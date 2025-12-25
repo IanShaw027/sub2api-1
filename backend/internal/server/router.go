@@ -215,6 +215,13 @@ func registerRoutes(r *gin.Engine, h *handler.Handlers, s *service.Services, rep
 				openai.POST("/create-from-oauth", h.Admin.OpenAIOAuth.CreateAccountFromOAuth)
 			}
 
+			// Gemini OAuth routes
+			gemini := admin.Group("/gemini")
+			{
+				gemini.POST("/oauth/auth-url", h.Admin.GeminiOAuth.GenerateAuthURL)
+				gemini.POST("/oauth/exchange-code", h.Admin.GeminiOAuth.ExchangeCode)
+			}
+
 			// 代理管理
 			proxies := admin.Group("/proxies")
 			{
