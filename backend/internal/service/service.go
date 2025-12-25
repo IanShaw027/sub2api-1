@@ -18,6 +18,7 @@ type Services struct {
 	OpenAIGateway *OpenAIGatewayService
 	OAuth         *OAuthService
 	OpenAIOAuth   *OpenAIOAuthService
+	GeminiOAuth   *GeminiOAuthService
 	RateLimit     *RateLimitService
 	AccountUsage  *AccountUsageService
 	AccountTest   *AccountTestService
