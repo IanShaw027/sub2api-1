@@ -930,11 +930,11 @@ const applyFilters = () => {
 const loadFilterOptions = async () => {
   try {
     // Load accounts
-    const accountsResponse = await adminAPI.accounts.list(1, 1000)
+    const accountsResponse = await adminAPI.accounts.list({ page: 1, page_size: 1000 })
     accounts.value = accountsResponse.items || []
 
     // Load groups
-    const groupsResponse = await adminAPI.groups.list(1, 1000)
+    const groupsResponse = await adminAPI.groups.list({ page: 1, page_size: 1000 })
     groups.value = groupsResponse.items || []
   } catch (error) {
     console.error('Failed to load filter options:', error)
