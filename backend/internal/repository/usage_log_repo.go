@@ -410,9 +410,7 @@ func (r *usageLogRepository) GetAccountTodayStats(ctx context.Context, accountID
 		if err == nil {
 			return stats, nil
 		}
-		if !errors.Is(err, redis.Nil) {
-			// Cache errors fall back to DB query.
-		}
+		// Cache errors (including redis.Nil) fall back to DB query.
 	}
 
 	today := timezone.Today()
