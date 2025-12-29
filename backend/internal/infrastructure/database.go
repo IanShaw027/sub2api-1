@@ -1,6 +1,8 @@
 package infrastructure
 
 import (
+	"time"
+
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
@@ -27,6 +29,16 @@ func InitDB(cfg *config.Config) (*gorm.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// 配置数据库连接池参数
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, err
+	}
+	sqlDB.SetMaxOpenConns(25)
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetConnMaxLifetime(5 * time.Minute)
+	sqlDB.SetConnMaxIdleTime(10 * time.Minute)
 
 	// 自动迁移（始终执行，确保数据库结构与代码同步）
 	// GORM 的 AutoMigrate 只会添加新字段，不会删除或修改已有字段，是安全的

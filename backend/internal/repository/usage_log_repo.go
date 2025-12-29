@@ -4,21 +4,20 @@ import (
 	"context"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/service"
-
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
-
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"gorm.io/gorm"
 )
 
 type usageLogRepository struct {
-	db *gorm.DB
+	db    *gorm.DB
+	cache UsageLogCache
 }
 
-func NewUsageLogRepository(db *gorm.DB) service.UsageLogRepository {
-	return &usageLogRepository{db: db}
+func NewUsageLogRepository(db *gorm.DB, cache UsageLogCache) service.UsageLogRepository {
+	return &usageLogRepository{db: db, cache: cache}
 }
 
 // getPerformanceStats 获取 RPM 和 TPM（近5分钟平均值，可选按用户过滤）
@@ -404,6 +403,14 @@ func (r *usageLogRepository) Delete(ctx context.Context, id int64) error {
 
 // GetAccountTodayStats 获取账号今日统计
 func (r *usageLogRepository) GetAccountTodayStats(ctx context.Context, accountID int64) (*usagestats.AccountStats, error) {
+	if r.cache != nil {
+		stats, err := r.cache.GetAccountTodayStats(ctx, accountID)
+		if err == nil {
+			return stats, nil
+		}
+		// Cache errors (including redis.Nil) fall back to DB query.
+	}
+
 	today := timezone.Today()
 
 	var stats struct {
@@ -425,11 +432,15 @@ func (r *usageLogRepository) GetAccountTodayStats(ctx context.Context, accountID
 		return nil, err
 	}
 
-	return &usagestats.AccountStats{
+	result := &usagestats.AccountStats{
 		Requests: stats.Requests,
 		Tokens:   stats.Tokens,
 		Cost:     stats.Cost,
-	}, nil
+	}
+	if r.cache != nil {
+		_ = r.cache.SetAccountTodayStats(ctx, accountID, result)
+	}
+	return result, nil
 }
 
 // GetAccountWindowStats 获取账号时间窗口内的统计

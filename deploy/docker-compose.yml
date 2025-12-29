@@ -36,6 +36,7 @@ services:
       - SERVER_HOST=0.0.0.0
       - SERVER_PORT=8080
       - SERVER_MODE=${SERVER_MODE:-release}
+      - RUN_MODE=${RUN_MODE:-standard}
 
       # =======================================================================
       # Database Configuration (PostgreSQL)
@@ -138,6 +139,8 @@ services:
       --save 60 1
       --appendonly yes
       --appendfsync everysec
+      --maxmemory 100mb
+      --maxmemory-policy volatile-lru
       ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
     environment:
       - TZ=${TZ:-Asia/Shanghai}

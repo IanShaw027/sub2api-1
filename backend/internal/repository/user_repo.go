@@ -2,22 +2,23 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/service"
-
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
-
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
 type userRepository struct {
-	db *gorm.DB
+	db    *gorm.DB
+	cache UserCache
 }
 
-func NewUserRepository(db *gorm.DB) service.UserRepository {
-	return &userRepository{db: db}
+func NewUserRepository(db *gorm.DB, cache UserCache) service.UserRepository {
+	return &userRepository{db: db, cache: cache}
 }
 
 func (r *userRepository) Create(ctx context.Context, user *service.User) error {
@@ -30,12 +31,25 @@ func (r *userRepository) Create(ctx context.Context, user *service.User) error {
 }
 
 func (r *userRepository) GetByID(ctx context.Context, id int64) (*service.User, error) {
+	if r.cache != nil {
+		user, err := r.cache.Get(ctx, id)
+		if err == nil {
+			return user, nil
+		}
+		if !errors.Is(err, redis.Nil) {
+			_ = r.cache.Delete(ctx, id)
+		}
+	}
 	var m userModel
 	err := r.db.WithContext(ctx).First(&m, id).Error
 	if err != nil {
 		return nil, translatePersistenceError(err, service.ErrUserNotFound, nil)
 	}
-	return userModelToService(&m), nil
+	user := userModelToService(&m)
+	if r.cache != nil {
+		_ = r.cache.Set(ctx, user)
+	}
+	return user, nil
 }
 
 func (r *userRepository) GetByEmail(ctx context.Context, email string) (*service.User, error) {
@@ -52,12 +66,22 @@ func (r *userRepository) Update(ctx context.Context, user *service.User) error {
 	err := r.db.WithContext(ctx).Save(m).Error
 	if err == nil {
 		applyUserModelToService(user, m)
+		if r.cache != nil && user != nil {
+			_ = r.cache.Delete(ctx, user.ID)
+		}
 	}
 	return translatePersistenceError(err, nil, service.ErrEmailExists)
 }
 
 func (r *userRepository) Delete(ctx context.Context, id int64) error {
-	return r.db.WithContext(ctx).Delete(&userModel{}, id).Error
+	err := r.db.WithContext(ctx).Delete(&userModel{}, id).Error
+	if err != nil {
+		return err
+	}
+	if r.cache != nil {
+		_ = r.cache.Delete(ctx, id)
+	}
+	return nil
 }
 
 func (r *userRepository) List(ctx context.Context, params pagination.PaginationParams) ([]service.User, *pagination.PaginationResult, error) {

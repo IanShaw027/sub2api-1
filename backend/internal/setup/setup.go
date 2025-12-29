@@ -319,7 +319,7 @@ func createAdminUser(cfg *SetupConfig) error {
 		return err
 	}
 
-	return repository.NewUserRepository(db).Create(context.Background(), admin)
+	return repository.NewUserRepository(db, nil).Create(context.Background(), admin)
 }
 
 func writeConfigFile(cfg *SetupConfig) error {

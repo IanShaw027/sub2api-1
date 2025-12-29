@@ -25,7 +25,7 @@ type UsageLogRepoSuite struct {
 func (s *UsageLogRepoSuite) SetupTest() {
 	s.ctx = context.Background()
 	s.db = testTx(s.T())
-	s.repo = NewUsageLogRepository(s.db).(*usageLogRepository)
+	s.repo = NewUsageLogRepository(s.db, nil).(*usageLogRepository)
 }
 
 func TestUsageLogRepoSuite(t *testing.T) {
