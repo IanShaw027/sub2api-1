@@ -22,7 +22,7 @@ type ApiKeyRepoSuite struct {
 func (s *ApiKeyRepoSuite) SetupTest() {
 	s.ctx = context.Background()
 	s.db = testTx(s.T())
-	s.repo = NewApiKeyRepository(s.db).(*apiKeyRepository)
+	s.repo = NewApiKeyRepository(s.db, nil).(*apiKeyRepository)
 }
 
 func TestApiKeyRepoSuite(t *testing.T) {

@@ -24,7 +24,7 @@ type UserRepoSuite struct {
 func (s *UserRepoSuite) SetupTest() {
 	s.ctx = context.Background()
 	s.db = testTx(s.T())
-	s.repo = NewUserRepository(s.db).(*userRepository)
+	s.repo = NewUserRepository(s.db, nil).(*userRepository)
 }
 
 func TestUserRepoSuite(t *testing.T) {

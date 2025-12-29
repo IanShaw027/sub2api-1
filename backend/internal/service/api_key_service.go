@@ -51,6 +51,10 @@ type ApiKeyCache interface {
 
 	IncrementDailyUsage(ctx context.Context, apiKey string) error
 	SetDailyUsageExpiry(ctx context.Context, apiKey string, ttl time.Duration) error
+
+	GetByKey(ctx context.Context, key string) (*ApiKey, error)
+	SetByKey(ctx context.Context, key string, apiKey *ApiKey) error
+	DeleteByKey(ctx context.Context, key string) error
 }
 
 // CreateApiKeyRequest 创建API Key请求
