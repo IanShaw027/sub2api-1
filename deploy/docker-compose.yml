@@ -139,6 +139,8 @@ services:
       --save 60 1
       --appendonly yes
       --appendfsync everysec
+      --maxmemory 100mb
+      --maxmemory-policy volatile-lru
       ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
     environment:
       - TZ=${TZ:-Asia/Shanghai}

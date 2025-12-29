@@ -2,21 +2,22 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/service"
-
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
-
+	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
 type apiKeyRepository struct {
-	db *gorm.DB
+	db    *gorm.DB
+	cache service.ApiKeyCache
 }
 
-func NewApiKeyRepository(db *gorm.DB) service.ApiKeyRepository {
-	return &apiKeyRepository{db: db}
+func NewApiKeyRepository(db *gorm.DB, cache service.ApiKeyCache) service.ApiKeyRepository {
+	return &apiKeyRepository{db: db, cache: cache}
 }
 
 func (r *apiKeyRepository) Create(ctx context.Context, key *service.ApiKey) error {
@@ -38,12 +39,25 @@ func (r *apiKeyRepository) GetByID(ctx context.Context, id int64) (*service.ApiK
 }
 
 func (r *apiKeyRepository) GetByKey(ctx context.Context, key string) (*service.ApiKey, error) {
+	if r.cache != nil {
+		cached, err := r.cache.GetByKey(ctx, key)
+		if err == nil && cached != nil {
+			return cached, nil
+		}
+		if err != nil && !errors.Is(err, redis.Nil) {
+			_ = r.cache.DeleteByKey(ctx, key)
+		}
+	}
 	var m apiKeyModel
 	err := r.db.WithContext(ctx).Preload("User").Preload("Group").Where("key = ?", key).First(&m).Error
 	if err != nil {
 		return nil, translatePersistenceError(err, service.ErrApiKeyNotFound, nil)
 	}
-	return apiKeyModelToService(&m), nil
+	apiKey := apiKeyModelToService(&m)
+	if r.cache != nil {
+		_ = r.cache.SetByKey(ctx, key, apiKey)
+	}
+	return apiKey, nil
 }
 
 func (r *apiKeyRepository) Update(ctx context.Context, key *service.ApiKey) error {
@@ -51,12 +65,29 @@ func (r *apiKeyRepository) Update(ctx context.Context, key *service.ApiKey) erro
 	err := r.db.WithContext(ctx).Model(m).Select("name", "group_id", "status", "updated_at").Updates(m).Error
 	if err == nil {
 		applyApiKeyModelToService(key, m)
+		if r.cache != nil && key != nil {
+			_ = r.cache.DeleteByKey(ctx, key.Key)
+		}
 	}
 	return err
 }
 
 func (r *apiKeyRepository) Delete(ctx context.Context, id int64) error {
-	return r.db.WithContext(ctx).Delete(&apiKeyModel{}, id).Error
+	var key string
+	if r.cache != nil {
+		_ = r.db.WithContext(ctx).Model(&apiKeyModel{}).
+			Select("key").
+			Where("id = ?", id).
+			Scan(&key).Error
+	}
+	err := r.db.WithContext(ctx).Delete(&apiKeyModel{}, id).Error
+	if err != nil {
+		return err
+	}
+	if r.cache != nil && key != "" {
+		_ = r.cache.DeleteByKey(ctx, key)
+	}
+	return nil
 }
 
 func (r *apiKeyRepository) ListByUserID(ctx context.Context, userID int64, params pagination.PaginationParams) ([]service.ApiKey, *pagination.PaginationResult, error) {

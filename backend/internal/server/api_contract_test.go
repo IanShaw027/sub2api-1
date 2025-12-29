@@ -23,6 +23,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 )
 
@@ -546,6 +547,18 @@ func (stubApiKeyCache) IncrementDailyUsage(ctx context.Context, apiKey string) e
 }
 
 func (stubApiKeyCache) SetDailyUsageExpiry(ctx context.Context, apiKey string, ttl time.Duration) error {
+	return nil
+}
+
+func (stubApiKeyCache) GetByKey(ctx context.Context, key string) (*service.ApiKey, error) {
+	return nil, redis.Nil
+}
+
+func (stubApiKeyCache) SetByKey(ctx context.Context, key string, apiKey *service.ApiKey) error {
+	return nil
+}
+
+func (stubApiKeyCache) DeleteByKey(ctx context.Context, key string) error {
 	return nil
 }
 
