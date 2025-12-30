@@ -84,7 +84,11 @@ type ForwardResult struct {
 
 // UpstreamFailoverError indicates an upstream error that should trigger account failover.
 type UpstreamFailoverError struct {
-	StatusCode int
+	StatusCode   int
+	ResponseBody []byte
+	Headers      http.Header
+	// ErrorMessage is a pre-parsed error message from the upstream response body.
+	ErrorMessage string
 }
 
 func (e *UpstreamFailoverError) Error() string {

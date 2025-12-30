@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -16,6 +17,22 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+var sensitiveAPIKeyRegex = regexp.MustCompile(`(?i)\b(?:AIza[0-9A-Za-z-_]{10,}|sk-[0-9A-Za-z]{10,})\b`)
+
+func sanitizeErrorMessage(msg string) string {
+	if msg == "" {
+		return msg
+	}
+	sanitized := sensitiveAPIKeyRegex.ReplaceAllString(msg, "[REDACTED]")
+	if gin.IsDebugging() {
+		return sanitized
+	}
+	if runes := []rune(sanitized); len(runes) > 200 {
+		sanitized = string(runes[:200]) + "..."
+	}
+	return sanitized
+}
 
 // GeminiV1BetaListModels proxies:
 // GET /v1beta/models
@@ -236,7 +253,20 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 				}
 				lastFailoverStatus = failoverErr.StatusCode
 				switchCount++
-				log.Printf("Gemini account %d: upstream error %d, switching account %d/%d", account.ID, failoverErr.StatusCode, switchCount, maxAccountSwitches)
+
+				// 提取错误消息（仅记录 error.message 以避免敏感数据泄露）
+				errorMsg := strings.TrimSpace(failoverErr.ErrorMessage)
+				if errorMsg == "" {
+					errorMsg = gemini.ParseErrorMessage(failoverErr.ResponseBody)
+				}
+				sanitizedErrorMsg := sanitizeErrorMessage(errorMsg)
+				if sanitizedErrorMsg != "" {
+					log.Printf("Gemini account %d: upstream error %d, message: %q, switching account %d/%d",
+						account.ID, failoverErr.StatusCode, sanitizedErrorMsg, switchCount, maxAccountSwitches)
+				} else {
+					log.Printf("Gemini account %d: upstream error %d, switching account %d/%d",
+						account.ID, failoverErr.StatusCode, switchCount, maxAccountSwitches)
+				}
 				continue
 			}
 			// ForwardNative already wrote the response

@@ -1066,7 +1066,7 @@ export default {
 	          authCodeHint: 'The system will auto-extract code/state from the URL.',
           redirectUri: 'Redirect URI',
           redirectUriHint:
-            'This must be configured in your Google OAuth client and must match exactly.',
+            'This Redirect URI (including the port number) must be configured in your Google Cloud Console OAuth Client and must match exactly.',
           confirmRedirectUri:
             'I have configured this Redirect URI in the Google OAuth client (must match exactly)',
 	          invalidRedirectUri: 'Redirect URI must be a valid http(s) URL',
@@ -1119,7 +1119,18 @@ export default {
         modelPassthroughDesc:
           'All model requests are forwarded directly to the Gemini API without model restrictions or mappings.',
         baseUrlHint: 'Leave default for official Gemini API',
-        apiKeyHint: 'Your Gemini API Key (starts with AIza)'
+        apiKeyHint: 'Your Gemini API Key (starts with AIza)',
+        getApiKeyLink: 'Get API Key',
+        helpToggle: '❓ Not sure which method to choose?',
+        oauthLabel: 'OAuth:',
+        apiKeyLabel: 'API Key:',
+        oauthBrief: 'Simulates web version calls, more powerful, requires authorization',
+        apiKeyBrief: 'Uses developer API Key, simple and direct configuration',
+        codeAssistLabel: 'Code Assist',
+        aiStudioLabel: 'AI Studio',
+        codeAssistBrief: 'Uses GCP project quota (requires Project ID)',
+        aiStudioBrief: 'Uses AI Studio quota (requires operator configuration)',
+        viewFullGuide: 'View Complete Setup Guide'
       },
       // Re-Auth Modal
       reAuthorizeAccount: 'Re-Authorize Account',

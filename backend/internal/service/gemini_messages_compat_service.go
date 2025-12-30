@@ -15,10 +15,12 @@ import (
 	mathrand "math/rand"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/gemini"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/googleapi"
 
@@ -28,9 +30,15 @@ import (
 const geminiStickySessionTTL = time.Hour
 
 const (
-	geminiMaxRetries     = 5
-	geminiRetryBaseDelay = 1 * time.Second
-	geminiRetryMaxDelay  = 16 * time.Second
+	geminiMaxRetries         = 5
+	geminiRetryBaseDelay     = 1 * time.Second
+	geminiRetryMaxDelay      = 16 * time.Second
+	geminiFailoverBodyMaxLen = 8 << 10
+)
+
+var (
+	// 用于匹配 Gemini 限额错误消息中的重试时间，如 "Please retry in 60s"
+	geminiRetryInRegex = regexp.MustCompile(`Please retry in ([0-9.]+)s`)
 )
 
 type GeminiMessagesCompatService struct {
@@ -496,7 +504,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 			}
 			if resp.StatusCode == 429 {
 				// Mark as rate-limited early so concurrent requests avoid this account.
-				s.handleGeminiUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+				_ = s.handleGeminiUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
 			}
 			if attempt < geminiMaxRetries {
 				log.Printf("Gemini account %d: upstream status %d, retry %d/%d", account.ID, resp.StatusCode, attempt, geminiMaxRetries)
@@ -518,9 +526,14 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
-		s.handleGeminiUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+		errorMessage := s.handleGeminiUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
 		if s.shouldFailoverGeminiUpstreamError(resp.StatusCode) {
-			return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode}
+			return nil, &UpstreamFailoverError{
+				StatusCode:   resp.StatusCode,
+				ResponseBody: truncateBody(respBody, geminiFailoverBodyMaxLen),
+				Headers:      resp.Header.Clone(),
+				ErrorMessage: errorMessage,
+			}
 		}
 		return nil, s.writeGeminiMappedError(c, resp.StatusCode, respBody)
 	}
@@ -760,7 +773,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 				break
 			}
 			if resp.StatusCode == 429 {
-				s.handleGeminiUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+				_ = s.handleGeminiUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
 			}
 			if attempt < geminiMaxRetries {
 				log.Printf("Gemini account %d: upstream status %d, retry %d/%d", account.ID, resp.StatusCode, attempt, geminiMaxRetries)
@@ -804,7 +817,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
-		s.handleGeminiUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+		errorMessage := s.handleGeminiUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
 
 		// Best-effort fallback for OAuth tokens missing AI Studio scopes when calling countTokens.
 		// This avoids Gemini SDKs failing hard during preflight token counting.
@@ -822,7 +835,12 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 		}
 
 		if s.shouldFailoverGeminiUpstreamError(resp.StatusCode) {
-			return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode}
+			return nil, &UpstreamFailoverError{
+				StatusCode:   resp.StatusCode,
+				ResponseBody: truncateBody(respBody, geminiFailoverBodyMaxLen),
+				Headers:      resp.Header.Clone(),
+				ErrorMessage: errorMessage,
+			}
 		}
 
 		respBody = unwrapIfNeeded(isOAuth, respBody)
@@ -922,12 +940,36 @@ func sleepGeminiBackoff(attempt int) {
 }
 
 var sensitiveQueryParamRegex = regexp.MustCompile(`(?i)([?&](?:key|client_secret|access_token|refresh_token)=)[^&"\s]+`)
+var sensitiveAPIKeyRegex = regexp.MustCompile(`(?i)\b(?:AIza[0-9A-Za-z-_]{10,}|sk-[0-9A-Za-z]{10,})\b`)
 
 func sanitizeUpstreamErrorMessage(msg string) string {
 	if msg == "" {
 		return msg
 	}
 	return sensitiveQueryParamRegex.ReplaceAllString(msg, `$1***`)
+}
+
+func sanitizeErrorMessage(msg string) string {
+	if msg == "" {
+		return msg
+	}
+	sanitized := sensitiveAPIKeyRegex.ReplaceAllString(msg, "[REDACTED]")
+	if gin.IsDebugging() {
+		return sanitized
+	}
+	if runes := []rune(sanitized); len(runes) > 200 {
+		sanitized = string(runes[:200]) + "..."
+	}
+	return sanitized
+}
+
+func truncateBody(body []byte, maxLen int) []byte {
+	if len(body) <= maxLen {
+		return body
+	}
+	truncated := make([]byte, maxLen)
+	copy(truncated, body[:maxLen])
+	return truncated
 }
 
 func (s *GeminiMessagesCompatService) writeGeminiMappedError(c *gin.Context, upstreamStatus int, body []byte) error {
@@ -1875,47 +1917,36 @@ func asInt(v any) (int, bool) {
 	}
 }
 
-func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, body []byte) {
+func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, body []byte) string {
 	if s.rateLimitService != nil && (statusCode == 401 || statusCode == 403 || statusCode == 529) {
 		s.rateLimitService.HandleUpstreamError(ctx, account, statusCode, headers, body)
-		return
+		return ""
 	}
 	if statusCode != 429 {
-		return
+		return ""
 	}
-	resetAt := ParseGeminiRateLimitResetTime(body)
-	if resetAt == nil {
-		ra := time.Now().Add(5 * time.Minute)
-		_ = s.accountRepo.SetRateLimited(ctx, account.ID, ra)
-		return
-	}
-	_ = s.accountRepo.SetRateLimited(ctx, account.ID, time.Unix(*resetAt, 0))
-}
 
-// ParseGeminiRateLimitResetTime 解析 Gemini 格式的 429 响应，返回重置时间的 Unix 时间戳
-func ParseGeminiRateLimitResetTime(body []byte) *int64 {
-	// Try to parse metadata.quotaResetDelay like "12.345s"
+	// 一次性解析 JSON 并提取限额信息
+	errorMessage := gemini.ParseErrorMessage(body)
+	var quotaResetDelay string
+	var resetAtFromBody *int64
 	var parsed map[string]any
 	if err := json.Unmarshal(body, &parsed); err == nil {
 		if errObj, ok := parsed["error"].(map[string]any); ok {
-			if msg, ok := errObj["message"].(string); ok {
-				if looksLikeGeminiDailyQuota(msg) {
-					if ts := nextGeminiDailyResetUnix(); ts != nil {
-						return ts
-					}
-				}
+			// 检查是否是每日限额错误
+			if errorMessage != "" && looksLikeGeminiDailyQuota(errorMessage) {
+				resetAtFromBody = nextGeminiDailyResetUnix()
 			}
 			if details, ok := errObj["details"].([]any); ok {
 				for _, d := range details {
-					dm, ok := d.(map[string]any)
-					if !ok {
-						continue
-					}
-					if meta, ok := dm["metadata"].(map[string]any); ok {
-						if v, ok := meta["quotaResetDelay"].(string); ok {
-							if dur, err := time.ParseDuration(v); err == nil {
-								ts := time.Now().Unix() + int64(dur.Seconds())
-								return &ts
+					if dm, ok := d.(map[string]any); ok {
+						if meta, ok := dm["metadata"].(map[string]any); ok {
+							if v, ok := meta["quotaResetDelay"].(string); ok {
+								quotaResetDelay = v
+								if dur, err := time.ParseDuration(v); err == nil {
+									ts := time.Now().Unix() + int64(dur.Seconds())
+									resetAtFromBody = &ts
+								}
 							}
 						}
 					}
@@ -1924,17 +1955,69 @@ func ParseGeminiRateLimitResetTime(body []byte) *int64 {
 		}
 	}
 
-	// Match "Please retry in Xs"
-	retryInRegex := regexp.MustCompile(`Please retry in ([0-9.]+)s`)
-	matches := retryInRegex.FindStringSubmatch(string(body))
-	if len(matches) == 2 {
-		if dur, err := time.ParseDuration(matches[1] + "s"); err == nil {
-			ts := time.Now().Unix() + int64(math.Ceil(dur.Seconds()))
-			return &ts
+	// 如果 JSON 解析失败，尝试从响应体匹配 "Please retry in Xs"
+	if resetAtFromBody == nil && len(body) < 10000 {
+		matches := geminiRetryInRegex.FindSubmatch(body)
+		if len(matches) > 1 {
+			if dur, err := time.ParseDuration(string(matches[1]) + "s"); err == nil {
+				ts := time.Now().Unix() + int64(math.Ceil(dur.Seconds()))
+				resetAtFromBody = &ts
+			}
 		}
 	}
 
-	return nil
+	// 尝试从 Retry-After 头获取重置时间
+	var resetAt *int64
+	if resetAtFromBody != nil {
+		resetAt = resetAtFromBody
+	} else if retryAfter := strings.TrimSpace(headers.Get("Retry-After")); retryAfter != "" {
+		// Retry-After 可以是秒数或 HTTP-date
+		if seconds, err := strconv.ParseInt(retryAfter, 10, 64); err == nil {
+			// 秒数格式
+			ts := time.Now().Unix() + seconds
+			resetAt = &ts
+		} else if httpDate, err := http.ParseTime(retryAfter); err == nil {
+			// HTTP-date 格式
+			ts := httpDate.Unix()
+			resetAt = &ts
+		}
+	}
+
+	if resetAt != nil {
+		now := time.Now().Unix()
+		if *resetAt <= now {
+			ts := now + 60
+			resetAt = &ts
+		}
+	}
+
+	rawErrorMessage := errorMessage
+	// 使用 rune-safe 截断错误消息和重置延迟，防止日志膨胀
+	if runes := []rune(errorMessage); len(runes) > 200 {
+		errorMessage = string(runes[:200]) + "..."
+	}
+	if runes := []rune(quotaResetDelay); len(runes) > 50 {
+		quotaResetDelay = string(runes[:50]) + "..."
+	}
+
+	sanitizedErrorMessage := sanitizeErrorMessage(rawErrorMessage)
+	// 设置限额并记录日志
+	if resetAt == nil {
+		ra := time.Now().Add(5 * time.Minute)
+		log.Printf("[Gemini Rate Limit] Account %d hit 429, no reset time found. Error: %q. Marking limited until %s",
+			account.ID, sanitizedErrorMessage, ra.Format(time.RFC3339))
+		if err := s.accountRepo.SetRateLimited(ctx, account.ID, ra); err != nil {
+			s.logger.Warn("Failed to set account rate limited", zap.Error(err), zap.Int64("account_id", account.ID))
+		}
+		return errorMessage
+	}
+	resetTime := time.Unix(*resetAt, 0)
+	log.Printf("[Gemini Rate Limit] Account %d hit 429. Error: %q. Quota reset delay: %q. Reset at: %s",
+		account.ID, sanitizedErrorMessage, quotaResetDelay, resetTime.Format(time.RFC3339))
+	if err := s.accountRepo.SetRateLimited(ctx, account.ID, resetTime); err != nil {
+		s.logger.Warn("Failed to set account rate limited", zap.Error(err), zap.Int64("account_id", account.ID))
+	}
+	return errorMessage
 }
 
 func looksLikeGeminiDailyQuota(message string) bool {
@@ -1946,6 +2029,7 @@ func looksLikeGeminiDailyQuota(message string) bool {
 }
 
 func nextGeminiDailyResetUnix() *int64 {
+	// Gemini daily quota resets at midnight Pacific Time (America/Los_Angeles).
 	loc, err := time.LoadLocation("America/Los_Angeles")
 	if err != nil {
 		// Fallback: PST without DST.

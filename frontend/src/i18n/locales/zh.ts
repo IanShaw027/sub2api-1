@@ -1201,7 +1201,7 @@ export default {
 	          authCodePlaceholder: '方式1（推荐）：粘贴回调链接\n方式2：仅粘贴 code 参数的值',
 	          authCodeHint: '系统会自动从链接中解析 code/state。',
           redirectUri: 'Redirect URI',
-          redirectUriHint: '需要在 Google OAuth Client 中配置，且必须与此处完全一致。',
+          redirectUriHint: '需要在 Google Cloud Console 的 OAuth Client 中配置此 Redirect URI（包括端口号），且必须与此处完全一致。',
           confirmRedirectUri: '我已在 Google OAuth Client 中配置了该 Redirect URI（必须完全一致）',
           invalidRedirectUri: 'Redirect URI 必须是合法的 http(s) URL',
 	          redirectUriNotConfirmed: '请确认 Redirect URI 已在 Google OAuth Client 中正确配置',
@@ -1249,7 +1249,18 @@ export default {
         modelPassthrough: 'Gemini 直接转发模型',
         modelPassthroughDesc: '所有模型请求将直接转发至 Gemini API，不进行模型限制或映射。',
         baseUrlHint: '留空使用官方 Gemini API',
-        apiKeyHint: '您的 Gemini API Key（以 AIza 开头）'
+        apiKeyHint: '您的 Gemini API Key（以 AIza 开头）',
+        getApiKeyLink: '获取 API Key',
+        helpToggle: '❓ 不知道该选哪种方式？',
+        oauthLabel: 'OAuth:',
+        apiKeyLabel: 'API Key:',
+        oauthBrief: '模拟网页版调用，功能更强大，需要授权流程',
+        apiKeyBrief: '使用开发者 API Key，配置简单直接',
+        codeAssistLabel: 'Code Assist',
+        aiStudioLabel: 'AI Studio',
+        codeAssistBrief: '使用 GCP 项目配额（需要 Project ID）',
+        aiStudioBrief: '使用 AI Studio 配额（需运营商配置）',
+        viewFullGuide: '查看完整设置指南'
       },
       // Re-Auth Modal
       reAuthorizeAccount: '重新授权账号',

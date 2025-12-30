@@ -417,6 +417,51 @@
           </button>
         </div>
 
+        <!-- Gemini Help Panel -->
+        <details class="group mt-4 overflow-hidden rounded-lg border border-blue-100 bg-blue-50/50 dark:border-blue-900/30 dark:bg-blue-900/10">
+          <summary class="flex cursor-pointer items-center justify-between p-3 text-sm font-medium text-blue-700 hover:bg-blue-100/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-400 dark:hover:bg-blue-900/20 [&::-webkit-details-marker]:hidden">
+            <span class="flex items-center gap-2">
+              <svg class="h-4 w-4 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>{{ t('admin.accounts.gemini.helpToggle') }}</span>
+            </span>
+            <svg
+              class="h-4 w-4 transition-transform duration-200 group-open:rotate-90"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+            </svg>
+          </summary>
+          <div class="border-t border-blue-100 p-3 text-xs leading-relaxed text-blue-800 sm:text-sm dark:border-blue-900/30 dark:text-blue-300">
+            <div class="space-y-2">
+              <p>
+                <span class="font-semibold text-blue-900 dark:text-blue-200">{{ t('admin.accounts.gemini.oauthLabel') }}</span>
+                {{ t('admin.accounts.gemini.oauthBrief') }}
+              </p>
+              <p>
+                <span class="font-semibold text-blue-900 dark:text-blue-200">{{ t('admin.accounts.gemini.apiKeyLabel') }}</span>
+                {{ t('admin.accounts.gemini.apiKeyBrief') }}
+              </p>
+              <div class="mt-2">
+                <a
+                  href="https://github.com/Wei-Shaw/sub2api/blob/main/deploy/README.md#gemini-configuration"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex items-center font-medium text-blue-600 underline-offset-4 hover:underline dark:text-blue-400"
+                >
+                  {{ t('admin.accounts.gemini.viewFullGuide') }}
+                  <svg class="ml-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </a>
+              </div>
+            </div>
+          </div>
+        </details>
+
         <!-- OAuth Type Selection (only show when oauth-based is selected) -->
         <div v-if="accountCategory === 'oauth-based'" class="mt-4">
           <label class="input-label">{{ t('admin.accounts.oauth.gemini.oauthTypeLabel') }}</label>
@@ -444,9 +489,10 @@
                 </svg>
               </div>
               <div>
-                <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.types.codeAssist') }}</span>
-                <span class="block text-xs font-medium text-blue-600 dark:text-blue-400">{{ t('admin.accounts.oauth.gemini.needsProjectId') }}</span>
-                <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.oauth.gemini.needsProjectIdDesc') }}</span>
+                <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.gemini.codeAssistLabel') }}</span>
+                <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  {{ t('admin.accounts.gemini.codeAssistBrief') }}
+                </span>
               </div>
             </button>
 
@@ -486,13 +532,10 @@
                   </svg>
                 </div>
                 <div class="min-w-0">
-                  <span class="block text-sm font-medium text-gray-900 dark:text-white">AI Studio</span>
-                  <span class="block text-xs font-medium text-purple-600 dark:text-purple-400">{{
-                    t('admin.accounts.oauth.gemini.noProjectIdNeeded')
-                  }}</span>
-                  <span class="text-xs text-gray-500 dark:text-gray-400">{{
-                    t('admin.accounts.oauth.gemini.noProjectIdNeededDesc')
-                  }}</span>
+                  <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.gemini.aiStudioLabel') }}</span>
+                  <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    {{ t('admin.accounts.gemini.aiStudioBrief') }}
+                  </span>
                 </div>
                 <span
                   v-if="!geminiAIStudioOAuthEnabled"
@@ -603,7 +646,18 @@
                   : 'sk-ant-...'
             "
           />
-          <p class="input-hint">{{ apiKeyHint }}</p>
+          <p class="input-hint">
+            {{ apiKeyHint }}
+            <a
+              v-if="form.platform === 'gemini'"
+              href="https://aistudio.google.com/app/apikey"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="ml-1 text-blue-600 hover:underline dark:text-blue-400"
+            >
+              {{ t('admin.accounts.gemini.getApiKeyLink') }} ↗
+            </a>
+          </p>
         </div>
 
         <!-- Model Restriction Section (不适用于 Gemini) -->
