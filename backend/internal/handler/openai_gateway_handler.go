@@ -136,7 +136,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	for {
 		// Select account supporting the requested model
 		log.Printf("[OpenAI Handler] Selecting account: groupID=%v model=%s", apiKey.GroupID, reqModel)
-		account, err := h.gatewayService.SelectAccountForModelWithExclusions(c.Request.Context(), apiKey.GroupID, sessionHash, reqModel, failedAccountIDs)
+		candidates, err := h.gatewayService.ListAccountCandidatesForModelWithExclusions(c.Request.Context(), apiKey.GroupID, sessionHash, reqModel, failedAccountIDs)
 		if err != nil {
 			log.Printf("[OpenAI Handler] SelectAccount failed: %v", err)
 			if len(failedAccountIDs) == 0 {
@@ -146,15 +146,35 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			h.handleFailoverExhausted(c, lastFailoverStatus, streamStarted)
 			return
 		}
-		log.Printf("[OpenAI Handler] Selected account: id=%d name=%s", account.ID, account.Name)
 
-		// 3. Acquire account concurrency slot
-		accountReleaseFunc, err := h.concurrencyHelper.AcquireAccountSlotWithWait(c, account.ID, account.Concurrency, reqStream, &streamStarted)
-		if err != nil {
-			log.Printf("Account concurrency acquire failed: %v", err)
-			h.handleConcurrencyError(c, err, "account", streamStarted)
-			return
+		var account *service.Account
+		var accountReleaseFunc func()
+		for _, candidate := range candidates {
+			releaseFunc, acquired, err := h.concurrencyHelper.TryAcquireAccountSlot(c.Request.Context(), candidate.ID, candidate.Concurrency)
+			if err != nil {
+				log.Printf("Account concurrency acquire failed: %v", err)
+				h.handleConcurrencyError(c, err, "account", streamStarted)
+				return
+			}
+			if acquired {
+				account = candidate
+				accountReleaseFunc = releaseFunc
+				break
+			}
 		}
+
+		if account == nil {
+			account = candidates[0]
+			accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWait(c, account.ID, account.Concurrency, reqStream, &streamStarted)
+			if err != nil {
+				log.Printf("Account concurrency acquire failed: %v", err)
+				h.handleConcurrencyError(c, err, "account", streamStarted)
+				return
+			}
+		}
+
+		h.gatewayService.SetStickySessionAccount(c.Request.Context(), sessionHash, account.ID)
+		log.Printf("[OpenAI Handler] Selected account: id=%d name=%s", account.ID, account.Name)
 
 		// Forward request
 		result, err := h.gatewayService.Forward(c.Request.Context(), c, account, body)

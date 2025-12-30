@@ -76,6 +76,12 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		return
 	}
 
+	// 修复缺少 signature 的 thinking 块
+	body, fixed := h.gatewayService.FixMissingThinkingSignatures(body)
+	if fixed {
+		log.Printf("Messages: removed thinking blocks without signature")
+	}
+
 	// 解析请求获取模型名和stream
 	var req struct {
 		Model  string `json:"model"`
@@ -141,7 +147,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		lastFailoverStatus := 0
 
 		for {
-			account, err := h.geminiCompatService.SelectAccountForModelWithExclusions(c.Request.Context(), apiKey.GroupID, sessionHash, req.Model, failedAccountIDs)
+			candidates, err := h.geminiCompatService.ListAccountCandidatesForModelWithExclusions(c.Request.Context(), apiKey.GroupID, sessionHash, req.Model, failedAccountIDs)
 			if err != nil {
 				if len(failedAccountIDs) == 0 {
 					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts: "+err.Error(), streamStarted)
@@ -152,22 +158,44 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			}
 
 			// 检查预热请求拦截（在账号选择后、转发前检查）
-			if account.IsInterceptWarmupEnabled() && isWarmupRequest(body) {
+			if len(candidates) > 0 && candidates[0].IsInterceptWarmupEnabled() && isWarmupRequest(body) {
 				if req.Stream {
 					sendMockWarmupStream(c, req.Model)
 				} else {
 					sendMockWarmupResponse(c, req.Model)
 				}
+				h.geminiCompatService.SetStickySessionAccount(c.Request.Context(), sessionHash, candidates[0].ID)
 				return
 			}
 
-			// 3. 获取账号并发槽位
-			accountReleaseFunc, err := h.concurrencyHelper.AcquireAccountSlotWithWait(c, account.ID, account.Concurrency, req.Stream, &streamStarted)
-			if err != nil {
-				log.Printf("Account concurrency acquire failed: %v", err)
-				h.handleConcurrencyError(c, err, "account", streamStarted)
-				return
+			var account *service.Account
+			var accountReleaseFunc func()
+			for _, candidate := range candidates {
+				releaseFunc, acquired, err := h.concurrencyHelper.TryAcquireAccountSlot(c.Request.Context(), candidate.ID, candidate.Concurrency)
+				if err != nil {
+					log.Printf("Account concurrency acquire failed: %v", err)
+					h.handleConcurrencyError(c, err, "account", streamStarted)
+					return
+				}
+				if acquired {
+					account = candidate
+					accountReleaseFunc = releaseFunc
+					break
+				}
 			}
+
+			if account == nil {
+				account = candidates[0]
+				// 3. 获取账号并发槽位
+				accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWait(c, account.ID, account.Concurrency, req.Stream, &streamStarted)
+				if err != nil {
+					log.Printf("Account concurrency acquire failed: %v", err)
+					h.handleConcurrencyError(c, err, "account", streamStarted)
+					return
+				}
+			}
+
+			h.geminiCompatService.SetStickySessionAccount(c.Request.Context(), sessionHash, account.ID)
 
 			// 转发请求 - 根据账号平台分流
 			var result *service.ForwardResult
@@ -223,7 +251,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 	for {
 		// 选择支持该模型的账号
-		account, err := h.gatewayService.SelectAccountForModelWithExclusions(c.Request.Context(), apiKey.GroupID, sessionHash, req.Model, failedAccountIDs)
+		candidates, err := h.gatewayService.ListAccountCandidatesForModelWithExclusions(c.Request.Context(), apiKey.GroupID, sessionHash, req.Model, failedAccountIDs)
 		if err != nil {
 			if len(failedAccountIDs) == 0 {
 				h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts: "+err.Error(), streamStarted)
@@ -234,22 +262,44 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		}
 
 		// 检查预热请求拦截（在账号选择后、转发前检查）
-		if account.IsInterceptWarmupEnabled() && isWarmupRequest(body) {
+		if len(candidates) > 0 && candidates[0].IsInterceptWarmupEnabled() && isWarmupRequest(body) {
 			if req.Stream {
 				sendMockWarmupStream(c, req.Model)
 			} else {
 				sendMockWarmupResponse(c, req.Model)
 			}
+			h.gatewayService.SetStickySessionAccount(c.Request.Context(), sessionHash, candidates[0].ID)
 			return
 		}
 
-		// 3. 获取账号并发槽位
-		accountReleaseFunc, err := h.concurrencyHelper.AcquireAccountSlotWithWait(c, account.ID, account.Concurrency, req.Stream, &streamStarted)
-		if err != nil {
-			log.Printf("Account concurrency acquire failed: %v", err)
-			h.handleConcurrencyError(c, err, "account", streamStarted)
-			return
+		var account *service.Account
+		var accountReleaseFunc func()
+		for _, candidate := range candidates {
+			releaseFunc, acquired, err := h.concurrencyHelper.TryAcquireAccountSlot(c.Request.Context(), candidate.ID, candidate.Concurrency)
+			if err != nil {
+				log.Printf("Account concurrency acquire failed: %v", err)
+				h.handleConcurrencyError(c, err, "account", streamStarted)
+				return
+			}
+			if acquired {
+				account = candidate
+				accountReleaseFunc = releaseFunc
+				break
+			}
 		}
+
+		if account == nil {
+			account = candidates[0]
+			// 3. 获取账号并发槽位
+			accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWait(c, account.ID, account.Concurrency, req.Stream, &streamStarted)
+			if err != nil {
+				log.Printf("Account concurrency acquire failed: %v", err)
+				h.handleConcurrencyError(c, err, "account", streamStarted)
+				return
+			}
+		}
+
+		h.gatewayService.SetStickySessionAccount(c.Request.Context(), sessionHash, account.ID)
 
 		// 转发请求 - 根据账号平台分流
 		var result *service.ForwardResult

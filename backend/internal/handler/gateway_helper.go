@@ -105,6 +105,18 @@ func (h *ConcurrencyHelper) AcquireAccountSlotWithWait(c *gin.Context, accountID
 	return h.waitForSlotWithPing(c, "account", accountID, maxConcurrency, isStream, streamStarted)
 }
 
+// TryAcquireAccountSlot attempts to acquire an account slot once without waiting.
+func (h *ConcurrencyHelper) TryAcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int) (func(), bool, error) {
+	result, err := h.concurrencyService.AcquireAccountSlot(ctx, accountID, maxConcurrency)
+	if err != nil {
+		return nil, false, err
+	}
+	if !result.Acquired {
+		return nil, false, nil
+	}
+	return result.ReleaseFunc, true, nil
+}
+
 // waitForSlotWithPing waits for a concurrency slot, sending ping events for streaming requests.
 // streamStarted pointer is updated when streaming begins (for proper error handling by caller).
 func (h *ConcurrencyHelper) waitForSlotWithPing(c *gin.Context, slotType string, id int64, maxConcurrency int, isStream bool, streamStarted *bool) (func(), error) {
