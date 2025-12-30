@@ -46,6 +46,7 @@ type GatewayHandler struct {
 	recordUsageQueue             chan recordUsageJob
 	recordUsageWg                sync.WaitGroup
 	recordUsageStopOnce          sync.Once
+	recordUsageStopped           atomic.Bool
 	recordUsageBackpressureCount atomic.Uint64
 	recordUsageFallbackCount     atomic.Uint64
 }
@@ -78,6 +79,7 @@ func (h *GatewayHandler) Stop() {
 	}
 
 	h.recordUsageStopOnce.Do(func() {
+		h.recordUsageStopped.Store(true)
 		close(h.recordUsageQueue)
 	})
 	h.recordUsageWg.Wait()
@@ -115,7 +117,7 @@ func (h *GatewayHandler) recordUsage(job recordUsageJob) {
 }
 
 func (h *GatewayHandler) enqueueUsageRecord(c *gin.Context, result *service.ForwardResult, account *service.Account, apiKey *service.ApiKey, subscription *service.UserSubscription) {
-	if h.recordUsageQueue == nil {
+	if h.recordUsageQueue == nil || h.recordUsageStopped.Load() {
 		return
 	}
 
@@ -134,6 +136,10 @@ func (h *GatewayHandler) enqueueUsageRecord(c *gin.Context, result *service.Forw
 
 	backpressureCount := h.recordUsageBackpressureCount.Add(1)
 	log.Printf("Record usage queue full, applying backpressure (count=%d len=%d cap=%d)", backpressureCount, len(h.recordUsageQueue), cap(h.recordUsageQueue))
+
+	if h.recordUsageStopped.Load() {
+		return
+	}
 
 	start := time.Now()
 	timer := time.NewTimer(recordUsageEnqueueTimeout)

@@ -86,6 +86,8 @@ gateway:
   # Upstream request timeout for non-streaming responses (seconds). 0 disables.
   upstream_timeout: 30
   # Upstream request timeout for streaming responses (seconds). 0 disables.
+  # NOTE: Default is 300s; long streaming responses may be truncated if they exceed this.
+  # Increase the value or set to 0 to disable the streaming timeout.
   streaming_upstream_timeout: 300
   # Upstream response header timeout (seconds). 0 disables.
   response_header_timeout: 300
