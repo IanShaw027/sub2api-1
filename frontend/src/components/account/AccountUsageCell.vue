@@ -147,6 +147,39 @@
       <div v-else class="text-xs text-gray-400">-</div>
     </template>
 
+    <!-- Gemini OAuth accounts: show quota from extra field -->
+    <template v-else-if="account.platform === 'gemini' && account.type === 'oauth'">
+      <div v-if="hasGeminiQuota" class="space-y-1">
+        <!-- Gemini 2.0 Flash Exp -->
+        <UsageProgressBar
+          v-if="gemini2FlashExpUsage !== null"
+          label="Gemini 2.0 Flash Exp"
+          :utilization="gemini2FlashExpUsage.utilization"
+          :resets-at="gemini2FlashExpUsage.resetTime"
+          color="indigo"
+        />
+
+        <!-- Gemini Exp 1206 -->
+        <UsageProgressBar
+          v-if="geminiExp1206Usage !== null"
+          label="Gemini Exp 1206"
+          :utilization="geminiExp1206Usage.utilization"
+          :resets-at="geminiExp1206Usage.resetTime"
+          color="emerald"
+        />
+
+        <!-- Gemini 2.0 Flash Thinking -->
+        <UsageProgressBar
+          v-if="gemini2ThinkingUsage !== null"
+          label="Gemini 2.0 Flash Thinking"
+          :utilization="gemini2ThinkingUsage.utilization"
+          :resets-at="gemini2ThinkingUsage.resetTime"
+          color="purple"
+        />
+      </div>
+      <div v-else class="text-xs text-gray-400">-</div>
+    </template>
+
     <!-- Other accounts: no usage window -->
     <template v-else>
       <div class="text-xs text-gray-400">-</div>
@@ -437,6 +470,60 @@ const antigravityTierClass = computed(() => {
       return ''
   }
 })
+
+// Gemini quota computed properties
+const hasGeminiQuota = computed(() => {
+  const extra = props.account.extra as Record<string, unknown> | undefined
+  return extra && typeof extra.quota === 'object' && extra.quota !== null
+})
+
+// 从配额数据中获取使用率（多模型取最低剩余 = 最高使用）
+const getGeminiUsage = (modelNames: string[]): AntigravityUsageResult | null => {
+  const extra = props.account.extra as Record<string, unknown> | undefined
+  if (!extra || typeof extra.quota !== 'object' || extra.quota === null) return null
+
+  const quota = extra.quota as AntigravityQuotaData
+
+  let minRemaining = 100
+  let earliestReset: string | null = null
+
+  for (const model of modelNames) {
+    const modelQuota = quota[model]
+    if (!modelQuota) continue
+
+    if (modelQuota.remaining < minRemaining) {
+      minRemaining = modelQuota.remaining
+    }
+    if (modelQuota.reset_time) {
+      if (!earliestReset || modelQuota.reset_time < earliestReset) {
+        earliestReset = modelQuota.reset_time
+      }
+    }
+  }
+
+  // 如果没有找到任何匹配的模型
+  if (minRemaining === 100 && earliestReset === null) {
+    // 检查是否至少有一个模型有数据
+    const hasAnyData = modelNames.some((m) => quota[m])
+    if (!hasAnyData) return null
+  }
+
+  return {
+    utilization: 100 - minRemaining,
+    resetTime: earliestReset
+  }
+}
+
+// Gemini 2.0 Flash Exp: gemini-2.0-flash-exp
+const gemini2FlashExpUsage = computed(() => getGeminiUsage(['gemini-2.0-flash-exp']))
+
+// Gemini Exp 1206: gemini-exp-1206
+const geminiExp1206Usage = computed(() => getGeminiUsage(['gemini-exp-1206']))
+
+// Gemini 2.0 Flash Thinking: gemini-2.0-flash-thinking-exp
+const gemini2ThinkingUsage = computed(() =>
+  getGeminiUsage(['gemini-2.0-flash-thinking-exp'])
+)
 
 const loadUsage = async () => {
   // Fetch usage for Anthropic OAuth and Setup Token accounts

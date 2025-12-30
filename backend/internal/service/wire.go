@@ -66,6 +66,18 @@ func ProvideAntigravityQuotaRefresher(
 	return svc
 }
 
+// ProvideGeminiQuotaRefresher creates and starts GeminiQuotaRefresher
+func ProvideGeminiQuotaRefresher(
+	accountRepo AccountRepository,
+	proxyRepo ProxyRepository,
+	tokenProvider *GeminiTokenProvider,
+	cfg *config.Config,
+) *GeminiQuotaRefresher {
+	svc := NewGeminiQuotaRefresher(accountRepo, proxyRepo, tokenProvider, cfg)
+	svc.Start()
+	return svc
+}
+
 // ProvideDeferredService creates and starts DeferredService
 func ProvideDeferredService(accountRepo AccountRepository, timingWheel *TimingWheelService) *DeferredService {
 	svc := NewDeferredService(accountRepo, timingWheel, 10*time.Second)
@@ -115,4 +127,5 @@ var ProviderSet = wire.NewSet(
 	ProvideTimingWheelService,
 	ProvideDeferredService,
 	ProvideAntigravityQuotaRefresher,
+	ProvideGeminiQuotaRefresher,
 )
