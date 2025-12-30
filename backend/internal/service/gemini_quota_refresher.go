@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -30,6 +31,7 @@ type GeminiQuotaRefresher struct {
 	proxyRepo     ProxyRepository
 	tokenProvider *GeminiTokenProvider
 	cfg           *config.TokenRefreshConfig
+	httpClient    *http.Client
 
 	stopCh chan struct{}
 	wg     sync.WaitGroup
@@ -47,6 +49,7 @@ func NewGeminiQuotaRefresher(
 		proxyRepo:     proxyRepo,
 		tokenProvider: tokenProvider,
 		cfg:           &cfg.TokenRefresh,
+		httpClient:    newGeminiQuotaHTTPClient(),
 		stopCh:        make(chan struct{}),
 	}
 }
@@ -130,6 +133,12 @@ func (r *GeminiQuotaRefresher) processRefresh() {
 }
 
 func (r *GeminiQuotaRefresher) refreshAccountQuota(ctx context.Context, account *Account) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if account == nil {
+		return errors.New("account is nil")
+	}
 	if r.tokenProvider == nil {
 		return errors.New("gemini token provider not configured")
 	}
@@ -139,24 +148,64 @@ func (r *GeminiQuotaRefresher) refreshAccountQuota(ctx context.Context, account 
 		return fmt.Errorf("get access token: %w", err)
 	}
 
-	baseURL := strings.TrimSpace(account.GetCredential("base_url"))
-	if baseURL == "" {
-		baseURL = geminicli.AIStudioBaseURL
-	}
-
-	var proxyURL string
-	if account.ProxyID != nil {
-		proxy, err := r.proxyRepo.GetByID(ctx, *account.ProxyID)
-		if err == nil && proxy != nil {
-			proxyURL = proxy.URL()
+	var projectID string
+	if account.Extra != nil {
+		if raw, ok := account.Extra["project_id"]; ok {
+			if v, ok := toString(raw); ok {
+				projectID = strings.TrimSpace(v)
+			}
 		}
 	}
 
-	client := newGeminiQuotaHTTPClient(proxyURL)
-	quota := make(map[string]any)
+	baseURL := ""
+	apiType := ""
+	if projectID != "" {
+		baseURL = geminicli.GeminiCliBaseURL
+		apiType = "code_assist"
+	} else {
+		baseURL = strings.TrimSpace(account.GetCredential("base_url"))
+		if baseURL == "" {
+			baseURL = geminicli.AIStudioBaseURL
+		}
+		apiType = "ai_studio"
+	}
+	log.Printf("[GeminiQuota] Account %d (%s) using %s API", account.ID, account.Name, apiType)
 
+	var proxyURL string
+	if account.ProxyID != nil {
+		if r.proxyRepo != nil {
+			proxy, err := r.proxyRepo.GetByID(ctx, *account.ProxyID)
+			if err == nil && proxy != nil {
+				proxyURL = proxy.URL()
+			}
+		}
+	}
+
+	proxyCtx := ctx
+	if strings.TrimSpace(proxyURL) != "" {
+		if parsed, err := url.Parse(proxyURL); err == nil {
+			proxyCtx = withGeminiProxy(proxyCtx, parsed)
+		}
+	}
+
+	client := r.httpClient
+	if client == nil {
+		client = newGeminiQuotaHTTPClient()
+	}
+	quota := make(map[string]any)
+	if account.Extra != nil {
+		if rawQuota, ok := account.Extra["quota"]; ok {
+			if existing, ok := rawQuota.(map[string]any); ok {
+				for key, value := range existing {
+					quota[key] = value
+				}
+			}
+		}
+	}
+
+	updated := 0
 	for _, model := range geminiQuotaModels {
-		modelQuota, err := fetchGeminiModelQuota(ctx, client, baseURL, accessToken, model)
+		modelQuota, err := fetchGeminiModelQuota(proxyCtx, client, baseURL, accessToken, model)
 		if err != nil {
 			log.Printf("[GeminiQuota] Account %d model %s failed: %v", account.ID, model, err)
 			continue
@@ -165,10 +214,14 @@ func (r *GeminiQuotaRefresher) refreshAccountQuota(ctx context.Context, account 
 			"remaining":  modelQuota.Remaining,
 			"reset_time": modelQuota.ResetTime,
 		}
+		updated++
 	}
 
 	if len(quota) == 0 {
-		return errors.New("no quota data fetched")
+		return nil
+	}
+	if updated == 0 {
+		return nil
 	}
 
 	if account.Extra == nil {
@@ -235,24 +288,43 @@ func fetchGeminiModelQuota(ctx context.Context, client *http.Client, baseURL, ac
 	return quota, nil
 }
 
-func newGeminiQuotaHTTPClient(proxyURL string) *http.Client {
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
+type geminiProxyContextKey struct{}
 
-	if strings.TrimSpace(proxyURL) == "" {
-		return client
+func withGeminiProxy(ctx context.Context, proxyURL *url.URL) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
 	}
+	if proxyURL == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, geminiProxyContextKey{}, proxyURL)
+}
 
-	proxyURLParsed, err := url.Parse(proxyURL)
-	if err != nil {
-		return client
+func geminiProxyFromContext(req *http.Request) (*url.URL, error) {
+	if req == nil {
+		return nil, nil
 	}
+	if raw := req.Context().Value(geminiProxyContextKey{}); raw != nil {
+		if proxyURL, ok := raw.(*url.URL); ok && proxyURL != nil {
+			return proxyURL, nil
+		}
+	}
+	return http.ProxyFromEnvironment(req)
+}
 
-	client.Transport = &http.Transport{
-		Proxy: http.ProxyURL(proxyURLParsed),
+func newGeminiQuotaHTTPClient() *http.Client {
+	baseTransport, ok := http.DefaultTransport.(*http.Transport)
+	var transport *http.Transport
+	if ok && baseTransport != nil {
+		transport = baseTransport.Clone()
+	} else {
+		transport = &http.Transport{}
 	}
-	return client
+	transport.Proxy = geminiProxyFromContext
+	return &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: transport,
+	}
 }
 
 func parseGeminiQuota(body []byte, headers http.Header) (*geminiModelQuota, error) {
@@ -344,7 +416,7 @@ func extractQuotaFromRateLimits(payload map[string]any, key string) *geminiModel
 }
 
 func extractQuotaFromMap(m map[string]any) *geminiModelQuota {
-	remaining, ok := lookupInt(m, []string{
+	remaining, remainingOk := lookupFloat(m, []string{
 		"remaining",
 		"remainingRequests",
 		"remaining_requests",
@@ -353,16 +425,25 @@ func extractQuotaFromMap(m map[string]any) *geminiModelQuota {
 		"remainingQuota",
 		"remaining_quota",
 	})
-	if !ok {
-		if fraction, ok := lookupFloat(m, []string{
-			"remainingFraction",
-			"remaining_fraction",
-		}); ok {
-			remaining = int(fraction * 100)
-		} else {
-			return nil
-		}
-	}
+	limit, limitOk := lookupFloat(m, []string{
+		"limit",
+		"limitRequests",
+		"limit_requests",
+		"requestLimit",
+		"request_limit",
+		"requestsLimit",
+		"requests_limit",
+		"limitTokens",
+		"limit_tokens",
+		"maxRequests",
+		"max_requests",
+		"maxTokens",
+		"max_tokens",
+		"quotaLimit",
+		"quota_limit",
+		"maxQuota",
+		"max_quota",
+	})
 
 	reset := lookupString(m, []string{
 		"resetTime",
@@ -375,20 +456,102 @@ func extractQuotaFromMap(m map[string]any) *geminiModelQuota {
 		"quota_reset_delay",
 	})
 
-	return &geminiModelQuota{
-		Remaining: remaining,
-		ResetTime: normalizeResetTime(reset),
+	if remainingOk && limitOk {
+		remainingPercent, ok := percentFromRemainingLimit(remaining, limit, "payload")
+		if !ok {
+			return nil
+		}
+		return &geminiModelQuota{
+			Remaining: remainingPercent,
+			ResetTime: normalizeResetTime(reset),
+		}
 	}
+
+	if fraction, ok := lookupFloat(m, []string{
+		"remainingFraction",
+		"remaining_fraction",
+	}); ok {
+		remainingPercent, ok := percentFromFraction(fraction, "payload")
+		if !ok {
+			return nil
+		}
+		return &geminiModelQuota{
+			Remaining: remainingPercent,
+			ResetTime: normalizeResetTime(reset),
+		}
+	}
+
+	if remainingOk && !limitOk {
+		log.Printf("[GeminiQuota] Quota payload missing limit; remaining=%v", remaining)
+	}
+
+	return nil
+}
+
+func percentFromRemainingLimit(remaining, limit float64, source string) (int, bool) {
+	if limit <= 0 {
+		log.Printf("[GeminiQuota] %s limit invalid: %v", source, limit)
+		return 0, false
+	}
+
+	percent := (remaining / limit) * 100
+	if math.IsNaN(percent) || math.IsInf(percent, 0) {
+		log.Printf("[GeminiQuota] %s percent invalid (remaining=%v limit=%v)", source, remaining, limit)
+		return 0, false
+	}
+
+	if percent < 0 {
+		log.Printf("[GeminiQuota] %s percent below 0 (remaining=%v limit=%v)", source, remaining, limit)
+		percent = 0
+	} else if percent > 100 {
+		log.Printf("[GeminiQuota] %s percent above 100 (remaining=%v limit=%v)", source, remaining, limit)
+		percent = 100
+	}
+
+	return int(percent), true
+}
+
+func percentFromFraction(fraction float64, source string) (int, bool) {
+	percent := fraction * 100
+	if math.IsNaN(percent) || math.IsInf(percent, 0) {
+		log.Printf("[GeminiQuota] %s fraction percent invalid: %v", source, percent)
+		return 0, false
+	}
+	if percent < 0 {
+		log.Printf("[GeminiQuota] %s remaining fraction below 0: %v", source, fraction)
+		percent = 0
+	} else if percent > 100 {
+		log.Printf("[GeminiQuota] %s remaining fraction above 1: %v", source, fraction)
+		percent = 100
+	}
+	return int(percent), true
 }
 
 func extractQuotaFromHeaders(headers http.Header) *geminiModelQuota {
-	remaining, ok := headerInt(headers, []string{
+	remaining, remainingOk := headerFloat(headers, []string{
 		"x-ratelimit-remaining",
 		"x-ratelimit-remaining-requests",
 		"x-ratelimit-remaining-tokens",
 		"x-goog-quota-remaining",
 		"x-goog-quota-remaining-requests",
 	})
+	if !remainingOk {
+		return nil
+	}
+
+	limit, limitOk := headerFloat(headers, []string{
+		"x-ratelimit-limit",
+		"x-ratelimit-limit-requests",
+		"x-ratelimit-limit-tokens",
+		"x-goog-quota-limit",
+		"x-goog-quota-limit-requests",
+	})
+	if !limitOk {
+		log.Printf("[GeminiQuota] Quota headers missing limit; remaining=%v", remaining)
+		return nil
+	}
+
+	remainingPercent, ok := percentFromRemainingLimit(remaining, limit, "headers")
 	if !ok {
 		return nil
 	}
@@ -401,16 +564,16 @@ func extractQuotaFromHeaders(headers http.Header) *geminiModelQuota {
 	})
 
 	return &geminiModelQuota{
-		Remaining: remaining,
+		Remaining: remainingPercent,
 		ResetTime: normalizeResetTime(reset),
 	}
 }
 
-func headerInt(headers http.Header, keys []string) (int, bool) {
+func headerFloat(headers http.Header, keys []string) (float64, bool) {
 	for _, key := range keys {
 		if v := strings.TrimSpace(headers.Get(key)); v != "" {
-			if i, ok := toInt(v); ok {
-				return i, true
+			if f, ok := toFloat(v); ok {
+				return f, true
 			}
 		}
 	}
@@ -424,17 +587,6 @@ func headerString(headers http.Header, keys []string) string {
 		}
 	}
 	return ""
-}
-
-func lookupInt(m map[string]any, keys []string) (int, bool) {
-	for _, key := range keys {
-		if v, ok := m[key]; ok {
-			if i, ok := toInt(v); ok {
-				return i, true
-			}
-		}
-	}
-	return 0, false
 }
 
 func lookupString(m map[string]any, keys []string) string {
@@ -454,38 +606,6 @@ func lookupFloat(m map[string]any, keys []string) (float64, bool) {
 			if f, ok := toFloat(v); ok {
 				return f, true
 			}
-		}
-	}
-	return 0, false
-}
-
-func toInt(value any) (int, bool) {
-	switch v := value.(type) {
-	case int:
-		return v, true
-	case int64:
-		return int(v), true
-	case float64:
-		return int(v), true
-	case float32:
-		return int(v), true
-	case json.Number:
-		if i, err := v.Int64(); err == nil {
-			return int(i), true
-		}
-		if f, err := v.Float64(); err == nil {
-			return int(f), true
-		}
-	case string:
-		v = strings.TrimSpace(v)
-		if v == "" {
-			return 0, false
-		}
-		if i, err := strconv.ParseInt(v, 10, 64); err == nil {
-			return int(i), true
-		}
-		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			return int(f), true
 		}
 	}
 	return 0, false
