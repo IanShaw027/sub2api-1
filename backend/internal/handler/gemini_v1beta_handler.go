@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/gemini"
@@ -174,7 +175,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	defer geminiConcurrency.DecrementWaitCount(c.Request.Context(), authSubject.UserID)
 
 	// 1) user concurrency slot
-	streamStarted := false
+	var streamStarted atomic.Bool
 	userReleaseFunc, err := geminiConcurrency.AcquireUserSlotWithWait(c, authSubject.UserID, authSubject.Concurrency, stream, &streamStarted)
 	if err != nil {
 		googleError(c, http.StatusTooManyRequests, err.Error())

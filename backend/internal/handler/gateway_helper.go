@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -68,7 +69,7 @@ func (h *ConcurrencyHelper) DecrementWaitCount(ctx context.Context, userID int64
 // AcquireUserSlotWithWait acquires a user concurrency slot, waiting if necessary.
 // For streaming requests, sends ping events during the wait.
 // streamStarted is updated if streaming response has begun.
-func (h *ConcurrencyHelper) AcquireUserSlotWithWait(c *gin.Context, userID int64, maxConcurrency int, isStream bool, streamStarted *bool) (func(), error) {
+func (h *ConcurrencyHelper) AcquireUserSlotWithWait(c *gin.Context, userID int64, maxConcurrency int, isStream bool, streamStarted *atomic.Bool) (func(), error) {
 	ctx := c.Request.Context()
 
 	// Try to acquire immediately
@@ -88,7 +89,7 @@ func (h *ConcurrencyHelper) AcquireUserSlotWithWait(c *gin.Context, userID int64
 // AcquireAccountSlotWithWait acquires an account concurrency slot, waiting if necessary.
 // For streaming requests, sends ping events during the wait.
 // streamStarted is updated if streaming response has begun.
-func (h *ConcurrencyHelper) AcquireAccountSlotWithWait(c *gin.Context, accountID int64, maxConcurrency int, isStream bool, streamStarted *bool) (func(), error) {
+func (h *ConcurrencyHelper) AcquireAccountSlotWithWait(c *gin.Context, accountID int64, maxConcurrency int, isStream bool, streamStarted *atomic.Bool) (func(), error) {
 	ctx := c.Request.Context()
 
 	// Try to acquire immediately
@@ -107,7 +108,7 @@ func (h *ConcurrencyHelper) AcquireAccountSlotWithWait(c *gin.Context, accountID
 
 // waitForSlotWithPing waits for a concurrency slot, sending ping events for streaming requests.
 // streamStarted pointer is updated when streaming begins (for proper error handling by caller).
-func (h *ConcurrencyHelper) waitForSlotWithPing(c *gin.Context, slotType string, id int64, maxConcurrency int, isStream bool, streamStarted *bool) (func(), error) {
+func (h *ConcurrencyHelper) waitForSlotWithPing(c *gin.Context, slotType string, id int64, maxConcurrency int, isStream bool, streamStarted *atomic.Bool) (func(), error) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), maxConcurrencyWait)
 	defer cancel()
 
@@ -144,12 +145,12 @@ func (h *ConcurrencyHelper) waitForSlotWithPing(c *gin.Context, slotType string,
 
 		case <-pingCh:
 			// Send ping to keep connection alive
-			if !*streamStarted {
+			if !streamStarted.Load() {
 				c.Header("Content-Type", "text/event-stream")
 				c.Header("Cache-Control", "no-cache")
 				c.Header("Connection", "keep-alive")
 				c.Header("X-Accel-Buffering", "no")
-				*streamStarted = true
+				streamStarted.Store(true)
 			}
 			if _, err := fmt.Fprint(c.Writer, string(h.pingFormat)); err != nil {
 				return nil, err

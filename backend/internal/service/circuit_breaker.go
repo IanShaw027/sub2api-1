@@ -44,24 +44,34 @@ func (cb *CircuitBreaker) RecordFailure(accountID int64) {
 
 func (cb *CircuitBreaker) IsOpen(accountID int64) bool {
 	cb.mu.RLock()
-	defer cb.mu.RUnlock()
-
 	count, ok := cb.failureCount[accountID]
 	if !ok {
+		cb.mu.RUnlock()
 		return false
 	}
 
 	lastFail, ok := cb.lastFailTime[accountID]
 	if !ok {
+		cb.mu.RUnlock()
 		return false
 	}
 
 	if time.Since(lastFail) >= cb.resetTimeout {
-		// 需要重置，但不能在读锁中修改，返回 false 让下次调用时清理
+		cb.mu.RUnlock()
+		// 超时需要清理，升级到写锁
+		cb.mu.Lock()
+		// 双重检查，防止其他 goroutine 已经清理
+		if lastFail2, ok2 := cb.lastFailTime[accountID]; ok2 && time.Since(lastFail2) >= cb.resetTimeout {
+			delete(cb.failureCount, accountID)
+			delete(cb.lastFailTime, accountID)
+		}
+		cb.mu.Unlock()
 		return false
 	}
 
-	return count >= cb.threshold
+	isOpen := count >= cb.threshold
+	cb.mu.RUnlock()
+	return isOpen
 }
 
 func (cb *CircuitBreaker) RecordSuccess(accountID int64) {

@@ -646,6 +646,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 
 	// 重试循环
 	var resp *http.Response
+	var lastErr error
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		// 构建上游请求（每次重试需要重新构建，因为请求体需要重新读取）
 		upstreamReq, err := s.buildUpstreamRequest(ctx, c, account, body, token, tokenType)
@@ -655,13 +656,18 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 
 		// 设置超时
 		upstreamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		defer cancel()
 		upstreamReq = upstreamReq.WithContext(upstreamCtx)
 
 		// 发送请求
 		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL)
+		cancel()
 		if err != nil {
-			return nil, fmt.Errorf("upstream request failed: %w", err)
+			lastErr = err
+			if attempt < maxRetries {
+				time.Sleep(retryDelay)
+				continue
+			}
+			return nil, fmt.Errorf("upstream request failed: %w", lastErr)
 		}
 
 		// 检查是否需要重试
@@ -670,7 +676,6 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 				log.Printf("Account %d: upstream error %d, retry %d/%d after %v",
 					account.ID, resp.StatusCode, attempt, maxRetries, retryDelay)
 				_ = resp.Body.Close()
-				cancel()
 				time.Sleep(retryDelay)
 				continue
 			}
@@ -681,7 +686,11 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		// 不需要重试（成功或不可重试的错误），跳出循环
 		break
 	}
-	defer func() { _ = resp.Body.Close() }()
+
+	// 确保 resp 不为 nil 再 defer close
+	if resp != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
 
 	// 处理重试耗尽的情况
 	if resp.StatusCode >= 400 && s.shouldRetryUpstreamError(account, resp.StatusCode) {

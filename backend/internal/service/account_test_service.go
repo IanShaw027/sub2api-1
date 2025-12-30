@@ -592,11 +592,11 @@ func (s *AccountTestService) processGeminiStream(c *gin.Context, body io.Reader)
 		}
 
 		line = strings.TrimSpace(line)
-		if line == "" || !strings.HasPrefix(line, "data: ") {
+		if line == "" || !sseDataPrefix.MatchString(line) {
 			continue
 		}
 
-		jsonStr := strings.TrimPrefix(line, "data: ")
+		jsonStr := sseDataPrefix.ReplaceAllString(line, "")
 		if jsonStr == "[DONE]" {
 			s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
 			return nil
@@ -613,15 +613,19 @@ func (s *AccountTestService) processGeminiStream(c *gin.Context, body io.Reader)
 		if resp, ok := data["response"].(map[string]any); ok && resp != nil {
 			data = resp
 		}
+
+		// Handle errors first
+		if errData, ok := data["error"].(map[string]any); ok {
+			errorMsg := "Unknown error"
+			if msg, ok := errData["message"].(string); ok {
+				errorMsg = msg
+			}
+			return s.sendErrorAndEnd(c, errorMsg)
+		}
+
 		if candidates, ok := data["candidates"].([]any); ok && len(candidates) > 0 {
 			if candidate, ok := candidates[0].(map[string]any); ok {
-				// Check for completion
-				if finishReason, ok := candidate["finishReason"].(string); ok && finishReason != "" {
-					s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-					return nil
-				}
-
-				// Extract content
+				// Extract content first
 				if content, ok := candidate["content"].(map[string]any); ok {
 					if parts, ok := content["parts"].([]any); ok {
 						for _, part := range parts {
@@ -633,16 +637,17 @@ func (s *AccountTestService) processGeminiStream(c *gin.Context, body io.Reader)
 						}
 					}
 				}
-			}
-		}
 
-		// Handle errors
-		if errData, ok := data["error"].(map[string]any); ok {
-			errorMsg := "Unknown error"
-			if msg, ok := errData["message"].(string); ok {
-				errorMsg = msg
+				// Then check for completion - only STOP is considered success
+				if finishReason, ok := candidate["finishReason"].(string); ok && finishReason != "" {
+					if finishReason == "STOP" {
+						s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+						return nil
+					}
+					// Other finish reasons (SAFETY, RECITATION, OTHER, etc.) are errors
+					return s.sendErrorAndEnd(c, fmt.Sprintf("Request finished with reason: %s", finishReason))
+				}
 			}
-			return s.sendErrorAndEnd(c, errorMsg)
 		}
 	}
 }

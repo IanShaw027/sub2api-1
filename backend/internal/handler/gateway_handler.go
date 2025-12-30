@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
@@ -19,6 +20,20 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const (
+	recordUsageWorkerCount = 4
+	recordUsageQueueSize   = 256
+	recordUsageTimeout     = 10 * time.Second
+)
+
+type recordUsageJob struct {
+	result       *service.ForwardResult
+	apiKey       *service.ApiKey
+	account      *service.Account
+	subscription *service.UserSubscription
+	closeNotify  <-chan bool
+}
+
 // GatewayHandler handles API gateway requests
 type GatewayHandler struct {
 	gatewayService            *service.GatewayService
@@ -27,6 +42,7 @@ type GatewayHandler struct {
 	userService               *service.UserService
 	billingCacheService       *service.BillingCacheService
 	concurrencyHelper         *ConcurrencyHelper
+	recordUsageQueue          chan recordUsageJob
 }
 
 // NewGatewayHandler creates a new GatewayHandler
@@ -38,13 +54,72 @@ func NewGatewayHandler(
 	concurrencyService *service.ConcurrencyService,
 	billingCacheService *service.BillingCacheService,
 ) *GatewayHandler {
-	return &GatewayHandler{
+	handler := &GatewayHandler{
 		gatewayService:            gatewayService,
 		geminiCompatService:       geminiCompatService,
 		antigravityGatewayService: antigravityGatewayService,
 		userService:               userService,
 		billingCacheService:       billingCacheService,
 		concurrencyHelper:         NewConcurrencyHelper(concurrencyService, SSEPingFormatClaude),
+		recordUsageQueue:          make(chan recordUsageJob, recordUsageQueueSize),
+	}
+	handler.startRecordUsageWorkers()
+	return handler
+}
+
+func (h *GatewayHandler) startRecordUsageWorkers() {
+	for i := 0; i < recordUsageWorkerCount; i++ {
+		go h.recordUsageWorker()
+	}
+}
+
+func (h *GatewayHandler) recordUsageWorker() {
+	for job := range h.recordUsageQueue {
+		ctx, cancel := context.WithTimeout(context.Background(), recordUsageTimeout)
+		if job.closeNotify != nil {
+			closeNotify := job.closeNotify
+			go func() {
+				select {
+				case <-closeNotify:
+					cancel()
+				case <-ctx.Done():
+				}
+			}()
+		}
+
+		if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
+			Result:       job.result,
+			ApiKey:       job.apiKey,
+			User:         job.apiKey.User,
+			Account:      job.account,
+			Subscription: job.subscription,
+		}); err != nil {
+			log.Printf("Record usage failed: %v", err)
+		}
+		cancel()
+	}
+}
+
+func (h *GatewayHandler) enqueueUsageRecord(c *gin.Context, result *service.ForwardResult, account *service.Account, apiKey *service.ApiKey, subscription *service.UserSubscription) {
+	if h.recordUsageQueue == nil {
+		return
+	}
+
+	var closeNotify <-chan bool
+	if notifier, ok := c.Writer.(http.CloseNotifier); ok {
+		closeNotify = notifier.CloseNotify()
+	}
+
+	select {
+	case h.recordUsageQueue <- recordUsageJob{
+		result:       result,
+		apiKey:       apiKey,
+		account:      account,
+		subscription: subscription,
+		closeNotify:  closeNotify,
+	}:
+	default:
+		log.Printf("Record usage queue full, dropping usage record")
 	}
 }
 
@@ -87,7 +162,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	}
 
 	// Track if we've started streaming (for error handling)
-	streamStarted := false
+	var streamStarted atomic.Bool
 
 	// 获取订阅信息（可能为nil）- 提前获取用于后续检查
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
@@ -199,19 +274,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			}
 
 			// 异步记录使用量（subscription已在函数开头获取）
-			go func(result *service.ForwardResult, usedAccount *service.Account) {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				defer cancel()
-				if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
-					Result:       result,
-					ApiKey:       apiKey,
-					User:         apiKey.User,
-					Account:      usedAccount,
-					Subscription: subscription,
-				}); err != nil {
-					log.Printf("Record usage failed: %v", err)
-				}
-			}(result, account)
+			h.enqueueUsageRecord(c, result, account, apiKey, subscription)
 			return
 		}
 	}
@@ -281,19 +344,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		}
 
 		// 异步记录使用量（subscription已在函数开头获取）
-		go func(result *service.ForwardResult, usedAccount *service.Account) {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
-				Result:       result,
-				ApiKey:       apiKey,
-				User:         apiKey.User,
-				Account:      usedAccount,
-				Subscription: subscription,
-			}); err != nil {
-				log.Printf("Record usage failed: %v", err)
-			}
-		}(result, account)
+		h.enqueueUsageRecord(c, result, account, apiKey, subscription)
 		return
 	}
 }
@@ -418,7 +469,7 @@ func (h *GatewayHandler) calculateSubscriptionRemaining(group *service.Group, su
 }
 
 // handleConcurrencyError handles concurrency-related errors with proper 429 response
-func (h *GatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotType string, streamStarted bool) {
+func (h *GatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotType string, streamStarted atomic.Bool) {
 	h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error",
 		fmt.Sprintf("Concurrency limit exceeded for %s, please retry later", slotType), streamStarted)
 }
@@ -446,8 +497,8 @@ func (h *GatewayHandler) mapUpstreamError(statusCode int) (int, string, string) 
 }
 
 // handleStreamingAwareError handles errors that may occur after streaming has started
-func (h *GatewayHandler) handleStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
-	if streamStarted {
+func (h *GatewayHandler) handleStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted atomic.Bool) {
+	if streamStarted.Load() {
 		// Stream already started, send error as SSE event then close
 		flusher, ok := c.Writer.(http.Flusher)
 		if ok {
