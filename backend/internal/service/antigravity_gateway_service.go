@@ -533,7 +533,7 @@ func sleepAntigravityBackoff(attempt int) {
 func (s *AntigravityGatewayService) handleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, body []byte) {
 	// 429 使用 Gemini 格式解析（从 body 解析重置时间）
 	if statusCode == 429 {
-		resetAt := ParseGeminiRateLimitResetTime(body)
+		resetAt := ParseGeminiRateLimitResetTime(headers, body)
 		if resetAt == nil {
 			// 解析失败：Gemini 有重试时间用 5 分钟，Claude 没有用 1 分钟
 			defaultDur := 1 * time.Minute

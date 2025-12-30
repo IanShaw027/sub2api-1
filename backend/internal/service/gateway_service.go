@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -293,8 +294,18 @@ func (s *GatewayService) SelectAccountForModel(ctx context.Context, groupID *int
 	return s.SelectAccountForModelWithExclusions(ctx, groupID, sessionHash, requestedModel, nil)
 }
 
-// SelectAccountForModelWithExclusions selects an account supporting the requested model while excluding specified accounts.
-func (s *GatewayService) SelectAccountForModelWithExclusions(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) (*Account, error) {
+// SetStickySessionAccount updates sticky session mapping.
+func (s *GatewayService) SetStickySessionAccount(ctx context.Context, sessionHash string, accountID int64) {
+	if sessionHash == "" {
+		return
+	}
+	if err := s.cache.SetSessionAccountID(ctx, sessionHash, accountID, stickySessionTTL); err != nil {
+		log.Printf("set session account failed: session=%s account_id=%d err=%v", sessionHash, accountID, err)
+	}
+}
+
+// ListAccountCandidatesForModelWithExclusions returns ordered candidates for a model while excluding specified accounts.
+func (s *GatewayService) ListAccountCandidatesForModelWithExclusions(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) ([]*Account, error) {
 	// 优先检查 context 中的强制平台（/antigravity 路由）
 	var platform string
 	forcePlatform, hasForcePlatform := ctx.Value(ctxkey.ForcePlatform).(string)
@@ -315,21 +326,31 @@ func (s *GatewayService) SelectAccountForModelWithExclusions(ctx context.Context
 	// anthropic/gemini 分组支持混合调度（包含启用了 mixed_scheduling 的 antigravity 账户）
 	// 注意：强制平台模式不走混合调度
 	if (platform == PlatformAnthropic || platform == PlatformGemini) && !hasForcePlatform {
-		return s.selectAccountWithMixedScheduling(ctx, groupID, sessionHash, requestedModel, excludedIDs, platform)
+		return s.listAccountCandidatesWithMixedScheduling(ctx, groupID, sessionHash, requestedModel, excludedIDs, platform)
 	}
 
 	// 强制平台模式：优先按分组查找，找不到再查全部该平台账户
 	if hasForcePlatform && groupID != nil {
-		account, err := s.selectAccountForModelWithPlatform(ctx, groupID, sessionHash, requestedModel, excludedIDs, platform)
+		candidates, err := s.listAccountCandidatesForModelWithPlatform(ctx, groupID, sessionHash, requestedModel, excludedIDs, platform)
 		if err == nil {
-			return account, nil
+			return candidates, nil
 		}
-		// 分组中找不到，回退查询全部该平台账户
 		groupID = nil
 	}
 
 	// antigravity 分组、强制平台模式或无分组使用单平台选择
-	return s.selectAccountForModelWithPlatform(ctx, groupID, sessionHash, requestedModel, excludedIDs, platform)
+	return s.listAccountCandidatesForModelWithPlatform(ctx, groupID, sessionHash, requestedModel, excludedIDs, platform)
+}
+
+// SelectAccountForModelWithExclusions selects an account supporting the requested model while excluding specified accounts.
+func (s *GatewayService) SelectAccountForModelWithExclusions(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) (*Account, error) {
+	candidates, err := s.ListAccountCandidatesForModelWithExclusions(ctx, groupID, sessionHash, requestedModel, excludedIDs)
+	if err != nil {
+		return nil, err
+	}
+	selected := candidates[0]
+	s.SetStickySessionAccount(ctx, sessionHash, selected.ID)
+	return selected, nil
 }
 
 // selectAccountForModelWithPlatform 选择单平台账户（完全隔离）
@@ -413,6 +434,90 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 	}
 
 	return selected, nil
+}
+
+func (s *GatewayService) listAccountCandidatesForModelWithPlatform(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, platform string) ([]*Account, error) {
+	isExcluded := func(id int64) bool {
+		if excludedIDs == nil {
+			return false
+		}
+		_, excluded := excludedIDs[id]
+		return excluded
+	}
+
+	// 1. 查询粘性会话
+	var sticky *Account
+	if sessionHash != "" {
+		accountID, err := s.cache.GetSessionAccountID(ctx, sessionHash)
+		if err == nil && accountID > 0 {
+			if !isExcluded(accountID) {
+				account, err := s.accountRepo.GetByID(ctx, accountID)
+				// 检查账号平台是否匹配（确保粘性会话不会跨平台）
+				if err == nil && account.Platform == platform && account.IsSchedulable() && (requestedModel == "" || s.isModelSupportedByAccount(account, requestedModel)) {
+					sticky = account
+				}
+			}
+		}
+	}
+
+	// 2. 获取可调度账号列表（单平台）
+	var accounts []Account
+	var err error
+	if s.cfg.RunMode == config.RunModeSimple {
+		// 简易模式：忽略 groupID，查询所有可用账号
+		accounts, err = s.accountRepo.ListSchedulableByPlatform(ctx, platform)
+	} else if groupID != nil {
+		accounts, err = s.accountRepo.ListSchedulableByGroupIDAndPlatform(ctx, *groupID, platform)
+	} else {
+		accounts, err = s.accountRepo.ListSchedulableByPlatform(ctx, platform)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query accounts failed: %w", err)
+	}
+
+	candidates := make([]*Account, 0, len(accounts))
+	for i := range accounts {
+		acc := &accounts[i]
+		if isExcluded(acc.ID) {
+			continue
+		}
+		// 检查模型支持
+		if requestedModel != "" && !s.isModelSupportedByAccount(acc, requestedModel) {
+			continue
+		}
+		if sticky != nil && acc.ID == sticky.ID {
+			continue
+		}
+		candidates = append(candidates, acc)
+	}
+
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].Priority != candidates[j].Priority {
+			return candidates[i].Priority < candidates[j].Priority
+		}
+		iNil := candidates[i].LastUsedAt == nil
+		jNil := candidates[j].LastUsedAt == nil
+		if iNil != jNil {
+			return iNil
+		}
+		if iNil {
+			return false
+		}
+		return candidates[i].LastUsedAt.Before(*candidates[j].LastUsedAt)
+	})
+
+	if sticky != nil {
+		candidates = append([]*Account{sticky}, candidates...)
+	}
+
+	if len(candidates) == 0 {
+		if requestedModel != "" {
+			return nil, fmt.Errorf("no available accounts supporting model: %s", requestedModel)
+		}
+		return nil, errors.New("no available accounts")
+	}
+
+	return candidates, nil
 }
 
 // selectAccountWithMixedScheduling 选择账户（支持混合调度）
@@ -502,6 +607,92 @@ func (s *GatewayService) selectAccountWithMixedScheduling(ctx context.Context, g
 	}
 
 	return selected, nil
+}
+
+func (s *GatewayService) listAccountCandidatesWithMixedScheduling(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, nativePlatform string) ([]*Account, error) {
+	isExcluded := func(id int64) bool {
+		if excludedIDs == nil {
+			return false
+		}
+		_, excluded := excludedIDs[id]
+		return excluded
+	}
+
+	platforms := []string{nativePlatform, PlatformAntigravity}
+
+	// 1. 查询粘性会话
+	var sticky *Account
+	if sessionHash != "" {
+		accountID, err := s.cache.GetSessionAccountID(ctx, sessionHash)
+		if err == nil && accountID > 0 && !isExcluded(accountID) {
+			account, err := s.accountRepo.GetByID(ctx, accountID)
+			// 检查账号是否有效：原生平台直接匹配，antigravity 需要启用混合调度
+			if err == nil && account.IsSchedulable() && (requestedModel == "" || s.isModelSupportedByAccount(account, requestedModel)) {
+				if account.Platform == nativePlatform || (account.Platform == PlatformAntigravity && account.IsMixedSchedulingEnabled()) {
+					sticky = account
+				}
+			}
+		}
+	}
+
+	// 2. 获取可调度账号列表
+	var accounts []Account
+	var err error
+	if groupID != nil {
+		accounts, err = s.accountRepo.ListSchedulableByGroupIDAndPlatforms(ctx, *groupID, platforms)
+	} else {
+		accounts, err = s.accountRepo.ListSchedulableByPlatforms(ctx, platforms)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query accounts failed: %w", err)
+	}
+
+	candidates := make([]*Account, 0, len(accounts))
+	for i := range accounts {
+		acc := &accounts[i]
+		if isExcluded(acc.ID) {
+			continue
+		}
+		// 过滤：原生平台直接通过，antigravity 需要启用混合调度
+		if acc.Platform == PlatformAntigravity && !acc.IsMixedSchedulingEnabled() {
+			continue
+		}
+		if requestedModel != "" && !s.isModelSupportedByAccount(acc, requestedModel) {
+			continue
+		}
+		if sticky != nil && acc.ID == sticky.ID {
+			continue
+		}
+		candidates = append(candidates, acc)
+	}
+
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].Priority != candidates[j].Priority {
+			return candidates[i].Priority < candidates[j].Priority
+		}
+		iNil := candidates[i].LastUsedAt == nil
+		jNil := candidates[j].LastUsedAt == nil
+		if iNil != jNil {
+			return iNil
+		}
+		if iNil {
+			return false
+		}
+		return candidates[i].LastUsedAt.Before(*candidates[j].LastUsedAt)
+	})
+
+	if sticky != nil {
+		candidates = append([]*Account{sticky}, candidates...)
+	}
+
+	if len(candidates) == 0 {
+		if requestedModel != "" {
+			return nil, fmt.Errorf("no available accounts supporting model: %s", requestedModel)
+		}
+		return nil, errors.New("no available accounts")
+	}
+
+	return candidates, nil
 }
 
 // isModelSupportedByAccount 根据账户平台检查模型支持
@@ -1303,6 +1494,12 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 		}
 	}
 
+	// 修复缺少 signature 的 thinking 块
+	body, fixed := s.FixMissingThinkingSignatures(body)
+	if fixed {
+		log.Printf("CountTokens: removed thinking blocks without signature")
+	}
+
 	// 获取凭证
 	token, tokenType, err := s.GetAccessToken(ctx, account)
 	if err != nil {
@@ -1344,6 +1541,13 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	if resp.StatusCode >= 400 {
 		// 标记账号状态（429/529等）
 		s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+
+		// 记录详细的错误信息用于调试
+		truncated := string(respBody)
+		if len(truncated) > 1000 {
+			truncated = truncated[:1000] + "..."
+		}
+		log.Printf("CountTokens account %d: upstream error %d, response: %s", account.ID, resp.StatusCode, truncated)
 
 		// 返回简化的错误响应
 		errMsg := "Upstream request failed"
@@ -1428,6 +1632,91 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	}
 
 	return req, nil
+}
+
+// FixMissingThinkingSignatures 修复请求中缺少 signature 的 thinking 块
+// 移除缺少 signature 的 thinking 块，因为 Claude API 要求有效的 signature
+// 返回修复后的 body 和是否进行了修复
+func (s *GatewayService) FixMissingThinkingSignatures(body []byte) ([]byte, bool) {
+	// 解析请求体
+	var req map[string]any
+	if err := json.Unmarshal(body, &req); err != nil {
+		// 解析失败，返回原始 body
+		return body, false
+	}
+
+	// 检查是否有 messages 字段
+	messages, ok := req["messages"].([]any)
+	if !ok || len(messages) == 0 {
+		return body, false
+	}
+
+	fixed := false
+
+	// 遍历所有消息
+	for _, msg := range messages {
+		msgMap, ok := msg.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		// 获取 content 字段
+		content, ok := msgMap["content"]
+		if !ok {
+			continue
+		}
+
+		// content 可能是字符串或数组
+		contentArray, ok := content.([]any)
+		if !ok {
+			continue
+		}
+
+		// 过滤掉缺少 signature 的 thinking 块
+		newContentArray := make([]any, 0, len(contentArray))
+		for _, block := range contentArray {
+			blockMap, ok := block.(map[string]any)
+			if !ok {
+				newContentArray = append(newContentArray, block)
+				continue
+			}
+
+			// 检查是否是 thinking 类型
+			blockType, ok := blockMap["type"].(string)
+			if !ok || blockType != "thinking" {
+				newContentArray = append(newContentArray, block)
+				continue
+			}
+
+			// thinking 块必须有 signature，否则移除
+			if _, hasSignature := blockMap["signature"]; hasSignature {
+				newContentArray = append(newContentArray, block)
+			} else {
+				// 移除缺少 signature 的 thinking 块
+				fixed = true
+				log.Printf("Removed thinking block without signature: %s", blockMap["thinking"])
+			}
+		}
+
+		// 更新 content 数组
+		if len(newContentArray) != len(contentArray) {
+			msgMap["content"] = newContentArray
+		}
+	}
+
+	// 如果没有修复任何内容，返回原始 body
+	if !fixed {
+		return body, false
+	}
+
+	// 重新序列化
+	newBody, err := json.Marshal(req)
+	if err != nil {
+		// 序列化失败，返回原始 body
+		return body, false
+	}
+
+	return newBody, true
 }
 
 // countTokensError 返回 count_tokens 错误响应

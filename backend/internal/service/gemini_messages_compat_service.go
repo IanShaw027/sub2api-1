@@ -15,14 +15,18 @@ import (
 	mathrand "math/rand"
 	"net/http"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/googleapi"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 const geminiStickySessionTTL = time.Hour
@@ -37,6 +41,8 @@ type GeminiMessagesCompatService struct {
 	accountRepo               AccountRepository
 	groupRepo                 GroupRepository
 	cache                     GatewayCache
+	cfg                       *config.Config
+	logger                    *zap.Logger
 	tokenProvider             *GeminiTokenProvider
 	rateLimitService          *RateLimitService
 	httpUpstream              HTTPUpstream
@@ -47,6 +53,7 @@ func NewGeminiMessagesCompatService(
 	accountRepo AccountRepository,
 	groupRepo GroupRepository,
 	cache GatewayCache,
+	cfg *config.Config,
 	tokenProvider *GeminiTokenProvider,
 	rateLimitService *RateLimitService,
 	httpUpstream HTTPUpstream,
@@ -56,6 +63,8 @@ func NewGeminiMessagesCompatService(
 		accountRepo:               accountRepo,
 		groupRepo:                 groupRepo,
 		cache:                     cache,
+		cfg:                       cfg,
+		logger:                    zap.NewNop(),
 		tokenProvider:             tokenProvider,
 		rateLimitService:          rateLimitService,
 		httpUpstream:              httpUpstream,
@@ -72,7 +81,17 @@ func (s *GeminiMessagesCompatService) SelectAccountForModel(ctx context.Context,
 	return s.SelectAccountForModelWithExclusions(ctx, groupID, sessionHash, requestedModel, nil)
 }
 
-func (s *GeminiMessagesCompatService) SelectAccountForModelWithExclusions(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) (*Account, error) {
+// SetStickySessionAccount updates sticky session mapping for Gemini requests.
+func (s *GeminiMessagesCompatService) SetStickySessionAccount(ctx context.Context, sessionHash string, accountID int64) {
+	if sessionHash == "" {
+		return
+	}
+	cacheKey := "gemini:" + sessionHash
+	_ = s.cache.SetSessionAccountID(ctx, cacheKey, accountID, geminiStickySessionTTL)
+}
+
+// ListAccountCandidatesForModelWithExclusions returns ordered candidates for a model while excluding specified accounts.
+func (s *GeminiMessagesCompatService) ListAccountCandidatesForModelWithExclusions(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) ([]*Account, error) {
 	// 优先检查 context 中的强制平台（/antigravity 路由）
 	var platform string
 	forcePlatform, hasForcePlatform := ctx.Value(ctxkey.ForcePlatform).(string)
@@ -100,25 +119,30 @@ func (s *GeminiMessagesCompatService) SelectAccountForModelWithExclusions(ctx co
 		queryPlatforms = []string{platform}
 	}
 
-	cacheKey := "gemini:" + sessionHash
+	isExcluded := func(id int64) bool {
+		if excludedIDs == nil {
+			return false
+		}
+		_, excluded := excludedIDs[id]
+		return excluded
+	}
 
+	cacheKey := "gemini:" + sessionHash
+	var sticky *Account
 	if sessionHash != "" {
 		accountID, err := s.cache.GetSessionAccountID(ctx, cacheKey)
-		if err == nil && accountID > 0 {
-			if _, excluded := excludedIDs[accountID]; !excluded {
-				account, err := s.accountRepo.GetByID(ctx, accountID)
-				// 检查账号是否有效：原生平台直接匹配，antigravity 需要启用混合调度
-				if err == nil && account.IsSchedulable() && (requestedModel == "" || s.isModelSupportedByAccount(account, requestedModel)) {
-					valid := false
-					if account.Platform == platform {
-						valid = true
-					} else if useMixedScheduling && account.Platform == PlatformAntigravity && account.IsMixedSchedulingEnabled() {
-						valid = true
-					}
-					if valid {
-						_ = s.cache.RefreshSessionTTL(ctx, cacheKey, geminiStickySessionTTL)
-						return account, nil
-					}
+		if err == nil && accountID > 0 && !isExcluded(accountID) {
+			account, err := s.accountRepo.GetByID(ctx, accountID)
+			// 检查账号是否有效：原生平台直接匹配，antigravity 需要启用混合调度
+			if err == nil && account.IsSchedulable() && (requestedModel == "" || s.isModelSupportedByAccount(account, requestedModel)) {
+				valid := false
+				if account.Platform == platform {
+					valid = true
+				} else if useMixedScheduling && account.Platform == PlatformAntigravity && account.IsMixedSchedulingEnabled() {
+					valid = true
+				}
+				if valid {
+					sticky = account
 				}
 			}
 		}
@@ -143,10 +167,10 @@ func (s *GeminiMessagesCompatService) SelectAccountForModelWithExclusions(ctx co
 		return nil, fmt.Errorf("query accounts failed: %w", err)
 	}
 
-	var selected *Account
+	candidates := make([]*Account, 0, len(accounts))
 	for i := range accounts {
 		acc := &accounts[i]
-		if _, excluded := excludedIDs[acc.ID]; excluded {
+		if isExcluded(acc.ID) {
 			continue
 		}
 		// 混合调度模式下：原生平台直接通过，antigravity 需要启用 mixed_scheduling
@@ -157,42 +181,51 @@ func (s *GeminiMessagesCompatService) SelectAccountForModelWithExclusions(ctx co
 		if requestedModel != "" && !s.isModelSupportedByAccount(acc, requestedModel) {
 			continue
 		}
-		if selected == nil {
-			selected = acc
+		if sticky != nil && acc.ID == sticky.ID {
 			continue
 		}
-		if acc.Priority < selected.Priority {
-			selected = acc
-		} else if acc.Priority == selected.Priority {
-			switch {
-			case acc.LastUsedAt == nil && selected.LastUsedAt != nil:
-				selected = acc
-			case acc.LastUsedAt != nil && selected.LastUsedAt == nil:
-				// keep selected (never used is preferred)
-			case acc.LastUsedAt == nil && selected.LastUsedAt == nil:
-				// Prefer OAuth accounts when both are unused (more compatible for Code Assist flows).
-				if acc.Type == AccountTypeOAuth && selected.Type != AccountTypeOAuth {
-					selected = acc
-				}
-			default:
-				if acc.LastUsedAt.Before(*selected.LastUsedAt) {
-					selected = acc
-				}
-			}
-		}
+		candidates = append(candidates, acc)
 	}
 
-	if selected == nil {
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].Priority != candidates[j].Priority {
+			return candidates[i].Priority < candidates[j].Priority
+		}
+		iNil := candidates[i].LastUsedAt == nil
+		jNil := candidates[j].LastUsedAt == nil
+		if iNil != jNil {
+			return iNil
+		}
+		if iNil {
+			if candidates[i].Type != candidates[j].Type {
+				return candidates[i].Type == AccountTypeOAuth
+			}
+			return false
+		}
+		return candidates[i].LastUsedAt.Before(*candidates[j].LastUsedAt)
+	})
+
+	if sticky != nil {
+		candidates = append([]*Account{sticky}, candidates...)
+	}
+
+	if len(candidates) == 0 {
 		if requestedModel != "" {
 			return nil, fmt.Errorf("no available Gemini accounts supporting model: %s", requestedModel)
 		}
 		return nil, errors.New("no available Gemini accounts")
 	}
 
-	if sessionHash != "" {
-		_ = s.cache.SetSessionAccountID(ctx, cacheKey, selected.ID, geminiStickySessionTTL)
-	}
+	return candidates, nil
+}
 
+func (s *GeminiMessagesCompatService) SelectAccountForModelWithExclusions(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) (*Account, error) {
+	candidates, err := s.ListAccountCandidatesForModelWithExclusions(ctx, groupID, sessionHash, requestedModel, excludedIDs)
+	if err != nil {
+		return nil, err
+	}
+	selected := candidates[0]
+	s.SetStickySessionAccount(ctx, sessionHash, selected.ID)
 	return selected, nil
 }
 
@@ -806,6 +839,27 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 		s.handleGeminiUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
 
+		// 记录详细的错误信息用于调试
+		var errorMessage string
+		var parsed map[string]any
+		if err := json.Unmarshal(respBody, &parsed); err == nil {
+			if errObj, ok := parsed["error"].(map[string]any); ok {
+				if msg, ok := errObj["message"].(string); ok {
+					errorMessage = msg
+				}
+			}
+		}
+		if errorMessage != "" {
+			log.Printf("Gemini account %d: upstream error %d, message: %q", account.ID, resp.StatusCode, sanitizeUpstreamErrorMessage(errorMessage))
+		} else {
+			// 如果无法解析错误消息，记录原始响应体的一部分
+			truncated := string(respBody)
+			if len(truncated) > 500 {
+				truncated = truncated[:500] + "..."
+			}
+			log.Printf("Gemini account %d: upstream error %d, raw response: %s", account.ID, resp.StatusCode, sanitizeUpstreamErrorMessage(truncated))
+		}
+
 		// Best-effort fallback for OAuth tokens missing AI Studio scopes when calling countTokens.
 		// This avoids Gemini SDKs failing hard during preflight token counting.
 		if action == "countTokens" && isOAuth && isGeminiInsufficientScope(resp.Header, respBody) {
@@ -1203,6 +1257,7 @@ func (s *GeminiMessagesCompatService) handleStreamingResponse(c *gin.Context, re
 
 		geminiResp, err := unwrapGeminiResponse([]byte(payload))
 		if err != nil {
+			log.Printf("[Stream Warning] Failed to unwrap gemini response: %v, payload length: %d", err, len(payload))
 			continue
 		}
 
@@ -1454,9 +1509,13 @@ func collectGeminiSSE(body io.Reader, isOAuth bool) (map[string]any, *ClaudeUsag
 						inner, err := unwrapGeminiResponse([]byte(payload))
 						if err == nil && inner != nil {
 							parsed = inner
+						} else if err != nil {
+							log.Printf("[SSE Warning] Failed to unwrap OAuth gemini response: %v, payload length: %d", err, len(payload))
 						}
 					} else {
-						_ = json.Unmarshal([]byte(payload), &parsed)
+						if err := json.Unmarshal([]byte(payload), &parsed); err != nil {
+							log.Printf("[SSE Warning] Failed to unmarshal gemini response: %v, payload length: %d", err, len(payload))
+						}
 					}
 					if parsed != nil {
 						last = parsed
@@ -1662,9 +1721,13 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(c *gin.Conte
 							if b, err := json.Marshal(inner); err == nil {
 								rawToWrite = string(b)
 							}
+						} else if err != nil {
+							log.Printf("[Native Stream Warning] Failed to unwrap OAuth gemini response: %v, payload length: %d", err, len(payload))
 						}
 					} else {
-						_ = json.Unmarshal([]byte(payload), &parsed)
+						if err := json.Unmarshal([]byte(payload), &parsed); err != nil {
+							log.Printf("[Native Stream Warning] Failed to unmarshal gemini response: %v, payload length: %d", err, len(payload))
+						}
 					}
 
 					if parsed != nil {
@@ -1883,7 +1946,7 @@ func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Cont
 	if statusCode != 429 {
 		return
 	}
-	resetAt := ParseGeminiRateLimitResetTime(body)
+	resetAt := ParseGeminiRateLimitResetTime(headers, body)
 	if resetAt == nil {
 		ra := time.Now().Add(5 * time.Minute)
 		_ = s.accountRepo.SetRateLimited(ctx, account.ID, ra)
@@ -1893,7 +1956,9 @@ func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Cont
 }
 
 // ParseGeminiRateLimitResetTime 解析 Gemini 格式的 429 响应，返回重置时间的 Unix 时间戳
-func ParseGeminiRateLimitResetTime(body []byte) *int64 {
+func ParseGeminiRateLimitResetTime(headers http.Header, body []byte) *int64 {
+	var resetAt *int64
+
 	// Try to parse metadata.quotaResetDelay like "12.345s"
 	var parsed map[string]any
 	if err := json.Unmarshal(body, &parsed); err == nil {
@@ -1901,21 +1966,24 @@ func ParseGeminiRateLimitResetTime(body []byte) *int64 {
 			if msg, ok := errObj["message"].(string); ok {
 				if looksLikeGeminiDailyQuota(msg) {
 					if ts := nextGeminiDailyResetUnix(); ts != nil {
-						return ts
+						resetAt = ts
 					}
 				}
 			}
-			if details, ok := errObj["details"].([]any); ok {
-				for _, d := range details {
-					dm, ok := d.(map[string]any)
-					if !ok {
-						continue
-					}
-					if meta, ok := dm["metadata"].(map[string]any); ok {
-						if v, ok := meta["quotaResetDelay"].(string); ok {
-							if dur, err := time.ParseDuration(v); err == nil {
-								ts := time.Now().Unix() + int64(dur.Seconds())
-								return &ts
+			if resetAt == nil {
+				if details, ok := errObj["details"].([]any); ok {
+					for _, d := range details {
+						dm, ok := d.(map[string]any)
+						if !ok {
+							continue
+						}
+						if meta, ok := dm["metadata"].(map[string]any); ok {
+							if v, ok := meta["quotaResetDelay"].(string); ok {
+								if dur, err := time.ParseDuration(v); err == nil {
+									ts := time.Now().Unix() + int64(math.Ceil(dur.Seconds()))
+									resetAt = &ts
+									break
+								}
 							}
 						}
 					}
@@ -1925,16 +1993,43 @@ func ParseGeminiRateLimitResetTime(body []byte) *int64 {
 	}
 
 	// Match "Please retry in Xs"
-	retryInRegex := regexp.MustCompile(`Please retry in ([0-9.]+)s`)
-	matches := retryInRegex.FindStringSubmatch(string(body))
-	if len(matches) == 2 {
-		if dur, err := time.ParseDuration(matches[1] + "s"); err == nil {
-			ts := time.Now().Unix() + int64(math.Ceil(dur.Seconds()))
-			return &ts
+	if resetAt == nil {
+		geminiRetryInRegex := regexp.MustCompile(`Please retry in ([0-9.]+)s`)
+		matches := geminiRetryInRegex.FindSubmatch(body)
+		if len(matches) > 1 {
+			if dur, err := time.ParseDuration(string(matches[1]) + "s"); err == nil {
+				ts := time.Now().Unix() + int64(math.Ceil(dur.Seconds()))
+				resetAt = &ts
+			}
 		}
 	}
 
-	return nil
+	// Try Retry-After header
+	if resetAt == nil && headers != nil {
+		if retryAfter := strings.TrimSpace(headers.Get("Retry-After")); retryAfter != "" {
+			// Retry-After 可以是秒数或 HTTP-date
+			if seconds, err := strconv.ParseInt(retryAfter, 10, 64); err == nil {
+				// 秒数格式
+				ts := time.Now().Unix() + seconds
+				resetAt = &ts
+			} else if httpDate, err := http.ParseTime(retryAfter); err == nil {
+				// HTTP-date 格式
+				ts := httpDate.Unix()
+				resetAt = &ts
+			}
+		}
+	}
+
+	// Ensure resetAt is in the future (minimum 60 seconds)
+	if resetAt != nil {
+		now := time.Now().Unix()
+		if *resetAt <= now {
+			ts := now + 60
+			resetAt = &ts
+		}
+	}
+
+	return resetAt
 }
 
 func looksLikeGeminiDailyQuota(message string) bool {

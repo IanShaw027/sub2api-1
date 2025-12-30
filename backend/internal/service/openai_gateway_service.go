@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -136,19 +137,32 @@ func (s *OpenAIGatewayService) SelectAccountForModel(ctx context.Context, groupI
 	return s.SelectAccountForModelWithExclusions(ctx, groupID, sessionHash, requestedModel, nil)
 }
 
-// SelectAccountForModelWithExclusions selects an account supporting the requested model while excluding specified accounts.
-func (s *OpenAIGatewayService) SelectAccountForModelWithExclusions(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) (*Account, error) {
-	// 1. Check sticky session
+// SetStickySessionAccount updates sticky session mapping for OpenAI requests.
+func (s *OpenAIGatewayService) SetStickySessionAccount(ctx context.Context, sessionHash string, accountID int64) {
+	if sessionHash == "" {
+		return
+	}
+	_ = s.cache.SetSessionAccountID(ctx, "openai:"+sessionHash, accountID, openaiStickySessionTTL)
+}
+
+// ListAccountCandidatesForModelWithExclusions returns ordered candidates for a model while excluding specified accounts.
+func (s *OpenAIGatewayService) ListAccountCandidatesForModelWithExclusions(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) ([]*Account, error) {
+	isExcluded := func(id int64) bool {
+		if excludedIDs == nil {
+			return false
+		}
+		_, excluded := excludedIDs[id]
+		return excluded
+	}
+
+	// 1. Resolve sticky session candidate
+	var sticky *Account
 	if sessionHash != "" {
 		accountID, err := s.cache.GetSessionAccountID(ctx, "openai:"+sessionHash)
-		if err == nil && accountID > 0 {
-			if _, excluded := excludedIDs[accountID]; !excluded {
-				account, err := s.accountRepo.GetByID(ctx, accountID)
-				if err == nil && account.IsSchedulable() && account.IsOpenAI() && (requestedModel == "" || account.IsModelSupported(requestedModel)) {
-					// Refresh sticky session TTL
-					_ = s.cache.RefreshSessionTTL(ctx, "openai:"+sessionHash, openaiStickySessionTTL)
-					return account, nil
-				}
+		if err == nil && accountID > 0 && !isExcluded(accountID) {
+			account, err := s.accountRepo.GetByID(ctx, accountID)
+			if err == nil && account.IsSchedulable() && account.IsOpenAI() && (requestedModel == "" || account.IsModelSupported(requestedModel)) {
+				sticky = account
 			}
 		}
 	}
@@ -168,53 +182,59 @@ func (s *OpenAIGatewayService) SelectAccountForModelWithExclusions(ctx context.C
 		return nil, fmt.Errorf("query accounts failed: %w", err)
 	}
 
-	// 3. Select by priority + LRU
-	var selected *Account
+	candidates := make([]*Account, 0, len(accounts))
 	for i := range accounts {
 		acc := &accounts[i]
-		if _, excluded := excludedIDs[acc.ID]; excluded {
+		if isExcluded(acc.ID) {
 			continue
 		}
 		// Check model support
 		if requestedModel != "" && !acc.IsModelSupported(requestedModel) {
 			continue
 		}
-		if selected == nil {
-			selected = acc
+		if sticky != nil && acc.ID == sticky.ID {
 			continue
 		}
-		// Lower priority value means higher priority
-		if acc.Priority < selected.Priority {
-			selected = acc
-		} else if acc.Priority == selected.Priority {
-			switch {
-			case acc.LastUsedAt == nil && selected.LastUsedAt != nil:
-				selected = acc
-			case acc.LastUsedAt != nil && selected.LastUsedAt == nil:
-				// keep selected (never used is preferred)
-			case acc.LastUsedAt == nil && selected.LastUsedAt == nil:
-				// keep selected (both never used)
-			default:
-				// Same priority, select least recently used
-				if acc.LastUsedAt.Before(*selected.LastUsedAt) {
-					selected = acc
-				}
-			}
-		}
+		candidates = append(candidates, acc)
 	}
 
-	if selected == nil {
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].Priority != candidates[j].Priority {
+			return candidates[i].Priority < candidates[j].Priority
+		}
+		iNil := candidates[i].LastUsedAt == nil
+		jNil := candidates[j].LastUsedAt == nil
+		if iNil != jNil {
+			return iNil
+		}
+		if iNil {
+			return false
+		}
+		return candidates[i].LastUsedAt.Before(*candidates[j].LastUsedAt)
+	})
+
+	if sticky != nil {
+		candidates = append([]*Account{sticky}, candidates...)
+	}
+
+	if len(candidates) == 0 {
 		if requestedModel != "" {
 			return nil, fmt.Errorf("no available OpenAI accounts supporting model: %s", requestedModel)
 		}
 		return nil, errors.New("no available OpenAI accounts")
 	}
 
-	// 4. Set sticky session
-	if sessionHash != "" {
-		_ = s.cache.SetSessionAccountID(ctx, "openai:"+sessionHash, selected.ID, openaiStickySessionTTL)
-	}
+	return candidates, nil
+}
 
+// SelectAccountForModelWithExclusions selects an account supporting the requested model while excluding specified accounts.
+func (s *OpenAIGatewayService) SelectAccountForModelWithExclusions(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) (*Account, error) {
+	candidates, err := s.ListAccountCandidatesForModelWithExclusions(ctx, groupID, sessionHash, requestedModel, excludedIDs)
+	if err != nil {
+		return nil, err
+	}
+	selected := candidates[0]
+	s.SetStickySessionAccount(ctx, sessionHash, selected.ID)
 	return selected, nil
 }
 

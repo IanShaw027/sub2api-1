@@ -19,6 +19,7 @@ require (
 	github.com/tidwall/gjson v1.18.0
 	github.com/tidwall/sjson v1.2.5
 	github.com/zeromicro/go-zero v1.9.4
+	go.uber.org/zap v1.24.0
 	golang.org/x/crypto v0.44.0
 	golang.org/x/net v0.47.0
 	golang.org/x/term v0.37.0
