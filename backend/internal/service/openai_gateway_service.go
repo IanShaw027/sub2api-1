@@ -311,7 +311,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 
 	// 设置超时
-	upstreamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	upstreamCtx, cancel := withUpstreamTimeout(ctx, s.cfg, reqStream)
 	defer cancel()
 	upstreamReq = upstreamReq.WithContext(upstreamCtx)
 

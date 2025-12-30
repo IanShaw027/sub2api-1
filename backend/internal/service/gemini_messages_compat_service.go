@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/googleapi"
@@ -37,6 +38,7 @@ type GeminiMessagesCompatService struct {
 	accountRepo               AccountRepository
 	groupRepo                 GroupRepository
 	cache                     GatewayCache
+	cfg                       *config.Config
 	tokenProvider             *GeminiTokenProvider
 	rateLimitService          *RateLimitService
 	httpUpstream              HTTPUpstream
@@ -47,6 +49,7 @@ func NewGeminiMessagesCompatService(
 	accountRepo AccountRepository,
 	groupRepo GroupRepository,
 	cache GatewayCache,
+	cfg *config.Config,
 	tokenProvider *GeminiTokenProvider,
 	rateLimitService *RateLimitService,
 	httpUpstream HTTPUpstream,
@@ -56,6 +59,7 @@ func NewGeminiMessagesCompatService(
 		accountRepo:               accountRepo,
 		groupRepo:                 groupRepo,
 		cache:                     cache,
+		cfg:                       cfg,
 		tokenProvider:             tokenProvider,
 		rateLimitService:          rateLimitService,
 		httpUpstream:              httpUpstream,
@@ -473,7 +477,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 		requestIDHeader = idHeader
 
 		// 设置超时
-		upstreamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		upstreamCtx, cancel := withUpstreamTimeout(ctx, s.cfg, req.Stream)
 		defer cancel()
 		upstreamReq = upstreamReq.WithContext(upstreamCtx)
 
@@ -733,7 +737,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 		requestIDHeader = idHeader
 
 		// 设置超时
-		upstreamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		upstreamCtx, cancel := withUpstreamTimeout(ctx, s.cfg, stream)
 		defer cancel()
 		upstreamReq = upstreamReq.WithContext(upstreamCtx)
 
@@ -1768,7 +1772,7 @@ func (s *GeminiMessagesCompatService) ForwardAIStudioGET(ctx context.Context, ac
 	}
 
 	// 设置超时
-	upstreamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	upstreamCtx, cancel := withUpstreamTimeout(ctx, s.cfg, false)
 	defer cancel()
 	req = req.WithContext(upstreamCtx)
 

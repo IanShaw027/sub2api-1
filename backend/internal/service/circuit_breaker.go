@@ -15,6 +15,7 @@ type CircuitBreaker struct {
 	resetTimeout time.Duration
 	stopCh       chan struct{}
 	wg           sync.WaitGroup
+	stopOnce     sync.Once
 }
 
 func NewCircuitBreaker() *CircuitBreaker {
@@ -63,7 +64,9 @@ func (cb *CircuitBreaker) Cleanup() {
 
 // Stop gracefully shuts down the cleanup goroutine
 func (cb *CircuitBreaker) Stop() {
-	close(cb.stopCh)
+	cb.stopOnce.Do(func() {
+		close(cb.stopCh)
+	})
 	cb.wg.Wait()
 }
 

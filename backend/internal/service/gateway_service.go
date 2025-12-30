@@ -143,6 +143,13 @@ func NewGatewayService(
 	}
 }
 
+// Stop shuts down background resources owned by GatewayService.
+func (s *GatewayService) Stop() {
+	if s.circuitBreaker != nil {
+		s.circuitBreaker.Stop()
+	}
+}
+
 // GenerateSessionHash 从请求体计算粘性会话hash
 func (s *GatewayService) GenerateSessionHash(body []byte) string {
 	var req map[string]any
@@ -432,7 +439,9 @@ func (s *GatewayService) selectAccountWithMixedScheduling(ctx context.Context, g
 	if sessionHash != "" {
 		accountID, err := s.cache.GetSessionAccountID(ctx, sessionHash)
 		if err == nil && accountID > 0 {
-			if _, excluded := excludedIDs[accountID]; !excluded {
+			if s.circuitBreaker != nil && s.circuitBreaker.IsOpen(accountID) {
+				log.Printf("Account %d is circuit-open; skipping sticky session selection", accountID)
+			} else if _, excluded := excludedIDs[accountID]; !excluded {
 				account, err := s.accountRepo.GetByID(ctx, accountID)
 				// 检查账号是否有效：原生平台直接匹配，antigravity 需要启用混合调度
 				if err == nil && account.IsSchedulable() && (requestedModel == "" || s.isModelSupportedByAccount(account, requestedModel)) {
@@ -464,6 +473,9 @@ func (s *GatewayService) selectAccountWithMixedScheduling(ctx context.Context, g
 	for i := range accounts {
 		acc := &accounts[i]
 		if _, excluded := excludedIDs[acc.ID]; excluded {
+			continue
+		}
+		if s.circuitBreaker != nil && s.circuitBreaker.IsOpen(acc.ID) {
 			continue
 		}
 		// 过滤：原生平台直接通过，antigravity 需要启用混合调度
@@ -647,6 +659,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	// 重试循环
 	var resp *http.Response
 	var lastErr error
+	var finalCancel context.CancelFunc
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		// 构建上游请求（每次重试需要重新构建，因为请求体需要重新读取）
 		upstreamReq, err := s.buildUpstreamRequest(ctx, c, account, body, token, tokenType)
@@ -655,13 +668,13 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		}
 
 		// 设置超时
-		upstreamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		upstreamCtx, cancel := withUpstreamTimeout(ctx, s.cfg, req.Stream)
 		upstreamReq = upstreamReq.WithContext(upstreamCtx)
 
 		// 发送请求
 		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL)
-		cancel()
 		if err != nil {
+			cancel()
 			lastErr = err
 			if attempt < maxRetries {
 				time.Sleep(retryDelay)
@@ -676,15 +689,22 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 				log.Printf("Account %d: upstream error %d, retry %d/%d after %v",
 					account.ID, resp.StatusCode, attempt, maxRetries, retryDelay)
 				_ = resp.Body.Close()
+				cancel()
 				time.Sleep(retryDelay)
 				continue
 			}
 			// 最后一次尝试也失败，跳出循环处理重试耗尽
+			finalCancel = cancel
 			break
 		}
 
 		// 不需要重试（成功或不可重试的错误），跳出循环
+		finalCancel = cancel
 		break
+	}
+
+	if finalCancel != nil {
+		defer finalCancel()
 	}
 
 	// 确保 resp 不为 nil 再 defer close
@@ -1361,7 +1381,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	}
 
 	// 设置超时
-	upstreamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	upstreamCtx, cancel := withUpstreamTimeout(ctx, s.cfg, false)
 	defer cancel()
 	upstreamReq = upstreamReq.WithContext(upstreamCtx)
 
