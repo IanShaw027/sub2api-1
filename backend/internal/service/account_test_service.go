@@ -256,6 +256,11 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
+	// 设置超时
+	upstreamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	req = req.WithContext(upstreamCtx)
+
 	resp, err := s.httpUpstream.Do(req, proxyURL)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
@@ -371,6 +376,11 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
+	// 设置超时
+	upstreamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	req = req.WithContext(upstreamCtx)
+
 	resp, err := s.httpUpstream.Do(req, proxyURL)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
@@ -441,6 +451,11 @@ func (s *AccountTestService) testGeminiAccountConnection(c *gin.Context, account
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
+
+	// 设置超时
+	upstreamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	req = req.WithContext(upstreamCtx)
 
 	resp, err := s.httpUpstream.Do(req, proxyURL)
 	if err != nil {

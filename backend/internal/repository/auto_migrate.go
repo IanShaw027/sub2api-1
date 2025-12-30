@@ -31,6 +31,11 @@ func AutoMigrate(db *gorm.DB, runMode string) error {
 		return err
 	}
 
+	// 创建复合索引以优化查询性能
+	if err := createCompositeIndexes(db); err != nil {
+		return err
+	}
+
 	// 创建默认分组(简易模式支持)
 	if err := ensureDefaultGroups(db, runMode); err != nil {
 		return err
@@ -38,6 +43,54 @@ func AutoMigrate(db *gorm.DB, runMode string) error {
 
 	// 修复无效的过期时间（年份超过 2099 会导致 JSON 序列化失败）
 	return fixInvalidExpiresAt(db)
+}
+
+// createCompositeIndexes 创建复合索引以优化查询性能
+func createCompositeIndexes(db *gorm.DB) error {
+	// usage_logs 表的复合索引
+	indexes := []struct {
+		table string
+		name  string
+		sql   string
+	}{
+		{
+			table: "usage_logs",
+			name:  "idx_usage_logs_user_created",
+			sql:   "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_usage_logs_user_created ON usage_logs(user_id, created_at)",
+		},
+		{
+			table: "usage_logs",
+			name:  "idx_usage_logs_created_model",
+			sql:   "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_usage_logs_created_model ON usage_logs(created_at, model)",
+		},
+	}
+
+	for _, idx := range indexes {
+		// 检查索引是否已存在
+		var exists bool
+		err := db.Raw(`
+			SELECT EXISTS (
+				SELECT 1 FROM pg_indexes
+				WHERE tablename = ? AND indexname = ?
+			)
+		`, idx.table, idx.name).Scan(&exists).Error
+
+		if err != nil {
+			log.Printf("[AutoMigrate] Failed to check index %s: %v", idx.name, err)
+			return err
+		}
+
+		if !exists {
+			// 注意：CONCURRENTLY 不能在事务中使用，需要单独执行
+			if err := db.Exec(idx.sql).Error; err != nil {
+				log.Printf("[AutoMigrate] Failed to create index %s: %v", idx.name, err)
+				return err
+			}
+			log.Printf("[AutoMigrate] Created composite index: %s", idx.name)
+		}
+	}
+
+	return nil
 }
 
 // fixInvalidExpiresAt 修复 user_subscriptions 表中无效的过期时间

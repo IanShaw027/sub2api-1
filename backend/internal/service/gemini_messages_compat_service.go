@@ -472,10 +472,16 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 		}
 		requestIDHeader = idHeader
 
+		// 设置超时
+		upstreamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		upstreamReq = upstreamReq.WithContext(upstreamCtx)
+
 		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL)
 		if err != nil {
 			if attempt < geminiMaxRetries {
 				log.Printf("Gemini account %d: upstream request failed, retry %d/%d: %v", account.ID, attempt, geminiMaxRetries, err)
+				cancel()
 				sleepGeminiBackoff(attempt)
 				continue
 			}
@@ -500,6 +506,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 			}
 			if attempt < geminiMaxRetries {
 				log.Printf("Gemini account %d: upstream status %d, retry %d/%d", account.ID, resp.StatusCode, attempt, geminiMaxRetries)
+				cancel()
 				sleepGeminiBackoff(attempt)
 				continue
 			}
@@ -725,10 +732,16 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 		}
 		requestIDHeader = idHeader
 
+		// 设置超时
+		upstreamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		upstreamReq = upstreamReq.WithContext(upstreamCtx)
+
 		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL)
 		if err != nil {
 			if attempt < geminiMaxRetries {
 				log.Printf("Gemini account %d: upstream request failed, retry %d/%d: %v", account.ID, attempt, geminiMaxRetries, err)
+				cancel()
 				sleepGeminiBackoff(attempt)
 				continue
 			}
@@ -764,6 +777,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 			}
 			if attempt < geminiMaxRetries {
 				log.Printf("Gemini account %d: upstream status %d, retry %d/%d", account.ID, resp.StatusCode, attempt, geminiMaxRetries)
+				cancel()
 				sleepGeminiBackoff(attempt)
 				continue
 			}
@@ -1752,6 +1766,11 @@ func (s *GeminiMessagesCompatService) ForwardAIStudioGET(ctx context.Context, ac
 	default:
 		return nil, fmt.Errorf("unsupported account type: %s", account.Type)
 	}
+
+	// 设置超时
+	upstreamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	req = req.WithContext(upstreamCtx)
 
 	resp, err := s.httpUpstream.Do(req, proxyURL)
 	if err != nil {

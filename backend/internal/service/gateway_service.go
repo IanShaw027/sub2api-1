@@ -106,6 +106,7 @@ type GatewayService struct {
 	identityService     *IdentityService
 	httpUpstream        HTTPUpstream
 	deferredService     *DeferredService
+	circuitBreaker      *CircuitBreaker
 }
 
 // NewGatewayService creates a new GatewayService
@@ -138,6 +139,7 @@ func NewGatewayService(
 		identityService:     identityService,
 		httpUpstream:        httpUpstream,
 		deferredService:     deferredService,
+		circuitBreaker:      NewCircuitBreaker(),
 	}
 }
 
@@ -338,7 +340,9 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 	if sessionHash != "" {
 		accountID, err := s.cache.GetSessionAccountID(ctx, sessionHash)
 		if err == nil && accountID > 0 {
-			if _, excluded := excludedIDs[accountID]; !excluded {
+			if s.circuitBreaker != nil && s.circuitBreaker.IsOpen(accountID) {
+				log.Printf("Account %d is circuit-open; skipping sticky session selection", accountID)
+			} else if _, excluded := excludedIDs[accountID]; !excluded {
 				account, err := s.accountRepo.GetByID(ctx, accountID)
 				// 检查账号平台是否匹配（确保粘性会话不会跨平台）
 				if err == nil && account.Platform == platform && account.IsSchedulable() && (requestedModel == "" || s.isModelSupportedByAccount(account, requestedModel)) {
@@ -373,6 +377,10 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 		if _, excluded := excludedIDs[acc.ID]; excluded {
 			continue
 		}
+		if s.circuitBreaker != nil && s.circuitBreaker.IsOpen(acc.ID) {
+			continue
+		}
+		// 检查模型支持
 		if requestedModel != "" && !s.isModelSupportedByAccount(acc, requestedModel) {
 			continue
 		}
@@ -645,6 +653,11 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 			return nil, err
 		}
 
+		// 设置超时
+		upstreamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		upstreamReq = upstreamReq.WithContext(upstreamCtx)
+
 		// 发送请求
 		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL)
 		if err != nil {
@@ -657,6 +670,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 				log.Printf("Account %d: upstream error %d, retry %d/%d after %v",
 					account.ID, resp.StatusCode, attempt, maxRetries, retryDelay)
 				_ = resp.Body.Close()
+				cancel()
 				time.Sleep(retryDelay)
 				continue
 			}
@@ -673,6 +687,9 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	if resp.StatusCode >= 400 && s.shouldRetryUpstreamError(account, resp.StatusCode) {
 		if s.shouldFailoverUpstreamError(resp.StatusCode) {
 			s.handleRetryExhaustedSideEffects(ctx, resp, account)
+			if s.circuitBreaker != nil {
+				s.circuitBreaker.RecordFailure(account.ID)
+			}
 			return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode}
 		}
 		return s.handleRetryExhaustedError(ctx, resp, c, account)
@@ -681,6 +698,9 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	// 处理可切换账号的错误
 	if resp.StatusCode >= 400 && s.shouldFailoverUpstreamError(resp.StatusCode) {
 		s.handleFailoverSideEffects(ctx, resp, account)
+		if s.circuitBreaker != nil {
+			s.circuitBreaker.RecordFailure(account.ID)
+		}
 		return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode}
 	}
 
@@ -709,6 +729,10 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	if s.circuitBreaker != nil {
+		s.circuitBreaker.RecordSuccess(account.ID)
 	}
 
 	return &ForwardResult{
@@ -1322,6 +1346,11 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
+
+	// 设置超时
+	upstreamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	upstreamReq = upstreamReq.WithContext(upstreamCtx)
 
 	// 发送请求
 	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL)

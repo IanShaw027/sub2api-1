@@ -527,17 +527,42 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 	// 计算粘性会话 hash
 	sessionHash := h.gatewayService.GenerateSessionHash(body)
 
-	// 选择支持该模型的账号
-	account, err := h.gatewayService.SelectAccountForModel(c.Request.Context(), apiKey.GroupID, sessionHash, req.Model)
-	if err != nil {
-		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "No available accounts: "+err.Error())
-		return
-	}
+	const maxAccountSwitches = 3
+	switchCount := 0
+	failedAccountIDs := make(map[int64]struct{})
+	lastFailoverStatus := 0
 
-	// 转发请求（不记录使用量）
-	if err := h.gatewayService.ForwardCountTokens(c.Request.Context(), c, account, body); err != nil {
-		log.Printf("Forward count_tokens request failed: %v", err)
-		// 错误响应已在 ForwardCountTokens 中处理
+	for {
+		// 选择支持该模型的账号
+		account, err := h.gatewayService.SelectAccountForModelWithExclusions(c.Request.Context(), apiKey.GroupID, sessionHash, req.Model, failedAccountIDs)
+		if err != nil {
+			if len(failedAccountIDs) == 0 {
+				h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "No available accounts: "+err.Error())
+				return
+			}
+			h.errorResponse(c, lastFailoverStatus, "upstream_error", "All accounts failed")
+			return
+		}
+
+		// 转发请求（不记录使用量）
+		if err := h.gatewayService.ForwardCountTokens(c.Request.Context(), c, account, body); err != nil {
+			var failoverErr *service.UpstreamFailoverError
+			if errors.As(err, &failoverErr) {
+				failedAccountIDs[account.ID] = struct{}{}
+				if switchCount >= maxAccountSwitches {
+					lastFailoverStatus = failoverErr.StatusCode
+					h.errorResponse(c, lastFailoverStatus, "upstream_error", "All accounts failed after retries")
+					return
+				}
+				lastFailoverStatus = failoverErr.StatusCode
+				switchCount++
+				log.Printf("Account %d: count_tokens upstream error %d, switching account %d/%d", account.ID, failoverErr.StatusCode, switchCount, maxAccountSwitches)
+				continue
+			}
+			log.Printf("Forward count_tokens request failed: %v", err)
+			// 错误响应已在 ForwardCountTokens 中处理
+			return
+		}
 		return
 	}
 }

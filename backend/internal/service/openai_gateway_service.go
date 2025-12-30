@@ -310,6 +310,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		proxyURL = account.Proxy.URL()
 	}
 
+	// 设置超时
+	upstreamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	upstreamReq = upstreamReq.WithContext(upstreamCtx)
+
 	// Send request
 	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL)
 	if err != nil {
