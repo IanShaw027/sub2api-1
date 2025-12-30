@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -286,16 +287,23 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 	// 清理工具定义中的 JSON Schema（如果存在）
 	if tools, ok := reqBody["tools"].([]any); ok && len(tools) > 0 {
+		toolsModified := false
 		for i, tool := range tools {
 			if toolMap, ok := tool.(map[string]any); ok {
 				if inputSchema, ok := toolMap["input_schema"].(map[string]any); ok {
-					toolMap["input_schema"] = schema.CleanJSONSchema(inputSchema)
-					tools[i] = toolMap
+					cleanedSchema := schema.CleanJSONSchema(inputSchema)
+					if !reflect.DeepEqual(cleanedSchema, inputSchema) {
+						toolMap["input_schema"] = cleanedSchema
+						tools[i] = toolMap
+						toolsModified = true
+					}
 				}
 			}
 		}
-		reqBody["tools"] = tools
-		bodyModified = true
+		if toolsModified {
+			reqBody["tools"] = tools
+			bodyModified = true
+		}
 	}
 
 	// Re-serialize body only if modified
