@@ -1955,6 +1955,27 @@ func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Cont
 		}
 	}
 
+	// Passive tier detection for AI Studio OAuth accounts on 429 responses.
+	if account != nil && account.Platform == PlatformGemini && account.Type == AccountTypeOAuth {
+		oauthType := strings.ToLower(strings.TrimSpace(account.GetCredential("oauth_type")))
+		projectID := strings.TrimSpace(account.GetCredential("project_id"))
+		isAIStudioOAuth := oauthType == "ai_studio" || (oauthType == "" && projectID == "")
+		if isAIStudioOAuth {
+			if tier := detectGeminiTierFromError(parsed, errorMessage); tier != "" {
+				log.Printf("[Gemini Tier Detect] Account %d detected tier %q", account.ID, tier)
+				if account.Extra == nil {
+					account.Extra = make(map[string]any)
+				}
+				if current, ok := account.Extra["tier"].(string); !ok || current != tier {
+					account.Extra["tier"] = tier
+					if err := s.accountRepo.Update(ctx, account); err != nil {
+						log.Printf("[Gemini Tier Detect] Failed to update account %d tier %q: %v", account.ID, tier, err)
+					}
+				}
+			}
+		}
+	}
+
 	// 如果 JSON 解析失败，尝试从响应体匹配 "Please retry in Xs"
 	if resetAtFromBody == nil && len(body) < 10000 {
 		matches := geminiRetryInRegex.FindSubmatch(body)
@@ -2026,6 +2047,74 @@ func looksLikeGeminiDailyQuota(message string) bool {
 		return true
 	}
 	return false
+}
+
+func detectGeminiTierFromError(parsed map[string]any, errorMessage string) string {
+	if tier := normalizeGeminiTier(errorMessage); tier != "" {
+		return tier
+	}
+	if parsed == nil {
+		return ""
+	}
+	errObj, ok := parsed["error"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	if msg, ok := errObj["message"].(string); ok {
+		if tier := normalizeGeminiTier(msg); tier != "" {
+			return tier
+		}
+	}
+	if details, ok := errObj["details"].([]any); ok {
+		for _, d := range details {
+			dm, ok := d.(map[string]any)
+			if !ok {
+				continue
+			}
+			if tier := detectGeminiTierFromMap(dm); tier != "" {
+				return tier
+			}
+			if meta, ok := dm["metadata"].(map[string]any); ok {
+				if tier := detectGeminiTierFromMap(meta); tier != "" {
+					return tier
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func detectGeminiTierFromMap(m map[string]any) string {
+	for k, v := range m {
+		key := strings.ToLower(k)
+		normalizedKey := strings.ReplaceAll(strings.ReplaceAll(key, "_", ""), "-", "")
+		if normalizedKey == "quotaid" || strings.Contains(normalizedKey, "tier") {
+			if s, ok := v.(string); ok {
+				if tier := normalizeGeminiTier(s); tier != "" {
+					return tier
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func normalizeGeminiTier(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return ""
+	}
+	lower := strings.ToLower(value)
+	compact := strings.NewReplacer("-", "", "_", "", " ", "").Replace(lower)
+	switch {
+	case strings.Contains(lower, "free-tier") || strings.Contains(compact, "freetier"):
+		return "free-tier"
+	case strings.Contains(lower, "pro-tier") || strings.Contains(compact, "protier"):
+		return "g1-pro-tier"
+	case strings.Contains(lower, "ultra-tier") || strings.Contains(compact, "ultratier"):
+		return "g1-ultra-tier"
+	default:
+		return ""
+	}
 }
 
 func nextGeminiDailyResetUnix() *int64 {
