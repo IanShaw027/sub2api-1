@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/schema"
 	"github.com/gin-gonic/gin"
 )
 
@@ -280,6 +281,20 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	// For OAuth accounts using ChatGPT internal API, add store: false
 	if account.Type == AccountTypeOAuth {
 		reqBody["store"] = false
+		bodyModified = true
+	}
+
+	// 清理工具定义中的 JSON Schema（如果存在）
+	if tools, ok := reqBody["tools"].([]any); ok && len(tools) > 0 {
+		for i, tool := range tools {
+			if toolMap, ok := tool.(map[string]any); ok {
+				if inputSchema, ok := toolMap["input_schema"].(map[string]any); ok {
+					toolMap["input_schema"] = schema.CleanJSONSchema(inputSchema)
+					tools[i] = toolMap
+				}
+			}
+		}
+		reqBody["tools"] = tools
 		bodyModified = true
 	}
 
