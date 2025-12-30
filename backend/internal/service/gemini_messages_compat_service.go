@@ -1203,6 +1203,7 @@ func (s *GeminiMessagesCompatService) handleStreamingResponse(c *gin.Context, re
 
 		geminiResp, err := unwrapGeminiResponse([]byte(payload))
 		if err != nil {
+			log.Printf("[Stream Warning] Failed to unwrap gemini response: %v, payload length: %d", err, len(payload))
 			continue
 		}
 
@@ -1454,9 +1455,13 @@ func collectGeminiSSE(body io.Reader, isOAuth bool) (map[string]any, *ClaudeUsag
 						inner, err := unwrapGeminiResponse([]byte(payload))
 						if err == nil && inner != nil {
 							parsed = inner
+						} else if err != nil {
+							log.Printf("[SSE Warning] Failed to unwrap OAuth gemini response: %v, payload length: %d", err, len(payload))
 						}
 					} else {
-						_ = json.Unmarshal([]byte(payload), &parsed)
+						if err := json.Unmarshal([]byte(payload), &parsed); err != nil {
+							log.Printf("[SSE Warning] Failed to unmarshal gemini response: %v, payload length: %d", err, len(payload))
+						}
 					}
 					if parsed != nil {
 						last = parsed
@@ -1662,9 +1667,13 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(c *gin.Conte
 							if b, err := json.Marshal(inner); err == nil {
 								rawToWrite = string(b)
 							}
+						} else if err != nil {
+							log.Printf("[Native Stream Warning] Failed to unwrap OAuth gemini response: %v, payload length: %d", err, len(payload))
 						}
 					} else {
-						_ = json.Unmarshal([]byte(payload), &parsed)
+						if err := json.Unmarshal([]byte(payload), &parsed); err != nil {
+							log.Printf("[Native Stream Warning] Failed to unmarshal gemini response: %v, payload length: %d", err, len(payload))
+						}
 					}
 
 					if parsed != nil {
@@ -1893,7 +1902,9 @@ func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Cont
 }
 
 // ParseGeminiRateLimitResetTime 解析 Gemini 格式的 429 响应，返回重置时间的 Unix 时间戳
-func ParseGeminiRateLimitResetTime(body []byte) *int64 {
+func ParseGeminiRateLimitResetTime(headers http.Header, body []byte) *int64 {
+	var resetAt *int64
+
 	// Try to parse metadata.quotaResetDelay like "12.345s"
 	var parsed map[string]any
 	if err := json.Unmarshal(body, &parsed); err == nil {
@@ -1901,21 +1912,24 @@ func ParseGeminiRateLimitResetTime(body []byte) *int64 {
 			if msg, ok := errObj["message"].(string); ok {
 				if looksLikeGeminiDailyQuota(msg) {
 					if ts := nextGeminiDailyResetUnix(); ts != nil {
-						return ts
+						resetAt = ts
 					}
 				}
 			}
-			if details, ok := errObj["details"].([]any); ok {
-				for _, d := range details {
-					dm, ok := d.(map[string]any)
-					if !ok {
-						continue
-					}
-					if meta, ok := dm["metadata"].(map[string]any); ok {
-						if v, ok := meta["quotaResetDelay"].(string); ok {
-							if dur, err := time.ParseDuration(v); err == nil {
-								ts := time.Now().Unix() + int64(dur.Seconds())
-								return &ts
+			if resetAt == nil {
+				if details, ok := errObj["details"].([]any); ok {
+					for _, d := range details {
+						dm, ok := d.(map[string]any)
+						if !ok {
+							continue
+						}
+						if meta, ok := dm["metadata"].(map[string]any); ok {
+							if v, ok := meta["quotaResetDelay"].(string); ok {
+								if dur, err := time.ParseDuration(v); err == nil {
+									ts := time.Now().Unix() + int64(math.Ceil(dur.Seconds()))
+									resetAt = &ts
+									break
+								}
 							}
 						}
 					}
@@ -1925,16 +1939,42 @@ func ParseGeminiRateLimitResetTime(body []byte) *int64 {
 	}
 
 	// Match "Please retry in Xs"
-	retryInRegex := regexp.MustCompile(`Please retry in ([0-9.]+)s`)
-	matches := retryInRegex.FindStringSubmatch(string(body))
-	if len(matches) == 2 {
-		if dur, err := time.ParseDuration(matches[1] + "s"); err == nil {
-			ts := time.Now().Unix() + int64(math.Ceil(dur.Seconds()))
-			return &ts
+	if resetAt == nil {
+		matches := geminiRetryInRegex.FindSubmatch(body)
+		if len(matches) > 1 {
+			if dur, err := time.ParseDuration(string(matches[1]) + "s"); err == nil {
+				ts := time.Now().Unix() + int64(math.Ceil(dur.Seconds()))
+				resetAt = &ts
+			}
 		}
 	}
 
-	return nil
+	// Try Retry-After header
+	if resetAt == nil && headers != nil {
+		if retryAfter := strings.TrimSpace(headers.Get("Retry-After")); retryAfter != "" {
+			// Retry-After 可以是秒数或 HTTP-date
+			if seconds, err := strconv.ParseInt(retryAfter, 10, 64); err == nil {
+				// 秒数格式
+				ts := time.Now().Unix() + seconds
+				resetAt = &ts
+			} else if httpDate, err := http.ParseTime(retryAfter); err == nil {
+				// HTTP-date 格式
+				ts := httpDate.Unix()
+				resetAt = &ts
+			}
+		}
+	}
+
+	// Ensure resetAt is in the future (minimum 60 seconds)
+	if resetAt != nil {
+		now := time.Now().Unix()
+		if *resetAt <= now {
+			ts := now + 60
+			resetAt = &ts
+		}
+	}
+
+	return resetAt
 }
 
 func looksLikeGeminiDailyQuota(message string) bool {

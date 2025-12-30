@@ -1,0 +1,12 @@
+# Docker Compose Override for Local Development
+# This file exposes database ports for local backend development
+version: '3.8'
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+  
+  redis:
+    ports:
+      - "6379:6379"
