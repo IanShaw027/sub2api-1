@@ -1938,7 +1938,7 @@ func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Cont
 	if statusCode != 429 {
 		return
 	}
-	resetAt := ParseGeminiRateLimitResetTime(body)
+	resetAt := ParseGeminiRateLimitResetTime(headers, body)
 	if resetAt == nil {
 		ra := time.Now().Add(5 * time.Minute)
 		_ = s.accountRepo.SetRateLimited(ctx, account.ID, ra)

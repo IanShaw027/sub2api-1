@@ -294,7 +294,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWait(c, account.ID, account.Concurrency, req.Stream, &streamStarted)
 			if err != nil {
 				log.Printf("Account concurrency acquire failed: %v", err)
-				h.handleConcurrencyError(c, err, "account", &streamStarted)
+				h.handleConcurrencyError(c, err, "account", streamStarted)
 				return
 			}
 		}
