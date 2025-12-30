@@ -28,8 +28,8 @@ import (
 )
 
 const (
-	redisImageTag    = "redis:8.4-alpine"
-	postgresImageTag = "postgres:18.1-alpine3.23"
+	redisImageTag    = "redis:7-alpine"
+	postgresImageTag = "postgres:18-alpine"
 )
 
 var (
