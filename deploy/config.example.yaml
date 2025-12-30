@@ -80,6 +80,17 @@ rate_limit:
   overload_cooldown_minutes: 10
 
 # =============================================================================
+# Gateway Settings
+# =============================================================================
+gateway:
+  # Upstream request timeout for non-streaming responses (seconds). 0 disables.
+  upstream_timeout: 30
+  # Upstream request timeout for streaming responses (seconds). 0 disables.
+  streaming_upstream_timeout: 300
+  # Upstream response header timeout (seconds). 0 disables.
+  response_header_timeout: 300
+
+# =============================================================================
 # Pricing Data Source (Optional)
 # =============================================================================
 pricing:

@@ -67,8 +67,11 @@ func provideCleanup(
 	tokenRefresh *service.TokenRefreshService,
 	pricing *service.PricingService,
 	emailQueue *service.EmailQueueService,
+	gatewayHandler *handler.GatewayHandler,
+	gatewayService *service.GatewayService,
 	oauth *service.OAuthService,
 	openaiOAuth *service.OpenAIOAuthService,
+	geminiQuota *service.GeminiQuotaRefresher,
 	geminiOAuth *service.GeminiOAuthService,
 	antigravityOAuth *service.AntigravityOAuthService,
 	antigravityQuota *service.AntigravityQuotaRefresher,
@@ -82,6 +85,14 @@ func provideCleanup(
 			name string
 			fn   func() error
 		}{
+			{"GatewayHandler", func() error {
+				gatewayHandler.Stop()
+				return nil
+			}},
+			{"GatewayService", func() error {
+				gatewayService.Stop()
+				return nil
+			}},
 			{"TokenRefreshService", func() error {
 				tokenRefresh.Stop()
 				return nil
@@ -100,6 +111,10 @@ func provideCleanup(
 			}},
 			{"OpenAIOAuthService", func() error {
 				openaiOAuth.Stop()
+				return nil
+			}},
+			{"GeminiQuotaRefresher", func() error {
+				geminiQuota.Stop()
 				return nil
 			}},
 			{"GeminiOAuthService", func() error {

@@ -79,6 +79,10 @@ type GatewayConfig struct {
 	// 等待上游响应头的超时时间（秒），0表示无超时
 	// 注意：这不影响流式数据传输，只控制等待响应头的时间
 	ResponseHeaderTimeout int `mapstructure:"response_header_timeout"`
+	// Upstream request timeout for non-streaming responses (seconds). 0 disables the timeout.
+	UpstreamTimeout int `mapstructure:"upstream_timeout"`
+	// Upstream request timeout for streaming responses (seconds). 0 disables the timeout.
+	StreamingUpstreamTimeout int `mapstructure:"streaming_upstream_timeout"`
 }
 
 func (s *ServerConfig) Address() string {
@@ -237,7 +241,9 @@ func setDefaults() {
 	viper.SetDefault("timezone", "Asia/Shanghai")
 
 	// Gateway
-	viper.SetDefault("gateway.response_header_timeout", 300) // 300秒(5分钟)等待上游响应头，LLM高负载时可能排队较久
+	viper.SetDefault("gateway.response_header_timeout", 300) // 300 seconds to wait for upstream response headers
+	viper.SetDefault("gateway.upstream_timeout", 30)         // 30 seconds for non-streaming upstream requests
+	viper.SetDefault("gateway.streaming_upstream_timeout", 300)
 
 	// TokenRefresh
 	viper.SetDefault("token_refresh.enabled", true)
