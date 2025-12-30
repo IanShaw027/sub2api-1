@@ -136,9 +136,8 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	engine := server.ProvideRouter(configConfig, handlers, jwtAuthMiddleware, adminAuthMiddleware, apiKeyAuthMiddleware, apiKeyService, subscriptionService)
 	httpServer := server.ProvideHTTPServer(configConfig, engine)
 	tokenRefreshService := service.ProvideTokenRefreshService(accountRepository, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, configConfig)
-	geminiQuotaRefresher := service.ProvideGeminiQuotaRefresher(accountRepository, proxyRepository, geminiTokenProvider, configConfig)
 	antigravityQuotaRefresher := service.ProvideAntigravityQuotaRefresher(accountRepository, proxyRepository, antigravityOAuthService, configConfig)
-	v := provideCleanup(db, client, tokenRefreshService, pricingService, emailQueueService, gatewayHandler, gatewayService, oAuthService, openAIOAuthService, geminiQuotaRefresher, geminiOAuthService, antigravityOAuthService, antigravityQuotaRefresher)
+	v := provideCleanup(db, client, tokenRefreshService, pricingService, emailQueueService, gatewayHandler, gatewayService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, antigravityQuotaRefresher)
 	application := &Application{
 		Server:  httpServer,
 		Cleanup: v,
@@ -170,7 +169,6 @@ func provideCleanup(
 	gatewayService *service.GatewayService,
 	oauth *service.OAuthService,
 	openaiOAuth *service.OpenAIOAuthService,
-	geminiQuota *service.GeminiQuotaRefresher,
 	geminiOAuth *service.GeminiOAuthService,
 	antigravityOAuth *service.AntigravityOAuthService,
 	antigravityQuota *service.AntigravityQuotaRefresher,
@@ -209,10 +207,6 @@ func provideCleanup(
 			}},
 			{"OpenAIOAuthService", func() error {
 				openaiOAuth.Stop()
-				return nil
-			}},
-			{"GeminiQuotaRefresher", func() error {
-				geminiQuota.Stop()
 				return nil
 			}},
 			{"GeminiOAuthService", func() error {

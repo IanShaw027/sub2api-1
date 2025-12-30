@@ -71,7 +71,6 @@ func provideCleanup(
 	gatewayService *service.GatewayService,
 	oauth *service.OAuthService,
 	openaiOAuth *service.OpenAIOAuthService,
-	geminiQuota *service.GeminiQuotaRefresher,
 	geminiOAuth *service.GeminiOAuthService,
 	antigravityOAuth *service.AntigravityOAuthService,
 	antigravityQuota *service.AntigravityQuotaRefresher,
@@ -111,10 +110,6 @@ func provideCleanup(
 			}},
 			{"OpenAIOAuthService", func() error {
 				openaiOAuth.Stop()
-				return nil
-			}},
-			{"GeminiQuotaRefresher", func() error {
-				geminiQuota.Stop()
 				return nil
 			}},
 			{"GeminiOAuthService", func() error {
