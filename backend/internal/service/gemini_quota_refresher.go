@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -148,19 +149,17 @@ func (r *GeminiQuotaRefresher) refreshAccountQuota(ctx context.Context, account 
 		return fmt.Errorf("get access token: %w", err)
 	}
 
-	var projectID string
-	if account.Extra != nil {
-		if raw, ok := account.Extra["project_id"]; ok {
-			if v, ok := toString(raw); ok {
-				projectID = strings.TrimSpace(v)
-			}
-		}
-	}
+	projectID := strings.TrimSpace(account.GetCredential("project_id"))
 
 	baseURL := ""
+	fallbackBaseURL := ""
 	apiType := ""
 	if projectID != "" {
 		baseURL = geminicli.GeminiCliBaseURL
+		fallbackBaseURL = strings.TrimSpace(account.GetCredential("base_url"))
+		if fallbackBaseURL == "" {
+			fallbackBaseURL = geminicli.AIStudioBaseURL
+		}
 		apiType = "code_assist"
 	} else {
 		baseURL = strings.TrimSpace(account.GetCredential("base_url"))
@@ -205,7 +204,7 @@ func (r *GeminiQuotaRefresher) refreshAccountQuota(ctx context.Context, account 
 
 	updated := 0
 	for _, model := range geminiQuotaModels {
-		modelQuota, err := fetchGeminiModelQuota(proxyCtx, client, baseURL, accessToken, model)
+		modelQuota, err := fetchGeminiModelQuota(proxyCtx, client, baseURL, accessToken, model, projectID, fallbackBaseURL)
 		if err != nil {
 			log.Printf("[GeminiQuota] Account %d model %s failed: %v", account.ID, model, err)
 			continue
@@ -238,7 +237,7 @@ type geminiModelQuota struct {
 	ResetTime string
 }
 
-func fetchGeminiModelQuota(ctx context.Context, client *http.Client, baseURL, accessToken, model string) (*geminiModelQuota, error) {
+func fetchGeminiModelQuota(ctx context.Context, client *http.Client, baseURL, accessToken, model, projectID, fallbackBaseURL string) (*geminiModelQuota, error) {
 	if client == nil {
 		return nil, errors.New("http client is nil")
 	}
@@ -247,11 +246,35 @@ func fetchGeminiModelQuota(ctx context.Context, client *http.Client, baseURL, ac
 		return nil, errors.New("model is empty")
 	}
 
+	projectID = strings.TrimSpace(projectID)
+	if projectID != "" {
+		log.Printf("[GeminiQuota] Model %s attempting code_assist quota API", model)
+		quota, err := fetchGeminiModelQuotaCodeAssist(ctx, client, baseURL, accessToken, projectID, model)
+		if err == nil {
+			return quota, nil
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+		log.Printf("[GeminiQuota] Model %s code_assist quota API failed: %v", model, err)
+		fallbackBaseURL = strings.TrimRight(strings.TrimSpace(fallbackBaseURL), "/")
+		if fallbackBaseURL == "" {
+			fallbackBaseURL = geminicli.AIStudioBaseURL
+		}
+		log.Printf("[GeminiQuota] Model %s attempting ai_studio quota API", model)
+		return fetchGeminiModelQuotaAIStudio(ctx, client, fallbackBaseURL, accessToken, model)
+	}
+
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {
 		baseURL = geminicli.AIStudioBaseURL
 	}
 
+	log.Printf("[GeminiQuota] Model %s attempting ai_studio quota API", model)
+	return fetchGeminiModelQuotaAIStudio(ctx, client, baseURL, accessToken, model)
+}
+
+func fetchGeminiModelQuotaAIStudio(ctx context.Context, client *http.Client, baseURL, accessToken, model string) (*geminiModelQuota, error) {
 	modelPath := strings.TrimPrefix(model, "models/")
 	fullURL := fmt.Sprintf("%s/v1beta/models/%s", baseURL, modelPath)
 
@@ -286,6 +309,114 @@ func fetchGeminiModelQuota(ctx context.Context, client *http.Client, baseURL, ac
 		return nil, err
 	}
 	return quota, nil
+}
+
+func fetchGeminiModelQuotaCodeAssist(ctx context.Context, client *http.Client, baseURL, accessToken, projectID, model string) (*geminiModelQuota, error) {
+	if client == nil {
+		return nil, errors.New("http client is nil")
+	}
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return nil, errors.New("project_id is empty")
+	}
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return nil, errors.New("model is empty")
+	}
+
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		baseURL = geminicli.GeminiCliBaseURL
+	}
+
+	reqBody := map[string]string{
+		"project": projectID,
+	}
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	fullURL := fmt.Sprintf("%s/v1internal:fetchAvailableModels", baseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", geminicli.GeminiCLIUserAgent)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		snippet := strings.TrimSpace(string(body))
+		if len(snippet) > 500 {
+			snippet = snippet[:500] + "..."
+		}
+		return nil, fmt.Errorf("fetchAvailableModels failed (HTTP %d): %s", resp.StatusCode, snippet)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+
+	modelKey := strings.TrimPrefix(model, "models/")
+	modelPayload, err := lookupCodeAssistModel(payload, modelKey)
+	if err != nil {
+		return nil, err
+	}
+
+	if quota := extractQuotaFromPayload(modelPayload); quota != nil {
+		return quota, nil
+	}
+
+	return nil, fmt.Errorf("quota info not found for model %s", modelKey)
+}
+
+func lookupCodeAssistModel(payload map[string]any, modelKey string) (map[string]any, error) {
+	modelsRaw, ok := payload["models"]
+	if !ok || modelsRaw == nil {
+		return nil, errors.New("models not found in code_assist response")
+	}
+	models, ok := modelsRaw.(map[string]any)
+	if !ok {
+		return nil, errors.New("models has unexpected type in code_assist response")
+	}
+
+	candidates := []string{
+		modelKey,
+		"models/" + modelKey,
+	}
+	for _, candidate := range candidates {
+		if raw, ok := models[candidate]; ok {
+			if modelPayload, ok := raw.(map[string]any); ok {
+				return modelPayload, nil
+			}
+			return nil, fmt.Errorf("model %s has unexpected type", candidate)
+		}
+	}
+
+	for key, raw := range models {
+		if strings.TrimPrefix(key, "models/") == modelKey {
+			if modelPayload, ok := raw.(map[string]any); ok {
+				return modelPayload, nil
+			}
+			return nil, fmt.Errorf("model %s has unexpected type", key)
+		}
+	}
+
+	return nil, fmt.Errorf("model %s not found in code_assist response", modelKey)
 }
 
 type geminiProxyContextKey struct{}
