@@ -13,15 +13,58 @@ type CircuitBreaker struct {
 	lastFailTime map[int64]time.Time
 	threshold    int
 	resetTimeout time.Duration
+	stopCh       chan struct{}
+	wg           sync.WaitGroup
 }
 
 func NewCircuitBreaker() *CircuitBreaker {
-	return &CircuitBreaker{
+	cb := &CircuitBreaker{
 		failureCount: make(map[int64]int),
 		lastFailTime: make(map[int64]time.Time),
 		threshold:    5,
 		resetTimeout: 5 * time.Minute,
+		stopCh:       make(chan struct{}),
 	}
+	// Start background cleanup goroutine
+	cb.wg.Add(1)
+	go cb.cleanupLoop()
+	return cb
+}
+
+// cleanupLoop periodically removes expired entries
+func (cb *CircuitBreaker) cleanupLoop() {
+	defer cb.wg.Done()
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			cb.Cleanup()
+		case <-cb.stopCh:
+			return
+		}
+	}
+}
+
+// Cleanup removes expired entries from the maps
+func (cb *CircuitBreaker) Cleanup() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	now := time.Now()
+	for id, lastFail := range cb.lastFailTime {
+		if now.Sub(lastFail) >= cb.resetTimeout {
+			delete(cb.failureCount, id)
+			delete(cb.lastFailTime, id)
+		}
+	}
+}
+
+// Stop gracefully shuts down the cleanup goroutine
+func (cb *CircuitBreaker) Stop() {
+	close(cb.stopCh)
+	cb.wg.Wait()
 }
 
 func (cb *CircuitBreaker) RecordFailure(accountID int64) {

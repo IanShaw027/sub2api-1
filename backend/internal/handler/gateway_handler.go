@@ -31,7 +31,6 @@ type recordUsageJob struct {
 	apiKey       *service.ApiKey
 	account      *service.Account
 	subscription *service.UserSubscription
-	closeNotify  <-chan bool
 }
 
 // GatewayHandler handles API gateway requests
@@ -75,17 +74,9 @@ func (h *GatewayHandler) startRecordUsageWorkers() {
 
 func (h *GatewayHandler) recordUsageWorker() {
 	for job := range h.recordUsageQueue {
+		// FIX: Use independent timeout context only. Do NOT cancel on client disconnect.
+		// Billing must complete even if client has disconnected, since tokens were consumed.
 		ctx, cancel := context.WithTimeout(context.Background(), recordUsageTimeout)
-		if job.closeNotify != nil {
-			closeNotify := job.closeNotify
-			go func() {
-				select {
-				case <-closeNotify:
-					cancel()
-				case <-ctx.Done():
-				}
-			}()
-		}
 
 		if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 			Result:       job.result,
@@ -105,20 +96,15 @@ func (h *GatewayHandler) enqueueUsageRecord(c *gin.Context, result *service.Forw
 		return
 	}
 
-	var closeNotify <-chan bool
-	if notifier, ok := c.Writer.(http.CloseNotifier); ok {
-		closeNotify = notifier.CloseNotify()
-	}
-
 	select {
 	case h.recordUsageQueue <- recordUsageJob{
 		result:       result,
 		apiKey:       apiKey,
 		account:      account,
 		subscription: subscription,
-		closeNotify:  closeNotify,
 	}:
 	default:
+		// TODO: Consider using backpressure or synchronous fallback instead of dropping
 		log.Printf("Record usage queue full, dropping usage record")
 	}
 }
@@ -178,13 +164,18 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		return
 	}
 	// 确保在函数退出时减少wait计数
-	defer h.concurrencyHelper.DecrementWaitCount(c.Request.Context(), subject.UserID)
+	// FIX: Use background context to ensure cleanup completes even if request context is canceled
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		h.concurrencyHelper.DecrementWaitCount(ctx, subject.UserID)
+	}()
 
 	// 1. 首先获取用户并发槽位
 	userReleaseFunc, err := h.concurrencyHelper.AcquireUserSlotWithWait(c, subject.UserID, subject.Concurrency, req.Stream, &streamStarted)
 	if err != nil {
 		log.Printf("User concurrency acquire failed: %v", err)
-		h.handleConcurrencyError(c, err, "user", streamStarted)
+		h.handleConcurrencyError(c, err, "user", &streamStarted)
 		return
 	}
 	if userReleaseFunc != nil {
@@ -194,7 +185,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	// 2. 【新增】Wait后二次检查余额/订阅
 	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription); err != nil {
 		log.Printf("Billing eligibility check failed after wait: %v", err)
-		h.handleStreamingAwareError(c, http.StatusForbidden, "billing_error", err.Error(), streamStarted)
+		h.handleStreamingAwareError(c, http.StatusForbidden, "billing_error", err.Error(), &streamStarted)
 		return
 	}
 
@@ -219,10 +210,10 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			account, err := h.geminiCompatService.SelectAccountForModelWithExclusions(c.Request.Context(), apiKey.GroupID, sessionHash, req.Model, failedAccountIDs)
 			if err != nil {
 				if len(failedAccountIDs) == 0 {
-					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts: "+err.Error(), streamStarted)
+					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts: "+err.Error(), &streamStarted)
 					return
 				}
-				h.handleFailoverExhausted(c, lastFailoverStatus, streamStarted)
+				h.handleFailoverExhausted(c, lastFailoverStatus, &streamStarted)
 				return
 			}
 
@@ -240,7 +231,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			accountReleaseFunc, err := h.concurrencyHelper.AcquireAccountSlotWithWait(c, account.ID, account.Concurrency, req.Stream, &streamStarted)
 			if err != nil {
 				log.Printf("Account concurrency acquire failed: %v", err)
-				h.handleConcurrencyError(c, err, "account", streamStarted)
+				h.handleConcurrencyError(c, err, "account", &streamStarted)
 				return
 			}
 
@@ -260,7 +251,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					failedAccountIDs[account.ID] = struct{}{}
 					if switchCount >= maxAccountSwitches {
 						lastFailoverStatus = failoverErr.StatusCode
-						h.handleFailoverExhausted(c, lastFailoverStatus, streamStarted)
+						h.handleFailoverExhausted(c, lastFailoverStatus, &streamStarted)
 						return
 					}
 					lastFailoverStatus = failoverErr.StatusCode
@@ -289,10 +280,10 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		account, err := h.gatewayService.SelectAccountForModelWithExclusions(c.Request.Context(), apiKey.GroupID, sessionHash, req.Model, failedAccountIDs)
 		if err != nil {
 			if len(failedAccountIDs) == 0 {
-				h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts: "+err.Error(), streamStarted)
+				h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts: "+err.Error(), &streamStarted)
 				return
 			}
-			h.handleFailoverExhausted(c, lastFailoverStatus, streamStarted)
+			h.handleFailoverExhausted(c, lastFailoverStatus, &streamStarted)
 			return
 		}
 
@@ -310,7 +301,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		accountReleaseFunc, err := h.concurrencyHelper.AcquireAccountSlotWithWait(c, account.ID, account.Concurrency, req.Stream, &streamStarted)
 		if err != nil {
 			log.Printf("Account concurrency acquire failed: %v", err)
-			h.handleConcurrencyError(c, err, "account", streamStarted)
+			h.handleConcurrencyError(c, err, "account", &streamStarted)
 			return
 		}
 
@@ -330,7 +321,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				failedAccountIDs[account.ID] = struct{}{}
 				if switchCount >= maxAccountSwitches {
 					lastFailoverStatus = failoverErr.StatusCode
-					h.handleFailoverExhausted(c, lastFailoverStatus, streamStarted)
+					h.handleFailoverExhausted(c, lastFailoverStatus, &streamStarted)
 					return
 				}
 				lastFailoverStatus = failoverErr.StatusCode
@@ -469,12 +460,12 @@ func (h *GatewayHandler) calculateSubscriptionRemaining(group *service.Group, su
 }
 
 // handleConcurrencyError handles concurrency-related errors with proper 429 response
-func (h *GatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotType string, streamStarted atomic.Bool) {
+func (h *GatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotType string, streamStarted *atomic.Bool) {
 	h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error",
 		fmt.Sprintf("Concurrency limit exceeded for %s, please retry later", slotType), streamStarted)
 }
 
-func (h *GatewayHandler) handleFailoverExhausted(c *gin.Context, statusCode int, streamStarted bool) {
+func (h *GatewayHandler) handleFailoverExhausted(c *gin.Context, statusCode int, streamStarted *atomic.Bool) {
 	status, errType, errMsg := h.mapUpstreamError(statusCode)
 	h.handleStreamingAwareError(c, status, errType, errMsg, streamStarted)
 }
@@ -497,7 +488,7 @@ func (h *GatewayHandler) mapUpstreamError(statusCode int) (int, string, string) 
 }
 
 // handleStreamingAwareError handles errors that may occur after streaming has started
-func (h *GatewayHandler) handleStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted atomic.Bool) {
+func (h *GatewayHandler) handleStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted *atomic.Bool) {
 	if streamStarted.Load() {
 		// Stream already started, send error as SSE event then close
 		flusher, ok := c.Writer.(http.Flusher)

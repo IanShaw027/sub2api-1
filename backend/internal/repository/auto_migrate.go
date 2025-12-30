@@ -46,7 +46,14 @@ func AutoMigrate(db *gorm.DB, runMode string) error {
 }
 
 // createCompositeIndexes 创建复合索引以优化查询性能
+// 注意：此函数使用 PostgreSQL 特定语法（CONCURRENTLY 和 pg_indexes）
 func createCompositeIndexes(db *gorm.DB) error {
+	// 检查数据库类型，只在 PostgreSQL 上执行
+	if db.Dialector.Name() != "postgres" {
+		log.Printf("[AutoMigrate] Skipping composite indexes: not a PostgreSQL database (current: %s)", db.Dialector.Name())
+		return nil
+	}
+
 	// usage_logs 表的复合索引
 	indexes := []struct {
 		table string
@@ -66,7 +73,7 @@ func createCompositeIndexes(db *gorm.DB) error {
 	}
 
 	for _, idx := range indexes {
-		// 检查索引是否已存在
+		// 检查索引是否已存在（使用 pg_indexes 系统表）
 		var exists bool
 		err := db.Raw(`
 			SELECT EXISTS (

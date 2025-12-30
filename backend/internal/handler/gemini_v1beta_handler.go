@@ -172,7 +172,12 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		googleError(c, http.StatusTooManyRequests, "Too many pending requests, please retry later")
 		return
 	}
-	defer geminiConcurrency.DecrementWaitCount(c.Request.Context(), authSubject.UserID)
+	// FIX: Use background context to ensure cleanup completes even if request context is canceled
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		geminiConcurrency.DecrementWaitCount(ctx, authSubject.UserID)
+	}()
 
 	// 1) user concurrency slot
 	var streamStarted atomic.Bool
