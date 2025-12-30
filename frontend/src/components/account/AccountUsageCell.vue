@@ -183,7 +183,7 @@
           label="Gemini 2.5 Flash"
           :utilization="gemini25FlashUsage.utilization"
           :resets-at="gemini25FlashUsage.resetTime"
-          color="blue"
+          color="amber"
         />
       </div>
       <div v-else class="text-xs text-gray-400">-</div>

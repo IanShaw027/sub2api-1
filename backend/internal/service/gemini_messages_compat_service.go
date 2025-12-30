@@ -2028,7 +2028,7 @@ func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Cont
 		log.Printf("[Gemini Rate Limit] Account %d hit 429, no reset time found. Error: %q. Marking limited until %s",
 			account.ID, sanitizedErrorMessage, ra.Format(time.RFC3339))
 		if err := s.accountRepo.SetRateLimited(ctx, account.ID, ra); err != nil {
-			s.logger.Warn("Failed to set account rate limited", zap.Error(err), zap.Int64("account_id", account.ID))
+			log.Printf("[Gemini Rate Limit] Failed to set account rate limited: account_id=%d, error=%v", account.ID, err)
 		}
 		return errorMessage
 	}
@@ -2036,7 +2036,7 @@ func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Cont
 	log.Printf("[Gemini Rate Limit] Account %d hit 429. Error: %q. Quota reset delay: %q. Reset at: %s",
 		account.ID, sanitizedErrorMessage, quotaResetDelay, resetTime.Format(time.RFC3339))
 	if err := s.accountRepo.SetRateLimited(ctx, account.ID, resetTime); err != nil {
-		s.logger.Warn("Failed to set account rate limited", zap.Error(err), zap.Int64("account_id", account.ID))
+		log.Printf("[Gemini Rate Limit] Failed to set account rate limited: account_id=%d, error=%v", account.ID, err)
 	}
 	return errorMessage
 }
@@ -2457,4 +2457,49 @@ func convertClaudeGenerationConfig(req map[string]any) map[string]any {
 		return nil
 	}
 	return out
+}
+
+// ParseGeminiRateLimitResetTime 从 Gemini API 错误响应中解析限流重置时间
+func ParseGeminiRateLimitResetTime(body []byte) *int64 {
+	// Try to parse metadata.quotaResetDelay like "12.345s"
+	var parsed map[string]any
+	if err := json.Unmarshal(body, &parsed); err == nil {
+		if errObj, ok := parsed["error"].(map[string]any); ok {
+			if msg, ok := errObj["message"].(string); ok {
+				if looksLikeGeminiDailyQuota(msg) {
+					if ts := nextGeminiDailyResetUnix(); ts != nil {
+						return ts
+					}
+				}
+			}
+			if details, ok := errObj["details"].([]any); ok {
+				for _, d := range details {
+					dm, ok := d.(map[string]any)
+					if !ok {
+						continue
+					}
+					if meta, ok := dm["metadata"].(map[string]any); ok {
+						if v, ok := meta["quotaResetDelay"].(string); ok {
+							if dur, err := time.ParseDuration(v); err == nil {
+								ts := time.Now().Unix() + int64(dur.Seconds())
+								return &ts
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Match "Please retry in Xs"
+	retryInRegex := regexp.MustCompile(`Please retry in ([0-9.]+)s`)
+	matches := retryInRegex.FindStringSubmatch(string(body))
+	if len(matches) == 2 {
+		if dur, err := time.ParseDuration(matches[1] + "s"); err == nil {
+			ts := time.Now().Unix() + int64(math.Ceil(dur.Seconds()))
+			return &ts
+		}
+	}
+
+	return nil
 }
