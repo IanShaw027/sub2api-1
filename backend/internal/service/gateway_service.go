@@ -1008,6 +1008,10 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "event: error" {
+			// Record circuit breaker failure before triggering failover
+			if s.circuitBreaker != nil {
+				s.circuitBreaker.RecordFailure(account.ID)
+			}
 			return nil, errors.New("have error in stream")
 		}
 

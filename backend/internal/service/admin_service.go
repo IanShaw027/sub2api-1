@@ -305,6 +305,8 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 		if err := user.SetPassword(input.Password); err != nil {
 			return nil, err
 		}
+		// Increment TokenVersion to invalidate all existing tokens
+		user.TokenVersion++
 	}
 
 	if input.Username != nil {
