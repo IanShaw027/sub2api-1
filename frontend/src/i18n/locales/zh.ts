@@ -984,8 +984,10 @@ export default {
       },
       usageWindow: {
         statsTitle: '5小时窗口用量统计',
-        gemini3Pro: 'G3P',
-        gemini3Flash: 'G3F',
+        gemini3Pro: 'Gemini 3 Pro',
+        gemini3Flash: 'Gemini 3 Flash',
+        gemini25Pro: 'Gemini 2.5 Pro',
+        gemini25Flash: 'Gemini 2.5 Flash',
         gemini3Image: 'G3I',
         claude45: 'C4.5'
       },
@@ -1218,6 +1220,10 @@ export default {
 	          needsProjectIdDesc: '需 GCP 项目',
 	          noProjectIdNeeded: '适合普通用户',
 	          noProjectIdNeededDesc: '需管理员配置 OAuth Client',
+	          aiStudioOAuthChoice: {
+	            label: 'API Key',
+	            description: 'AI Studio API Key'
+	          },
 	          aiStudioNotConfiguredShort: '未配置',
 	          aiStudioNotConfiguredTip: 'AI Studio OAuth 未配置：请先设置 GEMINI_OAUTH_CLIENT_ID / GEMINI_OAUTH_CLIENT_SECRET，并在 Google OAuth Client 添加 Redirect URI：http://localhost:1455/auth/callback（Consent Screen scopes 需包含 https://www.googleapis.com/auth/generative-language.retriever）',
 	          aiStudioNotConfigured: 'AI Studio OAuth 未配置：请先设置 GEMINI_OAUTH_CLIENT_ID / GEMINI_OAUTH_CLIENT_SECRET，并在 Google OAuth Client 添加 Redirect URI：http://localhost:1455/auth/callback'

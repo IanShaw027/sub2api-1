@@ -1085,6 +1085,10 @@ export default {
 	          needsProjectIdDesc: 'Requires GCP project',
 	          noProjectIdNeeded: 'For Regular Users',
 	          noProjectIdNeededDesc: 'Requires admin-configured OAuth client',
+	          aiStudioOAuthChoice: {
+	            label: 'API Key',
+	            description: 'AI Studio API Key'
+	          },
 	          aiStudioNotConfiguredShort: 'Not configured',
 	          aiStudioNotConfiguredTip:
 	            'AI Studio OAuth is not configured: set GEMINI_OAUTH_CLIENT_ID / GEMINI_OAUTH_CLIENT_SECRET and add Redirect URI: http://localhost:1455/auth/callback (Consent screen scopes must include https://www.googleapis.com/auth/generative-language.retriever)',
@@ -1196,8 +1200,10 @@ export default {
       },
       usageWindow: {
         statsTitle: '5-Hour Window Usage Statistics',
-        gemini3Pro: 'G3P',
-        gemini3Flash: 'G3F',
+        gemini3Pro: 'Gemini 3 Pro',
+        gemini3Flash: 'Gemini 3 Flash',
+        gemini25Pro: 'Gemini 2.5 Pro',
+        gemini25Flash: 'Gemini 2.5 Flash',
         gemini3Image: 'G3I',
         claude45: 'C4.5'
       },

@@ -411,8 +411,12 @@
               </svg>
             </div>
             <div>
-              <span class="block text-sm font-medium text-gray-900 dark:text-white">API Key</span>
-              <span class="text-xs text-gray-500 dark:text-gray-400">AI Studio API Key</span>
+              <span class="block text-sm font-medium text-gray-900 dark:text-white">
+                {{ t('admin.accounts.oauth.gemini.aiStudioOAuthChoice.label') }}
+              </span>
+              <span class="text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.accounts.oauth.gemini.aiStudioOAuthChoice.description') }}
+              </span>
             </div>
           </button>
         </div>
