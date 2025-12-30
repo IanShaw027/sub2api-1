@@ -150,31 +150,40 @@
     <!-- Gemini OAuth accounts: show quota from extra field -->
     <template v-else-if="account.platform === 'gemini' && account.type === 'oauth'">
       <div v-if="hasGeminiQuota" class="space-y-1">
-        <!-- Gemini 2.0 Flash Exp -->
+        <!-- Gemini 3 Pro Preview -->
         <UsageProgressBar
-          v-if="gemini2FlashExpUsage !== null"
-          label="Gemini 2.0 Flash Exp"
-          :utilization="gemini2FlashExpUsage.utilization"
-          :resets-at="gemini2FlashExpUsage.resetTime"
+          v-if="gemini3ProUsage !== null"
+          label="Gemini 3 Pro"
+          :utilization="gemini3ProUsage.utilization"
+          :resets-at="gemini3ProUsage.resetTime"
           color="indigo"
         />
 
-        <!-- Gemini Exp 1206 -->
+        <!-- Gemini 3 Flash Preview -->
         <UsageProgressBar
-          v-if="geminiExp1206Usage !== null"
-          label="Gemini Exp 1206"
-          :utilization="geminiExp1206Usage.utilization"
-          :resets-at="geminiExp1206Usage.resetTime"
+          v-if="gemini3FlashUsage !== null"
+          label="Gemini 3 Flash"
+          :utilization="gemini3FlashUsage.utilization"
+          :resets-at="gemini3FlashUsage.resetTime"
           color="emerald"
         />
 
-        <!-- Gemini 2.0 Flash Thinking -->
+        <!-- Gemini 2.5 Pro -->
         <UsageProgressBar
-          v-if="gemini2ThinkingUsage !== null"
-          label="Gemini 2.0 Flash Thinking"
-          :utilization="gemini2ThinkingUsage.utilization"
-          :resets-at="gemini2ThinkingUsage.resetTime"
+          v-if="gemini25ProUsage !== null"
+          label="Gemini 2.5 Pro"
+          :utilization="gemini25ProUsage.utilization"
+          :resets-at="gemini25ProUsage.resetTime"
           color="purple"
+        />
+
+        <!-- Gemini 2.5 Flash -->
+        <UsageProgressBar
+          v-if="gemini25FlashUsage !== null"
+          label="Gemini 2.5 Flash"
+          :utilization="gemini25FlashUsage.utilization"
+          :resets-at="gemini25FlashUsage.resetTime"
+          color="blue"
         />
       </div>
       <div v-else class="text-xs text-gray-400">-</div>
@@ -514,16 +523,17 @@ const getGeminiUsage = (modelNames: string[]): AntigravityUsageResult | null => 
   }
 }
 
-// Gemini 2.0 Flash Exp: gemini-2.0-flash-exp
-const gemini2FlashExpUsage = computed(() => getGeminiUsage(['gemini-2.0-flash-exp']))
+// Gemini 3 Pro Preview: gemini-3-pro-preview
+const gemini3ProUsage = computed(() => getGeminiUsage(['gemini-3-pro-preview']))
 
-// Gemini Exp 1206: gemini-exp-1206
-const geminiExp1206Usage = computed(() => getGeminiUsage(['gemini-exp-1206']))
+// Gemini 3 Flash Preview: gemini-3-flash-preview
+const gemini3FlashUsage = computed(() => getGeminiUsage(['gemini-3-flash-preview']))
 
-// Gemini 2.0 Flash Thinking: gemini-2.0-flash-thinking-exp
-const gemini2ThinkingUsage = computed(() =>
-  getGeminiUsage(['gemini-2.0-flash-thinking-exp'])
-)
+// Gemini 2.5 Pro: gemini-2.5-pro
+const gemini25ProUsage = computed(() => getGeminiUsage(['gemini-2.5-pro']))
+
+// Gemini 2.5 Flash: gemini-2.5-flash
+const gemini25FlashUsage = computed(() => getGeminiUsage(['gemini-2.5-flash']))
 
 const loadUsage = async () => {
   // Fetch usage for Anthropic OAuth and Setup Token accounts
