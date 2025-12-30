@@ -76,6 +76,12 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		return
 	}
 
+	// 修复缺少 signature 的 thinking 块
+	body, fixed := h.gatewayService.FixMissingThinkingSignatures(body)
+	if fixed {
+		log.Printf("Messages: removed thinking blocks without signature")
+	}
+
 	// 解析请求获取模型名和stream
 	var req struct {
 		Model  string `json:"model"`

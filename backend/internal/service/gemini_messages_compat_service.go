@@ -806,6 +806,21 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 		s.handleGeminiUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
 
+		// 记录详细的错误信息用于调试
+		if errorMessage == "" {
+			errorMessage = gemini.ParseErrorMessage(respBody)
+		}
+		if errorMessage != "" {
+			log.Printf("Gemini account %d: upstream error %d, message: %q", account.ID, resp.StatusCode, sanitizeUpstreamErrorMessage(errorMessage))
+		} else {
+			// 如果无法解析错误消息，记录原始响应体的一部分
+			truncated := string(respBody)
+			if len(truncated) > 500 {
+				truncated = truncated[:500] + "..."
+			}
+			log.Printf("Gemini account %d: upstream error %d, raw response: %s", account.ID, resp.StatusCode, sanitizeUpstreamErrorMessage(truncated))
+		}
+
 		// Best-effort fallback for OAuth tokens missing AI Studio scopes when calling countTokens.
 		// This avoids Gemini SDKs failing hard during preflight token counting.
 		if action == "countTokens" && isOAuth && isGeminiInsufficientScope(resp.Header, respBody) {

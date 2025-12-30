@@ -1303,6 +1303,12 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 		}
 	}
 
+	// 修复缺少 signature 的 thinking 块
+	body, fixed := s.FixMissingThinkingSignatures(body)
+	if fixed {
+		log.Printf("CountTokens: removed thinking blocks without signature")
+	}
+
 	// 获取凭证
 	token, tokenType, err := s.GetAccessToken(ctx, account)
 	if err != nil {
@@ -1344,6 +1350,13 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	if resp.StatusCode >= 400 {
 		// 标记账号状态（429/529等）
 		s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+
+		// 记录详细的错误信息用于调试
+		truncated := string(respBody)
+		if len(truncated) > 1000 {
+			truncated = truncated[:1000] + "..."
+		}
+		log.Printf("CountTokens account %d: upstream error %d, response: %s", account.ID, resp.StatusCode, truncated)
 
 		// 返回简化的错误响应
 		errMsg := "Upstream request failed"
@@ -1428,6 +1441,91 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	}
 
 	return req, nil
+}
+
+// FixMissingThinkingSignatures 修复请求中缺少 signature 的 thinking 块
+// 移除缺少 signature 的 thinking 块，因为 Claude API 要求有效的 signature
+// 返回修复后的 body 和是否进行了修复
+func (s *GatewayService) FixMissingThinkingSignatures(body []byte) ([]byte, bool) {
+	// 解析请求体
+	var req map[string]any
+	if err := json.Unmarshal(body, &req); err != nil {
+		// 解析失败，返回原始 body
+		return body, false
+	}
+
+	// 检查是否有 messages 字段
+	messages, ok := req["messages"].([]any)
+	if !ok || len(messages) == 0 {
+		return body, false
+	}
+
+	fixed := false
+
+	// 遍历所有消息
+	for _, msg := range messages {
+		msgMap, ok := msg.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		// 获取 content 字段
+		content, ok := msgMap["content"]
+		if !ok {
+			continue
+		}
+
+		// content 可能是字符串或数组
+		contentArray, ok := content.([]any)
+		if !ok {
+			continue
+		}
+
+		// 过滤掉缺少 signature 的 thinking 块
+		newContentArray := make([]any, 0, len(contentArray))
+		for _, block := range contentArray {
+			blockMap, ok := block.(map[string]any)
+			if !ok {
+				newContentArray = append(newContentArray, block)
+				continue
+			}
+
+			// 检查是否是 thinking 类型
+			blockType, ok := blockMap["type"].(string)
+			if !ok || blockType != "thinking" {
+				newContentArray = append(newContentArray, block)
+				continue
+			}
+
+			// thinking 块必须有 signature，否则移除
+			if _, hasSignature := blockMap["signature"]; hasSignature {
+				newContentArray = append(newContentArray, block)
+			} else {
+				// 移除缺少 signature 的 thinking 块
+				fixed = true
+				log.Printf("Removed thinking block without signature: %s", blockMap["thinking"])
+			}
+		}
+
+		// 更新 content 数组
+		if len(newContentArray) != len(contentArray) {
+			msgMap["content"] = newContentArray
+		}
+	}
+
+	// 如果没有修复任何内容，返回原始 body
+	if !fixed {
+		return body, false
+	}
+
+	// 重新序列化
+	newBody, err := json.Marshal(req)
+	if err != nil {
+		// 序列化失败，返回原始 body
+		return body, false
+	}
+
+	return newBody, true
 }
 
 // countTokensError 返回 count_tokens 错误响应
