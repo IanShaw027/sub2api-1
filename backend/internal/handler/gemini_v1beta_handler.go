@@ -198,7 +198,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	lastFailoverStatus := 0
 
 	for {
-		account, err := h.geminiCompatService.SelectAccountForModelWithExclusions(c.Request.Context(), apiKey.GroupID, sessionHash, modelName, failedAccountIDs)
+		candidates, err := h.geminiCompatService.ListAccountCandidatesForModelWithExclusions(c.Request.Context(), apiKey.GroupID, sessionHash, modelName, failedAccountIDs)
 		if err != nil {
 			if len(failedAccountIDs) == 0 {
 				googleError(c, http.StatusServiceUnavailable, "No available Gemini accounts: "+err.Error())
@@ -208,12 +208,32 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 			return
 		}
 
-		// 4) account concurrency slot
-		accountReleaseFunc, err := geminiConcurrency.AcquireAccountSlotWithWait(c, account.ID, account.Concurrency, stream, &streamStarted)
-		if err != nil {
-			googleError(c, http.StatusTooManyRequests, err.Error())
-			return
+		var account *service.Account
+		var accountReleaseFunc func()
+		for _, candidate := range candidates {
+			releaseFunc, acquired, err := geminiConcurrency.TryAcquireAccountSlot(c.Request.Context(), candidate.ID, candidate.Concurrency)
+			if err != nil {
+				googleError(c, http.StatusTooManyRequests, err.Error())
+				return
+			}
+			if acquired {
+				account = candidate
+				accountReleaseFunc = releaseFunc
+				break
+			}
 		}
+
+		if account == nil {
+			account = candidates[0]
+			// 4) account concurrency slot
+			accountReleaseFunc, err = geminiConcurrency.AcquireAccountSlotWithWait(c, account.ID, account.Concurrency, stream, &streamStarted)
+			if err != nil {
+				googleError(c, http.StatusTooManyRequests, err.Error())
+				return
+			}
+		}
+
+		h.geminiCompatService.SetStickySessionAccount(c.Request.Context(), sessionHash, account.ID)
 
 		// 5) forward (根据平台分流)
 		var result *service.ForwardResult

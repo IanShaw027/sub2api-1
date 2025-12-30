@@ -15,6 +15,8 @@ import (
 	mathrand "math/rand"
 	"net/http"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -72,7 +74,17 @@ func (s *GeminiMessagesCompatService) SelectAccountForModel(ctx context.Context,
 	return s.SelectAccountForModelWithExclusions(ctx, groupID, sessionHash, requestedModel, nil)
 }
 
-func (s *GeminiMessagesCompatService) SelectAccountForModelWithExclusions(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) (*Account, error) {
+// SetStickySessionAccount updates sticky session mapping for Gemini requests.
+func (s *GeminiMessagesCompatService) SetStickySessionAccount(ctx context.Context, sessionHash string, accountID int64) {
+	if sessionHash == "" {
+		return
+	}
+	cacheKey := "gemini:" + sessionHash
+	_ = s.cache.SetSessionAccountID(ctx, cacheKey, accountID, geminiStickySessionTTL)
+}
+
+// ListAccountCandidatesForModelWithExclusions returns ordered candidates for a model while excluding specified accounts.
+func (s *GeminiMessagesCompatService) ListAccountCandidatesForModelWithExclusions(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) ([]*Account, error) {
 	// 优先检查 context 中的强制平台（/antigravity 路由）
 	var platform string
 	forcePlatform, hasForcePlatform := ctx.Value(ctxkey.ForcePlatform).(string)
@@ -100,25 +112,30 @@ func (s *GeminiMessagesCompatService) SelectAccountForModelWithExclusions(ctx co
 		queryPlatforms = []string{platform}
 	}
 
-	cacheKey := "gemini:" + sessionHash
+	isExcluded := func(id int64) bool {
+		if excludedIDs == nil {
+			return false
+		}
+		_, excluded := excludedIDs[id]
+		return excluded
+	}
 
+	cacheKey := "gemini:" + sessionHash
+	var sticky *Account
 	if sessionHash != "" {
 		accountID, err := s.cache.GetSessionAccountID(ctx, cacheKey)
-		if err == nil && accountID > 0 {
-			if _, excluded := excludedIDs[accountID]; !excluded {
-				account, err := s.accountRepo.GetByID(ctx, accountID)
-				// 检查账号是否有效：原生平台直接匹配，antigravity 需要启用混合调度
-				if err == nil && account.IsSchedulable() && (requestedModel == "" || s.isModelSupportedByAccount(account, requestedModel)) {
-					valid := false
-					if account.Platform == platform {
-						valid = true
-					} else if useMixedScheduling && account.Platform == PlatformAntigravity && account.IsMixedSchedulingEnabled() {
-						valid = true
-					}
-					if valid {
-						_ = s.cache.RefreshSessionTTL(ctx, cacheKey, geminiStickySessionTTL)
-						return account, nil
-					}
+		if err == nil && accountID > 0 && !isExcluded(accountID) {
+			account, err := s.accountRepo.GetByID(ctx, accountID)
+			// 检查账号是否有效：原生平台直接匹配，antigravity 需要启用混合调度
+			if err == nil && account.IsSchedulable() && (requestedModel == "" || s.isModelSupportedByAccount(account, requestedModel)) {
+				valid := false
+				if account.Platform == platform {
+					valid = true
+				} else if useMixedScheduling && account.Platform == PlatformAntigravity && account.IsMixedSchedulingEnabled() {
+					valid = true
+				}
+				if valid {
+					sticky = account
 				}
 			}
 		}
@@ -143,10 +160,10 @@ func (s *GeminiMessagesCompatService) SelectAccountForModelWithExclusions(ctx co
 		return nil, fmt.Errorf("query accounts failed: %w", err)
 	}
 
-	var selected *Account
+	candidates := make([]*Account, 0, len(accounts))
 	for i := range accounts {
 		acc := &accounts[i]
-		if _, excluded := excludedIDs[acc.ID]; excluded {
+		if isExcluded(acc.ID) {
 			continue
 		}
 		// 混合调度模式下：原生平台直接通过，antigravity 需要启用 mixed_scheduling
@@ -157,42 +174,51 @@ func (s *GeminiMessagesCompatService) SelectAccountForModelWithExclusions(ctx co
 		if requestedModel != "" && !s.isModelSupportedByAccount(acc, requestedModel) {
 			continue
 		}
-		if selected == nil {
-			selected = acc
+		if sticky != nil && acc.ID == sticky.ID {
 			continue
 		}
-		if acc.Priority < selected.Priority {
-			selected = acc
-		} else if acc.Priority == selected.Priority {
-			switch {
-			case acc.LastUsedAt == nil && selected.LastUsedAt != nil:
-				selected = acc
-			case acc.LastUsedAt != nil && selected.LastUsedAt == nil:
-				// keep selected (never used is preferred)
-			case acc.LastUsedAt == nil && selected.LastUsedAt == nil:
-				// Prefer OAuth accounts when both are unused (more compatible for Code Assist flows).
-				if acc.Type == AccountTypeOAuth && selected.Type != AccountTypeOAuth {
-					selected = acc
-				}
-			default:
-				if acc.LastUsedAt.Before(*selected.LastUsedAt) {
-					selected = acc
-				}
-			}
-		}
+		candidates = append(candidates, acc)
 	}
 
-	if selected == nil {
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].Priority != candidates[j].Priority {
+			return candidates[i].Priority < candidates[j].Priority
+		}
+		iNil := candidates[i].LastUsedAt == nil
+		jNil := candidates[j].LastUsedAt == nil
+		if iNil != jNil {
+			return iNil
+		}
+		if iNil {
+			if candidates[i].Type != candidates[j].Type {
+				return candidates[i].Type == AccountTypeOAuth
+			}
+			return false
+		}
+		return candidates[i].LastUsedAt.Before(*candidates[j].LastUsedAt)
+	})
+
+	if sticky != nil {
+		candidates = append([]*Account{sticky}, candidates...)
+	}
+
+	if len(candidates) == 0 {
 		if requestedModel != "" {
 			return nil, fmt.Errorf("no available Gemini accounts supporting model: %s", requestedModel)
 		}
 		return nil, errors.New("no available Gemini accounts")
 	}
 
-	if sessionHash != "" {
-		_ = s.cache.SetSessionAccountID(ctx, cacheKey, selected.ID, geminiStickySessionTTL)
-	}
+	return candidates, nil
+}
 
+func (s *GeminiMessagesCompatService) SelectAccountForModelWithExclusions(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) (*Account, error) {
+	candidates, err := s.ListAccountCandidatesForModelWithExclusions(ctx, groupID, sessionHash, requestedModel, excludedIDs)
+	if err != nil {
+		return nil, err
+	}
+	selected := candidates[0]
+	s.SetStickySessionAccount(ctx, sessionHash, selected.ID)
 	return selected, nil
 }
 
