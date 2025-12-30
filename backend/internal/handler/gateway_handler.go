@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -21,9 +22,10 @@ import (
 )
 
 const (
-	recordUsageWorkerCount = 4
-	recordUsageQueueSize   = 256
-	recordUsageTimeout     = 10 * time.Second
+	recordUsageWorkerCount    = 4
+	recordUsageQueueSize      = 256
+	recordUsageTimeout        = 10 * time.Second
+	recordUsageEnqueueTimeout = 5 * time.Second
 )
 
 type recordUsageJob struct {
@@ -35,13 +37,17 @@ type recordUsageJob struct {
 
 // GatewayHandler handles API gateway requests
 type GatewayHandler struct {
-	gatewayService            *service.GatewayService
-	geminiCompatService       *service.GeminiMessagesCompatService
-	antigravityGatewayService *service.AntigravityGatewayService
-	userService               *service.UserService
-	billingCacheService       *service.BillingCacheService
-	concurrencyHelper         *ConcurrencyHelper
-	recordUsageQueue          chan recordUsageJob
+	gatewayService               *service.GatewayService
+	geminiCompatService          *service.GeminiMessagesCompatService
+	antigravityGatewayService    *service.AntigravityGatewayService
+	userService                  *service.UserService
+	billingCacheService          *service.BillingCacheService
+	concurrencyHelper            *ConcurrencyHelper
+	recordUsageQueue             chan recordUsageJob
+	recordUsageWg                sync.WaitGroup
+	recordUsageStopOnce          sync.Once
+	recordUsageBackpressureCount atomic.Uint64
+	recordUsageFallbackCount     atomic.Uint64
 }
 
 // NewGatewayHandler creates a new GatewayHandler
@@ -66,28 +72,45 @@ func NewGatewayHandler(
 	return handler
 }
 
+func (h *GatewayHandler) Stop() {
+	if h.recordUsageQueue == nil {
+		return
+	}
+
+	h.recordUsageStopOnce.Do(func() {
+		close(h.recordUsageQueue)
+	})
+	h.recordUsageWg.Wait()
+}
+
 func (h *GatewayHandler) startRecordUsageWorkers() {
 	for i := 0; i < recordUsageWorkerCount; i++ {
+		h.recordUsageWg.Add(1)
 		go h.recordUsageWorker()
 	}
 }
 
 func (h *GatewayHandler) recordUsageWorker() {
+	defer h.recordUsageWg.Done()
 	for job := range h.recordUsageQueue {
-		// FIX: Use independent timeout context only. Do NOT cancel on client disconnect.
-		// Billing must complete even if client has disconnected, since tokens were consumed.
-		ctx, cancel := context.WithTimeout(context.Background(), recordUsageTimeout)
+		h.recordUsage(job)
+	}
+}
 
-		if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
-			Result:       job.result,
-			ApiKey:       job.apiKey,
-			User:         job.apiKey.User,
-			Account:      job.account,
-			Subscription: job.subscription,
-		}); err != nil {
-			log.Printf("Record usage failed: %v", err)
-		}
-		cancel()
+func (h *GatewayHandler) recordUsage(job recordUsageJob) {
+	// FIX: Use independent timeout context only. Do NOT cancel on client disconnect.
+	// Billing must complete even if client has disconnected, since tokens were consumed.
+	ctx, cancel := context.WithTimeout(context.Background(), recordUsageTimeout)
+	defer cancel()
+
+	if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
+		Result:       job.result,
+		ApiKey:       job.apiKey,
+		User:         job.apiKey.User,
+		Account:      job.account,
+		Subscription: job.subscription,
+	}); err != nil {
+		log.Printf("Record usage failed: %v", err)
 	}
 }
 
@@ -96,16 +119,33 @@ func (h *GatewayHandler) enqueueUsageRecord(c *gin.Context, result *service.Forw
 		return
 	}
 
-	select {
-	case h.recordUsageQueue <- recordUsageJob{
+	job := recordUsageJob{
 		result:       result,
 		apiKey:       apiKey,
 		account:      account,
 		subscription: subscription,
-	}:
+	}
+
+	select {
+	case h.recordUsageQueue <- job:
+		return
 	default:
-		// TODO: Consider using backpressure or synchronous fallback instead of dropping
-		log.Printf("Record usage queue full, dropping usage record")
+	}
+
+	backpressureCount := h.recordUsageBackpressureCount.Add(1)
+	log.Printf("Record usage queue full, applying backpressure (count=%d len=%d cap=%d)", backpressureCount, len(h.recordUsageQueue), cap(h.recordUsageQueue))
+
+	start := time.Now()
+	timer := time.NewTimer(recordUsageEnqueueTimeout)
+	defer timer.Stop()
+
+	select {
+	case h.recordUsageQueue <- job:
+		log.Printf("Record usage queue backpressure resolved after %s (count=%d)", time.Since(start), backpressureCount)
+	case <-timer.C:
+		fallbackCount := h.recordUsageFallbackCount.Add(1)
+		log.Printf("Record usage backpressure timeout after %s, falling back to synchronous record (timeout_count=%d)", recordUsageEnqueueTimeout, fallbackCount)
+		h.recordUsage(job)
 	}
 }
 

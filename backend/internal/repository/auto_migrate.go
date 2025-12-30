@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"database/sql"
 	"log"
 	"time"
 
@@ -54,21 +55,38 @@ func createCompositeIndexes(db *gorm.DB) error {
 		return nil
 	}
 
+	var schemaName string
+	if err := db.Raw("SELECT current_schema()").Scan(&schemaName).Error; err != nil || schemaName == "" {
+		log.Printf("[AutoMigrate] Failed to resolve current schema, defaulting to public: %v", err)
+		schemaName = "public"
+	}
+
+	inTransaction := false
+	if db.Statement != nil {
+		_, inTransaction = db.Statement.ConnPool.(*sql.Tx)
+	}
+	if inTransaction {
+		log.Printf("[AutoMigrate] Warning: transaction detected; creating indexes without CONCURRENTLY")
+	}
+
 	// usage_logs 表的复合索引
 	indexes := []struct {
-		table string
-		name  string
-		sql   string
+		table       string
+		name        string
+		sql         string
+		fallbackSQL string
 	}{
 		{
-			table: "usage_logs",
-			name:  "idx_usage_logs_user_created",
-			sql:   "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_usage_logs_user_created ON usage_logs(user_id, created_at)",
+			table:       "usage_logs",
+			name:        "idx_usage_logs_user_created",
+			sql:         "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_usage_logs_user_created ON usage_logs(user_id, created_at)",
+			fallbackSQL: "CREATE INDEX IF NOT EXISTS idx_usage_logs_user_created ON usage_logs(user_id, created_at)",
 		},
 		{
-			table: "usage_logs",
-			name:  "idx_usage_logs_created_model",
-			sql:   "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_usage_logs_created_model ON usage_logs(created_at, model)",
+			table:       "usage_logs",
+			name:        "idx_usage_logs_created_model",
+			sql:         "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_usage_logs_created_model ON usage_logs(created_at, model)",
+			fallbackSQL: "CREATE INDEX IF NOT EXISTS idx_usage_logs_created_model ON usage_logs(created_at, model)",
 		},
 	}
 
@@ -78,9 +96,9 @@ func createCompositeIndexes(db *gorm.DB) error {
 		err := db.Raw(`
 			SELECT EXISTS (
 				SELECT 1 FROM pg_indexes
-				WHERE tablename = ? AND indexname = ?
+				WHERE schemaname = ? AND tablename = ? AND indexname = ?
 			)
-		`, idx.table, idx.name).Scan(&exists).Error
+		`, schemaName, idx.table, idx.name).Scan(&exists).Error
 
 		if err != nil {
 			log.Printf("[AutoMigrate] Failed to check index %s: %v", idx.name, err)
@@ -89,7 +107,11 @@ func createCompositeIndexes(db *gorm.DB) error {
 
 		if !exists {
 			// 注意：CONCURRENTLY 不能在事务中使用，需要单独执行
-			if err := db.Exec(idx.sql).Error; err != nil {
+			sqlToRun := idx.sql
+			if inTransaction {
+				sqlToRun = idx.fallbackSQL
+			}
+			if err := db.Exec(sqlToRun).Error; err != nil {
 				log.Printf("[AutoMigrate] Failed to create index %s: %v", idx.name, err)
 				return err
 			}
