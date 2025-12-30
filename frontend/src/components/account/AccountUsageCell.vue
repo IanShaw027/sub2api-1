@@ -153,7 +153,7 @@
         <!-- Gemini 3 Pro Preview -->
         <UsageProgressBar
           v-if="gemini3ProUsage !== null"
-          label="Gemini 3 Pro"
+          :label="t('admin.accounts.usageWindow.gemini3Pro')"
           :utilization="gemini3ProUsage.utilization"
           :resets-at="gemini3ProUsage.resetTime"
           color="indigo"
@@ -162,7 +162,7 @@
         <!-- Gemini 3 Flash Preview -->
         <UsageProgressBar
           v-if="gemini3FlashUsage !== null"
-          label="Gemini 3 Flash"
+          :label="t('admin.accounts.usageWindow.gemini3Flash')"
           :utilization="gemini3FlashUsage.utilization"
           :resets-at="gemini3FlashUsage.resetTime"
           color="emerald"
@@ -171,7 +171,7 @@
         <!-- Gemini 2.5 Pro -->
         <UsageProgressBar
           v-if="gemini25ProUsage !== null"
-          label="Gemini 2.5 Pro"
+          :label="t('admin.accounts.usageWindow.gemini25Pro')"
           :utilization="gemini25ProUsage.utilization"
           :resets-at="gemini25ProUsage.resetTime"
           color="purple"
@@ -180,7 +180,7 @@
         <!-- Gemini 2.5 Flash -->
         <UsageProgressBar
           v-if="gemini25FlashUsage !== null"
-          label="Gemini 2.5 Flash"
+          :label="t('admin.accounts.usageWindow.gemini25Flash')"
           :utilization="gemini25FlashUsage.utilization"
           :resets-at="gemini25FlashUsage.resetTime"
           color="amber"

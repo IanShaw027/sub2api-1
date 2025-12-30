@@ -204,8 +204,33 @@ func (r *GeminiQuotaRefresher) refreshAccountQuota(ctx context.Context, account 
 	}
 
 	updated := 0
+	// For Code Assist accounts, cache fetchAvailableModels result to avoid redundant API calls
+	var codeAssistModelsCache map[string]*geminiModelQuota
+	if projectID != "" {
+		log.Printf("[GeminiQuota] Account %d fetching available models (Code Assist)", account.ID)
+		codeAssistModelsCache = make(map[string]*geminiModelQuota)
+	}
+
 	for _, model := range geminiQuotaModels {
-		modelQuota, err := fetchGeminiModelQuota(proxyCtx, client, baseURL, accessToken, model, projectID, fallbackBaseURL)
+		var modelQuota *geminiModelQuota
+		var err error
+
+		// Use cached result for Code Assist to avoid redundant API calls
+		if projectID != "" && codeAssistModelsCache != nil {
+			if cached, ok := codeAssistModelsCache[model]; ok {
+				modelQuota = cached
+			} else {
+				// First call will populate the cache for all models
+				modelQuota, err = fetchGeminiModelQuota(proxyCtx, client, baseURL, accessToken, model, projectID, fallbackBaseURL)
+				if err == nil {
+					// Cache for other models (though fetchAvailableModels returns all models at once)
+					codeAssistModelsCache[model] = modelQuota
+				}
+			}
+		} else {
+			modelQuota, err = fetchGeminiModelQuota(proxyCtx, client, baseURL, accessToken, model, projectID, fallbackBaseURL)
+		}
+
 		if err != nil {
 			log.Printf("[GeminiQuota] Account %d model %s failed: %v", account.ID, model, err)
 			continue

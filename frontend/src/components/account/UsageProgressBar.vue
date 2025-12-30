@@ -21,9 +21,9 @@
 
     <!-- Progress bar row -->
     <div class="flex items-center gap-1">
-      <!-- Label badge (fixed width for alignment) -->
+      <!-- Label badge (min width for alignment, allows expansion for longer labels) -->
       <span
-        :class="['w-[32px] shrink-0 rounded px-1 text-center text-[10px] font-medium', labelClass]"
+        :class="['min-w-[32px] shrink-0 rounded px-1 text-center text-[10px] font-medium', labelClass]"
       >
         {{ label }}
       </span>
