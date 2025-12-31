@@ -201,21 +201,14 @@ func isValidThoughtSignature(signature string) bool {
 	// 检查是否是有效的 base64 字符
 	// base64 字符集: A-Z, a-z, 0-9, +, /, =
 	for i, c := range signature {
-		if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-			 (c >= '0' && c <= '9') || c == '+' || c == '/' || c == '=') {
+		if (c < 'A' || c > 'Z') && (c < 'a' || c > 'z') &&
+			(c < '0' || c > '9') && c != '+' && c != '/' && c != '=' {
 			log.Printf("[Debug] Invalid base64 character at position %d: %c (code=%d)", i, c, c)
 			return false
 		}
 	}
 
 	return true
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // buildParts 构建消息的 parts
