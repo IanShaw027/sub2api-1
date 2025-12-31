@@ -172,6 +172,42 @@ func buildContents(messages []ClaudeMessage, toolIDToName map[string]string, isT
 // 参考: https://ai.google.dev/gemini-api/docs/thought-signatures
 const dummyThoughtSignature = "skip_thought_signature_validator"
 
+// isValidThoughtSignature 验证 thought signature 是否有效
+// Claude API 要求 signature 必须是 base64 编码的字符串，长度至少 32 字节
+func isValidThoughtSignature(signature string) bool {
+	// 空字符串无效
+	if signature == "" {
+		return false
+	}
+
+	// signature 应该是 base64 编码，长度至少 40 个字符（约 30 字节）
+	// 参考 Claude API 文档和实际观察到的有效 signature
+	if len(signature) < 40 {
+		log.Printf("[Debug] Signature too short: len=%d", len(signature))
+		return false
+	}
+
+	// 检查是否是有效的 base64 字符
+	// base64 字符集: A-Z, a-z, 0-9, +, /, =
+	for i, c := range signature {
+		if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+			 (c >= '0' && c <= '9') || c == '+' || c == '/' || c == '=') {
+			log.Printf("[Debug] Invalid base64 character at position %d: %c (code=%d)", i, c, c)
+			return false
+		}
+	}
+
+	log.Printf("[Debug] Signature validation passed: len=%d, first 20 chars=%s", len(signature), signature[:min(20, len(signature))])
+	return true
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // buildParts 构建消息的 parts
 // allowDummyThought: 只有 Gemini 模型支持 dummy thought signature
 func buildParts(content json.RawMessage, toolIDToName map[string]string, allowDummyThought bool) ([]GeminiPart, error) {
@@ -200,15 +236,10 @@ func buildParts(content json.RawMessage, toolIDToName map[string]string, allowDu
 			}
 
 		case "thinking":
-			// Claude 模型需要有效的 signature，如果没有则跳过或转为普通文本
-			if block.Signature != "" {
-				part := GeminiPart{
-					Text:             block.Thinking,
-					Thought:          true,
-					ThoughtSignature: block.Signature,
-				}
-				parts = append(parts, part)
-			} else if allowDummyThought {
+			// Claude 模型的 thinking 块 signature 验证非常严格
+			// 即使格式正确的 signature 也可能被拒绝
+			// 最安全的做法是完全跳过 thinking 块
+			if allowDummyThought {
 				// Gemini 模型可以使用 dummy signature
 				part := GeminiPart{
 					Text:             block.Thinking,
@@ -217,8 +248,8 @@ func buildParts(content json.RawMessage, toolIDToName map[string]string, allowDu
 				}
 				parts = append(parts, part)
 			} else {
-				// Claude 模型需要有效 signature，跳过无 signature 的 thinking block
-				log.Printf("[Warning] Skipping thinking block without signature for Claude model")
+				// Claude 模型：完全跳过 thinking 块以避免 signature 验证问题
+				log.Printf("[Warning] Skipping thinking block for Claude model (signature validation too strict)")
 			}
 
 		case "image":
@@ -244,10 +275,9 @@ func buildParts(content json.RawMessage, toolIDToName map[string]string, allowDu
 					ID:   block.ID,
 				},
 			}
-			// 保留原有 signature，或对 Gemini 模型使用 dummy signature
-			if block.Signature != "" {
-				part.ThoughtSignature = block.Signature
-			} else if allowDummyThought {
+			// 只有 Gemini 模型使用 dummy signature
+			// Claude 模型不设置 signature（避免验证问题）
+			if allowDummyThought {
 				part.ThoughtSignature = dummyThoughtSignature
 			}
 			parts = append(parts, part)
@@ -578,9 +608,11 @@ func cleanSchemaValue(value any) any {
 			if k == "additionalProperties" {
 				if boolVal, ok := val.(bool); ok {
 					result[k] = boolVal
+					log.Printf("[Debug] additionalProperties is bool: %v", boolVal)
 				} else {
-					// 如果是 schema 对象，转换为 true
-					result[k] = true
+					// 如果是 schema 对象，转换为 false（更安全的默认值）
+					result[k] = false
+					log.Printf("[Debug] additionalProperties is not bool (type: %T), converting to false", val)
 				}
 				continue
 			}
