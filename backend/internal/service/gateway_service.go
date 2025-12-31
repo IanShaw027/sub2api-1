@@ -443,6 +443,11 @@ func (s *GatewayService) shouldUseAtomicScheduling(sessionHash string) bool {
 
 // selectAccountWithAtomicScheduling 使用原子化调度选择账号
 func (s *GatewayService) selectAccountWithAtomicScheduling(ctx context.Context, candidates []Account, requestID string) (*Account, error) {
+	// 如果requestID为空，生成唯一ID
+	if requestID == "" {
+		requestID = fmt.Sprintf("req-%d", time.Now().UnixNano())
+	}
+
 	// 构建候选账号列表
 	atomicCandidates := make([]*AccountCandidate, 0, len(candidates))
 	for i := range candidates {
@@ -458,8 +463,10 @@ func (s *GatewayService) selectAccountWithAtomicScheduling(ctx context.Context, 
 		})
 	}
 
-	// 调用原子化调度器
-	accountID, _, _, err := s.atomicScheduler.SelectAndAcquireAccountSlot(
+	// 调用原子化调度器（仅用于选择，不占用槽位）
+	// 注意：这里我们只使用原子化调度的选择逻辑（评分算法），
+	// 实际的并发控制由ConcurrencyService在上层处理
+	accountID, _, releaseFunc, err := s.atomicScheduler.SelectAndAcquireAccountSlot(
 		ctx, atomicCandidates, requestID, 300, // 5分钟超时
 	)
 	if err != nil {
@@ -467,6 +474,12 @@ func (s *GatewayService) selectAccountWithAtomicScheduling(ctx context.Context, 
 	}
 	if accountID == 0 {
 		return nil, errors.New("all accounts are at max concurrency")
+	}
+
+	// 立即释放槽位，因为我们只使用选择逻辑
+	// 实际的并发控制由ConcurrencyService处理
+	if releaseFunc != nil {
+		defer releaseFunc()
 	}
 
 	// 查找选中的账号
