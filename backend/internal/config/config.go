@@ -79,6 +79,17 @@ type GatewayConfig struct {
 	// 等待上游响应头的超时时间（秒），0表示无超时
 	// 注意：这不影响流式数据传输，只控制等待响应头的时间
 	ResponseHeaderTimeout int `mapstructure:"response_header_timeout"`
+
+	// 是否记录上游错误响应体摘要（避免输出请求内容）
+	LogUpstreamErrorBody bool `mapstructure:"log_upstream_error_body"`
+	// 上游错误响应体记录最大字节数（超过会截断）
+	LogUpstreamErrorBodyMaxBytes int `mapstructure:"log_upstream_error_body_max_bytes"`
+
+	// API-key 账号在客户端未提供 anthropic-beta 时，是否按需自动补齐（默认关闭以保持兼容）
+	InjectBetaForApiKey bool `mapstructure:"inject_beta_for_apikey"`
+
+	// 是否允许对部分 400 错误触发 failover（默认关闭以避免改变语义）
+	FailoverOn400 bool `mapstructure:"failover_on_400"`
 }
 
 func (s *ServerConfig) Address() string {
@@ -240,6 +251,10 @@ func setDefaults() {
 
 	// Gateway
 	viper.SetDefault("gateway.response_header_timeout", 300) // 300秒(5分钟)等待上游响应头，LLM高负载时可能排队较久
+	viper.SetDefault("gateway.log_upstream_error_body", false)
+	viper.SetDefault("gateway.log_upstream_error_body_max_bytes", 2048)
+	viper.SetDefault("gateway.inject_beta_for_apikey", false)
+	viper.SetDefault("gateway.failover_on_400", false)
 
 	// TokenRefresh
 	viper.SetDefault("token_refresh.enabled", true)

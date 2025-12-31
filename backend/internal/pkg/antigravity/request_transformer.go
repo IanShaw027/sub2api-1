@@ -14,12 +14,15 @@ func TransformClaudeToGemini(claudeReq *ClaudeRequest, projectID, mappedModel st
 	// 用于存储 tool_use id -> name 映射
 	toolIDToName := make(map[string]string)
 
-	// 检测是否启用 thinking
-	isThinkingEnabled := claudeReq.Thinking != nil && claudeReq.Thinking.Type == "enabled"
-
 	// 只有 Gemini 模型支持 dummy thought workaround
 	// Claude 模型通过 Vertex/Google API 需要有效的 thought signatures
 	allowDummyThought := strings.HasPrefix(mappedModel, "gemini-")
+
+	// 检测是否启用 thinking
+	requestedThinkingEnabled := claudeReq.Thinking != nil && claudeReq.Thinking.Type == "enabled"
+	// 为避免 Claude 模型的 thought signature/消息块约束导致 400（上游要求 thinking 块开头等），
+	// 非 Gemini 模型默认不启用 thinking（除非未来支持完整签名链路）。
+	isThinkingEnabled := requestedThinkingEnabled && allowDummyThought
 
 	// 1. 构建 contents
 	contents, err := buildContents(claudeReq.Messages, toolIDToName, isThinkingEnabled, allowDummyThought)
@@ -31,7 +34,15 @@ func TransformClaudeToGemini(claudeReq *ClaudeRequest, projectID, mappedModel st
 	systemInstruction := buildSystemInstruction(claudeReq.System, claudeReq.Model)
 
 	// 3. 构建 generationConfig
-	generationConfig := buildGenerationConfig(claudeReq)
+	reqForGen := claudeReq
+	if requestedThinkingEnabled && !allowDummyThought {
+		log.Printf("[Warning] Disabling thinking for non-Gemini model in antigravity transform: model=%s", mappedModel)
+		// shallow copy to avoid mutating caller's request
+		clone := *claudeReq
+		clone.Thinking = nil
+		reqForGen = &clone
+	}
+	generationConfig := buildGenerationConfig(reqForGen)
 
 	// 4. 构建 tools
 	tools := buildTools(claudeReq.Tools)
@@ -197,7 +208,6 @@ func isValidThoughtSignature(signature string) bool {
 		}
 	}
 
-	log.Printf("[Debug] Signature validation passed: len=%d, first 20 chars=%s", len(signature), signature[:min(20, len(signature))])
 	return true
 }
 
@@ -236,9 +246,6 @@ func buildParts(content json.RawMessage, toolIDToName map[string]string, allowDu
 			}
 
 		case "thinking":
-			// Claude 模型的 thinking 块 signature 验证非常严格
-			// 即使格式正确的 signature 也可能被拒绝
-			// 最安全的做法是完全跳过 thinking 块
 			if allowDummyThought {
 				// Gemini 模型可以使用 dummy signature
 				part := GeminiPart{
@@ -247,10 +254,23 @@ func buildParts(content json.RawMessage, toolIDToName map[string]string, allowDu
 					ThoughtSignature: dummyThoughtSignature,
 				}
 				parts = append(parts, part)
-			} else {
-				// Claude 模型：完全跳过 thinking 块以避免 signature 验证问题
-				log.Printf("[Warning] Skipping thinking block for Claude model (signature validation too strict)")
+				break
 			}
+
+			// Claude 模型：仅在提供有效 signature 时保留 thinking block；否则跳过以避免上游校验失败。
+			signature := strings.TrimSpace(block.Signature)
+			if signature == "" || signature == dummyThoughtSignature {
+				log.Printf("[Warning] Skipping thinking block for Claude model (missing or dummy signature)")
+				break
+			}
+			if !isValidThoughtSignature(signature) {
+				log.Printf("[Debug] Thinking signature may be invalid (passing through anyway): len=%d", len(signature))
+			}
+			parts = append(parts, GeminiPart{
+				Text:             block.Thinking,
+				Thought:          true,
+				ThoughtSignature: signature,
+			})
 
 		case "image":
 			if block.Source != nil && block.Source.Type == "base64" {
