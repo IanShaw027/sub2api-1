@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -164,6 +165,44 @@ type GeminiTokenInfo struct {
 	ProjectID    string `json:"project_id,omitempty"`
 	OAuthType    string `json:"oauth_type,omitempty"` // "code_assist" 或 "ai_studio"
 	TierID       string `json:"tier_id,omitempty"`    // Gemini Code Assist tier: LEGACY/PRO/ULTRA
+}
+
+// validateTierID validates tier_id format and length
+func validateTierID(tierID string) error {
+	if tierID == "" {
+		return nil // Empty is allowed
+	}
+	if len(tierID) > 64 {
+		return fmt.Errorf("tier_id exceeds maximum length of 64 characters")
+	}
+	// Allow alphanumeric, underscore, hyphen, and slash (for tier paths)
+	if !regexp.MustCompile(`^[a-zA-Z0-9_/-]+$`).MatchString(tierID) {
+		return fmt.Errorf("tier_id contains invalid characters")
+	}
+	return nil
+}
+
+// extractTierIDFromAllowedTiers extracts tierID from LoadCodeAssist response
+// Prioritizes IsDefault tier, falls back to first non-empty tier
+func extractTierIDFromAllowedTiers(allowedTiers []geminicli.AllowedTier) string {
+	tierID := "LEGACY"
+	// First pass: look for default tier
+	for _, tier := range allowedTiers {
+		if tier.IsDefault && strings.TrimSpace(tier.ID) != "" {
+			tierID = strings.TrimSpace(tier.ID)
+			break
+		}
+	}
+	// Second pass: if still LEGACY, take first non-empty tier
+	if tierID == "LEGACY" {
+		for _, tier := range allowedTiers {
+			if strings.TrimSpace(tier.ID) != "" {
+				tierID = strings.TrimSpace(tier.ID)
+				break
+			}
+		}
+	}
+	return tierID
 }
 
 func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExchangeCodeInput) (*GeminiTokenInfo, error) {
@@ -393,7 +432,11 @@ func (s *GeminiOAuthService) BuildAccountCredentials(tokenInfo *GeminiTokenInfo)
 		creds["project_id"] = tokenInfo.ProjectID
 	}
 	if tokenInfo.TierID != "" {
-		creds["tier_id"] = tokenInfo.TierID
+		// Validate tier_id before storing
+		if err := validateTierID(tokenInfo.TierID); err == nil {
+			creds["tier_id"] = tokenInfo.TierID
+		}
+		// Silently skip invalid tier_id (don't block account creation)
 	}
 	if tokenInfo.OAuthType != "" {
 		creds["oauth_type"] = tokenInfo.OAuthType
@@ -411,46 +454,20 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 	}
 
 	loadResp, loadErr := s.codeAssist.LoadCodeAssist(ctx, accessToken, proxyURL, nil)
+
+	// Extract tierID from response (works whether CloudAICompanionProject is set or not)
+	tierID := "LEGACY"
+	if loadResp != nil {
+		tierID = extractTierIDFromAllowedTiers(loadResp.AllowedTiers)
+	}
+
+	// If LoadCodeAssist returned a project, use it
 	if loadErr == nil && loadResp != nil && strings.TrimSpace(loadResp.CloudAICompanionProject) != "" {
-		// 获取tierID
-		tierID := "LEGACY"
-		if loadResp != nil {
-			for _, tier := range loadResp.AllowedTiers {
-				if tier.IsDefault && strings.TrimSpace(tier.ID) != "" {
-					tierID = strings.TrimSpace(tier.ID)
-					break
-				}
-			}
-			if strings.TrimSpace(tierID) == "" || tierID == "LEGACY" {
-				for _, tier := range loadResp.AllowedTiers {
-					if strings.TrimSpace(tier.ID) != "" {
-						tierID = strings.TrimSpace(tier.ID)
-						break
-					}
-				}
-			}
-		}
 		return strings.TrimSpace(loadResp.CloudAICompanionProject), tierID, nil
 	}
 
 	// Pick tier from allowedTiers; if no default tier is marked, pick the first non-empty tier ID.
-	tierID := "LEGACY"
-	if loadResp != nil {
-		for _, tier := range loadResp.AllowedTiers {
-			if tier.IsDefault && strings.TrimSpace(tier.ID) != "" {
-				tierID = strings.TrimSpace(tier.ID)
-				break
-			}
-		}
-		if strings.TrimSpace(tierID) == "" || tierID == "LEGACY" {
-			for _, tier := range loadResp.AllowedTiers {
-				if strings.TrimSpace(tier.ID) != "" {
-					tierID = strings.TrimSpace(tier.ID)
-					break
-				}
-			}
-		}
-	}
+	// (tierID already extracted above, reuse it)
 
 	req := &geminicli.OnboardUserRequest{
 		TierID: tierID,
