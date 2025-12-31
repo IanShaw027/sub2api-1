@@ -391,7 +391,7 @@ func buildTools(tools []ClaudeTool) []GeminiToolDeclaration {
 
 	// 普通工具
 	var funcDecls []GeminiFunctionDecl
-	for _, tool := range tools {
+	for i, tool := range tools {
 		var description string
 		var inputSchema map[string]any
 
@@ -405,6 +405,11 @@ func buildTools(tools []ClaudeTool) []GeminiToolDeclaration {
 			// custom 类型工具：从 Custom 字段获取 description 和 input_schema
 			description = tool.Custom.Description
 			inputSchema = tool.Custom.InputSchema
+
+			// 调试日志：记录 custom 工具的 schema
+			if schemaJSON, err := json.Marshal(inputSchema); err == nil {
+				log.Printf("[Debug] Tool[%d] '%s' (custom) original schema: %s", i, tool.Name, string(schemaJSON))
+			}
 		} else {
 			// 标准工具格式
 			description = tool.Description
@@ -413,6 +418,11 @@ func buildTools(tools []ClaudeTool) []GeminiToolDeclaration {
 
 		// 清理 JSON Schema
 		params := cleanJSONSchema(inputSchema)
+
+		// 调试日志：记录清理后的 schema
+		if paramsJSON, err := json.Marshal(params); err == nil {
+			log.Printf("[Debug] Tool[%d] '%s' cleaned schema: %s", i, tool.Name, string(paramsJSON))
+		}
 
 		funcDecls = append(funcDecls, GeminiFunctionDecl{
 			Name:        tool.Name,
@@ -475,10 +485,9 @@ func cleanJSONSchema(schema map[string]any) map[string]any {
 }
 
 // excludedSchemaKeys 不支持的 schema 字段
-// 基于 Gemini API 官方文档: https://ai.google.dev/gemini-api/docs/structured-output
-// Gemini 支持: type, title, description, enum, format (date-time/date/time), minimum, maximum,
-//
-//	properties, required, additionalProperties, items, prefixItems, minItems, maxItems
+// 基于 Claude API (Vertex AI) 的实际支持情况
+// 支持: type, description, enum, properties, required, additionalProperties, items
+// 不支持: minItems, maxItems, minLength, maxLength, pattern, minimum, maximum 等验证字段
 var excludedSchemaKeys = map[string]bool{
 	// 元 schema 字段
 	"$schema": true,
@@ -494,8 +503,10 @@ var excludedSchemaKeys = map[string]bool{
 	"exclusiveMinimum": true,
 	"exclusiveMaximum": true,
 
-	// 数组验证（仅保留 minItems/maxItems）
+	// 数组验证（Claude API 通过 Vertex AI 不支持这些字段）
 	"uniqueItems": true,
+	"minItems":    true,
+	"maxItems":    true,
 
 	// 组合 schema（Gemini 不支持）
 	"oneOf":       true,
