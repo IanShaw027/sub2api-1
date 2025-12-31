@@ -106,6 +106,7 @@ type GatewayService struct {
 	identityService     *IdentityService
 	httpUpstream        HTTPUpstream
 	deferredService     *DeferredService
+	atomicScheduler     *AtomicScheduler
 }
 
 // NewGatewayService creates a new GatewayService
@@ -123,6 +124,7 @@ func NewGatewayService(
 	identityService *IdentityService,
 	httpUpstream HTTPUpstream,
 	deferredService *DeferredService,
+	atomicScheduler *AtomicScheduler,
 ) *GatewayService {
 	return &GatewayService{
 		accountRepo:         accountRepo,
@@ -138,6 +140,7 @@ func NewGatewayService(
 		identityService:     identityService,
 		httpUpstream:        httpUpstream,
 		deferredService:     deferredService,
+		atomicScheduler:     atomicScheduler,
 	}
 }
 
@@ -366,8 +369,8 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 		return nil, fmt.Errorf("query accounts failed: %w", err)
 	}
 
-	// 3. 按优先级+最久未用选择（考虑模型支持）
-	var selected *Account
+	// 过滤排除的账号和不支持的模型
+	var candidates []Account
 	for i := range accounts {
 		acc := &accounts[i]
 		if _, excluded := excludedIDs[acc.ID]; excluded {
@@ -376,6 +379,102 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 		if requestedModel != "" && !s.isModelSupportedByAccount(acc, requestedModel) {
 			continue
 		}
+		candidates = append(candidates, *acc)
+	}
+
+	if len(candidates) == 0 {
+		if requestedModel != "" {
+			return nil, fmt.Errorf("no available accounts supporting model: %s", requestedModel)
+		}
+		return nil, errors.New("no available accounts")
+	}
+
+	// 3. 选择账号：原子化调度 vs 传统调度
+	var selected *Account
+
+	if s.atomicScheduler != nil {
+		// 使用原子化调度
+		selected, err = s.selectAccountWithAtomicScheduling(ctx, candidates, sessionHash)
+		if err != nil {
+			log.Printf("atomic scheduling failed, fallback to traditional: %v", err)
+			// 降级到传统调度
+			selected = s.selectAccountTraditional(candidates)
+		}
+	} else {
+		// 使用传统调度
+		selected = s.selectAccountTraditional(candidates)
+	}
+
+	if selected == nil {
+		return nil, errors.New("no available accounts")
+	}
+
+	// 4. 建立粘性绑定
+	if sessionHash != "" {
+		if err := s.cache.SetSessionAccountID(ctx, sessionHash, selected.ID, stickySessionTTL); err != nil {
+			log.Printf("set session account failed: session=%s account_id=%d err=%v", sessionHash, selected.ID, err)
+		}
+	}
+
+	return selected, nil
+}
+
+// selectAccountWithAtomicScheduling 使用原子化调度选择账号
+func (s *GatewayService) selectAccountWithAtomicScheduling(ctx context.Context, candidates []Account, requestID string) (*Account, error) {
+	// 如果requestID为空，生成唯一ID
+	if requestID == "" {
+		requestID = fmt.Sprintf("req-%d", time.Now().UnixNano())
+	}
+
+	// 构建候选账号列表
+	atomicCandidates := make([]*AccountCandidate, 0, len(candidates))
+	for i := range candidates {
+		acc := &candidates[i]
+		maxConcurrency := acc.Concurrency
+		if maxConcurrency <= 0 {
+			maxConcurrency = 10 // 默认并发数
+		}
+		atomicCandidates = append(atomicCandidates, &AccountCandidate{
+			ID:             acc.ID,
+			Priority:       acc.Priority,
+			MaxConcurrency: maxConcurrency,
+		})
+	}
+
+	// 调用原子化调度器（仅用于选择，不占用槽位）
+	// 注意：这里我们只使用原子化调度的选择逻辑（评分算法），
+	// 实际的并发控制由ConcurrencyService在上层处理
+	accountID, _, releaseFunc, err := s.atomicScheduler.SelectAndAcquireAccountSlot(
+		ctx, atomicCandidates, requestID, 300, // 5分钟超时
+	)
+	if err != nil {
+		return nil, err
+	}
+	if accountID == 0 {
+		return nil, errors.New("all accounts are at max concurrency")
+	}
+
+	// 立即释放槽位，因为我们只使用选择逻辑
+	// 实际的并发控制由ConcurrencyService处理
+	if releaseFunc != nil {
+		defer releaseFunc()
+	}
+
+	// 查找选中的账号
+	for i := range candidates {
+		if candidates[i].ID == accountID {
+			return &candidates[i], nil
+		}
+	}
+
+	return nil, fmt.Errorf("selected account %d not found in candidates", accountID)
+}
+
+// selectAccountTraditional 使用传统方式选择账号（优先级+最久未用）
+func (s *GatewayService) selectAccountTraditional(candidates []Account) *Account {
+	var selected *Account
+	for i := range candidates {
+		acc := &candidates[i]
 		if selected == nil {
 			selected = acc
 			continue
@@ -397,22 +496,7 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 			}
 		}
 	}
-
-	if selected == nil {
-		if requestedModel != "" {
-			return nil, fmt.Errorf("no available accounts supporting model: %s", requestedModel)
-		}
-		return nil, errors.New("no available accounts")
-	}
-
-	// 4. 建立粘性绑定
-	if sessionHash != "" {
-		if err := s.cache.SetSessionAccountID(ctx, sessionHash, selected.ID, stickySessionTTL); err != nil {
-			log.Printf("set session account failed: session=%s account_id=%d err=%v", sessionHash, selected.ID, err)
-		}
-	}
-
-	return selected, nil
+	return selected
 }
 
 // selectAccountWithMixedScheduling 选择账户（支持混合调度）

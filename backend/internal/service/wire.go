@@ -115,4 +115,5 @@ var ProviderSet = wire.NewSet(
 	ProvideTimingWheelService,
 	ProvideDeferredService,
 	ProvideAntigravityQuotaRefresher,
+	NewAtomicScheduler,
 )
