@@ -2300,10 +2300,10 @@ func cleanToolSchema(schema any) any {
 		cleaned := make(map[string]any)
 		for key, value := range v {
 			// 跳过不支持的字段
+			// 跳过不支持的字段
 			if key == "$schema" || key == "$id" || key == "$ref" ||
-			   key == "additionalProperties" || key == "minLength" ||
-			   key == "maxLength" || key == "minItems" || key == "maxItems" {
-				continue
+				key == "additionalProperties" || key == "minLength" ||
+				key == "maxLength" || key == "minItems" || key == "maxItems" {
 			}
 			// 递归清理嵌套对象
 			cleaned[key] = cleanToolSchema(value)

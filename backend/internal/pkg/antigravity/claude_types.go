@@ -42,7 +42,7 @@ type ClaudeTool struct {
 	Name        string                 `json:"name"`
 	Description string                 `json:"description,omitempty"`
 	InputSchema map[string]any         `json:"input_schema,omitempty"`
-	Custom      *ClaudeCustomToolSpec  `json:"custom,omitempty"`      // for custom type tools
+	Custom      *ClaudeCustomToolSpec  `json:"custom,omitempty"` // for custom type tools
 }
 
 // ClaudeCustomToolSpec Custom 类型工具的规格（MCP 格式）
