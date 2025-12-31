@@ -39,11 +39,11 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	if err != nil {
 		return nil, err
 	}
-	sqlDB, err := infrastructure.ProvideSQLDB(client)
+	db, err := infrastructure.ProvideSQLDB(client)
 	if err != nil {
 		return nil, err
 	}
-	userRepository := repository.NewUserRepository(client, sqlDB)
+	userRepository := repository.NewUserRepository(client, db)
 	settingRepository := repository.NewSettingRepository(client)
 	settingService := service.NewSettingService(settingRepository, configConfig)
 	redisClient := infrastructure.ProvideRedis(configConfig)
@@ -57,12 +57,12 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	authHandler := handler.NewAuthHandler(configConfig, authService, userService)
 	userHandler := handler.NewUserHandler(userService)
 	apiKeyRepository := repository.NewApiKeyRepository(client)
-	groupRepository := repository.NewGroupRepository(client, sqlDB)
+	groupRepository := repository.NewGroupRepository(client, db)
 	userSubscriptionRepository := repository.NewUserSubscriptionRepository(client)
 	apiKeyCache := repository.NewApiKeyCache(redisClient)
 	apiKeyService := service.NewApiKeyService(apiKeyRepository, userRepository, groupRepository, userSubscriptionRepository, apiKeyCache, configConfig)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
-	usageLogRepository := repository.NewUsageLogRepository(client, sqlDB)
+	usageLogRepository := repository.NewUsageLogRepository(client, db)
 	usageService := service.NewUsageService(usageLogRepository, userRepository)
 	usageHandler := handler.NewUsageHandler(usageService, apiKeyService)
 	redeemCodeRepository := repository.NewRedeemCodeRepository(client)
@@ -75,8 +75,8 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	subscriptionHandler := handler.NewSubscriptionHandler(subscriptionService)
 	dashboardService := service.NewDashboardService(usageLogRepository)
 	dashboardHandler := admin.NewDashboardHandler(dashboardService)
-	accountRepository := repository.NewAccountRepository(client, sqlDB)
-	proxyRepository := repository.NewProxyRepository(client, sqlDB)
+	accountRepository := repository.NewAccountRepository(client, db)
+	proxyRepository := repository.NewProxyRepository(client, db)
 	proxyExitInfoProber := repository.NewProxyExitInfoProber()
 	adminService := service.NewAdminService(userRepository, groupRepository, accountRepository, proxyRepository, apiKeyRepository, redeemCodeRepository, billingCacheService, proxyExitInfoProber)
 	adminUserHandler := admin.NewUserHandler(adminService)
@@ -126,7 +126,8 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	identityService := service.NewIdentityService(identityCache)
 	timingWheelService := service.ProvideTimingWheelService()
 	deferredService := service.ProvideDeferredService(accountRepository, timingWheelService)
-	gatewayService := service.NewGatewayService(accountRepository, groupRepository, usageLogRepository, userRepository, userSubscriptionRepository, gatewayCache, configConfig, billingService, rateLimitService, billingCacheService, identityService, httpUpstream, deferredService)
+	atomicScheduler := service.NewAtomicScheduler(redisClient)
+	gatewayService := service.NewGatewayService(accountRepository, groupRepository, usageLogRepository, userRepository, userSubscriptionRepository, gatewayCache, configConfig, billingService, rateLimitService, billingCacheService, identityService, httpUpstream, deferredService, atomicScheduler)
 	antigravityTokenProvider := service.NewAntigravityTokenProvider(accountRepository, geminiTokenCache, antigravityOAuthService)
 	antigravityGatewayService := service.NewAntigravityGatewayService(accountRepository, gatewayCache, antigravityTokenProvider, rateLimitService, httpUpstream)
 	geminiMessagesCompatService := service.NewGeminiMessagesCompatService(accountRepository, groupRepository, gatewayCache, geminiTokenProvider, rateLimitService, httpUpstream, antigravityGatewayService)

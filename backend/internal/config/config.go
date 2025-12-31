@@ -79,6 +79,8 @@ type GatewayConfig struct {
 	// 等待上游响应头的超时时间（秒），0表示无超时
 	// 注意：这不影响流式数据传输，只控制等待响应头的时间
 	ResponseHeaderTimeout int `mapstructure:"response_header_timeout"`
+	// 原子化调度启用百分比（0-100），用于灰度发布
+	AtomicSchedulingPercentage int `mapstructure:"atomic_scheduling_percentage"`
 }
 
 func (s *ServerConfig) Address() string {
