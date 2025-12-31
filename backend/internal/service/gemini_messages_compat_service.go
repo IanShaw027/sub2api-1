@@ -472,7 +472,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 		}
 		requestIDHeader = idHeader
 
-		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL)
+		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 		if err != nil {
 			if attempt < geminiMaxRetries {
 				log.Printf("Gemini account %d: upstream request failed, retry %d/%d: %v", account.ID, attempt, geminiMaxRetries, err)
@@ -725,7 +725,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 		}
 		requestIDHeader = idHeader
 
-		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL)
+		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 		if err != nil {
 			if attempt < geminiMaxRetries {
 				log.Printf("Gemini account %d: upstream request failed, retry %d/%d: %v", account.ID, attempt, geminiMaxRetries, err)
@@ -921,7 +921,10 @@ func sleepGeminiBackoff(attempt int) {
 	time.Sleep(sleepFor)
 }
 
-var sensitiveQueryParamRegex = regexp.MustCompile(`(?i)([?&](?:key|client_secret|access_token|refresh_token)=)[^&"\s]+`)
+var (
+	sensitiveQueryParamRegex = regexp.MustCompile(`(?i)([?&](?:key|client_secret|access_token|refresh_token)=)[^&"\s]+`)
+	retryInRegex             = regexp.MustCompile(`Please retry in ([0-9.]+)s`)
+)
 
 func sanitizeUpstreamErrorMessage(msg string) string {
 	if msg == "" {
@@ -1753,7 +1756,7 @@ func (s *GeminiMessagesCompatService) ForwardAIStudioGET(ctx context.Context, ac
 		return nil, fmt.Errorf("unsupported account type: %s", account.Type)
 	}
 
-	resp, err := s.httpUpstream.Do(req, proxyURL)
+	resp, err := s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
 	if err != nil {
 		return nil, err
 	}
@@ -1925,7 +1928,6 @@ func ParseGeminiRateLimitResetTime(body []byte) *int64 {
 	}
 
 	// Match "Please retry in Xs"
-	retryInRegex := regexp.MustCompile(`Please retry in ([0-9.]+)s`)
 	matches := retryInRegex.FindStringSubmatch(string(body))
 	if len(matches) == 2 {
 		if dur, err := time.ParseDuration(matches[1] + "s"); err == nil {
@@ -2247,10 +2249,10 @@ func convertClaudeToolsToGeminiTools(tools any) []any {
 		var name, desc string
 		var params any
 
-		// 检查是否为 custom 类型工具（MCP 格式）
+		// 检查是否为 custom 类型工具 (MCP)
 		toolType, _ := tm["type"].(string)
 		if toolType == "custom" {
-			// custom 类型工具：从 custom 字段获取 description 和 input_schema
+			// Custom 格式: 从 custom 字段获取 description 和 input_schema
 			custom, ok := tm["custom"].(map[string]any)
 			if !ok {
 				continue
@@ -2259,7 +2261,7 @@ func convertClaudeToolsToGeminiTools(tools any) []any {
 			desc, _ = custom["description"].(string)
 			params = custom["input_schema"]
 		} else {
-			// 标准工具格式
+			// 标准格式: 从顶层字段获取
 			name, _ = tm["name"].(string)
 			desc, _ = tm["description"].(string)
 			params = tm["input_schema"]
@@ -2269,6 +2271,13 @@ func convertClaudeToolsToGeminiTools(tools any) []any {
 			continue
 		}
 
+		// 为 nil params 提供默认值
+		if params == nil {
+			params = map[string]any{
+				"type":       "object",
+				"properties": map[string]any{},
+			}
+		}
 		// 清理 JSON Schema
 		cleanedParams := cleanToolSchema(params)
 

@@ -311,7 +311,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 
 	// Send request
-	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL)
+	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 	if err != nil {
 		return nil, fmt.Errorf("upstream request failed: %w", err)
 	}
@@ -772,20 +772,12 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if isSubscriptionBilling {
 		if cost.TotalCost > 0 {
 			_ = s.userSubRepo.IncrementUsage(ctx, subscription.ID, cost.TotalCost)
-			go func() {
-				cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				_ = s.billingCacheService.UpdateSubscriptionUsage(cacheCtx, user.ID, *apiKey.GroupID, cost.TotalCost)
-			}()
+			s.billingCacheService.QueueUpdateSubscriptionUsage(user.ID, *apiKey.GroupID, cost.TotalCost)
 		}
 	} else {
 		if cost.ActualCost > 0 {
 			_ = s.userRepo.DeductBalance(ctx, user.ID, cost.ActualCost)
-			go func() {
-				cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				_ = s.billingCacheService.DeductBalanceCache(cacheCtx, user.ID, cost.ActualCost)
-			}()
+			s.billingCacheService.QueueDeductBalance(user.ID, cost.ActualCost)
 		}
 	}
 

@@ -12,6 +12,20 @@ const (
 	RunModeSimple   = "simple"
 )
 
+// 连接池隔离策略常量
+// 用于控制上游 HTTP 连接池的隔离粒度，影响连接复用和资源消耗
+const (
+	// ConnectionPoolIsolationProxy: 按代理隔离
+	// 同一代理地址共享连接池，适合代理数量少、账户数量多的场景
+	ConnectionPoolIsolationProxy = "proxy"
+	// ConnectionPoolIsolationAccount: 按账户隔离
+	// 每个账户独立连接池，适合账户数量少、需要严格隔离的场景
+	ConnectionPoolIsolationAccount = "account"
+	// ConnectionPoolIsolationAccountProxy: 按账户+代理组合隔离（默认）
+	// 同一账户+代理组合共享连接池，提供最细粒度的隔离
+	ConnectionPoolIsolationAccountProxy = "account_proxy"
+)
+
 type Config struct {
 	Server       ServerConfig       `mapstructure:"server"`
 	Database     DatabaseConfig     `mapstructure:"database"`
@@ -79,6 +93,32 @@ type GatewayConfig struct {
 	// 等待上游响应头的超时时间（秒），0表示无超时
 	// 注意：这不影响流式数据传输，只控制等待响应头的时间
 	ResponseHeaderTimeout int `mapstructure:"response_header_timeout"`
+	// 请求体最大字节数，用于网关请求体大小限制
+	MaxBodySize int64 `mapstructure:"max_body_size"`
+	// ConnectionPoolIsolation: 上游连接池隔离策略（proxy/account/account_proxy）
+	ConnectionPoolIsolation string `mapstructure:"connection_pool_isolation"`
+
+	// HTTP 上游连接池配置（性能优化：支持高并发场景调优）
+	// MaxIdleConns: 所有主机的最大空闲连接总数
+	MaxIdleConns int `mapstructure:"max_idle_conns"`
+	// MaxIdleConnsPerHost: 每个主机的最大空闲连接数（关键参数，影响连接复用率）
+	MaxIdleConnsPerHost int `mapstructure:"max_idle_conns_per_host"`
+	// MaxConnsPerHost: 每个主机的最大连接数（包括活跃+空闲），0表示无限制
+	MaxConnsPerHost int `mapstructure:"max_conns_per_host"`
+	// IdleConnTimeoutSeconds: 空闲连接超时时间（秒）
+	IdleConnTimeoutSeconds int `mapstructure:"idle_conn_timeout_seconds"`
+	// MaxUpstreamClients: 上游连接池客户端最大缓存数量
+	// 当使用连接池隔离策略时，系统会为不同的账户/代理组合创建独立的 HTTP 客户端
+	// 此参数限制缓存的客户端数量，超出后会淘汰最久未使用的客户端
+	// 建议值：预估的活跃账户数 * 1.2（留有余量）
+	MaxUpstreamClients int `mapstructure:"max_upstream_clients"`
+	// ClientIdleTTLSeconds: 上游连接池客户端空闲回收阈值（秒）
+	// 超过此时间未使用的客户端会被标记为可回收
+	// 建议值：根据用户访问频率设置，一般 10-30 分钟
+	ClientIdleTTLSeconds int `mapstructure:"client_idle_ttl_seconds"`
+	// ConcurrencySlotTTLMinutes: 并发槽位过期时间（分钟）
+	// 应大于最长 LLM 请求时间，防止请求完成前槽位过期
+	ConcurrencySlotTTLMinutes int `mapstructure:"concurrency_slot_ttl_minutes"`
 
 	// 是否记录上游错误响应体摘要（避免输出请求内容）
 	LogUpstreamErrorBody bool `mapstructure:"log_upstream_error_body"`
@@ -96,6 +136,8 @@ func (s *ServerConfig) Address() string {
 	return fmt.Sprintf("%s:%d", s.Host, s.Port)
 }
 
+// DatabaseConfig 数据库连接配置
+// 性能优化：新增连接池参数，避免频繁创建/销毁连接
 type DatabaseConfig struct {
 	Host     string `mapstructure:"host"`
 	Port     int    `mapstructure:"port"`
@@ -103,6 +145,15 @@ type DatabaseConfig struct {
 	Password string `mapstructure:"password"`
 	DBName   string `mapstructure:"dbname"`
 	SSLMode  string `mapstructure:"sslmode"`
+	// 连接池配置（性能优化：可配置化连接池参数）
+	// MaxOpenConns: 最大打开连接数，控制数据库连接上限，防止资源耗尽
+	MaxOpenConns int `mapstructure:"max_open_conns"`
+	// MaxIdleConns: 最大空闲连接数，保持热连接减少建连延迟
+	MaxIdleConns int `mapstructure:"max_idle_conns"`
+	// ConnMaxLifetimeMinutes: 连接最大存活时间，防止长连接导致的资源泄漏
+	ConnMaxLifetimeMinutes int `mapstructure:"conn_max_lifetime_minutes"`
+	// ConnMaxIdleTimeMinutes: 空闲连接最大存活时间，及时释放不活跃连接
+	ConnMaxIdleTimeMinutes int `mapstructure:"conn_max_idle_time_minutes"`
 }
 
 func (d *DatabaseConfig) DSN() string {
@@ -123,11 +174,24 @@ func (d *DatabaseConfig) DSNWithTimezone(tz string) string {
 	)
 }
 
+// RedisConfig Redis 连接配置
+// 性能优化：新增连接池和超时参数，提升高并发场景下的吞吐量
 type RedisConfig struct {
 	Host     string `mapstructure:"host"`
 	Port     int    `mapstructure:"port"`
 	Password string `mapstructure:"password"`
 	DB       int    `mapstructure:"db"`
+	// 连接池与超时配置（性能优化：可配置化连接池参数）
+	// DialTimeoutSeconds: 建立连接超时，防止慢连接阻塞
+	DialTimeoutSeconds int `mapstructure:"dial_timeout_seconds"`
+	// ReadTimeoutSeconds: 读取超时，避免慢查询阻塞连接池
+	ReadTimeoutSeconds int `mapstructure:"read_timeout_seconds"`
+	// WriteTimeoutSeconds: 写入超时，避免慢写入阻塞连接池
+	WriteTimeoutSeconds int `mapstructure:"write_timeout_seconds"`
+	// PoolSize: 连接池大小，控制最大并发连接数
+	PoolSize int `mapstructure:"pool_size"`
+	// MinIdleConns: 最小空闲连接数，保持热连接减少冷启动延迟
+	MinIdleConns int `mapstructure:"min_idle_conns"`
 }
 
 func (r *RedisConfig) Address() string {
@@ -214,12 +278,21 @@ func setDefaults() {
 	viper.SetDefault("database.password", "postgres")
 	viper.SetDefault("database.dbname", "sub2api")
 	viper.SetDefault("database.sslmode", "disable")
+	viper.SetDefault("database.max_open_conns", 50)
+	viper.SetDefault("database.max_idle_conns", 10)
+	viper.SetDefault("database.conn_max_lifetime_minutes", 30)
+	viper.SetDefault("database.conn_max_idle_time_minutes", 5)
 
 	// Redis
 	viper.SetDefault("redis.host", "localhost")
 	viper.SetDefault("redis.port", 6379)
 	viper.SetDefault("redis.password", "")
 	viper.SetDefault("redis.db", 0)
+	viper.SetDefault("redis.dial_timeout_seconds", 5)
+	viper.SetDefault("redis.read_timeout_seconds", 3)
+	viper.SetDefault("redis.write_timeout_seconds", 3)
+	viper.SetDefault("redis.pool_size", 128)
+	viper.SetDefault("redis.min_idle_conns", 10)
 
 	// JWT
 	viper.SetDefault("jwt.secret", "change-me-in-production")
@@ -255,6 +328,16 @@ func setDefaults() {
 	viper.SetDefault("gateway.log_upstream_error_body_max_bytes", 2048)
 	viper.SetDefault("gateway.inject_beta_for_apikey", false)
 	viper.SetDefault("gateway.failover_on_400", false)
+	viper.SetDefault("gateway.max_body_size", int64(100*1024*1024))
+	viper.SetDefault("gateway.connection_pool_isolation", ConnectionPoolIsolationAccountProxy)
+	// HTTP 上游连接池配置（针对 5000+ 并发用户优化）
+	viper.SetDefault("gateway.max_idle_conns", 240)            // 最大空闲连接总数（HTTP/2 场景默认）
+	viper.SetDefault("gateway.max_idle_conns_per_host", 120)   // 每主机最大空闲连接（HTTP/2 场景默认）
+	viper.SetDefault("gateway.max_conns_per_host", 240)        // 每主机最大连接数（含活跃，HTTP/2 场景默认）
+	viper.SetDefault("gateway.idle_conn_timeout_seconds", 300) // 空闲连接超时（秒）
+	viper.SetDefault("gateway.max_upstream_clients", 5000)
+	viper.SetDefault("gateway.client_idle_ttl_seconds", 900)
+	viper.SetDefault("gateway.concurrency_slot_ttl_minutes", 15) // 并发槽位过期时间（支持超长请求）
 
 	// TokenRefresh
 	viper.SetDefault("token_refresh.enabled", true)
@@ -277,6 +360,71 @@ func (c *Config) Validate() error {
 	}
 	if c.JWT.Secret == "change-me-in-production" && c.Server.Mode == "release" {
 		return fmt.Errorf("jwt.secret must be changed in production")
+	}
+	if c.Database.MaxOpenConns <= 0 {
+		return fmt.Errorf("database.max_open_conns must be positive")
+	}
+	if c.Database.MaxIdleConns < 0 {
+		return fmt.Errorf("database.max_idle_conns must be non-negative")
+	}
+	if c.Database.MaxIdleConns > c.Database.MaxOpenConns {
+		return fmt.Errorf("database.max_idle_conns cannot exceed database.max_open_conns")
+	}
+	if c.Database.ConnMaxLifetimeMinutes < 0 {
+		return fmt.Errorf("database.conn_max_lifetime_minutes must be non-negative")
+	}
+	if c.Database.ConnMaxIdleTimeMinutes < 0 {
+		return fmt.Errorf("database.conn_max_idle_time_minutes must be non-negative")
+	}
+	if c.Redis.DialTimeoutSeconds <= 0 {
+		return fmt.Errorf("redis.dial_timeout_seconds must be positive")
+	}
+	if c.Redis.ReadTimeoutSeconds <= 0 {
+		return fmt.Errorf("redis.read_timeout_seconds must be positive")
+	}
+	if c.Redis.WriteTimeoutSeconds <= 0 {
+		return fmt.Errorf("redis.write_timeout_seconds must be positive")
+	}
+	if c.Redis.PoolSize <= 0 {
+		return fmt.Errorf("redis.pool_size must be positive")
+	}
+	if c.Redis.MinIdleConns < 0 {
+		return fmt.Errorf("redis.min_idle_conns must be non-negative")
+	}
+	if c.Redis.MinIdleConns > c.Redis.PoolSize {
+		return fmt.Errorf("redis.min_idle_conns cannot exceed redis.pool_size")
+	}
+	if c.Gateway.MaxBodySize <= 0 {
+		return fmt.Errorf("gateway.max_body_size must be positive")
+	}
+	if strings.TrimSpace(c.Gateway.ConnectionPoolIsolation) != "" {
+		switch c.Gateway.ConnectionPoolIsolation {
+		case ConnectionPoolIsolationProxy, ConnectionPoolIsolationAccount, ConnectionPoolIsolationAccountProxy:
+		default:
+			return fmt.Errorf("gateway.connection_pool_isolation must be one of: %s/%s/%s",
+				ConnectionPoolIsolationProxy, ConnectionPoolIsolationAccount, ConnectionPoolIsolationAccountProxy)
+		}
+	}
+	if c.Gateway.MaxIdleConns <= 0 {
+		return fmt.Errorf("gateway.max_idle_conns must be positive")
+	}
+	if c.Gateway.MaxIdleConnsPerHost <= 0 {
+		return fmt.Errorf("gateway.max_idle_conns_per_host must be positive")
+	}
+	if c.Gateway.MaxConnsPerHost < 0 {
+		return fmt.Errorf("gateway.max_conns_per_host must be non-negative")
+	}
+	if c.Gateway.IdleConnTimeoutSeconds <= 0 {
+		return fmt.Errorf("gateway.idle_conn_timeout_seconds must be positive")
+	}
+	if c.Gateway.MaxUpstreamClients <= 0 {
+		return fmt.Errorf("gateway.max_upstream_clients must be positive")
+	}
+	if c.Gateway.ClientIdleTTLSeconds <= 0 {
+		return fmt.Errorf("gateway.client_idle_ttl_seconds must be positive")
+	}
+	if c.Gateway.ConcurrencySlotTTLMinutes <= 0 {
+		return fmt.Errorf("gateway.concurrency_slot_ttl_minutes must be positive")
 	}
 	return nil
 }
