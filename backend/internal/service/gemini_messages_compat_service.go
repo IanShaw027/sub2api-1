@@ -2243,16 +2243,39 @@ func convertClaudeToolsToGeminiTools(tools any) []any {
 		if !ok {
 			continue
 		}
-		name, _ := tm["name"].(string)
-		desc, _ := tm["description"].(string)
-		params := tm["input_schema"]
+
+		var name, desc string
+		var params any
+
+		// 检查是否为 custom 类型工具（MCP 格式）
+		toolType, _ := tm["type"].(string)
+		if toolType == "custom" {
+			// custom 类型工具：从 custom 字段获取 description 和 input_schema
+			custom, ok := tm["custom"].(map[string]any)
+			if !ok {
+				continue
+			}
+			name, _ = tm["name"].(string)
+			desc, _ = custom["description"].(string)
+			params = custom["input_schema"]
+		} else {
+			// 标准工具格式
+			name, _ = tm["name"].(string)
+			desc, _ = tm["description"].(string)
+			params = tm["input_schema"]
+		}
+
 		if name == "" {
 			continue
 		}
+
+		// 清理 JSON Schema
+		cleanedParams := cleanToolSchema(params)
+
 		funcDecls = append(funcDecls, map[string]any{
 			"name":        name,
 			"description": desc,
-			"parameters":  params,
+			"parameters":  cleanedParams,
 		})
 	}
 
@@ -2263,6 +2286,41 @@ func convertClaudeToolsToGeminiTools(tools any) []any {
 		map[string]any{
 			"functionDeclarations": funcDecls,
 		},
+	}
+}
+
+// cleanToolSchema 清理工具的 JSON Schema，移除 Gemini 不支持的字段
+func cleanToolSchema(schema any) any {
+	if schema == nil {
+		return nil
+	}
+
+	switch v := schema.(type) {
+	case map[string]any:
+		cleaned := make(map[string]any)
+		for key, value := range v {
+			// 跳过不支持的字段
+			if key == "$schema" || key == "$id" || key == "$ref" ||
+			   key == "additionalProperties" || key == "minLength" ||
+			   key == "maxLength" || key == "minItems" || key == "maxItems" {
+				continue
+			}
+			// 递归清理嵌套对象
+			cleaned[key] = cleanToolSchema(value)
+		}
+		// 规范化 type 字段为大写
+		if typeVal, ok := cleaned["type"].(string); ok {
+			cleaned["type"] = strings.ToUpper(typeVal)
+		}
+		return cleaned
+	case []any:
+		cleaned := make([]any, len(v))
+		for i, item := range v {
+			cleaned[i] = cleanToolSchema(item)
+		}
+		return cleaned
+	default:
+		return v
 	}
 }
 
