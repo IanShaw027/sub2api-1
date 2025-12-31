@@ -497,6 +497,26 @@ var excludedSchemaKeys = map[string]bool{
 	// 数组验证（仅保留 minItems/maxItems）
 	"uniqueItems": true,
 
+	// 组合 schema（Gemini 不支持）
+	"oneOf":       true,
+	"anyOf":       true,
+	"allOf":       true,
+	"not":         true,
+	"if":          true,
+	"then":        true,
+	"else":        true,
+	"$defs":       true,
+	"definitions": true,
+
+	// 对象验证（仅保留 properties/required/additionalProperties）
+	"minProperties":     true,
+	"maxProperties":     true,
+	"patternProperties": true,
+	"propertyNames":     true,
+	"dependencies":      true,
+	"dependentSchemas":  true,
+	"dependentRequired": true,
+
 	// 其他不支持的字段
 	"default":          true,
 	"const":            true,
@@ -525,6 +545,18 @@ func cleanSchemaValue(value any) any {
 			// 特殊处理 type 字段
 			if k == "type" {
 				result[k] = cleanTypeValue(val)
+				continue
+			}
+
+			// 特殊处理 format 字段：只保留 Gemini 支持的 format 值
+			if k == "format" {
+				if formatStr, ok := val.(string); ok {
+					// Gemini 只支持 date-time, date, time
+					if formatStr == "date-time" || formatStr == "date" || formatStr == "time" {
+						result[k] = val
+					}
+					// 其他 format 值直接跳过
+				}
 				continue
 			}
 
