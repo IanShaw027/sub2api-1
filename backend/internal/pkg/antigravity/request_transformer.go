@@ -148,8 +148,9 @@ func buildContents(messages []ClaudeMessage, toolIDToName map[string]string, isT
 			if !hasThoughtPart && len(parts) > 0 {
 				// 在开头添加 dummy thinking block
 				parts = append([]GeminiPart{{
-					Text:    "Thinking...",
-					Thought: true,
+					Text:             "Thinking...",
+					Thought:          true,
+					ThoughtSignature: dummyThoughtSignature,
 				}}, parts...)
 			}
 		}
@@ -199,17 +200,21 @@ func buildParts(content json.RawMessage, toolIDToName map[string]string, allowDu
 			}
 
 		case "thinking":
-			part := GeminiPart{
-				Text:    block.Thinking,
-				Thought: true,
-			}
-			// 保留原有 signature（Claude 模型需要有效的 signature）
+			// Claude 模型需要有效的 signature，如果没有则跳过或转为普通文本
 			if block.Signature != "" {
-				part.ThoughtSignature = block.Signature
+				part := GeminiPart{
+					Text:             block.Thinking,
+					Thought:          true,
+					ThoughtSignature: block.Signature,
+				}
 				parts = append(parts, part)
 			} else if allowDummyThought {
 				// Gemini 模型可以使用 dummy signature
-				part.ThoughtSignature = dummyThoughtSignature
+				part := GeminiPart{
+					Text:             block.Thinking,
+					Thought:          true,
+					ThoughtSignature: dummyThoughtSignature,
+				}
 				parts = append(parts, part)
 			} else {
 				// Claude 模型需要有效 signature，跳过无 signature 的 thinking block
@@ -470,31 +475,40 @@ func cleanJSONSchema(schema map[string]any) map[string]any {
 }
 
 // excludedSchemaKeys 不支持的 schema 字段
+// 基于 Gemini API 官方文档: https://ai.google.dev/gemini-api/docs/structured-output
+// Gemini 支持: type, title, description, enum, format (date-time/date/time), minimum, maximum,
+//
+//	properties, required, additionalProperties, items, prefixItems, minItems, maxItems
 var excludedSchemaKeys = map[string]bool{
-	"$schema":              true,
-	"$id":                  true,
-	"$ref":                 true,
-	"additionalProperties": true,
-	"minLength":            true,
-	"maxLength":            true,
-	"minItems":             true,
-	"maxItems":             true,
-	"uniqueItems":          true,
-	"minimum":              true,
-	"maximum":              true,
-	"exclusiveMinimum":     true,
-	"exclusiveMaximum":     true,
-	"pattern":              true,
-	"format":               true,
-	"default":              true,
-	"strict":               true,
-	"const":                true,
-	"examples":             true,
-	"deprecated":           true,
-	"readOnly":             true,
-	"writeOnly":            true,
-	"contentMediaType":     true,
-	"contentEncoding":      true,
+	// 元 schema 字段
+	"$schema": true,
+	"$id":     true,
+	"$ref":    true,
+
+	// 字符串验证（Gemini 不支持）
+	"minLength": true,
+	"maxLength": true,
+	"pattern":   true,
+
+	// 数字验证（仅保留 minimum/maximum，移除 exclusive 变体）
+	"exclusiveMinimum": true,
+	"exclusiveMaximum": true,
+
+	// 数组验证（仅保留 minItems/maxItems）
+	"uniqueItems": true,
+
+	// 其他不支持的字段
+	"default":          true,
+	"const":            true,
+	"examples":         true,
+	"deprecated":       true,
+	"readOnly":         true,
+	"writeOnly":        true,
+	"contentMediaType": true,
+	"contentEncoding":  true,
+
+	// Claude 特有字段
+	"strict": true,
 }
 
 // cleanSchemaValue 递归清理 schema 值
