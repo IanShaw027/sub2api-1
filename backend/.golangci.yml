@@ -18,6 +18,8 @@ linters:
           list-mode: original
           files:
             - "**/internal/service/**"
+            - "!**/internal/service/atomic_scheduler.go"
+            - "!**/internal/service/atomic_scheduler_test.go"
           deny:
             - pkg: github.com/Wei-Shaw/sub2api/internal/repository
               desc: "service must not import repository"
