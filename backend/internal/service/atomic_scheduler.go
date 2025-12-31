@@ -50,7 +50,7 @@ func (s *AtomicScheduler) SelectAndAcquireAccountSlot(
 	// ARGV[2+]: 每个账号的 (id, priority, max_concurrency) 三个一组
 	// ARGV[last-1]: requestID
 	// ARGV[last]: timeout
-	args := make([]interface{}, 0, 2+len(candidates)*3+2)
+	args := make([]any, 0, 2+len(candidates)*3+2)
 	args = append(args, len(candidates))
 
 	for _, c := range candidates {
@@ -66,7 +66,7 @@ func (s *AtomicScheduler) SelectAndAcquireAccountSlot(
 	}
 
 	// 解析返回值
-	resultSlice, ok := result.([]interface{})
+	resultSlice, ok := result.([]any)
 	if !ok || len(resultSlice) != 2 {
 		return 0, 0, nil, fmt.Errorf("unexpected lua script result format")
 	}
