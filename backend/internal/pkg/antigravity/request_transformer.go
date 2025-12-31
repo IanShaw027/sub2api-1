@@ -499,9 +499,12 @@ var excludedSchemaKeys = map[string]bool{
 	"maxLength": true,
 	"pattern":   true,
 
-	// 数字验证（仅保留 minimum/maximum，移除 exclusive 变体）
+	// 数字验证（Claude API 通过 Vertex AI 不支持这些字段）
+	"minimum":          true,
+	"maximum":          true,
 	"exclusiveMinimum": true,
 	"exclusiveMaximum": true,
+	"multipleOf":       true,
 
 	// 数组验证（Claude API 通过 Vertex AI 不支持这些字段）
 	"uniqueItems": true,
@@ -567,6 +570,17 @@ func cleanSchemaValue(value any) any {
 						result[k] = val
 					}
 					// 其他 format 值直接跳过
+				}
+				continue
+			}
+
+			// 特殊处理 additionalProperties：Claude API 只支持布尔值，不支持 schema 对象
+			if k == "additionalProperties" {
+				if boolVal, ok := val.(bool); ok {
+					result[k] = boolVal
+				} else {
+					// 如果是 schema 对象，转换为 true
+					result[k] = true
 				}
 				continue
 			}
