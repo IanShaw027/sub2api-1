@@ -3,6 +3,7 @@ package antigravity
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/google/uuid"
@@ -205,8 +206,15 @@ func buildParts(content json.RawMessage, toolIDToName map[string]string, allowDu
 			// 保留原有 signature（Claude 模型需要有效的 signature）
 			if block.Signature != "" {
 				part.ThoughtSignature = block.Signature
+				parts = append(parts, part)
+			} else if allowDummyThought {
+				// Gemini 模型可以使用 dummy signature
+				part.ThoughtSignature = dummyThoughtSignature
+				parts = append(parts, part)
+			} else {
+				// Claude 模型需要有效 signature，跳过无 signature 的 thinking block
+				log.Printf("[Warning] Skipping thinking block without signature for Claude model")
 			}
-			parts = append(parts, part)
 
 		case "image":
 			if block.Source != nil && block.Source.Type == "base64" {
@@ -379,12 +387,31 @@ func buildTools(tools []ClaudeTool) []GeminiToolDeclaration {
 	// 普通工具
 	var funcDecls []GeminiFunctionDecl
 	for _, tool := range tools {
+		var description string
+		var inputSchema map[string]any
+
+		// 检查是否为 custom 类型工具（MCP 格式）
+		if tool.Type == "custom" {
+			if tool.Custom == nil || tool.Custom.InputSchema == nil {
+				// 跳过无效的 custom 工具
+				log.Printf("[Warning] Skipping invalid custom tool '%s': missing Custom or InputSchema", tool.Name)
+				continue
+			}
+			// custom 类型工具：从 Custom 字段获取 description 和 input_schema
+			description = tool.Custom.Description
+			inputSchema = tool.Custom.InputSchema
+		} else {
+			// 标准工具格式
+			description = tool.Description
+			inputSchema = tool.InputSchema
+		}
+
 		// 清理 JSON Schema
-		params := cleanJSONSchema(tool.InputSchema)
+		params := cleanJSONSchema(inputSchema)
 
 		funcDecls = append(funcDecls, GeminiFunctionDecl{
 			Name:        tool.Name,
-			Description: tool.Description,
+			Description: description,
 			Parameters:  params,
 		})
 	}
