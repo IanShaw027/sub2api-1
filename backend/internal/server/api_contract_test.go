@@ -136,7 +136,7 @@ func TestAPIContracts(t *testing.T) {
 					{
 						ID:                  1,
 						UserID:              1,
-						ApiKeyID:            100,
+						APIKeyID:            100,
 						AccountID:           200,
 						Model:               "claude-3",
 						InputTokens:         10,
@@ -151,7 +151,7 @@ func TestAPIContracts(t *testing.T) {
 					{
 						ID:           2,
 						UserID:       1,
-						ApiKeyID:     100,
+						APIKeyID:     100,
 						AccountID:    200,
 						Model:        "claude-3",
 						InputTokens:  5,
@@ -189,7 +189,7 @@ func TestAPIContracts(t *testing.T) {
 					{
 						ID:                  1,
 						UserID:              1,
-						ApiKeyID:            100,
+						APIKeyID:            100,
 						AccountID:           200,
 						RequestID:           "req_123",
 						Model:               "claude-3",
@@ -924,7 +924,7 @@ func (r *stubUsageLogRepo) GetModelStatsWithFilters(ctx context.Context, startTi
 	return nil, errors.New("not implemented")
 }
 
-func (r *stubUsageLogRepo) GetApiKeyUsageTrend(ctx context.Context, startTime, endTime time.Time, granularity string, limit int) ([]usagestats.ApiKeyUsageTrendPoint, error) {
+func (r *stubUsageLogRepo) GetApiKeyUsageTrend(ctx context.Context, startTime, endTime time.Time, granularity string, limit int) ([]usagestats.APIKeyUsageTrendPoint, error) {
 	return nil, errors.New("not implemented")
 }
 
@@ -1019,8 +1019,8 @@ func (r *stubUsageLogRepo) ListWithFilters(ctx context.Context, params paginatio
 	// Apply filters
 	var filtered []service.UsageLog
 	for _, log := range logs {
-		// Apply ApiKeyID filter
-		if filters.ApiKeyID > 0 && log.ApiKeyID != filters.ApiKeyID {
+		// Apply APIKeyID filter
+		if filters.APIKeyID > 0 && log.APIKeyID != filters.APIKeyID {
 			continue
 		}
 		// Apply Model filter
@@ -1153,7 +1153,7 @@ func paginationResult(total int64, params pagination.PaginationParams) *paginati
 // Ensure compile-time interface compliance.
 var (
 	_ service.UserRepository             = (*stubUserRepo)(nil)
-	_ service.ApiKeyRepository           = (*stubApiKeyRepo)(nil)
+	_ service.APIKeyRepository           = (*stubApiKeyRepo)(nil)
 	_ service.ApiKeyCache                = (*stubApiKeyCache)(nil)
 	_ service.GroupRepository            = (*stubGroupRepo)(nil)
 	_ service.UserSubscriptionRepository = (*stubUserSubscriptionRepo)(nil)

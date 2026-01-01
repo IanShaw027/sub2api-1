@@ -27,6 +27,7 @@ type ConcurrencyCache interface {
 	// 等待队列计数（只在首次创建时设置 TTL）
 	IncrementWaitCount(ctx context.Context, userID int64, maxWait int) (bool, error)
 	DecrementWaitCount(ctx context.Context, userID int64) error
+	GetTotalWaitCount(ctx context.Context) (int, error)
 }
 
 // generateRequestID generates a unique request ID for concurrency slot tracking
@@ -175,6 +176,14 @@ func (s *ConcurrencyService) DecrementWaitCount(ctx context.Context, userID int6
 	if err := s.cache.DecrementWaitCount(bgCtx, userID); err != nil {
 		log.Printf("Warning: decrement wait count failed for user %d: %v", userID, err)
 	}
+}
+
+// GetTotalWaitCount returns the total wait queue depth across users.
+func (s *ConcurrencyService) GetTotalWaitCount(ctx context.Context) (int, error) {
+	if s.cache == nil {
+		return 0, nil
+	}
+	return s.cache.GetTotalWaitCount(ctx)
 }
 
 // CalculateMaxWait calculates the maximum wait queue size for a user
