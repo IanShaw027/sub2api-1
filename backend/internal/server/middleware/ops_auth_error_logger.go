@@ -53,4 +53,3 @@ func enqueueOpsAuthErrorLog(ops *service.OpsService, entry *service.OpsErrorLog)
 		// Queue is full; drop to avoid blocking request handling.
 	}
 }
-

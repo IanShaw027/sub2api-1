@@ -183,7 +183,7 @@ func (r *opsRepository) ListErrorLogs(ctx context.Context, filters service.OpsEr
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	results := make([]service.OpsErrorLog, 0)
 	for rows.Next() {
@@ -417,7 +417,7 @@ func (r *opsRepository) ListRecentSystemMetrics(ctx context.Context, windowMinut
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	results := make([]service.OpsMetrics, 0)
 	for rows.Next() {
@@ -482,7 +482,7 @@ func (r *opsRepository) ListSystemMetricsRange(ctx context.Context, windowMinute
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	results := make([]service.OpsMetrics, 0)
 	for rows.Next() {
@@ -525,7 +525,7 @@ func (r *opsRepository) ListAlertRules(ctx context.Context) ([]service.OpsAlertR
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	rules := make([]service.OpsAlertRule, 0)
 	for rows.Next() {

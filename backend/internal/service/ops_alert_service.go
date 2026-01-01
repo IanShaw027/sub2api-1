@@ -671,12 +671,12 @@ func buildWebhookTransport(base http.RoundTripper, webhookTarget *validatedWebho
 			return nil, fmt.Errorf("webhook dial target mismatch: %q", addr)
 		}
 
-			var lastErr error
-			for _, ip := range pinnedIPs {
-				if isDisallowedWebhookIP(ip) {
-					lastErr = fmt.Errorf("webhook target resolves to a disallowed ip")
-					continue
-				}
+		var lastErr error
+		for _, ip := range pinnedIPs {
+			if isDisallowedWebhookIP(ip) {
+				lastErr = fmt.Errorf("webhook target resolves to a disallowed ip")
+				continue
+			}
 
 			dialAddr := net.JoinHostPort(ip.String(), port)
 			conn, err := webhookBaseDialContext(ctx, network, dialAddr)
@@ -730,13 +730,13 @@ func validateWebhookURL(ctx context.Context, raw string) (*validatedWebhookTarge
 		return nil, errors.New("webhook url host must not be localhost")
 	}
 
-		if ip := net.ParseIP(host); ip != nil {
-			if isDisallowedWebhookIP(ip) {
-				return nil, errors.New("webhook url host resolves to a disallowed ip")
-			}
-			return &validatedWebhookTarget{
-				URL:       parsed,
-				host:      host,
+	if ip := net.ParseIP(host); ip != nil {
+		if isDisallowedWebhookIP(ip) {
+			return nil, errors.New("webhook url host resolves to a disallowed ip")
+		}
+		return &validatedWebhookTarget{
+			URL:       parsed,
+			host:      host,
 			port:      portForScheme(parsed),
 			pinnedIPs: []net.IP{ip},
 		}, nil
@@ -749,14 +749,14 @@ func validateWebhookURL(ctx context.Context, raw string) (*validatedWebhookTarge
 	if err != nil || len(ips) == 0 {
 		return nil, errors.New("webhook url host cannot be resolved")
 	}
-		pinned := make([]net.IP, 0, len(ips))
-		for _, addr := range ips {
-			if isDisallowedWebhookIP(addr.IP) {
-				return nil, errors.New("webhook url host resolves to a disallowed ip")
-			}
-			if addr.IP != nil {
-				pinned = append(pinned, addr.IP)
-			}
+	pinned := make([]net.IP, 0, len(ips))
+	for _, addr := range ips {
+		if isDisallowedWebhookIP(addr.IP) {
+			return nil, errors.New("webhook url host resolves to a disallowed ip")
+		}
+		if addr.IP != nil {
+			pinned = append(pinned, addr.IP)
+		}
 	}
 
 	if len(pinned) == 0 {

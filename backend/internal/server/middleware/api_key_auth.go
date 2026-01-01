@@ -190,12 +190,12 @@ func recordOpsAuthError(c *gin.Context, opsService *service.OpsService, apiKey *
 	}
 
 	logEntry := &service.OpsErrorLog{
-		Phase:       phase,
-		Type:        errType,
-		Severity:    severity,
-		StatusCode:  status,
-		Message:     message,
-		ClientIP:    c.ClientIP(),
+		Phase:      phase,
+		Type:       errType,
+		Severity:   severity,
+		StatusCode: status,
+		Message:    message,
+		ClientIP:   c.ClientIP(),
 		RequestPath: func() string {
 			if c.Request != nil && c.Request.URL != nil {
 				return c.Request.URL.Path
