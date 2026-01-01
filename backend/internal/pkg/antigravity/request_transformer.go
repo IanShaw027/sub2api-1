@@ -433,49 +433,28 @@ func buildTools(tools []ClaudeTool) []GeminiToolDeclaration {
 
 	// 普通工具
 	var funcDecls []GeminiFunctionDecl
-	for i, tool := range tools {
-		// 跳过无效工具名称
-		if strings.TrimSpace(tool.Name) == "" {
-			log.Printf("Warning: skipping tool with empty name")
-			continue
-		}
-
+	for _, tool := range tools {
 		var description string
 		var inputSchema map[string]any
 
-		// 检查是否为 custom 类型工具 (MCP)
+		// 检查是否为 custom 类型工具（MCP 格式）
 		if tool.Type == "custom" {
 			if tool.Custom == nil || tool.Custom.InputSchema == nil {
-				log.Printf("[Warning] Skipping invalid custom tool '%s': missing custom spec or input_schema", tool.Name)
+				// 跳过无效的 custom 工具
+				log.Printf("[Warning] Skipping invalid custom tool '%s': missing Custom or InputSchema", tool.Name)
 				continue
 			}
+			// custom 类型工具：从 Custom 字段获取 description 和 input_schema
 			description = tool.Custom.Description
 			inputSchema = tool.Custom.InputSchema
-
-			// 调试日志：记录 custom 工具的 schema
-			if schemaJSON, err := json.Marshal(inputSchema); err == nil {
-				log.Printf("[Debug] Tool[%d] '%s' (custom) original schema: %s", i, tool.Name, string(schemaJSON))
-			}
 		} else {
-			// 标准格式: 从顶层字段获取
+			// 标准工具格式
 			description = tool.Description
 			inputSchema = tool.InputSchema
 		}
 
 		// 清理 JSON Schema
 		params := cleanJSONSchema(inputSchema)
-		// 为 nil schema 提供默认值
-		if params == nil {
-			params = map[string]any{
-				"type":       "OBJECT",
-				"properties": map[string]any{},
-			}
-		}
-
-		// 调试日志：记录清理后的 schema
-		if paramsJSON, err := json.Marshal(params); err == nil {
-			log.Printf("[Debug] Tool[%d] '%s' cleaned schema: %s", i, tool.Name, string(paramsJSON))
-		}
 
 		funcDecls = append(funcDecls, GeminiFunctionDecl{
 			Name:        tool.Name,
