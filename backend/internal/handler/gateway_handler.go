@@ -147,6 +147,10 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	} else if apiKey.Group != nil {
 		platform = apiKey.Group.Platform
 	}
+	sessionKey := sessionHash
+	if platform == service.PlatformGemini && sessionHash != "" {
+		sessionKey = "gemini:" + sessionHash
+	}
 
 	if platform == service.PlatformGemini {
 		const maxAccountSwitches = 3
@@ -155,7 +159,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		lastFailoverStatus := 0
 
 		for {
-			account, err := h.geminiCompatService.SelectAccountForModelWithExclusions(c.Request.Context(), apiKey.GroupID, sessionHash, reqModel, failedAccountIDs)
+			selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionKey, reqModel, failedAccountIDs)
 			if err != nil {
 				if len(failedAccountIDs) == 0 {
 					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts: "+err.Error(), streamStarted)
@@ -164,9 +168,13 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				h.handleFailoverExhausted(c, lastFailoverStatus, streamStarted)
 				return
 			}
+			account := selection.Account
 
 			// 检查预热请求拦截（在账号选择后、转发前检查）
 			if account.IsInterceptWarmupEnabled() && isWarmupRequest(body) {
+				if selection.Acquired && selection.ReleaseFunc != nil {
+					selection.ReleaseFunc()
+				}
 				if reqStream {
 					sendMockWarmupStream(c, reqModel)
 				} else {
@@ -176,11 +184,46 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			}
 
 			// 3. 获取账号并发槽位
-			accountReleaseFunc, err := h.concurrencyHelper.AcquireAccountSlotWithWait(c, account.ID, account.Concurrency, reqStream, &streamStarted)
-			if err != nil {
-				log.Printf("Account concurrency acquire failed: %v", err)
-				h.handleConcurrencyError(c, err, "account", streamStarted)
-				return
+			accountReleaseFunc := selection.ReleaseFunc
+			var accountWaitRelease func()
+			if !selection.Acquired {
+				if selection.WaitPlan == nil {
+					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", streamStarted)
+					return
+				}
+				canWait, err := h.concurrencyHelper.IncrementAccountWaitCount(c.Request.Context(), account.ID, selection.WaitPlan.MaxWaiting)
+				if err != nil {
+					log.Printf("Increment account wait count failed: %v", err)
+				} else if !canWait {
+					log.Printf("Account wait queue full: account=%d", account.ID)
+					h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later", streamStarted)
+					return
+				} else {
+					// Only set release function if increment succeeded
+					accountWaitRelease = func() {
+						h.concurrencyHelper.DecrementAccountWaitCount(c.Request.Context(), account.ID)
+					}
+				}
+
+				accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
+					c,
+					account.ID,
+					selection.WaitPlan.MaxConcurrency,
+					selection.WaitPlan.Timeout,
+					reqStream,
+					&streamStarted,
+				)
+				if err != nil {
+					if accountWaitRelease != nil {
+						accountWaitRelease()
+					}
+					log.Printf("Account concurrency acquire failed: %v", err)
+					h.handleConcurrencyError(c, err, "account", streamStarted)
+					return
+				}
+				if err := h.gatewayService.BindStickySession(c.Request.Context(), sessionKey, account.ID); err != nil {
+					log.Printf("Bind sticky session failed: %v", err)
+				}
 			}
 
 			// 转发请求 - 根据账号平台分流
@@ -192,6 +235,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			}
 			if accountReleaseFunc != nil {
 				accountReleaseFunc()
+			}
+			if accountWaitRelease != nil {
+				accountWaitRelease()
 			}
 			if err != nil {
 				var failoverErr *service.UpstreamFailoverError
@@ -237,7 +283,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 	for {
 		// 选择支持该模型的账号
-		account, err := h.gatewayService.SelectAccountForModelWithExclusions(c.Request.Context(), apiKey.GroupID, sessionHash, reqModel, failedAccountIDs)
+		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionKey, reqModel, failedAccountIDs)
 		if err != nil {
 			if len(failedAccountIDs) == 0 {
 				h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts: "+err.Error(), streamStarted)
@@ -246,9 +292,13 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			h.handleFailoverExhausted(c, lastFailoverStatus, streamStarted)
 			return
 		}
+		account := selection.Account
 
 		// 检查预热请求拦截（在账号选择后、转发前检查）
 		if account.IsInterceptWarmupEnabled() && isWarmupRequest(body) {
+			if selection.Acquired && selection.ReleaseFunc != nil {
+				selection.ReleaseFunc()
+			}
 			if reqStream {
 				sendMockWarmupStream(c, reqModel)
 			} else {
@@ -258,11 +308,46 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		}
 
 		// 3. 获取账号并发槽位
-		accountReleaseFunc, err := h.concurrencyHelper.AcquireAccountSlotWithWait(c, account.ID, account.Concurrency, reqStream, &streamStarted)
-		if err != nil {
-			log.Printf("Account concurrency acquire failed: %v", err)
-			h.handleConcurrencyError(c, err, "account", streamStarted)
-			return
+		accountReleaseFunc := selection.ReleaseFunc
+		var accountWaitRelease func()
+		if !selection.Acquired {
+			if selection.WaitPlan == nil {
+				h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", streamStarted)
+				return
+			}
+			canWait, err := h.concurrencyHelper.IncrementAccountWaitCount(c.Request.Context(), account.ID, selection.WaitPlan.MaxWaiting)
+			if err != nil {
+				log.Printf("Increment account wait count failed: %v", err)
+			} else if !canWait {
+				log.Printf("Account wait queue full: account=%d", account.ID)
+				h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later", streamStarted)
+				return
+			} else {
+				// Only set release function if increment succeeded
+				accountWaitRelease = func() {
+					h.concurrencyHelper.DecrementAccountWaitCount(c.Request.Context(), account.ID)
+				}
+			}
+
+			accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
+				c,
+				account.ID,
+				selection.WaitPlan.MaxConcurrency,
+				selection.WaitPlan.Timeout,
+				reqStream,
+				&streamStarted,
+			)
+			if err != nil {
+				if accountWaitRelease != nil {
+					accountWaitRelease()
+				}
+				log.Printf("Account concurrency acquire failed: %v", err)
+				h.handleConcurrencyError(c, err, "account", streamStarted)
+				return
+			}
+			if err := h.gatewayService.BindStickySession(c.Request.Context(), sessionKey, account.ID); err != nil {
+				log.Printf("Bind sticky session failed: %v", err)
+			}
 		}
 
 		// 转发请求 - 根据账号平台分流
@@ -274,6 +359,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		}
 		if accountReleaseFunc != nil {
 			accountReleaseFunc()
+		}
+		if accountWaitRelease != nil {
+			accountWaitRelease()
 		}
 		if err != nil {
 			var failoverErr *service.UpstreamFailoverError
@@ -314,12 +402,42 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 // Models handles listing available models
 // GET /v1/models
-// Returns different model lists based on the API key's group platform
+// Returns models based on account configurations (model_mapping whitelist)
+// Falls back to default models if no whitelist is configured
 func (h *GatewayHandler) Models(c *gin.Context) {
 	apiKey, _ := middleware2.GetAPIKeyFromContext(c)
 
-	// Return OpenAI models for OpenAI platform groups
-	if apiKey != nil && apiKey.Group != nil && apiKey.Group.Platform == "openai" {
+	var groupID *int64
+	var platform string
+
+	if apiKey != nil && apiKey.Group != nil {
+		groupID = &apiKey.Group.ID
+		platform = apiKey.Group.Platform
+	}
+
+	// Get available models from account configurations (without platform filter)
+	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, "")
+
+	if len(availableModels) > 0 {
+		// Build model list from whitelist
+		models := make([]claude.Model, 0, len(availableModels))
+		for _, modelID := range availableModels {
+			models = append(models, claude.Model{
+				ID:          modelID,
+				Type:        "model",
+				DisplayName: modelID,
+				CreatedAt:   "2024-01-01T00:00:00Z",
+			})
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"object": "list",
+			"data":   models,
+		})
+		return
+	}
+
+	// Fallback to default models
+	if platform == "openai" {
 		c.JSON(http.StatusOK, gin.H{
 			"object": "list",
 			"data":   openai.DefaultModels,
@@ -327,7 +445,6 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		return
 	}
 
-	// Default: Claude models
 	c.JSON(http.StatusOK, gin.H{
 		"object": "list",
 		"data":   claude.DefaultModels,

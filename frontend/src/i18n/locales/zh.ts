@@ -1094,6 +1094,9 @@ export default {
       },
       usageWindow: {
         statsTitle: '5小时窗口用量统计',
+        statsTitleDaily: '每日用量统计',
+        geminiProDaily: 'Pro',
+        geminiFlashDaily: 'Flash',
         gemini3Pro: 'G3P',
         gemini3Flash: 'G3F',
         gemini3Image: 'G3I',
@@ -1102,7 +1105,12 @@ export default {
       tier: {
         free: 'Free',
         pro: 'Pro',
-        ultra: 'Ultra'
+        ultra: 'Ultra',
+        aiPremium: 'AI Premium',
+        standard: '标准版',
+        basic: '基础版',
+        personal: '个人版',
+        unlimited: '无限制'
       },
       ineligibleWarning:
         '该账号无 Antigravity 使用权限，但仍能进行 API 转发。继续使用请自行承担风险。',
@@ -1203,6 +1211,15 @@ export default {
       actualModel: '实际模型',
       addMapping: '添加映射',
       mappingExists: '模型 {model} 的映射已存在',
+      searchModels: '搜索模型...',
+      noMatchingModels: '没有匹配的模型',
+      fillRelatedModels: '填入相关模型',
+      clearAllModels: '清除所有模型',
+      customModelName: '自定义模型名称',
+      enterCustomModelName: '输入自定义模型名称',
+      addModel: '填入',
+      modelExists: '该模型已存在',
+      modelCount: '{count} 个模型',
       customErrorCodes: '自定义错误码',
       customErrorCodesHint: '仅对选中的错误码停止调度',
       customErrorCodesWarning: '仅选中的错误码会停止调度，其他错误将返回 500。',
@@ -1321,15 +1338,16 @@ export default {
 	          failedToGenerateUrl: '生成 Gemini 授权链接失败',
 	          missingExchangeParams: '缺少 code / session_id / state',
 	          failedToExchangeCode: 'Gemini 授权码兑换失败',
+	          missingProjectId: 'GCP Project ID 获取失败：您的 Google 账号未关联有效的 GCP 项目。请前往 Google Cloud Console 激活 GCP 并绑定信用卡，或在授权时手动填写 Project ID。',
 	          modelPassthrough: 'Gemini 直接转发模型',
 	          modelPassthroughDesc: '所有模型请求将直接转发至 Gemini API，不进行模型限制或映射。',
 	          stateWarningTitle: '提示',
 	          stateWarningDesc: '建议粘贴完整回调链接（包含 code 和 state）。',
 	          oauthTypeLabel: 'OAuth 类型',
-	          needsProjectId: '适合 GCP 开发者',
-	          needsProjectIdDesc: '需 GCP 项目',
-	          noProjectIdNeeded: '适合普通用户',
-	          noProjectIdNeededDesc: '需管理员配置 OAuth Client',
+          needsProjectId: '内置授权（Code Assist）',
+          needsProjectIdDesc: '需要 GCP 项目与 Project ID',
+          noProjectIdNeeded: '自定义授权（AI Studio）',
+          noProjectIdNeededDesc: '需管理员配置 OAuth Client',
 	          aiStudioNotConfiguredShort: '未配置',
 	          aiStudioNotConfiguredTip: 'AI Studio OAuth 未配置：请先设置 GEMINI_OAUTH_CLIENT_ID / GEMINI_OAUTH_CLIENT_SECRET，并在 Google OAuth Client 添加 Redirect URI：http://localhost:1455/auth/callback（Consent Screen scopes 需包含 https://www.googleapis.com/auth/generative-language.retriever）',
 	          aiStudioNotConfigured: 'AI Studio OAuth 未配置：请先设置 GEMINI_OAUTH_CLIENT_ID / GEMINI_OAUTH_CLIENT_SECRET，并在 Google OAuth Client 添加 Redirect URI：http://localhost:1455/auth/callback'
@@ -1361,7 +1379,99 @@ export default {
         modelPassthrough: 'Gemini 直接转发模型',
         modelPassthroughDesc: '所有模型请求将直接转发至 Gemini API，不进行模型限制或映射。',
         baseUrlHint: '留空使用官方 Gemini API',
-        apiKeyHint: '您的 Gemini API Key（以 AIza 开头）'
+        apiKeyHint: '您的 Gemini API Key（以 AIza 开头）',
+        accountType: {
+          oauthTitle: 'OAuth 授权（Gemini）',
+          oauthDesc: '使用 Google 账号授权，并选择 OAuth 子类型。',
+          apiKeyTitle: 'API 密钥（AI Studio）',
+          apiKeyDesc: '最快接入方式，使用 AIza API Key。',
+          apiKeyNote: '适合轻量测试。免费层限流严格，数据可能用于训练。',
+          apiKeyLink: '获取 API Key',
+          quotaLink: '配额说明'
+        },
+        oauthType: {
+          builtInTitle: '内置授权（Gemini CLI / Code Assist）',
+          builtInDesc: '使用 Google 内置客户端 ID，无需管理员配置。',
+          builtInRequirement: '需要 GCP 项目并填写 Project ID。',
+          gcpProjectLink: '创建项目',
+          customTitle: '自定义授权（AI Studio OAuth）',
+          customDesc: '使用管理员预设的 OAuth 客户端，适合组织管理。',
+          customRequirement: '需管理员配置 Client ID 并加入测试用户白名单。',
+          badges: {
+            recommended: '推荐',
+            highConcurrency: '高并发',
+            noAdmin: '无需管理员配置',
+            orgManaged: '组织管理',
+            adminRequired: '需要管理员'
+          }
+        },
+        setupGuide: {
+          title: 'Gemini 使用准备',
+          checklistTitle: '准备工作',
+          checklistItems: {
+            usIp: '使用美国 IP，并确保账号归属地为美国。',
+            age: '账号需满 18 岁。'
+          },
+          activationTitle: '服务激活',
+          activationItems: {
+            geminiWeb: '激活 Gemini Web，避免 User not initialized。',
+            gcpProject: '激活 GCP 项目，获取 Code Assist 所需 Project ID。'
+          },
+          links: {
+            countryCheck: '检查归属地',
+            geminiWebActivation: '激活 Gemini Web',
+            gcpProject: '打开 GCP 控制台'
+          }
+        },
+        quotaPolicy: {
+          title: 'Gemini 配额与限流政策（参考）',
+          note: '注意：Gemini 官方未提供用量查询接口。此处显示的“每日配额”是由系统根据账号等级模拟计算的估算值，仅供调度参考，请以 Google 官方实际报错为准。',
+          columns: {
+            channel: '授权通道',
+            account: '账号状态',
+            limits: '限流政策',
+            docs: '官方文档'
+          },
+          docs: {
+            codeAssist: 'Code Assist 配额',
+            aiStudio: 'AI Studio 定价',
+            vertex: 'Vertex AI 配额'
+          },
+          simulatedNote: '本地模拟配额，仅供参考',
+          rows: {
+            cli: {
+              channel: 'Gemini CLI（官方 Google 登录 / Code Assist）',
+              free: '免费 Google 账号',
+              premium: 'Google One AI Premium',
+              limitsFree: 'RPD ~1000；RPM ~60（软限制）',
+              limitsPremium: 'RPD ~1500+；RPM ~60+（优先队列）'
+            },
+            gcloud: {
+              channel: 'GCP Code Assist（gcloud 登录）',
+              account: '未购买 Code Assist 订阅',
+              limits: 'RPD ~1000；RPM ~60（预览期）'
+            },
+            aiStudio: {
+              channel: 'AI Studio API Key / OAuth',
+              free: '未绑卡（免费层）',
+              paid: '已绑卡（按量付费）',
+              limitsFree: 'RPD 50；RPM 2（Pro）/ 15（Flash）',
+              limitsPaid: 'RPD 不限；RPM 1000+（按模型配额）'
+            },
+            customOAuth: {
+              channel: 'Custom OAuth Client（GCP）',
+              free: '项目未绑卡',
+              paid: '项目已绑卡',
+              limitsFree: 'RPD 50；RPM 2（项目配额）',
+              limitsPaid: 'RPD 不限；RPM 1000+（项目配额）'
+            }
+          }
+        },
+        rateLimit: {
+          ok: '未限流',
+          limited: '限流 {time}',
+          now: '现在'
+        }
       },
       // Re-Auth Modal
       reAuthorizeAccount: '重新授权账号',
