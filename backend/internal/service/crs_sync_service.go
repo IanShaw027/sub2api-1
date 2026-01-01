@@ -82,7 +82,7 @@ type crsExportResponse struct {
 		OpenAIOAuthAccounts     []crsOpenAIOAuthAccount     `json:"openaiOAuthAccounts"`
 		OpenAIResponsesAccounts []crsOpenAIResponsesAccount `json:"openaiResponsesAccounts"`
 		GeminiOAuthAccounts     []crsGeminiOAuthAccount     `json:"geminiOAuthAccounts"`
-		GeminiAPIKeyAccounts    []crsGeminiAPIKeyAccount    `json:"geminiApiKeyAccounts"`
+		GeminiAPIKeyAccounts    []crsGeminiAPIKeyAccount    `json:"geminiAPIKeyAccounts"`
 	} `json:"data"`
 }
 

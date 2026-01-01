@@ -488,7 +488,7 @@ func (s *OpenAIGatewayService) GetAccessToken(ctx context.Context, account *Acco
 		}
 		return accessToken, "oauth", nil
 	case AccountTypeAPIKey:
-		apiKey := account.GetOpenAIApiKey()
+		apiKey := account.GetOpenAIAPIKey()
 		if apiKey == "" {
 			return "", "", errors.New("api_key not found in credentials")
 		}

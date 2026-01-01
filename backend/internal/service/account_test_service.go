@@ -324,7 +324,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		chatgptAccountID = account.GetChatGPTAccountID()
 	} else if account.Type == "apikey" {
 		// API Key - use Platform API
-		authToken = account.GetOpenAIApiKey()
+		authToken = account.GetOpenAIAPIKey()
 		if authToken == "" {
 			return s.sendErrorAndEnd(c, "No API key available")
 		}
