@@ -2292,10 +2292,10 @@ func convertClaudeToolsToGeminiTools(tools any) []any {
 		var name, desc string
 		var params any
 
-		// 检查是否为 custom 类型工具 (MCP)
+		// 检查是否为 custom 类型工具（MCP 格式）
 		toolType, _ := tm["type"].(string)
 		if toolType == "custom" {
-			// Custom 格式: 从 custom 字段获取 description 和 input_schema
+			// custom 类型工具：从 custom 字段获取 description 和 input_schema
 			custom, ok := tm["custom"].(map[string]any)
 			if !ok {
 				continue
@@ -2304,7 +2304,7 @@ func convertClaudeToolsToGeminiTools(tools any) []any {
 			desc, _ = custom["description"].(string)
 			params = custom["input_schema"]
 		} else {
-			// 标准格式: 从顶层字段获取
+			// 标准工具格式
 			name, _ = tm["name"].(string)
 			desc, _ = tm["description"].(string)
 			params = tm["input_schema"]
@@ -2314,13 +2314,6 @@ func convertClaudeToolsToGeminiTools(tools any) []any {
 			continue
 		}
 
-		// 为 nil params 提供默认值
-		if params == nil {
-			params = map[string]any{
-				"type":       "object",
-				"properties": map[string]any{},
-			}
-		}
 		// 清理 JSON Schema
 		cleanedParams := cleanToolSchema(params)
 
@@ -2352,10 +2345,10 @@ func cleanToolSchema(schema any) any {
 		cleaned := make(map[string]any)
 		for key, value := range v {
 			// 跳过不支持的字段
+			// 跳过不支持的字段
 			if key == "$schema" || key == "$id" || key == "$ref" ||
 				key == "additionalProperties" || key == "minLength" ||
 				key == "maxLength" || key == "minItems" || key == "maxItems" {
-				continue
 			}
 			// 递归清理嵌套对象
 			cleaned[key] = cleanToolSchema(value)

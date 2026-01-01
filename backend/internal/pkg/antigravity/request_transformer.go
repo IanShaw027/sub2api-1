@@ -248,21 +248,18 @@ func buildParts(content json.RawMessage, toolIDToName map[string]string, allowDu
 				})
 				continue
 			}
-
-			// Claude 模型：仅在提供有效 signature 时保留 thinking block；否则跳过以避免上游校验失败。
-			signature := strings.TrimSpace(block.Signature)
-			if signature == "" || signature == dummyThoughtSignature {
-				log.Printf("[Warning] Skipping thinking block for Claude model (missing or dummy signature)")
-				continue
+			// 保留原有 signature（Claude 模型需要有效的 signature）
+			if block.Signature != "" {
+				part.ThoughtSignature = block.Signature
+				parts = append(parts, part)
+			} else if allowDummyThought {
+				// Gemini 模型可以使用 dummy signature
+				part.ThoughtSignature = dummyThoughtSignature
+				parts = append(parts, part)
+			} else {
+				// Claude 模型需要有效 signature，跳过无 signature 的 thinking block
+				log.Printf("[Warning] Skipping thinking block without signature for Claude model")
 			}
-			if !isValidThoughtSignature(signature) {
-				log.Printf("[Debug] Thinking signature may be invalid (passing through anyway): len=%d", len(signature))
-			}
-			parts = append(parts, GeminiPart{
-				Text:             block.Thinking,
-				Thought:          true,
-				ThoughtSignature: signature,
-			})
 
 		case "image":
 			if block.Source != nil && block.Source.Type == "base64" {
@@ -433,49 +430,28 @@ func buildTools(tools []ClaudeTool) []GeminiToolDeclaration {
 
 	// 普通工具
 	var funcDecls []GeminiFunctionDecl
-	for i, tool := range tools {
-		// 跳过无效工具名称
-		if strings.TrimSpace(tool.Name) == "" {
-			log.Printf("Warning: skipping tool with empty name")
-			continue
-		}
-
+	for _, tool := range tools {
 		var description string
 		var inputSchema map[string]any
 
-		// 检查是否为 custom 类型工具 (MCP)
+		// 检查是否为 custom 类型工具（MCP 格式）
 		if tool.Type == "custom" {
 			if tool.Custom == nil || tool.Custom.InputSchema == nil {
-				log.Printf("[Warning] Skipping invalid custom tool '%s': missing custom spec or input_schema", tool.Name)
+				// 跳过无效的 custom 工具
+				log.Printf("[Warning] Skipping invalid custom tool '%s': missing Custom or InputSchema", tool.Name)
 				continue
 			}
+			// custom 类型工具：从 Custom 字段获取 description 和 input_schema
 			description = tool.Custom.Description
 			inputSchema = tool.Custom.InputSchema
-
-			// 调试日志：记录 custom 工具的 schema
-			if schemaJSON, err := json.Marshal(inputSchema); err == nil {
-				log.Printf("[Debug] Tool[%d] '%s' (custom) original schema: %s", i, tool.Name, string(schemaJSON))
-			}
 		} else {
-			// 标准格式: 从顶层字段获取
+			// 标准工具格式
 			description = tool.Description
 			inputSchema = tool.InputSchema
 		}
 
 		// 清理 JSON Schema
 		params := cleanJSONSchema(inputSchema)
-		// 为 nil schema 提供默认值
-		if params == nil {
-			params = map[string]any{
-				"type":       "OBJECT",
-				"properties": map[string]any{},
-			}
-		}
-
-		// 调试日志：记录清理后的 schema
-		if paramsJSON, err := json.Marshal(params); err == nil {
-			log.Printf("[Debug] Tool[%d] '%s' cleaned schema: %s", i, tool.Name, string(paramsJSON))
-		}
 
 		funcDecls = append(funcDecls, GeminiFunctionDecl{
 			Name:        tool.Name,
