@@ -179,6 +179,10 @@ func EffectiveOAuthConfig(cfg OAuthConfig, oauthType string) (OAuthConfig, error
 			} else {
 				effective.Scopes = DefaultAIStudioScopes
 			}
+		} else if oauthType == "google_one" {
+			// Google One accounts need generative-language scope for Gemini API access
+			// and drive.readonly scope for storage tier detection
+			effective.Scopes = DefaultGoogleOneScopes
 		} else {
 			// Default to Code Assist scopes
 			effective.Scopes = DefaultCodeAssistScopes
