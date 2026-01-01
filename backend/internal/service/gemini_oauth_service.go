@@ -428,10 +428,12 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 
 	// For Code Assist, project_id is required. Auto-detect if missing.
 	// For AI Studio OAuth, project_id is optional and should not block refresh.
-	if oauthType == "code_assist" && strings.TrimSpace(tokenInfo.ProjectID) == "" {
-		projectID, tierID, err := s.fetchProjectID(ctx, tokenInfo.AccessToken, proxyURL)
-		if err != nil {
-			return nil, fmt.Errorf("failed to auto-detect project_id: %w", err)
+	if oauthType == "code_assist" {
+		// 先设置默认值或保留旧值，确保 tier_id 始终有值
+		if existingTierID != "" {
+			tokenInfo.TierID = existingTierID
+		} else {
+			tokenInfo.TierID = "LEGACY" // 默认值
 		}
 
 		// 尝试自动探测 project_id 和 tier_id
@@ -454,8 +456,6 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 		if strings.TrimSpace(tokenInfo.ProjectID) == "" {
 			return nil, fmt.Errorf("failed to auto-detect project_id: empty result")
 		}
-		tokenInfo.ProjectID = projectID
-		tokenInfo.TierID = tierID
 	}
 
 	return tokenInfo, nil
@@ -513,9 +513,6 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 		return strings.TrimSpace(loadResp.CloudAICompanionProject), tierID, nil
 	}
 
-	// Pick tier from allowedTiers; if no default tier is marked, pick the first non-empty tier ID.
-	// (tierID already extracted above, reuse it)
-
 	req := &geminicli.OnboardUserRequest{
 		TierID: tierID,
 		Metadata: geminicli.LoadCodeAssistMetadata{
@@ -534,7 +531,7 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 			if fbErr == nil && strings.TrimSpace(fallback) != "" {
 				return strings.TrimSpace(fallback), tierID, nil
 			}
-			return "", "", err
+			return "", tierID, err
 		}
 		if resp.Done {
 			if resp.Response != nil && resp.Response.CloudAICompanionProject != nil {
@@ -552,7 +549,7 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 			if fbErr == nil && strings.TrimSpace(fallback) != "" {
 				return strings.TrimSpace(fallback), tierID, nil
 			}
-			return "", "", errors.New("onboardUser completed but no project_id returned")
+			return "", tierID, errors.New("onboardUser completed but no project_id returned")
 		}
 		time.Sleep(2 * time.Second)
 	}
@@ -562,9 +559,9 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 		return strings.TrimSpace(fallback), tierID, nil
 	}
 	if loadErr != nil {
-		return "", "", fmt.Errorf("loadCodeAssist failed (%v) and onboardUser timeout after %d attempts", loadErr, maxAttempts)
+		return "", tierID, fmt.Errorf("loadCodeAssist failed (%v) and onboardUser timeout after %d attempts", loadErr, maxAttempts)
 	}
-	return "", "", fmt.Errorf("onboardUser timeout after %d attempts", maxAttempts)
+	return "", tierID, fmt.Errorf("onboardUser timeout after %d attempts", maxAttempts)
 }
 
 type googleCloudProject struct {
