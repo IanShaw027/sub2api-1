@@ -1862,6 +1862,9 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		}
 	}
 
+	// Filter thinking blocks from request body (prevents 400 errors from invalid signatures)
+	body = FilterThinkingBlocks(body)
+
 	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, err

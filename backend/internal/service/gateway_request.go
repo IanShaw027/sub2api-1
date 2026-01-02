@@ -70,3 +70,65 @@ func ParseGatewayRequest(body []byte) (*ParsedRequest, error) {
 
 	return parsed, nil
 }
+
+// FilterThinkingBlocks removes thinking blocks from request body
+// Returns filtered body or original body if filtering fails (fail-safe)
+// This prevents 400 errors from invalid thinking block signatures
+func FilterThinkingBlocks(body []byte) []byte {
+	var req map[string]any
+	if err := json.Unmarshal(body, &req); err != nil {
+		return body // Return original on parse error
+	}
+
+	messages, ok := req["messages"].([]any)
+	if !ok {
+		return body // No messages array
+	}
+
+	filtered := false
+	for _, msg := range messages {
+		msgMap, ok := msg.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		content, ok := msgMap["content"].([]any)
+		if !ok {
+			continue
+		}
+
+		// Filter thinking blocks from content array
+		newContent := make([]any, 0, len(content))
+		for _, block := range content {
+			blockMap, ok := block.(map[string]any)
+			if !ok {
+				newContent = append(newContent, block)
+				continue
+			}
+
+			blockType, _ := blockMap["type"].(string)
+			if blockType == "thinking" {
+				filtered = true
+				continue // Skip thinking blocks
+			}
+
+			newContent = append(newContent, block)
+		}
+
+		if filtered {
+			msgMap["content"] = newContent
+		}
+	}
+
+	if !filtered {
+		return body // No changes needed
+	}
+
+	// Re-serialize
+	newBody, err := json.Marshal(req)
+	if err != nil {
+		return body // Return original on marshal error
+	}
+
+	return newBody
+}

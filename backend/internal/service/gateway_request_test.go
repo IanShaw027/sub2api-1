@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -37,4 +38,67 @@ func TestParseGatewayRequest_InvalidStreamType(t *testing.T) {
 	body := []byte(`{"stream":"true"}`)
 	_, err := ParseGatewayRequest(body)
 	require.Error(t, err)
+}
+
+func TestFilterThinkingBlocks(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		shouldFilter bool
+		expectError  bool
+	}{
+		{
+			name: "filters thinking blocks",
+			input: `{"model":"claude-3-5-sonnet-20241022","messages":[{"role":"user","content":[{"type":"text","text":"Hello"},{"type":"thinking","thinking":"internal","signature":"invalid"},{"type":"text","text":"World"}]}]}`,
+			shouldFilter: true,
+		},
+		{
+			name: "handles no thinking blocks",
+			input: `{"model":"claude-3-5-sonnet-20241022","messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]}`,
+			shouldFilter: false,
+		},
+		{
+			name: "handles invalid JSON gracefully",
+			input: `{invalid json`,
+			shouldFilter: false,
+			expectError: true,
+		},
+		{
+			name: "handles multiple messages with thinking blocks",
+			input: `{"messages":[{"role":"user","content":[{"type":"text","text":"A"}]},{"role":"assistant","content":[{"type":"thinking","thinking":"think"},{"type":"text","text":"B"}]}]}`,
+			shouldFilter: true,
+		},
+		{
+			name: "handles empty messages array",
+			input: `{"messages":[]}`,
+			shouldFilter: false,
+		},
+		{
+			name: "handles missing messages field",
+			input: `{"model":"claude-3"}`,
+			shouldFilter: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := FilterThinkingBlocks([]byte(tt.input))
+
+			if tt.expectError {
+				// For invalid JSON, should return original
+				require.Equal(t, tt.input, string(result))
+				return
+			}
+
+			if tt.shouldFilter {
+				// Verify thinking blocks removed
+				require.NotContains(t, string(result), `"type":"thinking"`)
+			}
+
+			// Verify valid JSON returned (unless input was invalid)
+			var parsed map[string]any
+			err := json.Unmarshal(result, &parsed)
+			require.NoError(t, err)
+		})
+	}
 }
