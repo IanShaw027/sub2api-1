@@ -99,6 +99,7 @@ func FilterThinkingBlocks(body []byte) []byte {
 
 		// Filter thinking blocks from content array
 		newContent := make([]any, 0, len(content))
+		filteredThisMessage := false
 		for _, block := range content {
 			blockMap, ok := block.(map[string]any)
 			if !ok {
@@ -107,15 +108,29 @@ func FilterThinkingBlocks(body []byte) []byte {
 			}
 
 			blockType, _ := blockMap["type"].(string)
+			// Explicit Anthropic-style thinking block: {"type":"thinking", ...}
 			if blockType == "thinking" {
 				filtered = true
+				filteredThisMessage = true
 				continue // Skip thinking blocks
+			}
+
+			// Some clients send the "thinking" object without a "type" discriminator.
+			// Vertex/Claude still expects a signature for any thinking block, so we drop it.
+			// We intentionally do not drop other typed blocks (e.g. tool_use) that might
+			// legitimately contain a "thinking" key inside their payload.
+			if blockType == "" {
+				if _, hasThinking := blockMap["thinking"]; hasThinking {
+					filtered = true
+					filteredThisMessage = true
+					continue // Skip thinking blocks
+				}
 			}
 
 			newContent = append(newContent, block)
 		}
 
-		if filtered {
+		if filteredThisMessage {
 			msgMap["content"] = newContent
 		}
 	}
