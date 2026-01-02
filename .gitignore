@@ -120,4 +120,3 @@ docs/
 code-reviews/
 AGENTS.md
 backend/cmd/server/server
-deploy/docker-compose.override.yml
