@@ -484,13 +484,26 @@ func AutoSetupFromEnv() error {
 
 	// Generate admin password if not provided
 	if cfg.Admin.Password == "" {
+		// In production/release mode, require an explicit admin password so we never
+		// end up generating credentials that operators might rely on logs to obtain.
+		// This avoids leaking highest-privilege credentials via CI/container logs.
+		if cfg.Server.Mode == "release" {
+			return fmt.Errorf("ADMIN_PASSWORD is required when SERVER_MODE=release (refusing to auto-generate admin credentials)")
+		}
+
 		password, err := generateSecret(16)
 		if err != nil {
 			return fmt.Errorf("failed to generate admin password: %w", err)
 		}
 		cfg.Admin.Password = password
-		log.Printf("Generated admin password: %s", cfg.Admin.Password)
-		log.Println("IMPORTANT: Save this password! It will not be shown again.")
+		// Only show the generated password in debug mode for local development.
+		// Never print credentials in CI logs.
+		if os.Getenv("CI") != "" {
+			log.Printf("Generated admin password automatically (debug mode, len=%d). Not printing password because CI is set; set ADMIN_PASSWORD to a known value instead.", len(cfg.Admin.Password))
+		} else {
+			log.Printf("Generated admin password (debug mode only): %s", cfg.Admin.Password)
+			log.Println("IMPORTANT: Save this password! It will not be shown in release mode.")
+		}
 	}
 
 	// Test database connection

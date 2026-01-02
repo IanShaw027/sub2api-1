@@ -18,7 +18,6 @@ import {
 import { useIntervalFn } from '@vueuse/core'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { opsAPI, type OpsDashboardOverview, type ProviderHealthData, type LatencyHistogramResponse, type ErrorDistributionResponse, type OpsMetrics } from '@/api/admin/ops'
-import { useAuthStore } from '@/stores/auth'
 import { formatBytes, formatNumber } from '@/utils/format'
 
 ChartJS.register(
@@ -35,9 +34,9 @@ ChartJS.register(
 )
 
 const { t } = useI18n()
-const authStore = useAuthStore()
 const loading = ref(false)
 const errorMessage = ref('')
+const hasLoadedOnce = ref(false)
 const timeRange = ref('1h')
 const lastUpdated = ref(new Date())
 
@@ -52,41 +51,7 @@ const metricsHistory = ref<OpsMetrics[]>([])
 const realTimeQPS = ref(0)
 const realTimeTPS = ref(0)
 const wsConnected = ref(false)
-let ws: WebSocket | null = null
-let reconnectTimer: ReturnType<typeof setTimeout> | null = null
-
-const connectWS = () => {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const wsBaseUrl = import.meta.env.VITE_WS_BASE_URL || window.location.host
-  const wsURL = new URL(`${protocol}//${wsBaseUrl}/api/v1/admin/ops/ws/qps`)
-  const token = authStore.token || localStorage.getItem('auth_token')
-  if (token) {
-    wsURL.searchParams.set('token', token)
-  }
-  ws = new WebSocket(wsURL.toString())
-
-  ws.onopen = () => {
-    wsConnected.value = true
-  }
-
-  ws.onmessage = (event) => {
-    try {
-      const payload = JSON.parse(event.data)
-      if (payload && typeof payload === 'object' && payload.type === 'qps_update' && payload.data) {
-        realTimeQPS.value = payload.data.qps || 0
-        realTimeTPS.value = payload.data.tps || 0
-      }
-    } catch (e) {
-      console.error('WS parse error', e)
-    }
-  }
-
-  ws.onclose = () => {
-    wsConnected.value = false
-    if (reconnectTimer) clearTimeout(reconnectTimer)
-    reconnectTimer = setTimeout(connectWS, 5000)
-  }
-}
+let unsubscribeQPS: (() => void) | null = null
 
 const fetchData = async () => {
   loading.value = true
@@ -121,6 +86,7 @@ const fetchData = async () => {
     errorMessage.value = '数据加载失败，请稍后重试'
   } finally {
     loading.value = false
+    hasLoadedOnce.value = true
   }
 }
 
@@ -129,21 +95,54 @@ useIntervalFn(fetchData, 30000)
 
 onMounted(() => {
   fetchData()
-  connectWS()
+  unsubscribeQPS = opsAPI.subscribeQPS(
+    (payload) => {
+      if (payload && typeof payload === 'object' && payload.type === 'qps_update' && payload.data) {
+        realTimeQPS.value = payload.data.qps || 0
+        realTimeTPS.value = payload.data.tps || 0
+      }
+    },
+    {
+      onOpen: () => {
+        wsConnected.value = true
+      },
+      onClose: () => {
+        wsConnected.value = false
+      }
+    }
+  )
 })
 
 onUnmounted(() => {
-  if (ws) ws.close()
-  if (reconnectTimer) clearTimeout(reconnectTimer)
+  wsConnected.value = false
+  if (unsubscribeQPS) unsubscribeQPS()
+  unsubscribeQPS = null
 })
 
 watch(timeRange, () => {
   fetchData()
 })
 
+function sumNumbers(values: Array<number | null | undefined>): number {
+  return values.reduce<number>((acc, v) => {
+    const n = typeof v === 'number' && Number.isFinite(v) ? v : 0
+    return acc + n
+  }, 0)
+}
+
+const emptyRequestHintText = computed(() => '当前时间段内无请求记录')
+const emptyErrorHintText = computed(() => '当前时间段内无错误记录')
+
 // Chart Data: Latency Distribution
+const latencyHasData = computed(() => (latencyData.value?.total_requests ?? 0) > 0)
+const latencyChartState = computed<'loading' | 'empty' | 'ready'>(() => {
+  if (!hasLoadedOnce.value) return 'loading'
+  if (latencyHasData.value) return 'ready'
+  if (loading.value) return 'loading'
+  return 'empty'
+})
 const latencyChartData = computed(() => {
-  if (!latencyData.value) return null
+  if (!latencyData.value || !latencyHasData.value) return null
   return {
     labels: latencyData.value.buckets.map(b => b.range),
     datasets: [
@@ -158,8 +157,15 @@ const latencyChartData = computed(() => {
 })
 
 // Chart Data: Error Distribution
+const errorTotalCount = computed(() => sumNumbers(errorDistribution.value?.items?.map(i => i.count) ?? []))
+const errorChartState = computed<'loading' | 'empty' | 'ready'>(() => {
+  if (!hasLoadedOnce.value) return 'loading'
+  if (errorTotalCount.value > 0) return 'ready'
+  if (loading.value) return 'loading'
+  return 'empty'
+})
 const errorChartData = computed(() => {
-  if (!errorDistribution.value) return null
+  if (!errorDistribution.value || errorTotalCount.value <= 0) return null
   return {
     labels: errorDistribution.value.items.map(i => i.code),
     datasets: [
@@ -174,8 +180,15 @@ const errorChartData = computed(() => {
 })
 
 // Chart Data: Provider SLA
+const providerTotalRequests = computed(() => sumNumbers(providers.value.map(p => p.request_count)))
+const providerChartState = computed<'loading' | 'empty' | 'ready'>(() => {
+  if (!hasLoadedOnce.value) return 'loading'
+  if (providers.value.length > 0 && providerTotalRequests.value > 0) return 'ready'
+  if (loading.value) return 'loading'
+  return 'empty'
+})
 const providerChartData = computed(() => {
-  if (!providers.value.length) return null
+  if (!providers.value.length || providerTotalRequests.value <= 0) return null
   return {
     labels: providers.value.map(p => p.name),
     datasets: [
@@ -289,7 +302,8 @@ const diskIOText = computed(() => {
 })
 
 const throughputChartData = computed(() => {
-  if (!metricsHistory.value.length) return null
+  const totalRequests = sumNumbers(metricsHistory.value.map(m => m.request_count))
+  if (!metricsHistory.value.length || totalRequests <= 0) return null
   return {
     labels: metricsHistory.value.map(m => formatHistoryLabel(m.updated_at)),
     datasets: [
@@ -313,6 +327,13 @@ const throughputChartData = computed(() => {
       }
     ]
   }
+})
+
+const throughputChartState = computed<'loading' | 'empty' | 'ready'>(() => {
+  if (!hasLoadedOnce.value) return 'loading'
+  if (throughputChartData.value) return 'ready'
+  if (loading.value) return 'loading'
+  return 'empty'
 })
 
 const throughputChartOptions = computed(() => ({
@@ -497,8 +518,11 @@ const throughputChartOptions = computed(() => ({
             <h3 class="text-sm font-black text-gray-900 dark:text-white uppercase tracking-wider">请求延迟分布</h3>
           </div>
           <div class="h-64">
-            <Bar v-if="latencyChartData" :data="latencyChartData" :options="chartOptions" />
-            <div v-else class="flex h-full items-center justify-center text-gray-400">加载中...</div>
+            <Bar v-if="latencyChartState === 'ready' && latencyChartData" :data="latencyChartData" :options="chartOptions" />
+            <div v-else class="flex h-full flex-col items-center justify-center gap-1 text-center text-gray-400">
+              <div v-if="latencyChartState === 'loading'" class="text-sm font-medium">加载中...</div>
+              <div v-else class="text-sm font-medium">{{ emptyRequestHintText }}</div>
+            </div>
           </div>
         </div>
 
@@ -508,8 +532,11 @@ const throughputChartOptions = computed(() => ({
             <h3 class="text-sm font-black text-gray-900 dark:text-white uppercase tracking-wider">上游供应商健康度 (SLA)</h3>
           </div>
           <div class="h-64">
-            <Bar v-if="providerChartData" :data="providerChartData" :options="chartOptions" />
-            <div v-else class="flex h-full items-center justify-center text-gray-400">加载中...</div>
+            <Bar v-if="providerChartState === 'ready' && providerChartData" :data="providerChartData" :options="chartOptions" />
+            <div v-else class="flex h-full flex-col items-center justify-center gap-1 text-center text-gray-400">
+              <div v-if="providerChartState === 'loading'" class="text-sm font-medium">加载中...</div>
+              <div v-else class="text-sm font-medium">{{ emptyRequestHintText }}</div>
+            </div>
           </div>
         </div>
 
@@ -519,8 +546,11 @@ const throughputChartOptions = computed(() => ({
             <h3 class="text-sm font-black text-gray-900 dark:text-white uppercase tracking-wider">吞吐趋势 (QPS/TPS)</h3>
           </div>
           <div class="h-64">
-            <Line v-if="throughputChartData" :data="throughputChartData" :options="throughputChartOptions" />
-            <div v-else class="flex h-full items-center justify-center text-gray-400">加载中...</div>
+            <Line v-if="throughputChartState === 'ready' && throughputChartData" :data="throughputChartData" :options="throughputChartOptions" />
+            <div v-else class="flex h-full flex-col items-center justify-center gap-1 text-center text-gray-400">
+              <div v-if="throughputChartState === 'loading'" class="text-sm font-medium">加载中...</div>
+              <div v-else class="text-sm font-medium">{{ emptyRequestHintText }}</div>
+            </div>
           </div>
         </div>
 
@@ -529,18 +559,24 @@ const throughputChartOptions = computed(() => ({
           <div class="mb-6 flex items-center justify-between">
             <h3 class="text-sm font-black text-gray-900 dark:text-white uppercase tracking-wider">错误类型分布</h3>
           </div>
-          <div class="flex h-64 gap-6">
-            <div class="relative w-1/2">
-              <Doughnut v-if="errorChartData" :data="errorChartData" :options="{ ...chartOptions, cutout: '70%' }" />
-            </div>
-            <div class="flex flex-1 flex-col justify-center space-y-3">
-              <div v-for="(item, idx) in errorDistribution?.items.slice(0, 5)" :key="item.code" class="flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                  <div class="h-2 w-2 rounded-full" :style="{ backgroundColor: ['#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#8b5cf6'][idx] }"></div>
-                  <span class="text-xs font-bold text-gray-700 dark:text-gray-300">{{ item.code }}</span>
-                </div>
-                <span class="text-xs font-black text-gray-900 dark:text-white">{{ item.percentage }}%</span>
+          <div class="h-64">
+            <div v-if="errorChartState === 'ready' && errorChartData" class="flex h-full gap-6">
+              <div class="relative w-1/2">
+                <Doughnut :data="errorChartData" :options="{ ...chartOptions, cutout: '70%' }" />
               </div>
+              <div class="flex flex-1 flex-col justify-center space-y-3">
+                <div v-for="(item, idx) in errorDistribution?.items.slice(0, 5)" :key="item.code" class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <div class="h-2 w-2 rounded-full" :style="{ backgroundColor: ['#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#8b5cf6'][idx] }"></div>
+                    <span class="text-xs font-bold text-gray-700 dark:text-gray-300">{{ item.code }}</span>
+                  </div>
+                  <span class="text-xs font-black text-gray-900 dark:text-white">{{ item.percentage }}%</span>
+                </div>
+              </div>
+            </div>
+            <div v-else class="flex h-full flex-col items-center justify-center gap-1 text-center text-gray-400">
+              <div v-if="errorChartState === 'loading'" class="text-sm font-medium">加载中...</div>
+              <div v-else class="text-sm font-medium">{{ emptyErrorHintText }}</div>
             </div>
           </div>
         </div>

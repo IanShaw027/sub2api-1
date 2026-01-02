@@ -626,7 +626,7 @@ func (h *GatewayHandler) mapUpstreamError(statusCode int) (int, string, string) 
 // handleStreamingAwareError handles errors that may occur after streaming has started
 func (h *GatewayHandler) handleStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
 	if streamStarted {
-		recordOpsError(c, h.opsService, status, errType, message, "", true)
+		recordOpsError(c, h.opsService, status, errType, message, "", true, "")
 		// Stream already started, send error as SSE event then close
 		flusher, ok := c.Writer.(http.Flusher)
 		if ok {
@@ -658,7 +658,7 @@ func (h *GatewayHandler) handleStreamingAwareError(c *gin.Context, status int, e
 
 // errorResponse 返回Claude API格式的错误响应
 func (h *GatewayHandler) errorResponse(c *gin.Context, status int, errType, message string) {
-	recordOpsError(c, h.opsService, status, errType, message, "", false)
+	recordOpsError(c, h.opsService, status, errType, message, "", false, "")
 	c.JSON(status, gin.H{
 		"type": "error",
 		"error": gin.H{

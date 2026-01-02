@@ -1045,6 +1045,14 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		// 发送请求
 		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 		if err != nil {
+			errMsg := err.Error()
+			if strings.Contains(errMsg, "timeout_error:") {
+				detail := strings.TrimPrefix(errMsg, "timeout_error: ")
+				log.Printf("Account %d: upstream timeout: %s", account.ID, detail)
+			} else if strings.Contains(errMsg, "network_error:") {
+				detail := strings.TrimPrefix(errMsg, "network_error: ")
+				log.Printf("Account %d: upstream network error: %s", account.ID, detail)
+			}
 			return nil, fmt.Errorf("upstream request failed: %w", err)
 		}
 
@@ -1829,6 +1837,14 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	// 发送请求
 	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 	if err != nil {
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "timeout_error:") {
+			detail := strings.TrimPrefix(errMsg, "timeout_error: ")
+			log.Printf("Account %d: count_tokens upstream timeout: %s", account.ID, detail)
+		} else if strings.Contains(errMsg, "network_error:") {
+			detail := strings.TrimPrefix(errMsg, "network_error: ")
+			log.Printf("Account %d: count_tokens upstream network error: %s", account.ID, detail)
+		}
 		s.countTokensError(c, http.StatusBadGateway, "upstream_error", "Request failed")
 		return fmt.Errorf("upstream request failed: %w", err)
 	}

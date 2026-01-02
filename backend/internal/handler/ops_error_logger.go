@@ -182,7 +182,7 @@ func setOpsRequestContext(c *gin.Context, model string, stream bool) {
 	c.Set(opsStreamKey, stream)
 }
 
-func recordOpsError(c *gin.Context, ops *service.OpsService, status int, errType, message, fallbackPlatform string, streamInterrupted bool) {
+func recordOpsError(c *gin.Context, ops *service.OpsService, status int, errType, message, fallbackPlatform string, streamInterrupted bool, upstreamDetail string) {
 	if ops == nil || c == nil {
 		return
 	}
@@ -221,6 +221,10 @@ func recordOpsError(c *gin.Context, ops *service.OpsService, status int, errType
 	}
 	logEntry.IsRetryable = classifyOpsIsRetryable(errType, status)
 	logEntry.CompletionStatus = classifyOpsCompletionStatus(status, streaming, streamInterrupted)
+
+	if upstreamDetail != "" {
+		logEntry.UpstreamErrorDetail = &upstreamDetail
+	}
 
 	if apiKey != nil {
 		logEntry.APIKeyID = &apiKey.ID

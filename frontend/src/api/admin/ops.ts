@@ -295,7 +295,15 @@ export async function getErrorDistribution(timeRange = '1h'): Promise<ErrorDistr
 /**
  * Subscribe to realtime QPS updates via WebSocket
  */
-export function subscribeQPS(onMessage: (data: any) => void): () => void {
+export interface SubscribeQPSOptions {
+  token?: string | null
+  onOpen?: () => void
+  onClose?: (event: CloseEvent) => void
+  onError?: (event: Event) => void
+  wsBaseUrl?: string
+}
+
+export function subscribeQPS(onMessage: (data: any) => void, options: SubscribeQPSOptions = {}): () => void {
   let ws: WebSocket | null = null
   let reconnectAttempts = 0
   const maxReconnectAttempts = 5
@@ -304,28 +312,37 @@ export function subscribeQPS(onMessage: (data: any) => void): () => void {
 
   const connect = () => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = window.location.host
-    ws = new WebSocket(`${protocol}//${host}/api/v1/admin/ops/ws/qps`)
+    const wsBaseUrl = options.wsBaseUrl || import.meta.env.VITE_WS_BASE_URL || window.location.host
+    const wsURL = new URL(`${protocol}//${wsBaseUrl}/api/v1/admin/ops/ws/qps`)
+
+    const token = options.token ?? localStorage.getItem('auth_token')
+    if (token) wsURL.searchParams.set('token', token)
+
+    ws = new WebSocket(wsURL.toString())
 
     ws.onopen = () => {
-      console.log('[OpsWS] Connected')
       reconnectAttempts = 0
+      options.onOpen?.()
     }
 
     ws.onmessage = (e) => {
-      const data = JSON.parse(e.data)
-      onMessage(data)
+      try {
+        const data = JSON.parse(e.data)
+        onMessage(data)
+      } catch (err) {
+        console.warn('[OpsWS] Failed to parse message:', err)
+      }
     }
 
     ws.onerror = (error) => {
       console.error('[OpsWS] Connection error:', error)
+      options.onError?.(error)
     }
 
-    ws.onclose = () => {
-      console.log('[OpsWS] Connection closed')
+    ws.onclose = (event) => {
+      options.onClose?.(event)
       if (shouldReconnect && reconnectAttempts < maxReconnectAttempts) {
         const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000)
-        console.log(`[OpsWS] Reconnecting in ${delay}ms...`)
         reconnectTimer = setTimeout(() => {
           reconnectAttempts++
           connect()

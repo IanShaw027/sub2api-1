@@ -280,6 +280,24 @@ func evaluateRule(rule OpsAlertRule, metrics []OpsMetrics) (bool, float64, bool)
 		return false, 0, false
 	}
 
+	// 如果没有 alert_category，使用传统逻辑（向后兼容）
+	if rule.AlertCategory == "" {
+		return evaluateRuleLegacy(rule, metrics)
+	}
+
+	// 根据 alert_category 选择评估逻辑
+	switch rule.AlertCategory {
+	case "error_rate", "error_count", "latency", "availability":
+		return evaluateRuleLegacy(rule, metrics)
+	case "account_status":
+		// account_status 类型暂时使用传统逻辑，后续可扩展
+		return evaluateRuleLegacy(rule, metrics)
+	default:
+		return evaluateRuleLegacy(rule, metrics)
+	}
+}
+
+func evaluateRuleLegacy(rule OpsAlertRule, metrics []OpsMetrics) (bool, float64, bool) {
 	latestValue, ok := metricValue(metrics[0], rule.MetricType)
 	if !ok {
 		return false, 0, false

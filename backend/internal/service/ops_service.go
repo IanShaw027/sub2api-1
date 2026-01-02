@@ -79,6 +79,16 @@ type OpsErrorLog struct {
 	ProviderErrorCode string `json:"provider_error_code,omitempty"`
 	ProviderErrorType string `json:"provider_error_type,omitempty"`
 
+	// 错误分类字段
+	ErrorSource           string  `json:"error_source,omitempty"`
+	ErrorOwner            string  `json:"error_owner,omitempty"`
+	AccountStatus         string  `json:"account_status,omitempty"`
+	UpstreamStatusCode    *int    `json:"upstream_status_code,omitempty"`
+	UpstreamErrorMessage  string  `json:"upstream_error_message,omitempty"`
+	UpstreamErrorDetail   *string `json:"upstream_error_detail,omitempty"`
+	NetworkErrorType      string  `json:"network_error_type,omitempty"`
+	RetryAfterSeconds     *int    `json:"retry_after_seconds,omitempty"`
+
 	IsRetryable      bool   `json:"is_retryable"`
 	IsUserActionable bool   `json:"is_user_actionable"`
 	RetryCount       int    `json:"retry_count"`
@@ -200,6 +210,12 @@ type OpsRepository interface {
 	GetCachedDashboardOverview(ctx context.Context, timeRange string) (*DashboardOverviewData, error)
 	SetCachedDashboardOverview(ctx context.Context, timeRange string, data *DashboardOverviewData, ttl time.Duration) error
 	PingRedis(ctx context.Context) error
+
+	// Account status monitoring methods
+	GetAccountStats(ctx context.Context, accountID int64, duration time.Duration) (*AccountStats, error)
+	GetLastAccountError(ctx context.Context, accountID int64) (*OpsErrorLog, error)
+	UpsertAccountStatus(ctx context.Context, status *OpsAccountStatus) error
+	GetActiveAccounts(ctx context.Context) ([]int64, error)
 }
 
 type OpsService struct {
@@ -319,7 +335,85 @@ func (s *OpsService) ListErrorLogs(ctx context.Context, filters OpsErrorLogFilte
 	if err != nil {
 		return nil, 0, err
 	}
-	return logs, len(logs), nil
+
+	// Return the total number of rows matching the filter conditions (not just the current page/limit).
+	// This is used by the admin UI for pagination/statistics.
+	if s == nil || s.sqlDB == nil {
+		s.dbNilWarnOnce.Do(func() {
+			log.Printf("[OpsService][WARN] database is nil; returning total=len(items) for legacy error logs list")
+		})
+		return logs, len(logs), nil
+	}
+
+	total, err := s.countErrorLogsLegacy(ctxDB, filters)
+	if err != nil {
+		return nil, 0, err
+	}
+	return logs, total, nil
+}
+
+func (s *OpsService) countErrorLogsLegacy(ctx context.Context, filters OpsErrorLogFilters) (int, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if s == nil || s.sqlDB == nil {
+		return 0, errors.New("ops service database not initialized")
+	}
+
+	conditions := make([]string, 0)
+	args := make([]any, 0)
+
+	addCondition := func(condition string, values ...any) {
+		conditions = append(conditions, condition)
+		args = append(args, values...)
+	}
+
+	// Keep conditions aligned with repository.OpsRepository.ListErrorLogsLegacy so total matches returned items.
+	if filters.StartTime != nil {
+		addCondition(fmt.Sprintf("created_at >= $%d", len(args)+1), *filters.StartTime)
+	}
+	if filters.EndTime != nil {
+		addCondition(fmt.Sprintf("created_at <= $%d", len(args)+1), *filters.EndTime)
+	}
+	if filters.Platform != "" {
+		addCondition(fmt.Sprintf("platform = $%d", len(args)+1), filters.Platform)
+	}
+	if filters.Phase != "" {
+		addCondition(fmt.Sprintf("error_phase = $%d", len(args)+1), filters.Phase)
+	}
+	if filters.Severity != "" {
+		addCondition(fmt.Sprintf("severity = $%d", len(args)+1), filters.Severity)
+	}
+	if filters.Query != "" {
+		like := "%" + strings.ToLower(filters.Query) + "%"
+		startIdx := len(args) + 1
+		addCondition(
+			fmt.Sprintf("(LOWER(request_id) LIKE $%d OR LOWER(model) LIKE $%d OR LOWER(error_message) LIKE $%d OR LOWER(error_type) LIKE $%d)",
+				startIdx, startIdx+1, startIdx+2, startIdx+3,
+			),
+			like, like, like, like,
+		)
+	}
+
+	where := ""
+	if len(conditions) > 0 {
+		where = "WHERE " + strings.Join(conditions, " AND ")
+	}
+
+	query := fmt.Sprintf(`SELECT COUNT(*) FROM ops_error_logs %s`, where)
+	var total int64
+	if err := s.sqlDB.QueryRowContext(ctx, query, args...).Scan(&total); err != nil {
+		return 0, err
+	}
+
+	maxInt := int64(^uint(0) >> 1)
+	if total > maxInt {
+		return int(maxInt), nil
+	}
+	if total < 0 {
+		return 0, nil
+	}
+	return int(total), nil
 }
 
 func (s *OpsService) GetWindowStats(ctx context.Context, startTime, endTime time.Time) (*OpsWindowStats, error) {
@@ -494,6 +588,38 @@ type OverviewStats struct {
 	MemoryTotalMB         int64
 	ConcurrencyQueueDepth int
 }
+
+// AccountStats 账号统计数据
+type AccountStats struct {
+	ErrorCount      int
+	SuccessCount    int
+	TimeoutCount    int
+	RateLimitCount  int
+}
+
+// OpsAccountStatus 账号状态
+type OpsAccountStatus struct {
+	ID                   int64
+	AccountID            int64
+	Platform             string
+	Status               string
+	LastErrorType        string
+	LastErrorMessage     string
+	LastErrorTime        time.Time
+	ErrorCount1h         int
+	SuccessCount1h       int
+	TimeoutCount1h       int
+	RateLimitCount1h     int
+	ErrorCount24h        int
+	SuccessCount24h      int
+	TimeoutCount24h      int
+	RateLimitCount24h    int
+	LastSuccessTime      *time.Time
+	StatusChangedAt      *time.Time
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+}
+
 
 func (s *OpsService) GetDashboardOverview(ctx context.Context, timeRange string) (*DashboardOverviewData, error) {
 	if s == nil {
@@ -1093,4 +1219,14 @@ func classifyProviderStatus(successRate float64, p99LatencyMs int, timeoutCount 
 	}
 
 	return "healthy"
+}
+
+// GetAccountStats returns account statistics for a given duration.
+func (s *OpsService) GetAccountStats(ctx context.Context, accountID int64, duration time.Duration) (*AccountStats, error) {
+	if s == nil || s.repo == nil {
+		return &AccountStats{}, nil
+	}
+	ctxDB, cancel := context.WithTimeout(ctx, opsDBQueryTimeout)
+	defer cancel()
+	return s.repo.GetAccountStats(ctxDB, accountID, duration)
 }

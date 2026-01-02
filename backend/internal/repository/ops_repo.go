@@ -90,13 +90,22 @@ func (r *OpsRepository) CreateErrorLog(ctx context.Context, log *service.OpsErro
 			retry_count,
 			completion_status,
 			duration_ms,
+			error_source,
+			error_owner,
+			account_status,
+			upstream_status_code,
+			upstream_error_message,
+			network_error_type,
+			retry_after_seconds,
 			created_at
 		) VALUES (
 			$1, $2, $3, $4, $5,
 			$6, $7, $8, $9, $10,
 			$11, $12, $13, $14, $15,
 			$16, $17, $18, $19, $20,
-			$21, $22, $23, $24
+			$21, $22, $23, $24, $25,
+			$26, $27, $28, $29, $30,
+			$31
 		)
 		RETURNING id, created_at
 	`
@@ -144,6 +153,13 @@ func (r *OpsRepository) CreateErrorLog(ctx context.Context, log *service.OpsErro
 		log.RetryCount,
 		completionStatus,
 		durationMs,
+		nullString(log.ErrorSource),
+		nullString(log.ErrorOwner),
+		nullString(log.AccountStatus),
+		nullInt64Ptr(log.UpstreamStatusCode),
+		nullString(log.UpstreamErrorMessage),
+		nullString(log.NetworkErrorType),
+		nullInt64Ptr(log.RetryAfterSeconds),
 		createdAt,
 	}
 
@@ -3105,4 +3121,203 @@ func nullString(value string) sql.NullString {
 		return sql.NullString{}
 	}
 	return sql.NullString{String: value, Valid: true}
+}
+
+func nullInt64Ptr(value *int) sql.NullInt64 {
+	if value == nil {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: int64(*value), Valid: true}
+}
+
+func formatPostgresInterval(duration time.Duration) (string, error) {
+	if duration < 0 {
+		return "", fmt.Errorf("duration must be non-negative: %s", duration)
+	}
+	if duration == 0 {
+		return "0 seconds", nil
+	}
+
+	remaining := duration
+	hours := remaining / time.Hour
+	remaining -= hours * time.Hour
+	minutes := remaining / time.Minute
+	remaining -= minutes * time.Minute
+	seconds := remaining / time.Second
+	remaining -= seconds * time.Second
+
+	var parts []string
+	if hours != 0 {
+		unit := "hours"
+		if hours == 1 {
+			unit = "hour"
+		}
+		parts = append(parts, fmt.Sprintf("%d %s", hours, unit))
+	}
+	if minutes != 0 {
+		unit := "minutes"
+		if minutes == 1 {
+			unit = "minute"
+		}
+		parts = append(parts, fmt.Sprintf("%d %s", minutes, unit))
+	}
+
+	secondsValue := float64(seconds)
+	if remaining != 0 {
+		secondsValue += float64(remaining) / float64(time.Second)
+	}
+	if secondsValue != 0 || len(parts) == 0 {
+		secondsStr := strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.9f", secondsValue), "0"), ".")
+		unit := "seconds"
+		if secondsStr == "1" {
+			unit = "second"
+		}
+		parts = append(parts, fmt.Sprintf("%s %s", secondsStr, unit))
+	}
+
+	return strings.Join(parts, " "), nil
+}
+
+// GetAccountStats 获取账号统计数据
+func (r *OpsRepository) GetAccountStats(ctx context.Context, accountID int64, duration time.Duration) (*service.AccountStats, error) {
+	interval, err := formatPostgresInterval(duration)
+	if err != nil {
+		return nil, err
+	}
+
+	query := `
+		WITH
+		error_stats AS (
+			SELECT
+				COUNT(*) FILTER (WHERE status_code >= 400) AS error_count,
+				COUNT(*) FILTER (WHERE error_type = 'timeout_error') AS timeout_count,
+				COUNT(*) FILTER (WHERE error_type = 'rate_limit_error') AS rate_limit_count
+			FROM ops_error_logs
+			WHERE account_id = $1 AND created_at >= NOW() - $2::interval
+		),
+		usage_stats AS (
+			SELECT
+				COUNT(*) AS success_count
+			FROM usage_logs
+			WHERE account_id = $1 AND created_at >= NOW() - $2::interval
+		)
+		SELECT
+			error_stats.error_count,
+			usage_stats.success_count,
+			error_stats.timeout_count,
+			error_stats.rate_limit_count
+		FROM error_stats
+		CROSS JOIN usage_stats
+	`
+
+	var stats service.AccountStats
+	err = r.sql.QueryRowContext(ctx, query, accountID, interval).Scan(
+		&stats.ErrorCount,
+		&stats.SuccessCount,
+		&stats.TimeoutCount,
+		&stats.RateLimitCount,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &stats, nil
+}
+
+// GetLastAccountError 获取账号最近一次错误
+func (r *OpsRepository) GetLastAccountError(ctx context.Context, accountID int64) (*service.OpsErrorLog, error) {
+	query := `
+		SELECT id, created_at, error_type, error_message, platform, account_status
+		FROM ops_error_logs
+		WHERE account_id = $1 AND status_code >= 400
+		ORDER BY created_at DESC
+		LIMIT 1
+	`
+
+	var log service.OpsErrorLog
+	err := r.sql.QueryRowContext(ctx, query, accountID).Scan(
+		&log.ID,
+		&log.CreatedAt,
+		&log.Type,
+		&log.Message,
+		&log.Platform,
+		&log.AccountStatus,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &log, nil
+}
+
+// UpsertAccountStatus 更新或插入账号状态
+func (r *OpsRepository) UpsertAccountStatus(ctx context.Context, status *service.OpsAccountStatus) error {
+	query := `
+		INSERT INTO ops_account_status (
+			account_id, platform, status, last_error_type, last_error_message,
+			last_error_time, error_count_1h, success_count_1h, timeout_count_1h,
+			rate_limit_count_1h, error_count_24h, success_count_24h,
+			timeout_count_24h, rate_limit_count_24h, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		ON CONFLICT (account_id, platform) DO UPDATE SET
+			status = EXCLUDED.status,
+			last_error_type = EXCLUDED.last_error_type,
+			last_error_message = EXCLUDED.last_error_message,
+			last_error_time = EXCLUDED.last_error_time,
+			error_count_1h = EXCLUDED.error_count_1h,
+			success_count_1h = EXCLUDED.success_count_1h,
+			timeout_count_1h = EXCLUDED.timeout_count_1h,
+			rate_limit_count_1h = EXCLUDED.rate_limit_count_1h,
+			error_count_24h = EXCLUDED.error_count_24h,
+			success_count_24h = EXCLUDED.success_count_24h,
+			timeout_count_24h = EXCLUDED.timeout_count_24h,
+			rate_limit_count_24h = EXCLUDED.rate_limit_count_24h,
+			updated_at = EXCLUDED.updated_at
+	`
+
+	_, err := r.sql.ExecContext(ctx, query,
+		status.AccountID,
+		status.Platform,
+		status.Status,
+		status.LastErrorType,
+		status.LastErrorMessage,
+		status.LastErrorTime,
+		status.ErrorCount1h,
+		status.SuccessCount1h,
+		status.TimeoutCount1h,
+		status.RateLimitCount1h,
+		status.ErrorCount24h,
+		status.SuccessCount24h,
+		status.TimeoutCount24h,
+		status.RateLimitCount24h,
+		status.UpdatedAt,
+	)
+	return err
+}
+
+// GetActiveAccounts 获取所有活跃账号ID
+func (r *OpsRepository) GetActiveAccounts(ctx context.Context) ([]int64, error) {
+	query := `
+		SELECT DISTINCT account_id
+		FROM ops_error_logs
+		WHERE created_at >= NOW() - INTERVAL '24 hours'
+		  AND account_id IS NOT NULL
+	`
+
+	rows, err := r.sql.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var accounts []int64
+	for rows.Next() {
+		var accountID int64
+		if err := rows.Scan(&accountID); err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, accountID)
+	}
+	return accounts, rows.Err()
 }

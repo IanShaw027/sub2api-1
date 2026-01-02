@@ -1,0 +1,374 @@
+package service
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"sync"
+	"time"
+)
+
+type OpsScheduledReportService struct {
+	opsService   *OpsService
+	userService  *UserService
+	emailService *EmailService
+	httpClient   *http.Client
+
+	startOnce sync.Once
+	stopOnce  sync.Once
+	stopCtx   context.Context
+	stop      context.CancelFunc
+	wg        sync.WaitGroup
+}
+
+type ScheduledReport struct {
+	ID           int64
+	Name         string
+	ReportType   string
+	TimeRange    string
+	Schedule     string
+	NotifyEmail  bool
+	NotifyWebhook bool
+	WebhookURL   string
+	Enabled      bool
+	LastRunAt    *time.Time
+	NextRunAt    time.Time
+}
+
+func NewOpsScheduledReportService(opsService *OpsService, userService *UserService, emailService *EmailService) *OpsScheduledReportService {
+	return &OpsScheduledReportService{
+		opsService:   opsService,
+		userService:  userService,
+		emailService: emailService,
+		httpClient:   &http.Client{Timeout: 10 * time.Second},
+	}
+}
+
+func (s *OpsScheduledReportService) Start() {
+	s.StartWithContext(context.Background())
+}
+
+func (s *OpsScheduledReportService) StartWithContext(ctx context.Context) {
+	if s == nil {
+		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	s.startOnce.Do(func() {
+		s.stopCtx, s.stop = context.WithCancel(ctx)
+		s.wg.Add(1)
+		go s.run()
+	})
+}
+
+func (s *OpsScheduledReportService) Stop() {
+	if s == nil {
+		return
+	}
+
+	s.stopOnce.Do(func() {
+		if s.stop != nil {
+			s.stop()
+		}
+	})
+	s.wg.Wait()
+}
+
+func (s *OpsScheduledReportService) run() {
+	defer s.wg.Done()
+
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+
+	s.checkAndRunReports()
+	for {
+		select {
+		case <-ticker.C:
+			s.checkAndRunReports()
+		case <-s.stopCtx.Done():
+			return
+		}
+	}
+}
+
+func (s *OpsScheduledReportService) checkAndRunReports() {
+	ctx, cancel := context.WithTimeout(s.stopCtx, 30*time.Second)
+	defer cancel()
+
+	reports, err := s.listScheduledReports(ctx)
+	if err != nil {
+		log.Printf("[ScheduledReport] failed to list reports: %v", err)
+		return
+	}
+
+	now := time.Now()
+	for _, report := range reports {
+		if !report.Enabled {
+			continue
+		}
+		if report.NextRunAt.After(now) {
+			continue
+		}
+
+		s.runReport(ctx, &report, now)
+	}
+}
+
+func (s *OpsScheduledReportService) runReport(ctx context.Context, report *ScheduledReport, now time.Time) {
+	content, err := s.generateReportContent(ctx, report.ReportType, report.TimeRange)
+	if err != nil {
+		log.Printf("[ScheduledReport] failed to generate report %s: %v", report.Name, err)
+		return
+	}
+
+	emailSent, webhookSent := false, false
+	if report.NotifyEmail {
+		emailSent = s.sendReportEmail(ctx, report, content)
+	}
+	if report.NotifyWebhook && report.WebhookURL != "" {
+		webhookSent = s.sendReportWebhook(ctx, report, content)
+	}
+
+	if emailSent || webhookSent {
+		log.Printf("[ScheduledReport] report %s sent (email=%v, webhook=%v)", report.Name, emailSent, webhookSent)
+	}
+}
+
+func (s *OpsScheduledReportService) generateReportContent(ctx context.Context, reportType string, timeRange string) (map[string]any, error) {
+	if s.opsService == nil {
+		return nil, fmt.Errorf("ops service not initialized")
+	}
+
+	duration, err := parseTimeRange(timeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	startTime := now.Add(-duration)
+
+	switch reportType {
+	case "daily_summary":
+		return s.generateDailySummary(ctx, startTime, now)
+	case "weekly_summary":
+		return s.generateWeeklySummary(ctx, startTime, now)
+	case "error_digest":
+		return s.generateErrorDigest(ctx, startTime, now)
+	case "account_health":
+		return s.generateAccountHealth(ctx, startTime, now)
+	default:
+		return nil, fmt.Errorf("unknown report type: %s", reportType)
+	}
+}
+
+func (s *OpsScheduledReportService) generateDailySummary(ctx context.Context, startTime, endTime time.Time) (map[string]any, error) {
+	stats, err := s.opsService.GetWindowStats(ctx, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+
+	totalReqs := stats.SuccessCount + stats.ErrorCount
+	successRate := 0.0
+	if totalReqs > 0 {
+		successRate = float64(stats.SuccessCount) / float64(totalReqs) * 100
+	}
+
+	return map[string]any{
+		"report_type":   "daily_summary",
+		"period_start":  startTime.Format(time.RFC3339),
+		"period_end":    endTime.Format(time.RFC3339),
+		"total_requests": totalReqs,
+		"success_count":  stats.SuccessCount,
+		"error_count":    stats.ErrorCount,
+		"success_rate":   fmt.Sprintf("%.2f%%", successRate),
+		"p50_latency_ms": stats.P50LatencyMs,
+		"p99_latency_ms": stats.P99LatencyMs,
+		"timeout_count":  stats.TimeoutCount,
+	}, nil
+}
+
+func (s *OpsScheduledReportService) generateWeeklySummary(ctx context.Context, startTime, endTime time.Time) (map[string]any, error) {
+	stats, err := s.opsService.GetWindowStats(ctx, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+
+	totalReqs := stats.SuccessCount + stats.ErrorCount
+	successRate := 0.0
+	if totalReqs > 0 {
+		successRate = float64(stats.SuccessCount) / float64(totalReqs) * 100
+	}
+
+	return map[string]any{
+		"report_type":    "weekly_summary",
+		"period_start":   startTime.Format(time.RFC3339),
+		"period_end":     endTime.Format(time.RFC3339),
+		"total_requests": totalReqs,
+		"success_rate":   fmt.Sprintf("%.2f%%", successRate),
+		"error_count":    stats.ErrorCount,
+		"avg_latency_ms": stats.AvgLatencyMs,
+		"p99_latency_ms": stats.P99LatencyMs,
+	}, nil
+}
+
+func (s *OpsScheduledReportService) generateErrorDigest(ctx context.Context, startTime, endTime time.Time) (map[string]any, error) {
+	filters := OpsErrorLogFilters{
+		StartTime: &startTime,
+		EndTime:   &endTime,
+		Limit:     100,
+	}
+
+	logs, _, err := s.opsService.ListErrorLogs(ctx, filters)
+	if err != nil {
+		return nil, err
+	}
+
+	errorsByType := make(map[string]int)
+	for _, log := range logs {
+		errorsByType[log.Type]++
+	}
+
+	return map[string]any{
+		"report_type":     "error_digest",
+		"period_start":    startTime.Format(time.RFC3339),
+		"period_end":      endTime.Format(time.RFC3339),
+		"total_errors":    len(logs),
+		"errors_by_type":  errorsByType,
+		"recent_errors":   logs[:min(10, len(logs))],
+	}, nil
+}
+
+func (s *OpsScheduledReportService) generateAccountHealth(ctx context.Context, startTime, endTime time.Time) (map[string]any, error) {
+	if s.opsService == nil || s.opsService.repo == nil {
+		return nil, fmt.Errorf("ops service not initialized")
+	}
+
+	accountIDs, err := s.opsService.repo.GetActiveAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	healthyCount := 0
+	unhealthyAccounts := []map[string]any{}
+
+	for _, accountID := range accountIDs {
+		stats, err := s.opsService.repo.GetAccountStats(ctx, accountID, 24*time.Hour)
+		if err != nil {
+			continue
+		}
+
+		totalReqs := stats.SuccessCount + stats.ErrorCount
+		if totalReqs == 0 {
+			continue
+		}
+
+		errorRate := float64(stats.ErrorCount) / float64(totalReqs) * 100
+		if errorRate > 10 {
+			lastError, _ := s.opsService.repo.GetLastAccountError(ctx, accountID)
+			unhealthyAccounts = append(unhealthyAccounts, map[string]any{
+				"account_id":  accountID,
+				"error_rate":  fmt.Sprintf("%.2f%%", errorRate),
+				"error_count": stats.ErrorCount,
+				"last_error":  lastError,
+			})
+		} else {
+			healthyCount++
+		}
+	}
+
+	return map[string]any{
+		"report_type":        "account_health",
+		"period_start":       startTime.Format(time.RFC3339),
+		"period_end":         endTime.Format(time.RFC3339),
+		"total_accounts":     len(accountIDs),
+		"healthy_accounts":   healthyCount,
+		"unhealthy_accounts": unhealthyAccounts,
+	}, nil
+}
+
+func (s *OpsScheduledReportService) sendReportEmail(ctx context.Context, report *ScheduledReport, content map[string]any) bool {
+	if s.emailService == nil || s.userService == nil {
+		return false
+	}
+
+	admin, err := s.userService.GetFirstAdmin(ctx)
+	if err != nil || admin == nil || admin.Email == "" {
+		return false
+	}
+
+	config, err := s.emailService.GetSMTPConfig(ctx)
+	if err != nil {
+		log.Printf("[ScheduledReport] email config load failed: %v", err)
+		return false
+	}
+
+	subject := fmt.Sprintf("[Scheduled Report] %s", report.Name)
+	body := formatReportEmail(content)
+
+	if err := s.emailService.SendEmailWithConfig(config, admin.Email, subject, body); err != nil {
+		log.Printf("[ScheduledReport] email send failed: %v", err)
+		return false
+	}
+
+	return true
+}
+
+func (s *OpsScheduledReportService) sendReportWebhook(ctx context.Context, report *ScheduledReport, content map[string]any) bool {
+	payload := map[string]any{
+		"report_name": report.Name,
+		"report_type": report.ReportType,
+		"content":     content,
+		"timestamp":   time.Now().Format(time.RFC3339),
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return false
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, report.WebhookURL, bytes.NewReader(body))
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		log.Printf("[ScheduledReport] webhook send failed: %v", err)
+		return false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		log.Printf("[ScheduledReport] webhook returned status %d", resp.StatusCode)
+		return false
+	}
+
+	return true
+}
+
+func (s *OpsScheduledReportService) listScheduledReports(ctx context.Context) ([]ScheduledReport, error) {
+	// TODO: 从数据库读取配置
+	// 目前返回空列表，等待数据库表创建
+	return []ScheduledReport{}, nil
+}
+
+func formatReportEmail(content map[string]any) string {
+	body := "Scheduled Report\n\n"
+	for k, v := range content {
+		body += fmt.Sprintf("%s: %v\n", k, v)
+	}
+	return body
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
