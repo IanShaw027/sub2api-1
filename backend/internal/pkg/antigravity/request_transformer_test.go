@@ -26,15 +26,15 @@ func TestBuildParts_ThinkingBlockWithoutSignature(t *testing.T) {
 			description:       "Claude模型应该跳过无signature的thinking block",
 		},
 		{
-			name: "Claude model - keep thinking block with signature",
+			name: "Claude model - skip all thinking blocks",
 			content: `[
 				{"type": "text", "text": "Hello"},
-				{"type": "thinking", "thinking": "Let me think...", "signature": "valid_sig"},
+				{"type": "thinking", "thinking": "Let me think...", "signature": "valid_base64_signature_that_looks_real"},
 				{"type": "text", "text": "World"}
 			]`,
 			allowDummyThought: false,
-			expectedParts:     3, // 三个block都保留
-			description:       "Claude模型应该保留有signature的thinking block",
+			expectedParts:     2, // 跳过所有thinking block
+			description:       "Claude模型应该跳过所有thinking block（包括有signature的）",
 		},
 		{
 			name: "Gemini model - use dummy signature",

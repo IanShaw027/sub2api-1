@@ -249,20 +249,12 @@ func buildParts(content json.RawMessage, toolIDToName map[string]string, allowDu
 				continue
 			}
 
-			// Claude 模型：仅在提供有效 signature 时保留 thinking block；否则跳过以避免上游校验失败。
-			signature := strings.TrimSpace(block.Signature)
-			if signature == "" || signature == dummyThoughtSignature {
-				log.Printf("[Warning] Skipping thinking block for Claude model (missing or dummy signature)")
-				continue
-			}
-			if !isValidThoughtSignature(signature) {
-				log.Printf("[Debug] Thinking signature may be invalid (passing through anyway): len=%d", len(signature))
-			}
-			parts = append(parts, GeminiPart{
-				Text:             block.Thinking,
-				Thought:          true,
-				ThoughtSignature: signature,
-			})
+			// Claude 模型：完全跳过所有 thinking 块
+			// 原因：1) thinking 功能已禁用 (isThinkingEnabled=false)
+			//      2) Vertex AI 的 signature 是完整性令牌，无法在本地验证
+			//      3) 保留无效 signature 会导致 400 错误
+			log.Printf("[Debug] Skipping thinking block for Claude model (thinking disabled)")
+			continue
 
 		case "image":
 			if block.Source != nil && block.Source.Type == "base64" {
