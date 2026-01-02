@@ -183,34 +183,6 @@ func buildContents(messages []ClaudeMessage, toolIDToName map[string]string, isT
 // 参考: https://ai.google.dev/gemini-api/docs/thought-signatures
 const dummyThoughtSignature = "skip_thought_signature_validator"
 
-// isValidThoughtSignature 验证 thought signature 是否有效
-// Claude API 要求 signature 必须是 base64 编码的字符串，长度至少 32 字节
-func isValidThoughtSignature(signature string) bool {
-	// 空字符串无效
-	if signature == "" {
-		return false
-	}
-
-	// signature 应该是 base64 编码，长度至少 40 个字符（约 30 字节）
-	// 参考 Claude API 文档和实际观察到的有效 signature
-	if len(signature) < 40 {
-		log.Printf("[Debug] Signature too short: len=%d", len(signature))
-		return false
-	}
-
-	// 检查是否是有效的 base64 字符
-	// base64 字符集: A-Z, a-z, 0-9, +, /, =
-	for i, c := range signature {
-		if (c < 'A' || c > 'Z') && (c < 'a' || c > 'z') &&
-			(c < '0' || c > '9') && c != '+' && c != '/' && c != '=' {
-			log.Printf("[Debug] Invalid base64 character at position %d: %c (code=%d)", i, c, c)
-			return false
-		}
-	}
-
-	return true
-}
-
 // buildParts 构建消息的 parts
 // allowDummyThought: 只有 Gemini 模型支持 dummy thought signature
 func buildParts(content json.RawMessage, toolIDToName map[string]string, allowDummyThought bool) ([]GeminiPart, error) {
@@ -253,7 +225,7 @@ func buildParts(content json.RawMessage, toolIDToName map[string]string, allowDu
 			// 原因：1) thinking 功能已禁用 (isThinkingEnabled=false)
 			//      2) Vertex AI 的 signature 是完整性令牌，无法在本地验证
 			//      3) 保留无效 signature 会导致 400 错误
-			log.Printf("[Debug] Skipping thinking block for Claude model (thinking disabled)")
+			// Note: 日志已移除以避免高频请求下的噪音，可通过指标监控
 			continue
 
 		case "image":

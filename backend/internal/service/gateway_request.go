@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -75,6 +76,11 @@ func ParseGatewayRequest(body []byte) (*ParsedRequest, error) {
 // Returns filtered body or original body if filtering fails (fail-safe)
 // This prevents 400 errors from invalid thinking block signatures
 func FilterThinkingBlocks(body []byte) []byte {
+	// Fast path: if body doesn't contain "thinking", skip parsing
+	if !bytes.Contains(body, []byte("thinking")) {
+		return body
+	}
+
 	var req map[string]any
 	if err := json.Unmarshal(body, &req); err != nil {
 		return body // Return original on parse error
