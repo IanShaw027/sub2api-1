@@ -565,7 +565,7 @@ export default {
       failedToLoad: '加载仪表盘数据失败'
     },
     ops: {
-      title: '运维监控中心',
+      title: '运维监控中心 2.0',
       description: '稳定性指标、错误分布与系统健康',
       status: {
         title: '系统健康快照',
@@ -577,7 +577,9 @@ export default {
         monitoring: '监控中',
         lastUpdated: '最后更新',
         live: '实时',
-        waiting: '等待数据'
+        waiting: '等待数据',
+        realtime: '实时连接中',
+        disconnected: '连接已断开'
       },
       charts: {
         errorTrend: '错误趋势',
@@ -587,7 +589,11 @@ export default {
         rateLimits: '限流 (429)',
         serverErrors: '服务端错误 (5xx)',
         clientErrors: '客户端错误 (4xx)',
-        otherErrors: '其他'
+        otherErrors: '其他',
+        latencyDist: '请求延迟分布',
+        providerSla: '上游供应商健康度 (SLA)',
+        errorDist: '错误类型分布',
+        systemStatus: '系统运行状态'
       },
       metrics: {
         successRate: '成功率',
@@ -597,7 +603,12 @@ export default {
         http2Errors: 'HTTP/2 错误',
         activeAlerts: '活跃告警',
         cpuUsage: 'CPU 使用率',
-        queueDepth: '排队深度'
+        queueDepth: '排队深度',
+        healthScore: '健康评分',
+        sla: '服务可用率 (SLA)',
+        qps: '实时 QPS',
+        tps: '实时 TPS',
+        errorCount: '周期错误数'
       },
       errors: {
         title: '最近错误',

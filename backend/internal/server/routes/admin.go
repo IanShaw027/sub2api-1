@@ -79,7 +79,23 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	{
 		ops.GET("/metrics", h.Admin.Ops.GetMetrics)
 		ops.GET("/metrics/history", h.Admin.Ops.ListMetricsHistory)
+		ops.GET("/errors", h.Admin.Ops.GetErrorLogs)
 		ops.GET("/error-logs", h.Admin.Ops.ListErrorLogs)
+
+		// Dashboard routes
+		dashboard := ops.Group("/dashboard")
+		{
+			dashboard.GET("/overview", h.Admin.Ops.GetDashboardOverview)
+			dashboard.GET("/providers", h.Admin.Ops.GetProviderHealth)
+			dashboard.GET("/latency-histogram", h.Admin.Ops.GetLatencyHistogram)
+			dashboard.GET("/errors/distribution", h.Admin.Ops.GetErrorDistribution)
+		}
+
+		// WebSocket routes
+		ws := ops.Group("/ws")
+		{
+			ws.GET("/qps", h.Admin.Ops.QPSWSHandler)
+		}
 	}
 }
 

@@ -22,22 +22,25 @@ const (
 )
 
 type OpsAlertRule struct {
-	ID               int64     `json:"id"`
-	Name             string    `json:"name"`
-	Description      string    `json:"description"`
-	Enabled          bool      `json:"enabled"`
-	MetricType       string    `json:"metric_type"`
-	Operator         string    `json:"operator"`
-	Threshold        float64   `json:"threshold"`
-	WindowMinutes    int       `json:"window_minutes"`
-	SustainedMinutes int       `json:"sustained_minutes"`
-	Severity         string    `json:"severity"`
-	NotifyEmail      bool      `json:"notify_email"`
-	NotifyWebhook    bool      `json:"notify_webhook"`
-	WebhookURL       string    `json:"webhook_url"`
-	CooldownMinutes  int       `json:"cooldown_minutes"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ID               int64                  `json:"id"`
+	Name             string                 `json:"name"`
+	Description      string                 `json:"description"`
+	Enabled          bool                   `json:"enabled"`
+	MetricType       string                 `json:"metric_type"`
+	Operator         string                 `json:"operator"`
+	Threshold        float64                `json:"threshold"`
+	WindowMinutes    int                    `json:"window_minutes"`
+	SustainedMinutes int                    `json:"sustained_minutes"`
+	Severity         string                 `json:"severity"`
+	NotifyEmail      bool                   `json:"notify_email"`
+	NotifyWebhook    bool                   `json:"notify_webhook"`
+	WebhookURL       string                 `json:"webhook_url"`
+	CooldownMinutes  int                    `json:"cooldown_minutes"`
+	DimensionFilters map[string]interface{} `json:"dimension_filters,omitempty"`
+	NotifyChannels   []string               `json:"notify_channels,omitempty"`
+	NotifyConfig     map[string]interface{} `json:"notify_config,omitempty"`
+	CreatedAt        time.Time              `json:"created_at"`
+	UpdatedAt        time.Time              `json:"updated_at"`
 }
 
 type OpsAlertEvent struct {

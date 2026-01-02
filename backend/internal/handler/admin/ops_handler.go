@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -38,7 +39,7 @@ func (h *OpsHandler) GetMetrics(c *gin.Context) {
 // - window_minutes: int (default 1)
 // - minutes: int (lookback; optional)
 // - start_time/end_time: RFC3339 timestamps (optional; overrides minutes when provided)
-// - limit: int (optional; max 2000)
+// - limit: int (optional; max 100, default 300 for backward compatibility)
 func (h *OpsHandler) ListMetricsHistory(c *gin.Context) {
 	windowMinutes := 1
 	if v := c.Query("window_minutes"); v != "" {
@@ -51,16 +52,15 @@ func (h *OpsHandler) ListMetricsHistory(c *gin.Context) {
 	}
 
 	limit := 300
+	limitProvided := false
 	if v := c.Query("limit"); v != "" {
-		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
-			if parsed > 5000 {
-				parsed = 5000
-			}
-			limit = parsed
-		} else {
-			response.BadRequest(c, "Invalid limit")
+		parsed, err := strconv.Atoi(v)
+		if err != nil || parsed <= 0 || parsed > 5000 {
+			response.BadRequest(c, "Invalid limit (must be 1-5000)")
 			return
 		}
+		limit = parsed
+		limitProvided = true
 	}
 
 	endTime := time.Now()
@@ -98,6 +98,20 @@ func (h *OpsHandler) ListMetricsHistory(c *gin.Context) {
 		}
 	}
 
+	// Default time range: last 24 hours.
+	if startTime.IsZero() {
+		startTime = endTime.Add(-24 * time.Hour)
+		if !limitProvided {
+			// Metrics are collected at 1-minute cadence; 24h requires ~1440 points.
+			limit = 24 * 60
+		}
+	}
+
+	if startTime.After(endTime) {
+		response.BadRequest(c, "Invalid time range: start_time must be <= end_time")
+		return
+	}
+
 	items, err := h.opsService.ListMetricsHistory(c.Request.Context(), windowMinutes, startTime, endTime, limit)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to list ops metrics history")
@@ -128,15 +142,24 @@ func (h *OpsHandler) ListErrorLogs(c *gin.Context) {
 		filters.EndTime = &endTime
 	}
 
+	if filters.StartTime != nil && filters.EndTime != nil && filters.StartTime.After(*filters.EndTime) {
+		response.BadRequest(c, "Invalid time range: start_time must be <= end_time")
+		return
+	}
+
 	filters.Platform = c.Query("platform")
 	filters.Phase = c.Query("phase")
 	filters.Severity = c.Query("severity")
 	filters.Query = c.Query("q")
 
+	filters.Limit = 100
 	if limitStr := c.Query("limit"); limitStr != "" {
-		if limit, err := strconv.Atoi(limitStr); err == nil {
-			filters.Limit = limit
+		limit, err := strconv.Atoi(limitStr)
+		if err != nil || limit <= 0 || limit > 5000 {
+			response.BadRequest(c, "Invalid limit (must be 1-5000)")
+			return
 		}
+		filters.Limit = limit
 	}
 
 	items, total, err := h.opsService.ListErrorLogs(c.Request.Context(), filters)
@@ -148,5 +171,224 @@ func (h *OpsHandler) ListErrorLogs(c *gin.Context) {
 	response.Success(c, gin.H{
 		"items": items,
 		"total": total,
+	})
+}
+
+// GetDashboardOverview returns realtime ops dashboard overview.
+// GET /api/v1/admin/ops/dashboard/overview
+//
+// Query params:
+// - time_range: string (optional; default "1h") one of: 5m, 30m, 1h, 6h, 24h
+func (h *OpsHandler) GetDashboardOverview(c *gin.Context) {
+	timeRange := c.Query("time_range")
+	if timeRange == "" {
+		timeRange = "1h"
+	}
+
+	switch timeRange {
+	case "5m", "30m", "1h", "6h", "24h":
+	default:
+		response.BadRequest(c, "Invalid time_range (supported: 5m, 30m, 1h, 6h, 24h)")
+		return
+	}
+
+	data, err := h.opsService.GetDashboardOverview(c.Request.Context(), timeRange)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to get dashboard overview")
+		return
+	}
+	response.Success(c, data)
+}
+
+// GetProviderHealth returns upstream provider health comparison data.
+// GET /api/v1/admin/ops/dashboard/providers
+//
+// Query params:
+// - time_range: string (optional; default "1h") one of: 5m, 30m, 1h, 6h, 24h
+func (h *OpsHandler) GetProviderHealth(c *gin.Context) {
+	timeRange := c.Query("time_range")
+	if timeRange == "" {
+		timeRange = "1h"
+	}
+
+	switch timeRange {
+	case "5m", "30m", "1h", "6h", "24h":
+	default:
+		response.BadRequest(c, "Invalid time_range (supported: 5m, 30m, 1h, 6h, 24h)")
+		return
+	}
+
+	providers, err := h.opsService.GetProviderHealth(c.Request.Context(), timeRange)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to get provider health")
+		return
+	}
+
+	var totalRequests int64
+	var weightedSuccess float64
+	var bestProvider string
+	var worstProvider string
+	var bestRate float64
+	var worstRate float64
+	hasRate := false
+
+	for _, p := range providers {
+		if p == nil {
+			continue
+		}
+		totalRequests += p.RequestCount
+		weightedSuccess += (p.SuccessRate / 100) * float64(p.RequestCount)
+
+		if p.RequestCount <= 0 {
+			continue
+		}
+		if !hasRate {
+			bestProvider = p.Name
+			worstProvider = p.Name
+			bestRate = p.SuccessRate
+			worstRate = p.SuccessRate
+			hasRate = true
+			continue
+		}
+
+		if p.SuccessRate > bestRate {
+			bestProvider = p.Name
+			bestRate = p.SuccessRate
+		}
+		if p.SuccessRate < worstRate {
+			worstProvider = p.Name
+			worstRate = p.SuccessRate
+		}
+	}
+
+	avgSuccessRate := 0.0
+	if totalRequests > 0 {
+		avgSuccessRate = (weightedSuccess / float64(totalRequests)) * 100
+		avgSuccessRate = math.Round(avgSuccessRate*100) / 100
+	}
+
+	response.Success(c, gin.H{
+		"providers": providers,
+		"summary": gin.H{
+			"total_requests":   totalRequests,
+			"avg_success_rate": avgSuccessRate,
+			"best_provider":    bestProvider,
+			"worst_provider":   worstProvider,
+		},
+	})
+}
+
+// GetErrorLogs returns a paginated error log list with multi-dimensional filters.
+// GET /api/v1/admin/ops/errors
+func (h *OpsHandler) GetErrorLogs(c *gin.Context) {
+	page, pageSize := response.ParsePagination(c)
+
+	filter := &service.ErrorLogFilter{
+		Page:     page,
+		PageSize: pageSize,
+	}
+
+	if startTimeStr := c.Query("start_time"); startTimeStr != "" {
+		startTime, err := time.Parse(time.RFC3339, startTimeStr)
+		if err != nil {
+			response.BadRequest(c, "Invalid start_time format (RFC3339)")
+			return
+		}
+		filter.StartTime = &startTime
+	}
+	if endTimeStr := c.Query("end_time"); endTimeStr != "" {
+		endTime, err := time.Parse(time.RFC3339, endTimeStr)
+		if err != nil {
+			response.BadRequest(c, "Invalid end_time format (RFC3339)")
+			return
+		}
+		filter.EndTime = &endTime
+	}
+
+	if filter.StartTime != nil && filter.EndTime != nil && filter.StartTime.After(*filter.EndTime) {
+		response.BadRequest(c, "Invalid time range: start_time must be <= end_time")
+		return
+	}
+
+	if errorCodeStr := c.Query("error_code"); errorCodeStr != "" {
+		code, err := strconv.Atoi(errorCodeStr)
+		if err != nil || code < 0 {
+			response.BadRequest(c, "Invalid error_code")
+			return
+		}
+		filter.ErrorCode = &code
+	}
+
+	// Keep both parameter names for compatibility: provider (docs) and platform (legacy).
+	filter.Provider = c.Query("provider")
+	if filter.Provider == "" {
+		filter.Provider = c.Query("platform")
+	}
+
+	if accountIDStr := c.Query("account_id"); accountIDStr != "" {
+		accountID, err := strconv.ParseInt(accountIDStr, 10, 64)
+		if err != nil || accountID <= 0 {
+			response.BadRequest(c, "Invalid account_id")
+			return
+		}
+		filter.AccountID = &accountID
+	}
+
+	out, err := h.opsService.GetErrorLogs(c.Request.Context(), filter)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to get error logs")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"errors":    out.Errors,
+		"total":     out.Total,
+		"page":      out.Page,
+		"page_size": out.PageSize,
+	})
+}
+
+// GetLatencyHistogram returns the latency distribution histogram.
+// GET /api/v1/admin/ops/dashboard/latency-histogram
+func (h *OpsHandler) GetLatencyHistogram(c *gin.Context) {
+	timeRange := c.Query("time_range")
+	if timeRange == "" {
+		timeRange = "1h"
+	}
+
+	buckets, err := h.opsService.GetLatencyHistogram(c.Request.Context(), timeRange)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to get latency histogram")
+		return
+	}
+
+	totalRequests := int64(0)
+	for _, b := range buckets {
+		totalRequests += b.Count
+	}
+
+	response.Success(c, gin.H{
+		"buckets":                buckets,
+		"total_requests":         totalRequests,
+		"slow_request_threshold": 1000,
+	})
+}
+
+// GetErrorDistribution returns the error distribution.
+// GET /api/v1/admin/ops/dashboard/errors/distribution
+func (h *OpsHandler) GetErrorDistribution(c *gin.Context) {
+	timeRange := c.Query("time_range")
+	if timeRange == "" {
+		timeRange = "1h"
+	}
+
+	items, err := h.opsService.GetErrorDistribution(c.Request.Context(), timeRange)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to get error distribution")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"items": items,
 	})
 }

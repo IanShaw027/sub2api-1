@@ -75,7 +75,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	dashboardService := service.NewDashboardService(usageLogRepository)
 	dashboardHandler := admin.NewDashboardHandler(dashboardService)
 	opsRepository := repository.NewOpsRepository(client, db)
-	opsService := service.NewOpsService(opsRepository)
+	opsService := service.NewOpsService(opsRepository, redisClient, db)
 	opsHandler := admin.NewOpsHandler(opsService)
 	accountRepository := repository.NewAccountRepository(client, db)
 	proxyRepository := repository.NewProxyRepository(client, db)
@@ -117,15 +117,15 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	gitHubReleaseClient := repository.NewGitHubReleaseClient()
 	serviceBuildInfo := provideServiceBuildInfo(buildInfo)
 	updateService := service.ProvideUpdateService(updateCache, gitHubReleaseClient, serviceBuildInfo)
+	systemHandler := handler.ProvideSystemHandler(updateService)
+	adminSubscriptionHandler := admin.NewSubscriptionHandler(subscriptionService)
+	adminUsageHandler := admin.NewUsageHandler(usageService, apiKeyService, adminService)
+	adminHandlers := handler.ProvideAdminHandlers(dashboardHandler, opsHandler, adminUserHandler, groupHandler, accountHandler, oAuthHandler, openAIOAuthHandler, geminiOAuthHandler, antigravityOAuthHandler, proxyHandler, adminRedeemHandler, settingHandler, systemHandler, adminSubscriptionHandler, adminUsageHandler)
 	pricingRemoteClient := repository.NewPricingRemoteClient()
 	pricingService, err := service.ProvidePricingService(configConfig, pricingRemoteClient)
 	if err != nil {
 		return nil, err
 	}
-	systemHandler := handler.ProvideSystemHandler(updateService)
-	adminSubscriptionHandler := admin.NewSubscriptionHandler(subscriptionService)
-	adminUsageHandler := admin.NewUsageHandler(usageService, apiKeyService, adminService)
-	adminHandlers := handler.ProvideAdminHandlers(dashboardHandler, opsHandler, adminUserHandler, groupHandler, accountHandler, oAuthHandler, openAIOAuthHandler, geminiOAuthHandler, antigravityOAuthHandler, proxyHandler, adminRedeemHandler, settingHandler, systemHandler, adminSubscriptionHandler, adminUsageHandler)
 	billingService := service.NewBillingService(configConfig, pricingService)
 	identityCache := repository.NewIdentityCache(redisClient)
 	identityService := service.NewIdentityService(identityCache)
@@ -134,7 +134,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	gatewayService := service.NewGatewayService(accountRepository, groupRepository, usageLogRepository, userRepository, userSubscriptionRepository, gatewayCache, configConfig, concurrencyService, billingService, rateLimitService, billingCacheService, identityService, httpUpstream, deferredService)
 	geminiMessagesCompatService := service.NewGeminiMessagesCompatService(accountRepository, groupRepository, gatewayCache, geminiTokenProvider, rateLimitService, httpUpstream, antigravityGatewayService)
 	gatewayHandler := handler.NewGatewayHandler(gatewayService, geminiMessagesCompatService, antigravityGatewayService, userService, concurrencyService, billingCacheService, opsService)
-	openAIGatewayService := service.NewOpenAIGatewayService(accountRepository, usageLogRepository, userRepository, userSubscriptionRepository, gatewayCache, configConfig, billingService, rateLimitService, billingCacheService, httpUpstream, deferredService)
+	openAIGatewayService := service.NewOpenAIGatewayService(accountRepository, usageLogRepository, userRepository, userSubscriptionRepository, gatewayCache, configConfig, concurrencyService, billingService, rateLimitService, billingCacheService, httpUpstream, deferredService)
 	openAIGatewayHandler := handler.NewOpenAIGatewayHandler(openAIGatewayService, concurrencyService, billingCacheService, opsService)
 	handlerSettingHandler := handler.ProvideSettingHandler(settingService, buildInfo)
 	handlers := handler.ProvideHandlers(authHandler, userHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, adminHandlers, gatewayHandler, openAIGatewayHandler, handlerSettingHandler)
@@ -184,6 +184,9 @@ func provideCleanup(
 	opsMetricsCollector *service.OpsMetricsCollector,
 	opsAlertService *service.OpsAlertService,
 ) func() {
+	if opsAlertService != nil {
+		opsAlertService.Start()
+	}
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

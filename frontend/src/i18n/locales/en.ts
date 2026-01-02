@@ -552,29 +552,35 @@ export default {
       failedToLoad: 'Failed to load dashboard statistics'
     },
     ops: {
-      title: 'Ops Dashboard',
-      description: 'Stability metrics, errors, and system health',
+      title: 'Ops Monitoring Center 2.0',
+      description: 'Stability metrics, error distribution, and system health',
       status: {
         title: 'System Health Snapshot',
-        subtitle: 'Operational metrics and live error visibility',
+        subtitle: 'Real-time metrics and error visibility',
         systemNormal: 'System Normal',
         systemDegraded: 'System Degraded',
         systemDown: 'System Down',
-        noData: 'No data',
+        noData: 'No Data',
         monitoring: 'Monitoring',
-        lastUpdated: 'Last updated',
+        lastUpdated: 'Last Updated',
         live: 'Live',
-        waiting: 'Waiting for data'
+        waiting: 'Waiting for data',
+        realtime: 'Connected',
+        disconnected: 'Disconnected'
       },
       charts: {
         errorTrend: 'Error Trend',
         errorDistribution: 'Error Distribution',
-        errorRate: 'Error rate',
-        requestCount: 'Requests',
-        rateLimits: 'Rate limits (429)',
-        serverErrors: 'Server errors (5xx)',
-        clientErrors: 'Client errors (4xx)',
-        otherErrors: 'Other'
+        errorRate: 'Error Rate',
+        requestCount: 'Request Count',
+        rateLimits: 'Rate Limits (429)',
+        serverErrors: 'Server Errors (5xx)',
+        clientErrors: 'Client Errors (4xx)',
+        otherErrors: 'Other',
+        latencyDist: 'Latency Distribution',
+        providerSla: 'Upstream SLA Comparison',
+        errorDist: 'Error Type Distribution',
+        systemStatus: 'System Resources'
       },
       metrics: {
         successRate: 'Success Rate',
@@ -584,7 +590,12 @@ export default {
         http2Errors: 'HTTP/2 Errors',
         activeAlerts: 'Active Alerts',
         cpuUsage: 'CPU Usage',
-        queueDepth: 'Queue Depth'
+        queueDepth: 'Queue Depth',
+        healthScore: 'Health Score',
+        sla: 'Availability (SLA)',
+        qps: 'Real-time QPS',
+        tps: 'Real-time TPS',
+        errorCount: 'Error Count'
       },
       errors: {
         title: 'Recent Errors',
