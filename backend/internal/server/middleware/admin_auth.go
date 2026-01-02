@@ -52,9 +52,38 @@ func adminAuth(
 			}
 		}
 
+		// WebSocket 请求无法设置自定义 header，允许在 query 中携带凭证
+		if isWebSocketRequest(c) {
+			if token := strings.TrimSpace(c.Query("token")); token != "" {
+				if !validateJWTForAdmin(c, token, authService, userService) {
+					return
+				}
+				c.Next()
+				return
+			}
+			if apiKey := strings.TrimSpace(c.Query("api_key")); apiKey != "" {
+				if !validateAdminAPIKey(c, apiKey, settingService, userService) {
+					return
+				}
+				c.Next()
+				return
+			}
+		}
+
 		// 无有效认证信息
 		AbortWithError(c, 401, "UNAUTHORIZED", "Authorization required")
 	}
+}
+
+func isWebSocketRequest(c *gin.Context) bool {
+	if c == nil || c.Request == nil {
+		return false
+	}
+	if strings.EqualFold(c.GetHeader("Upgrade"), "websocket") {
+		return true
+	}
+	conn := strings.ToLower(c.GetHeader("Connection"))
+	return strings.Contains(conn, "upgrade") && strings.EqualFold(c.GetHeader("Upgrade"), "websocket")
 }
 
 // validateAdminAPIKey 验证管理员 API Key

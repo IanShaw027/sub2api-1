@@ -122,6 +122,14 @@ func (h *OpsHandler) ListMetricsHistory(c *gin.Context) {
 
 // ListErrorLogs lists recent error logs with optional filters.
 // GET /api/v1/admin/ops/error-logs
+//
+// Query params:
+// - start_time/end_time: RFC3339 timestamps (optional)
+// - platform: string (optional)
+// - phase: string (optional)
+// - severity: string (optional)
+// - q: string (optional; fuzzy match)
+// - limit: int (optional; default 100; max 500)
 func (h *OpsHandler) ListErrorLogs(c *gin.Context) {
 	var filters service.OpsErrorLogFilters
 
@@ -155,8 +163,8 @@ func (h *OpsHandler) ListErrorLogs(c *gin.Context) {
 	filters.Limit = 100
 	if limitStr := c.Query("limit"); limitStr != "" {
 		limit, err := strconv.Atoi(limitStr)
-		if err != nil || limit <= 0 || limit > 5000 {
-			response.BadRequest(c, "Invalid limit (must be 1-5000)")
+		if err != nil || limit <= 0 || limit > 500 {
+			response.BadRequest(c, "Invalid limit (must be 1-500)")
 			return
 		}
 		filters.Limit = limit

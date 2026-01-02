@@ -66,6 +66,9 @@ export interface OpsErrorListParams {
   phase?: OpsPhase
   severity?: OpsSeverity
   q?: string
+  /**
+   * Max 500 (legacy endpoint uses a hard cap); use paginated /admin/ops/errors for larger result sets.
+   */
   limit?: number
 }
 
@@ -263,7 +266,7 @@ export function subscribeQPS(onMessage: (data: any) => void): () => void {
   let ws: WebSocket | null = null
   let reconnectAttempts = 0
   const maxReconnectAttempts = 5
-  let reconnectTimer: NodeJS.Timeout | null = null
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let shouldReconnect = true
 
   const connect = () => {

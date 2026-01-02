@@ -132,9 +132,6 @@ func (c *OpsMetricsCollector) collectOnce() {
 		}
 	}
 
-	if c.alertService != nil {
-		c.alertService.Evaluate(ctx, now)
-	}
 }
 
 func computeRates(successCount, errorCount int64) (float64, float64) {

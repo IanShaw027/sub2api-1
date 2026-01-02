@@ -31,13 +31,19 @@ type OpsAlertService struct {
 	wg        sync.WaitGroup
 }
 
+// opsAlertEvalInterval defines how often OpsAlertService evaluates alert rules.
+//
+// Production uses opsMetricsInterval. Tests may override this variable to keep
+// integration tests fast without changing production defaults.
+var opsAlertEvalInterval = opsMetricsInterval
+
 func NewOpsAlertService(opsService *OpsService, userService *UserService, emailService *EmailService) *OpsAlertService {
 	return &OpsAlertService{
 		opsService:   opsService,
 		userService:  userService,
 		emailService: emailService,
 		httpClient:   &http.Client{Timeout: 10 * time.Second},
-		interval:     opsMetricsInterval,
+		interval:     opsAlertEvalInterval,
 	}
 }
 
@@ -60,7 +66,7 @@ func (s *OpsAlertService) StartWithContext(ctx context.Context) {
 
 	s.startOnce.Do(func() {
 		if s.interval <= 0 {
-			s.interval = opsMetricsInterval
+			s.interval = opsAlertEvalInterval
 		}
 
 		s.stopCtx, s.stop = context.WithCancel(ctx)

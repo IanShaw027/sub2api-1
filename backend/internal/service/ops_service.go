@@ -126,7 +126,8 @@ type ErrorDistributionItem struct {
 type OpsRepository interface {
 	CreateErrorLog(ctx context.Context, log *OpsErrorLog) error
 	// ListErrorLogsLegacy keeps the original non-paginated query API used by the
-	// existing /api/v1/admin/ops/error-logs endpoint.
+	// existing /api/v1/admin/ops/error-logs endpoint (limit is capped at 500; for
+	// stable pagination use /api/v1/admin/ops/errors).
 	ListErrorLogsLegacy(ctx context.Context, filters OpsErrorLogFilters) ([]OpsErrorLog, error)
 
 	// ListErrorLogs provides a paginated error-log query API (with total count).

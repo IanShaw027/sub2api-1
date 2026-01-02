@@ -1,835 +1,417 @@
-<template>
-  <AppLayout>
-    <div class="space-y-6">
-      <!-- Top Status Bar -->
-      <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
-        <div class="flex flex-wrap items-center justify-between gap-4">
-          <div class="flex items-center gap-4">
-            <!-- Health Score Ring -->
-            <div
-              class="relative flex h-16 w-16 items-center justify-center rounded-full border-4 bg-white dark:bg-dark-800"
-              :class="healthRingBorderClass"
-            >
-              <svg class="absolute h-full w-full -rotate-90 transform" viewBox="0 0 36 36">
-                <!-- Background Circle -->
-                <path
-                  class="text-gray-100 dark:text-dark-700"
-                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="3"
-                />
-                <!-- Progress Circle -->
-                <path
-                  class="drop-shadow-sm"
-                  :class="healthRingProgressClass"
-                  :stroke-dasharray="`${healthScoreRing}, 100`"
-                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="3"
-                />
-              </svg>
-              <div class="flex flex-col items-center">
-                <span class="text-sm font-bold text-gray-900 dark:text-white">{{ healthScoreText }}</span>
-                <span class="text-[10px] text-gray-400">SCORE</span>
-              </div>
-            </div>
-
-            <div>
-              <h2 class="text-lg font-bold text-gray-900 dark:text-white">
-                {{ healthStatusText }}
-              </h2>
-              <div class="flex items-center gap-2">
-                <span class="relative flex h-2.5 w-2.5">
-                  <span class="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75" :class="healthDotPingClass"></span>
-                  <span class="relative inline-flex h-2.5 w-2.5 rounded-full" :class="healthDotClass"></span>
-                </span>
-                <span class="text-xs text-gray-500 dark:text-gray-400">
-                  {{ t('admin.ops.status.monitoring') }} • {{ lastUpdatedText }}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div class="flex items-center gap-3">
-            <button
-              class="btn btn-secondary btn-sm gap-2"
-              @click="refreshData"
-              :disabled="loading"
-            >
-              <svg
-                class="h-4 w-4"
-                :class="{ 'animate-spin': loading }"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              {{ t('common.refresh') }}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Metrics Grid -->
-      <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard
-          v-for="card in statCards"
-          :key="card.key"
-          :title="card.title"
-          :value="card.value"
-          :icon="card.icon"
-          :icon-variant="card.iconVariant"
-        />
-      </div>
-
-      <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <!-- Main Chart: Error Trend -->
-        <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700 lg:col-span-2">
-          <div class="mb-4 flex items-center justify-between">
-            <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.ops.charts.errorTrend') }}</h3>
-            <Select v-model="timeRange" :options="timeRangeOptions" class="w-32 !text-xs" />
-          </div>
-          <div class="h-64">
-            <Line v-if="chartData" :data="chartData" :options="chartOptions" />
-          </div>
-        </div>
-
-        <!-- Secondary: Distribution -->
-        <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
-           <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.ops.charts.errorDistribution') }}</h3>
-           <div class="space-y-4">
-             <div v-for="(item, idx) in errorDistribution" :key="idx" class="space-y-1">
-               <div class="flex justify-between text-xs">
-                 <span class="font-medium text-gray-700 dark:text-gray-300">{{ item.label }}</span>
-                 <span class="text-gray-500">{{ item.percentage }}%</span>
-               </div>
-               <div class="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-dark-700">
-                 <div
-                    class="h-full rounded-full"
-                    :class="item.color"
-                    :style="{ width: `${item.percentage}%` }"
-                 ></div>
-               </div>
-             </div>
-           </div>
-        </div>
-      </div>
-
-      <!-- Error Logs Table -->
-      <div class="rounded-xl bg-white shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
-        <div class="border-b border-gray-100 p-4 dark:border-dark-700">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-             <div class="flex items-center gap-2">
-               <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400">
-                 <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                 </svg>
-               </div>
-               <div>
-                 <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.ops.errors.title') }}</h3>
-                 <p class="text-xs text-gray-500 dark:text-gray-400">
-                   {{ t('admin.ops.errors.subtitle') }} • {{ t('admin.ops.errors.count', { n: filteredErrors.length }) }}
-                 </p>
-               </div>
-             </div>
-
-             <div class="flex gap-2">
-                <input
-                  v-model="searchQuery"
-                  class="input text-xs"
-                  :placeholder="t('admin.ops.searchPlaceholder')"
-                />
-                <Select v-model="platformFilter" :options="platformOptions" class="w-28 !text-xs" />
-                <Select v-model="phaseFilter" :options="phaseOptions" class="w-28 !text-xs" />
-                <Select v-model="severityFilter" :options="severityOptions" class="w-28 !text-xs" />
-             </div>
-          </div>
-        </div>
-
-        <DataTable :columns="errorColumns" :data="filteredErrors" :loading="loading">
-          <template #cell-created_at="{ value }">
-            <span class="font-mono text-xs text-gray-500">
-              {{ formatTimeOnly(value) }}
-            </span>
-          </template>
-
-          <template #cell-severity="{ value }">
-             <span :class="['inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide', severityBadgeClass(value)]">
-                {{ value }}
-             </span>
-          </template>
-
-          <template #cell-phase="{ value }">
-            <span class="text-xs font-medium text-gray-700 dark:text-gray-300">
-              {{ t(`admin.ops.phase.${value}`) }}
-            </span>
-          </template>
-
-          <template #cell-platform="{ value }">
-             <div class="flex items-center gap-1.5">
-               <div class="h-1.5 w-1.5 rounded-full" :class="platformColorClass(value)"></div>
-               <span class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ platformLabel(value) }}</span>
-             </div>
-          </template>
-
-          <template #cell-status_code="{ value }">
-             <span class="font-mono text-xs font-bold" :class="statusColorClass(value)">
-                {{ value }}
-             </span>
-          </template>
-
-          <template #cell-latency_ms="{ value }">
-            <span class="font-mono text-xs text-gray-600 dark:text-gray-400">
-              {{ formatLatency(value) }}
-            </span>
-          </template>
-
-          <template #cell-request_id="{ value }">
-             <div class="group flex items-center gap-1">
-               <span class="font-mono text-[10px] text-gray-500">{{ shortenId(value) }}</span>
-                 <button
-                   class="invisible p-0.5 text-gray-400 hover:text-gray-600 group-hover:visible dark:hover:text-gray-300"
-                   @click.stop="copyToClipboard(value)"
-                   :title="t('common.copy')"
-                 >
-                 <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                 </svg>
-               </button>
-             </div>
-          </template>
-
-          <template #cell-message="{ value }">
-             <span class="line-clamp-1 max-w-[200px] text-xs font-medium text-gray-900 dark:text-gray-200" :title="value">
-                {{ value }}
-             </span>
-          </template>
-
-          <template #cell-actions="{ row }">
-             <button
-               class="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-white"
-               @click="openDetails(row)"
-             >
-               {{ t('common.details') }}
-               <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-               </svg>
-             </button>
-          </template>
-
-          <template #empty>
-            <div class="flex flex-col items-center">
-              <p class="text-lg font-medium text-gray-900 dark:text-gray-100">
-                {{ t('admin.ops.empty.title') }}
-              </p>
-              <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">
-                {{ t('admin.ops.empty.subtitle') }}
-              </p>
-            </div>
-          </template>
-        </DataTable>
-      </div>
-    </div>
-
-    <!-- Details Drawer (Slide-over) -->
-    <div v-if="selectedError" class="fixed inset-0 z-50 overflow-hidden" aria-labelledby="slide-over-title" role="dialog" aria-modal="true">
-      <div class="absolute inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="closeDetails"></div>
-      <div class="fixed inset-y-0 right-0 flex max-w-full pl-10">
-        <div class="pointer-events-auto w-screen max-w-md transform transition-transform">
-          <div class="flex h-full flex-col overflow-y-scroll bg-white shadow-xl dark:bg-dark-800">
-            <div class="bg-gray-50 px-4 py-6 dark:bg-dark-900 sm:px-6">
-              <div class="flex items-start justify-between">
-                <h2 class="text-lg font-medium text-gray-900 dark:text-white" id="slide-over-title">
-                  {{ t('admin.ops.details.title') }}
-                </h2>
-                <div class="ml-3 flex h-7 items-center">
-                  <button type="button" class="rounded-md bg-transparent text-gray-400 hover:text-gray-500 focus:outline-none" @click="closeDetails">
-                    <span class="sr-only">Close panel</span>
-                    <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              <div class="mt-1">
-                 <p class="text-sm text-gray-500 dark:text-gray-400">
-                   {{ t('admin.ops.details.requestId') }}:
-                   <span class="font-mono select-all text-gray-900 dark:text-white">{{ selectedError.request_id }}</span>
-                 </p>
-              </div>
-            </div>
-            <div class="relative flex-1 px-4 py-6 sm:px-6">
-              <!-- Content -->
-              <div class="space-y-6">
-                <!-- Status Badge -->
-                <div class="flex items-center gap-3">
-                   <span :class="['rounded px-2.5 py-1 text-sm font-bold', severityBadgeClass(selectedError.severity)]">
-                      {{ selectedError.severity }}
-                   </span>
-                   <span :class="['rounded px-2.5 py-1 text-sm font-mono font-bold', statusColorClass(selectedError.status_code)]">
-                      {{ selectedError.status_code }}
-                   </span>
-                   <span class="text-sm font-medium text-gray-900 dark:text-white">{{ selectedError.type }}</span>
-                </div>
-
-                <!-- Error Message -->
-                <div class="rounded-lg bg-red-50 p-4 dark:bg-red-900/10">
-                   <h4 class="mb-1 text-xs font-bold uppercase tracking-wider text-red-800 dark:text-red-300">
-                     {{ t('admin.ops.details.errorMessage') }}
-                   </h4>
-                   <p class="text-sm text-red-900 dark:text-red-200">{{ selectedError.message }}</p>
-                </div>
-
-                <!-- Metadata -->
-                <dl class="grid grid-cols-2 gap-x-4 gap-y-4 rounded-lg border border-gray-100 p-4 dark:border-dark-700">
-                  <div>
-                    <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('admin.ops.table.platform') }}</dt>
-                    <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">{{ platformLabel(selectedError.platform) }}</dd>
-                  </div>
-                  <div>
-                    <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('admin.ops.table.model') }}</dt>
-                    <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">{{ selectedError.model }}</dd>
-                  </div>
-                  <div>
-                    <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('admin.ops.table.latency') }}</dt>
-                    <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">{{ formatLatency(selectedError.latency_ms) }}</dd>
-                  </div>
-                  <div>
-                    <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('admin.ops.table.phase') }}</dt>
-                    <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">{{ selectedError.phase }}</dd>
-                  </div>
-                  <div v-if="selectedError.request_path">
-                    <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('admin.ops.details.requestPath') }}</dt>
-                    <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">{{ selectedError.request_path }}</dd>
-                  </div>
-                  <div v-if="selectedError.client_ip">
-                    <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('admin.ops.details.clientIp') }}</dt>
-                    <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">{{ selectedError.client_ip }}</dd>
-                  </div>
-                  <div v-if="selectedError.user_id !== undefined && selectedError.user_id !== null">
-                    <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('admin.ops.details.userId') }}</dt>
-                    <dd class="mt-1 text-sm font-mono font-bold text-gray-900 dark:text-white">{{ selectedError.user_id }}</dd>
-                  </div>
-                  <div v-if="selectedError.api_key_id !== undefined && selectedError.api_key_id !== null">
-                    <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('admin.ops.details.apiKeyId') }}</dt>
-                    <dd class="mt-1 text-sm font-mono font-bold text-gray-900 dark:text-white">{{ selectedError.api_key_id }}</dd>
-                  </div>
-                  <div v-if="selectedError.group_id !== undefined && selectedError.group_id !== null">
-                    <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('admin.ops.details.groupId') }}</dt>
-                    <dd class="mt-1 text-sm font-mono font-bold text-gray-900 dark:text-white">{{ selectedError.group_id }}</dd>
-                  </div>
-                  <div v-if="selectedError.stream !== undefined">
-                    <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('admin.ops.details.stream') }}</dt>
-                    <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">{{ selectedError.stream ? t('common.yes') : t('common.no') }}</dd>
-                  </div>
-                </dl>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-  </AppLayout>
-</template>
-
 <script setup lang="ts">
-import { computed, ref, h, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import AppLayout from '@/components/layout/AppLayout.vue'
-import StatCard from '@/components/common/StatCard.vue'
-import DataTable from '@/components/common/DataTable.vue'
-import Select from '@/components/common/Select.vue'
-import type { Column } from '@/components/common/types'
-import { formatNumber, formatRelativeTime } from '@/utils/format'
-import { opsAPI, type OpsErrorLog, type OpsMetrics } from '@/api/admin/ops'
-import { useAppStore } from '@/stores/app'
-
-// Chart.js
+import { Bar, Doughnut } from 'vue-chartjs'
 import {
   Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
   Title,
   Tooltip,
   Legend,
-  Filler
+  LineElement,
+  LinearScale,
+  PointElement,
+  CategoryScale,
+  BarElement,
+  ArcElement
 } from 'chart.js'
-import { Line } from 'vue-chartjs'
+import { useIntervalFn } from '@vueuse/core'
+import AppLayout from '@/components/layout/AppLayout.vue'
+import { opsAPI, type OpsDashboardOverview, type ProviderHealthData, type LatencyHistogramResponse, type ErrorDistributionResponse } from '@/api/admin/ops'
+import { useAuthStore } from '@/stores/auth'
 
 ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
   Title,
   Tooltip,
   Legend,
-  Filler
+  LineElement,
+  LinearScale,
+  PointElement,
+  CategoryScale,
+  BarElement,
+  ArcElement
 )
 
 const { t } = useI18n()
-const appStore = useAppStore()
-
-type Platform = 'gemini' | 'openai' | 'anthropic' | 'antigravity'
-type Severity = 'P0' | 'P1' | 'P2' | 'P3'
-type OpsError = OpsErrorLog
-type IconVariant = 'primary' | 'success' | 'warning' | 'danger'
-
-// --- State ---
+const authStore = useAuthStore()
 const loading = ref(false)
-const selectedError = ref<OpsError | null>(null)
-const timeRange = ref<'15m' | '1h' | '24h' | '7d'>('1h')
-const severityFilter = ref<'all' | Severity>('all')
-const platformFilter = ref<'all' | Platform>('all')
-const phaseFilter = ref<
-  | 'all'
-  | 'auth'
-  | 'concurrency'
-  | 'billing'
-  | 'scheduling'
-  | 'network'
-  | 'upstream'
-  | 'response'
-  | 'internal'
->('all')
-const searchQuery = ref('')
-const metrics = ref<OpsMetrics | null>(null)
-const metricsHistory = ref<OpsMetrics[]>([])
-const errors = ref<OpsError[]>([])
+const errorMessage = ref('')
+const timeRange = ref('1h')
+const lastUpdated = ref(new Date())
 
-let autoRefreshTimer: number | null = null
+const overview = ref<OpsDashboardOverview | null>(null)
+const providers = ref<ProviderHealthData[]>([])
+const latencyData = ref<LatencyHistogramResponse | null>(null)
+const errorDistribution = ref<ErrorDistributionResponse | null>(null)
 
-const lookbackMinutes = (range: string): number => {
-  switch (range) {
-    case '15m':
-      return 15
-    case '1h':
-      return 60
-    case '24h':
-      return 60 * 24
-    case '7d':
-      return 60 * 24 * 7
-    default:
-      return 60
+// WebSocket for real-time QPS
+const realTimeQPS = ref(0)
+const realTimeTPS = ref(0)
+const wsConnected = ref(false)
+let ws: WebSocket | null = null
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+
+const connectWS = () => {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const wsBaseUrl = import.meta.env.VITE_WS_BASE_URL || window.location.host
+  const wsURL = new URL(`${protocol}//${wsBaseUrl}/api/v1/admin/ops/ws/qps`)
+  const token = authStore.token || localStorage.getItem('auth_token')
+  if (token) {
+    wsURL.searchParams.set('token', token)
+  }
+  ws = new WebSocket(wsURL.toString())
+
+  ws.onopen = () => {
+    wsConnected.value = true
+  }
+
+  ws.onmessage = (event) => {
+    try {
+      const payload = JSON.parse(event.data)
+      if (payload && typeof payload === 'object' && payload.type === 'qps_update' && payload.data) {
+        realTimeQPS.value = payload.data.qps || 0
+        realTimeTPS.value = payload.data.tps || 0
+      }
+    } catch (e) {
+      console.error('WS parse error', e)
+    }
+  }
+
+  ws.onclose = () => {
+    wsConnected.value = false
+    if (reconnectTimer) clearTimeout(reconnectTimer)
+    reconnectTimer = setTimeout(connectWS, 5000)
   }
 }
 
-const hasTraffic = computed(() => (metrics.value?.request_count ?? 0) > 0)
+const fetchData = async () => {
+  loading.value = true
+  errorMessage.value = ''
+  try {
+    const [ov, pr, lt, er] = await Promise.all([
+      opsAPI.getDashboardOverview(timeRange.value),
+      opsAPI.getProviderHealth(timeRange.value),
+      opsAPI.getLatencyHistogram(timeRange.value),
+      opsAPI.getErrorDistribution(timeRange.value)
+    ])
+    overview.value = ov
+    providers.value = pr.providers
+    latencyData.value = lt
+    errorDistribution.value = er
+    lastUpdated.value = new Date()
+  } catch (err) {
+    console.error('Failed to fetch ops data', err)
+    errorMessage.value = '数据加载失败，请稍后重试'
+  } finally {
+    loading.value = false
+  }
+}
 
-const healthScoreValue = computed<number | null>(() => {
-  if (!metrics.value || !hasTraffic.value) return null
-  const raw = metrics.value.success_rate
-  if (!Number.isFinite(raw)) return null
-  return Math.round(Math.max(0, Math.min(100, raw)))
+// Refresh data every 30 seconds (fallback for L2/L3)
+useIntervalFn(fetchData, 30000)
+
+onMounted(() => {
+  fetchData()
+  connectWS()
 })
 
-const healthScoreRing = computed(() => healthScoreValue.value ?? 0)
-const healthScoreText = computed(() => (healthScoreValue.value === null ? '--' : String(healthScoreValue.value)))
-
-const healthVariant = computed<'neutral' | 'success' | 'warning' | 'danger'>(() => {
-  const score = healthScoreValue.value
-  if (score === null) return 'neutral'
-  if (score >= 99) return 'success'
-  if (score >= 95) return 'warning'
-  return 'danger'
+onUnmounted(() => {
+  if (ws) ws.close()
+  if (reconnectTimer) clearTimeout(reconnectTimer)
 })
 
-const healthStatusText = computed(() => {
-  if (healthVariant.value === 'neutral') return t('admin.ops.status.noData')
-  if (healthVariant.value === 'success') return t('admin.ops.status.systemNormal')
-  if (healthVariant.value === 'warning') return t('admin.ops.status.systemDegraded')
-  return t('admin.ops.status.systemDown')
+watch(timeRange, () => {
+  fetchData()
 })
 
-const healthRingBorderClass = computed(() => {
-  switch (healthVariant.value) {
-    case 'success':
-      return 'border-emerald-50 dark:border-emerald-900/20'
-    case 'warning':
-      return 'border-amber-50 dark:border-amber-900/20'
-    case 'danger':
-      return 'border-red-50 dark:border-red-900/20'
-    default:
-      return 'border-gray-100 dark:border-dark-700'
+// Chart Data: Latency Distribution
+const latencyChartData = computed(() => {
+  if (!latencyData.value) return null
+  return {
+    labels: latencyData.value.buckets.map(b => b.range),
+    datasets: [
+      {
+        label: t('admin.ops.charts.requestCount'),
+        data: latencyData.value.buckets.map(b => b.count),
+        backgroundColor: '#3b82f6',
+        borderRadius: 4
+      }
+    ]
   }
 })
 
-const healthRingProgressClass = computed(() => {
-  switch (healthVariant.value) {
-    case 'success':
-      return 'text-emerald-500'
-    case 'warning':
-      return 'text-amber-500'
-    case 'danger':
-      return 'text-red-500'
-    default:
-      return 'text-gray-300 dark:text-dark-600'
+// Chart Data: Error Distribution
+const errorChartData = computed(() => {
+  if (!errorDistribution.value) return null
+  return {
+    labels: errorDistribution.value.items.map(i => i.code),
+    datasets: [
+      {
+        data: errorDistribution.value.items.map(i => i.count),
+        backgroundColor: [
+          '#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899'
+        ]
+      }
+    ]
   }
 })
 
-const healthDotClass = computed(() => {
-  switch (healthVariant.value) {
-    case 'success':
-      return 'bg-emerald-500'
-    case 'warning':
-      return 'bg-amber-500'
-    case 'danger':
-      return 'bg-red-500'
-    default:
-      return 'bg-gray-400'
+// Chart Data: Provider SLA
+const providerChartData = computed(() => {
+  if (!providers.value.length) return null
+  return {
+    labels: providers.value.map(p => p.name),
+    datasets: [
+      {
+        label: 'SLA (%)',
+        data: providers.value.map(p => p.success_rate),
+        backgroundColor: providers.value.map(p => p.success_rate > 99.5 ? '#10b981' : p.success_rate > 98 ? '#f59e0b' : '#ef4444'),
+        borderRadius: 4
+      }
+    ]
   }
-})
-
-const healthDotPingClass = computed(() => {
-  switch (healthVariant.value) {
-    case 'success':
-      return 'bg-emerald-400'
-    case 'warning':
-      return 'bg-amber-400'
-    case 'danger':
-      return 'bg-red-400'
-    default:
-      return 'bg-gray-300'
-  }
-})
-
-const lastUpdatedText = computed(() => {
-  if (metrics.value?.updated_at) return formatRelativeTime(metrics.value.updated_at)
-  return t('admin.ops.status.waiting')
 })
 
 const chartOptions = {
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
-    legend: { display: true, position: 'top' as const, align: 'end' as const },
-    tooltip: { mode: 'index' as const, intersect: false }
+    legend: {
+      display: false
+    }
   },
   scales: {
-    y: { beginAtZero: true, suggestedMax: 100, grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { callback: (v: any) => `${v}%` } },
-    y1: { beginAtZero: true, position: 'right' as const, grid: { display: false } },
-    x: { grid: { display: false } }
-  }
-}
-
-const chartData = computed(() => {
-  const items = metricsHistory.value ?? []
-  const labels = items.map((m) => formatTimeLabel(m.updated_at))
-  const errorRate = items.map((m) => {
-    if (!Number.isFinite(m.request_count) || m.request_count <= 0) return null
-    if (!Number.isFinite(m.error_rate)) return null
-    return m.error_rate
-  })
-  const reqCount = items.map((m) => (Number.isFinite(m.request_count) ? m.request_count : 0))
-
-  return {
-    labels,
-    datasets: [
-      {
-        label: t('admin.ops.charts.errorRate'),
-        data: errorRate,
-        yAxisID: 'y',
-        borderColor: '#ef4444',
-        backgroundColor: 'rgba(239, 68, 68, 0.1)',
-        tension: 0.35,
-        fill: true
-      },
-      {
-        label: t('admin.ops.charts.requestCount'),
-        data: reqCount,
-        yAxisID: 'y1',
-        borderColor: '#10b981',
-        backgroundColor: 'transparent',
-        borderDash: [4, 4],
-        tension: 0.35
+    y: {
+      beginAtZero: true,
+      grid: {
+        display: false
       }
-    ]
-  }
-})
-
-const errorDistribution = computed(() => {
-  const items = errors.value ?? []
-  if (items.length === 0) return []
-
-  const buckets = {
-    rateLimit: 0,
-    serverError: 0,
-    clientError: 0,
-    other: 0
-  }
-
-  for (const e of items) {
-    if (e.status_code === 429) {
-      buckets.rateLimit++
-      continue
+    },
+    x: {
+      grid: {
+        display: false
+      }
     }
-    if (e.status_code >= 500) {
-      buckets.serverError++
-      continue
-    }
-    if (e.status_code >= 400) {
-      buckets.clientError++
-      continue
-    }
-    buckets.other++
   }
+}
 
-  const total = items.length
-  const pct = (n: number) => Math.round((n / total) * 100)
-
-  return [
-    { label: t('admin.ops.charts.rateLimits'), percentage: pct(buckets.rateLimit), color: 'bg-amber-500' },
-    { label: t('admin.ops.charts.serverErrors'), percentage: pct(buckets.serverError), color: 'bg-red-500' },
-    { label: t('admin.ops.charts.clientErrors'), percentage: pct(buckets.clientError), color: 'bg-blue-500' },
-    { label: t('admin.ops.charts.otherErrors'), percentage: pct(buckets.other), color: 'bg-gray-500' }
-  ].filter((b) => b.percentage > 0)
+const healthScoreClass = computed(() => {
+  const score = overview.value?.health_score || 0
+  if (score >= 90) return 'text-green-500 border-green-500'
+  if (score >= 70) return 'text-yellow-500 border-yellow-500'
+  return 'text-red-500 border-red-500'
 })
 
-// --- Columns ---
-const errorColumns = computed<Column[]>(() => [
-  { key: 'created_at', label: t('admin.ops.table.time'), sortable: true },
-  { key: 'severity', label: t('admin.ops.table.severity') },
-  { key: 'phase', label: t('admin.ops.table.phase') },
-  { key: 'platform', label: t('admin.ops.table.platform') },
-  { key: 'status_code', label: t('admin.ops.table.statusCode') },
-  { key: 'latency_ms', label: t('admin.ops.table.latency') },
-  { key: 'message', label: t('admin.ops.table.message') },
-  { key: 'request_id', label: t('admin.ops.table.requestId') },
-  { key: 'actions', label: '' }
-])
-
-// --- Helpers ---
-const formatTimeOnly = (iso: string) => {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-}
-const shortenId = (id: string) => id.length > 12 ? id.substring(0, 12) + '...' : id
-
-const severityBadgeClass = (sev: Severity) => {
-  const map: Record<string, string> = {
-    P0: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-    P1: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-    P2: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-    P3: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-  }
-  return map[sev] || 'bg-gray-100 text-gray-700'
-}
-
-const statusColorClass = (code: number) => {
-  if (code >= 500) return 'text-red-600 dark:text-red-400'
-  if (code === 429) return 'text-amber-600 dark:text-amber-400'
-  return 'text-gray-600 dark:text-gray-400'
-}
-
-const platformColorClass = (p: Platform) => {
-  const map: Record<string, string> = {
-    openai: 'bg-green-500',
-    anthropic: 'bg-orange-500',
-    gemini: 'bg-blue-500',
-    antigravity: 'bg-purple-500'
-  }
-  return map[p] || 'bg-gray-400'
-}
-
-const platformLabel = (p: string) => p.charAt(0).toUpperCase() + p.slice(1)
-
-const formatLatency = (latencyMs: number | null) => {
-  if (latencyMs === null || latencyMs === undefined) return '—'
-  return `${latencyMs} ms`
-}
-
-const formatTimeLabel = (iso: string | undefined): string => {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-
-  if (timeRange.value === '24h' || timeRange.value === '7d') {
-    return d.toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-  }
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-
-// --- Actions ---
-const refreshData = async () => {
-  if (loading.value) return
-  loading.value = true
-  const endTime = new Date()
-  const minutes = lookbackMinutes(timeRange.value)
-  const windowMinutes = timeRange.value === '7d' ? 5 : 1
-  const historyLimit = Math.min(5000, Math.ceil(minutes / windowMinutes) + 5)
-  const startTime = new Date(endTime.getTime() - minutes * 60 * 1000)
-
-  try {
-    const [latest, historyResp, errorsResp] = await Promise.all([
-      opsAPI.getMetrics(),
-      opsAPI.listMetricsHistory({ window_minutes: windowMinutes, minutes, limit: historyLimit }),
-      opsAPI.listErrors({
-        start_time: startTime.toISOString(),
-        end_time: endTime.toISOString(),
-        limit: 200,
-        platform: platformFilter.value === 'all' ? undefined : platformFilter.value,
-        phase: phaseFilter.value === 'all' ? undefined : phaseFilter.value,
-        severity: severityFilter.value === 'all' ? undefined : severityFilter.value
-      })
-    ])
-
-    metrics.value = latest
-    metricsHistory.value = historyResp.items || []
-    errors.value = errorsResp.items || []
-  } catch (err) {
-    const message =
-      (err as { message?: string })?.message ||
-      t('admin.ops.failedToLoad')
-    appStore.showError(message)
-  } finally {
-    loading.value = false
-  }
-}
-
-const openDetails = (err: OpsError) => {
-  selectedError.value = err
-}
-const closeDetails = () => {
-  selectedError.value = null
-}
-
-const copyToClipboard = async (text: string) => {
-  try {
-    await navigator.clipboard.writeText(text)
-    appStore.showSuccess(t('common.copiedToClipboard'))
-  } catch {
-    appStore.showError(t('common.copyFailed'))
-  }
-}
-
-const filteredErrors = computed(() => {
-  return errors.value.filter(e => {
-    const q = searchQuery.value.trim().toLowerCase()
-    if (q) {
-      const hay = `${e.message} ${e.request_id} ${e.model} ${e.type}`.toLowerCase()
-      if (!hay.includes(q)) return false
-    }
-    if (severityFilter.value !== 'all' && e.severity !== severityFilter.value) return false
-    if (platformFilter.value !== 'all' && e.platform !== platformFilter.value) return false
-    if (phaseFilter.value !== 'all' && e.phase !== phaseFilter.value) return false
-    return true
-  })
-})
-
-const severityOptions = computed(() => [
-  { value: 'all', label: t('admin.ops.filters.allSeverities') },
-  { value: 'P0', label: t('admin.ops.filters.p0') },
-  { value: 'P1', label: t('admin.ops.filters.p1') },
-  { value: 'P2', label: t('admin.ops.filters.p2') },
-  { value: 'P3', label: t('admin.ops.filters.p3') }
-])
-
-const platformOptions = computed(() => [
-  { value: 'all', label: t('admin.ops.filters.allPlatforms') },
-  { value: 'openai', label: t('admin.ops.platform.openai') },
-  { value: 'gemini', label: t('admin.ops.platform.gemini') },
-  { value: 'anthropic', label: t('admin.ops.platform.anthropic') },
-  { value: 'antigravity', label: t('admin.ops.platform.antigravity') }
-])
-
-const phaseOptions = computed(() => [
-  { value: 'all', label: t('admin.ops.filters.allPhases') },
-  { value: 'auth', label: t('admin.ops.phase.auth') },
-  { value: 'concurrency', label: t('admin.ops.phase.concurrency') },
-  { value: 'billing', label: t('admin.ops.phase.billing') },
-  { value: 'scheduling', label: t('admin.ops.phase.scheduling') },
-  { value: 'network', label: t('admin.ops.phase.network') },
-  { value: 'upstream', label: t('admin.ops.phase.upstream') },
-  { value: 'response', label: t('admin.ops.phase.response') },
-  { value: 'internal', label: t('admin.ops.phase.internal') }
-])
-
-const timeRangeOptions = computed(() => [
-  { value: '15m', label: t('admin.ops.range.15m') },
-  { value: '1h', label: t('admin.ops.range.1h') },
-  { value: '24h', label: t('admin.ops.range.24h') },
-  { value: '7d', label: t('admin.ops.range.7d') }
-])
-
-type StatCardItem = {
-  key: string
-  title: string
-  value: string | number
-  icon: any
-  iconVariant: IconVariant
-}
-
-const statCards = computed<StatCardItem[]>(() => [
-  {
-    key: 'success',
-    title: t('admin.ops.metrics.successRate'),
-    value: hasTraffic.value ? `${(metrics.value?.success_rate ?? 0).toFixed(2)}%` : t('common.noData'),
-    icon: { render: () => h('svg', {class: 'h-6 w-6 text-emerald-600', fill:'none', viewBox:'0 0 24 24', stroke:'currentColor'}, [h('path',{d:'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z', 'stroke-width':2})]) },
-    iconVariant: 'success'
-  },
-  {
-    key: 'error_rate',
-    title: t('admin.ops.metrics.errorRate'),
-    value: hasTraffic.value ? `${(metrics.value?.error_rate ?? 0).toFixed(2)}%` : t('common.noData'),
-    icon: { render: () => h('svg', {class: 'h-6 w-6 text-red-600', fill:'none', viewBox:'0 0 24 24', stroke:'currentColor'}, [h('path',{d:'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z', 'stroke-width':2})]) },
-    iconVariant: 'danger'
-  },
-  {
-    key: 'p99',
-    title: t('admin.ops.metrics.p99'),
-    value: hasTraffic.value ? `${formatNumber(metrics.value?.p99_latency_ms ?? 0)} ms` : t('common.noData'),
-    icon: { render: () => h('svg', {class: 'h-6 w-6 text-amber-600', fill:'none', viewBox:'0 0 24 24', stroke:'currentColor'}, [h('path',{d:'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z', 'stroke-width':2})]) },
-    iconVariant: 'warning'
-  },
-  {
-    key: 'cpu',
-    title: t('admin.ops.metrics.cpuUsage'),
-    value: metrics.value?.cpu_usage_percent !== undefined ? `${metrics.value.cpu_usage_percent.toFixed(1)}%` : t('common.noData'),
-    icon: { render: () => h('svg', {class: 'h-6 w-6 text-blue-600', fill:'none', viewBox:'0 0 24 24', stroke:'currentColor'}, [h('path',{d:'M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M8 9h8v6H8V9z', 'stroke-width':2})]) },
-    iconVariant: 'primary'
-  },
-  {
-    key: 'queue',
-    title: t('admin.ops.metrics.queueDepth'),
-    value: metrics.value?.concurrency_queue_depth !== undefined ? formatNumber(metrics.value.concurrency_queue_depth) : t('common.noData'),
-    icon: { render: () => h('svg', {class: 'h-6 w-6 text-blue-600', fill:'none', viewBox:'0 0 24 24', stroke:'currentColor'}, [h('path',{d:'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9', 'stroke-width':2})]) },
-    iconVariant: 'primary'
-  }
-])
-
-onMounted(() => {
-  refreshData()
-  autoRefreshTimer = window.setInterval(() => {
-    refreshData()
-  }, 30_000)
-})
-
-onUnmounted(() => {
-  if (autoRefreshTimer) window.clearInterval(autoRefreshTimer)
-  autoRefreshTimer = null
-})
-
-watch(timeRange, () => {
-  refreshData()
-})
-
-watch([platformFilter, phaseFilter, severityFilter], () => {
-  refreshData()
-})
 </script>
 
+<template>
+  <AppLayout>
+    <div class="space-y-6 pb-12">
+      <!-- Error Message -->
+      <div v-if="errorMessage" class="rounded-2xl bg-red-50 p-4 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
+        {{ errorMessage }}
+      </div>
+
+      <!-- L1: Header & Realtime Stats -->
+      <div class="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
+        <div class="flex items-center gap-6">
+          <!-- Health Score Gauge -->
+          <div class="flex h-20 w-20 flex-col items-center justify-center rounded-full border-4 bg-gray-50 dark:bg-dark-900" :class="healthScoreClass">
+            <span class="text-2xl font-black">{{ overview?.health_score || '--' }}</span>
+            <span class="text-[10px] font-bold opacity-60">HEALTH</span>
+          </div>
+          
+          <div>
+            <h1 class="text-xl font-black text-gray-900 dark:text-white">运维监控中心 2.0</h1>
+            <div class="mt-1 flex items-center gap-3">
+              <span class="flex items-center gap-1.5">
+                <span class="h-2 w-2 rounded-full bg-green-500 animate-pulse" v-if="wsConnected"></span>
+                <span class="h-2 w-2 rounded-full bg-red-500" v-else></span>
+                <span class="text-xs font-medium text-gray-500">{{ wsConnected ? '实时连接中' : '连接已断开' }}</span>
+              </span>
+              <span class="text-xs text-gray-400">最后更新: {{ lastUpdated.toLocaleTimeString() }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-4">
+          <div class="hidden items-center gap-6 border-r border-gray-100 pr-6 dark:border-dark-700 lg:flex">
+            <div class="text-center">
+              <div class="text-sm font-black text-gray-900 dark:text-white">{{ realTimeQPS.toFixed(1) }}</div>
+              <div class="text-[10px] font-bold text-gray-400 uppercase">实时 QPS</div>
+            </div>
+            <div class="text-center">
+              <div class="text-sm font-black text-gray-900 dark:text-white">{{ (realTimeTPS / 1000).toFixed(1) }}K</div>
+              <div class="text-[10px] font-bold text-gray-400 uppercase">实时 TPS</div>
+            </div>
+          </div>
+          
+          <select v-model="timeRange" class="rounded-lg border-gray-200 bg-gray-50 py-1.5 pl-3 pr-8 text-sm font-medium text-gray-700 focus:border-blue-500 focus:ring-blue-500 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300">
+            <option value="5m">5 分钟</option>
+            <option value="30m">30 分钟</option>
+            <option value="1h">1 小时</option>
+            <option value="24h">24 小时</option>
+          </select>
+          
+          <button @click="fetchData" :disabled="loading" class="flex h-9 w-9 items-center justify-center rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-dark-700 dark:text-gray-400">
+            <svg class="h-5 w-5" :class="{ 'animate-spin': loading }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- L1: Core Metrics Grid -->
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">服务可用率 (SLA)</span>
+            <span class="rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-bold text-green-600 dark:bg-green-900/30">{{ overview?.sla.status }}</span>
+          </div>
+          <div class="mt-2 flex items-baseline gap-2">
+            <span class="text-2xl font-black text-gray-900 dark:text-white">{{ overview?.sla.current.toFixed(2) }}%</span>
+            <span class="text-xs font-bold" :class="overview?.sla.change_24h && overview.sla.change_24h >= 0 ? 'text-green-500' : 'text-red-500'">
+              {{ overview?.sla.change_24h && overview.sla.change_24h >= 0 ? '+' : '' }}{{ overview?.sla.change_24h }}%
+            </span>
+          </div>
+          <div class="mt-3 h-1 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-dark-700">
+            <div class="h-full bg-green-500" :style="{ width: `${overview?.sla.current}%` }"></div>
+          </div>
+        </div>
+
+        <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">P99 响应延迟</span>
+            <span class="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-600 dark:bg-blue-900/30">Target 1s</span>
+          </div>
+          <div class="mt-2 flex items-baseline gap-2">
+            <span class="text-2xl font-black text-gray-900 dark:text-white">{{ overview?.latency.p99 }}ms</span>
+            <span class="text-xs font-bold text-gray-400">Avg: {{ overview?.latency.avg }}ms</span>
+          </div>
+          <div class="mt-3 flex gap-1">
+            <div v-for="i in 10" :key="i" class="h-1 flex-1 rounded-full" :class="i <= (overview?.latency.p99 || 0) / 200 ? 'bg-blue-500' : 'bg-gray-100 dark:bg-dark-700'"></div>
+          </div>
+        </div>
+
+        <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">周期请求总数</span>
+            <svg class="h-4 w-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
+          </div>
+          <div class="mt-2 flex items-baseline gap-2">
+            <span class="text-2xl font-black text-gray-900 dark:text-white">{{ overview?.qps.avg_1h.toFixed(1) }}</span>
+            <span class="text-xs font-bold text-gray-400">req/s</span>
+          </div>
+          <div class="mt-1 text-[10px] font-bold text-gray-400 uppercase">对比昨日: {{ overview?.qps.change_vs_yesterday }}%</div>
+        </div>
+
+        <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">周期错误数</span>
+            <span class="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600 dark:bg-red-900/30">{{ overview?.errors.error_rate.toFixed(2) }}%</span>
+          </div>
+          <div class="mt-2 flex items-baseline gap-2">
+            <span class="text-2xl font-black text-gray-900 dark:text-white">{{ overview?.errors.total_count }}</span>
+            <span class="text-xs font-bold text-red-500">5xx: {{ overview?.errors['5xx_count'] }}</span>
+          </div>
+          <div class="mt-1 text-[10px] font-bold text-gray-400 uppercase">主要错误码: {{ overview?.errors.top_error?.code || 'N/A' }}</div>
+        </div>
+      </div>
+
+      <!-- L2: Visual Analysis -->
+      <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <!-- Latency Distribution -->
+        <div class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
+          <div class="mb-6 flex items-center justify-between">
+            <h3 class="text-sm font-black text-gray-900 dark:text-white uppercase tracking-wider">请求延迟分布</h3>
+          </div>
+          <div class="h-64">
+            <Bar v-if="latencyChartData" :data="latencyChartData" :options="chartOptions" />
+            <div v-else class="flex h-full items-center justify-center text-gray-400">加载中...</div>
+          </div>
+        </div>
+
+        <!-- Provider Health -->
+        <div class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
+          <div class="mb-6 flex items-center justify-between">
+            <h3 class="text-sm font-black text-gray-900 dark:text-white uppercase tracking-wider">上游供应商健康度 (SLA)</h3>
+          </div>
+          <div class="h-64">
+            <Bar v-if="providerChartData" :data="providerChartData" :options="chartOptions" />
+            <div v-else class="flex h-full items-center justify-center text-gray-400">加载中...</div>
+          </div>
+        </div>
+
+        <!-- Error Distribution -->
+        <div class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
+          <div class="mb-6 flex items-center justify-between">
+            <h3 class="text-sm font-black text-gray-900 dark:text-white uppercase tracking-wider">错误类型分布</h3>
+          </div>
+          <div class="flex h-64 gap-6">
+            <div class="relative w-1/2">
+              <Doughnut v-if="errorChartData" :data="errorChartData" :options="{ ...chartOptions, cutout: '70%' }" />
+            </div>
+            <div class="flex flex-1 flex-col justify-center space-y-3">
+              <div v-for="(item, idx) in errorDistribution?.items.slice(0, 5)" :key="item.code" class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="h-2 w-2 rounded-full" :style="{ backgroundColor: ['#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#8b5cf6'][idx] }"></div>
+                  <span class="text-xs font-bold text-gray-700 dark:text-gray-300">{{ item.code }}</span>
+                </div>
+                <span class="text-xs font-black text-gray-900 dark:text-white">{{ item.percentage }}%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- System Resources -->
+        <div class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
+          <div class="mb-6 flex items-center justify-between">
+            <h3 class="text-sm font-black text-gray-900 dark:text-white uppercase tracking-wider">系统运行状态</h3>
+          </div>
+          <div class="grid grid-cols-2 gap-6">
+            <div class="space-y-4">
+              <div>
+                <div class="mb-1 flex justify-between text-[10px] font-bold text-gray-400 uppercase">CPU 使用率</div>
+                <div class="h-2 w-full rounded-full bg-gray-100 dark:bg-dark-700">
+                  <div class="h-full rounded-full bg-purple-500" :style="{ width: `${overview?.resources.cpu_usage}%` }"></div>
+                </div>
+                <div class="mt-1 text-right text-xs font-bold text-gray-900 dark:text-white">{{ overview?.resources.cpu_usage }}%</div>
+              </div>
+              <div>
+                <div class="mb-1 flex justify-between text-[10px] font-bold text-gray-400 uppercase">内存使用率</div>
+                <div class="h-2 w-full rounded-full bg-gray-100 dark:bg-dark-700">
+                  <div class="h-full rounded-full bg-indigo-500" :style="{ width: `${overview?.resources.memory_usage}%` }"></div>
+                </div>
+                <div class="mt-1 text-right text-xs font-bold text-gray-900 dark:text-white">{{ overview?.resources.memory_usage }}%</div>
+              </div>
+            </div>
+            <div class="flex flex-col justify-center space-y-4 rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold text-gray-400 uppercase">Redis 状态</span>
+                <span class="text-xs font-bold text-green-500 uppercase">{{ overview?.system_status.redis }}</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold text-gray-400 uppercase">DB 连接</span>
+                <span class="text-xs font-bold text-gray-900 dark:text-white">{{ overview?.resources.db_connections.active }} / {{ overview?.resources.db_connections.max }}</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold text-gray-400 uppercase">Goroutines</span>
+                <span class="text-xs font-bold text-gray-900 dark:text-white">{{ overview?.resources.goroutines }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </AppLayout>
+</template>
+
 <style scoped>
-/* Optional: Custom scrollbar for the drawer code block */
-pre::-webkit-scrollbar {
-  height: 4px;
-}
-pre::-webkit-scrollbar-thumb {
-  background-color: #4b5563;
-  border-radius: 4px;
+/* Custom select styling */
+select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 1.5em 1.5em;
 }
 </style>
