@@ -73,20 +73,6 @@ func ProvideDeferredService(accountRepo AccountRepository, timingWheel *TimingWh
 	return svc
 }
 
-// ProvideOpsMetricsCollector creates and starts OpsMetricsCollector.
-func ProvideOpsMetricsCollector(opsService *OpsService, concurrencyService *ConcurrencyService) *OpsMetricsCollector {
-	svc := NewOpsMetricsCollector(opsService, concurrencyService)
-	svc.Start()
-	return svc
-}
-
-// ProvideOpsAlertService creates and starts OpsAlertService.
-func ProvideOpsAlertService(opsService *OpsService, userService *UserService, emailService *EmailService) *OpsAlertService {
-	svc := NewOpsAlertService(opsService, userService, emailService)
-	svc.Start()
-	return svc
-}
-
 // ProvideConcurrencyService creates ConcurrencyService and starts slot cleanup worker.
 func ProvideConcurrencyService(cache ConcurrencyCache, accountRepo AccountRepository, cfg *config.Config) *ConcurrencyService {
 	svc := NewConcurrencyService(cache)
@@ -101,14 +87,13 @@ var ProviderSet = wire.NewSet(
 	// Core services
 	NewAuthService,
 	NewUserService,
-	NewAPIKeyService,
+	NewApiKeyService,
 	NewGroupService,
 	NewAccountService,
 	NewProxyService,
 	NewRedeemService,
 	NewUsageService,
 	NewDashboardService,
-	NewOpsService,
 	ProvidePricingService,
 	NewBillingService,
 	NewBillingCacheService,
@@ -140,7 +125,5 @@ var ProviderSet = wire.NewSet(
 	ProvideTimingWheelService,
 	ProvideDeferredService,
 	ProvideAntigravityQuotaRefresher,
-	ProvideOpsMetricsCollector,
-	ProvideOpsAlertService,
 	NewUserAttributeService,
 )

@@ -1,4 +1,3 @@
-// Package dto provides mapping utilities for converting between service layer and HTTP handler DTOs.
 package dto
 
 import "github.com/Wei-Shaw/sub2api/internal/service"
@@ -27,11 +26,11 @@ func UserFromService(u *service.User) *User {
 		return nil
 	}
 	out := UserFromServiceShallow(u)
-	if len(u.APIKeys) > 0 {
-		out.APIKeys = make([]APIKey, 0, len(u.APIKeys))
-		for i := range u.APIKeys {
-			k := u.APIKeys[i]
-			out.APIKeys = append(out.APIKeys, *APIKeyFromService(&k))
+	if len(u.ApiKeys) > 0 {
+		out.ApiKeys = make([]ApiKey, 0, len(u.ApiKeys))
+		for i := range u.ApiKeys {
+			k := u.ApiKeys[i]
+			out.ApiKeys = append(out.ApiKeys, *ApiKeyFromService(&k))
 		}
 	}
 	if len(u.Subscriptions) > 0 {
@@ -44,11 +43,11 @@ func UserFromService(u *service.User) *User {
 	return out
 }
 
-func APIKeyFromService(k *service.APIKey) *APIKey {
+func ApiKeyFromService(k *service.ApiKey) *ApiKey {
 	if k == nil {
 		return nil
 	}
-	return &APIKey{
+	return &ApiKey{
 		ID:        k.ID,
 		UserID:    k.UserID,
 		Key:       k.Key,
@@ -221,7 +220,7 @@ func UsageLogFromService(l *service.UsageLog) *UsageLog {
 	return &UsageLog{
 		ID:                    l.ID,
 		UserID:                l.UserID,
-		APIKeyID:              l.APIKeyID,
+		ApiKeyID:              l.ApiKeyID,
 		AccountID:             l.AccountID,
 		RequestID:             l.RequestID,
 		Model:                 l.Model,
@@ -246,7 +245,7 @@ func UsageLogFromService(l *service.UsageLog) *UsageLog {
 		FirstTokenMs:          l.FirstTokenMs,
 		CreatedAt:             l.CreatedAt,
 		User:                  UserFromServiceShallow(l.User),
-		APIKey:                APIKeyFromService(l.APIKey),
+		ApiKey:                ApiKeyFromService(l.ApiKey),
 		Account:               AccountFromService(l.Account),
 		Group:                 GroupFromServiceShallow(l.Group),
 		Subscription:          UserSubscriptionFromService(l.Subscription),

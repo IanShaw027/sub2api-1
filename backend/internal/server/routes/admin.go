@@ -19,9 +19,6 @@ func RegisterAdminRoutes(
 		// 仪表盘
 		registerDashboardRoutes(admin, h)
 
-		// 运维监控
-		registerOpsRoutes(admin, h)
-
 		// 用户管理
 		registerUserManagementRoutes(admin, h)
 
@@ -70,35 +67,10 @@ func registerDashboardRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		dashboard.GET("/realtime", h.Admin.Dashboard.GetRealtimeMetrics)
 		dashboard.GET("/trend", h.Admin.Dashboard.GetUsageTrend)
 		dashboard.GET("/models", h.Admin.Dashboard.GetModelStats)
-		dashboard.GET("/api-keys-trend", h.Admin.Dashboard.GetAPIKeyUsageTrend)
+		dashboard.GET("/api-keys-trend", h.Admin.Dashboard.GetApiKeyUsageTrend)
 		dashboard.GET("/users-trend", h.Admin.Dashboard.GetUserUsageTrend)
 		dashboard.POST("/users-usage", h.Admin.Dashboard.GetBatchUsersUsage)
-		dashboard.POST("/api-keys-usage", h.Admin.Dashboard.GetBatchAPIKeysUsage)
-	}
-}
-
-func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
-	ops := admin.Group("/ops")
-	{
-		ops.GET("/metrics", h.Admin.Ops.GetMetrics)
-		ops.GET("/metrics/history", h.Admin.Ops.ListMetricsHistory)
-		ops.GET("/errors", h.Admin.Ops.GetErrorLogs)
-		ops.GET("/error-logs", h.Admin.Ops.ListErrorLogs)
-
-		// Dashboard routes
-		dashboard := ops.Group("/dashboard")
-		{
-			dashboard.GET("/overview", h.Admin.Ops.GetDashboardOverview)
-			dashboard.GET("/providers", h.Admin.Ops.GetProviderHealth)
-			dashboard.GET("/latency-histogram", h.Admin.Ops.GetLatencyHistogram)
-			dashboard.GET("/errors/distribution", h.Admin.Ops.GetErrorDistribution)
-		}
-
-		// WebSocket routes
-		ws := ops.Group("/ws")
-		{
-			ws.GET("/qps", h.Admin.Ops.QPSWSHandler)
-		}
+		dashboard.POST("/api-keys-usage", h.Admin.Dashboard.GetBatchApiKeysUsage)
 	}
 }
 
@@ -231,12 +203,12 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	{
 		adminSettings.GET("", h.Admin.Setting.GetSettings)
 		adminSettings.PUT("", h.Admin.Setting.UpdateSettings)
-		adminSettings.POST("/test-smtp", h.Admin.Setting.TestSMTPConnection)
+		adminSettings.POST("/test-smtp", h.Admin.Setting.TestSmtpConnection)
 		adminSettings.POST("/send-test-email", h.Admin.Setting.SendTestEmail)
 		// Admin API Key 管理
-		adminSettings.GET("/admin-api-key", h.Admin.Setting.GetAdminAPIKey)
-		adminSettings.POST("/admin-api-key/regenerate", h.Admin.Setting.RegenerateAdminAPIKey)
-		adminSettings.DELETE("/admin-api-key", h.Admin.Setting.DeleteAdminAPIKey)
+		adminSettings.GET("/admin-api-key", h.Admin.Setting.GetAdminApiKey)
+		adminSettings.POST("/admin-api-key/regenerate", h.Admin.Setting.RegenerateAdminApiKey)
+		adminSettings.DELETE("/admin-api-key", h.Admin.Setting.DeleteAdminApiKey)
 	}
 }
 
@@ -276,7 +248,7 @@ func registerUsageRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		usage.GET("", h.Admin.Usage.List)
 		usage.GET("/stats", h.Admin.Usage.Stats)
 		usage.GET("/search-users", h.Admin.Usage.SearchUsers)
-		usage.GET("/search-api-keys", h.Admin.Usage.SearchAPIKeys)
+		usage.GET("/search-api-keys", h.Admin.Usage.SearchApiKeys)
 	}
 }
 

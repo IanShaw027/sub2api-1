@@ -1,5 +1,3 @@
-// Package geminicli provides OAuth authentication and API client functionality
-// for Google's Gemini AI services, supporting both AI Studio and Code Assist endpoints.
 package geminicli
 
 import "time"
