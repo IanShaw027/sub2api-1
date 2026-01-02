@@ -74,8 +74,8 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	subscriptionHandler := handler.NewSubscriptionHandler(subscriptionService)
 	dashboardService := service.NewDashboardService(usageLogRepository)
 	dashboardHandler := admin.NewDashboardHandler(dashboardService)
-	opsRepository := repository.NewOpsRepository(client, db)
-	opsService := service.NewOpsService(opsRepository, redisClient, db)
+	opsRepository := repository.NewOpsRepository(client, db, redisClient)
+	opsService := service.NewOpsService(opsRepository, db)
 	opsHandler := admin.NewOpsHandler(opsService)
 	accountRepository := repository.NewAccountRepository(client, db)
 	proxyRepository := repository.NewProxyRepository(client, db)
@@ -167,7 +167,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	tokenRefreshService := service.ProvideTokenRefreshService(accountRepository, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, configConfig)
 	antigravityQuotaRefresher := service.ProvideAntigravityQuotaRefresher(accountRepository, proxyRepository, antigravityOAuthService, configConfig)
 	opsAlertService := service.ProvideOpsAlertService(opsService, userService, emailService)
-	opsMetricsCollector := service.ProvideOpsMetricsCollector(opsService, opsAlertService, concurrencyService)
+	opsMetricsCollector := service.ProvideOpsMetricsCollector(opsService, concurrencyService)
 	v := provideCleanup(client, redisClient, tokenRefreshService, pricingService, emailQueueService, billingCacheService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, antigravityQuotaRefresher, opsMetricsCollector, opsAlertService)
 	application := &Application{
 		Server:  httpServer,

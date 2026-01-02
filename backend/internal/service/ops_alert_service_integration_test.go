@@ -16,23 +16,23 @@ import (
 // This integration test protects the DI startup contract for OpsAlertService.
 //
 // Background:
-// - OpsMetricsCollector previously called alertService.Start()/Evaluate() directly.
-// - Those direct calls were removed, so OpsAlertService must now start via DI
-//   (ProvideOpsAlertService in wire.go) and run its own evaluation ticker.
+//   - OpsMetricsCollector previously called alertService.Start()/Evaluate() directly.
+//   - Those direct calls were removed, so OpsAlertService must now start via DI
+//     (ProvideOpsAlertService in wire.go) and run its own evaluation ticker.
 //
 // What we validate here:
-//  1) When we construct via the Wire provider functions (ProvideOpsAlertService +
+//  1. When we construct via the Wire provider functions (ProvideOpsAlertService +
 //     ProvideOpsMetricsCollector), OpsAlertService starts automatically.
-//  2) Its evaluation loop continues to tick even if OpsMetricsCollector is stopped,
+//  2. Its evaluation loop continues to tick even if OpsMetricsCollector is stopped,
 //     proving the alert evaluator is independent.
-//  3) The evaluation path can trigger alert logic (CreateAlertEvent called).
+//  3. The evaluation path can trigger alert logic (CreateAlertEvent called).
 func TestOpsAlertService_StartedViaWireProviders_RunsIndependentTicker(t *testing.T) {
 	oldInterval := opsAlertEvalInterval
 	opsAlertEvalInterval = 25 * time.Millisecond
 	t.Cleanup(func() { opsAlertEvalInterval = oldInterval })
 
 	repo := newFakeOpsRepository()
-	opsService := NewOpsService(repo, nil, nil)
+	opsService := NewOpsService(repo, nil)
 
 	// Start via the Wire provider function (the production DI path).
 	alertService := ProvideOpsAlertService(opsService, nil, nil)
@@ -40,7 +40,7 @@ func TestOpsAlertService_StartedViaWireProviders_RunsIndependentTicker(t *testin
 
 	// Construct via ProvideOpsMetricsCollector (wire.go). Stop immediately to ensure
 	// the alert ticker keeps running without the metrics collector.
-	collector := ProvideOpsMetricsCollector(opsService, alertService, NewConcurrencyService(nil))
+	collector := ProvideOpsMetricsCollector(opsService, NewConcurrencyService(nil))
 	collector.Stop()
 
 	// Wait for at least one evaluation (run() calls evaluateOnce immediately).
@@ -250,3 +250,22 @@ func (r *fakeOpsRepository) GetOverviewStats(ctx context.Context, startTime, end
 	return &OverviewStats{}, nil
 }
 
+func (r *fakeOpsRepository) GetCachedLatestSystemMetric(ctx context.Context) (*OpsMetrics, error) {
+	return nil, nil
+}
+
+func (r *fakeOpsRepository) SetCachedLatestSystemMetric(ctx context.Context, metric *OpsMetrics) error {
+	return nil
+}
+
+func (r *fakeOpsRepository) GetCachedDashboardOverview(ctx context.Context, timeRange string) (*DashboardOverviewData, error) {
+	return nil, nil
+}
+
+func (r *fakeOpsRepository) SetCachedDashboardOverview(ctx context.Context, timeRange string, data *DashboardOverviewData, ttl time.Duration) error {
+	return nil
+}
+
+func (r *fakeOpsRepository) PingRedis(ctx context.Context) error {
+	return nil
+}

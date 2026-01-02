@@ -188,4 +188,3 @@ func levelFromSeverity(severity string) string {
 		return "ERROR"
 	}
 }
-

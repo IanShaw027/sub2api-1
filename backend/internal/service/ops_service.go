@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -13,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/shirou/gopsutil/v4/disk"
 )
 
@@ -148,11 +146,17 @@ type OpsRepository interface {
 	UpdateAlertEventNotifications(ctx context.Context, eventID int64, emailSent, webhookSent bool) error
 	CountActiveAlerts(ctx context.Context) (int, error)
 	GetOverviewStats(ctx context.Context, startTime, endTime time.Time) (*OverviewStats, error)
+
+	// Redis-backed cache/health (best-effort; implementation lives in repository layer).
+	GetCachedLatestSystemMetric(ctx context.Context) (*OpsMetrics, error)
+	SetCachedLatestSystemMetric(ctx context.Context, metric *OpsMetrics) error
+	GetCachedDashboardOverview(ctx context.Context, timeRange string) (*DashboardOverviewData, error)
+	SetCachedDashboardOverview(ctx context.Context, timeRange string, data *DashboardOverviewData, ttl time.Duration) error
+	PingRedis(ctx context.Context) error
 }
 
 type OpsService struct {
 	repo  OpsRepository
-	cache *redis.Client
 	sqlDB *sql.DB
 
 	redisNilWarnOnce sync.Once
@@ -161,8 +165,8 @@ type OpsService struct {
 
 const opsDBQueryTimeout = 5 * time.Second
 
-func NewOpsService(repo OpsRepository, cache *redis.Client, sqlDB *sql.DB) *OpsService {
-	svc := &OpsService{repo: repo, cache: cache, sqlDB: sqlDB}
+func NewOpsService(repo OpsRepository, sqlDB *sql.DB) *OpsService {
+	svc := &OpsService{repo: repo, sqlDB: sqlDB}
 
 	// Best-effort startup health checks: log warnings if Redis/DB is unavailable,
 	// but never fail service startup (graceful degradation).
@@ -226,8 +230,10 @@ func (s *OpsService) RecordMetrics(ctx context.Context, metric *OpsMetrics) erro
 	if windowMinutes == 0 {
 		windowMinutes = 1
 	}
-	if windowMinutes == 1 && s.cache != nil {
-		_ = NewOpsMetricsCache(s.cache).SetLatestMetrics(ctx, metric)
+	if windowMinutes == 1 {
+		if repo := s.repo; repo != nil {
+			_ = repo.SetCachedLatestSystemMetric(ctx, metric)
+		}
 	}
 	return nil
 }
@@ -250,12 +256,14 @@ func (s *OpsService) GetWindowStats(ctx context.Context, startTime, endTime time
 
 func (s *OpsService) GetLatestMetrics(ctx context.Context) (*OpsMetrics, error) {
 	// Cache first (best-effort): cache errors should not break the dashboard.
-	if s != nil && s.cache != nil {
-		if cached, err := NewOpsMetricsCache(s.cache).GetLatestMetrics(ctx); err == nil && cached != nil {
-			if cached.WindowMinutes == 0 {
-				cached.WindowMinutes = 1
+	if s != nil {
+		if repo := s.repo; repo != nil {
+			if cached, err := repo.GetCachedLatestSystemMetric(ctx); err == nil && cached != nil {
+				if cached.WindowMinutes == 0 {
+					cached.WindowMinutes = 1
+				}
+				return cached, nil
 			}
-			return cached, nil
 		}
 	}
 
@@ -276,8 +284,10 @@ func (s *OpsService) GetLatestMetrics(ctx context.Context) (*OpsMetrics, error) 
 	}
 
 	// Backfill cache (best-effort).
-	if s != nil && s.cache != nil {
-		_ = NewOpsMetricsCache(s.cache).SetLatestMetrics(ctx, metric)
+	if s != nil {
+		if repo := s.repo; repo != nil {
+			_ = repo.SetCachedLatestSystemMetric(ctx, metric)
+		}
 	}
 	return metric, nil
 }
@@ -307,7 +317,7 @@ func (s *OpsService) ListMetricsHistory(ctx context.Context, windowMinutes int, 
 	return s.repo.ListSystemMetricsRange(ctxDB, windowMinutes, startTime, endTime, limit)
 }
 
-// Dashboard overview types
+// DashboardOverviewData represents aggregated metrics for the ops dashboard overview.
 type DashboardOverviewData struct {
 	Timestamp    time.Time        `json:"timestamp"`
 	HealthScore  int              `json:"health_score"`
@@ -412,7 +422,14 @@ type OverviewStats struct {
 }
 
 func (s *OpsService) GetDashboardOverview(ctx context.Context, timeRange string) (*DashboardOverviewData, error) {
-	if s == nil || s.repo == nil || s.sqlDB == nil {
+	if s == nil {
+		return nil, errors.New("ops service not initialized")
+	}
+	repo := s.repo
+	if repo == nil {
+		return nil, errors.New("ops repository not initialized")
+	}
+	if s.sqlDB == nil {
 		return nil, errors.New("ops service not initialized")
 	}
 	if strings.TrimSpace(timeRange) == "" {
@@ -424,26 +441,15 @@ func (s *OpsService) GetDashboardOverview(ctx context.Context, timeRange string)
 		return nil, err
 	}
 
-	cacheKey := "ops:dashboard:overview:" + timeRange
-
-	if s != nil && s.cache != nil {
-		cached, err := s.cache.Get(ctx, cacheKey).Bytes()
-		if err == nil && len(cached) > 0 {
-			var data DashboardOverviewData
-			if err := json.Unmarshal(cached, &data); err == nil {
-				return &data, nil
-			}
-			log.Printf("[OpsOverview] cache unmarshal failed (key=%s): %v", cacheKey, err)
-		} else if err != nil && !errors.Is(err, redis.Nil) {
-			log.Printf("[OpsOverview] cache get failed (key=%s): %v", cacheKey, err)
-		}
+	if cached, err := repo.GetCachedDashboardOverview(ctx, timeRange); err == nil && cached != nil {
+		return cached, nil
 	}
 
 	now := time.Now().UTC()
 	startTime := now.Add(-duration)
 
 	ctxStats, cancelStats := context.WithTimeout(ctx, opsDBQueryTimeout)
-	stats, err := s.repo.GetOverviewStats(ctxStats, startTime, now)
+	stats, err := repo.GetOverviewStats(ctxStats, startTime, now)
 	cancelStats()
 	if err != nil {
 		return nil, fmt.Errorf("get overview stats: %w", err)
@@ -457,7 +463,7 @@ func (s *OpsService) GetDashboardOverview(ctx context.Context, timeRange string)
 		yesterdayEnd := now.Add(-24 * time.Hour)
 		yesterdayStart := yesterdayEnd.Add(-duration)
 		ctxYesterday, cancelYesterday := context.WithTimeout(ctx, opsDBQueryTimeout)
-		ys, err := s.repo.GetOverviewStats(ctxYesterday, yesterdayStart, yesterdayEnd)
+		ys, err := repo.GetOverviewStats(ctxYesterday, yesterdayStart, yesterdayEnd)
 		cancelYesterday()
 		if err != nil {
 			// Best-effort: overview should still work when historical comparison fails.
@@ -488,7 +494,7 @@ func (s *OpsService) GetDashboardOverview(ctx context.Context, timeRange string)
 	qpsCurrent := 0.0
 	{
 		ctxWindow, cancelWindow := context.WithTimeout(ctx, opsDBQueryTimeout)
-		windowStats, err := s.repo.GetWindowStats(ctxWindow, now.Add(-1*time.Minute), now)
+		windowStats, err := repo.GetWindowStats(ctxWindow, now.Add(-1*time.Minute), now)
 		cancelWindow()
 		if err == nil && windowStats != nil {
 			qpsCurrent = roundTo1DP(float64(windowStats.SuccessCount+windowStats.ErrorCount) / 60)
@@ -508,7 +514,7 @@ func (s *OpsService) GetDashboardOverview(ctx context.Context, timeRange string)
 			limit = 5000
 		}
 		ctxMetrics, cancelMetrics := context.WithTimeout(ctx, opsDBQueryTimeout)
-		items, err := s.repo.ListSystemMetricsRange(ctxMetrics, 1, startTime, now, limit)
+		items, err := repo.ListSystemMetricsRange(ctxMetrics, 1, startTime, now, limit)
 		cancelMetrics()
 		if err != nil {
 			log.Printf("[OpsOverview] get metrics range for peak qps failed: %v", err)
@@ -610,13 +616,7 @@ func (s *OpsService) GetDashboardOverview(ctx context.Context, timeRange string)
 		}
 	}
 
-	if s != nil && s.cache != nil {
-		if cached, err := json.Marshal(data); err == nil {
-			if err := s.cache.Set(ctx, cacheKey, cached, 10*time.Second).Err(); err != nil {
-				log.Printf("[OpsOverview] cache set failed (key=%s): %v", cacheKey, err)
-			}
-		}
-	}
+	_ = repo.SetCachedDashboardOverview(ctx, timeRange, data, 10*time.Second)
 
 	return data, nil
 }
@@ -859,9 +859,9 @@ func (s *OpsService) checkRedisHealth(ctx context.Context) string {
 		log.Printf("[OpsOverview][WARN] ops service is nil; redis health check skipped")
 		return "critical"
 	}
-	if s.cache == nil {
+	if s.repo == nil {
 		s.redisNilWarnOnce.Do(func() {
-			log.Printf("[OpsOverview][WARN] redis client is nil; redis health check skipped")
+			log.Printf("[OpsOverview][WARN] ops repository is nil; redis health check skipped")
 		})
 		return "critical"
 	}
@@ -869,7 +869,7 @@ func (s *OpsService) checkRedisHealth(ctx context.Context) string {
 	ctxPing, cancel := context.WithTimeout(ctx, 800*time.Millisecond)
 	defer cancel()
 
-	if err := s.cache.Ping(ctxPing).Err(); err != nil {
+	if err := s.repo.PingRedis(ctxPing); err != nil {
 		log.Printf("[OpsOverview][WARN] redis ping failed: %v", err)
 		return "critical"
 	}

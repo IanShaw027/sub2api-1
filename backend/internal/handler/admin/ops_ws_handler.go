@@ -50,13 +50,15 @@ func (h *OpsHandler) QPSWSHandler(c *gin.Context) {
 		log.Printf("[OpsWS] upgrade failed: %v", err)
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Set pong handler
-	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	if err := conn.SetReadDeadline(time.Now().Add(60 * time.Second)); err != nil {
+		log.Printf("[OpsWS] set read deadline failed: %v", err)
+		return
+	}
 	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-		return nil
+		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	})
 
 	// Push QPS data every 2 seconds

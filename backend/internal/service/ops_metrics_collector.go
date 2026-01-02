@@ -26,7 +26,6 @@ const (
 
 type OpsMetricsCollector struct {
 	opsService         *OpsService
-	alertService       *OpsAlertService
 	concurrencyService *ConcurrencyService
 	interval           time.Duration
 	lastGCPauseTotal   uint64
@@ -36,10 +35,9 @@ type OpsMetricsCollector struct {
 	stopOnce           sync.Once
 }
 
-func NewOpsMetricsCollector(opsService *OpsService, alertService *OpsAlertService, concurrencyService *ConcurrencyService) *OpsMetricsCollector {
+func NewOpsMetricsCollector(opsService *OpsService, concurrencyService *ConcurrencyService) *OpsMetricsCollector {
 	return &OpsMetricsCollector{
 		opsService:         opsService,
-		alertService:       alertService,
 		concurrencyService: concurrencyService,
 		interval:           opsMetricsInterval,
 	}

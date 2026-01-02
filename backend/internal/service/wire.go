@@ -74,8 +74,8 @@ func ProvideDeferredService(accountRepo AccountRepository, timingWheel *TimingWh
 }
 
 // ProvideOpsMetricsCollector creates and starts OpsMetricsCollector.
-func ProvideOpsMetricsCollector(opsService *OpsService, opsAlertService *OpsAlertService, concurrencyService *ConcurrencyService) *OpsMetricsCollector {
-	svc := NewOpsMetricsCollector(opsService, opsAlertService, concurrencyService)
+func ProvideOpsMetricsCollector(opsService *OpsService, concurrencyService *ConcurrencyService) *OpsMetricsCollector {
+	svc := NewOpsMetricsCollector(opsService, concurrencyService)
 	svc.Start()
 	return svc
 }

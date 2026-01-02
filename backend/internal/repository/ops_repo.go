@@ -12,6 +12,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/redis/go-redis/v9"
 )
 
 const (
@@ -29,10 +30,11 @@ const (
 
 type OpsRepository struct {
 	sql sqlExecutor
+	rdb *redis.Client
 }
 
-func NewOpsRepository(_ *dbent.Client, sqlDB *sql.DB) service.OpsRepository {
-	return &OpsRepository{sql: sqlDB}
+func NewOpsRepository(_ *dbent.Client, sqlDB *sql.DB, rdb *redis.Client) service.OpsRepository {
+	return &OpsRepository{sql: sqlDB, rdb: rdb}
 }
 
 func (r *OpsRepository) CreateErrorLog(ctx context.Context, log *service.OpsErrorLog) error {
