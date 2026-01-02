@@ -142,4 +142,5 @@ var ProviderSet = wire.NewSet(
 	ProvideAntigravityQuotaRefresher,
 	ProvideOpsMetricsCollector,
 	ProvideOpsAlertService,
+	NewUserAttributeService,
 )

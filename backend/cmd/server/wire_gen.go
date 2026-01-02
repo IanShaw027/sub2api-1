@@ -120,7 +120,28 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	systemHandler := handler.ProvideSystemHandler(updateService)
 	adminSubscriptionHandler := admin.NewSubscriptionHandler(subscriptionService)
 	adminUsageHandler := admin.NewUsageHandler(usageService, apiKeyService, adminService)
-	adminHandlers := handler.ProvideAdminHandlers(dashboardHandler, opsHandler, adminUserHandler, groupHandler, accountHandler, oAuthHandler, openAIOAuthHandler, geminiOAuthHandler, antigravityOAuthHandler, proxyHandler, adminRedeemHandler, settingHandler, systemHandler, adminSubscriptionHandler, adminUsageHandler)
+	userAttributeDefinitionRepository := repository.NewUserAttributeDefinitionRepository(client)
+	userAttributeValueRepository := repository.NewUserAttributeValueRepository(client)
+	userAttributeService := service.NewUserAttributeService(userAttributeDefinitionRepository, userAttributeValueRepository)
+	userAttributeHandler := admin.NewUserAttributeHandler(userAttributeService)
+	adminHandlers := handler.ProvideAdminHandlers(
+		dashboardHandler,
+		opsHandler,
+		adminUserHandler,
+		groupHandler,
+		accountHandler,
+		oAuthHandler,
+		openAIOAuthHandler,
+		geminiOAuthHandler,
+		antigravityOAuthHandler,
+		proxyHandler,
+		adminRedeemHandler,
+		settingHandler,
+		systemHandler,
+		adminSubscriptionHandler,
+		adminUsageHandler,
+		userAttributeHandler,
+	)
 	pricingRemoteClient := repository.NewPricingRemoteClient()
 	pricingService, err := service.ProvidePricingService(configConfig, pricingRemoteClient)
 	if err != nil {
