@@ -350,8 +350,15 @@ func stripThinkingFromClaudeRequest(req *antigravity.ClaudeRequest) *antigravity
 			if err := json.Unmarshal(msg.Content, &blocks); err == nil {
 				filtered := make([]map[string]any, 0, len(blocks))
 				for _, block := range blocks {
+					// 跳过有 type="thinking" 的块
 					if blockType, ok := block["type"].(string); ok && blockType == "thinking" {
-						continue // 跳过 thinking 块
+						continue
+					}
+					// 跳过没有 type 但有 thinking 字段的块（untyped thinking blocks）
+					if _, hasType := block["type"]; !hasType {
+						if _, hasThinking := block["thinking"]; hasThinking {
+							continue
+						}
 					}
 					filtered = append(filtered, block)
 				}
