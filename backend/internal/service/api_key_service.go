@@ -353,7 +353,7 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 
 // Delete 删除API Key
 // 优化：使用 GetOwnerID 替代 GetByID 进行权限验证，
-// 避免加载完整 ApiKey 对象及其关联数据（User、Group），提升删除操作的性能
+// 避免加载完整 APIKey 对象及其关联数据（User、Group），提升删除操作的性能
 func (s *APIKeyService) Delete(ctx context.Context, id int64, userID int64) error {
 	// 仅获取所有者 ID 用于权限验证，而非加载完整对象
 	ownerID, err := s.apiKeyRepo.GetOwnerID(ctx, id)

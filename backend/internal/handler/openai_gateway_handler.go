@@ -43,7 +43,7 @@ func NewOpenAIGatewayHandler(
 // Responses handles OpenAI Responses API endpoint
 // POST /openai/v1/responses
 func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
-	// Get apiKey and user from context (set by ApiKeyAuth middleware)
+	// Get apiKey and user from context (set by APIKeyAuth middleware)
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
 	if !ok {
 		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")

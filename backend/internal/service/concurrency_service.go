@@ -34,11 +34,6 @@ type ConcurrencyCache interface {
 	DecrementWaitCount(ctx context.Context, userID int64) error
 	GetTotalWaitCount(ctx context.Context) (int, error)
 
-	// 账号等待队列（账号级）
-	IncrementAccountWaitCount(ctx context.Context, accountID int64, maxWait int) (bool, error)
-	DecrementAccountWaitCount(ctx context.Context, accountID int64) error
-	GetAccountWaitingCount(ctx context.Context, accountID int64) (int, error)
-
 	// 批量负载查询（只读）
 	GetAccountsLoadBatch(ctx context.Context, accounts []AccountWithConcurrency) (map[int64]*AccountLoadInfo, error)
 

@@ -59,7 +59,7 @@ func (r *apiKeyRepository) GetByID(ctx context.Context, id int64) (*service.APIK
 // GetOwnerID 根据 API Key ID 获取其所有者（用户）的 ID。
 // 相比 GetByID，此方法性能更优，因为：
 //   - 使用 Select() 只查询 user_id 字段，减少数据传输量
-//   - 不加载完整的 ApiKey 实体及其关联数据（User、Group 等）
+//   - 不加载完整的 APIKey 实体及其关联数据（User、Group 等）
 //   - 适用于权限验证等只需用户 ID 的场景（如删除前的所有权检查）
 func (r *apiKeyRepository) GetOwnerID(ctx context.Context, id int64) (int64, error) {
 	m, err := r.activeQuery().

@@ -45,10 +45,10 @@ func TestSimpleModeBypassesQuotaCheck(t *testing.T) {
 	}
 	apiKey.GroupID = &group.ID
 
-	apiKeyRepo := &stubApiKeyRepo{
+	apiKeyRepo := &stubAPIKeyRepo{
 		getByKey: func(ctx context.Context, key string) (*service.APIKey, error) {
 			if key != apiKey.Key {
-				return nil, service.ErrApiKeyNotFound
+				return nil, service.ErrAPIKeyNotFound
 			}
 			clone := *apiKey
 			return &clone, nil
@@ -57,7 +57,7 @@ func TestSimpleModeBypassesQuotaCheck(t *testing.T) {
 
 	t.Run("simple_mode_bypasses_quota_check", func(t *testing.T) {
 		cfg := &config.Config{RunMode: config.RunModeSimple}
-		apiKeyService := service.NewApiKeyService(apiKeyRepo, nil, nil, nil, nil, cfg)
+		apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, cfg)
 		subscriptionService := service.NewSubscriptionService(nil, &stubUserSubscriptionRepo{}, nil)
 		router := newAuthTestRouter(apiKeyService, subscriptionService, cfg)
 
@@ -71,7 +71,7 @@ func TestSimpleModeBypassesQuotaCheck(t *testing.T) {
 
 	t.Run("standard_mode_enforces_quota_check", func(t *testing.T) {
 		cfg := &config.Config{RunMode: config.RunModeStandard}
-		apiKeyService := service.NewApiKeyService(apiKeyRepo, nil, nil, nil, nil, cfg)
+		apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, cfg)
 
 		now := time.Now()
 		sub := &service.UserSubscription{
@@ -119,66 +119,66 @@ func newAuthTestRouter(apiKeyService *service.APIKeyService, subscriptionService
 	return router
 }
 
-type stubApiKeyRepo struct {
+type stubAPIKeyRepo struct {
 	getByKey func(ctx context.Context, key string) (*service.APIKey, error)
 }
 
-func (r *stubApiKeyRepo) Create(ctx context.Context, key *service.APIKey) error {
+func (r *stubAPIKeyRepo) Create(ctx context.Context, key *service.APIKey) error {
 	return errors.New("not implemented")
 }
 
-func (r *stubApiKeyRepo) GetByID(ctx context.Context, id int64) (*service.APIKey, error) {
+func (r *stubAPIKeyRepo) GetByID(ctx context.Context, id int64) (*service.APIKey, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (r *stubApiKeyRepo) GetOwnerID(ctx context.Context, id int64) (int64, error) {
+func (r *stubAPIKeyRepo) GetOwnerID(ctx context.Context, id int64) (int64, error) {
 	return 0, errors.New("not implemented")
 }
 
-func (r *stubApiKeyRepo) GetByKey(ctx context.Context, key string) (*service.APIKey, error) {
+func (r *stubAPIKeyRepo) GetByKey(ctx context.Context, key string) (*service.APIKey, error) {
 	if r.getByKey != nil {
 		return r.getByKey(ctx, key)
 	}
 	return nil, errors.New("not implemented")
 }
 
-func (r *stubApiKeyRepo) Update(ctx context.Context, key *service.APIKey) error {
+func (r *stubAPIKeyRepo) Update(ctx context.Context, key *service.APIKey) error {
 	return errors.New("not implemented")
 }
 
-func (r *stubApiKeyRepo) Delete(ctx context.Context, id int64) error {
+func (r *stubAPIKeyRepo) Delete(ctx context.Context, id int64) error {
 	return errors.New("not implemented")
 }
 
-func (r *stubApiKeyRepo) ListByUserID(ctx context.Context, userID int64, params pagination.PaginationParams) ([]service.APIKey, *pagination.PaginationResult, error) {
+func (r *stubAPIKeyRepo) ListByUserID(ctx context.Context, userID int64, params pagination.PaginationParams) ([]service.APIKey, *pagination.PaginationResult, error) {
 	return nil, nil, errors.New("not implemented")
 }
 
-func (r *stubApiKeyRepo) VerifyOwnership(ctx context.Context, userID int64, apiKeyIDs []int64) ([]int64, error) {
+func (r *stubAPIKeyRepo) VerifyOwnership(ctx context.Context, userID int64, apiKeyIDs []int64) ([]int64, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (r *stubApiKeyRepo) CountByUserID(ctx context.Context, userID int64) (int64, error) {
+func (r *stubAPIKeyRepo) CountByUserID(ctx context.Context, userID int64) (int64, error) {
 	return 0, errors.New("not implemented")
 }
 
-func (r *stubApiKeyRepo) ExistsByKey(ctx context.Context, key string) (bool, error) {
+func (r *stubAPIKeyRepo) ExistsByKey(ctx context.Context, key string) (bool, error) {
 	return false, errors.New("not implemented")
 }
 
-func (r *stubApiKeyRepo) ListByGroupID(ctx context.Context, groupID int64, params pagination.PaginationParams) ([]service.APIKey, *pagination.PaginationResult, error) {
+func (r *stubAPIKeyRepo) ListByGroupID(ctx context.Context, groupID int64, params pagination.PaginationParams) ([]service.APIKey, *pagination.PaginationResult, error) {
 	return nil, nil, errors.New("not implemented")
 }
 
-func (r *stubApiKeyRepo) SearchApiKeys(ctx context.Context, userID int64, keyword string, limit int) ([]service.APIKey, error) {
+func (r *stubAPIKeyRepo) SearchAPIKeys(ctx context.Context, userID int64, keyword string, limit int) ([]service.APIKey, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (r *stubApiKeyRepo) ClearGroupIDByGroupID(ctx context.Context, groupID int64) (int64, error) {
+func (r *stubAPIKeyRepo) ClearGroupIDByGroupID(ctx context.Context, groupID int64) (int64, error) {
 	return 0, errors.New("not implemented")
 }
 
-func (r *stubApiKeyRepo) CountByGroupID(ctx context.Context, groupID int64) (int64, error) {
+func (r *stubAPIKeyRepo) CountByGroupID(ctx context.Context, groupID int64) (int64, error) {
 	return 0, errors.New("not implemented")
 }
 

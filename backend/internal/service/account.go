@@ -300,7 +300,7 @@ func (a *Account) IsOpenAIOAuth() bool {
 	return a.IsOpenAI() && a.Type == AccountTypeOAuth
 }
 
-func (a *Account) IsOpenAIApiKey() bool {
+func (a *Account) IsOpenAIAPIKey() bool {
 	return a.IsOpenAI() && a.Type == AccountTypeAPIKey
 }
 
@@ -338,8 +338,8 @@ func (a *Account) GetOpenAIIDToken() string {
 	return a.GetCredential("id_token")
 }
 
-func (a *Account) GetOpenAIApiKey() string {
-	if !a.IsOpenAIApiKey() {
+func (a *Account) GetOpenAIAPIKey() string {
+	if !a.IsOpenAIAPIKey() {
 		return ""
 	}
 	return a.GetCredential("api_key")

@@ -16,7 +16,7 @@ func APIKeyAuthGoogle(apiKeyService *service.APIKeyService, cfg *config.Config) 
 	return APIKeyAuthWithSubscriptionGoogle(apiKeyService, nil, cfg)
 }
 
-// APIKeyAuthWithSubscriptionGoogle behaves like ApiKeyAuthWithSubscription but returns Google-style errors:
+// APIKeyAuthWithSubscriptionGoogle behaves like APIKeyAuthWithSubscription but returns Google-style errors:
 // {"error":{"code":401,"message":"...","status":"UNAUTHENTICATED"}}
 //
 // It is intended for Gemini native endpoints (/v1beta) to match Gemini SDK expectations.

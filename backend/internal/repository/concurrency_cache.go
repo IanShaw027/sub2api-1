@@ -38,7 +38,6 @@ const (
 	// 账号级等待队列计数器格式: wait:account:{accountID}
 	accountWaitKeyPrefix = "wait:account:"
 
-
 	// 默认槽位过期时间（分钟），可通过配置覆盖
 	defaultSlotTTLMinutes = 15
 )
@@ -282,29 +281,6 @@ var (
 		return result
 	`)
 
-	// incrementAccountWaitScript - account-level wait queue count
-	incrementAccountWaitScript = redis.NewScript(`
-			local current = redis.call('GET', KEYS[1])
-			if current == false then
-				current = 0
-			else
-				current = tonumber(current)
-			end
-
-			if current >= tonumber(ARGV[1]) then
-				return 0
-			end
-
-			local newVal = redis.call('INCR', KEYS[1])
-
-			-- Only set TTL on first creation to avoid refreshing zombie data
-			if newVal == 1 then
-				redis.call('EXPIRE', KEYS[1], ARGV[2])
-			end
-
-			return 1
-		`)
-
 	// decrementAccountWaitScript - account-level wait queue decrement
 	decrementAccountWaitScript = redis.NewScript(`
 			local current = redis.call('GET', KEYS[1])
@@ -471,7 +447,7 @@ func (c *concurrencyCache) IncrementWaitCount(ctx context.Context, userID int64,
 		[]string{waitQueueTotalKey, waitQueueUpdatedKey, waitQueueCountsKey},
 		userKey,
 		maxWait,
-		c.slotTTLSeconds,
+		c.waitQueueTTLSeconds,
 		200, // cleanup limit per call
 	).Int()
 	if err != nil {
@@ -487,7 +463,7 @@ func (c *concurrencyCache) DecrementWaitCount(ctx context.Context, userID int64)
 		c.rdb,
 		[]string{waitQueueTotalKey, waitQueueUpdatedKey, waitQueueCountsKey},
 		userKey,
-		c.slotTTLSeconds,
+		c.waitQueueTTLSeconds,
 		200, // cleanup limit per call
 	).Result()
 	return err
@@ -501,7 +477,7 @@ func (c *concurrencyCache) GetTotalWaitCount(ctx context.Context) (int, error) {
 		ctx,
 		c.rdb,
 		[]string{waitQueueTotalKey, waitQueueUpdatedKey, waitQueueCountsKey},
-		c.slotTTLSeconds,
+		c.waitQueueTTLSeconds,
 		500, // cleanup limit per query (rare)
 	).Int64()
 	if err != nil {
