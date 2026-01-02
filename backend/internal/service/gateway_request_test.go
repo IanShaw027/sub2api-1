@@ -85,44 +85,44 @@ func TestFilterThinkingBlocks(t *testing.T) {
 		expectError  bool
 	}{
 		{
-			name: "filters thinking blocks",
-			input: `{"model":"claude-3-5-sonnet-20241022","messages":[{"role":"user","content":[{"type":"text","text":"Hello"},{"type":"thinking","thinking":"internal","signature":"invalid"},{"type":"text","text":"World"}]}]}`,
+			name:         "filters thinking blocks",
+			input:        `{"model":"claude-3-5-sonnet-20241022","messages":[{"role":"user","content":[{"type":"text","text":"Hello"},{"type":"thinking","thinking":"internal","signature":"invalid"},{"type":"text","text":"World"}]}]}`,
 			shouldFilter: true,
 		},
 		{
-			name: "handles no thinking blocks",
-			input: `{"model":"claude-3-5-sonnet-20241022","messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]}`,
+			name:         "handles no thinking blocks",
+			input:        `{"model":"claude-3-5-sonnet-20241022","messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]}`,
 			shouldFilter: false,
 		},
 		{
-			name: "handles invalid JSON gracefully",
-			input: `{invalid json`,
+			name:         "handles invalid JSON gracefully",
+			input:        `{invalid json`,
 			shouldFilter: false,
-			expectError: true,
+			expectError:  true,
 		},
 		{
-			name: "handles multiple messages with thinking blocks",
-			input: `{"messages":[{"role":"user","content":[{"type":"text","text":"A"}]},{"role":"assistant","content":[{"type":"thinking","thinking":"think"},{"type":"text","text":"B"}]}]}`,
+			name:         "handles multiple messages with thinking blocks",
+			input:        `{"messages":[{"role":"user","content":[{"type":"text","text":"A"}]},{"role":"assistant","content":[{"type":"thinking","thinking":"think"},{"type":"text","text":"B"}]}]}`,
 			shouldFilter: true,
 		},
 		{
-			name: "filters thinking blocks without type discriminator",
-			input: `{"messages":[{"role":"assistant","content":[{"thinking":{"text":"internal"}},{"type":"text","text":"B"}]}]}`,
+			name:         "filters thinking blocks without type discriminator",
+			input:        `{"messages":[{"role":"assistant","content":[{"thinking":{"text":"internal"}},{"type":"text","text":"B"}]}]}`,
 			shouldFilter: true,
 		},
 		{
-			name: "does not filter tool_use input fields named thinking",
-			input: `{"messages":[{"role":"user","content":[{"type":"tool_use","id":"t1","name":"foo","input":{"thinking":"keepme","x":1}},{"type":"text","text":"Hello"}]}]}`,
+			name:         "does not filter tool_use input fields named thinking",
+			input:        `{"messages":[{"role":"user","content":[{"type":"tool_use","id":"t1","name":"foo","input":{"thinking":"keepme","x":1}},{"type":"text","text":"Hello"}]}]}`,
 			shouldFilter: false,
 		},
 		{
-			name: "handles empty messages array",
-			input: `{"messages":[]}`,
+			name:         "handles empty messages array",
+			input:        `{"messages":[]}`,
 			shouldFilter: false,
 		},
 		{
-			name: "handles missing messages field",
-			input: `{"model":"claude-3"}`,
+			name:         "handles missing messages field",
+			input:        `{"model":"claude-3"}`,
 			shouldFilter: false,
 		},
 	}
