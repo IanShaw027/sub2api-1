@@ -212,10 +212,10 @@ CREATE OR REPLACE VIEW ops_latest_metrics AS
 SELECT
     m.*,
     calculate_health_score(
-        m.success_rate,
-        m.error_rate,
-        m.p99_latency_ms,
-        m.cpu_usage_percent
+        m.success_rate::DECIMAL,
+        m.error_rate::DECIMAL,
+        m.p99_latency_ms::DECIMAL,
+        m.cpu_usage_percent::DECIMAL
     ) AS health_score
 FROM ops_system_metrics m
 WHERE m.window_minutes = 1
