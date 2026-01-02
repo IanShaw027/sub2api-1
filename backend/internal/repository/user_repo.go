@@ -36,6 +36,7 @@ func (r *userRepository) Create(ctx context.Context, userIn *service.User) error
 	// 并避免基于 *sql.Tx 手动构造 ent client 导致的 ExecQuerier 断言错误。
 	tx, err := r.client.Tx(ctx)
 	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
+		recordInfrastructureError(ctx, "db", "UserRepository.Create:Tx", err)
 		return err
 	}
 
@@ -59,15 +60,18 @@ func (r *userRepository) Create(ctx context.Context, userIn *service.User) error
 		SetStatus(userIn.Status).
 		Save(ctx)
 	if err != nil {
+		recordInfrastructureError(ctx, "db", "UserRepository.Create:Save", err)
 		return translatePersistenceError(err, nil, service.ErrEmailExists)
 	}
 
 	if err := r.syncUserAllowedGroupsWithClient(ctx, txClient, created.ID, userIn.AllowedGroups); err != nil {
+		recordInfrastructureError(ctx, "db", "UserRepository.Create:SyncAllowedGroups", err)
 		return err
 	}
 
 	if tx != nil {
 		if err := tx.Commit(); err != nil {
+			recordInfrastructureError(ctx, "db", "UserRepository.Create:Commit", err)
 			return err
 		}
 	}
@@ -79,6 +83,9 @@ func (r *userRepository) Create(ctx context.Context, userIn *service.User) error
 func (r *userRepository) GetByID(ctx context.Context, id int64) (*service.User, error) {
 	m, err := r.client.User.Query().Where(dbuser.IDEQ(id)).Only(ctx)
 	if err != nil {
+		if !dbent.IsNotFound(err) && !errors.Is(err, sql.ErrNoRows) {
+			recordInfrastructureError(ctx, "db", "UserRepository.GetByID", err)
+		}
 		return nil, translatePersistenceError(err, service.ErrUserNotFound, nil)
 	}
 
@@ -96,6 +103,9 @@ func (r *userRepository) GetByID(ctx context.Context, id int64) (*service.User, 
 func (r *userRepository) GetByEmail(ctx context.Context, email string) (*service.User, error) {
 	m, err := r.client.User.Query().Where(dbuser.EmailEQ(email)).Only(ctx)
 	if err != nil {
+		if !dbent.IsNotFound(err) && !errors.Is(err, sql.ErrNoRows) {
+			recordInfrastructureError(ctx, "db", "UserRepository.GetByEmail", err)
+		}
 		return nil, translatePersistenceError(err, service.ErrUserNotFound, nil)
 	}
 
@@ -118,6 +128,7 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User) error
 	// 使用 ent 事务包裹用户更新与 allowed_groups 同步，避免跨层事务不一致。
 	tx, err := r.client.Tx(ctx)
 	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
+		recordInfrastructureError(ctx, "db", "UserRepository.Update:Tx", err)
 		return err
 	}
 
@@ -141,15 +152,18 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User) error
 		SetStatus(userIn.Status).
 		Save(ctx)
 	if err != nil {
+		recordInfrastructureError(ctx, "db", "UserRepository.Update:Save", err)
 		return translatePersistenceError(err, service.ErrUserNotFound, service.ErrEmailExists)
 	}
 
 	if err := r.syncUserAllowedGroupsWithClient(ctx, txClient, updated.ID, userIn.AllowedGroups); err != nil {
+		recordInfrastructureError(ctx, "db", "UserRepository.Update:SyncAllowedGroups", err)
 		return err
 	}
 
 	if tx != nil {
 		if err := tx.Commit(); err != nil {
+			recordInfrastructureError(ctx, "db", "UserRepository.Update:Commit", err)
 			return err
 		}
 	}
@@ -161,6 +175,7 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User) error
 func (r *userRepository) Delete(ctx context.Context, id int64) error {
 	affected, err := r.client.User.Delete().Where(dbuser.IDEQ(id)).Exec(ctx)
 	if err != nil {
+		recordInfrastructureError(ctx, "db", "UserRepository.Delete", err)
 		return translatePersistenceError(err, service.ErrUserNotFound, nil)
 	}
 	if affected == 0 {
@@ -318,6 +333,7 @@ func (r *userRepository) UpdateBalance(ctx context.Context, id int64, amount flo
 	client := clientFromContext(ctx, r.client)
 	n, err := client.User.Update().Where(dbuser.IDEQ(id)).AddBalance(amount).Save(ctx)
 	if err != nil {
+		recordInfrastructureError(ctx, "db", "UserRepository.UpdateBalance", err)
 		return translatePersistenceError(err, service.ErrUserNotFound, nil)
 	}
 	if n == 0 {
@@ -333,6 +349,7 @@ func (r *userRepository) DeductBalance(ctx context.Context, id int64, amount flo
 		AddBalance(-amount).
 		Save(ctx)
 	if err != nil {
+		recordInfrastructureError(ctx, "db", "UserRepository.DeductBalance", err)
 		return err
 	}
 	if n == 0 {
@@ -345,6 +362,7 @@ func (r *userRepository) UpdateConcurrency(ctx context.Context, id int64, amount
 	client := clientFromContext(ctx, r.client)
 	n, err := client.User.Update().Where(dbuser.IDEQ(id)).AddConcurrency(amount).Save(ctx)
 	if err != nil {
+		recordInfrastructureError(ctx, "db", "UserRepository.UpdateConcurrency", err)
 		return translatePersistenceError(err, service.ErrUserNotFound, nil)
 	}
 	if n == 0 {

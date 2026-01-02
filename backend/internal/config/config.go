@@ -32,6 +32,7 @@ type Config struct {
 	Server       ServerConfig       `mapstructure:"server"`
 	Database     DatabaseConfig     `mapstructure:"database"`
 	Redis        RedisConfig        `mapstructure:"redis"`
+	Ops          OpsConfig          `mapstructure:"ops"`
 	JWT          JWTConfig          `mapstructure:"jwt"`
 	Default      DefaultConfig      `mapstructure:"default"`
 	RateLimit    RateLimitConfig    `mapstructure:"rate_limit"`
@@ -41,6 +42,15 @@ type Config struct {
 	RunMode      string             `mapstructure:"run_mode" yaml:"run_mode"`
 	Timezone     string             `mapstructure:"timezone"` // e.g. "Asia/Shanghai", "UTC"
 	Gemini       GeminiConfig       `mapstructure:"gemini"`
+}
+
+type OpsConfig struct {
+	// UsePreaggregatedTables switches ops dashboard queries to prefer the pre-aggregation
+	// tables (ops_metrics_hourly / ops_metrics_daily) when available.
+	//
+	// Default is false to preserve existing behavior until the background aggregation
+	// job is deployed and validated.
+	UsePreaggregatedTables bool `mapstructure:"use_preaggregated_tables"`
 }
 
 type GeminiConfig struct {
@@ -327,6 +337,9 @@ func setDefaults() {
 	viper.SetDefault("redis.write_timeout_seconds", 3)
 	viper.SetDefault("redis.pool_size", 128)
 	viper.SetDefault("redis.min_idle_conns", 10)
+
+	// Ops
+	viper.SetDefault("ops.use_preaggregated_tables", false)
 
 	// JWT
 	viper.SetDefault("jwt.secret", "change-me-in-production")

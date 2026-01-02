@@ -34,6 +34,9 @@ func (c *apiKeyCache) GetCreateAttemptCount(ctx context.Context, userID int64) (
 	if errors.Is(err, redis.Nil) {
 		return 0, nil
 	}
+	if err != nil {
+		recordRedisError(ctx, "APIKeyCache.GetCreateAttemptCount", err)
+	}
 	return count, err
 }
 
@@ -43,18 +46,33 @@ func (c *apiKeyCache) IncrementCreateAttemptCount(ctx context.Context, userID in
 	pipe.Incr(ctx, key)
 	pipe.Expire(ctx, key, apiKeyRateLimitDuration)
 	_, err := pipe.Exec(ctx)
+	if err != nil {
+		recordRedisError(ctx, "APIKeyCache.IncrementCreateAttemptCount", err)
+	}
 	return err
 }
 
 func (c *apiKeyCache) DeleteCreateAttemptCount(ctx context.Context, userID int64) error {
 	key := apiKeyRateLimitKey(userID)
-	return c.rdb.Del(ctx, key).Err()
+	if err := c.rdb.Del(ctx, key).Err(); err != nil {
+		recordRedisError(ctx, "APIKeyCache.DeleteCreateAttemptCount", err)
+		return err
+	}
+	return nil
 }
 
 func (c *apiKeyCache) IncrementDailyUsage(ctx context.Context, apiKey string) error {
-	return c.rdb.Incr(ctx, apiKey).Err()
+	if err := c.rdb.Incr(ctx, apiKey).Err(); err != nil {
+		recordRedisError(ctx, "APIKeyCache.IncrementDailyUsage", err)
+		return err
+	}
+	return nil
 }
 
 func (c *apiKeyCache) SetDailyUsageExpiry(ctx context.Context, apiKey string, ttl time.Duration) error {
-	return c.rdb.Expire(ctx, apiKey, ttl).Err()
+	if err := c.rdb.Expire(ctx, apiKey, ttl).Err(); err != nil {
+		recordRedisError(ctx, "APIKeyCache.SetDailyUsageExpiry", err)
+		return err
+	}
+	return nil
 }

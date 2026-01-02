@@ -1020,7 +1020,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		usageLog.SubscriptionID = &subscription.ID
 	}
 
-	_ = s.usageLogRepo.Create(ctx, usageLog)
+	_ = createUsageLogWithRetry(ctx, s.usageLogRepo, usageLog)
 
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
 		log.Printf("[SIMPLE MODE] Usage recorded (not billed): user=%d, tokens=%d", usageLog.UserID, usageLog.TotalTokens())

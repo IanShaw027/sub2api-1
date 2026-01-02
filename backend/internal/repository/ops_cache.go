@@ -33,6 +33,7 @@ func (r *OpsRepository) GetCachedLatestSystemMetric(ctx context.Context) (*servi
 		return nil, nil
 	}
 	if err != nil {
+		recordRedisError(ctx, "OpsRepository.GetCachedLatestSystemMetric", err)
 		return nil, fmt.Errorf("redis get cached latest system metric: %w", err)
 	}
 
@@ -58,7 +59,11 @@ func (r *OpsRepository) SetCachedLatestSystemMetric(ctx context.Context, metric 
 	if err != nil {
 		return fmt.Errorf("marshal cached latest system metric: %w", err)
 	}
-	return r.rdb.Set(ctx, opsLatestMetricsKey, data, opsLatestMetricsTTL).Err()
+	if err := r.rdb.Set(ctx, opsLatestMetricsKey, data, opsLatestMetricsTTL).Err(); err != nil {
+		recordRedisError(ctx, "OpsRepository.SetCachedLatestSystemMetric", err)
+		return err
+	}
+	return nil
 }
 
 func (r *OpsRepository) GetCachedDashboardOverview(ctx context.Context, timeRange string) (*service.DashboardOverviewData, error) {
@@ -79,6 +84,7 @@ func (r *OpsRepository) GetCachedDashboardOverview(ctx context.Context, timeRang
 		return nil, nil
 	}
 	if err != nil {
+		recordRedisError(ctx, "OpsRepository.GetCachedDashboardOverview", err)
 		return nil, fmt.Errorf("redis get cached dashboard overview: %w", err)
 	}
 
@@ -113,7 +119,11 @@ func (r *OpsRepository) SetCachedDashboardOverview(ctx context.Context, timeRang
 		return fmt.Errorf("marshal cached dashboard overview: %w", err)
 	}
 	key := opsDashboardOverviewKeyPrefix + rangeKey
-	return r.rdb.Set(ctx, key, payload, ttl).Err()
+	if err := r.rdb.Set(ctx, key, payload, ttl).Err(); err != nil {
+		recordRedisError(ctx, "OpsRepository.SetCachedDashboardOverview", err)
+		return err
+	}
+	return nil
 }
 
 func (r *OpsRepository) PingRedis(ctx context.Context) error {
@@ -123,5 +133,9 @@ func (r *OpsRepository) PingRedis(ctx context.Context) error {
 	if r == nil || r.rdb == nil {
 		return errors.New("redis client is nil")
 	}
-	return r.rdb.Ping(ctx).Err()
+	if err := r.rdb.Ping(ctx).Err(); err != nil {
+		recordRedisError(ctx, "OpsRepository.PingRedis", err)
+		return err
+	}
+	return nil
 }

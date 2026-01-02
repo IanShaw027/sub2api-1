@@ -74,7 +74,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	subscriptionHandler := handler.NewSubscriptionHandler(subscriptionService)
 	dashboardService := service.NewDashboardService(usageLogRepository)
 	dashboardHandler := admin.NewDashboardHandler(dashboardService)
-	opsRepository := repository.NewOpsRepository(client, db, redisClient)
+	opsRepository := repository.NewOpsRepository(client, db, redisClient, configConfig)
 	opsService := service.NewOpsService(opsRepository, db)
 	opsHandler := admin.NewOpsHandler(opsService)
 	accountRepository := repository.NewAccountRepository(client, db)
@@ -159,16 +159,17 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	openAIGatewayHandler := handler.NewOpenAIGatewayHandler(openAIGatewayService, concurrencyService, billingCacheService, opsService)
 	handlerSettingHandler := handler.ProvideSettingHandler(settingService, buildInfo)
 	handlers := handler.ProvideHandlers(authHandler, userHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, adminHandlers, gatewayHandler, openAIGatewayHandler, handlerSettingHandler)
-	jwtAuthMiddleware := middleware.NewJWTAuthMiddleware(authService, userService)
+	jwtAuthMiddleware := middleware.NewJWTAuthMiddleware(authService, userService, opsService)
 	adminAuthMiddleware := middleware.NewAdminAuthMiddleware(authService, userService, settingService)
 	apiKeyAuthMiddleware := middleware.NewAPIKeyAuthMiddleware(apiKeyService, subscriptionService, configConfig, opsService)
-	engine := server.ProvideRouter(configConfig, handlers, jwtAuthMiddleware, adminAuthMiddleware, apiKeyAuthMiddleware, apiKeyService, subscriptionService)
+	engine := server.ProvideRouter(configConfig, handlers, jwtAuthMiddleware, adminAuthMiddleware, apiKeyAuthMiddleware, apiKeyService, subscriptionService, opsService)
 	httpServer := server.ProvideHTTPServer(configConfig, engine)
 	tokenRefreshService := service.ProvideTokenRefreshService(accountRepository, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, configConfig)
 	antigravityQuotaRefresher := service.ProvideAntigravityQuotaRefresher(accountRepository, proxyRepository, antigravityOAuthService, configConfig)
 	opsAlertService := service.ProvideOpsAlertService(opsService, userService, emailService)
 	opsMetricsCollector := service.ProvideOpsMetricsCollector(opsService, concurrencyService)
-	v := provideCleanup(client, redisClient, tokenRefreshService, pricingService, emailQueueService, billingCacheService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, antigravityQuotaRefresher, opsMetricsCollector, opsAlertService)
+	opsAggregationService := service.ProvideOpsAggregationService(opsRepository, db)
+	v := provideCleanup(client, redisClient, tokenRefreshService, pricingService, emailQueueService, billingCacheService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, antigravityQuotaRefresher, opsAggregationService, opsMetricsCollector, opsAlertService)
 	application := &Application{
 		Server:  httpServer,
 		Cleanup: v,
@@ -202,6 +203,7 @@ func provideCleanup(
 	geminiOAuth *service.GeminiOAuthService,
 	antigravityOAuth *service.AntigravityOAuthService,
 	antigravityQuota *service.AntigravityQuotaRefresher,
+	opsAggregation *service.OpsAggregationService,
 	opsMetricsCollector *service.OpsMetricsCollector,
 	opsAlertService *service.OpsAlertService,
 ) func() {
@@ -216,6 +218,10 @@ func provideCleanup(
 			name string
 			fn   func() error
 		}{
+			{"OpsAggregationService", func() error {
+				opsAggregation.Stop()
+				return nil
+			}},
 			{"OpsMetricsCollector", func() error {
 				opsMetricsCollector.Stop()
 				return nil

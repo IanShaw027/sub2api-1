@@ -13,6 +13,11 @@ import (
 
 type UsageLogRepository interface {
 	Create(ctx context.Context, log *UsageLog) error
+	// CreateIdempotent inserts into usage_logs with ON CONFLICT DO NOTHING (request_id, api_key_id).
+	// It returns true when a new row is inserted, and false when the request is a duplicate.
+	CreateIdempotent(ctx context.Context, log *UsageLog) (bool, error)
+	// CreateBillingUsageEntry writes a billing ledger entry for reconciliation.
+	CreateBillingUsageEntry(ctx context.Context, entry *BillingUsageEntry) error
 	GetByID(ctx context.Context, id int64) (*UsageLog, error)
 	Delete(ctx context.Context, id int64) error
 

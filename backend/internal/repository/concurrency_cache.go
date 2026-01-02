@@ -399,6 +399,7 @@ func (c *concurrencyCache) AcquireAccountSlot(ctx context.Context, accountID int
 	// 时间戳在 Lua 脚本内使用 Redis TIME 命令获取，确保多实例时钟一致
 	result, err := acquireScript.Run(ctx, c.rdb, []string{key}, maxConcurrency, c.slotTTLSeconds, requestID).Int()
 	if err != nil {
+		recordRedisError(ctx, "ConcurrencyCache.AcquireAccountSlot", err)
 		return false, err
 	}
 	return result == 1, nil
@@ -406,7 +407,11 @@ func (c *concurrencyCache) AcquireAccountSlot(ctx context.Context, accountID int
 
 func (c *concurrencyCache) ReleaseAccountSlot(ctx context.Context, accountID int64, requestID string) error {
 	key := accountSlotKey(accountID)
-	return c.rdb.ZRem(ctx, key, requestID).Err()
+	if err := c.rdb.ZRem(ctx, key, requestID).Err(); err != nil {
+		recordRedisError(ctx, "ConcurrencyCache.ReleaseAccountSlot", err)
+		return err
+	}
+	return nil
 }
 
 func (c *concurrencyCache) GetAccountConcurrency(ctx context.Context, accountID int64) (int, error) {
@@ -414,6 +419,7 @@ func (c *concurrencyCache) GetAccountConcurrency(ctx context.Context, accountID 
 	// 时间戳在 Lua 脚本内使用 Redis TIME 命令获取
 	result, err := getCountScript.Run(ctx, c.rdb, []string{key}, c.slotTTLSeconds).Int()
 	if err != nil {
+		recordRedisError(ctx, "ConcurrencyCache.GetAccountConcurrency", err)
 		return 0, err
 	}
 	return result, nil
@@ -426,6 +432,7 @@ func (c *concurrencyCache) AcquireUserSlot(ctx context.Context, userID int64, ma
 	// 时间戳在 Lua 脚本内使用 Redis TIME 命令获取，确保多实例时钟一致
 	result, err := acquireScript.Run(ctx, c.rdb, []string{key}, maxConcurrency, c.slotTTLSeconds, requestID).Int()
 	if err != nil {
+		recordRedisError(ctx, "ConcurrencyCache.AcquireUserSlot", err)
 		return false, err
 	}
 	return result == 1, nil
@@ -433,7 +440,11 @@ func (c *concurrencyCache) AcquireUserSlot(ctx context.Context, userID int64, ma
 
 func (c *concurrencyCache) ReleaseUserSlot(ctx context.Context, userID int64, requestID string) error {
 	key := userSlotKey(userID)
-	return c.rdb.ZRem(ctx, key, requestID).Err()
+	if err := c.rdb.ZRem(ctx, key, requestID).Err(); err != nil {
+		recordRedisError(ctx, "ConcurrencyCache.ReleaseUserSlot", err)
+		return err
+	}
+	return nil
 }
 
 func (c *concurrencyCache) GetUserConcurrency(ctx context.Context, userID int64) (int, error) {
@@ -441,6 +452,7 @@ func (c *concurrencyCache) GetUserConcurrency(ctx context.Context, userID int64)
 	// 时间戳在 Lua 脚本内使用 Redis TIME 命令获取
 	result, err := getCountScript.Run(ctx, c.rdb, []string{key}, c.slotTTLSeconds).Int()
 	if err != nil {
+		recordRedisError(ctx, "ConcurrencyCache.GetUserConcurrency", err)
 		return 0, err
 	}
 	return result, nil
@@ -460,6 +472,7 @@ func (c *concurrencyCache) IncrementWaitCount(ctx context.Context, userID int64,
 		200, // cleanup limit per call
 	).Int()
 	if err != nil {
+		recordRedisError(ctx, "ConcurrencyCache.IncrementWaitCount", err)
 		return false, err
 	}
 	return result == 1, nil
@@ -475,6 +488,9 @@ func (c *concurrencyCache) DecrementWaitCount(ctx context.Context, userID int64)
 		c.waitQueueTTLSeconds,
 		200, // cleanup limit per call
 	).Result()
+	if err != nil {
+		recordRedisError(ctx, "ConcurrencyCache.DecrementWaitCount", err)
+	}
 	return err
 }
 
@@ -490,6 +506,7 @@ func (c *concurrencyCache) GetTotalWaitCount(ctx context.Context) (int, error) {
 		500, // cleanup limit per query (rare)
 	).Int64()
 	if err != nil {
+		recordRedisError(ctx, "ConcurrencyCache.GetTotalWaitCount", err)
 		return 0, err
 	}
 	return int(total), nil
@@ -501,6 +518,7 @@ func (c *concurrencyCache) IncrementAccountWaitCount(ctx context.Context, accoun
 	key := accountWaitKey(accountID)
 	result, err := incrementAccountWaitScript.Run(ctx, c.rdb, []string{key}, maxWait, c.waitQueueTTLSeconds).Int()
 	if err != nil {
+		recordRedisError(ctx, "ConcurrencyCache.IncrementAccountWaitCount", err)
 		return false, err
 	}
 	return result == 1, nil
@@ -509,6 +527,9 @@ func (c *concurrencyCache) IncrementAccountWaitCount(ctx context.Context, accoun
 func (c *concurrencyCache) DecrementAccountWaitCount(ctx context.Context, accountID int64) error {
 	key := accountWaitKey(accountID)
 	_, err := decrementAccountWaitScript.Run(ctx, c.rdb, []string{key}).Result()
+	if err != nil {
+		recordRedisError(ctx, "ConcurrencyCache.DecrementAccountWaitCount", err)
+	}
 	return err
 }
 
@@ -516,6 +537,7 @@ func (c *concurrencyCache) GetAccountWaitingCount(ctx context.Context, accountID
 	key := accountWaitKey(accountID)
 	val, err := c.rdb.Get(ctx, key).Int()
 	if err != nil && !errors.Is(err, redis.Nil) {
+		recordRedisError(ctx, "ConcurrencyCache.GetAccountWaitingCount", err)
 		return 0, err
 	}
 	if errors.Is(err, redis.Nil) {
@@ -536,6 +558,7 @@ func (c *concurrencyCache) GetAccountsLoadBatch(ctx context.Context, accounts []
 
 	result, err := getAccountsLoadBatchScript.Run(ctx, c.rdb, []string{}, args...).Slice()
 	if err != nil {
+		recordRedisError(ctx, "ConcurrencyCache.GetAccountsLoadBatch", err)
 		return nil, err
 	}
 
@@ -564,5 +587,8 @@ func (c *concurrencyCache) GetAccountsLoadBatch(ctx context.Context, accounts []
 func (c *concurrencyCache) CleanupExpiredAccountSlots(ctx context.Context, accountID int64) error {
 	key := accountSlotKey(accountID)
 	_, err := cleanupExpiredSlotsScript.Run(ctx, c.rdb, []string{key}, c.slotTTLSeconds).Result()
+	if err != nil {
+		recordRedisError(ctx, "ConcurrencyCache.CleanupExpiredAccountSlots", err)
+	}
 	return err
 }

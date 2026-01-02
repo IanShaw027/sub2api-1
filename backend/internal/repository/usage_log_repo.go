@@ -149,6 +149,161 @@ func (r *usageLogRepository) Create(ctx context.Context, log *service.UsageLog) 
 	return nil
 }
 
+func (r *usageLogRepository) CreateIdempotent(ctx context.Context, log *service.UsageLog) (bool, error) {
+	if log == nil {
+		return false, nil
+	}
+
+	// Without a request_id we cannot apply the (request_id, api_key_id) idempotency constraint.
+	if strings.TrimSpace(log.RequestID) == "" {
+		return true, r.Create(ctx, log)
+	}
+
+	createdAt := log.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = time.Now()
+	}
+
+	rateMultiplier := log.RateMultiplier
+
+	query := `
+		INSERT INTO usage_logs (
+			user_id,
+			api_key_id,
+			account_id,
+			request_id,
+			model,
+			group_id,
+			subscription_id,
+			input_tokens,
+			output_tokens,
+			cache_creation_tokens,
+			cache_read_tokens,
+			cache_creation_5m_tokens,
+			cache_creation_1h_tokens,
+			input_cost,
+			output_cost,
+			cache_creation_cost,
+			cache_read_cost,
+			total_cost,
+			actual_cost,
+			rate_multiplier,
+			billing_type,
+			stream,
+			duration_ms,
+			first_token_ms,
+			created_at
+		) VALUES (
+			$1, $2, $3, $4, $5,
+			$6, $7,
+			$8, $9, $10, $11,
+			$12, $13,
+			$14, $15, $16, $17, $18, $19,
+			$20, $21, $22, $23, $24, $25
+		)
+		ON CONFLICT (request_id, api_key_id) DO NOTHING
+		RETURNING id, created_at
+	`
+
+	groupID := nullInt64(log.GroupID)
+	subscriptionID := nullInt64(log.SubscriptionID)
+	duration := nullInt(log.DurationMs)
+	firstToken := nullInt(log.FirstTokenMs)
+
+	args := []any{
+		log.UserID,
+		log.APIKeyID,
+		log.AccountID,
+		log.RequestID,
+		log.Model,
+		groupID,
+		subscriptionID,
+		log.InputTokens,
+		log.OutputTokens,
+		log.CacheCreationTokens,
+		log.CacheReadTokens,
+		log.CacheCreation5mTokens,
+		log.CacheCreation1hTokens,
+		log.InputCost,
+		log.OutputCost,
+		log.CacheCreationCost,
+		log.CacheReadCost,
+		log.TotalCost,
+		log.ActualCost,
+		rateMultiplier,
+		log.BillingType,
+		log.Stream,
+		duration,
+		firstToken,
+		createdAt,
+	}
+
+	if err := scanSingleRow(ctx, r.sql, query, args, &log.ID, &log.CreatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+
+	log.RateMultiplier = rateMultiplier
+	return true, nil
+}
+
+func (r *usageLogRepository) CreateBillingUsageEntry(ctx context.Context, entry *service.BillingUsageEntry) error {
+	if entry == nil {
+		return nil
+	}
+
+	createdAt := entry.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = time.Now()
+	}
+
+	query := `
+		INSERT INTO billing_usage_entries (
+			usage_log_id,
+			user_id,
+			api_key_id,
+			subscription_id,
+			billing_type,
+			applied,
+			delta_usd,
+			created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (usage_log_id) DO NOTHING
+		RETURNING id, created_at
+	`
+
+	var id int64
+	var insertedAt time.Time
+	err := scanSingleRow(
+		ctx,
+		r.sql,
+		query,
+		[]any{
+			entry.UsageLogID,
+			entry.UserID,
+			entry.APIKeyID,
+			nullInt64(entry.SubscriptionID),
+			entry.BillingType,
+			entry.Applied,
+			entry.DeltaUSD,
+			createdAt,
+		},
+		&id,
+		&insertedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return err
+	}
+	entry.ID = id
+	entry.CreatedAt = insertedAt
+	return nil
+}
+
 func (r *usageLogRepository) GetByID(ctx context.Context, id int64) (log *service.UsageLog, err error) {
 	query := "SELECT " + usageLogSelectColumns + " FROM usage_logs WHERE id = $1"
 	rows, err := r.sql.QueryContext(ctx, query, id)

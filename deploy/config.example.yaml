@@ -71,6 +71,14 @@ redis:
   db: 0
 
 # =============================================================================
+# Ops Dashboard (Optional)
+# =============================================================================
+ops:
+  # Prefer pre-aggregated tables (ops_metrics_hourly/ops_metrics_daily) for expensive
+  # dashboard queries. Falls back to raw logs for the newest <1 hour slice.
+  use_preaggregated_tables: false
+
+# =============================================================================
 # JWT Configuration
 # =============================================================================
 jwt:

@@ -71,6 +71,7 @@ func provideCleanup(
 	geminiOAuth *service.GeminiOAuthService,
 	antigravityOAuth *service.AntigravityOAuthService,
 	antigravityQuota *service.AntigravityQuotaRefresher,
+	opsAggregation *service.OpsAggregationService,
 	opsMetricsCollector *service.OpsMetricsCollector,
 	opsAlertService *service.OpsAlertService,
 ) func() {
@@ -86,6 +87,10 @@ func provideCleanup(
 			name string
 			fn   func() error
 		}{
+			{"OpsAggregationService", func() error {
+				opsAggregation.Stop()
+				return nil
+			}},
 			{"OpsMetricsCollector", func() error {
 				opsMetricsCollector.Stop()
 				return nil

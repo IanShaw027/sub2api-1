@@ -250,6 +250,14 @@ func (r *fakeOpsRepository) GetOverviewStats(ctx context.Context, startTime, end
 	return &OverviewStats{}, nil
 }
 
+func (r *fakeOpsRepository) UpsertHourlyMetrics(ctx context.Context, startTime, endTime time.Time) error {
+	return nil
+}
+
+func (r *fakeOpsRepository) UpsertDailyMetrics(ctx context.Context, startTime, endTime time.Time) error {
+	return nil
+}
+
 func (r *fakeOpsRepository) GetCachedLatestSystemMetric(ctx context.Context) (*OpsMetrics, error) {
 	return nil, nil
 }

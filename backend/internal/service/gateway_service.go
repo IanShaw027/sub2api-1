@@ -958,6 +958,40 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		return nil, fmt.Errorf("parse request: empty request")
 	}
 
+	getRetryCount := func(current context.Context) int {
+		if current == nil {
+			return 0
+		}
+		v := current.Value(ctxkey.RetryCount)
+		switch n := v.(type) {
+		case int:
+			if n < 0 {
+				return 0
+			}
+			return n
+		case int64:
+			if n < 0 {
+				return 0
+			}
+			return int(n)
+		default:
+			return 0
+		}
+	}
+
+	withRetryCount := func(current context.Context, retryCount int) context.Context {
+		if current == nil {
+			current = context.Background()
+		}
+		next := context.WithValue(current, ctxkey.RetryCount, retryCount)
+		if c != nil && c.Request != nil {
+			c.Request = c.Request.WithContext(next)
+		}
+		return next
+	}
+	baseRetryCount := getRetryCount(ctx)
+	ctx = withRetryCount(ctx, baseRetryCount)
+
 	body := parsed.Body
 	reqModel := parsed.Model
 	reqStream := parsed.Stream
@@ -1001,6 +1035,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	// 重试循环
 	var resp *http.Response
 	for attempt := 1; attempt <= maxRetries; attempt++ {
+		ctx = withRetryCount(ctx, baseRetryCount+attempt-1)
 		// 构建上游请求（每次重试需要重新构建，因为请求体需要重新读取）
 		upstreamReq, err := s.buildUpstreamRequest(ctx, c, account, body, token, tokenType, reqModel)
 		if err != nil {
@@ -1706,9 +1741,7 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 		usageLog.SubscriptionID = &subscription.ID
 	}
 
-	if err := s.usageLogRepo.Create(ctx, usageLog); err != nil {
-		log.Printf("Create usage log failed: %v", err)
-	}
+	_ = createUsageLogWithRetry(ctx, s.usageLogRepo, usageLog)
 
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
 		log.Printf("[SIMPLE MODE] Usage recorded (not billed): user=%d, tokens=%d", usageLog.UserID, usageLog.TotalTokens())

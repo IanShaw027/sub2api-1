@@ -1,6 +1,7 @@
 package service
 
 import (
+	"database/sql"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -87,6 +88,13 @@ func ProvideOpsAlertService(opsService *OpsService, userService *UserService, em
 	return svc
 }
 
+// ProvideOpsAggregationService creates and starts OpsAggregationService.
+func ProvideOpsAggregationService(repo OpsRepository, sqlDB *sql.DB) *OpsAggregationService {
+	svc := NewOpsAggregationService(repo, sqlDB)
+	svc.Start()
+	return svc
+}
+
 // ProvideConcurrencyService creates ConcurrencyService and starts slot cleanup worker.
 func ProvideConcurrencyService(cache ConcurrencyCache, accountRepo AccountRepository, cfg *config.Config) *ConcurrencyService {
 	svc := NewConcurrencyService(cache)
@@ -142,5 +150,6 @@ var ProviderSet = wire.NewSet(
 	ProvideAntigravityQuotaRefresher,
 	ProvideOpsMetricsCollector,
 	ProvideOpsAlertService,
+	ProvideOpsAggregationService,
 	NewUserAttributeService,
 )

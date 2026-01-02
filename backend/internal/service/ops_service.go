@@ -12,50 +12,84 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/infraerror"
 	"github.com/shirou/gopsutil/v4/disk"
 )
 
 type OpsMetrics struct {
-	WindowMinutes         int       `json:"window_minutes"`
-	RequestCount          int64     `json:"request_count"`
-	SuccessCount          int64     `json:"success_count"`
-	ErrorCount            int64     `json:"error_count"`
-	SuccessRate           float64   `json:"success_rate"`
-	ErrorRate             float64   `json:"error_rate"`
-	P95LatencyMs          int       `json:"p95_latency_ms"`
-	P99LatencyMs          int       `json:"p99_latency_ms"`
-	HTTP2Errors           int       `json:"http2_errors"`
-	ActiveAlerts          int       `json:"active_alerts"`
-	CPUUsagePercent       float64   `json:"cpu_usage_percent"`
-	MemoryUsedMB          int64     `json:"memory_used_mb"`
-	MemoryTotalMB         int64     `json:"memory_total_mb"`
-	MemoryUsagePercent    float64   `json:"memory_usage_percent"`
-	HeapAllocMB           int64     `json:"heap_alloc_mb"`
-	GCPauseMs             float64   `json:"gc_pause_ms"`
-	ConcurrencyQueueDepth int       `json:"concurrency_queue_depth"`
-	UpdatedAt             time.Time `json:"updated_at,omitempty"`
+	WindowMinutes         int            `json:"window_minutes"`
+	RequestCount          int64          `json:"request_count"`
+	SuccessCount          int64          `json:"success_count"`
+	ErrorCount            int64          `json:"error_count"`
+	QPS                   float64        `json:"qps"`
+	TPS                   float64        `json:"tps"`
+	Error4xxCount         int64          `json:"error_4xx_count"`
+	Error5xxCount         int64          `json:"error_5xx_count"`
+	ErrorTimeoutCount     int64          `json:"error_timeout_count"`
+	LatencyP50            float64        `json:"latency_p50"`
+	LatencyP999           float64        `json:"latency_p999"`
+	LatencyAvg            float64        `json:"latency_avg"`
+	LatencyMax            float64        `json:"latency_max"`
+	UpstreamLatencyAvg    float64        `json:"upstream_latency_avg"`
+	DiskUsed              int64          `json:"disk_used"`
+	DiskTotal             int64          `json:"disk_total"`
+	DiskIOPS              int64          `json:"disk_iops"`
+	NetworkInBytes        int64          `json:"network_in_bytes"`
+	NetworkOutBytes       int64          `json:"network_out_bytes"`
+	GoroutineCount        int            `json:"goroutine_count"`
+	DBConnActive          int            `json:"db_conn_active"`
+	DBConnIdle            int            `json:"db_conn_idle"`
+	DBConnWaiting         int            `json:"db_conn_waiting"`
+	TokenConsumed         int64          `json:"token_consumed"`
+	TokenRate             float64        `json:"token_rate"`
+	ActiveSubscriptions   int            `json:"active_subscriptions"`
+	Tags                  map[string]any `json:"tags,omitempty"`
+	SuccessRate           float64        `json:"success_rate"`
+	ErrorRate             float64        `json:"error_rate"`
+	P95LatencyMs          int            `json:"p95_latency_ms"`
+	P99LatencyMs          int            `json:"p99_latency_ms"`
+	HTTP2Errors           int            `json:"http2_errors"`
+	ActiveAlerts          int            `json:"active_alerts"`
+	CPUUsagePercent       float64        `json:"cpu_usage_percent"`
+	MemoryUsedMB          int64          `json:"memory_used_mb"`
+	MemoryTotalMB         int64          `json:"memory_total_mb"`
+	MemoryUsagePercent    float64        `json:"memory_usage_percent"`
+	HeapAllocMB           int64          `json:"heap_alloc_mb"`
+	GCPauseMs             float64        `json:"gc_pause_ms"`
+	ConcurrencyQueueDepth int            `json:"concurrency_queue_depth"`
+	UpdatedAt             time.Time      `json:"updated_at,omitempty"`
 }
 
 type OpsErrorLog struct {
-	ID         int64     `json:"id"`
-	CreatedAt  time.Time `json:"created_at"`
-	Phase      string    `json:"phase"`
-	Type       string    `json:"type"`
-	Severity   string    `json:"severity"`
-	StatusCode int       `json:"status_code"`
-	Platform   string    `json:"platform"`
-	Model      string    `json:"model"`
-	LatencyMs  *int      `json:"latency_ms"`
-	RequestID  string    `json:"request_id"`
-	Message    string    `json:"message"`
+	ID          int64     `json:"id"`
+	CreatedAt   time.Time `json:"created_at"`
+	Phase       string    `json:"phase"`
+	Type        string    `json:"type"`
+	Severity    string    `json:"severity"`
+	StatusCode  int       `json:"status_code"`
+	Platform    string    `json:"platform"`
+	Model       string    `json:"model"`
+	RequestPath string    `json:"request_path,omitempty"`
+	LatencyMs   *int      `json:"latency_ms"`
+	DurationMs  *int      `json:"duration_ms,omitempty"`
+	RequestID   string    `json:"request_id"`
+	Message     string    `json:"message"`
+	ErrorBody   string    `json:"error_body,omitempty"`
 
-	UserID      *int64 `json:"user_id,omitempty"`
-	APIKeyID    *int64 `json:"api_key_id,omitempty"`
-	AccountID   *int64 `json:"account_id,omitempty"`
-	GroupID     *int64 `json:"group_id,omitempty"`
-	ClientIP    string `json:"client_ip,omitempty"`
-	RequestPath string `json:"request_path,omitempty"`
-	Stream      bool   `json:"stream"`
+	ProviderErrorCode string `json:"provider_error_code,omitempty"`
+	ProviderErrorType string `json:"provider_error_type,omitempty"`
+
+	IsRetryable      bool   `json:"is_retryable"`
+	IsUserActionable bool   `json:"is_user_actionable"`
+	RetryCount       int    `json:"retry_count"`
+	CompletionStatus string `json:"completion_status,omitempty"`
+
+	UserID    *int64 `json:"user_id,omitempty"`
+	APIKeyID  *int64 `json:"api_key_id,omitempty"`
+	AccountID *int64 `json:"account_id,omitempty"`
+	GroupID   *int64 `json:"group_id,omitempty"`
+	ClientIP  string `json:"client_ip,omitempty"`
+	Stream    bool   `json:"stream"`
 }
 
 type OpsErrorLogFilters struct {
@@ -69,11 +103,19 @@ type OpsErrorLogFilters struct {
 }
 
 type OpsWindowStats struct {
-	SuccessCount int64
-	ErrorCount   int64
-	P95LatencyMs int
-	P99LatencyMs int
-	HTTP2Errors  int
+	SuccessCount  int64
+	ErrorCount    int64
+	Error4xxCount int64
+	Error5xxCount int64
+	TimeoutCount  int64
+	P50LatencyMs  int
+	P95LatencyMs  int
+	P99LatencyMs  int
+	P999LatencyMs int
+	AvgLatencyMs  int
+	MaxLatencyMs  int
+	HTTP2Errors   int
+	TokenConsumed int64
 }
 
 type ProviderStats struct {
@@ -147,6 +189,11 @@ type OpsRepository interface {
 	CountActiveAlerts(ctx context.Context) (int, error)
 	GetOverviewStats(ctx context.Context, startTime, endTime time.Time) (*OverviewStats, error)
 
+	// UpsertHourlyMetrics pre-aggregates raw logs into ops_metrics_hourly for [startTime, endTime).
+	UpsertHourlyMetrics(ctx context.Context, startTime, endTime time.Time) error
+	// UpsertDailyMetrics rolls up ops_metrics_hourly into ops_metrics_daily for [startTime, endTime).
+	UpsertDailyMetrics(ctx context.Context, startTime, endTime time.Time) error
+
 	// Redis-backed cache/health (best-effort; implementation lives in repository layer).
 	GetCachedLatestSystemMetric(ctx context.Context) (*OpsMetrics, error)
 	SetCachedLatestSystemMetric(ctx context.Context, metric *OpsMetrics) error
@@ -164,6 +211,8 @@ type OpsService struct {
 }
 
 const opsDBQueryTimeout = 5 * time.Second
+
+type opsRecordErrorGuardKey struct{}
 
 func NewOpsService(repo OpsRepository, sqlDB *sql.DB) *OpsService {
 	svc := &OpsService{repo: repo, sqlDB: sqlDB}
@@ -186,6 +235,15 @@ func NewOpsService(repo OpsRepository, sqlDB *sql.DB) *OpsService {
 }
 
 func (s *OpsService) RecordError(ctx context.Context, log *OpsErrorLog) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Value(opsRecordErrorGuardKey{}) != nil {
+		// Prevent recursion: RecordError (or its error path) should never attempt to record again.
+		return nil
+	}
+	ctx = context.WithValue(ctx, opsRecordErrorGuardKey{}, true)
+
 	if log == nil {
 		return nil
 	}
@@ -207,7 +265,23 @@ func (s *OpsService) RecordError(ctx context.Context, log *OpsErrorLog) error {
 
 	ctxDB, cancel := context.WithTimeout(ctx, opsDBQueryTimeout)
 	defer cancel()
-	return s.repo.CreateErrorLog(ctxDB, log)
+	ctxDB = infraerror.WithRecordingDisabled(ctxDB)
+	if s == nil || s.repo == nil {
+		return nil
+	}
+
+	if err := s.repo.CreateErrorLog(ctxDB, log); err != nil {
+		// Best-effort fallback: if the ops log persistence fails due to infrastructure issues
+		// (DB down, timeouts), write to the independent infra error channel instead.
+		recordInfrastructureError(ctx, "db", "OpsService.RecordError", err)
+		return err
+	}
+	return nil
+}
+
+// RecordOpsError is a compatibility wrapper around RecordError.
+func (s *OpsService) RecordOpsError(ctx context.Context, log *OpsErrorLog) error {
+	return s.RecordError(ctx, log)
 }
 
 func (s *OpsService) RecordMetrics(ctx context.Context, metric *OpsMetrics) error {
@@ -870,6 +944,7 @@ func (s *OpsService) checkRedisHealth(ctx context.Context) string {
 	defer cancel()
 
 	if err := s.repo.PingRedis(ctxPing); err != nil {
+		recordInfrastructureError(ctx, "redis", "OpsService.checkRedisHealth", err)
 		log.Printf("[OpsOverview][WARN] redis ping failed: %v", err)
 		return "critical"
 	}
@@ -892,6 +967,7 @@ func (s *OpsService) checkDatabaseHealth(ctx context.Context) string {
 	defer cancel()
 
 	if err := s.sqlDB.PingContext(ctxPing); err != nil {
+		recordInfrastructureError(ctx, "db", "OpsService.checkDatabaseHealth", err)
 		log.Printf("[OpsOverview][WARN] db ping failed: %v", err)
 		return "critical"
 	}

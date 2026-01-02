@@ -7,4 +7,6 @@ type Key string
 const (
 	// ForcePlatform 强制平台（用于 /antigravity 路由），由 middleware.ForcePlatform 设置
 	ForcePlatform Key = "ctx_force_platform"
+	// RetryCount 转发请求的重试次数（0 表示未重试）
+	RetryCount Key = "ctx_retry_count"
 )

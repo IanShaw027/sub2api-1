@@ -145,16 +145,36 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	}
 
 	stream := action == "streamGenerateContent"
+	setOpsRequestContext(c, modelName, stream)
+
+	if maxBytes, ok := middleware.GetMaxBodySizeFromContext(c); ok && maxBytes > 0 {
+		if c.Request != nil && c.Request.ContentLength > maxBytes {
+			msg := buildBodyTooLargeMessage(maxBytes)
+			recordOpsError(c, h.opsService, http.StatusRequestEntityTooLarge, "invalid_request_error", msg, "", false)
+			googleError(c, http.StatusRequestEntityTooLarge, msg)
+			return
+		}
+	}
 
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		if maxErr, ok := extractMaxBytesError(err); ok {
-			googleError(c, http.StatusRequestEntityTooLarge, buildBodyTooLargeMessage(maxErr.Limit))
+			msg := buildBodyTooLargeMessage(maxErr.Limit)
+			recordOpsError(c, h.opsService, http.StatusRequestEntityTooLarge, "invalid_request_error", msg, "", false)
+			googleError(c, http.StatusRequestEntityTooLarge, msg)
 			return
 		}
 		googleError(c, http.StatusBadRequest, "Failed to read request body")
 		return
 	}
+
+	if maxBytes, ok := middleware.GetMaxBodySizeFromContext(c); ok && maxBytes > 0 && int64(len(body)) > maxBytes {
+		msg := buildBodyTooLargeMessage(maxBytes)
+		recordOpsError(c, h.opsService, http.StatusRequestEntityTooLarge, "invalid_request_error", msg, "", false)
+		googleError(c, http.StatusRequestEntityTooLarge, msg)
+		return
+	}
+
 	if len(body) == 0 {
 		googleError(c, http.StatusBadRequest, "Request body is empty")
 		return

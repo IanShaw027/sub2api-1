@@ -25,20 +25,36 @@ func NewGeminiTokenCache(rdb *redis.Client) service.GeminiTokenCache {
 
 func (c *geminiTokenCache) GetAccessToken(ctx context.Context, cacheKey string) (string, error) {
 	key := fmt.Sprintf("%s%s", geminiTokenKeyPrefix, cacheKey)
-	return c.rdb.Get(ctx, key).Result()
+	val, err := c.rdb.Get(ctx, key).Result()
+	if err != nil {
+		recordRedisError(ctx, "GeminiTokenCache.GetAccessToken", err)
+	}
+	return val, err
 }
 
 func (c *geminiTokenCache) SetAccessToken(ctx context.Context, cacheKey string, token string, ttl time.Duration) error {
 	key := fmt.Sprintf("%s%s", geminiTokenKeyPrefix, cacheKey)
-	return c.rdb.Set(ctx, key, token, ttl).Err()
+	if err := c.rdb.Set(ctx, key, token, ttl).Err(); err != nil {
+		recordRedisError(ctx, "GeminiTokenCache.SetAccessToken", err)
+		return err
+	}
+	return nil
 }
 
 func (c *geminiTokenCache) AcquireRefreshLock(ctx context.Context, cacheKey string, ttl time.Duration) (bool, error) {
 	key := fmt.Sprintf("%s%s", geminiRefreshLockKeyPrefix, cacheKey)
-	return c.rdb.SetNX(ctx, key, 1, ttl).Result()
+	ok, err := c.rdb.SetNX(ctx, key, 1, ttl).Result()
+	if err != nil {
+		recordRedisError(ctx, "GeminiTokenCache.AcquireRefreshLock", err)
+	}
+	return ok, err
 }
 
 func (c *geminiTokenCache) ReleaseRefreshLock(ctx context.Context, cacheKey string) error {
 	key := fmt.Sprintf("%s%s", geminiRefreshLockKeyPrefix, cacheKey)
-	return c.rdb.Del(ctx, key).Err()
+	if err := c.rdb.Del(ctx, key).Err(); err != nil {
+		recordRedisError(ctx, "GeminiTokenCache.ReleaseRefreshLock", err)
+		return err
+	}
+	return nil
 }

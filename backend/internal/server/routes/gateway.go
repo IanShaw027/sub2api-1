@@ -17,8 +17,9 @@ func RegisterGatewayRoutes(
 	apiKeyService *service.APIKeyService,
 	subscriptionService *service.SubscriptionService,
 	cfg *config.Config,
+	opsService *service.OpsService,
 ) {
-	bodyLimit := middleware.RequestBodyLimit(cfg.Gateway.MaxBodySize)
+	bodyLimit := middleware.RequestBodyLimitWithOps(cfg.Gateway.MaxBodySize, opsService)
 
 	// API网关（Claude API兼容）
 	gateway := r.Group("/v1")

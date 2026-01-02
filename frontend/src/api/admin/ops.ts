@@ -22,6 +22,39 @@ export interface OpsMetrics {
   request_count: number
   success_count: number
   error_count: number
+  qps?: number
+  tps?: number
+  error_4xx_count?: number
+  error_5xx_count?: number
+  error_timeout_count?: number
+  latency_p50?: number
+  latency_p999?: number
+  latency_avg?: number
+  latency_max?: number
+  upstream_latency_avg?: number
+  disk_used?: number
+  disk_total?: number
+  disk_iops?: number
+  disk_read_bytes?: number
+  disk_write_bytes?: number
+  /**
+   * Total bytes received in the window (approx RX).
+   * Backend may later provide per-second rate or split read/write fields.
+   */
+  network_in_bytes?: number
+  /**
+   * Total bytes sent in the window (approx TX).
+   * Backend may later provide per-second rate or split read/write fields.
+   */
+  network_out_bytes?: number
+  goroutine_count?: number
+  db_conn_active?: number
+  db_conn_idle?: number
+  db_conn_waiting?: number
+  token_consumed?: number
+  token_rate?: number
+  active_subscriptions?: number
+  tags?: Record<string, any>
   success_rate: number
   error_rate: number
   p95_latency_ms: number

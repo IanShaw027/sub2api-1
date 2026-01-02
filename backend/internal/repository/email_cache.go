@@ -28,6 +28,7 @@ func (c *emailCache) GetVerificationCode(ctx context.Context, email string) (*se
 	key := verifyCodeKey(email)
 	val, err := c.rdb.Get(ctx, key).Result()
 	if err != nil {
+		recordRedisError(ctx, "EmailCache.GetVerificationCode", err)
 		return nil, err
 	}
 	var data service.VerificationCodeData
@@ -43,10 +44,18 @@ func (c *emailCache) SetVerificationCode(ctx context.Context, email string, data
 	if err != nil {
 		return err
 	}
-	return c.rdb.Set(ctx, key, val, ttl).Err()
+	if err := c.rdb.Set(ctx, key, val, ttl).Err(); err != nil {
+		recordRedisError(ctx, "EmailCache.SetVerificationCode", err)
+		return err
+	}
+	return nil
 }
 
 func (c *emailCache) DeleteVerificationCode(ctx context.Context, email string) error {
 	key := verifyCodeKey(email)
-	return c.rdb.Del(ctx, key).Err()
+	if err := c.rdb.Del(ctx, key).Err(); err != nil {
+		recordRedisError(ctx, "EmailCache.DeleteVerificationCode", err)
+		return err
+	}
+	return nil
 }

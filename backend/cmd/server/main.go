@@ -147,7 +147,12 @@ func runMainServer() {
 	defer cancel()
 
 	if err := app.Server.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		log.Printf("Server forced to shutdown: %v", err)
+		_ = app.Server.Close()
+	}
+
+	if drained := handler.StopOpsErrorLogWorkers(); !drained {
+		log.Printf("Ops error log drain timed out after 10s; exiting")
 	}
 
 	log.Println("Server exited")

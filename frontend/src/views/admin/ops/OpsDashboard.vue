@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Bar, Doughnut } from 'vue-chartjs'
+import { Bar, Doughnut, Line } from 'vue-chartjs'
 import {
   Chart as ChartJS,
   Title,
@@ -12,12 +12,14 @@ import {
   PointElement,
   CategoryScale,
   BarElement,
-  ArcElement
+  ArcElement,
+  Filler
 } from 'chart.js'
 import { useIntervalFn } from '@vueuse/core'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import { opsAPI, type OpsDashboardOverview, type ProviderHealthData, type LatencyHistogramResponse, type ErrorDistributionResponse } from '@/api/admin/ops'
+import { opsAPI, type OpsDashboardOverview, type ProviderHealthData, type LatencyHistogramResponse, type ErrorDistributionResponse, type OpsMetrics } from '@/api/admin/ops'
 import { useAuthStore } from '@/stores/auth'
+import { formatBytes, formatNumber } from '@/utils/format'
 
 ChartJS.register(
   Title,
@@ -28,7 +30,8 @@ ChartJS.register(
   PointElement,
   CategoryScale,
   BarElement,
-  ArcElement
+  ArcElement,
+  Filler
 )
 
 const { t } = useI18n()
@@ -42,6 +45,8 @@ const overview = ref<OpsDashboardOverview | null>(null)
 const providers = ref<ProviderHealthData[]>([])
 const latencyData = ref<LatencyHistogramResponse | null>(null)
 const errorDistribution = ref<ErrorDistributionResponse | null>(null)
+const latestMetrics = ref<OpsMetrics | null>(null)
+const metricsHistory = ref<OpsMetrics[]>([])
 
 // WebSocket for real-time QPS
 const realTimeQPS = ref(0)
@@ -98,6 +103,19 @@ const fetchData = async () => {
     latencyData.value = lt
     errorDistribution.value = er
     lastUpdated.value = new Date()
+
+    try {
+      const minutes = parseTimeRangeMinutes(timeRange.value)
+      const historyLimit = Math.min(Math.max(minutes + 5, 10), 24 * 60 + 10)
+      const [m, history] = await Promise.all([
+        opsAPI.getMetrics(),
+        opsAPI.listMetricsHistory({ window_minutes: 1, minutes, limit: historyLimit })
+      ])
+      latestMetrics.value = m
+      metricsHistory.value = history.items
+    } catch (e) {
+      console.warn('[OpsDashboard] Failed to fetch system metrics', e)
+    }
   } catch (err) {
     console.error('Failed to fetch ops data', err)
     errorMessage.value = '数据加载失败，请稍后重试'
@@ -201,6 +219,160 @@ const healthScoreClass = computed(() => {
   return 'text-red-500 border-red-500'
 })
 
+const displayRealTimeQPS = computed(() => {
+  if (wsConnected.value && realTimeQPS.value > 0) return realTimeQPS.value
+  return overview.value?.qps.current ?? realTimeQPS.value
+})
+
+const displayRealTimeTPS = computed(() => {
+  if (wsConnected.value && realTimeTPS.value > 0) return realTimeTPS.value
+  return overview.value?.tps.current ?? realTimeTPS.value
+})
+
+const isDarkMode = computed(() => {
+  return document.documentElement.classList.contains('dark')
+})
+
+const lineColors = computed(() => ({
+  text: isDarkMode.value ? '#e5e7eb' : '#374151',
+  grid: isDarkMode.value ? '#374151' : '#e5e7eb'
+}))
+
+function parseTimeRangeMinutes(range: string): number {
+  const trimmed = (range || '').trim()
+  if (!trimmed) return 60
+  if (trimmed.endsWith('m')) {
+    const v = Number.parseInt(trimmed.slice(0, -1), 10)
+    return Number.isFinite(v) && v > 0 ? v : 60
+  }
+  if (trimmed.endsWith('h')) {
+    const v = Number.parseInt(trimmed.slice(0, -1), 10)
+    return Number.isFinite(v) && v > 0 ? v * 60 : 60
+  }
+  return 60
+}
+
+function formatHistoryLabel(date: string | undefined): string {
+  if (!date) return ''
+  const d = new Date(date)
+  if (Number.isNaN(d.getTime())) return ''
+  const minutes = parseTimeRangeMinutes(timeRange.value)
+  if (minutes >= 24 * 60) {
+    return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  }
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+function formatByteRate(bytes: number, windowMinutes: number): string {
+  const seconds = Math.max(1, (windowMinutes || 1) * 60)
+  return `${formatBytes(bytes / seconds, 1)}/s`
+}
+
+const networkIOText = computed(() => {
+  const m = latestMetrics.value
+  if (!m) return null
+  const rx = formatByteRate(m.network_in_bytes ?? 0, m.window_minutes || 1)
+  const tx = formatByteRate(m.network_out_bytes ?? 0, m.window_minutes || 1)
+  return `RX ${rx} · TX ${tx}`
+})
+
+const diskIOText = computed(() => {
+  const m = latestMetrics.value
+  if (!m) return null
+  const hasReadWrite = (m.disk_read_bytes ?? 0) > 0 || (m.disk_write_bytes ?? 0) > 0
+  if (hasReadWrite) {
+    const read = formatByteRate(m.disk_read_bytes ?? 0, m.window_minutes || 1)
+    const write = formatByteRate(m.disk_write_bytes ?? 0, m.window_minutes || 1)
+    return `Read ${read} · Write ${write}`
+  }
+  return `${formatNumber(m.disk_iops ?? 0)} IOPS`
+})
+
+const throughputChartData = computed(() => {
+  if (!metricsHistory.value.length) return null
+  return {
+    labels: metricsHistory.value.map(m => formatHistoryLabel(m.updated_at)),
+    datasets: [
+      {
+        label: 'QPS',
+        data: metricsHistory.value.map(m => m.qps ?? 0),
+        borderColor: '#3b82f6',
+        backgroundColor: '#3b82f620',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 0
+      },
+      {
+        label: 'TPS (K)',
+        data: metricsHistory.value.map(m => (m.tps ?? 0) / 1000),
+        borderColor: '#10b981',
+        backgroundColor: '#10b98120',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 0
+      }
+    ]
+  }
+})
+
+const throughputChartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  interaction: {
+    intersect: false,
+    mode: 'index' as const
+  },
+  plugins: {
+    legend: {
+      position: 'top' as const,
+      labels: {
+        color: lineColors.value.text,
+        usePointStyle: true,
+        pointStyle: 'circle',
+        padding: 12,
+        font: {
+          size: 11
+        }
+      }
+    },
+    tooltip: {
+      callbacks: {
+        label: (context: any) => {
+          const label = context.dataset.label as string
+          if (label === 'TPS (K)') return `${label}: ${Number(context.raw).toFixed(1)}K`
+          return `${label}: ${Number(context.raw).toFixed(1)}`
+        }
+      }
+    }
+  },
+  scales: {
+    x: {
+      grid: {
+        color: lineColors.value.grid
+      },
+      ticks: {
+        color: lineColors.value.text,
+        font: {
+          size: 10
+        },
+        maxTicksLimit: 8
+      }
+    },
+    y: {
+      beginAtZero: true,
+      grid: {
+        color: lineColors.value.grid
+      },
+      ticks: {
+        color: lineColors.value.text,
+        font: {
+          size: 10
+        }
+      }
+    }
+  }
+}))
+
 </script>
 
 <template>
@@ -236,11 +408,11 @@ const healthScoreClass = computed(() => {
         <div class="flex items-center gap-4">
           <div class="hidden items-center gap-6 border-r border-gray-100 pr-6 dark:border-dark-700 lg:flex">
             <div class="text-center">
-              <div class="text-sm font-black text-gray-900 dark:text-white">{{ realTimeQPS.toFixed(1) }}</div>
+              <div class="text-sm font-black text-gray-900 dark:text-white">{{ displayRealTimeQPS.toFixed(1) }}</div>
               <div class="text-[10px] font-bold text-gray-400 uppercase">实时 QPS</div>
             </div>
             <div class="text-center">
-              <div class="text-sm font-black text-gray-900 dark:text-white">{{ (realTimeTPS / 1000).toFixed(1) }}K</div>
+              <div class="text-sm font-black text-gray-900 dark:text-white">{{ formatNumber(displayRealTimeTPS) }}</div>
               <div class="text-[10px] font-bold text-gray-400 uppercase">实时 TPS</div>
             </div>
           </div>
@@ -341,6 +513,17 @@ const healthScoreClass = computed(() => {
           </div>
         </div>
 
+        <!-- Throughput Trend -->
+        <div class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
+          <div class="mb-6 flex items-center justify-between">
+            <h3 class="text-sm font-black text-gray-900 dark:text-white uppercase tracking-wider">吞吐趋势 (QPS/TPS)</h3>
+          </div>
+          <div class="h-64">
+            <Line v-if="throughputChartData" :data="throughputChartData" :options="throughputChartOptions" />
+            <div v-else class="flex h-full items-center justify-center text-gray-400">加载中...</div>
+          </div>
+        </div>
+
         <!-- Error Distribution -->
         <div class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
           <div class="mb-6 flex items-center justify-between">
@@ -395,7 +578,15 @@ const healthScoreClass = computed(() => {
               </div>
               <div class="flex items-center justify-between">
                 <span class="text-[10px] font-bold text-gray-400 uppercase">Goroutines</span>
-                <span class="text-xs font-bold text-gray-900 dark:text-white">{{ overview?.resources.goroutines }}</span>
+                <span class="text-xs font-bold text-gray-900 dark:text-white">{{ latestMetrics?.goroutine_count ?? overview?.resources.goroutines }}</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold text-gray-400 uppercase">Network I/O</span>
+                <span class="text-xs font-bold text-gray-900 dark:text-white">{{ networkIOText || '--' }}</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold text-gray-400 uppercase">Disk I/O</span>
+                <span class="text-xs font-bold text-gray-900 dark:text-white">{{ diskIOText || '--' }}</span>
               </div>
             </div>
           </div>

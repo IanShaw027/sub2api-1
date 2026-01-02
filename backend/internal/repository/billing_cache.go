@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strconv"
 	"time"
 
@@ -75,6 +74,7 @@ func (c *billingCache) GetUserBalance(ctx context.Context, userID int64) (float6
 	key := billingBalanceKey(userID)
 	val, err := c.rdb.Get(ctx, key).Result()
 	if err != nil {
+		recordRedisError(ctx, "BillingCache.GetUserBalance", err)
 		return 0, err
 	}
 	return strconv.ParseFloat(val, 64)
@@ -82,27 +82,36 @@ func (c *billingCache) GetUserBalance(ctx context.Context, userID int64) (float6
 
 func (c *billingCache) SetUserBalance(ctx context.Context, userID int64, balance float64) error {
 	key := billingBalanceKey(userID)
-	return c.rdb.Set(ctx, key, balance, billingCacheTTL).Err()
+	if err := c.rdb.Set(ctx, key, balance, billingCacheTTL).Err(); err != nil {
+		recordRedisError(ctx, "BillingCache.SetUserBalance", err)
+		return err
+	}
+	return nil
 }
 
 func (c *billingCache) DeductUserBalance(ctx context.Context, userID int64, amount float64) error {
 	key := billingBalanceKey(userID)
 	_, err := deductBalanceScript.Run(ctx, c.rdb, []string{key}, amount, int(billingCacheTTL.Seconds())).Result()
 	if err != nil && !errors.Is(err, redis.Nil) {
-		log.Printf("Warning: deduct balance cache failed for user %d: %v", userID, err)
+		recordRedisError(ctx, "BillingCache.DeductUserBalance", err)
 	}
 	return nil
 }
 
 func (c *billingCache) InvalidateUserBalance(ctx context.Context, userID int64) error {
 	key := billingBalanceKey(userID)
-	return c.rdb.Del(ctx, key).Err()
+	if err := c.rdb.Del(ctx, key).Err(); err != nil {
+		recordRedisError(ctx, "BillingCache.InvalidateUserBalance", err)
+		return err
+	}
+	return nil
 }
 
 func (c *billingCache) GetSubscriptionCache(ctx context.Context, userID, groupID int64) (*service.SubscriptionCacheData, error) {
 	key := billingSubKey(userID, groupID)
 	result, err := c.rdb.HGetAll(ctx, key).Result()
 	if err != nil {
+		recordRedisError(ctx, "BillingCache.GetSubscriptionCache", err)
 		return nil, err
 	}
 	if len(result) == 0 {
@@ -165,6 +174,9 @@ func (c *billingCache) SetSubscriptionCache(ctx context.Context, userID, groupID
 	pipe.HSet(ctx, key, fields)
 	pipe.Expire(ctx, key, billingCacheTTL)
 	_, err := pipe.Exec(ctx)
+	if err != nil {
+		recordRedisError(ctx, "BillingCache.SetSubscriptionCache", err)
+	}
 	return err
 }
 
@@ -172,12 +184,16 @@ func (c *billingCache) UpdateSubscriptionUsage(ctx context.Context, userID, grou
 	key := billingSubKey(userID, groupID)
 	_, err := updateSubUsageScript.Run(ctx, c.rdb, []string{key}, cost, int(billingCacheTTL.Seconds())).Result()
 	if err != nil && !errors.Is(err, redis.Nil) {
-		log.Printf("Warning: update subscription usage cache failed for user %d group %d: %v", userID, groupID, err)
+		recordRedisError(ctx, "BillingCache.UpdateSubscriptionUsage", err)
 	}
 	return nil
 }
 
 func (c *billingCache) InvalidateSubscriptionCache(ctx context.Context, userID, groupID int64) error {
 	key := billingSubKey(userID, groupID)
-	return c.rdb.Del(ctx, key).Err()
+	if err := c.rdb.Del(ctx, key).Err(); err != nil {
+		recordRedisError(ctx, "BillingCache.InvalidateSubscriptionCache", err)
+		return err
+	}
+	return nil
 }

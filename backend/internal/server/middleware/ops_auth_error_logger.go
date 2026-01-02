@@ -33,7 +33,7 @@ func startOpsAuthErrorLogWorkers() {
 					continue
 				}
 				ctx, cancel := context.WithTimeout(context.Background(), opsAuthErrorLogTimeout)
-				_ = job.ops.RecordError(ctx, job.entry)
+				_ = job.ops.RecordOpsError(ctx, job.entry)
 				cancel()
 			}
 		}()
@@ -52,4 +52,8 @@ func enqueueOpsAuthErrorLog(ops *service.OpsService, entry *service.OpsErrorLog)
 	default:
 		// Queue is full; drop to avoid blocking request handling.
 	}
+}
+
+func RecordOpsError(ops *service.OpsService, entry *service.OpsErrorLog) {
+	enqueueOpsAuthErrorLog(ops, entry)
 }
