@@ -8,11 +8,11 @@ import (
 // TestBuildParts_ThinkingBlockWithoutSignature 测试thinking block无signature时的处理
 func TestBuildParts_ThinkingBlockWithoutSignature(t *testing.T) {
 	tests := []struct {
-		name              string
-		content           string
-		thoughtMode       thoughtSignatureMode
-		expectedParts     int
-		description       string
+		name          string
+		content       string
+		thoughtMode   thoughtSignatureMode
+		expectedParts int
+		description   string
 	}{
 		{
 			name: "Claude model - skip thinking block without signature",
@@ -21,9 +21,9 @@ func TestBuildParts_ThinkingBlockWithoutSignature(t *testing.T) {
 				{"type": "thinking", "thinking": "Let me think...", "signature": ""},
 				{"type": "text", "text": "World"}
 			]`,
-			thoughtMode:       thoughtSignatureModePreserve,
-			expectedParts:     2, // 只有两个text block
-			description:       "Claude模型应该跳过无signature的thinking block",
+			thoughtMode:   thoughtSignatureModePreserve,
+			expectedParts: 2, // 只有两个text block
+			description:   "Claude模型应该跳过无signature的thinking block",
 		},
 		{
 			name: "Claude model - preserve thinking block with signature",
@@ -43,9 +43,9 @@ func TestBuildParts_ThinkingBlockWithoutSignature(t *testing.T) {
 				{"type": "thinking", "thinking": "Let me think...", "signature": ""},
 				{"type": "text", "text": "World"}
 			]`,
-			thoughtMode:       thoughtSignatureModeDummy,
-			expectedParts:     3, // 三个block都保留，thinking使用dummy signature
-			description:       "Gemini模型应该为无signature的thinking block使用dummy signature",
+			thoughtMode:   thoughtSignatureModeDummy,
+			expectedParts: 3, // 三个block都保留，thinking使用dummy signature
+			description:   "Gemini模型应该为无signature的thinking block使用dummy signature",
 		},
 		{
 			name: "Claude model - signature-only thinking block becomes signature-only part",
