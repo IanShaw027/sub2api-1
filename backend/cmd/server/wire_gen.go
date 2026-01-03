@@ -10,6 +10,7 @@ import (
 	"context"
 	"github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/cron"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
@@ -152,7 +153,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	opsAggregationService := service.ProvideOpsAggregationService(opsRepository, db)
 	opsMetricsCollector := service.ProvideOpsMetricsCollector(opsService, concurrencyService)
 	opsAlertService := service.ProvideOpsAlertService(opsService, userService, emailService)
-	v := provideCleanup(client, redisClient, tokenRefreshService, pricingService, emailQueueService, billingCacheService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, antigravityQuotaRefresher, opsAggregationService, opsMetricsCollector, opsAlertService)
+	v := provideCleanup(client, redisClient, tokenRefreshService, pricingService, emailQueueService, billingCacheService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, antigravityQuotaRefresher, opsAggregationService, opsMetricsCollector, opsAlertService, configConfig, opsRepository)
 	application := &Application{
 		Server:  httpServer,
 		Cleanup: v,
@@ -189,13 +190,75 @@ func provideCleanup(
 	opsAggregation *service.OpsAggregationService,
 	opsMetricsCollector *service.OpsMetricsCollector,
 	opsAlertService *service.OpsAlertService,
+	cfg *config.Config,
+	opsRepo service.OpsRepository,
 ) func() {
 	if opsAlertService != nil {
 		opsAlertService.Start()
 	}
+
+	// Initialize cron manager if cleanup is enabled
+	var cronManager *cron.Manager
+	if cfg.Ops.Cleanup.Enabled || cfg.Ops.Aggregation.Enabled {
+		ctx := context.Background()
+		cronManager = cron.NewManager(ctx)
+
+		if cfg.Ops.Cleanup.Enabled {
+			cleanupConfig := cron.CleanupConfig{
+				ErrorLogRetentionDays:      cfg.Ops.Cleanup.ErrorLogRetentionDays,
+				MinuteMetricsRetentionDays: cfg.Ops.Cleanup.MinuteMetricsRetentionDays,
+				HourlyMetricsRetentionDays: cfg.Ops.Cleanup.HourlyMetricsRetentionDays,
+			}
+			opsCleaner := cron.NewOpsCleaner(ctx, opsRepo, cleanupConfig)
+
+			schedule := cfg.Ops.Cleanup.Schedule
+			if schedule == "" {
+				schedule = "0 2 * * *"
+			}
+
+			if err := cronManager.AddJob(schedule, opsCleaner.Run); err != nil {
+				log.Printf("[CRON] Failed to add ops cleanup job: %v", err)
+			} else {
+				log.Printf("[CRON] Ops cleanup job scheduled: %s", schedule)
+			}
+		}
+
+		if cfg.Ops.Aggregation.Enabled {
+			opsAggregator := cron.NewOpsAggregator(ctx, opsRepo)
+
+			hourlySchedule := cfg.Ops.Aggregation.HourlySchedule
+			if hourlySchedule == "" {
+				hourlySchedule = "5 * * * *"
+			}
+			if err := cronManager.AddJob(hourlySchedule, opsAggregator.RunHourly); err != nil {
+				log.Printf("[CRON] Failed to add hourly aggregation job: %v", err)
+			} else {
+				log.Printf("[CRON] Hourly aggregation job scheduled: %s", hourlySchedule)
+			}
+
+			dailySchedule := cfg.Ops.Aggregation.DailySchedule
+			if dailySchedule == "" {
+				dailySchedule = "10 0 * * *"
+			}
+			if err := cronManager.AddJob(dailySchedule, opsAggregator.RunDaily); err != nil {
+				log.Printf("[CRON] Failed to add daily aggregation job: %v", err)
+			} else {
+				log.Printf("[CRON] Daily aggregation job scheduled: %s", dailySchedule)
+			}
+		}
+
+		if cronManager != nil {
+			cronManager.Start()
+		}
+	}
+
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+
+		if cronManager != nil {
+			cronManager.Stop()
+		}
 
 		cleanupSteps := []struct {
 			name string

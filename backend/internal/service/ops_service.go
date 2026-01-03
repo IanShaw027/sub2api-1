@@ -215,6 +215,10 @@ type OpsRepository interface {
 	ListRecentSystemMetrics(ctx context.Context, windowMinutes, limit int) ([]OpsMetrics, error)
 	ListSystemMetricsRange(ctx context.Context, windowMinutes int, startTime, endTime time.Time, limit int) ([]OpsMetrics, error)
 	ListAlertRules(ctx context.Context) ([]OpsAlertRule, error)
+	CreateAlertRule(ctx context.Context, rule *OpsAlertRule) error
+	UpdateAlertRule(ctx context.Context, rule *OpsAlertRule) error
+	DeleteAlertRule(ctx context.Context, id int64) error
+	ListAlertEvents(ctx context.Context, limit int) ([]OpsAlertEvent, error)
 	GetActiveAlertEvent(ctx context.Context, ruleID int64) (*OpsAlertEvent, error)
 	GetLatestAlertEvent(ctx context.Context, ruleID int64) (*OpsAlertEvent, error)
 	CreateAlertEvent(ctx context.Context, event *OpsAlertEvent) error
@@ -244,6 +248,10 @@ type OpsRepository interface {
 	// IP statistics methods
 	GetErrorStatsByIP(ctx context.Context, startTime, endTime time.Time, limit int, sortBy, sortOrder string) ([]IPErrorStats, error)
 	GetErrorsByIP(ctx context.Context, ip string, startTime, endTime time.Time, page, pageSize int) ([]OpsErrorLog, int64, error)
+
+	// Data cleanup methods
+	DeleteOldErrorLogs(ctx context.Context, retentionDays int) (int64, error)
+	DeleteOldMetrics(ctx context.Context, windowMinutes int, retentionDays int) (int64, error)
 }
 
 type OpsService struct {

@@ -51,6 +51,34 @@ type OpsConfig struct {
 	// Default is false to preserve existing behavior until the background aggregation
 	// job is deployed and validated.
 	UsePreaggregatedTables bool `mapstructure:"use_preaggregated_tables"`
+
+	// Data cleanup configuration
+	Cleanup OpsCleanupConfig `mapstructure:"cleanup"`
+
+	// Pre-aggregation configuration
+	Aggregation OpsAggregationConfig `mapstructure:"aggregation"`
+}
+
+type OpsCleanupConfig struct {
+	// Enabled controls whether automatic data cleanup is enabled
+	Enabled bool `mapstructure:"enabled"`
+	// Schedule is the cron expression for cleanup job (default: "0 2 * * *" - daily at 2 AM)
+	Schedule string `mapstructure:"schedule"`
+	// ErrorLogRetentionDays is the number of days to retain error logs (default: 30)
+	ErrorLogRetentionDays int `mapstructure:"error_log_retention_days"`
+	// MinuteMetricsRetentionDays is the number of days to retain minute-level metrics (default: 7)
+	MinuteMetricsRetentionDays int `mapstructure:"minute_metrics_retention_days"`
+	// HourlyMetricsRetentionDays is the number of days to retain hourly metrics (default: 30)
+	HourlyMetricsRetentionDays int `mapstructure:"hourly_metrics_retention_days"`
+}
+
+type OpsAggregationConfig struct {
+	// Enabled controls whether automatic pre-aggregation is enabled
+	Enabled bool `mapstructure:"enabled"`
+	// HourlySchedule is the cron expression for hourly aggregation (default: "5 * * * *" - 5 minutes past every hour)
+	HourlySchedule string `mapstructure:"hourly_schedule"`
+	// DailySchedule is the cron expression for daily aggregation (default: "10 0 * * *" - 10 minutes past midnight)
+	DailySchedule string `mapstructure:"daily_schedule"`
 }
 
 type GeminiConfig struct {
@@ -340,6 +368,11 @@ func setDefaults() {
 
 	// Ops
 	viper.SetDefault("ops.use_preaggregated_tables", false)
+	viper.SetDefault("ops.cleanup.enabled", false)
+	viper.SetDefault("ops.cleanup.schedule", "0 2 * * *")
+	viper.SetDefault("ops.cleanup.error_log_retention_days", 30)
+	viper.SetDefault("ops.cleanup.minute_metrics_retention_days", 7)
+	viper.SetDefault("ops.cleanup.hourly_metrics_retention_days", 30)
 
 	// JWT
 	viper.SetDefault("jwt.secret", "change-me-in-production")

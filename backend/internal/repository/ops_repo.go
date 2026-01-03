@@ -905,6 +905,121 @@ func (r *OpsRepository) ListAlertRules(ctx context.Context) ([]service.OpsAlertR
 	return rules, nil
 }
 
+func (r *OpsRepository) CreateAlertRule(ctx context.Context, rule *service.OpsAlertRule) error {
+	if rule == nil {
+		return errors.New("rule cannot be nil")
+	}
+	now := time.Now()
+	rule.CreatedAt = now
+	rule.UpdatedAt = now
+
+	dimensionFilters, _ := json.Marshal(rule.DimensionFilters)
+	notifyChannels, _ := json.Marshal(rule.NotifyChannels)
+	notifyConfig, _ := json.Marshal(rule.NotifyConfig)
+
+	query := `
+		INSERT INTO ops_alert_rules (
+			name, description, enabled, metric_type, operator, threshold,
+			window_minutes, sustained_minutes, severity, notify_email, notify_webhook,
+			webhook_url, cooldown_minutes, dimension_filters, notify_channels, notify_config,
+			created_at, updated_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
+		) RETURNING id
+	`
+	return r.sql.QueryRowContext(ctx, query,
+		rule.Name, rule.Description, rule.Enabled, rule.MetricType, rule.Operator, rule.Threshold,
+		rule.WindowMinutes, rule.SustainedMinutes, rule.Severity, rule.NotifyEmail, rule.NotifyWebhook,
+		rule.WebhookURL, rule.CooldownMinutes, dimensionFilters, notifyChannels, notifyConfig,
+		rule.CreatedAt, rule.UpdatedAt,
+	).Scan(&rule.ID)
+}
+
+func (r *OpsRepository) UpdateAlertRule(ctx context.Context, rule *service.OpsAlertRule) error {
+	if rule == nil || rule.ID == 0 {
+		return errors.New("invalid rule")
+	}
+	rule.UpdatedAt = time.Now()
+
+	dimensionFilters, _ := json.Marshal(rule.DimensionFilters)
+	notifyChannels, _ := json.Marshal(rule.NotifyChannels)
+	notifyConfig, _ := json.Marshal(rule.NotifyConfig)
+
+	query := `
+		UPDATE ops_alert_rules SET
+			name = $1, description = $2, enabled = $3, metric_type = $4, operator = $5,
+			threshold = $6, window_minutes = $7, sustained_minutes = $8, severity = $9,
+			notify_email = $10, notify_webhook = $11, webhook_url = $12, cooldown_minutes = $13,
+			dimension_filters = $14, notify_channels = $15, notify_config = $16, updated_at = $17
+		WHERE id = $18
+	`
+	result, err := r.sql.ExecContext(ctx, query,
+		rule.Name, rule.Description, rule.Enabled, rule.MetricType, rule.Operator,
+		rule.Threshold, rule.WindowMinutes, rule.SustainedMinutes, rule.Severity,
+		rule.NotifyEmail, rule.NotifyWebhook, rule.WebhookURL, rule.CooldownMinutes,
+		dimensionFilters, notifyChannels, notifyConfig, rule.UpdatedAt, rule.ID,
+	)
+	if err != nil {
+		return err
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return errors.New("rule not found")
+	}
+	return nil
+}
+
+func (r *OpsRepository) DeleteAlertRule(ctx context.Context, id int64) error {
+	query := `DELETE FROM ops_alert_rules WHERE id = $1`
+	result, err := r.sql.ExecContext(ctx, query, id)
+	if err != nil {
+		return err
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return errors.New("rule not found")
+	}
+	return nil
+}
+
+func (r *OpsRepository) ListAlertEvents(ctx context.Context, limit int) ([]service.OpsAlertEvent, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+
+	query := `
+		SELECT id, rule_id, severity, status, title, description,
+			metric_value, threshold_value, fired_at, resolved_at,
+			email_sent, webhook_sent, created_at
+		FROM ops_alert_events
+		ORDER BY created_at DESC
+		LIMIT $1
+	`
+	rows, err := r.sql.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	events := make([]service.OpsAlertEvent, 0)
+	for rows.Next() {
+		var event service.OpsAlertEvent
+		if err := rows.Scan(
+			&event.ID, &event.RuleID, &event.Severity, &event.Status,
+			&event.Title, &event.Description, &event.MetricValue, &event.ThresholdValue,
+			&event.FiredAt, &event.ResolvedAt, &event.EmailSent, &event.WebhookSent,
+			&event.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+	return events, rows.Err()
+}
+
 func (r *OpsRepository) GetActiveAlertEvent(ctx context.Context, ruleID int64) (*service.OpsAlertEvent, error) {
 	return r.getAlertEvent(ctx, `WHERE rule_id = $1 AND status = $2`, []any{ruleID, service.OpsAlertStatusFiring})
 }
@@ -3463,4 +3578,26 @@ func (r *OpsRepository) GetErrorsByIP(ctx context.Context, ip string, startTime,
 		results = append(results, log)
 	}
 	return results, total, rows.Err()
+}
+
+// DeleteOldErrorLogs deletes error logs older than retentionDays and returns the count of deleted rows.
+func (r *OpsRepository) DeleteOldErrorLogs(ctx context.Context, retentionDays int) (int64, error) {
+	cutoffTime := time.Now().AddDate(0, 0, -retentionDays)
+	query := `DELETE FROM ops_error_logs WHERE created_at < $1`
+	result, err := r.sql.ExecContext(ctx, query, cutoffTime)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// DeleteOldMetrics deletes metrics older than retentionDays for the given windowMinutes and returns the count of deleted rows.
+func (r *OpsRepository) DeleteOldMetrics(ctx context.Context, windowMinutes int, retentionDays int) (int64, error) {
+	cutoffTime := time.Now().AddDate(0, 0, -retentionDays)
+	query := `DELETE FROM ops_metrics WHERE window_minutes = $1 AND created_at < $2`
+	result, err := r.sql.ExecContext(ctx, query, windowMinutes, cutoffTime)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

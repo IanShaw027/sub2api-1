@@ -97,6 +97,13 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		ops.GET("/error-timeseries", h.Admin.Ops.GetErrorTimeseries)
 		ops.GET("/account-status", h.Admin.Ops.GetAccountStatus)
 
+		// Alert rules management
+		ops.GET("/alert-rules", h.Admin.Ops.ListAlertRules)
+		ops.POST("/alert-rules", h.Admin.Ops.CreateAlertRule)
+		ops.PUT("/alert-rules/:id", h.Admin.Ops.UpdateAlertRule)
+		ops.DELETE("/alert-rules/:id", h.Admin.Ops.DeleteAlertRule)
+		ops.GET("/alert-events", h.Admin.Ops.ListAlertEvents)
+
 		// Dashboard routes
 		dashboard := ops.Group("/dashboard")
 		{

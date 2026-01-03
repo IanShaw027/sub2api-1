@@ -66,6 +66,22 @@ func (s *OpsService) ListAlertRules(ctx context.Context) ([]OpsAlertRule, error)
 	return s.repo.ListAlertRules(ctx)
 }
 
+func (s *OpsService) CreateAlertRule(ctx context.Context, rule *OpsAlertRule) error {
+	return s.repo.CreateAlertRule(ctx, rule)
+}
+
+func (s *OpsService) UpdateAlertRule(ctx context.Context, rule *OpsAlertRule) error {
+	return s.repo.UpdateAlertRule(ctx, rule)
+}
+
+func (s *OpsService) DeleteAlertRule(ctx context.Context, id int64) error {
+	return s.repo.DeleteAlertRule(ctx, id)
+}
+
+func (s *OpsService) ListAlertEvents(ctx context.Context, limit int) ([]OpsAlertEvent, error) {
+	return s.repo.ListAlertEvents(ctx, limit)
+}
+
 func (s *OpsService) GetActiveAlertEvent(ctx context.Context, ruleID int64) (*OpsAlertEvent, error) {
 	return s.repo.GetActiveAlertEvent(ctx, ruleID)
 }

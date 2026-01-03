@@ -727,3 +727,82 @@ func (h *OpsHandler) GetErrorsByIP(c *gin.Context) {
 		"errors":    errors,
 	})
 }
+
+// ListAlertRules returns all alert rules.
+// GET /api/v1/admin/ops/alert-rules
+func (h *OpsHandler) ListAlertRules(c *gin.Context) {
+	rules, err := h.opsService.ListAlertRules(c.Request.Context())
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to list alert rules")
+		return
+	}
+	response.Success(c, rules)
+}
+
+// CreateAlertRule creates a new alert rule.
+// POST /api/v1/admin/ops/alert-rules
+func (h *OpsHandler) CreateAlertRule(c *gin.Context) {
+	var rule service.OpsAlertRule
+	if err := c.ShouldBindJSON(&rule); err != nil {
+		response.BadRequest(c, "Invalid request body")
+		return
+	}
+	if err := h.opsService.CreateAlertRule(c.Request.Context(), &rule); err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to create alert rule")
+		return
+	}
+	response.Success(c, rule)
+}
+
+// UpdateAlertRule updates an existing alert rule.
+// PUT /api/v1/admin/ops/alert-rules/:id
+func (h *OpsHandler) UpdateAlertRule(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid rule ID")
+		return
+	}
+	var rule service.OpsAlertRule
+	if err := c.ShouldBindJSON(&rule); err != nil {
+		response.BadRequest(c, "Invalid request body")
+		return
+	}
+	rule.ID = id
+	if err := h.opsService.UpdateAlertRule(c.Request.Context(), &rule); err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to update alert rule")
+		return
+	}
+	response.Success(c, rule)
+}
+
+// DeleteAlertRule deletes an alert rule.
+// DELETE /api/v1/admin/ops/alert-rules/:id
+func (h *OpsHandler) DeleteAlertRule(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid rule ID")
+		return
+	}
+	if err := h.opsService.DeleteAlertRule(c.Request.Context(), id); err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to delete alert rule")
+		return
+	}
+	response.Success(c, nil)
+}
+
+// ListAlertEvents returns alert event history.
+// GET /api/v1/admin/ops/alert-events
+func (h *OpsHandler) ListAlertEvents(c *gin.Context) {
+	limit := 100
+	if v := c.Query("limit"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	events, err := h.opsService.ListAlertEvents(c.Request.Context(), limit)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to list alert events")
+		return
+	}
+	response.Success(c, events)
+}
