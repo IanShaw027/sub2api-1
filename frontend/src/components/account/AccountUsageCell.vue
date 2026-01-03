@@ -186,17 +186,17 @@
 
     <!-- Gemini platform: show quota + local usage window -->
     <template v-else-if="account.platform === 'gemini'">
-      <!-- 账户类型徽章 -->
-      <div v-if="geminiTierLabel" class="mb-1 flex items-center gap-1">
+      <!-- Auth Type + Tier Badge (first line) -->
+      <div v-if="geminiAuthTypeLabel" class="mb-1 flex items-center gap-1">
         <span
           :class="[
             'inline-block rounded px-1.5 py-0.5 text-[10px] font-medium',
             geminiTierClass
           ]"
         >
-          {{ geminiTierLabel }}
+          {{ geminiAuthTypeLabel }}
         </span>
-        <!-- 帮助图标 -->
+        <!-- Help icon -->
         <span
           class="group relative cursor-help"
         >
@@ -220,7 +220,7 @@
               <div><strong>{{ geminiQuotaPolicyChannel }}:</strong></div>
               <div class="pl-2">• {{ geminiQuotaPolicyLimits }}</div>
               <div class="mt-2">
-                <a :href="geminiQuotaPolicyDocsUrl" target="_blank" class="text-blue-400 hover:text-blue-300 underline">
+                <a :href="geminiQuotaPolicyDocsUrl" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline">
                   {{ t('admin.accounts.gemini.quotaPolicy.columns.docs') }} →
                 </a>
               </div>
@@ -572,40 +572,55 @@ const isGeminiCodeAssist = computed(() => {
   return creds?.oauth_type === 'code_assist' || (!creds?.oauth_type && !!creds?.project_id)
 })
 
-// Gemini 账户类型显示标签
-const geminiTierLabel = computed(() => {
-  if (!geminiTier.value) return null
-
+// Gemini 认证类型 + Tier 组合标签（简洁版）
+const geminiAuthTypeLabel = computed(() => {
   const creds = props.account.credentials as GeminiCredentials | undefined
-  const isGoogleOne = creds?.oauth_type === 'google_one'
+  const oauthType = creds?.oauth_type
 
-  if (isGoogleOne) {
-    // Google One tier 标签
+  // For API Key accounts, don't show auth type label
+  if (props.account.type !== 'oauth') return null
+
+  if (oauthType === 'google_one') {
+    // Google One: show "G1" + tier
     const tierMap: Record<string, string> = {
-      AI_PREMIUM: t('admin.accounts.tier.aiPremium'),
-      GOOGLE_ONE_STANDARD: t('admin.accounts.tier.standard'),
-      GOOGLE_ONE_BASIC: t('admin.accounts.tier.basic'),
-      FREE: t('admin.accounts.tier.free'),
-      GOOGLE_ONE_UNKNOWN: t('admin.accounts.tier.personal'),
-      GOOGLE_ONE_UNLIMITED: t('admin.accounts.tier.unlimited')
+      AI_PREMIUM: 'AI Premium',
+      GOOGLE_ONE_STANDARD: 'Standard',
+      GOOGLE_ONE_BASIC: 'Basic',
+      FREE: 'Free',
+      GOOGLE_ONE_UNKNOWN: 'Personal',
+      GOOGLE_ONE_UNLIMITED: 'Unlimited'
     }
-    return tierMap[geminiTier.value] || t('admin.accounts.tier.personal')
+    const tierLabel = geminiTier.value ? tierMap[geminiTier.value] || 'Personal' : 'Personal'
+    return `G1 ${tierLabel}`
+  } else if (oauthType === 'code_assist' || (!oauthType && isGeminiCodeAssist.value)) {
+    // Code Assist: show "CLI" + tier
+    const tierMap: Record<string, string> = {
+      LEGACY: 'Free',
+      PRO: 'Pro',
+      ULTRA: 'Ultra'
+    }
+    const tierLabel = geminiTier.value ? tierMap[geminiTier.value] || 'Free' : 'Free'
+    return `CLI ${tierLabel}`
+  } else if (oauthType === 'ai_studio') {
+    // AI Studio: just show "AI Studio" (no tier)
+    return 'AI Studio'
   }
 
-  // Code Assist tier 标签
-  const tierMap: Record<string, string> = {
-    LEGACY: t('admin.accounts.tier.free'),
-    PRO: t('admin.accounts.tier.pro'),
-    ULTRA: t('admin.accounts.tier.ultra')
-  }
-  return tierMap[geminiTier.value] || null
+  return null
 })
 
 // Gemini 账户类型徽章样式
 const geminiTierClass = computed(() => {
+  const creds = props.account.credentials as GeminiCredentials | undefined
+  const oauthType = creds?.oauth_type
+
+  // AI Studio: use neutral gray color (no tier)
+  if (oauthType === 'ai_studio') {
+    return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+  }
+
   if (!geminiTier.value) return ''
 
-  const creds = props.account.credentials as GeminiCredentials | undefined
   const isGoogleOne = creds?.oauth_type === 'google_one'
 
   if (isGoogleOne) {

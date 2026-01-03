@@ -308,7 +308,12 @@ func TestAPIContracts(t *testing.T) {
 					"contact_info": "support",
 					"doc_url": "https://docs.example.com",
 					"default_concurrency": 5,
-					"default_balance": 1.25
+					"default_balance": 1.25,
+					"enable_model_fallback": false,
+					"fallback_model_anthropic": "claude-3-5-sonnet-20241022",
+					"fallback_model_antigravity": "gemini-2.5-pro",
+					"fallback_model_gemini": "gemini-2.5-pro",
+					"fallback_model_openai": "gpt-4o"
 				}
 			}`,
 		},

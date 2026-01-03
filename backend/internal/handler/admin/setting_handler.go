@@ -34,26 +34,31 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 	}
 
 	response.Success(c, dto.SystemSettings{
-		RegistrationEnabled: settings.RegistrationEnabled,
-		EmailVerifyEnabled:  settings.EmailVerifyEnabled,
-		SmtpHost:            settings.SmtpHost,
-		SmtpPort:            settings.SmtpPort,
-		SmtpUsername:        settings.SmtpUsername,
-		SmtpPassword:        settings.SmtpPassword,
-		SmtpFrom:            settings.SmtpFrom,
-		SmtpFromName:        settings.SmtpFromName,
-		SmtpUseTLS:          settings.SmtpUseTLS,
-		TurnstileEnabled:    settings.TurnstileEnabled,
-		TurnstileSiteKey:    settings.TurnstileSiteKey,
-		TurnstileSecretKey:  settings.TurnstileSecretKey,
-		SiteName:            settings.SiteName,
-		SiteLogo:            settings.SiteLogo,
-		SiteSubtitle:        settings.SiteSubtitle,
-		ApiBaseUrl:          settings.ApiBaseUrl,
-		ContactInfo:         settings.ContactInfo,
-		DocUrl:              settings.DocUrl,
-		DefaultConcurrency:  settings.DefaultConcurrency,
-		DefaultBalance:      settings.DefaultBalance,
+		RegistrationEnabled:      settings.RegistrationEnabled,
+		EmailVerifyEnabled:       settings.EmailVerifyEnabled,
+		SmtpHost:                 settings.SmtpHost,
+		SmtpPort:                 settings.SmtpPort,
+		SmtpUsername:             settings.SmtpUsername,
+		SmtpPassword:             settings.SmtpPassword,
+		SmtpFrom:                 settings.SmtpFrom,
+		SmtpFromName:             settings.SmtpFromName,
+		SmtpUseTLS:               settings.SmtpUseTLS,
+		TurnstileEnabled:         settings.TurnstileEnabled,
+		TurnstileSiteKey:         settings.TurnstileSiteKey,
+		TurnstileSecretKey:       settings.TurnstileSecretKey,
+		SiteName:                 settings.SiteName,
+		SiteLogo:                 settings.SiteLogo,
+		SiteSubtitle:             settings.SiteSubtitle,
+		ApiBaseUrl:               settings.ApiBaseUrl,
+		ContactInfo:              settings.ContactInfo,
+		DocUrl:                   settings.DocUrl,
+		DefaultConcurrency:       settings.DefaultConcurrency,
+		DefaultBalance:           settings.DefaultBalance,
+		EnableModelFallback:      settings.EnableModelFallback,
+		FallbackModelAnthropic:   settings.FallbackModelAnthropic,
+		FallbackModelOpenAI:      settings.FallbackModelOpenAI,
+		FallbackModelGemini:      settings.FallbackModelGemini,
+		FallbackModelAntigravity: settings.FallbackModelAntigravity,
 	})
 }
 
@@ -88,6 +93,13 @@ type UpdateSettingsRequest struct {
 	// 默认配置
 	DefaultConcurrency int     `json:"default_concurrency"`
 	DefaultBalance     float64 `json:"default_balance"`
+
+	// Model fallback configuration
+	EnableModelFallback      bool   `json:"enable_model_fallback"`
+	FallbackModelAnthropic   string `json:"fallback_model_anthropic"`
+	FallbackModelOpenAI      string `json:"fallback_model_openai"`
+	FallbackModelGemini      string `json:"fallback_model_gemini"`
+	FallbackModelAntigravity string `json:"fallback_model_antigravity"`
 }
 
 // UpdateSettings 更新系统设置
@@ -141,26 +153,31 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	}
 
 	settings := &service.SystemSettings{
-		RegistrationEnabled: req.RegistrationEnabled,
-		EmailVerifyEnabled:  req.EmailVerifyEnabled,
-		SmtpHost:            req.SmtpHost,
-		SmtpPort:            req.SmtpPort,
-		SmtpUsername:        req.SmtpUsername,
-		SmtpPassword:        req.SmtpPassword,
-		SmtpFrom:            req.SmtpFrom,
-		SmtpFromName:        req.SmtpFromName,
-		SmtpUseTLS:          req.SmtpUseTLS,
-		TurnstileEnabled:    req.TurnstileEnabled,
-		TurnstileSiteKey:    req.TurnstileSiteKey,
-		TurnstileSecretKey:  req.TurnstileSecretKey,
-		SiteName:            req.SiteName,
-		SiteLogo:            req.SiteLogo,
-		SiteSubtitle:        req.SiteSubtitle,
-		ApiBaseUrl:          req.ApiBaseUrl,
-		ContactInfo:         req.ContactInfo,
-		DocUrl:              req.DocUrl,
-		DefaultConcurrency:  req.DefaultConcurrency,
-		DefaultBalance:      req.DefaultBalance,
+		RegistrationEnabled:      req.RegistrationEnabled,
+		EmailVerifyEnabled:       req.EmailVerifyEnabled,
+		SmtpHost:                 req.SmtpHost,
+		SmtpPort:                 req.SmtpPort,
+		SmtpUsername:             req.SmtpUsername,
+		SmtpPassword:             req.SmtpPassword,
+		SmtpFrom:                 req.SmtpFrom,
+		SmtpFromName:             req.SmtpFromName,
+		SmtpUseTLS:               req.SmtpUseTLS,
+		TurnstileEnabled:         req.TurnstileEnabled,
+		TurnstileSiteKey:         req.TurnstileSiteKey,
+		TurnstileSecretKey:       req.TurnstileSecretKey,
+		SiteName:                 req.SiteName,
+		SiteLogo:                 req.SiteLogo,
+		SiteSubtitle:             req.SiteSubtitle,
+		ApiBaseUrl:               req.ApiBaseUrl,
+		ContactInfo:              req.ContactInfo,
+		DocUrl:                   req.DocUrl,
+		DefaultConcurrency:       req.DefaultConcurrency,
+		DefaultBalance:           req.DefaultBalance,
+		EnableModelFallback:      req.EnableModelFallback,
+		FallbackModelAnthropic:   req.FallbackModelAnthropic,
+		FallbackModelOpenAI:      req.FallbackModelOpenAI,
+		FallbackModelGemini:      req.FallbackModelGemini,
+		FallbackModelAntigravity: req.FallbackModelAntigravity,
 	}
 
 	if err := h.settingService.UpdateSettings(c.Request.Context(), settings); err != nil {
@@ -176,26 +193,31 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	}
 
 	response.Success(c, dto.SystemSettings{
-		RegistrationEnabled: updatedSettings.RegistrationEnabled,
-		EmailVerifyEnabled:  updatedSettings.EmailVerifyEnabled,
-		SmtpHost:            updatedSettings.SmtpHost,
-		SmtpPort:            updatedSettings.SmtpPort,
-		SmtpUsername:        updatedSettings.SmtpUsername,
-		SmtpPassword:        updatedSettings.SmtpPassword,
-		SmtpFrom:            updatedSettings.SmtpFrom,
-		SmtpFromName:        updatedSettings.SmtpFromName,
-		SmtpUseTLS:          updatedSettings.SmtpUseTLS,
-		TurnstileEnabled:    updatedSettings.TurnstileEnabled,
-		TurnstileSiteKey:    updatedSettings.TurnstileSiteKey,
-		TurnstileSecretKey:  updatedSettings.TurnstileSecretKey,
-		SiteName:            updatedSettings.SiteName,
-		SiteLogo:            updatedSettings.SiteLogo,
-		SiteSubtitle:        updatedSettings.SiteSubtitle,
-		ApiBaseUrl:          updatedSettings.ApiBaseUrl,
-		ContactInfo:         updatedSettings.ContactInfo,
-		DocUrl:              updatedSettings.DocUrl,
-		DefaultConcurrency:  updatedSettings.DefaultConcurrency,
-		DefaultBalance:      updatedSettings.DefaultBalance,
+		RegistrationEnabled:      updatedSettings.RegistrationEnabled,
+		EmailVerifyEnabled:       updatedSettings.EmailVerifyEnabled,
+		SmtpHost:                 updatedSettings.SmtpHost,
+		SmtpPort:                 updatedSettings.SmtpPort,
+		SmtpUsername:             updatedSettings.SmtpUsername,
+		SmtpPassword:             updatedSettings.SmtpPassword,
+		SmtpFrom:                 updatedSettings.SmtpFrom,
+		SmtpFromName:             updatedSettings.SmtpFromName,
+		SmtpUseTLS:               updatedSettings.SmtpUseTLS,
+		TurnstileEnabled:         updatedSettings.TurnstileEnabled,
+		TurnstileSiteKey:         updatedSettings.TurnstileSiteKey,
+		TurnstileSecretKey:       updatedSettings.TurnstileSecretKey,
+		SiteName:                 updatedSettings.SiteName,
+		SiteLogo:                 updatedSettings.SiteLogo,
+		SiteSubtitle:             updatedSettings.SiteSubtitle,
+		ApiBaseUrl:               updatedSettings.ApiBaseUrl,
+		ContactInfo:              updatedSettings.ContactInfo,
+		DocUrl:                   updatedSettings.DocUrl,
+		DefaultConcurrency:       updatedSettings.DefaultConcurrency,
+		DefaultBalance:           updatedSettings.DefaultBalance,
+		EnableModelFallback:      updatedSettings.EnableModelFallback,
+		FallbackModelAnthropic:   updatedSettings.FallbackModelAnthropic,
+		FallbackModelOpenAI:      updatedSettings.FallbackModelOpenAI,
+		FallbackModelGemini:      updatedSettings.FallbackModelGemini,
+		FallbackModelAntigravity: updatedSettings.FallbackModelAntigravity,
 	})
 }
 

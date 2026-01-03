@@ -132,6 +132,9 @@ export default {
     noOptionsFound: '无匹配选项',
     saving: '保存中...',
     refresh: '刷新',
+    notAvailable: '不可用',
+    now: '现在',
+    unknown: '未知',
     time: {
       never: '从未',
       justNow: '刚刚',
@@ -1056,6 +1059,54 @@ export default {
         error: '错误',
         cooldown: '冷却中'
       },
+      status: {
+        paused: '已暂停',
+        limited: '受限',
+        tempUnschedulable: '临时不可调度'
+      },
+      tempUnschedulable: {
+        title: '临时不可调度',
+        statusTitle: '临时不可调度状态',
+        hint: '当错误码与关键词同时匹配时，账号会在指定时间内被临时禁用。',
+        notice: '规则按顺序匹配，需同时满足错误码与关键词。',
+        addRule: '添加规则',
+        ruleOrder: '规则序号',
+        ruleIndex: '规则 #{index}',
+        errorCode: '错误码',
+        errorCodePlaceholder: '例如 429',
+        durationMinutes: '持续时间（分钟）',
+        durationPlaceholder: '例如 30',
+        keywords: '关键词',
+        keywordsPlaceholder: '例如 overloaded, too many requests',
+        keywordsHint: '多个关键词用逗号分隔，匹配时必须命中其中之一。',
+        description: '描述',
+        descriptionPlaceholder: '可选，便于记忆规则用途',
+        rulesInvalid: '请至少填写一条包含错误码、关键词和时长的规则。',
+        viewDetails: '查看临时不可调度详情',
+        accountName: '账号',
+        triggeredAt: '触发时间',
+        until: '解除时间',
+        remaining: '剩余时间',
+        matchedKeyword: '匹配关键词',
+        errorMessage: '错误详情',
+        reset: '重置状态',
+        resetSuccess: '临时不可调度已重置',
+        resetFailed: '重置临时不可调度失败',
+        failedToLoad: '加载临时不可调度状态失败',
+        notActive: '当前账号未处于临时不可调度状态。',
+        expired: '已到期',
+        remainingMinutes: '约 {minutes} 分钟',
+        remainingHours: '约 {hours} 小时',
+        remainingHoursMinutes: '约 {hours} 小时 {minutes} 分钟',
+        presets: {
+          overloadLabel: '529 过载',
+          overloadDesc: '服务过载 - 暂停 60 分钟',
+          rateLimitLabel: '429 限流',
+          rateLimitDesc: '触发限流 - 暂停 10 分钟',
+          unavailableLabel: '503 维护',
+          unavailableDesc: '服务不可用 - 暂停 30 分钟'
+        }
+      },
       usageWindow: {
         statsTitle: '5小时窗口用量统计',
         statsTitleDaily: '每日用量统计',
@@ -1760,6 +1811,7 @@ export default {
         siteKey: '站点密钥',
         secretKey: '私密密钥',
         siteKeyHint: '从 Cloudflare Dashboard 获取',
+        cloudflareDashboard: 'Cloudflare Dashboard',
         secretKeyHint: '服务端验证密钥（请保密）'
       },
       defaults: {
@@ -1907,6 +1959,7 @@ export default {
     description: '查看您的订阅计划和用量',
     noActiveSubscriptions: '暂无有效订阅',
     noActiveSubscriptionsDesc: '您没有任何有效订阅。请联系管理员获取订阅。',
+    failedToLoad: '加载订阅失败',
     status: {
       active: '有效',
       expired: '已过期',

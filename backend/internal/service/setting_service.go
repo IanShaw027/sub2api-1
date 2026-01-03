@@ -123,6 +123,13 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	updates[SettingKeyDefaultConcurrency] = strconv.Itoa(settings.DefaultConcurrency)
 	updates[SettingKeyDefaultBalance] = strconv.FormatFloat(settings.DefaultBalance, 'f', 8, 64)
 
+	// Model fallback configuration
+	updates[SettingKeyEnableModelFallback] = strconv.FormatBool(settings.EnableModelFallback)
+	updates[SettingKeyFallbackModelAnthropic] = settings.FallbackModelAnthropic
+	updates[SettingKeyFallbackModelOpenAI] = settings.FallbackModelOpenAI
+	updates[SettingKeyFallbackModelGemini] = settings.FallbackModelGemini
+	updates[SettingKeyFallbackModelAntigravity] = settings.FallbackModelAntigravity
+
 	return s.settingRepo.SetMultiple(ctx, updates)
 }
 
@@ -200,6 +207,12 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyDefaultBalance:      strconv.FormatFloat(s.cfg.Default.UserBalance, 'f', 8, 64),
 		SettingKeySmtpPort:            "587",
 		SettingKeySmtpUseTLS:          "false",
+		// Model fallback defaults
+		SettingKeyEnableModelFallback:      "false",
+		SettingKeyFallbackModelAnthropic:   "claude-3-5-sonnet-20241022",
+		SettingKeyFallbackModelOpenAI:      "gpt-4o",
+		SettingKeyFallbackModelGemini:      "gemini-2.5-pro",
+		SettingKeyFallbackModelAntigravity: "gemini-2.5-pro",
 	}
 
 	return s.settingRepo.SetMultiple(ctx, defaults)
@@ -248,6 +261,13 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	// 敏感信息直接返回，方便测试连接时使用
 	result.SmtpPassword = settings[SettingKeySmtpPassword]
 	result.TurnstileSecretKey = settings[SettingKeyTurnstileSecretKey]
+
+	// Model fallback settings
+	result.EnableModelFallback = settings[SettingKeyEnableModelFallback] == "true"
+	result.FallbackModelAnthropic = s.getStringOrDefault(settings, SettingKeyFallbackModelAnthropic, "claude-3-5-sonnet-20241022")
+	result.FallbackModelOpenAI = s.getStringOrDefault(settings, SettingKeyFallbackModelOpenAI, "gpt-4o")
+	result.FallbackModelGemini = s.getStringOrDefault(settings, SettingKeyFallbackModelGemini, "gemini-2.5-pro")
+	result.FallbackModelAntigravity = s.getStringOrDefault(settings, SettingKeyFallbackModelAntigravity, "gemini-2.5-pro")
 
 	return result
 }
@@ -336,4 +356,42 @@ func (s *SettingService) GetAdminApiKey(ctx context.Context) (string, error) {
 // DeleteAdminApiKey 删除管理员 API Key
 func (s *SettingService) DeleteAdminApiKey(ctx context.Context) error {
 	return s.settingRepo.Delete(ctx, SettingKeyAdminApiKey)
+}
+
+// IsModelFallbackEnabled 检查是否启用模型兜底机制
+func (s *SettingService) IsModelFallbackEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyEnableModelFallback)
+	if err != nil {
+		return false // Default: disabled
+	}
+	return value == "true"
+}
+
+// GetFallbackModel 获取指定平台的兜底模型
+func (s *SettingService) GetFallbackModel(ctx context.Context, platform string) string {
+	var key string
+	var defaultModel string
+
+	switch platform {
+	case PlatformAnthropic:
+		key = SettingKeyFallbackModelAnthropic
+		defaultModel = "claude-3-5-sonnet-20241022"
+	case PlatformOpenAI:
+		key = SettingKeyFallbackModelOpenAI
+		defaultModel = "gpt-4o"
+	case PlatformGemini:
+		key = SettingKeyFallbackModelGemini
+		defaultModel = "gemini-2.5-pro"
+	case PlatformAntigravity:
+		key = SettingKeyFallbackModelAntigravity
+		defaultModel = "gemini-2.5-pro"
+	default:
+		return ""
+	}
+
+	value, err := s.settingRepo.GetValue(ctx, key)
+	if err != nil || value == "" {
+		return defaultModel
+	}
+	return value
 }

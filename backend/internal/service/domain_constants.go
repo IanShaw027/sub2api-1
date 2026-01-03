@@ -94,6 +94,13 @@ const (
 
 	// Gemini 配额策略（JSON）
 	SettingKeyGeminiQuotaPolicy = "gemini_quota_policy"
+
+	// Model fallback settings
+	SettingKeyEnableModelFallback      = "enable_model_fallback"
+	SettingKeyFallbackModelAnthropic   = "fallback_model_anthropic"
+	SettingKeyFallbackModelOpenAI      = "fallback_model_openai"
+	SettingKeyFallbackModelGemini      = "fallback_model_gemini"
+	SettingKeyFallbackModelAntigravity = "fallback_model_antigravity"
 )
 
 // Admin API Key prefix (distinct from user "sk-" keys)

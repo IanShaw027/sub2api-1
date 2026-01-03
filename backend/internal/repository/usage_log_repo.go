@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -70,6 +71,9 @@ func (r *usageLogRepository) Create(ctx context.Context, log *service.UsageLog) 
 		createdAt = time.Now()
 	}
 
+	requestID := strings.TrimSpace(log.RequestID)
+	log.RequestID = requestID
+
 	rateMultiplier := log.RateMultiplier
 
 	query := `
@@ -107,6 +111,7 @@ func (r *usageLogRepository) Create(ctx context.Context, log *service.UsageLog) 
 			$14, $15, $16, $17, $18, $19,
 			$20, $21, $22, $23, $24, $25
 		)
+		ON CONFLICT (request_id, api_key_id) DO NOTHING
 		RETURNING id, created_at
 	`
 
@@ -115,11 +120,16 @@ func (r *usageLogRepository) Create(ctx context.Context, log *service.UsageLog) 
 	duration := nullInt(log.DurationMs)
 	firstToken := nullInt(log.FirstTokenMs)
 
+	var requestIDArg any
+	if requestID != "" {
+		requestIDArg = requestID
+	}
+
 	args := []any{
 		log.UserID,
 		log.ApiKeyID,
 		log.AccountID,
-		log.RequestID,
+		requestIDArg,
 		log.Model,
 		groupID,
 		subscriptionID,
@@ -143,7 +153,14 @@ func (r *usageLogRepository) Create(ctx context.Context, log *service.UsageLog) 
 		createdAt,
 	}
 	if err := scanSingleRow(ctx, r.sql, query, args, &log.ID, &log.CreatedAt); err != nil {
-		return err
+		if errors.Is(err, sql.ErrNoRows) && requestID != "" {
+			selectQuery := "SELECT id, created_at FROM usage_logs WHERE request_id = $1 AND api_key_id = $2"
+			if err := scanSingleRow(ctx, r.sql, selectQuery, []any{requestID, log.ApiKeyID}, &log.ID, &log.CreatedAt); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
 	}
 	log.RateMultiplier = rateMultiplier
 	return nil

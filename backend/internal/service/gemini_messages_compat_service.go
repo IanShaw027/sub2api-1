@@ -539,7 +539,14 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+		tempMatched := false
+		if s.rateLimitService != nil {
+			tempMatched = s.rateLimitService.HandleTempUnschedulable(ctx, account, resp.StatusCode, respBody)
+		}
 		s.handleGeminiUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+		if tempMatched {
+			return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode}
+		}
 		if s.shouldFailoverGeminiUpstreamError(resp.StatusCode) {
 			return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode}
 		}
@@ -825,6 +832,10 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+		tempMatched := false
+		if s.rateLimitService != nil {
+			tempMatched = s.rateLimitService.HandleTempUnschedulable(ctx, account, resp.StatusCode, respBody)
+		}
 		s.handleGeminiUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
 
 		// Best-effort fallback for OAuth tokens missing AI Studio scopes when calling countTokens.
@@ -842,6 +853,9 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 			}, nil
 		}
 
+		if tempMatched {
+			return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode}
+		}
 		if s.shouldFailoverGeminiUpstreamError(resp.StatusCode) {
 			return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode}
 		}
@@ -2177,10 +2191,12 @@ func convertClaudeMessagesToGeminiContents(messages any, toolUseIDToName map[str
 		parts := make([]any, 0)
 		switch content := mm["content"].(type) {
 		case string:
-			if strings.TrimSpace(content) != "" {
-				parts = append(parts, map[string]any{"text": content})
-			}
+			// 字符串形式的 content，保留所有内容（包括空白）
+			parts = append(parts, map[string]any{"text": content})
 		case []any:
+			// 如果只有一个 block，不过滤空白（让上游 API 报错）
+			singleBlock := len(content) == 1
+
 			for _, block := range content {
 				bm, ok := block.(map[string]any)
 				if !ok {
@@ -2189,8 +2205,12 @@ func convertClaudeMessagesToGeminiContents(messages any, toolUseIDToName map[str
 				bt, _ := bm["type"].(string)
 				switch bt {
 				case "text":
-					if text, ok := bm["text"].(string); ok && strings.TrimSpace(text) != "" {
-						parts = append(parts, map[string]any{"text": text})
+					if text, ok := bm["text"].(string); ok {
+						// 单个 block 时保留所有内容（包括空白）
+						// 多个 blocks 时过滤掉空白
+						if singleBlock || strings.TrimSpace(text) != "" {
+							parts = append(parts, map[string]any{"text": text})
+						}
 					}
 				case "tool_use":
 					id, _ := bm["id"].(string)

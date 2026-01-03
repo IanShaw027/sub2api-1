@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
@@ -40,6 +42,7 @@ func (s *UsageLogRepoSuite) createUsageLog(user *service.User, apiKey *service.A
 		UserID:       user.ID,
 		ApiKeyID:     apiKey.ID,
 		AccountID:    account.ID,
+		RequestID:    uuid.New().String(), // Generate unique RequestID for each log
 		Model:        "claude-3",
 		InputTokens:  inputTokens,
 		OutputTokens: outputTokens,

@@ -135,6 +135,9 @@ export default {
     noOptionsFound: 'No options found',
     saving: 'Saving...',
     refresh: 'Refresh',
+    notAvailable: 'N/A',
+    now: 'Now',
+    unknown: 'Unknown',
     time: {
       never: 'Never',
       justNow: 'Just now',
@@ -930,6 +933,54 @@ export default {
         codeAssist: 'Code Assist',
         antigravityOauth: 'Antigravity OAuth'
       },
+      status: {
+        paused: 'Paused',
+        limited: 'Limited',
+        tempUnschedulable: 'Temp Unschedulable'
+      },
+      tempUnschedulable: {
+        title: 'Temp Unschedulable',
+        statusTitle: 'Temp Unschedulable Status',
+        hint: 'Disable accounts temporarily when error code and keyword both match.',
+        notice: 'Rules are evaluated in order and require both error code and keyword match.',
+        addRule: 'Add Rule',
+        ruleOrder: 'Rule Order',
+        ruleIndex: 'Rule #{index}',
+        errorCode: 'Error Code',
+        errorCodePlaceholder: 'e.g. 429',
+        durationMinutes: 'Duration (minutes)',
+        durationPlaceholder: 'e.g. 30',
+        keywords: 'Keywords',
+        keywordsPlaceholder: 'e.g. overloaded, too many requests',
+        keywordsHint: 'Separate keywords with commas; any keyword match will trigger.',
+        description: 'Description',
+        descriptionPlaceholder: 'Optional note for this rule',
+        rulesInvalid: 'Add at least one rule with error code, keywords, and duration.',
+        viewDetails: 'View temp unschedulable details',
+        accountName: 'Account',
+        triggeredAt: 'Triggered At',
+        until: 'Until',
+        remaining: 'Remaining',
+        matchedKeyword: 'Matched Keyword',
+        errorMessage: 'Error Details',
+        reset: 'Reset Status',
+        resetSuccess: 'Temp unschedulable status reset',
+        resetFailed: 'Failed to reset temp unschedulable status',
+        failedToLoad: 'Failed to load temp unschedulable status',
+        notActive: 'This account is not temporarily unschedulable.',
+        expired: 'Expired',
+        remainingMinutes: 'About {minutes} minutes',
+        remainingHours: 'About {hours} hours',
+        remainingHoursMinutes: 'About {hours} hours {minutes} minutes',
+        presets: {
+          overloadLabel: '529 Overloaded',
+          overloadDesc: 'Overloaded - pause 60 minutes',
+          rateLimitLabel: '429 Rate Limit',
+          rateLimitDesc: 'Rate limited - pause 10 minutes',
+          unavailableLabel: '503 Unavailable',
+          unavailableDesc: 'Unavailable - pause 30 minutes'
+        }
+      },
       columns: {
         name: 'Name',
         platformType: 'Platform/Type',
@@ -1564,6 +1615,7 @@ export default {
         siteKey: 'Site Key',
         secretKey: 'Secret Key',
         siteKeyHint: 'Get this from your Cloudflare Dashboard',
+        cloudflareDashboard: 'Cloudflare Dashboard',
         secretKeyHint: 'Server-side verification key (keep this secret)'
       },
       defaults: {
@@ -1714,6 +1766,7 @@ export default {
     noActiveSubscriptions: 'No Active Subscriptions',
     noActiveSubscriptionsDesc:
       "You don't have any active subscriptions. Contact administrator to get one.",
+    failedToLoad: 'Failed to load subscriptions',
     status: {
       active: 'Active',
       expired: 'Expired',
