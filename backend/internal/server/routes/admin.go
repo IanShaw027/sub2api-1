@@ -82,8 +82,20 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	{
 		ops.GET("/metrics", h.Admin.Ops.GetMetrics)
 		ops.GET("/metrics/history", h.Admin.Ops.ListMetricsHistory)
-		ops.GET("/errors", h.Admin.Ops.GetErrorLogs)
-		ops.GET("/error-logs", h.Admin.Ops.ListErrorLogs)
+
+		// Error logs endpoints
+		ops.GET("/errors", h.Admin.Ops.GetErrorLogs)          // Paginated list (page/page_size)
+		ops.GET("/errors/:id", h.Admin.Ops.GetErrorDetail)    // Single error detail
+		ops.GET("/error-logs", h.Admin.Ops.ListErrorLogs)     // Simple list (limit filter)
+
+		// IP-based error statistics
+		ops.GET("/errors/by-ip", h.Admin.OpsMonitoring.GetErrorStatsByIP)
+		ops.GET("/errors/by-ip/:ip", h.Admin.OpsMonitoring.GetErrorsByIP)
+
+		// Additional monitoring endpoints
+		ops.GET("/error-stats", h.Admin.OpsMonitoring.GetErrorStats)
+		ops.GET("/error-timeseries", h.Admin.OpsMonitoring.GetErrorTimeseries)
+		ops.GET("/account-status", h.Admin.OpsMonitoring.GetAccountStatus)
 
 		// Dashboard routes
 		dashboard := ops.Group("/dashboard")

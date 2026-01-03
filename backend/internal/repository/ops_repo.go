@@ -90,6 +90,13 @@ func (r *OpsRepository) CreateErrorLog(ctx context.Context, log *service.OpsErro
 			retry_count,
 			completion_status,
 			duration_ms,
+			time_to_first_token_ms,
+			auth_latency_ms,
+			routing_latency_ms,
+			upstream_latency_ms,
+			response_latency_ms,
+			request_body,
+			user_agent,
 			error_source,
 			error_owner,
 			account_status,
@@ -105,7 +112,8 @@ func (r *OpsRepository) CreateErrorLog(ctx context.Context, log *service.OpsErro
 			$16, $17, $18, $19, $20,
 			$21, $22, $23, $24, $25,
 			$26, $27, $28, $29, $30,
-			$31
+			$31, $32, $33, $34, $35,
+			$36, $37, $38
 		)
 		RETURNING id, created_at
 	`
@@ -120,6 +128,7 @@ func (r *OpsRepository) CreateErrorLog(ctx context.Context, log *service.OpsErro
 	providerErrorCode := nullString(log.ProviderErrorCode)
 	providerErrorType := nullString(log.ProviderErrorType)
 	completionStatus := nullString(log.CompletionStatus)
+	userAgent := nullString(log.UserAgent)
 
 	// For backward compatibility: use DurationMs if available, otherwise fall back to LatencyMs
 	var durationMs sql.NullInt64
@@ -127,6 +136,18 @@ func (r *OpsRepository) CreateErrorLog(ctx context.Context, log *service.OpsErro
 		durationMs = sql.NullInt64{Int64: int64(*log.DurationMs), Valid: true}
 	} else if log.LatencyMs != nil {
 		durationMs = sql.NullInt64{Int64: int64(*log.LatencyMs), Valid: true}
+	}
+
+	timeToFirstTokenMs := nullInt64Ptr(log.TimeToFirstTokenMs)
+	authLatencyMs := nullInt64Ptr(log.AuthLatencyMs)
+	routingLatencyMs := nullInt64Ptr(log.RoutingLatencyMs)
+	upstreamLatencyMs := nullInt64Ptr(log.UpstreamLatencyMs)
+	responseLatencyMs := nullInt64Ptr(log.ResponseLatencyMs)
+
+	// Handle request_body as JSONB (can be nil)
+	var requestBody sql.NullString
+	if log.RequestBody != "" {
+		requestBody = sql.NullString{String: log.RequestBody, Valid: true}
 	}
 
 	args := []any{
@@ -153,6 +174,13 @@ func (r *OpsRepository) CreateErrorLog(ctx context.Context, log *service.OpsErro
 		log.RetryCount,
 		completionStatus,
 		durationMs,
+		timeToFirstTokenMs,
+		authLatencyMs,
+		routingLatencyMs,
+		upstreamLatencyMs,
+		responseLatencyMs,
+		requestBody,
+		userAgent,
 		nullString(log.ErrorSource),
 		nullString(log.ErrorOwner),
 		nullString(log.AccountStatus),
@@ -3320,4 +3348,121 @@ func (r *OpsRepository) GetActiveAccounts(ctx context.Context) ([]int64, error) 
 		accounts = append(accounts, accountID)
 	}
 	return accounts, rows.Err()
+}
+
+// GetErrorStatsByIP 获取IP错误统计
+func (r *OpsRepository) GetErrorStatsByIP(ctx context.Context, startTime, endTime time.Time, limit int, sortBy, sortOrder string) ([]service.IPErrorStats, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if sortBy != "error_count" && sortBy != "last_error_time" {
+		sortBy = "error_count"
+	}
+	if sortOrder != "asc" && sortOrder != "desc" {
+		sortOrder = "desc"
+	}
+
+	query := fmt.Sprintf(`
+		WITH error_type_counts AS (
+			SELECT
+				client_ip,
+				error_type,
+				COUNT(*) as type_count,
+				MIN(created_at) as first_error,
+				MAX(created_at) as last_error
+			FROM ops_error_logs
+			WHERE created_at >= $1 AND created_at < $2
+				AND client_ip IS NOT NULL AND client_ip != ''
+			GROUP BY client_ip, error_type
+		)
+		SELECT
+			client_ip,
+			SUM(type_count) as error_count,
+			MIN(first_error) as first_error_time,
+			MAX(last_error) as last_error_time,
+			jsonb_object_agg(error_type, type_count) as error_types
+		FROM error_type_counts
+		GROUP BY client_ip
+		ORDER BY %s %s
+		LIMIT $3
+	`, sortBy, sortOrder)
+
+	rows, err := r.sql.QueryContext(ctx, query, startTime, endTime, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []service.IPErrorStats
+	for rows.Next() {
+		var stat service.IPErrorStats
+		var errorTypesJSON []byte
+		if err := rows.Scan(&stat.ClientIP, &stat.ErrorCount, &stat.FirstErrorTime, &stat.LastErrorTime, &errorTypesJSON); err != nil {
+			return nil, err
+		}
+		if len(errorTypesJSON) > 0 {
+			if err := json.Unmarshal(errorTypesJSON, &stat.ErrorTypes); err != nil {
+				return nil, err
+			}
+		}
+		results = append(results, stat)
+	}
+	return results, rows.Err()
+}
+
+// GetErrorsByIP 获取特定IP的错误详情
+func (r *OpsRepository) GetErrorsByIP(ctx context.Context, ip string, startTime, endTime time.Time, page, pageSize int) ([]service.OpsErrorLog, int64, error) {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 50
+	}
+
+	countQuery := `
+		SELECT COUNT(*)
+		FROM ops_error_logs
+		WHERE client_ip = $1 AND created_at >= $2 AND created_at < $3
+	`
+	var total int64
+	if err := r.sql.QueryRowContext(ctx, countQuery, ip, startTime, endTime).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	query := `
+		SELECT
+			id, created_at, error_type, error_message, request_path,
+			user_id, duration_ms, status_code, platform, model
+		FROM ops_error_logs
+		WHERE client_ip = $1 AND created_at >= $2 AND created_at < $3
+		ORDER BY created_at DESC
+		LIMIT $4 OFFSET $5
+	`
+
+	offset := (page - 1) * pageSize
+	rows, err := r.sql.QueryContext(ctx, query, ip, startTime, endTime, pageSize, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var results []service.OpsErrorLog
+	for rows.Next() {
+		var log service.OpsErrorLog
+		var userID sql.NullInt64
+		var durationMs sql.NullInt64
+		if err := rows.Scan(&log.ID, &log.CreatedAt, &log.Type, &log.Message, &log.RequestPath, &userID, &durationMs, &log.StatusCode, &log.Platform, &log.Model); err != nil {
+			return nil, 0, err
+		}
+		if userID.Valid {
+			uid := userID.Int64
+			log.UserID = &uid
+		}
+		if durationMs.Valid {
+			dm := int(durationMs.Int64)
+			log.DurationMs = &dm
+		}
+		results = append(results, log)
+	}
+	return results, total, rows.Err()
 }

@@ -4,6 +4,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -399,4 +400,32 @@ func (h *OpsHandler) GetErrorDistribution(c *gin.Context) {
 	response.Success(c, gin.H{
 		"items": items,
 	})
+}
+
+// GetErrorDetail returns detailed information for a specific error log by ID.
+// GET /api/v1/admin/ops/errors/:id
+func (h *OpsHandler) GetErrorDetail(c *gin.Context) {
+	idStr := c.Param("id")
+	if idStr == "" {
+		response.BadRequest(c, "Error ID is required")
+		return
+	}
+
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, "Invalid error ID")
+		return
+	}
+
+	errorLog, err := h.opsService.GetErrorLogByID(c.Request.Context(), id)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			response.Error(c, http.StatusNotFound, "Error log not found")
+		} else {
+			response.Error(c, http.StatusInternalServerError, "Failed to get error detail")
+		}
+		return
+	}
+
+	response.Success(c, errorLog)
 }
