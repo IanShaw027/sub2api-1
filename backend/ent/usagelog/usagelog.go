@@ -60,8 +60,8 @@ const (
 	FieldStream = "stream"
 	// FieldDurationMs holds the string denoting the duration_ms field in the database.
 	FieldDurationMs = "duration_ms"
-	// FieldFirstTokenMs holds the string denoting the first_token_ms field in the database.
-	FieldFirstTokenMs = "first_token_ms"
+	// FieldTimeToFirstTokenMs holds the string denoting the time_to_first_token_ms field in the database.
+	FieldTimeToFirstTokenMs = "time_to_first_token_ms"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// EdgeUser holds the string denoting the user edge name in mutations.
@@ -139,7 +139,7 @@ var Columns = []string{
 	FieldBillingType,
 	FieldStream,
 	FieldDurationMs,
-	FieldFirstTokenMs,
+	FieldTimeToFirstTokenMs,
 	FieldCreatedAt,
 }
 
@@ -315,9 +315,9 @@ func ByDurationMs(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldDurationMs, opts...).ToFunc()
 }
 
-// ByFirstTokenMs orders the results by the first_token_ms field.
-func ByFirstTokenMs(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldFirstTokenMs, opts...).ToFunc()
+// ByTimeToFirstTokenMs orders the results by the time_to_first_token_ms field.
+func ByTimeToFirstTokenMs(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTimeToFirstTokenMs, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.

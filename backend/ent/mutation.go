@@ -36,19 +36,19 @@ const (
 	OpUpdateOne = ent.OpUpdateOne
 
 	// Node types.
-	TypeAPIKey           = "APIKey"
-	TypeAccount          = "Account"
-	TypeAccountGroup     = "AccountGroup"
-	TypeGroup            = "Group"
-	TypeProxy            = "Proxy"
-	TypeRedeemCode       = "RedeemCode"
-	TypeSetting          = "Setting"
-	TypeUsageLog         = "UsageLog"
-	TypeUser             = "User"
-	TypeUserAllowedGroup = "UserAllowedGroup"
+	TypeAPIKey                  = "APIKey"
+	TypeAccount                 = "Account"
+	TypeAccountGroup            = "AccountGroup"
+	TypeGroup                   = "Group"
+	TypeProxy                   = "Proxy"
+	TypeRedeemCode              = "RedeemCode"
+	TypeSetting                 = "Setting"
+	TypeUsageLog                = "UsageLog"
+	TypeUser                    = "User"
+	TypeUserAllowedGroup        = "UserAllowedGroup"
 	TypeUserAttributeDefinition = "UserAttributeDefinition"
 	TypeUserAttributeValue      = "UserAttributeValue"
-	TypeUserSubscription = "UserSubscription"
+	TypeUserSubscription        = "UserSubscription"
 )
 
 // APIKeyMutation represents an operation that mutates the APIKey nodes in the graph.
@@ -7711,8 +7711,8 @@ type UsageLogMutation struct {
 	stream                      *bool
 	duration_ms                 *int
 	addduration_ms              *int
-	first_token_ms              *int
-	addfirst_token_ms           *int
+	time_to_first_token_ms      *int
+	addtime_to_first_token_ms   *int
 	created_at                  *time.Time
 	clearedFields               map[string]struct{}
 	user                        *int64
@@ -8996,74 +8996,74 @@ func (m *UsageLogMutation) ResetDurationMs() {
 	delete(m.clearedFields, usagelog.FieldDurationMs)
 }
 
-// SetFirstTokenMs sets the "first_token_ms" field.
-func (m *UsageLogMutation) SetFirstTokenMs(i int) {
-	m.first_token_ms = &i
-	m.addfirst_token_ms = nil
+// SetTimeToFirstTokenMs sets the "time_to_first_token_ms" field.
+func (m *UsageLogMutation) SetTimeToFirstTokenMs(i int) {
+	m.time_to_first_token_ms = &i
+	m.addtime_to_first_token_ms = nil
 }
 
-// FirstTokenMs returns the value of the "first_token_ms" field in the mutation.
-func (m *UsageLogMutation) FirstTokenMs() (r int, exists bool) {
-	v := m.first_token_ms
+// TimeToFirstTokenMs returns the value of the "time_to_first_token_ms" field in the mutation.
+func (m *UsageLogMutation) TimeToFirstTokenMs() (r int, exists bool) {
+	v := m.time_to_first_token_ms
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldFirstTokenMs returns the old "first_token_ms" field's value of the UsageLog entity.
+// OldTimeToFirstTokenMs returns the old "time_to_first_token_ms" field's value of the UsageLog entity.
 // If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *UsageLogMutation) OldFirstTokenMs(ctx context.Context) (v *int, err error) {
+func (m *UsageLogMutation) OldTimeToFirstTokenMs(ctx context.Context) (v *int, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldFirstTokenMs is only allowed on UpdateOne operations")
+		return v, errors.New("OldTimeToFirstTokenMs is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldFirstTokenMs requires an ID field in the mutation")
+		return v, errors.New("OldTimeToFirstTokenMs requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldFirstTokenMs: %w", err)
+		return v, fmt.Errorf("querying old value for OldTimeToFirstTokenMs: %w", err)
 	}
-	return oldValue.FirstTokenMs, nil
+	return oldValue.TimeToFirstTokenMs, nil
 }
 
-// AddFirstTokenMs adds i to the "first_token_ms" field.
-func (m *UsageLogMutation) AddFirstTokenMs(i int) {
-	if m.addfirst_token_ms != nil {
-		*m.addfirst_token_ms += i
+// AddTimeToFirstTokenMs adds i to the "time_to_first_token_ms" field.
+func (m *UsageLogMutation) AddTimeToFirstTokenMs(i int) {
+	if m.addtime_to_first_token_ms != nil {
+		*m.addtime_to_first_token_ms += i
 	} else {
-		m.addfirst_token_ms = &i
+		m.addtime_to_first_token_ms = &i
 	}
 }
 
-// AddedFirstTokenMs returns the value that was added to the "first_token_ms" field in this mutation.
-func (m *UsageLogMutation) AddedFirstTokenMs() (r int, exists bool) {
-	v := m.addfirst_token_ms
+// AddedTimeToFirstTokenMs returns the value that was added to the "time_to_first_token_ms" field in this mutation.
+func (m *UsageLogMutation) AddedTimeToFirstTokenMs() (r int, exists bool) {
+	v := m.addtime_to_first_token_ms
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// ClearFirstTokenMs clears the value of the "first_token_ms" field.
-func (m *UsageLogMutation) ClearFirstTokenMs() {
-	m.first_token_ms = nil
-	m.addfirst_token_ms = nil
-	m.clearedFields[usagelog.FieldFirstTokenMs] = struct{}{}
+// ClearTimeToFirstTokenMs clears the value of the "time_to_first_token_ms" field.
+func (m *UsageLogMutation) ClearTimeToFirstTokenMs() {
+	m.time_to_first_token_ms = nil
+	m.addtime_to_first_token_ms = nil
+	m.clearedFields[usagelog.FieldTimeToFirstTokenMs] = struct{}{}
 }
 
-// FirstTokenMsCleared returns if the "first_token_ms" field was cleared in this mutation.
-func (m *UsageLogMutation) FirstTokenMsCleared() bool {
-	_, ok := m.clearedFields[usagelog.FieldFirstTokenMs]
+// TimeToFirstTokenMsCleared returns if the "time_to_first_token_ms" field was cleared in this mutation.
+func (m *UsageLogMutation) TimeToFirstTokenMsCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldTimeToFirstTokenMs]
 	return ok
 }
 
-// ResetFirstTokenMs resets all changes to the "first_token_ms" field.
-func (m *UsageLogMutation) ResetFirstTokenMs() {
-	m.first_token_ms = nil
-	m.addfirst_token_ms = nil
-	delete(m.clearedFields, usagelog.FieldFirstTokenMs)
+// ResetTimeToFirstTokenMs resets all changes to the "time_to_first_token_ms" field.
+func (m *UsageLogMutation) ResetTimeToFirstTokenMs() {
+	m.time_to_first_token_ms = nil
+	m.addtime_to_first_token_ms = nil
+	delete(m.clearedFields, usagelog.FieldTimeToFirstTokenMs)
 }
 
 // SetCreatedAt sets the "created_at" field.
@@ -9341,8 +9341,8 @@ func (m *UsageLogMutation) Fields() []string {
 	if m.duration_ms != nil {
 		fields = append(fields, usagelog.FieldDurationMs)
 	}
-	if m.first_token_ms != nil {
-		fields = append(fields, usagelog.FieldFirstTokenMs)
+	if m.time_to_first_token_ms != nil {
+		fields = append(fields, usagelog.FieldTimeToFirstTokenMs)
 	}
 	if m.created_at != nil {
 		fields = append(fields, usagelog.FieldCreatedAt)
@@ -9401,8 +9401,8 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.Stream()
 	case usagelog.FieldDurationMs:
 		return m.DurationMs()
-	case usagelog.FieldFirstTokenMs:
-		return m.FirstTokenMs()
+	case usagelog.FieldTimeToFirstTokenMs:
+		return m.TimeToFirstTokenMs()
 	case usagelog.FieldCreatedAt:
 		return m.CreatedAt()
 	}
@@ -9460,8 +9460,8 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldStream(ctx)
 	case usagelog.FieldDurationMs:
 		return m.OldDurationMs(ctx)
-	case usagelog.FieldFirstTokenMs:
-		return m.OldFirstTokenMs(ctx)
+	case usagelog.FieldTimeToFirstTokenMs:
+		return m.OldTimeToFirstTokenMs(ctx)
 	case usagelog.FieldCreatedAt:
 		return m.OldCreatedAt(ctx)
 	}
@@ -9634,12 +9634,12 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetDurationMs(v)
 		return nil
-	case usagelog.FieldFirstTokenMs:
+	case usagelog.FieldTimeToFirstTokenMs:
 		v, ok := value.(int)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetFirstTokenMs(v)
+		m.SetTimeToFirstTokenMs(v)
 		return nil
 	case usagelog.FieldCreatedAt:
 		v, ok := value.(time.Time)
@@ -9701,8 +9701,8 @@ func (m *UsageLogMutation) AddedFields() []string {
 	if m.addduration_ms != nil {
 		fields = append(fields, usagelog.FieldDurationMs)
 	}
-	if m.addfirst_token_ms != nil {
-		fields = append(fields, usagelog.FieldFirstTokenMs)
+	if m.addtime_to_first_token_ms != nil {
+		fields = append(fields, usagelog.FieldTimeToFirstTokenMs)
 	}
 	return fields
 }
@@ -9742,8 +9742,8 @@ func (m *UsageLogMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedBillingType()
 	case usagelog.FieldDurationMs:
 		return m.AddedDurationMs()
-	case usagelog.FieldFirstTokenMs:
-		return m.AddedFirstTokenMs()
+	case usagelog.FieldTimeToFirstTokenMs:
+		return m.AddedTimeToFirstTokenMs()
 	}
 	return nil, false
 }
@@ -9858,12 +9858,12 @@ func (m *UsageLogMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddDurationMs(v)
 		return nil
-	case usagelog.FieldFirstTokenMs:
+	case usagelog.FieldTimeToFirstTokenMs:
 		v, ok := value.(int)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.AddFirstTokenMs(v)
+		m.AddTimeToFirstTokenMs(v)
 		return nil
 	}
 	return fmt.Errorf("unknown UsageLog numeric field %s", name)
@@ -9882,8 +9882,8 @@ func (m *UsageLogMutation) ClearedFields() []string {
 	if m.FieldCleared(usagelog.FieldDurationMs) {
 		fields = append(fields, usagelog.FieldDurationMs)
 	}
-	if m.FieldCleared(usagelog.FieldFirstTokenMs) {
-		fields = append(fields, usagelog.FieldFirstTokenMs)
+	if m.FieldCleared(usagelog.FieldTimeToFirstTokenMs) {
+		fields = append(fields, usagelog.FieldTimeToFirstTokenMs)
 	}
 	return fields
 }
@@ -9908,8 +9908,8 @@ func (m *UsageLogMutation) ClearField(name string) error {
 	case usagelog.FieldDurationMs:
 		m.ClearDurationMs()
 		return nil
-	case usagelog.FieldFirstTokenMs:
-		m.ClearFirstTokenMs()
+	case usagelog.FieldTimeToFirstTokenMs:
+		m.ClearTimeToFirstTokenMs()
 		return nil
 	}
 	return fmt.Errorf("unknown UsageLog nullable field %s", name)
@@ -9988,8 +9988,8 @@ func (m *UsageLogMutation) ResetField(name string) error {
 	case usagelog.FieldDurationMs:
 		m.ResetDurationMs()
 		return nil
-	case usagelog.FieldFirstTokenMs:
-		m.ResetFirstTokenMs()
+	case usagelog.FieldTimeToFirstTokenMs:
+		m.ResetTimeToFirstTokenMs()
 		return nil
 	case usagelog.FieldCreatedAt:
 		m.ResetCreatedAt()

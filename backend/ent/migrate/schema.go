@@ -366,7 +366,7 @@ var (
 		{Name: "billing_type", Type: field.TypeInt8, Default: 0},
 		{Name: "stream", Type: field.TypeBool, Default: false},
 		{Name: "duration_ms", Type: field.TypeInt, Nullable: true},
-		{Name: "first_token_ms", Type: field.TypeInt, Nullable: true},
+		{Name: "time_to_first_token_ms", Type: field.TypeInt, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "api_key_id", Type: field.TypeInt64},
 		{Name: "account_id", Type: field.TypeInt64},
@@ -461,6 +461,11 @@ var (
 				Name:    "usagelog_api_key_id_created_at",
 				Unique:  false,
 				Columns: []*schema.Column{UsageLogsColumns[21], UsageLogsColumns[20]},
+			},
+			{
+				Name:    "usagelog_account_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{UsageLogsColumns[22], UsageLogsColumns[20]},
 			},
 		},
 	}

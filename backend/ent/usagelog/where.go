@@ -170,9 +170,9 @@ func DurationMs(v int) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldDurationMs, v))
 }
 
-// FirstTokenMs applies equality check predicate on the "first_token_ms" field. It's identical to FirstTokenMsEQ.
-func FirstTokenMs(v int) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEQ(FieldFirstTokenMs, v))
+// TimeToFirstTokenMs applies equality check predicate on the "time_to_first_token_ms" field. It's identical to TimeToFirstTokenMsEQ.
+func TimeToFirstTokenMs(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldTimeToFirstTokenMs, v))
 }
 
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
@@ -1050,54 +1050,54 @@ func DurationMsNotNil() predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldNotNull(FieldDurationMs))
 }
 
-// FirstTokenMsEQ applies the EQ predicate on the "first_token_ms" field.
-func FirstTokenMsEQ(v int) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEQ(FieldFirstTokenMs, v))
+// TimeToFirstTokenMsEQ applies the EQ predicate on the "time_to_first_token_ms" field.
+func TimeToFirstTokenMsEQ(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldTimeToFirstTokenMs, v))
 }
 
-// FirstTokenMsNEQ applies the NEQ predicate on the "first_token_ms" field.
-func FirstTokenMsNEQ(v int) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNEQ(FieldFirstTokenMs, v))
+// TimeToFirstTokenMsNEQ applies the NEQ predicate on the "time_to_first_token_ms" field.
+func TimeToFirstTokenMsNEQ(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldTimeToFirstTokenMs, v))
 }
 
-// FirstTokenMsIn applies the In predicate on the "first_token_ms" field.
-func FirstTokenMsIn(vs ...int) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldIn(FieldFirstTokenMs, vs...))
+// TimeToFirstTokenMsIn applies the In predicate on the "time_to_first_token_ms" field.
+func TimeToFirstTokenMsIn(vs ...int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldTimeToFirstTokenMs, vs...))
 }
 
-// FirstTokenMsNotIn applies the NotIn predicate on the "first_token_ms" field.
-func FirstTokenMsNotIn(vs ...int) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNotIn(FieldFirstTokenMs, vs...))
+// TimeToFirstTokenMsNotIn applies the NotIn predicate on the "time_to_first_token_ms" field.
+func TimeToFirstTokenMsNotIn(vs ...int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldTimeToFirstTokenMs, vs...))
 }
 
-// FirstTokenMsGT applies the GT predicate on the "first_token_ms" field.
-func FirstTokenMsGT(v int) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldGT(FieldFirstTokenMs, v))
+// TimeToFirstTokenMsGT applies the GT predicate on the "time_to_first_token_ms" field.
+func TimeToFirstTokenMsGT(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldTimeToFirstTokenMs, v))
 }
 
-// FirstTokenMsGTE applies the GTE predicate on the "first_token_ms" field.
-func FirstTokenMsGTE(v int) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldGTE(FieldFirstTokenMs, v))
+// TimeToFirstTokenMsGTE applies the GTE predicate on the "time_to_first_token_ms" field.
+func TimeToFirstTokenMsGTE(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldTimeToFirstTokenMs, v))
 }
 
-// FirstTokenMsLT applies the LT predicate on the "first_token_ms" field.
-func FirstTokenMsLT(v int) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldLT(FieldFirstTokenMs, v))
+// TimeToFirstTokenMsLT applies the LT predicate on the "time_to_first_token_ms" field.
+func TimeToFirstTokenMsLT(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldTimeToFirstTokenMs, v))
 }
 
-// FirstTokenMsLTE applies the LTE predicate on the "first_token_ms" field.
-func FirstTokenMsLTE(v int) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldLTE(FieldFirstTokenMs, v))
+// TimeToFirstTokenMsLTE applies the LTE predicate on the "time_to_first_token_ms" field.
+func TimeToFirstTokenMsLTE(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldTimeToFirstTokenMs, v))
 }
 
-// FirstTokenMsIsNil applies the IsNil predicate on the "first_token_ms" field.
-func FirstTokenMsIsNil() predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldIsNull(FieldFirstTokenMs))
+// TimeToFirstTokenMsIsNil applies the IsNil predicate on the "time_to_first_token_ms" field.
+func TimeToFirstTokenMsIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldTimeToFirstTokenMs))
 }
 
-// FirstTokenMsNotNil applies the NotNil predicate on the "first_token_ms" field.
-func FirstTokenMsNotNil() predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNotNull(FieldFirstTokenMs))
+// TimeToFirstTokenMsNotNil applies the NotNil predicate on the "time_to_first_token_ms" field.
+func TimeToFirstTokenMsNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldTimeToFirstTokenMs))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.

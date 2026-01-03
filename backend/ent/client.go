@@ -254,8 +254,8 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.APIKey, c.Account, c.AccountGroup, c.Group, c.Proxy, c.RedeemCode, c.Setting,
-		c.UsageLog, c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserSubscription,
+		c.UsageLog, c.User, c.UserAllowedGroup, c.UserAttributeDefinition,
+		c.UserAttributeValue, c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -266,8 +266,8 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.APIKey, c.Account, c.AccountGroup, c.Group, c.Proxy, c.RedeemCode, c.Setting,
-		c.UsageLog, c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserSubscription,
+		c.UsageLog, c.User, c.UserAllowedGroup, c.UserAttributeDefinition,
+		c.UserAttributeValue, c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}

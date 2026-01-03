@@ -309,16 +309,16 @@ func (_c *UsageLogCreate) SetNillableDurationMs(v *int) *UsageLogCreate {
 	return _c
 }
 
-// SetFirstTokenMs sets the "first_token_ms" field.
-func (_c *UsageLogCreate) SetFirstTokenMs(v int) *UsageLogCreate {
-	_c.mutation.SetFirstTokenMs(v)
+// SetTimeToFirstTokenMs sets the "time_to_first_token_ms" field.
+func (_c *UsageLogCreate) SetTimeToFirstTokenMs(v int) *UsageLogCreate {
+	_c.mutation.SetTimeToFirstTokenMs(v)
 	return _c
 }
 
-// SetNillableFirstTokenMs sets the "first_token_ms" field if the given value is not nil.
-func (_c *UsageLogCreate) SetNillableFirstTokenMs(v *int) *UsageLogCreate {
+// SetNillableTimeToFirstTokenMs sets the "time_to_first_token_ms" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableTimeToFirstTokenMs(v *int) *UsageLogCreate {
 	if v != nil {
-		_c.SetFirstTokenMs(*v)
+		_c.SetTimeToFirstTokenMs(*v)
 	}
 	return _c
 }
@@ -646,9 +646,9 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 		_spec.SetField(usagelog.FieldDurationMs, field.TypeInt, value)
 		_node.DurationMs = &value
 	}
-	if value, ok := _c.mutation.FirstTokenMs(); ok {
-		_spec.SetField(usagelog.FieldFirstTokenMs, field.TypeInt, value)
-		_node.FirstTokenMs = &value
+	if value, ok := _c.mutation.TimeToFirstTokenMs(); ok {
+		_spec.SetField(usagelog.FieldTimeToFirstTokenMs, field.TypeInt, value)
+		_node.TimeToFirstTokenMs = &value
 	}
 	if value, ok := _c.mutation.CreatedAt(); ok {
 		_spec.SetField(usagelog.FieldCreatedAt, field.TypeTime, value)
@@ -1175,27 +1175,27 @@ func (u *UsageLogUpsert) ClearDurationMs() *UsageLogUpsert {
 	return u
 }
 
-// SetFirstTokenMs sets the "first_token_ms" field.
-func (u *UsageLogUpsert) SetFirstTokenMs(v int) *UsageLogUpsert {
-	u.Set(usagelog.FieldFirstTokenMs, v)
+// SetTimeToFirstTokenMs sets the "time_to_first_token_ms" field.
+func (u *UsageLogUpsert) SetTimeToFirstTokenMs(v int) *UsageLogUpsert {
+	u.Set(usagelog.FieldTimeToFirstTokenMs, v)
 	return u
 }
 
-// UpdateFirstTokenMs sets the "first_token_ms" field to the value that was provided on create.
-func (u *UsageLogUpsert) UpdateFirstTokenMs() *UsageLogUpsert {
-	u.SetExcluded(usagelog.FieldFirstTokenMs)
+// UpdateTimeToFirstTokenMs sets the "time_to_first_token_ms" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateTimeToFirstTokenMs() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldTimeToFirstTokenMs)
 	return u
 }
 
-// AddFirstTokenMs adds v to the "first_token_ms" field.
-func (u *UsageLogUpsert) AddFirstTokenMs(v int) *UsageLogUpsert {
-	u.Add(usagelog.FieldFirstTokenMs, v)
+// AddTimeToFirstTokenMs adds v to the "time_to_first_token_ms" field.
+func (u *UsageLogUpsert) AddTimeToFirstTokenMs(v int) *UsageLogUpsert {
+	u.Add(usagelog.FieldTimeToFirstTokenMs, v)
 	return u
 }
 
-// ClearFirstTokenMs clears the value of the "first_token_ms" field.
-func (u *UsageLogUpsert) ClearFirstTokenMs() *UsageLogUpsert {
-	u.SetNull(usagelog.FieldFirstTokenMs)
+// ClearTimeToFirstTokenMs clears the value of the "time_to_first_token_ms" field.
+func (u *UsageLogUpsert) ClearTimeToFirstTokenMs() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldTimeToFirstTokenMs)
 	return u
 }
 
@@ -1692,31 +1692,31 @@ func (u *UsageLogUpsertOne) ClearDurationMs() *UsageLogUpsertOne {
 	})
 }
 
-// SetFirstTokenMs sets the "first_token_ms" field.
-func (u *UsageLogUpsertOne) SetFirstTokenMs(v int) *UsageLogUpsertOne {
+// SetTimeToFirstTokenMs sets the "time_to_first_token_ms" field.
+func (u *UsageLogUpsertOne) SetTimeToFirstTokenMs(v int) *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
-		s.SetFirstTokenMs(v)
+		s.SetTimeToFirstTokenMs(v)
 	})
 }
 
-// AddFirstTokenMs adds v to the "first_token_ms" field.
-func (u *UsageLogUpsertOne) AddFirstTokenMs(v int) *UsageLogUpsertOne {
+// AddTimeToFirstTokenMs adds v to the "time_to_first_token_ms" field.
+func (u *UsageLogUpsertOne) AddTimeToFirstTokenMs(v int) *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
-		s.AddFirstTokenMs(v)
+		s.AddTimeToFirstTokenMs(v)
 	})
 }
 
-// UpdateFirstTokenMs sets the "first_token_ms" field to the value that was provided on create.
-func (u *UsageLogUpsertOne) UpdateFirstTokenMs() *UsageLogUpsertOne {
+// UpdateTimeToFirstTokenMs sets the "time_to_first_token_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateTimeToFirstTokenMs() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
-		s.UpdateFirstTokenMs()
+		s.UpdateTimeToFirstTokenMs()
 	})
 }
 
-// ClearFirstTokenMs clears the value of the "first_token_ms" field.
-func (u *UsageLogUpsertOne) ClearFirstTokenMs() *UsageLogUpsertOne {
+// ClearTimeToFirstTokenMs clears the value of the "time_to_first_token_ms" field.
+func (u *UsageLogUpsertOne) ClearTimeToFirstTokenMs() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
-		s.ClearFirstTokenMs()
+		s.ClearTimeToFirstTokenMs()
 	})
 }
 
@@ -2379,31 +2379,31 @@ func (u *UsageLogUpsertBulk) ClearDurationMs() *UsageLogUpsertBulk {
 	})
 }
 
-// SetFirstTokenMs sets the "first_token_ms" field.
-func (u *UsageLogUpsertBulk) SetFirstTokenMs(v int) *UsageLogUpsertBulk {
+// SetTimeToFirstTokenMs sets the "time_to_first_token_ms" field.
+func (u *UsageLogUpsertBulk) SetTimeToFirstTokenMs(v int) *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
-		s.SetFirstTokenMs(v)
+		s.SetTimeToFirstTokenMs(v)
 	})
 }
 
-// AddFirstTokenMs adds v to the "first_token_ms" field.
-func (u *UsageLogUpsertBulk) AddFirstTokenMs(v int) *UsageLogUpsertBulk {
+// AddTimeToFirstTokenMs adds v to the "time_to_first_token_ms" field.
+func (u *UsageLogUpsertBulk) AddTimeToFirstTokenMs(v int) *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
-		s.AddFirstTokenMs(v)
+		s.AddTimeToFirstTokenMs(v)
 	})
 }
 
-// UpdateFirstTokenMs sets the "first_token_ms" field to the value that was provided on create.
-func (u *UsageLogUpsertBulk) UpdateFirstTokenMs() *UsageLogUpsertBulk {
+// UpdateTimeToFirstTokenMs sets the "time_to_first_token_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateTimeToFirstTokenMs() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
-		s.UpdateFirstTokenMs()
+		s.UpdateTimeToFirstTokenMs()
 	})
 }
 
-// ClearFirstTokenMs clears the value of the "first_token_ms" field.
-func (u *UsageLogUpsertBulk) ClearFirstTokenMs() *UsageLogUpsertBulk {
+// ClearTimeToFirstTokenMs clears the value of the "time_to_first_token_ms" field.
+func (u *UsageLogUpsertBulk) ClearTimeToFirstTokenMs() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
-		s.ClearFirstTokenMs()
+		s.ClearTimeToFirstTokenMs()
 	})
 }
 
