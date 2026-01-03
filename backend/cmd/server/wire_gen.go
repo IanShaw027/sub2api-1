@@ -151,8 +151,8 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	tokenRefreshService := service.ProvideTokenRefreshService(accountRepository, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, configConfig)
 	antigravityQuotaRefresher := service.ProvideAntigravityQuotaRefresher(accountRepository, proxyRepository, antigravityOAuthService, configConfig)
 	opsAggregationService := service.ProvideOpsAggregationService(opsRepository, db)
-	opsMetricsCollector := service.ProvideOpsMetricsCollector(opsService, concurrencyService)
-	opsAlertService := service.ProvideOpsAlertService(opsService, userService, emailService)
+	opsMetricsCollector := service.ProvideOpsMetricsCollector(opsService, concurrencyService, redisClient, configConfig)
+	opsAlertService := service.ProvideOpsAlertService(opsService, userService, emailService, redisClient, configConfig)
 	v := provideCleanup(client, redisClient, tokenRefreshService, pricingService, emailQueueService, billingCacheService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, antigravityQuotaRefresher, opsAggregationService, opsMetricsCollector, opsAlertService, configConfig, opsRepository)
 	application := &Application{
 		Server:  httpServer,

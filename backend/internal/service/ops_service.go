@@ -94,14 +94,14 @@ type OpsErrorLog struct {
 	UserAgent   string `json:"user_agent,omitempty"`
 
 	// 错误分类字段
-	ErrorSource           string  `json:"error_source,omitempty"`
-	ErrorOwner            string  `json:"error_owner,omitempty"`
-	AccountStatus         string  `json:"account_status,omitempty"`
-	UpstreamStatusCode    *int    `json:"upstream_status_code,omitempty"`
-	UpstreamErrorMessage  string  `json:"upstream_error_message,omitempty"`
-	UpstreamErrorDetail   *string `json:"upstream_error_detail,omitempty"`
-	NetworkErrorType      string  `json:"network_error_type,omitempty"`
-	RetryAfterSeconds     *int    `json:"retry_after_seconds,omitempty"`
+	ErrorSource          string  `json:"error_source,omitempty"`
+	ErrorOwner           string  `json:"error_owner,omitempty"`
+	AccountStatus        string  `json:"account_status,omitempty"`
+	UpstreamStatusCode   *int    `json:"upstream_status_code,omitempty"`
+	UpstreamErrorMessage string  `json:"upstream_error_message,omitempty"`
+	UpstreamErrorDetail  *string `json:"upstream_error_detail,omitempty"`
+	NetworkErrorType     string  `json:"network_error_type,omitempty"`
+	RetryAfterSeconds    *int    `json:"retry_after_seconds,omitempty"`
 
 	IsRetryable      bool   `json:"is_retryable"`
 	IsUserActionable bool   `json:"is_user_actionable"`
@@ -140,6 +140,15 @@ type OpsWindowStats struct {
 	MaxLatencyMs  int
 	HTTP2Errors   int
 	TokenConsumed int64
+}
+
+type OpsWindowStatsGroupedItem struct {
+	Group         string `json:"group"`
+	ErrorCount    int64  `json:"error_count"`
+	Error4xxCount int64  `json:"error_4xx_count"`
+	Error5xxCount int64  `json:"error_5xx_count"`
+	TimeoutCount  int64  `json:"timeout_count"`
+	HTTP2Errors   int64  `json:"http2_errors"`
 }
 
 type ProviderStats struct {
@@ -188,11 +197,11 @@ type ErrorDistributionItem struct {
 }
 
 type IPErrorStats struct {
-	ClientIP       string            `json:"client_ip"`
-	ErrorCount     int64             `json:"error_count"`
-	FirstErrorTime time.Time         `json:"first_error_time"`
-	LastErrorTime  time.Time         `json:"last_error_time"`
-	ErrorTypes     map[string]int64  `json:"error_types"`
+	ClientIP       string           `json:"client_ip"`
+	ErrorCount     int64            `json:"error_count"`
+	FirstErrorTime time.Time        `json:"first_error_time"`
+	LastErrorTime  time.Time        `json:"last_error_time"`
+	ErrorTypes     map[string]int64 `json:"error_types"`
 }
 
 type OpsRepository interface {
@@ -209,6 +218,7 @@ type OpsRepository interface {
 	GetLatestSystemMetric(ctx context.Context) (*OpsMetrics, error)
 	CreateSystemMetric(ctx context.Context, metric *OpsMetrics) error
 	GetWindowStats(ctx context.Context, startTime, endTime time.Time) (*OpsWindowStats, error)
+	GetWindowStatsGrouped(ctx context.Context, startTime, endTime time.Time, groupBy string) ([]*OpsWindowStatsGroupedItem, error)
 	GetProviderStats(ctx context.Context, startTime, endTime time.Time) ([]*ProviderStats, error)
 	GetLatencyHistogram(ctx context.Context, startTime, endTime time.Time) ([]*LatencyHistogramItem, error)
 	GetErrorDistribution(ctx context.Context, startTime, endTime time.Time) ([]*ErrorDistributionItem, error)
@@ -271,9 +281,9 @@ var (
 	// NOTE:
 	// - API Key / Token 可能包含 Base64 字符（+ / =）或 URL 编码字符（%）
 	// - 一些 key（如 sk-proj-...）还会包含 '-' 等分隔符
-	apiKeyRegex    = regexp.MustCompile(`(?i)(sk-[a-zA-Z0-9_\-+/=%]{8,}|(?:key|apikey|api_key)[=:]\s*[a-zA-Z0-9_\-+/=%]{12,})`)
-	tokenRegex     = regexp.MustCompile(`(?i)(bearer\s+[a-zA-Z0-9_\-\.+/=%]+|token[=:]\s*[a-zA-Z0-9_\-\.+/=%]+)`)
-	emailRegex     = regexp.MustCompile(`[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`)
+	apiKeyRegex     = regexp.MustCompile(`(?i)(sk-[a-zA-Z0-9_\-+/=%]{8,}|(?:key|apikey|api_key)[=:]\s*[a-zA-Z0-9_\-+/=%]{12,})`)
+	tokenRegex      = regexp.MustCompile(`(?i)(bearer\s+[a-zA-Z0-9_\-\.+/=%]+|token[=:]\s*[a-zA-Z0-9_\-\.+/=%]+)`)
+	emailRegex      = regexp.MustCompile(`[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`)
 	queryParamRegex = regexp.MustCompile(`(?i)([?&](?:key|apikey|api_key|token|access_token|refresh_token|client_secret)=)[^&\s"]+`)
 )
 
@@ -541,6 +551,12 @@ func (s *OpsService) GetWindowStats(ctx context.Context, startTime, endTime time
 	return s.repo.GetWindowStats(ctxDB, startTime, endTime)
 }
 
+func (s *OpsService) GetWindowStatsGrouped(ctx context.Context, startTime, endTime time.Time, groupBy string) ([]*OpsWindowStatsGroupedItem, error) {
+	ctxDB, cancel := context.WithTimeout(ctx, opsDBQueryTimeout)
+	defer cancel()
+	return s.repo.GetWindowStatsGrouped(ctxDB, startTime, endTime, groupBy)
+}
+
 func (s *OpsService) GetLatestMetrics(ctx context.Context) (*OpsMetrics, error) {
 	// Cache first (best-effort): cache errors should not break the dashboard.
 	if s != nil {
@@ -710,35 +726,34 @@ type OverviewStats struct {
 
 // AccountStats 账号统计数据
 type AccountStats struct {
-	ErrorCount      int
-	SuccessCount    int
-	TimeoutCount    int
-	RateLimitCount  int
+	ErrorCount     int
+	SuccessCount   int
+	TimeoutCount   int
+	RateLimitCount int
 }
 
 // OpsAccountStatus 账号状态
 type OpsAccountStatus struct {
-	ID                   int64
-	AccountID            int64
-	Platform             string
-	Status               string
-	LastErrorType        string
-	LastErrorMessage     string
-	LastErrorTime        time.Time
-	ErrorCount1h         int
-	SuccessCount1h       int
-	TimeoutCount1h       int
-	RateLimitCount1h     int
-	ErrorCount24h        int
-	SuccessCount24h      int
-	TimeoutCount24h      int
-	RateLimitCount24h    int
-	LastSuccessTime      *time.Time
-	StatusChangedAt      *time.Time
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	ID                int64
+	AccountID         int64
+	Platform          string
+	Status            string
+	LastErrorType     string
+	LastErrorMessage  string
+	LastErrorTime     time.Time
+	ErrorCount1h      int
+	SuccessCount1h    int
+	TimeoutCount1h    int
+	RateLimitCount1h  int
+	ErrorCount24h     int
+	SuccessCount24h   int
+	TimeoutCount24h   int
+	RateLimitCount24h int
+	LastSuccessTime   *time.Time
+	StatusChangedAt   *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
-
 
 func (s *OpsService) GetDashboardOverview(ctx context.Context, timeRange string) (*DashboardOverviewData, error) {
 	if s == nil {

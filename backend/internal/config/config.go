@@ -52,11 +52,34 @@ type OpsConfig struct {
 	// job is deployed and validated.
 	UsePreaggregatedTables bool `mapstructure:"use_preaggregated_tables"`
 
+	// MetricsCollectorCache controls Redis caching for the ops metrics collector's
+	// per-minute window stats queries.
+	MetricsCollectorCache OpsMetricsCollectorCacheConfig `mapstructure:"metrics_collector_cache"`
+
+	// Alert controls ops alert evaluator behavior (including distributed leader lock).
+	Alert OpsAlertConfig `mapstructure:"alert"`
+
 	// Data cleanup configuration
 	Cleanup OpsCleanupConfig `mapstructure:"cleanup"`
 
 	// Pre-aggregation configuration
 	Aggregation OpsAggregationConfig `mapstructure:"aggregation"`
+}
+
+type OpsAlertConfig struct {
+	// DistributedLockEnabled ensures that in multi-replica deployments only one instance
+	// evaluates alert rules at a time (to prevent duplicate notifications/events).
+	//
+	// Default is true.
+	DistributedLockEnabled bool `mapstructure:"distributed_lock_enabled"`
+
+	// DistributedLockKey is the Redis key used for leader election / lock.
+	// Default: "ops:alert:leader".
+	DistributedLockKey string `mapstructure:"distributed_lock_key"`
+
+	// DistributedLockTTL is the lock TTL. It is renewed during evaluation, but it
+	// should still be longer than the typical evaluation duration. Default: 30s.
+	DistributedLockTTL time.Duration `mapstructure:"distributed_lock_ttl"`
 }
 
 type OpsCleanupConfig struct {
@@ -79,6 +102,16 @@ type OpsAggregationConfig struct {
 	HourlySchedule string `mapstructure:"hourly_schedule"`
 	// DailySchedule is the cron expression for daily aggregation (default: "10 0 * * *" - 10 minutes past midnight)
 	DailySchedule string `mapstructure:"daily_schedule"`
+}
+
+type OpsMetricsCollectorCacheConfig struct {
+	// Enabled controls whether OpsMetricsCollector uses Redis to cache window stats
+	// (useful in multi-replica deployments to avoid duplicate expensive percentile queries).
+	Enabled bool `mapstructure:"enabled"`
+
+	// TTL is the cache entry TTL. It should be slightly larger than the collection
+	// interval (1 minute) to ensure replicas overlap.
+	TTL time.Duration `mapstructure:"ttl"`
 }
 
 type GeminiConfig struct {
@@ -368,6 +401,11 @@ func setDefaults() {
 
 	// Ops
 	viper.SetDefault("ops.use_preaggregated_tables", false)
+	viper.SetDefault("ops.metrics_collector_cache.enabled", true)
+	viper.SetDefault("ops.metrics_collector_cache.ttl", 65*time.Second)
+	viper.SetDefault("ops.alert.distributed_lock_enabled", true)
+	viper.SetDefault("ops.alert.distributed_lock_key", "ops:alert:leader")
+	viper.SetDefault("ops.alert.distributed_lock_ttl", 30*time.Second)
 	viper.SetDefault("ops.cleanup.enabled", false)
 	viper.SetDefault("ops.cleanup.schedule", "0 2 * * *")
 	viper.SetDefault("ops.cleanup.error_log_retention_days", 30)
@@ -480,6 +518,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Redis.MinIdleConns > c.Redis.PoolSize {
 		return fmt.Errorf("redis.min_idle_conns cannot exceed redis.pool_size")
+	}
+	if c.Ops.MetricsCollectorCache.TTL < 0 {
+		return fmt.Errorf("ops.metrics_collector_cache.ttl must be non-negative")
+	}
+	if c.Ops.Alert.DistributedLockTTL < 0 {
+		return fmt.Errorf("ops.alert.distributed_lock_ttl must be non-negative")
 	}
 	if c.Gateway.MaxBodySize <= 0 {
 		return fmt.Errorf("gateway.max_body_size must be positive")

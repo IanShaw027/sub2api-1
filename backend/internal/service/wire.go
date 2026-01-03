@@ -6,6 +6,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/google/wire"
+	"github.com/redis/go-redis/v9"
 )
 
 // BuildInfo contains build information
@@ -75,15 +76,26 @@ func ProvideDeferredService(accountRepo AccountRepository, timingWheel *TimingWh
 }
 
 // ProvideOpsMetricsCollector creates and starts OpsMetricsCollector.
-func ProvideOpsMetricsCollector(opsService *OpsService, concurrencyService *ConcurrencyService) *OpsMetricsCollector {
-	svc := NewOpsMetricsCollector(opsService, concurrencyService)
+func ProvideOpsMetricsCollector(
+	opsService *OpsService,
+	concurrencyService *ConcurrencyService,
+	redisClient *redis.Client,
+	cfg *config.Config,
+) *OpsMetricsCollector {
+	svc := NewOpsMetricsCollector(opsService, concurrencyService, redisClient, cfg)
 	svc.Start()
 	return svc
 }
 
 // ProvideOpsAlertService creates and starts OpsAlertService.
-func ProvideOpsAlertService(opsService *OpsService, userService *UserService, emailService *EmailService) *OpsAlertService {
-	svc := NewOpsAlertService(opsService, userService, emailService)
+func ProvideOpsAlertService(
+	opsService *OpsService,
+	userService *UserService,
+	emailService *EmailService,
+	redisClient *redis.Client,
+	cfg *config.Config,
+) *OpsAlertService {
+	svc := NewOpsAlertService(opsService, userService, emailService, redisClient, cfg)
 	svc.Start()
 	return svc
 }

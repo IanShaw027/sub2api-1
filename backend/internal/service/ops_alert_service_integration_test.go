@@ -35,12 +35,12 @@ func TestOpsAlertService_StartedViaWireProviders_RunsIndependentTicker(t *testin
 	opsService := NewOpsService(repo, nil)
 
 	// Start via the Wire provider function (the production DI path).
-	alertService := ProvideOpsAlertService(opsService, nil, nil)
+	alertService := ProvideOpsAlertService(opsService, nil, nil, nil, nil)
 	t.Cleanup(alertService.Stop)
 
 	// Construct via ProvideOpsMetricsCollector (wire.go). Stop immediately to ensure
 	// the alert ticker keeps running without the metrics collector.
-	collector := ProvideOpsMetricsCollector(opsService, NewConcurrencyService(nil))
+	collector := ProvideOpsMetricsCollector(opsService, NewConcurrencyService(nil), nil, nil)
 	collector.Stop()
 
 	// Wait for at least one evaluation (run() calls evaluateOnce immediately).
@@ -104,6 +104,10 @@ func (r *fakeOpsRepository) CreateSystemMetric(ctx context.Context, metric *OpsM
 
 func (r *fakeOpsRepository) GetWindowStats(ctx context.Context, startTime, endTime time.Time) (*OpsWindowStats, error) {
 	return &OpsWindowStats{}, nil
+}
+
+func (r *fakeOpsRepository) GetWindowStatsGrouped(ctx context.Context, startTime, endTime time.Time, groupBy string) ([]*OpsWindowStatsGroupedItem, error) {
+	return nil, nil
 }
 
 func (r *fakeOpsRepository) GetProviderStats(ctx context.Context, startTime, endTime time.Time) ([]*ProviderStats, error) {

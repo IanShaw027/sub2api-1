@@ -1150,6 +1150,83 @@ func (r *OpsRepository) GetWindowStats(ctx context.Context, startTime, endTime t
 	return r.GetWindowStatsLegacy(ctx, startTime, endTime)
 }
 
+func (r *OpsRepository) GetWindowStatsGrouped(ctx context.Context, startTime, endTime time.Time, groupBy string) ([]*service.OpsWindowStatsGroupedItem, error) {
+	if startTime.IsZero() || endTime.IsZero() {
+		return nil, nil
+	}
+	if startTime.After(endTime) {
+		startTime, endTime = endTime, startTime
+	}
+
+	var groupExpr string
+	switch groupBy {
+	case "platform":
+		// Prefer the explicit platform stored on the error log; otherwise fall back to
+		// group/account platforms to avoid "missing platform" rows.
+		groupExpr = "COALESCE(NULLIF(o.platform, ''), g.platform, a.platform, 'unknown')"
+	case "phase":
+		groupExpr = "COALESCE(NULLIF(o.error_phase, ''), 'unknown')"
+	case "severity":
+		groupExpr = "COALESCE(NULLIF(o.severity, ''), 'unknown')"
+	default:
+		return nil, fmt.Errorf("invalid groupBy: %q", groupBy)
+	}
+
+	query := fmt.Sprintf(`
+		SELECT
+			%s AS group_value,
+			COUNT(*) AS error_count,
+			COUNT(*) FILTER (
+				WHERE
+					o.error_type = 'network_error'
+					OR o.error_message ILIKE '%%http2%%'
+					OR o.error_message ILIKE '%%http/2%%'
+			) AS http2_errors,
+			COUNT(*) FILTER (WHERE o.status_code >= 400 AND o.status_code < 500) AS error_4xx_count,
+			COUNT(*) FILTER (WHERE o.status_code >= 500) AS error_5xx_count,
+			COUNT(*) FILTER (
+				WHERE
+					o.error_type IN ('timeout', 'timeout_error')
+					OR o.error_message ILIKE '%%timeout%%'
+					OR o.error_message ILIKE '%%deadline exceeded%%'
+			) AS timeout_count
+		FROM ops_error_logs o
+		LEFT JOIN groups g ON g.id = o.group_id
+		LEFT JOIN accounts a ON a.id = o.account_id
+		WHERE o.created_at >= $1 AND o.created_at < $2
+		GROUP BY 1
+		ORDER BY error_count DESC, 1 ASC
+	`, groupExpr)
+
+	rows, err := r.sql.QueryContext(ctx, query, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	items := make([]*service.OpsWindowStatsGroupedItem, 0)
+	for rows.Next() {
+		var item service.OpsWindowStatsGroupedItem
+		var http2Errors int64
+		if err := rows.Scan(
+			&item.Group,
+			&item.ErrorCount,
+			&http2Errors,
+			&item.Error4xxCount,
+			&item.Error5xxCount,
+			&item.TimeoutCount,
+		); err != nil {
+			return nil, err
+		}
+		item.HTTP2Errors = http2Errors
+		items = append(items, &item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 // GetWindowStatsLegacy keeps the original raw-log implementation (usage_logs + ops_error_logs).
 // It is intentionally preserved for backward compatibility and as a safe fallback when
 // pre-aggregation tables are not available.
@@ -1159,15 +1236,10 @@ func (r *OpsRepository) GetWindowStatsLegacy(ctx context.Context, startTime, end
 		usage_agg AS (
 			SELECT
 				COUNT(*) AS success_count,
-				percentile_cont(0.50) WITHIN GROUP (ORDER BY duration_ms)
-					FILTER (WHERE duration_ms IS NOT NULL) AS p50,
-				percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms)
-					FILTER (WHERE duration_ms IS NOT NULL) AS p95,
-				percentile_cont(0.99) WITHIN GROUP (ORDER BY duration_ms)
-					FILTER (WHERE duration_ms IS NOT NULL) AS p99
-				,
-				percentile_cont(0.999) WITHIN GROUP (ORDER BY duration_ms)
-					FILTER (WHERE duration_ms IS NOT NULL) AS p999,
+				-- Ordered-set aggregates can be expensive at high QPS; computing multiple
+				-- percentiles via the array form avoids redundant sorts within the same query.
+				percentile_cont(ARRAY[0.50, 0.95, 0.99, 0.999]) WITHIN GROUP (ORDER BY duration_ms)
+					FILTER (WHERE duration_ms IS NOT NULL) AS pcts,
 				AVG(duration_ms) FILTER (WHERE duration_ms IS NOT NULL) AS avg_latency,
 				MAX(duration_ms) FILTER (WHERE duration_ms IS NOT NULL) AS max_latency,
 				COALESCE(
@@ -1201,10 +1273,10 @@ func (r *OpsRepository) GetWindowStatsLegacy(ctx context.Context, startTime, end
 		SELECT
 			usage_agg.success_count,
 			error_agg.error_count,
-			usage_agg.p50,
-			usage_agg.p95,
-			usage_agg.p99,
-			usage_agg.p999,
+			(usage_agg.pcts)[1] AS p50,
+			(usage_agg.pcts)[2] AS p95,
+			(usage_agg.pcts)[3] AS p99,
+			(usage_agg.pcts)[4] AS p999,
 			usage_agg.avg_latency,
 			usage_agg.max_latency,
 			error_agg.http2_errors,

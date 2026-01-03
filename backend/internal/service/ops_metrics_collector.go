@@ -2,11 +2,18 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/infraerror"
+	"github.com/redis/go-redis/v9"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/mem"
 )
@@ -18,6 +25,8 @@ const (
 	opsMetricsWindowShortMinutes = 1
 	opsMetricsWindowLongMinutes  = 5
 
+	opsMetricsCollectorCacheKeyPrefix = "ops:metrics:collector:window:"
+
 	bytesPerMB             = 1024 * 1024
 	cpuUsageSampleInterval = 0 * time.Second
 
@@ -27,6 +36,14 @@ const (
 type OpsMetricsCollector struct {
 	opsService         *OpsService
 	concurrencyService *ConcurrencyService
+	redisClient        *redis.Client
+	cacheEnabled       bool
+	cacheTTL           time.Duration
+	cacheHits          uint64
+	cacheMisses        uint64
+	lastCacheStatsMu   sync.Mutex
+	lastCacheHits      uint64
+	lastCacheMisses    uint64
 	interval           time.Duration
 	lastGCPauseTotal   uint64
 	lastGCPauseMu      sync.Mutex
@@ -35,10 +52,26 @@ type OpsMetricsCollector struct {
 	stopOnce           sync.Once
 }
 
-func NewOpsMetricsCollector(opsService *OpsService, concurrencyService *ConcurrencyService) *OpsMetricsCollector {
+func NewOpsMetricsCollector(
+	opsService *OpsService,
+	concurrencyService *ConcurrencyService,
+	redisClient *redis.Client,
+	cfg *config.Config,
+) *OpsMetricsCollector {
+	cacheEnabled := false
+	cacheTTL := 60 * time.Second
+	if cfg != nil {
+		cacheEnabled = cfg.Ops.MetricsCollectorCache.Enabled
+		if cfg.Ops.MetricsCollectorCache.TTL > 0 {
+			cacheTTL = cfg.Ops.MetricsCollectorCache.TTL
+		}
+	}
 	return &OpsMetricsCollector{
 		opsService:         opsService,
 		concurrencyService: concurrencyService,
+		redisClient:        redisClient,
+		cacheEnabled:       cacheEnabled,
+		cacheTTL:           cacheTTL,
 		interval:           opsMetricsInterval,
 	}
 }
@@ -90,13 +123,16 @@ func (c *OpsMetricsCollector) collectOnce() {
 	defer cancel()
 
 	now := time.Now()
+	// Use stable minute boundaries to maximize Redis cache hits across replicas.
+	// This also prevents small clock skews from producing unique cache keys.
+	windowEnd := now.Truncate(time.Minute)
 	systemStats := c.collectSystemStats(ctx)
 	queueDepth := c.collectQueueDepth(ctx)
 	activeAlerts := c.collectActiveAlerts(ctx)
 
 	for _, window := range []int{opsMetricsWindowShortMinutes, opsMetricsWindowLongMinutes} {
-		startTime := now.Add(-time.Duration(window) * time.Minute)
-		windowStats, err := c.opsService.GetWindowStats(ctx, startTime, now)
+		startTime := windowEnd.Add(-time.Duration(window) * time.Minute)
+		windowStats, err := c.getWindowStatsCached(ctx, window, startTime, windowEnd)
 		if err != nil {
 			log.Printf("[OpsMetrics] failed to get window stats (%dm): %v", window, err)
 			continue
@@ -130,6 +166,80 @@ func (c *OpsMetricsCollector) collectOnce() {
 		}
 	}
 
+	if c.cacheEnabled && c.redisClient != nil {
+		hits := atomic.LoadUint64(&c.cacheHits)
+		misses := atomic.LoadUint64(&c.cacheMisses)
+
+		c.lastCacheStatsMu.Lock()
+		deltaHits := hits - c.lastCacheHits
+		deltaMisses := misses - c.lastCacheMisses
+		c.lastCacheHits = hits
+		c.lastCacheMisses = misses
+		c.lastCacheStatsMu.Unlock()
+
+		total := deltaHits + deltaMisses
+		hitRate := 0.0
+		if total > 0 {
+			hitRate = float64(deltaHits) / float64(total) * percentScale
+		}
+		log.Printf("[OpsMetrics] window-stats cache hits=%d misses=%d hit_rate=%.1f%% ttl=%s", deltaHits, deltaMisses, hitRate, c.cacheTTL)
+	}
+}
+
+func (c *OpsMetricsCollector) getWindowStatsCached(
+	ctx context.Context,
+	windowMinutes int,
+	startTime time.Time,
+	endTime time.Time,
+) (*OpsWindowStats, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if c == nil || c.opsService == nil {
+		return nil, nil
+	}
+
+	// Cache is optional; always fall back to DB on any cache issue.
+	if c.cacheEnabled && c.redisClient != nil {
+		key := fmt.Sprintf("%s%d:end:%d", opsMetricsCollectorCacheKeyPrefix, windowMinutes, endTime.UTC().Unix())
+		data, err := c.redisClient.Get(ctx, key).Bytes()
+		if err == nil {
+			var stats OpsWindowStats
+			unmarshalErr := json.Unmarshal(data, &stats)
+			if unmarshalErr == nil {
+				atomic.AddUint64(&c.cacheHits, 1)
+				return &stats, nil
+			}
+			// Corrupt payload shouldn't break collection; treat as miss and recompute.
+			atomic.AddUint64(&c.cacheMisses, 1)
+			log.Printf("[OpsMetrics] failed to unmarshal cached window stats (%dm): %v", windowMinutes, unmarshalErr)
+			_ = c.redisClient.Del(ctx, key).Err()
+		} else if errors.Is(err, redis.Nil) {
+			atomic.AddUint64(&c.cacheMisses, 1)
+		} else {
+			atomic.AddUint64(&c.cacheMisses, 1)
+			infraerror.RecordInfrastructureError(ctx, "redis", "OpsMetricsCollector.getWindowStatsCached.get", err)
+		}
+	}
+
+	stats, err := c.opsService.GetWindowStats(ctx, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+
+	if c.cacheEnabled && c.redisClient != nil {
+		key := fmt.Sprintf("%s%d:end:%d", opsMetricsCollectorCacheKeyPrefix, windowMinutes, endTime.UTC().Unix())
+		payload, marshalErr := json.Marshal(stats)
+		if marshalErr != nil {
+			log.Printf("[OpsMetrics] failed to marshal window stats for cache (%dm): %v", windowMinutes, marshalErr)
+			return stats, nil
+		}
+		if setErr := c.redisClient.Set(ctx, key, payload, c.cacheTTL).Err(); setErr != nil {
+			infraerror.RecordInfrastructureError(ctx, "redis", "OpsMetricsCollector.getWindowStatsCached.set", setErr)
+		}
+	}
+
+	return stats, nil
 }
 
 func computeRates(successCount, errorCount int64) (float64, float64) {

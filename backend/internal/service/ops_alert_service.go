@@ -3,6 +3,8 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,10 +12,14 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/redis/go-redis/v9"
 )
 
 type OpsAlertService struct {
@@ -23,6 +29,14 @@ type OpsAlertService struct {
 	httpClient   *http.Client
 
 	interval time.Duration
+
+	redisClient          *redis.Client
+	distributedLockOn    bool
+	distributedLockKey   string
+	distributedLockTTL   time.Duration
+	distributedLockWarn  sync.Once
+	distributedSkipLogMu sync.Mutex
+	distributedSkipLogAt time.Time
 
 	startOnce sync.Once
 	stopOnce  sync.Once
@@ -37,13 +51,37 @@ type OpsAlertService struct {
 // integration tests fast without changing production defaults.
 var opsAlertEvalInterval = opsMetricsInterval
 
-func NewOpsAlertService(opsService *OpsService, userService *UserService, emailService *EmailService) *OpsAlertService {
+func NewOpsAlertService(
+	opsService *OpsService,
+	userService *UserService,
+	emailService *EmailService,
+	redisClient *redis.Client,
+	cfg *config.Config,
+) *OpsAlertService {
+	lockOn := true
+	lockKey := opsAlertLeaderLockKeyDefault
+	lockTTL := opsAlertLeaderLockTTLDefault
+	if cfg != nil {
+		lockOn = cfg.Ops.Alert.DistributedLockEnabled
+		if strings.TrimSpace(cfg.Ops.Alert.DistributedLockKey) != "" {
+			lockKey = strings.TrimSpace(cfg.Ops.Alert.DistributedLockKey)
+		}
+		if cfg.Ops.Alert.DistributedLockTTL > 0 {
+			lockTTL = cfg.Ops.Alert.DistributedLockTTL
+		}
+	}
+
 	return &OpsAlertService{
 		opsService:   opsService,
 		userService:  userService,
 		emailService: emailService,
 		httpClient:   &http.Client{Timeout: 10 * time.Second},
 		interval:     opsAlertEvalInterval,
+		redisClient:  redisClient,
+
+		distributedLockOn:  lockOn,
+		distributedLockKey: lockKey,
+		distributedLockTTL: lockTTL,
 	}
 }
 
@@ -117,6 +155,14 @@ func (s *OpsAlertService) evaluateOnce() {
 func (s *OpsAlertService) Evaluate(ctx context.Context, now time.Time) {
 	if s == nil || s.opsService == nil {
 		return
+	}
+
+	releaseLeaderLock, ok := s.tryAcquireLeaderLock(ctx)
+	if !ok {
+		return
+	}
+	if releaseLeaderLock != nil {
+		defer releaseLeaderLock()
 	}
 
 	rules, err := s.opsService.ListAlertRules(ctx)
@@ -233,6 +279,185 @@ func (s *OpsAlertService) Evaluate(ctx context.Context, now time.Time) {
 			}
 		}
 	}
+}
+
+const (
+	opsAlertLeaderLockKeyDefault = "ops:alert:leader"
+
+	// opsAlertLeaderLockTTLDefault is the base TTL for the leader lock.
+	// We renew periodically while evaluating, so this is mainly a safety net to
+	// recover if the leader crashes mid-run.
+	opsAlertLeaderLockTTLDefault = 30 * time.Second
+
+	opsAlertLeaderLockSkipLogMinInterval = 1 * time.Minute
+)
+
+var opsAlertLeaderUnlockScript = redis.NewScript(`
+if redis.call("get", KEYS[1]) == ARGV[1] then
+  return redis.call("del", KEYS[1])
+end
+return 0
+`)
+
+var opsAlertLeaderRenewScript = redis.NewScript(`
+if redis.call("get", KEYS[1]) == ARGV[1] then
+  return redis.call("pexpire", KEYS[1], ARGV[2])
+end
+return 0
+`)
+
+func (s *OpsAlertService) tryAcquireLeaderLock(ctx context.Context) (func(), bool) {
+	if s == nil || !s.distributedLockOn {
+		return nil, true
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	key := strings.TrimSpace(s.distributedLockKey)
+	if key == "" {
+		key = opsAlertLeaderLockKeyDefault
+	}
+	ttl := s.distributedLockTTL
+	if ttl <= 0 {
+		ttl = opsAlertLeaderLockTTLDefault
+	}
+
+	if s.redisClient == nil {
+		s.distributedLockWarn.Do(func() {
+			log.Printf("[OpsAlert] distributed lock enabled but redis client is nil; proceeding without leader lock (key=%q)", key)
+		})
+		return nil, true
+	}
+
+	token := opsAlertLeaderToken()
+	ok, err := s.redisClient.SetNX(ctx, key, token, ttl).Result()
+	if err != nil {
+		log.Printf("[OpsAlert] failed to acquire leader lock (key=%q): %v", key, err)
+		return nil, false
+	}
+	if !ok {
+		s.logLeaderLockSkipped(key)
+		return nil, false
+	}
+
+	log.Printf("[OpsAlert] acquired leader lock (key=%q ttl=%s token=%s)", key, ttl, shortenLockToken(token))
+
+	renewCancel, renewDone := s.startLeaderLockRenewal(key, token, ttl)
+
+	release := func() {
+		if renewCancel != nil {
+			renewCancel()
+		}
+		if renewDone != nil {
+			select {
+			case <-renewDone:
+			case <-time.After(2 * time.Second):
+				log.Printf("[OpsAlert] leader lock renewal goroutine did not stop in time (key=%q)", key)
+			}
+		}
+
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		res, err := opsAlertLeaderUnlockScript.Run(releaseCtx, s.redisClient, []string{key}, token).Int()
+		if err != nil {
+			log.Printf("[OpsAlert] failed to release leader lock (key=%q token=%s): %v", key, shortenLockToken(token), err)
+			return
+		}
+		if res == 1 {
+			log.Printf("[OpsAlert] released leader lock (key=%q token=%s)", key, shortenLockToken(token))
+		}
+	}
+
+	return release, true
+}
+
+func (s *OpsAlertService) startLeaderLockRenewal(key string, token string, ttl time.Duration) (context.CancelFunc, <-chan struct{}) {
+	if s == nil || s.redisClient == nil {
+		return nil, nil
+	}
+	if strings.TrimSpace(key) == "" || token == "" || ttl <= 0 {
+		return nil, nil
+	}
+
+	refreshEvery := ttl / 2
+	if refreshEvery < 5*time.Second {
+		refreshEvery = 5 * time.Second
+	}
+	ttlMillis := ttl.Milliseconds()
+	if ttlMillis <= 0 {
+		ttlMillis = 1
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		ticker := time.NewTicker(refreshEvery)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				renewCtx, renewCancel := context.WithTimeout(context.Background(), 2*time.Second)
+				res, err := opsAlertLeaderRenewScript.Run(renewCtx, s.redisClient, []string{key}, token, ttlMillis).Int()
+				renewCancel()
+				if err != nil {
+					log.Printf("[OpsAlert] leader lock renewal failed (key=%q token=%s): %v", key, shortenLockToken(token), err)
+					continue
+				}
+				if res == 0 {
+					log.Printf("[OpsAlert] leader lock no longer owned; stop renewing (key=%q token=%s)", key, shortenLockToken(token))
+					return
+				}
+			}
+		}
+	}()
+
+	return cancel, done
+}
+
+func (s *OpsAlertService) logLeaderLockSkipped(key string) {
+	if s == nil {
+		return
+	}
+	s.distributedSkipLogMu.Lock()
+	defer s.distributedSkipLogMu.Unlock()
+
+	now := time.Now()
+	if !s.distributedSkipLogAt.IsZero() && now.Sub(s.distributedSkipLogAt) < opsAlertLeaderLockSkipLogMinInterval {
+		return
+	}
+	s.distributedSkipLogAt = now
+	log.Printf("[OpsAlert] skipped evaluation; leader lock held by another instance (key=%q)", key)
+}
+
+func opsAlertLeaderToken() string {
+	host, _ := os.Hostname()
+	pid := os.Getpid()
+
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return fmt.Sprintf("%s:%d:%d", host, pid, time.Now().UnixNano())
+	}
+	return fmt.Sprintf("%s:%d:%s", host, pid, hex.EncodeToString(buf))
+}
+
+func shortenLockToken(token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return ""
+	}
+	const maxLen = 10
+	if len(token) <= maxLen {
+		return token
+	}
+	return token[:maxLen]
 }
 
 const opsMetricsContinuityTolerance = 20 * time.Second
@@ -354,6 +579,8 @@ func compareMetric(value float64, operator string, threshold float64) bool {
 		return value <= threshold
 	case "==":
 		return value == threshold
+	case "!=":
+		return value != threshold
 	default:
 		return false
 	}

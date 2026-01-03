@@ -61,12 +61,12 @@ func TestMetricValue_SuccessRate_NoTrafficIsNoData(t *testing.T) {
 }
 
 func TestOpsAlertService_StopWithoutStart_NoPanic(t *testing.T) {
-	s := NewOpsAlertService(nil, nil, nil)
+	s := NewOpsAlertService(nil, nil, nil, nil, nil)
 	require.NotPanics(t, func() { s.Stop() })
 }
 
 func TestOpsAlertService_StartStop_Graceful(t *testing.T) {
-	s := NewOpsAlertService(nil, nil, nil)
+	s := NewOpsAlertService(nil, nil, nil, nil, nil)
 	s.interval = 5 * time.Millisecond
 
 	ctx, cancel := context.WithCancel(context.Background())
