@@ -76,13 +76,14 @@ func (s *OpsService) GetErrorLogs(ctx context.Context, filter *ErrorLogFilter) (
 	}
 
 	page, pageSize := filter.normalize()
-	if filter == nil {
-		filter = &ErrorLogFilter{}
+	filterCopy := &ErrorLogFilter{}
+	if filter != nil {
+		*filterCopy = *filter
 	}
-	filter.Page = page
-	filter.PageSize = pageSize
+	filterCopy.Page = page
+	filterCopy.PageSize = pageSize
 
-	items, total, err := s.repo.ListErrorLogs(ctx, filter)
+	items, total, err := s.repo.ListErrorLogs(ctx, filterCopy)
 	if err != nil {
 		return nil, err
 	}

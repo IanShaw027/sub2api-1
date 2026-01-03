@@ -2,6 +2,7 @@ package admin
 
 import (
 	"math"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -50,6 +51,11 @@ func (h *OpsHandler) ListMetricsHistory(c *gin.Context) {
 			response.BadRequest(c, "Invalid window_minutes")
 			return
 		}
+	}
+	validWindows := map[int]bool{1: true, 5: true, 60: true}
+	if !validWindows[windowMinutes] {
+		response.BadRequest(c, "Invalid window_minutes (supported: 1, 5, 60)")
+		return
 	}
 
 	limit := 300
@@ -427,13 +433,12 @@ func (h *OpsHandler) GetErrorDetail(c *gin.Context) {
 	response.Success(c, errorLog)
 }
 
-// GetErrorStats returns error statistics aggregated by dimensions.
+// GetErrorStats returns error statistics for a time window.
 // GET /api/v1/admin/ops/error-stats
 //
 // Query params:
-// - start_time: RFC3339 timestamp (optional)
-// - end_time: RFC3339 timestamp (optional)
-// - group_by: string (optional; one of: platform, error_type, error_source)
+// - start_time: RFC3339 timestamp (optional; default: 24h ago)
+// - end_time: RFC3339 timestamp (optional; default: now)
 func (h *OpsHandler) GetErrorStats(c *gin.Context) {
 	startTime := time.Now().Add(-24 * time.Hour)
 	endTime := time.Now()
@@ -658,6 +663,10 @@ func (h *OpsHandler) GetErrorsByIP(c *gin.Context) {
 	ip := c.Param("ip")
 	if ip == "" {
 		response.BadRequest(c, "IP address is required")
+		return
+	}
+	if net.ParseIP(ip) == nil {
+		response.BadRequest(c, "Invalid IP address format")
 		return
 	}
 
