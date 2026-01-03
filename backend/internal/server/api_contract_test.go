@@ -202,7 +202,7 @@ func TestAPIContracts(t *testing.T) {
 						BillingType:         service.BillingTypeBalance,
 						Stream:              true,
 						DurationMs:          ptr(100),
-						FirstTokenMs:        ptr(50),
+						TimeToFirstTokenMs:  ptr(50),
 						CreatedAt:           deps.now,
 					},
 				})
@@ -240,7 +240,7 @@ func TestAPIContracts(t *testing.T) {
 							"billing_type": 0,
 							"stream": true,
 							"duration_ms": 100,
-							"first_token_ms": 50,
+							"time_to_first_token_ms": 50,
 							"created_at": "2025-01-02T03:04:05Z"
 						}
 					],

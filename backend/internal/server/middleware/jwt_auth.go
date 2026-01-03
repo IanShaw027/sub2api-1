@@ -118,5 +118,8 @@ func recordOpsJWTAuthError(c *gin.Context, opsService *service.OpsService, userI
 		logEntry.UserID = userID
 	}
 
-	RecordOpsError(opsService, logEntry)
+	// 异步记录错误日志，避免阻塞请求
+	go func() {
+		_ = opsService.RecordOpsError(c.Request.Context(), logEntry, nil)
+	}()
 }

@@ -293,7 +293,7 @@ func (h *OpenAIGatewayHandler) mapUpstreamError(statusCode int) (int, string, st
 // handleStreamingAwareError handles errors that may occur after streaming has started
 func (h *OpenAIGatewayHandler) handleStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
 	if streamStarted {
-		recordOpsError(c, h.opsService, status, errType, message, service.PlatformOpenAI, true, "")
+		recordOpsError(c, h.opsService, status, errType, message, service.PlatformOpenAI, true, "", nil)
 		// Stream already started, send error as SSE event then close
 		flusher, ok := c.Writer.(http.Flusher)
 		if ok {
@@ -313,7 +313,7 @@ func (h *OpenAIGatewayHandler) handleStreamingAwareError(c *gin.Context, status 
 
 // errorResponse returns OpenAI API format error response
 func (h *OpenAIGatewayHandler) errorResponse(c *gin.Context, status int, errType, message string) {
-	recordOpsError(c, h.opsService, status, errType, message, service.PlatformOpenAI, false, "")
+	recordOpsError(c, h.opsService, status, errType, message, service.PlatformOpenAI, false, "", nil)
 	c.JSON(status, gin.H{
 		"error": gin.H{
 			"type":    errType,

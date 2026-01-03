@@ -92,6 +92,20 @@ export interface OpsErrorLog {
   stream?: boolean
 }
 
+export interface OpsErrorDetail extends OpsErrorLog {
+  // 延迟细化字段
+  auth_latency_ms?: number | null
+  routing_latency_ms?: number | null
+  upstream_latency_ms?: number | null
+  response_latency_ms?: number | null
+  time_to_first_token_ms?: number | null
+
+  // 请求和响应信息
+  request_body?: string
+  response_body?: string
+  user_agent?: string
+}
+
 export interface OpsErrorListParams {
   start_time?: string
   end_time?: string
@@ -143,6 +157,14 @@ export async function listMetricsHistory(params?: OpsMetricsHistoryParams): Prom
  */
 export async function listErrors(params?: OpsErrorListParams): Promise<OpsErrorListResponse> {
   const { data } = await apiClient.get<OpsErrorListResponse>('/admin/ops/error-logs', { params })
+  return data
+}
+
+/**
+ * Get detailed error log by ID
+ */
+export async function getErrorDetail(id: number): Promise<OpsErrorDetail> {
+  const { data } = await apiClient.get<OpsErrorDetail>(`/admin/ops/errors/${id}`)
   return data
 }
 
@@ -364,6 +386,7 @@ export const opsAPI = {
   getMetrics,
   listMetricsHistory,
   listErrors,
+  getErrorDetail,
   getDashboardOverview,
   getProviderHealth,
   getLatencyHistogram,

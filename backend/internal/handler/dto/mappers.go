@@ -243,7 +243,7 @@ func UsageLogFromService(l *service.UsageLog) *UsageLog {
 		BillingType:           l.BillingType,
 		Stream:                l.Stream,
 		DurationMs:            l.DurationMs,
-		FirstTokenMs:          l.FirstTokenMs,
+		TimeToFirstTokenMs:    l.TimeToFirstTokenMs,
 		CreatedAt:             l.CreatedAt,
 		User:                  UserFromServiceShallow(l.User),
 		APIKey:                APIKeyFromService(l.APIKey),

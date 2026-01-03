@@ -141,5 +141,8 @@ func recordOpsRequestBodyTooLarge(c *gin.Context, opsService *service.OpsService
 		}
 	}
 
-	RecordOpsError(opsService, logEntry)
+	// 异步记录错误日志，避免阻塞请求
+	go func() {
+		_ = opsService.RecordOpsError(c.Request.Context(), logEntry, nil)
+	}()
 }

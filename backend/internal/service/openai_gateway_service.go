@@ -65,12 +65,12 @@ type OpenAIUsage struct {
 
 // OpenAIForwardResult represents the result of forwarding
 type OpenAIForwardResult struct {
-	RequestID    string
-	Usage        OpenAIUsage
-	Model        string
-	Stream       bool
-	Duration     time.Duration
-	FirstTokenMs *int
+	RequestID          string
+	Usage              OpenAIUsage
+	Model              string
+	Stream             bool
+	Duration           time.Duration
+	TimeToFirstTokenMs *int
 }
 
 // OpenAIGatewayService handles OpenAI API gateway operations
@@ -611,12 +611,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 
 	return &OpenAIForwardResult{
-		RequestID:    resp.Header.Get("x-request-id"),
-		Usage:        *usage,
-		Model:        originalModel,
-		Stream:       reqStream,
-		Duration:     time.Since(startTime),
-		FirstTokenMs: firstTokenMs,
+		RequestID:          resp.Header.Get("x-request-id"),
+		Usage:              *usage,
+		Model:              originalModel,
+		Stream:             reqStream,
+		Duration:           time.Since(startTime),
+		TimeToFirstTokenMs: firstTokenMs,
 	}, nil
 }
 
@@ -1006,11 +1006,11 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		TotalCost:           cost.TotalCost,
 		ActualCost:          cost.ActualCost,
 		RateMultiplier:      multiplier,
-		BillingType:         billingType,
-		Stream:              result.Stream,
-		DurationMs:          &durationMs,
-		FirstTokenMs:        result.FirstTokenMs,
-		CreatedAt:           time.Now(),
+		BillingType:        billingType,
+		Stream:             result.Stream,
+		DurationMs:         &durationMs,
+		TimeToFirstTokenMs: result.TimeToFirstTokenMs,
+		CreatedAt:          time.Now(),
 	}
 
 	if apiKey.GroupID != nil {

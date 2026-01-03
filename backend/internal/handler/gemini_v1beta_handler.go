@@ -150,7 +150,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	if maxBytes, ok := middleware.GetMaxBodySizeFromContext(c); ok && maxBytes > 0 {
 		if c.Request != nil && c.Request.ContentLength > maxBytes {
 			msg := buildBodyTooLargeMessage(maxBytes)
-			recordOpsError(c, h.opsService, http.StatusRequestEntityTooLarge, "invalid_request_error", msg, "", false, "")
+			recordOpsError(c, h.opsService, http.StatusRequestEntityTooLarge, "invalid_request_error", msg, "", false, "", nil)
 			googleError(c, http.StatusRequestEntityTooLarge, msg)
 			return
 		}
@@ -160,7 +160,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	if err != nil {
 		if maxErr, ok := extractMaxBytesError(err); ok {
 			msg := buildBodyTooLargeMessage(maxErr.Limit)
-			recordOpsError(c, h.opsService, http.StatusRequestEntityTooLarge, "invalid_request_error", msg, "", false, "")
+			recordOpsError(c, h.opsService, http.StatusRequestEntityTooLarge, "invalid_request_error", msg, "", false, "", nil)
 			googleError(c, http.StatusRequestEntityTooLarge, msg)
 			return
 		}
@@ -170,7 +170,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 
 	if maxBytes, ok := middleware.GetMaxBodySizeFromContext(c); ok && maxBytes > 0 && int64(len(body)) > maxBytes {
 		msg := buildBodyTooLargeMessage(maxBytes)
-		recordOpsError(c, h.opsService, http.StatusRequestEntityTooLarge, "invalid_request_error", msg, "", false, "")
+		recordOpsError(c, h.opsService, http.StatusRequestEntityTooLarge, "invalid_request_error", msg, "", false, "", nil)
 		googleError(c, http.StatusRequestEntityTooLarge, msg)
 		return
 	}

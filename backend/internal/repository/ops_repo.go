@@ -796,7 +796,7 @@ func (r *OpsRepository) ListSystemMetricsRange(ctx context.Context, windowMinute
 		FROM ops_system_metrics
 		WHERE window_minutes = $1
 		  AND created_at >= $2
-		  AND created_at <= $3
+		  AND created_at < $3
 		ORDER BY created_at ASC
 		LIMIT $4
 	`
@@ -1449,18 +1449,16 @@ func (r *OpsRepository) GetLatencyHistogramLegacy(ctx context.Context, startTime
 		WITH buckets AS (
 			SELECT
 				CASE
-					WHEN duration_ms < 200 THEN '<200ms'
-					WHEN duration_ms < 500 THEN '200-500ms'
+					WHEN duration_ms < 100 THEN '0-100ms'
+					WHEN duration_ms < 500 THEN '100-500ms'
 					WHEN duration_ms < 1000 THEN '500-1000ms'
-					WHEN duration_ms < 3000 THEN '1000-3000ms'
-					ELSE '>3000ms'
+					ELSE '1000ms+'
 				END AS range_name,
 				CASE
-					WHEN duration_ms < 200 THEN 1
+					WHEN duration_ms < 100 THEN 1
 					WHEN duration_ms < 500 THEN 2
 					WHEN duration_ms < 1000 THEN 3
-					WHEN duration_ms < 3000 THEN 4
-					ELSE 5
+					ELSE 4
 				END AS range_order,
 				COUNT(*) AS count
 			FROM usage_logs
@@ -2570,7 +2568,7 @@ func (r *OpsRepository) GetErrorDistribution(ctx context.Context, startTime, end
 		WITH errors AS (
 			SELECT
 				COALESCE(status_code::text, 'unknown') AS code,
-				COALESCE(error_message, 'Unknown error') AS message,
+				COALESCE(error_type, 'unknown') AS message,
 				COUNT(*) AS count
 			FROM ops_error_logs
 			WHERE created_at >= $1 AND created_at < $2

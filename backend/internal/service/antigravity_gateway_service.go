@@ -563,19 +563,19 @@ func (s *AntigravityGatewayService) Forward(ctx context.Context, c *gin.Context,
 		usage = streamRes.usage
 		firstTokenMs = streamRes.firstTokenMs
 	} else {
-		usage, err = s.handleClaudeNonStreamingResponse(c, resp, originalModel)
+		usage, firstTokenMs, err = s.handleClaudeNonStreamingResponse(c, resp, originalModel, startTime)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	return &ForwardResult{
-		RequestID:    requestID,
-		Usage:        *usage,
-		Model:        originalModel, // 使用原始模型用于计费和日志
-		Stream:       claudeReq.Stream,
-		Duration:     time.Since(startTime),
-		FirstTokenMs: firstTokenMs,
+		RequestID:          requestID,
+		Usage:              *usage,
+		Model:              originalModel, // 使用原始模型用于计费和日志
+		Stream:             claudeReq.Stream,
+		Duration:           time.Since(startTime),
+		TimeToFirstTokenMs: firstTokenMs,
 	}, nil
 }
 
@@ -659,7 +659,7 @@ func (s *AntigravityGatewayService) ForwardGemini(ctx context.Context, c *gin.Co
 					Model:        originalModel,
 					Stream:       false,
 					Duration:     time.Since(startTime),
-					FirstTokenMs: nil,
+					TimeToFirstTokenMs: nil,
 				}, nil
 			}
 			return nil, s.writeGoogleError(c, http.StatusBadGateway, "Upstream request failed after retries")
@@ -687,7 +687,7 @@ func (s *AntigravityGatewayService) ForwardGemini(ctx context.Context, c *gin.Co
 					Model:        originalModel,
 					Stream:       false,
 					Duration:     time.Since(startTime),
-					FirstTokenMs: nil,
+					TimeToFirstTokenMs: nil,
 				}, nil
 			}
 			resp = &http.Response{
@@ -721,7 +721,7 @@ func (s *AntigravityGatewayService) ForwardGemini(ctx context.Context, c *gin.Co
 				Model:        originalModel,
 				Stream:       false,
 				Duration:     time.Since(startTime),
-				FirstTokenMs: nil,
+				TimeToFirstTokenMs: nil,
 			}, nil
 		}
 
@@ -767,7 +767,7 @@ func (s *AntigravityGatewayService) ForwardGemini(ctx context.Context, c *gin.Co
 		Model:        originalModel,
 		Stream:       stream,
 		Duration:     time.Since(startTime),
-		FirstTokenMs: firstTokenMs,
+		TimeToFirstTokenMs: firstTokenMs,
 	}, nil
 }
 
@@ -988,17 +988,20 @@ func (s *AntigravityGatewayService) writeGoogleError(c *gin.Context, status int,
 }
 
 // handleClaudeNonStreamingResponse 处理 Claude 非流式响应（Gemini → Claude 转换）
-func (s *AntigravityGatewayService) handleClaudeNonStreamingResponse(c *gin.Context, resp *http.Response, originalModel string) (*ClaudeUsage, error) {
+func (s *AntigravityGatewayService) handleClaudeNonStreamingResponse(c *gin.Context, resp *http.Response, originalModel string, startTime time.Time) (*ClaudeUsage, *int, error) {
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
-		return nil, s.writeClaudeError(c, http.StatusBadGateway, "upstream_error", "Failed to read upstream response")
+		return nil, nil, s.writeClaudeError(c, http.StatusBadGateway, "upstream_error", "Failed to read upstream response")
 	}
+
+	// 非流式响应：TTFT = 收到完整响应的时间
+	ttft := int(time.Since(startTime).Milliseconds())
 
 	// 转换 Gemini 响应为 Claude 格式
 	claudeResp, agUsage, err := antigravity.TransformGeminiToClaude(body, originalModel)
 	if err != nil {
 		log.Printf("Transform Gemini to Claude failed: %v, body: %s", err, string(body))
-		return nil, s.writeClaudeError(c, http.StatusBadGateway, "upstream_error", "Failed to parse upstream response")
+		return nil, nil, s.writeClaudeError(c, http.StatusBadGateway, "upstream_error", "Failed to parse upstream response")
 	}
 
 	c.Data(http.StatusOK, "application/json", claudeResp)
@@ -1010,7 +1013,7 @@ func (s *AntigravityGatewayService) handleClaudeNonStreamingResponse(c *gin.Cont
 		CacheCreationInputTokens: agUsage.CacheCreationInputTokens,
 		CacheReadInputTokens:     agUsage.CacheReadInputTokens,
 	}
-	return usage, nil
+	return usage, &ttft, nil
 }
 
 // handleClaudeStreamingResponse 处理 Claude 流式响应（Gemini SSE → Claude SSE 转换）

@@ -32,8 +32,9 @@ const (
 )
 
 type opsErrorLogJob struct {
-	ops   *service.OpsService
-	entry *service.OpsErrorLog
+	ops         *service.OpsService
+	entry       *service.OpsErrorLog
+	requestBody []byte
 }
 
 var (
@@ -73,14 +74,14 @@ func startOpsErrorLogWorkers() {
 					continue
 				}
 				ctx, cancel := context.WithTimeout(context.Background(), opsErrorLogTimeout)
-				_ = job.ops.RecordError(ctx, job.entry)
+				_ = job.ops.RecordError(ctx, job.entry, job.requestBody)
 				cancel()
 			}
 		}()
 	}
 }
 
-func enqueueOpsErrorLog(ops *service.OpsService, entry *service.OpsErrorLog) {
+func enqueueOpsErrorLog(ops *service.OpsService, entry *service.OpsErrorLog, requestBody []byte) {
 	if ops == nil || entry == nil {
 		return
 	}
@@ -106,7 +107,7 @@ func enqueueOpsErrorLog(ops *service.OpsService, entry *service.OpsErrorLog) {
 	}
 
 	select {
-	case opsErrorLogQueue <- opsErrorLogJob{ops: ops, entry: entry}:
+	case opsErrorLogQueue <- opsErrorLogJob{ops: ops, entry: entry, requestBody: requestBody}:
 		opsErrorLogQueueLen.Add(1)
 	default:
 		// Queue is full; drop to avoid blocking request handling.
@@ -182,7 +183,7 @@ func setOpsRequestContext(c *gin.Context, model string, stream bool) {
 	c.Set(opsStreamKey, stream)
 }
 
-func recordOpsError(c *gin.Context, ops *service.OpsService, status int, errType, message, fallbackPlatform string, streamInterrupted bool, upstreamDetail string) {
+func recordOpsError(c *gin.Context, ops *service.OpsService, status int, errType, message, fallbackPlatform string, streamInterrupted bool, upstreamDetail string, requestBody []byte) {
 	if ops == nil || c == nil {
 		return
 	}
@@ -215,6 +216,12 @@ func recordOpsError(c *gin.Context, ops *service.OpsService, status int, errType
 			return ""
 		}(),
 		Stream: streaming,
+		UserAgent: func() string {
+			if c.Request != nil {
+				return c.Request.Header.Get("User-Agent")
+			}
+			return ""
+		}(),
 	}
 	if c.Request != nil {
 		logEntry.RetryCount = getOpsRetryCountFromContext(c.Request.Context())
@@ -236,7 +243,7 @@ func recordOpsError(c *gin.Context, ops *service.OpsService, status int, errType
 		}
 	}
 
-	enqueueOpsErrorLog(ops, logEntry)
+	enqueueOpsErrorLog(ops, logEntry, requestBody)
 }
 
 func resolveOpsPlatform(apiKey *service.APIKey, fallback string) string {

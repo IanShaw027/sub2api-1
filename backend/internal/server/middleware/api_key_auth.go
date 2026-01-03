@@ -217,7 +217,10 @@ func recordOpsAuthError(c *gin.Context, opsService *service.OpsService, apiKey *
 		}
 	}
 
-	enqueueOpsAuthErrorLog(opsService, logEntry)
+	// 异步记录错误日志，避免阻塞请求
+	go func() {
+		_ = opsService.RecordOpsError(c.Request.Context(), logEntry, nil)
+	}()
 }
 
 // GetAPIKeyFromContext 从上下文中获取API key

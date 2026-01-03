@@ -17,7 +17,8 @@ import {
 } from 'chart.js'
 import { useIntervalFn } from '@vueuse/core'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import { opsAPI, type OpsDashboardOverview, type ProviderHealthData, type LatencyHistogramResponse, type ErrorDistributionResponse, type OpsMetrics } from '@/api/admin/ops'
+import ErrorDetailModal from '@/components/admin/ErrorDetailModal.vue'
+import { opsAPI, type OpsDashboardOverview, type ProviderHealthData, type LatencyHistogramResponse, type ErrorDistributionResponse, type OpsMetrics, type OpsErrorLog, type OpsPlatform, type OpsSeverity } from '@/api/admin/ops'
 import { formatBytes, formatNumber } from '@/utils/format'
 
 ChartJS.register(
@@ -46,6 +47,39 @@ const latencyData = ref<LatencyHistogramResponse | null>(null)
 const errorDistribution = ref<ErrorDistributionResponse | null>(null)
 const latestMetrics = ref<OpsMetrics | null>(null)
 const metricsHistory = ref<OpsMetrics[]>([])
+
+// Error logs section
+const errorLogsLoading = ref(false)
+const errorLogs = ref<OpsErrorLog[]>([])
+const errorLogsTotal = ref(0)
+const errorLogsPagination = ref({
+  page: 1,
+  pageSize: 50
+})
+
+// Error detail modal
+const showErrorDetail = ref(false)
+const selectedErrorId = ref<number | null>(null)
+
+function openErrorDetail(errorLog: OpsErrorLog) {
+  selectedErrorId.value = errorLog.id
+  showErrorDetail.value = true
+}
+
+function closeErrorDetail() {
+  showErrorDetail.value = false
+  // Delay clearing selectedErrorId to allow animation to complete
+  setTimeout(() => {
+    selectedErrorId.value = null
+  }, 300)
+}
+const errorFilters = ref({
+  platforms: [] as OpsPlatform[],
+  statusCodes: [] as number[],
+  clientIp: '',
+  severity: '' as OpsSeverity | '',
+  searchText: ''
+})
 
 // WebSocket for real-time QPS
 const realTimeQPS = ref(0)
@@ -95,6 +129,7 @@ useIntervalFn(fetchData, 30000)
 
 onMounted(() => {
   fetchData()
+  fetchErrors()
   unsubscribeQPS = opsAPI.subscribeQPS(
     (payload) => {
       if (payload && typeof payload === 'object' && payload.type === 'qps_update' && payload.data) {
@@ -122,6 +157,90 @@ onUnmounted(() => {
 watch(timeRange, () => {
   fetchData()
 })
+
+// Platform and status code options
+const platformOptions: OpsPlatform[] = ['openai', 'anthropic', 'gemini', 'antigravity']
+const statusCodeOptions = [400, 401, 403, 404, 429, 500, 502, 503, 504]
+const severityOptions: OpsSeverity[] = ['P0', 'P1', 'P2', 'P3']
+
+// Fetch error logs
+const fetchErrors = async () => {
+  errorLogsLoading.value = true
+  try {
+    const params: any = {
+      limit: errorLogsPagination.value.pageSize
+    }
+
+    // Apply time range filter
+    const minutes = parseTimeRangeMinutes(timeRange.value)
+    const endTime = new Date()
+    const startTime = new Date(endTime.getTime() - minutes * 60 * 1000)
+    params.start_time = startTime.toISOString()
+    params.end_time = endTime.toISOString()
+
+    // Apply filters
+    if (errorFilters.value.platforms.length > 0) {
+      params.platform = errorFilters.value.platforms[0] // API只支持单个platform
+    }
+    if (errorFilters.value.severity) {
+      params.severity = errorFilters.value.severity
+    }
+    if (errorFilters.value.searchText) {
+      params.q = errorFilters.value.searchText
+    }
+
+    const response = await opsAPI.listErrors(params)
+
+    // 客户端过滤状态码和IP(如果API不支持)
+    let filtered = response.items
+    if (errorFilters.value.statusCodes.length > 0) {
+      filtered = filtered.filter(log => errorFilters.value.statusCodes.includes(log.status_code))
+    }
+    if (errorFilters.value.clientIp) {
+      filtered = filtered.filter(log => log.client_ip?.includes(errorFilters.value.clientIp))
+    }
+    if (errorFilters.value.platforms.length > 1) {
+      filtered = filtered.filter(log => errorFilters.value.platforms.includes(log.platform))
+    }
+
+    errorLogs.value = filtered
+    errorLogsTotal.value = response.total || filtered.length
+  } catch (err) {
+    console.error('Failed to fetch error logs', err)
+  } finally {
+    errorLogsLoading.value = false
+  }
+}
+
+// Watch for filter changes
+watch([errorFilters, timeRange], () => {
+  errorLogsPagination.value.page = 1
+  fetchErrors()
+}, { deep: true })
+
+// Severity badge class
+const getSeverityClass = (severity: OpsSeverity) => {
+  const classes = {
+    P0: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+    P1: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
+    P2: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
+    P3: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+  }
+  return classes[severity] || classes.P3
+}
+
+// Truncate message
+const truncateMessage = (msg: string, maxLength = 80) => {
+  if (!msg) return ''
+  return msg.length > maxLength ? msg.substring(0, maxLength) + '...' : msg
+}
+
+// Format date time
+const formatDateTime = (dateStr: string) => {
+  const d = new Date(dateStr)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
+}
 
 function sumNumbers(values: Array<number | null | undefined>): number {
   return values.reduce<number>((acc, v) => {
@@ -628,7 +747,165 @@ const throughputChartOptions = computed(() => ({
           </div>
         </div>
       </div>
+
+      <!-- L3: Error Logs Query Section -->
+      <div class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
+        <div class="mb-6 flex items-center justify-between">
+          <h3 class="text-sm font-black text-gray-900 dark:text-white uppercase tracking-wider">错误日志查询</h3>
+          <span class="text-xs font-medium text-gray-500">共 {{ errorLogsTotal }} 条记录</span>
+        </div>
+
+        <!-- Filters Bar -->
+        <div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <!-- Platform Multi-Select -->
+          <div>
+            <label class="mb-1.5 block text-xs font-bold text-gray-400 uppercase">平台</label>
+            <select
+              v-model="errorFilters.platforms"
+              multiple
+              class="w-full rounded-lg border-gray-200 bg-gray-50 py-2 px-3 text-sm text-gray-700 focus:border-blue-500 focus:ring-blue-500 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300"
+              style="height: 38px; overflow: auto;"
+            >
+              <option v-for="platform in platformOptions" :key="platform" :value="platform">
+                {{ platform }}
+              </option>
+            </select>
+          </div>
+
+          <!-- Status Code Multi-Select -->
+          <div>
+            <label class="mb-1.5 block text-xs font-bold text-gray-400 uppercase">错误码</label>
+            <select
+              v-model="errorFilters.statusCodes"
+              multiple
+              class="w-full rounded-lg border-gray-200 bg-gray-50 py-2 px-3 text-sm text-gray-700 focus:border-blue-500 focus:ring-blue-500 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300"
+              style="height: 38px; overflow: auto;"
+            >
+              <option v-for="code in statusCodeOptions" :key="code" :value="code">
+                {{ code }}
+              </option>
+            </select>
+          </div>
+
+          <!-- Severity Select -->
+          <div>
+            <label class="mb-1.5 block text-xs font-bold text-gray-400 uppercase">严重级别</label>
+            <select
+              v-model="errorFilters.severity"
+              class="w-full rounded-lg border-gray-200 bg-gray-50 py-2 px-3 text-sm text-gray-700 focus:border-blue-500 focus:ring-blue-500 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300"
+            >
+              <option value="">全部</option>
+              <option v-for="sev in severityOptions" :key="sev" :value="sev">
+                {{ sev }}
+              </option>
+            </select>
+          </div>
+
+          <!-- IP Address Input -->
+          <div>
+            <label class="mb-1.5 block text-xs font-bold text-gray-400 uppercase">IP地址</label>
+            <input
+              v-model="errorFilters.clientIp"
+              type="text"
+              placeholder="搜索IP"
+              class="w-full rounded-lg border-gray-200 bg-gray-50 py-2 px-3 text-sm text-gray-700 placeholder-gray-400 focus:border-blue-500 focus:ring-blue-500 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300"
+            />
+          </div>
+
+          <!-- Search Input -->
+          <div>
+            <label class="mb-1.5 block text-xs font-bold text-gray-400 uppercase">搜索</label>
+            <input
+              v-model="errorFilters.searchText"
+              type="text"
+              placeholder="request_id / 错误信息"
+              class="w-full rounded-lg border-gray-200 bg-gray-50 py-2 px-3 text-sm text-gray-700 placeholder-gray-400 focus:border-blue-500 focus:ring-blue-500 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300"
+            />
+          </div>
+        </div>
+
+        <!-- Error Logs Table -->
+        <div class="overflow-x-auto">
+          <div v-if="errorLogsLoading" class="flex items-center justify-center py-12">
+            <div class="text-sm font-medium text-gray-400">加载中...</div>
+          </div>
+          <div v-else-if="errorLogs.length === 0" class="flex items-center justify-center py-12">
+            <div class="text-sm font-medium text-gray-400">当前筛选条件下无错误记录</div>
+          </div>
+          <table v-else class="min-w-full divide-y divide-gray-200 dark:divide-dark-700">
+            <thead class="bg-gray-50 dark:bg-dark-900">
+              <tr>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-500">时间</th>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-500">Request ID</th>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-500">平台</th>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-500">错误码</th>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-500">严重级别</th>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-500">延迟(ms)</th>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-500">错误信息</th>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-500">客户端IP</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 bg-white dark:divide-dark-700 dark:bg-dark-800">
+              <tr
+                v-for="log in errorLogs"
+                :key="log.id"
+                class="cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-dark-700/50"
+                @click="openErrorDetail(log)"
+              >
+                <td class="whitespace-nowrap px-3 py-3 text-xs text-gray-900 dark:text-gray-300">
+                  {{ formatDateTime(log.created_at) }}
+                </td>
+                <td class="px-3 py-3 text-xs font-mono text-gray-700 dark:text-gray-400">
+                  <div class="max-w-[120px] truncate" :title="log.request_id">{{ log.request_id }}</div>
+                </td>
+                <td class="whitespace-nowrap px-3 py-3">
+                  <span class="rounded-full bg-blue-100 px-2 py-1 text-xs font-bold text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                    {{ log.platform }}
+                  </span>
+                </td>
+                <td class="whitespace-nowrap px-3 py-3">
+                  <span class="rounded-full bg-gray-100 px-2 py-1 text-xs font-bold text-gray-800 dark:bg-gray-900/30 dark:text-gray-400">
+                    {{ log.status_code }}
+                  </span>
+                </td>
+                <td class="whitespace-nowrap px-3 py-3">
+                  <span class="rounded-full px-2 py-1 text-xs font-bold" :class="getSeverityClass(log.severity)">
+                    {{ log.severity }}
+                  </span>
+                </td>
+                <td class="whitespace-nowrap px-3 py-3 text-xs text-gray-700 dark:text-gray-400">
+                  {{ log.latency_ms !== null ? log.latency_ms.toFixed(0) : '--' }}
+                </td>
+                <td class="px-3 py-3 text-xs text-gray-700 dark:text-gray-400">
+                  <div class="max-w-[300px]" :title="log.message">{{ truncateMessage(log.message) }}</div>
+                </td>
+                <td class="whitespace-nowrap px-3 py-3 text-xs font-mono text-gray-600 dark:text-gray-500">
+                  {{ log.client_ip || '--' }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination Info -->
+        <div v-if="errorLogs.length > 0" class="mt-4 flex items-center justify-between border-t border-gray-200 pt-4 dark:border-dark-700">
+          <div class="text-xs text-gray-500">
+            显示 {{ errorLogs.length }} 条记录 (共 {{ errorLogsTotal }} 条)
+          </div>
+          <div class="text-xs text-gray-400">
+            分页功能后续可扩展
+          </div>
+        </div>
+      </div>
     </div>
+
+    <!-- Error Detail Modal -->
+    <ErrorDetailModal
+      v-if="selectedErrorId !== null"
+      v-model="showErrorDetail"
+      :error-id="selectedErrorId"
+      @update:model-value="closeErrorDetail"
+    />
   </AppLayout>
 </template>
 

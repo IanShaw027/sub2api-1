@@ -21,7 +21,7 @@ import (
 	"github.com/lib/pq"
 )
 
-const usageLogSelectColumns = "id, user_id, api_key_id, account_id, request_id, model, group_id, subscription_id, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cache_creation_5m_tokens, cache_creation_1h_tokens, input_cost, output_cost, cache_creation_cost, cache_read_cost, total_cost, actual_cost, rate_multiplier, billing_type, stream, duration_ms, first_token_ms, created_at"
+const usageLogSelectColumns = "id, user_id, api_key_id, account_id, request_id, model, group_id, subscription_id, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cache_creation_5m_tokens, cache_creation_1h_tokens, input_cost, output_cost, cache_creation_cost, cache_read_cost, total_cost, actual_cost, rate_multiplier, billing_type, stream, duration_ms, time_to_first_token_ms, auth_latency_ms, routing_latency_ms, upstream_latency_ms, response_latency_ms, provider, created_at"
 
 type usageLogRepository struct {
 	client *dbent.Client
@@ -97,7 +97,12 @@ func (r *usageLogRepository) Create(ctx context.Context, log *service.UsageLog) 
 			billing_type,
 			stream,
 			duration_ms,
-			first_token_ms,
+			time_to_first_token_ms,
+			auth_latency_ms,
+			routing_latency_ms,
+			upstream_latency_ms,
+			response_latency_ms,
+			provider,
 			created_at
 		) VALUES (
 			$1, $2, $3, $4, $5,
@@ -105,7 +110,8 @@ func (r *usageLogRepository) Create(ctx context.Context, log *service.UsageLog) 
 			$8, $9, $10, $11,
 			$12, $13,
 			$14, $15, $16, $17, $18, $19,
-			$20, $21, $22, $23, $24, $25
+			$20, $21, $22, $23, $24,
+			$25, $26, $27, $28, $29, $30
 		)
 		RETURNING id, created_at
 	`
@@ -113,7 +119,11 @@ func (r *usageLogRepository) Create(ctx context.Context, log *service.UsageLog) 
 	groupID := nullInt64(log.GroupID)
 	subscriptionID := nullInt64(log.SubscriptionID)
 	duration := nullInt(log.DurationMs)
-	firstToken := nullInt(log.FirstTokenMs)
+	firstToken := nullInt(log.TimeToFirstTokenMs)
+	authLatency := nullInt(log.AuthLatencyMs)
+	routingLatency := nullInt(log.RoutingLatencyMs)
+	upstreamLatency := nullInt(log.UpstreamLatencyMs)
+	responseLatency := nullInt(log.ResponseLatencyMs)
 
 	args := []any{
 		log.UserID,
@@ -140,6 +150,11 @@ func (r *usageLogRepository) Create(ctx context.Context, log *service.UsageLog) 
 		log.Stream,
 		duration,
 		firstToken,
+		authLatency,
+		routingLatency,
+		upstreamLatency,
+		responseLatency,
+		log.Provider,
 		createdAt,
 	}
 	if err := scanSingleRow(ctx, r.sql, query, args, &log.ID, &log.CreatedAt); err != nil {
@@ -191,7 +206,12 @@ func (r *usageLogRepository) CreateIdempotent(ctx context.Context, log *service.
 			billing_type,
 			stream,
 			duration_ms,
-			first_token_ms,
+			time_to_first_token_ms,
+			auth_latency_ms,
+			routing_latency_ms,
+			upstream_latency_ms,
+			response_latency_ms,
+			provider,
 			created_at
 		) VALUES (
 			$1, $2, $3, $4, $5,
@@ -199,7 +219,8 @@ func (r *usageLogRepository) CreateIdempotent(ctx context.Context, log *service.
 			$8, $9, $10, $11,
 			$12, $13,
 			$14, $15, $16, $17, $18, $19,
-			$20, $21, $22, $23, $24, $25
+			$20, $21, $22, $23, $24,
+			$25, $26, $27, $28, $29, $30
 		)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 		RETURNING id, created_at
@@ -208,7 +229,11 @@ func (r *usageLogRepository) CreateIdempotent(ctx context.Context, log *service.
 	groupID := nullInt64(log.GroupID)
 	subscriptionID := nullInt64(log.SubscriptionID)
 	duration := nullInt(log.DurationMs)
-	firstToken := nullInt(log.FirstTokenMs)
+	firstToken := nullInt(log.TimeToFirstTokenMs)
+	authLatency := nullInt(log.AuthLatencyMs)
+	routingLatency := nullInt(log.RoutingLatencyMs)
+	upstreamLatency := nullInt(log.UpstreamLatencyMs)
+	responseLatency := nullInt(log.ResponseLatencyMs)
 
 	args := []any{
 		log.UserID,
@@ -235,6 +260,11 @@ func (r *usageLogRepository) CreateIdempotent(ctx context.Context, log *service.
 		log.Stream,
 		duration,
 		firstToken,
+		authLatency,
+		routingLatency,
+		upstreamLatency,
+		responseLatency,
+		log.Provider,
 		createdAt,
 	}
 
@@ -1488,7 +1518,7 @@ func (r *usageLogRepository) GetGlobalStats(ctx context.Context, startTime, endT
 			COALESCE(SUM(actual_cost), 0) as total_actual_cost,
 			COALESCE(AVG(duration_ms), 0) as avg_duration_ms
 		FROM usage_logs
-		WHERE created_at >= $1 AND created_at <= $2
+		WHERE created_at >= $1 AND created_at < $2
 	`
 
 	stats := &UsageStats{}
@@ -1918,6 +1948,11 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 		stream              bool
 		durationMs          sql.NullInt64
 		firstTokenMs        sql.NullInt64
+		authLatencyMs       sql.NullInt64
+		routingLatencyMs    sql.NullInt64
+		upstreamLatencyMs   sql.NullInt64
+		responseLatencyMs   sql.NullInt64
+		provider            sql.NullString
 		createdAt           time.Time
 	)
 
@@ -1947,6 +1982,11 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 		&stream,
 		&durationMs,
 		&firstTokenMs,
+		&authLatencyMs,
+		&routingLatencyMs,
+		&upstreamLatencyMs,
+		&responseLatencyMs,
+		&provider,
 		&createdAt,
 	); err != nil {
 		return nil, err
@@ -1993,7 +2033,26 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 	}
 	if firstTokenMs.Valid {
 		value := int(firstTokenMs.Int64)
-		log.FirstTokenMs = &value
+		log.TimeToFirstTokenMs = &value
+	}
+	if authLatencyMs.Valid {
+		value := int(authLatencyMs.Int64)
+		log.AuthLatencyMs = &value
+	}
+	if routingLatencyMs.Valid {
+		value := int(routingLatencyMs.Int64)
+		log.RoutingLatencyMs = &value
+	}
+	if upstreamLatencyMs.Valid {
+		value := int(upstreamLatencyMs.Int64)
+		log.UpstreamLatencyMs = &value
+	}
+	if responseLatencyMs.Valid {
+		value := int(responseLatencyMs.Int64)
+		log.ResponseLatencyMs = &value
+	}
+	if provider.Valid {
+		log.Provider = provider.String
 	}
 
 	return log, nil

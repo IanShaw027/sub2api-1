@@ -92,12 +92,18 @@ type ClaudeUsage struct {
 
 // ForwardResult 转发结果
 type ForwardResult struct {
-	RequestID    string
-	Usage        ClaudeUsage
-	Model        string
-	Stream       bool
-	Duration     time.Duration
-	FirstTokenMs *int // 首字时间（流式请求）
+	RequestID          string
+	Usage              ClaudeUsage
+	Model              string
+	Stream             bool
+	Duration           time.Duration
+	TimeToFirstTokenMs *int // 首字时间（流式请求）
+	AuthLatencyMs      *int
+	RoutingLatencyMs   *int
+	UpstreamLatencyMs  *int
+	ResponseLatencyMs  *int
+	UserAgent          string
+	Provider           string
 }
 
 // UpstreamFailoverError indicates an upstream error that should trigger account failover.
@@ -951,9 +957,63 @@ func (s *GatewayService) shouldFailoverUpstreamError(statusCode int) bool {
 	}
 }
 
+// sanitizeRequestBody 脱敏请求体中的敏感信息
+func sanitizeRequestBody(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+	// 限制大小为10KB
+	const maxSize = 10 * 1024
+	if len(body) > maxSize {
+		body = body[:maxSize]
+	}
+
+	var data map[string]any
+	if err := json.Unmarshal(body, &data); err != nil {
+		return ""
+	}
+
+	sensitiveFields := []string{
+		"api_key", "apiKey", "API_KEY",
+		"password", "pwd", "passwd",
+		"email", "mail",
+		"phone", "mobile", "tel",
+		"credit_card", "card_number",
+		"token", "access_token", "refresh_token",
+	}
+
+	var sanitize func(map[string]any)
+	sanitize = func(m map[string]any) {
+		for k, v := range m {
+			lowerKey := strings.ToLower(k)
+			for _, field := range sensitiveFields {
+				if strings.Contains(lowerKey, strings.ToLower(field)) {
+					if s, ok := v.(string); ok && s != "" {
+						if strings.HasPrefix(s, "sk-") || strings.HasPrefix(s, "Bearer ") {
+							m[k] = "***"
+						} else {
+							m[k] = "***"
+						}
+					}
+					break
+				}
+			}
+			if nested, ok := v.(map[string]any); ok {
+				sanitize(nested)
+			}
+		}
+	}
+	sanitize(data)
+
+	sanitized, _ := json.Marshal(data)
+	return string(sanitized)
+}
+
 // Forward 转发请求到Claude API
 func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest) (*ForwardResult, error) {
 	startTime := time.Now()
+	var authEnd, routingEnd, upstreamEnd time.Time
+
 	if parsed == nil {
 		return nil, fmt.Errorf("parse request: empty request")
 	}
@@ -1025,12 +1085,14 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	if err != nil {
 		return nil, err
 	}
+	authEnd = time.Now()
 
 	// 获取代理URL
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
+	routingEnd = time.Now()
 
 	// 重试循环
 	var resp *http.Response
@@ -1072,6 +1134,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		// 不需要重试（成功或不可重试的错误），跳出循环
 		break
 	}
+	upstreamEnd = time.Now()
 	defer func() { _ = resp.Body.Close() }()
 
 	// 处理重试耗尽的情况
@@ -1134,19 +1197,45 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		usage = streamResult.usage
 		firstTokenMs = streamResult.firstTokenMs
 	} else {
-		usage, err = s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, reqModel)
+		usage, firstTokenMs, err = s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, reqModel, startTime)
 		if err != nil {
 			return nil, err
 		}
 	}
 
+	// 计算延迟
+	responseEnd := time.Now()
+	var authLatency, routingLatency, upstreamLatency, responseLatency *int
+	if !authEnd.IsZero() {
+		ms := int(authEnd.Sub(startTime).Milliseconds())
+		authLatency = &ms
+	}
+	if !routingEnd.IsZero() && !authEnd.IsZero() {
+		ms := int(routingEnd.Sub(authEnd).Milliseconds())
+		routingLatency = &ms
+	}
+	if !upstreamEnd.IsZero() && !routingEnd.IsZero() {
+		ms := int(upstreamEnd.Sub(routingEnd).Milliseconds())
+		upstreamLatency = &ms
+	}
+	if !upstreamEnd.IsZero() {
+		ms := int(responseEnd.Sub(upstreamEnd).Milliseconds())
+		responseLatency = &ms
+	}
+
 	return &ForwardResult{
-		RequestID:    resp.Header.Get("x-request-id"),
-		Usage:        *usage,
-		Model:        originalModel, // 使用原始模型用于计费和日志
-		Stream:       reqStream,
-		Duration:     time.Since(startTime),
-		FirstTokenMs: firstTokenMs,
+		RequestID:          resp.Header.Get("x-request-id"),
+		Usage:              *usage,
+		Model:              originalModel, // 使用原始模型用于计费和日志
+		Stream:             reqStream,
+		Duration:           time.Since(startTime),
+		TimeToFirstTokenMs: firstTokenMs,
+		AuthLatencyMs:      authLatency,
+		RoutingLatencyMs:   routingLatency,
+		UpstreamLatencyMs:  upstreamLatency,
+		ResponseLatencyMs:  responseLatency,
+		UserAgent:          c.Request.Header.Get("User-Agent"),
+		Provider:           account.Platform,
 	}, nil
 }
 
@@ -1614,21 +1703,24 @@ func (s *GatewayService) parseSSEUsage(data string, usage *ClaudeUsage) {
 	}
 }
 
-func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, originalModel, mappedModel string) (*ClaudeUsage, error) {
+func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, originalModel, mappedModel string, startTime time.Time) (*ClaudeUsage, *int, error) {
 	// 更新5h窗口状态
 	s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+
+	// 非流式响应：TTFT = 收到完整响应的时间
+	ttft := int(time.Since(startTime).Milliseconds())
 
 	// 解析usage
 	var response struct {
 		Usage ClaudeUsage `json:"usage"`
 	}
 	if err := json.Unmarshal(body, &response); err != nil {
-		return nil, fmt.Errorf("parse response: %w", err)
+		return nil, nil, fmt.Errorf("parse response: %w", err)
 	}
 
 	// 如果有模型映射，替换响应中的model字段
@@ -1646,7 +1738,7 @@ func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *h
 	// 写入响应
 	c.Data(resp.StatusCode, "application/json", body)
 
-	return &response.Usage, nil
+	return &response.Usage, &ttft, nil
 }
 
 // replaceModelInResponseBody 替换响应体中的model字段
@@ -1734,11 +1826,16 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 		TotalCost:           cost.TotalCost,
 		ActualCost:          cost.ActualCost,
 		RateMultiplier:      multiplier,
-		BillingType:         billingType,
-		Stream:              result.Stream,
-		DurationMs:          &durationMs,
-		FirstTokenMs:        result.FirstTokenMs,
-		CreatedAt:           time.Now(),
+		BillingType:        billingType,
+		Stream:             result.Stream,
+		DurationMs:         &durationMs,
+		TimeToFirstTokenMs: result.TimeToFirstTokenMs,
+		AuthLatencyMs:      result.AuthLatencyMs,
+		RoutingLatencyMs:   result.RoutingLatencyMs,
+		UpstreamLatencyMs:  result.UpstreamLatencyMs,
+		ResponseLatencyMs:  result.ResponseLatencyMs,
+		Provider:           result.Provider,
+		CreatedAt:          time.Now(),
 	}
 
 	// 添加分组和订阅关联

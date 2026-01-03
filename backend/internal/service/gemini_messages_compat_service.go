@@ -576,7 +576,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 				usage = usageObj
 			}
 		} else {
-			usage, err = s.handleNonStreamingResponse(c, resp, originalModel)
+			usage, firstTokenMs, err = s.handleNonStreamingResponse(c, resp, originalModel, startTime)
 			if err != nil {
 				return nil, err
 			}
@@ -589,7 +589,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 		Model:        originalModel,
 		Stream:       req.Stream,
 		Duration:     time.Since(startTime),
-		FirstTokenMs: firstTokenMs,
+		TimeToFirstTokenMs: firstTokenMs,
 	}, nil
 }
 
@@ -762,7 +762,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 					Model:        originalModel,
 					Stream:       false,
 					Duration:     time.Since(startTime),
-					FirstTokenMs: nil,
+					TimeToFirstTokenMs: nil,
 				}, nil
 			}
 			return nil, s.writeGoogleError(c, http.StatusBadGateway, "Upstream request failed after retries: "+sanitizeUpstreamErrorMessage(err.Error()))
@@ -797,7 +797,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 					Model:        originalModel,
 					Stream:       false,
 					Duration:     time.Since(startTime),
-					FirstTokenMs: nil,
+					TimeToFirstTokenMs: nil,
 				}, nil
 			}
 			// Final attempt: surface the upstream error body (passed through below) instead of a generic retry error.
@@ -838,7 +838,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 				Model:        originalModel,
 				Stream:       false,
 				Duration:     time.Since(startTime),
-				FirstTokenMs: nil,
+				TimeToFirstTokenMs: nil,
 			}, nil
 		}
 
@@ -893,7 +893,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 		Model:        originalModel,
 		Stream:       stream,
 		Duration:     time.Since(startTime),
-		FirstTokenMs: firstTokenMs,
+		TimeToFirstTokenMs: firstTokenMs,
 	}, nil
 }
 
@@ -1141,21 +1141,24 @@ type geminiStreamResult struct {
 	firstTokenMs *int
 }
 
-func (s *GeminiMessagesCompatService) handleNonStreamingResponse(c *gin.Context, resp *http.Response, originalModel string) (*ClaudeUsage, error) {
+func (s *GeminiMessagesCompatService) handleNonStreamingResponse(c *gin.Context, resp *http.Response, originalModel string, startTime time.Time) (*ClaudeUsage, *int, error) {
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
-		return nil, s.writeClaudeError(c, http.StatusBadGateway, "upstream_error", "Failed to read upstream response")
+		return nil, nil, s.writeClaudeError(c, http.StatusBadGateway, "upstream_error", "Failed to read upstream response")
 	}
+
+	// 非流式响应：TTFT = 收到完整响应的时间
+	ttft := int(time.Since(startTime).Milliseconds())
 
 	geminiResp, err := unwrapGeminiResponse(body)
 	if err != nil {
-		return nil, s.writeClaudeError(c, http.StatusBadGateway, "upstream_error", "Failed to parse upstream response")
+		return nil, nil, s.writeClaudeError(c, http.StatusBadGateway, "upstream_error", "Failed to parse upstream response")
 	}
 
 	claudeResp, usage := convertGeminiToClaudeMessage(geminiResp, originalModel)
 	c.JSON(http.StatusOK, claudeResp)
 
-	return usage, nil
+	return usage, &ttft, nil
 }
 
 func (s *GeminiMessagesCompatService) handleStreamingResponse(c *gin.Context, resp *http.Response, startTime time.Time, originalModel string) (*geminiStreamResult, error) {

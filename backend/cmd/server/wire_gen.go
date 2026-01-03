@@ -124,24 +124,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	userAttributeValueRepository := repository.NewUserAttributeValueRepository(client)
 	userAttributeService := service.NewUserAttributeService(userAttributeDefinitionRepository, userAttributeValueRepository)
 	userAttributeHandler := admin.NewUserAttributeHandler(userAttributeService)
-	adminHandlers := handler.ProvideAdminHandlers(
-		dashboardHandler,
-		opsHandler,
-		adminUserHandler,
-		groupHandler,
-		accountHandler,
-		oAuthHandler,
-		openAIOAuthHandler,
-		geminiOAuthHandler,
-		antigravityOAuthHandler,
-		proxyHandler,
-		adminRedeemHandler,
-		settingHandler,
-		systemHandler,
-		adminSubscriptionHandler,
-		adminUsageHandler,
-		userAttributeHandler,
-	)
+	adminHandlers := handler.ProvideAdminHandlers(dashboardHandler, opsHandler, adminUserHandler, groupHandler, accountHandler, oAuthHandler, openAIOAuthHandler, geminiOAuthHandler, antigravityOAuthHandler, proxyHandler, adminRedeemHandler, settingHandler, systemHandler, adminSubscriptionHandler, adminUsageHandler, userAttributeHandler)
 	pricingRemoteClient := repository.NewPricingRemoteClient()
 	pricingService, err := service.ProvidePricingService(configConfig, pricingRemoteClient)
 	if err != nil {
@@ -166,9 +149,9 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	httpServer := server.ProvideHTTPServer(configConfig, engine)
 	tokenRefreshService := service.ProvideTokenRefreshService(accountRepository, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, configConfig)
 	antigravityQuotaRefresher := service.ProvideAntigravityQuotaRefresher(accountRepository, proxyRepository, antigravityOAuthService, configConfig)
-	opsAlertService := service.ProvideOpsAlertService(opsService, userService, emailService)
-	opsMetricsCollector := service.ProvideOpsMetricsCollector(opsService, concurrencyService)
 	opsAggregationService := service.ProvideOpsAggregationService(opsRepository, db)
+	opsMetricsCollector := service.ProvideOpsMetricsCollector(opsService, concurrencyService)
+	opsAlertService := service.ProvideOpsAlertService(opsService, userService, emailService)
 	v := provideCleanup(client, redisClient, tokenRefreshService, pricingService, emailQueueService, billingCacheService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, antigravityQuotaRefresher, opsAggregationService, opsMetricsCollector, opsAlertService)
 	application := &Application{
 		Server:  httpServer,

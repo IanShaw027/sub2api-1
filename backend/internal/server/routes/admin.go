@@ -89,13 +89,13 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		ops.GET("/error-logs", h.Admin.Ops.ListErrorLogs)     // Simple list (limit filter)
 
 		// IP-based error statistics
-		ops.GET("/errors/by-ip", h.Admin.OpsMonitoring.GetErrorStatsByIP)
-		ops.GET("/errors/by-ip/:ip", h.Admin.OpsMonitoring.GetErrorsByIP)
+		ops.GET("/errors/by-ip", h.Admin.Ops.GetErrorStatsByIP)
+		ops.GET("/errors/by-ip/:ip", h.Admin.Ops.GetErrorsByIP)
 
 		// Additional monitoring endpoints
-		ops.GET("/error-stats", h.Admin.OpsMonitoring.GetErrorStats)
-		ops.GET("/error-timeseries", h.Admin.OpsMonitoring.GetErrorTimeseries)
-		ops.GET("/account-status", h.Admin.OpsMonitoring.GetAccountStatus)
+		ops.GET("/error-stats", h.Admin.Ops.GetErrorStats)
+		ops.GET("/error-timeseries", h.Admin.Ops.GetErrorTimeseries)
+		ops.GET("/account-status", h.Admin.Ops.GetAccountStatus)
 
 		// Dashboard routes
 		dashboard := ops.Group("/dashboard")

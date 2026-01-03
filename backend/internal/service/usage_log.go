@@ -34,10 +34,16 @@ type UsageLog struct {
 	ActualCost        float64
 	RateMultiplier    float64
 
-	BillingType  int8
-	Stream       bool
-	DurationMs   *int
-	FirstTokenMs *int
+	BillingType        int8
+	Stream             bool
+	DurationMs         *int
+	TimeToFirstTokenMs *int
+
+	AuthLatencyMs     *int
+	RoutingLatencyMs  *int
+	UpstreamLatencyMs *int
+	ResponseLatencyMs *int
+	Provider          string
 
 	CreatedAt time.Time
 

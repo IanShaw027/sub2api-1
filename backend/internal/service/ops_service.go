@@ -79,6 +79,17 @@ type OpsErrorLog struct {
 	ProviderErrorCode string `json:"provider_error_code,omitempty"`
 	ProviderErrorType string `json:"provider_error_type,omitempty"`
 
+	// 延迟细化字段
+	TimeToFirstTokenMs *int `json:"time_to_first_token_ms,omitempty"`
+	AuthLatencyMs      *int `json:"auth_latency_ms,omitempty"`
+	RoutingLatencyMs   *int `json:"routing_latency_ms,omitempty"`
+	UpstreamLatencyMs  *int `json:"upstream_latency_ms,omitempty"`
+	ResponseLatencyMs  *int `json:"response_latency_ms,omitempty"`
+
+	// 请求体和客户端信息
+	RequestBody string `json:"request_body,omitempty"`
+	UserAgent   string `json:"user_agent,omitempty"`
+
 	// 错误分类字段
 	ErrorSource           string  `json:"error_source,omitempty"`
 	ErrorOwner            string  `json:"error_owner,omitempty"`
@@ -173,6 +184,14 @@ type ErrorDistributionItem struct {
 	Percentage float64 `json:"percentage"`
 }
 
+type IPErrorStats struct {
+	ClientIP       string            `json:"client_ip"`
+	ErrorCount     int64             `json:"error_count"`
+	FirstErrorTime time.Time         `json:"first_error_time"`
+	LastErrorTime  time.Time         `json:"last_error_time"`
+	ErrorTypes     map[string]int64  `json:"error_types"`
+}
+
 type OpsRepository interface {
 	CreateErrorLog(ctx context.Context, log *OpsErrorLog) error
 	// ListErrorLogsLegacy keeps the original non-paginated query API used by the
@@ -182,6 +201,8 @@ type OpsRepository interface {
 
 	// ListErrorLogs provides a paginated error-log query API (with total count).
 	ListErrorLogs(ctx context.Context, filter *ErrorLogFilter) ([]*ErrorLog, int64, error)
+	// GetErrorLogByID retrieves a single error log by its ID with all details.
+	GetErrorLogByID(ctx context.Context, id int64) (*OpsErrorLog, error)
 	GetLatestSystemMetric(ctx context.Context) (*OpsMetrics, error)
 	CreateSystemMetric(ctx context.Context, metric *OpsMetrics) error
 	GetWindowStats(ctx context.Context, startTime, endTime time.Time) (*OpsWindowStats, error)
@@ -216,6 +237,10 @@ type OpsRepository interface {
 	GetLastAccountError(ctx context.Context, accountID int64) (*OpsErrorLog, error)
 	UpsertAccountStatus(ctx context.Context, status *OpsAccountStatus) error
 	GetActiveAccounts(ctx context.Context) ([]int64, error)
+
+	// IP statistics methods
+	GetErrorStatsByIP(ctx context.Context, startTime, endTime time.Time, limit int, sortBy, sortOrder string) ([]IPErrorStats, error)
+	GetErrorsByIP(ctx context.Context, ip string, startTime, endTime time.Time, page, pageSize int) ([]OpsErrorLog, int64, error)
 }
 
 type OpsService struct {
@@ -250,7 +275,7 @@ func NewOpsService(repo OpsRepository, sqlDB *sql.DB) *OpsService {
 	return svc
 }
 
-func (s *OpsService) RecordError(ctx context.Context, log *OpsErrorLog) error {
+func (s *OpsService) RecordError(ctx context.Context, log *OpsErrorLog, requestBody []byte) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -279,6 +304,11 @@ func (s *OpsService) RecordError(ctx context.Context, log *OpsErrorLog) error {
 		log.Message = "Unknown error"
 	}
 
+	// 脱敏并存储请求体（仅失败请求）
+	if len(requestBody) > 0 {
+		log.RequestBody = sanitizeRequestBody(requestBody)
+	}
+
 	ctxDB, cancel := context.WithTimeout(ctx, opsDBQueryTimeout)
 	defer cancel()
 	ctxDB = infraerror.WithRecordingDisabled(ctxDB)
@@ -296,8 +326,8 @@ func (s *OpsService) RecordError(ctx context.Context, log *OpsErrorLog) error {
 }
 
 // RecordOpsError is a compatibility wrapper around RecordError.
-func (s *OpsService) RecordOpsError(ctx context.Context, log *OpsErrorLog) error {
-	return s.RecordError(ctx, log)
+func (s *OpsService) RecordOpsError(ctx context.Context, log *OpsErrorLog, requestBody []byte) error {
+	return s.RecordError(ctx, log, requestBody)
 }
 
 func (s *OpsService) RecordMetrics(ctx context.Context, metric *OpsMetrics) error {
@@ -1128,51 +1158,59 @@ func (s *OpsService) getTokenTPS(ctx context.Context, endTime time.Time, startTi
 		return 0, 0, 0, nil
 	}
 
-	// Current TPS: last 1 minute.
-	var tokensLastMinute int64
+	// Current TPS: 从预聚合表读取最新 1 分钟的 token_rate
+	var currentTPS sql.NullFloat64
 	{
-		lastMinuteStart := endTime.Add(-1 * time.Minute)
 		ctxQuery, cancel := context.WithTimeout(ctx, opsDBQueryTimeout)
 		row := s.sqlDB.QueryRowContext(ctxQuery, `
-			SELECT COALESCE(SUM(input_tokens + output_tokens), 0)
-			FROM usage_logs
-			WHERE created_at >= $1 AND created_at < $2
-		`, lastMinuteStart, endTime)
-		scanErr := row.Scan(&tokensLastMinute)
+			SELECT token_rate
+			FROM ops_system_metrics
+			WHERE window_minutes = 1
+			ORDER BY created_at DESC
+			LIMIT 1
+		`)
+		scanErr := row.Scan(&currentTPS)
 		cancel()
-		if scanErr != nil {
+		if scanErr != nil && scanErr != sql.ErrNoRows {
 			return 0, 0, 0, scanErr
 		}
 	}
 
-	var totalTokens int64
-	var maxTokensPerMinute int64
+	// Peak 和 Avg: 从指定时间范围内的预聚合数据计算
+	var peakTPS, avgTPS sql.NullFloat64
 	{
 		ctxQuery, cancel := context.WithTimeout(ctx, opsDBQueryTimeout)
 		row := s.sqlDB.QueryRowContext(ctxQuery, `
-			WITH buckets AS (
-				SELECT
-					date_trunc('minute', created_at) AS bucket,
-					SUM(input_tokens + output_tokens) AS tokens
-				FROM usage_logs
-				WHERE created_at >= $1 AND created_at < $2
-				GROUP BY 1
-			)
 			SELECT
-				COALESCE(SUM(tokens), 0) AS total_tokens,
-				COALESCE(MAX(tokens), 0) AS max_tokens_per_minute
-			FROM buckets
+				MAX(token_rate) as peak_tps,
+				AVG(token_rate) as avg_tps
+			FROM ops_system_metrics
+			WHERE window_minutes = 1
+			  AND created_at >= $1
+			  AND created_at < $2
 		`, startTime, endTime)
-		scanErr := row.Scan(&totalTokens, &maxTokensPerMinute)
+		scanErr := row.Scan(&peakTPS, &avgTPS)
 		cancel()
-		if scanErr != nil {
+		if scanErr != nil && scanErr != sql.ErrNoRows {
 			return 0, 0, 0, scanErr
 		}
 	}
 
-	current = safeDivide(float64(tokensLastMinute), 60)
-	peak = safeDivide(float64(maxTokensPerMinute), 60)
-	avg = safeDivide(float64(totalTokens), duration.Seconds())
+	current = 0
+	if currentTPS.Valid {
+		current = currentTPS.Float64
+	}
+
+	peak = 0
+	if peakTPS.Valid {
+		peak = peakTPS.Float64
+	}
+
+	avg = 0
+	if avgTPS.Valid {
+		avg = avgTPS.Float64
+	}
+
 	return current, peak, avg, nil
 }
 
@@ -1230,3 +1268,34 @@ func (s *OpsService) GetAccountStats(ctx context.Context, accountID int64, durat
 	defer cancel()
 	return s.repo.GetAccountStats(ctxDB, accountID, duration)
 }
+
+// GetErrorStatsByIP 获取IP错误统计
+func (s *OpsService) GetErrorStatsByIP(ctx context.Context, startTime, endTime time.Time, limit int, sortBy, sortOrder string) ([]IPErrorStats, error) {
+	if s == nil || s.repo == nil {
+		return nil, nil
+	}
+	ctxDB, cancel := context.WithTimeout(ctx, opsDBQueryTimeout)
+	defer cancel()
+	return s.repo.GetErrorStatsByIP(ctxDB, startTime, endTime, limit, sortBy, sortOrder)
+}
+
+// GetErrorsByIP 获取特定IP的错误详情
+func (s *OpsService) GetErrorsByIP(ctx context.Context, ip string, startTime, endTime time.Time, page, pageSize int) ([]OpsErrorLog, int64, error) {
+	if s == nil || s.repo == nil {
+		return nil, 0, nil
+	}
+	ctxDB, cancel := context.WithTimeout(ctx, opsDBQueryTimeout)
+	defer cancel()
+	return s.repo.GetErrorsByIP(ctxDB, ip, startTime, endTime, page, pageSize)
+}
+
+// GetErrorLogByID retrieves a single error log by its ID with all details.
+func (s *OpsService) GetErrorLogByID(ctx context.Context, id int64) (*OpsErrorLog, error) {
+	if s == nil || s.repo == nil {
+		return nil, errors.New("ops service not initialized")
+	}
+	ctxDB, cancel := context.WithTimeout(ctx, opsDBQueryTimeout)
+	defer cancel()
+	return s.repo.GetErrorLogByID(ctxDB, id)
+}
+

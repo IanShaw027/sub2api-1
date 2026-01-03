@@ -48,7 +48,7 @@ func (r *OpsRepository) ListErrorLogs(ctx context.Context, filter *service.Error
 			addCondition(fmt.Sprintf("created_at >= $%d", len(args)+1), *filter.StartTime)
 		}
 		if filter.EndTime != nil {
-			addCondition(fmt.Sprintf("created_at <= $%d", len(args)+1), *filter.EndTime)
+			addCondition(fmt.Sprintf("created_at < $%d", len(args)+1), *filter.EndTime)
 		}
 		if filter.ErrorCode != nil {
 			addCondition(fmt.Sprintf("status_code = $%d", len(args)+1), *filter.ErrorCode)
@@ -173,6 +173,155 @@ func (r *OpsRepository) ListErrorLogs(ctx context.Context, filter *service.Error
 	}
 
 	return results, total, nil
+}
+
+// GetErrorLogByID retrieves a single error log by its ID with all details.
+func (r *OpsRepository) GetErrorLogByID(ctx context.Context, id int64) (*service.OpsErrorLog, error) {
+	query := `
+		SELECT
+			id,
+			created_at,
+			error_phase,
+			error_type,
+			severity,
+			status_code,
+			platform,
+			model,
+			duration_ms,
+			request_id,
+			error_message,
+			user_id,
+			api_key_id,
+			account_id,
+			group_id,
+			client_ip,
+			request_path,
+			stream,
+			auth_latency_ms,
+			routing_latency_ms,
+			upstream_latency_ms,
+			response_latency_ms,
+			time_to_first_token_ms,
+			request_body,
+			error_body,
+			user_agent
+		FROM ops_error_logs
+		WHERE id = $1
+	`
+
+	var (
+		errorLog                      service.OpsErrorLog
+		userID, apiKeyID, accountID   sql.NullInt64
+		groupID                       sql.NullInt64
+		clientIP, requestPath         sql.NullString
+		stream                        sql.NullBool
+		durationMs                    sql.NullInt64
+		authLatencyMs                 sql.NullInt64
+		routingLatencyMs              sql.NullInt64
+		upstreamLatencyMs             sql.NullInt64
+		responseLatencyMs             sql.NullInt64
+		timeToFirstTokenMs            sql.NullInt64
+		requestBody, errorBody        sql.NullString
+		userAgent                     sql.NullString
+	)
+
+	err := r.sql.QueryRowContext(ctx, query, id).Scan(
+		&errorLog.ID,
+		&errorLog.CreatedAt,
+		&errorLog.Phase,
+		&errorLog.Type,
+		&errorLog.Severity,
+		&errorLog.StatusCode,
+		&errorLog.Platform,
+		&errorLog.Model,
+		&durationMs,
+		&errorLog.RequestID,
+		&errorLog.Message,
+		&userID,
+		&apiKeyID,
+		&accountID,
+		&groupID,
+		&clientIP,
+		&requestPath,
+		&stream,
+		&authLatencyMs,
+		&routingLatencyMs,
+		&upstreamLatencyMs,
+		&responseLatencyMs,
+		&timeToFirstTokenMs,
+		&requestBody,
+		&errorBody,
+		&userAgent,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("error log not found: id=%d", id)
+		}
+		return nil, err
+	}
+
+	// Set nullable fields
+	if durationMs.Valid {
+		v := int(durationMs.Int64)
+		errorLog.LatencyMs = &v
+	}
+	if userID.Valid {
+		v := userID.Int64
+		errorLog.UserID = &v
+	}
+	if apiKeyID.Valid {
+		v := apiKeyID.Int64
+		errorLog.APIKeyID = &v
+	}
+	if accountID.Valid {
+		v := accountID.Int64
+		errorLog.AccountID = &v
+	}
+	if groupID.Valid {
+		v := groupID.Int64
+		errorLog.GroupID = &v
+	}
+	if clientIP.Valid {
+		errorLog.ClientIP = clientIP.String
+	}
+	if requestPath.Valid {
+		errorLog.RequestPath = requestPath.String
+	}
+	if stream.Valid {
+		errorLog.Stream = stream.Bool
+	}
+	if authLatencyMs.Valid {
+		v := int(authLatencyMs.Int64)
+		errorLog.AuthLatencyMs = &v
+	}
+	if routingLatencyMs.Valid {
+		v := int(routingLatencyMs.Int64)
+		errorLog.RoutingLatencyMs = &v
+	}
+	if upstreamLatencyMs.Valid {
+		v := int(upstreamLatencyMs.Int64)
+		errorLog.UpstreamLatencyMs = &v
+	}
+	if responseLatencyMs.Valid {
+		v := int(responseLatencyMs.Int64)
+		errorLog.ResponseLatencyMs = &v
+	}
+	if timeToFirstTokenMs.Valid {
+		v := int(timeToFirstTokenMs.Int64)
+		errorLog.TimeToFirstTokenMs = &v
+	}
+	if requestBody.Valid {
+		errorLog.RequestBody = requestBody.String
+	}
+	if errorBody.Valid {
+		errorLog.ErrorBody = errorBody.String
+	}
+	if userAgent.Valid {
+		errorLog.UserAgent = userAgent.String
+	}
+
+	return &errorLog, nil
 }
 
 func levelFromSeverity(severity string) string {

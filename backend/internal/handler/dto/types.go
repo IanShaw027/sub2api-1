@@ -161,9 +161,9 @@ type UsageLog struct {
 	RateMultiplier    float64 `json:"rate_multiplier"`
 
 	BillingType  int8 `json:"billing_type"`
-	Stream       bool `json:"stream"`
-	DurationMs   *int `json:"duration_ms"`
-	FirstTokenMs *int `json:"first_token_ms"`
+	Stream              bool `json:"stream"`
+	DurationMs          *int `json:"duration_ms"`
+	TimeToFirstTokenMs  *int `json:"time_to_first_token_ms"`
 
 	CreatedAt time.Time `json:"created_at"`
 

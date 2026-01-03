@@ -328,11 +328,8 @@ func (h *OpsHandler) GetErrorLogs(c *gin.Context) {
 		filter.ErrorCode = &code
 	}
 
-	// Keep both parameter names for compatibility: provider (docs) and platform (legacy).
-	filter.Provider = c.Query("provider")
-	if filter.Provider == "" {
-		filter.Provider = c.Query("platform")
-	}
+	// Query parameter uses "platform" (consistent with database field naming)
+	filter.Provider = c.Query("platform")
 
 	if accountIDStr := c.Query("account_id"); accountIDStr != "" {
 		accountID, err := strconv.ParseInt(accountIDStr, 10, 64)
@@ -428,4 +425,296 @@ func (h *OpsHandler) GetErrorDetail(c *gin.Context) {
 	}
 
 	response.Success(c, errorLog)
+}
+
+// GetErrorStats returns error statistics aggregated by dimensions.
+// GET /api/v1/admin/ops/error-stats
+//
+// Query params:
+// - start_time: RFC3339 timestamp (optional)
+// - end_time: RFC3339 timestamp (optional)
+// - group_by: string (optional; one of: platform, error_type, error_source)
+func (h *OpsHandler) GetErrorStats(c *gin.Context) {
+	startTime := time.Now().Add(-24 * time.Hour)
+	endTime := time.Now()
+
+	if startTimeStr := c.Query("start_time"); startTimeStr != "" {
+		parsed, err := time.Parse(time.RFC3339, startTimeStr)
+		if err != nil {
+			response.BadRequest(c, "Invalid start_time format (RFC3339)")
+			return
+		}
+		startTime = parsed
+	}
+	if endTimeStr := c.Query("end_time"); endTimeStr != "" {
+		parsed, err := time.Parse(time.RFC3339, endTimeStr)
+		if err != nil {
+			response.BadRequest(c, "Invalid end_time format (RFC3339)")
+			return
+		}
+		endTime = parsed
+	}
+
+	if startTime.After(endTime) {
+		response.BadRequest(c, "Invalid time range: start_time must be <= end_time")
+		return
+	}
+
+	stats, err := h.opsService.GetWindowStats(c.Request.Context(), startTime, endTime)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to get error stats")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"success_count":   stats.SuccessCount,
+		"error_count":     stats.ErrorCount,
+		"error_4xx_count": stats.Error4xxCount,
+		"error_5xx_count": stats.Error5xxCount,
+		"timeout_count":   stats.TimeoutCount,
+		"p50_latency_ms":  stats.P50LatencyMs,
+		"p95_latency_ms":  stats.P95LatencyMs,
+		"p99_latency_ms":  stats.P99LatencyMs,
+		"avg_latency_ms":  stats.AvgLatencyMs,
+	})
+}
+
+// GetAccountStatus returns account status information.
+// GET /api/v1/admin/ops/account-status
+//
+// Query params:
+// - account_id: int64 (optional; if not provided, returns all active accounts)
+func (h *OpsHandler) GetAccountStatus(c *gin.Context) {
+	accountIDStr := c.Query("account_id")
+	if accountIDStr == "" {
+		response.BadRequest(c, "account_id is required")
+		return
+	}
+
+	accountID, err := strconv.ParseInt(accountIDStr, 10, 64)
+	if err != nil || accountID <= 0 {
+		response.BadRequest(c, "Invalid account_id")
+		return
+	}
+
+	stats1h, err := h.opsService.GetAccountStats(c.Request.Context(), accountID, time.Hour)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to get account stats")
+		return
+	}
+
+	stats24h, err := h.opsService.GetAccountStats(c.Request.Context(), accountID, 24*time.Hour)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to get account stats")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"account_id": accountID,
+		"stats_1h": gin.H{
+			"error_count":      stats1h.ErrorCount,
+			"success_count":    stats1h.SuccessCount,
+			"timeout_count":    stats1h.TimeoutCount,
+			"rate_limit_count": stats1h.RateLimitCount,
+		},
+		"stats_24h": gin.H{
+			"error_count":      stats24h.ErrorCount,
+			"success_count":    stats24h.SuccessCount,
+			"timeout_count":    stats24h.TimeoutCount,
+			"rate_limit_count": stats24h.RateLimitCount,
+		},
+	})
+}
+
+// GetErrorTimeseries returns time-series error data for charts.
+// GET /api/v1/admin/ops/error-timeseries
+//
+// Query params:
+// - start_time: RFC3339 timestamp (optional; default: 24h ago)
+// - end_time: RFC3339 timestamp (optional; default: now)
+// - interval: string (optional; one of: 1m, 5m, 1h; default: 5m)
+func (h *OpsHandler) GetErrorTimeseries(c *gin.Context) {
+	endTime := time.Now()
+	startTime := endTime.Add(-24 * time.Hour)
+
+	if startTimeStr := c.Query("start_time"); startTimeStr != "" {
+		parsed, err := time.Parse(time.RFC3339, startTimeStr)
+		if err != nil {
+			response.BadRequest(c, "Invalid start_time format (RFC3339)")
+			return
+		}
+		startTime = parsed
+	}
+	if endTimeStr := c.Query("end_time"); endTimeStr != "" {
+		parsed, err := time.Parse(time.RFC3339, endTimeStr)
+		if err != nil {
+			response.BadRequest(c, "Invalid end_time format (RFC3339)")
+			return
+		}
+		endTime = parsed
+	}
+
+	if startTime.After(endTime) {
+		response.BadRequest(c, "Invalid time range: start_time must be <= end_time")
+		return
+	}
+
+	windowMinutes := 5
+	if intervalStr := c.Query("interval"); intervalStr != "" {
+		switch intervalStr {
+		case "1m":
+			windowMinutes = 1
+		case "5m":
+			windowMinutes = 5
+		case "1h":
+			windowMinutes = 60
+		default:
+			response.BadRequest(c, "Invalid interval (supported: 1m, 5m, 1h)")
+			return
+		}
+	}
+
+	limit := int(endTime.Sub(startTime).Minutes()/float64(windowMinutes)) + 10
+	if limit > 5000 {
+		limit = 5000
+	}
+
+	items, err := h.opsService.ListMetricsHistory(c.Request.Context(), windowMinutes, startTime, endTime, limit)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to get error timeseries")
+		return
+	}
+
+	response.Success(c, gin.H{"items": items})
+}
+
+// GetErrorStatsByIP returns error statistics aggregated by client IP.
+// GET /api/v1/admin/ops/errors/by-ip
+//
+// Query params:
+// - start_time: RFC3339 timestamp (required)
+// - end_time: RFC3339 timestamp (required)
+// - limit: int (optional; default 50; max 200)
+// - sort_by: string (optional; error_count or last_error_time; default error_count)
+// - sort_order: string (optional; asc or desc; default desc)
+func (h *OpsHandler) GetErrorStatsByIP(c *gin.Context) {
+	startTimeStr := c.Query("start_time")
+	endTimeStr := c.Query("end_time")
+	if startTimeStr == "" || endTimeStr == "" {
+		response.BadRequest(c, "start_time and end_time are required")
+		return
+	}
+
+	startTime, err := time.Parse(time.RFC3339, startTimeStr)
+	if err != nil {
+		response.BadRequest(c, "Invalid start_time format (RFC3339)")
+		return
+	}
+	endTime, err := time.Parse(time.RFC3339, endTimeStr)
+	if err != nil {
+		response.BadRequest(c, "Invalid end_time format (RFC3339)")
+		return
+	}
+
+	if startTime.After(endTime) {
+		response.BadRequest(c, "Invalid time range: start_time must be <= end_time")
+		return
+	}
+
+	limit := 50
+	if limitStr := c.Query("limit"); limitStr != "" {
+		l, err := strconv.Atoi(limitStr)
+		if err != nil || l <= 0 || l > 200 {
+			response.BadRequest(c, "Invalid limit (must be 1-200)")
+			return
+		}
+		limit = l
+	}
+
+	sortBy := c.DefaultQuery("sort_by", "error_count")
+	sortOrder := c.DefaultQuery("sort_order", "desc")
+
+	stats, err := h.opsService.GetErrorStatsByIP(c.Request.Context(), startTime, endTime, limit, sortBy, sortOrder)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to get IP error statistics")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"total": len(stats),
+		"data":  stats,
+	})
+}
+
+// GetErrorsByIP returns error details for a specific IP.
+// GET /api/v1/admin/ops/errors/by-ip/:ip
+//
+// Query params:
+// - start_time: RFC3339 timestamp (required)
+// - end_time: RFC3339 timestamp (required)
+// - page: int (optional; default 1)
+// - page_size: int (optional; default 50; max 100)
+func (h *OpsHandler) GetErrorsByIP(c *gin.Context) {
+	ip := c.Param("ip")
+	if ip == "" {
+		response.BadRequest(c, "IP address is required")
+		return
+	}
+
+	startTimeStr := c.Query("start_time")
+	endTimeStr := c.Query("end_time")
+	if startTimeStr == "" || endTimeStr == "" {
+		response.BadRequest(c, "start_time and end_time are required")
+		return
+	}
+
+	startTime, err := time.Parse(time.RFC3339, startTimeStr)
+	if err != nil {
+		response.BadRequest(c, "Invalid start_time format (RFC3339)")
+		return
+	}
+	endTime, err := time.Parse(time.RFC3339, endTimeStr)
+	if err != nil {
+		response.BadRequest(c, "Invalid end_time format (RFC3339)")
+		return
+	}
+
+	if startTime.After(endTime) {
+		response.BadRequest(c, "Invalid time range: start_time must be <= end_time")
+		return
+	}
+
+	page := 1
+	if pageStr := c.Query("page"); pageStr != "" {
+		p, err := strconv.Atoi(pageStr)
+		if err != nil || p <= 0 {
+			response.BadRequest(c, "Invalid page")
+			return
+		}
+		page = p
+	}
+
+	pageSize := 50
+	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
+		ps, err := strconv.Atoi(pageSizeStr)
+		if err != nil || ps <= 0 || ps > 100 {
+			response.BadRequest(c, "Invalid page_size (must be 1-100)")
+			return
+		}
+		pageSize = ps
+	}
+
+	errors, total, err := h.opsService.GetErrorsByIP(c.Request.Context(), ip, startTime, endTime, page, pageSize)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to get errors by IP")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"ip":        ip,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+		"errors":    errors,
+	})
 }
