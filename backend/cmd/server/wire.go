@@ -7,6 +7,8 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/ent"
@@ -84,9 +86,11 @@ func provideCleanup(
 
 	// Initialize cron manager if cleanup is enabled
 	var cronManager *cron.Manager
+	var cancelCron context.CancelFunc
 	if cfg.Ops.Cleanup.Enabled || cfg.Ops.Aggregation.Enabled {
-		ctx := context.Background()
-		cronManager = cron.NewManager(ctx)
+		cronCtx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		cancelCron = cancel
+		cronManager = cron.NewManager(cronCtx)
 
 		// Register cleanup job
 		if cfg.Ops.Cleanup.Enabled {
@@ -95,7 +99,7 @@ func provideCleanup(
 				MinuteMetricsRetentionDays: cfg.Ops.Cleanup.MinuteMetricsRetentionDays,
 				HourlyMetricsRetentionDays: cfg.Ops.Cleanup.HourlyMetricsRetentionDays,
 			}
-			opsCleaner := cron.NewOpsCleaner(ctx, opsRepo, cleanupConfig)
+			opsCleaner := cron.NewOpsCleaner(cronCtx, opsRepo, cleanupConfig)
 
 			schedule := cfg.Ops.Cleanup.Schedule
 			if schedule == "" {
@@ -111,7 +115,7 @@ func provideCleanup(
 
 		// Register aggregation jobs
 		if cfg.Ops.Aggregation.Enabled {
-			opsAggregator := cron.NewOpsAggregator(ctx, opsRepo)
+			opsAggregator := cron.NewOpsAggregator(cronCtx, opsRepo)
 
 			// Hourly aggregation
 			hourlySchedule := cfg.Ops.Aggregation.HourlySchedule
@@ -147,7 +151,15 @@ func provideCleanup(
 
 		// Stop cron manager first
 		if cronManager != nil {
-			cronManager.Stop()
+			if cancelCron != nil {
+				cancelCron()
+			}
+			stopCtx := cronManager.Stop()
+			select {
+			case <-stopCtx.Done():
+			case <-ctx.Done():
+				log.Printf("[Cleanup] Warning: cron shutdown timed out after 10 seconds")
+			}
 		}
 
 		// Cleanup steps in reverse dependency order

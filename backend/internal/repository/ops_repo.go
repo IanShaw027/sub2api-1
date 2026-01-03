@@ -913,9 +913,18 @@ func (r *OpsRepository) CreateAlertRule(ctx context.Context, rule *service.OpsAl
 	rule.CreatedAt = now
 	rule.UpdatedAt = now
 
-	dimensionFilters, _ := json.Marshal(rule.DimensionFilters)
-	notifyChannels, _ := json.Marshal(rule.NotifyChannels)
-	notifyConfig, _ := json.Marshal(rule.NotifyConfig)
+	dimensionFilters, err := json.Marshal(rule.DimensionFilters)
+	if err != nil {
+		return fmt.Errorf("marshal dimension_filters: %w", err)
+	}
+	notifyChannels, err := json.Marshal(rule.NotifyChannels)
+	if err != nil {
+		return fmt.Errorf("marshal notify_channels: %w", err)
+	}
+	notifyConfig, err := json.Marshal(rule.NotifyConfig)
+	if err != nil {
+		return fmt.Errorf("marshal notify_config: %w", err)
+	}
 
 	query := `
 		INSERT INTO ops_alert_rules (
@@ -941,9 +950,18 @@ func (r *OpsRepository) UpdateAlertRule(ctx context.Context, rule *service.OpsAl
 	}
 	rule.UpdatedAt = time.Now()
 
-	dimensionFilters, _ := json.Marshal(rule.DimensionFilters)
-	notifyChannels, _ := json.Marshal(rule.NotifyChannels)
-	notifyConfig, _ := json.Marshal(rule.NotifyConfig)
+	dimensionFilters, err := json.Marshal(rule.DimensionFilters)
+	if err != nil {
+		return fmt.Errorf("marshal dimension_filters: %w", err)
+	}
+	notifyChannels, err := json.Marshal(rule.NotifyChannels)
+	if err != nil {
+		return fmt.Errorf("marshal notify_channels: %w", err)
+	}
+	notifyConfig, err := json.Marshal(rule.NotifyConfig)
+	if err != nil {
+		return fmt.Errorf("marshal notify_config: %w", err)
+	}
 
 	query := `
 		UPDATE ops_alert_rules SET
@@ -1619,6 +1637,19 @@ func (r *OpsRepository) GetProviderStatsLegacy(ctx context.Context, startTime, e
 // pre-aggregation is enabled this method approximates older data by bucketing each
 // aggregated row by its avg_latency_ms (weighted by success_count), and uses raw logs
 // for the newest <1h slice.
+//
+// Bucket definitions (milliseconds, left-inclusive / right-exclusive):
+// - "0-100ms"      : duration_ms/avg_latency_ms < 100
+// - "100-200ms"    : duration_ms/avg_latency_ms < 200
+// - "200-500ms"    : duration_ms/avg_latency_ms < 500
+// - "500-1000ms"   : duration_ms/avg_latency_ms < 1000
+// - "1000-2000ms"  : duration_ms/avg_latency_ms < 2000
+// - "2000ms+"      : duration_ms/avg_latency_ms >= 2000
+//
+// Important: both the legacy (raw logs) and pre-aggregated SQL paths must keep the
+// same bucket boundaries and labels so the frontend can render consistent charts. Since
+// bucketing happens at query-time, changing bucket definitions does not require a data
+// backfill/re-aggregation, but historical charts will shift accordingly.
 func (r *OpsRepository) GetLatencyHistogram(ctx context.Context, startTime, endTime time.Time) ([]*service.LatencyHistogramItem, error) {
 	if !r.usePreaggregatedTables {
 		return r.GetLatencyHistogramLegacy(ctx, startTime, endTime)
@@ -1637,15 +1668,19 @@ func (r *OpsRepository) GetLatencyHistogramLegacy(ctx context.Context, startTime
 			SELECT
 				CASE
 					WHEN duration_ms < 100 THEN '0-100ms'
-					WHEN duration_ms < 500 THEN '100-500ms'
+					WHEN duration_ms < 200 THEN '100-200ms'
+					WHEN duration_ms < 500 THEN '200-500ms'
 					WHEN duration_ms < 1000 THEN '500-1000ms'
-					ELSE '1000ms+'
+					WHEN duration_ms < 2000 THEN '1000-2000ms'
+					ELSE '2000ms+'
 				END AS range_name,
 				CASE
 					WHEN duration_ms < 100 THEN 1
-					WHEN duration_ms < 500 THEN 2
-					WHEN duration_ms < 1000 THEN 3
-					ELSE 4
+					WHEN duration_ms < 200 THEN 2
+					WHEN duration_ms < 500 THEN 3
+					WHEN duration_ms < 1000 THEN 4
+					WHEN duration_ms < 2000 THEN 5
+					ELSE 6
 				END AS range_order,
 				COUNT(*) AS count
 			FROM usage_logs
@@ -2033,11 +2068,12 @@ func (r *OpsRepository) getLatencyHistogramPreaggregated(ctx context.Context, st
 		order int
 	}
 	ordered := []orderedRange{
-		{name: "<200ms", order: 1},
-		{name: "200-500ms", order: 2},
-		{name: "500-1000ms", order: 3},
-		{name: "1000-3000ms", order: 4},
-		{name: ">3000ms", order: 5},
+		{name: "0-100ms", order: 1},
+		{name: "100-200ms", order: 2},
+		{name: "200-500ms", order: 3},
+		{name: "500-1000ms", order: 4},
+		{name: "1000-2000ms", order: 5},
+		{name: "2000ms+", order: 6},
 	}
 
 	out := make([]*service.LatencyHistogramItem, 0, len(ordered))
@@ -2473,11 +2509,12 @@ func (r *OpsRepository) queryLatencyHistogramCountsHourly(ctx context.Context, s
 	rows, err := r.sql.QueryContext(ctx, `
 		SELECT
 			CASE
-				WHEN avg_latency_ms < 200 THEN '<200ms'
+				WHEN avg_latency_ms < 100 THEN '0-100ms'
+				WHEN avg_latency_ms < 200 THEN '100-200ms'
 				WHEN avg_latency_ms < 500 THEN '200-500ms'
 				WHEN avg_latency_ms < 1000 THEN '500-1000ms'
-				WHEN avg_latency_ms < 3000 THEN '1000-3000ms'
-				ELSE '>3000ms'
+				WHEN avg_latency_ms < 2000 THEN '1000-2000ms'
+				ELSE '2000ms+'
 			END AS range_name,
 			COALESCE(SUM(success_count), 0) AS count
 		FROM ops_metrics_hourly
@@ -2508,11 +2545,12 @@ func (r *OpsRepository) queryLatencyHistogramCountsDaily(ctx context.Context, st
 	rows, err := r.sql.QueryContext(ctx, `
 		SELECT
 			CASE
-				WHEN avg_latency_ms < 200 THEN '<200ms'
+				WHEN avg_latency_ms < 100 THEN '0-100ms'
+				WHEN avg_latency_ms < 200 THEN '100-200ms'
 				WHEN avg_latency_ms < 500 THEN '200-500ms'
 				WHEN avg_latency_ms < 1000 THEN '500-1000ms'
-				WHEN avg_latency_ms < 3000 THEN '1000-3000ms'
-				ELSE '>3000ms'
+				WHEN avg_latency_ms < 2000 THEN '1000-2000ms'
+				ELSE '2000ms+'
 			END AS range_name,
 			COALESCE(SUM(success_count), 0) AS count
 		FROM ops_metrics_daily
@@ -3535,6 +3573,100 @@ func (r *OpsRepository) GetActiveAccounts(ctx context.Context) ([]int64, error) 
 	return accounts, rows.Err()
 }
 
+// GetAllActiveAccountStatus returns recent stats for all "active" accounts (as defined by ops_error_logs activity in last 24h).
+func (r *OpsRepository) GetAllActiveAccountStatus(ctx context.Context) ([]service.AccountStatusSummary, error) {
+	query := `
+		WITH
+		active_accounts AS (
+			SELECT DISTINCT account_id
+			FROM ops_error_logs
+			WHERE created_at >= NOW() - INTERVAL '24 hours'
+			  AND account_id IS NOT NULL
+		),
+		error_1h AS (
+			SELECT
+				account_id,
+				COUNT(*) FILTER (WHERE status_code >= 400) AS error_count,
+				COUNT(*) FILTER (WHERE error_type = 'timeout_error') AS timeout_count,
+				COUNT(*) FILTER (WHERE error_type = 'rate_limit_error') AS rate_limit_count
+			FROM ops_error_logs
+			WHERE created_at >= NOW() - INTERVAL '1 hour'
+			  AND account_id IS NOT NULL
+			GROUP BY account_id
+		),
+		error_24h AS (
+			SELECT
+				account_id,
+				COUNT(*) FILTER (WHERE status_code >= 400) AS error_count,
+				COUNT(*) FILTER (WHERE error_type = 'timeout_error') AS timeout_count,
+				COUNT(*) FILTER (WHERE error_type = 'rate_limit_error') AS rate_limit_count
+			FROM ops_error_logs
+			WHERE created_at >= NOW() - INTERVAL '24 hours'
+			  AND account_id IS NOT NULL
+			GROUP BY account_id
+		),
+		usage_1h AS (
+			SELECT account_id, COUNT(*) AS success_count
+			FROM usage_logs
+			WHERE created_at >= NOW() - INTERVAL '1 hour'
+			  AND account_id IS NOT NULL
+			GROUP BY account_id
+		),
+		usage_24h AS (
+			SELECT account_id, COUNT(*) AS success_count
+			FROM usage_logs
+			WHERE created_at >= NOW() - INTERVAL '24 hours'
+			  AND account_id IS NOT NULL
+			GROUP BY account_id
+		)
+		SELECT
+			a.account_id,
+			COALESCE(e1.error_count, 0) AS error_count_1h,
+			COALESCE(u1.success_count, 0) AS success_count_1h,
+			COALESCE(e1.timeout_count, 0) AS timeout_count_1h,
+			COALESCE(e1.rate_limit_count, 0) AS rate_limit_count_1h,
+			COALESCE(e24.error_count, 0) AS error_count_24h,
+			COALESCE(u24.success_count, 0) AS success_count_24h,
+			COALESCE(e24.timeout_count, 0) AS timeout_count_24h,
+			COALESCE(e24.rate_limit_count, 0) AS rate_limit_count_24h
+		FROM active_accounts a
+		LEFT JOIN error_1h e1 ON e1.account_id = a.account_id
+		LEFT JOIN error_24h e24 ON e24.account_id = a.account_id
+		LEFT JOIN usage_1h u1 ON u1.account_id = a.account_id
+		LEFT JOIN usage_24h u24 ON u24.account_id = a.account_id
+		ORDER BY a.account_id
+	`
+
+	rows, err := r.sql.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]service.AccountStatusSummary, 0, 64)
+	for rows.Next() {
+		var item service.AccountStatusSummary
+		if err := rows.Scan(
+			&item.AccountID,
+			&item.Stats1h.ErrorCount,
+			&item.Stats1h.SuccessCount,
+			&item.Stats1h.TimeoutCount,
+			&item.Stats1h.RateLimitCount,
+			&item.Stats24h.ErrorCount,
+			&item.Stats24h.SuccessCount,
+			&item.Stats24h.TimeoutCount,
+			&item.Stats24h.RateLimitCount,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GetErrorStatsByIP 获取IP错误统计
 func (r *OpsRepository) GetErrorStatsByIP(ctx context.Context, startTime, endTime time.Time, limit int, sortBy, sortOrder string) ([]service.IPErrorStats, error) {
 	if limit <= 0 || limit > 200 {
@@ -3547,6 +3679,19 @@ func (r *OpsRepository) GetErrorStatsByIP(ctx context.Context, startTime, endTim
 		sortOrder = "desc"
 	}
 
+	// Performance notes (large datasets: million+ ops_error_logs rows):
+	// - This query scans all rows in the [startTime, endTime) window, then aggregates twice:
+	//   1) (client_ip, error_type) to get per-type counts and min/max timestamps
+	//   2) (client_ip) to get total counts + jsonb_object_agg(error_type -> count)
+	// - Validate real-world performance with a representative window and:
+	//   EXPLAIN (ANALYZE, BUFFERS) <query>
+	// - Index recommendations:
+	//   - Per-IP drilldown queries (e.g. GetErrorsByIP) benefit from:
+	//     CREATE INDEX idx_ops_error_logs_ip_time ON ops_error_logs(client_ip, created_at);
+	//   - This aggregate query is primarily time-range driven; if EXPLAIN shows a Seq Scan / heavy heap fetches
+	//     on large windows, consider an index that starts with created_at, e.g. (created_at, client_ip, error_type)
+	//     or (created_at, client_ip) plus INCLUDE(error_type) (Postgres), depending on write/space tradeoffs.
+	// - For very wide windows, consider time partitioning or pre-aggregation tables to avoid scanning raw logs.
 	query := fmt.Sprintf(`
 		WITH error_type_counts AS (
 			SELECT
@@ -3557,7 +3702,7 @@ func (r *OpsRepository) GetErrorStatsByIP(ctx context.Context, startTime, endTim
 				MAX(created_at) as last_error
 			FROM ops_error_logs
 			WHERE created_at >= $1 AND created_at < $2
-				AND client_ip IS NOT NULL AND client_ip != ''
+				AND client_ip IS NOT NULL
 			GROUP BY client_ip, error_type
 		)
 		SELECT

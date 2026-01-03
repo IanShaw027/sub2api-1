@@ -674,9 +674,18 @@ func (h *OpsHandler) GetErrorStats(c *gin.Context) {
 // Query params:
 // - account_id: int64 (optional; if not provided, returns all active accounts)
 func (h *OpsHandler) GetAccountStatus(c *gin.Context) {
-	accountIDStr := c.Query("account_id")
+	accountIDStr := strings.TrimSpace(c.Query("account_id"))
 	if accountIDStr == "" {
-		response.BadRequest(c, "account_id is required")
+		items, err := h.opsService.GetAllActiveAccountStatus(c.Request.Context())
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, "Failed to get account stats")
+			return
+		}
+
+		response.Success(c, gin.H{
+			"accounts": items,
+			"total":    len(items),
+		})
 		return
 	}
 

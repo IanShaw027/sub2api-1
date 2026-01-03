@@ -3,6 +3,7 @@ package cron
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
@@ -20,6 +21,9 @@ type OpsCleaner struct {
 }
 
 func NewOpsCleaner(ctx context.Context, repo service.OpsRepository, config CleanupConfig) *OpsCleaner {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return &OpsCleaner{
 		repo:   repo,
 		config: config,
@@ -30,9 +34,12 @@ func NewOpsCleaner(ctx context.Context, repo service.OpsRepository, config Clean
 func (c *OpsCleaner) Run() {
 	log.Println("[CRON] Starting ops data cleanup...")
 
+	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Minute)
+	defer cancel()
+
 	// Clean error logs
 	if c.config.ErrorLogRetentionDays > 0 {
-		deleted, err := c.repo.DeleteOldErrorLogs(c.ctx, c.config.ErrorLogRetentionDays)
+		deleted, err := c.repo.DeleteOldErrorLogs(ctx, c.config.ErrorLogRetentionDays)
 		if err != nil {
 			log.Printf("[CRON] Failed to clean error logs: %v", err)
 		} else {
@@ -41,8 +48,12 @@ func (c *OpsCleaner) Run() {
 	}
 
 	// Clean minute-level metrics
+	if err := ctx.Err(); err != nil {
+		log.Printf("[CRON] Ops data cleanup canceled: %v", err)
+		return
+	}
 	if c.config.MinuteMetricsRetentionDays > 0 {
-		deleted, err := c.repo.DeleteOldMetrics(c.ctx, 1, c.config.MinuteMetricsRetentionDays)
+		deleted, err := c.repo.DeleteOldMetrics(ctx, 1, c.config.MinuteMetricsRetentionDays)
 		if err != nil {
 			log.Printf("[CRON] Failed to clean minute metrics: %v", err)
 		} else {
@@ -51,8 +62,12 @@ func (c *OpsCleaner) Run() {
 	}
 
 	// Clean hourly metrics
+	if err := ctx.Err(); err != nil {
+		log.Printf("[CRON] Ops data cleanup canceled: %v", err)
+		return
+	}
 	if c.config.HourlyMetricsRetentionDays > 0 {
-		deleted, err := c.repo.DeleteOldMetrics(c.ctx, 60, c.config.HourlyMetricsRetentionDays)
+		deleted, err := c.repo.DeleteOldMetrics(ctx, 60, c.config.HourlyMetricsRetentionDays)
 		if err != nil {
 			log.Printf("[CRON] Failed to clean hourly metrics: %v", err)
 		} else {

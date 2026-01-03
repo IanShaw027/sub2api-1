@@ -36,7 +36,8 @@ func (m *Manager) Start() {
 	log.Println("[CRON] Manager started")
 }
 
-func (m *Manager) Stop() {
-	m.cron.Stop()
+func (m *Manager) Stop() context.Context {
+	stopCtx := m.cron.Stop()
 	log.Println("[CRON] Manager stopped")
+	return stopCtx
 }

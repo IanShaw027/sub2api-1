@@ -14,6 +14,9 @@ type OpsAggregator struct {
 }
 
 func NewOpsAggregator(ctx context.Context, repo service.OpsRepository) *OpsAggregator {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return &OpsAggregator{
 		repo: repo,
 		ctx:  ctx,
@@ -24,6 +27,9 @@ func NewOpsAggregator(ctx context.Context, repo service.OpsRepository) *OpsAggre
 func (a *OpsAggregator) RunHourly() {
 	log.Println("[CRON] Starting hourly metrics aggregation...")
 
+	ctx, cancel := context.WithTimeout(a.ctx, 10*time.Minute)
+	defer cancel()
+
 	// Aggregate the previous hour (e.g., if now is 14:30, aggregate 13:00-14:00)
 	now := time.Now().UTC()
 	endTime := now.Truncate(time.Hour)
@@ -31,7 +37,7 @@ func (a *OpsAggregator) RunHourly() {
 
 	log.Printf("[CRON] Aggregating hourly metrics for [%s, %s)", startTime.Format(time.RFC3339), endTime.Format(time.RFC3339))
 
-	if err := a.repo.UpsertHourlyMetrics(a.ctx, startTime, endTime); err != nil {
+	if err := a.repo.UpsertHourlyMetrics(ctx, startTime, endTime); err != nil {
 		log.Printf("[CRON] Failed to aggregate hourly metrics: %v", err)
 		return
 	}
@@ -43,6 +49,9 @@ func (a *OpsAggregator) RunHourly() {
 func (a *OpsAggregator) RunDaily() {
 	log.Println("[CRON] Starting daily metrics aggregation...")
 
+	ctx, cancel := context.WithTimeout(a.ctx, 10*time.Minute)
+	defer cancel()
+
 	// Aggregate the previous day (e.g., if now is 2024-01-03 01:00, aggregate 2024-01-02 00:00-2024-01-03 00:00)
 	now := time.Now().UTC()
 	endTime := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
@@ -50,7 +59,7 @@ func (a *OpsAggregator) RunDaily() {
 
 	log.Printf("[CRON] Aggregating daily metrics for [%s, %s)", startTime.Format(time.RFC3339), endTime.Format(time.RFC3339))
 
-	if err := a.repo.UpsertDailyMetrics(a.ctx, startTime, endTime); err != nil {
+	if err := a.repo.UpsertDailyMetrics(ctx, startTime, endTime); err != nil {
 		log.Printf("[CRON] Failed to aggregate daily metrics: %v", err)
 		return
 	}

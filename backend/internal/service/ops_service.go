@@ -251,6 +251,9 @@ type OpsRepository interface {
 
 	// Account status monitoring methods
 	GetAccountStats(ctx context.Context, accountID int64, duration time.Duration) (*AccountStats, error)
+	// GetAllActiveAccountStatus returns account stats for all active accounts.
+	// "Active" is defined by repository implementation (currently: accounts seen in ops_error_logs within 24h).
+	GetAllActiveAccountStatus(ctx context.Context) ([]AccountStatusSummary, error)
 	GetLastAccountError(ctx context.Context, accountID int64) (*OpsErrorLog, error)
 	UpsertAccountStatus(ctx context.Context, status *OpsAccountStatus) error
 	GetActiveAccounts(ctx context.Context) ([]int64, error)
@@ -726,10 +729,17 @@ type OverviewStats struct {
 
 // AccountStats 账号统计数据
 type AccountStats struct {
-	ErrorCount     int
-	SuccessCount   int
-	TimeoutCount   int
-	RateLimitCount int
+	ErrorCount     int `json:"error_count"`
+	SuccessCount   int `json:"success_count"`
+	TimeoutCount   int `json:"timeout_count"`
+	RateLimitCount int `json:"rate_limit_count"`
+}
+
+// AccountStatusSummary summarizes recent stats for an account.
+type AccountStatusSummary struct {
+	AccountID int64        `json:"account_id"`
+	Stats1h   AccountStats `json:"stats_1h"`
+	Stats24h  AccountStats `json:"stats_24h"`
 }
 
 // OpsAccountStatus 账号状态
@@ -1371,6 +1381,16 @@ func (s *OpsService) GetAccountStats(ctx context.Context, accountID int64, durat
 	ctxDB, cancel := context.WithTimeout(ctx, opsDBQueryTimeout)
 	defer cancel()
 	return s.repo.GetAccountStats(ctxDB, accountID, duration)
+}
+
+// GetAllActiveAccountStatus returns stats for all active accounts.
+func (s *OpsService) GetAllActiveAccountStatus(ctx context.Context) ([]AccountStatusSummary, error) {
+	if s == nil || s.repo == nil {
+		return nil, nil
+	}
+	ctxDB, cancel := context.WithTimeout(ctx, opsDBQueryTimeout)
+	defer cancel()
+	return s.repo.GetAllActiveAccountStatus(ctxDB)
 }
 
 // GetErrorStatsByIP 获取IP错误统计
