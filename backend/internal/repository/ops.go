@@ -197,6 +197,17 @@ func (r *OpsRepository) GetErrorLogByID(ctx context.Context, id int64) (*service
 			client_ip,
 			request_path,
 			stream,
+			provider_error_code,
+			provider_error_type,
+			is_retryable,
+			is_user_actionable,
+			retry_count,
+			completion_status,
+			upstream_status_code,
+			upstream_error_message,
+			upstream_error_detail,
+			network_error_type,
+			retry_after_seconds,
 			auth_latency_ms,
 			routing_latency_ms,
 			upstream_latency_ms,
@@ -210,19 +221,34 @@ func (r *OpsRepository) GetErrorLogByID(ctx context.Context, id int64) (*service
 	`
 
 	var (
-		errorLog                      service.OpsErrorLog
-		userID, apiKeyID, accountID   sql.NullInt64
-		groupID                       sql.NullInt64
-		clientIP, requestPath         sql.NullString
-		stream                        sql.NullBool
-		durationMs                    sql.NullInt64
-		authLatencyMs                 sql.NullInt64
-		routingLatencyMs              sql.NullInt64
-		upstreamLatencyMs             sql.NullInt64
-		responseLatencyMs             sql.NullInt64
-		timeToFirstTokenMs            sql.NullInt64
-		requestBody, errorBody        sql.NullString
-		userAgent                     sql.NullString
+		errorLog                    service.OpsErrorLog
+		userID, apiKeyID, accountID sql.NullInt64
+		groupID                     sql.NullInt64
+		clientIP, requestPath       sql.NullString
+		stream                      sql.NullBool
+		statusCode                  sql.NullInt64
+		platform, model             sql.NullString
+		durationMs                  sql.NullInt64
+		requestID                   sql.NullString
+		message                     sql.NullString
+		providerErrorCode           sql.NullString
+		providerErrorType           sql.NullString
+		isRetryable                 sql.NullBool
+		isUserActionable            sql.NullBool
+		retryCount                  sql.NullInt64
+		completionStatus            sql.NullString
+		upstreamStatusCode          sql.NullInt64
+		upstreamErrorMessage        sql.NullString
+		upstreamErrorDetail         sql.NullString
+		networkErrorType            sql.NullString
+		retryAfterSeconds           sql.NullInt64
+		authLatencyMs               sql.NullInt64
+		routingLatencyMs            sql.NullInt64
+		upstreamLatencyMs           sql.NullInt64
+		responseLatencyMs           sql.NullInt64
+		timeToFirstTokenMs          sql.NullInt64
+		requestBody, errorBody      sql.NullString
+		userAgent                   sql.NullString
 	)
 
 	err := r.sql.QueryRowContext(ctx, query, id).Scan(
@@ -231,12 +257,12 @@ func (r *OpsRepository) GetErrorLogByID(ctx context.Context, id int64) (*service
 		&errorLog.Phase,
 		&errorLog.Type,
 		&errorLog.Severity,
-		&errorLog.StatusCode,
-		&errorLog.Platform,
-		&errorLog.Model,
+		&statusCode,
+		&platform,
+		&model,
 		&durationMs,
-		&errorLog.RequestID,
-		&errorLog.Message,
+		&requestID,
+		&message,
 		&userID,
 		&apiKeyID,
 		&accountID,
@@ -244,6 +270,17 @@ func (r *OpsRepository) GetErrorLogByID(ctx context.Context, id int64) (*service
 		&clientIP,
 		&requestPath,
 		&stream,
+		&providerErrorCode,
+		&providerErrorType,
+		&isRetryable,
+		&isUserActionable,
+		&retryCount,
+		&completionStatus,
+		&upstreamStatusCode,
+		&upstreamErrorMessage,
+		&upstreamErrorDetail,
+		&networkErrorType,
+		&retryAfterSeconds,
 		&authLatencyMs,
 		&routingLatencyMs,
 		&upstreamLatencyMs,
@@ -262,9 +299,25 @@ func (r *OpsRepository) GetErrorLogByID(ctx context.Context, id int64) (*service
 	}
 
 	// Set nullable fields
+	if statusCode.Valid {
+		errorLog.StatusCode = int(statusCode.Int64)
+	}
+	if platform.Valid {
+		errorLog.Platform = platform.String
+	}
+	if model.Valid {
+		errorLog.Model = model.String
+	}
 	if durationMs.Valid {
 		v := int(durationMs.Int64)
 		errorLog.LatencyMs = &v
+		errorLog.DurationMs = &v
+	}
+	if requestID.Valid {
+		errorLog.RequestID = requestID.String
+	}
+	if message.Valid {
+		errorLog.Message = message.String
 	}
 	if userID.Valid {
 		v := userID.Int64
@@ -290,6 +343,42 @@ func (r *OpsRepository) GetErrorLogByID(ctx context.Context, id int64) (*service
 	}
 	if stream.Valid {
 		errorLog.Stream = stream.Bool
+	}
+	if providerErrorCode.Valid {
+		errorLog.ProviderErrorCode = providerErrorCode.String
+	}
+	if providerErrorType.Valid {
+		errorLog.ProviderErrorType = providerErrorType.String
+	}
+	if isRetryable.Valid {
+		errorLog.IsRetryable = isRetryable.Bool
+	}
+	if isUserActionable.Valid {
+		errorLog.IsUserActionable = isUserActionable.Bool
+	}
+	if retryCount.Valid {
+		errorLog.RetryCount = int(retryCount.Int64)
+	}
+	if completionStatus.Valid {
+		errorLog.CompletionStatus = completionStatus.String
+	}
+	if upstreamStatusCode.Valid {
+		v := int(upstreamStatusCode.Int64)
+		errorLog.UpstreamStatusCode = &v
+	}
+	if upstreamErrorMessage.Valid {
+		errorLog.UpstreamErrorMessage = upstreamErrorMessage.String
+	}
+	if upstreamErrorDetail.Valid {
+		detail := upstreamErrorDetail.String
+		errorLog.UpstreamErrorDetail = &detail
+	}
+	if networkErrorType.Valid {
+		errorLog.NetworkErrorType = networkErrorType.String
+	}
+	if retryAfterSeconds.Valid {
+		v := int(retryAfterSeconds.Int64)
+		errorLog.RetryAfterSeconds = &v
 	}
 	if authLatencyMs.Valid {
 		v := int(authLatencyMs.Int64)

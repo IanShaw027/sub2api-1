@@ -268,8 +268,11 @@ type opsRecordErrorGuardKey struct{}
 
 var (
 	// 敏感信息正则表达式
-	apiKeyRegex    = regexp.MustCompile(`(?i)(sk-[a-zA-Z0-9]{8,}|(?:key|apikey|api_key)[=:]\s*[a-zA-Z0-9]{12,})`)
-	tokenRegex     = regexp.MustCompile(`(?i)(bearer\s+[a-zA-Z0-9_\-\.]+|token[=:]\s*[a-zA-Z0-9_\-\.]+)`)
+	// NOTE:
+	// - API Key / Token 可能包含 Base64 字符（+ / =）或 URL 编码字符（%）
+	// - 一些 key（如 sk-proj-...）还会包含 '-' 等分隔符
+	apiKeyRegex    = regexp.MustCompile(`(?i)(sk-[a-zA-Z0-9_\-+/=%]{8,}|(?:key|apikey|api_key)[=:]\s*[a-zA-Z0-9_\-+/=%]{12,})`)
+	tokenRegex     = regexp.MustCompile(`(?i)(bearer\s+[a-zA-Z0-9_\-\.+/=%]+|token[=:]\s*[a-zA-Z0-9_\-\.+/=%]+)`)
 	emailRegex     = regexp.MustCompile(`[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`)
 	queryParamRegex = regexp.MustCompile(`(?i)([?&](?:key|apikey|api_key|token|access_token|refresh_token|client_secret)=)[^&\s"]+`)
 )
@@ -1384,4 +1387,3 @@ func (s *OpsService) GetErrorLogByID(ctx context.Context, id int64) (*OpsErrorLo
 	defer cancel()
 	return s.repo.GetErrorLogByID(ctxDB, id)
 }
-

@@ -14,7 +14,7 @@ type Manager struct {
 
 func NewManager(ctx context.Context) *Manager {
 	return &Manager{
-		cron: cron.New(cron.WithSeconds()),
+		cron: cron.New(),
 		ctx:  ctx,
 	}
 }
