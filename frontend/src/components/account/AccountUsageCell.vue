@@ -245,7 +245,7 @@
             color="emerald"
           />
           <p class="mt-1 text-[9px] leading-tight text-gray-400 dark:text-gray-500 italic">
-            * {{ t('admin.accounts.gemini.quotaPolicy.simulatedNote') || 'Simulated quota' }}
+            * {{ t('admin.accounts.gemini.quotaPolicy.simulatedNote') }}
           </p>
         </div>
       </div>

@@ -4,6 +4,7 @@
  */
 
 import { apiClient } from '../client'
+import type { AlertRule, GroupAvailabilityConfig, GroupAvailabilityStatus, EmailNotificationConfig } from '@/views/admin/ops/types'
 
 export type OpsSeverity = 'P0' | 'P1' | 'P2' | 'P3'
 export type OpsPhase =
@@ -28,7 +29,8 @@ export interface OpsMetrics {
   error_5xx_count?: number
   error_timeout_count?: number
   latency_p50?: number
-  latency_p999?: number
+  latency_p95?: number
+  latency_p99?: number
   latency_avg?: number
   latency_max?: number
   upstream_latency_avg?: number
@@ -57,9 +59,6 @@ export interface OpsMetrics {
   tags?: Record<string, any>
   success_rate: number
   error_rate: number
-  p95_latency_ms: number
-  p99_latency_ms: number
-  http2_errors: number
   active_alerts: number
   cpu_usage_percent?: number
   memory_used_mb?: number
@@ -110,13 +109,28 @@ export interface OpsErrorListParams {
   start_time?: string
   end_time?: string
   platform?: OpsPlatform
+  /**
+   * Comma-separated platforms (e.g. "openai,anthropic"); preferred over `platform` when selecting multiple.
+   * Backend supports both `platform` (single) and `platforms` (multi) for compatibility.
+   */
+  platforms?: string
   phase?: OpsPhase
   severity?: OpsSeverity
   q?: string
   /**
+   * Comma-separated integers (e.g. "500,502,503")
+   */
+  status_codes?: string
+  /**
+   * Client IP filter (exact match, per backend behavior)
+   */
+  client_ip?: string
+  /**
    * Max 500 (legacy endpoint uses a hard cap); use paginated /admin/ops/errors for larger result sets.
    */
   limit?: number
+  page?: number
+  page_size?: number
 }
 
 export interface OpsErrorListResponse {
@@ -152,12 +166,31 @@ export async function listMetricsHistory(params?: OpsMetricsHistoryParams): Prom
   return data
 }
 
+type OpsErrorLogsRawResponse = {
+  // New endpoint shape: { errors, total, page, page_size }
+  errors?: OpsErrorLog[]
+  // Legacy endpoint shape: { items, total }
+  items?: OpsErrorLog[]
+  total?: number
+  page?: number
+  page_size?: number
+}
+
 /**
- * List recent error logs with optional filters
+ * List error logs with server-side filters.
+ * Normalizes both legacy and paginated endpoint response shapes into `{ items, total }`.
+ */
+export async function listErrorLogs(params?: OpsErrorListParams): Promise<OpsErrorListResponse> {
+  const { data } = await apiClient.get<OpsErrorLogsRawResponse>('/admin/ops/errors', { params })
+  const items = Array.isArray(data.items) ? data.items : Array.isArray(data.errors) ? data.errors : []
+  return { items, total: data.total }
+}
+
+/**
+ * Backwards-compatible alias for `listErrorLogs`.
  */
 export async function listErrors(params?: OpsErrorListParams): Promise<OpsErrorListResponse> {
-  const { data } = await apiClient.get<OpsErrorListResponse>('/admin/ops/error-logs', { params })
-  return data
+  return listErrorLogs(params)
 }
 
 /**
@@ -165,6 +198,20 @@ export async function listErrors(params?: OpsErrorListParams): Promise<OpsErrorL
  */
 export async function getErrorDetail(id: number): Promise<OpsErrorDetail> {
   const { data } = await apiClient.get<OpsErrorDetail>(`/admin/ops/errors/${id}`)
+  return data
+}
+
+export interface RetryErrorResponse {
+  can_retry: boolean
+  request_id: string
+  platform: string
+  model: string
+  request_body: string
+  message: string
+}
+
+export async function retryErrorRequest(id: number): Promise<RetryErrorResponse> {
+  const { data } = await apiClient.post<RetryErrorResponse>(`/admin/ops/errors/${id}/retry`)
   return data
 }
 
@@ -193,7 +240,6 @@ export interface OpsDashboardOverview {
     p50: number
     p95: number
     p99: number
-    p999: number
     avg: number
     max: number
     threshold_p99: number
@@ -382,16 +428,68 @@ export function subscribeQPS(onMessage: (data: any) => void, options: SubscribeQ
   }
 }
 
+// Alert Rules API
+export async function listAlertRules(): Promise<AlertRule[]> {
+  const { data } = await apiClient.get<AlertRule[]>('/admin/ops/alert-rules')
+  return data
+}
+
+export async function createAlertRule(rule: AlertRule): Promise<AlertRule> {
+  const { data } = await apiClient.post<AlertRule>('/admin/ops/alert-rules', rule)
+  return data
+}
+
+export async function updateAlertRule(id: number, rule: Partial<AlertRule>): Promise<AlertRule> {
+  const { data } = await apiClient.put<AlertRule>(`/admin/ops/alert-rules/${id}`, rule)
+  return data
+}
+
+export async function deleteAlertRule(id: number): Promise<void> {
+  await apiClient.delete(`/admin/ops/alert-rules/${id}`)
+}
+
+// Group Availability API
+export async function listGroupAvailabilityStatus(): Promise<GroupAvailabilityStatus[]> {
+  const { data } = await apiClient.get<GroupAvailabilityStatus[]>('/admin/ops/group-availability/status')
+  return data
+}
+
+export async function updateGroupAvailabilityConfig(groupId: number, config: Partial<GroupAvailabilityConfig>): Promise<GroupAvailabilityConfig> {
+  const { data } = await apiClient.put<GroupAvailabilityConfig>(`/admin/ops/group-availability/configs/${groupId}`, config)
+  return data
+}
+
+// Email Notification API
+export async function getEmailNotificationConfig(): Promise<EmailNotificationConfig> {
+  const { data } = await apiClient.get<EmailNotificationConfig>('/admin/ops/email-notification/config')
+  return data
+}
+
+export async function updateEmailNotificationConfig(config: EmailNotificationConfig): Promise<EmailNotificationConfig> {
+  const { data } = await apiClient.put<EmailNotificationConfig>('/admin/ops/email-notification/config', config)
+  return data
+}
+
 export const opsAPI = {
   getMetrics,
   listMetricsHistory,
+  listErrorLogs,
   listErrors,
   getErrorDetail,
+  retryErrorRequest,
   getDashboardOverview,
   getProviderHealth,
   getLatencyHistogram,
   getErrorDistribution,
-  subscribeQPS
+  subscribeQPS,
+  listAlertRules,
+  createAlertRule,
+  updateAlertRule,
+  deleteAlertRule,
+  listGroupAvailabilityStatus,
+  updateGroupAvailabilityConfig,
+  getEmailNotificationConfig,
+  updateEmailNotificationConfig
 }
 
 export default opsAPI

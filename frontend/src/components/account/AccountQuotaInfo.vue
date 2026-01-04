@@ -66,27 +66,27 @@ const tierLabel = computed(() => {
   if (isCodeAssist.value) {
     // GCP Code Assist: 显示 GCP tier
     const tierMap: Record<string, string> = {
-      LEGACY: 'Free',
-      PRO: 'Pro',
-      ULTRA: 'Ultra',
-      'standard-tier': 'Standard',
-      'pro-tier': 'Pro',
-      'ultra-tier': 'Ultra'
+      LEGACY: t('admin.accounts.tier.free'),
+      PRO: t('admin.accounts.tier.pro'),
+      ULTRA: t('admin.accounts.tier.ultra'),
+      'standard-tier': t('admin.accounts.tier.standard'),
+      'pro-tier': t('admin.accounts.tier.pro'),
+      'ultra-tier': t('admin.accounts.tier.ultra')
     }
-    return tierMap[creds?.tier_id || ''] || (creds?.tier_id ? 'GCP' : 'Unknown')
+    return tierMap[creds?.tier_id || ''] || (creds?.tier_id ? t('admin.accounts.tier.gcp') : t('admin.accounts.tier.unknown'))
   }
 
   if (isGoogleOne.value) {
     // Google One: tier 映射
     const tierMap: Record<string, string> = {
-      AI_PREMIUM: 'AI Premium',
-      GOOGLE_ONE_STANDARD: 'Standard',
-      GOOGLE_ONE_BASIC: 'Basic',
-      FREE: 'Free',
-      GOOGLE_ONE_UNKNOWN: 'Personal',
-      GOOGLE_ONE_UNLIMITED: 'Unlimited'
+      AI_PREMIUM: t('admin.accounts.tier.aiPremium'),
+      GOOGLE_ONE_STANDARD: t('admin.accounts.tier.standard'),
+      GOOGLE_ONE_BASIC: t('admin.accounts.tier.basic'),
+      FREE: t('admin.accounts.tier.free'),
+      GOOGLE_ONE_UNKNOWN: t('admin.accounts.tier.personal'),
+      GOOGLE_ONE_UNLIMITED: t('admin.accounts.tier.unlimited')
     }
-    return tierMap[creds?.tier_id || ''] || 'Personal'
+    return tierMap[creds?.tier_id || ''] || t('admin.accounts.tier.personal')
   }
 
   // AI Studio 或其他

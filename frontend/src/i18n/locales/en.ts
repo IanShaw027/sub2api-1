@@ -550,7 +550,7 @@ export default {
       failedToLoad: 'Failed to load dashboard statistics'
     },
     ops: {
-      title: 'Ops Monitoring Center 2.0',
+      title: 'Ops Monitoring Center',
       description: 'Stability metrics, error distribution, and system health',
       status: {
         title: 'System Health Snapshot',
@@ -564,21 +564,64 @@ export default {
         live: 'Live',
         waiting: 'Waiting for data',
         realtime: 'Connected',
-        disconnected: 'Disconnected'
+        disconnected: 'Disconnected',
+        wsConnected: 'WebSocket Connected',
+        wsDisconnected: 'WebSocket Disconnected (Polling Mode)',
+        online: 'Live Monitoring',
+        offline: 'Offline Mode',
+        updatedAt: 'Updated at',
+        refresh: 'Refresh Data',
+        healthCondition: 'System Health',
+        healthy: 'System Operational',
+        risky: 'Potential Risks',
+        trafficPulse: 'Live Traffic Pulse',
+        peak1h: 'Peak (1h)',
+        slaTooltip: 'Service Level Agreement: Percentage of successful requests',
+        p99Tooltip: '99% of requests are faster than this',
+        errorRateTooltip: 'Request Error Rate (non-200 OK)',
+        dbConnsTooltip: 'Active Database Connections'
+      },
+      tooltips: {
+        healthScore: 'Composite health score (0-100) based on error rate, latency, and resource usage',
+        realtimeQPS: 'Real-time Queries Per Second',
+        realtimeTPS: 'Real-time Tokens Per Second',
+        peak1h: 'Highest value in the last hour',
+        systemStatus: 'Component connection and operational status',
+        cpu: 'Current CPU usage',
+        memory: 'Current memory usage',
+        throughputChart: 'Trend of QPS (Requests/sec) and TPS (Tokens/sec)',
+        errorDistChart: 'Distribution of error codes',
+        latencyChart: 'Histogram of request response times',
+        providerChart: 'Provider error rate ranking (Error count / Total requests)'
+      },
+      timeRange: {
+        '5m': 'Last 5 Minutes',
+        '30m': 'Last 30 Minutes',
+        '1h': 'Last 1 Hour',
+        '6h': 'Last 6 Hours',
+        '24h': 'Last 24 Hours'
       },
       charts: {
+        throughput: 'Throughput Trend',
         errorTrend: 'Error Trend',
         errorDistribution: 'Error Distribution',
         errorRate: 'Error Rate',
         requestCount: 'Request Count',
+        requestCountLabel: 'Request Count',
         rateLimits: 'Rate Limits (429)',
         serverErrors: 'Server Errors (5xx)',
         clientErrors: 'Client Errors (4xx)',
         otherErrors: 'Other',
         latencyDist: 'Latency Distribution',
+        latency: 'Latency Distribution',
         providerSla: 'Upstream SLA Comparison',
+        providerErrorRate: 'Provider Error Rate',
         errorDist: 'Error Type Distribution',
-        systemStatus: 'System Resources'
+        systemStatus: 'System Resources',
+        loading: 'Loading data...',
+        emptyRequest: 'No requests in this period',
+        emptyError: 'No errors in this period',
+        errorRateLabel: 'Error Rate (%)'
       },
       metrics: {
         successRate: 'Success Rate',
@@ -597,57 +640,35 @@ export default {
       },
       errors: {
         title: 'Recent Errors',
+        trackingTitle: 'Error Log Tracking',
         subtitle: 'Inspect failures across platforms and phases',
-        count: '{n} errors'
-      },
-      filters: {
-        allSeverities: 'All severities',
-        allPlatforms: 'All platforms',
-        allPhases: 'All phases',
-        p0: 'P0 (Critical)',
-        p1: 'P1 (High)',
-        p2: 'P2 (Medium)',
-        p3: 'P3 (Low)'
-      },
-      searchPlaceholder: 'Search by request ID, model, or message',
-      range: {
-        '15m': 'Last 15 minutes',
-        '1h': 'Last 1 hour',
-        '24h': 'Last 24 hours',
-        '7d': 'Last 7 days'
-      },
-      platform: {
-        anthropic: 'Anthropic',
-        openai: 'OpenAI',
-        gemini: 'Gemini',
-        antigravity: 'Antigravity'
-      },
-      phase: {
-        auth: 'Auth',
-        concurrency: 'Concurrency',
-        billing: 'Billing',
-        scheduling: 'Scheduling',
-        network: 'Network',
-        upstream: 'Upstream',
-        response: 'Response',
-        internal: 'Internal'
-      },
-      severity: {
-        p0: 'P0',
-        p1: 'P1',
-        p2: 'P2',
-        p3: 'P3'
-      },
-      table: {
-        time: 'Time',
-        severity: 'Severity',
-        phase: 'Phase',
-        statusCode: 'Status',
-        platform: 'Platform',
-        model: 'Model',
-        latency: 'Latency',
-        requestId: 'Request ID',
-        message: 'Message'
+        count: '{n} errors',
+        recentCount: 'Latest {n} error records',
+        searchPlaceholder: 'Search Request ID / Error Message...',
+        quickFilters: {
+          critical: 'Critical (P0)',
+          fiveXX: '5xx Errors',
+          timeout: 'Timeout'
+        },
+        allPlatforms: 'All Platforms',
+        allStatusCodes: 'All Status Codes',
+        allSeverities: 'All Severities',
+        loading: 'Loading...',
+        emptyTable: 'No error records found',
+        table: {
+          time: 'Time',
+          timeId: 'Time / Request ID',
+          context: 'Context',
+          status: 'Status',
+          severity: 'Severity',
+          phase: 'Phase',
+          statusCode: 'Status',
+          platform: 'Platform',
+          model: 'Model',
+          latency: 'Latency',
+          requestId: 'Request ID',
+          message: 'Error Message'
+        }
       },
       details: {
         title: 'Error Details',
@@ -658,7 +679,87 @@ export default {
         userId: 'User ID',
         apiKeyId: 'API Key ID',
         groupId: 'Group ID',
-        stream: 'Stream'
+        stream: 'Stream',
+        occurrenceTime: 'Occurrence Time',
+        errorPhase: 'Error Phase',
+        latencyWaterfall: 'Latency Waterfall',
+        basicInfo: 'Basic Info',
+        totalLatency: 'Total Latency',
+        ttft: 'TTFT',
+        requestBody: 'Request Body',
+        upstreamInfo: 'Upstream Info',
+        accountId: 'Account ID',
+        errorResponse: 'Error Response',
+        clientInfo: 'Client Info',
+        userAgent: 'User-Agent',
+        retry: 'Retry Verification',
+        retrying: 'Retrying...',
+        retryInfo: 'Retry information retrieved. Check console for details',
+        cannotRetry: 'Cannot retry this request',
+        retryFailed: 'Retry failed. Please try again later',
+        failedToLoad: 'Failed to load error details'
+      },
+      availability: {
+        title: 'Group Availability Monitoring',
+        refresh: 'Refresh',
+        loading: 'Loading...',
+        noData: 'No group monitoring data',
+        configureNow: 'Configure Now',
+        groupName: 'Group Name',
+        availableAccounts: 'Available Accounts',
+        status: 'Status',
+        lastUpdate: 'Last Update',
+        actions: 'Actions',
+        config: 'Config',
+        healthy: 'Healthy',
+        alert: 'Alert',
+        unmonitored: 'Unmonitored'
+      },
+      config: {
+        title: 'Ops Monitoring Config - Bulk Group Actions',
+        selectedGroups: '{count} groups selected',
+        batchEnable: 'Batch Enable',
+        batchDisable: 'Batch Disable',
+        batchSetThreshold: 'Set Threshold',
+        batchSetSeverity: 'Set Severity',
+        applyTemplate: 'Apply Template',
+        cancelSelection: 'Cancel Selection',
+        exportConfig: 'Export Config',
+        importConfig: 'Import Config',
+        minThreshold: 'Min Threshold',
+        monitoringStatus: 'Monitoring',
+        alertStatus: 'Alert',
+        batchSetThresholdTitle: 'Batch Set Threshold',
+        minAvailableAccounts: 'Min Available Accounts',
+        applyToGroups: 'Apply to following groups',
+        batchSetSeverityTitle: 'Batch Set Severity',
+        applyTemplateTitle: 'Apply Config Template',
+        selectTemplate: 'Select Template',
+        applyTo: 'Apply to',
+        strictMode: 'Strict Mode',
+        strictModeDesc: 'Low threshold, high priority, fast response',
+        standardMode: 'Standard Mode',
+        standardModeDesc: 'Medium threshold, standard priority, balanced response',
+        looseMode: 'Loose Mode',
+        looseModeDesc: 'High threshold, low priority, delayed response',
+        threshold: 'Threshold',
+        severity: 'Severity',
+        cooldown: 'Cooldown',
+        email: 'Email',
+        loadConfigFailed: 'Failed to load group config',
+        batchEnableSuccess: 'Enabled {count} group monitors',
+        batchEnableFailed: 'Failed to batch enable',
+        batchDisableSuccess: 'Disabled {count} group monitors',
+        batchDisableFailed: 'Failed to batch disable',
+        batchSetThresholdSuccess: 'Updated threshold for {count} groups',
+        batchSetThresholdFailed: 'Failed to set threshold',
+        batchSetSeveritySuccess: 'Updated severity for {count} groups',
+        batchSetSeverityFailed: 'Failed to set severity',
+        applyTemplateSuccess: 'Applied template to {count} groups',
+        applyTemplateFailed: 'Failed to apply template',
+        configExported: 'Config exported',
+        importComplete: 'Import complete: {success} success, {failed} failed',
+        importFailedFormat: 'Import failed: Invalid file format'
       },
       empty: {
         title: 'No ops data yet',
@@ -838,6 +939,7 @@ export default {
       createGroup: 'Create Group',
       editGroup: 'Edit Group',
       deleteGroup: 'Delete Group',
+      monitoringConfig: 'Monitoring Config',
       allPlatforms: 'All Platforms',
       allStatus: 'All Status',
       allGroups: 'All Groups',
@@ -984,6 +1086,8 @@ export default {
       syncFromCrsTitle: 'Sync Accounts from CRS',
       syncFromCrsDesc:
         'Sync accounts from claude-relay-service (CRS) into this system (CRS is called server-to-server).',
+      syncFromCrsNote:
+        'Existing accounts will only sync fields returned by CRS; missing fields retain their original values. Credentials will be merged by key and will not clear existing keys. If "Sync Proxies" is unchecked, original proxies will be kept.',
       crsVersionRequirement: '⚠️ Note: CRS version must be ≥ v1.1.240 to support this feature',
       crsBaseUrl: 'CRS Base URL',
       crsBaseUrlPlaceholder: 'e.g. http://127.0.0.1:3000',
@@ -1275,7 +1379,9 @@ export default {
 	          aiStudioNotConfiguredTip:
 	            'AI Studio OAuth is not configured: set GEMINI_OAUTH_CLIENT_ID / GEMINI_OAUTH_CLIENT_SECRET and add Redirect URI: http://localhost:1455/auth/callback (Consent screen scopes must include https://www.googleapis.com/auth/generative-language.retriever)',
 	          aiStudioNotConfigured:
-	            'AI Studio OAuth is not configured: set GEMINI_OAUTH_CLIENT_ID / GEMINI_OAUTH_CLIENT_SECRET and add Redirect URI: http://localhost:1455/auth/callback'
+	            'AI Studio OAuth is not configured: set GEMINI_OAUTH_CLIENT_ID / GEMINI_OAUTH_CLIENT_SECRET and add Redirect URI: http://localhost:1455/auth/callback',
+            showAdvancedOptions: 'Show advanced options (Self-hosted OAuth Client)',
+            hideAdvancedOptions: 'Hide advanced options (Self-hosted OAuth Client)'
 	        },
         // Antigravity specific
         antigravity: {
@@ -1324,6 +1430,13 @@ export default {
           customTitle: 'Custom OAuth (AI Studio OAuth)',
           customDesc: 'Uses admin-configured OAuth client for org management.',
           customRequirement: 'Admin must configure Client ID and add you as a test user.',
+          googleOneDesc: 'Personal account, enjoy Google One subscription quota',
+          recommendedPersonal: 'Recommended for individuals',
+          noGcpNeeded: 'No GCP needed',
+          codeAssistDesc: 'Enterprise grade, requires GCP project',
+          codeAssistHint: 'Requires GCP project activation and credit card binding',
+          enterpriseUser: 'Enterprise user',
+          highConcurrency: 'High concurrency',
           badges: {
             recommended: 'Recommended',
             highConcurrency: 'High concurrency',
@@ -1480,7 +1593,9 @@ export default {
         standard: 'Standard',
         basic: 'Basic',
         personal: 'Personal',
-        unlimited: 'Unlimited'
+        unlimited: 'Unlimited',
+        gcp: 'GCP',
+        unknown: 'Unknown'
       },
       ineligibleWarning:
         'This account is not eligible for Antigravity, but API forwarding still works. Use at your own risk.'
@@ -1976,6 +2091,42 @@ export default {
         title: '🎉 Complete Creation',
         description: '<div style="line-height: 1.7;"><p style="margin-bottom: 12px;">Click to confirm and create your API key.</p><div style="padding: 8px 12px; background: #fee2e2; border-left: 3px solid #ef4444; border-radius: 4px; font-size: 13px; margin-bottom: 12px;"><b>⚠️ Important:</b><ul style="margin: 8px 0 0 16px;"><li>Copy the key (sk-xxx) immediately after creation</li><li>Key is only shown once, need to regenerate if lost</li></ul></div><p style="padding: 8px 12px; background: #f0fdf4; border-left: 3px solid #10b981; border-radius: 4px; font-size: 13px;"><b>🚀 How to Use:</b><br/>Configure the key in any OpenAI-compatible client (like ChatBox, OpenCat, etc.) and start using!</p><p style="margin-top: 12px; color: #10b981; font-weight: 600;">👉 Click "Create" button</p></div>'
       }
+    }
+  },
+
+  // Email Templates
+  email: {
+    verification: {
+      subject: '[{siteName}] Email Verification Code',
+      title: 'Email Verification',
+      message: 'Your verification code is as follows. Please complete the verification within 10 minutes.',
+      expireNote: 'This code will expire in 10 minutes. If you did not request this code, please ignore this email.'
+    },
+    alert: {
+      subject: '[Ops Alert][{level}] Group {groupName} low availability',
+      resolved: 'ALERT RESOLVED',
+      triggered: '{level} ALERT TRIGGERED',
+      metric: 'Metric',
+      currentValue: 'Current Value',
+      threshold: 'Threshold',
+      duration: 'Duration',
+      time: 'Time',
+      viewDetails: 'View Alert Details'
+    },
+    report: {
+      subject: '[Sub2API] {title}',
+      topErrors: 'Top Errors',
+      errorType: 'Error Type',
+      count: 'Count',
+      rate: 'Rate',
+      viewFull: 'View Full Report'
+    },
+    common: {
+      allRightsReserved: 'All rights reserved.',
+      autoSentNote: 'This is an automated message, please do not reply.',
+      visitDashboard: 'Visit Dashboard',
+      notificationSettings: 'Notification Settings',
+      footerNote: 'This email was sent to you because you are subscribed to system notifications.'
     }
   }
 }

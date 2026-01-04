@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Bar, Doughnut, Line } from 'vue-chartjs'
-import { formatNumber } from '@/utils/format'
-import { sumNumbers, formatHistoryLabel, formatByteRate } from '../utils/opsFormatters'
+import { sumNumbers, formatHistoryLabel } from '../utils/opsFormatters'
 import type { ChartState } from '../types'
 import type {
   ProviderHealthData,
@@ -25,18 +25,27 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+const { t } = useI18n()
 
-const emptyRequestHintText = '当前时间段内无请求记录'
-const emptyErrorHintText = '当前时间段内无错误记录'
+const emptyRequestHintText = computed(() => t('admin.ops.charts.emptyRequest'))
+const emptyErrorHintText = computed(() => t('admin.ops.charts.emptyError'))
 
 const isDarkMode = computed(() => {
   return document.documentElement.classList.contains('dark')
 })
 
-const lineColors = computed(() => ({
-  text: isDarkMode.value ? '#e5e7eb' : '#374151',
-  grid: isDarkMode.value ? '#374151' : '#e5e7eb'
-}))
+const colors = {
+  blue: '#3b82f6',
+  blueAlpha: '#3b82f620',
+  green: '#10b981',
+  greenAlpha: '#10b98120',
+  red: '#ef4444',
+  orange: '#f59e0b',
+  purple: '#8b5cf6',
+  gray: '#9ca3af',
+  grid: isDarkMode.value ? '#374151' : '#f3f4f6',
+  text: isDarkMode.value ? '#9ca3af' : '#6b7280'
+}
 
 // Chart Data: Latency Distribution
 const latencyHasData = computed(() => (props.latencyData?.total_requests ?? 0) > 0)
@@ -52,10 +61,11 @@ const latencyChartData = computed(() => {
     labels: props.latencyData.buckets.map(b => b.range),
     datasets: [
       {
-        label: '请求数量',
+        label: t('admin.ops.charts.requestCountLabel'),
         data: props.latencyData.buckets.map(b => b.count),
-        backgroundColor: '#3b82f6',
-        borderRadius: 4
+        backgroundColor: colors.blue,
+        borderRadius: 4,
+        barPercentage: 0.6
       }
     ]
   }
@@ -78,13 +88,14 @@ const errorChartData = computed(() => {
         data: props.errorDistribution.items.map(i => i.count),
         backgroundColor: [
           '#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899'
-        ]
+        ],
+        borderWidth: 0
       }
     ]
   }
 })
 
-// Chart Data: Provider SLA
+// Chart Data: Provider SLA (Horizontal Bar)
 const providerTotalRequests = computed(() => sumNumbers(props.providers.map(p => p.request_count)))
 const providerChartState = computed<ChartState>(() => {
   if (!props.hasLoadedOnce) return 'loading'
@@ -94,14 +105,17 @@ const providerChartState = computed<ChartState>(() => {
 })
 const providerChartData = computed(() => {
   if (!props.providers.length || providerTotalRequests.value <= 0) return null
+  // Sort providers by error rate (desc) to highlight issues
+  const sorted = [...props.providers].sort((a, b) => a.error_rate - b.error_rate)
   return {
-    labels: props.providers.map(p => p.name),
+    labels: sorted.map(p => p.name),
     datasets: [
       {
-        label: 'SLA (%)',
-        data: props.providers.map(p => p.success_rate),
-        backgroundColor: props.providers.map(p => p.success_rate > 99.5 ? '#10b981' : p.success_rate > 98 ? '#f59e0b' : '#ef4444'),
-        borderRadius: 4
+        label: t('admin.ops.charts.errorRateLabel'),
+        data: sorted.map(p => p.error_rate),
+        backgroundColor: sorted.map(p => p.error_rate > 5 ? colors.red : p.error_rate > 1 ? colors.orange : colors.green),
+        borderRadius: 4,
+        barPercentage: 0.6
       }
     ]
   }
@@ -117,20 +131,23 @@ const throughputChartData = computed(() => {
       {
         label: 'QPS',
         data: props.metricsHistory.map(m => m.qps ?? 0),
-        borderColor: '#3b82f6',
-        backgroundColor: '#3b82f620',
+        borderColor: colors.blue,
+        backgroundColor: colors.blueAlpha,
         fill: true,
-        tension: 0.3,
-        pointRadius: 0
+        tension: 0.4,
+        pointRadius: 0,
+        pointHitRadius: 10
       },
       {
         label: 'TPS (K)',
         data: props.metricsHistory.map(m => (m.tps ?? 0) / 1000),
-        borderColor: '#10b981',
-        backgroundColor: '#10b98120',
+        borderColor: colors.green,
+        backgroundColor: colors.greenAlpha,
         fill: true,
-        tension: 0.3,
-        pointRadius: 0
+        tension: 0.4,
+        pointRadius: 0,
+        pointHitRadius: 10,
+        yAxisID: 'y1'
       }
     ]
   }
@@ -143,52 +160,28 @@ const throughputChartState = computed<ChartState>(() => {
   return 'empty'
 })
 
-const networkIOText = computed(() => {
-  const m = props.latestMetrics
-  if (!m) return null
-  const rx = formatByteRate(m.network_in_bytes ?? 0, m.window_minutes || 1)
-  const tx = formatByteRate(m.network_out_bytes ?? 0, m.window_minutes || 1)
-  return `RX ${rx} · TX ${tx}`
-})
-
-const diskIOText = computed(() => {
-  const m = props.latestMetrics
-  if (!m) return null
-  const hasReadWrite = (m.disk_read_bytes ?? 0) > 0 || (m.disk_write_bytes ?? 0) > 0
-  if (hasReadWrite) {
-    const read = formatByteRate(m.disk_read_bytes ?? 0, m.window_minutes || 1)
-    const write = formatByteRate(m.disk_write_bytes ?? 0, m.window_minutes || 1)
-    return `Read ${read} · Write ${write}`
-  }
-  return `${formatNumber(m.disk_iops ?? 0)} IOPS`
-})
-
-const chartOptions = {
+// Common Options
+const baseOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
-    legend: {
-      display: false
-    }
+    legend: { display: false }
   },
   scales: {
+    x: {
+      grid: { display: false },
+      ticks: { color: colors.text, font: { size: 10 } }
+    },
     y: {
       beginAtZero: true,
-      grid: {
-        display: false
-      }
-    },
-    x: {
-      grid: {
-        display: false
-      }
+      grid: { color: colors.grid, borderDash: [4, 4] },
+      ticks: { color: colors.text, font: { size: 10 } }
     }
   }
-}
+}))
 
-const throughputChartOptions = computed(() => ({
-  responsive: true,
-  maintainAspectRatio: false,
+const throughputOptions = computed(() => ({
+  ...baseOptions.value,
   interaction: {
     intersect: false,
     mode: 'index' as const
@@ -196,169 +189,173 @@ const throughputChartOptions = computed(() => ({
   plugins: {
     legend: {
       position: 'top' as const,
-      labels: {
-        color: lineColors.value.text,
-        usePointStyle: true,
-        pointStyle: 'circle',
-        padding: 12,
-        font: {
-          size: 11
-        }
-      }
+      align: 'end' as const,
+      labels: { color: colors.text, usePointStyle: true, boxWidth: 6, font: { size: 10 } }
     },
     tooltip: {
+      backgroundColor: isDarkMode.value ? '#1f2937' : '#ffffff',
+      titleColor: isDarkMode.value ? '#f3f4f6' : '#111827',
+      bodyColor: isDarkMode.value ? '#d1d5db' : '#4b5563',
+      borderColor: colors.grid,
+      borderWidth: 1,
+      padding: 10,
+      displayColors: true,
       callbacks: {
         label: (context: any) => {
-          const label = context.dataset.label as string
-          if (label === 'TPS (K)') return `${label}: ${Number(context.raw).toFixed(1)}K`
-          return `${label}: ${Number(context.raw).toFixed(1)}`
+           let label = context.dataset.label || ''
+           if (label) label += ': '
+           if (context.raw !== null) {
+              label += context.parsed.y.toFixed(1)
+           }
+           return label
         }
       }
     }
   },
   scales: {
     x: {
-      grid: {
-        color: lineColors.value.grid
-      },
-      ticks: {
-        color: lineColors.value.text,
-        font: {
-          size: 10
-        },
-        maxTicksLimit: 8
-      }
+      grid: { display: false },
+      ticks: { color: colors.text, font: { size: 10 }, maxTicksLimit: 8 }
     },
     y: {
+      type: 'linear' as const,
+      display: true,
+      position: 'left' as const,
+      grid: { color: colors.grid, borderDash: [4, 4] },
+      ticks: { color: colors.text, font: { size: 10 } }
+    },
+    y1: {
+      type: 'linear' as const,
+      display: true,
+      position: 'right' as const,
+      grid: { display: false },
+      ticks: { color: colors.green, font: { size: 10 } }
+    }
+  }
+}))
+
+const providerOptions = computed(() => ({
+  ...baseOptions.value,
+  indexAxis: 'y' as const, // Horizontal Bar
+  plugins: { legend: { display: false } },
+  scales: {
+    x: {
       beginAtZero: true,
-      grid: {
-        color: lineColors.value.grid
-      },
-      ticks: {
-        color: lineColors.value.text,
-        font: {
-          size: 10
-        }
-      }
+      grid: { color: colors.grid, borderDash: [4, 4] },
+      ticks: { color: colors.text, font: { size: 10 } }
+    },
+    y: {
+      grid: { display: false },
+      ticks: { color: colors.text, font: { size: 11, weight: 'bold' as const } }
     }
   }
 }))
 </script>
 
 <template>
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-    <!-- Latency Distribution -->
-    <div class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
-      <div class="mb-6 flex items-center justify-between">
-        <h3 class="text-sm font-black text-gray-900 dark:text-white uppercase tracking-wider">请求延迟分布</h3>
-      </div>
-      <div class="h-64">
-        <Bar v-if="latencyChartState === 'ready' && latencyChartData" :data="latencyChartData" :options="chartOptions" />
-        <div v-else class="flex h-full flex-col items-center justify-center gap-1 text-center text-gray-400">
-          <div v-if="latencyChartState === 'loading'" class="text-sm font-medium">加载中...</div>
-          <div v-else class="text-sm font-medium">{{ emptyRequestHintText }}</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Provider Health -->
-    <div class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
-      <div class="mb-6 flex items-center justify-between">
-        <h3 class="text-sm font-black text-gray-900 dark:text-white uppercase tracking-wider">上游供应商健康度 (SLA)</h3>
-      </div>
-      <div class="h-64">
-        <Bar v-if="providerChartState === 'ready' && providerChartData" :data="providerChartData" :options="chartOptions" />
-        <div v-else class="flex h-full flex-col items-center justify-center gap-1 text-center text-gray-400">
-          <div v-if="providerChartState === 'loading'" class="text-sm font-medium">加载中...</div>
-          <div v-else class="text-sm font-medium">{{ emptyRequestHintText }}</div>
-        </div>
-      </div>
-    </div>
-
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <!-- Row 1: Throughput (2/3) + Error Distribution (1/3) -->
+    
     <!-- Throughput Trend -->
-    <div class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
-      <div class="mb-6 flex items-center justify-between">
-        <h3 class="text-sm font-black text-gray-900 dark:text-white uppercase tracking-wider">吞吐趋势 (QPS/TPS)</h3>
+    <div class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700 lg:col-span-2">
+      <div class="mb-4 flex items-center justify-between">
+        <h3 
+          class="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white"
+          :title="$t('admin.ops.tooltips.throughputChart')"
+        >
+          <svg class="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+          </svg>
+          {{ $t('admin.ops.charts.throughput') }}
+        </h3>
+        <div class="flex items-center gap-2 text-xs text-gray-500">
+          <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-blue-500"></span>QPS</span>
+          <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-green-500"></span>TPS(K)</span>
+        </div>
       </div>
       <div class="h-64">
-        <Line v-if="throughputChartState === 'ready' && throughputChartData" :data="throughputChartData" :options="throughputChartOptions" />
-        <div v-else class="flex h-full flex-col items-center justify-center gap-1 text-center text-gray-400">
-          <div v-if="throughputChartState === 'loading'" class="text-sm font-medium">加载中...</div>
-          <div v-else class="text-sm font-medium">{{ emptyRequestHintText }}</div>
+        <Line v-if="throughputChartState === 'ready' && throughputChartData" :data="throughputChartData" :options="throughputOptions" />
+        <div v-else class="flex h-full flex-col items-center justify-center gap-2 text-gray-400">
+          <div v-if="throughputChartState === 'loading'" class="animate-pulse text-sm">{{ $t('admin.ops.charts.loading') }}</div>
+          <div v-else class="text-sm">{{ emptyRequestHintText }}</div>
         </div>
       </div>
     </div>
 
     <!-- Error Distribution -->
-    <div class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
-      <div class="mb-6 flex items-center justify-between">
-        <h3 class="text-sm font-black text-gray-900 dark:text-white uppercase tracking-wider">错误类型分布</h3>
+    <div class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700 lg:col-span-1">
+      <div class="mb-4 flex items-center justify-between">
+        <h3 
+          class="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white"
+          :title="$t('admin.ops.tooltips.errorDistChart')"
+        >
+          <svg class="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          {{ $t('admin.ops.charts.errorDistribution') }}
+        </h3>
       </div>
-      <div class="h-64">
-        <div v-if="errorChartState === 'ready' && errorChartData" class="flex h-full gap-6">
-          <div class="relative w-1/2">
-            <Doughnut :data="errorChartData" :options="{ ...chartOptions, cutout: '70%' }" />
+      <div class="relative h-64">
+        <div v-if="errorChartState === 'ready' && errorChartData" class="flex h-full flex-col">
+          <div class="flex-1">
+             <Doughnut :data="errorChartData" :options="{ ...baseOptions, cutout: '65%' }" />
           </div>
-          <div class="flex flex-1 flex-col justify-center space-y-3">
-            <div v-for="(item, idx) in errorDistribution?.items.slice(0, 5)" :key="item.code" class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <div class="h-2 w-2 rounded-full" :style="{ backgroundColor: ['#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#8b5cf6'][idx] }"></div>
-                <span class="text-xs font-bold text-gray-700 dark:text-gray-300">{{ item.code }}</span>
-              </div>
-              <span class="text-xs font-black text-gray-900 dark:text-white">{{ item.percentage }}%</span>
+          <!-- Custom Legend -->
+          <div class="mt-4 flex flex-wrap justify-center gap-3">
+            <div v-for="(item, idx) in errorDistribution?.items.slice(0, 4)" :key="item.code" class="flex items-center gap-1.5 text-xs">
+              <span class="h-2 w-2 rounded-full" :style="{ backgroundColor: ['#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#8b5cf6'][idx] }"></span>
+              <span class="font-medium text-gray-700 dark:text-gray-300">{{ item.code }}</span>
+              <span class="text-gray-400">{{ item.percentage }}%</span>
             </div>
           </div>
         </div>
-        <div v-else class="flex h-full flex-col items-center justify-center gap-1 text-center text-gray-400">
-          <div v-if="errorChartState === 'loading'" class="text-sm font-medium">加载中...</div>
-          <div v-else class="text-sm font-medium">{{ emptyErrorHintText }}</div>
+        <div v-else class="flex h-full flex-col items-center justify-center gap-2 text-gray-400">
+           <div v-if="errorChartState === 'loading'" class="animate-pulse text-sm">{{ $t('admin.ops.charts.loading') }}</div>
+           <div v-else class="text-sm">{{ emptyErrorHintText }}</div>
         </div>
       </div>
     </div>
 
-    <!-- System Resources -->
-    <div class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
-      <div class="mb-6 flex items-center justify-between">
-        <h3 class="text-sm font-black text-gray-900 dark:text-white uppercase tracking-wider">系统运行状态</h3>
+    <!-- Row 2: Latency & Provider Health -->
+
+    <!-- Latency Histogram -->
+    <div class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700 lg:col-span-1">
+      <div class="mb-4 flex items-center justify-between">
+        <h3 
+          class="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white"
+          :title="$t('admin.ops.tooltips.latencyChart')"
+        >
+          <svg class="h-4 w-4 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          {{ $t('admin.ops.charts.latency') }}
+        </h3>
       </div>
-      <div class="grid grid-cols-2 gap-6">
-        <div class="space-y-4">
-          <div>
-            <div class="mb-1 flex justify-between text-[10px] font-bold text-gray-400 uppercase">CPU 使用率</div>
-            <div class="h-2 w-full rounded-full bg-gray-100 dark:bg-dark-700">
-              <div class="h-full rounded-full bg-purple-500" :style="{ width: `${overview?.resources.cpu_usage}%` }"></div>
-            </div>
-            <div class="mt-1 text-right text-xs font-bold text-gray-900 dark:text-white">{{ overview?.resources.cpu_usage }}%</div>
-          </div>
-          <div>
-            <div class="mb-1 flex justify-between text-[10px] font-bold text-gray-400 uppercase">内存使用率</div>
-            <div class="h-2 w-full rounded-full bg-gray-100 dark:bg-dark-700">
-              <div class="h-full rounded-full bg-indigo-500" :style="{ width: `${overview?.resources.memory_usage}%` }"></div>
-            </div>
-            <div class="mt-1 text-right text-xs font-bold text-gray-900 dark:text-white">{{ overview?.resources.memory_usage }}%</div>
-          </div>
+      <div class="h-48">
+        <Bar v-if="latencyChartState === 'ready' && latencyChartData" :data="latencyChartData" :options="baseOptions" />
+        <div v-else class="flex h-full items-center justify-center text-sm text-gray-400">
+           {{ latencyChartState === 'loading' ? 'Loading...' : emptyRequestHintText }}
         </div>
-        <div class="flex flex-col justify-center space-y-4 rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
-          <div class="flex items-center justify-between">
-            <span class="text-[10px] font-bold text-gray-400 uppercase">Redis 状态</span>
-            <span class="text-xs font-bold text-green-500 uppercase">{{ overview?.system_status.redis }}</span>
-          </div>
-          <div class="flex items-center justify-between">
-            <span class="text-[10px] font-bold text-gray-400 uppercase">DB 连接</span>
-            <span class="text-xs font-bold text-gray-900 dark:text-white">{{ overview?.resources.db_connections.active }} / {{ overview?.resources.db_connections.max }}</span>
-          </div>
-          <div class="flex items-center justify-between">
-            <span class="text-[10px] font-bold text-gray-400 uppercase">Goroutines</span>
-            <span class="text-xs font-bold text-gray-900 dark:text-white">{{ latestMetrics?.goroutine_count ?? overview?.resources.goroutines }}</span>
-          </div>
-          <div class="flex items-center justify-between">
-            <span class="text-[10px] font-bold text-gray-400 uppercase">Network I/O</span>
-            <span class="text-xs font-bold text-gray-900 dark:text-white">{{ networkIOText || '--' }}</span>
-          </div>
-          <div class="flex items-center justify-between">
-            <span class="text-[10px] font-bold text-gray-400 uppercase">Disk I/O</span>
-            <span class="text-xs font-bold text-gray-900 dark:text-white">{{ diskIOText || '--' }}</span>
-          </div>
+      </div>
+    </div>
+
+    <!-- Provider Health (Horizontal Bar) -->
+    <div class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700 lg:col-span-2">
+      <div class="mb-4 flex items-center justify-between">
+        <h3 
+          class="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white"
+          :title="$t('admin.ops.tooltips.providerChart')"
+        >
+          <svg class="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          {{ $t('admin.ops.charts.providerErrorRate') }}
+        </h3>
+      </div>
+      <div class="h-48">
+        <Bar v-if="providerChartState === 'ready' && providerChartData" :data="providerChartData" :options="providerOptions" />
+        <div v-else class="flex h-full items-center justify-center text-sm text-gray-400">
+           {{ providerChartState === 'loading' ? 'Loading...' : emptyRequestHintText }}
         </div>
       </div>
     </div>
