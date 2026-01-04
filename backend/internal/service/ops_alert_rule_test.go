@@ -71,7 +71,7 @@ func TestEvaluateRule_WithAlertCategory(t *testing.T) {
 			operator:      ">",
 			threshold:     1000.0,
 			metrics: []OpsMetrics{
-				{P95LatencyMs: 1500, UpdatedAt: time.Now()},
+				{LatencyP95: 1500, UpdatedAt: time.Now()},
 			},
 			wantBreached: true,
 			wantValue:    1500.0,

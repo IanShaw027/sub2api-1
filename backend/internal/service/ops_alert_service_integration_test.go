@@ -161,7 +161,6 @@ func (r *fakeOpsRepository) ListAlertRules(ctx context.Context) ([]OpsAlertRule,
 			SustainedMinutes: 1,
 			Severity:         "P1",
 			NotifyEmail:      false,
-			NotifyWebhook:    false,
 			CooldownMinutes:  0,
 		},
 	}, nil
@@ -227,16 +226,14 @@ func (r *fakeOpsRepository) UpdateAlertEventStatus(ctx context.Context, eventID 
 	return nil
 }
 
-func (r *fakeOpsRepository) UpdateAlertEventNotifications(ctx context.Context, eventID int64, emailSent, webhookSent bool) error {
+func (r *fakeOpsRepository) UpdateAlertEventNotifications(ctx context.Context, eventID int64, emailSent bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.activeEvent != nil && r.activeEvent.ID == eventID {
 		r.activeEvent.EmailSent = emailSent
-		r.activeEvent.WebhookSent = webhookSent
 	}
 	if r.latestEvent != nil && r.latestEvent.ID == eventID {
 		r.latestEvent.EmailSent = emailSent
-		r.latestEvent.WebhookSent = webhookSent
 	}
 	return nil
 }
