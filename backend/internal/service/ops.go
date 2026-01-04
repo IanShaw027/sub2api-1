@@ -31,9 +31,12 @@ type ErrorLogFilter struct {
 	StartTime *time.Time
 	EndTime   *time.Time
 
-	ErrorCode *int
-	Provider  string
-	AccountID *int64
+	ErrorCode   *int
+	Provider    string   // 保留用于向后兼容
+	Platforms   []string // 新增：多平台过滤
+	StatusCodes []int    // 新增：多状态码过滤
+	ClientIP    string   // 新增：客户端 IP 过滤
+	AccountID   *int64
 
 	Page     int
 	PageSize int

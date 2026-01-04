@@ -26,7 +26,6 @@ var validOpsAlertMetricTypes = []string{
 	service.OpsMetricErrorRate,
 	service.OpsMetricP95LatencyMs,
 	service.OpsMetricP99LatencyMs,
-	service.OpsMetricHTTP2Errors,
 	service.OpsMetricCPUUsagePercent,
 	service.OpsMetricMemoryUsagePercent,
 	service.OpsMetricQueueDepth,
@@ -175,6 +174,7 @@ func validateOpsAlertRulePayload(raw map[string]json.RawMessage) (*opsAlertRuleV
 
 // NewOpsHandler creates a new OpsHandler.
 func NewOpsHandler(opsService *service.OpsService) *OpsHandler {
+	qpsWSCache.start(opsService)
 	return &OpsHandler{opsService: opsService}
 }
 
@@ -196,7 +196,8 @@ func (h *OpsHandler) GetMetrics(c *gin.Context) {
 // - window_minutes: int (default 1)
 // - minutes: int (lookback; optional)
 // - start_time/end_time: RFC3339 timestamps (optional; overrides minutes when provided)
-// - limit: int (optional; max 100, default 300 for backward compatibility)
+// - limit: int (optional; max 1000, default 300 for backward compatibility)
+// Note: Maximum time range is 7 days
 func (h *OpsHandler) ListMetricsHistory(c *gin.Context) {
 	windowMinutes := 1
 	if v := c.Query("window_minutes"); v != "" {
@@ -217,8 +218,8 @@ func (h *OpsHandler) ListMetricsHistory(c *gin.Context) {
 	limitProvided := false
 	if v := c.Query("limit"); v != "" {
 		parsed, err := strconv.Atoi(v)
-		if err != nil || parsed <= 0 || parsed > 5000 {
-			response.BadRequest(c, "Invalid limit (must be 1-5000)")
+		if err != nil || parsed <= 0 || parsed > 1000 {
+			response.BadRequest(c, "Invalid limit (must be 1-1000)")
 			return
 		}
 		limit = parsed
@@ -265,8 +266,15 @@ func (h *OpsHandler) ListMetricsHistory(c *gin.Context) {
 		startTime = endTime.Add(-24 * time.Hour)
 		if !limitProvided {
 			// Metrics are collected at 1-minute cadence; 24h requires ~1440 points.
-			limit = 24 * 60
+			limit = 1000
 		}
+	}
+
+	// Enforce maximum time range of 7 days
+	maxRange := 7 * 24 * time.Hour
+	if endTime.Sub(startTime) > maxRange {
+		response.BadRequest(c, "Time range exceeds maximum of 7 days")
+		return
 	}
 
 	if startTime.After(endTime) {
@@ -489,13 +497,51 @@ func (h *OpsHandler) GetErrorLogs(c *gin.Context) {
 		filter.ErrorCode = &code
 	}
 
-	// Query parameter uses "platform" (consistent with database field naming).
+	// Query parameter uses "platform" or "platforms" (consistent with database field naming).
 	// Backwards compatibility: older clients used "provider" for the same filter.
-	platform := c.Query("platform")
-	if platform == "" {
-		platform = c.Query("provider")
+	// Support both single-value "platform" and multi-value "platforms" (comma-separated).
+	platforms := c.Query("platforms")
+	if platforms == "" {
+		platform := c.Query("platform")
+		if platform == "" {
+			platform = c.Query("provider")
+		}
+		if platform != "" {
+			// Single-value backwards compatibility: add to Platforms array
+			filter.Platforms = []string{platform}
+			filter.Provider = platform
+		}
+	} else {
+		// Multi-value support: parse comma-separated string
+		platformList := strings.Split(strings.TrimSpace(platforms), ",")
+		filter.Platforms = make([]string, 0, len(platformList))
+		for _, p := range platformList {
+			if trimmed := strings.TrimSpace(p); trimmed != "" {
+				filter.Platforms = append(filter.Platforms, trimmed)
+			}
+		}
 	}
-	filter.Provider = platform
+
+	// Parse status_codes: comma-separated integers (e.g., "500,502,503")
+	if statusCodesStr := c.Query("status_codes"); statusCodesStr != "" {
+		codeStrs := strings.Split(strings.TrimSpace(statusCodesStr), ",")
+		filter.StatusCodes = make([]int, 0, len(codeStrs))
+		for _, codeStr := range codeStrs {
+			if trimmed := strings.TrimSpace(codeStr); trimmed != "" {
+				code, err := strconv.Atoi(trimmed)
+				if err != nil || code < 0 {
+					response.BadRequest(c, fmt.Sprintf("Invalid status_codes: %q is not a valid integer", trimmed))
+					return
+				}
+				filter.StatusCodes = append(filter.StatusCodes, code)
+			}
+		}
+	}
+
+	// Parse client_ip: single IP address string
+	if clientIP := strings.TrimSpace(c.Query("client_ip")); clientIP != "" {
+		filter.ClientIP = clientIP
+	}
 
 	if accountIDStr := c.Query("account_id"); accountIDStr != "" {
 		accountID, err := strconv.ParseInt(accountIDStr, 10, 64)
@@ -695,31 +741,54 @@ func (h *OpsHandler) GetAccountStatus(c *gin.Context) {
 		return
 	}
 
-	stats1h, err := h.opsService.GetAccountStats(c.Request.Context(), accountID, time.Hour)
+	// Get all active accounts and find the requested one
+	items, err := h.opsService.GetAllActiveAccountStatus(c.Request.Context())
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to get account stats")
 		return
 	}
 
-	stats24h, err := h.opsService.GetAccountStats(c.Request.Context(), accountID, 24*time.Hour)
-	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "Failed to get account stats")
+	var found *service.AccountStatusSummary
+	for i := range items {
+		if items[i].AccountID == accountID {
+			found = &items[i]
+			break
+		}
+	}
+
+	if found == nil {
+		// Return empty stats for accounts with no recent activity
+		response.Success(c, gin.H{
+			"account_id": accountID,
+			"stats_1h": gin.H{
+				"error_count":      0,
+				"success_count":    0,
+				"timeout_count":    0,
+				"rate_limit_count": 0,
+			},
+			"stats_24h": gin.H{
+				"error_count":      0,
+				"success_count":    0,
+				"timeout_count":    0,
+				"rate_limit_count": 0,
+			},
+		})
 		return
 	}
 
 	response.Success(c, gin.H{
 		"account_id": accountID,
 		"stats_1h": gin.H{
-			"error_count":      stats1h.ErrorCount,
-			"success_count":    stats1h.SuccessCount,
-			"timeout_count":    stats1h.TimeoutCount,
-			"rate_limit_count": stats1h.RateLimitCount,
+			"error_count":      found.Stats1h.ErrorCount,
+			"success_count":    found.Stats1h.SuccessCount,
+			"timeout_count":    found.Stats1h.TimeoutCount,
+			"rate_limit_count": found.Stats1h.RateLimitCount,
 		},
 		"stats_24h": gin.H{
-			"error_count":      stats24h.ErrorCount,
-			"success_count":    stats24h.SuccessCount,
-			"timeout_count":    stats24h.TimeoutCount,
-			"rate_limit_count": stats24h.RateLimitCount,
+			"error_count":      found.Stats24h.ErrorCount,
+			"success_count":    found.Stats24h.SuccessCount,
+			"timeout_count":    found.Stats24h.TimeoutCount,
+			"rate_limit_count": found.Stats24h.RateLimitCount,
 		},
 	})
 }
@@ -1039,4 +1108,75 @@ func (h *OpsHandler) ListAlertEvents(c *gin.Context) {
 		return
 	}
 	response.Success(c, events)
+}
+
+// parseTimeRange parses start_time and end_time query parameters from gin.Context.
+// Returns (startTime, endTime, error). If error is not nil, an HTTP error response
+// has already been sent to the client.
+func parseTimeRangeRFC3339(c *gin.Context) (time.Time, time.Time, error) {
+	var startTime, endTime time.Time
+
+	if startTimeStr := c.Query("start_time"); startTimeStr != "" {
+		parsed, err := time.Parse(time.RFC3339, startTimeStr)
+		if err != nil {
+			response.BadRequest(c, "Invalid start_time format (RFC3339)")
+			return time.Time{}, time.Time{}, err
+		}
+		startTime = parsed
+	}
+
+	if endTimeStr := c.Query("end_time"); endTimeStr != "" {
+		parsed, err := time.Parse(time.RFC3339, endTimeStr)
+		if err != nil {
+			response.BadRequest(c, "Invalid end_time format (RFC3339)")
+			return time.Time{}, time.Time{}, err
+		}
+		endTime = parsed
+	}
+
+	return startTime, endTime, nil
+}
+
+// RetryErrorRequest retries a failed request to verify if the issue persists.
+// POST /api/v1/admin/ops/errors/:id/retry
+func (h *OpsHandler) RetryErrorRequest(c *gin.Context) {
+	idStr := c.Param("id")
+	if idStr == "" {
+		response.BadRequest(c, "Error ID is required")
+		return
+	}
+
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, "Invalid error ID")
+		return
+	}
+
+	// Get error log details
+	errorLog, err := h.opsService.GetErrorLogByID(c.Request.Context(), id)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			response.Error(c, http.StatusNotFound, "Error log not found")
+		} else {
+			response.Error(c, http.StatusInternalServerError, "Failed to get error detail")
+		}
+		return
+	}
+
+	// Check if we have request body to retry
+	if errorLog.RequestBody == "" {
+		response.BadRequest(c, "No request body found to retry")
+		return
+	}
+
+	// Return retry information for now
+	// In a full implementation, this would actually retry the request
+	response.Success(c, gin.H{
+		"can_retry":    true,
+		"request_id":   errorLog.RequestID,
+		"platform":     errorLog.Platform,
+		"model":        errorLog.Model,
+		"request_body": errorLog.RequestBody,
+		"message":      "Retry information retrieved successfully. Please use the client to retry the request manually.",
+	})
 }

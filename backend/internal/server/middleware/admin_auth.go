@@ -152,6 +152,13 @@ func validateJWTForAdmin(
 		return false
 	}
 
+	// Security: Validate TokenVersion to ensure token hasn't been invalidated
+	// This check ensures tokens issued before a password change are rejected
+	if claims.TokenVersion != user.TokenVersion {
+		AbortWithError(c, 401, "TOKEN_REVOKED", "Token has been revoked")
+		return false
+	}
+
 	// 检查管理员权限
 	if !user.IsAdmin() {
 		AbortWithError(c, 403, "FORBIDDEN", "Admin access required")

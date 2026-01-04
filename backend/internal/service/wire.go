@@ -101,8 +101,32 @@ func ProvideOpsAlertService(
 }
 
 // ProvideOpsAggregationService creates and starts OpsAggregationService.
-func ProvideOpsAggregationService(repo OpsRepository, sqlDB *sql.DB) *OpsAggregationService {
+func ProvideOpsAggregationService(repo OpsRepository, sqlDB *sql.DB, cfg *config.Config) *OpsAggregationService {
 	svc := NewOpsAggregationService(repo, sqlDB)
+	if cfg != nil && cfg.Ops.Aggregation.Enabled {
+		svc.Start()
+	}
+	return svc
+}
+
+// ProvideOpsScheduledReportService creates and starts OpsScheduledReportService.
+func ProvideOpsScheduledReportService(opsService *OpsService, userService *UserService, emailService *EmailService) *OpsScheduledReportService {
+	svc := NewOpsScheduledReportService(opsService, userService, emailService)
+	svc.Start()
+	return svc
+}
+
+// ProvideOpsGroupAvailabilityMonitor creates and starts OpsGroupAvailabilityMonitor.
+func ProvideOpsGroupAvailabilityMonitor(
+	opsService *OpsService,
+	accountRepo AccountRepository,
+	groupRepo GroupRepository,
+	emailService *EmailService,
+	userService *UserService,
+	redisClient *redis.Client,
+	cfg *config.Config,
+) *OpsGroupAvailabilityMonitor {
+	svc := NewOpsGroupAvailabilityMonitor(opsService, accountRepo, groupRepo, emailService, userService, redisClient, cfg)
 	svc.Start()
 	return svc
 }
@@ -163,5 +187,7 @@ var ProviderSet = wire.NewSet(
 	ProvideOpsMetricsCollector,
 	ProvideOpsAlertService,
 	ProvideOpsAggregationService,
+	ProvideOpsScheduledReportService,
+	ProvideOpsGroupAvailabilityMonitor,
 	NewUserAttributeService,
 )

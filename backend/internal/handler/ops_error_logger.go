@@ -243,6 +243,12 @@ func recordOpsError(c *gin.Context, ops *service.OpsService, status int, errType
 		}
 	}
 
+	// 调用错误分类函数
+	classification := service.ClassifyError(errType, logEntry.Phase, status, nil, nil)
+	logEntry.ErrorSource = classification.ErrorSource
+	logEntry.ErrorOwner = classification.ErrorOwner
+	logEntry.AccountStatus = classification.AccountStatus
+
 	enqueueOpsErrorLog(ops, logEntry, requestBody)
 }
 

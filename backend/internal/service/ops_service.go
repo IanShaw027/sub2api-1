@@ -20,47 +20,58 @@ import (
 )
 
 type OpsMetrics struct {
-	WindowMinutes         int            `json:"window_minutes"`
-	RequestCount          int64          `json:"request_count"`
-	SuccessCount          int64          `json:"success_count"`
-	ErrorCount            int64          `json:"error_count"`
-	QPS                   float64        `json:"qps"`
-	TPS                   float64        `json:"tps"`
-	Error4xxCount         int64          `json:"error_4xx_count"`
-	Error5xxCount         int64          `json:"error_5xx_count"`
-	ErrorTimeoutCount     int64          `json:"error_timeout_count"`
-	LatencyP50            float64        `json:"latency_p50"`
-	LatencyP999           float64        `json:"latency_p999"`
-	LatencyAvg            float64        `json:"latency_avg"`
-	LatencyMax            float64        `json:"latency_max"`
-	UpstreamLatencyAvg    float64        `json:"upstream_latency_avg"`
-	DiskUsed              int64          `json:"disk_used"`
-	DiskTotal             int64          `json:"disk_total"`
-	DiskIOPS              int64          `json:"disk_iops"`
-	NetworkInBytes        int64          `json:"network_in_bytes"`
-	NetworkOutBytes       int64          `json:"network_out_bytes"`
-	GoroutineCount        int            `json:"goroutine_count"`
-	DBConnActive          int            `json:"db_conn_active"`
-	DBConnIdle            int            `json:"db_conn_idle"`
-	DBConnWaiting         int            `json:"db_conn_waiting"`
-	TokenConsumed         int64          `json:"token_consumed"`
-	TokenRate             float64        `json:"token_rate"`
-	ActiveSubscriptions   int            `json:"active_subscriptions"`
-	Tags                  map[string]any `json:"tags,omitempty"`
-	SuccessRate           float64        `json:"success_rate"`
-	ErrorRate             float64        `json:"error_rate"`
-	P95LatencyMs          int            `json:"p95_latency_ms"`
-	P99LatencyMs          int            `json:"p99_latency_ms"`
-	HTTP2Errors           int            `json:"http2_errors"`
-	ActiveAlerts          int            `json:"active_alerts"`
-	CPUUsagePercent       float64        `json:"cpu_usage_percent"`
-	MemoryUsedMB          int64          `json:"memory_used_mb"`
-	MemoryTotalMB         int64          `json:"memory_total_mb"`
-	MemoryUsagePercent    float64        `json:"memory_usage_percent"`
-	HeapAllocMB           int64          `json:"heap_alloc_mb"`
-	GCPauseMs             float64        `json:"gc_pause_ms"`
-	ConcurrencyQueueDepth int            `json:"concurrency_queue_depth"`
-	UpdatedAt             time.Time      `json:"updated_at,omitempty"`
+	// 窗口和时间
+	WindowMinutes int       `json:"window_minutes"`
+	UpdatedAt     time.Time `json:"updated_at,omitempty"`
+
+	// 请求统计
+	RequestCount int64   `json:"request_count"`
+	SuccessCount int64   `json:"success_count"`
+	ErrorCount   int64   `json:"error_count"`
+	QPS          float64 `json:"qps"`
+	TPS          float64 `json:"tps"`
+
+	// 错误分类
+	Error4xxCount     int64 `json:"error_4xx_count"`
+	Error5xxCount     int64 `json:"error_5xx_count"`
+	ErrorTimeoutCount int64 `json:"error_timeout_count"`
+
+	// 延迟指标
+	LatencyP50         float64 `json:"latency_p50"`
+	LatencyP95         float64 `json:"latency_p95"`
+	LatencyP99         float64 `json:"latency_p99"`
+	LatencyAvg         float64 `json:"latency_avg"`
+	LatencyMax         float64 `json:"latency_max"`
+	UpstreamLatencyAvg float64 `json:"upstream_latency_avg"`
+
+	// 成功/错误率
+	SuccessRate float64 `json:"success_rate"`
+	ErrorRate   float64 `json:"error_rate"`
+
+	// 系统资源（基础）
+	CPUUsagePercent    float64 `json:"cpu_usage_percent"`
+	MemoryUsagePercent float64 `json:"memory_usage_percent"`
+	MemoryUsedMB       int64   `json:"memory_used_mb"`
+	MemoryTotalMB      int64   `json:"memory_total_mb"`
+
+	// 数据库连接
+	DBConnActive  int `json:"db_conn_active"`
+	DBConnIdle    int `json:"db_conn_idle"`
+	DBConnWaiting int `json:"db_conn_waiting"`
+
+	// Goroutine
+	GoroutineCount int `json:"goroutine_count"`
+
+	// 业务指标
+	TokenConsumed       int64   `json:"token_consumed"`
+	TokenRate           float64 `json:"token_rate"`
+	ActiveSubscriptions int     `json:"active_subscriptions"`
+
+	// 告警
+	ActiveAlerts int `json:"active_alerts"`
+
+	// 队列
+	ConcurrencyQueueDepth int `json:"concurrency_queue_depth"`
 }
 
 type OpsErrorLog struct {
@@ -135,10 +146,8 @@ type OpsWindowStats struct {
 	P50LatencyMs  int
 	P95LatencyMs  int
 	P99LatencyMs  int
-	P999LatencyMs int
 	AvgLatencyMs  int
 	MaxLatencyMs  int
-	HTTP2Errors   int
 	TokenConsumed int64
 }
 
@@ -148,7 +157,6 @@ type OpsWindowStatsGroupedItem struct {
 	Error4xxCount int64  `json:"error_4xx_count"`
 	Error5xxCount int64  `json:"error_5xx_count"`
 	TimeoutCount  int64  `json:"timeout_count"`
-	HTTP2Errors   int64  `json:"http2_errors"`
 }
 
 type ProviderStats struct {
@@ -233,9 +241,24 @@ type OpsRepository interface {
 	GetLatestAlertEvent(ctx context.Context, ruleID int64) (*OpsAlertEvent, error)
 	CreateAlertEvent(ctx context.Context, event *OpsAlertEvent) error
 	UpdateAlertEventStatus(ctx context.Context, eventID int64, status string, resolvedAt *time.Time) error
-	UpdateAlertEventNotifications(ctx context.Context, eventID int64, emailSent, webhookSent bool) error
+	UpdateAlertEventNotifications(ctx context.Context, eventID int64, emailSent bool) error
 	CountActiveAlerts(ctx context.Context) (int, error)
 	GetOverviewStats(ctx context.Context, startTime, endTime time.Time) (*OverviewStats, error)
+
+	// Group availability monitoring methods
+	ListGroupAvailabilityConfigs(ctx context.Context, enabledOnly bool) ([]OpsGroupAvailabilityConfig, error)
+	GetGroupAvailabilityConfig(ctx context.Context, groupID int64) (*OpsGroupAvailabilityConfig, error)
+	CreateGroupAvailabilityConfig(ctx context.Context, config *OpsGroupAvailabilityConfig) error
+	UpdateGroupAvailabilityConfig(ctx context.Context, config *OpsGroupAvailabilityConfig) error
+	DeleteGroupAvailabilityConfig(ctx context.Context, groupID int64) error
+	GetActiveGroupAvailabilityEvent(ctx context.Context, configID int64) (*OpsGroupAvailabilityEvent, error)
+	GetLatestGroupAvailabilityEvent(ctx context.Context, configID int64) (*OpsGroupAvailabilityEvent, error)
+	CreateGroupAvailabilityEvent(ctx context.Context, event *OpsGroupAvailabilityEvent) error
+	UpdateGroupAvailabilityEventStatus(ctx context.Context, eventID int64, status string, resolvedAt *time.Time) error
+	UpdateGroupAvailabilityEventNotifications(ctx context.Context, eventID int64, emailSent bool) error
+	ListGroupAvailabilityEvents(ctx context.Context, limit int, status string) ([]OpsGroupAvailabilityEvent, error)
+	CountAvailableAccountsByGroup(ctx context.Context, groupID int64) (available, total int, err error)
+
 
 	// UpsertHourlyMetrics pre-aggregates raw logs into ops_metrics_hourly for [startTime, endTime).
 	UpsertHourlyMetrics(ctx context.Context, startTime, endTime time.Time) error
@@ -250,13 +273,9 @@ type OpsRepository interface {
 	PingRedis(ctx context.Context) error
 
 	// Account status monitoring methods
-	GetAccountStats(ctx context.Context, accountID int64, duration time.Duration) (*AccountStats, error)
 	// GetAllActiveAccountStatus returns account stats for all active accounts.
 	// "Active" is defined by repository implementation (currently: accounts seen in ops_error_logs within 24h).
 	GetAllActiveAccountStatus(ctx context.Context) ([]AccountStatusSummary, error)
-	GetLastAccountError(ctx context.Context, accountID int64) (*OpsErrorLog, error)
-	UpsertAccountStatus(ctx context.Context, status *OpsAccountStatus) error
-	GetActiveAccounts(ctx context.Context) ([]int64, error)
 
 	// IP statistics methods
 	GetErrorStatsByIP(ctx context.Context, startTime, endTime time.Time, limit int, sortBy, sortOrder string) ([]IPErrorStats, error)
@@ -661,7 +680,6 @@ type LatencyData struct {
 	P50          int    `json:"p50"`
 	P95          int    `json:"p95"`
 	P99          int    `json:"p99"`
-	P999         int    `json:"p999"`
 	Avg          int    `json:"avg"`
 	Max          int    `json:"max"`
 	ThresholdP99 int    `json:"threshold_p99"`
@@ -714,7 +732,6 @@ type OverviewStats struct {
 	LatencyP50            int
 	LatencyP95            int
 	LatencyP99            int
-	LatencyP999           int
 	LatencyAvg            int
 	LatencyMax            int
 	TopErrorCode          string
@@ -925,7 +942,6 @@ func (s *OpsService) GetDashboardOverview(ctx context.Context, timeRange string)
 			P50:          stats.LatencyP50,
 			P95:          stats.LatencyP95,
 			P99:          stats.LatencyP99,
-			P999:         stats.LatencyP999,
 			Avg:          stats.LatencyAvg,
 			Max:          stats.LatencyMax,
 			ThresholdP99: latencyThresholdP99,
@@ -1371,16 +1387,6 @@ func classifyProviderStatus(successRate float64, p99LatencyMs int, timeoutCount 
 	}
 
 	return "healthy"
-}
-
-// GetAccountStats returns account statistics for a given duration.
-func (s *OpsService) GetAccountStats(ctx context.Context, accountID int64, duration time.Duration) (*AccountStats, error) {
-	if s == nil || s.repo == nil {
-		return &AccountStats{}, nil
-	}
-	ctxDB, cancel := context.WithTimeout(ctx, opsDBQueryTimeout)
-	defer cancel()
-	return s.repo.GetAccountStats(ctxDB, accountID, duration)
 }
 
 // GetAllActiveAccountStatus returns stats for all active accounts.

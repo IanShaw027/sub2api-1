@@ -1,9 +1,7 @@
 package service
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -25,17 +23,15 @@ type OpsScheduledReportService struct {
 }
 
 type ScheduledReport struct {
-	ID           int64
-	Name         string
-	ReportType   string
-	TimeRange    string
-	Schedule     string
-	NotifyEmail  bool
-	NotifyWebhook bool
-	WebhookURL   string
-	Enabled      bool
-	LastRunAt    *time.Time
-	NextRunAt    time.Time
+	ID            int64
+	Name          string
+	ReportType    string
+	TimeRange     string
+	Schedule      string
+	NotifyEmail   bool
+	Enabled       bool
+	LastRunAt     *time.Time
+	NextRunAt     time.Time
 }
 
 func NewOpsScheduledReportService(opsService *OpsService, userService *UserService, emailService *EmailService) *OpsScheduledReportService {
@@ -126,16 +122,13 @@ func (s *OpsScheduledReportService) runReport(ctx context.Context, report *Sched
 		return
 	}
 
-	emailSent, webhookSent := false, false
+	emailSent := false
 	if report.NotifyEmail {
 		emailSent = s.sendReportEmail(ctx, report, content)
 	}
-	if report.NotifyWebhook && report.WebhookURL != "" {
-		webhookSent = s.sendReportWebhook(ctx, report, content)
-	}
 
-	if emailSent || webhookSent {
-		log.Printf("[ScheduledReport] report %s sent (email=%v, webhook=%v)", report.Name, emailSent, webhookSent)
+	if emailSent {
+		log.Printf("[ScheduledReport] report %s sent (email=%v)", report.Name, emailSent)
 	}
 }
 
@@ -179,9 +172,9 @@ func (s *OpsScheduledReportService) generateDailySummary(ctx context.Context, st
 	}
 
 	return map[string]any{
-		"report_type":   "daily_summary",
-		"period_start":  startTime.Format(time.RFC3339),
-		"period_end":    endTime.Format(time.RFC3339),
+		"report_type":    "daily_summary",
+		"period_start":   startTime.Format(time.RFC3339),
+		"period_end":     endTime.Format(time.RFC3339),
 		"total_requests": totalReqs,
 		"success_count":  stats.SuccessCount,
 		"error_count":    stats.ErrorCount,
@@ -234,21 +227,22 @@ func (s *OpsScheduledReportService) generateErrorDigest(ctx context.Context, sta
 	}
 
 	return map[string]any{
-		"report_type":     "error_digest",
-		"period_start":    startTime.Format(time.RFC3339),
-		"period_end":      endTime.Format(time.RFC3339),
-		"total_errors":    len(logs),
-		"errors_by_type":  errorsByType,
-		"recent_errors":   logs[:min(10, len(logs))],
+		"report_type":    "error_digest",
+		"period_start":   startTime.Format(time.RFC3339),
+		"period_end":     endTime.Format(time.RFC3339),
+		"total_errors":   len(logs),
+		"errors_by_type": errorsByType,
+		"recent_errors":  logs[:min(10, len(logs))],
 	}, nil
 }
 
 func (s *OpsScheduledReportService) generateAccountHealth(ctx context.Context, startTime, endTime time.Time) (map[string]any, error) {
-	if s.opsService == nil || s.opsService.repo == nil {
+	if s.opsService == nil {
 		return nil, fmt.Errorf("ops service not initialized")
 	}
 
-	accountIDs, err := s.opsService.repo.GetActiveAccounts(ctx)
+	// Get all active account status (including 24h stats)
+	accountStatuses, err := s.opsService.GetAllActiveAccountStatus(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -256,12 +250,8 @@ func (s *OpsScheduledReportService) generateAccountHealth(ctx context.Context, s
 	healthyCount := 0
 	unhealthyAccounts := []map[string]any{}
 
-	for _, accountID := range accountIDs {
-		stats, err := s.opsService.repo.GetAccountStats(ctx, accountID, 24*time.Hour)
-		if err != nil {
-			continue
-		}
-
+	for _, status := range accountStatuses {
+		stats := status.Stats24h
 		totalReqs := stats.SuccessCount + stats.ErrorCount
 		if totalReqs == 0 {
 			continue
@@ -269,12 +259,10 @@ func (s *OpsScheduledReportService) generateAccountHealth(ctx context.Context, s
 
 		errorRate := float64(stats.ErrorCount) / float64(totalReqs) * 100
 		if errorRate > 10 {
-			lastError, _ := s.opsService.repo.GetLastAccountError(ctx, accountID)
 			unhealthyAccounts = append(unhealthyAccounts, map[string]any{
-				"account_id":  accountID,
+				"account_id":  status.AccountID,
 				"error_rate":  fmt.Sprintf("%.2f%%", errorRate),
 				"error_count": stats.ErrorCount,
-				"last_error":  lastError,
 			})
 		} else {
 			healthyCount++
@@ -285,7 +273,7 @@ func (s *OpsScheduledReportService) generateAccountHealth(ctx context.Context, s
 		"report_type":        "account_health",
 		"period_start":       startTime.Format(time.RFC3339),
 		"period_end":         endTime.Format(time.RFC3339),
-		"total_accounts":     len(accountIDs),
+		"total_accounts":     len(accountStatuses),
 		"healthy_accounts":   healthyCount,
 		"unhealthy_accounts": unhealthyAccounts,
 	}, nil
@@ -307,10 +295,21 @@ func (s *OpsScheduledReportService) sendReportEmail(ctx context.Context, report 
 		return false
 	}
 
-	subject := fmt.Sprintf("[Scheduled Report] %s", report.Name)
-	body := formatReportEmail(content)
+	reportData := buildReportData(content)
+	templateData := EmailTemplateData{
+		Type:      "report",
+		Title:     report.Name,
+		LogoURL:   "https://your-site.com/logo.png",
+		SiteName:  "Sub2API",
+		SiteURL:   "https://your-site.com",
+		Year:      time.Now().Year(),
+		ActionURL: "https://your-site.com/admin/ops/reports",
+		Report:    reportData,
+	}
 
-	if err := s.emailService.SendEmailWithConfig(config, admin.Email, subject, body); err != nil {
+	subject := fmt.Sprintf("[Scheduled Report] %s", report.Name)
+
+	if err := s.emailService.SendTemplatedEmail(config, admin.Email, subject, templateData); err != nil {
 		log.Printf("[ScheduledReport] email send failed: %v", err)
 		return false
 	}
@@ -318,38 +317,32 @@ func (s *OpsScheduledReportService) sendReportEmail(ctx context.Context, report 
 	return true
 }
 
-func (s *OpsScheduledReportService) sendReportWebhook(ctx context.Context, report *ScheduledReport, content map[string]any) bool {
-	payload := map[string]any{
-		"report_name": report.Name,
-		"report_type": report.ReportType,
-		"content":     content,
-		"timestamp":   time.Now().Format(time.RFC3339),
+func buildReportData(content map[string]any) *ReportData {
+	reportData := &ReportData{
+		Date:  time.Now().Format("2006-01-02"),
+		Stats: []StatItem{},
 	}
 
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return false
+	if totalReqs, ok := content["total_requests"].(int); ok {
+		reportData.Stats = append(reportData.Stats, StatItem{
+			Label: "总请求数",
+			Value: fmt.Sprintf("%d", totalReqs),
+		})
+	}
+	if successRate, ok := content["success_rate"].(string); ok {
+		reportData.Stats = append(reportData.Stats, StatItem{
+			Label: "成功率",
+			Value: successRate,
+		})
+	}
+	if p99, ok := content["p99_latency_ms"].(float64); ok {
+		reportData.Stats = append(reportData.Stats, StatItem{
+			Label: "P99延迟",
+			Value: fmt.Sprintf("%.0fms", p99),
+		})
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, report.WebhookURL, bytes.NewReader(body))
-	if err != nil {
-		return false
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		log.Printf("[ScheduledReport] webhook send failed: %v", err)
-		return false
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		log.Printf("[ScheduledReport] webhook returned status %d", resp.StatusCode)
-		return false
-	}
-
-	return true
+	return reportData
 }
 
 func (s *OpsScheduledReportService) listScheduledReports(ctx context.Context) ([]ScheduledReport, error) {

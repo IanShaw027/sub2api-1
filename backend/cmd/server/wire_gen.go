@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/cron"
@@ -80,6 +81,8 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	opsRepository := repository.NewOpsRepository(client, db, redisClient, configConfig)
 	opsService := service.NewOpsService(opsRepository, db)
 	opsHandler := admin.NewOpsHandler(opsService)
+	groupService := service.NewGroupService(groupRepository)
+	opsGroupAvailabilityHandler := admin.NewOpsGroupAvailabilityHandler(opsService, groupService)
 	accountRepository := repository.NewAccountRepository(client, db)
 	proxyRepository := repository.NewProxyRepository(client, db)
 	proxyExitInfoProber := repository.NewProxyExitInfoProber()
@@ -127,7 +130,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	userAttributeValueRepository := repository.NewUserAttributeValueRepository(client)
 	userAttributeService := service.NewUserAttributeService(userAttributeDefinitionRepository, userAttributeValueRepository)
 	userAttributeHandler := admin.NewUserAttributeHandler(userAttributeService)
-	adminHandlers := handler.ProvideAdminHandlers(dashboardHandler, opsHandler, adminUserHandler, groupHandler, accountHandler, oAuthHandler, openAIOAuthHandler, geminiOAuthHandler, antigravityOAuthHandler, proxyHandler, adminRedeemHandler, settingHandler, systemHandler, adminSubscriptionHandler, adminUsageHandler, userAttributeHandler)
+	adminHandlers := handler.ProvideAdminHandlers(dashboardHandler, opsHandler, opsGroupAvailabilityHandler, adminUserHandler, groupHandler, accountHandler, oAuthHandler, openAIOAuthHandler, geminiOAuthHandler, antigravityOAuthHandler, proxyHandler, adminRedeemHandler, settingHandler, systemHandler, adminSubscriptionHandler, adminUsageHandler, userAttributeHandler)
 	pricingRemoteClient := repository.NewPricingRemoteClient()
 	pricingService, err := service.ProvidePricingService(configConfig, pricingRemoteClient)
 	if err != nil {
@@ -152,10 +155,12 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	httpServer := server.ProvideHTTPServer(configConfig, engine)
 	tokenRefreshService := service.ProvideTokenRefreshService(accountRepository, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, configConfig)
 	antigravityQuotaRefresher := service.ProvideAntigravityQuotaRefresher(accountRepository, proxyRepository, antigravityOAuthService, configConfig)
-	opsAggregationService := service.ProvideOpsAggregationService(opsRepository, db)
+	opsAggregationService := service.ProvideOpsAggregationService(opsRepository, db, configConfig)
 	opsMetricsCollector := service.ProvideOpsMetricsCollector(opsService, concurrencyService, redisClient, configConfig)
 	opsAlertService := service.ProvideOpsAlertService(opsService, userService, emailService, redisClient, configConfig)
-	v := provideCleanup(client, redisClient, tokenRefreshService, pricingService, emailQueueService, billingCacheService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, antigravityQuotaRefresher, opsAggregationService, opsMetricsCollector, opsAlertService, configConfig, opsRepository)
+	opsScheduledReportService := service.ProvideOpsScheduledReportService(opsService, userService, emailService)
+	opsGroupAvailabilityMonitor := service.ProvideOpsGroupAvailabilityMonitor(opsService, accountRepository, groupRepository, emailService, userService, redisClient, configConfig)
+	v := provideCleanup(client, redisClient, tokenRefreshService, pricingService, emailQueueService, billingCacheService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, antigravityQuotaRefresher, opsAggregationService, opsMetricsCollector, opsAlertService, opsScheduledReportService, opsGroupAvailabilityMonitor, configConfig, opsRepository)
 	application := &Application{
 		Server:  httpServer,
 		Cleanup: v,
@@ -192,6 +197,8 @@ func provideCleanup(
 	opsAggregation *service.OpsAggregationService,
 	opsMetricsCollector *service.OpsMetricsCollector,
 	opsAlertService *service.OpsAlertService,
+	opsScheduledReport *service.OpsScheduledReportService,
+	opsGroupAvailability *service.OpsGroupAvailabilityMonitor,
 	cfg *config.Config,
 	opsRepo service.OpsRepository,
 ) func() {
@@ -202,7 +209,7 @@ func provideCleanup(
 	// Initialize cron manager if cleanup is enabled
 	var cronManager *cron.Manager
 	var cancelCron context.CancelFunc
-	if cfg.Ops.Cleanup.Enabled || cfg.Ops.Aggregation.Enabled {
+	if cfg.Ops.Cleanup.Enabled {
 		cronCtx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		cancelCron = cancel
 		cronManager = cron.NewManager(cronCtx)
@@ -224,30 +231,6 @@ func provideCleanup(
 				log.Printf("[CRON] Failed to add ops cleanup job: %v", err)
 			} else {
 				log.Printf("[CRON] Ops cleanup job scheduled: %s", schedule)
-			}
-		}
-
-		if cfg.Ops.Aggregation.Enabled {
-			opsAggregator := cron.NewOpsAggregator(cronCtx, opsRepo)
-
-			hourlySchedule := cfg.Ops.Aggregation.HourlySchedule
-			if hourlySchedule == "" {
-				hourlySchedule = "5 * * * *"
-			}
-			if err := cronManager.AddJob(hourlySchedule, opsAggregator.RunHourly); err != nil {
-				log.Printf("[CRON] Failed to add hourly aggregation job: %v", err)
-			} else {
-				log.Printf("[CRON] Hourly aggregation job scheduled: %s", hourlySchedule)
-			}
-
-			dailySchedule := cfg.Ops.Aggregation.DailySchedule
-			if dailySchedule == "" {
-				dailySchedule = "10 0 * * *"
-			}
-			if err := cronManager.AddJob(dailySchedule, opsAggregator.RunDaily); err != nil {
-				log.Printf("[CRON] Failed to add daily aggregation job: %v", err)
-			} else {
-				log.Printf("[CRON] Daily aggregation job scheduled: %s", dailySchedule)
 			}
 		}
 
@@ -276,6 +259,24 @@ func provideCleanup(
 			name string
 			fn   func() error
 		}{
+			{"OpsErrorLogWorkers", func() error {
+				if ok := handler.StopOpsErrorLogWorkers(); !ok {
+					return fmt.Errorf("timed out draining ops error log workers")
+				}
+				return nil
+			}},
+			{"OpsWSQPSCache", func() error {
+				admin.StopOpsWSQPSCache()
+				return nil
+			}},
+			{"OpsGroupAvailabilityMonitor", func() error {
+				opsGroupAvailability.Stop()
+				return nil
+			}},
+			{"OpsScheduledReportService", func() error {
+				opsScheduledReport.Stop()
+				return nil
+			}},
 			{"OpsAggregationService", func() error {
 				opsAggregation.Stop()
 				return nil

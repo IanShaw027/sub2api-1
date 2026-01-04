@@ -26,7 +26,7 @@ const (
 	MaxRecentSystemMetricsLimit     = 500
 	DefaultRecentSystemMetricsLimit = 60
 
-	MaxMetricsLimit     = 5000
+	MaxMetricsLimit     = 1000
 	DefaultMetricsLimit = 300
 )
 
@@ -310,35 +310,25 @@ func (r *OpsRepository) GetLatestSystemMetric(ctx context.Context) (*service.Ops
 			error_5xx_count,
 			error_timeout_count,
 			latency_p50,
-			latency_p999,
+			latency_p95,
+			latency_p99,
 			latency_avg,
 			latency_max,
 			upstream_latency_avg,
-			disk_used,
-			disk_total,
-			disk_iops,
-			network_in_bytes,
-			network_out_bytes,
-			goroutine_count,
-			db_conn_active,
-			db_conn_idle,
-			db_conn_waiting,
-			token_consumed,
-			token_rate,
-			active_subscriptions,
-			tags,
 			success_rate,
 			error_rate,
-			p95_latency_ms,
-			p99_latency_ms,
-			http2_errors,
-			active_alerts,
 			cpu_usage_percent,
 			memory_used_mb,
 			memory_total_mb,
 			memory_usage_percent,
-			heap_alloc_mb,
-			gc_pause_ms,
+			db_conn_active,
+			db_conn_idle,
+			db_conn_waiting,
+			goroutine_count,
+			token_consumed,
+			token_rate,
+			active_subscriptions,
+			active_alerts,
 			concurrency_queue_depth,
 			created_at AS updated_at
 		FROM ops_system_metrics
@@ -351,19 +341,19 @@ func (r *OpsRepository) GetLatestSystemMetric(ctx context.Context) (*service.Ops
 	var requestCount, successCount, errorCount sql.NullInt64
 	var qps, tps sql.NullFloat64
 	var error4xxCount, error5xxCount, errorTimeoutCount sql.NullInt64
-	var latencyP50, latencyP999, latencyAvg, latencyMax, upstreamLatencyAvg sql.NullFloat64
-	var diskUsed, diskTotal, diskIOPS sql.NullInt64
-	var networkInBytes, networkOutBytes sql.NullInt64
-	var goroutineCount, dbConnActive, dbConnIdle, dbConnWaiting sql.NullInt64
+	var latencyP50, latencyP95, latencyP99, latencyAvg, latencyMax, upstreamLatencyAvg sql.NullFloat64
+	var successRate, errorRate sql.NullFloat64
+	var cpuUsage, memoryUsage sql.NullFloat64
+	var memoryUsed, memoryTotal sql.NullInt64
+	var dbConnActive, dbConnIdle, dbConnWaiting sql.NullInt64
+	var goroutineCount sql.NullInt64
 	var tokenConsumed sql.NullInt64
 	var tokenRate sql.NullFloat64
 	var activeSubscriptions sql.NullInt64
-	var tags []byte
-	var successRate, errorRate sql.NullFloat64
-	var p95Latency, p99Latency, http2Errors, activeAlerts sql.NullInt64
-	var cpuUsage, memoryUsage, gcPause sql.NullFloat64
-	var memoryUsed, memoryTotal, heapAlloc, queueDepth sql.NullInt64
+	var activeAlerts sql.NullInt64
+	var queueDepth sql.NullInt64
 	var createdAt time.Time
+
 	if err := scanSingleRow(
 		ctx,
 		r.sql,
@@ -379,35 +369,25 @@ func (r *OpsRepository) GetLatestSystemMetric(ctx context.Context) (*service.Ops
 		&error5xxCount,
 		&errorTimeoutCount,
 		&latencyP50,
-		&latencyP999,
+		&latencyP95,
+		&latencyP99,
 		&latencyAvg,
 		&latencyMax,
 		&upstreamLatencyAvg,
-		&diskUsed,
-		&diskTotal,
-		&diskIOPS,
-		&networkInBytes,
-		&networkOutBytes,
-		&goroutineCount,
-		&dbConnActive,
-		&dbConnIdle,
-		&dbConnWaiting,
-		&tokenConsumed,
-		&tokenRate,
-		&activeSubscriptions,
-		&tags,
 		&successRate,
 		&errorRate,
-		&p95Latency,
-		&p99Latency,
-		&http2Errors,
-		&activeAlerts,
 		&cpuUsage,
 		&memoryUsed,
 		&memoryTotal,
 		&memoryUsage,
-		&heapAlloc,
-		&gcPause,
+		&dbConnActive,
+		&dbConnIdle,
+		&dbConnWaiting,
+		&goroutineCount,
+		&tokenConsumed,
+		&tokenRate,
+		&activeSubscriptions,
+		&activeAlerts,
 		&queueDepth,
 		&createdAt,
 	); err != nil {
@@ -447,8 +427,11 @@ func (r *OpsRepository) GetLatestSystemMetric(ctx context.Context) (*service.Ops
 	if latencyP50.Valid {
 		metric.LatencyP50 = latencyP50.Float64
 	}
-	if latencyP999.Valid {
-		metric.LatencyP999 = latencyP999.Float64
+	if latencyP95.Valid {
+		metric.LatencyP95 = latencyP95.Float64
+	}
+	if latencyP99.Valid {
+		metric.LatencyP99 = latencyP99.Float64
 	}
 	if latencyAvg.Valid {
 		metric.LatencyAvg = latencyAvg.Float64
@@ -459,62 +442,11 @@ func (r *OpsRepository) GetLatestSystemMetric(ctx context.Context) (*service.Ops
 	if upstreamLatencyAvg.Valid {
 		metric.UpstreamLatencyAvg = upstreamLatencyAvg.Float64
 	}
-	if diskUsed.Valid {
-		metric.DiskUsed = diskUsed.Int64
-	}
-	if diskTotal.Valid {
-		metric.DiskTotal = diskTotal.Int64
-	}
-	if diskIOPS.Valid {
-		metric.DiskIOPS = diskIOPS.Int64
-	}
-	if networkInBytes.Valid {
-		metric.NetworkInBytes = networkInBytes.Int64
-	}
-	if networkOutBytes.Valid {
-		metric.NetworkOutBytes = networkOutBytes.Int64
-	}
-	if goroutineCount.Valid {
-		metric.GoroutineCount = int(goroutineCount.Int64)
-	}
-	if dbConnActive.Valid {
-		metric.DBConnActive = int(dbConnActive.Int64)
-	}
-	if dbConnIdle.Valid {
-		metric.DBConnIdle = int(dbConnIdle.Int64)
-	}
-	if dbConnWaiting.Valid {
-		metric.DBConnWaiting = int(dbConnWaiting.Int64)
-	}
-	if tokenConsumed.Valid {
-		metric.TokenConsumed = tokenConsumed.Int64
-	}
-	if tokenRate.Valid {
-		metric.TokenRate = tokenRate.Float64
-	}
-	if activeSubscriptions.Valid {
-		metric.ActiveSubscriptions = int(activeSubscriptions.Int64)
-	}
-	if len(tags) > 0 {
-		_ = json.Unmarshal(tags, &metric.Tags)
-	}
 	if successRate.Valid {
 		metric.SuccessRate = successRate.Float64
 	}
 	if errorRate.Valid {
 		metric.ErrorRate = errorRate.Float64
-	}
-	if p95Latency.Valid {
-		metric.P95LatencyMs = int(p95Latency.Int64)
-	}
-	if p99Latency.Valid {
-		metric.P99LatencyMs = int(p99Latency.Int64)
-	}
-	if http2Errors.Valid {
-		metric.HTTP2Errors = int(http2Errors.Int64)
-	}
-	if activeAlerts.Valid {
-		metric.ActiveAlerts = int(activeAlerts.Int64)
 	}
 	if cpuUsage.Valid {
 		metric.CPUUsagePercent = cpuUsage.Float64
@@ -528,11 +460,29 @@ func (r *OpsRepository) GetLatestSystemMetric(ctx context.Context) (*service.Ops
 	if memoryUsage.Valid {
 		metric.MemoryUsagePercent = memoryUsage.Float64
 	}
-	if heapAlloc.Valid {
-		metric.HeapAllocMB = heapAlloc.Int64
+	if dbConnActive.Valid {
+		metric.DBConnActive = int(dbConnActive.Int64)
 	}
-	if gcPause.Valid {
-		metric.GCPauseMs = gcPause.Float64
+	if dbConnIdle.Valid {
+		metric.DBConnIdle = int(dbConnIdle.Int64)
+	}
+	if dbConnWaiting.Valid {
+		metric.DBConnWaiting = int(dbConnWaiting.Int64)
+	}
+	if goroutineCount.Valid {
+		metric.GoroutineCount = int(goroutineCount.Int64)
+	}
+	if tokenConsumed.Valid {
+		metric.TokenConsumed = tokenConsumed.Int64
+	}
+	if tokenRate.Valid {
+		metric.TokenRate = tokenRate.Float64
+	}
+	if activeSubscriptions.Valid {
+		metric.ActiveSubscriptions = int(activeSubscriptions.Int64)
+	}
+	if activeAlerts.Valid {
+		metric.ActiveAlerts = int(activeAlerts.Int64)
 	}
 	if queueDepth.Valid {
 		metric.ConcurrencyQueueDepth = int(queueDepth.Int64)
@@ -565,15 +515,11 @@ func (r *OpsRepository) CreateSystemMetric(ctx context.Context, metric *service.
 			error_5xx_count,
 			error_timeout_count,
 			latency_p50,
-			latency_p999,
+			latency_p95,
+			latency_p99,
 			latency_avg,
 			latency_max,
 			upstream_latency_avg,
-			disk_used,
-			disk_total,
-			disk_iops,
-			network_in_bytes,
-			network_out_bytes,
 			goroutine_count,
 			db_conn_active,
 			db_conn_idle,
@@ -581,35 +527,22 @@ func (r *OpsRepository) CreateSystemMetric(ctx context.Context, metric *service.
 			token_consumed,
 			token_rate,
 			active_subscriptions,
-			tags,
 			success_rate,
 			error_rate,
-			p95_latency_ms,
-			p99_latency_ms,
-			http2_errors,
 			active_alerts,
 			cpu_usage_percent,
 			memory_used_mb,
 			memory_total_mb,
 			memory_usage_percent,
-			heap_alloc_mb,
-			gc_pause_ms,
 			concurrency_queue_depth,
 			created_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
 			$11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-			$21, $22, $23, $24, $25, $26, $27, $28::jsonb,
-			$29, $30, $31, $32, $33, $34, $35, $36,
-			$37, $38, $39, $40, $41, $42, $43, $44
+			$21, $22, $23, $24, $25, $26, $27, $28,
+			$29, $30, $31
 		)
 	`
-	tagsJSON := "{}"
-	if metric.Tags != nil {
-		if raw, err := json.Marshal(metric.Tags); err == nil && len(raw) > 0 {
-			tagsJSON = string(raw)
-		}
-	}
 	_, err := r.sql.ExecContext(ctx, query,
 		windowMinutes,
 		metric.RequestCount,
@@ -621,15 +554,11 @@ func (r *OpsRepository) CreateSystemMetric(ctx context.Context, metric *service.
 		metric.Error5xxCount,
 		metric.ErrorTimeoutCount,
 		metric.LatencyP50,
-		metric.LatencyP999,
+		metric.LatencyP95,
+		metric.LatencyP99,
 		metric.LatencyAvg,
 		metric.LatencyMax,
 		metric.UpstreamLatencyAvg,
-		metric.DiskUsed,
-		metric.DiskTotal,
-		metric.DiskIOPS,
-		metric.NetworkInBytes,
-		metric.NetworkOutBytes,
 		metric.GoroutineCount,
 		metric.DBConnActive,
 		metric.DBConnIdle,
@@ -637,19 +566,13 @@ func (r *OpsRepository) CreateSystemMetric(ctx context.Context, metric *service.
 		metric.TokenConsumed,
 		metric.TokenRate,
 		metric.ActiveSubscriptions,
-		tagsJSON,
 		metric.SuccessRate,
 		metric.ErrorRate,
-		metric.P95LatencyMs,
-		metric.P99LatencyMs,
-		metric.HTTP2Errors,
 		metric.ActiveAlerts,
 		metric.CPUUsagePercent,
 		metric.MemoryUsedMB,
 		metric.MemoryTotalMB,
 		metric.MemoryUsagePercent,
-		metric.HeapAllocMB,
-		metric.GCPauseMs,
 		metric.ConcurrencyQueueDepth,
 		createdAt,
 	)
@@ -676,15 +599,11 @@ func (r *OpsRepository) ListRecentSystemMetrics(ctx context.Context, windowMinut
 			error_5xx_count,
 			error_timeout_count,
 			latency_p50,
-			latency_p999,
+			latency_p95,
+			latency_p99,
 			latency_avg,
 			latency_max,
 			upstream_latency_avg,
-			disk_used,
-			disk_total,
-			disk_iops,
-			network_in_bytes,
-			network_out_bytes,
 			goroutine_count,
 			db_conn_active,
 			db_conn_idle,
@@ -692,19 +611,13 @@ func (r *OpsRepository) ListRecentSystemMetrics(ctx context.Context, windowMinut
 			token_consumed,
 			token_rate,
 			active_subscriptions,
-			tags,
 			success_rate,
 			error_rate,
-			p95_latency_ms,
-			p99_latency_ms,
-			http2_errors,
 			active_alerts,
 			cpu_usage_percent,
 			memory_used_mb,
 			memory_total_mb,
 			memory_usage_percent,
-			heap_alloc_mb,
-			gc_pause_ms,
 			concurrency_queue_depth,
 			created_at AS updated_at
 		FROM ops_system_metrics
@@ -762,15 +675,11 @@ func (r *OpsRepository) ListSystemMetricsRange(ctx context.Context, windowMinute
 			error_5xx_count,
 			error_timeout_count,
 			latency_p50,
-			latency_p999,
+			latency_p95,
+			latency_p99,
 			latency_avg,
 			latency_max,
 			upstream_latency_avg,
-			disk_used,
-			disk_total,
-			disk_iops,
-			network_in_bytes,
-			network_out_bytes,
 			goroutine_count,
 			db_conn_active,
 			db_conn_idle,
@@ -778,19 +687,13 @@ func (r *OpsRepository) ListSystemMetricsRange(ctx context.Context, windowMinute
 			token_consumed,
 			token_rate,
 			active_subscriptions,
-			tags,
 			success_rate,
 			error_rate,
-			p95_latency_ms,
-			p99_latency_ms,
-			http2_errors,
 			active_alerts,
 			cpu_usage_percent,
 			memory_used_mb,
 			memory_total_mb,
 			memory_usage_percent,
-			heap_alloc_mb,
-			gc_pause_ms,
 			concurrency_queue_depth,
 			created_at
 		FROM ops_system_metrics
@@ -835,8 +738,6 @@ func (r *OpsRepository) ListAlertRules(ctx context.Context) ([]service.OpsAlertR
 			sustained_minutes,
 			severity,
 			notify_email,
-			notify_webhook,
-			webhook_url,
 			cooldown_minutes,
 			dimension_filters,
 			notify_channels,
@@ -857,7 +758,6 @@ func (r *OpsRepository) ListAlertRules(ctx context.Context) ([]service.OpsAlertR
 	for rows.Next() {
 		var rule service.OpsAlertRule
 		var description sql.NullString
-		var webhookURL sql.NullString
 		var dimensionFilters, notifyChannels, notifyConfig []byte
 		if err := rows.Scan(
 			&rule.ID,
@@ -871,8 +771,6 @@ func (r *OpsRepository) ListAlertRules(ctx context.Context) ([]service.OpsAlertR
 			&rule.SustainedMinutes,
 			&rule.Severity,
 			&rule.NotifyEmail,
-			&rule.NotifyWebhook,
-			&webhookURL,
 			&rule.CooldownMinutes,
 			&dimensionFilters,
 			&notifyChannels,
@@ -884,9 +782,6 @@ func (r *OpsRepository) ListAlertRules(ctx context.Context) ([]service.OpsAlertR
 		}
 		if description.Valid {
 			rule.Description = description.String
-		}
-		if webhookURL.Valid {
-			rule.WebhookURL = webhookURL.String
 		}
 		if len(dimensionFilters) > 0 {
 			_ = json.Unmarshal(dimensionFilters, &rule.DimensionFilters)
@@ -929,17 +824,17 @@ func (r *OpsRepository) CreateAlertRule(ctx context.Context, rule *service.OpsAl
 	query := `
 		INSERT INTO ops_alert_rules (
 			name, description, enabled, metric_type, operator, threshold,
-			window_minutes, sustained_minutes, severity, notify_email, notify_webhook,
-			webhook_url, cooldown_minutes, dimension_filters, notify_channels, notify_config,
+			window_minutes, sustained_minutes, severity, notify_email,
+			cooldown_minutes, dimension_filters, notify_channels, notify_config,
 			created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
 		) RETURNING id
 	`
 	return r.sql.QueryRowContext(ctx, query,
 		rule.Name, rule.Description, rule.Enabled, rule.MetricType, rule.Operator, rule.Threshold,
-		rule.WindowMinutes, rule.SustainedMinutes, rule.Severity, rule.NotifyEmail, rule.NotifyWebhook,
-		rule.WebhookURL, rule.CooldownMinutes, dimensionFilters, notifyChannels, notifyConfig,
+		rule.WindowMinutes, rule.SustainedMinutes, rule.Severity, rule.NotifyEmail,
+		rule.CooldownMinutes, dimensionFilters, notifyChannels, notifyConfig,
 		rule.CreatedAt, rule.UpdatedAt,
 	).Scan(&rule.ID)
 }
@@ -967,14 +862,14 @@ func (r *OpsRepository) UpdateAlertRule(ctx context.Context, rule *service.OpsAl
 		UPDATE ops_alert_rules SET
 			name = $1, description = $2, enabled = $3, metric_type = $4, operator = $5,
 			threshold = $6, window_minutes = $7, sustained_minutes = $8, severity = $9,
-			notify_email = $10, notify_webhook = $11, webhook_url = $12, cooldown_minutes = $13,
-			dimension_filters = $14, notify_channels = $15, notify_config = $16, updated_at = $17
-		WHERE id = $18
+			notify_email = $10, cooldown_minutes = $11,
+			dimension_filters = $12, notify_channels = $13, notify_config = $14, updated_at = $15
+		WHERE id = $16
 	`
 	result, err := r.sql.ExecContext(ctx, query,
 		rule.Name, rule.Description, rule.Enabled, rule.MetricType, rule.Operator,
 		rule.Threshold, rule.WindowMinutes, rule.SustainedMinutes, rule.Severity,
-		rule.NotifyEmail, rule.NotifyWebhook, rule.WebhookURL, rule.CooldownMinutes,
+		rule.NotifyEmail, rule.CooldownMinutes,
 		dimensionFilters, notifyChannels, notifyConfig, rule.UpdatedAt, rule.ID,
 	)
 	if err != nil {
@@ -1004,6 +899,7 @@ func (r *OpsRepository) ListAlertEvents(ctx context.Context, limit int) ([]servi
 	if limit <= 0 {
 		limit = 100
 	}
+
 	if limit > 500 {
 		limit = 500
 	}
@@ -1011,51 +907,75 @@ func (r *OpsRepository) ListAlertEvents(ctx context.Context, limit int) ([]servi
 	query := `
 		SELECT id, rule_id, severity, status, title, description,
 			metric_value, threshold_value, fired_at, resolved_at,
-			email_sent, webhook_sent, created_at
+			email_sent, created_at
 		FROM ops_alert_events
 		ORDER BY created_at DESC
 		LIMIT $1
 	`
+
 	rows, err := r.sql.QueryContext(ctx, query, limit)
 	if err != nil {
 		return nil, err
 	}
+
 	defer func() { _ = rows.Close() }()
 
 	events := make([]service.OpsAlertEvent, 0)
 	for rows.Next() {
 		var event service.OpsAlertEvent
+		var resolvedAt sql.NullTime
 		if err := rows.Scan(
-			&event.ID, &event.RuleID, &event.Severity, &event.Status,
-			&event.Title, &event.Description, &event.MetricValue, &event.ThresholdValue,
-			&event.FiredAt, &event.ResolvedAt, &event.EmailSent, &event.WebhookSent,
+			&event.ID,
+			&event.RuleID,
+			&event.Severity,
+			&event.Status,
+			&event.Title,
+			&event.Description,
+			&event.MetricValue,
+			&event.ThresholdValue,
+			&event.FiredAt,
+			&resolvedAt,
+			&event.EmailSent,
 			&event.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
+		if resolvedAt.Valid {
+			event.ResolvedAt = &resolvedAt.Time
+		}
 		events = append(events, event)
 	}
+
 	return events, rows.Err()
 }
+
+
 
 func (r *OpsRepository) GetActiveAlertEvent(ctx context.Context, ruleID int64) (*service.OpsAlertEvent, error) {
 	return r.getAlertEvent(ctx, `WHERE rule_id = $1 AND status = $2`, []any{ruleID, service.OpsAlertStatusFiring})
 }
 
+
+
 func (r *OpsRepository) GetLatestAlertEvent(ctx context.Context, ruleID int64) (*service.OpsAlertEvent, error) {
 	return r.getAlertEvent(ctx, `WHERE rule_id = $1`, []any{ruleID})
 }
+
+
 
 func (r *OpsRepository) CreateAlertEvent(ctx context.Context, event *service.OpsAlertEvent) error {
 	if event == nil {
 		return nil
 	}
+
 	if event.FiredAt.IsZero() {
 		event.FiredAt = time.Now()
 	}
+
 	if event.CreatedAt.IsZero() {
 		event.CreatedAt = event.FiredAt
 	}
+
 	if event.Status == "" {
 		event.Status = service.OpsAlertStatusFiring
 	}
@@ -1072,67 +992,50 @@ func (r *OpsRepository) CreateAlertEvent(ctx context.Context, event *service.Ops
 			fired_at,
 			resolved_at,
 			email_sent,
-			webhook_sent,
 			created_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6,
-			$7, $8, $9, $10, $11, $12
-		)
-		RETURNING id, created_at
+			$1, $2, $3, $4, $5,
+			$6, $7, $8, $9, $10,
+			$11
+		) RETURNING id
 	`
 
-	var resolvedAt sql.NullTime
-	if event.ResolvedAt != nil {
-		resolvedAt = sql.NullTime{Time: *event.ResolvedAt, Valid: true}
-	}
-
-	if err := scanSingleRow(
-		ctx,
-		r.sql,
-		query,
-		[]any{
-			event.RuleID,
-			event.Severity,
-			event.Status,
-			event.Title,
-			event.Description,
-			event.MetricValue,
-			event.ThresholdValue,
-			event.FiredAt,
-			resolvedAt,
-			event.EmailSent,
-			event.WebhookSent,
-			event.CreatedAt,
-		},
-		&event.ID,
-		&event.CreatedAt,
-	); err != nil {
-		return err
-	}
-	return nil
+	return r.sql.QueryRowContext(ctx, query,
+		event.RuleID,
+		event.Severity,
+		event.Status,
+		event.Title,
+		event.Description,
+		event.MetricValue,
+		event.ThresholdValue,
+		event.FiredAt,
+		event.ResolvedAt,
+		event.EmailSent,
+		event.CreatedAt,
+	).Scan(&event.ID)
 }
+
+
 
 func (r *OpsRepository) UpdateAlertEventStatus(ctx context.Context, eventID int64, status string, resolvedAt *time.Time) error {
-	var resolved sql.NullTime
-	if resolvedAt != nil {
-		resolved = sql.NullTime{Time: *resolvedAt, Valid: true}
-	}
-	_, err := r.sql.ExecContext(ctx, `
-		UPDATE ops_alert_events
-		SET status = $2, resolved_at = $3
-		WHERE id = $1
-	`, eventID, status, resolved)
+	query := `UPDATE ops_alert_events SET status = $2, resolved_at = $3 WHERE id = $1`
+	_, err := r.sql.ExecContext(ctx, query, eventID, status, resolvedAt)
 	return err
 }
 
-func (r *OpsRepository) UpdateAlertEventNotifications(ctx context.Context, eventID int64, emailSent, webhookSent bool) error {
-	_, err := r.sql.ExecContext(ctx, `
+
+
+func (r *OpsRepository) UpdateAlertEventNotifications(ctx context.Context, eventID int64, emailSent bool) error {
+	query := `
 		UPDATE ops_alert_events
-		SET email_sent = $2, webhook_sent = $3
+		SET email_sent = $2
 		WHERE id = $1
-	`, eventID, emailSent, webhookSent)
+	`
+	_, err := r.sql.ExecContext(ctx, query, eventID, emailSent)
 	return err
 }
+
+
 
 func (r *OpsRepository) CountActiveAlerts(ctx context.Context) (int, error) {
 	var count int64
@@ -1176,45 +1079,88 @@ func (r *OpsRepository) GetWindowStatsGrouped(ctx context.Context, startTime, en
 		startTime, endTime = endTime, startTime
 	}
 
-	var groupExpr string
-	switch groupBy {
-	case "platform":
-		// Prefer the explicit platform stored on the error log; otherwise fall back to
-		// group/account platforms to avoid "missing platform" rows.
-		groupExpr = "COALESCE(NULLIF(o.platform, ''), g.platform, a.platform, 'unknown')"
-	case "phase":
-		groupExpr = "COALESCE(NULLIF(o.error_phase, ''), 'unknown')"
-	case "severity":
-		groupExpr = "COALESCE(NULLIF(o.severity, ''), 'unknown')"
-	default:
-		return nil, fmt.Errorf("invalid groupBy: %q", groupBy)
+	queries := map[string]string{
+		"platform": `
+			SELECT
+				COALESCE(NULLIF(o.platform, ''), g.platform, a.platform, 'unknown') AS group_value,
+				COUNT(*) AS error_count,
+				COUNT(*) FILTER (
+					WHERE
+						o.error_type = 'network_error'
+						OR o.error_message ILIKE '%http2%'
+						OR o.error_message ILIKE '%http/2%'
+				) AS http2_errors,
+				COUNT(*) FILTER (WHERE o.status_code >= 400 AND o.status_code < 500) AS error_4xx_count,
+				COUNT(*) FILTER (WHERE o.status_code >= 500) AS error_5xx_count,
+				COUNT(*) FILTER (
+					WHERE
+						o.error_type IN ('timeout', 'timeout_error')
+						OR o.error_message ILIKE '%timeout%'
+						OR o.error_message ILIKE '%deadline exceeded%'
+				) AS timeout_count
+			FROM ops_error_logs o
+			LEFT JOIN groups g ON g.id = o.group_id
+			LEFT JOIN accounts a ON a.id = o.account_id
+			WHERE o.created_at >= $1 AND o.created_at < $2
+			GROUP BY 1
+			ORDER BY error_count DESC, 1 ASC
+		`,
+		"phase": `
+			SELECT
+				COALESCE(NULLIF(o.error_phase, ''), 'unknown') AS group_value,
+				COUNT(*) AS error_count,
+				COUNT(*) FILTER (
+					WHERE
+						o.error_type = 'network_error'
+						OR o.error_message ILIKE '%http2%'
+						OR o.error_message ILIKE '%http/2%'
+				) AS http2_errors,
+				COUNT(*) FILTER (WHERE o.status_code >= 400 AND o.status_code < 500) AS error_4xx_count,
+				COUNT(*) FILTER (WHERE o.status_code >= 500) AS error_5xx_count,
+				COUNT(*) FILTER (
+					WHERE
+						o.error_type IN ('timeout', 'timeout_error')
+						OR o.error_message ILIKE '%timeout%'
+						OR o.error_message ILIKE '%deadline exceeded%'
+				) AS timeout_count
+			FROM ops_error_logs o
+			LEFT JOIN groups g ON g.id = o.group_id
+			LEFT JOIN accounts a ON a.id = o.account_id
+			WHERE o.created_at >= $1 AND o.created_at < $2
+			GROUP BY 1
+			ORDER BY error_count DESC, 1 ASC
+		`,
+		"severity": `
+			SELECT
+				COALESCE(NULLIF(o.severity, ''), 'unknown') AS group_value,
+				COUNT(*) AS error_count,
+				COUNT(*) FILTER (
+					WHERE
+						o.error_type = 'network_error'
+						OR o.error_message ILIKE '%http2%'
+						OR o.error_message ILIKE '%http/2%'
+				) AS http2_errors,
+				COUNT(*) FILTER (WHERE o.status_code >= 400 AND o.status_code < 500) AS error_4xx_count,
+				COUNT(*) FILTER (WHERE o.status_code >= 500) AS error_5xx_count,
+				COUNT(*) FILTER (
+					WHERE
+						o.error_type IN ('timeout', 'timeout_error')
+						OR o.error_message ILIKE '%timeout%'
+						OR o.error_message ILIKE '%deadline exceeded%'
+				) AS timeout_count
+			FROM ops_error_logs o
+			LEFT JOIN groups g ON g.id = o.group_id
+			LEFT JOIN accounts a ON a.id = o.account_id
+			WHERE o.created_at >= $1 AND o.created_at < $2
+			GROUP BY 1
+			ORDER BY error_count DESC, 1 ASC
+		`,
 	}
 
-	query := fmt.Sprintf(`
-		SELECT
-			%s AS group_value,
-			COUNT(*) AS error_count,
-			COUNT(*) FILTER (
-				WHERE
-					o.error_type = 'network_error'
-					OR o.error_message ILIKE '%%http2%%'
-					OR o.error_message ILIKE '%%http/2%%'
-			) AS http2_errors,
-			COUNT(*) FILTER (WHERE o.status_code >= 400 AND o.status_code < 500) AS error_4xx_count,
-			COUNT(*) FILTER (WHERE o.status_code >= 500) AS error_5xx_count,
-			COUNT(*) FILTER (
-				WHERE
-					o.error_type IN ('timeout', 'timeout_error')
-					OR o.error_message ILIKE '%%timeout%%'
-					OR o.error_message ILIKE '%%deadline exceeded%%'
-			) AS timeout_count
-		FROM ops_error_logs o
-		LEFT JOIN groups g ON g.id = o.group_id
-		LEFT JOIN accounts a ON a.id = o.account_id
-		WHERE o.created_at >= $1 AND o.created_at < $2
-		GROUP BY 1
-		ORDER BY error_count DESC, 1 ASC
-	`, groupExpr)
+	query, ok := queries[groupBy]
+	if !ok {
+		return nil, fmt.Errorf("invalid groupBy: %q", groupBy)
+	}
 
 	rows, err := r.sql.QueryContext(ctx, query, startTime, endTime)
 	if err != nil {
@@ -1236,7 +1182,6 @@ func (r *OpsRepository) GetWindowStatsGrouped(ctx context.Context, startTime, en
 		); err != nil {
 			return nil, err
 		}
-		item.HTTP2Errors = http2Errors
 		items = append(items, &item)
 	}
 	if err := rows.Err(); err != nil {
@@ -1333,7 +1278,6 @@ func (r *OpsRepository) GetWindowStatsLegacy(ctx context.Context, startTime, end
 		return nil, err
 	}
 
-	stats.HTTP2Errors = int(http2Errors)
 	stats.Error4xxCount = error4xxCount
 	stats.Error5xxCount = error5xxCount
 	stats.TimeoutCount = errorTimeoutCount
@@ -1346,9 +1290,6 @@ func (r *OpsRepository) GetWindowStatsLegacy(ctx context.Context, startTime, end
 	}
 	if p99Latency.Valid {
 		stats.P99LatencyMs = int(math.Round(p99Latency.Float64))
-	}
-	if p999Latency.Valid {
-		stats.P999LatencyMs = int(math.Round(p999Latency.Float64))
 	}
 	if avgLatency.Valid {
 		stats.AvgLatencyMs = int(math.Round(avgLatency.Float64))
@@ -1497,9 +1438,6 @@ func (r *OpsRepository) GetOverviewStatsLegacy(ctx context.Context, startTime, e
 	}
 	if p99.Valid {
 		stats.LatencyP99 = int(p99.Float64)
-	}
-	if p999.Valid {
-		stats.LatencyP999 = int(p999.Float64)
 	}
 	if avgLatency.Valid {
 		stats.LatencyAvg = int(avgLatency.Float64)
@@ -1847,7 +1785,6 @@ func (r *OpsRepository) getWindowStatsPreaggregated(ctx context.Context, startTi
 	out.P99LatencyMs = int(math.Round(agg.p99LatencyMax))
 	out.P50LatencyMs = out.P99LatencyMs
 	out.P95LatencyMs = out.P99LatencyMs
-	out.P999LatencyMs = out.P99LatencyMs
 	out.MaxLatencyMs = out.P99LatencyMs
 
 	// Raw-log tail/head fragments:
@@ -1909,7 +1846,6 @@ func (r *OpsRepository) getOverviewStatsPreaggregated(ctx context.Context, start
 	out.LatencyP99 = int(math.Round(agg.p99LatencyMax))
 	out.LatencyP50 = out.LatencyP99
 	out.LatencyP95 = out.LatencyP99
-	out.LatencyP999 = out.LatencyP99
 	out.LatencyMax = out.LatencyP99
 
 	// Bring in raw-log boundary fragments (small) and let them "win" for percentiles/top error.
@@ -2660,7 +2596,6 @@ func mergeWindowStats(dst *service.OpsWindowStats, src *service.OpsWindowStats) 
 	dst.Error4xxCount += src.Error4xxCount
 	dst.Error5xxCount += src.Error5xxCount
 	dst.TimeoutCount += src.TimeoutCount
-	dst.HTTP2Errors += src.HTTP2Errors
 	dst.TokenConsumed += src.TokenConsumed
 
 	// Conservative merge for latency percentiles: keep the worst/highest observed.
@@ -2672,9 +2607,6 @@ func mergeWindowStats(dst *service.OpsWindowStats, src *service.OpsWindowStats) 
 	}
 	if src.P99LatencyMs > dst.P99LatencyMs {
 		dst.P99LatencyMs = src.P99LatencyMs
-	}
-	if src.P999LatencyMs > dst.P999LatencyMs {
-		dst.P999LatencyMs = src.P999LatencyMs
 	}
 	if src.MaxLatencyMs > dst.MaxLatencyMs {
 		dst.MaxLatencyMs = src.MaxLatencyMs
@@ -2718,9 +2650,6 @@ func mergeOverviewStats(dst *service.OverviewStats, src *service.OverviewStats) 
 	}
 	if src.LatencyP99 > dst.LatencyP99 {
 		dst.LatencyP99 = src.LatencyP99
-	}
-	if src.LatencyP999 > dst.LatencyP999 {
-		dst.LatencyP999 = src.LatencyP999
 	}
 	if src.LatencyMax > dst.LatencyMax {
 		dst.LatencyMax = src.LatencyMax
@@ -2924,8 +2853,20 @@ func (r *OpsRepository) UpsertHourlyMetrics(ctx context.Context, startTime, endT
 			error_4xx_count = EXCLUDED.error_4xx_count,
 			error_5xx_count = EXCLUDED.error_5xx_count,
 			timeout_count = EXCLUDED.timeout_count,
-			avg_latency_ms = EXCLUDED.avg_latency_ms,
-			p99_latency_ms = EXCLUDED.p99_latency_ms,
+			avg_latency_ms = CASE
+				WHEN ops_metrics_hourly.success_count + EXCLUDED.success_count = 0 THEN NULL
+				ELSE (
+					COALESCE(ops_metrics_hourly.avg_latency_ms, 0) * ops_metrics_hourly.success_count +
+					COALESCE(EXCLUDED.avg_latency_ms, 0) * EXCLUDED.success_count
+				) / (ops_metrics_hourly.success_count + EXCLUDED.success_count)
+			END,
+			p99_latency_ms = CASE
+				WHEN ops_metrics_hourly.success_count + EXCLUDED.success_count = 0 THEN NULL
+				ELSE GREATEST(
+					COALESCE(ops_metrics_hourly.p99_latency_ms, 0),
+					COALESCE(EXCLUDED.p99_latency_ms, 0)
+				)
+			END,
 			error_rate = EXCLUDED.error_rate,
 			computed_at = NOW()
 	`
@@ -2967,8 +2908,7 @@ func (r *OpsRepository) UpsertDailyMetrics(ctx context.Context, startTime, endTi
 				SUM(h.avg_latency_ms * h.success_count) FILTER (WHERE h.avg_latency_ms IS NOT NULL)
 				/ NULLIF(SUM(h.success_count) FILTER (WHERE h.avg_latency_ms IS NOT NULL), 0)
 			) AS avg_latency_ms,
-			percentile_cont(0.99) WITHIN GROUP (ORDER BY h.p99_latency_ms)
-				FILTER (WHERE h.p99_latency_ms IS NOT NULL) AS p99_latency_ms,
+			MAX(h.p99_latency_ms) AS p99_latency_ms,
 			CASE
 				WHEN SUM(h.request_count) = 0 THEN 0
 				ELSE (SUM(h.error_count)::double precision * 100.0) / SUM(h.request_count)
@@ -2984,8 +2924,17 @@ func (r *OpsRepository) UpsertDailyMetrics(ctx context.Context, startTime, endTi
 			error_4xx_count = EXCLUDED.error_4xx_count,
 			error_5xx_count = EXCLUDED.error_5xx_count,
 			timeout_count = EXCLUDED.timeout_count,
-			avg_latency_ms = EXCLUDED.avg_latency_ms,
-			p99_latency_ms = EXCLUDED.p99_latency_ms,
+			avg_latency_ms = CASE
+				WHEN ops_metrics_daily.success_count + EXCLUDED.success_count = 0 THEN NULL
+				ELSE (
+					COALESCE(ops_metrics_daily.avg_latency_ms, 0) * ops_metrics_daily.success_count +
+					COALESCE(EXCLUDED.avg_latency_ms, 0) * EXCLUDED.success_count
+				) / (ops_metrics_daily.success_count + EXCLUDED.success_count)
+			END,
+			p99_latency_ms = GREATEST(
+				COALESCE(ops_metrics_daily.p99_latency_ms, 0),
+				COALESCE(EXCLUDED.p99_latency_ms, 0)
+			),
 			error_rate = EXCLUDED.error_rate,
 			computed_at = NOW()
 	`
@@ -3008,7 +2957,6 @@ func (r *OpsRepository) getAlertEvent(ctx context.Context, whereClause string, a
 			fired_at,
 			resolved_at,
 			email_sent,
-			webhook_sent,
 			created_at
 		FROM ops_alert_events
 		%s
@@ -3036,7 +2984,6 @@ func (r *OpsRepository) getAlertEvent(ctx context.Context, whereClause string, a
 		&event.FiredAt,
 		&resolvedAt,
 		&event.EmailSent,
-		&event.WebhookSent,
 		&event.CreatedAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -3063,18 +3010,17 @@ func scanOpsSystemMetric(rows *sql.Rows) (*service.OpsMetrics, error) {
 	var requestCount, successCount, errorCount sql.NullInt64
 	var qps, tps sql.NullFloat64
 	var error4xxCount, error5xxCount, errorTimeoutCount sql.NullInt64
-	var latencyP50, latencyP999, latencyAvg, latencyMax, upstreamLatencyAvg sql.NullFloat64
-	var diskUsed, diskTotal, diskIOPS sql.NullInt64
-	var networkInBytes, networkOutBytes sql.NullInt64
+	var latencyP50, latencyP95, latencyP99, latencyAvg, latencyMax, upstreamLatencyAvg sql.NullFloat64
 	var goroutineCount, dbConnActive, dbConnIdle, dbConnWaiting sql.NullInt64
 	var tokenConsumed sql.NullInt64
 	var tokenRate sql.NullFloat64
 	var activeSubscriptions sql.NullInt64
-	var tags []byte
 	var successRate, errorRate sql.NullFloat64
-	var p95Latency, p99Latency, http2Errors, activeAlerts sql.NullInt64
-	var cpuUsage, memoryUsage, gcPause sql.NullFloat64
-	var memoryUsed, memoryTotal, heapAlloc, queueDepth sql.NullInt64
+	var activeAlerts sql.NullInt64
+	var cpuUsage sql.NullFloat64
+	var memoryUsed, memoryTotal sql.NullInt64
+	var memoryUsage sql.NullFloat64
+	var queueDepth sql.NullInt64
 
 	if err := rows.Scan(
 		&windowMinutes,
@@ -3087,15 +3033,11 @@ func scanOpsSystemMetric(rows *sql.Rows) (*service.OpsMetrics, error) {
 		&error5xxCount,
 		&errorTimeoutCount,
 		&latencyP50,
-		&latencyP999,
+		&latencyP95,
+		&latencyP99,
 		&latencyAvg,
 		&latencyMax,
 		&upstreamLatencyAvg,
-		&diskUsed,
-		&diskTotal,
-		&diskIOPS,
-		&networkInBytes,
-		&networkOutBytes,
 		&goroutineCount,
 		&dbConnActive,
 		&dbConnIdle,
@@ -3103,19 +3045,13 @@ func scanOpsSystemMetric(rows *sql.Rows) (*service.OpsMetrics, error) {
 		&tokenConsumed,
 		&tokenRate,
 		&activeSubscriptions,
-		&tags,
 		&successRate,
 		&errorRate,
-		&p95Latency,
-		&p99Latency,
-		&http2Errors,
 		&activeAlerts,
 		&cpuUsage,
 		&memoryUsed,
 		&memoryTotal,
 		&memoryUsage,
-		&heapAlloc,
-		&gcPause,
 		&queueDepth,
 		&metric.UpdatedAt,
 	); err != nil {
@@ -3152,8 +3088,11 @@ func scanOpsSystemMetric(rows *sql.Rows) (*service.OpsMetrics, error) {
 	if latencyP50.Valid {
 		metric.LatencyP50 = latencyP50.Float64
 	}
-	if latencyP999.Valid {
-		metric.LatencyP999 = latencyP999.Float64
+	if latencyP95.Valid {
+		metric.LatencyP95 = latencyP95.Float64
+	}
+	if latencyP99.Valid {
+		metric.LatencyP99 = latencyP99.Float64
 	}
 	if latencyAvg.Valid {
 		metric.LatencyAvg = latencyAvg.Float64
@@ -3163,21 +3102,6 @@ func scanOpsSystemMetric(rows *sql.Rows) (*service.OpsMetrics, error) {
 	}
 	if upstreamLatencyAvg.Valid {
 		metric.UpstreamLatencyAvg = upstreamLatencyAvg.Float64
-	}
-	if diskUsed.Valid {
-		metric.DiskUsed = diskUsed.Int64
-	}
-	if diskTotal.Valid {
-		metric.DiskTotal = diskTotal.Int64
-	}
-	if diskIOPS.Valid {
-		metric.DiskIOPS = diskIOPS.Int64
-	}
-	if networkInBytes.Valid {
-		metric.NetworkInBytes = networkInBytes.Int64
-	}
-	if networkOutBytes.Valid {
-		metric.NetworkOutBytes = networkOutBytes.Int64
 	}
 	if goroutineCount.Valid {
 		metric.GoroutineCount = int(goroutineCount.Int64)
@@ -3200,23 +3124,11 @@ func scanOpsSystemMetric(rows *sql.Rows) (*service.OpsMetrics, error) {
 	if activeSubscriptions.Valid {
 		metric.ActiveSubscriptions = int(activeSubscriptions.Int64)
 	}
-	if len(tags) > 0 {
-		_ = json.Unmarshal(tags, &metric.Tags)
-	}
 	if successRate.Valid {
 		metric.SuccessRate = successRate.Float64
 	}
 	if errorRate.Valid {
 		metric.ErrorRate = errorRate.Float64
-	}
-	if p95Latency.Valid {
-		metric.P95LatencyMs = int(p95Latency.Int64)
-	}
-	if p99Latency.Valid {
-		metric.P99LatencyMs = int(p99Latency.Int64)
-	}
-	if http2Errors.Valid {
-		metric.HTTP2Errors = int(http2Errors.Int64)
 	}
 	if activeAlerts.Valid {
 		metric.ActiveAlerts = int(activeAlerts.Int64)
@@ -3232,12 +3144,6 @@ func scanOpsSystemMetric(rows *sql.Rows) (*service.OpsMetrics, error) {
 	}
 	if memoryUsage.Valid {
 		metric.MemoryUsagePercent = memoryUsage.Float64
-	}
-	if heapAlloc.Valid {
-		metric.HeapAllocMB = heapAlloc.Int64
-	}
-	if gcPause.Valid {
-		metric.GCPauseMs = gcPause.Float64
 	}
 	if queueDepth.Valid {
 		metric.ConcurrencyQueueDepth = int(queueDepth.Int64)
@@ -3429,149 +3335,6 @@ func formatPostgresInterval(duration time.Duration) (string, error) {
 	return strings.Join(parts, " "), nil
 }
 
-// GetAccountStats 获取账号统计数据
-func (r *OpsRepository) GetAccountStats(ctx context.Context, accountID int64, duration time.Duration) (*service.AccountStats, error) {
-	interval, err := formatPostgresInterval(duration)
-	if err != nil {
-		return nil, err
-	}
-
-	query := `
-		WITH
-		error_stats AS (
-			SELECT
-				COUNT(*) FILTER (WHERE status_code >= 400) AS error_count,
-				COUNT(*) FILTER (WHERE error_type = 'timeout_error') AS timeout_count,
-				COUNT(*) FILTER (WHERE error_type = 'rate_limit_error') AS rate_limit_count
-			FROM ops_error_logs
-			WHERE account_id = $1 AND created_at >= NOW() - $2::interval
-		),
-		usage_stats AS (
-			SELECT
-				COUNT(*) AS success_count
-			FROM usage_logs
-			WHERE account_id = $1 AND created_at >= NOW() - $2::interval
-		)
-		SELECT
-			error_stats.error_count,
-			usage_stats.success_count,
-			error_stats.timeout_count,
-			error_stats.rate_limit_count
-		FROM error_stats
-		CROSS JOIN usage_stats
-	`
-
-	var stats service.AccountStats
-	err = r.sql.QueryRowContext(ctx, query, accountID, interval).Scan(
-		&stats.ErrorCount,
-		&stats.SuccessCount,
-		&stats.TimeoutCount,
-		&stats.RateLimitCount,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return &stats, nil
-}
-
-// GetLastAccountError 获取账号最近一次错误
-func (r *OpsRepository) GetLastAccountError(ctx context.Context, accountID int64) (*service.OpsErrorLog, error) {
-	query := `
-		SELECT id, created_at, error_type, error_message, platform, account_status
-		FROM ops_error_logs
-		WHERE account_id = $1 AND status_code >= 400
-		ORDER BY created_at DESC
-		LIMIT 1
-	`
-
-	var log service.OpsErrorLog
-	err := r.sql.QueryRowContext(ctx, query, accountID).Scan(
-		&log.ID,
-		&log.CreatedAt,
-		&log.Type,
-		&log.Message,
-		&log.Platform,
-		&log.AccountStatus,
-	)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &log, nil
-}
-
-// UpsertAccountStatus 更新或插入账号状态
-func (r *OpsRepository) UpsertAccountStatus(ctx context.Context, status *service.OpsAccountStatus) error {
-	query := `
-		INSERT INTO ops_account_status (
-			account_id, platform, status, last_error_type, last_error_message,
-			last_error_time, error_count_1h, success_count_1h, timeout_count_1h,
-			rate_limit_count_1h, error_count_24h, success_count_24h,
-			timeout_count_24h, rate_limit_count_24h, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-		ON CONFLICT (account_id, platform) DO UPDATE SET
-			status = EXCLUDED.status,
-			last_error_type = EXCLUDED.last_error_type,
-			last_error_message = EXCLUDED.last_error_message,
-			last_error_time = EXCLUDED.last_error_time,
-			error_count_1h = EXCLUDED.error_count_1h,
-			success_count_1h = EXCLUDED.success_count_1h,
-			timeout_count_1h = EXCLUDED.timeout_count_1h,
-			rate_limit_count_1h = EXCLUDED.rate_limit_count_1h,
-			error_count_24h = EXCLUDED.error_count_24h,
-			success_count_24h = EXCLUDED.success_count_24h,
-			timeout_count_24h = EXCLUDED.timeout_count_24h,
-			rate_limit_count_24h = EXCLUDED.rate_limit_count_24h,
-			updated_at = EXCLUDED.updated_at
-	`
-
-	_, err := r.sql.ExecContext(ctx, query,
-		status.AccountID,
-		status.Platform,
-		status.Status,
-		status.LastErrorType,
-		status.LastErrorMessage,
-		status.LastErrorTime,
-		status.ErrorCount1h,
-		status.SuccessCount1h,
-		status.TimeoutCount1h,
-		status.RateLimitCount1h,
-		status.ErrorCount24h,
-		status.SuccessCount24h,
-		status.TimeoutCount24h,
-		status.RateLimitCount24h,
-		status.UpdatedAt,
-	)
-	return err
-}
-
-// GetActiveAccounts 获取所有活跃账号ID
-func (r *OpsRepository) GetActiveAccounts(ctx context.Context) ([]int64, error) {
-	query := `
-		SELECT DISTINCT account_id
-		FROM ops_error_logs
-		WHERE created_at >= NOW() - INTERVAL '24 hours'
-		  AND account_id IS NOT NULL
-	`
-
-	rows, err := r.sql.QueryContext(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var accounts []int64
-	for rows.Next() {
-		var accountID int64
-		if err := rows.Scan(&accountID); err != nil {
-			return nil, err
-		}
-		accounts = append(accounts, accountID)
-	}
-	return accounts, rows.Err()
-}
 
 // GetAllActiveAccountStatus returns recent stats for all "active" accounts (as defined by ops_error_logs activity in last 24h).
 func (r *OpsRepository) GetAllActiveAccountStatus(ctx context.Context) ([]service.AccountStatusSummary, error) {
@@ -3672,11 +3435,23 @@ func (r *OpsRepository) GetErrorStatsByIP(ctx context.Context, startTime, endTim
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	if sortBy != "error_count" && sortBy != "last_error_time" {
-		sortBy = "error_count"
+
+	sortColumns := map[string]string{
+		"error_count":     "error_count",
+		"last_error_time": "last_error_time",
 	}
-	if sortOrder != "asc" && sortOrder != "desc" {
-		sortOrder = "desc"
+	sortDirections := map[string]string{
+		"asc":  "ASC",
+		"desc": "DESC",
+	}
+
+	sortCol, ok := sortColumns[sortBy]
+	if !ok {
+		sortCol = "error_count"
+	}
+	sortDir, ok := sortDirections[sortOrder]
+	if !ok {
+		sortDir = "DESC"
 	}
 
 	// Performance notes (large datasets: million+ ops_error_logs rows):
@@ -3715,7 +3490,7 @@ func (r *OpsRepository) GetErrorStatsByIP(ctx context.Context, startTime, endTim
 		GROUP BY client_ip
 		ORDER BY %s %s
 		LIMIT $3
-	`, sortBy, sortOrder)
+	`, sortCol, sortDir)
 
 	rows, err := r.sql.QueryContext(ctx, query, startTime, endTime, limit)
 	if err != nil {
@@ -3797,24 +3572,564 @@ func (r *OpsRepository) GetErrorsByIP(ctx context.Context, ip string, startTime,
 	return results, total, rows.Err()
 }
 
-// DeleteOldErrorLogs deletes error logs older than retentionDays and returns the count of deleted rows.
+// DeleteOldErrorLogs deletes error logs older than retentionDays in batches to avoid database overload.
+// Returns the total count of deleted rows.
 func (r *OpsRepository) DeleteOldErrorLogs(ctx context.Context, retentionDays int) (int64, error) {
 	cutoffTime := time.Now().AddDate(0, 0, -retentionDays)
-	query := `DELETE FROM ops_error_logs WHERE created_at < $1`
-	result, err := r.sql.ExecContext(ctx, query, cutoffTime)
-	if err != nil {
-		return 0, err
+	totalDeleted := int64(0)
+	batchSize := 10000
+
+	for {
+		// Delete in batches to avoid WAL explosion and table lock issues
+		result, err := r.sql.ExecContext(ctx, `
+			DELETE FROM ops_error_logs
+			WHERE id IN (
+				SELECT id FROM ops_error_logs
+				WHERE created_at < $1
+				ORDER BY created_at ASC
+				LIMIT $2
+			)
+		`, cutoffTime, batchSize)
+
+		if err != nil {
+			return totalDeleted, err
+		}
+
+		rowsAffected, _ := result.RowsAffected()
+		if rowsAffected == 0 {
+			break
+		}
+
+		totalDeleted += rowsAffected
+
+		// Pause between batches to avoid overwhelming the database
+		time.Sleep(100 * time.Millisecond)
 	}
-	return result.RowsAffected()
+
+	return totalDeleted, nil
 }
 
 // DeleteOldMetrics deletes metrics older than retentionDays for the given windowMinutes and returns the count of deleted rows.
 func (r *OpsRepository) DeleteOldMetrics(ctx context.Context, windowMinutes int, retentionDays int) (int64, error) {
 	cutoffTime := time.Now().AddDate(0, 0, -retentionDays)
-	query := `DELETE FROM ops_metrics WHERE window_minutes = $1 AND created_at < $2`
-	result, err := r.sql.ExecContext(ctx, query, windowMinutes, cutoffTime)
-	if err != nil {
+
+	switch windowMinutes {
+	case 60:
+		// Hourly pre-aggregation table.
+		result, err := r.sql.ExecContext(ctx, `DELETE FROM ops_metrics_hourly WHERE bucket_start < $1`, cutoffTime)
+		if err != nil {
+			return 0, err
+		}
+		deletedHourly, err := result.RowsAffected()
+		if err != nil {
+			return 0, err
+		}
+
+		// Backward compatibility: also clean any system metrics recorded at 60-minute window.
+		result, err = r.sql.ExecContext(ctx, `DELETE FROM ops_system_metrics WHERE window_minutes = $1 AND created_at < $2`, windowMinutes, cutoffTime)
+		if err != nil {
+			return 0, err
+		}
+		deletedSystem, err := result.RowsAffected()
+		if err != nil {
+			return 0, err
+		}
+		return deletedHourly + deletedSystem, nil
+	case 1440:
+		// Daily pre-aggregation table.
+		result, err := r.sql.ExecContext(ctx, `DELETE FROM ops_metrics_daily WHERE bucket_date < $1::date`, cutoffTime)
+		if err != nil {
+			return 0, err
+		}
+		deletedDaily, err := result.RowsAffected()
+		if err != nil {
+			return 0, err
+		}
+
+		// Backward compatibility: also clean any system metrics recorded at 1440-minute window.
+		result, err = r.sql.ExecContext(ctx, `DELETE FROM ops_system_metrics WHERE window_minutes = $1 AND created_at < $2`, windowMinutes, cutoffTime)
+		if err != nil {
+			return 0, err
+		}
+		deletedSystem, err := result.RowsAffected()
+		if err != nil {
+			return 0, err
+		}
+		return deletedDaily + deletedSystem, nil
+	default:
+		// Primary system metrics store uses window_minutes.
+		result, err := r.sql.ExecContext(ctx, `DELETE FROM ops_system_metrics WHERE window_minutes = $1 AND created_at < $2`, windowMinutes, cutoffTime)
+		if err != nil {
+			return 0, err
+		}
+		return result.RowsAffected()
+	}
+}
+
+// CountErrorLogs counts error logs matching the given filters.
+func (r *OpsRepository) CountErrorLogs(ctx context.Context, filters service.OpsErrorLogFilters) (int, error) {
+	conditions := make([]string, 0)
+	args := make([]any, 0)
+
+	addCondition := func(condition string, values ...any) {
+		conditions = append(conditions, condition)
+		args = append(args, values...)
+	}
+
+	if filters.StartTime != nil {
+		addCondition(fmt.Sprintf("created_at >= $%d", len(args)+1), *filters.StartTime)
+	}
+	if filters.EndTime != nil {
+		addCondition(fmt.Sprintf("created_at <= $%d", len(args)+1), *filters.EndTime)
+	}
+	if filters.Platform != "" {
+		addCondition(fmt.Sprintf("platform = $%d", len(args)+1), filters.Platform)
+	}
+	if filters.Phase != "" {
+		addCondition(fmt.Sprintf("error_phase = $%d", len(args)+1), filters.Phase)
+	}
+	if filters.Severity != "" {
+		addCondition(fmt.Sprintf("severity = $%d", len(args)+1), filters.Severity)
+	}
+	if filters.Query != "" {
+		like := "%" + strings.ToLower(filters.Query) + "%"
+		startIdx := len(args) + 1
+		addCondition(
+			fmt.Sprintf("(LOWER(request_id) LIKE $%d OR LOWER(model) LIKE $%d OR LOWER(error_message) LIKE $%d OR LOWER(error_type) LIKE $%d)",
+				startIdx, startIdx+1, startIdx+2, startIdx+3,
+			),
+			like, like, like, like,
+		)
+	}
+
+	where := ""
+	if len(conditions) > 0 {
+		where = "WHERE " + strings.Join(conditions, " AND ")
+	}
+
+	query := fmt.Sprintf(`SELECT COUNT(*) FROM ops_error_logs %s`, where)
+	var total int64
+	if err := r.sql.QueryRowContext(ctx, query, args...).Scan(&total); err != nil {
 		return 0, err
 	}
-	return result.RowsAffected()
+
+	maxInt := int64(^uint(0) >> 1)
+	if total > maxInt {
+		return int(maxInt), nil
+	}
+	if total < 0 {
+		return 0, nil
+	}
+	return int(total), nil
+}
+
+// GetTokenTPS retrieves token TPS metrics (current, peak, avg) for the given time range.
+func (r *OpsRepository) GetTokenTPS(ctx context.Context, startTime, endTime time.Time) (current, peak, avg float64, err error) {
+	// Current TPS: 从预聚合表读取最新 1 分钟的 token_rate
+	var currentTPS sql.NullFloat64
+	{
+		row := r.sql.QueryRowContext(ctx, `
+			SELECT token_rate
+			FROM ops_system_metrics
+			WHERE window_minutes = 1
+			ORDER BY created_at DESC
+			LIMIT 1
+		`)
+		scanErr := row.Scan(&currentTPS)
+		if scanErr != nil && scanErr != sql.ErrNoRows {
+			return 0, 0, 0, scanErr
+		}
+	}
+
+	// Peak 和 Avg: 从指定时间范围内的预聚合数据计算
+	var peakTPS, avgTPS sql.NullFloat64
+	{
+		row := r.sql.QueryRowContext(ctx, `
+			SELECT
+				MAX(token_rate) as peak_tps,
+				AVG(token_rate) as avg_tps
+			FROM ops_system_metrics
+			WHERE window_minutes = 1
+			  AND created_at >= $1
+			  AND created_at < $2
+		`, startTime, endTime)
+		scanErr := row.Scan(&peakTPS, &avgTPS)
+		if scanErr != nil && scanErr != sql.ErrNoRows {
+			return 0, 0, 0, scanErr
+		}
+	}
+
+	current = 0
+	if currentTPS.Valid {
+		current = currentTPS.Float64
+	}
+
+	peak = 0
+	if peakTPS.Valid {
+		peak = peakTPS.Float64
+	}
+
+	avg = 0
+	if avgTPS.Valid {
+		avg = avgTPS.Float64
+	}
+
+	return current, peak, avg, nil
+}
+
+// ListGroupAvailabilityConfigs 获取所有分组可用性监控配置
+func (r *OpsRepository) ListGroupAvailabilityConfigs(ctx context.Context, enabledOnly bool) ([]service.OpsGroupAvailabilityConfig, error) {
+	query := `
+		SELECT
+			id, group_id, enabled, min_available_accounts,
+			notify_email,
+			severity, cooldown_minutes,
+			created_at, updated_at
+		FROM ops_group_availability_configs`
+	if enabledOnly {
+		query += " WHERE enabled = true"
+	}
+	query += " ORDER BY id ASC"
+
+	rows, err := r.sql.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	configs := make([]service.OpsGroupAvailabilityConfig, 0)
+	for rows.Next() {
+		var config service.OpsGroupAvailabilityConfig
+		if err := rows.Scan(
+			&config.ID, &config.GroupID, &config.Enabled, &config.MinAvailableAccounts,
+			&config.NotifyEmail,
+			&config.Severity, &config.CooldownMinutes,
+			&config.CreatedAt, &config.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		configs = append(configs, config)
+	}
+	return configs, rows.Err()
+}
+
+// GetGroupAvailabilityConfig 获取指定分组的监控配置
+func (r *OpsRepository) GetGroupAvailabilityConfig(ctx context.Context, groupID int64) (*service.OpsGroupAvailabilityConfig, error) {
+	query := `
+		SELECT
+			id, group_id, enabled, min_available_accounts,
+			notify_email,
+			severity, cooldown_minutes,
+			created_at, updated_at
+		FROM ops_group_availability_configs
+		WHERE group_id = $1`
+
+	var config service.OpsGroupAvailabilityConfig
+	err := r.sql.QueryRowContext(ctx, query, groupID).Scan(
+		&config.ID, &config.GroupID, &config.Enabled, &config.MinAvailableAccounts,
+		&config.NotifyEmail,
+		&config.Severity, &config.CooldownMinutes,
+		&config.CreatedAt, &config.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &config, nil
+}
+
+// CreateGroupAvailabilityConfig 创建分组监控配置
+func (r *OpsRepository) CreateGroupAvailabilityConfig(ctx context.Context, config *service.OpsGroupAvailabilityConfig) error {
+	if config == nil {
+		return errors.New("config cannot be nil")
+	}
+	now := time.Now()
+	config.CreatedAt = now
+	config.UpdatedAt = now
+
+	query := `
+		INSERT INTO ops_group_availability_configs (
+			group_id, enabled, min_available_accounts,
+			notify_email,
+			severity, cooldown_minutes,
+			created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id`
+	return r.sql.QueryRowContext(ctx, query,
+		config.GroupID, config.Enabled, config.MinAvailableAccounts,
+		config.NotifyEmail,
+		config.Severity, config.CooldownMinutes,
+		config.CreatedAt, config.UpdatedAt,
+	).Scan(&config.ID)
+}
+
+// UpdateGroupAvailabilityConfig 更新分组监控配置
+func (r *OpsRepository) UpdateGroupAvailabilityConfig(ctx context.Context, config *service.OpsGroupAvailabilityConfig) error {
+	if config == nil || config.ID == 0 {
+		return errors.New("invalid config")
+	}
+	config.UpdatedAt = time.Now()
+
+	query := `
+		UPDATE ops_group_availability_configs SET
+			enabled = $1, min_available_accounts = $2,
+			notify_email = $3,
+			severity = $4, cooldown_minutes = $5, updated_at = $6
+		WHERE id = $7`
+	_, err := r.sql.ExecContext(ctx, query,
+		config.Enabled, config.MinAvailableAccounts,
+		config.NotifyEmail,
+		config.Severity, config.CooldownMinutes, config.UpdatedAt,
+		config.ID,
+	)
+	return err
+}
+
+// DeleteGroupAvailabilityConfig 删除分组监控配置
+func (r *OpsRepository) DeleteGroupAvailabilityConfig(ctx context.Context, groupID int64) error {
+	_, err := r.sql.ExecContext(ctx, `DELETE FROM ops_group_availability_configs WHERE group_id = $1`, groupID)
+	return err
+}
+
+// GetActiveGroupAvailabilityEvent 获取指定配置的活跃告警事件
+func (r *OpsRepository) GetActiveGroupAvailabilityEvent(ctx context.Context, configID int64) (*service.OpsGroupAvailabilityEvent, error) {
+	query := `
+		SELECT
+			id, config_id, group_id, status, severity,
+			title, description,
+			available_accounts, threshold_accounts, total_accounts,
+			email_sent,
+			fired_at, resolved_at, created_at
+		FROM ops_group_availability_events
+		WHERE config_id = $1 AND status = $2
+		ORDER BY fired_at DESC
+		LIMIT 1`
+
+	var event service.OpsGroupAvailabilityEvent
+	var resolvedAt sql.NullTime
+	err := r.sql.QueryRowContext(ctx, query, configID, service.OpsAlertStatusFiring).Scan(
+		&event.ID, &event.ConfigID, &event.GroupID, &event.Status, &event.Severity,
+		&event.Title, &event.Description,
+		&event.AvailableAccounts, &event.ThresholdAccounts, &event.TotalAccounts,
+		&event.EmailSent,
+		&event.FiredAt, &resolvedAt, &event.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if resolvedAt.Valid {
+		event.ResolvedAt = &resolvedAt.Time
+	}
+	return &event, nil
+}
+
+// GetLatestGroupAvailabilityEvent 获取指定配置的最新告警事件
+func (r *OpsRepository) GetLatestGroupAvailabilityEvent(ctx context.Context, configID int64) (*service.OpsGroupAvailabilityEvent, error) {
+	query := `
+		SELECT
+			id, config_id, group_id, status, severity,
+			title, description,
+			available_accounts, threshold_accounts, total_accounts,
+			email_sent,
+			fired_at, resolved_at, created_at
+		FROM ops_group_availability_events
+		WHERE config_id = $1
+		ORDER BY fired_at DESC
+		LIMIT 1`
+
+	var event service.OpsGroupAvailabilityEvent
+	var resolvedAt sql.NullTime
+	err := r.sql.QueryRowContext(ctx, query, configID).Scan(
+		&event.ID, &event.ConfigID, &event.GroupID, &event.Status, &event.Severity,
+		&event.Title, &event.Description,
+		&event.AvailableAccounts, &event.ThresholdAccounts, &event.TotalAccounts,
+		&event.EmailSent,
+		&event.FiredAt, &resolvedAt, &event.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if resolvedAt.Valid {
+		event.ResolvedAt = &resolvedAt.Time
+	}
+	return &event, nil
+}
+
+// CreateGroupAvailabilityEvent 创建分组可用性告警事件
+func (r *OpsRepository) CreateGroupAvailabilityEvent(ctx context.Context, event *service.OpsGroupAvailabilityEvent) error {
+	if event == nil {
+		return nil
+	}
+	if event.FiredAt.IsZero() {
+		event.FiredAt = time.Now()
+	}
+	if event.CreatedAt.IsZero() {
+		event.CreatedAt = event.FiredAt
+	}
+	if event.Status == "" {
+		event.Status = service.OpsAlertStatusFiring
+	}
+
+	query := `
+		INSERT INTO ops_group_availability_events (
+			config_id, group_id, status, severity,
+			title, description,
+			available_accounts, threshold_accounts, total_accounts,
+			email_sent,
+			fired_at, resolved_at, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		RETURNING id, created_at`
+
+	var resolvedAt sql.NullTime
+	if event.ResolvedAt != nil {
+		resolvedAt = sql.NullTime{Time: *event.ResolvedAt, Valid: true}
+	}
+
+	return scanSingleRow(
+		ctx, r.sql, query,
+		[]any{
+			event.ConfigID, event.GroupID, event.Status, event.Severity,
+			event.Title, event.Description,
+			event.AvailableAccounts, event.ThresholdAccounts, event.TotalAccounts,
+			event.EmailSent,
+			event.FiredAt, resolvedAt, event.CreatedAt,
+		},
+		&event.ID, &event.CreatedAt,
+	)
+}
+
+// UpdateGroupAvailabilityEventStatus 更新告警事件状态
+func (r *OpsRepository) UpdateGroupAvailabilityEventStatus(ctx context.Context, eventID int64, status string, resolvedAt *time.Time) error {
+	var resolved sql.NullTime
+	if resolvedAt != nil {
+		resolved = sql.NullTime{Time: *resolvedAt, Valid: true}
+	}
+	_, err := r.sql.ExecContext(ctx, `
+		UPDATE ops_group_availability_events
+		SET status = $2, resolved_at = $3
+		WHERE id = $1
+	`, eventID, status, resolved)
+	return err
+}
+
+// UpdateGroupAvailabilityEventNotifications 更新告警事件通知状态
+func (r *OpsRepository) UpdateGroupAvailabilityEventNotifications(ctx context.Context, eventID int64, emailSent bool) error {
+	_, err := r.sql.ExecContext(ctx, `
+		UPDATE ops_group_availability_events
+		SET email_sent = $2
+		WHERE id = $1
+	`, eventID, emailSent)
+	return err
+}
+
+// ListGroupAvailabilityEvents 获取分组可用性告警事件列表
+func (r *OpsRepository) ListGroupAvailabilityEvents(ctx context.Context, limit int, status string) ([]service.OpsGroupAvailabilityEvent, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	query := `
+		SELECT
+			id, config_id, group_id, status, severity,
+			title, description,
+			available_accounts, threshold_accounts, total_accounts,
+			email_sent,
+			fired_at, resolved_at, created_at
+		FROM ops_group_availability_events`
+
+	args := make([]any, 0)
+	if status != "" {
+		query += " WHERE status = $1"
+		args = append(args, status)
+		query += " ORDER BY fired_at DESC LIMIT $2"
+		args = append(args, limit)
+	} else {
+		query += " ORDER BY fired_at DESC LIMIT $1"
+		args = append(args, limit)
+	}
+
+	rows, err := r.sql.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	events := make([]service.OpsGroupAvailabilityEvent, 0)
+	for rows.Next() {
+		var event service.OpsGroupAvailabilityEvent
+		var resolvedAt sql.NullTime
+		if err := rows.Scan(
+			&event.ID, &event.ConfigID, &event.GroupID, &event.Status, &event.Severity,
+			&event.Title, &event.Description,
+			&event.AvailableAccounts, &event.ThresholdAccounts, &event.TotalAccounts,
+			&event.EmailSent,
+			&event.FiredAt, &resolvedAt, &event.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if resolvedAt.Valid {
+			event.ResolvedAt = &resolvedAt.Time
+		}
+		events = append(events, event)
+	}
+	return events, rows.Err()
+}
+
+// CountAvailableAccountsByGroup 统计分组的可用账号数
+func (r *OpsRepository) CountAvailableAccountsByGroup(ctx context.Context, groupID int64) (available, total int, err error) {
+	query := `
+		SELECT
+			a.id,
+			a.status,
+			a.disabled,
+			a.error_count,
+			a.last_error_at,
+			a.overload_until
+		FROM accounts a
+		INNER JOIN account_groups ag ON a.id = ag.account_id
+		WHERE ag.group_id = $1 AND a.deleted_at IS NULL`
+
+	rows, err := r.sql.QueryContext(ctx, query, groupID)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	now := time.Now()
+	total = 0
+	available = 0
+
+	for rows.Next() {
+		var accountID int64
+		var status string
+		var disabled bool
+		var errorCount int
+		var lastErrorAt sql.NullTime
+		var overloadUntil sql.NullTime
+
+		if err := rows.Scan(&accountID, &status, &disabled, &errorCount, &lastErrorAt, &overloadUntil); err != nil {
+			return 0, 0, err
+		}
+
+		total++
+
+		// 判断账号是否可调度
+		if !disabled && status == "active" {
+			// 检查是否在过载期
+			if overloadUntil.Valid && now.Before(overloadUntil.Time) {
+				continue
+			}
+			available++
+		}
+	}
+
+	return available, total, rows.Err()
 }

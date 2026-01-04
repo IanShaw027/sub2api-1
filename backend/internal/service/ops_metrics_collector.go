@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -24,6 +23,7 @@ const (
 
 	opsMetricsWindowShortMinutes = 1
 	opsMetricsWindowLongMinutes  = 5
+	opsMetricsWindowHourlyMinutes = 60
 
 	opsMetricsCollectorCacheKeyPrefix = "ops:metrics:collector:window:"
 
@@ -130,7 +130,7 @@ func (c *OpsMetricsCollector) collectOnce() {
 	queueDepth := c.collectQueueDepth(ctx)
 	activeAlerts := c.collectActiveAlerts(ctx)
 
-	for _, window := range []int{opsMetricsWindowShortMinutes, opsMetricsWindowLongMinutes} {
+	for _, window := range []int{opsMetricsWindowShortMinutes, opsMetricsWindowLongMinutes, opsMetricsWindowHourlyMinutes} {
 		startTime := windowEnd.Add(-time.Duration(window) * time.Minute)
 		windowStats, err := c.getWindowStatsCached(ctx, window, startTime, windowEnd)
 		if err != nil {
@@ -140,23 +140,25 @@ func (c *OpsMetricsCollector) collectOnce() {
 
 		successRate, errorRate := computeRates(windowStats.SuccessCount, windowStats.ErrorCount)
 		requestCount := windowStats.SuccessCount + windowStats.ErrorCount
+		windowSeconds := float64(window * 60)
 		metric := &OpsMetrics{
 			WindowMinutes:         window,
 			RequestCount:          requestCount,
+			QPS:                   float64(requestCount) / windowSeconds,
 			SuccessCount:          windowStats.SuccessCount,
 			ErrorCount:            windowStats.ErrorCount,
 			SuccessRate:           successRate,
 			ErrorRate:             errorRate,
-			P95LatencyMs:          windowStats.P95LatencyMs,
-			P99LatencyMs:          windowStats.P99LatencyMs,
-			HTTP2Errors:           windowStats.HTTP2Errors,
+			TokenConsumed:         windowStats.TokenConsumed,
+			TPS:                   float64(windowStats.TokenConsumed) / windowSeconds,
+			TokenRate:             float64(windowStats.TokenConsumed) / windowSeconds,
+			LatencyP95:            float64(windowStats.P95LatencyMs),
+			LatencyP99:            float64(windowStats.P99LatencyMs),
 			ActiveAlerts:          activeAlerts,
 			CPUUsagePercent:       systemStats.cpuUsage,
 			MemoryUsedMB:          systemStats.memoryUsedMB,
 			MemoryTotalMB:         systemStats.memoryTotalMB,
 			MemoryUsagePercent:    systemStats.memoryUsagePercent,
-			HeapAllocMB:           systemStats.heapAllocMB,
-			GCPauseMs:             systemStats.gcPauseMs,
 			ConcurrencyQueueDepth: queueDepth,
 			UpdatedAt:             now,
 		}
@@ -259,8 +261,6 @@ type opsSystemStats struct {
 	memoryUsedMB       int64
 	memoryTotalMB      int64
 	memoryUsagePercent float64
-	heapAllocMB        int64
-	gcPauseMs          float64
 }
 
 func (c *OpsMetricsCollector) collectSystemStats(ctx context.Context) opsSystemStats {
@@ -275,16 +275,6 @@ func (c *OpsMetricsCollector) collectSystemStats(ctx context.Context) opsSystemS
 		stats.memoryTotalMB = int64(vm.Total / bytesPerMB)
 		stats.memoryUsagePercent = vm.UsedPercent
 	}
-
-	var memStats runtime.MemStats
-	runtime.ReadMemStats(&memStats)
-	stats.heapAllocMB = int64(memStats.HeapAlloc / bytesPerMB)
-	c.lastGCPauseMu.Lock()
-	if c.lastGCPauseTotal != 0 && memStats.PauseTotalNs >= c.lastGCPauseTotal {
-		stats.gcPauseMs = float64(memStats.PauseTotalNs-c.lastGCPauseTotal) / float64(time.Millisecond)
-	}
-	c.lastGCPauseTotal = memStats.PauseTotalNs
-	c.lastGCPauseMu.Unlock()
 
 	return stats
 }

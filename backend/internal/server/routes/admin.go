@@ -86,6 +86,7 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		// Error logs endpoints
 		ops.GET("/errors", h.Admin.Ops.GetErrorLogs)          // Paginated list (page/page_size)
 		ops.GET("/errors/:id", h.Admin.Ops.GetErrorDetail)    // Single error detail
+		ops.POST("/errors/:id/retry", h.Admin.Ops.RetryErrorRequest) // Retry error request
 		ops.GET("/error-logs", h.Admin.Ops.ListErrorLogs)     // Simple list (limit filter)
 
 		// IP-based error statistics
@@ -117,6 +118,20 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		ws := ops.Group("/ws")
 		{
 			ws.GET("/qps", h.Admin.Ops.QPSWSHandler)
+		}
+
+		// Group availability monitoring routes
+		groupAvailability := ops.Group("/group-availability")
+		{
+			groupAvailability.GET("/configs", h.Admin.OpsGroupAvailability.ListConfigs)
+			groupAvailability.GET("/configs/:groupId", h.Admin.OpsGroupAvailability.GetConfig)
+			groupAvailability.PUT("/configs/:groupId", h.Admin.OpsGroupAvailability.UpsertConfig)
+			groupAvailability.DELETE("/configs/:groupId", h.Admin.OpsGroupAvailability.DeleteConfig)
+
+			groupAvailability.GET("/status", h.Admin.OpsGroupAvailability.ListStatus)
+			groupAvailability.GET("/status/:groupId", h.Admin.OpsGroupAvailability.GetStatus)
+
+			groupAvailability.GET("/events", h.Admin.OpsGroupAvailability.ListEvents)
 		}
 	}
 }

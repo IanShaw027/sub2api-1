@@ -53,9 +53,36 @@ func (r *OpsRepository) ListErrorLogs(ctx context.Context, filter *service.Error
 		if filter.ErrorCode != nil {
 			addCondition(fmt.Sprintf("status_code = $%d", len(args)+1), *filter.ErrorCode)
 		}
-		if provider := strings.TrimSpace(filter.Provider); provider != "" {
+
+		// 支持单值 Provider（向后兼容）和多值 Platforms
+		if len(filter.Platforms) > 0 {
+			// 多值平台过滤：使用 IN 子句
+			placeholders := make([]string, len(filter.Platforms))
+			for i, p := range filter.Platforms {
+				placeholders[i] = fmt.Sprintf("$%d", len(args)+i+1)
+				args = append(args, p)
+			}
+			conditions = append(conditions, fmt.Sprintf("platform = ANY(ARRAY[%s])", strings.Join(placeholders, ", ")))
+		} else if provider := strings.TrimSpace(filter.Provider); provider != "" {
+			// 单值平台过滤（向后兼容）
 			addCondition(fmt.Sprintf("platform = $%d", len(args)+1), provider)
 		}
+
+		// 支持多值状态码过滤
+		if len(filter.StatusCodes) > 0 {
+			placeholders := make([]string, len(filter.StatusCodes))
+			for i, code := range filter.StatusCodes {
+				placeholders[i] = fmt.Sprintf("$%d", len(args)+i+1)
+				args = append(args, code)
+			}
+			conditions = append(conditions, fmt.Sprintf("status_code = ANY(ARRAY[%s])", strings.Join(placeholders, ", ")))
+		}
+
+		// 支持客户端 IP 过滤
+		if clientIP := strings.TrimSpace(filter.ClientIP); clientIP != "" {
+			addCondition(fmt.Sprintf("client_ip = $%d", len(args)+1), clientIP)
+		}
+
 		if filter.AccountID != nil {
 			addCondition(fmt.Sprintf("account_id = $%d", len(args)+1), *filter.AccountID)
 		}

@@ -1,19 +1,14 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
-	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -266,9 +261,9 @@ func (s *OpsAlertService) Evaluate(ctx context.Context, now time.Time) {
 				continue
 			}
 
-			emailSent, webhookSent := s.dispatchNotifications(ctx, rule, event)
-			if emailSent || webhookSent {
-				if err := s.opsService.UpdateAlertEventNotifications(ctx, event.ID, emailSent, webhookSent); err != nil {
+			emailSent := s.dispatchNotifications(ctx, rule, event)
+			if emailSent {
+				if err := s.opsService.UpdateAlertEventNotifications(ctx, event.ID, emailSent); err != nil {
 					log.Printf("[OpsAlert] failed to update notification flags (event=%d): %v", event.ID, err)
 				}
 			}
@@ -551,11 +546,11 @@ func metricValue(metric OpsMetrics, metricType string) (float64, bool) {
 		}
 		return metric.ErrorRate, true
 	case OpsMetricP95LatencyMs:
-		return float64(metric.P95LatencyMs), true
+		return metric.LatencyP95, true
 	case OpsMetricP99LatencyMs:
-		return float64(metric.P99LatencyMs), true
+		return metric.LatencyP99, true
 	case OpsMetricHTTP2Errors:
-		return float64(metric.HTTP2Errors), true
+		return 0, false // HTTP2Errors 已删除
 	case OpsMetricCPUUsagePercent:
 		return metric.CPUUsagePercent, true
 	case OpsMetricMemoryUsagePercent:
@@ -601,9 +596,8 @@ func buildAlertDescription(rule OpsAlertRule, value float64) string {
 	)
 }
 
-func (s *OpsAlertService) dispatchNotifications(ctx context.Context, rule OpsAlertRule, event *OpsAlertEvent) (bool, bool) {
+func (s *OpsAlertService) dispatchNotifications(ctx context.Context, rule OpsAlertRule, event *OpsAlertEvent) bool {
 	emailSent := false
-	webhookSent := false
 
 	notifyCtx, cancel := s.notificationContext(ctx)
 	defer cancel()
@@ -611,17 +605,8 @@ func (s *OpsAlertService) dispatchNotifications(ctx context.Context, rule OpsAle
 	if rule.NotifyEmail {
 		emailSent = s.sendEmailNotification(notifyCtx, rule, event)
 	}
-	if rule.NotifyWebhook && rule.WebhookURL != "" {
-		webhookSent = s.sendWebhookNotification(notifyCtx, rule, event)
-	}
-	// Fallback channel: if email is enabled but ultimately fails, try webhook even if the
-	// webhook toggle is off (as long as a webhook URL is configured).
-	if rule.NotifyEmail && !emailSent && !rule.NotifyWebhook && rule.WebhookURL != "" {
-		log.Printf("[OpsAlert] email failed; attempting webhook fallback (rule=%d)", rule.ID)
-		webhookSent = s.sendWebhookNotification(notifyCtx, rule, event)
-	}
 
-	return emailSent, webhookSent
+	return emailSent
 }
 
 const (
@@ -731,30 +716,41 @@ func (s *OpsAlertService) sendEmailNotification(ctx context.Context, rule OpsAle
 		return false
 	}
 
-	subject := fmt.Sprintf("[Ops Alert][%s] %s", rule.Severity, rule.Name)
-	body := fmt.Sprintf(
-		"Alert triggered: %s\n\nMetric: %s\nThreshold: %.2f\nCurrent: %.2f\nWindow: %dm\nStatus: %s\nTime: %s",
-		rule.Name,
-		rule.MetricType,
-		rule.Threshold,
-		event.MetricValue,
-		rule.WindowMinutes,
-		event.Status,
-		event.FiredAt.Format(time.RFC3339),
-	)
-
 	config, err := s.emailService.GetSMTPConfig(ctx)
 	if err != nil {
 		log.Printf("[OpsAlert] email config load failed: %v", err)
 		return false
 	}
 
+	templateData := EmailTemplateData{
+		Type:      "alert",
+		Title:     rule.Name,
+		Message:   fmt.Sprintf("告警规则 %s 已触发", rule.Name),
+		LogoURL:   "https://your-site.com/logo.png",
+		SiteName:  "Sub2API",
+		SiteURL:   "https://your-site.com",
+		Year:      time.Now().Year(),
+		ActionURL: fmt.Sprintf("https://your-site.com/admin/ops/alerts/%d", rule.ID),
+		Alert: &AlertData{
+			Status:    event.Status,
+			Level:     rule.Severity,
+			Metric:    rule.MetricType,
+			Value:     fmt.Sprintf("%.2f", event.MetricValue),
+			Threshold: fmt.Sprintf("%.2f", rule.Threshold),
+			Duration:  fmt.Sprintf("%d 分钟", rule.WindowMinutes),
+			Time:      event.FiredAt.Format("2006-01-02 15:04:05"),
+			Labels:    map[string]string{},
+		},
+	}
+
+	subject := fmt.Sprintf("[Ops Alert][%s] %s", rule.Severity, rule.Name)
+
 	if err := retryWithBackoff(
 		ctx,
 		opsAlertEmailMaxRetries,
 		opsAlertEmailBackoff,
 		func() error {
-			return s.emailService.SendEmailWithConfig(config, admin.Email, subject, body)
+			return s.emailService.SendTemplatedEmail(config, admin.Email, subject, templateData)
 		},
 		func(attempt int, total int, nextDelay time.Duration, err error) {
 			if attempt < total {
@@ -770,310 +766,4 @@ func (s *OpsAlertService) sendEmailNotification(ctx context.Context, rule OpsAle
 		return false
 	}
 	return true
-}
-
-func (s *OpsAlertService) sendWebhookNotification(ctx context.Context, rule OpsAlertRule, event *OpsAlertEvent) bool {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	webhookTarget, err := validateWebhookURL(ctx, rule.WebhookURL)
-	if err != nil {
-		log.Printf("[OpsAlert] invalid webhook url (rule=%d): %v", rule.ID, err)
-		return false
-	}
-
-	payload := map[string]any{
-		"rule_id":         rule.ID,
-		"rule_name":       rule.Name,
-		"severity":        rule.Severity,
-		"status":          event.Status,
-		"metric_type":     rule.MetricType,
-		"metric_value":    event.MetricValue,
-		"threshold_value": rule.Threshold,
-		"window_minutes":  rule.WindowMinutes,
-		"fired_at":        event.FiredAt.Format(time.RFC3339),
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return false
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookTarget.URL.String(), bytes.NewReader(body))
-	if err != nil {
-		return false
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := buildWebhookHTTPClient(s.httpClient, webhookTarget).Do(req)
-	if err != nil {
-		log.Printf("[OpsAlert] webhook send failed: %v", err)
-		return false
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		log.Printf("[OpsAlert] webhook returned status %d", resp.StatusCode)
-		return false
-	}
-	return true
-}
-
-const webhookHTTPClientTimeout = 10 * time.Second
-
-func buildWebhookHTTPClient(base *http.Client, webhookTarget *validatedWebhookTarget) *http.Client {
-	var client http.Client
-	if base != nil {
-		client = *base
-	}
-	if client.Timeout <= 0 {
-		client.Timeout = webhookHTTPClientTimeout
-	}
-	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse
-	}
-	if webhookTarget != nil {
-		client.Transport = buildWebhookTransport(client.Transport, webhookTarget)
-	}
-	return &client
-}
-
-var disallowedWebhookIPNets = []net.IPNet{
-	// "this host on this network" / unspecified.
-	mustParseCIDR("0.0.0.0/8"),
-	mustParseCIDR("127.0.0.0/8"),    // loopback (includes 127.0.0.1)
-	mustParseCIDR("10.0.0.0/8"),     // RFC1918
-	mustParseCIDR("192.168.0.0/16"), // RFC1918
-	mustParseCIDR("172.16.0.0/12"),  // RFC1918 (172.16.0.0 - 172.31.255.255)
-	mustParseCIDR("100.64.0.0/10"),  // RFC6598 (carrier-grade NAT)
-	mustParseCIDR("169.254.0.0/16"), // IPv4 link-local (includes 169.254.169.254 metadata IP on many clouds)
-	mustParseCIDR("198.18.0.0/15"),  // RFC2544 benchmark testing
-	mustParseCIDR("224.0.0.0/4"),    // IPv4 multicast
-	mustParseCIDR("240.0.0.0/4"),    // IPv4 reserved
-	mustParseCIDR("::/128"),         // IPv6 unspecified
-	mustParseCIDR("::1/128"),        // IPv6 loopback
-	mustParseCIDR("fc00::/7"),       // IPv6 unique local
-	mustParseCIDR("fe80::/10"),      // IPv6 link-local
-	mustParseCIDR("ff00::/8"),       // IPv6 multicast
-}
-
-func mustParseCIDR(cidr string) net.IPNet {
-	_, block, err := net.ParseCIDR(cidr)
-	if err != nil {
-		panic(err)
-	}
-	return *block
-}
-
-var lookupIPAddrs = func(ctx context.Context, host string) ([]net.IPAddr, error) {
-	return net.DefaultResolver.LookupIPAddr(ctx, host)
-}
-
-type validatedWebhookTarget struct {
-	URL *url.URL
-
-	host      string
-	port      string
-	pinnedIPs []net.IP
-}
-
-var webhookBaseDialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-	dialer := net.Dialer{
-		Timeout:   5 * time.Second,
-		KeepAlive: 30 * time.Second,
-	}
-	return dialer.DialContext(ctx, network, addr)
-}
-
-func buildWebhookTransport(base http.RoundTripper, webhookTarget *validatedWebhookTarget) http.RoundTripper {
-	if webhookTarget == nil || webhookTarget.URL == nil {
-		return base
-	}
-
-	var transport *http.Transport
-	switch typed := base.(type) {
-	case *http.Transport:
-		if typed != nil {
-			transport = typed.Clone()
-		}
-	}
-	if transport == nil {
-		if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok && defaultTransport != nil {
-			transport = defaultTransport.Clone()
-		} else {
-			transport = (&http.Transport{}).Clone()
-		}
-	}
-
-	webhookHost := webhookTarget.host
-	webhookPort := webhookTarget.port
-	pinnedIPs := append([]net.IP(nil), webhookTarget.pinnedIPs...)
-
-	transport.Proxy = nil
-	transport.DialTLSContext = nil
-	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-		host, port, err := net.SplitHostPort(addr)
-		if err != nil || host == "" || port == "" {
-			return nil, fmt.Errorf("webhook dial target is invalid: %q", addr)
-		}
-
-		canonicalHost := strings.TrimSuffix(strings.ToLower(host), ".")
-		if canonicalHost != webhookHost || port != webhookPort {
-			return nil, fmt.Errorf("webhook dial target mismatch: %q", addr)
-		}
-
-		var lastErr error
-		for _, ip := range pinnedIPs {
-			if isDisallowedWebhookIP(ip) {
-				lastErr = fmt.Errorf("webhook target resolves to a disallowed ip")
-				continue
-			}
-
-			dialAddr := net.JoinHostPort(ip.String(), port)
-			conn, err := webhookBaseDialContext(ctx, network, dialAddr)
-			if err == nil {
-				return conn, nil
-			}
-			lastErr = err
-		}
-		if lastErr == nil {
-			lastErr = errors.New("webhook target has no resolved addresses")
-		}
-		return nil, lastErr
-	}
-
-	return transport
-}
-
-func validateWebhookURL(ctx context.Context, raw string) (*validatedWebhookTarget, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil, errors.New("webhook url is empty")
-	}
-	// Avoid request smuggling / header injection vectors.
-	if strings.ContainsAny(raw, "\r\n") {
-		return nil, errors.New("webhook url contains invalid characters")
-	}
-
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return nil, errors.New("webhook url format is invalid")
-	}
-	if !strings.EqualFold(parsed.Scheme, "https") {
-		return nil, errors.New("webhook url scheme must be https")
-	}
-	parsed.Scheme = "https"
-	if parsed.Host == "" || parsed.Hostname() == "" {
-		return nil, errors.New("webhook url must include host")
-	}
-	if parsed.User != nil {
-		return nil, errors.New("webhook url must not include userinfo")
-	}
-	if parsed.Port() != "" {
-		port, err := strconv.Atoi(parsed.Port())
-		if err != nil || port < 1 || port > 65535 {
-			return nil, errors.New("webhook url port is invalid")
-		}
-	}
-
-	host := strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
-	if host == "localhost" {
-		return nil, errors.New("webhook url host must not be localhost")
-	}
-
-	if ip := net.ParseIP(host); ip != nil {
-		if isDisallowedWebhookIP(ip) {
-			return nil, errors.New("webhook url host resolves to a disallowed ip")
-		}
-		return &validatedWebhookTarget{
-			URL:       parsed,
-			host:      host,
-			port:      portForScheme(parsed),
-			pinnedIPs: []net.IP{ip},
-		}, nil
-	}
-
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	ips, err := lookupIPAddrs(ctx, host)
-	if err != nil || len(ips) == 0 {
-		return nil, errors.New("webhook url host cannot be resolved")
-	}
-	pinned := make([]net.IP, 0, len(ips))
-	for _, addr := range ips {
-		if isDisallowedWebhookIP(addr.IP) {
-			return nil, errors.New("webhook url host resolves to a disallowed ip")
-		}
-		if addr.IP != nil {
-			pinned = append(pinned, addr.IP)
-		}
-	}
-
-	if len(pinned) == 0 {
-		return nil, errors.New("webhook url host cannot be resolved")
-	}
-
-	return &validatedWebhookTarget{
-		URL:       parsed,
-		host:      host,
-		port:      portForScheme(parsed),
-		pinnedIPs: uniqueResolvedIPs(pinned),
-	}, nil
-}
-
-func isDisallowedWebhookIP(ip net.IP) bool {
-	if ip == nil {
-		return false
-	}
-	if ip4 := ip.To4(); ip4 != nil {
-		ip = ip4
-	} else if ip16 := ip.To16(); ip16 != nil {
-		ip = ip16
-	} else {
-		return false
-	}
-
-	// Disallow non-public addresses even if they're not explicitly covered by the CIDR list.
-	// This provides defense-in-depth against SSRF targets such as link-local, multicast, and
-	// unspecified addresses, and ensures any "pinned" IP is still blocked at dial time.
-	if ip.IsUnspecified() ||
-		ip.IsLoopback() ||
-		ip.IsMulticast() ||
-		ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() ||
-		ip.IsPrivate() {
-		return true
-	}
-
-	for _, block := range disallowedWebhookIPNets {
-		if block.Contains(ip) {
-			return true
-		}
-	}
-	return false
-}
-
-func portForScheme(u *url.URL) string {
-	if u != nil && u.Port() != "" {
-		return u.Port()
-	}
-	return "443"
-}
-
-func uniqueResolvedIPs(ips []net.IP) []net.IP {
-	seen := make(map[string]struct{}, len(ips))
-	out := make([]net.IP, 0, len(ips))
-	for _, ip := range ips {
-		if ip == nil {
-			continue
-		}
-		key := ip.String()
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, ip)
-	}
-	return out
 }

@@ -54,6 +54,20 @@ const (
 	// qpsWSOverviewTimeRange is only used to reuse the existing overview logic for
 	// TPS semantics (currently based on input+output tokens in usage_logs).
 	qpsWSOverviewTimeRange = "5m"
+
+	// maxWSConns 最大 WebSocket 连接数
+	maxWSConns = 100
+)
+
+var wsConnCount atomic.Int32
+
+const (
+	qpsWSWriteTimeout = 10 * time.Second
+	qpsWSPongWait     = 60 * time.Second
+	qpsWSPingInterval = 30 * time.Second
+
+	// We don't expect clients to send application messages; we only read to process control frames (Pong/Close).
+	qpsWSMaxReadBytes = 1024
 )
 
 type opsWSQPSCache struct {
@@ -65,7 +79,12 @@ type opsWSQPSCache struct {
 	payload             atomic.Value // []byte
 	lastTPS             atomic.Value // float64
 
-	mu sync.Mutex
+	opsService *service.OpsService
+	cancel     context.CancelFunc
+	done       chan struct{}
+
+	mu      sync.Mutex
+	running bool
 }
 
 var qpsWSCache = &opsWSQPSCache{
@@ -74,47 +93,127 @@ var qpsWSCache = &opsWSQPSCache{
 	overviewTimeRange:  qpsWSOverviewTimeRange,
 }
 
-func roundTo1DP(v float64) float64 {
-	return math.Round(v*10) / 10
-}
-
-func (c *opsWSQPSCache) getPayload(opsService *service.OpsService) []byte {
+func (c *opsWSQPSCache) start(opsService *service.OpsService) {
 	if c == nil || opsService == nil {
-		return nil
+		return
 	}
 
-	nowUnixNano := time.Now().UnixNano()
-	if cached, ok := c.payload.Load().([]byte); ok && cached != nil {
-		last := c.lastUpdatedUnixNano.Load()
-		if last > 0 && time.Duration(nowUnixNano-last) < c.refreshInterval {
-			return cached
+	for {
+		c.mu.Lock()
+		if c.running {
+			c.mu.Unlock()
+			return
 		}
+		// If a previous refresh loop is currently stopping, wait for it to fully exit
+		// before starting a new one (prevents Add/Wait-style lifecycle races).
+		done := c.done
+		if done != nil {
+			c.mu.Unlock()
+			<-done
+
+			c.mu.Lock()
+			if c.done == done && !c.running {
+				c.done = nil
+			}
+			c.mu.Unlock()
+			continue
+		}
+
+		c.opsService = opsService
+		ctx, cancel := context.WithCancel(context.Background())
+		c.cancel = cancel
+		c.done = make(chan struct{})
+		done = c.done
+		c.running = true
+		c.mu.Unlock()
+
+		go func() {
+			defer close(done)
+			c.refreshLoop(ctx)
+		}()
+		return
+	}
+}
+
+// Stop stops the background refresh loop.
+// It is safe to call multiple times.
+func (c *opsWSQPSCache) Stop() {
+	if c == nil {
+		return
 	}
 
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	now := time.Now().UTC()
-	if cached, ok := c.payload.Load().([]byte); ok && cached != nil {
-		last := c.lastUpdatedUnixNano.Load()
-		if last > 0 && time.Duration(now.UnixNano()-last) < c.refreshInterval {
-			return cached
+	if !c.running {
+		done := c.done
+		c.mu.Unlock()
+		if done != nil {
+			<-done
 		}
+		return
+	}
+	cancel := c.cancel
+	c.cancel = nil
+	c.running = false
+	c.opsService = nil
+	done := c.done
+	c.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	if done != nil {
+		<-done
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	c.mu.Lock()
+	if c.done == done && !c.running {
+		c.done = nil
+	}
+	c.mu.Unlock()
+}
+
+func (c *opsWSQPSCache) stop() { c.Stop() }
+
+func (c *opsWSQPSCache) refreshLoop(ctx context.Context) {
+	ticker := time.NewTicker(c.refreshInterval)
+	defer ticker.Stop()
+
+	c.refresh(ctx)
+	for {
+		select {
+		case <-ticker.C:
+			c.refresh(ctx)
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (c *opsWSQPSCache) refresh(parentCtx context.Context) {
+	if c == nil {
+		return
+	}
+
+	c.mu.Lock()
+	opsService := c.opsService
+	c.mu.Unlock()
+	if opsService == nil {
+		return
+	}
+
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parentCtx, 10*time.Second)
 	defer cancel()
 
-	// Exact last-1m stats used for both QPS and request_count to keep semantics consistent.
+	now := time.Now().UTC()
 	windowStats, err := opsService.GetWindowStats(ctx, now.Add(-c.requestCountWindow), now)
 	if err != nil || windowStats == nil {
 		if err != nil {
-			log.Printf("[OpsWS] get window stats failed: %v", err)
+			log.Printf("[OpsWS] refresh: get window stats failed: %v", err)
 		}
-		if cached, ok := c.payload.Load().([]byte); ok && cached != nil {
-			return cached
-		}
-		return nil
+		return
 	}
 
 	requestCount := windowStats.SuccessCount + windowStats.ErrorCount
@@ -123,7 +222,6 @@ func (c *opsWSQPSCache) getPayload(opsService *service.OpsService) []byte {
 		qps = roundTo1DP(float64(requestCount) / c.requestCountWindow.Seconds())
 	}
 
-	// TPS comes from the dashboard overview to preserve existing TPS semantics.
 	tps := 0.0
 	if v := c.lastTPS.Load(); v != nil {
 		if prev, ok := v.(float64); ok {
@@ -131,7 +229,7 @@ func (c *opsWSQPSCache) getPayload(opsService *service.OpsService) []byte {
 		}
 	}
 	if overview, err := opsService.GetDashboardOverview(ctx, c.overviewTimeRange); err != nil {
-		log.Printf("[OpsWS] get overview failed: %v", err)
+		log.Printf("[OpsWS] refresh: get overview failed: %v", err)
 	} else if overview != nil {
 		tps = overview.TPS.Current
 		c.lastTPS.Store(tps)
@@ -149,66 +247,173 @@ func (c *opsWSQPSCache) getPayload(opsService *service.OpsService) []byte {
 
 	msg, err := json.Marshal(payload)
 	if err != nil {
-		log.Printf("[OpsWS] marshal payload failed: %v", err)
-		if cached, ok := c.payload.Load().([]byte); ok && cached != nil {
-			return cached
-		}
-		return nil
+		log.Printf("[OpsWS] refresh: marshal payload failed: %v", err)
+		return
 	}
 
 	c.payload.Store(msg)
 	c.lastUpdatedUnixNano.Store(now.UnixNano())
-	return msg
+}
+
+// StopOpsWSQPSCache stops the background QPS/TPS cache refresh loop started by NewOpsHandler.
+// It is safe to call multiple times.
+func StopOpsWSQPSCache() {
+	qpsWSCache.Stop()
+}
+
+func roundTo1DP(v float64) float64 {
+	return math.Round(v*10) / 10
+}
+
+func (c *opsWSQPSCache) getPayload() []byte {
+	if c == nil {
+		return nil
+	}
+	if cached, ok := c.payload.Load().([]byte); ok && cached != nil {
+		return cached
+	}
+	return nil
 }
 
 // QPSWSHandler handles realtime QPS push via WebSocket.
 // GET /api/v1/admin/ops/ws/qps
 func (h *OpsHandler) QPSWSHandler(c *gin.Context) {
+	// 检查连接数限制
+	if wsConnCount.Load() >= maxWSConns {
+		log.Printf("[OpsWS] connection limit reached: %d/%d", wsConnCount.Load(), maxWSConns)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "too many connections"})
+		return
+	}
+
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		log.Printf("[OpsWS] upgrade failed: %v", err)
 		return
 	}
-	defer func() { _ = conn.Close() }()
 
-	// Set pong handler
-	if err := conn.SetReadDeadline(time.Now().Add(60 * time.Second)); err != nil {
-		log.Printf("[OpsWS] set read deadline failed: %v", err)
+	// 增加连接计数
+	wsConnCount.Add(1)
+	defer func() {
+		wsConnCount.Add(-1)
+		_ = conn.Close()
+	}()
+
+	handleQPSWebSocket(c.Request.Context(), conn)
+}
+
+func handleQPSWebSocket(parentCtx context.Context, conn *websocket.Conn) {
+	if conn == nil {
 		return
 	}
-	conn.SetPongHandler(func(string) error {
-		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	})
+
+	ctx, cancel := context.WithCancel(parentCtx)
+	defer cancel()
+
+	var closeOnce sync.Once
+	closeConn := func() {
+		closeOnce.Do(func() {
+			_ = conn.Close()
+		})
+	}
+
+	closeFrameCh := make(chan []byte, 1)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer cancel()
+
+		conn.SetReadLimit(qpsWSMaxReadBytes)
+		if err := conn.SetReadDeadline(time.Now().Add(qpsWSPongWait)); err != nil {
+			log.Printf("[OpsWS] set read deadline failed: %v", err)
+			return
+		}
+		conn.SetPongHandler(func(string) error {
+			return conn.SetReadDeadline(time.Now().Add(qpsWSPongWait))
+		})
+		conn.SetCloseHandler(func(code int, text string) error {
+			select {
+			case closeFrameCh <- websocket.FormatCloseMessage(code, text):
+			default:
+			}
+			cancel()
+			return nil
+		})
+
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived) {
+					log.Printf("[OpsWS] read failed: %v", err)
+				}
+				return
+			}
+		}
+	}()
 
 	// Push QPS data every 2 seconds (values are globally cached and refreshed at most once per qpsWSRefreshInterval).
-	ticker := time.NewTicker(qpsWSPushInterval)
-	defer ticker.Stop()
+	pushTicker := time.NewTicker(qpsWSPushInterval)
+	defer pushTicker.Stop()
 
-	// Heartbeat ping every 30 seconds
-	pingTicker := time.NewTicker(30 * time.Second)
+	// Heartbeat ping every 30 seconds.
+	pingTicker := time.NewTicker(qpsWSPingInterval)
 	defer pingTicker.Stop()
 
-	ctx, cancel := context.WithCancel(c.Request.Context())
-	defer cancel()
+	writeWithTimeout := func(messageType int, data []byte) error {
+		if err := conn.SetWriteDeadline(time.Now().Add(qpsWSWriteTimeout)); err != nil {
+			return err
+		}
+		return conn.WriteMessage(messageType, data)
+	}
+
+	sendClose := func(closeFrame []byte) {
+		if closeFrame == nil {
+			closeFrame = websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")
+		}
+		_ = writeWithTimeout(websocket.CloseMessage, closeFrame)
+	}
 
 	for {
 		select {
-		case <-ticker.C:
-			// Fetch cached payload (built from exact 1m window stats + 5m dashboard overview TPS).
-			msg := qpsWSCache.getPayload(h.opsService)
+		case <-pushTicker.C:
+			msg := qpsWSCache.getPayload()
 			if msg == nil {
 				continue
 			}
-			if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+			if err := writeWithTimeout(websocket.TextMessage, msg); err != nil {
 				log.Printf("[OpsWS] write failed: %v", err)
+				cancel()
+				closeConn()
+				wg.Wait()
 				return
 			}
+
 		case <-pingTicker.C:
-			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			if err := writeWithTimeout(websocket.PingMessage, nil); err != nil {
 				log.Printf("[OpsWS] ping failed: %v", err)
+				cancel()
+				closeConn()
+				wg.Wait()
 				return
 			}
+
+		case closeFrame := <-closeFrameCh:
+			sendClose(closeFrame)
+			closeConn()
+			wg.Wait()
+			return
+
 		case <-ctx.Done():
+			var closeFrame []byte
+			select {
+			case closeFrame = <-closeFrameCh:
+			default:
+			}
+			sendClose(closeFrame)
+
+			closeConn()
+			wg.Wait()
 			return
 		}
 	}
