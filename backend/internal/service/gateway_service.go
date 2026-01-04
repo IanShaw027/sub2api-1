@@ -982,28 +982,49 @@ func sanitizeRequestBody(body []byte) string {
 		"token", "access_token", "refresh_token",
 	}
 
-	var sanitize func(map[string]any)
-	sanitize = func(m map[string]any) {
-		for k, v := range m {
-			lowerKey := strings.ToLower(k)
-			for _, field := range sensitiveFields {
-				if strings.Contains(lowerKey, strings.ToLower(field)) {
-					if s, ok := v.(string); ok && s != "" {
-						if strings.HasPrefix(s, "sk-") || strings.HasPrefix(s, "Bearer ") {
-							m[k] = "***"
-						} else {
-							m[k] = "***"
-						}
+	// 递归脱敏函数,支持 map, slice 和基本类型
+	var sanitize func(any) any
+	sanitize = func(v any) any {
+		switch val := v.(type) {
+		case map[string]any:
+			result := make(map[string]any, len(val))
+			for k, v := range val {
+				lowerKey := strings.ToLower(k)
+				// 检查是否是敏感字段
+				isSensitive := false
+				for _, field := range sensitiveFields {
+					if strings.Contains(lowerKey, strings.ToLower(field)) {
+						isSensitive = true
+						break
 					}
-					break
+				}
+				if isSensitive {
+					// 敏感字段统一脱敏为 "***"
+					if s, ok := v.(string); ok && s != "" {
+						result[k] = "***"
+					} else {
+						result[k] = "***"
+					}
+				} else {
+					// 非敏感字段递归处理
+					result[k] = sanitize(v)
 				}
 			}
-			if nested, ok := v.(map[string]any); ok {
-				sanitize(nested)
+			return result
+		case []any:
+			// 处理数组,递归处理每个元素
+			result := make([]any, len(val))
+			for i, item := range val {
+				result[i] = sanitize(item)
 			}
+			return result
+		default:
+			// 基本类型直接返回
+			return val
 		}
 	}
-	sanitize(data)
+
+	data = sanitize(data).(map[string]any)
 
 	sanitized, _ := json.Marshal(data)
 	return string(sanitized)

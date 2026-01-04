@@ -1,13 +1,16 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/tls"
 	"fmt"
+	"html/template"
 	"math/big"
 	"net/smtp"
 	"strconv"
+	"strings"
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -49,6 +52,56 @@ type SMTPConfig struct {
 	From     string
 	FromName string
 	UseTLS   bool
+}
+
+// EmailTemplateData 邮件模板数据
+type EmailTemplateData struct {
+	Type       string
+	Title      string
+	Message    string
+	LogoURL    string
+	SiteName   string
+	SiteURL    string
+	Year       int
+	ActionURL  string
+	ActionText string
+	Alert      *AlertData
+	Report     *ReportData
+	Code       string
+}
+
+// AlertData 告警数据
+type AlertData struct {
+	Status    string
+	Level     string
+	Metric    string
+	Value     string
+	Threshold string
+	Duration  string
+	Time      string
+	Labels    map[string]string
+}
+
+// ReportData 报告数据
+type ReportData struct {
+	Date      string
+	Stats     []StatItem
+	TopErrors []ErrorItem
+}
+
+// StatItem 统计项
+type StatItem struct {
+	Label   string
+	Value   string
+	Change  string
+	TrendUp bool
+}
+
+// ErrorItem 错误项
+type ErrorItem struct {
+	Code  string
+	Count string
+	Rate  string
 }
 
 // EmailService 邮件服务
@@ -134,6 +187,23 @@ func (s *EmailService) SendEmailWithConfig(config *SMTPConfig, to, subject, body
 	}
 
 	return smtp.SendMail(addr, auth, config.From, []string{to}, []byte(msg))
+}
+
+// SendTemplatedEmail 使用模板发送邮件
+func (s *EmailService) SendTemplatedEmail(config *SMTPConfig, to, subject string, templateData EmailTemplateData) error {
+	tmpl, err := template.New("layout").Funcs(template.FuncMap{
+		"toUpper": strings.ToUpper,
+	}).ParseFiles("backend/internal/resources/templates/email_layout.html")
+	if err != nil {
+		return fmt.Errorf("parse template: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, templateData); err != nil {
+		return fmt.Errorf("execute template: %w", err)
+	}
+
+	return s.SendEmailWithConfig(config, to, subject, buf.String())
 }
 
 // sendMailTLS 使用TLS发送邮件
