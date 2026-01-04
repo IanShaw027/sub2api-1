@@ -23,6 +23,17 @@ vendor/
 
 # Go 编译缓存
 backend/.gocache/
+backend/.gomodcache/
+
+# 临时资源目录
+backend/internal/resources/
+
+# 重构脚本和临时文件
+*.py
+*.sh
+*.txt
+!requirements.txt
+!README.txt
 
 # ===================
 # Node.js / Vue 前端
