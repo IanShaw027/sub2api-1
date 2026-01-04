@@ -133,6 +133,13 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 
 			groupAvailability.GET("/events", h.Admin.OpsGroupAvailability.ListEvents)
 		}
+
+		// Email notification configuration routes
+		emailNotification := ops.Group("/email-notification")
+		{
+			emailNotification.GET("/config", h.Admin.Ops.GetEmailNotificationConfig)
+			emailNotification.PUT("/config", h.Admin.Ops.UpdateEmailNotificationConfig)
+		}
 	}
 }
 

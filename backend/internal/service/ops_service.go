@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/infraerror"
 	"github.com/shirou/gopsutil/v4/disk"
 )
@@ -287,8 +288,9 @@ type OpsRepository interface {
 }
 
 type OpsService struct {
-	repo  OpsRepository
-	sqlDB *sql.DB
+	repo   OpsRepository
+	sqlDB  *sql.DB
+	config *config.Config
 
 	redisNilWarnOnce sync.Once
 	dbNilWarnOnce    sync.Once
@@ -367,8 +369,8 @@ func sanitizeErrorMessage(msg string) string {
 	return msg
 }
 
-func NewOpsService(repo OpsRepository, sqlDB *sql.DB) *OpsService {
-	svc := &OpsService{repo: repo, sqlDB: sqlDB}
+func NewOpsService(repo OpsRepository, sqlDB *sql.DB, cfg *config.Config) *OpsService {
+	svc := &OpsService{repo: repo, sqlDB: sqlDB, config: cfg}
 
 	// Best-effort startup health checks: log warnings if Redis/DB is unavailable,
 	// but never fail service startup (graceful degradation).
@@ -1427,4 +1429,70 @@ func (s *OpsService) GetErrorLogByID(ctx context.Context, id int64) (*OpsErrorLo
 	ctxDB, cancel := context.WithTimeout(ctx, opsDBQueryTimeout)
 	defer cancel()
 	return s.repo.GetErrorLogByID(ctxDB, id)
+}
+
+// GetEmailNotificationConfig 获取邮件通知配置
+func (s *OpsService) GetEmailNotificationConfig(ctx context.Context) (*OpsEmailNotificationConfig, error) {
+	if s.config == nil {
+		return nil, errors.New("config not initialized")
+	}
+	return &OpsEmailNotificationConfig{
+		Alert: OpsEmailAlertConfig{
+			Enabled:                   s.config.Ops.Email.Alert.Enabled,
+			Recipients:                s.config.Ops.Email.Alert.Recipients,
+			MinSeverity:               s.config.Ops.Email.Alert.MinSeverity,
+			RateLimitPerHour:          s.config.Ops.Email.Alert.RateLimitPerHour,
+			BatchingWindowSeconds:     s.config.Ops.Email.Alert.BatchingWindowSeconds,
+			IncludeResolvedAlerts:     s.config.Ops.Email.Alert.IncludeResolvedAlerts,
+		},
+		Report: OpsEmailReportConfig{
+			Enabled:                         s.config.Ops.Email.Report.Enabled,
+			Recipients:                      s.config.Ops.Email.Report.Recipients,
+			DailySummaryEnabled:             s.config.Ops.Email.Report.DailySummaryEnabled,
+			DailySummarySchedule:            s.config.Ops.Email.Report.DailySummarySchedule,
+			WeeklySummaryEnabled:            s.config.Ops.Email.Report.WeeklySummaryEnabled,
+			WeeklySummarySchedule:           s.config.Ops.Email.Report.WeeklySummarySchedule,
+			ErrorDigestEnabled:              s.config.Ops.Email.Report.ErrorDigestEnabled,
+			ErrorDigestSchedule:             s.config.Ops.Email.Report.ErrorDigestSchedule,
+			ErrorDigestMinCount:             s.config.Ops.Email.Report.ErrorDigestMinCount,
+			AccountHealthEnabled:            s.config.Ops.Email.Report.AccountHealthEnabled,
+			AccountHealthSchedule:           s.config.Ops.Email.Report.AccountHealthSchedule,
+			AccountHealthErrorRateThreshold: s.config.Ops.Email.Report.AccountHealthErrorRateThreshold,
+		},
+	}, nil
+}
+
+// UpdateEmailNotificationConfig 更新邮件通知配置
+func (s *OpsService) UpdateEmailNotificationConfig(ctx context.Context, req *OpsEmailNotificationConfigUpdateRequest) error {
+	if s.config == nil {
+		return errors.New("config not initialized")
+	}
+
+	if req.Alert != nil {
+		s.config.Ops.Email.Alert.Enabled = req.Alert.Enabled
+		s.config.Ops.Email.Alert.Recipients = req.Alert.Recipients
+		s.config.Ops.Email.Alert.MinSeverity = req.Alert.MinSeverity
+		s.config.Ops.Email.Alert.RateLimitPerHour = req.Alert.RateLimitPerHour
+		s.config.Ops.Email.Alert.BatchingWindowSeconds = req.Alert.BatchingWindowSeconds
+		s.config.Ops.Email.Alert.IncludeResolvedAlerts = req.Alert.IncludeResolvedAlerts
+	}
+
+	if req.Report != nil {
+		s.config.Ops.Email.Report.Enabled = req.Report.Enabled
+		s.config.Ops.Email.Report.Recipients = req.Report.Recipients
+		s.config.Ops.Email.Report.DailySummaryEnabled = req.Report.DailySummaryEnabled
+		s.config.Ops.Email.Report.DailySummarySchedule = req.Report.DailySummarySchedule
+		s.config.Ops.Email.Report.WeeklySummaryEnabled = req.Report.WeeklySummaryEnabled
+		s.config.Ops.Email.Report.WeeklySummarySchedule = req.Report.WeeklySummarySchedule
+		s.config.Ops.Email.Report.ErrorDigestEnabled = req.Report.ErrorDigestEnabled
+		s.config.Ops.Email.Report.ErrorDigestSchedule = req.Report.ErrorDigestSchedule
+		s.config.Ops.Email.Report.ErrorDigestMinCount = req.Report.ErrorDigestMinCount
+		s.config.Ops.Email.Report.AccountHealthEnabled = req.Report.AccountHealthEnabled
+		s.config.Ops.Email.Report.AccountHealthSchedule = req.Report.AccountHealthSchedule
+		s.config.Ops.Email.Report.AccountHealthErrorRateThreshold = req.Report.AccountHealthErrorRateThreshold
+	}
+
+	// 注意：这里只更新内存中的配置，不持久化到文件
+	// 如果需要持久化，需要实现配置文件写入逻辑
+	return nil
 }

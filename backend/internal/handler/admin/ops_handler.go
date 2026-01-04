@@ -1180,3 +1180,29 @@ func (h *OpsHandler) RetryErrorRequest(c *gin.Context) {
 		"message":      "Retry information retrieved successfully. Please use the client to retry the request manually.",
 	})
 }
+
+// GetEmailNotificationConfig 获取邮件通知配置
+func (h *OpsHandler) GetEmailNotificationConfig(c *gin.Context) {
+	config, err := h.opsService.GetEmailNotificationConfig(c.Request.Context())
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to get email notification config")
+		return
+	}
+	response.Success(c, config)
+}
+
+// UpdateEmailNotificationConfig 更新邮件通知配置
+func (h *OpsHandler) UpdateEmailNotificationConfig(c *gin.Context) {
+	var req service.OpsEmailNotificationConfigUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if err := h.opsService.UpdateEmailNotificationConfig(c.Request.Context(), &req); err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to update email notification config")
+		return
+	}
+
+	response.Success(c, gin.H{"message": "Email notification config updated successfully"})
+}

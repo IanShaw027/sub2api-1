@@ -79,7 +79,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	dashboardService := service.NewDashboardService(usageLogRepository)
 	dashboardHandler := admin.NewDashboardHandler(dashboardService)
 	opsRepository := repository.NewOpsRepository(client, db, redisClient, configConfig)
-	opsService := service.NewOpsService(opsRepository, db)
+	opsService := service.NewOpsService(opsRepository, db, configConfig)
 	opsHandler := admin.NewOpsHandler(opsService)
 	groupService := service.NewGroupService(groupRepository)
 	opsGroupAvailabilityHandler := admin.NewOpsGroupAvailabilityHandler(opsService, groupService)
