@@ -76,22 +76,42 @@ export interface GroupAvailabilityStatus {
 }
 
 export interface EmailNotificationConfig {
-  alert_enabled: boolean
-  alert_recipients: string[]
-  alert_min_severity: AlertSeverity
-  alert_rate_limit_per_hour: number
-  alert_batch_window_seconds: number
-  alert_send_recovery: boolean
-  report_enabled: boolean
-  report_recipients: string[]
-  daily_summary_enabled: boolean
-  daily_summary_time: string
-  weekly_summary_enabled: boolean
-  weekly_summary_time: string
-  error_summary_enabled: boolean
-  error_summary_time: string
-  error_summary_min_errors: number
-  account_health_enabled: boolean
-  account_health_time: string
-  account_health_error_rate_threshold: number
+  alert: {
+    enabled: boolean
+    recipients: string[]
+    min_severity: AlertSeverity | ''
+    rate_limit_per_hour: number
+    batching_window_seconds: number
+    include_resolved_alerts: boolean
+  }
+  report: {
+    enabled: boolean
+    recipients: string[]
+    daily_summary_enabled: boolean
+    daily_summary_schedule: string
+    weekly_summary_enabled: boolean
+    weekly_summary_schedule: string
+    error_digest_enabled: boolean
+    error_digest_schedule: string
+    error_digest_min_count: number
+    account_health_enabled: boolean
+    account_health_schedule: string
+    account_health_error_rate_threshold: number
+  }
+}
+
+export interface OpsDistributedLockSettings {
+  enabled: boolean
+  key: string
+  ttl_seconds: number
+}
+
+export interface OpsAlertRuntimeSettings {
+  evaluation_interval_seconds: number
+  distributed_lock: OpsDistributedLockSettings
+}
+
+export interface OpsGroupAvailabilityRuntimeSettings {
+  evaluation_interval_seconds: number
+  distributed_lock: OpsDistributedLockSettings
 }

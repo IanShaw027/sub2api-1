@@ -140,6 +140,15 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 			emailNotification.GET("/config", h.Admin.Ops.GetEmailNotificationConfig)
 			emailNotification.PUT("/config", h.Admin.Ops.UpdateEmailNotificationConfig)
 		}
+
+		// Ops runtime settings (DB-backed; do not manage via config file)
+		runtime := ops.Group("/runtime")
+		{
+			runtime.GET("/alert", h.Admin.Ops.GetAlertRuntimeSettings)
+			runtime.PUT("/alert", h.Admin.Ops.UpdateAlertRuntimeSettings)
+			runtime.GET("/group-availability", h.Admin.Ops.GetGroupAvailabilityRuntimeSettings)
+			runtime.PUT("/group-availability", h.Admin.Ops.UpdateGroupAvailabilityRuntimeSettings)
+		}
 	}
 }
 

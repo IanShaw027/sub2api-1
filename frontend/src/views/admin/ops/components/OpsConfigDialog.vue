@@ -29,7 +29,6 @@ const showTemplateDialog = ref(false)
 const selectedTemplate = ref('')
 
 interface ConfigTemplate {
-  name: string
   translationKey: string
   config: {
     min_available_accounts: number
@@ -41,7 +40,6 @@ interface ConfigTemplate {
 
 const templates: ConfigTemplate[] = [
   {
-    name: 'Strict Mode',
     translationKey: 'strictMode',
     config: {
       min_available_accounts: 5,
@@ -51,7 +49,6 @@ const templates: ConfigTemplate[] = [
     }
   },
   {
-    name: 'Standard Mode',
     translationKey: 'standardMode',
     config: {
       min_available_accounts: 3,
@@ -61,7 +58,6 @@ const templates: ConfigTemplate[] = [
     }
   },
   {
-    name: 'Loose Mode',
     translationKey: 'looseMode',
     config: {
       min_available_accounts: 1,
@@ -72,18 +68,14 @@ const templates: ConfigTemplate[] = [
   }
 ]
 
-const severityLevels = [
-  { label: 'Critical', value: 'critical', translationKey: 'admin.ops.metrics.activeAlerts' }, // Reusing existing if possible, or just use values
-  { label: 'Warning', value: 'warning', translationKey: 'common.warning' },
-  { label: 'Info', value: 'info', translationKey: 'common.info' }
-]
-
 const getSeverityLabel = (value: string) => {
-  if (value === 'critical') return t('admin.ops.metrics.activeAlerts')
+  if (value === 'critical') return t('common.critical')
   if (value === 'warning') return t('common.warning')
   if (value === 'info') return t('common.info')
   return value
 }
+
+const severityLevels: AlertSeverity[] = ['critical', 'warning', 'info']
 
 async function loadGroupConfigs() {
   loading.value = true
@@ -355,7 +347,7 @@ watch(
             </td>
             <td class="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{{ group.group_name }}</td>
             <td class="px-4 py-3 text-sm text-gray-500 dark:text-dark-400">
-              <el-tag size="small" type="info">{{ group.platform }}</el-tag>
+              <span class="badge badge-gray">{{ group.platform }}</span>
             </td>
             <td class="px-4 py-3 text-sm text-gray-500 dark:text-dark-400">
               {{ group.available_accounts }} / {{ group.total_accounts }}
@@ -414,7 +406,7 @@ watch(
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-dark-300 mb-2">{{ t('admin.ops.config.severity') }}</label>
           <select v-model="batchSeverity" class="input">
-            <option v-for="s in severityLevels" :key="s.value" :value="s.value">{{ getSeverityLabel(s.value) }}</option>
+            <option v-for="s in severityLevels" :key="s" :value="s">{{ getSeverityLabel(s) }}</option>
           </select>
         </div>
         <div>

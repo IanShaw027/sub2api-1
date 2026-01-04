@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -13,7 +12,7 @@ import (
 
 // ListErrorLogs queries ops_error_logs with optional filters and pagination.
 // It returns the list items and the total count of matching rows.
-func (r *OpsRepository) ListErrorLogs(ctx context.Context, filter *service.ErrorLogFilter) ([]*service.ErrorLog, int64, error) {
+func (r *OpsRepository) ListErrorLogs(ctx context.Context, filter *service.ErrorLogFilter) ([]*service.OpsErrorLog, int64, error) {
 	page := 1
 	pageSize := 20
 	if filter != nil {
@@ -56,7 +55,7 @@ func (r *OpsRepository) ListErrorLogs(ctx context.Context, filter *service.Error
 
 		// 支持单值 Provider（向后兼容）和多值 Platforms
 		if len(filter.Platforms) > 0 {
-			// 多值平台过滤：使用 IN 子句
+			// 多值平台过滤
 			placeholders := make([]string, len(filter.Platforms))
 			for i, p := range filter.Platforms {
 				placeholders[i] = fmt.Sprintf("$%d", len(args)+i+1)
@@ -66,6 +65,23 @@ func (r *OpsRepository) ListErrorLogs(ctx context.Context, filter *service.Error
 		} else if provider := strings.TrimSpace(filter.Provider); provider != "" {
 			// 单值平台过滤（向后兼容）
 			addCondition(fmt.Sprintf("platform = $%d", len(args)+1), provider)
+		}
+
+		if phase := strings.TrimSpace(filter.Phase); phase != "" {
+			addCondition(fmt.Sprintf("error_phase = $%d", len(args)+1), phase)
+		}
+		if severity := strings.TrimSpace(filter.Severity); severity != "" {
+			addCondition(fmt.Sprintf("severity = $%d", len(args)+1), severity)
+		}
+		if q := strings.TrimSpace(filter.Query); q != "" {
+			like := "%" + strings.ToLower(q) + "%"
+			startIdx := len(args) + 1
+			addCondition(
+				fmt.Sprintf("(LOWER(request_id) LIKE $%d OR LOWER(model) LIKE $%d OR LOWER(error_message) LIKE $%d OR LOWER(error_type) LIKE $%d)",
+					startIdx, startIdx+1, startIdx+2, startIdx+3,
+				),
+				like, like, like, like,
+			)
 		}
 
 		// 支持多值状态码过滤
@@ -86,6 +102,10 @@ func (r *OpsRepository) ListErrorLogs(ctx context.Context, filter *service.Error
 		if filter.AccountID != nil {
 			addCondition(fmt.Sprintf("account_id = $%d", len(args)+1), *filter.AccountID)
 		}
+
+		if filter.GroupID != nil {
+			addCondition(fmt.Sprintf("group_id = $%d", len(args)+1), *filter.GroupID)
+		}
 	}
 
 	where := ""
@@ -103,21 +123,34 @@ func (r *OpsRepository) ListErrorLogs(ctx context.Context, filter *service.Error
 		}
 	}
 
+	// NOTE: Keep columns aligned with scanOpsErrorLog() in ops_repo.go.
 	listQuery := fmt.Sprintf(`
 		SELECT
 			id,
 			created_at,
-			severity,
-			request_id,
+			user_id,
+			api_key_id,
 			account_id,
-			request_path,
+			group_id,
+			client_ip,
+			error_phase,
+			error_type,
+			severity,
+			status_code,
 			platform,
 			model,
-			status_code,
-			error_message,
+			request_path,
+			stream,
 			duration_ms,
+			request_id,
+			error_message,
+			error_body,
+			provider_error_code,
+			provider_error_type,
+			is_retryable,
+			is_user_actionable,
 			retry_count,
-			stream
+			completion_status
 		FROM ops_error_logs
 		%s
 		ORDER BY created_at DESC
@@ -131,68 +164,12 @@ func (r *OpsRepository) ListErrorLogs(ctx context.Context, filter *service.Error
 	}
 	defer func() { _ = rows.Close() }()
 
-	results := make([]*service.ErrorLog, 0)
+	results := make([]*service.OpsErrorLog, 0)
 	for rows.Next() {
-		var (
-			id         int64
-			createdAt  time.Time
-			severity   sql.NullString
-			requestID  sql.NullString
-			accountID  sql.NullInt64
-			requestURI sql.NullString
-			platform   sql.NullString
-			model      sql.NullString
-			statusCode sql.NullInt64
-			message    sql.NullString
-			durationMs sql.NullInt64
-			retryCount sql.NullInt64
-			stream     sql.NullBool
-		)
-
-		if err := rows.Scan(
-			&id,
-			&createdAt,
-			&severity,
-			&requestID,
-			&accountID,
-			&requestURI,
-			&platform,
-			&model,
-			&statusCode,
-			&message,
-			&durationMs,
-			&retryCount,
-			&stream,
-		); err != nil {
+		entry, err := scanOpsErrorLog(rows)
+		if err != nil {
 			return nil, 0, err
 		}
-
-		entry := &service.ErrorLog{
-			ID:        id,
-			Timestamp: createdAt,
-			Level:     levelFromSeverity(severity.String),
-			RequestID: requestID.String,
-			APIPath:   requestURI.String,
-			Provider:  platform.String,
-			Model:     model.String,
-			HTTPCode:  int(statusCode.Int64),
-			Stream:    stream.Bool,
-		}
-		if accountID.Valid {
-			entry.AccountID = strconv.FormatInt(accountID.Int64, 10)
-		}
-		if message.Valid {
-			entry.ErrorMessage = message.String
-		}
-		if durationMs.Valid {
-			v := int(durationMs.Int64)
-			entry.DurationMs = &v
-		}
-		if retryCount.Valid {
-			v := int(retryCount.Int64)
-			entry.RetryCount = &v
-		}
-
 		results = append(results, entry)
 	}
 	if err := rows.Err(); err != nil {

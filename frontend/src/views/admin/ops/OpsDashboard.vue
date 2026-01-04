@@ -20,6 +20,8 @@ import ErrorDetailModal from '@/components/admin/ErrorDetailModal.vue'
 import OpsDashboardHeader from './components/OpsDashboardHeader.vue'
 import OpsMetricsCharts from './components/OpsMetricsCharts.vue'
 import OpsGroupAvailabilityCard from './components/OpsGroupAvailabilityCard.vue'
+import OpsRuntimeSettingsCard from './components/OpsRuntimeSettingsCard.vue'
+import OpsEmailNotificationCard from './components/OpsEmailNotificationCard.vue'
 import OpsErrorLogTable from './components/OpsErrorLogTable.vue'
 import { opsAPI, type OpsDashboardOverview, type ProviderHealthData, type LatencyHistogramResponse, type ErrorDistributionResponse, type OpsMetrics, type OpsErrorLog } from '@/api/admin/ops'
 import { parseTimeRangeMinutes } from './utils/opsFormatters'
@@ -263,6 +265,12 @@ function handleErrorPageSizeChange(pageSize: number) {
 
       <!-- Group Availability Monitoring -->
       <OpsGroupAvailabilityCard />
+
+      <!-- Ops Runtime Settings -->
+      <OpsRuntimeSettingsCard />
+
+      <!-- Email Notification Configuration -->
+      <OpsEmailNotificationCard />
 
       <!-- L3: Error Logs Query Section -->
       <OpsErrorLogTable

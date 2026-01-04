@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getSeverityClass, formatDateTime } from '../utils/opsFormatters'
 import type { ErrorFilters } from '../types'
-import type { OpsErrorLog, OpsPlatform, OpsSeverity } from '@/api/admin/ops'
+import { opsAPI, type OpsErrorLog, type OpsPlatform, type OpsSeverity } from '@/api/admin/ops'
 import ElPagination from '@/components/common/Pagination.vue'
+import { useAppStore } from '@/stores/app'
 
 interface Props {
   errorLogs: OpsErrorLog[]
@@ -23,6 +24,7 @@ interface Emits {
 }
 
 const { t } = useI18n()
+const appStore = useAppStore()
 const props = withDefaults(defineProps<Props>(), {
   page: 1,
   pageSize: 50
@@ -32,6 +34,21 @@ const emit = defineEmits<Emits>()
 const platformOptions: OpsPlatform[] = ['openai', 'anthropic', 'gemini', 'antigravity']
 const statusCodeOptions = [400, 401, 403, 404, 429, 500, 502, 503, 504]
 const severityOptions: OpsSeverity[] = ['P0', 'P1', 'P2', 'P3']
+
+const retryingIds = reactive(new Set<number>())
+
+async function handleRetry(log: OpsErrorLog) {
+  if (retryingIds.has(log.id)) return
+  retryingIds.add(log.id)
+  try {
+    await opsAPI.retryErrorRequest(log.id)
+    appStore.showSuccess(t('admin.ops.details.retryInfo'))
+  } catch (e: any) {
+    appStore.showError(e?.response?.data?.detail || t('admin.ops.details.retryFailed'))
+  } finally {
+    retryingIds.delete(log.id)
+  }
+}
 
 function updateFilter(key: keyof ErrorFilters, value: any) {
   emit('update:filters', { ...props.filters, [key]: value })
@@ -283,6 +300,9 @@ function getStatusClass(code: number): string {
               <th scope="col" class="whitespace-nowrap px-6 py-4 text-right text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-dark-400">
                 {{ t('admin.ops.errors.table.latency') }}
               </th>
+              <th scope="col" class="whitespace-nowrap px-6 py-4 text-right text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-dark-400">
+                {{ t('common.actions') }}
+              </th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
@@ -366,6 +386,20 @@ function getStatusClass(code: number): string {
                     {{ log.latency_ms ? Math.round(log.latency_ms) + 'ms' : '--' }}
                   </span>
                 </div>
+              </td>
+
+              <!-- Actions (Retry) -->
+              <td class="px-6 py-4 text-right" @click.stop>
+                <button
+                  @click="handleRetry(log)"
+                  :disabled="retryingIds.has(log.id)"
+                  class="btn btn-xs btn-secondary inline-flex items-center gap-1"
+                  :title="t('admin.ops.details.retry')"
+                >
+                  <svg v-if="retryingIds.has(log.id)" class="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                  <svg v-else class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                  {{ t('admin.ops.details.retry') }}
+                </button>
               </td>
             </tr>
           </tbody>

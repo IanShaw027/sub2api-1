@@ -32,7 +32,7 @@ func TestOpsAlertService_StartedViaWireProviders_RunsIndependentTicker(t *testin
 	t.Cleanup(func() { opsAlertEvalInterval = oldInterval })
 
 	repo := newFakeOpsRepository()
-	opsService := NewOpsService(repo, nil)
+	opsService := NewOpsService(repo, nil, nil, nil)
 
 	// Start via the Wire provider function (the production DI path).
 	alertService := ProvideOpsAlertService(opsService, nil, nil, nil, nil)
@@ -90,7 +90,7 @@ func (r *fakeOpsRepository) ListErrorLogsLegacy(ctx context.Context, filters Ops
 	return nil, nil
 }
 
-func (r *fakeOpsRepository) ListErrorLogs(ctx context.Context, filter *ErrorLogFilter) ([]*ErrorLog, int64, error) {
+func (r *fakeOpsRepository) ListErrorLogs(ctx context.Context, filter *ErrorLogFilter) ([]*OpsErrorLog, int64, error) {
 	return nil, 0, nil
 }
 

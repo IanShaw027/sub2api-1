@@ -5,28 +5,11 @@ import (
 	"time"
 )
 
-// ErrorLog represents an ops error log item for list queries.
-//
-// Field naming matches docs/API-运维监控中心2.0.md (L3 根因追踪 - 错误日志列表).
-type ErrorLog struct {
-	ID        int64     `json:"id"`
-	Timestamp time.Time `json:"timestamp"`
-
-	Level        string `json:"level,omitempty"`
-	RequestID    string `json:"request_id,omitempty"`
-	AccountID    string `json:"account_id,omitempty"`
-	APIPath      string `json:"api_path,omitempty"`
-	Provider     string `json:"provider,omitempty"`
-	Model        string `json:"model,omitempty"`
-	HTTPCode     int    `json:"http_code,omitempty"`
-	ErrorMessage string `json:"error_message,omitempty"`
-
-	DurationMs *int `json:"duration_ms,omitempty"`
-	RetryCount *int `json:"retry_count,omitempty"`
-	Stream     bool `json:"stream,omitempty"`
-}
-
 // ErrorLogFilter describes optional filters and pagination for listing ops error logs.
+//
+// NOTE:
+// - This filter is used by the paginated endpoint `/api/v1/admin/ops/errors`.
+// - The response payload uses `OpsErrorLog` to keep list/detail DTOs consistent.
 type ErrorLogFilter struct {
 	StartTime *time.Time
 	EndTime   *time.Time
@@ -34,9 +17,13 @@ type ErrorLogFilter struct {
 	ErrorCode   *int
 	Provider    string   // 保留用于向后兼容
 	Platforms   []string // 新增：多平台过滤
+	Phase       string   // error_phase
+	Severity    string   // P0/P1/P2/P3
+	Query       string   // fuzzy match against request_id/model/error_message/error_type
 	StatusCodes []int    // 新增：多状态码过滤
 	ClientIP    string   // 新增：客户端 IP 过滤
 	AccountID   *int64
+	GroupID     *int64
 
 	Page     int
 	PageSize int
@@ -62,16 +49,16 @@ func (f *ErrorLogFilter) normalize() (page, pageSize int) {
 }
 
 type ErrorLogListResponse struct {
-	Errors   []*ErrorLog `json:"errors"`
-	Total    int64       `json:"total"`
-	Page     int         `json:"page"`
-	PageSize int         `json:"page_size"`
+	Errors   []*OpsErrorLog `json:"errors"`
+	Total    int64          `json:"total"`
+	Page     int            `json:"page"`
+	PageSize int            `json:"page_size"`
 }
 
 func (s *OpsService) GetErrorLogs(ctx context.Context, filter *ErrorLogFilter) (*ErrorLogListResponse, error) {
 	if s == nil || s.repo == nil {
 		return &ErrorLogListResponse{
-			Errors:   []*ErrorLog{},
+			Errors:   []*OpsErrorLog{},
 			Total:    0,
 			Page:     1,
 			PageSize: 20,
@@ -91,7 +78,7 @@ func (s *OpsService) GetErrorLogs(ctx context.Context, filter *ErrorLogFilter) (
 		return nil, err
 	}
 	if items == nil {
-		items = []*ErrorLog{}
+		items = []*OpsErrorLog{}
 	}
 
 	return &ErrorLogListResponse{
@@ -111,7 +98,7 @@ type OpsEmailNotificationConfig struct {
 // OpsEmailAlertConfig 告警邮件通知配置
 type OpsEmailAlertConfig struct {
 	Enabled                   bool   `json:"enabled"`
-	Recipients                string `json:"recipients"`
+	Recipients                []string `json:"recipients"`
 	MinSeverity               string `json:"min_severity"`
 	RateLimitPerHour          int    `json:"rate_limit_per_hour"`
 	BatchingWindowSeconds     int    `json:"batching_window_seconds"`
@@ -121,7 +108,7 @@ type OpsEmailAlertConfig struct {
 // OpsEmailReportConfig 定时报告邮件通知配置
 type OpsEmailReportConfig struct {
 	Enabled                         bool    `json:"enabled"`
-	Recipients                      string  `json:"recipients"`
+	Recipients                      []string  `json:"recipients"`
 	DailySummaryEnabled             bool    `json:"daily_summary_enabled"`
 	DailySummarySchedule            string  `json:"daily_summary_schedule"`
 	WeeklySummaryEnabled            bool    `json:"weekly_summary_enabled"`

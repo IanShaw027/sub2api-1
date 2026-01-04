@@ -56,50 +56,11 @@ type OpsConfig struct {
 	// per-minute window stats queries.
 	MetricsCollectorCache OpsMetricsCollectorCacheConfig `mapstructure:"metrics_collector_cache"`
 
-	// Alert controls ops alert evaluator behavior (including distributed leader lock).
-	Alert OpsAlertConfig `mapstructure:"alert"`
-
 	// Data cleanup configuration
 	Cleanup OpsCleanupConfig `mapstructure:"cleanup"`
 
 	// Pre-aggregation configuration
 	Aggregation OpsAggregationConfig `mapstructure:"aggregation"`
-
-	// Email notification configuration
-	Email OpsEmailConfig `mapstructure:"email"`
-
-	// GroupAvailability 分组可用性监控配置
-	GroupAvailability OpsGroupAvailabilityConfig `mapstructure:"group_availability"`
-}
-
-type OpsAlertConfig struct {
-	// DistributedLockEnabled ensures that in multi-replica deployments only one instance
-	// evaluates alert rules at a time (to prevent duplicate notifications/events).
-	//
-	// Default is true.
-	DistributedLockEnabled bool `mapstructure:"distributed_lock_enabled"`
-
-	// DistributedLockKey is the Redis key used for leader election / lock.
-	// Default: "ops:alert:leader".
-	DistributedLockKey string `mapstructure:"distributed_lock_key"`
-
-	// DistributedLockTTL is the lock TTL. It is renewed during evaluation, but it
-	// should still be longer than the typical evaluation duration. Default: 30s.
-	DistributedLockTTL time.Duration `mapstructure:"distributed_lock_ttl"`
-}
-
-type OpsGroupAvailabilityConfig struct {
-	// DistributedLockEnabled 是否启用分布式锁
-	DistributedLockEnabled bool `mapstructure:"distributed_lock_enabled"`
-
-	// DistributedLockKey Redis 锁 key
-	DistributedLockKey string `mapstructure:"distributed_lock_key"`
-
-	// DistributedLockTTL 锁 TTL
-	DistributedLockTTL time.Duration `mapstructure:"distributed_lock_ttl"`
-
-	// EvaluationInterval 评估间隔
-	EvaluationInterval time.Duration `mapstructure:"evaluation_interval"`
 }
 
 type OpsCleanupConfig struct {
@@ -122,82 +83,6 @@ type OpsAggregationConfig struct {
 	HourlySchedule string `mapstructure:"hourly_schedule"`
 	// DailySchedule is the cron expression for daily aggregation (default: "10 0 * * *" - 10 minutes past midnight)
 	DailySchedule string `mapstructure:"daily_schedule"`
-}
-
-// OpsEmailConfig 运维监控邮件通知配置
-type OpsEmailConfig struct {
-	// Alert 告警邮件通知配置
-	Alert OpsEmailAlertConfig `mapstructure:"alert"`
-	// Report 定时报告邮件通知配置
-	Report OpsEmailReportConfig `mapstructure:"report"`
-}
-
-// OpsEmailAlertConfig 告警邮件通知配置
-type OpsEmailAlertConfig struct {
-	// Enabled 是否启用告警邮件通知（全局开关）
-	// 即使规则配置了 notify_email=true，此开关关闭时也不发送邮件
-	Enabled bool `mapstructure:"enabled"`
-
-	// Recipients 默认收件人列表（逗号分隔）
-	// 如果为空，则发送给第一个管理员用户
-	Recipients string `mapstructure:"recipients"`
-
-	// MinSeverity 最低告警级别（critical/warning/info）
-	// 只有达到或超过此级别的告警才发送邮件
-	// 默认: "" (所有级别都发送)
-	MinSeverity string `mapstructure:"min_severity"`
-
-	// RateLimitPerHour 每小时最大邮件发送数量（防止邮件轰炸）
-	// 0 表示不限制
-	RateLimitPerHour int `mapstructure:"rate_limit_per_hour"`
-
-	// BatchingWindowSeconds 邮件批量发送窗口（秒）
-	// 在此窗口内的多个告警可以合并为一封邮件发送
-	// 0 表示不批量，立即发送
-	BatchingWindowSeconds int `mapstructure:"batching_window_seconds"`
-
-	// IncludeResolvedAlerts 是否发送告警恢复通知
-	IncludeResolvedAlerts bool `mapstructure:"include_resolved_alerts"`
-}
-
-// OpsEmailReportConfig 定时报告邮件通知配置
-type OpsEmailReportConfig struct {
-	// Enabled 是否启用定时报告邮件通知（全局开关）
-	Enabled bool `mapstructure:"enabled"`
-
-	// Recipients 默认收件人列表（逗号分隔）
-	// 如果为空，则发送给第一个管理员用户
-	Recipients string `mapstructure:"recipients"`
-
-	// DailySummaryEnabled 是否启用每日摘要报告
-	DailySummaryEnabled bool `mapstructure:"daily_summary_enabled"`
-	// DailySummarySchedule 每日摘要发送时间 (cron 表达式)
-	// 默认: "0 9 * * *" (每天上午9点)
-	DailySummarySchedule string `mapstructure:"daily_summary_schedule"`
-
-	// WeeklySummaryEnabled 是否启用每周摘要报告
-	WeeklySummaryEnabled bool `mapstructure:"weekly_summary_enabled"`
-	// WeeklySummarySchedule 每周摘要发送时间 (cron 表达式)
-	// 默认: "0 9 * * 1" (每周一上午9点)
-	WeeklySummarySchedule string `mapstructure:"weekly_summary_schedule"`
-
-	// ErrorDigestEnabled 是否启用错误摘要报告
-	ErrorDigestEnabled bool `mapstructure:"error_digest_enabled"`
-	// ErrorDigestSchedule 错误摘要发送时间 (cron 表达式)
-	// 默认: "0 9 * * *" (每天上午9点)
-	ErrorDigestSchedule string `mapstructure:"error_digest_schedule"`
-	// ErrorDigestMinCount 错误摘要最小错误数量阈值
-	// 只有错误数量达到此阈值才发送报告（避免无意义的空报告）
-	ErrorDigestMinCount int `mapstructure:"error_digest_min_count"`
-
-	// AccountHealthEnabled 是否启用账户健康报告
-	AccountHealthEnabled bool `mapstructure:"account_health_enabled"`
-	// AccountHealthSchedule 账户健康报告发送时间 (cron 表达式)
-	// 默认: "0 9 * * *" (每天上午9点)
-	AccountHealthSchedule string `mapstructure:"account_health_schedule"`
-	// AccountHealthErrorRateThreshold 账户健康报告错误率阈值（百分比）
-	// 只有错误率超过此阈值的账户才会在报告中标记为不健康
-	AccountHealthErrorRateThreshold float64 `mapstructure:"account_health_error_rate_threshold"`
 }
 
 type OpsMetricsCollectorCacheConfig struct {
@@ -499,42 +384,11 @@ func setDefaults() {
 	viper.SetDefault("ops.use_preaggregated_tables", false)
 	viper.SetDefault("ops.metrics_collector_cache.enabled", true)
 	viper.SetDefault("ops.metrics_collector_cache.ttl", 65*time.Second)
-	viper.SetDefault("ops.alert.distributed_lock_enabled", true)
-	viper.SetDefault("ops.alert.distributed_lock_key", "ops:alert:leader")
-	viper.SetDefault("ops.alert.distributed_lock_ttl", 30*time.Second)
 	viper.SetDefault("ops.cleanup.enabled", false)
 	viper.SetDefault("ops.cleanup.schedule", "0 2 * * *")
 	viper.SetDefault("ops.cleanup.error_log_retention_days", 30)
 	viper.SetDefault("ops.cleanup.minute_metrics_retention_days", 7)
 	viper.SetDefault("ops.cleanup.hourly_metrics_retention_days", 30)
-
-	// Ops Email - Alert
-	viper.SetDefault("ops.email.alert.enabled", true)
-	viper.SetDefault("ops.email.alert.recipients", "")
-	viper.SetDefault("ops.email.alert.min_severity", "")
-	viper.SetDefault("ops.email.alert.rate_limit_per_hour", 0)
-	viper.SetDefault("ops.email.alert.batching_window_seconds", 0)
-	viper.SetDefault("ops.email.alert.include_resolved_alerts", false)
-
-	// Ops Email - Report
-	viper.SetDefault("ops.email.report.enabled", false)
-	viper.SetDefault("ops.email.report.recipients", "")
-	viper.SetDefault("ops.email.report.daily_summary_enabled", false)
-	viper.SetDefault("ops.email.report.daily_summary_schedule", "0 9 * * *")
-	viper.SetDefault("ops.email.report.weekly_summary_enabled", false)
-	viper.SetDefault("ops.email.report.weekly_summary_schedule", "0 9 * * 1")
-	viper.SetDefault("ops.email.report.error_digest_enabled", false)
-	viper.SetDefault("ops.email.report.error_digest_schedule", "0 9 * * *")
-	viper.SetDefault("ops.email.report.error_digest_min_count", 10)
-	viper.SetDefault("ops.email.report.account_health_enabled", false)
-	viper.SetDefault("ops.email.report.account_health_schedule", "0 9 * * *")
-	viper.SetDefault("ops.email.report.account_health_error_rate_threshold", 10.0)
-
-	// Ops Group Availability
-	viper.SetDefault("ops.group_availability.distributed_lock_enabled", true)
-	viper.SetDefault("ops.group_availability.distributed_lock_key", "ops:alert:leader:group_availability")
-	viper.SetDefault("ops.group_availability.distributed_lock_ttl", 30*time.Second)
-	viper.SetDefault("ops.group_availability.evaluation_interval", 5*time.Minute)
 
 	// JWT
 	viper.SetDefault("jwt.secret", "change-me-in-production")
@@ -645,9 +499,6 @@ func (c *Config) Validate() error {
 	}
 	if c.Ops.MetricsCollectorCache.TTL < 0 {
 		return fmt.Errorf("ops.metrics_collector_cache.ttl must be non-negative")
-	}
-	if c.Ops.Alert.DistributedLockTTL < 0 {
-		return fmt.Errorf("ops.alert.distributed_lock_ttl must be non-negative")
 	}
 	if c.Gateway.MaxBodySize <= 0 {
 		return fmt.Errorf("gateway.max_body_size must be positive")

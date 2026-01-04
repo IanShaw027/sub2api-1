@@ -94,6 +94,11 @@ const (
 
 	// Gemini 配额策略（JSON）
 	SettingKeyGeminiQuotaPolicy = "gemini_quota_policy"
+
+	// Ops configuration (JSON payloads; configured via admin pages, persisted in DB)
+	SettingKeyOpsEmailNotificationConfig = "ops_email_notification_config"
+	SettingKeyOpsAlertRuntimeSettings    = "ops_alert_runtime_settings"
+	SettingKeyOpsGroupAvailabilityRuntimeSettings = "ops_group_availability_runtime_settings"
 )
 
 // AdminAPIKeyPrefix is the prefix for admin API keys (distinct from user "sk-" keys)

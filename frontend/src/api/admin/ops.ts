@@ -4,7 +4,14 @@
  */
 
 import { apiClient } from '../client'
-import type { AlertRule, GroupAvailabilityConfig, GroupAvailabilityStatus, EmailNotificationConfig } from '@/views/admin/ops/types'
+import type {
+  AlertRule,
+  GroupAvailabilityConfig,
+  GroupAvailabilityStatus,
+  EmailNotificationConfig,
+  OpsAlertRuntimeSettings,
+  OpsGroupAvailabilityRuntimeSettings
+} from '@/views/admin/ops/types'
 
 export type OpsSeverity = 'P0' | 'P1' | 'P2' | 'P3'
 export type OpsPhase =
@@ -470,6 +477,27 @@ export async function updateEmailNotificationConfig(config: EmailNotificationCon
   return data
 }
 
+// Runtime settings API (DB-backed)
+export async function getAlertRuntimeSettings(): Promise<OpsAlertRuntimeSettings> {
+  const { data } = await apiClient.get<OpsAlertRuntimeSettings>('/admin/ops/runtime/alert')
+  return data
+}
+
+export async function updateAlertRuntimeSettings(config: OpsAlertRuntimeSettings): Promise<OpsAlertRuntimeSettings> {
+  const { data } = await apiClient.put<OpsAlertRuntimeSettings>('/admin/ops/runtime/alert', config)
+  return data
+}
+
+export async function getGroupAvailabilityRuntimeSettings(): Promise<OpsGroupAvailabilityRuntimeSettings> {
+  const { data } = await apiClient.get<OpsGroupAvailabilityRuntimeSettings>('/admin/ops/runtime/group-availability')
+  return data
+}
+
+export async function updateGroupAvailabilityRuntimeSettings(config: OpsGroupAvailabilityRuntimeSettings): Promise<OpsGroupAvailabilityRuntimeSettings> {
+  const { data } = await apiClient.put<OpsGroupAvailabilityRuntimeSettings>('/admin/ops/runtime/group-availability', config)
+  return data
+}
+
 export const opsAPI = {
   getMetrics,
   listMetricsHistory,
@@ -489,7 +517,11 @@ export const opsAPI = {
   listGroupAvailabilityStatus,
   updateGroupAvailabilityConfig,
   getEmailNotificationConfig,
-  updateEmailNotificationConfig
+  updateEmailNotificationConfig,
+  getAlertRuntimeSettings,
+  updateAlertRuntimeSettings,
+  getGroupAvailabilityRuntimeSettings,
+  updateGroupAvailabilityRuntimeSettings
 }
 
 export default opsAPI

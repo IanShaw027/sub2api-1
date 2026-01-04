@@ -50,20 +50,11 @@ func NewOpsGroupAvailabilityMonitor(
 	emailService *EmailService,
 	userService *UserService,
 	redisClient *redis.Client,
-	cfg *config.Config,
+	_ *config.Config,
 ) *OpsGroupAvailabilityMonitor {
 	lockOn := true
 	lockKey := opsGroupAvailabilityLeaderLockKeyDefault
 	lockTTL := opsGroupAvailabilityLeaderLockTTLDefault
-	if cfg != nil {
-		lockOn = cfg.Ops.Alert.DistributedLockEnabled
-		if strings.TrimSpace(cfg.Ops.Alert.DistributedLockKey) != "" {
-			lockKey = strings.TrimSpace(cfg.Ops.Alert.DistributedLockKey) + ":group_availability"
-		}
-		if cfg.Ops.Alert.DistributedLockTTL > 0 {
-			lockTTL = cfg.Ops.Alert.DistributedLockTTL
-		}
-	}
 
 	return &OpsGroupAvailabilityMonitor{
 		opsService:   opsService,
@@ -120,14 +111,18 @@ func (s *OpsGroupAvailabilityMonitor) Stop() {
 func (s *OpsGroupAvailabilityMonitor) run() {
 	defer s.wg.Done()
 
-	ticker := time.NewTicker(s.interval)
-	defer ticker.Stop()
+	timer := time.NewTimer(0)
+	defer timer.Stop()
 
-	s.evaluateOnce()
 	for {
 		select {
-		case <-ticker.C:
+		case <-timer.C:
 			s.evaluateOnce()
+			next := s.interval
+			if next <= 0 {
+				next = opsGroupAvailabilityMonitorInterval
+			}
+			timer.Reset(next)
 		case <-s.stopCtx.Done():
 			return
 		}
@@ -138,7 +133,32 @@ func (s *OpsGroupAvailabilityMonitor) evaluateOnce() {
 	ctx, cancel := context.WithTimeout(s.stopCtx, 45*time.Second)
 	defer cancel()
 
+	s.applyRuntimeSettings(ctx)
 	s.Evaluate(ctx, time.Now())
+}
+
+func (s *OpsGroupAvailabilityMonitor) applyRuntimeSettings(ctx context.Context) {
+	if s == nil || s.opsService == nil {
+		return
+	}
+	cfg, err := s.opsService.GetOpsGroupAvailabilityRuntimeSettings(ctx)
+	if err != nil || cfg == nil {
+		return
+	}
+
+	interval := time.Duration(cfg.EvaluationIntervalSeconds) * time.Second
+	if interval <= 0 {
+		interval = opsGroupAvailabilityMonitorInterval
+	}
+	s.interval = interval
+
+	s.distributedLockOn = cfg.DistributedLock.Enabled
+	if strings.TrimSpace(cfg.DistributedLock.Key) != "" {
+		s.distributedLockKey = strings.TrimSpace(cfg.DistributedLock.Key)
+	}
+	if cfg.DistributedLock.TTLSeconds > 0 {
+		s.distributedLockTTL = time.Duration(cfg.DistributedLock.TTLSeconds) * time.Second
+	}
 }
 
 func (s *OpsGroupAvailabilityMonitor) Evaluate(ctx context.Context, now time.Time) {
@@ -440,13 +460,34 @@ func (s *OpsGroupAvailabilityMonitor) sendEmailNotification(ctx context.Context,
 	if s.emailService == nil || s.userService == nil {
 		return false
 	}
+	if s.opsService == nil {
+		return false
+	}
 
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
-	admin, err := s.userService.GetFirstAdmin(ctx)
-	if err != nil || admin == nil || admin.Email == "" {
+	emailCfg, err := s.opsService.GetEmailNotificationConfig(ctx)
+	if err != nil {
+		log.Printf("[OpsGroupAvailability] load email notification config failed: %v", err)
+		return false
+	}
+	if emailCfg == nil || !emailCfg.Alert.Enabled {
+		return false
+	}
+	if event != nil && event.Status == OpsAlertStatusResolved && !emailCfg.Alert.IncludeResolvedAlerts {
+		return false
+	}
+	if !shouldSendOpsEmailBySeverity(emailCfg.Alert.MinSeverity, cfg.Severity) {
+		return false
+	}
+
+	recipients, err := resolveOpsAlertEmailRecipients(ctx, s.userService, emailCfg)
+	if err != nil {
+		log.Printf("[OpsGroupAvailability] resolve recipients failed: %v", err)
+	}
+	if len(recipients) == 0 {
 		return false
 	}
 
@@ -482,22 +523,26 @@ func (s *OpsGroupAvailabilityMonitor) sendEmailNotification(ctx context.Context,
 
 	subject := fmt.Sprintf("[Ops Alert][%s] 分组 %s 可用账号不足", cfg.Severity, group.Name)
 
-	if err := retryWithBackoff(
-		ctx,
-		3,
-		[]time.Duration{1 * time.Second, 2 * time.Second, 4 * time.Second},
-		func() error {
-			return s.emailService.SendTemplatedEmail(config, admin.Email, subject, templateData)
-		},
-		func(attempt int, total int, nextDelay time.Duration, err error) {
-			if attempt < total {
-				log.Printf("[OpsGroupAvailability] email send failed (attempt=%d/%d), retrying in %s: %v", attempt, total, nextDelay, err)
-				return
-			}
-			log.Printf("[OpsGroupAvailability] email send failed (attempt=%d/%d), giving up: %v", attempt, total, err)
-		},
-	); err != nil {
-		return false
+	anySent := false
+	for _, to := range recipients {
+		if err := retryWithBackoff(
+			ctx,
+			3,
+			[]time.Duration{1 * time.Second, 2 * time.Second, 4 * time.Second},
+			func() error {
+				return s.emailService.SendTemplatedEmail(config, to, subject, templateData)
+			},
+			func(attempt int, total int, nextDelay time.Duration, err error) {
+				if attempt < total {
+					log.Printf("[OpsGroupAvailability] email send failed (to=%s attempt=%d/%d), retrying in %s: %v", to, attempt, total, nextDelay, err)
+					return
+				}
+				log.Printf("[OpsGroupAvailability] email send failed (to=%s attempt=%d/%d), giving up: %v", to, attempt, total, err)
+			},
+		); err != nil {
+			continue
+		}
+		anySent = true
 	}
-	return true
+	return anySent
 }

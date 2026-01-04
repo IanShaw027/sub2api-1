@@ -175,24 +175,40 @@ func (h *OpsGroupAvailabilityHandler) DeleteConfig(c *gin.Context) {
 	response.Success(c, nil)
 }
 
-// ListStatus returns availability status for all groups with monitoring enabled.
+// ListStatus returns availability status for all active groups.
 // GET /api/admin/ops/group-availability/status
 func (h *OpsGroupAvailabilityHandler) ListStatus(c *gin.Context) {
-	configs, err := h.opsService.ListGroupAvailabilityConfigs(c.Request.Context(), true)
+	ctx := c.Request.Context()
+
+	groups, err := h.groupService.ListActive(ctx)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to list groups")
+		return
+	}
+
+	configs, err := h.opsService.ListGroupAvailabilityConfigs(ctx, false)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to list configs")
 		return
 	}
 
-	result := make([]groupAvailabilityStatusResponse, 0, len(configs))
+	configByGroupID := make(map[int64]*service.OpsGroupAvailabilityConfig, len(configs))
 	for i := range configs {
-		status, err := h.computeStatus(c.Request.Context(), &configs[i])
+		configByGroupID[configs[i].GroupID] = &configs[i]
+	}
+
+	result := make([]groupAvailabilityStatusResponse, 0, len(groups))
+	for i := range groups {
+		group := groups[i]
+		cfg := configByGroupID[group.ID]
+
+		status, err := h.computeStatusWithGroup(ctx, &group, cfg)
 		if err != nil {
 			continue
 		}
 		result = append(result, groupAvailabilityStatusResponse{
 			OpsGroupAvailabilityStatus: *status,
-			Config:                     &configs[i],
+			Config:                     cfg,
 		})
 	}
 
@@ -222,7 +238,13 @@ func (h *OpsGroupAvailabilityHandler) GetStatus(c *gin.Context) {
 		return
 	}
 
-	status, err := h.computeStatus(c.Request.Context(), config)
+	group, err := h.groupService.GetByID(c.Request.Context(), groupID)
+	if err != nil || group == nil {
+		response.Error(c, http.StatusNotFound, "Group not found")
+		return
+	}
+
+	status, err := h.computeStatusWithGroup(c.Request.Context(), group, config)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to compute status")
 		return
@@ -265,12 +287,23 @@ func (h *OpsGroupAvailabilityHandler) ListEvents(c *gin.Context) {
 
 // computeStatus calculates the current availability status for a group.
 func (h *OpsGroupAvailabilityHandler) computeStatus(ctx context.Context, config *service.OpsGroupAvailabilityConfig) (*service.OpsGroupAvailabilityStatus, error) {
+	if config == nil {
+		return nil, nil
+	}
 	group, err := h.groupService.GetByID(ctx, config.GroupID)
 	if err != nil {
 		return nil, err
 	}
+	return h.computeStatusWithGroup(ctx, group, config)
+}
 
-	available, total, err := h.opsService.CountAvailableAccountsByGroup(ctx, config.GroupID)
+func (h *OpsGroupAvailabilityHandler) computeStatusWithGroup(ctx context.Context, group *service.Group, config *service.OpsGroupAvailabilityConfig) (*service.OpsGroupAvailabilityStatus, error) {
+	if group == nil {
+		return nil, nil
+	}
+
+	groupID := group.ID
+	available, total, err := h.opsService.CountAvailableAccountsByGroup(ctx, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -279,16 +312,29 @@ func (h *OpsGroupAvailabilityHandler) computeStatus(ctx context.Context, config 
 	errorAccounts := 0
 	overload := 0
 
-	isHealthy := available >= config.MinAvailableAccounts
+	monitoringEnabled := false
+	minAvailable := 0
+	if config != nil {
+		monitoringEnabled = config.Enabled
+		minAvailable = config.MinAvailableAccounts
+	}
+
+	isHealthy := true
+	if config != nil {
+		isHealthy = available >= minAvailable
+	}
 	alertStatus := "ok"
-	if !isHealthy {
+	if config != nil && !isHealthy {
 		alertStatus = "firing"
 	}
 
-	event, _ := h.opsService.GetLatestGroupAvailabilityEvent(ctx, config.ID)
+	var event *service.OpsGroupAvailabilityEvent
+	if config != nil && config.ID != 0 {
+		event, _ = h.opsService.GetLatestGroupAvailabilityEvent(ctx, config.ID)
+	}
 
 	status := &service.OpsGroupAvailabilityStatus{
-		GroupID:   config.GroupID,
+		GroupID:   groupID,
 		GroupName: group.Name,
 		Platform:  group.Platform,
 
@@ -298,8 +344,8 @@ func (h *OpsGroupAvailabilityHandler) computeStatus(ctx context.Context, config 
 		ErrorAccounts:     errorAccounts,
 		OverloadAccounts:  overload,
 
-		MonitoringEnabled:    config.Enabled,
-		MinAvailableAccounts: config.MinAvailableAccounts,
+		MonitoringEnabled:    monitoringEnabled,
+		MinAvailableAccounts: minAvailable,
 
 		IsHealthy:   isHealthy,
 		AlertStatus: alertStatus,

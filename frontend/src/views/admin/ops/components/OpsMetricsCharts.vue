@@ -11,6 +11,7 @@ import type {
   OpsMetrics,
   OpsDashboardOverview
 } from '@/api/admin/ops'
+import HelpTooltip from '@/components/common/HelpTooltip.vue'
 
 interface Props {
   hasLoadedOnce: boolean
@@ -71,7 +72,45 @@ const latencyChartData = computed(() => {
   }
 })
 
-// Chart Data: Error Distribution
+// --- 错误归因逻辑 (Error Attribution) ---
+// 将错误码分类为：上游 (502/503)、客户端 (4xx)、系统 (500)
+interface ErrorCategory {
+  label: string
+  count: number
+  color: string
+}
+
+const errorAttribution = computed(() => {
+  if (!props.errorDistribution) return []
+  
+  let upstream = 0 // 502, 503, 504
+  let client = 0   // 4xx
+  let system = 0   // 500
+  let other = 0
+
+  props.errorDistribution.items.forEach(item => {
+    const code = parseInt(item.code)
+    if ([502, 503, 504].includes(code)) upstream += item.count
+    else if (code >= 400 && code < 500) client += item.count
+    else if (code === 500) system += item.count
+    else other += item.count
+  })
+
+  const result: ErrorCategory[] = []
+  if (upstream > 0) result.push({ label: '上游故障 (Upstream)', count: upstream, color: colors.orange })
+  if (client > 0) result.push({ label: '用户行为 (Client)', count: client, color: colors.blue })
+  if (system > 0) result.push({ label: '系统故障 (System)', count: system, color: colors.red })
+  if (other > 0) result.push({ label: '其他 (Other)', count: other, color: colors.gray })
+  
+  return result
+})
+
+const topErrorReason = computed(() => {
+  if (errorAttribution.value.length === 0) return null
+  return errorAttribution.value.reduce((prev, current) => (prev.count > current.count) ? prev : current)
+})
+
+// Chart Data: Error Distribution (Replaced with Attribution)
 const errorTotalCount = computed(() => sumNumbers(props.errorDistribution?.items?.map(i => i.count) ?? []))
 const errorChartState = computed<ChartState>(() => {
   if (!props.hasLoadedOnce) return 'loading'
@@ -82,20 +121,19 @@ const errorChartState = computed<ChartState>(() => {
 const errorChartData = computed(() => {
   if (!props.errorDistribution || errorTotalCount.value <= 0) return null
   return {
-    labels: props.errorDistribution.items.map(i => i.code),
+    labels: errorAttribution.value.map(i => i.label),
     datasets: [
       {
-        data: props.errorDistribution.items.map(i => i.count),
-        backgroundColor: [
-          '#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899'
-        ],
+        data: errorAttribution.value.map(i => i.count),
+        backgroundColor: errorAttribution.value.map(i => i.color),
         borderWidth: 0
       }
     ]
   }
 })
 
-// Chart Data: Provider SLA (Horizontal Bar)
+// --- 供应商健康度拆解 (Provider Breakdown) ---
+// 堆叠柱状图：绿色代表成功，红色代表失败
 const providerTotalRequests = computed(() => sumNumbers(props.providers.map(p => p.request_count)))
 const providerChartState = computed<ChartState>(() => {
   if (!props.hasLoadedOnce) return 'loading'
@@ -105,17 +143,27 @@ const providerChartState = computed<ChartState>(() => {
 })
 const providerChartData = computed(() => {
   if (!props.providers.length || providerTotalRequests.value <= 0) return null
-  // Sort providers by error rate (desc) to highlight issues
-  const sorted = [...props.providers].sort((a, b) => a.error_rate - b.error_rate)
+  // 按请求量排序，优先看大户
+  const sorted = [...props.providers].sort((a, b) => b.request_count - a.request_count)
+  
   return {
     labels: sorted.map(p => p.name),
     datasets: [
       {
-        label: t('admin.ops.charts.errorRateLabel'),
-        data: sorted.map(p => p.error_rate),
-        backgroundColor: sorted.map(p => p.error_rate > 5 ? colors.red : p.error_rate > 1 ? colors.orange : colors.green),
+        label: '成功请求',
+        data: sorted.map(p => p.request_count * (1 - p.error_rate / 100)), // 估算成功数
+        backgroundColor: colors.green,
         borderRadius: 4,
-        barPercentage: 0.6
+        barPercentage: 0.6,
+        stack: 'total'
+      },
+      {
+        label: '失败请求',
+        data: sorted.map(p => p.request_count * (p.error_rate / 100)), // 估算失败数
+        backgroundColor: colors.red,
+        borderRadius: 4,
+        barPercentage: 0.6,
+        stack: 'total'
       }
     ]
   }
@@ -237,14 +285,30 @@ const throughputOptions = computed(() => ({
 const providerOptions = computed(() => ({
   ...baseOptions.value,
   indexAxis: 'y' as const, // Horizontal Bar
-  plugins: { legend: { display: false } },
+  plugins: { 
+    legend: { display: false },
+    tooltip: {
+      callbacks: {
+        label: (context: any) => {
+          const label = context.dataset.label || ''
+          const value = context.raw || 0
+          // 计算百分比
+          const total = context.chart.data.datasets.reduce((acc: number, ds: any) => acc + (ds.data[context.dataIndex] || 0), 0)
+          const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0
+          return `${label}: ${Math.round(value)} (${percentage}%)`
+        }
+      }
+    }
+  },
   scales: {
     x: {
       beginAtZero: true,
+      stacked: true, // 堆叠
       grid: { color: colors.grid, borderDash: [4, 4] },
       ticks: { color: colors.text, font: { size: 10 } }
     },
     y: {
+      stacked: true, // 堆叠
       grid: { display: false },
       ticks: { color: colors.text, font: { size: 11, weight: 'bold' as const } }
     }
@@ -261,12 +325,12 @@ const providerOptions = computed(() => ({
       <div class="mb-4 flex items-center justify-between">
         <h3 
           class="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white"
-          :title="$t('admin.ops.tooltips.throughputChart')"
         >
           <svg class="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
           </svg>
           {{ $t('admin.ops.charts.throughput') }}
+          <HelpTooltip content="流量趋势图。QPS 激增但 TPS 不涨，通常意味着大量无效请求（可能是攻击或错误调用）。" />
         </h3>
         <div class="flex items-center gap-2 text-xs text-gray-500">
           <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-blue-500"></span>QPS</span>
@@ -282,17 +346,17 @@ const providerOptions = computed(() => ({
       </div>
     </div>
 
-    <!-- Error Distribution -->
+    <!-- Error Distribution (Attribution) -->
     <div class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700 lg:col-span-1">
       <div class="mb-4 flex items-center justify-between">
         <h3 
           class="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white"
-          :title="$t('admin.ops.tooltips.errorDistChart')"
         >
           <svg class="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
           {{ $t('admin.ops.charts.errorDistribution') }}
+          <HelpTooltip content="错误归因分析。上游故障=502/503；用户行为=4xx；系统故障=500。" />
         </h3>
       </div>
       <div class="relative h-64">
@@ -300,12 +364,16 @@ const providerOptions = computed(() => ({
           <div class="flex-1">
              <Doughnut :data="errorChartData" :options="{ ...baseOptions, cutout: '65%' }" />
           </div>
-          <!-- Custom Legend -->
-          <div class="mt-4 flex flex-wrap justify-center gap-3">
-            <div v-for="(item, idx) in errorDistribution?.items.slice(0, 4)" :key="item.code" class="flex items-center gap-1.5 text-xs">
-              <span class="h-2 w-2 rounded-full" :style="{ backgroundColor: ['#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#8b5cf6'][idx] }"></span>
-              <span class="font-medium text-gray-700 dark:text-gray-300">{{ item.code }}</span>
-              <span class="text-gray-400">{{ item.percentage }}%</span>
+          <!-- Custom Legend with Diagnosis -->
+          <div class="mt-4 flex flex-col items-center gap-2">
+            <div v-if="topErrorReason" class="text-xs font-bold text-gray-900 dark:text-white">
+              主要原因: <span :style="{ color: topErrorReason.color }">{{ topErrorReason.label }}</span>
+            </div>
+            <div class="flex flex-wrap justify-center gap-3">
+              <div v-for="item in errorAttribution" :key="item.label" class="flex items-center gap-1.5 text-xs">
+                <span class="h-2 w-2 rounded-full" :style="{ backgroundColor: item.color }"></span>
+                <span class="text-gray-500 dark:text-gray-400">{{ item.count }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -323,12 +391,12 @@ const providerOptions = computed(() => ({
       <div class="mb-4 flex items-center justify-between">
         <h3 
           class="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white"
-          :title="$t('admin.ops.tooltips.latencyChart')"
         >
           <svg class="h-4 w-4 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           {{ $t('admin.ops.charts.latency') }}
+          <HelpTooltip content="请求延迟分布。长尾（右侧）越高，说明卡顿越严重。" />
         </h3>
       </div>
       <div class="h-48">
@@ -339,17 +407,17 @@ const providerOptions = computed(() => ({
       </div>
     </div>
 
-    <!-- Provider Health (Horizontal Bar) -->
+    <!-- Provider Health (Breakdown) -->
     <div class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700 lg:col-span-2">
       <div class="mb-4 flex items-center justify-between">
         <h3 
           class="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white"
-          :title="$t('admin.ops.tooltips.providerChart')"
         >
           <svg class="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           {{ $t('admin.ops.charts.providerErrorRate') }}
+          <HelpTooltip content="各供应商的请求量与成功率。红色部分代表失败请求。如果某个供应商全是红色，请立即检查。" />
         </h3>
       </div>
       <div class="h-48">

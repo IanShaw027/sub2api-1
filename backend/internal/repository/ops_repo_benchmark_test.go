@@ -49,8 +49,8 @@ func BenchmarkOpsRepo_PreaggregatedQueries(b *testing.B) {
 			repoLegacy := &OpsRepository{sql: db, usePreaggregatedTables: false}
 			repoPreagg := &OpsRepository{sql: db, usePreaggregatedTables: true}
 
-			opsSvcLegacy := svc.NewOpsService(repoLegacy, db)
-			opsSvcPreagg := svc.NewOpsService(repoPreagg, db)
+			opsSvcLegacy := svc.NewOpsService(repoLegacy, db, nil, nil)
+			opsSvcPreagg := svc.NewOpsService(repoPreagg, db, nil, nil)
 
 			// Ensure aggregates exist for the full range.
 			b.StopTimer()

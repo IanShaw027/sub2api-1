@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { formatNumber } from '@/utils/format'
 import type { OpsDashboardOverview } from '@/api/admin/ops'
+import { adminAPI } from '@/api/admin' // Import for group list
+import HelpTooltip from '@/components/common/HelpTooltip.vue'
 
 interface Props {
   overview: OpsDashboardOverview | null
@@ -16,33 +18,135 @@ interface Props {
 interface Emits {
   (e: 'update:timeRange', value: string): void
   (e: 'refresh'): void
+  // Add new filter events
+  (e: 'update:platform', value: string): void
+  (e: 'update:group', value: number | null): void
 }
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
+// --- Global Filters ---
+const selectedPlatform = ref('')
+const selectedGroupId = ref<number | null>(null)
+const groups = ref<Array<{ id: number, name: string }>>([])
+
+onMounted(async () => {
+  try {
+    // Fetch simple group list for filter
+    const res = await adminAPI.groups.list(1, 100)
+    groups.value = res.items.map(g => ({ id: g.id, name: g.name }))
+  } catch (e) {
+    console.error('Failed to load groups for filter', e)
+  }
+})
+
+function handlePlatformChange(val: string) {
+  selectedPlatform.value = val
+  emit('update:platform', val)
+}
+
+function handleGroupChange(val: string) {
+  const id = val ? Number(val) : null
+  selectedGroupId.value = id
+  emit('update:group', id)
+}
+
+// --- 视觉辅助逻辑 ---
+
+const isSystemIdle = computed(() => {
+  const ov = props.overview
+  if (!ov) return true
+  // 如果 QPS 为 0 且 错误率 为 0，视为待机
+  // 注意：某些情况下 qps.current 可能是瞬时值，也可以结合 total_requests 判断，但这里用实时 QPS 比较直观
+  return (props.realTimeQPS || ov.qps.current) === 0 && ov.errors.error_rate === 0
+})
+
 const healthScoreColor = computed(() => {
+  if (isSystemIdle.value) return '#9ca3af' // gray-400 for Idle
+  
   const score = props.overview?.health_score || 0
-  if (score >= 90) return '#10b981' // green-500
-  if (score >= 70) return '#f59e0b' // yellow-500
-  return '#ef4444' // red-500
+  if (score >= 90) return '#10b981' // green
+  if (score >= 60) return '#f59e0b' // yellow
+  return '#ef4444' // red
 })
 
 const healthScoreClass = computed(() => {
+  if (isSystemIdle.value) return 'text-gray-400'
+  
   const score = props.overview?.health_score || 0
   if (score >= 90) return 'text-green-500'
-  if (score >= 70) return 'text-yellow-500'
+  if (score >= 60) return 'text-yellow-500'
   return 'text-red-500'
 })
 
-// SVG Circle properties for Health Score
+// SVG Circle properties
 const circleSize = 100
 const strokeWidth = 8
 const radius = (circleSize - strokeWidth) / 2
 const circumference = 2 * Math.PI * radius
 const dashOffset = computed(() => {
+  if (isSystemIdle.value) return 0 // Full circle for idle
   const score = props.overview?.health_score || 0
   return circumference - (score / 100) * circumference
+})
+
+// --- 智能诊断引擎 (Frontend Diagnosis) ---
+// Tuned for LLM Gateway context
+interface DiagnosisItem {
+  type: 'critical' | 'warning' | 'info'
+  message: string
+  impact: string
+}
+
+const diagnosisReport = computed<DiagnosisItem[]>(() => {
+  const ov = props.overview
+  if (!ov) return []
+  
+  const report: DiagnosisItem[] = []
+
+  // 0. 待机检测
+  if (isSystemIdle.value) {
+    report.push({ type: 'info', message: '系统待机中', impact: '当前无流量，系统处于休眠状态' })
+    return report
+  }
+  
+  // 1. 错误率检查 (Upstream Error Rate)
+  // LLM API 波动大，3% 以内可接受
+  if (ov.errors.error_rate > 10) {
+    report.push({ type: 'critical', message: '上游错误率极高 (>10%)', impact: '大量请求失败，请检查供应商额度或状态' })
+  } else if (ov.errors.error_rate > 3) {
+    report.push({ type: 'warning', message: '上游错误率偏高 (>3%)', impact: '部分请求遇到风控或网络抖动' })
+  }
+
+  // 2. SLA 检查 (User Success Rate)
+  if (ov.sla.current < 90.0) {
+    report.push({ type: 'critical', message: 'SLA 严重未达标 (<90%)', impact: '用户体验受到严重影响' })
+  } else if (ov.sla.current < 98.0) {
+    report.push({ type: 'warning', message: 'SLA 轻微波动 (<98%)', impact: '可能有少量请求失败' })
+  }
+
+  // 3. 延迟检查
+  // LLM 响应本来就慢，8s 以内算正常，超过 20s 才是异常
+  if (ov.latency.p99 > 20000) {
+    report.push({ type: 'warning', message: 'P99 延迟极高 (>20s)', impact: '存在超长等待请求，可能导致客户端超时' })
+  } else if (ov.latency.p99 > 8000) {
+    // 8s-20s 对于流式输出来说是可接受的，作为提示即可
+    report.push({ type: 'info', message: 'P99 延迟较高 (>8s)', impact: '长文本生成场景下的正常现象' })
+  }
+
+  // 4. 资源水位检查
+  const dbUsage = ov.resources.db_connections.active / Math.max(ov.resources.db_connections.max, 1)
+  if (dbUsage > 0.9) {
+    report.push({ type: 'critical', message: '数据库连接池即将耗尽', impact: '可能导致服务拒绝' })
+  }
+
+  // 5. 健康加分项
+  if (report.length === 0) {
+    report.push({ type: 'info', message: '系统运行平稳', impact: '各项指标在预期范围内' })
+  }
+
+  return report
 })
 
 const displayRealTimeQPS = computed(() => {
@@ -55,12 +159,12 @@ const displayRealTimeTPS = computed(() => {
   return props.overview?.tps.current ?? 0
 })
 
-// Status helpers
 const getStatusColor = (status: string | undefined) => {
   if (!status) return 'bg-gray-200 text-gray-500 dark:bg-dark-700 dark:text-gray-400'
-  if (status === 'operational' || status === 'healthy' || status === 'running')
+  const s = status.toLowerCase()
+  if (s === 'operational' || s === 'healthy' || s === 'running')
     return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-  if (status === 'degraded' || status === 'warning')
+  if (s === 'degraded' || s === 'warning')
     return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
   return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
 }
@@ -73,7 +177,7 @@ const getStatusColor = (status: string | undefined) => {
       <div>
         <h1 class="flex items-center gap-2 text-xl font-black text-gray-900 dark:text-white">
           <svg class="h-6 w-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
           </svg>
           {{ $t('admin.ops.title') }}
         </h1>
@@ -92,9 +196,32 @@ const getStatusColor = (status: string | undefined) => {
 
       <div class="flex items-center gap-3">
         <select
+          :value="selectedPlatform"
+          @change="handlePlatformChange(($event.target as HTMLSelectElement).value)"
+          class="rounded-lg border-gray-200 bg-gray-50 py-1.5 pl-3 pr-8 text-xs font-medium text-gray-700 focus:border-blue-500 focus:ring-blue-500 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300"
+        >
+          <option value="">{{ $t('admin.ops.errors.allPlatforms') }}</option>
+          <option value="openai">OpenAI</option>
+          <option value="anthropic">Anthropic</option>
+          <option value="gemini">Gemini</option>
+          <option value="antigravity">Antigravity</option>
+        </select>
+
+        <select
+          :value="selectedGroupId || ''"
+          @change="handleGroupChange(($event.target as HTMLSelectElement).value)"
+          class="rounded-lg border-gray-200 bg-gray-50 py-1.5 pl-3 pr-8 text-xs font-medium text-gray-700 focus:border-blue-500 focus:ring-blue-500 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 max-w-[120px]"
+        >
+          <option value="">{{ $t('admin.ops.config.applyToGroups').replace(':', '') }}</option>
+          <option v-for="g in groups" :key="g.id" :value="g.id">{{ g.name }}</option>
+        </select>
+
+        <div class="h-4 w-[1px] bg-gray-200 dark:bg-dark-700 mx-1"></div>
+
+        <select
           :value="timeRange"
           @change="emit('update:timeRange', ($event.target as HTMLSelectElement).value)"
-          class="rounded-lg border-gray-200 bg-gray-50 py-1.5 pl-3 pr-8 text-sm font-medium text-gray-700 focus:border-blue-500 focus:ring-blue-500 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300"
+          class="rounded-lg border-gray-200 bg-gray-50 py-1.5 pl-3 pr-8 text-xs font-medium text-gray-700 focus:border-blue-500 focus:ring-blue-500 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300"
         >
           <option value="5m">{{ $t('admin.ops.timeRange.5m') }}</option>
           <option value="30m">{{ $t('admin.ops.timeRange.30m') }}</option>
@@ -106,7 +233,7 @@ const getStatusColor = (status: string | undefined) => {
         <button
           @click="emit('refresh')"
           :disabled="loading"
-          class="flex h-9 w-9 items-center justify-center rounded-lg bg-gray-100 text-gray-500 transition-colors hover:bg-gray-200 dark:bg-dark-700 dark:text-gray-400 dark:hover:bg-dark-600"
+          class="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 transition-colors hover:bg-gray-200 dark:bg-dark-700 dark:text-gray-400 dark:hover:bg-dark-600"
           :title="$t('admin.ops.status.refresh')"
         >
           <svg class="h-4 w-4" :class="{ 'animate-spin': loading }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -118,11 +245,35 @@ const getStatusColor = (status: string | undefined) => {
 
     <!-- Main Dashboard Grid -->
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-12">
-      <!-- 1. Health Score (Col span 3) -->
+      <!-- 1. Health Score Diagnosis Card (Col span 3) -->
       <div 
-        class="flex flex-col items-center justify-center border-r border-gray-100 py-2 dark:border-dark-700 lg:col-span-3"
-        :title="$t('admin.ops.tooltips.healthScore')"
+        class="group relative flex flex-col items-center justify-center border-r border-gray-100 py-2 transition-all hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-700/50 lg:col-span-3 cursor-pointer rounded-xl"
       >
+        <!-- Hover Popover: Diagnosis Report -->
+        <div class="pointer-events-none absolute left-full top-0 z-50 ml-2 w-72 opacity-0 transition-opacity duration-200 group-hover:pointer-events-auto group-hover:opacity-100">
+           <div class="rounded-xl bg-white p-4 shadow-xl ring-1 ring-black/5 dark:bg-gray-800 dark:ring-white/10">
+             <h4 class="mb-3 border-b border-gray-100 pb-2 text-sm font-bold text-gray-900 dark:border-gray-700 dark:text-white">
+               🩺 健康诊断报告
+             </h4>
+             <div class="space-y-3">
+               <div v-for="(item, idx) in diagnosisReport" :key="idx" class="flex gap-3">
+                 <div class="mt-0.5 shrink-0">
+                   <svg v-if="item.type === 'critical'" class="h-4 w-4 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" /></svg>
+                   <svg v-else-if="item.type === 'warning'" class="h-4 w-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+                   <svg v-else-if="item.type === 'info'" class="h-4 w-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" /></svg>
+                 </div>
+                 <div>
+                   <div class="text-xs font-medium text-gray-900 dark:text-white">{{ item.message }}</div>
+                   <div class="text-[10px] text-gray-500 dark:text-gray-400">{{ item.impact }}</div>
+                 </div>
+               </div>
+             </div>
+             <div class="mt-3 border-t border-gray-100 pt-2 text-[10px] text-gray-400 dark:border-gray-700">
+               诊断标准基于大模型网关场景优化
+             </div>
+           </div>
+        </div>
+
         <div class="relative flex items-center justify-center">
           <svg :width="circleSize" :height="circleSize" class="-rotate-90 transform">
             <circle
@@ -148,14 +299,20 @@ const getStatusColor = (status: string | undefined) => {
             />
           </svg>
           <div class="absolute flex flex-col items-center">
-            <span class="text-3xl font-black" :class="healthScoreClass">{{ overview?.health_score || '--' }}</span>
+            <span class="text-3xl font-black" :class="healthScoreClass">{{ isSystemIdle ? 'Idle' : (overview?.health_score || '--') }}</span>
             <span class="text-[10px] font-bold uppercase tracking-wider text-gray-400">Health</span>
           </div>
         </div>
         <div class="mt-4 text-center">
-          <div class="text-xs font-medium text-gray-500">{{ $t('admin.ops.status.healthCondition') }}</div>
+          <div class="flex items-center justify-center gap-1 text-xs font-medium text-gray-500">
+            {{ $t('admin.ops.status.healthCondition') }}
+            <!-- Hint Icon -->
+            <svg class="h-3.5 w-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
           <div class="mt-1 text-xs font-bold" :class="healthScoreClass">
-            {{ overview?.health_score && overview.health_score >= 90 ? $t('admin.ops.status.healthy') : $t('admin.ops.status.risky') }}
+            {{ isSystemIdle ? '系统待机' : (overview?.health_score && overview.health_score >= 90 ? '运行平稳' : '存在风险') }}
           </div>
         </div>
       </div>
@@ -170,12 +327,17 @@ const getStatusColor = (status: string | undefined) => {
           <h3 class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ $t('admin.ops.status.trafficPulse') }}</h3>
         </div>
 
-        <div class="flex items-baseline gap-1" :title="$t('admin.ops.tooltips.realtimeQPS')">
+        <div class="flex items-baseline gap-1">
           <span class="text-4xl font-black text-gray-900 dark:text-white">{{ displayRealTimeQPS.toFixed(1) }}</span>
           <span class="text-sm font-bold text-gray-500">QPS</span>
+          <HelpTooltip content="每秒请求数 (Queries Per Second)。反映当前系统的并发压力。如果只高不低，可能存在 CC 攻击风险。" />
         </div>
+        
         <div class="mt-1 flex items-center gap-4 text-xs font-medium text-gray-500">
-          <span :title="$t('admin.ops.tooltips.realtimeTPS')">TPS: {{ formatNumber(displayRealTimeTPS) }}</span>
+          <span class="flex items-center">
+            TPS: {{ formatNumber(displayRealTimeTPS) }}
+            <HelpTooltip content="每秒 Token 消耗量。直接反映业务计费流转速度。TPS 越高，系统每秒产生的价值（或成本）越高。" />
+          </span>
           <span class="h-1 w-1 rounded-full bg-gray-300 dark:bg-gray-600"></span>
           <span :title="$t('admin.ops.tooltips.peak1h')">{{ $t('admin.ops.status.peak1h') }}: {{ overview?.qps.peak_1h.toFixed(1) }}</span>
         </div>
@@ -205,8 +367,11 @@ const getStatusColor = (status: string | undefined) => {
       <div class="grid grid-cols-2 gap-4 lg:col-span-4">
         <!-- SLA -->
         <div class="rounded-xl bg-gray-50 p-3 dark:bg-dark-900">
-          <div class="flex items-center justify-between" :title="$t('admin.ops.status.slaTooltip')">
-            <span class="text-[10px] font-bold uppercase text-gray-400">SLA</span>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-1">
+              <span class="text-[10px] font-bold uppercase text-gray-400">SLA</span>
+              <HelpTooltip content="用户成功率 (User Success Rate)。低于 98% 意味着用户体验有轻微影响。" />
+            </div>
             <span class="h-1.5 w-1.5 rounded-full" :class="overview?.sla.current && overview.sla.current >= 99.9 ? 'bg-green-500' : 'bg-yellow-500'"></span>
           </div>
           <div class="mt-1 text-xl font-black text-gray-900 dark:text-white">{{ overview?.sla.current.toFixed(3) }}%</div>
@@ -217,20 +382,32 @@ const getStatusColor = (status: string | undefined) => {
 
         <!-- P99 Latency -->
         <div class="rounded-xl bg-gray-50 p-3 dark:bg-dark-900">
-          <div class="flex items-center justify-between" :title="$t('admin.ops.status.p99Tooltip')">
-            <span class="text-[10px] font-bold uppercase text-gray-400">P99 Latency</span>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-1">
+              <span class="text-[10px] font-bold uppercase text-gray-400">P99 Latency</span>
+              <HelpTooltip content="最差体验指标。99% 的请求都在此时间内完成。比平均值更能反映系统的卡顿情况。" />
+            </div>
             <span class="text-[10px] text-gray-400">ms</span>
           </div>
-          <div class="mt-1 text-xl font-black text-gray-900 dark:text-white">{{ overview?.latency.p99 }}</div>
-          <div class="mt-1 text-[10px] font-medium text-gray-500">Avg: {{ overview?.latency.avg }}ms</div>
+          <div class="flex items-baseline gap-2 mt-1">
+            <div class="text-xl font-black text-gray-900 dark:text-white">{{ overview?.latency.p99 }} <span class="text-[10px] text-gray-400 font-normal">P99</span></div>
+          </div>
+          <div class="mt-1 flex items-center gap-2 text-[10px] font-medium text-gray-500">
+            <span>P95: {{ overview?.latency.p95 }}</span>
+            <span class="text-gray-300">|</span>
+            <span>P90: {{ overview?.latency.p50 }}</span> <!-- API might not have p90, use p50 or adjust -->
+          </div>
         </div>
 
         <!-- Error Rate -->
         <div class="rounded-xl bg-gray-50 p-3 dark:bg-dark-900">
-          <div class="flex items-center justify-between" :title="$t('admin.ops.status.errorRateTooltip')">
-            <span class="text-[10px] font-bold uppercase text-gray-400">Error Rate</span>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-1">
+              <span class="text-[10px] font-bold uppercase text-gray-400">Error Rate</span>
+              <HelpTooltip content="上游供应商错误率 (Upstream Error Rate)。主要反映 OpenAI/Anthropic 等的健康度。" />
+            </div>
           </div>
-          <div class="mt-1 text-xl font-black" :class="overview?.errors.error_rate && overview.errors.error_rate > 1 ? 'text-red-500' : 'text-gray-900 dark:text-white'">
+          <div class="mt-1 text-xl font-black" :class="overview?.errors.error_rate && overview.errors.error_rate > 5 ? 'text-red-500' : 'text-gray-900 dark:text-white'">
             {{ overview?.errors.error_rate.toFixed(2) }}%
           </div>
           <div class="mt-1 text-[10px] font-medium text-gray-500">5xx: {{ overview?.errors['5xx_count'] }}</div>
@@ -238,8 +415,11 @@ const getStatusColor = (status: string | undefined) => {
 
         <!-- Active Conns -->
         <div class="rounded-xl bg-gray-50 p-3 dark:bg-dark-900">
-          <div class="flex items-center justify-between" :title="$t('admin.ops.status.dbConnsTooltip')">
-            <span class="text-[10px] font-bold uppercase text-gray-400">DB Conns</span>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-1">
+              <span class="text-[10px] font-bold uppercase text-gray-400">DB Conns</span>
+              <HelpTooltip content="数据库连接池占用。如果持续接近 Max，说明数据库成为瓶颈，可能需要扩容。" />
+            </div>
           </div>
           <div class="mt-1 text-xl font-black text-gray-900 dark:text-white">{{ overview?.resources.db_connections.active }}</div>
           <div class="mt-1 text-[10px] font-medium text-gray-500">/ {{ overview?.resources.db_connections.max }} Max</div>
@@ -265,7 +445,7 @@ const getStatusColor = (status: string | undefined) => {
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
           </svg>
           <svg v-else class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37.996.608 2.296.07 2.572-1.065z" />
              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
         </div>

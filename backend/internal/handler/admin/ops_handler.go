@@ -552,6 +552,25 @@ func (h *OpsHandler) GetErrorLogs(c *gin.Context) {
 		filter.AccountID = &accountID
 	}
 
+	if groupIDStr := c.Query("group_id"); groupIDStr != "" {
+		groupID, err := strconv.ParseInt(groupIDStr, 10, 64)
+		if err != nil || groupID <= 0 {
+			response.BadRequest(c, "Invalid group_id")
+			return
+		}
+		filter.GroupID = &groupID
+	}
+
+	if phase := strings.TrimSpace(c.Query("phase")); phase != "" {
+		filter.Phase = phase
+	}
+	if severity := strings.TrimSpace(c.Query("severity")); severity != "" {
+		filter.Severity = severity
+	}
+	if q := strings.TrimSpace(c.Query("q")); q != "" {
+		filter.Query = q
+	}
+
 	out, err := h.opsService.GetErrorLogs(c.Request.Context(), filter)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to get error logs")
@@ -1200,9 +1219,15 @@ func (h *OpsHandler) UpdateEmailNotificationConfig(c *gin.Context) {
 	}
 
 	if err := h.opsService.UpdateEmailNotificationConfig(c.Request.Context(), &req); err != nil {
-		response.Error(c, http.StatusInternalServerError, "Failed to update email notification config")
+		// Most failures here are validation errors from request payload; treat as 400.
+		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	response.Success(c, gin.H{"message": "Email notification config updated successfully"})
+	updated, err := h.opsService.GetEmailNotificationConfig(c.Request.Context())
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to load updated email notification config")
+		return
+	}
+	response.Success(c, updated)
 }

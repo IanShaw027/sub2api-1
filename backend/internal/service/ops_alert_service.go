@@ -51,20 +51,11 @@ func NewOpsAlertService(
 	userService *UserService,
 	emailService *EmailService,
 	redisClient *redis.Client,
-	cfg *config.Config,
+	_ *config.Config,
 ) *OpsAlertService {
 	lockOn := true
 	lockKey := opsAlertLeaderLockKeyDefault
 	lockTTL := opsAlertLeaderLockTTLDefault
-	if cfg != nil {
-		lockOn = cfg.Ops.Alert.DistributedLockEnabled
-		if strings.TrimSpace(cfg.Ops.Alert.DistributedLockKey) != "" {
-			lockKey = strings.TrimSpace(cfg.Ops.Alert.DistributedLockKey)
-		}
-		if cfg.Ops.Alert.DistributedLockTTL > 0 {
-			lockTTL = cfg.Ops.Alert.DistributedLockTTL
-		}
-	}
 
 	return &OpsAlertService{
 		opsService:   opsService,
@@ -126,14 +117,18 @@ func (s *OpsAlertService) Stop() {
 func (s *OpsAlertService) run() {
 	defer s.wg.Done()
 
-	ticker := time.NewTicker(s.interval)
-	defer ticker.Stop()
+	timer := time.NewTimer(0)
+	defer timer.Stop()
 
-	s.evaluateOnce()
 	for {
 		select {
-		case <-ticker.C:
+		case <-timer.C:
 			s.evaluateOnce()
+			next := s.interval
+			if next <= 0 {
+				next = opsAlertEvalInterval
+			}
+			timer.Reset(next)
 		case <-s.stopCtx.Done():
 			return
 		}
@@ -144,7 +139,32 @@ func (s *OpsAlertService) evaluateOnce() {
 	ctx, cancel := context.WithTimeout(s.stopCtx, opsAlertEvaluateTimeout)
 	defer cancel()
 
+	s.applyRuntimeSettings(ctx)
 	s.Evaluate(ctx, time.Now())
+}
+
+func (s *OpsAlertService) applyRuntimeSettings(ctx context.Context) {
+	if s == nil || s.opsService == nil {
+		return
+	}
+	cfg, err := s.opsService.GetOpsAlertRuntimeSettings(ctx)
+	if err != nil || cfg == nil {
+		return
+	}
+
+	interval := time.Duration(cfg.EvaluationIntervalSeconds) * time.Second
+	if interval <= 0 {
+		interval = opsAlertEvalInterval
+	}
+	s.interval = interval
+
+	s.distributedLockOn = cfg.DistributedLock.Enabled
+	if strings.TrimSpace(cfg.DistributedLock.Key) != "" {
+		s.distributedLockKey = strings.TrimSpace(cfg.DistributedLock.Key)
+	}
+	if cfg.DistributedLock.TTLSeconds > 0 {
+		s.distributedLockTTL = time.Duration(cfg.DistributedLock.TTLSeconds) * time.Second
+	}
 }
 
 func (s *OpsAlertService) Evaluate(ctx context.Context, now time.Time) {
@@ -706,13 +726,34 @@ func (s *OpsAlertService) sendEmailNotification(ctx context.Context, rule OpsAle
 	if s.emailService == nil || s.userService == nil {
 		return false
 	}
+	if s.opsService == nil {
+		return false
+	}
 
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
-	admin, err := s.userService.GetFirstAdmin(ctx)
-	if err != nil || admin == nil || admin.Email == "" {
+	emailCfg, err := s.opsService.GetEmailNotificationConfig(ctx)
+	if err != nil {
+		log.Printf("[OpsAlert] load email notification config failed: %v", err)
+		return false
+	}
+	if emailCfg == nil || !emailCfg.Alert.Enabled {
+		return false
+	}
+	if event != nil && event.Status == OpsAlertStatusResolved && !emailCfg.Alert.IncludeResolvedAlerts {
+		return false
+	}
+	if !shouldSendOpsEmailBySeverity(emailCfg.Alert.MinSeverity, rule.Severity) {
+		return false
+	}
+
+	recipients, err := resolveOpsAlertEmailRecipients(ctx, s.userService, emailCfg)
+	if err != nil {
+		log.Printf("[OpsAlert] resolve recipients failed: %v", err)
+	}
+	if len(recipients) == 0 {
 		return false
 	}
 
@@ -745,25 +786,30 @@ func (s *OpsAlertService) sendEmailNotification(ctx context.Context, rule OpsAle
 
 	subject := fmt.Sprintf("[Ops Alert][%s] %s", rule.Severity, rule.Name)
 
-	if err := retryWithBackoff(
-		ctx,
-		opsAlertEmailMaxRetries,
-		opsAlertEmailBackoff,
-		func() error {
-			return s.emailService.SendTemplatedEmail(config, admin.Email, subject, templateData)
-		},
-		func(attempt int, total int, nextDelay time.Duration, err error) {
-			if attempt < total {
-				log.Printf("[OpsAlert] email send failed (attempt=%d/%d), retrying in %s: %v", attempt, total, nextDelay, err)
-				return
+	anySent := false
+	for _, to := range recipients {
+		if err := retryWithBackoff(
+			ctx,
+			opsAlertEmailMaxRetries,
+			opsAlertEmailBackoff,
+			func() error {
+				return s.emailService.SendTemplatedEmail(config, to, subject, templateData)
+			},
+			func(attempt int, total int, nextDelay time.Duration, err error) {
+				if attempt < total {
+					log.Printf("[OpsAlert] email send failed (to=%s attempt=%d/%d), retrying in %s: %v", to, attempt, total, nextDelay, err)
+					return
+				}
+				log.Printf("[OpsAlert] email send failed (to=%s attempt=%d/%d), giving up: %v", to, attempt, total, err)
+			},
+		); err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				log.Printf("[OpsAlert] email send canceled (to=%s): %v", to, err)
 			}
-			log.Printf("[OpsAlert] email send failed (attempt=%d/%d), giving up: %v", attempt, total, err)
-		},
-	); err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			log.Printf("[OpsAlert] email send canceled: %v", err)
+			continue
 		}
-		return false
+		anySent = true
 	}
-	return true
+
+	return anySent
 }

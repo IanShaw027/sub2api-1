@@ -32,7 +32,7 @@ func TestOpsService_EndToEnd_RawToAggregatesToDashboard(t *testing.T) {
 	require.NoError(t, opsRepo.UpsertHourlyMetrics(ctx, fixture.start, fixture.end))
 	require.NoError(t, opsRepo.UpsertDailyMetrics(ctx, fixture.start, fixture.end))
 
-	opsSvc := service.NewOpsService(opsRepo, db)
+	opsSvc := service.NewOpsService(opsRepo, db, nil, nil)
 
 	overview, err := opsSvc.GetDashboardOverview(ctx, "24h")
 	require.NoError(t, err)

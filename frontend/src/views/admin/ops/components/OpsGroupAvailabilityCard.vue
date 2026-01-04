@@ -1,80 +1,144 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
 import { opsAPI } from '@/api/admin/ops'
-import type { GroupAvailabilityStatus } from '../types'
-import OpsConfigDialog from './OpsConfigDialog.vue'
-import { formatDistanceToNow } from 'date-fns'
-import { zhCN } from 'date-fns/locale'
+import { adminAPI } from '@/api/admin' // Import adminAPI
+import type { GroupAvailabilityStatus, GroupAvailabilityConfig, AlertSeverity } from '../types'
+import HelpTooltip from '@/components/common/HelpTooltip.vue'
 
-const { t, locale } = useI18n()
-const router = useRouter()
+const { t } = useI18n()
 const loading = ref(false)
 const groups = ref<GroupAvailabilityStatus[]>([])
-const showConfigDialog = ref(false)
-const focusGroupId = ref<number | null>(null)
+const updatingId = ref<number | null>(null)
 
-const isMonitoringEnabled = (group: GroupAvailabilityStatus) => {
-  return group.monitoring_enabled ?? group.config?.enabled ?? false
+// --- 策略模板定义 (Strategy Templates) ---
+interface StrategyTemplate {
+  key: string
+  label: string
+  desc: string
+  config: {
+    min_available_accounts: number
+    severity: AlertSeverity
+    cooldown_minutes: number
+    notify_email: boolean
+  }
+}
+
+const strategies: StrategyTemplate[] = [
+  {
+    key: 'strict',
+    label: '🛡️ 核心保障 (Strict)',
+    desc: '敏感度高，只要有账号挂了就报警',
+    config: { min_available_accounts: 5, severity: 'critical', cooldown_minutes: 15, notify_email: true }
+  },
+  {
+    key: 'standard',
+    label: '⚖️ 标准均衡 (Standard)',
+    desc: '平衡策略，可用率过低时报警',
+    config: { min_available_accounts: 3, severity: 'warning', cooldown_minutes: 30, notify_email: true }
+  },
+  {
+    key: 'loose',
+    label: '💤 宽松模式 (Loose)',
+    desc: '仅记录日志，不发送邮件轰炸',
+    config: { min_available_accounts: 1, severity: 'info', cooldown_minutes: 60, notify_email: false }
+  }
+]
+
+// 推断当前分组使用的是哪个策略
+function detectStrategy(config: GroupAvailabilityConfig | undefined): string {
+  if (!config) return 'standard'
+  if (config.severity === 'critical') return 'strict'
+  if (config.severity === 'info') return 'loose'
+  return 'standard'
 }
 
 const fetchData = async () => {
   loading.value = true
   try {
-    groups.value = await opsAPI.listGroupAvailabilityStatus()
+    // 1. Fetch monitoring status
+    const statusList = await opsAPI.listGroupAvailabilityStatus()
+    
+    // 2. Fetch all groups (pagination 1-100 for now, assumes reasonable count)
+    const allGroupsRes = await adminAPI.groups.list(1, 100)
+    
+    // 3. Merge: Ensure all groups are listed
+    const merged: GroupAvailabilityStatus[] = allGroupsRes.items.map(g => {
+      const status = statusList.find(s => s.group_id === g.id)
+      if (status) return status
+      
+      // Default placeholder for unmonitored groups
+      return {
+        group_id: g.id,
+        group_name: g.name,
+        platform: g.platform,
+        total_accounts: 0, // Will be updated if backend supports detailed counts in group list
+        available_accounts: 0,
+        min_available_accounts: 0,
+        is_healthy: true, // Default to true visually until monitored
+        monitoring_enabled: false,
+        config: undefined
+      }
+    })
+    
+    // 4. Sort: Monitored first, then by ID
+    groups.value = merged.sort((a, b) => {
+      if (a.monitoring_enabled === b.monitoring_enabled) return a.group_id - b.group_id
+      return a.monitoring_enabled ? -1 : 1
+    })
+
   } catch (err) {
-    console.error('Failed to fetch group availability status', err)
+    console.error('Failed to fetch group data', err)
   } finally {
     loading.value = false
   }
 }
 
-const getStatusType = (group: GroupAvailabilityStatus) => {
-  if (!isMonitoringEnabled(group)) return 'info'
-  return group.is_healthy ? 'success' : 'danger'
-}
-
-const getStatusText = (group: GroupAvailabilityStatus) => {
-  if (!isMonitoringEnabled(group)) return t('admin.ops.availability.unmonitored')
-  return group.is_healthy ? t('admin.ops.availability.healthy') : t('admin.ops.availability.alert')
-}
-
-const getProgressColor = (group: GroupAvailabilityStatus) => {
-  if (!isMonitoringEnabled(group)) return '#9ca3af'
-  return group.is_healthy ? '#10b981' : '#ef4444'
-}
-
-const availabilityPercentage = (group: GroupAvailabilityStatus) => {
-  if (group.total_accounts === 0) return 0
-  return Math.round((group.available_accounts / group.total_accounts) * 100)
-}
-
-const formatLastAlert = (group: GroupAvailabilityStatus) => {
-  const timestamp = group.last_alert_at || group.config?.updated_at
-  if (!timestamp) return '-'
+// 切换监控开关
+const toggleMonitoring = async (group: GroupAvailabilityStatus, enabled: boolean) => {
+  updatingId.value = group.group_id
   try {
-    return formatDistanceToNow(new Date(timestamp), {
-      addSuffix: true,
-      locale: locale.value === 'zh' ? zhCN : undefined
+    const currentConfig = group.config || {}
+    // If enabling for the first time, use standard strategy defaults
+    const defaults = enabled && !group.config ? strategies.find(s => s.key === 'standard')?.config : {}
+    
+    await opsAPI.updateGroupAvailabilityConfig(group.group_id, {
+      ...currentConfig,
+      ...defaults,
+      group_id: group.group_id,
+      enabled: enabled
     })
-  } catch {
-    return '-'
+    
+    // Refresh to get full status (including correct accounts count)
+    await fetchData()
+  } catch (e) {
+    console.error('Failed to toggle monitoring', e)
+  } finally {
+    updatingId.value = null
   }
 }
 
-function openGroupAvailabilityConfig(groupId?: number) {
-  focusGroupId.value = groupId ?? null
-  showConfigDialog.value = true
-}
+// 切换策略模板
+const changeStrategy = async (group: GroupAvailabilityStatus, strategyKey: string) => {
+  const strategy = strategies.find(s => s.key === strategyKey)
+  if (!strategy) return
 
-function closeGroupAvailabilityConfig() {
-  showConfigDialog.value = false
-  focusGroupId.value = null
-  fetchData()
+  updatingId.value = group.group_id
+  try {
+    const currentConfig = group.config || {}
+    await opsAPI.updateGroupAvailabilityConfig(group.group_id, {
+      ...currentConfig,
+      group_id: group.group_id,
+      enabled: true,
+      ...strategy.config
+    })
+    await fetchData()
+  } catch (e) {
+    console.error('Failed to change strategy', e)
+  } finally {
+    updatingId.value = null
+  }
 }
-
-const hasData = computed(() => groups.value.length > 0)
 
 onMounted(() => {
   fetchData()
@@ -83,105 +147,107 @@ onMounted(() => {
 
 <template>
   <div class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
+    <!-- Header -->
     <div class="mb-4 flex items-center justify-between">
-      <h3 class="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white">
-        <svg class="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-        </svg>
-        {{ t('admin.ops.availability.title') }}
-      </h3>
+      <div class="flex items-center gap-2">
+        <h3 class="text-sm font-bold text-gray-900 dark:text-white">
+          {{ t('admin.ops.availability.title') }}
+        </h3>
+        <HelpTooltip content="监控各分组的账号存活情况。如果是 VIP 专用分组，建议开启「严格模式」。" />
+      </div>
+      
       <button
         @click="fetchData"
         :disabled="loading"
-        class="flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-bold text-gray-700 transition-colors hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600"
+        class="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400"
       >
-        <svg class="h-3.5 w-3.5" :class="{ 'animate-spin': loading }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-        </svg>
-        {{ t('admin.ops.availability.refresh') }}
+        {{ t('common.refresh') }}
       </button>
     </div>
 
-    <div v-if="loading && !hasData" class="flex h-48 items-center justify-center text-sm text-gray-400">
+    <!-- Content -->
+    <div v-if="loading && groups.length === 0" class="flex h-32 items-center justify-center text-sm text-gray-400">
       <div class="animate-pulse">{{ t('admin.ops.availability.loading') }}</div>
     </div>
 
-    <div v-else-if="!hasData" class="flex h-48 flex-col items-center justify-center gap-3 text-sm text-gray-400">
-      <svg class="h-12 w-12 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-      </svg>
-      <p class="font-medium">{{ t('admin.ops.availability.noData') }}</p>
-      <button
-        @click="router.push('/admin/groups')"
-        class="mt-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700"
+    <div v-else class="space-y-1">
+      <!-- List Header -->
+      <div class="grid grid-cols-12 gap-4 border-b border-gray-100 pb-2 text-xs font-medium text-gray-500 dark:border-dark-700 dark:text-gray-400 px-2">
+        <div class="col-span-3">分组名称</div>
+        <div class="col-span-3 text-center">水位 (可用/总数)</div>
+        <div class="col-span-3 text-center">监控开关</div>
+        <div class="col-span-3 text-right">报警策略</div>
+      </div>
+
+      <!-- Group Items -->
+      <div 
+        v-for="group in groups" 
+        :key="group.group_id"
+        class="grid grid-cols-12 items-center gap-4 rounded-lg px-2 py-3 transition-colors hover:bg-gray-50 dark:hover:bg-dark-700/50"
       >
-        前往分组管理
-      </button>
-    </div>
-
-    <el-table v-else :data="groups" stripe class="w-full">
-      <el-table-column :label="t('admin.ops.availability.groupName')" min-width="150">
-        <template #default="{ row }">
-          <div class="flex items-center gap-2">
-            <span class="text-sm font-medium text-gray-900 dark:text-white">{{ row.group_name }}</span>
-            <el-tag size="small" type="info">{{ row.platform }}</el-tag>
-          </div>
-        </template>
-      </el-table-column>
-
-      <el-table-column :label="t('admin.ops.availability.availableAccounts')" min-width="200">
-        <template #default="{ row }">
-          <div class="space-y-1">
-            <div class="flex items-center justify-between text-xs">
-              <span class="text-gray-600 dark:text-gray-400">
-                {{ row.available_accounts }} / {{ row.total_accounts }}
-              </span>
-              <span class="font-medium text-gray-900 dark:text-white">
-                {{ availabilityPercentage(row) }}%
-              </span>
-            </div>
-            <el-progress
-              :percentage="availabilityPercentage(row)"
-              :color="getProgressColor(row)"
-              :show-text="false"
-              :stroke-width="6"
-            />
-          </div>
-        </template>
-      </el-table-column>
-
-      <el-table-column :label="t('admin.ops.availability.status')" width="100">
-        <template #default="{ row }">
-          <el-tag :type="getStatusType(row)" size="small">
-            {{ getStatusText(row) }}
-          </el-tag>
-        </template>
-      </el-table-column>
-
-      <el-table-column :label="t('admin.ops.availability.lastUpdate')" width="120">
-        <template #default="{ row }">
-          <span class="text-xs text-gray-500 dark:text-gray-400">
-            {{ formatLastAlert(row) }}
+        <!-- 1. Name & Status Dot -->
+        <div class="col-span-3 flex items-center gap-2 overflow-hidden">
+          <span 
+            class="h-2 w-2 flex-shrink-0 rounded-full"
+            :class="[
+              !group.monitoring_enabled ? 'bg-gray-300' :
+              group.is_healthy ? 'bg-green-500' : 'animate-pulse bg-red-500'
+            ]"
+          ></span>
+          <span class="truncate text-sm font-medium text-gray-900 dark:text-white" :title="group.group_name">
+            {{ group.group_name }}
           </span>
-        </template>
-      </el-table-column>
+        </div>
 
-      <el-table-column :label="t('admin.ops.availability.actions')" width="100" align="center">
-        <template #default="{ row }">
+        <!-- 2. Water Level -->
+        <div class="col-span-3 flex flex-col items-center justify-center">
+          <div class="text-xs font-medium text-gray-700 dark:text-gray-300">
+            {{ group.available_accounts }} <span class="text-gray-400">/ {{ group.total_accounts }}</span>
+          </div>
+          <!-- Mini Progress Bar -->
+          <div class="mt-1 h-1 w-16 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-600">
+            <div 
+              class="h-full rounded-full transition-all"
+              :class="group.is_healthy ? 'bg-green-500' : 'bg-red-500'"
+              :style="{ width: `${(group.available_accounts / Math.max(group.total_accounts, 1)) * 100}%` }"
+            ></div>
+          </div>
+        </div>
+
+        <!-- 3. Monitoring Switch -->
+        <div class="col-span-3 flex justify-center">
           <button
-            @click="openGroupAvailabilityConfig(row.group_id)"
-            class="text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+            @click="toggleMonitoring(group, !group.monitoring_enabled)"
+            :disabled="updatingId === group.group_id"
+            class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            :class="[group.monitoring_enabled ? 'bg-blue-600' : 'bg-gray-200 dark:bg-dark-600']"
           >
-            {{ t('admin.ops.availability.config') }}
+            <span
+              class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+              :class="[group.monitoring_enabled ? 'translate-x-4' : 'translate-x-0']"
+            ></span>
           </button>
-        </template>
-      </el-table-column>
-    </el-table>
+        </div>
 
-    <OpsConfigDialog
-      :show="showConfigDialog"
-      :focus-group-id="focusGroupId"
-      @close="closeGroupAvailabilityConfig"
-    />
+        <!-- 4. Strategy Selector -->
+        <div class="col-span-3 flex justify-end">
+          <select
+            :disabled="!group.monitoring_enabled || updatingId === group.group_id"
+            :value="detectStrategy(group.config)"
+            @change="(e) => changeStrategy(group, (e.target as HTMLSelectElement).value)"
+            class="block w-full max-w-[140px] rounded-md border-0 bg-transparent py-1 pl-2 pr-7 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-blue-600 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-300 dark:ring-dark-600 sm:text-xs sm:leading-6"
+          >
+            <option v-for="s in strategies" :key="s.key" :value="s.key">
+              {{ s.label }}
+            </option>
+          </select>
+        </div>
+      </div>
+      
+      <!-- Empty State -->
+      <div v-if="groups.length === 0" class="py-4 text-center text-xs text-gray-400">
+        {{ t('admin.ops.availability.noData') }}
+      </div>
+    </div>
   </div>
 </template>
