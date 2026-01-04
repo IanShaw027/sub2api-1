@@ -949,19 +949,13 @@ func (r *OpsRepository) ListAlertEvents(ctx context.Context, limit int) ([]servi
 	return events, rows.Err()
 }
 
-
-
 func (r *OpsRepository) GetActiveAlertEvent(ctx context.Context, ruleID int64) (*service.OpsAlertEvent, error) {
 	return r.getAlertEvent(ctx, `WHERE rule_id = $1 AND status = $2`, []any{ruleID, service.OpsAlertStatusFiring})
 }
 
-
-
 func (r *OpsRepository) GetLatestAlertEvent(ctx context.Context, ruleID int64) (*service.OpsAlertEvent, error) {
 	return r.getAlertEvent(ctx, `WHERE rule_id = $1`, []any{ruleID})
 }
-
-
 
 func (r *OpsRepository) CreateAlertEvent(ctx context.Context, event *service.OpsAlertEvent) error {
 	if event == nil {
@@ -1015,15 +1009,11 @@ func (r *OpsRepository) CreateAlertEvent(ctx context.Context, event *service.Ops
 	).Scan(&event.ID)
 }
 
-
-
 func (r *OpsRepository) UpdateAlertEventStatus(ctx context.Context, eventID int64, status string, resolvedAt *time.Time) error {
 	query := `UPDATE ops_alert_events SET status = $2, resolved_at = $3 WHERE id = $1`
 	_, err := r.sql.ExecContext(ctx, query, eventID, status, resolvedAt)
 	return err
 }
-
-
 
 func (r *OpsRepository) UpdateAlertEventNotifications(ctx context.Context, eventID int64, emailSent bool) error {
 	query := `
@@ -1034,8 +1024,6 @@ func (r *OpsRepository) UpdateAlertEventNotifications(ctx context.Context, event
 	_, err := r.sql.ExecContext(ctx, query, eventID, emailSent)
 	return err
 }
-
-
 
 func (r *OpsRepository) CountActiveAlerts(ctx context.Context) (int, error) {
 	var count int64
@@ -3335,7 +3323,6 @@ func formatPostgresInterval(duration time.Duration) (string, error) {
 	return strings.Join(parts, " "), nil
 }
 
-
 // GetAllActiveAccountStatus returns recent stats for all "active" accounts (as defined by ops_error_logs activity in last 24h).
 func (r *OpsRepository) GetAllActiveAccountStatus(ctx context.Context) ([]service.AccountStatusSummary, error) {
 	query := `
@@ -3781,7 +3768,7 @@ func (r *OpsRepository) GetTokenTPS(ctx context.Context, startTime, endTime time
 func (r *OpsRepository) ListGroupAvailabilityConfigs(ctx context.Context, enabledOnly bool) ([]service.OpsGroupAvailabilityConfig, error) {
 	query := `
 		SELECT
-			id, group_id, enabled, min_available_accounts,
+			id, group_id, enabled, min_available_accounts, threshold_mode, min_available_percentage,
 			notify_email,
 			severity, cooldown_minutes,
 			created_at, updated_at
@@ -3801,7 +3788,7 @@ func (r *OpsRepository) ListGroupAvailabilityConfigs(ctx context.Context, enable
 	for rows.Next() {
 		var config service.OpsGroupAvailabilityConfig
 		if err := rows.Scan(
-			&config.ID, &config.GroupID, &config.Enabled, &config.MinAvailableAccounts,
+			&config.ID, &config.GroupID, &config.Enabled, &config.MinAvailableAccounts, &config.ThresholdMode, &config.MinAvailablePercentage,
 			&config.NotifyEmail,
 			&config.Severity, &config.CooldownMinutes,
 			&config.CreatedAt, &config.UpdatedAt,
@@ -3817,7 +3804,7 @@ func (r *OpsRepository) ListGroupAvailabilityConfigs(ctx context.Context, enable
 func (r *OpsRepository) GetGroupAvailabilityConfig(ctx context.Context, groupID int64) (*service.OpsGroupAvailabilityConfig, error) {
 	query := `
 		SELECT
-			id, group_id, enabled, min_available_accounts,
+			id, group_id, enabled, min_available_accounts, threshold_mode, min_available_percentage,
 			notify_email,
 			severity, cooldown_minutes,
 			created_at, updated_at
@@ -3826,7 +3813,7 @@ func (r *OpsRepository) GetGroupAvailabilityConfig(ctx context.Context, groupID 
 
 	var config service.OpsGroupAvailabilityConfig
 	err := r.sql.QueryRowContext(ctx, query, groupID).Scan(
-		&config.ID, &config.GroupID, &config.Enabled, &config.MinAvailableAccounts,
+		&config.ID, &config.GroupID, &config.Enabled, &config.MinAvailableAccounts, &config.ThresholdMode, &config.MinAvailablePercentage,
 		&config.NotifyEmail,
 		&config.Severity, &config.CooldownMinutes,
 		&config.CreatedAt, &config.UpdatedAt,
@@ -3851,14 +3838,14 @@ func (r *OpsRepository) CreateGroupAvailabilityConfig(ctx context.Context, confi
 
 	query := `
 		INSERT INTO ops_group_availability_configs (
-			group_id, enabled, min_available_accounts,
+			group_id, enabled, min_available_accounts, threshold_mode, min_available_percentage,
 			notify_email,
 			severity, cooldown_minutes,
 			created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id`
 	return r.sql.QueryRowContext(ctx, query,
-		config.GroupID, config.Enabled, config.MinAvailableAccounts,
+		config.GroupID, config.Enabled, config.MinAvailableAccounts, config.ThresholdMode, config.MinAvailablePercentage,
 		config.NotifyEmail,
 		config.Severity, config.CooldownMinutes,
 		config.CreatedAt, config.UpdatedAt,
@@ -3874,12 +3861,12 @@ func (r *OpsRepository) UpdateGroupAvailabilityConfig(ctx context.Context, confi
 
 	query := `
 		UPDATE ops_group_availability_configs SET
-			enabled = $1, min_available_accounts = $2,
-			notify_email = $3,
-			severity = $4, cooldown_minutes = $5, updated_at = $6
-		WHERE id = $7`
+			enabled = $1, min_available_accounts = $2, threshold_mode = $3, min_available_percentage = $4,
+			notify_email = $5,
+			severity = $6, cooldown_minutes = $7, updated_at = $8
+		WHERE id = $9`
 	_, err := r.sql.ExecContext(ctx, query,
-		config.Enabled, config.MinAvailableAccounts,
+		config.Enabled, config.MinAvailableAccounts, config.ThresholdMode, config.MinAvailablePercentage,
 		config.NotifyEmail,
 		config.Severity, config.CooldownMinutes, config.UpdatedAt,
 		config.ID,
@@ -4089,9 +4076,6 @@ func (r *OpsRepository) CountAvailableAccountsByGroup(ctx context.Context, group
 		SELECT
 			a.id,
 			a.status,
-			a.disabled,
-			a.error_count,
-			a.last_error_at,
 			a.overload_until
 		FROM accounts a
 		INNER JOIN account_groups ag ON a.id = ag.account_id
@@ -4110,19 +4094,16 @@ func (r *OpsRepository) CountAvailableAccountsByGroup(ctx context.Context, group
 	for rows.Next() {
 		var accountID int64
 		var status string
-		var disabled bool
-		var errorCount int
-		var lastErrorAt sql.NullTime
 		var overloadUntil sql.NullTime
 
-		if err := rows.Scan(&accountID, &status, &disabled, &errorCount, &lastErrorAt, &overloadUntil); err != nil {
+		if err := rows.Scan(&accountID, &status, &overloadUntil); err != nil {
 			return 0, 0, err
 		}
 
 		total++
 
-		// 判断账号是否可调度
-		if !disabled && status == "active" {
+		// 判断账号是否可调度（status 为 active 表示可用）
+		if status == "active" {
 			// 检查是否在过载期
 			if overloadUntil.Valid && now.Before(overloadUntil.Time) {
 				continue

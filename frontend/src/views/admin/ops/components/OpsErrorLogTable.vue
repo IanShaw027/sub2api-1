@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getSeverityClass, formatDateTime } from '../utils/opsFormatters'
 import type { ErrorFilters } from '../types'
 import { opsAPI, type OpsErrorLog, type OpsPlatform, type OpsSeverity } from '@/api/admin/ops'
 import ElPagination from '@/components/common/Pagination.vue'
 import { useAppStore } from '@/stores/app'
+import Select from '@/components/common/Select.vue'
 
 interface Props {
   errorLogs: OpsErrorLog[]
@@ -35,6 +36,22 @@ const platformOptions: OpsPlatform[] = ['openai', 'anthropic', 'gemini', 'antigr
 const statusCodeOptions = [400, 401, 403, 404, 429, 500, 502, 503, 504]
 const severityOptions: OpsSeverity[] = ['P0', 'P1', 'P2', 'P3']
 
+// Select component options
+const platformSelectOptions = computed(() => [
+  { value: '', label: t('admin.ops.errors.allPlatforms') },
+  ...platformOptions.map(p => ({ value: p, label: p.toUpperCase() }))
+])
+
+const statusCodeSelectOptions = computed(() => [
+  { value: '', label: t('admin.ops.errors.allStatusCodes') },
+  ...statusCodeOptions.map(c => ({ value: c, label: String(c) }))
+])
+
+const severitySelectOptions = computed(() => [
+  { value: '', label: t('admin.ops.errors.allSeverities') },
+  ...severityOptions.map(s => ({ value: s, label: s }))
+])
+
 const retryingIds = reactive(new Set<number>())
 
 async function handleRetry(log: OpsErrorLog) {
@@ -52,6 +69,18 @@ async function handleRetry(log: OpsErrorLog) {
 
 function updateFilter(key: keyof ErrorFilters, value: any) {
   emit('update:filters', { ...props.filters, [key]: value })
+}
+
+function handlePlatformChange(val: string | number | boolean | null) {
+  updateFilter('platforms', val ? [String(val)] : [])
+}
+
+function handleStatusCodeChange(val: string | number | boolean | null) {
+  updateFilter('statusCodes', val ? [Number(val)] : [])
+}
+
+function handleSeverityChange(val: string | number | boolean | null) {
+  updateFilter('severity', String(val || ''))
 }
 
 function handlePageChange(page: number) {
@@ -117,9 +146,9 @@ function formatSmartMessage(msg: string): string {
   }
 
   // Common patterns
-  if (msg.includes('context deadline exceeded')) return 'Timeout (Deadline Exceeded)'
-  if (msg.includes('connection refused')) return 'Connection Refused'
-  if (msg.includes('rate limit')) return 'Rate Limit Exceeded'
+  if (msg.includes('context deadline exceeded')) return t('admin.ops.errors.smartMessage.timeoutDeadlineExceeded')
+  if (msg.includes('connection refused')) return t('admin.ops.errors.smartMessage.connectionRefused')
+  if (msg.includes('rate limit')) return t('admin.ops.errors.smartMessage.rateLimitExceeded')
 
   // Truncate if still too long
   return msg.length > 200 ? msg.substring(0, 200) + '...' : msg
@@ -217,55 +246,25 @@ function getStatusClass(code: number): string {
       </div>
 
       <!-- Platform Select -->
-      <div class="relative">
-        <select
-          :value="filters.platforms.length > 0 ? filters.platforms[0] : ''"
-          @change="updateFilter('platforms', ($event.target as HTMLSelectElement).value ? [($event.target as HTMLSelectElement).value] : [])"
-          class="w-full appearance-none rounded-2xl border-gray-200 bg-gray-50/50 py-2.5 pl-4 pr-10 text-sm font-bold text-gray-700 transition-all focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300"
-        >
-          <option value="">{{ t('admin.ops.errors.allPlatforms') }}</option>
-          <option v-for="platform in platformOptions" :key="platform" :value="platform">
-            {{ platform.toUpperCase() }}
-          </option>
-        </select>
-        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3.5">
-          <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7" /></svg>
-        </div>
-      </div>
+      <Select
+        :model-value="filters.platforms.length > 0 ? filters.platforms[0] : ''"
+        :options="platformSelectOptions"
+        @change="handlePlatformChange"
+      />
 
       <!-- Status Code Select -->
-      <div class="relative">
-        <select
-          :value="filters.statusCodes.length > 0 ? filters.statusCodes[0] : ''"
-          @change="updateFilter('statusCodes', ($event.target as HTMLSelectElement).value ? [Number(($event.target as HTMLSelectElement).value)] : [])"
-          class="w-full appearance-none rounded-2xl border-gray-200 bg-gray-50/50 py-2.5 pl-4 pr-10 text-sm font-bold text-gray-700 transition-all focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300"
-        >
-          <option value="">{{ t('admin.ops.errors.allStatusCodes') }}</option>
-          <option v-for="code in statusCodeOptions" :key="code" :value="code">
-            {{ code }}
-          </option>
-        </select>
-        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3.5">
-          <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7" /></svg>
-        </div>
-      </div>
+      <Select
+        :model-value="filters.statusCodes.length > 0 ? filters.statusCodes[0] : ''"
+        :options="statusCodeSelectOptions"
+        @change="handleStatusCodeChange"
+      />
 
       <!-- Severity Select -->
-      <div class="relative">
-        <select
-          :value="filters.severity"
-          @change="updateFilter('severity', ($event.target as HTMLSelectElement).value)"
-          class="w-full appearance-none rounded-2xl border-gray-200 bg-gray-50/50 py-2.5 pl-4 pr-10 text-sm font-bold text-gray-700 transition-all focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300"
-        >
-          <option value="">{{ t('admin.ops.errors.allSeverities') }}</option>
-          <option v-for="sev in severityOptions" :key="sev" :value="sev">
-            {{ sev }}
-          </option>
-        </select>
-        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3.5">
-          <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7" /></svg>
-        </div>
-      </div>
+      <Select
+        :model-value="filters.severity"
+        :options="severitySelectOptions"
+        @change="handleSeverityChange"
+      />
     </div>
 
     <!-- Error Logs Table Area -->
@@ -422,21 +421,3 @@ function getStatusClass(code: number): string {
     </div>
   </div>
 </template>
-
-<style scoped>
-/* Hidden Select default arrow */
-select {
-  background-image: none;
-}
-</style>
-
-<style scoped>
-/* Custom select styling */
-select {
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
-  background-repeat: no-repeat;
-  background-position: right 0.5rem center;
-  background-size: 1.5em 1.5em;
-}
-</style>

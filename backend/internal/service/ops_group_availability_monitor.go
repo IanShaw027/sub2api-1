@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"strings"
@@ -194,7 +195,8 @@ func (s *OpsGroupAvailabilityMonitor) Evaluate(ctx context.Context, now time.Tim
 			continue
 		}
 
-		breached := available < cfg.MinAvailableAccounts
+		breached := !groupAvailabilityHealthy(cfg, available, total)
+		thresholdAccounts := groupAvailabilityThresholdAccounts(cfg, total)
 
 		activeEvent, err := s.opsService.GetActiveGroupAvailabilityEvent(ctx, cfg.ID)
 		if err != nil {
@@ -230,10 +232,10 @@ func (s *OpsGroupAvailabilityMonitor) Evaluate(ctx context.Context, now time.Tim
 				GroupID:           cfg.GroupID,
 				Status:            OpsAlertStatusFiring,
 				Severity:          cfg.Severity,
-				Title:             fmt.Sprintf("[%s] 分组 %s 可用账号不足", cfg.Severity, group.Name),
-				Description:       buildGroupAvailabilityDescription(group, available, cfg.MinAvailableAccounts, total),
+				Title:             fmt.Sprintf("[%s] 分组 %s 可用性不足", cfg.Severity, group.Name),
+				Description:       buildGroupAvailabilityDescription(group, available, total, cfg),
 				AvailableAccounts: available,
-				ThresholdAccounts: cfg.MinAvailableAccounts,
+				ThresholdAccounts: thresholdAccounts,
 				TotalAccounts:     total,
 				FiredAt:           now,
 				CreatedAt:         now,
@@ -421,15 +423,96 @@ func opsGroupAvailabilityLeaderToken() string {
 	return fmt.Sprintf("%s:%d:%s", host, pid, hex.EncodeToString(buf))
 }
 
-func buildGroupAvailabilityDescription(group *Group, available, threshold, total int) string {
+func buildGroupAvailabilityDescription(group *Group, available, total int, cfg OpsGroupAvailabilityConfig) string {
+	mode := strings.ToLower(strings.TrimSpace(cfg.ThresholdMode))
+	if mode == "" {
+		mode = "count"
+	}
+	return buildGroupAvailabilityDescriptionWithThreshold(
+		group,
+		available,
+		total,
+		mode,
+		cfg.MinAvailableAccounts,
+		cfg.MinAvailablePercentage,
+	)
+}
+
+func buildGroupAvailabilityDescriptionWithThreshold(group *Group, available, total int, mode string, minAccounts int, minPercentage float64) string {
+	currentPercent := 0.0
+	if total > 0 {
+		currentPercent = (float64(available) / float64(total)) * 100
+	}
+
+	thresholdLines := make([]string, 0, 3)
+	switch mode {
+	case "percentage":
+		thresholdLines = append(thresholdLines, fmt.Sprintf("阈值模式: percentage"))
+		thresholdLines = append(thresholdLines, fmt.Sprintf("最低可用占比阈值: %.2f%%", minPercentage))
+	case "both":
+		thresholdLines = append(thresholdLines, fmt.Sprintf("阈值模式: both"))
+		thresholdLines = append(thresholdLines, fmt.Sprintf("最低可用账号数阈值: %d", minAccounts))
+		thresholdLines = append(thresholdLines, fmt.Sprintf("最低可用占比阈值: %.2f%%", minPercentage))
+	default:
+		thresholdLines = append(thresholdLines, fmt.Sprintf("阈值模式: count"))
+		thresholdLines = append(thresholdLines, fmt.Sprintf("最低可用账号数阈值: %d", minAccounts))
+	}
+
 	return fmt.Sprintf(
-		"分组可用性告警\n\n分组名称: %s\n平台: %s\n当前可用账号数: %d\n最低阈值: %d\n总账号数: %d",
+		"分组可用性告警\n\n分组名称: %s\n平台: %s\n当前可用账号数: %d\n总账号数: %d\n当前可用占比: %.2f%%\n%s",
 		group.Name,
 		group.Platform,
 		available,
-		threshold,
 		total,
+		currentPercent,
+		strings.Join(thresholdLines, "\n"),
 	)
+}
+
+func groupAvailabilityHealthy(cfg OpsGroupAvailabilityConfig, available, total int) bool {
+	mode := strings.ToLower(strings.TrimSpace(cfg.ThresholdMode))
+	if mode == "" {
+		mode = "count"
+	}
+	currentPercent := 0.0
+	if total > 0 {
+		currentPercent = (float64(available) / float64(total)) * 100
+	}
+
+	countOk := cfg.MinAvailableAccounts <= 0 || available >= cfg.MinAvailableAccounts
+	percentOk := cfg.MinAvailablePercentage <= 0 || currentPercent >= cfg.MinAvailablePercentage
+
+	switch mode {
+	case "percentage":
+		return percentOk
+	case "both":
+		return countOk && percentOk
+	default:
+		return countOk
+	}
+}
+
+func groupAvailabilityThresholdAccounts(cfg OpsGroupAvailabilityConfig, total int) int {
+	mode := strings.ToLower(strings.TrimSpace(cfg.ThresholdMode))
+	if mode == "" {
+		mode = "count"
+	}
+	requiredFromPercent := 0
+	if total > 0 && cfg.MinAvailablePercentage > 0 {
+		requiredFromPercent = int(math.Ceil(float64(total) * cfg.MinAvailablePercentage / 100))
+	}
+
+	switch mode {
+	case "percentage":
+		return requiredFromPercent
+	case "both":
+		if requiredFromPercent > cfg.MinAvailableAccounts {
+			return requiredFromPercent
+		}
+		return cfg.MinAvailableAccounts
+	default:
+		return cfg.MinAvailableAccounts
+	}
 }
 
 func (s *OpsGroupAvailabilityMonitor) dispatchNotifications(ctx context.Context, cfg OpsGroupAvailabilityConfig, event *OpsGroupAvailabilityEvent, group *Group) bool {

@@ -112,6 +112,61 @@ export interface OpsErrorDetail extends OpsErrorLog {
   user_agent?: string
 }
 
+export type OpsRequestKind = 'success' | 'error'
+
+export interface OpsRequestDetail {
+  kind: OpsRequestKind
+  created_at: string
+  request_id: string
+
+  platform?: string
+  model?: string
+
+  duration_ms?: number | null
+  status_code?: number | null
+
+  error_id?: number | null
+  phase?: OpsPhase
+  severity?: OpsSeverity
+  message?: string
+
+  user_id?: number | null
+  api_key_id?: number | null
+  account_id?: number | null
+  group_id?: number | null
+
+  stream: boolean
+}
+
+export interface OpsRequestDetailsParams {
+  start_time?: string
+  end_time?: string
+  time_range?: string
+  kind?: 'success' | 'error' | 'all'
+  platform?: OpsPlatform
+  platforms?: string
+  user_id?: number
+  api_key_id?: number
+  account_id?: number
+  group_id?: number
+  model?: string
+  request_id?: string
+  q?: string
+  min_duration_ms?: number
+  max_duration_ms?: number
+  sort?: 'created_at_desc' | 'duration_desc'
+  page?: number
+  page_size?: number
+}
+
+export interface OpsRequestDetailsResponse {
+  items: OpsRequestDetail[]
+  total: number
+  page: number
+  page_size: number
+  pages: number
+}
+
 export interface OpsErrorListParams {
   start_time?: string
   end_time?: string
@@ -219,6 +274,11 @@ export interface RetryErrorResponse {
 
 export async function retryErrorRequest(id: number): Promise<RetryErrorResponse> {
   const { data } = await apiClient.post<RetryErrorResponse>(`/admin/ops/errors/${id}/retry`)
+  return data
+}
+
+export async function listRequestDetails(params?: OpsRequestDetailsParams): Promise<OpsRequestDetailsResponse> {
+  const { data } = await apiClient.get<OpsRequestDetailsResponse>('/admin/ops/requests', { params })
   return data
 }
 
@@ -456,8 +516,24 @@ export async function deleteAlertRule(id: number): Promise<void> {
 }
 
 // Group Availability API
-export async function listGroupAvailabilityStatus(): Promise<GroupAvailabilityStatus[]> {
-  const { data } = await apiClient.get<GroupAvailabilityStatus[]>('/admin/ops/group-availability/status')
+export interface ListGroupAvailabilityStatusParams {
+  search?: string
+  monitoring?: 'enabled' | 'disabled' | 'all'
+  alert?: 'ok' | 'firing' | 'all'
+  page?: number
+  page_size?: number
+}
+
+export interface ListGroupAvailabilityStatusResponse {
+  items: GroupAvailabilityStatus[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+export async function listGroupAvailabilityStatus(params?: ListGroupAvailabilityStatusParams): Promise<ListGroupAvailabilityStatusResponse> {
+  const { data } = await apiClient.get<ListGroupAvailabilityStatusResponse>('/admin/ops/group-availability/status', { params })
   return data
 }
 
@@ -505,6 +581,7 @@ export const opsAPI = {
   listErrors,
   getErrorDetail,
   retryErrorRequest,
+  listRequestDetails,
   getDashboardOverview,
   getProviderHealth,
   getLatencyHistogram,

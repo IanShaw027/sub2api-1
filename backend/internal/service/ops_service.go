@@ -226,6 +226,9 @@ type OpsRepository interface {
 	ListErrorLogs(ctx context.Context, filter *ErrorLogFilter) ([]*OpsErrorLog, int64, error)
 	// GetErrorLogByID retrieves a single error log by its ID with all details.
 	GetErrorLogByID(ctx context.Context, id int64) (*OpsErrorLog, error)
+
+	// ListRequestDetails returns request-level rows (success + error) with request_id for metric drill-down.
+	ListRequestDetails(ctx context.Context, filter *OpsRequestDetailFilter) ([]*OpsRequestDetail, int64, error)
 	GetLatestSystemMetric(ctx context.Context) (*OpsMetrics, error)
 	CreateSystemMetric(ctx context.Context, metric *OpsMetrics) error
 	GetWindowStats(ctx context.Context, startTime, endTime time.Time) (*OpsWindowStats, error)

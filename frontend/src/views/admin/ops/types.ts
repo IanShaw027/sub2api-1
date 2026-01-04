@@ -20,6 +20,7 @@ export interface ErrorLogsPagination {
 }
 
 export type AlertSeverity = 'critical' | 'warning' | 'info'
+export type ThresholdMode = 'count' | 'percentage' | 'both'
 export type MetricType = 'success_rate' | 'error_rate' | 'p95_latency_ms' | 'p99_latency_ms' | 'cpu_usage_percent' | 'memory_usage_percent' | 'concurrency_queue_depth'
 export type Operator = '>' | '>=' | '<' | '<=' | '==' | '!='
 
@@ -51,6 +52,8 @@ export interface GroupAvailabilityConfig {
   group_id: number
   enabled: boolean
   min_available_accounts: number
+  threshold_mode: ThresholdMode
+  min_available_percentage?: number
   severity: AlertSeverity
   notify_email: boolean
   cooldown_minutes: number

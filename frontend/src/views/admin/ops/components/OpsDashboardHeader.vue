@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { formatNumber } from '@/utils/format'
 import type { OpsDashboardOverview } from '@/api/admin/ops'
 import { adminAPI } from '@/api/admin' // Import for group list
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
+import Select from '@/components/common/Select.vue'
+
+const { t } = useI18n()
 
 interface Props {
   overview: OpsDashboardOverview | null
@@ -21,15 +25,48 @@ interface Emits {
   // Add new filter events
   (e: 'update:platform', value: string): void
   (e: 'update:group', value: number | null): void
+  (e: 'openRequestDetails', preset: RequestDetailsPreset): void
 }
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
+type RequestDetailsPreset = {
+  title: string
+  kind?: 'success' | 'error' | 'all'
+  sort?: 'created_at_desc' | 'duration_desc'
+  min_duration_ms?: number
+  max_duration_ms?: number
+}
+
 // --- Global Filters ---
 const selectedPlatform = ref('')
 const selectedGroupId = ref<number | null>(null)
 const groups = ref<Array<{ id: number, name: string }>>([])
+
+// Platform options
+const platformOptions = computed(() => [
+  { value: '', label: t('admin.ops.filters.allPlatforms') },
+  { value: 'openai', label: 'OpenAI' },
+  { value: 'anthropic', label: 'Anthropic' },
+  { value: 'gemini', label: 'Gemini' },
+  { value: 'antigravity', label: 'Antigravity' }
+])
+
+// Time range options
+const timeRangeOptions = computed(() => [
+  { value: '5m', label: t('admin.ops.timeRange.5m') },
+  { value: '30m', label: t('admin.ops.timeRange.30m') },
+  { value: '1h', label: t('admin.ops.timeRange.1h') },
+  { value: '6h', label: t('admin.ops.timeRange.6h') },
+  { value: '24h', label: t('admin.ops.timeRange.24h') }
+])
+
+// Group options computed
+const groupOptions = computed(() => [
+  { value: null, label: t('admin.ops.filters.allGroups') },
+  ...groups.value.map(g => ({ value: g.id, label: g.name }))
+])
 
 onMounted(async () => {
   try {
@@ -41,15 +78,19 @@ onMounted(async () => {
   }
 })
 
-function handlePlatformChange(val: string) {
-  selectedPlatform.value = val
-  emit('update:platform', val)
+function handlePlatformChange(val: string | number | boolean | null) {
+  selectedPlatform.value = String(val || '')
+  emit('update:platform', String(val || ''))
 }
 
-function handleGroupChange(val: string) {
+function handleGroupChange(val: string | number | boolean | null) {
   const id = val ? Number(val) : null
   selectedGroupId.value = id
   emit('update:group', id)
+}
+
+function handleTimeRangeChange(val: string | number | boolean | null) {
+  emit('update:timeRange', String(val || '5m'))
 }
 
 // --- 视觉辅助逻辑 ---
@@ -107,43 +148,79 @@ const diagnosisReport = computed<DiagnosisItem[]>(() => {
 
   // 0. 待机检测
   if (isSystemIdle.value) {
-    report.push({ type: 'info', message: '系统待机中', impact: '当前无流量，系统处于休眠状态' })
+    report.push({
+      type: 'info',
+      message: t('admin.ops.diagnosis.items.idle.message'),
+      impact: t('admin.ops.diagnosis.items.idle.impact')
+    })
     return report
   }
   
   // 1. 错误率检查 (Upstream Error Rate)
   // LLM API 波动大，3% 以内可接受
   if (ov.errors.error_rate > 10) {
-    report.push({ type: 'critical', message: '上游错误率极高 (>10%)', impact: '大量请求失败，请检查供应商额度或状态' })
+    report.push({
+      type: 'critical',
+      message: t('admin.ops.diagnosis.items.upstreamErrorVeryHigh.message'),
+      impact: t('admin.ops.diagnosis.items.upstreamErrorVeryHigh.impact')
+    })
   } else if (ov.errors.error_rate > 3) {
-    report.push({ type: 'warning', message: '上游错误率偏高 (>3%)', impact: '部分请求遇到风控或网络抖动' })
+    report.push({
+      type: 'warning',
+      message: t('admin.ops.diagnosis.items.upstreamErrorHigh.message'),
+      impact: t('admin.ops.diagnosis.items.upstreamErrorHigh.impact')
+    })
   }
 
   // 2. SLA 检查 (User Success Rate)
   if (ov.sla.current < 90.0) {
-    report.push({ type: 'critical', message: 'SLA 严重未达标 (<90%)', impact: '用户体验受到严重影响' })
+    report.push({
+      type: 'critical',
+      message: t('admin.ops.diagnosis.items.slaCritical.message'),
+      impact: t('admin.ops.diagnosis.items.slaCritical.impact')
+    })
   } else if (ov.sla.current < 98.0) {
-    report.push({ type: 'warning', message: 'SLA 轻微波动 (<98%)', impact: '可能有少量请求失败' })
+    report.push({
+      type: 'warning',
+      message: t('admin.ops.diagnosis.items.slaWarning.message'),
+      impact: t('admin.ops.diagnosis.items.slaWarning.impact')
+    })
   }
 
   // 3. 延迟检查
   // LLM 响应本来就慢，8s 以内算正常，超过 20s 才是异常
   if (ov.latency.p99 > 20000) {
-    report.push({ type: 'warning', message: 'P99 延迟极高 (>20s)', impact: '存在超长等待请求，可能导致客户端超时' })
+    report.push({
+      type: 'warning',
+      message: t('admin.ops.diagnosis.items.p99VeryHigh.message'),
+      impact: t('admin.ops.diagnosis.items.p99VeryHigh.impact')
+    })
   } else if (ov.latency.p99 > 8000) {
     // 8s-20s 对于流式输出来说是可接受的，作为提示即可
-    report.push({ type: 'info', message: 'P99 延迟较高 (>8s)', impact: '长文本生成场景下的正常现象' })
+    report.push({
+      type: 'info',
+      message: t('admin.ops.diagnosis.items.p99High.message'),
+      impact: t('admin.ops.diagnosis.items.p99High.impact')
+    })
   }
 
   // 4. 资源水位检查
   const dbUsage = ov.resources.db_connections.active / Math.max(ov.resources.db_connections.max, 1)
   if (dbUsage > 0.9) {
-    report.push({ type: 'critical', message: '数据库连接池即将耗尽', impact: '可能导致服务拒绝' })
+    report.push({
+      type: 'critical',
+      message: t('admin.ops.diagnosis.items.dbConnsExhausted.message'),
+      impact: t('admin.ops.diagnosis.items.dbConnsExhausted.impact')
+    })
   }
 
   // 5. 健康加分项
   if (report.length === 0) {
-    report.push({ type: 'info', message: '系统运行平稳', impact: '各项指标在预期范围内' })
+    report.push({
+      type: 'info',
+      message: t('admin.ops.diagnosis.items.stable.message'),
+      impact: t('admin.ops.diagnosis.items.stable.impact')
+    })
   }
 
   return report
@@ -167,6 +244,20 @@ const getStatusColor = (status: string | undefined) => {
   if (s === 'degraded' || s === 'warning')
     return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
   return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+}
+
+const getComponentName = (component: string) => {
+  const key = `admin.ops.systemComponents.${component}`
+  return t(key) !== key ? t(key) : component.toUpperCase()
+}
+
+const getStatusName = (status: string) => {
+  const key = `admin.ops.systemStatus.${status.toLowerCase()}`
+  return t(key) !== key ? t(key) : status.toUpperCase()
+}
+
+function openDetails(preset: RequestDetailsPreset) {
+  emit('openRequestDetails', preset)
 }
 </script>
 
@@ -195,40 +286,28 @@ const getStatusColor = (status: string | undefined) => {
       </div>
 
       <div class="flex items-center gap-3">
-        <select
-          :value="selectedPlatform"
-          @change="handlePlatformChange(($event.target as HTMLSelectElement).value)"
-          class="rounded-lg border-gray-200 bg-gray-50 py-1.5 pl-3 pr-8 text-xs font-medium text-gray-700 focus:border-blue-500 focus:ring-blue-500 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300"
-        >
-          <option value="">{{ $t('admin.ops.errors.allPlatforms') }}</option>
-          <option value="openai">OpenAI</option>
-          <option value="anthropic">Anthropic</option>
-          <option value="gemini">Gemini</option>
-          <option value="antigravity">Antigravity</option>
-        </select>
+        <Select
+          :model-value="selectedPlatform"
+          :options="platformOptions"
+          @change="handlePlatformChange"
+          class="w-[140px]"
+        />
 
-        <select
-          :value="selectedGroupId || ''"
-          @change="handleGroupChange(($event.target as HTMLSelectElement).value)"
-          class="rounded-lg border-gray-200 bg-gray-50 py-1.5 pl-3 pr-8 text-xs font-medium text-gray-700 focus:border-blue-500 focus:ring-blue-500 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 max-w-[120px]"
-        >
-          <option value="">{{ $t('admin.ops.config.applyToGroups').replace(':', '') }}</option>
-          <option v-for="g in groups" :key="g.id" :value="g.id">{{ g.name }}</option>
-        </select>
+        <Select
+          :model-value="selectedGroupId"
+          :options="groupOptions"
+          @change="handleGroupChange"
+          class="w-[140px]"
+        />
 
         <div class="h-4 w-[1px] bg-gray-200 dark:bg-dark-700 mx-1"></div>
 
-        <select
-          :value="timeRange"
-          @change="emit('update:timeRange', ($event.target as HTMLSelectElement).value)"
-          class="rounded-lg border-gray-200 bg-gray-50 py-1.5 pl-3 pr-8 text-xs font-medium text-gray-700 focus:border-blue-500 focus:ring-blue-500 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300"
-        >
-          <option value="5m">{{ $t('admin.ops.timeRange.5m') }}</option>
-          <option value="30m">{{ $t('admin.ops.timeRange.30m') }}</option>
-          <option value="1h">{{ $t('admin.ops.timeRange.1h') }}</option>
-          <option value="6h">{{ $t('admin.ops.timeRange.6h') }}</option>
-          <option value="24h">{{ $t('admin.ops.timeRange.24h') }}</option>
-        </select>
+        <Select
+          :model-value="timeRange"
+          :options="timeRangeOptions"
+          @change="handleTimeRangeChange"
+          class="w-[120px]"
+        />
 
         <button
           @click="emit('refresh')"
@@ -253,7 +332,7 @@ const getStatusColor = (status: string | undefined) => {
         <div class="pointer-events-none absolute left-full top-0 z-50 ml-2 w-72 opacity-0 transition-opacity duration-200 group-hover:pointer-events-auto group-hover:opacity-100">
            <div class="rounded-xl bg-white p-4 shadow-xl ring-1 ring-black/5 dark:bg-gray-800 dark:ring-white/10">
              <h4 class="mb-3 border-b border-gray-100 pb-2 text-sm font-bold text-gray-900 dark:border-gray-700 dark:text-white">
-               🩺 健康诊断报告
+               {{ t('admin.ops.diagnosis.title') }}
              </h4>
              <div class="space-y-3">
                <div v-for="(item, idx) in diagnosisReport" :key="idx" class="flex gap-3">
@@ -269,7 +348,7 @@ const getStatusColor = (status: string | undefined) => {
                </div>
              </div>
              <div class="mt-3 border-t border-gray-100 pt-2 text-[10px] text-gray-400 dark:border-gray-700">
-               诊断标准基于大模型网关场景优化
+               {{ t('admin.ops.diagnosis.footer') }}
              </div>
            </div>
         </div>
@@ -299,8 +378,8 @@ const getStatusColor = (status: string | undefined) => {
             />
           </svg>
           <div class="absolute flex flex-col items-center">
-            <span class="text-3xl font-black" :class="healthScoreClass">{{ isSystemIdle ? 'Idle' : (overview?.health_score || '--') }}</span>
-            <span class="text-[10px] font-bold uppercase tracking-wider text-gray-400">Health</span>
+            <span class="text-3xl font-black" :class="healthScoreClass">{{ isSystemIdle ? t('admin.ops.labels.idle') : (overview?.health_score || '--') }}</span>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.labels.health') }}</span>
           </div>
         </div>
         <div class="mt-4 text-center">
@@ -312,31 +391,37 @@ const getStatusColor = (status: string | undefined) => {
             </svg>
           </div>
           <div class="mt-1 text-xs font-bold" :class="healthScoreClass">
-            {{ isSystemIdle ? '系统待机' : (overview?.health_score && overview.health_score >= 90 ? '运行平稳' : '存在风险') }}
+            {{ isSystemIdle ? t('admin.ops.status.idle') : (overview?.health_score && overview.health_score >= 90 ? t('admin.ops.status.healthy') : t('admin.ops.status.risky')) }}
           </div>
         </div>
       </div>
 
       <!-- 2. Real-time Pulse (Col span 4) -->
       <div class="flex flex-col justify-center border-r border-gray-100 px-4 py-2 dark:border-dark-700 lg:col-span-5">
-        <div class="mb-2 flex items-center gap-2">
+        <div class="mb-2 flex items-center justify-between gap-2">
           <div class="relative flex h-3 w-3">
             <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75"></span>
             <span class="relative inline-flex h-3 w-3 rounded-full bg-blue-500"></span>
           </div>
-          <h3 class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ $t('admin.ops.status.trafficPulse') }}</h3>
+          <h3 class="flex-1 text-xs font-bold uppercase tracking-wider text-gray-400">{{ $t('admin.ops.status.trafficPulse') }}</h3>
+          <button
+            class="text-[10px] font-bold text-blue-500 hover:underline"
+            @click="openDetails({ title: t('admin.ops.status.trafficPulse'), kind: 'all', sort: 'created_at_desc' })"
+          >
+            {{ t('admin.ops.requestDetails.details') }}
+          </button>
         </div>
 
         <div class="flex items-baseline gap-1">
           <span class="text-4xl font-black text-gray-900 dark:text-white">{{ displayRealTimeQPS.toFixed(1) }}</span>
           <span class="text-sm font-bold text-gray-500">QPS</span>
-          <HelpTooltip content="每秒请求数 (Queries Per Second)。反映当前系统的并发压力。如果只高不低，可能存在 CC 攻击风险。" />
+          <HelpTooltip :content="t('admin.ops.tooltips.realtimeQPS')" />
         </div>
         
         <div class="mt-1 flex items-center gap-4 text-xs font-medium text-gray-500">
           <span class="flex items-center">
             TPS: {{ formatNumber(displayRealTimeTPS) }}
-            <HelpTooltip content="每秒 Token 消耗量。直接反映业务计费流转速度。TPS 越高，系统每秒产生的价值（或成本）越高。" />
+            <HelpTooltip :content="t('admin.ops.tooltips.realtimeTPS')" />
           </span>
           <span class="h-1 w-1 rounded-full bg-gray-300 dark:bg-gray-600"></span>
           <span :title="$t('admin.ops.tooltips.peak1h')">{{ $t('admin.ops.status.peak1h') }}: {{ overview?.qps.peak_1h.toFixed(1) }}</span>
@@ -370,8 +455,14 @@ const getStatusColor = (status: string | undefined) => {
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-1">
               <span class="text-[10px] font-bold uppercase text-gray-400">SLA</span>
-              <HelpTooltip content="用户成功率 (User Success Rate)。低于 98% 意味着用户体验有轻微影响。" />
+              <HelpTooltip :content="t('admin.ops.status.slaTooltip')" />
             </div>
+            <button
+              class="text-[10px] font-bold text-blue-500 hover:underline"
+              @click="openDetails({ title: t('admin.ops.metrics.sla'), kind: 'all', sort: 'created_at_desc' })"
+            >
+              {{ t('admin.ops.requestDetails.details') }}
+            </button>
             <span class="h-1.5 w-1.5 rounded-full" :class="overview?.sla.current && overview.sla.current >= 99.9 ? 'bg-green-500' : 'bg-yellow-500'"></span>
           </div>
           <div class="mt-1 text-xl font-black text-gray-900 dark:text-white">{{ overview?.sla.current.toFixed(3) }}%</div>
@@ -384,18 +475,31 @@ const getStatusColor = (status: string | undefined) => {
         <div class="rounded-xl bg-gray-50 p-3 dark:bg-dark-900">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-1">
-              <span class="text-[10px] font-bold uppercase text-gray-400">P99 Latency</span>
-              <HelpTooltip content="最差体验指标。99% 的请求都在此时间内完成。比平均值更能反映系统的卡顿情况。" />
+              <span class="text-[10px] font-bold uppercase text-gray-400">{{ t('admin.ops.labels.p99Latency') }}</span>
+              <HelpTooltip :content="t('admin.ops.status.p99Tooltip')" />
             </div>
+            <button
+              class="text-[10px] font-bold text-blue-500 hover:underline"
+              @click="
+                openDetails({
+                  title: t('admin.ops.labels.p99Latency'),
+                  kind: 'all',
+                  sort: 'duration_desc',
+                  min_duration_ms: Math.max(Number(overview?.latency?.p99 ?? 0), 0)
+                })
+              "
+            >
+              {{ t('admin.ops.requestDetails.details') }}
+            </button>
             <span class="text-[10px] text-gray-400">ms</span>
           </div>
           <div class="flex items-baseline gap-2 mt-1">
             <div class="text-xl font-black text-gray-900 dark:text-white">{{ overview?.latency.p99 }} <span class="text-[10px] text-gray-400 font-normal">P99</span></div>
           </div>
-          <div class="mt-1 flex items-center gap-2 text-[10px] font-medium text-gray-500">
+          <div class="mt-1 flex items-center justify-end gap-2 text-[10px] font-medium text-gray-500">
             <span>P95: {{ overview?.latency.p95 }}</span>
             <span class="text-gray-300">|</span>
-            <span>P90: {{ overview?.latency.p50 }}</span> <!-- API might not have p90, use p50 or adjust -->
+            <span>P90: {{ overview?.latency.p50 }}</span>
           </div>
         </div>
 
@@ -403,9 +507,15 @@ const getStatusColor = (status: string | undefined) => {
         <div class="rounded-xl bg-gray-50 p-3 dark:bg-dark-900">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-1">
-              <span class="text-[10px] font-bold uppercase text-gray-400">Error Rate</span>
-              <HelpTooltip content="上游供应商错误率 (Upstream Error Rate)。主要反映 OpenAI/Anthropic 等的健康度。" />
+              <span class="text-[10px] font-bold uppercase text-gray-400">{{ t('admin.ops.labels.errorRate') }}</span>
+              <HelpTooltip :content="t('admin.ops.status.errorRateTooltip')" />
             </div>
+            <button
+              class="text-[10px] font-bold text-blue-500 hover:underline"
+              @click="openDetails({ title: t('admin.ops.labels.errorRate'), kind: 'error', sort: 'created_at_desc' })"
+            >
+              {{ t('admin.ops.requestDetails.details') }}
+            </button>
           </div>
           <div class="mt-1 text-xl font-black" :class="overview?.errors.error_rate && overview.errors.error_rate > 5 ? 'text-red-500' : 'text-gray-900 dark:text-white'">
             {{ overview?.errors.error_rate.toFixed(2) }}%
@@ -417,12 +527,12 @@ const getStatusColor = (status: string | undefined) => {
         <div class="rounded-xl bg-gray-50 p-3 dark:bg-dark-900">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-1">
-              <span class="text-[10px] font-bold uppercase text-gray-400">DB Conns</span>
-              <HelpTooltip content="数据库连接池占用。如果持续接近 Max，说明数据库成为瓶颈，可能需要扩容。" />
+              <span class="text-[10px] font-bold uppercase text-gray-400">{{ t('admin.ops.labels.dbConns') }}</span>
+              <HelpTooltip :content="t('admin.ops.status.dbConnsTooltip')" />
             </div>
           </div>
           <div class="mt-1 text-xl font-black text-gray-900 dark:text-white">{{ overview?.resources.db_connections.active }}</div>
-          <div class="mt-1 text-[10px] font-medium text-gray-500">/ {{ overview?.resources.db_connections.max }} Max</div>
+          <div class="mt-1 text-[10px] font-medium text-gray-500">/ {{ overview?.resources.db_connections.max }} {{ t('admin.ops.labels.max') }}</div>
         </div>
       </div>
     </div>
@@ -449,8 +559,8 @@ const getStatusColor = (status: string | undefined) => {
              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
         </div>
-        <span class="uppercase">{{ component }}</span>
-        <span class="uppercase opacity-70">{{ status }}</span>
+        <span class="uppercase">{{ getComponentName(component) }}</span>
+        <span class="uppercase opacity-70">{{ getStatusName(status) }}</span>
       </div>
 
       <!-- Add Goroutines and Memory as generic status pills -->
@@ -475,22 +585,3 @@ const getStatusColor = (status: string | undefined) => {
     </div>
   </div>
 </template>
-
-<style scoped>
-/* Custom select styling */
-select {
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
-  background-repeat: no-repeat;
-  background-position: right 0.5rem center;
-  background-size: 1.5em 1.5em;
-}
-
-.scrollbar-hide::-webkit-scrollbar {
-    display: none;
-}
-.scrollbar-hide {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-}
-</style>

@@ -82,6 +82,7 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	{
 		ops.GET("/metrics", h.Admin.Ops.GetMetrics)
 		ops.GET("/metrics/history", h.Admin.Ops.ListMetricsHistory)
+		ops.GET("/requests", h.Admin.Ops.ListRequestDetails)
 
 		// Error logs endpoints
 		ops.GET("/errors", h.Admin.Ops.GetErrorLogs)          // Paginated list (page/page_size)

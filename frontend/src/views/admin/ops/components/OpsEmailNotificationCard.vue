@@ -5,6 +5,7 @@ import { useAppStore } from '@/stores/app'
 import { opsAPI } from '@/api/admin/ops'
 import type { EmailNotificationConfig, AlertSeverity } from '../types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import Select from '@/components/common/Select.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -170,9 +171,10 @@ onMounted(() => {
 
           <div>
             <div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('admin.ops.email.minSeverity') }}</div>
-            <select v-model="draft.alert.min_severity" class="input">
-              <option v-for="opt in severityOptions" :key="opt.value || 'all'" :value="opt.value">{{ opt.label }}</option>
-            </select>
+            <Select
+              v-model="draft.alert.min_severity"
+              :options="severityOptions"
+            />
           </div>
 
           <div class="md:col-span-2">

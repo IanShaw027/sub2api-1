@@ -109,13 +109,19 @@ func (s *OpsService) CountActiveAlerts(ctx context.Context) (int, error) {
 
 // OpsGroupAvailabilityConfig 分组可用性监控配置
 type OpsGroupAvailabilityConfig struct {
-	ID       int64 `json:"id"`
-	GroupID  int64 `json:"group_id"`
+	ID      int64 `json:"id"`
+	GroupID int64 `json:"group_id"`
 
 	Enabled              bool `json:"enabled"`
 	MinAvailableAccounts int  `json:"min_available_accounts"`
+	// ThresholdMode controls how availability is evaluated:
+	// - count: only `MinAvailableAccounts` is enforced
+	// - percentage: only `MinAvailablePercentage` is enforced
+	// - both: both thresholds must be satisfied
+	ThresholdMode          string  `json:"threshold_mode"`
+	MinAvailablePercentage float64 `json:"min_available_percentage"`
 
-	NotifyEmail   bool   `json:"notify_email"`
+	NotifyEmail bool `json:"notify_email"`
 
 	Severity        string `json:"severity"`
 	CooldownMinutes int    `json:"cooldown_minutes"`
@@ -142,7 +148,7 @@ type OpsGroupAvailabilityEvent struct {
 	ThresholdAccounts int `json:"threshold_accounts"`
 	TotalAccounts     int `json:"total_accounts"`
 
-	EmailSent   bool `json:"email_sent"`
+	EmailSent bool `json:"email_sent"`
 
 	FiredAt    time.Time  `json:"fired_at"`
 	ResolvedAt *time.Time `json:"resolved_at"`
@@ -150,7 +156,6 @@ type OpsGroupAvailabilityEvent struct {
 
 	Group *Group `json:"group,omitempty"`
 }
-
 
 // OpsGroupAvailabilityStatus 分组可用性实时状态
 type OpsGroupAvailabilityStatus struct {
@@ -164,8 +169,10 @@ type OpsGroupAvailabilityStatus struct {
 	ErrorAccounts     int `json:"error_accounts"`
 	OverloadAccounts  int `json:"overload_accounts"`
 
-	MonitoringEnabled    bool `json:"monitoring_enabled"`
-	MinAvailableAccounts int  `json:"min_available_accounts"`
+	MonitoringEnabled      bool    `json:"monitoring_enabled"`
+	MinAvailableAccounts   int     `json:"min_available_accounts"`
+	ThresholdMode          string  `json:"threshold_mode"`
+	MinAvailablePercentage float64 `json:"min_available_percentage"`
 
 	IsHealthy   bool       `json:"is_healthy"`
 	AlertStatus string     `json:"alert_status"`

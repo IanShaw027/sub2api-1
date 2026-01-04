@@ -585,6 +585,168 @@ func (h *OpsHandler) GetErrorLogs(c *gin.Context) {
 	})
 }
 
+// ListRequestDetails returns a request-level list (success + error) for metric drill-down.
+// GET /api/v1/admin/ops/requests
+//
+// Query params:
+// - start_time/end_time: RFC3339 timestamps (optional; default last 1h)
+// - time_range: string (optional; one of: 5m, 30m, 1h, 6h, 24h; used when start/end not provided)
+// - kind: string (optional; one of: success, error, all)
+// - platform/platforms: string (optional; platforms is comma-separated)
+// - user_id/api_key_id/account_id/group_id: int64 (optional)
+// - model: string (optional; exact match)
+// - request_id: string (optional; exact match)
+// - q: string (optional; fuzzy match against request_id/model/message)
+// - min_duration_ms/max_duration_ms: int (optional)
+// - sort: string (optional; one of: created_at_desc, duration_desc)
+// - page/page_size: pagination (page_size max 100)
+func (h *OpsHandler) ListRequestDetails(c *gin.Context) {
+	page, pageSize := response.ParsePagination(c)
+
+	filter := &service.OpsRequestDetailFilter{
+		Page:     page,
+		PageSize: pageSize,
+	}
+
+	var hasExplicitRange bool
+	if startTimeStr := strings.TrimSpace(c.Query("start_time")); startTimeStr != "" {
+		startTime, err := time.Parse(time.RFC3339, startTimeStr)
+		if err != nil {
+			response.BadRequest(c, "Invalid start_time format (RFC3339)")
+			return
+		}
+		filter.StartTime = &startTime
+		hasExplicitRange = true
+	}
+	if endTimeStr := strings.TrimSpace(c.Query("end_time")); endTimeStr != "" {
+		endTime, err := time.Parse(time.RFC3339, endTimeStr)
+		if err != nil {
+			response.BadRequest(c, "Invalid end_time format (RFC3339)")
+			return
+		}
+		filter.EndTime = &endTime
+		hasExplicitRange = true
+	}
+
+	if !hasExplicitRange {
+		timeRange := strings.TrimSpace(c.Query("time_range"))
+		if timeRange == "" {
+			timeRange = "1h"
+		}
+		end := time.Now()
+		start := end.Add(-1 * time.Hour)
+		switch timeRange {
+		case "5m":
+			start = end.Add(-5 * time.Minute)
+		case "30m":
+			start = end.Add(-30 * time.Minute)
+		case "1h":
+			start = end.Add(-1 * time.Hour)
+		case "6h":
+			start = end.Add(-6 * time.Hour)
+		case "24h":
+			start = end.Add(-24 * time.Hour)
+		default:
+			response.BadRequest(c, "Invalid time_range (supported: 5m, 30m, 1h, 6h, 24h)")
+			return
+		}
+		filter.StartTime = &start
+		filter.EndTime = &end
+	}
+
+	if filter.StartTime != nil && filter.EndTime != nil && filter.StartTime.After(*filter.EndTime) {
+		response.BadRequest(c, "Invalid time range: start_time must be <= end_time")
+		return
+	}
+
+	filter.Kind = strings.TrimSpace(c.Query("kind"))
+	filter.Model = strings.TrimSpace(c.Query("model"))
+	filter.RequestID = strings.TrimSpace(c.Query("request_id"))
+	filter.Query = strings.TrimSpace(c.Query("q"))
+	filter.Sort = strings.TrimSpace(c.Query("sort"))
+
+	// Platforms (platform/platforms)
+	platforms := strings.TrimSpace(c.Query("platforms"))
+	if platforms == "" {
+		if p := strings.TrimSpace(c.Query("platform")); p != "" {
+			filter.Platforms = []string{p}
+		}
+	} else {
+		parts := strings.Split(platforms, ",")
+		out := make([]string, 0, len(parts))
+		for _, part := range parts {
+			if trimmed := strings.TrimSpace(part); trimmed != "" {
+				out = append(out, trimmed)
+			}
+		}
+		filter.Platforms = out
+	}
+
+	// IDs
+	if v := strings.TrimSpace(c.Query("user_id")); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || id <= 0 {
+			response.BadRequest(c, "Invalid user_id")
+			return
+		}
+		filter.UserID = &id
+	}
+	if v := strings.TrimSpace(c.Query("api_key_id")); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || id <= 0 {
+			response.BadRequest(c, "Invalid api_key_id")
+			return
+		}
+		filter.APIKeyID = &id
+	}
+	if v := strings.TrimSpace(c.Query("account_id")); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || id <= 0 {
+			response.BadRequest(c, "Invalid account_id")
+			return
+		}
+		filter.AccountID = &id
+	}
+	if v := strings.TrimSpace(c.Query("group_id")); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || id <= 0 {
+			response.BadRequest(c, "Invalid group_id")
+			return
+		}
+		filter.GroupID = &id
+	}
+
+	// Duration filters
+	if v := strings.TrimSpace(c.Query("min_duration_ms")); v != "" {
+		parsed, err := strconv.Atoi(v)
+		if err != nil || parsed < 0 {
+			response.BadRequest(c, "Invalid min_duration_ms")
+			return
+		}
+		filter.MinDurationMs = &parsed
+	}
+	if v := strings.TrimSpace(c.Query("max_duration_ms")); v != "" {
+		parsed, err := strconv.Atoi(v)
+		if err != nil || parsed < 0 {
+			response.BadRequest(c, "Invalid max_duration_ms")
+			return
+		}
+		filter.MaxDurationMs = &parsed
+	}
+
+	out, err := h.opsService.ListRequestDetails(c.Request.Context(), filter)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "invalid") {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, "Failed to list request details")
+		return
+	}
+
+	response.Paginated(c, out.Items, out.Total, out.Page, out.PageSize)
+}
+
 // GetLatencyHistogram returns the latency distribution histogram.
 // GET /api/v1/admin/ops/dashboard/latency-histogram
 func (h *OpsHandler) GetLatencyHistogram(c *gin.Context) {

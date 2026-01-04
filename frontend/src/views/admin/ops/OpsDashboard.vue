@@ -23,6 +23,7 @@ import OpsGroupAvailabilityCard from './components/OpsGroupAvailabilityCard.vue'
 import OpsRuntimeSettingsCard from './components/OpsRuntimeSettingsCard.vue'
 import OpsEmailNotificationCard from './components/OpsEmailNotificationCard.vue'
 import OpsErrorLogTable from './components/OpsErrorLogTable.vue'
+import OpsRequestDetailsModal, { type OpsRequestDetailsPreset } from './components/OpsRequestDetailsModal.vue'
 import { opsAPI, type OpsDashboardOverview, type ProviderHealthData, type LatencyHistogramResponse, type ErrorDistributionResponse, type OpsMetrics, type OpsErrorLog } from '@/api/admin/ops'
 import { parseTimeRangeMinutes } from './utils/opsFormatters'
 import type { ErrorFilters, ErrorLogsPagination } from './types'
@@ -72,12 +73,30 @@ function openErrorDetail(errorLog: OpsErrorLog) {
   showErrorDetail.value = true
 }
 
+function openErrorDetailById(id: number) {
+  selectedErrorId.value = id
+  showErrorDetail.value = true
+}
+
 function closeErrorDetail() {
   showErrorDetail.value = false
   // Delay clearing selectedErrorId to allow animation to complete
   setTimeout(() => {
     selectedErrorId.value = null
   }, 300)
+}
+
+// Request details modal (metric drill-down)
+const showRequestDetails = ref(false)
+const requestDetailsPreset = ref<OpsRequestDetailsPreset>({
+  title: '',
+  kind: 'all',
+  sort: 'created_at_desc'
+})
+
+function openRequestDetails(preset: OpsRequestDetailsPreset) {
+  requestDetailsPreset.value = preset
+  showRequestDetails.value = true
 }
 
 const errorFilters = ref<ErrorFilters>({
@@ -248,6 +267,7 @@ function handleErrorPageSizeChange(pageSize: number) {
         :lastUpdated="lastUpdated"
         @update:timeRange="timeRange = $event"
         @refresh="fetchData"
+        @openRequestDetails="openRequestDetails"
       />
 
       <!-- L2: Visual Analysis -->
@@ -293,6 +313,14 @@ function handleErrorPageSizeChange(pageSize: number) {
       v-model="showErrorDetail"
       :error-id="selectedErrorId"
       @update:model-value="closeErrorDetail"
+    />
+
+    <!-- Request Details Modal -->
+    <OpsRequestDetailsModal
+      v-model="showRequestDetails"
+      :time-range="timeRange"
+      :preset="requestDetailsPreset"
+      @openErrorDetail="openErrorDetailById"
     />
   </AppLayout>
 </template>

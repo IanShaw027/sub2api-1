@@ -567,6 +567,61 @@ export default {
     ops: {
       title: '运维监控中心',
       description: '稳定性指标、错误分布与系统健康',
+      filters: {
+        allPlatforms: '所有平台',
+        allGroups: '所有分组'
+      },
+      diagnosis: {
+        title: '🩺 健康诊断报告',
+        footer: '诊断标准基于大模型网关场景优化',
+        items: {
+          idle: {
+            message: '系统待机中',
+            impact: '当前无流量，系统处于休眠状态'
+          },
+          upstreamErrorVeryHigh: {
+            message: '上游错误率极高 (>10%)',
+            impact: '大量请求失败，请检查供应商额度或状态'
+          },
+          upstreamErrorHigh: {
+            message: '上游错误率偏高 (>3%)',
+            impact: '部分请求遇到风控或网络抖动'
+          },
+          slaCritical: {
+            message: 'SLA 严重未达标 (<90%)',
+            impact: '用户体验受到严重影响'
+          },
+          slaWarning: {
+            message: 'SLA 轻微波动 (<98%)',
+            impact: '可能有少量请求失败'
+          },
+          p99VeryHigh: {
+            message: 'P99 延迟极高 (>20s)',
+            impact: '存在超长等待请求，可能导致客户端超时'
+          },
+          p99High: {
+            message: 'P99 延迟较高 (>8s)',
+            impact: '长文本生成场景下的正常现象'
+          },
+          dbConnsExhausted: {
+            message: '数据库连接池即将耗尽',
+            impact: '可能导致服务拒绝'
+          },
+          stable: {
+            message: '系统运行平稳',
+            impact: '各项指标在预期范围内'
+          }
+        }
+      },
+      labels: {
+        idle: '待机',
+        health: '健康',
+        p99Latency: 'P99 延迟',
+        errorRate: '错误率',
+        dbConns: 'DB 连接',
+        max: 'Max',
+        topReason: '主要原因:'
+      },
       status: {
         title: '系统健康快照',
         subtitle: '实时指标与错误可见性',
@@ -575,6 +630,7 @@ export default {
         systemDown: '系统异常',
         noData: '无数据',
         monitoring: '监控中',
+        idle: '系统待机',
         lastUpdated: '最后更新',
         live: '实时',
         waiting: '等待数据',
@@ -609,6 +665,19 @@ export default {
         latencyChart: '请求响应时间的分布直方图',
         providerChart: '各上游供应商的错误率排行 (错误数/总请求数)'
       },
+      systemComponents: {
+        redis: 'Redis',
+        database: '数据库',
+        background_jobs: '后台任务'
+      },
+      systemStatus: {
+        healthy: '正常',
+        operational: '运行中',
+        degraded: '降级',
+        warning: '警告',
+        down: '异常',
+        unknown: '未知'
+      },
       timeRange: {
         '5m': '最近 5 分钟',
         '30m': '最近 30 分钟',
@@ -619,7 +688,7 @@ export default {
       charts: {
         throughput: '吞吐趋势 (Throughput)',
         errorTrend: '错误趋势',
-        errorDistribution: '错误分布 (Errors)',
+        errorDistribution: '请求错误分析 (Errors)',
         errorRate: '错误率',
         requestCount: '请求数',
         requestCountLabel: '请求数量',
@@ -636,7 +705,17 @@ export default {
         loading: '加载数据中...',
         emptyRequest: '当前时间段内无请求记录',
         emptyError: '当前时间段内无错误记录',
-        errorRateLabel: '错误率 (%)'
+        errorRateLabel: '错误率 (%)',
+        attribution: {
+          upstream: '上游故障 (502/503/504)',
+          client: '用户行为 (4xx)',
+          system: '系统故障 (500)',
+          other: '其他'
+        },
+        provider: {
+          successRequests: '成功请求',
+          failedRequests: '失败请求'
+        }
       },
       metrics: {
         successRate: '成功率',
@@ -652,6 +731,34 @@ export default {
         qps: '实时 QPS',
         tps: '实时 TPS',
         errorCount: '周期错误数'
+      },
+      requestDetails: {
+        details: '详情',
+        subtitle: '请求级明细（用于指标下钻），包含 request_id，可用于排查与复现',
+        refresh: '刷新',
+        failedToLoad: '加载请求明细失败',
+        empty: '暂无请求明细',
+        emptyHint: '尝试切换时间范围或稍后重试',
+        copy: '复制',
+        requestIdCopied: 'Request ID 已复制',
+        copyFailed: '复制失败',
+        viewError: '错误详情',
+        rangeMinutes: '最近 {n} 分钟',
+        rangeHours: '最近 {n} 小时',
+        kind: {
+          success: '成功',
+          error: '错误'
+        },
+        table: {
+          time: '时间',
+          kind: '类型',
+          platform: '平台',
+          model: '模型',
+          duration: '耗时',
+          status: '状态码',
+          requestId: 'Request ID',
+          actions: '操作'
+        }
       },
       errors: {
         title: '最近错误',
@@ -670,6 +777,11 @@ export default {
         allSeverities: '所有级别',
         loading: '加载中...',
         emptyTable: '暂无异常记录',
+        smartMessage: {
+          timeoutDeadlineExceeded: '超时（截止时间已到）',
+          connectionRefused: '连接被拒绝',
+          rateLimitExceeded: '触发限流'
+        },
         table: {
           time: '时间',
           timeId: '时间 / 请求ID',
@@ -719,13 +831,27 @@ export default {
         refresh: '刷新',
         loading: '加载中...',
         noData: '暂无分组监控数据',
+        recentCount: '共 {n} 个分组',
         configureNow: '立即配置',
         groupName: '分组名称',
         availableAccounts: '可用账号',
+        waterLevel: '水位 (可用/总数)',
+        monitoringSwitch: '监控开关',
+        alertStrategy: '报警策略',
+        tooltip: '监控各分组的账号存活情况。如果是 VIP 专用分组，建议开启「严格模式」。',
         monitoringConfig: '监控配置',
         minAvailable: '最低可用数',
+        thresholdMode: '阈值模式',
+        thresholdModes: {
+          count: '按数量 - 至少 N 个账号可用',
+          percentage: '按百分比 - 至少 X% 账号可用',
+          both: '两者都满足 - 同时满足数量和百分比'
+        },
+        minAvailablePercentage: '最低可用百分比 (%)',
         severity: '级别',
         cooldown: '冷却期',
+        cooldownMinutes: '冷却期（分钟）',
+        notifyEmail: '发送邮件通知',
         status: '状态',
         lastUpdate: '最后更新',
         actions: '操作',
@@ -734,7 +860,25 @@ export default {
         alert: '告警',
         unmonitored: '未监控',
         notConfigured: '未配置',
-        goToGroupManagement: '前往分组管理'
+        goToGroupManagement: '前往分组管理',
+        customMode: '自定义',
+        customModeDesc: '自定义配置，灵活设置',
+        customConfigTitle: '配置报警策略',
+        configureCustomStrategy: '配置自定义策略',
+        searchPlaceholder: '搜索分组名称...',
+        strategyTemplates: '策略模板',
+        advancedSettings: '高级设置',
+        presetSettings: '预设配置',
+        presetStrategyInfo: '当前使用预设策略',
+        presetStrategyHint: '预设策略的参数已锁定，如需自定义请修改任意参数',
+        filters: {
+          allMonitoring: '全部监控状态',
+          monitoringEnabled: '已启用监控',
+          monitoringDisabled: '未启用监控',
+          allAlerts: '全部报警状态',
+          alertOk: '正常',
+          alertFiring: '告警中'
+        }
       },
       config: {
         title: '运维监控配置 - 分组可用性批量操作',
@@ -795,7 +939,10 @@ export default {
         evalIntervalSeconds: '评估间隔（秒）',
         lockEnabled: '启用分布式锁',
         lockKey: '分布式锁 Key',
-        lockTTLSeconds: '分布式锁 TTL（秒）'
+        lockTTLSeconds: '分布式锁 TTL（秒）',
+        showAdvancedDeveloperSettings: '显示高级开发者设置 (Distributed Lock)',
+        advancedSettingsSummary: '高级设置 (分布式锁)',
+        evalIntervalHint: '检测任务的执行频率，建议保持默认。'
       },
       email: {
         title: '邮件通知配置',

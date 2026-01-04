@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import type { GroupAvailabilityConfig, GroupAvailabilityStatus, AlertSeverity } from '../types'
 import { opsAPI } from '@/api/admin/ops'
+import Select from '@/components/common/Select.vue'
 
 const { t } = useI18n()
 
@@ -31,7 +32,9 @@ const selectedTemplate = ref('')
 interface ConfigTemplate {
   translationKey: string
   config: {
+    threshold_mode: 'count' | 'percentage' | 'both'
     min_available_accounts: number
+    min_available_percentage?: number
     severity: AlertSeverity
     cooldown_minutes: number
     notify_email: boolean
@@ -42,7 +45,9 @@ const templates: ConfigTemplate[] = [
   {
     translationKey: 'strictMode',
     config: {
+      threshold_mode: 'both',
       min_available_accounts: 5,
+      min_available_percentage: 80,
       severity: 'critical',
       cooldown_minutes: 15,
       notify_email: true
@@ -51,7 +56,9 @@ const templates: ConfigTemplate[] = [
   {
     translationKey: 'standardMode',
     config: {
+      threshold_mode: 'percentage',
       min_available_accounts: 3,
+      min_available_percentage: 60,
       severity: 'warning',
       cooldown_minutes: 30,
       notify_email: true
@@ -60,6 +67,7 @@ const templates: ConfigTemplate[] = [
   {
     translationKey: 'looseMode',
     config: {
+      threshold_mode: 'count',
       min_available_accounts: 1,
       severity: 'info',
       cooldown_minutes: 60,
@@ -77,10 +85,15 @@ const getSeverityLabel = (value: string) => {
 
 const severityLevels: AlertSeverity[] = ['critical', 'warning', 'info']
 
+const severityOptions = computed(() =>
+  severityLevels.map(s => ({ value: s, label: getSeverityLabel(s) }))
+)
+
 async function loadGroupConfigs() {
   loading.value = true
   try {
-    groupConfigs.value = await opsAPI.listGroupAvailabilityStatus()
+    const response = await opsAPI.listGroupAvailabilityStatus()
+    groupConfigs.value = response.items
   } catch (err) {
     console.error(t('admin.ops.config.loadConfigFailed'), err)
   } finally {
@@ -117,6 +130,8 @@ function getGroupConfig(group: GroupAvailabilityStatus): GroupAvailabilityConfig
     group_id: group.group_id,
     enabled: group.config?.enabled ?? group.monitoring_enabled ?? false,
     min_available_accounts: group.config?.min_available_accounts ?? group.min_available_accounts ?? 1,
+    threshold_mode: group.config?.threshold_mode ?? 'count',
+    min_available_percentage: group.config?.min_available_percentage,
     severity: group.config?.severity ?? 'warning',
     notify_email: group.config?.notify_email ?? false,
     cooldown_minutes: group.config?.cooldown_minutes ?? 0,
@@ -212,7 +227,9 @@ async function confirmApplyTemplate() {
   try {
     await Promise.all(selectedGroups.value.map(group =>
       opsAPI.updateGroupAvailabilityConfig(group.group_id, buildConfigUpdate(group, {
+        threshold_mode: template.config.threshold_mode,
         min_available_accounts: template.config.min_available_accounts,
+        min_available_percentage: template.config.min_available_percentage,
         severity: template.config.severity,
         cooldown_minutes: template.config.cooldown_minutes,
         notify_email: template.config.notify_email
@@ -405,9 +422,10 @@ watch(
       <div class="space-y-4">
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-dark-300 mb-2">{{ t('admin.ops.config.severity') }}</label>
-          <select v-model="batchSeverity" class="input">
-            <option v-for="s in severityLevels" :key="s" :value="s">{{ getSeverityLabel(s) }}</option>
-          </select>
+          <Select
+            v-model="batchSeverity"
+            :options="severityOptions"
+          />
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-dark-300 mb-2">{{ t('admin.ops.config.applyToGroups') }}</label>

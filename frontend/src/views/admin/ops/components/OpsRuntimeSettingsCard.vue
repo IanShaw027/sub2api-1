@@ -123,19 +123,19 @@ onMounted(() => {
           <!-- 隐藏的高级设置 -->
           <details class="col-span-1 md:col-span-2">
             <summary class="cursor-pointer text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400">
-              显示高级开发者设置 (Distributed Lock)
+              {{ t('admin.ops.runtime.showAdvancedDeveloperSettings') }}
             </summary>
             <div class="mt-2 grid grid-cols-1 gap-3 rounded-lg bg-gray-100 p-3 dark:bg-dark-800 md:grid-cols-2">
               <div class="text-xs text-gray-500 dark:text-gray-400">
-                Lock Enabled:
+                {{ t('admin.ops.runtime.lockEnabled') }}:
                 <span class="ml-1 font-mono text-gray-700 dark:text-gray-300">{{ alertSettings.distributed_lock.enabled }}</span>
               </div>
               <div class="text-xs text-gray-500 dark:text-gray-400">
-                Lock Key:
+                {{ t('admin.ops.runtime.lockKey') }}:
                 <span class="ml-1 font-mono text-gray-700 dark:text-gray-300">{{ alertSettings.distributed_lock.key }}</span>
               </div>
               <div class="text-xs text-gray-500 dark:text-gray-400">
-                Lock TTL:
+                {{ t('admin.ops.runtime.lockTTLSeconds') }}:
                 <span class="ml-1 font-mono text-gray-700 dark:text-gray-300">{{ alertSettings.distributed_lock.ttl_seconds }}s</span>
               </div>
             </div>
@@ -156,19 +156,19 @@ onMounted(() => {
           <!-- 隐藏的高级设置 -->
           <details class="col-span-1 md:col-span-2">
             <summary class="cursor-pointer text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400">
-              显示高级开发者设置 (Distributed Lock)
+              {{ t('admin.ops.runtime.showAdvancedDeveloperSettings') }}
             </summary>
             <div class="mt-2 grid grid-cols-1 gap-3 rounded-lg bg-gray-100 p-3 dark:bg-dark-800 md:grid-cols-2">
               <div class="text-xs text-gray-500 dark:text-gray-400">
-                Lock Enabled:
+                {{ t('admin.ops.runtime.lockEnabled') }}:
                 <span class="ml-1 font-mono text-gray-700 dark:text-gray-300">{{ groupAvailabilitySettings.distributed_lock.enabled }}</span>
               </div>
               <div class="text-xs text-gray-500 dark:text-gray-400">
-                Lock Key:
+                {{ t('admin.ops.runtime.lockKey') }}:
                 <span class="ml-1 font-mono text-gray-700 dark:text-gray-300">{{ groupAvailabilitySettings.distributed_lock.key }}</span>
               </div>
               <div class="text-xs text-gray-500 dark:text-gray-400">
-                Lock TTL:
+                {{ t('admin.ops.runtime.lockTTLSeconds') }}:
                 <span class="ml-1 font-mono text-gray-700 dark:text-gray-300">{{ groupAvailabilitySettings.distributed_lock.ttl_seconds }}s</span>
               </div>
             </div>
@@ -194,24 +194,24 @@ onMounted(() => {
           max="86400"
           class="input"
         />
-        <p class="mt-1 text-xs text-gray-500">检测任务的执行频率，建议保持默认。</p>
+        <p class="mt-1 text-xs text-gray-500">{{ t('admin.ops.runtime.evalIntervalHint') }}</p>
       </div>
 
       <details class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-600 dark:bg-dark-800">
-        <summary class="cursor-pointer text-xs font-medium text-gray-600 dark:text-gray-400">高级设置 (分布式锁)</summary>
+        <summary class="cursor-pointer text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.ops.runtime.advancedSettingsSummary') }}</summary>
         <div class="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
             <label class="inline-flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
               <input v-model="draftAlert.distributed_lock.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300" />
-              <span>启用分布式锁 (Lock Enabled)</span>
+              <span>{{ t('admin.ops.runtime.lockEnabled') }}</span>
             </label>
           </div>
           <div class="md:col-span-2">
-            <div class="mb-1 text-xs font-medium text-gray-500">Lock Key</div>
+            <div class="mb-1 text-xs font-medium text-gray-500">{{ t('admin.ops.runtime.lockKey') }}</div>
             <input v-model="draftAlert.distributed_lock.key" type="text" class="input text-xs font-mono" />
           </div>
           <div>
-            <div class="mb-1 text-xs font-medium text-gray-500">TTL (Seconds)</div>
+            <div class="mb-1 text-xs font-medium text-gray-500">{{ t('admin.ops.runtime.lockTTLSeconds') }}</div>
             <input
               v-model.number="draftAlert.distributed_lock.ttl_seconds"
               type="number"
@@ -249,24 +249,24 @@ onMounted(() => {
           max="86400"
           class="input"
         />
-        <p class="mt-1 text-xs text-gray-500">检测任务的执行频率，建议保持默认。</p>
+        <p class="mt-1 text-xs text-gray-500">{{ t('admin.ops.runtime.evalIntervalHint') }}</p>
       </div>
       
       <details class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-600 dark:bg-dark-800">
-        <summary class="cursor-pointer text-xs font-medium text-gray-600 dark:text-gray-400">高级设置 (分布式锁)</summary>
+        <summary class="cursor-pointer text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.ops.runtime.advancedSettingsSummary') }}</summary>
         <div class="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
             <label class="inline-flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
               <input v-model="draftGroupAvailability.distributed_lock.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300" />
-              <span>启用分布式锁 (Lock Enabled)</span>
+              <span>{{ t('admin.ops.runtime.lockEnabled') }}</span>
             </label>
           </div>
           <div class="md:col-span-2">
-            <div class="mb-1 text-xs font-medium text-gray-500">Lock Key</div>
+            <div class="mb-1 text-xs font-medium text-gray-500">{{ t('admin.ops.runtime.lockKey') }}</div>
             <input v-model="draftGroupAvailability.distributed_lock.key" type="text" class="input text-xs font-mono" />
           </div>
           <div>
-            <div class="mb-1 text-xs font-medium text-gray-500">TTL (Seconds)</div>
+            <div class="mb-1 text-xs font-medium text-gray-500">{{ t('admin.ops.runtime.lockTTLSeconds') }}</div>
             <input
               v-model.number="draftGroupAvailability.distributed_lock.ttl_seconds"
               type="number"

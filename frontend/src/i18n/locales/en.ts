@@ -554,6 +554,61 @@ export default {
     ops: {
       title: 'Ops Monitoring Center',
       description: 'Stability metrics, error distribution, and system health',
+      filters: {
+        allPlatforms: 'All Platforms',
+        allGroups: 'All Groups'
+      },
+      diagnosis: {
+        title: '🩺 Health Diagnosis Report',
+        footer: 'Diagnosis rules are tuned for LLM gateway workloads',
+        items: {
+          idle: {
+            message: 'System is idle',
+            impact: 'No traffic detected; system is in standby'
+          },
+          upstreamErrorVeryHigh: {
+            message: 'Upstream error rate is extremely high (>10%)',
+            impact: 'Many requests are failing; check provider quota/status or networking'
+          },
+          upstreamErrorHigh: {
+            message: 'Upstream error rate is elevated (>3%)',
+            impact: 'Some requests may fail due to rate limiting or transient network issues'
+          },
+          slaCritical: {
+            message: 'SLA is critically low (<90%)',
+            impact: 'User experience is severely impacted'
+          },
+          slaWarning: {
+            message: 'SLA is slightly unstable (<98%)',
+            impact: 'A small portion of requests may fail'
+          },
+          p99VeryHigh: {
+            message: 'P99 latency is extremely high (>20s)',
+            impact: 'Long-tail requests may time out on clients'
+          },
+          p99High: {
+            message: 'P99 latency is high (>8s)',
+            impact: 'Often acceptable for long generation; keep an eye on timeouts'
+          },
+          dbConnsExhausted: {
+            message: 'Database connection pool is nearly exhausted',
+            impact: 'May lead to request rejection or cascading failures'
+          },
+          stable: {
+            message: 'System is stable',
+            impact: 'All metrics look healthy within expected ranges'
+          }
+        }
+      },
+      labels: {
+        idle: 'Idle',
+        health: 'Health',
+        p99Latency: 'P99 Latency',
+        errorRate: 'Error Rate',
+        dbConns: 'DB Conns',
+        max: 'Max',
+        topReason: 'Top Cause:'
+      },
       status: {
         title: 'System Health Snapshot',
         subtitle: 'Real-time metrics and error visibility',
@@ -562,6 +617,7 @@ export default {
         systemDown: 'System Down',
         noData: 'No Data',
         monitoring: 'Monitoring',
+        idle: 'Idle',
         lastUpdated: 'Last Updated',
         live: 'Live',
         waiting: 'Waiting for data',
@@ -623,7 +679,17 @@ export default {
         loading: 'Loading data...',
         emptyRequest: 'No requests in this period',
         emptyError: 'No errors in this period',
-        errorRateLabel: 'Error Rate (%)'
+        errorRateLabel: 'Error Rate (%)',
+        attribution: {
+          upstream: 'Upstream (502/503/504)',
+          client: 'Client (4xx)',
+          system: 'System (500)',
+          other: 'Other'
+        },
+        provider: {
+          successRequests: 'Successful Requests',
+          failedRequests: 'Failed Requests'
+        }
       },
       metrics: {
         successRate: 'Success Rate',
@@ -639,6 +705,34 @@ export default {
         qps: 'Real-time QPS',
         tps: 'Real-time TPS',
         errorCount: 'Error Count'
+      },
+      requestDetails: {
+        details: 'Details',
+        subtitle: 'Request-level drill-down with request_id for debugging and replay',
+        refresh: 'Refresh',
+        failedToLoad: 'Failed to load request details',
+        empty: 'No request details',
+        emptyHint: 'Try another time range or retry later',
+        copy: 'Copy',
+        requestIdCopied: 'Request ID copied',
+        copyFailed: 'Copy failed',
+        viewError: 'Error Detail',
+        rangeMinutes: 'Last {n} minutes',
+        rangeHours: 'Last {n} hours',
+        kind: {
+          success: 'Success',
+          error: 'Error'
+        },
+        table: {
+          time: 'Time',
+          kind: 'Type',
+          platform: 'Platform',
+          model: 'Model',
+          duration: 'Duration',
+          status: 'Status',
+          requestId: 'Request ID',
+          actions: 'Actions'
+        }
       },
       errors: {
         title: 'Recent Errors',
@@ -657,6 +751,11 @@ export default {
         allSeverities: 'All Severities',
         loading: 'Loading...',
         emptyTable: 'No error records found',
+        smartMessage: {
+          timeoutDeadlineExceeded: 'Timeout (Deadline Exceeded)',
+          connectionRefused: 'Connection Refused',
+          rateLimitExceeded: 'Rate Limit Exceeded'
+        },
         table: {
           time: 'Time',
           timeId: 'Time / Request ID',
@@ -706,13 +805,28 @@ export default {
         refresh: 'Refresh',
         loading: 'Loading...',
         noData: 'No group monitoring data',
+        recentCount: '{n} groups total',
         configureNow: 'Configure Now',
         groupName: 'Group Name',
         availableAccounts: 'Available Accounts',
+        waterLevel: 'Water Level (Available/Total)',
+        monitoringSwitch: 'Monitoring',
+        alertStrategy: 'Alert Strategy',
+        tooltip:
+          'Monitor account availability per group. For VIP-exclusive groups, enabling "Strict Mode" is recommended.',
         monitoringConfig: 'Monitoring Config',
         minAvailable: 'Min Available',
+        thresholdMode: 'Threshold Mode',
+        thresholdModes: {
+          count: 'Count - at least N accounts available',
+          percentage: 'Percentage - at least X% accounts available',
+          both: 'Both - meet count and percentage'
+        },
+        minAvailablePercentage: 'Min Available Percentage (%)',
         severity: 'Severity',
         cooldown: 'Cooldown',
+        cooldownMinutes: 'Cooldown (minutes)',
+        notifyEmail: 'Send email notification',
         status: 'Status',
         lastUpdate: 'Last Update',
         actions: 'Actions',
@@ -721,7 +835,25 @@ export default {
         alert: 'Alert',
         unmonitored: 'Unmonitored',
         notConfigured: 'Not configured',
-        goToGroupManagement: 'Go to Group Management'
+        goToGroupManagement: 'Go to Group Management',
+        customMode: 'Custom',
+        customModeDesc: 'Custom configuration for flexible control',
+        customConfigTitle: 'Configure Alert Strategy',
+        configureCustomStrategy: 'Configure custom strategy',
+        searchPlaceholder: 'Search group name...',
+        strategyTemplates: 'Strategy Templates',
+        advancedSettings: 'Advanced Settings',
+        presetSettings: 'Preset Configuration',
+        presetStrategyInfo: 'Using preset strategy',
+        presetStrategyHint: 'Preset parameters are locked. Modify any parameter to customize',
+        filters: {
+          allMonitoring: 'All Monitoring',
+          monitoringEnabled: 'Monitoring Enabled',
+          monitoringDisabled: 'Monitoring Disabled',
+          allAlerts: 'All Alerts',
+          alertOk: 'OK',
+          alertFiring: 'Firing'
+        }
       },
       config: {
         title: 'Ops Monitoring Config - Bulk Group Actions',
@@ -782,7 +914,10 @@ export default {
         evalIntervalSeconds: 'Evaluation Interval (seconds)',
         lockEnabled: 'Distributed Lock Enabled',
         lockKey: 'Distributed Lock Key',
-        lockTTLSeconds: 'Distributed Lock TTL (seconds)'
+        lockTTLSeconds: 'Distributed Lock TTL (seconds)',
+        showAdvancedDeveloperSettings: 'Show advanced developer settings (Distributed Lock)',
+        advancedSettingsSummary: 'Advanced settings (Distributed Lock)',
+        evalIntervalHint: 'How often the evaluator runs. Keeping the default is recommended.'
       },
       email: {
         title: 'Email Notification',

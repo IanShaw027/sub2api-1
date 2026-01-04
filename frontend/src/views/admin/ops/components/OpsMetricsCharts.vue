@@ -97,10 +97,10 @@ const errorAttribution = computed(() => {
   })
 
   const result: ErrorCategory[] = []
-  if (upstream > 0) result.push({ label: '上游故障 (Upstream)', count: upstream, color: colors.orange })
-  if (client > 0) result.push({ label: '用户行为 (Client)', count: client, color: colors.blue })
-  if (system > 0) result.push({ label: '系统故障 (System)', count: system, color: colors.red })
-  if (other > 0) result.push({ label: '其他 (Other)', count: other, color: colors.gray })
+  if (upstream > 0) result.push({ label: t('admin.ops.charts.attribution.upstream'), count: upstream, color: colors.orange })
+  if (client > 0) result.push({ label: t('admin.ops.charts.attribution.client'), count: client, color: colors.blue })
+  if (system > 0) result.push({ label: t('admin.ops.charts.attribution.system'), count: system, color: colors.red })
+  if (other > 0) result.push({ label: t('admin.ops.charts.attribution.other'), count: other, color: colors.gray })
   
   return result
 })
@@ -150,7 +150,7 @@ const providerChartData = computed(() => {
     labels: sorted.map(p => p.name),
     datasets: [
       {
-        label: '成功请求',
+        label: t('admin.ops.charts.provider.successRequests'),
         data: sorted.map(p => p.request_count * (1 - p.error_rate / 100)), // 估算成功数
         backgroundColor: colors.green,
         borderRadius: 4,
@@ -158,7 +158,7 @@ const providerChartData = computed(() => {
         stack: 'total'
       },
       {
-        label: '失败请求',
+        label: t('admin.ops.charts.provider.failedRequests'),
         data: sorted.map(p => p.request_count * (p.error_rate / 100)), // 估算失败数
         backgroundColor: colors.red,
         borderRadius: 4,
@@ -330,7 +330,7 @@ const providerOptions = computed(() => ({
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
           </svg>
           {{ $t('admin.ops.charts.throughput') }}
-          <HelpTooltip content="流量趋势图。QPS 激增但 TPS 不涨，通常意味着大量无效请求（可能是攻击或错误调用）。" />
+          <HelpTooltip :content="t('admin.ops.tooltips.throughputChart')" />
         </h3>
         <div class="flex items-center gap-2 text-xs text-gray-500">
           <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-blue-500"></span>QPS</span>
@@ -356,7 +356,7 @@ const providerOptions = computed(() => ({
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
           {{ $t('admin.ops.charts.errorDistribution') }}
-          <HelpTooltip content="错误归因分析。上游故障=502/503；用户行为=4xx；系统故障=500。" />
+          <HelpTooltip :content="t('admin.ops.tooltips.errorDistChart')" />
         </h3>
       </div>
       <div class="relative h-64">
@@ -367,7 +367,7 @@ const providerOptions = computed(() => ({
           <!-- Custom Legend with Diagnosis -->
           <div class="mt-4 flex flex-col items-center gap-2">
             <div v-if="topErrorReason" class="text-xs font-bold text-gray-900 dark:text-white">
-              主要原因: <span :style="{ color: topErrorReason.color }">{{ topErrorReason.label }}</span>
+              {{ t('admin.ops.labels.topReason') }} <span :style="{ color: topErrorReason.color }">{{ topErrorReason.label }}</span>
             </div>
             <div class="flex flex-wrap justify-center gap-3">
               <div v-for="item in errorAttribution" :key="item.label" class="flex items-center gap-1.5 text-xs">
@@ -396,13 +396,13 @@ const providerOptions = computed(() => ({
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           {{ $t('admin.ops.charts.latency') }}
-          <HelpTooltip content="请求延迟分布。长尾（右侧）越高，说明卡顿越严重。" />
+          <HelpTooltip :content="t('admin.ops.tooltips.latencyChart')" />
         </h3>
       </div>
       <div class="h-48">
         <Bar v-if="latencyChartState === 'ready' && latencyChartData" :data="latencyChartData" :options="baseOptions" />
         <div v-else class="flex h-full items-center justify-center text-sm text-gray-400">
-           {{ latencyChartState === 'loading' ? 'Loading...' : emptyRequestHintText }}
+           {{ latencyChartState === 'loading' ? t('admin.ops.charts.loading') : emptyRequestHintText }}
         </div>
       </div>
     </div>
@@ -417,13 +417,13 @@ const providerOptions = computed(() => ({
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           {{ $t('admin.ops.charts.providerErrorRate') }}
-          <HelpTooltip content="各供应商的请求量与成功率。红色部分代表失败请求。如果某个供应商全是红色，请立即检查。" />
+          <HelpTooltip :content="t('admin.ops.tooltips.providerChart')" />
         </h3>
       </div>
       <div class="h-48">
         <Bar v-if="providerChartState === 'ready' && providerChartData" :data="providerChartData" :options="providerOptions" />
         <div v-else class="flex h-full items-center justify-center text-sm text-gray-400">
-           {{ providerChartState === 'loading' ? 'Loading...' : emptyRequestHintText }}
+           {{ providerChartState === 'loading' ? t('admin.ops.charts.loading') : emptyRequestHintText }}
         </div>
       </div>
     </div>
