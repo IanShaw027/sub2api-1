@@ -939,25 +939,6 @@ export default {
         alertTitle: 'Alert Evaluator',
         groupAvailabilityTitle: 'Group Availability Monitor',
         evalIntervalSeconds: 'Evaluation Interval (seconds)',
-        webhook: {
-          title: 'Webhook Notifications',
-          enabled: 'Webhook',
-          url: 'Webhook URL',
-          urlPlaceholder: 'https://example.com/webhook',
-          urlHint: 'Receives JSON payload when an alert fires.',
-          secret: 'Webhook Secret (optional)',
-          secretPlaceholder: 'HMAC secret for signature',
-          secretHint: 'When set, requests include X-Sub2API-Signature = sha256(HMAC(secret, timestamp + \"\\n\" + body)).',
-          timeoutSeconds: 'Timeout (seconds)',
-          maxRetries: 'Max retries',
-          includeResolved: 'Include resolved alerts',
-          validation: {
-            urlRequired: 'Webhook URL is required when webhook is enabled',
-            urlFormat: 'Webhook URL must start with http:// or https://',
-            timeoutRange: 'Webhook timeout must be between 1 and 300 seconds',
-            retriesRange: 'Webhook max retries must be between 0 and 10'
-          }
-        },
         silencing: {
           title: 'Alert Silencing (Maintenance Mode)',
           enabled: 'Enable silencing',

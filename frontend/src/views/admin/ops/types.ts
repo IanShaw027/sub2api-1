@@ -112,15 +112,6 @@ export interface OpsDistributedLockSettings {
 export interface OpsAlertRuntimeSettings {
   evaluation_interval_seconds: number
   distributed_lock: OpsDistributedLockSettings
-  webhook: {
-    enabled: boolean
-    url: string
-    secret: string
-    timeout_seconds: number
-    max_retries: number
-    include_resolved: boolean
-    min_severity: AlertSeverity | ''
-  }
   silencing: {
     enabled: boolean
     global_until_rfc3339: string

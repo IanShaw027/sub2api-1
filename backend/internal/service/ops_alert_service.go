@@ -1,18 +1,13 @@
 package service
 
 import (
-	"bytes"
 	"context"
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -30,7 +25,6 @@ type OpsAlertService struct {
 	httpClient   *http.Client
 
 	interval time.Duration
-	webhook  OpsAlertWebhookSettings
 	silence  OpsAlertSilencingSettings
 
 	redisClient          *redis.Client
@@ -189,7 +183,6 @@ func (s *OpsAlertService) applyRuntimeSettings(ctx context.Context) {
 		s.distributedLockTTL = time.Duration(cfg.DistributedLock.TTLSeconds) * time.Second
 	}
 
-	s.webhook = cfg.Webhook
 	s.silence = cfg.Silencing
 }
 
@@ -661,8 +654,6 @@ func (s *OpsAlertService) dispatchNotifications(ctx context.Context, rule OpsAle
 		emailSent = s.sendEmailNotification(notifyCtx, rule, event)
 	}
 
-	_ = s.sendWebhookNotification(notifyCtx, rule, event)
-
 	return emailSent
 }
 
@@ -954,237 +945,6 @@ func stringSliceContains(values []string, target string) bool {
 		}
 	}
 	return false
-}
-
-func (s *OpsAlertService) sendWebhookNotification(ctx context.Context, rule OpsAlertRule, event *OpsAlertEvent) bool {
-	if s == nil || s.httpClient == nil {
-		return false
-	}
-	if s.opsService == nil {
-		return false
-	}
-	if event == nil {
-		return false
-	}
-
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	// Determine webhook settings:
-	// 1) Prefer rule-level config if rule.NotifyChannels includes "webhook" and notify_config provides a URL.
-	// 2) Otherwise, fall back to global runtime webhook config.
-	ruleCfgURL, ruleCfgSecret, ok := webhookConfigFromRule(rule)
-	webhook := s.webhook
-	urlToCall := ""
-	secret := ""
-	if ok {
-		urlToCall = ruleCfgURL
-		secret = ruleCfgSecret
-	} else if webhook.Enabled {
-		urlToCall = webhook.URL
-		secret = webhook.Secret
-	}
-
-	urlToCall = strings.TrimSpace(urlToCall)
-	if urlToCall == "" {
-		return false
-	}
-
-	includeResolved := webhook.IncludeResolved
-	minSeverity := webhook.MinSeverity
-	if ok && rule.NotifyConfig != nil {
-		if v, ok := rule.NotifyConfig["include_resolved"].(bool); ok {
-			includeResolved = v
-		}
-		if v, ok := rule.NotifyConfig["min_severity"].(string); ok && strings.TrimSpace(v) != "" {
-			minSeverity = strings.TrimSpace(v)
-		}
-	}
-
-	if !includeResolved && event.Status == OpsAlertStatusResolved {
-		return false
-	}
-	if strings.TrimSpace(minSeverity) != "" && !shouldSendOpsEmailBySeverity(minSeverity, rule.Severity) {
-		return false
-	}
-
-	parsed, err := url.Parse(urlToCall)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		log.Printf("[OpsAlert] invalid webhook url=%q (rule=%d)", urlToCall, rule.ID)
-		return false
-	}
-	if parsed.Scheme != "https" && parsed.Scheme != "http" {
-		log.Printf("[OpsAlert] invalid webhook scheme=%q (rule=%d)", parsed.Scheme, rule.ID)
-		return false
-	}
-
-	branding := EmailBranding{SiteName: "Sub2API"}
-	if s.emailService != nil {
-		branding = s.emailService.GetBranding(ctx)
-	}
-
-	payload := map[string]any{
-		"type":    "ops_alert",
-		"sent_at": time.Now().UTC().Format(time.RFC3339Nano),
-		"site": map[string]any{
-			"name": branding.SiteName,
-			"url":  branding.SiteURL,
-		},
-		"rule": map[string]any{
-			"id":             rule.ID,
-			"name":           rule.Name,
-			"severity":       rule.Severity,
-			"metric_type":    rule.MetricType,
-			"operator":       rule.Operator,
-			"threshold":      rule.Threshold,
-			"window_minutes": rule.WindowMinutes,
-			"sustained":      rule.SustainedMinutes,
-		},
-		"event": map[string]any{
-			"id":              event.ID,
-			"status":          event.Status,
-			"title":           event.Title,
-			"description":     event.Description,
-			"metric_value":    event.MetricValue,
-			"threshold_value": event.ThresholdValue,
-			"fired_at":        event.FiredAt.Format(time.RFC3339Nano),
-			"resolved_at": func() string {
-				if event.ResolvedAt == nil {
-					return ""
-				}
-				return event.ResolvedAt.Format(time.RFC3339Nano)
-			}(),
-		},
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("[OpsAlert] marshal webhook payload failed (rule=%d): %v", rule.ID, err)
-		return false
-	}
-
-	timeoutSeconds := webhook.TimeoutSeconds
-	if timeoutSeconds <= 0 {
-		timeoutSeconds = 5
-	}
-
-	maxRetries := webhook.MaxRetries
-	if maxRetries < 0 {
-		maxRetries = 0
-	}
-
-	timestamp := time.Now().UTC().Format(time.RFC3339Nano)
-	signature := ""
-	if strings.TrimSpace(secret) != "" {
-		signature = signWebhookPayload(secret, timestamp, body)
-	}
-
-	anySent := false
-	if err := retryWithBackoff(
-		ctx,
-		maxRetries,
-		opsAlertEmailBackoff,
-		func() error {
-			reqCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
-			defer cancel()
-			req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, urlToCall, bytes.NewReader(body))
-			if err != nil {
-				return err
-			}
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("User-Agent", "Sub2API-OpsAlert/1.0")
-			req.Header.Set("X-Sub2API-Event-Type", "ops_alert")
-			req.Header.Set("X-Sub2API-Timestamp", timestamp)
-			if signature != "" {
-				req.Header.Set("X-Sub2API-Signature", "sha256="+signature)
-			}
-
-			resp, err := s.httpClient.Do(req)
-			if err != nil {
-				return err
-			}
-			defer func() { _ = resp.Body.Close() }()
-			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-				return fmt.Errorf("webhook http status %d", resp.StatusCode)
-			}
-			anySent = true
-			return nil
-		},
-		func(attempt int, total int, nextDelay time.Duration, err error) {
-			if attempt < total {
-				log.Printf("[OpsAlert] webhook send failed (rule=%d attempt=%d/%d), retrying in %s: %v", rule.ID, attempt, total, nextDelay, err)
-				return
-			}
-			log.Printf("[OpsAlert] webhook send failed (rule=%d attempt=%d/%d), giving up: %v", rule.ID, attempt, total, err)
-		},
-	); err != nil {
-		return false
-	}
-
-	return anySent
-}
-
-func signWebhookPayload(secret string, timestamp string, body []byte) string {
-	mac := hmac.New(sha256.New, []byte(secret))
-	_, _ = mac.Write([]byte(timestamp))
-	_, _ = mac.Write([]byte("\n"))
-	_, _ = mac.Write(body)
-	return hex.EncodeToString(mac.Sum(nil))
-}
-
-func webhookConfigFromRule(rule OpsAlertRule) (url string, secret string, ok bool) {
-	if len(rule.NotifyChannels) == 0 {
-		return "", "", false
-	}
-	hasWebhook := false
-	for _, ch := range rule.NotifyChannels {
-		if strings.EqualFold(strings.TrimSpace(ch), "webhook") {
-			hasWebhook = true
-			break
-		}
-	}
-	if !hasWebhook {
-		return "", "", false
-	}
-	if rule.NotifyConfig == nil {
-		return "", "", false
-	}
-
-	readString := func(key string) string {
-		v, ok := rule.NotifyConfig[key]
-		if !ok {
-			return ""
-		}
-		if s, ok := v.(string); ok {
-			return strings.TrimSpace(s)
-		}
-		return ""
-	}
-
-	u := readString("webhook_url")
-	if u == "" {
-		u = readString("url")
-	}
-	if u == "" {
-		// Support nested config: { webhook: { url: "...", secret: "..." } }
-		if nested, ok := rule.NotifyConfig["webhook"].(map[string]any); ok && nested != nil {
-			if v, ok := nested["url"].(string); ok {
-				u = strings.TrimSpace(v)
-			}
-			if v, ok := nested["secret"].(string); ok {
-				secret = strings.TrimSpace(v)
-			}
-		}
-	}
-	if secret == "" {
-		secret = readString("webhook_secret")
-	}
-
-	if u == "" {
-		return "", "", false
-	}
-	return u, secret, true
 }
 
 const (
