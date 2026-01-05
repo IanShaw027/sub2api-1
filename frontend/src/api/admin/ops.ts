@@ -6,6 +6,7 @@
 import { apiClient } from '../client'
 import type {
   AlertRule,
+  AlertEvent,
   GroupAvailabilityConfig,
   GroupAvailabilityStatus,
   EmailNotificationConfig,
@@ -635,6 +636,11 @@ export async function deleteAlertRule(id: number): Promise<void> {
   await apiClient.delete(`/admin/ops/alert-rules/${id}`)
 }
 
+export async function listAlertEvents(limit = 100): Promise<AlertEvent[]> {
+  const { data } = await apiClient.get<AlertEvent[]>('/admin/ops/alert-events', { params: { limit } })
+  return data
+}
+
 // Group Availability API
 export interface ListGroupAvailabilityStatusParams {
   search?: string
@@ -711,6 +717,7 @@ export const opsAPI = {
   createAlertRule,
   updateAlertRule,
   deleteAlertRule,
+  listAlertEvents,
   listGroupAvailabilityStatus,
   updateGroupAvailabilityConfig,
   getEmailNotificationConfig,

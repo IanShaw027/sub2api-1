@@ -48,6 +48,21 @@ export interface AlertRule {
   aggregation_dimensions?: string[]
 }
 
+export interface AlertEvent {
+  id: number
+  rule_id: number
+  severity: OpsSeverity | string
+  status: 'firing' | 'resolved' | string
+  title?: string
+  description?: string
+  metric_value?: number
+  threshold_value?: number
+  fired_at: string
+  resolved_at?: string | null
+  email_sent: boolean
+  created_at: string
+}
+
 export interface GroupAvailabilityConfig {
   id?: number
   group_id: number

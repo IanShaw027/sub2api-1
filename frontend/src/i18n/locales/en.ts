@@ -744,6 +744,21 @@ export default {
           actions: 'Actions'
         }
       },
+      alertEvents: {
+        title: 'Alert Events',
+        description: 'Recent alert firing/resolution records (email-only)',
+        loading: 'Loading...',
+        empty: 'No alert events',
+        loadFailed: 'Failed to load alert events',
+        table: {
+          time: 'Time',
+          status: 'Status',
+          severity: 'Severity',
+          title: 'Title',
+          metric: 'Metric / Threshold',
+          email: 'Email Sent'
+        }
+      },
       errors: {
         title: 'Recent Errors',
         trackingTitle: 'Error Log Tracking',

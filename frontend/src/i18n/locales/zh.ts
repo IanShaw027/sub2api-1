@@ -770,6 +770,21 @@ export default {
           actions: '操作'
         }
       },
+      alertEvents: {
+        title: '告警事件',
+        description: '最近的告警触发/恢复记录（仅邮件通知）',
+        loading: '加载中...',
+        empty: '暂无告警事件',
+        loadFailed: '加载告警事件失败',
+        table: {
+          time: '时间',
+          status: '状态',
+          severity: '级别',
+          title: '标题',
+          metric: '指标 / 阈值',
+          email: '邮件已发送'
+        }
+      },
       errors: {
         title: '最近错误',
         trackingTitle: '异常日志追踪',

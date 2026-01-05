@@ -24,6 +24,7 @@ import OpsMetricsCharts from './components/OpsMetricsCharts.vue'
 import OpsGroupAvailabilityCard from './components/OpsGroupAvailabilityCard.vue'
 import OpsRuntimeSettingsCard from './components/OpsRuntimeSettingsCard.vue'
 import OpsEmailNotificationCard from './components/OpsEmailNotificationCard.vue'
+import OpsAlertEventsCard from './components/OpsAlertEventsCard.vue'
 import OpsErrorLogTable from './components/OpsErrorLogTable.vue'
 import OpsDashboardSkeleton from './components/OpsDashboardSkeleton.vue'
 import OpsRequestDetailsModal, { type OpsRequestDetailsPreset } from './components/OpsRequestDetailsModal.vue'
@@ -496,6 +497,9 @@ watch(timeRange, () => {
 
       <!-- Email Notification Configuration -->
       <OpsEmailNotificationCard v-if="!(loading && !hasLoadedOnce)" />
+
+      <!-- Alert Events -->
+      <OpsAlertEventsCard v-if="!(loading && !hasLoadedOnce)" />
 
       <!-- L3: Error Logs Query Section -->
       <OpsErrorLogTable
