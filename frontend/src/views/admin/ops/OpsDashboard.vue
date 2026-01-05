@@ -22,6 +22,7 @@ import ErrorDetailModal from '@/components/admin/ErrorDetailModal.vue'
 import OpsDashboardHeader from './components/OpsDashboardHeader.vue'
 import OpsMetricsCharts from './components/OpsMetricsCharts.vue'
 import OpsGroupAvailabilityCard from './components/OpsGroupAvailabilityCard.vue'
+import OpsGroupAvailabilityEventsCard from './components/OpsGroupAvailabilityEventsCard.vue'
 import OpsRuntimeSettingsCard from './components/OpsRuntimeSettingsCard.vue'
 import OpsEmailNotificationCard from './components/OpsEmailNotificationCard.vue'
 import OpsAlertEventsCard from './components/OpsAlertEventsCard.vue'
@@ -491,6 +492,9 @@ watch(timeRange, () => {
 
       <!-- Group Availability Monitoring -->
       <OpsGroupAvailabilityCard v-if="!(loading && !hasLoadedOnce)" />
+
+      <!-- Group Availability Events -->
+      <OpsGroupAvailabilityEventsCard v-if="!(loading && !hasLoadedOnce)" />
 
       <!-- Ops Runtime Settings -->
       <OpsRuntimeSettingsCard v-if="!(loading && !hasLoadedOnce)" />

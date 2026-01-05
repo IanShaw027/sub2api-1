@@ -890,6 +890,26 @@ export default {
           severity: 'Please choose a valid severity'
         }
       },
+      availabilityEvents: {
+        title: 'Availability Events',
+        description: 'Group availability alert history (firing/resolved)',
+        loading: 'Loading...',
+        empty: 'No availability events',
+        loadFailed: 'Failed to load availability events',
+        status: {
+          all: 'All',
+          firing: 'Firing',
+          resolved: 'Resolved'
+        },
+        table: {
+          time: 'Time',
+          group: 'Group',
+          status: 'Status',
+          severity: 'Severity',
+          waterline: 'Available / Threshold (Total)',
+          email: 'Email Sent'
+        }
+      },
       config: {
         title: 'Ops Monitoring Config - Bulk Group Actions',
         selectedGroups: '{count} groups selected',

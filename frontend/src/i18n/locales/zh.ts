@@ -915,6 +915,26 @@ export default {
           severity: '请选择有效的告警级别'
         }
       },
+      availabilityEvents: {
+        title: '分组可用性事件',
+        description: '分组可用性告警事件历史（触发/恢复）',
+        loading: '加载中...',
+        empty: '暂无分组可用性事件',
+        loadFailed: '加载分组可用性事件失败',
+        status: {
+          all: '全部',
+          firing: '告警中',
+          resolved: '已恢复'
+        },
+        table: {
+          time: '时间',
+          group: '分组',
+          status: '状态',
+          severity: '级别',
+          waterline: '可用 / 阈值（总数）',
+          email: '邮件已发送'
+        }
+      },
       config: {
         title: '运维监控配置 - 分组可用性批量操作',
         selectedGroups: '已选中 {count} 个分组',

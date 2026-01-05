@@ -94,6 +94,28 @@ export interface GroupAvailabilityStatus {
   config?: GroupAvailabilityConfig
 }
 
+export interface GroupAvailabilityEvent {
+  id: number
+  config_id: number
+  group_id: number
+  status: 'firing' | 'resolved' | string
+  severity: AlertSeverity | string
+  title?: string
+  description?: string
+  available_accounts: number
+  threshold_accounts: number
+  total_accounts: number
+  email_sent: boolean
+  fired_at: string
+  resolved_at?: string | null
+  created_at: string
+  group?: {
+    id: number
+    name: string
+    platform?: string
+  }
+}
+
 export interface EmailNotificationConfig {
   alert: {
     enabled: boolean

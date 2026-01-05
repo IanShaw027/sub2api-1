@@ -9,6 +9,7 @@ import type {
   AlertEvent,
   GroupAvailabilityConfig,
   GroupAvailabilityStatus,
+  GroupAvailabilityEvent,
   EmailNotificationConfig,
   OpsAlertRuntimeSettings,
   OpsGroupAvailabilityRuntimeSettings
@@ -663,6 +664,11 @@ export async function listGroupAvailabilityStatus(params?: ListGroupAvailability
   return data
 }
 
+export async function listGroupAvailabilityEvents(params?: { limit?: number, status?: 'firing' | 'resolved' | 'all' }): Promise<GroupAvailabilityEvent[]> {
+  const { data } = await apiClient.get<GroupAvailabilityEvent[]>('/admin/ops/group-availability/events', { params })
+  return data
+}
+
 export async function updateGroupAvailabilityConfig(groupId: number, config: Partial<GroupAvailabilityConfig>): Promise<GroupAvailabilityConfig> {
   const { data } = await apiClient.put<GroupAvailabilityConfig>(`/admin/ops/group-availability/configs/${groupId}`, config)
   return data
@@ -719,6 +725,7 @@ export const opsAPI = {
   deleteAlertRule,
   listAlertEvents,
   listGroupAvailabilityStatus,
+  listGroupAvailabilityEvents,
   updateGroupAvailabilityConfig,
   getEmailNotificationConfig,
   updateEmailNotificationConfig,
