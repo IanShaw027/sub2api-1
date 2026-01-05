@@ -3,15 +3,18 @@ import { computed, ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { formatNumber } from '@/utils/format'
 import type { OpsDashboardOverview } from '@/api/admin/ops'
+import type { OpsWSStatus } from '@/api/admin/ops'
 import { adminAPI } from '@/api/admin' // Import for group list
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Select from '@/components/common/Select.vue'
 
 const { t } = useI18n()
+const helpUrl = 'https://github.com/Wei-Shaw/sub2api#readme'
 
 interface Props {
   overview: OpsDashboardOverview | null
-  wsConnected: boolean
+  wsStatus: OpsWSStatus
+  wsReconnectInMs?: number | null
   realTimeQPS: number
   realTimeTPS: number
   timeRange: string
@@ -227,13 +230,35 @@ const diagnosisReport = computed<DiagnosisItem[]>(() => {
 })
 
 const displayRealTimeQPS = computed(() => {
-  if (props.wsConnected && props.realTimeQPS > 0) return props.realTimeQPS
+  if (props.wsStatus === 'connected' && props.realTimeQPS > 0) return props.realTimeQPS
   return props.overview?.qps.current ?? 0
 })
 
 const displayRealTimeTPS = computed(() => {
-  if (props.wsConnected && props.realTimeTPS > 0) return props.realTimeTPS
+  if (props.wsStatus === 'connected' && props.realTimeTPS > 0) return props.realTimeTPS
   return props.overview?.tps.current ?? 0
+})
+
+const wsStatusLabel = computed(() => {
+  if (props.wsStatus === 'connected') return t('admin.ops.status.online')
+  if (props.wsStatus === 'reconnecting') return t('admin.ops.status.reconnecting')
+  if (props.wsStatus === 'connecting') return t('admin.ops.status.connecting')
+  if (props.wsStatus === 'offline') return t('admin.ops.status.offline')
+  return t('admin.ops.status.offline')
+})
+
+const wsStatusTitle = computed(() => {
+  if (props.wsStatus === 'connected') return t('admin.ops.status.wsConnected')
+  if (props.wsStatus === 'reconnecting') return t('admin.ops.status.wsReconnecting')
+  if (props.wsStatus === 'connecting') return t('admin.ops.status.wsConnecting')
+  if (props.wsStatus === 'offline') return t('admin.ops.status.wsDisconnected')
+  return t('admin.ops.status.wsDisconnected')
+})
+
+const wsDotClass = computed(() => {
+  if (props.wsStatus === 'connected') return 'bg-green-500'
+  if (props.wsStatus === 'reconnecting' || props.wsStatus === 'connecting') return 'bg-amber-500'
+  return 'bg-red-500'
 })
 
 const getStatusColor = (status: string | undefined) => {
@@ -273,40 +298,55 @@ function openDetails(preset: RequestDetailsPreset) {
           {{ $t('admin.ops.title') }}
         </h1>
         <div class="mt-1 flex items-center gap-3 text-xs text-gray-500">
-          <span class="flex items-center gap-1.5" :title="wsConnected ? $t('admin.ops.status.wsConnected') : $t('admin.ops.status.wsDisconnected')">
+          <span class="flex items-center gap-1.5" :title="wsStatusTitle">
             <span class="relative flex h-2 w-2">
-              <span v-if="wsConnected" class="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
-              <span class="relative inline-flex h-2 w-2 rounded-full" :class="wsConnected ? 'bg-green-500' : 'bg-red-500'"></span>
+              <span v-if="wsStatus === 'connected'" class="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
+              <span class="relative inline-flex h-2 w-2 rounded-full" :class="wsDotClass"></span>
             </span>
-            {{ wsConnected ? $t('admin.ops.status.online') : $t('admin.ops.status.offline') }}
+            {{ wsStatusLabel }}
+            <span v-if="wsStatus === 'reconnecting' && wsReconnectInMs" class="text-[10px] font-semibold text-gray-400">
+              ({{ Math.max(1, Math.round(wsReconnectInMs / 1000)) }}s)
+            </span>
           </span>
           <span>·</span>
           <span>{{ $t('admin.ops.status.updatedAt') }} {{ lastUpdated.toLocaleTimeString() }}</span>
         </div>
       </div>
 
-      <div class="flex items-center gap-3">
+      <div class="flex flex-wrap items-center gap-3">
+        <a
+          :href="helpUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 transition-colors hover:bg-gray-200 dark:bg-dark-700 dark:text-gray-400 dark:hover:bg-dark-600"
+          :title="t('admin.ops.status.help')"
+        >
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.02 2.575-2.5 2.9-.98.215-1.5.792-1.5 1.6V16m0 3h.01M12 21a9 9 0 110-18 9 9 0 010 18z" />
+          </svg>
+        </a>
+
         <Select
           :model-value="selectedPlatform"
           :options="platformOptions"
           @change="handlePlatformChange"
-          class="w-[140px]"
+          class="w-full sm:w-[140px]"
         />
 
         <Select
           :model-value="selectedGroupId"
           :options="groupOptions"
           @change="handleGroupChange"
-          class="w-[140px]"
+          class="w-full sm:w-[140px]"
         />
 
-        <div class="h-4 w-[1px] bg-gray-200 dark:bg-dark-700 mx-1"></div>
+        <div class="mx-1 hidden h-4 w-[1px] bg-gray-200 dark:bg-dark-700 sm:block"></div>
 
         <Select
           :model-value="timeRange"
           :options="timeRangeOptions"
           @change="handleTimeRangeChange"
-          class="w-[120px]"
+          class="w-full sm:w-[120px]"
         />
 
         <button

@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +33,10 @@ type OpsAlertService struct {
 	distributedLockWarn  sync.Once
 	distributedSkipLogMu sync.Mutex
 	distributedSkipLogAt time.Time
+
+	emailLimiter         *tokenBucket
+	emailLimiterSkipLogMu sync.Mutex
+	emailLimiterSkipLogAt time.Time
 
 	startOnce sync.Once
 	stopOnce  sync.Once
@@ -57,6 +62,8 @@ func NewOpsAlertService(
 	lockKey := opsAlertLeaderLockKeyDefault
 	lockTTL := opsAlertLeaderLockTTLDefault
 
+	emailLimiter := newOpsAlertEmailLimiterFromEnv()
+
 	return &OpsAlertService{
 		opsService:   opsService,
 		userService:  userService,
@@ -68,6 +75,8 @@ func NewOpsAlertService(
 		distributedLockOn:  lockOn,
 		distributedLockKey: lockKey,
 		distributedLockTTL: lockTTL,
+
+		emailLimiter: emailLimiter,
 	}
 }
 
@@ -633,6 +642,8 @@ const (
 	opsAlertEvaluateTimeout     = 45 * time.Second
 	opsAlertNotificationTimeout = 30 * time.Second
 	opsAlertEmailMaxRetries     = 3
+
+	opsAlertEmailRateLimitSkipLogMinInterval = 1 * time.Minute
 )
 
 var opsAlertEmailBackoff = []time.Duration{
@@ -788,6 +799,10 @@ func (s *OpsAlertService) sendEmailNotification(ctx context.Context, rule OpsAle
 
 	anySent := false
 	for _, to := range recipients {
+		if s.emailLimiter != nil && !s.emailLimiter.allow(1) {
+			s.logEmailRateLimited()
+			continue
+		}
 		if err := retryWithBackoff(
 			ctx,
 			opsAlertEmailMaxRetries,
@@ -812,4 +827,52 @@ func (s *OpsAlertService) sendEmailNotification(ctx context.Context, rule OpsAle
 	}
 
 	return anySent
+}
+
+const (
+	envOpsAlertEmailRatePerMin = "OPS_ALERT_EMAIL_RATE_PER_MIN"
+	envOpsAlertEmailBurst      = "OPS_ALERT_EMAIL_BURST"
+)
+
+func newOpsAlertEmailLimiterFromEnv() *tokenBucket {
+	// Defaults: moderate cap to protect SMTP providers during alert storms.
+	// These are process-local; leader lock ensures only one instance sends.
+	ratePerMin := 30.0
+	burst := 20.0
+
+	if v := strings.TrimSpace(os.Getenv(envOpsAlertEmailRatePerMin)); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil {
+			if parsed <= 0 {
+				return nil
+			}
+			ratePerMin = float64(parsed)
+		}
+	}
+	if v := strings.TrimSpace(os.Getenv(envOpsAlertEmailBurst)); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil {
+			if parsed <= 0 {
+				return nil
+			}
+			burst = float64(parsed)
+		}
+	}
+	if ratePerMin <= 0 || burst <= 0 {
+		return nil
+	}
+	return newTokenBucket(ratePerMin/60.0, burst)
+}
+
+func (s *OpsAlertService) logEmailRateLimited() {
+	if s == nil {
+		return
+	}
+	now := time.Now()
+
+	s.emailLimiterSkipLogMu.Lock()
+	defer s.emailLimiterSkipLogMu.Unlock()
+	if !s.emailLimiterSkipLogAt.IsZero() && now.Sub(s.emailLimiterSkipLogAt) < opsAlertEmailRateLimitSkipLogMinInterval {
+		return
+	}
+	s.emailLimiterSkipLogAt = now
+	log.Printf("[OpsAlert] email rate-limited; skipping some notifications (set %s/%s to tune)", envOpsAlertEmailRatePerMin, envOpsAlertEmailBurst)
 }

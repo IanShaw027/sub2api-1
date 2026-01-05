@@ -19,6 +19,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/infraerror"
 	"github.com/shirou/gopsutil/v4/disk"
+	"golang.org/x/sync/singleflight"
 )
 
 type OpsMetrics struct {
@@ -300,9 +301,44 @@ type OpsService struct {
 
 	redisNilWarnOnce sync.Once
 	dbNilWarnOnce    sync.Once
+
+	dashboardSF singleflight.Group
+
+	dashboardOverviewCacheMu sync.Mutex
+	dashboardOverviewCache   map[string]dashboardOverviewCacheEntry
+
+	providerHealthCacheMu sync.Mutex
+	providerHealthCache   map[string]providerHealthCacheEntry
+
+	latencyHistogramCacheMu sync.Mutex
+	latencyHistogramCache   map[string]latencyHistogramCacheEntry
+
+	errorDistributionCacheMu sync.Mutex
+	errorDistributionCache   map[string]errorDistributionCacheEntry
 }
 
 const opsDBQueryTimeout = 5 * time.Second
+const opsDashboardLocalCacheTTL = 10 * time.Second
+
+type dashboardOverviewCacheEntry struct {
+	expiresAt time.Time
+	data      *DashboardOverviewData
+}
+
+type providerHealthCacheEntry struct {
+	expiresAt time.Time
+	data      []*ProviderHealthData
+}
+
+type latencyHistogramCacheEntry struct {
+	expiresAt time.Time
+	data      []*LatencyHistogramItem
+}
+
+type errorDistributionCacheEntry struct {
+	expiresAt time.Time
+	data      []*ErrorDistributionItem
+}
 
 type opsRecordErrorGuardKey struct{}
 
@@ -376,7 +412,17 @@ func sanitizeErrorMessage(msg string) string {
 }
 
 func NewOpsService(repo OpsRepository, sqlDB *sql.DB, cfg *config.Config, settingRepo SettingRepository) *OpsService {
-	svc := &OpsService{repo: repo, sqlDB: sqlDB, config: cfg, settingRepo: settingRepo}
+	svc := &OpsService{
+		repo:       repo,
+		sqlDB:      sqlDB,
+		config:     cfg,
+		settingRepo: settingRepo,
+
+		dashboardOverviewCache: make(map[string]dashboardOverviewCacheEntry),
+		providerHealthCache:    make(map[string]providerHealthCacheEntry),
+		latencyHistogramCache:  make(map[string]latencyHistogramCacheEntry),
+		errorDistributionCache: make(map[string]errorDistributionCacheEntry),
+	}
 
 	// Best-effort startup health checks: log warnings if Redis/DB is unavailable,
 	// but never fail service startup (graceful degradation).
@@ -393,6 +439,158 @@ func NewOpsService(repo OpsRepository, sqlDB *sql.DB, cfg *config.Config, settin
 	}
 
 	return svc
+}
+
+func (s *OpsService) getDashboardOverviewFromLocalCache(timeRange string) (*DashboardOverviewData, bool) {
+	if s == nil {
+		return nil, false
+	}
+	key := strings.TrimSpace(timeRange)
+	if key == "" {
+		key = "1h"
+	}
+	now := time.Now()
+
+	s.dashboardOverviewCacheMu.Lock()
+	defer s.dashboardOverviewCacheMu.Unlock()
+	entry, ok := s.dashboardOverviewCache[key]
+	if !ok || entry.data == nil || now.After(entry.expiresAt) {
+		return nil, false
+	}
+	return entry.data, true
+}
+
+func (s *OpsService) setDashboardOverviewLocalCache(timeRange string, data *DashboardOverviewData, ttl time.Duration) {
+	if s == nil || data == nil {
+		return
+	}
+	if ttl <= 0 {
+		ttl = opsDashboardLocalCacheTTL
+	}
+	key := strings.TrimSpace(timeRange)
+	if key == "" {
+		key = "1h"
+	}
+	s.dashboardOverviewCacheMu.Lock()
+	s.dashboardOverviewCache[key] = dashboardOverviewCacheEntry{
+		data:      data,
+		expiresAt: time.Now().Add(ttl),
+	}
+	s.dashboardOverviewCacheMu.Unlock()
+}
+
+func (s *OpsService) getProviderHealthFromLocalCache(timeRange string) ([]*ProviderHealthData, bool) {
+	if s == nil {
+		return nil, false
+	}
+	key := strings.TrimSpace(timeRange)
+	if key == "" {
+		key = "1h"
+	}
+	now := time.Now()
+
+	s.providerHealthCacheMu.Lock()
+	defer s.providerHealthCacheMu.Unlock()
+	entry, ok := s.providerHealthCache[key]
+	if !ok || entry.data == nil || now.After(entry.expiresAt) {
+		return nil, false
+	}
+	return entry.data, true
+}
+
+func (s *OpsService) setProviderHealthLocalCache(timeRange string, data []*ProviderHealthData, ttl time.Duration) {
+	if s == nil || data == nil {
+		return
+	}
+	if ttl <= 0 {
+		ttl = opsDashboardLocalCacheTTL
+	}
+	key := strings.TrimSpace(timeRange)
+	if key == "" {
+		key = "1h"
+	}
+	s.providerHealthCacheMu.Lock()
+	s.providerHealthCache[key] = providerHealthCacheEntry{
+		data:      data,
+		expiresAt: time.Now().Add(ttl),
+	}
+	s.providerHealthCacheMu.Unlock()
+}
+
+func (s *OpsService) getLatencyHistogramFromLocalCache(timeRange string) ([]*LatencyHistogramItem, bool) {
+	if s == nil {
+		return nil, false
+	}
+	key := strings.TrimSpace(timeRange)
+	if key == "" {
+		key = "1h"
+	}
+	now := time.Now()
+
+	s.latencyHistogramCacheMu.Lock()
+	defer s.latencyHistogramCacheMu.Unlock()
+	entry, ok := s.latencyHistogramCache[key]
+	if !ok || entry.data == nil || now.After(entry.expiresAt) {
+		return nil, false
+	}
+	return entry.data, true
+}
+
+func (s *OpsService) setLatencyHistogramLocalCache(timeRange string, data []*LatencyHistogramItem, ttl time.Duration) {
+	if s == nil || data == nil {
+		return
+	}
+	if ttl <= 0 {
+		ttl = opsDashboardLocalCacheTTL
+	}
+	key := strings.TrimSpace(timeRange)
+	if key == "" {
+		key = "1h"
+	}
+	s.latencyHistogramCacheMu.Lock()
+	s.latencyHistogramCache[key] = latencyHistogramCacheEntry{
+		data:      data,
+		expiresAt: time.Now().Add(ttl),
+	}
+	s.latencyHistogramCacheMu.Unlock()
+}
+
+func (s *OpsService) getErrorDistributionFromLocalCache(timeRange string) ([]*ErrorDistributionItem, bool) {
+	if s == nil {
+		return nil, false
+	}
+	key := strings.TrimSpace(timeRange)
+	if key == "" {
+		key = "1h"
+	}
+	now := time.Now()
+
+	s.errorDistributionCacheMu.Lock()
+	defer s.errorDistributionCacheMu.Unlock()
+	entry, ok := s.errorDistributionCache[key]
+	if !ok || entry.data == nil || now.After(entry.expiresAt) {
+		return nil, false
+	}
+	return entry.data, true
+}
+
+func (s *OpsService) setErrorDistributionLocalCache(timeRange string, data []*ErrorDistributionItem, ttl time.Duration) {
+	if s == nil || data == nil {
+		return
+	}
+	if ttl <= 0 {
+		ttl = opsDashboardLocalCacheTTL
+	}
+	key := strings.TrimSpace(timeRange)
+	if key == "" {
+		key = "1h"
+	}
+	s.errorDistributionCacheMu.Lock()
+	s.errorDistributionCache[key] = errorDistributionCacheEntry{
+		data:      data,
+		expiresAt: time.Now().Add(ttl),
+	}
+	s.errorDistributionCacheMu.Unlock()
 }
 
 func (s *OpsService) RecordError(ctx context.Context, log *OpsErrorLog, requestBody []byte) error {
@@ -810,183 +1008,215 @@ func (s *OpsService) GetDashboardOverview(ctx context.Context, timeRange string)
 		return nil, err
 	}
 
-	if cached, err := repo.GetCachedDashboardOverview(ctx, timeRange); err == nil && cached != nil {
+	if cached, ok := s.getDashboardOverviewFromLocalCache(timeRange); ok && cached != nil {
 		return cached, nil
 	}
 
-	now := time.Now().UTC()
-	startTime := now.Add(-duration)
-
-	ctxStats, cancelStats := context.WithTimeout(ctx, opsDBQueryTimeout)
-	stats, err := repo.GetOverviewStats(ctxStats, startTime, now)
-	cancelStats()
-	if err != nil {
-		return nil, fmt.Errorf("get overview stats: %w", err)
-	}
-	if stats == nil {
-		return nil, errors.New("get overview stats returned nil")
+	if cached, err := repo.GetCachedDashboardOverview(ctx, timeRange); err == nil && cached != nil {
+		s.setDashboardOverviewLocalCache(timeRange, cached, opsDashboardLocalCacheTTL)
+		return cached, nil
 	}
 
-	var statsYesterday *OverviewStats
-	{
-		yesterdayEnd := now.Add(-24 * time.Hour)
-		yesterdayStart := yesterdayEnd.Add(-duration)
-		ctxYesterday, cancelYesterday := context.WithTimeout(ctx, opsDBQueryTimeout)
-		ys, err := repo.GetOverviewStats(ctxYesterday, yesterdayStart, yesterdayEnd)
-		cancelYesterday()
+	key := "dashboard_overview:" + strings.TrimSpace(timeRange)
+	v, err, _ := s.dashboardSF.Do(key, func() (any, error) {
+		// Double-check local/Redis caches to avoid recomputing after waiting on the singleflight.
+		if cached, ok := s.getDashboardOverviewFromLocalCache(timeRange); ok && cached != nil {
+			return cached, nil
+		}
+		if cached, err := repo.GetCachedDashboardOverview(ctx, timeRange); err == nil && cached != nil {
+			s.setDashboardOverviewLocalCache(timeRange, cached, opsDashboardLocalCacheTTL)
+			return cached, nil
+		}
+
+		// Use a background context so a single disconnected client doesn't cancel the shared refresh.
+		// Per-query timeouts still ensure we don't overrun the DB in pathological cases.
+		workCtx := context.Background()
+
+		now := time.Now().UTC()
+		startTime := now.Add(-duration)
+
+		ctxStats, cancelStats := context.WithTimeout(workCtx, opsDBQueryTimeout)
+		stats, err := repo.GetOverviewStats(ctxStats, startTime, now)
+		cancelStats()
 		if err != nil {
-			// Best-effort: overview should still work when historical comparison fails.
-			log.Printf("[OpsOverview] get yesterday overview stats failed: %v", err)
-		} else {
-			statsYesterday = ys
+			return nil, fmt.Errorf("get overview stats: %w", err)
 		}
-	}
-
-	totalReqs := stats.SuccessCount + stats.ErrorCount
-	successRate, errorRate := calculateRates(stats.SuccessCount, stats.ErrorCount, totalReqs)
-
-	successRateYesterday := 0.0
-	totalReqsYesterday := int64(0)
-	if statsYesterday != nil {
-		totalReqsYesterday = statsYesterday.SuccessCount + statsYesterday.ErrorCount
-		successRateYesterday, _ = calculateRates(statsYesterday.SuccessCount, statsYesterday.ErrorCount, totalReqsYesterday)
-	}
-
-	slaThreshold := 99.9
-	slaChange24h := roundTo2DP(successRate - successRateYesterday)
-	slaTrend := classifyTrend(slaChange24h, 0.05)
-	slaStatus := classifySLAStatus(successRate, slaThreshold)
-
-	latencyThresholdP99 := 1000
-	latencyStatus := classifyLatencyStatus(stats.LatencyP99, latencyThresholdP99)
-
-	qpsCurrent := 0.0
-	{
-		ctxWindow, cancelWindow := context.WithTimeout(ctx, opsDBQueryTimeout)
-		windowStats, err := repo.GetWindowStats(ctxWindow, now.Add(-1*time.Minute), now)
-		cancelWindow()
-		if err == nil && windowStats != nil {
-			qpsCurrent = roundTo1DP(float64(windowStats.SuccessCount+windowStats.ErrorCount) / 60)
-		} else if err != nil {
-			log.Printf("[OpsOverview] get realtime qps failed: %v", err)
+		if stats == nil {
+			return nil, errors.New("get overview stats returned nil")
 		}
-	}
 
-	qpsAvg := roundTo1DP(safeDivide(float64(totalReqs), duration.Seconds()))
-	qpsPeak := qpsAvg
-	{
-		limit := int(duration.Minutes()) + 5
-		if limit < 10 {
-			limit = 10
+		var statsYesterday *OverviewStats
+		{
+			yesterdayEnd := now.Add(-24 * time.Hour)
+			yesterdayStart := yesterdayEnd.Add(-duration)
+			ctxYesterday, cancelYesterday := context.WithTimeout(workCtx, opsDBQueryTimeout)
+			ys, err := repo.GetOverviewStats(ctxYesterday, yesterdayStart, yesterdayEnd)
+			cancelYesterday()
+			if err != nil {
+				// Best-effort: overview should still work when historical comparison fails.
+				log.Printf("[OpsOverview] get yesterday overview stats failed: %v", err)
+			} else {
+				statsYesterday = ys
+			}
 		}
-		if limit > 5000 {
-			limit = 5000
+
+		totalReqs := stats.SuccessCount + stats.ErrorCount
+		successRate, errorRate := calculateRates(stats.SuccessCount, stats.ErrorCount, totalReqs)
+
+		successRateYesterday := 0.0
+		totalReqsYesterday := int64(0)
+		if statsYesterday != nil {
+			totalReqsYesterday = statsYesterday.SuccessCount + statsYesterday.ErrorCount
+			successRateYesterday, _ = calculateRates(statsYesterday.SuccessCount, statsYesterday.ErrorCount, totalReqsYesterday)
 		}
-		ctxMetrics, cancelMetrics := context.WithTimeout(ctx, opsDBQueryTimeout)
-		items, err := repo.ListSystemMetricsRange(ctxMetrics, 1, startTime, now, limit)
-		cancelMetrics()
-		if err != nil {
-			log.Printf("[OpsOverview] get metrics range for peak qps failed: %v", err)
-		} else {
-			maxQPS := 0.0
-			for _, item := range items {
-				v := float64(item.RequestCount) / 60
-				if v > maxQPS {
-					maxQPS = v
+
+		slaThreshold := 99.9
+		slaChange24h := roundTo2DP(successRate - successRateYesterday)
+		slaTrend := classifyTrend(slaChange24h, 0.05)
+		slaStatus := classifySLAStatus(successRate, slaThreshold)
+
+		latencyThresholdP99 := 1000
+		latencyStatus := classifyLatencyStatus(stats.LatencyP99, latencyThresholdP99)
+
+		qpsCurrent := 0.0
+		{
+			ctxWindow, cancelWindow := context.WithTimeout(workCtx, opsDBQueryTimeout)
+			windowStats, err := repo.GetWindowStats(ctxWindow, now.Add(-1*time.Minute), now)
+			cancelWindow()
+			if err == nil && windowStats != nil {
+				qpsCurrent = roundTo1DP(float64(windowStats.SuccessCount+windowStats.ErrorCount) / 60)
+			} else if err != nil {
+				log.Printf("[OpsOverview] get realtime qps failed: %v", err)
+			}
+		}
+
+		qpsAvg := roundTo1DP(safeDivide(float64(totalReqs), duration.Seconds()))
+		qpsPeak := qpsAvg
+		{
+			limit := int(duration.Minutes()) + 5
+			if limit < 10 {
+				limit = 10
+			}
+			if limit > 5000 {
+				limit = 5000
+			}
+			ctxMetrics, cancelMetrics := context.WithTimeout(workCtx, opsDBQueryTimeout)
+			items, err := repo.ListSystemMetricsRange(ctxMetrics, 1, startTime, now, limit)
+			cancelMetrics()
+			if err != nil {
+				log.Printf("[OpsOverview] get metrics range for peak qps failed: %v", err)
+			} else {
+				maxQPS := 0.0
+				for _, item := range items {
+					v := float64(item.RequestCount) / 60
+					if v > maxQPS {
+						maxQPS = v
+					}
+				}
+				if maxQPS > 0 {
+					qpsPeak = roundTo1DP(maxQPS)
 				}
 			}
-			if maxQPS > 0 {
-				qpsPeak = roundTo1DP(maxQPS)
+		}
+
+		qpsAvgYesterday := 0.0
+		if duration.Seconds() > 0 && totalReqsYesterday > 0 {
+			qpsAvgYesterday = float64(totalReqsYesterday) / duration.Seconds()
+		}
+		qpsChangeVsYesterday := roundTo1DP(percentChange(qpsAvgYesterday, float64(totalReqs)/duration.Seconds()))
+
+		tpsCurrent, tpsPeak, tpsAvg := 0.0, 0.0, 0.0
+		if current, peak, avg, err := s.getTokenTPS(workCtx, now, startTime, duration); err != nil {
+			log.Printf("[OpsOverview] get token tps failed: %v", err)
+		} else {
+			tpsCurrent, tpsPeak, tpsAvg = roundTo1DP(current), roundTo1DP(peak), roundTo1DP(avg)
+		}
+
+		diskUsage := 0.0
+		if v, err := getDiskUsagePercent(workCtx, "/"); err != nil {
+			log.Printf("[OpsOverview] get disk usage failed: %v", err)
+		} else {
+			diskUsage = roundTo1DP(v)
+		}
+
+		redisStatus := s.checkRedisHealth(workCtx)
+		dbStatus := s.checkDatabaseHealth(workCtx)
+		healthScore := calculateHealthScore(successRate, stats.LatencyP99, errorRate, redisStatus, dbStatus)
+
+		data := &DashboardOverviewData{
+			Timestamp:   now,
+			HealthScore: healthScore,
+			SLA: SLAData{
+				Current:   successRate,
+				Threshold: slaThreshold,
+				Status:    slaStatus,
+				Trend:     slaTrend,
+				Change24h: slaChange24h,
+			},
+			QPS: QPSData{
+				Current:           qpsCurrent,
+				Peak1h:            qpsPeak,
+				Avg1h:             qpsAvg,
+				ChangeVsYesterday: qpsChangeVsYesterday,
+			},
+			TPS: TPSData{
+				Current: tpsCurrent,
+				Peak1h:  tpsPeak,
+				Avg1h:   tpsAvg,
+			},
+			Latency: LatencyData{
+				P50:          stats.LatencyP50,
+				P95:          stats.LatencyP95,
+				P99:          stats.LatencyP99,
+				Avg:          stats.LatencyAvg,
+				Max:          stats.LatencyMax,
+				ThresholdP99: latencyThresholdP99,
+				Status:       latencyStatus,
+			},
+			Errors: ErrorData{
+				TotalCount:   stats.ErrorCount,
+				ErrorRate:    errorRate,
+				Count4xx:     stats.Error4xxCount,
+				Count5xx:     stats.Error5xxCount,
+				TimeoutCount: stats.TimeoutCount,
+			},
+			Resources: ResourceData{
+				CPUUsage:      roundTo1DP(stats.CPUUsage),
+				MemoryUsage:   roundTo1DP(stats.MemoryUsage),
+				DiskUsage:     diskUsage,
+				Goroutines:    runtime.NumGoroutine(),
+				DBConnections: s.getDBConnections(),
+			},
+			SystemStatus: SystemStatusData{
+				Redis:          redisStatus,
+				Database:       dbStatus,
+				BackgroundJobs: "healthy",
+			},
+		}
+
+		if stats.TopErrorCount > 0 {
+			data.Errors.TopError = &TopError{
+				Code:    stats.TopErrorCode,
+				Message: stats.TopErrorMsg,
+				Count:   stats.TopErrorCount,
 			}
 		}
+
+		s.setDashboardOverviewLocalCache(timeRange, data, opsDashboardLocalCacheTTL)
+		cacheCtx, cancelCache := context.WithTimeout(context.Background(), 2*time.Second)
+		_ = repo.SetCachedDashboardOverview(cacheCtx, timeRange, data, 10*time.Second)
+		cancelCache()
+
+		return data, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-
-	qpsAvgYesterday := 0.0
-	if duration.Seconds() > 0 && totalReqsYesterday > 0 {
-		qpsAvgYesterday = float64(totalReqsYesterday) / duration.Seconds()
+	out, ok := v.(*DashboardOverviewData)
+	if !ok || out == nil {
+		return nil, errors.New("dashboard overview: invalid cache payload")
 	}
-	qpsChangeVsYesterday := roundTo1DP(percentChange(qpsAvgYesterday, float64(totalReqs)/duration.Seconds()))
-
-	tpsCurrent, tpsPeak, tpsAvg := 0.0, 0.0, 0.0
-	if current, peak, avg, err := s.getTokenTPS(ctx, now, startTime, duration); err != nil {
-		log.Printf("[OpsOverview] get token tps failed: %v", err)
-	} else {
-		tpsCurrent, tpsPeak, tpsAvg = roundTo1DP(current), roundTo1DP(peak), roundTo1DP(avg)
-	}
-
-	diskUsage := 0.0
-	if v, err := getDiskUsagePercent(ctx, "/"); err != nil {
-		log.Printf("[OpsOverview] get disk usage failed: %v", err)
-	} else {
-		diskUsage = roundTo1DP(v)
-	}
-
-	redisStatus := s.checkRedisHealth(ctx)
-	dbStatus := s.checkDatabaseHealth(ctx)
-	healthScore := calculateHealthScore(successRate, stats.LatencyP99, errorRate, redisStatus, dbStatus)
-
-	data := &DashboardOverviewData{
-		Timestamp:   now,
-		HealthScore: healthScore,
-		SLA: SLAData{
-			Current:   successRate,
-			Threshold: slaThreshold,
-			Status:    slaStatus,
-			Trend:     slaTrend,
-			Change24h: slaChange24h,
-		},
-		QPS: QPSData{
-			Current:           qpsCurrent,
-			Peak1h:            qpsPeak,
-			Avg1h:             qpsAvg,
-			ChangeVsYesterday: qpsChangeVsYesterday,
-		},
-		TPS: TPSData{
-			Current: tpsCurrent,
-			Peak1h:  tpsPeak,
-			Avg1h:   tpsAvg,
-		},
-		Latency: LatencyData{
-			P50:          stats.LatencyP50,
-			P95:          stats.LatencyP95,
-			P99:          stats.LatencyP99,
-			Avg:          stats.LatencyAvg,
-			Max:          stats.LatencyMax,
-			ThresholdP99: latencyThresholdP99,
-			Status:       latencyStatus,
-		},
-		Errors: ErrorData{
-			TotalCount:   stats.ErrorCount,
-			ErrorRate:    errorRate,
-			Count4xx:     stats.Error4xxCount,
-			Count5xx:     stats.Error5xxCount,
-			TimeoutCount: stats.TimeoutCount,
-		},
-		Resources: ResourceData{
-			CPUUsage:      roundTo1DP(stats.CPUUsage),
-			MemoryUsage:   roundTo1DP(stats.MemoryUsage),
-			DiskUsage:     diskUsage,
-			Goroutines:    runtime.NumGoroutine(),
-			DBConnections: s.getDBConnections(),
-		},
-		SystemStatus: SystemStatusData{
-			Redis:          redisStatus,
-			Database:       dbStatus,
-			BackgroundJobs: "healthy",
-		},
-	}
-
-	if stats.TopErrorCount > 0 {
-		data.Errors.TopError = &TopError{
-			Code:    stats.TopErrorCode,
-			Message: stats.TopErrorMsg,
-			Count:   stats.TopErrorCount,
-		}
-	}
-
-	_ = repo.SetCachedDashboardOverview(ctx, timeRange, data, 10*time.Second)
-
-	return data, nil
+	return out, nil
 }
 
 func (s *OpsService) GetProviderHealth(ctx context.Context, timeRange string) ([]*ProviderHealthData, error) {
@@ -997,76 +1227,149 @@ func (s *OpsService) GetProviderHealth(ctx context.Context, timeRange string) ([
 	if strings.TrimSpace(timeRange) == "" {
 		timeRange = "1h"
 	}
+
+	if cached, ok := s.getProviderHealthFromLocalCache(timeRange); ok {
+		return cached, nil
+	}
+
 	window, err := parseTimeRange(timeRange)
 	if err != nil {
 		return nil, err
 	}
 
-	endTime := time.Now()
-	startTime := endTime.Add(-window)
+	key := "provider_health:" + strings.TrimSpace(timeRange)
+	v, err, _ := s.dashboardSF.Do(key, func() (any, error) {
+		if cached, ok := s.getProviderHealthFromLocalCache(timeRange); ok {
+			return cached, nil
+		}
 
-	ctxDB, cancel := context.WithTimeout(ctx, opsDBQueryTimeout)
-	stats, err := s.repo.GetProviderStats(ctxDB, startTime, endTime)
-	cancel()
+		endTime := time.Now()
+		startTime := endTime.Add(-window)
+
+		ctxDB, cancel := context.WithTimeout(context.Background(), opsDBQueryTimeout)
+		stats, err := s.repo.GetProviderStats(ctxDB, startTime, endTime)
+		cancel()
+		if err != nil {
+			return nil, err
+		}
+
+		results := make([]*ProviderHealthData, 0, len(stats))
+		for _, item := range stats {
+			if item == nil {
+				continue
+			}
+
+			successRate, errorRate := calculateRates(item.SuccessCount, item.ErrorCount, item.RequestCount)
+
+			results = append(results, &ProviderHealthData{
+				Name:         formatPlatformName(item.Platform),
+				RequestCount: item.RequestCount,
+				SuccessRate:  successRate,
+				ErrorRate:    errorRate,
+				LatencyAvg:   item.AvgLatencyMs,
+				LatencyP99:   item.P99LatencyMs,
+				Status:       classifyProviderStatus(successRate, item.P99LatencyMs, item.TimeoutCount, item.RequestCount),
+				ErrorsByType: ProviderHealthErrorsByType{
+					HTTP4xx: item.Error4xxCount,
+					HTTP5xx: item.Error5xxCount,
+					Timeout: item.TimeoutCount,
+				},
+			})
+		}
+
+		s.setProviderHealthLocalCache(timeRange, results, opsDashboardLocalCacheTTL)
+		return results, nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	results := make([]*ProviderHealthData, 0, len(stats))
-	for _, item := range stats {
-		if item == nil {
-			continue
-		}
-
-		successRate, errorRate := calculateRates(item.SuccessCount, item.ErrorCount, item.RequestCount)
-
-		results = append(results, &ProviderHealthData{
-			Name:         formatPlatformName(item.Platform),
-			RequestCount: item.RequestCount,
-			SuccessRate:  successRate,
-			ErrorRate:    errorRate,
-			LatencyAvg:   item.AvgLatencyMs,
-			LatencyP99:   item.P99LatencyMs,
-			Status:       classifyProviderStatus(successRate, item.P99LatencyMs, item.TimeoutCount, item.RequestCount),
-			ErrorsByType: ProviderHealthErrorsByType{
-				HTTP4xx: item.Error4xxCount,
-				HTTP5xx: item.Error5xxCount,
-				Timeout: item.TimeoutCount,
-			},
-		})
+	out, ok := v.([]*ProviderHealthData)
+	if !ok {
+		return nil, errors.New("provider health: invalid cache payload")
 	}
-
-	return results, nil
+	return out, nil
 }
 
 func (s *OpsService) GetLatencyHistogram(ctx context.Context, timeRange string) ([]*LatencyHistogramItem, error) {
 	if s == nil || s.repo == nil {
 		return nil, nil
 	}
+
+	if cached, ok := s.getLatencyHistogramFromLocalCache(timeRange); ok {
+		return cached, nil
+	}
+
 	duration, err := parseTimeRange(timeRange)
 	if err != nil {
 		return nil, err
 	}
-	endTime := time.Now()
-	startTime := endTime.Add(-duration)
-	ctxDB, cancel := context.WithTimeout(ctx, opsDBQueryTimeout)
-	defer cancel()
-	return s.repo.GetLatencyHistogram(ctxDB, startTime, endTime)
+
+	key := "latency_histogram:" + strings.TrimSpace(timeRange)
+	v, err, _ := s.dashboardSF.Do(key, func() (any, error) {
+		if cached, ok := s.getLatencyHistogramFromLocalCache(timeRange); ok {
+			return cached, nil
+		}
+
+		endTime := time.Now()
+		startTime := endTime.Add(-duration)
+		ctxDB, cancel := context.WithTimeout(context.Background(), opsDBQueryTimeout)
+		items, err := s.repo.GetLatencyHistogram(ctxDB, startTime, endTime)
+		cancel()
+		if err != nil {
+			return nil, err
+		}
+		s.setLatencyHistogramLocalCache(timeRange, items, opsDashboardLocalCacheTTL)
+		return items, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	out, ok := v.([]*LatencyHistogramItem)
+	if !ok {
+		return nil, errors.New("latency histogram: invalid cache payload")
+	}
+	return out, nil
 }
 
 func (s *OpsService) GetErrorDistribution(ctx context.Context, timeRange string) ([]*ErrorDistributionItem, error) {
 	if s == nil || s.repo == nil {
 		return nil, nil
 	}
+
+	if cached, ok := s.getErrorDistributionFromLocalCache(timeRange); ok {
+		return cached, nil
+	}
+
 	duration, err := parseTimeRange(timeRange)
 	if err != nil {
 		return nil, err
 	}
-	endTime := time.Now()
-	startTime := endTime.Add(-duration)
-	ctxDB, cancel := context.WithTimeout(ctx, opsDBQueryTimeout)
-	defer cancel()
-	return s.repo.GetErrorDistribution(ctxDB, startTime, endTime)
+
+	key := "error_distribution:" + strings.TrimSpace(timeRange)
+	v, err, _ := s.dashboardSF.Do(key, func() (any, error) {
+		if cached, ok := s.getErrorDistributionFromLocalCache(timeRange); ok {
+			return cached, nil
+		}
+
+		endTime := time.Now()
+		startTime := endTime.Add(-duration)
+		ctxDB, cancel := context.WithTimeout(context.Background(), opsDBQueryTimeout)
+		items, err := s.repo.GetErrorDistribution(ctxDB, startTime, endTime)
+		cancel()
+		if err != nil {
+			return nil, err
+		}
+		s.setErrorDistributionLocalCache(timeRange, items, opsDashboardLocalCacheTTL)
+		return items, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	out, ok := v.([]*ErrorDistributionItem)
+	if !ok {
+		return nil, errors.New("error distribution: invalid cache payload")
+	}
+	return out, nil
 }
 
 func parseTimeRange(timeRange string) (time.Duration, error) {

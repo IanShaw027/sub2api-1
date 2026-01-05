@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { opsAPI } from '@/api/admin/ops'
@@ -18,6 +18,8 @@ const saving = ref(false)
 const draft = ref<EmailNotificationConfig | null>(null)
 const alertRecipientInput = ref('')
 const reportRecipientInput = ref('')
+const alertRecipientError = ref('')
+const reportRecipientError = ref('')
 
 const severityOptions: Array<{ value: AlertSeverity | ''; label: string }> = [
   { value: '', label: t('admin.ops.email.minSeverityAll') },
@@ -41,6 +43,10 @@ async function loadConfig() {
 
 async function saveConfig() {
   if (!draft.value) return
+  if (!editorValidation.value.valid) {
+    appStore.showError(editorValidation.value.errors[0] || t('admin.ops.email.validation.invalid'))
+    return
+  }
   saving.value = true
   try {
     config.value = await opsAPI.updateEmailNotificationConfig(draft.value)
@@ -59,14 +65,82 @@ function openEditor() {
   draft.value = JSON.parse(JSON.stringify(config.value))
   alertRecipientInput.value = ''
   reportRecipientInput.value = ''
+  alertRecipientError.value = ''
+  reportRecipientError.value = ''
   showEditor.value = true
 }
+
+function isValidEmailAddress(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
+function isNonNegativeNumber(value: unknown): boolean {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+}
+
+function validateCronField(enabled: boolean, cron: string): string | null {
+  if (!enabled) return null
+  if (!cron || !cron.trim()) return t('admin.ops.email.validation.cronRequired')
+  if (cron.trim().split(/\s+/).length < 5) return t('admin.ops.email.validation.cronFormat')
+  return null
+}
+
+const editorValidation = computed(() => {
+  const errors: string[] = []
+  if (!draft.value) return { valid: true, errors }
+
+  if (draft.value.alert.enabled && draft.value.alert.recipients.length === 0) {
+    errors.push(t('admin.ops.email.validation.alertRecipientsRequired'))
+  }
+  if (draft.value.report.enabled && draft.value.report.recipients.length === 0) {
+    errors.push(t('admin.ops.email.validation.reportRecipientsRequired'))
+  }
+
+  const invalidAlertRecipients = draft.value.alert.recipients.filter(e => !isValidEmailAddress(e))
+  if (invalidAlertRecipients.length > 0) errors.push(t('admin.ops.email.validation.invalidRecipients'))
+
+  const invalidReportRecipients = draft.value.report.recipients.filter(e => !isValidEmailAddress(e))
+  if (invalidReportRecipients.length > 0) errors.push(t('admin.ops.email.validation.invalidRecipients'))
+
+  if (!isNonNegativeNumber(draft.value.alert.rate_limit_per_hour)) {
+    errors.push(t('admin.ops.email.validation.rateLimitRange'))
+  }
+  if (!isNonNegativeNumber(draft.value.alert.batching_window_seconds) || draft.value.alert.batching_window_seconds > 86400) {
+    errors.push(t('admin.ops.email.validation.batchWindowRange'))
+  }
+
+  const dailyErr = validateCronField(draft.value.report.daily_summary_enabled, draft.value.report.daily_summary_schedule)
+  if (dailyErr) errors.push(dailyErr)
+  const weeklyErr = validateCronField(draft.value.report.weekly_summary_enabled, draft.value.report.weekly_summary_schedule)
+  if (weeklyErr) errors.push(weeklyErr)
+  const digestErr = validateCronField(draft.value.report.error_digest_enabled, draft.value.report.error_digest_schedule)
+  if (digestErr) errors.push(digestErr)
+  const accErr = validateCronField(draft.value.report.account_health_enabled, draft.value.report.account_health_schedule)
+  if (accErr) errors.push(accErr)
+
+  if (!isNonNegativeNumber(draft.value.report.error_digest_min_count)) {
+    errors.push(t('admin.ops.email.validation.digestMinCountRange'))
+  }
+
+  const thr = draft.value.report.account_health_error_rate_threshold
+  if (!(typeof thr === 'number' && Number.isFinite(thr) && thr >= 0 && thr <= 100)) {
+    errors.push(t('admin.ops.email.validation.accountHealthThresholdRange'))
+  }
+
+  return { valid: errors.length === 0, errors }
+})
 
 function addRecipient(target: 'alert' | 'report') {
   if (!draft.value) return
   const raw = (target === 'alert' ? alertRecipientInput.value : reportRecipientInput.value).trim()
   if (!raw) return
-  if (!raw.includes('@')) return
+
+  if (!isValidEmailAddress(raw)) {
+    const msg = t('common.invalidEmail')
+    if (target === 'alert') alertRecipientError.value = msg
+    else reportRecipientError.value = msg
+    return
+  }
 
   const normalized = raw.toLowerCase()
   const list = target === 'alert' ? draft.value.alert.recipients : draft.value.report.recipients
@@ -75,6 +149,8 @@ function addRecipient(target: 'alert' | 'report') {
   }
   if (target === 'alert') alertRecipientInput.value = ''
   else reportRecipientInput.value = ''
+  if (target === 'alert') alertRecipientError.value = ''
+  else reportRecipientError.value = ''
 }
 
 function removeRecipient(target: 'alert' | 'report', email: string) {
@@ -158,6 +234,12 @@ onMounted(() => {
     @close="showEditor = false"
   >
     <div v-if="draft" class="space-y-6">
+      <div v-if="!editorValidation.valid" class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200">
+        <div class="font-bold">{{ t('admin.ops.email.validation.title') }}</div>
+        <ul class="mt-1 list-disc space-y-1 pl-4">
+          <li v-for="msg in editorValidation.errors" :key="msg">{{ msg }}</li>
+        </ul>
+      </div>
       <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-700/50">
         <h4 class="mb-3 text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.ops.email.alertTitle') }}</h4>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -191,6 +273,7 @@ onMounted(() => {
                 {{ t('common.add') }}
               </button>
             </div>
+            <p v-if="alertRecipientError" class="mt-1 text-xs text-red-600 dark:text-red-400">{{ alertRecipientError }}</p>
             <div class="mt-2 flex flex-wrap gap-2">
               <span
                 v-for="email in draft.alert.recipients"
@@ -255,6 +338,7 @@ onMounted(() => {
                 {{ t('common.add') }}
               </button>
             </div>
+            <p v-if="reportRecipientError" class="mt-1 text-xs text-red-600 dark:text-red-400">{{ reportRecipientError }}</p>
             <div class="mt-2 flex flex-wrap gap-2">
               <span
                 v-for="email in draft.report.recipients"
@@ -329,7 +413,7 @@ onMounted(() => {
     <template #footer>
       <div class="flex justify-end gap-2">
         <button class="btn btn-secondary" @click="showEditor = false">{{ t('common.cancel') }}</button>
-        <button class="btn btn-primary" :disabled="saving" @click="saveConfig">
+        <button class="btn btn-primary" :disabled="saving || !editorValidation.valid" @click="saveConfig">
           {{ saving ? t('common.saving') : t('common.save') }}
         </button>
       </div>

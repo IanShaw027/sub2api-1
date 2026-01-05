@@ -35,6 +35,10 @@ type OpsGroupAvailabilityMonitor struct {
 	distributedSkipLogMu sync.Mutex
 	distributedSkipLogAt time.Time
 
+	emailLimiter         *tokenBucket
+	emailLimiterSkipLogMu sync.Mutex
+	emailLimiterSkipLogAt time.Time
+
 	startOnce sync.Once
 	stopOnce  sync.Once
 	stopCtx   context.Context
@@ -70,6 +74,8 @@ func NewOpsGroupAvailabilityMonitor(
 		distributedLockOn:  lockOn,
 		distributedLockKey: lockKey,
 		distributedLockTTL: lockTTL,
+
+		emailLimiter: newOpsAlertEmailLimiterFromEnv(),
 	}
 }
 
@@ -608,6 +614,10 @@ func (s *OpsGroupAvailabilityMonitor) sendEmailNotification(ctx context.Context,
 
 	anySent := false
 	for _, to := range recipients {
+		if s.emailLimiter != nil && !s.emailLimiter.allow(1) {
+			s.logEmailRateLimited()
+			continue
+		}
 		if err := retryWithBackoff(
 			ctx,
 			3,
@@ -628,4 +638,19 @@ func (s *OpsGroupAvailabilityMonitor) sendEmailNotification(ctx context.Context,
 		anySent = true
 	}
 	return anySent
+}
+
+func (s *OpsGroupAvailabilityMonitor) logEmailRateLimited() {
+	if s == nil {
+		return
+	}
+	now := time.Now()
+
+	s.emailLimiterSkipLogMu.Lock()
+	defer s.emailLimiterSkipLogMu.Unlock()
+	if !s.emailLimiterSkipLogAt.IsZero() && now.Sub(s.emailLimiterSkipLogAt) < opsAlertEmailRateLimitSkipLogMinInterval {
+		return
+	}
+	s.emailLimiterSkipLogAt = now
+	log.Printf("[OpsGroupAvailability] email rate-limited; skipping some notifications (set %s/%s to tune)", envOpsAlertEmailRatePerMin, envOpsAlertEmailBurst)
 }

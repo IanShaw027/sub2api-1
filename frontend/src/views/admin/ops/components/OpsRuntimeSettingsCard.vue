@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { opsAPI } from '@/api/admin/ops'
@@ -20,6 +20,43 @@ const saving = ref(false)
 
 const draftAlert = ref<OpsAlertRuntimeSettings | null>(null)
 const draftGroupAvailability = ref<OpsGroupAvailabilityRuntimeSettings | null>(null)
+
+type ValidationResult = { valid: boolean, errors: string[] }
+
+function validateRuntimeSettings(
+  settings: OpsAlertRuntimeSettings | OpsGroupAvailabilityRuntimeSettings,
+  opts: { requireKeyPrefix?: string } = {}
+): ValidationResult {
+  const errors: string[] = []
+  const evalSeconds = settings.evaluation_interval_seconds
+  if (!Number.isFinite(evalSeconds) || evalSeconds < 1 || evalSeconds > 86400) {
+    errors.push(t('admin.ops.runtime.validation.evalIntervalRange'))
+  }
+
+  const lock = settings.distributed_lock
+  if (lock.enabled) {
+    if (!lock.key || lock.key.trim().length < 3) {
+      errors.push(t('admin.ops.runtime.validation.lockKeyRequired'))
+    } else if (opts.requireKeyPrefix && !lock.key.startsWith(opts.requireKeyPrefix)) {
+      errors.push(t('admin.ops.runtime.validation.lockKeyPrefix', { prefix: opts.requireKeyPrefix }))
+    }
+    if (!Number.isFinite(lock.ttl_seconds) || lock.ttl_seconds < 1 || lock.ttl_seconds > 86400) {
+      errors.push(t('admin.ops.runtime.validation.lockTtlRange'))
+    }
+  }
+
+  return { valid: errors.length === 0, errors }
+}
+
+const alertValidation = computed(() => {
+  if (!draftAlert.value) return { valid: true, errors: [] as string[] }
+  return validateRuntimeSettings(draftAlert.value, { requireKeyPrefix: 'ops:' })
+})
+
+const groupAvailabilityValidation = computed(() => {
+  if (!draftGroupAvailability.value) return { valid: true, errors: [] as string[] }
+  return validateRuntimeSettings(draftGroupAvailability.value, { requireKeyPrefix: 'ops:' })
+})
 
 async function loadSettings() {
   loading.value = true
@@ -52,6 +89,10 @@ function openGroupAvailabilityEditor() {
 
 async function saveAlertSettings() {
   if (!draftAlert.value) return
+  if (!alertValidation.value.valid) {
+    appStore.showError(alertValidation.value.errors[0] || t('admin.ops.runtime.validation.invalid'))
+    return
+  }
   saving.value = true
   try {
     alertSettings.value = await opsAPI.updateAlertRuntimeSettings(draftAlert.value)
@@ -67,6 +108,10 @@ async function saveAlertSettings() {
 
 async function saveGroupAvailabilitySettings() {
   if (!draftGroupAvailability.value) return
+  if (!groupAvailabilityValidation.value.valid) {
+    appStore.showError(groupAvailabilityValidation.value.errors[0] || t('admin.ops.runtime.validation.invalid'))
+    return
+  }
   saving.value = true
   try {
     groupAvailabilitySettings.value = await opsAPI.updateGroupAvailabilityRuntimeSettings(draftGroupAvailability.value)
@@ -185,6 +230,12 @@ onMounted(() => {
     @close="showAlertEditor = false"
   >
     <div v-if="draftAlert" class="space-y-4">
+      <div v-if="!alertValidation.valid" class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200">
+        <div class="font-bold">{{ t('admin.ops.runtime.validation.title') }}</div>
+        <ul class="mt-1 list-disc space-y-1 pl-4">
+          <li v-for="msg in alertValidation.errors" :key="msg">{{ msg }}</li>
+        </ul>
+      </div>
       <div>
         <div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('admin.ops.runtime.evalIntervalSeconds') }}</div>
         <input
@@ -193,6 +244,7 @@ onMounted(() => {
           min="1"
           max="86400"
           class="input"
+          :aria-invalid="!alertValidation.valid"
         />
         <p class="mt-1 text-xs text-gray-500">{{ t('admin.ops.runtime.evalIntervalHint') }}</p>
       </div>
@@ -206,10 +258,13 @@ onMounted(() => {
               <span>{{ t('admin.ops.runtime.lockEnabled') }}</span>
             </label>
           </div>
-          <div class="md:col-span-2">
-            <div class="mb-1 text-xs font-medium text-gray-500">{{ t('admin.ops.runtime.lockKey') }}</div>
-            <input v-model="draftAlert.distributed_lock.key" type="text" class="input text-xs font-mono" />
-          </div>
+            <div class="md:col-span-2">
+              <div class="mb-1 text-xs font-medium text-gray-500">{{ t('admin.ops.runtime.lockKey') }}</div>
+              <input v-model="draftAlert.distributed_lock.key" type="text" class="input text-xs font-mono" />
+              <p v-if="draftAlert.distributed_lock.enabled" class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                {{ t('admin.ops.runtime.validation.lockKeyHint', { prefix: 'ops:' }) }}
+              </p>
+            </div>
           <div>
             <div class="mb-1 text-xs font-medium text-gray-500">{{ t('admin.ops.runtime.lockTTLSeconds') }}</div>
             <input
@@ -226,7 +281,7 @@ onMounted(() => {
     <template #footer>
       <div class="flex justify-end gap-2">
         <button class="btn btn-secondary" @click="showAlertEditor = false">{{ t('common.cancel') }}</button>
-        <button class="btn btn-primary" :disabled="saving" @click="saveAlertSettings">
+        <button class="btn btn-primary" :disabled="saving || !alertValidation.valid" @click="saveAlertSettings">
           {{ saving ? t('common.saving') : t('common.save') }}
         </button>
       </div>
@@ -240,6 +295,12 @@ onMounted(() => {
     @close="showGroupAvailabilityEditor = false"
   >
     <div v-if="draftGroupAvailability" class="space-y-4">
+      <div v-if="!groupAvailabilityValidation.valid" class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200">
+        <div class="font-bold">{{ t('admin.ops.runtime.validation.title') }}</div>
+        <ul class="mt-1 list-disc space-y-1 pl-4">
+          <li v-for="msg in groupAvailabilityValidation.errors" :key="msg">{{ msg }}</li>
+        </ul>
+      </div>
       <div>
         <div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('admin.ops.runtime.evalIntervalSeconds') }}</div>
         <input
@@ -248,6 +309,7 @@ onMounted(() => {
           min="1"
           max="86400"
           class="input"
+          :aria-invalid="!groupAvailabilityValidation.valid"
         />
         <p class="mt-1 text-xs text-gray-500">{{ t('admin.ops.runtime.evalIntervalHint') }}</p>
       </div>
@@ -264,6 +326,9 @@ onMounted(() => {
           <div class="md:col-span-2">
             <div class="mb-1 text-xs font-medium text-gray-500">{{ t('admin.ops.runtime.lockKey') }}</div>
             <input v-model="draftGroupAvailability.distributed_lock.key" type="text" class="input text-xs font-mono" />
+            <p v-if="draftGroupAvailability.distributed_lock.enabled" class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+              {{ t('admin.ops.runtime.validation.lockKeyHint', { prefix: 'ops:' }) }}
+            </p>
           </div>
           <div>
             <div class="mb-1 text-xs font-medium text-gray-500">{{ t('admin.ops.runtime.lockTTLSeconds') }}</div>
@@ -281,7 +346,7 @@ onMounted(() => {
     <template #footer>
       <div class="flex justify-end gap-2">
         <button class="btn btn-secondary" @click="showGroupAvailabilityEditor = false">{{ t('common.cancel') }}</button>
-        <button class="btn btn-primary" :disabled="saving" @click="saveGroupAvailabilitySettings">
+        <button class="btn btn-primary" :disabled="saving || !groupAvailabilityValidation.valid" @click="saveGroupAvailabilitySettings">
           {{ saving ? t('common.saving') : t('common.save') }}
         </button>
       </div>

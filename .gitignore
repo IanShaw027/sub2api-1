@@ -90,7 +90,7 @@ temp/
 *.bak
 .cache/
 .gemini-clipboard/
-migrations/
+/migrations/
 
 # ===================
 # 构建产物
@@ -127,8 +127,14 @@ AGENTS.md
 scripts
 .code-review-state
 openspec/
-docs/
+# NOTE: We keep general docs ignored, but allow QA reports/roadmaps to be versioned.
+docs/*
+!docs/qa/
+!docs/qa/**
 code-reviews/
 AGENTS.md
 backend/cmd/server/server
 deploy/docker-compose.override.yml
+
+# Local binaries
+backend/sub2api-server

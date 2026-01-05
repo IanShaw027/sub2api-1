@@ -5,6 +5,7 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import type { GroupAvailabilityConfig, GroupAvailabilityStatus, AlertSeverity } from '../types'
 import { opsAPI } from '@/api/admin/ops'
 import Select from '@/components/common/Select.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 
 const { t } = useI18n()
 
@@ -28,6 +29,10 @@ const showBatchSeverity = ref(false)
 const batchSeverity = ref<AlertSeverity>('warning')
 const showTemplateDialog = ref(false)
 const selectedTemplate = ref('')
+const batchThresholdError = ref('')
+
+const showBatchConfirm = ref(false)
+const batchConfirmKind = ref<'enable' | 'disable' | null>(null)
 
 interface ConfigTemplate {
   translationKey: string
@@ -88,6 +93,14 @@ const severityLevels: AlertSeverity[] = ['critical', 'warning', 'info']
 const severityOptions = computed(() =>
   severityLevels.map(s => ({ value: s, label: getSeverityLabel(s) }))
 )
+
+const batchThresholdValid = computed(() => {
+  return Number.isFinite(batchThreshold.value) && batchThreshold.value >= 1
+})
+
+watch(batchThreshold, () => {
+  if (batchThresholdValid.value) batchThresholdError.value = ''
+})
 
 async function loadGroupConfigs() {
   loading.value = true
@@ -165,6 +178,12 @@ async function batchEnableGroups() {
   }
 }
 
+function requestBatchEnable() {
+  if (selectedGroups.value.length === 0) return
+  batchConfirmKind.value = 'enable'
+  showBatchConfirm.value = true
+}
+
 async function batchDisableGroups() {
   if (selectedGroups.value.length === 0) return
   loading.value = true
@@ -182,7 +201,31 @@ async function batchDisableGroups() {
   }
 }
 
+function requestBatchDisable() {
+  if (selectedGroups.value.length === 0) return
+  batchConfirmKind.value = 'disable'
+  showBatchConfirm.value = true
+}
+
+async function confirmBatchAction() {
+  const kind = batchConfirmKind.value
+  showBatchConfirm.value = false
+  batchConfirmKind.value = null
+  if (kind === 'enable') await batchEnableGroups()
+  if (kind === 'disable') await batchDisableGroups()
+}
+
+function cancelBatchAction() {
+  showBatchConfirm.value = false
+  batchConfirmKind.value = null
+}
+
 async function confirmBatchThreshold() {
+  if (selectedGroups.value.length === 0) return
+  if (!batchThresholdValid.value) {
+    batchThresholdError.value = t('admin.ops.config.validation.thresholdMinOne')
+    return
+  }
   loading.value = true
   try {
     await Promise.all(selectedGroups.value.map(group =>
@@ -202,6 +245,7 @@ async function confirmBatchThreshold() {
 }
 
 async function confirmBatchSeverity() {
+  if (selectedGroups.value.length === 0) return
   loading.value = true
   try {
     await Promise.all(selectedGroups.value.map(group =>
@@ -219,6 +263,7 @@ async function confirmBatchSeverity() {
 }
 
 async function confirmApplyTemplate() {
+  if (selectedGroups.value.length === 0) return
   if (!selectedTemplate.value) return
   const template = templates.find(t => t.translationKey === selectedTemplate.value)
   if (!template) return
@@ -320,8 +365,8 @@ watch(
         {{ t('admin.ops.config.selectedGroups', { count: selectedGroups.length }) }}
       </span>
       <div class="flex gap-2">
-        <button @click="batchEnableGroups" class="btn btn-sm btn-secondary">{{ t('admin.ops.config.batchEnable') }}</button>
-        <button @click="batchDisableGroups" class="btn btn-sm btn-secondary">{{ t('admin.ops.config.batchDisable') }}</button>
+        <button @click="requestBatchEnable" class="btn btn-sm btn-secondary">{{ t('admin.ops.config.batchEnable') }}</button>
+        <button @click="requestBatchDisable" class="btn btn-sm btn-secondary">{{ t('admin.ops.config.batchDisable') }}</button>
         <button @click="showBatchThreshold = true" class="btn btn-sm btn-secondary">{{ t('admin.ops.config.batchSetThreshold') }}</button>
         <button @click="showBatchSeverity = true" class="btn btn-sm btn-secondary">{{ t('admin.ops.config.batchSetSeverity') }}</button>
         <button @click="showTemplateDialog = true" class="btn btn-sm btn-primary">{{ t('admin.ops.config.applyTemplate') }}</button>
@@ -341,6 +386,7 @@ watch(
     <!-- Groups Table -->
     <div class="overflow-x-auto">
       <table class="w-full">
+        <caption class="sr-only">{{ t('admin.ops.config.title') }}</caption>
         <thead class="bg-gray-50 dark:bg-dark-700">
           <tr>
             <th class="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-dark-400">
@@ -399,6 +445,7 @@ watch(
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-dark-300 mb-2">{{ t('admin.ops.config.minAvailableAccounts') }}</label>
           <input v-model.number="batchThreshold" type="number" min="1" class="input" />
+          <p v-if="batchThresholdError" class="mt-1 text-xs text-red-600 dark:text-red-400">{{ batchThresholdError }}</p>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-dark-300 mb-2">{{ t('admin.ops.config.applyToGroups') }}</label>
@@ -412,7 +459,7 @@ watch(
       <template #footer>
         <div class="flex justify-end gap-2">
           <button @click="showBatchThreshold = false" class="btn btn-secondary">{{ t('common.cancel') }}</button>
-          <button @click="confirmBatchThreshold" class="btn btn-primary" :disabled="loading">{{ t('common.confirm') }}</button>
+          <button @click="confirmBatchThreshold" class="btn btn-primary" :disabled="loading || !batchThresholdValid">{{ t('common.confirm') }}</button>
         </div>
       </template>
     </BaseDialog>
@@ -439,7 +486,7 @@ watch(
       <template #footer>
         <div class="flex justify-end gap-2">
           <button @click="showBatchSeverity = false" class="btn btn-secondary">{{ t('common.cancel') }}</button>
-          <button @click="confirmBatchSeverity" class="btn btn-primary" :disabled="loading">{{ t('common.confirm') }}</button>
+          <button @click="confirmBatchSeverity" class="btn btn-primary" :disabled="loading || selectedGroups.length === 0">{{ t('common.confirm') }}</button>
         </div>
       </template>
     </BaseDialog>
@@ -477,9 +524,19 @@ watch(
       <template #footer>
         <div class="flex justify-end gap-2">
           <button @click="showTemplateDialog = false" class="btn btn-secondary">{{ t('common.cancel') }}</button>
-          <button @click="confirmApplyTemplate" class="btn btn-primary" :disabled="!selectedTemplate || loading">{{ t('common.confirm') }}</button>
+          <button @click="confirmApplyTemplate" class="btn btn-primary" :disabled="!selectedTemplate || loading || selectedGroups.length === 0">{{ t('common.confirm') }}</button>
         </div>
       </template>
     </BaseDialog>
   </BaseDialog>
+
+  <ConfirmDialog
+    :show="showBatchConfirm"
+    :title="batchConfirmKind === 'enable' ? t('admin.ops.config.confirmEnableTitle') : t('admin.ops.config.confirmDisableTitle')"
+    :message="batchConfirmKind === 'enable'
+      ? t('admin.ops.config.confirmEnableMessage', { count: selectedGroups.length })
+      : t('admin.ops.config.confirmDisableMessage', { count: selectedGroups.length })"
+    @confirm="confirmBatchAction"
+    @cancel="cancelBatchAction"
+  />
 </template>

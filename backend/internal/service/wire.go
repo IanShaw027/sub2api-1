@@ -101,8 +101,8 @@ func ProvideOpsAlertService(
 }
 
 // ProvideOpsAggregationService creates and starts OpsAggregationService.
-func ProvideOpsAggregationService(repo OpsRepository, sqlDB *sql.DB, cfg *config.Config) *OpsAggregationService {
-	svc := NewOpsAggregationService(repo, sqlDB)
+func ProvideOpsAggregationService(repo OpsRepository, sqlDB *sql.DB, redisClient *redis.Client, cfg *config.Config) *OpsAggregationService {
+	svc := NewOpsAggregationService(repo, sqlDB, redisClient)
 	if cfg != nil && cfg.Ops.Aggregation.Enabled {
 		svc.Start()
 	}
@@ -110,8 +110,8 @@ func ProvideOpsAggregationService(repo OpsRepository, sqlDB *sql.DB, cfg *config
 }
 
 // ProvideOpsScheduledReportService creates and starts OpsScheduledReportService.
-func ProvideOpsScheduledReportService(opsService *OpsService, userService *UserService, emailService *EmailService) *OpsScheduledReportService {
-	svc := NewOpsScheduledReportService(opsService, userService, emailService)
+func ProvideOpsScheduledReportService(opsService *OpsService, userService *UserService, emailService *EmailService, redisClient *redis.Client) *OpsScheduledReportService {
+	svc := NewOpsScheduledReportService(opsService, userService, emailService, redisClient)
 	svc.Start()
 	return svc
 }

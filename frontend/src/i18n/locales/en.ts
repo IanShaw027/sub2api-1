@@ -624,11 +624,16 @@ export default {
         realtime: 'Connected',
         disconnected: 'Disconnected',
         wsConnected: 'WebSocket Connected',
+        wsConnecting: 'WebSocket Connecting',
+        wsReconnecting: 'WebSocket Reconnecting',
         wsDisconnected: 'WebSocket Disconnected (Polling Mode)',
         online: 'Live Monitoring',
+        connecting: 'Connecting…',
+        reconnecting: 'Reconnecting…',
         offline: 'Offline Mode',
         updatedAt: 'Updated at',
         refresh: 'Refresh Data',
+        help: 'Help / Docs',
         healthCondition: 'System Health',
         healthy: 'System Operational',
         risky: 'Potential Risks',
@@ -666,6 +671,11 @@ export default {
         errorRate: 'Error Rate',
         requestCount: 'Request Count',
         requestCountLabel: 'Request Count',
+        noDataTitle: 'No data',
+        resetZoom: 'Reset',
+        resetZoomHint: 'Scroll/pinch to zoom; Ctrl+drag to pan; click to reset',
+        download: 'Download',
+        downloadHint: 'Download chart as PNG',
         rateLimits: 'Rate Limits (429)',
         serverErrors: 'Server Errors (5xx)',
         clientErrors: 'Client Errors (4xx)',
@@ -741,6 +751,8 @@ export default {
         count: '{n} errors',
         recentCount: 'Latest {n} error records',
         searchPlaceholder: 'Search Request ID / Error Message...',
+        retryConfirmTitle: 'Retry this request?',
+        retryConfirmMessage: 'This will enqueue a retry for this error log. Continue?',
         quickFilters: {
           critical: 'Critical (P0)',
           fiveXX: '5xx Errors',
@@ -853,6 +865,14 @@ export default {
           allAlerts: 'All Alerts',
           alertOk: 'OK',
           alertFiring: 'Firing'
+        },
+        validation: {
+          title: 'Please fix the following issues',
+          thresholdMode: 'Please choose a valid threshold mode',
+          minAccountsRange: 'Min available accounts must be a number ≥ 0',
+          minPercentageRange: 'Min available percentage must be between 0 and 100',
+          cooldownRange: 'Cooldown minutes must be between 0 and 1440',
+          severity: 'Please choose a valid severity'
         }
       },
       config: {
@@ -860,6 +880,10 @@ export default {
         selectedGroups: '{count} groups selected',
         batchEnable: 'Batch Enable',
         batchDisable: 'Batch Disable',
+        confirmEnableTitle: 'Enable monitoring for selected groups?',
+        confirmEnableMessage: 'This will enable monitoring for {count} groups. Continue?',
+        confirmDisableTitle: 'Disable monitoring for selected groups?',
+        confirmDisableMessage: 'This will disable monitoring for {count} groups. Continue?',
         batchSetThreshold: 'Set Threshold',
         batchSetSeverity: 'Set Severity',
         applyTemplate: 'Apply Template',
@@ -899,7 +923,10 @@ export default {
         applyTemplateFailed: 'Failed to apply template',
         configExported: 'Config exported',
         importComplete: 'Import complete: {success} success, {failed} failed',
-        importFailedFormat: 'Import failed: Invalid file format'
+        importFailedFormat: 'Import failed: Invalid file format',
+        validation: {
+          thresholdMinOne: 'Min available accounts must be at least 1'
+        }
       },
       runtime: {
         title: 'Ops Runtime Settings',
@@ -917,7 +944,16 @@ export default {
         lockTTLSeconds: 'Distributed Lock TTL (seconds)',
         showAdvancedDeveloperSettings: 'Show advanced developer settings (Distributed Lock)',
         advancedSettingsSummary: 'Advanced settings (Distributed Lock)',
-        evalIntervalHint: 'How often the evaluator runs. Keeping the default is recommended.'
+        evalIntervalHint: 'How often the evaluator runs. Keeping the default is recommended.',
+        validation: {
+          title: 'Please fix the following issues',
+          invalid: 'Invalid settings',
+          evalIntervalRange: 'Evaluation interval must be between 1 and 86400 seconds',
+          lockKeyRequired: 'Distributed lock key is required when lock is enabled',
+          lockKeyPrefix: 'Distributed lock key must start with "{prefix}"',
+          lockKeyHint: 'Recommended: start with "{prefix}" to avoid conflicts',
+          lockTtlRange: 'Distributed lock TTL must be between 1 and 86400 seconds'
+        }
       },
       email: {
         title: 'Email Notification',
@@ -943,7 +979,20 @@ export default {
         accountHealth: 'Account health',
         accountHealthThreshold: 'Error rate threshold (%)',
         cronPlaceholder: 'Cron expression',
-        reportHint: 'Schedules use cron syntax; leave empty to use defaults.'
+        reportHint: 'Schedules use cron syntax; leave empty to use defaults.',
+        validation: {
+          title: 'Please fix the following issues',
+          invalid: 'Invalid email notification config',
+          alertRecipientsRequired: 'Alert emails are enabled but no recipients are configured',
+          reportRecipientsRequired: 'Report emails are enabled but no recipients are configured',
+          invalidRecipients: 'One or more recipient emails are invalid',
+          rateLimitRange: 'Rate limit per hour must be a number ≥ 0',
+          batchWindowRange: 'Batch window must be between 0 and 86400 seconds',
+          cronRequired: 'A cron expression is required when schedule is enabled',
+          cronFormat: 'Cron expression format looks invalid (expected at least 5 parts)',
+          digestMinCountRange: 'Min errors for digest must be a number ≥ 0',
+          accountHealthThresholdRange: 'Account health threshold must be between 0 and 100'
+        }
       },
       empty: {
         title: 'No ops data yet',

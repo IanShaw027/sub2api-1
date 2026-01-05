@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Bar, Doughnut, Line } from 'vue-chartjs'
+import type { ChartComponentRef } from 'vue-chartjs'
 import { sumNumbers, formatHistoryLabel } from '../utils/opsFormatters'
 import type { ChartState } from '../types'
 import type {
@@ -12,6 +13,7 @@ import type {
   OpsDashboardOverview
 } from '@/api/admin/ops'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 
 interface Props {
   hasLoadedOnce: boolean
@@ -152,7 +154,8 @@ const providerChartData = computed(() => {
       {
         label: t('admin.ops.charts.provider.successRequests'),
         data: sorted.map(p => p.request_count * (1 - p.error_rate / 100)), // 估算成功数
-        backgroundColor: colors.green,
+        // Use a color-blind friendlier palette (avoid red/green as the only signal).
+        backgroundColor: colors.blue,
         borderRadius: 4,
         barPercentage: 0.6,
         stack: 'total'
@@ -160,7 +163,7 @@ const providerChartData = computed(() => {
       {
         label: t('admin.ops.charts.provider.failedRequests'),
         data: sorted.map(p => p.request_count * (p.error_rate / 100)), // 估算失败数
-        backgroundColor: colors.red,
+        backgroundColor: colors.orange,
         borderRadius: 4,
         barPercentage: 0.6,
         stack: 'total'
@@ -259,6 +262,22 @@ const throughputOptions = computed(() => ({
         }
       }
     }
+    ,
+    // Enable x-axis zoom/pan (dataZoom-like) for deeper exploration.
+    // - Wheel / pinch zoom on x
+    // - Ctrl + drag to pan (prevents accidental page scroll)
+    zoom: {
+      pan: {
+        enabled: true,
+        mode: 'x' as const,
+        modifierKey: 'ctrl' as const
+      },
+      zoom: {
+        wheel: { enabled: true },
+        pinch: { enabled: true },
+        mode: 'x' as const
+      }
+    }
   },
   scales: {
     x: {
@@ -314,6 +333,23 @@ const providerOptions = computed(() => ({
     }
   }
 }))
+
+const throughputChartRef = ref<ChartComponentRef | null>(null)
+function resetThroughputZoom() {
+  const chart: any = throughputChartRef.value?.chart
+  if (!chart) return
+  if (typeof chart.resetZoom === 'function') chart.resetZoom()
+}
+
+function downloadThroughputChart() {
+  const chart: any = throughputChartRef.value?.chart
+  if (!chart || typeof chart.toBase64Image !== 'function') return
+  const url = chart.toBase64Image('image/png', 1)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `ops-throughput-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.png`
+  a.click()
+}
 </script>
 
 <template>
@@ -335,13 +371,40 @@ const providerOptions = computed(() => ({
         <div class="flex items-center gap-2 text-xs text-gray-500">
           <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-blue-500"></span>QPS</span>
           <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-green-500"></span>TPS(K)</span>
+          <button
+            type="button"
+            class="ml-2 inline-flex items-center rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:hover:bg-dark-800"
+            :disabled="throughputChartState !== 'ready'"
+            @click="resetThroughputZoom"
+            :title="t('admin.ops.charts.resetZoomHint')"
+          >
+            {{ t('admin.ops.charts.resetZoom') }}
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:hover:bg-dark-800"
+            :disabled="throughputChartState !== 'ready'"
+            @click="downloadThroughputChart"
+            :title="t('admin.ops.charts.downloadHint')"
+          >
+            {{ t('admin.ops.charts.download') }}
+          </button>
         </div>
       </div>
       <div class="h-64">
-        <Line v-if="throughputChartState === 'ready' && throughputChartData" :data="throughputChartData" :options="throughputOptions" />
-        <div v-else class="flex h-full flex-col items-center justify-center gap-2 text-gray-400">
-          <div v-if="throughputChartState === 'loading'" class="animate-pulse text-sm">{{ $t('admin.ops.charts.loading') }}</div>
-          <div v-else class="text-sm">{{ emptyRequestHintText }}</div>
+        <Line
+          v-if="throughputChartState === 'ready' && throughputChartData"
+          ref="throughputChartRef"
+          :data="throughputChartData"
+          :options="throughputOptions"
+        />
+        <div v-else class="flex h-full items-center justify-center">
+          <div v-if="throughputChartState === 'loading'" class="animate-pulse text-sm text-gray-400">{{ $t('admin.ops.charts.loading') }}</div>
+          <EmptyState
+            v-else
+            :title="t('admin.ops.charts.noDataTitle')"
+            :description="emptyRequestHintText"
+          />
         </div>
       </div>
     </div>
@@ -377,9 +440,13 @@ const providerOptions = computed(() => ({
             </div>
           </div>
         </div>
-        <div v-else class="flex h-full flex-col items-center justify-center gap-2 text-gray-400">
-           <div v-if="errorChartState === 'loading'" class="animate-pulse text-sm">{{ $t('admin.ops.charts.loading') }}</div>
-           <div v-else class="text-sm">{{ emptyErrorHintText }}</div>
+        <div v-else class="flex h-full items-center justify-center">
+           <div v-if="errorChartState === 'loading'" class="animate-pulse text-sm text-gray-400">{{ $t('admin.ops.charts.loading') }}</div>
+           <EmptyState
+             v-else
+             :title="t('admin.ops.charts.noDataTitle')"
+             :description="emptyErrorHintText"
+           />
         </div>
       </div>
     </div>
@@ -401,8 +468,13 @@ const providerOptions = computed(() => ({
       </div>
       <div class="h-48">
         <Bar v-if="latencyChartState === 'ready' && latencyChartData" :data="latencyChartData" :options="baseOptions" />
-        <div v-else class="flex h-full items-center justify-center text-sm text-gray-400">
-           {{ latencyChartState === 'loading' ? t('admin.ops.charts.loading') : emptyRequestHintText }}
+        <div v-else class="flex h-full items-center justify-center">
+          <div v-if="latencyChartState === 'loading'" class="animate-pulse text-sm text-gray-400">{{ t('admin.ops.charts.loading') }}</div>
+          <EmptyState
+            v-else
+            :title="t('admin.ops.charts.noDataTitle')"
+            :description="emptyRequestHintText"
+          />
         </div>
       </div>
     </div>
@@ -422,8 +494,13 @@ const providerOptions = computed(() => ({
       </div>
       <div class="h-48">
         <Bar v-if="providerChartState === 'ready' && providerChartData" :data="providerChartData" :options="providerOptions" />
-        <div v-else class="flex h-full items-center justify-center text-sm text-gray-400">
-           {{ providerChartState === 'loading' ? t('admin.ops.charts.loading') : emptyRequestHintText }}
+        <div v-else class="flex h-full items-center justify-center">
+          <div v-if="providerChartState === 'loading'" class="animate-pulse text-sm text-gray-400">{{ t('admin.ops.charts.loading') }}</div>
+          <EmptyState
+            v-else
+            :title="t('admin.ops.charts.noDataTitle')"
+            :description="emptyRequestHintText"
+          />
         </div>
       </div>
     </div>

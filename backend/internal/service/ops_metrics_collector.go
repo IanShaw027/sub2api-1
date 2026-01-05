@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -50,6 +51,13 @@ type OpsMetricsCollector struct {
 	stopCh             chan struct{}
 	startOnce          sync.Once
 	stopOnce           sync.Once
+
+	distributedLockOn    bool
+	distributedLockKey   string
+	distributedLockTTL   time.Duration
+	distributedLockWarn  sync.Once
+	distributedSkipLogMu sync.Mutex
+	distributedSkipLogAt time.Time
 }
 
 func NewOpsMetricsCollector(
@@ -73,6 +81,10 @@ func NewOpsMetricsCollector(
 		cacheEnabled:       cacheEnabled,
 		cacheTTL:           cacheTTL,
 		interval:           opsMetricsInterval,
+
+		distributedLockOn:  true,
+		distributedLockKey: opsMetricsCollectorLeaderLockKeyDefault,
+		distributedLockTTL: opsMetricsCollectorLeaderLockTTLDefault,
 	}
 }
 
@@ -121,6 +133,14 @@ func (c *OpsMetricsCollector) collectOnce() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), opsMetricsCollectTimeout)
 	defer cancel()
+
+	releaseLeaderLock, ok := c.tryAcquireLeaderLock(ctx)
+	if !ok {
+		return
+	}
+	if releaseLeaderLock != nil {
+		defer releaseLeaderLock()
+	}
 
 	now := time.Now()
 	// Use stable minute boundaries to maximize Redis cache hits across replicas.
@@ -186,6 +206,152 @@ func (c *OpsMetricsCollector) collectOnce() {
 		}
 		log.Printf("[OpsMetrics] window-stats cache hits=%d misses=%d hit_rate=%.1f%% ttl=%s", deltaHits, deltaMisses, hitRate, c.cacheTTL)
 	}
+}
+
+const (
+	opsMetricsCollectorLeaderLockKeyDefault = "ops:metrics:collector:leader"
+	// TTL must outlive a single collection (opsMetricsCollectTimeout) and should cover
+	// occasional GC pauses; collection is expected to finish within ~10s.
+	opsMetricsCollectorLeaderLockTTLDefault = 90 * time.Second
+
+	opsMetricsCollectorLeaderLockSkipLogMinInterval = 1 * time.Minute
+)
+
+var opsMetricsCollectorLeaderUnlockScript = redis.NewScript(`
+if redis.call("get", KEYS[1]) == ARGV[1] then
+  return redis.call("del", KEYS[1])
+end
+return 0
+`)
+
+var opsMetricsCollectorLeaderRenewScript = redis.NewScript(`
+if redis.call("get", KEYS[1]) == ARGV[1] then
+  return redis.call("pexpire", KEYS[1], ARGV[2])
+end
+return 0
+`)
+
+func (c *OpsMetricsCollector) tryAcquireLeaderLock(ctx context.Context) (func(), bool) {
+	if c == nil || !c.distributedLockOn {
+		return nil, true
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	key := strings.TrimSpace(c.distributedLockKey)
+	if key == "" {
+		key = opsMetricsCollectorLeaderLockKeyDefault
+	}
+	ttl := c.distributedLockTTL
+	if ttl <= 0 {
+		ttl = opsMetricsCollectorLeaderLockTTLDefault
+	}
+
+	if c.redisClient == nil {
+		c.distributedLockWarn.Do(func() {
+			log.Printf("[OpsMetrics] distributed lock enabled but redis client is nil; proceeding without leader lock (key=%q)", key)
+		})
+		return nil, true
+	}
+
+	token := opsAlertLeaderToken()
+	ok, err := c.redisClient.SetNX(ctx, key, token, ttl).Result()
+	if err != nil {
+		log.Printf("[OpsMetrics] failed to acquire leader lock (key=%q): %v", key, err)
+		return nil, false
+	}
+	if !ok {
+		c.logLeaderLockSkipped(key)
+		return nil, false
+	}
+
+	renewCancel, renewDone := c.startLeaderLockRenewal(key, token, ttl)
+
+	release := func() {
+		if renewCancel != nil {
+			renewCancel()
+		}
+		if renewDone != nil {
+			select {
+			case <-renewDone:
+			case <-time.After(2 * time.Second):
+				log.Printf("[OpsMetrics] leader lock renewal goroutine did not stop in time (key=%q)", key)
+			}
+		}
+
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		if _, err := opsMetricsCollectorLeaderUnlockScript.Run(releaseCtx, c.redisClient, []string{key}, token).Int(); err != nil {
+			log.Printf("[OpsMetrics] failed to release leader lock (key=%q token=%s): %v", key, shortenLockToken(token), err)
+		}
+	}
+
+	return release, true
+}
+
+func (c *OpsMetricsCollector) startLeaderLockRenewal(key string, token string, ttl time.Duration) (context.CancelFunc, <-chan struct{}) {
+	if c == nil || c.redisClient == nil {
+		return nil, nil
+	}
+	if strings.TrimSpace(key) == "" || token == "" || ttl <= 0 {
+		return nil, nil
+	}
+
+	refreshEvery := ttl / 2
+	if refreshEvery < 5*time.Second {
+		refreshEvery = 5 * time.Second
+	}
+	ttlMillis := ttl.Milliseconds()
+	if ttlMillis <= 0 {
+		ttlMillis = 1
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		ticker := time.NewTicker(refreshEvery)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				res, err := opsMetricsCollectorLeaderRenewScript.Run(context.Background(), c.redisClient, []string{key}, token, ttlMillis).Int()
+				if err != nil {
+					log.Printf("[OpsMetrics] leader lock renewal failed (key=%q token=%s): %v", key, shortenLockToken(token), err)
+					continue
+				}
+				if res == 0 {
+					log.Printf("[OpsMetrics] leader lock no longer owned; stop renewing (key=%q token=%s)", key, shortenLockToken(token))
+					return
+				}
+			}
+		}
+	}()
+
+	return cancel, done
+}
+
+func (c *OpsMetricsCollector) logLeaderLockSkipped(key string) {
+	if c == nil {
+		return
+	}
+	now := time.Now()
+
+	c.distributedSkipLogMu.Lock()
+	defer c.distributedSkipLogMu.Unlock()
+
+	if !c.distributedSkipLogAt.IsZero() && now.Sub(c.distributedSkipLogAt) < opsMetricsCollectorLeaderLockSkipLogMinInterval {
+		return
+	}
+	c.distributedSkipLogAt = now
+	log.Printf("[OpsMetrics] skipped collection; leader lock held by another instance (key=%q)", key)
 }
 
 func (c *OpsMetricsCollector) getWindowStatsCached(

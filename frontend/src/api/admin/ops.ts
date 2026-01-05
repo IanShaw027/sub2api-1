@@ -435,17 +435,126 @@ export interface SubscribeQPSOptions {
   onOpen?: () => void
   onClose?: (event: CloseEvent) => void
   onError?: (event: Event) => void
+  /**
+   * More granular status updates for UI (connecting/reconnecting/offline/etc).
+   * Does not replace `onOpen`/`onClose`; it complements them.
+   */
+  onStatusChange?: (status: OpsWSStatus) => void
+  /**
+   * Called when a reconnect is scheduled (helps display "retry in Xs").
+   */
+  onReconnectScheduled?: (info: { attempt: number, delayMs: number }) => void
   wsBaseUrl?: string
+  /**
+   * Maximum reconnect attempts. Defaults to Infinity to keep the dashboard live.
+   * Set to 0 to disable reconnect.
+   */
+  maxReconnectAttempts?: number
+  reconnectBaseDelayMs?: number
+  reconnectMaxDelayMs?: number
+  /**
+   * Stale connection detection (heartbeat-by-observation).
+   * If no messages are received within this window, the socket is closed to trigger a reconnect.
+   * Set to 0 to disable.
+   */
+  staleTimeoutMs?: number
+  /**
+   * How often to check staleness. Only used when `staleTimeoutMs > 0`.
+   */
+  staleCheckIntervalMs?: number
 }
+
+export type OpsWSStatus = 'connecting' | 'connected' | 'reconnecting' | 'offline' | 'closed'
 
 export function subscribeQPS(onMessage: (data: any) => void, options: SubscribeQPSOptions = {}): () => void {
   let ws: WebSocket | null = null
   let reconnectAttempts = 0
-  const maxReconnectAttempts = 5
+  const maxReconnectAttempts = Number.isFinite(options.maxReconnectAttempts as number)
+    ? (options.maxReconnectAttempts as number)
+    : Infinity
+  const baseDelayMs = options.reconnectBaseDelayMs ?? 1000
+  const maxDelayMs = options.reconnectMaxDelayMs ?? 30000
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let shouldReconnect = true
+  let isConnecting = false
+  let hasConnectedOnce = false
+  let lastMessageAt = 0
+  const staleTimeoutMs = options.staleTimeoutMs ?? 120_000
+  const staleCheckIntervalMs = options.staleCheckIntervalMs ?? 30_000
+  let staleTimer: ReturnType<typeof setInterval> | null = null
+
+  const setStatus = (status: OpsWSStatus) => {
+    options.onStatusChange?.(status)
+  }
+
+  const clearReconnectTimer = () => {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+  }
+
+  const clearStaleTimer = () => {
+    if (staleTimer) {
+      clearInterval(staleTimer)
+      staleTimer = null
+    }
+  }
+
+  const startStaleTimer = () => {
+    clearStaleTimer()
+    if (!staleTimeoutMs || staleTimeoutMs <= 0) return
+    staleTimer = setInterval(() => {
+      if (!shouldReconnect) return
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
+      if (!lastMessageAt) return
+      const ageMs = Date.now() - lastMessageAt
+      if (ageMs > staleTimeoutMs) {
+        // Treat as a half-open connection; closing triggers the normal reconnect path.
+        ws.close()
+      }
+    }, staleCheckIntervalMs)
+  }
+
+  const scheduleReconnect = () => {
+    if (!shouldReconnect) return
+    if (hasConnectedOnce && reconnectAttempts >= maxReconnectAttempts) return
+
+    // If we're offline, wait for the browser to come back online.
+    if (typeof navigator !== 'undefined' && 'onLine' in navigator && !navigator.onLine) {
+      setStatus('offline')
+      return
+    }
+
+    const expDelay = baseDelayMs * Math.pow(2, reconnectAttempts)
+    const delay = Math.min(expDelay, maxDelayMs)
+    const jitter = Math.floor(Math.random() * 250)
+    clearReconnectTimer()
+    reconnectTimer = setTimeout(() => {
+      reconnectAttempts++
+      connect()
+    }, delay + jitter)
+    options.onReconnectScheduled?.({ attempt: reconnectAttempts + 1, delayMs: delay + jitter })
+  }
+
+  const handleOnline = () => {
+    if (!shouldReconnect) return
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return
+    connect()
+  }
+
+  const handleOffline = () => {
+    setStatus('offline')
+  }
 
   const connect = () => {
+    if (!shouldReconnect) return
+    if (isConnecting) return
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return
+    if (hasConnectedOnce && reconnectAttempts >= maxReconnectAttempts) return
+
+    isConnecting = true
+    setStatus(hasConnectedOnce ? 'reconnecting' : 'connecting')
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsBaseUrl = options.wsBaseUrl || import.meta.env.VITE_WS_BASE_URL || window.location.host
     const wsURL = new URL(`${protocol}//${wsBaseUrl}/api/v1/admin/ops/ws/qps`)
@@ -457,12 +566,19 @@ export function subscribeQPS(onMessage: (data: any) => void, options: SubscribeQ
 
     ws.onopen = () => {
       reconnectAttempts = 0
+      isConnecting = false
+      hasConnectedOnce = true
+      clearReconnectTimer()
+      lastMessageAt = Date.now()
+      startStaleTimer()
+      setStatus('connected')
       options.onOpen?.()
     }
 
     ws.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data)
+        lastMessageAt = Date.now()
         onMessage(data)
       } catch (err) {
         console.warn('[OpsWS] Failed to parse message:', err)
@@ -475,23 +591,27 @@ export function subscribeQPS(onMessage: (data: any) => void, options: SubscribeQ
     }
 
     ws.onclose = (event) => {
+      isConnecting = false
       options.onClose?.(event)
-      if (shouldReconnect && reconnectAttempts < maxReconnectAttempts) {
-        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000)
-        reconnectTimer = setTimeout(() => {
-          reconnectAttempts++
-          connect()
-        }, delay)
-      }
+      clearStaleTimer()
+      ws = null
+      scheduleReconnect()
     }
   }
 
+  window.addEventListener('online', handleOnline)
+  window.addEventListener('offline', handleOffline)
   connect()
 
   return () => {
     shouldReconnect = false
-    if (reconnectTimer) clearTimeout(reconnectTimer)
+    window.removeEventListener('online', handleOnline)
+    window.removeEventListener('offline', handleOffline)
+    clearReconnectTimer()
+    clearStaleTimer()
     if (ws) ws.close()
+    ws = null
+    setStatus('closed')
   }
 }
 

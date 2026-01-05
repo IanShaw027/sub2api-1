@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { opsAPI } from '@/api/admin/ops'
 import type { GroupAvailabilityStatus, GroupAvailabilityConfig, AlertSeverity, ThresholdMode } from '../types'
@@ -7,6 +7,7 @@ import Select from '@/components/common/Select.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ElPagination from '@/components/common/Pagination.vue'
 import { useAppStore } from '@/stores/app'
+import { useDebounceFn } from '@vueuse/core'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -29,6 +30,38 @@ const totalPages = ref(1)
 const showCustomConfig = ref(false)
 const editingGroup = ref<GroupAvailabilityStatus | null>(null)
 const customConfig = ref<GroupAvailabilityConfig | null>(null)
+
+const customConfigValidation = computed(() => {
+  const errors: string[] = []
+  const cfg = customConfig.value
+  if (!cfg) return { valid: true, errors }
+
+  const mode = cfg.threshold_mode
+  if (!['count', 'percentage', 'both'].includes(mode)) {
+    errors.push(t('admin.ops.availability.validation.thresholdMode'))
+  }
+
+  if (!(typeof cfg.min_available_accounts === 'number' && Number.isFinite(cfg.min_available_accounts) && cfg.min_available_accounts >= 0)) {
+    errors.push(t('admin.ops.availability.validation.minAccountsRange'))
+  }
+
+  if (mode === 'percentage' || mode === 'both') {
+    const p = cfg.min_available_percentage ?? 0
+    if (!(typeof p === 'number' && Number.isFinite(p) && p >= 0 && p <= 100)) {
+      errors.push(t('admin.ops.availability.validation.minPercentageRange'))
+    }
+  }
+
+  if (!(typeof cfg.cooldown_minutes === 'number' && Number.isFinite(cfg.cooldown_minutes) && cfg.cooldown_minutes >= 0 && cfg.cooldown_minutes <= 1440)) {
+    errors.push(t('admin.ops.availability.validation.cooldownRange'))
+  }
+
+  if (!['critical', 'warning', 'info'].includes(cfg.severity)) {
+    errors.push(t('admin.ops.availability.validation.severity'))
+  }
+
+  return { valid: errors.length === 0, errors }
+})
 
 // --- 策略模板定义 (Strategy Templates) ---
 interface StrategyTemplate {
@@ -199,6 +232,11 @@ const handleSearch = () => {
   fetchData()
 }
 
+const handleSearchDebounced = useDebounceFn(() => {
+  currentPage.value = 1
+  fetchData()
+}, 400)
+
 const handlePageChange = (page: number) => {
   currentPage.value = page
   fetchData()
@@ -258,6 +296,10 @@ const applyStrategyTemplate = (strategyKey: string) => {
 // Save custom config
 const saveCustomConfig = async () => {
   if (!editingGroup.value || !customConfig.value) return
+  if (!customConfigValidation.value.valid) {
+    appStore.showError(customConfigValidation.value.errors[0] || t('common.error'))
+    return
+  }
 
   updatingId.value = editingGroup.value.group_id
   try {
@@ -284,6 +326,18 @@ const saveCustomConfig = async () => {
 
 onMounted(() => {
   fetchData()
+})
+
+watch(searchQuery, () => {
+  handleSearchDebounced()
+})
+
+watch(monitoringFilter, () => {
+  handleSearch()
+})
+
+watch(alertFilter, () => {
+  handleSearch()
 })
 </script>
 
@@ -386,6 +440,7 @@ onMounted(() => {
 
       <div class="overflow-x-auto">
         <table class="min-w-full divide-y divide-gray-200 dark:divide-dark-700">
+          <caption class="sr-only">{{ t('admin.ops.availability.title') }}</caption>
           <thead>
             <tr class="bg-gray-50/50 dark:bg-dark-800/50">
               <th scope="col" class="whitespace-nowrap px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-dark-400">
@@ -510,6 +565,12 @@ onMounted(() => {
   <!-- Custom Config Dialog -->
   <BaseDialog :show="showCustomConfig" :title="t('admin.ops.availability.customConfigTitle')" width="normal" @close="showCustomConfig = false">
     <div v-if="customConfig" class="space-y-6">
+      <div v-if="!customConfigValidation.valid" class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200">
+        <div class="font-bold">{{ t('admin.ops.availability.validation.title') }}</div>
+        <ul class="mt-1 list-disc space-y-1 pl-4">
+          <li v-for="msg in customConfigValidation.errors" :key="msg">{{ msg }}</li>
+        </ul>
+      </div>
       <!-- Group Info -->
       <div class="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-800">
         <div class="flex items-center gap-3">
@@ -528,7 +589,7 @@ onMounted(() => {
       <!-- Strategy Templates -->
       <div>
         <label class="mb-3 block text-sm font-bold text-gray-700 dark:text-gray-300">{{ t('admin.ops.availability.strategyTemplates') }}</label>
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <button
             v-for="strategy in strategies"
             :key="strategy.key"
@@ -646,7 +707,9 @@ onMounted(() => {
     <template #footer>
       <div class="flex justify-end gap-2">
         <button @click="showCustomConfig = false" class="btn btn-secondary">{{ t('common.cancel') }}</button>
-        <button @click="saveCustomConfig" class="btn btn-primary">{{ t('common.save') }}</button>
+        <button @click="saveCustomConfig" class="btn btn-primary" :disabled="updatingId === editingGroup?.group_id || !customConfigValidation.valid">
+          {{ t('common.save') }}
+        </button>
       </div>
     </template>
   </BaseDialog>

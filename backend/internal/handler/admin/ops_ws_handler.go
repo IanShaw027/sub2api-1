@@ -31,6 +31,8 @@ const (
 	envOpsWSTrustProxy     = "OPS_WS_TRUST_PROXY"
 	envOpsWSTrustedProxies = "OPS_WS_TRUSTED_PROXIES"
 	envOpsWSOriginPolicy   = "OPS_WS_ORIGIN_POLICY"
+	envOpsWSMaxConns       = "OPS_WS_MAX_CONNS"
+	envOpsWSMaxConnsPerIP  = "OPS_WS_MAX_CONNS_PER_IP"
 )
 
 const (
@@ -55,11 +57,19 @@ const (
 	// TPS semantics (currently based on input+output tokens in usage_logs).
 	qpsWSOverviewTimeRange = "5m"
 
-	// maxWSConns 最大 WebSocket 连接数
-	maxWSConns = 100
+	defaultMaxWSConns      = 100
+	defaultMaxWSConnsPerIP = 20
 )
 
 var wsConnCount atomic.Int32
+var wsConnCountByIP sync.Map // map[string]*atomic.Int32
+
+type opsWSRuntimeLimits struct {
+	MaxConns      int32
+	MaxConnsPerIP int32
+}
+
+var opsWSLimits = loadOpsWSRuntimeLimitsFromEnv()
 
 const (
 	qpsWSWriteTimeout = 10 * time.Second
@@ -278,11 +288,23 @@ func (c *opsWSQPSCache) getPayload() []byte {
 // QPSWSHandler handles realtime QPS push via WebSocket.
 // GET /api/v1/admin/ops/ws/qps
 func (h *OpsHandler) QPSWSHandler(c *gin.Context) {
-	// 检查连接数限制
-	if wsConnCount.Load() >= maxWSConns {
-		log.Printf("[OpsWS] connection limit reached: %d/%d", wsConnCount.Load(), maxWSConns)
+	clientIP := requestClientIP(c.Request)
+
+	// Reserve a global slot before upgrading the connection to keep the limit strict.
+	if !tryAcquireOpsWSTotalSlot(opsWSLimits.MaxConns) {
+		log.Printf("[OpsWS] connection limit reached: %d/%d", wsConnCount.Load(), opsWSLimits.MaxConns)
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "too many connections"})
 		return
+	}
+	defer wsConnCount.Add(-1)
+
+	if opsWSLimits.MaxConnsPerIP > 0 && clientIP != "" {
+		if !tryAcquireOpsWSIPSlot(clientIP, opsWSLimits.MaxConnsPerIP) {
+			log.Printf("[OpsWS] per-ip connection limit reached: ip=%s limit=%d", clientIP, opsWSLimits.MaxConnsPerIP)
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "too many connections"})
+			return
+		}
+		defer releaseOpsWSIPSlot(clientIP)
 	}
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -291,14 +313,62 @@ func (h *OpsHandler) QPSWSHandler(c *gin.Context) {
 		return
 	}
 
-	// 增加连接计数
-	wsConnCount.Add(1)
 	defer func() {
-		wsConnCount.Add(-1)
 		_ = conn.Close()
 	}()
 
 	handleQPSWebSocket(c.Request.Context(), conn)
+}
+
+func tryAcquireOpsWSTotalSlot(limit int32) bool {
+	if limit <= 0 {
+		return true
+	}
+	for {
+		current := wsConnCount.Load()
+		if current >= limit {
+			return false
+		}
+		if wsConnCount.CompareAndSwap(current, current+1) {
+			return true
+		}
+	}
+}
+
+func tryAcquireOpsWSIPSlot(clientIP string, limit int32) bool {
+	if strings.TrimSpace(clientIP) == "" || limit <= 0 {
+		return true
+	}
+
+	v, _ := wsConnCountByIP.LoadOrStore(clientIP, &atomic.Int32{})
+	counter := v.(*atomic.Int32)
+
+	for {
+		current := counter.Load()
+		if current >= limit {
+			return false
+		}
+		if counter.CompareAndSwap(current, current+1) {
+			return true
+		}
+	}
+}
+
+func releaseOpsWSIPSlot(clientIP string) {
+	if strings.TrimSpace(clientIP) == "" {
+		return
+	}
+
+	v, ok := wsConnCountByIP.Load(clientIP)
+	if !ok {
+		return
+	}
+	counter := v.(*atomic.Int32)
+	next := counter.Add(-1)
+	if next <= 0 {
+		// Best-effort cleanup; safe even if a new slot was acquired concurrently.
+		wsConnCountByIP.Delete(clientIP)
+	}
 }
 
 func handleQPSWebSocket(parentCtx context.Context, conn *websocket.Conn) {
@@ -492,6 +562,31 @@ func requestPeerIP(r *http.Request) (netip.Addr, bool) {
 	return addr.Unmap(), true
 }
 
+func requestClientIP(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+
+	trustProxyHeaders := shouldTrustOpsWSProxyHeaders(r)
+	if trustProxyHeaders {
+		xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
+		if xff != "" {
+			// Use the left-most entry (original client). If multiple proxies add values, they are comma-separated.
+			xff = strings.TrimSpace(strings.Split(xff, ",")[0])
+			xff = strings.TrimPrefix(xff, "[")
+			xff = strings.TrimSuffix(xff, "]")
+			if addr, err := netip.ParseAddr(xff); err == nil && addr.IsValid() {
+				return addr.Unmap().String()
+			}
+		}
+	}
+
+	if peer, ok := requestPeerIP(r); ok && peer.IsValid() {
+		return peer.String()
+	}
+	return ""
+}
+
 func isAddrInTrustedProxies(addr netip.Addr, trusted []netip.Prefix) bool {
 	if !addr.IsValid() {
 		return false
@@ -537,6 +632,29 @@ func loadOpsWSProxyConfigFromEnv() OpsWSProxyConfig {
 		}
 	}
 
+	return cfg
+}
+
+func loadOpsWSRuntimeLimitsFromEnv() opsWSRuntimeLimits {
+	cfg := opsWSRuntimeLimits{
+		MaxConns:      defaultMaxWSConns,
+		MaxConnsPerIP: defaultMaxWSConnsPerIP,
+	}
+
+	if v := strings.TrimSpace(os.Getenv(envOpsWSMaxConns)); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			cfg.MaxConns = int32(parsed)
+		} else {
+			log.Printf("[OpsWS] invalid %s=%q (expected int>0); using default=%d", envOpsWSMaxConns, v, cfg.MaxConns)
+		}
+	}
+	if v := strings.TrimSpace(os.Getenv(envOpsWSMaxConnsPerIP)); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed >= 0 {
+			cfg.MaxConnsPerIP = int32(parsed)
+		} else {
+			log.Printf("[OpsWS] invalid %s=%q (expected int>=0); using default=%d", envOpsWSMaxConnsPerIP, v, cfg.MaxConnsPerIP)
+		}
+	}
 	return cfg
 }
 

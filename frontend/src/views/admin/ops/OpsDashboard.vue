@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   Chart as ChartJS,
   Title,
@@ -13,7 +14,8 @@ import {
   ArcElement,
   Filler
 } from 'chart.js'
-import { useIntervalFn } from '@vueuse/core'
+import zoomPlugin from 'chartjs-plugin-zoom'
+import { useDebounceFn, useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import ErrorDetailModal from '@/components/admin/ErrorDetailModal.vue'
@@ -23,8 +25,9 @@ import OpsGroupAvailabilityCard from './components/OpsGroupAvailabilityCard.vue'
 import OpsRuntimeSettingsCard from './components/OpsRuntimeSettingsCard.vue'
 import OpsEmailNotificationCard from './components/OpsEmailNotificationCard.vue'
 import OpsErrorLogTable from './components/OpsErrorLogTable.vue'
+import OpsDashboardSkeleton from './components/OpsDashboardSkeleton.vue'
 import OpsRequestDetailsModal, { type OpsRequestDetailsPreset } from './components/OpsRequestDetailsModal.vue'
-import { opsAPI, type OpsDashboardOverview, type ProviderHealthData, type LatencyHistogramResponse, type ErrorDistributionResponse, type OpsMetrics, type OpsErrorLog } from '@/api/admin/ops'
+import { opsAPI, type OpsDashboardOverview, type ProviderHealthData, type LatencyHistogramResponse, type ErrorDistributionResponse, type OpsMetrics, type OpsErrorLog, type OpsWSStatus } from '@/api/admin/ops'
 import { parseTimeRangeMinutes } from './utils/opsFormatters'
 import type { ErrorFilters, ErrorLogsPagination } from './types'
 
@@ -38,11 +41,16 @@ ChartJS.register(
   CategoryScale,
   BarElement,
   ArcElement,
-  Filler
+  Filler,
+  zoomPlugin
 )
 
 const { t } = useI18n()
-const loading = ref(false)
+const route = useRoute()
+const router = useRouter()
+// Start in loading state so the first paint shows the skeleton immediately.
+// Otherwise users may briefly see an "empty" dashboard before `onMounted()` kicks off the first fetch.
+const loading = ref(true)
 const errorMessage = ref('')
 const hasLoadedOnce = ref(false)
 const timeRange = ref('1h')
@@ -56,7 +64,8 @@ const latestMetrics = ref<OpsMetrics | null>(null)
 const metricsHistory = ref<OpsMetrics[]>([])
 
 // Error logs section
-const errorLogsLoading = ref(false)
+// Same rationale as `loading`: avoid a first-paint flash of "empty table" before the first query starts.
+const errorLogsLoading = ref(true)
 const errorLogs = ref<OpsErrorLog[]>([])
 const errorLogsTotal = ref(0)
 const errorPagination = ref<ErrorLogsPagination>({
@@ -107,10 +116,127 @@ const errorFilters = ref<ErrorFilters>({
   searchText: ''
 })
 
+// --- URL Query Persistence (Error log filters) ---
+// Keeps Ops troubleshooting links shareable and restores state on refresh/back.
+const QUERY_KEYS = {
+  timeRange: 'tr',
+  page: 'page',
+  pageSize: 'pageSize',
+  platforms: 'platforms',
+  statusCodes: 'status_codes',
+  severity: 'severity',
+  clientIp: 'client_ip',
+  search: 'q'
+} as const
+
+const allowedTimeRanges = new Set(['5m', '30m', '1h', '6h', '24h'])
+const allowedSeverities = new Set(['P0', 'P1', 'P2', 'P3'])
+
+const isApplyingRouteQuery = ref(false)
+const isSyncingRouteQuery = ref(false)
+
+const readQueryString = (key: string): string => {
+  const value = route.query[key]
+  if (typeof value === 'string') return value
+  if (Array.isArray(value) && typeof value[0] === 'string') return value[0]
+  return ''
+}
+
+const readQueryNumber = (key: string): number | null => {
+  const raw = readQueryString(key)
+  if (!raw) return null
+  const n = Number.parseInt(raw, 10)
+  return Number.isFinite(n) ? n : null
+}
+
+const splitCsv = (value: string): string[] => value.split(',').map(s => s.trim()).filter(Boolean)
+
+const applyRouteQueryToState = () => {
+  const nextTimeRange = readQueryString(QUERY_KEYS.timeRange)
+  if (nextTimeRange && allowedTimeRanges.has(nextTimeRange)) {
+    timeRange.value = nextTimeRange
+  }
+
+  const nextPage = readQueryNumber(QUERY_KEYS.page)
+  if (nextPage && nextPage > 0) {
+    errorPagination.value.page = nextPage
+  }
+
+  const nextPageSize = readQueryNumber(QUERY_KEYS.pageSize)
+  if (nextPageSize && nextPageSize > 0) {
+    errorPagination.value.pageSize = nextPageSize
+  }
+
+  const platformsCsv = readQueryString(QUERY_KEYS.platforms)
+  const statusCodesCsv = readQueryString(QUERY_KEYS.statusCodes)
+  const severityRaw = readQueryString(QUERY_KEYS.severity)
+  const clientIp = readQueryString(QUERY_KEYS.clientIp)
+  const searchText = readQueryString(QUERY_KEYS.search)
+
+  const platforms = platformsCsv ? splitCsv(platformsCsv) : []
+  const statusCodes = statusCodesCsv
+    ? splitCsv(statusCodesCsv).map(v => Number.parseInt(v, 10)).filter(n => Number.isFinite(n))
+    : []
+  const severity = allowedSeverities.has(severityRaw) ? (severityRaw as ErrorFilters['severity']) : ''
+
+  errorFilters.value = {
+    platforms,
+    statusCodes,
+    clientIp,
+    severity,
+    searchText
+  }
+}
+
+// Apply once during setup, before watchers register, so initial fetch uses query state.
+applyRouteQueryToState()
+
+const buildQueryFromState = () => {
+  const next: Record<string, any> = { ...route.query }
+
+  // Remove keys we own (so defaults don't linger).
+  Object.values(QUERY_KEYS).forEach((k) => {
+    delete next[k]
+  })
+
+  if (timeRange.value !== '1h') next[QUERY_KEYS.timeRange] = timeRange.value
+  if (errorPagination.value.page !== 1) next[QUERY_KEYS.page] = String(errorPagination.value.page)
+  if (errorPagination.value.pageSize !== 50) next[QUERY_KEYS.pageSize] = String(errorPagination.value.pageSize)
+
+  if (errorFilters.value.platforms.length > 0) next[QUERY_KEYS.platforms] = errorFilters.value.platforms.join(',')
+  if (errorFilters.value.statusCodes.length > 0) next[QUERY_KEYS.statusCodes] = errorFilters.value.statusCodes.join(',')
+  if (errorFilters.value.severity) next[QUERY_KEYS.severity] = errorFilters.value.severity
+  if (errorFilters.value.clientIp) next[QUERY_KEYS.clientIp] = errorFilters.value.clientIp
+  if (errorFilters.value.searchText) next[QUERY_KEYS.search] = errorFilters.value.searchText
+
+  return next
+}
+
+const syncQueryToRoute = useDebounceFn(async () => {
+  if (isApplyingRouteQuery.value) return
+  const nextQuery = buildQueryFromState()
+
+  // Avoid spamming router updates.
+  const curr = route.query
+  const nextKeys = Object.keys(nextQuery)
+  const currKeys = Object.keys(curr)
+  const sameLength = nextKeys.length === currKeys.length
+  const sameValues = sameLength && nextKeys.every(k => String((curr as any)[k] ?? '') === String(nextQuery[k] ?? ''))
+  if (sameValues) return
+
+  try {
+    isSyncingRouteQuery.value = true
+    await router.replace({ query: nextQuery })
+  } finally {
+    isSyncingRouteQuery.value = false
+  }
+}, 250)
+
 // WebSocket for real-time QPS
 const realTimeQPS = ref(0)
 const realTimeTPS = ref(0)
-const wsConnected = ref(false)
+const wsStatus = ref<OpsWSStatus>('connecting')
+const wsReconnectInMs = ref<number | null>(null)
 let unsubscribeQPS: (() => void) | null = null
 
 const fetchData = async () => {
@@ -194,6 +320,8 @@ const fetchErrors = async () => {
   }
 }
 
+const fetchErrorsDebounced = useDebounceFn(fetchErrors, 400)
+
 // Refresh data every 30 seconds (fallback for L2/L3)
 useIntervalFn(fetchData, 30000)
 
@@ -208,18 +336,21 @@ onMounted(() => {
       }
     },
     {
-      onOpen: () => {
-        wsConnected.value = true
+      onStatusChange: (status) => {
+        wsStatus.value = status
+        if (status === 'connected') wsReconnectInMs.value = null
       },
-      onClose: () => {
-        wsConnected.value = false
-      }
+      onReconnectScheduled: ({ delayMs }) => {
+        wsReconnectInMs.value = delayMs
+      },
+      // QPS updates may be sparse in idle periods; keep the timeout conservative.
+      staleTimeoutMs: 180_000
     }
   )
 })
 
 onUnmounted(() => {
-  wsConnected.value = false
+  wsStatus.value = 'closed'
   if (unsubscribeQPS) unsubscribeQPS()
   unsubscribeQPS = null
 })
@@ -230,22 +361,75 @@ watch(timeRange, () => {
   fetchErrors()
 })
 
+watch(
+  () => route.query,
+  () => {
+    if (isSyncingRouteQuery.value) return
+
+    const prevTimeRange = timeRange.value
+    const prevPage = errorPagination.value.page
+    const prevPageSize = errorPagination.value.pageSize
+    const prevFilters = errorFilters.value
+
+    isApplyingRouteQuery.value = true
+    applyRouteQueryToState()
+    isApplyingRouteQuery.value = false
+
+    const timeRangeChanged = prevTimeRange !== timeRange.value
+    const pageChanged = prevPage !== errorPagination.value.page || prevPageSize !== errorPagination.value.pageSize
+    const filtersChanged = JSON.stringify(prevFilters) !== JSON.stringify(errorFilters.value)
+
+    if (timeRangeChanged) {
+      fetchData()
+      fetchErrors()
+      return
+    }
+
+    if (pageChanged || filtersChanged) {
+      fetchErrors()
+    }
+  }
+)
+
 function handleErrorFiltersUpdate(nextFilters: ErrorFilters) {
+  const prev = errorFilters.value
+
+  const sameNonSearch =
+    prev.clientIp === nextFilters.clientIp &&
+    prev.severity === nextFilters.severity &&
+    prev.platforms.join(',') === nextFilters.platforms.join(',') &&
+    prev.statusCodes.join(',') === nextFilters.statusCodes.join(',')
+
+  const searchOnlyChanged = sameNonSearch && prev.searchText !== nextFilters.searchText
+
   errorFilters.value = nextFilters
   errorPagination.value.page = 1
-  fetchErrors()
+
+  if (searchOnlyChanged) {
+    fetchErrorsDebounced()
+  } else {
+    fetchErrors()
+  }
+
+  syncQueryToRoute()
 }
 
 function handleErrorPageChange(page: number) {
   errorPagination.value.page = page
   fetchErrors()
+  syncQueryToRoute()
 }
 
 function handleErrorPageSizeChange(pageSize: number) {
   errorPagination.value.pageSize = pageSize
   errorPagination.value.page = 1
   fetchErrors()
+  syncQueryToRoute()
 }
+
+watch(timeRange, () => {
+  syncQueryToRoute()
+})
 </script>
 
 <template>
@@ -256,10 +440,15 @@ function handleErrorPageSizeChange(pageSize: number) {
         {{ errorMessage }}
       </div>
 
+      <!-- First-load skeleton -->
+      <OpsDashboardSkeleton v-if="loading && !hasLoadedOnce" />
+
       <!-- L1: Header & Core Metrics -->
       <OpsDashboardHeader
+        v-else
         :overview="overview"
-        :wsConnected="wsConnected"
+        :wsStatus="wsStatus"
+        :wsReconnectInMs="wsReconnectInMs"
         :realTimeQPS="realTimeQPS"
         :realTimeTPS="realTimeTPS"
         :timeRange="timeRange"
@@ -272,6 +461,7 @@ function handleErrorPageSizeChange(pageSize: number) {
 
       <!-- L2: Visual Analysis -->
       <OpsMetricsCharts
+        v-if="!(loading && !hasLoadedOnce)"
         :hasLoadedOnce="hasLoadedOnce"
         :loading="loading"
         :timeRange="timeRange"
@@ -284,16 +474,17 @@ function handleErrorPageSizeChange(pageSize: number) {
       />
 
       <!-- Group Availability Monitoring -->
-      <OpsGroupAvailabilityCard />
+      <OpsGroupAvailabilityCard v-if="!(loading && !hasLoadedOnce)" />
 
       <!-- Ops Runtime Settings -->
-      <OpsRuntimeSettingsCard />
+      <OpsRuntimeSettingsCard v-if="!(loading && !hasLoadedOnce)" />
 
       <!-- Email Notification Configuration -->
-      <OpsEmailNotificationCard />
+      <OpsEmailNotificationCard v-if="!(loading && !hasLoadedOnce)" />
 
       <!-- L3: Error Logs Query Section -->
       <OpsErrorLogTable
+        v-if="!(loading && !hasLoadedOnce)"
         :errorLogs="errorLogs"
         :errorLogsTotal="errorLogsTotal"
         :errorLogsLoading="errorLogsLoading"

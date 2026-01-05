@@ -155,10 +155,10 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	httpServer := server.ProvideHTTPServer(configConfig, engine)
 	tokenRefreshService := service.ProvideTokenRefreshService(accountRepository, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, configConfig)
 	antigravityQuotaRefresher := service.ProvideAntigravityQuotaRefresher(accountRepository, proxyRepository, antigravityOAuthService, configConfig)
-	opsAggregationService := service.ProvideOpsAggregationService(opsRepository, db, configConfig)
+	opsAggregationService := service.ProvideOpsAggregationService(opsRepository, db, redisClient, configConfig)
 	opsMetricsCollector := service.ProvideOpsMetricsCollector(opsService, concurrencyService, redisClient, configConfig)
 	opsAlertService := service.ProvideOpsAlertService(opsService, userService, emailService, redisClient, configConfig)
-	opsScheduledReportService := service.ProvideOpsScheduledReportService(opsService, userService, emailService)
+	opsScheduledReportService := service.ProvideOpsScheduledReportService(opsService, userService, emailService, redisClient)
 	opsGroupAvailabilityMonitor := service.ProvideOpsGroupAvailabilityMonitor(opsService, accountRepository, groupRepository, emailService, userService, redisClient, configConfig)
 	v := provideCleanup(client, redisClient, tokenRefreshService, pricingService, emailQueueService, billingCacheService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, antigravityQuotaRefresher, opsAggregationService, opsMetricsCollector, opsAlertService, opsScheduledReportService, opsGroupAvailabilityMonitor, configConfig, opsRepository)
 	application := &Application{

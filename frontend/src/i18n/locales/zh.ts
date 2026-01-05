@@ -637,11 +637,16 @@ export default {
         realtime: '实时连接中',
         disconnected: '连接已断开',
         wsConnected: 'WebSocket 已连接',
+        wsConnecting: 'WebSocket 连接中',
+        wsReconnecting: 'WebSocket 重连中',
         wsDisconnected: 'WebSocket 断开，使用轮询模式',
         online: '实时监控中',
+        connecting: '连接中…',
+        reconnecting: '重连中…',
         offline: '离线模式',
         updatedAt: '更新于',
         refresh: '刷新数据',
+        help: '帮助/文档',
         healthCondition: '系统健康状况',
         healthy: '系统运行良好',
         risky: '存在潜在风险',
@@ -692,6 +697,11 @@ export default {
         errorRate: '错误率',
         requestCount: '请求数',
         requestCountLabel: '请求数量',
+        noDataTitle: '暂无数据',
+        resetZoom: '重置',
+        resetZoomHint: '滚轮/双指缩放；Ctrl+拖动平移；点击重置',
+        download: '下载',
+        downloadHint: '将图表下载为 PNG',
         rateLimits: '限流 (429)',
         serverErrors: '服务端错误 (5xx)',
         clientErrors: '客户端错误 (4xx)',
@@ -767,6 +777,8 @@ export default {
         count: '{n} 条错误',
         recentCount: '最近产生的 {n} 条异常记录',
         searchPlaceholder: '搜索 Request ID / 错误信息...',
+        retryConfirmTitle: '确认重试该请求？',
+        retryConfirmMessage: '将为该错误日志触发一次重试请求，是否继续？',
         quickFilters: {
           critical: '严重 (P0)',
           fiveXX: '5xx 错误',
@@ -878,6 +890,14 @@ export default {
           allAlerts: '全部报警状态',
           alertOk: '正常',
           alertFiring: '告警中'
+        },
+        validation: {
+          title: '请先修正以下问题',
+          thresholdMode: '请选择有效的阈值模式',
+          minAccountsRange: '最低可用账号数必须为 ≥ 0 的数字',
+          minPercentageRange: '最低可用百分比必须在 0 到 100 之间',
+          cooldownRange: '冷却期必须在 0 到 1440 分钟之间',
+          severity: '请选择有效的告警级别'
         }
       },
       config: {
@@ -885,6 +905,10 @@ export default {
         selectedGroups: '已选中 {count} 个分组',
         batchEnable: '批量启用',
         batchDisable: '批量禁用',
+        confirmEnableTitle: '确认批量启用监控？',
+        confirmEnableMessage: '将为 {count} 个分组启用监控，是否继续？',
+        confirmDisableTitle: '确认批量禁用监控？',
+        confirmDisableMessage: '将为 {count} 个分组禁用监控，是否继续？',
         batchSetThreshold: '批量设置阈值',
         batchSetSeverity: '批量设置级别',
         applyTemplate: '应用模板',
@@ -924,7 +948,10 @@ export default {
         applyTemplateFailed: '应用模板失败',
         configExported: '配置已导出',
         importComplete: '导入完成：成功 {success} 个，失败 {failed} 个',
-        importFailedFormat: '导入失败：文件格式错误'
+        importFailedFormat: '导入失败：文件格式错误',
+        validation: {
+          thresholdMinOne: '最低可用账号数不能小于 1'
+        }
       },
       runtime: {
         title: '运维监控运行设置',
@@ -942,7 +969,16 @@ export default {
         lockTTLSeconds: '分布式锁 TTL（秒）',
         showAdvancedDeveloperSettings: '显示高级开发者设置 (Distributed Lock)',
         advancedSettingsSummary: '高级设置 (分布式锁)',
-        evalIntervalHint: '检测任务的执行频率，建议保持默认。'
+        evalIntervalHint: '检测任务的执行频率，建议保持默认。',
+        validation: {
+          title: '请先修正以下问题',
+          invalid: '设置不合法',
+          evalIntervalRange: '评估间隔必须在 1 到 86400 秒之间',
+          lockKeyRequired: '启用分布式锁时必须填写 Lock Key',
+          lockKeyPrefix: '分布式锁 Key 必须以「{prefix}」开头',
+          lockKeyHint: '建议以「{prefix}」开头以避免冲突',
+          lockTtlRange: '分布式锁 TTL 必须在 1 到 86400 秒之间'
+        }
       },
       email: {
         title: '邮件通知配置',
@@ -968,7 +1004,20 @@ export default {
         accountHealth: '账号健康报告',
         accountHealthThreshold: '错误率阈值（%）',
         cronPlaceholder: 'Cron 表达式',
-        reportHint: '发送时间使用 Cron 语法；留空将使用默认值。'
+        reportHint: '发送时间使用 Cron 语法；留空将使用默认值。',
+        validation: {
+          title: '请先修正以下问题',
+          invalid: '邮件通知配置不合法',
+          alertRecipientsRequired: '已启用告警邮件，但未配置任何收件人',
+          reportRecipientsRequired: '已启用报告邮件，但未配置任何收件人',
+          invalidRecipients: '存在不合法的收件人邮箱',
+          rateLimitRange: '每小时限额必须为 ≥ 0 的数字',
+          batchWindowRange: '合并窗口必须在 0 到 86400 秒之间',
+          cronRequired: '启用定时任务时必须填写 Cron 表达式',
+          cronFormat: 'Cron 表达式格式可能不正确（至少应包含 5 段）',
+          digestMinCountRange: '错误摘要最小数量必须为 ≥ 0 的数字',
+          accountHealthThresholdRange: '账号健康错误率阈值必须在 0 到 100 之间'
+        }
       },
       empty: {
         title: '暂无运维数据',
