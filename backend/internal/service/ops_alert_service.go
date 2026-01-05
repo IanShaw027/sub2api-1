@@ -1,13 +1,18 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -25,6 +30,8 @@ type OpsAlertService struct {
 	httpClient   *http.Client
 
 	interval time.Duration
+	webhook  OpsAlertWebhookSettings
+	silence  OpsAlertSilencingSettings
 
 	redisClient          *redis.Client
 	distributedLockOn    bool
@@ -37,6 +44,13 @@ type OpsAlertService struct {
 	emailLimiter          *tokenBucket
 	emailLimiterSkipLogMu sync.Mutex
 	emailLimiterSkipLogAt time.Time
+
+	// currentEmailRateLimit 记录当前生效的限流配置 (每小时邮件数)，用于检测配置变更
+	currentEmailRateLimit int
+	emailLimiterMu        sync.Mutex
+
+	silenceSkipLogMu sync.Mutex
+	silenceSkipLogAt time.Time
 
 	startOnce sync.Once
 	stopOnce  sync.Once
@@ -174,6 +188,9 @@ func (s *OpsAlertService) applyRuntimeSettings(ctx context.Context) {
 	if cfg.DistributedLock.TTLSeconds > 0 {
 		s.distributedLockTTL = time.Duration(cfg.DistributedLock.TTLSeconds) * time.Second
 	}
+
+	s.webhook = cfg.Webhook
+	s.silence = cfg.Silencing
 }
 
 func (s *OpsAlertService) Evaluate(ctx context.Context, now time.Time) {
@@ -626,6 +643,15 @@ func buildAlertDescription(rule OpsAlertRule, value float64) string {
 }
 
 func (s *OpsAlertService) dispatchNotifications(ctx context.Context, rule OpsAlertRule, event *OpsAlertEvent) bool {
+	if event == nil {
+		return false
+	}
+
+	if s.isSilenced(rule, event) {
+		s.logSilenced(rule, event)
+		return false
+	}
+
 	emailSent := false
 
 	notifyCtx, cancel := s.notificationContext(ctx)
@@ -634,6 +660,8 @@ func (s *OpsAlertService) dispatchNotifications(ctx context.Context, rule OpsAle
 	if rule.NotifyEmail {
 		emailSent = s.sendEmailNotification(notifyCtx, rule, event)
 	}
+
+	_ = s.sendWebhookNotification(notifyCtx, rule, event)
 
 	return emailSent
 }
@@ -763,6 +791,26 @@ func (s *OpsAlertService) sendEmailNotification(ctx context.Context, rule OpsAle
 		return false
 	}
 
+	// 动态更新限流器配置
+	s.emailLimiterMu.Lock()
+	dbRate := emailCfg.Alert.RateLimitPerHour
+	// 默认兜底：如果数据库配置为0（未配置），保持初始化时的环境变量配置；
+	// 如果配置了具体数值，则应用该数值。
+	// 注意：这里简化处理，如果 DB 配置变更，直接替换 limiter。
+	if dbRate > 0 && dbRate != s.currentEmailRateLimit {
+		// RateLimitPerHour -> refill per second
+		// capacity 设为 1.5 倍速率以允许适度突发，或保持默认 burst
+		refillPerSec := float64(dbRate) / 3600.0
+		burst := float64(dbRate) / 6.0 // 允许 10 分钟的量突发
+		if burst < 10 {
+			burst = 10
+		}
+		s.emailLimiter = newTokenBucket(refillPerSec, burst)
+		s.currentEmailRateLimit = dbRate
+		log.Printf("[OpsAlert] updated email rate limiter: %d/hour (burst=%.0f)", dbRate, burst)
+	}
+	s.emailLimiterMu.Unlock()
+
 	recipients, err := resolveOpsAlertEmailRecipients(ctx, s.userService, emailCfg)
 	if err != nil {
 		log.Printf("[OpsAlert] resolve recipients failed: %v", err)
@@ -839,6 +887,304 @@ func (s *OpsAlertService) sendEmailNotification(ctx context.Context, rule OpsAle
 	}
 
 	return anySent
+}
+
+const opsAlertSilenceSkipLogMinInterval = 1 * time.Minute
+
+func (s *OpsAlertService) logSilenced(rule OpsAlertRule, event *OpsAlertEvent) {
+	if s == nil {
+		return
+	}
+	now := time.Now()
+	s.silenceSkipLogMu.Lock()
+	defer s.silenceSkipLogMu.Unlock()
+	if !s.silenceSkipLogAt.IsZero() && now.Sub(s.silenceSkipLogAt) < opsAlertSilenceSkipLogMinInterval {
+		return
+	}
+	s.silenceSkipLogAt = now
+	log.Printf("[OpsAlert] notification silenced (rule=%d severity=%s status=%s)", rule.ID, rule.Severity, event.Status)
+}
+
+func (s *OpsAlertService) isSilenced(rule OpsAlertRule, event *OpsAlertEvent) bool {
+	if s == nil {
+		return false
+	}
+	cfg := s.silence
+	if !cfg.Enabled {
+		return false
+	}
+	now := time.Now()
+
+	if strings.TrimSpace(cfg.GlobalUntilRFC3339) != "" {
+		if t, err := time.Parse(time.RFC3339, cfg.GlobalUntilRFC3339); err == nil && t.After(now) {
+			return true
+		}
+	}
+
+	for _, entry := range cfg.Entries {
+		untilStr := strings.TrimSpace(entry.UntilRFC3339)
+		if untilStr == "" {
+			continue
+		}
+		until, err := time.Parse(time.RFC3339, untilStr)
+		if err != nil || !until.After(now) {
+			continue
+		}
+
+		if entry.RuleID != nil && *entry.RuleID != rule.ID {
+			continue
+		}
+		if len(entry.Severities) > 0 && !stringSliceContains(entry.Severities, rule.Severity) {
+			continue
+		}
+		return true
+	}
+
+	return false
+}
+
+func stringSliceContains(values []string, target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return false
+	}
+	for _, v := range values {
+		if strings.EqualFold(strings.TrimSpace(v), target) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *OpsAlertService) sendWebhookNotification(ctx context.Context, rule OpsAlertRule, event *OpsAlertEvent) bool {
+	if s == nil || s.httpClient == nil {
+		return false
+	}
+	if s.opsService == nil {
+		return false
+	}
+	if event == nil {
+		return false
+	}
+
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	// Determine webhook settings:
+	// 1) Prefer rule-level config if rule.NotifyChannels includes "webhook" and notify_config provides a URL.
+	// 2) Otherwise, fall back to global runtime webhook config.
+	ruleCfgURL, ruleCfgSecret, ok := webhookConfigFromRule(rule)
+	webhook := s.webhook
+	urlToCall := ""
+	secret := ""
+	if ok {
+		urlToCall = ruleCfgURL
+		secret = ruleCfgSecret
+	} else if webhook.Enabled {
+		urlToCall = webhook.URL
+		secret = webhook.Secret
+	}
+
+	urlToCall = strings.TrimSpace(urlToCall)
+	if urlToCall == "" {
+		return false
+	}
+
+	includeResolved := webhook.IncludeResolved
+	minSeverity := webhook.MinSeverity
+	if ok && rule.NotifyConfig != nil {
+		if v, ok := rule.NotifyConfig["include_resolved"].(bool); ok {
+			includeResolved = v
+		}
+		if v, ok := rule.NotifyConfig["min_severity"].(string); ok && strings.TrimSpace(v) != "" {
+			minSeverity = strings.TrimSpace(v)
+		}
+	}
+
+	if !includeResolved && event.Status == OpsAlertStatusResolved {
+		return false
+	}
+	if strings.TrimSpace(minSeverity) != "" && !shouldSendOpsEmailBySeverity(minSeverity, rule.Severity) {
+		return false
+	}
+
+	parsed, err := url.Parse(urlToCall)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		log.Printf("[OpsAlert] invalid webhook url=%q (rule=%d)", urlToCall, rule.ID)
+		return false
+	}
+	if parsed.Scheme != "https" && parsed.Scheme != "http" {
+		log.Printf("[OpsAlert] invalid webhook scheme=%q (rule=%d)", parsed.Scheme, rule.ID)
+		return false
+	}
+
+	branding := EmailBranding{SiteName: "Sub2API"}
+	if s.emailService != nil {
+		branding = s.emailService.GetBranding(ctx)
+	}
+
+	payload := map[string]any{
+		"type":    "ops_alert",
+		"sent_at": time.Now().UTC().Format(time.RFC3339Nano),
+		"site": map[string]any{
+			"name": branding.SiteName,
+			"url":  branding.SiteURL,
+		},
+		"rule": map[string]any{
+			"id":             rule.ID,
+			"name":           rule.Name,
+			"severity":       rule.Severity,
+			"metric_type":    rule.MetricType,
+			"operator":       rule.Operator,
+			"threshold":      rule.Threshold,
+			"window_minutes": rule.WindowMinutes,
+			"sustained":      rule.SustainedMinutes,
+		},
+		"event": map[string]any{
+			"id":              event.ID,
+			"status":          event.Status,
+			"title":           event.Title,
+			"description":     event.Description,
+			"metric_value":    event.MetricValue,
+			"threshold_value": event.ThresholdValue,
+			"fired_at":        event.FiredAt.Format(time.RFC3339Nano),
+			"resolved_at": func() string {
+				if event.ResolvedAt == nil {
+					return ""
+				}
+				return event.ResolvedAt.Format(time.RFC3339Nano)
+			}(),
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("[OpsAlert] marshal webhook payload failed (rule=%d): %v", rule.ID, err)
+		return false
+	}
+
+	timeoutSeconds := webhook.TimeoutSeconds
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 5
+	}
+
+	maxRetries := webhook.MaxRetries
+	if maxRetries < 0 {
+		maxRetries = 0
+	}
+
+	timestamp := time.Now().UTC().Format(time.RFC3339Nano)
+	signature := ""
+	if strings.TrimSpace(secret) != "" {
+		signature = signWebhookPayload(secret, timestamp, body)
+	}
+
+	anySent := false
+	if err := retryWithBackoff(
+		ctx,
+		maxRetries,
+		opsAlertEmailBackoff,
+		func() error {
+			reqCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
+			defer cancel()
+			req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, urlToCall, bytes.NewReader(body))
+			if err != nil {
+				return err
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("User-Agent", "Sub2API-OpsAlert/1.0")
+			req.Header.Set("X-Sub2API-Event-Type", "ops_alert")
+			req.Header.Set("X-Sub2API-Timestamp", timestamp)
+			if signature != "" {
+				req.Header.Set("X-Sub2API-Signature", "sha256="+signature)
+			}
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				return fmt.Errorf("webhook http status %d", resp.StatusCode)
+			}
+			anySent = true
+			return nil
+		},
+		func(attempt int, total int, nextDelay time.Duration, err error) {
+			if attempt < total {
+				log.Printf("[OpsAlert] webhook send failed (rule=%d attempt=%d/%d), retrying in %s: %v", rule.ID, attempt, total, nextDelay, err)
+				return
+			}
+			log.Printf("[OpsAlert] webhook send failed (rule=%d attempt=%d/%d), giving up: %v", rule.ID, attempt, total, err)
+		},
+	); err != nil {
+		return false
+	}
+
+	return anySent
+}
+
+func signWebhookPayload(secret string, timestamp string, body []byte) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(timestamp))
+	_, _ = mac.Write([]byte("\n"))
+	_, _ = mac.Write(body)
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func webhookConfigFromRule(rule OpsAlertRule) (url string, secret string, ok bool) {
+	if len(rule.NotifyChannels) == 0 {
+		return "", "", false
+	}
+	hasWebhook := false
+	for _, ch := range rule.NotifyChannels {
+		if strings.EqualFold(strings.TrimSpace(ch), "webhook") {
+			hasWebhook = true
+			break
+		}
+	}
+	if !hasWebhook {
+		return "", "", false
+	}
+	if rule.NotifyConfig == nil {
+		return "", "", false
+	}
+
+	readString := func(key string) string {
+		v, ok := rule.NotifyConfig[key]
+		if !ok {
+			return ""
+		}
+		if s, ok := v.(string); ok {
+			return strings.TrimSpace(s)
+		}
+		return ""
+	}
+
+	u := readString("webhook_url")
+	if u == "" {
+		u = readString("url")
+	}
+	if u == "" {
+		// Support nested config: { webhook: { url: "...", secret: "..." } }
+		if nested, ok := rule.NotifyConfig["webhook"].(map[string]any); ok && nested != nil {
+			if v, ok := nested["url"].(string); ok {
+				u = strings.TrimSpace(v)
+			}
+			if v, ok := nested["secret"].(string); ok {
+				secret = strings.TrimSpace(v)
+			}
+		}
+	}
+	if secret == "" {
+		secret = readString("webhook_secret")
+	}
+
+	if u == "" {
+		return "", "", false
+	}
+	return u, secret, true
 }
 
 const (

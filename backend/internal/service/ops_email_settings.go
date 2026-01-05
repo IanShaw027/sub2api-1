@@ -7,12 +7,20 @@ import (
 
 func opsEmailSeverityRank(severity string) int {
 	switch strings.ToLower(strings.TrimSpace(severity)) {
+	case "p0":
+		return 40
+	case "p1":
+		return 30
+	case "p2":
+		return 20
+	case "p3":
+		return 10
 	case "critical":
-		return 3
+		return 30
 	case "warning":
-		return 2
+		return 20
 	case "info":
-		return 1
+		return 10
 	default:
 		return 0
 	}

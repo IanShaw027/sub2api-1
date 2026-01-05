@@ -964,6 +964,37 @@ export default {
         alertTitle: '告警评估器',
         groupAvailabilityTitle: '分组可用性监控',
         evalIntervalSeconds: '评估间隔（秒）',
+        webhook: {
+          title: 'Webhook 通知',
+          enabled: 'Webhook',
+          url: 'Webhook 地址',
+          urlPlaceholder: 'https://example.com/webhook',
+          urlHint: '当告警触发时以 JSON 形式推送到该地址。',
+          secret: 'Webhook 密钥（可选）',
+          secretPlaceholder: '用于签名的 HMAC 密钥',
+          secretHint: '配置后请求会带 X-Sub2API-Signature 头（HMAC-SHA256 签名）。',
+          timeoutSeconds: '超时（秒）',
+          maxRetries: '重试次数',
+          includeResolved: '包含恢复通知',
+          validation: {
+            urlRequired: '启用 Webhook 时必须填写 Webhook 地址',
+            urlFormat: 'Webhook 地址必须以 http:// 或 https:// 开头',
+            timeoutRange: 'Webhook 超时必须在 1 到 300 秒之间',
+            retriesRange: 'Webhook 重试次数必须在 0 到 10 之间'
+          }
+        },
+        silencing: {
+          title: '告警静默（维护模式）',
+          enabled: '启用静默',
+          globalUntil: '静默截止时间（RFC3339）',
+          untilPlaceholder: '2026-01-05T00:00:00Z',
+          untilHint: '建议填写截止时间，避免忘记关闭静默。',
+          reason: '原因',
+          reasonPlaceholder: '例如：计划维护',
+          validation: {
+            timeFormat: '静默时间必须为合法的 RFC3339 时间戳'
+          }
+        },
         lockEnabled: '启用分布式锁',
         lockKey: '分布式锁 Key',
         lockTTLSeconds: '分布式锁 TTL（秒）',

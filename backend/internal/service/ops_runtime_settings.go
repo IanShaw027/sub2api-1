@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -14,12 +15,45 @@ type OpsDistributedLockSettings struct {
 	TTLSeconds int    `json:"ttl_seconds"`
 }
 
+type OpsAlertWebhookSettings struct {
+	Enabled         bool   `json:"enabled"`
+	URL             string `json:"url"`
+	Secret          string `json:"secret"`
+	TimeoutSeconds  int    `json:"timeout_seconds"`
+	MaxRetries      int    `json:"max_retries"`
+	IncludeResolved bool   `json:"include_resolved"`
+	MinSeverity     string `json:"min_severity"`
+}
+
+type OpsAlertSilenceEntry struct {
+	// Optional matchers (empty means "match all").
+	RuleID     *int64   `json:"rule_id,omitempty"`
+	Severities []string `json:"severities,omitempty"`
+
+	// UntilRFC3339 is the RFC3339 time when the silence expires.
+	UntilRFC3339 string `json:"until_rfc3339"`
+	Reason       string `json:"reason"`
+}
+
+type OpsAlertSilencingSettings struct {
+	Enabled bool `json:"enabled"`
+
+	// GlobalUntilRFC3339 silences all alert notifications until this time (RFC3339).
+	GlobalUntilRFC3339 string `json:"global_until_rfc3339"`
+	GlobalReason       string `json:"global_reason"`
+
+	Entries []OpsAlertSilenceEntry `json:"entries,omitempty"`
+}
+
 type OpsAlertRuntimeSettings struct {
 	// EvaluationIntervalSeconds controls how often the alert evaluator runs.
 	// 0 means "use default".
 	EvaluationIntervalSeconds int `json:"evaluation_interval_seconds"`
 
 	DistributedLock OpsDistributedLockSettings `json:"distributed_lock"`
+
+	Webhook   OpsAlertWebhookSettings   `json:"webhook"`
+	Silencing OpsAlertSilencingSettings `json:"silencing"`
 }
 
 type OpsGroupAvailabilityRuntimeSettings struct {
@@ -49,6 +83,21 @@ func defaultOpsAlertRuntimeSettings() *OpsAlertRuntimeSettings {
 			Enabled:    true,
 			Key:        opsAlertLeaderLockKeyDefault,
 			TTLSeconds: int(opsAlertLeaderLockTTLDefault.Seconds()),
+		},
+		Webhook: OpsAlertWebhookSettings{
+			Enabled:         false,
+			URL:             "",
+			Secret:          "",
+			TimeoutSeconds:  5,
+			MaxRetries:      2,
+			IncludeResolved: false,
+			MinSeverity:     "",
+		},
+		Silencing: OpsAlertSilencingSettings{
+			Enabled:            false,
+			GlobalUntilRFC3339: "",
+			GlobalReason:       "",
+			Entries:            []OpsAlertSilenceEntry{},
 		},
 	}
 }
@@ -87,12 +136,66 @@ func normalizeOpsDistributedLockSettings(s *OpsDistributedLockSettings, defaultK
 	}
 }
 
+func normalizeOpsAlertWebhookSettings(s *OpsAlertWebhookSettings, defaults OpsAlertWebhookSettings) {
+	if s == nil {
+		return
+	}
+	s.URL = strings.TrimSpace(s.URL)
+	if s.TimeoutSeconds <= 0 {
+		s.TimeoutSeconds = defaults.TimeoutSeconds
+	}
+	if s.MaxRetries < 0 {
+		s.MaxRetries = defaults.MaxRetries
+	}
+	s.MinSeverity = strings.TrimSpace(s.MinSeverity)
+}
+
+func normalizeOpsAlertSilencingSettings(s *OpsAlertSilencingSettings) {
+	if s == nil {
+		return
+	}
+	s.GlobalUntilRFC3339 = strings.TrimSpace(s.GlobalUntilRFC3339)
+	s.GlobalReason = strings.TrimSpace(s.GlobalReason)
+	if s.Entries == nil {
+		s.Entries = []OpsAlertSilenceEntry{}
+	}
+	for i := range s.Entries {
+		s.Entries[i].UntilRFC3339 = strings.TrimSpace(s.Entries[i].UntilRFC3339)
+		s.Entries[i].Reason = strings.TrimSpace(s.Entries[i].Reason)
+	}
+}
+
 func validateOpsDistributedLockSettings(s OpsDistributedLockSettings) error {
 	if strings.TrimSpace(s.Key) == "" {
 		return errors.New("distributed_lock.key is required")
 	}
 	if s.TTLSeconds <= 0 || s.TTLSeconds > int((24*time.Hour).Seconds()) {
 		return errors.New("distributed_lock.ttl_seconds must be between 1 and 86400")
+	}
+	return nil
+}
+
+func validateOpsAlertSilencingSettings(s OpsAlertSilencingSettings) error {
+	parse := func(raw string) error {
+		if strings.TrimSpace(raw) == "" {
+			return nil
+		}
+		if _, err := time.Parse(time.RFC3339, raw); err != nil {
+			return errors.New("silencing time must be RFC3339")
+		}
+		return nil
+	}
+
+	if err := parse(s.GlobalUntilRFC3339); err != nil {
+		return err
+	}
+	for _, entry := range s.Entries {
+		if strings.TrimSpace(entry.UntilRFC3339) == "" {
+			return errors.New("silencing.entries.until_rfc3339 is required")
+		}
+		if _, err := time.Parse(time.RFC3339, entry.UntilRFC3339); err != nil {
+			return errors.New("silencing.entries.until_rfc3339 must be RFC3339")
+		}
 	}
 	return nil
 }
@@ -126,6 +229,8 @@ func (s *OpsService) GetOpsAlertRuntimeSettings(ctx context.Context) (*OpsAlertR
 		cfg.EvaluationIntervalSeconds = defaultCfg.EvaluationIntervalSeconds
 	}
 	normalizeOpsDistributedLockSettings(&cfg.DistributedLock, opsAlertLeaderLockKeyDefault, defaultCfg.DistributedLock.TTLSeconds)
+	normalizeOpsAlertWebhookSettings(&cfg.Webhook, defaultCfg.Webhook)
+	normalizeOpsAlertSilencingSettings(&cfg.Silencing)
 
 	return cfg, nil
 }
@@ -146,11 +251,34 @@ func (s *OpsService) UpdateOpsAlertRuntimeSettings(ctx context.Context, cfg *Ops
 		cfg.EvaluationIntervalSeconds = defaultCfg.EvaluationIntervalSeconds
 	}
 	normalizeOpsDistributedLockSettings(&cfg.DistributedLock, opsAlertLeaderLockKeyDefault, defaultCfg.DistributedLock.TTLSeconds)
+	normalizeOpsAlertWebhookSettings(&cfg.Webhook, defaultCfg.Webhook)
+	normalizeOpsAlertSilencingSettings(&cfg.Silencing)
 
 	if cfg.EvaluationIntervalSeconds <= 0 || cfg.EvaluationIntervalSeconds > int((24*time.Hour).Seconds()) {
 		return nil, errors.New("evaluation_interval_seconds must be between 1 and 86400")
 	}
 	if err := validateOpsDistributedLockSettings(cfg.DistributedLock); err != nil {
+		return nil, err
+	}
+	if cfg.Webhook.Enabled && cfg.Webhook.URL == "" {
+		return nil, errors.New("webhook.url is required when webhook is enabled")
+	}
+	if cfg.Webhook.Enabled {
+		parsed, err := url.Parse(strings.TrimSpace(cfg.Webhook.URL))
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return nil, errors.New("webhook.url is invalid")
+		}
+		if parsed.Scheme != "https" && parsed.Scheme != "http" {
+			return nil, errors.New("webhook.url must start with http:// or https://")
+		}
+	}
+	if cfg.Webhook.TimeoutSeconds <= 0 || cfg.Webhook.TimeoutSeconds > int((5*time.Minute).Seconds()) {
+		return nil, errors.New("webhook.timeout_seconds must be between 1 and 300")
+	}
+	if cfg.Webhook.MaxRetries < 0 || cfg.Webhook.MaxRetries > 10 {
+		return nil, errors.New("webhook.max_retries must be between 0 and 10")
+	}
+	if err := validateOpsAlertSilencingSettings(cfg.Silencing); err != nil {
 		return nil, err
 	}
 

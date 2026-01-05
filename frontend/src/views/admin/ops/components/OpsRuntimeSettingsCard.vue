@@ -45,6 +45,34 @@ function validateRuntimeSettings(
     }
   }
 
+  // Alert-only runtime settings extensions
+  if ('webhook' in settings) {
+    const alertSettings = settings as OpsAlertRuntimeSettings
+    const webhook = alertSettings.webhook
+    if (webhook?.enabled) {
+      const url = (webhook.url || '').trim()
+      if (!url) errors.push(t('admin.ops.runtime.webhook.validation.urlRequired'))
+      if (url && !(url.startsWith('https://') || url.startsWith('http://'))) {
+        errors.push(t('admin.ops.runtime.webhook.validation.urlFormat'))
+      }
+      if (!Number.isFinite(webhook.timeout_seconds) || webhook.timeout_seconds < 1 || webhook.timeout_seconds > 300) {
+        errors.push(t('admin.ops.runtime.webhook.validation.timeoutRange'))
+      }
+      if (!Number.isFinite(webhook.max_retries) || webhook.max_retries < 0 || webhook.max_retries > 10) {
+        errors.push(t('admin.ops.runtime.webhook.validation.retriesRange'))
+      }
+    }
+
+    const silencing = alertSettings.silencing
+    if (silencing?.enabled) {
+      const until = (silencing.global_until_rfc3339 || '').trim()
+      if (until) {
+        const parsed = Date.parse(until)
+        if (!Number.isFinite(parsed)) errors.push(t('admin.ops.runtime.silencing.validation.timeFormat'))
+      }
+    }
+  }
+
   return { valid: errors.length === 0, errors }
 }
 
@@ -78,6 +106,28 @@ async function loadSettings() {
 function openAlertEditor() {
   if (!alertSettings.value) return
   draftAlert.value = JSON.parse(JSON.stringify(alertSettings.value))
+  // Backwards-compat: ensure nested settings exist even if API payload is older.
+  if (draftAlert.value) {
+    if (!draftAlert.value.webhook) {
+      draftAlert.value.webhook = {
+        enabled: false,
+        url: '',
+        secret: '',
+        timeout_seconds: 5,
+        max_retries: 2,
+        include_resolved: false,
+        min_severity: ''
+      }
+    }
+    if (!draftAlert.value.silencing) {
+      draftAlert.value.silencing = {
+        enabled: false,
+        global_until_rfc3339: '',
+        global_reason: '',
+        entries: []
+      }
+    }
+  }
   showAlertEditor.value = true
 }
 
@@ -165,6 +215,19 @@ onMounted(() => {
             {{ t('admin.ops.runtime.evalIntervalSeconds') }}:
             <span class="ml-1 font-medium text-gray-900 dark:text-white">{{ alertSettings.evaluation_interval_seconds }}s</span>
           </div>
+          <div class="text-xs text-gray-600 dark:text-gray-300">
+            {{ t('admin.ops.runtime.webhook.enabled') }}:
+            <span class="ml-1 font-medium text-gray-900 dark:text-white">
+              {{ alertSettings.webhook?.enabled ? t('common.enabled') : t('common.disabled') }}
+            </span>
+          </div>
+          <div
+            v-if="alertSettings.silencing?.enabled && alertSettings.silencing.global_until_rfc3339"
+            class="text-xs text-gray-600 dark:text-gray-300 md:col-span-2"
+          >
+            {{ t('admin.ops.runtime.silencing.globalUntil') }}:
+            <span class="ml-1 font-mono text-gray-900 dark:text-white">{{ alertSettings.silencing.global_until_rfc3339 }}</span>
+          </div>
           <!-- 隐藏的高级设置 -->
           <details class="col-span-1 md:col-span-2">
             <summary class="cursor-pointer text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400">
@@ -247,6 +310,70 @@ onMounted(() => {
           :aria-invalid="!alertValidation.valid"
         />
         <p class="mt-1 text-xs text-gray-500">{{ t('admin.ops.runtime.evalIntervalHint') }}</p>
+      </div>
+
+      <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-700/50">
+        <div class="mb-2 text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.ops.runtime.webhook.title') }}</div>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div class="md:col-span-2">
+            <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input v-model="draftAlert.webhook.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300" />
+              <span>{{ draftAlert.webhook.enabled ? t('common.enabled') : t('common.disabled') }}</span>
+            </label>
+          </div>
+
+          <div class="md:col-span-2">
+            <div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('admin.ops.runtime.webhook.url') }}</div>
+            <input v-model="draftAlert.webhook.url" type="url" class="input font-mono text-sm" :placeholder="t('admin.ops.runtime.webhook.urlPlaceholder')" />
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.ops.runtime.webhook.urlHint') }}</p>
+          </div>
+
+          <div class="md:col-span-2">
+            <div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('admin.ops.runtime.webhook.secret') }}</div>
+            <input v-model="draftAlert.webhook.secret" type="password" class="input font-mono text-sm" :placeholder="t('admin.ops.runtime.webhook.secretPlaceholder')" />
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.ops.runtime.webhook.secretHint') }}</p>
+          </div>
+
+          <div>
+            <div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('admin.ops.runtime.webhook.timeoutSeconds') }}</div>
+            <input v-model.number="draftAlert.webhook.timeout_seconds" type="number" min="1" max="300" class="input" />
+          </div>
+
+          <div>
+            <div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('admin.ops.runtime.webhook.maxRetries') }}</div>
+            <input v-model.number="draftAlert.webhook.max_retries" type="number" min="0" max="10" class="input" />
+          </div>
+
+          <div class="md:col-span-2">
+            <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input v-model="draftAlert.webhook.include_resolved" type="checkbox" class="h-4 w-4 rounded border-gray-300" />
+              <span>{{ t('admin.ops.runtime.webhook.includeResolved') }}</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-700/50">
+        <div class="mb-2 text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.ops.runtime.silencing.title') }}</div>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div class="md:col-span-2">
+            <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input v-model="draftAlert.silencing.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300" />
+              <span>{{ t('admin.ops.runtime.silencing.enabled') }}</span>
+            </label>
+          </div>
+
+          <div class="md:col-span-2">
+            <div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('admin.ops.runtime.silencing.globalUntil') }}</div>
+            <input v-model="draftAlert.silencing.global_until_rfc3339" type="text" class="input font-mono text-sm" :placeholder="t('admin.ops.runtime.silencing.untilPlaceholder')" />
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.ops.runtime.silencing.untilHint') }}</p>
+          </div>
+
+          <div class="md:col-span-2">
+            <div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('admin.ops.runtime.silencing.reason') }}</div>
+            <input v-model="draftAlert.silencing.global_reason" type="text" class="input" :placeholder="t('admin.ops.runtime.silencing.reasonPlaceholder')" />
+          </div>
+        </div>
       </div>
 
       <details class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-600 dark:bg-dark-800">
