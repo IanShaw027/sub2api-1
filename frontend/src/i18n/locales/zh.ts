@@ -865,6 +865,60 @@ export default {
         },
         footer: '展示前 {shown} 条（共 {total} 条）'
       },
+      alertRules: {
+        title: '告警规则',
+        description: '创建与管理系统阈值告警（仅邮件通知）',
+        loading: '加载中...',
+        empty: '暂无告警规则',
+        loadFailed: '加载告警规则失败',
+        saveFailed: '保存告警规则失败',
+        deleteFailed: '删除告警规则失败',
+        create: '新建规则',
+        createTitle: '新建告警规则',
+        editTitle: '编辑告警规则',
+        deleteConfirmTitle: '确认删除该规则？',
+        deleteConfirmMessage: '将删除该规则及其关联的告警事件，是否继续？',
+        metrics: {
+          successRate: '成功率 (%)',
+          errorRate: '错误率 (%)',
+          p95: 'P95 延迟 (ms)',
+          p99: 'P99 延迟 (ms)',
+          cpu: 'CPU 使用率 (%)',
+          memory: '内存使用率 (%)',
+          queueDepth: '并发排队深度'
+        },
+        table: {
+          name: '名称',
+          metric: '指标',
+          severity: '级别',
+          enabled: '启用',
+          actions: '操作'
+        },
+        form: {
+          name: '名称',
+          description: '描述',
+          metric: '指标',
+          operator: '运算符',
+          threshold: '阈值',
+          severity: '级别',
+          window: '统计窗口（分钟）',
+          sustained: '持续时间（分钟）',
+          cooldown: '冷却期（分钟）',
+          enabled: '启用',
+          notifyEmail: '发送邮件通知'
+        },
+        validation: {
+          title: '请先修正以下问题',
+          invalid: '规则不合法',
+          nameRequired: '名称不能为空',
+          metricRequired: '指标不能为空',
+          operatorRequired: '运算符不能为空',
+          thresholdRequired: '阈值必须为数字',
+          windowRange: '统计窗口必须在 1 到 1440 分钟之间',
+          sustainedRange: '持续时间必须在 1 到 1440 分钟之间',
+          cooldownRange: '冷却期必须在 0 到 1440 分钟之间'
+        }
+      },
       errors: {
         title: '最近错误',
         trackingTitle: '异常日志追踪',

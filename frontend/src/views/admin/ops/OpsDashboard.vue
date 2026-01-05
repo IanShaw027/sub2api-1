@@ -27,6 +27,7 @@ import OpsErrorAnalyticsCard from './components/OpsErrorAnalyticsCard.vue'
 import OpsAccountStatusCard from './components/OpsAccountStatusCard.vue'
 import OpsRuntimeSettingsCard from './components/OpsRuntimeSettingsCard.vue'
 import OpsEmailNotificationCard from './components/OpsEmailNotificationCard.vue'
+import OpsAlertRulesCard from './components/OpsAlertRulesCard.vue'
 import OpsAlertEventsCard from './components/OpsAlertEventsCard.vue'
 import OpsErrorByIPCard from './components/OpsErrorByIPCard.vue'
 import OpsErrorLogTable from './components/OpsErrorLogTable.vue'
@@ -510,6 +511,9 @@ watch(timeRange, () => {
 
       <!-- Email Notification Configuration -->
       <OpsEmailNotificationCard v-if="!(loading && !hasLoadedOnce)" />
+
+      <!-- Alert Rules -->
+      <OpsAlertRulesCard v-if="!(loading && !hasLoadedOnce)" />
 
       <!-- Alert Events -->
       <OpsAlertEventsCard v-if="!(loading && !hasLoadedOnce)" />

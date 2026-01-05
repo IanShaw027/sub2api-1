@@ -839,6 +839,60 @@ export default {
         },
         footer: 'Showing top {shown} of {total}'
       },
+      alertRules: {
+        title: 'Alert Rules',
+        description: 'Create and manage threshold-based system alerts (email-only)',
+        loading: 'Loading...',
+        empty: 'No alert rules',
+        loadFailed: 'Failed to load alert rules',
+        saveFailed: 'Failed to save alert rule',
+        deleteFailed: 'Failed to delete alert rule',
+        create: 'Create Rule',
+        createTitle: 'Create Alert Rule',
+        editTitle: 'Edit Alert Rule',
+        deleteConfirmTitle: 'Delete this rule?',
+        deleteConfirmMessage: 'This will remove the rule and its related events. Continue?',
+        metrics: {
+          successRate: 'Success Rate (%)',
+          errorRate: 'Error Rate (%)',
+          p95: 'P95 Latency (ms)',
+          p99: 'P99 Latency (ms)',
+          cpu: 'CPU Usage (%)',
+          memory: 'Memory Usage (%)',
+          queueDepth: 'Concurrency Queue Depth'
+        },
+        table: {
+          name: 'Name',
+          metric: 'Metric',
+          severity: 'Severity',
+          enabled: 'Enabled',
+          actions: 'Actions'
+        },
+        form: {
+          name: 'Name',
+          description: 'Description',
+          metric: 'Metric',
+          operator: 'Operator',
+          threshold: 'Threshold',
+          severity: 'Severity',
+          window: 'Window (minutes)',
+          sustained: 'Sustained (minutes)',
+          cooldown: 'Cooldown (minutes)',
+          enabled: 'Enabled',
+          notifyEmail: 'Send email notifications'
+        },
+        validation: {
+          title: 'Please fix the following issues',
+          invalid: 'Invalid rule',
+          nameRequired: 'Name is required',
+          metricRequired: 'Metric is required',
+          operatorRequired: 'Operator is required',
+          thresholdRequired: 'Threshold must be a number',
+          windowRange: 'Window must be between 1 and 1440 minutes',
+          sustainedRange: 'Sustained must be between 1 and 1440 minutes',
+          cooldownRange: 'Cooldown must be between 0 and 1440 minutes'
+        }
+      },
       errors: {
         title: 'Recent Errors',
         trackingTitle: 'Error Log Tracking',
