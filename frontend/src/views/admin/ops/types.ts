@@ -35,7 +35,7 @@ export interface AlertRule {
   threshold: number
   window_minutes: number
   sustained_minutes: number
-  severity: AlertSeverity
+  severity: OpsSeverity
   cooldown_minutes: number
   notify_email: boolean
   created_at?: string
