@@ -716,6 +716,34 @@ export async function getErrorTimeseries(params?: GetErrorTimeseriesParams): Pro
   return data
 }
 
+export type AccountStats = {
+  error_count: number
+  success_count: number
+  timeout_count: number
+  rate_limit_count: number
+}
+
+export type AccountStatusSummary = {
+  account_id: number
+  stats_1h: AccountStats
+  stats_24h: AccountStats
+}
+
+export type GetAllAccountStatusResponse = {
+  accounts: AccountStatusSummary[]
+  total: number
+}
+
+export async function getAllAccountStatus(): Promise<GetAllAccountStatusResponse> {
+  const { data } = await apiClient.get<GetAllAccountStatusResponse>('/admin/ops/account-status')
+  return data
+}
+
+export async function getAccountStatusByID(accountId: number): Promise<AccountStatusSummary> {
+  const { data } = await apiClient.get<AccountStatusSummary>('/admin/ops/account-status', { params: { account_id: accountId } })
+  return data
+}
+
 // Group Availability API
 export interface ListGroupAvailabilityStatusParams {
   search?: string
@@ -802,6 +830,8 @@ export const opsAPI = {
   getErrorsByIP,
   getErrorStatsGrouped,
   getErrorTimeseries,
+  getAllAccountStatus,
+  getAccountStatusByID,
   listGroupAvailabilityStatus,
   listGroupAvailabilityEvents,
   updateGroupAvailabilityConfig,

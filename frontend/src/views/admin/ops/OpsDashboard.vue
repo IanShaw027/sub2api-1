@@ -24,6 +24,7 @@ import OpsMetricsCharts from './components/OpsMetricsCharts.vue'
 import OpsGroupAvailabilityCard from './components/OpsGroupAvailabilityCard.vue'
 import OpsGroupAvailabilityEventsCard from './components/OpsGroupAvailabilityEventsCard.vue'
 import OpsErrorAnalyticsCard from './components/OpsErrorAnalyticsCard.vue'
+import OpsAccountStatusCard from './components/OpsAccountStatusCard.vue'
 import OpsRuntimeSettingsCard from './components/OpsRuntimeSettingsCard.vue'
 import OpsEmailNotificationCard from './components/OpsEmailNotificationCard.vue'
 import OpsAlertEventsCard from './components/OpsAlertEventsCard.vue'
@@ -494,6 +495,9 @@ watch(timeRange, () => {
 
       <!-- Error Analytics -->
       <OpsErrorAnalyticsCard v-if="!(loading && !hasLoadedOnce)" :time-range="timeRange" />
+
+      <!-- Account Status -->
+      <OpsAccountStatusCard v-if="!(loading && !hasLoadedOnce)" />
 
       <!-- Group Availability Monitoring -->
       <OpsGroupAvailabilityCard v-if="!(loading && !hasLoadedOnce)" />

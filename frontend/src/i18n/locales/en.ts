@@ -817,6 +817,28 @@ export default {
           }
         }
       },
+      accountStatus: {
+        title: 'Account Health',
+        description: 'Recent error/timeout/rate-limit counts per active account',
+        loading: 'Loading...',
+        empty: 'No account status data',
+        loadFailed: 'Failed to load account status',
+        searchPlaceholder: 'Search account_id...',
+        sort: {
+          error1h: 'Errors (1h)',
+          error24h: 'Errors (24h)',
+          timeout1h: 'Timeouts (1h)',
+          rateLimit1h: 'Rate limits (1h)'
+        },
+        table: {
+          accountId: 'Account ID',
+          errors1h: 'Errors (1h)',
+          timeouts1h: 'Timeouts (1h)',
+          rateLimits1h: '429 (1h)',
+          errors24h: 'Errors (24h)'
+        },
+        footer: 'Showing top {shown} of {total}'
+      },
       errors: {
         title: 'Recent Errors',
         trackingTitle: 'Error Log Tracking',

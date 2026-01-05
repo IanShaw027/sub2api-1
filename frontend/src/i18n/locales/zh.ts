@@ -843,6 +843,28 @@ export default {
           }
         }
       },
+      accountStatus: {
+        title: '账号健康度',
+        description: '按账号统计最近的错误/超时/限流次数，辅助定位拖累整体成功率的账号',
+        loading: '加载中...',
+        empty: '暂无账号状态数据',
+        loadFailed: '加载账号状态失败',
+        searchPlaceholder: '搜索账号ID...',
+        sort: {
+          error1h: '错误数（1小时）',
+          error24h: '错误数（24小时）',
+          timeout1h: '超时数（1小时）',
+          rateLimit1h: '限流数（1小时）'
+        },
+        table: {
+          accountId: '账号ID',
+          errors1h: '错误（1小时）',
+          timeouts1h: '超时（1小时）',
+          rateLimits1h: '429（1小时）',
+          errors24h: '错误（24小时）'
+        },
+        footer: '展示前 {shown} 条（共 {total} 条）'
+      },
       errors: {
         title: '最近错误',
         trackingTitle: '异常日志追踪',
