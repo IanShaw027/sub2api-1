@@ -164,7 +164,7 @@ export interface OpsAlertRuntimeSettings {
     global_reason: string
     entries?: Array<{
       rule_id?: number
-      severities?: Array<AlertSeverity | string>
+      severities?: Array<OpsSeverity | string>
       until_rfc3339: string
       reason: string
     }>

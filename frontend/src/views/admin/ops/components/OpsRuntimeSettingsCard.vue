@@ -23,6 +23,22 @@ const draftGroupAvailability = ref<OpsGroupAvailabilityRuntimeSettings | null>(n
 
 type ValidationResult = { valid: boolean, errors: string[] }
 
+function normalizeSeverities(input: Array<string | null | undefined> | null | undefined): string[] {
+  if (!input || input.length === 0) return []
+  const allowed = new Set(['P0', 'P1', 'P2', 'P3'])
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const raw of input) {
+    const s = String(raw || '').trim().toUpperCase()
+    if (!s) continue
+    if (!allowed.has(s)) continue
+    if (seen.has(s)) continue
+    seen.add(s)
+    out.push(s)
+  }
+  return out
+}
+
 function validateRuntimeSettings(
   settings: OpsAlertRuntimeSettings | OpsGroupAvailabilityRuntimeSettings,
   opts: { requireKeyPrefix?: string } = {}
@@ -54,6 +70,34 @@ function validateRuntimeSettings(
       if (until) {
         const parsed = Date.parse(until)
         if (!Number.isFinite(parsed)) errors.push(t('admin.ops.runtime.silencing.validation.timeFormat'))
+      }
+
+      const entries = Array.isArray(silencing.entries) ? silencing.entries : []
+      for (let idx = 0; idx < entries.length; idx++) {
+        const entry = entries[idx]
+        const untilEntry = (entry?.until_rfc3339 || '').trim()
+        if (!untilEntry) {
+          errors.push(t('admin.ops.runtime.silencing.entries.validation.untilRequired'))
+          break
+        }
+        const parsedEntry = Date.parse(untilEntry)
+        if (!Number.isFinite(parsedEntry)) {
+          errors.push(t('admin.ops.runtime.silencing.entries.validation.untilFormat'))
+          break
+        }
+        const ruleId = (entry as any)?.rule_id
+        if (typeof ruleId === 'number' && (!Number.isFinite(ruleId) || ruleId <= 0)) {
+          errors.push(t('admin.ops.runtime.silencing.entries.validation.ruleIdPositive'))
+          break
+        }
+        if ((entry as any)?.severities) {
+          const raw = (entry as any).severities
+          const normalized = normalizeSeverities(Array.isArray(raw) ? raw : [raw])
+          if (Array.isArray(raw) && raw.length > 0 && normalized.length === 0) {
+            errors.push(t('admin.ops.runtime.silencing.entries.validation.severitiesFormat'))
+            break
+          }
+        }
       }
     }
   }
@@ -101,6 +145,9 @@ function openAlertEditor() {
         entries: []
       }
     }
+    if (!Array.isArray(draftAlert.value.silencing.entries)) {
+      draftAlert.value.silencing.entries = []
+    }
   }
   showAlertEditor.value = true
 }
@@ -111,11 +158,70 @@ function openGroupAvailabilityEditor() {
   showGroupAvailabilityEditor.value = true
 }
 
+function addSilenceEntry() {
+  if (!draftAlert.value) return
+  if (!draftAlert.value.silencing) {
+    draftAlert.value.silencing = { enabled: true, global_until_rfc3339: '', global_reason: '', entries: [] }
+  }
+  if (!Array.isArray(draftAlert.value.silencing.entries)) {
+    draftAlert.value.silencing.entries = []
+  }
+  draftAlert.value.silencing.entries.push({
+    rule_id: undefined,
+    severities: [],
+    until_rfc3339: '',
+    reason: ''
+  })
+}
+
+function removeSilenceEntry(index: number) {
+  if (!draftAlert.value?.silencing?.entries) return
+  draftAlert.value.silencing.entries.splice(index, 1)
+}
+
+function updateSilenceEntryRuleId(index: number, raw: string) {
+  const entries = draftAlert.value?.silencing?.entries
+  if (!entries || !entries[index]) return
+  const trimmed = raw.trim()
+  if (!trimmed) {
+    delete (entries[index] as any).rule_id
+    return
+  }
+  const n = Number.parseInt(trimmed, 10)
+  ;(entries[index] as any).rule_id = Number.isFinite(n) ? n : undefined
+}
+
+function updateSilenceEntrySeverities(index: number, raw: string) {
+  const entries = draftAlert.value?.silencing?.entries
+  if (!entries || !entries[index]) return
+  const parts = raw.split(',').map(s => s.trim()).filter(Boolean)
+  ;(entries[index] as any).severities = normalizeSeverities(parts)
+}
+
+function getSilenceEntrySeveritiesText(index: number): string {
+  const entries = draftAlert.value?.silencing?.entries
+  if (!entries || !entries[index]) return ''
+  const s = (entries[index] as any).severities
+  return Array.isArray(s) ? s.join(',') : ''
+}
+
 async function saveAlertSettings() {
   if (!draftAlert.value) return
   if (!alertValidation.value.valid) {
     appStore.showError(alertValidation.value.errors[0] || t('admin.ops.runtime.validation.invalid'))
     return
+  }
+  // Normalize silencing entries before sending to backend.
+  if (draftAlert.value.silencing) {
+    if (!Array.isArray(draftAlert.value.silencing.entries)) {
+      draftAlert.value.silencing.entries = []
+    }
+    draftAlert.value.silencing.entries = draftAlert.value.silencing.entries.map((e: any) => ({
+      rule_id: typeof e.rule_id === 'number' && Number.isFinite(e.rule_id) && e.rule_id > 0 ? e.rule_id : undefined,
+      severities: normalizeSeverities(e.severities),
+      until_rfc3339: String(e.until_rfc3339 || '').trim(),
+      reason: String(e.reason || '').trim()
+    }))
   }
   saving.value = true
   try {
@@ -301,6 +407,94 @@ onMounted(() => {
             <input v-model="draftAlert.silencing.global_reason" type="text" class="input" :placeholder="t('admin.ops.runtime.silencing.reasonPlaceholder')" />
           </div>
         </div>
+
+        <details class="mt-4">
+          <summary class="cursor-pointer text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400">
+            {{ t('admin.ops.runtime.silencing.entries.title') }}
+          </summary>
+          <div class="mt-3 space-y-3">
+            <p class="text-[11px] text-gray-500 dark:text-gray-400">{{ t('admin.ops.runtime.silencing.entries.hint') }}</p>
+
+            <div class="flex justify-end">
+              <button class="btn btn-sm btn-secondary" type="button" @click="addSilenceEntry">
+                {{ t('admin.ops.runtime.silencing.entries.add') }}
+              </button>
+            </div>
+
+            <div v-if="(draftAlert.silencing.entries || []).length === 0" class="rounded-lg border border-dashed border-gray-200 p-4 text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400">
+              {{ t('admin.ops.runtime.silencing.entries.empty') }}
+            </div>
+
+            <div v-else class="space-y-3">
+              <div
+                v-for="(entry, idx) in draftAlert.silencing.entries"
+                :key="idx"
+                class="rounded-xl border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800"
+              >
+                <div class="mb-3 flex items-center justify-between gap-3">
+                  <div class="text-xs font-bold text-gray-700 dark:text-gray-200">
+                    {{ t('admin.ops.runtime.silencing.entries.entryTitle', { n: idx + 1 }) }}
+                  </div>
+                  <button class="btn btn-sm btn-danger" type="button" @click="removeSilenceEntry(idx)">
+                    {{ t('common.delete') }}
+                  </button>
+                </div>
+
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div>
+                    <div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-300">
+                      {{ t('admin.ops.runtime.silencing.entries.ruleId') }}
+                    </div>
+                    <input
+                      :value="typeof entry.rule_id === 'number' ? String(entry.rule_id) : ''"
+                      type="text"
+                      class="input"
+                      :placeholder="t('admin.ops.runtime.silencing.entries.ruleIdPlaceholder')"
+                      @input="updateSilenceEntryRuleId(idx, ($event.target as HTMLInputElement).value)"
+                    />
+                  </div>
+
+                  <div>
+                    <div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-300">
+                      {{ t('admin.ops.runtime.silencing.entries.severities') }}
+                    </div>
+                    <input
+                      :value="getSilenceEntrySeveritiesText(idx)"
+                      type="text"
+                      class="input"
+                      :placeholder="t('admin.ops.runtime.silencing.entries.severitiesPlaceholder')"
+                      @input="updateSilenceEntrySeverities(idx, ($event.target as HTMLInputElement).value)"
+                    />
+                  </div>
+
+                  <div class="md:col-span-2">
+                    <div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-300">
+                      {{ t('admin.ops.runtime.silencing.entries.until') }}
+                    </div>
+                    <input
+                      v-model="entry.until_rfc3339"
+                      type="text"
+                      class="input font-mono text-sm"
+                      :placeholder="t('admin.ops.runtime.silencing.untilPlaceholder')"
+                    />
+                  </div>
+
+                  <div class="md:col-span-2">
+                    <div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-300">
+                      {{ t('admin.ops.runtime.silencing.entries.reason') }}
+                    </div>
+                    <input
+                      v-model="entry.reason"
+                      type="text"
+                      class="input"
+                      :placeholder="t('admin.ops.runtime.silencing.reasonPlaceholder')"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </details>
       </div>
 
       <details class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-600 dark:bg-dark-800">

@@ -1116,6 +1116,25 @@ export default {
           untilHint: 'Leave empty to only toggle silencing without an expiry (not recommended).',
           reason: 'Reason',
           reasonPlaceholder: 'e.g., planned maintenance',
+          entries: {
+            title: 'Advanced: targeted silencing',
+            hint: 'Optional: silence only certain rules or severities. Leave fields empty to match all.',
+            add: 'Add Entry',
+            empty: 'No targeted entries',
+            entryTitle: 'Entry #{n}',
+            ruleId: 'Rule ID (optional)',
+            ruleIdPlaceholder: 'e.g., 1',
+            severities: 'Severities (optional)',
+            severitiesPlaceholder: 'e.g., P0,P1 (empty = all)',
+            until: 'Until (RFC3339)',
+            reason: 'Reason',
+            validation: {
+              untilRequired: 'Entry until time is required',
+              untilFormat: 'Entry until time must be a valid RFC3339 timestamp',
+              ruleIdPositive: 'Entry rule_id must be a positive integer',
+              severitiesFormat: 'Entry severities must be a comma-separated list of P0..P3'
+            }
+          },
           validation: {
             timeFormat: 'Silence time must be a valid RFC3339 timestamp'
           }

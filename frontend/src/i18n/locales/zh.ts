@@ -1141,6 +1141,25 @@ export default {
           untilHint: '建议填写截止时间，避免忘记关闭静默。',
           reason: '原因',
           reasonPlaceholder: '例如：计划维护',
+          entries: {
+            title: '高级：定向静默',
+            hint: '可选：仅静默特定规则或特定级别。字段留空表示匹配全部。',
+            add: '新增条目',
+            empty: '暂无定向静默条目',
+            entryTitle: '条目 #{n}',
+            ruleId: '规则ID（可选）',
+            ruleIdPlaceholder: '例如：1',
+            severities: '级别（可选）',
+            severitiesPlaceholder: '例如：P0,P1（留空=全部）',
+            until: '截止时间（RFC3339）',
+            reason: '原因',
+            validation: {
+              untilRequired: '条目截止时间不能为空',
+              untilFormat: '条目截止时间必须为合法的 RFC3339 时间戳',
+              ruleIdPositive: '条目 rule_id 必须为正整数',
+              severitiesFormat: '条目级别必须为 P0..P3 的逗号分隔列表'
+            }
+          },
           validation: {
             timeFormat: '静默时间必须为合法的 RFC3339 时间戳'
           }
