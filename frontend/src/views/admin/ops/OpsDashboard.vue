@@ -26,6 +26,7 @@ import OpsGroupAvailabilityEventsCard from './components/OpsGroupAvailabilityEve
 import OpsRuntimeSettingsCard from './components/OpsRuntimeSettingsCard.vue'
 import OpsEmailNotificationCard from './components/OpsEmailNotificationCard.vue'
 import OpsAlertEventsCard from './components/OpsAlertEventsCard.vue'
+import OpsErrorByIPCard from './components/OpsErrorByIPCard.vue'
 import OpsErrorLogTable from './components/OpsErrorLogTable.vue'
 import OpsDashboardSkeleton from './components/OpsDashboardSkeleton.vue'
 import OpsRequestDetailsModal, { type OpsRequestDetailsPreset } from './components/OpsRequestDetailsModal.vue'
@@ -504,6 +505,13 @@ watch(timeRange, () => {
 
       <!-- Alert Events -->
       <OpsAlertEventsCard v-if="!(loading && !hasLoadedOnce)" />
+
+      <!-- Errors by IP -->
+      <OpsErrorByIPCard
+        v-if="!(loading && !hasLoadedOnce)"
+        :time-range="timeRange"
+        @openErrorDetail="openErrorDetailById"
+      />
 
       <!-- L3: Error Logs Query Section -->
       <OpsErrorLogTable

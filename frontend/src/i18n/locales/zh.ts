@@ -785,6 +785,33 @@ export default {
           email: '邮件已发送'
         }
       },
+      ipErrors: {
+        title: '异常 IP 排行',
+        description: '按客户端 IP 聚合错误，便于快速定位异常流量',
+        loading: '加载中...',
+        empty: '暂无 IP 维度统计',
+        loadFailed: '加载 IP 错误统计失败',
+        details: '详情',
+        view: '查看',
+        range: '时间范围',
+        modalTitle: '来自 {ip} 的错误',
+        sort: {
+          errorCount: '按错误数排序',
+          lastSeen: '按最近出现排序'
+        },
+        table: {
+          ip: '客户端IP',
+          count: '错误数',
+          firstSeen: '首次出现',
+          lastSeen: '最近出现',
+          platform: '平台',
+          phase: '阶段',
+          severity: '级别',
+          status: '状态码',
+          requestId: '请求ID',
+          actions: '操作'
+        }
+      },
       errors: {
         title: '最近错误',
         trackingTitle: '异常日志追踪',

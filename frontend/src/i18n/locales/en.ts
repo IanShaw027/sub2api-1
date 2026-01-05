@@ -759,6 +759,33 @@ export default {
           email: 'Email Sent'
         }
       },
+      ipErrors: {
+        title: 'Top Error IPs',
+        description: 'Aggregate errors by client IP for fast incident triage',
+        loading: 'Loading...',
+        empty: 'No IP error stats',
+        loadFailed: 'Failed to load IP error statistics',
+        details: 'Details',
+        view: 'View',
+        range: 'Range',
+        modalTitle: 'Errors from {ip}',
+        sort: {
+          errorCount: 'Sort: Error Count',
+          lastSeen: 'Sort: Last Seen'
+        },
+        table: {
+          ip: 'Client IP',
+          count: 'Errors',
+          firstSeen: 'First Seen',
+          lastSeen: 'Last Seen',
+          platform: 'Platform',
+          phase: 'Phase',
+          severity: 'Severity',
+          status: 'Status',
+          requestId: 'Request ID',
+          actions: 'Actions'
+        }
+      },
       errors: {
         title: 'Recent Errors',
         trackingTitle: 'Error Log Tracking',

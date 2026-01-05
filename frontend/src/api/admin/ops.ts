@@ -7,6 +7,7 @@ import { apiClient } from '../client'
 import type {
   AlertRule,
   AlertEvent,
+  IPErrorStats,
   GroupAvailabilityConfig,
   GroupAvailabilityStatus,
   GroupAvailabilityEvent,
@@ -642,6 +643,44 @@ export async function listAlertEvents(limit = 100): Promise<AlertEvent[]> {
   return data
 }
 
+export interface GetErrorStatsByIPParams {
+  start_time: string
+  end_time: string
+  limit?: number
+  sort_by?: 'error_count' | 'last_error_time'
+  sort_order?: 'asc' | 'desc'
+}
+
+export interface GetErrorStatsByIPResponse {
+  total: number
+  data: IPErrorStats[]
+}
+
+export async function getErrorStatsByIP(params: GetErrorStatsByIPParams): Promise<GetErrorStatsByIPResponse> {
+  const { data } = await apiClient.get<GetErrorStatsByIPResponse>('/admin/ops/errors/by-ip', { params })
+  return data
+}
+
+export interface GetErrorsByIPParams {
+  start_time: string
+  end_time: string
+  page?: number
+  page_size?: number
+}
+
+export interface GetErrorsByIPResponse {
+  ip: string
+  total: number
+  page: number
+  page_size: number
+  errors: OpsErrorLog[]
+}
+
+export async function getErrorsByIP(ip: string, params: GetErrorsByIPParams): Promise<GetErrorsByIPResponse> {
+  const { data } = await apiClient.get<GetErrorsByIPResponse>(`/admin/ops/errors/by-ip/${encodeURIComponent(ip)}`, { params })
+  return data
+}
+
 // Group Availability API
 export interface ListGroupAvailabilityStatusParams {
   search?: string
@@ -724,6 +763,8 @@ export const opsAPI = {
   updateAlertRule,
   deleteAlertRule,
   listAlertEvents,
+  getErrorStatsByIP,
+  getErrorsByIP,
   listGroupAvailabilityStatus,
   listGroupAvailabilityEvents,
   updateGroupAvailabilityConfig,

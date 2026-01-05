@@ -63,6 +63,14 @@ export interface AlertEvent {
   created_at: string
 }
 
+export interface IPErrorStats {
+  client_ip: string
+  error_count: number
+  first_error_time: string
+  last_error_time: string
+  error_types?: Record<string, number>
+}
+
 export interface GroupAvailabilityConfig {
   id?: number
   group_id: number
