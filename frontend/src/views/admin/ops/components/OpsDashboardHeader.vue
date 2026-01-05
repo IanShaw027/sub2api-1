@@ -17,6 +17,8 @@ interface Props {
   wsReconnectInMs?: number | null
   realTimeQPS: number
   realTimeTPS: number
+  platform: string
+  groupId: number | null
   timeRange: string
   loading: boolean
   lastUpdated: Date
@@ -43,8 +45,6 @@ type RequestDetailsPreset = {
 }
 
 // --- Global Filters ---
-const selectedPlatform = ref('')
-const selectedGroupId = ref<number | null>(null)
 const groups = ref<Array<{ id: number, name: string }>>([])
 
 // Platform options
@@ -82,13 +82,11 @@ onMounted(async () => {
 })
 
 function handlePlatformChange(val: string | number | boolean | null) {
-  selectedPlatform.value = String(val || '')
   emit('update:platform', String(val || ''))
 }
 
 function handleGroupChange(val: string | number | boolean | null) {
   const id = val ? Number(val) : null
-  selectedGroupId.value = id
   emit('update:group', id)
 }
 
@@ -327,14 +325,14 @@ function openDetails(preset: RequestDetailsPreset) {
         </a>
 
         <Select
-          :model-value="selectedPlatform"
+          :model-value="platform"
           :options="platformOptions"
           @change="handlePlatformChange"
           class="w-full sm:w-[140px]"
         />
 
         <Select
-          :model-value="selectedGroupId"
+          :model-value="groupId"
           :options="groupOptions"
           @change="handleGroupChange"
           class="w-full sm:w-[140px]"

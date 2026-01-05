@@ -131,6 +131,7 @@ function applyQuickFilter(type: string) {
     activeQuickFilter.value = ''
     emit('update:filters', {
       platforms: [],
+      groupId: null,
       statusCodes: [],
       clientIp: '',
       severity: '',
@@ -142,6 +143,7 @@ function applyQuickFilter(type: string) {
   activeQuickFilter.value = type
   const newFilters: ErrorFilters = {
     platforms: [],
+    groupId: null,
     statusCodes: [],
     clientIp: '',
     severity: '',

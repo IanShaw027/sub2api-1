@@ -110,6 +110,7 @@ function openRequestDetails(preset: OpsRequestDetailsPreset) {
 
 const errorFilters = ref<ErrorFilters>({
   platforms: [],
+  groupId: null,
   statusCodes: [],
   clientIp: '',
   severity: '',
@@ -123,6 +124,7 @@ const QUERY_KEYS = {
   page: 'page',
   pageSize: 'pageSize',
   platforms: 'platforms',
+  groupId: 'group_id',
   statusCodes: 'status_codes',
   severity: 'severity',
   clientIp: 'client_ip',
@@ -168,6 +170,7 @@ const applyRouteQueryToState = () => {
   }
 
   const platformsCsv = readQueryString(QUERY_KEYS.platforms)
+  const groupIdRaw = readQueryNumber(QUERY_KEYS.groupId)
   const statusCodesCsv = readQueryString(QUERY_KEYS.statusCodes)
   const severityRaw = readQueryString(QUERY_KEYS.severity)
   const clientIp = readQueryString(QUERY_KEYS.clientIp)
@@ -179,8 +182,11 @@ const applyRouteQueryToState = () => {
     : []
   const severity = allowedSeverities.has(severityRaw) ? (severityRaw as ErrorFilters['severity']) : ''
 
+  const groupId = typeof groupIdRaw === 'number' && groupIdRaw > 0 ? groupIdRaw : null
+
   errorFilters.value = {
     platforms,
+    groupId,
     statusCodes,
     clientIp,
     severity,
@@ -204,6 +210,7 @@ const buildQueryFromState = () => {
   if (errorPagination.value.pageSize !== 50) next[QUERY_KEYS.pageSize] = String(errorPagination.value.pageSize)
 
   if (errorFilters.value.platforms.length > 0) next[QUERY_KEYS.platforms] = errorFilters.value.platforms.join(',')
+  if (typeof errorFilters.value.groupId === 'number' && errorFilters.value.groupId > 0) next[QUERY_KEYS.groupId] = String(errorFilters.value.groupId)
   if (errorFilters.value.statusCodes.length > 0) next[QUERY_KEYS.statusCodes] = errorFilters.value.statusCodes.join(',')
   if (errorFilters.value.severity) next[QUERY_KEYS.severity] = errorFilters.value.severity
   if (errorFilters.value.clientIp) next[QUERY_KEYS.clientIp] = errorFilters.value.clientIp
@@ -295,6 +302,9 @@ const fetchErrors = async () => {
     // Apply filters
     if (errorFilters.value.platforms.length > 0) {
       params.platforms = errorFilters.value.platforms.join(',')
+    }
+    if (typeof errorFilters.value.groupId === 'number' && errorFilters.value.groupId > 0) {
+      params.group_id = errorFilters.value.groupId
     }
     if (errorFilters.value.severity) {
       params.severity = errorFilters.value.severity
@@ -397,6 +407,7 @@ function handleErrorFiltersUpdate(nextFilters: ErrorFilters) {
   const sameNonSearch =
     prev.clientIp === nextFilters.clientIp &&
     prev.severity === nextFilters.severity &&
+    prev.groupId === nextFilters.groupId &&
     prev.platforms.join(',') === nextFilters.platforms.join(',') &&
     prev.statusCodes.join(',') === nextFilters.statusCodes.join(',')
 
@@ -444,18 +455,22 @@ watch(timeRange, () => {
       <OpsDashboardSkeleton v-if="loading && !hasLoadedOnce" />
 
       <!-- L1: Header & Core Metrics -->
-      <OpsDashboardHeader
+  <OpsDashboardHeader
         v-else
         :overview="overview"
         :wsStatus="wsStatus"
         :wsReconnectInMs="wsReconnectInMs"
         :realTimeQPS="realTimeQPS"
         :realTimeTPS="realTimeTPS"
+        :platform="errorFilters.platforms.length === 1 ? errorFilters.platforms[0] : ''"
+        :group-id="errorFilters.groupId"
         :timeRange="timeRange"
         :loading="loading"
         :lastUpdated="lastUpdated"
         @update:timeRange="timeRange = $event"
         @refresh="fetchData"
+        @update:platform="handleErrorFiltersUpdate({ ...errorFilters, platforms: $event ? [$event] : [] })"
+        @update:group="handleErrorFiltersUpdate({ ...errorFilters, groupId: $event })"
         @openRequestDetails="openRequestDetails"
       />
 
@@ -507,10 +522,12 @@ watch(timeRange, () => {
     />
 
     <!-- Request Details Modal -->
-    <OpsRequestDetailsModal
+  <OpsRequestDetailsModal
       v-model="showRequestDetails"
       :time-range="timeRange"
       :preset="requestDetailsPreset"
+      :platform="errorFilters.platforms.length === 1 ? errorFilters.platforms[0] : ''"
+      :group-id="errorFilters.groupId"
       @openErrorDetail="openErrorDetailById"
     />
   </AppLayout>

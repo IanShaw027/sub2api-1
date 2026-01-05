@@ -8,6 +8,7 @@ export type ChartState = 'loading' | 'empty' | 'ready'
 
 export interface ErrorFilters {
   platforms: string[]
+  groupId: number | null
   statusCodes: number[]
   clientIp: string
   severity: OpsSeverity | ''

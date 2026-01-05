@@ -20,6 +20,8 @@ interface Props {
   modelValue: boolean
   timeRange: string
   preset: OpsRequestDetailsPreset
+  platform?: string
+  groupId?: number | null
 }
 
 const props = defineProps<Props>()
@@ -76,6 +78,12 @@ const fetchData = async () => {
       sort: props.preset.sort ?? 'created_at_desc'
     }
 
+    const platform = (props.platform || '').trim()
+    if (platform === 'openai' || platform === 'anthropic' || platform === 'gemini' || platform === 'antigravity') {
+      params.platform = platform
+    }
+    if (typeof props.groupId === 'number' && props.groupId > 0) params.group_id = props.groupId
+
     if (typeof props.preset.min_duration_ms === 'number') params.min_duration_ms = props.preset.min_duration_ms
     if (typeof props.preset.max_duration_ms === 'number') params.max_duration_ms = props.preset.max_duration_ms
 
@@ -103,7 +111,7 @@ watch(
 )
 
 watch(
-  () => [props.timeRange, props.preset.kind, props.preset.sort, props.preset.min_duration_ms, props.preset.max_duration_ms],
+  () => [props.timeRange, props.platform, props.groupId, props.preset.kind, props.preset.sort, props.preset.min_duration_ms, props.preset.max_duration_ms],
   () => {
     if (!props.modelValue) return
     page.value = 1
@@ -293,4 +301,3 @@ const kindBadgeClass = (kind: string) => {
     </div>
   </Teleport>
 </template>
-
