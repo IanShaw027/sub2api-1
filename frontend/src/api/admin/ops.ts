@@ -681,6 +681,41 @@ export async function getErrorsByIP(ip: string, params: GetErrorsByIPParams): Pr
   return data
 }
 
+export interface GetErrorStatsParams {
+  start_time?: string
+  end_time?: string
+  group_by?: 'platform' | 'phase' | 'severity' | ''
+}
+
+export type OpsWindowStatsGroupedItem = {
+  group: string
+  error_count: number
+  error_4xx_count: number
+  error_5xx_count: number
+  timeout_count: number
+}
+
+export type GetErrorStatsGroupedResponse = {
+  group_by: string
+  items: OpsWindowStatsGroupedItem[]
+}
+
+export async function getErrorStatsGrouped(params: GetErrorStatsParams & { group_by: 'platform' | 'phase' | 'severity' }): Promise<GetErrorStatsGroupedResponse> {
+  const { data } = await apiClient.get<GetErrorStatsGroupedResponse>('/admin/ops/error-stats', { params })
+  return data
+}
+
+export interface GetErrorTimeseriesParams {
+  start_time?: string
+  end_time?: string
+  interval?: '1m' | '5m' | '1h'
+}
+
+export async function getErrorTimeseries(params?: GetErrorTimeseriesParams): Promise<{ items: OpsMetrics[] }> {
+  const { data } = await apiClient.get<{ items: OpsMetrics[] }>('/admin/ops/error-timeseries', { params })
+  return data
+}
+
 // Group Availability API
 export interface ListGroupAvailabilityStatusParams {
   search?: string
@@ -765,6 +800,8 @@ export const opsAPI = {
   listAlertEvents,
   getErrorStatsByIP,
   getErrorsByIP,
+  getErrorStatsGrouped,
+  getErrorTimeseries,
   listGroupAvailabilityStatus,
   listGroupAvailabilityEvents,
   updateGroupAvailabilityConfig,

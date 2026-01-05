@@ -786,6 +786,37 @@ export default {
           actions: 'Actions'
         }
       },
+      errorAnalytics: {
+        title: 'Error Analytics',
+        description: 'Trend + grouped statistics for faster root-cause orientation',
+        groupBy: {
+          platform: 'Platform',
+          phase: 'Phase',
+          severity: 'Severity'
+        },
+        trend: {
+          title: 'Error Trend',
+          loading: 'Loading...',
+          empty: 'No trend data',
+          emptyHint: 'Try a wider time range',
+          loadFailed: 'Failed to load error trend',
+          errorCount: 'Errors',
+          errorRate: 'Error Rate (%)'
+        },
+        grouped: {
+          title: 'Grouped Errors',
+          loading: 'Loading...',
+          empty: 'No grouped stats',
+          emptyHint: 'Try a wider time range',
+          loadFailed: 'Failed to load grouped error stats',
+          groupBy: 'Group by',
+          table: {
+            group: 'Group',
+            errors: 'Errors',
+            timeouts: 'Timeouts'
+          }
+        }
+      },
       errors: {
         title: 'Recent Errors',
         trackingTitle: 'Error Log Tracking',

@@ -812,6 +812,37 @@ export default {
           actions: '操作'
         }
       },
+      errorAnalytics: {
+        title: '错误分析',
+        description: '错误趋势 + 维度聚合，帮助快速定位根因方向',
+        groupBy: {
+          platform: '平台',
+          phase: '阶段',
+          severity: '级别'
+        },
+        trend: {
+          title: '错误趋势',
+          loading: '加载中...',
+          empty: '暂无趋势数据',
+          emptyHint: '尝试扩大时间范围',
+          loadFailed: '加载错误趋势失败',
+          errorCount: '错误数',
+          errorRate: '错误率 (%)'
+        },
+        grouped: {
+          title: '聚合统计',
+          loading: '加载中...',
+          empty: '暂无聚合数据',
+          emptyHint: '尝试扩大时间范围',
+          loadFailed: '加载聚合统计失败',
+          groupBy: '分组维度',
+          table: {
+            group: '分组',
+            errors: '错误数',
+            timeouts: '超时数'
+          }
+        }
+      },
       errors: {
         title: '最近错误',
         trackingTitle: '异常日志追踪',
