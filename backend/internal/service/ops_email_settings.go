@@ -40,6 +40,20 @@ func resolveOpsAlertEmailRecipients(ctx context.Context, userService *UserServic
 	return []string{strings.TrimSpace(admin.Email)}, nil
 }
 
+func resolveOpsReportEmailRecipients(ctx context.Context, userService *UserService, cfg *OpsEmailNotificationConfig) ([]string, error) {
+	if cfg != nil && len(cfg.Report.Recipients) > 0 {
+		return normalizeEmails(cfg.Report.Recipients), nil
+	}
+	if userService == nil {
+		return []string{}, nil
+	}
+	admin, err := userService.GetFirstAdmin(ctx)
+	if err != nil || admin == nil || strings.TrimSpace(admin.Email) == "" {
+		return []string{}, err
+	}
+	return []string{strings.TrimSpace(admin.Email)}, nil
+}
+
 func normalizeEmails(emails []string) []string {
 	if len(emails) == 0 {
 		return []string{}
@@ -59,4 +73,3 @@ func normalizeEmails(emails []string) []string {
 	}
 	return out
 }
-

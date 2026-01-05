@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	_ "embed"
 	"fmt"
 	"html/template"
 	"math/big"
@@ -15,6 +16,9 @@ import (
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
+
+//go:embed email_layout.html
+var emailLayoutTemplate string
 
 var (
 	ErrEmailNotConfigured    = infraerrors.ServiceUnavailable("EMAIL_NOT_CONFIGURED", "email service not configured")
@@ -110,12 +114,52 @@ type EmailService struct {
 	cache       EmailCache
 }
 
+type EmailBranding struct {
+	SiteName string
+	SiteURL  string
+	LogoURL  string
+}
+
 // NewEmailService 创建邮件服务实例
 func NewEmailService(settingRepo SettingRepository, cache EmailCache) *EmailService {
 	return &EmailService{
 		settingRepo: settingRepo,
 		cache:       cache,
 	}
+}
+
+func (s *EmailService) GetBranding(ctx context.Context) EmailBranding {
+	branding := EmailBranding{
+		SiteName: "Sub2API",
+		SiteURL:  "",
+		LogoURL:  "",
+	}
+	if s == nil || s.settingRepo == nil {
+		return branding
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	settings, err := s.settingRepo.GetMultiple(ctx, []string{
+		SettingKeySiteName,
+		SettingKeySiteURL,
+		SettingKeySiteLogo,
+	})
+	if err != nil {
+		return branding
+	}
+
+	if v := strings.TrimSpace(settings[SettingKeySiteName]); v != "" {
+		branding.SiteName = v
+	}
+	if v := normalizeSiteURL(settings[SettingKeySiteURL]); v != "" {
+		branding.SiteURL = v
+	}
+	if v := strings.TrimSpace(settings[SettingKeySiteLogo]); strings.HasPrefix(v, "data:image/") {
+		branding.LogoURL = v
+	}
+	return branding
 }
 
 // GetSMTPConfig 从数据库获取SMTP配置
@@ -191,9 +235,26 @@ func (s *EmailService) SendEmailWithConfig(config *SMTPConfig, to, subject, body
 
 // SendTemplatedEmail 使用模板发送邮件
 func (s *EmailService) SendTemplatedEmail(config *SMTPConfig, to, subject string, templateData EmailTemplateData) error {
+	// Fill some defaults so callers don't have to.
+	if templateData.SiteName == "" || templateData.SiteURL == "" || templateData.LogoURL == "" || templateData.Year == 0 {
+		branding := s.GetBranding(context.Background())
+		if templateData.SiteName == "" {
+			templateData.SiteName = branding.SiteName
+		}
+		if templateData.SiteURL == "" {
+			templateData.SiteURL = branding.SiteURL
+		}
+		if templateData.LogoURL == "" {
+			templateData.LogoURL = branding.LogoURL
+		}
+		if templateData.Year == 0 {
+			templateData.Year = time.Now().Year()
+		}
+	}
+
 	tmpl, err := template.New("layout").Funcs(template.FuncMap{
 		"toUpper": strings.ToUpper,
-	}).ParseFiles("backend/internal/resources/templates/email_layout.html")
+	}).Parse(emailLayoutTemplate)
 	if err != nil {
 		return fmt.Errorf("parse template: %w", err)
 	}
@@ -204,6 +265,29 @@ func (s *EmailService) SendTemplatedEmail(config *SMTPConfig, to, subject string
 	}
 
 	return s.SendEmailWithConfig(config, to, subject, buf.String())
+}
+
+func normalizeSiteURL(raw string) string {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return ""
+	}
+	return strings.TrimRight(v, "/")
+}
+
+func joinSiteURL(base string, path string) string {
+	base = normalizeSiteURL(base)
+	if base == "" {
+		return ""
+	}
+	p := strings.TrimSpace(path)
+	if p == "" {
+		return base
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return base + p
 }
 
 // sendMailTLS 使用TLS发送邮件

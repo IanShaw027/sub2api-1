@@ -459,7 +459,23 @@ func (h *OpsHandler) GetProviderHealth(c *gin.Context) {
 // GetErrorLogs returns a paginated error log list with multi-dimensional filters.
 // GET /api/v1/admin/ops/errors
 func (h *OpsHandler) GetErrorLogs(c *gin.Context) {
-	page, pageSize := response.ParsePagination(c)
+	page := 1
+	if p := strings.TrimSpace(c.Query("page")); p != "" {
+		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
+
+	pageSize := 20
+	if ps := strings.TrimSpace(c.Query("page_size")); ps != "" {
+		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 1000 {
+			pageSize = parsed
+		}
+	} else if l := strings.TrimSpace(c.Query("limit")); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 1000 {
+			pageSize = parsed
+		}
+	}
 
 	filter := &service.ErrorLogFilter{
 		Page:     page,

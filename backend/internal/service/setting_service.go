@@ -61,6 +61,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeySiteName,
 		SettingKeySiteLogo,
 		SettingKeySiteSubtitle,
+		SettingKeySiteURL,
 		SettingKeyAPIBaseURL,
 		SettingKeyContactInfo,
 		SettingKeyDocURL,
@@ -79,6 +80,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SiteName:            s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
 		SiteLogo:            settings[SettingKeySiteLogo],
 		SiteSubtitle:        s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
+		SiteURL:             settings[SettingKeySiteURL],
 		APIBaseURL:          settings[SettingKeyAPIBaseURL],
 		ContactInfo:         settings[SettingKeyContactInfo],
 		DocURL:              settings[SettingKeyDocURL],
@@ -115,6 +117,7 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	updates[SettingKeySiteName] = settings.SiteName
 	updates[SettingKeySiteLogo] = settings.SiteLogo
 	updates[SettingKeySiteSubtitle] = settings.SiteSubtitle
+	updates[SettingKeySiteURL] = settings.SiteURL
 	updates[SettingKeyAPIBaseURL] = settings.APIBaseURL
 	updates[SettingKeyContactInfo] = settings.ContactInfo
 	updates[SettingKeyDocURL] = settings.DocURL
@@ -196,6 +199,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyEmailVerifyEnabled:  "false",
 		SettingKeySiteName:            "Sub2API",
 		SettingKeySiteLogo:            "",
+		SettingKeySiteURL:             "",
 		SettingKeyDefaultConcurrency:  strconv.Itoa(s.cfg.Default.UserConcurrency),
 		SettingKeyDefaultBalance:      strconv.FormatFloat(s.cfg.Default.UserBalance, 'f', 8, 64),
 		SettingKeySMTPPort:            "587",
@@ -220,6 +224,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		SiteName:            s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
 		SiteLogo:            settings[SettingKeySiteLogo],
 		SiteSubtitle:        s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
+		SiteURL:             settings[SettingKeySiteURL],
 		APIBaseURL:          settings[SettingKeyAPIBaseURL],
 		ContactInfo:         settings[SettingKeyContactInfo],
 		DocURL:              settings[SettingKeyDocURL],

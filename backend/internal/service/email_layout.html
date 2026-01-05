@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ .Title }}</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background: #f6f7fb;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+        color: #111827;
+      }
+      .container {
+        max-width: 680px;
+        margin: 0 auto;
+        padding: 24px 12px;
+      }
+      .card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        overflow: hidden;
+      }
+      .header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 16px 18px;
+        border-bottom: 1px solid #f1f5f9;
+      }
+      .logo {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        object-fit: contain;
+        background: #f8fafc;
+        border: 1px solid #e5e7eb;
+      }
+      .site {
+        font-weight: 700;
+        font-size: 14px;
+        color: #111827;
+        text-decoration: none;
+      }
+      .content {
+        padding: 18px;
+      }
+      h1 {
+        margin: 0 0 10px;
+        font-size: 18px;
+        line-height: 1.25;
+      }
+      p {
+        margin: 0 0 14px;
+        font-size: 13px;
+        line-height: 1.5;
+        color: #374151;
+      }
+      .btn {
+        display: inline-block;
+        padding: 10px 14px;
+        border-radius: 10px;
+        background: #2563eb;
+        color: #ffffff !important;
+        text-decoration: none;
+        font-weight: 700;
+        font-size: 13px;
+      }
+      .section {
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top: 1px solid #f1f5f9;
+      }
+      .label {
+        font-size: 12px;
+        color: #6b7280;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 8px;
+      }
+      th, td {
+        text-align: left;
+        padding: 8px 10px;
+        border-top: 1px solid #f1f5f9;
+        font-size: 12px;
+      }
+      th {
+        color: #6b7280;
+        font-weight: 700;
+        background: #fafafa;
+        border-top: none;
+      }
+      .footer {
+        padding: 14px 18px;
+        border-top: 1px solid #f1f5f9;
+        font-size: 12px;
+        color: #6b7280;
+      }
+      .muted {
+        color: #6b7280;
+      }
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="card">
+        <div class="header">
+          {{ if .LogoURL }}
+            <img class="logo" src="{{ .LogoURL }}" alt="Logo" />
+          {{ end }}
+          {{ if .SiteURL }}
+            <a class="site" href="{{ .SiteURL }}">{{ .SiteName }}</a>
+          {{ else }}
+            <span class="site">{{ .SiteName }}</span>
+          {{ end }}
+        </div>
+
+        <div class="content">
+          <h1>{{ .Title }}</h1>
+          {{ if .Message }}<p>{{ .Message }}</p>{{ end }}
+
+          {{ if .ActionURL }}
+            <p>
+              <a class="btn" href="{{ .ActionURL }}">
+                {{ if .ActionText }}{{ .ActionText }}{{ else }}Open dashboard{{ end }}
+              </a>
+            </p>
+          {{ end }}
+
+          {{ if .Alert }}
+            <div class="section">
+              <div class="label">Alert</div>
+              <table>
+                <tr>
+                  <th>Status</th>
+                  <th>Level</th>
+                  <th>Metric</th>
+                  <th>Value</th>
+                </tr>
+                <tr>
+                  <td>{{ .Alert.Status }}</td>
+                  <td class="mono">{{ .Alert.Level }}</td>
+                  <td>{{ .Alert.Metric }}</td>
+                  <td class="mono">{{ .Alert.Value }}</td>
+                </tr>
+              </table>
+            </div>
+          {{ end }}
+
+          {{ if .Report }}
+            <div class="section">
+              <div class="label">Report</div>
+              {{ if .Report.Date }}<p class="muted">Date: <span class="mono">{{ .Report.Date }}</span></p>{{ end }}
+              {{ if .Report.Stats }}
+                <table>
+                  <tr>
+                    <th>Metric</th>
+                    <th>Value</th>
+                    <th>Change</th>
+                  </tr>
+                  {{ range .Report.Stats }}
+                    <tr>
+                      <td>{{ .Label }}</td>
+                      <td class="mono">{{ .Value }}</td>
+                      <td class="mono">{{ .Change }}</td>
+                    </tr>
+                  {{ end }}
+                </table>
+              {{ end }}
+            </div>
+          {{ end }}
+        </div>
+
+        <div class="footer">
+          © {{ .Year }} {{ .SiteName }} · <span class="muted">This is an automated email.</span>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
+

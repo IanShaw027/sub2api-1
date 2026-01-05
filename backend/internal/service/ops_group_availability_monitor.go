@@ -35,7 +35,7 @@ type OpsGroupAvailabilityMonitor struct {
 	distributedSkipLogMu sync.Mutex
 	distributedSkipLogAt time.Time
 
-	emailLimiter         *tokenBucket
+	emailLimiter          *tokenBucket
 	emailLimiterSkipLogMu sync.Mutex
 	emailLimiterSkipLogAt time.Time
 
@@ -552,6 +552,9 @@ func (s *OpsGroupAvailabilityMonitor) sendEmailNotification(ctx context.Context,
 	if s.opsService == nil {
 		return false
 	}
+	if event == nil || group == nil {
+		return false
+	}
 
 	if ctx == nil {
 		ctx = context.Background()
@@ -586,15 +589,24 @@ func (s *OpsGroupAvailabilityMonitor) sendEmailNotification(ctx context.Context,
 		return false
 	}
 
+	branding := s.emailService.GetBranding(ctx)
+	actionURL := joinSiteURL(branding.SiteURL, "/admin/ops")
+
 	templateData := EmailTemplateData{
 		Type:      "alert",
 		Title:     fmt.Sprintf("分组 %s 可用账号不足", group.Name),
 		Message:   fmt.Sprintf("分组 %s 当前可用账号数 %d，低于阈值 %d", group.Name, event.AvailableAccounts, event.ThresholdAccounts),
-		LogoURL:   "https://your-site.com/logo.png",
-		SiteName:  "Sub2API",
-		SiteURL:   "https://your-site.com",
+		LogoURL:   branding.LogoURL,
+		SiteName:  branding.SiteName,
+		SiteURL:   branding.SiteURL,
 		Year:      time.Now().Year(),
-		ActionURL: fmt.Sprintf("https://your-site.com/admin/ops/groups/%d", cfg.GroupID),
+		ActionURL: actionURL,
+		ActionText: func() string {
+			if actionURL == "" {
+				return ""
+			}
+			return "打开运维监控"
+		}(),
 		Alert: &AlertData{
 			Status:    "",
 			Level:     cfg.Severity,

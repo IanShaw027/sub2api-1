@@ -352,6 +352,22 @@
               </div>
             </div>
 
+            <!-- Site URL -->
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('admin.settings.site.siteUrl') }}
+              </label>
+              <input
+                v-model="form.site_url"
+                type="url"
+                class="input font-mono text-sm"
+                :placeholder="t('admin.settings.site.siteUrlPlaceholder')"
+              />
+              <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.settings.site.siteUrlHint') }}
+              </p>
+            </div>
+
             <!-- API Base URL -->
             <div>
               <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -743,6 +759,7 @@ const form = reactive<SystemSettings>({
   site_name: 'Sub2API',
   site_logo: '',
   site_subtitle: 'Subscription to API Conversion Platform',
+  site_url: '',
   api_base_url: '',
   contact_info: '',
   doc_url: '',

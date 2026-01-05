@@ -81,6 +81,7 @@ const (
 	SettingKeySiteName     = "site_name"     // 网站名称
 	SettingKeySiteLogo     = "site_logo"     // 网站Logo (base64)
 	SettingKeySiteSubtitle = "site_subtitle" // 网站副标题
+	SettingKeySiteURL      = "site_url"      // 网站访问地址（用于邮件/外部链接等）
 	SettingKeyAPIBaseURL   = "api_base_url"  // API端点地址（用于客户端配置和导入）
 	SettingKeyContactInfo  = "contact_info"  // 客服联系方式
 	SettingKeyDocURL       = "doc_url"       // 文档链接
@@ -96,8 +97,8 @@ const (
 	SettingKeyGeminiQuotaPolicy = "gemini_quota_policy"
 
 	// Ops configuration (JSON payloads; configured via admin pages, persisted in DB)
-	SettingKeyOpsEmailNotificationConfig = "ops_email_notification_config"
-	SettingKeyOpsAlertRuntimeSettings    = "ops_alert_runtime_settings"
+	SettingKeyOpsEmailNotificationConfig          = "ops_email_notification_config"
+	SettingKeyOpsAlertRuntimeSettings             = "ops_alert_runtime_settings"
 	SettingKeyOpsGroupAvailabilityRuntimeSettings = "ops_group_availability_runtime_settings"
 )
 

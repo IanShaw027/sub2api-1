@@ -42,8 +42,8 @@ func (f *ErrorLogFilter) normalize() (page, pageSize int) {
 	if f.PageSize > 0 {
 		pageSize = f.PageSize
 	}
-	if pageSize > 100 {
-		pageSize = 100
+	if pageSize > 1000 {
+		pageSize = 1000
 	}
 	return page, pageSize
 }
@@ -97,28 +97,28 @@ type OpsEmailNotificationConfig struct {
 
 // OpsEmailAlertConfig 告警邮件通知配置
 type OpsEmailAlertConfig struct {
-	Enabled                   bool   `json:"enabled"`
-	Recipients                []string `json:"recipients"`
-	MinSeverity               string `json:"min_severity"`
-	RateLimitPerHour          int    `json:"rate_limit_per_hour"`
-	BatchingWindowSeconds     int    `json:"batching_window_seconds"`
-	IncludeResolvedAlerts     bool   `json:"include_resolved_alerts"`
+	Enabled               bool     `json:"enabled"`
+	Recipients            []string `json:"recipients"`
+	MinSeverity           string   `json:"min_severity"`
+	RateLimitPerHour      int      `json:"rate_limit_per_hour"`
+	BatchingWindowSeconds int      `json:"batching_window_seconds"`
+	IncludeResolvedAlerts bool     `json:"include_resolved_alerts"`
 }
 
 // OpsEmailReportConfig 定时报告邮件通知配置
 type OpsEmailReportConfig struct {
-	Enabled                         bool    `json:"enabled"`
-	Recipients                      []string  `json:"recipients"`
-	DailySummaryEnabled             bool    `json:"daily_summary_enabled"`
-	DailySummarySchedule            string  `json:"daily_summary_schedule"`
-	WeeklySummaryEnabled            bool    `json:"weekly_summary_enabled"`
-	WeeklySummarySchedule           string  `json:"weekly_summary_schedule"`
-	ErrorDigestEnabled              bool    `json:"error_digest_enabled"`
-	ErrorDigestSchedule             string  `json:"error_digest_schedule"`
-	ErrorDigestMinCount             int     `json:"error_digest_min_count"`
-	AccountHealthEnabled            bool    `json:"account_health_enabled"`
-	AccountHealthSchedule           string  `json:"account_health_schedule"`
-	AccountHealthErrorRateThreshold float64 `json:"account_health_error_rate_threshold"`
+	Enabled                         bool     `json:"enabled"`
+	Recipients                      []string `json:"recipients"`
+	DailySummaryEnabled             bool     `json:"daily_summary_enabled"`
+	DailySummarySchedule            string   `json:"daily_summary_schedule"`
+	WeeklySummaryEnabled            bool     `json:"weekly_summary_enabled"`
+	WeeklySummarySchedule           string   `json:"weekly_summary_schedule"`
+	ErrorDigestEnabled              bool     `json:"error_digest_enabled"`
+	ErrorDigestSchedule             string   `json:"error_digest_schedule"`
+	ErrorDigestMinCount             int      `json:"error_digest_min_count"`
+	AccountHealthEnabled            bool     `json:"account_health_enabled"`
+	AccountHealthSchedule           string   `json:"account_health_schedule"`
+	AccountHealthErrorRateThreshold float64  `json:"account_health_error_rate_threshold"`
 }
 
 // OpsEmailNotificationConfigUpdateRequest 更新邮件通知配置请求

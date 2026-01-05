@@ -34,7 +34,7 @@ type OpsAlertService struct {
 	distributedSkipLogMu sync.Mutex
 	distributedSkipLogAt time.Time
 
-	emailLimiter         *tokenBucket
+	emailLimiter          *tokenBucket
 	emailLimiterSkipLogMu sync.Mutex
 	emailLimiterSkipLogAt time.Time
 
@@ -740,6 +740,9 @@ func (s *OpsAlertService) sendEmailNotification(ctx context.Context, rule OpsAle
 	if s.opsService == nil {
 		return false
 	}
+	if event == nil {
+		return false
+	}
 
 	if ctx == nil {
 		ctx = context.Background()
@@ -774,15 +777,24 @@ func (s *OpsAlertService) sendEmailNotification(ctx context.Context, rule OpsAle
 		return false
 	}
 
+	branding := s.emailService.GetBranding(ctx)
+	actionURL := joinSiteURL(branding.SiteURL, "/admin/ops")
+
 	templateData := EmailTemplateData{
 		Type:      "alert",
 		Title:     rule.Name,
 		Message:   fmt.Sprintf("告警规则 %s 已触发", rule.Name),
-		LogoURL:   "https://your-site.com/logo.png",
-		SiteName:  "Sub2API",
-		SiteURL:   "https://your-site.com",
+		LogoURL:   branding.LogoURL,
+		SiteName:  branding.SiteName,
+		SiteURL:   branding.SiteURL,
 		Year:      time.Now().Year(),
-		ActionURL: fmt.Sprintf("https://your-site.com/admin/ops/alerts/%d", rule.ID),
+		ActionURL: actionURL,
+		ActionText: func() string {
+			if actionURL == "" {
+				return ""
+			}
+			return "打开运维监控"
+		}(),
 		Alert: &AlertData{
 			Status:    event.Status,
 			Level:     rule.Severity,

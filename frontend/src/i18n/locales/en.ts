@@ -2031,6 +2031,9 @@ export default {
         siteSubtitle: 'Site Subtitle',
         siteSubtitlePlaceholder: 'Subscription to API Conversion Platform',
         siteSubtitleHint: 'Displayed on login and register pages',
+        siteUrl: 'Site URL',
+        siteUrlPlaceholder: 'https://example.com',
+        siteUrlHint: 'Public site URL used in notification emails (e.g., Ops alerts and reports).',
         apiBaseUrl: 'API Base URL',
         apiBaseUrlPlaceholder: 'https://api.example.com',
         apiBaseUrlHint:

@@ -4,19 +4,19 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/robfig/cron/v3"
 )
 
 type OpsScheduledReportService struct {
 	opsService   *OpsService
 	userService  *UserService
 	emailService *EmailService
-	httpClient   *http.Client
 	redisClient  *redis.Client
 
 	distributedLockOn   bool
@@ -32,15 +32,18 @@ type OpsScheduledReportService struct {
 }
 
 type ScheduledReport struct {
-	ID            int64
-	Name          string
-	ReportType    string
-	TimeRange     string
-	Schedule      string
-	NotifyEmail   bool
-	Enabled       bool
-	LastRunAt     *time.Time
-	NextRunAt     time.Time
+	ID                              int64
+	Name                            string
+	ReportType                      string
+	TimeRange                       string
+	Schedule                        string
+	NotifyEmail                     bool
+	Recipients                      []string
+	ErrorDigestMinCount             int
+	AccountHealthErrorRateThreshold float64
+	Enabled                         bool
+	LastRunAt                       *time.Time
+	NextRunAt                       time.Time
 }
 
 func NewOpsScheduledReportService(opsService *OpsService, userService *UserService, emailService *EmailService, redisClient *redis.Client) *OpsScheduledReportService {
@@ -48,7 +51,6 @@ func NewOpsScheduledReportService(opsService *OpsService, userService *UserServi
 		opsService:   opsService,
 		userService:  userService,
 		emailService: emailService,
-		httpClient:   &http.Client{Timeout: 10 * time.Second},
 		redisClient:  redisClient,
 
 		distributedLockOn: true,
@@ -90,7 +92,7 @@ func (s *OpsScheduledReportService) Stop() {
 func (s *OpsScheduledReportService) run() {
 	defer s.wg.Done()
 
-	ticker := time.NewTicker(1 * time.Hour)
+	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
 	s.checkAndRunReports()
@@ -121,6 +123,9 @@ func (s *OpsScheduledReportService) checkAndRunReports() {
 		log.Printf("[ScheduledReport] failed to list reports: %v", err)
 		return
 	}
+	if len(reports) == 0 {
+		return
+	}
 
 	now := time.Now()
 	for _, report := range reports {
@@ -141,6 +146,12 @@ const (
 
 	opsScheduledReportSkipLogMinInterval = 1 * time.Minute
 )
+
+const (
+	opsScheduledReportLastRunKeyPrefix = "ops:scheduled_reports:last_run:"
+)
+
+var opsScheduledReportCronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 
 var opsScheduledReportLeaderUnlockScript = redis.NewScript(`
 if redis.call("get", KEYS[1]) == ARGV[1] then
@@ -276,10 +287,19 @@ func (s *OpsScheduledReportService) logLeaderLockSkipped(key string) {
 }
 
 func (s *OpsScheduledReportService) runReport(ctx context.Context, report *ScheduledReport, now time.Time) {
-	content, err := s.generateReportContent(ctx, report.ReportType, report.TimeRange)
+	// Mark as "run" up-front so a misconfigured SMTP setup doesn't spam retries every minute.
+	s.setLastRunAt(ctx, report.ReportType, now)
+
+	content, err := s.generateReportContentForReport(ctx, report, now)
 	if err != nil {
 		log.Printf("[ScheduledReport] failed to generate report %s: %v", report.Name, err)
 		return
+	}
+
+	if report.ReportType == "error_digest" && report.ErrorDigestMinCount > 0 {
+		if total, ok := content["total_errors"].(int); ok && total < report.ErrorDigestMinCount {
+			return
+		}
 	}
 
 	emailSent := false
@@ -292,20 +312,22 @@ func (s *OpsScheduledReportService) runReport(ctx context.Context, report *Sched
 	}
 }
 
-func (s *OpsScheduledReportService) generateReportContent(ctx context.Context, reportType string, timeRange string) (map[string]any, error) {
+func (s *OpsScheduledReportService) generateReportContentForReport(ctx context.Context, report *ScheduledReport, now time.Time) (map[string]any, error) {
 	if s.opsService == nil {
 		return nil, fmt.Errorf("ops service not initialized")
 	}
+	if report == nil {
+		return nil, fmt.Errorf("report is nil")
+	}
 
-	duration, err := parseTimeRange(timeRange)
+	duration, err := parseTimeRange(report.TimeRange)
 	if err != nil {
 		return nil, err
 	}
 
-	now := time.Now()
 	startTime := now.Add(-duration)
 
-	switch reportType {
+	switch report.ReportType {
 	case "daily_summary":
 		return s.generateDailySummary(ctx, startTime, now)
 	case "weekly_summary":
@@ -313,9 +335,13 @@ func (s *OpsScheduledReportService) generateReportContent(ctx context.Context, r
 	case "error_digest":
 		return s.generateErrorDigest(ctx, startTime, now)
 	case "account_health":
-		return s.generateAccountHealth(ctx, startTime, now)
+		threshold := report.AccountHealthErrorRateThreshold
+		if threshold <= 0 || threshold > 100 {
+			threshold = 10
+		}
+		return s.generateAccountHealth(ctx, startTime, now, threshold)
 	default:
-		return nil, fmt.Errorf("unknown report type: %s", reportType)
+		return nil, fmt.Errorf("unknown report type: %s", report.ReportType)
 	}
 }
 
@@ -396,7 +422,7 @@ func (s *OpsScheduledReportService) generateErrorDigest(ctx context.Context, sta
 	}, nil
 }
 
-func (s *OpsScheduledReportService) generateAccountHealth(ctx context.Context, startTime, endTime time.Time) (map[string]any, error) {
+func (s *OpsScheduledReportService) generateAccountHealth(ctx context.Context, startTime, endTime time.Time, errorRateThreshold float64) (map[string]any, error) {
 	if s.opsService == nil {
 		return nil, fmt.Errorf("ops service not initialized")
 	}
@@ -418,7 +444,7 @@ func (s *OpsScheduledReportService) generateAccountHealth(ctx context.Context, s
 		}
 
 		errorRate := float64(stats.ErrorCount) / float64(totalReqs) * 100
-		if errorRate > 10 {
+		if errorRate > errorRateThreshold {
 			unhealthyAccounts = append(unhealthyAccounts, map[string]any{
 				"account_id":  status.AccountID,
 				"error_rate":  fmt.Sprintf("%.2f%%", errorRate),
@@ -444,37 +470,54 @@ func (s *OpsScheduledReportService) sendReportEmail(ctx context.Context, report 
 		return false
 	}
 
-	admin, err := s.userService.GetFirstAdmin(ctx)
-	if err != nil || admin == nil || admin.Email == "" {
-		return false
-	}
-
 	config, err := s.emailService.GetSMTPConfig(ctx)
 	if err != nil {
 		log.Printf("[ScheduledReport] email config load failed: %v", err)
 		return false
 	}
 
+	recipients := normalizeEmails(report.Recipients)
+	if len(recipients) == 0 {
+		admin, err := s.userService.GetFirstAdmin(ctx)
+		if err != nil || admin == nil || strings.TrimSpace(admin.Email) == "" {
+			return false
+		}
+		recipients = []string{strings.TrimSpace(admin.Email)}
+	}
+
 	reportData := buildReportData(content)
+	branding := s.emailService.GetBranding(ctx)
+	actionURL := joinSiteURL(branding.SiteURL, "/admin/ops")
+
 	templateData := EmailTemplateData{
 		Type:      "report",
 		Title:     report.Name,
-		LogoURL:   "https://your-site.com/logo.png",
-		SiteName:  "Sub2API",
-		SiteURL:   "https://your-site.com",
 		Year:      time.Now().Year(),
-		ActionURL: "https://your-site.com/admin/ops/reports",
-		Report:    reportData,
+		LogoURL:   branding.LogoURL,
+		SiteName:  branding.SiteName,
+		SiteURL:   branding.SiteURL,
+		ActionURL: actionURL,
+		ActionText: func() string {
+			if actionURL == "" {
+				return ""
+			}
+			return "打开运维监控"
+		}(),
+		Report: reportData,
 	}
 
 	subject := fmt.Sprintf("[Scheduled Report] %s", report.Name)
 
-	if err := s.emailService.SendTemplatedEmail(config, admin.Email, subject, templateData); err != nil {
-		log.Printf("[ScheduledReport] email send failed: %v", err)
-		return false
+	anySent := false
+	for _, to := range recipients {
+		if err := s.emailService.SendTemplatedEmail(config, to, subject, templateData); err != nil {
+			log.Printf("[ScheduledReport] email send failed (to=%s): %v", to, err)
+			continue
+		}
+		anySent = true
 	}
 
-	return true
+	return anySent
 }
 
 func buildReportData(content map[string]any) *ReportData {
@@ -483,11 +526,15 @@ func buildReportData(content map[string]any) *ReportData {
 		Stats: []StatItem{},
 	}
 
-	if totalReqs, ok := content["total_requests"].(int); ok {
-		reportData.Stats = append(reportData.Stats, StatItem{
-			Label: "总请求数",
-			Value: fmt.Sprintf("%d", totalReqs),
-		})
+	if v, ok := content["total_requests"]; ok {
+		switch vv := v.(type) {
+		case int64:
+			reportData.Stats = append(reportData.Stats, StatItem{Label: "总请求数", Value: fmt.Sprintf("%d", vv)})
+		case int:
+			reportData.Stats = append(reportData.Stats, StatItem{Label: "总请求数", Value: fmt.Sprintf("%d", vv)})
+		case float64:
+			reportData.Stats = append(reportData.Stats, StatItem{Label: "总请求数", Value: fmt.Sprintf("%.0f", vv)})
+		}
 	}
 	if successRate, ok := content["success_rate"].(string); ok {
 		reportData.Stats = append(reportData.Stats, StatItem{
@@ -506,9 +553,92 @@ func buildReportData(content map[string]any) *ReportData {
 }
 
 func (s *OpsScheduledReportService) listScheduledReports(ctx context.Context) ([]ScheduledReport, error) {
-	// TODO: 从数据库读取配置
-	// 目前返回空列表，等待数据库表创建
-	return []ScheduledReport{}, nil
+	if s == nil || s.opsService == nil {
+		return []ScheduledReport{}, nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	emailCfg, err := s.opsService.GetEmailNotificationConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if emailCfg == nil || !emailCfg.Report.Enabled {
+		return []ScheduledReport{}, nil
+	}
+
+	recipients, err := resolveOpsReportEmailRecipients(ctx, s.userService, emailCfg)
+	if err != nil {
+		log.Printf("[ScheduledReport] resolve recipients failed: %v", err)
+	}
+
+	type reportDef struct {
+		enabled   bool
+		name      string
+		kind      string
+		timeRange string
+		schedule  string
+	}
+
+	defs := []reportDef{
+		{enabled: emailCfg.Report.DailySummaryEnabled, name: "日报", kind: "daily_summary", timeRange: "24h", schedule: emailCfg.Report.DailySummarySchedule},
+		{enabled: emailCfg.Report.WeeklySummaryEnabled, name: "周报", kind: "weekly_summary", timeRange: "7d", schedule: emailCfg.Report.WeeklySummarySchedule},
+		{enabled: emailCfg.Report.ErrorDigestEnabled, name: "错误摘要", kind: "error_digest", timeRange: "24h", schedule: emailCfg.Report.ErrorDigestSchedule},
+		{enabled: emailCfg.Report.AccountHealthEnabled, name: "账号健康", kind: "account_health", timeRange: "24h", schedule: emailCfg.Report.AccountHealthSchedule},
+	}
+
+	now := time.Now()
+	reports := make([]ScheduledReport, 0, len(defs))
+
+	for idx, d := range defs {
+		if !d.enabled {
+			continue
+		}
+		spec := strings.TrimSpace(d.schedule)
+		if spec == "" {
+			continue
+		}
+		sched, err := opsScheduledReportCronParser.Parse(spec)
+		if err != nil {
+			log.Printf("[ScheduledReport] invalid cron spec=%q for %s: %v", spec, d.kind, err)
+			continue
+		}
+
+		lastRun := s.getLastRunAt(ctx, d.kind)
+		base := lastRun
+		if base.IsZero() {
+			// Allow a schedule matching the current minute to trigger immediately after startup.
+			base = now.Add(-1 * time.Minute)
+		}
+
+		next := sched.Next(base)
+		if next.IsZero() {
+			continue
+		}
+
+		var lastRunPtr *time.Time
+		if !lastRun.IsZero() {
+			lastRunPtr = &lastRun
+		}
+
+		reports = append(reports, ScheduledReport{
+			ID:                              int64(idx + 1),
+			Name:                            d.name,
+			ReportType:                      d.kind,
+			TimeRange:                       d.timeRange,
+			Schedule:                        spec,
+			NotifyEmail:                     true,
+			Recipients:                      recipients,
+			ErrorDigestMinCount:             emailCfg.Report.ErrorDigestMinCount,
+			AccountHealthErrorRateThreshold: emailCfg.Report.AccountHealthErrorRateThreshold,
+			Enabled:                         true,
+			LastRunAt:                       lastRunPtr,
+			NextRunAt:                       next,
+		})
+	}
+
+	return reports, nil
 }
 
 func formatReportEmail(content map[string]any) string {
@@ -524,4 +654,39 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func (s *OpsScheduledReportService) getLastRunAt(ctx context.Context, reportType string) time.Time {
+	if s == nil || s.redisClient == nil {
+		return time.Time{}
+	}
+	key := opsScheduledReportLastRunKeyPrefix + strings.TrimSpace(reportType)
+	if strings.TrimSpace(reportType) == "" {
+		return time.Time{}
+	}
+	raw, err := s.redisClient.Get(ctx, key).Result()
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return time.Time{}
+	}
+	sec, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+	if err != nil || sec <= 0 {
+		return time.Time{}
+	}
+	return time.Unix(sec, 0)
+}
+
+func (s *OpsScheduledReportService) setLastRunAt(ctx context.Context, reportType string, at time.Time) {
+	if s == nil || s.redisClient == nil {
+		return
+	}
+	rt := strings.TrimSpace(reportType)
+	if rt == "" {
+		return
+	}
+	if at.IsZero() {
+		at = time.Now()
+	}
+	key := opsScheduledReportLastRunKeyPrefix + rt
+	// Keep for ~90 days; this is only a dedupe hint.
+	_ = s.redisClient.Set(ctx, key, strconv.FormatInt(at.Unix(), 10), 90*24*time.Hour).Err()
 }
