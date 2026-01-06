@@ -65,6 +65,50 @@ func TestMigrationsRunner_IsIdempotent_AndSchemaIsUpToDate(t *testing.T) {
 
 	// user_allowed_groups: created_at should be timestamptz
 	requireColumn(t, tx, "user_allowed_groups", "created_at", "timestamp with time zone", 0, false)
+
+	// ops_* tables: core schema must exist for monitoring/alerting.
+	requireColumn(t, tx, "ops_system_metrics", "window_minutes", "integer", 0, false)
+	requireColumn(t, tx, "ops_system_metrics", "created_at", "timestamp with time zone", 0, false)
+
+	requireColumn(t, tx, "ops_error_logs", "error_phase", "character varying", 32, false)
+	requireColumn(t, tx, "ops_error_logs", "error_type", "character varying", 64, false)
+	requireColumn(t, tx, "ops_error_logs", "severity", "character varying", 4, false)
+	requireColumn(t, tx, "ops_error_logs", "created_at", "timestamp with time zone", 0, false)
+
+	requireColumn(t, tx, "ops_alert_rules", "name", "character varying", 128, false)
+	requireColumn(t, tx, "ops_alert_rules", "metric_type", "character varying", 64, false)
+	requireColumn(t, tx, "ops_alert_rules", "operator", "character varying", 8, false)
+	requireColumn(t, tx, "ops_alert_rules", "threshold", "double precision", 0, false)
+	requireColumn(t, tx, "ops_alert_rules", "window_minutes", "integer", 0, false)
+	requireColumn(t, tx, "ops_alert_rules", "sustained_minutes", "integer", 0, false)
+	requireColumn(t, tx, "ops_alert_rules", "notify_email", "boolean", 0, false)
+	requireColumn(t, tx, "ops_alert_rules", "dimension_filters", "jsonb", 0, true)
+	requireColumn(t, tx, "ops_alert_rules", "notify_channels", "jsonb", 0, true)
+	requireColumn(t, tx, "ops_alert_rules", "notify_config", "jsonb", 0, true)
+	requireColumn(t, tx, "ops_alert_rules", "created_at", "timestamp with time zone", 0, false)
+	requireColumn(t, tx, "ops_alert_rules", "updated_at", "timestamp with time zone", 0, false)
+
+	requireColumn(t, tx, "ops_alert_events", "rule_id", "bigint", 0, false)
+	requireColumn(t, tx, "ops_alert_events", "status", "character varying", 0, false)
+	requireColumn(t, tx, "ops_alert_events", "fired_at", "timestamp with time zone", 0, false)
+	requireColumn(t, tx, "ops_alert_events", "resolved_at", "timestamp with time zone", 0, true)
+	requireColumn(t, tx, "ops_alert_events", "created_at", "timestamp with time zone", 0, false)
+
+	// Pre-aggregation tables (optional, but required when enabled).
+	requireColumn(t, tx, "ops_metrics_hourly", "bucket_start", "timestamp with time zone", 0, false)
+	requireColumn(t, tx, "ops_metrics_hourly", "platform", "character varying", 50, false)
+	requireColumn(t, tx, "ops_metrics_daily", "bucket_date", "date", 0, false)
+	requireColumn(t, tx, "ops_metrics_daily", "platform", "character varying", 50, false)
+
+	requireColumn(t, tx, "ops_group_availability_configs", "group_id", "bigint", 0, false)
+	requireColumn(t, tx, "ops_group_availability_configs", "enabled", "boolean", 0, false)
+	requireColumn(t, tx, "ops_group_availability_configs", "created_at", "timestamp without time zone", 0, false)
+	requireColumn(t, tx, "ops_group_availability_configs", "updated_at", "timestamp without time zone", 0, false)
+
+	requireColumn(t, tx, "ops_group_availability_events", "config_id", "bigint", 0, false)
+	requireColumn(t, tx, "ops_group_availability_events", "status", "character varying", 0, false)
+	requireColumn(t, tx, "ops_group_availability_events", "fired_at", "timestamp without time zone", 0, false)
+	requireColumn(t, tx, "ops_group_availability_events", "resolved_at", "timestamp without time zone", 0, true)
 }
 
 func requireColumn(t *testing.T, tx *sql.Tx, table, column, dataType string, maxLen int, nullable bool) {

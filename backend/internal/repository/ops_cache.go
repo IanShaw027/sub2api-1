@@ -18,6 +18,10 @@ const (
 	opsDashboardOverviewKeyPrefix = "ops:dashboard:overview:"
 
 	opsLatestMetricsTTL = 10 * time.Second
+
+	opsConcurrencyPlatformKey = "ops:concurrency:platform"
+	opsConcurrencyGroupKey    = "ops:concurrency:group"
+	opsConcurrencyCollectedAtKey = "ops:concurrency:collected_at_unix"
 )
 
 func (r *OpsRepository) GetCachedLatestSystemMetric(ctx context.Context) (*service.OpsMetrics, error) {
@@ -138,4 +142,74 @@ func (r *OpsRepository) PingRedis(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+func (r *OpsRepository) GetCachedPlatformConcurrency(ctx context.Context) (map[string]*service.PlatformConcurrencyInfo, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if r == nil || r.rdb == nil {
+		return make(map[string]*service.PlatformConcurrencyInfo), nil
+	}
+
+	data, err := r.rdb.Get(ctx, opsConcurrencyPlatformKey).Bytes()
+	if errors.Is(err, redis.Nil) {
+		return make(map[string]*service.PlatformConcurrencyInfo), nil
+	}
+	if err != nil {
+		recordRedisError(ctx, "OpsRepository.GetCachedPlatformConcurrency", err)
+		return make(map[string]*service.PlatformConcurrencyInfo), nil
+	}
+
+	var result map[string]*service.PlatformConcurrencyInfo
+	if err := json.Unmarshal(data, &result); err != nil {
+		return make(map[string]*service.PlatformConcurrencyInfo), nil
+	}
+	return result, nil
+}
+
+func (r *OpsRepository) GetCachedGroupConcurrency(ctx context.Context) (map[int64]*service.GroupConcurrencyInfo, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if r == nil || r.rdb == nil {
+		return make(map[int64]*service.GroupConcurrencyInfo), nil
+	}
+
+	data, err := r.rdb.Get(ctx, opsConcurrencyGroupKey).Bytes()
+	if errors.Is(err, redis.Nil) {
+		return make(map[int64]*service.GroupConcurrencyInfo), nil
+	}
+	if err != nil {
+		recordRedisError(ctx, "OpsRepository.GetCachedGroupConcurrency", err)
+		return make(map[int64]*service.GroupConcurrencyInfo), nil
+	}
+
+	var result map[int64]*service.GroupConcurrencyInfo
+	if err := json.Unmarshal(data, &result); err != nil {
+		return make(map[int64]*service.GroupConcurrencyInfo), nil
+	}
+	return result, nil
+}
+
+func (r *OpsRepository) GetCachedConcurrencyCollectedAt(ctx context.Context) (time.Time, bool, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if r == nil || r.rdb == nil {
+		return time.Time{}, false, nil
+	}
+
+	val, err := r.rdb.Get(ctx, opsConcurrencyCollectedAtKey).Int64()
+	if errors.Is(err, redis.Nil) {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		recordRedisError(ctx, "OpsRepository.GetCachedConcurrencyCollectedAt", err)
+		return time.Time{}, false, nil
+	}
+	if val <= 0 {
+		return time.Time{}, false, nil
+	}
+	return time.Unix(val, 0).UTC(), true, nil
 }

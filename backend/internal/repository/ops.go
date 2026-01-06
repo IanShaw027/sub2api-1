@@ -23,8 +23,9 @@ func (r *OpsRepository) ListErrorLogs(ctx context.Context, filter *service.Error
 			pageSize = filter.PageSize
 		}
 	}
-	if pageSize > 100 {
-		pageSize = 100
+	// Keep consistent with OpsService filter normalization and handler validation.
+	if pageSize > 500 {
+		pageSize = 500
 	}
 	offset := (page - 1) * pageSize
 
@@ -123,7 +124,7 @@ func (r *OpsRepository) ListErrorLogs(ctx context.Context, filter *service.Error
 		}
 	}
 
-	// NOTE: Keep columns aligned with scanOpsErrorLog() in ops_repo.go.
+	// NOTE: Keep columns aligned with scanOpsErrorLog() in ops_repo_error_logs.go.
 	listQuery := fmt.Sprintf(`
 		SELECT
 			id,
