@@ -66,12 +66,7 @@ func (r *usageLogRepository) Create(ctx context.Context, log *service.UsageLog) 
 		return false, nil
 	}
 
-	// 在事务上下文中，使用 tx 绑定的 ExecQuerier 执行原生 SQL，保证与其他更新同事务。
-	// 无事务时回退到默认的 *sql.DB 执行器。
 	sqlq := r.sql
-	if tx := dbent.TxFromContext(ctx); tx != nil {
-		sqlq = tx.Client()
-	}
 
 	createdAt := log.CreatedAt
 	if createdAt.IsZero() {
@@ -129,7 +124,7 @@ func (r *usageLogRepository) Create(ctx context.Context, log *service.UsageLog) 
 	subscriptionID := nullInt64(log.SubscriptionID)
 	duration := nullInt(log.DurationMs)
 	firstToken := nullInt(log.FirstTokenMs)
-	imageSize := nullString(log.ImageSize)
+	imageSize := nullStringPtr(log.ImageSize)
 
 	var requestIDArg any
 	if requestID != "" {
@@ -1952,7 +1947,14 @@ func nullInt(v *int) sql.NullInt64 {
 	return sql.NullInt64{Int64: int64(*v), Valid: true}
 }
 
-func nullString(v *string) sql.NullString {
+func nullString(value string) sql.NullString {
+	if value == "" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: value, Valid: true}
+}
+
+func nullStringPtr(v *string) sql.NullString {
 	if v == nil || *v == "" {
 		return sql.NullString{}
 	}

@@ -387,16 +387,8 @@ func (c *OpsMetricsCollector) collectSystemStats(ctx context.Context) opsSystemS
 	return stats
 }
 
-func (c *OpsMetricsCollector) collectQueueDepth(ctx context.Context) int {
-	if c.concurrencyService == nil {
-		return 0
-	}
-	depth, err := c.concurrencyService.GetTotalWaitCount(ctx)
-	if err != nil {
-		log.Printf("[OpsMetrics] failed to get queue depth: %v", err)
-		return 0
-	}
-	return depth
+func (c *OpsMetricsCollector) collectQueueDepth(_ context.Context) int {
+	return 0
 }
 
 func (c *OpsMetricsCollector) collectActiveAlerts(ctx context.Context) int {

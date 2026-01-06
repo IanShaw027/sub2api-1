@@ -560,24 +560,6 @@ func (s *OpsAlertService) notificationContext(ctx context.Context) (context.Cont
 
 var opsAlertSleep = sleepWithContext
 
-func sleepWithContext(ctx context.Context, d time.Duration) error {
-	if d <= 0 {
-		return nil
-	}
-	if ctx == nil {
-		time.Sleep(d)
-		return nil
-	}
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
-}
-
 func retryWithBackoff(
 	ctx context.Context,
 	maxRetries int,

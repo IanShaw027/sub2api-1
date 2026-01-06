@@ -336,13 +336,6 @@ func (r *OpsRepository) recordOpsPreaggFallback(method opsPreaggFallbackMethod, 
 	}
 }
 
-func nullString(value string) sql.NullString {
-	if value == "" {
-		return sql.NullString{}
-	}
-	return sql.NullString{String: value, Valid: true}
-}
-
 func nullInt64Ptr(value *int) sql.NullInt64 {
 	if value == nil {
 		return sql.NullInt64{}

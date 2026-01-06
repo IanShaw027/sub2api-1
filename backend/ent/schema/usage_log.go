@@ -93,7 +93,7 @@ func (UsageLog) Fields() []ent.Field {
 		field.Int("duration_ms").
 			Optional().
 			Nillable(),
-		field.Int("time_to_first_token_ms").
+		field.Int("first_token_ms").
 			Optional().
 			Nillable(),
 
@@ -156,10 +156,5 @@ func (UsageLog) Indexes() []ent.Index {
 		// 复合索引用于时间范围查询
 		index.Fields("user_id", "created_at"),
 		index.Fields("api_key_id", "created_at"),
-		// P1-4: 支持账号维度的时间范围查询（账号健康监控、TPS 统计）
-		index.Fields("account_id", "created_at"),
-		// 优化后台聚合任务（按模型/分组统计时间序列数据）
-		index.Fields("model", "created_at"),
-		index.Fields("group_id", "created_at"),
 	}
 }

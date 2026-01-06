@@ -249,7 +249,7 @@ func UsageLogFromService(l *service.UsageLog) *UsageLog {
 		BillingType:           l.BillingType,
 		Stream:                l.Stream,
 		DurationMs:            l.DurationMs,
-		TimeToFirstTokenMs:    l.TimeToFirstTokenMs,
+		FirstTokenMs:          l.FirstTokenMs,
 		ImageCount:            l.ImageCount,
 		ImageSize:             l.ImageSize,
 		CreatedAt:             l.CreatedAt,

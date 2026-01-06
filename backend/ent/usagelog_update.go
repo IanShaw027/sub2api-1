@@ -477,30 +477,30 @@ func (_u *UsageLogUpdate) ClearDurationMs() *UsageLogUpdate {
 	return _u
 }
 
-// SetTimeToFirstTokenMs sets the "time_to_first_token_ms" field.
-func (_u *UsageLogUpdate) SetTimeToFirstTokenMs(v int) *UsageLogUpdate {
-	_u.mutation.ResetTimeToFirstTokenMs()
-	_u.mutation.SetTimeToFirstTokenMs(v)
+// SetFirstTokenMs sets the "first_token_ms" field.
+func (_u *UsageLogUpdate) SetFirstTokenMs(v int) *UsageLogUpdate {
+	_u.mutation.ResetFirstTokenMs()
+	_u.mutation.SetFirstTokenMs(v)
 	return _u
 }
 
-// SetNillableTimeToFirstTokenMs sets the "time_to_first_token_ms" field if the given value is not nil.
-func (_u *UsageLogUpdate) SetNillableTimeToFirstTokenMs(v *int) *UsageLogUpdate {
+// SetNillableFirstTokenMs sets the "first_token_ms" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableFirstTokenMs(v *int) *UsageLogUpdate {
 	if v != nil {
-		_u.SetTimeToFirstTokenMs(*v)
+		_u.SetFirstTokenMs(*v)
 	}
 	return _u
 }
 
-// AddTimeToFirstTokenMs adds value to the "time_to_first_token_ms" field.
-func (_u *UsageLogUpdate) AddTimeToFirstTokenMs(v int) *UsageLogUpdate {
-	_u.mutation.AddTimeToFirstTokenMs(v)
+// AddFirstTokenMs adds value to the "first_token_ms" field.
+func (_u *UsageLogUpdate) AddFirstTokenMs(v int) *UsageLogUpdate {
+	_u.mutation.AddFirstTokenMs(v)
 	return _u
 }
 
-// ClearTimeToFirstTokenMs clears the value of the "time_to_first_token_ms" field.
-func (_u *UsageLogUpdate) ClearTimeToFirstTokenMs() *UsageLogUpdate {
-	_u.mutation.ClearTimeToFirstTokenMs()
+// ClearFirstTokenMs clears the value of the "first_token_ms" field.
+func (_u *UsageLogUpdate) ClearFirstTokenMs() *UsageLogUpdate {
+	_u.mutation.ClearFirstTokenMs()
 	return _u
 }
 
@@ -775,14 +775,14 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.DurationMsCleared() {
 		_spec.ClearField(usagelog.FieldDurationMs, field.TypeInt)
 	}
-	if value, ok := _u.mutation.TimeToFirstTokenMs(); ok {
-		_spec.SetField(usagelog.FieldTimeToFirstTokenMs, field.TypeInt, value)
+	if value, ok := _u.mutation.FirstTokenMs(); ok {
+		_spec.SetField(usagelog.FieldFirstTokenMs, field.TypeInt, value)
 	}
-	if value, ok := _u.mutation.AddedTimeToFirstTokenMs(); ok {
-		_spec.AddField(usagelog.FieldTimeToFirstTokenMs, field.TypeInt, value)
+	if value, ok := _u.mutation.AddedFirstTokenMs(); ok {
+		_spec.AddField(usagelog.FieldFirstTokenMs, field.TypeInt, value)
 	}
-	if _u.mutation.TimeToFirstTokenMsCleared() {
-		_spec.ClearField(usagelog.FieldTimeToFirstTokenMs, field.TypeInt)
+	if _u.mutation.FirstTokenMsCleared() {
+		_spec.ClearField(usagelog.FieldFirstTokenMs, field.TypeInt)
 	}
 	if value, ok := _u.mutation.ImageCount(); ok {
 		_spec.SetField(usagelog.FieldImageCount, field.TypeInt, value)
@@ -1406,30 +1406,30 @@ func (_u *UsageLogUpdateOne) ClearDurationMs() *UsageLogUpdateOne {
 	return _u
 }
 
-// SetTimeToFirstTokenMs sets the "time_to_first_token_ms" field.
-func (_u *UsageLogUpdateOne) SetTimeToFirstTokenMs(v int) *UsageLogUpdateOne {
-	_u.mutation.ResetTimeToFirstTokenMs()
-	_u.mutation.SetTimeToFirstTokenMs(v)
+// SetFirstTokenMs sets the "first_token_ms" field.
+func (_u *UsageLogUpdateOne) SetFirstTokenMs(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetFirstTokenMs()
+	_u.mutation.SetFirstTokenMs(v)
 	return _u
 }
 
-// SetNillableTimeToFirstTokenMs sets the "time_to_first_token_ms" field if the given value is not nil.
-func (_u *UsageLogUpdateOne) SetNillableTimeToFirstTokenMs(v *int) *UsageLogUpdateOne {
+// SetNillableFirstTokenMs sets the "first_token_ms" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableFirstTokenMs(v *int) *UsageLogUpdateOne {
 	if v != nil {
-		_u.SetTimeToFirstTokenMs(*v)
+		_u.SetFirstTokenMs(*v)
 	}
 	return _u
 }
 
-// AddTimeToFirstTokenMs adds value to the "time_to_first_token_ms" field.
-func (_u *UsageLogUpdateOne) AddTimeToFirstTokenMs(v int) *UsageLogUpdateOne {
-	_u.mutation.AddTimeToFirstTokenMs(v)
+// AddFirstTokenMs adds value to the "first_token_ms" field.
+func (_u *UsageLogUpdateOne) AddFirstTokenMs(v int) *UsageLogUpdateOne {
+	_u.mutation.AddFirstTokenMs(v)
 	return _u
 }
 
-// ClearTimeToFirstTokenMs clears the value of the "time_to_first_token_ms" field.
-func (_u *UsageLogUpdateOne) ClearTimeToFirstTokenMs() *UsageLogUpdateOne {
-	_u.mutation.ClearTimeToFirstTokenMs()
+// ClearFirstTokenMs clears the value of the "first_token_ms" field.
+func (_u *UsageLogUpdateOne) ClearFirstTokenMs() *UsageLogUpdateOne {
+	_u.mutation.ClearFirstTokenMs()
 	return _u
 }
 
@@ -1734,14 +1734,14 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	if _u.mutation.DurationMsCleared() {
 		_spec.ClearField(usagelog.FieldDurationMs, field.TypeInt)
 	}
-	if value, ok := _u.mutation.TimeToFirstTokenMs(); ok {
-		_spec.SetField(usagelog.FieldTimeToFirstTokenMs, field.TypeInt, value)
+	if value, ok := _u.mutation.FirstTokenMs(); ok {
+		_spec.SetField(usagelog.FieldFirstTokenMs, field.TypeInt, value)
 	}
-	if value, ok := _u.mutation.AddedTimeToFirstTokenMs(); ok {
-		_spec.AddField(usagelog.FieldTimeToFirstTokenMs, field.TypeInt, value)
+	if value, ok := _u.mutation.AddedFirstTokenMs(); ok {
+		_spec.AddField(usagelog.FieldFirstTokenMs, field.TypeInt, value)
 	}
-	if _u.mutation.TimeToFirstTokenMsCleared() {
-		_spec.ClearField(usagelog.FieldTimeToFirstTokenMs, field.TypeInt)
+	if _u.mutation.FirstTokenMsCleared() {
+		_spec.ClearField(usagelog.FieldFirstTokenMs, field.TypeInt)
 	}
 	if value, ok := _u.mutation.ImageCount(); ok {
 		_spec.SetField(usagelog.FieldImageCount, field.TypeInt, value)
