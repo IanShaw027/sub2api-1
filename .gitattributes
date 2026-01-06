@@ -1,0 +1,12 @@
+# Treat generated artifacts as generated so GitHub can hide them in diffs by default.
+# This keeps PRs reviewable while still committing required generated output.
+
+# Ent codegen output (keep schema definitions reviewable).
+backend/ent/** linguist-generated=true
+backend/ent/schema/** linguist-generated=false
+
+# Frontend lockfile.
+pnpm-lock.yaml linguist-generated=true
+
+# Built frontend assets embedded by the backend (if present/committed).
+backend/internal/web/dist/** linguist-generated=true

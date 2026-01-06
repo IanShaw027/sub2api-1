@@ -32,6 +32,7 @@ func (c *identityCache) GetFingerprint(ctx context.Context, accountID int64) (*s
 	key := fingerprintKey(accountID)
 	val, err := c.rdb.Get(ctx, key).Result()
 	if err != nil {
+		recordRedisError(ctx, "IdentityCache.GetFingerprint", err)
 		return nil, err
 	}
 	var fp service.Fingerprint
@@ -47,5 +48,9 @@ func (c *identityCache) SetFingerprint(ctx context.Context, accountID int64, fp 
 	if err != nil {
 		return err
 	}
-	return c.rdb.Set(ctx, key, val, fingerprintTTL).Err()
+	if err := c.rdb.Set(ctx, key, val, fingerprintTTL).Err(); err != nil {
+		recordRedisError(ctx, "IdentityCache.SetFingerprint", err)
+		return err
+	}
+	return nil
 }

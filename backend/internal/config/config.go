@@ -42,6 +42,7 @@ type Config struct {
 	Turnstile    TurnstileConfig    `mapstructure:"turnstile"`
 	Database     DatabaseConfig     `mapstructure:"database"`
 	Redis        RedisConfig        `mapstructure:"redis"`
+	Ops          OpsConfig          `mapstructure:"ops"`
 	JWT          JWTConfig          `mapstructure:"jwt"`
 	Default      DefaultConfig      `mapstructure:"default"`
 	RateLimit    RateLimitConfig    `mapstructure:"rate_limit"`
@@ -52,6 +53,61 @@ type Config struct {
 	RunMode      string             `mapstructure:"run_mode" yaml:"run_mode"`
 	Timezone     string             `mapstructure:"timezone"` // e.g. "Asia/Shanghai", "UTC"
 	Gemini       GeminiConfig       `mapstructure:"gemini"`
+}
+
+type OpsConfig struct {
+	// Enabled controls whether ops background services (metrics collector, alerting,
+	// scheduled reports, availability monitors, cleanup jobs) should run.
+	//
+	// Disabling ops can significantly reduce complexity and resource usage for
+	// minimal/self-hosted deployments.
+	Enabled bool `mapstructure:"enabled"`
+
+	// UsePreaggregatedTables switches ops dashboard queries to prefer the pre-aggregation
+	// tables (ops_metrics_hourly / ops_metrics_daily) when available.
+	//
+	// Default is false to preserve existing behavior until the background aggregation
+	// job is deployed and validated.
+	UsePreaggregatedTables bool `mapstructure:"use_preaggregated_tables"`
+
+	// Cleanup controls periodic deletion of old ops data to prevent unbounded growth.
+	Cleanup OpsCleanupConfig `mapstructure:"cleanup"`
+
+	// MetricsCollectorCache controls Redis caching for the ops metrics collector's
+	// per-minute window stats queries.
+	MetricsCollectorCache OpsMetricsCollectorCacheConfig `mapstructure:"metrics_collector_cache"`
+
+	// Pre-aggregation configuration
+	Aggregation OpsAggregationConfig `mapstructure:"aggregation"`
+}
+
+type OpsCleanupConfig struct {
+	// Enabled controls whether cleanup runs periodically.
+	Enabled bool `mapstructure:"enabled"`
+
+	// Schedule is a 5-field cron expression (minute hour dom month dow),
+	// e.g. "0 2 * * *" (daily at 2 AM).
+	Schedule string `mapstructure:"schedule"`
+
+	// Retention days (0 disables that cleanup target).
+	ErrorLogRetentionDays      int `mapstructure:"error_log_retention_days"`
+	MinuteMetricsRetentionDays int `mapstructure:"minute_metrics_retention_days"`
+	HourlyMetricsRetentionDays int `mapstructure:"hourly_metrics_retention_days"`
+}
+
+type OpsAggregationConfig struct {
+	// Enabled controls whether automatic pre-aggregation is enabled
+	Enabled bool `mapstructure:"enabled"`
+}
+
+type OpsMetricsCollectorCacheConfig struct {
+	// Enabled controls whether OpsMetricsCollector uses Redis to cache window stats
+	// (useful in multi-replica deployments to avoid duplicate expensive percentile queries).
+	Enabled bool `mapstructure:"enabled"`
+
+	// TTL is the cache entry TTL. It should be slightly larger than the collection
+	// interval (1 minute) to ensure replicas overlap.
+	TTL time.Duration `mapstructure:"ttl"`
 }
 
 type GeminiConfig struct {
@@ -489,6 +545,18 @@ func setDefaults() {
 	viper.SetDefault("redis.pool_size", 128)
 	viper.SetDefault("redis.min_idle_conns", 10)
 
+	// Ops
+	viper.SetDefault("ops.enabled", true)
+	viper.SetDefault("ops.use_preaggregated_tables", false)
+	// Ops cleanup
+	viper.SetDefault("ops.cleanup.enabled", true)
+	viper.SetDefault("ops.cleanup.schedule", "0 2 * * *")
+	viper.SetDefault("ops.cleanup.error_log_retention_days", 30)
+	viper.SetDefault("ops.cleanup.minute_metrics_retention_days", 7)
+	viper.SetDefault("ops.cleanup.hourly_metrics_retention_days", 30)
+	viper.SetDefault("ops.metrics_collector_cache.enabled", true)
+	viper.SetDefault("ops.metrics_collector_cache.ttl", 65*time.Second)
+
 	// JWT
 	viper.SetDefault("jwt.secret", "")
 	viper.SetDefault("jwt.expire_hour", 24)
@@ -616,6 +684,21 @@ func (c *Config) Validate() error {
 	}
 	if c.Redis.MinIdleConns > c.Redis.PoolSize {
 		return fmt.Errorf("redis.min_idle_conns cannot exceed redis.pool_size")
+	}
+	if c.Ops.MetricsCollectorCache.TTL < 0 {
+		return fmt.Errorf("ops.metrics_collector_cache.ttl must be non-negative")
+	}
+	if c.Ops.Cleanup.ErrorLogRetentionDays < 0 {
+		return fmt.Errorf("ops.cleanup.error_log_retention_days must be non-negative")
+	}
+	if c.Ops.Cleanup.MinuteMetricsRetentionDays < 0 {
+		return fmt.Errorf("ops.cleanup.minute_metrics_retention_days must be non-negative")
+	}
+	if c.Ops.Cleanup.HourlyMetricsRetentionDays < 0 {
+		return fmt.Errorf("ops.cleanup.hourly_metrics_retention_days must be non-negative")
+	}
+	if c.Ops.Cleanup.Enabled && strings.TrimSpace(c.Ops.Cleanup.Schedule) == "" {
+		return fmt.Errorf("ops.cleanup.schedule is required when ops.cleanup.enabled=true")
 	}
 	if c.Gateway.MaxBodySize <= 0 {
 		return fmt.Errorf("gateway.max_body_size must be positive")

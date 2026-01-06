@@ -20,6 +20,9 @@ func RegisterAdminRoutes(
 		// 仪表盘
 		registerDashboardRoutes(admin, h)
 
+		// Ops 监控
+		registerOpsRoutes(admin, h)
+
 		// 用户管理
 		registerUserManagementRoutes(admin, h)
 
@@ -75,6 +78,80 @@ func registerDashboardRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	}
 }
 
+func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	ops := admin.Group("/ops")
+	{
+		ops.Use(h.Admin.Ops.RequireOpsEnabled)
+
+		ops.GET("/metrics", h.Admin.Ops.GetMetrics)
+		ops.GET("/metrics/history", h.Admin.Ops.ListMetricsHistory)
+		ops.GET("/requests", h.Admin.Ops.ListRequestDetails)
+
+		// Error logs endpoints
+		ops.GET("/errors", h.Admin.Ops.GetErrorLogs)                 // Paginated list (page/page_size)
+		ops.GET("/errors/:id", h.Admin.Ops.GetErrorDetail)           // Single error detail
+		ops.POST("/errors/:id/retry", h.Admin.Ops.RetryErrorRequest) // Retry error request
+
+		// IP-based error statistics
+		ops.GET("/errors/by-ip", h.Admin.Ops.GetErrorStatsByIP)
+		ops.GET("/errors/by-ip/:ip", h.Admin.Ops.GetErrorsByIP)
+
+		// Additional monitoring endpoints
+		ops.GET("/error-stats", h.Admin.Ops.GetErrorStats)
+		ops.GET("/error-timeseries", h.Admin.Ops.GetErrorTimeseries)
+		ops.GET("/account-status", h.Admin.Ops.GetAccountStatus)
+		ops.GET("/concurrency", h.Admin.Ops.GetConcurrencyStats)
+		ops.GET("/health", h.Admin.Ops.GetSystemHealth)
+
+		// Alert rules management
+		ops.GET("/alert-rules", h.Admin.Ops.ListAlertRules)
+		ops.POST("/alert-rules", h.Admin.Ops.CreateAlertRule)
+		ops.PUT("/alert-rules/:id", h.Admin.Ops.UpdateAlertRule)
+		ops.DELETE("/alert-rules/:id", h.Admin.Ops.DeleteAlertRule)
+		ops.GET("/alert-events", h.Admin.Ops.ListAlertEvents)
+
+		// Dashboard routes
+		dashboard := ops.Group("/dashboard")
+		{
+			dashboard.GET("/overview", h.Admin.Ops.GetDashboardOverview)
+			dashboard.GET("/providers", h.Admin.Ops.GetProviderHealth)
+			dashboard.GET("/latency-histogram", h.Admin.Ops.GetLatencyHistogram)
+			dashboard.GET("/errors/distribution", h.Admin.Ops.GetErrorDistribution)
+		}
+
+		// WebSocket routes
+		ws := ops.Group("/ws")
+		{
+			ws.GET("/qps", h.Admin.Ops.QPSWSHandler)
+		}
+
+		// Group availability monitoring routes
+		groupAvailability := ops.Group("/group-availability")
+		{
+			groupAvailability.PUT("/configs/:groupId", h.Admin.OpsGroupAvailability.UpsertConfig)
+
+			groupAvailability.GET("/status", h.Admin.OpsGroupAvailability.ListStatus)
+
+			groupAvailability.GET("/events", h.Admin.OpsGroupAvailability.ListEvents)
+		}
+
+		// Email notification configuration routes
+		emailNotification := ops.Group("/email-notification")
+		{
+			emailNotification.GET("/config", h.Admin.Ops.GetEmailNotificationConfig)
+			emailNotification.PUT("/config", h.Admin.Ops.UpdateEmailNotificationConfig)
+		}
+
+		// Ops runtime settings (DB-backed; do not manage via config file)
+		runtime := ops.Group("/runtime")
+		{
+			runtime.GET("/alert", h.Admin.Ops.GetAlertRuntimeSettings)
+			runtime.PUT("/alert", h.Admin.Ops.UpdateAlertRuntimeSettings)
+			runtime.GET("/group-availability", h.Admin.Ops.GetGroupAvailabilityRuntimeSettings)
+			runtime.PUT("/group-availability", h.Admin.Ops.UpdateGroupAvailabilityRuntimeSettings)
+		}
+	}
+}
 func registerUserManagementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	users := admin.Group("/users")
 	{

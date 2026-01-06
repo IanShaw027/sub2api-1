@@ -6,8 +6,8 @@
         <div class="h-8 w-8 animate-spin rounded-full border-b-2 border-primary-600"></div>
       </div>
 
-      <!-- Settings Form -->
-      <form v-else @submit.prevent="saveSettings" class="space-y-6">
+	      <!-- Settings Form -->
+	      <form v-else @submit.prevent="saveSettings" class="space-y-6">
         <!-- Admin API Key Settings -->
         <div class="card">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
@@ -350,6 +350,22 @@
               </div>
             </div>
 
+            <!-- Site URL -->
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('admin.settings.site.siteUrl') }}
+              </label>
+              <input
+                v-model="form.site_url"
+                type="url"
+                class="input font-mono text-sm"
+                :placeholder="t('admin.settings.site.siteUrlPlaceholder')"
+              />
+              <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.settings.site.siteUrlHint') }}
+              </p>
+            </div>
+
             <!-- API Base URL -->
             <div>
               <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -606,8 +622,8 @@
           </div>
         </div>
 
-        <!-- Send Test Email - Only show when email verification is enabled -->
-        <div v-if="form.email_verify_enabled" class="card">
+	        <!-- Send Test Email - Only show when email verification is enabled -->
+	        <div v-if="form.email_verify_enabled" class="card">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
               {{ t('admin.settings.testEmail.title') }}
@@ -663,11 +679,48 @@
               </button>
             </div>
           </div>
-        </div>
+	        </div>
 
-        <!-- Save Button -->
-        <div class="flex justify-end">
-          <button type="submit" :disabled="saving" class="btn btn-primary">
+	        <!-- Ops Monitoring -->
+	        <div class="card">
+	          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+	            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+	              {{ t('admin.settings.opsMonitoring.title') }}
+	            </h2>
+	            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+	              {{ t('admin.settings.opsMonitoring.description') }}
+	            </p>
+	          </div>
+	          <div class="p-6">
+	            <div class="flex items-center justify-between">
+	              <div>
+	                <label class="font-medium text-gray-900 dark:text-white">{{
+	                  t('admin.settings.opsMonitoring.enabled')
+	                }}</label>
+	                <p class="text-sm text-gray-500 dark:text-gray-400">
+	                  {{ t('admin.settings.opsMonitoring.enabledHint') }}
+	                </p>
+	              </div>
+	              <Toggle v-model="form.ops_monitoring_enabled" />
+	            </div>
+
+	            <div v-if="form.ops_monitoring_enabled" class="mt-5 flex items-center justify-between">
+	              <div>
+	                <label class="font-medium text-gray-900 dark:text-white">{{
+	                  t('admin.settings.opsMonitoring.realtimeEnabled')
+	                }}</label>
+	                <p class="text-sm text-gray-500 dark:text-gray-400">
+	                  {{ t('admin.settings.opsMonitoring.realtimeEnabledHint') }}
+	                </p>
+	              </div>
+	              <Toggle v-model="form.ops_realtime_monitoring_enabled" />
+	            </div>
+	          </div>
+	        </div>
+
+	        <!-- Save Button -->
+	        <div class="flex justify-end">
+	          <button type="submit" :disabled="saving" class="btn btn-primary">
             <svg v-if="saving" class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
               <circle
                 class="opacity-25"
@@ -685,24 +738,35 @@
             </svg>
             {{ saving ? t('admin.settings.saving') : t('admin.settings.saveSettings') }}
           </button>
-        </div>
-      </form>
-    </div>
-  </AppLayout>
-</template>
+	        </div>
+	      </form>
+
+	      <!-- Ops settings and management (only show when enabled) -->
+	      <div v-if="showOpsSettings" class="space-y-6">
+	        <OpsRuntimeSettingsCard />
+	        <OpsEmailNotificationCard />
+	        <OpsAlertRulesCard />
+	      </div>
+	    </div>
+	  </AppLayout>
+	</template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api'
 import type { SystemSettings, UpdateSettingsRequest } from '@/api/admin/settings'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import Toggle from '@/components/common/Toggle.vue'
-import { useAppStore } from '@/stores'
+import { useAppStore, useAdminSettingsStore } from '@/stores'
+import OpsAlertRulesCard from '@/views/admin/ops/components/OpsAlertRulesCard.vue'
+import OpsEmailNotificationCard from '@/views/admin/ops/components/OpsEmailNotificationCard.vue'
+import OpsRuntimeSettingsCard from '@/views/admin/ops/components/OpsRuntimeSettingsCard.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const adminSettingsStore = useAdminSettingsStore()
 
 const loading = ref(true)
 const saving = ref(false)
@@ -731,6 +795,7 @@ const form = reactive<SettingsForm>({
   site_name: 'Sub2API',
   site_logo: '',
   site_subtitle: 'Subscription to API Conversion Platform',
+  site_url: '',
   api_base_url: '',
   contact_info: '',
   doc_url: '',
@@ -747,10 +812,21 @@ const form = reactive<SettingsForm>({
   turnstile_site_key: '',
   turnstile_secret_key: '',
   turnstile_secret_key_configured: false,
+  // Ops monitoring
+  ops_monitoring_enabled: true,
+  ops_realtime_monitoring_enabled: true,
+  // Model fallback configuration
+  enable_model_fallback: false,
+  fallback_model_anthropic: 'claude-3-5-sonnet-20241022',
+  fallback_model_openai: 'gpt-4o',
+  fallback_model_gemini: 'gemini-2.5-pro',
+  fallback_model_antigravity: 'gemini-2.5-pro',
   // Identity patch (Claude -> Gemini)
   enable_identity_patch: true,
   identity_patch_prompt: ''
 })
+
+const showOpsSettings = computed(() => form.ops_monitoring_enabled)
 
 function handleLogoUpload(event: Event) {
   const input = event.target as HTMLInputElement
@@ -797,6 +873,8 @@ async function loadSettings() {
     Object.assign(form, settings)
     form.smtp_password = ''
     form.turnstile_secret_key = ''
+    adminSettingsStore.setOpsMonitoringEnabledLocal(form.ops_monitoring_enabled)
+    adminSettingsStore.setOpsRealtimeMonitoringEnabledLocal(form.ops_realtime_monitoring_enabled ?? true)
   } catch (error: any) {
     appStore.showError(
       t('admin.settings.failedToLoad') + ': ' + (error.message || t('common.unknownError'))
@@ -817,6 +895,7 @@ async function saveSettings() {
       site_name: form.site_name,
       site_logo: form.site_logo,
       site_subtitle: form.site_subtitle,
+      site_url: form.site_url,
       api_base_url: form.api_base_url,
       contact_info: form.contact_info,
       doc_url: form.doc_url,
@@ -829,7 +908,16 @@ async function saveSettings() {
       smtp_use_tls: form.smtp_use_tls,
       turnstile_enabled: form.turnstile_enabled,
       turnstile_site_key: form.turnstile_site_key,
-      turnstile_secret_key: form.turnstile_secret_key || undefined
+      turnstile_secret_key: form.turnstile_secret_key || undefined,
+      ops_monitoring_enabled: form.ops_monitoring_enabled,
+      ops_realtime_monitoring_enabled: form.ops_realtime_monitoring_enabled,
+      enable_model_fallback: form.enable_model_fallback,
+      fallback_model_anthropic: form.fallback_model_anthropic,
+      fallback_model_openai: form.fallback_model_openai,
+      fallback_model_gemini: form.fallback_model_gemini,
+      fallback_model_antigravity: form.fallback_model_antigravity,
+      enable_identity_patch: form.enable_identity_patch,
+      identity_patch_prompt: form.identity_patch_prompt
     }
     const updated = await adminAPI.settings.updateSettings(payload)
     Object.assign(form, updated)
@@ -837,6 +925,8 @@ async function saveSettings() {
     form.turnstile_secret_key = ''
     // Refresh cached public settings so sidebar/header update immediately
     await appStore.fetchPublicSettings(true)
+    adminSettingsStore.setOpsMonitoringEnabledLocal(form.ops_monitoring_enabled)
+    adminSettingsStore.setOpsRealtimeMonitoringEnabledLocal(form.ops_realtime_monitoring_enabled ?? true)
     appStore.showSuccess(t('admin.settings.settingsSaved'))
   } catch (error: any) {
     appStore.showError(

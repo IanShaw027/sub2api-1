@@ -1,0 +1,912 @@
+/**
+ * Admin Ops API endpoints
+ * Provides stability metrics and error logs for ops dashboard
+ */
+
+import { apiClient } from '../client'
+import type {
+  AlertRule,
+  AlertEvent,
+  IPErrorStats,
+  GroupAvailabilityConfig,
+  GroupAvailabilityStatus,
+  GroupAvailabilityEvent,
+  EmailNotificationConfig,
+  OpsAlertRuntimeSettings,
+  OpsGroupAvailabilityRuntimeSettings
+} from '@/views/admin/ops/types'
+
+export type OpsSeverity = 'P0' | 'P1' | 'P2' | 'P3'
+export type OpsPhase =
+  | 'auth'
+  | 'concurrency'
+  | 'billing'
+  | 'scheduling'
+  | 'network'
+  | 'upstream'
+  | 'response'
+  | 'internal'
+export type OpsPlatform = 'gemini' | 'openai' | 'anthropic' | 'antigravity'
+
+export interface OpsMetrics {
+  window_minutes: number
+  request_count: number
+  success_count: number
+  error_count: number
+  qps?: number
+  tps?: number
+  error_4xx_count?: number
+  error_5xx_count?: number
+  error_timeout_count?: number
+  latency_p50?: number
+  latency_p95?: number
+  latency_p99?: number
+  latency_avg?: number
+  latency_max?: number
+  upstream_latency_avg?: number
+  disk_used?: number
+  disk_total?: number
+  disk_iops?: number
+  disk_read_bytes?: number
+  disk_write_bytes?: number
+  /**
+   * Total bytes received in the window (approx RX).
+   * Backend may later provide per-second rate or split read/write fields.
+   */
+  network_in_bytes?: number
+  /**
+   * Total bytes sent in the window (approx TX).
+   * Backend may later provide per-second rate or split read/write fields.
+   */
+  network_out_bytes?: number
+  goroutine_count?: number
+  db_conn_active?: number
+  db_conn_idle?: number
+  db_conn_waiting?: number
+  token_consumed?: number
+  token_rate?: number
+  active_subscriptions?: number
+  tags?: Record<string, any>
+  success_rate: number
+  error_rate: number
+  active_alerts: number
+  cpu_usage_percent?: number
+  memory_used_mb?: number
+  memory_total_mb?: number
+  memory_usage_percent?: number
+  heap_alloc_mb?: number
+  gc_pause_ms?: number
+  concurrency_queue_depth?: number
+  updated_at?: string
+}
+
+export interface PlatformConcurrencyInfo {
+  platform: string
+  current_in_use: number
+  max_capacity: number
+  load_percentage: number
+  waiting_in_queue: number
+}
+
+export interface GroupConcurrencyInfo {
+  group_id: number
+  group_name: string
+  platform: string
+  current_in_use: number
+  max_capacity: number
+  load_percentage: number
+  waiting_in_queue: number
+}
+
+export interface OpsConcurrencyStatsResponse {
+  enabled: boolean
+  platform: Record<string, PlatformConcurrencyInfo>
+  group: Record<string, GroupConcurrencyInfo>
+  timestamp?: string
+}
+
+export async function getConcurrencyStats(): Promise<OpsConcurrencyStatsResponse> {
+  const { data } = await apiClient.get<OpsConcurrencyStatsResponse>('/admin/ops/concurrency')
+  return data
+}
+
+export interface OpsSystemHealthResponse {
+  enabled: boolean
+  status: 'healthy' | 'degraded' | 'unhealthy'
+  healthy: boolean
+  warnings: string[]
+  checks: Record<string, any>
+}
+
+export async function getSystemHealth(): Promise<OpsSystemHealthResponse> {
+  const { data } = await apiClient.get<OpsSystemHealthResponse>('/admin/ops/health')
+  return data
+}
+
+export interface OpsErrorLog {
+  id: number
+  created_at: string
+  phase: OpsPhase
+  type: string
+  severity: OpsSeverity
+  status_code: number
+  platform: OpsPlatform
+  model: string
+  latency_ms: number | null
+  request_id: string
+  message: string
+  user_id?: number | null
+  api_key_id?: number | null
+  account_id?: number | null
+  group_id?: number | null
+  client_ip?: string
+  request_path?: string
+  stream?: boolean
+}
+
+export interface OpsErrorDetail extends OpsErrorLog {
+  // 延迟细化字段
+  auth_latency_ms?: number | null
+  routing_latency_ms?: number | null
+  upstream_latency_ms?: number | null
+  response_latency_ms?: number | null
+  time_to_first_token_ms?: number | null
+
+  // 请求和响应信息
+  request_body?: string
+  // Backend field name is `error_body` (stored as ops_error_logs.error_body)
+  // and represents the upstream error response payload (sanitized/truncated).
+  error_body?: string
+  user_agent?: string
+}
+
+export type OpsRequestKind = 'success' | 'error'
+
+export interface OpsRequestDetail {
+  kind: OpsRequestKind
+  created_at: string
+  request_id: string
+
+  platform?: string
+  model?: string
+
+  duration_ms?: number | null
+  status_code?: number | null
+
+  error_id?: number | null
+  phase?: OpsPhase
+  severity?: OpsSeverity
+  message?: string
+
+  user_id?: number | null
+  api_key_id?: number | null
+  account_id?: number | null
+  group_id?: number | null
+
+  stream: boolean
+}
+
+export interface OpsRequestDetailsParams {
+  start_time?: string
+  end_time?: string
+  time_range?: string
+  kind?: 'success' | 'error' | 'all'
+  platform?: OpsPlatform
+  platforms?: string
+  user_id?: number
+  api_key_id?: number
+  account_id?: number
+  group_id?: number
+  model?: string
+  request_id?: string
+  q?: string
+  min_duration_ms?: number
+  max_duration_ms?: number
+  sort?: 'created_at_desc' | 'duration_desc'
+  page?: number
+  page_size?: number
+}
+
+export interface OpsRequestDetailsResponse {
+  items: OpsRequestDetail[]
+  total: number
+  page: number
+  page_size: number
+  pages: number
+}
+
+export interface OpsErrorListParams {
+  start_time?: string
+  end_time?: string
+  platform?: OpsPlatform
+  /**
+   * Comma-separated platforms (e.g. "openai,anthropic"); preferred over `platform` when selecting multiple.
+   * Backend supports both `platform` (single) and `platforms` (multi) for compatibility.
+   */
+  platforms?: string
+  phase?: OpsPhase
+  severity?: OpsSeverity
+  q?: string
+  /**
+   * Comma-separated integers (e.g. "500,502,503")
+   */
+  status_codes?: string
+  /**
+   * Client IP filter (exact match, per backend behavior)
+   */
+  client_ip?: string
+  /**
+   * Max 500; prefer pagination for larger result sets.
+   */
+  limit?: number
+  page?: number
+  page_size?: number
+}
+
+export interface OpsErrorListResponse {
+  items: OpsErrorLog[]
+  total?: number
+}
+
+export interface OpsMetricsHistoryParams {
+  window_minutes?: number
+  minutes?: number
+  start_time?: string
+  end_time?: string
+  limit?: number
+}
+
+export interface OpsMetricsHistoryResponse {
+  items: OpsMetrics[]
+}
+
+/**
+ * Get latest ops metrics snapshot
+ */
+export async function getMetrics(): Promise<OpsMetrics> {
+  const { data } = await apiClient.get<OpsMetrics>('/admin/ops/metrics')
+  return data
+}
+
+/**
+ * List metrics history for charts
+ */
+export async function listMetricsHistory(params?: OpsMetricsHistoryParams): Promise<OpsMetricsHistoryResponse> {
+  const { data } = await apiClient.get<OpsMetricsHistoryResponse>('/admin/ops/metrics/history', { params })
+  return data
+}
+
+type OpsErrorLogsRawResponse = {
+  // New endpoint shape: { errors, total, page, page_size }
+  errors?: OpsErrorLog[]
+  // Legacy endpoint shape: { items, total }
+  items?: OpsErrorLog[]
+  total?: number
+  page?: number
+  page_size?: number
+}
+
+/**
+ * List error logs with server-side filters.
+ * Normalizes both legacy and paginated endpoint response shapes into `{ items, total }`.
+ */
+export async function listErrorLogs(params?: OpsErrorListParams): Promise<OpsErrorListResponse> {
+  const { data } = await apiClient.get<OpsErrorLogsRawResponse>('/admin/ops/errors', { params })
+  const items = Array.isArray(data.items) ? data.items : Array.isArray(data.errors) ? data.errors : []
+  return { items, total: data.total }
+}
+
+/**
+ * Backwards-compatible alias for `listErrorLogs`.
+ */
+export async function listErrors(params?: OpsErrorListParams): Promise<OpsErrorListResponse> {
+  return listErrorLogs(params)
+}
+
+/**
+ * Get detailed error log by ID
+ */
+export async function getErrorDetail(id: number): Promise<OpsErrorDetail> {
+  const { data } = await apiClient.get<OpsErrorDetail>(`/admin/ops/errors/${id}`)
+  return data
+}
+
+export interface RetryErrorResponse {
+  can_retry: boolean
+  request_id: string
+  platform: string
+  model: string
+  request_body: string
+  message: string
+}
+
+export async function retryErrorRequest(id: number): Promise<RetryErrorResponse> {
+  const { data } = await apiClient.post<RetryErrorResponse>(`/admin/ops/errors/${id}/retry`)
+  return data
+}
+
+export async function listRequestDetails(params?: OpsRequestDetailsParams): Promise<OpsRequestDetailsResponse> {
+  const { data } = await apiClient.get<OpsRequestDetailsResponse>('/admin/ops/requests', { params })
+  return data
+}
+
+export interface OpsDashboardOverview {
+  timestamp: string
+  health_score: number
+  sla: {
+    current: number
+    threshold: number
+    status: string
+    trend: string
+    change_24h: number
+  }
+  qps: {
+    current: number
+    peak_1h: number
+    avg_1h: number
+    change_vs_yesterday: number
+  }
+  tps: {
+    current: number
+    peak_1h: number
+    avg_1h: number
+  }
+  latency: {
+    p50: number
+    p95: number
+    p99: number
+    avg: number
+    max: number
+    threshold_p99: number
+    status: string
+  }
+  errors: {
+    total_count: number
+    error_rate: number
+    '4xx_count': number
+    '5xx_count': number
+    timeout_count: number
+    top_error?: {
+      code: string
+      message: string
+      count: number
+    }
+  }
+  resources: {
+    cpu_usage: number
+    memory_usage: number
+    disk_usage: number
+    goroutines: number
+    db_connections: {
+      active: number
+      idle: number
+      waiting: number
+      max: number
+    }
+  }
+  system_status: {
+    redis: string
+    database: string
+    background_jobs: string
+  }
+}
+
+export interface ProviderHealthData {
+  name: string
+  request_count: number
+  success_rate: number
+  error_rate: number
+  latency_avg: number
+  latency_p99: number
+  status: string
+  errors_by_type: {
+    '4xx': number
+    '5xx': number
+    timeout: number
+  }
+}
+
+export interface ProviderHealthResponse {
+  providers: ProviderHealthData[]
+  summary: {
+    total_requests: number
+    avg_success_rate: number
+    best_provider: string
+    worst_provider: string
+  }
+}
+
+export interface LatencyHistogramResponse {
+  buckets: {
+    range: string
+    count: number
+    percentage: number
+  }[]
+  total_requests: number
+  slow_request_threshold: number
+}
+
+export interface ErrorDistributionResponse {
+  items: {
+    code: string
+    message: string
+    count: number
+    percentage: number
+  }[]
+}
+
+/**
+ * Get realtime ops dashboard overview
+ */
+export async function getDashboardOverview(timeRange = '1h'): Promise<OpsDashboardOverview> {
+  const { data } = await apiClient.get<OpsDashboardOverview>('/admin/ops/dashboard/overview', {
+    params: { time_range: timeRange }
+  })
+  return data
+}
+
+/**
+ * Get provider health comparison
+ */
+export async function getProviderHealth(timeRange = '1h'): Promise<ProviderHealthResponse> {
+  const { data } = await apiClient.get<ProviderHealthResponse>('/admin/ops/dashboard/providers', {
+    params: { time_range: timeRange }
+  })
+  return data
+}
+
+/**
+ * Get latency histogram
+ */
+export async function getLatencyHistogram(timeRange = '1h'): Promise<LatencyHistogramResponse> {
+  const { data } = await apiClient.get<LatencyHistogramResponse>('/admin/ops/dashboard/latency-histogram', {
+    params: { time_range: timeRange }
+  })
+  return data
+}
+
+/**
+ * Get error distribution
+ */
+export async function getErrorDistribution(timeRange = '1h'): Promise<ErrorDistributionResponse> {
+  const { data } = await apiClient.get<ErrorDistributionResponse>('/admin/ops/dashboard/errors/distribution', {
+    params: { time_range: timeRange }
+  })
+  return data
+}
+
+/**
+ * Subscribe to realtime QPS updates via WebSocket
+ */
+export interface SubscribeQPSOptions {
+  token?: string | null
+  onOpen?: () => void
+  onClose?: (event: CloseEvent) => void
+  onError?: (event: Event) => void
+  /**
+   * Called when the server closes with an application close code that indicates
+   * reconnecting is not useful (e.g. feature flag disabled).
+   */
+  onFatalClose?: (event: CloseEvent) => void
+  /**
+   * More granular status updates for UI (connecting/reconnecting/offline/etc).
+   * Does not replace `onOpen`/`onClose`; it complements them.
+   */
+  onStatusChange?: (status: OpsWSStatus) => void
+  /**
+   * Called when a reconnect is scheduled (helps display "retry in Xs").
+   */
+  onReconnectScheduled?: (info: { attempt: number, delayMs: number }) => void
+  wsBaseUrl?: string
+  /**
+   * Maximum reconnect attempts. Defaults to Infinity to keep the dashboard live.
+   * Set to 0 to disable reconnect.
+   */
+  maxReconnectAttempts?: number
+  reconnectBaseDelayMs?: number
+  reconnectMaxDelayMs?: number
+  /**
+   * Stale connection detection (heartbeat-by-observation).
+   * If no messages are received within this window, the socket is closed to trigger a reconnect.
+   * Set to 0 to disable.
+   */
+  staleTimeoutMs?: number
+  /**
+   * How often to check staleness. Only used when `staleTimeoutMs > 0`.
+   */
+  staleCheckIntervalMs?: number
+}
+
+export type OpsWSStatus = 'connecting' | 'connected' | 'reconnecting' | 'offline' | 'closed'
+
+export const OPS_WS_CLOSE_CODES = {
+  REALTIME_DISABLED: 4001
+} as const
+
+export function subscribeQPS(onMessage: (data: any) => void, options: SubscribeQPSOptions = {}): () => void {
+  let ws: WebSocket | null = null
+  let reconnectAttempts = 0
+  const maxReconnectAttempts = Number.isFinite(options.maxReconnectAttempts as number)
+    ? (options.maxReconnectAttempts as number)
+    : Infinity
+  const baseDelayMs = options.reconnectBaseDelayMs ?? 1000
+  const maxDelayMs = options.reconnectMaxDelayMs ?? 30000
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  let shouldReconnect = true
+  let isConnecting = false
+  let hasConnectedOnce = false
+  let lastMessageAt = 0
+  const staleTimeoutMs = options.staleTimeoutMs ?? 120_000
+  const staleCheckIntervalMs = options.staleCheckIntervalMs ?? 30_000
+  let staleTimer: ReturnType<typeof setInterval> | null = null
+
+  const setStatus = (status: OpsWSStatus) => {
+    options.onStatusChange?.(status)
+  }
+
+  const clearReconnectTimer = () => {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+  }
+
+  const clearStaleTimer = () => {
+    if (staleTimer) {
+      clearInterval(staleTimer)
+      staleTimer = null
+    }
+  }
+
+  const startStaleTimer = () => {
+    clearStaleTimer()
+    if (!staleTimeoutMs || staleTimeoutMs <= 0) return
+    staleTimer = setInterval(() => {
+      if (!shouldReconnect) return
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
+      if (!lastMessageAt) return
+      const ageMs = Date.now() - lastMessageAt
+      if (ageMs > staleTimeoutMs) {
+        // Treat as a half-open connection; closing triggers the normal reconnect path.
+        ws.close()
+      }
+    }, staleCheckIntervalMs)
+  }
+
+  const scheduleReconnect = () => {
+    if (!shouldReconnect) return
+    if (hasConnectedOnce && reconnectAttempts >= maxReconnectAttempts) return
+
+    // If we're offline, wait for the browser to come back online.
+    if (typeof navigator !== 'undefined' && 'onLine' in navigator && !navigator.onLine) {
+      setStatus('offline')
+      return
+    }
+
+    const expDelay = baseDelayMs * Math.pow(2, reconnectAttempts)
+    const delay = Math.min(expDelay, maxDelayMs)
+    const jitter = Math.floor(Math.random() * 250)
+    clearReconnectTimer()
+    reconnectTimer = setTimeout(() => {
+      reconnectAttempts++
+      connect()
+    }, delay + jitter)
+    options.onReconnectScheduled?.({ attempt: reconnectAttempts + 1, delayMs: delay + jitter })
+  }
+
+  const handleOnline = () => {
+    if (!shouldReconnect) return
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return
+    connect()
+  }
+
+  const handleOffline = () => {
+    setStatus('offline')
+  }
+
+  const connect = () => {
+    if (!shouldReconnect) return
+    if (isConnecting) return
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return
+    if (hasConnectedOnce && reconnectAttempts >= maxReconnectAttempts) return
+
+    isConnecting = true
+    setStatus(hasConnectedOnce ? 'reconnecting' : 'connecting')
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const wsBaseUrl = options.wsBaseUrl || import.meta.env.VITE_WS_BASE_URL || window.location.host
+    const wsURL = new URL(`${protocol}//${wsBaseUrl}/api/v1/admin/ops/ws/qps`)
+
+    const token = options.token ?? localStorage.getItem('auth_token')
+    if (token) wsURL.searchParams.set('token', token)
+
+    ws = new WebSocket(wsURL.toString())
+
+    ws.onopen = () => {
+      reconnectAttempts = 0
+      isConnecting = false
+      hasConnectedOnce = true
+      clearReconnectTimer()
+      lastMessageAt = Date.now()
+      startStaleTimer()
+      setStatus('connected')
+      options.onOpen?.()
+    }
+
+    ws.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data)
+        lastMessageAt = Date.now()
+        onMessage(data)
+      } catch (err) {
+        console.warn('[OpsWS] Failed to parse message:', err)
+      }
+    }
+
+    ws.onerror = (error) => {
+      console.error('[OpsWS] Connection error:', error)
+      options.onError?.(error)
+    }
+
+    ws.onclose = (event) => {
+      isConnecting = false
+      options.onClose?.(event)
+      clearStaleTimer()
+      ws = null
+
+      // If the server explicitly tells us to stop reconnecting, honor it.
+      if (event && typeof event.code === 'number' && event.code === OPS_WS_CLOSE_CODES.REALTIME_DISABLED) {
+        shouldReconnect = false
+        clearReconnectTimer()
+        setStatus('closed')
+        options.onFatalClose?.(event)
+        return
+      }
+
+      scheduleReconnect()
+    }
+  }
+
+  window.addEventListener('online', handleOnline)
+  window.addEventListener('offline', handleOffline)
+  connect()
+
+  return () => {
+    shouldReconnect = false
+    window.removeEventListener('online', handleOnline)
+    window.removeEventListener('offline', handleOffline)
+    clearReconnectTimer()
+    clearStaleTimer()
+    if (ws) ws.close()
+    ws = null
+    setStatus('closed')
+  }
+}
+
+// Alert Rules API
+export async function listAlertRules(): Promise<AlertRule[]> {
+  const { data } = await apiClient.get<AlertRule[]>('/admin/ops/alert-rules')
+  return data
+}
+
+export async function createAlertRule(rule: AlertRule): Promise<AlertRule> {
+  const { data } = await apiClient.post<AlertRule>('/admin/ops/alert-rules', rule)
+  return data
+}
+
+export async function updateAlertRule(id: number, rule: Partial<AlertRule>): Promise<AlertRule> {
+  const { data } = await apiClient.put<AlertRule>(`/admin/ops/alert-rules/${id}`, rule)
+  return data
+}
+
+export async function deleteAlertRule(id: number): Promise<void> {
+  await apiClient.delete(`/admin/ops/alert-rules/${id}`)
+}
+
+export async function listAlertEvents(limit = 100): Promise<AlertEvent[]> {
+  const { data } = await apiClient.get<AlertEvent[]>('/admin/ops/alert-events', { params: { limit } })
+  return data
+}
+
+export interface GetErrorStatsByIPParams {
+  start_time: string
+  end_time: string
+  limit?: number
+  sort_by?: 'error_count' | 'last_error_time'
+  sort_order?: 'asc' | 'desc'
+}
+
+export interface GetErrorStatsByIPResponse {
+  total: number
+  data: IPErrorStats[]
+}
+
+export async function getErrorStatsByIP(params: GetErrorStatsByIPParams): Promise<GetErrorStatsByIPResponse> {
+  const { data } = await apiClient.get<GetErrorStatsByIPResponse>('/admin/ops/errors/by-ip', { params })
+  return data
+}
+
+export interface GetErrorsByIPParams {
+  start_time: string
+  end_time: string
+  page?: number
+  page_size?: number
+}
+
+export interface GetErrorsByIPResponse {
+  ip: string
+  total: number
+  page: number
+  page_size: number
+  errors: OpsErrorLog[]
+}
+
+export async function getErrorsByIP(ip: string, params: GetErrorsByIPParams): Promise<GetErrorsByIPResponse> {
+  const { data } = await apiClient.get<GetErrorsByIPResponse>(`/admin/ops/errors/by-ip/${encodeURIComponent(ip)}`, { params })
+  return data
+}
+
+export interface GetErrorStatsParams {
+  start_time?: string
+  end_time?: string
+  group_by?: 'platform' | 'phase' | 'severity' | ''
+}
+
+export type OpsWindowStatsGroupedItem = {
+  group: string
+  error_count: number
+  error_4xx_count: number
+  error_5xx_count: number
+  timeout_count: number
+}
+
+export type GetErrorStatsGroupedResponse = {
+  group_by: string
+  items: OpsWindowStatsGroupedItem[]
+}
+
+export async function getErrorStatsGrouped(params: GetErrorStatsParams & { group_by: 'platform' | 'phase' | 'severity' }): Promise<GetErrorStatsGroupedResponse> {
+  const { data } = await apiClient.get<GetErrorStatsGroupedResponse>('/admin/ops/error-stats', { params })
+  return data
+}
+
+export interface GetErrorTimeseriesParams {
+  start_time?: string
+  end_time?: string
+  interval?: '1m' | '5m' | '1h'
+}
+
+export async function getErrorTimeseries(params?: GetErrorTimeseriesParams): Promise<{ items: OpsMetrics[] }> {
+  const { data } = await apiClient.get<{ items: OpsMetrics[] }>('/admin/ops/error-timeseries', { params })
+  return data
+}
+
+export type AccountStats = {
+  error_count: number
+  success_count: number
+  timeout_count: number
+  rate_limit_count: number
+}
+
+export type AccountStatusSummary = {
+  account_id: number
+  stats_1h: AccountStats
+  stats_24h: AccountStats
+}
+
+export type GetAllAccountStatusResponse = {
+  accounts: AccountStatusSummary[]
+  total: number
+}
+
+export async function getAllAccountStatus(): Promise<GetAllAccountStatusResponse> {
+  const { data } = await apiClient.get<GetAllAccountStatusResponse>('/admin/ops/account-status')
+  return data
+}
+
+export async function getAccountStatusByID(accountId: number): Promise<AccountStatusSummary> {
+  const { data } = await apiClient.get<AccountStatusSummary>('/admin/ops/account-status', { params: { account_id: accountId } })
+  return data
+}
+
+// Group Availability API
+export interface ListGroupAvailabilityStatusParams {
+  search?: string
+  monitoring?: 'enabled' | 'disabled' | 'all'
+  alert?: 'ok' | 'firing' | 'all'
+  page?: number
+  page_size?: number
+}
+
+export interface ListGroupAvailabilityStatusResponse {
+  items: GroupAvailabilityStatus[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+export async function listGroupAvailabilityStatus(params?: ListGroupAvailabilityStatusParams): Promise<ListGroupAvailabilityStatusResponse> {
+  const { data } = await apiClient.get<ListGroupAvailabilityStatusResponse>('/admin/ops/group-availability/status', { params })
+  return data
+}
+
+export async function listGroupAvailabilityEvents(params?: { limit?: number, status?: 'firing' | 'resolved' | 'all' }): Promise<GroupAvailabilityEvent[]> {
+  const { data } = await apiClient.get<GroupAvailabilityEvent[]>('/admin/ops/group-availability/events', { params })
+  return data
+}
+
+export async function updateGroupAvailabilityConfig(groupId: number, config: Partial<GroupAvailabilityConfig>): Promise<GroupAvailabilityConfig> {
+  const { data } = await apiClient.put<GroupAvailabilityConfig>(`/admin/ops/group-availability/configs/${groupId}`, config)
+  return data
+}
+
+// Email Notification API
+export async function getEmailNotificationConfig(): Promise<EmailNotificationConfig> {
+  const { data } = await apiClient.get<EmailNotificationConfig>('/admin/ops/email-notification/config')
+  return data
+}
+
+export async function updateEmailNotificationConfig(config: EmailNotificationConfig): Promise<EmailNotificationConfig> {
+  const { data } = await apiClient.put<EmailNotificationConfig>('/admin/ops/email-notification/config', config)
+  return data
+}
+
+// Runtime settings API (DB-backed)
+export async function getAlertRuntimeSettings(): Promise<OpsAlertRuntimeSettings> {
+  const { data } = await apiClient.get<OpsAlertRuntimeSettings>('/admin/ops/runtime/alert')
+  return data
+}
+
+export async function updateAlertRuntimeSettings(config: OpsAlertRuntimeSettings): Promise<OpsAlertRuntimeSettings> {
+  const { data } = await apiClient.put<OpsAlertRuntimeSettings>('/admin/ops/runtime/alert', config)
+  return data
+}
+
+export async function getGroupAvailabilityRuntimeSettings(): Promise<OpsGroupAvailabilityRuntimeSettings> {
+  const { data } = await apiClient.get<OpsGroupAvailabilityRuntimeSettings>('/admin/ops/runtime/group-availability')
+  return data
+}
+
+export async function updateGroupAvailabilityRuntimeSettings(config: OpsGroupAvailabilityRuntimeSettings): Promise<OpsGroupAvailabilityRuntimeSettings> {
+  const { data } = await apiClient.put<OpsGroupAvailabilityRuntimeSettings>('/admin/ops/runtime/group-availability', config)
+  return data
+}
+
+export const opsAPI = {
+  getMetrics,
+  listMetricsHistory,
+  listErrorLogs,
+  listErrors,
+  getErrorDetail,
+  retryErrorRequest,
+  listRequestDetails,
+  getDashboardOverview,
+  getProviderHealth,
+  getLatencyHistogram,
+  getErrorDistribution,
+  getConcurrencyStats,
+  getSystemHealth,
+  subscribeQPS,
+  listAlertRules,
+  createAlertRule,
+  updateAlertRule,
+  deleteAlertRule,
+  listAlertEvents,
+  getErrorStatsByIP,
+  getErrorsByIP,
+  getErrorStatsGrouped,
+  getErrorTimeseries,
+  getAllAccountStatus,
+  getAccountStatusByID,
+  listGroupAvailabilityStatus,
+  listGroupAvailabilityEvents,
+  updateGroupAvailabilityConfig,
+  getEmailNotificationConfig,
+  updateEmailNotificationConfig,
+  getAlertRuntimeSettings,
+  updateAlertRuntimeSettings,
+  getGroupAvailabilityRuntimeSettings,
+  updateGroupAvailabilityRuntimeSettings
+}
+
+export default opsAPI

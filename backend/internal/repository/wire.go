@@ -25,6 +25,10 @@ func ProvideConcurrencyCache(rdb *redis.Client, cfg *config.Config) service.Conc
 	return NewConcurrencyCache(rdb, cfg.Gateway.ConcurrencySlotTTLMinutes, waitTTLSeconds)
 }
 
+func ProvideDashboardUsageRepository(repo service.UsageLogRepository) service.DashboardUsageRepository {
+	return repo
+}
+
 // ProviderSet is the Wire provider set for all repositories
 var ProviderSet = wire.NewSet(
 	NewUserRepository,
@@ -34,10 +38,12 @@ var ProviderSet = wire.NewSet(
 	NewProxyRepository,
 	NewRedeemCodeRepository,
 	NewUsageLogRepository,
+	NewOpsRepository,
 	NewSettingRepository,
 	NewUserSubscriptionRepository,
 	NewUserAttributeDefinitionRepository,
 	NewUserAttributeValueRepository,
+	ProvideDashboardUsageRepository,
 
 	// Cache implementations
 	NewGatewayCache,

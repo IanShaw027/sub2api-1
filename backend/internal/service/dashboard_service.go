@@ -10,10 +10,10 @@ import (
 
 // DashboardService provides aggregated statistics for admin dashboard.
 type DashboardService struct {
-	usageRepo UsageLogRepository
+	usageRepo DashboardUsageRepository
 }
 
-func NewDashboardService(usageRepo UsageLogRepository) *DashboardService {
+func NewDashboardService(usageRepo DashboardUsageRepository) *DashboardService {
 	return &DashboardService{
 		usageRepo: usageRepo,
 	}

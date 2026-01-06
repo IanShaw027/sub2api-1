@@ -23,6 +23,7 @@ type OpenAIGatewayHandler struct {
 	gatewayService      *service.OpenAIGatewayService
 	billingCacheService *service.BillingCacheService
 	concurrencyHelper   *ConcurrencyHelper
+	opsService          *service.OpsService
 }
 
 // NewOpenAIGatewayHandler creates a new OpenAIGatewayHandler
@@ -30,6 +31,7 @@ func NewOpenAIGatewayHandler(
 	gatewayService *service.OpenAIGatewayService,
 	concurrencyService *service.ConcurrencyService,
 	billingCacheService *service.BillingCacheService,
+	opsService *service.OpsService,
 	cfg *config.Config,
 ) *OpenAIGatewayHandler {
 	pingInterval := time.Duration(0)
@@ -40,6 +42,7 @@ func NewOpenAIGatewayHandler(
 		gatewayService:      gatewayService,
 		billingCacheService: billingCacheService,
 		concurrencyHelper:   NewConcurrencyHelper(concurrencyService, SSEPingFormatComment, pingInterval),
+		opsService:          opsService,
 	}
 }
 
@@ -60,6 +63,12 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	}
 
 	// Read request body
+	if maxBytes, ok := middleware2.GetMaxBodySizeFromContext(c); ok && maxBytes > 0 {
+		if c.Request != nil && c.Request.ContentLength > maxBytes {
+			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxBytes))
+			return
+		}
+	}
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		if maxErr, ok := extractMaxBytesError(err); ok {
@@ -67,6 +76,11 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			return
 		}
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		return
+	}
+
+	if maxBytes, ok := middleware2.GetMaxBodySizeFromContext(c); ok && maxBytes > 0 && int64(len(body)) > maxBytes {
+		h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxBytes))
 		return
 	}
 
@@ -85,6 +99,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	// Extract model and stream
 	reqModel, _ := reqBody["model"].(string)
 	reqStream, _ := reqBody["stream"].(bool)
+	setOpsRequestContext(c, reqModel, reqStream)
 
 	// 验证 model 必填
 	if reqModel == "" {
@@ -290,6 +305,7 @@ func (h *OpenAIGatewayHandler) mapUpstreamError(statusCode int) (int, string, st
 // handleStreamingAwareError handles errors that may occur after streaming has started
 func (h *OpenAIGatewayHandler) handleStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
 	if streamStarted {
+		recordOpsError(c, h.opsService, status, errType, message, service.PlatformOpenAI, true, "", nil)
 		// Stream already started, send error as SSE event then close
 		flusher, ok := c.Writer.(http.Flusher)
 		if ok {
@@ -309,6 +325,7 @@ func (h *OpenAIGatewayHandler) handleStreamingAwareError(c *gin.Context, status 
 
 // errorResponse returns OpenAI API format error response
 func (h *OpenAIGatewayHandler) errorResponse(c *gin.Context, status int, errType, message string) {
+	recordOpsError(c, h.opsService, status, errType, message, service.PlatformOpenAI, false, "", nil)
 	c.JSON(status, gin.H{
 		"error": gin.H{
 			"type":    errType,

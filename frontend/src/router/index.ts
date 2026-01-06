@@ -5,6 +5,7 @@
 
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import i18n from '@/i18n'
 
 /**
  * Route definitions with lazy loading
@@ -259,6 +260,17 @@ const routes: RouteRecordRaw[] = [
       descriptionKey: 'admin.usage.description'
     }
   },
+  {
+    path: '/admin/ops',
+    name: 'AdminOps',
+    component: () => import('@/views/admin/ops/OpsDashboard.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Ops',
+      titleKey: 'nav.ops'
+    }
+  },
 
   // ==================== 404 Not Found ====================
   {
@@ -302,8 +314,13 @@ router.beforeEach((to, _from, next) => {
   }
 
   // Set page title
-  if (to.meta.title) {
-    document.title = `${to.meta.title} - Sub2API`
+  const titleKey = typeof to.meta.titleKey === 'string' ? to.meta.titleKey : undefined
+  const translatedTitle = titleKey ? i18n.global.t(titleKey) : undefined
+  const fallbackTitle = typeof to.meta.title === 'string' ? to.meta.title : undefined
+  const finalTitle = translatedTitle || fallbackTitle
+
+  if (finalTitle) {
+    document.title = `${finalTitle} - Sub2API`
   } else {
     document.title = 'Sub2API'
   }

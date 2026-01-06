@@ -20,15 +20,27 @@ func NewGatewayCache(rdb *redis.Client) service.GatewayCache {
 
 func (c *gatewayCache) GetSessionAccountID(ctx context.Context, sessionHash string) (int64, error) {
 	key := stickySessionPrefix + sessionHash
-	return c.rdb.Get(ctx, key).Int64()
+	val, err := c.rdb.Get(ctx, key).Int64()
+	if err != nil {
+		recordRedisError(ctx, "GatewayCache.GetSessionAccountID", err)
+	}
+	return val, err
 }
 
 func (c *gatewayCache) SetSessionAccountID(ctx context.Context, sessionHash string, accountID int64, ttl time.Duration) error {
 	key := stickySessionPrefix + sessionHash
-	return c.rdb.Set(ctx, key, accountID, ttl).Err()
+	if err := c.rdb.Set(ctx, key, accountID, ttl).Err(); err != nil {
+		recordRedisError(ctx, "GatewayCache.SetSessionAccountID", err)
+		return err
+	}
+	return nil
 }
 
 func (c *gatewayCache) RefreshSessionTTL(ctx context.Context, sessionHash string, ttl time.Duration) error {
 	key := stickySessionPrefix + sessionHash
-	return c.rdb.Expire(ctx, key, ttl).Err()
+	if err := c.rdb.Expire(ctx, key, ttl).Err(); err != nil {
+		recordRedisError(ctx, "GatewayCache.RefreshSessionTTL", err)
+		return err
+	}
+	return nil
 }

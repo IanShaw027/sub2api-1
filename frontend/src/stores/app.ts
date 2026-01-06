@@ -26,6 +26,7 @@ export const useAppStore = defineStore('app', () => {
   const publicSettingsLoading = ref<boolean>(false)
   const siteName = ref<string>('Sub2API')
   const siteLogo = ref<string>('')
+  const siteUrl = ref<string>('')
   const siteVersion = ref<string>('')
   const contactInfo = ref<string>('')
   const apiBaseUrl = ref<string>('')
@@ -293,6 +294,7 @@ export const useAppStore = defineStore('app', () => {
         site_name: siteName.value,
         site_logo: siteLogo.value,
         site_subtitle: '',
+        site_url: siteUrl.value,
         api_base_url: apiBaseUrl.value,
         contact_info: contactInfo.value,
         doc_url: docUrl.value,
@@ -310,6 +312,7 @@ export const useAppStore = defineStore('app', () => {
       const data = await fetchPublicSettingsAPI()
       siteName.value = data.site_name || 'Sub2API'
       siteLogo.value = data.site_logo || ''
+      siteUrl.value = data.site_url || ''
       siteVersion.value = data.version || ''
       contactInfo.value = data.contact_info || ''
       apiBaseUrl.value = data.api_base_url || ''

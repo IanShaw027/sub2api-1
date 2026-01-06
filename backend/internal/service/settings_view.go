@@ -21,12 +21,17 @@ type SystemSettings struct {
 	SiteName     string
 	SiteLogo     string
 	SiteSubtitle string
+	SiteURL      string
 	APIBaseURL   string
 	ContactInfo  string
 	DocURL       string
 
 	DefaultConcurrency int
 	DefaultBalance     float64
+
+	// Ops monitoring
+	OpsMonitoringEnabled         bool
+	OpsRealtimeMonitoringEnabled bool
 
 	// Model fallback configuration
 	EnableModelFallback      bool   `json:"enable_model_fallback"`
@@ -48,6 +53,7 @@ type PublicSettings struct {
 	SiteName            string
 	SiteLogo            string
 	SiteSubtitle        string
+	SiteURL             string
 	APIBaseURL          string
 	ContactInfo         string
 	DocURL              string

@@ -83,6 +83,33 @@ apiClient.interceptors.response.use(
     // Handle common errors
     if (error.response) {
       const { status, data } = error.response
+      const url = String(error.config?.url || '')
+
+      // Ops monitoring disabled: treat as feature-flagged 404, and proactively redirect away
+      // from ops pages to avoid noisy console errors / broken UI states.
+      if (status === 404 && data?.message === 'Ops monitoring is disabled') {
+        try {
+          localStorage.setItem('ops_monitoring_enabled_cached', 'false')
+        } catch {
+          // ignore localStorage failures
+        }
+        try {
+          window.dispatchEvent(new CustomEvent('ops-monitoring-disabled'))
+        } catch {
+          // ignore event failures
+        }
+
+        if (window.location.pathname.startsWith('/admin/ops')) {
+          window.location.href = '/admin/settings'
+        }
+
+        return Promise.reject({
+          status,
+          code: 'OPS_DISABLED',
+          message: data?.message || error.message,
+          url
+        })
+      }
 
       // 401: Unauthorized - clear token and redirect to login
       if (status === 401) {

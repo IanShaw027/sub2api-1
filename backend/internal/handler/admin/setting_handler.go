@@ -2,6 +2,7 @@ package admin
 
 import (
 	"log"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
@@ -18,6 +19,8 @@ type SettingHandler struct {
 	emailService     *service.EmailService
 	turnstileService *service.TurnstileService
 }
+
+const maskedSecretPlaceholder = "********"
 
 // NewSettingHandler 创建系统设置处理器
 func NewSettingHandler(settingService *service.SettingService, emailService *service.EmailService, turnstileService *service.TurnstileService) *SettingHandler {
@@ -53,11 +56,14 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		SiteName:                     settings.SiteName,
 		SiteLogo:                     settings.SiteLogo,
 		SiteSubtitle:                 settings.SiteSubtitle,
+		SiteURL:                      settings.SiteURL,
 		APIBaseURL:                   settings.APIBaseURL,
 		ContactInfo:                  settings.ContactInfo,
 		DocURL:                       settings.DocURL,
 		DefaultConcurrency:           settings.DefaultConcurrency,
 		DefaultBalance:               settings.DefaultBalance,
+		OpsMonitoringEnabled:         settings.OpsMonitoringEnabled,
+		OpsRealtimeMonitoringEnabled: settings.OpsRealtimeMonitoringEnabled,
 		EnableModelFallback:          settings.EnableModelFallback,
 		FallbackModelAnthropic:       settings.FallbackModelAnthropic,
 		FallbackModelOpenAI:          settings.FallbackModelOpenAI,
@@ -92,6 +98,7 @@ type UpdateSettingsRequest struct {
 	SiteName     string `json:"site_name"`
 	SiteLogo     string `json:"site_logo"`
 	SiteSubtitle string `json:"site_subtitle"`
+	SiteURL      string `json:"site_url"`
 	APIBaseURL   string `json:"api_base_url"`
 	ContactInfo  string `json:"contact_info"`
 	DocURL       string `json:"doc_url"`
@@ -99,6 +106,10 @@ type UpdateSettingsRequest struct {
 	// 默认配置
 	DefaultConcurrency int     `json:"default_concurrency"`
 	DefaultBalance     float64 `json:"default_balance"`
+
+	// Ops monitoring
+	OpsMonitoringEnabled         bool `json:"ops_monitoring_enabled"`
+	OpsRealtimeMonitoringEnabled bool `json:"ops_realtime_monitoring_enabled"`
 
 	// Model fallback configuration
 	EnableModelFallback      bool   `json:"enable_model_fallback"`
@@ -119,6 +130,14 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
+	}
+
+	// If frontend sends placeholder values (legacy UI), treat them as "keep existing".
+	if strings.TrimSpace(req.SMTPPassword) == maskedSecretPlaceholder {
+		req.SMTPPassword = ""
+	}
+	if strings.TrimSpace(req.TurnstileSecretKey) == maskedSecretPlaceholder {
+		req.TurnstileSecretKey = ""
 	}
 
 	previousSettings, err := h.settingService.GetAllSettings(c.Request.Context())
@@ -166,33 +185,36 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	}
 
 	settings := &service.SystemSettings{
-		RegistrationEnabled:      req.RegistrationEnabled,
-		EmailVerifyEnabled:       req.EmailVerifyEnabled,
-		SMTPHost:                 req.SMTPHost,
-		SMTPPort:                 req.SMTPPort,
-		SMTPUsername:             req.SMTPUsername,
-		SMTPPassword:             req.SMTPPassword,
-		SMTPFrom:                 req.SMTPFrom,
-		SMTPFromName:             req.SMTPFromName,
-		SMTPUseTLS:               req.SMTPUseTLS,
-		TurnstileEnabled:         req.TurnstileEnabled,
-		TurnstileSiteKey:         req.TurnstileSiteKey,
-		TurnstileSecretKey:       req.TurnstileSecretKey,
-		SiteName:                 req.SiteName,
-		SiteLogo:                 req.SiteLogo,
-		SiteSubtitle:             req.SiteSubtitle,
-		APIBaseURL:               req.APIBaseURL,
-		ContactInfo:              req.ContactInfo,
-		DocURL:                   req.DocURL,
-		DefaultConcurrency:       req.DefaultConcurrency,
-		DefaultBalance:           req.DefaultBalance,
-		EnableModelFallback:      req.EnableModelFallback,
-		FallbackModelAnthropic:   req.FallbackModelAnthropic,
-		FallbackModelOpenAI:      req.FallbackModelOpenAI,
-		FallbackModelGemini:      req.FallbackModelGemini,
-		FallbackModelAntigravity: req.FallbackModelAntigravity,
-		EnableIdentityPatch:      req.EnableIdentityPatch,
-		IdentityPatchPrompt:      req.IdentityPatchPrompt,
+		RegistrationEnabled:          req.RegistrationEnabled,
+		EmailVerifyEnabled:           req.EmailVerifyEnabled,
+		SMTPHost:                     req.SMTPHost,
+		SMTPPort:                     req.SMTPPort,
+		SMTPUsername:                 req.SMTPUsername,
+		SMTPPassword:                 req.SMTPPassword,
+		SMTPFrom:                     req.SMTPFrom,
+		SMTPFromName:                 req.SMTPFromName,
+		SMTPUseTLS:                   req.SMTPUseTLS,
+		TurnstileEnabled:             req.TurnstileEnabled,
+		TurnstileSiteKey:             req.TurnstileSiteKey,
+		TurnstileSecretKey:           req.TurnstileSecretKey,
+		SiteName:                     req.SiteName,
+		SiteLogo:                     req.SiteLogo,
+		SiteSubtitle:                 req.SiteSubtitle,
+		SiteURL:                      req.SiteURL,
+		APIBaseURL:                   req.APIBaseURL,
+		ContactInfo:                  req.ContactInfo,
+		DocURL:                       req.DocURL,
+		DefaultConcurrency:           req.DefaultConcurrency,
+		DefaultBalance:               req.DefaultBalance,
+		OpsMonitoringEnabled:         req.OpsMonitoringEnabled,
+		OpsRealtimeMonitoringEnabled: req.OpsRealtimeMonitoringEnabled,
+		EnableModelFallback:          req.EnableModelFallback,
+		FallbackModelAnthropic:       req.FallbackModelAnthropic,
+		FallbackModelOpenAI:          req.FallbackModelOpenAI,
+		FallbackModelGemini:          req.FallbackModelGemini,
+		FallbackModelAntigravity:     req.FallbackModelAntigravity,
+		EnableIdentityPatch:          req.EnableIdentityPatch,
+		IdentityPatchPrompt:          req.IdentityPatchPrompt,
 	}
 
 	if err := h.settingService.UpdateSettings(c.Request.Context(), settings); err != nil {
@@ -225,11 +247,14 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		SiteName:                     updatedSettings.SiteName,
 		SiteLogo:                     updatedSettings.SiteLogo,
 		SiteSubtitle:                 updatedSettings.SiteSubtitle,
+		SiteURL:                      updatedSettings.SiteURL,
 		APIBaseURL:                   updatedSettings.APIBaseURL,
 		ContactInfo:                  updatedSettings.ContactInfo,
 		DocURL:                       updatedSettings.DocURL,
 		DefaultConcurrency:           updatedSettings.DefaultConcurrency,
 		DefaultBalance:               updatedSettings.DefaultBalance,
+		OpsMonitoringEnabled:         updatedSettings.OpsMonitoringEnabled,
+		OpsRealtimeMonitoringEnabled: updatedSettings.OpsRealtimeMonitoringEnabled,
 		EnableModelFallback:          updatedSettings.EnableModelFallback,
 		FallbackModelAnthropic:       updatedSettings.FallbackModelAnthropic,
 		FallbackModelOpenAI:          updatedSettings.FallbackModelOpenAI,
@@ -307,6 +332,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.SiteSubtitle != after.SiteSubtitle {
 		changed = append(changed, "site_subtitle")
 	}
+	if before.SiteURL != after.SiteURL {
+		changed = append(changed, "site_url")
+	}
 	if before.APIBaseURL != after.APIBaseURL {
 		changed = append(changed, "api_base_url")
 	}
@@ -322,6 +350,12 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.DefaultBalance != after.DefaultBalance {
 		changed = append(changed, "default_balance")
 	}
+	if before.OpsMonitoringEnabled != after.OpsMonitoringEnabled {
+		changed = append(changed, "ops_monitoring_enabled")
+	}
+	if before.OpsRealtimeMonitoringEnabled != after.OpsRealtimeMonitoringEnabled {
+		changed = append(changed, "ops_realtime_monitoring_enabled")
+	}
 	if before.EnableModelFallback != after.EnableModelFallback {
 		changed = append(changed, "enable_model_fallback")
 	}
@@ -336,6 +370,12 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.FallbackModelAntigravity != after.FallbackModelAntigravity {
 		changed = append(changed, "fallback_model_antigravity")
+	}
+	if before.EnableIdentityPatch != after.EnableIdentityPatch {
+		changed = append(changed, "enable_identity_patch")
+	}
+	if before.IdentityPatchPrompt != after.IdentityPatchPrompt {
+		changed = append(changed, "identity_patch_prompt")
 	}
 	return changed
 }

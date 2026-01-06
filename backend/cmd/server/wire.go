@@ -12,6 +12,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
+	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/server"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -70,55 +71,163 @@ func provideCleanup(
 	openaiOAuth *service.OpenAIOAuthService,
 	geminiOAuth *service.GeminiOAuthService,
 	antigravityOAuth *service.AntigravityOAuthService,
+	opsAggregation *service.OpsAggregationService,
+	opsMetricsCollector *service.OpsMetricsCollector,
+	opsAlertService *service.OpsAlertService,
+	opsScheduledReport *service.OpsScheduledReportService,
+	opsGroupAvailability *service.OpsGroupAvailabilityMonitor,
+	opsCleanup *service.OpsCleanupService,
 ) func() {
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		// Cleanup steps in reverse dependency order
+		// Cleanup steps in reverse dependency order.
+		// Note: ops-related services are best-effort and may be nil when disabled.
 		cleanupSteps := []struct {
 			name string
 			fn   func() error
-		}{
-			{"TokenRefreshService", func() error {
+		}{}
+
+		if opsCleanup != nil {
+			cleanupSteps = append(cleanupSteps, struct {
+				name string
+				fn   func() error
+			}{"OpsCleanupService", func() error {
+				opsCleanup.Stop()
+				return nil
+			}})
+		}
+		if opsGroupAvailability != nil {
+			cleanupSteps = append(cleanupSteps, struct {
+				name string
+				fn   func() error
+			}{"OpsGroupAvailabilityMonitor", func() error {
+				opsGroupAvailability.Stop()
+				return nil
+			}})
+		}
+		if opsScheduledReport != nil {
+			cleanupSteps = append(cleanupSteps, struct {
+				name string
+				fn   func() error
+			}{"OpsScheduledReportService", func() error {
+				opsScheduledReport.Stop()
+				return nil
+			}})
+		}
+		if opsAggregation != nil {
+			cleanupSteps = append(cleanupSteps, struct {
+				name string
+				fn   func() error
+			}{"OpsAggregationService", func() error {
+				opsAggregation.Stop()
+				return nil
+			}})
+		}
+		if opsMetricsCollector != nil {
+			cleanupSteps = append(cleanupSteps, struct {
+				name string
+				fn   func() error
+			}{"OpsMetricsCollector", func() error {
+				opsMetricsCollector.Stop()
+				return nil
+			}})
+		}
+		if opsAlertService != nil {
+			cleanupSteps = append(cleanupSteps, struct {
+				name string
+				fn   func() error
+			}{"OpsAlertService", func() error {
+				opsAlertService.Stop()
+				return nil
+			}})
+		}
+
+		cleanupSteps = append(cleanupSteps,
+			struct {
+				name string
+				fn   func() error
+			}{"OpsErrorLogWorkers", func() error {
+				_ = handler.StopOpsErrorLogWorkers()
+				return nil
+			}},
+			struct {
+				name string
+				fn   func() error
+			}{"OpsWSQPSCache", func() error {
+				admin.StopOpsWSQPSCache()
+				return nil
+			}},
+			struct {
+				name string
+				fn   func() error
+			}{"TokenRefreshService", func() error {
 				tokenRefresh.Stop()
 				return nil
 			}},
-			{"PricingService", func() error {
+			struct {
+				name string
+				fn   func() error
+			}{"PricingService", func() error {
 				pricing.Stop()
 				return nil
 			}},
-			{"EmailQueueService", func() error {
+			struct {
+				name string
+				fn   func() error
+			}{"EmailQueueService", func() error {
 				emailQueue.Stop()
 				return nil
 			}},
-			{"BillingCacheService", func() error {
+			struct {
+				name string
+				fn   func() error
+			}{"BillingCacheService", func() error {
 				billingCache.Stop()
 				return nil
 			}},
-			{"OAuthService", func() error {
+			struct {
+				name string
+				fn   func() error
+			}{"OAuthService", func() error {
 				oauth.Stop()
 				return nil
 			}},
-			{"OpenAIOAuthService", func() error {
+			struct {
+				name string
+				fn   func() error
+			}{"OpenAIOAuthService", func() error {
 				openaiOAuth.Stop()
 				return nil
 			}},
-			{"GeminiOAuthService", func() error {
+			struct {
+				name string
+				fn   func() error
+			}{"GeminiOAuthService", func() error {
 				geminiOAuth.Stop()
 				return nil
 			}},
-			{"AntigravityOAuthService", func() error {
+			struct {
+				name string
+				fn   func() error
+			}{"AntigravityOAuthService", func() error {
 				antigravityOAuth.Stop()
 				return nil
 			}},
-			{"Redis", func() error {
+			struct {
+				name string
+				fn   func() error
+			}{"Redis", func() error {
 				return rdb.Close()
 			}},
-			{"Ent", func() error {
+			struct {
+				name string
+				fn   func() error
+			}{"Ent", func() error {
 				return entClient.Close()
 			}},
-		}
+		)
 
 		for _, step := range cleanupSteps {
 			if err := step.fn(); err != nil {

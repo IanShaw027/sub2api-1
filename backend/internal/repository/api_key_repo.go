@@ -33,6 +33,9 @@ func (r *apiKeyRepository) Create(ctx context.Context, key *service.APIKey) erro
 		SetStatus(key.Status).
 		SetNillableGroupID(key.GroupID).
 		Save(ctx)
+	if err != nil {
+		recordInfrastructureError(ctx, "db", "APIKeyRepository.Create", err)
+	}
 	if err == nil {
 		key.ID = created.ID
 		key.CreatedAt = created.CreatedAt
@@ -48,6 +51,9 @@ func (r *apiKeyRepository) GetByID(ctx context.Context, id int64) (*service.APIK
 		WithGroup().
 		Only(ctx)
 	if err != nil {
+		if !dbent.IsNotFound(err) {
+			recordInfrastructureError(ctx, "db", "APIKeyRepository.GetByID", err)
+		}
 		if dbent.IsNotFound(err) {
 			return nil, service.ErrAPIKeyNotFound
 		}
@@ -67,6 +73,9 @@ func (r *apiKeyRepository) GetOwnerID(ctx context.Context, id int64) (int64, err
 		Select(apikey.FieldUserID).
 		Only(ctx)
 	if err != nil {
+		if !dbent.IsNotFound(err) {
+			recordInfrastructureError(ctx, "db", "APIKeyRepository.GetOwnerID", err)
+		}
 		if dbent.IsNotFound(err) {
 			return 0, service.ErrAPIKeyNotFound
 		}
@@ -82,6 +91,9 @@ func (r *apiKeyRepository) GetByKey(ctx context.Context, key string) (*service.A
 		WithGroup().
 		Only(ctx)
 	if err != nil {
+		if !dbent.IsNotFound(err) {
+			recordInfrastructureError(ctx, "db", "APIKeyRepository.GetByKey", err)
+		}
 		if dbent.IsNotFound(err) {
 			return nil, service.ErrAPIKeyNotFound
 		}
@@ -110,6 +122,7 @@ func (r *apiKeyRepository) Update(ctx context.Context, key *service.APIKey) erro
 
 	affected, err := builder.Save(ctx)
 	if err != nil {
+		recordInfrastructureError(ctx, "db", "APIKeyRepository.Update", err)
 		return err
 	}
 	if affected == 0 {
@@ -129,6 +142,7 @@ func (r *apiKeyRepository) Delete(ctx context.Context, id int64) error {
 		SetDeletedAt(time.Now()).
 		Save(ctx)
 	if err != nil {
+		recordInfrastructureError(ctx, "db", "APIKeyRepository.Delete", err)
 		if dbent.IsNotFound(err) {
 			return service.ErrAPIKeyNotFound
 		}
@@ -139,6 +153,7 @@ func (r *apiKeyRepository) Delete(ctx context.Context, id int64) error {
 			Where(apikey.IDEQ(id)).
 			Exist(mixins.SkipSoftDelete(ctx))
 		if err != nil {
+			recordInfrastructureError(ctx, "db", "APIKeyRepository.Delete:Exist", err)
 			return err
 		}
 		if exists {

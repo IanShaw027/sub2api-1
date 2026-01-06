@@ -20,6 +20,7 @@ func SetupRouter(
 	apiKeyAuth middleware2.APIKeyAuthMiddleware,
 	apiKeyService *service.APIKeyService,
 	subscriptionService *service.SubscriptionService,
+	opsService *service.OpsService,
 	cfg *config.Config,
 ) *gin.Engine {
 	// 应用中间件
@@ -33,7 +34,7 @@ func SetupRouter(
 	}
 
 	// 注册路由
-	registerRoutes(r, handlers, jwtAuth, adminAuth, apiKeyAuth, apiKeyService, subscriptionService, cfg)
+	registerRoutes(r, handlers, jwtAuth, adminAuth, apiKeyAuth, apiKeyService, subscriptionService, opsService, cfg)
 
 	return r
 }
@@ -47,6 +48,7 @@ func registerRoutes(
 	apiKeyAuth middleware2.APIKeyAuthMiddleware,
 	apiKeyService *service.APIKeyService,
 	subscriptionService *service.SubscriptionService,
+	opsService *service.OpsService,
 	cfg *config.Config,
 ) {
 	// 通用路由（健康检查、状态等）
@@ -59,5 +61,5 @@ func registerRoutes(
 	routes.RegisterAuthRoutes(v1, h, jwtAuth)
 	routes.RegisterUserRoutes(v1, h, jwtAuth)
 	routes.RegisterAdminRoutes(v1, h, adminAuth)
-	routes.RegisterGatewayRoutes(r, h, apiKeyAuth, apiKeyService, subscriptionService, cfg)
+	routes.RegisterGatewayRoutes(r, h, apiKeyAuth, apiKeyService, subscriptionService, cfg, opsService)
 }

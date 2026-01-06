@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	pkgerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -27,6 +28,7 @@ type GatewayHandler struct {
 	gatewayService            *service.GatewayService
 	geminiCompatService       *service.GeminiMessagesCompatService
 	antigravityGatewayService *service.AntigravityGatewayService
+	opsService                *service.OpsService
 	userService               *service.UserService
 	billingCacheService       *service.BillingCacheService
 	concurrencyHelper         *ConcurrencyHelper
@@ -37,6 +39,7 @@ func NewGatewayHandler(
 	gatewayService *service.GatewayService,
 	geminiCompatService *service.GeminiMessagesCompatService,
 	antigravityGatewayService *service.AntigravityGatewayService,
+	opsService *service.OpsService,
 	userService *service.UserService,
 	concurrencyService *service.ConcurrencyService,
 	billingCacheService *service.BillingCacheService,
@@ -50,6 +53,7 @@ func NewGatewayHandler(
 		gatewayService:            gatewayService,
 		geminiCompatService:       geminiCompatService,
 		antigravityGatewayService: antigravityGatewayService,
+		opsService:                opsService,
 		userService:               userService,
 		billingCacheService:       billingCacheService,
 		concurrencyHelper:         NewConcurrencyHelper(concurrencyService, SSEPingFormatClaude, pingInterval),
@@ -73,6 +77,12 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	}
 
 	// 读取请求体
+	if maxBytes, ok := middleware2.GetMaxBodySizeFromContext(c); ok && maxBytes > 0 {
+		if c.Request != nil && c.Request.ContentLength > maxBytes {
+			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxBytes))
+			return
+		}
+	}
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		if maxErr, ok := extractMaxBytesError(err); ok {
@@ -80,6 +90,11 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			return
 		}
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		return
+	}
+
+	if maxBytes, ok := middleware2.GetMaxBodySizeFromContext(c); ok && maxBytes > 0 && int64(len(body)) > maxBytes {
+		h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxBytes))
 		return
 	}
 
@@ -95,6 +110,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	}
 	reqModel := parsedReq.Model
 	reqStream := parsedReq.Stream
+	setOpsRequestContext(c, reqModel, reqStream)
 
 	// 验证 model 必填
 	if reqModel == "" {
@@ -157,6 +173,37 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		sessionKey = "gemini:" + sessionHash
 	}
 
+	getRetryCount := func() int {
+		if c == nil || c.Request == nil {
+			return 0
+		}
+		v := c.Request.Context().Value(ctxkey.RetryCount)
+		switch n := v.(type) {
+		case int:
+			if n < 0 {
+				return 0
+			}
+			return n
+		case int64:
+			if n < 0 {
+				return 0
+			}
+			return int(n)
+		default:
+			return 0
+		}
+	}
+	setRetryCount := func(retryCount int) {
+		if c == nil || c.Request == nil {
+			return
+		}
+		if retryCount < 0 {
+			retryCount = 0
+		}
+		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), ctxkey.RetryCount, retryCount))
+	}
+	retryCount := getRetryCount()
+
 	if platform == service.PlatformGemini {
 		const maxAccountSwitches = 3
 		switchCount := 0
@@ -164,6 +211,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		lastFailoverStatus := 0
 
 		for {
+			setRetryCount(retryCount)
 			selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionKey, reqModel, failedAccountIDs)
 			if err != nil {
 				if len(failedAccountIDs) == 0 {
@@ -258,6 +306,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					}
 					lastFailoverStatus = failoverErr.StatusCode
 					switchCount++
+					retryCount = getRetryCount() + 1
 					log.Printf("Account %d: upstream error %d, switching account %d/%d", account.ID, failoverErr.StatusCode, switchCount, maxAccountSwitches)
 					continue
 				}
@@ -290,6 +339,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	lastFailoverStatus := 0
 
 	for {
+		setRetryCount(retryCount)
 		// 选择支持该模型的账号
 		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionKey, reqModel, failedAccountIDs)
 		if err != nil {
@@ -385,6 +435,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}
 				lastFailoverStatus = failoverErr.StatusCode
 				switchCount++
+				retryCount = getRetryCount() + 1
 				log.Printf("Account %d: upstream error %d, switching account %d/%d", account.ID, failoverErr.StatusCode, switchCount, maxAccountSwitches)
 				continue
 			}
@@ -599,6 +650,7 @@ func (h *GatewayHandler) mapUpstreamError(statusCode int) (int, string, string) 
 // handleStreamingAwareError handles errors that may occur after streaming has started
 func (h *GatewayHandler) handleStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
 	if streamStarted {
+		recordOpsError(c, h.opsService, status, errType, message, "", true, "", nil)
 		// Stream already started, send error as SSE event then close
 		flusher, ok := c.Writer.(http.Flusher)
 		if ok {
@@ -630,6 +682,7 @@ func (h *GatewayHandler) handleStreamingAwareError(c *gin.Context, status int, e
 
 // errorResponse 返回Claude API格式的错误响应
 func (h *GatewayHandler) errorResponse(c *gin.Context, status int, errType, message string) {
+	recordOpsError(c, h.opsService, status, errType, message, "", false, "", nil)
 	c.JSON(status, gin.H{
 		"type": "error",
 		"error": gin.H{
@@ -657,6 +710,12 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 	}
 
 	// 读取请求体
+	if maxBytes, ok := middleware2.GetMaxBodySizeFromContext(c); ok && maxBytes > 0 {
+		if c.Request != nil && c.Request.ContentLength > maxBytes {
+			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxBytes))
+			return
+		}
+	}
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		if maxErr, ok := extractMaxBytesError(err); ok {
@@ -664,6 +723,11 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 			return
 		}
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		return
+	}
+
+	if maxBytes, ok := middleware2.GetMaxBodySizeFromContext(c); ok && maxBytes > 0 && int64(len(body)) > maxBytes {
+		h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxBytes))
 		return
 	}
 

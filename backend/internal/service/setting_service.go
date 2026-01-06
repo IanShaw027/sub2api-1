@@ -61,6 +61,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeySiteName,
 		SettingKeySiteLogo,
 		SettingKeySiteSubtitle,
+		SettingKeySiteURL,
 		SettingKeyAPIBaseURL,
 		SettingKeyContactInfo,
 		SettingKeyDocURL,
@@ -79,6 +80,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SiteName:            s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
 		SiteLogo:            settings[SettingKeySiteLogo],
 		SiteSubtitle:        s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
+		SiteURL:             settings[SettingKeySiteURL],
 		APIBaseURL:          settings[SettingKeyAPIBaseURL],
 		ContactInfo:         settings[SettingKeyContactInfo],
 		DocURL:              settings[SettingKeyDocURL],
@@ -115,6 +117,7 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	updates[SettingKeySiteName] = settings.SiteName
 	updates[SettingKeySiteLogo] = settings.SiteLogo
 	updates[SettingKeySiteSubtitle] = settings.SiteSubtitle
+	updates[SettingKeySiteURL] = settings.SiteURL
 	updates[SettingKeyAPIBaseURL] = settings.APIBaseURL
 	updates[SettingKeyContactInfo] = settings.ContactInfo
 	updates[SettingKeyDocURL] = settings.DocURL
@@ -122,6 +125,10 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	// 默认配置
 	updates[SettingKeyDefaultConcurrency] = strconv.Itoa(settings.DefaultConcurrency)
 	updates[SettingKeyDefaultBalance] = strconv.FormatFloat(settings.DefaultBalance, 'f', 8, 64)
+
+	// Ops monitoring
+	updates[SettingKeyOpsMonitoringEnabled] = strconv.FormatBool(settings.OpsMonitoringEnabled)
+	updates[SettingKeyOpsRealtimeMonitoringEnabled] = strconv.FormatBool(settings.OpsRealtimeMonitoringEnabled)
 
 	// Model fallback configuration
 	updates[SettingKeyEnableModelFallback] = strconv.FormatBool(settings.EnableModelFallback)
@@ -207,10 +214,14 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyEmailVerifyEnabled:  "false",
 		SettingKeySiteName:            "Sub2API",
 		SettingKeySiteLogo:            "",
+		SettingKeySiteURL:             "",
 		SettingKeyDefaultConcurrency:  strconv.Itoa(s.cfg.Default.UserConcurrency),
 		SettingKeyDefaultBalance:      strconv.FormatFloat(s.cfg.Default.UserBalance, 'f', 8, 64),
 		SettingKeySMTPPort:            "587",
 		SettingKeySMTPUseTLS:          "false",
+		// Ops defaults
+		SettingKeyOpsMonitoringEnabled:         "true",
+		SettingKeyOpsRealtimeMonitoringEnabled: "true",
 		// Model fallback defaults
 		SettingKeyEnableModelFallback:      "false",
 		SettingKeyFallbackModelAnthropic:   "claude-3-5-sonnet-20241022",
@@ -242,6 +253,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		SiteName:                     s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
 		SiteLogo:                     settings[SettingKeySiteLogo],
 		SiteSubtitle:                 s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
+		SiteURL:                      settings[SettingKeySiteURL],
 		APIBaseURL:                   settings[SettingKeyAPIBaseURL],
 		ContactInfo:                  settings[SettingKeyContactInfo],
 		DocURL:                       settings[SettingKeyDocURL],
@@ -285,6 +297,10 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		result.EnableIdentityPatch = true
 	}
 	result.IdentityPatchPrompt = settings[SettingKeyIdentityPatchPrompt]
+
+	// Ops monitoring settings (default: enabled, to preserve existing behavior)
+	result.OpsMonitoringEnabled = s.getStringOrDefault(settings, SettingKeyOpsMonitoringEnabled, "true") == "true"
+	result.OpsRealtimeMonitoringEnabled = s.getStringOrDefault(settings, SettingKeyOpsRealtimeMonitoringEnabled, "true") == "true"
 
 	return result
 }

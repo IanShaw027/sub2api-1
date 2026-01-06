@@ -1,10 +1,12 @@
 package service
 
 import (
+	"log"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/google/wire"
+	"github.com/redis/go-redis/v9"
 )
 
 // BuildInfo contains build information
@@ -61,6 +63,96 @@ func ProvideDeferredService(accountRepo AccountRepository, timingWheel *TimingWh
 	return svc
 }
 
+// ProvideOpsMetricsCollector creates and starts OpsMetricsCollector.
+func ProvideOpsMetricsCollector(
+	opsService *OpsService,
+	concurrencyService *ConcurrencyService,
+	accountRepo AccountRepository,
+	redisClient *redis.Client,
+	cfg *config.Config,
+) *OpsMetricsCollector {
+	if cfg != nil && !cfg.Ops.Enabled {
+		return nil
+	}
+	svc := NewOpsMetricsCollector(opsService, concurrencyService, accountRepo, redisClient, cfg)
+	svc.Start()
+	return svc
+}
+
+// ProvideOpsAlertService creates and starts OpsAlertService.
+func ProvideOpsAlertService(
+	opsService *OpsService,
+	userService *UserService,
+	emailService *EmailService,
+	redisClient *redis.Client,
+	cfg *config.Config,
+) *OpsAlertService {
+	if cfg != nil && !cfg.Ops.Enabled {
+		return nil
+	}
+	svc := NewOpsAlertService(opsService, userService, emailService, redisClient, cfg)
+	svc.Start()
+	return svc
+}
+
+// ProvideOpsAggregationService creates and starts OpsAggregationService.
+func ProvideOpsAggregationService(opsService *OpsService, repo OpsRepository, redisClient *redis.Client, cfg *config.Config) *OpsAggregationService {
+	if cfg != nil && !cfg.Ops.Enabled {
+		return nil
+	}
+	svc := NewOpsAggregationService(repo, redisClient)
+	svc.ops = opsService
+	if cfg != nil && cfg.RunMode == config.RunModeSimple {
+		svc.distributedLockOn = false
+	}
+	if cfg != nil && cfg.Ops.Aggregation.Enabled {
+		if !cfg.Ops.UsePreaggregatedTables {
+			log.Printf("[OpsAggregation] aggregation enabled but ops.use_preaggregated_tables=false; skipping background pre-aggregation")
+			return svc
+		}
+		svc.Start()
+	}
+	return svc
+}
+
+// ProvideOpsScheduledReportService creates and starts OpsScheduledReportService.
+func ProvideOpsScheduledReportService(opsService *OpsService, userService *UserService, emailService *EmailService, redisClient *redis.Client, cfg *config.Config) *OpsScheduledReportService {
+	if cfg != nil && !cfg.Ops.Enabled {
+		return nil
+	}
+	svc := NewOpsScheduledReportService(opsService, userService, emailService, redisClient, cfg)
+	svc.Start()
+	return svc
+}
+
+// ProvideOpsGroupAvailabilityMonitor creates and starts OpsGroupAvailabilityMonitor.
+func ProvideOpsGroupAvailabilityMonitor(
+	opsService *OpsService,
+	accountRepo AccountRepository,
+	groupRepo GroupRepository,
+	emailService *EmailService,
+	userService *UserService,
+	redisClient *redis.Client,
+	cfg *config.Config,
+) *OpsGroupAvailabilityMonitor {
+	if cfg != nil && !cfg.Ops.Enabled {
+		return nil
+	}
+	svc := NewOpsGroupAvailabilityMonitor(opsService, accountRepo, groupRepo, emailService, userService, redisClient, cfg)
+	svc.Start()
+	return svc
+}
+
+// ProvideOpsCleanupService creates and starts OpsCleanupService.
+func ProvideOpsCleanupService(repo OpsRepository, redisClient *redis.Client, cfg *config.Config) *OpsCleanupService {
+	if cfg != nil && !cfg.Ops.Enabled {
+		return nil
+	}
+	svc := NewOpsCleanupService(repo, redisClient, cfg)
+	svc.Start()
+	return svc
+}
+
 // ProvideConcurrencyService creates ConcurrencyService and starts slot cleanup worker.
 func ProvideConcurrencyService(cache ConcurrencyCache, accountRepo AccountRepository, cfg *config.Config) *ConcurrencyService {
 	svc := NewConcurrencyService(cache)
@@ -101,6 +193,7 @@ var ProviderSet = wire.NewSet(
 	NewAccountUsageService,
 	NewAccountTestService,
 	NewSettingService,
+	NewOpsService,
 	NewEmailService,
 	ProvideEmailQueueService,
 	NewTurnstileService,
@@ -113,6 +206,12 @@ var ProviderSet = wire.NewSet(
 	ProvideTimingWheelService,
 	ProvideDeferredService,
 	NewAntigravityQuotaFetcher,
+	ProvideOpsMetricsCollector,
+	ProvideOpsAlertService,
+	ProvideOpsAggregationService,
+	ProvideOpsScheduledReportService,
+	ProvideOpsGroupAvailabilityMonitor,
+	ProvideOpsCleanupService,
 	NewUserAttributeService,
 	NewUsageCache,
 )

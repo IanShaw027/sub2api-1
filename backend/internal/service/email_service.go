@@ -1,17 +1,24 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	_ "embed"
 	"fmt"
+	"html/template"
 	"math/big"
 	"net/smtp"
 	"strconv"
+	"strings"
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
+
+//go:embed email_layout.html
+var emailLayoutTemplate string
 
 var (
 	ErrEmailNotConfigured    = infraerrors.ServiceUnavailable("EMAIL_NOT_CONFIGURED", "email service not configured")
@@ -51,10 +58,66 @@ type SMTPConfig struct {
 	UseTLS   bool
 }
 
+// EmailTemplateData 邮件模板数据
+type EmailTemplateData struct {
+	Type       string
+	Title      string
+	Message    string
+	LogoURL    string
+	SiteName   string
+	SiteURL    string
+	Year       int
+	ActionURL  string
+	ActionText string
+	Alert      *AlertData
+	Report     *ReportData
+	Code       string
+}
+
+// AlertData 告警数据
+type AlertData struct {
+	Status    string
+	Level     string
+	Metric    string
+	Value     string
+	Threshold string
+	Duration  string
+	Time      string
+	Labels    map[string]string
+}
+
+// ReportData 报告数据
+type ReportData struct {
+	Date      string
+	Stats     []StatItem
+	TopErrors []ErrorItem
+}
+
+// StatItem 统计项
+type StatItem struct {
+	Label   string
+	Value   string
+	Change  string
+	TrendUp bool
+}
+
+// ErrorItem 错误项
+type ErrorItem struct {
+	Code  string
+	Count string
+	Rate  string
+}
+
 // EmailService 邮件服务
 type EmailService struct {
 	settingRepo SettingRepository
 	cache       EmailCache
+}
+
+type EmailBranding struct {
+	SiteName string
+	SiteURL  string
+	LogoURL  string
 }
 
 // NewEmailService 创建邮件服务实例
@@ -63,6 +126,40 @@ func NewEmailService(settingRepo SettingRepository, cache EmailCache) *EmailServ
 		settingRepo: settingRepo,
 		cache:       cache,
 	}
+}
+
+func (s *EmailService) GetBranding(ctx context.Context) EmailBranding {
+	branding := EmailBranding{
+		SiteName: "Sub2API",
+		SiteURL:  "",
+		LogoURL:  "",
+	}
+	if s == nil || s.settingRepo == nil {
+		return branding
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	settings, err := s.settingRepo.GetMultiple(ctx, []string{
+		SettingKeySiteName,
+		SettingKeySiteURL,
+		SettingKeySiteLogo,
+	})
+	if err != nil {
+		return branding
+	}
+
+	if v := strings.TrimSpace(settings[SettingKeySiteName]); v != "" {
+		branding.SiteName = v
+	}
+	if v := normalizeSiteURL(settings[SettingKeySiteURL]); v != "" {
+		branding.SiteURL = v
+	}
+	if v := strings.TrimSpace(settings[SettingKeySiteLogo]); strings.HasPrefix(v, "data:image/") {
+		branding.LogoURL = v
+	}
+	return branding
 }
 
 // GetSMTPConfig 从数据库获取SMTP配置
@@ -134,6 +231,63 @@ func (s *EmailService) SendEmailWithConfig(config *SMTPConfig, to, subject, body
 	}
 
 	return smtp.SendMail(addr, auth, config.From, []string{to}, []byte(msg))
+}
+
+// SendTemplatedEmail 使用模板发送邮件
+func (s *EmailService) SendTemplatedEmail(config *SMTPConfig, to, subject string, templateData EmailTemplateData) error {
+	// Fill some defaults so callers don't have to.
+	if templateData.SiteName == "" || templateData.SiteURL == "" || templateData.LogoURL == "" || templateData.Year == 0 {
+		branding := s.GetBranding(context.Background())
+		if templateData.SiteName == "" {
+			templateData.SiteName = branding.SiteName
+		}
+		if templateData.SiteURL == "" {
+			templateData.SiteURL = branding.SiteURL
+		}
+		if templateData.LogoURL == "" {
+			templateData.LogoURL = branding.LogoURL
+		}
+		if templateData.Year == 0 {
+			templateData.Year = time.Now().Year()
+		}
+	}
+
+	tmpl, err := template.New("layout").Funcs(template.FuncMap{
+		"toUpper": strings.ToUpper,
+	}).Parse(emailLayoutTemplate)
+	if err != nil {
+		return fmt.Errorf("parse template: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, templateData); err != nil {
+		return fmt.Errorf("execute template: %w", err)
+	}
+
+	return s.SendEmailWithConfig(config, to, subject, buf.String())
+}
+
+func normalizeSiteURL(raw string) string {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return ""
+	}
+	return strings.TrimRight(v, "/")
+}
+
+func joinSiteURL(base string, path string) string {
+	base = normalizeSiteURL(base)
+	if base == "" {
+		return ""
+	}
+	p := strings.TrimSpace(path)
+	if p == "" {
+		return base
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return base + p
 }
 
 // sendMailTLS 使用TLS发送邮件

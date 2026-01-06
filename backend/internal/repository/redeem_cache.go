@@ -39,6 +39,9 @@ func (c *redeemCache) GetRedeemAttemptCount(ctx context.Context, userID int64) (
 	if err == redis.Nil {
 		return 0, nil
 	}
+	if err != nil {
+		recordRedisError(ctx, "RedeemCache.GetRedeemAttemptCount", err)
+	}
 	return count, err
 }
 
@@ -48,15 +51,26 @@ func (c *redeemCache) IncrementRedeemAttemptCount(ctx context.Context, userID in
 	pipe.Incr(ctx, key)
 	pipe.Expire(ctx, key, redeemRateLimitDuration)
 	_, err := pipe.Exec(ctx)
+	if err != nil {
+		recordRedisError(ctx, "RedeemCache.IncrementRedeemAttemptCount", err)
+	}
 	return err
 }
 
 func (c *redeemCache) AcquireRedeemLock(ctx context.Context, code string, ttl time.Duration) (bool, error) {
 	key := redeemLockKey(code)
-	return c.rdb.SetNX(ctx, key, 1, ttl).Result()
+	ok, err := c.rdb.SetNX(ctx, key, 1, ttl).Result()
+	if err != nil {
+		recordRedisError(ctx, "RedeemCache.AcquireRedeemLock", err)
+	}
+	return ok, err
 }
 
 func (c *redeemCache) ReleaseRedeemLock(ctx context.Context, code string) error {
 	key := redeemLockKey(code)
-	return c.rdb.Del(ctx, key).Err()
+	if err := c.rdb.Del(ctx, key).Err(); err != nil {
+		recordRedisError(ctx, "RedeemCache.ReleaseRedeemLock", err)
+		return err
+	}
+	return nil
 }

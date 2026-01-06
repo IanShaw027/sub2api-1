@@ -20,12 +20,17 @@ type SystemSettings struct {
 	SiteName     string `json:"site_name"`
 	SiteLogo     string `json:"site_logo"`
 	SiteSubtitle string `json:"site_subtitle"`
+	SiteURL      string `json:"site_url"`
 	APIBaseURL   string `json:"api_base_url"`
 	ContactInfo  string `json:"contact_info"`
 	DocURL       string `json:"doc_url"`
 
 	DefaultConcurrency int     `json:"default_concurrency"`
 	DefaultBalance     float64 `json:"default_balance"`
+
+	// Ops monitoring
+	OpsMonitoringEnabled         bool `json:"ops_monitoring_enabled"`
+	OpsRealtimeMonitoringEnabled bool `json:"ops_realtime_monitoring_enabled"`
 
 	// Model fallback configuration
 	EnableModelFallback      bool   `json:"enable_model_fallback"`
@@ -47,6 +52,7 @@ type PublicSettings struct {
 	SiteName            string `json:"site_name"`
 	SiteLogo            string `json:"site_logo"`
 	SiteSubtitle        string `json:"site_subtitle"`
+	SiteURL             string `json:"site_url"`
 	APIBaseURL          string `json:"api_base_url"`
 	ContactInfo         string `json:"contact_info"`
 	DocURL              string `json:"doc_url"`

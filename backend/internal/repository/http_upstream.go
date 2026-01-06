@@ -137,6 +137,13 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 		// 请求失败，立即减少计数
 		atomic.AddInt64(&entry.inFlight, -1)
 		atomic.StoreInt64(&entry.lastUsed, time.Now().UnixNano())
+		var netErr net.Error
+		if errors.As(err, &netErr) {
+			if netErr.Timeout() {
+				return nil, fmt.Errorf("timeout_error: %w", err)
+			}
+			return nil, fmt.Errorf("network_error: %w", err)
+		}
 		return nil, err
 	}
 

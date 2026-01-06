@@ -128,6 +128,7 @@ export default {
     noData: '暂无数据',
     success: '成功',
     error: '错误',
+    critical: '严重',
     warning: '警告',
     info: '提示',
     active: '启用',
@@ -150,6 +151,7 @@ export default {
     saving: '保存中...',
     selectedCount: '（已选 {count} 个）',
     refresh: '刷新',
+    add: '添加',
     notAvailable: '不可用',
     now: '现在',
     unknown: '未知',
@@ -176,6 +178,7 @@ export default {
     proxies: 'IP管理',
     redeemCodes: '兑换码',
     settings: '系统设置',
+    ops: '运维监控',
     myAccount: '我的账户',
     lightMode: '浅色模式',
     darkMode: '深色模式',
@@ -603,6 +606,696 @@ export default {
       configureSystem: '配置系统设置',
       failedToLoad: '加载仪表盘数据失败'
     },
+    ops: {
+      title: '运维监控中心',
+      description: '稳定性指标、错误分布与系统健康',
+      filters: {
+        allPlatforms: '所有平台',
+        allGroups: '所有分组'
+      },
+      healthStatus: {
+        healthy: '健康',
+        degraded: '降级',
+        unhealthy: '异常',
+        unknown: '未知'
+      },
+      concurrency: {
+        title: '实时并发槽位',
+        description: '并发槽位使用情况与等待队列（缓存数据，尽力而为）。',
+        byPlatform: '按平台',
+        byGroup: '按分组',
+        byGroupHint: '同一账号可能属于多个分组；分组统计不可跨分组相加。',
+        load: '负载：{percent}%',
+        waiting: '等待：{count}',
+        waitingShort: '队列 {count}',
+        updatedAgo: '{age} 前更新',
+        updatedUnknown: '更新时间：未知',
+        dataDelayed: '数据延迟',
+        realtimeDisabled: '实时已关闭',
+        disabledHint: '已在设置中关闭实时监控。',
+        empty: '暂无数据',
+        unknownPlatform: '未知平台',
+        failedToLoad: '加载并发数据失败'
+      },
+      diagnosis: {
+        title: '🩺 健康诊断报告',
+        footer: '诊断标准基于大模型网关场景优化',
+        items: {
+          idle: {
+            message: '系统待机中',
+            impact: '当前无流量，系统处于休眠状态'
+          },
+          upstreamErrorVeryHigh: {
+            message: '上游错误率极高 (>10%)',
+            impact: '大量请求失败，请检查供应商额度或状态'
+          },
+          upstreamErrorHigh: {
+            message: '上游错误率偏高 (>3%)',
+            impact: '部分请求遇到风控或网络抖动'
+          },
+          slaCritical: {
+            message: 'SLA 严重未达标 (<90%)',
+            impact: '用户体验受到严重影响'
+          },
+          slaWarning: {
+            message: 'SLA 轻微波动 (<98%)',
+            impact: '可能有少量请求失败'
+          },
+          p99VeryHigh: {
+            message: 'P99 延迟极高 (>20s)',
+            impact: '存在超长等待请求，可能导致客户端超时'
+          },
+          p99High: {
+            message: 'P99 延迟较高 (>8s)',
+            impact: '长文本生成场景下的正常现象'
+          },
+          dbConnsExhausted: {
+            message: '数据库连接池即将耗尽',
+            impact: '可能导致服务拒绝'
+          },
+          stable: {
+            message: '系统运行平稳',
+            impact: '各项指标在预期范围内'
+          }
+        }
+      },
+      labels: {
+        idle: '待机',
+        health: '健康',
+        p99Latency: 'P99 延迟',
+        errorRate: '错误率',
+        dbConns: 'DB 连接',
+        max: 'Max',
+        topReason: '主要原因:'
+      },
+      status: {
+        title: '系统健康快照',
+        subtitle: '实时指标与错误可见性',
+        systemNormal: '系统正常',
+        systemDegraded: '系统降级',
+        systemDown: '系统异常',
+        noData: '无数据',
+        monitoring: '监控中',
+        idle: '系统待机',
+        lastUpdated: '最后更新',
+        live: '实时',
+        waiting: '等待数据',
+        realtime: '实时连接中',
+        disconnected: '连接已断开',
+        wsConnected: 'WebSocket 已连接',
+        wsConnecting: 'WebSocket 连接中',
+        wsReconnecting: 'WebSocket 重连中',
+        wsDisconnected: 'WebSocket 断开，使用轮询模式',
+        online: '实时监控中',
+        connecting: '连接中…',
+        reconnecting: '重连中…',
+        offline: '离线模式',
+        updatedAt: '更新于',
+        refresh: '刷新数据',
+        help: '帮助/文档',
+        healthCondition: '系统健康状况',
+        healthy: '系统运行良好',
+        risky: '存在潜在风险',
+        trafficPulse: '实时流量脉搏',
+        peak1h: '峰值(1h)',
+        slaTooltip: 'Service Level Agreement: 成功请求比例',
+        p99Tooltip: '99% 的请求延迟低于此值',
+        errorRateTooltip: '请求错误率 (非 200 OK)',
+        dbConnsTooltip: '当前活跃数据库连接数'
+      },
+      tooltips: {
+        healthScore: '基于错误率、延迟和系统资源使用的综合健康评分 (0-100)',
+        realtimeQPS: '实时每秒请求数 (Queries Per Second)',
+        realtimeTPS: '实时每秒 Token 数 (Tokens Per Second)',
+        peak1h: '过去 1 小时内的最高值',
+        systemStatus: '组件连接与运行状态',
+        cpu: '当前 CPU 使用率',
+        memory: '当前内存使用率',
+        throughputChart: '展示 QPS (请求/秒) 和 TPS (Token/秒) 的变化趋势',
+        errorDistChart: '各类错误码的占比分布',
+        latencyChart: '请求响应时间的分布直方图',
+        providerChart: '各上游供应商的错误率排行 (错误数/总请求数)'
+      },
+      systemComponents: {
+        redis: 'Redis',
+        database: '数据库',
+        background_jobs: '后台任务'
+      },
+      systemStatus: {
+        healthy: '正常',
+        operational: '运行中',
+        degraded: '降级',
+        warning: '警告',
+        down: '异常',
+        unknown: '未知'
+      },
+      timeRange: {
+        '5m': '最近 5 分钟',
+        '30m': '最近 30 分钟',
+        '1h': '最近 1 小时',
+        '6h': '最近 6 小时',
+        '24h': '最近 24 小时'
+      },
+      charts: {
+        throughput: '吞吐趋势 (Throughput)',
+        errorTrend: '错误趋势',
+        errorDistribution: '请求错误分析 (Errors)',
+        errorRate: '错误率',
+        requestCount: '请求数',
+        requestCountLabel: '请求数量',
+        noDataTitle: '暂无数据',
+        resetZoom: '重置',
+        resetZoomHint: '滚轮/双指缩放；Ctrl+拖动平移；点击重置',
+        download: '下载',
+        downloadHint: '将图表下载为 PNG',
+        rateLimits: '限流 (429)',
+        serverErrors: '服务端错误 (5xx)',
+        clientErrors: '客户端错误 (4xx)',
+        otherErrors: '其他',
+        latencyDist: '请求延迟分布',
+        latency: '延迟分布 (Latency)',
+        providerSla: '上游供应商健康度 (SLA)',
+        providerErrorRate: '供应商错误率 (Provider Error Rate)',
+        errorDist: '错误类型分布',
+        systemStatus: '系统运行状态',
+        loading: '加载数据中...',
+        emptyRequest: '当前时间段内无请求记录',
+        emptyError: '当前时间段内无错误记录',
+        errorRateLabel: '错误率 (%)',
+        attribution: {
+          upstream: '上游故障 (502/503/504)',
+          client: '用户行为 (4xx)',
+          system: '系统故障 (500)',
+          other: '其他'
+        },
+        provider: {
+          successRequests: '成功请求',
+          failedRequests: '失败请求'
+        }
+      },
+      metrics: {
+        successRate: '成功率',
+        errorRate: '错误率',
+        p95: 'P95 延迟',
+        p99: 'P99 延迟',
+        http2Errors: 'HTTP/2 错误',
+        activeAlerts: '活跃告警',
+        cpuUsage: 'CPU 使用率',
+        queueDepth: '排队深度',
+        healthScore: '健康评分',
+        sla: '服务可用率 (SLA)',
+        qps: '实时 QPS',
+        tps: '实时 TPS',
+        errorCount: '周期错误数'
+      },
+      requestDetails: {
+        details: '详情',
+        subtitle: '请求级明细（用于指标下钻），包含 request_id，可用于排查与复现',
+        refresh: '刷新',
+        failedToLoad: '加载请求明细失败',
+        empty: '暂无请求明细',
+        emptyHint: '尝试切换时间范围或稍后重试',
+        copy: '复制',
+        requestIdCopied: 'Request ID 已复制',
+        copyFailed: '复制失败',
+        viewError: '错误详情',
+        rangeMinutes: '最近 {n} 分钟',
+        rangeHours: '最近 {n} 小时',
+        kind: {
+          success: '成功',
+          error: '错误'
+        },
+        table: {
+          time: '时间',
+          kind: '类型',
+          platform: '平台',
+          model: '模型',
+          duration: '耗时',
+          status: '状态码',
+          requestId: 'Request ID',
+          actions: '操作'
+        }
+      },
+      alertEvents: {
+        title: '告警事件',
+        description: '最近的告警触发/恢复记录（仅邮件通知）',
+        loading: '加载中...',
+        empty: '暂无告警事件',
+        loadFailed: '加载告警事件失败',
+        table: {
+          time: '时间',
+          status: '状态',
+          severity: '级别',
+          title: '标题',
+          metric: '指标 / 阈值',
+          email: '邮件已发送'
+        }
+      },
+      ipErrors: {
+        title: '异常 IP 排行',
+        description: '按客户端 IP 聚合错误，便于快速定位异常流量',
+        loading: '加载中...',
+        empty: '暂无 IP 维度统计',
+        loadFailed: '加载 IP 错误统计失败',
+        details: '详情',
+        view: '查看',
+        range: '时间范围',
+        modalTitle: '来自 {ip} 的错误',
+        sort: {
+          errorCount: '按错误数排序',
+          lastSeen: '按最近出现排序'
+        },
+        table: {
+          ip: '客户端IP',
+          count: '错误数',
+          firstSeen: '首次出现',
+          lastSeen: '最近出现',
+          platform: '平台',
+          phase: '阶段',
+          severity: '级别',
+          status: '状态码',
+          requestId: '请求ID',
+          actions: '操作'
+        }
+      },
+      errorAnalytics: {
+        title: '错误分析',
+        description: '错误趋势 + 维度聚合，帮助快速定位根因方向',
+        groupBy: {
+          platform: '平台',
+          phase: '阶段',
+          severity: '级别'
+        },
+        trend: {
+          title: '错误趋势',
+          loading: '加载中...',
+          empty: '暂无趋势数据',
+          emptyHint: '尝试扩大时间范围',
+          loadFailed: '加载错误趋势失败',
+          errorCount: '错误数',
+          errorRate: '错误率 (%)'
+        },
+        grouped: {
+          title: '聚合统计',
+          loading: '加载中...',
+          empty: '暂无聚合数据',
+          emptyHint: '尝试扩大时间范围',
+          loadFailed: '加载聚合统计失败',
+          groupBy: '分组维度',
+          table: {
+            group: '分组',
+            errors: '错误数',
+            timeouts: '超时数'
+          }
+        }
+      },
+      accountStatus: {
+        title: '账号健康度',
+        description: '按账号统计最近的错误/超时/限流次数，辅助定位拖累整体成功率的账号',
+        loading: '加载中...',
+        empty: '暂无账号状态数据',
+        loadFailed: '加载账号状态失败',
+        searchPlaceholder: '搜索账号ID...',
+        sort: {
+          error1h: '错误数（1小时）',
+          error24h: '错误数（24小时）',
+          timeout1h: '超时数（1小时）',
+          rateLimit1h: '限流数（1小时）'
+        },
+        table: {
+          accountId: '账号ID',
+          errors1h: '错误（1小时）',
+          timeouts1h: '超时（1小时）',
+          rateLimits1h: '429（1小时）',
+          errors24h: '错误（24小时）'
+        },
+        footer: '展示前 {shown} 条（共 {total} 条）'
+      },
+      alertRules: {
+        title: '告警规则',
+        description: '创建与管理系统阈值告警（仅邮件通知）',
+        loading: '加载中...',
+        empty: '暂无告警规则',
+        loadFailed: '加载告警规则失败',
+        saveFailed: '保存告警规则失败',
+        deleteFailed: '删除告警规则失败',
+        create: '新建规则',
+        createTitle: '新建告警规则',
+        editTitle: '编辑告警规则',
+        deleteConfirmTitle: '确认删除该规则？',
+        deleteConfirmMessage: '将删除该规则及其关联的告警事件，是否继续？',
+        metrics: {
+          successRate: '成功率 (%)',
+          errorRate: '错误率 (%)',
+          p95: 'P95 延迟 (ms)',
+          p99: 'P99 延迟 (ms)',
+          cpu: 'CPU 使用率 (%)',
+          memory: '内存使用率 (%)',
+          queueDepth: '并发排队深度'
+        },
+        table: {
+          name: '名称',
+          metric: '指标',
+          severity: '级别',
+          enabled: '启用',
+          actions: '操作'
+        },
+        form: {
+          name: '名称',
+          description: '描述',
+          metric: '指标',
+          operator: '运算符',
+          threshold: '阈值',
+          severity: '级别',
+          window: '统计窗口（分钟）',
+          sustained: '连续样本数（每分钟）',
+          cooldown: '冷却期（分钟）',
+          enabled: '启用',
+          notifyEmail: '发送邮件通知'
+        },
+        validation: {
+          title: '请先修正以下问题',
+          invalid: '规则不合法',
+          nameRequired: '名称不能为空',
+          metricRequired: '指标不能为空',
+          operatorRequired: '运算符不能为空',
+          thresholdRequired: '阈值必须为数字',
+          windowRange: '统计窗口必须为 1 / 5 / 60 分钟之一',
+          sustainedRange: '连续样本数必须在 1 到 1440 之间',
+          cooldownRange: '冷却期必须在 0 到 1440 分钟之间'
+        }
+      },
+      errors: {
+        title: '最近错误',
+        trackingTitle: '异常日志追踪',
+        subtitle: '按平台与阶段定位失败原因',
+        count: '{n} 条错误',
+        recentCount: '最近产生的 {n} 条异常记录',
+        searchPlaceholder: '搜索 Request ID / 错误信息...',
+        retryConfirmTitle: '确认重试该请求？',
+        retryConfirmMessage: '将为该错误日志触发一次重试请求，是否继续？',
+        quickFilters: {
+          critical: '严重 (P0)',
+          fiveXX: '5xx 错误',
+          timeout: '超时'
+        },
+        allPlatforms: '所有平台',
+        allStatusCodes: '所有状态码',
+        allSeverities: '所有级别',
+        loading: '加载中...',
+        emptyTable: '暂无异常记录',
+        smartMessage: {
+          timeoutDeadlineExceeded: '超时（截止时间已到）',
+          connectionRefused: '连接被拒绝',
+          rateLimitExceeded: '触发限流'
+        },
+        table: {
+          time: '时间',
+          timeId: '时间 / 请求ID',
+          context: '上下文',
+          status: '状态',
+          severity: '级别',
+          phase: '阶段',
+          statusCode: '状态码',
+          platform: '平台',
+          model: '模型',
+          latency: '延迟',
+          requestId: '请求ID',
+          message: '错误信息'
+        }
+      },
+      details: {
+        title: '错误详情',
+        requestId: '请求ID',
+        errorMessage: '错误信息',
+        requestPath: '请求路径',
+        clientIp: '客户端IP',
+        userId: '用户ID',
+        apiKeyId: 'API Key ID',
+        groupId: '分组ID',
+        stream: '流式',
+        occurrenceTime: '发生时间',
+        errorPhase: '错误阶段',
+        latencyWaterfall: '延迟瀑布图',
+        basicInfo: '基本信息',
+        totalLatency: '总延迟',
+        ttft: '首Token延迟 (TTFT)',
+        requestBody: '请求体',
+        upstreamInfo: '上游信息',
+        accountId: '账号ID',
+        errorResponse: '错误响应',
+        clientInfo: '客户信息',
+        userAgent: 'User-Agent',
+        retry: '重试验证',
+        retrying: '重试中...',
+        retryInfo: '已获取重试信息，请在控制台查看详情',
+        cannotRetry: '无法重试此请求',
+        retryFailed: '重试失败，请稍后再试',
+        failedToLoad: '加载错误详情失败'
+      },
+      availability: {
+        title: '分组可用性监控',
+        refresh: '刷新',
+        loading: '加载中...',
+        noData: '暂无分组监控数据',
+        recentCount: '共 {n} 个分组',
+        configureNow: '立即配置',
+        groupName: '分组名称',
+        availableAccounts: '可用账号',
+        waterLevel: '水位 (可用/总数)',
+        monitoringSwitch: '监控开关',
+        alertStrategy: '报警策略',
+        tooltip: '监控各分组的账号存活情况。如果是 VIP 专用分组，建议开启「严格模式」。',
+        monitoringConfig: '监控配置',
+        minAvailable: '最低可用数',
+        thresholdMode: '阈值模式',
+        thresholdModes: {
+          count: '按数量 - 至少 N 个账号可用',
+          percentage: '按百分比 - 至少 X% 账号可用',
+          both: '两者都满足 - 同时满足数量和百分比'
+        },
+        thresholdSummary: {
+          count: '数量 ≥ {n}',
+          percentage: '比例 ≥ {p}%',
+          both: '数量 ≥ {n} 且 比例 ≥ {p}%'
+        },
+        minAvailablePercentage: '最低可用百分比 (%)',
+        severity: '级别',
+        cooldown: '冷却期',
+        cooldownMinutes: '冷却期（分钟）',
+        notifyEmail: '发送邮件通知',
+        status: '状态',
+        lastUpdate: '最后更新',
+        actions: '操作',
+        config: '配置',
+        healthy: '健康',
+        alert: '告警',
+        unmonitored: '未监控',
+        notConfigured: '未配置',
+        goToGroupManagement: '前往分组管理',
+        customMode: '自定义',
+        customModeDesc: '自定义配置，灵活设置',
+        customConfigTitle: '配置报警策略',
+        configureCustomStrategy: '配置自定义策略',
+        searchPlaceholder: '搜索分组名称...',
+        strategyTemplates: '策略模板',
+        advancedSettings: '高级设置',
+        presetSettings: '预设配置',
+        presetStrategyInfo: '当前使用预设策略',
+        presetStrategyHint: '预设策略的参数已锁定，如需自定义请修改任意参数',
+        filters: {
+          allMonitoring: '全部监控状态',
+          monitoringEnabled: '已启用监控',
+          monitoringDisabled: '未启用监控',
+          allAlerts: '全部报警状态',
+          alertOk: '正常',
+          alertFiring: '告警中'
+        },
+        validation: {
+          title: '请先修正以下问题',
+          thresholdMode: '请选择有效的阈值模式',
+          minAccountsRange: '最低可用账号数必须为 ≥ 0 的数字',
+          minPercentageRange: '最低可用百分比必须在 0 到 100 之间',
+          cooldownRange: '冷却期必须在 0 到 1440 分钟之间',
+          severity: '请选择有效的告警级别'
+        }
+      },
+      availabilityEvents: {
+        title: '分组可用性事件',
+        description: '分组可用性告警事件历史（触发/恢复）',
+        loading: '加载中...',
+        empty: '暂无分组可用性事件',
+        loadFailed: '加载分组可用性事件失败',
+        status: {
+          all: '全部',
+          firing: '告警中',
+          resolved: '已恢复'
+        },
+        table: {
+          time: '时间',
+          group: '分组',
+          status: '状态',
+          severity: '级别',
+          waterline: '可用 / 阈值（总数）',
+          email: '邮件已发送'
+        }
+      },
+      config: {
+        title: '运维监控配置 - 分组可用性批量操作',
+        selectedGroups: '已选中 {count} 个分组',
+        batchEnable: '批量启用',
+        batchDisable: '批量禁用',
+        confirmEnableTitle: '确认批量启用监控？',
+        confirmEnableMessage: '将为 {count} 个分组启用监控，是否继续？',
+        confirmDisableTitle: '确认批量禁用监控？',
+        confirmDisableMessage: '将为 {count} 个分组禁用监控，是否继续？',
+        batchSetThreshold: '批量设置阈值',
+        batchSetSeverity: '批量设置级别',
+        applyTemplate: '应用模板',
+        cancelSelection: '取消选择',
+        exportConfig: '导出配置',
+        importConfig: '导入配置',
+        minThreshold: '最低阈值',
+        monitoringStatus: '监控状态',
+        alertStatus: '告警状态',
+        batchSetThresholdTitle: '批量设置阈值',
+        minAvailableAccounts: '最低可用账号数',
+        applyToGroups: '将应用到以下分组',
+        batchSetSeverityTitle: '批量设置告警级别',
+        applyTemplateTitle: '应用配置模板',
+        selectTemplate: '选择模板',
+        applyTo: '应用到',
+        strictMode: '严格模式',
+        strictModeDesc: '低阈值、高优先级、快速响应',
+        standardMode: '标准模式',
+        standardModeDesc: '中等阈值、标准优先级、平衡响应',
+        looseMode: '宽松模式',
+        looseModeDesc: '高阈值、低优先级、延迟响应',
+        threshold: '阈值',
+        severity: '级别',
+        cooldown: '冷却期',
+        email: '邮件',
+        loadConfigFailed: '加载分组配置失败',
+        batchEnableSuccess: '已启用 {count} 个分组监控',
+        batchEnableFailed: '批量启用失败',
+        batchDisableSuccess: '已禁用 {count} 个分组监控',
+        batchDisableFailed: '批量禁用失败',
+        batchSetThresholdSuccess: '已更新 {count} 个分组的阈值',
+        batchSetThresholdFailed: '批量设置失败',
+        batchSetSeveritySuccess: '已更新 {count} 个分组的告警级别',
+        batchSetSeverityFailed: '批量设置失败',
+        applyTemplateSuccess: '已应用模板到 {count} 个分组',
+        applyTemplateFailed: '应用模板失败',
+        configExported: '配置已导出',
+        importComplete: '导入完成：成功 {success} 个，失败 {failed} 个',
+        importFailedFormat: '导入失败：文件格式错误',
+        validation: {
+          thresholdMinOne: '最低可用账号数不能小于 1'
+        }
+      },
+      runtime: {
+        title: '运维监控运行设置',
+        description: '配置存储在数据库中，无需修改 config 文件即可生效。',
+        loading: '加载中...',
+        noData: '暂无运行设置',
+        loadFailed: '加载运行设置失败',
+        saveSuccess: '运行设置已保存',
+        saveFailed: '保存运行设置失败',
+        alertTitle: '告警评估器',
+        groupAvailabilityTitle: '分组可用性监控',
+        evalIntervalSeconds: '评估间隔（秒）',
+        silencing: {
+          title: '告警静默（维护模式）',
+          enabled: '启用静默',
+          globalUntil: '静默截止时间（RFC3339）',
+          untilPlaceholder: '2026-01-05T00:00:00Z',
+          untilHint: '建议填写截止时间，避免忘记关闭静默。',
+          reason: '原因',
+          reasonPlaceholder: '例如：计划维护',
+          entries: {
+            title: '高级：定向静默',
+            hint: '可选：仅静默特定规则或特定级别。字段留空表示匹配全部。',
+            add: '新增条目',
+            empty: '暂无定向静默条目',
+            entryTitle: '条目 #{n}',
+            ruleId: '规则ID（可选）',
+            ruleIdPlaceholder: '例如：1',
+            severities: '级别（可选）',
+            severitiesPlaceholder: '例如：P0,P1（留空=全部）',
+            until: '截止时间（RFC3339）',
+            reason: '原因',
+            validation: {
+              untilRequired: '条目截止时间不能为空',
+              untilFormat: '条目截止时间必须为合法的 RFC3339 时间戳',
+              ruleIdPositive: '条目 rule_id 必须为正整数',
+              severitiesFormat: '条目级别必须为 P0..P3 的逗号分隔列表'
+            }
+          },
+          validation: {
+            timeFormat: '静默时间必须为合法的 RFC3339 时间戳'
+          }
+        },
+        lockEnabled: '启用分布式锁',
+        lockKey: '分布式锁 Key',
+        lockTTLSeconds: '分布式锁 TTL（秒）',
+        showAdvancedDeveloperSettings: '显示高级开发者设置 (Distributed Lock)',
+        advancedSettingsSummary: '高级设置 (分布式锁)',
+        evalIntervalHint: '检测任务的执行频率，建议保持默认。',
+        validation: {
+          title: '请先修正以下问题',
+          invalid: '设置不合法',
+          evalIntervalRange: '评估间隔必须在 1 到 86400 秒之间',
+          lockKeyRequired: '启用分布式锁时必须填写 Lock Key',
+          lockKeyPrefix: '分布式锁 Key 必须以「{prefix}」开头',
+          lockKeyHint: '建议以「{prefix}」开头以避免冲突',
+          lockTtlRange: '分布式锁 TTL 必须在 1 到 86400 秒之间'
+        }
+      },
+      email: {
+        title: '邮件通知配置',
+        description: '配置告警/报告邮件通知（存储在数据库中）。',
+        loading: '加载中...',
+        noData: '暂无邮件通知配置',
+        loadFailed: '加载邮件通知配置失败',
+        saveSuccess: '邮件通知配置已保存',
+        saveFailed: '保存邮件通知配置失败',
+        alertTitle: '告警邮件',
+        reportTitle: '报告邮件',
+        recipients: '收件人',
+        recipientsHint: '若为空，系统可能会回退使用第一个管理员邮箱。',
+        minSeverity: '最低级别',
+        minSeverityAll: '全部级别',
+        rateLimitPerHour: '每小时限额',
+        batchWindowSeconds: '合并窗口（秒）',
+        includeResolved: '包含恢复通知',
+        dailySummary: '每日摘要',
+        weeklySummary: '每周摘要',
+        errorDigest: '错误摘要',
+        errorDigestMinCount: '错误摘要最小数量',
+        accountHealth: '账号健康报告',
+        accountHealthThreshold: '错误率阈值（%）',
+        cronPlaceholder: 'Cron 表达式',
+        reportHint: '发送时间使用 Cron 语法；留空将使用默认值。',
+        validation: {
+          title: '请先修正以下问题',
+          invalid: '邮件通知配置不合法',
+          alertRecipientsRequired: '已启用告警邮件，但未配置任何收件人',
+          reportRecipientsRequired: '已启用报告邮件，但未配置任何收件人',
+          invalidRecipients: '存在不合法的收件人邮箱',
+          rateLimitRange: '每小时限额必须为 ≥ 0 的数字',
+          batchWindowRange: '合并窗口必须在 0 到 86400 秒之间',
+          cronRequired: '启用定时任务时必须填写 Cron 表达式',
+          cronFormat: 'Cron 表达式格式可能不正确（至少应包含 5 段）',
+          digestMinCountRange: '错误摘要最小数量必须为 ≥ 0 的数字',
+          accountHealthThresholdRange: '账号健康错误率阈值必须在 0 到 100 之间'
+        }
+      },
+      empty: {
+        title: '暂无运维数据',
+        subtitle: '启用错误日志与指标采集后将展示在此处'
+      },
+      failedToLoad: '加载运维数据失败'
+    },
 
     // Users Management
     users: {
@@ -821,6 +1514,7 @@ export default {
       createGroup: '创建分组',
       editGroup: '编辑分组',
       deleteGroup: '删除分组',
+      monitoringConfig: '监控配置',
       deleteConfirm: "确定要删除分组 '{name}' 吗？所有关联的 API 密钥将不再属于任何分组。",
       deleteConfirmSubscription:
         "确定要删除订阅分组 '{name}' 吗？此操作会让所有绑定此订阅的用户的 API Key 失效，并删除所有相关的订阅记录。此操作无法撤销。",
@@ -1009,6 +1703,8 @@ export default {
       syncFromCrsTitle: '从 CRS 同步账号',
       syncFromCrsDesc:
         '将 claude-relay-service（CRS）中的账号同步到当前系统（不会在浏览器侧直接请求 CRS）。',
+      syncFromCrsNote:
+        '已有账号仅同步 CRS 返回的字段，缺失字段保持原值；凭据按键合并，不会清空未下发的键；未勾选"同步代理"时保留原有代理。',
       crsVersionRequirement: '⚠️ 注意：CRS 版本必须 ≥ v1.1.240 才支持此功能',
       crsBaseUrl: 'CRS 服务地址',
       crsBaseUrlPlaceholder: '例如：http://127.0.0.1:3000',
@@ -1157,14 +1853,16 @@ export default {
         claude45: 'C4.5'
       },
       tier: {
-        free: 'Free',
-        pro: 'Pro',
-        ultra: 'Ultra',
-        aiPremium: 'AI Premium',
+        free: '免费版',
+        pro: '专业版',
+        ultra: '旗舰版',
+        aiPremium: 'AI 高级版',
         standard: '标准版',
         basic: '基础版',
         personal: '个人版',
-        unlimited: '无限制'
+        unlimited: '无限制',
+        gcp: 'GCP',
+        unknown: '未知'
       },
       ineligibleWarning:
         '该账号无 Antigravity 使用权限，但仍能进行 API 转发。继续使用请自行承担风险。',
@@ -1404,7 +2102,9 @@ export default {
           noProjectIdNeededDesc: '需管理员配置 OAuth Client',
 	          aiStudioNotConfiguredShort: '未配置',
 	          aiStudioNotConfiguredTip: 'AI Studio OAuth 未配置：请先设置 GEMINI_OAUTH_CLIENT_ID / GEMINI_OAUTH_CLIENT_SECRET，并在 Google OAuth Client 添加 Redirect URI：http://localhost:1455/auth/callback（Consent Screen scopes 需包含 https://www.googleapis.com/auth/generative-language.retriever）',
-	          aiStudioNotConfigured: 'AI Studio OAuth 未配置：请先设置 GEMINI_OAUTH_CLIENT_ID / GEMINI_OAUTH_CLIENT_SECRET，并在 Google OAuth Client 添加 Redirect URI：http://localhost:1455/auth/callback'
+	          aiStudioNotConfigured: 'AI Studio OAuth 未配置：请先设置 GEMINI_OAUTH_CLIENT_ID / GEMINI_OAUTH_CLIENT_SECRET，并在 Google OAuth Client 添加 Redirect URI：http://localhost:1455/auth/callback',
+            showAdvancedOptions: '显示高级选项（自建 OAuth Client）',
+            hideAdvancedOptions: '隐藏高级选项（自建 OAuth Client）'
 	        },
         // Antigravity specific
         antigravity: {
@@ -1474,6 +2174,13 @@ export default {
           customTitle: '自定义授权（AI Studio OAuth）',
           customDesc: '使用管理员预设的 OAuth 客户端，适合组织管理。',
           customRequirement: '需管理员配置 Client ID 并加入测试用户白名单。',
+          googleOneDesc: '个人账号，享受 Google One 订阅配额',
+          recommendedPersonal: '推荐个人用户',
+          noGcpNeeded: '无需 GCP',
+          codeAssistDesc: '企业级，需要 GCP 项目',
+          codeAssistHint: '需要激活 GCP 项目并绑定信用卡',
+          enterpriseUser: '企业用户',
+          highConcurrency: '高并发',
           badges: {
             recommended: '推荐',
             highConcurrency: '高并发',
@@ -1898,6 +2605,9 @@ export default {
         siteSubtitle: '站点副标题',
         siteSubtitleHint: '显示在登录和注册页面',
         siteSubtitlePlaceholder: '订阅转 API 转换平台',
+        siteUrl: '站点地址',
+        siteUrlHint: '用于邮件通知中的跳转链接（例如运维告警、定时报表）。',
+        siteUrlPlaceholder: 'https://example.com',
         apiBaseUrl: 'API 端点地址',
         apiBaseUrlHint: '用于"使用密钥"和"导入到 CC Switch"功能，留空则使用当前站点地址',
         apiBaseUrlPlaceholder: 'https://api.example.com',
@@ -1946,6 +2656,14 @@ export default {
         sendTestEmail: '发送测试邮件',
         sending: '发送中...',
         enterRecipientHint: '请输入收件人邮箱地址'
+      },
+      opsMonitoring: {
+        title: '运维监控 (Ops)',
+        description: '启用或关闭运维监控模块及其后台任务。',
+        enabled: '启用运维监控',
+        enabledHint: '关闭后将隐藏 Ops 模块，并停止相关后台任务与接口访问。',
+        realtimeEnabled: '启用实时监控',
+        realtimeEnabledHint: '控制实时特性（并发轮询、WebSocket 推送）。关闭可减少系统负载。'
       },
       adminApiKey: {
         title: '管理员 API Key',
@@ -2191,6 +2909,42 @@ export default {
         title: '🎉 完成创建',
         description: '<div style="line-height: 1.7;"><p style="margin-bottom: 12px;">点击确认创建您的 API 密钥。</p><div style="padding: 8px 12px; background: #fee2e2; border-left: 3px solid #ef4444; border-radius: 4px; font-size: 13px; margin-bottom: 12px;"><b>⚠️ 重要：</b><ul style="margin: 8px 0 0 16px;"><li>创建后请立即复制密钥（sk-xxx）</li><li>密钥只显示一次，丢失需重新生成</li></ul></div><p style="padding: 8px 12px; background: #f0fdf4; border-left: 3px solid #10b981; border-radius: 4px; font-size: 13px;"><b>🚀 如何使用：</b><br/>将密钥配置到支持 OpenAI 接口的任何客户端（如 ChatBox、OpenCat 等），即可开始使用！</p><p style="margin-top: 12px; color: #10b981; font-weight: 600;">👉 点击"创建"按钮</p></div>'
       }
+    }
+  },
+
+  // Email Templates
+  email: {
+    verification: {
+      subject: '[{siteName}] 邮箱验证码',
+      title: '邮箱验证',
+      message: '您的验证码如下，请在 10 分钟内完成验证。',
+      expireNote: '此验证码将在 10 分钟后过期。如果您没有请求此代码，请忽略此邮件。'
+    },
+    alert: {
+      subject: '[Ops Alert][{level}] 分组 {groupName} 可用账号不足',
+      resolved: '告警已恢复',
+      triggered: '{level} 告警触发',
+      metric: '指标',
+      currentValue: '当前值',
+      threshold: '阈值',
+      duration: '持续时间',
+      time: '发生时间',
+      viewDetails: '查看告警详情'
+    },
+    report: {
+      subject: '[Sub2API] {title}',
+      topErrors: '高频错误',
+      errorType: '错误类型',
+      count: '次数',
+      rate: '占比',
+      viewFull: '查看完整报告'
+    },
+    common: {
+      allRightsReserved: '保留所有权利。',
+      autoSentNote: '此邮件由系统自动发送，请勿直接回复。',
+      visitDashboard: '访问控制台',
+      notificationSettings: '通知设置',
+      footerNote: '由于您订阅了系统通知，因此收到了此邮件。'
     }
   }
 }

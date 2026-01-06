@@ -125,6 +125,7 @@ func (s *SettingRepoSuite) TestSetMultiple_WithEmptyValues() {
 		"site_name":     "AICodex2API",
 		"site_subtitle": "Subscription to API",
 		"site_logo":     "", // 用户未上传Logo
+		"site_url":      "", // 用户未设置站点地址
 		"api_base_url":  "", // 用户未设置API地址
 		"contact_info":  "", // 用户未设置联系方式
 		"doc_url":       "", // 用户未设置文档链接
@@ -133,12 +134,13 @@ func (s *SettingRepoSuite) TestSetMultiple_WithEmptyValues() {
 	s.Require().NoError(s.repo.SetMultiple(s.ctx, settings), "SetMultiple with empty values should succeed")
 
 	// 验证所有值都正确保存
-	result, err := s.repo.GetMultiple(s.ctx, []string{"site_name", "site_subtitle", "site_logo", "api_base_url", "contact_info", "doc_url"})
+	result, err := s.repo.GetMultiple(s.ctx, []string{"site_name", "site_subtitle", "site_logo", "site_url", "api_base_url", "contact_info", "doc_url"})
 	s.Require().NoError(err, "GetMultiple after SetMultiple with empty values")
 
 	s.Require().Equal("AICodex2API", result["site_name"])
 	s.Require().Equal("Subscription to API", result["site_subtitle"])
 	s.Require().Equal("", result["site_logo"], "empty site_logo should be preserved")
+	s.Require().Equal("", result["site_url"], "empty site_url should be preserved")
 	s.Require().Equal("", result["api_base_url"], "empty api_base_url should be preserved")
 	s.Require().Equal("", result["contact_info"], "empty contact_info should be preserved")
 	s.Require().Equal("", result["doc_url"], "empty doc_url should be preserved")

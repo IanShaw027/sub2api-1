@@ -10,6 +10,8 @@ import (
 // ProvideAdminHandlers creates the AdminHandlers struct
 func ProvideAdminHandlers(
 	dashboardHandler *admin.DashboardHandler,
+	opsHandler *admin.OpsHandler,
+	opsGroupAvailabilityHandler *admin.OpsGroupAvailabilityHandler,
 	userHandler *admin.UserHandler,
 	groupHandler *admin.GroupHandler,
 	accountHandler *admin.AccountHandler,
@@ -26,21 +28,23 @@ func ProvideAdminHandlers(
 	userAttributeHandler *admin.UserAttributeHandler,
 ) *AdminHandlers {
 	return &AdminHandlers{
-		Dashboard:        dashboardHandler,
-		User:             userHandler,
-		Group:            groupHandler,
-		Account:          accountHandler,
-		OAuth:            oauthHandler,
-		OpenAIOAuth:      openaiOAuthHandler,
-		GeminiOAuth:      geminiOAuthHandler,
-		AntigravityOAuth: antigravityOAuthHandler,
-		Proxy:            proxyHandler,
-		Redeem:           redeemHandler,
-		Setting:          settingHandler,
-		System:           systemHandler,
-		Subscription:     subscriptionHandler,
-		Usage:            usageHandler,
-		UserAttribute:    userAttributeHandler,
+		Dashboard:            dashboardHandler,
+		Ops:                  opsHandler,
+		OpsGroupAvailability: opsGroupAvailabilityHandler,
+		User:                 userHandler,
+		Group:                groupHandler,
+		Account:              accountHandler,
+		OAuth:                oauthHandler,
+		OpenAIOAuth:          openaiOAuthHandler,
+		GeminiOAuth:          geminiOAuthHandler,
+		AntigravityOAuth:     antigravityOAuthHandler,
+		Proxy:                proxyHandler,
+		Redeem:               redeemHandler,
+		Setting:              settingHandler,
+		System:               systemHandler,
+		Subscription:         subscriptionHandler,
+		Usage:                usageHandler,
+		UserAttribute:        userAttributeHandler,
 	}
 }
 
@@ -96,6 +100,8 @@ var ProviderSet = wire.NewSet(
 
 	// Admin handlers
 	admin.NewDashboardHandler,
+	admin.NewOpsHandler,
+	admin.NewOpsGroupAvailabilityHandler,
 	admin.NewUserHandler,
 	admin.NewGroupHandler,
 	admin.NewAccountHandler,

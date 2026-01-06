@@ -19,6 +19,7 @@ export interface SystemSettings {
   site_name: string
   site_logo: string
   site_subtitle: string
+  site_url: string
   api_base_url: string
   contact_info: string
   doc_url: string
@@ -34,34 +35,28 @@ export interface SystemSettings {
   turnstile_enabled: boolean
   turnstile_site_key: string
   turnstile_secret_key_configured: boolean
+
+  // Ops monitoring
+  ops_monitoring_enabled: boolean
+  ops_realtime_monitoring_enabled: boolean
+
+  // Model fallback configuration
+  enable_model_fallback: boolean
+  fallback_model_anthropic: string
+  fallback_model_openai: string
+  fallback_model_gemini: string
+  fallback_model_antigravity: string
+
   // Identity patch configuration (Claude -> Gemini)
   enable_identity_patch: boolean
   identity_patch_prompt: string
 }
 
-export interface UpdateSettingsRequest {
-  registration_enabled?: boolean
-  email_verify_enabled?: boolean
-  default_balance?: number
-  default_concurrency?: number
-  site_name?: string
-  site_logo?: string
-  site_subtitle?: string
-  api_base_url?: string
-  contact_info?: string
-  doc_url?: string
-  smtp_host?: string
-  smtp_port?: number
-  smtp_username?: string
+export type UpdateSettingsRequest = Partial<
+  Omit<SystemSettings, 'smtp_password_configured' | 'turnstile_secret_key_configured'>
+> & {
   smtp_password?: string
-  smtp_from_email?: string
-  smtp_from_name?: string
-  smtp_use_tls?: boolean
-  turnstile_enabled?: boolean
-  turnstile_site_key?: string
   turnstile_secret_key?: string
-  enable_identity_patch?: boolean
-  identity_patch_prompt?: string
 }
 
 /**
