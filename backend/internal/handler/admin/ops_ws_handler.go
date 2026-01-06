@@ -64,6 +64,42 @@ const (
 var wsConnCount atomic.Int32
 var wsConnCountByIP sync.Map // map[string]*atomic.Int32
 
+const qpsWSIdleStopDelay = 30 * time.Second
+
+const (
+	opsWSCloseRealtimeDisabled = 4001
+)
+
+var qpsWSIdleStopMu sync.Mutex
+var qpsWSIdleStopTimer *time.Timer
+
+func cancelQPSWSIdleStop() {
+	qpsWSIdleStopMu.Lock()
+	if qpsWSIdleStopTimer != nil {
+		qpsWSIdleStopTimer.Stop()
+		qpsWSIdleStopTimer = nil
+	}
+	qpsWSIdleStopMu.Unlock()
+}
+
+func scheduleQPSWSIdleStop() {
+	qpsWSIdleStopMu.Lock()
+	if qpsWSIdleStopTimer != nil {
+		qpsWSIdleStopMu.Unlock()
+		return
+	}
+	qpsWSIdleStopTimer = time.AfterFunc(qpsWSIdleStopDelay, func() {
+		// Only stop if truly idle at fire time.
+		if wsConnCount.Load() == 0 {
+			qpsWSCache.Stop()
+		}
+		qpsWSIdleStopMu.Lock()
+		qpsWSIdleStopTimer = nil
+		qpsWSIdleStopMu.Unlock()
+	})
+	qpsWSIdleStopMu.Unlock()
+}
+
 type opsWSRuntimeLimits struct {
 	MaxConns      int32
 	MaxConnsPerIP int32
@@ -285,10 +321,40 @@ func (c *opsWSQPSCache) getPayload() []byte {
 	return nil
 }
 
+func closeWS(conn *websocket.Conn, code int, reason string) {
+	if conn == nil {
+		return
+	}
+	msg := websocket.FormatCloseMessage(code, reason)
+	_ = conn.WriteControl(websocket.CloseMessage, msg, time.Now().Add(qpsWSWriteTimeout))
+	_ = conn.Close()
+}
+
 // QPSWSHandler handles realtime QPS push via WebSocket.
 // GET /api/v1/admin/ops/ws/qps
 func (h *OpsHandler) QPSWSHandler(c *gin.Context) {
 	clientIP := requestClientIP(c.Request)
+
+	if h == nil || h.opsService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ops service not initialized"})
+		return
+	}
+
+	// If realtime monitoring is disabled, prefer a successful WS upgrade followed by a clean close
+	// with a deterministic close code. This prevents clients from spinning on 404/1006 reconnect loops.
+	if !h.opsService.IsRealtimeMonitoringEnabled(c.Request.Context()) {
+		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "ops realtime monitoring is disabled"})
+			return
+		}
+		closeWS(conn, opsWSCloseRealtimeDisabled, "realtime_disabled")
+		return
+	}
+	cancelQPSWSIdleStop()
+	// Lazily start the background refresh loop so unit tests that never hit the
+	// websocket route don't spawn goroutines that depend on DB/Redis stubs.
+	qpsWSCache.start(h.opsService)
 
 	// Reserve a global slot before upgrading the connection to keep the limit strict.
 	if !tryAcquireOpsWSTotalSlot(opsWSLimits.MaxConns) {
@@ -296,7 +362,11 @@ func (h *OpsHandler) QPSWSHandler(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "too many connections"})
 		return
 	}
-	defer wsConnCount.Add(-1)
+	defer func() {
+		if wsConnCount.Add(-1) == 0 {
+			scheduleQPSWSIdleStop()
+		}
+	}()
 
 	if opsWSLimits.MaxConnsPerIP > 0 && clientIP != "" {
 		if !tryAcquireOpsWSIPSlot(clientIP, opsWSLimits.MaxConnsPerIP) {

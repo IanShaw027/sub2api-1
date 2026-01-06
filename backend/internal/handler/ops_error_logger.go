@@ -158,6 +158,16 @@ func OpsErrorLogQueueLength() int64 {
 	return opsErrorLogQueueLen.Load()
 }
 
+func OpsErrorLogQueueCapacity() int {
+	opsErrorLogMu.RLock()
+	ch := opsErrorLogQueue
+	opsErrorLogMu.RUnlock()
+	if ch == nil {
+		return 0
+	}
+	return cap(ch)
+}
+
 func opsErrorLogConfig() (workerCount int, queueSize int) {
 	workerCount = runtime.GOMAXPROCS(0) * 2
 	if workerCount < opsErrorLogMinWorkerCount {

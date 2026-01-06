@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"strings"
+
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -13,6 +15,15 @@ type SettingHandler struct {
 	settingService   *service.SettingService
 	emailService     *service.EmailService
 	turnstileService *service.TurnstileService
+}
+
+const maskedSecretPlaceholder = "********"
+
+func maskSecret(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return ""
+	}
+	return maskedSecretPlaceholder
 }
 
 // NewSettingHandler 创建系统设置处理器
@@ -39,13 +50,13 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		SMTPHost:            settings.SMTPHost,
 		SMTPPort:            settings.SMTPPort,
 		SMTPUsername:        settings.SMTPUsername,
-		SMTPPassword:        settings.SMTPPassword,
+		SMTPPassword:        maskSecret(settings.SMTPPassword),
 		SMTPFrom:            settings.SMTPFrom,
 		SMTPFromName:        settings.SMTPFromName,
 		SMTPUseTLS:          settings.SMTPUseTLS,
 		TurnstileEnabled:    settings.TurnstileEnabled,
 		TurnstileSiteKey:    settings.TurnstileSiteKey,
-		TurnstileSecretKey:  settings.TurnstileSecretKey,
+		TurnstileSecretKey:  maskSecret(settings.TurnstileSecretKey),
 		SiteName:            settings.SiteName,
 		SiteLogo:            settings.SiteLogo,
 		SiteSubtitle:        settings.SiteSubtitle,
@@ -55,6 +66,8 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		DocURL:              settings.DocURL,
 		DefaultConcurrency:  settings.DefaultConcurrency,
 		DefaultBalance:      settings.DefaultBalance,
+		OpsMonitoringEnabled:         settings.OpsMonitoringEnabled,
+		OpsRealtimeMonitoringEnabled: settings.OpsRealtimeMonitoringEnabled,
 	})
 }
 
@@ -90,6 +103,10 @@ type UpdateSettingsRequest struct {
 	// 默认配置
 	DefaultConcurrency int     `json:"default_concurrency"`
 	DefaultBalance     float64 `json:"default_balance"`
+
+	// Ops monitoring
+	OpsMonitoringEnabled         *bool `json:"ops_monitoring_enabled"`
+	OpsRealtimeMonitoringEnabled *bool `json:"ops_realtime_monitoring_enabled"`
 }
 
 // UpdateSettings 更新系统设置
@@ -99,6 +116,28 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
+	}
+
+	var currentSettings *service.SystemSettings
+	getCurrentSettings := func() (*service.SystemSettings, error) {
+		if currentSettings != nil {
+			return currentSettings, nil
+		}
+		settings, err := h.settingService.GetAllSettings(c.Request.Context())
+		if err != nil {
+			return nil, err
+		}
+		currentSettings = settings
+		return currentSettings, nil
+	}
+
+	resolveSecret := func(incoming string, current string) string {
+		switch strings.TrimSpace(incoming) {
+		case "", maskedSecretPlaceholder:
+			return current
+		default:
+			return incoming
+		}
 	}
 
 	// 验证参数
@@ -114,6 +153,14 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 
 	// Turnstile 参数验证
 	if req.TurnstileEnabled {
+		currentSettings, err := getCurrentSettings()
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+
+		req.TurnstileSecretKey = resolveSecret(req.TurnstileSecretKey, currentSettings.TurnstileSecretKey)
+
 		// 检查必填字段
 		if req.TurnstileSiteKey == "" {
 			response.BadRequest(c, "Turnstile Site Key is required when enabled")
@@ -121,13 +168,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		}
 		if req.TurnstileSecretKey == "" {
 			response.BadRequest(c, "Turnstile Secret Key is required when enabled")
-			return
-		}
-
-		// 获取当前设置，检查参数是否有变化
-		currentSettings, err := h.settingService.GetAllSettings(c.Request.Context())
-		if err != nil {
-			response.ErrorFrom(c, err)
 			return
 		}
 
@@ -140,6 +180,32 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				return
 			}
 		}
+	} else {
+		// When disabled, do not keep old secrets around.
+		req.TurnstileSiteKey = ""
+		req.TurnstileSecretKey = ""
+	}
+
+	opsMonitoringEnabled := true
+	if req.OpsMonitoringEnabled != nil {
+		opsMonitoringEnabled = *req.OpsMonitoringEnabled
+	} else {
+		if current, err := getCurrentSettings(); err == nil && current != nil {
+			opsMonitoringEnabled = current.OpsMonitoringEnabled
+		}
+	}
+
+	opsRealtimeMonitoringEnabled := true
+	if req.OpsRealtimeMonitoringEnabled != nil {
+		opsRealtimeMonitoringEnabled = *req.OpsRealtimeMonitoringEnabled
+	} else {
+		if current, err := getCurrentSettings(); err == nil && current != nil {
+			opsRealtimeMonitoringEnabled = current.OpsRealtimeMonitoringEnabled
+		}
+	}
+
+	if current, err := getCurrentSettings(); err == nil && current != nil {
+		req.SMTPPassword = resolveSecret(req.SMTPPassword, current.SMTPPassword)
 	}
 
 	settings := &service.SystemSettings{
@@ -164,6 +230,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		DocURL:              req.DocURL,
 		DefaultConcurrency:  req.DefaultConcurrency,
 		DefaultBalance:      req.DefaultBalance,
+		OpsMonitoringEnabled:         opsMonitoringEnabled,
+		OpsRealtimeMonitoringEnabled: opsRealtimeMonitoringEnabled,
 	}
 
 	if err := h.settingService.UpdateSettings(c.Request.Context(), settings); err != nil {
@@ -184,13 +252,13 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		SMTPHost:            updatedSettings.SMTPHost,
 		SMTPPort:            updatedSettings.SMTPPort,
 		SMTPUsername:        updatedSettings.SMTPUsername,
-		SMTPPassword:        updatedSettings.SMTPPassword,
+		SMTPPassword:        maskSecret(updatedSettings.SMTPPassword),
 		SMTPFrom:            updatedSettings.SMTPFrom,
 		SMTPFromName:        updatedSettings.SMTPFromName,
 		SMTPUseTLS:          updatedSettings.SMTPUseTLS,
 		TurnstileEnabled:    updatedSettings.TurnstileEnabled,
 		TurnstileSiteKey:    updatedSettings.TurnstileSiteKey,
-		TurnstileSecretKey:  updatedSettings.TurnstileSecretKey,
+		TurnstileSecretKey:  maskSecret(updatedSettings.TurnstileSecretKey),
 		SiteName:            updatedSettings.SiteName,
 		SiteLogo:            updatedSettings.SiteLogo,
 		SiteSubtitle:        updatedSettings.SiteSubtitle,
@@ -200,6 +268,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		DocURL:              updatedSettings.DocURL,
 		DefaultConcurrency:  updatedSettings.DefaultConcurrency,
 		DefaultBalance:      updatedSettings.DefaultBalance,
+		OpsMonitoringEnabled:         updatedSettings.OpsMonitoringEnabled,
+		OpsRealtimeMonitoringEnabled: updatedSettings.OpsRealtimeMonitoringEnabled,
 	})
 }
 
@@ -227,7 +297,7 @@ func (h *SettingHandler) TestSMTPConnection(c *gin.Context) {
 
 	// 如果未提供密码，从数据库获取已保存的密码
 	password := req.SMTPPassword
-	if password == "" {
+	if strings.TrimSpace(password) == "" || strings.TrimSpace(password) == maskedSecretPlaceholder {
 		savedConfig, err := h.emailService.GetSMTPConfig(c.Request.Context())
 		if err == nil && savedConfig != nil {
 			password = savedConfig.Password
@@ -278,7 +348,7 @@ func (h *SettingHandler) SendTestEmail(c *gin.Context) {
 
 	// 如果未提供密码，从数据库获取已保存的密码
 	password := req.SMTPPassword
-	if password == "" {
+	if strings.TrimSpace(password) == "" || strings.TrimSpace(password) == maskedSecretPlaceholder {
 		savedConfig, err := h.emailService.GetSMTPConfig(c.Request.Context())
 		if err == nil && savedConfig != nil {
 			password = savedConfig.Password

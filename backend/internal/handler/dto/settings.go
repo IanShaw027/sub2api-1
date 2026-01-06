@@ -27,6 +27,10 @@ type SystemSettings struct {
 
 	DefaultConcurrency int     `json:"default_concurrency"`
 	DefaultBalance     float64 `json:"default_balance"`
+
+	// Ops monitoring
+	OpsMonitoringEnabled         bool `json:"ops_monitoring_enabled"`
+	OpsRealtimeMonitoringEnabled bool `json:"ops_realtime_monitoring_enabled"`
 }
 
 type PublicSettings struct {

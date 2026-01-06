@@ -40,74 +40,9 @@ type GroupAvailabilityConfigRequest struct {
 	CooldownMinutes        *int     `json:"cooldown_minutes"`
 }
 
-// GroupAvailabilityConfigResponse represents the response with group info.
-type GroupAvailabilityConfigResponse struct {
-	service.OpsGroupAvailabilityConfig
-	Group *service.Group `json:"group"`
-}
-
 type groupAvailabilityStatusResponse struct {
 	service.OpsGroupAvailabilityStatus
 	Config *service.OpsGroupAvailabilityConfig `json:"config,omitempty"`
-}
-
-// ListConfigs returns all group availability monitoring configs.
-// GET /api/admin/ops/group-availability/configs
-func (h *OpsGroupAvailabilityHandler) ListConfigs(c *gin.Context) {
-	configs, err := h.opsService.ListGroupAvailabilityConfigs(c.Request.Context(), false)
-	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "Failed to list configs")
-		return
-	}
-
-	result := make([]GroupAvailabilityConfigResponse, 0, len(configs))
-	for i := range configs {
-		group, err := h.groupService.GetByID(c.Request.Context(), configs[i].GroupID)
-		if err != nil {
-			continue
-		}
-		result = append(result, GroupAvailabilityConfigResponse{
-			OpsGroupAvailabilityConfig: configs[i],
-			Group:                      group,
-		})
-	}
-
-	response.Success(c, result)
-}
-
-// GetConfig returns a single group's monitoring config.
-// GET /api/admin/ops/group-availability/configs/:groupId
-func (h *OpsGroupAvailabilityHandler) GetConfig(c *gin.Context) {
-	groupID, err := strconv.ParseInt(c.Param("groupId"), 10, 64)
-	if err != nil {
-		response.BadRequest(c, "Invalid group ID")
-		return
-	}
-
-	group, err := h.groupService.GetByID(c.Request.Context(), groupID)
-	if err != nil {
-		response.Error(c, http.StatusNotFound, "Group not found")
-		return
-	}
-
-	config, err := h.opsService.GetGroupAvailabilityConfig(c.Request.Context(), groupID)
-	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			response.Error(c, http.StatusNotFound, "Config not found")
-		} else {
-			response.Error(c, http.StatusInternalServerError, "Failed to get config")
-		}
-		return
-	}
-	if config == nil {
-		response.Error(c, http.StatusNotFound, "Config not found")
-		return
-	}
-
-	response.Success(c, GroupAvailabilityConfigResponse{
-		OpsGroupAvailabilityConfig: *config,
-		Group:                      group,
-	})
 }
 
 // UpsertConfig creates or updates a group's monitoring config.
@@ -254,27 +189,6 @@ func (h *OpsGroupAvailabilityHandler) UpsertConfig(c *gin.Context) {
 	response.Success(c, base)
 }
 
-// DeleteConfig deletes a group's monitoring config.
-// DELETE /api/admin/ops/group-availability/configs/:groupId
-func (h *OpsGroupAvailabilityHandler) DeleteConfig(c *gin.Context) {
-	groupID, err := strconv.ParseInt(c.Param("groupId"), 10, 64)
-	if err != nil {
-		response.BadRequest(c, "Invalid group ID")
-		return
-	}
-
-	if err := h.opsService.DeleteGroupAvailabilityConfig(c.Request.Context(), groupID); err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			response.Error(c, http.StatusNotFound, "Config not found")
-		} else {
-			response.Error(c, http.StatusInternalServerError, "Failed to delete config")
-		}
-		return
-	}
-
-	response.Success(c, nil)
-}
-
 // ListStatus returns availability status for all active groups.
 // GET /api/admin/ops/group-availability/status?search=xxx&monitoring=enabled&alert=firing&page=1&page_size=20
 func (h *OpsGroupAvailabilityHandler) ListStatus(c *gin.Context) {
@@ -390,47 +304,6 @@ func (h *OpsGroupAvailabilityHandler) ListStatus(c *gin.Context) {
 		"page":        page,
 		"page_size":   pageSize,
 		"total_pages": totalPages,
-	})
-}
-
-// GetStatus returns availability status for a single group.
-// GET /api/admin/ops/group-availability/status/:groupId
-func (h *OpsGroupAvailabilityHandler) GetStatus(c *gin.Context) {
-	groupID, err := strconv.ParseInt(c.Param("groupId"), 10, 64)
-	if err != nil {
-		response.BadRequest(c, "Invalid group ID")
-		return
-	}
-
-	config, err := h.opsService.GetGroupAvailabilityConfig(c.Request.Context(), groupID)
-	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			response.Error(c, http.StatusNotFound, "Config not found")
-		} else {
-			response.Error(c, http.StatusInternalServerError, "Failed to get config")
-		}
-		return
-	}
-	if config == nil {
-		response.Error(c, http.StatusNotFound, "Config not found")
-		return
-	}
-
-	group, err := h.groupService.GetByID(c.Request.Context(), groupID)
-	if err != nil || group == nil {
-		response.Error(c, http.StatusNotFound, "Group not found")
-		return
-	}
-
-	status, err := h.computeStatusWithGroup(c.Request.Context(), group, config)
-	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "Failed to compute status")
-		return
-	}
-
-	response.Success(c, groupAvailabilityStatusResponse{
-		OpsGroupAvailabilityStatus: *status,
-		Config:                     config,
 	})
 }
 
@@ -587,16 +460,4 @@ func groupAvailabilityThresholdAccounts(mode string, total int, minAccounts int,
 	}
 }
 
-// Router registration (add to backend/internal/server/router.go):
-//
-// groupAvailHandler := admin.NewOpsGroupAvailabilityHandler(opsService, groupService)
-// opsGroup := adminGroup.Group("/ops/group-availability")
-// {
-//     opsGroup.GET("/configs", groupAvailHandler.ListConfigs)
-//     opsGroup.GET("/configs/:groupId", groupAvailHandler.GetConfig)
-//     opsGroup.PUT("/configs/:groupId", groupAvailHandler.UpsertConfig)
-//     opsGroup.DELETE("/configs/:groupId", groupAvailHandler.DeleteConfig)
-//     opsGroup.GET("/status", groupAvailHandler.ListStatus)
-//     opsGroup.GET("/status/:groupId", groupAvailHandler.GetStatus)
-//     opsGroup.GET("/events", groupAvailHandler.ListEvents)
-// }
+// Router registration lives in `backend/internal/server/routes/admin.go`.
