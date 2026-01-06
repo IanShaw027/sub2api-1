@@ -57,6 +57,114 @@ func (f GroupFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.GroupMutation", m)
 }
 
+// The OpsAlertEventFunc type is an adapter to allow the use of ordinary
+// function as OpsAlertEvent mutator.
+type OpsAlertEventFunc func(context.Context, *ent.OpsAlertEventMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f OpsAlertEventFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.OpsAlertEventMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.OpsAlertEventMutation", m)
+}
+
+// The OpsAlertRuleFunc type is an adapter to allow the use of ordinary
+// function as OpsAlertRule mutator.
+type OpsAlertRuleFunc func(context.Context, *ent.OpsAlertRuleMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f OpsAlertRuleFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.OpsAlertRuleMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.OpsAlertRuleMutation", m)
+}
+
+// The OpsErrorLogFunc type is an adapter to allow the use of ordinary
+// function as OpsErrorLog mutator.
+type OpsErrorLogFunc func(context.Context, *ent.OpsErrorLogMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f OpsErrorLogFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.OpsErrorLogMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.OpsErrorLogMutation", m)
+}
+
+// The OpsGroupAvailabilityConfigFunc type is an adapter to allow the use of ordinary
+// function as OpsGroupAvailabilityConfig mutator.
+type OpsGroupAvailabilityConfigFunc func(context.Context, *ent.OpsGroupAvailabilityConfigMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f OpsGroupAvailabilityConfigFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.OpsGroupAvailabilityConfigMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.OpsGroupAvailabilityConfigMutation", m)
+}
+
+// The OpsGroupAvailabilityEventFunc type is an adapter to allow the use of ordinary
+// function as OpsGroupAvailabilityEvent mutator.
+type OpsGroupAvailabilityEventFunc func(context.Context, *ent.OpsGroupAvailabilityEventMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f OpsGroupAvailabilityEventFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.OpsGroupAvailabilityEventMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.OpsGroupAvailabilityEventMutation", m)
+}
+
+// The OpsMetricsDailyFunc type is an adapter to allow the use of ordinary
+// function as OpsMetricsDaily mutator.
+type OpsMetricsDailyFunc func(context.Context, *ent.OpsMetricsDailyMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f OpsMetricsDailyFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.OpsMetricsDailyMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.OpsMetricsDailyMutation", m)
+}
+
+// The OpsMetricsHourlyFunc type is an adapter to allow the use of ordinary
+// function as OpsMetricsHourly mutator.
+type OpsMetricsHourlyFunc func(context.Context, *ent.OpsMetricsHourlyMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f OpsMetricsHourlyFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.OpsMetricsHourlyMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.OpsMetricsHourlyMutation", m)
+}
+
+// The OpsScheduledReportFunc type is an adapter to allow the use of ordinary
+// function as OpsScheduledReport mutator.
+type OpsScheduledReportFunc func(context.Context, *ent.OpsScheduledReportMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f OpsScheduledReportFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.OpsScheduledReportMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.OpsScheduledReportMutation", m)
+}
+
+// The OpsSystemMetricFunc type is an adapter to allow the use of ordinary
+// function as OpsSystemMetric mutator.
+type OpsSystemMetricFunc func(context.Context, *ent.OpsSystemMetricMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f OpsSystemMetricFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.OpsSystemMetricMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.OpsSystemMetricMutation", m)
+}
+
 // The ProxyFunc type is an adapter to allow the use of ordinary
 // function as Proxy mutator.
 type ProxyFunc func(context.Context, *ent.ProxyMutation) (ent.Value, error)

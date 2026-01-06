@@ -12,6 +12,15 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/opsalertevent"
+	"github.com/Wei-Shaw/sub2api/ent/opsalertrule"
+	"github.com/Wei-Shaw/sub2api/ent/opserrorlog"
+	"github.com/Wei-Shaw/sub2api/ent/opsgroupavailabilityconfig"
+	"github.com/Wei-Shaw/sub2api/ent/opsgroupavailabilityevent"
+	"github.com/Wei-Shaw/sub2api/ent/opsmetricsdaily"
+	"github.com/Wei-Shaw/sub2api/ent/opsmetricshourly"
+	"github.com/Wei-Shaw/sub2api/ent/opsscheduledreport"
+	"github.com/Wei-Shaw/sub2api/ent/opssystemmetric"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
@@ -186,6 +195,249 @@ func (f TraverseGroup) Traverse(ctx context.Context, q ent.Query) error {
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *ent.GroupQuery", q)
+}
+
+// The OpsAlertEventFunc type is an adapter to allow the use of ordinary function as a Querier.
+type OpsAlertEventFunc func(context.Context, *ent.OpsAlertEventQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f OpsAlertEventFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.OpsAlertEventQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.OpsAlertEventQuery", q)
+}
+
+// The TraverseOpsAlertEvent type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseOpsAlertEvent func(context.Context, *ent.OpsAlertEventQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseOpsAlertEvent) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseOpsAlertEvent) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.OpsAlertEventQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.OpsAlertEventQuery", q)
+}
+
+// The OpsAlertRuleFunc type is an adapter to allow the use of ordinary function as a Querier.
+type OpsAlertRuleFunc func(context.Context, *ent.OpsAlertRuleQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f OpsAlertRuleFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.OpsAlertRuleQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.OpsAlertRuleQuery", q)
+}
+
+// The TraverseOpsAlertRule type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseOpsAlertRule func(context.Context, *ent.OpsAlertRuleQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseOpsAlertRule) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseOpsAlertRule) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.OpsAlertRuleQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.OpsAlertRuleQuery", q)
+}
+
+// The OpsErrorLogFunc type is an adapter to allow the use of ordinary function as a Querier.
+type OpsErrorLogFunc func(context.Context, *ent.OpsErrorLogQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f OpsErrorLogFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.OpsErrorLogQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.OpsErrorLogQuery", q)
+}
+
+// The TraverseOpsErrorLog type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseOpsErrorLog func(context.Context, *ent.OpsErrorLogQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseOpsErrorLog) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseOpsErrorLog) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.OpsErrorLogQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.OpsErrorLogQuery", q)
+}
+
+// The OpsGroupAvailabilityConfigFunc type is an adapter to allow the use of ordinary function as a Querier.
+type OpsGroupAvailabilityConfigFunc func(context.Context, *ent.OpsGroupAvailabilityConfigQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f OpsGroupAvailabilityConfigFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.OpsGroupAvailabilityConfigQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.OpsGroupAvailabilityConfigQuery", q)
+}
+
+// The TraverseOpsGroupAvailabilityConfig type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseOpsGroupAvailabilityConfig func(context.Context, *ent.OpsGroupAvailabilityConfigQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseOpsGroupAvailabilityConfig) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseOpsGroupAvailabilityConfig) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.OpsGroupAvailabilityConfigQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.OpsGroupAvailabilityConfigQuery", q)
+}
+
+// The OpsGroupAvailabilityEventFunc type is an adapter to allow the use of ordinary function as a Querier.
+type OpsGroupAvailabilityEventFunc func(context.Context, *ent.OpsGroupAvailabilityEventQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f OpsGroupAvailabilityEventFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.OpsGroupAvailabilityEventQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.OpsGroupAvailabilityEventQuery", q)
+}
+
+// The TraverseOpsGroupAvailabilityEvent type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseOpsGroupAvailabilityEvent func(context.Context, *ent.OpsGroupAvailabilityEventQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseOpsGroupAvailabilityEvent) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseOpsGroupAvailabilityEvent) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.OpsGroupAvailabilityEventQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.OpsGroupAvailabilityEventQuery", q)
+}
+
+// The OpsMetricsDailyFunc type is an adapter to allow the use of ordinary function as a Querier.
+type OpsMetricsDailyFunc func(context.Context, *ent.OpsMetricsDailyQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f OpsMetricsDailyFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.OpsMetricsDailyQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.OpsMetricsDailyQuery", q)
+}
+
+// The TraverseOpsMetricsDaily type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseOpsMetricsDaily func(context.Context, *ent.OpsMetricsDailyQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseOpsMetricsDaily) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseOpsMetricsDaily) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.OpsMetricsDailyQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.OpsMetricsDailyQuery", q)
+}
+
+// The OpsMetricsHourlyFunc type is an adapter to allow the use of ordinary function as a Querier.
+type OpsMetricsHourlyFunc func(context.Context, *ent.OpsMetricsHourlyQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f OpsMetricsHourlyFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.OpsMetricsHourlyQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.OpsMetricsHourlyQuery", q)
+}
+
+// The TraverseOpsMetricsHourly type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseOpsMetricsHourly func(context.Context, *ent.OpsMetricsHourlyQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseOpsMetricsHourly) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseOpsMetricsHourly) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.OpsMetricsHourlyQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.OpsMetricsHourlyQuery", q)
+}
+
+// The OpsScheduledReportFunc type is an adapter to allow the use of ordinary function as a Querier.
+type OpsScheduledReportFunc func(context.Context, *ent.OpsScheduledReportQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f OpsScheduledReportFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.OpsScheduledReportQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.OpsScheduledReportQuery", q)
+}
+
+// The TraverseOpsScheduledReport type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseOpsScheduledReport func(context.Context, *ent.OpsScheduledReportQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseOpsScheduledReport) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseOpsScheduledReport) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.OpsScheduledReportQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.OpsScheduledReportQuery", q)
+}
+
+// The OpsSystemMetricFunc type is an adapter to allow the use of ordinary function as a Querier.
+type OpsSystemMetricFunc func(context.Context, *ent.OpsSystemMetricQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f OpsSystemMetricFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.OpsSystemMetricQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.OpsSystemMetricQuery", q)
+}
+
+// The TraverseOpsSystemMetric type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseOpsSystemMetric func(context.Context, *ent.OpsSystemMetricQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseOpsSystemMetric) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseOpsSystemMetric) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.OpsSystemMetricQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.OpsSystemMetricQuery", q)
 }
 
 // The ProxyFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -442,6 +694,24 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.AccountGroupQuery, predicate.AccountGroup, accountgroup.OrderOption]{typ: ent.TypeAccountGroup, tq: q}, nil
 	case *ent.GroupQuery:
 		return &query[*ent.GroupQuery, predicate.Group, group.OrderOption]{typ: ent.TypeGroup, tq: q}, nil
+	case *ent.OpsAlertEventQuery:
+		return &query[*ent.OpsAlertEventQuery, predicate.OpsAlertEvent, opsalertevent.OrderOption]{typ: ent.TypeOpsAlertEvent, tq: q}, nil
+	case *ent.OpsAlertRuleQuery:
+		return &query[*ent.OpsAlertRuleQuery, predicate.OpsAlertRule, opsalertrule.OrderOption]{typ: ent.TypeOpsAlertRule, tq: q}, nil
+	case *ent.OpsErrorLogQuery:
+		return &query[*ent.OpsErrorLogQuery, predicate.OpsErrorLog, opserrorlog.OrderOption]{typ: ent.TypeOpsErrorLog, tq: q}, nil
+	case *ent.OpsGroupAvailabilityConfigQuery:
+		return &query[*ent.OpsGroupAvailabilityConfigQuery, predicate.OpsGroupAvailabilityConfig, opsgroupavailabilityconfig.OrderOption]{typ: ent.TypeOpsGroupAvailabilityConfig, tq: q}, nil
+	case *ent.OpsGroupAvailabilityEventQuery:
+		return &query[*ent.OpsGroupAvailabilityEventQuery, predicate.OpsGroupAvailabilityEvent, opsgroupavailabilityevent.OrderOption]{typ: ent.TypeOpsGroupAvailabilityEvent, tq: q}, nil
+	case *ent.OpsMetricsDailyQuery:
+		return &query[*ent.OpsMetricsDailyQuery, predicate.OpsMetricsDaily, opsmetricsdaily.OrderOption]{typ: ent.TypeOpsMetricsDaily, tq: q}, nil
+	case *ent.OpsMetricsHourlyQuery:
+		return &query[*ent.OpsMetricsHourlyQuery, predicate.OpsMetricsHourly, opsmetricshourly.OrderOption]{typ: ent.TypeOpsMetricsHourly, tq: q}, nil
+	case *ent.OpsScheduledReportQuery:
+		return &query[*ent.OpsScheduledReportQuery, predicate.OpsScheduledReport, opsscheduledreport.OrderOption]{typ: ent.TypeOpsScheduledReport, tq: q}, nil
+	case *ent.OpsSystemMetricQuery:
+		return &query[*ent.OpsSystemMetricQuery, predicate.OpsSystemMetric, opssystemmetric.OrderOption]{typ: ent.TypeOpsSystemMetric, tq: q}, nil
 	case *ent.ProxyQuery:
 		return &query[*ent.ProxyQuery, predicate.Proxy, proxy.OrderOption]{typ: ent.TypeProxy, tq: q}, nil
 	case *ent.RedeemCodeQuery:

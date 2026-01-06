@@ -18,6 +18,33 @@ type AccountGroup func(*sql.Selector)
 // Group is the predicate function for group builders.
 type Group func(*sql.Selector)
 
+// OpsAlertEvent is the predicate function for opsalertevent builders.
+type OpsAlertEvent func(*sql.Selector)
+
+// OpsAlertRule is the predicate function for opsalertrule builders.
+type OpsAlertRule func(*sql.Selector)
+
+// OpsErrorLog is the predicate function for opserrorlog builders.
+type OpsErrorLog func(*sql.Selector)
+
+// OpsGroupAvailabilityConfig is the predicate function for opsgroupavailabilityconfig builders.
+type OpsGroupAvailabilityConfig func(*sql.Selector)
+
+// OpsGroupAvailabilityEvent is the predicate function for opsgroupavailabilityevent builders.
+type OpsGroupAvailabilityEvent func(*sql.Selector)
+
+// OpsMetricsDaily is the predicate function for opsmetricsdaily builders.
+type OpsMetricsDaily func(*sql.Selector)
+
+// OpsMetricsHourly is the predicate function for opsmetricshourly builders.
+type OpsMetricsHourly func(*sql.Selector)
+
+// OpsScheduledReport is the predicate function for opsscheduledreport builders.
+type OpsScheduledReport func(*sql.Selector)
+
+// OpsSystemMetric is the predicate function for opssystemmetric builders.
+type OpsSystemMetric func(*sql.Selector)
+
 // Proxy is the predicate function for proxy builders.
 type Proxy func(*sql.Selector)
 

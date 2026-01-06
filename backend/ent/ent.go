@@ -16,6 +16,15 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/opsalertevent"
+	"github.com/Wei-Shaw/sub2api/ent/opsalertrule"
+	"github.com/Wei-Shaw/sub2api/ent/opserrorlog"
+	"github.com/Wei-Shaw/sub2api/ent/opsgroupavailabilityconfig"
+	"github.com/Wei-Shaw/sub2api/ent/opsgroupavailabilityevent"
+	"github.com/Wei-Shaw/sub2api/ent/opsmetricsdaily"
+	"github.com/Wei-Shaw/sub2api/ent/opsmetricshourly"
+	"github.com/Wei-Shaw/sub2api/ent/opsscheduledreport"
+	"github.com/Wei-Shaw/sub2api/ent/opssystemmetric"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
@@ -85,19 +94,28 @@ var (
 func checkColumn(t, c string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			apikey.Table:                  apikey.ValidColumn,
-			account.Table:                 account.ValidColumn,
-			accountgroup.Table:            accountgroup.ValidColumn,
-			group.Table:                   group.ValidColumn,
-			proxy.Table:                   proxy.ValidColumn,
-			redeemcode.Table:              redeemcode.ValidColumn,
-			setting.Table:                 setting.ValidColumn,
-			usagelog.Table:                usagelog.ValidColumn,
-			user.Table:                    user.ValidColumn,
-			userallowedgroup.Table:        userallowedgroup.ValidColumn,
-			userattributedefinition.Table: userattributedefinition.ValidColumn,
-			userattributevalue.Table:      userattributevalue.ValidColumn,
-			usersubscription.Table:        usersubscription.ValidColumn,
+			apikey.Table:                     apikey.ValidColumn,
+			account.Table:                    account.ValidColumn,
+			accountgroup.Table:               accountgroup.ValidColumn,
+			group.Table:                      group.ValidColumn,
+			opsalertevent.Table:              opsalertevent.ValidColumn,
+			opsalertrule.Table:               opsalertrule.ValidColumn,
+			opserrorlog.Table:                opserrorlog.ValidColumn,
+			opsgroupavailabilityconfig.Table: opsgroupavailabilityconfig.ValidColumn,
+			opsgroupavailabilityevent.Table:  opsgroupavailabilityevent.ValidColumn,
+			opsmetricsdaily.Table:            opsmetricsdaily.ValidColumn,
+			opsmetricshourly.Table:           opsmetricshourly.ValidColumn,
+			opsscheduledreport.Table:         opsscheduledreport.ValidColumn,
+			opssystemmetric.Table:            opssystemmetric.ValidColumn,
+			proxy.Table:                      proxy.ValidColumn,
+			redeemcode.Table:                 redeemcode.ValidColumn,
+			setting.Table:                    setting.ValidColumn,
+			usagelog.Table:                   usagelog.ValidColumn,
+			user.Table:                       user.ValidColumn,
+			userallowedgroup.Table:           userallowedgroup.ValidColumn,
+			userattributedefinition.Table:    userattributedefinition.ValidColumn,
+			userattributevalue.Table:         userattributevalue.ValidColumn,
+			usersubscription.Table:           usersubscription.ValidColumn,
 		})
 	})
 	return columnCheck(t, c)

@@ -9,6 +9,15 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/opsalertevent"
+	"github.com/Wei-Shaw/sub2api/ent/opsalertrule"
+	"github.com/Wei-Shaw/sub2api/ent/opserrorlog"
+	"github.com/Wei-Shaw/sub2api/ent/opsgroupavailabilityconfig"
+	"github.com/Wei-Shaw/sub2api/ent/opsgroupavailabilityevent"
+	"github.com/Wei-Shaw/sub2api/ent/opsmetricsdaily"
+	"github.com/Wei-Shaw/sub2api/ent/opsmetricshourly"
+	"github.com/Wei-Shaw/sub2api/ent/opsscheduledreport"
+	"github.com/Wei-Shaw/sub2api/ent/opssystemmetric"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/schema"
@@ -266,6 +275,552 @@ func init() {
 	groupDescDefaultValidityDays := groupFields[10].Descriptor()
 	// group.DefaultDefaultValidityDays holds the default value on creation for the default_validity_days field.
 	group.DefaultDefaultValidityDays = groupDescDefaultValidityDays.Default.(int)
+	opsalerteventFields := schema.OpsAlertEvent{}.Fields()
+	_ = opsalerteventFields
+	// opsalerteventDescSeverity is the schema descriptor for severity field.
+	opsalerteventDescSeverity := opsalerteventFields[1].Descriptor()
+	// opsalertevent.SeverityValidator is a validator for the "severity" field. It is called by the builders before save.
+	opsalertevent.SeverityValidator = func() func(string) error {
+		validators := opsalerteventDescSeverity.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(severity string) error {
+			for _, fn := range fns {
+				if err := fn(severity); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// opsalerteventDescStatus is the schema descriptor for status field.
+	opsalerteventDescStatus := opsalerteventFields[2].Descriptor()
+	// opsalertevent.DefaultStatus holds the default value on creation for the status field.
+	opsalertevent.DefaultStatus = opsalerteventDescStatus.Default.(string)
+	// opsalertevent.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	opsalertevent.StatusValidator = opsalerteventDescStatus.Validators[0].(func(string) error)
+	// opsalerteventDescTitle is the schema descriptor for title field.
+	opsalerteventDescTitle := opsalerteventFields[3].Descriptor()
+	// opsalertevent.TitleValidator is a validator for the "title" field. It is called by the builders before save.
+	opsalertevent.TitleValidator = opsalerteventDescTitle.Validators[0].(func(string) error)
+	// opsalerteventDescFiredAt is the schema descriptor for fired_at field.
+	opsalerteventDescFiredAt := opsalerteventFields[7].Descriptor()
+	// opsalertevent.DefaultFiredAt holds the default value on creation for the fired_at field.
+	opsalertevent.DefaultFiredAt = opsalerteventDescFiredAt.Default.(func() time.Time)
+	// opsalerteventDescEmailSent is the schema descriptor for email_sent field.
+	opsalerteventDescEmailSent := opsalerteventFields[9].Descriptor()
+	// opsalertevent.DefaultEmailSent holds the default value on creation for the email_sent field.
+	opsalertevent.DefaultEmailSent = opsalerteventDescEmailSent.Default.(bool)
+	// opsalerteventDescCreatedAt is the schema descriptor for created_at field.
+	opsalerteventDescCreatedAt := opsalerteventFields[10].Descriptor()
+	// opsalertevent.DefaultCreatedAt holds the default value on creation for the created_at field.
+	opsalertevent.DefaultCreatedAt = opsalerteventDescCreatedAt.Default.(func() time.Time)
+	opsalertruleFields := schema.OpsAlertRule{}.Fields()
+	_ = opsalertruleFields
+	// opsalertruleDescName is the schema descriptor for name field.
+	opsalertruleDescName := opsalertruleFields[0].Descriptor()
+	// opsalertrule.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	opsalertrule.NameValidator = func() func(string) error {
+		validators := opsalertruleDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// opsalertruleDescEnabled is the schema descriptor for enabled field.
+	opsalertruleDescEnabled := opsalertruleFields[2].Descriptor()
+	// opsalertrule.DefaultEnabled holds the default value on creation for the enabled field.
+	opsalertrule.DefaultEnabled = opsalertruleDescEnabled.Default.(bool)
+	// opsalertruleDescMetricType is the schema descriptor for metric_type field.
+	opsalertruleDescMetricType := opsalertruleFields[3].Descriptor()
+	// opsalertrule.MetricTypeValidator is a validator for the "metric_type" field. It is called by the builders before save.
+	opsalertrule.MetricTypeValidator = func() func(string) error {
+		validators := opsalertruleDescMetricType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(metric_type string) error {
+			for _, fn := range fns {
+				if err := fn(metric_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// opsalertruleDescOperator is the schema descriptor for operator field.
+	opsalertruleDescOperator := opsalertruleFields[4].Descriptor()
+	// opsalertrule.OperatorValidator is a validator for the "operator" field. It is called by the builders before save.
+	opsalertrule.OperatorValidator = func() func(string) error {
+		validators := opsalertruleDescOperator.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(operator string) error {
+			for _, fn := range fns {
+				if err := fn(operator); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// opsalertruleDescWindowMinutes is the schema descriptor for window_minutes field.
+	opsalertruleDescWindowMinutes := opsalertruleFields[6].Descriptor()
+	// opsalertrule.DefaultWindowMinutes holds the default value on creation for the window_minutes field.
+	opsalertrule.DefaultWindowMinutes = opsalertruleDescWindowMinutes.Default.(int)
+	// opsalertruleDescSustainedMinutes is the schema descriptor for sustained_minutes field.
+	opsalertruleDescSustainedMinutes := opsalertruleFields[7].Descriptor()
+	// opsalertrule.DefaultSustainedMinutes holds the default value on creation for the sustained_minutes field.
+	opsalertrule.DefaultSustainedMinutes = opsalertruleDescSustainedMinutes.Default.(int)
+	// opsalertruleDescSeverity is the schema descriptor for severity field.
+	opsalertruleDescSeverity := opsalertruleFields[8].Descriptor()
+	// opsalertrule.DefaultSeverity holds the default value on creation for the severity field.
+	opsalertrule.DefaultSeverity = opsalertruleDescSeverity.Default.(string)
+	// opsalertrule.SeverityValidator is a validator for the "severity" field. It is called by the builders before save.
+	opsalertrule.SeverityValidator = opsalertruleDescSeverity.Validators[0].(func(string) error)
+	// opsalertruleDescNotifyEmail is the schema descriptor for notify_email field.
+	opsalertruleDescNotifyEmail := opsalertruleFields[9].Descriptor()
+	// opsalertrule.DefaultNotifyEmail holds the default value on creation for the notify_email field.
+	opsalertrule.DefaultNotifyEmail = opsalertruleDescNotifyEmail.Default.(bool)
+	// opsalertruleDescCooldownMinutes is the schema descriptor for cooldown_minutes field.
+	opsalertruleDescCooldownMinutes := opsalertruleFields[10].Descriptor()
+	// opsalertrule.DefaultCooldownMinutes holds the default value on creation for the cooldown_minutes field.
+	opsalertrule.DefaultCooldownMinutes = opsalertruleDescCooldownMinutes.Default.(int)
+	// opsalertruleDescCreatedBy is the schema descriptor for created_by field.
+	opsalertruleDescCreatedBy := opsalertruleFields[14].Descriptor()
+	// opsalertrule.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
+	opsalertrule.CreatedByValidator = opsalertruleDescCreatedBy.Validators[0].(func(string) error)
+	// opsalertruleDescAlertCategory is the schema descriptor for alert_category field.
+	opsalertruleDescAlertCategory := opsalertruleFields[16].Descriptor()
+	// opsalertrule.AlertCategoryValidator is a validator for the "alert_category" field. It is called by the builders before save.
+	opsalertrule.AlertCategoryValidator = opsalertruleDescAlertCategory.Validators[0].(func(string) error)
+	// opsalertruleDescNotificationFrequency is the schema descriptor for notification_frequency field.
+	opsalertruleDescNotificationFrequency := opsalertruleFields[20].Descriptor()
+	// opsalertrule.NotificationFrequencyValidator is a validator for the "notification_frequency" field. It is called by the builders before save.
+	opsalertrule.NotificationFrequencyValidator = opsalertruleDescNotificationFrequency.Validators[0].(func(string) error)
+	// opsalertruleDescCreatedAt is the schema descriptor for created_at field.
+	opsalertruleDescCreatedAt := opsalertruleFields[22].Descriptor()
+	// opsalertrule.DefaultCreatedAt holds the default value on creation for the created_at field.
+	opsalertrule.DefaultCreatedAt = opsalertruleDescCreatedAt.Default.(func() time.Time)
+	// opsalertruleDescUpdatedAt is the schema descriptor for updated_at field.
+	opsalertruleDescUpdatedAt := opsalertruleFields[23].Descriptor()
+	// opsalertrule.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	opsalertrule.DefaultUpdatedAt = opsalertruleDescUpdatedAt.Default.(func() time.Time)
+	opserrorlogFields := schema.OpsErrorLog{}.Fields()
+	_ = opserrorlogFields
+	// opserrorlogDescRequestID is the schema descriptor for request_id field.
+	opserrorlogDescRequestID := opserrorlogFields[0].Descriptor()
+	// opserrorlog.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
+	opserrorlog.RequestIDValidator = opserrorlogDescRequestID.Validators[0].(func(string) error)
+	// opserrorlogDescErrorPhase is the schema descriptor for error_phase field.
+	opserrorlogDescErrorPhase := opserrorlogFields[6].Descriptor()
+	// opserrorlog.ErrorPhaseValidator is a validator for the "error_phase" field. It is called by the builders before save.
+	opserrorlog.ErrorPhaseValidator = func() func(string) error {
+		validators := opserrorlogDescErrorPhase.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(error_phase string) error {
+			for _, fn := range fns {
+				if err := fn(error_phase); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// opserrorlogDescErrorType is the schema descriptor for error_type field.
+	opserrorlogDescErrorType := opserrorlogFields[7].Descriptor()
+	// opserrorlog.ErrorTypeValidator is a validator for the "error_type" field. It is called by the builders before save.
+	opserrorlog.ErrorTypeValidator = func() func(string) error {
+		validators := opserrorlogDescErrorType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(error_type string) error {
+			for _, fn := range fns {
+				if err := fn(error_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// opserrorlogDescSeverity is the schema descriptor for severity field.
+	opserrorlogDescSeverity := opserrorlogFields[8].Descriptor()
+	// opserrorlog.SeverityValidator is a validator for the "severity" field. It is called by the builders before save.
+	opserrorlog.SeverityValidator = func() func(string) error {
+		validators := opserrorlogDescSeverity.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(severity string) error {
+			for _, fn := range fns {
+				if err := fn(severity); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// opserrorlogDescPlatform is the schema descriptor for platform field.
+	opserrorlogDescPlatform := opserrorlogFields[10].Descriptor()
+	// opserrorlog.PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
+	opserrorlog.PlatformValidator = opserrorlogDescPlatform.Validators[0].(func(string) error)
+	// opserrorlogDescModel is the schema descriptor for model field.
+	opserrorlogDescModel := opserrorlogFields[11].Descriptor()
+	// opserrorlog.ModelValidator is a validator for the "model" field. It is called by the builders before save.
+	opserrorlog.ModelValidator = opserrorlogDescModel.Validators[0].(func(string) error)
+	// opserrorlogDescRequestPath is the schema descriptor for request_path field.
+	opserrorlogDescRequestPath := opserrorlogFields[12].Descriptor()
+	// opserrorlog.RequestPathValidator is a validator for the "request_path" field. It is called by the builders before save.
+	opserrorlog.RequestPathValidator = opserrorlogDescRequestPath.Validators[0].(func(string) error)
+	// opserrorlogDescStream is the schema descriptor for stream field.
+	opserrorlogDescStream := opserrorlogFields[13].Descriptor()
+	// opserrorlog.DefaultStream holds the default value on creation for the stream field.
+	opserrorlog.DefaultStream = opserrorlogDescStream.Default.(bool)
+	// opserrorlogDescProviderErrorCode is the schema descriptor for provider_error_code field.
+	opserrorlogDescProviderErrorCode := opserrorlogFields[16].Descriptor()
+	// opserrorlog.ProviderErrorCodeValidator is a validator for the "provider_error_code" field. It is called by the builders before save.
+	opserrorlog.ProviderErrorCodeValidator = opserrorlogDescProviderErrorCode.Validators[0].(func(string) error)
+	// opserrorlogDescProviderErrorType is the schema descriptor for provider_error_type field.
+	opserrorlogDescProviderErrorType := opserrorlogFields[17].Descriptor()
+	// opserrorlog.ProviderErrorTypeValidator is a validator for the "provider_error_type" field. It is called by the builders before save.
+	opserrorlog.ProviderErrorTypeValidator = opserrorlogDescProviderErrorType.Validators[0].(func(string) error)
+	// opserrorlogDescIsRetryable is the schema descriptor for is_retryable field.
+	opserrorlogDescIsRetryable := opserrorlogFields[18].Descriptor()
+	// opserrorlog.DefaultIsRetryable holds the default value on creation for the is_retryable field.
+	opserrorlog.DefaultIsRetryable = opserrorlogDescIsRetryable.Default.(bool)
+	// opserrorlogDescIsUserActionable is the schema descriptor for is_user_actionable field.
+	opserrorlogDescIsUserActionable := opserrorlogFields[19].Descriptor()
+	// opserrorlog.DefaultIsUserActionable holds the default value on creation for the is_user_actionable field.
+	opserrorlog.DefaultIsUserActionable = opserrorlogDescIsUserActionable.Default.(bool)
+	// opserrorlogDescRetryCount is the schema descriptor for retry_count field.
+	opserrorlogDescRetryCount := opserrorlogFields[20].Descriptor()
+	// opserrorlog.DefaultRetryCount holds the default value on creation for the retry_count field.
+	opserrorlog.DefaultRetryCount = opserrorlogDescRetryCount.Default.(int)
+	// opserrorlogDescCompletionStatus is the schema descriptor for completion_status field.
+	opserrorlogDescCompletionStatus := opserrorlogFields[21].Descriptor()
+	// opserrorlog.CompletionStatusValidator is a validator for the "completion_status" field. It is called by the builders before save.
+	opserrorlog.CompletionStatusValidator = opserrorlogDescCompletionStatus.Validators[0].(func(string) error)
+	// opserrorlogDescErrorSource is the schema descriptor for error_source field.
+	opserrorlogDescErrorSource := opserrorlogFields[23].Descriptor()
+	// opserrorlog.ErrorSourceValidator is a validator for the "error_source" field. It is called by the builders before save.
+	opserrorlog.ErrorSourceValidator = opserrorlogDescErrorSource.Validators[0].(func(string) error)
+	// opserrorlogDescErrorOwner is the schema descriptor for error_owner field.
+	opserrorlogDescErrorOwner := opserrorlogFields[24].Descriptor()
+	// opserrorlog.ErrorOwnerValidator is a validator for the "error_owner" field. It is called by the builders before save.
+	opserrorlog.ErrorOwnerValidator = opserrorlogDescErrorOwner.Validators[0].(func(string) error)
+	// opserrorlogDescAccountStatus is the schema descriptor for account_status field.
+	opserrorlogDescAccountStatus := opserrorlogFields[25].Descriptor()
+	// opserrorlog.AccountStatusValidator is a validator for the "account_status" field. It is called by the builders before save.
+	opserrorlog.AccountStatusValidator = opserrorlogDescAccountStatus.Validators[0].(func(string) error)
+	// opserrorlogDescNetworkErrorType is the schema descriptor for network_error_type field.
+	opserrorlogDescNetworkErrorType := opserrorlogFields[29].Descriptor()
+	// opserrorlog.NetworkErrorTypeValidator is a validator for the "network_error_type" field. It is called by the builders before save.
+	opserrorlog.NetworkErrorTypeValidator = opserrorlogDescNetworkErrorType.Validators[0].(func(string) error)
+	// opserrorlogDescCreatedAt is the schema descriptor for created_at field.
+	opserrorlogDescCreatedAt := opserrorlogFields[38].Descriptor()
+	// opserrorlog.DefaultCreatedAt holds the default value on creation for the created_at field.
+	opserrorlog.DefaultCreatedAt = opserrorlogDescCreatedAt.Default.(func() time.Time)
+	opsgroupavailabilityconfigFields := schema.OpsGroupAvailabilityConfig{}.Fields()
+	_ = opsgroupavailabilityconfigFields
+	// opsgroupavailabilityconfigDescEnabled is the schema descriptor for enabled field.
+	opsgroupavailabilityconfigDescEnabled := opsgroupavailabilityconfigFields[1].Descriptor()
+	// opsgroupavailabilityconfig.DefaultEnabled holds the default value on creation for the enabled field.
+	opsgroupavailabilityconfig.DefaultEnabled = opsgroupavailabilityconfigDescEnabled.Default.(bool)
+	// opsgroupavailabilityconfigDescMinAvailableAccounts is the schema descriptor for min_available_accounts field.
+	opsgroupavailabilityconfigDescMinAvailableAccounts := opsgroupavailabilityconfigFields[2].Descriptor()
+	// opsgroupavailabilityconfig.DefaultMinAvailableAccounts holds the default value on creation for the min_available_accounts field.
+	opsgroupavailabilityconfig.DefaultMinAvailableAccounts = opsgroupavailabilityconfigDescMinAvailableAccounts.Default.(int)
+	// opsgroupavailabilityconfigDescThresholdMode is the schema descriptor for threshold_mode field.
+	opsgroupavailabilityconfigDescThresholdMode := opsgroupavailabilityconfigFields[3].Descriptor()
+	// opsgroupavailabilityconfig.DefaultThresholdMode holds the default value on creation for the threshold_mode field.
+	opsgroupavailabilityconfig.DefaultThresholdMode = opsgroupavailabilityconfigDescThresholdMode.Default.(string)
+	// opsgroupavailabilityconfig.ThresholdModeValidator is a validator for the "threshold_mode" field. It is called by the builders before save.
+	opsgroupavailabilityconfig.ThresholdModeValidator = opsgroupavailabilityconfigDescThresholdMode.Validators[0].(func(string) error)
+	// opsgroupavailabilityconfigDescMinAvailablePercentage is the schema descriptor for min_available_percentage field.
+	opsgroupavailabilityconfigDescMinAvailablePercentage := opsgroupavailabilityconfigFields[4].Descriptor()
+	// opsgroupavailabilityconfig.DefaultMinAvailablePercentage holds the default value on creation for the min_available_percentage field.
+	opsgroupavailabilityconfig.DefaultMinAvailablePercentage = opsgroupavailabilityconfigDescMinAvailablePercentage.Default.(float64)
+	// opsgroupavailabilityconfigDescNotifyEmail is the schema descriptor for notify_email field.
+	opsgroupavailabilityconfigDescNotifyEmail := opsgroupavailabilityconfigFields[5].Descriptor()
+	// opsgroupavailabilityconfig.DefaultNotifyEmail holds the default value on creation for the notify_email field.
+	opsgroupavailabilityconfig.DefaultNotifyEmail = opsgroupavailabilityconfigDescNotifyEmail.Default.(bool)
+	// opsgroupavailabilityconfigDescSeverity is the schema descriptor for severity field.
+	opsgroupavailabilityconfigDescSeverity := opsgroupavailabilityconfigFields[6].Descriptor()
+	// opsgroupavailabilityconfig.DefaultSeverity holds the default value on creation for the severity field.
+	opsgroupavailabilityconfig.DefaultSeverity = opsgroupavailabilityconfigDescSeverity.Default.(string)
+	// opsgroupavailabilityconfig.SeverityValidator is a validator for the "severity" field. It is called by the builders before save.
+	opsgroupavailabilityconfig.SeverityValidator = opsgroupavailabilityconfigDescSeverity.Validators[0].(func(string) error)
+	// opsgroupavailabilityconfigDescCooldownMinutes is the schema descriptor for cooldown_minutes field.
+	opsgroupavailabilityconfigDescCooldownMinutes := opsgroupavailabilityconfigFields[7].Descriptor()
+	// opsgroupavailabilityconfig.DefaultCooldownMinutes holds the default value on creation for the cooldown_minutes field.
+	opsgroupavailabilityconfig.DefaultCooldownMinutes = opsgroupavailabilityconfigDescCooldownMinutes.Default.(int)
+	// opsgroupavailabilityconfigDescCreatedAt is the schema descriptor for created_at field.
+	opsgroupavailabilityconfigDescCreatedAt := opsgroupavailabilityconfigFields[8].Descriptor()
+	// opsgroupavailabilityconfig.DefaultCreatedAt holds the default value on creation for the created_at field.
+	opsgroupavailabilityconfig.DefaultCreatedAt = opsgroupavailabilityconfigDescCreatedAt.Default.(func() time.Time)
+	// opsgroupavailabilityconfigDescUpdatedAt is the schema descriptor for updated_at field.
+	opsgroupavailabilityconfigDescUpdatedAt := opsgroupavailabilityconfigFields[9].Descriptor()
+	// opsgroupavailabilityconfig.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	opsgroupavailabilityconfig.DefaultUpdatedAt = opsgroupavailabilityconfigDescUpdatedAt.Default.(func() time.Time)
+	opsgroupavailabilityeventFields := schema.OpsGroupAvailabilityEvent{}.Fields()
+	_ = opsgroupavailabilityeventFields
+	// opsgroupavailabilityeventDescStatus is the schema descriptor for status field.
+	opsgroupavailabilityeventDescStatus := opsgroupavailabilityeventFields[2].Descriptor()
+	// opsgroupavailabilityevent.DefaultStatus holds the default value on creation for the status field.
+	opsgroupavailabilityevent.DefaultStatus = opsgroupavailabilityeventDescStatus.Default.(string)
+	// opsgroupavailabilityevent.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	opsgroupavailabilityevent.StatusValidator = opsgroupavailabilityeventDescStatus.Validators[0].(func(string) error)
+	// opsgroupavailabilityeventDescSeverity is the schema descriptor for severity field.
+	opsgroupavailabilityeventDescSeverity := opsgroupavailabilityeventFields[3].Descriptor()
+	// opsgroupavailabilityevent.SeverityValidator is a validator for the "severity" field. It is called by the builders before save.
+	opsgroupavailabilityevent.SeverityValidator = func() func(string) error {
+		validators := opsgroupavailabilityeventDescSeverity.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(severity string) error {
+			for _, fn := range fns {
+				if err := fn(severity); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// opsgroupavailabilityeventDescTitle is the schema descriptor for title field.
+	opsgroupavailabilityeventDescTitle := opsgroupavailabilityeventFields[4].Descriptor()
+	// opsgroupavailabilityevent.TitleValidator is a validator for the "title" field. It is called by the builders before save.
+	opsgroupavailabilityevent.TitleValidator = opsgroupavailabilityeventDescTitle.Validators[0].(func(string) error)
+	// opsgroupavailabilityeventDescDescription is the schema descriptor for description field.
+	opsgroupavailabilityeventDescDescription := opsgroupavailabilityeventFields[5].Descriptor()
+	// opsgroupavailabilityevent.DescriptionValidator is a validator for the "description" field. It is called by the builders before save.
+	opsgroupavailabilityevent.DescriptionValidator = opsgroupavailabilityeventDescDescription.Validators[0].(func(string) error)
+	// opsgroupavailabilityeventDescEmailSent is the schema descriptor for email_sent field.
+	opsgroupavailabilityeventDescEmailSent := opsgroupavailabilityeventFields[9].Descriptor()
+	// opsgroupavailabilityevent.DefaultEmailSent holds the default value on creation for the email_sent field.
+	opsgroupavailabilityevent.DefaultEmailSent = opsgroupavailabilityeventDescEmailSent.Default.(bool)
+	// opsgroupavailabilityeventDescCreatedAt is the schema descriptor for created_at field.
+	opsgroupavailabilityeventDescCreatedAt := opsgroupavailabilityeventFields[12].Descriptor()
+	// opsgroupavailabilityevent.DefaultCreatedAt holds the default value on creation for the created_at field.
+	opsgroupavailabilityevent.DefaultCreatedAt = opsgroupavailabilityeventDescCreatedAt.Default.(func() time.Time)
+	opsmetricsdailyFields := schema.OpsMetricsDaily{}.Fields()
+	_ = opsmetricsdailyFields
+	// opsmetricsdailyDescPlatform is the schema descriptor for platform field.
+	opsmetricsdailyDescPlatform := opsmetricsdailyFields[1].Descriptor()
+	// opsmetricsdaily.DefaultPlatform holds the default value on creation for the platform field.
+	opsmetricsdaily.DefaultPlatform = opsmetricsdailyDescPlatform.Default.(string)
+	// opsmetricsdaily.PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
+	opsmetricsdaily.PlatformValidator = opsmetricsdailyDescPlatform.Validators[0].(func(string) error)
+	// opsmetricsdailyDescRequestCount is the schema descriptor for request_count field.
+	opsmetricsdailyDescRequestCount := opsmetricsdailyFields[2].Descriptor()
+	// opsmetricsdaily.DefaultRequestCount holds the default value on creation for the request_count field.
+	opsmetricsdaily.DefaultRequestCount = opsmetricsdailyDescRequestCount.Default.(int64)
+	// opsmetricsdailyDescSuccessCount is the schema descriptor for success_count field.
+	opsmetricsdailyDescSuccessCount := opsmetricsdailyFields[3].Descriptor()
+	// opsmetricsdaily.DefaultSuccessCount holds the default value on creation for the success_count field.
+	opsmetricsdaily.DefaultSuccessCount = opsmetricsdailyDescSuccessCount.Default.(int64)
+	// opsmetricsdailyDescErrorCount is the schema descriptor for error_count field.
+	opsmetricsdailyDescErrorCount := opsmetricsdailyFields[4].Descriptor()
+	// opsmetricsdaily.DefaultErrorCount holds the default value on creation for the error_count field.
+	opsmetricsdaily.DefaultErrorCount = opsmetricsdailyDescErrorCount.Default.(int64)
+	// opsmetricsdailyDescError4xxCount is the schema descriptor for error_4xx_count field.
+	opsmetricsdailyDescError4xxCount := opsmetricsdailyFields[5].Descriptor()
+	// opsmetricsdaily.DefaultError4xxCount holds the default value on creation for the error_4xx_count field.
+	opsmetricsdaily.DefaultError4xxCount = opsmetricsdailyDescError4xxCount.Default.(int64)
+	// opsmetricsdailyDescError5xxCount is the schema descriptor for error_5xx_count field.
+	opsmetricsdailyDescError5xxCount := opsmetricsdailyFields[6].Descriptor()
+	// opsmetricsdaily.DefaultError5xxCount holds the default value on creation for the error_5xx_count field.
+	opsmetricsdaily.DefaultError5xxCount = opsmetricsdailyDescError5xxCount.Default.(int64)
+	// opsmetricsdailyDescTimeoutCount is the schema descriptor for timeout_count field.
+	opsmetricsdailyDescTimeoutCount := opsmetricsdailyFields[7].Descriptor()
+	// opsmetricsdaily.DefaultTimeoutCount holds the default value on creation for the timeout_count field.
+	opsmetricsdaily.DefaultTimeoutCount = opsmetricsdailyDescTimeoutCount.Default.(int64)
+	// opsmetricsdailyDescComputedAt is the schema descriptor for computed_at field.
+	opsmetricsdailyDescComputedAt := opsmetricsdailyFields[11].Descriptor()
+	// opsmetricsdaily.DefaultComputedAt holds the default value on creation for the computed_at field.
+	opsmetricsdaily.DefaultComputedAt = opsmetricsdailyDescComputedAt.Default.(func() time.Time)
+	// opsmetricsdailyDescCreatedAt is the schema descriptor for created_at field.
+	opsmetricsdailyDescCreatedAt := opsmetricsdailyFields[12].Descriptor()
+	// opsmetricsdaily.DefaultCreatedAt holds the default value on creation for the created_at field.
+	opsmetricsdaily.DefaultCreatedAt = opsmetricsdailyDescCreatedAt.Default.(func() time.Time)
+	opsmetricshourlyFields := schema.OpsMetricsHourly{}.Fields()
+	_ = opsmetricshourlyFields
+	// opsmetricshourlyDescPlatform is the schema descriptor for platform field.
+	opsmetricshourlyDescPlatform := opsmetricshourlyFields[1].Descriptor()
+	// opsmetricshourly.DefaultPlatform holds the default value on creation for the platform field.
+	opsmetricshourly.DefaultPlatform = opsmetricshourlyDescPlatform.Default.(string)
+	// opsmetricshourly.PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
+	opsmetricshourly.PlatformValidator = opsmetricshourlyDescPlatform.Validators[0].(func(string) error)
+	// opsmetricshourlyDescRequestCount is the schema descriptor for request_count field.
+	opsmetricshourlyDescRequestCount := opsmetricshourlyFields[2].Descriptor()
+	// opsmetricshourly.DefaultRequestCount holds the default value on creation for the request_count field.
+	opsmetricshourly.DefaultRequestCount = opsmetricshourlyDescRequestCount.Default.(int64)
+	// opsmetricshourlyDescSuccessCount is the schema descriptor for success_count field.
+	opsmetricshourlyDescSuccessCount := opsmetricshourlyFields[3].Descriptor()
+	// opsmetricshourly.DefaultSuccessCount holds the default value on creation for the success_count field.
+	opsmetricshourly.DefaultSuccessCount = opsmetricshourlyDescSuccessCount.Default.(int64)
+	// opsmetricshourlyDescErrorCount is the schema descriptor for error_count field.
+	opsmetricshourlyDescErrorCount := opsmetricshourlyFields[4].Descriptor()
+	// opsmetricshourly.DefaultErrorCount holds the default value on creation for the error_count field.
+	opsmetricshourly.DefaultErrorCount = opsmetricshourlyDescErrorCount.Default.(int64)
+	// opsmetricshourlyDescError4xxCount is the schema descriptor for error_4xx_count field.
+	opsmetricshourlyDescError4xxCount := opsmetricshourlyFields[5].Descriptor()
+	// opsmetricshourly.DefaultError4xxCount holds the default value on creation for the error_4xx_count field.
+	opsmetricshourly.DefaultError4xxCount = opsmetricshourlyDescError4xxCount.Default.(int64)
+	// opsmetricshourlyDescError5xxCount is the schema descriptor for error_5xx_count field.
+	opsmetricshourlyDescError5xxCount := opsmetricshourlyFields[6].Descriptor()
+	// opsmetricshourly.DefaultError5xxCount holds the default value on creation for the error_5xx_count field.
+	opsmetricshourly.DefaultError5xxCount = opsmetricshourlyDescError5xxCount.Default.(int64)
+	// opsmetricshourlyDescTimeoutCount is the schema descriptor for timeout_count field.
+	opsmetricshourlyDescTimeoutCount := opsmetricshourlyFields[7].Descriptor()
+	// opsmetricshourly.DefaultTimeoutCount holds the default value on creation for the timeout_count field.
+	opsmetricshourly.DefaultTimeoutCount = opsmetricshourlyDescTimeoutCount.Default.(int64)
+	// opsmetricshourlyDescComputedAt is the schema descriptor for computed_at field.
+	opsmetricshourlyDescComputedAt := opsmetricshourlyFields[11].Descriptor()
+	// opsmetricshourly.DefaultComputedAt holds the default value on creation for the computed_at field.
+	opsmetricshourly.DefaultComputedAt = opsmetricshourlyDescComputedAt.Default.(func() time.Time)
+	// opsmetricshourlyDescCreatedAt is the schema descriptor for created_at field.
+	opsmetricshourlyDescCreatedAt := opsmetricshourlyFields[12].Descriptor()
+	// opsmetricshourly.DefaultCreatedAt holds the default value on creation for the created_at field.
+	opsmetricshourly.DefaultCreatedAt = opsmetricshourlyDescCreatedAt.Default.(func() time.Time)
+	opsscheduledreportFields := schema.OpsScheduledReport{}.Fields()
+	_ = opsscheduledreportFields
+	// opsscheduledreportDescName is the schema descriptor for name field.
+	opsscheduledreportDescName := opsscheduledreportFields[0].Descriptor()
+	// opsscheduledreport.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	opsscheduledreport.NameValidator = func() func(string) error {
+		validators := opsscheduledreportDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// opsscheduledreportDescScheduleCron is the schema descriptor for schedule_cron field.
+	opsscheduledreportDescScheduleCron := opsscheduledreportFields[2].Descriptor()
+	// opsscheduledreport.ScheduleCronValidator is a validator for the "schedule_cron" field. It is called by the builders before save.
+	opsscheduledreport.ScheduleCronValidator = func() func(string) error {
+		validators := opsscheduledreportDescScheduleCron.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(schedule_cron string) error {
+			for _, fn := range fns {
+				if err := fn(schedule_cron); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// opsscheduledreportDescReportType is the schema descriptor for report_type field.
+	opsscheduledreportDescReportType := opsscheduledreportFields[3].Descriptor()
+	// opsscheduledreport.ReportTypeValidator is a validator for the "report_type" field. It is called by the builders before save.
+	opsscheduledreport.ReportTypeValidator = func() func(string) error {
+		validators := opsscheduledreportDescReportType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(report_type string) error {
+			for _, fn := range fns {
+				if err := fn(report_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// opsscheduledreportDescEnabled is the schema descriptor for enabled field.
+	opsscheduledreportDescEnabled := opsscheduledreportFields[6].Descriptor()
+	// opsscheduledreport.DefaultEnabled holds the default value on creation for the enabled field.
+	opsscheduledreport.DefaultEnabled = opsscheduledreportDescEnabled.Default.(bool)
+	// opsscheduledreportDescCreatedAt is the schema descriptor for created_at field.
+	opsscheduledreportDescCreatedAt := opsscheduledreportFields[9].Descriptor()
+	// opsscheduledreport.DefaultCreatedAt holds the default value on creation for the created_at field.
+	opsscheduledreport.DefaultCreatedAt = opsscheduledreportDescCreatedAt.Default.(func() time.Time)
+	// opsscheduledreportDescUpdatedAt is the schema descriptor for updated_at field.
+	opsscheduledreportDescUpdatedAt := opsscheduledreportFields[10].Descriptor()
+	// opsscheduledreport.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	opsscheduledreport.DefaultUpdatedAt = opsscheduledreportDescUpdatedAt.Default.(func() time.Time)
+	opssystemmetricFields := schema.OpsSystemMetric{}.Fields()
+	_ = opssystemmetricFields
+	// opssystemmetricDescWindowMinutes is the schema descriptor for window_minutes field.
+	opssystemmetricDescWindowMinutes := opssystemmetricFields[0].Descriptor()
+	// opssystemmetric.DefaultWindowMinutes holds the default value on creation for the window_minutes field.
+	opssystemmetric.DefaultWindowMinutes = opssystemmetricDescWindowMinutes.Default.(int)
+	// opssystemmetricDescRequestCount is the schema descriptor for request_count field.
+	opssystemmetricDescRequestCount := opssystemmetricFields[1].Descriptor()
+	// opssystemmetric.DefaultRequestCount holds the default value on creation for the request_count field.
+	opssystemmetric.DefaultRequestCount = opssystemmetricDescRequestCount.Default.(int64)
+	// opssystemmetricDescSuccessCount is the schema descriptor for success_count field.
+	opssystemmetricDescSuccessCount := opssystemmetricFields[2].Descriptor()
+	// opssystemmetric.DefaultSuccessCount holds the default value on creation for the success_count field.
+	opssystemmetric.DefaultSuccessCount = opssystemmetricDescSuccessCount.Default.(int64)
+	// opssystemmetricDescErrorCount is the schema descriptor for error_count field.
+	opssystemmetricDescErrorCount := opssystemmetricFields[3].Descriptor()
+	// opssystemmetric.DefaultErrorCount holds the default value on creation for the error_count field.
+	opssystemmetric.DefaultErrorCount = opssystemmetricDescErrorCount.Default.(int64)
+	// opssystemmetricDescError4xxCount is the schema descriptor for error_4xx_count field.
+	opssystemmetricDescError4xxCount := opssystemmetricFields[6].Descriptor()
+	// opssystemmetric.DefaultError4xxCount holds the default value on creation for the error_4xx_count field.
+	opssystemmetric.DefaultError4xxCount = opssystemmetricDescError4xxCount.Default.(int64)
+	// opssystemmetricDescError5xxCount is the schema descriptor for error_5xx_count field.
+	opssystemmetricDescError5xxCount := opssystemmetricFields[7].Descriptor()
+	// opssystemmetric.DefaultError5xxCount holds the default value on creation for the error_5xx_count field.
+	opssystemmetric.DefaultError5xxCount = opssystemmetricDescError5xxCount.Default.(int64)
+	// opssystemmetricDescErrorTimeoutCount is the schema descriptor for error_timeout_count field.
+	opssystemmetricDescErrorTimeoutCount := opssystemmetricFields[8].Descriptor()
+	// opssystemmetric.DefaultErrorTimeoutCount holds the default value on creation for the error_timeout_count field.
+	opssystemmetric.DefaultErrorTimeoutCount = opssystemmetricDescErrorTimeoutCount.Default.(int64)
+	// opssystemmetricDescSuccessRate is the schema descriptor for success_rate field.
+	opssystemmetricDescSuccessRate := opssystemmetricFields[15].Descriptor()
+	// opssystemmetric.DefaultSuccessRate holds the default value on creation for the success_rate field.
+	opssystemmetric.DefaultSuccessRate = opssystemmetricDescSuccessRate.Default.(float64)
+	// opssystemmetricDescErrorRate is the schema descriptor for error_rate field.
+	opssystemmetricDescErrorRate := opssystemmetricFields[16].Descriptor()
+	// opssystemmetric.DefaultErrorRate holds the default value on creation for the error_rate field.
+	opssystemmetric.DefaultErrorRate = opssystemmetricDescErrorRate.Default.(float64)
+	// opssystemmetricDescTokenConsumed is the schema descriptor for token_consumed field.
+	opssystemmetricDescTokenConsumed := opssystemmetricFields[25].Descriptor()
+	// opssystemmetric.DefaultTokenConsumed holds the default value on creation for the token_consumed field.
+	opssystemmetric.DefaultTokenConsumed = opssystemmetricDescTokenConsumed.Default.(int64)
+	// opssystemmetricDescActiveAlerts is the schema descriptor for active_alerts field.
+	opssystemmetricDescActiveAlerts := opssystemmetricFields[28].Descriptor()
+	// opssystemmetric.DefaultActiveAlerts holds the default value on creation for the active_alerts field.
+	opssystemmetric.DefaultActiveAlerts = opssystemmetricDescActiveAlerts.Default.(int)
+	// opssystemmetricDescCreatedAt is the schema descriptor for created_at field.
+	opssystemmetricDescCreatedAt := opssystemmetricFields[30].Descriptor()
+	// opssystemmetric.DefaultCreatedAt holds the default value on creation for the created_at field.
+	opssystemmetric.DefaultCreatedAt = opssystemmetricDescCreatedAt.Default.(func() time.Time)
 	proxyMixin := schema.Proxy{}.Mixin()
 	proxyMixinHooks1 := proxyMixin[1].Hooks()
 	proxy.Hooks[0] = proxyMixinHooks1[0]

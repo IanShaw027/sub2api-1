@@ -22,6 +22,24 @@ type Tx struct {
 	AccountGroup *AccountGroupClient
 	// Group is the client for interacting with the Group builders.
 	Group *GroupClient
+	// OpsAlertEvent is the client for interacting with the OpsAlertEvent builders.
+	OpsAlertEvent *OpsAlertEventClient
+	// OpsAlertRule is the client for interacting with the OpsAlertRule builders.
+	OpsAlertRule *OpsAlertRuleClient
+	// OpsErrorLog is the client for interacting with the OpsErrorLog builders.
+	OpsErrorLog *OpsErrorLogClient
+	// OpsGroupAvailabilityConfig is the client for interacting with the OpsGroupAvailabilityConfig builders.
+	OpsGroupAvailabilityConfig *OpsGroupAvailabilityConfigClient
+	// OpsGroupAvailabilityEvent is the client for interacting with the OpsGroupAvailabilityEvent builders.
+	OpsGroupAvailabilityEvent *OpsGroupAvailabilityEventClient
+	// OpsMetricsDaily is the client for interacting with the OpsMetricsDaily builders.
+	OpsMetricsDaily *OpsMetricsDailyClient
+	// OpsMetricsHourly is the client for interacting with the OpsMetricsHourly builders.
+	OpsMetricsHourly *OpsMetricsHourlyClient
+	// OpsScheduledReport is the client for interacting with the OpsScheduledReport builders.
+	OpsScheduledReport *OpsScheduledReportClient
+	// OpsSystemMetric is the client for interacting with the OpsSystemMetric builders.
+	OpsSystemMetric *OpsSystemMetricClient
 	// Proxy is the client for interacting with the Proxy builders.
 	Proxy *ProxyClient
 	// RedeemCode is the client for interacting with the RedeemCode builders.
@@ -175,6 +193,15 @@ func (tx *Tx) init() {
 	tx.Account = NewAccountClient(tx.config)
 	tx.AccountGroup = NewAccountGroupClient(tx.config)
 	tx.Group = NewGroupClient(tx.config)
+	tx.OpsAlertEvent = NewOpsAlertEventClient(tx.config)
+	tx.OpsAlertRule = NewOpsAlertRuleClient(tx.config)
+	tx.OpsErrorLog = NewOpsErrorLogClient(tx.config)
+	tx.OpsGroupAvailabilityConfig = NewOpsGroupAvailabilityConfigClient(tx.config)
+	tx.OpsGroupAvailabilityEvent = NewOpsGroupAvailabilityEventClient(tx.config)
+	tx.OpsMetricsDaily = NewOpsMetricsDailyClient(tx.config)
+	tx.OpsMetricsHourly = NewOpsMetricsHourlyClient(tx.config)
+	tx.OpsScheduledReport = NewOpsScheduledReportClient(tx.config)
+	tx.OpsSystemMetric = NewOpsSystemMetricClient(tx.config)
 	tx.Proxy = NewProxyClient(tx.config)
 	tx.RedeemCode = NewRedeemCodeClient(tx.config)
 	tx.Setting = NewSettingClient(tx.config)
