@@ -55,6 +55,10 @@ func generateRequestID() string {
 const (
 	// Default extra wait slots beyond concurrency limit
 	defaultExtraWaitSlots = 20
+
+	// Max batch size for load queries. Large deployments may have hundreds/thousands of
+	// accounts; splitting avoids overly large Redis Lua argument lists and long single-script runs.
+	defaultAccountsLoadBatchChunkSize = 200
 )
 
 // ConcurrencyService manages concurrent request limiting for accounts and users
@@ -83,6 +87,35 @@ type AccountLoadInfo struct {
 	CurrentConcurrency int
 	WaitingCount       int
 	LoadRate           int // 0-100+ (percent)
+}
+
+// PlatformConcurrencyInfo 按平台聚合的并发信息
+type PlatformConcurrencyInfo struct {
+	Platform       string  `json:"platform"`
+	CurrentInUse   int64   `json:"current_in_use"`
+	MaxCapacity    int64   `json:"max_capacity"`
+	LoadPercentage float64 `json:"load_percentage"`
+	WaitingInQueue int64   `json:"waiting_in_queue"`
+}
+
+// GroupConcurrencyInfo 按分组聚合的并发信息
+type GroupConcurrencyInfo struct {
+	GroupID        int64   `json:"group_id"`
+	GroupName      string  `json:"group_name"`
+	Platform       string  `json:"platform"`
+	CurrentInUse   int64   `json:"current_in_use"`
+	MaxCapacity    int64   `json:"max_capacity"`
+	LoadPercentage float64 `json:"load_percentage"`
+	WaitingInQueue int64   `json:"waiting_in_queue"`
+}
+
+// AccountWithPlatform 账号与平台信息
+type AccountWithPlatform struct {
+	ID             int64
+	Platform       string
+	MaxConcurrency int
+	GroupID        int64
+	GroupName      string
 }
 
 // AcquireAccountSlot attempts to acquire a concurrency slot for an account.
@@ -259,7 +292,35 @@ func (s *ConcurrencyService) GetAccountsLoadBatch(ctx context.Context, accounts 
 	if s.cache == nil {
 		return map[int64]*AccountLoadInfo{}, nil
 	}
-	return s.cache.GetAccountsLoadBatch(ctx, accounts)
+	if len(accounts) == 0 {
+		return map[int64]*AccountLoadInfo{}, nil
+	}
+
+	chunkSize := defaultAccountsLoadBatchChunkSize
+	if chunkSize <= 0 {
+		chunkSize = len(accounts)
+	}
+
+	// Fast path: small batches.
+	if len(accounts) <= chunkSize {
+		return s.cache.GetAccountsLoadBatch(ctx, accounts)
+	}
+
+	out := make(map[int64]*AccountLoadInfo, len(accounts))
+	for start := 0; start < len(accounts); start += chunkSize {
+		end := start + chunkSize
+		if end > len(accounts) {
+			end = len(accounts)
+		}
+		part, err := s.cache.GetAccountsLoadBatch(ctx, accounts[start:end])
+		if err != nil {
+			return nil, err
+		}
+		for id, info := range part {
+			out[id] = info
+		}
+	}
+	return out, nil
 }
 
 // CleanupExpiredAccountSlots removes expired slots for one account (background task).
@@ -308,6 +369,9 @@ func (s *ConcurrencyService) StartSlotCleanupWorker(accountRepo AccountRepositor
 // GetAccountConcurrencyBatch gets current concurrency counts for multiple accounts
 // Returns a map of accountID -> current concurrency count
 func (s *ConcurrencyService) GetAccountConcurrencyBatch(ctx context.Context, accountIDs []int64) (map[int64]int, error) {
+	if s == nil || s.cache == nil {
+		return make(map[int64]int), nil
+	}
 	result := make(map[int64]int)
 
 	for _, accountID := range accountIDs {
@@ -317,6 +381,132 @@ func (s *ConcurrencyService) GetAccountConcurrencyBatch(ctx context.Context, acc
 			count = 0
 		}
 		result[accountID] = count
+	}
+
+	return result, nil
+}
+
+// GetPlatformConcurrency 获取按平台聚合的并发统计
+func (s *ConcurrencyService) GetPlatformConcurrency(ctx context.Context, accounts []AccountWithPlatform) (map[string]*PlatformConcurrencyInfo, error) {
+	if s == nil || s.cache == nil {
+		return make(map[string]*PlatformConcurrencyInfo), nil
+	}
+	result := make(map[string]*PlatformConcurrencyInfo)
+
+	loadMap := make(map[int64]*AccountLoadInfo)
+	{
+		unique := make(map[int64]int, len(accounts))
+		for _, acc := range accounts {
+			if acc.ID <= 0 {
+				continue
+			}
+			// Pick the max to avoid under-reporting load rate in the cache layer.
+			if prev, ok := unique[acc.ID]; !ok || acc.MaxConcurrency > prev {
+				unique[acc.ID] = acc.MaxConcurrency
+			}
+		}
+		batch := make([]AccountWithConcurrency, 0, len(unique))
+		for id, maxConc := range unique {
+			batch = append(batch, AccountWithConcurrency{ID: id, MaxConcurrency: maxConc})
+		}
+
+		if len(batch) > 0 {
+			if m, err := s.GetAccountsLoadBatch(ctx, batch); err != nil {
+				// Best-effort: fall back to zeros rather than failing the endpoint/collector.
+				log.Printf("Warning: GetAccountsLoadBatch failed for platform concurrency: %v", err)
+			} else if m != nil {
+				loadMap = m
+			}
+		}
+	}
+
+	for _, acc := range accounts {
+		if _, exists := result[acc.Platform]; !exists {
+			result[acc.Platform] = &PlatformConcurrencyInfo{
+				Platform: acc.Platform,
+			}
+		}
+
+		info := result[acc.Platform]
+		info.MaxCapacity += int64(acc.MaxConcurrency)
+
+		if load := loadMap[acc.ID]; load != nil {
+			info.CurrentInUse += int64(load.CurrentConcurrency)
+			info.WaitingInQueue += int64(load.WaitingCount)
+		}
+	}
+
+	for _, info := range result {
+		if info.MaxCapacity > 0 {
+			info.LoadPercentage = float64(info.CurrentInUse) / float64(info.MaxCapacity) * 100
+		}
+	}
+
+	return result, nil
+}
+
+// GetGroupConcurrency 获取按分组聚合的并发统计
+func (s *ConcurrencyService) GetGroupConcurrency(ctx context.Context, accounts []AccountWithPlatform) (map[int64]*GroupConcurrencyInfo, error) {
+	if s == nil || s.cache == nil {
+		return make(map[int64]*GroupConcurrencyInfo), nil
+	}
+	result := make(map[int64]*GroupConcurrencyInfo)
+
+	loadMap := make(map[int64]*AccountLoadInfo)
+	{
+		unique := make(map[int64]int, len(accounts))
+		for _, acc := range accounts {
+			if acc.ID <= 0 {
+				continue
+			}
+			if prev, ok := unique[acc.ID]; !ok || acc.MaxConcurrency > prev {
+				unique[acc.ID] = acc.MaxConcurrency
+			}
+		}
+		batch := make([]AccountWithConcurrency, 0, len(unique))
+		for id, maxConc := range unique {
+			batch = append(batch, AccountWithConcurrency{ID: id, MaxConcurrency: maxConc})
+		}
+
+		if len(batch) > 0 {
+			if m, err := s.GetAccountsLoadBatch(ctx, batch); err != nil {
+				log.Printf("Warning: GetAccountsLoadBatch failed for group concurrency: %v", err)
+			} else if m != nil {
+				loadMap = m
+			}
+		}
+	}
+
+	for _, acc := range accounts {
+		if _, exists := result[acc.GroupID]; !exists {
+			result[acc.GroupID] = &GroupConcurrencyInfo{
+				GroupID:   acc.GroupID,
+				GroupName: acc.GroupName,
+				Platform:  acc.Platform,
+			}
+		}
+
+		info := result[acc.GroupID]
+		if info.GroupName == "" && acc.GroupName != "" {
+			info.GroupName = acc.GroupName
+		}
+		if info.Platform != "" && acc.Platform != "" && info.Platform != acc.Platform {
+			// Group is expected to be platform-scoped; if mismatched data is observed,
+			// avoid emitting misleading platform labels.
+			info.Platform = ""
+		}
+		info.MaxCapacity += int64(acc.MaxConcurrency)
+
+		if load := loadMap[acc.ID]; load != nil {
+			info.CurrentInUse += int64(load.CurrentConcurrency)
+			info.WaitingInQueue += int64(load.WaitingCount)
+		}
+	}
+
+	for _, info := range result {
+		if info.MaxCapacity > 0 {
+			info.LoadPercentage = float64(info.CurrentInUse) / float64(info.MaxCapacity) * 100
+		}
 	}
 
 	return result, nil

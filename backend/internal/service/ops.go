@@ -42,8 +42,10 @@ func (f *ErrorLogFilter) normalize() (page, pageSize int) {
 	if f.PageSize > 0 {
 		pageSize = f.PageSize
 	}
-	if pageSize > 1000 {
-		pageSize = 1000
+	// Keep bounded to prevent heavy, unindexed scans and large payloads.
+	// NOTE: Keep consistent with handler/repository caps.
+	if pageSize > 500 {
+		pageSize = 500
 	}
 	return page, pageSize
 }
@@ -55,7 +57,7 @@ type ErrorLogListResponse struct {
 	PageSize int            `json:"page_size"`
 }
 
-func (s *OpsService) GetErrorLogs(ctx context.Context, filter *ErrorLogFilter) (*ErrorLogListResponse, error) {
+func (s *OpsQueryService) GetErrorLogs(ctx context.Context, filter *ErrorLogFilter) (*ErrorLogListResponse, error) {
 	if s == nil || s.repo == nil {
 		return &ErrorLogListResponse{
 			Errors:   []*OpsErrorLog{},

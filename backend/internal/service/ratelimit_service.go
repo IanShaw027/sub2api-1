@@ -15,7 +15,7 @@ import (
 // RateLimitService 处理限流和过载状态管理
 type RateLimitService struct {
 	accountRepo        AccountRepository
-	usageRepo          UsageLogRepository
+	usageRepo          RateLimitUsageRepository
 	cfg                *config.Config
 	geminiQuotaService *GeminiQuotaService
 	usageCacheMu       sync.RWMutex
@@ -31,7 +31,7 @@ type geminiUsageCacheEntry struct {
 const geminiPrecheckCacheTTL = time.Minute
 
 // NewRateLimitService 创建RateLimitService实例
-func NewRateLimitService(accountRepo AccountRepository, usageRepo UsageLogRepository, cfg *config.Config, geminiQuotaService *GeminiQuotaService) *RateLimitService {
+func NewRateLimitService(accountRepo AccountRepository, usageRepo RateLimitUsageRepository, cfg *config.Config, geminiQuotaService *GeminiQuotaService) *RateLimitService {
 	return &RateLimitService{
 		accountRepo:        accountRepo,
 		usageRepo:          usageRepo,

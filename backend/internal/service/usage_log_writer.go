@@ -14,7 +14,7 @@ const (
 	usageLogWriteRetryDelay = 100 * time.Millisecond
 )
 
-func createUsageLogWithRetry(ctx context.Context, repo UsageLogRepository, usageLog *UsageLog) error {
+func createUsageLogWithRetry(ctx context.Context, repo UsageLogWriter, usageLog *UsageLog) error {
 	if repo == nil || usageLog == nil {
 		return nil
 	}

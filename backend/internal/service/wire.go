@@ -1,7 +1,7 @@
 package service
 
 import (
-	"database/sql"
+	"log"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -79,10 +79,14 @@ func ProvideDeferredService(accountRepo AccountRepository, timingWheel *TimingWh
 func ProvideOpsMetricsCollector(
 	opsService *OpsService,
 	concurrencyService *ConcurrencyService,
+	accountRepo AccountRepository,
 	redisClient *redis.Client,
 	cfg *config.Config,
 ) *OpsMetricsCollector {
-	svc := NewOpsMetricsCollector(opsService, concurrencyService, redisClient, cfg)
+	if cfg != nil && !cfg.Ops.Enabled {
+		return nil
+	}
+	svc := NewOpsMetricsCollector(opsService, concurrencyService, accountRepo, redisClient, cfg)
 	svc.Start()
 	return svc
 }
@@ -95,23 +99,40 @@ func ProvideOpsAlertService(
 	redisClient *redis.Client,
 	cfg *config.Config,
 ) *OpsAlertService {
+	if cfg != nil && !cfg.Ops.Enabled {
+		return nil
+	}
 	svc := NewOpsAlertService(opsService, userService, emailService, redisClient, cfg)
 	svc.Start()
 	return svc
 }
 
 // ProvideOpsAggregationService creates and starts OpsAggregationService.
-func ProvideOpsAggregationService(repo OpsRepository, sqlDB *sql.DB, redisClient *redis.Client, cfg *config.Config) *OpsAggregationService {
-	svc := NewOpsAggregationService(repo, sqlDB, redisClient)
+func ProvideOpsAggregationService(opsService *OpsService, repo OpsRepository, redisClient *redis.Client, cfg *config.Config) *OpsAggregationService {
+	if cfg != nil && !cfg.Ops.Enabled {
+		return nil
+	}
+	svc := NewOpsAggregationService(repo, redisClient)
+	svc.ops = opsService
+	if cfg != nil && cfg.RunMode == config.RunModeSimple {
+		svc.distributedLockOn = false
+	}
 	if cfg != nil && cfg.Ops.Aggregation.Enabled {
+		if !cfg.Ops.UsePreaggregatedTables {
+			log.Printf("[OpsAggregation] aggregation enabled but ops.use_preaggregated_tables=false; skipping background pre-aggregation")
+			return svc
+		}
 		svc.Start()
 	}
 	return svc
 }
 
 // ProvideOpsScheduledReportService creates and starts OpsScheduledReportService.
-func ProvideOpsScheduledReportService(opsService *OpsService, userService *UserService, emailService *EmailService, redisClient *redis.Client) *OpsScheduledReportService {
-	svc := NewOpsScheduledReportService(opsService, userService, emailService, redisClient)
+func ProvideOpsScheduledReportService(opsService *OpsService, userService *UserService, emailService *EmailService, redisClient *redis.Client, cfg *config.Config) *OpsScheduledReportService {
+	if cfg != nil && !cfg.Ops.Enabled {
+		return nil
+	}
+	svc := NewOpsScheduledReportService(opsService, userService, emailService, redisClient, cfg)
 	svc.Start()
 	return svc
 }
@@ -126,7 +147,20 @@ func ProvideOpsGroupAvailabilityMonitor(
 	redisClient *redis.Client,
 	cfg *config.Config,
 ) *OpsGroupAvailabilityMonitor {
+	if cfg != nil && !cfg.Ops.Enabled {
+		return nil
+	}
 	svc := NewOpsGroupAvailabilityMonitor(opsService, accountRepo, groupRepo, emailService, userService, redisClient, cfg)
+	svc.Start()
+	return svc
+}
+
+// ProvideOpsCleanupService creates and starts OpsCleanupService.
+func ProvideOpsCleanupService(repo OpsRepository, redisClient *redis.Client, cfg *config.Config) *OpsCleanupService {
+	if cfg != nil && !cfg.Ops.Enabled {
+		return nil
+	}
+	svc := NewOpsCleanupService(repo, redisClient, cfg)
 	svc.Start()
 	return svc
 }
@@ -189,5 +223,6 @@ var ProviderSet = wire.NewSet(
 	ProvideOpsAggregationService,
 	ProvideOpsScheduledReportService,
 	ProvideOpsGroupAvailabilityMonitor,
+	ProvideOpsCleanupService,
 	NewUserAttributeService,
 )

@@ -2,12 +2,9 @@ package service
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -22,12 +19,12 @@ type OpsAlertService struct {
 	opsService   *OpsService
 	userService  *UserService
 	emailService *EmailService
-	httpClient   *http.Client
 
 	interval time.Duration
 	silence  OpsAlertSilencingSettings
 
 	redisClient          *redis.Client
+	singleNodeMode       bool
 	distributedLockOn    bool
 	distributedLockKey   string
 	distributedLockTTL   time.Duration
@@ -45,6 +42,8 @@ type OpsAlertService struct {
 
 	silenceSkipLogMu sync.Mutex
 	silenceSkipLogAt time.Time
+
+	opsDisabledWarn sync.Once
 
 	startOnce sync.Once
 	stopOnce  sync.Once
@@ -64,7 +63,7 @@ func NewOpsAlertService(
 	userService *UserService,
 	emailService *EmailService,
 	redisClient *redis.Client,
-	_ *config.Config,
+	cfg *config.Config,
 ) *OpsAlertService {
 	lockOn := true
 	lockKey := opsAlertLeaderLockKeyDefault
@@ -72,14 +71,20 @@ func NewOpsAlertService(
 
 	emailLimiter := newOpsAlertEmailLimiterFromEnv()
 
+	singleNodeMode := false
+	if cfg != nil && cfg.RunMode == config.RunModeSimple {
+		singleNodeMode = true
+		lockOn = false
+	}
+
 	return &OpsAlertService{
 		opsService:   opsService,
 		userService:  userService,
 		emailService: emailService,
-		httpClient:   &http.Client{Timeout: 10 * time.Second},
 		interval:     opsAlertEvalInterval,
 		redisClient:  redisClient,
 
+		singleNodeMode:     singleNodeMode,
 		distributedLockOn:  lockOn,
 		distributedLockKey: lockKey,
 		distributedLockTTL: lockTTL,
@@ -156,6 +161,13 @@ func (s *OpsAlertService) evaluateOnce() {
 	ctx, cancel := context.WithTimeout(s.stopCtx, opsAlertEvaluateTimeout)
 	defer cancel()
 
+	if s.opsService != nil && !s.opsService.IsOpsMonitoringEnabled(ctx) {
+		s.opsDisabledWarn.Do(func() {
+			log.Printf("[OpsAlert] ops monitoring disabled; skipping evaluation")
+		})
+		return
+	}
+
 	s.applyRuntimeSettings(ctx)
 	s.Evaluate(ctx, time.Now())
 }
@@ -164,26 +176,14 @@ func (s *OpsAlertService) applyRuntimeSettings(ctx context.Context) {
 	if s == nil || s.opsService == nil {
 		return
 	}
-	cfg, err := s.opsService.GetOpsAlertRuntimeSettings(ctx)
-	if err != nil || cfg == nil {
-		return
-	}
-
-	interval := time.Duration(cfg.EvaluationIntervalSeconds) * time.Second
-	if interval <= 0 {
-		interval = opsAlertEvalInterval
-	}
+	interval, lock, silence := s.opsService.EffectiveOpsAlertRuntimeSettings(ctx, s.singleNodeMode)
 	s.interval = interval
-
-	s.distributedLockOn = cfg.DistributedLock.Enabled
-	if strings.TrimSpace(cfg.DistributedLock.Key) != "" {
-		s.distributedLockKey = strings.TrimSpace(cfg.DistributedLock.Key)
+	s.distributedLockOn = lock.Enabled
+	s.distributedLockKey = strings.TrimSpace(lock.Key)
+	if lock.TTLSeconds > 0 {
+		s.distributedLockTTL = time.Duration(lock.TTLSeconds) * time.Second
 	}
-	if cfg.DistributedLock.TTLSeconds > 0 {
-		s.distributedLockTTL = time.Duration(cfg.DistributedLock.TTLSeconds) * time.Second
-	}
-
-	s.silence = cfg.Silencing
+	s.silence = silence
 }
 
 func (s *OpsAlertService) Evaluate(ctx context.Context, now time.Time) {
@@ -326,26 +326,9 @@ const (
 	opsAlertLeaderLockSkipLogMinInterval = 1 * time.Minute
 )
 
-var opsAlertLeaderUnlockScript = redis.NewScript(`
-if redis.call("get", KEYS[1]) == ARGV[1] then
-  return redis.call("del", KEYS[1])
-end
-return 0
-`)
-
-var opsAlertLeaderRenewScript = redis.NewScript(`
-if redis.call("get", KEYS[1]) == ARGV[1] then
-  return redis.call("pexpire", KEYS[1], ARGV[2])
-end
-return 0
-`)
-
 func (s *OpsAlertService) tryAcquireLeaderLock(ctx context.Context) (func(), bool) {
 	if s == nil || !s.distributedLockOn {
 		return nil, true
-	}
-	if ctx == nil {
-		ctx = context.Background()
 	}
 
 	key := strings.TrimSpace(s.distributedLockKey)
@@ -357,103 +340,21 @@ func (s *OpsAlertService) tryAcquireLeaderLock(ctx context.Context) (func(), boo
 		ttl = opsAlertLeaderLockTTLDefault
 	}
 
-	if s.redisClient == nil {
-		s.distributedLockWarn.Do(func() {
-			log.Printf("[OpsAlert] distributed lock enabled but redis client is nil; proceeding without leader lock (key=%q)", key)
-		})
-		return nil, true
+	opts := RedisLeaderLockOptions{
+		Enabled:         true,
+		Redis:           s.redisClient,
+		Key:             key,
+		TTL:             ttl,
+		LogPrefix:       "[OpsAlert]",
+		WarnNoRedisOnce: &s.distributedLockWarn,
+		OnSkip: func() {
+			s.logLeaderLockSkipped(key)
+		},
+		LogAcquired:      true,
+		LogReleased:      true,
+		MinRenewInterval: 5 * time.Second,
 	}
-
-	token := opsAlertLeaderToken()
-	ok, err := s.redisClient.SetNX(ctx, key, token, ttl).Result()
-	if err != nil {
-		log.Printf("[OpsAlert] failed to acquire leader lock (key=%q): %v", key, err)
-		return nil, false
-	}
-	if !ok {
-		s.logLeaderLockSkipped(key)
-		return nil, false
-	}
-
-	log.Printf("[OpsAlert] acquired leader lock (key=%q ttl=%s token=%s)", key, ttl, shortenLockToken(token))
-
-	renewCancel, renewDone := s.startLeaderLockRenewal(key, token, ttl)
-
-	release := func() {
-		if renewCancel != nil {
-			renewCancel()
-		}
-		if renewDone != nil {
-			select {
-			case <-renewDone:
-			case <-time.After(2 * time.Second):
-				log.Printf("[OpsAlert] leader lock renewal goroutine did not stop in time (key=%q)", key)
-			}
-		}
-
-		releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-
-		res, err := opsAlertLeaderUnlockScript.Run(releaseCtx, s.redisClient, []string{key}, token).Int()
-		if err != nil {
-			log.Printf("[OpsAlert] failed to release leader lock (key=%q token=%s): %v", key, shortenLockToken(token), err)
-			return
-		}
-		if res == 1 {
-			log.Printf("[OpsAlert] released leader lock (key=%q token=%s)", key, shortenLockToken(token))
-		}
-	}
-
-	return release, true
-}
-
-func (s *OpsAlertService) startLeaderLockRenewal(key string, token string, ttl time.Duration) (context.CancelFunc, <-chan struct{}) {
-	if s == nil || s.redisClient == nil {
-		return nil, nil
-	}
-	if strings.TrimSpace(key) == "" || token == "" || ttl <= 0 {
-		return nil, nil
-	}
-
-	refreshEvery := ttl / 2
-	if refreshEvery < 5*time.Second {
-		refreshEvery = 5 * time.Second
-	}
-	ttlMillis := ttl.Milliseconds()
-	if ttlMillis <= 0 {
-		ttlMillis = 1
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-
-		ticker := time.NewTicker(refreshEvery)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				renewCtx, renewCancel := context.WithTimeout(context.Background(), 2*time.Second)
-				res, err := opsAlertLeaderRenewScript.Run(renewCtx, s.redisClient, []string{key}, token, ttlMillis).Int()
-				renewCancel()
-				if err != nil {
-					log.Printf("[OpsAlert] leader lock renewal failed (key=%q token=%s): %v", key, shortenLockToken(token), err)
-					continue
-				}
-				if res == 0 {
-					log.Printf("[OpsAlert] leader lock no longer owned; stop renewing (key=%q token=%s)", key, shortenLockToken(token))
-					return
-				}
-			}
-		}
-	}()
-
-	return cancel, done
+	return TryAcquireRedisLeaderLock(ctx, opts)
 }
 
 func (s *OpsAlertService) logLeaderLockSkipped(key string) {
@@ -469,29 +370,6 @@ func (s *OpsAlertService) logLeaderLockSkipped(key string) {
 	}
 	s.distributedSkipLogAt = now
 	log.Printf("[OpsAlert] skipped evaluation; leader lock held by another instance (key=%q)", key)
-}
-
-func opsAlertLeaderToken() string {
-	host, _ := os.Hostname()
-	pid := os.Getpid()
-
-	buf := make([]byte, 16)
-	if _, err := rand.Read(buf); err != nil {
-		return fmt.Sprintf("%s:%d:%d", host, pid, time.Now().UnixNano())
-	}
-	return fmt.Sprintf("%s:%d:%s", host, pid, hex.EncodeToString(buf))
-}
-
-func shortenLockToken(token string) string {
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return ""
-	}
-	const maxLen = 10
-	if len(token) <= maxLen {
-		return token
-	}
-	return token[:maxLen]
 }
 
 const opsMetricsContinuityTolerance = 20 * time.Second
@@ -588,8 +466,6 @@ func metricValue(metric OpsMetrics, metricType string) (float64, bool) {
 		return metric.LatencyP95, true
 	case OpsMetricP99LatencyMs:
 		return metric.LatencyP99, true
-	case OpsMetricHTTP2Errors:
-		return 0, false // HTTP2Errors 已删除
 	case OpsMetricCPUUsagePercent:
 		return metric.CPUUsagePercent, true
 	case OpsMetricMemoryUsagePercent:

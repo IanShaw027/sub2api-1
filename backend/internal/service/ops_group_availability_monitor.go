@@ -2,13 +2,9 @@ package service
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"log"
 	"math"
-	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -23,11 +19,11 @@ type OpsGroupAvailabilityMonitor struct {
 	groupRepo    GroupRepository
 	emailService *EmailService
 	userService  *UserService
-	httpClient   *http.Client
 
 	interval time.Duration
 
 	redisClient          *redis.Client
+	singleNodeMode       bool
 	distributedLockOn    bool
 	distributedLockKey   string
 	distributedLockTTL   time.Duration
@@ -38,6 +34,8 @@ type OpsGroupAvailabilityMonitor struct {
 	emailLimiter          *tokenBucket
 	emailLimiterSkipLogMu sync.Mutex
 	emailLimiterSkipLogAt time.Time
+
+	opsDisabledWarn sync.Once
 
 	startOnce sync.Once
 	stopOnce  sync.Once
@@ -55,11 +53,17 @@ func NewOpsGroupAvailabilityMonitor(
 	emailService *EmailService,
 	userService *UserService,
 	redisClient *redis.Client,
-	_ *config.Config,
+	cfg *config.Config,
 ) *OpsGroupAvailabilityMonitor {
 	lockOn := true
 	lockKey := opsGroupAvailabilityLeaderLockKeyDefault
 	lockTTL := opsGroupAvailabilityLeaderLockTTLDefault
+
+	singleNodeMode := false
+	if cfg != nil && cfg.RunMode == config.RunModeSimple {
+		singleNodeMode = true
+		lockOn = false
+	}
 
 	return &OpsGroupAvailabilityMonitor{
 		opsService:   opsService,
@@ -67,10 +71,10 @@ func NewOpsGroupAvailabilityMonitor(
 		groupRepo:    groupRepo,
 		emailService: emailService,
 		userService:  userService,
-		httpClient:   &http.Client{Timeout: 10 * time.Second},
 		interval:     opsGroupAvailabilityMonitorInterval,
 		redisClient:  redisClient,
 
+		singleNodeMode:     singleNodeMode,
 		distributedLockOn:  lockOn,
 		distributedLockKey: lockKey,
 		distributedLockTTL: lockTTL,
@@ -140,6 +144,13 @@ func (s *OpsGroupAvailabilityMonitor) evaluateOnce() {
 	ctx, cancel := context.WithTimeout(s.stopCtx, 45*time.Second)
 	defer cancel()
 
+	if s.opsService != nil && !s.opsService.IsOpsMonitoringEnabled(ctx) {
+		s.opsDisabledWarn.Do(func() {
+			log.Printf("[OpsGroupAvailability] ops monitoring disabled; skipping evaluation")
+		})
+		return
+	}
+
 	s.applyRuntimeSettings(ctx)
 	s.Evaluate(ctx, time.Now())
 }
@@ -148,23 +159,12 @@ func (s *OpsGroupAvailabilityMonitor) applyRuntimeSettings(ctx context.Context) 
 	if s == nil || s.opsService == nil {
 		return
 	}
-	cfg, err := s.opsService.GetOpsGroupAvailabilityRuntimeSettings(ctx)
-	if err != nil || cfg == nil {
-		return
-	}
-
-	interval := time.Duration(cfg.EvaluationIntervalSeconds) * time.Second
-	if interval <= 0 {
-		interval = opsGroupAvailabilityMonitorInterval
-	}
+	interval, lock := s.opsService.EffectiveOpsGroupAvailabilityRuntimeSettings(ctx, s.singleNodeMode)
 	s.interval = interval
-
-	s.distributedLockOn = cfg.DistributedLock.Enabled
-	if strings.TrimSpace(cfg.DistributedLock.Key) != "" {
-		s.distributedLockKey = strings.TrimSpace(cfg.DistributedLock.Key)
-	}
-	if cfg.DistributedLock.TTLSeconds > 0 {
-		s.distributedLockTTL = time.Duration(cfg.DistributedLock.TTLSeconds) * time.Second
+	s.distributedLockOn = lock.Enabled
+	s.distributedLockKey = strings.TrimSpace(lock.Key)
+	if lock.TTLSeconds > 0 {
+		s.distributedLockTTL = time.Duration(lock.TTLSeconds) * time.Second
 	}
 }
 
@@ -273,26 +273,9 @@ const (
 	opsGroupAvailabilityLeaderLockSkipLogMinInt = 1 * time.Minute
 )
 
-var opsGroupAvailabilityLeaderUnlockScript = redis.NewScript(`
-if redis.call("get", KEYS[1]) == ARGV[1] then
-  return redis.call("del", KEYS[1])
-end
-return 0
-`)
-
-var opsGroupAvailabilityLeaderRenewScript = redis.NewScript(`
-if redis.call("get", KEYS[1]) == ARGV[1] then
-  return redis.call("pexpire", KEYS[1], ARGV[2])
-end
-return 0
-`)
-
 func (s *OpsGroupAvailabilityMonitor) tryAcquireLeaderLock(ctx context.Context) (func(), bool) {
 	if s == nil || !s.distributedLockOn {
 		return nil, true
-	}
-	if ctx == nil {
-		ctx = context.Background()
 	}
 
 	key := strings.TrimSpace(s.distributedLockKey)
@@ -304,103 +287,21 @@ func (s *OpsGroupAvailabilityMonitor) tryAcquireLeaderLock(ctx context.Context) 
 		ttl = opsGroupAvailabilityLeaderLockTTLDefault
 	}
 
-	if s.redisClient == nil {
-		s.distributedLockWarn.Do(func() {
-			log.Printf("[OpsGroupAvailability] distributed lock enabled but redis client is nil; proceeding without leader lock (key=%q)", key)
-		})
-		return nil, true
+	opts := RedisLeaderLockOptions{
+		Enabled:         true,
+		Redis:           s.redisClient,
+		Key:             key,
+		TTL:             ttl,
+		LogPrefix:       "[OpsGroupAvailability]",
+		WarnNoRedisOnce: &s.distributedLockWarn,
+		OnSkip: func() {
+			s.logLeaderLockSkipped(key)
+		},
+		LogAcquired:      true,
+		LogReleased:      true,
+		MinRenewInterval: 5 * time.Second,
 	}
-
-	token := opsGroupAvailabilityLeaderToken()
-	ok, err := s.redisClient.SetNX(ctx, key, token, ttl).Result()
-	if err != nil {
-		log.Printf("[OpsGroupAvailability] failed to acquire leader lock (key=%q): %v", key, err)
-		return nil, false
-	}
-	if !ok {
-		s.logLeaderLockSkipped(key)
-		return nil, false
-	}
-
-	log.Printf("[OpsGroupAvailability] acquired leader lock (key=%q ttl=%s token=%s)", key, ttl, shortenLockToken(token))
-
-	renewCancel, renewDone := s.startLeaderLockRenewal(key, token, ttl)
-
-	release := func() {
-		if renewCancel != nil {
-			renewCancel()
-		}
-		if renewDone != nil {
-			select {
-			case <-renewDone:
-			case <-time.After(2 * time.Second):
-				log.Printf("[OpsGroupAvailability] leader lock renewal goroutine did not stop in time (key=%q)", key)
-			}
-		}
-
-		releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-
-		res, err := opsGroupAvailabilityLeaderUnlockScript.Run(releaseCtx, s.redisClient, []string{key}, token).Int()
-		if err != nil {
-			log.Printf("[OpsGroupAvailability] failed to release leader lock (key=%q token=%s): %v", key, shortenLockToken(token), err)
-			return
-		}
-		if res == 1 {
-			log.Printf("[OpsGroupAvailability] released leader lock (key=%q token=%s)", key, shortenLockToken(token))
-		}
-	}
-
-	return release, true
-}
-
-func (s *OpsGroupAvailabilityMonitor) startLeaderLockRenewal(key string, token string, ttl time.Duration) (context.CancelFunc, <-chan struct{}) {
-	if s == nil || s.redisClient == nil {
-		return nil, nil
-	}
-	if strings.TrimSpace(key) == "" || token == "" || ttl <= 0 {
-		return nil, nil
-	}
-
-	refreshEvery := ttl / 2
-	if refreshEvery < 5*time.Second {
-		refreshEvery = 5 * time.Second
-	}
-	ttlMillis := ttl.Milliseconds()
-	if ttlMillis <= 0 {
-		ttlMillis = 1
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-
-		ticker := time.NewTicker(refreshEvery)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				renewCtx, renewCancel := context.WithTimeout(context.Background(), 2*time.Second)
-				res, err := opsGroupAvailabilityLeaderRenewScript.Run(renewCtx, s.redisClient, []string{key}, token, ttlMillis).Int()
-				renewCancel()
-				if err != nil {
-					log.Printf("[OpsGroupAvailability] leader lock renewal failed (key=%q token=%s): %v", key, shortenLockToken(token), err)
-					continue
-				}
-				if res == 0 {
-					log.Printf("[OpsGroupAvailability] leader lock no longer owned; stop renewing (key=%q token=%s)", key, shortenLockToken(token))
-					return
-				}
-			}
-		}
-	}()
-
-	return cancel, done
+	return TryAcquireRedisLeaderLock(ctx, opts)
 }
 
 func (s *OpsGroupAvailabilityMonitor) logLeaderLockSkipped(key string) {
@@ -416,17 +317,6 @@ func (s *OpsGroupAvailabilityMonitor) logLeaderLockSkipped(key string) {
 	}
 	s.distributedSkipLogAt = now
 	log.Printf("[OpsGroupAvailability] skipped evaluation; leader lock held by another instance (key=%q)", key)
-}
-
-func opsGroupAvailabilityLeaderToken() string {
-	host, _ := os.Hostname()
-	pid := os.Getpid()
-
-	buf := make([]byte, 16)
-	if _, err := rand.Read(buf); err != nil {
-		return fmt.Sprintf("%s:%d:%d", host, pid, time.Now().UnixNano())
-	}
-	return fmt.Sprintf("%s:%d:%s", host, pid, hex.EncodeToString(buf))
 }
 
 func buildGroupAvailabilityDescription(group *Group, available, total int, cfg OpsGroupAvailabilityConfig) string {

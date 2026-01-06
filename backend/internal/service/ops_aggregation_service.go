@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"database/sql"
 	"log"
 	"strings"
 	"sync"
@@ -30,9 +29,9 @@ const (
 )
 
 type OpsAggregationService struct {
-	repo  OpsRepository
-	sqlDB *sql.DB
-	rdb   *redis.Client
+	repo OpsIngestRepository
+	rdb  *redis.Client
+	ops  *OpsService
 
 	hourlyInterval time.Duration
 	dailyInterval  time.Duration
@@ -47,6 +46,8 @@ type OpsAggregationService struct {
 	hourlyMu sync.Mutex
 	dailyMu  sync.Mutex
 
+	opsDisabledWarn sync.Once
+
 	distributedLockOn   bool
 	distributedLockWarn sync.Once
 
@@ -54,11 +55,10 @@ type OpsAggregationService struct {
 	skipLogAt time.Time
 }
 
-func NewOpsAggregationService(repo OpsRepository, sqlDB *sql.DB, rdb *redis.Client) *OpsAggregationService {
+func NewOpsAggregationService(repo OpsIngestRepository, rdb *redis.Client) *OpsAggregationService {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &OpsAggregationService{
 		repo:           repo,
-		sqlDB:          sqlDB,
 		rdb:            rdb,
 		hourlyInterval: opsAggHourlyInterval,
 		dailyInterval:  opsAggDailyInterval,
@@ -73,7 +73,7 @@ func (s *OpsAggregationService) Start() {
 	if s == nil {
 		return
 	}
-	if s.repo == nil || s.sqlDB == nil {
+	if s.repo == nil {
 		log.Printf("[OpsAggregation] not started (missing dependencies)")
 		return
 	}
@@ -133,7 +133,13 @@ func (s *OpsAggregationService) dailyLoop() {
 }
 
 func (s *OpsAggregationService) aggregateHourly() {
-	if s == nil || s.repo == nil || s.sqlDB == nil {
+	if s == nil || s.repo == nil {
+		return
+	}
+	if s.ops != nil && !s.ops.IsOpsMonitoringEnabled(s.ctx) {
+		s.opsDisabledWarn.Do(func() {
+			log.Printf("[OpsAggregation] ops monitoring disabled; skipping aggregation")
+		})
 		return
 	}
 
@@ -156,7 +162,7 @@ func (s *OpsAggregationService) aggregateHourly() {
 	start := end.Add(-opsAggBackfillWindow)
 
 	ctxMax, cancel := context.WithTimeout(s.ctx, opsAggMaxQueryTimeout)
-	latest, ok, err := s.getLatestHourlyBucketStart(ctxMax)
+	latest, ok, err := s.repo.GetLatestHourlyBucketStart(ctxMax)
 	cancel()
 	if err != nil {
 		log.Printf("[OpsAggregation] hourly: failed to read latest bucket_start: %v", err)
@@ -185,7 +191,13 @@ func (s *OpsAggregationService) aggregateHourly() {
 }
 
 func (s *OpsAggregationService) aggregateDaily() {
-	if s == nil || s.repo == nil || s.sqlDB == nil {
+	if s == nil || s.repo == nil {
+		return
+	}
+	if s.ops != nil && !s.ops.IsOpsMonitoringEnabled(s.ctx) {
+		s.opsDisabledWarn.Do(func() {
+			log.Printf("[OpsAggregation] ops monitoring disabled; skipping aggregation")
+		})
 		return
 	}
 
@@ -208,7 +220,7 @@ func (s *OpsAggregationService) aggregateDaily() {
 	start := end.Add(-opsAggBackfillWindow)
 
 	ctxMax, cancel := context.WithTimeout(s.ctx, opsAggMaxQueryTimeout)
-	latest, ok, err := s.getLatestDailyBucketDate(ctxMax)
+	latest, ok, err := s.repo.GetLatestDailyBucketDate(ctxMax)
 	cancel()
 	if err != nil {
 		log.Printf("[OpsAggregation] daily: failed to read latest bucket_date: %v", err)
@@ -236,17 +248,6 @@ func (s *OpsAggregationService) aggregateDaily() {
 	}
 }
 
-func (s *OpsAggregationService) getLatestHourlyBucketStart(ctx context.Context) (time.Time, bool, error) {
-	var value sql.NullTime
-	if err := s.sqlDB.QueryRowContext(ctx, `SELECT MAX(bucket_start) FROM ops_metrics_hourly`).Scan(&value); err != nil {
-		return time.Time{}, false, err
-	}
-	if !value.Valid {
-		return time.Time{}, false, nil
-	}
-	return value.Time.UTC(), true, nil
-}
-
 const (
 	opsAggHourlyLeaderLockKeyDefault = "ops:aggregation:hourly:leader"
 	opsAggDailyLeaderLockKeyDefault  = "ops:aggregation:daily:leader"
@@ -258,127 +259,25 @@ const (
 	opsAggLeaderLockSkipLogMinInterval = 1 * time.Minute
 )
 
-var opsAggLeaderUnlockScript = redis.NewScript(`
-if redis.call("get", KEYS[1]) == ARGV[1] then
-  return redis.call("del", KEYS[1])
-end
-return 0
-`)
-
-var opsAggLeaderRenewScript = redis.NewScript(`
-if redis.call("get", KEYS[1]) == ARGV[1] then
-  return redis.call("pexpire", KEYS[1], ARGV[2])
-end
-return 0
-`)
-
 func (s *OpsAggregationService) tryAcquireLeaderLock(ctx context.Context, key string, ttl time.Duration, logPrefix string) (func(), bool) {
 	if s == nil || !s.distributedLockOn {
 		return nil, true
 	}
-	if ctx == nil {
-		ctx = context.Background()
+	opts := RedisLeaderLockOptions{
+		Enabled:         true,
+		Redis:           s.rdb,
+		Key:             key,
+		TTL:             ttl,
+		LogPrefix:       logPrefix,
+		WarnNoRedisOnce: &s.distributedLockWarn,
+		OnSkip: func() {
+			s.logLeaderLockSkipped(logPrefix, strings.TrimSpace(key))
+		},
+		LogAcquired:      false,
+		LogReleased:      false,
+		MinRenewInterval: 10 * time.Second,
 	}
-
-	key = strings.TrimSpace(key)
-	if key == "" {
-		return nil, true
-	}
-	if ttl <= 0 {
-		ttl = 5 * time.Minute
-	}
-
-	if s.rdb == nil {
-		s.distributedLockWarn.Do(func() {
-			log.Printf("%s distributed lock enabled but redis client is nil; proceeding without leader lock (key=%q)", logPrefix, key)
-		})
-		return nil, true
-	}
-
-	lockCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-
-	token := opsAlertLeaderToken()
-	ok, err := s.rdb.SetNX(lockCtx, key, token, ttl).Result()
-	if err != nil {
-		log.Printf("%s failed to acquire leader lock (key=%q): %v", logPrefix, key, err)
-		return nil, false
-	}
-	if !ok {
-		s.logLeaderLockSkipped(logPrefix, key)
-		return nil, false
-	}
-
-	renewCancel, renewDone := s.startLeaderLockRenewal(key, token, ttl, logPrefix)
-
-	release := func() {
-		if renewCancel != nil {
-			renewCancel()
-		}
-		if renewDone != nil {
-			select {
-			case <-renewDone:
-			case <-time.After(2 * time.Second):
-				log.Printf("%s leader lock renewal goroutine did not stop in time (key=%q)", logPrefix, key)
-			}
-		}
-
-		releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-
-		if _, err := opsAggLeaderUnlockScript.Run(releaseCtx, s.rdb, []string{key}, token).Int(); err != nil {
-			log.Printf("%s failed to release leader lock (key=%q token=%s): %v", logPrefix, key, shortenLockToken(token), err)
-		}
-	}
-
-	return release, true
-}
-
-func (s *OpsAggregationService) startLeaderLockRenewal(key string, token string, ttl time.Duration, logPrefix string) (context.CancelFunc, <-chan struct{}) {
-	if s == nil || s.rdb == nil {
-		return nil, nil
-	}
-	if strings.TrimSpace(key) == "" || token == "" || ttl <= 0 {
-		return nil, nil
-	}
-
-	refreshEvery := ttl / 2
-	if refreshEvery < 10*time.Second {
-		refreshEvery = 10 * time.Second
-	}
-	ttlMillis := ttl.Milliseconds()
-	if ttlMillis <= 0 {
-		ttlMillis = 1
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-
-		ticker := time.NewTicker(refreshEvery)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				res, err := opsAggLeaderRenewScript.Run(context.Background(), s.rdb, []string{key}, token, ttlMillis).Int()
-				if err != nil {
-					log.Printf("%s leader lock renewal failed (key=%q token=%s): %v", logPrefix, key, shortenLockToken(token), err)
-					continue
-				}
-				if res == 0 {
-					log.Printf("%s leader lock no longer owned; stop renewing (key=%q token=%s)", logPrefix, key, shortenLockToken(token))
-					return
-				}
-			}
-		}
-	}()
-
-	return cancel, done
+	return TryAcquireRedisLeaderLock(ctx, opts)
 }
 
 func (s *OpsAggregationService) logLeaderLockSkipped(prefix string, key string) {
@@ -394,18 +293,6 @@ func (s *OpsAggregationService) logLeaderLockSkipped(prefix string, key string) 
 	}
 	s.skipLogAt = now
 	log.Printf("%s skipped; leader lock held by another instance (key=%q)", prefix, key)
-}
-
-func (s *OpsAggregationService) getLatestDailyBucketDate(ctx context.Context) (time.Time, bool, error) {
-	var value sql.NullTime
-	if err := s.sqlDB.QueryRowContext(ctx, `SELECT MAX(bucket_date) FROM ops_metrics_daily`).Scan(&value); err != nil {
-		return time.Time{}, false, err
-	}
-	if !value.Valid {
-		return time.Time{}, false, nil
-	}
-	t := value.Time
-	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC), true, nil
 }
 
 func utcFloorToHour(t time.Time) time.Time {

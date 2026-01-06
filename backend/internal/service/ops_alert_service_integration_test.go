@@ -40,7 +40,7 @@ func TestOpsAlertService_StartedViaWireProviders_RunsIndependentTicker(t *testin
 
 	// Construct via ProvideOpsMetricsCollector (wire.go). Stop immediately to ensure
 	// the alert ticker keeps running without the metrics collector.
-	collector := ProvideOpsMetricsCollector(opsService, NewConcurrencyService(nil), nil, nil)
+	collector := ProvideOpsMetricsCollector(opsService, NewConcurrencyService(nil), nil, nil, nil)
 	collector.Stop()
 
 	// Wait for at least one evaluation (run() calls evaluateOnce immediately).
@@ -69,9 +69,89 @@ func newFakeOpsRepository() *fakeOpsRepository {
 	}
 }
 
+type noopOpsRepository struct{}
+
+func (noopOpsRepository) CreateAlertRule(ctx context.Context, rule *OpsAlertRule) error { return nil }
+func (noopOpsRepository) UpdateAlertRule(ctx context.Context, rule *OpsAlertRule) error { return nil }
+func (noopOpsRepository) DeleteAlertRule(ctx context.Context, id int64) error           { return nil }
+
+func (noopOpsRepository) CreateGroupAvailabilityConfig(ctx context.Context, config *OpsGroupAvailabilityConfig) error {
+	return nil
+}
+func (noopOpsRepository) UpdateGroupAvailabilityConfig(ctx context.Context, config *OpsGroupAvailabilityConfig) error {
+	return nil
+}
+func (noopOpsRepository) DeleteGroupAvailabilityConfig(ctx context.Context, groupID int64) error {
+	return nil
+}
+func (noopOpsRepository) CreateGroupAvailabilityEvent(ctx context.Context, event *OpsGroupAvailabilityEvent) error {
+	return nil
+}
+func (noopOpsRepository) UpdateGroupAvailabilityEventStatus(ctx context.Context, eventID int64, status string, resolvedAt *time.Time) error {
+	return nil
+}
+func (noopOpsRepository) UpdateGroupAvailabilityEventNotifications(ctx context.Context, eventID int64, emailSent bool) error {
+	return nil
+}
+
+func (noopOpsRepository) GetLatestHourlyBucketStart(ctx context.Context) (time.Time, bool, error) {
+	return time.Time{}, false, nil
+}
+func (noopOpsRepository) GetLatestDailyBucketDate(ctx context.Context) (time.Time, bool, error) {
+	return time.Time{}, false, nil
+}
+func (noopOpsRepository) DeleteOldErrorLogs(ctx context.Context, retentionDays int) (int64, error) {
+	return 0, nil
+}
+func (noopOpsRepository) DeleteOldMetrics(ctx context.Context, windowMinutes int, retentionDays int) (int64, error) {
+	return 0, nil
+}
+
+func (noopOpsRepository) GetErrorLogByID(ctx context.Context, id int64) (*OpsErrorLog, error) {
+	return nil, nil
+}
+func (noopOpsRepository) ListRequestDetails(ctx context.Context, filter *OpsRequestDetailFilter) ([]*OpsRequestDetail, int64, error) {
+	return nil, 0, nil
+}
+func (noopOpsRepository) GetTokenTPS(ctx context.Context, startTime, endTime time.Time) (current, peak, avg float64, err error) {
+	return 0, 0, 0, nil
+}
+func (noopOpsRepository) ListAlertEvents(ctx context.Context, limit int) ([]OpsAlertEvent, error) {
+	return nil, nil
+}
+func (noopOpsRepository) ListGroupAvailabilityConfigs(ctx context.Context, enabledOnly bool) ([]OpsGroupAvailabilityConfig, error) {
+	return nil, nil
+}
+func (noopOpsRepository) GetGroupAvailabilityConfig(ctx context.Context, groupID int64) (*OpsGroupAvailabilityConfig, error) {
+	return nil, nil
+}
+func (noopOpsRepository) GetActiveGroupAvailabilityEvent(ctx context.Context, configID int64) (*OpsGroupAvailabilityEvent, error) {
+	return nil, nil
+}
+func (noopOpsRepository) GetLatestGroupAvailabilityEvent(ctx context.Context, configID int64) (*OpsGroupAvailabilityEvent, error) {
+	return nil, nil
+}
+func (noopOpsRepository) ListGroupAvailabilityEvents(ctx context.Context, limit int, status string) ([]OpsGroupAvailabilityEvent, error) {
+	return nil, nil
+}
+func (noopOpsRepository) GetAllActiveAccountStatus(ctx context.Context) ([]AccountStatusSummary, error) {
+	return nil, nil
+}
+func (noopOpsRepository) GetErrorStatsByIP(ctx context.Context, startTime, endTime time.Time, limit int, sortBy, sortOrder string) ([]IPErrorStats, error) {
+	return nil, nil
+}
+func (noopOpsRepository) GetErrorsByIP(ctx context.Context, ip string, startTime, endTime time.Time, page, pageSize int) ([]OpsErrorLog, int64, error) {
+	return nil, 0, nil
+}
+func (noopOpsRepository) GetRetentionConfig(ctx context.Context) (map[string]int, error) {
+	return map[string]int{}, nil
+}
+
 // fakeOpsRepository is a lightweight in-memory stub of OpsRepository for integration tests.
 // It avoids real DB/Redis usage and provides deterministic responses fast.
 type fakeOpsRepository struct {
+	noopOpsRepository
+
 	listRulesCalls atomic.Int64
 
 	mu             sync.Mutex
@@ -84,10 +164,6 @@ type fakeOpsRepository struct {
 
 func (r *fakeOpsRepository) CreateErrorLog(ctx context.Context, log *OpsErrorLog) error {
 	return nil
-}
-
-func (r *fakeOpsRepository) ListErrorLogsLegacy(ctx context.Context, filters OpsErrorLogFilters) ([]OpsErrorLog, error) {
-	return nil, nil
 }
 
 func (r *fakeOpsRepository) ListErrorLogs(ctx context.Context, filter *ErrorLogFilter) ([]*OpsErrorLog, int64, error) {
@@ -277,4 +353,20 @@ func (r *fakeOpsRepository) SetCachedDashboardOverview(ctx context.Context, time
 
 func (r *fakeOpsRepository) PingRedis(ctx context.Context) error {
 	return nil
+}
+
+func (r *fakeOpsRepository) CountAvailableAccountsByGroup(ctx context.Context, groupID int64) (available, total int, err error) {
+	return 0, 0, nil
+}
+
+func (r *fakeOpsRepository) GetCachedPlatformConcurrency(ctx context.Context) (map[string]*PlatformConcurrencyInfo, error) {
+	return map[string]*PlatformConcurrencyInfo{}, nil
+}
+
+func (r *fakeOpsRepository) GetCachedGroupConcurrency(ctx context.Context) (map[int64]*GroupConcurrencyInfo, error) {
+	return map[int64]*GroupConcurrencyInfo{}, nil
+}
+
+func (r *fakeOpsRepository) GetCachedConcurrencyCollectedAt(ctx context.Context) (time.Time, bool, error) {
+	return time.Time{}, false, nil
 }

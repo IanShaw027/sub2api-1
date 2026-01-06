@@ -26,6 +26,10 @@ type SystemSettings struct {
 
 	DefaultConcurrency int
 	DefaultBalance     float64
+
+	// Ops monitoring
+	OpsMonitoringEnabled         bool
+	OpsRealtimeMonitoringEnabled bool
 }
 
 type PublicSettings struct {

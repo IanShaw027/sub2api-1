@@ -97,6 +97,8 @@ const (
 	SettingKeyGeminiQuotaPolicy = "gemini_quota_policy"
 
 	// Ops configuration (JSON payloads; configured via admin pages, persisted in DB)
+	SettingKeyOpsMonitoringEnabled                 = "ops_monitoring_enabled"
+	SettingKeyOpsRealtimeMonitoringEnabled         = "ops_realtime_monitoring_enabled"
 	SettingKeyOpsEmailNotificationConfig          = "ops_email_notification_config"
 	SettingKeyOpsAlertRuntimeSettings             = "ops_alert_runtime_settings"
 	SettingKeyOpsGroupAvailabilityRuntimeSettings = "ops_group_availability_runtime_settings"

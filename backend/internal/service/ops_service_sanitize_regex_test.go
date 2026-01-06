@@ -22,4 +22,3 @@ func TestSensitiveRegexes_MatchExtendedCharset(t *testing.T) {
 	require.True(t, tokenRegex.MatchString("Bearer abc+def/ghi=="))
 	require.True(t, tokenRegex.MatchString("token=abc%2Bdef%3Dghi"))
 }
-

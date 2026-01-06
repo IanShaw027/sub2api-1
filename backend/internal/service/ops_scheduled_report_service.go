@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/redis/go-redis/v9"
 	"github.com/robfig/cron/v3"
 )
@@ -23,6 +24,8 @@ type OpsScheduledReportService struct {
 	distributedLockWarn sync.Once
 	skipLogMu           sync.Mutex
 	skipLogAt           time.Time
+
+	opsDisabledWarn sync.Once
 
 	startOnce sync.Once
 	stopOnce  sync.Once
@@ -46,14 +49,18 @@ type ScheduledReport struct {
 	NextRunAt                       time.Time
 }
 
-func NewOpsScheduledReportService(opsService *OpsService, userService *UserService, emailService *EmailService, redisClient *redis.Client) *OpsScheduledReportService {
+func NewOpsScheduledReportService(opsService *OpsService, userService *UserService, emailService *EmailService, redisClient *redis.Client, cfg *config.Config) *OpsScheduledReportService {
+	lockOn := true
+	if cfg != nil && cfg.RunMode == config.RunModeSimple {
+		lockOn = false
+	}
 	return &OpsScheduledReportService{
 		opsService:   opsService,
 		userService:  userService,
 		emailService: emailService,
 		redisClient:  redisClient,
 
-		distributedLockOn: true,
+		distributedLockOn: lockOn,
 	}
 }
 
@@ -110,6 +117,13 @@ func (s *OpsScheduledReportService) checkAndRunReports() {
 	ctx, cancel := context.WithTimeout(s.stopCtx, 30*time.Second)
 	defer cancel()
 
+	if s.opsService != nil && !s.opsService.IsOpsMonitoringEnabled(ctx) {
+		s.opsDisabledWarn.Do(func() {
+			log.Printf("[ScheduledReport] ops monitoring disabled; skipping scheduled reports")
+		})
+		return
+	}
+
 	releaseLeaderLock, ok := s.tryAcquireLeaderLock(ctx)
 	if !ok {
 		return
@@ -153,32 +167,8 @@ const (
 
 var opsScheduledReportCronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 
-var opsScheduledReportLeaderUnlockScript = redis.NewScript(`
-if redis.call("get", KEYS[1]) == ARGV[1] then
-  return redis.call("del", KEYS[1])
-end
-return 0
-`)
-
-var opsScheduledReportLeaderRenewScript = redis.NewScript(`
-if redis.call("get", KEYS[1]) == ARGV[1] then
-  return redis.call("pexpire", KEYS[1], ARGV[2])
-end
-return 0
-`)
-
 func (s *OpsScheduledReportService) tryAcquireLeaderLock(ctx context.Context) (func(), bool) {
 	if s == nil || !s.distributedLockOn {
-		return nil, true
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	if s.redisClient == nil {
-		s.distributedLockWarn.Do(func() {
-			log.Printf("[ScheduledReport] distributed lock enabled but redis client is nil; proceeding without leader lock (key=%q)", opsScheduledReportLeaderLockKeyDefault)
-		})
 		return nil, true
 	}
 
@@ -187,89 +177,21 @@ func (s *OpsScheduledReportService) tryAcquireLeaderLock(ctx context.Context) (f
 	if ttl <= 0 {
 		ttl = 5 * time.Minute
 	}
-
-	lockCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-
-	token := opsAlertLeaderToken()
-	ok, err := s.redisClient.SetNX(lockCtx, key, token, ttl).Result()
-	if err != nil {
-		log.Printf("[ScheduledReport] failed to acquire leader lock (key=%q): %v", key, err)
-		return nil, false
+	opts := RedisLeaderLockOptions{
+		Enabled:         true,
+		Redis:           s.redisClient,
+		Key:             key,
+		TTL:             ttl,
+		LogPrefix:       "[ScheduledReport]",
+		WarnNoRedisOnce: &s.distributedLockWarn,
+		OnSkip: func() {
+			s.logLeaderLockSkipped(key)
+		},
+		LogAcquired:      false,
+		LogReleased:      false,
+		MinRenewInterval: 15 * time.Second,
 	}
-	if !ok {
-		s.logLeaderLockSkipped(key)
-		return nil, false
-	}
-
-	renewCancel, renewDone := s.startLeaderLockRenewal(key, token, ttl)
-
-	release := func() {
-		if renewCancel != nil {
-			renewCancel()
-		}
-		if renewDone != nil {
-			select {
-			case <-renewDone:
-			case <-time.After(2 * time.Second):
-				log.Printf("[ScheduledReport] leader lock renewal goroutine did not stop in time (key=%q)", key)
-			}
-		}
-
-		releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		if _, err := opsScheduledReportLeaderUnlockScript.Run(releaseCtx, s.redisClient, []string{key}, token).Int(); err != nil {
-			log.Printf("[ScheduledReport] failed to release leader lock (key=%q token=%s): %v", key, shortenLockToken(token), err)
-		}
-	}
-
-	return release, true
-}
-
-func (s *OpsScheduledReportService) startLeaderLockRenewal(key string, token string, ttl time.Duration) (context.CancelFunc, <-chan struct{}) {
-	if s == nil || s.redisClient == nil {
-		return nil, nil
-	}
-	if strings.TrimSpace(key) == "" || token == "" || ttl <= 0 {
-		return nil, nil
-	}
-
-	refreshEvery := ttl / 2
-	if refreshEvery < 15*time.Second {
-		refreshEvery = 15 * time.Second
-	}
-	ttlMillis := ttl.Milliseconds()
-	if ttlMillis <= 0 {
-		ttlMillis = 1
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-		ticker := time.NewTicker(refreshEvery)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				res, err := opsScheduledReportLeaderRenewScript.Run(context.Background(), s.redisClient, []string{key}, token, ttlMillis).Int()
-				if err != nil {
-					log.Printf("[ScheduledReport] leader lock renewal failed (key=%q token=%s): %v", key, shortenLockToken(token), err)
-					continue
-				}
-				if res == 0 {
-					log.Printf("[ScheduledReport] leader lock no longer owned; stop renewing (key=%q token=%s)", key, shortenLockToken(token))
-					return
-				}
-			}
-		}
-	}()
-
-	return cancel, done
+	return TryAcquireRedisLeaderLock(ctx, opts)
 }
 
 func (s *OpsScheduledReportService) logLeaderLockSkipped(key string) {
@@ -396,20 +318,30 @@ func (s *OpsScheduledReportService) generateWeeklySummary(ctx context.Context, s
 }
 
 func (s *OpsScheduledReportService) generateErrorDigest(ctx context.Context, startTime, endTime time.Time) (map[string]any, error) {
-	filters := OpsErrorLogFilters{
+	filter := &ErrorLogFilter{
 		StartTime: &startTime,
 		EndTime:   &endTime,
-		Limit:     100,
+		Page:      1,
+		PageSize:  100,
 	}
 
-	logs, _, err := s.opsService.ListErrorLogs(ctx, filters)
+	out, err := s.opsService.GetErrorLogs(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
+	logs := out.Errors
 
 	errorsByType := make(map[string]int)
 	for _, log := range logs {
+		if log == nil {
+			continue
+		}
 		errorsByType[log.Type]++
+	}
+
+	recent := logs
+	if len(recent) > 10 {
+		recent = recent[:10]
 	}
 
 	return map[string]any{
@@ -418,7 +350,7 @@ func (s *OpsScheduledReportService) generateErrorDigest(ctx context.Context, sta
 		"period_end":     endTime.Format(time.RFC3339),
 		"total_errors":   len(logs),
 		"errors_by_type": errorsByType,
-		"recent_errors":  logs[:min(10, len(logs))],
+		"recent_errors":  recent,
 	}, nil
 }
 

@@ -126,6 +126,10 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	updates[SettingKeyDefaultConcurrency] = strconv.Itoa(settings.DefaultConcurrency)
 	updates[SettingKeyDefaultBalance] = strconv.FormatFloat(settings.DefaultBalance, 'f', 8, 64)
 
+	// Ops monitoring
+	updates[SettingKeyOpsMonitoringEnabled] = strconv.FormatBool(settings.OpsMonitoringEnabled)
+	updates[SettingKeyOpsRealtimeMonitoringEnabled] = strconv.FormatBool(settings.OpsRealtimeMonitoringEnabled)
+
 	return s.settingRepo.SetMultiple(ctx, updates)
 }
 
@@ -195,15 +199,17 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 
 	// 初始化默认设置
 	defaults := map[string]string{
-		SettingKeyRegistrationEnabled: "true",
-		SettingKeyEmailVerifyEnabled:  "false",
-		SettingKeySiteName:            "Sub2API",
-		SettingKeySiteLogo:            "",
-		SettingKeySiteURL:             "",
-		SettingKeyDefaultConcurrency:  strconv.Itoa(s.cfg.Default.UserConcurrency),
-		SettingKeyDefaultBalance:      strconv.FormatFloat(s.cfg.Default.UserBalance, 'f', 8, 64),
-		SettingKeySMTPPort:            "587",
-		SettingKeySMTPUseTLS:          "false",
+		SettingKeyRegistrationEnabled:          "true",
+		SettingKeyEmailVerifyEnabled:           "false",
+		SettingKeySiteName:                     "Sub2API",
+		SettingKeySiteLogo:                     "",
+		SettingKeySiteURL:                      "",
+		SettingKeyDefaultConcurrency:           strconv.Itoa(s.cfg.Default.UserConcurrency),
+		SettingKeyDefaultBalance:               strconv.FormatFloat(s.cfg.Default.UserBalance, 'f', 8, 64),
+		SettingKeySMTPPort:                     "587",
+		SettingKeySMTPUseTLS:                   "false",
+		SettingKeyOpsMonitoringEnabled:         "true",
+		SettingKeyOpsRealtimeMonitoringEnabled: "true",
 	}
 
 	return s.settingRepo.SetMultiple(ctx, defaults)
@@ -225,9 +231,11 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		SiteLogo:            settings[SettingKeySiteLogo],
 		SiteSubtitle:        s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
 		SiteURL:             settings[SettingKeySiteURL],
-		APIBaseURL:          settings[SettingKeyAPIBaseURL],
-		ContactInfo:         settings[SettingKeyContactInfo],
-		DocURL:              settings[SettingKeyDocURL],
+		APIBaseURL:                   settings[SettingKeyAPIBaseURL],
+		ContactInfo:                  settings[SettingKeyContactInfo],
+		DocURL:                       settings[SettingKeyDocURL],
+		OpsMonitoringEnabled:         s.getStringOrDefault(settings, SettingKeyOpsMonitoringEnabled, "true") == "true",
+		OpsRealtimeMonitoringEnabled: s.getStringOrDefault(settings, SettingKeyOpsRealtimeMonitoringEnabled, "true") == "true",
 	}
 
 	// 解析整数类型

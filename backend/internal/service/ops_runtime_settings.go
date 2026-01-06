@@ -164,7 +164,62 @@ func validateOpsAlertSilencingSettings(s OpsAlertSilencingSettings) error {
 	return nil
 }
 
-func (s *OpsService) GetOpsAlertRuntimeSettings(ctx context.Context) (*OpsAlertRuntimeSettings, error) {
+// EffectiveOpsAlertRuntimeSettings computes the effective runtime settings for OpsAlertService,
+// applying sane fallbacks and enforcing single-node overrides (when applicable).
+func (s *OpsSettingsService) EffectiveOpsAlertRuntimeSettings(ctx context.Context, singleNodeMode bool) (time.Duration, OpsDistributedLockSettings, OpsAlertSilencingSettings) {
+	defaultCfg := defaultOpsAlertRuntimeSettings()
+	cfg := defaultCfg
+
+	if s != nil {
+		if loaded, err := s.GetOpsAlertRuntimeSettings(ctx); err == nil && loaded != nil {
+			cfg = loaded
+		}
+	}
+
+	interval := time.Duration(cfg.EvaluationIntervalSeconds) * time.Second
+	if interval <= 0 {
+		interval = opsAlertEvalInterval
+	}
+
+	lock := cfg.DistributedLock
+	if singleNodeMode {
+		lock.Enabled = false
+	}
+	normalizeOpsDistributedLockSettings(&lock, opsAlertLeaderLockKeyDefault, defaultCfg.DistributedLock.TTLSeconds)
+
+	silencing := cfg.Silencing
+	normalizeOpsAlertSilencingSettings(&silencing)
+
+	return interval, lock, silencing
+}
+
+// EffectiveOpsGroupAvailabilityRuntimeSettings computes the effective runtime settings for OpsGroupAvailabilityMonitor,
+// applying fallbacks and enforcing single-node overrides (when applicable).
+func (s *OpsSettingsService) EffectiveOpsGroupAvailabilityRuntimeSettings(ctx context.Context, singleNodeMode bool) (time.Duration, OpsDistributedLockSettings) {
+	defaultCfg := defaultOpsGroupAvailabilityRuntimeSettings()
+	cfg := defaultCfg
+
+	if s != nil {
+		if loaded, err := s.GetOpsGroupAvailabilityRuntimeSettings(ctx); err == nil && loaded != nil {
+			cfg = loaded
+		}
+	}
+
+	interval := time.Duration(cfg.EvaluationIntervalSeconds) * time.Second
+	if interval <= 0 {
+		interval = opsGroupAvailabilityMonitorInterval
+	}
+
+	lock := cfg.DistributedLock
+	if singleNodeMode {
+		lock.Enabled = false
+	}
+	normalizeOpsDistributedLockSettings(&lock, opsGroupAvailabilityLeaderLockKeyDefault, defaultCfg.DistributedLock.TTLSeconds)
+
+	return interval, lock
+}
+
+func (s *OpsSettingsService) GetOpsAlertRuntimeSettings(ctx context.Context) (*OpsAlertRuntimeSettings, error) {
 	defaultCfg := defaultOpsAlertRuntimeSettings()
 	if s == nil || s.settingRepo == nil {
 		return defaultCfg, nil
@@ -198,7 +253,7 @@ func (s *OpsService) GetOpsAlertRuntimeSettings(ctx context.Context) (*OpsAlertR
 	return cfg, nil
 }
 
-func (s *OpsService) UpdateOpsAlertRuntimeSettings(ctx context.Context, cfg *OpsAlertRuntimeSettings) (*OpsAlertRuntimeSettings, error) {
+func (s *OpsSettingsService) UpdateOpsAlertRuntimeSettings(ctx context.Context, cfg *OpsAlertRuntimeSettings) (*OpsAlertRuntimeSettings, error) {
 	if s == nil || s.settingRepo == nil {
 		return nil, errors.New("setting repository not initialized")
 	}
@@ -236,7 +291,7 @@ func (s *OpsService) UpdateOpsAlertRuntimeSettings(ctx context.Context, cfg *Ops
 	return cfg, nil
 }
 
-func (s *OpsService) GetOpsGroupAvailabilityRuntimeSettings(ctx context.Context) (*OpsGroupAvailabilityRuntimeSettings, error) {
+func (s *OpsSettingsService) GetOpsGroupAvailabilityRuntimeSettings(ctx context.Context) (*OpsGroupAvailabilityRuntimeSettings, error) {
 	defaultCfg := defaultOpsGroupAvailabilityRuntimeSettings()
 	if s == nil || s.settingRepo == nil {
 		return defaultCfg, nil
@@ -268,7 +323,7 @@ func (s *OpsService) GetOpsGroupAvailabilityRuntimeSettings(ctx context.Context)
 	return cfg, nil
 }
 
-func (s *OpsService) UpdateOpsGroupAvailabilityRuntimeSettings(ctx context.Context, cfg *OpsGroupAvailabilityRuntimeSettings) (*OpsGroupAvailabilityRuntimeSettings, error) {
+func (s *OpsSettingsService) UpdateOpsGroupAvailabilityRuntimeSettings(ctx context.Context, cfg *OpsGroupAvailabilityRuntimeSettings) (*OpsGroupAvailabilityRuntimeSettings, error) {
 	if s == nil || s.settingRepo == nil {
 		return nil, errors.New("setting repository not initialized")
 	}

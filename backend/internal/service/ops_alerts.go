@@ -15,7 +15,6 @@ const (
 	OpsMetricErrorRate          = "error_rate"
 	OpsMetricP95LatencyMs       = "p95_latency_ms"
 	OpsMetricP99LatencyMs       = "p99_latency_ms"
-	OpsMetricHTTP2Errors        = "http2_errors"
 	OpsMetricCPUUsagePercent    = "cpu_usage_percent"
 	OpsMetricMemoryUsagePercent = "memory_usage_percent"
 	OpsMetricQueueDepth         = "concurrency_queue_depth"
@@ -59,51 +58,51 @@ type OpsAlertEvent struct {
 	CreatedAt      time.Time  `json:"created_at"`
 }
 
-func (s *OpsService) ListAlertRules(ctx context.Context) ([]OpsAlertRule, error) {
+func (s *OpsQueryService) ListAlertRules(ctx context.Context) ([]OpsAlertRule, error) {
 	return s.repo.ListAlertRules(ctx)
 }
 
-func (s *OpsService) CreateAlertRule(ctx context.Context, rule *OpsAlertRule) error {
+func (s *OpsIngestService) CreateAlertRule(ctx context.Context, rule *OpsAlertRule) error {
 	return s.repo.CreateAlertRule(ctx, rule)
 }
 
-func (s *OpsService) UpdateAlertRule(ctx context.Context, rule *OpsAlertRule) error {
+func (s *OpsIngestService) UpdateAlertRule(ctx context.Context, rule *OpsAlertRule) error {
 	return s.repo.UpdateAlertRule(ctx, rule)
 }
 
-func (s *OpsService) DeleteAlertRule(ctx context.Context, id int64) error {
+func (s *OpsIngestService) DeleteAlertRule(ctx context.Context, id int64) error {
 	return s.repo.DeleteAlertRule(ctx, id)
 }
 
-func (s *OpsService) ListAlertEvents(ctx context.Context, limit int) ([]OpsAlertEvent, error) {
+func (s *OpsQueryService) ListAlertEvents(ctx context.Context, limit int) ([]OpsAlertEvent, error) {
 	return s.repo.ListAlertEvents(ctx, limit)
 }
 
-func (s *OpsService) GetActiveAlertEvent(ctx context.Context, ruleID int64) (*OpsAlertEvent, error) {
+func (s *OpsQueryService) GetActiveAlertEvent(ctx context.Context, ruleID int64) (*OpsAlertEvent, error) {
 	return s.repo.GetActiveAlertEvent(ctx, ruleID)
 }
 
-func (s *OpsService) GetLatestAlertEvent(ctx context.Context, ruleID int64) (*OpsAlertEvent, error) {
+func (s *OpsQueryService) GetLatestAlertEvent(ctx context.Context, ruleID int64) (*OpsAlertEvent, error) {
 	return s.repo.GetLatestAlertEvent(ctx, ruleID)
 }
 
-func (s *OpsService) CreateAlertEvent(ctx context.Context, event *OpsAlertEvent) error {
+func (s *OpsIngestService) CreateAlertEvent(ctx context.Context, event *OpsAlertEvent) error {
 	return s.repo.CreateAlertEvent(ctx, event)
 }
 
-func (s *OpsService) UpdateAlertEventStatus(ctx context.Context, eventID int64, status string, resolvedAt *time.Time) error {
+func (s *OpsIngestService) UpdateAlertEventStatus(ctx context.Context, eventID int64, status string, resolvedAt *time.Time) error {
 	return s.repo.UpdateAlertEventStatus(ctx, eventID, status, resolvedAt)
 }
 
-func (s *OpsService) UpdateAlertEventNotifications(ctx context.Context, eventID int64, emailSent bool) error {
+func (s *OpsIngestService) UpdateAlertEventNotifications(ctx context.Context, eventID int64, emailSent bool) error {
 	return s.repo.UpdateAlertEventNotifications(ctx, eventID, emailSent)
 }
 
-func (s *OpsService) ListRecentSystemMetrics(ctx context.Context, windowMinutes, limit int) ([]OpsMetrics, error) {
+func (s *OpsQueryService) ListRecentSystemMetrics(ctx context.Context, windowMinutes, limit int) ([]OpsMetrics, error) {
 	return s.repo.ListRecentSystemMetrics(ctx, windowMinutes, limit)
 }
 
-func (s *OpsService) CountActiveAlerts(ctx context.Context) (int, error) {
+func (s *OpsQueryService) CountActiveAlerts(ctx context.Context) (int, error) {
 	return s.repo.CountActiveAlerts(ctx)
 }
 
@@ -179,50 +178,50 @@ type OpsGroupAvailabilityStatus struct {
 	LastAlertAt *time.Time `json:"last_alert_at"`
 }
 
-func (s *OpsService) ListGroupAvailabilityConfigs(ctx context.Context, enabledOnly bool) ([]OpsGroupAvailabilityConfig, error) {
+func (s *OpsQueryService) ListGroupAvailabilityConfigs(ctx context.Context, enabledOnly bool) ([]OpsGroupAvailabilityConfig, error) {
 	return s.repo.ListGroupAvailabilityConfigs(ctx, enabledOnly)
 }
 
-func (s *OpsService) GetGroupAvailabilityConfig(ctx context.Context, groupID int64) (*OpsGroupAvailabilityConfig, error) {
+func (s *OpsQueryService) GetGroupAvailabilityConfig(ctx context.Context, groupID int64) (*OpsGroupAvailabilityConfig, error) {
 	return s.repo.GetGroupAvailabilityConfig(ctx, groupID)
 }
 
-func (s *OpsService) CreateGroupAvailabilityConfig(ctx context.Context, config *OpsGroupAvailabilityConfig) error {
+func (s *OpsIngestService) CreateGroupAvailabilityConfig(ctx context.Context, config *OpsGroupAvailabilityConfig) error {
 	return s.repo.CreateGroupAvailabilityConfig(ctx, config)
 }
 
-func (s *OpsService) UpdateGroupAvailabilityConfig(ctx context.Context, config *OpsGroupAvailabilityConfig) error {
+func (s *OpsIngestService) UpdateGroupAvailabilityConfig(ctx context.Context, config *OpsGroupAvailabilityConfig) error {
 	return s.repo.UpdateGroupAvailabilityConfig(ctx, config)
 }
 
-func (s *OpsService) DeleteGroupAvailabilityConfig(ctx context.Context, groupID int64) error {
+func (s *OpsIngestService) DeleteGroupAvailabilityConfig(ctx context.Context, groupID int64) error {
 	return s.repo.DeleteGroupAvailabilityConfig(ctx, groupID)
 }
 
-func (s *OpsService) GetActiveGroupAvailabilityEvent(ctx context.Context, configID int64) (*OpsGroupAvailabilityEvent, error) {
+func (s *OpsQueryService) GetActiveGroupAvailabilityEvent(ctx context.Context, configID int64) (*OpsGroupAvailabilityEvent, error) {
 	return s.repo.GetActiveGroupAvailabilityEvent(ctx, configID)
 }
 
-func (s *OpsService) GetLatestGroupAvailabilityEvent(ctx context.Context, configID int64) (*OpsGroupAvailabilityEvent, error) {
+func (s *OpsQueryService) GetLatestGroupAvailabilityEvent(ctx context.Context, configID int64) (*OpsGroupAvailabilityEvent, error) {
 	return s.repo.GetLatestGroupAvailabilityEvent(ctx, configID)
 }
 
-func (s *OpsService) CreateGroupAvailabilityEvent(ctx context.Context, event *OpsGroupAvailabilityEvent) error {
+func (s *OpsIngestService) CreateGroupAvailabilityEvent(ctx context.Context, event *OpsGroupAvailabilityEvent) error {
 	return s.repo.CreateGroupAvailabilityEvent(ctx, event)
 }
 
-func (s *OpsService) UpdateGroupAvailabilityEventStatus(ctx context.Context, eventID int64, status string, resolvedAt *time.Time) error {
+func (s *OpsIngestService) UpdateGroupAvailabilityEventStatus(ctx context.Context, eventID int64, status string, resolvedAt *time.Time) error {
 	return s.repo.UpdateGroupAvailabilityEventStatus(ctx, eventID, status, resolvedAt)
 }
 
-func (s *OpsService) UpdateGroupAvailabilityEventNotifications(ctx context.Context, eventID int64, emailSent bool) error {
+func (s *OpsIngestService) UpdateGroupAvailabilityEventNotifications(ctx context.Context, eventID int64, emailSent bool) error {
 	return s.repo.UpdateGroupAvailabilityEventNotifications(ctx, eventID, emailSent)
 }
 
-func (s *OpsService) ListGroupAvailabilityEvents(ctx context.Context, limit int, status string) ([]OpsGroupAvailabilityEvent, error) {
+func (s *OpsQueryService) ListGroupAvailabilityEvents(ctx context.Context, limit int, status string) ([]OpsGroupAvailabilityEvent, error) {
 	return s.repo.ListGroupAvailabilityEvents(ctx, limit, status)
 }
 
-func (s *OpsService) CountAvailableAccountsByGroup(ctx context.Context, groupID int64) (available, total int, err error) {
+func (s *OpsQueryService) CountAvailableAccountsByGroup(ctx context.Context, groupID int64) (available, total int, err error) {
 	return s.repo.CountAvailableAccountsByGroup(ctx, groupID)
 }

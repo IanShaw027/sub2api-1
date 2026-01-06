@@ -107,7 +107,7 @@ type OpsRequestDetailListResponse struct {
 	PageSize int                 `json:"page_size"`
 }
 
-func (s *OpsService) ListRequestDetails(ctx context.Context, filter *OpsRequestDetailFilter) (*OpsRequestDetailListResponse, error) {
+func (s *OpsQueryService) ListRequestDetails(ctx context.Context, filter *OpsRequestDetailFilter) (*OpsRequestDetailListResponse, error) {
 	if s == nil || s.repo == nil {
 		return &OpsRequestDetailListResponse{
 			Items:    []*OpsRequestDetail{},

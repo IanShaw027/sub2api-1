@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -119,7 +118,7 @@ func (e *UpstreamFailoverError) Error() string {
 type GatewayService struct {
 	accountRepo         AccountRepository
 	groupRepo           GroupRepository
-	usageLogRepo        UsageLogRepository
+	usageLogRepo        UsageLogWriter
 	userRepo            UserRepository
 	userSubRepo         UserSubscriptionRepository
 	cache               GatewayCache
@@ -137,7 +136,7 @@ type GatewayService struct {
 func NewGatewayService(
 	accountRepo AccountRepository,
 	groupRepo GroupRepository,
-	usageLogRepo UsageLogRepository,
+	usageLogRepo UsageLogWriter,
 	userRepo UserRepository,
 	userSubRepo UserSubscriptionRepository,
 	cache GatewayCache,
@@ -957,79 +956,6 @@ func (s *GatewayService) shouldFailoverUpstreamError(statusCode int) bool {
 	}
 }
 
-// sanitizeRequestBody 脱敏请求体中的敏感信息
-func sanitizeRequestBody(body []byte) string {
-	if len(body) == 0 {
-		return ""
-	}
-	// 限制大小为10KB
-	const maxSize = 10 * 1024
-	if len(body) > maxSize {
-		body = body[:maxSize]
-	}
-
-	var data map[string]any
-	if err := json.Unmarshal(body, &data); err != nil {
-		return ""
-	}
-
-	sensitiveFields := []string{
-		"api_key", "apiKey", "API_KEY",
-		"password", "pwd", "passwd",
-		"email", "mail",
-		"phone", "mobile", "tel",
-		"credit_card", "card_number",
-		"token", "access_token", "refresh_token",
-	}
-
-	// 递归脱敏函数,支持 map, slice 和基本类型
-	var sanitize func(any) any
-	sanitize = func(v any) any {
-		switch val := v.(type) {
-		case map[string]any:
-			result := make(map[string]any, len(val))
-			for k, v := range val {
-				lowerKey := strings.ToLower(k)
-				// 检查是否是敏感字段
-				isSensitive := false
-				for _, field := range sensitiveFields {
-					if strings.Contains(lowerKey, strings.ToLower(field)) {
-						isSensitive = true
-						break
-					}
-				}
-				if isSensitive {
-					// 敏感字段统一脱敏为 "***"
-					if s, ok := v.(string); ok && s != "" {
-						result[k] = "***"
-					} else {
-						result[k] = "***"
-					}
-				} else {
-					// 非敏感字段递归处理
-					result[k] = sanitize(v)
-				}
-			}
-			return result
-		case []any:
-			// 处理数组,递归处理每个元素
-			result := make([]any, len(val))
-			for i, item := range val {
-				result[i] = sanitize(item)
-			}
-			return result
-		default:
-			// 基本类型直接返回
-			return val
-		}
-	}
-
-	data = sanitize(data).(map[string]any)
-
-	sanitized, _ := json.Marshal(data)
-	return string(sanitized)
-}
-
 // Forward 转发请求到Claude API
 func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest) (*ForwardResult, error) {
 	startTime := time.Now()
@@ -1566,223 +1492,6 @@ func (s *GatewayService) handleRetryExhaustedError(ctx context.Context, resp *ht
 	return nil, fmt.Errorf("upstream error: %d (retries exhausted)", resp.StatusCode)
 }
 
-// streamingResult 流式响应结果
-type streamingResult struct {
-	usage        *ClaudeUsage
-	firstTokenMs *int
-}
-
-func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel string) (*streamingResult, error) {
-	// 更新5h窗口状态
-	s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
-
-	// 设置SSE响应头
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Header("X-Accel-Buffering", "no")
-
-	// 透传其他响应头
-	if v := resp.Header.Get("x-request-id"); v != "" {
-		c.Header("x-request-id", v)
-	}
-
-	w := c.Writer
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		return nil, errors.New("streaming not supported")
-	}
-
-	usage := &ClaudeUsage{}
-	var firstTokenMs *int
-	scanner := bufio.NewScanner(resp.Body)
-	// 设置更大的buffer以处理长行
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-
-	needModelReplace := originalModel != mappedModel
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "event: error" {
-			return nil, errors.New("have error in stream")
-		}
-
-		// Extract data from SSE line (supports both "data: " and "data:" formats)
-		if sseDataRe.MatchString(line) {
-			data := sseDataRe.ReplaceAllString(line, "")
-
-			// 如果有模型映射，替换响应中的model字段
-			if needModelReplace {
-				line = s.replaceModelInSSELine(line, mappedModel, originalModel)
-			}
-
-			// 转发行
-			if _, err := fmt.Fprintf(w, "%s\n", line); err != nil {
-				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, err
-			}
-			flusher.Flush()
-
-			// 记录首字时间：第一个有效的 content_block_delta 或 message_start
-			if firstTokenMs == nil && data != "" && data != "[DONE]" {
-				ms := int(time.Since(startTime).Milliseconds())
-				firstTokenMs = &ms
-			}
-			s.parseSSEUsage(data, usage)
-		} else {
-			// 非 data 行直接转发
-			if _, err := fmt.Fprintf(w, "%s\n", line); err != nil {
-				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, err
-			}
-			flusher.Flush()
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream read error: %w", err)
-	}
-
-	return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, nil
-}
-
-// replaceModelInSSELine 替换SSE数据行中的model字段
-func (s *GatewayService) replaceModelInSSELine(line, fromModel, toModel string) string {
-	if !sseDataRe.MatchString(line) {
-		return line
-	}
-	data := sseDataRe.ReplaceAllString(line, "")
-	if data == "" || data == "[DONE]" {
-		return line
-	}
-
-	var event map[string]any
-	if err := json.Unmarshal([]byte(data), &event); err != nil {
-		return line
-	}
-
-	// 只替换 message_start 事件中的 message.model
-	if event["type"] != "message_start" {
-		return line
-	}
-
-	msg, ok := event["message"].(map[string]any)
-	if !ok {
-		return line
-	}
-
-	model, ok := msg["model"].(string)
-	if !ok || model != fromModel {
-		return line
-	}
-
-	msg["model"] = toModel
-	newData, err := json.Marshal(event)
-	if err != nil {
-		return line
-	}
-
-	return "data: " + string(newData)
-}
-
-func (s *GatewayService) parseSSEUsage(data string, usage *ClaudeUsage) {
-	// 解析message_start获取input tokens（标准Claude API格式）
-	var msgStart struct {
-		Type    string `json:"type"`
-		Message struct {
-			Usage ClaudeUsage `json:"usage"`
-		} `json:"message"`
-	}
-	if json.Unmarshal([]byte(data), &msgStart) == nil && msgStart.Type == "message_start" {
-		usage.InputTokens = msgStart.Message.Usage.InputTokens
-		usage.CacheCreationInputTokens = msgStart.Message.Usage.CacheCreationInputTokens
-		usage.CacheReadInputTokens = msgStart.Message.Usage.CacheReadInputTokens
-	}
-
-	// 解析message_delta获取tokens（兼容GLM等把所有usage放在delta中的API）
-	var msgDelta struct {
-		Type  string `json:"type"`
-		Usage struct {
-			InputTokens              int `json:"input_tokens"`
-			OutputTokens             int `json:"output_tokens"`
-			CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
-			CacheReadInputTokens     int `json:"cache_read_input_tokens"`
-		} `json:"usage"`
-	}
-	if json.Unmarshal([]byte(data), &msgDelta) == nil && msgDelta.Type == "message_delta" {
-		// output_tokens 总是从 message_delta 获取
-		usage.OutputTokens = msgDelta.Usage.OutputTokens
-
-		// 如果 message_start 中没有值，则从 message_delta 获取（兼容GLM等API）
-		if usage.InputTokens == 0 {
-			usage.InputTokens = msgDelta.Usage.InputTokens
-		}
-		if usage.CacheCreationInputTokens == 0 {
-			usage.CacheCreationInputTokens = msgDelta.Usage.CacheCreationInputTokens
-		}
-		if usage.CacheReadInputTokens == 0 {
-			usage.CacheReadInputTokens = msgDelta.Usage.CacheReadInputTokens
-		}
-	}
-}
-
-func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, originalModel, mappedModel string, startTime time.Time) (*ClaudeUsage, *int, error) {
-	// 更新5h窗口状态
-	s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// 非流式响应：TTFT = 收到完整响应的时间
-	ttft := int(time.Since(startTime).Milliseconds())
-
-	// 解析usage
-	var response struct {
-		Usage ClaudeUsage `json:"usage"`
-	}
-	if err := json.Unmarshal(body, &response); err != nil {
-		return nil, nil, fmt.Errorf("parse response: %w", err)
-	}
-
-	// 如果有模型映射，替换响应中的model字段
-	if originalModel != mappedModel {
-		body = s.replaceModelInResponseBody(body, mappedModel, originalModel)
-	}
-
-	// 透传响应头
-	for key, values := range resp.Header {
-		for _, value := range values {
-			c.Header(key, value)
-		}
-	}
-
-	// 写入响应
-	c.Data(resp.StatusCode, "application/json", body)
-
-	return &response.Usage, &ttft, nil
-}
-
-// replaceModelInResponseBody 替换响应体中的model字段
-func (s *GatewayService) replaceModelInResponseBody(body []byte, fromModel, toModel string) []byte {
-	var resp map[string]any
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return body
-	}
-
-	model, ok := resp["model"].(string)
-	if !ok || model != fromModel {
-		return body
-	}
-
-	resp["model"] = toModel
-	newBody, err := json.Marshal(resp)
-	if err != nil {
-		return body
-	}
-
-	return newBody
-}
-
 // RecordUsageInput 记录使用量的输入参数
 type RecordUsageInput struct {
 	Result       *ForwardResult
@@ -1847,16 +1556,16 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 		TotalCost:           cost.TotalCost,
 		ActualCost:          cost.ActualCost,
 		RateMultiplier:      multiplier,
-		BillingType:        billingType,
-		Stream:             result.Stream,
-		DurationMs:         &durationMs,
-		TimeToFirstTokenMs: result.TimeToFirstTokenMs,
-		AuthLatencyMs:      result.AuthLatencyMs,
-		RoutingLatencyMs:   result.RoutingLatencyMs,
-		UpstreamLatencyMs:  result.UpstreamLatencyMs,
-		ResponseLatencyMs:  result.ResponseLatencyMs,
-		Provider:           result.Provider,
-		CreatedAt:          time.Now(),
+		BillingType:         billingType,
+		Stream:              result.Stream,
+		DurationMs:          &durationMs,
+		TimeToFirstTokenMs:  result.TimeToFirstTokenMs,
+		AuthLatencyMs:       result.AuthLatencyMs,
+		RoutingLatencyMs:    result.RoutingLatencyMs,
+		UpstreamLatencyMs:   result.UpstreamLatencyMs,
+		ResponseLatencyMs:   result.ResponseLatencyMs,
+		Provider:            result.Provider,
+		CreatedAt:           time.Now(),
 	}
 
 	// 添加分组和订阅关联
@@ -1900,204 +1609,6 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 	s.deferredService.ScheduleLastUsedUpdate(account.ID)
 
 	return nil
-}
-
-// ForwardCountTokens 转发 count_tokens 请求到上游 API
-// 特点：不记录使用量、仅支持非流式响应
-func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest) error {
-	if parsed == nil {
-		s.countTokensError(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
-		return fmt.Errorf("parse request: empty request")
-	}
-
-	body := parsed.Body
-	reqModel := parsed.Model
-
-	// Antigravity 账户不支持 count_tokens 转发，返回估算值
-	// 参考 Antigravity-Manager 和 proxycast 实现
-	if account.Platform == PlatformAntigravity {
-		c.JSON(http.StatusOK, gin.H{"input_tokens": 100})
-		return nil
-	}
-
-	// 应用模型映射（仅对 apikey 类型账号）
-	if account.Type == AccountTypeAPIKey {
-		if reqModel != "" {
-			mappedModel := account.GetMappedModel(reqModel)
-			if mappedModel != reqModel {
-				body = s.replaceModelInBody(body, mappedModel)
-				reqModel = mappedModel
-				log.Printf("CountTokens model mapping applied: %s -> %s (account: %s)", parsed.Model, mappedModel, account.Name)
-			}
-		}
-	}
-
-	// 获取凭证
-	token, tokenType, err := s.GetAccessToken(ctx, account)
-	if err != nil {
-		s.countTokensError(c, http.StatusBadGateway, "upstream_error", "Failed to get access token")
-		return err
-	}
-
-	// 构建上游请求
-	upstreamReq, err := s.buildCountTokensRequest(ctx, c, account, body, token, tokenType, reqModel)
-	if err != nil {
-		s.countTokensError(c, http.StatusInternalServerError, "api_error", "Failed to build request")
-		return err
-	}
-
-	// 获取代理URL
-	proxyURL := ""
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
-	}
-
-	// 发送请求
-	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
-	if err != nil {
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "timeout_error:") {
-			detail := strings.TrimPrefix(errMsg, "timeout_error: ")
-			log.Printf("Account %d: count_tokens upstream timeout: %s", account.ID, detail)
-		} else if strings.Contains(errMsg, "network_error:") {
-			detail := strings.TrimPrefix(errMsg, "network_error: ")
-			log.Printf("Account %d: count_tokens upstream network error: %s", account.ID, detail)
-		}
-		s.countTokensError(c, http.StatusBadGateway, "upstream_error", "Request failed")
-		return fmt.Errorf("upstream request failed: %w", err)
-	}
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	// 读取响应体
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		s.countTokensError(c, http.StatusBadGateway, "upstream_error", "Failed to read response")
-		return err
-	}
-
-	// 处理错误响应
-	if resp.StatusCode >= 400 {
-		// 标记账号状态（429/529等）
-		s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
-
-		// 记录上游错误摘要便于排障（不回显请求内容）
-		if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
-			log.Printf(
-				"count_tokens upstream error %d (account=%d platform=%s type=%s): %s",
-				resp.StatusCode,
-				account.ID,
-				account.Platform,
-				account.Type,
-				truncateForLog(respBody, s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes),
-			)
-		}
-
-		// 返回简化的错误响应
-		errMsg := "Upstream request failed"
-		switch resp.StatusCode {
-		case 429:
-			errMsg = "Rate limit exceeded"
-		case 529:
-			errMsg = "Service overloaded"
-		}
-		s.countTokensError(c, resp.StatusCode, "upstream_error", errMsg)
-		return fmt.Errorf("upstream error: %d", resp.StatusCode)
-	}
-
-	// 透传成功响应
-	c.Data(resp.StatusCode, "application/json", respBody)
-	return nil
-}
-
-// buildCountTokensRequest 构建 count_tokens 上游请求
-func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Context, account *Account, body []byte, token, tokenType, modelID string) (*http.Request, error) {
-	// 确定目标 URL
-	targetURL := claudeAPICountTokensURL
-	if account.Type == AccountTypeAPIKey {
-		baseURL := account.GetBaseURL()
-		targetURL = baseURL + "/v1/messages/count_tokens"
-	}
-
-	// OAuth 账号：应用统一指纹和重写 userID
-	if account.IsOAuth() && s.identityService != nil {
-		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, c.Request.Header)
-		if err == nil {
-			accountUUID := account.GetExtraString("account_uuid")
-			if accountUUID != "" && fp.ClientID != "" {
-				if newBody, err := s.identityService.RewriteUserID(body, account.ID, accountUUID, fp.ClientID); err == nil && len(newBody) > 0 {
-					body = newBody
-				}
-			}
-		}
-	}
-
-	// Filter thinking blocks from request body (prevents 400 errors from invalid signatures)
-	body = FilterThinkingBlocks(body)
-
-	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-
-	// 设置认证头
-	if tokenType == "oauth" {
-		req.Header.Set("authorization", "Bearer "+token)
-	} else {
-		req.Header.Set("x-api-key", token)
-	}
-
-	// 白名单透传 headers
-	for key, values := range c.Request.Header {
-		lowerKey := strings.ToLower(key)
-		if allowedHeaders[lowerKey] {
-			for _, v := range values {
-				req.Header.Add(key, v)
-			}
-		}
-	}
-
-	// OAuth 账号：应用指纹到请求头
-	if account.IsOAuth() && s.identityService != nil {
-		fp, _ := s.identityService.GetOrCreateFingerprint(ctx, account.ID, c.Request.Header)
-		if fp != nil {
-			s.identityService.ApplyFingerprint(req, fp)
-		}
-	}
-
-	// 确保必要的 headers 存在
-	if req.Header.Get("content-type") == "" {
-		req.Header.Set("content-type", "application/json")
-	}
-	if req.Header.Get("anthropic-version") == "" {
-		req.Header.Set("anthropic-version", "2023-06-01")
-	}
-
-	// OAuth 账号：处理 anthropic-beta header
-	if tokenType == "oauth" {
-		req.Header.Set("anthropic-beta", s.getBetaHeader(modelID, c.GetHeader("anthropic-beta")))
-	} else if s.cfg != nil && s.cfg.Gateway.InjectBetaForAPIKey && req.Header.Get("anthropic-beta") == "" {
-		// API-key：与 messages 同步的按需 beta 注入（默认关闭）
-		if requestNeedsBetaFeatures(body) {
-			if beta := defaultAPIKeyBetaHeader(body); beta != "" {
-				req.Header.Set("anthropic-beta", beta)
-			}
-		}
-	}
-
-	return req, nil
-}
-
-// countTokensError 返回 count_tokens 错误响应
-func (s *GatewayService) countTokensError(c *gin.Context, status int, errType, message string) {
-	c.JSON(status, gin.H{
-		"type": "error",
-		"error": gin.H{
-			"type":    errType,
-			"message": message,
-		},
-	})
 }
 
 // GetAvailableModels returns the list of models available for a group

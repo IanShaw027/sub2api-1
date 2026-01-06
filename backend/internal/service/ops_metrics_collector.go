@@ -22,11 +22,16 @@ const (
 	opsMetricsInterval       = 1 * time.Minute
 	opsMetricsCollectTimeout = 10 * time.Second
 
-	opsMetricsWindowShortMinutes = 1
-	opsMetricsWindowLongMinutes  = 5
+	opsMetricsWindowShortMinutes  = 1
+	opsMetricsWindowLongMinutes   = 5
 	opsMetricsWindowHourlyMinutes = 60
 
 	opsMetricsCollectorCacheKeyPrefix = "ops:metrics:collector:window:"
+
+	opsConcurrencyPlatformCacheKey = "ops:concurrency:platform"
+	opsConcurrencyGroupCacheKey    = "ops:concurrency:group"
+	opsConcurrencyCollectedAtKey   = "ops:concurrency:collected_at_unix"
+	opsConcurrencyCacheTTL         = 2 * time.Minute
 
 	bytesPerMB             = 1024 * 1024
 	cpuUsageSampleInterval = 0 * time.Second
@@ -37,6 +42,7 @@ const (
 type OpsMetricsCollector struct {
 	opsService         *OpsService
 	concurrencyService *ConcurrencyService
+	accountRepo        AccountRepository
 	redisClient        *redis.Client
 	cacheEnabled       bool
 	cacheTTL           time.Duration
@@ -51,6 +57,7 @@ type OpsMetricsCollector struct {
 	stopCh             chan struct{}
 	startOnce          sync.Once
 	stopOnce           sync.Once
+	opsDisabledWarn    sync.Once
 
 	distributedLockOn    bool
 	distributedLockKey   string
@@ -63,26 +70,32 @@ type OpsMetricsCollector struct {
 func NewOpsMetricsCollector(
 	opsService *OpsService,
 	concurrencyService *ConcurrencyService,
+	accountRepo AccountRepository,
 	redisClient *redis.Client,
 	cfg *config.Config,
 ) *OpsMetricsCollector {
 	cacheEnabled := false
 	cacheTTL := 60 * time.Second
+	lockOn := true
 	if cfg != nil {
 		cacheEnabled = cfg.Ops.MetricsCollectorCache.Enabled
 		if cfg.Ops.MetricsCollectorCache.TTL > 0 {
 			cacheTTL = cfg.Ops.MetricsCollectorCache.TTL
 		}
+		if cfg.RunMode == config.RunModeSimple {
+			lockOn = false
+		}
 	}
 	return &OpsMetricsCollector{
 		opsService:         opsService,
 		concurrencyService: concurrencyService,
+		accountRepo:        accountRepo,
 		redisClient:        redisClient,
 		cacheEnabled:       cacheEnabled,
 		cacheTTL:           cacheTTL,
 		interval:           opsMetricsInterval,
 
-		distributedLockOn:  true,
+		distributedLockOn:  lockOn,
 		distributedLockKey: opsMetricsCollectorLeaderLockKeyDefault,
 		distributedLockTTL: opsMetricsCollectorLeaderLockTTLDefault,
 	}
@@ -134,6 +147,13 @@ func (c *OpsMetricsCollector) collectOnce() {
 	ctx, cancel := context.WithTimeout(context.Background(), opsMetricsCollectTimeout)
 	defer cancel()
 
+	if !c.opsService.IsOpsMonitoringEnabled(ctx) {
+		c.opsDisabledWarn.Do(func() {
+			log.Printf("[OpsMetrics] ops monitoring disabled; skipping metrics collection")
+		})
+		return
+	}
+
 	releaseLeaderLock, ok := c.tryAcquireLeaderLock(ctx)
 	if !ok {
 		return
@@ -149,6 +169,15 @@ func (c *OpsMetricsCollector) collectOnce() {
 	systemStats := c.collectSystemStats(ctx)
 	queueDepth := c.collectQueueDepth(ctx)
 	activeAlerts := c.collectActiveAlerts(ctx)
+
+	if c.opsService.IsRealtimeMonitoringEnabled(ctx) {
+		accounts := c.listSchedulableAccounts(ctx)
+		platformConcurrency := c.collectPlatformConcurrency(ctx, accounts)
+		groupConcurrency := c.collectGroupConcurrency(ctx, accounts)
+		c.cacheConcurrencyStats(ctx, platformConcurrency, groupConcurrency)
+	} else {
+		c.clearConcurrencyStats(ctx)
+	}
 
 	for _, window := range []int{opsMetricsWindowShortMinutes, opsMetricsWindowLongMinutes, opsMetricsWindowHourlyMinutes} {
 		startTime := windowEnd.Add(-time.Duration(window) * time.Minute)
@@ -217,20 +246,6 @@ const (
 	opsMetricsCollectorLeaderLockSkipLogMinInterval = 1 * time.Minute
 )
 
-var opsMetricsCollectorLeaderUnlockScript = redis.NewScript(`
-if redis.call("get", KEYS[1]) == ARGV[1] then
-  return redis.call("del", KEYS[1])
-end
-return 0
-`)
-
-var opsMetricsCollectorLeaderRenewScript = redis.NewScript(`
-if redis.call("get", KEYS[1]) == ARGV[1] then
-  return redis.call("pexpire", KEYS[1], ARGV[2])
-end
-return 0
-`)
-
 func (c *OpsMetricsCollector) tryAcquireLeaderLock(ctx context.Context) (func(), bool) {
 	if c == nil || !c.distributedLockOn {
 		return nil, true
@@ -248,94 +263,21 @@ func (c *OpsMetricsCollector) tryAcquireLeaderLock(ctx context.Context) (func(),
 		ttl = opsMetricsCollectorLeaderLockTTLDefault
 	}
 
-	if c.redisClient == nil {
-		c.distributedLockWarn.Do(func() {
-			log.Printf("[OpsMetrics] distributed lock enabled but redis client is nil; proceeding without leader lock (key=%q)", key)
-		})
-		return nil, true
+	opts := RedisLeaderLockOptions{
+		Enabled:         true,
+		Redis:           c.redisClient,
+		Key:             key,
+		TTL:             ttl,
+		LogPrefix:       "[OpsMetrics]",
+		WarnNoRedisOnce: &c.distributedLockWarn,
+		OnSkip: func() {
+			c.logLeaderLockSkipped(key)
+		},
+		LogAcquired:      false,
+		LogReleased:      false,
+		MinRenewInterval: 5 * time.Second,
 	}
-
-	token := opsAlertLeaderToken()
-	ok, err := c.redisClient.SetNX(ctx, key, token, ttl).Result()
-	if err != nil {
-		log.Printf("[OpsMetrics] failed to acquire leader lock (key=%q): %v", key, err)
-		return nil, false
-	}
-	if !ok {
-		c.logLeaderLockSkipped(key)
-		return nil, false
-	}
-
-	renewCancel, renewDone := c.startLeaderLockRenewal(key, token, ttl)
-
-	release := func() {
-		if renewCancel != nil {
-			renewCancel()
-		}
-		if renewDone != nil {
-			select {
-			case <-renewDone:
-			case <-time.After(2 * time.Second):
-				log.Printf("[OpsMetrics] leader lock renewal goroutine did not stop in time (key=%q)", key)
-			}
-		}
-
-		releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-
-		if _, err := opsMetricsCollectorLeaderUnlockScript.Run(releaseCtx, c.redisClient, []string{key}, token).Int(); err != nil {
-			log.Printf("[OpsMetrics] failed to release leader lock (key=%q token=%s): %v", key, shortenLockToken(token), err)
-		}
-	}
-
-	return release, true
-}
-
-func (c *OpsMetricsCollector) startLeaderLockRenewal(key string, token string, ttl time.Duration) (context.CancelFunc, <-chan struct{}) {
-	if c == nil || c.redisClient == nil {
-		return nil, nil
-	}
-	if strings.TrimSpace(key) == "" || token == "" || ttl <= 0 {
-		return nil, nil
-	}
-
-	refreshEvery := ttl / 2
-	if refreshEvery < 5*time.Second {
-		refreshEvery = 5 * time.Second
-	}
-	ttlMillis := ttl.Milliseconds()
-	if ttlMillis <= 0 {
-		ttlMillis = 1
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-
-		ticker := time.NewTicker(refreshEvery)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				res, err := opsMetricsCollectorLeaderRenewScript.Run(context.Background(), c.redisClient, []string{key}, token, ttlMillis).Int()
-				if err != nil {
-					log.Printf("[OpsMetrics] leader lock renewal failed (key=%q token=%s): %v", key, shortenLockToken(token), err)
-					continue
-				}
-				if res == 0 {
-					log.Printf("[OpsMetrics] leader lock no longer owned; stop renewing (key=%q token=%s)", key, shortenLockToken(token))
-					return
-				}
-			}
-		}
-	}()
-
-	return cancel, done
+	return TryAcquireRedisLeaderLock(ctx, opts)
 }
 
 func (c *OpsMetricsCollector) logLeaderLockSkipped(key string) {
@@ -466,4 +408,130 @@ func (c *OpsMetricsCollector) collectActiveAlerts(ctx context.Context) int {
 		return 0
 	}
 	return count
+}
+
+func (c *OpsMetricsCollector) listSchedulableAccounts(ctx context.Context) []Account {
+	if c.accountRepo == nil {
+		return []Account{}
+	}
+
+	accounts, err := c.accountRepo.ListSchedulable(ctx)
+	if err != nil {
+		log.Printf("[OpsMetrics] failed to list schedulable accounts: %v", err)
+		return []Account{}
+	}
+	return accounts
+}
+
+func (c *OpsMetricsCollector) collectPlatformConcurrency(ctx context.Context, accounts []Account) map[string]*PlatformConcurrencyInfo {
+	if c.concurrencyService == nil || c.accountRepo == nil {
+		return map[string]*PlatformConcurrencyInfo{}
+	}
+
+	accountsWithPlatform := make([]AccountWithPlatform, 0, len(accounts))
+	for _, acc := range accounts {
+		accountsWithPlatform = append(accountsWithPlatform, AccountWithPlatform{
+			ID:             acc.ID,
+			Platform:       acc.Platform,
+			MaxConcurrency: acc.Concurrency,
+			GroupID:        0,
+			GroupName:      "",
+		})
+	}
+
+	result, err := c.concurrencyService.GetPlatformConcurrency(ctx, accountsWithPlatform)
+	if err != nil {
+		log.Printf("[OpsMetrics] failed to get platform concurrency: %v", err)
+		return map[string]*PlatformConcurrencyInfo{}
+	}
+
+	return result
+}
+
+func (c *OpsMetricsCollector) collectGroupConcurrency(ctx context.Context, accounts []Account) map[int64]*GroupConcurrencyInfo {
+	if c.concurrencyService == nil || c.accountRepo == nil {
+		return map[int64]*GroupConcurrencyInfo{}
+	}
+
+	accountsWithPlatform := make([]AccountWithPlatform, 0, len(accounts))
+	for _, acc := range accounts {
+		for _, groupID := range acc.GroupIDs {
+			groupName := ""
+			groupPlatform := ""
+			for _, group := range acc.Groups {
+				if group != nil && group.ID == groupID {
+					groupName = group.Name
+					groupPlatform = group.Platform
+					break
+				}
+			}
+			if strings.TrimSpace(groupPlatform) == "" {
+				// Defensive fallback: groups are platform-specific, but if the
+				// group record is not loaded, keep using the account platform.
+				groupPlatform = acc.Platform
+			}
+			accountsWithPlatform = append(accountsWithPlatform, AccountWithPlatform{
+				ID:             acc.ID,
+				Platform:       groupPlatform,
+				MaxConcurrency: acc.Concurrency,
+				GroupID:        groupID,
+				GroupName:      groupName,
+			})
+		}
+	}
+
+	result, err := c.concurrencyService.GetGroupConcurrency(ctx, accountsWithPlatform)
+	if err != nil {
+		log.Printf("[OpsMetrics] failed to get group concurrency: %v", err)
+		return map[int64]*GroupConcurrencyInfo{}
+	}
+
+	return result
+}
+
+func (c *OpsMetricsCollector) cacheConcurrencyStats(
+	ctx context.Context,
+	platform map[string]*PlatformConcurrencyInfo,
+	group map[int64]*GroupConcurrencyInfo,
+) {
+	if c.redisClient == nil {
+		return
+	}
+
+	collectedAt := time.Now().UTC()
+
+	if platform == nil {
+		platform = map[string]*PlatformConcurrencyInfo{}
+	}
+	data, err := json.Marshal(platform)
+	if err != nil {
+		log.Printf("[OpsMetrics] failed to marshal platform concurrency: %v", err)
+	} else if err := c.redisClient.Set(ctx, opsConcurrencyPlatformCacheKey, data, opsConcurrencyCacheTTL).Err(); err != nil {
+		infraerror.RecordInfrastructureError(ctx, "redis", "OpsMetricsCollector.cacheConcurrencyStats.platform", err)
+	}
+
+	if group == nil {
+		group = map[int64]*GroupConcurrencyInfo{}
+	}
+	data, err = json.Marshal(group)
+	if err != nil {
+		log.Printf("[OpsMetrics] failed to marshal group concurrency: %v", err)
+	} else if err := c.redisClient.Set(ctx, opsConcurrencyGroupCacheKey, data, opsConcurrencyCacheTTL).Err(); err != nil {
+		infraerror.RecordInfrastructureError(ctx, "redis", "OpsMetricsCollector.cacheConcurrencyStats.group", err)
+	}
+
+	if err := c.redisClient.Set(ctx, opsConcurrencyCollectedAtKey, collectedAt.Unix(), opsConcurrencyCacheTTL).Err(); err != nil {
+		infraerror.RecordInfrastructureError(ctx, "redis", "OpsMetricsCollector.cacheConcurrencyStats.collected_at", err)
+	}
+}
+
+func (c *OpsMetricsCollector) clearConcurrencyStats(ctx context.Context) {
+	if c == nil || c.redisClient == nil {
+		return
+	}
+	// Best-effort cleanup so that when realtime is disabled, endpoints and UI won't
+	// accidentally display stale cached data or misleading timestamps once re-enabled.
+	if err := c.redisClient.Del(ctx, opsConcurrencyPlatformCacheKey, opsConcurrencyGroupCacheKey, opsConcurrencyCollectedAtKey).Err(); err != nil {
+		infraerror.RecordInfrastructureError(ctx, "redis", "OpsMetricsCollector.clearConcurrencyStats", err)
+	}
 }
