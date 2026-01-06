@@ -88,8 +88,8 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		ops.GET("/requests", h.Admin.Ops.ListRequestDetails)
 
 		// Error logs endpoints
-		ops.GET("/errors", h.Admin.Ops.GetErrorLogs)          // Paginated list (page/page_size)
-		ops.GET("/errors/:id", h.Admin.Ops.GetErrorDetail)    // Single error detail
+		ops.GET("/errors", h.Admin.Ops.GetErrorLogs)                 // Paginated list (page/page_size)
+		ops.GET("/errors/:id", h.Admin.Ops.GetErrorDetail)           // Single error detail
 		ops.POST("/errors/:id/retry", h.Admin.Ops.RetryErrorRequest) // Retry error request
 
 		// IP-based error statistics
