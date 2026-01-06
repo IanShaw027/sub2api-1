@@ -334,11 +334,14 @@ If you need to use AI Studio OAuth for Gemini accounts, add the OAuth client cre
 
 The main config file is at `/etc/sub2api/config.yaml` (created by Setup Wizard).
 
+Ops data maintenance:
+- `ops.cleanup` runs periodic cleanup for `ops_error_logs` and ops metrics to prevent unbounded table growth (recommended to keep enabled).
+
 ### Prerequisites
 
 - Linux server (Ubuntu 20.04+, Debian 11+, CentOS 8+, etc.)
-- PostgreSQL 14+
-- Redis 6+
+- PostgreSQL 15+
+- Redis 7+
 - systemd
 
 ### Directory Structure

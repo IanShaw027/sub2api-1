@@ -91,6 +91,12 @@ services:
       - GEMINI_OAUTH_CLIENT_SECRET=${GEMINI_OAUTH_CLIENT_SECRET:-}
       - GEMINI_OAUTH_SCOPES=${GEMINI_OAUTH_SCOPES:-}
       - GEMINI_QUOTA_POLICY=${GEMINI_QUOTA_POLICY:-}
+
+      # =======================================================================
+      # Antigravity OAuth Configuration (for Antigravity accounts)
+      # =======================================================================
+      - ANTIGRAVITY_OAUTH_CLIENT_ID=${ANTIGRAVITY_OAUTH_CLIENT_ID:-}
+      - ANTIGRAVITY_OAUTH_CLIENT_SECRET=${ANTIGRAVITY_OAUTH_CLIENT_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -109,7 +115,7 @@ services:
   # PostgreSQL Database
   # ===========================================================================
   postgres:
-    image: postgres:18-alpine
+    image: postgres:15-alpine
     container_name: sub2api-postgres
     restart: unless-stopped
     ulimits:
