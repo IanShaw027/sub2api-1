@@ -65,6 +65,11 @@ const severityOptions = computed(() => {
   return sev.map(s => ({ value: s, label: s }))
 })
 
+const windowOptions = computed(() => {
+  const windows = [1, 5, 60]
+  return windows.map(m => ({ value: m, label: `${m}m` }))
+})
+
 function newRuleDraft(): AlertRule {
   return {
     name: '',
@@ -101,7 +106,7 @@ const editorValidation = computed(() => {
   if (!r.metric_type) errors.push(t('admin.ops.alertRules.validation.metricRequired'))
   if (!r.operator) errors.push(t('admin.ops.alertRules.validation.operatorRequired'))
   if (!(typeof r.threshold === 'number' && Number.isFinite(r.threshold))) errors.push(t('admin.ops.alertRules.validation.thresholdRequired'))
-  if (!(typeof r.window_minutes === 'number' && Number.isFinite(r.window_minutes) && r.window_minutes >= 1 && r.window_minutes <= 1440)) {
+  if (!(typeof r.window_minutes === 'number' && Number.isFinite(r.window_minutes) && [1, 5, 60].includes(r.window_minutes))) {
     errors.push(t('admin.ops.alertRules.validation.windowRange'))
   }
   if (!(typeof r.sustained_minutes === 'number' && Number.isFinite(r.sustained_minutes) && r.sustained_minutes >= 1 && r.sustained_minutes <= 1440)) {
@@ -299,7 +304,7 @@ function cancelDelete() {
         </div>
         <div>
           <label class="input-label">{{ t('admin.ops.alertRules.form.window') }}</label>
-          <input v-model.number="draft.window_minutes" type="number" min="1" max="1440" class="input" />
+          <Select v-model="draft.window_minutes" :options="windowOptions" />
         </div>
         <div>
           <label class="input-label">{{ t('admin.ops.alertRules.form.sustained') }}</label>
@@ -343,4 +348,3 @@ function cancelDelete() {
     @cancel="cancelDelete"
   />
 </template>
-

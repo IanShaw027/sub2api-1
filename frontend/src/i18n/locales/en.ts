@@ -558,6 +558,30 @@ export default {
         allPlatforms: 'All Platforms',
         allGroups: 'All Groups'
       },
+      healthStatus: {
+        healthy: 'Healthy',
+        degraded: 'Degraded',
+        unhealthy: 'Unhealthy',
+        unknown: 'Unknown'
+      },
+      concurrency: {
+        title: 'Realtime Concurrency',
+        description: 'Concurrency slot usage and queue depth (cached; best-effort).',
+        byPlatform: 'By Platform',
+        byGroup: 'By Group',
+        byGroupHint: 'Accounts may belong to multiple groups; group stats are not additive across groups.',
+        load: 'Load: {percent}%',
+        waiting: 'Waiting: {count}',
+        waitingShort: 'Queue {count}',
+        updatedAgo: 'Updated {age} ago',
+        updatedUnknown: 'Updated: unknown',
+        dataDelayed: 'Data delayed',
+        realtimeDisabled: 'Realtime Disabled',
+        disabledHint: 'Realtime monitoring is disabled in settings.',
+        empty: 'No data available',
+        unknownPlatform: 'Unknown',
+        failedToLoad: 'Failed to load concurrency stats'
+      },
       diagnosis: {
         title: '🩺 Health Diagnosis Report',
         footer: 'Diagnosis rules are tuned for LLM gateway workloads',
@@ -876,7 +900,7 @@ export default {
           threshold: 'Threshold',
           severity: 'Severity',
           window: 'Window (minutes)',
-          sustained: 'Sustained (minutes)',
+          sustained: 'Sustained (samples)',
           cooldown: 'Cooldown (minutes)',
           enabled: 'Enabled',
           notifyEmail: 'Send email notifications'
@@ -888,8 +912,8 @@ export default {
           metricRequired: 'Metric is required',
           operatorRequired: 'Operator is required',
           thresholdRequired: 'Threshold must be a number',
-          windowRange: 'Window must be between 1 and 1440 minutes',
-          sustainedRange: 'Sustained must be between 1 and 1440 minutes',
+          windowRange: 'Window must be one of: 1, 5, 60 minutes',
+          sustainedRange: 'Sustained must be between 1 and 1440 samples',
           cooldownRange: 'Cooldown must be between 0 and 1440 minutes'
         }
       },
@@ -982,6 +1006,11 @@ export default {
           count: 'Count - at least N accounts available',
           percentage: 'Percentage - at least X% accounts available',
           both: 'Both - meet count and percentage'
+        },
+        thresholdSummary: {
+          count: 'Count ≥ {n}',
+          percentage: 'Percent ≥ {p}%',
+          both: 'Count ≥ {n} AND {p}%'
         },
         minAvailablePercentage: 'Min Available Percentage (%)',
         severity: 'Severity',
@@ -2281,6 +2310,14 @@ export default {
         sendTestEmail: 'Send Test Email',
         sending: 'Sending...',
         enterRecipientHint: 'Please enter a recipient email address'
+      },
+      opsMonitoring: {
+        title: 'Ops Monitoring',
+        description: 'Enable or disable the Ops monitoring module and its background tasks.',
+        enabled: 'Enable Ops Monitoring',
+        enabledHint: 'When disabled, the Ops module is hidden and related background tasks will stop.',
+        realtimeEnabled: 'Enable Realtime Monitoring',
+        realtimeEnabledHint: 'Controls realtime features (concurrency polling, WebSocket push). Disable to reduce load.'
       },
       adminApiKey: {
         title: 'Admin API Key',

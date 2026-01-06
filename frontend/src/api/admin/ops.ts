@@ -80,6 +80,49 @@ export interface OpsMetrics {
   updated_at?: string
 }
 
+export interface PlatformConcurrencyInfo {
+  platform: string
+  current_in_use: number
+  max_capacity: number
+  load_percentage: number
+  waiting_in_queue: number
+}
+
+export interface GroupConcurrencyInfo {
+  group_id: number
+  group_name: string
+  platform: string
+  current_in_use: number
+  max_capacity: number
+  load_percentage: number
+  waiting_in_queue: number
+}
+
+export interface OpsConcurrencyStatsResponse {
+  enabled: boolean
+  platform: Record<string, PlatformConcurrencyInfo>
+  group: Record<string, GroupConcurrencyInfo>
+  timestamp?: string
+}
+
+export async function getConcurrencyStats(): Promise<OpsConcurrencyStatsResponse> {
+  const { data } = await apiClient.get<OpsConcurrencyStatsResponse>('/admin/ops/concurrency')
+  return data
+}
+
+export interface OpsSystemHealthResponse {
+  enabled: boolean
+  status: 'healthy' | 'degraded' | 'unhealthy'
+  healthy: boolean
+  warnings: string[]
+  checks: Record<string, any>
+}
+
+export async function getSystemHealth(): Promise<OpsSystemHealthResponse> {
+  const { data } = await apiClient.get<OpsSystemHealthResponse>('/admin/ops/health')
+  return data
+}
+
 export interface OpsErrorLog {
   id: number
   created_at: string
@@ -111,7 +154,9 @@ export interface OpsErrorDetail extends OpsErrorLog {
 
   // 请求和响应信息
   request_body?: string
-  response_body?: string
+  // Backend field name is `error_body` (stored as ops_error_logs.error_body)
+  // and represents the upstream error response payload (sanitized/truncated).
+  error_body?: string
   user_agent?: string
 }
 
@@ -191,7 +236,7 @@ export interface OpsErrorListParams {
    */
   client_ip?: string
   /**
-   * Max 500 (legacy endpoint uses a hard cap); use paginated /admin/ops/errors for larger result sets.
+   * Max 500; prefer pagination for larger result sets.
    */
   limit?: number
   page?: number
@@ -439,6 +484,11 @@ export interface SubscribeQPSOptions {
   onClose?: (event: CloseEvent) => void
   onError?: (event: Event) => void
   /**
+   * Called when the server closes with an application close code that indicates
+   * reconnecting is not useful (e.g. feature flag disabled).
+   */
+  onFatalClose?: (event: CloseEvent) => void
+  /**
    * More granular status updates for UI (connecting/reconnecting/offline/etc).
    * Does not replace `onOpen`/`onClose`; it complements them.
    */
@@ -468,6 +518,10 @@ export interface SubscribeQPSOptions {
 }
 
 export type OpsWSStatus = 'connecting' | 'connected' | 'reconnecting' | 'offline' | 'closed'
+
+export const OPS_WS_CLOSE_CODES = {
+  REALTIME_DISABLED: 4001
+} as const
 
 export function subscribeQPS(onMessage: (data: any) => void, options: SubscribeQPSOptions = {}): () => void {
   let ws: WebSocket | null = null
@@ -598,6 +652,16 @@ export function subscribeQPS(onMessage: (data: any) => void, options: SubscribeQ
       options.onClose?.(event)
       clearStaleTimer()
       ws = null
+
+      // If the server explicitly tells us to stop reconnecting, honor it.
+      if (event && typeof event.code === 'number' && event.code === OPS_WS_CLOSE_CODES.REALTIME_DISABLED) {
+        shouldReconnect = false
+        clearReconnectTimer()
+        setStatus('closed')
+        options.onFatalClose?.(event)
+        return
+      }
+
       scheduleReconnect()
     }
   }
@@ -820,6 +884,8 @@ export const opsAPI = {
   getProviderHealth,
   getLatencyHistogram,
   getErrorDistribution,
+  getConcurrencyStats,
+  getSystemHealth,
   subscribeQPS,
   listAlertRules,
   createAlertRule,

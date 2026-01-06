@@ -6,8 +6,8 @@
         <div class="h-8 w-8 animate-spin rounded-full border-b-2 border-primary-600"></div>
       </div>
 
-      <!-- Settings Form -->
-      <form v-else @submit.prevent="saveSettings" class="space-y-6">
+	      <!-- Settings Form -->
+	      <form v-else @submit.prevent="saveSettings" class="space-y-6">
         <!-- Admin API Key Settings -->
         <div class="card">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
@@ -640,8 +640,8 @@
           </div>
         </div>
 
-        <!-- Send Test Email - Only show when email verification is enabled -->
-        <div v-if="form.email_verify_enabled" class="card">
+	        <!-- Send Test Email - Only show when email verification is enabled -->
+	        <div v-if="form.email_verify_enabled" class="card">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
               {{ t('admin.settings.testEmail.title') }}
@@ -697,11 +697,48 @@
               </button>
             </div>
           </div>
-        </div>
+	        </div>
 
-        <!-- Save Button -->
-        <div class="flex justify-end">
-          <button type="submit" :disabled="saving" class="btn btn-primary">
+	        <!-- Ops Monitoring -->
+	        <div class="card">
+	          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+	            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+	              {{ t('admin.settings.opsMonitoring.title') }}
+	            </h2>
+	            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+	              {{ t('admin.settings.opsMonitoring.description') }}
+	            </p>
+	          </div>
+	          <div class="p-6">
+	            <div class="flex items-center justify-between">
+	              <div>
+	                <label class="font-medium text-gray-900 dark:text-white">{{
+	                  t('admin.settings.opsMonitoring.enabled')
+	                }}</label>
+	                <p class="text-sm text-gray-500 dark:text-gray-400">
+	                  {{ t('admin.settings.opsMonitoring.enabledHint') }}
+	                </p>
+	              </div>
+	              <Toggle v-model="form.ops_monitoring_enabled" />
+	            </div>
+
+	            <div v-if="form.ops_monitoring_enabled" class="mt-5 flex items-center justify-between">
+	              <div>
+	                <label class="font-medium text-gray-900 dark:text-white">{{
+	                  t('admin.settings.opsMonitoring.realtimeEnabled')
+	                }}</label>
+	                <p class="text-sm text-gray-500 dark:text-gray-400">
+	                  {{ t('admin.settings.opsMonitoring.realtimeEnabledHint') }}
+	                </p>
+	              </div>
+	              <Toggle v-model="form.ops_realtime_monitoring_enabled" />
+	            </div>
+	          </div>
+	        </div>
+
+	        <!-- Save Button -->
+	        <div class="flex justify-end">
+	          <button type="submit" :disabled="saving" class="btn btn-primary">
             <svg v-if="saving" class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
               <circle
                 class="opacity-25"
@@ -719,23 +756,34 @@
             </svg>
             {{ saving ? t('admin.settings.saving') : t('admin.settings.saveSettings') }}
           </button>
-        </div>
-      </form>
-    </div>
-  </AppLayout>
-</template>
+	        </div>
+	      </form>
+
+	      <!-- Ops settings and management (only show when enabled) -->
+	      <div v-if="showOpsSettings" class="space-y-6">
+	        <OpsRuntimeSettingsCard />
+	        <OpsEmailNotificationCard />
+	        <OpsAlertRulesCard />
+	      </div>
+	    </div>
+	  </AppLayout>
+	</template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api'
 import type { SystemSettings } from '@/api/admin/settings'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Toggle from '@/components/common/Toggle.vue'
-import { useAppStore } from '@/stores'
+import { useAppStore, useAdminSettingsStore } from '@/stores'
+import OpsAlertRulesCard from '@/views/admin/ops/components/OpsAlertRulesCard.vue'
+import OpsEmailNotificationCard from '@/views/admin/ops/components/OpsEmailNotificationCard.vue'
+import OpsRuntimeSettingsCard from '@/views/admin/ops/components/OpsRuntimeSettingsCard.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const adminSettingsStore = useAdminSettingsStore()
 
 const loading = ref(true)
 const saving = ref(false)
@@ -773,8 +821,13 @@ const form = reactive<SystemSettings>({
   // Cloudflare Turnstile
   turnstile_enabled: false,
   turnstile_site_key: '',
-  turnstile_secret_key: ''
+  turnstile_secret_key: '',
+  // Ops monitoring
+  ops_monitoring_enabled: true,
+  ops_realtime_monitoring_enabled: true
 })
+
+const showOpsSettings = computed(() => form.ops_monitoring_enabled)
 
 function handleLogoUpload(event: Event) {
   const input = event.target as HTMLInputElement
@@ -819,6 +872,8 @@ async function loadSettings() {
   try {
     const settings = await adminAPI.settings.getSettings()
     Object.assign(form, settings)
+    adminSettingsStore.setOpsMonitoringEnabledLocal(form.ops_monitoring_enabled)
+    adminSettingsStore.setOpsRealtimeMonitoringEnabledLocal(form.ops_realtime_monitoring_enabled ?? true)
   } catch (error: any) {
     appStore.showError(
       t('admin.settings.failedToLoad') + ': ' + (error.message || t('common.unknownError'))
@@ -834,6 +889,8 @@ async function saveSettings() {
     await adminAPI.settings.updateSettings(form)
     // Refresh cached public settings so sidebar/header update immediately
     await appStore.fetchPublicSettings(true)
+    adminSettingsStore.setOpsMonitoringEnabledLocal(form.ops_monitoring_enabled)
+    adminSettingsStore.setOpsRealtimeMonitoringEnabledLocal(form.ops_realtime_monitoring_enabled ?? true)
     appStore.showSuccess(t('admin.settings.settingsSaved'))
   } catch (error: any) {
     appStore.showError(

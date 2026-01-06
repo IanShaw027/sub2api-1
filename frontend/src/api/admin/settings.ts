@@ -35,6 +35,10 @@ export interface SystemSettings {
   turnstile_enabled: boolean
   turnstile_site_key: string
   turnstile_secret_key: string
+
+  // Ops monitoring
+  ops_monitoring_enabled: boolean
+  ops_realtime_monitoring_enabled: boolean
 }
 
 /**

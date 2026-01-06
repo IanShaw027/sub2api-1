@@ -15,27 +15,26 @@ import {
   Filler
 } from 'chart.js'
 import zoomPlugin from 'chartjs-plugin-zoom'
-import { useDebounceFn, useIntervalFn } from '@vueuse/core'
-import { useI18n } from 'vue-i18n'
-import AppLayout from '@/components/layout/AppLayout.vue'
-import ErrorDetailModal from '@/components/admin/ErrorDetailModal.vue'
-import OpsDashboardHeader from './components/OpsDashboardHeader.vue'
-import OpsMetricsCharts from './components/OpsMetricsCharts.vue'
-import OpsGroupAvailabilityCard from './components/OpsGroupAvailabilityCard.vue'
-import OpsGroupAvailabilityEventsCard from './components/OpsGroupAvailabilityEventsCard.vue'
-import OpsErrorAnalyticsCard from './components/OpsErrorAnalyticsCard.vue'
-import OpsAccountStatusCard from './components/OpsAccountStatusCard.vue'
-import OpsRuntimeSettingsCard from './components/OpsRuntimeSettingsCard.vue'
-import OpsEmailNotificationCard from './components/OpsEmailNotificationCard.vue'
-import OpsAlertRulesCard from './components/OpsAlertRulesCard.vue'
-import OpsAlertEventsCard from './components/OpsAlertEventsCard.vue'
-import OpsErrorByIPCard from './components/OpsErrorByIPCard.vue'
-import OpsErrorLogTable from './components/OpsErrorLogTable.vue'
-import OpsDashboardSkeleton from './components/OpsDashboardSkeleton.vue'
-import OpsRequestDetailsModal, { type OpsRequestDetailsPreset } from './components/OpsRequestDetailsModal.vue'
-import { opsAPI, type OpsDashboardOverview, type ProviderHealthData, type LatencyHistogramResponse, type ErrorDistributionResponse, type OpsMetrics, type OpsErrorLog, type OpsWSStatus } from '@/api/admin/ops'
-import { parseTimeRangeMinutes } from './utils/opsFormatters'
-import type { ErrorFilters, ErrorLogsPagination } from './types'
+	import { useDebounceFn, useIntervalFn } from '@vueuse/core'
+	import { useI18n } from 'vue-i18n'
+	import AppLayout from '@/components/layout/AppLayout.vue'
+	import ErrorDetailModal from '@/components/admin/ErrorDetailModal.vue'
+	import OpsDashboardHeader from './components/OpsDashboardHeader.vue'
+	import OpsConcurrencyCard from './components/OpsConcurrencyCard.vue'
+	import OpsMetricsCharts from './components/OpsMetricsCharts.vue'
+	import OpsGroupAvailabilityCard from './components/OpsGroupAvailabilityCard.vue'
+	import OpsGroupAvailabilityEventsCard from './components/OpsGroupAvailabilityEventsCard.vue'
+	import OpsErrorAnalyticsCard from './components/OpsErrorAnalyticsCard.vue'
+	import OpsAccountStatusCard from './components/OpsAccountStatusCard.vue'
+	import OpsAlertEventsCard from './components/OpsAlertEventsCard.vue'
+	import OpsErrorByIPCard from './components/OpsErrorByIPCard.vue'
+	import OpsErrorLogTable from './components/OpsErrorLogTable.vue'
+	import OpsDashboardSkeleton from './components/OpsDashboardSkeleton.vue'
+	import OpsRequestDetailsModal, { type OpsRequestDetailsPreset } from './components/OpsRequestDetailsModal.vue'
+	import { opsAPI, OPS_WS_CLOSE_CODES, type OpsDashboardOverview, type ProviderHealthData, type LatencyHistogramResponse, type ErrorDistributionResponse, type OpsMetrics, type OpsErrorLog, type OpsWSStatus } from '@/api/admin/ops'
+	import { parseTimeRangeMinutes } from './utils/opsFormatters'
+	import type { ErrorFilters, ErrorLogsPagination } from './types'
+	import { useAdminSettingsStore } from '@/stores'
 
 ChartJS.register(
   Title,
@@ -52,8 +51,9 @@ ChartJS.register(
 )
 
 const { t } = useI18n()
-const route = useRoute()
-const router = useRouter()
+	const route = useRoute()
+	const router = useRouter()
+	const adminSettingsStore = useAdminSettingsStore()
 // Start in loading state so the first paint shows the skeleton immediately.
 // Otherwise users may briefly see an "empty" dashboard before `onMounted()` kicks off the first fetch.
 const loading = ref(true)
@@ -82,6 +82,10 @@ const errorPagination = ref<ErrorLogsPagination>({
 // Error detail modal
 const showErrorDetail = ref(false)
 const selectedErrorId = ref<number | null>(null)
+
+function isOpsDisabledError(err: unknown): boolean {
+  return !!err && typeof err === 'object' && (err as any).code === 'OPS_DISABLED'
+}
 
 function openErrorDetail(errorLog: OpsErrorLog) {
   selectedErrorId.value = errorLog.id
@@ -252,6 +256,49 @@ const wsStatus = ref<OpsWSStatus>('connecting')
 const wsReconnectInMs = ref<number | null>(null)
 let unsubscribeQPS: (() => void) | null = null
 
+function stopQPSSubscription(options?: { resetMetrics?: boolean }) {
+  wsStatus.value = 'closed'
+  wsReconnectInMs.value = null
+  if (unsubscribeQPS) unsubscribeQPS()
+  unsubscribeQPS = null
+
+  if (options?.resetMetrics) {
+    realTimeQPS.value = 0
+    realTimeTPS.value = 0
+  }
+}
+
+function startQPSSubscription() {
+  stopQPSSubscription()
+  unsubscribeQPS = opsAPI.subscribeQPS(
+    (payload) => {
+      if (payload && typeof payload === 'object' && payload.type === 'qps_update' && payload.data) {
+        realTimeQPS.value = payload.data.qps || 0
+        realTimeTPS.value = payload.data.tps || 0
+      }
+    },
+    {
+      onStatusChange: (status) => {
+        wsStatus.value = status
+        if (status === 'connected') wsReconnectInMs.value = null
+      },
+      onReconnectScheduled: ({ delayMs }) => {
+        wsReconnectInMs.value = delayMs
+      },
+      onFatalClose: (event) => {
+        // Server-side feature flag says realtime is disabled; keep UI consistent and avoid
+        // re-opening the socket until settings are re-enabled.
+        if (event && event.code === OPS_WS_CLOSE_CODES.REALTIME_DISABLED) {
+          adminSettingsStore.setOpsRealtimeMonitoringEnabledLocal(false)
+          stopQPSSubscription({ resetMetrics: true })
+        }
+      },
+      // QPS updates may be sparse in idle periods; keep the timeout conservative.
+      staleTimeoutMs: 180_000
+    }
+  )
+}
+
 const fetchData = async () => {
   loading.value = true
   errorMessage.value = ''
@@ -281,8 +328,10 @@ const fetchData = async () => {
       console.warn('[OpsDashboard] Failed to fetch system metrics', e)
     }
   } catch (err) {
-    console.error('Failed to fetch ops data', err)
-    errorMessage.value = t('admin.ops.failedToLoad')
+    if (!isOpsDisabledError(err)) {
+      console.error('Failed to fetch ops data', err)
+      errorMessage.value = t('admin.ops.failedToLoad')
+    }
   } finally {
     loading.value = false
     hasLoadedOnce.value = true
@@ -330,7 +379,9 @@ const fetchErrors = async () => {
     errorLogs.value = response.items
     errorLogsTotal.value = response.total ?? response.items.length
   } catch (err) {
-    console.error('Failed to fetch error logs', err)
+    if (!isOpsDisabledError(err)) {
+      console.error('Failed to fetch error logs', err)
+    }
   } finally {
     errorLogsLoading.value = false
   }
@@ -338,38 +389,57 @@ const fetchErrors = async () => {
 
 const fetchErrorsDebounced = useDebounceFn(fetchErrors, 400)
 
-// Refresh data every 30 seconds (fallback for L2/L3)
-useIntervalFn(fetchData, 30000)
+// Refresh data every 30 seconds (fallback for L2/L3).
+// Do not auto-start until we confirm ops is enabled; otherwise we keep polling a disabled feature.
+const { pause: pauseRefresh, resume: resumeRefresh } = useIntervalFn(fetchData, 30000, { immediate: false })
 
-onMounted(() => {
-  fetchData()
-  fetchErrors()
-  unsubscribeQPS = opsAPI.subscribeQPS(
-    (payload) => {
-      if (payload && typeof payload === 'object' && payload.type === 'qps_update' && payload.data) {
-        realTimeQPS.value = payload.data.qps || 0
-        realTimeTPS.value = payload.data.tps || 0
-      }
-    },
-    {
-      onStatusChange: (status) => {
-        wsStatus.value = status
-        if (status === 'connected') wsReconnectInMs.value = null
-      },
-      onReconnectScheduled: ({ delayMs }) => {
-        wsReconnectInMs.value = delayMs
-      },
-      // QPS updates may be sparse in idle periods; keep the timeout conservative.
-      staleTimeoutMs: 180_000
-    }
-  )
-})
+	onMounted(async () => {
+	  await adminSettingsStore.fetch()
+	  if (!adminSettingsStore.opsMonitoringEnabled) {
+	    await router.replace('/admin/settings')
+	    return
+	  }
+
+	  fetchData()
+	  fetchErrors()
+	  resumeRefresh()
+	  if (adminSettingsStore.opsRealtimeMonitoringEnabled) {
+	    startQPSSubscription()
+	  } else {
+	    stopQPSSubscription({ resetMetrics: true })
+	  }
+	})
 
 onUnmounted(() => {
-  wsStatus.value = 'closed'
-  if (unsubscribeQPS) unsubscribeQPS()
-  unsubscribeQPS = null
+  pauseRefresh()
+  stopQPSSubscription()
 })
+
+watch(
+  () => adminSettingsStore.opsMonitoringEnabled,
+  async (enabled) => {
+    if (enabled) return
+    pauseRefresh()
+    stopQPSSubscription({ resetMetrics: true })
+    if (route.path.startsWith('/admin/ops')) {
+      await router.replace('/admin/settings')
+    }
+  }
+)
+
+watch(
+  () => adminSettingsStore.opsRealtimeMonitoringEnabled,
+  (enabled) => {
+    if (!adminSettingsStore.opsMonitoringEnabled) return
+    if (!route.path.startsWith('/admin/ops')) return
+
+    if (enabled) {
+      startQPSSubscription()
+    } else {
+      stopQPSSubscription({ resetMetrics: true })
+    }
+  }
+)
 
 watch(timeRange, () => {
   errorPagination.value.page = 1
@@ -461,7 +531,7 @@ watch(timeRange, () => {
       <OpsDashboardSkeleton v-if="loading && !hasLoadedOnce" />
 
       <!-- L1: Header & Core Metrics -->
-  <OpsDashboardHeader
+      <OpsDashboardHeader
         v-else
         :overview="overview"
         :wsStatus="wsStatus"
@@ -478,6 +548,12 @@ watch(timeRange, () => {
         @update:platform="handleErrorFiltersUpdate({ ...errorFilters, platforms: $event ? [$event] : [] })"
         @update:group="handleErrorFiltersUpdate({ ...errorFilters, groupId: $event })"
         @openRequestDetails="openRequestDetails"
+      />
+
+      <OpsConcurrencyCard
+        v-if="!(loading && !hasLoadedOnce)"
+        :platform-filter="errorFilters.platforms.length === 1 ? errorFilters.platforms[0] : ''"
+        :group-id-filter="errorFilters.groupId"
       />
 
       <!-- L2: Visual Analysis -->
@@ -506,14 +582,7 @@ watch(timeRange, () => {
       <!-- Group Availability Events -->
       <OpsGroupAvailabilityEventsCard v-if="!(loading && !hasLoadedOnce)" />
 
-      <!-- Ops Runtime Settings -->
-      <OpsRuntimeSettingsCard v-if="!(loading && !hasLoadedOnce)" />
-
-      <!-- Email Notification Configuration -->
-      <OpsEmailNotificationCard v-if="!(loading && !hasLoadedOnce)" />
-
-      <!-- Alert Rules -->
-      <OpsAlertRulesCard v-if="!(loading && !hasLoadedOnce)" />
+      <!-- Settings/management moved to /admin/settings -->
 
       <!-- Alert Events -->
       <OpsAlertEventsCard v-if="!(loading && !hasLoadedOnce)" />

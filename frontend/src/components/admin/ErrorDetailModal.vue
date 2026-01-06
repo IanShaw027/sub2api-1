@@ -341,9 +341,9 @@ const handleRetry = async () => {
                   {{ errorDetail.account_id ?? 'N/A' }}
                 </div>
               </div>
-              <div v-if="errorDetail.response_body">
+              <div v-if="errorDetail.error_body">
                 <div class="text-xs font-bold text-gray-400 uppercase mb-2">{{ t('admin.ops.details.errorResponse') }}</div>
-                <pre class="overflow-x-auto rounded-lg bg-white p-4 text-xs font-mono text-gray-800 dark:bg-dark-800 dark:text-gray-200">{{ formatJSON(errorDetail.response_body) }}</pre>
+                <pre class="overflow-x-auto rounded-lg bg-white p-4 text-xs font-mono text-gray-800 dark:bg-dark-800 dark:text-gray-200">{{ formatJSON(errorDetail.error_body) }}</pre>
               </div>
             </div>
           </div>

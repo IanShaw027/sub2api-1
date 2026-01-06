@@ -571,6 +571,30 @@ export default {
         allPlatforms: '所有平台',
         allGroups: '所有分组'
       },
+      healthStatus: {
+        healthy: '健康',
+        degraded: '降级',
+        unhealthy: '异常',
+        unknown: '未知'
+      },
+      concurrency: {
+        title: '实时并发槽位',
+        description: '并发槽位使用情况与等待队列（缓存数据，尽力而为）。',
+        byPlatform: '按平台',
+        byGroup: '按分组',
+        byGroupHint: '同一账号可能属于多个分组；分组统计不可跨分组相加。',
+        load: '负载：{percent}%',
+        waiting: '等待：{count}',
+        waitingShort: '队列 {count}',
+        updatedAgo: '{age} 前更新',
+        updatedUnknown: '更新时间：未知',
+        dataDelayed: '数据延迟',
+        realtimeDisabled: '实时已关闭',
+        disabledHint: '已在设置中关闭实时监控。',
+        empty: '暂无数据',
+        unknownPlatform: '未知平台',
+        failedToLoad: '加载并发数据失败'
+      },
       diagnosis: {
         title: '🩺 健康诊断报告',
         footer: '诊断标准基于大模型网关场景优化',
@@ -902,7 +926,7 @@ export default {
           threshold: '阈值',
           severity: '级别',
           window: '统计窗口（分钟）',
-          sustained: '持续时间（分钟）',
+          sustained: '连续样本数（每分钟）',
           cooldown: '冷却期（分钟）',
           enabled: '启用',
           notifyEmail: '发送邮件通知'
@@ -914,8 +938,8 @@ export default {
           metricRequired: '指标不能为空',
           operatorRequired: '运算符不能为空',
           thresholdRequired: '阈值必须为数字',
-          windowRange: '统计窗口必须在 1 到 1440 分钟之间',
-          sustainedRange: '持续时间必须在 1 到 1440 分钟之间',
+          windowRange: '统计窗口必须为 1 / 5 / 60 分钟之一',
+          sustainedRange: '连续样本数必须在 1 到 1440 之间',
           cooldownRange: '冷却期必须在 0 到 1440 分钟之间'
         }
       },
@@ -1007,6 +1031,11 @@ export default {
           count: '按数量 - 至少 N 个账号可用',
           percentage: '按百分比 - 至少 X% 账号可用',
           both: '两者都满足 - 同时满足数量和百分比'
+        },
+        thresholdSummary: {
+          count: '数量 ≥ {n}',
+          percentage: '比例 ≥ {p}%',
+          both: '数量 ≥ {n} 且 比例 ≥ {p}%'
         },
         minAvailablePercentage: '最低可用百分比 (%)',
         severity: '级别',
@@ -2488,6 +2517,14 @@ export default {
         sendTestEmail: '发送测试邮件',
         sending: '发送中...',
         enterRecipientHint: '请输入收件人邮箱地址'
+      },
+      opsMonitoring: {
+        title: '运维监控 (Ops)',
+        description: '启用或关闭运维监控模块及其后台任务。',
+        enabled: '启用运维监控',
+        enabledHint: '关闭后将隐藏 Ops 模块，并停止相关后台任务与接口访问。',
+        realtimeEnabled: '启用实时监控',
+        realtimeEnabledHint: '控制实时特性（并发轮询、WebSocket 推送）。关闭可减少系统负载。'
       },
       adminApiKey: {
         title: '管理员 API Key',

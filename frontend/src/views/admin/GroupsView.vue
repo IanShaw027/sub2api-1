@@ -201,6 +201,7 @@
                 @click="openGroupAvailabilityConfigDialog(row)"
                 class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400"
                 :title="t('admin.groups.monitoringConfig')"
+                v-if="adminSettingsStore.opsMonitoringEnabled"
               >
                 <svg
                   class="h-4 w-4"
@@ -679,6 +680,7 @@
     />
 
     <OpsConfigDialog
+      v-if="adminSettingsStore.opsMonitoringEnabled"
       :show="showGroupAvailabilityConfigDialog"
       :focus-group-id="focusGroupAvailabilityId"
       @close="closeGroupAvailabilityConfigDialog"
@@ -690,6 +692,7 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
+import { useAdminSettingsStore } from '@/stores/adminSettings'
 import { useOnboardingStore } from '@/stores/onboarding'
 import { adminAPI } from '@/api/admin'
 import type { Group, GroupPlatform, SubscriptionType } from '@/types'
@@ -707,6 +710,7 @@ import OpsConfigDialog from '@/views/admin/ops/components/OpsConfigDialog.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const adminSettingsStore = useAdminSettingsStore()
 const onboardingStore = useOnboardingStore()
 
 const columns = computed<Column[]>(() => [
@@ -973,6 +977,7 @@ watch(
 )
 
 onMounted(() => {
+  adminSettingsStore.fetch()
   loadGroups()
 })
 </script>
