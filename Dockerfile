@@ -6,8 +6,8 @@
 # Stage 3: Final minimal image
 # =============================================================================
 
-ARG NODE_IMAGE=node:24-alpine
-ARG GOLANG_IMAGE=golang:1.25-alpine
+ARG NODE_IMAGE=node:20-alpine
+ARG GOLANG_IMAGE=golang:1.24-alpine
 ARG ALPINE_IMAGE=alpine:3.19
 ARG GOPROXY=https://goproxy.cn,direct
 ARG GOSUMDB=sum.golang.google.cn
