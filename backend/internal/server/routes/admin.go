@@ -80,6 +80,8 @@ func registerDashboardRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	ops := admin.Group("/ops")
 	{
+		ops.Use(h.Admin.Ops.RequireOpsEnabled)
+
 		ops.GET("/metrics", h.Admin.Ops.GetMetrics)
 		ops.GET("/metrics/history", h.Admin.Ops.ListMetricsHistory)
 		ops.GET("/requests", h.Admin.Ops.ListRequestDetails)
@@ -88,7 +90,6 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		ops.GET("/errors", h.Admin.Ops.GetErrorLogs)          // Paginated list (page/page_size)
 		ops.GET("/errors/:id", h.Admin.Ops.GetErrorDetail)    // Single error detail
 		ops.POST("/errors/:id/retry", h.Admin.Ops.RetryErrorRequest) // Retry error request
-		ops.GET("/error-logs", h.Admin.Ops.ListErrorLogs)     // Simple list (limit filter)
 
 		// IP-based error statistics
 		ops.GET("/errors/by-ip", h.Admin.Ops.GetErrorStatsByIP)
@@ -98,6 +99,8 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		ops.GET("/error-stats", h.Admin.Ops.GetErrorStats)
 		ops.GET("/error-timeseries", h.Admin.Ops.GetErrorTimeseries)
 		ops.GET("/account-status", h.Admin.Ops.GetAccountStatus)
+		ops.GET("/concurrency", h.Admin.Ops.GetConcurrencyStats)
+		ops.GET("/health", h.Admin.Ops.GetSystemHealth)
 
 		// Alert rules management
 		ops.GET("/alert-rules", h.Admin.Ops.ListAlertRules)
@@ -124,13 +127,9 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		// Group availability monitoring routes
 		groupAvailability := ops.Group("/group-availability")
 		{
-			groupAvailability.GET("/configs", h.Admin.OpsGroupAvailability.ListConfigs)
-			groupAvailability.GET("/configs/:groupId", h.Admin.OpsGroupAvailability.GetConfig)
 			groupAvailability.PUT("/configs/:groupId", h.Admin.OpsGroupAvailability.UpsertConfig)
-			groupAvailability.DELETE("/configs/:groupId", h.Admin.OpsGroupAvailability.DeleteConfig)
 
 			groupAvailability.GET("/status", h.Admin.OpsGroupAvailability.ListStatus)
-			groupAvailability.GET("/status/:groupId", h.Admin.OpsGroupAvailability.GetStatus)
 
 			groupAvailability.GET("/events", h.Admin.OpsGroupAvailability.ListEvents)
 		}

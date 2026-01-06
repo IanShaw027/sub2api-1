@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/cron"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
@@ -21,8 +20,6 @@ import (
 	"github.com/redis/go-redis/v9"
 	"log"
 	"net/http"
-	"os/signal"
-	"syscall"
 	"time"
 )
 
@@ -155,12 +152,13 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	httpServer := server.ProvideHTTPServer(configConfig, engine)
 	tokenRefreshService := service.ProvideTokenRefreshService(accountRepository, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, configConfig)
 	antigravityQuotaRefresher := service.ProvideAntigravityQuotaRefresher(accountRepository, proxyRepository, antigravityOAuthService, configConfig)
-	opsAggregationService := service.ProvideOpsAggregationService(opsRepository, db, redisClient, configConfig)
-	opsMetricsCollector := service.ProvideOpsMetricsCollector(opsService, concurrencyService, redisClient, configConfig)
+	opsAggregationService := service.ProvideOpsAggregationService(opsService, opsRepository, redisClient, configConfig)
+	opsMetricsCollector := service.ProvideOpsMetricsCollector(opsService, concurrencyService, accountRepository, redisClient, configConfig)
 	opsAlertService := service.ProvideOpsAlertService(opsService, userService, emailService, redisClient, configConfig)
-	opsScheduledReportService := service.ProvideOpsScheduledReportService(opsService, userService, emailService, redisClient)
+	opsScheduledReportService := service.ProvideOpsScheduledReportService(opsService, userService, emailService, redisClient, configConfig)
 	opsGroupAvailabilityMonitor := service.ProvideOpsGroupAvailabilityMonitor(opsService, accountRepository, groupRepository, emailService, userService, redisClient, configConfig)
-	v := provideCleanup(client, redisClient, tokenRefreshService, pricingService, emailQueueService, billingCacheService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, antigravityQuotaRefresher, opsAggregationService, opsMetricsCollector, opsAlertService, opsScheduledReportService, opsGroupAvailabilityMonitor, configConfig, opsRepository)
+	opsCleanupService := service.ProvideOpsCleanupService(opsRepository, redisClient, configConfig)
+	v := provideCleanup(client, redisClient, tokenRefreshService, pricingService, emailQueueService, billingCacheService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, antigravityQuotaRefresher, opsAggregationService, opsMetricsCollector, opsAlertService, opsScheduledReportService, opsGroupAvailabilityMonitor, opsCleanupService)
 	application := &Application{
 		Server:  httpServer,
 		Cleanup: v,
@@ -199,66 +197,24 @@ func provideCleanup(
 	opsAlertService *service.OpsAlertService,
 	opsScheduledReport *service.OpsScheduledReportService,
 	opsGroupAvailability *service.OpsGroupAvailabilityMonitor,
-	cfg *config.Config,
-	opsRepo service.OpsRepository,
+	opsCleanup *service.OpsCleanupService,
 ) func() {
 	if opsAlertService != nil {
 		opsAlertService.Start()
-	}
-
-	// Initialize cron manager if cleanup is enabled
-	var cronManager *cron.Manager
-	var cancelCron context.CancelFunc
-	if cfg.Ops.Cleanup.Enabled {
-		cronCtx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-		cancelCron = cancel
-		cronManager = cron.NewManager(cronCtx)
-
-		if cfg.Ops.Cleanup.Enabled {
-			cleanupConfig := cron.CleanupConfig{
-				ErrorLogRetentionDays:      cfg.Ops.Cleanup.ErrorLogRetentionDays,
-				MinuteMetricsRetentionDays: cfg.Ops.Cleanup.MinuteMetricsRetentionDays,
-				HourlyMetricsRetentionDays: cfg.Ops.Cleanup.HourlyMetricsRetentionDays,
-			}
-			opsCleaner := cron.NewOpsCleaner(cronCtx, opsRepo, cleanupConfig)
-
-			schedule := cfg.Ops.Cleanup.Schedule
-			if schedule == "" {
-				schedule = "0 2 * * *"
-			}
-
-			if err := cronManager.AddJob(schedule, opsCleaner.Run); err != nil {
-				log.Printf("[CRON] Failed to add ops cleanup job: %v", err)
-			} else {
-				log.Printf("[CRON] Ops cleanup job scheduled: %s", schedule)
-			}
-		}
-
-		if cronManager != nil {
-			cronManager.Start()
-		}
 	}
 
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		if cronManager != nil {
-			if cancelCron != nil {
-				cancelCron()
-			}
-			stopCtx := cronManager.Stop()
-			select {
-			case <-stopCtx.Done():
-			case <-ctx.Done():
-				log.Printf("[Cleanup] Warning: cron shutdown timed out after 10 seconds")
-			}
-		}
-
 		cleanupSteps := []struct {
 			name string
 			fn   func() error
 		}{
+			{"OpsCleanupService", func() error {
+				opsCleanup.Stop()
+				return nil
+			}},
 			{"OpsErrorLogWorkers", func() error {
 				if ok := handler.StopOpsErrorLogWorkers(); !ok {
 					return fmt.Errorf("timed out draining ops error log workers")

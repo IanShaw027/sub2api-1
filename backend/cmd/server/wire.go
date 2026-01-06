@@ -8,13 +8,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/cron"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
@@ -81,142 +78,238 @@ func provideCleanup(
 	opsAlertService *service.OpsAlertService,
 	opsScheduledReport *service.OpsScheduledReportService,
 	opsGroupAvailability *service.OpsGroupAvailabilityMonitor,
-	cfg *config.Config,
-	opsRepo service.OpsRepository,
+	opsCleanup *service.OpsCleanupService,
 ) func() {
-	if opsAlertService != nil {
-		opsAlertService.Start()
-	}
-
-	// Initialize cron manager if cleanup is enabled
-	var cronManager *cron.Manager
-	var cancelCron context.CancelFunc
-	if cfg.Ops.Cleanup.Enabled {
-		cronCtx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-		cancelCron = cancel
-		cronManager = cron.NewManager(cronCtx)
-
-		// Register cleanup job
-		if cfg.Ops.Cleanup.Enabled {
-			cleanupConfig := cron.CleanupConfig{
-				ErrorLogRetentionDays:      cfg.Ops.Cleanup.ErrorLogRetentionDays,
-				MinuteMetricsRetentionDays: cfg.Ops.Cleanup.MinuteMetricsRetentionDays,
-				HourlyMetricsRetentionDays: cfg.Ops.Cleanup.HourlyMetricsRetentionDays,
-			}
-			opsCleaner := cron.NewOpsCleaner(cronCtx, opsRepo, cleanupConfig)
-
-			schedule := cfg.Ops.Cleanup.Schedule
-			if schedule == "" {
-				schedule = "0 2 * * *"
-			}
-
-			if err := cronManager.AddJob(schedule, opsCleaner.Run); err != nil {
-				log.Printf("[CRON] Failed to add ops cleanup job: %v", err)
-			} else {
-				log.Printf("[CRON] Ops cleanup job scheduled: %s", schedule)
-			}
-		}
-
-		if cronManager != nil {
-			cronManager.Start()
-		}
-	}
-
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		// Stop cron manager first
-		if cronManager != nil {
-			if cancelCron != nil {
-				cancelCron()
-			}
-			stopCtx := cronManager.Stop()
-			select {
-			case <-stopCtx.Done():
-			case <-ctx.Done():
-				log.Printf("[Cleanup] Warning: cron shutdown timed out after 10 seconds")
-			}
+		// Cleanup steps in reverse dependency order
+		cleanupSteps := make([]struct {
+			name string
+			fn   func() error
+		}, 0, 16)
+
+		if opsCleanup != nil {
+			cleanupSteps = append(cleanupSteps, struct {
+				name string
+				fn   func() error
+			}{
+				name: "OpsCleanupService",
+				fn: func() error {
+					opsCleanup.Stop()
+					return nil
+				},
+			})
 		}
 
-		// Cleanup steps in reverse dependency order
-		cleanupSteps := []struct {
+		cleanupSteps = append(cleanupSteps, struct {
 			name string
 			fn   func() error
 		}{
-			{"OpsErrorLogWorkers", func() error {
+			name: "OpsErrorLogWorkers",
+			fn: func() error {
 				if ok := handler.StopOpsErrorLogWorkers(); !ok {
 					return fmt.Errorf("timed out draining ops error log workers")
 				}
 				return nil
-			}},
-			{"OpsWSQPSCache", func() error {
+			},
+		})
+
+		cleanupSteps = append(cleanupSteps, struct {
+			name string
+			fn   func() error
+		}{
+			name: "OpsWSQPSCache",
+			fn: func() error {
 				admin.StopOpsWSQPSCache()
 				return nil
-			}},
-			{"OpsGroupAvailabilityMonitor", func() error {
-				opsGroupAvailability.Stop()
-				return nil
-			}},
-			{"OpsScheduledReportService", func() error {
-				opsScheduledReport.Stop()
-				return nil
-			}},
-			{"OpsAggregationService", func() error {
-				opsAggregation.Stop()
-				return nil
-			}},
-			{"OpsMetricsCollector", func() error {
-				opsMetricsCollector.Stop()
-				return nil
-			}},
-			{"OpsAlertService", func() error {
-				opsAlertService.Stop()
-				return nil
-			}},
-			{"TokenRefreshService", func() error {
+			},
+		})
+
+		if opsGroupAvailability != nil {
+			cleanupSteps = append(cleanupSteps, struct {
+				name string
+				fn   func() error
+			}{
+				name: "OpsGroupAvailabilityMonitor",
+				fn: func() error {
+					opsGroupAvailability.Stop()
+					return nil
+				},
+			})
+		}
+
+		if opsScheduledReport != nil {
+			cleanupSteps = append(cleanupSteps, struct {
+				name string
+				fn   func() error
+			}{
+				name: "OpsScheduledReportService",
+				fn: func() error {
+					opsScheduledReport.Stop()
+					return nil
+				},
+			})
+		}
+
+		if opsAggregation != nil {
+			cleanupSteps = append(cleanupSteps, struct {
+				name string
+				fn   func() error
+			}{
+				name: "OpsAggregationService",
+				fn: func() error {
+					opsAggregation.Stop()
+					return nil
+				},
+			})
+		}
+
+		if opsMetricsCollector != nil {
+			cleanupSteps = append(cleanupSteps, struct {
+				name string
+				fn   func() error
+			}{
+				name: "OpsMetricsCollector",
+				fn: func() error {
+					opsMetricsCollector.Stop()
+					return nil
+				},
+			})
+		}
+
+		if opsAlertService != nil {
+			cleanupSteps = append(cleanupSteps, struct {
+				name string
+				fn   func() error
+			}{
+				name: "OpsAlertService",
+				fn: func() error {
+					opsAlertService.Stop()
+					return nil
+				},
+			})
+		}
+
+		cleanupSteps = append(cleanupSteps, struct {
+			name string
+			fn   func() error
+		}{
+			name: "TokenRefreshService",
+			fn: func() error {
 				tokenRefresh.Stop()
 				return nil
-			}},
-			{"PricingService", func() error {
+			},
+		})
+
+		cleanupSteps = append(cleanupSteps, struct {
+			name string
+			fn   func() error
+		}{
+			name: "PricingService",
+			fn: func() error {
 				pricing.Stop()
 				return nil
-			}},
-			{"EmailQueueService", func() error {
+			},
+		})
+
+		cleanupSteps = append(cleanupSteps, struct {
+			name string
+			fn   func() error
+		}{
+			name: "EmailQueueService",
+			fn: func() error {
 				emailQueue.Stop()
 				return nil
-			}},
-			{"BillingCacheService", func() error {
+			},
+		})
+
+		cleanupSteps = append(cleanupSteps, struct {
+			name string
+			fn   func() error
+		}{
+			name: "BillingCacheService",
+			fn: func() error {
 				billingCache.Stop()
 				return nil
-			}},
-			{"OAuthService", func() error {
+			},
+		})
+
+		cleanupSteps = append(cleanupSteps, struct {
+			name string
+			fn   func() error
+		}{
+			name: "OAuthService",
+			fn: func() error {
 				oauth.Stop()
 				return nil
-			}},
-			{"OpenAIOAuthService", func() error {
+			},
+		})
+
+		cleanupSteps = append(cleanupSteps, struct {
+			name string
+			fn   func() error
+		}{
+			name: "OpenAIOAuthService",
+			fn: func() error {
 				openaiOAuth.Stop()
 				return nil
-			}},
-			{"GeminiOAuthService", func() error {
+			},
+		})
+
+		cleanupSteps = append(cleanupSteps, struct {
+			name string
+			fn   func() error
+		}{
+			name: "GeminiOAuthService",
+			fn: func() error {
 				geminiOAuth.Stop()
 				return nil
-			}},
-			{"AntigravityOAuthService", func() error {
+			},
+		})
+
+		cleanupSteps = append(cleanupSteps, struct {
+			name string
+			fn   func() error
+		}{
+			name: "AntigravityOAuthService",
+			fn: func() error {
 				antigravityOAuth.Stop()
 				return nil
-			}},
-			{"AntigravityQuotaRefresher", func() error {
+			},
+		})
+
+		cleanupSteps = append(cleanupSteps, struct {
+			name string
+			fn   func() error
+		}{
+			name: "AntigravityQuotaRefresher",
+			fn: func() error {
 				antigravityQuota.Stop()
 				return nil
-			}},
-			{"Redis", func() error {
+			},
+		})
+
+		cleanupSteps = append(cleanupSteps, struct {
+			name string
+			fn   func() error
+		}{
+			name: "Redis",
+			fn: func() error {
 				return rdb.Close()
-			}},
-			{"Ent", func() error {
+			},
+		})
+
+		cleanupSteps = append(cleanupSteps, struct {
+			name string
+			fn   func() error
+		}{
+			name: "Ent",
+			fn: func() error {
 				return entClient.Close()
-			}},
-		}
+			},
+		})
 
 		for _, step := range cleanupSteps {
 			if err := step.fn(); err != nil {

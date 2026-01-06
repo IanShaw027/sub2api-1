@@ -21,19 +21,40 @@ func RegisterCommonRoutes(r *gin.Engine) {
 	r.GET("/metrics", func(c *gin.Context) {
 		c.Header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		queueDepth := handler.OpsErrorLogQueueLength()
+		queueCapacity := handler.OpsErrorLogQueueCapacity()
 		c.String(http.StatusOK, fmt.Sprintf(
 			"# HELP ops_error_log_queue_depth Current ops error log async queue depth.\n"+
 				"# TYPE ops_error_log_queue_depth gauge\n"+
 				"ops_error_log_queue_depth %d\n"+
-				"# HELP ops_error_log_queue_length Current ops error log async queue length.\n"+
+				"# HELP ops_error_log_queue_length Configured ops error log async queue capacity.\n"+
 				"# TYPE ops_error_log_queue_length gauge\n"+
 				"ops_error_log_queue_length %d\n"+
 				"# HELP usage_logs_failed_total Total number of failed usage log writes.\n"+
 				"# TYPE usage_logs_failed_total counter\n"+
-				"usage_logs_failed_total %d\n",
+				"usage_logs_failed_total %d\n"+
+				"# HELP ops_preagg_fallback_total Total number of pre-aggregated ops query fallbacks to legacy paths.\n"+
+				"# TYPE ops_preagg_fallback_total counter\n"+
+				"ops_preagg_fallback_total{method=\"window_stats\",reason=\"not_populated\"} %d\n"+
+				"ops_preagg_fallback_total{method=\"window_stats\",reason=\"unexpected_error\"} %d\n"+
+				"ops_preagg_fallback_total{method=\"overview_stats\",reason=\"not_populated\"} %d\n"+
+				"ops_preagg_fallback_total{method=\"overview_stats\",reason=\"unexpected_error\"} %d\n"+
+				"ops_preagg_fallback_total{method=\"provider_stats\",reason=\"not_populated\"} %d\n"+
+				"ops_preagg_fallback_total{method=\"provider_stats\",reason=\"unexpected_error\"} %d\n"+
+				"ops_preagg_fallback_total{method=\"latency_histogram\",reason=\"not_populated\"} %d\n"+
+				"ops_preagg_fallback_total{method=\"latency_histogram\",reason=\"unexpected_error\"} %d\n"+
+				"ops_preagg_fallback_total{method=\"unknown\",reason=\"unknown_method\"} %d\n",
 			queueDepth,
-			queueDepth,
+			queueCapacity,
 			metrics.UsageLogsFailedTotal(),
+			metrics.OpsPreaggFallbackWindowStatsNotPopulatedTotal(),
+			metrics.OpsPreaggFallbackWindowStatsUnexpectedErrorTotal(),
+			metrics.OpsPreaggFallbackOverviewStatsNotPopulatedTotal(),
+			metrics.OpsPreaggFallbackOverviewStatsUnexpectedErrorTotal(),
+			metrics.OpsPreaggFallbackProviderStatsNotPopulatedTotal(),
+			metrics.OpsPreaggFallbackProviderStatsUnexpectedErrorTotal(),
+			metrics.OpsPreaggFallbackLatencyHistogramNotPopulatedTotal(),
+			metrics.OpsPreaggFallbackLatencyHistogramUnexpectedErrorTotal(),
+			metrics.OpsPreaggFallbackUnknownMethodTotal(),
 		))
 	})
 

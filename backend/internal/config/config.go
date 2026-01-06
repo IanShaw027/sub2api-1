@@ -45,6 +45,13 @@ type Config struct {
 }
 
 type OpsConfig struct {
+	// Enabled controls whether ops background services (metrics collector, alerting,
+	// scheduled reports, availability monitors, cleanup jobs) should run.
+	//
+	// Disabling ops can significantly reduce complexity and resource usage for
+	// minimal/self-hosted deployments.
+	Enabled bool `mapstructure:"enabled"`
+
 	// UsePreaggregatedTables switches ops dashboard queries to prefer the pre-aggregation
 	// tables (ops_metrics_hourly / ops_metrics_daily) when available.
 	//
@@ -52,37 +59,34 @@ type OpsConfig struct {
 	// job is deployed and validated.
 	UsePreaggregatedTables bool `mapstructure:"use_preaggregated_tables"`
 
+	// Cleanup controls periodic deletion of old ops data to prevent unbounded growth.
+	Cleanup OpsCleanupConfig `mapstructure:"cleanup"`
+
 	// MetricsCollectorCache controls Redis caching for the ops metrics collector's
 	// per-minute window stats queries.
 	MetricsCollectorCache OpsMetricsCollectorCacheConfig `mapstructure:"metrics_collector_cache"`
-
-	// Data cleanup configuration
-	Cleanup OpsCleanupConfig `mapstructure:"cleanup"`
 
 	// Pre-aggregation configuration
 	Aggregation OpsAggregationConfig `mapstructure:"aggregation"`
 }
 
 type OpsCleanupConfig struct {
-	// Enabled controls whether automatic data cleanup is enabled
+	// Enabled controls whether cleanup runs periodically.
 	Enabled bool `mapstructure:"enabled"`
-	// Schedule is the cron expression for cleanup job (default: "0 2 * * *" - daily at 2 AM)
+
+	// Schedule is a 5-field cron expression (minute hour dom month dow),
+	// e.g. "0 2 * * *" (daily at 2 AM).
 	Schedule string `mapstructure:"schedule"`
-	// ErrorLogRetentionDays is the number of days to retain error logs (default: 30)
-	ErrorLogRetentionDays int `mapstructure:"error_log_retention_days"`
-	// MinuteMetricsRetentionDays is the number of days to retain minute-level metrics (default: 7)
+
+	// Retention days (0 disables that cleanup target).
+	ErrorLogRetentionDays      int `mapstructure:"error_log_retention_days"`
 	MinuteMetricsRetentionDays int `mapstructure:"minute_metrics_retention_days"`
-	// HourlyMetricsRetentionDays is the number of days to retain hourly metrics (default: 30)
 	HourlyMetricsRetentionDays int `mapstructure:"hourly_metrics_retention_days"`
 }
 
 type OpsAggregationConfig struct {
 	// Enabled controls whether automatic pre-aggregation is enabled
 	Enabled bool `mapstructure:"enabled"`
-	// HourlySchedule is the cron expression for hourly aggregation (default: "5 * * * *" - 5 minutes past every hour)
-	HourlySchedule string `mapstructure:"hourly_schedule"`
-	// DailySchedule is the cron expression for daily aggregation (default: "10 0 * * *" - 10 minutes past midnight)
-	DailySchedule string `mapstructure:"daily_schedule"`
 }
 
 type OpsMetricsCollectorCacheConfig struct {
@@ -381,14 +385,16 @@ func setDefaults() {
 	viper.SetDefault("redis.min_idle_conns", 10)
 
 	// Ops
+	viper.SetDefault("ops.enabled", true)
 	viper.SetDefault("ops.use_preaggregated_tables", false)
-	viper.SetDefault("ops.metrics_collector_cache.enabled", true)
-	viper.SetDefault("ops.metrics_collector_cache.ttl", 65*time.Second)
-	viper.SetDefault("ops.cleanup.enabled", false)
+	// Ops cleanup
+	viper.SetDefault("ops.cleanup.enabled", true)
 	viper.SetDefault("ops.cleanup.schedule", "0 2 * * *")
 	viper.SetDefault("ops.cleanup.error_log_retention_days", 30)
 	viper.SetDefault("ops.cleanup.minute_metrics_retention_days", 7)
 	viper.SetDefault("ops.cleanup.hourly_metrics_retention_days", 30)
+	viper.SetDefault("ops.metrics_collector_cache.enabled", true)
+	viper.SetDefault("ops.metrics_collector_cache.ttl", 65*time.Second)
 
 	// JWT
 	viper.SetDefault("jwt.secret", "change-me-in-production")
@@ -499,6 +505,18 @@ func (c *Config) Validate() error {
 	}
 	if c.Ops.MetricsCollectorCache.TTL < 0 {
 		return fmt.Errorf("ops.metrics_collector_cache.ttl must be non-negative")
+	}
+	if c.Ops.Cleanup.ErrorLogRetentionDays < 0 {
+		return fmt.Errorf("ops.cleanup.error_log_retention_days must be non-negative")
+	}
+	if c.Ops.Cleanup.MinuteMetricsRetentionDays < 0 {
+		return fmt.Errorf("ops.cleanup.minute_metrics_retention_days must be non-negative")
+	}
+	if c.Ops.Cleanup.HourlyMetricsRetentionDays < 0 {
+		return fmt.Errorf("ops.cleanup.hourly_metrics_retention_days must be non-negative")
+	}
+	if c.Ops.Cleanup.Enabled && strings.TrimSpace(c.Ops.Cleanup.Schedule) == "" {
+		return fmt.Errorf("ops.cleanup.schedule is required when ops.cleanup.enabled=true")
 	}
 	if c.Gateway.MaxBodySize <= 0 {
 		return fmt.Errorf("gateway.max_body_size must be positive")

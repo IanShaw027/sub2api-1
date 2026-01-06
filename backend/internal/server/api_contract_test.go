@@ -5,6 +5,7 @@ package server_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"math"
@@ -287,30 +288,67 @@ func TestAPIContracts(t *testing.T) {
 			path:       "/api/v1/admin/settings",
 			wantStatus: http.StatusOK,
 			wantJSON: `{
-				"code": 0,
-				"message": "success",
-				"data": {
-					"registration_enabled": true,
-					"email_verify_enabled": false,
-					"smtp_host": "smtp.example.com",
-					"smtp_port": 587,
-					"smtp_username": "user",
-					"smtp_password": "secret",
-					"smtp_from_email": "no-reply@example.com",
-					"smtp_from_name": "Sub2API",
-					"smtp_use_tls": true,
-					"turnstile_enabled": true,
-					"turnstile_site_key": "site-key",
-					"turnstile_secret_key": "secret-key",
-					"site_name": "Sub2API",
-					"site_logo": "",
-					"site_subtitle": "Subtitle",
-					"site_url": "https://example.com",
+					"code": 0,
+					"message": "success",
+						"data": {
+							"registration_enabled": true,
+							"email_verify_enabled": false,
+							"ops_monitoring_enabled": true,
+							"ops_realtime_monitoring_enabled": true,
+							"smtp_host": "smtp.example.com",
+							"smtp_port": 587,
+							"smtp_username": "user",
+							"smtp_password": "********",
+						"smtp_from_email": "no-reply@example.com",
+						"smtp_from_name": "Sub2API",
+						"smtp_use_tls": true,
+						"turnstile_enabled": true,
+						"turnstile_site_key": "site-key",
+						"turnstile_secret_key": "********",
+						"site_name": "Sub2API",
+						"site_logo": "",
+						"site_subtitle": "Subtitle",
+						"site_url": "https://example.com",
 					"api_base_url": "https://api.example.com",
 					"contact_info": "support",
 					"doc_url": "https://docs.example.com",
 					"default_concurrency": 5,
 					"default_balance": 1.25
+				}
+			}`,
+		},
+		{
+			name:   "GET /api/v1/admin/ops/concurrency",
+			method: http.MethodGet,
+			path:   "/api/v1/admin/ops/concurrency",
+			setup: func(t *testing.T, deps *contractDeps) {
+				// Timestamp is dynamic, so we'll verify structure without exact match
+			},
+			wantStatus: http.StatusOK,
+			wantJSON: `{
+				"code": 0,
+				"message": "success",
+				"data": {
+					"enabled": true,
+					"platform": {},
+					"group": {}
+				}
+			}`,
+		},
+		{
+			name:       "GET /api/v1/admin/ops/health",
+			method:     http.MethodGet,
+			path:       "/api/v1/admin/ops/health",
+			wantStatus: http.StatusOK,
+			wantJSON: `{
+				"code": 0,
+				"message": "success",
+				"data": {
+					"enabled": true,
+					"status": "healthy",
+					"healthy": true,
+					"warnings": [],
+					"checks": {}
 				}
 			}`,
 		},
@@ -325,7 +363,24 @@ func TestAPIContracts(t *testing.T) {
 
 			status, body := doRequest(t, deps.router, tt.method, tt.path, tt.body, tt.headers)
 			require.Equal(t, tt.wantStatus, status)
-			require.JSONEq(t, tt.wantJSON, body)
+
+			// Special handling for ops/concurrency endpoint with dynamic timestamp
+			if tt.path == "/api/v1/admin/ops/concurrency" {
+				var actual, expected map[string]interface{}
+				require.NoError(t, json.Unmarshal([]byte(body), &actual))
+				require.NoError(t, json.Unmarshal([]byte(tt.wantJSON), &expected))
+
+				// Remove timestamp from actual for comparison
+				if data, ok := actual["data"].(map[string]interface{}); ok {
+					delete(data, "timestamp")
+				}
+
+				actualJSON, _ := json.Marshal(actual)
+				expectedJSON, _ := json.Marshal(expected)
+				require.JSONEq(t, string(expectedJSON), string(actualJSON))
+			} else {
+				require.JSONEq(t, tt.wantJSON, body)
+			}
 		})
 	}
 }
@@ -382,10 +437,14 @@ func newContractDeps(t *testing.T) *contractDeps {
 	settingRepo := newStubSettingRepo()
 	settingService := service.NewSettingService(settingRepo, cfg)
 
+	opsRepo := &stubOpsRepo{}
+	opsService := service.NewOpsService(opsRepo, nil, cfg, nil)
+
 	authHandler := handler.NewAuthHandler(cfg, nil, userService)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
 	usageHandler := handler.NewUsageHandler(usageService, apiKeyService)
 	adminSettingHandler := adminhandler.NewSettingHandler(settingService, nil, nil)
+	opsHandler := adminhandler.NewOpsHandler(opsService)
 
 	jwtAuth := func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{
@@ -425,6 +484,8 @@ func newContractDeps(t *testing.T) *contractDeps {
 	v1Admin := v1.Group("/admin")
 	v1Admin.Use(adminAuth)
 	v1Admin.GET("/settings", adminSettingHandler.GetSettings)
+	v1Admin.GET("/ops/concurrency", opsHandler.GetConcurrencyStats)
+	v1Admin.GET("/ops/health", opsHandler.GetSystemHealth)
 
 	return &contractDeps{
 		now:         now,
@@ -864,6 +925,14 @@ func (r *stubUsageLogRepo) Create(ctx context.Context, log *service.UsageLog) er
 	return errors.New("not implemented")
 }
 
+func (r *stubUsageLogRepo) CreateIdempotent(ctx context.Context, log *service.UsageLog) (bool, error) {
+	return false, errors.New("not implemented")
+}
+
+func (r *stubUsageLogRepo) CreateBillingUsageEntry(ctx context.Context, entry *service.BillingUsageEntry) error {
+	return errors.New("not implemented")
+}
+
 func (r *stubUsageLogRepo) GetByID(ctx context.Context, id int64) (*service.UsageLog, error) {
 	return nil, errors.New("not implemented")
 }
@@ -1120,6 +1189,120 @@ func (r *stubSettingRepo) GetAll(ctx context.Context) (map[string]string, error)
 func (r *stubSettingRepo) Delete(ctx context.Context, key string) error {
 	delete(r.all, key)
 	return nil
+}
+
+type stubOpsRepo struct {
+	service.OpsRepository
+}
+
+func (r *stubOpsRepo) GetLatestSystemMetric(ctx context.Context) (*service.OpsMetrics, error) {
+	return &service.OpsMetrics{}, nil
+}
+
+func (r *stubOpsRepo) GetCachedLatestSystemMetric(ctx context.Context) (*service.OpsMetrics, error) {
+	return nil, nil
+}
+
+func (r *stubOpsRepo) CountActiveAlerts(ctx context.Context) (int, error) {
+	return 0, nil
+}
+
+func (r *stubOpsRepo) CountAvailableAccountsByGroup(ctx context.Context, groupID int64) (int, int, error) {
+	return 0, 0, nil
+}
+
+func (r *stubOpsRepo) GetCachedPlatformConcurrency(ctx context.Context) (map[string]*service.PlatformConcurrencyInfo, error) {
+	return map[string]*service.PlatformConcurrencyInfo{}, nil
+}
+
+func (r *stubOpsRepo) GetCachedGroupConcurrency(ctx context.Context) (map[int64]*service.GroupConcurrencyInfo, error) {
+	return map[int64]*service.GroupConcurrencyInfo{}, nil
+}
+
+func (r *stubOpsRepo) GetCachedConcurrencyCollectedAt(ctx context.Context) (time.Time, bool, error) {
+	return time.Time{}, false, nil
+}
+
+func (r *stubOpsRepo) PingRedis(ctx context.Context) error {
+	return nil
+}
+
+func (r *stubOpsRepo) GetWindowStats(ctx context.Context, startTime, endTime time.Time) (*service.OpsWindowStats, error) {
+	return &service.OpsWindowStats{}, nil
+}
+
+func (r *stubOpsRepo) SetCachedLatestSystemMetric(ctx context.Context, metric *service.OpsMetrics) error {
+	return nil
+}
+
+type stubConcurrencyCache struct{}
+
+func (c *stubConcurrencyCache) AcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
+	return true, nil
+}
+
+func (c *stubConcurrencyCache) ReleaseAccountSlot(ctx context.Context, accountID int64, requestID string) error {
+	return nil
+}
+
+func (c *stubConcurrencyCache) GetAccountConcurrency(ctx context.Context, accountID int64) (int, error) {
+	return 0, nil
+}
+
+func (c *stubConcurrencyCache) IncrementAccountWaitCount(ctx context.Context, accountID int64, maxWait int) (bool, error) {
+	return true, nil
+}
+
+func (c *stubConcurrencyCache) DecrementAccountWaitCount(ctx context.Context, accountID int64) error {
+	return nil
+}
+
+func (c *stubConcurrencyCache) GetAccountWaitingCount(ctx context.Context, accountID int64) (int, error) {
+	return 0, nil
+}
+
+func (c *stubConcurrencyCache) AcquireUserSlot(ctx context.Context, userID int64, maxConcurrency int, requestID string) (bool, error) {
+	return true, nil
+}
+
+func (c *stubConcurrencyCache) ReleaseUserSlot(ctx context.Context, userID int64, requestID string) error {
+	return nil
+}
+
+func (c *stubConcurrencyCache) GetUserConcurrency(ctx context.Context, userID int64) (int, error) {
+	return 0, nil
+}
+
+func (c *stubConcurrencyCache) IncrementUserWaitCount(ctx context.Context, userID int64, maxWait int) (bool, error) {
+	return true, nil
+}
+
+func (c *stubConcurrencyCache) DecrementUserWaitCount(ctx context.Context, userID int64) error {
+	return nil
+}
+
+func (c *stubConcurrencyCache) GetUserWaitingCount(ctx context.Context, userID int64) (int, error) {
+	return 0, nil
+}
+
+func (c *stubConcurrencyCache) CleanupExpiredAccountSlots(ctx context.Context, accountID int64) error {
+	return nil
+}
+
+func (c *stubConcurrencyCache) IncrementWaitCount(ctx context.Context, userID int64, maxWait int) (bool, error) {
+	return true, nil
+}
+
+func (c *stubConcurrencyCache) DecrementWaitCount(ctx context.Context, userID int64) error {
+	return nil
+}
+
+func (c *stubConcurrencyCache) GetTotalWaitCount(ctx context.Context) (int, error) {
+	return 0, nil
+}
+
+func (c *stubConcurrencyCache) GetAccountsLoadBatch(ctx context.Context, accounts []service.AccountWithConcurrency) (map[int64]*service.AccountLoadInfo, error) {
+	return map[int64]*service.AccountLoadInfo{}, nil
 }
 
 func paginateLogs(logs []service.UsageLog, params pagination.PaginationParams) []service.UsageLog {

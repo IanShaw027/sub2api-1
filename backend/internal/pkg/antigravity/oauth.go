@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -19,8 +20,13 @@ const (
 	UserInfoURL  = "https://www.googleapis.com/oauth2/v2/userinfo"
 
 	// Antigravity OAuth 客户端凭证
-	ClientID     = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
-	ClientSecret = "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"
+	//
+	// SECURITY NOTE:
+	// - ClientSecret MUST NOT be hardcoded in source control.
+	// - Configure credentials via environment variables:
+	//   - ANTIGRAVITY_OAUTH_CLIENT_ID (optional; defaults to DefaultClientID)
+	//   - ANTIGRAVITY_OAUTH_CLIENT_SECRET (required for token exchange/refresh)
+	DefaultClientID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
 
 	// 固定的 redirect_uri（用户需手动复制 code）
 	RedirectURI = "http://localhost:8085/callback"
@@ -41,6 +47,22 @@ const (
 	// Session 过期时间
 	SessionTTL = 30 * time.Minute
 )
+
+const (
+	envAntigravityOAuthClientID     = "ANTIGRAVITY_OAUTH_CLIENT_ID"
+	envAntigravityOAuthClientSecret = "ANTIGRAVITY_OAUTH_CLIENT_SECRET"
+)
+
+func OAuthClientID() string {
+	if v := strings.TrimSpace(os.Getenv(envAntigravityOAuthClientID)); v != "" {
+		return v
+	}
+	return DefaultClientID
+}
+
+func OAuthClientSecret() string {
+	return strings.TrimSpace(os.Getenv(envAntigravityOAuthClientSecret))
+}
 
 // OAuthSession 保存 OAuth 授权流程的临时状态
 type OAuthSession struct {
@@ -164,7 +186,7 @@ func base64URLEncode(data []byte) string {
 // BuildAuthorizationURL 构建 Google OAuth 授权 URL
 func BuildAuthorizationURL(state, codeChallenge string) string {
 	params := url.Values{}
-	params.Set("client_id", ClientID)
+	params.Set("client_id", OAuthClientID())
 	params.Set("redirect_uri", RedirectURI)
 	params.Set("response_type", "code")
 	params.Set("scope", Scopes)

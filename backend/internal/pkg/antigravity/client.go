@@ -112,9 +112,14 @@ func NewClient(proxyURL string) *Client {
 
 // ExchangeCode 用 authorization code 交换 token
 func (c *Client) ExchangeCode(ctx context.Context, code, codeVerifier string) (*TokenResponse, error) {
+	clientSecret := OAuthClientSecret()
+	if clientSecret == "" {
+		return nil, fmt.Errorf("%s is required for Antigravity OAuth token exchange", envAntigravityOAuthClientSecret)
+	}
+
 	params := url.Values{}
-	params.Set("client_id", ClientID)
-	params.Set("client_secret", ClientSecret)
+	params.Set("client_id", OAuthClientID())
+	params.Set("client_secret", clientSecret)
 	params.Set("code", code)
 	params.Set("redirect_uri", RedirectURI)
 	params.Set("grant_type", "authorization_code")
@@ -151,9 +156,14 @@ func (c *Client) ExchangeCode(ctx context.Context, code, codeVerifier string) (*
 
 // RefreshToken 刷新 access_token
 func (c *Client) RefreshToken(ctx context.Context, refreshToken string) (*TokenResponse, error) {
+	clientSecret := OAuthClientSecret()
+	if clientSecret == "" {
+		return nil, fmt.Errorf("%s is required for Antigravity OAuth token refresh", envAntigravityOAuthClientSecret)
+	}
+
 	params := url.Values{}
-	params.Set("client_id", ClientID)
-	params.Set("client_secret", ClientSecret)
+	params.Set("client_id", OAuthClientID())
+	params.Set("client_secret", clientSecret)
 	params.Set("refresh_token", refreshToken)
 	params.Set("grant_type", "refresh_token")
 

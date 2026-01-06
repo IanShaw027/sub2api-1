@@ -120,6 +120,13 @@ ALTER TABLE ops_alert_events
 -- 5. 简化 ops_system_metrics 表
 -- ============================================
 
+-- 旧视图使用了 `SELECT m.*`，会对所有列产生依赖；先删除以解除依赖关系，
+-- 否则 DROP COLUMN 会因为 view 依赖而失败（尤其是 disk_used 等字段）。
+DROP VIEW IF EXISTS ops_latest_metrics CASCADE;
+
+-- 旧 GIN 索引依赖 tags 字段（由 025_enhance_ops_monitoring.sql 创建）。
+DROP INDEX IF EXISTS idx_ops_metrics_tags;
+
 -- 删除过度监控字段 (来自 033)
 ALTER TABLE ops_system_metrics
     DROP COLUMN IF EXISTS disk_used,
@@ -141,6 +148,37 @@ ALTER TABLE ops_system_metrics
     ADD COLUMN IF NOT EXISTS latency_p99 DOUBLE PRECISION;
 
 COMMENT ON TABLE ops_system_metrics IS '运维系统指标表（已简化）- 从63个字段精简到30个核心字段，删除磁盘/网络/GC等过度监控指标';
+
+-- 重建视图: 最新指标快照（避免使用 SELECT m.* 导致列依赖过强）
+CREATE OR REPLACE VIEW ops_latest_metrics AS
+SELECT
+    m.created_at,
+    m.window_minutes,
+    m.request_count,
+    m.success_count,
+    m.error_count,
+    m.success_rate,
+    m.error_rate,
+    m.qps,
+    m.tps,
+    m.latency_p95,
+    m.latency_p99,
+    m.cpu_usage_percent,
+    m.memory_usage_percent,
+    m.concurrency_queue_depth,
+    m.active_alerts,
+    calculate_health_score(
+        m.success_rate::DECIMAL,
+        m.error_rate::DECIMAL,
+        COALESCE(m.latency_p99, 0)::DECIMAL,
+        m.cpu_usage_percent::DECIMAL
+    ) AS health_score
+FROM ops_system_metrics m
+WHERE m.window_minutes = 1
+  AND m.created_at = (SELECT MAX(created_at) FROM ops_system_metrics WHERE window_minutes = 1)
+LIMIT 1;
+
+COMMENT ON VIEW ops_latest_metrics IS '最新的系统指标快照,包含健康度评分';
 
 -- ============================================
 -- 6. 删除废弃表 (来自 031, 032)

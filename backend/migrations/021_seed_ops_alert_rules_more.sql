@@ -84,40 +84,6 @@ INSERT INTO ops_alert_rules (
     cooldown_minutes
 )
 SELECT
-    'HTTP/2 errors > 20',
-    'Trigger when HTTP/2 errors exceed 20 in the last minute for 2 consecutive minutes.',
-    TRUE,
-    'http2_errors',
-    '>',
-    20,
-    1,
-    2,
-    'P2',
-    FALSE,
-    CASE
-        WHEN (SELECT webhook_url FROM ops_alert_rules WHERE webhook_url IS NOT NULL AND webhook_url <> '' LIMIT 1) IS NULL THEN FALSE
-        ELSE TRUE
-    END,
-    (SELECT webhook_url FROM ops_alert_rules WHERE webhook_url IS NOT NULL AND webhook_url <> '' LIMIT 1),
-    10
-WHERE NOT EXISTS (SELECT 1 FROM ops_alert_rules WHERE name = 'HTTP/2 errors > 20');
-
-INSERT INTO ops_alert_rules (
-    name,
-    description,
-    enabled,
-    metric_type,
-    operator,
-    threshold,
-    window_minutes,
-    sustained_minutes,
-    severity,
-    notify_email,
-    notify_webhook,
-    webhook_url,
-    cooldown_minutes
-)
-SELECT
     'CPU usage > 85%',
     'Trigger when CPU usage exceeds 85% for 5 consecutive minutes.',
     TRUE,
