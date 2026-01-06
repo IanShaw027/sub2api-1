@@ -1,4 +1,4 @@
-// Package pagination provides utilities for handling paginated queries and results.
+// Package pagination provides types and helpers for paginated responses.
 package pagination
 
 // PaginationParams 分页参数

@@ -60,8 +60,12 @@ const (
 	FieldStream = "stream"
 	// FieldDurationMs holds the string denoting the duration_ms field in the database.
 	FieldDurationMs = "duration_ms"
-	// FieldTimeToFirstTokenMs holds the string denoting the time_to_first_token_ms field in the database.
-	FieldTimeToFirstTokenMs = "time_to_first_token_ms"
+	// FieldFirstTokenMs holds the string denoting the first_token_ms field in the database.
+	FieldFirstTokenMs = "first_token_ms"
+	// FieldImageCount holds the string denoting the image_count field in the database.
+	FieldImageCount = "image_count"
+	// FieldImageSize holds the string denoting the image_size field in the database.
+	FieldImageSize = "image_size"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// EdgeUser holds the string denoting the user edge name in mutations.
@@ -139,7 +143,9 @@ var Columns = []string{
 	FieldBillingType,
 	FieldStream,
 	FieldDurationMs,
-	FieldTimeToFirstTokenMs,
+	FieldFirstTokenMs,
+	FieldImageCount,
+	FieldImageSize,
 	FieldCreatedAt,
 }
 
@@ -188,6 +194,10 @@ var (
 	DefaultBillingType int8
 	// DefaultStream holds the default value on creation for the "stream" field.
 	DefaultStream bool
+	// DefaultImageCount holds the default value on creation for the "image_count" field.
+	DefaultImageCount int
+	// ImageSizeValidator is a validator for the "image_size" field. It is called by the builders before save.
+	ImageSizeValidator func(string) error
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 )
@@ -315,9 +325,19 @@ func ByDurationMs(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldDurationMs, opts...).ToFunc()
 }
 
-// ByTimeToFirstTokenMs orders the results by the time_to_first_token_ms field.
-func ByTimeToFirstTokenMs(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldTimeToFirstTokenMs, opts...).ToFunc()
+// ByFirstTokenMs orders the results by the first_token_ms field.
+func ByFirstTokenMs(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldFirstTokenMs, opts...).ToFunc()
+}
+
+// ByImageCount orders the results by the image_count field.
+func ByImageCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldImageCount, opts...).ToFunc()
+}
+
+// ByImageSize orders the results by the image_size field.
+func ByImageSize(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldImageSize, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.

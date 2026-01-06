@@ -45,6 +45,10 @@ type UsageLog struct {
 	ResponseLatencyMs *int
 	Provider          string
 
+	// 图片生成字段
+	ImageCount int
+	ImageSize  *string
+
 	CreatedAt time.Time
 
 	User         *User

@@ -1,4 +1,4 @@
-// Package setup provides CLI-based installation wizard for initial system configuration.
+// Package setup provides CLI commands and application initialization helpers.
 package setup
 
 import (

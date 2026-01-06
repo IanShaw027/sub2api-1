@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -65,7 +66,7 @@ type AdminService interface {
 	ExpireRedeemCode(ctx context.Context, id int64) (*RedeemCode, error)
 }
 
-// CreateUserInput represents the input for creating a new user
+// CreateUserInput represents input for creating a new user via admin operations.
 type CreateUserInput struct {
 	Email         string
 	Password      string
@@ -97,6 +98,10 @@ type CreateGroupInput struct {
 	DailyLimitUSD    *float64 // 日限额 (USD)
 	WeeklyLimitUSD   *float64 // 周限额 (USD)
 	MonthlyLimitUSD  *float64 // 月限额 (USD)
+	// 图片生成计费配置（仅 antigravity 平台使用）
+	ImagePrice1K *float64
+	ImagePrice2K *float64
+	ImagePrice4K *float64
 }
 
 type UpdateGroupInput struct {
@@ -110,10 +115,15 @@ type UpdateGroupInput struct {
 	DailyLimitUSD    *float64 // 日限额 (USD)
 	WeeklyLimitUSD   *float64 // 周限额 (USD)
 	MonthlyLimitUSD  *float64 // 月限额 (USD)
+	// 图片生成计费配置（仅 antigravity 平台使用）
+	ImagePrice1K *float64
+	ImagePrice2K *float64
+	ImagePrice4K *float64
 }
 
 type CreateAccountInput struct {
 	Name        string
+	Notes       *string
 	Platform    string
 	Type        string
 	Credentials map[string]any
@@ -122,18 +132,23 @@ type CreateAccountInput struct {
 	Concurrency int
 	Priority    int
 	GroupIDs    []int64
+	// SkipMixedChannelCheck skips the mixed channel risk check when binding groups.
+	// This should only be set when the caller has explicitly confirmed the risk.
+	SkipMixedChannelCheck bool
 }
 
 type UpdateAccountInput struct {
-	Name        string
-	Type        string // Account type: oauth, setup-token, apikey
-	Credentials map[string]any
-	Extra       map[string]any
-	ProxyID     *int64
-	Concurrency *int // 使用指针区分"未提供"和"设置为0"
-	Priority    *int // 使用指针区分"未提供"和"设置为0"
-	Status      string
-	GroupIDs    *[]int64
+	Name                  string
+	Notes                 *string
+	Type                  string // Account type: oauth, setup-token, apikey
+	Credentials           map[string]any
+	Extra                 map[string]any
+	ProxyID               *int64
+	Concurrency           *int // 使用指针区分"未提供"和"设置为0"
+	Priority              *int // 使用指针区分"未提供"和"设置为0"
+	Status                string
+	GroupIDs              *[]int64
+	SkipMixedChannelCheck bool // 跳过混合渠道检查（用户已确认风险）
 }
 
 // BulkUpdateAccountsInput describes the payload for bulk updating accounts.
@@ -147,6 +162,9 @@ type BulkUpdateAccountsInput struct {
 	GroupIDs    *[]int64
 	Credentials map[string]any
 	Extra       map[string]any
+	// SkipMixedChannelCheck skips the mixed channel risk check when binding groups.
+	// This should only be set when the caller has explicitly confirmed the risk.
+	SkipMixedChannelCheck bool
 }
 
 // BulkUpdateAccountResult captures the result for a single account update.
@@ -488,6 +506,11 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	weeklyLimit := normalizeLimit(input.WeeklyLimitUSD)
 	monthlyLimit := normalizeLimit(input.MonthlyLimitUSD)
 
+	// 图片价格：负数表示清除（使用默认价格），0 保留（表示免费）
+	imagePrice1K := normalizePrice(input.ImagePrice1K)
+	imagePrice2K := normalizePrice(input.ImagePrice2K)
+	imagePrice4K := normalizePrice(input.ImagePrice4K)
+
 	group := &Group{
 		Name:             input.Name,
 		Description:      input.Description,
@@ -499,6 +522,9 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		DailyLimitUSD:    dailyLimit,
 		WeeklyLimitUSD:   weeklyLimit,
 		MonthlyLimitUSD:  monthlyLimit,
+		ImagePrice1K:     imagePrice1K,
+		ImagePrice2K:     imagePrice2K,
+		ImagePrice4K:     imagePrice4K,
 	}
 	if err := s.groupRepo.Create(ctx, group); err != nil {
 		return nil, err
@@ -512,6 +538,14 @@ func normalizeLimit(limit *float64) *float64 {
 		return nil
 	}
 	return limit
+}
+
+// normalizePrice 将负数转换为 nil（表示使用默认价格），0 保留（表示免费）
+func normalizePrice(price *float64) *float64 {
+	if price == nil || *price < 0 {
+		return nil
+	}
+	return price
 }
 
 func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *UpdateGroupInput) (*Group, error) {
@@ -552,6 +586,16 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	if input.MonthlyLimitUSD != nil {
 		group.MonthlyLimitUSD = normalizeLimit(input.MonthlyLimitUSD)
+	}
+	// 图片生成计费配置：负数表示清除（使用默认价格）
+	if input.ImagePrice1K != nil {
+		group.ImagePrice1K = normalizePrice(input.ImagePrice1K)
+	}
+	if input.ImagePrice2K != nil {
+		group.ImagePrice2K = normalizePrice(input.ImagePrice2K)
+	}
+	if input.ImagePrice4K != nil {
+		group.ImagePrice4K = normalizePrice(input.ImagePrice4K)
 	}
 
 	if err := s.groupRepo.Update(ctx, group); err != nil {
@@ -620,21 +664,6 @@ func (s *adminServiceImpl) GetAccountsByIDs(ctx context.Context, ids []int64) ([
 }
 
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
-	account := &Account{
-		Name:        input.Name,
-		Platform:    input.Platform,
-		Type:        input.Type,
-		Credentials: input.Credentials,
-		Extra:       input.Extra,
-		ProxyID:     input.ProxyID,
-		Concurrency: input.Concurrency,
-		Priority:    input.Priority,
-		Status:      StatusActive,
-	}
-	if err := s.accountRepo.Create(ctx, account); err != nil {
-		return nil, err
-	}
-
 	// 绑定分组
 	groupIDs := input.GroupIDs
 	// 如果没有指定分组,自动绑定对应平台的默认分组
@@ -645,13 +674,37 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 			for _, g := range groups {
 				if g.Name == defaultGroupName {
 					groupIDs = []int64{g.ID}
-					log.Printf("[CreateAccount] Auto-binding account %d to default group %s (ID: %d)", account.ID, defaultGroupName, g.ID)
 					break
 				}
 			}
 		}
 	}
 
+	// 检查混合渠道风险（除非用户已确认）
+	if len(groupIDs) > 0 && !input.SkipMixedChannelCheck {
+		if err := s.checkMixedChannelRisk(ctx, 0, input.Platform, groupIDs); err != nil {
+			return nil, err
+		}
+	}
+
+	account := &Account{
+		Name:        input.Name,
+		Notes:       normalizeAccountNotes(input.Notes),
+		Platform:    input.Platform,
+		Type:        input.Type,
+		Credentials: input.Credentials,
+		Extra:       input.Extra,
+		ProxyID:     input.ProxyID,
+		Concurrency: input.Concurrency,
+		Priority:    input.Priority,
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+	if err := s.accountRepo.Create(ctx, account); err != nil {
+		return nil, err
+	}
+
+	// 绑定分组
 	if len(groupIDs) > 0 {
 		if err := s.accountRepo.BindGroups(ctx, account.ID, groupIDs); err != nil {
 			return nil, err
@@ -673,6 +726,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if input.Type != "" {
 		account.Type = input.Type
 	}
+	if input.Notes != nil {
+		account.Notes = normalizeAccountNotes(input.Notes)
+	}
 	if len(input.Credentials) > 0 {
 		account.Credentials = input.Credentials
 	}
@@ -680,7 +736,12 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		account.Extra = input.Extra
 	}
 	if input.ProxyID != nil {
-		account.ProxyID = input.ProxyID
+		// 0 表示清除代理（前端发送 0 而不是 null 来表达清除意图）
+		if *input.ProxyID == 0 {
+			account.ProxyID = nil
+		} else {
+			account.ProxyID = input.ProxyID
+		}
 		account.Proxy = nil // 清除关联对象，防止 GORM Save 时根据 Proxy.ID 覆盖 ProxyID
 	}
 	// 只在指针非 nil 时更新 Concurrency（支持设置为 0）
@@ -700,6 +761,13 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		for _, groupID := range *input.GroupIDs {
 			if _, err := s.groupRepo.GetByID(ctx, groupID); err != nil {
 				return nil, fmt.Errorf("get group: %w", err)
+			}
+		}
+
+		// 检查混合渠道风险（除非用户已确认）
+		if !input.SkipMixedChannelCheck {
+			if err := s.checkMixedChannelRisk(ctx, account.ID, account.Platform, *input.GroupIDs); err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -728,6 +796,20 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 
 	if len(input.AccountIDs) == 0 {
 		return result, nil
+	}
+
+	// Preload account platforms for mixed channel risk checks if group bindings are requested.
+	platformByID := map[int64]string{}
+	if input.GroupIDs != nil && !input.SkipMixedChannelCheck {
+		accounts, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
+		if err != nil {
+			return nil, err
+		}
+		for _, account := range accounts {
+			if account != nil {
+				platformByID[account.ID] = account.Platform
+			}
+		}
 	}
 
 	// Prepare bulk updates for columns and JSONB fields.
@@ -761,6 +843,29 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		entry := BulkUpdateAccountResult{AccountID: accountID}
 
 		if input.GroupIDs != nil {
+			// 检查混合渠道风险（除非用户已确认）
+			if !input.SkipMixedChannelCheck {
+				platform := platformByID[accountID]
+				if platform == "" {
+					account, err := s.accountRepo.GetByID(ctx, accountID)
+					if err != nil {
+						entry.Success = false
+						entry.Error = err.Error()
+						result.Failed++
+						result.Results = append(result.Results, entry)
+						continue
+					}
+					platform = account.Platform
+				}
+				if err := s.checkMixedChannelRisk(ctx, accountID, platform, *input.GroupIDs); err != nil {
+					entry.Success = false
+					entry.Error = err.Error()
+					result.Failed++
+					result.Results = append(result.Results, entry)
+					continue
+				}
+			}
+
 			if err := s.accountRepo.BindGroups(ctx, accountID, *input.GroupIDs); err != nil {
 				entry.Success = false
 				entry.Error = err.Error()
@@ -1004,4 +1109,78 @@ func (s *adminServiceImpl) TestProxy(ctx context.Context, id int64) (*ProxyTestR
 		Region:    exitInfo.Region,
 		Country:   exitInfo.Country,
 	}, nil
+}
+
+// checkMixedChannelRisk 检查分组中是否存在混合渠道（Antigravity + Anthropic）
+// 如果存在混合，返回错误提示用户确认
+func (s *adminServiceImpl) checkMixedChannelRisk(ctx context.Context, currentAccountID int64, currentAccountPlatform string, groupIDs []int64) error {
+	// 判断当前账号的渠道类型（基于 platform 字段，而不是 type 字段）
+	currentPlatform := getAccountPlatform(currentAccountPlatform)
+	if currentPlatform == "" {
+		// 不是 Antigravity 或 Anthropic，无需检查
+		return nil
+	}
+
+	// 检查每个分组中的其他账号
+	for _, groupID := range groupIDs {
+		accounts, err := s.accountRepo.ListByGroup(ctx, groupID)
+		if err != nil {
+			return fmt.Errorf("get accounts in group %d: %w", groupID, err)
+		}
+
+		// 检查是否存在不同渠道的账号
+		for _, account := range accounts {
+			if currentAccountID > 0 && account.ID == currentAccountID {
+				continue // 跳过当前账号
+			}
+
+			otherPlatform := getAccountPlatform(account.Platform)
+			if otherPlatform == "" {
+				continue // 不是 Antigravity 或 Anthropic，跳过
+			}
+
+			// 检测混合渠道
+			if currentPlatform != otherPlatform {
+				group, _ := s.groupRepo.GetByID(ctx, groupID)
+				groupName := fmt.Sprintf("Group %d", groupID)
+				if group != nil {
+					groupName = group.Name
+				}
+
+				return &MixedChannelError{
+					GroupID:         groupID,
+					GroupName:       groupName,
+					CurrentPlatform: currentPlatform,
+					OtherPlatform:   otherPlatform,
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// getAccountPlatform 根据账号 platform 判断混合渠道检查用的平台标识
+func getAccountPlatform(accountPlatform string) string {
+	switch strings.ToLower(strings.TrimSpace(accountPlatform)) {
+	case PlatformAntigravity:
+		return "Antigravity"
+	case PlatformAnthropic, "claude":
+		return "Anthropic"
+	default:
+		return ""
+	}
+}
+
+// MixedChannelError 混合渠道错误
+type MixedChannelError struct {
+	GroupID         int64
+	GroupName       string
+	CurrentPlatform string
+	OtherPlatform   string
+}
+
+func (e *MixedChannelError) Error() string {
+	return fmt.Sprintf("mixed_channel_warning: Group '%s' contains both %s and %s accounts. Using mixed channels in the same context may cause thinking block signature validation issues, which will fallback to non-thinking mode for historical messages.",
+		e.GroupName, e.CurrentPlatform, e.OtherPlatform)
 }

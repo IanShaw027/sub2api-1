@@ -44,6 +44,7 @@ export default {
     description: '配置您的 Sub2API 实例',
     database: {
       title: '数据库配置',
+      description: '连接到您的 PostgreSQL 数据库',
       host: '主机',
       port: '端口',
       username: '用户名',
@@ -60,6 +61,7 @@ export default {
     },
     redis: {
       title: 'Redis 配置',
+      description: '连接到您的 Redis 服务器',
       host: '主机',
       port: '端口',
       password: '密码（可选）',
@@ -68,6 +70,7 @@ export default {
     },
     admin: {
       title: '管理员账户',
+      description: '创建您的管理员账户',
       email: '邮箱',
       password: '密码',
       confirmPassword: '确认密码',
@@ -77,9 +80,21 @@ export default {
     },
     ready: {
       title: '准备安装',
+      description: '检查您的配置并完成安装',
       database: '数据库',
       redis: 'Redis',
       adminEmail: '管理员邮箱'
+    },
+    status: {
+      testing: '测试中...',
+      success: '连接成功',
+      testConnection: '测试连接',
+      installing: '安装中...',
+      completeInstallation: '完成安装',
+      completed: '安装完成！',
+      redirecting: '正在跳转到登录页面...',
+      restarting: '服务正在重启，请稍候...',
+      timeout: '服务重启时间超出预期，请手动刷新页面。'
     }
   },
 
@@ -125,17 +140,21 @@ export default {
     total: '总计',
     balance: '余额',
     available: '可用',
-    copy: '复制',
-    details: '详情',
     copiedToClipboard: '已复制到剪贴板',
     copyFailed: '复制失败',
     contactSupport: '联系客服',
     selectOption: '请选择',
     searchPlaceholder: '搜索...',
     noOptionsFound: '无匹配选项',
+    noGroupsAvailable: '无可用分组',
+    unknownError: '发生未知错误',
     saving: '保存中...',
+    selectedCount: '（已选 {count} 个）',
     refresh: '刷新',
     add: '添加',
+    notAvailable: '不可用',
+    now: '现在',
+    unknown: '未知',
     time: {
       never: '从未',
       justNow: '刚刚',
@@ -148,7 +167,6 @@ export default {
   // Navigation
   nav: {
     dashboard: '仪表盘',
-    ops: '运维监控',
     apiKeys: 'API 密钥',
     usage: '使用记录',
     redeem: '兑换',
@@ -160,6 +178,7 @@ export default {
     proxies: 'IP管理',
     redeemCodes: '兑换码',
     settings: '系统设置',
+    ops: '运维监控',
     myAccount: '我的账户',
     lightMode: '浅色模式',
     darkMode: '深色模式',
@@ -199,6 +218,7 @@ export default {
     registrationFailed: '注册失败，请重试。',
     loginSuccess: '登录成功！欢迎回来。',
     accountCreatedSuccess: '账户创建成功！欢迎使用 {siteName}。',
+    reloginRequired: '会话已过期，请重新登录。',
     turnstileExpired: '验证已过期，请重试',
     turnstileFailed: '验证失败，请重试',
     completeVerification: '请完成验证',
@@ -322,6 +342,18 @@ export default {
         note: '请确保配置目录存在。macOS/Linux 用户可运行 mkdir -p ~/.codex 创建目录。',
         noteWindows: '按 Win+R，输入 %userprofile%\\.codex 打开配置目录。如目录不存在，请先手动创建。',
       },
+      antigravity: {
+        description: '为 Antigravity 分组配置 API 访问。请根据您使用的客户端选择对应的配置方式。',
+        claudeCode: 'Claude Code',
+        geminiCli: 'Gemini CLI',
+        claudeNote: '这些环境变量将在当前终端会话中生效。如需永久配置，请将其添加到 ~/.bashrc、~/.zshrc 或相应的配置文件中。',
+        geminiNote: '这些环境变量将在当前终端会话中生效。如需永久配置，请将其添加到 ~/.bashrc、~/.zshrc 或相应的配置文件中。',
+      },
+      gemini: {
+        description: '将以下环境变量添加到您的终端配置文件或直接在终端中运行，以配置 Gemini CLI 访问。',
+        modelComment: '如果你有 Gemini 3 权限可以填：gemini-3-pro-preview',
+        note: '这些环境变量将在当前终端会话中生效。如需永久配置，请将其添加到 ~/.bashrc、~/.zshrc 或相应的配置文件中。',
+      },
     },
     customKeyLabel: '自定义密钥',
     customKeyPlaceholder: '输入自定义密钥（至少16个字符）',
@@ -329,7 +361,15 @@ export default {
     customKeyTooShort: '自定义密钥至少需要16个字符',
     customKeyInvalidChars: '自定义密钥只能包含字母、数字、下划线和连字符',
     customKeyRequired: '请输入自定义密钥',
-    ccSwitchNotInstalled: 'CC-Switch 未安装或协议处理程序未注册。请先安装 CC-Switch 或手动复制 API 密钥。'
+    ccSwitchNotInstalled: 'CC-Switch 未安装或协议处理程序未注册。请先安装 CC-Switch 或手动复制 API 密钥。',
+    ccsClientSelect: {
+      title: '选择客户端',
+      description: '请选择您要导入到 CC-Switch 的客户端类型：',
+      claudeCode: 'Claude Code',
+      claudeCodeDesc: '导入为 Claude Code 配置',
+      geminiCli: 'Gemini CLI',
+      geminiCliDesc: '导入为 Gemini CLI 配置',
+    },
   },
 
   // Usage
@@ -381,7 +421,8 @@ export default {
     exportExcelFailed: '使用数据导出失败',
     billingType: '消费类型',
     balance: '余额',
-    subscription: '订阅'
+    subscription: '订阅',
+    imageUnit: '张'
   },
 
   // Redeem
@@ -422,7 +463,8 @@ export default {
     days: '天',
     codeRedeemSuccess: '兑换成功！',
     failedToRedeem: '兑换失败，请检查兑换码后重试。',
-    subscriptionRefreshFailed: '兑换成功，但订阅状态刷新失败。'
+    subscriptionRefreshFailed: '兑换成功，但订阅状态刷新失败。',
+    pleaseEnterCode: '请输入兑换码'
   },
 
   // Profile
@@ -1336,10 +1378,6 @@ export default {
         admin: '管理员',
         user: '用户'
       },
-      statuses: {
-        active: '正常',
-        banned: '禁用'
-      },
       form: {
         emailLabel: '邮箱',
         emailPlaceholder: '请输入邮箱',
@@ -1373,6 +1411,10 @@ export default {
       concurrencyAdjustedSuccess: '并发数调整成功',
       failedToSave: '保存用户失败',
       failedToAdjust: '调整失败',
+      emailRequired: '请输入邮箱',
+      concurrencyMin: '并发数不能小于1',
+      amountRequired: '请输入有效金额',
+      insufficientBalance: '余额不足',
       setAllowedGroups: '设置允许分组',
       allowedGroupsHint: '选择此用户可以使用的标准分组。订阅类型分组请在订阅管理中配置。',
       noStandardGroups: '暂无标准分组',
@@ -1399,7 +1441,6 @@ export default {
       failedToDeposit: '充值失败',
       failedToWithdraw: '退款失败',
       useDepositWithdrawButtons: '请使用充值/退款按钮调整余额',
-      insufficientBalance: '余额不足，退款后余额不能为负数',
       // Settings Dropdowns
       filterSettings: '筛选设置',
       columnSettings: '列设置',
@@ -1455,6 +1496,9 @@ export default {
         failedToLoad: '加载属性列表失败',
         failedToCreate: '创建属性失败',
         failedToUpdate: '更新属性失败',
+        keyRequired: '请输入属性键',
+        nameRequired: '请输入显示名称',
+        optionsRequired: '请至少添加一个选项',
         failedToDelete: '删除属性失败',
         failedToReorder: '更新排序失败',
         keyExists: '属性键已存在',
@@ -1466,6 +1510,7 @@ export default {
     groups: {
       title: '分组管理',
       description: '管理 API 密钥分组和费率配置',
+      searchGroups: '搜索分组...',
       createGroup: '创建分组',
       editGroup: '编辑分组',
       deleteGroup: '删除分组',
@@ -1524,8 +1569,10 @@ export default {
       rateMultiplierHint: '1.0 = 标准费率，0.5 = 半价，2.0 = 双倍',
       platforms: {
         all: '全部平台',
-        claude: 'Claude',
-        openai: 'OpenAI'
+        anthropic: 'Anthropic',
+        openai: 'OpenAI',
+        gemini: 'Gemini',
+        antigravity: 'Antigravity'
       },
       saving: '保存中...',
       noGroups: '暂无分组',
@@ -1560,6 +1607,7 @@ export default {
       groupDeleted: '分组删除成功',
       failedToCreate: '创建分组失败',
       failedToUpdate: '更新分组失败',
+      nameRequired: '请输入分组名称',
       subscription: {
         title: '订阅设置',
         type: '计费类型',
@@ -1573,6 +1621,10 @@ export default {
         defaultValidityDays: '默认有效期（天）',
         validityHint: '分配给用户时订阅的有效天数',
         noLimit: '无限制'
+      },
+      imagePricing: {
+        title: '图片生成计费',
+        description: '配置 gemini-3-pro-image 模型的图片生成价格，留空则使用默认价格'
       }
     },
 
@@ -1636,6 +1688,9 @@ export default {
       failedToAssign: '分配订阅失败',
       failedToExtend: '延长订阅失败',
       failedToRevoke: '撤销订阅失败',
+      pleaseSelectUser: '请选择用户',
+      pleaseSelectGroup: '请选择分组',
+      validityDaysRequired: '请输入有效的天数（至少1天）',
       revokeConfirm: "确定要撤销 '{user}' 的订阅吗？此操作无法撤销。"
     },
 
@@ -1671,6 +1726,9 @@ export default {
       refreshCookie: '刷新 Cookie',
       testAccount: '测试账号',
       searchAccounts: '搜索账号...',
+      notes: '备注',
+      notesPlaceholder: '请输入备注',
+      notesHint: '备注可选',
       // Filter options
       allPlatforms: '全部平台',
       allTypes: '全部类型',
@@ -1688,6 +1746,7 @@ export default {
         platform: '平台',
         type: '类型',
         concurrencyStatus: '并发',
+        notes: '备注',
         priority: '优先级',
         weight: '权重',
         status: '状态',
@@ -1728,11 +1787,60 @@ export default {
         api_key: 'API Key',
         cookie: 'Cookie'
       },
-      statuses: {
+      status: {
         active: '正常',
         inactive: '停用',
         error: '错误',
-        cooldown: '冷却中'
+        cooldown: '冷却中',
+        paused: '暂停',
+        limited: '限流',
+        tempUnschedulable: '临时不可调度',
+        rateLimitedUntil: '限流中，重置时间：{time}',
+        overloadedUntil: '负载过重，重置时间：{time}',
+        viewTempUnschedDetails: '查看临时不可调度详情'
+      },
+      tempUnschedulable: {
+        title: '临时不可调度',
+        statusTitle: '临时不可调度状态',
+        hint: '当错误码与关键词同时匹配时，账号会在指定时间内被临时禁用。',
+        notice: '规则按顺序匹配，需同时满足错误码与关键词。',
+        addRule: '添加规则',
+        ruleOrder: '规则序号',
+        ruleIndex: '规则 #{index}',
+        errorCode: '错误码',
+        errorCodePlaceholder: '例如 429',
+        durationMinutes: '持续时间（分钟）',
+        durationPlaceholder: '例如 30',
+        keywords: '关键词',
+        keywordsPlaceholder: '例如 overloaded, too many requests',
+        keywordsHint: '多个关键词用逗号分隔，匹配时必须命中其中之一。',
+        description: '描述',
+        descriptionPlaceholder: '可选，便于记忆规则用途',
+        rulesInvalid: '请至少填写一条包含错误码、关键词和时长的规则。',
+        viewDetails: '查看临时不可调度详情',
+        accountName: '账号',
+        triggeredAt: '触发时间',
+        until: '解除时间',
+        remaining: '剩余时间',
+        matchedKeyword: '匹配关键词',
+        errorMessage: '错误详情',
+        reset: '重置状态',
+        resetSuccess: '临时不可调度已重置',
+        resetFailed: '重置临时不可调度失败',
+        failedToLoad: '加载临时不可调度状态失败',
+        notActive: '当前账号未处于临时不可调度状态。',
+        expired: '已到期',
+        remainingMinutes: '约 {minutes} 分钟',
+        remainingHours: '约 {hours} 小时',
+        remainingHoursMinutes: '约 {hours} 小时 {minutes} 分钟',
+        presets: {
+          overloadLabel: '529 过载',
+          overloadDesc: '服务过载 - 暂停 60 分钟',
+          rateLimitLabel: '429 限流',
+          rateLimitDesc: '触发限流 - 暂停 10 分钟',
+          unavailableLabel: '503 维护',
+          unavailableDesc: '服务不可用 - 暂停 30 分钟'
+        }
       },
       usageWindow: {
         statsTitle: '5小时窗口用量统计',
@@ -1880,10 +1988,10 @@ export default {
       priority: '优先级',
       priorityHint: '优先级越高的账号优先使用',
       higherPriorityFirst: '数值越高优先级越高',
-      mixedScheduling: '混合调度',
+      mixedScheduling: '在 /v1/messages 中使用',
       mixedSchedulingHint: '启用后可参与 Anthropic/Gemini 分组的调度',
       mixedSchedulingTooltip:
-        '开启后，该账户可被 /v1/messages 及 /v1beta 端点调度，否则只被 /antigravity 调度。注意：Anthropic Claude 和 Antigravity Claude 无法在同个上下文中混合使用，开启后请自行做好分组管理。',
+        '！！注意！！ Antigravity Claude 和 Anthropic Claude 无法在同个上下文中使用，如果你同时有 Anthropic 账号和 Antigravity 账号，开启此选项会导致经常 400 报错。开启后，请用分组功能做好 Antigravity 账号和 Anthropic 账号的隔离。一定要弄明白再开启！！',
       creating: '创建中...',
       updating: '更新中...',
       accountCreated: '账号创建成功',
@@ -1908,13 +2016,13 @@ export default {
           '每行一个 sessionKey，例如：\nsk-ant-sid01-xxxxx...\nsk-ant-sid01-yyyyy...',
         sessionKeyPlaceholderSingle: 'sk-ant-sid01-xxxxx...',
         howToGetSessionKey: '如何获取 sessionKey',
-        step1: '在浏览器中登录 <strong>claude.ai</strong>',
-        step2: '按 <kbd>F12</kbd> 打开开发者工具',
-        step3: '切换到 <strong>Application</strong> 标签',
-        step4: '找到 <strong>Cookies</strong> → <strong>https://claude.ai</strong>',
-        step5: '找到 <strong>sessionKey</strong> 所在行',
-        step6: '复制 <strong>Value</strong> 列的值',
-        sessionKeyFormat: 'sessionKey 通常以 <code>sk-ant-sid01-</code> 开头',
+        step1: '在浏览器中登录 claude.ai',
+        step2: '按 F12 打开开发者工具',
+        step3: '切换到 Application 标签',
+        step4: '找到 Cookies → https://claude.ai',
+        step5: '找到 sessionKey 所在行',
+        step6: '复制 Value 列的值',
+        sessionKeyFormat: 'sessionKey 通常以 sk-ant-sid01- 开头',
         startAutoAuth: '开始自动授权',
         authorizing: '授权中...',
         followSteps: '按照以下步骤授权您的 Claude 账号：',
@@ -1925,9 +2033,9 @@ export default {
         step2OpenUrl: '在浏览器中打开 URL 并完成授权',
         openUrlDesc: '在新标签页中打开授权 URL，登录您的 Claude 账号并授权。',
         proxyWarning:
-          '<strong>注意：</strong>如果您配置了代理，请确保浏览器使用相同的代理访问授权页面。',
+          '注意：如果您配置了代理，请确保浏览器使用相同的代理访问授权页面。',
         step3EnterCode: '输入授权码',
-        authCodeDesc: '授权完成后，页面会显示一个 <strong>授权码</strong>。复制并粘贴到下方：',
+        authCodeDesc: '授权完成后，页面会显示一个授权码。复制并粘贴到下方：',
         authCode: '授权码',
         authCodePlaceholder: '粘贴 Claude 页面的授权码...',
         authCodeHint: '粘贴从 Claude 页面复制的授权码',
@@ -1947,10 +2055,10 @@ export default {
           step2OpenUrl: '在浏览器中打开链接并完成授权',
           openUrlDesc: '请在新标签页中打开授权链接，登录您的 OpenAI 账户并授权。',
           importantNotice:
-            '<strong>重要提示：</strong>授权后页面可能会加载较长时间，请耐心等待。当浏览器地址栏变为 <code>http://localhost...</code> 开头时，表示授权已完成。',
+            '重要提示：授权后页面可能会加载较长时间，请耐心等待。当浏览器地址栏变为 http://localhost... 开头时，表示授权已完成。',
           step3EnterCode: '输入授权链接或 Code',
           authCodeDesc:
-            '授权完成后，当页面地址变为 <code>http://localhost:xxx/auth/callback?code=...</code> 时：',
+            '授权完成后，当页面地址变为 http://localhost:xxx/auth/callback?code=... 时：',
           authCode: '授权链接或 Code',
           authCodePlaceholder:
             '方式1：复制完整的链接\n(http://localhost:xxx/auth/callback?code=...)\n方式2：仅复制 code 参数的值',
@@ -1969,7 +2077,7 @@ export default {
 	          step2OpenUrl: '在浏览器中打开链接并完成授权',
 	          openUrlDesc: '请在新标签页中打开授权链接，登录您的 Google 账户并授权。',
 	          step3EnterCode: '输入回调链接或 Code',
-	          authCodeDesc: '授权完成后，复制浏览器跳转后的回调链接（推荐）或仅复制 <code>code</code>，粘贴到下方即可。',
+	          authCodeDesc: '授权完成后，复制浏览器跳转后的回调链接（推荐）或仅复制 code，粘贴到下方即可。',
 	          authCode: '回调链接或 Code',
 	          authCodePlaceholder: '方式1（推荐）：粘贴回调链接\n方式2：仅粘贴 code 参数的值',
 	          authCodeHint: '系统会自动从链接中解析 code/state。',
@@ -2007,10 +2115,10 @@ export default {
           step2OpenUrl: '在浏览器中打开链接并完成授权',
           openUrlDesc: '请在新标签页中打开授权链接，登录您的 Google 账户并授权。',
           importantNotice:
-            '<strong>重要提示：</strong>授权后页面可能会加载较长时间，请耐心等待。当浏览器地址栏变为 <code>http://localhost...</code> 开头时，表示授权已完成。',
+            '重要提示：授权后页面可能会加载较长时间，请耐心等待。当浏览器地址栏变为 http://localhost... 开头时，表示授权已完成。',
           step3EnterCode: '输入授权链接或 Code',
           authCodeDesc:
-            '授权完成后，当页面地址变为 <code>http://localhost:xxx/auth/callback?code=...</code> 时：',
+            '授权完成后，当页面地址变为 http://localhost:xxx/auth/callback?code=... 时：',
           authCode: '授权链接或 Code',
           authCodePlaceholder:
             '方式1：复制完整的链接\n(http://localhost:xxx/auth/callback?code=...)\n方式2：仅复制 code 参数的值',
@@ -2022,10 +2130,33 @@ export default {
 	      },
       // Gemini specific (platform-wide)
       gemini: {
+        helpButton: '使用帮助',
+        helpDialog: {
+          title: 'Gemini 使用指南',
+          apiKeySection: 'API Key 相关链接'
+        },
         modelPassthrough: 'Gemini 直接转发模型',
         modelPassthroughDesc: '所有模型请求将直接转发至 Gemini API，不进行模型限制或映射。',
         baseUrlHint: '留空使用官方 Gemini API',
         apiKeyHint: '您的 Gemini API Key（以 AIza 开头）',
+        tier: {
+          label: '账号等级',
+          hint: '提示：系统会优先尝试自动识别账号等级；若自动识别不可用或失败，则使用你选择的等级作为回退（本地模拟配额）。',
+          aiStudioHint: 'AI Studio 的配额是按模型分别限流（Pro/Flash 独立）。若已绑卡（按量付费），请选 Pay-as-you-go。',
+          googleOne: {
+            free: 'Google One Free',
+            pro: 'Google One Pro',
+            ultra: 'Google One Ultra'
+          },
+          gcp: {
+            standard: 'GCP Standard',
+            enterprise: 'GCP Enterprise'
+          },
+          aiStudio: {
+            free: 'Google AI Free',
+            paid: 'Google AI Pay-as-you-go'
+          }
+        },
         accountType: {
           oauthTitle: 'OAuth 授权（Gemini）',
           oauthDesc: '使用 Google 账号授权，并选择 OAuth 子类型。',
@@ -2092,6 +2223,17 @@ export default {
           },
           simulatedNote: '本地模拟配额，仅供参考',
           rows: {
+            googleOne: {
+              channel: 'Google One OAuth（个人版 / Code Assist for Individuals）',
+              limitsFree: '共享池：1000 RPD / 60 RPM（不分模型）',
+              limitsPro: '共享池：1500 RPD / 120 RPM（不分模型）',
+              limitsUltra: '共享池：2000 RPD / 120 RPM（不分模型）'
+            },
+            gcp: {
+              channel: 'GCP Code Assist OAuth（企业版）',
+              limitsStandard: '共享池：1500 RPD / 120 RPM（不分模型）',
+              limitsEnterprise: '共享池：2000 RPD / 120 RPM（不分模型）'
+            },
             cli: {
               channel: 'Gemini CLI（官方 Google 登录 / Code Assist）',
               free: '免费 Google 账号',
@@ -2109,7 +2251,7 @@ export default {
               free: '未绑卡（免费层）',
               paid: '已绑卡（按量付费）',
               limitsFree: 'RPD 50；RPM 2（Pro）/ 15（Flash）',
-              limitsPaid: 'RPD 不限；RPM 1000+（按模型配额）'
+              limitsPaid: 'RPD 不限；RPM 1000（Pro）/ 2000（Flash）（按模型配额）'
             },
             customOAuth: {
               channel: 'Custom OAuth Client（GCP）',
@@ -2122,6 +2264,7 @@ export default {
         },
         rateLimit: {
           ok: '未限流',
+          unlimited: '无限流',
           limited: '限流 {time}',
           now: '现在'
         }
@@ -2201,22 +2344,8 @@ export default {
         name: '名称',
         protocol: '协议',
         address: '地址',
-        priority: '优先级',
         status: '状态',
-        lastCheck: '最近检测',
-        actions: '操作'
-      },
-      protocols: {
-        http: 'HTTP',
-        https: 'HTTPS',
-        socks5: 'SOCKS5'
-      },
-      statuses: {
-        active: '正常',
-        inactive: '停用',
-        error: '错误'
-      },
-      form: {
+        actions: '操作',
         nameLabel: '名称',
         namePlaceholder: '请输入代理名称',
         protocolLabel: '协议',
@@ -2295,6 +2424,9 @@ export default {
       failedToCreate: '创建代理失败',
       failedToUpdate: '更新代理失败',
       failedToTest: '测试代理失败',
+      nameRequired: '请输入代理名称',
+      hostRequired: '请输入主机地址',
+      portInvalid: '端口必须在 1-65535 之间',
       deleteConfirm: "确定要删除代理 '{name}' 吗？使用此代理的账号将被移除代理设置。"
     },
 
@@ -2316,7 +2448,10 @@ export default {
       types: {
         balance: '余额',
         concurrency: '并发数',
-        subscription: '订阅'
+        subscription: '订阅',
+        // 管理员在用户管理页面调整余额/并发时产生的记录
+        admin_balance: '余额（管理员）',
+        admin_concurrency: '并发数（管理员）'
       },
       // 用于选择器和筛选器的直接键
       balance: '余额',
@@ -2355,7 +2490,7 @@ export default {
       validityDays: '有效天数',
       groupRequired: '请选择订阅分组',
       days: '天',
-      statuses: {
+      status: {
         unused: '未使用',
         used: '已使用',
         expired: '已过期',
@@ -2407,6 +2542,7 @@ export default {
       description: '查看和管理所有用户的使用记录',
       userFilter: '用户',
       searchUserPlaceholder: '按邮箱搜索用户...',
+      searchApiKeyPlaceholder: '按名称搜索 API 密钥...',
       selectedUser: '已选择',
       user: '用户',
       account: '账户',
@@ -2449,8 +2585,9 @@ export default {
         siteKey: '站点密钥',
         secretKey: '私密密钥',
         siteKeyHint: '从 Cloudflare Dashboard 获取',
-        secretKeyHint: '服务端验证密钥（请保密）'
-      },
+        cloudflareDashboard: 'Cloudflare Dashboard',
+        secretKeyHint: '服务端验证密钥（请保密）',
+        secretKeyConfiguredHint: '密钥已配置，留空以保留当前值。'      },
       defaults: {
         title: '用户默认设置',
         description: '新用户的默认值',
@@ -2502,6 +2639,8 @@ export default {
         password: 'SMTP 密码',
         passwordPlaceholder: '********',
         passwordHint: '留空以保留现有密码',
+        passwordConfiguredPlaceholder: '********',
+        passwordConfiguredHint: '密码已配置，留空以保留当前值。',
         fromEmail: '发件人邮箱',
         fromEmailPlaceholder: "noreply{'@'}example.com",
         fromName: '发件人名称',
@@ -2607,6 +2746,7 @@ export default {
     description: '查看您的订阅计划和用量',
     noActiveSubscriptions: '暂无有效订阅',
     noActiveSubscriptionsDesc: '您没有任何有效订阅。请联系管理员获取订阅。',
+    failedToLoad: '加载订阅失败',
     status: {
       active: '有效',
       expired: '已过期',

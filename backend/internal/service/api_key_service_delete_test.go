@@ -132,14 +132,14 @@ func (s *apiKeyCacheStub) SetDailyUsageExpiry(ctx context.Context, apiKey string
 	return nil
 }
 
-// TestAPIKeyService_Delete_OwnerMismatch 测试非所有者尝试删除时返回权限错误。
+// TestApiKeyService_Delete_OwnerMismatch 测试非所有者尝试删除时返回权限错误。
 // 预期行为：
 //   - GetOwnerID 返回所有者 ID 为 1
 //   - 调用者 userID 为 2（不匹配）
 //   - 返回 ErrInsufficientPerms 错误
 //   - Delete 方法不被调用
 //   - 缓存不被清除
-func TestAPIKeyService_Delete_OwnerMismatch(t *testing.T) {
+func TestApiKeyService_Delete_OwnerMismatch(t *testing.T) {
 	repo := &apiKeyRepoStub{ownerID: 1}
 	cache := &apiKeyCacheStub{}
 	svc := &APIKeyService{apiKeyRepo: repo, cache: cache}
@@ -150,14 +150,14 @@ func TestAPIKeyService_Delete_OwnerMismatch(t *testing.T) {
 	require.Empty(t, cache.invalidated) // 验证缓存未被清除
 }
 
-// TestAPIKeyService_Delete_Success 测试所有者成功删除 API Key 的场景。
+// TestApiKeyService_Delete_Success 测试所有者成功删除 API Key 的场景。
 // 预期行为：
 //   - GetOwnerID 返回所有者 ID 为 7
 //   - 调用者 userID 为 7（匹配）
 //   - Delete 成功执行
 //   - 缓存被正确清除（使用 ownerID）
 //   - 返回 nil 错误
-func TestAPIKeyService_Delete_Success(t *testing.T) {
+func TestApiKeyService_Delete_Success(t *testing.T) {
 	repo := &apiKeyRepoStub{ownerID: 7}
 	cache := &apiKeyCacheStub{}
 	svc := &APIKeyService{apiKeyRepo: repo, cache: cache}
@@ -168,13 +168,13 @@ func TestAPIKeyService_Delete_Success(t *testing.T) {
 	require.Equal(t, []int64{7}, cache.invalidated) // 验证所有者的缓存被清除
 }
 
-// TestAPIKeyService_Delete_NotFound 测试删除不存在的 API Key 时返回正确的错误。
+// TestApiKeyService_Delete_NotFound 测试删除不存在的 API Key 时返回正确的错误。
 // 预期行为：
 //   - GetOwnerID 返回 ErrAPIKeyNotFound 错误
 //   - 返回 ErrAPIKeyNotFound 错误（被 fmt.Errorf 包装）
 //   - Delete 方法不被调用
 //   - 缓存不被清除
-func TestAPIKeyService_Delete_NotFound(t *testing.T) {
+func TestApiKeyService_Delete_NotFound(t *testing.T) {
 	repo := &apiKeyRepoStub{ownerErr: ErrAPIKeyNotFound}
 	cache := &apiKeyCacheStub{}
 	svc := &APIKeyService{apiKeyRepo: repo, cache: cache}
@@ -185,14 +185,14 @@ func TestAPIKeyService_Delete_NotFound(t *testing.T) {
 	require.Empty(t, cache.invalidated)
 }
 
-// TestAPIKeyService_Delete_DeleteFails 测试删除操作失败时的错误处理。
+// TestApiKeyService_Delete_DeleteFails 测试删除操作失败时的错误处理。
 // 预期行为：
 //   - GetOwnerID 返回正确的所有者 ID
 //   - 所有权验证通过
 //   - 缓存被清除（在删除之前）
 //   - Delete 被调用但返回错误
 //   - 返回包含 "delete api key" 的错误信息
-func TestAPIKeyService_Delete_DeleteFails(t *testing.T) {
+func TestApiKeyService_Delete_DeleteFails(t *testing.T) {
 	repo := &apiKeyRepoStub{
 		ownerID:   3,
 		deleteErr: errors.New("delete failed"),

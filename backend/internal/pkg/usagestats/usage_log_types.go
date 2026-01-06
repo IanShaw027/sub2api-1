@@ -1,4 +1,4 @@
-// Package usagestats defines types for tracking and reporting API usage statistics.
+// Package usagestats provides types for usage statistics and reporting.
 package usagestats
 
 import "time"

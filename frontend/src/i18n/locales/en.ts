@@ -47,6 +47,7 @@ export default {
     description: 'Configure your Sub2API instance',
     database: {
       title: 'Database Configuration',
+      description: 'Connect to your PostgreSQL database',
       host: 'Host',
       port: 'Port',
       username: 'Username',
@@ -63,6 +64,7 @@ export default {
     },
     redis: {
       title: 'Redis Configuration',
+      description: 'Connect to your Redis server',
       host: 'Host',
       port: 'Port',
       password: 'Password (optional)',
@@ -71,6 +73,7 @@ export default {
     },
     admin: {
       title: 'Admin Account',
+      description: 'Create your administrator account',
       email: 'Email',
       password: 'Password',
       confirmPassword: 'Confirm Password',
@@ -80,9 +83,21 @@ export default {
     },
     ready: {
       title: 'Ready to Install',
+      description: 'Review your configuration and complete setup',
       database: 'Database',
       redis: 'Redis',
       adminEmail: 'Admin Email'
+    },
+    status: {
+      testing: 'Testing...',
+      success: 'Connection Successful',
+      testConnection: 'Test Connection',
+      installing: 'Installing...',
+      completeInstallation: 'Complete Installation',
+      completed: 'Installation completed!',
+      redirecting: 'Redirecting to login page...',
+      restarting: 'Service is restarting, please wait...',
+      timeout: 'Service restart is taking longer than expected. Please refresh the page manually.'
     }
   },
 
@@ -128,17 +143,21 @@ export default {
     total: 'Total',
     balance: 'Balance',
     available: 'Available',
-    copy: 'Copy',
-    details: 'Details',
     copiedToClipboard: 'Copied to clipboard',
     copyFailed: 'Failed to copy',
     contactSupport: 'Contact Support',
     selectOption: 'Select an option',
     searchPlaceholder: 'Search...',
     noOptionsFound: 'No options found',
+    noGroupsAvailable: 'No groups available',
+    unknownError: 'Unknown error occurred',
     saving: 'Saving...',
+    selectedCount: '({count} selected)',
     refresh: 'Refresh',
     add: 'Add',
+    notAvailable: 'N/A',
+    now: 'Now',
+    unknown: 'Unknown',
     time: {
       never: 'Never',
       justNow: 'Just now',
@@ -151,7 +170,6 @@ export default {
   // Navigation
   nav: {
     dashboard: 'Dashboard',
-    ops: 'Ops Center',
     apiKeys: 'API Keys',
     usage: 'Usage',
     redeem: 'Redeem',
@@ -163,6 +181,7 @@ export default {
     proxies: 'Proxies',
     redeemCodes: 'Redeem Codes',
     settings: 'Settings',
+    ops: 'Ops',
     myAccount: 'My Account',
     lightMode: 'Light Mode',
     darkMode: 'Dark Mode',
@@ -202,6 +221,7 @@ export default {
     registrationFailed: 'Registration failed. Please try again.',
     loginSuccess: 'Login successful! Welcome back.',
     accountCreatedSuccess: 'Account created successfully! Welcome to {siteName}.',
+    reloginRequired: 'Session expired. Please log in again.',
     turnstileExpired: 'Verification expired, please try again',
     turnstileFailed: 'Verification failed, please try again',
     completeVerification: 'Please complete the verification',
@@ -326,6 +346,18 @@ export default {
         note: 'Make sure the config directory exists. macOS/Linux users can run mkdir -p ~/.codex to create it.',
         noteWindows: 'Press Win+R and enter %userprofile%\\.codex to open the config directory. Create it manually if it does not exist.',
       },
+      antigravity: {
+        description: 'Configure API access for Antigravity group. Select the configuration method based on your client.',
+        claudeCode: 'Claude Code',
+        geminiCli: 'Gemini CLI',
+        claudeNote: 'These environment variables will be active in the current terminal session. For permanent configuration, add them to ~/.bashrc, ~/.zshrc, or the appropriate configuration file.',
+        geminiNote: 'These environment variables will be active in the current terminal session. For permanent configuration, add them to ~/.bashrc, ~/.zshrc, or the appropriate configuration file.',
+      },
+      gemini: {
+        description: 'Add the following environment variables to your terminal profile or run directly in terminal to configure Gemini CLI access.',
+        modelComment: 'If you have Gemini 3 access, you can use: gemini-3-pro-preview',
+        note: 'These environment variables will be active in the current terminal session. For permanent configuration, add them to ~/.bashrc, ~/.zshrc, or the appropriate configuration file.',
+      },
     },
     customKeyLabel: 'Custom Key',
     customKeyPlaceholder: 'Enter your custom key (min 16 chars)',
@@ -333,7 +365,15 @@ export default {
     customKeyTooShort: 'Custom key must be at least 16 characters',
     customKeyInvalidChars: 'Custom key can only contain letters, numbers, underscores, and hyphens',
     customKeyRequired: 'Please enter a custom key',
-    ccSwitchNotInstalled: 'CC-Switch is not installed or the protocol handler is not registered. Please install CC-Switch first or manually copy the API key.'
+    ccSwitchNotInstalled: 'CC-Switch is not installed or the protocol handler is not registered. Please install CC-Switch first or manually copy the API key.',
+    ccsClientSelect: {
+      title: 'Select Client',
+      description: 'Please select the client type to import to CC-Switch:',
+      claudeCode: 'Claude Code',
+      claudeCodeDesc: 'Import as Claude Code configuration',
+      geminiCli: 'Gemini CLI',
+      geminiCliDesc: 'Import as Gemini CLI configuration',
+    },
   },
 
   // Usage
@@ -385,7 +425,8 @@ export default {
     exportExcelFailed: 'Failed to export usage data',
     billingType: 'Billing',
     balance: 'Balance',
-    subscription: 'Subscription'
+    subscription: 'Subscription',
+    imageUnit: ' images'
   },
 
   // Redeem
@@ -426,7 +467,8 @@ export default {
     days: ' days',
     codeRedeemSuccess: 'Code redeemed successfully!',
     failedToRedeem: 'Failed to redeem code. Please check the code and try again.',
-    subscriptionRefreshFailed: 'Redeemed successfully, but failed to refresh subscription status.'
+    subscriptionRefreshFailed: 'Redeemed successfully, but failed to refresh subscription status.',
+    pleaseEnterCode: 'Please enter a redeem code'
   },
 
   // Profile
@@ -1300,6 +1342,10 @@ export default {
       failedToDelete: 'Failed to delete user',
       failedToToggle: 'Failed to update user status',
       failedToLoadApiKeys: 'Failed to load user API keys',
+      emailRequired: 'Please enter email',
+      concurrencyMin: 'Concurrency must be at least 1',
+      amountRequired: 'Please enter a valid amount',
+      insufficientBalance: 'Insufficient balance',
       deleteConfirm: "Are you sure you want to delete '{email}'? This action cannot be undone.",
       setAllowedGroups: 'Set Allowed Groups',
       allowedGroupsHint:
@@ -1331,7 +1377,10 @@ export default {
       failedToDeposit: 'Failed to deposit',
       failedToWithdraw: 'Failed to withdraw',
       useDepositWithdrawButtons: 'Please use deposit/withdraw buttons to adjust balance',
-      insufficientBalance: 'Insufficient balance, balance cannot be negative after withdrawal',
+      roles: {
+        admin: 'Admin',
+        user: 'User'
+      },
       // Settings Dropdowns
       filterSettings: 'Filter Settings',
       columnSettings: 'Column Settings',
@@ -1387,6 +1436,9 @@ export default {
         failedToLoad: 'Failed to load attributes',
         failedToCreate: 'Failed to create attribute',
         failedToUpdate: 'Failed to update attribute',
+        keyRequired: 'Please enter attribute key',
+        nameRequired: 'Please enter display name',
+        optionsRequired: 'Please add at least one option',
         failedToDelete: 'Failed to delete attribute',
         failedToReorder: 'Failed to update order',
         keyExists: 'Attribute key already exists',
@@ -1398,6 +1450,7 @@ export default {
     groups: {
       title: 'Group Management',
       description: 'Manage API key groups and rate multipliers',
+      searchGroups: 'Search groups...',
       createGroup: 'Create Group',
       editGroup: 'Edit Group',
       deleteGroup: 'Delete Group',
@@ -1454,6 +1507,14 @@ export default {
       failedToCreate: 'Failed to create group',
       failedToUpdate: 'Failed to update group',
       failedToDelete: 'Failed to delete group',
+      nameRequired: 'Please enter group name',
+      platforms: {
+        all: 'All Platforms',
+        anthropic: 'Anthropic',
+        openai: 'OpenAI',
+        gemini: 'Gemini',
+        antigravity: 'Antigravity'
+      },
       deleteConfirm:
         "Are you sure you want to delete '{name}'? All associated API keys will no longer belong to any group.",
       deleteConfirmSubscription:
@@ -1472,6 +1533,10 @@ export default {
         defaultValidityDays: 'Default Validity (Days)',
         validityHint: 'Number of days the subscription is valid when assigned to a user',
         noLimit: 'No limit'
+      },
+      imagePricing: {
+        title: 'Image Generation Pricing',
+        description: 'Configure pricing for gemini-3-pro-image model. Leave empty to use default prices.'
       }
     },
 
@@ -1535,6 +1600,9 @@ export default {
       failedToAssign: 'Failed to assign subscription',
       failedToExtend: 'Failed to extend subscription',
       failedToRevoke: 'Failed to revoke subscription',
+      pleaseSelectUser: 'Please select a user',
+      pleaseSelectGroup: 'Please select a group',
+      validityDaysRequired: 'Please enter a valid number of days (at least 1)',
       revokeConfirm:
         "Are you sure you want to revoke the subscription for '{user}'? This action cannot be undone."
     },
@@ -1569,6 +1637,9 @@ export default {
       editAccount: 'Edit Account',
       deleteAccount: 'Delete Account',
       searchAccounts: 'Search accounts...',
+      notes: 'Notes',
+      notesPlaceholder: 'Enter notes',
+      notesHint: 'Notes are optional',
       allPlatforms: 'All Platforms',
       allTypes: 'All Types',
       allStatus: 'All Status',
@@ -1596,20 +1667,77 @@ export default {
         codeAssist: 'Code Assist',
         antigravityOauth: 'Antigravity OAuth'
       },
+      status: {
+        active: 'Active',
+        inactive: 'Inactive',
+        error: 'Error',
+        cooldown: 'Cooldown',
+        paused: 'Paused',
+        limited: 'Limited',
+        tempUnschedulable: 'Temp Unschedulable',
+        rateLimitedUntil: 'Rate limited until {time}',
+        overloadedUntil: 'Overloaded until {time}',
+        viewTempUnschedDetails: 'View temp unschedulable details'
+      },
       columns: {
         name: 'Name',
         platformType: 'Platform/Type',
         platform: 'Platform',
         type: 'Type',
         concurrencyStatus: 'Concurrency',
+        notes: 'Notes',
+        priority: 'Priority',
+        weight: 'Weight',
         status: 'Status',
-        schedulable: 'Schedule',
-        todayStats: "Today's Stats",
+        schedulable: 'Schedulable',
+        todayStats: 'Today Stats',
         groups: 'Groups',
         usageWindows: 'Usage Windows',
-        priority: 'Priority',
         lastUsed: 'Last Used',
         actions: 'Actions'
+      },
+      tempUnschedulable: {
+        title: 'Temp Unschedulable',
+        statusTitle: 'Temp Unschedulable Status',
+        hint: 'Disable accounts temporarily when error code and keyword both match.',
+        notice: 'Rules are evaluated in order and require both error code and keyword match.',
+        addRule: 'Add Rule',
+        ruleOrder: 'Rule Order',
+        ruleIndex: 'Rule #{index}',
+        errorCode: 'Error Code',
+        errorCodePlaceholder: 'e.g. 429',
+        durationMinutes: 'Duration (minutes)',
+        durationPlaceholder: 'e.g. 30',
+        keywords: 'Keywords',
+        keywordsPlaceholder: 'e.g. overloaded, too many requests',
+        keywordsHint: 'Separate keywords with commas; any keyword match will trigger.',
+        description: 'Description',
+        descriptionPlaceholder: 'Optional note for this rule',
+        rulesInvalid: 'Add at least one rule with error code, keywords, and duration.',
+        viewDetails: 'View temp unschedulable details',
+        accountName: 'Account',
+        triggeredAt: 'Triggered At',
+        until: 'Until',
+        remaining: 'Remaining',
+        matchedKeyword: 'Matched Keyword',
+        errorMessage: 'Error Details',
+        reset: 'Reset Status',
+        resetSuccess: 'Temp unschedulable status reset',
+        resetFailed: 'Failed to reset temp unschedulable status',
+        failedToLoad: 'Failed to load temp unschedulable status',
+        notActive: 'This account is not temporarily unschedulable.',
+        expired: 'Expired',
+        remainingMinutes: 'About {minutes} minutes',
+        remainingHours: 'About {hours} hours',
+        remainingHoursMinutes: 'About {hours} hours {minutes} minutes',
+        presets: {
+          overloadLabel: '529 Overloaded',
+          overloadDesc: 'Overloaded - pause 60 minutes',
+          rateLimitLabel: '429 Rate Limit',
+          rateLimitDesc: 'Rate limited - pause 10 minutes',
+          unavailableLabel: '503 Unavailable',
+          unavailableDesc: 'Unavailable - pause 30 minutes'
+        }
       },
       clearRateLimit: 'Clear Rate Limit',
       testConnection: 'Test Connection',
@@ -1713,10 +1841,10 @@ export default {
       priority: 'Priority',
       priorityHint: 'Higher priority accounts are used first',
       higherPriorityFirst: 'Higher value means higher priority',
-      mixedScheduling: 'Mixed Scheduling',
+      mixedScheduling: 'Use in /v1/messages',
       mixedSchedulingHint: 'Enable to participate in Anthropic/Gemini group scheduling',
       mixedSchedulingTooltip:
-        'When enabled, this account can be scheduled by /v1/messages and /v1beta endpoints. Otherwise, it will only be scheduled by /antigravity. Note: Anthropic Claude and Antigravity Claude cannot be mixed in the same context. Please manage groups carefully when enabled.',
+        '!! WARNING !! Antigravity Claude and Anthropic Claude cannot be used in the same context. If you have both Anthropic and Antigravity accounts, enabling this option will cause frequent 400 errors. When enabled, please use the group feature to isolate Antigravity accounts from Anthropic accounts. Make sure you understand this before enabling!!',
       creating: 'Creating...',
       updating: 'Updating...',
       accountCreated: 'Account created successfully',
@@ -1742,13 +1870,13 @@ export default {
           'One sessionKey per line, e.g.:\nsk-ant-sid01-xxxxx...\nsk-ant-sid01-yyyyy...',
         sessionKeyPlaceholderSingle: 'sk-ant-sid01-xxxxx...',
         howToGetSessionKey: 'How to get sessionKey',
-        step1: 'Login to <strong>claude.ai</strong> in your browser',
-        step2: 'Press <kbd>F12</kbd> to open Developer Tools',
-        step3: 'Go to <strong>Application</strong> tab',
-        step4: 'Find <strong>Cookies</strong> → <strong>https://claude.ai</strong>',
-        step5: 'Find the row with key <strong>sessionKey</strong>',
-        step6: 'Copy the <strong>Value</strong>',
-        sessionKeyFormat: 'sessionKey usually starts with <code>sk-ant-sid01-</code>',
+        step1: 'Login to claude.ai in your browser',
+        step2: 'Press F12 to open Developer Tools',
+        step3: 'Go to Application tab',
+        step4: 'Find Cookies → https://claude.ai',
+        step5: 'Find the row with key sessionKey',
+        step6: 'Copy the Value',
+        sessionKeyFormat: 'sessionKey usually starts with sk-ant-sid01-',
         startAutoAuth: 'Start Auto-Auth',
         authorizing: 'Authorizing...',
         followSteps: 'Follow these steps to authorize your Claude account:',
@@ -1760,10 +1888,10 @@ export default {
         openUrlDesc:
           'Open the authorization URL in a new tab, log in to your Claude account and authorize.',
         proxyWarning:
-          '<strong>Note:</strong> If you configured a proxy, make sure your browser uses the same proxy to access the authorization page.',
+          'Note: If you configured a proxy, make sure your browser uses the same proxy to access the authorization page.',
         step3EnterCode: 'Enter the Authorization Code',
         authCodeDesc:
-          'After authorization is complete, the page will display an <strong>Authorization Code</strong>. Copy and paste it below:',
+          'After authorization is complete, the page will display an Authorization Code. Copy and paste it below:',
         authCode: 'Authorization Code',
         authCodePlaceholder: 'Paste the Authorization Code from Claude page...',
         authCodeHint: 'Paste the Authorization Code copied from the Claude page',
@@ -1784,10 +1912,10 @@ export default {
           openUrlDesc:
             'Open the authorization URL in a new tab, log in to your OpenAI account and authorize.',
           importantNotice:
-            '<strong>Important:</strong> The page may take a while to load after authorization. Please wait patiently. When the browser address bar changes to <code>http://localhost...</code>, the authorization is complete.',
+            'Important: The page may take a while to load after authorization. Please wait patiently. When the browser address bar changes to http://localhost..., the authorization is complete.',
           step3EnterCode: 'Enter Authorization URL or Code',
           authCodeDesc:
-            'After authorization is complete, when the page URL becomes <code>http://localhost:xxx/auth/callback?code=...</code>:',
+            'After authorization is complete, when the page URL becomes http://localhost:xxx/auth/callback?code=...:',
           authCode: 'Authorization URL or Code',
           authCodePlaceholder:
             'Option 1: Copy the complete URL\n(http://localhost:xxx/auth/callback?code=...)\nOption 2: Copy only the code parameter value',
@@ -1810,7 +1938,7 @@ export default {
 	            'Open the authorization URL in a new tab, log in to your Google account and authorize.',
 	          step3EnterCode: 'Enter Authorization URL or Code',
 	          authCodeDesc:
-	            'After authorization, copy the callback URL (recommended) or just the <code>code</code> and paste it below.',
+	            'After authorization, copy the callback URL (recommended) or just the code and paste it below.',
 	          authCode: 'Callback URL or Code',
 	          authCodePlaceholder:
 	            'Option 1 (recommended): Paste the callback URL\nOption 2: Paste only the code value',
@@ -1854,10 +1982,10 @@ export default {
           step2OpenUrl: 'Open the URL in your browser and complete authorization',
           openUrlDesc: 'Open the authorization URL in a new tab, log in to your Google account and authorize.',
           importantNotice:
-            '<strong>Important:</strong> The page may take a while to load after authorization. Please wait patiently. When the browser address bar shows <code>http://localhost...</code>, authorization is complete.',
+            'Important: The page may take a while to load after authorization. Please wait patiently. When the browser address bar shows http://localhost..., authorization is complete.',
           step3EnterCode: 'Enter Authorization URL or Code',
           authCodeDesc:
-            'After authorization, when the page URL becomes <code>http://localhost:xxx/auth/callback?code=...</code>:',
+            'After authorization, when the page URL becomes http://localhost:xxx/auth/callback?code=...:',
           authCode: 'Authorization URL or Code',
           authCodePlaceholder:
             'Option 1: Copy the complete URL\n(http://localhost:xxx/auth/callback?code=...)\nOption 2: Copy only the code parameter value',
@@ -1869,11 +1997,35 @@ export default {
 	      },
       // Gemini specific (platform-wide)
       gemini: {
+        helpButton: 'Help',
+        helpDialog: {
+          title: 'Gemini Usage Guide',
+          apiKeySection: 'API Key Links'
+        },
         modelPassthrough: 'Gemini Model Passthrough',
         modelPassthroughDesc:
           'All model requests are forwarded directly to the Gemini API without model restrictions or mappings.',
         baseUrlHint: 'Leave default for official Gemini API',
         apiKeyHint: 'Your Gemini API Key (starts with AIza)',
+        tier: {
+          label: 'Account Tier',
+          hint: 'Tip: The system will try to auto-detect the tier first; if auto-detection is unavailable or fails, your selected tier is used as a fallback (simulated quota).',
+          aiStudioHint:
+            'AI Studio quotas are per-model (Pro/Flash are limited independently). If billing is enabled, choose Pay-as-you-go.',
+          googleOne: {
+            free: 'Google One Free',
+            pro: 'Google One Pro',
+            ultra: 'Google One Ultra'
+          },
+          gcp: {
+            standard: 'GCP Standard',
+            enterprise: 'GCP Enterprise'
+          },
+          aiStudio: {
+            free: 'Google AI Free',
+            paid: 'Google AI Pay-as-you-go'
+          }
+        },
         accountType: {
           oauthTitle: 'OAuth (Gemini)',
           oauthDesc: 'Authorize with your Google account and choose an OAuth type.',
@@ -1941,6 +2093,17 @@ export default {
           },
           simulatedNote: 'Simulated quota, for reference only',
           rows: {
+            googleOne: {
+              channel: 'Google One OAuth (Individuals / Code Assist for Individuals)',
+              limitsFree: 'Shared pool: 1000 RPD / 60 RPM',
+              limitsPro: 'Shared pool: 1500 RPD / 120 RPM',
+              limitsUltra: 'Shared pool: 2000 RPD / 120 RPM'
+            },
+            gcp: {
+              channel: 'GCP Code Assist OAuth (Enterprise)',
+              limitsStandard: 'Shared pool: 1500 RPD / 120 RPM',
+              limitsEnterprise: 'Shared pool: 2000 RPD / 120 RPM'
+            },
             cli: {
               channel: 'Gemini CLI (Official Google Login / Code Assist)',
               free: 'Free Google Account',
@@ -1958,7 +2121,7 @@ export default {
               free: 'No billing (free tier)',
               paid: 'Billing enabled (pay-as-you-go)',
               limitsFree: 'RPD 50; RPM 2 (Pro) / 15 (Flash)',
-              limitsPaid: 'RPD unlimited; RPM 1000+ (per model quota)'
+              limitsPaid: 'RPD unlimited; RPM 1000 (Pro) / 2000 (Flash) (per model)'
             },
             customOAuth: {
               channel: 'Custom OAuth Client (GCP)',
@@ -1971,6 +2134,7 @@ export default {
         },
         rateLimit: {
           ok: 'Not rate limited',
+          unlimited: 'Unlimited',
           limited: 'Rate limited {time}',
           now: 'now'
         }
@@ -2073,6 +2237,12 @@ export default {
       searchProxies: 'Search proxies...',
       allProtocols: 'All Protocols',
       allStatus: 'All Status',
+      protocols: {
+        http: 'HTTP',
+        https: 'HTTPS',
+        socks5: 'SOCKS5',
+        socks5h: 'SOCKS5H (Remote DNS)'
+      },
       columns: {
         name: 'Name',
         protocol: 'Protocol',
@@ -2129,6 +2299,9 @@ export default {
       failedToUpdate: 'Failed to update proxy',
       failedToDelete: 'Failed to delete proxy',
       failedToTest: 'Failed to test proxy',
+      nameRequired: 'Please enter proxy name',
+      hostRequired: 'Please enter host address',
+      portInvalid: 'Port must be between 1-65535',
       deleteConfirm:
         "Are you sure you want to delete '{name}'? Accounts using this proxy will have their proxy removed."
     },
@@ -2186,11 +2359,25 @@ export default {
       failedToDelete: 'Failed to delete code',
       failedToDeleteUnused: 'Failed to delete unused codes',
       failedToCopy: 'Failed to copy codes',
+      types: {
+        balance: 'Balance',
+        concurrency: 'Concurrency',
+        subscription: 'Subscription',
+        // Admin adjustment types (created when admin modifies user balance/concurrency)
+        admin_balance: 'Balance (Admin)',
+        admin_concurrency: 'Concurrency (Admin)'
+      },
       selectGroup: 'Select Group',
       selectGroupPlaceholder: 'Choose a subscription group',
       validityDays: 'Validity Days',
       groupRequired: 'Please select a subscription group',
-      days: ' days'
+      days: ' days',
+      status: {
+        unused: 'Unused',
+        used: 'Used',
+        expired: 'Expired',
+        disabled: 'Disabled'
+      }
     },
 
     // Usage Records
@@ -2199,6 +2386,7 @@ export default {
       description: 'View and manage all user usage records',
       userFilter: 'User',
       searchUserPlaceholder: 'Search user by email...',
+      searchApiKeyPlaceholder: 'Search API key by name...',
       selectedUser: 'Selected',
       user: 'User',
       account: 'Account',
@@ -2241,8 +2429,9 @@ export default {
         siteKey: 'Site Key',
         secretKey: 'Secret Key',
         siteKeyHint: 'Get this from your Cloudflare Dashboard',
-        secretKeyHint: 'Server-side verification key (keep this secret)'
-      },
+        cloudflareDashboard: 'Cloudflare Dashboard',
+        secretKeyHint: 'Server-side verification key (keep this secret)',
+        secretKeyConfiguredHint: 'Secret key configured. Leave empty to keep the current value.'      },
       defaults: {
         title: 'Default User Settings',
         description: 'Default values for new users',
@@ -2295,6 +2484,8 @@ export default {
         password: 'SMTP Password',
         passwordPlaceholder: '********',
         passwordHint: 'Leave empty to keep existing password',
+        passwordConfiguredPlaceholder: '********',
+        passwordConfiguredHint: 'Password configured. Leave empty to keep the current value.',
         fromEmail: 'From Email',
         fromEmailPlaceholder: "noreply{'@'}example.com",
         fromName: 'From Name',
@@ -2402,6 +2593,7 @@ export default {
     noActiveSubscriptions: 'No Active Subscriptions',
     noActiveSubscriptionsDesc:
       "You don't have any active subscriptions. Contact administrator to get one.",
+    failedToLoad: 'Failed to load subscriptions',
     status: {
       active: 'Active',
       expired: 'Expired',

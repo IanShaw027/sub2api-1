@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -15,9 +16,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
+	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/gin-gonic/gin"
 )
 
@@ -64,18 +68,18 @@ type OpenAIUsage struct {
 
 // OpenAIForwardResult represents the result of forwarding
 type OpenAIForwardResult struct {
-	RequestID          string
-	Usage              OpenAIUsage
-	Model              string
-	Stream             bool
-	Duration           time.Duration
-	TimeToFirstTokenMs *int
+	RequestID    string
+	Usage        OpenAIUsage
+	Model        string
+	Stream       bool
+	Duration     time.Duration
+	FirstTokenMs *int
 }
 
 // OpenAIGatewayService handles OpenAI API gateway operations
 type OpenAIGatewayService struct {
 	accountRepo         AccountRepository
-	usageLogRepo        UsageLogWriter
+	usageLogRepo        UsageLogRepository
 	userRepo            UserRepository
 	userSubRepo         UserSubscriptionRepository
 	cache               GatewayCache
@@ -91,7 +95,7 @@ type OpenAIGatewayService struct {
 // NewOpenAIGatewayService creates a new OpenAIGatewayService
 func NewOpenAIGatewayService(
 	accountRepo AccountRepository,
-	usageLogRepo UsageLogWriter,
+	usageLogRepo UsageLogRepository,
 	userRepo UserRepository,
 	userSubRepo UserSubscriptionRepository,
 	cache GatewayCache,
@@ -487,7 +491,7 @@ func (s *OpenAIGatewayService) GetAccessToken(ctx context.Context, account *Acco
 		}
 		return accessToken, "oauth", nil
 	case AccountTypeAPIKey:
-		apiKey := account.GetOpenAIAPIKey()
+		apiKey := account.GetOpenAIApiKey()
 		if apiKey == "" {
 			return "", "", errors.New("api_key not found in credentials")
 		}
@@ -610,12 +614,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 
 	return &OpenAIForwardResult{
-		RequestID:          resp.Header.Get("x-request-id"),
-		Usage:              *usage,
-		Model:              originalModel,
-		Stream:             reqStream,
-		Duration:           time.Since(startTime),
-		TimeToFirstTokenMs: firstTokenMs,
+		RequestID:    resp.Header.Get("x-request-id"),
+		Usage:        *usage,
+		Model:        originalModel,
+		Stream:       reqStream,
+		Duration:     time.Since(startTime),
+		FirstTokenMs: firstTokenMs,
 	}, nil
 }
 
@@ -629,10 +633,14 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	case AccountTypeAPIKey:
 		// API Key accounts use Platform API or custom base URL
 		baseURL := account.GetOpenAIBaseURL()
-		if baseURL != "" {
-			targetURL = baseURL + "/responses"
-		} else {
+		if baseURL == "" {
 			targetURL = openaiPlatformAPIURL
+		} else {
+			validatedURL, err := s.validateUpstreamBaseURL(baseURL)
+			if err != nil {
+				return nil, err
+			}
+			targetURL = validatedURL + "/responses"
 		}
 	default:
 		targetURL = openaiPlatformAPIURL
@@ -702,7 +710,13 @@ func (s *OpenAIGatewayService) handleErrorResponse(ctx context.Context, resp *ht
 	}
 
 	// Handle upstream error (mark account status)
-	s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, body)
+	shouldDisable := false
+	if s.rateLimitService != nil {
+		shouldDisable = s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, body)
+	}
+	if shouldDisable {
+		return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode}
+	}
 
 	// Return appropriate error response
 	var errType, errMsg string
@@ -739,6 +753,336 @@ func (s *OpenAIGatewayService) handleErrorResponse(ctx context.Context, resp *ht
 	})
 
 	return nil, fmt.Errorf("upstream error: %d", resp.StatusCode)
+}
+
+// openaiStreamingResult streaming response result
+type openaiStreamingResult struct {
+	usage        *OpenAIUsage
+	firstTokenMs *int
+}
+
+func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel string) (*openaiStreamingResult, error) {
+	if s.cfg != nil {
+		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.cfg.Security.ResponseHeaders)
+	}
+
+	// Set SSE response headers
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+
+	// Pass through other headers
+	if v := resp.Header.Get("x-request-id"); v != "" {
+		c.Header("x-request-id", v)
+	}
+
+	w := c.Writer
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		return nil, errors.New("streaming not supported")
+	}
+
+	usage := &OpenAIUsage{}
+	var firstTokenMs *int
+	scanner := bufio.NewScanner(resp.Body)
+	maxLineSize := defaultMaxLineSize
+	if s.cfg != nil && s.cfg.Gateway.MaxLineSize > 0 {
+		maxLineSize = s.cfg.Gateway.MaxLineSize
+	}
+	scanner.Buffer(make([]byte, 64*1024), maxLineSize)
+
+	type scanEvent struct {
+		line string
+		err  error
+	}
+	// 独立 goroutine 读取上游，避免读取阻塞影响 keepalive/超时处理
+	events := make(chan scanEvent, 16)
+	done := make(chan struct{})
+	sendEvent := func(ev scanEvent) bool {
+		select {
+		case events <- ev:
+			return true
+		case <-done:
+			return false
+		}
+	}
+	var lastReadAt int64
+	atomic.StoreInt64(&lastReadAt, time.Now().UnixNano())
+	go func() {
+		defer close(events)
+		for scanner.Scan() {
+			atomic.StoreInt64(&lastReadAt, time.Now().UnixNano())
+			if !sendEvent(scanEvent{line: scanner.Text()}) {
+				return
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			_ = sendEvent(scanEvent{err: err})
+		}
+	}()
+	defer close(done)
+
+	streamInterval := time.Duration(0)
+	if s.cfg != nil && s.cfg.Gateway.StreamDataIntervalTimeout > 0 {
+		streamInterval = time.Duration(s.cfg.Gateway.StreamDataIntervalTimeout) * time.Second
+	}
+	// 仅监控上游数据间隔超时，不被下游写入阻塞影响
+	var intervalTicker *time.Ticker
+	if streamInterval > 0 {
+		intervalTicker = time.NewTicker(streamInterval)
+		defer intervalTicker.Stop()
+	}
+	var intervalCh <-chan time.Time
+	if intervalTicker != nil {
+		intervalCh = intervalTicker.C
+	}
+
+	keepaliveInterval := time.Duration(0)
+	if s.cfg != nil && s.cfg.Gateway.StreamKeepaliveInterval > 0 {
+		keepaliveInterval = time.Duration(s.cfg.Gateway.StreamKeepaliveInterval) * time.Second
+	}
+	// 下游 keepalive 仅用于防止代理空闲断开
+	var keepaliveTicker *time.Ticker
+	if keepaliveInterval > 0 {
+		keepaliveTicker = time.NewTicker(keepaliveInterval)
+		defer keepaliveTicker.Stop()
+	}
+	var keepaliveCh <-chan time.Time
+	if keepaliveTicker != nil {
+		keepaliveCh = keepaliveTicker.C
+	}
+	// 记录上次收到上游数据的时间，用于控制 keepalive 发送频率
+	lastDataAt := time.Now()
+
+	// 仅发送一次错误事件，避免多次写入导致协议混乱（写失败时尽力通知客户端）
+	errorEventSent := false
+	sendErrorEvent := func(reason string) {
+		if errorEventSent {
+			return
+		}
+		errorEventSent = true
+		_, _ = fmt.Fprintf(w, "event: error\ndata: {\"error\":\"%s\"}\n\n", reason)
+		flusher.Flush()
+	}
+
+	needModelReplace := originalModel != mappedModel
+
+	for {
+		select {
+		case ev, ok := <-events:
+			if !ok {
+				return &openaiStreamingResult{usage: usage, firstTokenMs: firstTokenMs}, nil
+			}
+			if ev.err != nil {
+				if errors.Is(ev.err, bufio.ErrTooLong) {
+					log.Printf("SSE line too long: account=%d max_size=%d error=%v", account.ID, maxLineSize, ev.err)
+					sendErrorEvent("response_too_large")
+					return &openaiStreamingResult{usage: usage, firstTokenMs: firstTokenMs}, ev.err
+				}
+				sendErrorEvent("stream_read_error")
+				return &openaiStreamingResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream read error: %w", ev.err)
+			}
+
+			line := ev.line
+			lastDataAt = time.Now()
+
+			// Extract data from SSE line (supports both "data: " and "data:" formats)
+			if openaiSSEDataRe.MatchString(line) {
+				data := openaiSSEDataRe.ReplaceAllString(line, "")
+
+				// Replace model in response if needed
+				if needModelReplace {
+					line = s.replaceModelInSSELine(line, mappedModel, originalModel)
+				}
+
+				// Forward line
+				if _, err := fmt.Fprintf(w, "%s\n", line); err != nil {
+					sendErrorEvent("write_failed")
+					return &openaiStreamingResult{usage: usage, firstTokenMs: firstTokenMs}, err
+				}
+				flusher.Flush()
+
+				// Record first token time
+				if firstTokenMs == nil && data != "" && data != "[DONE]" {
+					ms := int(time.Since(startTime).Milliseconds())
+					firstTokenMs = &ms
+				}
+				s.parseSSEUsage(data, usage)
+			} else {
+				// Forward non-data lines as-is
+				if _, err := fmt.Fprintf(w, "%s\n", line); err != nil {
+					sendErrorEvent("write_failed")
+					return &openaiStreamingResult{usage: usage, firstTokenMs: firstTokenMs}, err
+				}
+				flusher.Flush()
+			}
+
+		case <-intervalCh:
+			lastRead := time.Unix(0, atomic.LoadInt64(&lastReadAt))
+			if time.Since(lastRead) < streamInterval {
+				continue
+			}
+			log.Printf("Stream data interval timeout: account=%d model=%s interval=%s", account.ID, originalModel, streamInterval)
+			sendErrorEvent("stream_timeout")
+			return &openaiStreamingResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream data interval timeout")
+
+		case <-keepaliveCh:
+			if time.Since(lastDataAt) < keepaliveInterval {
+				continue
+			}
+			if _, err := fmt.Fprint(w, ":\n\n"); err != nil {
+				return &openaiStreamingResult{usage: usage, firstTokenMs: firstTokenMs}, err
+			}
+			flusher.Flush()
+		}
+	}
+
+}
+
+func (s *OpenAIGatewayService) replaceModelInSSELine(line, fromModel, toModel string) string {
+	if !openaiSSEDataRe.MatchString(line) {
+		return line
+	}
+	data := openaiSSEDataRe.ReplaceAllString(line, "")
+	if data == "" || data == "[DONE]" {
+		return line
+	}
+
+	var event map[string]any
+	if err := json.Unmarshal([]byte(data), &event); err != nil {
+		return line
+	}
+
+	// Replace model in response
+	if m, ok := event["model"].(string); ok && m == fromModel {
+		event["model"] = toModel
+		newData, err := json.Marshal(event)
+		if err != nil {
+			return line
+		}
+		return "data: " + string(newData)
+	}
+
+	// Check nested response
+	if response, ok := event["response"].(map[string]any); ok {
+		if m, ok := response["model"].(string); ok && m == fromModel {
+			response["model"] = toModel
+			newData, err := json.Marshal(event)
+			if err != nil {
+				return line
+			}
+			return "data: " + string(newData)
+		}
+	}
+
+	return line
+}
+
+func (s *OpenAIGatewayService) parseSSEUsage(data string, usage *OpenAIUsage) {
+	// Parse response.completed event for usage (OpenAI Responses format)
+	var event struct {
+		Type     string `json:"type"`
+		Response struct {
+			Usage struct {
+				InputTokens       int `json:"input_tokens"`
+				OutputTokens      int `json:"output_tokens"`
+				InputTokenDetails struct {
+					CachedTokens int `json:"cached_tokens"`
+				} `json:"input_tokens_details"`
+			} `json:"usage"`
+		} `json:"response"`
+	}
+
+	if json.Unmarshal([]byte(data), &event) == nil && event.Type == "response.completed" {
+		usage.InputTokens = event.Response.Usage.InputTokens
+		usage.OutputTokens = event.Response.Usage.OutputTokens
+		usage.CacheReadInputTokens = event.Response.Usage.InputTokenDetails.CachedTokens
+	}
+}
+
+func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, originalModel, mappedModel string) (*OpenAIUsage, error) {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse usage
+	var response struct {
+		Usage struct {
+			InputTokens       int `json:"input_tokens"`
+			OutputTokens      int `json:"output_tokens"`
+			InputTokenDetails struct {
+				CachedTokens int `json:"cached_tokens"`
+			} `json:"input_tokens_details"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("parse response: %w", err)
+	}
+
+	usage := &OpenAIUsage{
+		InputTokens:          response.Usage.InputTokens,
+		OutputTokens:         response.Usage.OutputTokens,
+		CacheReadInputTokens: response.Usage.InputTokenDetails.CachedTokens,
+	}
+
+	// Replace model in response if needed
+	if originalModel != mappedModel {
+		body = s.replaceModelInResponseBody(body, mappedModel, originalModel)
+	}
+
+	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.cfg.Security.ResponseHeaders)
+
+	contentType := "application/json"
+	if s.cfg != nil && !s.cfg.Security.ResponseHeaders.Enabled {
+		if upstreamType := resp.Header.Get("Content-Type"); upstreamType != "" {
+			contentType = upstreamType
+		}
+	}
+
+	c.Data(resp.StatusCode, contentType, body)
+
+	return usage, nil
+}
+
+func (s *OpenAIGatewayService) validateUpstreamBaseURL(raw string) (string, error) {
+	if s.cfg != nil && !s.cfg.Security.URLAllowlist.Enabled {
+		normalized, err := urlvalidator.ValidateURLFormat(raw, s.cfg.Security.URLAllowlist.AllowInsecureHTTP)
+		if err != nil {
+			return "", fmt.Errorf("invalid base_url: %w", err)
+		}
+		return normalized, nil
+	}
+	normalized, err := urlvalidator.ValidateHTTPSURL(raw, urlvalidator.ValidationOptions{
+		AllowedHosts:     s.cfg.Security.URLAllowlist.UpstreamHosts,
+		RequireAllowlist: true,
+		AllowPrivate:     s.cfg.Security.URLAllowlist.AllowPrivateHosts,
+	})
+	if err != nil {
+		return "", fmt.Errorf("invalid base_url: %w", err)
+	}
+	return normalized, nil
+}
+
+func (s *OpenAIGatewayService) replaceModelInResponseBody(body []byte, fromModel, toModel string) []byte {
+	var resp map[string]any
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return body
+	}
+
+	model, ok := resp["model"].(string)
+	if !ok || model != fromModel {
+		return body
+	}
+
+	resp["model"] = toModel
+	newBody, err := json.Marshal(resp)
+	if err != nil {
+		return body
+	}
+
+	return newBody
 }
 
 // OpenAIRecordUsageInput input for recording usage
@@ -813,7 +1157,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		BillingType:         billingType,
 		Stream:              result.Stream,
 		DurationMs:          &durationMs,
-		TimeToFirstTokenMs:  result.TimeToFirstTokenMs,
+		FirstTokenMs:        result.FirstTokenMs,
 		CreatedAt:           time.Now(),
 	}
 
@@ -824,22 +1168,23 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		usageLog.SubscriptionID = &subscription.ID
 	}
 
-	_ = createUsageLogWithRetry(ctx, s.usageLogRepo, usageLog)
-
+	inserted, err := s.usageLogRepo.Create(ctx, usageLog)
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
 		log.Printf("[SIMPLE MODE] Usage recorded (not billed): user=%d, tokens=%d", usageLog.UserID, usageLog.TotalTokens())
 		s.deferredService.ScheduleLastUsedUpdate(account.ID)
 		return nil
 	}
 
+	shouldBill := inserted || err != nil
+
 	// Deduct based on billing type
 	if isSubscriptionBilling {
-		if cost.TotalCost > 0 {
+		if shouldBill && cost.TotalCost > 0 {
 			_ = s.userSubRepo.IncrementUsage(ctx, subscription.ID, cost.TotalCost)
 			s.billingCacheService.QueueUpdateSubscriptionUsage(user.ID, *apiKey.GroupID, cost.TotalCost)
 		}
 	} else {
-		if cost.ActualCost > 0 {
+		if shouldBill && cost.ActualCost > 0 {
 			_ = s.userRepo.DeductBalance(ctx, user.ID, cost.ActualCost)
 			s.billingCacheService.QueueDeductBalance(user.ID, cost.ActualCost)
 		}

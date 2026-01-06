@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[![Go](https://img.shields.io/badge/Go-1.24+-00ADD8.svg)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.25.5-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.4+-4FC08D.svg)](https://vuejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7+-DC382D.svg)](https://redis.io/)
@@ -44,10 +44,16 @@ Sub2API is an AI API gateway platform designed to distribute and manage API quot
 
 | Component | Technology |
 |-----------|------------|
-| Backend | Go 1.24+, Gin, Ent |
+| Backend | Go 1.25.5, Gin, GORM |
 | Frontend | Vue 3.4+, Vite 5+, TailwindCSS |
 | Database | PostgreSQL 15+ |
 | Cache/Queue | Redis 7+ |
+
+---
+
+## Documentation
+
+- Dependency Security: `docs/dependency-security.md`
 
 ---
 
@@ -160,6 +166,22 @@ ADMIN_PASSWORD=your_admin_password
 
 # Optional: Custom port
 SERVER_PORT=8080
+
+# Optional: Security configuration
+# Enable URL allowlist validation (false to skip allowlist checks, only basic format validation)
+SECURITY_URL_ALLOWLIST_ENABLED=false
+
+# Allow insecure HTTP URLs when allowlist is disabled (default: false, requires https)
+# ⚠️ WARNING: Enabling this allows HTTP (plaintext) URLs which can expose API keys
+#             Only recommended for:
+#             - Development/testing environments
+#             - Internal networks with trusted endpoints
+#             - When using local test servers (http://localhost)
+# PRODUCTION: Keep this false or use HTTPS URLs only
+SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP=false
+
+# Allow private IP addresses for upstream/pricing/CRS (for internal deployments)
+SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS=false
 ```
 
 ```bash
@@ -206,7 +228,7 @@ Build and run from source code for development or customization.
 
 #### Prerequisites
 
-- Go 1.24+
+- Go 1.21+
 - Node.js 18+
 - PostgreSQL 15+
 - Redis 7+
@@ -218,20 +240,23 @@ Build and run from source code for development or customization.
 git clone https://github.com/Wei-Shaw/sub2api.git
 cd sub2api
 
-# 2. Build frontend
+# 2. Install pnpm (if not already installed)
+npm install -g pnpm
+
+# 3. Build frontend
 cd frontend
-npm install
-npm run build
+pnpm install
+pnpm run build
 # Output will be in ../backend/internal/web/dist/
 
-# 3. Build backend with embedded frontend
+# 4. Build backend with embedded frontend
 cd ../backend
 go build -tags embed -o sub2api ./cmd/server
 
-# 4. Create configuration file
+# 5. Create configuration file
 cp ../deploy/config.example.yaml ./config.yaml
 
-# 5. Edit configuration
+# 6. Edit configuration
 nano config.yaml
 ```
 
@@ -268,6 +293,59 @@ default:
   rate_multiplier: 1.0
 ```
 
+Additional security-related options are available in `config.yaml`:
+
+- `cors.allowed_origins` for CORS allowlist
+- `security.url_allowlist` for upstream/pricing/CRS host allowlists
+- `security.url_allowlist.enabled` to disable URL validation (use with caution)
+- `security.url_allowlist.allow_insecure_http` to allow HTTP URLs when validation is disabled
+- `security.url_allowlist.allow_private_hosts` to allow private/local IP addresses
+- `security.response_headers.enabled` to enable configurable response header filtering (disabled uses default allowlist)
+- `security.csp` to control Content-Security-Policy headers
+- `billing.circuit_breaker` to fail closed on billing errors
+- `server.trusted_proxies` to enable X-Forwarded-For parsing
+- `turnstile.required` to require Turnstile in release mode
+
+**⚠️ Security Warning: HTTP URL Configuration**
+
+When `security.url_allowlist.enabled=false`, the system performs minimal URL validation by default, **rejecting HTTP URLs** and only allowing HTTPS. To allow HTTP URLs (e.g., for development or internal testing), you must explicitly set:
+
+```yaml
+security:
+  url_allowlist:
+    enabled: false                # Disable allowlist checks
+    allow_insecure_http: true     # Allow HTTP URLs (⚠️ INSECURE)
+```
+
+**Or via environment variable:**
+
+```bash
+SECURITY_URL_ALLOWLIST_ENABLED=false
+SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP=true
+```
+
+**Risks of allowing HTTP:**
+- API keys and data transmitted in **plaintext** (vulnerable to interception)
+- Susceptible to **man-in-the-middle (MITM) attacks**
+- **NOT suitable for production** environments
+
+**When to use HTTP:**
+- ✅ Development/testing with local servers (http://localhost)
+- ✅ Internal networks with trusted endpoints
+- ✅ Testing account connectivity before obtaining HTTPS
+- ❌ Production environments (use HTTPS only)
+
+**Example error without this setting:**
+```
+Invalid base URL: invalid url scheme: http
+```
+
+If you disable URL validation or response header filtering, harden your network layer:
+- Enforce an egress allowlist for upstream domains/IPs
+- Block private/loopback/link-local ranges
+- Enforce TLS-only outbound traffic
+- Strip sensitive upstream response headers at the proxy
+
 ```bash
 # 6. Run the application
 ./sub2api
@@ -282,7 +360,7 @@ go run ./cmd/server
 
 # Frontend (with hot reload)
 cd frontend
-npm run dev
+pnpm run dev
 ```
 
 #### Code Generation
@@ -294,6 +372,16 @@ cd backend
 go generate ./ent
 go generate ./cmd/server
 ```
+
+---
+
+## Simple Mode
+
+Simple Mode is designed for individual developers or internal teams who want quick access without full SaaS features.
+
+- Enable: Set environment variable `RUN_MODE=simple`
+- Difference: Hides SaaS-related features and skips billing process
+- Security note: In production, you must also set `SIMPLE_MODE_CONFIRM=true` to allow startup
 
 ---
 
@@ -320,6 +408,12 @@ export ANTHROPIC_AUTH_TOKEN="sk-xxx"
 Antigravity accounts support optional **hybrid scheduling**. When enabled, the general endpoints `/v1/messages` and `/v1beta/` will also route requests to Antigravity accounts.
 
 > **⚠️ Warning**: Anthropic Claude and Antigravity Claude **cannot be mixed within the same conversation context**. Use groups to isolate them properly.
+
+### Known Issues
+
+In Claude Code, Plan Mode cannot exit automatically. (Normally when using the native Claude API, after planning is complete, Claude Code will pop up options for users to approve or reject the plan.)
+
+**Workaround**: Press `Shift + Tab` to manually exit Plan Mode, then type your response to approve or reject the plan.
 
 ---
 

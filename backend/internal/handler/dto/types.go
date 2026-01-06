@@ -47,6 +47,11 @@ type Group struct {
 	WeeklyLimitUSD   *float64 `json:"weekly_limit_usd"`
 	MonthlyLimitUSD  *float64 `json:"monthly_limit_usd"`
 
+	// 图片生成计费配置（仅 antigravity 平台使用）
+	ImagePrice1K *float64 `json:"image_price_1k"`
+	ImagePrice2K *float64 `json:"image_price_2k"`
+	ImagePrice4K *float64 `json:"image_price_4k"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
@@ -57,6 +62,7 @@ type Group struct {
 type Account struct {
 	ID           int64          `json:"id"`
 	Name         string         `json:"name"`
+	Notes        *string        `json:"notes"`
 	Platform     string         `json:"platform"`
 	Type         string         `json:"type"`
 	Credentials  map[string]any `json:"credentials"`
@@ -75,6 +81,9 @@ type Account struct {
 	RateLimitedAt    *time.Time `json:"rate_limited_at"`
 	RateLimitResetAt *time.Time `json:"rate_limit_reset_at"`
 	OverloadUntil    *time.Time `json:"overload_until"`
+
+	TempUnschedulableUntil  *time.Time `json:"temp_unschedulable_until"`
+	TempUnschedulableReason string     `json:"temp_unschedulable_reason"`
 
 	SessionWindowStart  *time.Time `json:"session_window_start"`
 	SessionWindowEnd    *time.Time `json:"session_window_end"`
@@ -164,6 +173,10 @@ type UsageLog struct {
 	Stream              bool `json:"stream"`
 	DurationMs          *int `json:"duration_ms"`
 	TimeToFirstTokenMs  *int `json:"time_to_first_token_ms"`
+
+	// 图片生成字段
+	ImageCount int     `json:"image_count"`
+	ImageSize  *string `json:"image_size"`
 
 	CreatedAt time.Time `json:"created_at"`
 

@@ -70,6 +70,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "name", Type: field.TypeString, Size: 100},
+		{Name: "notes", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "platform", Type: field.TypeString, Size: 50},
 		{Name: "type", Type: field.TypeString, Size: 20},
 		{Name: "credentials", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
@@ -96,7 +97,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "accounts_proxies_proxy",
-				Columns:    []*schema.Column{AccountsColumns[21]},
+				Columns:    []*schema.Column{AccountsColumns[22]},
 				RefColumns: []*schema.Column{ProxiesColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -105,52 +106,52 @@ var (
 			{
 				Name:    "account_platform",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[5]},
+				Columns: []*schema.Column{AccountsColumns[6]},
 			},
 			{
 				Name:    "account_type",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[6]},
+				Columns: []*schema.Column{AccountsColumns[7]},
 			},
 			{
 				Name:    "account_status",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[11]},
+				Columns: []*schema.Column{AccountsColumns[12]},
 			},
 			{
 				Name:    "account_proxy_id",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[21]},
+				Columns: []*schema.Column{AccountsColumns[22]},
 			},
 			{
 				Name:    "account_priority",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[10]},
+				Columns: []*schema.Column{AccountsColumns[11]},
 			},
 			{
 				Name:    "account_last_used_at",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[13]},
+				Columns: []*schema.Column{AccountsColumns[14]},
 			},
 			{
 				Name:    "account_schedulable",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[14]},
+				Columns: []*schema.Column{AccountsColumns[15]},
 			},
 			{
 				Name:    "account_rate_limited_at",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[15]},
+				Columns: []*schema.Column{AccountsColumns[16]},
 			},
 			{
 				Name:    "account_rate_limit_reset_at",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[16]},
+				Columns: []*schema.Column{AccountsColumns[17]},
 			},
 			{
 				Name:    "account_overload_until",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[17]},
+				Columns: []*schema.Column{AccountsColumns[18]},
 			},
 			{
 				Name:    "account_deleted_at",
@@ -215,6 +216,9 @@ var (
 		{Name: "weekly_limit_usd", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
 		{Name: "monthly_limit_usd", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
 		{Name: "default_validity_days", Type: field.TypeInt, Default: 30},
+		{Name: "image_price_1k", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "image_price_2k", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "image_price_4k", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
 	}
 	// GroupsTable holds the schema information for the "groups" table.
 	GroupsTable = &schema.Table{
@@ -246,439 +250,6 @@ var (
 				Name:    "group_deleted_at",
 				Unique:  false,
 				Columns: []*schema.Column{GroupsColumns[3]},
-			},
-		},
-	}
-	// OpsAlertEventsColumns holds the columns for the "ops_alert_events" table.
-	OpsAlertEventsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt64, Increment: true},
-		{Name: "rule_id", Type: field.TypeInt64},
-		{Name: "severity", Type: field.TypeString, Size: 20},
-		{Name: "status", Type: field.TypeString, Size: 20, Default: "firing"},
-		{Name: "title", Type: field.TypeString, Nullable: true, Size: 200},
-		{Name: "description", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
-		{Name: "metric_value", Type: field.TypeFloat64, Nullable: true},
-		{Name: "threshold_value", Type: field.TypeFloat64, Nullable: true},
-		{Name: "fired_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "resolved_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "email_sent", Type: field.TypeBool, Default: false},
-		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-	}
-	// OpsAlertEventsTable holds the schema information for the "ops_alert_events" table.
-	OpsAlertEventsTable = &schema.Table{
-		Name:       "ops_alert_events",
-		Columns:    OpsAlertEventsColumns,
-		PrimaryKey: []*schema.Column{OpsAlertEventsColumns[0]},
-		Indexes: []*schema.Index{
-			{
-				Name:    "opsalertevent_rule_id_status",
-				Unique:  false,
-				Columns: []*schema.Column{OpsAlertEventsColumns[1], OpsAlertEventsColumns[3]},
-			},
-			{
-				Name:    "opsalertevent_fired_at",
-				Unique:  false,
-				Columns: []*schema.Column{OpsAlertEventsColumns[8]},
-			},
-		},
-	}
-	// OpsAlertRulesColumns holds the columns for the "ops_alert_rules" table.
-	OpsAlertRulesColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt64, Increment: true},
-		{Name: "name", Type: field.TypeString, Size: 128},
-		{Name: "description", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
-		{Name: "enabled", Type: field.TypeBool, Default: true},
-		{Name: "metric_type", Type: field.TypeString, Size: 64},
-		{Name: "operator", Type: field.TypeString, Size: 8},
-		{Name: "threshold", Type: field.TypeFloat64},
-		{Name: "window_minutes", Type: field.TypeInt, Default: 1},
-		{Name: "sustained_minutes", Type: field.TypeInt, Default: 1},
-		{Name: "severity", Type: field.TypeString, Size: 20, Default: "P1"},
-		{Name: "notify_email", Type: field.TypeBool, Default: false},
-		{Name: "cooldown_minutes", Type: field.TypeInt, Default: 10},
-		{Name: "dimension_filters", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "notify_channels", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "notify_config", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "created_by", Type: field.TypeString, Nullable: true, Size: 100},
-		{Name: "last_triggered_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "alert_category", Type: field.TypeString, Nullable: true, Size: 50},
-		{Name: "filter_conditions", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "aggregation_dimensions", Type: field.TypeJSON, Nullable: true},
-		{Name: "notification_channels", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "notification_frequency", Type: field.TypeString, Nullable: true, Size: 50},
-		{Name: "notification_template", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
-		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-	}
-	// OpsAlertRulesTable holds the schema information for the "ops_alert_rules" table.
-	OpsAlertRulesTable = &schema.Table{
-		Name:       "ops_alert_rules",
-		Columns:    OpsAlertRulesColumns,
-		PrimaryKey: []*schema.Column{OpsAlertRulesColumns[0]},
-		Indexes: []*schema.Index{
-			{
-				Name:    "opsalertrule_enabled",
-				Unique:  false,
-				Columns: []*schema.Column{OpsAlertRulesColumns[3]},
-			},
-			{
-				Name:    "opsalertrule_metric_type_window_minutes",
-				Unique:  false,
-				Columns: []*schema.Column{OpsAlertRulesColumns[4], OpsAlertRulesColumns[7]},
-			},
-		},
-	}
-	// OpsErrorLogsColumns holds the columns for the "ops_error_logs" table.
-	OpsErrorLogsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt64, Increment: true},
-		{Name: "request_id", Type: field.TypeString, Nullable: true, Size: 64},
-		{Name: "user_id", Type: field.TypeInt64, Nullable: true},
-		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
-		{Name: "account_id", Type: field.TypeInt64, Nullable: true},
-		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
-		{Name: "client_ip", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "inet"}},
-		{Name: "error_phase", Type: field.TypeString, Size: 32},
-		{Name: "error_type", Type: field.TypeString, Size: 64},
-		{Name: "severity", Type: field.TypeString, Size: 4},
-		{Name: "status_code", Type: field.TypeInt, Nullable: true},
-		{Name: "platform", Type: field.TypeString, Nullable: true, Size: 32},
-		{Name: "model", Type: field.TypeString, Nullable: true, Size: 100},
-		{Name: "request_path", Type: field.TypeString, Nullable: true, Size: 256},
-		{Name: "stream", Type: field.TypeBool, Default: false},
-		{Name: "error_message", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
-		{Name: "error_body", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
-		{Name: "provider_error_code", Type: field.TypeString, Nullable: true, Size: 64},
-		{Name: "provider_error_type", Type: field.TypeString, Nullable: true, Size: 64},
-		{Name: "is_retryable", Type: field.TypeBool, Default: false},
-		{Name: "is_user_actionable", Type: field.TypeBool, Default: false},
-		{Name: "retry_count", Type: field.TypeInt, Default: 0},
-		{Name: "completion_status", Type: field.TypeString, Nullable: true, Size: 16},
-		{Name: "duration_ms", Type: field.TypeInt, Nullable: true},
-		{Name: "error_source", Type: field.TypeString, Nullable: true, Size: 50},
-		{Name: "error_owner", Type: field.TypeString, Nullable: true, Size: 50},
-		{Name: "account_status", Type: field.TypeString, Nullable: true, Size: 50},
-		{Name: "upstream_status_code", Type: field.TypeInt, Nullable: true},
-		{Name: "upstream_error_message", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
-		{Name: "upstream_error_detail", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
-		{Name: "network_error_type", Type: field.TypeString, Nullable: true, Size: 50},
-		{Name: "retry_after_seconds", Type: field.TypeInt, Nullable: true},
-		{Name: "time_to_first_token_ms", Type: field.TypeInt64, Nullable: true},
-		{Name: "auth_latency_ms", Type: field.TypeInt64, Nullable: true},
-		{Name: "routing_latency_ms", Type: field.TypeInt64, Nullable: true},
-		{Name: "upstream_latency_ms", Type: field.TypeInt64, Nullable: true},
-		{Name: "response_latency_ms", Type: field.TypeInt64, Nullable: true},
-		{Name: "request_body", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "user_agent", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
-		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-	}
-	// OpsErrorLogsTable holds the schema information for the "ops_error_logs" table.
-	OpsErrorLogsTable = &schema.Table{
-		Name:       "ops_error_logs",
-		Columns:    OpsErrorLogsColumns,
-		PrimaryKey: []*schema.Column{OpsErrorLogsColumns[0]},
-		Indexes: []*schema.Index{
-			{
-				Name:    "opserrorlog_created_at",
-				Unique:  false,
-				Columns: []*schema.Column{OpsErrorLogsColumns[39]},
-			},
-			{
-				Name:    "opserrorlog_error_phase",
-				Unique:  false,
-				Columns: []*schema.Column{OpsErrorLogsColumns[7]},
-			},
-			{
-				Name:    "opserrorlog_platform",
-				Unique:  false,
-				Columns: []*schema.Column{OpsErrorLogsColumns[11]},
-			},
-			{
-				Name:    "opserrorlog_severity",
-				Unique:  false,
-				Columns: []*schema.Column{OpsErrorLogsColumns[9]},
-			},
-			{
-				Name:    "opserrorlog_status_code",
-				Unique:  false,
-				Columns: []*schema.Column{OpsErrorLogsColumns[10]},
-			},
-			{
-				Name:    "opserrorlog_client_ip",
-				Unique:  false,
-				Columns: []*schema.Column{OpsErrorLogsColumns[6]},
-			},
-			{
-				Name:    "opserrorlog_account_id",
-				Unique:  false,
-				Columns: []*schema.Column{OpsErrorLogsColumns[4]},
-			},
-			{
-				Name:    "opserrorlog_group_id",
-				Unique:  false,
-				Columns: []*schema.Column{OpsErrorLogsColumns[5]},
-			},
-			{
-				Name:    "opserrorlog_request_id",
-				Unique:  false,
-				Columns: []*schema.Column{OpsErrorLogsColumns[1]},
-			},
-			{
-				Name:    "opserrorlog_platform_created_at",
-				Unique:  false,
-				Columns: []*schema.Column{OpsErrorLogsColumns[11], OpsErrorLogsColumns[39]},
-			},
-			{
-				Name:    "opserrorlog_severity_created_at",
-				Unique:  false,
-				Columns: []*schema.Column{OpsErrorLogsColumns[9], OpsErrorLogsColumns[39]},
-			},
-			{
-				Name:    "opserrorlog_account_id_created_at",
-				Unique:  false,
-				Columns: []*schema.Column{OpsErrorLogsColumns[4], OpsErrorLogsColumns[39]},
-			},
-			{
-				Name:    "opserrorlog_group_id_created_at",
-				Unique:  false,
-				Columns: []*schema.Column{OpsErrorLogsColumns[5], OpsErrorLogsColumns[39]},
-			},
-		},
-	}
-	// OpsGroupAvailabilityConfigsColumns holds the columns for the "ops_group_availability_configs" table.
-	OpsGroupAvailabilityConfigsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt64, Increment: true},
-		{Name: "group_id", Type: field.TypeInt64},
-		{Name: "enabled", Type: field.TypeBool, Default: false},
-		{Name: "min_available_accounts", Type: field.TypeInt, Default: 1},
-		{Name: "threshold_mode", Type: field.TypeString, Size: 20, Default: "count"},
-		{Name: "min_available_percentage", Type: field.TypeFloat64, Default: 0},
-		{Name: "notify_email", Type: field.TypeBool, Default: true},
-		{Name: "severity", Type: field.TypeString, Size: 20, Default: "warning"},
-		{Name: "cooldown_minutes", Type: field.TypeInt, Default: 30},
-		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamp"}},
-		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamp"}},
-	}
-	// OpsGroupAvailabilityConfigsTable holds the schema information for the "ops_group_availability_configs" table.
-	OpsGroupAvailabilityConfigsTable = &schema.Table{
-		Name:       "ops_group_availability_configs",
-		Columns:    OpsGroupAvailabilityConfigsColumns,
-		PrimaryKey: []*schema.Column{OpsGroupAvailabilityConfigsColumns[0]},
-		Indexes: []*schema.Index{
-			{
-				Name:    "opsgroupavailabilityconfig_group_id",
-				Unique:  true,
-				Columns: []*schema.Column{OpsGroupAvailabilityConfigsColumns[1]},
-			},
-			{
-				Name:    "opsgroupavailabilityconfig_enabled",
-				Unique:  false,
-				Columns: []*schema.Column{OpsGroupAvailabilityConfigsColumns[2]},
-			},
-		},
-	}
-	// OpsGroupAvailabilityEventsColumns holds the columns for the "ops_group_availability_events" table.
-	OpsGroupAvailabilityEventsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt64, Increment: true},
-		{Name: "config_id", Type: field.TypeInt64},
-		{Name: "group_id", Type: field.TypeInt64},
-		{Name: "status", Type: field.TypeString, Size: 20, Default: "firing"},
-		{Name: "severity", Type: field.TypeString, Size: 20},
-		{Name: "title", Type: field.TypeString, SchemaType: map[string]string{"postgres": "text"}},
-		{Name: "description", Type: field.TypeString, SchemaType: map[string]string{"postgres": "text"}},
-		{Name: "available_accounts", Type: field.TypeInt},
-		{Name: "threshold_accounts", Type: field.TypeInt},
-		{Name: "total_accounts", Type: field.TypeInt},
-		{Name: "email_sent", Type: field.TypeBool, Default: false},
-		{Name: "fired_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamp"}},
-		{Name: "resolved_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamp"}},
-		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamp"}},
-	}
-	// OpsGroupAvailabilityEventsTable holds the schema information for the "ops_group_availability_events" table.
-	OpsGroupAvailabilityEventsTable = &schema.Table{
-		Name:       "ops_group_availability_events",
-		Columns:    OpsGroupAvailabilityEventsColumns,
-		PrimaryKey: []*schema.Column{OpsGroupAvailabilityEventsColumns[0]},
-		Indexes: []*schema.Index{
-			{
-				Name:    "opsgroupavailabilityevent_config_id",
-				Unique:  false,
-				Columns: []*schema.Column{OpsGroupAvailabilityEventsColumns[1]},
-			},
-			{
-				Name:    "opsgroupavailabilityevent_group_id",
-				Unique:  false,
-				Columns: []*schema.Column{OpsGroupAvailabilityEventsColumns[2]},
-			},
-			{
-				Name:    "opsgroupavailabilityevent_status",
-				Unique:  false,
-				Columns: []*schema.Column{OpsGroupAvailabilityEventsColumns[3]},
-			},
-			{
-				Name:    "opsgroupavailabilityevent_fired_at",
-				Unique:  false,
-				Columns: []*schema.Column{OpsGroupAvailabilityEventsColumns[11]},
-			},
-		},
-	}
-	// OpsMetricsDailyColumns holds the columns for the "ops_metrics_daily" table.
-	OpsMetricsDailyColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt64, Increment: true},
-		{Name: "bucket_date", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "date"}},
-		{Name: "platform", Type: field.TypeString, Size: 50, Default: ""},
-		{Name: "request_count", Type: field.TypeInt64, Default: 0},
-		{Name: "success_count", Type: field.TypeInt64, Default: 0},
-		{Name: "error_count", Type: field.TypeInt64, Default: 0},
-		{Name: "error_4xx_count", Type: field.TypeInt64, Default: 0},
-		{Name: "error_5xx_count", Type: field.TypeInt64, Default: 0},
-		{Name: "timeout_count", Type: field.TypeInt64, Default: 0},
-		{Name: "avg_latency_ms", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(10,2)"}},
-		{Name: "p99_latency_ms", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(10,2)"}},
-		{Name: "error_rate", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(5,2)"}},
-		{Name: "computed_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-	}
-	// OpsMetricsDailyTable holds the schema information for the "ops_metrics_daily" table.
-	OpsMetricsDailyTable = &schema.Table{
-		Name:       "ops_metrics_daily",
-		Columns:    OpsMetricsDailyColumns,
-		PrimaryKey: []*schema.Column{OpsMetricsDailyColumns[0]},
-		Indexes: []*schema.Index{
-			{
-				Name:    "opsmetricsdaily_bucket_date_platform",
-				Unique:  true,
-				Columns: []*schema.Column{OpsMetricsDailyColumns[1], OpsMetricsDailyColumns[2]},
-			},
-			{
-				Name:    "opsmetricsdaily_bucket_date",
-				Unique:  false,
-				Columns: []*schema.Column{OpsMetricsDailyColumns[1]},
-			},
-			{
-				Name:    "opsmetricsdaily_platform_bucket_date",
-				Unique:  false,
-				Columns: []*schema.Column{OpsMetricsDailyColumns[2], OpsMetricsDailyColumns[1]},
-			},
-		},
-	}
-	// OpsMetricsHourlyColumns holds the columns for the "ops_metrics_hourly" table.
-	OpsMetricsHourlyColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt64, Increment: true},
-		{Name: "bucket_start", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "platform", Type: field.TypeString, Size: 50, Default: ""},
-		{Name: "request_count", Type: field.TypeInt64, Default: 0},
-		{Name: "success_count", Type: field.TypeInt64, Default: 0},
-		{Name: "error_count", Type: field.TypeInt64, Default: 0},
-		{Name: "error_4xx_count", Type: field.TypeInt64, Default: 0},
-		{Name: "error_5xx_count", Type: field.TypeInt64, Default: 0},
-		{Name: "timeout_count", Type: field.TypeInt64, Default: 0},
-		{Name: "avg_latency_ms", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(10,2)"}},
-		{Name: "p99_latency_ms", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(10,2)"}},
-		{Name: "error_rate", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(5,2)"}},
-		{Name: "computed_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-	}
-	// OpsMetricsHourlyTable holds the schema information for the "ops_metrics_hourly" table.
-	OpsMetricsHourlyTable = &schema.Table{
-		Name:       "ops_metrics_hourly",
-		Columns:    OpsMetricsHourlyColumns,
-		PrimaryKey: []*schema.Column{OpsMetricsHourlyColumns[0]},
-		Indexes: []*schema.Index{
-			{
-				Name:    "opsmetricshourly_bucket_start_platform",
-				Unique:  true,
-				Columns: []*schema.Column{OpsMetricsHourlyColumns[1], OpsMetricsHourlyColumns[2]},
-			},
-			{
-				Name:    "opsmetricshourly_bucket_start",
-				Unique:  false,
-				Columns: []*schema.Column{OpsMetricsHourlyColumns[1]},
-			},
-			{
-				Name:    "opsmetricshourly_platform_bucket_start",
-				Unique:  false,
-				Columns: []*schema.Column{OpsMetricsHourlyColumns[2], OpsMetricsHourlyColumns[1]},
-			},
-		},
-	}
-	// OpsScheduledReportsColumns holds the columns for the "ops_scheduled_reports" table.
-	OpsScheduledReportsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt64, Increment: true},
-		{Name: "name", Type: field.TypeString, Size: 255},
-		{Name: "description", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
-		{Name: "schedule_cron", Type: field.TypeString, Size: 100},
-		{Name: "report_type", Type: field.TypeString, Size: 50},
-		{Name: "report_config", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "notification_channels", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "enabled", Type: field.TypeBool, Default: true},
-		{Name: "last_run_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "next_run_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-	}
-	// OpsScheduledReportsTable holds the schema information for the "ops_scheduled_reports" table.
-	OpsScheduledReportsTable = &schema.Table{
-		Name:       "ops_scheduled_reports",
-		Columns:    OpsScheduledReportsColumns,
-		PrimaryKey: []*schema.Column{OpsScheduledReportsColumns[0]},
-		Indexes: []*schema.Index{
-			{
-				Name:    "opsscheduledreport_next_run_at",
-				Unique:  false,
-				Columns: []*schema.Column{OpsScheduledReportsColumns[9]},
-			},
-		},
-	}
-	// OpsSystemMetricsColumns holds the columns for the "ops_system_metrics" table.
-	OpsSystemMetricsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt64, Increment: true},
-		{Name: "window_minutes", Type: field.TypeInt, Default: 1},
-		{Name: "request_count", Type: field.TypeInt64, Default: 0},
-		{Name: "success_count", Type: field.TypeInt64, Default: 0},
-		{Name: "error_count", Type: field.TypeInt64, Default: 0},
-		{Name: "qps", Type: field.TypeFloat64, Nullable: true},
-		{Name: "tps", Type: field.TypeFloat64, Nullable: true},
-		{Name: "error_4xx_count", Type: field.TypeInt64, Default: 0},
-		{Name: "error_5xx_count", Type: field.TypeInt64, Default: 0},
-		{Name: "error_timeout_count", Type: field.TypeInt64, Default: 0},
-		{Name: "latency_p50", Type: field.TypeFloat64, Nullable: true},
-		{Name: "latency_p95", Type: field.TypeFloat64, Nullable: true},
-		{Name: "latency_p99", Type: field.TypeFloat64, Nullable: true},
-		{Name: "latency_avg", Type: field.TypeFloat64, Nullable: true},
-		{Name: "latency_max", Type: field.TypeFloat64, Nullable: true},
-		{Name: "upstream_latency_avg", Type: field.TypeFloat64, Nullable: true},
-		{Name: "success_rate", Type: field.TypeFloat64, Default: 0},
-		{Name: "error_rate", Type: field.TypeFloat64, Default: 0},
-		{Name: "cpu_usage_percent", Type: field.TypeFloat64, Nullable: true},
-		{Name: "memory_used_mb", Type: field.TypeInt64, Nullable: true},
-		{Name: "memory_total_mb", Type: field.TypeInt64, Nullable: true},
-		{Name: "memory_usage_percent", Type: field.TypeFloat64, Nullable: true},
-		{Name: "db_conn_active", Type: field.TypeInt, Nullable: true},
-		{Name: "db_conn_idle", Type: field.TypeInt, Nullable: true},
-		{Name: "db_conn_waiting", Type: field.TypeInt, Nullable: true},
-		{Name: "goroutine_count", Type: field.TypeInt, Nullable: true},
-		{Name: "token_consumed", Type: field.TypeInt64, Default: 0},
-		{Name: "token_rate", Type: field.TypeFloat64, Nullable: true},
-		{Name: "active_subscriptions", Type: field.TypeInt, Nullable: true},
-		{Name: "active_alerts", Type: field.TypeInt, Default: 0},
-		{Name: "concurrency_queue_depth", Type: field.TypeInt, Nullable: true},
-		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-	}
-	// OpsSystemMetricsTable holds the schema information for the "ops_system_metrics" table.
-	OpsSystemMetricsTable = &schema.Table{
-		Name:       "ops_system_metrics",
-		Columns:    OpsSystemMetricsColumns,
-		PrimaryKey: []*schema.Column{OpsSystemMetricsColumns[0]},
-		Indexes: []*schema.Index{
-			{
-				Name:    "opssystemmetric_created_at",
-				Unique:  false,
-				Columns: []*schema.Column{OpsSystemMetricsColumns[31]},
-			},
-			{
-				Name:    "opssystemmetric_window_minutes_created_at",
-				Unique:  false,
-				Columns: []*schema.Column{OpsSystemMetricsColumns[1], OpsSystemMetricsColumns[31]},
 			},
 		},
 	}
@@ -799,7 +370,9 @@ var (
 		{Name: "billing_type", Type: field.TypeInt8, Default: 0},
 		{Name: "stream", Type: field.TypeBool, Default: false},
 		{Name: "duration_ms", Type: field.TypeInt, Nullable: true},
-		{Name: "time_to_first_token_ms", Type: field.TypeInt, Nullable: true},
+		{Name: "first_token_ms", Type: field.TypeInt, Nullable: true},
+		{Name: "image_count", Type: field.TypeInt, Default: 0},
+		{Name: "image_size", Type: field.TypeString, Nullable: true, Size: 10},
 		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "api_key_id", Type: field.TypeInt64},
 		{Name: "account_id", Type: field.TypeInt64},
@@ -815,31 +388,31 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "usage_logs_api_keys_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[21]},
+				Columns:    []*schema.Column{UsageLogsColumns[23]},
 				RefColumns: []*schema.Column{APIKeysColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "usage_logs_accounts_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[22]},
+				Columns:    []*schema.Column{UsageLogsColumns[24]},
 				RefColumns: []*schema.Column{AccountsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "usage_logs_groups_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[23]},
+				Columns:    []*schema.Column{UsageLogsColumns[25]},
 				RefColumns: []*schema.Column{GroupsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "usage_logs_users_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[24]},
+				Columns:    []*schema.Column{UsageLogsColumns[26]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "usage_logs_user_subscriptions_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[25]},
+				Columns:    []*schema.Column{UsageLogsColumns[27]},
 				RefColumns: []*schema.Column{UserSubscriptionsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -848,32 +421,32 @@ var (
 			{
 				Name:    "usagelog_user_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[24]},
+				Columns: []*schema.Column{UsageLogsColumns[26]},
 			},
 			{
 				Name:    "usagelog_api_key_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[21]},
+				Columns: []*schema.Column{UsageLogsColumns[23]},
 			},
 			{
 				Name:    "usagelog_account_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[22]},
+				Columns: []*schema.Column{UsageLogsColumns[24]},
 			},
 			{
 				Name:    "usagelog_group_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[23]},
+				Columns: []*schema.Column{UsageLogsColumns[25]},
 			},
 			{
 				Name:    "usagelog_subscription_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[25]},
+				Columns: []*schema.Column{UsageLogsColumns[27]},
 			},
 			{
 				Name:    "usagelog_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[20]},
+				Columns: []*schema.Column{UsageLogsColumns[22]},
 			},
 			{
 				Name:    "usagelog_model",
@@ -888,27 +461,12 @@ var (
 			{
 				Name:    "usagelog_user_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[24], UsageLogsColumns[20]},
+				Columns: []*schema.Column{UsageLogsColumns[26], UsageLogsColumns[22]},
 			},
 			{
 				Name:    "usagelog_api_key_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[21], UsageLogsColumns[20]},
-			},
-			{
-				Name:    "usagelog_account_id_created_at",
-				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[22], UsageLogsColumns[20]},
-			},
-			{
-				Name:    "usagelog_model_created_at",
-				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[2], UsageLogsColumns[20]},
-			},
-			{
-				Name:    "usagelog_group_id_created_at",
-				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[23], UsageLogsColumns[20]},
+				Columns: []*schema.Column{UsageLogsColumns[23], UsageLogsColumns[22]},
 			},
 		},
 	}
@@ -1154,15 +712,6 @@ var (
 		AccountsTable,
 		AccountGroupsTable,
 		GroupsTable,
-		OpsAlertEventsTable,
-		OpsAlertRulesTable,
-		OpsErrorLogsTable,
-		OpsGroupAvailabilityConfigsTable,
-		OpsGroupAvailabilityEventsTable,
-		OpsMetricsDailyTable,
-		OpsMetricsHourlyTable,
-		OpsScheduledReportsTable,
-		OpsSystemMetricsTable,
 		ProxiesTable,
 		RedeemCodesTable,
 		SettingsTable,
@@ -1192,33 +741,6 @@ func init() {
 	}
 	GroupsTable.Annotation = &entsql.Annotation{
 		Table: "groups",
-	}
-	OpsAlertEventsTable.Annotation = &entsql.Annotation{
-		Table: "ops_alert_events",
-	}
-	OpsAlertRulesTable.Annotation = &entsql.Annotation{
-		Table: "ops_alert_rules",
-	}
-	OpsErrorLogsTable.Annotation = &entsql.Annotation{
-		Table: "ops_error_logs",
-	}
-	OpsGroupAvailabilityConfigsTable.Annotation = &entsql.Annotation{
-		Table: "ops_group_availability_configs",
-	}
-	OpsGroupAvailabilityEventsTable.Annotation = &entsql.Annotation{
-		Table: "ops_group_availability_events",
-	}
-	OpsMetricsDailyTable.Annotation = &entsql.Annotation{
-		Table: "ops_metrics_daily",
-	}
-	OpsMetricsHourlyTable.Annotation = &entsql.Annotation{
-		Table: "ops_metrics_hourly",
-	}
-	OpsScheduledReportsTable.Annotation = &entsql.Annotation{
-		Table: "ops_scheduled_reports",
-	}
-	OpsSystemMetricsTable.Annotation = &entsql.Annotation{
-		Table: "ops_system_metrics",
 	}
 	ProxiesTable.Annotation = &entsql.Annotation{
 		Table: "proxies",

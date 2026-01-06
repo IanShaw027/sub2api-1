@@ -9,7 +9,6 @@ docs/claude-relay-service/
 *.dll
 *.so
 *.dylib
-*.test
 backend/bin/
 backend/server
 backend/sub2api
@@ -24,17 +23,6 @@ vendor/
 
 # Go 编译缓存
 backend/.gocache/
-backend/.gomodcache/
-
-# 临时资源目录
-backend/internal/resources/
-
-# 重构脚本和临时文件
-*.py
-*.sh
-*.txt
-!requirements.txt
-!README.txt
 
 # ===================
 # Node.js / Vue 前端
@@ -45,6 +33,7 @@ frontend/dist/
 *.local
 *.tsbuildinfo
 vite.config.d.ts
+vite.config.js.timestamp-*
 
 # 日志
 npm-debug.log*
@@ -60,6 +49,7 @@ pnpm-debug.log*
 .env.*.local
 *.env
 !.env.example
+docker-compose.override.yml
 
 # ===================
 # IDE / 编辑器
@@ -90,8 +80,6 @@ temp/
 *.log
 *.bak
 .cache/
-.gemini-clipboard/
-/migrations/
 
 # ===================
 # 构建产物
@@ -128,14 +116,13 @@ AGENTS.md
 scripts
 .code-review-state
 openspec/
-# NOTE: We keep general docs ignored, but allow QA reports/roadmaps to be versioned.
-docs/*
-!docs/qa/
-!docs/qa/**
+docs/
 code-reviews/
 AGENTS.md
 backend/cmd/server/server
 deploy/docker-compose.override.yml
-
-# Local binaries
-backend/sub2api-server
+.gocache/
+vite.config.js
+!docs/
+docs/*
+!docs/dependency-security.md

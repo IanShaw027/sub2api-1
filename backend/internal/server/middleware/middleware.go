@@ -1,5 +1,3 @@
-// Package middleware provides HTTP middleware components for authentication,
-// authorization, logging, error recovery, and request processing.
 package middleware
 
 import (

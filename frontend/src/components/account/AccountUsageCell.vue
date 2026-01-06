@@ -93,7 +93,7 @@
       <div v-else class="text-xs text-gray-400">-</div>
     </template>
 
-    <!-- Antigravity OAuth accounts: show quota from extra field -->
+    <!-- Antigravity OAuth accounts: fetch usage from API -->
     <template v-else-if="account.platform === 'antigravity' && account.type === 'oauth'">
       <!-- 账户类型徽章 -->
       <div v-if="antigravityTierLabel" class="mb-1 flex items-center gap-1">
@@ -129,40 +129,55 @@
         </span>
       </div>
 
-      <div v-if="hasAntigravityQuota" class="space-y-1">
+      <!-- Loading state -->
+      <div v-if="loading" class="space-y-1.5">
+        <div class="flex items-center gap-1">
+          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
+        </div>
+      </div>
+
+      <!-- Error state -->
+      <div v-else-if="error" class="text-xs text-red-500">
+        {{ error }}
+      </div>
+
+      <!-- Usage data from API -->
+      <div v-else-if="hasAntigravityQuotaFromAPI" class="space-y-1">
         <!-- Gemini 3 Pro -->
         <UsageProgressBar
-          v-if="antigravity3ProUsage !== null"
+          v-if="antigravity3ProUsageFromAPI !== null"
           :label="t('admin.accounts.usageWindow.gemini3Pro')"
-          :utilization="antigravity3ProUsage.utilization"
-          :resets-at="antigravity3ProUsage.resetTime"
+          :utilization="antigravity3ProUsageFromAPI.utilization"
+          :resets-at="antigravity3ProUsageFromAPI.resetTime"
           color="indigo"
         />
 
         <!-- Gemini 3 Flash -->
         <UsageProgressBar
-          v-if="antigravity3FlashUsage !== null"
+          v-if="antigravity3FlashUsageFromAPI !== null"
           :label="t('admin.accounts.usageWindow.gemini3Flash')"
-          :utilization="antigravity3FlashUsage.utilization"
-          :resets-at="antigravity3FlashUsage.resetTime"
+          :utilization="antigravity3FlashUsageFromAPI.utilization"
+          :resets-at="antigravity3FlashUsageFromAPI.resetTime"
           color="emerald"
         />
 
         <!-- Gemini 3 Image -->
         <UsageProgressBar
-          v-if="antigravity3ImageUsage !== null"
+          v-if="antigravity3ImageUsageFromAPI !== null"
           :label="t('admin.accounts.usageWindow.gemini3Image')"
-          :utilization="antigravity3ImageUsage.utilization"
-          :resets-at="antigravity3ImageUsage.resetTime"
+          :utilization="antigravity3ImageUsageFromAPI.utilization"
+          :resets-at="antigravity3ImageUsageFromAPI.resetTime"
           color="purple"
         />
 
         <!-- Claude 4.5 -->
         <UsageProgressBar
-          v-if="antigravityClaude45Usage !== null"
+          v-if="antigravityClaude45UsageFromAPI !== null"
           :label="t('admin.accounts.usageWindow.claude45')"
-          :utilization="antigravityClaude45Usage.utilization"
-          :resets-at="antigravityClaude45Usage.resetTime"
+          :utilization="antigravityClaude45UsageFromAPI.utilization"
+          :resets-at="antigravityClaude45UsageFromAPI.resetTime"
           color="amber"
         />
       </div>
@@ -171,17 +186,17 @@
 
     <!-- Gemini platform: show quota + local usage window -->
     <template v-else-if="account.platform === 'gemini'">
-      <!-- 账户类型徽章 -->
-      <div v-if="geminiTierLabel" class="mb-1 flex items-center gap-1">
+      <!-- Auth Type + Tier Badge (first line) -->
+      <div v-if="geminiAuthTypeLabel" class="mb-1 flex items-center gap-1">
         <span
           :class="[
             'inline-block rounded px-1.5 py-0.5 text-[10px] font-medium',
             geminiTierClass
           ]"
         >
-          {{ geminiTierLabel }}
+          {{ geminiAuthTypeLabel }}
         </span>
-        <!-- 帮助图标 -->
+        <!-- Help icon -->
         <span
           class="group relative cursor-help"
         >
@@ -205,7 +220,7 @@
               <div><strong>{{ geminiQuotaPolicyChannel }}:</strong></div>
               <div class="pl-2">• {{ geminiQuotaPolicyLimits }}</div>
               <div class="mt-2">
-                <a :href="geminiQuotaPolicyDocsUrl" target="_blank" class="text-blue-400 hover:text-blue-300 underline">
+                <a :href="geminiQuotaPolicyDocsUrl" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline">
                   {{ t('admin.accounts.gemini.quotaPolicy.columns.docs') }} →
                 </a>
               </div>
@@ -214,6 +229,7 @@
         </span>
       </div>
 
+      <!-- Usage data or unlimited flow -->
       <div class="space-y-1">
         <div v-if="loading" class="space-y-1">
           <div class="flex items-center gap-1">
@@ -225,28 +241,24 @@
         <div v-else-if="error" class="text-xs text-red-500">
           {{ error }}
         </div>
+        <!-- Gemini: show daily usage bars when available -->
         <div v-else-if="geminiUsageAvailable" class="space-y-1">
           <UsageProgressBar
-            v-if="usageInfo?.gemini_pro_daily"
-            :label="t('admin.accounts.usageWindow.geminiProDaily')"
-            :utilization="usageInfo.gemini_pro_daily.utilization"
-            :resets-at="usageInfo.gemini_pro_daily.resets_at"
-            :window-stats="usageInfo.gemini_pro_daily.window_stats"
-            :stats-title="t('admin.accounts.usageWindow.statsTitleDaily')"
-            color="indigo"
-          />
-          <UsageProgressBar
-            v-if="usageInfo?.gemini_flash_daily"
-            :label="t('admin.accounts.usageWindow.geminiFlashDaily')"
-            :utilization="usageInfo.gemini_flash_daily.utilization"
-            :resets-at="usageInfo.gemini_flash_daily.resets_at"
-            :window-stats="usageInfo.gemini_flash_daily.window_stats"
-            :stats-title="t('admin.accounts.usageWindow.statsTitleDaily')"
-            color="emerald"
+            v-for="bar in geminiUsageBars"
+            :key="bar.key"
+            :label="bar.label"
+            :utilization="bar.utilization"
+            :resets-at="bar.resetsAt"
+            :window-stats="bar.windowStats"
+            :color="bar.color"
           />
           <p class="mt-1 text-[9px] leading-tight text-gray-400 dark:text-gray-500 italic">
             * {{ t('admin.accounts.gemini.quotaPolicy.simulatedNote') }}
           </p>
+        </div>
+        <!-- AI Studio Client OAuth: show unlimited flow (no usage tracking) -->
+        <div v-else class="text-xs text-gray-400">
+          {{ t('admin.accounts.gemini.rateLimit.unlimited') }}
         </div>
       </div>
     </template>
@@ -269,7 +281,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
-import type { Account, AccountUsageInfo, GeminiCredentials } from '@/types'
+import type { Account, AccountUsageInfo, GeminiCredentials, WindowStats } from '@/types'
 import UsageProgressBar from './UsageProgressBar.vue'
 import AccountQuotaInfo from './AccountQuotaInfo.vue'
 
@@ -284,15 +296,20 @@ const error = ref<string | null>(null)
 const usageInfo = ref<AccountUsageInfo | null>(null)
 
 // Show usage windows for OAuth and Setup Token accounts
-const showUsageWindows = computed(
-  () => props.account.type === 'oauth' || props.account.type === 'setup-token'
-)
+const showUsageWindows = computed(() => {
+  // Gemini: we can always compute local usage windows from DB logs (simulated quotas).
+  if (props.account.platform === 'gemini') return true
+  return props.account.type === 'oauth' || props.account.type === 'setup-token'
+})
 
 const shouldFetchUsage = computed(() => {
   if (props.account.platform === 'anthropic') {
     return props.account.type === 'oauth' || props.account.type === 'setup-token'
   }
   if (props.account.platform === 'gemini') {
+    return true
+  }
+  if (props.account.platform === 'antigravity') {
     return props.account.type === 'oauth'
   }
   return false
@@ -300,8 +317,12 @@ const shouldFetchUsage = computed(() => {
 
 const geminiUsageAvailable = computed(() => {
   return (
+    !!usageInfo.value?.gemini_shared_daily ||
     !!usageInfo.value?.gemini_pro_daily ||
-    !!usageInfo.value?.gemini_flash_daily
+    !!usageInfo.value?.gemini_flash_daily ||
+    !!usageInfo.value?.gemini_shared_minute ||
+    !!usageInfo.value?.gemini_pro_minute ||
+    !!usageInfo.value?.gemini_flash_minute
   )
 })
 
@@ -453,45 +474,35 @@ const codex7dResetAt = computed(() => {
   return null
 })
 
-// Antigravity quota types
-interface AntigravityModelQuota {
-  remaining: number // 剩余百分比 0-100
-  reset_time: string // ISO 8601 重置时间
-}
-
-interface AntigravityQuotaData {
-  [model: string]: AntigravityModelQuota
-}
-
+// Antigravity quota types (用于 API 返回的数据)
 interface AntigravityUsageResult {
   utilization: number
   resetTime: string | null
 }
 
-// Antigravity quota computed properties
-const hasAntigravityQuota = computed(() => {
-  const extra = props.account.extra as Record<string, unknown> | undefined
-  return extra && typeof extra.quota === 'object' && extra.quota !== null
+// ===== Antigravity quota from API (usageInfo.antigravity_quota) =====
+
+// 检查是否有从 API 获取的配额数据
+const hasAntigravityQuotaFromAPI = computed(() => {
+  return usageInfo.value?.antigravity_quota && Object.keys(usageInfo.value.antigravity_quota).length > 0
 })
 
-// 从配额数据中获取使用率（多模型取最低剩余 = 最高使用）
-const getAntigravityUsage = (
+// 从 API 配额数据中获取使用率（多模型取最高使用率）
+const getAntigravityUsageFromAPI = (
   modelNames: string[]
 ): AntigravityUsageResult | null => {
-  const extra = props.account.extra as Record<string, unknown> | undefined
-  if (!extra || typeof extra.quota !== 'object' || extra.quota === null) return null
+  const quota = usageInfo.value?.antigravity_quota
+  if (!quota) return null
 
-  const quota = extra.quota as AntigravityQuotaData
-
-  let minRemaining = 100
+  let maxUtilization = 0
   let earliestReset: string | null = null
 
   for (const model of modelNames) {
     const modelQuota = quota[model]
     if (!modelQuota) continue
 
-    if (modelQuota.remaining < minRemaining) {
-      minRemaining = modelQuota.remaining
+    if (modelQuota.utilization > maxUtilization) {
+      maxUtilization = modelQuota.utilization
     }
     if (modelQuota.reset_time) {
       if (!earliestReset || modelQuota.reset_time < earliestReset) {
@@ -501,32 +512,31 @@ const getAntigravityUsage = (
   }
 
   // 如果没有找到任何匹配的模型
-  if (minRemaining === 100 && earliestReset === null) {
-    // 检查是否至少有一个模型有数据
+  if (maxUtilization === 0 && earliestReset === null) {
     const hasAnyData = modelNames.some((m) => quota[m])
     if (!hasAnyData) return null
   }
 
   return {
-    utilization: 100 - minRemaining,
+    utilization: maxUtilization,
     resetTime: earliestReset
   }
 }
 
-// Gemini 3 Pro: gemini-3-pro-low, gemini-3-pro-high, gemini-3-pro-preview
-const antigravity3ProUsage = computed(() =>
-  getAntigravityUsage(['gemini-3-pro-low', 'gemini-3-pro-high', 'gemini-3-pro-preview'])
+// Gemini 3 Pro from API
+const antigravity3ProUsageFromAPI = computed(() =>
+  getAntigravityUsageFromAPI(['gemini-3-pro-low', 'gemini-3-pro-high', 'gemini-3-pro-preview'])
 )
 
-// Gemini 3 Flash: gemini-3-flash
-const antigravity3FlashUsage = computed(() => getAntigravityUsage(['gemini-3-flash']))
+// Gemini 3 Flash from API
+const antigravity3FlashUsageFromAPI = computed(() => getAntigravityUsageFromAPI(['gemini-3-flash']))
 
-// Gemini 3 Image: gemini-3-pro-image
-const antigravity3ImageUsage = computed(() => getAntigravityUsage(['gemini-3-pro-image']))
+// Gemini 3 Image from API
+const antigravity3ImageUsageFromAPI = computed(() => getAntigravityUsageFromAPI(['gemini-3-pro-image']))
 
-// Claude 4.5: claude-sonnet-4-5, claude-opus-4-5-thinking
-const antigravityClaude45Usage = computed(() =>
-  getAntigravityUsage(['claude-sonnet-4-5', 'claude-opus-4-5-thinking'])
+// Claude 4.5 from API
+const antigravityClaude45UsageFromAPI = computed(() =>
+  getAntigravityUsageFromAPI(['claude-sonnet-4-5', 'claude-opus-4-5-thinking'])
 )
 
 // Antigravity 账户类型（从 load_code_assist 响应中提取）
@@ -558,6 +568,12 @@ const geminiTier = computed(() => {
   return creds?.tier_id || null
 })
 
+const geminiOAuthType = computed(() => {
+  if (props.account.platform !== 'gemini') return null
+  const creds = props.account.credentials as GeminiCredentials | undefined
+  return (creds?.oauth_type || '').trim() || null
+})
+
 // Gemini 是否为 Code Assist OAuth
 const isGeminiCodeAssist = computed(() => {
   if (props.account.platform !== 'gemini') return false
@@ -565,92 +581,206 @@ const isGeminiCodeAssist = computed(() => {
   return creds?.oauth_type === 'code_assist' || (!creds?.oauth_type && !!creds?.project_id)
 })
 
-// Gemini 账户类型显示标签
-const geminiTierLabel = computed(() => {
-  if (!geminiTier.value) return null
+const geminiChannelShort = computed((): 'ai studio' | 'gcp' | 'google one' | 'client' | null => {
+  if (props.account.platform !== 'gemini') return null
 
-  const creds = props.account.credentials as GeminiCredentials | undefined
-  const isGoogleOne = creds?.oauth_type === 'google_one'
+  // API Key accounts are AI Studio.
+  if (props.account.type === 'apikey') return 'ai studio'
 
-  if (isGoogleOne) {
-    // Google One tier 标签
-    const tierMap: Record<string, string> = {
-      AI_PREMIUM: t('admin.accounts.tier.aiPremium'),
-      GOOGLE_ONE_STANDARD: t('admin.accounts.tier.standard'),
-      GOOGLE_ONE_BASIC: t('admin.accounts.tier.basic'),
-      FREE: t('admin.accounts.tier.free'),
-      GOOGLE_ONE_UNKNOWN: t('admin.accounts.tier.personal'),
-      GOOGLE_ONE_UNLIMITED: t('admin.accounts.tier.unlimited')
-    }
-    return tierMap[geminiTier.value] || t('admin.accounts.tier.personal')
-  }
+  if (geminiOAuthType.value === 'google_one') return 'google one'
+  if (isGeminiCodeAssist.value) return 'gcp'
+  if (geminiOAuthType.value === 'ai_studio') return 'client'
 
-  // Code Assist tier 标签
-  const tierMap: Record<string, string> = {
-    LEGACY: t('admin.accounts.tier.free'),
-    PRO: t('admin.accounts.tier.pro'),
-    ULTRA: t('admin.accounts.tier.ultra')
-  }
-  return tierMap[geminiTier.value] || null
+  // Fallback (unknown legacy data): treat as AI Studio.
+  return 'ai studio'
 })
 
-// Gemini 账户类型徽章样式
+const geminiUserLevel = computed((): string | null => {
+  if (props.account.platform !== 'gemini') return null
+
+  const tier = (geminiTier.value || '').toString().trim()
+  const tierLower = tier.toLowerCase()
+  const tierUpper = tier.toUpperCase()
+
+  // Google One: free / pro / ultra
+  if (geminiOAuthType.value === 'google_one') {
+    if (tierLower === 'google_one_free') return 'free'
+    if (tierLower === 'google_ai_pro') return 'pro'
+    if (tierLower === 'google_ai_ultra') return 'ultra'
+
+    // Backward compatibility (legacy tier markers)
+    if (tierUpper === 'AI_PREMIUM' || tierUpper === 'GOOGLE_ONE_STANDARD') return 'pro'
+    if (tierUpper === 'GOOGLE_ONE_UNLIMITED') return 'ultra'
+    if (tierUpper === 'FREE' || tierUpper === 'GOOGLE_ONE_BASIC' || tierUpper === 'GOOGLE_ONE_UNKNOWN' || tierUpper === '') return 'free'
+
+    return null
+  }
+
+  // GCP Code Assist: standard / enterprise
+  if (isGeminiCodeAssist.value) {
+    if (tierLower === 'gcp_enterprise') return 'enterprise'
+    if (tierLower === 'gcp_standard') return 'standard'
+
+    // Backward compatibility
+    if (tierUpper.includes('ULTRA') || tierUpper.includes('ENTERPRISE')) return 'enterprise'
+    return 'standard'
+  }
+
+  // AI Studio (API Key) and Client OAuth: free / paid
+  if (props.account.type === 'apikey' || geminiOAuthType.value === 'ai_studio') {
+    if (tierLower === 'aistudio_paid') return 'paid'
+    if (tierLower === 'aistudio_free') return 'free'
+
+    // Backward compatibility
+    if (tierUpper.includes('PAID') || tierUpper.includes('PAYG') || tierUpper.includes('PAY')) return 'paid'
+    if (tierUpper.includes('FREE')) return 'free'
+    if (props.account.type === 'apikey') return 'free'
+    return null
+  }
+
+  return null
+})
+
+// Gemini 认证类型（按要求：授权方式简称 + 用户等级）
+const geminiAuthTypeLabel = computed(() => {
+  if (props.account.platform !== 'gemini') return null
+  if (!geminiChannelShort.value) return null
+  return geminiUserLevel.value ? `${geminiChannelShort.value} ${geminiUserLevel.value}` : geminiChannelShort.value
+})
+
+// Gemini 账户类型徽章样式（统一样式）
 const geminiTierClass = computed(() => {
-  if (!geminiTier.value) return ''
+  // Use channel+level to choose a stable color without depending on raw tier_id variants.
+  const channel = geminiChannelShort.value
+  const level = geminiUserLevel.value
 
-  const creds = props.account.credentials as GeminiCredentials | undefined
-  const isGoogleOne = creds?.oauth_type === 'google_one'
-
-  if (isGoogleOne) {
-    // Google One tier 颜色
-    const colorMap: Record<string, string> = {
-      AI_PREMIUM: 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300',
-      GOOGLE_ONE_STANDARD: 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300',
-      GOOGLE_ONE_BASIC: 'bg-green-100 text-green-600 dark:bg-green-900/40 dark:text-green-300',
-      FREE: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
-      GOOGLE_ONE_UNKNOWN: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
-      GOOGLE_ONE_UNLIMITED: 'bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-300'
-    }
-    return colorMap[geminiTier.value] || 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+  if (channel === 'client' || channel === 'ai studio') {
+    return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
   }
 
-  // Code Assist tier 颜色
-  switch (geminiTier.value) {
-    case 'LEGACY':
-      return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-    case 'PRO':
-      return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
-    case 'ULTRA':
-      return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
-    default:
-      return ''
+  if (channel === 'google one') {
+    if (level === 'ultra') return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
+    if (level === 'pro') return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
+    return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
   }
+
+  if (channel === 'gcp') {
+    if (level === 'enterprise') return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
+    return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
+  }
+
+  return ''
 })
 
 // Gemini 配额政策信息
 const geminiQuotaPolicyChannel = computed(() => {
+  if (geminiOAuthType.value === 'google_one') {
+    return t('admin.accounts.gemini.quotaPolicy.rows.googleOne.channel')
+  }
   if (isGeminiCodeAssist.value) {
-    return t('admin.accounts.gemini.quotaPolicy.rows.cli.channel')
+    return t('admin.accounts.gemini.quotaPolicy.rows.gcp.channel')
   }
   return t('admin.accounts.gemini.quotaPolicy.rows.aiStudio.channel')
 })
 
 const geminiQuotaPolicyLimits = computed(() => {
-  if (isGeminiCodeAssist.value) {
-    if (geminiTier.value === 'PRO' || geminiTier.value === 'ULTRA') {
-      return t('admin.accounts.gemini.quotaPolicy.rows.cli.limitsPremium')
+  const tierLower = (geminiTier.value || '').toString().trim().toLowerCase()
+
+  if (geminiOAuthType.value === 'google_one') {
+    if (tierLower === 'google_ai_ultra' || geminiUserLevel.value === 'ultra') {
+      return t('admin.accounts.gemini.quotaPolicy.rows.googleOne.limitsUltra')
     }
-    return t('admin.accounts.gemini.quotaPolicy.rows.cli.limitsFree')
+    if (tierLower === 'google_ai_pro' || geminiUserLevel.value === 'pro') {
+      return t('admin.accounts.gemini.quotaPolicy.rows.googleOne.limitsPro')
+    }
+    return t('admin.accounts.gemini.quotaPolicy.rows.googleOne.limitsFree')
   }
-  // AI Studio - 默认显示免费层限制
+
+  if (isGeminiCodeAssist.value) {
+    if (tierLower === 'gcp_enterprise' || geminiUserLevel.value === 'enterprise') {
+      return t('admin.accounts.gemini.quotaPolicy.rows.gcp.limitsEnterprise')
+    }
+    return t('admin.accounts.gemini.quotaPolicy.rows.gcp.limitsStandard')
+  }
+
+  // AI Studio (API Key / custom OAuth)
+  if (tierLower === 'aistudio_paid' || geminiUserLevel.value === 'paid') {
+    return t('admin.accounts.gemini.quotaPolicy.rows.aiStudio.limitsPaid')
+  }
   return t('admin.accounts.gemini.quotaPolicy.rows.aiStudio.limitsFree')
 })
 
 const geminiQuotaPolicyDocsUrl = computed(() => {
-  if (isGeminiCodeAssist.value) {
-    return 'https://cloud.google.com/products/gemini/code-assist#pricing'
+  if (geminiOAuthType.value === 'google_one' || isGeminiCodeAssist.value) {
+    return 'https://developers.google.com/gemini-code-assist/resources/quotas'
   }
   return 'https://ai.google.dev/pricing'
+})
+
+const geminiUsesSharedDaily = computed(() => {
+  if (props.account.platform !== 'gemini') return false
+  // Per requirement: Google One & GCP are shared RPD pools (no per-model breakdown).
+  return (
+    !!usageInfo.value?.gemini_shared_daily ||
+    !!usageInfo.value?.gemini_shared_minute ||
+    geminiOAuthType.value === 'google_one' ||
+    isGeminiCodeAssist.value
+  )
+})
+
+const geminiUsageBars = computed(() => {
+  if (props.account.platform !== 'gemini') return []
+  if (!usageInfo.value) return []
+
+  const bars: Array<{
+    key: string
+    label: string
+    utilization: number
+    resetsAt: string | null
+    windowStats?: WindowStats | null
+    color: 'indigo' | 'emerald'
+  }> = []
+
+  if (geminiUsesSharedDaily.value) {
+    const sharedDaily = usageInfo.value.gemini_shared_daily
+    if (sharedDaily) {
+      bars.push({
+        key: 'shared_daily',
+        label: '1d',
+        utilization: sharedDaily.utilization,
+        resetsAt: sharedDaily.resets_at,
+        windowStats: sharedDaily.window_stats,
+        color: 'indigo'
+      })
+    }
+    return bars
+  }
+
+  const pro = usageInfo.value.gemini_pro_daily
+  if (pro) {
+    bars.push({
+      key: 'pro_daily',
+      label: 'pro',
+      utilization: pro.utilization,
+      resetsAt: pro.resets_at,
+      windowStats: pro.window_stats,
+      color: 'indigo'
+      })
+  }
+
+  const flash = usageInfo.value.gemini_flash_daily
+  if (flash) {
+    bars.push({
+      key: 'flash_daily',
+      label: 'flash',
+      utilization: flash.utilization,
+      resetsAt: flash.resets_at,
+      windowStats: flash.window_stats,
+      color: 'emerald'
+    })
+  }
+
+  return bars
 })
 
 // 账户类型显示标签

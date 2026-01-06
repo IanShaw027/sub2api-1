@@ -1,4 +1,4 @@
-// Package openai provides OpenAI API models and configuration.
+// Package openai provides helpers and types for OpenAI API integration.
 package openai
 
 import _ "embed"

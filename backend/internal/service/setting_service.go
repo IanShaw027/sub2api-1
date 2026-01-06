@@ -130,6 +130,17 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	updates[SettingKeyOpsMonitoringEnabled] = strconv.FormatBool(settings.OpsMonitoringEnabled)
 	updates[SettingKeyOpsRealtimeMonitoringEnabled] = strconv.FormatBool(settings.OpsRealtimeMonitoringEnabled)
 
+	// Model fallback configuration
+	updates[SettingKeyEnableModelFallback] = strconv.FormatBool(settings.EnableModelFallback)
+	updates[SettingKeyFallbackModelAnthropic] = settings.FallbackModelAnthropic
+	updates[SettingKeyFallbackModelOpenAI] = settings.FallbackModelOpenAI
+	updates[SettingKeyFallbackModelGemini] = settings.FallbackModelGemini
+	updates[SettingKeyFallbackModelAntigravity] = settings.FallbackModelAntigravity
+
+	// Identity patch configuration (Claude -> Gemini)
+	updates[SettingKeyEnableIdentityPatch] = strconv.FormatBool(settings.EnableIdentityPatch)
+	updates[SettingKeyIdentityPatchPrompt] = settings.IdentityPatchPrompt
+
 	return s.settingRepo.SetMultiple(ctx, updates)
 }
 
@@ -199,17 +210,27 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 
 	// 初始化默认设置
 	defaults := map[string]string{
-		SettingKeyRegistrationEnabled:          "true",
-		SettingKeyEmailVerifyEnabled:           "false",
-		SettingKeySiteName:                     "Sub2API",
-		SettingKeySiteLogo:                     "",
-		SettingKeySiteURL:                      "",
-		SettingKeyDefaultConcurrency:           strconv.Itoa(s.cfg.Default.UserConcurrency),
-		SettingKeyDefaultBalance:               strconv.FormatFloat(s.cfg.Default.UserBalance, 'f', 8, 64),
-		SettingKeySMTPPort:                     "587",
-		SettingKeySMTPUseTLS:                   "false",
+		SettingKeyRegistrationEnabled: "true",
+		SettingKeyEmailVerifyEnabled:  "false",
+		SettingKeySiteName:            "Sub2API",
+		SettingKeySiteLogo:            "",
+		SettingKeySiteURL:             "",
+		SettingKeyDefaultConcurrency:  strconv.Itoa(s.cfg.Default.UserConcurrency),
+		SettingKeyDefaultBalance:      strconv.FormatFloat(s.cfg.Default.UserBalance, 'f', 8, 64),
+		SettingKeySMTPPort:            "587",
+		SettingKeySMTPUseTLS:          "false",
+		// Ops defaults
 		SettingKeyOpsMonitoringEnabled:         "true",
 		SettingKeyOpsRealtimeMonitoringEnabled: "true",
+		// Model fallback defaults
+		SettingKeyEnableModelFallback:      "false",
+		SettingKeyFallbackModelAnthropic:   "claude-3-5-sonnet-20241022",
+		SettingKeyFallbackModelOpenAI:      "gpt-4o",
+		SettingKeyFallbackModelGemini:      "gemini-2.5-pro",
+		SettingKeyFallbackModelAntigravity: "gemini-2.5-pro",
+		// Identity patch defaults
+		SettingKeyEnableIdentityPatch: "true",
+		SettingKeyIdentityPatchPrompt: "",
 	}
 
 	return s.settingRepo.SetMultiple(ctx, defaults)
@@ -218,24 +239,24 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 // parseSettings 解析设置到结构体
 func (s *SettingService) parseSettings(settings map[string]string) *SystemSettings {
 	result := &SystemSettings{
-		RegistrationEnabled: settings[SettingKeyRegistrationEnabled] == "true",
-		EmailVerifyEnabled:  settings[SettingKeyEmailVerifyEnabled] == "true",
-		SMTPHost:            settings[SettingKeySMTPHost],
-		SMTPUsername:        settings[SettingKeySMTPUsername],
-		SMTPFrom:            settings[SettingKeySMTPFrom],
-		SMTPFromName:        settings[SettingKeySMTPFromName],
-		SMTPUseTLS:          settings[SettingKeySMTPUseTLS] == "true",
-		TurnstileEnabled:    settings[SettingKeyTurnstileEnabled] == "true",
-		TurnstileSiteKey:    settings[SettingKeyTurnstileSiteKey],
-		SiteName:            s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
-		SiteLogo:            settings[SettingKeySiteLogo],
-		SiteSubtitle:        s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
-		SiteURL:             settings[SettingKeySiteURL],
+		RegistrationEnabled:          settings[SettingKeyRegistrationEnabled] == "true",
+		EmailVerifyEnabled:           settings[SettingKeyEmailVerifyEnabled] == "true",
+		SMTPHost:                     settings[SettingKeySMTPHost],
+		SMTPUsername:                 settings[SettingKeySMTPUsername],
+		SMTPFrom:                     settings[SettingKeySMTPFrom],
+		SMTPFromName:                 settings[SettingKeySMTPFromName],
+		SMTPUseTLS:                   settings[SettingKeySMTPUseTLS] == "true",
+		SMTPPasswordConfigured:       settings[SettingKeySMTPPassword] != "",
+		TurnstileEnabled:             settings[SettingKeyTurnstileEnabled] == "true",
+		TurnstileSiteKey:             settings[SettingKeyTurnstileSiteKey],
+		TurnstileSecretKeyConfigured: settings[SettingKeyTurnstileSecretKey] != "",
+		SiteName:                     s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
+		SiteLogo:                     settings[SettingKeySiteLogo],
+		SiteSubtitle:                 s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
+		SiteURL:                      settings[SettingKeySiteURL],
 		APIBaseURL:                   settings[SettingKeyAPIBaseURL],
 		ContactInfo:                  settings[SettingKeyContactInfo],
 		DocURL:                       settings[SettingKeyDocURL],
-		OpsMonitoringEnabled:         s.getStringOrDefault(settings, SettingKeyOpsMonitoringEnabled, "true") == "true",
-		OpsRealtimeMonitoringEnabled: s.getStringOrDefault(settings, SettingKeyOpsRealtimeMonitoringEnabled, "true") == "true",
 	}
 
 	// 解析整数类型
@@ -258,9 +279,28 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		result.DefaultBalance = s.cfg.Default.UserBalance
 	}
 
-	// 敏感信息直接返回,方便测试连接时使用
+	// 敏感信息直接返回，方便测试连接时使用
 	result.SMTPPassword = settings[SettingKeySMTPPassword]
 	result.TurnstileSecretKey = settings[SettingKeyTurnstileSecretKey]
+
+	// Model fallback settings
+	result.EnableModelFallback = settings[SettingKeyEnableModelFallback] == "true"
+	result.FallbackModelAnthropic = s.getStringOrDefault(settings, SettingKeyFallbackModelAnthropic, "claude-3-5-sonnet-20241022")
+	result.FallbackModelOpenAI = s.getStringOrDefault(settings, SettingKeyFallbackModelOpenAI, "gpt-4o")
+	result.FallbackModelGemini = s.getStringOrDefault(settings, SettingKeyFallbackModelGemini, "gemini-2.5-pro")
+	result.FallbackModelAntigravity = s.getStringOrDefault(settings, SettingKeyFallbackModelAntigravity, "gemini-2.5-pro")
+
+	// Identity patch settings (default: enabled, to preserve existing behavior)
+	if v, ok := settings[SettingKeyEnableIdentityPatch]; ok && v != "" {
+		result.EnableIdentityPatch = v == "true"
+	} else {
+		result.EnableIdentityPatch = true
+	}
+	result.IdentityPatchPrompt = settings[SettingKeyIdentityPatchPrompt]
+
+	// Ops monitoring settings (default: enabled, to preserve existing behavior)
+	result.OpsMonitoringEnabled = s.getStringOrDefault(settings, SettingKeyOpsMonitoringEnabled, "true") == "true"
+	result.OpsRealtimeMonitoringEnabled = s.getStringOrDefault(settings, SettingKeyOpsRealtimeMonitoringEnabled, "true") == "true"
 
 	return result
 }
@@ -285,6 +325,25 @@ func (s *SettingService) IsTurnstileEnabled(ctx context.Context) bool {
 // GetTurnstileSecretKey 获取 Turnstile Secret Key
 func (s *SettingService) GetTurnstileSecretKey(ctx context.Context) string {
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyTurnstileSecretKey)
+	if err != nil {
+		return ""
+	}
+	return value
+}
+
+// IsIdentityPatchEnabled 检查是否启用身份补丁（Claude -> Gemini systemInstruction 注入）
+func (s *SettingService) IsIdentityPatchEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyEnableIdentityPatch)
+	if err != nil {
+		// 默认开启，保持兼容
+		return true
+	}
+	return value == "true"
+}
+
+// GetIdentityPatchPrompt 获取自定义身份补丁提示词（为空表示使用内置默认模板）
+func (s *SettingService) GetIdentityPatchPrompt(ctx context.Context) string {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyIdentityPatchPrompt)
 	if err != nil {
 		return ""
 	}
@@ -349,4 +408,42 @@ func (s *SettingService) GetAdminAPIKey(ctx context.Context) (string, error) {
 // DeleteAdminAPIKey 删除管理员 API Key
 func (s *SettingService) DeleteAdminAPIKey(ctx context.Context) error {
 	return s.settingRepo.Delete(ctx, SettingKeyAdminAPIKey)
+}
+
+// IsModelFallbackEnabled 检查是否启用模型兜底机制
+func (s *SettingService) IsModelFallbackEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyEnableModelFallback)
+	if err != nil {
+		return false // Default: disabled
+	}
+	return value == "true"
+}
+
+// GetFallbackModel 获取指定平台的兜底模型
+func (s *SettingService) GetFallbackModel(ctx context.Context, platform string) string {
+	var key string
+	var defaultModel string
+
+	switch platform {
+	case PlatformAnthropic:
+		key = SettingKeyFallbackModelAnthropic
+		defaultModel = "claude-3-5-sonnet-20241022"
+	case PlatformOpenAI:
+		key = SettingKeyFallbackModelOpenAI
+		defaultModel = "gpt-4o"
+	case PlatformGemini:
+		key = SettingKeyFallbackModelGemini
+		defaultModel = "gemini-2.5-pro"
+	case PlatformAntigravity:
+		key = SettingKeyFallbackModelAntigravity
+		defaultModel = "gemini-2.5-pro"
+	default:
+		return ""
+	}
+
+	value, err := s.settingRepo.GetValue(ctx, key)
+	if err != nil || value == "" {
+		return defaultModel
+	}
+	return value
 }

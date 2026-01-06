@@ -68,3 +68,25 @@ func TestLoadSchedulingConfigFromEnv(t *testing.T) {
 		t.Fatalf("StickySessionMaxWaiting = %d, want 5", cfg.Gateway.Scheduling.StickySessionMaxWaiting)
 	}
 }
+
+func TestLoadDefaultSecurityToggles(t *testing.T) {
+	viper.Reset()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.Security.URLAllowlist.Enabled {
+		t.Fatalf("URLAllowlist.Enabled = true, want false")
+	}
+	if !cfg.Security.URLAllowlist.AllowInsecureHTTP {
+		t.Fatalf("URLAllowlist.AllowInsecureHTTP = false, want true")
+	}
+	if !cfg.Security.URLAllowlist.AllowPrivateHosts {
+		t.Fatalf("URLAllowlist.AllowPrivateHosts = false, want true")
+	}
+	if cfg.Security.ResponseHeaders.Enabled {
+		t.Fatalf("ResponseHeaders.Enabled = true, want false")
+	}
+}

@@ -219,7 +219,7 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 			return nil, fmt.Errorf("check key exists: %w", err)
 		}
 		if exists {
-			// Key已存在,增加错误计数
+			// Key已存在，增加错误计数
 			s.incrementAPIKeyErrorCount(ctx, userID)
 			return nil, ErrAPIKeyExists
 		}

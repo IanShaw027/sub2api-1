@@ -34,7 +34,7 @@ func createEntUser(t *testing.T, ctx context.Context, client *dbent.Client, emai
 	return u
 }
 
-func TestEntSoftDelete_APIKey_DefaultFilterAndSkip(t *testing.T) {
+func TestEntSoftDelete_ApiKey_DefaultFilterAndSkip(t *testing.T) {
 	ctx := context.Background()
 	// 使用全局 ent client，确保软删除验证在实际持久化数据上进行。
 	client := testEntClient(t)
@@ -66,7 +66,7 @@ func TestEntSoftDelete_APIKey_DefaultFilterAndSkip(t *testing.T) {
 	require.NotNil(t, got.DeletedAt, "deleted_at should be set after soft delete")
 }
 
-func TestEntSoftDelete_APIKey_DeleteIdempotent(t *testing.T) {
+func TestEntSoftDelete_ApiKey_DeleteIdempotent(t *testing.T) {
 	ctx := context.Background()
 	// 使用全局 ent client，避免事务回滚影响幂等性验证。
 	client := testEntClient(t)
@@ -86,7 +86,7 @@ func TestEntSoftDelete_APIKey_DeleteIdempotent(t *testing.T) {
 	require.NoError(t, repo.Delete(ctx, key.ID), "second delete should be idempotent")
 }
 
-func TestEntSoftDelete_APIKey_HardDeleteViaSkipSoftDelete(t *testing.T) {
+func TestEntSoftDelete_ApiKey_HardDeleteViaSkipSoftDelete(t *testing.T) {
 	ctx := context.Background()
 	// 使用全局 ent client，确保 SkipSoftDelete 的硬删除语义可验证。
 	client := testEntClient(t)

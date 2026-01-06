@@ -1,3 +1,4 @@
+// Package routes provides HTTP route registration and handlers.
 package routes
 
 import (
@@ -19,7 +20,7 @@ func RegisterAdminRoutes(
 		// 仪表盘
 		registerDashboardRoutes(admin, h)
 
-		// 运维监控
+		// Ops 监控
 		registerOpsRoutes(admin, h)
 
 		// 用户管理
@@ -151,7 +152,6 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		}
 	}
 }
-
 func registerUserManagementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	users := admin.Group("/users")
 	{
@@ -201,6 +201,8 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		accounts.GET("/:id/usage", h.Admin.Account.GetUsage)
 		accounts.GET("/:id/today-stats", h.Admin.Account.GetTodayStats)
 		accounts.POST("/:id/clear-rate-limit", h.Admin.Account.ClearRateLimit)
+		accounts.GET("/:id/temp-unschedulable", h.Admin.Account.GetTempUnschedulable)
+		accounts.DELETE("/:id/temp-unschedulable", h.Admin.Account.ClearTempUnschedulable)
 		accounts.POST("/:id/schedulable", h.Admin.Account.SetSchedulable)
 		accounts.GET("/:id/models", h.Admin.Account.GetAvailableModels)
 		accounts.POST("/batch", h.Admin.Account.BatchCreate)

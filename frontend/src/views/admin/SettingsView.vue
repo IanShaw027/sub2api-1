@@ -24,17 +24,11 @@
               class="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20"
             >
               <div class="flex items-start">
-                <svg
-                  class="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-500"
-                  fill="currentColor"
-                  viewBox="0 0 20 20"
-                >
-                  <path
-                    fill-rule="evenodd"
-                    d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                    clip-rule="evenodd"
-                  />
-                </svg>
+                <Icon
+                  name="exclamationTriangle"
+                  size="md"
+                  class="mt-0.5 flex-shrink-0 text-amber-500"
+                />
                 <p class="ml-3 text-sm text-amber-700 dark:text-amber-300">
                   {{ t('admin.settings.adminApiKey.securityWarning') }}
                 </p>
@@ -240,7 +234,7 @@
                       href="https://dash.cloudflare.com/"
                       target="_blank"
                       class="text-primary-600 hover:text-primary-500"
-                      >Cloudflare Dashboard</a
+                      >{{ t('admin.settings.turnstile.cloudflareDashboard') }}</a
                     >
                   </p>
                 </div>
@@ -255,7 +249,11 @@
                     placeholder="0x4AAAAAAA..."
                   />
                   <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                    {{ t('admin.settings.turnstile.secretKeyHint') }}
+                    {{
+                      form.turnstile_secret_key_configured
+                        ? t('admin.settings.turnstile.secretKeyConfiguredHint')
+                        : t('admin.settings.turnstile.secretKeyHint')
+                    }}
                   </p>
                 </div>
               </div>
@@ -460,19 +458,7 @@
                         class="hidden"
                         @change="handleLogoUpload"
                       />
-                      <svg
-                        class="mr-1.5 h-4 w-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
-                        />
-                      </svg>
+                      <Icon name="upload" size="sm" class="mr-1.5" :stroke-width="2" />
                       {{ t('admin.settings.site.uploadImage') }}
                     </label>
                     <button
@@ -481,19 +467,7 @@
                       @click="form.site_logo = ''"
                       class="btn btn-secondary btn-sm text-red-600 hover:text-red-700 dark:text-red-400"
                     >
-                      <svg
-                        class="mr-1.5 h-4 w-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
+                      <Icon name="trash" size="sm" class="mr-1.5" :stroke-width="2" />
                       {{ t('admin.settings.site.remove') }}
                     </button>
                   </div>
@@ -593,10 +567,18 @@
                   v-model="form.smtp_password"
                   type="password"
                   class="input"
-                  :placeholder="t('admin.settings.smtp.passwordPlaceholder')"
+                  :placeholder="
+                    form.smtp_password_configured
+                      ? t('admin.settings.smtp.passwordConfiguredPlaceholder')
+                      : t('admin.settings.smtp.passwordPlaceholder')
+                  "
                 />
                 <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                  {{ t('admin.settings.smtp.passwordHint') }}
+                  {{
+                    form.smtp_password_configured
+                      ? t('admin.settings.smtp.passwordConfiguredHint')
+                      : t('admin.settings.smtp.passwordHint')
+                  }}
                 </p>
               </div>
               <div>
@@ -773,8 +755,9 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api'
-import type { SystemSettings } from '@/api/admin/settings'
+import type { SystemSettings, UpdateSettingsRequest } from '@/api/admin/settings'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import Icon from '@/components/icons/Icon.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import { useAppStore, useAdminSettingsStore } from '@/stores'
 import OpsAlertRulesCard from '@/views/admin/ops/components/OpsAlertRulesCard.vue'
@@ -799,7 +782,12 @@ const adminApiKeyMasked = ref('')
 const adminApiKeyOperating = ref(false)
 const newAdminApiKey = ref('')
 
-const form = reactive<SystemSettings>({
+type SettingsForm = SystemSettings & {
+  smtp_password: string
+  turnstile_secret_key: string
+}
+
+const form = reactive<SettingsForm>({
   registration_enabled: true,
   email_verify_enabled: false,
   default_balance: 0,
@@ -815,6 +803,7 @@ const form = reactive<SystemSettings>({
   smtp_port: 587,
   smtp_username: '',
   smtp_password: '',
+  smtp_password_configured: false,
   smtp_from_email: '',
   smtp_from_name: '',
   smtp_use_tls: true,
@@ -822,9 +811,19 @@ const form = reactive<SystemSettings>({
   turnstile_enabled: false,
   turnstile_site_key: '',
   turnstile_secret_key: '',
+  turnstile_secret_key_configured: false,
   // Ops monitoring
   ops_monitoring_enabled: true,
-  ops_realtime_monitoring_enabled: true
+  ops_realtime_monitoring_enabled: true,
+  // Model fallback configuration
+  enable_model_fallback: false,
+  fallback_model_anthropic: 'claude-3-5-sonnet-20241022',
+  fallback_model_openai: 'gpt-4o',
+  fallback_model_gemini: 'gemini-2.5-pro',
+  fallback_model_antigravity: 'gemini-2.5-pro',
+  // Identity patch (Claude -> Gemini)
+  enable_identity_patch: true,
+  identity_patch_prompt: ''
 })
 
 const showOpsSettings = computed(() => form.ops_monitoring_enabled)
@@ -872,6 +871,8 @@ async function loadSettings() {
   try {
     const settings = await adminAPI.settings.getSettings()
     Object.assign(form, settings)
+    form.smtp_password = ''
+    form.turnstile_secret_key = ''
     adminSettingsStore.setOpsMonitoringEnabledLocal(form.ops_monitoring_enabled)
     adminSettingsStore.setOpsRealtimeMonitoringEnabledLocal(form.ops_realtime_monitoring_enabled ?? true)
   } catch (error: any) {
@@ -886,7 +887,42 @@ async function loadSettings() {
 async function saveSettings() {
   saving.value = true
   try {
-    await adminAPI.settings.updateSettings(form)
+    const payload: UpdateSettingsRequest = {
+      registration_enabled: form.registration_enabled,
+      email_verify_enabled: form.email_verify_enabled,
+      default_balance: form.default_balance,
+      default_concurrency: form.default_concurrency,
+      site_name: form.site_name,
+      site_logo: form.site_logo,
+      site_subtitle: form.site_subtitle,
+      site_url: form.site_url,
+      api_base_url: form.api_base_url,
+      contact_info: form.contact_info,
+      doc_url: form.doc_url,
+      smtp_host: form.smtp_host,
+      smtp_port: form.smtp_port,
+      smtp_username: form.smtp_username,
+      smtp_password: form.smtp_password || undefined,
+      smtp_from_email: form.smtp_from_email,
+      smtp_from_name: form.smtp_from_name,
+      smtp_use_tls: form.smtp_use_tls,
+      turnstile_enabled: form.turnstile_enabled,
+      turnstile_site_key: form.turnstile_site_key,
+      turnstile_secret_key: form.turnstile_secret_key || undefined,
+      ops_monitoring_enabled: form.ops_monitoring_enabled,
+      ops_realtime_monitoring_enabled: form.ops_realtime_monitoring_enabled,
+      enable_model_fallback: form.enable_model_fallback,
+      fallback_model_anthropic: form.fallback_model_anthropic,
+      fallback_model_openai: form.fallback_model_openai,
+      fallback_model_gemini: form.fallback_model_gemini,
+      fallback_model_antigravity: form.fallback_model_antigravity,
+      enable_identity_patch: form.enable_identity_patch,
+      identity_patch_prompt: form.identity_patch_prompt
+    }
+    const updated = await adminAPI.settings.updateSettings(payload)
+    Object.assign(form, updated)
+    form.smtp_password = ''
+    form.turnstile_secret_key = ''
     // Refresh cached public settings so sidebar/header update immediately
     await appStore.fetchPublicSettings(true)
     adminSettingsStore.setOpsMonitoringEnabledLocal(form.ops_monitoring_enabled)

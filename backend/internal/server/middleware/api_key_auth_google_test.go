@@ -85,7 +85,7 @@ func newTestAPIKeyService(repo service.APIKeyRepository) *service.APIKeyService 
 	)
 }
 
-func TestAPIKeyAuthWithSubscriptionGoogle_MissingKey(t *testing.T) {
+func TestApiKeyAuthWithSubscriptionGoogle_MissingKey(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
@@ -109,7 +109,59 @@ func TestAPIKeyAuthWithSubscriptionGoogle_MissingKey(t *testing.T) {
 	require.Equal(t, "UNAUTHENTICATED", resp.Error.Status)
 }
 
-func TestAPIKeyAuthWithSubscriptionGoogle_InvalidKey(t *testing.T) {
+func TestApiKeyAuthWithSubscriptionGoogle_QueryApiKeyRejected(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	r := gin.New()
+	apiKeyService := newTestAPIKeyService(fakeAPIKeyRepo{
+		getByKey: func(ctx context.Context, key string) (*service.APIKey, error) {
+			return nil, errors.New("should not be called")
+		},
+	})
+	r.Use(APIKeyAuthWithSubscriptionGoogle(apiKeyService, nil, &config.Config{}))
+	r.GET("/v1beta/test", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
+
+	req := httptest.NewRequest(http.MethodGet, "/v1beta/test?api_key=legacy", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	var resp googleErrorResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, http.StatusBadRequest, resp.Error.Code)
+	require.Equal(t, "Query parameter api_key is deprecated. Use Authorization header or key instead.", resp.Error.Message)
+	require.Equal(t, "INVALID_ARGUMENT", resp.Error.Status)
+}
+
+func TestApiKeyAuthWithSubscriptionGoogle_QueryKeyAllowedOnV1Beta(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	r := gin.New()
+	apiKeyService := newTestAPIKeyService(fakeAPIKeyRepo{
+		getByKey: func(ctx context.Context, key string) (*service.APIKey, error) {
+			return &service.APIKey{
+				ID:     1,
+				Key:    key,
+				Status: service.StatusActive,
+				User: &service.User{
+					ID:     123,
+					Status: service.StatusActive,
+				},
+			}, nil
+		},
+	})
+	cfg := &config.Config{RunMode: config.RunModeSimple}
+	r.Use(APIKeyAuthWithSubscriptionGoogle(apiKeyService, nil, cfg))
+	r.GET("/v1beta/test", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
+
+	req := httptest.NewRequest(http.MethodGet, "/v1beta/test?key=valid", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestApiKeyAuthWithSubscriptionGoogle_InvalidKey(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
@@ -134,7 +186,7 @@ func TestAPIKeyAuthWithSubscriptionGoogle_InvalidKey(t *testing.T) {
 	require.Equal(t, "UNAUTHENTICATED", resp.Error.Status)
 }
 
-func TestAPIKeyAuthWithSubscriptionGoogle_RepoError(t *testing.T) {
+func TestApiKeyAuthWithSubscriptionGoogle_RepoError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
@@ -159,7 +211,7 @@ func TestAPIKeyAuthWithSubscriptionGoogle_RepoError(t *testing.T) {
 	require.Equal(t, "INTERNAL", resp.Error.Status)
 }
 
-func TestAPIKeyAuthWithSubscriptionGoogle_DisabledKey(t *testing.T) {
+func TestApiKeyAuthWithSubscriptionGoogle_DisabledKey(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
@@ -192,7 +244,7 @@ func TestAPIKeyAuthWithSubscriptionGoogle_DisabledKey(t *testing.T) {
 	require.Equal(t, "UNAUTHENTICATED", resp.Error.Status)
 }
 
-func TestAPIKeyAuthWithSubscriptionGoogle_InsufficientBalance(t *testing.T) {
+func TestApiKeyAuthWithSubscriptionGoogle_InsufficientBalance(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()

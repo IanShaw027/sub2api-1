@@ -99,10 +99,21 @@ const (
 	// Ops configuration (JSON payloads; configured via admin pages, persisted in DB)
 	SettingKeyOpsMonitoringEnabled                 = "ops_monitoring_enabled"
 	SettingKeyOpsRealtimeMonitoringEnabled         = "ops_realtime_monitoring_enabled"
-	SettingKeyOpsEmailNotificationConfig          = "ops_email_notification_config"
-	SettingKeyOpsAlertRuntimeSettings             = "ops_alert_runtime_settings"
-	SettingKeyOpsGroupAvailabilityRuntimeSettings = "ops_group_availability_runtime_settings"
+	SettingKeyOpsEmailNotificationConfig           = "ops_email_notification_config"
+	SettingKeyOpsAlertRuntimeSettings              = "ops_alert_runtime_settings"
+	SettingKeyOpsGroupAvailabilityRuntimeSettings  = "ops_group_availability_runtime_settings"
+
+	// Model fallback settings
+	SettingKeyEnableModelFallback      = "enable_model_fallback"
+	SettingKeyFallbackModelAnthropic   = "fallback_model_anthropic"
+	SettingKeyFallbackModelOpenAI      = "fallback_model_openai"
+	SettingKeyFallbackModelGemini      = "fallback_model_gemini"
+	SettingKeyFallbackModelAntigravity = "fallback_model_antigravity"
+
+	// Request identity patch (Claude -> Gemini systemInstruction injection)
+	SettingKeyEnableIdentityPatch = "enable_identity_patch"
+	SettingKeyIdentityPatchPrompt = "identity_patch_prompt"
 )
 
-// AdminAPIKeyPrefix is the prefix for admin API keys (distinct from user "sk-" keys)
+// AdminAPIKeyPrefix is the prefix for admin API keys (distinct from user "sk-" keys).
 const AdminAPIKeyPrefix = "admin-"

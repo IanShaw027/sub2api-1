@@ -1,4 +1,4 @@
-// Package sysutil provides system-level utilities for service management.
+// Package sysutil provides system-level utilities for process management.
 package sysutil
 
 import (

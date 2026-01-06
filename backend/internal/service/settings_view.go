@@ -4,17 +4,19 @@ type SystemSettings struct {
 	RegistrationEnabled bool
 	EmailVerifyEnabled  bool
 
-	SMTPHost     string
-	SMTPPort     int
-	SMTPUsername string
-	SMTPPassword string
-	SMTPFrom     string
-	SMTPFromName string
-	SMTPUseTLS   bool
+	SMTPHost               string
+	SMTPPort               int
+	SMTPUsername           string
+	SMTPPassword           string
+	SMTPPasswordConfigured bool
+	SMTPFrom               string
+	SMTPFromName           string
+	SMTPUseTLS             bool
 
-	TurnstileEnabled   bool
-	TurnstileSiteKey   string
-	TurnstileSecretKey string
+	TurnstileEnabled             bool
+	TurnstileSiteKey             string
+	TurnstileSecretKey           string
+	TurnstileSecretKeyConfigured bool
 
 	SiteName     string
 	SiteLogo     string
@@ -30,6 +32,17 @@ type SystemSettings struct {
 	// Ops monitoring
 	OpsMonitoringEnabled         bool
 	OpsRealtimeMonitoringEnabled bool
+
+	// Model fallback configuration
+	EnableModelFallback      bool   `json:"enable_model_fallback"`
+	FallbackModelAnthropic   string `json:"fallback_model_anthropic"`
+	FallbackModelOpenAI      string `json:"fallback_model_openai"`
+	FallbackModelGemini      string `json:"fallback_model_gemini"`
+	FallbackModelAntigravity string `json:"fallback_model_antigravity"`
+
+	// Identity patch configuration (Claude -> Gemini)
+	EnableIdentityPatch bool   `json:"enable_identity_patch"`
+	IdentityPatchPrompt string `json:"identity_patch_prompt"`
 }
 
 type PublicSettings struct {

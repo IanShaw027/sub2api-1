@@ -12,13 +12,20 @@ import (
 )
 
 // NewAPIKeyAuthMiddleware 创建 API Key 认证中间件
-func NewAPIKeyAuthMiddleware(apiKeyService *service.APIKeyService, subscriptionService *service.SubscriptionService, cfg *config.Config, opsService *service.OpsService) APIKeyAuthMiddleware {
-	return APIKeyAuthMiddleware(apiKeyAuthWithSubscription(apiKeyService, subscriptionService, cfg, opsService))
+func NewAPIKeyAuthMiddleware(apiKeyService *service.APIKeyService, subscriptionService *service.SubscriptionService, cfg *config.Config) APIKeyAuthMiddleware {
+	return APIKeyAuthMiddleware(apiKeyAuthWithSubscription(apiKeyService, subscriptionService, cfg))
 }
 
 // apiKeyAuthWithSubscription API Key认证中间件（支持订阅验证）
-func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscriptionService *service.SubscriptionService, cfg *config.Config, opsService *service.OpsService) gin.HandlerFunc {
+func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscriptionService *service.SubscriptionService, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		queryKey := strings.TrimSpace(c.Query("key"))
+		queryApiKey := strings.TrimSpace(c.Query("api_key"))
+		if queryKey != "" || queryApiKey != "" {
+			AbortWithError(c, 400, "api_key_in_query_deprecated", "API key in query parameter is deprecated. Please use Authorization header instead.")
+			return
+		}
+
 		// 尝试从Authorization header中提取API key (Bearer scheme)
 		authHeader := c.GetHeader("Authorization")
 		var apiKeyString string
@@ -41,20 +48,9 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			apiKeyString = c.GetHeader("x-goog-api-key")
 		}
 
-		// 如果header中没有，尝试从query参数中提取（Google API key风格）
-		if apiKeyString == "" {
-			apiKeyString = c.Query("key")
-		}
-
-		// 兼容常见别名
-		if apiKeyString == "" {
-			apiKeyString = c.Query("api_key")
-		}
-
 		// 如果所有header都没有API key
 		if apiKeyString == "" {
-			recordOpsAuthError(c, opsService, nil, 401, "API key is required in Authorization header (Bearer scheme), x-api-key header, x-goog-api-key header, or key/api_key query parameter")
-			AbortWithError(c, 401, "API_KEY_REQUIRED", "API key is required in Authorization header (Bearer scheme), x-api-key header, x-goog-api-key header, or key/api_key query parameter")
+			AbortWithError(c, 401, "API_KEY_REQUIRED", "API key is required in Authorization header (Bearer scheme), x-api-key header, or x-goog-api-key header")
 			return
 		}
 
@@ -62,32 +58,27 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		apiKey, err := apiKeyService.GetByKey(c.Request.Context(), apiKeyString)
 		if err != nil {
 			if errors.Is(err, service.ErrAPIKeyNotFound) {
-				recordOpsAuthError(c, opsService, nil, 401, "Invalid API key")
 				AbortWithError(c, 401, "INVALID_API_KEY", "Invalid API key")
 				return
 			}
-			recordOpsAuthError(c, opsService, nil, 500, "Failed to validate API key")
 			AbortWithError(c, 500, "INTERNAL_ERROR", "Failed to validate API key")
 			return
 		}
 
 		// 检查API key是否激活
 		if !apiKey.IsActive() {
-			recordOpsAuthError(c, opsService, apiKey, 401, "API key is disabled")
 			AbortWithError(c, 401, "API_KEY_DISABLED", "API key is disabled")
 			return
 		}
 
 		// 检查关联的用户
 		if apiKey.User == nil {
-			recordOpsAuthError(c, opsService, apiKey, 401, "User associated with API key not found")
 			AbortWithError(c, 401, "USER_NOT_FOUND", "User associated with API key not found")
 			return
 		}
 
 		// 检查用户状态
 		if !apiKey.User.IsActive() {
-			recordOpsAuthError(c, opsService, apiKey, 401, "User account is not active")
 			AbortWithError(c, 401, "USER_INACTIVE", "User account is not active")
 			return
 		}
@@ -115,14 +106,12 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 				apiKey.Group.ID,
 			)
 			if err != nil {
-				recordOpsAuthError(c, opsService, apiKey, 403, "No active subscription found for this group")
 				AbortWithError(c, 403, "SUBSCRIPTION_NOT_FOUND", "No active subscription found for this group")
 				return
 			}
 
 			// 验证订阅状态（是否过期、暂停等）
 			if err := subscriptionService.ValidateSubscription(c.Request.Context(), subscription); err != nil {
-				recordOpsAuthError(c, opsService, apiKey, 403, err.Error())
 				AbortWithError(c, 403, "SUBSCRIPTION_INVALID", err.Error())
 				return
 			}
@@ -139,7 +128,6 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 
 			// 预检查用量限制（使用0作为额外费用进行预检查）
 			if err := subscriptionService.CheckUsageLimits(c.Request.Context(), subscription, apiKey.Group, 0); err != nil {
-				recordOpsAuthError(c, opsService, apiKey, 429, err.Error())
 				AbortWithError(c, 429, "USAGE_LIMIT_EXCEEDED", err.Error())
 				return
 			}
@@ -149,7 +137,6 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		} else {
 			// 余额模式：检查用户余额
 			if apiKey.User.Balance <= 0 {
-				recordOpsAuthError(c, opsService, apiKey, 403, "Insufficient account balance")
 				AbortWithError(c, 403, "INSUFFICIENT_BALANCE", "Insufficient account balance")
 				return
 			}
@@ -165,62 +152,6 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 
 		c.Next()
 	}
-}
-
-func recordOpsAuthError(c *gin.Context, opsService *service.OpsService, apiKey *service.APIKey, status int, message string) {
-	if opsService == nil || c == nil {
-		return
-	}
-
-	errType := "authentication_error"
-	phase := "auth"
-	severity := "P3"
-	switch status {
-	case 403:
-		errType = "billing_error"
-		phase = "billing"
-	case 429:
-		errType = "rate_limit_error"
-		phase = "billing"
-		severity = "P2"
-	case 500:
-		errType = "api_error"
-		phase = "internal"
-		severity = "P1"
-	}
-
-	logEntry := &service.OpsErrorLog{
-		Phase:      phase,
-		Type:       errType,
-		Severity:   severity,
-		StatusCode: status,
-		Message:    message,
-		ClientIP:   c.ClientIP(),
-		RequestPath: func() string {
-			if c.Request != nil && c.Request.URL != nil {
-				return c.Request.URL.Path
-			}
-			return ""
-		}(),
-	}
-
-	if apiKey != nil {
-		logEntry.APIKeyID = &apiKey.ID
-		if apiKey.User != nil {
-			logEntry.UserID = &apiKey.User.ID
-		}
-		if apiKey.GroupID != nil {
-			logEntry.GroupID = apiKey.GroupID
-		}
-		if apiKey.Group != nil {
-			logEntry.Platform = apiKey.Group.Platform
-		}
-	}
-
-	// 异步记录错误日志，避免阻塞请求
-	go func() {
-		_ = opsService.RecordOpsError(c.Request.Context(), logEntry, nil)
-	}()
 }
 
 // GetAPIKeyFromContext 从上下文中获取API key

@@ -1,4 +1,4 @@
-// Package errors provides custom error types and error handling utilities.
+// Package errors provides application error types and helpers.
 // nolint:mnd
 package errors
 

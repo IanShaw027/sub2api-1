@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -72,7 +71,6 @@ func provideCleanup(
 	openaiOAuth *service.OpenAIOAuthService,
 	geminiOAuth *service.GeminiOAuthService,
 	antigravityOAuth *service.AntigravityOAuthService,
-	antigravityQuota *service.AntigravityQuotaRefresher,
 	opsAggregation *service.OpsAggregationService,
 	opsMetricsCollector *service.OpsMetricsCollector,
 	opsAlertService *service.OpsAlertService,
@@ -84,232 +82,152 @@ func provideCleanup(
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		// Cleanup steps in reverse dependency order
-		cleanupSteps := make([]struct {
+		// Cleanup steps in reverse dependency order.
+		// Note: ops-related services are best-effort and may be nil when disabled.
+		cleanupSteps := []struct {
 			name string
 			fn   func() error
-		}, 0, 16)
+		}{}
 
 		if opsCleanup != nil {
 			cleanupSteps = append(cleanupSteps, struct {
 				name string
 				fn   func() error
-			}{
-				name: "OpsCleanupService",
-				fn: func() error {
-					opsCleanup.Stop()
-					return nil
-				},
-			})
+			}{"OpsCleanupService", func() error {
+				opsCleanup.Stop()
+				return nil
+			}})
 		}
-
-		cleanupSteps = append(cleanupSteps, struct {
-			name string
-			fn   func() error
-		}{
-			name: "OpsErrorLogWorkers",
-			fn: func() error {
-				if ok := handler.StopOpsErrorLogWorkers(); !ok {
-					return fmt.Errorf("timed out draining ops error log workers")
-				}
-				return nil
-			},
-		})
-
-		cleanupSteps = append(cleanupSteps, struct {
-			name string
-			fn   func() error
-		}{
-			name: "OpsWSQPSCache",
-			fn: func() error {
-				admin.StopOpsWSQPSCache()
-				return nil
-			},
-		})
-
 		if opsGroupAvailability != nil {
 			cleanupSteps = append(cleanupSteps, struct {
 				name string
 				fn   func() error
-			}{
-				name: "OpsGroupAvailabilityMonitor",
-				fn: func() error {
-					opsGroupAvailability.Stop()
-					return nil
-				},
-			})
+			}{"OpsGroupAvailabilityMonitor", func() error {
+				opsGroupAvailability.Stop()
+				return nil
+			}})
 		}
-
 		if opsScheduledReport != nil {
 			cleanupSteps = append(cleanupSteps, struct {
 				name string
 				fn   func() error
-			}{
-				name: "OpsScheduledReportService",
-				fn: func() error {
-					opsScheduledReport.Stop()
-					return nil
-				},
-			})
+			}{"OpsScheduledReportService", func() error {
+				opsScheduledReport.Stop()
+				return nil
+			}})
 		}
-
 		if opsAggregation != nil {
 			cleanupSteps = append(cleanupSteps, struct {
 				name string
 				fn   func() error
-			}{
-				name: "OpsAggregationService",
-				fn: func() error {
-					opsAggregation.Stop()
-					return nil
-				},
-			})
+			}{"OpsAggregationService", func() error {
+				opsAggregation.Stop()
+				return nil
+			}})
 		}
-
 		if opsMetricsCollector != nil {
 			cleanupSteps = append(cleanupSteps, struct {
 				name string
 				fn   func() error
-			}{
-				name: "OpsMetricsCollector",
-				fn: func() error {
-					opsMetricsCollector.Stop()
-					return nil
-				},
-			})
+			}{"OpsMetricsCollector", func() error {
+				opsMetricsCollector.Stop()
+				return nil
+			}})
 		}
-
 		if opsAlertService != nil {
 			cleanupSteps = append(cleanupSteps, struct {
 				name string
 				fn   func() error
-			}{
-				name: "OpsAlertService",
-				fn: func() error {
-					opsAlertService.Stop()
-					return nil
-				},
-			})
+			}{"OpsAlertService", func() error {
+				opsAlertService.Stop()
+				return nil
+			}})
 		}
 
-		cleanupSteps = append(cleanupSteps, struct {
-			name string
-			fn   func() error
-		}{
-			name: "TokenRefreshService",
-			fn: func() error {
+		cleanupSteps = append(cleanupSteps,
+			struct {
+				name string
+				fn   func() error
+			}{"OpsErrorLogWorkers", func() error {
+				_ = handler.StopOpsErrorLogWorkers()
+				return nil
+			}},
+			struct {
+				name string
+				fn   func() error
+			}{"OpsWSQPSCache", func() error {
+				admin.StopOpsWSQPSCache()
+				return nil
+			}},
+			struct {
+				name string
+				fn   func() error
+			}{"TokenRefreshService", func() error {
 				tokenRefresh.Stop()
 				return nil
-			},
-		})
-
-		cleanupSteps = append(cleanupSteps, struct {
-			name string
-			fn   func() error
-		}{
-			name: "PricingService",
-			fn: func() error {
+			}},
+			struct {
+				name string
+				fn   func() error
+			}{"PricingService", func() error {
 				pricing.Stop()
 				return nil
-			},
-		})
-
-		cleanupSteps = append(cleanupSteps, struct {
-			name string
-			fn   func() error
-		}{
-			name: "EmailQueueService",
-			fn: func() error {
+			}},
+			struct {
+				name string
+				fn   func() error
+			}{"EmailQueueService", func() error {
 				emailQueue.Stop()
 				return nil
-			},
-		})
-
-		cleanupSteps = append(cleanupSteps, struct {
-			name string
-			fn   func() error
-		}{
-			name: "BillingCacheService",
-			fn: func() error {
+			}},
+			struct {
+				name string
+				fn   func() error
+			}{"BillingCacheService", func() error {
 				billingCache.Stop()
 				return nil
-			},
-		})
-
-		cleanupSteps = append(cleanupSteps, struct {
-			name string
-			fn   func() error
-		}{
-			name: "OAuthService",
-			fn: func() error {
+			}},
+			struct {
+				name string
+				fn   func() error
+			}{"OAuthService", func() error {
 				oauth.Stop()
 				return nil
-			},
-		})
-
-		cleanupSteps = append(cleanupSteps, struct {
-			name string
-			fn   func() error
-		}{
-			name: "OpenAIOAuthService",
-			fn: func() error {
+			}},
+			struct {
+				name string
+				fn   func() error
+			}{"OpenAIOAuthService", func() error {
 				openaiOAuth.Stop()
 				return nil
-			},
-		})
-
-		cleanupSteps = append(cleanupSteps, struct {
-			name string
-			fn   func() error
-		}{
-			name: "GeminiOAuthService",
-			fn: func() error {
+			}},
+			struct {
+				name string
+				fn   func() error
+			}{"GeminiOAuthService", func() error {
 				geminiOAuth.Stop()
 				return nil
-			},
-		})
-
-		cleanupSteps = append(cleanupSteps, struct {
-			name string
-			fn   func() error
-		}{
-			name: "AntigravityOAuthService",
-			fn: func() error {
+			}},
+			struct {
+				name string
+				fn   func() error
+			}{"AntigravityOAuthService", func() error {
 				antigravityOAuth.Stop()
 				return nil
-			},
-		})
-
-		cleanupSteps = append(cleanupSteps, struct {
-			name string
-			fn   func() error
-		}{
-			name: "AntigravityQuotaRefresher",
-			fn: func() error {
-				antigravityQuota.Stop()
-				return nil
-			},
-		})
-
-		cleanupSteps = append(cleanupSteps, struct {
-			name string
-			fn   func() error
-		}{
-			name: "Redis",
-			fn: func() error {
+			}},
+			struct {
+				name string
+				fn   func() error
+			}{"Redis", func() error {
 				return rdb.Close()
-			},
-		})
-
-		cleanupSteps = append(cleanupSteps, struct {
-			name string
-			fn   func() error
-		}{
-			name: "Ent",
-			fn: func() error {
+			}},
+			struct {
+				name string
+				fn   func() error
+			}{"Ent", func() error {
 				return entClient.Close()
-			},
-		})
+			}},
+		)
 
 		for _, step := range cleanupSteps {
 			if err := step.fn(); err != nil {

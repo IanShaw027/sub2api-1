@@ -5,7 +5,6 @@ package server_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"math"
@@ -203,7 +202,7 @@ func TestAPIContracts(t *testing.T) {
 						BillingType:         service.BillingTypeBalance,
 						Stream:              true,
 						DurationMs:          ptr(100),
-						TimeToFirstTokenMs:  ptr(50),
+						FirstTokenMs:        ptr(50),
 						CreatedAt:           deps.now,
 					},
 				})
@@ -241,7 +240,9 @@ func TestAPIContracts(t *testing.T) {
 							"billing_type": 0,
 							"stream": true,
 							"duration_ms": 100,
-							"time_to_first_token_ms": 50,
+							"first_token_ms": 50,
+							"image_count": 0,
+							"image_size": null,
 							"created_at": "2025-01-02T03:04:05Z"
 						}
 					],
@@ -275,7 +276,6 @@ func TestAPIContracts(t *testing.T) {
 					service.SettingKeySiteName:     "Sub2API",
 					service.SettingKeySiteLogo:     "",
 					service.SettingKeySiteSubtitle: "Subtitle",
-					service.SettingKeySiteURL:      "https://example.com",
 					service.SettingKeyAPIBaseURL:   "https://api.example.com",
 					service.SettingKeyContactInfo:  "support",
 					service.SettingKeyDocURL:       "https://docs.example.com",
@@ -288,67 +288,36 @@ func TestAPIContracts(t *testing.T) {
 			path:       "/api/v1/admin/settings",
 			wantStatus: http.StatusOK,
 			wantJSON: `{
-					"code": 0,
-					"message": "success",
-						"data": {
-							"registration_enabled": true,
-							"email_verify_enabled": false,
-							"ops_monitoring_enabled": true,
-							"ops_realtime_monitoring_enabled": true,
-							"smtp_host": "smtp.example.com",
-							"smtp_port": 587,
-							"smtp_username": "user",
-							"smtp_password": "********",
-						"smtp_from_email": "no-reply@example.com",
-						"smtp_from_name": "Sub2API",
-						"smtp_use_tls": true,
-						"turnstile_enabled": true,
-						"turnstile_site_key": "site-key",
-						"turnstile_secret_key": "********",
-						"site_name": "Sub2API",
-						"site_logo": "",
-						"site_subtitle": "Subtitle",
-						"site_url": "https://example.com",
+				"code": 0,
+				"message": "success",
+				"data": {
+					"registration_enabled": true,
+					"email_verify_enabled": false,
+					"smtp_host": "smtp.example.com",
+					"smtp_port": 587,
+					"smtp_username": "user",
+					"smtp_password_configured": true,
+					"smtp_from_email": "no-reply@example.com",
+					"smtp_from_name": "Sub2API",
+					"smtp_use_tls": true,
+					"turnstile_enabled": true,
+					"turnstile_site_key": "site-key",
+					"turnstile_secret_key_configured": true,
+					"site_name": "Sub2API",
+					"site_logo": "",
+					"site_subtitle": "Subtitle",
 					"api_base_url": "https://api.example.com",
 					"contact_info": "support",
 					"doc_url": "https://docs.example.com",
 					"default_concurrency": 5,
-					"default_balance": 1.25
-				}
-			}`,
-		},
-		{
-			name:   "GET /api/v1/admin/ops/concurrency",
-			method: http.MethodGet,
-			path:   "/api/v1/admin/ops/concurrency",
-			setup: func(t *testing.T, deps *contractDeps) {
-				// Timestamp is dynamic, so we'll verify structure without exact match
-			},
-			wantStatus: http.StatusOK,
-			wantJSON: `{
-				"code": 0,
-				"message": "success",
-				"data": {
-					"enabled": true,
-					"platform": {},
-					"group": {}
-				}
-			}`,
-		},
-		{
-			name:       "GET /api/v1/admin/ops/health",
-			method:     http.MethodGet,
-			path:       "/api/v1/admin/ops/health",
-			wantStatus: http.StatusOK,
-			wantJSON: `{
-				"code": 0,
-				"message": "success",
-				"data": {
-					"enabled": true,
-					"status": "healthy",
-					"healthy": true,
-					"warnings": [],
-					"checks": {}
+					"default_balance": 1.25,
+					"enable_model_fallback": false,
+					"fallback_model_anthropic": "claude-3-5-sonnet-20241022",
+					"fallback_model_antigravity": "gemini-2.5-pro",
+					"fallback_model_gemini": "gemini-2.5-pro",
+					"fallback_model_openai": "gpt-4o",
+					"enable_identity_patch": true,
+					"identity_patch_prompt": ""
 				}
 			}`,
 		},
@@ -363,24 +332,7 @@ func TestAPIContracts(t *testing.T) {
 
 			status, body := doRequest(t, deps.router, tt.method, tt.path, tt.body, tt.headers)
 			require.Equal(t, tt.wantStatus, status)
-
-			// Special handling for ops/concurrency endpoint with dynamic timestamp
-			if tt.path == "/api/v1/admin/ops/concurrency" {
-				var actual, expected map[string]interface{}
-				require.NoError(t, json.Unmarshal([]byte(body), &actual))
-				require.NoError(t, json.Unmarshal([]byte(tt.wantJSON), &expected))
-
-				// Remove timestamp from actual for comparison
-				if data, ok := actual["data"].(map[string]interface{}); ok {
-					delete(data, "timestamp")
-				}
-
-				actualJSON, _ := json.Marshal(actual)
-				expectedJSON, _ := json.Marshal(expected)
-				require.JSONEq(t, string(expectedJSON), string(actualJSON))
-			} else {
-				require.JSONEq(t, tt.wantJSON, body)
-			}
+			require.JSONEq(t, tt.wantJSON, body)
 		})
 	}
 }
@@ -388,7 +340,7 @@ func TestAPIContracts(t *testing.T) {
 type contractDeps struct {
 	now         time.Time
 	router      http.Handler
-	apiKeyRepo  *stubAPIKeyRepo
+	apiKeyRepo  *stubApiKeyRepo
 	usageRepo   *stubUsageLogRepo
 	settingRepo *stubSettingRepo
 }
@@ -416,8 +368,8 @@ func newContractDeps(t *testing.T) *contractDeps {
 		},
 	}
 
-	apiKeyRepo := newStubAPIKeyRepo(now)
-	apiKeyCache := stubAPIKeyCache{}
+	apiKeyRepo := newStubApiKeyRepo(now)
+	apiKeyCache := stubApiKeyCache{}
 	groupRepo := stubGroupRepo{}
 	userSubRepo := stubUserSubscriptionRepo{}
 
@@ -432,19 +384,15 @@ func newContractDeps(t *testing.T) *contractDeps {
 	apiKeyService := service.NewAPIKeyService(apiKeyRepo, userRepo, groupRepo, userSubRepo, apiKeyCache, cfg)
 
 	usageRepo := newStubUsageLogRepo()
-	usageService := service.NewUsageService(usageRepo, userRepo)
+	usageService := service.NewUsageService(usageRepo, userRepo, nil)
 
 	settingRepo := newStubSettingRepo()
 	settingService := service.NewSettingService(settingRepo, cfg)
-
-	opsRepo := &stubOpsRepo{}
-	opsService := service.NewOpsService(opsRepo, nil, cfg, nil)
 
 	authHandler := handler.NewAuthHandler(cfg, nil, userService)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
 	usageHandler := handler.NewUsageHandler(usageService, apiKeyService)
 	adminSettingHandler := adminhandler.NewSettingHandler(settingService, nil, nil)
-	opsHandler := adminhandler.NewOpsHandler(opsService)
 
 	jwtAuth := func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{
@@ -484,8 +432,6 @@ func newContractDeps(t *testing.T) *contractDeps {
 	v1Admin := v1.Group("/admin")
 	v1Admin.Use(adminAuth)
 	v1Admin.GET("/settings", adminSettingHandler.GetSettings)
-	v1Admin.GET("/ops/concurrency", opsHandler.GetConcurrencyStats)
-	v1Admin.GET("/ops/health", opsHandler.GetSystemHealth)
 
 	return &contractDeps{
 		now:         now,
@@ -588,25 +534,25 @@ func (r *stubUserRepo) RemoveGroupFromAllowedGroups(ctx context.Context, groupID
 	return 0, errors.New("not implemented")
 }
 
-type stubAPIKeyCache struct{}
+type stubApiKeyCache struct{}
 
-func (stubAPIKeyCache) GetCreateAttemptCount(ctx context.Context, userID int64) (int, error) {
+func (stubApiKeyCache) GetCreateAttemptCount(ctx context.Context, userID int64) (int, error) {
 	return 0, nil
 }
 
-func (stubAPIKeyCache) IncrementCreateAttemptCount(ctx context.Context, userID int64) error {
+func (stubApiKeyCache) IncrementCreateAttemptCount(ctx context.Context, userID int64) error {
 	return nil
 }
 
-func (stubAPIKeyCache) DeleteCreateAttemptCount(ctx context.Context, userID int64) error {
+func (stubApiKeyCache) DeleteCreateAttemptCount(ctx context.Context, userID int64) error {
 	return nil
 }
 
-func (stubAPIKeyCache) IncrementDailyUsage(ctx context.Context, apiKey string) error {
+func (stubApiKeyCache) IncrementDailyUsage(ctx context.Context, apiKey string) error {
 	return nil
 }
 
-func (stubAPIKeyCache) SetDailyUsageExpiry(ctx context.Context, apiKey string, ttl time.Duration) error {
+func (stubApiKeyCache) SetDailyUsageExpiry(ctx context.Context, apiKey string, ttl time.Duration) error {
 	return nil
 }
 
@@ -723,7 +669,7 @@ func (stubUserSubscriptionRepo) BatchUpdateExpiredStatus(ctx context.Context) (i
 	return 0, errors.New("not implemented")
 }
 
-type stubAPIKeyRepo struct {
+type stubApiKeyRepo struct {
 	now time.Time
 
 	nextID int64
@@ -731,8 +677,8 @@ type stubAPIKeyRepo struct {
 	byKey  map[string]*service.APIKey
 }
 
-func newStubAPIKeyRepo(now time.Time) *stubAPIKeyRepo {
-	return &stubAPIKeyRepo{
+func newStubApiKeyRepo(now time.Time) *stubApiKeyRepo {
+	return &stubApiKeyRepo{
 		now:    now,
 		nextID: 100,
 		byID:   make(map[int64]*service.APIKey),
@@ -740,7 +686,7 @@ func newStubAPIKeyRepo(now time.Time) *stubAPIKeyRepo {
 	}
 }
 
-func (r *stubAPIKeyRepo) MustSeed(key *service.APIKey) {
+func (r *stubApiKeyRepo) MustSeed(key *service.APIKey) {
 	if key == nil {
 		return
 	}
@@ -749,7 +695,7 @@ func (r *stubAPIKeyRepo) MustSeed(key *service.APIKey) {
 	r.byKey[clone.Key] = &clone
 }
 
-func (r *stubAPIKeyRepo) Create(ctx context.Context, key *service.APIKey) error {
+func (r *stubApiKeyRepo) Create(ctx context.Context, key *service.APIKey) error {
 	if key == nil {
 		return errors.New("nil key")
 	}
@@ -769,7 +715,7 @@ func (r *stubAPIKeyRepo) Create(ctx context.Context, key *service.APIKey) error 
 	return nil
 }
 
-func (r *stubAPIKeyRepo) GetByID(ctx context.Context, id int64) (*service.APIKey, error) {
+func (r *stubApiKeyRepo) GetByID(ctx context.Context, id int64) (*service.APIKey, error) {
 	key, ok := r.byID[id]
 	if !ok {
 		return nil, service.ErrAPIKeyNotFound
@@ -778,7 +724,7 @@ func (r *stubAPIKeyRepo) GetByID(ctx context.Context, id int64) (*service.APIKey
 	return &clone, nil
 }
 
-func (r *stubAPIKeyRepo) GetOwnerID(ctx context.Context, id int64) (int64, error) {
+func (r *stubApiKeyRepo) GetOwnerID(ctx context.Context, id int64) (int64, error) {
 	key, ok := r.byID[id]
 	if !ok {
 		return 0, service.ErrAPIKeyNotFound
@@ -786,7 +732,7 @@ func (r *stubAPIKeyRepo) GetOwnerID(ctx context.Context, id int64) (int64, error
 	return key.UserID, nil
 }
 
-func (r *stubAPIKeyRepo) GetByKey(ctx context.Context, key string) (*service.APIKey, error) {
+func (r *stubApiKeyRepo) GetByKey(ctx context.Context, key string) (*service.APIKey, error) {
 	found, ok := r.byKey[key]
 	if !ok {
 		return nil, service.ErrAPIKeyNotFound
@@ -795,7 +741,7 @@ func (r *stubAPIKeyRepo) GetByKey(ctx context.Context, key string) (*service.API
 	return &clone, nil
 }
 
-func (r *stubAPIKeyRepo) Update(ctx context.Context, key *service.APIKey) error {
+func (r *stubApiKeyRepo) Update(ctx context.Context, key *service.APIKey) error {
 	if key == nil {
 		return errors.New("nil key")
 	}
@@ -811,7 +757,7 @@ func (r *stubAPIKeyRepo) Update(ctx context.Context, key *service.APIKey) error 
 	return nil
 }
 
-func (r *stubAPIKeyRepo) Delete(ctx context.Context, id int64) error {
+func (r *stubApiKeyRepo) Delete(ctx context.Context, id int64) error {
 	key, ok := r.byID[id]
 	if !ok {
 		return service.ErrAPIKeyNotFound
@@ -821,7 +767,7 @@ func (r *stubAPIKeyRepo) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (r *stubAPIKeyRepo) ListByUserID(ctx context.Context, userID int64, params pagination.PaginationParams) ([]service.APIKey, *pagination.PaginationResult, error) {
+func (r *stubApiKeyRepo) ListByUserID(ctx context.Context, userID int64, params pagination.PaginationParams) ([]service.APIKey, *pagination.PaginationResult, error) {
 	ids := make([]int64, 0, len(r.byID))
 	for id := range r.byID {
 		if r.byID[id].UserID == userID {
@@ -859,7 +805,7 @@ func (r *stubAPIKeyRepo) ListByUserID(ctx context.Context, userID int64, params 
 	}, nil
 }
 
-func (r *stubAPIKeyRepo) VerifyOwnership(ctx context.Context, userID int64, apiKeyIDs []int64) ([]int64, error) {
+func (r *stubApiKeyRepo) VerifyOwnership(ctx context.Context, userID int64, apiKeyIDs []int64) ([]int64, error) {
 	if len(apiKeyIDs) == 0 {
 		return []int64{}, nil
 	}
@@ -878,7 +824,7 @@ func (r *stubAPIKeyRepo) VerifyOwnership(ctx context.Context, userID int64, apiK
 	return out, nil
 }
 
-func (r *stubAPIKeyRepo) CountByUserID(ctx context.Context, userID int64) (int64, error) {
+func (r *stubApiKeyRepo) CountByUserID(ctx context.Context, userID int64) (int64, error) {
 	var count int64
 	for _, key := range r.byID {
 		if key.UserID == userID {
@@ -888,24 +834,24 @@ func (r *stubAPIKeyRepo) CountByUserID(ctx context.Context, userID int64) (int64
 	return count, nil
 }
 
-func (r *stubAPIKeyRepo) ExistsByKey(ctx context.Context, key string) (bool, error) {
+func (r *stubApiKeyRepo) ExistsByKey(ctx context.Context, key string) (bool, error) {
 	_, ok := r.byKey[key]
 	return ok, nil
 }
 
-func (r *stubAPIKeyRepo) ListByGroupID(ctx context.Context, groupID int64, params pagination.PaginationParams) ([]service.APIKey, *pagination.PaginationResult, error) {
+func (r *stubApiKeyRepo) ListByGroupID(ctx context.Context, groupID int64, params pagination.PaginationParams) ([]service.APIKey, *pagination.PaginationResult, error) {
 	return nil, nil, errors.New("not implemented")
 }
 
-func (r *stubAPIKeyRepo) SearchAPIKeys(ctx context.Context, userID int64, keyword string, limit int) ([]service.APIKey, error) {
+func (r *stubApiKeyRepo) SearchAPIKeys(ctx context.Context, userID int64, keyword string, limit int) ([]service.APIKey, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (r *stubAPIKeyRepo) ClearGroupIDByGroupID(ctx context.Context, groupID int64) (int64, error) {
+func (r *stubApiKeyRepo) ClearGroupIDByGroupID(ctx context.Context, groupID int64) (int64, error) {
 	return 0, errors.New("not implemented")
 }
 
-func (r *stubAPIKeyRepo) CountByGroupID(ctx context.Context, groupID int64) (int64, error) {
+func (r *stubApiKeyRepo) CountByGroupID(ctx context.Context, groupID int64) (int64, error) {
 	return 0, errors.New("not implemented")
 }
 
@@ -921,16 +867,8 @@ func (r *stubUsageLogRepo) SetUserLogs(userID int64, logs []service.UsageLog) {
 	r.userLogs[userID] = logs
 }
 
-func (r *stubUsageLogRepo) Create(ctx context.Context, log *service.UsageLog) error {
-	return errors.New("not implemented")
-}
-
-func (r *stubUsageLogRepo) CreateIdempotent(ctx context.Context, log *service.UsageLog) (bool, error) {
+func (r *stubUsageLogRepo) Create(ctx context.Context, log *service.UsageLog) (bool, error) {
 	return false, errors.New("not implemented")
-}
-
-func (r *stubUsageLogRepo) CreateBillingUsageEntry(ctx context.Context, entry *service.BillingUsageEntry) error {
-	return errors.New("not implemented")
 }
 
 func (r *stubUsageLogRepo) GetByID(ctx context.Context, id int64) (*service.UsageLog, error) {
@@ -1191,120 +1129,6 @@ func (r *stubSettingRepo) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-type stubOpsRepo struct {
-	service.OpsRepository
-}
-
-func (r *stubOpsRepo) GetLatestSystemMetric(ctx context.Context) (*service.OpsMetrics, error) {
-	return &service.OpsMetrics{}, nil
-}
-
-func (r *stubOpsRepo) GetCachedLatestSystemMetric(ctx context.Context) (*service.OpsMetrics, error) {
-	return nil, nil
-}
-
-func (r *stubOpsRepo) CountActiveAlerts(ctx context.Context) (int, error) {
-	return 0, nil
-}
-
-func (r *stubOpsRepo) CountAvailableAccountsByGroup(ctx context.Context, groupID int64) (int, int, error) {
-	return 0, 0, nil
-}
-
-func (r *stubOpsRepo) GetCachedPlatformConcurrency(ctx context.Context) (map[string]*service.PlatformConcurrencyInfo, error) {
-	return map[string]*service.PlatformConcurrencyInfo{}, nil
-}
-
-func (r *stubOpsRepo) GetCachedGroupConcurrency(ctx context.Context) (map[int64]*service.GroupConcurrencyInfo, error) {
-	return map[int64]*service.GroupConcurrencyInfo{}, nil
-}
-
-func (r *stubOpsRepo) GetCachedConcurrencyCollectedAt(ctx context.Context) (time.Time, bool, error) {
-	return time.Time{}, false, nil
-}
-
-func (r *stubOpsRepo) PingRedis(ctx context.Context) error {
-	return nil
-}
-
-func (r *stubOpsRepo) GetWindowStats(ctx context.Context, startTime, endTime time.Time) (*service.OpsWindowStats, error) {
-	return &service.OpsWindowStats{}, nil
-}
-
-func (r *stubOpsRepo) SetCachedLatestSystemMetric(ctx context.Context, metric *service.OpsMetrics) error {
-	return nil
-}
-
-type stubConcurrencyCache struct{}
-
-func (c *stubConcurrencyCache) AcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
-	return true, nil
-}
-
-func (c *stubConcurrencyCache) ReleaseAccountSlot(ctx context.Context, accountID int64, requestID string) error {
-	return nil
-}
-
-func (c *stubConcurrencyCache) GetAccountConcurrency(ctx context.Context, accountID int64) (int, error) {
-	return 0, nil
-}
-
-func (c *stubConcurrencyCache) IncrementAccountWaitCount(ctx context.Context, accountID int64, maxWait int) (bool, error) {
-	return true, nil
-}
-
-func (c *stubConcurrencyCache) DecrementAccountWaitCount(ctx context.Context, accountID int64) error {
-	return nil
-}
-
-func (c *stubConcurrencyCache) GetAccountWaitingCount(ctx context.Context, accountID int64) (int, error) {
-	return 0, nil
-}
-
-func (c *stubConcurrencyCache) AcquireUserSlot(ctx context.Context, userID int64, maxConcurrency int, requestID string) (bool, error) {
-	return true, nil
-}
-
-func (c *stubConcurrencyCache) ReleaseUserSlot(ctx context.Context, userID int64, requestID string) error {
-	return nil
-}
-
-func (c *stubConcurrencyCache) GetUserConcurrency(ctx context.Context, userID int64) (int, error) {
-	return 0, nil
-}
-
-func (c *stubConcurrencyCache) IncrementUserWaitCount(ctx context.Context, userID int64, maxWait int) (bool, error) {
-	return true, nil
-}
-
-func (c *stubConcurrencyCache) DecrementUserWaitCount(ctx context.Context, userID int64) error {
-	return nil
-}
-
-func (c *stubConcurrencyCache) GetUserWaitingCount(ctx context.Context, userID int64) (int, error) {
-	return 0, nil
-}
-
-func (c *stubConcurrencyCache) CleanupExpiredAccountSlots(ctx context.Context, accountID int64) error {
-	return nil
-}
-
-func (c *stubConcurrencyCache) IncrementWaitCount(ctx context.Context, userID int64, maxWait int) (bool, error) {
-	return true, nil
-}
-
-func (c *stubConcurrencyCache) DecrementWaitCount(ctx context.Context, userID int64) error {
-	return nil
-}
-
-func (c *stubConcurrencyCache) GetTotalWaitCount(ctx context.Context) (int, error) {
-	return 0, nil
-}
-
-func (c *stubConcurrencyCache) GetAccountsLoadBatch(ctx context.Context, accounts []service.AccountWithConcurrency) (map[int64]*service.AccountLoadInfo, error) {
-	return map[int64]*service.AccountLoadInfo{}, nil
-}
-
 func paginateLogs(logs []service.UsageLog, params pagination.PaginationParams) []service.UsageLog {
 	start := params.Offset()
 	if start > len(logs) {
@@ -1336,8 +1160,8 @@ func paginationResult(total int64, params pagination.PaginationParams) *paginati
 // Ensure compile-time interface compliance.
 var (
 	_ service.UserRepository             = (*stubUserRepo)(nil)
-	_ service.APIKeyRepository           = (*stubAPIKeyRepo)(nil)
-	_ service.APIKeyCache                = (*stubAPIKeyCache)(nil)
+	_ service.APIKeyRepository           = (*stubApiKeyRepo)(nil)
+	_ service.APIKeyCache                = (*stubApiKeyCache)(nil)
 	_ service.GroupRepository            = (*stubGroupRepo)(nil)
 	_ service.UserSubscriptionRepository = (*stubUserSubscriptionRepo)(nil)
 	_ service.UsageLogRepository         = (*stubUsageLogRepo)(nil)

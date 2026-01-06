@@ -1,49 +1,23 @@
 <template>
   <AppLayout>
     <TablePageLayout>
-      <template #actions>
-        <div class="flex justify-end gap-3">
-          <button
-            @click="loadGroups"
-            :disabled="loading"
-            class="btn btn-secondary"
-            :title="t('common.refresh')"
-          >
-            <svg
-              :class="['h-5 w-5', loading ? 'animate-spin' : '']"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="1.5"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
-              />
-            </svg>
-          </button>
-          <button
-            @click="showCreateModal = true"
-            class="btn btn-primary"
-            data-tour="groups-create-btn"
-          >
-            <svg
-              class="mr-2 h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="1.5"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-            {{ t('admin.groups.createGroup') }}
-          </button>
-        </div>
-      </template>
-
       <template #filters>
-        <div class="flex flex-wrap gap-3">
+        <div class="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+          <!-- Left: fuzzy search + filters (can wrap to multiple lines) -->
+          <div class="flex flex-1 flex-wrap items-center gap-3">
+            <div class="relative w-full sm:w-64">
+              <Icon
+                name="search"
+                size="md"
+                class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500"
+              />
+              <input
+                v-model="searchQuery"
+                type="text"
+                :placeholder="t('admin.groups.searchGroups')"
+                class="input pl-10"
+              />
+            </div>
           <Select
             v-model="filters.platform"
             :options="platformFilterOptions"
@@ -65,11 +39,32 @@
             class="w-44"
             @change="loadGroups"
           />
+          </div>
+
+          <!-- Right: actions -->
+          <div class="flex w-full flex-shrink-0 flex-wrap items-center justify-end gap-3 lg:w-auto">
+            <button
+              @click="loadGroups"
+              :disabled="loading"
+              class="btn btn-secondary"
+              :title="t('common.refresh')"
+            >
+              <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
+            </button>
+            <button
+              @click="showCreateModal = true"
+              class="btn btn-primary"
+              data-tour="groups-create-btn"
+            >
+              <Icon name="plus" size="md" class="mr-2" />
+              {{ t('admin.groups.createGroup') }}
+            </button>
+          </div>
         </div>
       </template>
 
       <template #table>
-        <DataTable :columns="columns" :data="groups" :loading="loading">
+        <DataTable :columns="columns" :data="displayedGroups" :loading="loading">
           <template #cell-name="{ value }">
             <span class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
           </template>
@@ -88,15 +83,7 @@
               ]"
             >
               <PlatformIcon :platform="value" size="xs" />
-              {{
-                value === 'anthropic'
-                  ? 'Anthropic'
-                  : value === 'openai'
-                    ? 'OpenAI'
-                    : value === 'antigravity'
-                      ? 'Antigravity'
-                      : 'Gemini'
-              }}
+              {{ t('admin.groups.platforms.' + value) }}
             </span>
           </template>
 
@@ -172,7 +159,7 @@
 
           <template #cell-status="{ value }">
             <span :class="['badge', value === 'active' ? 'badge-success' : 'badge-danger']">
-              {{ value }}
+              {{ t('admin.accounts.status.' + value) }}
             </span>
           </template>
 
@@ -182,64 +169,14 @@
                 @click="handleEdit(row)"
                 class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
               >
-                <svg
-                  class="h-4 w-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  stroke-width="1.5"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"
-                  />
-                </svg>
+                <Icon name="edit" size="sm" />
                 <span class="text-xs">{{ t('common.edit') }}</span>
-              </button>
-              <button
-                @click="openGroupAvailabilityConfigDialog(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400"
-                :title="t('admin.groups.monitoringConfig')"
-                v-if="adminSettingsStore.opsMonitoringEnabled"
-              >
-                <svg
-                  class="h-4 w-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  stroke-width="1.5"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"
-                  />
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                  />
-                </svg>
-                <span class="text-xs">{{ t('admin.groups.monitoringConfig') }}</span>
               </button>
               <button
                 @click="handleDelete(row)"
                 class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
               >
-                <svg
-                  class="h-4 w-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  stroke-width="1.5"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
-                  />
-                </svg>
+                <Icon name="trash" size="sm" />
                 <span class="text-xs">{{ t('common.delete') }}</span>
               </button>
             </div>
@@ -325,15 +262,12 @@
             </label>
             <!-- Help Tooltip -->
             <div class="group relative inline-flex">
-              <svg
-                class="h-3.5 w-3.5 cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+              <Icon
+                name="questionCircle"
+                size="sm"
+                :stroke-width="2"
+                class="cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
+              />
               <!-- Tooltip Popover -->
               <div class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100">
                 <div class="rounded-lg bg-gray-900 p-3 text-white shadow-lg dark:bg-gray-800">
@@ -343,7 +277,7 @@
                   </p>
                   <div class="rounded bg-gray-800 p-2 dark:bg-gray-700">
                     <p class="text-xs leading-relaxed text-gray-300">
-                      <span class="text-primary-400">💡 {{ t('admin.groups.exclusiveTooltip.example') }}</span>
+                      <span class="inline-flex items-center gap-1 text-primary-400"><Icon name="lightbulb" size="xs" /> {{ t('admin.groups.exclusiveTooltip.example') }}</span>
                       {{ t('admin.groups.exclusiveTooltip.exampleContent') }}
                     </p>
                   </div>
@@ -419,6 +353,51 @@
                 min="0"
                 class="input"
                 :placeholder="t('admin.groups.subscription.noLimit')"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- 图片生成计费配置（antigravity 和 gemini 平台） -->
+        <div v-if="createForm.platform === 'antigravity' || createForm.platform === 'gemini'" class="border-t pt-4">
+          <label class="block mb-2 font-medium text-gray-700 dark:text-gray-300">
+            {{ t('admin.groups.imagePricing.title') }}
+          </label>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            {{ t('admin.groups.imagePricing.description') }}
+          </p>
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="input-label">1K ($)</label>
+              <input
+                v-model.number="createForm.image_price_1k"
+                type="number"
+                step="0.001"
+                min="0"
+                class="input"
+                placeholder="0.134"
+              />
+            </div>
+            <div>
+              <label class="input-label">2K ($)</label>
+              <input
+                v-model.number="createForm.image_price_2k"
+                type="number"
+                step="0.001"
+                min="0"
+                class="input"
+                placeholder="0.134"
+              />
+            </div>
+            <div>
+              <label class="input-label">4K ($)</label>
+              <input
+                v-model.number="createForm.image_price_4k"
+                type="number"
+                step="0.001"
+                min="0"
+                class="input"
+                placeholder="0.268"
               />
             </div>
           </div>
@@ -520,15 +499,12 @@
             </label>
             <!-- Help Tooltip -->
             <div class="group relative inline-flex">
-              <svg
-                class="h-3.5 w-3.5 cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+              <Icon
+                name="questionCircle"
+                size="sm"
+                :stroke-width="2"
+                class="cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
+              />
               <!-- Tooltip Popover -->
               <div class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100">
                 <div class="rounded-lg bg-gray-900 p-3 text-white shadow-lg dark:bg-gray-800">
@@ -538,7 +514,7 @@
                   </p>
                   <div class="rounded bg-gray-800 p-2 dark:bg-gray-700">
                     <p class="text-xs leading-relaxed text-gray-300">
-                      <span class="text-primary-400">💡 {{ t('admin.groups.exclusiveTooltip.example') }}</span>
+                      <span class="inline-flex items-center gap-1 text-primary-400"><Icon name="lightbulb" size="xs" /> {{ t('admin.groups.exclusiveTooltip.example') }}</span>
                       {{ t('admin.groups.exclusiveTooltip.exampleContent') }}
                     </p>
                   </div>
@@ -627,6 +603,51 @@
           </div>
         </div>
 
+        <!-- 图片生成计费配置（antigravity 和 gemini 平台） -->
+        <div v-if="editForm.platform === 'antigravity' || editForm.platform === 'gemini'" class="border-t pt-4">
+          <label class="block mb-2 font-medium text-gray-700 dark:text-gray-300">
+            {{ t('admin.groups.imagePricing.title') }}
+          </label>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            {{ t('admin.groups.imagePricing.description') }}
+          </p>
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="input-label">1K ($)</label>
+              <input
+                v-model.number="editForm.image_price_1k"
+                type="number"
+                step="0.001"
+                min="0"
+                class="input"
+                placeholder="0.134"
+              />
+            </div>
+            <div>
+              <label class="input-label">2K ($)</label>
+              <input
+                v-model.number="editForm.image_price_2k"
+                type="number"
+                step="0.001"
+                min="0"
+                class="input"
+                placeholder="0.134"
+              />
+            </div>
+            <div>
+              <label class="input-label">4K ($)</label>
+              <input
+                v-model.number="editForm.image_price_4k"
+                type="number"
+                step="0.001"
+                min="0"
+                class="input"
+                placeholder="0.268"
+              />
+            </div>
+          </div>
+        </div>
+
       </form>
 
       <template #footer>
@@ -678,13 +699,6 @@
       @confirm="confirmDelete"
       @cancel="showDeleteDialog = false"
     />
-
-    <OpsConfigDialog
-      v-if="adminSettingsStore.opsMonitoringEnabled"
-      :show="showGroupAvailabilityConfigDialog"
-      :focus-group-id="focusGroupAvailabilityId"
-      @close="closeGroupAvailabilityConfigDialog"
-    />
   </AppLayout>
 </template>
 
@@ -692,7 +706,6 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
-import { useAdminSettingsStore } from '@/stores/adminSettings'
 import { useOnboardingStore } from '@/stores/onboarding'
 import { adminAPI } from '@/api/admin'
 import type { Group, GroupPlatform, SubscriptionType } from '@/types'
@@ -706,11 +719,10 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import Select from '@/components/common/Select.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
-import OpsConfigDialog from '@/views/admin/ops/components/OpsConfigDialog.vue'
+import Icon from '@/components/icons/Icon.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
-const adminSettingsStore = useAdminSettingsStore()
 const onboardingStore = useOnboardingStore()
 
 const columns = computed<Column[]>(() => [
@@ -727,8 +739,8 @@ const columns = computed<Column[]>(() => [
 // Filter options
 const statusOptions = computed(() => [
   { value: '', label: t('admin.groups.allStatus') },
-  { value: 'active', label: t('common.active') },
-  { value: 'inactive', label: t('common.inactive') }
+  { value: 'active', label: t('admin.accounts.status.active') },
+  { value: 'inactive', label: t('admin.accounts.status.inactive') }
 ])
 
 const exclusiveOptions = computed(() => [
@@ -753,8 +765,8 @@ const platformFilterOptions = computed(() => [
 ])
 
 const editStatusOptions = computed(() => [
-  { value: 'active', label: t('common.active') },
-  { value: 'inactive', label: t('common.inactive') }
+  { value: 'active', label: t('admin.accounts.status.active') },
+  { value: 'inactive', label: t('admin.accounts.status.inactive') }
 ])
 
 const subscriptionTypeOptions = computed(() => [
@@ -764,6 +776,7 @@ const subscriptionTypeOptions = computed(() => [
 
 const groups = ref<Group[]>([])
 const loading = ref(false)
+const searchQuery = ref('')
 const filters = reactive({
   platform: '',
   status: '',
@@ -778,14 +791,22 @@ const pagination = reactive({
 
 let abortController: AbortController | null = null
 
+const displayedGroups = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return groups.value
+  return groups.value.filter((group) => {
+    const name = group.name?.toLowerCase?.() ?? ''
+    const description = group.description?.toLowerCase?.() ?? ''
+    return name.includes(q) || description.includes(q)
+  })
+})
+
 const showCreateModal = ref(false)
 const showEditModal = ref(false)
 const showDeleteDialog = ref(false)
 const submitting = ref(false)
 const editingGroup = ref<Group | null>(null)
 const deletingGroup = ref<Group | null>(null)
-const showGroupAvailabilityConfigDialog = ref(false)
-const focusGroupAvailabilityId = ref<number | null>(null)
 
 const createForm = reactive({
   name: '',
@@ -796,7 +817,11 @@ const createForm = reactive({
   subscription_type: 'standard' as SubscriptionType,
   daily_limit_usd: null as number | null,
   weekly_limit_usd: null as number | null,
-  monthly_limit_usd: null as number | null
+  monthly_limit_usd: null as number | null,
+  // 图片生成计费配置（仅 antigravity 平台使用）
+  image_price_1k: null as number | null,
+  image_price_2k: null as number | null,
+  image_price_4k: null as number | null
 })
 
 const editForm = reactive({
@@ -809,7 +834,11 @@ const editForm = reactive({
   subscription_type: 'standard' as SubscriptionType,
   daily_limit_usd: null as number | null,
   weekly_limit_usd: null as number | null,
-  monthly_limit_usd: null as number | null
+  monthly_limit_usd: null as number | null,
+  // 图片生成计费配置（仅 antigravity 平台使用）
+  image_price_1k: null as number | null,
+  image_price_2k: null as number | null,
+  image_price_4k: null as number | null
 })
 
 // 根据分组类型返回不同的删除确认消息
@@ -876,9 +905,16 @@ const closeCreateModal = () => {
   createForm.daily_limit_usd = null
   createForm.weekly_limit_usd = null
   createForm.monthly_limit_usd = null
+  createForm.image_price_1k = null
+  createForm.image_price_2k = null
+  createForm.image_price_4k = null
 }
 
 const handleCreateGroup = async () => {
+  if (!createForm.name.trim()) {
+    appStore.showError(t('admin.groups.nameRequired'))
+    return
+  }
   submitting.value = true
   try {
     await adminAPI.groups.create(createForm)
@@ -910,6 +946,9 @@ const handleEdit = (group: Group) => {
   editForm.daily_limit_usd = group.daily_limit_usd
   editForm.weekly_limit_usd = group.weekly_limit_usd
   editForm.monthly_limit_usd = group.monthly_limit_usd
+  editForm.image_price_1k = group.image_price_1k
+  editForm.image_price_2k = group.image_price_2k
+  editForm.image_price_4k = group.image_price_4k
   showEditModal.value = true
 }
 
@@ -920,6 +959,10 @@ const closeEditModal = () => {
 
 const handleUpdateGroup = async () => {
   if (!editingGroup.value) return
+  if (!editForm.name.trim()) {
+    appStore.showError(t('admin.groups.nameRequired'))
+    return
+  }
 
   submitting.value = true
   try {
@@ -938,16 +981,6 @@ const handleUpdateGroup = async () => {
 const handleDelete = (group: Group) => {
   deletingGroup.value = group
   showDeleteDialog.value = true
-}
-
-function openGroupAvailabilityConfigDialog(group: Group) {
-  focusGroupAvailabilityId.value = group.id
-  showGroupAvailabilityConfigDialog.value = true
-}
-
-function closeGroupAvailabilityConfigDialog() {
-  showGroupAvailabilityConfigDialog.value = false
-  focusGroupAvailabilityId.value = null
 }
 
 const confirmDelete = async () => {
@@ -977,7 +1010,6 @@ watch(
 )
 
 onMounted(() => {
-  adminSettingsStore.fetch()
   loadGroups()
 })
 </script>
