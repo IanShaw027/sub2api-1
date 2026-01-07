@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { formatNumber } from '@/utils/format'
 import type { OpsDashboardOverview } from '@/api/admin/ops'
@@ -9,7 +9,6 @@ import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Select from '@/components/common/Select.vue'
 
 const { t } = useI18n()
-const helpUrl = 'https://github.com/Wei-Shaw/sub2api#readme'
 
 interface Props {
   overview: OpsDashboardOverview | null
@@ -45,7 +44,7 @@ type RequestDetailsPreset = {
 }
 
 // --- Global Filters ---
-const groups = ref<Array<{ id: number, name: string }>>([])
+const groups = ref<Array<{ id: number, name: string, platform: string }>>([])
 
 // Platform options
 const platformOptions = computed(() => [
@@ -65,17 +64,31 @@ const timeRangeOptions = computed(() => [
   { value: '24h', label: t('admin.ops.timeRange.24h') }
 ])
 
-// Group options computed
-const groupOptions = computed(() => [
-  { value: null, label: t('admin.ops.filters.allGroups') },
-  ...groups.value.map(g => ({ value: g.id, label: g.name }))
-])
+// Group options - 根据选中的平台过滤
+const groupOptions = computed(() => {
+  const filtered = props.platform
+    ? groups.value.filter(g => g.platform === props.platform)
+    : groups.value
+  return [
+    { value: null, label: t('admin.ops.filters.allGroups') },
+    ...filtered.map(g => ({ value: g.id, label: g.name }))
+  ]
+})
+
+// 当平台变化时，如果当前选中的分组不属于新平台，则清空分组选择
+watch(() => props.platform, (newPlatform) => {
+  if (!newPlatform) return
+  const currentGroup = groups.value.find(g => g.id === props.groupId)
+  if (currentGroup && currentGroup.platform !== newPlatform) {
+    emit('update:group', null)
+  }
+})
 
 onMounted(async () => {
   try {
     // Fetch simple group list for filter
     const res = await adminAPI.groups.list(1, 100)
-    groups.value = res.items.map(g => ({ id: g.id, name: g.name }))
+    groups.value = res.items.map(g => ({ id: g.id, name: g.name, platform: g.platform }))
   } catch (e) {
     console.error('Failed to load groups for filter', e)
   }
@@ -312,18 +325,6 @@ function openDetails(preset: RequestDetailsPreset) {
       </div>
 
       <div class="flex flex-wrap items-center gap-3">
-        <a
-          :href="helpUrl"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 transition-colors hover:bg-gray-200 dark:bg-dark-700 dark:text-gray-400 dark:hover:bg-dark-600"
-          :title="t('admin.ops.status.help')"
-        >
-          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.02 2.575-2.5 2.9-.98.215-1.5.792-1.5 1.6V16m0 3h.01M12 21a9 9 0 110-18 9 9 0 010 18z" />
-          </svg>
-        </a>
-
         <Select
           :model-value="platform"
           :options="platformOptions"
