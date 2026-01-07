@@ -87,7 +87,7 @@ type OpsQueryRepository interface {
 	// Account status monitoring methods
 	// GetAllActiveAccountStatus returns account stats for all active accounts.
 	// "Active" is defined by repository implementation (currently: accounts seen in ops_error_logs within 24h).
-	GetAllActiveAccountStatus(ctx context.Context) ([]AccountStatusSummary, error)
+	GetAllActiveAccountStatus(ctx context.Context, platform string, groupID int64) ([]AccountStatusSummary, error)
 
 	// IP statistics methods
 	GetErrorStatsByIP(ctx context.Context, startTime, endTime time.Time, limit int, sortBy, sortOrder string) ([]IPErrorStats, error)

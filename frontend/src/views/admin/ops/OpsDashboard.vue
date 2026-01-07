@@ -21,13 +21,11 @@ import zoomPlugin from 'chartjs-plugin-zoom'
 	import ErrorDetailModal from '@/components/admin/ErrorDetailModal.vue'
 	import OpsDashboardHeader from './components/OpsDashboardHeader.vue'
 	import OpsConcurrencyCard from './components/OpsConcurrencyCard.vue'
+	import OpsThroughputChart from './components/OpsThroughputChart.vue'
 	import OpsMetricsCharts from './components/OpsMetricsCharts.vue'
-	import OpsGroupAvailabilityCard from './components/OpsGroupAvailabilityCard.vue'
-	import OpsGroupAvailabilityEventsCard from './components/OpsGroupAvailabilityEventsCard.vue'
 	import OpsErrorAnalyticsCard from './components/OpsErrorAnalyticsCard.vue'
 	import OpsAccountStatusCard from './components/OpsAccountStatusCard.vue'
 	import OpsAlertEventsCard from './components/OpsAlertEventsCard.vue'
-	import OpsErrorByIPCard from './components/OpsErrorByIPCard.vue'
 	import OpsErrorLogTable from './components/OpsErrorLogTable.vue'
 	import OpsDashboardSkeleton from './components/OpsDashboardSkeleton.vue'
 	import OpsRequestDetailsModal, { type OpsRequestDetailsPreset } from './components/OpsRequestDetailsModal.vue'
@@ -303,11 +301,13 @@ const fetchData = async () => {
   loading.value = true
   errorMessage.value = ''
   try {
+    const platform = errorFilters.value.platforms.length === 1 ? errorFilters.value.platforms[0] : ''
+    const groupId = errorFilters.value.groupId
     const [ov, pr, lt, er] = await Promise.all([
       opsAPI.getDashboardOverview(timeRange.value),
-      opsAPI.getProviderHealth(timeRange.value),
-      opsAPI.getLatencyHistogram(timeRange.value),
-      opsAPI.getErrorDistribution(timeRange.value)
+      opsAPI.getProviderHealth(timeRange.value, platform),
+      opsAPI.getLatencyHistogram(timeRange.value, platform, groupId),
+      opsAPI.getErrorDistribution(timeRange.value, platform, groupId)
     ])
     overview.value = ov
     providers.value = pr.providers
@@ -550,24 +550,22 @@ watch(timeRange, () => {
         @openRequestDetails="openRequestDetails"
       />
 
-      <OpsConcurrencyCard
-        v-if="!(loading && !hasLoadedOnce)"
-        :platform-filter="errorFilters.platforms.length === 1 ? errorFilters.platforms[0] : ''"
-        :group-id-filter="errorFilters.groupId"
-      />
+      <div v-if="!(loading && !hasLoadedOnce)" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <OpsThroughputChart :metrics-history="metricsHistory" :loading="loading" :time-range="timeRange" />
+        <OpsConcurrencyCard
+          :platform-filter="errorFilters.platforms.length === 1 ? errorFilters.platforms[0] : ''"
+          :group-id-filter="errorFilters.groupId"
+        />
+      </div>
 
       <!-- L2: Visual Analysis -->
       <OpsMetricsCharts
         v-if="!(loading && !hasLoadedOnce)"
         :hasLoadedOnce="hasLoadedOnce"
         :loading="loading"
-        :timeRange="timeRange"
         :providers="providers"
         :latencyData="latencyData"
         :errorDistribution="errorDistribution"
-        :latestMetrics="latestMetrics"
-        :metricsHistory="metricsHistory"
-        :overview="overview"
       />
 
       <!-- Error Analytics -->
@@ -576,23 +574,10 @@ watch(timeRange, () => {
       <!-- Account Status -->
       <OpsAccountStatusCard v-if="!(loading && !hasLoadedOnce)" />
 
-      <!-- Group Availability Monitoring -->
-      <OpsGroupAvailabilityCard v-if="!(loading && !hasLoadedOnce)" />
-
-      <!-- Group Availability Events -->
-      <OpsGroupAvailabilityEventsCard v-if="!(loading && !hasLoadedOnce)" />
-
       <!-- Settings/management moved to /admin/settings -->
 
       <!-- Alert Events -->
       <OpsAlertEventsCard v-if="!(loading && !hasLoadedOnce)" />
-
-      <!-- Errors by IP -->
-      <OpsErrorByIPCard
-        v-if="!(loading && !hasLoadedOnce)"
-        :time-range="timeRange"
-        @openErrorDetail="openErrorDetailById"
-      />
 
       <!-- L3: Error Logs Query Section -->
       <OpsErrorLogTable
@@ -601,6 +586,7 @@ watch(timeRange, () => {
         :errorLogsTotal="errorLogsTotal"
         :errorLogsLoading="errorLogsLoading"
         :filters="errorFilters"
+        :time-range="timeRange"
         :page="errorPagination.page"
         :page-size="errorPagination.pageSize"
         @update:filters="handleErrorFiltersUpdate"

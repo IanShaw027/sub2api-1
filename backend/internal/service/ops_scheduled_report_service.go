@@ -360,7 +360,7 @@ func (s *OpsScheduledReportService) generateAccountHealth(ctx context.Context, s
 	}
 
 	// Get all active account status (including 24h stats)
-	accountStatuses, err := s.opsService.GetAllActiveAccountStatus(ctx)
+	accountStatuses, err := s.opsService.GetAllActiveAccountStatus(ctx, "", 0)
 	if err != nil {
 		return nil, err
 	}

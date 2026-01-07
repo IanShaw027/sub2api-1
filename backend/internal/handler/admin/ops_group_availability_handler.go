@@ -2,7 +2,6 @@ package admin
 
 import (
 	"context"
-	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -198,20 +197,7 @@ func (h *OpsGroupAvailabilityHandler) ListStatus(c *gin.Context) {
 	search := strings.TrimSpace(c.Query("search"))
 	monitoringFilter := strings.ToLower(strings.TrimSpace(c.Query("monitoring")))
 	alertFilter := strings.ToLower(strings.TrimSpace(c.Query("alert")))
-
-	page := 1
-	if p := c.Query("page"); p != "" {
-		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
-			page = parsed
-		}
-	}
-
-	pageSize := 20
-	if ps := c.Query("page_size"); ps != "" {
-		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 100 {
-			pageSize = parsed
-		}
-	}
+	page, pageSize := response.ParsePagination(c)
 
 	groups, err := h.groupService.ListActive(ctx)
 	if err != nil {
@@ -336,18 +322,6 @@ func (h *OpsGroupAvailabilityHandler) ListEvents(c *gin.Context) {
 	response.Success(c, events)
 }
 
-// computeStatus calculates the current availability status for a group.
-func (h *OpsGroupAvailabilityHandler) computeStatus(ctx context.Context, config *service.OpsGroupAvailabilityConfig) (*service.OpsGroupAvailabilityStatus, error) {
-	if config == nil {
-		return nil, nil
-	}
-	group, err := h.groupService.GetByID(ctx, config.GroupID)
-	if err != nil {
-		return nil, err
-	}
-	return h.computeStatusWithGroup(ctx, group, config)
-}
-
 func (h *OpsGroupAvailabilityHandler) computeStatusWithGroup(ctx context.Context, group *service.Group, config *service.OpsGroupAvailabilityConfig) (*service.OpsGroupAvailabilityStatus, error) {
 	if group == nil {
 		return nil, nil
@@ -435,28 +409,6 @@ func evaluateGroupAvailabilityHealthy(mode string, available, total, minAccounts
 		return countOk && percentOk
 	default:
 		return countOk
-	}
-}
-
-func groupAvailabilityThresholdAccounts(mode string, total int, minAccounts int, minPercentage float64) int {
-	m := strings.ToLower(strings.TrimSpace(mode))
-	if m == "" {
-		m = "count"
-	}
-	requiredFromPercent := 0
-	if total > 0 && minPercentage > 0 {
-		requiredFromPercent = int(math.Ceil(float64(total) * minPercentage / 100))
-	}
-	switch m {
-	case "percentage":
-		return requiredFromPercent
-	case "both":
-		if requiredFromPercent > minAccounts {
-			return requiredFromPercent
-		}
-		return minAccounts
-	default:
-		return minAccounts
 	}
 }
 

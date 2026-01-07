@@ -3,17 +3,18 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 )
 
 // GetAllActiveAccountStatus returns stats for all active accounts.
-func (s *OpsQueryService) GetAllActiveAccountStatus(ctx context.Context) ([]AccountStatusSummary, error) {
+func (s *OpsQueryService) GetAllActiveAccountStatus(ctx context.Context, platform string, groupID int64) ([]AccountStatusSummary, error) {
 	if s == nil || s.repo == nil {
 		return nil, nil
 	}
 	ctxDB, cancel := context.WithTimeout(ctx, opsDBQueryTimeout)
 	defer cancel()
-	return s.repo.GetAllActiveAccountStatus(ctxDB)
+	return s.repo.GetAllActiveAccountStatus(ctxDB, strings.TrimSpace(platform), groupID)
 }
 
 // GetErrorStatsByIP 获取IP错误统计

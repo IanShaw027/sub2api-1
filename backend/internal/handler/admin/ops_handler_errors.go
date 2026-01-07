@@ -404,10 +404,23 @@ func (h *OpsHandler) GetErrorStats(c *gin.Context) {
 //
 // Query params:
 // - account_id: int64 (optional; if not provided, returns all active accounts)
+// - platform: string (optional)
+// - group_id: int64 (optional)
 func (h *OpsHandler) GetAccountStatus(c *gin.Context) {
+	platform := strings.TrimSpace(c.Query("platform"))
+	var groupID int64
+	if groupIDStr := strings.TrimSpace(c.Query("group_id")); groupIDStr != "" {
+		parsed, err := strconv.ParseInt(groupIDStr, 10, 64)
+		if err != nil || parsed <= 0 {
+			response.BadRequest(c, "Invalid group_id")
+			return
+		}
+		groupID = parsed
+	}
+
 	accountIDStr := strings.TrimSpace(c.Query("account_id"))
 	if accountIDStr == "" {
-		items, err := h.opsService.GetAllActiveAccountStatus(c.Request.Context())
+		items, err := h.opsService.GetAllActiveAccountStatus(c.Request.Context(), platform, groupID)
 		if err != nil {
 			response.Error(c, http.StatusInternalServerError, "Failed to get account stats")
 			return
@@ -427,7 +440,7 @@ func (h *OpsHandler) GetAccountStatus(c *gin.Context) {
 	}
 
 	// Get all active accounts and find the requested one
-	items, err := h.opsService.GetAllActiveAccountStatus(c.Request.Context())
+	items, err := h.opsService.GetAllActiveAccountStatus(c.Request.Context(), platform, groupID)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to get account stats")
 		return

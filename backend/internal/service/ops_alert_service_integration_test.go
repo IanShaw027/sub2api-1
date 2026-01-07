@@ -134,7 +134,7 @@ func (noopOpsRepository) GetLatestGroupAvailabilityEvent(ctx context.Context, co
 func (noopOpsRepository) ListGroupAvailabilityEvents(ctx context.Context, limit int, status string) ([]OpsGroupAvailabilityEvent, error) {
 	return nil, nil
 }
-func (noopOpsRepository) GetAllActiveAccountStatus(ctx context.Context) ([]AccountStatusSummary, error) {
+func (noopOpsRepository) GetAllActiveAccountStatus(ctx context.Context, platform string, groupID int64) ([]AccountStatusSummary, error) {
 	return nil, nil
 }
 func (noopOpsRepository) GetErrorStatsByIP(ctx context.Context, startTime, endTime time.Time, limit int, sortBy, sortOrder string) ([]IPErrorStats, error) {

@@ -59,22 +59,18 @@ func (h *OpsHandler) ListMetricsHistory(c *gin.Context) {
 
 	endTime := time.Now()
 	startTime := time.Time{}
-
-	if startTimeStr := c.Query("start_time"); startTimeStr != "" {
-		parsed, err := time.Parse(time.RFC3339, startTimeStr)
-		if err != nil {
-			response.BadRequest(c, "Invalid start_time format (RFC3339)")
-			return
-		}
-		startTime = parsed
+	parsedStart, parsedEnd, err := parseTimeRangeRFC3339(c)
+	if err != nil {
+		return
 	}
-	if endTimeStr := c.Query("end_time"); endTimeStr != "" {
-		parsed, err := time.Parse(time.RFC3339, endTimeStr)
-		if err != nil {
-			response.BadRequest(c, "Invalid end_time format (RFC3339)")
-			return
-		}
-		endTime = parsed
+	if err := validateTimeRangeOrderIfPresent(c, parsedStart, parsedEnd); err != nil {
+		return
+	}
+	if !parsedStart.IsZero() {
+		startTime = parsedStart
+	}
+	if !parsedEnd.IsZero() {
+		endTime = parsedEnd
 	}
 
 	// If explicit range not provided, use lookback minutes.

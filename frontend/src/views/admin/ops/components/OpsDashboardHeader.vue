@@ -344,7 +344,7 @@ function openDetails(preset: RequestDetailsPreset) {
           :model-value="timeRange"
           :options="timeRangeOptions"
           @change="handleTimeRangeChange"
-          class="w-full sm:w-[120px]"
+          class="relative w-full sm:w-[140px]"
         />
 
         <button

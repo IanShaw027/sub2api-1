@@ -448,9 +448,9 @@ export async function getDashboardOverview(timeRange = '1h'): Promise<OpsDashboa
 /**
  * Get provider health comparison
  */
-export async function getProviderHealth(timeRange = '1h'): Promise<ProviderHealthResponse> {
+export async function getProviderHealth(timeRange = '1h', platform?: OpsPlatform | string | ''): Promise<ProviderHealthResponse> {
   const { data } = await apiClient.get<ProviderHealthResponse>('/admin/ops/dashboard/providers', {
-    params: { time_range: timeRange }
+    params: { time_range: timeRange, ...(platform ? { platform } : {}) }
   })
   return data
 }
@@ -458,9 +458,13 @@ export async function getProviderHealth(timeRange = '1h'): Promise<ProviderHealt
 /**
  * Get latency histogram
  */
-export async function getLatencyHistogram(timeRange = '1h'): Promise<LatencyHistogramResponse> {
+export async function getLatencyHistogram(timeRange = '1h', platform?: OpsPlatform | string | '', groupId?: number | null): Promise<LatencyHistogramResponse> {
   const { data } = await apiClient.get<LatencyHistogramResponse>('/admin/ops/dashboard/latency-histogram', {
-    params: { time_range: timeRange }
+    params: {
+      time_range: timeRange,
+      ...(platform ? { platform } : {}),
+      ...(typeof groupId === 'number' && groupId > 0 ? { group_id: groupId } : {})
+    }
   })
   return data
 }
@@ -468,9 +472,13 @@ export async function getLatencyHistogram(timeRange = '1h'): Promise<LatencyHist
 /**
  * Get error distribution
  */
-export async function getErrorDistribution(timeRange = '1h'): Promise<ErrorDistributionResponse> {
+export async function getErrorDistribution(timeRange = '1h', platform?: OpsPlatform | string | '', groupId?: number | null): Promise<ErrorDistributionResponse> {
   const { data } = await apiClient.get<ErrorDistributionResponse>('/admin/ops/dashboard/errors/distribution', {
-    params: { time_range: timeRange }
+    params: {
+      time_range: timeRange,
+      ...(platform ? { platform } : {}),
+      ...(typeof groupId === 'number' && groupId > 0 ? { group_id: groupId } : {})
+    }
   })
   return data
 }

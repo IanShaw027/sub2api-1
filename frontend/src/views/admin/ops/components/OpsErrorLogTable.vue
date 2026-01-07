@@ -1,20 +1,22 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getSeverityClass, formatDateTime } from '../utils/opsFormatters'
-import type { ErrorFilters } from '../types'
+import { getSeverityClass, formatDateTime, parseTimeRangeMinutes } from '../utils/opsFormatters'
+import type { ErrorFilters, IPErrorStats } from '../types'
 import { opsAPI, type OpsErrorLog, type OpsPlatform, type OpsSeverity } from '@/api/admin/ops'
 import ElPagination from '@/components/common/Pagination.vue'
 import { useAppStore } from '@/stores/app'
 import Select from '@/components/common/Select.vue'
 import { useVirtualList } from '@vueuse/core'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import OpsErrorsByIPModal from './OpsErrorsByIPModal.vue'
 
 interface Props {
   errorLogs: OpsErrorLog[]
   errorLogsTotal: number
   errorLogsLoading: boolean
   filters: ErrorFilters
+  timeRange: string
   page?: number
   pageSize?: number
 }
@@ -57,6 +59,92 @@ const severitySelectOptions = computed(() => [
 const retryingIds = reactive(new Set<number>())
 const showRetryConfirm = ref(false)
 const pendingRetryLog = ref<OpsErrorLog | null>(null)
+
+// Top Error IPs quick filter
+const topIpLoading = ref(false)
+const topIpItems = ref<IPErrorStats[]>([])
+const topIpLimit = 30
+const ipModalOpen = ref(false)
+const ipModalSelectedIP = ref('')
+const ipModalStartTimeIso = ref('')
+const ipModalEndTimeIso = ref('')
+
+function computeTimeRangeIso(): { start: string, end: string } {
+  const minutes = parseTimeRangeMinutes(props.timeRange)
+  const end = new Date()
+  const start = new Date(end.getTime() - minutes * 60 * 1000)
+  return { start: start.toISOString(), end: end.toISOString() }
+}
+
+async function loadTopErrorIps() {
+  topIpLoading.value = true
+  try {
+    const { start, end } = computeTimeRangeIso()
+    ipModalStartTimeIso.value = start
+    ipModalEndTimeIso.value = end
+    const res = await opsAPI.getErrorStatsByIP({
+      start_time: start,
+      end_time: end,
+      limit: topIpLimit,
+      sort_by: 'error_count',
+      sort_order: 'desc'
+    })
+    topIpItems.value = res.data || []
+  } catch (err: any) {
+    console.error('[OpsErrorLogTable] Failed to load top error IPs', err)
+    appStore.showError(err?.response?.data?.detail || t('admin.ops.ipErrors.loadFailed'))
+    topIpItems.value = []
+  } finally {
+    topIpLoading.value = false
+  }
+}
+
+const topIpSelectOptions = computed(() => {
+  const options = [
+    { value: '', label: t('common.all') }
+  ] as Array<{ value: string, label: string }>
+
+  const seen = new Set<string>()
+  for (const row of topIpItems.value) {
+    if (!row?.client_ip) continue
+    seen.add(row.client_ip)
+    options.push({
+      value: row.client_ip,
+      label: `${row.client_ip} · ${row.error_count}`
+    })
+  }
+
+  if (props.filters.clientIp && !seen.has(props.filters.clientIp)) {
+    options.push({ value: props.filters.clientIp, label: props.filters.clientIp })
+  }
+
+  return options
+})
+
+function handleTopIpChange(val: string | number | boolean | null) {
+  // Clear "quick filter" highlight when using IP filter.
+  activeQuickFilter.value = ''
+  updateFilter('clientIp', String(val || ''))
+}
+
+function openIpModal(ip: string) {
+  if (!ip) return
+  const { start, end } = computeTimeRangeIso()
+  ipModalStartTimeIso.value = start
+  ipModalEndTimeIso.value = end
+  ipModalSelectedIP.value = ip
+  ipModalOpen.value = true
+}
+
+function closeIpModal() {
+  ipModalOpen.value = false
+  ipModalSelectedIP.value = ''
+}
+
+function handleIpModalOpenErrorDetail(errorId: number) {
+  // OpsDashboard only needs `id` to open the error detail modal.
+  emit('openErrorDetail', { id: errorId } as unknown as OpsErrorLog)
+}
 
 // Enable virtualization earlier when the page size is increased (e.g. 200/500/1000),
 // and also guard against backends returning more than requested.
@@ -201,6 +289,17 @@ function getStatusClass(code: number): string {
   if (code >= 400) return 'bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-900/30 dark:text-amber-400 dark:ring-amber-500/30'
   return 'bg-gray-50 text-gray-700 ring-gray-600/20 dark:bg-gray-900/30 dark:text-gray-400 dark:ring-gray-500/30'
 }
+
+onMounted(() => {
+  loadTopErrorIps()
+})
+
+watch(
+  () => props.timeRange,
+  () => {
+    loadTopErrorIps()
+  }
+)
 </script>
 
 <template>
@@ -255,6 +354,46 @@ function getStatusClass(code: number): string {
           <span class="h-1.5 w-1.5 rounded-full bg-current"></span>
           {{ t('admin.ops.errors.quickFilters.timeout') }}
         </button>
+      </div>
+    </div>
+
+    <!-- Top Error IPs -->
+    <div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div class="text-xs font-black text-gray-500 dark:text-dark-400">
+          {{ t('admin.ops.ipErrors.title') }}
+        </div>
+        <div class="flex items-center gap-2">
+          <Select
+            class="w-[260px]"
+            :model-value="filters.clientIp"
+            :options="topIpSelectOptions"
+            :disabled="topIpLoading || topIpSelectOptions.length <= 1"
+            searchable
+            @change="handleTopIpChange"
+          />
+          <button
+            class="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-300 dark:hover:bg-dark-700"
+            :disabled="topIpLoading"
+            @click="loadTopErrorIps"
+          >
+            <svg class="h-3.5 w-3.5" :class="{ 'animate-spin': topIpLoading }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {{ t('common.refresh') }}
+          </button>
+          <button
+            class="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-300 dark:hover:bg-dark-700"
+            :disabled="!filters.clientIp"
+            @click="openIpModal(filters.clientIp)"
+          >
+            {{ t('admin.ops.ipErrors.details') }}
+          </button>
+        </div>
+      </div>
+      <div v-if="filters.clientIp" class="text-[11px] font-medium text-gray-500 dark:text-dark-400">
+        client_ip:
+        <span class="ml-1 font-mono font-bold text-gray-700 dark:text-gray-200">{{ filters.clientIp }}</span>
       </div>
     </div>
 
@@ -660,5 +799,14 @@ function getStatusClass(code: number): string {
     :message="t('admin.ops.errors.retryConfirmMessage')"
     @confirm="runConfirmedRetry"
     @cancel="cancelRetry"
+  />
+
+  <OpsErrorsByIPModal
+    :show="ipModalOpen"
+    :ip="ipModalSelectedIP"
+    :start-time-iso="ipModalStartTimeIso"
+    :end-time-iso="ipModalEndTimeIso"
+    @close="closeIpModal"
+    @openErrorDetail="handleIpModalOpenErrorDetail"
   />
 </template>

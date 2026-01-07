@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -195,50 +196,69 @@ func (r *OpsRepository) GetErrorDistribution(ctx context.Context, startTime, end
 }
 
 // GetAllActiveAccountStatus returns recent stats for all "active" accounts (as defined by ops_error_logs activity in last 24h).
-func (r *OpsRepository) GetAllActiveAccountStatus(ctx context.Context) ([]service.AccountStatusSummary, error) {
+func (r *OpsRepository) GetAllActiveAccountStatus(ctx context.Context, platform string, groupID int64) ([]service.AccountStatusSummary, error) {
+	platform = strings.TrimSpace(platform)
+
 	query := `
 		WITH
 		active_accounts AS (
-			SELECT DISTINCT account_id
-			FROM ops_error_logs
-			WHERE created_at >= NOW() - INTERVAL '24 hours'
-			  AND account_id IS NOT NULL
+			SELECT DISTINCT o.account_id
+			FROM ops_error_logs o
+			LEFT JOIN accounts acc ON acc.id = o.account_id
+			WHERE o.created_at >= NOW() - INTERVAL '24 hours'
+			  AND o.account_id IS NOT NULL
+			  AND ($1 = '' OR acc.platform = $1)
+			  AND ($2 = 0 OR o.group_id = $2)
 		),
 		error_1h AS (
 			SELECT
-				account_id,
-				COUNT(*) FILTER (WHERE status_code >= 400) AS error_count,
-				COUNT(*) FILTER (WHERE error_type = 'timeout_error') AS timeout_count,
-				COUNT(*) FILTER (WHERE error_type = 'rate_limit_error') AS rate_limit_count
-			FROM ops_error_logs
-			WHERE created_at >= NOW() - INTERVAL '1 hour'
-			  AND account_id IS NOT NULL
-			GROUP BY account_id
+				o.account_id,
+				COUNT(*) FILTER (WHERE o.status_code >= 400) AS error_count,
+				COUNT(*) FILTER (WHERE o.error_type = 'timeout_error') AS timeout_count,
+				COUNT(*) FILTER (WHERE o.error_type = 'rate_limit_error') AS rate_limit_count
+			FROM ops_error_logs o
+			LEFT JOIN accounts acc ON acc.id = o.account_id
+			WHERE o.created_at >= NOW() - INTERVAL '1 hour'
+			  AND o.account_id IS NOT NULL
+			  AND ($1 = '' OR acc.platform = $1)
+			  AND ($2 = 0 OR o.group_id = $2)
+			GROUP BY o.account_id
 		),
 		error_24h AS (
 			SELECT
-				account_id,
-				COUNT(*) FILTER (WHERE status_code >= 400) AS error_count,
-				COUNT(*) FILTER (WHERE error_type = 'timeout_error') AS timeout_count,
-				COUNT(*) FILTER (WHERE error_type = 'rate_limit_error') AS rate_limit_count
-			FROM ops_error_logs
-			WHERE created_at >= NOW() - INTERVAL '24 hours'
-			  AND account_id IS NOT NULL
-			GROUP BY account_id
+				o.account_id,
+				COUNT(*) FILTER (WHERE o.status_code >= 400) AS error_count,
+				COUNT(*) FILTER (WHERE o.error_type = 'timeout_error') AS timeout_count,
+				COUNT(*) FILTER (WHERE o.error_type = 'rate_limit_error') AS rate_limit_count
+			FROM ops_error_logs o
+			LEFT JOIN accounts acc ON acc.id = o.account_id
+			WHERE o.created_at >= NOW() - INTERVAL '24 hours'
+			  AND o.account_id IS NOT NULL
+			  AND ($1 = '' OR acc.platform = $1)
+			  AND ($2 = 0 OR o.group_id = $2)
+			GROUP BY o.account_id
 		),
 		usage_1h AS (
-			SELECT account_id, COUNT(*) AS success_count
-			FROM usage_logs
-			WHERE created_at >= NOW() - INTERVAL '1 hour'
-			  AND account_id IS NOT NULL
-			GROUP BY account_id
+			SELECT u.account_id, COUNT(*) AS success_count
+			FROM usage_logs u
+			JOIN accounts acc ON acc.id = u.account_id
+			JOIN api_keys k ON k.id = u.api_key_id
+			WHERE u.created_at >= NOW() - INTERVAL '1 hour'
+			  AND u.account_id IS NOT NULL
+			  AND ($1 = '' OR acc.platform = $1)
+			  AND ($2 = 0 OR k.group_id = $2)
+			GROUP BY u.account_id
 		),
 		usage_24h AS (
-			SELECT account_id, COUNT(*) AS success_count
-			FROM usage_logs
-			WHERE created_at >= NOW() - INTERVAL '24 hours'
-			  AND account_id IS NOT NULL
-			GROUP BY account_id
+			SELECT u.account_id, COUNT(*) AS success_count
+			FROM usage_logs u
+			JOIN accounts acc ON acc.id = u.account_id
+			JOIN api_keys k ON k.id = u.api_key_id
+			WHERE u.created_at >= NOW() - INTERVAL '24 hours'
+			  AND u.account_id IS NOT NULL
+			  AND ($1 = '' OR acc.platform = $1)
+			  AND ($2 = 0 OR k.group_id = $2)
+			GROUP BY u.account_id
 		)
 		SELECT
 			a.account_id,
@@ -258,7 +278,7 @@ func (r *OpsRepository) GetAllActiveAccountStatus(ctx context.Context) ([]servic
 		ORDER BY a.account_id
 	`
 
-	rows, err := r.sql.QueryContext(ctx, query)
+	rows, err := r.sql.QueryContext(ctx, query, platform, groupID)
 	if err != nil {
 		return nil, err
 	}
