@@ -120,15 +120,16 @@ func (s *GeminiOAuthService) GenerateAuthURL(ctx context.Context, proxyID *int64
 	}
 
 	// OAuth client selection:
-	// - code_assist: always use built-in Gemini CLI OAuth client (public), regardless of configured client_id/secret.
-	// - google_one: uses configured OAuth client when provided; otherwise falls back to built-in client.
-	// - ai_studio: requires a user-provided OAuth client.
+	// - code_assist: always use built-in Gemini CLI OAuth client (public)
+	// - google_one: always use built-in Gemini CLI OAuth client (public)
+	// - ai_studio: requires a user-provided OAuth client
 	oauthCfg := geminicli.OAuthConfig{
 		ClientID:     s.cfg.Gemini.OAuth.ClientID,
 		ClientSecret: s.cfg.Gemini.OAuth.ClientSecret,
 		Scopes:       s.cfg.Gemini.OAuth.Scopes,
 	}
-	if oauthType == "code_assist" {
+	if oauthType == "code_assist" || oauthType == "google_one" {
+		// Force use of built-in Gemini CLI OAuth client
 		oauthCfg.ClientID = ""
 		oauthCfg.ClientSecret = ""
 	}
