@@ -586,7 +586,7 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 			projectID, _, err = s.fetchProjectID(ctx, tokenResp.AccessToken, proxyURL)
 			if err != nil {
 				log.Printf("[GeminiOAuth] ERROR: Failed to fetch project_id: %v", err)
-				return nil, fmt.Errorf("Google One accounts require a project_id. Failed to auto-detect: %w", err)
+				return nil, fmt.Errorf("google One accounts require a project_id, failed to auto-detect: %w", err)
 			}
 			log.Printf("[GeminiOAuth] Successfully fetched project_id: %s", projectID)
 		}
