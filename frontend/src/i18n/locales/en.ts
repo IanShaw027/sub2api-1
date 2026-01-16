@@ -916,6 +916,26 @@ export default {
         fallbackGroup: 'Fallback Group',
         fallbackHint: 'Non-Claude Code requests will use this group. Leave empty to reject directly.',
         noFallback: 'No Fallback (Reject)'
+      },
+      modelRouting: {
+        title: 'Model Routing',
+        tooltip: 'Configure specific model requests to be routed to designated accounts. Supports wildcard matching, e.g., claude-opus-* matches all opus models.',
+        enabled: 'Enabled',
+        disabled: 'Disabled',
+        disabledHint: 'Routing rules will only take effect when enabled',
+        addRule: 'Add Routing Rule',
+        modelPattern: 'Model Pattern',
+        modelPatternPlaceholder: 'claude-opus-*',
+        modelPatternHint: 'Supports * wildcard, e.g., claude-opus-* matches all opus models',
+        accounts: 'Priority Accounts',
+        selectAccounts: 'Select accounts',
+        noAccounts: 'No accounts in this group',
+        loadingAccounts: 'Loading accounts...',
+        removeRule: 'Remove Rule',
+        noRules: 'No routing rules',
+        noRulesHint: 'Add routing rules to route specific model requests to designated accounts',
+        searchAccountPlaceholder: 'Search accounts...',
+        accountsHint: 'Select accounts to prioritize for this model pattern'
       }
     },
 
@@ -1925,7 +1945,7 @@ export default {
       errors: 'Errors',
       errorRate: 'error_rate:',
       upstreamRate: 'upstream_rate:',
-      latencyDuration: 'Request Duration (ms)',
+      latencyDuration: 'Request Duration',
       ttftLabel: 'TTFT (first_token_ms)',
       p50: 'p50:',
       p90: 'p90:',
@@ -2590,7 +2610,7 @@ export default {
         errors: 'Error statistics, including total errors, error rate, and upstream error rate.',
         upstreamErrors: 'Upstream error statistics, excluding rate limit errors (429/529).',
         latency: 'Request duration statistics, including p50, p90, p95, p99 percentiles.',
-        ttft: 'Time To First Token, measuring the speed of first byte return in streaming responses.',
+        ttft: 'Time To First Token, measuring the speed of first token return in streaming responses.',
         health: 'System health score (0-100), considering SLA, error rate, and resource usage.'
       },
       charts: {
