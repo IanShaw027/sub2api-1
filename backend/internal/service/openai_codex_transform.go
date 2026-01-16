@@ -394,19 +394,28 @@ func normalizeCodexTools(reqBody map[string]any) bool {
 	}
 
 	modified := false
-	for idx, tool := range tools {
+	validTools := make([]any, 0, len(tools))
+
+	for _, tool := range tools {
 		toolMap, ok := tool.(map[string]any)
 		if !ok {
+			// 保守处理：未知结构的 tool 先原样透传，避免破坏上游行为。
+			validTools = append(validTools, tool)
 			continue
 		}
 
 		toolType, _ := toolMap["type"].(string)
 		if strings.TrimSpace(toolType) != "function" {
+			// 非 function 类型（例如 web_search）不做规范化，但必须保留。
+			validTools = append(validTools, toolMap)
 			continue
 		}
 
-		function, ok := toolMap["function"].(map[string]any)
-		if !ok {
+		functionValue, hasFunction := toolMap["function"]
+		function, ok := functionValue.(map[string]any)
+		if !hasFunction || functionValue == nil || !ok || function == nil {
+			// 跳过无效工具（function 字段缺失或为 null）
+			modified = true
 			continue
 		}
 
@@ -435,11 +444,11 @@ func normalizeCodexTools(reqBody map[string]any) bool {
 			}
 		}
 
-		tools[idx] = toolMap
+		validTools = append(validTools, toolMap)
 	}
 
 	if modified {
-		reqBody["tools"] = tools
+		reqBody["tools"] = validTools
 	}
 
 	return modified

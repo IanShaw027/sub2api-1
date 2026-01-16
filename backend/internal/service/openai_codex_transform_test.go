@@ -145,6 +145,33 @@ func TestApplyCodexOAuthTransform_EmptyInput(t *testing.T) {
 	require.Len(t, input, 0)
 }
 
+func TestApplyCodexOAuthTransform_NormalizeCodexTools_PreservesNonFunctionTools(t *testing.T) {
+	setupCodexCache(t)
+
+	reqBody := map[string]any{
+		"model": "gpt-5.1",
+		"tools": []any{
+			map[string]any{
+				"type": "web_search",
+			},
+			map[string]any{
+				"type":     "function",
+				"function": nil,
+			},
+		},
+	}
+
+	applyCodexOAuthTransform(reqBody)
+
+	tools, ok := reqBody["tools"].([]any)
+	require.True(t, ok)
+	require.Len(t, tools, 1)
+
+	first, ok := tools[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "web_search", first["type"])
+}
+
 func setupCodexCache(t *testing.T) {
 	t.Helper()
 
