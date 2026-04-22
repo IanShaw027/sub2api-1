@@ -138,9 +138,9 @@ type ResponsesEventToAnthropicState struct {
 	OutputTokens         int
 	CacheReadInputTokens int
 
-	ResponseID string
-	Model      string
-	Created    int64
+	ResponseID  string
+	Model       string
+	Created     int64
 	ToolNameMap map[string]string
 }
 
