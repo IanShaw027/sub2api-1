@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -334,6 +335,27 @@ func TestApplyCodexOAuthTransform_CodexCLI_SuppliesDefaultWhenEmpty(t *testing.T
 	require.True(t, ok)
 	require.NotEmpty(t, instructions)
 	require.True(t, result.Modified)
+}
+
+func TestApplyInstructions_DoesNotInjectLongDefaultInstructionsForNonCodexCLI(t *testing.T) {
+	reqBody := map[string]any{}
+
+	changed := applyInstructions(reqBody, false)
+
+	require.False(t, changed)
+	_, exists := reqBody["instructions"]
+	require.False(t, exists)
+}
+
+func TestApplyEmbeddedDefaultInstructions_OnlyFillsWhenInstructionsEmpty(t *testing.T) {
+	reqBody := map[string]any{}
+
+	changed := applyEmbeddedDefaultInstructions(reqBody)
+
+	require.True(t, changed)
+	instructions, ok := reqBody["instructions"].(string)
+	require.True(t, ok)
+	require.NotEmpty(t, strings.TrimSpace(instructions))
 }
 
 func TestApplyCodexOAuthTransform_NonCodexCLI_PreservesExistingInstructions(t *testing.T) {
