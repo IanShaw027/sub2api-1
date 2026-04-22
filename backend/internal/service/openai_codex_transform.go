@@ -82,6 +82,9 @@ func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact
 	result := codexTransformResult{}
 	// 工具续链需求会影响存储策略与 input 过滤逻辑。
 	needsToolContinuation := NeedsToolContinuation(reqBody)
+	if needsToolContinuation {
+		recordOpenAICompatToolContinuationDetected()
+	}
 
 	model := ""
 	if v, ok := reqBody["model"].(string); ok {
@@ -142,6 +145,7 @@ func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact
 	for _, key := range unsupportedKeys {
 		if _, ok := reqBody[key]; ok {
 			delete(reqBody, key)
+			recordOpenAICompatStrippedField(key)
 			result.Modified = true
 		}
 	}

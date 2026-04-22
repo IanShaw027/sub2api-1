@@ -144,6 +144,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		zap.Bool("responses_shape", isResponsesShape),
 	}
 	if compatPromptCacheInjected {
+		recordOpenAICompatPromptCacheInjected()
 		logFields = append(logFields,
 			zap.Bool("compat_prompt_cache_key_injected", true),
 			zap.String("compat_prompt_cache_key_sha256", hashSensitiveValueForLog(promptCacheKey)),
@@ -211,6 +212,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 
 	// 8. Handle error response with failover
 	if resp.StatusCode >= 400 {
+		recordOpenAICompatUpstreamStatus(upstreamModel, resp.StatusCode)
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))

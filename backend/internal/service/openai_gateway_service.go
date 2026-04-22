@@ -1962,7 +1962,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		// 确保高版本模型向低版本模型映射不报错
 		if !ResolveOpenAIModelCapabilities(upstreamModel).SupportsVerbosity {
 			if text, ok := reqBody["text"].(map[string]any); ok {
-				delete(text, "verbosity")
+				if _, exists := text["verbosity"]; exists {
+					delete(text, "verbosity")
+					recordOpenAICompatStrippedField("verbosity")
+				}
 			}
 		}
 	}
