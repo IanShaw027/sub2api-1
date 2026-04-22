@@ -43,6 +43,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	applyOpenAICompatModelNormalization(&anthropicReq)
 	normalizedModel := anthropicReq.Model
 	clientStream := anthropicReq.Stream // client's original stream preference
+	toolNameMap := anthropicToolNameMap(anthropicReq.Tools)
 
 	// 2. Convert Anthropic → Responses
 	responsesReq, err := apicompat.AnthropicToResponses(&anthropicReq)
@@ -229,10 +230,10 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	var result *OpenAIForwardResult
 	var handleErr error
 	if clientStream {
-		result, handleErr = s.handleAnthropicStreamingResponse(resp, c, originalModel, billingModel, upstreamModel, startTime)
+		result, handleErr = s.handleAnthropicStreamingResponse(resp, c, originalModel, billingModel, upstreamModel, toolNameMap, startTime)
 	} else {
 		// Client wants JSON: buffer the streaming response and assemble a JSON reply.
-		result, handleErr = s.handleAnthropicBufferedStreamingResponse(resp, c, originalModel, billingModel, upstreamModel, startTime)
+		result, handleErr = s.handleAnthropicBufferedStreamingResponse(resp, c, originalModel, billingModel, upstreamModel, toolNameMap, startTime)
 	}
 
 	// Propagate ServiceTier and ReasoningEffort to result for billing
@@ -279,6 +280,7 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 	originalModel string,
 	billingModel string,
 	upstreamModel string,
+	toolNameMap map[string]string,
 	startTime time.Time,
 ) (*OpenAIForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
@@ -349,7 +351,7 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 	// accumulated delta events so the client receives the full content.
 	acc.SupplementResponseOutput(finalResponse)
 
-	anthropicResp := apicompat.ResponsesToAnthropic(finalResponse, originalModel)
+	anthropicResp := apicompat.ResponsesToAnthropic(finalResponse, originalModel, toolNameMap)
 
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -378,6 +380,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	originalModel string,
 	billingModel string,
 	upstreamModel string,
+	toolNameMap map[string]string,
 	startTime time.Time,
 ) (*OpenAIForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
@@ -393,6 +396,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 
 	state := apicompat.NewResponsesEventToAnthropicState()
 	state.Model = originalModel
+	state.ToolNameMap = toolNameMap
 	var usage OpenAIUsage
 	var firstTokenMs *int
 	firstChunk := true
@@ -596,4 +600,22 @@ func writeAnthropicError(c *gin.Context, statusCode int, errType, message string
 			"message": message,
 		},
 	})
+}
+
+func anthropicToolNameMap(tools []apicompat.AnthropicTool) map[string]string {
+	nameMap := make(map[string]string, len(tools))
+	for _, tool := range tools {
+		if tool.Name == "" {
+			continue
+		}
+		canonical := strings.ToLower(strings.TrimLeft(strings.TrimSpace(tool.Name), "_"))
+		if canonical == "" {
+			continue
+		}
+		if _, exists := nameMap[canonical]; exists {
+			continue
+		}
+		nameMap[canonical] = tool.Name
+	}
+	return nameMap
 }
