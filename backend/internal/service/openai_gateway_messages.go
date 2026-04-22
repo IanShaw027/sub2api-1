@@ -116,7 +116,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		// OAuth codex transform forces stream=true upstream, so always use
 		// the streaming response handler regardless of what the client asked.
 		isStream = true
-		responsesBody, err = json.Marshal(reqBody)
+		responsesBody, err = marshalOpenAIResponsesRequestBodyOrdered(reqBody)
 		if err != nil {
 			return nil, fmt.Errorf("remarshal after codex transform: %w", err)
 		}
@@ -135,7 +135,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 			}
 			if existing, ok := reqBody["prompt_cache_key"].(string); !ok || strings.TrimSpace(existing) == "" {
 				reqBody["prompt_cache_key"] = trimmedKey
-				updated, err := json.Marshal(reqBody)
+				updated, err := marshalOpenAIResponsesRequestBodyOrdered(reqBody)
 				if err != nil {
 					return nil, fmt.Errorf("remarshal after prompt cache key injection: %w", err)
 				}
