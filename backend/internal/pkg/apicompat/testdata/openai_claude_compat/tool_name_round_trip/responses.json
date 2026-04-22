@@ -1,0 +1,22 @@
+{
+  "id": "resp_456",
+  "model": "gpt-5.2",
+  "status": "completed",
+  "output": [
+    {
+      "type": "message",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "Let me check."
+        }
+      ]
+    },
+    {
+      "type": "function_call",
+      "call_id": "call_1",
+      "name": "readfile",
+      "arguments": "{\"path\":\"/tmp/demo.txt\"}"
+    }
+  ]
+}

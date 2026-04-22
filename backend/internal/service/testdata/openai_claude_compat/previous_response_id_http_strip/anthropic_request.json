@@ -1,0 +1,12 @@
+{
+  "model": "gpt-5.1",
+  "max_tokens": 16,
+  "messages": [
+    {
+      "role": "user",
+      "content": "hello"
+    }
+  ],
+  "previous_response_id": "resp_123",
+  "stream": false
+}

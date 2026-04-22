@@ -1,0 +1,7 @@
+{
+  "equals_paths": {
+    "model": "gpt-5.1-codex",
+    "content.0.type": "text",
+    "content.0.text": "ok"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "equals_paths": {
+    "model": "gpt-5.1",
+    "input.0.role": "user",
+    "input.0.content": "hello"
+  },
+  "absent_paths": [
+    "previous_response_id"
+  ]
+}
