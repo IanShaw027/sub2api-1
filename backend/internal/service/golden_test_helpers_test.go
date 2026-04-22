@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -21,6 +22,69 @@ type goldenFixtureExpectation struct {
 	EqualsPaths       map[string]any `json:"equals_paths"`
 	AbsentPaths       []string       `json:"absent_paths"`
 	OrderedSubstrings []string       `json:"ordered_substrings"`
+}
+
+func runForwardAsChatCompletionsGoldenFixture(
+	t *testing.T,
+	fixtureDir string,
+	promptCacheKey string,
+	requestModel string,
+	accountType string,
+) {
+	t.Helper()
+
+	gin.SetMode(gin.TestMode)
+
+	baseDir := filepath.Join("testdata", "openai_claude_compat", fixtureDir)
+	body := loadGoldenFixtureBytes(t, filepath.Join(baseDir, "chat_request.json"))
+	upstreamSSE := string(loadGoldenFixtureBytes(t, filepath.Join(baseDir, "upstream_sse.txt")))
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_fixture"}},
+		Body:       io.NopCloser(strings.NewReader(upstreamSSE)),
+	}}
+
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{
+			Security: config.SecurityConfig{
+				URLAllowlist: config.URLAllowlistConfig{
+					Enabled: false,
+				},
+			},
+		},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          1,
+		Name:        "openai-compat",
+		Platform:    PlatformOpenAI,
+		Type:        accountType,
+		Concurrency: 1,
+	}
+	switch accountType {
+	case AccountTypeOAuth:
+		account.Credentials = map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		}
+	case AccountTypeAPIKey:
+		account.Credentials = map[string]any{
+			"api_key": "sk-test",
+		}
+	}
+
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, promptCacheKey, requestModel)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	requireGoldenFixtureMatch(t, upstream.lastBody, filepath.Join(baseDir, "expected_upstream_request.json"))
+	requireGoldenFixtureMatch(t, rec.Body.Bytes(), filepath.Join(baseDir, "expected_downstream_response.json"))
 }
 
 func runForwardAsAnthropicGoldenFixture(t *testing.T, fixtureDir, promptCacheKey, requestModel string) {

@@ -219,6 +219,17 @@ func TestClaudeToolNameMapFromTools_PreservesOriginalClaudeToolName(t *testing.T
 	assert.Equal(t, "__ReadFile", MapClaudeToolName("readfile", nameMap))
 }
 
+func TestClaudeToolNameMapFromTools_CanonicalCollisionKeepsFirstSeenName(t *testing.T) {
+	nameMap := ClaudeToolNameMapFromTools([]ResponsesTool{
+		{Type: "function", Name: "__ReadFile"},
+		{Type: "function", Name: "_readfile"},
+		{Type: "function", Name: "readfile"},
+	})
+
+	assert.Equal(t, "__ReadFile", MapClaudeToolName("readfile", nameMap))
+	assert.Equal(t, "__ReadFile", MapClaudeToolName("__ReadFile", nameMap))
+}
+
 func TestResponsesToAnthropic_ToolUse_RestoresOriginalClaudeToolName(t *testing.T) {
 	resp := &ResponsesResponse{
 		ID:     "resp_456",

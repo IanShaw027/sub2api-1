@@ -1,0 +1,10 @@
+{
+  "model": "gpt-5.1",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hello"
+    }
+  ],
+  "stream": false
+}
