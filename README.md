@@ -571,6 +571,13 @@ Antigravity accounts support optional **hybrid scheduling**. When enabled, the g
 
 > **⚠️ Warning**: Anthropic Claude and Antigravity Claude **cannot be mixed within the same conversation context**. Use groups to isolate them properly.
 
+### OpenAI/Claude Compatibility Notes
+
+- Claude Messages bridging preserves original tool names and tool-call identity when forwarding through the OpenAI compatibility layer.
+- OAuth/Codex request shaping is capability-aware and strips unsupported controls such as `verbosity`, `temperature`, and `top_p` only when the upstream model does not support them.
+- Prompt cache stability relies on `prompt_cache_key` plus stable request-body encoding so semantically identical requests hash consistently.
+- Embedded default instructions are fallback-only for Codex-style clients; provider-native prompts remain the primary source of behavior.
+
 ### Known Issues
 
 In Claude Code, Plan Mode cannot exit automatically. (Normally when using the native Claude API, after planning is complete, Claude Code will pop up options for users to approve or reject the plan.)

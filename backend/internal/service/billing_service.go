@@ -290,11 +290,11 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 		switch normalized {
 		case "gpt-5.4-mini":
 			return s.fallbackPrices["gpt-5.4-mini"]
-		case "gpt-5.4":
+		case "gpt-5.4", "gpt-5.1":
 			return s.fallbackPrices["gpt-5.4"]
 		case "gpt-5.2":
 			return s.fallbackPrices["gpt-5.2"]
-		case "gpt-5.3-codex", "gpt-5.3-codex-spark":
+		case "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2-codex", "gpt-5.1-codex", "gpt-5.1-codex-mini", "gpt-5.1-codex-max":
 			return s.fallbackPrices["gpt-5.3-codex"]
 		}
 	}
