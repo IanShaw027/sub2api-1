@@ -234,6 +234,34 @@ func (s *BillingService) initFallbackPricing() {
 		CacheReadPricePerTokenPriority: 0.35e-6,
 		SupportsCacheBreakdown:         false,
 	}
+	// OpenAI GPT-5.2 Codex（官方模型页与 GPT-5.2 同价，单独建键避免误映射到其它价位）
+	s.fallbackPrices["gpt-5.2-codex"] = s.fallbackPrices["gpt-5.2"]
+	// OpenAI GPT-5.1
+	s.fallbackPrices["gpt-5.1"] = &ModelPricing{
+		InputPricePerToken:             1.25e-6,
+		InputPricePerTokenPriority:     2.5e-6,
+		OutputPricePerToken:            10e-6,
+		OutputPricePerTokenPriority:    20e-6,
+		CacheCreationPricePerToken:     1.25e-6,
+		CacheReadPricePerToken:         0.125e-6,
+		CacheReadPricePerTokenPriority: 0.25e-6,
+		SupportsCacheBreakdown:         false,
+	}
+	// OpenAI GPT-5.1 Codex（官方模型页与 GPT-5.1 同价）
+	s.fallbackPrices["gpt-5.1-codex"] = s.fallbackPrices["gpt-5.1"]
+	// OpenAI GPT-5.1 Codex Max（官方模型页与 GPT-5.1 同价）
+	s.fallbackPrices["gpt-5.1-codex-max"] = s.fallbackPrices["gpt-5.1"]
+	// OpenAI GPT-5.1 Codex Mini
+	s.fallbackPrices["gpt-5.1-codex-mini"] = &ModelPricing{
+		InputPricePerToken:             0.25e-6,
+		InputPricePerTokenPriority:     0.5e-6,
+		OutputPricePerToken:            2e-6,
+		OutputPricePerTokenPriority:    4e-6,
+		CacheCreationPricePerToken:     0.25e-6,
+		CacheReadPricePerToken:         0.025e-6,
+		CacheReadPricePerTokenPriority: 0.05e-6,
+		SupportsCacheBreakdown:         false,
+	}
 	// Codex 族兜底统一按 GPT-5.3 Codex 价格计费
 	s.fallbackPrices["gpt-5.3-codex"] = &ModelPricing{
 		InputPricePerToken:             1.5e-6, // $1.5 per MTok
@@ -290,11 +318,21 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 		switch normalized {
 		case "gpt-5.4-mini":
 			return s.fallbackPrices["gpt-5.4-mini"]
-		case "gpt-5.4", "gpt-5.1":
+		case "gpt-5.4":
 			return s.fallbackPrices["gpt-5.4"]
+		case "gpt-5.1":
+			return s.fallbackPrices["gpt-5.1"]
 		case "gpt-5.2":
 			return s.fallbackPrices["gpt-5.2"]
-		case "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2-codex", "gpt-5.1-codex", "gpt-5.1-codex-mini", "gpt-5.1-codex-max":
+		case "gpt-5.2-codex":
+			return s.fallbackPrices["gpt-5.2-codex"]
+		case "gpt-5.1-codex":
+			return s.fallbackPrices["gpt-5.1-codex"]
+		case "gpt-5.1-codex-mini":
+			return s.fallbackPrices["gpt-5.1-codex-mini"]
+		case "gpt-5.1-codex-max":
+			return s.fallbackPrices["gpt-5.1-codex-max"]
+		case "gpt-5.3-codex", "gpt-5.3-codex-spark":
 			return s.fallbackPrices["gpt-5.3-codex"]
 		}
 	}

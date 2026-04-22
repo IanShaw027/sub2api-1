@@ -14,12 +14,25 @@ func mustRawJSON(t *testing.T, s string) json.RawMessage {
 }
 
 func TestShouldAutoInjectPromptCacheKeyForCompat(t *testing.T) {
-	require.True(t, shouldAutoInjectPromptCacheKeyForCompat("gpt-5.4"))
-	require.True(t, shouldAutoInjectPromptCacheKeyForCompat("gpt-5.3"))
-	require.True(t, shouldAutoInjectPromptCacheKeyForCompat("gpt-5.3-codex"))
-	require.True(t, shouldAutoInjectPromptCacheKeyForCompat("gpt-5.3-codex-spark"))
-	require.False(t, shouldAutoInjectPromptCacheKeyForCompat("gpt-5.1-codex"))
-	require.False(t, shouldAutoInjectPromptCacheKeyForCompat("gpt-4o"))
+	tests := []struct {
+		name      string
+		model     string
+		supported bool
+	}{
+		{name: "gpt-5.4", model: "gpt-5.4", supported: true},
+		{name: "gpt-5.1", model: "gpt-5.1", supported: true},
+		{name: "gpt-5.1-codex", model: "gpt-5.1-codex", supported: true},
+		{name: "gpt-5.1-codex-mini", model: "gpt-5.1-codex-mini", supported: true},
+		{name: "gpt-5.2-codex", model: "gpt-5.2-codex", supported: true},
+		{name: "gpt-5.3-codex-spark", model: "gpt-5.3-codex-spark", supported: true},
+		{name: "gpt-4o", model: "gpt-4o", supported: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.supported, shouldAutoInjectPromptCacheKeyForCompat(tt.model))
+		})
+	}
 }
 
 func TestDeriveCompatPromptCacheKey_StableAcrossLaterTurns(t *testing.T) {

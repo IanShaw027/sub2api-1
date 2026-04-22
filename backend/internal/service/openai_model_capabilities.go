@@ -53,10 +53,9 @@ func isOpenAICompatCapabilityFamily(model string) bool {
 }
 
 func supportsCompatPromptCacheKey(normalizedModel string) bool {
-	switch strings.TrimSpace(normalizedModel) {
-	case "gpt-5.4", "gpt-5.3-codex":
-		return true
-	default:
+	normalized := strings.ToLower(strings.TrimSpace(normalizedModel))
+	if normalized == "" {
 		return false
 	}
+	return strings.HasPrefix(normalized, "gpt-5") || strings.Contains(normalized, "codex")
 }
