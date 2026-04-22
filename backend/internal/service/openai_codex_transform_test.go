@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -243,10 +244,10 @@ func TestNormalizeCodexModel_Gpt53(t *testing.T) {
 		"gpt-5.3":                   "gpt-5.3-codex",
 		"gpt-5.3-codex":             "gpt-5.3-codex",
 		"gpt-5.3-codex-xhigh":       "gpt-5.3-codex",
-		"gpt-5.3-codex-spark":       "gpt-5.3-codex-spark",
-		"gpt 5.3 codex spark":       "gpt-5.3-codex-spark",
-		"gpt-5.3-codex-spark-high":  "gpt-5.3-codex-spark",
-		"gpt-5.3-codex-spark-xhigh": "gpt-5.3-codex-spark",
+		"gpt-5.3-codex-spark":       "gpt-5.3-codex",
+		"gpt 5.3 codex spark":       "gpt-5.3-codex",
+		"gpt-5.3-codex-spark-high":  "gpt-5.3-codex",
+		"gpt-5.3-codex-spark-xhigh": "gpt-5.3-codex",
 		"gpt 5.3 codex":             "gpt-5.3-codex",
 	}
 
@@ -257,17 +258,17 @@ func TestNormalizeCodexModel_Gpt53(t *testing.T) {
 
 func TestNormalizeCodexModel_RemovedModelsFallbackToSupportedTargets(t *testing.T) {
 	cases := map[string]string{
-		"":                   "gpt-5.4",
-		"gpt-5":              "gpt-5.4",
-		"gpt-5-mini":         "gpt-5.4",
-		"gpt-5-nano":         "gpt-5.4",
-		"gpt-5.1":            "gpt-5.4",
-		"gpt-5.1-codex":      "gpt-5.3-codex",
-		"gpt-5.1-codex-max":  "gpt-5.3-codex",
-		"gpt-5.1-codex-mini": "gpt-5.3-codex",
-		"gpt-5.2-codex":      "gpt-5.2",
-		"codex-mini-latest":  "gpt-5.3-codex",
-		"gpt-5-codex":        "gpt-5.3-codex",
+		"":                   "gpt-5.1",
+		"gpt-5":              "gpt-5.1",
+		"gpt-5-mini":         "gpt-5.1",
+		"gpt-5-nano":         "gpt-5.1",
+		"gpt-5.1":            "gpt-5.1",
+		"gpt-5.1-codex":      "gpt-5.1-codex",
+		"gpt-5.1-codex-max":  "gpt-5.1-codex-max",
+		"gpt-5.1-codex-mini": "gpt-5.1-codex-mini",
+		"gpt-5.2-codex":      "gpt-5.2-codex",
+		"codex-mini-latest":  "gpt-5.1-codex-mini",
+		"gpt-5-codex":        "gpt-5.1-codex",
 	}
 
 	for input, expected := range cases {
@@ -275,7 +276,7 @@ func TestNormalizeCodexModel_RemovedModelsFallbackToSupportedTargets(t *testing.
 	}
 }
 
-func TestApplyCodexOAuthTransform_PreservesBareSparkModel(t *testing.T) {
+func TestApplyCodexOAuthTransform_NormalizesBareSparkModelToStableTarget(t *testing.T) {
 	reqBody := map[string]any{
 		"model": "gpt-5.3-codex-spark",
 		"input": []any{},
@@ -283,14 +284,14 @@ func TestApplyCodexOAuthTransform_PreservesBareSparkModel(t *testing.T) {
 
 	result := applyCodexOAuthTransform(reqBody, false, false)
 
-	require.Equal(t, "gpt-5.3-codex-spark", reqBody["model"])
-	require.Equal(t, "gpt-5.3-codex-spark", result.NormalizedModel)
+	require.Equal(t, "gpt-5.3-codex", reqBody["model"])
+	require.Equal(t, "gpt-5.3-codex", result.NormalizedModel)
 	store, ok := reqBody["store"].(bool)
 	require.True(t, ok)
 	require.False(t, store)
 }
 
-func TestApplyCodexOAuthTransform_TrimmedModelWithoutPolicyRewrite(t *testing.T) {
+func TestApplyCodexOAuthTransform_TrimmedModelNormalizesToStableTarget(t *testing.T) {
 	reqBody := map[string]any{
 		"model": "  gpt-5.3-codex-spark  ",
 		"input": []any{},
@@ -298,8 +299,8 @@ func TestApplyCodexOAuthTransform_TrimmedModelWithoutPolicyRewrite(t *testing.T)
 
 	result := applyCodexOAuthTransform(reqBody, false, false)
 
-	require.Equal(t, "gpt-5.3-codex-spark", reqBody["model"])
-	require.Equal(t, "gpt-5.3-codex-spark", result.NormalizedModel)
+	require.Equal(t, "gpt-5.3-codex", reqBody["model"])
+	require.Equal(t, "gpt-5.3-codex", result.NormalizedModel)
 	require.True(t, result.Modified)
 }
 
@@ -334,6 +335,27 @@ func TestApplyCodexOAuthTransform_CodexCLI_SuppliesDefaultWhenEmpty(t *testing.T
 	require.True(t, ok)
 	require.NotEmpty(t, instructions)
 	require.True(t, result.Modified)
+}
+
+func TestApplyInstructions_DoesNotInjectLongDefaultInstructionsForNonCodexCLI(t *testing.T) {
+	reqBody := map[string]any{}
+
+	changed := applyInstructions(reqBody, false)
+
+	require.False(t, changed)
+	_, exists := reqBody["instructions"]
+	require.False(t, exists)
+}
+
+func TestApplyEmbeddedDefaultInstructions_OnlyFillsWhenInstructionsEmpty(t *testing.T) {
+	reqBody := map[string]any{}
+
+	changed := applyEmbeddedDefaultInstructions(reqBody)
+
+	require.True(t, changed)
+	instructions, ok := reqBody["instructions"].(string)
+	require.True(t, ok)
+	require.NotEmpty(t, strings.TrimSpace(instructions))
 }
 
 func TestApplyCodexOAuthTransform_NonCodexCLI_PreservesExistingInstructions(t *testing.T) {

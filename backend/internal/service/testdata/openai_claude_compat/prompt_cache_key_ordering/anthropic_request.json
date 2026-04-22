@@ -1,0 +1,11 @@
+{
+  "model": "gpt-5.1-codex",
+  "max_tokens": 16,
+  "messages": [
+    {
+      "role": "user",
+      "content": "hello"
+    }
+  ],
+  "stream": false
+}

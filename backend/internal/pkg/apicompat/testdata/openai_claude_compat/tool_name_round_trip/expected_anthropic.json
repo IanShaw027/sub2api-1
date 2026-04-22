@@ -1,0 +1,11 @@
+{
+  "equals_paths": {
+    "stop_reason": "tool_use",
+    "content.0.type": "text",
+    "content.0.text": "Let me check.",
+    "content.1.type": "tool_use",
+    "content.1.id": "call_1",
+    "content.1.name": "__ReadFile",
+    "content.1.input.path": "/tmp/demo.txt"
+  }
+}

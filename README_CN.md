@@ -634,6 +634,13 @@ Antigravity 账户支持可选的**混合调度**功能。开启后，通用端�
 
 > **⚠️ 注意**：Anthropic Claude 和 Antigravity Claude **不能在同一上下文中混合使用**，请通过分组功能做好隔离。
 
+### OpenAI/Claude 兼容层说明
+
+- Claude Messages 桥接会保留原始工具名和 tool call 身份，避免兼容层改写后导致续链失败。
+- OAuth/Codex 请求整形是能力感知的，只会在上游模型不支持时移除 `verbosity`、`temperature`、`top_p` 等控制字段。
+- Prompt cache 的稳定性依赖 `prompt_cache_key` 与稳定的请求体编码顺序，语义相同的请求会尽量得到一致的缓存键。
+- 内嵌默认 instructions 只作为 Codex 类客户端的兜底提示，真实行为仍以 provider 原生 prompt 为准。
+- 这条兼容线的合并顺序与灰度/回滚 runbook 见 [docs/OPENAI_CLAUDE_COMPAT_ROLLOUT.md](docs/OPENAI_CLAUDE_COMPAT_ROLLOUT.md)。
 
 ### 已知问题
 在 Claude Code 中，无法自动退出Plan Mode。（正常使用原生Claude Api时，Plan 完成后，Claude Code会弹出弹出选项让用户同意或拒绝Plan。） 

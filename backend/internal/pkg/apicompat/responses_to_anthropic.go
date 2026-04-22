@@ -13,12 +13,16 @@ import (
 // ResponsesToAnthropic converts a Responses API response directly into an
 // Anthropic Messages response. Reasoning output items are mapped to thinking
 // blocks; function_call items become tool_use blocks.
-func ResponsesToAnthropic(resp *ResponsesResponse, model string) *AnthropicResponse {
+func ResponsesToAnthropic(resp *ResponsesResponse, model string, nameMaps ...map[string]string) *AnthropicResponse {
 	out := &AnthropicResponse{
 		ID:    resp.ID,
 		Type:  "message",
 		Role:  "assistant",
 		Model: model,
+	}
+	var toolNameMap map[string]string
+	if len(nameMaps) > 0 {
+		toolNameMap = nameMaps[0]
 	}
 
 	var blocks []AnthropicContentBlock
@@ -51,7 +55,7 @@ func ResponsesToAnthropic(resp *ResponsesResponse, model string) *AnthropicRespo
 			blocks = append(blocks, AnthropicContentBlock{
 				Type:  "tool_use",
 				ID:    fromResponsesCallID(item.CallID),
-				Name:  item.Name,
+				Name:  MapClaudeToolName(item.Name, toolNameMap),
 				Input: json.RawMessage(item.Arguments),
 			})
 		case "web_search_call":
@@ -134,9 +138,10 @@ type ResponsesEventToAnthropicState struct {
 	OutputTokens         int
 	CacheReadInputTokens int
 
-	ResponseID string
-	Model      string
-	Created    int64
+	ResponseID  string
+	Model       string
+	Created     int64
+	ToolNameMap map[string]string
 }
 
 // NewResponsesEventToAnthropicState returns an initialised stream state.
@@ -269,7 +274,7 @@ func resToAnthHandleOutputItemAdded(evt *ResponsesStreamEvent, state *ResponsesE
 			ContentBlock: &AnthropicContentBlock{
 				Type:  "tool_use",
 				ID:    fromResponsesCallID(evt.Item.CallID),
-				Name:  evt.Item.Name,
+				Name:  MapClaudeToolName(evt.Item.Name, state.ToolNameMap),
 				Input: json.RawMessage("{}"),
 			},
 		})

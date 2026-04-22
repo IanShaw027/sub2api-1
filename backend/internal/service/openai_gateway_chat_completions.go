@@ -144,6 +144,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		zap.Bool("responses_shape", isResponsesShape),
 	}
 	if compatPromptCacheInjected {
+		recordOpenAICompatPromptCacheInjected()
 		logFields = append(logFields,
 			zap.Bool("compat_prompt_cache_key_injected", true),
 			zap.String("compat_prompt_cache_key_sha256", hashSensitiveValueForLog(promptCacheKey)),
@@ -165,9 +166,32 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		} else if promptCacheKey != "" {
 			reqBody["prompt_cache_key"] = promptCacheKey
 		}
-		responsesBody, err = json.Marshal(reqBody)
+		responsesBody, err = marshalOpenAIResponsesRequestBodyOrdered(reqBody)
 		if err != nil {
 			return nil, fmt.Errorf("remarshal after codex transform: %w", err)
+		}
+	}
+
+	// For API key accounts (including OpenAI-compatible upstream gateways),
+	// ensure promptCacheKey is also propagated via the request body so that
+	// upstreams using the Responses API can derive a stable session identifier
+	// from prompt_cache_key. This keeps the /v1/chat/completions compatibility
+	// path consistent with /v1/messages.
+	if account.Type == AccountTypeAPIKey {
+		if trimmedKey := strings.TrimSpace(promptCacheKey); trimmedKey != "" {
+			var reqBody map[string]any
+			if err := json.Unmarshal(responsesBody, &reqBody); err != nil {
+				return nil, fmt.Errorf("unmarshal for prompt cache key injection: %w", err)
+			}
+			if existing, ok := reqBody["prompt_cache_key"].(string); !ok || strings.TrimSpace(existing) == "" {
+				reqBody["prompt_cache_key"] = trimmedKey
+				recordOpenAICompatPromptCacheInjected()
+				updated, err := marshalOpenAIResponsesRequestBodyOrdered(reqBody)
+				if err != nil {
+					return nil, fmt.Errorf("remarshal after prompt cache key injection: %w", err)
+				}
+				responsesBody = updated
+			}
 		}
 	}
 
@@ -211,6 +235,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 
 	// 8. Handle error response with failover
 	if resp.StatusCode >= 400 {
+		recordOpenAICompatUpstreamStatus(upstreamModel, resp.StatusCode)
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))

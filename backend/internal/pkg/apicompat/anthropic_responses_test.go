@@ -202,13 +202,62 @@ func TestResponsesToAnthropic_ToolUse(t *testing.T) {
 		},
 	}
 
-	anth := ResponsesToAnthropic(resp, "claude-opus-4-6")
+	anth := ResponsesToAnthropic(resp, "claude-opus-4-6", nil)
 	assert.Equal(t, "tool_use", anth.StopReason)
 	require.Len(t, anth.Content, 2)
 	assert.Equal(t, "text", anth.Content[0].Type)
 	assert.Equal(t, "tool_use", anth.Content[1].Type)
 	assert.Equal(t, "call_1", anth.Content[1].ID)
 	assert.Equal(t, "get_weather", anth.Content[1].Name)
+}
+
+func TestClaudeToolNameMapFromTools_PreservesOriginalClaudeToolName(t *testing.T) {
+	nameMap := ClaudeToolNameMapFromTools([]ResponsesTool{
+		{Type: "function", Name: "__ReadFile"},
+	})
+
+	assert.Equal(t, "__ReadFile", MapClaudeToolName("readfile", nameMap))
+}
+
+func TestClaudeToolNameMapFromTools_CanonicalCollisionKeepsFirstSeenName(t *testing.T) {
+	nameMap := ClaudeToolNameMapFromTools([]ResponsesTool{
+		{Type: "function", Name: "__ReadFile"},
+		{Type: "function", Name: "_readfile"},
+		{Type: "function", Name: "readfile"},
+	})
+
+	assert.Equal(t, "__ReadFile", MapClaudeToolName("readfile", nameMap))
+	assert.Equal(t, "__ReadFile", MapClaudeToolName("__ReadFile", nameMap))
+}
+
+func TestResponsesToAnthropic_ToolUse_RestoresOriginalClaudeToolName(t *testing.T) {
+	resp := &ResponsesResponse{
+		ID:     "resp_456",
+		Model:  "gpt-5.2",
+		Status: "completed",
+		Output: []ResponsesOutput{
+			{
+				Type: "message",
+				Content: []ResponsesContentPart{
+					{Type: "output_text", Text: "Let me check."},
+				},
+			},
+			{
+				Type:      "function_call",
+				CallID:    "call_1",
+				Name:      "readfile",
+				Arguments: `{"path":"/tmp/demo.txt"}`,
+			},
+		},
+	}
+
+	nameMap := ClaudeToolNameMapFromTools([]ResponsesTool{
+		{Type: "function", Name: "__ReadFile"},
+	})
+
+	anth := ResponsesToAnthropic(resp, "claude-opus-4-6", nameMap)
+	require.Len(t, anth.Content, 2)
+	assert.Equal(t, "__ReadFile", anth.Content[1].Name)
 }
 
 func TestResponsesToAnthropic_Reasoning(t *testing.T) {
@@ -345,6 +394,9 @@ func TestStreamingTextOnly(t *testing.T) {
 
 func TestStreamingToolCall(t *testing.T) {
 	state := NewResponsesEventToAnthropicState()
+	state.ToolNameMap = ClaudeToolNameMapFromTools([]ResponsesTool{
+		{Type: "function", Name: "__ReadFile"},
+	})
 
 	// 1. response.created
 	ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
@@ -356,12 +408,13 @@ func TestStreamingToolCall(t *testing.T) {
 	events := ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
 		Type:        "response.output_item.added",
 		OutputIndex: 0,
-		Item:        &ResponsesOutput{Type: "function_call", CallID: "call_1", Name: "get_weather"},
+		Item:        &ResponsesOutput{Type: "function_call", CallID: "call_1", Name: "readfile"},
 	}, state)
 	require.Len(t, events, 1)
 	assert.Equal(t, "content_block_start", events[0].Type)
 	assert.Equal(t, "tool_use", events[0].ContentBlock.Type)
 	assert.Equal(t, "call_1", events[0].ContentBlock.ID)
+	assert.Equal(t, "__ReadFile", events[0].ContentBlock.Name)
 
 	// 3. arguments delta
 	events = ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
