@@ -650,8 +650,9 @@ func (h *AccountHandler) Delete(c *gin.Context) {
 
 // TestAccountRequest represents the request body for testing an account
 type TestAccountRequest struct {
-	ModelID string `json:"model_id"`
-	Prompt  string `json:"prompt"`
+	ModelID  string `json:"model_id"`
+	Prompt   string `json:"prompt"`
+	TestMode string `json:"test_mode"`
 }
 
 type SyncFromCRSRequest struct {
@@ -680,6 +681,9 @@ func (h *AccountHandler) Test(c *gin.Context) {
 	var req TestAccountRequest
 	// Allow empty body, model_id is optional
 	_ = c.ShouldBindJSON(&req)
+	if normalizedMode := service.NormalizeOpenAIImageTestMode(req.TestMode); normalizedMode != "" {
+		c.Set(service.AccountTestContextRequestedModeKey, normalizedMode)
+	}
 
 	// Use AccountTestService to test the account with SSE streaming
 	if err := h.accountTestService.TestAccountConnection(c, accountID, req.ModelID, req.Prompt); err != nil {
