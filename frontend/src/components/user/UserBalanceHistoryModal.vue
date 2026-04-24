@@ -18,7 +18,7 @@
           <div class="min-w-0 flex-1">
             <p class="truncate font-medium text-gray-900 dark:text-white">{{ email || '-' }}</p>
             <p class="text-xs text-gray-400 dark:text-dark-500">
-              {{ t('usage.clickToViewBalance') }}
+              {{ t('admin.users.balanceHistory') }}
             </p>
           </div>
           <div class="flex-shrink-0 text-right">

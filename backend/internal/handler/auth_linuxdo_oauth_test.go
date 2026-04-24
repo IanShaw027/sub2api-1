@@ -59,7 +59,7 @@ func TestLinuxDoParseUserInfoParsesIDAndUsername(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "123", subject)
 	require.Equal(t, "alice", username)
-	require.Equal(t, "linuxdo-123@linuxdo-connect.invalid", email)
+	require.Empty(t, email)
 	require.Equal(t, "Alice", displayName)
 	require.Equal(t, "https://cdn.example/avatar.png", avatarURL)
 }
@@ -73,7 +73,7 @@ func TestLinuxDoParseUserInfoDefaultsUsername(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "123", subject)
 	require.Equal(t, "linuxdo_123", username)
-	require.Equal(t, "linuxdo-123@linuxdo-connect.invalid", email)
+	require.Empty(t, email)
 	require.Equal(t, "linuxdo_123", displayName)
 	require.Equal(t, "", avatarURL)
 }
@@ -542,7 +542,7 @@ func TestLinuxDoOAuthCallbackCreatesBindPendingSessionForCompatEmailUser(t *test
 	require.NotNil(t, session.TargetUserID)
 	require.Equal(t, existingUser.ID, *session.TargetUserID)
 	require.Equal(t, strings.TrimSpace(existingUser.Email), session.ResolvedEmail)
-	require.Equal(t, "legacy@example.com", session.UpstreamIdentityClaims["compat_email"])
+	require.Equal(t, "legacy@example.com", session.UpstreamIdentityClaims["email"])
 
 	completion, ok := session.LocalFlowState[oauthCompletionResponseKey].(map[string]any)
 	require.True(t, ok)
@@ -685,7 +685,7 @@ func TestLinuxDoOAuthCallbackCreatesBindPendingSessionForCurrentUser(t *testing.
 	require.Equal(t, oauthIntentBindCurrentUser, session.Intent)
 	require.NotNil(t, session.TargetUserID)
 	require.Equal(t, currentUser.ID, *session.TargetUserID)
-	require.Equal(t, linuxDoSyntheticEmail("999"), session.ResolvedEmail)
+	require.Empty(t, session.ResolvedEmail)
 
 	completion, ok := session.LocalFlowState[oauthCompletionResponseKey].(map[string]any)
 	require.True(t, ok)

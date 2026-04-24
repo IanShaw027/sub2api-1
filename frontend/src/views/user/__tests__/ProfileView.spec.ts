@@ -62,6 +62,7 @@ describe('ProfileView', () => {
     }
     fetchPublicSettingsMock.mockResolvedValue({
       contact_info: '',
+      support_qr_codes: [],
       balance_low_notify_enabled: false,
       balance_low_notify_threshold: 0,
       linuxdo_oauth_enabled: true,

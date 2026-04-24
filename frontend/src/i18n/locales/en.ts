@@ -5389,10 +5389,15 @@ export default {
           descriptionPlaceholder: "e.g., Supports OpenAI format requests",
           add: "Add Endpoint",
         },
-        contactInfo: "Contact Info",
-        contactInfoPlaceholder: "e.g., QQ: 123456789",
-        contactInfoHint:
-          "Customer support contact info, displayed on redeem page, profile, etc.",
+        supportQRCodes: "Support QR Codes",
+        supportQRCodesHint:
+          "Upload one or more support QR codes. Optional notes will be shown below each code.",
+        addSupportQRCode: "Add QR Code",
+        uploadQRCode: "Upload QR Code",
+        supportQRCodeImageHint:
+          "PNG or JPG. Max 500KB. Square images display best.",
+        supportQRCodeNote: "Note",
+        supportQRCodeNotePlaceholder: "Optional note shown below the QR code",
         docUrl: "Documentation URL",
         docUrlPlaceholder: "https://docs.example.com",
         docUrlHint:

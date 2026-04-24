@@ -248,6 +248,7 @@ describe('ProfileIdentityBindingsSection', () => {
       site_subtitle: '',
       api_base_url: '',
       contact_info: '',
+      support_qr_codes: [],
       doc_url: '',
       home_content: '',
       hide_ccs_import_button: false,

@@ -346,12 +346,11 @@ func (h *AuthHandler) OIDCOAuthCallback(c *gin.Context) {
 		return
 	}
 
-	identityKey := oidcIdentityKey(issuer, subject)
 	compatEmail := strings.TrimSpace(userInfoClaims.Email)
 	if compatEmail == "" && idClaims != nil {
 		compatEmail = strings.TrimSpace(idClaims.Email)
 	}
-	email := oidcSyntheticEmailFromIdentityKey(identityKey)
+	email := compatEmail
 	username := firstNonEmpty(
 		userInfoClaims.Username,
 		func() string {

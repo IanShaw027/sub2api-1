@@ -441,7 +441,7 @@ func TestOIDCOAuthCallbackCreatesBindPendingSessionForCompatEmailUser(t *testing
 	require.NotNil(t, session.TargetUserID)
 	require.Equal(t, existingUser.ID, *session.TargetUserID)
 	require.Equal(t, existingUser.Email, session.ResolvedEmail)
-	require.Equal(t, "legacy@example.com", session.UpstreamIdentityClaims["compat_email"])
+	require.Equal(t, "legacy@example.com", session.UpstreamIdentityClaims["email"])
 
 	completion, ok := session.LocalFlowState[oauthCompletionResponseKey].(map[string]any)
 	require.True(t, ok)

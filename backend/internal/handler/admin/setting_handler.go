@@ -52,6 +52,33 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+func mustMarshalSupportQRCodes(entries *[]dto.SupportQRCodeEntry) string {
+	if entries == nil || len(*entries) == 0 {
+		return "[]"
+	}
+
+	normalized := make([]dto.SupportQRCodeEntry, 0, len(*entries))
+	for _, entry := range *entries {
+		imageURL := strings.TrimSpace(entry.ImageURL)
+		if imageURL == "" {
+			continue
+		}
+		normalized = append(normalized, dto.SupportQRCodeEntry{
+			ImageURL: imageURL,
+			Note:     strings.TrimSpace(entry.Note),
+		})
+	}
+	if len(normalized) == 0 {
+		return "[]"
+	}
+
+	raw, err := json.Marshal(normalized)
+	if err != nil {
+		return "[]"
+	}
+	return string(raw)
+}
+
 // SettingHandler 系统设置处理器
 type SettingHandler struct {
 	settingService       *service.SettingService
@@ -174,6 +201,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		SiteSubtitle:                           settings.SiteSubtitle,
 		APIBaseURL:                             settings.APIBaseURL,
 		ContactInfo:                            settings.ContactInfo,
+		SupportQRCodes:                         dto.ParseSupportQRCodes(settings.SupportQRCodes),
 		DocURL:                                 settings.DocURL,
 		HomeContent:                            settings.HomeContent,
 		HideCcsImportButton:                    settings.HideCcsImportButton,
@@ -321,20 +349,21 @@ type UpdateSettingsRequest struct {
 	OIDCConnectUserInfoUsernamePath string `json:"oidc_connect_userinfo_username_path"`
 
 	// OEM设置
-	SiteName                    string                `json:"site_name"`
-	SiteLogo                    string                `json:"site_logo"`
-	SiteSubtitle                string                `json:"site_subtitle"`
-	APIBaseURL                  string                `json:"api_base_url"`
-	ContactInfo                 string                `json:"contact_info"`
-	DocURL                      string                `json:"doc_url"`
-	HomeContent                 string                `json:"home_content"`
-	HideCcsImportButton         bool                  `json:"hide_ccs_import_button"`
-	PurchaseSubscriptionEnabled *bool                 `json:"purchase_subscription_enabled"`
-	PurchaseSubscriptionURL     *string               `json:"purchase_subscription_url"`
-	TableDefaultPageSize        int                   `json:"table_default_page_size"`
-	TablePageSizeOptions        []int                 `json:"table_page_size_options"`
-	CustomMenuItems             *[]dto.CustomMenuItem `json:"custom_menu_items"`
-	CustomEndpoints             *[]dto.CustomEndpoint `json:"custom_endpoints"`
+	SiteName                    string                    `json:"site_name"`
+	SiteLogo                    string                    `json:"site_logo"`
+	SiteSubtitle                string                    `json:"site_subtitle"`
+	APIBaseURL                  string                    `json:"api_base_url"`
+	ContactInfo                 string                    `json:"contact_info"`
+	SupportQRCodes              *[]dto.SupportQRCodeEntry `json:"support_qr_codes"`
+	DocURL                      string                    `json:"doc_url"`
+	HomeContent                 string                    `json:"home_content"`
+	HideCcsImportButton         bool                      `json:"hide_ccs_import_button"`
+	PurchaseSubscriptionEnabled *bool                     `json:"purchase_subscription_enabled"`
+	PurchaseSubscriptionURL     *string                   `json:"purchase_subscription_url"`
+	TableDefaultPageSize        int                       `json:"table_default_page_size"`
+	TablePageSizeOptions        []int                     `json:"table_page_size_options"`
+	CustomMenuItems             *[]dto.CustomMenuItem     `json:"custom_menu_items"`
+	CustomEndpoints             *[]dto.CustomEndpoint     `json:"custom_endpoints"`
 
 	// 默认配置
 	DefaultConcurrency                       int                               `json:"default_concurrency"`
@@ -856,6 +885,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	if req.PurchaseSubscriptionURL != nil {
 		purchaseURL = strings.TrimSpace(*req.PurchaseSubscriptionURL)
 	}
+	supportQRCodes := previousSettings.SupportQRCodes
+	if req.SupportQRCodes != nil {
+		supportQRCodes = mustMarshalSupportQRCodes(req.SupportQRCodes)
+	}
 
 	// - 启用时要求 URL 合法且非空
 	// - 禁用时允许为空；若提供了 URL 也做基本校验，避免误配置
@@ -1120,6 +1153,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		SiteSubtitle:                     req.SiteSubtitle,
 		APIBaseURL:                       req.APIBaseURL,
 		ContactInfo:                      req.ContactInfo,
+		SupportQRCodes:                   supportQRCodes,
 		DocURL:                           req.DocURL,
 		HomeContent:                      req.HomeContent,
 		HideCcsImportButton:              req.HideCcsImportButton,
@@ -1435,6 +1469,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		SiteSubtitle:                           updatedSettings.SiteSubtitle,
 		APIBaseURL:                             updatedSettings.APIBaseURL,
 		ContactInfo:                            updatedSettings.ContactInfo,
+		SupportQRCodes:                         dto.ParseSupportQRCodes(updatedSettings.SupportQRCodes),
 		DocURL:                                 updatedSettings.DocURL,
 		HomeContent:                            updatedSettings.HomeContent,
 		HideCcsImportButton:                    updatedSettings.HideCcsImportButton,
@@ -1736,6 +1771,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.ContactInfo != after.ContactInfo {
 		changed = append(changed, "contact_info")
+	}
+	if before.SupportQRCodes != after.SupportQRCodes {
+		changed = append(changed, "support_qr_codes")
 	}
 	if before.DocURL != after.DocURL {
 		changed = append(changed, "doc_url")

@@ -94,6 +94,7 @@ type SystemSettings struct {
 	SiteSubtitle                string
 	APIBaseURL                  string
 	ContactInfo                 string
+	SupportQRCodes              string
 	DocURL                      string
 	HomeContent                 string
 	HideCcsImportButton         bool
@@ -192,6 +193,7 @@ type PublicSettings struct {
 	SiteSubtitle                     string
 	APIBaseURL                       string
 	ContactInfo                      string
+	SupportQRCodes                   string
 	DocURL                           string
 	HomeContent                      string
 	HideCcsImportButton              bool

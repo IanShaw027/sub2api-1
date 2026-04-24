@@ -71,6 +71,7 @@ function buildPublicSettings(overrides: Partial<WeChatPublicSettings> = {}): WeC
     site_subtitle: '',
     api_base_url: '/api/v1',
     contact_info: '',
+    support_qr_codes: [],
     doc_url: '',
     home_content: '',
     hide_ccs_import_button: false,

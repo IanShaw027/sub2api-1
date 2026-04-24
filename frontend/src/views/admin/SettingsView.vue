@@ -3507,21 +3507,77 @@
                 </button>
               </div>
 
-              <!-- Contact Info -->
+              <!-- Support QR Codes -->
               <div>
                 <label
                   class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
                 >
-                  {{ t("admin.settings.site.contactInfo") }}
+                  {{ t("admin.settings.site.supportQRCodes") }}
                 </label>
-                <input
-                  v-model="form.contact_info"
-                  type="text"
-                  class="input"
-                  :placeholder="t('admin.settings.site.contactInfoPlaceholder')"
-                />
+                <div class="space-y-4">
+                  <div
+                    v-for="(item, index) in form.support_qr_codes"
+                    :key="`support-qr-${index}`"
+                    class="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 dark:border-dark-700 dark:bg-dark-900/40"
+                  >
+                    <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+                      <div class="space-y-4">
+                        <ImageUpload
+                          v-model="item.image_url"
+                          mode="image"
+                          :upload-label="t('admin.settings.site.uploadQRCode')"
+                          :remove-label="t('admin.settings.site.remove')"
+                          :hint="t('admin.settings.site.supportQRCodeImageHint')"
+                          :max-size="500 * 1024"
+                        />
+                        <div>
+                          <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            {{ t("admin.settings.site.supportQRCodeNote") }}
+                          </label>
+                          <input
+                            v-model="item.note"
+                            type="text"
+                            class="input"
+                            :placeholder="t('admin.settings.site.supportQRCodeNotePlaceholder')"
+                          />
+                        </div>
+                      </div>
+                      <div class="flex justify-end lg:justify-start">
+                        <button
+                          type="button"
+                          class="btn btn-secondary btn-sm text-red-600 hover:text-red-700 dark:text-red-400"
+                          @click="removeSupportQRCode(index)"
+                        >
+                          <Icon name="trash" size="sm" class="mr-1.5" :stroke-width="2" />
+                          {{ t("admin.settings.site.remove") }}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    class="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 px-4 py-2.5 text-sm text-gray-500 transition-colors hover:border-primary-400 hover:text-primary-600 dark:border-dark-600 dark:text-gray-400 dark:hover:border-primary-500 dark:hover:text-primary-400"
+                    @click="addSupportQRCode"
+                  >
+                    <svg
+                      class="h-4 w-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M12 4v16m8-8H4"
+                      />
+                    </svg>
+                    {{ t("admin.settings.site.addSupportQRCode") }}
+                  </button>
+                </div>
                 <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                  {{ t("admin.settings.site.contactInfoHint") }}
+                  {{ t("admin.settings.site.supportQRCodesHint") }}
                 </p>
               </div>
 
@@ -4820,7 +4876,12 @@ import type {
   WebSearchProviderConfig,
   WebSearchTestResult,
 } from "@/api/admin/settings";
-import type { AdminGroup, Proxy, NotifyEmailEntry } from "@/types";
+import type {
+  AdminGroup,
+  Proxy,
+  NotifyEmailEntry,
+  SupportQRCodeEntry,
+} from "@/types";
 import type { ProviderInstance } from "@/types/payment";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import Icon from "@/components/icons/Icon.vue";
@@ -5007,6 +5068,7 @@ const form = reactive<SettingsForm>({
   site_subtitle: "Subscription to API Conversion Platform",
   api_base_url: "",
   contact_info: "",
+  support_qr_codes: [] as SupportQRCodeEntry[],
   doc_url: "",
   home_content: "",
   backend_mode_enabled: false,
@@ -5606,6 +5668,17 @@ function removeEndpoint(index: number) {
   form.custom_endpoints.splice(index, 1);
 }
 
+function addSupportQRCode() {
+  form.support_qr_codes.push({
+    image_url: "",
+    note: "",
+  });
+}
+
+function removeSupportQRCode(index: number) {
+  form.support_qr_codes.splice(index, 1);
+}
+
 function formatTablePageSizeOptions(options: number[]): string {
   return options.join(", ");
 }
@@ -5933,6 +6006,12 @@ async function saveSettings() {
       site_subtitle: form.site_subtitle,
       api_base_url: form.api_base_url,
       contact_info: form.contact_info,
+      support_qr_codes: form.support_qr_codes
+        .map((item) => ({
+          image_url: item.image_url.trim(),
+          note: item.note?.trim() || "",
+        }))
+        .filter((item) => item.image_url),
       doc_url: form.doc_url,
       home_content: form.home_content,
       backend_mode_enabled: form.backend_mode_enabled,

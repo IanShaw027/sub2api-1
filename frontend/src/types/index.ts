@@ -174,6 +174,11 @@ export interface CustomEndpoint {
   description: string
 }
 
+export interface SupportQRCodeEntry {
+  image_url: string
+  note?: string
+}
+
 export interface PublicSettings {
   registration_enabled: boolean
   email_verify_enabled: boolean
@@ -189,6 +194,7 @@ export interface PublicSettings {
   site_subtitle: string
   api_base_url: string
   contact_info: string
+  support_qr_codes: SupportQRCodeEntry[]
   doc_url: string
   home_content: string
   hide_ccs_import_button: boolean

@@ -5,7 +5,7 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Toast, ToastType, PublicSettings } from '@/types'
+import type { Toast, ToastType, PublicSettings, SupportQRCodeEntry } from '@/types'
 import { i18n } from '@/i18n'
 import {
   checkUpdates as checkUpdatesAPI,
@@ -29,6 +29,7 @@ export const useAppStore = defineStore('app', () => {
   const siteLogo = ref<string>('')
   const siteVersion = ref<string>('')
   const contactInfo = ref<string>('')
+  const supportQRCodes = ref<SupportQRCodeEntry[]>([])
   const apiBaseUrl = ref<string>('')
   const docUrl = ref<string>('')
   const cachedPublicSettings = ref<PublicSettings | null>(null)
@@ -296,6 +297,7 @@ export const useAppStore = defineStore('app', () => {
     siteLogo.value = config.site_logo || ''
     siteVersion.value = config.version || ''
     contactInfo.value = config.contact_info || ''
+    supportQRCodes.value = Array.isArray(config.support_qr_codes) ? [...config.support_qr_codes] : []
     apiBaseUrl.value = config.api_base_url || ''
     docUrl.value = config.doc_url || ''
     publicSettingsLoaded.value = true
@@ -332,6 +334,7 @@ export const useAppStore = defineStore('app', () => {
         site_subtitle: '',
         api_base_url: apiBaseUrl.value,
         contact_info: contactInfo.value,
+        support_qr_codes: supportQRCodes.value,
         doc_url: docUrl.value,
         home_content: '',
         hide_ccs_import_button: false,
@@ -412,6 +415,7 @@ export const useAppStore = defineStore('app', () => {
     siteLogo,
     siteVersion,
     contactInfo,
+    supportQRCodes,
     apiBaseUrl,
     docUrl,
     cachedPublicSettings,
