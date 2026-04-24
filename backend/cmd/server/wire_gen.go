@@ -178,7 +178,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	identityService := service.NewIdentityService(identityCache)
 	deferredService := service.ProvideDeferredService(accountRepository, timingWheelService)
 	claudeTokenProvider := service.ProvideClaudeTokenProvider(accountRepository, geminiTokenCache, oAuthService, oAuthRefreshAPI)
-	kiroTokenProvider := service.ProvideKiroTokenProvider(accountRepository, geminiTokenCache, oAuthRefreshAPI)
+	kiroTokenProvider := service.ProvideKiroTokenProvider(accountRepository, geminiTokenCache, httpUpstream, tlsFingerprintProfileService, oAuthRefreshAPI)
 	kiroGatewayService := service.NewKiroGatewayService(httpUpstream, kiroTokenProvider, rateLimitService, tlsFingerprintProfileService)
 	accountUsageService = service.NewAccountUsageService(accountRepository, usageLogRepository, claudeUsageFetcher, geminiQuotaService, antigravityQuotaFetcher, kiroTokenProvider, usageCache, identityCache, compositeTokenCacheInvalidator, tlsFingerprintProfileService)
 	accountTestService = service.NewAccountTestService(accountRepository, geminiTokenProvider, kiroTokenProvider, antigravityGatewayService, httpUpstream, configConfig, tlsFingerprintProfileService)

@@ -1,7 +1,7 @@
 <template>
   <BaseDialog
     :show="show"
-    :title="t('admin.accounts.reAuthorizeAccount')"
+    :title="dialogTitle"
     width="normal"
     @close="handleClose"
   >
@@ -53,11 +53,16 @@
         class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-200"
       >
         <div class="font-medium">
-          {{ t('admin.accounts.reAuthorizeUnavailable') }}
+          {{ t('admin.accounts.kiro.manualUpdateTitle') }}
         </div>
         <p class="mt-1">
-          {{ t('admin.accounts.reAuthorizeUnavailableKiro') }}
+          {{ t('admin.accounts.kiro.manualUpdateDesc') }}
         </p>
+        <ul class="mt-3 list-disc space-y-1 pl-5">
+          <li>{{ t('admin.accounts.kiro.manualUpdateStepRefresh') }}</li>
+          <li>{{ t('admin.accounts.kiro.manualUpdateStepIDC') }}</li>
+          <li>{{ t('admin.accounts.kiro.manualUpdateStepVersions') }}</li>
+        </ul>
       </div>
 
       <!-- Add Method Selection (Claude only) -->
@@ -259,6 +264,11 @@ const isGemini = computed(() => props.account?.platform === 'gemini')
 const isAnthropic = computed(() => props.account?.platform === 'anthropic')
 const isAntigravity = computed(() => props.account?.platform === 'antigravity')
 const isKiro = computed(() => props.account?.platform === 'kiro')
+const dialogTitle = computed(() => (
+  isKiro.value
+    ? t('admin.accounts.kiro.manualUpdateDialogTitle')
+    : t('admin.accounts.reAuthorizeAccount')
+))
 
 // Computed - current OAuth state based on platform
 const currentAuthUrl = computed(() => {

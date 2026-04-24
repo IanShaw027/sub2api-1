@@ -111,6 +111,7 @@ type CreateAccountRequest struct {
 type UpdateAccountRequest struct {
 	Name               *string         `json:"name"`
 	Notes              *string         `json:"notes"`
+	Type               *string         `json:"type"`
 	Credentials        *map[string]any `json:"credentials"`
 	Extra              *map[string]any `json:"extra"`
 	ProxyID            *int64          `json:"proxy_id"`
@@ -248,9 +249,6 @@ func (s *AccountService) Update(ctx context.Context, id int64, req UpdateAccount
 	if err != nil {
 		return nil, fmt.Errorf("get account: %w", err)
 	}
-	if err := validatePlatformAccountType(account.Platform, account.Type); err != nil {
-		return nil, err
-	}
 
 	// 更新字段
 	if req.Name != nil {
@@ -258,6 +256,12 @@ func (s *AccountService) Update(ctx context.Context, id int64, req UpdateAccount
 	}
 	if req.Notes != nil {
 		account.Notes = normalizeAccountNotes(req.Notes)
+	}
+	if req.Type != nil {
+		account.Type = *req.Type
+	}
+	if err := validatePlatformAccountType(account.Platform, account.Type); err != nil {
+		return nil, err
 	}
 
 	if req.Credentials != nil {

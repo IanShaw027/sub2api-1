@@ -24,22 +24,15 @@
             </button>
             <template v-if="account.type === 'oauth' || account.type === 'setup-token'">
               <button
-                v-if="supportsReauth"
+                v-if="supportsReauth || isKiroOAuth"
                 @click="$emit('reauth', account); $emit('close')"
-                class="flex w-full items-center gap-2 px-4 py-2 text-sm text-blue-600 hover:bg-gray-100 dark:hover:bg-dark-700"
+                :class="[
+                  'flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700',
+                  isKiroOAuth ? 'text-cyan-600' : 'text-blue-600'
+                ]"
               >
                 <Icon name="link" size="sm" />
-                {{ t('admin.accounts.reAuthorize') }}
-              </button>
-              <button
-                v-else-if="isKiroOAuth"
-                type="button"
-                disabled
-                :title="t('admin.accounts.reAuthorizeUnavailableKiro')"
-                class="flex w-full cursor-not-allowed items-center gap-2 px-4 py-2 text-sm text-gray-400 opacity-70 dark:text-gray-500"
-              >
-                <Icon name="link" size="sm" />
-                {{ t('admin.accounts.reAuthorizeUnavailable') }}
+                {{ isKiroOAuth ? t('admin.accounts.kiro.manualUpdateAction') : t('admin.accounts.reAuthorize') }}
               </button>
               <button @click="$emit('refresh-token', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-purple-600 hover:bg-gray-100 dark:hover:bg-dark-700">
                 <Icon name="refresh" size="sm" />

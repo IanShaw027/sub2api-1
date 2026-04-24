@@ -24,6 +24,13 @@ type claudeUsageService struct {
 	httpUpstream      service.HTTPUpstream
 }
 
+func (s *claudeUsageService) HTTPUpstream() service.HTTPUpstream {
+	if s == nil {
+		return nil
+	}
+	return s.httpUpstream
+}
+
 // NewClaudeUsageFetcher 创建 Claude 用量获取服务
 // httpUpstream: 可选，如果提供则支持 TLS 指纹伪装
 func NewClaudeUsageFetcher(httpUpstream service.HTTPUpstream) service.ClaudeUsageFetcher {

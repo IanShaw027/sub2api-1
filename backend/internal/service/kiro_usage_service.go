@@ -9,6 +9,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 )
 
 type KiroUsageLimits struct {
@@ -41,10 +42,22 @@ type KiroFreeTrial struct {
 	FreeTrialStatus           *string `json:"freeTrialStatus"`
 }
 
-type KiroUsageService struct{}
+type KiroUsageService struct {
+	httpUpstream        HTTPUpstream
+	tlsFPProfileService *TLSFingerprintProfileService
+}
 
 func NewKiroUsageService() *KiroUsageService {
 	return &KiroUsageService{}
+}
+
+func (s *KiroUsageService) WithTransport(httpUpstream HTTPUpstream, tlsFPProfileService *TLSFingerprintProfileService) *KiroUsageService {
+	if s == nil {
+		return nil
+	}
+	s.httpUpstream = httpUpstream
+	s.tlsFPProfileService = tlsFPProfileService
+	return s
 }
 
 func (s *KiroUsageService) FetchUsageLimits(ctx context.Context, account *Account, accessToken string) (*KiroUsageLimits, error) {
@@ -55,14 +68,6 @@ func (s *KiroUsageService) FetchUsageLimits(ctx context.Context, account *Accoun
 	url := fmt.Sprintf("https://%s/getUsageLimits?origin=AI_EDITOR&resourceType=AGENTIC_REQUEST", host)
 	if profileARN := account.GetCredential("profile_arn"); profileARN != "" {
 		url += "&profileArn=" + profileARN
-	}
-
-	client, err := httpclient.GetClient(httpclient.Options{
-		ProxyURL: accountProxyURL(account),
-		Timeout:  60 * time.Second,
-	})
-	if err != nil {
-		return nil, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -80,7 +85,7 @@ func (s *KiroUsageService) FetchUsageLimits(ctx context.Context, account *Accoun
 	req.Header.Set("User-Agent", fmt.Sprintf("aws-sdk-js/1.0.0 ua/2.1 os/%s lang/js md/nodejs#%s api/codewhispererruntime#1.0.0 m/N,E KiroIDE-%s-%s", KiroSystemVersion(account), KiroNodeVersion(account), kiroVersion, machineID))
 	req.Header.Set("Connection", "close")
 
-	resp, err := client.Do(req)
+	resp, err := doKiroSidecarRequest(req, account, s.httpUpstream, s.tlsFPProfileService, 60*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -95,6 +100,79 @@ func (s *KiroUsageService) FetchUsageLimits(ctx context.Context, account *Accoun
 		return nil, err
 	}
 	return &out, nil
+}
+
+func doKiroSidecarRequest(
+	req *http.Request,
+	account *Account,
+	httpUpstream HTTPUpstream,
+	tlsFPProfileService *TLSFingerprintProfileService,
+	timeout time.Duration,
+) (*http.Response, error) {
+	if req == nil {
+		return nil, fmt.Errorf("request is nil")
+	}
+	if account == nil {
+		return nil, fmt.Errorf("account is nil")
+	}
+	if httpUpstream != nil {
+		return httpUpstream.DoWithTLS(
+			req,
+			accountProxyURL(account),
+			account.ID,
+			account.Concurrency,
+			resolveKiroTLSProfile(account, tlsFPProfileService),
+		)
+	}
+
+	poolSize := normalizeKiroTransportConcurrency(account.Concurrency)
+	client, err := httpclient.GetClient(httpclient.Options{
+		ProxyURL:              accountProxyURL(account),
+		Timeout:               timeout,
+		ResponseHeaderTimeout: timeout,
+		MaxIdleConns:          poolSize * 2,
+		MaxIdleConnsPerHost:   poolSize,
+		MaxConnsPerHost:       poolSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return client.Do(req)
+}
+
+func resolveKiroTLSProfile(account *Account, tlsFPProfileService *TLSFingerprintProfileService) *tlsfingerprint.Profile {
+	if account == nil || tlsFPProfileService == nil || !isKiroTLSFingerprintEnabled(account) {
+		return nil
+	}
+
+	id := account.GetTLSFingerprintProfileID()
+	if id > 0 {
+		if profile := tlsFPProfileService.GetProfileByID(id); profile != nil {
+			return profile
+		}
+	}
+	if id == -1 {
+		if profile := tlsFPProfileService.getRandomProfile(); profile != nil {
+			return profile
+		}
+	}
+
+	return &tlsfingerprint.Profile{Name: "Built-in Default (Node.js 24.x)"}
+}
+
+func isKiroTLSFingerprintEnabled(account *Account) bool {
+	if account == nil || account.Platform != PlatformKiro || account.Extra == nil {
+		return false
+	}
+	enabled, _ := account.Extra["enable_tls_fingerprint"].(bool)
+	return enabled
+}
+
+func normalizeKiroTransportConcurrency(concurrency int) int {
+	if concurrency > 0 {
+		return concurrency
+	}
+	return 1
 }
 
 func (k *KiroUsageLimits) SubscriptionTitle() string {

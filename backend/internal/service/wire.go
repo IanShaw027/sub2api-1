@@ -132,10 +132,12 @@ func ProvideAntigravityTokenProvider(
 func ProvideKiroTokenProvider(
 	accountRepo AccountRepository,
 	tokenCache GeminiTokenCache,
+	httpUpstream HTTPUpstream,
+	tlsFPProfileService *TLSFingerprintProfileService,
 	refreshAPI *OAuthRefreshAPI,
 ) *KiroTokenProvider {
 	p := NewKiroTokenProvider(accountRepo, tokenCache)
-	executor := NewKiroTokenRefresher()
+	executor := NewKiroTokenRefresher().WithTransport(httpUpstream, tlsFPProfileService)
 	p.SetRefreshAPI(refreshAPI, executor)
 	p.SetRefreshPolicy(ClaudeProviderRefreshPolicy())
 	return p

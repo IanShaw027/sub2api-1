@@ -9,14 +9,25 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
 	kiropkg "github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 )
 
-type KiroTokenRefresher struct{}
+type KiroTokenRefresher struct {
+	httpUpstream        HTTPUpstream
+	tlsFPProfileService *TLSFingerprintProfileService
+}
 
 func NewKiroTokenRefresher() *KiroTokenRefresher {
 	return &KiroTokenRefresher{}
+}
+
+func (r *KiroTokenRefresher) WithTransport(httpUpstream HTTPUpstream, tlsFPProfileService *TLSFingerprintProfileService) *KiroTokenRefresher {
+	if r == nil {
+		return nil
+	}
+	r.httpUpstream = httpUpstream
+	r.tlsFPProfileService = tlsFPProfileService
+	return r
 }
 
 func (r *KiroTokenRefresher) CacheKey(account *Account) string {
@@ -55,9 +66,9 @@ func (r *KiroTokenRefresher) Refresh(ctx context.Context, account *Account) (map
 
 	switch authMethod {
 	case "idc", "builder-id", "iam":
-		accessToken, refreshToken, expiresAt, err = refreshKiroIDCToken(ctx, account)
+		accessToken, refreshToken, expiresAt, err = r.refreshKiroIDCToken(ctx, account)
 	default:
-		accessToken, refreshToken, expiresAt, profileARN, err = refreshKiroSocialToken(ctx, account)
+		accessToken, refreshToken, expiresAt, profileARN, err = r.refreshKiroSocialToken(ctx, account)
 	}
 	if err != nil {
 		return nil, err
@@ -74,7 +85,7 @@ func (r *KiroTokenRefresher) Refresh(ctx context.Context, account *Account) (map
 	return MergeCredentials(account.Credentials, newCreds), nil
 }
 
-func refreshKiroSocialToken(ctx context.Context, account *Account) (accessToken, refreshToken, expiresAt, profileARN string, err error) {
+func (r *KiroTokenRefresher) refreshKiroSocialToken(ctx context.Context, account *Account) (accessToken, refreshToken, expiresAt, profileARN string, err error) {
 	payload := map[string]any{
 		"refreshToken": account.GetCredential("refresh_token"),
 	}
@@ -86,7 +97,7 @@ func refreshKiroSocialToken(ctx context.Context, account *Account) (accessToken,
 		ProfileARN   string `json:"profileArn"`
 		ExpiresIn    int64  `json:"expiresIn"`
 	}
-	if err = doKiroJSONRequest(ctx, account, url, host, payload, &out); err != nil {
+	if err = r.doKiroJSONRequest(ctx, account, url, host, payload, &out); err != nil {
 		return "", "", "", "", err
 	}
 	refreshToken = out.RefreshToken
@@ -97,7 +108,7 @@ func refreshKiroSocialToken(ctx context.Context, account *Account) (accessToken,
 	return out.AccessToken, refreshToken, expiresAt, out.ProfileARN, nil
 }
 
-func refreshKiroIDCToken(ctx context.Context, account *Account) (accessToken, refreshToken, expiresAt string, err error) {
+func (r *KiroTokenRefresher) refreshKiroIDCToken(ctx context.Context, account *Account) (accessToken, refreshToken, expiresAt string, err error) {
 	payload := map[string]any{
 		"clientId":     account.GetCredential("client_id"),
 		"clientSecret": account.GetCredential("client_secret"),
@@ -111,7 +122,7 @@ func refreshKiroIDCToken(ctx context.Context, account *Account) (accessToken, re
 		RefreshToken string `json:"refreshToken"`
 		ExpiresIn    int64  `json:"expiresIn"`
 	}
-	if err = doKiroJSONRequest(ctx, account, url, host, payload, &out); err != nil {
+	if err = r.doKiroJSONRequest(ctx, account, url, host, payload, &out); err != nil {
 		return "", "", "", err
 	}
 	refreshToken = out.RefreshToken
@@ -122,15 +133,8 @@ func refreshKiroIDCToken(ctx context.Context, account *Account) (accessToken, re
 	return out.AccessToken, refreshToken, expiresAt, nil
 }
 
-func doKiroJSONRequest(ctx context.Context, account *Account, url, host string, payload any, out any) error {
+func (r *KiroTokenRefresher) doKiroJSONRequest(ctx context.Context, account *Account, url, host string, payload any, out any) error {
 	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	client, err := httpclient.GetClient(httpclient.Options{
-		ProxyURL: accountProxyURL(account),
-		Timeout:  60 * time.Second,
-	})
 	if err != nil {
 		return err
 	}
@@ -153,7 +157,7 @@ func doKiroJSONRequest(ctx context.Context, account *Account, url, host string, 
 		req.Header.Set("User-Agent", "node")
 	}
 
-	resp, err := client.Do(req)
+	resp, err := doKiroSidecarRequest(req, account, r.httpUpstream, r.tlsFPProfileService, 60*time.Second)
 	if err != nil {
 		return err
 	}

@@ -442,6 +442,7 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 	if account == nil {
 		return nil, fmt.Errorf("account is nil")
 	}
+	kiroHTTPUpstream := s.kiroHTTPUpstream()
 	accessToken := ""
 	if s.kiroTokenProvider != nil {
 		var err error
@@ -453,7 +454,7 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 		accessToken = account.GetCredential("access_token")
 	}
 	if accessToken == "" {
-		refresher := NewKiroTokenRefresher()
+		refresher := NewKiroTokenRefresher().WithTransport(kiroHTTPUpstream, s.tlsFPProfileService)
 		newCreds, err := refresher.Refresh(ctx, account)
 		if err != nil {
 			return nil, err
@@ -464,7 +465,7 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 		accessToken = account.GetCredential("access_token")
 	}
 
-	usageService := NewKiroUsageService()
+	usageService := NewKiroUsageService().WithTransport(kiroHTTPUpstream, s.tlsFPProfileService)
 	limits, err := usageService.FetchUsageLimits(ctx, account, accessToken)
 	if err != nil {
 		return &UsageInfo{
@@ -503,6 +504,19 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 	now := time.Now()
 	info.UpdatedAt = &now
 	return info, nil
+}
+
+func (s *AccountUsageService) kiroHTTPUpstream() HTTPUpstream {
+	if s == nil || s.usageFetcher == nil {
+		return nil
+	}
+	type httpUpstreamProvider interface {
+		HTTPUpstream() HTTPUpstream
+	}
+	if provider, ok := s.usageFetcher.(httpUpstreamProvider); ok {
+		return provider.HTTPUpstream()
+	}
+	return nil
 }
 
 func (s *AccountUsageService) persistRefreshedKiroCredentials(ctx context.Context, account *Account, newCreds map[string]any) error {

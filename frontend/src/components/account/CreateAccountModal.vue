@@ -171,84 +171,84 @@
       >
         <div class="flex items-center justify-between gap-4">
           <div>
-            <label class="input-label">Auth Method</label>
-            <p class="input-hint">Social 适合常规账号，IDC 需要额外的 AWS/IDC 参数。</p>
+            <label class="input-label">{{ t('admin.accounts.kiro.authMethodLabel') }}</label>
+            <p class="input-hint">{{ t('admin.accounts.kiro.authMethodHint') }}</p>
           </div>
           <select v-model="kiroAuthMethod" class="input w-36">
-            <option value="social">Social</option>
-            <option value="idc">IDC</option>
+            <option value="social">{{ t('admin.accounts.kiro.authMethodSocial') }}</option>
+            <option value="idc">{{ t('admin.accounts.kiro.authMethodIDC') }}</option>
           </select>
         </div>
         <div>
-          <label class="input-label">Refresh Token</label>
+          <label class="input-label">{{ t('admin.accounts.kiro.refreshTokenLabel') }}</label>
           <textarea
             v-model="kiroRefreshToken"
             rows="4"
             class="input font-mono text-sm"
-            placeholder="Paste Kiro refresh token"
+            :placeholder="t('admin.accounts.kiro.refreshTokenPlaceholder')"
           />
         </div>
         <div>
-          <label class="input-label">Access Token</label>
+          <label class="input-label">{{ t('admin.accounts.kiro.accessTokenLabel') }}</label>
           <textarea
             v-model="kiroAccessToken"
             rows="3"
             class="input font-mono text-sm"
-            placeholder="Optional current Kiro access token"
+            :placeholder="t('admin.accounts.kiro.accessTokenPlaceholder')"
           />
-          <p class="input-hint">可选。不填时服务端会在首次调用前尝试用 refresh token 刷新。</p>
+          <p class="input-hint">{{ t('admin.accounts.kiro.accessTokenHintCreate') }}</p>
         </div>
         <div v-if="kiroAuthMethod === 'idc'" class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
-            <label class="input-label">Client ID</label>
-            <input v-model="kiroClientID" type="text" class="input font-mono text-sm" placeholder="Kiro clientId" />
+            <label class="input-label">{{ t('admin.accounts.kiro.clientIdLabel') }}</label>
+            <input v-model="kiroClientID" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.clientIdPlaceholder')" />
           </div>
           <div>
-            <label class="input-label">Client Secret</label>
+            <label class="input-label">{{ t('admin.accounts.kiro.clientSecretLabel') }}</label>
             <input
               v-model="kiroClientSecret"
               type="password"
               class="input font-mono text-sm"
-              placeholder="Kiro clientSecret"
+              :placeholder="t('admin.accounts.kiro.clientSecretPlaceholder')"
             />
           </div>
         </div>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
-            <label class="input-label">Expires At</label>
+            <label class="input-label">{{ t('admin.accounts.kiro.expiresAtLabel') }}</label>
             <input
               v-model="kiroExpiresAtInput"
               type="datetime-local"
               class="input"
             />
-            <p class="input-hint">可选。填写当前 access token 过期时间，避免服务端立即判定为待刷新。</p>
+            <p class="input-hint">{{ t('admin.accounts.kiro.expiresAtHintCreate') }}</p>
           </div>
           <div>
-            <label class="input-label">Region</label>
-            <input v-model="kiroRegion" type="text" class="input font-mono text-sm" placeholder="us-east-1" />
+            <label class="input-label">{{ t('admin.accounts.kiro.regionLabel') }}</label>
+            <input v-model="kiroRegion" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.regionPlaceholder')" />
           </div>
           <div>
-            <label class="input-label">Auth Region</label>
-            <input v-model="kiroAuthRegion" type="text" class="input font-mono text-sm" placeholder="Optional" />
+            <label class="input-label">{{ t('admin.accounts.kiro.authRegionLabel') }}</label>
+            <input v-model="kiroAuthRegion" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.optionalPlaceholder')" />
           </div>
           <div>
-            <label class="input-label">API Region</label>
-            <input v-model="kiroAPIRegion" type="text" class="input font-mono text-sm" placeholder="Optional" />
+            <label class="input-label">{{ t('admin.accounts.kiro.apiRegionLabel') }}</label>
+            <input v-model="kiroAPIRegion" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.optionalPlaceholder')" />
           </div>
           <div>
-            <label class="input-label">Profile ARN</label>
-            <input v-model="kiroProfileARN" type="text" class="input font-mono text-sm" placeholder="Optional" />
+            <label class="input-label">{{ t('admin.accounts.kiro.profileArnLabel') }}</label>
+            <input v-model="kiroProfileARN" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.optionalPlaceholder')" />
           </div>
           <div>
-            <label class="input-label">Machine ID</label>
-            <input v-model="kiroMachineID" type="text" class="input font-mono text-sm" placeholder="Optional" />
+            <label class="input-label">{{ t('admin.accounts.kiro.machineIdLabel') }}</label>
+            <input v-model="kiroMachineID" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.optionalPlaceholder')" />
           </div>
           <div>
-            <label class="input-label">Kiro Version</label>
+            <label class="input-label">{{ t('admin.accounts.kiro.kiroVersionLabel') }}</label>
             <input v-model="kiroVersion" type="text" class="input font-mono text-sm" placeholder="0.10.0" />
           </div>
           <div>
-            <label class="input-label">System Version</label>
+            <label class="input-label">{{ t('admin.accounts.kiro.systemVersionLabel') }}</label>
             <input
               v-model="kiroSystemVersion"
               type="text"
@@ -257,7 +257,7 @@
             />
           </div>
           <div>
-            <label class="input-label">Node Version</label>
+            <label class="input-label">{{ t('admin.accounts.kiro.nodeVersionLabel') }}</label>
             <input v-model="kiroNodeVersion" type="text" class="input font-mono text-sm" placeholder="22.21.1" />
           </div>
         </div>
@@ -4118,14 +4118,14 @@ const handleSubmit = async () => {
       return
     }
     if (!kiroRefreshToken.value.trim()) {
-      appStore.showError('Kiro refresh token is required')
+      appStore.showError(t('admin.accounts.kiro.refreshTokenRequired'))
       return
     }
     if (
       kiroAuthMethod.value === 'idc' &&
       (!kiroClientID.value.trim() || !kiroClientSecret.value.trim())
     ) {
-      appStore.showError('Kiro IDC client credentials are required')
+      appStore.showError(t('admin.accounts.kiro.idcClientRequired'))
       return
     }
 
@@ -4133,7 +4133,7 @@ const handleSubmit = async () => {
       ? new Date(kiroExpiresAtInput.value)
       : null
     if (expiresAt && Number.isNaN(expiresAt.getTime())) {
-      appStore.showError('Kiro expires_at is invalid')
+      appStore.showError(t('admin.accounts.kiro.expiresAtInvalid'))
       return
     }
 
