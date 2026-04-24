@@ -355,8 +355,15 @@ func TestOpenAIGatewayService_OAuthPassthrough_CodexMissingInstructionsRejectedB
 	upstream := &httpUpstreamRecorder{
 		resp: &http.Response{
 			StatusCode: http.StatusOK,
-			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid"}},
-			Body:       io.NopCloser(strings.NewReader(`{"output":[],"usage":{"input_tokens":1,"output_tokens":1}}`)),
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid"}},
+			Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+				`data: {"type":"response.output_text.delta","delta":"h"}`,
+				"",
+				`data: {"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}}}}`,
+				"",
+				"data: [DONE]",
+				"",
+			}, "\n"))),
 		},
 	}
 
@@ -388,6 +395,62 @@ func TestOpenAIGatewayService_OAuthPassthrough_CodexMissingInstructionsRejectedB
 	require.True(t, logSink.ContainsMessage("OpenAI passthrough 本地拦截：Codex 请求缺少有效 instructions"))
 	require.True(t, logSink.ContainsFieldValue("request_user_agent", "codex_cli_rs/0.98.0 (Windows 10.0.19045; x86_64) unknown"))
 	require.True(t, logSink.ContainsFieldValue("reject_reason", "instructions_missing"))
+}
+
+func TestEnsureOpenAIPassthroughInstructions_ChatCompletionsPathInjectsDefaultInstructions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(nil))
+
+	originalBody := []byte(`{"model":"gpt-5.1-codex-max","stream":false,"store":true,"input":[{"type":"text","text":"hi"}]}`)
+	updatedBody, changed, err := ensureOpenAIPassthroughInstructions(c, "gpt-5.1-codex-max", originalBody)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.NotEmpty(t, strings.TrimSpace(gjson.GetBytes(updatedBody, "instructions").String()))
+}
+
+func TestEnsureOpenAIPassthroughInstructions_ChatCompletionsPathInjectsDefaultInstructionsForGenericResponsesModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(nil))
+
+	originalBody := []byte(`{"model":"gpt-5.4","stream":false,"store":true,"input":[{"type":"text","text":"hi"}]}`)
+	updatedBody, changed, err := ensureOpenAIPassthroughInstructions(c, "gpt-5.4", originalBody)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.NotEmpty(t, strings.TrimSpace(gjson.GetBytes(updatedBody, "instructions").String()))
+}
+
+func TestEnsureOpenAIPassthroughInstructions_ResponsesPathDoesNotInjectDefaultInstructions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+
+	originalBody := []byte(`{"model":"gpt-5.1-codex-max","stream":false,"store":true,"input":[{"type":"text","text":"hi"}]}`)
+	updatedBody, changed, err := ensureOpenAIPassthroughInstructions(c, "gpt-5.1-codex-max", originalBody)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.JSONEq(t, string(originalBody), string(updatedBody))
+}
+
+func TestEnsureOpenAIPassthroughInstructions_RawResponsesPathDoesNotInjectDefaultInstructions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/responses", bytes.NewReader(nil))
+
+	originalBody := []byte(`{"model":"gpt-5.1-codex-max","stream":false,"store":true,"input":[{"type":"text","text":"hi"}]}`)
+	updatedBody, changed, err := ensureOpenAIPassthroughInstructions(c, "gpt-5.1-codex-max", originalBody)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.JSONEq(t, string(originalBody), string(updatedBody))
 }
 
 func TestOpenAIGatewayService_OAuthPassthrough_DisabledUsesLegacyTransform(t *testing.T) {

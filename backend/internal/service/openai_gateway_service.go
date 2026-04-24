@@ -2572,7 +2572,12 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 
 	if account != nil && account.Type == AccountTypeOAuth {
 		isCompact := isOpenAIResponsesCompactPath(c)
-		if rejectReason := detectOpenAIPassthroughInstructionsRejectReason(reqModel, body); rejectReason != "" {
+		bodyWithInstructions, _, err := ensureOpenAIPassthroughInstructions(c, reqModel, body)
+		if err != nil {
+			return nil, err
+		}
+		body = bodyWithInstructions
+		if rejectReason := detectOpenAIPassthroughInstructionsRejectReason(c, reqModel, body); rejectReason != "" {
 			rejectMsg := "OpenAI codex passthrough requires a non-empty instructions field"
 			setOpsUpstreamError(c, http.StatusForbidden, rejectMsg, "")
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -5101,9 +5106,39 @@ func normalizeOpenAIPassthroughOAuthBody(body []byte, compact bool) ([]byte, boo
 	return normalized, changed, nil
 }
 
-func detectOpenAIPassthroughInstructionsRejectReason(reqModel string, body []byte) string {
-	model := strings.ToLower(strings.TrimSpace(reqModel))
-	if !strings.Contains(model, "codex") {
+func isOpenAIResponsesInboundPath(c *gin.Context) bool {
+	if c == nil || c.Request == nil || c.Request.URL == nil {
+		return false
+	}
+	path := strings.TrimSpace(c.Request.URL.Path)
+	return strings.Contains(path, "/responses")
+}
+
+func ensureOpenAIPassthroughInstructions(c *gin.Context, reqModel string, body []byte) ([]byte, bool, error) {
+	_ = reqModel
+	if isOpenAIResponsesInboundPath(c) {
+		return body, false, nil
+	}
+
+	instructions := gjson.GetBytes(body, "instructions")
+	if instructions.Exists() && instructions.Type == gjson.String && strings.TrimSpace(instructions.String()) != "" {
+		return body, false, nil
+	}
+
+	defaultInstructions := strings.TrimSpace(openai.DefaultInstructions)
+	if defaultInstructions == "" {
+		defaultInstructions = "You are a helpful coding assistant."
+	}
+	updated, err := sjson.SetBytes(body, "instructions", defaultInstructions)
+	if err != nil {
+		return body, false, fmt.Errorf("inject passthrough instructions: %w", err)
+	}
+	return updated, true, nil
+}
+
+func detectOpenAIPassthroughInstructionsRejectReason(c *gin.Context, reqModel string, body []byte) string {
+	_ = reqModel
+	if !isOpenAIResponsesInboundPath(c) {
 		return ""
 	}
 

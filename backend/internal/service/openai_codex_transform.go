@@ -616,7 +616,13 @@ func isCodexToolCallItemType(typ string) bool {
 	if typ == "" {
 		return false
 	}
-	return strings.HasSuffix(typ, "_call") || strings.HasSuffix(typ, "_call_output")
+	if strings.HasSuffix(typ, "_call") || strings.HasSuffix(typ, "_call_output") {
+		return true
+	}
+	// Built-in Codex/OpenAI tools can emit `tool_*_output` items such as
+	// `tool_search_output`. Keep their call_id normalization aligned with the
+	// corresponding `tool_*_call` items so upstream can match call/output pairs.
+	return strings.HasPrefix(typ, "tool_") && strings.HasSuffix(typ, "_output")
 }
 
 func normalizeCodexTools(reqBody map[string]any) bool {
