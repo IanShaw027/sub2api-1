@@ -18,6 +18,8 @@ export { paymentAPI } from './payment'
 export { userGroupsAPI } from './groups'
 export { totpAPI } from './totp'
 export { default as announcementsAPI } from './announcements'
+export { default as ticketsAPI } from './tickets'
+export { default as adminTicketsAPI } from './adminTickets'
 
 // Admin APIs
 export { adminAPI } from './admin'

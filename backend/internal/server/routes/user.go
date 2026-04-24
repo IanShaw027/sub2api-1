@@ -88,11 +88,25 @@ func RegisterUserRoutes(
 			announcements.POST("/:id/read", h.Announcement.MarkRead)
 		}
 
+		tickets := authenticated.Group("/tickets")
+		{
+			tickets.GET("", h.Ticket.List)
+			tickets.POST("", h.Ticket.Create)
+			tickets.GET("/:id", h.Ticket.GetByID)
+			tickets.PATCH("/:id", h.Ticket.Update)
+			tickets.POST("/:id/submit", h.Ticket.Resubmit)
+			tickets.POST("/:id/withdraw", h.Ticket.Withdraw)
+			tickets.POST("/:id/close", h.Ticket.Close)
+			tickets.GET("/:id/messages", h.Ticket.ListMessages)
+			tickets.POST("/:id/messages", h.Ticket.Reply)
+		}
+
 		// 卡密兑换
 		redeem := authenticated.Group("/redeem")
 		{
 			redeem.POST("", h.Redeem.Redeem)
 			redeem.GET("/history", h.Redeem.GetHistory)
+			redeem.GET("/history-page", h.Redeem.GetHistoryPaginated)
 		}
 
 		// 用户订阅
