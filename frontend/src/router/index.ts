@@ -224,7 +224,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/tickets/create',
     name: 'TicketCreate',
-    component: () => import('@/views/user/TicketCreateView.vue'),
+    component: () => import('@/views/user/TicketsView.vue'),
     meta: {
       requiresAuth: true,
       requiresAdmin: false,

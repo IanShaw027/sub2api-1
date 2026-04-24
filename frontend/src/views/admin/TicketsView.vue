@@ -1,24 +1,34 @@
 <template>
   <AppLayout>
     <div class="space-y-6">
-      <div class="grid gap-4 rounded-2xl border bg-white p-5 dark:border-dark-700 dark:bg-dark-800 md:grid-cols-3">
+      <div class="grid gap-4 rounded-2xl border bg-white p-5 dark:border-dark-700 dark:bg-dark-800 md:grid-cols-5">
         <div>
           <label class="input-label">{{ t('tickets.filters.search') }}</label>
-          <input v-model="filters.search" class="input" @keyup.enter="loadTickets()" />
+          <input v-model="filters.search" class="input" @keyup.enter="applyFilters()" />
+        </div>
+        <div>
+          <label class="input-label">{{ t('tickets.filters.user') }}</label>
+          <input v-model="filters.user" class="input" :placeholder="t('tickets.filters.userPlaceholder')" @keyup.enter="applyFilters()" />
         </div>
         <div>
           <label class="input-label">{{ t('tickets.filters.category') }}</label>
-          <select v-model="filters.category" class="input">
-            <option value="">{{ t('tickets.filters.allCategories') }}</option>
-            <option v-for="option in ticketCategoryOptions" :key="option.value" :value="option.value">{{ t(option.labelKey) }}</option>
-          </select>
+          <Select v-model="filters.category" :options="categoryFilterOptions" :searchable="false" />
         </div>
         <div>
           <label class="input-label">{{ t('tickets.filters.status') }}</label>
-          <select v-model="filters.status" class="input">
-            <option value="">{{ t('tickets.filters.allStatuses') }}</option>
-            <option v-for="option in ticketStatusOptions" :key="option.value" :value="option.value">{{ t(option.labelKey) }}</option>
-          </select>
+          <Select v-model="filters.status" :options="statusFilterOptions" :searchable="false" />
+        </div>
+        <div>
+          <label class="input-label">{{ t('dates.startDate') }}</label>
+          <input v-model="filters.start_date" type="date" class="input" />
+        </div>
+        <div>
+          <label class="input-label">{{ t('dates.endDate') }}</label>
+          <input v-model="filters.end_date" type="date" class="input" />
+        </div>
+        <div class="md:col-span-5 flex justify-end gap-3">
+          <button class="btn btn-secondary" @click="resetFilters">{{ t('common.reset') }}</button>
+          <button class="btn btn-primary" @click="applyFilters">{{ t('common.search') }}</button>
         </div>
       </div>
 
@@ -50,6 +60,15 @@
           </table>
         </div>
       </div>
+
+      <Pagination
+        v-if="pagination.total > 0"
+        :page="pagination.page"
+        :total="pagination.total"
+        :page-size="pagination.page_size"
+        @update:page="handlePageChange"
+        @update:pageSize="handlePageSizeChange"
+      />
     </div>
   </AppLayout>
 </template>
@@ -59,6 +78,8 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import Pagination from '@/components/common/Pagination.vue'
+import Select from '@/components/common/Select.vue'
 import { useAppStore } from '@/stores'
 import adminTicketsAPI from '@/api/adminTickets'
 import { formatRelativeWithDateTime } from '@/utils/format'
@@ -70,10 +91,18 @@ const router = useRouter()
 const appStore = useAppStore()
 const loading = ref(false)
 const items = ref<SupportTicket[]>([])
-const filters = reactive<{ search: string; category: TicketCategory | ''; status: TicketStatus | '' }>({
+const pagination = reactive({
+  page: 1,
+  page_size: 20,
+  total: 0,
+})
+const filters = reactive<{ search: string; user: string; category: TicketCategory | ''; status: TicketStatus | ''; start_date: string; end_date: string }>({
   search: '',
+  user: '',
   category: '',
   status: '',
+  start_date: '',
+  end_date: '',
 })
 
 const headers = computed(() => [
@@ -85,17 +114,58 @@ const headers = computed(() => [
   t('tickets.table.updatedAt'),
   t('tickets.table.actions'),
 ])
+const categoryFilterOptions = computed(() => [
+  { value: '', label: t('tickets.filters.allCategories') },
+  ...ticketCategoryOptions.map((option) => ({ value: option.value, label: t(option.labelKey) })),
+])
+const statusFilterOptions = computed(() => [
+  { value: '', label: t('tickets.filters.allStatuses') },
+  ...ticketStatusOptions.map((option) => ({ value: option.value, label: t(option.labelKey) })),
+])
 
 async function loadTickets() {
   try {
     loading.value = true
-    const data = await adminTicketsAPI.listAdminTickets(filters)
+    const data = await adminTicketsAPI.listAdminTickets({
+      ...filters,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      page: pagination.page,
+      page_size: pagination.page_size,
+    })
     items.value = data.items
+    pagination.total = data.total
   } catch (err: any) {
     appStore.showError(err?.message || t('common.unknownError'))
   } finally {
     loading.value = false
   }
+}
+
+function applyFilters() {
+  pagination.page = 1
+  loadTickets()
+}
+
+function resetFilters() {
+  filters.search = ''
+  filters.user = ''
+  filters.category = ''
+  filters.status = ''
+  filters.start_date = ''
+  filters.end_date = ''
+  pagination.page = 1
+  loadTickets()
+}
+
+function handlePageChange(page: number) {
+  pagination.page = page
+  loadTickets()
+}
+
+function handlePageSizeChange(pageSize: number) {
+  pagination.page_size = pageSize
+  pagination.page = 1
+  loadTickets()
 }
 
 onMounted(loadTickets)

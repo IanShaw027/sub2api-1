@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -11,10 +12,20 @@ import (
 )
 
 type ticketRepoStub struct {
-	ticket *SupportTicket
+	ticket        *SupportTicket
+	createdTicket *SupportTicket
+	replyMessage  *SupportTicketMessage
 }
 
-func (*ticketRepoStub) CreateSubmitted(context.Context, *SupportTicket, *SupportTicketRevision, *SupportTicketMessage) error {
+func (s *ticketRepoStub) CreateSubmitted(_ context.Context, ticket *SupportTicket, _ *SupportTicketRevision, _ *SupportTicketMessage) error {
+	if ticket != nil {
+		stored := *ticket
+		if stored.ID == 0 {
+			stored.ID = 1
+		}
+		s.createdTicket = &stored
+		s.ticket = &stored
+	}
 	return nil
 }
 
@@ -53,7 +64,11 @@ func (*ticketRepoStub) CloseByUser(context.Context, int64, time.Time, *SupportTi
 	return nil
 }
 
-func (*ticketRepoStub) AddReply(context.Context, int64, *SupportTicketMessage, string, bool, bool) error {
+func (s *ticketRepoStub) AddReply(_ context.Context, _ int64, message *SupportTicketMessage, _ string, _ bool, _ bool) error {
+	if message != nil {
+		stored := *message
+		s.replyMessage = &stored
+	}
 	return nil
 }
 
@@ -106,4 +121,88 @@ func TestTicketServiceReplyForAdminRejectsLockedTicket(t *testing.T) {
 	})
 
 	require.ErrorIs(t, err, ErrTicketReplyLocked)
+}
+
+type ticketUserRepoStub struct {
+	announcementUserRepoStub
+	user       *User
+	getByIDErr error
+	avatar     *UserAvatar
+	avatarErr  error
+}
+
+func (s *ticketUserRepoStub) GetByID(_ context.Context, id int64) (*User, error) {
+	if s.getByIDErr != nil {
+		return nil, s.getByIDErr
+	}
+	if s.user != nil {
+		return s.user, nil
+	}
+	return &User{ID: id, Email: "user@example.com", Username: "user"}, nil
+}
+
+func (s *ticketUserRepoStub) GetUserAvatar(_ context.Context, _ int64) (*UserAvatar, error) {
+	if s.avatarErr != nil {
+		return nil, s.avatarErr
+	}
+	return s.avatar, nil
+}
+
+func TestTicketServiceCreateIgnoresAvatarLookupError(t *testing.T) {
+	repo := &ticketRepoStub{}
+	svc := NewTicketService(repo, &ticketUserRepoStub{
+		user:      &User{ID: 1, Email: "user@example.com", Username: "ticket-user"},
+		avatarErr: errors.New("avatar lookup failed"),
+	})
+
+	ticket, err := svc.Create(context.Background(), CreateSupportTicketInput{
+		UserID:      1,
+		Category:    SupportTicketCategoryConsult,
+		Title:       "need help",
+		FormPayload: json.RawMessage(`{"question":"hello"}`),
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, ticket)
+	require.NotNil(t, repo.createdTicket)
+	require.Equal(t, "", repo.createdTicket.UserAvatarURL)
+	require.Equal(t, "", ticket.UserAvatarURL)
+}
+
+func TestTicketServiceReplyForUserIgnoresAvatarLookupError(t *testing.T) {
+	repo := &ticketRepoStub{
+		ticket: &SupportTicket{ID: 1, UserID: 9, Status: SupportTicketStatusSubmitted},
+	}
+	svc := NewTicketService(repo, &ticketUserRepoStub{
+		user:      &User{ID: 9, Email: "user@example.com", Username: "ticket-user"},
+		avatarErr: errors.New("avatar lookup failed"),
+	})
+
+	err := svc.ReplyForUser(context.Background(), 1, CreateSupportTicketMessageInput{
+		UserID:  9,
+		Content: "hello",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, repo.replyMessage)
+	require.Equal(t, "", repo.replyMessage.SenderAvatarSnapshot)
+}
+
+func TestTicketServiceReplyForAdminIgnoresAvatarLookupError(t *testing.T) {
+	repo := &ticketRepoStub{
+		ticket: &SupportTicket{ID: 1, UserID: 9, Status: SupportTicketStatusSubmitted},
+	}
+	svc := NewTicketService(repo, &ticketUserRepoStub{
+		user:      &User{ID: 7, Email: "admin@example.com", Username: "ticket-admin"},
+		avatarErr: errors.New("avatar lookup failed"),
+	})
+
+	err := svc.ReplyForAdmin(context.Background(), 1, CreateSupportTicketMessageInput{
+		UserID:  7,
+		Content: "resolved",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, repo.replyMessage)
+	require.Equal(t, "", repo.replyMessage.SenderAvatarSnapshot)
 }

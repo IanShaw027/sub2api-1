@@ -23,3 +23,10 @@ func TestGenerateTicketNo_FormatAndUniqueness(t *testing.T) {
 		seen[ticketNo] = struct{}{}
 	}
 }
+
+func TestBaseTicketSelect_UsesUserAvatarTable(t *testing.T) {
+	query := baseTicketSelect()
+	require.Contains(t, query, "LEFT JOIN user_avatars ua ON ua.user_id = t.user_id")
+	require.Contains(t, query, "COALESCE(ua.url, '') AS user_avatar_url")
+	require.NotContains(t, query, "u.avatar_url")
+}

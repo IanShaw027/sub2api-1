@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -43,13 +44,14 @@ func (s *TicketService) Create(ctx context.Context, input CreateSupportTicketInp
 	if err != nil {
 		return nil, fmt.Errorf("get ticket user: %w", err)
 	}
+	avatarURL := s.loadTicketUserAvatarURLBestEffort(ctx, input.UserID)
 
 	now := time.Now()
 	ticket := &SupportTicket{
 		UserID:             input.UserID,
 		UserName:           firstNonEmptyTicketString(user.Username, user.Email),
 		UserEmail:          user.Email,
-		UserAvatarURL:      user.AvatarURL,
+		UserAvatarURL:      avatarURL,
 		Category:           category,
 		Title:              title,
 		Status:             SupportTicketStatusSubmitted,
@@ -62,8 +64,8 @@ func (s *TicketService) Create(ctx context.Context, input CreateSupportTicketInp
 		SubmittedAt:        &now,
 	}
 	revision := &SupportTicketRevision{
-		RevisionNo: 1,
-		Title:      title,
+		RevisionNo:  1,
+		Title:       title,
 		FormPayload: payload,
 		SubmittedBy: &input.UserID,
 		SubmittedAt: now,
@@ -260,13 +262,14 @@ func (s *TicketService) ReplyForUser(ctx context.Context, ticketID int64, input 
 	if err != nil {
 		return fmt.Errorf("get reply user: %w", err)
 	}
+	avatarURL := s.loadTicketUserAvatarURLBestEffort(ctx, input.UserID)
 	now := time.Now()
 	senderID := input.UserID
 	return s.ticketRepo.AddReply(ctx, ticketID, &SupportTicketMessage{
 		SenderRole:           SupportTicketSenderRoleUser,
 		SenderUserID:         &senderID,
 		SenderNameSnapshot:   firstNonEmptyTicketString(user.Username, user.Email),
-		SenderAvatarSnapshot: user.AvatarURL,
+		SenderAvatarSnapshot: avatarURL,
 		MessageType:          SupportTicketMessageTypeMessage,
 		Content:              content,
 		CreatedAt:            now,
@@ -289,13 +292,14 @@ func (s *TicketService) ReplyForAdmin(ctx context.Context, ticketID int64, input
 	if err != nil {
 		return fmt.Errorf("get admin user: %w", err)
 	}
+	avatarURL := s.loadTicketUserAvatarURLBestEffort(ctx, input.UserID)
 	now := time.Now()
 	senderID := input.UserID
 	return s.ticketRepo.AddReply(ctx, ticketID, &SupportTicketMessage{
 		SenderRole:           SupportTicketSenderRoleAdmin,
 		SenderUserID:         &senderID,
 		SenderNameSnapshot:   firstNonEmptyTicketString(adminUser.Username, adminUser.Email),
-		SenderAvatarSnapshot: adminUser.AvatarURL,
+		SenderAvatarSnapshot: avatarURL,
 		MessageType:          SupportTicketMessageTypeMessage,
 		Content:              content,
 		CreatedAt:            now,
@@ -376,12 +380,32 @@ func firstNonEmptyTicketString(values ...string) string {
 	return ""
 }
 
+func (s *TicketService) loadTicketUserAvatarURL(ctx context.Context, userID int64) (string, error) {
+	avatar, err := s.userRepo.GetUserAvatar(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	if avatar == nil {
+		return "", nil
+	}
+	return strings.TrimSpace(avatar.URL), nil
+}
+
+func (s *TicketService) loadTicketUserAvatarURLBestEffort(ctx context.Context, userID int64) string {
+	avatarURL, err := s.loadTicketUserAvatarURL(ctx, userID)
+	if err != nil {
+		slog.WarnContext(ctx, "support ticket avatar snapshot lookup failed", "user_id", userID, "error", err)
+		return ""
+	}
+	return avatarURL
+}
+
 func validateSupportTicketPayload(category string, payload json.RawMessage) error {
 	requiredFieldsByCategory := map[string][]string{
 		SupportTicketCategoryConsult:          {"question"},
 		SupportTicketCategoryRefund:           {"order_no", "reason"},
 		SupportTicketCategoryConcurrencyApply: {"current_concurrency", "target_concurrency", "usage_scenario"},
-		SupportTicketCategoryRateApply:        {"current_rate", "target_rate", "usage_scenario"},
+		SupportTicketCategoryRateApply:        {"target_rate", "usage_scenario"},
 		SupportTicketCategoryOther:            {"details"},
 	}
 	requiredFields := requiredFieldsByCategory[category]
@@ -392,6 +416,13 @@ func validateSupportTicketPayload(category string, payload json.RawMessage) erro
 	var form map[string]any
 	if err := json.Unmarshal(payload, &form); err != nil {
 		return ErrTicketPayloadInvalid
+	}
+
+	if category == SupportTicketCategoryRateApply {
+		groupIDs, ok := form["group_ids"].([]any)
+		if !ok || len(groupIDs) == 0 {
+			return ErrTicketPayloadInvalid
+		}
 	}
 
 	for _, field := range requiredFields {

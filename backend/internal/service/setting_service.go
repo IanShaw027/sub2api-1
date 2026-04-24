@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -738,6 +739,133 @@ func safeRawJSONArray(raw string) json.RawMessage {
 		return json.RawMessage(raw)
 	}
 	return json.RawMessage("[]")
+}
+
+type AdminTicketReplyTemplate struct {
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	Content string `json:"content"`
+}
+
+func newAdminTicketReplyTemplateID() (string, error) {
+	var buf [8]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return "", fmt.Errorf("generate template id: %w", err)
+	}
+	return hex.EncodeToString(buf[:]), nil
+}
+
+func normalizeAdminTicketReplyTemplates(templates []AdminTicketReplyTemplate) ([]AdminTicketReplyTemplate, error) {
+	if len(templates) == 0 {
+		return []AdminTicketReplyTemplate{}, nil
+	}
+	if len(templates) > 100 {
+		return nil, infraerrors.BadRequest("INVALID_TICKET_REPLY_TEMPLATES", "too many ticket reply templates")
+	}
+
+	normalized := make([]AdminTicketReplyTemplate, 0, len(templates))
+	seenIDs := make(map[string]struct{}, len(templates))
+	for _, tpl := range templates {
+		title := strings.TrimSpace(tpl.Title)
+		content := strings.TrimSpace(tpl.Content)
+		if title == "" || content == "" {
+			return nil, infraerrors.BadRequest("INVALID_TICKET_REPLY_TEMPLATES", "template title and content are required")
+		}
+		if len([]rune(title)) > 80 {
+			return nil, infraerrors.BadRequest("INVALID_TICKET_REPLY_TEMPLATES", "template title is too long")
+		}
+		if len([]rune(content)) > 4000 {
+			return nil, infraerrors.BadRequest("INVALID_TICKET_REPLY_TEMPLATES", "template content is too long")
+		}
+
+		id := strings.TrimSpace(tpl.ID)
+		if id == "" {
+			var err error
+			id, err = newAdminTicketReplyTemplateID()
+			if err != nil {
+				return nil, err
+			}
+		}
+		if _, ok := seenIDs[id]; ok {
+			return nil, infraerrors.BadRequest("INVALID_TICKET_REPLY_TEMPLATES", "duplicate template id")
+		}
+		seenIDs[id] = struct{}{}
+		normalized = append(normalized, AdminTicketReplyTemplate{
+			ID:      id,
+			Title:   title,
+			Content: content,
+		})
+	}
+	return normalized, nil
+}
+
+func normalizeStoredAdminTicketReplyTemplates(templates []AdminTicketReplyTemplate) []AdminTicketReplyTemplate {
+	if len(templates) == 0 {
+		return []AdminTicketReplyTemplate{}
+	}
+
+	normalized := make([]AdminTicketReplyTemplate, 0, len(templates))
+	seenIDs := make(map[string]struct{}, len(templates))
+	for i, tpl := range templates {
+		id := stableStoredAdminTicketReplyTemplateID(tpl, i, seenIDs)
+		seenIDs[id] = struct{}{}
+		normalized = append(normalized, AdminTicketReplyTemplate{
+			ID:      id,
+			Title:   strings.TrimSpace(tpl.Title),
+			Content: strings.TrimSpace(tpl.Content),
+		})
+	}
+	return normalized
+}
+
+func stableStoredAdminTicketReplyTemplateID(tpl AdminTicketReplyTemplate, index int, seenIDs map[string]struct{}) string {
+	if id := strings.TrimSpace(tpl.ID); id != "" {
+		if _, exists := seenIDs[id]; !exists {
+			return id
+		}
+	}
+
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%d\x00%s\x00%s\x00%s", index, strings.TrimSpace(tpl.ID), strings.TrimSpace(tpl.Title), strings.TrimSpace(tpl.Content))))
+	base := hex.EncodeToString(sum[:8])
+	candidate := base
+	for suffix := 1; ; suffix++ {
+		if _, exists := seenIDs[candidate]; !exists {
+			return candidate
+		}
+		candidate = fmt.Sprintf("%s_%d", base, suffix)
+	}
+}
+
+func (s *SettingService) GetAdminTicketReplyTemplates(ctx context.Context) ([]AdminTicketReplyTemplate, error) {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyAdminTicketReplyTemplates)
+	if err != nil {
+		if errors.Is(err, ErrSettingNotFound) {
+			return []AdminTicketReplyTemplate{}, nil
+		}
+		return nil, err
+	}
+	raw := strings.TrimSpace(value)
+	if raw == "" {
+		return []AdminTicketReplyTemplate{}, nil
+	}
+
+	var templates []AdminTicketReplyTemplate
+	if err := json.Unmarshal([]byte(raw), &templates); err != nil {
+		return nil, infraerrors.InternalServer("INVALID_TICKET_REPLY_TEMPLATES", "stored ticket reply templates are invalid")
+	}
+	return normalizeStoredAdminTicketReplyTemplates(templates), nil
+}
+
+func (s *SettingService) SetAdminTicketReplyTemplates(ctx context.Context, templates []AdminTicketReplyTemplate) error {
+	normalized, err := normalizeAdminTicketReplyTemplates(templates)
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(normalized)
+	if err != nil {
+		return fmt.Errorf("marshal ticket reply templates: %w", err)
+	}
+	return s.settingRepo.Set(ctx, SettingKeyAdminTicketReplyTemplates, string(data))
 }
 
 // GetFrameSrcOrigins returns deduplicated http(s) origins from home_content URL,

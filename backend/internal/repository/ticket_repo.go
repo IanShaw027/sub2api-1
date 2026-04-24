@@ -273,11 +273,12 @@ func insertTicketMessage(ctx context.Context, tx *sql.Tx, ticketID int64, messag
 func baseTicketSelect() string {
 	return `
 		SELECT
-			t.id, t.ticket_no, t.user_id, COALESCE(NULLIF(u.username, ''), u.email) AS user_name, u.email, COALESCE(u.avatar_url, '') AS user_avatar_url,
+			t.id, t.ticket_no, t.user_id, COALESCE(NULLIF(u.username, ''), u.email) AS user_name, u.email, COALESCE(ua.url, '') AS user_avatar_url,
 			t.category, t.title, t.status, t.current_form_payload, t.current_revision_no, t.latest_message_at, t.last_reply_role,
 			t.unread_by_user, t.unread_by_admin, t.submitted_at, t.closed_at, t.withdrawn_at, t.created_at, t.updated_at
 		FROM support_tickets t
 		LEFT JOIN users u ON u.id = t.user_id
+		LEFT JOIN user_avatars ua ON ua.user_id = t.user_id
 	`
 }
 
@@ -294,6 +295,19 @@ func appendTicketFilters(where []string, args []any, filters service.SupportTick
 		args = append(args, "%"+search+"%")
 		p := fmt.Sprint(len(args))
 		where = append(where, `(t.title ILIKE $`+p+` OR t.ticket_no ILIKE $`+p+` OR COALESCE(u.username, '') ILIKE $`+p+` OR COALESCE(u.email, '') ILIKE $`+p+`)`)
+	}
+	if userQuery := strings.TrimSpace(filters.UserQuery); userQuery != "" {
+		args = append(args, "%"+userQuery+"%")
+		p := fmt.Sprint(len(args))
+		where = append(where, `(COALESCE(u.username, '') ILIKE $`+p+` OR COALESCE(u.email, '') ILIKE $`+p+`)`)
+	}
+	if filters.StartTime != nil {
+		args = append(args, *filters.StartTime)
+		where = append(where, `t.created_at >= $`+fmt.Sprint(len(args)))
+	}
+	if filters.EndTime != nil {
+		args = append(args, *filters.EndTime)
+		where = append(where, `t.created_at < $`+fmt.Sprint(len(args)))
 	}
 	return where, args
 }

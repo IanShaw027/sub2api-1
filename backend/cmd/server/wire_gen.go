@@ -206,7 +206,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	systemOperationLockService := service.ProvideSystemOperationLockService(idempotencyRepository, configConfig)
 	systemHandler := handler.ProvideSystemHandler(updateService, systemOperationLockService)
 	adminSubscriptionHandler := admin.NewSubscriptionHandler(subscriptionService)
-	adminTicketHandler := admin.NewTicketHandler(ticketService)
+	adminTicketHandler := admin.NewTicketHandler(ticketService, settingService)
 	usageCleanupRepository := repository.NewUsageCleanupRepository(client, db)
 	usageCleanupService := service.ProvideUsageCleanupService(usageCleanupRepository, timingWheelService, dashboardAggregationService, configConfig)
 	adminUsageHandler := admin.NewUsageHandler(usageService, apiKeyService, adminService, usageCleanupService)

@@ -43,13 +43,21 @@ const requiredFieldsByCategory: Record<TicketCategory, string[]> = {
   consult: ['question'],
   refund: ['order_no', 'reason'],
   concurrency_apply: ['current_concurrency', 'target_concurrency', 'usage_scenario'],
-  rate_apply: ['current_rate', 'target_rate', 'usage_scenario'],
+  rate_apply: ['target_rate', 'usage_scenario'],
   other: ['details'],
 }
 
 export function validateTicketPayload(category: TicketCategory, title: string, payload: Record<string, unknown>) {
   if (!title.trim()) {
     return 'tickets.validation.titleRequired'
+  }
+  if (category === 'rate_apply') {
+    const groupIDs = Array.isArray(payload?.group_ids)
+      ? payload.group_ids.map((item) => Number(item)).filter((item) => Number.isFinite(item) && item > 0)
+      : []
+    if (groupIDs.length === 0) {
+      return 'tickets.validation.formIncomplete'
+    }
   }
   const requiredFields = requiredFieldsByCategory[category] || []
   for (const field of requiredFields) {

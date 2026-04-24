@@ -1,35 +1,50 @@
 <template>
-  <div class="space-y-4 rounded-2xl border bg-white p-5 dark:border-dark-700 dark:bg-dark-800">
-    <div class="grid gap-4 md:grid-cols-2">
-      <div>
-        <label class="input-label">{{ t('tickets.fields.category') }}</label>
-        <select v-model="localCategory" class="input" :disabled="disableCategory">
-          <option v-for="option in ticketCategoryOptions" :key="option.value" :value="option.value">
-            {{ t(option.labelKey) }}
-          </option>
-        </select>
-      </div>
-      <div>
-        <label class="input-label">{{ t('tickets.fields.title') }}</label>
-        <input v-model="localTitle" class="input" />
+  <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border bg-white dark:border-dark-700 dark:bg-dark-800">
+    <div class="border-b border-gray-100 px-5 py-5 dark:border-dark-700">
+      <div class="grid gap-4 md:grid-cols-2">
+        <div>
+          <label class="input-label">{{ t('tickets.fields.category') }}</label>
+          <Select
+            v-model="localCategory"
+            :options="categoryOptions"
+            :searchable="false"
+            :disabled="disableCategory"
+          />
+        </div>
+        <div>
+          <label class="input-label">{{ t('tickets.fields.title') }}</label>
+          <input v-model="localTitle" class="input" />
+        </div>
       </div>
     </div>
 
-    <TicketCategoryForm :category="localCategory" :model-value="localPayload" @update:model-value="localPayload = $event" />
+    <div class="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+      <TicketCategoryForm
+        :category="localCategory"
+        :model-value="localPayload"
+        :user-concurrency="userConcurrency"
+        :available-groups="availableGroups"
+        :user-group-rates="userGroupRates"
+        @update:model-value="localPayload = $event"
+      />
+    </div>
 
-    <div class="flex justify-end gap-3">
-      <button v-if="showCancel" class="btn btn-secondary" @click="$emit('cancel')">{{ t('common.cancel') }}</button>
-      <button class="btn btn-primary" :disabled="submitting" @click="submit">
-        {{ submitting ? t('common.submitting') : submitLabel }}
-      </button>
+    <div class="border-t border-gray-100 px-5 py-4 dark:border-dark-700">
+      <div class="flex justify-end gap-3">
+        <button v-if="showCancel" class="btn btn-secondary" @click="$emit('cancel')">{{ t('common.cancel') }}</button>
+        <button class="btn btn-primary" :disabled="submitting" @click="submit">
+          {{ submitting ? t('common.submitting') : submitLabel }}
+        </button>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { TicketCategory } from '@/types'
+import type { Group, TicketCategory } from '@/types'
+import Select from '@/components/common/Select.vue'
 import { ticketCategoryOptions } from '@/utils/tickets'
 import TicketCategoryForm from './TicketCategoryForm.vue'
 
@@ -41,10 +56,16 @@ const props = withDefaults(defineProps<{
   submitting?: boolean
   submitLabel: string
   showCancel?: boolean
+  userConcurrency?: number | null
+  availableGroups?: Group[]
+  userGroupRates?: Record<number, number>
 }>(), {
   disableCategory: false,
   submitting: false,
   showCancel: false,
+  userConcurrency: null,
+  availableGroups: () => [],
+  userGroupRates: () => ({}),
 })
 
 const emit = defineEmits<{
@@ -56,16 +77,52 @@ const { t } = useI18n()
 const localCategory = ref<TicketCategory>(props.category)
 const localTitle = ref(props.title)
 const localPayload = ref<Record<string, unknown>>({ ...props.payload })
+const categoryOptions = computed(() =>
+  ticketCategoryOptions.map((option) => ({
+    value: option.value,
+    label: t(option.labelKey),
+  })),
+)
 
 watch(() => props.category, (value) => { localCategory.value = value })
 watch(() => props.title, (value) => { localTitle.value = value })
-watch(() => props.payload, (value) => { localPayload.value = { ...value } }, { deep: true })
+watch(() => props.payload, (value) => {
+  localPayload.value = { ...value }
+}, { deep: true })
 
 function submit() {
+  const nextPayload: Record<string, unknown> = { ...localPayload.value }
+
+  if (localCategory.value === 'rate_apply') {
+    const visibleGroupIDs = new Set(
+      props.availableGroups
+        .filter((group) => group.subscription_type === 'standard')
+        .map((group) => group.id),
+    )
+    const groupIDs = Array.isArray(nextPayload.group_ids)
+      ? Array.from(new Set(
+        nextPayload.group_ids
+          .map((item) => Number(item))
+          .filter((item) => Number.isFinite(item) && item > 0 && visibleGroupIDs.has(item)),
+      ))
+      : []
+
+    nextPayload.group_ids = groupIDs
+    nextPayload.current_group_rates = props.availableGroups
+      .filter((group) => group.subscription_type === 'standard' && groupIDs.includes(group.id))
+      .map((group) => ({
+        group_id: group.id,
+        group_name: group.name,
+        base_rate: group.rate_multiplier,
+        special_rate: props.userGroupRates[group.id] ?? null,
+        effective_rate: props.userGroupRates[group.id] ?? group.rate_multiplier,
+      }))
+  }
+
   emit('submit', {
     category: localCategory.value,
     title: localTitle.value.trim(),
-    form_payload: localPayload.value,
+    form_payload: nextPayload,
   })
 }
 </script>

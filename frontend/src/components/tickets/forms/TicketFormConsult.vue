@@ -9,15 +9,6 @@
         @input="updateField('question', ($event.target as HTMLTextAreaElement).value)"
       />
     </div>
-    <div>
-      <label class="input-label">{{ t('tickets.fields.relatedResource') }}</label>
-      <input
-        :value="stringValue('related_resource')"
-        :readonly="readonly"
-        class="input"
-        @input="updateField('related_resource', ($event.target as HTMLInputElement).value)"
-      />
-    </div>
   </div>
 </template>
 

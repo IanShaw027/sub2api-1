@@ -3,23 +3,9 @@
     <div v-if="loading" class="rounded-2xl border bg-white p-10 text-center text-sm text-gray-500 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-400">
       {{ t('common.loading') }}
     </div>
-    <div v-else-if="ticket" class="grid gap-6 xl:grid-cols-[1.35fr_0.95fr]">
-      <TicketConversationPane
-        :title="t('tickets.detailConversationTitle')"
-        :subtitle="ticket.ticket_no"
-        :messages="messages"
-        :empty-text="t('tickets.emptyConversation')"
-        :show-composer="canReply"
-        :sending="sendingReply"
-        :composer-placeholder="t('tickets.replyPlaceholder')"
-        :submit-text="t('tickets.reply')"
-        :sending-text="t('common.submitting')"
-        @reply="reply"
-      />
-
-      <div class="space-y-4">
+    <div v-else-if="ticket" class="grid h-[calc(100vh-10rem)] min-h-[calc(100vh-10rem)] min-w-0 gap-6 overflow-hidden xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.95fr)]">
+      <div v-if="editing" class="min-h-0 xl:col-span-2">
         <TicketEditorCard
-          v-if="editing"
           :category="ticket.category"
           :title="ticket.title"
           :payload="ticket.current_form_payload || {}"
@@ -27,20 +13,43 @@
           :submit-label="t('tickets.resubmit')"
           :submitting="submittingEdit"
           :show-cancel="true"
+          :user-concurrency="authStore.user?.concurrency ?? null"
+          :available-groups="rateEligibleGroups"
+          :user-group-rates="userGroupRates"
           @submit="saveAndSubmit"
           @cancel="editing = false"
         />
-
-        <TicketDetailPane v-else :ticket="ticket">
-          <template #actions>
-            <div class="flex flex-wrap gap-3">
-              <button v-if="canWithdraw" class="btn btn-secondary" :disabled="actionLoading" @click="withdrawAndEdit">{{ t('tickets.actions.withdrawEdit') }}</button>
-              <button v-if="ticket.status === 'withdrawn'" class="btn btn-secondary" @click="editing = true">{{ t('tickets.actions.edit') }}</button>
-              <button class="btn btn-secondary" :disabled="ticket.status === 'closed' || actionLoading" @click="closeCurrentTicket">{{ t('tickets.actions.close') }}</button>
-            </div>
-          </template>
-        </TicketDetailPane>
       </div>
+
+      <template v-else>
+        <div class="min-h-0">
+          <TicketConversationPane
+            :title="t('tickets.detailConversationTitle')"
+            :subtitle="ticket.ticket_no"
+            :messages="messages"
+            :empty-text="t('tickets.emptyConversation')"
+            :show-composer="canReply"
+            :sending="sendingReply"
+            :clear-composer-key="clearComposerKey"
+            :composer-placeholder="t('tickets.replyPlaceholder')"
+            :submit-text="t('tickets.reply')"
+            :sending-text="t('common.submitting')"
+            @reply="reply"
+          />
+        </div>
+
+        <div class="min-h-0 h-full">
+          <TicketDetailPane :ticket="ticket">
+            <template #actions>
+              <div class="flex flex-wrap gap-3">
+                <button v-if="canWithdraw" class="btn btn-secondary" :disabled="actionLoading" @click="withdrawAndEdit">{{ t('tickets.actions.withdrawEdit') }}</button>
+                <button v-if="ticket.status === 'withdrawn'" class="btn btn-secondary" @click="editing = true">{{ t('tickets.actions.edit') }}</button>
+                <button v-if="ticket.status !== 'closed'" class="btn btn-secondary" :disabled="actionLoading" @click="closeCurrentTicket">{{ t('tickets.actions.close') }}</button>
+              </div>
+            </template>
+          </TicketDetailPane>
+        </div>
+      </template>
     </div>
   </AppLayout>
 </template>
@@ -50,17 +59,19 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import { useAppStore } from '@/stores'
+import { useAppStore, useAuthStore } from '@/stores'
 import ticketsAPI from '@/api/tickets'
+import userGroupsAPI from '@/api/groups'
 import TicketConversationPane from '@/components/tickets/TicketConversationPane.vue'
 import TicketDetailPane from '@/components/tickets/TicketDetailPane.vue'
 import TicketEditorCard from '@/components/tickets/TicketEditorCard.vue'
 import { validateTicketPayload } from '@/utils/tickets'
-import type { SupportTicket, SupportTicketMessage, TicketCategory } from '@/types'
+import type { Group, SupportTicket, SupportTicketMessage, TicketCategory } from '@/types'
 
 const { t } = useI18n()
 const route = useRoute()
 const appStore = useAppStore()
+const authStore = useAuthStore()
 
 const loading = ref(false)
 const actionLoading = ref(false)
@@ -68,11 +79,15 @@ const sendingReply = ref(false)
 const submittingEdit = ref(false)
 const ticket = ref<SupportTicket | null>(null)
 const messages = ref<SupportTicketMessage[]>([])
+const availableGroups = ref<Group[]>([])
+const userGroupRates = ref<Record<number, number>>({})
+const clearComposerKey = ref(0)
 const editing = ref(route.query.edit === '1')
 
 const ticketID = computed(() => Number(route.params.id))
 const canWithdraw = computed(() => ['submitted', 'processing', 'waiting_admin'].includes(ticket.value?.status || ''))
 const canReply = computed(() => !['resolved', 'closed'].includes(ticket.value?.status || ''))
+const rateEligibleGroups = computed(() => availableGroups.value.filter((group) => group.subscription_type === 'standard'))
 
 async function loadDetail() {
   try {
@@ -91,11 +106,49 @@ async function loadDetail() {
   }
 }
 
+async function loadTicketContext() {
+  try {
+    const [groups, rates] = await Promise.all([
+      userGroupsAPI.getAvailable(),
+      userGroupsAPI.getUserGroupRates(),
+    ])
+    availableGroups.value = groups
+    userGroupRates.value = rates
+  } catch (error) {
+    console.error('Failed to load ticket context:', error)
+  }
+}
+
 async function reply(content: string) {
   try {
     sendingReply.value = true
     await ticketsAPI.replyTicket(ticketID.value, content)
-    await loadDetail()
+    const now = new Date().toISOString()
+    messages.value = [
+      ...messages.value,
+      {
+        id: Date.now() * -1,
+        ticket_id: ticketID.value,
+        sender_role: 'user',
+        sender_user_id: authStore.user?.id ?? null,
+        sender_name_snapshot: authStore.user?.username || authStore.user?.email || '用户',
+        sender_avatar_snapshot: authStore.user?.avatar_url || '',
+        message_type: 'message',
+        content,
+        created_at: now,
+      },
+    ]
+    clearComposerKey.value += 1
+    if (ticket.value) {
+      ticket.value = {
+        ...ticket.value,
+        latest_message_at: now,
+        last_reply_role: 'user',
+        unread_by_user: false,
+        unread_by_admin: true,
+        updated_at: now,
+      }
+    }
   } catch (err: any) {
     appStore.showError(err?.message || t('common.unknownError'))
   } finally {
@@ -150,5 +203,7 @@ async function closeCurrentTicket() {
   }
 }
 
-onMounted(loadDetail)
+onMounted(async () => {
+  await Promise.all([loadDetail(), loadTicketContext()])
+})
 </script>

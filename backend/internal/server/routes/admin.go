@@ -306,6 +306,8 @@ func registerTicketRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	tickets := admin.Group("/tickets")
 	{
 		tickets.GET("", h.Admin.Ticket.List)
+		tickets.GET("/reply-templates", h.Admin.Ticket.ListReplyTemplates)
+		tickets.PUT("/reply-templates", h.Admin.Ticket.ReplaceReplyTemplates)
 		tickets.GET("/:id", h.Admin.Ticket.GetByID)
 		tickets.GET("/:id/messages", h.Admin.Ticket.ListMessages)
 		tickets.POST("/:id/messages", h.Admin.Ticket.Reply)

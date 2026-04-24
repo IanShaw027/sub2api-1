@@ -1,10 +1,18 @@
 <template>
-  <component :is="currentComponent" :model-value="modelValue" :readonly="readonly" @update:model-value="emit('update:modelValue', $event)" />
+  <component
+    :is="currentComponent"
+    :model-value="modelValue"
+    :readonly="readonly"
+    :user-concurrency="userConcurrency"
+    :available-groups="availableGroups"
+    :user-group-rates="userGroupRates"
+    @update:model-value="emit('update:modelValue', $event)"
+  />
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { TicketCategory } from '@/types'
+import type { Group, TicketCategory } from '@/types'
 import TicketFormConsult from './forms/TicketFormConsult.vue'
 import TicketFormRefund from './forms/TicketFormRefund.vue'
 import TicketFormConcurrency from './forms/TicketFormConcurrency.vue'
@@ -15,6 +23,9 @@ const props = defineProps<{
   category: TicketCategory
   modelValue: Record<string, unknown>
   readonly?: boolean
+  userConcurrency?: number | null
+  availableGroups?: Group[]
+  userGroupRates?: Record<number, number>
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: Record<string, unknown>] }>()
 

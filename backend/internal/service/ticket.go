@@ -19,13 +19,13 @@ const (
 )
 
 const (
-	SupportTicketStatusSubmitted   = "submitted"
-	SupportTicketStatusProcessing  = "processing"
-	SupportTicketStatusWaitingUser = "waiting_user"
+	SupportTicketStatusSubmitted    = "submitted"
+	SupportTicketStatusProcessing   = "processing"
+	SupportTicketStatusWaitingUser  = "waiting_user"
 	SupportTicketStatusWaitingAdmin = "waiting_admin"
-	SupportTicketStatusResolved    = "resolved"
-	SupportTicketStatusClosed      = "closed"
-	SupportTicketStatusWithdrawn   = "withdrawn"
+	SupportTicketStatusResolved     = "resolved"
+	SupportTicketStatusClosed       = "closed"
+	SupportTicketStatusWithdrawn    = "withdrawn"
 )
 
 const (
@@ -40,42 +40,42 @@ const (
 )
 
 var (
-	ErrTicketNotFound         = infraerrors.NotFound("TICKET_NOT_FOUND", "ticket not found")
-	ErrTicketInvalidCategory  = infraerrors.BadRequest("TICKET_CATEGORY_INVALID", "ticket category is invalid")
-	ErrTicketInvalidTitle     = infraerrors.BadRequest("TICKET_TITLE_INVALID", "ticket title is invalid")
-	ErrTicketPayloadRequired  = infraerrors.BadRequest("TICKET_PAYLOAD_REQUIRED", "ticket form payload is required")
-	ErrTicketPayloadInvalid   = infraerrors.BadRequest("TICKET_PAYLOAD_INVALID", "ticket form payload is invalid")
-	ErrTicketMessageRequired  = infraerrors.BadRequest("TICKET_MESSAGE_REQUIRED", "ticket message is required")
-	ErrTicketNotEditable      = infraerrors.BadRequest("TICKET_NOT_EDITABLE", "ticket is not editable in current status")
-	ErrTicketCannotWithdraw   = infraerrors.BadRequest("TICKET_WITHDRAW_INVALID", "ticket cannot be withdrawn in current status")
-	ErrTicketCannotClose      = infraerrors.BadRequest("TICKET_CLOSE_INVALID", "ticket cannot be closed in current status")
-	ErrTicketInvalidStatus    = infraerrors.BadRequest("TICKET_STATUS_INVALID", "ticket status is invalid")
-	ErrTicketReplyLocked      = infraerrors.BadRequest("TICKET_REPLY_LOCKED", "ticket cannot receive replies in current status")
-	ErrTicketForbidden        = infraerrors.Forbidden("TICKET_FORBIDDEN", "ticket is not accessible")
-	ErrTicketStatusLocked     = infraerrors.BadRequest("TICKET_STATUS_LOCKED", "ticket status can no longer be changed")
+	ErrTicketNotFound        = infraerrors.NotFound("TICKET_NOT_FOUND", "ticket not found")
+	ErrTicketInvalidCategory = infraerrors.BadRequest("TICKET_CATEGORY_INVALID", "ticket category is invalid")
+	ErrTicketInvalidTitle    = infraerrors.BadRequest("TICKET_TITLE_INVALID", "ticket title is invalid")
+	ErrTicketPayloadRequired = infraerrors.BadRequest("TICKET_PAYLOAD_REQUIRED", "ticket form payload is required")
+	ErrTicketPayloadInvalid  = infraerrors.BadRequest("TICKET_PAYLOAD_INVALID", "ticket form payload is invalid")
+	ErrTicketMessageRequired = infraerrors.BadRequest("TICKET_MESSAGE_REQUIRED", "ticket message is required")
+	ErrTicketNotEditable     = infraerrors.BadRequest("TICKET_NOT_EDITABLE", "ticket is not editable in current status")
+	ErrTicketCannotWithdraw  = infraerrors.BadRequest("TICKET_WITHDRAW_INVALID", "ticket cannot be withdrawn in current status")
+	ErrTicketCannotClose     = infraerrors.BadRequest("TICKET_CLOSE_INVALID", "ticket cannot be closed in current status")
+	ErrTicketInvalidStatus   = infraerrors.BadRequest("TICKET_STATUS_INVALID", "ticket status is invalid")
+	ErrTicketReplyLocked     = infraerrors.BadRequest("TICKET_REPLY_LOCKED", "ticket cannot receive replies in current status")
+	ErrTicketForbidden       = infraerrors.Forbidden("TICKET_FORBIDDEN", "ticket is not accessible")
+	ErrTicketStatusLocked    = infraerrors.BadRequest("TICKET_STATUS_LOCKED", "ticket status can no longer be changed")
 )
 
 type SupportTicket struct {
-	ID                int64
-	TicketNo          string
-	UserID            int64
-	UserName          string
-	UserEmail         string
-	UserAvatarURL     string
-	Category          string
-	Title             string
-	Status            string
+	ID                 int64
+	TicketNo           string
+	UserID             int64
+	UserName           string
+	UserEmail          string
+	UserAvatarURL      string
+	Category           string
+	Title              string
+	Status             string
 	CurrentFormPayload json.RawMessage
-	CurrentRevisionNo int
-	LatestMessageAt   time.Time
-	LastReplyRole     string
-	UnreadByUser      bool
-	UnreadByAdmin     bool
-	SubmittedAt       *time.Time
-	ClosedAt          *time.Time
-	WithdrawnAt       *time.Time
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	CurrentRevisionNo  int
+	LatestMessageAt    time.Time
+	LastReplyRole      string
+	UnreadByUser       bool
+	UnreadByAdmin      bool
+	SubmittedAt        *time.Time
+	ClosedAt           *time.Time
+	WithdrawnAt        *time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 type SupportTicketMessage struct {
@@ -102,9 +102,12 @@ type SupportTicketRevision struct {
 }
 
 type SupportTicketListFilters struct {
-	Status   string
-	Category string
-	Search   string
+	Status    string
+	Category  string
+	Search    string
+	UserQuery string
+	StartTime *time.Time
+	EndTime   *time.Time
 }
 
 type CreateSupportTicketInput struct {

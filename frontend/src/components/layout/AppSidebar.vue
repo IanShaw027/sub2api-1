@@ -424,6 +424,21 @@ const BellIcon = {
     )
 }
 
+const TicketListIcon = {
+  render: () =>
+    h(
+      'svg',
+      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
+      [
+        h('path', {
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'M9 5.25H7.5A2.25 2.25 0 005.25 7.5v10.5a2.25 2.25 0 002.25 2.25h9A2.25 2.25 0 0018.75 18V7.5a2.25 2.25 0 00-2.25-2.25H15m-6 0A2.25 2.25 0 0011.25 7.5h1.5A2.25 2.25 0 0015 5.25m-6 0A2.25 2.25 0 0111.25 3h1.5A2.25 2.25 0 0115 5.25m-6 4.5h6.75m-6.75 3h6.75m-6.75 3h3.75'
+        })
+      ]
+    )
+}
+
 const TicketIcon = {
   render: () =>
     h(
@@ -570,7 +585,7 @@ const userNavItems = computed((): NavItem[] => {
     { path: '/dashboard', label: t('nav.dashboard'), icon: DashboardIcon },
     { path: '/keys', label: t('nav.apiKeys'), icon: KeyIcon },
     { path: '/usage', label: t('nav.usage'), icon: ChartIcon, hideInSimpleMode: true },
-    { path: '/tickets', label: t('nav.tickets'), icon: TicketIcon, hideInSimpleMode: true },
+    { path: '/tickets', label: t('nav.tickets'), icon: TicketListIcon, hideInSimpleMode: true },
     { path: '/subscriptions', label: t('nav.mySubscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
     ...(appStore.cachedPublicSettings?.payment_enabled
       ? [
@@ -609,7 +624,7 @@ const personalNavItems = computed((): NavItem[] => {
   const items: NavItem[] = [
     { path: '/keys', label: t('nav.apiKeys'), icon: KeyIcon },
     { path: '/usage', label: t('nav.usage'), icon: ChartIcon, hideInSimpleMode: true },
-    { path: '/tickets', label: t('nav.tickets'), icon: TicketIcon, hideInSimpleMode: true },
+    { path: '/tickets', label: t('nav.tickets'), icon: TicketListIcon, hideInSimpleMode: true },
     { path: '/subscriptions', label: t('nav.mySubscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
     ...(appStore.cachedPublicSettings?.payment_enabled
       ? [
@@ -670,7 +685,7 @@ const adminNavItems = computed((): NavItem[] => {
     { path: '/admin/subscriptions', label: t('nav.subscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
     { path: '/admin/accounts', label: t('nav.accounts'), icon: GlobeIcon },
     { path: '/admin/announcements', label: t('nav.announcements'), icon: BellIcon },
-    { path: '/admin/tickets', label: t('nav.tickets'), icon: TicketIcon },
+    { path: '/admin/tickets', label: t('nav.tickets'), icon: TicketListIcon },
     { path: '/admin/proxies', label: t('nav.proxies'), icon: ServerIcon },
     { path: '/admin/redeem', label: t('nav.redeemCodes'), icon: TicketIcon, hideInSimpleMode: true },
     { path: '/admin/promo-codes', label: t('nav.promoCodes'), icon: GiftIcon, hideInSimpleMode: true },

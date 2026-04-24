@@ -3,7 +3,7 @@
     <div class="grid gap-4 md:grid-cols-2">
       <div>
         <label class="input-label">{{ t('tickets.fields.currentConcurrency') }}</label>
-        <input :value="stringValue('current_concurrency')" :readonly="readonly" class="input" @input="updateField('current_concurrency', ($event.target as HTMLInputElement).value)" />
+        <input :value="stringValue('current_concurrency')" readonly class="input" />
       </div>
       <div>
         <label class="input-label">{{ t('tickets.fields.targetConcurrency') }}</label>
@@ -22,9 +22,10 @@
 </template>
 
 <script setup lang="ts">
+import { watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-const props = defineProps<{ modelValue: Record<string, unknown>; readonly?: boolean }>()
+const props = defineProps<{ modelValue: Record<string, unknown>; readonly?: boolean; userConcurrency?: number | null }>()
 const emit = defineEmits<{ 'update:modelValue': [value: Record<string, unknown>] }>()
 const { t } = useI18n()
 
@@ -35,4 +36,18 @@ function stringValue(key: string) {
 function updateField(key: string, value: string) {
   emit('update:modelValue', { ...props.modelValue, [key]: value })
 }
+
+watch(
+  () => [props.readonly, props.userConcurrency, props.modelValue?.current_concurrency] as const,
+  ([readonly, userConcurrency, currentValue]) => {
+    if (readonly || userConcurrency == null || String(currentValue ?? '').trim()) {
+      return
+    }
+    emit('update:modelValue', {
+      ...props.modelValue,
+      current_concurrency: String(userConcurrency),
+    })
+  },
+  { immediate: true },
+)
 </script>
