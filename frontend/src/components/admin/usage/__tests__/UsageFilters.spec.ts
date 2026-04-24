@@ -1,0 +1,79 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
+
+import UsageFilters from '../UsageFilters.vue'
+
+const { listGroupsMock, getModelStatsMock } = vi.hoisted(() => ({
+  listGroupsMock: vi.fn(),
+  getModelStatsMock: vi.fn(),
+}))
+
+vi.mock('vue-i18n', async () => {
+  const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
+  return {
+    ...actual,
+    useI18n: () => ({
+      t: (key: string) => key,
+    }),
+  }
+})
+
+vi.mock('@/api/admin', () => ({
+  adminAPI: {
+    usage: {
+      searchUsers: vi.fn(),
+      searchApiKeys: vi.fn(),
+    },
+    accounts: {
+      list: vi.fn(),
+    },
+    groups: {
+      list: listGroupsMock,
+    },
+    dashboard: {
+      getModelStats: getModelStatsMock,
+    },
+  },
+}))
+
+const SelectStub = {
+  props: ['modelValue', 'options', 'searchable'],
+  emits: ['update:modelValue', 'change'],
+  template: '<div />',
+}
+
+describe('admin UsageFilters', () => {
+  beforeEach(() => {
+    listGroupsMock.mockResolvedValue({ items: [] })
+    getModelStatsMock.mockResolvedValue({ models: [] })
+  })
+
+  it('emits change when exclude admin is toggled', async () => {
+    const modelValue = {
+      exclude_admin: false,
+      start_date: '2026-04-01',
+      end_date: '2026-04-24',
+    }
+
+    const wrapper = mount(UsageFilters, {
+      props: {
+        modelValue,
+        exporting: false,
+        startDate: '2026-04-01',
+        endDate: '2026-04-24',
+      },
+      global: {
+        stubs: {
+          Select: SelectStub,
+        },
+      },
+    })
+
+    await nextTick()
+    await wrapper.get('[role="switch"]').trigger('click')
+
+    expect(modelValue.exclude_admin).toBe(true)
+    expect(wrapper.emitted('change')).toHaveLength(1)
+  })
+})

@@ -284,7 +284,7 @@ func TestUsageLogRepositoryGetUsageTrendWithFiltersRequestTypePriority(t *testin
 		WithArgs(start, end, requestType).
 		WillReturnRows(sqlmock.NewRows([]string{"date", "requests", "input_tokens", "output_tokens", "cache_creation_tokens", "cache_read_tokens", "total_tokens", "cost", "actual_cost"}))
 
-	trend, err := repo.GetUsageTrendWithFilters(context.Background(), start, end, "day", 0, 0, 0, 0, "", &requestType, &stream, nil)
+	trend, err := repo.GetUsageTrendWithFilters(context.Background(), start, end, "day", 0, 0, 0, 0, "", &requestType, &stream, nil, "")
 	require.NoError(t, err)
 	require.Empty(t, trend)
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -303,7 +303,7 @@ func TestUsageLogRepositoryGetModelStatsWithFiltersRequestTypePriority(t *testin
 		WithArgs(start, end, requestType).
 		WillReturnRows(sqlmock.NewRows([]string{"model", "requests", "input_tokens", "output_tokens", "cache_creation_tokens", "cache_read_tokens", "total_tokens", "cost", "actual_cost", "account_cost"}))
 
-	stats, err := repo.GetModelStatsWithFilters(context.Background(), start, end, 0, 0, 0, 0, &requestType, &stream, nil)
+	stats, err := repo.GetModelStatsWithFilters(context.Background(), start, end, 0, 0, 0, 0, &requestType, &stream, nil, "")
 	require.NoError(t, err)
 	require.Empty(t, stats)
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -351,6 +351,80 @@ func TestUsageLogRepositoryGetStatsWithFiltersRequestTypePriority(t *testing.T) 
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestBuildExcludeAdminCondition_ExcludesOnlyAdminUsers(t *testing.T) {
+	require.Equal(
+		t,
+		"NOT EXISTS (SELECT 1 FROM users _ua WHERE _ua.id = ul.user_id AND _ua.role = $2)",
+		buildExcludeAdminCondition("ul.user_id", 2),
+	)
+}
+
+func TestUsageLogRepositoryGetStatsWithFiltersExcludeAdminAppliesToEndpointBreakdowns(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+
+	filters := usagestats.UsageLogFilters{
+		ExcludeAdmin: true,
+	}
+
+	mock.ExpectQuery("FROM usage_logs\\s+WHERE NOT EXISTS \\(SELECT 1 FROM users _ua WHERE _ua.id = user_id AND _ua.role = \\$1\\)").
+		WithArgs(service.RoleAdmin).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"total_requests",
+			"total_input_tokens",
+			"total_output_tokens",
+			"total_cache_tokens",
+			"total_cost",
+			"total_actual_cost",
+			"total_account_cost",
+			"avg_duration_ms",
+		}).AddRow(int64(2), int64(3), int64(4), int64(5), 1.5, 1.25, 1.5, 10.0))
+	mock.ExpectQuery("NOT EXISTS \\(SELECT 1 FROM users _ua WHERE _ua.id = user_id AND _ua.role = \\$3\\)").
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), service.RoleAdmin).
+		WillReturnRows(sqlmock.NewRows([]string{"endpoint", "requests", "total_tokens", "cost", "actual_cost"}).
+			AddRow("/v1/chat/completions", int64(1), int64(10), 0.5, 0.5))
+	mock.ExpectQuery("NOT EXISTS \\(SELECT 1 FROM users _ua WHERE _ua.id = user_id AND _ua.role = \\$3\\)").
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), service.RoleAdmin).
+		WillReturnRows(sqlmock.NewRows([]string{"endpoint", "requests", "total_tokens", "cost", "actual_cost"}).
+			AddRow("/messages", int64(1), int64(10), 0.5, 0.5))
+	mock.ExpectQuery("NOT EXISTS \\(SELECT 1 FROM users _ua WHERE _ua.id = user_id AND _ua.role = \\$3\\)").
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), service.RoleAdmin).
+		WillReturnRows(sqlmock.NewRows([]string{"endpoint", "requests", "total_tokens", "cost", "actual_cost"}).
+			AddRow("/v1/chat/completions -> /messages", int64(1), int64(10), 0.5, 0.5))
+
+	stats, err := repo.GetStatsWithFilters(context.Background(), filters)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), stats.TotalRequests)
+	require.Len(t, stats.Endpoints, 1)
+	require.Len(t, stats.UpstreamEndpoints, 1)
+	require.Len(t, stats.EndpointPaths, 1)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUsageLogRepositoryGetUserBreakdownStatsAppliesBillingModeAndExcludeAdmin(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+
+	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	dim := usagestats.UserBreakdownDimension{
+		BillingMode:  "image",
+		ExcludeAdmin: true,
+	}
+
+	mock.ExpectQuery("FROM usage_logs ul.*ul\\.billing_mode = \\$3.*NOT EXISTS \\(SELECT 1 FROM users _ua WHERE _ua.id = ul.user_id AND _ua.role = \\$4\\)").
+		WithArgs(start, end, "image", service.RoleAdmin).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"user_id", "email", "requests", "total_tokens", "cost", "actual_cost", "account_cost",
+		}).AddRow(int64(2), "user@test.dev", int64(3), int64(120), 1.5, 1.2, 1.8))
+
+	results, err := repo.GetUserBreakdownStats(context.Background(), start, end, dim, 20)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, int64(2), results[0].UserID)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestUsageLogRepositoryGetModelStatsAccountCostColumn(t *testing.T) {
 	db, mock := newSQLMock(t)
 	repo := &usageLogRepository{sql: db}
@@ -368,7 +442,7 @@ func TestUsageLogRepositoryGetModelStatsAccountCostColumn(t *testing.T) {
 			AddRow("claude-opus-4-6", int64(10), int64(100), int64(200), int64(5), int64(3), int64(308), 2.5, 2.0, 1.8).
 			AddRow("claude-sonnet-4-6", int64(5), int64(50), int64(100), int64(0), int64(0), int64(150), 1.0, 0.8, 0.7))
 
-	results, err := repo.GetModelStatsWithFilters(context.Background(), start, end, 0, 0, 0, 0, nil, nil, nil)
+	results, err := repo.GetModelStatsWithFilters(context.Background(), start, end, 0, 0, 0, 0, nil, nil, nil, "")
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 	require.Equal(t, "claude-opus-4-6", results[0].Model)
@@ -396,7 +470,7 @@ func TestUsageLogRepositoryGetGroupStatsAccountCostColumn(t *testing.T) {
 			AddRow(int64(1), "azure-cc", int64(100), int64(5000), 10.0, 8.5, 7.2).
 			AddRow(int64(2), "max", int64(50), int64(2000), 5.0, 4.0, 3.5))
 
-	results, err := repo.GetGroupStatsWithFilters(context.Background(), start, end, 0, 0, 0, 0, nil, nil, nil)
+	results, err := repo.GetGroupStatsWithFilters(context.Background(), start, end, 0, 0, 0, 0, nil, nil, nil, "")
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 	require.Equal(t, int64(1), results[0].GroupID)

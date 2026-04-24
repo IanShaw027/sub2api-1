@@ -340,7 +340,7 @@ export default {
   nav: {
     dashboard: "仪表盘",
     announcements: "公告",
-    tickets: "工单",
+    tickets: "工单列表",
     apiKeys: "API 密钥",
     usage: "使用记录",
     redeem: "兑换",
@@ -564,6 +564,7 @@ export default {
   dashboard: {
     title: "仪表盘",
     welcomeMessage: "欢迎回来！这是您账户的概览。",
+    clickToViewBalance: "点击查看充值记录",
     balance: "余额",
     apiKeys: "API 密钥",
     todayRequests: "今日请求",
@@ -3759,7 +3760,7 @@ export default {
     },
 
     tickets: {
-      title: "工单管理",
+      title: "工单列表",
       description: "查看并处理用户工单",
     },
 
@@ -3860,6 +3861,8 @@ export default {
       billingModePerRequest: "按次",
       billingModeImage: "按次(图片)",
       allBillingModes: "全部计费模式",
+      excludeAdmins: "排除管理员",
+      excludeAdminsHint: "从使用记录和统计中隐藏管理员用户",
       ipAddress: "IP",
       clickToViewBalance: "点击查看充值记录",
       failedToLoadUser: "加载用户信息失败",
@@ -5773,8 +5776,8 @@ export default {
   },
 
   tickets: {
-    title: "工单",
-    description: "提交咨询、退款、并发与倍率申请工单",
+    title: "工单列表",
+    description: "提交并跟进咨询、退款、并发与倍率申请工单",
     detailTitle: "工单详情",
     create: "创建工单",
     submit: "提交工单",
@@ -5787,10 +5790,26 @@ export default {
     emptyConversation: "当前还没有对话消息。",
     replyPlaceholder: "补充问题进展或回复管理员...",
     replyPlaceholderAdmin: "回复用户并同步处理结果...",
+    templates: {
+      button: "模板",
+      manage: "管理模板",
+      manageTitle: "常用回复模板",
+      manageDescription: "维护管理员回复模板，悬浮菜单可直接填充到回复输入框。",
+      add: "添加模板",
+      batchDelete: "批量删除",
+      deleteSingle: "删除模板",
+      title: "模板名称",
+      titlePlaceholder: "例如：已收到申请，正在处理",
+      content: "模板内容",
+      contentPlaceholder: "输入模板内容，点击后会直接填充到回复框。",
+      empty: "还没有常用回复模板",
+    },
     empty: "暂无工单",
     adminActions: "管理员操作",
     filters: {
       search: "搜索工单",
+      user: "用户",
+      userPlaceholder: "按用户名或邮箱筛选",
       category: "工单类别",
       status: "工单状态",
       allCategories: "全部类别",
@@ -5849,9 +5868,14 @@ export default {
       usageScenario: "使用场景",
       peakWindow: "峰值时段",
       currentRate: "当前倍率",
+      baseRate: "基础倍率",
+      specialRate: "专属倍率",
+      effectiveRate: "生效倍率",
       targetRate: "申请倍率",
+      targetGroups: "目标分组",
       targetScope: "目标范围",
       details: "详细说明",
+      none: "无",
     },
     validation: {
       titleRequired: "请输入工单标题",
@@ -5864,6 +5888,7 @@ export default {
       closed: "工单已关闭",
       statusUpdated: "工单状态已更新",
     },
+    emptyAvailableGroups: "当前没有可申请的分组",
   },
 
   // User Subscriptions Page

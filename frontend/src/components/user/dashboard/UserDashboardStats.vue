@@ -6,7 +6,7 @@
       v-if="!isSimple"
       type="button"
       class="card p-4 text-left transition-colors hover:border-primary-200 hover:bg-primary-50/40 dark:hover:border-primary-800/50 dark:hover:bg-primary-900/10"
-      :title="t('usage.clickToViewBalance')"
+      :title="t('dashboard.clickToViewBalance')"
       @click="emit('balance-history')"
     >
       <div class="flex items-center gap-3">
@@ -18,7 +18,7 @@
         <div>
           <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.balance') }}</p>
           <p class="text-xl font-bold text-emerald-600 dark:text-emerald-400">${{ formatBalance(balance) }}</p>
-          <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('usage.clickToViewBalance') }}</p>
+          <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('dashboard.clickToViewBalance') }}</p>
         </div>
       </div>
     </button>

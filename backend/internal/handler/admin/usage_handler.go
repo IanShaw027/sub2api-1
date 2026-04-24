@@ -111,6 +111,7 @@ func (h *UsageHandler) List(c *gin.Context) {
 
 	model := c.Query("model")
 	billingMode := strings.TrimSpace(c.Query("billing_mode"))
+	excludeAdmin := parseBoolQueryWithDefault(c.Query("exclude_admin"), false)
 
 	var requestType *int16
 	var stream *bool
@@ -181,6 +182,7 @@ func (h *UsageHandler) List(c *gin.Context) {
 		Stream:      stream,
 		BillingType: billingType,
 		BillingMode: billingMode,
+		ExcludeAdmin: excludeAdmin,
 		StartTime:   startTime,
 		EndTime:     endTime,
 		ExactTotal:  exactTotal,
@@ -242,6 +244,7 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 
 	model := c.Query("model")
 	billingMode := strings.TrimSpace(c.Query("billing_mode"))
+	excludeAdmin := parseBoolQueryWithDefault(c.Query("exclude_admin"), false)
 
 	var requestType *int16
 	var stream *bool
@@ -321,6 +324,7 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 		Stream:      stream,
 		BillingType: billingType,
 		BillingMode: billingMode,
+		ExcludeAdmin: excludeAdmin,
 		StartTime:   &startTime,
 		EndTime:     &endTime,
 	}

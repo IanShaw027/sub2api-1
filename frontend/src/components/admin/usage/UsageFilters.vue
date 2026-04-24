@@ -145,6 +145,21 @@
           <Select v-model="filters.group_id" :options="groupOptions" searchable @change="emitChange" />
         </div>
 
+        <div class="flex min-h-[42px] items-center gap-3 pt-6">
+          <Toggle
+            :model-value="Boolean(filters.exclude_admin)"
+            @update:modelValue="handleExcludeAdminToggle"
+          />
+          <div class="min-w-[220px]">
+            <div class="text-sm font-medium text-gray-900 dark:text-gray-100">
+              {{ t('admin.usage.excludeAdmins') }}
+            </div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.usage.excludeAdminsHint') }}
+            </div>
+          </div>
+        </div>
+
       </div>
 
       <!-- Right: actions -->
@@ -172,6 +187,7 @@ import { ref, onMounted, onUnmounted, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import Select, { type SelectOption } from '@/components/common/Select.vue'
+import Toggle from '@/components/common/Toggle.vue'
 import type { SimpleApiKey, SimpleUser } from '@/api/admin/usage'
 
 type ModelValue = Record<string, any>
@@ -246,6 +262,11 @@ const billingModeOptions = ref<SelectOption[]>([
 ])
 
 const emitChange = () => emit('change')
+
+const handleExcludeAdminToggle = (value: boolean) => {
+  filters.value.exclude_admin = value
+  emitChange()
+}
 
 const debounceUserSearch = () => {
   if (userSearchTimeout) clearTimeout(userSearchTimeout)

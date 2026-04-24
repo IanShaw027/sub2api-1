@@ -227,3 +227,39 @@ func TestGetUserBreakdown_NoFilters(t *testing.T) {
 	require.Empty(t, repo.capturedDim.Model)
 	require.Empty(t, repo.capturedDim.Endpoint)
 }
+
+func TestGetUserBreakdown_AdditionalFilters(t *testing.T) {
+	repo := &userBreakdownRepoCapture{}
+	router := newUserBreakdownRouter(repo)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/admin/dashboard/user-breakdown?start_date=2026-03-01&end_date=2026-03-16&request_type=stream&billing_type=1&billing_mode=image&exclude_admin=true",
+		nil,
+	)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.NotNil(t, repo.capturedDim.RequestType)
+	require.Equal(t, int16(service.RequestTypeStream), *repo.capturedDim.RequestType)
+	require.NotNil(t, repo.capturedDim.BillingType)
+	require.Equal(t, int8(1), *repo.capturedDim.BillingType)
+	require.Equal(t, "image", repo.capturedDim.BillingMode)
+	require.True(t, repo.capturedDim.ExcludeAdmin)
+}
+
+func TestGetUserBreakdown_InvalidRequestType(t *testing.T) {
+	repo := &userBreakdownRepoCapture{}
+	router := newUserBreakdownRouter(repo)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/admin/dashboard/user-breakdown?start_date=2026-03-01&end_date=2026-03-16&request_type=bad",
+		nil,
+	)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}

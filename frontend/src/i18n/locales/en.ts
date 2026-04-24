@@ -343,7 +343,7 @@ export default {
   nav: {
     dashboard: "Dashboard",
     announcements: "Announcements",
-    tickets: "Tickets",
+    tickets: "Ticket List",
     apiKeys: "API Keys",
     usage: "Usage",
     redeem: "Redeem",
@@ -593,6 +593,7 @@ export default {
   dashboard: {
     title: "Dashboard",
     welcomeMessage: "Welcome back! Here's an overview of your account.",
+    clickToViewBalance: "Click to view balance history",
     balance: "Balance",
     apiKeys: "API Keys",
     todayRequests: "Today Requests",
@@ -3749,7 +3750,7 @@ export default {
     },
 
     tickets: {
-      title: "Ticket Management",
+      title: "Ticket List",
       description: "Review and handle user tickets",
     },
 
@@ -3852,6 +3853,8 @@ export default {
       billingModePerRequest: "Per Request",
       billingModeImage: "Image",
       allBillingModes: "All Billing Modes",
+      excludeAdmins: "Exclude Admins",
+      excludeAdminsHint: "Hide admin users from usage logs and usage stats",
       ipAddress: "IP",
       clickToViewBalance: "Click to view balance history",
       failedToLoadUser: "Failed to load user info",
@@ -5902,8 +5905,8 @@ export default {
   },
 
   tickets: {
-    title: "Tickets",
-    description: "Submit consult, refund, concurrency, and rate tickets",
+    title: "Ticket List",
+    description: "Submit and follow up on consult, refund, concurrency, and rate tickets",
     detailTitle: "Ticket Detail",
     create: "Create Ticket",
     submit: "Submit Ticket",
@@ -5916,10 +5919,26 @@ export default {
     emptyConversation: "No conversation messages yet.",
     replyPlaceholder: "Reply to the admin or add more details...",
     replyPlaceholderAdmin: "Reply to the user and sync the handling result...",
+    templates: {
+      button: "Templates",
+      manage: "Manage Templates",
+      manageTitle: "Reply Templates",
+      manageDescription: "Maintain admin reply templates. Hover menu items can fill the reply box directly.",
+      add: "Add Template",
+      batchDelete: "Delete Selected",
+      deleteSingle: "Delete template",
+      title: "Template Title",
+      titlePlaceholder: "Example: We received your request and are reviewing it",
+      content: "Template Content",
+      contentPlaceholder: "Enter the reply template content that will be filled into the composer.",
+      empty: "No reply templates yet",
+    },
     empty: "No tickets yet",
     adminActions: "Admin Actions",
     filters: {
       search: "Search tickets",
+      user: "User",
+      userPlaceholder: "Filter by username or email",
       category: "Category",
       status: "Status",
       allCategories: "All categories",
@@ -5978,9 +5997,14 @@ export default {
       usageScenario: "Usage Scenario",
       peakWindow: "Peak Window",
       currentRate: "Current Rate",
+      baseRate: "Base Rate",
+      specialRate: "Custom Rate",
+      effectiveRate: "Effective Rate",
       targetRate: "Target Rate",
+      targetGroups: "Target Groups",
       targetScope: "Target Scope",
       details: "Details",
+      none: "None",
     },
     validation: {
       titleRequired: "Please enter a ticket title",
@@ -5993,6 +6017,7 @@ export default {
       closed: "Ticket closed",
       statusUpdated: "Ticket status updated",
     },
+    emptyAvailableGroups: "No eligible groups available right now",
   },
 
   // User Subscriptions Page

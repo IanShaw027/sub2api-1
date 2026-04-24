@@ -183,12 +183,14 @@ type UserBreakdownDimension struct {
 	Endpoint     string // filter by endpoint value (non-empty to enable)
 	EndpointType string // "inbound", "upstream", or "path"
 	// Additional filter conditions
-	UserID      int64  // filter by user_id (>0 to enable)
-	APIKeyID    int64  // filter by api_key_id (>0 to enable)
-	AccountID   int64  // filter by account_id (>0 to enable)
-	RequestType *int16 // filter by request_type (non-nil to enable)
-	Stream      *bool  // filter by stream flag (non-nil to enable)
-	BillingType *int8  // filter by billing_type (non-nil to enable)
+	UserID       int64  // filter by user_id (>0 to enable)
+	APIKeyID     int64  // filter by api_key_id (>0 to enable)
+	AccountID    int64  // filter by account_id (>0 to enable)
+	RequestType  *int16 // filter by request_type (non-nil to enable)
+	Stream       *bool  // filter by stream flag (non-nil to enable)
+	BillingType  *int8  // filter by billing_type (non-nil to enable)
+	BillingMode  string // filter by billing_mode (non-empty to enable)
+	ExcludeAdmin bool   // exclude admin users when true
 }
 
 // APIKeyUsageTrendPoint represents API key usage trend data point
@@ -238,17 +240,18 @@ type UserDashboardStats struct {
 
 // UsageLogFilters represents filters for usage log queries
 type UsageLogFilters struct {
-	UserID      int64
-	APIKeyID    int64
-	AccountID   int64
-	GroupID     int64
-	Model       string
-	RequestType *int16
-	Stream      *bool
-	BillingType *int8
-	BillingMode string
-	StartTime   *time.Time
-	EndTime     *time.Time
+	UserID       int64
+	APIKeyID     int64
+	AccountID    int64
+	GroupID      int64
+	Model        string
+	RequestType  *int16
+	Stream       *bool
+	BillingType  *int8
+	BillingMode  string
+	ExcludeAdmin bool
+	StartTime    *time.Time
+	EndTime      *time.Time
 	// ExactTotal requests exact COUNT(*) for pagination. Default false for fast large-table paging.
 	ExactTotal bool
 }

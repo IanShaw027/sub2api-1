@@ -45,6 +45,7 @@ type dashboardSnapshotV2Filters struct {
 	RequestType *int16
 	Stream      *bool
 	BillingType *int8
+	BillingMode string
 }
 
 type dashboardSnapshotV2CacheKey struct {
@@ -59,6 +60,7 @@ type dashboardSnapshotV2CacheKey struct {
 	RequestType       *int16 `json:"request_type"`
 	Stream            *bool  `json:"stream"`
 	BillingType       *int8  `json:"billing_type"`
+	BillingMode       string `json:"billing_mode"`
 	IncludeStats      bool   `json:"include_stats"`
 	IncludeTrend      bool   `json:"include_trend"`
 	IncludeModels     bool   `json:"include_models"`
@@ -104,6 +106,7 @@ func (h *DashboardHandler) GetSnapshotV2(c *gin.Context) {
 		RequestType:       filters.RequestType,
 		Stream:            filters.Stream,
 		BillingType:       filters.BillingType,
+		BillingMode:       filters.BillingMode,
 		IncludeStats:      includeStats,
 		IncludeTrend:      includeTrend,
 		IncludeModels:     includeModels,
@@ -184,6 +187,7 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 			filters.RequestType,
 			filters.Stream,
 			filters.BillingType,
+			filters.BillingMode,
 		)
 		if err != nil {
 			return nil, errors.New("failed to get usage trend")
@@ -204,6 +208,7 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 			filters.RequestType,
 			filters.Stream,
 			filters.BillingType,
+			filters.BillingMode,
 		)
 		if err != nil {
 			return nil, errors.New("failed to get model statistics")
@@ -223,6 +228,7 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 			filters.RequestType,
 			filters.Stream,
 			filters.BillingType,
+			filters.BillingMode,
 		)
 		if err != nil {
 			return nil, errors.New("failed to get group statistics")
@@ -298,6 +304,7 @@ func parseDashboardSnapshotV2Filters(c *gin.Context) (*dashboardSnapshotV2Filter
 		bt := int8(v)
 		filters.BillingType = &bt
 	}
+	filters.BillingMode = strings.TrimSpace(c.Query("billing_mode"))
 
 	return filters, nil
 }
