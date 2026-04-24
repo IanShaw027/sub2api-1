@@ -44,11 +44,15 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	normalizedModel := anthropicReq.Model
 	clientStream := anthropicReq.Stream // client's original stream preference
 	toolNameMap := anthropicToolNameMap(anthropicReq.Tools)
+	stripAnthropicBillingHeaderFromSystem(&anthropicReq)
 
 	// 2. Convert Anthropic → Responses
 	responsesReq, err := apicompat.AnthropicToResponses(&anthropicReq)
 	if err != nil {
 		return nil, fmt.Errorf("convert anthropic to responses: %w", err)
+	}
+	if IsClaudeCodeClient(c.Request.Context()) {
+		apicompat.AugmentClaudeToolDescriptions(responsesReq.Tools)
 	}
 
 	// Upstream always uses streaming (upstream may not support sync mode).
@@ -90,6 +94,11 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		forcedTemplateText := ""
 		if s.cfg != nil {
 			forcedTemplateText = s.cfg.Gateway.ForcedCodexInstructionsTemplate
+		}
+		if IsClaudeCodeClient(c.Request.Context()) &&
+			strings.TrimSpace(forcedTemplateText) == "" &&
+			applyEmbeddedDefaultInstructions(reqBody) {
+			codexResult.Modified = true
 		}
 		templateUpstreamModel := upstreamModel
 		if codexResult.NormalizedModel != "" {
@@ -320,7 +329,8 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 
 		// Terminal events carry the complete ResponsesResponse with output + usage.
 		if (event.Type == "response.completed" || event.Type == "response.done" ||
-			event.Type == "response.incomplete" || event.Type == "response.failed") &&
+			event.Type == "response.incomplete" || event.Type == "response.failed" ||
+			event.Type == "response.cancelled" || event.Type == "response.canceled") &&
 			event.Response != nil {
 			finalResponse = event.Response
 			if event.Response.Usage != nil {
@@ -443,7 +453,9 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		}
 
 		// Extract usage from completion events
-		if (event.Type == "response.completed" || event.Type == "response.incomplete" || event.Type == "response.failed") &&
+		if (event.Type == "response.completed" || event.Type == "response.done" ||
+			event.Type == "response.incomplete" || event.Type == "response.failed" ||
+			event.Type == "response.cancelled" || event.Type == "response.canceled") &&
 			event.Response != nil && event.Response.Usage != nil {
 			usage = OpenAIUsage{
 				InputTokens:  event.Response.Usage.InputTokens,
@@ -620,4 +632,76 @@ func anthropicToolNameMap(tools []apicompat.AnthropicTool) map[string]string {
 		nameMap[canonical] = tool.Name
 	}
 	return nameMap
+}
+
+func stripAnthropicBillingHeaderFromSystem(req *apicompat.AnthropicRequest) {
+	if req == nil || len(req.System) == 0 {
+		return
+	}
+
+	if cleaned, ok := stripAnthropicBillingHeaderFromRawSystem(req.System); ok {
+		req.System = cleaned
+	}
+}
+
+func stripAnthropicBillingHeaderFromRawSystem(raw json.RawMessage) (json.RawMessage, bool) {
+	var systemText string
+	if err := json.Unmarshal(raw, &systemText); err == nil {
+		cleaned, changed := stripAnthropicBillingHeaderText(systemText)
+		if !changed {
+			return raw, false
+		}
+		encoded, err := json.Marshal(cleaned)
+		if err != nil {
+			return raw, false
+		}
+		return encoded, true
+	}
+
+	var blocks []apicompat.AnthropicContentBlock
+	if err := json.Unmarshal(raw, &blocks); err != nil {
+		return raw, false
+	}
+
+	filtered := make([]apicompat.AnthropicContentBlock, 0, len(blocks))
+	changed := false
+	for _, block := range blocks {
+		if block.Type == "text" {
+			cleaned, textChanged := stripAnthropicBillingHeaderText(block.Text)
+			if textChanged {
+				changed = true
+				block.Text = cleaned
+			}
+			if textChanged && strings.TrimSpace(block.Text) == "" {
+				continue
+			}
+		}
+		filtered = append(filtered, block)
+	}
+	if !changed {
+		return raw, false
+	}
+
+	encoded, err := json.Marshal(filtered)
+	if err != nil {
+		return raw, false
+	}
+	return encoded, true
+}
+
+func stripAnthropicBillingHeaderText(text string) (string, bool) {
+	lines := strings.Split(text, "\n")
+	filtered := make([]string, 0, len(lines))
+	changed := false
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "x-anthropic-billing-header:") {
+			changed = true
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	if !changed {
+		return text, false
+	}
+	return strings.TrimSpace(strings.Join(filtered, "\n")), true
 }

@@ -271,6 +271,15 @@ func (s *BillingService) initFallbackPricing() {
 		CacheReadPricePerTokenPriority: 0.05e-6,
 		SupportsCacheBreakdown:         false,
 	}
+	s.fallbackPrices["gpt-5.3-codex-spark"] = &ModelPricing{
+		InputPricePerToken:             1.75e-6,
+		InputPricePerTokenPriority:     3.5e-6,
+		OutputPricePerToken:            14e-6,
+		OutputPricePerTokenPriority:    28e-6,
+		CacheReadPricePerToken:         0.175e-6,
+		CacheReadPricePerTokenPriority: 0.35e-6,
+		SupportsCacheBreakdown:         false,
+	}
 	// Codex 族兜底统一按 GPT-5.3 Codex 价格计费
 	s.fallbackPrices["gpt-5.3-codex"] = &ModelPricing{
 		InputPricePerToken:             1.5e-6, // $1.5 per MTok
@@ -345,7 +354,9 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 			return s.fallbackPrices["gpt-5.1-codex-mini"]
 		case "gpt-5.1-codex-max":
 			return s.fallbackPrices["gpt-5.1-codex-max"]
-		case "gpt-5.3-codex", "gpt-5.3-codex-spark":
+		case "gpt-5.3-codex-spark":
+			return s.fallbackPrices["gpt-5.3-codex-spark"]
+		case "gpt-5.3-codex":
 			return s.fallbackPrices["gpt-5.3-codex"]
 		}
 	}

@@ -6,6 +6,17 @@ import (
 	"time"
 )
 
+type anthropicWebSearchResult struct {
+	Type  string `json:"type"`
+	URL   string `json:"url,omitempty"`
+	Title string `json:"title,omitempty"`
+}
+
+type pendingAnthropicWebSearchResult struct {
+	ToolUseID string
+	ItemID    string
+}
+
 // ---------------------------------------------------------------------------
 // Non-streaming: ResponsesResponse → AnthropicResponse
 // ---------------------------------------------------------------------------
@@ -26,6 +37,8 @@ func ResponsesToAnthropic(resp *ResponsesResponse, model string, nameMaps ...map
 	}
 
 	var blocks []AnthropicContentBlock
+	annotationResults := responsesWebSearchResultsFromAnnotations(resp.Output)
+	useAnnotationResults := responsesCountWebSearchCalls(resp.Output) == 1 && len(annotationResults) > 0
 
 	for _, item := range resp.Output {
 		switch item.Type {
@@ -50,6 +63,12 @@ func ResponsesToAnthropic(resp *ResponsesResponse, model string, nameMaps ...map
 						Text: part.Text,
 					})
 				}
+				if part.Type == "refusal" && part.Refusal != "" {
+					blocks = append(blocks, AnthropicContentBlock{
+						Type: "text",
+						Text: part.Refusal,
+					})
+				}
 			}
 		case "function_call":
 			blocks = append(blocks, AnthropicContentBlock{
@@ -71,11 +90,15 @@ func ResponsesToAnthropic(resp *ResponsesResponse, model string, nameMaps ...map
 				Name:  "web_search",
 				Input: inputJSON,
 			})
-			emptyResults, _ := json.Marshal([]struct{}{})
+			results := responsesWebSearchResultsFromAction(item.Action)
+			if len(results) == 0 && useAnnotationResults {
+				results = annotationResults
+			}
+			resultsJSON, _ := json.Marshal(results)
 			blocks = append(blocks, AnthropicContentBlock{
 				Type:      "web_search_tool_result",
 				ToolUseID: toolUseID,
-				Content:   emptyResults,
+				Content:   resultsJSON,
 			})
 		}
 	}
@@ -85,7 +108,7 @@ func ResponsesToAnthropic(resp *ResponsesResponse, model string, nameMaps ...map
 	}
 	out.Content = blocks
 
-	out.StopReason = responsesStatusToAnthropicStopReason(resp.Status, resp.IncompleteDetails, blocks)
+	out.StopReason = responsesStatusToAnthropicStopReason(resp.Status, resp.IncompleteDetails, resp.Output, blocks)
 
 	if resp.Usage != nil {
 		out.Usage = AnthropicUsage{
@@ -100,14 +123,29 @@ func ResponsesToAnthropic(resp *ResponsesResponse, model string, nameMaps ...map
 	return out
 }
 
-func responsesStatusToAnthropicStopReason(status string, details *ResponsesIncompleteDetails, blocks []AnthropicContentBlock) string {
+func responsesStatusToAnthropicStopReason(
+	status string,
+	details *ResponsesIncompleteDetails,
+	output []ResponsesOutput,
+	blocks []AnthropicContentBlock,
+) string {
 	switch status {
 	case "incomplete":
-		if details != nil && details.Reason == "max_output_tokens" {
-			return "max_tokens"
+		if details != nil {
+			switch details.Reason {
+			case "max_output_tokens":
+				return "max_tokens"
+			case "content_filter":
+				return "refusal"
+			case "model_context_window_exceeded":
+				return "model_context_window_exceeded"
+			}
 		}
 		return "end_turn"
 	case "completed":
+		if responsesOutputHasRefusal(output) {
+			return "refusal"
+		}
 		if len(blocks) > 0 && blocks[len(blocks)-1].Type == "tool_use" {
 			return "tool_use"
 		}
@@ -138,10 +176,13 @@ type ResponsesEventToAnthropicState struct {
 	OutputTokens         int
 	CacheReadInputTokens int
 
-	ResponseID  string
-	Model       string
-	Created     int64
+	ResponseID string
+	Model      string
+	Created    int64
+
 	ToolNameMap map[string]string
+
+	PendingWebSearchResults []pendingAnthropicWebSearchResult
 }
 
 // NewResponsesEventToAnthropicState returns an initialised stream state.
@@ -177,7 +218,7 @@ func ResponsesEventToAnthropicEvents(
 		return resToAnthHandleReasoningDelta(evt, state)
 	case "response.reasoning_summary_text.done":
 		return resToAnthHandleBlockDone(state)
-	case "response.completed", "response.incomplete", "response.failed":
+	case "response.completed", "response.done", "response.incomplete", "response.failed", "response.cancelled", "response.canceled":
 		return resToAnthHandleCompleted(evt, state)
 	default:
 		return nil
@@ -437,25 +478,16 @@ func resToAnthHandleWebSearchDone(evt *ResponsesStreamEvent, state *ResponsesEve
 	})
 	state.ContentBlockIndex++
 
-	// Emit web_search_tool_result block (start + stop).
-	// Content is empty because OpenAI does not expose individual search results;
-	// the model consumes them internally and produces text output.
-	emptyResults, _ := json.Marshal([]struct{}{})
-	idx2 := state.ContentBlockIndex
-	events = append(events, AnthropicStreamEvent{
-		Type:  "content_block_start",
-		Index: &idx2,
-		ContentBlock: &AnthropicContentBlock{
-			Type:      "web_search_tool_result",
+	results := responsesWebSearchResultsFromAction(evt.Item.Action)
+	if len(results) == 0 {
+		state.PendingWebSearchResults = append(state.PendingWebSearchResults, pendingAnthropicWebSearchResult{
 			ToolUseID: toolUseID,
-			Content:   emptyResults,
-		},
-	})
-	events = append(events, AnthropicStreamEvent{
-		Type:  "content_block_stop",
-		Index: &idx2,
-	})
-	state.ContentBlockIndex++
+			ItemID:    evt.Item.ID,
+		})
+		return events
+	}
+
+	events = append(events, emitAnthropicWebSearchResultBlock(state, toolUseID, results)...)
 
 	return events
 }
@@ -479,14 +511,44 @@ func resToAnthHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 		}
 		switch evt.Response.Status {
 		case "incomplete":
-			if evt.Response.IncompleteDetails != nil && evt.Response.IncompleteDetails.Reason == "max_output_tokens" {
-				stopReason = "max_tokens"
+			if evt.Response.IncompleteDetails != nil {
+				switch evt.Response.IncompleteDetails.Reason {
+				case "max_output_tokens":
+					stopReason = "max_tokens"
+				case "content_filter":
+					stopReason = "refusal"
+				case "model_context_window_exceeded":
+					stopReason = "model_context_window_exceeded"
+				}
 			}
 		case "completed":
+			if responsesOutputHasRefusal(evt.Response.Output) {
+				stopReason = "refusal"
+				break
+			}
 			if state.ContentBlockIndex > 0 && state.CurrentBlockType == "tool_use" {
 				stopReason = "tool_use"
 			}
 		}
+	}
+
+	if len(state.PendingWebSearchResults) > 0 {
+		actionResultsByToolUseID := map[string][]anthropicWebSearchResult{}
+		if evt.Response != nil {
+			actionResultsByToolUseID = responsesWebSearchResultsByToolUseIDFromOutput(evt.Response.Output)
+		}
+		annotationResults := []anthropicWebSearchResult{}
+		if evt.Response != nil && responsesCountWebSearchCalls(evt.Response.Output) == 1 {
+			annotationResults = responsesWebSearchResultsFromAnnotations(evt.Response.Output)
+		}
+		for i, pending := range state.PendingWebSearchResults {
+			results := actionResultsByToolUseID[pending.ToolUseID]
+			if len(results) == 0 && i == 0 && len(annotationResults) > 0 {
+				results = annotationResults
+			}
+			events = append(events, emitAnthropicWebSearchResultBlock(state, pending.ToolUseID, results)...)
+		}
+		state.PendingWebSearchResults = nil
 	}
 
 	events = append(events,
@@ -518,4 +580,132 @@ func closeCurrentBlock(state *ResponsesEventToAnthropicState) []AnthropicStreamE
 		Type:  "content_block_stop",
 		Index: &idx,
 	}}
+}
+
+func responsesOutputHasRefusal(output []ResponsesOutput) bool {
+	for _, item := range output {
+		if item.Type != "message" {
+			continue
+		}
+		for _, part := range item.Content {
+			if part.Type == "refusal" && part.Refusal != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func emitAnthropicWebSearchResultBlock(
+	state *ResponsesEventToAnthropicState,
+	toolUseID string,
+	results []anthropicWebSearchResult,
+) []AnthropicStreamEvent {
+	if results == nil {
+		results = []anthropicWebSearchResult{}
+	}
+	resultsJSON, _ := json.Marshal(results)
+	idx := state.ContentBlockIndex
+	state.ContentBlockIndex++
+	return []AnthropicStreamEvent{
+		{
+			Type:  "content_block_start",
+			Index: &idx,
+			ContentBlock: &AnthropicContentBlock{
+				Type:      "web_search_tool_result",
+				ToolUseID: toolUseID,
+				Content:   resultsJSON,
+			},
+		},
+		{
+			Type:  "content_block_stop",
+			Index: &idx,
+		},
+	}
+}
+
+func responsesCountWebSearchCalls(output []ResponsesOutput) int {
+	count := 0
+	for _, item := range output {
+		if item.Type == "web_search_call" {
+			count++
+		}
+	}
+	return count
+}
+
+func responsesWebSearchResultsFromAction(action *WebSearchAction) []anthropicWebSearchResult {
+	if action == nil {
+		return []anthropicWebSearchResult{}
+	}
+
+	results := make([]anthropicWebSearchResult, 0, len(action.Sources))
+	seen := make(map[string]struct{}, len(action.Sources))
+	for _, source := range action.Sources {
+		if source.URL == "" {
+			continue
+		}
+		key := source.URL + "\n" + source.Title
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		results = append(results, anthropicWebSearchResult{
+			Type:  "web_search_result",
+			URL:   source.URL,
+			Title: source.Title,
+		})
+	}
+	if len(results) == 0 {
+		return []anthropicWebSearchResult{}
+	}
+	return results
+}
+
+func responsesWebSearchResultsFromAnnotations(output []ResponsesOutput) []anthropicWebSearchResult {
+	var results []anthropicWebSearchResult
+	seen := map[string]struct{}{}
+
+	for _, item := range output {
+		if item.Type != "message" {
+			continue
+		}
+		for _, part := range item.Content {
+			for _, ann := range part.Annotations {
+				if ann.Type != "url_citation" || ann.URL == "" {
+					continue
+				}
+				key := ann.URL + "\n" + ann.Title
+				if _, ok := seen[key]; ok {
+					continue
+				}
+				seen[key] = struct{}{}
+				results = append(results, anthropicWebSearchResult{
+					Type:  "web_search_result",
+					URL:   ann.URL,
+					Title: ann.Title,
+				})
+			}
+		}
+	}
+
+	if len(results) == 0 {
+		return []anthropicWebSearchResult{}
+	}
+	return results
+}
+
+func responsesWebSearchResultsByToolUseIDFromOutput(output []ResponsesOutput) map[string][]anthropicWebSearchResult {
+	resultsByID := make(map[string][]anthropicWebSearchResult)
+	for _, item := range output {
+		if item.Type != "web_search_call" || item.ID == "" {
+			continue
+		}
+		results := responsesWebSearchResultsFromAction(item.Action)
+		if len(results) == 0 {
+			continue
+		}
+		resultsByID["srvtoolu_"+item.ID] = results
+	}
+	return resultsByID
 }

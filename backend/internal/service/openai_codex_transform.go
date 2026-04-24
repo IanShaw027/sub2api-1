@@ -25,11 +25,11 @@ var codexModelMap = map[string]string{
 	"gpt-5.3-high":               "gpt-5.3-codex",
 	"gpt-5.3-xhigh":              "gpt-5.3-codex",
 	"gpt-5.3-codex":              "gpt-5.3-codex",
-	"gpt-5.3-codex-spark":        "gpt-5.3-codex",
-	"gpt-5.3-codex-spark-low":    "gpt-5.3-codex",
-	"gpt-5.3-codex-spark-medium": "gpt-5.3-codex",
-	"gpt-5.3-codex-spark-high":   "gpt-5.3-codex",
-	"gpt-5.3-codex-spark-xhigh":  "gpt-5.3-codex",
+	"gpt-5.3-codex-spark":        "gpt-5.3-codex-spark",
+	"gpt-5.3-codex-spark-low":    "gpt-5.3-codex-spark",
+	"gpt-5.3-codex-spark-medium": "gpt-5.3-codex-spark",
+	"gpt-5.3-codex-spark-high":   "gpt-5.3-codex-spark",
+	"gpt-5.3-codex-spark-xhigh":  "gpt-5.3-codex-spark",
 	"gpt-5.3-codex-low":          "gpt-5.3-codex",
 	"gpt-5.3-codex-medium":       "gpt-5.3-codex",
 	"gpt-5.3-codex-high":         "gpt-5.3-codex",
@@ -268,6 +268,9 @@ func normalizeCodexModel(model string) string {
 	}
 	if strings.Contains(normalized, "gpt-5.2") || strings.Contains(normalized, "gpt 5.2") {
 		return "gpt-5.2"
+	}
+	if strings.Contains(normalized, "gpt-5.3-codex-spark") || strings.Contains(normalized, "gpt 5.3 codex spark") {
+		return "gpt-5.3-codex-spark"
 	}
 	if strings.Contains(normalized, "gpt-5.3-codex") || strings.Contains(normalized, "gpt 5.3 codex") {
 		return "gpt-5.3-codex"

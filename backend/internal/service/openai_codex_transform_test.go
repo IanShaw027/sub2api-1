@@ -280,10 +280,10 @@ func TestNormalizeCodexModel_Gpt53(t *testing.T) {
 		"gpt-5.3":                   "gpt-5.3-codex",
 		"gpt-5.3-codex":             "gpt-5.3-codex",
 		"gpt-5.3-codex-xhigh":       "gpt-5.3-codex",
-		"gpt-5.3-codex-spark":       "gpt-5.3-codex",
-		"gpt 5.3 codex spark":       "gpt-5.3-codex",
-		"gpt-5.3-codex-spark-high":  "gpt-5.3-codex",
-		"gpt-5.3-codex-spark-xhigh": "gpt-5.3-codex",
+		"gpt-5.3-codex-spark":       "gpt-5.3-codex-spark",
+		"gpt 5.3 codex spark":       "gpt-5.3-codex-spark",
+		"gpt-5.3-codex-spark-high":  "gpt-5.3-codex-spark",
+		"gpt-5.3-codex-spark-xhigh": "gpt-5.3-codex-spark",
 		"gpt 5.3 codex":             "gpt-5.3-codex",
 	}
 
@@ -312,7 +312,7 @@ func TestNormalizeCodexModel_RemovedModelsFallbackToSupportedTargets(t *testing.
 	}
 }
 
-func TestApplyCodexOAuthTransform_NormalizesBareSparkModelToStableTarget(t *testing.T) {
+func TestApplyCodexOAuthTransform_PreservesBareSparkModel(t *testing.T) {
 	reqBody := map[string]any{
 		"model": "gpt-5.3-codex-spark",
 		"input": []any{},
@@ -320,14 +320,14 @@ func TestApplyCodexOAuthTransform_NormalizesBareSparkModelToStableTarget(t *test
 
 	result := applyCodexOAuthTransform(reqBody, false, false)
 
-	require.Equal(t, "gpt-5.3-codex", reqBody["model"])
-	require.Equal(t, "gpt-5.3-codex", result.NormalizedModel)
+	require.Equal(t, "gpt-5.3-codex-spark", reqBody["model"])
+	require.Equal(t, "gpt-5.3-codex-spark", result.NormalizedModel)
 	store, ok := reqBody["store"].(bool)
 	require.True(t, ok)
 	require.False(t, store)
 }
 
-func TestApplyCodexOAuthTransform_TrimmedModelNormalizesToStableTarget(t *testing.T) {
+func TestApplyCodexOAuthTransform_TrimmedSparkModelPreservesStableTarget(t *testing.T) {
 	reqBody := map[string]any{
 		"model": "  gpt-5.3-codex-spark  ",
 		"input": []any{},
@@ -335,8 +335,8 @@ func TestApplyCodexOAuthTransform_TrimmedModelNormalizesToStableTarget(t *testin
 
 	result := applyCodexOAuthTransform(reqBody, false, false)
 
-	require.Equal(t, "gpt-5.3-codex", reqBody["model"])
-	require.Equal(t, "gpt-5.3-codex", result.NormalizedModel)
+	require.Equal(t, "gpt-5.3-codex-spark", reqBody["model"])
+	require.Equal(t, "gpt-5.3-codex-spark", result.NormalizedModel)
 	require.True(t, result.Modified)
 }
 

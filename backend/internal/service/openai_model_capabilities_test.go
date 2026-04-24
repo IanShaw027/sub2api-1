@@ -46,7 +46,7 @@ func TestResolveOpenAIModelCapabilities_CompatPromptCacheKeyCoverage(t *testing.
 		{name: "gpt-5.1-codex", model: "gpt-5.1-codex", upstream: "gpt-5.1-codex", supported: true},
 		{name: "gpt-5.1-codex-mini", model: "gpt-5.1-codex-mini", upstream: "gpt-5.1-codex-mini", supported: true},
 		{name: "gpt-5.2-codex", model: "gpt-5.2-codex", upstream: "gpt-5.2-codex", supported: true},
-		{name: "gpt-5.3-codex-spark", model: "gpt-5.3-codex-spark", upstream: "gpt-5.3-codex", supported: true},
+		{name: "gpt-5.3-codex-spark", model: "gpt-5.3-codex-spark", upstream: "gpt-5.3-codex-spark", supported: true},
 		{name: "gpt-4o", model: "gpt-4o", supported: false},
 	}
 
