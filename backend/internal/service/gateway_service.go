@@ -3406,7 +3406,7 @@ func (s *GatewayService) isModelSupportedByAccountWithContext(ctx context.Contex
 		if strings.TrimSpace(requestedModel) == "" {
 			return true
 		}
-		return kiro.MapModel(requestedModel) != ""
+		return mapKiroModel(account, requestedModel) != ""
 	}
 	if account.Platform == PlatformAntigravity {
 		if strings.TrimSpace(requestedModel) == "" {
@@ -3436,7 +3436,7 @@ func (s *GatewayService) isModelSupportedByAccount(account *Account, requestedMo
 		if strings.TrimSpace(requestedModel) == "" {
 			return true
 		}
-		return kiro.MapModel(requestedModel) != ""
+		return mapKiroModel(account, requestedModel) != ""
 	}
 	if account.Platform == PlatformAntigravity {
 		if strings.TrimSpace(requestedModel) == "" {
@@ -8170,11 +8170,25 @@ func resolveAccountUpstreamModel(account *Account, requestedModel string) string
 		return mapAntigravityModel(account, requestedModel)
 	}
 	if account.Platform == PlatformKiro {
-		if mapped := kiro.MapModel(requestedModel); mapped != "" {
-			return mapped
-		}
+		return mapKiroModel(account, requestedModel)
 	}
 	return account.GetMappedModel(requestedModel)
+}
+
+func mapKiroModel(account *Account, requestedModel string) string {
+	requestedModel = strings.TrimSpace(requestedModel)
+	if requestedModel == "" {
+		return ""
+	}
+	effectiveModel := requestedModel
+	if account != nil {
+		if mappedModel, matched := account.ResolveMappedModel(requestedModel); matched {
+			effectiveModel = mappedModel
+		} else if len(account.GetModelMapping()) > 0 {
+			return ""
+		}
+	}
+	return kiro.MapModel(effectiveModel)
 }
 
 // needsUpstreamChannelRestrictionCheck 判断是否需要在调度循环中逐账号检查上游模型的渠道限制。

@@ -18,12 +18,19 @@ type ConvertResult struct {
 }
 
 func ConvertAnthropicRequest(body []byte) (*ConvertResult, error) {
+	return ConvertAnthropicRequestWithModel(body, "")
+}
+
+func ConvertAnthropicRequestWithModel(body []byte, requestedModelOverride string) (*ConvertResult, error) {
 	var req map[string]any
 	if err := json.Unmarshal(body, &req); err != nil {
 		return nil, err
 	}
 
-	requestedModel, _ := req["model"].(string)
+	requestedModel := requestedModelOverride
+	if strings.TrimSpace(requestedModel) == "" {
+		requestedModel, _ = req["model"].(string)
+	}
 	modelID := MapModel(requestedModel)
 	if modelID == "" {
 		return nil, fmt.Errorf("unsupported kiro model: %s", requestedModel)

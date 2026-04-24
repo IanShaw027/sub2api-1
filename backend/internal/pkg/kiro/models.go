@@ -77,34 +77,45 @@ func DefaultModelIDs() []string {
 	return out
 }
 
+var kiroModelAliases = map[string]string{
+	"claude-sonnet-4":                     "claude-sonnet-4.6",
+	"claude-sonnet-4-thinking":            "claude-sonnet-4.6-thinking",
+	"claude-sonnet-4-5":                   "claude-sonnet-4.5",
+	"claude-sonnet-4-5-thinking":          "claude-sonnet-4.5-thinking",
+	"claude-sonnet-4.5":                   "claude-sonnet-4.5",
+	"claude-sonnet-4.5-thinking":          "claude-sonnet-4.5-thinking",
+	"claude-sonnet-4-5-20250929":          "claude-sonnet-4.5",
+	"claude-sonnet-4-5-20250929-thinking": "claude-sonnet-4.5-thinking",
+	"claude-sonnet-4-6":                   "claude-sonnet-4.6",
+	"claude-sonnet-4-6-thinking":          "claude-sonnet-4.6-thinking",
+	"claude-sonnet-4.6":                   "claude-sonnet-4.6",
+	"claude-sonnet-4.6-thinking":          "claude-sonnet-4.6-thinking",
+	"claude-opus-4":                       "claude-opus-4.6",
+	"claude-opus-4-thinking":              "claude-opus-4.6-thinking",
+	"claude-opus-4-5":                     "claude-opus-4.5",
+	"claude-opus-4-5-thinking":            "claude-opus-4.5-thinking",
+	"claude-opus-4.5":                     "claude-opus-4.5",
+	"claude-opus-4.5-thinking":            "claude-opus-4.5-thinking",
+	"claude-opus-4-5-20251101":            "claude-opus-4.5",
+	"claude-opus-4-5-20251101-thinking":   "claude-opus-4.5-thinking",
+	"claude-opus-4-6":                     "claude-opus-4.6",
+	"claude-opus-4-6-thinking":            "claude-opus-4.6-thinking",
+	"claude-opus-4.6":                     "claude-opus-4.6",
+	"claude-opus-4.6-thinking":            "claude-opus-4.6-thinking",
+	"claude-haiku-4":                      "claude-haiku-4.5",
+	"claude-haiku-4-thinking":             "claude-haiku-4.5-thinking",
+	"claude-haiku-4-5":                    "claude-haiku-4.5",
+	"claude-haiku-4-5-thinking":           "claude-haiku-4.5-thinking",
+	"claude-haiku-4.5":                    "claude-haiku-4.5",
+	"claude-haiku-4.5-thinking":           "claude-haiku-4.5-thinking",
+	"claude-haiku-4-5-20251001":           "claude-haiku-4.5",
+	"claude-haiku-4-5-20251001-thinking":  "claude-haiku-4.5-thinking",
+}
+
 func MapModel(model string) string {
-	modelLower := strings.ToLower(strings.TrimSpace(model))
-	thinking := strings.Contains(modelLower, "thinking")
-	switch {
-	case strings.Contains(modelLower, "sonnet"):
-		base := "claude-sonnet-4.5"
-		if strings.Contains(modelLower, "4-6") || strings.Contains(modelLower, "4.6") {
-			base = "claude-sonnet-4.6"
-		}
-		if thinking {
-			return base + "-thinking"
-		}
-		return base
-	case strings.Contains(modelLower, "opus"):
-		base := "claude-opus-4.6"
-		if strings.Contains(modelLower, "4-5") || strings.Contains(modelLower, "4.5") {
-			base = "claude-opus-4.5"
-		}
-		if thinking {
-			return base + "-thinking"
-		}
-		return base
-	case strings.Contains(modelLower, "haiku"):
-		if thinking {
-			return "claude-haiku-4.5-thinking"
-		}
-		return "claude-haiku-4.5"
-	default:
-		return ""
-	}
+	return kiroModelAliases[normalizeKiroModelAlias(model)]
+}
+
+func normalizeKiroModelAlias(model string) string {
+	return strings.ToLower(strings.TrimSpace(model))
 }

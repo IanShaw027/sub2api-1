@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -145,6 +147,65 @@ func validatePlatformAccountType(platform, accountType string) error {
 	return nil
 }
 
+func validateKiroCredentials(credentials map[string]any) error {
+	refreshToken := strings.TrimSpace(stringCredential(credentials, "refresh_token"))
+	if refreshToken == "" {
+		return infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro refresh_token is required")
+	}
+	authMethod := strings.TrimSpace(stringCredential(credentials, "auth_method"))
+	if authMethod == "" {
+		authMethod = "social"
+	}
+	if authMethod == "idc" {
+		if strings.TrimSpace(stringCredential(credentials, "client_id")) == "" || strings.TrimSpace(stringCredential(credentials, "client_secret")) == "" {
+			return infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro idc client_id and client_secret are required")
+		}
+	}
+	if rawExpiresAt, ok := credentials["expires_at"]; ok {
+		if _, err := parseKiroExpiresAt(rawExpiresAt); err != nil {
+			return infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro expires_at is invalid")
+		}
+	}
+	return nil
+}
+
+func stringCredential(credentials map[string]any, key string) string {
+	if credentials == nil {
+		return ""
+	}
+	value, ok := credentials[key]
+	if !ok || value == nil {
+		return ""
+	}
+	return fmt.Sprintf("%v", value)
+}
+
+func parseKiroExpiresAt(value any) (time.Time, error) {
+	switch typed := value.(type) {
+	case string:
+		trimmed := strings.TrimSpace(typed)
+		if trimmed == "" {
+			return time.Time{}, fmt.Errorf("empty expires_at")
+		}
+		if ts, err := time.Parse(time.RFC3339, trimmed); err == nil {
+			return ts, nil
+		}
+		seconds, err := strconv.ParseInt(trimmed, 10, 64)
+		if err != nil {
+			return time.Time{}, err
+		}
+		return time.Unix(seconds, 0).UTC(), nil
+	case int64:
+		return time.Unix(typed, 0).UTC(), nil
+	case int:
+		return time.Unix(int64(typed), 0).UTC(), nil
+	case float64:
+		return time.Unix(int64(typed), 0).UTC(), nil
+	default:
+		return time.Time{}, fmt.Errorf("unsupported expires_at type")
+	}
+}
+
 type groupExistenceBatchChecker interface {
 	ExistsByIDs(ctx context.Context, ids []int64) (map[int64]bool, error)
 }
@@ -161,6 +222,11 @@ func NewAccountService(accountRepo AccountRepository, groupRepo GroupRepository)
 func (s *AccountService) Create(ctx context.Context, req CreateAccountRequest) (*Account, error) {
 	if err := validatePlatformAccountType(req.Platform, req.Type); err != nil {
 		return nil, err
+	}
+	if req.Platform == PlatformKiro {
+		if err := validateKiroCredentials(req.Credentials); err != nil {
+			return nil, err
+		}
 	}
 
 	// 验证分组是否存在（如果指定了分组）
@@ -266,6 +332,11 @@ func (s *AccountService) Update(ctx context.Context, id int64, req UpdateAccount
 
 	if req.Credentials != nil {
 		account.Credentials = *req.Credentials
+	}
+	if account.Platform == PlatformKiro {
+		if err := validateKiroCredentials(account.Credentials); err != nil {
+			return nil, err
+		}
 	}
 
 	if req.Extra != nil {

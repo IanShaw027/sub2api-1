@@ -96,6 +96,13 @@ func NewAccountHandler(
 	}
 }
 
+func (h *AccountHandler) SetKiroRefreshTransport(httpUpstream service.HTTPUpstream, tlsFPProfileService *service.TLSFingerprintProfileService) {
+	if h == nil {
+		return
+	}
+	h.kiroRefresh = service.NewKiroTokenRefresher().WithTransport(httpUpstream, tlsFPProfileService).Refresh
+}
+
 // CreateAccountRequest represents create account request
 type CreateAccountRequest struct {
 	Name                    string         `json:"name" binding:"required"`
@@ -629,6 +636,11 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	if req.Credentials != nil && account.Type == service.AccountTypeOAuth && h.tokenCacheInvalidator != nil {
+		if err := h.tokenCacheInvalidator.InvalidateToken(c.Request.Context(), account); err != nil {
+			log.Printf("[WARN] Failed to invalidate token cache for account %d after update: %v", account.ID, err)
+		}
+	}
 
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
 }
@@ -901,6 +913,13 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 		if invalidateErr := h.tokenCacheInvalidator.InvalidateToken(ctx, updatedAccount); invalidateErr != nil {
 			log.Printf("[WARN] Failed to invalidate token cache for account %d: %v", updatedAccount.ID, invalidateErr)
 		}
+	}
+	if account.Platform == service.PlatformKiro {
+		clearedAccount, clearErr := h.adminService.ClearAccountError(ctx, updatedAccount.ID)
+		if clearErr != nil {
+			return nil, "", fmt.Errorf("failed to clear account error: %w", clearErr)
+		}
+		updatedAccount = clearedAccount
 	}
 
 	// OpenAI OAuth: 刷新成功后检查并设置 privacy_mode

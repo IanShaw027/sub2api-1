@@ -117,3 +117,52 @@ func TestAccountService_Update_RejectsAPIKeyForKiroOAuthOnlyGroup(t *testing.T) 
 	require.ErrorContains(t, err, "kiro accounts only support oauth type")
 	require.Empty(t, accountRepo.bindGroupsCalls)
 }
+
+func TestAccountService_Create_RejectsInvalidKiroCredentials(t *testing.T) {
+	t.Parallel()
+
+	svc := &AccountService{
+		accountRepo: &accountRepoStubForOAuthOnlyGroup{},
+		groupRepo:   &groupRepoStubForOAuthOnlyGroup{},
+	}
+
+	_, err := svc.Create(context.Background(), CreateAccountRequest{
+		Name:        "kiro-oauth",
+		Platform:    PlatformKiro,
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"auth_method": "social"},
+	})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "kiro refresh_token is required")
+}
+
+func TestAccountService_Update_RejectsInvalidKiroIDCFields(t *testing.T) {
+	t.Parallel()
+
+	accountRepo := &accountRepoStubForOAuthOnlyGroup{
+		getByIDAccount: &Account{
+			ID:       11,
+			Name:     "kiro-oauth",
+			Platform: PlatformKiro,
+			Type:     AccountTypeOAuth,
+			Status:   StatusActive,
+			Credentials: map[string]any{
+				"refresh_token": "refresh-token",
+			},
+		},
+	}
+	svc := &AccountService{
+		accountRepo: accountRepo,
+		groupRepo:   &groupRepoStubForOAuthOnlyGroup{},
+	}
+
+	_, err := svc.Update(context.Background(), 11, UpdateAccountRequest{
+		Credentials: &map[string]any{
+			"refresh_token": "refresh-token",
+			"auth_method":   "idc",
+			"client_id":     "client-id",
+		},
+	})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "kiro idc client_id and client_secret are required")
+}

@@ -59,8 +59,11 @@ func TestKiroGatewayService_ForwardNonStream_ExceptionDoesNotCommitFakeCache(t *
 
 	require.Error(t, err)
 	require.Nil(t, result)
-	require.Equal(t, http.StatusBadGateway, rec.Code)
-	require.Contains(t, rec.Body.String(), "exception frame")
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Empty(t, rec.Body.String())
 	_, found := svc.fakeCache.Get(fakeCachePlan.CurrentKey)
 	require.False(t, found, "exception responses must not commit fake cache")
 }
@@ -106,6 +109,7 @@ func TestKiroGatewayService_ForwardStream_ExceptionDoesNotCommitFakeCacheOrEmitF
 	require.Nil(t, result)
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Body.String(), "event: message_start")
+	require.Contains(t, rec.Body.String(), "event: error")
 	require.NotContains(t, rec.Body.String(), "event: message_delta")
 	require.NotContains(t, rec.Body.String(), "event: message_stop")
 	_, found := svc.fakeCache.Get(fakeCachePlan.CurrentKey)
@@ -186,7 +190,7 @@ func TestKiroGatewayService_ForwardStream_IncompleteFrameDoesNotCommitFakeCacheO
 	require.Error(t, err)
 	require.Nil(t, result)
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.Contains(t, rec.Body.String(), "event: message_start")
+	require.NotContains(t, rec.Body.String(), "event: message_start")
 	require.NotContains(t, rec.Body.String(), "event: message_stop")
 	_, found := svc.fakeCache.Get(fakeCachePlan.CurrentKey)
 	require.False(t, found, "truncated stream responses must not commit fake cache")
@@ -245,9 +249,56 @@ func TestKiroGatewayService_ForwardStream_EmptyBodyFailsWithoutFinalEvents(t *te
 	require.Error(t, err)
 	require.Nil(t, result)
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.Contains(t, rec.Body.String(), "event: message_start")
+	require.NotContains(t, rec.Body.String(), "event: message_start")
 	require.NotContains(t, rec.Body.String(), "event: message_delta")
 	require.NotContains(t, rec.Body.String(), "event: message_stop")
+}
+
+func TestKiroGatewayService_ForwardStream_ContextOnlyBodyFailsWithoutStartingStream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+
+	body := buildKiroTestFrame(t, map[string]string{
+		":message-type": "event",
+		":event-type":   "contextUsageEvent",
+	}, map[string]any{"contextUsagePercentage": 30})
+
+	result, err := svc.forwardStream(
+		context.Background(),
+		c,
+		&Account{ID: 4, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4", Stream: true},
+		&kiropkg.ConvertResult{Model: "claude-sonnet-4.6"},
+		32,
+		time.Now(),
+		nil,
+		false,
+	)
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.NotContains(t, rec.Body.String(), "event: message_start")
+}
+
+func TestParseKiroFrame_RejectsOversizedHeaderLength(t *testing.T) {
+	frame := buildKiroTestFrame(t, map[string]string{
+		":message-type": "event",
+		":event-type":   "assistantResponseEvent",
+	}, map[string]any{"content": "ok"})
+	binary.BigEndian.PutUint32(frame[4:8], uint32(len(frame)))
+	binary.BigEndian.PutUint32(frame[8:12], crc32.ChecksumIEEE(frame[:8]))
+
+	parsed, consumed, ok, err := parseKiroFrame(frame)
+	require.Error(t, err)
+	require.Nil(t, parsed)
+	require.Zero(t, consumed)
+	require.False(t, ok)
 }
 
 func TestKiroGatewayService_ForwardStream_ToolFirstUsesMonotonicBlockIndexes(t *testing.T) {

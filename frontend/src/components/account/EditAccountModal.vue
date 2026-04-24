@@ -3050,6 +3050,8 @@ const handleSubmit = async () => {
       newCredentials.refresh_token = kiroRefreshToken.value.trim()
       newCredentials.auth_method = kiroAuthMethod.value
       newCredentials.region = kiroRegion.value.trim() || 'us-east-1'
+      const refreshTokenChanged = newCredentials.refresh_token !== currentCredentials.refresh_token
+      const authMethodChanged = kiroAuthMethod.value !== (currentCredentials.auth_method || 'social')
       if (kiroAccessToken.value.trim()) {
         newCredentials.access_token = kiroAccessToken.value.trim()
       }
@@ -3082,6 +3084,12 @@ const handleSubmit = async () => {
         newCredentials.machine_id = kiroMachineID.value.trim()
       } else {
         delete newCredentials.machine_id
+      }
+      const clientIDChanged = (newCredentials.client_id || '') !== (currentCredentials.client_id || '')
+      const clientSecretChanged = kiroClientSecret.value.trim().length > 0 && kiroClientSecret.value.trim() !== (currentCredentials.client_secret || '')
+      if (!kiroAccessToken.value.trim() && (refreshTokenChanged || authMethodChanged || clientIDChanged || clientSecretChanged)) {
+        delete newCredentials.access_token
+        delete newCredentials.expires_at
       }
       if (expiresAt) {
         newCredentials.expires_at = expiresAt.toISOString()
