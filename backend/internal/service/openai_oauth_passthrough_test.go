@@ -259,10 +259,28 @@ func TestOpenAIGatewayService_OAuthPassthrough_CompactUsesJSONAndKeepsNonStreami
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses/compact", bytes.NewReader(nil))
+	c.Request.Header.Set("Accept", "*/*")
 	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.1.0")
 	c.Request.Header.Set("Content-Type", "application/json")
+	c.Request.Header.Set("Session_Id", "cache-123")
+	c.Request.Header.Set("X-Codex-Installation-Id", "inst-123")
+	c.Request.Header.Set("X-Codex-Window-Id", "cache-123:0")
+	c.Request.Header.Set("Originator", "codex_exec")
 
-	originalBody := []byte(`{"model":"gpt-5.1-codex","stream":true,"store":true,"instructions":"local-test-instructions","input":[{"type":"text","text":"compact me"}]}`)
+	originalBody := []byte(`{
+		"model":"gpt-5.1-codex",
+		"stream":true,
+		"store":true,
+		"instructions":"local-test-instructions",
+		"input":[{"type":"text","text":"compact me"}],
+		"tools":[{"type":"function","function":{"name":"apply_patch"}}],
+		"parallel_tool_calls":true,
+		"reasoning":{"effort":"high"},
+		"text":{"verbosity":"low"},
+		"prompt_cache_key":"cache-123",
+		"metadata":{"source":"test"},
+		"max_output_tokens":64
+	}`)
 
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
@@ -299,9 +317,21 @@ func TestOpenAIGatewayService_OAuthPassthrough_CompactUsesJSONAndKeepsNonStreami
 	require.Equal(t, "gpt-5.1-codex", gjson.GetBytes(upstream.lastBody, "model").String())
 	require.Equal(t, "compact me", gjson.GetBytes(upstream.lastBody, "input.0.text").String())
 	require.Equal(t, "local-test-instructions", strings.TrimSpace(gjson.GetBytes(upstream.lastBody, "instructions").String()))
-	require.Equal(t, "application/json", upstream.lastReq.Header.Get("Accept"))
-	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("Version"))
-	require.NotEmpty(t, upstream.lastReq.Header.Get("Session_Id"))
+	require.Equal(t, "apply_patch", gjson.GetBytes(upstream.lastBody, "tools.0.function.name").String())
+	require.True(t, gjson.GetBytes(upstream.lastBody, "parallel_tool_calls").Bool())
+	require.Equal(t, "high", gjson.GetBytes(upstream.lastBody, "reasoning.effort").String())
+	require.Equal(t, "low", gjson.GetBytes(upstream.lastBody, "text.verbosity").String())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "metadata").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "max_output_tokens").Exists())
+	require.Equal(t, "*/*", upstream.lastReq.Header.Get("Accept"))
+	require.Empty(t, upstream.lastReq.Header.Get("Version"))
+	require.Empty(t, upstream.lastReq.Header.Get("OpenAI-Beta"))
+	require.Equal(t, "cache-123", upstream.lastReq.Header.Get("Session_Id"))
+	require.Empty(t, upstream.lastReq.Header.Get("Conversation_Id"))
+	require.Equal(t, "inst-123", upstream.lastReq.Header.Get("X-Codex-Installation-Id"))
+	require.Equal(t, "cache-123:0", upstream.lastReq.Header.Get("X-Codex-Window-Id"))
+	require.Equal(t, "codex_exec", upstream.lastReq.Header.Get("Originator"))
 	require.Equal(t, "chatgpt.com", upstream.lastReq.Host)
 	require.Equal(t, "chatgpt-acc", upstream.lastReq.Header.Get("chatgpt-account-id"))
 	require.Contains(t, rec.Body.String(), `"id":"cmp_123"`)
@@ -694,7 +724,7 @@ func TestOpenAIGatewayService_OpenAIPassthrough_429And529TriggerFailover(t *test
 	}
 }
 
-func TestOpenAIGatewayService_OAuthPassthrough_NonCodexUAFallbackToCodexUA(t *testing.T) {
+func TestOpenAIGatewayService_OAuthPassthrough_NonCodexUAPreservesUserAgentWithoutForceCodexCLI(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	rec := httptest.NewRecorder()
@@ -734,7 +764,8 @@ func TestOpenAIGatewayService_OAuthPassthrough_NonCodexUAFallbackToCodexUA(t *te
 	require.NoError(t, err)
 	require.Equal(t, false, gjson.GetBytes(upstream.lastBody, "store").Bool())
 	require.Equal(t, true, gjson.GetBytes(upstream.lastBody, "stream").Bool())
-	require.Equal(t, "codex_cli_rs/0.104.0", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, "curl/8.0", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, "opencode", upstream.lastReq.Header.Get("Originator"))
 }
 
 func TestOpenAIGatewayService_CodexCLIOnly_RejectsNonCodexClient(t *testing.T) {

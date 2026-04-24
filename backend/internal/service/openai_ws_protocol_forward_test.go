@@ -247,7 +247,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRetriesInvalidEncryptedContentO
 		},
 	}
 
-	body := []byte(`{"model":"gpt-5.1","stream":false,"previous_response_id":"resp_http_retry","input":[{"type":"reasoning","encrypted_content":"gAAA","summary":[{"type":"summary_text","text":"keep me"}]},{"type":"input_text","text":"hello"}]}`)
+	body := []byte(`{"model":"gpt-5.1","stream":false,"previous_response_id":"resp_http_retry","instructions":"local-test-instructions","prompt_cache_key":"cache-http-retry","input":[{"type":"reasoning","encrypted_content":"gAAA","summary":[{"type":"summary_text","text":"keep me"}]},{"type":"input_text","text":"hello"}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -265,6 +265,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRetriesInvalidEncryptedContentO
 	require.False(t, gjson.GetBytes(secondBody, "input.0.encrypted_content").Exists(), "精确重试应移除 reasoning.encrypted_content")
 	require.Equal(t, "keep me", gjson.GetBytes(secondBody, "input.0.summary.0.text").String(), "精确重试应保留有效 reasoning summary")
 	require.Equal(t, "input_text", gjson.GetBytes(secondBody, "input.1.type").String(), "非 reasoning input 应保持原样")
+	requireOrderedJSONKeys(t, secondBody, "model", "instructions", "prompt_cache_key", "input")
 
 	decision, _ := c.Get("openai_ws_transport_decision")
 	reason, _ := c.Get("openai_ws_transport_reason")
@@ -336,7 +337,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRetriesWrappedInvalidEncryptedC
 		},
 	}
 
-	body := []byte(`{"model":"gpt-5.1","stream":false,"previous_response_id":"resp_http_retry_wrapped","input":[{"type":"reasoning","encrypted_content":"gAAA","summary":[{"type":"summary_text","text":"keep me too"}]},{"type":"input_text","text":"hello"}]}`)
+	body := []byte(`{"model":"gpt-5.1","stream":false,"previous_response_id":"resp_http_retry_wrapped","instructions":"local-test-instructions","prompt_cache_key":"cache-http-retry-wrapped","input":[{"type":"reasoning","encrypted_content":"gAAA","summary":[{"type":"summary_text","text":"keep me too"}]},{"type":"input_text","text":"hello"}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -349,11 +350,95 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRetriesWrappedInvalidEncryptedC
 	require.True(t, gjson.GetBytes(firstBody, "input.0.encrypted_content").Exists(), "首次请求不应做发送前预清理")
 	require.False(t, gjson.GetBytes(secondBody, "input.0.encrypted_content").Exists(), "wrapped exact retry 应移除 reasoning.encrypted_content")
 	require.Equal(t, "keep me too", gjson.GetBytes(secondBody, "input.0.summary.0.text").String(), "wrapped exact retry 应保留有效 reasoning summary")
+	requireOrderedJSONKeys(t, secondBody, "model", "instructions", "prompt_cache_key", "input")
 
 	decision, _ := c.Get("openai_ws_transport_decision")
 	reason, _ := c.Get("openai_ws_transport_reason")
 	require.Equal(t, string(OpenAIUpstreamTransportHTTPSSE), decision)
 	require.Equal(t, "client_protocol_http", reason)
+}
+
+func TestOpenAIGatewayService_Forward_HTTPIngressCompactRetryReappliesCodexShape(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses/compact", nil)
+	c.Request.Header.Set("User-Agent", "codex_exec/0.124.0")
+	c.Request.Header.Set("Originator", "codex_exec")
+	c.Request.Header.Set("Accept", "*/*")
+	c.Request.Header.Set("Session_Id", "compact-session-1")
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+
+	upstream := &httpUpstreamSequenceRecorder{
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(
+					`{"error":{"code":"invalid_encrypted_content","type":"invalid_request_error","message":"The encrypted content could not be verified."}}`,
+				)),
+			},
+			{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(
+					`{"id":"resp_http_compact_retry_ok","usage":{"input_tokens":1,"output_tokens":2,"input_tokens_details":{"cached_tokens":0}}}`,
+				)),
+			},
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     upstream,
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+	}
+
+	account := &Account{
+		ID:          104,
+		Name:        "openai-oauth-compact",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+	}
+
+	body := []byte(`{"model":"gpt-5.5","instructions":"compact retry","input":[{"type":"reasoning","encrypted_content":"gAAA","summary":[{"type":"summary_text","text":"keep compact summary"}]},{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]}],"tools":[{"type":"function","function":{"name":"apply_patch"}}],"parallel_tool_calls":true,"prompt_cache_key":"cache-compact-retry","metadata":{"source":"test"},"stream":true,"store":true}`)
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.OpenAIWSMode, "HTTP compact should stay on HTTP")
+	require.Equal(t, 2, upstream.callCount, "compact invalid_encrypted_content should retry once")
+	require.Len(t, upstream.bodies, 2)
+
+	firstBody := upstream.bodies[0]
+	secondBody := upstream.bodies[1]
+	require.False(t, gjson.GetBytes(firstBody, "prompt_cache_key").Exists(), "initial compact request should already use compact shape")
+	require.False(t, gjson.GetBytes(firstBody, "metadata").Exists())
+	require.False(t, gjson.GetBytes(firstBody, "stream").Exists())
+	require.False(t, gjson.GetBytes(firstBody, "store").Exists())
+	require.True(t, gjson.GetBytes(firstBody, "input.0.encrypted_content").Exists(), "first compact request should keep encrypted content")
+
+	require.False(t, gjson.GetBytes(secondBody, "prompt_cache_key").Exists(), "retry should reapply compact normalization")
+	require.False(t, gjson.GetBytes(secondBody, "metadata").Exists())
+	require.False(t, gjson.GetBytes(secondBody, "stream").Exists())
+	require.False(t, gjson.GetBytes(secondBody, "store").Exists())
+	require.False(t, gjson.GetBytes(secondBody, "input.0.encrypted_content").Exists(), "retry should remove encrypted content")
+	require.Equal(t, "keep compact summary", gjson.GetBytes(secondBody, "input.0.summary.0.text").String())
+	require.Equal(t, "apply_patch", gjson.GetBytes(secondBody, "tools.0.function.name").String())
+	require.Equal(t, "*/*", upstream.reqs[1].Header.Get("Accept"))
 }
 
 func TestOpenAIGatewayService_Forward_RemovePreviousResponseIDWhenWSDisabled(t *testing.T) {

@@ -18,6 +18,7 @@ import (
 	"github.com/cespare/xxhash/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 // 编译期接口断言
@@ -260,6 +261,59 @@ func TestOpenAIGatewayService_GenerateSessionHash_ContentFallback(t *testing.T) 
 	bodyDifferent := []byte(`{"model":"gpt-5.4","messages":[{"role":"user","content":"Different question"}]}`)
 	hashDifferent := svc.GenerateSessionHash(c, bodyDifferent)
 	require.NotEqual(t, hash, hashDifferent, "different content should produce different hash")
+}
+
+func TestOpenAIGatewayService_Forward_OAuthOrderedMarshalPreservesPromptCacheFriendlyPrefix(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	originalBody := []byte(`{
+		"model":"gpt-5.2",
+		"stream":false,
+		"store":true,
+		"prompt_cache_key":"cache-ordered-123",
+		"instructions":"local-test-instructions",
+		"input":"hello ordered world"
+	}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(originalBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Request.Header.Set("Accept", "text/event-stream")
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid-ordered"}},
+			Body:       io.NopCloser(strings.NewReader("data: [DONE]\n\n")),
+		},
+	}
+
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+	account := &Account{
+		ID:          321,
+		Name:        "oauth-ordered",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, originalBody)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq)
+	requireOrderedJSONKeys(t, upstream.lastBody, "model", "instructions", "prompt_cache_key", "input")
+	require.True(t, gjson.GetBytes(upstream.lastBody, "stream").Bool())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "store").Bool())
+	require.Equal(t, "cache-ordered-123", gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
+	require.Equal(t, "local-test-instructions", gjson.GetBytes(upstream.lastBody, "instructions").String())
+	require.Equal(t, "hello ordered world", gjson.GetBytes(upstream.lastBody, "input.0.content").String())
 }
 
 func TestOpenAIGatewayService_GenerateSessionHash_ExplicitSignalWinsOverContent(t *testing.T) {
@@ -1474,23 +1528,36 @@ func TestOpenAIBuildUpstreamRequestOpenAIPassthroughPreservesCompactPath(t *test
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses/compact", bytes.NewReader([]byte(`{"model":"gpt-5"}`)))
+	c.Request.Header.Set("Accept", "*/*")
+	c.Request.Header.Set("Session_Id", "compact-cache")
+	c.Request.Header.Set("X-Codex-Installation-Id", "inst-123")
+	c.Request.Header.Set("X-Codex-Window-Id", "compact-cache:0")
 
 	svc := &OpenAIGatewayService{}
 	account := &Account{Type: AccountTypeOAuth}
 
-	req, err := svc.buildUpstreamRequestOpenAIPassthrough(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token")
+	req, err := svc.buildUpstreamRequestOpenAIPassthrough(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token", "compact-cache")
 	require.NoError(t, err)
 	require.Equal(t, chatgptCodexURL+"/compact", req.URL.String())
-	require.Equal(t, "application/json", req.Header.Get("Accept"))
-	require.Equal(t, codexCLIVersion, req.Header.Get("Version"))
-	require.NotEmpty(t, req.Header.Get("Session_Id"))
+	require.Equal(t, "*/*", req.Header.Get("Accept"))
+	require.Empty(t, req.Header.Get("Version"))
+	require.Empty(t, req.Header.Get("OpenAI-Beta"))
+	require.Equal(t, "compact-cache", req.Header.Get("Session_Id"))
+	require.Empty(t, req.Header.Get("Conversation_Id"))
+	require.Equal(t, "inst-123", req.Header.Get("X-Codex-Installation-Id"))
+	require.Equal(t, "compact-cache:0", req.Header.Get("X-Codex-Window-Id"))
 }
 
-func TestOpenAIBuildUpstreamRequestCompactForcesJSONAcceptForOAuth(t *testing.T) {
+func TestOpenAIBuildUpstreamRequestCompactPreservesOfficialOAuthHeaders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses/compact", bytes.NewReader([]byte(`{"model":"gpt-5"}`)))
+	c.Request.Header.Set("Accept", "*/*")
+	c.Request.Header.Set("Session_Id", "sess-123")
+	c.Request.Header.Set("X-Codex-Installation-Id", "inst-123")
+	c.Request.Header.Set("X-Codex-Window-Id", "sess-123:0")
+	c.Request.Header.Set("Originator", "codex_exec")
 
 	svc := &OpenAIGatewayService{}
 	account := &Account{
@@ -1501,9 +1568,157 @@ func TestOpenAIBuildUpstreamRequestCompactForcesJSONAcceptForOAuth(t *testing.T)
 	req, err := svc.buildUpstreamRequest(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token", false, "", true)
 	require.NoError(t, err)
 	require.Equal(t, chatgptCodexURL+"/compact", req.URL.String())
-	require.Equal(t, "application/json", req.Header.Get("Accept"))
-	require.Equal(t, codexCLIVersion, req.Header.Get("Version"))
-	require.NotEmpty(t, req.Header.Get("Session_Id"))
+	require.Equal(t, "*/*", req.Header.Get("Accept"))
+	require.Empty(t, req.Header.Get("Version"))
+	require.Empty(t, req.Header.Get("OpenAI-Beta"))
+	require.Equal(t, "sess-123", req.Header.Get("Session_Id"))
+	require.Empty(t, req.Header.Get("Conversation_Id"))
+	require.Equal(t, "inst-123", req.Header.Get("X-Codex-Installation-Id"))
+	require.Equal(t, "sess-123:0", req.Header.Get("X-Codex-Window-Id"))
+	require.Equal(t, "codex_exec", req.Header.Get("Originator"))
+}
+
+func TestOpenAIBuildUpstreamRequestResponsesPreservesOfficialOAuthHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader([]byte(`{"model":"gpt-5"}`)))
+	c.Request.Header.Set("Accept", "text/event-stream")
+	c.Request.Header.Set("Session_Id", "sess-123")
+	c.Request.Header.Set("Conversation_Id", "conv-should-not-forward")
+	c.Request.Header.Set("X-Codex-Beta-Features", "memories,prevent_idle_sleep")
+	c.Request.Header.Set("X-Client-Request-Id", "req-123")
+	c.Request.Header.Set("X-Codex-Window-Id", "sess-123:0")
+	c.Request.Header.Set("Originator", "codex_exec")
+	c.Request.Header.Set("User-Agent", "codex_exec/0.124.0")
+
+	svc := &OpenAIGatewayService{}
+	account := &Account{
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"chatgpt_account_id": "chatgpt-acc"},
+	}
+
+	req, err := svc.buildUpstreamRequest(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token", true, "pcache-123", true)
+	require.NoError(t, err)
+	require.Equal(t, chatgptCodexURL, req.URL.String())
+	require.Equal(t, "text/event-stream", req.Header.Get("Accept"))
+	require.Empty(t, req.Header.Get("OpenAI-Beta"))
+	require.Equal(t, "sess-123", req.Header.Get("Session_Id"))
+	require.Empty(t, req.Header.Get("Conversation_Id"))
+	require.Equal(t, "memories,prevent_idle_sleep", req.Header.Get("X-Codex-Beta-Features"))
+	require.Equal(t, "req-123", req.Header.Get("X-Client-Request-Id"))
+	require.Equal(t, "sess-123:0", req.Header.Get("X-Codex-Window-Id"))
+	require.Equal(t, "codex_exec", req.Header.Get("Originator"))
+	require.Equal(t, "codex_exec/0.124.0", req.Header.Get("User-Agent"))
+}
+
+func TestOpenAIBuildUpstreamRequestOpenAIPassthroughResponsesPreservesOfficialOAuthHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader([]byte(`{"model":"gpt-5"}`)))
+	c.Request.Header.Set("Accept", "text/event-stream")
+	c.Request.Header.Set("Session_Id", "sess-123")
+	c.Request.Header.Set("Conversation_Id", "conv-should-not-forward")
+	c.Request.Header.Set("X-Codex-Beta-Features", "memories,prevent_idle_sleep")
+	c.Request.Header.Set("X-Client-Request-Id", "req-123")
+	c.Request.Header.Set("X-Codex-Window-Id", "sess-123:0")
+	c.Request.Header.Set("Originator", "codex_exec")
+	c.Request.Header.Set("User-Agent", "codex_exec/0.124.0")
+
+	svc := &OpenAIGatewayService{}
+	account := &Account{Type: AccountTypeOAuth}
+
+	req, err := svc.buildUpstreamRequestOpenAIPassthrough(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token", "pcache-123")
+	require.NoError(t, err)
+	require.Equal(t, chatgptCodexURL, req.URL.String())
+	require.Equal(t, "text/event-stream", req.Header.Get("Accept"))
+	require.Empty(t, req.Header.Get("OpenAI-Beta"))
+	require.Equal(t, "sess-123", req.Header.Get("Session_Id"))
+	require.Empty(t, req.Header.Get("Conversation_Id"))
+	require.Equal(t, "memories,prevent_idle_sleep", req.Header.Get("X-Codex-Beta-Features"))
+	require.Equal(t, "req-123", req.Header.Get("X-Client-Request-Id"))
+	require.Equal(t, "sess-123:0", req.Header.Get("X-Codex-Window-Id"))
+	require.Equal(t, "codex_exec", req.Header.Get("Originator"))
+	require.Equal(t, "codex_exec/0.124.0", req.Header.Get("User-Agent"))
+}
+
+func TestOpenAIBuildUpstreamRequest_ForceCodexCLIOnlyOverridesUserAgent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader([]byte(`{"model":"gpt-5"}`)))
+	c.Request.Header.Set("Session_Id", "sess-nonofficial")
+	c.Request.Header.Set("User-Agent", "custom-client/1.0")
+	c.Set("api_key", &APIKey{ID: 42})
+
+	svc := &OpenAIGatewayService{cfg: &config.Config{
+		Gateway: config.GatewayConfig{ForceCodexCLI: true},
+	}}
+	account := &Account{
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"chatgpt_account_id": "chatgpt-acc"},
+	}
+
+	req, err := svc.buildUpstreamRequest(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token", true, "", false)
+	require.NoError(t, err)
+	require.Equal(t, codexCLIUserAgent, req.Header.Get("User-Agent"))
+	require.Equal(t, "opencode", req.Header.Get("Originator"))
+	require.Equal(t, "responses=experimental", req.Header.Get("OpenAI-Beta"))
+	require.Equal(t, isolateOpenAISessionID(42, "sess-nonofficial"), req.Header.Get("Session_Id"))
+	require.Equal(t, isolateOpenAISessionID(42, "sess-nonofficial"), req.Header.Get("Conversation_Id"))
+}
+
+func TestOpenAIBuildUpstreamRequestOpenAIPassthrough_NonOfficialOAuthPreservesUserAgentWithoutForceCodexCLI(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader([]byte(`{"model":"gpt-5"}`)))
+	c.Request.Header.Set("Session_Id", "sess-nonofficial")
+	c.Request.Header.Set("User-Agent", "custom-client/1.0")
+
+	svc := &OpenAIGatewayService{cfg: &config.Config{
+		Gateway: config.GatewayConfig{ForceCodexCLI: false},
+	}}
+	account := &Account{
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"chatgpt_account_id": "chatgpt-acc"},
+	}
+
+	req, err := svc.buildUpstreamRequestOpenAIPassthrough(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token", "")
+	require.NoError(t, err)
+	require.Equal(t, "custom-client/1.0", req.Header.Get("User-Agent"))
+	require.Equal(t, "opencode", req.Header.Get("Originator"))
+	require.Equal(t, "responses=experimental", req.Header.Get("OpenAI-Beta"))
+}
+
+func TestOpenAIBuildUpstreamRequest_APIKeySkipsOAuthOnlyCodexHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader([]byte(`{"model":"gpt-5"}`)))
+	c.Request.Header.Set("X-Codex-Beta-Features", "memories,prevent_idle_sleep")
+	c.Request.Header.Set("X-Client-Request-Id", "req-123")
+	c.Request.Header.Set("X-Codex-Window-Id", "sess-123:0")
+	c.Request.Header.Set("User-Agent", "custom-client/1.0")
+
+	svc := &OpenAIGatewayService{}
+	account := &Account{
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-test"},
+	}
+
+	req, err := svc.buildUpstreamRequest(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token", true, "", false)
+	require.NoError(t, err)
+	require.Empty(t, req.Header.Get("X-Codex-Beta-Features"))
+	require.Empty(t, req.Header.Get("X-Client-Request-Id"))
+	require.Empty(t, req.Header.Get("X-Codex-Window-Id"))
+
+	passthroughReq, err := svc.buildUpstreamRequestOpenAIPassthrough(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token", "")
+	require.NoError(t, err)
+	require.Empty(t, passthroughReq.Header.Get("X-Codex-Beta-Features"))
+	require.Empty(t, passthroughReq.Header.Get("X-Client-Request-Id"))
+	require.Empty(t, passthroughReq.Header.Get("X-Codex-Window-Id"))
 }
 
 func TestOpenAIBuildUpstreamRequestPreservesCompactPathForAPIKeyBaseURL(t *testing.T) {

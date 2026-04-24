@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
@@ -31,6 +30,7 @@ const (
 
 	openAIWSTurnStateHeader    = "x-codex-turn-state"
 	openAIWSTurnMetadataHeader = "x-codex-turn-metadata"
+	openAIWSWindowIDHeader     = "x-codex-window-id"
 
 	openAIWSLogValueMaxLen      = 160
 	openAIWSHeaderValueMaxLen   = 120
@@ -261,6 +261,93 @@ type openAIWSSessionHeaderResolution struct {
 	ConversationID     string
 	SessionSource      string
 	ConversationSource string
+}
+
+func isolateOpenAIWSWindowID(apiKeyID int64, raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	sessionPart := raw
+	suffix := ""
+	if idx := strings.Index(raw, ":"); idx >= 0 {
+		sessionPart = raw[:idx]
+		suffix = raw[idx:]
+	}
+	return isolateOpenAISessionID(apiKeyID, sessionPart) + suffix
+}
+
+func buildOpenAIWSClientMetadataValues(c *gin.Context, turnMetadata string, account *Account) map[string]string {
+	values := map[string]string{}
+	allowOAuthOnlyHeaders := account == nil || account.Type == AccountTypeOAuth
+	if metadata := strings.TrimSpace(turnMetadata); metadata != "" && allowOAuthOnlyHeaders {
+		values[openAIWSTurnMetadataHeader] = metadata
+	}
+	if c == nil || c.Request == nil {
+		if len(values) == 0 {
+			return nil
+		}
+		return values
+	}
+
+	apiKeyID := int64(0)
+	isolateSessionDerivedValues := false
+	if account != nil && account.Type == AccountTypeOAuth {
+		apiKeyID = getAPIKeyIDFromContext(c)
+		isolateSessionDerivedValues = true
+	}
+
+	for _, key := range []string{
+		"x-codex-installation-id",
+		openAIWSWindowIDHeader,
+		"x-codex-beta-features",
+		"x-client-request-id",
+	} {
+		if !allowOAuthOnlyHeaders && openaiOAuthOnlyHeaders[key] {
+			continue
+		}
+		value := strings.TrimSpace(c.GetHeader(key))
+		if value == "" {
+			continue
+		}
+		if key == openAIWSWindowIDHeader && isolateSessionDerivedValues {
+			value = isolateOpenAIWSWindowID(apiKeyID, value)
+		}
+		values[key] = value
+	}
+	if len(values) == 0 {
+		return nil
+	}
+	return values
+}
+
+func mergeOpenAIWSClientMetadata(payload map[string]any, metadataValues map[string]string) {
+	if len(payload) == 0 || len(metadataValues) == 0 {
+		return
+	}
+
+	switch existing := payload["client_metadata"].(type) {
+	case map[string]any:
+		for k, v := range metadataValues {
+			existing[k] = v
+		}
+		payload["client_metadata"] = existing
+	case map[string]string:
+		next := make(map[string]any, len(existing)+len(metadataValues))
+		for k, v := range existing {
+			next[k] = v
+		}
+		for k, v := range metadataValues {
+			next[k] = v
+		}
+		payload["client_metadata"] = next
+	default:
+		next := make(map[string]any, len(metadataValues))
+		for k, v := range metadataValues {
+			next[k] = v
+		}
+		payload["client_metadata"] = next
+	}
 }
 
 func resolveOpenAIWSSessionHeaders(c *gin.Context, promptCacheKey string) openAIWSSessionHeaderResolution {
@@ -1123,28 +1210,38 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 		if v := strings.TrimSpace(c.Request.Header.Get("accept-language")); v != "" {
 			headers.Set("accept-language", v)
 		}
+		for _, key := range []string{"x-codex-installation-id", openAIWSWindowIDHeader, "x-codex-beta-features", "x-client-request-id"} {
+			if account != nil && account.Type != AccountTypeOAuth && openaiOAuthOnlyHeaders[key] {
+				continue
+			}
+			if v := strings.TrimSpace(c.Request.Header.Get(key)); v != "" {
+				if key == openAIWSWindowIDHeader && account != nil && account.Type == AccountTypeOAuth {
+					v = isolateOpenAIWSWindowID(getAPIKeyIDFromContext(c), v)
+				}
+				headers.Set(key, v)
+			}
+		}
 	}
-	// OAuth 账号：将 apiKeyID 混入 session 标识符，防止跨用户会话碰撞。
-	if account != nil && account.Type == AccountTypeOAuth {
-		apiKeyID := getAPIKeyIDFromContext(c)
-		if sessionResolution.SessionID != "" {
-			headers.Set("session_id", isolateOpenAISessionID(apiKeyID, sessionResolution.SessionID))
+	if sessionResolution.SessionID != "" {
+		sessionID := sessionResolution.SessionID
+		if account != nil && account.Type == AccountTypeOAuth {
+			sessionID = isolateOpenAISessionID(getAPIKeyIDFromContext(c), sessionID)
 		}
-		if sessionResolution.ConversationID != "" {
-			headers.Set("conversation_id", isolateOpenAISessionID(apiKeyID, sessionResolution.ConversationID))
+		headers.Set("session_id", sessionID)
+	}
+	if sessionResolution.ConversationID != "" {
+		conversationID := sessionResolution.ConversationID
+		if account != nil && account.Type == AccountTypeOAuth {
+			conversationID = isolateOpenAISessionID(getAPIKeyIDFromContext(c), conversationID)
 		}
+		headers.Set("conversation_id", conversationID)
 	} else {
-		if sessionResolution.SessionID != "" {
-			headers.Set("session_id", sessionResolution.SessionID)
-		}
-		if sessionResolution.ConversationID != "" {
-			headers.Set("conversation_id", sessionResolution.ConversationID)
-		}
+		headers.Del("conversation_id")
 	}
-	if state := strings.TrimSpace(turnState); state != "" {
+	if state := strings.TrimSpace(turnState); state != "" && (account == nil || account.Type == AccountTypeOAuth) {
 		headers.Set(openAIWSTurnStateHeader, state)
 	}
-	if metadata := strings.TrimSpace(turnMetadata); metadata != "" {
+	if metadata := strings.TrimSpace(turnMetadata); metadata != "" && (account == nil || account.Type == AccountTypeOAuth) {
 		headers.Set(openAIWSTurnMetadataHeader, metadata)
 	}
 
@@ -1175,9 +1272,6 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	if s != nil && s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
 		headers.Set("user-agent", codexCLIUserAgent)
 	}
-	if account != nil && account.Type == AccountTypeOAuth && !openai.IsCodexCLIRequest(headers.Get("user-agent")) {
-		headers.Set("user-agent", codexCLIUserAgent)
-	}
 
 	return headers, sessionResolution
 }
@@ -1203,31 +1297,17 @@ func (s *OpenAIGatewayService) buildOpenAIWSCreatePayload(reqBody map[string]any
 	return payload
 }
 
-func setOpenAIWSTurnMetadata(payload map[string]any, turnMetadata string) {
-	if len(payload) == 0 {
-		return
-	}
-	metadata := strings.TrimSpace(turnMetadata)
-	if metadata == "" {
-		return
-	}
+func setOpenAIWSClientMetadata(payload map[string]any, metadataValues map[string]string) {
+	mergeOpenAIWSClientMetadata(payload, metadataValues)
+}
 
-	switch existing := payload["client_metadata"].(type) {
-	case map[string]any:
-		existing[openAIWSTurnMetadataHeader] = metadata
-		payload["client_metadata"] = existing
-	case map[string]string:
-		next := make(map[string]any, len(existing)+1)
-		for k, v := range existing {
-			next[k] = v
-		}
-		next[openAIWSTurnMetadataHeader] = metadata
-		payload["client_metadata"] = next
-	default:
-		payload["client_metadata"] = map[string]any{
-			openAIWSTurnMetadataHeader: metadata,
-		}
+func setOpenAIWSTurnMetadata(payload map[string]any, turnMetadata string) {
+	if strings.TrimSpace(turnMetadata) == "" {
+		return
 	}
+	setOpenAIWSClientMetadata(payload, map[string]string{
+		openAIWSTurnMetadataHeader: strings.TrimSpace(turnMetadata),
+	})
 }
 
 func (s *OpenAIGatewayService) isOpenAIWSStoreRecoveryAllowed(account *Account) bool {
@@ -1740,7 +1820,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		turnState = strings.TrimSpace(c.GetHeader(openAIWSTurnStateHeader))
 		turnMetadata = strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader))
 	}
-	setOpenAIWSTurnMetadata(payload, turnMetadata)
+	setOpenAIWSClientMetadata(payload, buildOpenAIWSClientMetadataValues(c, turnMetadata, account))
 	payloadEventType := openAIWSPayloadString(payload, "type")
 	if payloadEventType == "" {
 		payloadEventType = "response.create"
@@ -2443,9 +2523,13 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		switch path {
 		case "type", "model":
 			payload[path] = value
-		case "client_metadata." + openAIWSTurnMetadataHeader:
-			setOpenAIWSTurnMetadata(payload, fmt.Sprintf("%v", value))
 		default:
+			if strings.HasPrefix(path, "client_metadata.") {
+				setOpenAIWSClientMetadata(payload, map[string]string{
+					strings.TrimPrefix(path, "client_metadata."): fmt.Sprintf("%v", value),
+				})
+				break
+			}
 			return nil, err
 		}
 		rebuilt, marshalErr := json.Marshal(payload)
@@ -2508,11 +2592,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				nil,
 			)
 		}
-		if turnMetadata := strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)); turnMetadata != "" {
-			next, setErr := applyPayloadMutation(normalized, "client_metadata."+openAIWSTurnMetadataHeader, turnMetadata)
-			if setErr != nil {
-				return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", setErr)
-			}
+		for key, value := range buildOpenAIWSClientMetadataValues(c, strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)), account) {
+			next, setErr := applyPayloadMutation(normalized, "client_metadata."+key, value)
+				if setErr != nil {
+					return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", setErr)
+				}
 			normalized = next
 		}
 		upstreamModel := normalizeOpenAIModelForUpstream(account, account.GetMappedModel(originalModel))
@@ -2564,7 +2648,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 	}
 
-	isCodexCLI := openai.IsCodexOfficialClientByHeaders(c.GetHeader("User-Agent"), c.GetHeader("originator")) || (s.cfg != nil && s.cfg.Gateway.ForceCodexCLI)
+	isCodexCLI := isOpenAICodexOfficialClientRequest(c)
 	wsHeaders, _ := s.buildOpenAIWSHeaders(c, account, token, wsDecision, isCodexCLI, turnState, strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)), firstPayload.promptCacheKey)
 	baseAcquireReq := openAIWSAcquireRequest{
 		Account: account,
