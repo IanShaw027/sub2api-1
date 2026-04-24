@@ -289,6 +289,65 @@ func TestLoadForcedCodexInstructionsTemplate(t *testing.T) {
 	require.Equal(t, "server-prefix\n\n{{ .ExistingInstructions }}", cfg.Gateway.ForcedCodexInstructionsTemplate)
 }
 
+func TestLoadForcedCodexInstructionsTemplateRelativeToConfigDir(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	tempDir := t.TempDir()
+	templatePath := filepath.Join(tempDir, "codex-instructions.md.tmpl")
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	require.NoError(t, os.WriteFile(templatePath, []byte("server-prefix\n\n{{ .ExistingInstructions }}"), 0o644))
+	require.NoError(t, os.WriteFile(configPath, []byte("gateway:\n  forced_codex_instructions_template_file: \"codex-instructions.md.tmpl\"\n"), 0o644))
+	t.Setenv("DATA_DIR", tempDir)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, filepath.Clean(templatePath), filepath.Clean(cfg.Gateway.ForcedCodexInstructionsTemplateFile))
+	require.Equal(t, "server-prefix\n\n{{ .ExistingInstructions }}", cfg.Gateway.ForcedCodexInstructionsTemplate)
+}
+
+func TestLoadForcedCodexInstructionsTemplateFallsBackToSiblingDeployDir(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	rootDir := t.TempDir()
+	dataDir := filepath.Join(rootDir, "data")
+	deployDir := filepath.Join(rootDir, "deploy")
+	require.NoError(t, os.MkdirAll(dataDir, 0o755))
+	require.NoError(t, os.MkdirAll(deployDir, 0o755))
+
+	configPath := filepath.Join(dataDir, "config.yaml")
+	templatePath := filepath.Join(deployDir, "codex-instructions.md.tmpl")
+	require.NoError(t, os.WriteFile(templatePath, []byte("server-prefix\n\n{{ .ExistingInstructions }}"), 0o644))
+	require.NoError(t, os.WriteFile(configPath, []byte("gateway:\n  forced_codex_instructions_template_file: \"codex-instructions.md.tmpl\"\n"), 0o644))
+	t.Setenv("DATA_DIR", dataDir)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, filepath.Clean(templatePath), filepath.Clean(cfg.Gateway.ForcedCodexInstructionsTemplateFile))
+	require.Equal(t, "server-prefix\n\n{{ .ExistingInstructions }}", cfg.Gateway.ForcedCodexInstructionsTemplate)
+}
+
+func TestLoadForcedCodexInstructionsTemplateFallbackPreservesRelativeSubdir(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	rootDir := t.TempDir()
+	dataDir := filepath.Join(rootDir, "data")
+	deployDir := filepath.Join(rootDir, "deploy", "templates", "custom")
+	require.NoError(t, os.MkdirAll(dataDir, 0o755))
+	require.NoError(t, os.MkdirAll(deployDir, 0o755))
+
+	configPath := filepath.Join(dataDir, "config.yaml")
+	templatePath := filepath.Join(deployDir, "codex.tmpl")
+	require.NoError(t, os.WriteFile(templatePath, []byte("server-prefix\n\n{{ .ExistingInstructions }}"), 0o644))
+	require.NoError(t, os.WriteFile(configPath, []byte("gateway:\n  forced_codex_instructions_template_file: \"templates/custom/codex.tmpl\"\n"), 0o644))
+	t.Setenv("DATA_DIR", dataDir)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, filepath.Clean(templatePath), filepath.Clean(cfg.Gateway.ForcedCodexInstructionsTemplateFile))
+	require.Equal(t, "server-prefix\n\n{{ .ExistingInstructions }}", cfg.Gateway.ForcedCodexInstructionsTemplate)
+}
+
 func TestLoadDefaultSecurityToggles(t *testing.T) {
 	resetViperWithJWTSecret(t)
 
