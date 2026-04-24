@@ -14,8 +14,11 @@
           :class="message.sender_role === 'user' ? 'justify-end' : 'justify-start'"
         >
           <template v-if="message.message_type === 'system'">
-            <div class="w-full py-2 text-center text-xs text-gray-500 dark:text-gray-400">
-              <span class="inline-block whitespace-nowrap">------------ {{ message.content }} ({{ formatDateTime(message.created_at) }}) ------------</span>
+            <div class="w-full py-2">
+              <div class="mx-auto flex max-w-2xl flex-wrap items-center justify-center gap-2 rounded-full bg-gray-50 px-4 py-2 text-center text-xs text-gray-500 dark:bg-dark-700/50 dark:text-gray-400">
+                <span class="break-words">{{ message.content }}</span>
+                <span class="text-gray-400 dark:text-gray-500">{{ formatDateTime(message.created_at) }}</span>
+              </div>
             </div>
           </template>
 

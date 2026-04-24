@@ -82,10 +82,35 @@ describe('TicketsView', () => {
       global: {
         stubs: {
           AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: { template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>' },
           Pagination: true,
+          DataTable: {
+            props: ['data', 'loading'],
+            template: `
+              <div>
+                <div v-if="loading">common.loading</div>
+                <div v-else-if="!data?.length"><slot name="empty" /></div>
+                <div v-else>
+                  <div v-for="row in data" :key="row.id">
+                    <slot name="cell-title" :row="row" :value="row.title">{{ row.title }}</slot>
+                  </div>
+                </div>
+              </div>
+            `,
+          },
+          SearchInput: {
+            props: ['modelValue'],
+            emits: ['update:modelValue', 'search'],
+            template: `
+              <input
+                :value="modelValue"
+                @input="$emit('update:modelValue', $event.target.value); $emit('search', $event.target.value)"
+              />
+            `,
+          },
           Select: {
             props: ['modelValue', 'options'],
-            emits: ['update:modelValue'],
+            emits: ['update:modelValue', 'change'],
             template: '<div class="select-stub" />',
           },
           TicketCreateDialog: {
@@ -139,10 +164,35 @@ describe('TicketsView', () => {
       global: {
         stubs: {
           AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: { template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>' },
           Pagination: true,
+          DataTable: {
+            props: ['data', 'loading'],
+            template: `
+              <div>
+                <div v-if="loading">common.loading</div>
+                <div v-else-if="!data?.length"><slot name="empty" /></div>
+                <div v-else>
+                  <div v-for="row in data" :key="row.id">
+                    <slot name="cell-title" :row="row" :value="row.title">{{ row.title }}</slot>
+                  </div>
+                </div>
+              </div>
+            `,
+          },
+          SearchInput: {
+            props: ['modelValue'],
+            emits: ['update:modelValue', 'search'],
+            template: `
+              <input
+                :value="modelValue"
+                @input="$emit('update:modelValue', $event.target.value); $emit('search', $event.target.value)"
+              />
+            `,
+          },
           Select: {
             props: ['modelValue', 'options'],
-            emits: ['update:modelValue'],
+            emits: ['update:modelValue', 'change'],
             template: '<div class="select-stub" />',
           },
           TicketCreateDialog: true,
@@ -155,7 +205,7 @@ describe('TicketsView', () => {
     expect(wrapper.text()).toContain('Initial ticket')
 
     await wrapper.get('input').setValue('abc')
-    await wrapper.get('.btn.btn-secondary').trigger('click')
+    await flushPromises()
 
     expect(wrapper.text()).toContain('Initial ticket')
     expect(wrapper.text()).not.toContain('common.loading')

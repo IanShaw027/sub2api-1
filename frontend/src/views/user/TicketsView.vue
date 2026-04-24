@@ -1,83 +1,126 @@
 <template>
   <AppLayout>
+    <TablePageLayout>
+      <template #filters>
+        <div class="flex flex-wrap items-center gap-3">
+          <SearchInput
+            v-model="filters.search"
+            :placeholder="t('tickets.filters.search')"
+            class="w-full sm:w-64"
+            @search="applyFilters"
+          />
+          <Select
+            v-model="filters.category"
+            :options="categoryFilterOptions"
+            :searchable="false"
+            class="w-full sm:w-40"
+            @change="applyFilters"
+          />
+          <Select
+            v-model="filters.status"
+            :options="statusFilterOptions"
+            :searchable="false"
+            class="w-full sm:w-40"
+            @change="applyFilters"
+          />
+          <input
+            v-model="filters.start_date"
+            type="date"
+            class="input w-full sm:w-40"
+            @change="applyFilters"
+          />
+          <input
+            v-model="filters.end_date"
+            type="date"
+            class="input w-full sm:w-40"
+            @change="applyFilters"
+          />
+
+          <div class="flex flex-1 flex-wrap items-center justify-end gap-2">
+            <button class="btn btn-secondary" @click="resetFilters">{{ t('common.reset') }}</button>
+            <button class="btn btn-secondary" :disabled="loading" :title="t('common.refresh')" @click="loadTickets">
+              <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
+            </button>
+            <button class="btn btn-primary" @click="openCreateDialog">
+              <Icon name="plus" size="md" class="mr-1" />
+              {{ t('tickets.create') }}
+            </button>
+          </div>
+        </div>
+      </template>
+
+      <template #table>
+        <DataTable
+          :columns="columns"
+          :data="items"
+          :loading="showInitialLoading"
+        >
+          <template #cell-category="{ row }">
+            <span class="text-sm text-gray-900 dark:text-white">
+              {{ t(`tickets.categories.${row.category}`) }}
+            </span>
+          </template>
+
+          <template #cell-title="{ row }">
+            <div class="max-w-[28rem] whitespace-normal break-words text-sm text-gray-900 dark:text-white">
+              {{ row.title }}
+            </div>
+          </template>
+
+          <template #cell-status="{ row }">
+            <span class="rounded-full px-2.5 py-1 text-xs font-medium" :class="getTicketStatusBadgeClass(row.status)">
+              {{ t(`tickets.statuses.${row.status}`) }}
+            </span>
+          </template>
+
+          <template #cell-created_at="{ value }">
+            <span class="text-sm text-gray-500 dark:text-dark-400">
+              {{ formatRelativeWithDateTime(value) }}
+            </span>
+          </template>
+
+          <template #cell-updated_at="{ value }">
+            <span class="text-sm text-gray-500 dark:text-dark-400">
+              {{ formatRelativeWithDateTime(value) }}
+            </span>
+          </template>
+
+          <template #cell-actions="{ row }">
+            <div class="flex flex-wrap items-center gap-2">
+              <button class="btn btn-secondary btn-sm" @click="router.push(`/tickets/${row.id}`)">{{ t('tickets.actions.view') }}</button>
+              <button v-if="row.status === 'withdrawn'" class="btn btn-secondary btn-sm" @click="openEdit(row)">{{ t('tickets.actions.edit') }}</button>
+              <button class="btn btn-secondary btn-sm" :disabled="row.status === 'closed'" @click="closeTicketItem(row.id)">{{ t('tickets.actions.close') }}</button>
+            </div>
+          </template>
+
+          <template #empty>
+            <div class="flex flex-col items-center">
+              <Icon
+                name="inbox"
+                size="xl"
+                class="mb-4 h-12 w-12 text-gray-400 dark:text-dark-500"
+              />
+              <p class="text-lg font-medium text-gray-900 dark:text-gray-100">
+                {{ t('tickets.empty') }}
+              </p>
+            </div>
+          </template>
+        </DataTable>
+      </template>
+
+      <template #pagination>
+        <Pagination
+          v-if="pagination.total > 0"
+          :page="pagination.page"
+          :total="pagination.total"
+          :page-size="pagination.page_size"
+          @update:page="handlePageChange"
+          @update:pageSize="handlePageSizeChange"
+        />
+      </template>
+    </TablePageLayout>
+
     <div class="space-y-6">
-      <div class="flex flex-col gap-4 rounded-2xl border bg-white p-5 dark:border-dark-700 dark:bg-dark-800 lg:flex-row lg:items-end lg:justify-between">
-        <div class="grid gap-4 md:grid-cols-5">
-          <div>
-            <label class="input-label">{{ t('tickets.filters.search') }}</label>
-            <input v-model="filters.search" class="input" @keyup.enter="applyFilters()" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('tickets.filters.category') }}</label>
-            <Select v-model="filters.category" :options="categoryFilterOptions" :searchable="false" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('tickets.filters.status') }}</label>
-            <Select v-model="filters.status" :options="statusFilterOptions" :searchable="false" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('dates.startDate') }}</label>
-            <input v-model="filters.start_date" type="date" class="input" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('dates.endDate') }}</label>
-            <input v-model="filters.end_date" type="date" class="input" />
-          </div>
-        </div>
-        <div class="flex gap-3">
-          <button class="btn btn-secondary" @click="resetFilters()">{{ t('common.reset') }}</button>
-          <button class="btn btn-secondary" @click="applyFilters()">{{ t('common.search') }}</button>
-          <button class="btn btn-primary" @click="openCreateDialog">{{ t('tickets.create') }}</button>
-        </div>
-      </div>
-
-      <div class="overflow-hidden rounded-2xl border bg-white dark:border-dark-700 dark:bg-dark-800">
-        <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-gray-100 dark:divide-dark-700">
-            <thead class="bg-gray-50 dark:bg-dark-700/50">
-              <tr>
-                <th v-for="header in headers" :key="header" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ header }}</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
-              <tr v-if="showInitialLoading">
-                <td colspan="6" class="px-4 py-10 text-center text-sm text-gray-500 dark:text-gray-400">{{ t('common.loading') }}</td>
-              </tr>
-              <tr v-else-if="items.length === 0">
-                <td colspan="6" class="px-4 py-10 text-center text-sm text-gray-500 dark:text-gray-400">{{ t('tickets.empty') }}</td>
-              </tr>
-              <tr v-for="ticket in items" :key="ticket.id" class="hover:bg-gray-50 dark:hover:bg-dark-700/30">
-                <td class="px-4 py-4 text-sm text-gray-900 dark:text-white">{{ t(`tickets.categories.${ticket.category}`) }}</td>
-                <td class="px-4 py-4 text-sm text-gray-900 dark:text-white">{{ ticket.title }}</td>
-                <td class="px-4 py-4">
-                  <span class="rounded-full px-2.5 py-1 text-xs font-medium" :class="getTicketStatusBadgeClass(ticket.status)">
-                    {{ t(`tickets.statuses.${ticket.status}`) }}
-                  </span>
-                </td>
-                <td class="px-4 py-4 text-sm text-gray-500 dark:text-gray-400">{{ formatRelativeWithDateTime(ticket.created_at) }}</td>
-                <td class="px-4 py-4 text-sm text-gray-500 dark:text-gray-400">{{ formatRelativeWithDateTime(ticket.updated_at) }}</td>
-                <td class="px-4 py-4">
-                  <div class="flex gap-2">
-                    <button class="btn btn-secondary btn-sm" @click="router.push(`/tickets/${ticket.id}`)">{{ t('tickets.actions.view') }}</button>
-                    <button v-if="ticket.status === 'withdrawn'" class="btn btn-secondary btn-sm" @click="openEdit(ticket)">{{ t('tickets.actions.edit') }}</button>
-                    <button class="btn btn-secondary btn-sm" :disabled="ticket.status === 'closed'" @click="closeTicketItem(ticket.id)">{{ t('tickets.actions.close') }}</button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <Pagination
-        v-if="pagination.total > 0"
-        :page="pagination.page"
-        :total="pagination.total"
-        :page-size="pagination.page_size"
-        @update:page="handlePageChange"
-        @update:pageSize="handlePageSizeChange"
-      />
-
       <TicketCreateDialog
         :show="showCreateDialog"
         :submitting="creating"
@@ -96,8 +139,13 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import Pagination from '@/components/common/Pagination.vue'
+import DataTable from '@/components/common/DataTable.vue'
+import SearchInput from '@/components/common/SearchInput.vue'
 import Select from '@/components/common/Select.vue'
+import type { Column } from '@/components/common/types'
+import Icon from '@/components/icons/Icon.vue'
 import TicketCreateDialog from '@/components/tickets/TicketCreateDialog.vue'
 import { useAppStore, useAuthStore } from '@/stores'
 import ticketsAPI from '@/api/tickets'
@@ -131,13 +179,13 @@ const filters = reactive<{ search: string; category: TicketCategory | ''; status
   end_date: '',
 })
 
-const headers = computed(() => [
-  t('tickets.table.category'),
-  t('tickets.table.title'),
-  t('tickets.table.status'),
-  t('tickets.table.createdAt'),
-  t('tickets.table.updatedAt'),
-  t('tickets.table.actions'),
+const columns = computed<Column[]>(() => [
+  { key: 'category', label: t('tickets.table.category'), class: 'w-36' },
+  { key: 'title', label: t('tickets.table.title'), class: 'min-w-[18rem] whitespace-normal' },
+  { key: 'status', label: t('tickets.table.status'), class: 'w-40' },
+  { key: 'created_at', label: t('tickets.table.createdAt'), class: 'w-44' },
+  { key: 'updated_at', label: t('tickets.table.updatedAt'), class: 'w-44' },
+  { key: 'actions', label: t('tickets.table.actions'), class: 'w-48' },
 ])
 const isCreateRoute = computed(() => route.name === 'TicketCreate')
 const categoryFilterOptions = computed(() => [

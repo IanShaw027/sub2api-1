@@ -1,22 +1,26 @@
 <template>
   <AppLayout>
-    <div class="grid gap-6 xl:grid-cols-[1.35fr_0.95fr]">
-      <TicketConversationPane
-        :title="t('tickets.createConversationTitle')"
-        :subtitle="t('tickets.createConversationSubtitle')"
-        :messages="systemMessages"
-        :empty-text="t('tickets.emptyConversation')"
-        :show-composer="false"
-      />
+    <div class="grid h-[calc(100vh-10rem)] min-h-[calc(100vh-10rem)] min-w-0 gap-6 overflow-hidden xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.95fr)]">
+      <div class="min-h-0">
+        <TicketConversationPane
+          :title="t('tickets.createConversationTitle')"
+          :subtitle="t('tickets.createConversationSubtitle')"
+          :messages="systemMessages"
+          :empty-text="t('tickets.emptyConversation')"
+          :show-composer="false"
+        />
+      </div>
 
-      <TicketEditorCard
-        :category="category"
-        :title="title"
-        :payload="payload"
-        :submit-label="t('tickets.submit')"
-        :submitting="submitting"
-        @submit="submit"
-      />
+      <div class="min-h-0">
+        <TicketEditorCard
+          :category="category"
+          :title="title"
+          :payload="payload"
+          :submit-label="t('tickets.submit')"
+          :submitting="submitting"
+          @submit="submit"
+        />
+      </div>
     </div>
   </AppLayout>
 </template>
