@@ -763,7 +763,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 	}
 	setOpsUpstreamRequestBody(c, responsesBody)
 
-	upstreamReq, err := s.buildUpstreamRequest(ctx, c, account, responsesBody, token, true, parsed.StickySessionSeed(), false)
+	upstreamReq, err := s.buildUpstreamRequest(ctx, c, account, responsesBody, token, true, parsed.StickySessionSeed(), isOpenAICodexOfficialClientRequest(c))
 	if err != nil {
 		return nil, err
 	}

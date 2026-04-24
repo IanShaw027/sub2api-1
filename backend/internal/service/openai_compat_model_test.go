@@ -85,6 +85,8 @@ func TestForwardAsAnthropic_NormalizesRoutingAndEffortForGpt54XHigh(t *testing.T
 	body := []byte(`{"model":"gpt-5.4-xhigh","max_tokens":16,"messages":[{"role":"user","content":"hello"}],"stream":false}`)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")
+	c.Request.Header.Set("User-Agent", "codex_exec/0.124.0")
+	c.Request.Header.Set("Originator", "codex_exec")
 
 	upstreamBody := strings.Join([]string{
 		`data: {"type":"response.completed","response":{"id":"resp_1","object":"response","model":"gpt-5.4","status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":5,"output_tokens":2,"total_tokens":7}}}`,
@@ -230,6 +232,19 @@ func TestForwardAsAnthropic_ForcedCodexInstructionsTemplateUsesCachedTemplateCon
 	require.Equal(t, "cached-prefix\n\nclient-system", gjson.GetBytes(upstream.lastBody, "instructions").String())
 }
 
+func TestRenderForcedCodexInstructionsTemplate_DeployTemplatePreservesExistingInstructions(t *testing.T) {
+	t.Parallel()
+
+	templateBytes, err := os.ReadFile(filepath.Join("..", "..", "..", "deploy", "codex-instructions.md.tmpl"))
+	require.NoError(t, err)
+
+	rendered, err := renderForcedCodexInstructionsTemplate(string(templateBytes), forcedCodexInstructionsTemplateData{
+		ExistingInstructions: "client-system",
+	})
+	require.NoError(t, err)
+	require.Contains(t, rendered, "client-system")
+}
+
 func TestForwardAsAnthropic_OrdersPromptCacheKeyBeforeInputAfterCodexTransform(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
@@ -239,6 +254,8 @@ func TestForwardAsAnthropic_OrdersPromptCacheKeyBeforeInputAfterCodexTransform(t
 	body := []byte(`{"model":"gpt-5.1-codex","max_tokens":16,"messages":[{"role":"user","content":"hello"}],"stream":false}`)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")
+	c.Request.Header.Set("User-Agent", "codex_exec/0.124.0")
+	c.Request.Header.Set("Originator", "codex_exec")
 
 	upstreamBody := strings.Join([]string{
 		`data: {"type":"response.completed","response":{"id":"resp_1","object":"response","model":"gpt-5.1-codex","status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":5,"output_tokens":2,"total_tokens":7}}}`,
@@ -278,6 +295,7 @@ func TestForwardAsAnthropic_OrdersPromptCacheKeyBeforeInputAfterCodexTransform(t
 	require.NotEqual(t, -1, inputPos)
 	require.Less(t, modelPos, promptCachePos)
 	require.Less(t, promptCachePos, inputPos)
+	require.Equal(t, "session-ordered", upstream.lastReq.Header.Get("Session_Id"))
 }
 
 func TestForwardAsAnthropic_SerializesStablePrefixFieldsBeforeInput(t *testing.T) {
