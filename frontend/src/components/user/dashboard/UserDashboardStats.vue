@@ -2,7 +2,13 @@
   <!-- Row 1: Core Stats -->
   <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
     <!-- Balance -->
-    <div v-if="!isSimple" class="card p-4">
+    <button
+      v-if="!isSimple"
+      type="button"
+      class="card p-4 text-left transition-colors hover:border-primary-200 hover:bg-primary-50/40 dark:hover:border-primary-800/50 dark:hover:bg-primary-900/10"
+      :title="t('usage.clickToViewBalance')"
+      @click="emit('balance-history')"
+    >
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-emerald-100 p-2 dark:bg-emerald-900/30">
           <svg class="h-5 w-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -12,10 +18,10 @@
         <div>
           <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.balance') }}</p>
           <p class="text-xl font-bold text-emerald-600 dark:text-emerald-400">${{ formatBalance(balance) }}</p>
-          <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('common.available') }}</p>
+          <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('usage.clickToViewBalance') }}</p>
         </div>
       </div>
-    </div>
+    </button>
 
     <!-- API Keys -->
     <div class="card p-4">
@@ -62,6 +68,11 @@
             <span class="text-purple-600 dark:text-purple-400" :title="t('dashboard.actual')">${{ formatCost(stats?.total_actual_cost || 0) }}</span>
             <span class="text-gray-400 dark:text-gray-500" :title="t('dashboard.standard')"> / ${{ formatCost(stats?.total_cost || 0) }}</span>
           </p>
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            {{ t('dashboard.avgRequestPrice') }}: ${{ formatCost(stats?.today_average_request_price || 0) }}
+            <span class="text-gray-400 dark:text-gray-500"> / </span>
+            {{ t('common.total') }}: ${{ formatCost(stats?.total_average_request_price || 0) }}
+          </p>
         </div>
       </div>
     </div>
@@ -79,6 +90,7 @@
           <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.todayTokens') }}</p>
           <p class="text-xl font-bold text-gray-900 dark:text-white">{{ formatTokens(stats?.today_tokens || 0) }}</p>
           <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('dashboard.input') }}: {{ formatTokens(stats?.today_input_tokens || 0) }} / {{ t('dashboard.output') }}: {{ formatTokens(stats?.today_output_tokens || 0) }}</p>
+          <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('usage.cacheWrite') }}: {{ formatTokens(stats?.today_cache_creation_tokens || 0) }} / {{ t('usage.cacheRead') }}: {{ formatTokens(stats?.today_cache_read_tokens || 0) }}</p>
         </div>
       </div>
     </div>
@@ -93,6 +105,7 @@
           <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.totalTokens') }}</p>
           <p class="text-xl font-bold text-gray-900 dark:text-white">{{ formatTokens(stats?.total_tokens || 0) }}</p>
           <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('dashboard.input') }}: {{ formatTokens(stats?.total_input_tokens || 0) }} / {{ t('dashboard.output') }}: {{ formatTokens(stats?.total_output_tokens || 0) }}</p>
+          <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('usage.cacheWrite') }}: {{ formatTokens(stats?.total_cache_creation_tokens || 0) }} / {{ t('usage.cacheRead') }}: {{ formatTokens(stats?.total_cache_read_tokens || 0) }}</p>
         </div>
       </div>
     </div>
@@ -137,6 +150,10 @@
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import type { UserDashboardStats as UserStatsType } from '@/api/usage'
+
+const emit = defineEmits<{
+  'balance-history': []
+}>()
 
 defineProps<{
   stats: UserStatsType

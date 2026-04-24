@@ -1552,6 +1552,9 @@ func (r *usageLogRepository) fillDashboardUsageStatsAggregated(ctx context.Conte
 	}
 	stats.TotalTokens = stats.TotalInputTokens + stats.TotalOutputTokens + stats.TotalCacheCreationTokens + stats.TotalCacheReadTokens
 	if stats.TotalRequests > 0 {
+		stats.TotalAverageRequestPrice = stats.TotalActualCost / float64(stats.TotalRequests)
+	}
+	if stats.TotalRequests > 0 {
 		stats.AverageDurationMs = float64(totalDurationMs) / float64(stats.TotalRequests)
 	}
 
@@ -1589,6 +1592,9 @@ func (r *usageLogRepository) fillDashboardUsageStatsAggregated(ctx context.Conte
 		}
 	}
 	stats.TodayTokens = stats.TodayInputTokens + stats.TodayOutputTokens + stats.TodayCacheCreationTokens + stats.TodayCacheReadTokens
+	if stats.TodayRequests > 0 {
+		stats.TodayAverageRequestPrice = stats.TodayActualCost / float64(stats.TodayRequests)
+	}
 
 	hourlyActiveQuery := `
 		SELECT active_users
@@ -1671,10 +1677,16 @@ func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Co
 	}
 	stats.TotalTokens = stats.TotalInputTokens + stats.TotalOutputTokens + stats.TotalCacheCreationTokens + stats.TotalCacheReadTokens
 	if stats.TotalRequests > 0 {
+		stats.TotalAverageRequestPrice = stats.TotalActualCost / float64(stats.TotalRequests)
+	}
+	if stats.TotalRequests > 0 {
 		stats.AverageDurationMs = float64(totalDurationMs) / float64(stats.TotalRequests)
 	}
 
 	stats.TodayTokens = stats.TodayInputTokens + stats.TodayOutputTokens + stats.TodayCacheCreationTokens + stats.TodayCacheReadTokens
+	if stats.TodayRequests > 0 {
+		stats.TodayAverageRequestPrice = stats.TodayActualCost / float64(stats.TodayRequests)
+	}
 
 	hourStart := now.UTC().Truncate(time.Hour)
 	hourEnd := hourStart.Add(time.Hour)

@@ -59,9 +59,12 @@
             </div>
 
             <div class="grid gap-3 sm:grid-cols-3">
-              <div
+              <button
                 data-testid="profile-overview-metric-balance"
-                class="rounded-2xl bg-white/85 px-4 py-3 shadow-sm ring-1 ring-white/70 dark:bg-dark-900/60 dark:ring-dark-700"
+                type="button"
+                class="rounded-2xl bg-white/85 px-4 py-3 text-left shadow-sm ring-1 ring-white/70 transition-colors hover:ring-primary-200 dark:bg-dark-900/60 dark:ring-dark-700 dark:hover:ring-primary-800/50"
+                :title="t('usage.clickToViewBalance')"
+                @click="emit('balance-history')"
               >
                 <p class="text-xs font-medium uppercase tracking-[0.16em] text-gray-400 dark:text-gray-500">
                   {{ t('profile.accountBalance') }}
@@ -69,7 +72,10 @@
                 <p class="mt-1 text-lg font-semibold text-gray-900 dark:text-white">
                   {{ formatCurrency(user?.balance || 0) }}
                 </p>
-              </div>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('usage.clickToViewBalance') }}
+                </p>
+              </button>
               <div
                 data-testid="profile-overview-metric-concurrency"
                 class="rounded-2xl bg-white/85 px-4 py-3 shadow-sm ring-1 ring-white/70 dark:bg-dark-900/60 dark:ring-dark-700"
@@ -186,6 +192,10 @@ import ProfileAvatarCard from '@/components/user/profile/ProfileAvatarCard.vue'
 import ProfileEditForm from '@/components/user/profile/ProfileEditForm.vue'
 import ProfileIdentityBindingsSection from '@/components/user/profile/ProfileIdentityBindingsSection.vue'
 import type { User, UserAuthBindingStatus, UserAuthProvider, UserProfileSourceContext } from '@/types'
+
+const emit = defineEmits<{
+  'balance-history': []
+}>()
 
 const props = withDefaults(defineProps<{
   user: User | null

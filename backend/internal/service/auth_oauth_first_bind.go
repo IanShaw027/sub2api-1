@@ -87,6 +87,7 @@ ON CONFLICT (user_id, provider_type, grant_reason) DO NOTHING`,
 			return fmt.Errorf("apply first bind concurrency default: %w", err)
 		}
 	}
+	s.recordFirstBindGrantHistory(ctx, userID, providerType, providerDefaults.Balance, providerDefaults.Concurrency)
 	if s.defaultSubAssigner != nil {
 		for _, item := range providerDefaults.Subscriptions {
 			if _, _, err := s.defaultSubAssigner.AssignOrExtendSubscription(ctx, &AssignSubscriptionInput{

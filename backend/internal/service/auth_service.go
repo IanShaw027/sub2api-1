@@ -222,6 +222,7 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		return "", nil, ErrServiceUnavailable
 	}
 	s.postAuthUserBootstrap(ctx, user, "email", true)
+	s.recordSignupGrantHistory(ctx, user.ID, "email", grantPlan)
 	s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 
 	// 标记邀请码为已使用（如果使用了邀请码）
@@ -520,6 +521,7 @@ func (s *AuthService) LoginOrRegisterOAuth(ctx context.Context, email, username 
 			} else {
 				user = newUser
 				s.postAuthUserBootstrap(ctx, user, signupSource, false)
+				s.recordSignupGrantHistory(ctx, user.ID, signupSource, grantPlan)
 				s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 			}
 		} else {
@@ -651,6 +653,7 @@ func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 					}
 					user = newUser
 					s.postAuthUserBootstrap(ctx, user, signupSource, false)
+					s.recordSignupGrantHistory(ctx, user.ID, signupSource, grantPlan)
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 				}
 			} else {
@@ -668,6 +671,7 @@ func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 				} else {
 					user = newUser
 					s.postAuthUserBootstrap(ctx, user, signupSource, false)
+					s.recordSignupGrantHistory(ctx, user.ID, signupSource, grantPlan)
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 					if invitationRedeemCode != nil {
 						if err := s.redeemRepo.Use(ctx, invitationRedeemCode.ID, user.ID); err != nil {
@@ -775,6 +779,60 @@ func (s *AuthService) postAuthUserBootstrap(ctx context.Context, user *User, sig
 
 	if touchLogin {
 		s.touchUserLogin(ctx, user.ID)
+	}
+}
+
+func (s *AuthService) recordSignupGrantHistory(ctx context.Context, userID int64, signupSource string, grantPlan signupGrantPlan) {
+	if s == nil || userID <= 0 {
+		return
+	}
+	source := strings.TrimSpace(signupSource)
+	if source == "" {
+		source = "email"
+	}
+	s.recordGrantHistory(ctx, userID, AdjustmentTypeAdminBalance, grantPlan.Balance, fmt.Sprintf("auto granted by signup defaults (%s)", source))
+	s.recordGrantHistory(ctx, userID, AdjustmentTypeAdminConcurrency, float64(grantPlan.Concurrency), fmt.Sprintf("auto granted by signup defaults (%s)", source))
+}
+
+func (s *AuthService) recordFirstBindGrantHistory(ctx context.Context, userID int64, providerType string, balance float64, concurrency int) {
+	if s == nil || userID <= 0 {
+		return
+	}
+	provider := strings.TrimSpace(providerType)
+	if provider == "" {
+		provider = "unknown"
+	}
+	s.recordGrantHistory(ctx, userID, AdjustmentTypeAdminBalance, balance, fmt.Sprintf("auto granted by first bind defaults (%s)", provider))
+	s.recordGrantHistory(ctx, userID, AdjustmentTypeAdminConcurrency, float64(concurrency), fmt.Sprintf("auto granted by first bind defaults (%s)", provider))
+}
+
+func (s *AuthService) recordGrantHistory(ctx context.Context, userID int64, recordType string, value float64, notes string) {
+	if s == nil || s.entClient == nil || userID <= 0 || value == 0 {
+		return
+	}
+
+	code, err := GenerateRedeemCode()
+	if err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to generate grant history code: user_id=%d type=%s err=%v", userID, recordType, err)
+		return
+	}
+
+	client := s.entClient
+	if tx := dbent.TxFromContext(ctx); tx != nil {
+		client = tx.Client()
+	}
+
+	now := time.Now().UTC()
+	if _, err := client.RedeemCode.Create().
+		SetCode(code).
+		SetType(recordType).
+		SetValue(value).
+		SetStatus(StatusUsed).
+		SetUsedBy(userID).
+		SetUsedAt(now).
+		SetNotes(notes).
+		Save(ctx); err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to record grant history: user_id=%d type=%s err=%v", userID, recordType, err)
 	}
 }
 

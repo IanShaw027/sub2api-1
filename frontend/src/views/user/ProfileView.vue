@@ -12,6 +12,7 @@
         :wechat-enabled="wechatOAuthEnabled"
         :wechat-open-enabled="wechatOAuthOpenEnabled"
         :wechat-mp-enabled="wechatOAuthMPEnabled"
+        @balance-history="showBalanceHistory = true"
       />
 
       <div
@@ -43,6 +44,13 @@
       />
 
       <ProfileTotpCard />
+
+      <UserBalanceHistoryModal
+        :show="showBalanceHistory"
+        :email="user?.email"
+        :balance="user?.balance || 0"
+        @close="showBalanceHistory = false"
+      />
     </div>
   </AppLayout>
 </template>
@@ -56,6 +64,7 @@ import ProfileBalanceNotifyCard from '@/components/user/profile/ProfileBalanceNo
 import ProfileInfoCard from '@/components/user/profile/ProfileInfoCard.vue'
 import ProfilePasswordForm from '@/components/user/profile/ProfilePasswordForm.vue'
 import ProfileTotpCard from '@/components/user/profile/ProfileTotpCard.vue'
+import UserBalanceHistoryModal from '@/components/user/UserBalanceHistoryModal.vue'
 import { isWeChatWebOAuthEnabled } from '@/api/auth'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
@@ -64,6 +73,7 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const user = computed(() => authStore.user)
+const showBalanceHistory = ref(false)
 
 const contactInfo = ref('')
 const balanceLowNotifyEnabled = ref(false)

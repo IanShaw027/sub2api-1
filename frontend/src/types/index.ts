@@ -235,6 +235,7 @@ export interface UpdateSubscriptionRequest {
 
 export type AnnouncementStatus = 'draft' | 'active' | 'archived'
 export type AnnouncementNotifyMode = 'silent' | 'popup'
+export type AnnouncementReadStatusFilter = 'all' | 'read' | 'unread'
 
 export type AnnouncementConditionType = 'subscription' | 'balance'
 
@@ -309,6 +310,46 @@ export interface AnnouncementUserReadStatus {
   balance: number
   eligible: boolean
   read_at?: string
+}
+
+export type TicketCategory = 'consult' | 'refund' | 'concurrency_apply' | 'rate_apply' | 'other'
+export type TicketStatus = 'submitted' | 'processing' | 'waiting_user' | 'waiting_admin' | 'resolved' | 'closed' | 'withdrawn'
+export type TicketSenderRole = 'user' | 'admin' | 'system'
+export type TicketMessageType = 'message' | 'system'
+
+export interface SupportTicket {
+  id: number
+  ticket_no: string
+  user_id: number
+  user_name: string
+  user_email: string
+  user_avatar_url: string
+  category: TicketCategory
+  title: string
+  status: TicketStatus
+  current_form_payload: Record<string, unknown>
+  current_revision_no: number
+  latest_message_at: string
+  last_reply_role: TicketSenderRole
+  unread_by_user: boolean
+  unread_by_admin: boolean
+  submitted_at?: string | null
+  closed_at?: string | null
+  withdrawn_at?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SupportTicketMessage {
+  id: number
+  ticket_id: number
+  sender_role: TicketSenderRole
+  sender_user_id?: number | null
+  sender_name_snapshot: string
+  sender_avatar_snapshot: string
+  message_type: TicketMessageType
+  content: string
+  created_at: string
 }
 
 // ==================== Proxy Node Types ====================
