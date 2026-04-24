@@ -5,12 +5,24 @@
       <div class="card p-4">
         <div class="flex flex-wrap items-center gap-3">
           <div class="flex-1 sm:max-w-64">
-            <input v-model="orderSearch" type="text" :placeholder="t('payment.admin.searchOrders')" class="input" @input="debounceLoadOrders" />
+            <input v-model="orderSearch" type="text" :placeholder="t('payment.admin.searchOrders')" class="input" @input="debounceApplyOrderFilters" />
           </div>
-          <Select v-model="orderFilters.status" :options="statusFilterOptions" class="w-36" @change="loadOrders" />
-          <Select v-model="orderFilters.payment_type" :options="paymentTypeFilterOptions" class="w-40" @change="loadOrders" />
-          <Select v-model="orderFilters.order_type" :options="orderTypeFilterOptions" class="w-36" @change="loadOrders" />
+          <Select v-model="orderFilters.status" :options="statusFilterOptions" class="w-36" @change="applyOrderFilters" />
+          <Select v-model="orderFilters.payment_type" :options="paymentTypeFilterOptions" class="w-40" @change="applyOrderFilters" />
+          <Select v-model="orderFilters.order_type" :options="orderTypeFilterOptions" class="w-36" @change="applyOrderFilters" />
+          <div class="w-40">
+            <input v-model="orderFilters.start_date" type="date" class="input" />
+          </div>
+          <div class="w-40">
+            <input v-model="orderFilters.end_date" type="date" class="input" />
+          </div>
           <div class="flex flex-1 flex-wrap items-center justify-end gap-2">
+            <button @click="resetOrderFilters" class="btn btn-secondary">
+              {{ t('common.reset') }}
+            </button>
+            <button @click="applyOrderFilters" class="btn btn-secondary">
+              {{ t('common.search') }}
+            </button>
             <button @click="loadOrders" :disabled="ordersLoading" class="btn btn-secondary" :title="t('common.refresh')">
               <Icon name="refresh" size="md" :class="ordersLoading ? 'animate-spin' : ''" />
             </button>
@@ -142,7 +154,7 @@ const appStore = useAppStore()
 const ordersLoading = ref(false)
 const orders = ref<PaymentOrder[]>([])
 const orderSearch = ref('')
-const orderFilters = reactive({ status: '', payment_type: '', order_type: '' })
+const orderFilters = reactive({ status: '', payment_type: '', order_type: '', start_date: '', end_date: '' })
 const orderPagination = reactive({ page: 1, page_size: 20, total: 0 })
 const selectedOrder = ref<PaymentOrder | null>(null)
 const showDetailDialog = ref(false)
@@ -151,9 +163,9 @@ const refundSubmitting = ref(false)
 const orderAuditLogs = ref<AuditLog[]>([])
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
-function debounceLoadOrders() {
+function debounceApplyOrderFilters() {
   if (debounceTimer) clearTimeout(debounceTimer)
-  debounceTimer = setTimeout(() => loadOrders(), 300)
+  debounceTimer = setTimeout(() => applyOrderFilters(), 300)
 }
 
 async function loadOrders() {
@@ -163,12 +175,30 @@ async function loadOrders() {
       page: orderPagination.page, page_size: orderPagination.page_size,
       keyword: orderSearch.value || undefined, status: orderFilters.status || undefined,
       payment_type: orderFilters.payment_type || undefined, order_type: orderFilters.order_type || undefined,
+      start_date: orderFilters.start_date || undefined, end_date: orderFilters.end_date || undefined,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     })
     orders.value = res.data.items || []
     orderPagination.total = res.data.total || 0
   } catch (err: unknown) {
     appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
   } finally { ordersLoading.value = false }
+}
+
+function applyOrderFilters() {
+  orderPagination.page = 1
+  loadOrders()
+}
+
+function resetOrderFilters() {
+  orderSearch.value = ''
+  orderFilters.status = ''
+  orderFilters.payment_type = ''
+  orderFilters.order_type = ''
+  orderFilters.start_date = ''
+  orderFilters.end_date = ''
+  orderPagination.page = 1
+  loadOrders()
 }
 
 function handleOrderPageChange(page: number) { orderPagination.page = page; loadOrders() }

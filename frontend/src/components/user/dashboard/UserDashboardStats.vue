@@ -63,16 +63,6 @@
             <span class="text-purple-600 dark:text-purple-400" :title="t('dashboard.actual')">${{ formatCost(stats?.today_actual_cost || 0) }}</span>
             <span class="text-sm font-normal text-gray-400 dark:text-gray-500" :title="t('dashboard.standard')"> / ${{ formatCost(stats?.today_cost || 0) }}</span>
           </p>
-          <p class="text-xs">
-            <span class="text-gray-500 dark:text-gray-400">{{ t('common.total') }}: </span>
-            <span class="text-purple-600 dark:text-purple-400" :title="t('dashboard.actual')">${{ formatCost(stats?.total_actual_cost || 0) }}</span>
-            <span class="text-gray-400 dark:text-gray-500" :title="t('dashboard.standard')"> / ${{ formatCost(stats?.total_cost || 0) }}</span>
-          </p>
-          <p class="text-xs text-gray-500 dark:text-gray-400">
-            {{ t('dashboard.avgRequestPrice') }}: ${{ formatCost(stats?.today_average_request_price || 0) }}
-            <span class="text-gray-400 dark:text-gray-500"> / </span>
-            {{ t('common.total') }}: ${{ formatCost(stats?.total_average_request_price || 0) }}
-          </p>
         </div>
       </div>
     </div>

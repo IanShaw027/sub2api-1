@@ -1,10 +1,14 @@
 package admin
 
 import (
+	"fmt"
 	"strconv"
+	"strings"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -49,6 +53,11 @@ func (h *PaymentHandler) GetDashboard(c *gin.Context) {
 // GET /api/v1/admin/payment/orders
 func (h *PaymentHandler) ListOrders(c *gin.Context) {
 	page, pageSize := response.ParsePagination(c)
+	startTime, endTime, err := parseOrderDateRange(c.Query("start_date"), c.Query("end_date"), c.Query("timezone"))
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 	var userID int64
 	if uid := c.Query("user_id"); uid != "" {
 		if v, err := strconv.ParseInt(uid, 10, 64); err == nil {
@@ -62,12 +71,38 @@ func (h *PaymentHandler) ListOrders(c *gin.Context) {
 		OrderType:   c.Query("order_type"),
 		PaymentType: c.Query("payment_type"),
 		Keyword:     c.Query("keyword"),
+		StartTime:   startTime,
+		EndTime:     endTime,
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
 	response.Paginated(c, sanitizeAdminPaymentOrdersForResponse(orders), int64(total), page, pageSize)
+}
+
+func parseOrderDateRange(startDate, endDate, userTZ string) (*time.Time, *time.Time, error) {
+	var startTime *time.Time
+	var endTime *time.Time
+	if strings.TrimSpace(startDate) != "" {
+		parsed, err := timezone.ParseInUserLocation("2006-01-02", strings.TrimSpace(startDate), userTZ)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid start_date")
+		}
+		startTime = &parsed
+	}
+	if strings.TrimSpace(endDate) != "" {
+		parsed, err := timezone.ParseInUserLocation("2006-01-02", strings.TrimSpace(endDate), userTZ)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid end_date")
+		}
+		upper := parsed.AddDate(0, 0, 1)
+		endTime = &upper
+	}
+	if startTime != nil && endTime != nil && !endTime.After(*startTime) {
+		return nil, nil, fmt.Errorf("invalid date range")
+	}
+	return startTime, endTime, nil
 }
 
 // GetOrderDetail returns detailed information about a single order.

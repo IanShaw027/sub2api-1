@@ -109,4 +109,64 @@ describe('TicketsView', () => {
 
     expect(routerReplace).toHaveBeenCalledWith({ name: 'Tickets' })
   })
+
+  it('keeps the existing rows visible while a follow-up search is loading', async () => {
+    routeState.name = 'Tickets'
+
+    let resolveSearch: ((value: { items: Array<{ id: number; category: string; title: string; status: string; created_at: string; updated_at: string }>; total: number; page: number; page_size: number }) => void) | null = null
+
+    listTickets
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 1,
+            category: 'consult',
+            title: 'Initial ticket',
+            status: 'submitted',
+            created_at: '2026-04-24T00:00:00Z',
+            updated_at: '2026-04-24T00:00:00Z',
+          },
+        ],
+        total: 1,
+        page: 1,
+        page_size: 20,
+      })
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveSearch = resolve
+      }))
+
+    const wrapper = mount(TicketsView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          Pagination: true,
+          Select: {
+            props: ['modelValue', 'options'],
+            emits: ['update:modelValue'],
+            template: '<div class="select-stub" />',
+          },
+          TicketCreateDialog: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Initial ticket')
+
+    await wrapper.get('input').setValue('abc')
+    await wrapper.get('.btn.btn-secondary').trigger('click')
+
+    expect(wrapper.text()).toContain('Initial ticket')
+    expect(wrapper.text()).not.toContain('common.loading')
+
+    resolveSearch?.({
+      items: [],
+      total: 0,
+      page: 1,
+      page_size: 20,
+    })
+
+    await flushPromises()
+  })
 })

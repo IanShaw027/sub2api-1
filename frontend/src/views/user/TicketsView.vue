@@ -2,21 +2,30 @@
   <AppLayout>
     <div class="space-y-6">
       <div class="flex flex-col gap-4 rounded-2xl border bg-white p-5 dark:border-dark-700 dark:bg-dark-800 lg:flex-row lg:items-end lg:justify-between">
-        <div class="grid gap-4 md:grid-cols-3">
+        <div class="grid gap-4 md:grid-cols-5">
           <div>
             <label class="input-label">{{ t('tickets.filters.search') }}</label>
             <input v-model="filters.search" class="input" @keyup.enter="applyFilters()" />
           </div>
-        <div>
-          <label class="input-label">{{ t('tickets.filters.category') }}</label>
-          <Select v-model="filters.category" :options="categoryFilterOptions" :searchable="false" />
-        </div>
-        <div>
-          <label class="input-label">{{ t('tickets.filters.status') }}</label>
-          <Select v-model="filters.status" :options="statusFilterOptions" :searchable="false" />
-        </div>
+          <div>
+            <label class="input-label">{{ t('tickets.filters.category') }}</label>
+            <Select v-model="filters.category" :options="categoryFilterOptions" :searchable="false" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('tickets.filters.status') }}</label>
+            <Select v-model="filters.status" :options="statusFilterOptions" :searchable="false" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('dates.startDate') }}</label>
+            <input v-model="filters.start_date" type="date" class="input" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('dates.endDate') }}</label>
+            <input v-model="filters.end_date" type="date" class="input" />
+          </div>
         </div>
         <div class="flex gap-3">
+          <button class="btn btn-secondary" @click="resetFilters()">{{ t('common.reset') }}</button>
           <button class="btn btn-secondary" @click="applyFilters()">{{ t('common.search') }}</button>
           <button class="btn btn-primary" @click="openCreateDialog">{{ t('tickets.create') }}</button>
         </div>
@@ -31,7 +40,7 @@
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
-              <tr v-if="loading">
+              <tr v-if="showInitialLoading">
                 <td colspan="6" class="px-4 py-10 text-center text-sm text-gray-500 dark:text-gray-400">{{ t('common.loading') }}</td>
               </tr>
               <tr v-else-if="items.length === 0">
@@ -103,6 +112,7 @@ const router = useRouter()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const loading = ref(false)
+const hasLoadedTickets = ref(false)
 const creating = ref(false)
 const showCreateDialog = ref(false)
 const items = ref<SupportTicket[]>([])
@@ -113,10 +123,12 @@ const pagination = reactive({
 })
 const availableGroups = ref<Group[]>([])
 const userGroupRates = ref<Record<number, number>>({})
-const filters = reactive<{ search: string; category: TicketCategory | ''; status: TicketStatus | '' }>({
+const filters = reactive<{ search: string; category: TicketCategory | ''; status: TicketStatus | ''; start_date: string; end_date: string }>({
   search: '',
   category: '',
   status: '',
+  start_date: '',
+  end_date: '',
 })
 
 const headers = computed(() => [
@@ -136,25 +148,49 @@ const statusFilterOptions = computed(() => [
   { value: '', label: t('tickets.filters.allStatuses') },
   ...ticketStatusOptions.map((option) => ({ value: option.value, label: t(option.labelKey) })),
 ])
+const showInitialLoading = computed(() => loading.value && !hasLoadedTickets.value)
+
+let loadTicketsRequestID = 0
 
 async function loadTickets() {
+  const requestID = ++loadTicketsRequestID
   try {
     loading.value = true
     const data = await ticketsAPI.listTickets({
       ...filters,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       page: pagination.page,
       page_size: pagination.page_size,
     })
+    if (requestID !== loadTicketsRequestID) {
+      return
+    }
     items.value = data.items
     pagination.total = data.total
   } catch (err: any) {
+    if (requestID !== loadTicketsRequestID) {
+      return
+    }
     appStore.showError(err?.message || t('common.unknownError'))
   } finally {
-    loading.value = false
+    if (requestID === loadTicketsRequestID) {
+      loading.value = false
+      hasLoadedTickets.value = true
+    }
   }
 }
 
 function applyFilters() {
+  pagination.page = 1
+  loadTickets()
+}
+
+function resetFilters() {
+  filters.search = ''
+  filters.category = ''
+  filters.status = ''
+  filters.start_date = ''
+  filters.end_date = ''
   pagination.page = 1
   loadTickets()
 }

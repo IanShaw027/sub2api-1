@@ -1,12 +1,13 @@
 <template>
-  <BaseDialog :show="show" :title="t('tickets.create')" width="full" @close="emit('close')">
-    <div class="mx-auto min-h-[70vh] max-w-4xl">
+  <BaseDialog :show="show" :title="t('tickets.create')" width="wide" @close="emit('close')">
+    <div class="mx-auto w-full max-w-2xl">
       <TicketEditorCard
         :category="category"
         :title="title"
         :payload="payload"
         :submit-label="t('tickets.submit')"
         :submitting="submitting"
+        embedded
         :user-concurrency="userConcurrency"
         :available-groups="availableGroups"
         :user-group-rates="userGroupRates"

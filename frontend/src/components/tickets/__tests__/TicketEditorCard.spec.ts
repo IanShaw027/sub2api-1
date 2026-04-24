@@ -62,4 +62,30 @@ describe('TicketEditorCard', () => {
       },
     ]])
   })
+
+  it('uses a frameless embedded layout when rendered inside a dialog', () => {
+    const wrapper = mount(TicketEditorCard, {
+      props: {
+        category: 'consult',
+        title: '',
+        payload: {},
+        submitLabel: 'Submit',
+        embedded: true,
+      },
+      global: {
+        stubs: {
+          Select: {
+            props: ['modelValue', 'options'],
+            emits: ['update:modelValue'],
+            template: '<div class="select-stub" />',
+          },
+        },
+      },
+    })
+
+    const rootClasses = wrapper.classes()
+    expect(rootClasses).toContain('space-y-5')
+    expect(rootClasses).not.toContain('rounded-2xl')
+    expect(rootClasses).not.toContain('border')
+  })
 })

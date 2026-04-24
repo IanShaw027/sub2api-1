@@ -1,13 +1,16 @@
 package handler
 
 import (
+	"fmt"
 	"encoding/json"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -44,15 +47,22 @@ func (h *TicketHandler) List(c *gin.Context) {
 		return
 	}
 	page, pageSize := response.ParsePagination(c)
+	startTime, endTime, err := parseTicketDateRange(c.Query("start_date"), c.Query("end_date"), c.Query("timezone"))
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 	items, result, err := h.ticketService.ListForUser(c.Request.Context(), subject.UserID, pagination.PaginationParams{
 		Page:      page,
 		PageSize:  pageSize,
 		SortBy:    c.DefaultQuery("sort_by", "created_at"),
 		SortOrder: c.DefaultQuery("sort_order", "desc"),
 	}, service.SupportTicketListFilters{
-		Status:   strings.TrimSpace(c.Query("status")),
-		Category: strings.TrimSpace(c.Query("category")),
-		Search:   strings.TrimSpace(c.Query("search")),
+		Status:    strings.TrimSpace(c.Query("status")),
+		Category:  strings.TrimSpace(c.Query("category")),
+		Search:    strings.TrimSpace(c.Query("search")),
+		StartTime: startTime,
+		EndTime:   endTime,
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -147,6 +157,30 @@ func (h *TicketHandler) Withdraw(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "ok"})
+}
+
+func parseTicketDateRange(startDate, endDate, userTZ string) (*time.Time, *time.Time, error) {
+	var startTime *time.Time
+	var endTime *time.Time
+	if strings.TrimSpace(startDate) != "" {
+		parsed, err := timezone.ParseInUserLocation("2006-01-02", strings.TrimSpace(startDate), userTZ)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid start_date")
+		}
+		startTime = &parsed
+	}
+	if strings.TrimSpace(endDate) != "" {
+		parsed, err := timezone.ParseInUserLocation("2006-01-02", strings.TrimSpace(endDate), userTZ)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid end_date")
+		}
+		upper := parsed.AddDate(0, 0, 1)
+		endTime = &upper
+	}
+	if startTime != nil && endTime != nil && !endTime.After(*startTime) {
+		return nil, nil, fmt.Errorf("invalid date range")
+	}
+	return startTime, endTime, nil
 }
 
 func (h *TicketHandler) Update(c *gin.Context) {

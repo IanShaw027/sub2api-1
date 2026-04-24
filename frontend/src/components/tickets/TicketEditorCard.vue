@@ -1,6 +1,6 @@
 <template>
-  <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border bg-white dark:border-dark-700 dark:bg-dark-800">
-    <div class="border-b border-gray-100 px-5 py-5 dark:border-dark-700">
+  <div :class="containerClass">
+    <div :class="headerClass">
       <div class="grid gap-4 md:grid-cols-2">
         <div>
           <label class="input-label">{{ t('tickets.fields.category') }}</label>
@@ -18,7 +18,7 @@
       </div>
     </div>
 
-    <div class="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+    <div :class="bodyClass">
       <TicketCategoryForm
         :category="localCategory"
         :model-value="localPayload"
@@ -29,7 +29,7 @@
       />
     </div>
 
-    <div class="border-t border-gray-100 px-5 py-4 dark:border-dark-700">
+    <div :class="footerClass">
       <div class="flex justify-end gap-3">
         <button v-if="showCancel" class="btn btn-secondary" @click="$emit('cancel')">{{ t('common.cancel') }}</button>
         <button class="btn btn-primary" :disabled="submitting" @click="submit">
@@ -56,6 +56,7 @@ const props = withDefaults(defineProps<{
   submitting?: boolean
   submitLabel: string
   showCancel?: boolean
+  embedded?: boolean
   userConcurrency?: number | null
   availableGroups?: Group[]
   userGroupRates?: Record<number, number>
@@ -63,6 +64,7 @@ const props = withDefaults(defineProps<{
   disableCategory: false,
   submitting: false,
   showCancel: false,
+  embedded: false,
   userConcurrency: null,
   availableGroups: () => [],
   userGroupRates: () => ({}),
@@ -82,6 +84,26 @@ const categoryOptions = computed(() =>
     value: option.value,
     label: t(option.labelKey),
   })),
+)
+const containerClass = computed(() =>
+  props.embedded
+    ? 'space-y-5'
+    : 'flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border bg-white dark:border-dark-700 dark:bg-dark-800',
+)
+const headerClass = computed(() =>
+  props.embedded
+    ? 'space-y-4'
+    : 'border-b border-gray-100 px-5 py-5 dark:border-dark-700',
+)
+const bodyClass = computed(() =>
+  props.embedded
+    ? 'space-y-5'
+    : 'min-h-0 flex-1 overflow-y-auto px-5 py-5',
+)
+const footerClass = computed(() =>
+  props.embedded
+    ? 'pt-2'
+    : 'border-t border-gray-100 px-5 py-4 dark:border-dark-700',
 )
 
 watch(() => props.category, (value) => { localCategory.value = value })
