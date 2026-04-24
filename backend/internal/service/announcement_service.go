@@ -215,7 +215,9 @@ func (s *AnnouncementService) List(ctx context.Context, params pagination.Pagina
 	return s.announcementRepo.List(ctx, params, filters)
 }
 
-func (s *AnnouncementService) ListForUser(ctx context.Context, userID int64, unreadOnly bool) ([]UserAnnouncement, error) {
+func (s *AnnouncementService) ListForUser(ctx context.Context, userID int64, readStatus string) ([]UserAnnouncement, error) {
+	readStatus = NormalizeAnnouncementReadStatus(strings.TrimSpace(readStatus))
+
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("get user: %w", err)
@@ -263,7 +265,10 @@ func (s *AnnouncementService) ListForUser(ctx context.Context, userID int64, unr
 	for i := range visible {
 		a := visible[i]
 		readAt, ok := readMap[a.ID]
-		if unreadOnly && ok {
+		if readStatus == AnnouncementReadStatusUnread && ok {
+			continue
+		}
+		if readStatus == AnnouncementReadStatusRead && !ok {
 			continue
 		}
 		var ptr *time.Time
