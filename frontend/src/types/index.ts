@@ -463,7 +463,7 @@ export interface PaginationConfig {
 
 // ==================== API Key & Group Types ====================
 
-export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity'
+export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'sora' | 'kiro'
 
 export type SubscriptionType = 'standard' | 'subscription'
 
@@ -592,6 +592,7 @@ export interface CreateGroupRequest {
   description?: string | null
   platform?: GroupPlatform
   rate_multiplier?: number
+  rpm_limit?: number | null
   is_exclusive?: boolean
   subscription_type?: SubscriptionType
   daily_limit_usd?: number | null
@@ -603,6 +604,10 @@ export interface CreateGroupRequest {
   claude_code_only?: boolean
   fallback_group_id?: number | null
   fallback_group_id_on_invalid_request?: number | null
+  allow_messages_dispatch?: boolean
+  model_routing?: Record<string, number[]> | null
+  model_routing_enabled?: boolean
+  messages_dispatch_model_config?: OpenAIMessagesDispatchModelConfig
   mcp_xml_inject?: boolean
   supported_model_scopes?: string[]
   require_oauth_only?: boolean
@@ -616,6 +621,7 @@ export interface UpdateGroupRequest {
   description?: string | null
   platform?: GroupPlatform
   rate_multiplier?: number
+  rpm_limit?: number | null
   is_exclusive?: boolean
   status?: 'active' | 'inactive'
   subscription_type?: SubscriptionType
@@ -628,6 +634,10 @@ export interface UpdateGroupRequest {
   claude_code_only?: boolean
   fallback_group_id?: number | null
   fallback_group_id_on_invalid_request?: number | null
+  allow_messages_dispatch?: boolean
+  model_routing?: Record<string, number[]> | null
+  model_routing_enabled?: boolean
+  messages_dispatch_model_config?: OpenAIMessagesDispatchModelConfig
   mcp_xml_inject?: boolean
   supported_model_scopes?: string[]
   require_oauth_only?: boolean
@@ -637,7 +647,7 @@ export interface UpdateGroupRequest {
 
 // ==================== Account & Proxy Types ====================
 
-export type AccountPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity'
+export type AccountPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'sora' | 'kiro'
 export type AccountType = 'oauth' | 'setup-token' | 'apikey' | 'upstream' | 'bedrock'
 export type OAuthAddMethod = 'oauth' | 'setup-token'
 export type ProxyProtocol = 'http' | 'https' | 'socks5' | 'socks5h'
@@ -886,6 +896,11 @@ export interface AccountUsageInfo {
   five_hour: UsageProgress | null
   seven_day: UsageProgress | null
   seven_day_sonnet: UsageProgress | null
+  kiro_quota?: UsageProgress | null
+  kiro_subscription_title?: string
+  kiro_current_usage?: number
+  kiro_usage_limit?: number
+  kiro_remaining?: number
   gemini_shared_daily?: UsageProgress | null
   gemini_pro_daily?: UsageProgress | null
   gemini_flash_daily?: UsageProgress | null

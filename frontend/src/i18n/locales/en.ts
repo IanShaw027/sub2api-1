@@ -1973,6 +1973,7 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
+        kiro: 'Kiro',
       },
       deleteConfirm:
         "Are you sure you want to delete '{name}'? All associated API keys will no longer belong to any group.",
@@ -2570,6 +2571,7 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
+        kiro: 'Kiro',
       },
       types: {
         oauth: 'OAuth',
@@ -3375,8 +3377,11 @@ export default {
       openaiAccount: 'OpenAI Account',
       geminiAccount: 'Gemini Account',
       antigravityAccount: 'Antigravity Account',
+      kiroAccount: 'Kiro Account',
       inputMethod: 'Input Method',
       reAuthorizedSuccess: 'Account re-authorized successfully',
+      reAuthorizeUnavailable: 'Re-Authorization Unavailable',
+      reAuthorizeUnavailableKiro: 'Kiro accounts do not support the admin re-authorization flow yet. Update credentials directly in the account editor instead.',
       // Test Modal
       testAccountConnection: 'Test Account Connection',
       account: 'Account',

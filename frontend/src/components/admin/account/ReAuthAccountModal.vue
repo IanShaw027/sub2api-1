@@ -20,7 +20,9 @@
                   ? 'from-blue-500 to-blue-600'
                   : isAntigravity
                     ? 'from-purple-500 to-purple-600'
-                    : 'from-orange-500 to-orange-600'
+                    : isKiro
+                      ? 'from-cyan-500 to-sky-600'
+                      : 'from-orange-500 to-orange-600'
             ]"
           >
             <Icon name="sparkles" size="md" class="text-white" />
@@ -37,11 +39,25 @@
                     ? t('admin.accounts.geminiAccount')
                     : isAntigravity
                       ? t('admin.accounts.antigravityAccount')
-                      : t('admin.accounts.claudeCodeAccount')
+                      : isKiro
+                        ? t('admin.accounts.kiroAccount')
+                        : t('admin.accounts.claudeCodeAccount')
               }}
             </span>
           </div>
         </div>
+      </div>
+
+      <div
+        v-if="isKiro"
+        class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-200"
+      >
+        <div class="font-medium">
+          {{ t('admin.accounts.reAuthorizeUnavailable') }}
+        </div>
+        <p class="mt-1">
+          {{ t('admin.accounts.reAuthorizeUnavailableKiro') }}
+        </p>
       </div>
 
       <!-- Add Method Selection (Claude only) -->
@@ -117,6 +133,7 @@
       </div>
 
       <OAuthAuthorizationFlow
+        v-if="!isKiro"
         ref="oauthFlowRef"
         :add-method="addMethod"
         :auth-url="currentAuthUrl"
@@ -142,7 +159,7 @@
           {{ t('common.cancel') }}
         </button>
         <button
-          v-if="isManualInputMethod"
+          v-if="!isKiro && isManualInputMethod"
           type="button"
           :disabled="!canExchangeCode"
           class="btn btn-primary"
@@ -241,27 +258,32 @@ const isOpenAILike = computed(() => isOpenAI.value)
 const isGemini = computed(() => props.account?.platform === 'gemini')
 const isAnthropic = computed(() => props.account?.platform === 'anthropic')
 const isAntigravity = computed(() => props.account?.platform === 'antigravity')
+const isKiro = computed(() => props.account?.platform === 'kiro')
 
 // Computed - current OAuth state based on platform
 const currentAuthUrl = computed(() => {
+  if (isKiro.value) return ''
   if (isOpenAILike.value) return openaiOAuth.authUrl.value
   if (isGemini.value) return geminiOAuth.authUrl.value
   if (isAntigravity.value) return antigravityOAuth.authUrl.value
   return claudeOAuth.authUrl.value
 })
 const currentSessionId = computed(() => {
+  if (isKiro.value) return ''
   if (isOpenAILike.value) return openaiOAuth.sessionId.value
   if (isGemini.value) return geminiOAuth.sessionId.value
   if (isAntigravity.value) return antigravityOAuth.sessionId.value
   return claudeOAuth.sessionId.value
 })
 const currentLoading = computed(() => {
+  if (isKiro.value) return false
   if (isOpenAILike.value) return openaiOAuth.loading.value
   if (isGemini.value) return geminiOAuth.loading.value
   if (isAntigravity.value) return antigravityOAuth.loading.value
   return claudeOAuth.loading.value
 })
 const currentError = computed(() => {
+  if (isKiro.value) return ''
   if (isOpenAILike.value) return openaiOAuth.error.value
   if (isGemini.value) return geminiOAuth.error.value
   if (isAntigravity.value) return antigravityOAuth.error.value
@@ -325,6 +347,10 @@ const handleClose = () => {
 
 const handleGenerateUrl = async () => {
   if (!props.account) return
+  if (isKiro.value) {
+    appStore.showError(t('admin.accounts.reAuthorizeUnavailableKiro'))
+    return
+  }
 
   if (isOpenAILike.value) {
     await openaiOAuth.generateAuthUrl(props.account.proxy_id)
@@ -342,6 +368,10 @@ const handleGenerateUrl = async () => {
 
 const handleExchangeCode = async () => {
   if (!props.account) return
+  if (isKiro.value) {
+    appStore.showError(t('admin.accounts.reAuthorizeUnavailableKiro'))
+    return
+  }
 
   const authCode = oauthFlowRef.value?.authCode || ''
   if (!authCode.trim()) return
@@ -499,7 +529,7 @@ const handleExchangeCode = async () => {
 }
 
 const handleCookieAuth = async (sessionKey: string) => {
-  if (!props.account || isOpenAILike.value) return
+  if (!props.account || isOpenAILike.value || isKiro.value) return
 
   claudeOAuth.loading.value = true
   claudeOAuth.error.value = ''

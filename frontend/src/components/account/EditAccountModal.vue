@@ -26,6 +26,95 @@
         <p class="input-hint">{{ t('admin.accounts.notesHint') }}</p>
       </div>
 
+      <div
+        v-if="account.platform === 'kiro' && account.type === 'oauth'"
+        class="space-y-4 rounded-lg border border-cyan-200 bg-cyan-50/60 p-4 dark:border-cyan-900/40 dark:bg-cyan-950/20"
+      >
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <label class="input-label">Auth Method</label>
+            <p class="input-hint">Social 适合常规账号，IDC 需要额外的 AWS/IDC 参数。</p>
+          </div>
+          <select v-model="kiroAuthMethod" class="input w-36">
+            <option value="social">Social</option>
+            <option value="idc">IDC</option>
+          </select>
+        </div>
+        <div>
+          <label class="input-label">Refresh Token</label>
+          <textarea
+            v-model="kiroRefreshToken"
+            rows="4"
+            class="input font-mono text-sm"
+            placeholder="Paste new refresh token or keep existing value"
+          />
+        </div>
+        <div>
+          <label class="input-label">Access Token</label>
+          <textarea
+            v-model="kiroAccessToken"
+            rows="3"
+            class="input font-mono text-sm"
+            placeholder="Leave empty to keep existing access token"
+          />
+          <p class="input-hint">可选。留空保留当前 access token；填写后会覆盖现有值。</p>
+        </div>
+        <div v-if="kiroAuthMethod === 'idc'" class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label class="input-label">Client ID</label>
+            <input v-model="kiroClientID" type="text" class="input font-mono text-sm" />
+          </div>
+          <div>
+            <label class="input-label">Client Secret</label>
+            <input
+              v-model="kiroClientSecret"
+              type="password"
+              class="input font-mono text-sm"
+              placeholder="Leave empty to keep existing"
+            />
+          </div>
+        </div>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label class="input-label">Expires At</label>
+            <input v-model="kiroExpiresAtInput" type="datetime-local" class="input" />
+            <p class="input-hint">留空会清除当前 expires_at，让服务端按 refresh token 重新获取。</p>
+          </div>
+          <div>
+            <label class="input-label">Region</label>
+            <input v-model="kiroRegion" type="text" class="input font-mono text-sm" />
+          </div>
+          <div>
+            <label class="input-label">Auth Region</label>
+            <input v-model="kiroAuthRegion" type="text" class="input font-mono text-sm" />
+          </div>
+          <div>
+            <label class="input-label">API Region</label>
+            <input v-model="kiroAPIRegion" type="text" class="input font-mono text-sm" />
+          </div>
+          <div>
+            <label class="input-label">Profile ARN</label>
+            <input v-model="kiroProfileARN" type="text" class="input font-mono text-sm" />
+          </div>
+          <div>
+            <label class="input-label">Machine ID</label>
+            <input v-model="kiroMachineID" type="text" class="input font-mono text-sm" />
+          </div>
+          <div>
+            <label class="input-label">Kiro Version</label>
+            <input v-model="kiroVersion" type="text" class="input font-mono text-sm" />
+          </div>
+          <div>
+            <label class="input-label">System Version</label>
+            <input v-model="kiroSystemVersion" type="text" class="input font-mono text-sm" />
+          </div>
+          <div>
+            <label class="input-label">Node Version</label>
+            <input v-model="kiroNodeVersion" type="text" class="input font-mono text-sm" />
+          </div>
+        </div>
+      </div>
+
       <!-- API Key fields (only for apikey type) -->
       <div v-if="account.type === 'apikey'" class="space-y-4">
         <div>
@@ -1955,6 +2044,20 @@ const tempUnschedRules = ref<TempUnschedRuleForm[]>([])
 const getModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-model-mapping')
 const getAntigravityModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-antigravity-model-mapping')
 const getTempUnschedRuleKey = createStableObjectKeyResolver<TempUnschedRuleForm>('edit-temp-unsched-rule')
+const kiroAuthMethod = ref<'social' | 'idc'>('social')
+const kiroRefreshToken = ref('')
+const kiroAccessToken = ref('')
+const kiroExpiresAtInput = ref('')
+const kiroClientID = ref('')
+const kiroClientSecret = ref('')
+const kiroProfileARN = ref('')
+const kiroRegion = ref('us-east-1')
+const kiroAuthRegion = ref('')
+const kiroAPIRegion = ref('')
+const kiroMachineID = ref('')
+const kiroVersion = ref('0.10.0')
+const kiroSystemVersion = ref('darwin#24.6.0')
+const kiroNodeVersion = ref('22.21.1')
 
 const showMixedChannelWarning = ref(false)
 const mixedChannelWarningDetails = ref<{ groupName: string; currentPlatform: string; otherPlatform: string } | null>(
@@ -2279,6 +2382,38 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   loadQuotaControlSettings(newAccount)
 
   loadTempUnschedRules(credentials)
+
+  if (newAccount.platform === 'kiro' && newAccount.type === 'oauth') {
+    kiroAuthMethod.value = ((credentials?.auth_method as string) || 'social') as 'social' | 'idc'
+    kiroRefreshToken.value = (credentials?.refresh_token as string) || ''
+    kiroAccessToken.value = ''
+    kiroExpiresAtInput.value = formatCredentialDateTimeLocal((credentials?.expires_at as string) || '')
+    kiroClientID.value = (credentials?.client_id as string) || ''
+    kiroClientSecret.value = ''
+    kiroProfileARN.value = (credentials?.profile_arn as string) || ''
+    kiroRegion.value = (credentials?.region as string) || 'us-east-1'
+    kiroAuthRegion.value = (credentials?.auth_region as string) || ''
+    kiroAPIRegion.value = (credentials?.api_region as string) || ''
+    kiroMachineID.value = (credentials?.machine_id as string) || ''
+    kiroVersion.value = (extra?.kiro_version as string) || '0.10.0'
+    kiroSystemVersion.value = (extra?.system_version as string) || 'darwin#24.6.0'
+    kiroNodeVersion.value = (extra?.node_version as string) || '22.21.1'
+  } else {
+    kiroAuthMethod.value = 'social'
+    kiroRefreshToken.value = ''
+    kiroAccessToken.value = ''
+    kiroExpiresAtInput.value = ''
+    kiroClientID.value = ''
+    kiroClientSecret.value = ''
+    kiroProfileARN.value = ''
+    kiroRegion.value = 'us-east-1'
+    kiroAuthRegion.value = ''
+    kiroAPIRegion.value = ''
+    kiroMachineID.value = ''
+    kiroVersion.value = '0.10.0'
+    kiroSystemVersion.value = 'darwin#24.6.0'
+    kiroNodeVersion.value = '22.21.1'
+  }
 
   // Initialize API Key fields for apikey type
   if (newAccount.type === 'apikey' && newAccount.credentials) {
@@ -2820,6 +2955,18 @@ const ensureAntigravityMixedChannelConfirmed = async (onConfirm: () => Promise<v
 const formatDateTimeLocal = formatDateTimeLocalInput
 const parseDateTimeLocal = parseDateTimeLocalInput
 
+const formatCredentialDateTimeLocal = (value: string) => {
+  if (!value) return ''
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return ''
+  const year = parsed.getFullYear()
+  const month = String(parsed.getMonth() + 1).padStart(2, '0')
+  const day = String(parsed.getDate()).padStart(2, '0')
+  const hours = String(parsed.getHours()).padStart(2, '0')
+  const minutes = String(parsed.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day}T${hours}:${minutes}`
+}
+
 // Methods
 const handleClose = () => {
   antigravityMixedChannelConfirmed.value = false
@@ -2876,8 +3023,87 @@ const handleSubmit = async () => {
     }
     updatePayload.auto_pause_on_expired = autoPauseOnExpired.value
 
-    // For apikey type, handle credentials update
-    if (props.account.type === 'apikey') {
+    if (props.account.platform === 'kiro' && props.account.type === 'oauth') {
+      const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
+      const newCredentials: Record<string, unknown> = { ...currentCredentials }
+
+      if (!kiroRefreshToken.value.trim()) {
+        appStore.showError('Kiro refresh token is required')
+        return
+      }
+      if (
+        kiroAuthMethod.value === 'idc' &&
+        (!kiroClientID.value.trim() || (!kiroClientSecret.value.trim() && !currentCredentials.client_secret))
+      ) {
+        appStore.showError('Kiro IDC client credentials are required')
+        return
+      }
+
+      const expiresAt = kiroExpiresAtInput.value.trim()
+        ? new Date(kiroExpiresAtInput.value)
+        : null
+      if (expiresAt && Number.isNaN(expiresAt.getTime())) {
+        appStore.showError('Kiro expires_at is invalid')
+        return
+      }
+
+      newCredentials.refresh_token = kiroRefreshToken.value.trim()
+      newCredentials.auth_method = kiroAuthMethod.value
+      newCredentials.region = kiroRegion.value.trim() || 'us-east-1'
+      if (kiroAccessToken.value.trim()) {
+        newCredentials.access_token = kiroAccessToken.value.trim()
+      }
+      if (kiroClientID.value.trim()) {
+        newCredentials.client_id = kiroClientID.value.trim()
+      } else if (kiroAuthMethod.value !== 'idc') {
+        delete newCredentials.client_id
+      }
+      if (kiroClientSecret.value.trim()) {
+        newCredentials.client_secret = kiroClientSecret.value.trim()
+      } else if (kiroAuthMethod.value !== 'idc') {
+        delete newCredentials.client_secret
+      }
+      if (kiroProfileARN.value.trim()) {
+        newCredentials.profile_arn = kiroProfileARN.value.trim()
+      } else {
+        delete newCredentials.profile_arn
+      }
+      if (kiroAuthRegion.value.trim()) {
+        newCredentials.auth_region = kiroAuthRegion.value.trim()
+      } else {
+        delete newCredentials.auth_region
+      }
+      if (kiroAPIRegion.value.trim()) {
+        newCredentials.api_region = kiroAPIRegion.value.trim()
+      } else {
+        delete newCredentials.api_region
+      }
+      if (kiroMachineID.value.trim()) {
+        newCredentials.machine_id = kiroMachineID.value.trim()
+      } else {
+        delete newCredentials.machine_id
+      }
+      if (expiresAt) {
+        newCredentials.expires_at = expiresAt.toISOString()
+      } else {
+        delete newCredentials.expires_at
+      }
+
+      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
+      if (!applyTempUnschedConfig(newCredentials)) {
+        return
+      }
+
+      updatePayload.credentials = newCredentials
+
+      const currentExtra = (props.account.extra as Record<string, unknown>) || {}
+      updatePayload.extra = {
+        ...currentExtra,
+        kiro_version: kiroVersion.value.trim() || '0.10.0',
+        system_version: kiroSystemVersion.value.trim() || 'darwin#24.6.0',
+        node_version: kiroNodeVersion.value.trim() || '22.21.1'
+      }
+    } else if (props.account.type === 'apikey') {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
       const newBaseUrl = editBaseUrl.value.trim() || defaultBaseUrl.value
       const shouldApplyModelMapping = !(props.account.platform === 'openai' && openaiPassthroughEnabled.value)

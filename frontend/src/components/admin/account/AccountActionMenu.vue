@@ -23,9 +23,23 @@
               {{ t('admin.scheduledTests.schedule') }}
             </button>
             <template v-if="account.type === 'oauth' || account.type === 'setup-token'">
-              <button @click="$emit('reauth', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-blue-600 hover:bg-gray-100 dark:hover:bg-dark-700">
+              <button
+                v-if="supportsReauth"
+                @click="$emit('reauth', account); $emit('close')"
+                class="flex w-full items-center gap-2 px-4 py-2 text-sm text-blue-600 hover:bg-gray-100 dark:hover:bg-dark-700"
+              >
                 <Icon name="link" size="sm" />
                 {{ t('admin.accounts.reAuthorize') }}
+              </button>
+              <button
+                v-else-if="isKiroOAuth"
+                type="button"
+                disabled
+                :title="t('admin.accounts.reAuthorizeUnavailableKiro')"
+                class="flex w-full cursor-not-allowed items-center gap-2 px-4 py-2 text-sm text-gray-400 opacity-70 dark:text-gray-500"
+              >
+                <Icon name="link" size="sm" />
+                {{ t('admin.accounts.reAuthorizeUnavailable') }}
               </button>
               <button @click="$emit('refresh-token', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-purple-600 hover:bg-gray-100 dark:hover:bg-dark-700">
                 <Icon name="refresh" size="sm" />
@@ -81,6 +95,8 @@ const hasRecoverableState = computed(() => {
 })
 const isAntigravityOAuth = computed(() => props.account?.platform === 'antigravity' && props.account?.type === 'oauth')
 const isOpenAIOAuth = computed(() => props.account?.platform === 'openai' && props.account?.type === 'oauth')
+const isKiroOAuth = computed(() => props.account?.platform === 'kiro' && props.account?.type === 'oauth')
+const supportsReauth = computed(() => !isKiroOAuth.value)
 const supportsPrivacy = computed(() => isAntigravityOAuth.value || isOpenAIOAuth.value)
 const hasQuotaLimit = computed(() => {
   return (props.account?.type === 'apikey' || props.account?.type === 'bedrock') && (

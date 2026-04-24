@@ -2001,6 +2001,7 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
+        kiro: 'Kiro',
       },
       saving: '保存中...',
       noGroups: '暂无分组',
@@ -2755,6 +2756,7 @@ export default {
         anthropic: 'Anthropic',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
+        kiro: 'Kiro',
       },
       types: {
         oauth: 'OAuth',
@@ -3505,8 +3507,11 @@ export default {
       openaiAccount: 'OpenAI 账号',
       geminiAccount: 'Gemini 账号',
       antigravityAccount: 'Antigravity 账号',
+      kiroAccount: 'Kiro 账号',
       inputMethod: '输入方式',
       reAuthorizedSuccess: '账号重新授权成功',
+      reAuthorizeUnavailable: '暂不支持重新授权',
+      reAuthorizeUnavailableKiro: 'Kiro 账号暂未接入管理端重新授权流程，请改为在账号编辑页直接更新凭据。',
       // Test Modal
       testAccountConnection: '测试账号连接',
       account: '账号',

@@ -145,7 +145,7 @@ func (r *accountRepository) Create(ctx context.Context, account *service.Account
 }
 
 func (r *accountRepository) GetByID(ctx context.Context, id int64) (*service.Account, error) {
-	m, err := r.client.Account.Query().Where(dbaccount.IDEQ(id)).Only(ctx)
+	m, err := r.client.Account.Query().Where(dbaccount.IDEQ(id)).WithProxy().Only(ctx)
 	if err != nil {
 		return nil, translatePersistenceError(err, service.ErrAccountNotFound, nil)
 	}
