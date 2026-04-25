@@ -89,6 +89,38 @@ export function useKiroOAuth() {
     }
   }
 
+  const validateRefreshToken = async (
+    credentials: Partial<KiroCredentials> & Record<string, unknown>,
+    extra?: KiroAccountExtra & Record<string, unknown>,
+    proxyId?: number | null
+  ): Promise<Record<string, unknown> | null> => {
+    const refreshToken = String(credentials.refresh_token || '').trim()
+    if (!refreshToken) {
+      error.value = t('admin.accounts.kiro.refreshTokenRequired')
+      return null
+    }
+
+    loading.value = true
+    error.value = ''
+
+    try {
+      const payloadCredentials: Record<string, unknown> = {
+        ...credentials,
+        refresh_token: refreshToken
+      }
+      return await adminAPI.kiro.refreshToken({
+        credentials: payloadCredentials,
+        extra,
+        proxy_id: proxyId || undefined
+      })
+    } catch (err: any) {
+      error.value = err?.response?.data?.detail || err?.message || t('admin.accounts.kiro.failedToValidateRT')
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
   const buildCredentials = (
     tokenInfo: KiroTokenInfo,
     overrides?: Partial<KiroCredentials> & Record<string, unknown>
@@ -167,6 +199,7 @@ export function useKiroOAuth() {
     resetState,
     generateAuthUrl,
     exchangeCallback,
+    validateRefreshToken,
     buildCredentials,
     buildExtraInfo,
     buildAccountName

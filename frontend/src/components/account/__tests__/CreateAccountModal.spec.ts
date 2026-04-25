@@ -9,7 +9,8 @@ const {
   createMock,
   checkMixedChannelRiskMock,
   getWebSearchEmulationConfigMock,
-  listTlsFingerprintProfilesMock
+  listTlsFingerprintProfilesMock,
+  kiroValidateRefreshTokenMock
 } = vi.hoisted(() => ({
   showErrorMock: vi.fn(),
   showSuccessMock: vi.fn(),
@@ -17,7 +18,8 @@ const {
   createMock: vi.fn(),
   checkMixedChannelRiskMock: vi.fn(),
   getWebSearchEmulationConfigMock: vi.fn(),
-  listTlsFingerprintProfilesMock: vi.fn()
+  listTlsFingerprintProfilesMock: vi.fn(),
+  kiroValidateRefreshTokenMock: vi.fn()
 }))
 
 vi.mock('@/stores/app', () => ({
@@ -79,7 +81,22 @@ vi.mock('@/composables/useModelWhitelist', () => ({
   commonErrorCodes: [],
   getPresetMappingsByPlatform: vi.fn(() => []),
   getModelsByPlatform: vi.fn(() => []),
-  buildModelMappingObject: vi.fn(() => undefined),
+  buildModelMappingObject: vi.fn((mode: string, allowed: string[], mappings: Array<{ from: string; to: string }>) => {
+    if (mode === 'whitelist') {
+      if (!Array.isArray(allowed) || allowed.length === 0) {
+        return undefined
+      }
+      return Object.fromEntries(allowed.map((model) => [model, model]))
+    }
+    if (!Array.isArray(mappings) || mappings.length === 0) {
+      return undefined
+    }
+    return Object.fromEntries(
+      mappings
+        .filter((mapping) => mapping.from && mapping.to)
+        .map((mapping) => [mapping.from, mapping.to])
+    )
+  }),
   fetchAntigravityDefaultMappings: vi.fn().mockResolvedValue([]),
   isValidWildcardPattern: vi.fn(() => true)
 }))
@@ -127,7 +144,10 @@ vi.mock('@/composables/useAntigravityOAuth', () => ({
 }))
 
 vi.mock('@/composables/useKiroOAuth', () => ({
-  useKiroOAuth: () => buildOAuthComposable()
+  useKiroOAuth: () => ({
+    ...buildOAuthComposable(),
+    validateRefreshToken: kiroValidateRefreshTokenMock
+  })
 }))
 
 vi.mock('vue-i18n', async () => {
@@ -219,11 +239,17 @@ describe('CreateAccountModal', () => {
     checkMixedChannelRiskMock.mockReset()
     getWebSearchEmulationConfigMock.mockReset()
     listTlsFingerprintProfilesMock.mockReset()
+    kiroValidateRefreshTokenMock.mockReset()
 
     createMock.mockResolvedValue(undefined)
     checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
     getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
     listTlsFingerprintProfilesMock.mockResolvedValue([])
+    kiroValidateRefreshTokenMock.mockResolvedValue({
+      refresh_token: 'rt-test',
+      access_token: 'at-test',
+      region: 'us-east-1'
+    })
   })
 
   it('allows an empty name for OAuth flows so the auto-naming step can continue', async () => {
@@ -320,5 +346,43 @@ describe('CreateAccountModal', () => {
 
     expect((wrapper.vm as any).form.platform).toBe('openai')
     expect((wrapper.vm as any).form.type).toBe('oauth')
+  })
+
+  it('creates a Kiro OAuth account from manual refresh token input', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'Kiro').trigger('click')
+    await nextTick()
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    await wrapper.getComponent(KiroAuthorizationFlowStub).vm.$emit('submit-refresh-token', {
+      credentials: {
+        refresh_token: 'rt-1',
+        auth_method: 'social',
+        region: 'us-east-1'
+      },
+      extra: {}
+    })
+    await flushPromises()
+
+    expect(kiroValidateRefreshTokenMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        refresh_token: 'rt-1',
+        auth_method: 'social',
+        region: 'us-east-1'
+      }),
+      {},
+      null
+    )
+    expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      platform: 'kiro',
+      type: 'oauth',
+      credentials: expect.objectContaining({
+        refresh_token: 'rt-test',
+        access_token: 'at-test'
+      })
+    }))
   })
 })

@@ -16,6 +16,12 @@ export interface KiroExchangeCallbackRequest {
   proxy_id?: number
 }
 
+export interface KiroRefreshTokenRequest {
+  credentials: Record<string, unknown>
+  extra?: Record<string, unknown>
+  proxy_id?: number
+}
+
 export interface KiroTokenInfo {
   access_token?: string
   refresh_token?: string
@@ -59,7 +65,15 @@ export async function exchangeCallback(
   return data
 }
 
+export async function refreshToken(
+  payload: KiroRefreshTokenRequest
+): Promise<Record<string, unknown>> {
+  const { data } = await apiClient.post<Record<string, unknown>>('/admin/kiro/oauth/refresh-token', payload)
+  return data
+}
+
 export default {
   generateAuthUrl,
-  exchangeCallback
+  exchangeCallback,
+  refreshToken
 }

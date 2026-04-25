@@ -844,6 +844,7 @@ export interface KiroCredentials {
   api_region?: string
   profile_arn?: string
   machine_id?: string
+  model_mapping?: Record<string, string>
 }
 
 export interface KiroAccountExtra {

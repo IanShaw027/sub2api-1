@@ -154,6 +154,129 @@
         </div>
       </div>
 
+      <div
+        v-if="account.platform === 'kiro'"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <label class="input-label">{{ t('admin.accounts.modelRestriction') }}</label>
+
+        <div class="mb-4 flex gap-2">
+          <button
+            type="button"
+            @click="modelRestrictionMode = 'whitelist'"
+            :class="[
+              'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
+              modelRestrictionMode === 'whitelist'
+                ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+            ]"
+          >
+            {{ t('admin.accounts.modelWhitelist') }}
+          </button>
+          <button
+            type="button"
+            @click="modelRestrictionMode = 'mapping'"
+            :class="[
+              'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
+              modelRestrictionMode === 'mapping'
+                ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+            ]"
+          >
+            {{ t('admin.accounts.modelMapping') }}
+          </button>
+        </div>
+
+        <div v-if="modelRestrictionMode === 'whitelist'">
+          <ModelWhitelistSelector v-model="allowedModels" platform="kiro" />
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
+            <span v-if="allowedModels.length === 0">{{ t('admin.accounts.supportsAllModels') }}</span>
+          </p>
+        </div>
+
+        <div v-else>
+          <div class="mb-3 rounded-lg bg-purple-50 p-3 dark:bg-purple-900/20">
+            <p class="text-xs text-purple-700 dark:text-purple-400">
+              {{ t('admin.accounts.mapRequestModels') }}
+            </p>
+          </div>
+
+          <div v-if="modelMappings.length > 0" class="mb-3 space-y-2">
+            <div
+              v-for="(mapping, index) in modelMappings"
+              :key="'kiro-' + getModelMappingKey(mapping)"
+              class="flex items-center gap-2"
+            >
+              <input
+                v-model="mapping.from"
+                type="text"
+                class="input flex-1"
+                :placeholder="t('admin.accounts.requestModel')"
+              />
+              <svg
+                class="h-4 w-4 flex-shrink-0 text-gray-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M14 5l7 7m0 0l-7 7m7-7H3"
+                />
+              </svg>
+              <input
+                v-model="mapping.to"
+                type="text"
+                class="input flex-1"
+                :placeholder="t('admin.accounts.actualModel')"
+              />
+              <button
+                type="button"
+                @click="removeModelMapping(index)"
+                class="rounded-lg p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
+              >
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div v-else class="mb-3 rounded-lg border border-dashed border-gray-300 p-4 text-center dark:border-dark-500">
+            <p class="text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.noMappingsConfigured') }}
+            </p>
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <button
+              type="button"
+              @click="addModelMapping"
+              class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-dark-500 dark:text-gray-300 dark:hover:bg-dark-700"
+            >
+              + {{ t('admin.accounts.addMapping') }}
+            </button>
+            <button
+              v-for="preset in presetMappings"
+              :key="'kiro-preset-' + preset.from"
+              type="button"
+              @click="addPresetMapping(preset.from, preset.to)"
+              :class="['rounded-lg px-3 py-2 text-sm font-medium transition-colors', preset.color]"
+            >
+              + {{ preset.label }}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- API Key fields (only for generic apikey type) -->
       <div v-if="account.type === 'apikey' && account.platform !== 'kiro'" class="space-y-4">
         <div>
@@ -2445,6 +2568,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     kiroAuthRegion.value = kiroCredentials?.auth_region || ''
     kiroAPIRegion.value = kiroCredentials?.api_region || ''
     kiroMachineID.value = kiroCredentials?.machine_id || ''
+    loadModelRestrictionFromCredentials(kiroCredentials)
   } else {
     kiroAuthMethod.value = 'social'
     kiroRefreshToken.value = ''
@@ -2462,9 +2586,6 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   // Initialize API Key fields for apikey type
   if (newAccount.platform === 'kiro' && newAccount.type === 'apikey' && newAccount.credentials) {
     editBaseUrl.value = ''
-    modelRestrictionMode.value = 'whitelist'
-    modelMappings.value = []
-    allowedModels.value = []
     poolModeEnabled.value = false
     poolModeRetryCount.value = DEFAULT_POOL_MODE_RETRY_COUNT
     customErrorCodesEnabled.value = false
@@ -2480,30 +2601,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     editBaseUrl.value = (credentials.base_url as string) || platformDefaultUrl
 
     // Load model mappings and detect mode
-    const existingMappings = credentials.model_mapping as Record<string, string> | undefined
-    if (existingMappings && typeof existingMappings === 'object') {
-      const entries = Object.entries(existingMappings)
-
-      // Detect if this is whitelist mode (all from === to) or mapping mode
-      const isWhitelistMode = entries.length > 0 && entries.every(([from, to]) => from === to)
-
-      if (isWhitelistMode) {
-        // Whitelist mode: populate allowedModels
-        modelRestrictionMode.value = 'whitelist'
-        allowedModels.value = entries.map(([from]) => from)
-        modelMappings.value = []
-      } else {
-        // Mapping mode: populate modelMappings
-        modelRestrictionMode.value = 'mapping'
-        modelMappings.value = entries.map(([from, to]) => ({ from, to }))
-        allowedModels.value = []
-      }
-    } else {
-      // No mappings: default to whitelist mode with empty selection (allow all)
-      modelRestrictionMode.value = 'whitelist'
-      modelMappings.value = []
-      allowedModels.value = []
-    }
+    loadModelRestrictionFromCredentials(credentials)
 
     // Load pool mode
     poolModeEnabled.value = credentials.pool_mode === true
@@ -2547,27 +2645,16 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     loadQuotaNotifyFromExtra(bedrockExtra)
 
     // Load model mappings for bedrock
-    const existingMappings = bedrockCreds.model_mapping as Record<string, string> | undefined
-    if (existingMappings && typeof existingMappings === 'object') {
-      const entries = Object.entries(existingMappings)
-      const isWhitelistMode = entries.length > 0 && entries.every(([from, to]) => from === to)
-      if (isWhitelistMode) {
-        modelRestrictionMode.value = 'whitelist'
-        allowedModels.value = entries.map(([from]) => from)
-        modelMappings.value = []
-      } else {
-        modelRestrictionMode.value = 'mapping'
-        modelMappings.value = entries.map(([from, to]) => ({ from, to }))
-        allowedModels.value = []
-      }
-    } else {
-      modelRestrictionMode.value = 'whitelist'
-      modelMappings.value = []
-      allowedModels.value = []
-    }
+    loadModelRestrictionFromCredentials(bedrockCreds)
   } else if (newAccount.type === 'upstream' && newAccount.credentials) {
     const credentials = newAccount.credentials as Record<string, unknown>
     editBaseUrl.value = (credentials.base_url as string) || ''
+  } else if (newAccount.platform === 'kiro') {
+    editBaseUrl.value = ''
+    poolModeEnabled.value = false
+    poolModeRetryCount.value = DEFAULT_POOL_MODE_RETRY_COUNT
+    customErrorCodesEnabled.value = false
+    selectedErrorCodes.value = []
   } else {
     const platformDefaultUrl =
       newAccount.platform === 'openai'
@@ -2580,24 +2667,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     // Load model mappings for OpenAI OAuth accounts
     if (newAccount.platform === 'openai' && newAccount.credentials) {
       const oauthCredentials = newAccount.credentials as Record<string, unknown>
-      const existingMappings = oauthCredentials.model_mapping as Record<string, string> | undefined
-      if (existingMappings && typeof existingMappings === 'object') {
-        const entries = Object.entries(existingMappings)
-        const isWhitelistMode = entries.length > 0 && entries.every(([from, to]) => from === to)
-        if (isWhitelistMode) {
-          modelRestrictionMode.value = 'whitelist'
-          allowedModels.value = entries.map(([from]) => from)
-          modelMappings.value = []
-        } else {
-          modelRestrictionMode.value = 'mapping'
-          modelMappings.value = entries.map(([from, to]) => ({ from, to }))
-          allowedModels.value = []
-        }
-      } else {
-        modelRestrictionMode.value = 'whitelist'
-        modelMappings.value = []
-        allowedModels.value = []
-      }
+      loadModelRestrictionFromCredentials(oauthCredentials)
     } else {
       modelRestrictionMode.value = 'whitelist'
       modelMappings.value = []
@@ -2632,6 +2702,29 @@ const loadTLSProfiles = async () => {
   } catch {
     tlsFingerprintProfiles.value = []
   }
+}
+
+const loadModelRestrictionFromCredentials = (credentials?: Record<string, unknown>) => {
+  const existingMappings = credentials?.model_mapping as Record<string, string> | undefined
+  if (existingMappings && typeof existingMappings === 'object') {
+    const entries = Object.entries(existingMappings)
+    const isWhitelistMode = entries.length > 0 && entries.every(([from, to]) => from === to)
+
+    if (isWhitelistMode) {
+      modelRestrictionMode.value = 'whitelist'
+      allowedModels.value = entries.map(([from]) => from)
+      modelMappings.value = []
+    } else {
+      modelRestrictionMode.value = 'mapping'
+      modelMappings.value = entries.map(([from, to]) => ({ from, to }))
+      allowedModels.value = []
+    }
+    return
+  }
+
+  modelRestrictionMode.value = 'whitelist'
+  modelMappings.value = []
+  allowedModels.value = []
 }
 
 // Model mapping helpers
@@ -3162,6 +3255,12 @@ const handleSubmit = async () => {
       } else {
         delete newCredentials.expires_at
       }
+      const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
+      if (modelMapping) {
+        newCredentials.model_mapping = modelMapping
+      } else {
+        delete newCredentials.model_mapping
+      }
 
       applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
       if (!applyTempUnschedConfig(newCredentials)) {
@@ -3206,6 +3305,12 @@ const handleSubmit = async () => {
         newCredentials.machine_id = kiroMachineID.value.trim()
       } else {
         delete newCredentials.machine_id
+      }
+      const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
+      if (modelMapping) {
+        newCredentials.model_mapping = modelMapping
+      } else {
+        delete newCredentials.model_mapping
       }
 
       if (!applyTempUnschedConfig(newCredentials)) {

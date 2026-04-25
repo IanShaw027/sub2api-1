@@ -190,7 +190,10 @@ describe('EditAccountModal', () => {
       credentials: {
         refresh_token: 'rt-test',
         region: 'us-east-1',
-        machine_id: 'machine-1'
+        machine_id: 'machine-1',
+        model_mapping: {
+          'claude-sonnet-4': 'claude-sonnet-4'
+        }
       },
       extra: {
         keep_flag: true,
@@ -232,7 +235,10 @@ describe('EditAccountModal', () => {
       expect.objectContaining({
         refresh_token: 'rt-test',
         region: 'us-east-1',
-        machine_id: 'machine-1'
+        machine_id: 'machine-1',
+        model_mapping: {
+          'claude-sonnet-4': 'claude-sonnet-4'
+        }
       })
     )
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toEqual({
@@ -353,7 +359,10 @@ describe('EditAccountModal', () => {
     )
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('base_url')
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('model_whitelist')
-    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('model_mapping')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toHaveProperty('model_mapping')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.model_mapping).toEqual({
+      'claude-sonnet-4': 'claude-sonnet-4'
+    })
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('pool_mode')
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('pool_mode_retry_count')
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('custom_error_codes_enabled')

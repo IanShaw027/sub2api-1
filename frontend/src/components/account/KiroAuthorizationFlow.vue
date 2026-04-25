@@ -19,7 +19,40 @@
         {{ t('admin.accounts.kiro.followSteps') }}
       </p>
 
-      <div class="rounded-lg border border-cyan-300 bg-white/80 p-4 dark:border-cyan-700 dark:bg-gray-800/80">
+      <div v-if="showInputModeSelection" class="rounded-lg border border-cyan-300 bg-white/80 p-4 dark:border-cyan-700 dark:bg-gray-800/80">
+        <label class="mb-3 block text-sm font-medium text-cyan-900 dark:text-cyan-100">
+          {{ t('admin.accounts.inputMethod') }}
+        </label>
+        <div class="flex flex-wrap gap-4">
+          <label class="flex cursor-pointer items-center gap-2">
+            <input
+              v-model="inputMode"
+              type="radio"
+              value="oauth"
+              class="text-cyan-600 focus:ring-cyan-500"
+            />
+            <span class="text-sm text-cyan-900 dark:text-cyan-200">
+              {{ t('admin.accounts.oauth.manualAuth') }}
+            </span>
+          </label>
+          <label class="flex cursor-pointer items-center gap-2">
+            <input
+              v-model="inputMode"
+              type="radio"
+              value="refresh_token"
+              class="text-cyan-600 focus:ring-cyan-500"
+            />
+            <span class="text-sm text-cyan-900 dark:text-cyan-200">
+              {{ t('admin.accounts.kiro.manualRefreshTokenAuth') }}
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <div
+        v-if="inputMode === 'oauth'"
+        class="rounded-lg border border-cyan-300 bg-white/80 p-4 dark:border-cyan-700 dark:bg-gray-800/80"
+      >
         <div class="flex items-start gap-3">
           <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-cyan-600 text-xs font-bold text-white">
             1
@@ -92,7 +125,10 @@
         </div>
       </div>
 
-      <div class="rounded-lg border border-cyan-300 bg-white/80 p-4 dark:border-cyan-700 dark:bg-gray-800/80">
+      <div
+        v-if="inputMode === 'oauth'"
+        class="rounded-lg border border-cyan-300 bg-white/80 p-4 dark:border-cyan-700 dark:bg-gray-800/80"
+      >
         <div class="flex items-start gap-3">
           <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-cyan-600 text-xs font-bold text-white">
             2
@@ -108,7 +144,10 @@
         </div>
       </div>
 
-      <div class="rounded-lg border border-cyan-300 bg-white/80 p-4 dark:border-cyan-700 dark:bg-gray-800/80">
+      <div
+        v-if="inputMode === 'oauth'"
+        class="rounded-lg border border-cyan-300 bg-white/80 p-4 dark:border-cyan-700 dark:bg-gray-800/80"
+      >
         <div class="flex items-start gap-3">
           <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-cyan-600 text-xs font-bold text-white">
             3
@@ -212,6 +251,166 @@
           </div>
         </div>
       </div>
+
+      <div
+        v-else
+        class="rounded-lg border border-cyan-300 bg-white/80 p-4 dark:border-cyan-700 dark:bg-gray-800/80"
+      >
+        <p class="mb-3 text-sm text-cyan-700 dark:text-cyan-300">
+          {{ t('admin.accounts.kiro.manualRefreshTokenDesc') }}
+        </p>
+
+        <div class="mb-4">
+          <label class="input-label">{{ t('admin.accounts.kiro.authMethodLabel') }}</label>
+          <select v-model="manualAuthMethod" class="input">
+            <option value="social">{{ t('admin.accounts.kiro.authMethodSocial') }}</option>
+            <option value="idc">{{ t('admin.accounts.kiro.authMethodIDC') }}</option>
+          </select>
+          <p class="input-hint">{{ t('admin.accounts.kiro.authMethodHint') }}</p>
+        </div>
+
+        <div class="mb-4">
+          <label class="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+            <Icon name="key" size="sm" class="text-cyan-500" />
+            {{ t('admin.accounts.kiro.refreshTokenLabel') }}
+            <span
+              v-if="parsedRefreshTokenCount > 1"
+              class="rounded-full bg-cyan-500 px-2 py-0.5 text-xs text-white"
+            >
+              {{ t('admin.accounts.oauth.keysCount', { count: parsedRefreshTokenCount }) }}
+            </span>
+          </label>
+          <textarea
+            v-model="manualRefreshToken"
+            rows="4"
+            class="input w-full resize-y font-mono text-sm"
+            :placeholder="t('admin.accounts.kiro.refreshTokenPlaceholderBatch')"
+          />
+          <p v-if="parsedRefreshTokenCount > 1" class="mt-1 text-xs text-cyan-600 dark:text-cyan-400">
+            {{ t('admin.accounts.oauth.batchCreateAccounts', { count: parsedRefreshTokenCount }) }}
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.accessTokenLabel') }}</label>
+            <input
+              v-model="manualAccessToken"
+              type="text"
+              class="input font-mono text-sm"
+              :placeholder="t('admin.accounts.kiro.accessTokenPlaceholder')"
+            />
+            <p class="input-hint">{{ t('admin.accounts.kiro.accessTokenHintCreate') }}</p>
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.expiresAtLabel') }}</label>
+            <input v-model="manualExpiresAtInput" type="datetime-local" class="input" />
+            <p class="input-hint">{{ t('admin.accounts.kiro.expiresAtHintCreate') }}</p>
+          </div>
+        </div>
+
+        <div v-if="manualAuthMethod === 'idc'" class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.clientIdLabel') }}</label>
+            <input
+              v-model="manualClientID"
+              type="text"
+              class="input font-mono text-sm"
+              :placeholder="t('admin.accounts.kiro.clientIdPlaceholder')"
+            />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.clientSecretLabel') }}</label>
+            <input
+              v-model="manualClientSecret"
+              type="password"
+              class="input font-mono text-sm"
+              :placeholder="t('admin.accounts.kiro.clientSecretPlaceholder')"
+            />
+          </div>
+        </div>
+
+        <details class="mt-4 rounded-lg border border-cyan-200/80 bg-white/70 p-3 dark:border-cyan-900/50 dark:bg-black/10">
+          <summary class="cursor-pointer text-sm font-medium text-cyan-900 dark:text-cyan-100">
+            {{ t('admin.accounts.kiro.advancedFieldsTitle') }}
+          </summary>
+          <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <p class="md:col-span-2 text-sm text-cyan-700 dark:text-cyan-300">
+              Kiro version、system version、Node.js version 等运行参数由系统配置统一管理。
+            </p>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.kiro.regionLabel') }}</label>
+              <input
+                v-model="region"
+                type="text"
+                class="input font-mono text-sm"
+                :placeholder="t('admin.accounts.kiro.regionPlaceholder')"
+              />
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.kiro.authRegionLabel') }}</label>
+              <input
+                v-model="authRegion"
+                type="text"
+                class="input font-mono text-sm"
+                :placeholder="t('admin.accounts.kiro.optionalPlaceholder')"
+              />
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.kiro.apiRegionLabel') }}</label>
+              <input
+                v-model="apiRegion"
+                type="text"
+                class="input font-mono text-sm"
+                :placeholder="t('admin.accounts.kiro.optionalPlaceholder')"
+              />
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.kiro.profileArnLabel') }}</label>
+              <input
+                v-model="profileARN"
+                type="text"
+                class="input font-mono text-sm"
+                :placeholder="t('admin.accounts.kiro.optionalPlaceholder')"
+              />
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.kiro.machineIdLabel') }}</label>
+              <input
+                v-model="machineID"
+                type="text"
+                class="input font-mono text-sm"
+                :placeholder="t('admin.accounts.kiro.optionalPlaceholder')"
+              />
+            </div>
+          </div>
+        </details>
+
+        <div
+          v-if="localError || error"
+          class="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800/60 dark:bg-red-900/20 dark:text-red-300"
+        >
+          {{ localError || error }}
+        </div>
+
+        <button
+          type="button"
+          class="btn btn-primary mt-4 w-full"
+          :disabled="loading"
+          @click="handleSubmitRefreshToken"
+        >
+          <svg
+            v-if="loading"
+            class="-ml-1 mr-2 h-4 w-4 animate-spin"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          {{ loading ? t('admin.accounts.kiro.validating') : t('admin.accounts.kiro.validateAndCreate') }}
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -250,6 +449,10 @@ const emit = defineEmits<{
     credentials: KiroCredentials & Record<string, unknown>
     extra: KiroAccountExtra & Record<string, unknown>
   }]
+  'submit-refresh-token': [payload: {
+    credentials: KiroCredentials & Record<string, unknown>
+    extra: KiroAccountExtra & Record<string, unknown>
+  }]
 }>()
 
 const { t } = useI18n()
@@ -262,6 +465,13 @@ const authRegion = ref('')
 const apiRegion = ref('')
 const machineID = ref('')
 const localError = ref('')
+const inputMode = ref<'oauth' | 'refresh_token'>('oauth')
+const manualAuthMethod = ref<'social' | 'idc'>('social')
+const manualRefreshToken = ref('')
+const manualAccessToken = ref('')
+const manualExpiresAtInput = ref('')
+const manualClientID = ref('')
+const manualClientSecret = ref('')
 
 const title = computed(() => (
   props.mode === 'reauth'
@@ -281,6 +491,14 @@ const submitLabel = computed(() => (
     : t('admin.accounts.oauth.completeAuth')
 ))
 
+const showInputModeSelection = computed(() => props.mode === 'create')
+const parsedRefreshTokenCount = computed(() => (
+  manualRefreshToken.value
+    .split('\n')
+    .map((rt) => rt.trim())
+    .filter((rt) => rt).length
+))
+
 const resetForm = () => {
   const credentials = props.initialCredentials || {}
   callbackUrl.value = ''
@@ -289,6 +507,13 @@ const resetForm = () => {
   authRegion.value = credentials.auth_region || ''
   apiRegion.value = credentials.api_region || ''
   machineID.value = credentials.machine_id || ''
+  inputMode.value = 'oauth'
+  manualAuthMethod.value = (credentials.auth_method || 'social') as 'social' | 'idc'
+  manualRefreshToken.value = ''
+  manualAccessToken.value = ''
+  manualExpiresAtInput.value = ''
+  manualClientID.value = credentials.client_id || ''
+  manualClientSecret.value = ''
   localError.value = ''
 }
 
@@ -322,6 +547,52 @@ const handleSubmit = () => {
 
   emit('submit', {
     callbackUrl: callbackUrl.value.trim(),
+    credentials,
+    extra: {}
+  })
+}
+
+const handleSubmitRefreshToken = () => {
+  localError.value = ''
+
+  if (!manualRefreshToken.value.trim()) {
+    localError.value = t('admin.accounts.kiro.refreshTokenRequired')
+    return
+  }
+
+  if (
+    manualAuthMethod.value === 'idc' &&
+    (!manualClientID.value.trim() || !manualClientSecret.value.trim())
+  ) {
+    localError.value = t('admin.accounts.kiro.idcClientRequired')
+    return
+  }
+
+  const expiresAt = manualExpiresAtInput.value.trim()
+    ? new Date(manualExpiresAtInput.value)
+    : null
+  if (expiresAt && Number.isNaN(expiresAt.getTime())) {
+    localError.value = t('admin.accounts.kiro.expiresAtInvalid')
+    return
+  }
+
+  const credentials: KiroCredentials & Record<string, unknown> = {
+    refresh_token: manualRefreshToken.value.trim(),
+    auth_method: manualAuthMethod.value,
+    region: region.value.trim() || 'us-east-1'
+  }
+  if (manualAccessToken.value.trim()) credentials.access_token = manualAccessToken.value.trim()
+  if (expiresAt) credentials.expires_at = expiresAt.toISOString()
+  if (manualAuthMethod.value === 'idc') {
+    credentials.client_id = manualClientID.value.trim()
+    credentials.client_secret = manualClientSecret.value.trim()
+  }
+  if (authRegion.value.trim()) credentials.auth_region = authRegion.value.trim()
+  if (apiRegion.value.trim()) credentials.api_region = apiRegion.value.trim()
+  if (profileARN.value.trim()) credentials.profile_arn = profileARN.value.trim()
+  if (machineID.value.trim()) credentials.machine_id = machineID.value.trim()
+
+  emit('submit-refresh-token', {
     credentials,
     extra: {}
   })
