@@ -85,8 +85,8 @@
       </div>
 
       <!-- Row: OpenAI Token Stats -->
-      <div v-if="opsEnabled && showOpenAITokenStats && !(loading && !hasLoadedOnce)" class="grid grid-cols-1 gap-6">
-        <OpsOpenAITokenStatsCard
+      <div v-if="shouldMountOpenAITokenStatsCard" class="grid grid-cols-1 gap-6">
+        <AsyncOpsOpenAITokenStatsCard
           :platform-filter="platform"
           :group-id-filter="groupId"
           :refresh-token="dashboardRefreshToken"
@@ -94,24 +94,30 @@
       </div>
 
       <!-- Alert Events -->
-      <OpsAlertEventsCard v-if="opsEnabled && showAlertEvents && !(loading && !hasLoadedOnce)" />
+      <AsyncOpsAlertEventsCard v-if="shouldMountAlertEventsCard" />
 
       <!-- System Logs -->
-      <OpsSystemLogTable
-        v-if="opsEnabled && !(loading && !hasLoadedOnce)"
+      <AsyncOpsSystemLogTable
+        v-if="shouldMountSystemLogTable"
         :platform-filter="platform"
         :refresh-token="dashboardRefreshToken"
       />
 
       <!-- Settings Dialog (hidden in fullscreen mode) -->
       <template v-if="!isFullscreen">
-        <OpsSettingsDialog :show="showSettingsDialog" @close="showSettingsDialog = false" @saved="onSettingsSaved" />
+        <AsyncOpsSettingsDialog
+          v-if="showSettingsDialog"
+          :show="showSettingsDialog"
+          @close="showSettingsDialog = false"
+          @saved="onSettingsSaved"
+        />
 
-        <BaseDialog :show="showAlertRulesCard" :title="t('admin.ops.alertRules.title')" width="extra-wide" @close="showAlertRulesCard = false">
-          <OpsAlertRulesCard />
+        <BaseDialog v-if="showAlertRulesCard" :show="showAlertRulesCard" :title="t('admin.ops.alertRules.title')" width="extra-wide" @close="showAlertRulesCard = false">
+          <AsyncOpsAlertRulesCard />
         </BaseDialog>
 
-        <OpsErrorDetailsModal
+        <AsyncOpsErrorDetailsModal
+          v-if="showErrorDetails"
           :show="showErrorDetails"
           :time-range="timeRange"
           :platform="platform"
@@ -121,9 +127,15 @@
           @openErrorDetail="openError"
         />
 
-        <OpsErrorDetailModal v-model:show="showErrorModal" :error-id="selectedErrorId" :error-type="errorDetailsType" />
+        <AsyncOpsErrorDetailModal
+          v-if="showErrorModal && selectedErrorId !== null"
+          v-model:show="showErrorModal"
+          :error-id="selectedErrorId"
+          :error-type="errorDetailsType"
+        />
 
-        <OpsRequestDetailsModal
+        <AsyncOpsRequestDetailsModal
+          v-if="showRequestDetails"
           v-model="showRequestDetails"
           :time-range="timeRange"
           :preset="requestDetailsPreset"
@@ -137,8 +149,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useDebounceFn, useIntervalFn } from '@vueuse/core'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -156,19 +167,21 @@ import { useAdminSettingsStore, useAppStore } from '@/stores'
 import OpsDashboardHeader from './components/OpsDashboardHeader.vue'
 import OpsDashboardSkeleton from './components/OpsDashboardSkeleton.vue'
 import OpsConcurrencyCard from './components/OpsConcurrencyCard.vue'
-import OpsErrorDetailModal from './components/OpsErrorDetailModal.vue'
 import OpsErrorDistributionChart from './components/OpsErrorDistributionChart.vue'
-import OpsErrorDetailsModal from './components/OpsErrorDetailsModal.vue'
 import OpsErrorTrendChart from './components/OpsErrorTrendChart.vue'
 import OpsLatencyChart from './components/OpsLatencyChart.vue'
 import OpsThroughputTrendChart from './components/OpsThroughputTrendChart.vue'
 import OpsSwitchRateTrendChart from './components/OpsSwitchRateTrendChart.vue'
-import OpsAlertEventsCard from './components/OpsAlertEventsCard.vue'
-import OpsOpenAITokenStatsCard from './components/OpsOpenAITokenStatsCard.vue'
-import OpsSystemLogTable from './components/OpsSystemLogTable.vue'
-import OpsRequestDetailsModal, { type OpsRequestDetailsPreset } from './components/OpsRequestDetailsModal.vue'
-import OpsSettingsDialog from './components/OpsSettingsDialog.vue'
-import OpsAlertRulesCard from './components/OpsAlertRulesCard.vue'
+import type { OpsRequestDetailsPreset } from './components/OpsRequestDetailsModal.vue'
+
+const AsyncOpsAlertEventsCard = defineAsyncComponent(() => import('./components/OpsAlertEventsCard.vue'))
+const AsyncOpsOpenAITokenStatsCard = defineAsyncComponent(() => import('./components/OpsOpenAITokenStatsCard.vue'))
+const AsyncOpsSystemLogTable = defineAsyncComponent(() => import('./components/OpsSystemLogTable.vue'))
+const AsyncOpsSettingsDialog = defineAsyncComponent(() => import('./components/OpsSettingsDialog.vue'))
+const AsyncOpsAlertRulesCard = defineAsyncComponent(() => import('./components/OpsAlertRulesCard.vue'))
+const AsyncOpsErrorDetailsModal = defineAsyncComponent(() => import('./components/OpsErrorDetailsModal.vue'))
+const AsyncOpsErrorDetailModal = defineAsyncComponent(() => import('./components/OpsErrorDetailModal.vue'))
+const AsyncOpsRequestDetailsModal = defineAsyncComponent(() => import('./components/OpsRequestDetailsModal.vue'))
 
 const route = useRoute()
 const router = useRouter()
@@ -215,6 +228,7 @@ const QUERY_KEYS = {
 
 const isApplyingRouteQuery = ref(false)
 const isSyncingRouteQuery = ref(false)
+let syncQueryTimer: ReturnType<typeof setTimeout> | null = null
 
 // Fullscreen mode
 const isFullscreen = computed(() => {
@@ -327,24 +341,31 @@ const buildQueryFromState = () => {
   return next
 }
 
-const syncQueryToRoute = useDebounceFn(async () => {
-  if (isApplyingRouteQuery.value) return
-  const nextQuery = buildQueryFromState()
-
-  const curr = route.query as Record<string, any>
-  const nextKeys = Object.keys(nextQuery)
-  const currKeys = Object.keys(curr)
-  const sameLength = nextKeys.length === currKeys.length
-  const sameValues = sameLength && nextKeys.every((k) => String(curr[k] ?? '') === String(nextQuery[k] ?? ''))
-  if (sameValues) return
-
-  try {
-    isSyncingRouteQuery.value = true
-    await router.replace({ query: nextQuery })
-  } finally {
-    isSyncingRouteQuery.value = false
+function syncQueryToRoute() {
+  if (syncQueryTimer !== null) {
+    clearTimeout(syncQueryTimer)
   }
-}, 250)
+
+  syncQueryTimer = setTimeout(async () => {
+    syncQueryTimer = null
+    if (isApplyingRouteQuery.value) return
+    const nextQuery = buildQueryFromState()
+
+    const curr = route.query as Record<string, any>
+    const nextKeys = Object.keys(nextQuery)
+    const currKeys = Object.keys(curr)
+    const sameLength = nextKeys.length === currKeys.length
+    const sameValues = sameLength && nextKeys.every((k) => String(curr[k] ?? '') === String(nextQuery[k] ?? ''))
+    if (sameValues) return
+
+    try {
+      isSyncingRouteQuery.value = true
+      await router.replace({ query: nextQuery })
+    } finally {
+      isSyncingRouteQuery.value = false
+    }
+  }, 250)
+}
 
 const overview = ref<OpsDashboardOverview | null>(null)
 const metricThresholds = ref<OpsMetricThresholds | null>(null)
@@ -386,29 +407,49 @@ const showOpenAITokenStats = ref(false)
 const autoRefreshEnabled = ref(false)
 const autoRefreshIntervalMs = ref(30000) // default 30 seconds
 const autoRefreshCountdown = ref(0)
+let countdownTimer: ReturnType<typeof setInterval> | null = null
 
 // Used to trigger child component refreshes in a single shared cadence.
 const dashboardRefreshToken = ref(0)
 
+const shouldMountOpenAITokenStatsCard = computed(() => {
+  return opsEnabled.value && showOpenAITokenStats.value && !(loading.value && !hasLoadedOnce.value)
+})
+
+const shouldMountAlertEventsCard = computed(() => {
+  return opsEnabled.value && showAlertEvents.value && !(loading.value && !hasLoadedOnce.value)
+})
+
+const shouldMountSystemLogTable = computed(() => {
+  return opsEnabled.value && !(loading.value && !hasLoadedOnce.value)
+})
+
 // Countdown timer (drives auto refresh; updates every second)
-const { pause: pauseCountdown, resume: resumeCountdown } = useIntervalFn(
-  () => {
-    if (!autoRefreshEnabled.value) return
-    if (!opsEnabled.value) return
-    if (loading.value) return
+function tickAutoRefreshCountdown() {
+  if (!autoRefreshEnabled.value) return
+  if (!opsEnabled.value) return
+  if (loading.value) return
 
-    if (autoRefreshCountdown.value <= 0) {
-      // Fetch immediately when the countdown reaches 0.
-      // fetchData() will reset the countdown to the full interval.
-      fetchData()
-      return
-    }
+  if (autoRefreshCountdown.value <= 0) {
+    // Fetch immediately when the countdown reaches 0.
+    // fetchData() will reset the countdown to the full interval.
+    fetchData()
+    return
+  }
 
-    autoRefreshCountdown.value -= 1
-  },
-  1000,
-  { immediate: false }
-)
+  autoRefreshCountdown.value -= 1
+}
+
+function resumeCountdown() {
+  if (countdownTimer !== null) return
+  countdownTimer = setInterval(tickAutoRefreshCountdown, 1000)
+}
+
+function pauseCountdown() {
+  if (countdownTimer === null) return
+  clearInterval(countdownTimer)
+  countdownTimer = null
+}
 
 // Load ops dashboard presentation settings from backend.
 async function loadDashboardAdvancedSettings() {
@@ -755,13 +796,17 @@ watch(
     const prevTimeRange = timeRange.value
     const prevPlatform = platform.value
     const prevGroupId = groupId.value
+    const prevQueryMode = queryMode.value
 
     isApplyingRouteQuery.value = true
     applyRouteQueryToState()
     isApplyingRouteQuery.value = false
 
     const changed =
-      prevTimeRange !== timeRange.value || prevPlatform !== platform.value || prevGroupId !== groupId.value
+      prevTimeRange !== timeRange.value ||
+      prevPlatform !== platform.value ||
+      prevGroupId !== groupId.value ||
+      prevQueryMode !== queryMode.value
     if (changed) {
       if (opsEnabled.value) {
         fetchData()
@@ -810,6 +855,10 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
   abortDashboardFetch()
   pauseCountdown()
+  if (syncQueryTimer !== null) {
+    clearTimeout(syncQueryTimer)
+    syncQueryTimer = null
+  }
 })
 
 // Watch auto refresh settings changes

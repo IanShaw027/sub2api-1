@@ -98,7 +98,8 @@ watch(
       pageSize.value = 10
       fetchData()
     }
-  }
+  },
+  { immediate: true }
 )
 
 watch(

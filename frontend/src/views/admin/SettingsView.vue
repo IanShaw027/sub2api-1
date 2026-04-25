@@ -3407,6 +3407,7 @@
                           t("admin.settings.webSearchEmulation.proxy")
                         }}</label>
                         <ProxySelector
+                          v-if="activeTab === 'gateway'"
                           v-model="provider.proxy_id"
                           :proxies="webSearchProxies"
                         />
@@ -4720,7 +4721,7 @@
 
           <!-- Provider Management -->
           <PaymentProviderList
-            v-if="form.payment_enabled"
+            v-if="activeTab === 'payment' && form.payment_enabled"
             :providers="providers"
             :loading="providersLoading"
             :can-create="hasAnyPaymentTypeEnabled"
@@ -5127,7 +5128,7 @@
         <!-- /Tab: Email -->
 
         <!-- Tab: Backup -->
-        <div v-show="activeTab === 'backup'">
+        <div v-if="activeTab === 'backup'">
           <BackupSettings />
         </div>
 
@@ -5169,6 +5170,7 @@
 
       <!-- Provider dialogs placed outside the settings form to prevent form submission bubbling -->
       <PaymentProviderDialog
+        v-if="showProviderDialog"
         ref="providerDialogRef"
         :show="showProviderDialog"
         :saving="providerSaving"
@@ -5194,7 +5196,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from "vue";
+import { defineAsyncComponent, ref, reactive, computed, onMounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { adminAPI } from "@/api";
 import {
@@ -5231,14 +5233,10 @@ import AppLayout from "@/components/layout/AppLayout.vue";
 import Icon from "@/components/icons/Icon.vue";
 import Select from "@/components/common/Select.vue";
 import ConfirmDialog from "@/components/common/ConfirmDialog.vue";
-import PaymentProviderList from "@/components/payment/PaymentProviderList.vue";
-import PaymentProviderDialog from "@/components/payment/PaymentProviderDialog.vue";
 import GroupBadge from "@/components/common/GroupBadge.vue";
 import GroupOptionItem from "@/components/common/GroupOptionItem.vue";
 import Toggle from "@/components/common/Toggle.vue";
-import ProxySelector from "@/components/common/ProxySelector.vue";
 import ImageUpload from "@/components/common/ImageUpload.vue";
-import BackupSettings from "@/views/admin/BackupView.vue";
 import { useClipboard } from "@/composables/useClipboard";
 import { extractApiErrorMessage, extractI18nErrorMessage } from "@/utils/apiError";
 import { useAppStore } from "@/stores";
@@ -5250,6 +5248,19 @@ import {
   normalizeRegistrationEmailSuffixDomains,
   parseRegistrationEmailSuffixWhitelistInput,
 } from "@/utils/registrationEmailPolicy";
+
+const PaymentProviderList = defineAsyncComponent(
+  () => import("@/components/payment/PaymentProviderList.vue"),
+);
+const PaymentProviderDialog = defineAsyncComponent(
+  () => import("@/components/payment/PaymentProviderDialog.vue"),
+);
+const ProxySelector = defineAsyncComponent(
+  () => import("@/components/common/ProxySelector.vue"),
+);
+const BackupSettings = defineAsyncComponent(
+  () => import("@/views/admin/BackupView.vue"),
+);
 
 const { t, locale } = useI18n();
 const appStore = useAppStore();
@@ -7064,13 +7075,22 @@ function slog(...args: unknown[]) {
 const providersLoading = ref(false);
 const providerSaving = ref(false);
 const providers = ref<ProviderInstance[]>([]);
+const providersLoaded = ref(false);
 const showProviderDialog = ref(false);
 const showDeleteProviderDialog = ref(false);
 const editingProvider = ref<ProviderInstance | null>(null);
 const deletingProviderId = ref<number | null>(null);
-const providerDialogRef = ref<InstanceType<
-  typeof PaymentProviderDialog
-> | null>(null);
+type PaymentProviderDialogExpose = {
+  reset: (defaultKey: string) => void;
+  loadProvider: (provider: ProviderInstance) => void;
+};
+type PendingProviderDialogAction =
+  | { type: "create"; defaultKey: string }
+  | { type: "edit"; provider: ProviderInstance };
+const providerDialogRef = ref<PaymentProviderDialogExpose | null>(null);
+const pendingProviderDialogAction = ref<PendingProviderDialogAction | null>(
+  null,
+);
 
 const providerKeyOptions = computed(() => [
   { value: "easypay", label: t("admin.settings.payment.providerEasypay") },
@@ -7205,10 +7225,12 @@ function showProviderEnablementConflict(
 }
 
 async function loadProviders() {
+  if (providersLoading.value) return;
   providersLoading.value = true;
   try {
     const res = await adminAPI.payment.getProviders();
     providers.value = res.data || [];
+    providersLoaded.value = true;
   } catch (err: unknown) {
     appStore.showError(extractI18nErrorMessage(err, t, "payment.errors", t("common.error")));
   } finally {
@@ -7216,18 +7238,43 @@ async function loadProviders() {
   }
 }
 
+async function ensureProvidersLoaded() {
+  if (providersLoaded.value || providersLoading.value) return;
+  await loadProviders();
+}
+
+function applyPendingProviderDialogAction() {
+  const dialog = providerDialogRef.value;
+  const action = pendingProviderDialogAction.value;
+  if (!dialog || !action) return;
+
+  if (action.type === "create") {
+    dialog.reset(action.defaultKey);
+  } else {
+    dialog.loadProvider(action.provider);
+  }
+
+  pendingProviderDialogAction.value = null;
+}
+
 function openCreateProvider() {
   editingProvider.value = null;
-  providerDialogRef.value?.reset(
-    enabledProviderKeyOptions.value[0]?.value || "easypay",
-  );
+  pendingProviderDialogAction.value = {
+    type: "create",
+    defaultKey: enabledProviderKeyOptions.value[0]?.value || "easypay",
+  };
   showProviderDialog.value = true;
+  applyPendingProviderDialogAction();
 }
 
 function openEditProvider(provider: ProviderInstance) {
   editingProvider.value = provider;
-  providerDialogRef.value?.loadProvider(provider);
+  pendingProviderDialogAction.value = {
+    type: "edit",
+    provider,
+  };
   showProviderDialog.value = true;
+  applyPendingProviderDialogAction();
 }
 
 async function handleSaveProvider(payload: Partial<ProviderInstance>) {
@@ -7369,8 +7416,26 @@ onMounted(() => {
   loadStreamTimeoutSettings();
   loadRectifierSettings();
   loadBetaPolicySettings();
-  loadProviders();
 });
+
+watch(providerDialogRef, () => {
+  applyPendingProviderDialogAction();
+});
+
+watch(showProviderDialog, (show) => {
+  if (!show) {
+    pendingProviderDialogAction.value = null;
+  }
+});
+
+watch(
+  [activeTab, () => form.payment_enabled],
+  ([tab, paymentEnabled]) => {
+    if (tab === "payment" && paymentEnabled) {
+      void ensureProvidersLoaded();
+    }
+  },
+);
 </script>
 
 <style scoped>

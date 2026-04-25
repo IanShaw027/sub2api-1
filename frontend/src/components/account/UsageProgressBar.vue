@@ -56,8 +56,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { useIntervalFn } from '@vueuse/core'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { WindowStats } from '@/types'
 import { formatCompactNumber } from '@/utils/format'
@@ -76,25 +75,39 @@ const { t } = useI18n()
 // Reactive clock for countdown — only runs when a reset time is shown,
 // to avoid creating many idle timers across large account lists.
 const now = ref(new Date())
-const { pause: pauseClock, resume: resumeClock } = useIntervalFn(
-  () => {
+let clockTimer: ReturnType<typeof setInterval> | null = null
+
+const startClock = () => {
+  if (clockTimer !== null) return
+
+  clockTimer = setInterval(() => {
     now.value = new Date()
-  },
-  60_000,
-  { immediate: false },
-)
-if (props.resetsAt) resumeClock()
+  }, 60_000)
+}
+
+const stopClock = () => {
+  if (clockTimer !== null) {
+    clearInterval(clockTimer)
+    clockTimer = null
+  }
+}
+
+if (props.resetsAt) startClock()
 watch(
   () => props.resetsAt,
   (val) => {
     if (val) {
       now.value = new Date()
-      resumeClock()
+      startClock()
     } else {
-      pauseClock()
+      stopClock()
     }
   },
 )
+
+onUnmounted(() => {
+  stopClock()
+})
 
 // Label background colors
 const labelClass = computed(() => {

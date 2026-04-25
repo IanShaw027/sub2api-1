@@ -72,7 +72,7 @@ watch(() => props.show, (show) => {
   if (show) {
     loadAllSettings()
   }
-})
+}, { immediate: true })
 
 // 邮件输入
 const alertRecipientInput = ref('')

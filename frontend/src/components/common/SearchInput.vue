@@ -14,7 +14,7 @@
 </template>
 
 <script setup lang="ts">
-import { useDebounceFn } from '@vueuse/core'
+import { onUnmounted } from 'vue'
 import Icon from '@/components/icons/Icon.vue'
 
 const props = withDefaults(defineProps<{
@@ -31,13 +31,26 @@ const emit = defineEmits<{
   (e: 'search', value: string): void
 }>()
 
-const debouncedEmitSearch = useDebounceFn((value: string) => {
-  emit('search', value)
-}, props.debounceMs)
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+const clearSearchTimer = () => {
+  if (searchTimer !== null) {
+    clearTimeout(searchTimer)
+    searchTimer = null
+  }
+}
 
 const handleInput = (event: Event) => {
   const value = (event.target as HTMLInputElement).value
   emit('update:modelValue', value)
-  debouncedEmitSearch(value)
+  clearSearchTimer()
+  searchTimer = setTimeout(() => {
+    searchTimer = null
+    emit('search', value)
+  }, props.debounceMs)
 }
+
+onUnmounted(() => {
+  clearSearchTimer()
+})
 </script>

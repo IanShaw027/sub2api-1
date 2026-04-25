@@ -1,5 +1,4 @@
 import { ref, reactive, onUnmounted, toRaw } from 'vue'
-import { useDebounceFn } from '@vueuse/core'
 import type { BasePaginationResponse, FetchOptions } from '@/types'
 import { getPersistedPageSize } from './usePersistedPageSize'
 
@@ -15,6 +14,10 @@ interface TableLoaderOptions<T, P> {
   initialParams?: P
   pageSize?: number
   debounceMs?: number
+}
+
+type DebouncedReload = (() => void) & {
+  cancel: () => void
 }
 
 /**
@@ -66,6 +69,7 @@ export function useTableLoader<T, P extends Record<string, any>>(options: TableL
       }
     } finally {
       if (abortController === currentController) {
+        abortController = null
         loading.value = false
       }
     }
@@ -76,7 +80,26 @@ export function useTableLoader<T, P extends Record<string, any>>(options: TableL
     return load()
   }
 
-  const debouncedReload = useDebounceFn(reload, debounceMs)
+  let reloadTimer: ReturnType<typeof setTimeout> | null = null
+
+  const clearReloadTimer = () => {
+    if (reloadTimer !== null) {
+      clearTimeout(reloadTimer)
+      reloadTimer = null
+    }
+  }
+
+  const debouncedReload = (() => {
+    clearReloadTimer()
+    reloadTimer = setTimeout(() => {
+      reloadTimer = null
+      void reload()
+    }, debounceMs)
+  }) as DebouncedReload
+
+  debouncedReload.cancel = () => {
+    clearReloadTimer()
+  }
 
   const handlePageChange = (page: number) => {
     // 确保页码在有效范围内
@@ -92,7 +115,9 @@ export function useTableLoader<T, P extends Record<string, any>>(options: TableL
   }
 
   onUnmounted(() => {
+    clearReloadTimer()
     abortController?.abort()
+    abortController = null
   })
 
   return {
