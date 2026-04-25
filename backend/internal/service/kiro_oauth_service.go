@@ -313,6 +313,56 @@ func (s *KiroOAuthService) enrichTokenInfo(ctx context.Context, tokenInfo *KiroT
 	}
 }
 
+func (s *KiroOAuthService) EnrichRefreshedCredentials(ctx context.Context, credentials map[string]any) map[string]any {
+	if credentials == nil {
+		return nil
+	}
+	tokenInfo := buildKiroTokenInfo(credentials, url.Values{}, NormalizeKiroAuthMethod(credentials))
+	if s != nil {
+		s.enrichTokenInfo(ctx, tokenInfo)
+	}
+	return MergeCredentials(credentials, kiroTokenInfoMap(tokenInfo))
+}
+
+func kiroTokenInfoMap(tokenInfo *KiroTokenInfo) map[string]any {
+	if tokenInfo == nil {
+		return nil
+	}
+	values := map[string]any{
+		"access_token":      tokenInfo.AccessToken,
+		"refresh_token":     tokenInfo.RefreshToken,
+		"token_type":        tokenInfo.TokenType,
+		"expires_at":        tokenInfo.ExpiresAt,
+		"auth_method":       tokenInfo.AuthMethod,
+		"client_id":         tokenInfo.ClientID,
+		"client_secret":     tokenInfo.ClientSecret,
+		"region":            tokenInfo.Region,
+		"auth_region":       tokenInfo.AuthRegion,
+		"api_region":        tokenInfo.APIRegion,
+		"profile_arn":       tokenInfo.ProfileARN,
+		"email":             tokenInfo.Email,
+		"name":              tokenInfo.Name,
+		"user_id":           tokenInfo.UserID,
+		"login_provider":    tokenInfo.LoginProvider,
+		"plan_name":         tokenInfo.PlanName,
+		"plan_tier":         tokenInfo.PlanTier,
+		"usage_reset_at":    tokenInfo.UsageResetAt,
+		"status":            tokenInfo.Status,
+		"status_reason":     tokenInfo.StatusReason,
+		"issuer_url":        tokenInfo.IssuerURL,
+		"idc_region":        tokenInfo.IDCRegion,
+		"scopes":            tokenInfo.Scopes,
+		"login_hint":        tokenInfo.LoginHint,
+		"subscription_type": tokenInfo.SubscriptionType,
+	}
+	for key, value := range values {
+		if text, ok := value.(string); ok && strings.TrimSpace(text) == "" {
+			delete(values, key)
+		}
+	}
+	return values
+}
+
 func (s *KiroOAuthService) Stop() {
 	s.sessionStore.Stop()
 }
@@ -585,20 +635,14 @@ func normalizeKiroExpiresAt(payload map[string]any) string {
 }
 
 func deriveKiroAuthMethod(loginOption string, payload map[string]any) string {
-	raw := strings.ToLower(strings.TrimSpace(firstNonEmptyKiroString(
-		pickKiroString(payload, []string{"authMethod"}, []string{"auth_method"}),
-		pickKiroString(payload, []string{"provider"}, []string{"loginProvider"}, []string{"login_option"}),
-		loginOption,
-	)))
-	switch raw {
-	case "idc", "builderid", "awsidc", "internal", "enterprise", "external_idp":
-		return "idc"
-	}
-	if pickKiroString(payload, []string{"client_secret"}, []string{"clientSecret"}) != "" &&
-		pickKiroString(payload, []string{"client_id"}, []string{"clientId"}) != "" {
-		return "idc"
-	}
-	return "social"
+	return NormalizeKiroAuthMethod(map[string]any{
+		"auth_method":    pickKiroString(payload, []string{"authMethod"}, []string{"auth_method"}),
+		"provider":       pickKiroString(payload, []string{"provider"}),
+		"login_provider": pickKiroString(payload, []string{"loginProvider"}),
+		"login_option":   firstNonEmptyKiroString(pickKiroString(payload, []string{"login_option"}), loginOption),
+		"client_id":      pickKiroString(payload, []string{"client_id"}, []string{"clientId"}),
+		"client_secret":  pickKiroString(payload, []string{"client_secret"}, []string{"clientSecret"}),
+	})
 }
 
 func normalizeKiroProvider(value string) string {

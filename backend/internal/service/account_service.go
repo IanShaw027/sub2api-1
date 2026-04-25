@@ -200,23 +200,35 @@ func validateKiroAccountCredentials(accountType string, credentials map[string]a
 // KiroAuthMethodUsesIDCRefresh mirrors KiroTokenRefresher.Refresh's IDC/OIDC
 // token refresh branch.
 func KiroAuthMethodUsesIDCRefresh(authMethod string) bool {
-	switch strings.ToLower(strings.TrimSpace(authMethod)) {
-	case "idc", "builder-id", "iam":
-		return true
-	default:
-		return false
-	}
+	return normalizeKiroAuthMethodValue(authMethod) == "idc"
 }
 
 func NormalizeKiroAuthMethod(credentials map[string]any) string {
-	authMethod := strings.ToLower(strings.TrimSpace(stringCredential(credentials, "auth_method")))
-	if authMethod != "" {
+	if authMethod := normalizeKiroAuthMethodValue(stringCredential(credentials, "auth_method")); authMethod != "" {
 		return authMethod
 	}
 	if strings.TrimSpace(stringCredential(credentials, "client_id")) != "" && strings.TrimSpace(stringCredential(credentials, "client_secret")) != "" {
 		return "idc"
 	}
+	for _, key := range []string{"provider", "login_provider", "login_option"} {
+		if authMethod := normalizeKiroAuthMethodValue(stringCredential(credentials, key)); authMethod != "" {
+			return authMethod
+		}
+	}
 	return "social"
+}
+
+func normalizeKiroAuthMethodValue(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	normalized = strings.ReplaceAll(normalized, "_", "-")
+	switch normalized {
+	case "":
+		return ""
+	case "idc", "builderid", "builder-id", "awsidc", "aws-idc", "iam", "internal", "enterprise", "external-idp":
+		return "idc"
+	default:
+		return "social"
+	}
 }
 
 func stringCredential(credentials map[string]any, key string) string {

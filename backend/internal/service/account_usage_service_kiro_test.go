@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/require"
 )
 
@@ -251,4 +252,72 @@ func TestAccountUsageService_GetUsage_KiroCachesSuccessfulUsage(t *testing.T) {
 	require.Equal(t, 1, upstream.calls)
 	require.NotNil(t, second.KiroQuota)
 	require.GreaterOrEqual(t, second.KiroQuota.RemainingSeconds, 0)
+}
+
+func TestAccountUsageService_GetUsage_KiroRefreshUsesAssignedProxy(t *testing.T) {
+	t.Parallel()
+
+	proxyID := int64(501)
+	account := &Account{
+		ID:       69,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		ProxyID:  &proxyID,
+		Credentials: map[string]any{
+			"refresh_token": "refresh-token",
+		},
+	}
+	repo := &kiroUsageAccountRepo{account: account}
+	var refreshProxyURL string
+	upstream := &kiroHTTPUpstreamRecorder{
+		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+			switch {
+			case strings.Contains(req.URL.String(), "/refreshToken"):
+				refreshProxyURL = proxyURL
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body: io.NopCloser(strings.NewReader(`{
+						"accessToken":"fresh-access-token",
+						"refreshToken":"fresh-refresh-token",
+						"profileArn":"arn:aws:kiro:us-east-1:123456789012:profile/test",
+						"expiresIn":3600
+					}`)),
+					Header: make(http.Header),
+				}, nil
+			default:
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body: io.NopCloser(strings.NewReader(`{
+						"subscriptionInfo":{"subscriptionTitle":"Kiro Pro"},
+						"usageBreakdownList":[{"currentUsageWithPrecision":12.5,"usageLimitWithPrecision":100,"nextDateReset":4102444800}]
+					}`)),
+					Header: make(http.Header),
+				}, nil
+			}
+		},
+	}
+	svc := &AccountUsageService{
+		accountRepo: repo,
+		usageFetcher: &kiroUsageFetcherStub{
+			upstream: upstream,
+		},
+		proxyRepo: &kiroDefaultProxyRepoStub{
+			getByIDFunc: func(ctx context.Context, id int64) (*Proxy, error) {
+				require.Equal(t, proxyID, id)
+				return &Proxy{
+					Protocol: "http",
+					Host:     "127.0.0.1",
+					Port:     8089,
+				}, nil
+			},
+		},
+		cache: NewUsageCache(),
+	}
+
+	usage, err := svc.GetUsage(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.NotNil(t, usage)
+	require.Equal(t, "http://127.0.0.1:8089", refreshProxyURL)
+	require.Equal(t, "fresh-access-token", account.GetCredential("access_token"))
 }

@@ -673,6 +673,23 @@ type TestAccountRequest struct {
 	TestMode string `json:"test_mode"`
 }
 
+func resolveTestAccountModes(req TestAccountRequest) (mode string, imageMode string) {
+	mode = strings.TrimSpace(req.Mode)
+	imageMode = service.NormalizeOpenAIImageTestMode(req.TestMode)
+	if mode != "" {
+		return mode, imageMode
+	}
+
+	switch strings.ToLower(strings.TrimSpace(req.TestMode)) {
+	case service.AccountTestModeDefault:
+		return service.AccountTestModeDefault, imageMode
+	case service.AccountTestModeCompact:
+		return service.AccountTestModeCompact, imageMode
+	default:
+		return "", imageMode
+	}
+}
+
 type SyncFromCRSRequest struct {
 	BaseURL            string   `json:"base_url" binding:"required"`
 	Username           string   `json:"username" binding:"required"`
@@ -699,12 +716,9 @@ func (h *AccountHandler) Test(c *gin.Context) {
 	var req TestAccountRequest
 	// Allow empty body, model_id is optional
 	_ = c.ShouldBindJSON(&req)
-	mode := strings.TrimSpace(req.Mode)
-	if mode == "" {
-		mode = strings.TrimSpace(req.TestMode)
-	}
-	if normalizedMode := service.NormalizeOpenAIImageTestMode(mode); normalizedMode != "" {
-		c.Set(service.AccountTestContextRequestedModeKey, normalizedMode)
+	mode, imageMode := resolveTestAccountModes(req)
+	if imageMode != "" {
+		c.Set(service.AccountTestContextRequestedModeKey, imageMode)
 	}
 
 	// Use AccountTestService to test the account with SSE streaming

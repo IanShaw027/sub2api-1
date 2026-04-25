@@ -139,7 +139,7 @@ func TestAccountService_Create_RejectsInvalidKiroCredentials(t *testing.T) {
 func TestAccountService_Update_RejectsInvalidKiroIDCFields(t *testing.T) {
 	t.Parallel()
 
-	for _, authMethod := range []string{"idc", "IDC", "builder-id", "iam"} {
+	for _, authMethod := range []string{"idc", "IDC", "builder-id", "builderid", "awsidc", "iam"} {
 		authMethod := authMethod
 		t.Run(authMethod, func(t *testing.T) {
 			t.Parallel()
@@ -177,7 +177,7 @@ func TestAccountService_Update_RejectsInvalidKiroIDCFields(t *testing.T) {
 func TestAccountService_Create_RejectsInvalidKiroIDCRefreshAliases(t *testing.T) {
 	t.Parallel()
 
-	for _, authMethod := range []string{"IDC", "builder-id", "iam"} {
+	for _, authMethod := range []string{"IDC", "builder-id", "builderid", "awsidc", "iam"} {
 		authMethod := authMethod
 		t.Run(authMethod, func(t *testing.T) {
 			t.Parallel()
@@ -223,4 +223,18 @@ func TestAccountService_Create_AllowsKiroAPIKeyWithoutOAuthCredentials(t *testin
 	require.NotNil(t, account)
 	require.Equal(t, AccountTypeAPIKey, account.Type)
 	require.Equal(t, "sk-test", account.GetCredential("api_key"))
+}
+
+func TestNormalizeKiroAuthMethod_CanonicalizesIDCAliases(t *testing.T) {
+	t.Parallel()
+
+	for _, authMethod := range []string{"IDC", "builder-id", "builderid", "awsidc", "aws-idc", "iam"} {
+		authMethod := authMethod
+		t.Run(authMethod, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, "idc", NormalizeKiroAuthMethod(map[string]any{
+				"auth_method": authMethod,
+			}))
+		})
+	}
 }

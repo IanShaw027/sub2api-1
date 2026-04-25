@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/require"
 )
@@ -22,6 +23,7 @@ type kiroHTTPUpstreamRecorder struct {
 	profile            *tlsfingerprint.Profile
 	resp               *http.Response
 	err                error
+	doFunc             func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error)
 }
 
 func (r *kiroHTTPUpstreamRecorder) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
@@ -35,6 +37,9 @@ func (r *kiroHTTPUpstreamRecorder) DoWithTLS(req *http.Request, proxyURL string,
 	r.accountID = accountID
 	r.accountConcurrency = accountConcurrency
 	r.profile = profile
+	if r.doFunc != nil {
+		return r.doFunc(req, proxyURL, accountID, accountConcurrency, profile)
+	}
 	return r.resp, r.err
 }
 
@@ -293,6 +298,75 @@ func TestKiroTokenRefresher_Refresh_IDCUsesRuntimeHeaders(t *testing.T) {
 	require.Contains(t, upstream.req.Header.Get("User-Agent"), "md/nodejs#23.1.0")
 	require.Contains(t, upstream.req.Header.Get("User-Agent"), "api/sso-oidc#3.738.0")
 	require.Equal(t, "commit-runtime", upstream.req.Header.Get("x-amzn-kiro-commit"))
+}
+
+func TestKiroTokenRefresher_Refresh_IDCDoesNotFallbackToSocial(t *testing.T) {
+	upstream := &kiroHTTPUpstreamRecorder{
+		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+			if strings.Contains(req.URL.Host, "oidc.") {
+				return &http.Response{
+					StatusCode: http.StatusBadRequest,
+					Body:       io.NopCloser(strings.NewReader(`{"error":"temporarily_unavailable"}`)),
+					Header:     make(http.Header),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body: io.NopCloser(strings.NewReader(`{
+					"accessToken":"fallback-access-token",
+					"refreshToken":"fallback-refresh-token",
+					"expiresIn":3600
+				}`)),
+				Header: make(http.Header),
+			}, nil
+		},
+	}
+	refresher := NewKiroTokenRefresher().WithTransport(upstream, &TLSFingerprintProfileService{})
+	account := &Account{
+		ID:       10,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "refresh-token",
+			"auth_method":   "awsidc",
+			"client_id":     "client-id",
+			"client_secret": "client-secret",
+		},
+	}
+
+	_, err := refresher.Refresh(context.Background(), account)
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "kiro idc refresh failed")
+	require.Equal(t, 1, upstream.calls)
+	require.NotNil(t, upstream.req)
+	require.Contains(t, upstream.req.URL.String(), "oidc.")
+}
+
+func TestKiroTokenRefresher_Refresh_InvalidGrantReturnsTerminalError(t *testing.T) {
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Body:       io.NopCloser(strings.NewReader(`{"error":"invalid_grant","error_description":"Invalid refresh token provided"}`)),
+			Header:     make(http.Header),
+		},
+	}
+	refresher := NewKiroTokenRefresher().WithTransport(upstream, &TLSFingerprintProfileService{})
+	account := &Account{
+		ID:       11,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "revoked-refresh-token",
+		},
+	}
+
+	_, err := refresher.Refresh(context.Background(), account)
+
+	require.Error(t, err)
+	require.True(t, infraerrors.IsUnauthorized(err))
+	require.Equal(t, kiroRefreshTokenInvalidReason, infraerrors.Reason(err))
+	require.ErrorContains(t, err, "invalid_grant")
 }
 
 func TestNewKiroSidecarHTTPClient_UsesTLSFingerprintTransportWhenEnabled(t *testing.T) {

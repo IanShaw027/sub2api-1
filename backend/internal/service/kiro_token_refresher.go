@@ -11,8 +11,11 @@ import (
 	"strings"
 	"time"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	kiropkg "github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 )
+
+const kiroRefreshTokenInvalidReason = "KIRO_REFRESH_TOKEN_INVALID"
 
 type KiroTokenRefresher struct {
 	httpUpstream        HTTPUpstream
@@ -67,7 +70,7 @@ func (r *KiroTokenRefresher) NeedsRefresh(account *Account, refreshWindow time.D
 }
 
 func (r *KiroTokenRefresher) Refresh(ctx context.Context, account *Account) (map[string]any, error) {
-	account = r.prepareAccount(account)
+	account = r.prepareAccount(ctx, account)
 	var (
 		accessToken  string
 		refreshToken string
@@ -97,11 +100,14 @@ func (r *KiroTokenRefresher) Refresh(ctx context.Context, account *Account) (map
 	return MergeCredentials(account.Credentials, newCreds), nil
 }
 
-func (r *KiroTokenRefresher) prepareAccount(account *Account) *Account {
+func (r *KiroTokenRefresher) prepareAccount(ctx context.Context, account *Account) *Account {
 	if account == nil || account.Proxy != nil || account.ProxyID == nil || r == nil || r.proxyRepo == nil {
 		return account
 	}
-	proxy, err := r.proxyRepo.GetByID(context.Background(), *account.ProxyID)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	proxy, err := r.proxyRepo.GetByID(ctx, *account.ProxyID)
 	if err != nil || proxy == nil {
 		return account
 	}
@@ -139,12 +145,7 @@ func (r *KiroTokenRefresher) refreshKiroIDCToken(ctx context.Context, account *A
 	host := fmt.Sprintf("oidc.%s.amazonaws.com", KiroAuthRegion(account))
 	var out kiroRefreshResponse
 	if err = r.doKiroFormRequest(ctx, account, url, host, payload, &out); err != nil {
-		var fallbackErr error
-		accessToken, refreshToken, expiresAt, _, fallbackErr = r.refreshKiroSocialToken(ctx, account)
-		if fallbackErr == nil {
-			return accessToken, refreshToken, expiresAt, nil
-		}
-		return "", "", "", fmt.Errorf("kiro idc refresh failed: %w; fallback refreshToken failed: %v", err, fallbackErr)
+		return "", "", "", fmt.Errorf("kiro idc refresh failed: %w", err)
 	}
 	refreshToken = out.RefreshToken
 	if refreshToken == "" {
@@ -250,16 +251,25 @@ func buildKiroRefreshUpstreamError(statusCode int, body []byte) error {
 	if detail == "" {
 		return fmt.Errorf("kiro oauth refresh upstream returned %d", statusCode)
 	}
+	errorCode := ""
 	var payload map[string]any
 	if err := json.Unmarshal(body, &payload); err == nil {
+		errorCode = firstNonEmptyStringValue(payload, "error")
 		parts := []string{
-			firstNonEmptyStringValue(payload, "error"),
+			errorCode,
 			firstNonEmptyStringValue(payload, "error_description", "errorDescription", "message"),
 		}
 		joined := strings.TrimSpace(strings.Join(filterEmptyStrings(parts), ": "))
 		if joined != "" {
 			detail = joined
 		}
+	}
+	if statusCode == http.StatusBadRequest && strings.EqualFold(strings.TrimSpace(errorCode), "invalid_grant") {
+		return infraerrors.Unauthorized(kiroRefreshTokenInvalidReason, fmt.Sprintf("kiro refresh token is invalid: %s", detail)).
+			WithMetadata(map[string]string{
+				"upstream_status": fmt.Sprintf("%d", statusCode),
+				"upstream_error":  "invalid_grant",
+			})
 	}
 	return fmt.Errorf("kiro oauth refresh upstream returned %d: %s", statusCode, detail)
 }

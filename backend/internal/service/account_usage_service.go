@@ -281,6 +281,7 @@ type AccountUsageService struct {
 	cache                   *UsageCache
 	identityCache           IdentityCache
 	tokenCacheInvalidator   TokenCacheInvalidator
+	proxyRepo               ProxyRepository
 	tlsFPProfileService     *TLSFingerprintProfileService
 	settingService          *SettingService
 }
@@ -296,6 +297,7 @@ func NewAccountUsageService(
 	cache *UsageCache,
 	identityCache IdentityCache,
 	tokenCacheInvalidator TokenCacheInvalidator,
+	proxyRepo ProxyRepository,
 	tlsFPProfileService *TLSFingerprintProfileService,
 	settingService *SettingService,
 ) *AccountUsageService {
@@ -309,6 +311,7 @@ func NewAccountUsageService(
 		cache:                   cache,
 		identityCache:           identityCache,
 		tokenCacheInvalidator:   tokenCacheInvalidator,
+		proxyRepo:               proxyRepo,
 		tlsFPProfileService:     tlsFPProfileService,
 		settingService:          settingService,
 	}
@@ -479,7 +482,8 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 		if accessToken == "" {
 			refresher := NewKiroTokenRefresher().
 				WithTransport(kiroHTTPUpstream, s.tlsFPProfileService).
-				WithSettingService(s.settingService)
+				WithSettingService(s.settingService).
+				WithProxyRepo(s.proxyRepo)
 			newCreds, err := refresher.Refresh(fetchCtx, account)
 			if err != nil {
 				return buildKiroDegradedUsage(err), nil

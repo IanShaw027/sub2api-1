@@ -104,7 +104,7 @@ func TestKiroOAuthServiceExchangeCallbackUsesCallbackPathAndLoginOptionForTokenE
 		kiroCodeExchangeFunc = originalExchange
 	})
 
-	_, err = svc.ExchangeCallback(context.Background(), &KiroExchangeCallbackInput{
+	tokenInfo, err := svc.ExchangeCallback(context.Background(), &KiroExchangeCallbackInput{
 		SessionID:   result.SessionID,
 		CallbackURL: fmt.Sprintf(callbackURL, url.QueryEscape(session.State)),
 	})
@@ -118,6 +118,9 @@ func TestKiroOAuthServiceExchangeCallbackUsesCallbackPathAndLoginOptionForTokenE
 	}
 	if gotRedirectURI == authRedirectURI {
 		t.Fatalf("token exchange should not reuse bare authorize redirect_uri: %q", gotRedirectURI)
+	}
+	if tokenInfo.AuthMethod != "idc" {
+		t.Fatalf("auth_method = %q, want %q", tokenInfo.AuthMethod, "idc")
 	}
 }
 
