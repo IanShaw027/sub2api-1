@@ -73,17 +73,20 @@ import { useAppStore } from '@/stores/app'
 import type { PublicSettings } from '@/types'
 
 export type FeatureFlagMode = 'opt-in' | 'opt-out'
+type BooleanPublicSettingsKey = {
+  [K in keyof PublicSettings]-?: Exclude<PublicSettings[K], undefined> extends boolean ? K : never
+}[keyof PublicSettings]
 
 export interface FeatureFlagDefinition {
   /** Public-settings key used for lookup. */
-  readonly key: keyof PublicSettings
+  readonly key: BooleanPublicSettingsKey
   /** Resolution mode when the key is missing/undefined. */
   readonly mode: FeatureFlagMode
   /** Short human label for logs and debug tooling. */
   readonly label: string
 }
 
-function defineFlag<K extends keyof PublicSettings>(
+function defineFlag<K extends BooleanPublicSettingsKey>(
   def: { key: K; mode: FeatureFlagMode; label: string },
 ): FeatureFlagDefinition {
   return def

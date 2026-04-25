@@ -2,7 +2,11 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
-import type { GeminiOAuthCapabilities } from '@/api/admin/gemini'
+import type {
+  GeminiAuthUrlRequest,
+  GeminiExchangeCodeRequest,
+  GeminiOAuthCapabilities
+} from '@/api/admin/gemini'
 
 export interface GeminiTokenInfo {
   access_token?: string
@@ -48,15 +52,17 @@ export function useGeminiOAuth() {
     error.value = ''
 
     try {
-      const payload: Record<string, unknown> = {}
+      const payload: GeminiAuthUrlRequest = {}
       if (proxyId) payload.proxy_id = proxyId
       const trimmedProjectID = projectId?.trim()
       if (trimmedProjectID) payload.project_id = trimmedProjectID
-      if (oauthType) payload.oauth_type = oauthType
+      if (oauthType === 'code_assist' || oauthType === 'google_one' || oauthType === 'ai_studio') {
+        payload.oauth_type = oauthType
+      }
       const trimmedTierID = tierId?.trim()
       if (trimmedTierID) payload.tier_id = trimmedTierID
 
-      const response = await adminAPI.gemini.generateAuthUrl(payload as any)
+      const response = await adminAPI.gemini.generateAuthUrl(payload)
       authUrl.value = response.auth_url
       sessionId.value = response.session_id
       state.value = response.state
@@ -88,17 +94,23 @@ export function useGeminiOAuth() {
     error.value = ''
 
     try {
-      const payload: Record<string, unknown> = {
+      const payload: GeminiExchangeCodeRequest = {
         session_id: params.sessionId,
         state: params.state,
         code
       }
       if (params.proxyId) payload.proxy_id = params.proxyId
-      if (params.oauthType) payload.oauth_type = params.oauthType
+      if (
+        params.oauthType === 'code_assist' ||
+        params.oauthType === 'google_one' ||
+        params.oauthType === 'ai_studio'
+      ) {
+        payload.oauth_type = params.oauthType
+      }
       const trimmedTierID = params.tierId?.trim()
       if (trimmedTierID) payload.tier_id = trimmedTierID
 
-      const tokenInfo = await adminAPI.gemini.exchangeCode(payload as any)
+      const tokenInfo = await adminAPI.gemini.exchangeCode(payload)
       return tokenInfo as GeminiTokenInfo
     } catch (err: any) {
       // Check for specific missing project_id error

@@ -18,12 +18,18 @@ interface TicketUpsertPayload {
   form_payload: Record<string, unknown>
 }
 
+interface TicketCreatePayload {
+  title: string
+  category: TicketCategory
+  form_payload: Record<string, unknown>
+}
+
 export async function listTickets(params: TicketListParams = {}) {
   const { data } = await apiClient.get<PaginatedResponse<SupportTicket>>('/tickets', { params })
   return data
 }
 
-export async function createTicket(payload: TicketUpsertPayload) {
+export async function createTicket(payload: TicketCreatePayload) {
   const { data } = await apiClient.post<SupportTicket>('/tickets', payload)
   return data
 }

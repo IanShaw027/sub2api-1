@@ -74,4 +74,14 @@ describe('useKiroOAuth', () => {
       kiro_status_reason: 'ok'
     })
   })
+
+  it('builds account names from explicit or identity fields and avoids generic defaults', () => {
+    const kiroOAuth = useKiroOAuth()
+
+    expect(kiroOAuth.buildAccountName({ email: 'user@example.com' } as any, '  Manual Name  ')).toBe('Manual Name')
+    expect(kiroOAuth.buildAccountName({ name: 'Kiro User' } as any)).toBe('Kiro User')
+    expect(kiroOAuth.buildAccountName({ email: 'user@example.com' } as any)).toBe('user@example.com')
+    expect(kiroOAuth.buildAccountName({ plan_name: 'Pro' } as any)).toBe('Kiro Pro')
+    expect(kiroOAuth.buildAccountName({} as any)).toBe('')
+  })
 })

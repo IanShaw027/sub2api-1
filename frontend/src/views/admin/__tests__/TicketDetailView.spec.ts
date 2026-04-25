@@ -1,14 +1,29 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { nextTick, reactive } from 'vue'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 import TicketDetailView from '../TicketDetailView.vue'
 
-const { getAdminTicket, listAdminTicketMessages, listAdminTicketReplyTemplates, replaceAdminTicketReplyTemplates, showError, showSuccess } = vi.hoisted(() => ({
+const routeState = reactive<{ params: { id: string } }>({
+  params: { id: '42' },
+})
+
+const {
+  getAdminTicket,
+  listAdminTicketMessages,
+  listAdminTicketReplyTemplates,
+  replaceAdminTicketReplyTemplates,
+  replyAdminTicket,
+  updateAdminTicketStatus,
+  showError,
+  showSuccess,
+} = vi.hoisted(() => ({
   getAdminTicket: vi.fn(),
   listAdminTicketMessages: vi.fn(),
   listAdminTicketReplyTemplates: vi.fn(),
   replaceAdminTicketReplyTemplates: vi.fn(),
+  replyAdminTicket: vi.fn(),
+  updateAdminTicketStatus: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
 }))
@@ -19,8 +34,8 @@ vi.mock('@/api/adminTickets', () => ({
     listAdminTicketMessages,
     listAdminTicketReplyTemplates,
     replaceAdminTicketReplyTemplates,
-    replyAdminTicket: vi.fn(),
-    updateAdminTicketStatus: vi.fn(),
+    replyAdminTicket,
+    updateAdminTicketStatus,
   },
 }))
 
@@ -40,11 +55,7 @@ vi.mock('@/stores', () => ({
 }))
 
 vi.mock('vue-router', () => ({
-  useRoute: () => ({
-    params: {
-      id: '42',
-    },
-  }),
+  useRoute: () => routeState,
 }))
 
 vi.mock('vue-i18n', async () => {
@@ -63,8 +74,11 @@ describe('admin TicketDetailView reply template menu', () => {
     listAdminTicketMessages.mockReset()
     listAdminTicketReplyTemplates.mockReset()
     replaceAdminTicketReplyTemplates.mockReset()
+    replyAdminTicket.mockReset()
+    updateAdminTicketStatus.mockReset()
     showError.mockReset()
     showSuccess.mockReset()
+    routeState.params.id = '42'
 
     getAdminTicket.mockResolvedValue({
       id: 42,
@@ -79,6 +93,32 @@ describe('admin TicketDetailView reply template menu', () => {
         content: 'template reply',
       },
     ])
+  })
+
+  it('reloads detail data when route id changes', async () => {
+    mount(TicketDetailView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TicketConversationPane: true,
+          TicketDetailPane: true,
+          TicketReplyTemplatesDialog: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    expect(getAdminTicket).toHaveBeenLastCalledWith(42)
+
+    getAdminTicket.mockResolvedValueOnce({
+      id: 108,
+      ticket_no: 'TK-108',
+      status: 'waiting_admin',
+    })
+    routeState.params.id = '108'
+    await flushPromises()
+
+    expect(getAdminTicket).toHaveBeenLastCalledWith(108)
   })
 
   it('keeps the template menu keyboard reachable for selecting and managing templates', async () => {
@@ -131,5 +171,64 @@ describe('admin TicketDetailView reply template menu', () => {
     await nextTick()
 
     expect(wrapper.get('[data-test="template-dialog"]').attributes('data-open')).toBe('true')
+  })
+
+  it('refreshes ticket detail after sending a reply', async () => {
+    const wrapper = mount(TicketDetailView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TicketConversationPane: {
+            emits: ['reply'],
+            template: '<button type="button" class="send-reply" @click="$emit(\'reply\', \'Need update\')">reply</button>',
+          },
+          TicketDetailPane: { template: '<div><slot name="actions" /></div>' },
+          TicketReplyTemplatesDialog: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    replyAdminTicket.mockResolvedValueOnce({ message: 'ok' })
+    getAdminTicket.mockResolvedValueOnce({
+      id: 42,
+      ticket_no: 'TK-42',
+      status: 'waiting_user',
+    })
+    listAdminTicketMessages.mockResolvedValueOnce([])
+
+    await wrapper.get('.send-reply').trigger('click')
+    await flushPromises()
+
+    expect(replyAdminTicket).toHaveBeenCalledWith(42, 'Need update')
+    expect(getAdminTicket).toHaveBeenCalledTimes(2)
+  })
+
+  it('hides withdrawn reply and status update actions', async () => {
+    getAdminTicket.mockResolvedValueOnce({
+      id: 42,
+      ticket_no: 'TK-42',
+      status: 'withdrawn',
+    })
+
+    const wrapper = mount(TicketDetailView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TicketConversationPane: {
+            props: ['showComposer'],
+            template: '<div data-test="show-composer">{{ String(showComposer) }}</div>',
+          },
+          TicketDetailPane: { template: '<div><slot name="actions" /></div>' },
+          TicketReplyTemplatesDialog: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="show-composer"]').text()).toBe('false')
+    expect(wrapper.text()).not.toContain('tickets.adminActions')
+    expect(wrapper.text()).not.toContain('tickets.statuses.processing')
   })
 })

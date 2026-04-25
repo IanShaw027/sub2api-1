@@ -180,16 +180,36 @@ const showInitialLoading = computed(() => loading.value && !hasLoadedTickets.val
 
 let loadTicketsRequestID = 0
 
+function buildListParams() {
+  const params: Record<string, string | number> = {
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    page: pagination.page,
+    page_size: pagination.page_size,
+  }
+  const trimmedSearch = filters.search.trim()
+  if (trimmedSearch) {
+    params.search = trimmedSearch
+  }
+  if (filters.category) {
+    params.category = filters.category
+  }
+  if (filters.status) {
+    params.status = filters.status
+  }
+  if (filters.start_date) {
+    params.start_date = filters.start_date
+  }
+  if (filters.end_date) {
+    params.end_date = filters.end_date
+  }
+  return params
+}
+
 async function loadTickets() {
   const requestID = ++loadTicketsRequestID
   try {
     loading.value = true
-    const data = await adminTicketsAPI.listAdminTickets({
-      ...filters,
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      page: pagination.page,
-      page_size: pagination.page_size,
-    })
+    const data = await adminTicketsAPI.listAdminTickets(buildListParams())
     if (requestID !== loadTicketsRequestID) {
       return
     }

@@ -3291,6 +3291,7 @@
         "callbackBaseUrlHint": "Callback base URL for this login: {value}",
         "generateUrlFirst": "Generate the Kiro auth URL first",
         "advancedFieldsTitle": "Advanced Fields",
+        "runtimeManagedHint": "Runtime parameters such as Kiro version, system version, and Node.js version are managed by system configuration.",
         "manualUpdateAction": "Refresh or Edit",
         "manualUpdateDialogTitle": "Recover Kiro Authorization",
         "manualUpdateTitle": "Refresh first, edit when needed",

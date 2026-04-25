@@ -129,4 +129,17 @@ describe('KiroAuthorizationFlow', () => {
       }
     ]])
   })
+
+  it('uses i18n keys for copy feedback and runtime-managed hint', async () => {
+    const wrapper = mountComponent({
+      mode: 'create',
+      authUrl: 'https://example.com/kiro/oauth'
+    })
+
+    const copyButton = wrapper.get('button[title="common.copy"]')
+    await copyButton.trigger('click')
+
+    expect(copyToClipboardMock).toHaveBeenCalledWith('https://example.com/kiro/oauth', 'common.copiedToClipboard')
+    expect(wrapper.text()).toContain('admin.accounts.kiro.runtimeManagedHint')
+  })
 })

@@ -91,8 +91,8 @@
                 <button
                   type="button"
                   class="btn btn-secondary p-2"
-                  title="Copy URL"
-                  @click="copyToClipboard(authUrl, 'URL copied to clipboard')"
+                  :title="t('common.copy')"
+                  @click="copyToClipboard(authUrl, t('common.copiedToClipboard'))"
                 >
                   <svg
                     v-if="!copied"
@@ -174,7 +174,7 @@
               </summary>
               <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                 <p class="md:col-span-2 text-sm text-cyan-700 dark:text-cyan-300">
-                  Kiro version、system version、Node.js version 等运行参数由系统配置统一管理。
+                  {{ t('admin.accounts.kiro.runtimeManagedHint') }}
                 </p>
                 <div>
                   <label class="input-label">{{ t('admin.accounts.kiro.regionLabel') }}</label>
@@ -336,7 +336,7 @@
           </summary>
           <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
             <p class="md:col-span-2 text-sm text-cyan-700 dark:text-cyan-300">
-              Kiro version、system version、Node.js version 等运行参数由系统配置统一管理。
+              {{ t('admin.accounts.kiro.runtimeManagedHint') }}
             </p>
             <div>
               <label class="input-label">{{ t('admin.accounts.kiro.regionLabel') }}</label>

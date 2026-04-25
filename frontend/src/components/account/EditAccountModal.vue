@@ -2652,12 +2652,12 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     kiroAuthMethod.value = newAccount.type === 'oauth'
       ? (kiroCredentials?.auth_method || 'social') as 'social' | 'idc'
       : 'social'
-    kiroRefreshToken.value = newAccount.type === 'oauth' ? (kiroCredentials?.refresh_token || '') : ''
+    kiroRefreshToken.value = ''
     kiroAccessToken.value = ''
     kiroExpiresAtInput.value = newAccount.type === 'oauth'
       ? formatCredentialDateTimeLocal(kiroCredentials?.expires_at || '')
       : ''
-    kiroClientID.value = newAccount.type === 'oauth' ? (kiroCredentials?.client_id || '') : ''
+    kiroClientID.value = ''
     kiroClientSecret.value = ''
     kiroProfileARN.value = kiroCredentials?.profile_arn || ''
     kiroRegion.value = kiroCredentials?.region || 'us-east-1'
@@ -3216,17 +3216,40 @@ const formatCredentialDateTimeLocal = (value: string) => {
   return `${year}-${month}-${day}T${hours}:${minutes}`
 }
 
-const stripGenericAPIKeyCredentials = (credentials: Record<string, unknown>) => {
-  delete credentials.base_url
-  delete credentials.model_whitelist
-  delete credentials.model_mapping
-  delete credentials.pool_mode
-  delete credentials.pool_mode_retry_count
-  Object.keys(credentials).forEach((key) => {
-    if (key.startsWith('custom_error_codes')) {
-      delete credentials[key]
-    }
-  })
+const readCredentialString = (credentials: Record<string, unknown>, key: string) => {
+  const value = credentials[key]
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+const stableSerializeCredentialValue = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerializeCredentialValue(item)).join(',')}]`
+  }
+  if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>
+    const pairs = Object.keys(obj)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableSerializeCredentialValue(obj[key])}`)
+    return `{${pairs.join(',')}}`
+  }
+  const serialized = JSON.stringify(value)
+  return serialized === undefined ? 'undefined' : serialized
+}
+
+const credentialsValueChanged = (current: unknown, next: unknown) =>
+  stableSerializeCredentialValue(current) !== stableSerializeCredentialValue(next)
+
+const setKiroStringCredentialIfChanged = (
+  target: Record<string, unknown>,
+  currentCredentials: Record<string, unknown>,
+  key: string,
+  nextValue: string
+) => {
+  const normalizedNext = nextValue.trim()
+  const normalizedCurrent = readCredentialString(currentCredentials, key)
+  if (normalizedNext !== normalizedCurrent) {
+    target[key] = normalizedNext
+  }
 }
 
 // Methods
@@ -3286,16 +3309,18 @@ const handleSubmit = async () => {
     updatePayload.auto_pause_on_expired = autoPauseOnExpired.value
 
     if (props.account.platform === 'kiro' && props.account.type === 'oauth') {
-      const currentCredentials = props.account.credentials || {}
-      const newCredentials: KiroCredentials & Record<string, unknown> = { ...currentCredentials }
+      const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
+      const newCredentials: KiroCredentials & Record<string, unknown> = {}
+      const refreshTokenInput = kiroRefreshToken.value.trim()
+      const clientIDInput = kiroClientID.value.trim()
+      const clientSecretInput = kiroClientSecret.value.trim()
+      const currentAuthMethod = readCredentialString(currentCredentials, 'auth_method') || 'social'
+      const authMethodChanged = kiroAuthMethod.value !== currentAuthMethod
 
-      if (!kiroRefreshToken.value.trim()) {
-        appStore.showError(t('admin.accounts.kiro.refreshTokenRequired'))
-        return
-      }
       if (
         kiroAuthMethod.value === 'idc' &&
-        (!kiroClientID.value.trim() || (!kiroClientSecret.value.trim() && !currentCredentials.client_secret))
+        authMethodChanged &&
+        (!clientIDInput || !clientSecretInput)
       ) {
         appStore.showError(t('admin.accounts.kiro.idcClientRequired'))
         return
@@ -3309,118 +3334,154 @@ const handleSubmit = async () => {
         return
       }
 
-      newCredentials.refresh_token = kiroRefreshToken.value.trim()
-      newCredentials.auth_method = kiroAuthMethod.value
-      newCredentials.region = kiroRegion.value.trim() || 'us-east-1'
-      const refreshTokenChanged = newCredentials.refresh_token !== currentCredentials.refresh_token
-      const authMethodChanged = kiroAuthMethod.value !== (currentCredentials.auth_method || 'social')
-      if (kiroAccessToken.value.trim()) {
-        newCredentials.access_token = kiroAccessToken.value.trim()
+      if (refreshTokenInput) {
+        newCredentials.refresh_token = refreshTokenInput
       }
-      if (kiroClientID.value.trim()) {
-        newCredentials.client_id = kiroClientID.value.trim()
-      } else if (kiroAuthMethod.value !== 'idc') {
-        delete newCredentials.client_id
+      const accessTokenInput = kiroAccessToken.value.trim()
+      if (accessTokenInput) {
+        newCredentials.access_token = accessTokenInput
       }
-      if (kiroClientSecret.value.trim()) {
-        newCredentials.client_secret = kiroClientSecret.value.trim()
-      } else if (kiroAuthMethod.value !== 'idc') {
-        delete newCredentials.client_secret
+      if (authMethodChanged) {
+        newCredentials.auth_method = kiroAuthMethod.value
       }
-      if (kiroProfileARN.value.trim()) {
-        newCredentials.profile_arn = kiroProfileARN.value.trim()
+
+      const nextRegion = kiroRegion.value.trim() || 'us-east-1'
+      const currentRegion = readCredentialString(currentCredentials, 'region') || 'us-east-1'
+      if (nextRegion !== currentRegion) {
+        newCredentials.region = nextRegion
+      }
+
+      if (kiroAuthMethod.value === 'idc') {
+        if (clientIDInput && clientIDInput !== readCredentialString(currentCredentials, 'client_id')) {
+          newCredentials.client_id = clientIDInput
+        }
+        if (clientSecretInput) {
+          newCredentials.client_secret = clientSecretInput
+        }
+      }
+
+      setKiroStringCredentialIfChanged(newCredentials, currentCredentials, 'profile_arn', kiroProfileARN.value)
+      setKiroStringCredentialIfChanged(newCredentials, currentCredentials, 'auth_region', kiroAuthRegion.value)
+      setKiroStringCredentialIfChanged(newCredentials, currentCredentials, 'api_region', kiroAPIRegion.value)
+      setKiroStringCredentialIfChanged(newCredentials, currentCredentials, 'machine_id', kiroMachineID.value)
+
+      const currentInterceptWarmup = currentCredentials.intercept_warmup_requests === true
+      if (interceptWarmupRequests.value !== currentInterceptWarmup) {
+        newCredentials.intercept_warmup_requests = interceptWarmupRequests.value
+      }
+
+      const currentTempUnschedEnabled = currentCredentials.temp_unschedulable_enabled === true
+      const currentTempUnschedRules = Array.isArray(currentCredentials.temp_unschedulable_rules)
+        ? currentCredentials.temp_unschedulable_rules
+        : []
+      if (!tempUnschedEnabled.value) {
+        if (currentTempUnschedEnabled || currentTempUnschedRules.length > 0) {
+          newCredentials.temp_unschedulable_enabled = false
+          newCredentials.temp_unschedulable_rules = []
+        }
       } else {
-        delete newCredentials.profile_arn
+        const nextTempUnschedRules = buildTempUnschedRules(tempUnschedRules.value)
+        if (nextTempUnschedRules.length === 0) {
+          appStore.showError(t('admin.accounts.tempUnschedulable.rulesInvalid'))
+          return
+        }
+        if (
+          !currentTempUnschedEnabled ||
+          credentialsValueChanged(currentTempUnschedRules, nextTempUnschedRules)
+        ) {
+          newCredentials.temp_unschedulable_enabled = true
+          newCredentials.temp_unschedulable_rules = nextTempUnschedRules
+        }
       }
-      if (kiroAuthRegion.value.trim()) {
-        newCredentials.auth_region = kiroAuthRegion.value.trim()
-      } else {
-        delete newCredentials.auth_region
-      }
-      if (kiroAPIRegion.value.trim()) {
-        newCredentials.api_region = kiroAPIRegion.value.trim()
-      } else {
-        delete newCredentials.api_region
-      }
-      if (kiroMachineID.value.trim()) {
-        newCredentials.machine_id = kiroMachineID.value.trim()
-      } else {
-        delete newCredentials.machine_id
-      }
-      const clientIDChanged = (newCredentials.client_id || '') !== (currentCredentials.client_id || '')
-      const clientSecretChanged = kiroClientSecret.value.trim().length > 0 && kiroClientSecret.value.trim() !== (currentCredentials.client_secret || '')
-      if (!kiroAccessToken.value.trim() && (refreshTokenChanged || authMethodChanged || clientIDChanged || clientSecretChanged)) {
-        delete newCredentials.access_token
-        delete newCredentials.expires_at
-      }
+
       if (expiresAt) {
-        newCredentials.expires_at = expiresAt.toISOString()
-      } else {
-        delete newCredentials.expires_at
+        const currentExpiresAt = readCredentialString(currentCredentials, 'expires_at')
+        const currentExpiresAtMs = currentExpiresAt ? new Date(currentExpiresAt).getTime() : null
+        if (currentExpiresAtMs !== expiresAt.getTime()) {
+          newCredentials.expires_at = expiresAt.toISOString()
+        }
+      } else if (readCredentialString(currentCredentials, 'expires_at')) {
+        newCredentials.expires_at = ''
       }
+
       const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
+      const currentModelMapping = currentCredentials.model_mapping as Record<string, string> | undefined
       if (modelMapping) {
-        newCredentials.model_mapping = modelMapping
-      } else {
-        delete newCredentials.model_mapping
+        if (credentialsValueChanged(currentModelMapping || {}, modelMapping)) {
+          newCredentials.model_mapping = modelMapping
+        }
+      } else if (currentModelMapping && Object.keys(currentModelMapping).length > 0) {
+        newCredentials.model_mapping = {}
       }
 
-      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
-      if (!applyTempUnschedConfig(newCredentials)) {
-        return
+      if (Object.keys(newCredentials).length > 0) {
+        updatePayload.credentials = newCredentials
       }
-
-      updatePayload.credentials = newCredentials
 
       const currentExtra = (props.account.extra || {}) as Record<string, unknown>
       updatePayload.extra = stripKiroRuntimeExtra(currentExtra)
     } else if (props.account.platform === 'kiro' && props.account.type === 'apikey') {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
-      const newCredentials: Record<string, unknown> = { ...currentCredentials }
+      const newCredentials: Record<string, unknown> = {}
 
-      stripGenericAPIKeyCredentials(newCredentials)
-      if (editApiKey.value.trim()) {
-        newCredentials.api_key = editApiKey.value.trim()
-      } else if (currentCredentials.api_key) {
-        newCredentials.api_key = currentCredentials.api_key
-      } else {
-        appStore.showError(t('admin.accounts.apiKeyIsRequired'))
-        return
+      const apiKeyInput = editApiKey.value.trim()
+      if (apiKeyInput) {
+        newCredentials.api_key = apiKeyInput
       }
 
-      newCredentials.region = kiroRegion.value.trim() || 'us-east-1'
-      if (kiroAuthRegion.value.trim()) {
-        newCredentials.auth_region = kiroAuthRegion.value.trim()
-      } else {
-        delete newCredentials.auth_region
+      const nextRegion = kiroRegion.value.trim() || 'us-east-1'
+      const currentRegion = readCredentialString(currentCredentials, 'region') || 'us-east-1'
+      if (nextRegion !== currentRegion) {
+        newCredentials.region = nextRegion
       }
-      if (kiroAPIRegion.value.trim()) {
-        newCredentials.api_region = kiroAPIRegion.value.trim()
-      } else {
-        delete newCredentials.api_region
+
+      setKiroStringCredentialIfChanged(newCredentials, currentCredentials, 'auth_region', kiroAuthRegion.value)
+      setKiroStringCredentialIfChanged(newCredentials, currentCredentials, 'api_region', kiroAPIRegion.value)
+      setKiroStringCredentialIfChanged(newCredentials, currentCredentials, 'profile_arn', kiroProfileARN.value)
+      setKiroStringCredentialIfChanged(newCredentials, currentCredentials, 'machine_id', kiroMachineID.value)
+
+      const currentInterceptWarmup = currentCredentials.intercept_warmup_requests === true
+      if (interceptWarmupRequests.value !== currentInterceptWarmup) {
+        newCredentials.intercept_warmup_requests = interceptWarmupRequests.value
       }
-      if (kiroProfileARN.value.trim()) {
-        newCredentials.profile_arn = kiroProfileARN.value.trim()
-      } else {
-        delete newCredentials.profile_arn
-      }
-      if (kiroMachineID.value.trim()) {
-        newCredentials.machine_id = kiroMachineID.value.trim()
-      } else {
-        delete newCredentials.machine_id
-      }
+
       const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
+      const currentModelMapping = currentCredentials.model_mapping as Record<string, string> | undefined
       if (modelMapping) {
-        newCredentials.model_mapping = modelMapping
+        if (credentialsValueChanged(currentModelMapping || {}, modelMapping)) {
+          newCredentials.model_mapping = modelMapping
+        }
+      } else if (currentModelMapping && Object.keys(currentModelMapping).length > 0) {
+        newCredentials.model_mapping = {}
+      }
+
+      const currentTempUnschedEnabled = currentCredentials.temp_unschedulable_enabled === true
+      const currentTempUnschedRules = Array.isArray(currentCredentials.temp_unschedulable_rules)
+        ? currentCredentials.temp_unschedulable_rules
+        : []
+      if (!tempUnschedEnabled.value) {
+        if (currentTempUnschedEnabled || currentTempUnschedRules.length > 0) {
+          newCredentials.temp_unschedulable_enabled = false
+          newCredentials.temp_unschedulable_rules = []
+        }
       } else {
-        delete newCredentials.model_mapping
+        const nextTempUnschedRules = buildTempUnschedRules(tempUnschedRules.value)
+        if (nextTempUnschedRules.length === 0) {
+          appStore.showError(t('admin.accounts.tempUnschedulable.rulesInvalid'))
+          return
+        }
+        if (
+          !currentTempUnschedEnabled ||
+          credentialsValueChanged(currentTempUnschedRules, nextTempUnschedRules)
+        ) {
+          newCredentials.temp_unschedulable_enabled = true
+          newCredentials.temp_unschedulable_rules = nextTempUnschedRules
+        }
       }
 
-      if (!applyTempUnschedConfig(newCredentials)) {
-        return
+      if (Object.keys(newCredentials).length > 0) {
+        updatePayload.credentials = newCredentials
       }
-
-      updatePayload.credentials = newCredentials
     } else if (props.account.type === 'apikey') {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
       const newBaseUrl = editBaseUrl.value.trim() || defaultBaseUrl.value

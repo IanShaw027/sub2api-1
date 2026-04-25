@@ -18,6 +18,9 @@
           :payload="payload"
           :submit-label="t('tickets.submit')"
           :submitting="submitting"
+          :user-concurrency="authStore.user?.concurrency ?? null"
+          :available-groups="rateEligibleGroups"
+          :user-group-rates="userGroupRates"
           @submit="submit"
         />
       </div>
@@ -26,36 +29,54 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import { useAppStore } from '@/stores'
+import { useAppStore, useAuthStore } from '@/stores'
 import ticketsAPI from '@/api/tickets'
+import userGroupsAPI from '@/api/groups'
 import TicketConversationPane from '@/components/tickets/TicketConversationPane.vue'
 import TicketEditorCard from '@/components/tickets/TicketEditorCard.vue'
 import { validateTicketPayload } from '@/utils/tickets'
-import type { SupportTicketMessage, TicketCategory } from '@/types'
+import type { Group, SupportTicketMessage, TicketCategory } from '@/types'
 
 const { t } = useI18n()
 const router = useRouter()
 const appStore = useAppStore()
+const authStore = useAuthStore()
 
 const category = ref<TicketCategory>('consult')
 const title = ref('')
 const payload = ref<Record<string, unknown>>({})
 const submitting = ref(false)
+const availableGroups = ref<Group[]>([])
+const userGroupRates = ref<Record<number, number>>({})
+const rateEligibleGroups = computed(() => availableGroups.value.filter((group) => group.subscription_type === 'standard'))
 
 const systemMessages = ref<SupportTicketMessage[]>([{
   id: 0,
   ticket_id: 0,
   sender_role: 'system',
-  sender_name_snapshot: '系统',
+  sender_name_snapshot: t('admin.ops.system'),
   sender_avatar_snapshot: '',
   message_type: 'system',
   content: t('tickets.createSystemMessage'),
   created_at: new Date().toISOString(),
 }])
+
+async function loadTicketContext() {
+  try {
+    const [groups, rates] = await Promise.all([
+      userGroupsAPI.getAvailable(),
+      userGroupsAPI.getUserGroupRates(),
+    ])
+    availableGroups.value = groups
+    userGroupRates.value = rates
+  } catch (error) {
+    console.error('Failed to load ticket context:', error)
+  }
+}
 
 async function submit(form: { category: TicketCategory; title: string; form_payload: Record<string, unknown> }) {
   const validationKey = validateTicketPayload(form.category, form.title, form.form_payload)
@@ -74,4 +95,6 @@ async function submit(form: { category: TicketCategory; title: string; form_payl
     submitting.value = false
   }
 }
+
+onMounted(loadTicketContext)
 </script>

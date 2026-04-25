@@ -47,15 +47,34 @@ const requiredFieldsByCategory: Record<TicketCategory, string[]> = {
   other: ['details'],
 }
 
+function isFiniteNumberString(value: unknown, { allowZero = false }: { allowZero?: boolean } = {}): boolean {
+  const normalized = String(value ?? '').trim()
+  if (!normalized) return false
+  const parsed = Number(normalized)
+  if (!Number.isFinite(parsed)) return false
+  return allowZero ? parsed >= 0 : parsed > 0
+}
+
 export function validateTicketPayload(category: TicketCategory, title: string, payload: Record<string, unknown>) {
   if (!title.trim()) {
     return 'tickets.validation.titleRequired'
+  }
+  if (category === 'concurrency_apply') {
+    if (!isFiniteNumberString(payload?.current_concurrency, { allowZero: true })) {
+      return 'tickets.validation.formIncomplete'
+    }
+    if (!isFiniteNumberString(payload?.target_concurrency)) {
+      return 'tickets.validation.formIncomplete'
+    }
   }
   if (category === 'rate_apply') {
     const groupIDs = Array.isArray(payload?.group_ids)
       ? payload.group_ids.map((item) => Number(item)).filter((item) => Number.isFinite(item) && item > 0)
       : []
     if (groupIDs.length === 0) {
+      return 'tickets.validation.formIncomplete'
+    }
+    if (!isFiniteNumberString(payload?.target_rate)) {
       return 'tickets.validation.formIncomplete'
     }
   }

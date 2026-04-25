@@ -9,6 +9,7 @@ import { useAppStore } from '@/stores/app'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
 import { useNavigationLoadingState } from '@/composables/useNavigationLoading'
 import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
+import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
 import { resolveDocumentTitle } from './title'
 
 /**
@@ -250,7 +251,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/tickets/create',
     name: 'TicketCreate',
-    component: () => import('@/views/user/TicketsView.vue'),
+    component: () => import('@/views/user/TicketCreateView.vue'),
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
@@ -775,30 +776,21 @@ router.beforeEach((to, _from, next) => {
 
 
   // Check payment requirement (internal payment system only)
-  if (to.meta.requiresPayment) {
-    const paymentEnabled = appStore.cachedPublicSettings?.payment_enabled
-    if (!paymentEnabled) {
-      next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
-      return
-    }
+  if (to.meta.requiresPayment === true && !isFeatureFlagEnabled(FeatureFlags.payment)) {
+    next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+    return
   }
 
   // Check ticket module requirement
-  if (to.meta.requiresTicket) {
-    const ticketEnabled = appStore.cachedPublicSettings?.ticket_enabled
-    if (ticketEnabled === false) {
-      next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
-      return
-    }
+  if (to.meta.requiresTicket === true && !isFeatureFlagEnabled(FeatureFlags.ticket)) {
+    next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+    return
   }
 
   // Check affiliate module requirement
-  if (to.meta.requiresAffiliate) {
-    const affiliateEnabled = appStore.cachedPublicSettings?.affiliate_enabled
-    if (affiliateEnabled === false) {
-      next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
-      return
-    }
+  if (to.meta.requiresAffiliate === true && !isFeatureFlagEnabled(FeatureFlags.affiliate)) {
+    next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+    return
   }
 
   // 简易模式下限制访问某些页面
@@ -856,6 +848,9 @@ router.afterEach((to) => {
  */
 router.onError((error) => {
   console.error('Router error:', error)
+  if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') {
+    return
+  }
 
   // Check if this is a dynamic import failure (chunk loading error)
   const isChunkLoadError =

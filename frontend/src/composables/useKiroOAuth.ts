@@ -3,7 +3,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
 import type { KiroAccountExtra, KiroCredentials } from '@/types'
-import type { KiroTokenInfo } from '@/api/admin/kiro'
+import type { KiroAuthUrlRequest, KiroExchangeCallbackRequest, KiroTokenInfo } from '@/api/admin/kiro'
 
 const KIRO_RUNTIME_EXTRA_KEYS = ['kiro_version', 'kiro_commit', 'system_version', 'node_version'] as const
 
@@ -43,10 +43,10 @@ export function useKiroOAuth() {
     error.value = ''
 
     try {
-      const payload: Record<string, unknown> = {}
+      const payload: KiroAuthUrlRequest = {}
       if (proxyId) payload.proxy_id = proxyId
 
-      const response = await adminAPI.kiro.generateAuthUrl(payload as any)
+      const response = await adminAPI.kiro.generateAuthUrl(payload)
       authUrl.value = response.auth_url
       sessionId.value = response.session_id
       callbackBaseUrl.value = response.callback_url
@@ -74,12 +74,12 @@ export function useKiroOAuth() {
     error.value = ''
 
     try {
-      const payload: Record<string, unknown> = {
+      const payload: KiroExchangeCallbackRequest = {
         session_id: sessionId.value,
         callback_url: trimmedCallback
       }
       if (proxyId) payload.proxy_id = proxyId
-      return await adminAPI.kiro.exchangeCallback(payload as any)
+      return await adminAPI.kiro.exchangeCallback(payload)
     } catch (err: any) {
       error.value = err?.response?.data?.detail || err?.message || t('admin.accounts.oauth.authFailed')
       appStore.showError(error.value)
@@ -182,12 +182,28 @@ export function useKiroOAuth() {
   }
 
   const buildAccountName = (tokenInfo: KiroTokenInfo, fallbackName?: string): string => {
-    return (
-      fallbackName?.trim() ||
-      tokenInfo.name?.trim() ||
-      tokenInfo.email?.trim() ||
-      'Kiro OAuth Account'
+    const explicitName = fallbackName?.trim()
+    if (explicitName) {
+      return explicitName
+    }
+
+    const identityName = tokenInfo.name?.trim() || tokenInfo.email?.trim() || tokenInfo.user_id?.trim()
+    if (identityName) {
+      return identityName
+    }
+
+    const subscriptionLabel = (
+      tokenInfo.subscription_type?.trim() ||
+      tokenInfo.plan_name?.trim() ||
+      tokenInfo.plan_tier?.trim()
     )
+    if (subscriptionLabel) {
+      return subscriptionLabel.toLowerCase().startsWith('kiro')
+        ? subscriptionLabel
+        : `Kiro ${subscriptionLabel}`
+    }
+
+    return ''
   }
 
   return {

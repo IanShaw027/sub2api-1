@@ -303,15 +303,23 @@ export const useAppStore = defineStore('app', () => {
     publicSettingsLoaded.value = true
   }
 
+  function getInjectedConfig(): PublicSettings | null {
+    if (typeof window === 'undefined') {
+      return null
+    }
+    return window.__APP_CONFIG__ ?? null
+  }
+
   /**
    * Fetch public settings (uses cache unless force=true)
    * @param force - Force refresh from API
    */
   async function fetchPublicSettings(force = false): Promise<PublicSettings | null> {
     // Check for injected config from server (eliminates flash)
-    if (!publicSettingsLoaded.value && !force && window.__APP_CONFIG__) {
-      applySettings(window.__APP_CONFIG__)
-      return window.__APP_CONFIG__
+    const injectedConfig = getInjectedConfig()
+    if (!publicSettingsLoaded.value && !force && injectedConfig) {
+      applySettings(injectedConfig)
+      return injectedConfig
     }
 
     // Return cached data if available and not forcing refresh
@@ -395,8 +403,9 @@ export const useAppStore = defineStore('app', () => {
    * @returns true if config was found and applied, false otherwise
    */
   function initFromInjectedConfig(): boolean {
-    if (window.__APP_CONFIG__) {
-      applySettings(window.__APP_CONFIG__)
+    const injectedConfig = getInjectedConfig()
+    if (injectedConfig) {
+      applySettings(injectedConfig)
       return true
     }
     return false

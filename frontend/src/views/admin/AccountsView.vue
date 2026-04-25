@@ -456,6 +456,7 @@ const showStats = ref(false)
 const showErrorPassthrough = ref(false)
 const showTLSFingerprintProfiles = ref(false)
 const edAcc = ref<Account | null>(null)
+let editDetailRequestSeq = 0
 const tempUnschedAcc = ref<Account | null>(null)
 const deletingAcc = ref<Account | null>(null)
 const reAuthAcc = ref<Account | null>(null)
@@ -869,7 +870,6 @@ const accountHasSensitiveCredentials = (account: Account | null | undefined) => 
     'refresh_token',
     'api_key',
     'client_secret',
-    'client_id',
     'session_token',
     'password',
     'cookie'
@@ -1135,10 +1135,18 @@ const ensureAccountDetail = async (account: Account) => {
 }
 
 const handleEdit = async (a: Account) => {
+  const requestSeq = ++editDetailRequestSeq
   try {
-    edAcc.value = await ensureAccountDetail(a)
+    const accountDetail = await ensureAccountDetail(a)
+    if (requestSeq !== editDetailRequestSeq) {
+      return
+    }
+    edAcc.value = accountDetail
     showEdit.value = true
   } catch (error: any) {
+    if (requestSeq !== editDetailRequestSeq) {
+      return
+    }
     appStore.showError(error.message || t('admin.accounts.failedToLoad'))
   }
 }
@@ -1474,7 +1482,7 @@ const handleExportData = async () => {
 }
 const closeTestModal = () => { showTest.value = false; testingAcc.value = null }
 const closeStatsModal = () => { showStats.value = false; statsAcc.value = null }
-const closeEditModal = () => { showEdit.value = false; edAcc.value = null }
+const closeEditModal = () => { editDetailRequestSeq += 1; showEdit.value = false; edAcc.value = null }
 const closeReAuthModal = () => { showReAuth.value = false; reAuthAcc.value = null }
 const handleTest = (a: Account) => { testingAcc.value = a; showTest.value = true }
 const handleViewStats = (a: Account) => { statsAcc.value = a; showStats.value = true }

@@ -44,7 +44,7 @@
               <div class="flex flex-wrap gap-3">
                 <button v-if="canWithdraw" class="btn btn-secondary" :disabled="actionLoading" @click="withdrawAndEdit">{{ t('tickets.actions.withdrawEdit') }}</button>
                 <button v-if="ticket.status === 'withdrawn'" class="btn btn-secondary" @click="editing = true">{{ t('tickets.actions.edit') }}</button>
-                <button v-if="ticket.status !== 'closed'" class="btn btn-secondary" :disabled="actionLoading" @click="closeCurrentTicket">{{ t('tickets.actions.close') }}</button>
+                <button v-if="canClose" class="btn btn-secondary" :disabled="actionLoading" @click="closeCurrentTicket">{{ t('tickets.actions.close') }}</button>
               </div>
             </template>
           </TicketDetailPane>
@@ -55,7 +55,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -86,23 +86,34 @@ const editing = ref(route.query.edit === '1')
 
 const ticketID = computed(() => Number(route.params.id))
 const canWithdraw = computed(() => ['submitted', 'processing', 'waiting_admin'].includes(ticket.value?.status || ''))
-const canReply = computed(() => !['resolved', 'closed'].includes(ticket.value?.status || ''))
+const canReply = computed(() => !['resolved', 'closed', 'withdrawn'].includes(ticket.value?.status || ''))
+const canClose = computed(() => !['closed', 'withdrawn'].includes(ticket.value?.status || ''))
 const rateEligibleGroups = computed(() => availableGroups.value.filter((group) => group.subscription_type === 'standard'))
+let loadDetailRequestID = 0
 
 async function loadDetail() {
+  const requestID = ++loadDetailRequestID
   try {
     loading.value = true
     const [ticketData, messageData] = await Promise.all([
       ticketsAPI.getTicket(ticketID.value),
       ticketsAPI.listTicketMessages(ticketID.value),
     ])
+    if (requestID !== loadDetailRequestID) {
+      return
+    }
     ticket.value = ticketData
     editing.value = route.query.edit === '1' && ticketData.status === 'withdrawn'
     messages.value = messageData
   } catch (err: any) {
+    if (requestID !== loadDetailRequestID) {
+      return
+    }
     appStore.showError(err?.message || t('common.unknownError'))
   } finally {
-    loading.value = false
+    if (requestID === loadDetailRequestID) {
+      loading.value = false
+    }
   }
 }
 
@@ -123,32 +134,8 @@ async function reply(content: string) {
   try {
     sendingReply.value = true
     await ticketsAPI.replyTicket(ticketID.value, content)
-    const now = new Date().toISOString()
-    messages.value = [
-      ...messages.value,
-      {
-        id: Date.now() * -1,
-        ticket_id: ticketID.value,
-        sender_role: 'user',
-        sender_user_id: authStore.user?.id ?? null,
-        sender_name_snapshot: authStore.user?.username || authStore.user?.email || '用户',
-        sender_avatar_snapshot: authStore.user?.avatar_url || '',
-        message_type: 'message',
-        content,
-        created_at: now,
-      },
-    ]
     clearComposerKey.value += 1
-    if (ticket.value) {
-      ticket.value = {
-        ...ticket.value,
-        latest_message_at: now,
-        last_reply_role: 'user',
-        unread_by_user: false,
-        unread_by_admin: true,
-        updated_at: now,
-      }
-    }
+    await loadDetail()
   } catch (err: any) {
     appStore.showError(err?.message || t('common.unknownError'))
   } finally {
@@ -203,7 +190,9 @@ async function closeCurrentTicket() {
   }
 }
 
-onMounted(async () => {
-  await Promise.all([loadDetail(), loadTicketContext()])
-})
+onMounted(loadTicketContext)
+
+watch(ticketID, () => {
+  loadDetail()
+}, { immediate: true })
 </script>

@@ -6,8 +6,9 @@ import TicketsView from '../TicketsView.vue'
 
 const routeState = reactive<{ name: string }>({ name: 'Tickets' })
 
-const { listTickets, getAvailable, getUserGroupRates, showError, showSuccess, routerPush, routerReplace } = vi.hoisted(() => ({
+const { listTickets, closeTicket, getAvailable, getUserGroupRates, showError, showSuccess, routerPush, routerReplace } = vi.hoisted(() => ({
   listTickets: vi.fn(),
+  closeTicket: vi.fn(),
   getAvailable: vi.fn(),
   getUserGroupRates: vi.fn(),
   showError: vi.fn(),
@@ -19,7 +20,7 @@ const { listTickets, getAvailable, getUserGroupRates, showError, showSuccess, ro
 vi.mock('@/api/tickets', () => ({
   default: {
     listTickets,
-    closeTicket: vi.fn(),
+    closeTicket,
     createTicket: vi.fn(),
   },
 }))
@@ -65,6 +66,7 @@ describe('TicketsView', () => {
   beforeEach(() => {
     routeState.name = 'TicketCreate'
     listTickets.mockReset()
+    closeTicket.mockReset()
     getAvailable.mockReset()
     getUserGroupRates.mockReset()
     showError.mockReset()
@@ -218,5 +220,86 @@ describe('TicketsView', () => {
     })
 
     await flushPromises()
+  })
+
+  it('omits empty filters when requesting ticket list data', async () => {
+    routeState.name = 'Tickets'
+
+    mount(TicketsView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: { template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>' },
+          Pagination: true,
+          DataTable: true,
+          SearchInput: true,
+          Select: true,
+          TicketCreateDialog: true,
+          Icon: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(listTickets).toHaveBeenCalledTimes(1)
+    const call = listTickets.mock.calls[0]?.[0]
+    expect(call).toMatchObject({
+      page: 1,
+      page_size: 20,
+    })
+    expect(call).not.toHaveProperty('search')
+    expect(call).not.toHaveProperty('category')
+    expect(call).not.toHaveProperty('status')
+    expect(call).not.toHaveProperty('start_date')
+    expect(call).not.toHaveProperty('end_date')
+  })
+
+  it('hides close action for withdrawn rows and keeps edit action', async () => {
+    routeState.name = 'Tickets'
+    listTickets.mockResolvedValueOnce({
+      items: [
+        {
+          id: 9,
+          category: 'consult',
+          title: 'Withdrawn ticket',
+          status: 'withdrawn',
+          created_at: '2026-04-24T00:00:00Z',
+          updated_at: '2026-04-24T00:00:00Z',
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    })
+
+    const wrapper = mount(TicketsView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: { template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>' },
+          Pagination: true,
+          DataTable: {
+            props: ['data'],
+            template: `
+              <div>
+                <div v-for="row in data" :key="row.id">
+                  <slot name="cell-actions" :row="row" />
+                </div>
+              </div>
+            `,
+          },
+          SearchInput: true,
+          Select: true,
+          TicketCreateDialog: true,
+          Icon: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('tickets.actions.edit')
+    expect(wrapper.text()).not.toContain('tickets.actions.close')
   })
 })

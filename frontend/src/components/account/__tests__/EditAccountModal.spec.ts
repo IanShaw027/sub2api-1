@@ -243,7 +243,7 @@ describe('EditAccountModal', () => {
     expect(anthropicWrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('')
   })
 
-  it('removes Kiro runtime version overrides from extra while keeping account credentials', async () => {
+  it('removes Kiro runtime version overrides from extra without resending unchanged Kiro OAuth credentials', async () => {
     const account = {
       id: 2,
       name: 'Kiro OAuth',
@@ -294,16 +294,7 @@ describe('EditAccountModal', () => {
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
 
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
-    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toEqual(
-      expect.objectContaining({
-        refresh_token: 'rt-test',
-        region: 'us-east-1',
-        machine_id: 'machine-1',
-        model_mapping: {
-          'claude-sonnet-4': 'claude-sonnet-4'
-        }
-      })
-    )
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toBeUndefined()
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toEqual({
       keep_flag: true
     })
@@ -353,7 +344,7 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toEqual({})
   })
 
-  it('round-trips Kiro API key credentials without generic base_url', async () => {
+  it('updates changed Kiro API key metadata without resending hidden api_key credentials', async () => {
     const account = {
       id: 4,
       name: 'Kiro API Key',
@@ -406,34 +397,64 @@ describe('EditAccountModal', () => {
     await wrapper.setProps({ show: true })
 
     expect(wrapper.text()).not.toContain('admin.accounts.baseUrl')
+    await wrapper.get('input[placeholder="admin.accounts.kiro.regionPlaceholder"]').setValue('us-east-2')
 
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
 
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
-    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toEqual(
-      expect.objectContaining({
-        api_key: 'kiro-old-key',
-        region: 'eu-west-1',
-        auth_region: 'us-west-2',
-        api_region: 'us-east-2',
-        profile_arn: 'arn:aws:bedrock:us-east-2:123456789012:inference-profile/demo',
-        machine_id: 'machine-1'
-      })
-    )
-    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('base_url')
-    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('model_whitelist')
-    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toHaveProperty('model_mapping')
-    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.model_mapping).toEqual({
-      'claude-sonnet-4': 'claude-sonnet-4'
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toEqual({
+      region: 'us-east-2'
     })
-    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('pool_mode')
-    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('pool_mode_retry_count')
-    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('custom_error_codes_enabled')
-    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('custom_error_codes')
-    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('custom_error_codes_backoff_ms')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('api_key')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('base_url')
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toEqual({
       quota_limit: 100
     })
+  })
+
+  it('allows Kiro OAuth edits to submit without requiring hidden refresh/client secrets', async () => {
+    const account = {
+      id: 6,
+      name: 'Kiro OAuth',
+      notes: '',
+      platform: 'kiro',
+      type: 'oauth',
+      credentials: {
+        region: 'us-east-1',
+        auth_method: 'social'
+      },
+      extra: {},
+      proxy_id: null,
+      concurrency: 1,
+      priority: 1,
+      rate_multiplier: 1,
+      status: 'active',
+      group_ids: [],
+      expires_at: null,
+      auto_pause_on_expired: false
+    } as any
+
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    getSettingsMock.mockReset()
+    getWebSearchEmulationConfigMock.mockReset()
+    listTlsFingerprintProfilesMock.mockReset()
+    getSettingsMock.mockResolvedValue({})
+    getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
+    listTlsFingerprintProfilesMock.mockResolvedValue([])
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+    await wrapper.get('input[placeholder="admin.accounts.kiro.regionPlaceholder"]').setValue('eu-west-1')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toEqual({
+      region: 'eu-west-1'
+    })
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('refresh_token')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('client_secret')
   })
 
   it('submits OpenAI compact mode and compact-only model mapping', async () => {

@@ -88,7 +88,7 @@
       <div class="min-h-0 h-full">
         <TicketDetailPane :ticket="ticket" show-user-meta>
           <template #actions>
-            <div class="space-y-3">
+            <div v-if="canUpdateStatus" class="space-y-3">
               <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('tickets.adminActions') }}</p>
               <div class="flex flex-wrap gap-3">
                 <button v-for="status in adminStatuses" :key="status" class="btn btn-secondary btn-sm" :disabled="actionLoading || ticket.status === status || isStatusLocked(status)" @click="updateStatus(status)">
@@ -112,11 +112,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import { useAppStore, useAuthStore } from '@/stores'
+import { useAppStore } from '@/stores'
 import adminTicketsAPI from '@/api/adminTickets'
 import TicketConversationPane from '@/components/tickets/TicketConversationPane.vue'
 import TicketDetailPane from '@/components/tickets/TicketDetailPane.vue'
@@ -127,7 +127,6 @@ import type { TicketReplyTemplate } from '@/api/adminTickets'
 const { t } = useI18n()
 const route = useRoute()
 const appStore = useAppStore()
-const authStore = useAuthStore()
 const loading = ref(false)
 const actionLoading = ref(false)
 const sendingReply = ref(false)
@@ -143,7 +142,10 @@ const templateMenuRef = ref<HTMLElement | null>(null)
 const templateTriggerRef = ref<HTMLButtonElement | null>(null)
 const templateMenuListRef = ref<HTMLElement | null>(null)
 const adminStatuses: TicketStatus[] = ['processing', 'waiting_user', 'waiting_admin', 'resolved', 'closed']
-const canReply = computed(() => !['resolved', 'closed'].includes(ticket.value?.status || ''))
+const canReply = computed(() => !['resolved', 'closed', 'withdrawn'].includes(ticket.value?.status || ''))
+const canUpdateStatus = computed(() => ticket.value?.status !== 'withdrawn')
+const ticketID = computed(() => Number(route.params.id))
+let loadDetailRequestID = 0
 
 function isStatusLocked(target: TicketStatus) {
   if (!ticket.value) return false
@@ -153,19 +155,27 @@ function isStatusLocked(target: TicketStatus) {
 }
 
 async function loadDetail() {
+  const requestID = ++loadDetailRequestID
   try {
     loading.value = true
-    const id = Number(route.params.id)
     const [ticketData, messageData] = await Promise.all([
-      adminTicketsAPI.getAdminTicket(id),
-      adminTicketsAPI.listAdminTicketMessages(id),
+      adminTicketsAPI.getAdminTicket(ticketID.value),
+      adminTicketsAPI.listAdminTicketMessages(ticketID.value),
     ])
+    if (requestID !== loadDetailRequestID) {
+      return
+    }
     ticket.value = ticketData
     messages.value = messageData
   } catch (err: any) {
+    if (requestID !== loadDetailRequestID) {
+      return
+    }
     appStore.showError(err?.message || t('common.unknownError'))
   } finally {
-    loading.value = false
+    if (requestID === loadDetailRequestID) {
+      loading.value = false
+    }
   }
 }
 
@@ -180,34 +190,10 @@ async function loadReplyTemplates() {
 async function reply(content: string) {
   try {
     sendingReply.value = true
-    await adminTicketsAPI.replyAdminTicket(Number(route.params.id), content)
-    const now = new Date().toISOString()
-    messages.value = [
-      ...messages.value,
-      {
-        id: Date.now() * -1,
-        ticket_id: Number(route.params.id),
-        sender_role: 'admin',
-        sender_user_id: authStore.user?.id ?? null,
-        sender_name_snapshot: authStore.user?.username || authStore.user?.email || '管理员',
-        sender_avatar_snapshot: authStore.user?.avatar_url || '',
-        message_type: 'message',
-        content,
-        created_at: now,
-      },
-    ]
+    await adminTicketsAPI.replyAdminTicket(ticketID.value, content)
     replyDraft.value = ''
     clearComposerKey.value += 1
-    if (ticket.value) {
-      ticket.value = {
-        ...ticket.value,
-        latest_message_at: now,
-        last_reply_role: 'admin',
-        unread_by_user: true,
-        unread_by_admin: false,
-        updated_at: now,
-      }
-    }
+    await loadDetail()
   } catch (err: any) {
     appStore.showError(err?.message || t('common.unknownError'))
   } finally {
@@ -283,7 +269,7 @@ function handleTemplateMouseLeave() {
 async function updateStatus(status: TicketStatus) {
   try {
     actionLoading.value = true
-    await adminTicketsAPI.updateAdminTicketStatus(Number(route.params.id), status)
+    await adminTicketsAPI.updateAdminTicketStatus(ticketID.value, status)
     await loadDetail()
     appStore.showSuccess(t('tickets.messages.statusUpdated'))
   } catch (err: any) {
@@ -293,7 +279,9 @@ async function updateStatus(status: TicketStatus) {
   }
 }
 
-onMounted(async () => {
-  await Promise.all([loadDetail(), loadReplyTemplates()])
-})
+onMounted(loadReplyTemplates)
+
+watch(ticketID, () => {
+  loadDetail()
+}, { immediate: true })
 </script>

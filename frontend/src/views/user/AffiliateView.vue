@@ -140,11 +140,11 @@
           </div>
         </div>
 
-        <div v-if="ledgerOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="ledgerOpen = false">
+        <div v-if="ledgerOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="closeLedger">
           <div class="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl dark:bg-dark-900">
             <div class="mb-4 flex items-center justify-between">
               <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('affiliate.ledger.title') }}</h3>
-              <button class="btn btn-secondary btn-sm" @click="ledgerOpen = false">{{ t('common.close') }}</button>
+              <button class="btn btn-secondary btn-sm" @click="closeLedger">{{ t('common.close') }}</button>
             </div>
             <div v-if="ledgerLoading" class="py-8 text-center text-sm text-gray-500">{{ t('common.loading') }}</div>
             <div v-else-if="ledgerItems.length === 0" class="py-8 text-center text-sm text-gray-500">{{ t('affiliate.ledger.empty') }}</div>
@@ -199,6 +199,7 @@ const detail = ref<UserAffiliateDetail | null>(null)
 const ledgerOpen = ref(false)
 const ledgerLoading = ref(false)
 const ledgerItems = ref<AffiliateLedgerEntry[]>([])
+let activeLedgerRequestID = 0
 
 const inviteLink = computed(() => {
   if (!detail.value) return ''
@@ -257,16 +258,32 @@ async function transferQuota(): Promise<void> {
 }
 
 async function openLedger(inviteeId: number): Promise<void> {
+  const requestID = ++activeLedgerRequestID
   ledgerOpen.value = true
   ledgerLoading.value = true
   ledgerItems.value = []
   try {
-    ledgerItems.value = await userAPI.getAffiliateInviteeLedger(inviteeId)
+    const items = await userAPI.getAffiliateInviteeLedger(inviteeId)
+    if (requestID !== activeLedgerRequestID) {
+      return
+    }
+    ledgerItems.value = items
   } catch (error) {
+    if (requestID !== activeLedgerRequestID) {
+      return
+    }
     appStore.showError(extractApiErrorMessage(error, t('affiliate.ledger.loadFailed')))
   } finally {
-    ledgerLoading.value = false
+    if (requestID === activeLedgerRequestID) {
+      ledgerLoading.value = false
+    }
   }
+}
+
+function closeLedger(): void {
+  activeLedgerRequestID++
+  ledgerOpen.value = false
+  ledgerLoading.value = false
 }
 
 onMounted(() => {
