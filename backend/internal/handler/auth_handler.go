@@ -441,7 +441,6 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	h.userService.TouchLastActiveForUser(c.Request.Context(), user)
 
 	identities, err := h.userService.GetProfileIdentitySummaries(c.Request.Context(), subject.UserID, user)
 	if err != nil {
@@ -459,6 +458,7 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 		runMode = h.cfg.RunMode
 	}
 
+	h.userService.RecordLastActiveForUser(c.Request.Context(), user)
 	response.Success(c, UserResponse{
 		userProfileResponse: userProfileResponseFromService(user, identities),
 		RunMode:             runMode,

@@ -29,19 +29,19 @@ func TestAuthHandlerGetCurrentUserReturnsProfileCompatibilityFields(t *testing.T
 			AvatarURL:    "https://cdn.example.com/linuxdo.png",
 			AvatarSource: "remote_url",
 		},
-			identities: []service.UserAuthIdentityRecord{
-				{
-					ProviderType:    "linuxdo",
-					ProviderKey:     "linuxdo",
-					ProviderSubject: "linuxdo-subject-31",
-					VerifiedAt:      &verifiedAt,
-					Metadata: map[string]any{
-						"username":   "linuxdo-handle",
-						"avatar_url": "https://cdn.example.com/linuxdo.png",
-					},
+		identities: []service.UserAuthIdentityRecord{
+			{
+				ProviderType:    "linuxdo",
+				ProviderKey:     "linuxdo",
+				ProviderSubject: "linuxdo-subject-31",
+				VerifiedAt:      &verifiedAt,
+				Metadata: map[string]any{
+					"username":   "linuxdo-handle",
+					"avatar_url": "https://cdn.example.com/linuxdo.png",
 				},
 			},
-		}
+		},
+	}
 
 	handler := &AuthHandler{
 		userService: service.NewUserService(repo, nil, nil, nil),
@@ -55,6 +55,8 @@ func TestAuthHandlerGetCurrentUserReturnsProfileCompatibilityFields(t *testing.T
 	handler.GetCurrentUser(c)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
+	require.NotNil(t, repo.user.LastActiveAt)
+	require.WithinDuration(t, time.Now(), *repo.user.LastActiveAt, 2*time.Second)
 
 	var resp struct {
 		Code int            `json:"code"`
@@ -65,6 +67,7 @@ func TestAuthHandlerGetCurrentUserReturnsProfileCompatibilityFields(t *testing.T
 	require.Equal(t, true, resp.Data["email_bound"])
 	require.Equal(t, true, resp.Data["linuxdo_bound"])
 	require.Equal(t, "https://cdn.example.com/linuxdo.png", resp.Data["avatar_url"])
+	require.NotEmpty(t, resp.Data["last_active_at"])
 
 	authBindings, ok := resp.Data["auth_bindings"].(map[string]any)
 	require.True(t, ok)

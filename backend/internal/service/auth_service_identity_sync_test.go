@@ -156,7 +156,7 @@ func TestAuthServiceRegisterDualWritesEmailIdentity(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "email", storedUser.SignupSource)
 	require.NotNil(t, storedUser.LastLoginAt)
-	require.NotNil(t, storedUser.LastActiveAt)
+	require.Nil(t, storedUser.LastActiveAt)
 
 	identity, err := client.AuthIdentity.Query().
 		Where(
@@ -218,6 +218,13 @@ func TestAuthServiceLoginDefersLastLoginTouchUntilRecordSuccessfulLogin(t *testi
 	require.Zero(t, identityCount)
 
 	svc.RecordSuccessfulLogin(ctx, user.ID)
+
+	storedUser, err = client.User.Get(ctx, user.ID)
+	require.NoError(t, err)
+	require.NotNil(t, storedUser.LastLoginAt)
+	require.True(t, storedUser.LastLoginAt.After(old))
+	require.NotNil(t, storedUser.LastActiveAt)
+	require.True(t, storedUser.LastActiveAt.Equal(old))
 
 	identity, err := client.AuthIdentity.Query().
 		Where(

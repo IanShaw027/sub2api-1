@@ -15,7 +15,8 @@ type User struct {
 	Concurrency   int        `json:"concurrency"`
 	Status        string     `json:"status"`
 	AllowedGroups []int64    `json:"allowed_groups"`
-	LastActiveAt  *time.Time `json:"last_active_at,omitempty"`
+	LastLoginAt   *time.Time `json:"last_login_at"`
+	LastActiveAt  *time.Time `json:"last_active_at"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 

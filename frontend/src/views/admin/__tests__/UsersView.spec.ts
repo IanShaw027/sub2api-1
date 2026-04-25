@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import type { AdminUser } from '@/types'
+import { formatDateTime } from '@/utils/format'
 import UsersView from '../UsersView.vue'
 
 const {
@@ -70,6 +71,7 @@ const createAdminUser = (): AdminUser => ({
   created_at: '2026-04-17T00:00:00Z',
   updated_at: '2026-04-17T00:00:00Z',
   notes: '',
+  last_login_at: '2026-04-15T02:00:00Z',
   last_active_at: '2026-04-16T02:00:00Z',
   last_used_at: '2026-04-17T02:00:00Z',
   current_concurrency: 0
@@ -82,9 +84,18 @@ const DataTableStub = {
     <div>
       <div data-test="columns">{{ columns.map(col => col.key).join(',') }}</div>
       <button data-test="sort-last-used" @click="$emit('sort', 'last_used_at', 'desc')">sort</button>
+      <button data-test="sort-last-login" @click="$emit('sort', 'last_login_at', 'asc')">sort login</button>
       <div v-for="row in data" :key="row.id">
         <slot name="cell-email" :value="row.email" :row="row" />
-        <slot name="cell-last_used_at" :value="row.last_used_at" :row="row" />
+        <div data-test="last-login-cell">
+          <slot name="cell-last_login_at" :value="row.last_login_at" :row="row" />
+        </div>
+        <div data-test="last-active-cell">
+          <slot name="cell-last_active_at" :value="row.last_active_at" :row="row" />
+        </div>
+        <div data-test="last-used-cell">
+          <slot name="cell-last_used_at" :value="row.last_used_at" :row="row" />
+        </div>
       </div>
     </div>
   `
@@ -122,7 +133,7 @@ describe('admin UsersView', () => {
     vi.useRealTimers()
   })
 
-  it('shows active, used, and created activity columns in order and requests last_used_at sort', async () => {
+  it('shows login, active, used, and created activity columns in order and requests last_used_at sort', async () => {
     const wrapper = mount(UsersView, {
       global: {
         stubs: {
@@ -155,8 +166,10 @@ describe('admin UsersView', () => {
 
     const columns = wrapper.get('[data-test="columns"]').text()
     const visibleColumns = columns.split(',')
-    expect(visibleColumns.slice(-4, -1)).toEqual(['last_active_at', 'last_used_at', 'created_at'])
-    expect(visibleColumns).not.toContain('last_login_at')
+    expect(visibleColumns.slice(-5, -1)).toEqual(['last_login_at', 'last_active_at', 'last_used_at', 'created_at'])
+    expect(wrapper.get('[data-test="last-login-cell"]').text()).toBe(formatDateTime(createAdminUser().last_login_at))
+    expect(wrapper.get('[data-test="last-active-cell"]').text()).toBe(formatDateTime(createAdminUser().last_active_at))
+    expect(wrapper.get('[data-test="last-used-cell"]').text()).toBe(formatDateTime(createAdminUser().last_used_at))
 
     await wrapper.get('[data-test="sort-last-used"]').trigger('click')
     await flushPromises()
@@ -167,6 +180,19 @@ describe('admin UsersView', () => {
       expect.objectContaining({
         sort_by: 'last_used_at',
         sort_order: 'desc'
+      }),
+      expect.any(Object)
+    )
+
+    await wrapper.get('[data-test="sort-last-login"]').trigger('click')
+    await flushPromises()
+
+    expect(listUsers).toHaveBeenLastCalledWith(
+      1,
+      20,
+      expect.objectContaining({
+        sort_by: 'last_login_at',
+        sort_order: 'asc'
       }),
       expect.any(Object)
     )

@@ -12,19 +12,15 @@ import (
 
 // NewJWTAuthMiddleware 创建 JWT 认证中间件
 func NewJWTAuthMiddleware(authService *service.AuthService, userService *service.UserService) JWTAuthMiddleware {
-	return JWTAuthMiddleware(jwtAuth(authService, userService, userService))
+	return JWTAuthMiddleware(jwtAuth(authService, userService))
 }
 
 type jwtUserReader interface {
 	GetByID(ctx context.Context, id int64) (*service.User, error)
 }
 
-type userActivityToucher interface {
-	TouchLastActiveForUser(ctx context.Context, user *service.User)
-}
-
 // jwtAuth JWT认证中间件实现
-func jwtAuth(authService *service.AuthService, userService jwtUserReader, activityToucher userActivityToucher) gin.HandlerFunc {
+func jwtAuth(authService *service.AuthService, userService jwtUserReader) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 从Authorization header中提取token
 		authHeader := c.GetHeader("Authorization")
@@ -82,9 +78,6 @@ func jwtAuth(authService *service.AuthService, userService jwtUserReader, activi
 			Concurrency: user.Concurrency,
 		})
 		c.Set(string(ContextKeyUserRole), user.Role)
-		if activityToucher != nil {
-			activityToucher.TouchLastActiveForUser(c.Request.Context(), user)
-		}
 
 		c.Next()
 	}

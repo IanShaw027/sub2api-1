@@ -332,6 +332,19 @@ func TestUpdateBalance_Success(t *testing.T) {
 	require.Equal(t, []int64{42}, cache.invalidatedUserIDs, "应对 userID=42 失效缓存")
 }
 
+func TestRecordLastActiveForUser_UpdatesPassedUser(t *testing.T) {
+	repo := &mockUserRepo{}
+	svc := NewUserService(repo, nil, nil, nil)
+	user := &User{ID: 42}
+
+	svc.RecordLastActiveForUser(context.Background(), user)
+
+	require.Len(t, repo.updateLastActiveUserIDs, 1)
+	require.Equal(t, int64(42), repo.updateLastActiveUserIDs[0])
+	require.NotNil(t, user.LastActiveAt)
+	require.WithinDuration(t, repo.updateLastActiveAt[0], *user.LastActiveAt, time.Millisecond)
+}
+
 func TestGetProfileIdentitySummaries_AllowsUnbindWhenAnotherLoginMethodRemains(t *testing.T) {
 	repo := &mockUserRepo{
 		getByIDUser: &User{
@@ -571,39 +584,6 @@ func TestUpdateBalance_CacheFailure_DoesNotAffectReturn(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return cache.invalidateCallCount.Load() == 1
 	}, 2*time.Second, 10*time.Millisecond, "即使失败也应调用 InvalidateUserBalance")
-}
-
-func TestTouchLastActive_UpdatesWhenStale(t *testing.T) {
-	stale := time.Now().Add(-11 * time.Minute)
-	repo := &mockUserRepo{
-		getByIDUser: &User{
-			ID:           42,
-			LastActiveAt: &stale,
-		},
-	}
-	svc := NewUserService(repo, nil, nil, nil)
-
-	svc.TouchLastActive(context.Background(), 42)
-
-	require.Equal(t, []int64{42}, repo.updateLastActiveUserIDs)
-	require.Len(t, repo.updateLastActiveAt, 1)
-	require.WithinDuration(t, time.Now(), repo.updateLastActiveAt[0], 2*time.Second)
-}
-
-func TestTouchLastActive_SkipsWhenRecent(t *testing.T) {
-	recent := time.Now().Add(-time.Minute)
-	repo := &mockUserRepo{
-		getByIDUser: &User{
-			ID:           42,
-			LastActiveAt: &recent,
-		},
-	}
-	svc := NewUserService(repo, nil, nil, nil)
-
-	svc.TouchLastActive(context.Background(), 42)
-
-	require.Empty(t, repo.updateLastActiveUserIDs)
-	require.Empty(t, repo.updateLastActiveAt)
 }
 
 func TestUpdateBalance_RepoError_ReturnsError(t *testing.T) {

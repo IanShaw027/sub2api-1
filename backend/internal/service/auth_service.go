@@ -904,9 +904,8 @@ func (s *AuthService) touchUserLogin(ctx context.Context, userID int64) {
 	now := time.Now().UTC()
 	if err := s.entClient.User.UpdateOneID(userID).
 		SetLastLoginAt(now).
-		SetLastActiveAt(now).
 		Exec(ctx); err != nil {
-		logger.LegacyPrintf("service.auth", "[Auth] Failed to touch login timestamps: user_id=%d err=%v", userID, err)
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to touch last login timestamp: user_id=%d err=%v", userID, err)
 	}
 }
 
