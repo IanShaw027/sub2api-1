@@ -76,3 +76,51 @@ func TestEmitOpenAICacheProbeEvent_SkipsNonCacheRequests(t *testing.T) {
 
 	require.False(t, logSink.ContainsMessage("OpenAI cache probe"))
 }
+
+func TestEmitOpenAICodexCompatFallbackEvent_LogsWithoutCacheProbe(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	logSink, restore := captureStructuredLog(t)
+	defer restore()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Set("api_key", &APIKey{ID: 7})
+
+	emitOpenAICodexCompatFallbackEvent(
+		context.Background(),
+		c,
+		&Account{
+			ID:       9,
+			Platform: PlatformOpenAI,
+			Type:     AccountTypeOAuth,
+		},
+		[]byte(`{"model":"gpt-5.4","input":[{"type":"message","id":"msg_123","role":"user","content":"hello"}]}`),
+		[]byte(`{"model":"gpt-5.4","input":[{"type":"message","role":"user","content":"hello"}]}`),
+		openAICodexCompatFallbackState{
+			Triggered:    true,
+			Reason:       "input_schema",
+			BodyModified: true,
+		},
+		"success",
+		http.StatusOK,
+		"",
+		"",
+		&OpenAIForwardResult{
+			RequestID: "resp_fallback_1",
+			Model:     "gpt-5.4",
+			Usage: OpenAIUsage{
+				InputTokens:  3,
+				OutputTokens: 2,
+			},
+		},
+	)
+
+	require.True(t, logSink.ContainsMessageAtLevel("OpenAI Codex compat fallback", "info"))
+	require.True(t, logSink.ContainsFieldValue("component", "audit.openai_codex_compat_fallback"))
+	require.True(t, logSink.ContainsFieldValue("request_id", "resp_fallback_1"))
+	require.True(t, logSink.ContainsFieldValue("api_key_id", "7"))
+	require.True(t, logSink.ContainsFieldValue("fallback_reason", "input_schema"))
+	require.True(t, logSink.ContainsFieldValue("fallback_outcome", "success"))
+	require.True(t, logSink.ContainsFieldValue("fallback_body_modified", "true"))
+}

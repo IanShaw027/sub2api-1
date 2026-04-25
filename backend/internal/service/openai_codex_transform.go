@@ -78,6 +78,44 @@ type codexTransformResult struct {
 	Modified        bool
 	NormalizedModel string
 	PromptCacheKey  string
+	Observability   codexTransformObservability
+}
+
+type codexTransformObservability struct {
+	NeedsToolContinuation         bool
+	ModelNormalized               bool
+	CompactStoreRemoved           bool
+	CompactStreamRemoved          bool
+	CompactDeferredToolSearch     bool
+	StoreForcedFalse              bool
+	StreamForcedTrue              bool
+	UnsupportedFieldsStripped     []string
+	FunctionsConverted            bool
+	FunctionCallConverted         bool
+	ToolsNormalized               bool
+	ToolChoiceNormalized          bool
+	SystemMessagesExtracted       bool
+	DefaultInstructionsApplied    bool
+	SparkInstructionsApplied      bool
+	InputToolRoleNormalized       bool
+	InputMessageContentNormalized bool
+	InputFiltered                 bool
+	InputStringWrapped            bool
+	InputItemsBefore              int
+	InputItemsAfter               int
+}
+
+type codexTransformInputMode int
+
+const (
+	codexTransformInputModeStrict codexTransformInputMode = iota
+	codexTransformInputModePreservePrefix
+)
+
+type codexInputFilterOptions struct {
+	rewriteToolContinuationIDs bool
+	dropItemReferences         bool
+	dropNonToolItemIDs         bool
 }
 
 const (
@@ -88,9 +126,29 @@ const (
 )
 
 func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact bool) codexTransformResult {
+	return applyCodexOAuthTransformWithInputModeAndFallbackReason(reqBody, isCodexCLI, isCompact, codexTransformInputModeStrict, "")
+}
+
+func applyCodexOAuthTransformWithInputMode(
+	reqBody map[string]any,
+	isCodexCLI bool,
+	isCompact bool,
+	inputMode codexTransformInputMode,
+) codexTransformResult {
+	return applyCodexOAuthTransformWithInputModeAndFallbackReason(reqBody, isCodexCLI, isCompact, inputMode, "")
+}
+
+func applyCodexOAuthTransformWithInputModeAndFallbackReason(
+	reqBody map[string]any,
+	isCodexCLI bool,
+	isCompact bool,
+	inputMode codexTransformInputMode,
+	fallbackReason string,
+) codexTransformResult {
 	result := codexTransformResult{}
 	// 工具续链需求会影响存储策略与 input 过滤逻辑。
 	needsToolContinuation := NeedsToolContinuation(reqBody)
+	result.Observability.NeedsToolContinuation = needsToolContinuation
 	if needsToolContinuation {
 		recordOpenAICompatToolContinuationDetected()
 	}
@@ -104,6 +162,7 @@ func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact
 		if model != profile.UpstreamModel {
 			reqBody["model"] = profile.UpstreamModel
 			result.Modified = true
+			result.Observability.ModelNormalized = true
 		}
 		result.NormalizedModel = profile.UpstreamModel
 	}
@@ -116,13 +175,16 @@ func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact
 		if _, ok := reqBody["store"]; ok {
 			delete(reqBody, "store")
 			result.Modified = true
+			result.Observability.CompactStoreRemoved = true
 		}
 		if _, ok := reqBody["stream"]; ok {
 			delete(reqBody, "stream")
 			result.Modified = true
+			result.Observability.CompactStreamRemoved = true
 		}
 		if ensureCompactDeferredToolSearchInMap(reqBody) {
 			result.Modified = true
+			result.Observability.CompactDeferredToolSearch = true
 		}
 	} else {
 		// OAuth 走 ChatGPT internal API 时，store 必须为 false；显式 true 也会强制覆盖。
@@ -130,10 +192,12 @@ func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact
 		if v, ok := reqBody["store"].(bool); !ok || v {
 			reqBody["store"] = false
 			result.Modified = true
+			result.Observability.StoreForcedFalse = true
 		}
 		if v, ok := reqBody["stream"].(bool); !ok || !v {
 			reqBody["stream"] = true
 			result.Modified = true
+			result.Observability.StreamForcedTrue = true
 		}
 	}
 
@@ -163,6 +227,7 @@ func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact
 			delete(reqBody, key)
 			recordOpenAICompatStrippedField(key)
 			result.Modified = true
+			result.Observability.UnsupportedFieldsStripped = append(result.Observability.UnsupportedFieldsStripped, key)
 		}
 	}
 
@@ -180,6 +245,7 @@ func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact
 		}
 		delete(reqBody, "functions")
 		result.Modified = true
+		result.Observability.FunctionsConverted = true
 	}
 
 	if fcRaw, ok := reqBody["function_call"]; ok {
@@ -199,13 +265,16 @@ func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact
 		}
 		delete(reqBody, "function_call")
 		result.Modified = true
+		result.Observability.FunctionCallConverted = true
 	}
 
 	if normalizeCodexTools(reqBody) {
 		result.Modified = true
+		result.Observability.ToolsNormalized = true
 	}
 	if normalizeCodexToolChoice(reqBody) {
 		result.Modified = true
+		result.Observability.ToolChoiceNormalized = true
 	}
 
 	if v, ok := reqBody["prompt_cache_key"].(string); ok {
@@ -215,29 +284,59 @@ func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact
 	// 提取 input 中 role:"system" 消息至 instructions（OAuth 上游不支持 system role）。
 	if extractSystemMessagesFromInput(reqBody) {
 		result.Modified = true
+		result.Observability.SystemMessagesExtracted = true
 	}
 
 	// instructions 处理逻辑：根据是否是 Codex CLI 分别调用不同方法
 	if applyInstructions(reqBody, isCodexCLI) {
 		result.Modified = true
+		result.Observability.DefaultInstructionsApplied = true
 	}
 	if isCodexSparkModel(normalizedModel) && applyCodexSparkImageUnsupportedInstructions(reqBody) {
 		result.Modified = true
+		result.Observability.SparkInstructionsApplied = true
 	}
 
 	// 续链场景保留 item_reference 与 id，避免 call_id 上下文丢失。
 	if input, ok := reqBody["input"].([]any); ok {
+		result.Observability.InputItemsBefore = len(input)
+		inputModified := false
 		if normalizedInput, modified := normalizeCodexToolRoleMessages(input); modified {
 			input = normalizedInput
+			inputModified = true
 			result.Modified = true
+			result.Observability.InputToolRoleNormalized = true
 		}
 		if normalizedInput, modified := normalizeCodexMessageContentText(input); modified {
 			input = normalizedInput
+			inputModified = true
 			result.Modified = true
+			result.Observability.InputMessageContentNormalized = true
 		}
-		input = filterCodexInput(input, needsToolContinuation)
-		reqBody["input"] = input
-		result.Modified = true
+		filterOptions := codexInputFilterOptions{
+			rewriteToolContinuationIDs: hasCodexToolContinuationInput(input),
+		}
+		if inputMode == codexTransformInputModePreservePrefix {
+			filterOptions.rewriteToolContinuationIDs = false
+		}
+		switch strings.TrimSpace(fallbackReason) {
+		case "call_id", "input_schema":
+			filterOptions.dropNonToolItemIDs = true
+		case "item_reference":
+			filterOptions.dropItemReferences = true
+			filterOptions.dropNonToolItemIDs = true
+		}
+		filteredInput, filteredModified := filterCodexInputWithOptions(input, filterOptions)
+		if filteredModified {
+			input = filteredInput
+			inputModified = true
+			result.Modified = true
+			result.Observability.InputFiltered = true
+		}
+		if inputModified {
+			reqBody["input"] = input
+		}
+		result.Observability.InputItemsAfter = len(input)
 	} else if inputStr, ok := reqBody["input"].(string); ok {
 		// ChatGPT codex endpoint requires input to be a list, not a string.
 		// Convert string input to the expected message array format.
@@ -254,6 +353,13 @@ func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact
 			reqBody["input"] = []any{}
 		}
 		result.Modified = true
+		result.Observability.InputStringWrapped = true
+		result.Observability.InputItemsBefore = 1
+		if strings.TrimSpace(inputStr) == "" {
+			result.Observability.InputItemsAfter = 0
+		} else {
+			result.Observability.InputItemsAfter = 1
+		}
 	}
 
 	return result
@@ -967,10 +1073,35 @@ func isInstructionsEmpty(reqBody map[string]any) bool {
 	return strings.TrimSpace(str) == ""
 }
 
-// filterCodexInput 按需过滤 item_reference 与 id。
-// preserveReferences 为 true 时保持引用与 id，以满足续链请求对上下文的依赖。
-func filterCodexInput(input []any, preserveReferences bool) []any {
+func hasCodexToolContinuationInput(input []any) bool {
+	for _, item := range input {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		typ := strings.TrimSpace(firstNonEmptyString(m["type"]))
+		if typ == "item_reference" || isCodexToolCallItemType(typ) {
+			return true
+		}
+		if strings.TrimSpace(firstNonEmptyString(m["role"])) == "tool" {
+			return true
+		}
+	}
+	return false
+}
+
+// filterCodexInput applies only hard compatibility fixes to Codex input.
+// rewriteToolContinuationIDs is intentionally narrower than NeedsToolContinuation:
+// tools/tool_choice alone should not rewrite ordinary input ids or references.
+func filterCodexInput(input []any, rewriteToolContinuationIDs bool) ([]any, bool) {
+	return filterCodexInputWithOptions(input, codexInputFilterOptions{
+		rewriteToolContinuationIDs: rewriteToolContinuationIDs,
+	})
+}
+
+func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]any, bool) {
 	filtered := make([]any, 0, len(input))
+	modified := false
 	for _, item := range input {
 		m, ok := item.(map[string]any)
 		if !ok {
@@ -992,15 +1123,18 @@ func filterCodexInput(input []any, preserveReferences bool) []any {
 		}
 
 		if typ == "item_reference" {
-			if !preserveReferences {
+			if opts.dropItemReferences {
+				modified = true
 				continue
 			}
-			newItem := make(map[string]any, len(m))
-			for key, value := range m {
-				newItem[key] = value
-			}
-			if id, ok := newItem["id"].(string); ok && strings.HasPrefix(id, "call_") {
+			newItem := m
+			if id, ok := m["id"].(string); ok && opts.rewriteToolContinuationIDs && strings.HasPrefix(id, "call_") {
+				newItem = make(map[string]any, len(m))
+				for key, value := range m {
+					newItem[key] = value
+				}
 				newItem["id"] = fixCallIDPrefix(id)
+				modified = true
 			}
 			filtered = append(filtered, newItem)
 			continue
@@ -1022,26 +1156,31 @@ func filterCodexInput(input []any, preserveReferences bool) []any {
 
 		if isCodexToolCallItemType(typ) {
 			callID, ok := m["call_id"].(string)
-			if !ok || strings.TrimSpace(callID) == "" {
+			if opts.rewriteToolContinuationIDs && (!ok || strings.TrimSpace(callID) == "") {
 				if id, ok := m["id"].(string); ok && strings.TrimSpace(id) != "" {
 					callID = id
 					ensureCopy()
 					newItem["call_id"] = callID
+					modified = true
 				}
 			}
 
-			if callID != "" {
+			if opts.rewriteToolContinuationIDs && callID != "" {
 				fixedCallID := fixCallIDPrefix(callID)
 				if fixedCallID != callID {
 					ensureCopy()
 					newItem["call_id"] = fixedCallID
+					modified = true
 				}
 			}
 		}
 
 		if !isCodexToolCallItemType(typ) {
-			ensureCopy()
-			delete(newItem, "call_id")
+			if _, exists := newItem["call_id"]; exists {
+				ensureCopy()
+				delete(newItem, "call_id")
+				modified = true
+			}
 		}
 
 		if codexInputItemRequiresName(typ) {
@@ -1057,17 +1196,24 @@ func filterCodexInput(input []any, preserveReferences bool) []any {
 				}
 				ensureCopy()
 				newItem["name"] = name
+				modified = true
 			}
 		}
 
-		if !preserveReferences {
-			ensureCopy()
-			delete(newItem, "id")
+		if opts.dropNonToolItemIDs && !isCodexToolCallItemType(typ) {
+			if _, exists := newItem["id"]; exists {
+				ensureCopy()
+				delete(newItem, "id")
+				modified = true
+			}
 		}
 
 		filtered = append(filtered, newItem)
 	}
-	return filtered
+	if !modified && len(filtered) == len(input) {
+		return input, false
+	}
+	return filtered, true
 }
 
 func isCodexToolCallItemType(typ string) bool {

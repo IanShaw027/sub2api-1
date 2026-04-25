@@ -48,7 +48,9 @@ func TestApplyCodexOAuthTransform_ToolContinuationPreservesNativeMessageAndReaso
 		"model": "gpt-5.2",
 		"input": []any{
 			map[string]any{"type": "message", "id": "msg_0", "role": "user", "content": "hi"},
-			map[string]any{"type": "item_reference", "id": "rs_123"},
+			map[string]any{"type": "reasoning", "id": "rs_123", "summary": []any{}},
+			map[string]any{"type": "input_text", "id": "txt_123", "text": "plain"},
+			map[string]any{"type": "item_reference", "id": "ref_123"},
 		},
 		"tool_choice": "auto",
 	}
@@ -57,15 +59,27 @@ func TestApplyCodexOAuthTransform_ToolContinuationPreservesNativeMessageAndReaso
 
 	input, ok := reqBody["input"].([]any)
 	require.True(t, ok)
-	require.Len(t, input, 2)
+	require.Len(t, input, 4)
 
 	first, ok := input[0].(map[string]any)
 	require.True(t, ok)
+	require.Equal(t, "message", first["type"])
 	require.Equal(t, "msg_0", first["id"])
 
 	second, ok := input[1].(map[string]any)
 	require.True(t, ok)
+	require.Equal(t, "reasoning", second["type"])
 	require.Equal(t, "rs_123", second["id"])
+
+	third, ok := input[2].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "input_text", third["type"])
+	require.Equal(t, "txt_123", third["id"])
+
+	fourth, ok := input[3].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "item_reference", fourth["type"])
+	require.Equal(t, "ref_123", fourth["id"])
 }
 
 func TestApplyCodexOAuthTransform_ToolContinuationNormalizesToolReferenceIDsOnly(t *testing.T) {
@@ -449,8 +463,8 @@ func TestApplyCodexOAuthTransform_CompactAddsToolSearchForObjectDeferredTools(t 
 	require.Equal(t, "tool_search", toolSearch["type"])
 }
 
-func TestApplyCodexOAuthTransform_NonContinuationDefaultsStoreFalseAndStripsIDs(t *testing.T) {
-	// 非续链场景：未设置 store 时默认 false，并移除 input 中的 id。
+func TestApplyCodexOAuthTransform_NonContinuationDefaultsStoreFalseAndPreservesIDs(t *testing.T) {
+	// 非续链场景：未设置 store 时默认 false，但保留普通 input item 的 id。
 
 	reqBody := map[string]any{
 		"model": "gpt-5.1",
@@ -471,22 +485,119 @@ func TestApplyCodexOAuthTransform_NonContinuationDefaultsStoreFalseAndStripsIDs(
 	// 校验 input[0] 为 map，避免类型不匹配触发 errcheck。
 	item, ok := input[0].(map[string]any)
 	require.True(t, ok)
-	_, hasID := item["id"]
-	require.False(t, hasID)
+	require.Equal(t, "t1", item["id"])
 }
 
-func TestFilterCodexInput_RemovesItemReferenceWhenNotPreserved(t *testing.T) {
+func TestApplyCodexOAuthTransform_ToolsSignalDoesNotRewriteOrdinaryInputIDs(t *testing.T) {
+	reqBody := map[string]any{
+		"model":       "gpt-5.2",
+		"tool_choice": "auto",
+		"tools": []any{
+			map[string]any{"type": "function", "name": "shell", "parameters": map[string]any{"type": "object"}},
+		},
+		"input": []any{
+			map[string]any{"type": "message", "id": "call_message", "role": "user", "content": "hi"},
+			map[string]any{"type": "reasoning", "id": "call_reasoning", "summary": []any{}},
+			map[string]any{"type": "input_text", "id": "call_text", "text": "plain"},
+		},
+	}
+
+	applyCodexOAuthTransform(reqBody, false, false)
+
+	input, ok := reqBody["input"].([]any)
+	require.True(t, ok)
+	require.Len(t, input, 3)
+
+	for i, want := range []struct {
+		typ string
+		id  string
+	}{
+		{typ: "message", id: "call_message"},
+		{typ: "reasoning", id: "call_reasoning"},
+		{typ: "input_text", id: "call_text"},
+	} {
+		item, ok := input[i].(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, want.typ, item["type"])
+		require.Equal(t, want.id, item["id"])
+	}
+}
+
+func TestFilterCodexInput_PreservesItemReferenceByDefault(t *testing.T) {
 	input := []any{
 		map[string]any{"type": "item_reference", "id": "ref1"},
 		map[string]any{"type": "text", "id": "t1", "text": "hi"},
 	}
 
-	filtered := filterCodexInput(input, false)
-	require.Len(t, filtered, 1)
+	filtered, modified := filterCodexInput(input, false)
+	require.False(t, modified)
+	require.Len(t, filtered, 2)
 	// 校验 filtered[0] 为 map，确保字段检查可靠。
 	item, ok := filtered[0].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "text", item["type"])
+	require.Equal(t, "item_reference", item["type"])
+	require.Equal(t, "ref1", item["id"])
+
+	second, ok := filtered[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "text", second["type"])
+	require.Equal(t, "t1", second["id"])
+}
+
+func TestApplyCodexOAuthTransform_InputSchemaFallbackDropsOrdinaryInputIDs(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.4",
+		"input": []any{
+			map[string]any{"type": "message", "id": "msg_123", "role": "user", "content": "hi"},
+			map[string]any{"type": "reasoning", "id": "rs_123", "summary": []any{}},
+			map[string]any{"type": "input_text", "id": "txt_123", "text": "plain"},
+		},
+	}
+
+	result := applyCodexOAuthTransformWithInputModeAndFallbackReason(
+		reqBody,
+		false,
+		false,
+		codexTransformInputModeStrict,
+		"input_schema",
+	)
+
+	require.True(t, result.Modified)
+	input, ok := reqBody["input"].([]any)
+	require.True(t, ok)
+	require.Len(t, input, 3)
+	for _, raw := range input {
+		item, ok := raw.(map[string]any)
+		require.True(t, ok)
+		_, hasID := item["id"]
+		require.False(t, hasID)
+	}
+}
+
+func TestApplyCodexOAuthTransform_ItemReferenceFallbackDropsItemReferences(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.4",
+		"input": []any{
+			map[string]any{"type": "item_reference", "id": "call_1"},
+			map[string]any{"type": "message", "id": "msg_123", "role": "user", "content": "hi"},
+		},
+	}
+
+	result := applyCodexOAuthTransformWithInputModeAndFallbackReason(
+		reqBody,
+		false,
+		false,
+		codexTransformInputModeStrict,
+		"item_reference",
+	)
+
+	require.True(t, result.Modified)
+	input, ok := reqBody["input"].([]any)
+	require.True(t, ok)
+	require.Len(t, input, 1)
+	item, ok := input[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "message", item["type"])
 	_, hasID := item["id"]
 	require.False(t, hasID)
 }

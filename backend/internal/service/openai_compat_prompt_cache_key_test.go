@@ -91,3 +91,46 @@ func TestDeriveCompatPromptCacheKey_UsesResolvedSparkFamily(t *testing.T) {
 	require.NotEmpty(t, k1)
 	require.Equal(t, k1, k2, "resolved spark family should derive a stable compat cache key")
 }
+
+func TestDeriveAnthropicCompatPromptCacheKey_StableAcrossLaterTurns(t *testing.T) {
+	base := &apicompat.AnthropicRequest{
+		Model:  "gpt-5.4",
+		System: mustRawJSON(t, `"You are helpful."`),
+		Messages: []apicompat.AnthropicMessage{
+			{Role: "user", Content: mustRawJSON(t, `"Hello"`)},
+		},
+	}
+	extended := &apicompat.AnthropicRequest{
+		Model:  "gpt-5.4",
+		System: mustRawJSON(t, `"You are helpful."`),
+		Messages: []apicompat.AnthropicMessage{
+			{Role: "user", Content: mustRawJSON(t, `"Hello"`)},
+			{Role: "assistant", Content: mustRawJSON(t, `"Hi there!"`)},
+			{Role: "user", Content: mustRawJSON(t, `"How are you?"`)},
+		},
+	}
+
+	k1 := deriveAnthropicCompatPromptCacheKey(base, "gpt-5.4")
+	k2 := deriveAnthropicCompatPromptCacheKey(extended, "gpt-5.4")
+	require.Equal(t, k1, k2, "cache key should be stable across later turns")
+	require.NotEmpty(t, k1)
+}
+
+func TestDeriveAnthropicCompatPromptCacheKey_DiffersAcrossSessions(t *testing.T) {
+	req1 := &apicompat.AnthropicRequest{
+		Model: "gpt-5.4",
+		Messages: []apicompat.AnthropicMessage{
+			{Role: "user", Content: mustRawJSON(t, `"Question A"`)},
+		},
+	}
+	req2 := &apicompat.AnthropicRequest{
+		Model: "gpt-5.4",
+		Messages: []apicompat.AnthropicMessage{
+			{Role: "user", Content: mustRawJSON(t, `"Question B"`)},
+		},
+	}
+
+	k1 := deriveAnthropicCompatPromptCacheKey(req1, "gpt-5.4")
+	k2 := deriveAnthropicCompatPromptCacheKey(req2, "gpt-5.4")
+	require.NotEqual(t, k1, k2, "different first user messages should yield different keys")
+}

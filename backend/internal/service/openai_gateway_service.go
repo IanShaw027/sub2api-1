@@ -50,15 +50,45 @@ const (
 	// 与 Codex 客户端保持一致：失败后最多重连 5 次。
 	openAIWSReconnectRetryLimit = 5
 	// OpenAI WS Mode 重连退避默认值（可由配置覆盖）。
-	openAIWSRetryBackoffInitialDefault = 120 * time.Millisecond
-	openAIWSRetryBackoffMaxDefault     = 2 * time.Second
-	openAIWSRetryJitterRatioDefault    = 0.2
-	openAICompactSessionSeedKey        = "openai_compact_session_seed"
+	openAIWSRetryBackoffInitialDefault   = 120 * time.Millisecond
+	openAIWSRetryBackoffMaxDefault       = 2 * time.Second
+	openAIWSRetryJitterRatioDefault      = 0.2
+	openAICompactSessionSeedKey          = "openai_compact_session_seed"
+	openAICodexTransformObsKey           = "openai_codex_transform_observability"
+	openAICodexCompatFallbackKey         = "openai_codex_compat_fallback"
+	openAICodexCompatFallbackReasonKey   = "openai_codex_compat_fallback_reason"
+	openAIMessagesDispatchForcedModelKey = "openai_messages_dispatch_forced_model"
 	// Codex 限额快照仅用于后台展示/诊断，不需要每个成功请求都立即落库。
 	openAICodexSnapshotPersistMinInterval = 30 * time.Second
 	openAICacheProbePrefix4KBytes         = 4 * 1024
 	openAICacheProbePrefix16KBytes        = 16 * 1024
 )
+
+type openAICodexCompatFallbackState struct {
+	Triggered    bool
+	Reason       string
+	BodyModified bool
+}
+
+func SetOpenAIMessagesDispatchForcedModel(c *gin.Context, model string) {
+	if c == nil {
+		return
+	}
+	if model = strings.TrimSpace(model); model != "" {
+		c.Set(openAIMessagesDispatchForcedModelKey, model)
+	}
+}
+
+func getOpenAIMessagesDispatchForcedModel(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	value, ok := c.Get(openAIMessagesDispatchForcedModelKey)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(firstNonEmptyString(value))
+}
 
 // OpenAI allowed headers whitelist (for non-passthrough).
 var openaiAllowedHeaders = map[string]bool{
@@ -1242,8 +1272,207 @@ func emitOpenAICacheProbeEvent(
 		"service_tier":                          strings.TrimSpace(firstNonEmptyString(result.ServiceTier)),
 		"reasoning_effort":                      strings.TrimSpace(firstNonEmptyString(result.ReasoningEffort)),
 	}
+	if c != nil {
+		if value, ok := c.Get(openAICodexTransformObsKey); ok {
+			if obs, ok := value.(codexTransformObservability); ok {
+				fields["codex_transform_needs_tool_continuation"] = obs.NeedsToolContinuation
+				fields["codex_transform_model_normalized"] = obs.ModelNormalized
+				fields["codex_transform_compact_store_removed"] = obs.CompactStoreRemoved
+				fields["codex_transform_compact_stream_removed"] = obs.CompactStreamRemoved
+				fields["codex_transform_compact_deferred_tool_search"] = obs.CompactDeferredToolSearch
+				fields["codex_transform_store_forced_false"] = obs.StoreForcedFalse
+				fields["codex_transform_stream_forced_true"] = obs.StreamForcedTrue
+				fields["codex_transform_unsupported_fields_stripped_count"] = len(obs.UnsupportedFieldsStripped)
+				fields["codex_transform_unsupported_fields_stripped"] = strings.Join(obs.UnsupportedFieldsStripped, ",")
+				fields["codex_transform_functions_converted"] = obs.FunctionsConverted
+				fields["codex_transform_function_call_converted"] = obs.FunctionCallConverted
+				fields["codex_transform_tools_normalized"] = obs.ToolsNormalized
+				fields["codex_transform_tool_choice_normalized"] = obs.ToolChoiceNormalized
+				fields["codex_transform_system_messages_extracted"] = obs.SystemMessagesExtracted
+				fields["codex_transform_default_instructions_applied"] = obs.DefaultInstructionsApplied
+				fields["codex_transform_spark_instructions_applied"] = obs.SparkInstructionsApplied
+				fields["codex_transform_input_tool_role_normalized"] = obs.InputToolRoleNormalized
+				fields["codex_transform_input_message_content_normalized"] = obs.InputMessageContentNormalized
+				fields["codex_transform_input_filtered"] = obs.InputFiltered
+				fields["codex_transform_input_string_wrapped"] = obs.InputStringWrapped
+				fields["codex_transform_input_items_before"] = obs.InputItemsBefore
+				fields["codex_transform_input_items_after"] = obs.InputItemsAfter
+			}
+		}
+		if fallbackValue, ok := c.Get(openAICodexCompatFallbackKey); ok {
+			if fallbackTriggered, ok := fallbackValue.(bool); ok && fallbackTriggered {
+				fields["codex_compat_fallback_triggered"] = true
+			}
+		}
+		if fallbackReason, ok := c.Get(openAICodexCompatFallbackReasonKey); ok {
+			if reason := strings.TrimSpace(firstNonEmptyString(fallbackReason)); reason != "" {
+				fields["codex_compat_fallback_reason"] = reason
+			}
+		}
+	}
 
 	logger.WriteSinkEvent("info", "audit.openai_cache_probe", "OpenAI cache probe", fields)
+}
+
+func clearOpenAICodexCompatContext(c *gin.Context) {
+	if c == nil {
+		return
+	}
+	c.Set(openAICodexTransformObsKey, nil)
+	c.Set(openAICodexCompatFallbackKey, nil)
+	c.Set(openAICodexCompatFallbackReasonKey, nil)
+}
+
+func emitOpenAICodexCompatFallbackEvent(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	originalBody []byte,
+	finalBody []byte,
+	state openAICodexCompatFallbackState,
+	outcome string,
+	upstreamStatusCode int,
+	upstreamCode string,
+	upstreamMsg string,
+	result *OpenAIForwardResult,
+) {
+	if account == nil || !state.Triggered {
+		return
+	}
+
+	requestID := ""
+	upstreamRequestID := ""
+	if result != nil {
+		requestID = resolveUsageBillingRequestID(ctx, result.RequestID)
+		upstreamRequestID = strings.TrimSpace(result.RequestID)
+	}
+	if requestID == "" {
+		requestID = resolveUsageBillingRequestID(ctx, "")
+	}
+
+	requestPath := ""
+	requestUserAgent := ""
+	if c != nil {
+		requestUserAgent = strings.TrimSpace(c.GetHeader("User-Agent"))
+		if c.Request != nil && c.Request.URL != nil {
+			requestPath = strings.TrimSpace(c.Request.URL.Path)
+		}
+	}
+
+	fields := map[string]any{
+		"request_id":                        requestID,
+		"upstream_request_id":               upstreamRequestID,
+		"component":                         "audit.openai_codex_compat_fallback",
+		"account_id":                        account.ID,
+		"api_key_id":                        getAPIKeyIDFromContext(c),
+		"platform":                          strings.TrimSpace(string(account.Platform)),
+		"account_type":                      strings.TrimSpace(string(account.Type)),
+		"request_user_agent":                requestUserAgent,
+		"inbound_endpoint":                  requestPath,
+		"fallback_reason":                   strings.TrimSpace(state.Reason),
+		"fallback_body_modified":            state.BodyModified,
+		"fallback_outcome":                  strings.TrimSpace(outcome),
+		"upstream_status_code":              upstreamStatusCode,
+		"upstream_error_code":               strings.TrimSpace(upstreamCode),
+		"upstream_error_message":            sanitizeUpstreamErrorMessage(strings.TrimSpace(upstreamMsg)),
+		"request_body_sha256":               hashBytesForLog(originalBody),
+		"final_upstream_body_sha256":        hashBytesForLog(finalBody),
+		"request_input_prefix_16k_sha256":   hashOpenAIBodyFieldPrefixForLog(originalBody, "input", openAICacheProbePrefix16KBytes),
+		"final_input_prefix_16k_sha256":     hashOpenAIBodyFieldPrefixForLog(finalBody, "input", openAICacheProbePrefix16KBytes),
+		"request_prompt_cache_key_sha256":   hashSensitiveValueForLog(gjson.GetBytes(originalBody, "prompt_cache_key").String()),
+		"final_prompt_cache_key_sha256":     hashSensitiveValueForLog(gjson.GetBytes(finalBody, "prompt_cache_key").String()),
+		"request_previous_response_present": strings.TrimSpace(gjson.GetBytes(originalBody, "previous_response_id").String()) != "",
+		"final_previous_response_present":   strings.TrimSpace(gjson.GetBytes(finalBody, "previous_response_id").String()) != "",
+	}
+	if result != nil {
+		fields["model"] = strings.TrimSpace(result.Model)
+		fields["upstream_model"] = strings.TrimSpace(firstNonEmptyString(result.UpstreamModel, gjson.GetBytes(finalBody, "model").String()))
+		fields["usage_input_tokens"] = result.Usage.InputTokens
+		fields["usage_cache_read_tokens"] = result.Usage.CacheReadInputTokens
+		fields["usage_output_tokens"] = result.Usage.OutputTokens
+	} else {
+		fields["model"] = strings.TrimSpace(gjson.GetBytes(originalBody, "model").String())
+		fields["upstream_model"] = strings.TrimSpace(gjson.GetBytes(finalBody, "model").String())
+	}
+
+	logger.WriteSinkEvent("info", "audit.openai_codex_compat_fallback", "OpenAI Codex compat fallback", fields)
+}
+
+func classifyOpenAICodexCompatFallback(statusCode int, upstreamCode, upstreamMsg string, upstreamBody []byte) string {
+	if statusCode != http.StatusBadRequest {
+		return ""
+	}
+	if strings.EqualFold(strings.TrimSpace(upstreamCode), "invalid_encrypted_content") {
+		return ""
+	}
+
+	msg := strings.ToLower(strings.TrimSpace(upstreamMsg))
+	if msg == "" {
+		msg = strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(upstreamBody)))
+	}
+	if msg == "" {
+		msg = strings.ToLower(strings.TrimSpace(string(upstreamBody)))
+	}
+	if msg == "" {
+		return ""
+	}
+
+	hasSchemaSignal := strings.Contains(msg, "invalid schema") ||
+		strings.Contains(msg, "invalid field") ||
+		strings.Contains(msg, "unknown field") ||
+		strings.Contains(msg, "unknown parameter") ||
+		strings.Contains(msg, "unsupported field") ||
+		strings.Contains(msg, "unsupported parameter") ||
+		strings.Contains(msg, "must be set")
+
+	switch {
+	case strings.Contains(msg, "item_reference"):
+		if hasSchemaSignal || strings.Contains(msg, "missing") {
+			return "item_reference"
+		}
+	case strings.Contains(msg, "tool_call_id"), strings.Contains(msg, "call_id"), strings.Contains(msg, "function_call_output"):
+		if hasSchemaSignal || strings.Contains(msg, "missing") || strings.Contains(msg, "invalid") {
+			return "call_id"
+		}
+	case strings.Contains(msg, "tool context"):
+		return "tool_context"
+	case strings.Contains(msg, "role") && strings.Contains(msg, "system"):
+		if hasSchemaSignal || strings.Contains(msg, "unsupported") || strings.Contains(msg, "invalid") {
+			return "system_role"
+		}
+	case strings.Contains(msg, "input") && hasSchemaSignal:
+		return "input_schema"
+	}
+
+	return ""
+}
+
+func remarshalOpenAIOAuthCompatFallbackBody(
+	reqBody map[string]any,
+	promptCacheKey string,
+	fallbackReason string,
+) ([]byte, codexTransformResult, string, error) {
+	codexResult := applyCodexOAuthTransformWithInputModeAndFallbackReason(
+		reqBody,
+		false,
+		false,
+		codexTransformInputModeStrict,
+		fallbackReason,
+	)
+	trimmedPromptCacheKey := strings.TrimSpace(promptCacheKey)
+	if codexResult.PromptCacheKey != "" {
+		trimmedPromptCacheKey = codexResult.PromptCacheKey
+	} else if trimmedPromptCacheKey != "" {
+		if existing, ok := reqBody["prompt_cache_key"].(string); !ok || strings.TrimSpace(existing) == "" {
+			reqBody["prompt_cache_key"] = trimmedPromptCacheKey
+			codexResult.Modified = true
+		}
+	}
+	body, err := marshalOpenAIResponsesRequestBodyOrdered(reqBody)
+	if err != nil {
+		return nil, codexResult, trimmedPromptCacheKey, err
+	}
+	return body, codexResult, trimmedPromptCacheKey, nil
 }
 
 func logOpenAIInstructionsRequiredDebug(
@@ -2087,6 +2316,8 @@ func (s *OpenAIGatewayService) handleFailoverSideEffects(ctx context.Context, re
 // Forward forwards request to OpenAI API
 func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (*OpenAIForwardResult, error) {
 	startTime := time.Now()
+	clearOpenAICodexCompatContext(c)
+	codexCompatFallbackState := openAICodexCompatFallbackState{}
 
 	restrictionResult := s.detectCodexClientRestriction(c, account)
 	apiKeyID := getAPIKeyIDFromContext(c)
@@ -2328,7 +2559,14 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 
 	if account.Type == AccountTypeOAuth {
-		codexResult := applyCodexOAuthTransform(reqBody, isCodexCLI, isOpenAIResponsesCompactPath(c))
+		codexInputMode := codexTransformInputModeStrict
+		if wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
+			codexInputMode = codexTransformInputModePreservePrefix
+		}
+		codexResult := applyCodexOAuthTransformWithInputMode(reqBody, isCodexCLI, isOpenAIResponsesCompactPath(c), codexInputMode)
+		if c != nil {
+			c.Set(openAICodexTransformObsKey, codexResult.Observability)
+		}
 		if codexResult.Modified {
 			bodyModified = true
 			disablePatch()
@@ -2665,6 +2903,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 
 	httpInvalidEncryptedContentRetryTried := false
+	httpCodexCompatRetryTried := false
 	for {
 		// Build upstream request
 		upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, reqStream)
@@ -2702,6 +2941,19 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					"message": "Upstream request failed",
 				},
 			})
+			emitOpenAICodexCompatFallbackEvent(
+				ctx,
+				c,
+				account,
+				originalBody,
+				body,
+				codexCompatFallbackState,
+				"request_error",
+				0,
+				"",
+				safeErr,
+				nil,
+			)
 			return nil, fmt.Errorf("upstream request failed: %s", safeErr)
 		}
 
@@ -2737,7 +2989,80 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				}
 				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Skip non-WSv2 invalid_encrypted_content retry because encrypted reasoning items are missing (account: %s)", account.Name)
 			}
+			if !httpCodexCompatRetryTried && account.Type == AccountTypeOAuth {
+				if fallbackReason := classifyOpenAICodexCompatFallback(resp.StatusCode, upstreamCode, upstreamMsg, respBody); fallbackReason != "" {
+					httpCodexCompatRetryTried = true
+					codexCompatFallbackState.Triggered = true
+					codexCompatFallbackState.Reason = fallbackReason
+					if c != nil {
+						c.Set(openAICodexCompatFallbackKey, true)
+						c.Set(openAICodexCompatFallbackReasonKey, fallbackReason)
+					}
+					codexResult := applyCodexOAuthTransformWithInputModeAndFallbackReason(
+						reqBody,
+						isCodexCLI,
+						isOpenAIResponsesCompactPath(c),
+						codexTransformInputModeStrict,
+						fallbackReason,
+					)
+					if c != nil {
+						c.Set(openAICodexTransformObsKey, codexResult.Observability)
+					}
+					codexCompatFallbackState.BodyModified = codexResult.Modified
+					if codexResult.Modified {
+						body, err = marshalOpenAIResponsesRequestBodyOrdered(reqBody)
+						if err != nil {
+							return nil, fmt.Errorf("serialize codex compat fallback body: %w", err)
+						}
+						if account.Type == AccountTypeOAuth && isOpenAIResponsesCompactPath(c) {
+							normalizedBody, normalized, normErr := normalizeOpenAICompactRequestBody(body)
+							if normErr != nil {
+								return nil, normErr
+							}
+							if normalized {
+								body = normalizedBody
+							}
+							reqStream = gjson.GetBytes(body, "stream").Bool()
+						}
+						setOpsUpstreamRequestBody(c, body)
+						logger.LegacyPrintf(
+							"service.openai_gateway",
+							"[OpenAI] Retrying non-WSv2 request once with Codex compat fallback (account: %s, reason: %s)",
+							account.Name,
+							fallbackReason,
+						)
+						continue
+					}
+					emitOpenAICodexCompatFallbackEvent(
+						ctx,
+						c,
+						account,
+						originalBody,
+						body,
+						codexCompatFallbackState,
+						"noop",
+						resp.StatusCode,
+						upstreamCode,
+						upstreamMsg,
+						nil,
+					)
+					codexCompatFallbackState = openAICodexCompatFallbackState{}
+				}
+			}
 			if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
+				emitOpenAICodexCompatFallbackEvent(
+					ctx,
+					c,
+					account,
+					originalBody,
+					body,
+					codexCompatFallbackState,
+					"failover",
+					resp.StatusCode,
+					upstreamCode,
+					upstreamMsg,
+					nil,
+				)
 				upstreamDetail := ""
 				if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
 					maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
@@ -2764,7 +3089,21 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					RetryableOnSameAccount: account.IsPoolMode() && (isPoolModeRetryableStatus(resp.StatusCode) || isOpenAITransientProcessingError(resp.StatusCode, upstreamMsg, respBody)),
 				}
 			}
-			return s.handleErrorResponse(ctx, resp, c, account, body)
+			result, handleErr := s.handleErrorResponse(ctx, resp, c, account, body)
+			emitOpenAICodexCompatFallbackEvent(
+				ctx,
+				c,
+				account,
+				originalBody,
+				body,
+				codexCompatFallbackState,
+				"http_error",
+				resp.StatusCode,
+				upstreamCode,
+				upstreamMsg,
+				result,
+			)
+			return result, handleErr
 		}
 		defer func() { _ = resp.Body.Close() }()
 
@@ -2812,6 +3151,19 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			FirstTokenMs:    firstTokenMs,
 		}
 		emitOpenAICacheProbeEvent(ctx, c, account, originalBody, body, result, promptCacheKey, false)
+		emitOpenAICodexCompatFallbackEvent(
+			ctx,
+			c,
+			account,
+			originalBody,
+			body,
+			codexCompatFallbackState,
+			"success",
+			http.StatusOK,
+			"",
+			"",
+			result,
+		)
 		return result, nil
 	}
 }

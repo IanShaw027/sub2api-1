@@ -263,6 +263,223 @@ func TestOpenAIGatewayService_GenerateSessionHash_ContentFallback(t *testing.T) 
 	require.NotEqual(t, hash, hashDifferent, "different content should produce different hash")
 }
 
+func TestClassifyOpenAICodexCompatFallback(t *testing.T) {
+	t.Run("call_id schema mismatch", func(t *testing.T) {
+		reason := classifyOpenAICodexCompatFallback(
+			http.StatusBadRequest,
+			"",
+			"Invalid schema for field input[1].call_id",
+			nil,
+		)
+		require.Equal(t, "call_id", reason)
+	})
+
+	t.Run("item_reference schema mismatch", func(t *testing.T) {
+		reason := classifyOpenAICodexCompatFallback(
+			http.StatusBadRequest,
+			"",
+			"Invalid schema for field input[0].item_reference",
+			nil,
+		)
+		require.Equal(t, "item_reference", reason)
+	})
+
+	t.Run("invalid encrypted content excluded", func(t *testing.T) {
+		reason := classifyOpenAICodexCompatFallback(
+			http.StatusBadRequest,
+			"invalid_encrypted_content",
+			"invalid encrypted content",
+			nil,
+		)
+		require.Empty(t, reason)
+	})
+
+	t.Run("generic bad request not retried", func(t *testing.T) {
+		reason := classifyOpenAICodexCompatFallback(
+			http.StatusBadRequest,
+			"",
+			"Bad request",
+			nil,
+		)
+		require.Empty(t, reason)
+	})
+}
+
+func TestOpenAIGatewayService_Forward_RetriesCodexCompatFallbackOnce(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "codex-tui/0.125.0")
+	c.Request.Header.Set("Accept", "text/event-stream")
+
+	upstream := &httpUpstreamSequenceRecorder{
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"Invalid schema for field input[1].call_id"}}`)),
+			},
+			{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid-codex-fallback"}},
+				Body: io.NopCloser(strings.NewReader(
+					"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_codex_fallback\",\"model\":\"gpt-5.4\",\"usage\":{\"input_tokens\":3,\"output_tokens\":2,\"input_tokens_details\":{\"cached_tokens\":1}}}}\n\n",
+				)),
+			},
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Gateway.OpenAIWS.Enabled = false
+	svc := &OpenAIGatewayService{
+		cfg:          cfg,
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          1,
+		Name:        "oauth-codex",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	body := []byte(`{"model":"gpt-5.4","stream":true,"input":[{"type":"item_reference","id":"call_1"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`)
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 2, upstream.callCount)
+	require.Equal(t, "call_1", gjson.GetBytes(upstream.bodies[0], "input.0.id").String())
+	require.Equal(t, "call_1", gjson.GetBytes(upstream.bodies[0], "input.1.call_id").String())
+	require.Equal(t, "fc1", gjson.GetBytes(upstream.bodies[1], "input.0.id").String())
+	require.Equal(t, "fc1", gjson.GetBytes(upstream.bodies[1], "input.1.call_id").String())
+	require.True(t, c.GetBool(openAICodexCompatFallbackKey))
+	require.Equal(t, "call_id", c.GetString(openAICodexCompatFallbackReasonKey))
+}
+
+func TestOpenAIGatewayService_Forward_CodexCompatFallbackStopsAfterOneRetry(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "codex-tui/0.125.0")
+	c.Request.Header.Set("Accept", "text/event-stream")
+
+	upstream := &httpUpstreamSequenceRecorder{
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"Invalid schema for field input[1].call_id"}}`)),
+			},
+			{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"Invalid schema for field input[1].call_id"}}`)),
+			},
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Gateway.OpenAIWS.Enabled = false
+	svc := &OpenAIGatewayService{
+		cfg:          cfg,
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          2,
+		Name:        "oauth-codex-once",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	body := []byte(`{"model":"gpt-5.4","stream":true,"input":[{"type":"item_reference","id":"call_1"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`)
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, 2, upstream.callCount)
+	require.Equal(t, "call_1", gjson.GetBytes(upstream.bodies[0], "input.1.call_id").String())
+	require.Equal(t, "fc1", gjson.GetBytes(upstream.bodies[1], "input.1.call_id").String())
+}
+
+func TestOpenAIGatewayService_Forward_CodexCompatFallbackDropsOrdinaryIDsForInputSchema(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "codex-tui/0.125.0")
+	c.Request.Header.Set("Accept", "text/event-stream")
+
+	upstream := &httpUpstreamSequenceRecorder{
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"Invalid schema for field input[0].id"}}`)),
+			},
+			{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid-codex-id-fallback"}},
+				Body: io.NopCloser(strings.NewReader(
+					"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_codex_id_fallback\",\"model\":\"gpt-5.4\",\"usage\":{\"input_tokens\":3,\"output_tokens\":2,\"input_tokens_details\":{\"cached_tokens\":0}}}}\n\n",
+				)),
+			},
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Gateway.OpenAIWS.Enabled = false
+	svc := &OpenAIGatewayService{
+		cfg:          cfg,
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          3,
+		Name:        "oauth-codex-input-schema",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	body := []byte(`{"model":"gpt-5.4","stream":true,"input":[{"type":"message","id":"msg_123","role":"user","content":"hello"}]}`)
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 2, upstream.callCount)
+	require.Equal(t, "msg_123", gjson.GetBytes(upstream.bodies[0], "input.0.id").String())
+	require.False(t, gjson.GetBytes(upstream.bodies[1], "input.0.id").Exists())
+	require.True(t, c.GetBool(openAICodexCompatFallbackKey))
+	require.Equal(t, "input_schema", c.GetString(openAICodexCompatFallbackReasonKey))
+}
+
 func TestOpenAIGatewayService_Forward_OAuthOrderedMarshalPreservesPromptCacheFriendlyPrefix(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
