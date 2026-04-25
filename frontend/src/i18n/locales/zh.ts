@@ -1005,11 +1005,23 @@ export default {
     linkCopied: '邀请链接已复制',
     loadFailed: '加载邀请返利数据失败',
     transferFailed: '转入余额失败',
-    stats: {
-      invitedUsers: '邀请人数',
-      availableQuota: '可转返利额度',
-      totalQuota: '历史返利额度'
-    },
+	    stats: {
+	      invitedUsers: '邀请人数',
+	      rebatedInvitees: '已返利人数',
+	      remainingSlots: '剩余可返利人数',
+	      unlimited: '不限',
+	      availableQuota: '可转返利额度',
+	      totalQuota: '历史返利额度'
+	    },
+	    policy: {
+	      title: '最新动态政策',
+	      rate: '被邀请用户充值余额后，邀请人按 {rate} 获得返利额度。',
+	      capLimited: '每位邀请人累计最多可获得 {amount} 返利额度。',
+	      capUnlimited: '每位邀请人的累计返利额度暂无上限。',
+	      inviteeLimited: '每位邀请人最多可纳入 {count} 位已返利消费用户；被邀请用户首次产生有效返利消费即占用 1 个名额。',
+	      inviteeUnlimited: '已返利消费用户人数暂无上限。',
+	      signupBonus: '新用户通过邀请链接注册成功可获得 {amount} 余额奖励。'
+	    },
     transfer: {
       title: '返利额度转余额',
       description: '将当前可用返利额度一键转入账户余额',
@@ -1021,12 +1033,27 @@ export default {
     invitees: {
       title: '已邀请用户',
       empty: '暂无邀请记录',
-      columns: {
-        email: '邮箱',
-        username: '用户名',
-        joinedAt: '注册时间'
-      }
-    },
+	      columns: {
+	        email: '邮箱',
+	        username: '用户名',
+	        joinedAt: '注册时间',
+	        consumed: '用户消费',
+	        rebate: '返利额度',
+	        details: '明细'
+	      },
+	      viewDetails: '查看明细'
+	    },
+	    ledger: {
+	      title: '消费返利明细',
+	      empty: '暂无返利明细',
+	      loadFailed: '加载返利明细失败',
+	      columns: {
+	        time: '时间',
+	        consumed: '消费',
+	        rate: '比例',
+	        rebate: '返利额度'
+	      }
+	    },
     tips: {
       title: '使用说明',
       line1: '将邀请码或邀请链接分享给新用户。',
@@ -5054,6 +5081,26 @@ export default {
         payment: "支付设置",
       },
       features: {
+        affiliate: {
+          title: "邀请返利",
+          description: "控制用户邀请返利功能、返利上限、可返利人数和新用户邀请奖励。",
+          enabled: "启用邀请返利",
+          enabledHint: "关闭后用户侧邀请返利菜单隐藏，邀请链接不产生绑定、奖励和返利。",
+          rebateRate: "邀请返利比例",
+          rebateRateHint: "被邀请用户充值余额后返给邀请人的比例（0-100）。",
+          rebateCap: "每人返利上限",
+          rebateCapHint: "每位邀请人累计最多可获得多少返利额度，0 表示不限制。",
+          inviteeLimit: "最多可返利人数",
+          inviteeLimitHint: "每位邀请人最多可纳入多少位已返利消费用户，首次有效返利消费即占 1 个名额，0 表示不限制。",
+          signupBonus: "邀请注册奖励",
+          signupBonusHint: "新用户通过邀请链接注册成功后获得的余额奖励，0 表示不奖励。",
+        },
+        ticket: {
+          title: "工单模块",
+          description: "控制用户端和管理端工单入口。默认关闭，开启后用户可提交工单，管理员可处理工单。",
+          enabled: "启用工单模块",
+          enabledHint: "关闭后用户侧和管理侧工单菜单隐藏，工单页面会重定向到仪表盘。",
+        },
         channelMonitor: {
           title: "渠道监控",
           description: "定期对配置的渠道发起健康检查，向用户展示可用性与延迟。关闭后调度器停止扫描，用户端列表为空。",

@@ -520,7 +520,7 @@ async function handleVerify(): Promise<void> {
       authStore.clearPendingAuthSession?.()
     } else {
       // Register with verification code
-      await authStore.register({
+      const registerResponse = await authStore.register({
         email: email.value,
         password: password.value,
         verify_code: verifyCode.value.trim(),
@@ -529,13 +529,14 @@ async function handleVerify(): Promise<void> {
         invitation_code: invitationCode.value || undefined,
         ...(affCode.value ? { aff_code: affCode.value } : {})
       })
+      const successMessages = registerResponse.messages?.length
+        ? registerResponse.messages.join('\n')
+        : t('auth.accountCreatedSuccess', { siteName: siteName.value })
+      appStore.showSuccess(successMessages)
     }
 
     // Clear session data
     sessionStorage.removeItem('register_data')
-
-    // Show success toast
-    appStore.showSuccess(t('auth.accountCreatedSuccess', { siteName: siteName.value }))
 
     // Redirect to dashboard
     await router.push(pendingRedirect.value || '/dashboard')

@@ -8,11 +8,23 @@
       </div>
 
       <template v-else-if="detail">
-        <div class="grid gap-4 md:grid-cols-3">
+        <div class="grid gap-4 md:grid-cols-5">
           <div class="card p-5">
             <p class="text-sm text-gray-500 dark:text-dark-400">{{ t('affiliate.stats.invitedUsers') }}</p>
             <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
-              {{ formatCount(detail.aff_count) }}
+              {{ formatCount(detail.invited_count ?? detail.aff_count) }}
+            </p>
+          </div>
+          <div class="card p-5">
+            <p class="text-sm text-gray-500 dark:text-dark-400">{{ t('affiliate.stats.rebatedInvitees') }}</p>
+            <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
+              {{ formatCount(detail.rebated_invitee_count || 0) }}
+            </p>
+          </div>
+          <div class="card p-5">
+            <p class="text-sm text-gray-500 dark:text-dark-400">{{ t('affiliate.stats.remainingSlots') }}</p>
+            <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
+              {{ detail.remaining_rebate_slots == null ? t('affiliate.stats.unlimited') : formatCount(detail.remaining_rebate_slots) }}
             </p>
           </div>
           <div class="card p-5">
@@ -58,11 +70,12 @@
           </div>
 
           <div class="mt-5 rounded-xl border border-primary-200 bg-primary-50 p-4 dark:border-primary-900/40 dark:bg-primary-900/20">
-            <p class="text-sm font-medium text-primary-800 dark:text-primary-200">{{ t('affiliate.tips.title') }}</p>
+            <p class="text-sm font-medium text-primary-800 dark:text-primary-200">{{ t('affiliate.policy.title') }}</p>
             <ul class="mt-2 space-y-1 text-sm text-primary-700 dark:text-primary-300">
-              <li>1. {{ t('affiliate.tips.line1') }}</li>
-              <li>2. {{ t('affiliate.tips.line2') }}</li>
-              <li>3. {{ t('affiliate.tips.line3') }}</li>
+              <li>{{ t('affiliate.policy.rate', { rate: formatPercent(detail.policy.rebate_rate) }) }}</li>
+              <li>{{ detail.policy.rebate_cap > 0 ? t('affiliate.policy.capLimited', { amount: formatCurrency(detail.policy.rebate_cap) }) : t('affiliate.policy.capUnlimited') }}</li>
+              <li>{{ detail.policy.invitee_limit > 0 ? t('affiliate.policy.inviteeLimited', { count: detail.policy.invitee_limit }) : t('affiliate.policy.inviteeUnlimited') }}</li>
+              <li v-if="detail.policy.signup_bonus > 0">{{ t('affiliate.policy.signupBonus', { amount: formatCurrency(detail.policy.signup_bonus) }) }}</li>
             </ul>
           </div>
         </div>
@@ -100,6 +113,9 @@
                   <th class="px-3 py-2 font-medium">{{ t('affiliate.invitees.columns.email') }}</th>
                   <th class="px-3 py-2 font-medium">{{ t('affiliate.invitees.columns.username') }}</th>
                   <th class="px-3 py-2 font-medium">{{ t('affiliate.invitees.columns.joinedAt') }}</th>
+                  <th class="px-3 py-2 font-medium">{{ t('affiliate.invitees.columns.consumed') }}</th>
+                  <th class="px-3 py-2 font-medium">{{ t('affiliate.invitees.columns.rebate') }}</th>
+                  <th class="px-3 py-2 font-medium">{{ t('affiliate.invitees.columns.details') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -111,9 +127,47 @@
                   <td class="px-3 py-3 text-gray-900 dark:text-white">{{ item.email || '-' }}</td>
                   <td class="px-3 py-3 text-gray-700 dark:text-gray-300">{{ item.username || '-' }}</td>
                   <td class="px-3 py-3 text-gray-700 dark:text-gray-300">{{ formatDateTime(item.created_at) || '-' }}</td>
+                  <td class="px-3 py-3 text-gray-700 dark:text-gray-300">{{ formatCurrency(item.total_consumed || 0) }}</td>
+                  <td class="px-3 py-3 text-gray-700 dark:text-gray-300">{{ formatCurrency(item.total_rebate || 0) }}</td>
+                  <td class="px-3 py-3">
+                    <button class="btn btn-secondary btn-sm" @click="openLedger(item.user_id)">
+                      {{ t('affiliate.invitees.viewDetails') }}
+                    </button>
+                  </td>
                 </tr>
               </tbody>
             </table>
+          </div>
+        </div>
+
+        <div v-if="ledgerOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="ledgerOpen = false">
+          <div class="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl dark:bg-dark-900">
+            <div class="mb-4 flex items-center justify-between">
+              <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('affiliate.ledger.title') }}</h3>
+              <button class="btn btn-secondary btn-sm" @click="ledgerOpen = false">{{ t('common.close') }}</button>
+            </div>
+            <div v-if="ledgerLoading" class="py-8 text-center text-sm text-gray-500">{{ t('common.loading') }}</div>
+            <div v-else-if="ledgerItems.length === 0" class="py-8 text-center text-sm text-gray-500">{{ t('affiliate.ledger.empty') }}</div>
+            <div v-else class="overflow-x-auto">
+              <table class="w-full min-w-[620px] text-left text-sm">
+                <thead>
+                  <tr class="border-b border-gray-200 text-gray-500 dark:border-dark-700 dark:text-dark-400">
+                    <th class="px-3 py-2">{{ t('affiliate.ledger.columns.time') }}</th>
+                    <th class="px-3 py-2">{{ t('affiliate.ledger.columns.consumed') }}</th>
+                    <th class="px-3 py-2">{{ t('affiliate.ledger.columns.rate') }}</th>
+                    <th class="px-3 py-2">{{ t('affiliate.ledger.columns.rebate') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in ledgerItems" :key="item.id" class="border-b border-gray-100 last:border-0 dark:border-dark-800">
+                    <td class="px-3 py-3">{{ formatDateTime(item.created_at) }}</td>
+                    <td class="px-3 py-3">{{ formatCurrency(item.base_amount) }}</td>
+                    <td class="px-3 py-3">{{ item.rebate_rate }}%</td>
+                    <td class="px-3 py-3">{{ formatCurrency(item.amount) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </template>
@@ -127,7 +181,7 @@ import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import userAPI from '@/api/user'
-import type { UserAffiliateDetail } from '@/types'
+import type { AffiliateLedgerEntry, UserAffiliateDetail } from '@/types'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { useClipboard } from '@/composables/useClipboard'
@@ -142,6 +196,9 @@ const { copyToClipboard } = useClipboard()
 const loading = ref(true)
 const transferring = ref(false)
 const detail = ref<UserAffiliateDetail | null>(null)
+const ledgerOpen = ref(false)
+const ledgerLoading = ref(false)
+const ledgerItems = ref<AffiliateLedgerEntry[]>([])
 
 const inviteLink = computed(() => {
   if (!detail.value) return ''
@@ -151,6 +208,10 @@ const inviteLink = computed(() => {
 
 function formatCount(value: number): string {
   return value.toLocaleString()
+}
+
+function formatPercent(value: number): string {
+  return `${Number(value || 0).toFixed(2)}%`
 }
 
 async function loadAffiliateDetail(silent = false): Promise<void> {
@@ -192,6 +253,19 @@ async function transferQuota(): Promise<void> {
     appStore.showError(extractApiErrorMessage(error, t('affiliate.transferFailed')))
   } finally {
     transferring.value = false
+  }
+}
+
+async function openLedger(inviteeId: number): Promise<void> {
+  ledgerOpen.value = true
+  ledgerLoading.value = true
+  ledgerItems.value = []
+  try {
+    ledgerItems.value = await userAPI.getAffiliateInviteeLedger(inviteeId)
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('affiliate.ledger.loadFailed')))
+  } finally {
+    ledgerLoading.value = false
   }
 }
 

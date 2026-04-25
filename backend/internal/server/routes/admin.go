@@ -4,6 +4,7 @@ package routes
 import (
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -13,6 +14,7 @@ func RegisterAdminRoutes(
 	v1 *gin.RouterGroup,
 	h *handler.Handlers,
 	adminAuth middleware.AdminAuthMiddleware,
+	settingService *service.SettingService,
 ) {
 	admin := v1.Group("/admin")
 	admin.Use(gin.HandlerFunc(adminAuth))
@@ -68,7 +70,7 @@ func RegisterAdminRoutes(
 		// 订阅管理
 		registerSubscriptionRoutes(admin, h)
 
-		registerTicketRoutes(admin, h)
+		registerTicketRoutes(admin, h, settingService)
 
 		// 使用记录管理
 		registerUsageRoutes(admin, h)
@@ -305,8 +307,9 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	}
 }
 
-func registerTicketRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+func registerTicketRoutes(admin *gin.RouterGroup, h *handler.Handlers, settingService *service.SettingService) {
 	tickets := admin.Group("/tickets")
+	tickets.Use(middleware.TicketFeatureGuard(settingService))
 	{
 		tickets.GET("", h.Admin.Ticket.List)
 		tickets.GET("/reply-templates", h.Admin.Ticket.ListReplyTemplates)

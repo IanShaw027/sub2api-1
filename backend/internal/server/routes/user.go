@@ -25,8 +25,13 @@ func RegisterUserRoutes(
 			user.GET("/profile", h.User.GetProfile)
 			user.PUT("/password", h.User.ChangePassword)
 			user.PUT("", h.User.UpdateProfile)
-			user.GET("/aff", h.User.GetAffiliate)
-			user.POST("/aff/transfer", h.User.TransferAffiliateQuota)
+			aff := user.Group("/aff")
+			aff.Use(middleware.AffiliateFeatureGuard(settingService))
+			{
+				aff.GET("", h.User.GetAffiliate)
+				aff.GET("/invitees/:id/ledger", h.User.GetAffiliateInviteeLedger)
+				aff.POST("/transfer", h.User.TransferAffiliateQuota)
+			}
 			user.POST("/account-bindings/email/send-code", h.User.SendEmailBindingCode)
 			user.POST("/account-bindings/email", h.User.BindEmailIdentity)
 			user.DELETE("/account-bindings/:provider", h.User.UnbindIdentity)
@@ -97,6 +102,7 @@ func RegisterUserRoutes(
 		}
 
 		tickets := authenticated.Group("/tickets")
+		tickets.Use(middleware.TicketFeatureGuard(settingService))
 		{
 			tickets.GET("", h.Ticket.List)
 			tickets.POST("", h.Ticket.Create)

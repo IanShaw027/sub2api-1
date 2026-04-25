@@ -60,6 +60,9 @@ type User struct {
 
 	APIKeys       []APIKey
 	Subscriptions []UserSubscription
+
+	// RuntimeMessages are transient notices collected during the current auth flow.
+	RuntimeMessages []string
 }
 
 func (u *User) IsAdmin() bool {

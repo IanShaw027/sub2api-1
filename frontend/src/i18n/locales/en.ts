@@ -1045,11 +1045,23 @@ export default {
     linkCopied: 'Invite link copied',
     loadFailed: 'Failed to load affiliate data',
     transferFailed: 'Failed to transfer affiliate quota',
-    stats: {
-      invitedUsers: 'Invited Users',
-      availableQuota: 'Available Rebate Quota',
-      totalQuota: 'Historical Rebate Quota'
-    },
+	    stats: {
+	      invitedUsers: 'Invited Users',
+	      rebatedInvitees: 'Rebated Invitees',
+	      remainingSlots: 'Remaining Rebate Slots',
+	      unlimited: 'Unlimited',
+	      availableQuota: 'Available Rebate Quota',
+	      totalQuota: 'Historical Rebate Quota'
+	    },
+	    policy: {
+	      title: 'Latest Dynamic Policy',
+	      rate: 'When an invited user recharges balance, the inviter receives rebate quota at {rate}.',
+	      capLimited: 'Each inviter can earn up to {amount} total rebate quota.',
+	      capUnlimited: 'There is no cumulative rebate quota cap per inviter.',
+	      inviteeLimited: 'Each inviter can have up to {count} rebated spending invitees; an invitee consumes one slot when their first effective rebate spend occurs.',
+	      inviteeUnlimited: 'There is no limit on rebated spending invitees.',
+	      signupBonus: 'A new user registering through an invite link receives {amount} balance bonus.'
+	    },
     transfer: {
       title: 'Transfer Rebate Quota',
       description: 'Move available rebate quota into your account balance',
@@ -1061,12 +1073,27 @@ export default {
     invitees: {
       title: 'Invited Users',
       empty: 'No invited users yet',
-      columns: {
-        email: 'Email',
-        username: 'Username',
-        joinedAt: 'Joined At'
-      }
-    },
+	      columns: {
+	        email: 'Email',
+	        username: 'Username',
+	        joinedAt: 'Joined At',
+	        consumed: 'User Spend',
+	        rebate: 'Rebate Quota',
+	        details: 'Details'
+	      },
+	      viewDetails: 'Details'
+	    },
+	    ledger: {
+	      title: 'Spend Rebate Details',
+	      empty: 'No rebate details yet',
+	      loadFailed: 'Failed to load rebate details',
+	      columns: {
+	        time: 'Time',
+	        consumed: 'Spend',
+	        rate: 'Rate',
+	        rebate: 'Rebate Quota'
+	      }
+	    },
     tips: {
       title: 'How It Works',
       line1: 'Share your affiliate code or invite link with new users.',
@@ -5109,6 +5136,26 @@ export default {
         payment: "Payment",
       },
       features: {
+        affiliate: {
+          title: "Affiliate Rebates",
+          description: "Control affiliate rebates, rebate cap, eligible invitee slots, and invited-user signup bonus.",
+          enabled: "Enable Affiliate Rebates",
+          enabledHint: "When off, the user menu is hidden and affiliate links do not bind, reward, or rebate.",
+          rebateRate: "Rebate Rate",
+          rebateRateHint: "Percentage credited to the inviter after an invited user recharges balance (0-100).",
+          rebateCap: "Per-Inviter Rebate Cap",
+          rebateCapHint: "Maximum cumulative rebate quota each inviter can earn. 0 means unlimited.",
+          inviteeLimit: "Max Rebated Invitees",
+          inviteeLimitHint: "Maximum invited users who can count for rebates. First effective rebate spend consumes one slot. 0 means unlimited.",
+          signupBonus: "Invited Signup Bonus",
+          signupBonusHint: "Balance granted to a new user after registering through an affiliate link. 0 means disabled.",
+        },
+        ticket: {
+          title: "Ticket Module",
+          description: "Controls user and admin ticket entry points. Disabled by default; enable it to let users submit tickets and admins process them.",
+          enabled: "Enable Tickets",
+          enabledHint: "When off, ticket menus are hidden and ticket pages redirect to the dashboard.",
+        },
         channelMonitor: {
           title: "Channel Monitor",
           description: "Periodically probe configured channels and surface availability / latency to users. Turning it off stops the scheduler and returns an empty list on the user page.",

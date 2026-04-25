@@ -410,6 +410,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyPromoCodeEnabled,
 		SettingKeyPasswordResetEnabled,
 		SettingKeyInvitationCodeEnabled,
+		SettingKeyAffiliateEnabled,
 		SettingKeyTotpEnabled,
 		SettingKeyTurnstileEnabled,
 		SettingKeyTurnstileSiteKey,
@@ -447,6 +448,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyWeChatConnectFrontendRedirectURL,
 		SettingKeyBackendModeEnabled,
 		SettingPaymentEnabled,
+		SettingKeyTicketEnabled,
 		SettingKeyOIDCConnectEnabled,
 		SettingKeyOIDCConnectProviderName,
 		SettingKeyBalanceLowNotifyEnabled,
@@ -533,6 +535,8 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		WeChatOAuthMobileEnabled:         weChatMobileEnabled,
 		BackendModeEnabled:               settings[SettingKeyBackendModeEnabled] == "true",
 		PaymentEnabled:                   settings[SettingPaymentEnabled] == "true",
+		AffiliateEnabled:                 settings[SettingKeyAffiliateEnabled] == "true",
+		TicketEnabled:                    settings[SettingKeyTicketEnabled] == "true",
 		OIDCOAuthEnabled:                 oidcEnabled,
 		OIDCOAuthProviderName:            oidcProviderName,
 		BalanceLowNotifyEnabled:          settings[SettingKeyBalanceLowNotifyEnabled] == "true",
@@ -679,6 +683,8 @@ type PublicSettingsInjectionPayload struct {
 	OIDCOAuthProviderName            string          `json:"oidc_oauth_provider_name"`
 	BackendModeEnabled               bool            `json:"backend_mode_enabled"`
 	PaymentEnabled                   bool            `json:"payment_enabled"`
+	AffiliateEnabled                 bool            `json:"affiliate_enabled"`
+	TicketEnabled                    bool            `json:"ticket_enabled"`
 	Version                          string          `json:"version"`
 	BalanceLowNotifyEnabled          bool            `json:"balance_low_notify_enabled"`
 	AccountQuotaNotifyEnabled        bool            `json:"account_quota_notify_enabled"`
@@ -735,6 +741,8 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		OIDCOAuthProviderName:            settings.OIDCOAuthProviderName,
 		BackendModeEnabled:               settings.BackendModeEnabled,
 		PaymentEnabled:                   settings.PaymentEnabled,
+		AffiliateEnabled:                 settings.AffiliateEnabled,
+		TicketEnabled:                    settings.TicketEnabled,
 		Version:                          s.version,
 		BalanceLowNotifyEnabled:          settings.BalanceLowNotifyEnabled,
 		AccountQuotaNotifyEnabled:        settings.AccountQuotaNotifyEnabled,
@@ -1312,8 +1320,12 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	// 默认配置
 	updates[SettingKeyDefaultConcurrency] = strconv.Itoa(settings.DefaultConcurrency)
 	updates[SettingKeyDefaultBalance] = strconv.FormatFloat(settings.DefaultBalance, 'f', 8, 64)
+	updates[SettingKeyAffiliateEnabled] = strconv.FormatBool(settings.AffiliateEnabled)
 	settings.AffiliateRebateRate = clampAffiliateRebateRate(settings.AffiliateRebateRate)
 	updates[SettingKeyAffiliateRebateRate] = strconv.FormatFloat(settings.AffiliateRebateRate, 'f', 8, 64)
+	updates[SettingKeyAffiliateRebateCap] = strconv.FormatFloat(clampNonNegativeFloat(settings.AffiliateRebateCap), 'f', 8, 64)
+	updates[SettingKeyAffiliateRebateInviteeLimit] = strconv.Itoa(clampNonNegativeInt(settings.AffiliateRebateInviteeLimit))
+	updates[SettingKeyAffiliateSignupBonus] = strconv.FormatFloat(clampNonNegativeFloat(settings.AffiliateSignupBonus), 'f', 8, 64)
 	updates[SettingKeyDefaultUserRPMLimit] = strconv.Itoa(settings.DefaultUserRPMLimit)
 	defaultSubsJSON, err := json.Marshal(settings.DefaultSubscriptions)
 	if err != nil {
@@ -1348,6 +1360,9 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 
 	// Available channels feature switch
 	updates[SettingKeyAvailableChannelsEnabled] = strconv.FormatBool(settings.AvailableChannelsEnabled)
+
+	// Ticket feature switch
+	updates[SettingKeyTicketEnabled] = strconv.FormatBool(settings.TicketEnabled)
 
 	// Claude Code version check
 	updates[SettingKeyMinClaudeCodeVersion] = settings.MinClaudeCodeVersion
@@ -1647,6 +1662,22 @@ func (s *SettingService) IsTotpEnabled(ctx context.Context) bool {
 	return value == "true"
 }
 
+func (s *SettingService) IsTicketEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyTicketEnabled)
+	if err != nil {
+		return false
+	}
+	return value == "true"
+}
+
+func (s *SettingService) IsAffiliateEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyAffiliateEnabled)
+	if err != nil {
+		return false
+	}
+	return value == "true"
+}
+
 // IsTotpEncryptionKeyConfigured 检查 TOTP 加密密钥是否已手动配置
 // 只有手动配置了密钥才允许在管理后台启用 TOTP 功能
 func (s *SettingService) IsTotpEncryptionKeyConfigured() bool {
@@ -1867,7 +1898,12 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyOIDCConnectUserInfoUsernamePath:          "",
 		SettingKeyDefaultConcurrency:                       strconv.Itoa(s.cfg.Default.UserConcurrency),
 		SettingKeyDefaultBalance:                           strconv.FormatFloat(s.cfg.Default.UserBalance, 'f', 8, 64),
+		SettingKeyAffiliateEnabled:                         "false",
 		SettingKeyAffiliateRebateRate:                      strconv.FormatFloat(AffiliateRebateRateDefault, 'f', 8, 64),
+		SettingKeyAffiliateRebateCap:                       strconv.FormatFloat(AffiliateRebateCapDefault, 'f', 8, 64),
+		SettingKeyAffiliateRebateInviteeLimit:              strconv.Itoa(AffiliateRebateInviteeLimitDefault),
+		SettingKeyAffiliateSignupBonus:                     strconv.FormatFloat(AffiliateSignupBonusDefault, 'f', 8, 64),
+		SettingKeyTicketEnabled:                            "false",
 		SettingKeyDefaultUserRPMLimit:                      "0",
 		SettingKeyDefaultSubscriptions:                     "[]",
 		SettingKeyAuthSourceDefaultEmailBalance:            "0",
@@ -2001,6 +2037,11 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	} else {
 		result.AffiliateRebateRate = AffiliateRebateRateDefault
 	}
+	result.AffiliateEnabled = settings[SettingKeyAffiliateEnabled] == "true"
+	result.AffiliateRebateCap = parseNonNegativeFloatSetting(settings[SettingKeyAffiliateRebateCap], AffiliateRebateCapDefault)
+	result.AffiliateRebateInviteeLimit = parseNonNegativeIntSetting(settings[SettingKeyAffiliateRebateInviteeLimit], AffiliateRebateInviteeLimitDefault)
+	result.AffiliateSignupBonus = parseNonNegativeFloatSetting(settings[SettingKeyAffiliateSignupBonus], AffiliateSignupBonusDefault)
+	result.TicketEnabled = settings[SettingKeyTicketEnabled] == "true"
 	result.DefaultSubscriptions = parseDefaultSubscriptions(settings[SettingKeyDefaultSubscriptions])
 
 	// 敏感信息直接返回，方便测试连接时使用
@@ -2237,6 +2278,9 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	// Available channels feature (default: disabled; strict true)
 	result.AvailableChannelsEnabled = settings[SettingKeyAvailableChannelsEnabled] == "true"
 
+	// Ticket feature (default: disabled; strict true)
+	result.TicketEnabled = settings[SettingKeyTicketEnabled] == "true"
+
 	// Claude Code version check
 	result.MinClaudeCodeVersion = settings[SettingKeyMinClaudeCodeVersion]
 	result.MaxClaudeCodeVersion = settings[SettingKeyMaxClaudeCodeVersion]
@@ -2296,6 +2340,36 @@ func clampAffiliateRebateRate(value float64) float64 {
 		return AffiliateRebateRateMax
 	}
 	return value
+}
+
+func clampNonNegativeFloat(value float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+		return 0
+	}
+	return value
+}
+
+func clampNonNegativeInt(value int) int {
+	if value < 0 {
+		return 0
+	}
+	return value
+}
+
+func parseNonNegativeFloatSetting(raw string, fallback float64) float64 {
+	value, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil {
+		return fallback
+	}
+	return clampNonNegativeFloat(value)
+}
+
+func parseNonNegativeIntSetting(raw string, fallback int) int {
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return fallback
+	}
+	return clampNonNegativeInt(value)
 }
 
 func isFalseSettingValue(value string) bool {

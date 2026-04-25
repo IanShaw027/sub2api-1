@@ -20,9 +20,13 @@ const (
 
 // Affiliate rebate settings
 const (
-	AffiliateRebateRateDefault = 20.0
-	AffiliateRebateRateMin     = 0.0
-	AffiliateRebateRateMax     = 100.0
+	AffiliateRebateRateDefault          = 20.0
+	AffiliateRebateRateMin              = 0.0
+	AffiliateRebateRateMax              = 100.0
+	AffiliateRebateCapDefault           = 0.0
+	AffiliateSignupBonusDefault         = 0.0
+	AffiliateRebateInviteeLimitDefault  = 0
+	AffiliateRebateInviteeLimitDisabled = 0
 )
 
 // Platform constants
@@ -94,7 +98,12 @@ const (
 	SettingKeyPasswordResetEnabled             = "password_reset_enabled"              // 是否启用忘记密码功能（需要先开启邮件验证）
 	SettingKeyFrontendURL                      = "frontend_url"                        // 前端基础URL，用于生成邮件中的重置密码链接
 	SettingKeyInvitationCodeEnabled            = "invitation_code_enabled"             // 是否启用邀请码注册
+	SettingKeyAffiliateEnabled                 = "affiliate_enabled"                   // 是否启用邀请返利
 	SettingKeyAffiliateRebateRate              = "affiliate_rebate_rate"               // 邀请返利比例（百分比，0-100）
+	SettingKeyAffiliateRebateCap               = "affiliate_rebate_cap"                // 每个邀请人累计返利上限，0=不限
+	SettingKeyAffiliateRebateInviteeLimit      = "affiliate_rebate_invitee_limit"      // 每个邀请人最多已返利消费人数，0=不限
+	SettingKeyAffiliateSignupBonus             = "affiliate_signup_bonus"              // 通过邀请链接注册的新用户余额奖励
+	SettingKeyTicketEnabled                    = "ticket_enabled"                      // 是否启用工单模块
 
 	// 邮件服务设置
 	SettingKeySMTPHost     = "smtp_host"      // SMTP服务器地址

@@ -112,11 +112,15 @@ type SystemSettings struct {
 	CustomMenuItems             []CustomMenuItem     `json:"custom_menu_items"`
 	CustomEndpoints             []CustomEndpoint     `json:"custom_endpoints"`
 
-	DefaultConcurrency   int                          `json:"default_concurrency"`
-	DefaultBalance       float64                      `json:"default_balance"`
-	AffiliateRebateRate  float64                      `json:"affiliate_rebate_rate"`
-	DefaultUserRPMLimit  int                          `json:"default_user_rpm_limit"`
-	DefaultSubscriptions []DefaultSubscriptionSetting `json:"default_subscriptions"`
+	DefaultConcurrency          int                          `json:"default_concurrency"`
+	DefaultBalance              float64                      `json:"default_balance"`
+	AffiliateEnabled            bool                         `json:"affiliate_enabled"`
+	AffiliateRebateRate         float64                      `json:"affiliate_rebate_rate"`
+	AffiliateRebateCap          float64                      `json:"affiliate_rebate_cap"`
+	AffiliateRebateInviteeLimit int                          `json:"affiliate_rebate_invitee_limit"`
+	AffiliateSignupBonus        float64                      `json:"affiliate_signup_bonus"`
+	DefaultUserRPMLimit         int                          `json:"default_user_rpm_limit"`
+	DefaultSubscriptions        []DefaultSubscriptionSetting `json:"default_subscriptions"`
 
 	// Model fallback configuration
 	EnableModelFallback      bool   `json:"enable_model_fallback"`
@@ -198,6 +202,9 @@ type SystemSettings struct {
 
 	// Available Channels feature switch (user-facing aggregate view)
 	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
+
+	// Ticket feature switch
+	TicketEnabled bool `json:"ticket_enabled"`
 }
 
 type DefaultSubscriptionSetting struct {
@@ -241,6 +248,8 @@ type PublicSettings struct {
 	SoraClientEnabled                bool                 `json:"sora_client_enabled"`
 	BackendModeEnabled               bool                 `json:"backend_mode_enabled"`
 	PaymentEnabled                   bool                 `json:"payment_enabled"`
+	AffiliateEnabled                 bool                 `json:"affiliate_enabled"`
+	TicketEnabled                    bool                 `json:"ticket_enabled"`
 	Version                          string               `json:"version"`
 	BalanceLowNotifyEnabled          bool                 `json:"balance_low_notify_enabled"`
 	AccountQuotaNotifyEnabled        bool                 `json:"account_quota_notify_enabled"`

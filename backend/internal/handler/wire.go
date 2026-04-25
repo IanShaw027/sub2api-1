@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -94,6 +95,21 @@ func ProvideUserHandler(
 	return handler
 }
 
+func ProvideAuthHandler(
+	cfg *config.Config,
+	authService *service.AuthService,
+	userService *service.UserService,
+	settingService *service.SettingService,
+	promoService *service.PromoService,
+	redeemService *service.RedeemService,
+	totpService *service.TotpService,
+	affiliateService *service.AffiliateService,
+) *AuthHandler {
+	handler := NewAuthHandler(cfg, authService, userService, settingService, promoService, redeemService, totpService)
+	handler.SetAffiliateService(affiliateService)
+	return handler
+}
+
 // ProvideHandlers creates the Handlers struct
 func ProvideHandlers(
 	authHandler *AuthHandler,
@@ -140,7 +156,7 @@ func ProvideHandlers(
 // ProviderSet is the Wire provider set for all handlers
 var ProviderSet = wire.NewSet(
 	// Top-level handlers
-	NewAuthHandler,
+	ProvideAuthHandler,
 	ProvideUserHandler,
 	NewAPIKeyHandler,
 	NewUsageHandler,

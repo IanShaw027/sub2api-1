@@ -15,6 +15,7 @@ import type {
   NotifyEmailEntry,
   UserAuthProvider,
   UserAffiliateDetail,
+  AffiliateLedgerEntry,
   AffiliateTransferResponse
 } from '@/types'
 
@@ -180,6 +181,11 @@ export async function getAffiliateDetail(): Promise<UserAffiliateDetail> {
   return data
 }
 
+export async function getAffiliateInviteeLedger(inviteeId: number): Promise<AffiliateLedgerEntry[]> {
+  const { data } = await apiClient.get<{ items: AffiliateLedgerEntry[] }>(`/user/aff/invitees/${inviteeId}/ledger`)
+  return data.items || []
+}
+
 export async function transferAffiliateQuota(): Promise<AffiliateTransferResponse> {
   const { data } = await apiClient.post<AffiliateTransferResponse>('/user/aff/transfer')
   return data
@@ -199,6 +205,7 @@ export const userAPI = {
   buildOAuthBindingStartURL,
   startOAuthBinding,
   getAffiliateDetail,
+  getAffiliateInviteeLedger,
   transferAffiliateQuota
 }
 

@@ -117,7 +117,7 @@
 
               <!-- Key Exists -->
               <div v-else class="space-y-4">
-                <div class="flex items-center justify-between">
+	            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <label
                       class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -2157,31 +2157,6 @@
                   <label
                     class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
                   >
-                    {{ t("admin.settings.defaults.affiliateRebateRate") }}
-                  </label>
-                  <div class="relative">
-                    <input
-                      v-model.number="form.affiliate_rebate_rate"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="100"
-                      class="input pr-8"
-                      placeholder="20"
-                    />
-                    <span
-                      class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
-                      >%</span
-                    >
-                  </div>
-                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                    {{ t("admin.settings.defaults.affiliateRebateRateHint") }}
-                  </p>
-                </div>
-                <div>
-                  <label
-                    class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
-                  >
                     {{ t("admin.settings.defaults.defaultConcurrency") }}
                   </label>
                   <input
@@ -3851,10 +3826,83 @@
         <!-- Tab: Features (功能开关) -->
         <div v-show="activeTab === 'features'" class="space-y-6">
 
-        <div class="card">
-          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
-            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-              {{ t('admin.settings.features.channelMonitor.title') }}
+	        <div class="card">
+	          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+	            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+	              {{ t('admin.settings.features.affiliate.title') }}
+	            </h2>
+	            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+	              {{ t('admin.settings.features.affiliate.description') }}
+	            </p>
+	          </div>
+	          <div class="space-y-5 p-6">
+	            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+	              <div>
+	                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+	                  {{ t('admin.settings.features.affiliate.enabled') }}
+	                </label>
+	                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+	                  {{ t('admin.settings.features.affiliate.enabledHint') }}
+	                </p>
+	              </div>
+	              <Toggle v-model="form.affiliate_enabled" />
+	            </div>
+	            <div v-if="form.affiliate_enabled" class="grid grid-cols-1 gap-6 md:grid-cols-2">
+	              <div>
+	                <label class="input-label">{{ t('admin.settings.features.affiliate.rebateRate') }}</label>
+	                <div class="relative">
+	                  <input v-model.number="form.affiliate_rebate_rate" type="number" step="0.01" min="0" max="100" class="input pr-8" />
+	                  <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">%</span>
+	                </div>
+	                <p class="mt-1 text-xs text-gray-400">{{ t('admin.settings.features.affiliate.rebateRateHint') }}</p>
+	              </div>
+	              <div>
+	                <label class="input-label">{{ t('admin.settings.features.affiliate.rebateCap') }}</label>
+	                <input v-model.number="form.affiliate_rebate_cap" type="number" step="0.01" min="0" class="input" />
+	                <p class="mt-1 text-xs text-gray-400">{{ t('admin.settings.features.affiliate.rebateCapHint') }}</p>
+	              </div>
+	              <div>
+	                <label class="input-label">{{ t('admin.settings.features.affiliate.inviteeLimit') }}</label>
+	                <input v-model.number="form.affiliate_rebate_invitee_limit" type="number" step="1" min="0" class="input" />
+	                <p class="mt-1 text-xs text-gray-400">{{ t('admin.settings.features.affiliate.inviteeLimitHint') }}</p>
+	              </div>
+	              <div>
+	                <label class="input-label">{{ t('admin.settings.features.affiliate.signupBonus') }}</label>
+	                <input v-model.number="form.affiliate_signup_bonus" type="number" step="0.01" min="0" class="input" />
+	                <p class="mt-1 text-xs text-gray-400">{{ t('admin.settings.features.affiliate.signupBonusHint') }}</p>
+	              </div>
+	            </div>
+	          </div>
+	        </div>
+
+	        <div class="card">
+	          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+	            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+	              {{ t('admin.settings.features.ticket.title') }}
+	            </h2>
+	            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+	              {{ t('admin.settings.features.ticket.description') }}
+	            </p>
+	          </div>
+	          <div class="space-y-5 p-6">
+	            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+	              <div>
+	                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+	                  {{ t('admin.settings.features.ticket.enabled') }}
+	                </label>
+	                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+	                  {{ t('admin.settings.features.ticket.enabledHint') }}
+	                </p>
+	              </div>
+	              <Toggle v-model="form.ticket_enabled" />
+	            </div>
+	          </div>
+	        </div>
+
+	        <div class="card">
+	          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+	            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+	              {{ t('admin.settings.features.channelMonitor.title') }}
             </h2>
             <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
               {{ t('admin.settings.features.channelMonitor.description') }}
@@ -3870,7 +3918,7 @@
             </p>
           </div>
           <div class="space-y-5 p-6">
-            <div class="flex items-center justify-between">
+	            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {{ t('admin.settings.features.channelMonitor.enabled') }}
@@ -5058,7 +5106,12 @@ const form = reactive<SettingsForm>({
   totp_enabled: false,
   totp_encryption_key_configured: false,
   default_balance: 0,
+  affiliate_enabled: false,
   affiliate_rebate_rate: 20,
+  affiliate_rebate_cap: 0,
+  affiliate_rebate_invitee_limit: 0,
+  affiliate_signup_bonus: 0,
+  ticket_enabled: false,
   default_concurrency: 1,
   default_subscriptions: [],
   force_email_on_third_party_signup: false,
@@ -5993,10 +6046,15 @@ async function saveSettings() {
       password_reset_enabled: form.password_reset_enabled,
       totp_enabled: form.totp_enabled,
       default_balance: form.default_balance,
+      affiliate_enabled: form.affiliate_enabled,
       affiliate_rebate_rate: Math.min(
         100,
         Math.max(0, Number(form.affiliate_rebate_rate) || 0),
       ),
+      affiliate_rebate_cap: Math.max(0, Number(form.affiliate_rebate_cap) || 0),
+      affiliate_rebate_invitee_limit: Math.max(0, Math.floor(Number(form.affiliate_rebate_invitee_limit) || 0)),
+      affiliate_signup_bonus: Math.max(0, Number(form.affiliate_signup_bonus) || 0),
+      ticket_enabled: form.ticket_enabled,
       default_concurrency: form.default_concurrency,
       default_subscriptions: normalizedDefaultSubscriptions,
       force_email_on_third_party_signup: form.force_email_on_third_party_signup,

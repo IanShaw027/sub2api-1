@@ -313,7 +313,12 @@ export interface SystemSettings {
   totp_encryption_key_configured: boolean; // TOTP 加密密钥是否已配置
   // Default settings
   default_balance: number;
+  affiliate_enabled: boolean;
   affiliate_rebate_rate: number;
+  affiliate_rebate_cap: number;
+  affiliate_rebate_invitee_limit: number;
+  affiliate_signup_bonus: number;
+  ticket_enabled: boolean;
   default_concurrency: number;
   default_user_rpm_limit: number;
   default_subscriptions: DefaultSubscriptionSetting[];
@@ -496,7 +501,12 @@ export interface UpdateSettingsRequest {
   invitation_code_enabled?: boolean;
   totp_enabled?: boolean; // TOTP 双因素认证
   default_balance?: number;
+  affiliate_enabled?: boolean;
   affiliate_rebate_rate?: number;
+  affiliate_rebate_cap?: number;
+  affiliate_rebate_invitee_limit?: number;
+  affiliate_signup_bonus?: number;
+  ticket_enabled?: boolean;
   default_concurrency?: number;
   default_user_rpm_limit?: number;
   default_subscriptions?: DefaultSubscriptionSetting[];

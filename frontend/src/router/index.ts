@@ -204,6 +204,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
+      requiresAffiliate: true,
       title: 'Affiliate',
       titleKey: 'affiliate.title',
       descriptionKey: 'affiliate.description'
@@ -240,6 +241,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
+      requiresTicket: true,
       title: 'Tickets',
       titleKey: 'tickets.title',
       descriptionKey: 'tickets.description'
@@ -252,6 +254,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
+      requiresTicket: true,
       title: 'Create Ticket',
       titleKey: 'tickets.create'
     }
@@ -263,6 +266,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
+      requiresTicket: true,
       title: 'Ticket Detail',
       titleKey: 'tickets.detailTitle'
     }
@@ -498,6 +502,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: true,
+      requiresTicket: true,
       title: 'Ticket Management',
       titleKey: 'admin.tickets.title',
       descriptionKey: 'admin.tickets.description'
@@ -510,6 +515,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: true,
+      requiresTicket: true,
       title: 'Ticket Detail',
       titleKey: 'tickets.detailTitle'
     }
@@ -759,6 +765,24 @@ router.beforeEach((to, _from, next) => {
   if (to.meta.requiresPayment) {
     const paymentEnabled = appStore.cachedPublicSettings?.payment_enabled
     if (!paymentEnabled) {
+      next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+      return
+    }
+  }
+
+  // Check ticket module requirement
+  if (to.meta.requiresTicket) {
+    const ticketEnabled = appStore.cachedPublicSettings?.ticket_enabled
+    if (ticketEnabled === false) {
+      next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+      return
+    }
+  }
+
+  // Check affiliate module requirement
+  if (to.meta.requiresAffiliate) {
+    const affiliateEnabled = appStore.cachedPublicSettings?.affiliate_enabled
+    if (affiliateEnabled === false) {
       next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
       return
     }

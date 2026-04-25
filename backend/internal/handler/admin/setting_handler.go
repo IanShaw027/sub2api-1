@@ -213,7 +213,12 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		CustomEndpoints:                        dto.ParseCustomEndpoints(settings.CustomEndpoints),
 		DefaultConcurrency:                     settings.DefaultConcurrency,
 		DefaultBalance:                         settings.DefaultBalance,
+		AffiliateEnabled:                       settings.AffiliateEnabled,
 		AffiliateRebateRate:                    settings.AffiliateRebateRate,
+		AffiliateRebateCap:                     settings.AffiliateRebateCap,
+		AffiliateRebateInviteeLimit:            settings.AffiliateRebateInviteeLimit,
+		AffiliateSignupBonus:                   settings.AffiliateSignupBonus,
+		TicketEnabled:                          settings.TicketEnabled,
 		DefaultUserRPMLimit:                    settings.DefaultUserRPMLimit,
 		DefaultSubscriptions:                   defaultSubscriptions,
 		EnableModelFallback:                    settings.EnableModelFallback,
@@ -368,7 +373,12 @@ type UpdateSettingsRequest struct {
 	// 默认配置
 	DefaultConcurrency                       int                               `json:"default_concurrency"`
 	DefaultBalance                           float64                           `json:"default_balance"`
+	AffiliateEnabled                         *bool                             `json:"affiliate_enabled"`
 	AffiliateRebateRate                      *float64                          `json:"affiliate_rebate_rate"`
+	AffiliateRebateCap                       *float64                          `json:"affiliate_rebate_cap"`
+	AffiliateRebateInviteeLimit              *int                              `json:"affiliate_rebate_invitee_limit"`
+	AffiliateSignupBonus                     *float64                          `json:"affiliate_signup_bonus"`
+	TicketEnabled                            *bool                             `json:"ticket_enabled"`
 	DefaultUserRPMLimit                      int                               `json:"default_user_rpm_limit"`
 	DefaultSubscriptions                     []dto.DefaultSubscriptionSetting  `json:"default_subscriptions"`
 	AuthSourceDefaultEmailBalance            *float64                          `json:"auth_source_default_email_balance"`
@@ -508,6 +518,27 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	}
 	if affiliateRebateRate > service.AffiliateRebateRateMax {
 		affiliateRebateRate = service.AffiliateRebateRateMax
+	}
+	affiliateRebateCap := previousSettings.AffiliateRebateCap
+	if req.AffiliateRebateCap != nil {
+		affiliateRebateCap = *req.AffiliateRebateCap
+	}
+	if affiliateRebateCap < 0 {
+		affiliateRebateCap = 0
+	}
+	affiliateRebateInviteeLimit := previousSettings.AffiliateRebateInviteeLimit
+	if req.AffiliateRebateInviteeLimit != nil {
+		affiliateRebateInviteeLimit = *req.AffiliateRebateInviteeLimit
+	}
+	if affiliateRebateInviteeLimit < 0 {
+		affiliateRebateInviteeLimit = 0
+	}
+	affiliateSignupBonus := previousSettings.AffiliateSignupBonus
+	if req.AffiliateSignupBonus != nil {
+		affiliateSignupBonus = *req.AffiliateSignupBonus
+	}
+	if affiliateSignupBonus < 0 {
+		affiliateSignupBonus = 0
 	}
 	// 通用表格配置：兼容旧客户端未传字段时保留当前值。
 	if req.TableDefaultPageSize <= 0 {
@@ -1165,7 +1196,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		CustomEndpoints:                  customEndpointsJSON,
 		DefaultConcurrency:               req.DefaultConcurrency,
 		DefaultBalance:                   req.DefaultBalance,
+		AffiliateEnabled:                 boolValueOrDefault(req.AffiliateEnabled, previousSettings.AffiliateEnabled),
 		AffiliateRebateRate:              affiliateRebateRate,
+		AffiliateRebateCap:               affiliateRebateCap,
+		AffiliateRebateInviteeLimit:      affiliateRebateInviteeLimit,
+		AffiliateSignupBonus:             affiliateSignupBonus,
+		TicketEnabled:                    boolValueOrDefault(req.TicketEnabled, previousSettings.TicketEnabled),
 		DefaultUserRPMLimit:              req.DefaultUserRPMLimit,
 		DefaultSubscriptions:             defaultSubscriptions,
 		EnableModelFallback:              req.EnableModelFallback,
@@ -1481,7 +1517,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		CustomEndpoints:                        dto.ParseCustomEndpoints(updatedSettings.CustomEndpoints),
 		DefaultConcurrency:                     updatedSettings.DefaultConcurrency,
 		DefaultBalance:                         updatedSettings.DefaultBalance,
+		AffiliateEnabled:                       updatedSettings.AffiliateEnabled,
 		AffiliateRebateRate:                    updatedSettings.AffiliateRebateRate,
+		AffiliateRebateCap:                     updatedSettings.AffiliateRebateCap,
+		AffiliateRebateInviteeLimit:            updatedSettings.AffiliateRebateInviteeLimit,
+		AffiliateSignupBonus:                   updatedSettings.AffiliateSignupBonus,
+		TicketEnabled:                          updatedSettings.TicketEnabled,
 		DefaultUserRPMLimit:                    updatedSettings.DefaultUserRPMLimit,
 		DefaultSubscriptions:                   updatedDefaultSubscriptions,
 		EnableModelFallback:                    updatedSettings.EnableModelFallback,
@@ -1790,8 +1831,23 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.DefaultBalance != after.DefaultBalance {
 		changed = append(changed, "default_balance")
 	}
+	if before.AffiliateEnabled != after.AffiliateEnabled {
+		changed = append(changed, "affiliate_enabled")
+	}
 	if before.AffiliateRebateRate != after.AffiliateRebateRate {
 		changed = append(changed, "affiliate_rebate_rate")
+	}
+	if before.AffiliateRebateCap != after.AffiliateRebateCap {
+		changed = append(changed, "affiliate_rebate_cap")
+	}
+	if before.AffiliateRebateInviteeLimit != after.AffiliateRebateInviteeLimit {
+		changed = append(changed, "affiliate_rebate_invitee_limit")
+	}
+	if before.AffiliateSignupBonus != after.AffiliateSignupBonus {
+		changed = append(changed, "affiliate_signup_bonus")
+	}
+	if before.TicketEnabled != after.TicketEnabled {
+		changed = append(changed, "ticket_enabled")
 	}
 	if !equalDefaultSubscriptions(before.DefaultSubscriptions, after.DefaultSubscriptions) {
 		changed = append(changed, "default_subscriptions")

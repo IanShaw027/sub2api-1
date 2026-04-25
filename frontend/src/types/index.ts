@@ -130,6 +130,30 @@ export interface AffiliateInvitee {
   email: string
   username: string
   created_at?: string
+  total_consumed: number
+  total_rebate: number
+  rebate_slot_claimed: boolean
+}
+
+export interface AffiliatePolicy {
+  enabled: boolean
+  rebate_rate: number
+  rebate_cap: number
+  invitee_limit: number
+  signup_bonus: number
+  policy_text: string
+}
+
+export interface AffiliateLedgerEntry {
+  id: number
+  created_at: string
+  action: string
+  amount: number
+  source_user_id?: number | null
+  source_order_id?: number | null
+  base_amount: number
+  rebate_rate: number
+  invitee_slot_claimed: boolean
 }
 
 export interface UserAffiliateDetail {
@@ -139,6 +163,10 @@ export interface UserAffiliateDetail {
   aff_count: number
   aff_quota: number
   aff_history_quota: number
+  invited_count: number
+  rebated_invitee_count: number
+  remaining_rebate_slots?: number | null
+  policy: AffiliatePolicy
   invitees: AffiliateInvitee[]
 }
 
@@ -199,6 +227,8 @@ export interface PublicSettings {
   home_content: string
   hide_ccs_import_button: boolean
   payment_enabled: boolean
+  affiliate_enabled: boolean
+  ticket_enabled: boolean
   table_default_page_size: number
   table_page_size_options: number[]
   custom_menu_items: CustomMenuItem[]
@@ -226,6 +256,7 @@ export interface AuthResponse {
   expires_in?: number     // New: Access Token expiry time in seconds
   token_type: string
   user: User & { run_mode?: 'standard' | 'simple' }
+  messages?: string[]
 }
 
 export interface CurrentUserResponse extends User {
