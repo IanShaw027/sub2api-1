@@ -4,6 +4,8 @@
 
 // OpenAI
 const openaiModels = [
+  // Legacy stable aliases still used by existing accounts and presets
+  'gpt-4o', 'gpt-4o-mini',
   // GPT-5.2 系列
   'gpt-5.2', 'gpt-5.2-2025-12-11', 'gpt-5.2-chat-latest',
   'gpt-5.2-pro', 'gpt-5.2-pro-2025-12-11',
@@ -20,6 +22,10 @@ const openaiModels = [
 
 // Anthropic Claude
 export const claudeModels = [
+  // Legacy stable aliases still used by existing accounts and presets
+  'claude-3-5-sonnet', 'claude-3-5-haiku', 'claude-3-7-sonnet',
+  'claude-sonnet-4', 'claude-opus-4',
+  'claude-sonnet-4-5', 'claude-haiku-4-5', 'claude-opus-4-5',
   'claude-3-5-sonnet-20241022', 'claude-3-5-sonnet-20240620',
   'claude-3-5-haiku-20241022',
   'claude-3-7-sonnet-20250219',

@@ -146,7 +146,18 @@ vi.mock('@/composables/useAntigravityOAuth', () => ({
 vi.mock('@/composables/useKiroOAuth', () => ({
   useKiroOAuth: () => ({
     ...buildOAuthComposable(),
-    validateRefreshToken: kiroValidateRefreshTokenMock
+    validateRefreshToken: kiroValidateRefreshTokenMock,
+    buildExtraInfo: (tokenInfo?: any, overrides?: Record<string, unknown>) => {
+      const extra: Record<string, unknown> = { ...(overrides || {}) }
+      if (tokenInfo?.email) extra.email = tokenInfo.email
+      if (tokenInfo?.subscription_type || tokenInfo?.plan_name) {
+        extra.subscription_type = tokenInfo.subscription_type || tokenInfo.plan_name
+      }
+      return extra
+    },
+    buildAccountName: (tokenInfo?: any, fallbackName?: string) => {
+      return fallbackName?.trim() || tokenInfo?.name || tokenInfo?.email || 'Kiro OAuth Account'
+    }
   })
 }))
 
@@ -248,7 +259,9 @@ describe('CreateAccountModal', () => {
     kiroValidateRefreshTokenMock.mockResolvedValue({
       refresh_token: 'rt-test',
       access_token: 'at-test',
-      region: 'us-east-1'
+      region: 'us-east-1',
+      email: 'manual@example.com',
+      plan_name: 'Kiro Pro'
     })
   })
 
@@ -348,6 +361,41 @@ describe('CreateAccountModal', () => {
     expect((wrapper.vm as any).form.type).toBe('oauth')
   })
 
+  it('clears stale OpenAI compact settings after switching to another platform', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'OpenAI').trigger('click')
+    await nextTick()
+
+    ;(wrapper.vm as any).openAICompactMode = 'force_on'
+    ;(wrapper.vm as any).openAICompactModelMappings = [
+      { from: 'gpt-5.4', to: 'gpt-5.4-openai-compact' }
+    ]
+
+    await findButtonByText(wrapper, 'Anthropic').trigger('click')
+    await nextTick()
+    await findButtonByText(wrapper, 'OpenAI').trigger('click')
+    await nextTick()
+    await findButtonByText(wrapper, 'API Key').trigger('click')
+    await nextTick()
+
+    await wrapper.get('[data-tour="account-form-name"]').setValue('openai-api')
+    await wrapper.get('input[placeholder="sk-proj-..."]').setValue('sk-proj-test')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'openai-api',
+      platform: 'openai',
+      type: 'apikey',
+      credentials: expect.not.objectContaining({
+        compact_model_mapping: expect.anything()
+      })
+    }))
+    expect(createMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('openai_compact_mode')
+  })
+
   it('creates a Kiro OAuth account from manual refresh token input', async () => {
     const wrapper = mountModal()
     await flushPromises()
@@ -377,11 +425,16 @@ describe('CreateAccountModal', () => {
       null
     )
     expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'manual@example.com',
       platform: 'kiro',
       type: 'oauth',
       credentials: expect.objectContaining({
         refresh_token: 'rt-test',
         access_token: 'at-test'
+      }),
+      extra: expect.objectContaining({
+        email: 'manual@example.com',
+        subscription_type: 'Kiro Pro'
       })
     }))
   })

@@ -94,6 +94,23 @@ function buildAccount() {
   } as any
 }
 
+function mountModal() {
+  return mount(AccountTestModal, {
+    props: {
+      show: true,
+      account: buildAccount()
+    },
+    global: {
+      stubs: {
+        BaseDialog: BaseDialogStub,
+        Select: SelectStub,
+        TextArea: TextAreaStub,
+        Icon: true
+      }
+    }
+  })
+}
+
 describe('AccountTestModal', () => {
   const originalFetch = global.fetch
 
@@ -119,20 +136,7 @@ describe('AccountTestModal', () => {
   })
 
   it('posts compact mode for OpenAI compact probe', async () => {
-    const wrapper = mount(AccountTestModal, {
-      props: {
-        show: true,
-        account: buildAccount()
-      },
-      global: {
-        stubs: {
-          BaseDialog: BaseDialogStub,
-          Select: SelectStub,
-          TextArea: TextAreaStub,
-          Icon: true
-        }
-      }
-    })
+    const wrapper = mountModal()
 
     await flushPromises()
     ;(wrapper.vm as any).selectedModelId = 'gpt-5.4'
@@ -145,6 +149,30 @@ describe('AccountTestModal', () => {
     expect(JSON.parse(options.body)).toMatchObject({
       model_id: 'gpt-5.4',
       mode: 'compact'
+    })
+  })
+
+  it('posts OpenAI image route selection alongside compact mode', async () => {
+    getAvailableModelsMock.mockResolvedValue([
+      { id: 'gpt-image-1', display_name: 'GPT Image 1' }
+    ])
+    const wrapper = mountModal()
+
+    await flushPromises()
+    ;(wrapper.vm as any).selectedModelId = 'gpt-image-1'
+    ;(wrapper.vm as any).testMode = 'compact'
+    ;(wrapper.vm as any).selectedOpenAIImageTestMode = 'web2api'
+    ;(wrapper.vm as any).testPrompt = 'draw a cat'
+    await (wrapper.vm as any).startTest()
+    await flushPromises()
+
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+    const [, options] = (global.fetch as any).mock.calls[0]
+    expect(JSON.parse(options.body)).toMatchObject({
+      model_id: 'gpt-image-1',
+      prompt: 'draw a cat',
+      mode: 'compact',
+      test_mode: 'web2api'
     })
   })
 })

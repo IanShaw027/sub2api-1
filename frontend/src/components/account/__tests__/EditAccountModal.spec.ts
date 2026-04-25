@@ -206,6 +206,33 @@ describe('EditAccountModal', () => {
     })
   })
 
+  it('falls back to legacy related-model coverage when OpenAI or Anthropic accounts have no explicit whitelist', async () => {
+    const openAIAccount = buildAccount()
+    openAIAccount.credentials = {
+      api_key: 'sk-test',
+      base_url: 'https://api.openai.com'
+    }
+
+    const openAIWrapper = mountModal(openAIAccount)
+    await openAIWrapper.setProps({ show: true })
+    expect(openAIWrapper.get('[data-testid="model-whitelist-value"]').text()).toContain('gpt-4o')
+    expect(openAIWrapper.get('[data-testid="model-whitelist-value"]').text()).toContain('gpt-4o-mini')
+
+    const anthropicWrapper = mountModal({
+      ...buildAccount(),
+      id: 5,
+      name: 'Claude Key',
+      platform: 'anthropic',
+      credentials: {
+        api_key: 'sk-ant-test',
+        base_url: 'https://api.anthropic.com'
+      }
+    } as any)
+    await anthropicWrapper.setProps({ show: true })
+    expect(anthropicWrapper.get('[data-testid="model-whitelist-value"]').text()).toContain('claude-sonnet-4')
+    expect(anthropicWrapper.get('[data-testid="model-whitelist-value"]').text()).toContain('claude-3-7-sonnet')
+  })
+
   it('removes Kiro runtime version overrides from extra while keeping account credentials', async () => {
     const account = {
       id: 2,
@@ -424,5 +451,29 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.compact_model_mapping).toEqual({
       'gpt-5.4': 'gpt-5.4-openai-compact'
     })
+  })
+
+  it('updates the OpenAI compact status label from current form state', async () => {
+    const account = buildAccount()
+    account.extra = {
+      openai_compact_mode: 'force_on',
+      openai_compact_supported: false,
+      openai_compact_checked_at: '2026-04-01T12:00:00Z'
+    }
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    expect(wrapper.text()).toContain('admin.accounts.openai.compactSupported')
+
+    const compactModeSelect = wrapper.findAll('select').find((candidate) =>
+      candidate.find('option[value="force_on"]').exists()
+    )
+    expect(compactModeSelect).toBeTruthy()
+
+    await compactModeSelect!.setValue('force_off')
+
+    expect(wrapper.text()).toContain('admin.accounts.openai.compactUnsupported')
+    expect(wrapper.text()).not.toContain('admin.accounts.openai.compactSupported')
   })
 })

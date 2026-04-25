@@ -1575,11 +1575,11 @@
         <div class="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-300">
           <span class="font-medium">{{ t(openAICompactStatusKey) }}</span>
           <span
-            v-if="account?.extra?.openai_compact_checked_at"
+            v-if="openAICompactMode === 'auto' && openAICompactCheckedAt"
             class="ml-2 text-gray-500 dark:text-gray-400"
           >
             {{ t('admin.accounts.openai.compactLastChecked') }}:
-            {{ formatDateTime(new Date(String(account.extra.openai_compact_checked_at))) }}
+            {{ formatDateTime(new Date(openAICompactCheckedAt)) }}
           </span>
         </div>
         <div>
@@ -2190,6 +2190,7 @@ import {
 } from '@/utils/openaiWsMode'
 import {
   getPresetMappingsByPlatform,
+  getModelsByPlatform,
   commonErrorCodes,
   buildModelMappingObject,
   isValidWildcardPattern
@@ -2324,6 +2325,8 @@ const customBaseUrl = ref('')
 // OpenAI 自动透传开关（OAuth/API Key）
 const openaiPassthroughEnabled = ref(false)
 const openAICompactMode = ref<OpenAICompactMode>('auto')
+const openAICompactSupported = ref<boolean | null>(null)
+const openAICompactCheckedAt = ref<string | null>(null)
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const codexCLIOnlyEnabled = ref(false)
@@ -2386,13 +2389,11 @@ const isOpenAIModelRestrictionDisabled = computed(() =>
   props.account?.platform === 'openai' && openaiPassthroughEnabled.value
 )
 const openAICompactStatusKey = computed(() => {
-  const extra = props.account?.extra as Record<string, unknown> | undefined
   if (!props.account || props.account.platform !== 'openai') return ''
-  const mode = typeof extra?.openai_compact_mode === 'string' ? extra.openai_compact_mode : 'auto'
-  if (mode === 'force_on') return 'admin.accounts.openai.compactSupported'
-  if (mode === 'force_off') return 'admin.accounts.openai.compactUnsupported'
-  if (typeof extra?.openai_compact_supported === 'boolean') {
-    return extra.openai_compact_supported
+  if (openAICompactMode.value === 'force_on') return 'admin.accounts.openai.compactSupported'
+  if (openAICompactMode.value === 'force_off') return 'admin.accounts.openai.compactUnsupported'
+  if (typeof openAICompactSupported.value === 'boolean') {
+    return openAICompactSupported.value
       ? 'admin.accounts.openai.compactSupported'
       : 'admin.accounts.openai.compactUnsupported'
   }
@@ -2528,6 +2529,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   // Load OpenAI passthrough toggle (OpenAI OAuth/API Key)
   openaiPassthroughEnabled.value = false
   openAICompactMode.value = 'auto'
+  openAICompactSupported.value = null
+  openAICompactCheckedAt.value = null
   openAICompactModelMappings.value = []
   openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
@@ -2537,6 +2540,12 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   if (newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'apikey')) {
     openaiPassthroughEnabled.value = extra?.openai_passthrough === true || extra?.openai_oauth_passthrough === true
     openAICompactMode.value = (extra?.openai_compact_mode as OpenAICompactMode) || 'auto'
+    openAICompactSupported.value = typeof extra?.openai_compact_supported === 'boolean'
+      ? extra.openai_compact_supported
+      : null
+    openAICompactCheckedAt.value = extra?.openai_compact_checked_at == null
+      ? null
+      : String(extra.openai_compact_checked_at)
     openaiOAuthResponsesWebSocketV2Mode.value = resolveOpenAIWSModeFromExtra(extra, {
       modeKey: 'openai_oauth_responses_websockets_v2_mode',
       enabledKey: 'openai_oauth_responses_websockets_v2_enabled',
@@ -2656,7 +2665,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     kiroAuthRegion.value = kiroCredentials?.auth_region || ''
     kiroAPIRegion.value = kiroCredentials?.api_region || ''
     kiroMachineID.value = kiroCredentials?.machine_id || ''
-    loadModelRestrictionFromCredentials(kiroCredentials)
+    loadModelRestrictionFromCredentials(newAccount.platform, kiroCredentials)
   } else {
     kiroAuthMethod.value = 'social'
     kiroRefreshToken.value = ''
@@ -2689,7 +2698,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     editBaseUrl.value = (credentials.base_url as string) || platformDefaultUrl
 
     // Load model mappings and detect mode
-    loadModelRestrictionFromCredentials(credentials)
+    loadModelRestrictionFromCredentials(newAccount.platform, credentials)
 
     // Load pool mode
     poolModeEnabled.value = credentials.pool_mode === true
@@ -2733,7 +2742,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     loadQuotaNotifyFromExtra(bedrockExtra)
 
     // Load model mappings for bedrock
-    loadModelRestrictionFromCredentials(bedrockCreds)
+    loadModelRestrictionFromCredentials(newAccount.platform, bedrockCreds)
   } else if (newAccount.type === 'upstream' && newAccount.credentials) {
     const credentials = newAccount.credentials as Record<string, unknown>
     editBaseUrl.value = (credentials.base_url as string) || ''
@@ -2755,7 +2764,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     // Load model mappings for OpenAI OAuth accounts
     if (newAccount.platform === 'openai' && newAccount.credentials) {
       const oauthCredentials = newAccount.credentials as Record<string, unknown>
-      loadModelRestrictionFromCredentials(oauthCredentials)
+      loadModelRestrictionFromCredentials(newAccount.platform, oauthCredentials)
     } else {
       modelRestrictionMode.value = 'whitelist'
       modelMappings.value = []
@@ -2792,7 +2801,14 @@ watch(
   { immediate: true }
 )
 
-const loadModelRestrictionFromCredentials = (credentials?: Record<string, unknown>) => {
+const getLegacyDefaultWhitelistModels = (platform?: string) => {
+  if (platform === 'openai' || platform === 'anthropic' || platform === 'claude') {
+    return [...getModelsByPlatform(platform)]
+  }
+  return []
+}
+
+const loadModelRestrictionFromCredentials = (platform: string, credentials?: Record<string, unknown>) => {
   const existingMappings = credentials?.model_mapping as Record<string, string> | undefined
   if (existingMappings && typeof existingMappings === 'object') {
     const entries = Object.entries(existingMappings)
@@ -2812,7 +2828,7 @@ const loadModelRestrictionFromCredentials = (credentials?: Record<string, unknow
 
   modelRestrictionMode.value = 'whitelist'
   modelMappings.value = []
-  allowedModels.value = []
+  allowedModels.value = getLegacyDefaultWhitelistModels(platform)
 }
 // Model mapping helpers
 const addModelMapping = () => {

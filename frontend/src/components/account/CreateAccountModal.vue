@@ -3227,6 +3227,7 @@ import { useOpenAIOAuth } from '@/composables/useOpenAIOAuth'
 import { useGeminiOAuth } from '@/composables/useGeminiOAuth'
 import { useAntigravityOAuth } from '@/composables/useAntigravityOAuth'
 import { useKiroOAuth } from '@/composables/useKiroOAuth'
+import type { KiroTokenInfo } from '@/api/admin/kiro'
 import type {
   Proxy,
   AdminGroup,
@@ -3764,6 +3765,8 @@ watch(
     }
     if (newPlatform !== 'openai') {
       openaiPassthroughEnabled.value = false
+      openAICompactMode.value = 'auto'
+      openAICompactModelMappings.value = []
       openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
       openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
       codexCLIOnlyEnabled.value = false
@@ -4631,7 +4634,9 @@ const handleKiroValidateRT = async (payload: {
           continue
         }
 
+        const tokenInfo = validatedCredentials as KiroTokenInfo
         const credentials = { ...validatedCredentials }
+        const extra = kiroOAuth.buildExtraInfo(tokenInfo, payload.extra)
         const modelMapping = buildKiroModelMapping()
         if (modelMapping) {
           credentials.model_mapping = modelMapping
@@ -4641,7 +4646,7 @@ const handleKiroValidateRT = async (payload: {
           return
         }
 
-        const baseName = form.name.trim() || 'Kiro OAuth Account'
+        const baseName = kiroOAuth.buildAccountName(tokenInfo, form.name)
         const accountName = refreshTokens.length > 1 ? `${baseName} #${i + 1}` : baseName
 
         await adminAPI.accounts.create({
@@ -4650,7 +4655,7 @@ const handleKiroValidateRT = async (payload: {
           platform: 'kiro',
           type: 'oauth',
           credentials,
-          extra: payload.extra,
+          extra,
           proxy_id: form.proxy_id,
           concurrency: form.concurrency,
           load_factor: form.load_factor ?? undefined,
