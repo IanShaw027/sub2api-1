@@ -178,3 +178,57 @@ func TestKiroOAuthServiceExchangeCallbackUsesCallbackPathForManualFullCallback(t
 		t.Fatalf("token exchange used callback parsing base as redirect_uri: %q", gotRedirectURI)
 	}
 }
+
+func TestKiroOAuthServiceExchangeCallbackUsesSigninPathForManualQueryOnlyIDCInput(t *testing.T) {
+	svc := NewKiroOAuthService(&kiroDefaultProxyRepoStub{}, nil, nil, nil)
+	svc.usageService = nil
+	defer svc.Stop()
+
+	const (
+		sessionID    = "session-query-idc"
+		state        = "state-query-idc"
+		code         = "code-query-idc"
+		codeVerifier = "verifier-query-idc"
+		redirectURI  = "http://localhost:3128"
+		callbackURL  = "?code=" + code + "&state=" + state + "&login_option=awsidc"
+	)
+
+	svc.sessionStore.Set(sessionID, &KiroOAuthSession{
+		State:           state,
+		CodeVerifier:    codeVerifier,
+		RedirectURI:     redirectURI,
+		CallbackBaseURL: redirectURI,
+		CreatedAt:       time.Now(),
+	})
+
+	var gotRedirectURI string
+	originalExchange := kiroCodeExchangeFunc
+	kiroCodeExchangeFunc = func(ctx context.Context, gotCode, gotVerifier, gotRedirect, gotProxy string) (map[string]any, error) {
+		if gotCode != code {
+			t.Fatalf("unexpected code: got=%q want=%q", gotCode, code)
+		}
+		if gotVerifier != codeVerifier {
+			t.Fatalf("unexpected code verifier: got=%q want=%q", gotVerifier, codeVerifier)
+		}
+		gotRedirectURI = gotRedirect
+		return map[string]any{
+			"refreshToken": "refresh-token",
+		}, nil
+	}
+	t.Cleanup(func() {
+		kiroCodeExchangeFunc = originalExchange
+	})
+
+	_, err := svc.ExchangeCallback(context.Background(), &KiroExchangeCallbackInput{
+		SessionID:   sessionID,
+		CallbackURL: callbackURL,
+	})
+	if err != nil {
+		t.Fatalf("ExchangeCallback returned error: %v", err)
+	}
+
+	expectedRedirectURI := "http://localhost:3128/signin/callback?login_option=awsidc"
+	if gotRedirectURI != expectedRedirectURI {
+		t.Fatalf("token exchange redirect_uri mismatch: got=%q want=%q", gotRedirectURI, expectedRedirectURI)
+	}
+}

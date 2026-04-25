@@ -669,6 +669,7 @@ func (h *AccountHandler) Delete(c *gin.Context) {
 type TestAccountRequest struct {
 	ModelID  string `json:"model_id"`
 	Prompt   string `json:"prompt"`
+	Mode     string `json:"mode"`
 	TestMode string `json:"test_mode"`
 }
 
@@ -698,12 +699,16 @@ func (h *AccountHandler) Test(c *gin.Context) {
 	var req TestAccountRequest
 	// Allow empty body, model_id is optional
 	_ = c.ShouldBindJSON(&req)
-	if normalizedMode := service.NormalizeOpenAIImageTestMode(req.TestMode); normalizedMode != "" {
+	mode := strings.TrimSpace(req.Mode)
+	if mode == "" {
+		mode = strings.TrimSpace(req.TestMode)
+	}
+	if normalizedMode := service.NormalizeOpenAIImageTestMode(mode); normalizedMode != "" {
 		c.Set(service.AccountTestContextRequestedModeKey, normalizedMode)
 	}
 
 	// Use AccountTestService to test the account with SSE streaming
-	if err := h.accountTestService.TestAccountConnection(c, accountID, req.ModelID, req.Prompt); err != nil {
+	if err := h.accountTestService.TestAccountConnection(c, accountID, req.ModelID, req.Prompt, mode); err != nil {
 		// Error already sent via SSE, just log
 		return
 	}

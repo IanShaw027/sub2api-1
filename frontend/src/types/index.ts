@@ -898,7 +898,10 @@ export interface Account<
   type: TType
   credentials?: AccountCredentialsShape<TCredentials>
   // Extra fields including Codex usage and model-level rate limits (Antigravity smart retry)
-  extra?: AccountExtraShape<TExtra>
+  extra?: AccountExtraShape<TExtra & OpenAICompactState & {
+    model_rate_limits?: Record<string, { rate_limited_at: string; rate_limit_reset_at: string }>
+    antigravity_credits_overages?: Record<string, { activated_at: string; active_until: string }>
+  }>
   proxy_id: number | null
   concurrency: number
   load_factor?: number | null
@@ -1074,6 +1077,16 @@ export interface CodexUsageSnapshot {
 
 export type AccountRequestPayload<TPayload extends object = AccountDataRecord> =
   TPayload & AccountDataRecord
+
+export type OpenAICompactMode = 'auto' | 'force_on' | 'force_off'
+
+export interface OpenAICompactState {
+  openai_compact_mode?: OpenAICompactMode
+  openai_compact_supported?: boolean
+  openai_compact_checked_at?: string
+  openai_compact_last_status?: number
+  openai_compact_last_error?: string
+}
 
 export interface CreateAccountRequest<
   TCredentials extends object = AccountDataRecord,

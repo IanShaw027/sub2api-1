@@ -4,15 +4,6 @@
 
 // OpenAI
 const openaiModels = [
-  'gpt-3.5-turbo', 'gpt-3.5-turbo-0125', 'gpt-3.5-turbo-1106', 'gpt-3.5-turbo-16k',
-  'gpt-4', 'gpt-4-turbo', 'gpt-4-turbo-preview',
-  'gpt-4o', 'gpt-4o-2024-08-06', 'gpt-4o-2024-11-20',
-  'gpt-4o-mini', 'gpt-4o-mini-2024-07-18',
-  'gpt-4.5-preview',
-  'gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano',
-  'o1', 'o1-preview', 'o1-mini', 'o1-pro',
-  'o3', 'o3-mini', 'o3-pro',
-  'o4-mini',
   // GPT-5.2 系列
   'gpt-5.2', 'gpt-5.2-2025-12-11', 'gpt-5.2-chat-latest',
   'gpt-5.2-pro', 'gpt-5.2-pro-2025-12-11',
@@ -22,7 +13,6 @@ const openaiModels = [
   'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-2026-03-05',
   // GPT-5.3 系列
   'gpt-5.3-codex', 'gpt-5.3-codex-spark',
-  'chatgpt-4o-latest',
   'gpt-4o-audio-preview', 'gpt-4o-realtime-preview',
   // GPT Image 系列
   'gpt-image-1', 'gpt-image-1.5', 'gpt-image-2'
@@ -32,7 +22,6 @@ const openaiModels = [
 export const claudeModels = [
   'claude-3-5-sonnet-20241022', 'claude-3-5-sonnet-20240620',
   'claude-3-5-haiku-20241022',
-  'claude-3-opus-20240229', 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307',
   'claude-3-7-sonnet-20250219',
   'claude-sonnet-4-20250514', 'claude-opus-4-20250514',
   'claude-opus-4-1-20250805',
@@ -40,8 +29,20 @@ export const claudeModels = [
   'claude-opus-4-5-20251101',
   'claude-opus-4-6',
   'claude-opus-4-7',
-  'claude-sonnet-4-6',
-  'claude-2.1', 'claude-2.0', 'claude-instant-1.2'
+  'claude-sonnet-4-6'
+]
+
+const kiroModels = [
+  'claude-sonnet-4.5',
+  'claude-sonnet-4.5-thinking',
+  'claude-sonnet-4.6',
+  'claude-sonnet-4.6-thinking',
+  'claude-opus-4.5',
+  'claude-opus-4.5-thinking',
+  'claude-opus-4.6',
+  'claude-opus-4.6-thinking',
+  'claude-haiku-4.5',
+  'claude-haiku-4.5-thinking'
 ]
 
 // Google Gemini
@@ -254,6 +255,15 @@ const anthropicPresetMappings = [
   { label: 'Opus->Sonnet', from: 'claude-opus-4-6', to: 'claude-sonnet-4-5-20250929', color: 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400' }
 ]
 
+const kiroPresetMappings = [
+  { label: 'Sonnet 4.6', from: 'claude-sonnet-4.6', to: 'claude-sonnet-4.6', color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400' },
+  { label: 'Sonnet 4.6 Thinking', from: 'claude-sonnet-4.6-thinking', to: 'claude-sonnet-4.6-thinking', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-400' },
+  { label: 'Sonnet 4.5', from: 'claude-sonnet-4.5', to: 'claude-sonnet-4.5', color: 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400' },
+  { label: 'Opus 4.6', from: 'claude-opus-4.6', to: 'claude-opus-4.6', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400' },
+  { label: 'Opus 4.5', from: 'claude-opus-4.5', to: 'claude-opus-4.5', color: 'bg-fuchsia-100 text-fuchsia-700 hover:bg-fuchsia-200 dark:bg-fuchsia-900/30 dark:text-fuchsia-400' },
+  { label: 'Haiku 4.5', from: 'claude-haiku-4.5', to: 'claude-haiku-4.5', color: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400' }
+]
+
 const openaiPresetMappings = [
   { label: 'GPT-4o', from: 'gpt-4o', to: 'gpt-4o', color: 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400' },
   { label: 'GPT-4o Mini', from: 'gpt-4o-mini', to: 'gpt-4o-mini', color: 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400' },
@@ -361,6 +371,7 @@ export const commonErrorCodes = [
 // 按平台获取模型
 export function getModelsByPlatform(platform: string): string[] {
   switch (platform) {
+    case 'kiro': return kiroModels
     case 'openai': return openaiModels
     case 'anthropic':
     case 'claude': return claudeModels
@@ -387,6 +398,7 @@ export function getModelsByPlatform(platform: string): string[] {
 
 // 按平台获取预设映射
 export function getPresetMappingsByPlatform(platform: string) {
+  if (platform === 'kiro') return kiroPresetMappings
   if (platform === 'openai') return openaiPresetMappings
   if (platform === 'gemini') return geminiPresetMappings
   if (platform === 'antigravity') return antigravityPresetMappings

@@ -367,11 +367,29 @@ func parseKiroCallbackURL(rawValue, callbackBaseURL string) (*url.URL, error) {
 		return parsed, nil
 	}
 
+	callbackPath := defaultKiroCallbackPathFromInput(trimmed)
 	parsed, err := url.Parse(base + "/oauth/callback?" + strings.TrimLeft(trimmed, "?"))
 	if err != nil {
 		return nil, fmt.Errorf("invalid kiro callback URL: %w", err)
 	}
+	parsed.Path = callbackPath
 	return parsed, nil
+}
+
+func defaultKiroCallbackPathFromInput(rawValue string) string {
+	queryText := strings.TrimLeft(strings.TrimSpace(rawValue), "?")
+	values, err := url.ParseQuery(queryText)
+	if err != nil {
+		return "/oauth/callback"
+	}
+	loginOption := strings.ToLower(strings.TrimSpace(firstNonEmptyKiroString(
+		values.Get("login_option"),
+		values.Get("loginOption"),
+	)))
+	if loginOption == "" || loginOption == "social" {
+		return "/oauth/callback"
+	}
+	return "/signin/callback"
 }
 
 func buildKiroTokenExchangeRedirectURI(callbackBaseURL string, parsedCallbackURL *url.URL, loginOption string) string {
