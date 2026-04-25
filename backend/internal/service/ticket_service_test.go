@@ -15,6 +15,7 @@ type ticketRepoStub struct {
 	ticket        *SupportTicket
 	createdTicket *SupportTicket
 	replyMessage  *SupportTicketMessage
+	nextStatus    string
 }
 
 func (s *ticketRepoStub) CreateSubmitted(_ context.Context, ticket *SupportTicket, _ *SupportTicketRevision, _ *SupportTicketMessage) error {
@@ -64,11 +65,12 @@ func (*ticketRepoStub) CloseByUser(context.Context, int64, time.Time, *SupportTi
 	return nil
 }
 
-func (s *ticketRepoStub) AddReply(_ context.Context, _ int64, message *SupportTicketMessage, _ string, _ bool, _ bool) error {
+func (s *ticketRepoStub) AddReply(_ context.Context, _ int64, message *SupportTicketMessage, _ string, _ bool, _ bool, nextStatus string) error {
 	if message != nil {
 		stored := *message
 		s.replyMessage = &stored
 	}
+	s.nextStatus = nextStatus
 	return nil
 }
 
@@ -186,6 +188,7 @@ func TestTicketServiceReplyForUserIgnoresAvatarLookupError(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, repo.replyMessage)
 	require.Equal(t, "", repo.replyMessage.SenderAvatarSnapshot)
+	require.Equal(t, SupportTicketStatusWaitingAdmin, repo.nextStatus)
 }
 
 func TestTicketServiceReplyForAdminIgnoresAvatarLookupError(t *testing.T) {
@@ -205,4 +208,5 @@ func TestTicketServiceReplyForAdminIgnoresAvatarLookupError(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, repo.replyMessage)
 	require.Equal(t, "", repo.replyMessage.SenderAvatarSnapshot)
+	require.Equal(t, SupportTicketStatusWaitingUser, repo.nextStatus)
 }

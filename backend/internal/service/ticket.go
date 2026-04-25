@@ -143,7 +143,7 @@ type SupportTicketRepository interface {
 	UpdateEditableContent(ctx context.Context, ticketID int64, title string, formPayload json.RawMessage) error
 	Resubmit(ctx context.Context, ticketID int64, ticket *SupportTicket, revision *SupportTicketRevision, systemMessage *SupportTicketMessage) error
 	CloseByUser(ctx context.Context, ticketID int64, closedAt time.Time, systemMessage *SupportTicketMessage) error
-	AddReply(ctx context.Context, ticketID int64, message *SupportTicketMessage, lastReplyRole string, unreadByUser, unreadByAdmin bool) error
+	AddReply(ctx context.Context, ticketID int64, message *SupportTicketMessage, lastReplyRole string, unreadByUser, unreadByAdmin bool, nextStatus string) error
 	UpdateStatusByAdmin(ctx context.Context, ticketID int64, status string, closedAt *time.Time, systemMessage *SupportTicketMessage) error
 	MarkReadByUser(ctx context.Context, ticketID int64) error
 	MarkReadByAdmin(ctx context.Context, ticketID int64) error

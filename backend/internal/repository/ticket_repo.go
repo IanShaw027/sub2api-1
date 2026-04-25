@@ -202,16 +202,17 @@ func (r *ticketRepository) CloseByUser(ctx context.Context, ticketID int64, clos
 	})
 }
 
-func (r *ticketRepository) AddReply(ctx context.Context, ticketID int64, message *service.SupportTicketMessage, lastReplyRole string, unreadByUser, unreadByAdmin bool) error {
+func (r *ticketRepository) AddReply(ctx context.Context, ticketID int64, message *service.SupportTicketMessage, lastReplyRole string, unreadByUser, unreadByAdmin bool, nextStatus string) error {
 	return r.withTicketUpdateTx(ctx, ticketID, func(tx *sql.Tx) error {
 		if err := insertTicketMessage(ctx, tx, ticketID, message); err != nil {
 			return err
 		}
 		_, err := tx.ExecContext(ctx, `
 			UPDATE support_tickets
-			SET latest_message_at = $2, last_reply_role = $3, unread_by_user = $4, unread_by_admin = $5, updated_at = NOW()
+			SET latest_message_at = $2, last_reply_role = $3, unread_by_user = $4, unread_by_admin = $5,
+				status = COALESCE(NULLIF($6, ''), status), updated_at = NOW()
 			WHERE id = $1
-		`, ticketID, message.CreatedAt, lastReplyRole, unreadByUser, unreadByAdmin)
+		`, ticketID, message.CreatedAt, lastReplyRole, unreadByUser, unreadByAdmin, nextStatus)
 		return err
 	})
 }

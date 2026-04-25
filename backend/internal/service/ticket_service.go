@@ -273,7 +273,7 @@ func (s *TicketService) ReplyForUser(ctx context.Context, ticketID int64, input 
 		MessageType:          SupportTicketMessageTypeMessage,
 		Content:              content,
 		CreatedAt:            now,
-	}, SupportTicketSenderRoleUser, false, true)
+	}, SupportTicketSenderRoleUser, false, true, SupportTicketStatusWaitingAdmin)
 }
 
 func (s *TicketService) ReplyForAdmin(ctx context.Context, ticketID int64, input CreateSupportTicketMessageInput) error {
@@ -303,7 +303,7 @@ func (s *TicketService) ReplyForAdmin(ctx context.Context, ticketID int64, input
 		MessageType:          SupportTicketMessageTypeMessage,
 		Content:              content,
 		CreatedAt:            now,
-	}, SupportTicketSenderRoleAdmin, true, false)
+	}, SupportTicketSenderRoleAdmin, true, false, SupportTicketStatusWaitingUser)
 }
 
 func (s *TicketService) UpdateStatusByAdmin(ctx context.Context, ticketID int64, input AdminSupportTicketStatusUpdateInput) error {
