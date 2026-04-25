@@ -209,6 +209,24 @@ interface NavItem {
   featureFlag?: () => boolean | undefined
 }
 
+function dedupeSelfNavItems(items: NavItem[]): NavItem[] {
+  const seenPaths = new Set<string>()
+  const seenLabels = new Set<string>()
+  const out: NavItem[] = []
+
+  for (const item of items) {
+    const normalizedPath = item.path.trim()
+    const normalizedLabel = item.label.trim()
+    if (normalizedPath && seenPaths.has(normalizedPath)) continue
+    if (normalizedLabel && seenLabels.has(normalizedLabel)) continue
+    if (normalizedPath) seenPaths.add(normalizedPath)
+    if (normalizedLabel) seenLabels.add(normalizedLabel)
+    out.push(item)
+  }
+
+  return out
+}
+
 // applyFeatureFlags 递归过滤掉 featureFlag() === false 的节点（含子节点）。
 // 使用 `!== false` 宽容语义：undefined（设置未加载）或 true 都视为显示。
 function applyFeatureFlags(items: NavItem[]): NavItem[] {
@@ -683,7 +701,7 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
       iconSvg: item.icon_svg,
     })),
   )
-  return items
+  return dedupeSelfNavItems(items)
 }
 
 // finalizeNav 合并三重过滤：featureFlag 过滤 + simple 模式过滤。

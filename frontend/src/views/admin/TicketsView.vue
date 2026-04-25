@@ -5,14 +5,8 @@
         <div class="flex flex-wrap items-center gap-3">
           <SearchInput
             v-model="filters.search"
-            :placeholder="t('tickets.filters.search')"
-            class="w-full sm:w-64"
-            @search="applyFilters"
-          />
-          <SearchInput
-            v-model="filters.user"
-            :placeholder="t('tickets.filters.userPlaceholder')"
-            class="w-full sm:w-56"
+            :placeholder="t('tickets.filters.adminSearch')"
+            class="w-full sm:w-80"
             @search="applyFilters"
           />
           <Select
@@ -157,9 +151,8 @@ const pagination = reactive({
   page_size: 20,
   total: 0,
 })
-const filters = reactive<{ search: string; user: string; category: TicketCategory | ''; status: TicketStatus | ''; start_date: string; end_date: string }>({
+const filters = reactive<{ search: string; category: TicketCategory | ''; status: TicketStatus | ''; start_date: string; end_date: string }>({
   search: '',
-  user: '',
   category: '',
   status: '',
   start_date: '',
@@ -222,7 +215,6 @@ function applyFilters() {
 
 function resetFilters() {
   filters.search = ''
-  filters.user = ''
   filters.category = ''
   filters.status = ''
   filters.start_date = ''

@@ -13,7 +13,6 @@ interface AdminTicketListParams {
   status?: TicketStatus | ''
   category?: TicketCategory | ''
   search?: string
-  user?: string
   start_date?: string
   end_date?: string
   timezone?: string

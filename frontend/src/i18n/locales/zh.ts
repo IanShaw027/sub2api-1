@@ -6211,6 +6211,7 @@ export default {
     adminActions: "管理员操作",
     filters: {
       search: "搜索工单",
+      adminSearch: "搜索标题或用户名",
       user: "用户",
       userPlaceholder: "按用户名或邮箱筛选",
       category: "工单类别",

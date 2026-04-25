@@ -6342,6 +6342,7 @@ export default {
     adminActions: "Admin Actions",
     filters: {
       search: "Search tickets",
+      adminSearch: "Search title or username",
       user: "User",
       userPlaceholder: "Filter by username or email",
       category: "Category",
