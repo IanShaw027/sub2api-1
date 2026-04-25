@@ -289,7 +289,13 @@
     </TablePageLayout>
     <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="groups" @close="showCreate = false" @created="reload" />
     <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
-    <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
+    <ReAuthAccountModal
+      :show="showReAuth"
+      :account="reAuthAcc"
+      @close="closeReAuthModal"
+      @reauthorized="handleAccountUpdated"
+      @open-editor="handleOpenEditorFromReAuth"
+    />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
@@ -791,9 +797,39 @@ const shouldReplaceAutoRefreshRow = (current: Account, next: Account) => {
   )
 }
 
+const accountHasSensitiveCredentials = (account: Account | null | undefined) => {
+  const credentials = account?.credentials as Record<string, unknown> | undefined
+  if (!credentials) {
+    return false
+  }
+  return [
+    'access_token',
+    'refresh_token',
+    'api_key',
+    'client_secret',
+    'client_id',
+    'session_token',
+    'password',
+    'cookie'
+  ].some((key) => key in credentials)
+}
+
+const mergeAccountReference = (current: Account | null, next: Account) => {
+  if (!current || current.id !== next.id) {
+    return next
+  }
+  if (accountHasSensitiveCredentials(current) && !accountHasSensitiveCredentials(next)) {
+    return {
+      ...next,
+      credentials: current.credentials
+    }
+  }
+  return next
+}
+
 const syncAccountRefs = (nextAccount: Account) => {
-  if (edAcc.value?.id === nextAccount.id) edAcc.value = nextAccount
-  if (reAuthAcc.value?.id === nextAccount.id) reAuthAcc.value = nextAccount
+  if (edAcc.value?.id === nextAccount.id) edAcc.value = mergeAccountReference(edAcc.value, nextAccount)
+  if (reAuthAcc.value?.id === nextAccount.id) reAuthAcc.value = mergeAccountReference(reAuthAcc.value, nextAccount)
   if (tempUnschedAcc.value?.id === nextAccount.id) tempUnschedAcc.value = nextAccount
   if (deletingAcc.value?.id === nextAccount.id) deletingAcc.value = nextAccount
   if (menu.acc?.id === nextAccount.id) menu.acc = nextAccount
@@ -981,7 +1017,21 @@ const cols = computed(() =>
   )
 )
 
-const handleEdit = (a: Account) => { edAcc.value = a; showEdit.value = true }
+const ensureAccountDetail = async (account: Account) => {
+  if (accountHasSensitiveCredentials(account)) {
+    return account
+  }
+  return adminAPI.accounts.getById(account.id)
+}
+
+const handleEdit = async (a: Account) => {
+  try {
+    edAcc.value = await ensureAccountDetail(a)
+    showEdit.value = true
+  } catch (error: any) {
+    appStore.showError(error.message || t('admin.accounts.failedToLoad'))
+  }
+}
 const openMenu = (a: Account, e: MouseEvent) => {
   menu.acc = a
 
@@ -1271,6 +1321,7 @@ const patchAccountInList = (updatedAccount: Account) => {
 }
 const handleAccountUpdated = (updatedAccount: Account) => {
   patchAccountInList(updatedAccount)
+  usageManualRefreshToken.value += 1
   enterAutoRefreshSilentWindow()
 }
 const formatExportTimestamp = () => {
@@ -1316,6 +1367,10 @@ const closeStatsModal = () => { showStats.value = false; statsAcc.value = null }
 const closeReAuthModal = () => { showReAuth.value = false; reAuthAcc.value = null }
 const handleTest = (a: Account) => { testingAcc.value = a; showTest.value = true }
 const handleViewStats = (a: Account) => { statsAcc.value = a; showStats.value = true }
+const handleOpenEditorFromReAuth = (a: Account) => {
+  closeReAuthModal()
+  void handleEdit(a)
+}
 const handleSchedule = async (a: Account) => {
   scheduleAcc.value = a
   scheduleModelOptions.value = []
@@ -1328,11 +1383,19 @@ const handleSchedule = async (a: Account) => {
   }
 }
 const closeSchedulePanel = () => { showSchedulePanel.value = false; scheduleAcc.value = null; scheduleModelOptions.value = [] }
-const handleReAuth = (a: Account) => { reAuthAcc.value = a; showReAuth.value = true }
+const handleReAuth = async (a: Account) => {
+  try {
+    reAuthAcc.value = await ensureAccountDetail(a)
+    showReAuth.value = true
+  } catch (error: any) {
+    appStore.showError(error.message || t('admin.accounts.failedToLoad'))
+  }
+}
 const handleRefresh = async (a: Account) => {
   try {
     const updated = await adminAPI.accounts.refreshCredentials(a.id)
     patchAccountInList(updated)
+    usageManualRefreshToken.value += 1
     enterAutoRefreshSilentWindow()
   } catch (error) {
     console.error('Failed to refresh credentials:', error)

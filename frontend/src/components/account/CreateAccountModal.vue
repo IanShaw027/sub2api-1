@@ -3031,7 +3031,9 @@ import type {
   AccountPlatform,
   AccountType,
   CheckMixedChannelResponse,
-  CreateAccountRequest
+  CreateAccountRequest,
+  KiroCredentials,
+  KiroAccountExtra
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -4137,7 +4139,7 @@ const handleSubmit = async () => {
       return
     }
 
-    const credentials: Record<string, unknown> = {
+    const credentials: KiroCredentials & Record<string, unknown> = {
       refresh_token: kiroRefreshToken.value.trim(),
       auth_method: kiroAuthMethod.value,
       region: kiroRegion.value.trim() || 'us-east-1'
@@ -4151,7 +4153,7 @@ const handleSubmit = async () => {
     if (kiroMachineID.value.trim()) credentials.machine_id = kiroMachineID.value.trim()
     if (expiresAt) credentials.expires_at = expiresAt.toISOString()
 
-    const extra = {
+    const extra: KiroAccountExtra & Record<string, unknown> = {
       kiro_version: kiroVersion.value.trim() || '0.10.0',
       system_version: kiroSystemVersion.value.trim() || 'darwin#24.6.0',
       node_version: kiroNodeVersion.value.trim() || '22.21.1'
@@ -4415,6 +4417,25 @@ const createAccountAndFinish = async (
     if (Object.keys(quotaExtra).length > 0) {
       finalExtra = quotaExtra
     }
+  }
+  if (platform === 'kiro') {
+    await doCreateAccount({
+      name: form.name,
+      notes: form.notes,
+      platform,
+      type: 'oauth',
+      credentials,
+      extra: finalExtra,
+      proxy_id: form.proxy_id,
+      concurrency: form.concurrency,
+      load_factor: form.load_factor ?? undefined,
+      priority: form.priority,
+      rate_multiplier: form.rate_multiplier,
+      group_ids: form.group_ids,
+      expires_at: form.expires_at,
+      auto_pause_on_expired: autoPauseOnExpired.value
+    })
+    return
   }
   await doCreateAccount({
     name: form.name,

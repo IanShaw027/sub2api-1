@@ -48,6 +48,7 @@
             class="input font-mono text-sm"
             :placeholder="t('admin.accounts.kiro.refreshTokenPlaceholderEdit')"
           />
+          <p class="input-hint">{{ t('admin.accounts.kiro.refreshTokenHintEdit') }}</p>
         </div>
         <div>
           <label class="input-label">{{ t('admin.accounts.kiro.accessTokenLabel') }}</label>
@@ -58,6 +59,7 @@
             :placeholder="t('admin.accounts.kiro.accessTokenPlaceholderEdit')"
           />
           <p class="input-hint">{{ t('admin.accounts.kiro.accessTokenHintEdit') }}</p>
+          <p class="input-hint">{{ t('admin.accounts.kiro.accessTokenAutoClearHintEdit') }}</p>
         </div>
         <div v-if="kiroAuthMethod === 'idc'" class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
@@ -1938,7 +1940,15 @@ import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { adminAPI } from '@/api/admin'
 import { useQuotaNotifyState } from '@/composables/useQuotaNotifyState'
-import type { Account, Proxy, AdminGroup, CheckMixedChannelResponse } from '@/types'
+import type {
+  Account,
+  Proxy,
+  AdminGroup,
+  CheckMixedChannelResponse,
+  UpdateAccountRequest,
+  KiroCredentials,
+  KiroAccountExtra
+} from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select from '@/components/common/Select.vue'
@@ -2384,20 +2394,23 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   loadTempUnschedRules(credentials)
 
   if (newAccount.platform === 'kiro' && newAccount.type === 'oauth') {
-    kiroAuthMethod.value = ((credentials?.auth_method as string) || 'social') as 'social' | 'idc'
-    kiroRefreshToken.value = (credentials?.refresh_token as string) || ''
+    const kiroCredentials = (newAccount.credentials || {}) as KiroCredentials & Record<string, unknown>
+    const kiroExtra = (newAccount.extra || {}) as KiroAccountExtra & Record<string, unknown>
+
+    kiroAuthMethod.value = (kiroCredentials?.auth_method || 'social') as 'social' | 'idc'
+    kiroRefreshToken.value = kiroCredentials?.refresh_token || ''
     kiroAccessToken.value = ''
-    kiroExpiresAtInput.value = formatCredentialDateTimeLocal((credentials?.expires_at as string) || '')
-    kiroClientID.value = (credentials?.client_id as string) || ''
+    kiroExpiresAtInput.value = formatCredentialDateTimeLocal(kiroCredentials?.expires_at || '')
+    kiroClientID.value = kiroCredentials?.client_id || ''
     kiroClientSecret.value = ''
-    kiroProfileARN.value = (credentials?.profile_arn as string) || ''
-    kiroRegion.value = (credentials?.region as string) || 'us-east-1'
-    kiroAuthRegion.value = (credentials?.auth_region as string) || ''
-    kiroAPIRegion.value = (credentials?.api_region as string) || ''
-    kiroMachineID.value = (credentials?.machine_id as string) || ''
-    kiroVersion.value = (extra?.kiro_version as string) || '0.10.0'
-    kiroSystemVersion.value = (extra?.system_version as string) || 'darwin#24.6.0'
-    kiroNodeVersion.value = (extra?.node_version as string) || '22.21.1'
+    kiroProfileARN.value = kiroCredentials?.profile_arn || ''
+    kiroRegion.value = kiroCredentials?.region || 'us-east-1'
+    kiroAuthRegion.value = kiroCredentials?.auth_region || ''
+    kiroAPIRegion.value = kiroCredentials?.api_region || ''
+    kiroMachineID.value = kiroCredentials?.machine_id || ''
+    kiroVersion.value = kiroExtra?.kiro_version || '0.10.0'
+    kiroSystemVersion.value = kiroExtra?.system_version || 'darwin#24.6.0'
+    kiroNodeVersion.value = kiroExtra?.node_version || '22.21.1'
   } else {
     kiroAuthMethod.value = 'social'
     kiroRefreshToken.value = ''
@@ -2906,7 +2919,7 @@ const openMixedChannelDialog = (opts: {
   showMixedChannelWarning.value = true
 }
 
-const withAntigravityConfirmFlag = (payload: Record<string, unknown>) => {
+const withAntigravityConfirmFlag = (payload: UpdateAccountRequest): UpdateAccountRequest => {
   if (needsMixedChannelCheck() && antigravityMixedChannelConfirmed.value) {
     return {
       ...payload,
@@ -2974,7 +2987,7 @@ const handleClose = () => {
   emit('close')
 }
 
-const submitUpdateAccount = async (accountID: number, updatePayload: Record<string, unknown>) => {
+const submitUpdateAccount = async (accountID: number, updatePayload: UpdateAccountRequest) => {
   submitting.value = true
   try {
     const updatedAccount = await adminAPI.accounts.update(accountID, withAntigravityConfirmFlag(updatePayload))
@@ -3007,7 +3020,7 @@ const handleSubmit = async () => {
     return
   }
 
-  const updatePayload: Record<string, unknown> = { ...form }
+  const updatePayload: UpdateAccountRequest = { ...form }
   try {
     // 后端期望 proxy_id: 0 表示清除代理，而不是 null
     if (updatePayload.proxy_id === null) {
@@ -3024,8 +3037,8 @@ const handleSubmit = async () => {
     updatePayload.auto_pause_on_expired = autoPauseOnExpired.value
 
     if (props.account.platform === 'kiro' && props.account.type === 'oauth') {
-      const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
-      const newCredentials: Record<string, unknown> = { ...currentCredentials }
+      const currentCredentials = props.account.credentials || {}
+      const newCredentials: KiroCredentials & Record<string, unknown> = { ...currentCredentials }
 
       if (!kiroRefreshToken.value.trim()) {
         appStore.showError(t('admin.accounts.kiro.refreshTokenRequired'))
@@ -3104,7 +3117,7 @@ const handleSubmit = async () => {
 
       updatePayload.credentials = newCredentials
 
-      const currentExtra = (props.account.extra as Record<string, unknown>) || {}
+      const currentExtra = props.account.extra || {}
       updatePayload.extra = {
         ...currentExtra,
         kiro_version: kiroVersion.value.trim() || '0.10.0',

@@ -605,6 +605,7 @@ export interface CreateGroupRequest {
   fallback_group_id?: number | null
   fallback_group_id_on_invalid_request?: number | null
   allow_messages_dispatch?: boolean
+  default_mapped_model?: string
   model_routing?: Record<string, number[]> | null
   model_routing_enabled?: boolean
   messages_dispatch_model_config?: OpenAIMessagesDispatchModelConfig
@@ -635,6 +636,7 @@ export interface UpdateGroupRequest {
   fallback_group_id?: number | null
   fallback_group_id_on_invalid_request?: number | null
   allow_messages_dispatch?: boolean
+  default_mapped_model?: string
   model_routing?: Record<string, number[]> | null
   model_routing_enabled?: boolean
   messages_dispatch_model_config?: OpenAIMessagesDispatchModelConfig
@@ -651,6 +653,7 @@ export type AccountPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' 
 export type AccountType = 'oauth' | 'setup-token' | 'apikey' | 'upstream' | 'bedrock'
 export type OAuthAddMethod = 'oauth' | 'setup-token'
 export type ProxyProtocol = 'http' | 'https' | 'socks5' | 'socks5h'
+export type AccountDataRecord = Record<string, unknown>
 
 // Claude Model type (returned by /v1/models and account models API)
 export interface ClaudeModel {
@@ -749,6 +752,28 @@ export interface GeminiCredentials {
   model_mapping?: Record<string, string>
 }
 
+export type KiroAuthMethod = 'social' | 'idc'
+
+export interface KiroCredentials {
+  access_token?: string
+  refresh_token?: string
+  expires_at?: string
+  auth_method?: KiroAuthMethod | string
+  client_id?: string
+  client_secret?: string
+  region?: string
+  auth_region?: string
+  api_region?: string
+  profile_arn?: string
+  machine_id?: string
+}
+
+export interface KiroAccountExtra {
+  kiro_version?: string
+  system_version?: string
+  node_version?: string
+}
+
 export interface TempUnschedulableRule {
   error_code: number
   keywords: string[]
@@ -770,18 +795,31 @@ export interface TempUnschedulableStatus {
   state?: TempUnschedulableState
 }
 
-export interface Account {
+export type AccountCredentialsShape<TCredentials extends object = AccountDataRecord> =
+  TCredentials & AccountDataRecord
+
+export interface AccountRuntimeExtra extends CodexUsageSnapshot {
+  model_rate_limits?: Record<string, { rate_limited_at: string; rate_limit_reset_at: string }>
+  antigravity_credits_overages?: Record<string, { activated_at: string; active_until: string }>
+}
+
+export type AccountExtraShape<TExtra extends object = AccountDataRecord> =
+  AccountRuntimeExtra & TExtra & AccountDataRecord
+
+export interface Account<
+  TCredentials extends object = AccountDataRecord,
+  TExtra extends object = AccountDataRecord,
+  TPlatform extends AccountPlatform = AccountPlatform,
+  TType extends AccountType = AccountType
+> {
   id: number
   name: string
   notes?: string | null
-  platform: AccountPlatform
-  type: AccountType
-  credentials?: Record<string, unknown>
+  platform: TPlatform
+  type: TType
+  credentials?: AccountCredentialsShape<TCredentials>
   // Extra fields including Codex usage and model-level rate limits (Antigravity smart retry)
-  extra?: (CodexUsageSnapshot & {
-    model_rate_limits?: Record<string, { rate_limited_at: string; rate_limit_reset_at: string }>
-    antigravity_credits_overages?: Record<string, { activated_at: string; active_until: string }>
-  } & Record<string, unknown>)
+  extra?: AccountExtraShape<TExtra>
   proxy_id: number | null
   concurrency: number
   load_factor?: number | null
@@ -955,13 +993,21 @@ export interface CodexUsageSnapshot {
   codex_usage_updated_at?: string // Last update timestamp
 }
 
-export interface CreateAccountRequest {
+export type AccountRequestPayload<TPayload extends object = AccountDataRecord> =
+  TPayload & AccountDataRecord
+
+export interface CreateAccountRequest<
+  TCredentials extends object = AccountDataRecord,
+  TExtra extends object = AccountDataRecord,
+  TPlatform extends AccountPlatform = AccountPlatform,
+  TType extends AccountType = AccountType
+> {
   name: string
   notes?: string | null
-  platform: AccountPlatform
-  type: AccountType
-  credentials: Record<string, unknown>
-  extra?: Record<string, unknown>
+  platform: TPlatform
+  type: TType
+  credentials: AccountRequestPayload<TCredentials>
+  extra?: AccountRequestPayload<TExtra>
   proxy_id?: number | null
   concurrency?: number
   load_factor?: number | null
@@ -973,12 +1019,16 @@ export interface CreateAccountRequest {
   confirm_mixed_channel_risk?: boolean
 }
 
-export interface UpdateAccountRequest {
+export interface UpdateAccountRequest<
+  TCredentials extends object = AccountDataRecord,
+  TExtra extends object = AccountDataRecord,
+  TType extends AccountType = AccountType
+> {
   name?: string
   notes?: string | null
-  type?: AccountType
-  credentials?: Record<string, unknown>
-  extra?: Record<string, unknown>
+  type?: TType
+  credentials?: AccountRequestPayload<TCredentials>
+  extra?: AccountRequestPayload<TExtra>
   proxy_id?: number | null
   concurrency?: number
   load_factor?: number | null
@@ -1050,13 +1100,18 @@ export interface AdminDataProxy {
   status: 'active' | 'inactive'
 }
 
-export interface AdminDataAccount {
+export interface AdminDataAccount<
+  TCredentials extends object = AccountDataRecord,
+  TExtra extends object = AccountDataRecord,
+  TPlatform extends AccountPlatform = AccountPlatform,
+  TType extends AccountType = AccountType
+> {
   name: string
   notes?: string | null
-  platform: AccountPlatform
-  type: AccountType
-  credentials: Record<string, unknown>
-  extra?: Record<string, unknown>
+  platform: TPlatform
+  type: TType
+  credentials: AccountRequestPayload<TCredentials>
+  extra?: AccountRequestPayload<TExtra>
   proxy_key?: string | null
   concurrency: number
   priority: number

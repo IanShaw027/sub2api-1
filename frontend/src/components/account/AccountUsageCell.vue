@@ -176,10 +176,7 @@
           color="cyan"
         />
         <div class="text-[10px] text-gray-500 dark:text-gray-400">
-          Used ${{ formatKiroMoney(usageInfo.kiro_current_usage) }}
-          /
-          Limit ${{ formatKiroMoney(usageInfo.kiro_usage_limit) }}
-          · Remaining ${{ formatKiroMoney(usageInfo.kiro_remaining) }}
+          {{ kiroUsageSummary }}
         </div>
       </div>
       <div v-else class="text-xs text-gray-400">-</div>
@@ -585,6 +582,12 @@ const kiroUsageLabel = computed(() => {
   if (typeof limit !== 'number' || Number.isNaN(limit) || limit <= 0) return '$0'
   return `$${formatKiroMoney(limit)}`
 })
+
+const kiroUsageSummary = computed(() => t('admin.accounts.kiro.usageSummary', {
+  used: formatKiroMoney(usageInfo.value?.kiro_current_usage),
+  limit: formatKiroMoney(usageInfo.value?.kiro_usage_limit),
+  remaining: formatKiroMoney(usageInfo.value?.kiro_remaining)
+}))
 
 const openAIUsageRefreshKey = computed(() => buildOpenAIUsageRefreshKey(props.account))
 
