@@ -30,7 +30,7 @@ func NewKiroTokenProvider(
 	return &KiroTokenProvider{
 		accountRepo:   accountRepo,
 		tokenCache:    tokenCache,
-		refreshPolicy: ClaudeProviderRefreshPolicy(),
+		refreshPolicy: KiroProviderRefreshPolicy(),
 	}
 }
 
@@ -140,6 +140,7 @@ func (p *KiroTokenProvider) GetAccessToken(ctx context.Context, account *Account
 		return "", errors.New("not a kiro oauth account")
 	}
 
+	callerAccount := account
 	cacheKey := KiroTokenCacheKey(account)
 	if p.tokenCache != nil {
 		if token, err := p.tokenCache.GetAccessToken(ctx, cacheKey); err == nil && token != "" {
@@ -165,8 +166,9 @@ func (p *KiroTokenProvider) GetAccessToken(ctx context.Context, account *Account
 					return token, nil
 				}
 			}
-		} else {
-			account = result.Account
+		} else if result.Account != nil {
+			copyKiroAccountRuntimeState(callerAccount, result.Account)
+			account = callerAccount
 			expiresAt = account.GetCredentialAsTime("expires_at")
 		}
 	}
@@ -179,6 +181,8 @@ func (p *KiroTokenProvider) GetAccessToken(ctx context.Context, account *Account
 	if p.tokenCache != nil {
 		latestAccount, isStale := CheckTokenVersion(ctx, account, p.accountRepo)
 		if isStale && latestAccount != nil {
+			copyKiroAccountRuntimeState(callerAccount, latestAccount)
+			account = callerAccount
 			accessToken = latestAccount.GetCredential("access_token")
 			if accessToken == "" {
 				return "", errors.New("access_token not found after version check")
@@ -207,6 +211,16 @@ func (p *KiroTokenProvider) GetAccessToken(ctx context.Context, account *Account
 	}
 
 	return accessToken, nil
+}
+
+func copyKiroAccountRuntimeState(dst, src *Account) {
+	if dst == nil || src == nil {
+		return
+	}
+	dst.Credentials = cloneCredentials(src.Credentials)
+	dst.Extra = cloneCredentials(src.Extra)
+	dst.ProxyID = src.ProxyID
+	dst.Proxy = src.Proxy
 }
 
 func KiroRegion(account *Account) string {

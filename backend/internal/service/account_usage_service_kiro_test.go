@@ -269,6 +269,8 @@ func TestAccountUsageService_GetUsage_KiroRefreshUsesAssignedProxy(t *testing.T)
 	}
 	repo := &kiroUsageAccountRepo{account: account}
 	var refreshProxyURL string
+	var usageProxyURL string
+	var usageRawQuery string
 	upstream := &kiroHTTPUpstreamRecorder{
 		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
 			switch {
@@ -285,6 +287,8 @@ func TestAccountUsageService_GetUsage_KiroRefreshUsesAssignedProxy(t *testing.T)
 					Header: make(http.Header),
 				}, nil
 			default:
+				usageProxyURL = proxyURL
+				usageRawQuery = req.URL.RawQuery
 				return &http.Response{
 					StatusCode: http.StatusOK,
 					Body: io.NopCloser(strings.NewReader(`{
@@ -319,5 +323,8 @@ func TestAccountUsageService_GetUsage_KiroRefreshUsesAssignedProxy(t *testing.T)
 	require.NoError(t, err)
 	require.NotNil(t, usage)
 	require.Equal(t, "http://127.0.0.1:8089", refreshProxyURL)
+	require.Equal(t, "http://127.0.0.1:8089", usageProxyURL)
+	require.Contains(t, usageRawQuery, "profileArn=")
 	require.Equal(t, "fresh-access-token", account.GetCredential("access_token"))
+	require.Equal(t, "arn:aws:kiro:us-east-1:123456789012:profile/test", account.GetCredential("profile_arn"))
 }

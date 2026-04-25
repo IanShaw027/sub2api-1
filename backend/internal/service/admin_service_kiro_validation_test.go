@@ -220,3 +220,15 @@ func TestNormalizeKiroAuthMethod_InfersIDCFromClientCredentials(t *testing.T) {
 	})
 	require.Equal(t, "idc", got)
 }
+
+func TestNormalizeKiroAuthMethod_ClientCredentialsOverrideUnknownExplicitLabel(t *testing.T) {
+	t.Parallel()
+
+	got := NormalizeKiroAuthMethod(map[string]any{
+		"refresh_token": "rt",
+		"auth_method":   "aws-builder",
+		"client_id":     "client-id",
+		"client_secret": "client-secret",
+	})
+	require.Equal(t, "idc", got)
+}

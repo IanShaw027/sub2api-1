@@ -45,6 +45,7 @@ type KiroUsageService struct {
 	httpUpstream        HTTPUpstream
 	tlsFPProfileService *TLSFingerprintProfileService
 	settingService      *SettingService
+	proxyRepo           ProxyRepository
 }
 
 func NewKiroUsageService() *KiroUsageService {
@@ -68,10 +69,19 @@ func (s *KiroUsageService) WithSettingService(settingService *SettingService) *K
 	return s
 }
 
+func (s *KiroUsageService) WithProxyRepo(proxyRepo ProxyRepository) *KiroUsageService {
+	if s == nil {
+		return nil
+	}
+	s.proxyRepo = proxyRepo
+	return s
+}
+
 func (s *KiroUsageService) FetchUsageLimits(ctx context.Context, account *Account, accessToken string) (*KiroUsageLimits, error) {
 	if account == nil {
 		return nil, fmt.Errorf("account is nil")
 	}
+	account = s.prepareAccount(ctx, account)
 	host := fmt.Sprintf("q.%s.amazonaws.com", KiroRegion(account))
 	params := url.Values{
 		"origin":       {"AI_EDITOR"},
@@ -118,6 +128,22 @@ func (s *KiroUsageService) FetchUsageLimits(ctx context.Context, account *Accoun
 		return nil, err
 	}
 	return &out, nil
+}
+
+func (s *KiroUsageService) prepareAccount(ctx context.Context, account *Account) *Account {
+	if account == nil || account.Proxy != nil || account.ProxyID == nil || s == nil || s.proxyRepo == nil {
+		return account
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	proxy, err := s.proxyRepo.GetByID(ctx, *account.ProxyID)
+	if err != nil || proxy == nil {
+		return account
+	}
+	cloned := *account
+	cloned.Proxy = proxy
+	return &cloned
 }
 
 func doKiroSidecarRequest(

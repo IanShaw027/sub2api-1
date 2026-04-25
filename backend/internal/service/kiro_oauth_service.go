@@ -280,25 +280,41 @@ func (s *KiroOAuthService) ExchangeCallback(ctx context.Context, input *KiroExch
 }
 
 func (s *KiroOAuthService) enrichTokenInfo(ctx context.Context, tokenInfo *KiroTokenInfo) {
-	if tokenInfo == nil || tokenInfo.AccessToken == "" || tokenInfo.ProfileARN == "" || s.usageService == nil {
+	s.enrichTokenInfoForAccount(ctx, nil, tokenInfo)
+}
+
+func (s *KiroOAuthService) enrichTokenInfoForAccount(ctx context.Context, baseAccount *Account, tokenInfo *KiroTokenInfo) {
+	if s == nil || tokenInfo == nil || tokenInfo.AccessToken == "" || tokenInfo.ProfileARN == "" || s.usageService == nil {
 		return
 	}
 
-	account := &Account{
-		Platform: PlatformKiro,
-		Type:     AccountTypeOAuth,
-		Credentials: map[string]any{
-			"access_token":  tokenInfo.AccessToken,
-			"refresh_token": tokenInfo.RefreshToken,
-			"profile_arn":   tokenInfo.ProfileARN,
-			"region":        firstNonEmptyKiroString(tokenInfo.Region, "us-east-1"),
-			"auth_region":   tokenInfo.AuthRegion,
-			"api_region":    tokenInfo.APIRegion,
-		},
-		Concurrency: 1,
+	credentials := map[string]any{
+		"access_token":  tokenInfo.AccessToken,
+		"refresh_token": tokenInfo.RefreshToken,
+		"profile_arn":   tokenInfo.ProfileARN,
+		"region":        firstNonEmptyKiroString(tokenInfo.Region, "us-east-1"),
+		"auth_region":   tokenInfo.AuthRegion,
+		"api_region":    tokenInfo.APIRegion,
+	}
+	account := baseAccount
+	if account == nil {
+		account = &Account{
+			Platform:    PlatformKiro,
+			Type:        AccountTypeOAuth,
+			Credentials: credentials,
+			Concurrency: 1,
+		}
+	} else {
+		cloned := *account
+		cloned.Credentials = MergeCredentials(cloneCredentials(account.Credentials), credentials)
+		if cloned.Concurrency <= 0 {
+			cloned.Concurrency = 1
+		}
+		account = &cloned
 	}
 
-	usage, err := s.usageService.FetchUsageLimits(ctx, account, tokenInfo.AccessToken)
+	usageService := s.usageService.WithProxyRepo(s.proxyRepo)
+	usage, err := usageService.FetchUsageLimits(ctx, account, tokenInfo.AccessToken)
 	if err != nil {
 		return
 	}
@@ -314,12 +330,16 @@ func (s *KiroOAuthService) enrichTokenInfo(ctx context.Context, tokenInfo *KiroT
 }
 
 func (s *KiroOAuthService) EnrichRefreshedCredentials(ctx context.Context, credentials map[string]any) map[string]any {
+	return s.EnrichRefreshedCredentialsForAccount(ctx, nil, credentials)
+}
+
+func (s *KiroOAuthService) EnrichRefreshedCredentialsForAccount(ctx context.Context, account *Account, credentials map[string]any) map[string]any {
 	if credentials == nil {
 		return nil
 	}
 	tokenInfo := buildKiroTokenInfo(credentials, url.Values{}, NormalizeKiroAuthMethod(credentials))
 	if s != nil {
-		s.enrichTokenInfo(ctx, tokenInfo)
+		s.enrichTokenInfoForAccount(ctx, account, tokenInfo)
 	}
 	return MergeCredentials(credentials, kiroTokenInfoMap(tokenInfo))
 }

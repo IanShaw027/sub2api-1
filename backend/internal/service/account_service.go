@@ -204,11 +204,15 @@ func KiroAuthMethodUsesIDCRefresh(authMethod string) bool {
 }
 
 func NormalizeKiroAuthMethod(credentials map[string]any) string {
-	if authMethod := normalizeKiroAuthMethodValue(stringCredential(credentials, "auth_method")); authMethod != "" {
+	authMethod := normalizeKiroAuthMethodValue(stringCredential(credentials, "auth_method"))
+	if authMethod == "idc" {
 		return authMethod
 	}
 	if strings.TrimSpace(stringCredential(credentials, "client_id")) != "" && strings.TrimSpace(stringCredential(credentials, "client_secret")) != "" {
 		return "idc"
+	}
+	if authMethod != "" {
+		return authMethod
 	}
 	for _, key := range []string{"provider", "login_provider", "login_option"} {
 		if authMethod := normalizeKiroAuthMethodValue(stringCredential(credentials, key)); authMethod != "" {

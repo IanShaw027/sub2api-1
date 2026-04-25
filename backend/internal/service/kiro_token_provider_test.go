@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -138,4 +139,68 @@ func TestKiroTokenProvider_RefreshAccount_LockHeldWithoutUpdateReturnsError(t *t
 	refreshedAccount, err := provider.RefreshAccount(ctx, account)
 	require.Error(t, err)
 	require.Nil(t, refreshedAccount)
+}
+
+func TestKiroTokenProvider_GetAccessTokenSyncsRefreshedAccountCredentials(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		ID:       55,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":  "stale-access",
+			"refresh_token": "stale-refresh",
+			"expires_at":    time.Now().Add(-time.Minute).UTC().Format(time.RFC3339),
+		},
+	}
+	repo := &refreshAPIAccountRepo{account: account}
+	cache := &refreshAPICacheStub{lockResult: true}
+	executor := &refreshAPIExecutorStub{
+		needsRefresh: true,
+		credentials: map[string]any{
+			"access_token":  "fresh-access",
+			"refresh_token": "fresh-refresh",
+			"expires_at":    time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+			"profile_arn":   "arn:aws:bedrock:us-east-1:123456789012:inference-profile/fresh",
+		},
+	}
+
+	provider := NewKiroTokenProvider(repo, cache)
+	provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), executor)
+
+	token, err := provider.GetAccessToken(context.Background(), account)
+	require.NoError(t, err)
+	require.Equal(t, "fresh-access", token)
+	require.Equal(t, "fresh-access", account.GetCredential("access_token"))
+	require.Equal(t, "arn:aws:bedrock:us-east-1:123456789012:inference-profile/fresh", account.GetCredential("profile_arn"))
+}
+
+func TestKiroTokenProvider_GetAccessTokenReturnsRefreshError(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		ID:       56,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":  "stale-access",
+			"refresh_token": "stale-refresh",
+			"expires_at":    time.Now().Add(-time.Minute).UTC().Format(time.RFC3339),
+		},
+	}
+	repo := &refreshAPIAccountRepo{account: account}
+	cache := &refreshAPICacheStub{lockResult: true}
+	executor := &refreshAPIExecutorStub{
+		needsRefresh: true,
+		err:          errors.New("invalid_grant"),
+	}
+
+	provider := NewKiroTokenProvider(repo, cache)
+	provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), executor)
+
+	token, err := provider.GetAccessToken(context.Background(), account)
+	require.Error(t, err)
+	require.Empty(t, token)
+	require.Equal(t, "stale-access", account.GetCredential("access_token"))
 }

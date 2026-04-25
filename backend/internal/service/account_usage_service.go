@@ -496,7 +496,8 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 
 		usageService := NewKiroUsageService().
 			WithTransport(kiroHTTPUpstream, s.tlsFPProfileService).
-			WithSettingService(s.settingService)
+			WithSettingService(s.settingService).
+			WithProxyRepo(s.proxyRepo)
 		limits, err := usageService.FetchUsageLimits(fetchCtx, account, accessToken)
 		if err != nil {
 			return buildKiroDegradedUsage(err), nil

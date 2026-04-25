@@ -3,9 +3,14 @@ package service
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 )
 
 func TestKiroOAuthServiceGenerateAuthURLUsesStoredRedirectURI(t *testing.T) {
@@ -233,5 +238,57 @@ func TestKiroOAuthServiceExchangeCallbackUsesSigninPathForManualQueryOnlyIDCInpu
 	expectedRedirectURI := "http://localhost:3128/signin/callback?login_option=awsidc"
 	if gotRedirectURI != expectedRedirectURI {
 		t.Fatalf("token exchange redirect_uri mismatch: got=%q want=%q", gotRedirectURI, expectedRedirectURI)
+	}
+}
+
+func TestKiroOAuthServiceEnrichRefreshedCredentialsUsesAccountProxy(t *testing.T) {
+	proxyID := int64(901)
+	var usageProxyURL string
+	upstream := &kiroHTTPUpstreamRecorder{
+		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+			usageProxyURL = proxyURL
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body: io.NopCloser(strings.NewReader(`{
+					"subscriptionInfo":{"subscriptionTitle":"Kiro Pro"},
+					"usageBreakdownList":[{"currentUsageWithPrecision":1,"usageLimitWithPrecision":10,"nextDateReset":4102444800}]
+				}`)),
+				Header: make(http.Header),
+			}, nil
+		},
+	}
+	svc := NewKiroOAuthService(&kiroDefaultProxyRepoStub{
+		getByIDFunc: func(ctx context.Context, id int64) (*Proxy, error) {
+			if id != proxyID {
+				t.Fatalf("proxy id mismatch: got=%d want=%d", id, proxyID)
+			}
+			return &Proxy{Protocol: "http", Host: "127.0.0.1", Port: 8091}, nil
+		},
+	}, upstream, nil, nil)
+	defer svc.Stop()
+
+	account := &Account{
+		ID:          902,
+		Platform:    PlatformKiro,
+		Type:        AccountTypeOAuth,
+		ProxyID:     &proxyID,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"refresh_token": "refresh-token",
+			"profile_arn":   "arn:aws:kiro:us-east-1:123456789012:profile/test",
+			"region":        "us-east-1",
+		},
+	}
+	credentials := MergeCredentials(account.Credentials, map[string]any{
+		"access_token": "fresh-access",
+	})
+
+	enriched := svc.EnrichRefreshedCredentialsForAccount(context.Background(), account, credentials)
+
+	if usageProxyURL != "http://127.0.0.1:8091" {
+		t.Fatalf("usage proxy URL mismatch: got=%q", usageProxyURL)
+	}
+	if enriched["subscription_type"] != "Kiro Pro" {
+		t.Fatalf("subscription_type mismatch: got=%v", enriched["subscription_type"])
 	}
 }

@@ -149,7 +149,7 @@ func ProvideKiroTokenProvider(
 		WithSettingService(settingService).
 		WithProxyRepo(proxyRepo)
 	p.SetRefreshAPI(refreshAPI, executor)
-	p.SetRefreshPolicy(ClaudeProviderRefreshPolicy())
+	p.SetRefreshPolicy(KiroProviderRefreshPolicy())
 	return p
 }
 

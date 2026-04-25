@@ -123,7 +123,8 @@ func (h *KiroOAuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 	if h.oauthService != nil {
-		credentials = h.oauthService.EnrichRefreshedCredentials(c.Request.Context(), credentials)
+		account.Credentials = credentials
+		credentials = h.oauthService.EnrichRefreshedCredentialsForAccount(c.Request.Context(), account, credentials)
 	}
 
 	response.Success(c, credentials)

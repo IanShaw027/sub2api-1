@@ -652,3 +652,10 @@ func TestAntigravityProviderRefreshPolicy(t *testing.T) {
 	require.Equal(t, ProviderLockHeldUseExistingToken, p.OnLockHeld)
 	require.Equal(t, time.Duration(0), p.FailureTTL)
 }
+
+func TestKiroProviderRefreshPolicy(t *testing.T) {
+	p := KiroProviderRefreshPolicy()
+	require.Equal(t, ProviderRefreshErrorReturn, p.OnRefreshError)
+	require.Equal(t, ProviderLockHeldUseExistingToken, p.OnLockHeld)
+	require.Equal(t, time.Duration(0), p.FailureTTL)
+}
