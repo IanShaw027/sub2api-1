@@ -4,6 +4,7 @@ import { defineComponent, h, ref } from 'vue'
 
 const {
   updateAccountMock,
+  createAccountMock,
   clearErrorMock,
   exchangeCallbackMock,
   validateRefreshTokenMock,
@@ -12,6 +13,7 @@ const {
   buildAccountNameMock
 } = vi.hoisted(() => ({
   updateAccountMock: vi.fn(),
+  createAccountMock: vi.fn(),
   clearErrorMock: vi.fn(),
   exchangeCallbackMock: vi.fn(),
   validateRefreshTokenMock: vi.fn(),
@@ -23,7 +25,8 @@ const {
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
     showError: vi.fn(),
-    showSuccess: vi.fn()
+    showSuccess: vi.fn(),
+    showWarning: vi.fn()
   })
 }))
 
@@ -31,6 +34,7 @@ vi.mock('@/api/admin', () => ({
   adminAPI: {
     accounts: {
       update: updateAccountMock,
+      create: createAccountMock,
       clearError: clearErrorMock
     }
   }
@@ -244,12 +248,14 @@ function mountModal(account = buildKiroAccount('apikey')) {
 describe('admin ReAuthAccountModal', () => {
   beforeEach(() => {
     updateAccountMock.mockReset()
+    createAccountMock.mockReset()
     clearErrorMock.mockReset()
     exchangeCallbackMock.mockReset()
     validateRefreshTokenMock.mockReset()
     buildCredentialsMock.mockReset()
     buildExtraInfoMock.mockReset()
     buildAccountNameMock.mockReset()
+    createAccountMock.mockResolvedValue({})
 
     exchangeCallbackMock.mockResolvedValue({
       access_token: 'access-new',
@@ -355,6 +361,77 @@ describe('admin ReAuthAccountModal', () => {
         subscription_type: 'Kiro Pro'
       }
     })
+    expect(clearErrorMock).toHaveBeenCalledWith(42)
+  })
+
+  it('reauthorizes Kiro OAuth accounts from multiline refresh tokens by updating one account and creating the rest', async () => {
+    validateRefreshTokenMock.mockImplementation(async (credentials: Record<string, unknown>) => ({
+      access_token: `access-${credentials.refresh_token}`,
+      refresh_token: `validated-${credentials.refresh_token}`,
+      expires_at: '2026-05-01T00:00:00Z',
+      email: `${credentials.refresh_token}@example.com`,
+      plan_name: 'Kiro Pro'
+    }))
+    buildAccountNameMock.mockImplementation((tokenInfo?: any) => `Kiro ${tokenInfo?.email || 'OAuth'}`)
+    const wrapper = mountModal(buildKiroAccount('oauth'))
+
+    wrapper.getComponent(KiroAuthorizationFlowStub).vm.$emit('submit-refresh-token', {
+      credentials: {
+        refresh_token: 'rt-one\nrt-two',
+        auth_method: 'social',
+        region: 'eu-west-1',
+        machine_id: 'machine-2'
+      },
+      extra: {
+        custom_note: 'manual'
+      }
+    })
+    await flushPromises()
+
+    expect(validateRefreshTokenMock).toHaveBeenCalledTimes(2)
+    expect(validateRefreshTokenMock).toHaveBeenNthCalledWith(
+      1,
+      {
+        refresh_token: 'rt-one',
+        auth_method: 'social',
+        region: 'eu-west-1',
+        machine_id: 'machine-2'
+      },
+      {
+        custom_note: 'manual'
+      },
+      null
+    )
+    expect(validateRefreshTokenMock).toHaveBeenNthCalledWith(
+      2,
+      {
+        refresh_token: 'rt-two',
+        auth_method: 'social',
+        region: 'eu-west-1',
+        machine_id: 'machine-2'
+      },
+      {
+        custom_note: 'manual'
+      },
+      null
+    )
+    expect(updateAccountMock).toHaveBeenCalledWith(42, expect.objectContaining({
+      name: 'Kiro rt-one@example.com #1',
+      type: 'oauth',
+      credentials: expect.objectContaining({
+        refresh_token: 'validated-rt-one',
+        access_token: 'access-rt-one'
+      })
+    }))
+    expect(createAccountMock).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Kiro rt-two@example.com #2',
+      platform: 'kiro',
+      type: 'oauth',
+      credentials: expect.objectContaining({
+        refresh_token: 'validated-rt-two',
+        access_token: 'access-rt-two'
+      })
+    }))
     expect(clearErrorMock).toHaveBeenCalledWith(42)
   })
 })

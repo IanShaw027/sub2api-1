@@ -3702,7 +3702,6 @@ export default {
         refreshTokenPlaceholderEdit: '粘贴新的刷新令牌，或保留当前值',
         refreshTokenHintEdit: '上游登录状态变化后应及时替换；如果缺失刷新令牌，后端后续无法自行恢复。',
         refreshTokenRequired: '必须填写 Kiro 刷新令牌',
-        singleRefreshTokenOnly: '重新授权一次只能提交一个 Kiro Refresh Token',
         failedToValidateRT: '验证 Kiro Refresh Token 失败',
         validating: '验证中...',
         validateAndCreate: '验证并创建账号',

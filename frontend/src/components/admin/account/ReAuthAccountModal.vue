@@ -464,28 +464,118 @@ const handleKiroValidateRT = async (payload: {
 }) => {
   if (!props.account || !isKiroOAuth.value) return
 
-  const validatedCredentials = await kiroOAuth.validateRefreshToken(
-    payload.credentials,
-    payload.extra,
-    props.account.proxy_id
-  )
-  if (!validatedCredentials) {
+  const refreshTokens = String(payload.credentials.refresh_token || '')
+    .split('\n')
+    .map((rt) => rt.trim())
+    .filter((rt) => rt)
+
+  if (refreshTokens.length === 0) {
+    kiroOAuth.error.value = t('admin.accounts.kiro.refreshTokenRequired')
     return
   }
 
-  const tokenInfo = validatedCredentials as KiroTokenInfo
-  const credentials = stripEmptyRecordValues(mergeRecord(
-    (props.account.credentials || {}) as Record<string, unknown>,
-    payload.credentials,
-    validatedCredentials
-  ))
-  const extra = stripKiroRuntimeExtra(stripEmptyRecordValues(mergeRecord(
-    (props.account.extra || {}) as Record<string, unknown>,
-    kiroOAuth.buildExtraInfo(tokenInfo, payload.extra)
-  )))
-  const name = kiroOAuth.buildAccountName(tokenInfo, props.account.name)
+  kiroOAuth.loading.value = true
+  kiroOAuth.error.value = ''
 
-  await finishKiroReauthorization(name, credentials, extra)
+  let successCount = 0
+  let failedCount = 0
+  let updatedAccount: Account | null = null
+  const errors: string[] = []
+
+  try {
+    for (let i = 0; i < refreshTokens.length; i++) {
+      try {
+        const manualCredentials = {
+          ...payload.credentials,
+          refresh_token: refreshTokens[i]
+        }
+        const validatedCredentials = await kiroOAuth.validateRefreshToken(
+          manualCredentials,
+          payload.extra,
+          props.account.proxy_id
+        )
+        if (!validatedCredentials) {
+          failedCount++
+          errors.push(`#${i + 1}: ${kiroOAuth.error.value || t('admin.accounts.kiro.failedToValidateRT')}`)
+          kiroOAuth.error.value = ''
+          continue
+        }
+
+        const tokenInfo = validatedCredentials as KiroTokenInfo
+        const credentials = stripEmptyRecordValues(mergeRecord(
+          (props.account.credentials || {}) as Record<string, unknown>,
+          manualCredentials,
+          validatedCredentials
+        ))
+        const extra = stripKiroRuntimeExtra(stripEmptyRecordValues(mergeRecord(
+          (props.account.extra || {}) as Record<string, unknown>,
+          kiroOAuth.buildExtraInfo(tokenInfo, payload.extra)
+        )))
+        const baseName = kiroOAuth.buildAccountName(tokenInfo, props.account.name)
+        const name = refreshTokens.length > 1 ? `${baseName} #${i + 1}` : baseName
+
+        if (successCount === 0) {
+          await adminAPI.accounts.update(props.account.id, {
+            name,
+            type: 'oauth',
+            credentials,
+            extra
+          })
+          updatedAccount = await adminAPI.accounts.clearError(props.account.id)
+        } else {
+          await adminAPI.accounts.create({
+            name,
+            notes: props.account.notes,
+            platform: 'kiro',
+            type: 'oauth',
+            credentials,
+            extra,
+            proxy_id: props.account.proxy_id,
+            concurrency: props.account.concurrency,
+            load_factor: props.account.load_factor ?? undefined,
+            priority: props.account.priority,
+            rate_multiplier: props.account.rate_multiplier,
+            group_ids: props.account.group_ids,
+            expires_at: props.account.expires_at,
+            auto_pause_on_expired: props.account.auto_pause_on_expired
+          })
+        }
+        successCount++
+      } catch (error: any) {
+        failedCount++
+        const message =
+          error?.response?.data?.detail ||
+          error?.message ||
+          t('admin.accounts.oauth.authFailed')
+        errors.push(`#${i + 1}: ${message}`)
+      }
+    }
+
+    if (successCount > 0 && failedCount === 0) {
+      appStore.showSuccess(
+        refreshTokens.length > 1
+          ? t('admin.accounts.oauth.batchSuccess', { count: successCount })
+          : t('admin.accounts.reAuthorizedSuccess')
+      )
+      if (updatedAccount) {
+        emit('reauthorized', updatedAccount)
+      }
+      handleClose()
+    } else if (successCount > 0 && failedCount > 0) {
+      appStore.showWarning(
+        t('admin.accounts.oauth.batchPartialSuccess', { success: successCount, failed: failedCount })
+      )
+      kiroOAuth.error.value = errors.join('\n')
+      if (updatedAccount) {
+        emit('reauthorized', updatedAccount)
+      }
+    } else {
+      kiroOAuth.error.value = errors.join('\n')
+      appStore.showError(t('admin.accounts.oauth.batchFailed'))
+    }
+  } finally {
+    kiroOAuth.loading.value = false
+  }
 }
 
 const handleGenerateUrl = async () => {
