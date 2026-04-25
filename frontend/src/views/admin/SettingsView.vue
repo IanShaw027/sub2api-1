@@ -2987,6 +2987,89 @@
                 </div>
                 <Toggle v-model="form.enable_cch_signing" />
               </div>
+
+              <!-- Gateway Debug Timeline -->
+              <div class="rounded-lg border border-amber-200 bg-amber-50/70 p-4 dark:border-amber-900/50 dark:bg-amber-950/20">
+                <div class="flex items-center justify-between gap-4">
+                  <div>
+                    <label
+                      class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ t("admin.settings.gatewayForwarding.debugTimeline") }}
+                    </label>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{
+                        t(
+                          "admin.settings.gatewayForwarding.debugTimelineHint",
+                        )
+                      }}
+                    </p>
+                  </div>
+                  <Toggle v-model="form.gateway_debug_timeline_enabled" />
+                </div>
+
+                <div
+                  v-if="form.gateway_debug_timeline_enabled"
+                  class="mt-4 grid gap-4 md:grid-cols-3"
+                >
+                  <div class="md:col-span-3">
+                    <label class="label">
+                      {{
+                        t(
+                          "admin.settings.gatewayForwarding.debugTimelineDirectory",
+                        )
+                      }}
+                    </label>
+                    <input
+                      v-model="form.gateway_debug_timeline_directory"
+                      type="text"
+                      class="input"
+                      placeholder="logs/gateway-debug"
+                    />
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {{
+                        t(
+                          "admin.settings.gatewayForwarding.debugTimelineDirectoryHint",
+                        )
+                      }}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label class="label">
+                      {{
+                        t(
+                          "admin.settings.gatewayForwarding.debugTimelineRetentionDays",
+                        )
+                      }}
+                    </label>
+                    <input
+                      v-model.number="
+                        form.gateway_debug_timeline_retention_days
+                      "
+                      type="number"
+                      min="1"
+                      class="input"
+                    />
+                  </div>
+
+                  <div>
+                    <label class="label">
+                      {{
+                        t(
+                          "admin.settings.gatewayForwarding.debugTimelineMaxSizeMB",
+                        )
+                      }}
+                    </label>
+                    <input
+                      v-model.number="form.gateway_debug_timeline_max_size_mb"
+                      type="number"
+                      min="1"
+                      class="input"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
           <!-- Web Search Emulation -->
@@ -5484,6 +5567,10 @@ const form = reactive<SettingsForm>({
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
   enable_cch_signing: false,
+  gateway_debug_timeline_enabled: false,
+  gateway_debug_timeline_directory: "logs/gateway-debug",
+  gateway_debug_timeline_retention_days: 7,
+  gateway_debug_timeline_max_size_mb: 1024,
   // Balance & quota notification
   balance_low_notify_enabled: false,
   balance_low_notify_threshold: 0,
@@ -6447,6 +6534,17 @@ async function saveSettings() {
       enable_fingerprint_unification: form.enable_fingerprint_unification,
       enable_metadata_passthrough: form.enable_metadata_passthrough,
       enable_cch_signing: form.enable_cch_signing,
+      gateway_debug_timeline_enabled: form.gateway_debug_timeline_enabled,
+      gateway_debug_timeline_directory:
+        form.gateway_debug_timeline_directory || "logs/gateway-debug",
+      gateway_debug_timeline_retention_days: Math.max(
+        1,
+        Math.floor(Number(form.gateway_debug_timeline_retention_days) || 7),
+      ),
+      gateway_debug_timeline_max_size_mb: Math.max(
+        1,
+        Math.floor(Number(form.gateway_debug_timeline_max_size_mb) || 1024),
+      ),
       // Payment configuration
       payment_enabled: form.payment_enabled,
       payment_min_amount: Number(form.payment_min_amount) || 0,

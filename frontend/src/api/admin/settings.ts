@@ -637,6 +637,10 @@ export interface SystemSettings {
   enable_fingerprint_unification: boolean;
   enable_metadata_passthrough: boolean;
   enable_cch_signing: boolean;
+  gateway_debug_timeline_enabled: boolean;
+  gateway_debug_timeline_directory: string;
+  gateway_debug_timeline_retention_days: number;
+  gateway_debug_timeline_max_size_mb: number;
   web_search_emulation_enabled?: boolean;
 
   // Payment configuration
@@ -812,6 +816,10 @@ export interface UpdateSettingsRequest {
   enable_fingerprint_unification?: boolean;
   enable_metadata_passthrough?: boolean;
   enable_cch_signing?: boolean;
+  gateway_debug_timeline_enabled?: boolean;
+  gateway_debug_timeline_directory?: string;
+  gateway_debug_timeline_retention_days?: number;
+  gateway_debug_timeline_max_size_mb?: number;
   // Payment configuration
   payment_enabled?: boolean;
   payment_min_amount?: number;

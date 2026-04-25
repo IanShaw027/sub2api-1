@@ -36,6 +36,7 @@ type OpenAIGatewayHandler struct {
 	concurrencyHelper       *ConcurrencyHelper
 	maxAccountSwitches      int
 	cfg                     *config.Config
+	settingService          *service.SettingService
 }
 
 func resolveOpenAIForwardDefaultMappedModel(apiKey *service.APIKey, fallbackModel string) string {
@@ -75,6 +76,7 @@ func NewOpenAIGatewayHandler(
 	usageRecordWorkerPool *service.UsageRecordWorkerPool,
 	errorPassthroughService *service.ErrorPassthroughService,
 	cfg *config.Config,
+	settingService *service.SettingService,
 ) *OpenAIGatewayHandler {
 	pingInterval := time.Duration(0)
 	maxAccountSwitches := 3
@@ -93,6 +95,7 @@ func NewOpenAIGatewayHandler(
 		concurrencyHelper:       NewConcurrencyHelper(concurrencyService, SSEPingFormatComment, pingInterval),
 		maxAccountSwitches:      maxAccountSwitches,
 		cfg:                     cfg,
+		settingService:          settingService,
 	}
 }
 
@@ -1202,7 +1205,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	reqLog.Info("openai.websocket_ingress_started")
 	clientIP := ip.GetClientIP(c)
 	userAgent := strings.TrimSpace(c.GetHeader("User-Agent"))
-	service.WriteGatewayDebugTimelineEvent(h.cfg, c, "ws_ingress_started", map[string]any{
+	service.WriteGatewayDebugTimelineEvent(h.settingService, c, "ws_ingress_started", map[string]any{
 		"component":             "gateway_debug_timeline",
 		"endpoint_kind":         "responses_ws",
 		"api_key_id":            apiKey.ID,
@@ -1470,7 +1473,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	}
 
 	if err := h.gatewayService.ProxyResponsesWebSocketFromClient(ctx, c, wsConn, account, token, wsFirstMessage, hooks); err != nil {
-		service.WriteGatewayDebugTimelineEvent(h.cfg, c, "ws_ingress_failed", map[string]any{
+		service.WriteGatewayDebugTimelineEvent(h.settingService, c, "ws_ingress_failed", map[string]any{
 			"component":          "gateway_debug_timeline",
 			"endpoint_kind":      "responses_ws",
 			"api_key_id":         apiKey.ID,
@@ -1498,7 +1501,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		return
 	}
 	reqLog.Info("openai.websocket_ingress_closed", zap.Int64("account_id", account.ID))
-	service.WriteGatewayDebugTimelineEvent(h.cfg, c, "ws_ingress_closed", map[string]any{
+	service.WriteGatewayDebugTimelineEvent(h.settingService, c, "ws_ingress_closed", map[string]any{
 		"component":          "gateway_debug_timeline",
 		"endpoint_kind":      "responses_ws",
 		"api_key_id":         apiKey.ID,
@@ -1614,7 +1617,7 @@ type openAIForwardLatencyAuditInput struct {
 }
 
 func (h *OpenAIGatewayHandler) emitGatewayDebugTimelineRequestReceived(c *gin.Context, endpointKind string, requestStart time.Time, apiKey *service.APIKey, userID int64, requestedModel string, stream bool, bodyBytes int) {
-	if c == nil || !service.GatewayDebugTimelineEnabled(h.cfg) {
+	if c == nil || c.Request == nil || !service.GatewayDebugTimelineEnabled(c.Request.Context(), h.settingService) {
 		return
 	}
 	apiKeyID := int64(0)
@@ -1625,7 +1628,7 @@ func (h *OpenAIGatewayHandler) emitGatewayDebugTimelineRequestReceived(c *gin.Co
 			groupID = *apiKey.GroupID
 		}
 	}
-	service.WriteGatewayDebugTimelineEvent(h.cfg, c, "request_received", map[string]any{
+	service.WriteGatewayDebugTimelineEvent(h.settingService, c, "request_received", map[string]any{
 		"component":             "gateway_debug_timeline",
 		"endpoint_kind":         strings.TrimSpace(endpointKind),
 		"api_key_id":            apiKeyID,
@@ -1642,10 +1645,10 @@ func (h *OpenAIGatewayHandler) emitGatewayDebugTimelineRequestReceived(c *gin.Co
 }
 
 func (h *OpenAIGatewayHandler) emitGatewayDebugTimelineAccountSelected(c *gin.Context, endpointKind string, requestStart time.Time, apiKey *service.APIKey, account *service.Account, requestedModel string, stream bool, decision service.OpenAIAccountScheduleDecision, switchCount int) {
-	if c == nil || !service.GatewayDebugTimelineEnabled(h.cfg) {
+	if c == nil || c.Request == nil || !service.GatewayDebugTimelineEnabled(c.Request.Context(), h.settingService) {
 		return
 	}
-	fields := openAIGatewayTimelineAccountFields(apiKey, account)
+	fields := openAIGatewayTimelineAccountFields(c, apiKey, account)
 	fields["component"] = "gateway_debug_timeline"
 	fields["endpoint_kind"] = strings.TrimSpace(endpointKind)
 	fields["requested_model"] = strings.TrimSpace(requestedModel)
@@ -1659,14 +1662,14 @@ func (h *OpenAIGatewayHandler) emitGatewayDebugTimelineAccountSelected(c *gin.Co
 	fields["scheduler_load_skew"] = decision.LoadSkew
 	fields["switch_count_before_attempt"] = switchCount
 	fields["request_elapsed_ms"] = time.Since(requestStart).Milliseconds()
-	service.WriteGatewayDebugTimelineEvent(h.cfg, c, "account_selected", fields)
+	service.WriteGatewayDebugTimelineEvent(h.settingService, c, "account_selected", fields)
 }
 
 func (h *OpenAIGatewayHandler) emitGatewayDebugTimelineSlotAcquired(c *gin.Context, endpointKind string, requestStart time.Time, apiKey *service.APIKey, account *service.Account, requestedModel string, stream bool, userSlotWaitMs int64, accountSlotWaitMs int64) {
-	if c == nil || !service.GatewayDebugTimelineEnabled(h.cfg) {
+	if c == nil || c.Request == nil || !service.GatewayDebugTimelineEnabled(c.Request.Context(), h.settingService) {
 		return
 	}
-	fields := openAIGatewayTimelineAccountFields(apiKey, account)
+	fields := openAIGatewayTimelineAccountFields(c, apiKey, account)
 	fields["component"] = "gateway_debug_timeline"
 	fields["endpoint_kind"] = strings.TrimSpace(endpointKind)
 	fields["requested_model"] = strings.TrimSpace(requestedModel)
@@ -1674,10 +1677,10 @@ func (h *OpenAIGatewayHandler) emitGatewayDebugTimelineSlotAcquired(c *gin.Conte
 	fields["user_slot_wait_ms"] = userSlotWaitMs
 	fields["account_slot_wait_ms"] = accountSlotWaitMs
 	fields["request_elapsed_ms"] = time.Since(requestStart).Milliseconds()
-	service.WriteGatewayDebugTimelineEvent(h.cfg, c, "concurrency_slots_acquired", fields)
+	service.WriteGatewayDebugTimelineEvent(h.settingService, c, "concurrency_slots_acquired", fields)
 }
 
-func openAIGatewayTimelineAccountFields(apiKey *service.APIKey, account *service.Account) map[string]any {
+func openAIGatewayTimelineAccountFields(c *gin.Context, apiKey *service.APIKey, account *service.Account) map[string]any {
 	fields := make(map[string]any, 12)
 	if apiKey != nil {
 		fields["api_key_id"] = apiKey.ID
@@ -1691,7 +1694,7 @@ func openAIGatewayTimelineAccountFields(apiKey *service.APIKey, account *service
 		fields["account_type"] = strings.TrimSpace(string(account.Type))
 		fields["account_platform"] = strings.TrimSpace(account.Platform)
 		fields["account_concurrency"] = account.Concurrency
-		fields["upstream_endpoint"] = GetUpstreamEndpoint(nil, account.Platform)
+		fields["upstream_endpoint"] = GetUpstreamEndpoint(c, account.Platform)
 	}
 	return fields
 }
@@ -1704,10 +1707,10 @@ func optionalGroupIDForDebug(apiKey *service.APIKey) any {
 }
 
 func (h *OpenAIGatewayHandler) emitGatewayDebugTimelineWSTurnFinished(c *gin.Context, requestStart time.Time, apiKey *service.APIKey, account *service.Account, requestedModel string, turn int, result *service.OpenAIForwardResult, turnErr error) {
-	if c == nil || !service.GatewayDebugTimelineEnabled(h.cfg) {
+	if c == nil || c.Request == nil || !service.GatewayDebugTimelineEnabled(c.Request.Context(), h.settingService) {
 		return
 	}
-	fields := openAIGatewayTimelineAccountFields(apiKey, account)
+	fields := openAIGatewayTimelineAccountFields(c, apiKey, account)
 	fields["component"] = "gateway_debug_timeline"
 	fields["endpoint_kind"] = "responses_ws"
 	fields["requested_model"] = strings.TrimSpace(requestedModel)
@@ -1732,11 +1735,11 @@ func (h *OpenAIGatewayHandler) emitGatewayDebugTimelineWSTurnFinished(c *gin.Con
 		fields["outcome"] = "error"
 		fields["error"] = trimLogField(turnErr.Error(), 512)
 	}
-	service.WriteGatewayDebugTimelineEvent(h.cfg, c, "ws_turn_finished", fields)
+	service.WriteGatewayDebugTimelineEvent(h.settingService, c, "ws_turn_finished", fields)
 }
 
 func (h *OpenAIGatewayHandler) emitOpenAIForwardLatencyAudit(c *gin.Context, input openAIForwardLatencyAuditInput) {
-	if c == nil || !service.GatewayDebugTimelineEnabled(h.cfg) {
+	if c == nil || c.Request == nil || !service.GatewayDebugTimelineEnabled(c.Request.Context(), h.settingService) {
 		return
 	}
 	requestID := ""
@@ -1882,7 +1885,7 @@ func (h *OpenAIGatewayHandler) emitOpenAIForwardLatencyAudit(c *gin.Context, inp
 		"upstream_status_code":              input.UpstreamStatusCode,
 		"error":                             errText,
 	}
-	service.WriteGatewayDebugTimelineEvent(h.cfg, c, "attempt_finished", fields)
+	service.WriteGatewayDebugTimelineEvent(h.settingService, c, "attempt_finished", fields)
 }
 
 func latencyValue(v int64, ok bool) any {

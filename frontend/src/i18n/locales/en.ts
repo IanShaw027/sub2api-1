@@ -5517,6 +5517,14 @@ export default {
         cchSigning: "CCH Signing",
         cchSigningHint:
           "Sign the billing header in forwarded requests with CCH hash. When disabled, the placeholder is preserved.",
+        debugTimeline: "Gateway Debug Timeline",
+        debugTimelineHint:
+          "Writes detailed per-stage JSONL timing logs for all provider gateway requests. Use only for short debugging windows; logging stops automatically when the size cap is reached.",
+        debugTimelineDirectory: "Log Directory",
+        debugTimelineDirectoryHint:
+          "Relative paths are resolved from the service working directory; files are named gateway-timeline-YYYY-MM-DD.log.",
+        debugTimelineRetentionDays: "Retention Days",
+        debugTimelineMaxSizeMB: "Max Size MB",
       },
       webSearchEmulation: {
         title: "Web Search Emulation",

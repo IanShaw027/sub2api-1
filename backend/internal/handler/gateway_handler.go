@@ -1844,10 +1844,10 @@ func (h *GatewayHandler) submitUsageRecordTask(task service.UsageRecordTask) {
 }
 
 func (h *GatewayHandler) emitGatewayDebugTimelineRequestReceived(c *gin.Context, platform, endpointKind string, requestStart time.Time, apiKey *service.APIKey, userID int64, requestedModel string, stream bool, bodyBytes int) {
-	if c == nil || !service.GatewayDebugTimelineEnabled(h.cfg) {
+	if c == nil || c.Request == nil || !service.GatewayDebugTimelineEnabled(c.Request.Context(), h.settingService) {
 		return
 	}
-	fields := gatewayDebugTimelineFields(apiKey, nil)
+	fields := gatewayDebugTimelineFields(c, apiKey, nil)
 	fields["component"] = "gateway_debug_timeline"
 	fields["platform"] = strings.TrimSpace(platform)
 	fields["endpoint_kind"] = strings.TrimSpace(endpointKind)
@@ -1858,14 +1858,14 @@ func (h *GatewayHandler) emitGatewayDebugTimelineRequestReceived(c *gin.Context,
 	fields["request_start_unix_ms"] = requestStart.UnixMilli()
 	fields["request_elapsed_ms"] = time.Since(requestStart).Milliseconds()
 	fields["inbound_endpoint"] = GetInboundEndpoint(c)
-	service.WriteGatewayDebugTimelineEvent(h.cfg, c, "request_received", fields)
+	service.WriteGatewayDebugTimelineEvent(h.settingService, c, "request_received", fields)
 }
 
 func (h *GatewayHandler) emitGatewayDebugTimelineAccountSelected(c *gin.Context, platform, endpointKind string, requestStart time.Time, apiKey *service.APIKey, account *service.Account, requestedModel string, stream bool, switchCount int) {
-	if c == nil || !service.GatewayDebugTimelineEnabled(h.cfg) {
+	if c == nil || c.Request == nil || !service.GatewayDebugTimelineEnabled(c.Request.Context(), h.settingService) {
 		return
 	}
-	fields := gatewayDebugTimelineFields(apiKey, account)
+	fields := gatewayDebugTimelineFields(c, apiKey, account)
 	fields["component"] = "gateway_debug_timeline"
 	fields["platform"] = strings.TrimSpace(platform)
 	fields["endpoint_kind"] = strings.TrimSpace(endpointKind)
@@ -1873,14 +1873,14 @@ func (h *GatewayHandler) emitGatewayDebugTimelineAccountSelected(c *gin.Context,
 	fields["stream"] = stream
 	fields["switch_count_before_attempt"] = switchCount
 	fields["request_elapsed_ms"] = time.Since(requestStart).Milliseconds()
-	service.WriteGatewayDebugTimelineEvent(h.cfg, c, "account_selected", fields)
+	service.WriteGatewayDebugTimelineEvent(h.settingService, c, "account_selected", fields)
 }
 
 func (h *GatewayHandler) emitGatewayDebugTimelineSlotAcquired(c *gin.Context, platform, endpointKind string, requestStart time.Time, apiKey *service.APIKey, account *service.Account, requestedModel string, stream bool, userSlotWaitMs int64, accountSlotWaitMs int64) {
-	if c == nil || !service.GatewayDebugTimelineEnabled(h.cfg) {
+	if c == nil || c.Request == nil || !service.GatewayDebugTimelineEnabled(c.Request.Context(), h.settingService) {
 		return
 	}
-	fields := gatewayDebugTimelineFields(apiKey, account)
+	fields := gatewayDebugTimelineFields(c, apiKey, account)
 	fields["component"] = "gateway_debug_timeline"
 	fields["platform"] = strings.TrimSpace(platform)
 	fields["endpoint_kind"] = strings.TrimSpace(endpointKind)
@@ -1889,14 +1889,14 @@ func (h *GatewayHandler) emitGatewayDebugTimelineSlotAcquired(c *gin.Context, pl
 	fields["user_slot_wait_ms"] = userSlotWaitMs
 	fields["account_slot_wait_ms"] = accountSlotWaitMs
 	fields["request_elapsed_ms"] = time.Since(requestStart).Milliseconds()
-	service.WriteGatewayDebugTimelineEvent(h.cfg, c, "concurrency_slots_acquired", fields)
+	service.WriteGatewayDebugTimelineEvent(h.settingService, c, "concurrency_slots_acquired", fields)
 }
 
 func (h *GatewayHandler) emitGatewayDebugTimelineAttemptFinished(c *gin.Context, platform, endpointKind, outcome string, requestStart time.Time, apiKey *service.APIKey, account *service.Account, requestedModel string, stream bool, switchCount int, forwardDurationMs int64, result *service.ForwardResult, err error) {
-	if c == nil || !service.GatewayDebugTimelineEnabled(h.cfg) {
+	if c == nil || c.Request == nil || !service.GatewayDebugTimelineEnabled(c.Request.Context(), h.settingService) {
 		return
 	}
-	fields := gatewayDebugTimelineFields(apiKey, account)
+	fields := gatewayDebugTimelineFields(c, apiKey, account)
 	fields["component"] = "gateway_debug_timeline"
 	fields["platform"] = strings.TrimSpace(platform)
 	fields["endpoint_kind"] = strings.TrimSpace(endpointKind)
@@ -1920,10 +1920,10 @@ func (h *GatewayHandler) emitGatewayDebugTimelineAttemptFinished(c *gin.Context,
 	if err != nil {
 		fields["error"] = trimLogField(err.Error(), 512)
 	}
-	service.WriteGatewayDebugTimelineEvent(h.cfg, c, "attempt_finished", fields)
+	service.WriteGatewayDebugTimelineEvent(h.settingService, c, "attempt_finished", fields)
 }
 
-func gatewayDebugTimelineFields(apiKey *service.APIKey, account *service.Account) map[string]any {
+func gatewayDebugTimelineFields(c *gin.Context, apiKey *service.APIKey, account *service.Account) map[string]any {
 	fields := make(map[string]any, 12)
 	if apiKey != nil {
 		fields["api_key_id"] = apiKey.ID
@@ -1937,7 +1937,7 @@ func gatewayDebugTimelineFields(apiKey *service.APIKey, account *service.Account
 		fields["account_type"] = strings.TrimSpace(string(account.Type))
 		fields["account_platform"] = strings.TrimSpace(account.Platform)
 		fields["account_concurrency"] = account.Concurrency
-		fields["upstream_endpoint"] = GetUpstreamEndpoint(nil, account.Platform)
+		fields["upstream_endpoint"] = GetUpstreamEndpoint(c, account.Platform)
 	}
 	return fields
 }

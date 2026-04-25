@@ -5442,6 +5442,14 @@ export default {
         cchSigning: "CCH 签名",
         cchSigningHint:
           "对转发请求的 billing header 进行 CCH 哈希签名。关闭时保留原始占位符。",
+        debugTimeline: "网关调试时间线",
+        debugTimelineHint:
+          "开启后对全平台请求写入详细阶段耗时 JSONL 日志。仅建议排查问题时短期开启，达到最大占用会自动停止。",
+        debugTimelineDirectory: "日志目录",
+        debugTimelineDirectoryHint:
+          "相对路径基于服务工作目录；日志文件按日期命名为 gateway-timeline-YYYY-MM-DD.log。",
+        debugTimelineRetentionDays: "保留天数",
+        debugTimelineMaxSizeMB: "最大占用 MB",
       },
       webSearchEmulation: {
         title: "Web Search 模拟",

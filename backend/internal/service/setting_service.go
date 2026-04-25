@@ -98,6 +98,28 @@ const gatewayForwardingCacheTTL = 60 * time.Second
 const gatewayForwardingErrorTTL = 5 * time.Second
 const gatewayForwardingDBTimeout = 5 * time.Second
 
+type GatewayDebugTimelineSettings struct {
+	Enabled       bool
+	Directory     string
+	RetentionDays int
+	MaxSizeMB     int64
+}
+
+type cachedGatewayDebugTimelineSettings struct {
+	settings  GatewayDebugTimelineSettings
+	expiresAt int64 // unix nano
+}
+
+var gatewayDebugTimelineSettingsCache atomic.Value // *cachedGatewayDebugTimelineSettings
+var gatewayDebugTimelineSettingsSF singleflight.Group
+
+const gatewayDebugTimelineSettingsCacheTTL = 5 * time.Second
+const gatewayDebugTimelineSettingsErrorTTL = 2 * time.Second
+const gatewayDebugTimelineSettingsDBTimeout = 3 * time.Second
+const defaultGatewayDebugTimelineDirectory = "logs/gateway-debug"
+const defaultGatewayDebugTimelineRetentionDays = 7
+const defaultGatewayDebugTimelineMaxSizeMB int64 = 1024
+
 type cachedKiroRuntimeSettings struct {
 	settings  *KiroRuntimeSettings
 	expiresAt int64 // unix nano
@@ -1411,6 +1433,16 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyEnableFingerprintUnification] = strconv.FormatBool(settings.EnableFingerprintUnification)
 	updates[SettingKeyEnableMetadataPassthrough] = strconv.FormatBool(settings.EnableMetadataPassthrough)
 	updates[SettingKeyEnableCCHSigning] = strconv.FormatBool(settings.EnableCCHSigning)
+	gatewayDebugTimeline := normalizeGatewayDebugTimelineSettings(GatewayDebugTimelineSettings{
+		Enabled:       settings.GatewayDebugTimelineEnabled,
+		Directory:     settings.GatewayDebugTimelineDirectory,
+		RetentionDays: settings.GatewayDebugTimelineRetentionDays,
+		MaxSizeMB:     settings.GatewayDebugTimelineMaxSizeMB,
+	})
+	updates[SettingKeyGatewayDebugTimelineEnabled] = strconv.FormatBool(gatewayDebugTimeline.Enabled)
+	updates[SettingKeyGatewayDebugTimelineDirectory] = gatewayDebugTimeline.Directory
+	updates[SettingKeyGatewayDebugTimelineRetentionDays] = strconv.Itoa(gatewayDebugTimeline.RetentionDays)
+	updates[SettingKeyGatewayDebugTimelineMaxSizeMB] = strconv.FormatInt(gatewayDebugTimeline.MaxSizeMB, 10)
 	kiroRuntime := normalizeKiroRuntimeSettings(&KiroRuntimeSettings{
 		KiroVersion:             settings.KiroDefaultVersion,
 		KiroCommit:              settings.KiroDefaultCommit,
@@ -1494,6 +1526,17 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 		cchSigning:             settings.EnableCCHSigning,
 		expiresAt:              time.Now().Add(gatewayForwardingCacheTTL).UnixNano(),
 	})
+	gatewayDebugTimelineSettingsSF.Forget("gateway_debug_timeline")
+	gatewayDebugTimelineSettingsCache.Store(&cachedGatewayDebugTimelineSettings{
+		settings: normalizeGatewayDebugTimelineSettings(GatewayDebugTimelineSettings{
+			Enabled:       settings.GatewayDebugTimelineEnabled,
+			Directory:     settings.GatewayDebugTimelineDirectory,
+			RetentionDays: settings.GatewayDebugTimelineRetentionDays,
+			MaxSizeMB:     settings.GatewayDebugTimelineMaxSizeMB,
+		}),
+		expiresAt: time.Now().Add(gatewayDebugTimelineSettingsCacheTTL).UnixNano(),
+	})
+	ResetGatewayDebugTimelineAutoStop()
 	kiroRuntimeSettingsSF.Forget("kiro_runtime")
 	kiroRuntimeSettingsCache.Store(&cachedKiroRuntimeSettings{
 		settings: normalizeKiroRuntimeSettings(&KiroRuntimeSettings{
@@ -1666,6 +1709,90 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 		return r.fp, r.mp, r.cch
 	}
 	return true, false, false // fail-open defaults
+}
+
+func DefaultGatewayDebugTimelineSettings() GatewayDebugTimelineSettings {
+	return GatewayDebugTimelineSettings{
+		Enabled:       false,
+		Directory:     defaultGatewayDebugTimelineDirectory,
+		RetentionDays: defaultGatewayDebugTimelineRetentionDays,
+		MaxSizeMB:     defaultGatewayDebugTimelineMaxSizeMB,
+	}
+}
+
+func normalizeGatewayDebugTimelineSettings(settings GatewayDebugTimelineSettings) GatewayDebugTimelineSettings {
+	if strings.TrimSpace(settings.Directory) == "" {
+		settings.Directory = defaultGatewayDebugTimelineDirectory
+	} else {
+		settings.Directory = strings.TrimSpace(settings.Directory)
+	}
+	if settings.RetentionDays <= 0 {
+		settings.RetentionDays = defaultGatewayDebugTimelineRetentionDays
+	}
+	if settings.MaxSizeMB <= 0 {
+		settings.MaxSizeMB = defaultGatewayDebugTimelineMaxSizeMB
+	}
+	return settings
+}
+
+func parseGatewayDebugTimelineSettings(values map[string]string) GatewayDebugTimelineSettings {
+	settings := DefaultGatewayDebugTimelineSettings()
+	settings.Enabled = values[SettingKeyGatewayDebugTimelineEnabled] == "true"
+	if dir := strings.TrimSpace(values[SettingKeyGatewayDebugTimelineDirectory]); dir != "" {
+		settings.Directory = dir
+	}
+	if v, err := strconv.Atoi(strings.TrimSpace(values[SettingKeyGatewayDebugTimelineRetentionDays])); err == nil && v > 0 {
+		settings.RetentionDays = v
+	}
+	if v, err := strconv.ParseInt(strings.TrimSpace(values[SettingKeyGatewayDebugTimelineMaxSizeMB]), 10, 64); err == nil && v > 0 {
+		settings.MaxSizeMB = v
+	}
+	return normalizeGatewayDebugTimelineSettings(settings)
+}
+
+func (s *SettingService) GetGatewayDebugTimelineSettings(ctx context.Context) GatewayDebugTimelineSettings {
+	defaults := DefaultGatewayDebugTimelineSettings()
+	if s == nil || s.settingRepo == nil {
+		return defaults
+	}
+	if cached, ok := gatewayDebugTimelineSettingsCache.Load().(*cachedGatewayDebugTimelineSettings); ok && cached != nil {
+		if time.Now().UnixNano() < cached.expiresAt {
+			return cached.settings
+		}
+	}
+	val, _, _ := gatewayDebugTimelineSettingsSF.Do("gateway_debug_timeline", func() (any, error) {
+		if cached, ok := gatewayDebugTimelineSettingsCache.Load().(*cachedGatewayDebugTimelineSettings); ok && cached != nil {
+			if time.Now().UnixNano() < cached.expiresAt {
+				return cached.settings, nil
+			}
+		}
+		dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), gatewayDebugTimelineSettingsDBTimeout)
+		defer cancel()
+		values, err := s.settingRepo.GetMultiple(dbCtx, []string{
+			SettingKeyGatewayDebugTimelineEnabled,
+			SettingKeyGatewayDebugTimelineDirectory,
+			SettingKeyGatewayDebugTimelineRetentionDays,
+			SettingKeyGatewayDebugTimelineMaxSizeMB,
+		})
+		if err != nil {
+			slog.Warn("failed to get gateway debug timeline settings", "error", err)
+			gatewayDebugTimelineSettingsCache.Store(&cachedGatewayDebugTimelineSettings{
+				settings:  defaults,
+				expiresAt: time.Now().Add(gatewayDebugTimelineSettingsErrorTTL).UnixNano(),
+			})
+			return defaults, nil
+		}
+		settings := parseGatewayDebugTimelineSettings(values)
+		gatewayDebugTimelineSettingsCache.Store(&cachedGatewayDebugTimelineSettings{
+			settings:  settings,
+			expiresAt: time.Now().Add(gatewayDebugTimelineSettingsCacheTTL).UnixNano(),
+		})
+		return settings, nil
+	})
+	if settings, ok := val.(GatewayDebugTimelineSettings); ok {
+		return settings
+	}
+	return defaults
 }
 
 // IsEmailVerifyEnabled 检查是否开启邮件验证
@@ -2355,6 +2482,11 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	}
 	result.EnableMetadataPassthrough = settings[SettingKeyEnableMetadataPassthrough] == "true"
 	result.EnableCCHSigning = settings[SettingKeyEnableCCHSigning] == "true"
+	gatewayDebugTimeline := parseGatewayDebugTimelineSettings(settings)
+	result.GatewayDebugTimelineEnabled = gatewayDebugTimeline.Enabled
+	result.GatewayDebugTimelineDirectory = gatewayDebugTimeline.Directory
+	result.GatewayDebugTimelineRetentionDays = gatewayDebugTimeline.RetentionDays
+	result.GatewayDebugTimelineMaxSizeMB = gatewayDebugTimeline.MaxSizeMB
 
 	// Web search emulation: quick enabled check from the JSON config
 	if raw := settings[SettingKeyWebSearchEmulationConfig]; raw != "" {

@@ -354,6 +354,12 @@ const (
 	SettingKeyEnableMetadataPassthrough = "enable_metadata_passthrough"
 	// SettingKeyEnableCCHSigning 是否对 billing header 中的 cch 进行 xxHash64 签名（默认 false）
 	SettingKeyEnableCCHSigning = "enable_cch_signing"
+	// Gateway debug timeline settings are DB-backed runtime controls for
+	// detailed per-request trace logs. Defaults are disabled and bounded.
+	SettingKeyGatewayDebugTimelineEnabled       = "gateway_debug_timeline_enabled"
+	SettingKeyGatewayDebugTimelineDirectory     = "gateway_debug_timeline_directory"
+	SettingKeyGatewayDebugTimelineRetentionDays = "gateway_debug_timeline_retention_days"
+	SettingKeyGatewayDebugTimelineMaxSizeMB     = "gateway_debug_timeline_max_size_mb"
 
 	// Balance Low Notification
 	SettingKeyBalanceLowNotifyEnabled     = "balance_low_notify_enabled"      // 全局开关

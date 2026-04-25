@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -8,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/gin-gonic/gin"
@@ -18,17 +18,41 @@ const gatewayDebugTimelineFilenamePrefix = "gateway-timeline-"
 
 var gatewayDebugTimelineState struct {
 	sync.Mutex
-	lastCleanup time.Time
-	disabled    bool
-	warnedFull  bool
+	lastCleanup           time.Time
+	disabled              bool
+	warnedFull            bool
+	initializedDir        string
+	lastCreateDirErrorLog time.Time
 }
 
-func GatewayDebugTimelineEnabled(cfg *config.Config) bool {
-	return cfg != nil && cfg.Gateway.DebugTimeline.Enabled
+func ResetGatewayDebugTimelineAutoStop() {
+	gatewayDebugTimelineState.Lock()
+	gatewayDebugTimelineState.disabled = false
+	gatewayDebugTimelineState.warnedFull = false
+	gatewayDebugTimelineState.Unlock()
 }
 
-func WriteGatewayDebugTimelineEvent(cfg *config.Config, c *gin.Context, stage string, fields map[string]any) {
-	if !GatewayDebugTimelineEnabled(cfg) {
+func GatewayDebugTimelineEnabled(ctx context.Context, settingService *SettingService) bool {
+	return ResolveGatewayDebugTimelineSettings(ctx, settingService).Enabled
+}
+
+func ResolveGatewayDebugTimelineSettings(ctx context.Context, settingService *SettingService) GatewayDebugTimelineSettings {
+	if settingService == nil {
+		return DefaultGatewayDebugTimelineSettings()
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return settingService.GetGatewayDebugTimelineSettings(ctx)
+}
+
+func WriteGatewayDebugTimelineEvent(settingService *SettingService, c *gin.Context, stage string, fields map[string]any) {
+	ctx := context.Background()
+	if c != nil && c.Request != nil {
+		ctx = c.Request.Context()
+	}
+	settings := ResolveGatewayDebugTimelineSettings(ctx, settingService)
+	if !settings.Enabled {
 		return
 	}
 	stage = strings.TrimSpace(stage)
@@ -36,15 +60,9 @@ func WriteGatewayDebugTimelineEvent(cfg *config.Config, c *gin.Context, stage st
 		return
 	}
 
-	dir := strings.TrimSpace(cfg.Gateway.DebugTimeline.Directory)
-	if dir == "" {
-		dir = "logs/gateway-debug"
-	}
-	retentionDays := cfg.Gateway.DebugTimeline.RetentionDays
-	if retentionDays <= 0 {
-		retentionDays = 7
-	}
-	maxSizeBytes := cfg.Gateway.DebugTimeline.MaxSizeMB * 1024 * 1024
+	dir := gatewayDebugTimelineDir(settings.Directory)
+	retentionDays := settings.RetentionDays
+	maxSizeBytes := settings.MaxSizeMB * 1024 * 1024
 
 	now := time.Now()
 	event := make(map[string]any, len(fields)+12)
@@ -84,12 +102,16 @@ func WriteGatewayDebugTimelineEvent(cfg *config.Config, c *gin.Context, stage st
 
 	gatewayDebugTimelineState.Lock()
 	defer gatewayDebugTimelineState.Unlock()
+
 	if gatewayDebugTimelineState.disabled {
 		return
 	}
 
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		logger.LegacyPrintf("service.gateway_debug_timeline", "create log dir failed: %v", err)
+	if err := ensureGatewayDebugTimelineDirLocked(dir); err != nil {
+		if gatewayDebugTimelineState.lastCreateDirErrorLog.IsZero() || now.Sub(gatewayDebugTimelineState.lastCreateDirErrorLog) >= time.Minute {
+			gatewayDebugTimelineState.lastCreateDirErrorLog = now
+			logger.LegacyPrintf("service.gateway_debug_timeline", "create log dir failed: %v", err)
+		}
 		return
 	}
 	cleanupGatewayDebugTimelineLocked(dir, retentionDays, now)
@@ -120,6 +142,36 @@ func WriteGatewayDebugTimelineEvent(cfg *config.Config, c *gin.Context, stage st
 	}
 	defer func() { _ = f.Close() }()
 	_, _ = f.Write(append(line, '\n'))
+}
+
+func gatewayDebugTimelineDir(configured string) string {
+	dir := strings.TrimSpace(configured)
+	if dir == "" {
+		dir = defaultGatewayDebugTimelineDirectory
+	}
+	if filepath.IsAbs(dir) {
+		return dir
+	}
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return dir
+	}
+	return absDir
+}
+
+func ensureGatewayDebugTimelineDirLocked(dir string) error {
+	if gatewayDebugTimelineState.initializedDir == dir {
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return nil
+		}
+		gatewayDebugTimelineState.initializedDir = ""
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	gatewayDebugTimelineState.initializedDir = dir
+	gatewayDebugTimelineState.lastCreateDirErrorLog = time.Time{}
+	return nil
 }
 
 func gatewayDebugTimelineDirSize(dir string) int64 {

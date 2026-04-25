@@ -239,6 +239,10 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		EnableFingerprintUnification:           settings.EnableFingerprintUnification,
 		EnableMetadataPassthrough:              settings.EnableMetadataPassthrough,
 		EnableCCHSigning:                       settings.EnableCCHSigning,
+		GatewayDebugTimelineEnabled:            settings.GatewayDebugTimelineEnabled,
+		GatewayDebugTimelineDirectory:          settings.GatewayDebugTimelineDirectory,
+		GatewayDebugTimelineRetentionDays:      settings.GatewayDebugTimelineRetentionDays,
+		GatewayDebugTimelineMaxSizeMB:          settings.GatewayDebugTimelineMaxSizeMB,
 		WebSearchEmulationEnabled:              settings.WebSearchEmulationEnabled,
 		KiroDefaultVersion:                     settings.KiroDefaultVersion,
 		KiroDefaultCommit:                      settings.KiroDefaultCommit,
@@ -438,9 +442,13 @@ type UpdateSettingsRequest struct {
 	BackendModeEnabled bool `json:"backend_mode_enabled"`
 
 	// Gateway forwarding behavior
-	EnableFingerprintUnification *bool `json:"enable_fingerprint_unification"`
-	EnableMetadataPassthrough    *bool `json:"enable_metadata_passthrough"`
-	EnableCCHSigning             *bool `json:"enable_cch_signing"`
+	EnableFingerprintUnification      *bool   `json:"enable_fingerprint_unification"`
+	EnableMetadataPassthrough         *bool   `json:"enable_metadata_passthrough"`
+	EnableCCHSigning                  *bool   `json:"enable_cch_signing"`
+	GatewayDebugTimelineEnabled       *bool   `json:"gateway_debug_timeline_enabled"`
+	GatewayDebugTimelineDirectory     *string `json:"gateway_debug_timeline_directory"`
+	GatewayDebugTimelineRetentionDays *int    `json:"gateway_debug_timeline_retention_days"`
+	GatewayDebugTimelineMaxSizeMB     *int64  `json:"gateway_debug_timeline_max_size_mb"`
 
 	// Kiro runtime defaults
 	KiroDefaultVersion             *string `json:"kiro_version"`
@@ -1306,6 +1314,30 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.EnableCCHSigning
 		}(),
+		GatewayDebugTimelineEnabled: func() bool {
+			if req.GatewayDebugTimelineEnabled != nil {
+				return *req.GatewayDebugTimelineEnabled
+			}
+			return previousSettings.GatewayDebugTimelineEnabled
+		}(),
+		GatewayDebugTimelineDirectory: func() string {
+			if req.GatewayDebugTimelineDirectory != nil {
+				return strings.TrimSpace(*req.GatewayDebugTimelineDirectory)
+			}
+			return previousSettings.GatewayDebugTimelineDirectory
+		}(),
+		GatewayDebugTimelineRetentionDays: func() int {
+			if req.GatewayDebugTimelineRetentionDays != nil {
+				return *req.GatewayDebugTimelineRetentionDays
+			}
+			return previousSettings.GatewayDebugTimelineRetentionDays
+		}(),
+		GatewayDebugTimelineMaxSizeMB: func() int64 {
+			if req.GatewayDebugTimelineMaxSizeMB != nil {
+				return *req.GatewayDebugTimelineMaxSizeMB
+			}
+			return previousSettings.GatewayDebugTimelineMaxSizeMB
+		}(),
 		KiroDefaultVersion: func() string {
 			if req.KiroDefaultVersion != nil {
 				return strings.TrimSpace(*req.KiroDefaultVersion)
@@ -1640,6 +1672,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		EnableFingerprintUnification:           updatedSettings.EnableFingerprintUnification,
 		EnableMetadataPassthrough:              updatedSettings.EnableMetadataPassthrough,
 		EnableCCHSigning:                       updatedSettings.EnableCCHSigning,
+		GatewayDebugTimelineEnabled:            updatedSettings.GatewayDebugTimelineEnabled,
+		GatewayDebugTimelineDirectory:          updatedSettings.GatewayDebugTimelineDirectory,
+		GatewayDebugTimelineRetentionDays:      updatedSettings.GatewayDebugTimelineRetentionDays,
+		GatewayDebugTimelineMaxSizeMB:          updatedSettings.GatewayDebugTimelineMaxSizeMB,
 		KiroDefaultVersion:                     updatedSettings.KiroDefaultVersion,
 		KiroDefaultCommit:                      updatedSettings.KiroDefaultCommit,
 		KiroDefaultSystemVersion:               updatedSettings.KiroDefaultSystemVersion,
@@ -2028,6 +2064,18 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.EnableCCHSigning != after.EnableCCHSigning {
 		changed = append(changed, "enable_cch_signing")
+	}
+	if before.GatewayDebugTimelineEnabled != after.GatewayDebugTimelineEnabled {
+		changed = append(changed, "gateway_debug_timeline_enabled")
+	}
+	if before.GatewayDebugTimelineDirectory != after.GatewayDebugTimelineDirectory {
+		changed = append(changed, "gateway_debug_timeline_directory")
+	}
+	if before.GatewayDebugTimelineRetentionDays != after.GatewayDebugTimelineRetentionDays {
+		changed = append(changed, "gateway_debug_timeline_retention_days")
+	}
+	if before.GatewayDebugTimelineMaxSizeMB != after.GatewayDebugTimelineMaxSizeMB {
+		changed = append(changed, "gateway_debug_timeline_max_size_mb")
 	}
 	if before.PaymentVisibleMethodAlipaySource != after.PaymentVisibleMethodAlipaySource {
 		changed = append(changed, "payment_visible_method_alipay_source")
