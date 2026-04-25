@@ -104,7 +104,7 @@ func (r *ticketRepository) list(ctx context.Context, params pagination.Paginatio
 	if err != nil {
 		return nil, nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]service.SupportTicket, 0)
 	for rows.Next() {
@@ -131,7 +131,7 @@ func (r *ticketRepository) ListMessages(ctx context.Context, ticketID int64) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]service.SupportTicketMessage, 0)
 	for rows.Next() {

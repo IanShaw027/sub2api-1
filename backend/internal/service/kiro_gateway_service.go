@@ -324,7 +324,6 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, toolStates); err != nil {
 							return nil, err
 						}
-						textBlockOpen = false
 						_ = writeKiroStreamError(writer, failureErr.Error())
 						var failoverErr *UpstreamFailoverError
 						if handledErr != nil && !errors.As(handledErr, &failoverErr) {
@@ -468,7 +467,6 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, toolStates); err != nil {
 							return nil, err
 						}
-						textBlockOpen = false
 						_ = writeKiroStreamError(writer, incompleteErr.Error())
 					}
 					s.handleProtocolError(ctx, account, parsed.Model, true, incompleteErr)

@@ -115,23 +115,23 @@ func EstimateInputTokens(body []byte) int {
 
 	var builder strings.Builder
 	if systemText := joinSystem(req["system"]); systemText != "" {
-		builder.WriteString(systemText)
-		builder.WriteString("\n")
+		_, _ = builder.WriteString(systemText)
+		_, _ = builder.WriteString("\n")
 	}
 	if messages, _ := req["messages"].([]any); len(messages) > 0 {
 		for _, item := range messages {
 			msg, _ := item.(map[string]any)
-			builder.WriteString(extractTextFromContent(msg["content"]))
-			builder.WriteString("\n")
+			_, _ = builder.WriteString(extractTextFromContent(msg["content"]))
+			_, _ = builder.WriteString("\n")
 		}
 	}
 	if tools, _ := req["tools"].([]any); len(tools) > 0 {
 		for _, item := range tools {
 			tool, _ := item.(map[string]any)
-			builder.WriteString(stringField(tool, "name"))
-			builder.WriteString("\n")
-			builder.WriteString(stringField(tool, "description"))
-			builder.WriteString("\n")
+			_, _ = builder.WriteString(stringField(tool, "name"))
+			_, _ = builder.WriteString("\n")
+			_, _ = builder.WriteString(stringField(tool, "description"))
+			_, _ = builder.WriteString("\n")
 		}
 	}
 	return roughTokenCount(builder.String())
