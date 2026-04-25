@@ -115,6 +115,30 @@ type AffiliateDetail struct {
 	Invitees             []AffiliateInvitee `json:"invitees"`
 }
 
+type AdminAffiliateListParams struct {
+	Page     int
+	PageSize int
+	Search   string
+	StartAt  *time.Time
+	EndAt    *time.Time
+}
+
+type AdminAffiliateStatsRow struct {
+	UserID              int64     `json:"user_id"`
+	Email               string    `json:"email"`
+	Username            string    `json:"username"`
+	AffCode             string    `json:"aff_code"`
+	InviterID           *int64    `json:"inviter_id,omitempty"`
+	AffCount            int       `json:"aff_count"`
+	AffQuota            float64   `json:"aff_quota"`
+	AffHistoryQuota     float64   `json:"aff_history_quota"`
+	RebatedInviteeCount int       `json:"rebated_invitee_count"`
+	PeriodInvitedCount  int       `json:"period_invited_count"`
+	PeriodRebateAmount  float64   `json:"period_rebate_amount"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
+}
+
 type AffiliateRepository interface {
 	EnsureUserAffiliate(ctx context.Context, userID int64) (*AffiliateSummary, error)
 	GetAffiliateByCode(ctx context.Context, code string) (*AffiliateSummary, error)
@@ -125,6 +149,7 @@ type AffiliateRepository interface {
 	ListInvitees(ctx context.Context, inviterID int64, limit int) ([]AffiliateInvitee, error)
 	ListInviteeLedger(ctx context.Context, inviterID, inviteeUserID int64, limit int) ([]AffiliateLedgerEntry, error)
 	CountRebatedInvitees(ctx context.Context, inviterID int64) (int, error)
+	ListAdminAffiliateStats(ctx context.Context, params AdminAffiliateListParams) ([]AdminAffiliateStatsRow, int64, error)
 }
 
 type AffiliateService struct {
@@ -195,6 +220,23 @@ func (s *AffiliateService) GetInviteeLedger(ctx context.Context, inviterID, invi
 		return nil, infraerrors.ServiceUnavailable("SERVICE_UNAVAILABLE", "affiliate service unavailable")
 	}
 	return s.repo.ListInviteeLedger(ctx, inviterID, inviteeUserID, 200)
+}
+
+func (s *AffiliateService) ListAdminAffiliateStats(ctx context.Context, params AdminAffiliateListParams) ([]AdminAffiliateStatsRow, int64, error) {
+	if s == nil || s.repo == nil {
+		return nil, 0, infraerrors.ServiceUnavailable("SERVICE_UNAVAILABLE", "affiliate service unavailable")
+	}
+	if params.Page < 1 {
+		params.Page = 1
+	}
+	if params.PageSize < 1 {
+		params.PageSize = 20
+	}
+	if params.PageSize > 200 {
+		params.PageSize = 200
+	}
+	params.Search = strings.TrimSpace(params.Search)
+	return s.repo.ListAdminAffiliateStats(ctx, params)
 }
 
 func (s *AffiliateService) BindInviterByCode(ctx context.Context, userID int64, rawCode string) error {

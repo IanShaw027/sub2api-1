@@ -430,6 +430,193 @@ LIMIT $3`, inviterID, inviteeUserID, limit)
 	return entries, nil
 }
 
+func (r *affiliateRepository) ListAdminAffiliateStats(ctx context.Context, params service.AdminAffiliateListParams) ([]service.AdminAffiliateStatsRow, int64, error) {
+	client := clientFromContext(ctx, r.client)
+	whereSQL, args := buildAdminAffiliateStatsWhere(params)
+
+	var total int64
+	countSQL := "SELECT COUNT(*) FROM user_affiliates ua LEFT JOIN users u ON u.id = ua.user_id " + whereSQL
+	countRows, err := client.QueryContext(ctx, countSQL, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("count admin affiliate stats: %w", err)
+	}
+	defer func() { _ = countRows.Close() }()
+	if countRows.Next() {
+		if err := countRows.Scan(&total); err != nil {
+			return nil, 0, fmt.Errorf("scan admin affiliate stats count: %w", err)
+		}
+	}
+	if err := countRows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("count admin affiliate stats rows: %w", err)
+	}
+	if total == 0 {
+		return []service.AdminAffiliateStatsRow{}, 0, nil
+	}
+
+	periodInviteFilter, periodInviteArgs := buildAdminAffiliateDateFilter("invitee.created_at", params)
+	periodLedgerFilter, periodLedgerArgs := buildAdminAffiliateDateFilter("l.created_at", params)
+	queryArgs := make([]any, 0, len(periodInviteArgs)+len(periodLedgerArgs)+len(args)+2)
+	queryArgs = append(queryArgs, periodInviteArgs...)
+	periodLedgerFilter = rebasePostgresPlaceholders(periodLedgerFilter, len(queryArgs))
+	queryArgs = append(queryArgs, periodLedgerArgs...)
+	whereSQL = rebasePostgresPlaceholders(whereSQL, len(queryArgs))
+	queryArgs = append(queryArgs, args...)
+	limitIdx := len(queryArgs) + 1
+	offsetIdx := len(queryArgs) + 2
+	queryArgs = append(queryArgs, params.PageSize, (params.Page-1)*params.PageSize)
+
+	rows, err := client.QueryContext(ctx, fmt.Sprintf(`
+SELECT ua.user_id,
+       COALESCE(u.email, ''),
+       COALESCE(u.username, ''),
+       ua.aff_code,
+       ua.inviter_id,
+       ua.aff_count,
+       ua.aff_quota::double precision,
+       ua.aff_history_quota::double precision,
+       COALESCE((
+         SELECT COUNT(DISTINCT l.source_user_id)
+         FROM user_affiliate_ledger l
+         WHERE l.user_id = ua.user_id
+           AND l.action = 'accrue'
+           AND l.source_user_id IS NOT NULL
+       ), 0)::integer AS rebated_invitee_count,
+       COALESCE((
+         SELECT COUNT(*)
+         FROM user_affiliates invitee
+         WHERE invitee.inviter_id = ua.user_id%s
+       ), 0)::integer AS period_invited_count,
+       COALESCE((
+         SELECT SUM(l.amount)
+         FROM user_affiliate_ledger l
+         WHERE l.user_id = ua.user_id
+           AND l.action = 'accrue'%s
+       ), 0)::double precision AS period_rebate_amount,
+       ua.created_at,
+       ua.updated_at
+FROM user_affiliates ua
+LEFT JOIN users u ON u.id = ua.user_id
+%s
+ORDER BY ua.aff_history_quota DESC, ua.aff_quota DESC, ua.aff_count DESC, ua.user_id DESC
+LIMIT $%d OFFSET $%d`, periodInviteFilter, periodLedgerFilter, whereSQL, limitIdx, offsetIdx), queryArgs...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list admin affiliate stats: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := make([]service.AdminAffiliateStatsRow, 0, params.PageSize)
+	for rows.Next() {
+		var item service.AdminAffiliateStatsRow
+		var inviterID sql.NullInt64
+		if err := rows.Scan(
+			&item.UserID,
+			&item.Email,
+			&item.Username,
+			&item.AffCode,
+			&inviterID,
+			&item.AffCount,
+			&item.AffQuota,
+			&item.AffHistoryQuota,
+			&item.RebatedInviteeCount,
+			&item.PeriodInvitedCount,
+			&item.PeriodRebateAmount,
+			&item.CreatedAt,
+			&item.UpdatedAt,
+		); err != nil {
+			return nil, 0, err
+		}
+		if inviterID.Valid {
+			item.InviterID = &inviterID.Int64
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
+}
+
+func buildAdminAffiliateStatsWhere(params service.AdminAffiliateListParams) (string, []any) {
+	clauses := []string{
+		"(ua.aff_count > 0 OR ua.aff_quota <> 0 OR ua.aff_history_quota <> 0)",
+	}
+	args := make([]any, 0, 4)
+	if search := strings.TrimSpace(params.Search); search != "" {
+		args = append(args, "%"+strings.ToLower(search)+"%")
+		idx := len(args)
+		clauses = append(clauses, fmt.Sprintf(
+			"(LOWER(COALESCE(u.email, '')) LIKE $%d OR LOWER(COALESCE(u.username, '')) LIKE $%d OR LOWER(ua.aff_code) LIKE $%d OR ua.user_id::text LIKE $%d)",
+			idx, idx, idx, idx,
+		))
+	}
+	if params.StartAt != nil || params.EndAt != nil {
+		inviteeDateFilter, inviteeArgs := buildAdminAffiliateDateFilter("invitee.created_at", params)
+		ledgerDateFilter, ledgerArgs := buildAdminAffiliateDateFilter("l.created_at", params)
+		offset := len(args)
+		inviteeDateFilter = rebasePostgresPlaceholders(inviteeDateFilter, offset)
+		args = append(args, inviteeArgs...)
+		ledgerDateFilter = rebasePostgresPlaceholders(ledgerDateFilter, len(args))
+		args = append(args, ledgerArgs...)
+		clauses = append(clauses, fmt.Sprintf(`(
+			EXISTS (
+				SELECT 1 FROM user_affiliates invitee
+				WHERE invitee.inviter_id = ua.user_id%s
+			)
+			OR EXISTS (
+				SELECT 1 FROM user_affiliate_ledger l
+				WHERE l.user_id = ua.user_id
+				  AND l.action = 'accrue'%s
+			)
+		)`, inviteeDateFilter, ledgerDateFilter))
+	}
+	return "WHERE " + strings.Join(clauses, " AND "), args
+}
+
+func buildAdminAffiliateDateFilter(column string, params service.AdminAffiliateListParams) (string, []any) {
+	clauses := make([]string, 0, 2)
+	args := make([]any, 0, 2)
+	if params.StartAt != nil {
+		args = append(args, *params.StartAt)
+		clauses = append(clauses, fmt.Sprintf("%s >= $%d", column, len(args)))
+	}
+	if params.EndAt != nil {
+		args = append(args, *params.EndAt)
+		clauses = append(clauses, fmt.Sprintf("%s < $%d", column, len(args)))
+	}
+	if len(clauses) == 0 {
+		return "", nil
+	}
+	return " AND " + strings.Join(clauses, " AND "), args
+}
+
+func rebasePostgresPlaceholders(sqlText string, offset int) string {
+	if offset == 0 || sqlText == "" {
+		return sqlText
+	}
+	var b strings.Builder
+	for i := 0; i < len(sqlText); i++ {
+		if sqlText[i] != '$' {
+			b.WriteByte(sqlText[i])
+			continue
+		}
+		j := i + 1
+		for j < len(sqlText) && sqlText[j] >= '0' && sqlText[j] <= '9' {
+			j++
+		}
+		if j == i+1 {
+			b.WriteByte(sqlText[i])
+			continue
+		}
+		var n int
+		for _, c := range sqlText[i+1 : j] {
+			n = n*10 + int(c-'0')
+		}
+		b.WriteString(fmt.Sprintf("$%d", n+offset))
+		i = j - 1
+	}
+	return b.String()
+}
+
 func (r *affiliateRepository) CountRebatedInvitees(ctx context.Context, inviterID int64) (int, error) {
 	client := clientFromContext(ctx, r.client)
 	var count int

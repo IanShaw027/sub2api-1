@@ -4277,6 +4277,26 @@ export default {
       failedToLoadUsages: "Failed to load usage records",
     },
 
+    affiliates: {
+      title: "Affiliate Rebates",
+      description: "View affiliate invitation and rebate summaries",
+      searchPlaceholder: "Search account, email, username, or affiliate code...",
+      period: "Period",
+      clearRange: "Clear Range",
+      userId: "User #{id}",
+      failedToLoad: "Failed to load affiliate summaries",
+      columns: {
+        user: "User",
+        affCode: "Affiliate Code",
+        invitedCount: "Invited Users",
+        rebatedInviteeCount: "Rebated Invitees",
+        availableQuota: "Available Balance",
+        historyQuota: "Historical Rebate",
+        periodInvitedCount: "Period Invites",
+        periodRebateAmount: "Period Rebate",
+      },
+    },
+
     // Usage Records
     usage: {
       title: "Usage Records",

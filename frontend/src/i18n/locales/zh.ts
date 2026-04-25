@@ -4285,6 +4285,26 @@ export default {
       failedToLoadUsages: "加载使用记录失败",
     },
 
+    affiliates: {
+      title: "邀请返利",
+      description: "查看邀请与返利汇总数据",
+      searchPlaceholder: "搜索账号、邮箱、用户名或邀请码...",
+      period: "区间",
+      clearRange: "清除区间",
+      userId: "用户 #{id}",
+      failedToLoad: "加载邀请返利汇总失败",
+      columns: {
+        user: "用户",
+        affCode: "邀请码",
+        invitedCount: "邀请人数",
+        rebatedInviteeCount: "已产生返利人数",
+        availableQuota: "可提余额",
+        historyQuota: "历史返利",
+        periodInvitedCount: "区间邀请人数",
+        periodRebateAmount: "区间返利金额",
+      },
+    },
+
     // Usage Records
     usage: {
       title: "使用记录",

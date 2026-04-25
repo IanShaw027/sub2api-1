@@ -73,6 +73,8 @@ func RegisterAdminRoutes(
 		// 订阅管理
 		registerSubscriptionRoutes(admin, h)
 
+		registerAffiliateRoutes(admin, h, settingService)
+
 		registerTicketRoutes(admin, h, settingService)
 
 		// 使用记录管理
@@ -307,6 +309,14 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		accounts.POST("/exchange-setup-token-code", h.Admin.OAuth.ExchangeSetupTokenCode)
 		accounts.POST("/cookie-auth", h.Admin.OAuth.CookieAuth)
 		accounts.POST("/setup-token-cookie-auth", h.Admin.OAuth.SetupTokenCookieAuth)
+	}
+}
+
+func registerAffiliateRoutes(admin *gin.RouterGroup, h *handler.Handlers, settingService *service.SettingService) {
+	affiliates := admin.Group("/affiliates")
+	affiliates.Use(middleware.AffiliateFeatureGuard(settingService))
+	{
+		affiliates.GET("", h.Admin.Affiliate.List)
 	}
 }
 
