@@ -267,7 +267,8 @@ func (s *KiroOAuthService) ExchangeCallback(ctx context.Context, input *KiroExch
 		}
 	}
 
-	tokenPayload, err := kiroCodeExchangeFunc(ctx, code, session.CodeVerifier, redirectURI, proxyURL)
+	tokenExchangeRedirectURI := buildKiroTokenExchangeRedirectURI(redirectURI, parsedURL, loginOption)
+	tokenPayload, err := kiroCodeExchangeFunc(ctx, code, session.CodeVerifier, tokenExchangeRedirectURI, proxyURL)
 	if err != nil {
 		return nil, err
 	}
@@ -371,6 +372,32 @@ func parseKiroCallbackURL(rawValue, callbackBaseURL string) (*url.URL, error) {
 		return nil, fmt.Errorf("invalid kiro callback URL: %w", err)
 	}
 	return parsed, nil
+}
+
+func buildKiroTokenExchangeRedirectURI(callbackBaseURL string, parsedCallbackURL *url.URL, loginOption string) string {
+	base := strings.TrimRight(strings.TrimSpace(callbackBaseURL), "/")
+	if base == "" {
+		if parsedCallbackURL != nil {
+			return strings.TrimSpace(parsedCallbackURL.String())
+		}
+		return ""
+	}
+
+	callbackPath := "/oauth/callback"
+	if parsedCallbackURL != nil {
+		if path := strings.TrimSpace(parsedCallbackURL.Path); path != "" {
+			callbackPath = path
+		}
+	}
+	if !strings.HasPrefix(callbackPath, "/") {
+		callbackPath = "/" + callbackPath
+	}
+
+	redirectURI := base + callbackPath
+	if trimmedLoginOption := strings.TrimSpace(loginOption); trimmedLoginOption != "" {
+		redirectURI += "?login_option=" + url.QueryEscape(trimmedLoginOption)
+	}
+	return redirectURI
 }
 
 func exchangeKiroCodeForToken(

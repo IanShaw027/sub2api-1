@@ -75,6 +75,7 @@ func (h *KiroOAuthHandler) ExchangeCallback(c *gin.Context) {
 type KiroRefreshTokenRequest struct {
 	Credentials map[string]any `json:"credentials" binding:"required"`
 	Extra       map[string]any `json:"extra"`
+	ProxyID     *int64         `json:"proxy_id"`
 }
 
 // RefreshToken validates Kiro credentials through the upstream refresh path and
@@ -112,6 +113,7 @@ func (h *KiroOAuthHandler) RefreshToken(c *gin.Context) {
 		Type:        service.AccountTypeOAuth,
 		Credentials: req.Credentials,
 		Extra:       req.Extra,
+		ProxyID:     req.ProxyID,
 		Concurrency: 1,
 	}
 

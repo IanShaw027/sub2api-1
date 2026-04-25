@@ -47,7 +47,7 @@ func TestKiroOAuthServiceGenerateAuthURLUsesStoredRedirectURI(t *testing.T) {
 	}
 }
 
-func TestKiroOAuthServiceExchangeCallbackReusesAuthorizeRedirectURI(t *testing.T) {
+func TestKiroOAuthServiceExchangeCallbackUsesCallbackPathAndLoginOptionForTokenExchange(t *testing.T) {
 	svc := NewKiroOAuthService(&kiroDefaultProxyRepoStub{}, nil, nil, nil)
 	svc.usageService = nil
 	defer svc.Stop()
@@ -112,15 +112,16 @@ func TestKiroOAuthServiceExchangeCallbackReusesAuthorizeRedirectURI(t *testing.T
 		t.Fatalf("ExchangeCallback returned error: %v", err)
 	}
 
-	if gotRedirectURI != authRedirectURI {
-		t.Fatalf("token exchange redirect_uri mismatch: got=%q want=%q", gotRedirectURI, authRedirectURI)
+	expectedRedirectURI := "http://localhost:3128/signin/callback?login_option=awsidc"
+	if gotRedirectURI != expectedRedirectURI {
+		t.Fatalf("token exchange redirect_uri mismatch: got=%q want=%q", gotRedirectURI, expectedRedirectURI)
 	}
-	if gotRedirectURI == fmt.Sprintf(callbackURL, url.QueryEscape(session.State)) {
-		t.Fatalf("token exchange used full callback URL as redirect_uri: %q", gotRedirectURI)
+	if gotRedirectURI == authRedirectURI {
+		t.Fatalf("token exchange should not reuse bare authorize redirect_uri: %q", gotRedirectURI)
 	}
 }
 
-func TestKiroOAuthServiceExchangeCallbackUsesSessionRedirectURIForManualFullCallback(t *testing.T) {
+func TestKiroOAuthServiceExchangeCallbackUsesCallbackPathForManualFullCallback(t *testing.T) {
 	svc := NewKiroOAuthService(&kiroDefaultProxyRepoStub{}, nil, nil, nil)
 	svc.usageService = nil
 	defer svc.Stop()
@@ -169,8 +170,9 @@ func TestKiroOAuthServiceExchangeCallbackUsesSessionRedirectURIForManualFullCall
 		t.Fatalf("ExchangeCallback returned error: %v", err)
 	}
 
-	if gotRedirectURI != redirectURI {
-		t.Fatalf("token exchange redirect_uri mismatch: got=%q want=%q", gotRedirectURI, redirectURI)
+	expectedRedirectURI := "http://localhost:3128/oauth/callback?login_option=social"
+	if gotRedirectURI != expectedRedirectURI {
+		t.Fatalf("token exchange redirect_uri mismatch: got=%q want=%q", gotRedirectURI, expectedRedirectURI)
 	}
 	if gotRedirectURI == callbackBaseURL {
 		t.Fatalf("token exchange used callback parsing base as redirect_uri: %q", gotRedirectURI)
