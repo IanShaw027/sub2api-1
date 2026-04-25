@@ -282,6 +282,7 @@ type AccountUsageService struct {
 	identityCache           IdentityCache
 	tokenCacheInvalidator   TokenCacheInvalidator
 	tlsFPProfileService     *TLSFingerprintProfileService
+	settingService          *SettingService
 }
 
 // NewAccountUsageService 创建AccountUsageService实例
@@ -296,6 +297,7 @@ func NewAccountUsageService(
 	identityCache IdentityCache,
 	tokenCacheInvalidator TokenCacheInvalidator,
 	tlsFPProfileService *TLSFingerprintProfileService,
+	settingService *SettingService,
 ) *AccountUsageService {
 	return &AccountUsageService{
 		accountRepo:             accountRepo,
@@ -308,6 +310,7 @@ func NewAccountUsageService(
 		identityCache:           identityCache,
 		tokenCacheInvalidator:   tokenCacheInvalidator,
 		tlsFPProfileService:     tlsFPProfileService,
+		settingService:          settingService,
 	}
 }
 
@@ -346,7 +349,7 @@ func (s *AccountUsageService) GetUsage(ctx context.Context, accountID int64) (*U
 		return usage, err
 	}
 
-	if account.Platform == PlatformKiro {
+	if account.Platform == PlatformKiro && account.Type == AccountTypeOAuth {
 		usage, err := s.getKiroUsage(ctx, account)
 		if err == nil && usage != nil && usage.Error == "" && usage.ErrorCode == "" && !usage.IsForbidden && !usage.NeedsReauth {
 			s.tryClearRecoverableAccountError(ctx, account)
@@ -474,7 +477,9 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 			accessToken = account.GetCredential("access_token")
 		}
 		if accessToken == "" {
-			refresher := NewKiroTokenRefresher().WithTransport(kiroHTTPUpstream, s.tlsFPProfileService)
+			refresher := NewKiroTokenRefresher().
+				WithTransport(kiroHTTPUpstream, s.tlsFPProfileService).
+				WithSettingService(s.settingService)
 			newCreds, err := refresher.Refresh(fetchCtx, account)
 			if err != nil {
 				return buildKiroDegradedUsage(err), nil
@@ -485,7 +490,9 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 			accessToken = account.GetCredential("access_token")
 		}
 
-		usageService := NewKiroUsageService().WithTransport(kiroHTTPUpstream, s.tlsFPProfileService)
+		usageService := NewKiroUsageService().
+			WithTransport(kiroHTTPUpstream, s.tlsFPProfileService).
+			WithSettingService(s.settingService)
 		limits, err := usageService.FetchUsageLimits(fetchCtx, account, accessToken)
 		if err != nil {
 			return buildKiroDegradedUsage(err), nil

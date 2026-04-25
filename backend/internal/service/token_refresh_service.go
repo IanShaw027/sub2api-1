@@ -96,6 +96,13 @@ func (s *TokenRefreshService) SetKiroTransport(httpUpstream HTTPUpstream, tlsFPP
 	s.kiroRefresher.WithTransport(httpUpstream, tlsFPProfileService)
 }
 
+func (s *TokenRefreshService) SetKiroSettingService(settingService *SettingService) {
+	if s == nil || s.kiroRefresher == nil {
+		return
+	}
+	s.kiroRefresher.WithSettingService(settingService)
+}
+
 // SetPrivacyDeps 注入 OpenAI privacy opt-out 所需依赖
 func (s *TokenRefreshService) SetPrivacyDeps(factory PrivacyClientFactory, proxyRepo ProxyRepository) {
 	s.privacyClientFactory = factory

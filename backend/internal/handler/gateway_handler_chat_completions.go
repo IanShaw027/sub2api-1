@@ -253,7 +253,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 
-		h.submitUsageRecordTask(func(ctx context.Context) {
+		h.submitUsageRecordTask(wrapUsageRecordTaskWithRequestContext(c, func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 				Result:             result,
 				APIKey:             apiKey,
@@ -273,7 +273,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 					zap.Error(err),
 				)
 			}
-		})
+		}))
 		return
 	}
 }
