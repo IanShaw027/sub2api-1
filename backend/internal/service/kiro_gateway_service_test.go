@@ -666,6 +666,20 @@ func TestParseKiroFrame_RejectsOversizedHeaderLength(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestParseKiroFrame_RejectsOversizedFrameLength(t *testing.T) {
+	frame := make([]byte, kiroPreludeSize)
+	binary.BigEndian.PutUint32(frame[0:4], uint32(kiroMaxBodySize+1))
+	binary.BigEndian.PutUint32(frame[4:8], 0)
+	binary.BigEndian.PutUint32(frame[8:12], crc32.ChecksumIEEE(frame[:8]))
+
+	parsed, consumed, ok, err := parseKiroFrame(frame)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "kiro frame exceeded limit")
+	require.Nil(t, parsed)
+	require.Zero(t, consumed)
+	require.False(t, ok)
+}
+
 func TestKiroGatewayService_ForwardStream_ToolFirstUsesMonotonicBlockIndexes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

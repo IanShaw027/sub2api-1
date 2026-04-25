@@ -354,6 +354,11 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		n, readErr := reader.Read(chunk)
 		if n > 0 {
 			buffer = append(buffer, chunk[:n]...)
+			if len(buffer) > kiroMaxBodySize {
+				err := fmt.Errorf("kiro stream buffer exceeded limit %d", kiroMaxBodySize)
+				s.handleProtocolError(ctx, account, parsed.Model, true, err)
+				return nil, err
+			}
 			for {
 				frame, consumed, ok, err := parseKiroFrame(buffer)
 				if err != nil {
@@ -732,6 +737,9 @@ func parseKiroFrame(buffer []byte) (*kiroFrame, int, bool, error) {
 	totalLength := int(binary.BigEndian.Uint32(buffer[0:4]))
 	headerLength := int(binary.BigEndian.Uint32(buffer[4:8]))
 	preludeCRC := binary.BigEndian.Uint32(buffer[8:12])
+	if totalLength > kiroMaxBodySize {
+		return nil, 0, false, fmt.Errorf("kiro frame exceeded limit %d", kiroMaxBodySize)
+	}
 	if totalLength < kiroMinMsgSize || headerLength < 0 {
 		return nil, 0, false, fmt.Errorf("invalid kiro frame size")
 	}
