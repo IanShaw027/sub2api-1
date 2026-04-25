@@ -128,24 +128,29 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.wechatConnect.frontendRedirectUrlLabel": "前端回调地址",
     "admin.settings.wechatConnect.frontendRedirectUrlPlaceholder": "/auth/wechat/callback",
     "admin.settings.wechatConnect.frontendRedirectUrlHint": "通常用于前端路由回调地址，需与后端配置保持一致。",
-    "admin.settings.authSourceDefaults.title": "认证来源默认值",
-    "admin.settings.authSourceDefaults.description": "按注册来源配置新用户默认余额、并发、订阅与授权策略。",
+    "admin.settings.authSourceDefaults.title": "来源附加授权",
+    "admin.settings.authSourceDefaults.description": "按第三方认证来源配置附加余额、并发和订阅。注册时会在用户默认值基础上叠加，首次绑定开启后也会叠加；不同来源可累计，同一来源只发一次。",
     "admin.settings.authSourceDefaults.requireEmailLabel": "第三方注册强制补充邮箱",
     "admin.settings.authSourceDefaults.requireEmailHint": "启用后，Linux DO、OIDC、微信注册缺少邮箱时必须先补充邮箱地址。",
-    "admin.settings.authSourceDefaults.enabledHint": "以下默认值会在该来源注册新用户时发放；首次绑定时授权仅作用于已有账号绑定该来源。",
     "admin.settings.authSourceDefaults.sources.email.title": "邮箱注册",
-    "admin.settings.authSourceDefaults.sources.email.description": "适用于邮箱密码注册的新用户默认配额。",
+    "admin.settings.authSourceDefaults.sources.email.description": "邮箱注册或首次绑定邮箱时可追加的附加权益。",
     "admin.settings.authSourceDefaults.sources.linuxdo.title": "Linux DO 登录",
-    "admin.settings.authSourceDefaults.sources.linuxdo.description": "适用于 Linux DO 第三方注册的新用户默认配额。",
+    "admin.settings.authSourceDefaults.sources.linuxdo.description": "Linux DO 注册或首次绑定时可追加的附加权益。",
     "admin.settings.authSourceDefaults.sources.oidc.title": "OIDC 登录",
-    "admin.settings.authSourceDefaults.sources.oidc.description": "适用于 OIDC 第三方注册的新用户默认配额。",
+    "admin.settings.authSourceDefaults.sources.oidc.description": "OIDC 注册或首次绑定时可追加的附加权益。",
     "admin.settings.authSourceDefaults.sources.wechat.title": "微信登录",
-    "admin.settings.authSourceDefaults.sources.wechat.description": "适用于微信第三方注册的新用户默认配额。",
-    "admin.settings.authSourceDefaults.grantOnFirstBindLabel": "首次绑定时授权",
-    "admin.settings.authSourceDefaults.grantOnFirstBindHint": "已有账号首次绑定该来源时发放默认权益。",
-    "admin.settings.authSourceDefaults.defaultSubscriptionsLabel": "默认订阅",
-    "admin.settings.authSourceDefaults.defaultSubscriptionsHint": "仅对当前认证来源生效，未配置时不追加来源专属订阅。",
-    "admin.settings.authSourceDefaults.noSourceSubscriptions": "当前来源未配置专属默认订阅。",
+    "admin.settings.authSourceDefaults.sources.wechat.description": "微信注册或首次绑定时可追加的附加权益。",
+    "admin.settings.authSourceDefaults.grantOnSignupLabel": "注册时叠加授权",
+    "admin.settings.authSourceDefaults.grantOnSignupHint": "新用户通过该来源注册时，在用户默认值基础上追加发放。",
+    "admin.settings.authSourceDefaults.grantOnFirstBindLabel": "首次绑定时叠加授权",
+    "admin.settings.authSourceDefaults.grantOnFirstBindHint": "已有账号首次绑定该来源时追加发放；以后重复绑定同一来源不会再获得。",
+    "admin.settings.authSourceDefaults.bonusBalanceLabel": "附加余额",
+    "admin.settings.authSourceDefaults.bonusConcurrencyLabel": "附加并发数",
+    "admin.settings.authSourceDefaults.defaultSubscriptionsLabel": "附加订阅",
+    "admin.settings.authSourceDefaults.defaultSubscriptionsHint": "仅对当前认证来源生效，会和用户默认订阅一起叠加发放。",
+    "admin.settings.authSourceDefaults.addBonusSubscription": "添加附加订阅",
+    "admin.settings.authSourceDefaults.subscriptionGroupLabel": "订阅分组",
+    "admin.settings.authSourceDefaults.noSourceSubscriptions": "当前来源未配置附加订阅。",
     "admin.settings.paymentVisibleMethods.methodLabel": "{title} 可见方式",
     "admin.settings.paymentVisibleMethods.methodHint": "控制前台结算页是否展示该方式，以及展示时使用的来源键。",
     "admin.settings.paymentVisibleMethods.sourceLabel": "支付来源",
@@ -831,31 +836,96 @@ describe("admin SettingsView wechat connect controls", () => {
     ).toContain("密钥已配置");
   });
 
-  it("collapses auth source defaults until the source is enabled", async () => {
+  it("shows source bonus grants settings without requiring signup grant", async () => {
     const wrapper = mountView();
 
     await flushPromises();
     await openUsersTab(wrapper);
 
     expect(
+      wrapper.find('[data-testid="auth-source-email-panel"]').exists(),
+    ).toBe(true);
+    expect(wrapper.text()).toContain("注册时叠加授权");
+    expect(wrapper.text()).toContain("首次绑定时叠加授权");
+    expect(
       (
         wrapper.get('[data-testid="auth-source-email-enabled"]')
           .element as HTMLInputElement
       ).checked,
     ).toBe(false);
-    expect(
-      wrapper.find('[data-testid="auth-source-email-panel"]').exists(),
-    ).toBe(false);
-    expect(wrapper.text()).not.toContain("注册即授权");
+    expect(wrapper.text()).toContain("附加余额");
+    expect(wrapper.text()).toContain("附加并发数");
+    expect(wrapper.text()).toContain("添加附加订阅");
+  });
+
+  it("serializes auth-source grant toggles while preserving omitted and explicit zero concurrency", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      auth_source_default_linuxdo_balance: 2,
+      auth_source_default_linuxdo_concurrency: 0,
+      auth_source_default_linuxdo_grant_on_signup: true,
+      auth_source_default_linuxdo_grant_on_first_bind: false,
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openUsersTab(wrapper);
 
     await wrapper
       .get('[data-testid="auth-source-email-enabled"]')
       .setValue(true);
+    await wrapper
+      .get('[data-testid="auth-source-email-first-bind-enabled"]')
+      .setValue(true);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
 
-    expect(
-      wrapper.find('[data-testid="auth-source-email-panel"]').exists(),
-    ).toBe(true);
-    expect(wrapper.text()).toContain("首次绑定时授权");
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        auth_source_default_email_grant_on_signup: true,
+        auth_source_default_email_grant_on_first_bind: true,
+        auth_source_default_linuxdo_concurrency: 0,
+      }),
+    );
+    expect(updateSettings.mock.calls[0]?.[0]).not.toHaveProperty(
+      "auth_source_default_email_concurrency",
+    );
+  });
+
+  it("does not block save for duplicate subscriptions on disabled source bonus sections", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      auth_source_default_email_balance: 5,
+      auth_source_default_email_subscriptions: [
+        { group_id: 1, validity_days: 30 },
+        { group_id: 1, validity_days: 90 },
+      ],
+      auth_source_default_email_grant_on_signup: false,
+      auth_source_default_email_grant_on_first_bind: false,
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openUsersTab(wrapper);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(showError).not.toHaveBeenCalledWith(
+      expect.stringContaining("邮箱注册"),
+    );
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        auth_source_default_email_subscriptions: [
+          { group_id: 1, validity_days: 30 },
+        ],
+        auth_source_default_email_grant_on_signup: false,
+        auth_source_default_email_grant_on_first_bind: false,
+      }),
+    );
   });
 
   it("preserves optional OIDC compatibility flags instead of forcing them on save", async () => {

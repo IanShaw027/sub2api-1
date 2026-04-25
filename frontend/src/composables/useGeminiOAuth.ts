@@ -136,8 +136,29 @@ export function useGeminiOAuth() {
   }
 
   const buildExtraInfo = (tokenInfo: GeminiTokenInfo): Record<string, unknown> | undefined => {
-    if (!tokenInfo.extra || typeof tokenInfo.extra !== 'object') return undefined
-    return tokenInfo.extra
+    const extra: Record<string, unknown> = {
+      ...(tokenInfo.extra && typeof tokenInfo.extra === 'object' ? tokenInfo.extra : {})
+    }
+    if (tokenInfo.tier_id) {
+      extra.subscription_type = tokenInfo.tier_id
+    }
+    if (tokenInfo.oauth_type) {
+      extra.oauth_type = tokenInfo.oauth_type
+    }
+    return Object.keys(extra).length > 0 ? extra : undefined
+  }
+
+  const buildAccountName = (tokenInfo: GeminiTokenInfo, fallbackName?: string): string => {
+    if (fallbackName?.trim()) {
+      return fallbackName.trim()
+    }
+    if (tokenInfo.tier_id?.trim()) {
+      return `Gemini ${tokenInfo.tier_id.trim()}`
+    }
+    if (tokenInfo.oauth_type?.trim()) {
+      return `Gemini ${tokenInfo.oauth_type.trim()}`
+    }
+    return 'Gemini OAuth Account'
   }
 
   const getCapabilities = async (): Promise<GeminiOAuthCapabilities | null> => {
@@ -160,6 +181,7 @@ export function useGeminiOAuth() {
     exchangeAuthCode,
     buildCredentials,
     buildExtraInfo,
+    buildAccountName,
     getCapabilities
   }
 }

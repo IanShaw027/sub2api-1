@@ -172,6 +172,50 @@ func TestAuthServiceBindEmailIdentity_UpdatesEmailAndAppliesFirstBindDefaults(t 
 	require.Equal(t, 1, countProviderGrantRecords(t, client, user.ID, "email", "first_bind"))
 }
 
+func TestAuthServiceBindEmailIdentity_FirstBindIgnoresGlobalUserDefaults(t *testing.T) {
+	assigner := &emailBindDefaultSubAssignerStub{}
+	cache := &emailBindCacheStub{
+		data: &service.VerificationCodeData{
+			Code:      "123456",
+			CreatedAt: time.Now().UTC(),
+			ExpiresAt: time.Now().UTC().Add(10 * time.Minute),
+		},
+	}
+	svc, _, client := newAuthServiceForEmailBind(t, map[string]string{
+		service.SettingKeyDefaultBalance:                         "3.5",
+		service.SettingKeyDefaultConcurrency:                     "2",
+		service.SettingKeyDefaultSubscriptions:                   `[{"group_id":21,"validity_days":14}]`,
+		service.SettingKeyAuthSourceDefaultEmailBalance:          "8.5",
+		service.SettingKeyAuthSourceDefaultEmailConcurrency:      "4",
+		service.SettingKeyAuthSourceDefaultEmailSubscriptions:    `[{"group_id":11,"validity_days":30}]`,
+		service.SettingKeyAuthSourceDefaultEmailGrantOnFirstBind: "true",
+	}, cache, assigner)
+
+	ctx := context.Background()
+	user, err := client.User.Create().
+		SetEmail("legacy-user-2" + service.LinuxDoConnectSyntheticEmailDomain).
+		SetUsername("legacy-user-2").
+		SetPasswordHash("old-hash").
+		SetBalance(2.5).
+		SetConcurrency(1).
+		SetRole(service.RoleUser).
+		SetStatus(service.StatusActive).
+		Save(ctx)
+	require.NoError(t, err)
+
+	updatedUser, err := svc.BindEmailIdentity(ctx, user.ID, "bind-only@example.com", "123456", "new-password")
+	require.NoError(t, err)
+	require.NotNil(t, updatedUser)
+
+	storedUser, err := client.User.Get(ctx, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, 11.0, storedUser.Balance)
+	require.Equal(t, 5, storedUser.Concurrency)
+	require.Len(t, assigner.calls, 1)
+	require.Equal(t, int64(11), assigner.calls[0].GroupID)
+	require.Equal(t, 30, assigner.calls[0].ValidityDays)
+}
+
 func TestAuthServiceBindEmailIdentity_RejectsExistingEmailOnAnotherUser(t *testing.T) {
 	cache := &emailBindCacheStub{
 		data: &service.VerificationCodeData{
@@ -810,8 +854,8 @@ func (s *emailBindUserRepoStub) UpdateUserLastActiveAt(context.Context, int64, t
 }
 
 func (s *emailBindUserRepoStub) UpdateBalance(context.Context, int64, float64) error { return nil }
-func (s *emailBindUserRepoStub) DeductBalance(context.Context, int64, float64) error  { return nil }
-func (s *emailBindUserRepoStub) UpdateConcurrency(context.Context, int64, int) error   { return nil }
+func (s *emailBindUserRepoStub) DeductBalance(context.Context, int64, float64) error { return nil }
+func (s *emailBindUserRepoStub) UpdateConcurrency(context.Context, int64, int) error { return nil }
 
 func (s *emailBindUserRepoStub) ExistsByEmail(_ context.Context, email string) (bool, error) {
 	s.mu.Lock()

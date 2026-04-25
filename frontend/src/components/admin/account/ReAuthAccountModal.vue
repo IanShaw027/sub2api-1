@@ -48,61 +48,6 @@
         </div>
       </div>
 
-      <div
-        v-if="isKiro"
-        class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-200"
-      >
-        <div class="font-medium">
-          {{ t('admin.accounts.kiro.manualUpdateTitle') }}
-        </div>
-        <p class="mt-1">
-          {{ t('admin.accounts.kiro.manualUpdateDesc') }}
-        </p>
-        <ul class="mt-3 list-disc space-y-1 pl-5">
-          <li>{{ t('admin.accounts.kiro.manualUpdateStepRefresh') }}</li>
-          <li>{{ t('admin.accounts.kiro.manualUpdateStepIDC') }}</li>
-          <li>{{ t('admin.accounts.kiro.manualUpdateStepVersions') }}</li>
-        </ul>
-        <div class="mt-3 flex flex-wrap gap-2 text-xs">
-          <span class="rounded-full bg-white/70 px-2 py-1 dark:bg-black/10">
-            {{ t('admin.accounts.kiro.manualUpdateCurrentAuth', { value: kiroAuthMethodLabel }) }}
-          </span>
-          <span class="rounded-full bg-white/70 px-2 py-1 dark:bg-black/10">
-            {{ t('admin.accounts.kiro.manualUpdateCurrentRegion', { value: kiroRegionLabel }) }}
-          </span>
-          <span
-            v-if="kiroUsesIDC"
-            class="rounded-full bg-white/70 px-2 py-1 dark:bg-black/10"
-          >
-            {{
-              kiroHasIDCClient
-                ? t('admin.accounts.kiro.manualUpdateIDCConfigured')
-                : t('admin.accounts.kiro.manualUpdateIDCMissing')
-            }}
-          </span>
-        </div>
-        <p class="mt-3 text-xs text-amber-700/90 dark:text-amber-200/90">
-          {{ t('admin.accounts.kiro.manualUpdateFooterHint') }}
-        </p>
-        <div class="mt-4 rounded-lg border border-amber-300/70 bg-white/70 p-3 dark:border-amber-800/60 dark:bg-black/10">
-          <div class="font-medium text-amber-900 dark:text-amber-100">
-            {{ t('admin.accounts.kiro.refreshNowTitle') }}
-          </div>
-          <p class="mt-1 text-xs text-amber-800/90 dark:text-amber-200/90">
-            {{ t('admin.accounts.kiro.refreshNowDesc') }}
-          </p>
-          <p v-if="kiroRefreshBlockedReason" class="mt-2 text-xs text-amber-900/80 dark:text-amber-100/90">
-            {{ kiroRefreshBlockedReason }}
-          </p>
-          <p v-else class="mt-2 text-xs text-amber-900/80 dark:text-amber-100/90">
-            {{ t('admin.accounts.kiro.refreshNowHint') }}
-          </p>
-          <p v-if="kiroRefreshError" class="mt-2 text-xs text-red-700 dark:text-red-300">
-            {{ kiroRefreshError }}
-          </p>
-        </div>
-      </div>
-
       <!-- Add Method Selection (Claude only) -->
       <fieldset v-if="isAnthropic" class="border-0 p-0">
         <legend class="input-label">{{ t('admin.accounts.oauth.authMethod') }}</legend>
@@ -175,8 +120,21 @@
         </div>
       </div>
 
+      <KiroAuthorizationFlow
+        v-if="isKiro"
+        mode="reauth"
+        :auth-url="kiroOAuth.authUrl.value"
+        :callback-base-url="kiroOAuth.callbackBaseUrl.value"
+        :loading="kiroOAuth.loading.value"
+        :error="kiroOAuth.error.value"
+        :initial-credentials="kiroCredentials"
+        :initial-extra="kiroExtra"
+        @generate-url="handleGenerateUrl"
+        @submit="handleKiroReauthorize"
+      />
+
       <OAuthAuthorizationFlow
-        v-if="!isKiro"
+        v-else
         ref="oauthFlowRef"
         :add-method="addMethod"
         :auth-url="currentAuthUrl"
@@ -208,38 +166,6 @@
             @click="handleOpenEditor"
           >
             {{ t('admin.accounts.kiro.openEditorAction') }}
-          </button>
-          <button
-            type="button"
-            class="btn btn-primary"
-            :disabled="!kiroCanRefresh || kiroRefreshLoading"
-            @click="handleKiroRefresh"
-          >
-            <svg
-              v-if="kiroRefreshLoading"
-              class="-ml-1 mr-2 h-4 w-4 animate-spin"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                class="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                stroke-width="4"
-              ></circle>
-              <path
-                class="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
-            {{
-              kiroRefreshLoading
-                ? t('admin.accounts.oauth.verifying')
-                : t('admin.accounts.kiro.refreshNowAction')
-            }}
           </button>
         </div>
         <button
@@ -293,10 +219,12 @@ import {
 import { useOpenAIOAuth } from '@/composables/useOpenAIOAuth'
 import { useGeminiOAuth } from '@/composables/useGeminiOAuth'
 import { useAntigravityOAuth } from '@/composables/useAntigravityOAuth'
-import type { Account, KiroCredentials } from '@/types'
+import { useKiroOAuth } from '@/composables/useKiroOAuth'
+import type { Account, KiroAccountExtra, KiroCredentials } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import OAuthAuthorizationFlow from '@/components/account/OAuthAuthorizationFlow.vue'
+import KiroAuthorizationFlow from '@/components/account/KiroAuthorizationFlow.vue'
 
 // Type for exposed OAuthAuthorizationFlow component
 // Note: defineExpose automatically unwraps refs, so we use the unwrapped types
@@ -329,6 +257,7 @@ const claudeOAuth = useAccountOAuth()
 const openaiOAuth = useOpenAIOAuth()
 const geminiOAuth = useGeminiOAuth()
 const antigravityOAuth = useAntigravityOAuth()
+const kiroOAuth = useKiroOAuth()
 
 // Refs
 const oauthFlowRef = ref<OAuthFlowExposed | null>(null)
@@ -336,8 +265,6 @@ const oauthFlowRef = ref<OAuthFlowExposed | null>(null)
 // State
 const addMethod = ref<AddMethod>('oauth')
 const geminiOAuthType = ref<'code_assist' | 'google_one' | 'ai_studio'>('code_assist')
-const kiroRefreshLoading = ref(false)
-const kiroRefreshError = ref('')
 
 // Computed - check platform
 const isOpenAI = computed(() => props.account?.platform === 'openai')
@@ -352,30 +279,13 @@ const kiroCredentials = computed((): KiroCredentials & Record<string, unknown> =
   }
   return props.account.credentials || {}
 })
-const kiroUsesIDC = computed(() => kiroCredentials.value.auth_method === 'idc')
-const kiroHasIDCClient = computed(() => (
-  Boolean(kiroCredentials.value.client_id?.trim()) &&
-  Boolean(kiroCredentials.value.client_secret?.trim())
-))
-const kiroHasRefreshToken = computed(() => Boolean(kiroCredentials.value.refresh_token?.trim()))
-const kiroCanRefresh = computed(() => kiroHasRefreshToken.value && (!kiroUsesIDC.value || kiroHasIDCClient.value))
-const kiroRefreshBlockedReason = computed(() => {
-  if (!isKiro.value) return ''
-  if (!kiroHasRefreshToken.value) return t('admin.accounts.kiro.refreshNowMissingRefreshToken')
-  if (kiroUsesIDC.value && !kiroHasIDCClient.value) return t('admin.accounts.kiro.refreshNowMissingIDC')
-  return ''
+const kiroExtra = computed((): KiroAccountExtra & Record<string, unknown> => {
+  if (props.account?.platform !== 'kiro') {
+    return {}
+  }
+  return props.account.extra || {}
 })
-const kiroRegionLabel = computed(() => kiroCredentials.value.region || 'us-east-1')
-const kiroAuthMethodLabel = computed(() => (
-  kiroUsesIDC.value
-    ? t('admin.accounts.kiro.authMethodIDC')
-    : t('admin.accounts.kiro.authMethodSocial')
-))
-const dialogTitle = computed(() => (
-  isKiro.value
-    ? t('admin.accounts.kiro.manualUpdateDialogTitle')
-    : t('admin.accounts.reAuthorizeAccount')
-))
+const dialogTitle = computed(() => t('admin.accounts.reAuthorizeAccount'))
 
 // Computed - current OAuth state based on platform
 const currentAuthUrl = computed(() => {
@@ -451,12 +361,11 @@ watch(
 const resetState = () => {
   addMethod.value = 'oauth'
   geminiOAuthType.value = 'code_assist'
-  kiroRefreshLoading.value = false
-  kiroRefreshError.value = ''
   claudeOAuth.resetState()
   openaiOAuth.resetState()
   geminiOAuth.resetState()
   antigravityOAuth.resetState()
+  kiroOAuth.resetState()
   oauthFlowRef.value?.reset()
 }
 
@@ -470,44 +379,64 @@ const handleOpenEditor = () => {
   emit('close')
 }
 
-const handleKiroRefresh = async () => {
+const mergeRecord = (
+  base?: Record<string, unknown> | null,
+  patch?: Record<string, unknown> | null
+): Record<string, unknown> => {
+  return {
+    ...(base || {}),
+    ...(patch || {})
+  }
+}
+
+const handleKiroReauthorize = async (payload: {
+  callbackUrl: string
+  credentials: Record<string, unknown>
+  extra: Record<string, unknown>
+}) => {
   if (!props.account) return
-  if (!kiroCanRefresh.value) {
-    const message = kiroRefreshBlockedReason.value || t('admin.accounts.kiro.refreshNowFailed')
-    kiroRefreshError.value = message
-    appStore.showError(message)
+
+  const tokenInfo = await kiroOAuth.exchangeCallback(payload.callbackUrl, props.account.proxy_id)
+  if (!tokenInfo) {
     return
   }
-
-  kiroRefreshLoading.value = true
-  kiroRefreshError.value = ''
+  const credentials = mergeRecord(
+    (props.account.credentials || {}) as Record<string, unknown>,
+    kiroOAuth.buildCredentials(tokenInfo, payload.credentials)
+  )
+  const extra = mergeRecord(
+    (props.account.extra || {}) as Record<string, unknown>,
+    kiroOAuth.buildExtraInfo(tokenInfo, payload.extra)
+  )
+  const name = kiroOAuth.buildAccountName(tokenInfo, props.account.name)
 
   try {
-    const updatedAccount = await adminAPI.accounts.refreshCredentials(props.account.id)
-    appStore.showSuccess(t('admin.accounts.kiro.refreshNowSuccess'))
+    await adminAPI.accounts.update(props.account.id, {
+      name,
+      type: 'oauth',
+      credentials,
+      extra
+    })
+    const updatedAccount = await adminAPI.accounts.clearError(props.account.id)
+    appStore.showSuccess(t('admin.accounts.reAuthorizedSuccess'))
     emit('reauthorized', updatedAccount)
     handleClose()
   } catch (error: any) {
     const message =
       error?.response?.data?.detail ||
       error?.message ||
-      t('admin.accounts.kiro.refreshNowFailed')
-    kiroRefreshError.value = message
+      t('admin.accounts.oauth.authFailed')
     appStore.showError(message)
-  } finally {
-    kiroRefreshLoading.value = false
   }
 }
 
 const handleGenerateUrl = async () => {
   if (!props.account) return
-  if (isKiro.value) {
-    appStore.showError(t('admin.accounts.reAuthorizeUnavailableKiro'))
-    return
-  }
 
   if (isOpenAILike.value) {
     await openaiOAuth.generateAuthUrl(props.account.proxy_id)
+  } else if (isKiro.value) {
+    await kiroOAuth.generateAuthUrl(props.account.proxy_id)
   } else if (isGemini.value) {
     const creds = (props.account.credentials || {}) as Record<string, unknown>
     const tierId = typeof creds.tier_id === 'string' ? creds.tier_id : undefined
@@ -522,10 +451,6 @@ const handleGenerateUrl = async () => {
 
 const handleExchangeCode = async () => {
   if (!props.account) return
-  if (isKiro.value) {
-    appStore.showError(t('admin.accounts.reAuthorizeUnavailableKiro'))
-    return
-  }
 
   const authCode = oauthFlowRef.value?.authCode || ''
   if (!authCode.trim()) return
@@ -551,12 +476,20 @@ const handleExchangeCode = async () => {
     if (!tokenInfo) return
 
     // Build credentials and extra info
-    const credentials = oauthClient.buildCredentials(tokenInfo)
-    const extra = oauthClient.buildExtraInfo(tokenInfo)
+    const credentials = mergeRecord(
+      (props.account.credentials || {}) as Record<string, unknown>,
+      oauthClient.buildCredentials(tokenInfo)
+    )
+    const extra = mergeRecord(
+      (props.account.extra || {}) as Record<string, unknown>,
+      oauthClient.buildExtraInfo(tokenInfo)
+    )
+    const name = oauthClient.buildAccountName(tokenInfo, props.account.name)
 
     try {
       // Update account with new credentials
       await adminAPI.accounts.update(props.account.id, {
+        name,
         type: 'oauth', // OpenAI OAuth is always 'oauth' type
         credentials,
         extra
@@ -590,12 +523,22 @@ const handleExchangeCode = async () => {
     })
     if (!tokenInfo) return
 
-    const credentials = geminiOAuth.buildCredentials(tokenInfo)
+    const credentials = mergeRecord(
+      (props.account.credentials || {}) as Record<string, unknown>,
+      geminiOAuth.buildCredentials(tokenInfo)
+    )
+    const extra = mergeRecord(
+      (props.account.extra || {}) as Record<string, unknown>,
+      geminiOAuth.buildExtraInfo(tokenInfo)
+    )
+    const name = geminiOAuth.buildAccountName(tokenInfo, props.account.name)
 
     try {
       await adminAPI.accounts.update(props.account.id, {
+        name,
         type: 'oauth',
-        credentials
+        credentials,
+        extra
       })
       const updatedAccount = await adminAPI.accounts.clearError(props.account.id)
       appStore.showSuccess(t('admin.accounts.reAuthorizedSuccess'))
@@ -622,12 +565,22 @@ const handleExchangeCode = async () => {
     })
     if (!tokenInfo) return
 
-    const credentials = antigravityOAuth.buildCredentials(tokenInfo)
+    const credentials = mergeRecord(
+      (props.account.credentials || {}) as Record<string, unknown>,
+      antigravityOAuth.buildCredentials(tokenInfo)
+    )
+    const extra = mergeRecord(
+      (props.account.extra || {}) as Record<string, unknown>,
+      antigravityOAuth.buildExtraInfo(tokenInfo)
+    )
+    const name = antigravityOAuth.buildAccountName(tokenInfo, props.account.name)
 
     try {
       await adminAPI.accounts.update(props.account.id, {
+        name,
         type: 'oauth',
-        credentials
+        credentials,
+        extra
       })
       const updatedAccount = await adminAPI.accounts.clearError(props.account.id)
       appStore.showSuccess(t('admin.accounts.reAuthorizedSuccess'))
@@ -658,12 +611,21 @@ const handleExchangeCode = async () => {
         ...proxyConfig
       })
 
-      const extra = claudeOAuth.buildExtraInfo(tokenInfo)
+      const credentials = mergeRecord(
+        (props.account.credentials || {}) as Record<string, unknown>,
+        tokenInfo as Record<string, unknown>
+      )
+      const extra = mergeRecord(
+        (props.account.extra || {}) as Record<string, unknown>,
+        claudeOAuth.buildExtraInfo(tokenInfo)
+      )
+      const name = claudeOAuth.buildAccountName(tokenInfo, props.account.name)
 
       // Update account with new credentials and type
       await adminAPI.accounts.update(props.account.id, {
+        name,
         type: addMethod.value, // Update type based on selected method
-        credentials: tokenInfo,
+        credentials,
         extra
       })
 
@@ -701,12 +663,21 @@ const handleCookieAuth = async (sessionKey: string) => {
       ...proxyConfig
     })
 
-    const extra = claudeOAuth.buildExtraInfo(tokenInfo)
+    const credentials = mergeRecord(
+      (props.account.credentials || {}) as Record<string, unknown>,
+      tokenInfo as Record<string, unknown>
+    )
+    const extra = mergeRecord(
+      (props.account.extra || {}) as Record<string, unknown>,
+      claudeOAuth.buildExtraInfo(tokenInfo)
+    )
+    const name = claudeOAuth.buildAccountName(tokenInfo, props.account.name)
 
     // Update account with new credentials and type
     await adminAPI.accounts.update(props.account.id, {
+      name,
       type: addMethod.value, // Update type based on selected method
-      credentials: tokenInfo,
+      credentials,
       extra
     })
 

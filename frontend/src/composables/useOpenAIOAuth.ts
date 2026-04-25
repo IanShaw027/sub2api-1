@@ -15,7 +15,10 @@ export interface OpenAITokenInfo {
   scope?: string
   email?: string
   name?: string
+  workspace_id?: string
+  workspace_name?: string
   plan_type?: string
+  subscription_expires_at?: string
   privacy_mode?: string
   // OpenAI specific IDs (extracted from ID Token)
   chatgpt_account_id?: string
@@ -185,6 +188,9 @@ export function useOpenAIOAuth() {
     if (tokenInfo.email) {
       creds.email = tokenInfo.email
     }
+    if (tokenInfo.name) {
+      creds.name = tokenInfo.name
+    }
     if (tokenInfo.chatgpt_account_id) {
       creds.chatgpt_account_id = tokenInfo.chatgpt_account_id
     }
@@ -194,8 +200,17 @@ export function useOpenAIOAuth() {
     if (tokenInfo.organization_id) {
       creds.organization_id = tokenInfo.organization_id
     }
+    if (tokenInfo.workspace_id) {
+      creds.workspace_id = tokenInfo.workspace_id
+    }
+    if (tokenInfo.workspace_name) {
+      creds.workspace_name = tokenInfo.workspace_name
+    }
     if (tokenInfo.plan_type) {
       creds.plan_type = tokenInfo.plan_type
+    }
+    if (tokenInfo.subscription_expires_at) {
+      creds.subscription_expires_at = tokenInfo.subscription_expires_at
     }
     if (tokenInfo.client_id) {
       creds.client_id = tokenInfo.client_id
@@ -205,18 +220,44 @@ export function useOpenAIOAuth() {
   }
 
   // Build extra info from token response
-  const buildExtraInfo = (tokenInfo: OpenAITokenInfo): Record<string, string> | undefined => {
-    const extra: Record<string, string> = {}
+  const buildExtraInfo = (tokenInfo: OpenAITokenInfo): Record<string, unknown> | undefined => {
+    const extra: Record<string, unknown> = {}
     if (tokenInfo.email) {
       extra.email = tokenInfo.email
     }
     if (tokenInfo.name) {
       extra.name = tokenInfo.name
     }
+    if (tokenInfo.workspace_id) {
+      extra.workspace_id = tokenInfo.workspace_id
+    }
+    if (tokenInfo.workspace_name) {
+      extra.workspace_name = tokenInfo.workspace_name
+    }
+    if (tokenInfo.plan_type) {
+      extra.subscription_type = tokenInfo.plan_type
+    }
+    if (tokenInfo.subscription_expires_at) {
+      extra.subscription_expires_at = tokenInfo.subscription_expires_at
+    }
     if (tokenInfo.privacy_mode) {
       extra.privacy_mode = tokenInfo.privacy_mode
     }
     return Object.keys(extra).length > 0 ? extra : undefined
+  }
+
+  const buildAccountName = (tokenInfo: OpenAITokenInfo, fallbackName?: string): string => {
+    const manualName = fallbackName?.trim()
+    if (manualName) {
+      return manualName
+    }
+
+    const baseName = tokenInfo.name?.trim() || tokenInfo.email?.trim() || 'OpenAI OAuth Account'
+    const workspaceName = tokenInfo.workspace_name?.trim()
+    if (!workspaceName) {
+      return baseName
+    }
+    return `[${workspaceName}]${baseName}`
   }
 
   return {
@@ -232,6 +273,7 @@ export function useOpenAIOAuth() {
     exchangeAuthCode,
     validateRefreshToken,
     buildCredentials,
-    buildExtraInfo
+    buildExtraInfo,
+    buildAccountName
   }
 }

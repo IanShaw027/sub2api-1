@@ -146,6 +146,13 @@ func ProvideKiroTokenProvider(
 	return p
 }
 
+func ProvideKiroTokenRefresher(
+	httpUpstream HTTPUpstream,
+	tlsFPProfileService *TLSFingerprintProfileService,
+) *KiroTokenRefresher {
+	return NewKiroTokenRefresher().WithTransport(httpUpstream, tlsFPProfileService)
+}
+
 // ProvideDashboardAggregationService 创建并启动仪表盘聚合服务
 func ProvideDashboardAggregationService(repo DashboardAggregationRepository, timingWheel *TimingWheelService, cfg *config.Config) *DashboardAggregationService {
 	svc := NewDashboardAggregationService(repo, timingWheel, cfg)
@@ -497,6 +504,7 @@ var ProviderSet = wire.NewSet(
 	NewCompositeTokenCacheInvalidator,
 	wire.Bind(new(TokenCacheInvalidator), new(*CompositeTokenCacheInvalidator)),
 	NewAntigravityOAuthService,
+	NewKiroOAuthService,
 	ProvideOAuthRefreshAPI,
 	ProvideGeminiTokenProvider,
 	NewGeminiMessagesCompatService,
@@ -504,6 +512,7 @@ var ProviderSet = wire.NewSet(
 	ProvideOpenAITokenProvider,
 	ProvideClaudeTokenProvider,
 	ProvideKiroTokenProvider,
+	ProvideKiroTokenRefresher,
 	NewKiroUsageService,
 	NewKiroGatewayService,
 	NewAntigravityGatewayService,

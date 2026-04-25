@@ -41,14 +41,14 @@ describe("admin settings auth source defaults helpers", () => {
     });
     expect(state.oidc).toEqual({
       balance: 0,
-      concurrency: 5,
+      concurrency: undefined,
       subscriptions: [],
       grant_on_signup: false,
       grant_on_first_bind: false,
     });
     expect(state.wechat).toEqual({
       balance: 0,
-      concurrency: 5,
+      concurrency: undefined,
       subscriptions: [],
       grant_on_signup: false,
       grant_on_first_bind: false,
@@ -79,7 +79,7 @@ describe("admin settings auth source defaults helpers", () => {
       },
       linuxdo: {
         balance: 0,
-        concurrency: 6,
+        concurrency: 0,
         subscriptions: [],
         grant_on_signup: false,
         grant_on_first_bind: true,
@@ -110,7 +110,7 @@ describe("admin settings auth source defaults helpers", () => {
       auth_source_default_email_grant_on_signup: true,
       auth_source_default_email_grant_on_first_bind: false,
       auth_source_default_linuxdo_balance: 0,
-      auth_source_default_linuxdo_concurrency: 6,
+      auth_source_default_linuxdo_concurrency: 0,
       auth_source_default_linuxdo_subscriptions: [],
       auth_source_default_linuxdo_grant_on_signup: false,
       auth_source_default_linuxdo_grant_on_first_bind: true,
@@ -127,5 +127,33 @@ describe("admin settings auth source defaults helpers", () => {
       auth_source_default_wechat_grant_on_signup: false,
       auth_source_default_wechat_grant_on_first_bind: false,
     });
+  });
+
+  it("preserves omitted concurrency fields while still serializing explicit zero", () => {
+    const state = buildAuthSourceDefaultsState({
+      auth_source_default_email_balance: 3,
+      auth_source_default_linuxdo_balance: 1,
+      auth_source_default_linuxdo_concurrency: 0,
+      auth_source_default_oidc_concurrency: 6,
+    });
+
+    expect(state.email.concurrency).toBeUndefined();
+    expect(state.linuxdo.concurrency).toBe(0);
+    expect(state.oidc.concurrency).toBe(6);
+    expect(state.wechat.concurrency).toBeUndefined();
+
+    const payload: UpdateSettingsRequest = {
+      site_name: "Sub2API",
+    };
+
+    appendAuthSourceDefaultsToUpdateRequest(payload, state);
+
+    expect(payload).toMatchObject({
+      site_name: "Sub2API",
+      auth_source_default_linuxdo_concurrency: 0,
+      auth_source_default_oidc_concurrency: 6,
+    });
+    expect(payload).not.toHaveProperty("auth_source_default_email_concurrency");
+    expect(payload).not.toHaveProperty("auth_source_default_wechat_concurrency");
   });
 });

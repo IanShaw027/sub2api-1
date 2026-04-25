@@ -20,7 +20,7 @@ export type AuthSourceType = "email" | "linuxdo" | "oidc" | "wechat";
 
 export interface AuthSourceDefaultsValue {
   balance: number;
-  concurrency: number;
+  concurrency?: number;
   subscriptions: DefaultSubscriptionSetting[];
   grant_on_signup: boolean;
   grant_on_first_bind: boolean;
@@ -58,7 +58,6 @@ const AUTH_SOURCE_TYPES: AuthSourceType[] = [
   "wechat",
 ];
 const AUTH_SOURCE_DEFAULT_BALANCE = 0;
-const AUTH_SOURCE_DEFAULT_CONCURRENCY = 5;
 const PAYMENT_VISIBLE_METHOD_SOURCE_OPTIONS: Record<
   PaymentVisibleMethod,
   PaymentVisibleMethodSourceOption[]
@@ -162,18 +161,14 @@ export function buildAuthSourceDefaultsState(
 
   return AUTH_SOURCE_TYPES.reduce((acc, source) => {
     const subscriptions = raw[`auth_source_default_${source}_subscriptions`];
+    const concurrency = raw[`auth_source_default_${source}_concurrency`];
     acc[source] = {
       balance: Number(
         raw[`auth_source_default_${source}_balance`] ??
           AUTH_SOURCE_DEFAULT_BALANCE,
       ),
-      concurrency: Math.max(
-        1,
-        Number(
-          raw[`auth_source_default_${source}_concurrency`] ??
-            AUTH_SOURCE_DEFAULT_CONCURRENCY,
-        ),
-      ),
+      concurrency:
+        concurrency == null ? undefined : Math.max(0, Number(concurrency)),
       subscriptions: normalizeDefaultSubscriptionSettings(
         Array.isArray(subscriptions)
           ? (subscriptions as DefaultSubscriptionSetting[])
@@ -198,12 +193,14 @@ export function appendAuthSourceDefaultsToUpdateRequest(
     const current = authSourceDefaults[source];
     target[`auth_source_default_${source}_balance`] =
       Number(current.balance) || 0;
-    target[`auth_source_default_${source}_concurrency`] = Math.max(
-      1,
-      Math.floor(
-        Number(current.concurrency) || AUTH_SOURCE_DEFAULT_CONCURRENCY,
-      ),
-    );
+    if (current.concurrency == null) {
+      delete target[`auth_source_default_${source}_concurrency`];
+    } else {
+      target[`auth_source_default_${source}_concurrency`] = Math.max(
+        0,
+        Math.floor(Number(current.concurrency)),
+      );
+    }
     target[`auth_source_default_${source}_subscriptions`] =
       normalizeDefaultSubscriptionSettings(current.subscriptions);
     target[`auth_source_default_${source}_grant_on_signup`] =

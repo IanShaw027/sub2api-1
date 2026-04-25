@@ -126,8 +126,21 @@ export function useAntigravityOAuth() {
       token_type: tokenInfo.token_type,
       expires_at: expiresAt,
       project_id: tokenInfo.project_id,
-      email: tokenInfo.email
+      email: tokenInfo.email,
+      plan_type: tokenInfo.plan_type
     }
+  }
+
+  const buildExtraInfo = (tokenInfo: AntigravityTokenInfo): Record<string, unknown> | undefined => {
+    const extra: Record<string, unknown> = {}
+    if (tokenInfo.email) extra.email = tokenInfo.email
+    if (tokenInfo.plan_type) extra.subscription_type = tokenInfo.plan_type
+    if (tokenInfo.privacy_mode) extra.privacy_mode = tokenInfo.privacy_mode
+    return Object.keys(extra).length > 0 ? extra : undefined
+  }
+
+  const buildAccountName = (tokenInfo: AntigravityTokenInfo, fallbackName?: string): string => {
+    return fallbackName?.trim() || tokenInfo.email?.trim() || 'Antigravity OAuth Account'
   }
 
   return {
@@ -140,6 +153,8 @@ export function useAntigravityOAuth() {
     generateAuthUrl,
     exchangeAuthCode,
     validateRefreshToken,
-    buildCredentials
+    buildCredentials,
+    buildExtraInfo,
+    buildAccountName
   }
 }

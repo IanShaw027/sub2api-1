@@ -86,6 +86,15 @@ type signupGrantPlan struct {
 	Subscriptions []DefaultSubscriptionSetting
 }
 
+func addProviderGrantToSignupPlan(plan signupGrantPlan, extra ProviderDefaultGrantSettings) signupGrantPlan {
+	plan.Balance += extra.Balance
+	plan.Concurrency += extra.Concurrency
+	if len(extra.Subscriptions) > 0 {
+		plan.Subscriptions = append(plan.Subscriptions, extra.Subscriptions...)
+	}
+	return plan
+}
+
 // NewAuthService 创建认证服务实例
 func NewAuthService(
 	entClient *dbent.Client,
@@ -773,10 +782,7 @@ func (s *AuthService) resolveSignupGrantPlan(ctx context.Context, signupSource s
 		return plan
 	}
 
-	plan.Balance = resolved.Balance
-	plan.Concurrency = resolved.Concurrency
-	plan.Subscriptions = resolved.Subscriptions
-	return plan
+	return addProviderGrantToSignupPlan(plan, resolved)
 }
 
 func authSourceSignupSettings(defaults *AuthSourceDefaultSettings, signupSource string) (ProviderDefaultGrantSettings, bool) {

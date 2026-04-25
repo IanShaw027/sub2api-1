@@ -1,0 +1,142 @@
+package admin
+
+import (
+	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/gin-gonic/gin"
+)
+
+type KiroOAuthHandler struct {
+	oauthService *service.KiroOAuthService
+	refresher    *service.KiroTokenRefresher
+}
+
+func NewKiroOAuthHandler(oauthService *service.KiroOAuthService, refresher *service.KiroTokenRefresher) *KiroOAuthHandler {
+	return &KiroOAuthHandler{
+		oauthService: oauthService,
+		refresher:    refresher,
+	}
+}
+
+type KiroGenerateAuthURLRequest struct {
+	ProxyID *int64 `json:"proxy_id"`
+}
+
+func (h *KiroOAuthHandler) GenerateAuthURL(c *gin.Context) {
+	var req KiroGenerateAuthURLRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		req = KiroGenerateAuthURLRequest{}
+	}
+	if h == nil || h.oauthService == nil {
+		response.InternalError(c, "Kiro OAuth service is not configured")
+		return
+	}
+
+	result, err := h.oauthService.GenerateAuthURL(c.Request.Context(), req.ProxyID)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, result)
+}
+
+type KiroExchangeCallbackRequest struct {
+	SessionID   string `json:"session_id" binding:"required"`
+	CallbackURL string `json:"callback_url" binding:"required"`
+	ProxyID     *int64 `json:"proxy_id"`
+}
+
+func (h *KiroOAuthHandler) ExchangeCallback(c *gin.Context) {
+	var req KiroExchangeCallbackRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "请求无效: "+err.Error())
+		return
+	}
+	if h == nil || h.oauthService == nil {
+		response.InternalError(c, "Kiro OAuth service is not configured")
+		return
+	}
+
+	tokenInfo, err := h.oauthService.ExchangeCallback(c.Request.Context(), &service.KiroExchangeCallbackInput{
+		SessionID:   strings.TrimSpace(req.SessionID),
+		CallbackURL: strings.TrimSpace(req.CallbackURL),
+		ProxyID:     req.ProxyID,
+	})
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, tokenInfo)
+}
+
+type KiroRefreshTokenRequest struct {
+	Credentials map[string]any `json:"credentials" binding:"required"`
+	Extra       map[string]any `json:"extra"`
+}
+
+// RefreshToken validates Kiro credentials through the upstream refresh path and
+// returns the refreshed credential set that should be written back.
+// POST /api/v1/admin/kiro/oauth/refresh-token
+func (h *KiroOAuthHandler) RefreshToken(c *gin.Context) {
+	var req KiroRefreshTokenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "请求无效: "+err.Error())
+		return
+	}
+	if h == nil || h.refresher == nil {
+		response.InternalError(c, "Kiro OAuth refresh service is not configured")
+		return
+	}
+
+	refreshToken := strings.TrimSpace(stringCredentialValue(req.Credentials, "refresh_token"))
+	if refreshToken == "" {
+		response.BadRequest(c, "kiro refresh_token is required")
+		return
+	}
+
+	authMethod := strings.ToLower(strings.TrimSpace(stringCredentialValue(req.Credentials, "auth_method")))
+	if authMethod == "" {
+		authMethod = "social"
+	}
+	if authMethod == "idc" {
+		clientID := strings.TrimSpace(stringCredentialValue(req.Credentials, "client_id"))
+		clientSecret := strings.TrimSpace(stringCredentialValue(req.Credentials, "client_secret"))
+		if clientID == "" || clientSecret == "" {
+			response.BadRequest(c, "kiro idc client_id and client_secret are required")
+			return
+		}
+	}
+
+	account := &service.Account{
+		Platform:    service.PlatformKiro,
+		Type:        service.AccountTypeOAuth,
+		Credentials: req.Credentials,
+		Extra:       req.Extra,
+		Concurrency: 1,
+	}
+
+	credentials, err := h.refresher.Refresh(c.Request.Context(), account)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, credentials)
+}
+
+func stringCredentialValue(credentials map[string]any, key string) string {
+	if credentials == nil {
+		return ""
+	}
+	value, ok := credentials[key]
+	if !ok || value == nil {
+		return ""
+	}
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return ""
+}

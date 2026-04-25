@@ -118,10 +118,13 @@ type OpenAITokenInfo struct {
 	ExpiresIn             int64  `json:"expires_in"`
 	ExpiresAt             int64  `json:"expires_at"`
 	ClientID              string `json:"client_id,omitempty"`
+	Name                  string `json:"name,omitempty"`
 	Email                 string `json:"email,omitempty"`
 	ChatGPTAccountID      string `json:"chatgpt_account_id,omitempty"`
 	ChatGPTUserID         string `json:"chatgpt_user_id,omitempty"`
 	OrganizationID        string `json:"organization_id,omitempty"`
+	WorkspaceID           string `json:"workspace_id,omitempty"`
+	WorkspaceName         string `json:"workspace_name,omitempty"`
 	PlanType              string `json:"plan_type,omitempty"`
 	SubscriptionExpiresAt string `json:"subscription_expires_at,omitempty"`
 	PrivacyMode           string `json:"privacy_mode,omitempty"`
@@ -193,10 +196,13 @@ func (s *OpenAIOAuthService) ExchangeCode(ctx context.Context, input *OpenAIExch
 	}
 
 	if userInfo != nil {
+		tokenInfo.Name = userInfo.Name
 		tokenInfo.Email = userInfo.Email
 		tokenInfo.ChatGPTAccountID = userInfo.ChatGPTAccountID
 		tokenInfo.ChatGPTUserID = userInfo.ChatGPTUserID
 		tokenInfo.OrganizationID = userInfo.OrganizationID
+		tokenInfo.WorkspaceID = userInfo.OrganizationID
+		tokenInfo.WorkspaceName = userInfo.OrganizationTitle
 		tokenInfo.PlanType = userInfo.PlanType
 	}
 
@@ -240,10 +246,13 @@ func (s *OpenAIOAuthService) RefreshTokenWithClientID(ctx context.Context, refre
 	}
 
 	if userInfo != nil {
+		tokenInfo.Name = userInfo.Name
 		tokenInfo.Email = userInfo.Email
 		tokenInfo.ChatGPTAccountID = userInfo.ChatGPTAccountID
 		tokenInfo.ChatGPTUserID = userInfo.ChatGPTUserID
 		tokenInfo.OrganizationID = userInfo.OrganizationID
+		tokenInfo.WorkspaceID = userInfo.OrganizationID
+		tokenInfo.WorkspaceName = userInfo.OrganizationTitle
 		tokenInfo.PlanType = userInfo.PlanType
 	}
 
@@ -297,15 +306,19 @@ func (s *OpenAIOAuthService) RefreshAccountToken(ctx context.Context, account *A
 		accessToken := account.GetCredential("access_token")
 		if accessToken != "" {
 			tokenInfo := &OpenAITokenInfo{
-				AccessToken:      accessToken,
-				RefreshToken:     "",
-				IDToken:          account.GetCredential("id_token"),
-				ClientID:         account.GetCredential("client_id"),
-				Email:            account.GetCredential("email"),
-				ChatGPTAccountID: account.GetCredential("chatgpt_account_id"),
-				ChatGPTUserID:    account.GetCredential("chatgpt_user_id"),
-				OrganizationID:   account.GetCredential("organization_id"),
-				PlanType:         account.GetCredential("plan_type"),
+				AccessToken:           accessToken,
+				RefreshToken:          "",
+				IDToken:               account.GetCredential("id_token"),
+				ClientID:              account.GetCredential("client_id"),
+				Name:                  account.GetCredential("name"),
+				Email:                 account.GetCredential("email"),
+				ChatGPTAccountID:      account.GetCredential("chatgpt_account_id"),
+				ChatGPTUserID:         account.GetCredential("chatgpt_user_id"),
+				OrganizationID:        account.GetCredential("organization_id"),
+				WorkspaceID:           account.GetCredential("workspace_id"),
+				WorkspaceName:         account.GetCredential("workspace_name"),
+				PlanType:              account.GetCredential("plan_type"),
+				SubscriptionExpiresAt: account.GetCredential("subscription_expires_at"),
 			}
 			if expiresAt := account.GetCredentialAsTime("expires_at"); expiresAt != nil {
 				tokenInfo.ExpiresAt = expiresAt.Unix()
@@ -344,6 +357,9 @@ func (s *OpenAIOAuthService) BuildAccountCredentials(tokenInfo *OpenAITokenInfo)
 	if tokenInfo.IDToken != "" {
 		creds["id_token"] = tokenInfo.IDToken
 	}
+	if tokenInfo.Name != "" {
+		creds["name"] = tokenInfo.Name
+	}
 	if tokenInfo.Email != "" {
 		creds["email"] = tokenInfo.Email
 	}
@@ -355,6 +371,12 @@ func (s *OpenAIOAuthService) BuildAccountCredentials(tokenInfo *OpenAITokenInfo)
 	}
 	if tokenInfo.OrganizationID != "" {
 		creds["organization_id"] = tokenInfo.OrganizationID
+	}
+	if tokenInfo.WorkspaceID != "" {
+		creds["workspace_id"] = tokenInfo.WorkspaceID
+	}
+	if tokenInfo.WorkspaceName != "" {
+		creds["workspace_name"] = tokenInfo.WorkspaceName
 	}
 	if tokenInfo.PlanType != "" {
 		creds["plan_type"] = tokenInfo.PlanType

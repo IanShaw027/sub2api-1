@@ -167,6 +167,14 @@ export function useAccountOAuth() {
     return Object.keys(extra).length > 0 ? extra : undefined
   }
 
+  const buildAccountName = (tokenInfo: TokenInfo, fallbackName?: string): string => {
+    return (
+      fallbackName?.trim() ||
+      (typeof tokenInfo.email_address === 'string' ? tokenInfo.email_address.trim() : '') ||
+      'OAuth Account'
+    )
+  }
+
   return {
     // State
     authUrl,
@@ -181,6 +189,7 @@ export function useAccountOAuth() {
     exchangeAuthCode,
     cookieAuth,
     parseSessionKeys,
-    buildExtraInfo
+    buildExtraInfo,
+    buildAccountName
   }
 }

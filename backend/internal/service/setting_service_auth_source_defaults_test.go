@@ -79,12 +79,12 @@ func TestSettingService_GetAuthSourceDefaultSettings_ParsesValuesAndDefaults(t *
 	require.False(t, got.Email.GrantOnSignup)
 	require.False(t, got.Email.GrantOnFirstBind)
 	require.Equal(t, 0.0, got.LinuxDo.Balance)
-	require.Equal(t, 5, got.LinuxDo.Concurrency)
+	require.Equal(t, 0, got.LinuxDo.Concurrency)
 	require.Equal(t, []DefaultSubscriptionSetting{}, got.LinuxDo.Subscriptions)
 	require.False(t, got.LinuxDo.GrantOnSignup)
 	require.True(t, got.LinuxDo.GrantOnFirstBind)
-	require.Equal(t, 5, got.OIDC.Concurrency)
-	require.Equal(t, 5, got.WeChat.Concurrency)
+	require.Equal(t, 0, got.OIDC.Concurrency)
+	require.Equal(t, 0, got.WeChat.Concurrency)
 	require.False(t, got.OIDC.GrantOnSignup)
 	require.False(t, got.WeChat.GrantOnSignup)
 	require.True(t, got.ForceEmailOnThirdPartySignup)
@@ -135,4 +135,44 @@ func TestSettingService_UpdateAuthSourceDefaultSettings_PersistsAllKeys(t *testi
 	var got []DefaultSubscriptionSetting
 	require.NoError(t, json.Unmarshal([]byte(repo.updates[SettingKeyAuthSourceDefaultWeChatSubscriptions]), &got))
 	require.Equal(t, []DefaultSubscriptionSetting{{GroupID: 24, ValidityDays: 90}}, got)
+}
+
+func TestSettingService_ResolveAuthSourceGrantSettings_ReturnsProviderExtrasOnly(t *testing.T) {
+	repo := &authSourceDefaultsRepoStub{
+		values: map[string]string{
+			SettingKeyDefaultBalance:                      "3.5",
+			SettingKeyDefaultConcurrency:                  "2",
+			SettingKeyDefaultSubscriptions:                `[{"group_id":91,"validity_days":3}]`,
+			SettingKeyAuthSourceDefaultEmailBalance:       "12.5",
+			SettingKeyAuthSourceDefaultEmailConcurrency:   "7",
+			SettingKeyAuthSourceDefaultEmailSubscriptions: `[{"group_id":11,"validity_days":30}]`,
+			SettingKeyAuthSourceDefaultEmailGrantOnSignup: "true",
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserBalance: 1, UserConcurrency: 1}})
+
+	got, enabled, err := svc.ResolveAuthSourceGrantSettings(context.Background(), "email", false)
+	require.NoError(t, err)
+	require.True(t, enabled)
+	require.Equal(t, 12.5, got.Balance)
+	require.Equal(t, 7, got.Concurrency)
+	require.Equal(t, []DefaultSubscriptionSetting{{GroupID: 11, ValidityDays: 30}}, got.Subscriptions)
+}
+
+func TestSettingService_ResolveAuthSourceGrantSettings_AllowsZeroConcurrencyAndBalance(t *testing.T) {
+	repo := &authSourceDefaultsRepoStub{
+		values: map[string]string{
+			SettingKeyAuthSourceDefaultWeChatBalance:          "0",
+			SettingKeyAuthSourceDefaultWeChatConcurrency:      "0",
+			SettingKeyAuthSourceDefaultWeChatGrantOnFirstBind: "true",
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	got, enabled, err := svc.ResolveAuthSourceGrantSettings(context.Background(), "wechat", true)
+	require.NoError(t, err)
+	require.True(t, enabled)
+	require.Equal(t, 0.0, got.Balance)
+	require.Equal(t, 0, got.Concurrency)
+	require.Equal(t, []DefaultSubscriptionSetting{}, got.Subscriptions)
 }

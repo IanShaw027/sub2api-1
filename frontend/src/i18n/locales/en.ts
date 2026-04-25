@@ -3648,6 +3648,21 @@ export default {
       reAuthorizeUnavailable: 'Re-Authorization Unavailable',
       reAuthorizeUnavailableKiro: 'Kiro accounts do not support the browser-based admin re-authorization flow. Try refreshing the stored refresh token first, or update credentials in the account editor.',
       kiro: {
+        authorizationTitle: 'Kiro Authorization',
+        authorizationDesc: 'Generate the Kiro auth URL, complete the login manually, then paste the full callback URL here.',
+        reauthorizeTitle: 'Re-authorize Kiro',
+        reauthorizeDesc: 'Use the same callback-based flow as creation: generate a new Kiro auth URL, authorize, then paste the full callback URL back here.',
+        followSteps: 'Complete Kiro OAuth in three steps: generate the auth URL, authorize manually, then paste the full callback URL.',
+        step1GenerateUrl: 'Generate the auth URL',
+        step2Authorize: 'Open the URL and finish Kiro authorization',
+        step2AuthorizeHint: 'After authorization finishes in the browser, copy the full callback URL from the address bar. You do not need to extract parameters manually.',
+        step3PasteCallback: 'Paste the full callback URL',
+        callbackUrlPlaceholder: 'Paste the full Kiro callback URL, for example http://localhost:1455/oauth/callback?...',
+        callbackUrlHint: 'You can paste the full callback URL, only the path, or only the query string. The server will normalize and exchange it.',
+        callbackUrlRequired: 'Paste the full Kiro callback URL first',
+        callbackBaseUrlHint: 'Callback base URL for this login: {value}',
+        generateUrlFirst: 'Generate the Kiro auth URL first',
+        advancedFieldsTitle: 'Advanced Fields',
         manualUpdateAction: 'Refresh or Edit',
         manualUpdateDialogTitle: 'Recover Kiro Authorization',
         manualUpdateTitle: 'Refresh first, edit when needed',
@@ -5366,8 +5381,9 @@ export default {
         userinfoUsernamePathPlaceholder: "for example data.username",
       },
       defaults: {
-        title: "Default User Settings",
-        description: "Default values for new users",
+        title: "User Defaults",
+        description:
+          "Base balance, concurrency, and subscriptions granted whenever a user registers",
         defaultBalance: "Default Balance",
         defaultBalanceHint: "Initial balance for new users",
         affiliateRebateRate: "Affiliate Rebate Rate",
@@ -6072,40 +6088,45 @@ export default {
           "Usually the frontend route callback path; keep it aligned with the backend.",
       },
       authSourceDefaults: {
-        title: "Auth Source Defaults",
+        title: "Source Bonus Grants",
         description:
-          "Configure per-source default balance, concurrency, subscriptions, and grant rules.",
+          "Configure extra balance, concurrency, and subscriptions per third-party auth source. They stack on top of user defaults at signup, can also stack on first bind when enabled, accumulate across different sources, and only grant once per source.",
         requireEmailLabel: "Require email on third-party signup",
         requireEmailHint:
           "When enabled, Linux DO, OIDC, and WeChat signups must provide an email before account creation.",
-        enabledHint:
-          "These defaults apply when a new user registers through this source. Grant on first bind only applies when an existing user binds this source.",
         sources: {
           email: {
             title: "Email signup",
-            description: "Default quota grants for email-password signups.",
+            description: "Extra grants that can be added on email signup or first email bind.",
           },
           linuxdo: {
             title: "Linux DO signup",
-            description: "Default quota grants for Linux DO signups.",
+            description: "Extra grants that can be added on Linux DO signup or first bind.",
           },
           oidc: {
             title: "OIDC signup",
-            description: "Default quota grants for OIDC signups.",
+            description: "Extra grants that can be added on OIDC signup or first bind.",
           },
           wechat: {
             title: "WeChat signup",
-            description: "Default quota grants for WeChat signups.",
+            description: "Extra grants that can be added on WeChat signup or first bind.",
           },
         },
+        grantOnSignupLabel: "Grant on signup",
+        grantOnSignupHint:
+          "Add these extras on top of user defaults when a new user registers through this source.",
         grantOnFirstBindLabel: "Grant on first bind",
         grantOnFirstBindHint:
-          "Grant default entitlements when an existing user first binds this source.",
-        defaultSubscriptionsLabel: "Default subscriptions",
+          "Grant these extras when an existing user binds this source for the first time. Rebinding the same source does not grant again.",
+        bonusBalanceLabel: "Bonus balance",
+        bonusConcurrencyLabel: "Bonus concurrency",
+        defaultSubscriptionsLabel: "Bonus subscriptions",
         defaultSubscriptionsHint:
-          "Applies only to this auth source. Leave empty to skip source-specific subscriptions.",
+          "Applies only to this auth source and stacks with user default subscriptions.",
+        addBonusSubscription: "Add bonus subscription",
+        subscriptionGroupLabel: "Subscription group",
         noSourceSubscriptions:
-          "No source-specific default subscriptions configured.",
+          "No bonus subscriptions configured for this source.",
       },
       paymentVisibleMethods: {
         methodLabel: "{title} visible method",

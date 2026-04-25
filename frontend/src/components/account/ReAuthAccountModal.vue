@@ -323,6 +323,16 @@ const handleClose = () => {
   emit('close')
 }
 
+const mergeRecord = (
+  base?: Record<string, unknown> | null,
+  patch?: Record<string, unknown> | null
+): Record<string, unknown> => {
+  return {
+    ...(base || {}),
+    ...(patch || {})
+  }
+}
+
 const handleGenerateUrl = async () => {
   if (!props.account) return
 
@@ -367,12 +377,20 @@ const handleExchangeCode = async () => {
     if (!tokenInfo) return
 
     // Build credentials and extra info
-    const credentials = oauthClient.buildCredentials(tokenInfo)
-    const extra = oauthClient.buildExtraInfo(tokenInfo)
+    const credentials = mergeRecord(
+      (props.account.credentials || {}) as Record<string, unknown>,
+      oauthClient.buildCredentials(tokenInfo)
+    )
+    const extra = mergeRecord(
+      (props.account.extra || {}) as Record<string, unknown>,
+      oauthClient.buildExtraInfo(tokenInfo)
+    )
+    const name = oauthClient.buildAccountName(tokenInfo, props.account.name)
 
     try {
       // Update account with new credentials
       await adminAPI.accounts.update(props.account.id, {
+        name,
         type: 'oauth', // OpenAI OAuth is always 'oauth' type
         credentials,
         extra
@@ -406,12 +424,22 @@ const handleExchangeCode = async () => {
     })
     if (!tokenInfo) return
 
-    const credentials = geminiOAuth.buildCredentials(tokenInfo)
+    const credentials = mergeRecord(
+      (props.account.credentials || {}) as Record<string, unknown>,
+      geminiOAuth.buildCredentials(tokenInfo)
+    )
+    const extra = mergeRecord(
+      (props.account.extra || {}) as Record<string, unknown>,
+      geminiOAuth.buildExtraInfo(tokenInfo)
+    )
+    const name = geminiOAuth.buildAccountName(tokenInfo, props.account.name)
 
     try {
       await adminAPI.accounts.update(props.account.id, {
+        name,
         type: 'oauth',
-        credentials
+        credentials,
+        extra
       })
       await adminAPI.accounts.clearError(props.account.id)
       appStore.showSuccess(t('admin.accounts.reAuthorizedSuccess'))
@@ -438,12 +466,22 @@ const handleExchangeCode = async () => {
     })
     if (!tokenInfo) return
 
-    const credentials = antigravityOAuth.buildCredentials(tokenInfo)
+    const credentials = mergeRecord(
+      (props.account.credentials || {}) as Record<string, unknown>,
+      antigravityOAuth.buildCredentials(tokenInfo)
+    )
+    const extra = mergeRecord(
+      (props.account.extra || {}) as Record<string, unknown>,
+      antigravityOAuth.buildExtraInfo(tokenInfo)
+    )
+    const name = antigravityOAuth.buildAccountName(tokenInfo, props.account.name)
 
     try {
       await adminAPI.accounts.update(props.account.id, {
+        name,
         type: 'oauth',
-        credentials
+        credentials,
+        extra
       })
       await adminAPI.accounts.clearError(props.account.id)
       appStore.showSuccess(t('admin.accounts.reAuthorizedSuccess'))
@@ -474,12 +512,21 @@ const handleExchangeCode = async () => {
         ...proxyConfig
       })
 
-      const extra = claudeOAuth.buildExtraInfo(tokenInfo)
+      const credentials = mergeRecord(
+        (props.account.credentials || {}) as Record<string, unknown>,
+        tokenInfo as Record<string, unknown>
+      )
+      const extra = mergeRecord(
+        (props.account.extra || {}) as Record<string, unknown>,
+        claudeOAuth.buildExtraInfo(tokenInfo)
+      )
+      const name = claudeOAuth.buildAccountName(tokenInfo, props.account.name)
 
       // Update account with new credentials and type
       await adminAPI.accounts.update(props.account.id, {
+        name,
         type: addMethod.value, // Update type based on selected method
-        credentials: tokenInfo,
+        credentials,
         extra
       })
 
@@ -517,12 +564,21 @@ const handleCookieAuth = async (sessionKey: string) => {
       ...proxyConfig
     })
 
-    const extra = claudeOAuth.buildExtraInfo(tokenInfo)
+    const credentials = mergeRecord(
+      (props.account.credentials || {}) as Record<string, unknown>,
+      tokenInfo as Record<string, unknown>
+    )
+    const extra = mergeRecord(
+      (props.account.extra || {}) as Record<string, unknown>,
+      claudeOAuth.buildExtraInfo(tokenInfo)
+    )
+    const name = claudeOAuth.buildAccountName(tokenInfo, props.account.name)
 
     // Update account with new credentials and type
     await adminAPI.accounts.update(props.account.id, {
+      name,
       type: addMethod.value, // Update type based on selected method
-      credentials: tokenInfo,
+      credentials,
       extra
     })
 

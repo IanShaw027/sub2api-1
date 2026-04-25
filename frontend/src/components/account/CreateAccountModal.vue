@@ -165,104 +165,6 @@
         </div>
       </div>
 
-      <div
-        v-if="form.platform === 'kiro'"
-        class="space-y-4 rounded-lg border border-cyan-200 bg-cyan-50/60 p-4 dark:border-cyan-900/40 dark:bg-cyan-950/20"
-      >
-        <div class="flex items-center justify-between gap-4">
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.authMethodLabel') }}</label>
-            <p class="input-hint">{{ t('admin.accounts.kiro.authMethodHint') }}</p>
-          </div>
-          <select v-model="kiroAuthMethod" class="input w-36">
-            <option value="social">{{ t('admin.accounts.kiro.authMethodSocial') }}</option>
-            <option value="idc">{{ t('admin.accounts.kiro.authMethodIDC') }}</option>
-          </select>
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.accounts.kiro.refreshTokenLabel') }}</label>
-          <textarea
-            v-model="kiroRefreshToken"
-            rows="4"
-            class="input font-mono text-sm"
-            :placeholder="t('admin.accounts.kiro.refreshTokenPlaceholder')"
-          />
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.accounts.kiro.accessTokenLabel') }}</label>
-          <textarea
-            v-model="kiroAccessToken"
-            rows="3"
-            class="input font-mono text-sm"
-            :placeholder="t('admin.accounts.kiro.accessTokenPlaceholder')"
-          />
-          <p class="input-hint">{{ t('admin.accounts.kiro.accessTokenHintCreate') }}</p>
-        </div>
-        <div v-if="kiroAuthMethod === 'idc'" class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.clientIdLabel') }}</label>
-            <input v-model="kiroClientID" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.clientIdPlaceholder')" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.clientSecretLabel') }}</label>
-            <input
-              v-model="kiroClientSecret"
-              type="password"
-              class="input font-mono text-sm"
-              :placeholder="t('admin.accounts.kiro.clientSecretPlaceholder')"
-            />
-          </div>
-        </div>
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.expiresAtLabel') }}</label>
-            <input
-              v-model="kiroExpiresAtInput"
-              type="datetime-local"
-              class="input"
-            />
-            <p class="input-hint">{{ t('admin.accounts.kiro.expiresAtHintCreate') }}</p>
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.regionLabel') }}</label>
-            <input v-model="kiroRegion" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.regionPlaceholder')" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.authRegionLabel') }}</label>
-            <input v-model="kiroAuthRegion" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.optionalPlaceholder')" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.apiRegionLabel') }}</label>
-            <input v-model="kiroAPIRegion" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.optionalPlaceholder')" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.profileArnLabel') }}</label>
-            <input v-model="kiroProfileARN" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.optionalPlaceholder')" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.machineIdLabel') }}</label>
-            <input v-model="kiroMachineID" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.optionalPlaceholder')" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.kiroVersionLabel') }}</label>
-            <input v-model="kiroVersion" type="text" class="input font-mono text-sm" placeholder="0.10.0" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.systemVersionLabel') }}</label>
-            <input
-              v-model="kiroSystemVersion"
-              type="text"
-              class="input font-mono text-sm"
-              placeholder="darwin#24.6.0"
-            />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.nodeVersionLabel') }}</label>
-            <input v-model="kiroNodeVersion" type="text" class="input font-mono text-sm" placeholder="22.21.1" />
-          </div>
-        </div>
-      </div>
-
       <!-- Account Type Selection (Anthropic) -->
       <div v-if="form.platform === 'anthropic'">
         <label class="input-label">{{ t('admin.accounts.accountType') }}</label>
@@ -2663,7 +2565,18 @@
 
     <!-- Step 2: OAuth Authorization -->
     <div v-else class="space-y-5">
+      <KiroAuthorizationFlow
+        v-if="form.platform === 'kiro'"
+        mode="create"
+        :auth-url="kiroOAuth.authUrl.value"
+        :callback-base-url="kiroOAuth.callbackBaseUrl.value"
+        :loading="kiroOAuth.loading.value"
+        :error="kiroOAuth.error.value"
+        @generate-url="handleGenerateUrl"
+        @submit="handleKiroAuthorize"
+      />
       <OAuthAuthorizationFlow
+        v-else
         ref="oauthFlowRef"
         :add-method="form.platform === 'anthropic' ? addMethod : 'oauth'"
         :auth-url="currentAuthUrl"
@@ -2735,7 +2648,7 @@
           {{ t('common.back') }}
         </button>
         <button
-          v-if="isManualInputMethod"
+          v-if="form.platform !== 'kiro' && isManualInputMethod"
           type="button"
           :disabled="!canExchangeCode"
           class="btn btn-primary"
@@ -3025,15 +2938,14 @@ import {
 import { useOpenAIOAuth } from '@/composables/useOpenAIOAuth'
 import { useGeminiOAuth } from '@/composables/useGeminiOAuth'
 import { useAntigravityOAuth } from '@/composables/useAntigravityOAuth'
+import { useKiroOAuth } from '@/composables/useKiroOAuth'
 import type {
   Proxy,
   AdminGroup,
   AccountPlatform,
   AccountType,
   CheckMixedChannelResponse,
-  CreateAccountRequest,
-  KiroCredentials,
-  KiroAccountExtra
+  CreateAccountRequest
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -3055,6 +2967,7 @@ import {
   type OpenAIWSMode
 } from '@/utils/openaiWsMode'
 import OAuthAuthorizationFlow from './OAuthAuthorizationFlow.vue'
+import KiroAuthorizationFlow from './KiroAuthorizationFlow.vue'
 
 // Type for exposed OAuthAuthorizationFlow component
 // Note: defineExpose automatically unwraps refs, so we use the unwrapped types
@@ -3076,6 +2989,7 @@ const oauthStepTitle = computed(() => {
   if (form.platform === 'openai') return t('admin.accounts.oauth.openai.title')
   if (form.platform === 'gemini') return t('admin.accounts.oauth.gemini.title')
   if (form.platform === 'antigravity') return t('admin.accounts.oauth.antigravity.title')
+  if (form.platform === 'kiro') return t('admin.accounts.kiro.authorizationTitle')
   return t('admin.accounts.oauth.title')
 })
 
@@ -3111,6 +3025,7 @@ const oauth = useAccountOAuth() // For Anthropic OAuth
 const openaiOAuth = useOpenAIOAuth() // For OpenAI OAuth
 const geminiOAuth = useGeminiOAuth() // For Gemini OAuth
 const antigravityOAuth = useAntigravityOAuth() // For Antigravity OAuth
+const kiroOAuth = useKiroOAuth()
 
 // Computed: current OAuth state for template binding
 const currentAuthUrl = computed(() => {
@@ -3231,20 +3146,6 @@ const getAntigravityModelMappingKey = createStableObjectKeyResolver<ModelMapping
 const getTempUnschedRuleKey = createStableObjectKeyResolver<TempUnschedRuleForm>('create-temp-unsched-rule')
 const geminiOAuthType = ref<'code_assist' | 'google_one' | 'ai_studio'>('google_one')
 const geminiAIStudioOAuthEnabled = ref(false)
-const kiroAuthMethod = ref<'social' | 'idc'>('social')
-const kiroAccessToken = ref('')
-const kiroExpiresAtInput = ref('')
-const kiroRefreshToken = ref('')
-const kiroClientID = ref('')
-const kiroClientSecret = ref('')
-const kiroProfileARN = ref('')
-const kiroRegion = ref('us-east-1')
-const kiroAuthRegion = ref('')
-const kiroAPIRegion = ref('')
-const kiroMachineID = ref('')
-const kiroVersion = ref('0.10.0')
-const kiroSystemVersion = ref('darwin#24.6.0')
-const kiroNodeVersion = ref('22.21.1')
 
 function buildAntigravityExtra(): Record<string, unknown> | undefined {
   const extra: Record<string, unknown> = {}
@@ -3408,9 +3309,6 @@ const form = reactive({
 
 // Helper to check if current type needs OAuth flow
 const isOAuthFlow = computed(() => {
-  if (form.platform === 'kiro') {
-    return false
-  }
   // Antigravity upstream 类型不需要 OAuth 流程
   if (form.platform === 'antigravity' && antigravityAccountType.value === 'upstream') {
     return false
@@ -3564,22 +3462,6 @@ watch(
     geminiOAuth.resetState()
     antigravityOAuth.resetState()
 
-    if (newPlatform !== 'kiro') {
-      kiroAuthMethod.value = 'social'
-      kiroAccessToken.value = ''
-      kiroExpiresAtInput.value = ''
-      kiroRefreshToken.value = ''
-      kiroClientID.value = ''
-      kiroClientSecret.value = ''
-      kiroProfileARN.value = ''
-      kiroRegion.value = 'us-east-1'
-      kiroAuthRegion.value = ''
-      kiroAPIRegion.value = ''
-      kiroMachineID.value = ''
-      kiroVersion.value = '0.10.0'
-      kiroSystemVersion.value = 'darwin#24.6.0'
-      kiroNodeVersion.value = '22.21.1'
-    }
   }
 )
 
@@ -3987,24 +3869,11 @@ const resetForm = () => {
   geminiTierGoogleOne.value = 'google_one_free'
   geminiTierGcp.value = 'gcp_standard'
   geminiTierAIStudio.value = 'aistudio_free'
-  kiroAuthMethod.value = 'social'
-  kiroAccessToken.value = ''
-  kiroExpiresAtInput.value = ''
-  kiroRefreshToken.value = ''
-  kiroClientID.value = ''
-  kiroClientSecret.value = ''
-  kiroProfileARN.value = ''
-  kiroRegion.value = 'us-east-1'
-  kiroAuthRegion.value = ''
-  kiroAPIRegion.value = ''
-  kiroMachineID.value = ''
-  kiroVersion.value = '0.10.0'
-  kiroSystemVersion.value = 'darwin#24.6.0'
-  kiroNodeVersion.value = '22.21.1'
   oauth.resetState()
   openaiOAuth.resetState()
   geminiOAuth.resetState()
   antigravityOAuth.resetState()
+  kiroOAuth.resetState()
   oauthFlowRef.value?.reset()
   antigravityMixedChannelConfirmed.value = false
   clearMixedChannelDialog()
@@ -4114,62 +3983,8 @@ const normalizePoolModeRetryCount = (value: number) => {
 }
 
 const handleSubmit = async () => {
-  if (form.platform === 'kiro') {
-    if (!form.name.trim()) {
-      appStore.showError(t('admin.accounts.pleaseEnterAccountName'))
-      return
-    }
-    if (!kiroRefreshToken.value.trim()) {
-      appStore.showError(t('admin.accounts.kiro.refreshTokenRequired'))
-      return
-    }
-    if (
-      kiroAuthMethod.value === 'idc' &&
-      (!kiroClientID.value.trim() || !kiroClientSecret.value.trim())
-    ) {
-      appStore.showError(t('admin.accounts.kiro.idcClientRequired'))
-      return
-    }
-
-    const expiresAt = kiroExpiresAtInput.value.trim()
-      ? new Date(kiroExpiresAtInput.value)
-      : null
-    if (expiresAt && Number.isNaN(expiresAt.getTime())) {
-      appStore.showError(t('admin.accounts.kiro.expiresAtInvalid'))
-      return
-    }
-
-    const credentials: KiroCredentials & Record<string, unknown> = {
-      refresh_token: kiroRefreshToken.value.trim(),
-      auth_method: kiroAuthMethod.value,
-      region: kiroRegion.value.trim() || 'us-east-1'
-    }
-    if (kiroAccessToken.value.trim()) credentials.access_token = kiroAccessToken.value.trim()
-    if (kiroClientID.value.trim()) credentials.client_id = kiroClientID.value.trim()
-    if (kiroClientSecret.value.trim()) credentials.client_secret = kiroClientSecret.value.trim()
-    if (kiroProfileARN.value.trim()) credentials.profile_arn = kiroProfileARN.value.trim()
-    if (kiroAuthRegion.value.trim()) credentials.auth_region = kiroAuthRegion.value.trim()
-    if (kiroAPIRegion.value.trim()) credentials.api_region = kiroAPIRegion.value.trim()
-    if (kiroMachineID.value.trim()) credentials.machine_id = kiroMachineID.value.trim()
-    if (expiresAt) credentials.expires_at = expiresAt.toISOString()
-
-    const extra: KiroAccountExtra & Record<string, unknown> = {
-      kiro_version: kiroVersion.value.trim() || '0.10.0',
-      system_version: kiroSystemVersion.value.trim() || 'darwin#24.6.0',
-      node_version: kiroNodeVersion.value.trim() || '22.21.1'
-    }
-
-    applyInterceptWarmup(credentials, interceptWarmupRequests.value, 'create')
-    await createAccountAndFinish('kiro', 'oauth', credentials, extra)
-    return
-  }
-
   // For OAuth-based type, handle OAuth flow (goes to step 2)
   if (isOAuthFlow.value) {
-    if (!form.name.trim()) {
-      appStore.showError(t('admin.accounts.pleaseEnterAccountName'))
-      return
-    }
     const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {
       step.value = 2
     })
@@ -4341,11 +4156,14 @@ const goBackToBasicInfo = () => {
   openaiOAuth.resetState()
   geminiOAuth.resetState()
   antigravityOAuth.resetState()
+  kiroOAuth.resetState()
   oauthFlowRef.value?.reset()
 }
 
 const handleGenerateUrl = async () => {
-  if (form.platform === 'openai') {
+  if (form.platform === 'kiro') {
+    await kiroOAuth.generateAuthUrl(form.proxy_id)
+  } else if (form.platform === 'openai') {
     await openaiOAuth.generateAuthUrl(form.proxy_id)
   } else if (form.platform === 'gemini') {
     await geminiOAuth.generateAuthUrl(
@@ -4369,6 +4187,21 @@ const handleValidateRefreshToken = (rt: string) => {
   }
 }
 
+const handleKiroAuthorize = async (payload: {
+  callbackUrl: string
+  credentials: Record<string, unknown>
+  extra: Record<string, unknown>
+}) => {
+  const tokenInfo = await kiroOAuth.exchangeCallback(payload.callbackUrl, form.proxy_id)
+  if (!tokenInfo) {
+    return
+  }
+  const credentials = kiroOAuth.buildCredentials(tokenInfo, payload.credentials)
+  const extra = kiroOAuth.buildExtraInfo(tokenInfo, payload.extra)
+  applyInterceptWarmup(credentials, interceptWarmupRequests.value, 'create')
+  await createAccountAndFinish('kiro', 'oauth', credentials, extra, kiroOAuth.buildAccountName(tokenInfo, form.name))
+}
+
 const handleValidateSessionToken = (_sessionToken: string) => {
   // Session token validation removed
 }
@@ -4381,7 +4214,8 @@ const createAccountAndFinish = async (
   platform: AccountPlatform,
   type: AccountType,
   credentials: Record<string, unknown>,
-  extra?: Record<string, unknown>
+  extra?: Record<string, unknown>,
+  nameOverride?: string
 ) => {
   if (!applyTempUnschedConfig(credentials)) {
     return
@@ -4420,7 +4254,7 @@ const createAccountAndFinish = async (
   }
   if (platform === 'kiro') {
     await doCreateAccount({
-      name: form.name,
+      name: nameOverride || form.name,
       notes: form.notes,
       platform,
       type: 'oauth',
@@ -4438,7 +4272,7 @@ const createAccountAndFinish = async (
     return
   }
   await doCreateAccount({
-    name: form.name,
+    name: nameOverride || form.name,
     notes: form.notes,
     platform,
     type,
@@ -4482,6 +4316,7 @@ const handleOpenAIExchange = async (authCode: string) => {
     const credentials = oauthClient.buildCredentials(tokenInfo)
     const oauthExtra = oauthClient.buildExtraInfo(tokenInfo) as Record<string, unknown> | undefined
     const extra = buildOpenAIExtra(oauthExtra)
+    const accountName = oauthClient.buildAccountName(tokenInfo, form.name)
     const shouldCreateOpenAI = form.platform === 'openai'
 
     // Add model mapping for OpenAI OAuth accounts（透传模式下不应用）
@@ -4499,7 +4334,7 @@ const handleOpenAIExchange = async (authCode: string) => {
 
     if (shouldCreateOpenAI) {
       await adminAPI.accounts.create({
-        name: form.name,
+        name: accountName,
         notes: form.notes,
         platform: 'openai',
         type: 'oauth',
@@ -4585,7 +4420,7 @@ const handleOpenAIBatchRT = async (refreshTokenInput: string, clientId?: string)
         }
 
         // Generate account name; fallback to email if name is empty (ent schema requires NotEmpty)
-        const baseName = form.name || tokenInfo.email || 'OpenAI OAuth Account'
+        const baseName = oauthClient.buildAccountName(tokenInfo, form.name)
         const accountName = refreshTokens.length > 1 ? `${baseName} #${i + 1}` : baseName
 
         if (shouldCreateOpenAI) {
@@ -4682,18 +4517,17 @@ const handleAntigravityValidateRT = async (refreshTokenInput: string) => {
         }
 
         const credentials = antigravityOAuth.buildCredentials(tokenInfo)
-        
-        // Generate account name with index for batch
-        const accountName = refreshTokens.length > 1 ? `${form.name} #${i + 1}` : form.name
+        const extra = antigravityOAuth.buildExtraInfo(tokenInfo) || {}
+        const baseName = antigravityOAuth.buildAccountName(tokenInfo, form.name)
+        const accountName = refreshTokens.length > 1 ? `${baseName} #${i + 1}` : baseName
 
-        // Note: Antigravity doesn't have buildExtraInfo, so we pass empty extra or rely on credentials
         const createPayload = withAntigravityConfirmFlag({
           name: accountName,
           notes: form.notes,
           platform: 'antigravity',
           type: 'oauth',
           credentials,
-          extra: {},
+          extra,
           proxy_id: form.proxy_id,
           concurrency: form.concurrency,
           load_factor: form.load_factor ?? undefined,
@@ -4764,7 +4598,8 @@ const handleGeminiExchange = async (authCode: string) => {
 
     const credentials = geminiOAuth.buildCredentials(tokenInfo)
     const extra = geminiOAuth.buildExtraInfo(tokenInfo)
-    await createAccountAndFinish('gemini', 'oauth', credentials, extra)
+    const accountName = geminiOAuth.buildAccountName(tokenInfo, form.name)
+    await createAccountAndFinish('gemini', 'oauth', credentials, extra, accountName)
   } catch (error: any) {
     geminiOAuth.error.value = error.response?.data?.detail || t('admin.accounts.oauth.authFailed')
     appStore.showError(geminiOAuth.error.value)
@@ -4808,8 +4643,12 @@ const handleAntigravityExchange = async (authCode: string) => {
 		if (antigravityModelMapping) {
 			credentials.model_mapping = antigravityModelMapping
 		}
-		const extra = buildAntigravityExtra()
-		await createAccountAndFinish('antigravity', 'oauth', credentials, extra)
+		const extra = {
+      ...(antigravityOAuth.buildExtraInfo(tokenInfo) || {}),
+      ...(buildAntigravityExtra() || {})
+    }
+		const accountName = antigravityOAuth.buildAccountName(tokenInfo, form.name)
+		await createAccountAndFinish('antigravity', 'oauth', credentials, extra, accountName)
   } catch (error: any) {
     antigravityOAuth.error.value = error.response?.data?.detail || t('admin.accounts.oauth.authFailed')
     appStore.showError(antigravityOAuth.error.value)
@@ -4896,9 +4735,10 @@ const handleAnthropicExchange = async (authCode: string) => {
       extra.custom_base_url = customBaseUrl.value.trim()
     }
 
+    const accountName = oauth.buildAccountName(tokenInfo, form.name)
     const credentials: Record<string, unknown> = { ...tokenInfo }
     applyInterceptWarmup(credentials, interceptWarmupRequests.value, 'create')
-    await createAccountAndFinish(form.platform, addMethod.value as AccountType, credentials, extra)
+    await createAccountAndFinish(form.platform, addMethod.value as AccountType, credentials, extra, accountName)
   } catch (error: any) {
     oauth.error.value = error.response?.data?.detail || t('admin.accounts.oauth.authFailed')
     appStore.showError(oauth.error.value)
@@ -5019,7 +4859,8 @@ const handleCookieAuth = async (sessionKey: string) => {
           extra.custom_base_url = customBaseUrl.value.trim()
         }
 
-        const accountName = keys.length > 1 ? `${form.name} #${i + 1}` : form.name
+        const baseName = oauth.buildAccountName(tokenInfo, form.name)
+        const accountName = keys.length > 1 ? `${baseName} #${i + 1}` : baseName
 
         const credentials: Record<string, unknown> = { ...tokenInfo }
         applyInterceptWarmup(credentials, interceptWarmupRequests.value, 'create')

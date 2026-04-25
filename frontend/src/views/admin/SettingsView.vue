@@ -2362,7 +2362,7 @@
                   :key="authSource.source"
                   class="rounded-xl border border-gray-200 p-4 dark:border-dark-700"
                 >
-                  <div class="flex items-center justify-between gap-4">
+                  <div class="gap-4 md:flex md:items-start md:justify-between">
                     <div>
                       <div class="font-medium text-gray-900 dark:text-white">
                         {{ authSource.title }}
@@ -2371,29 +2371,69 @@
                         {{ authSource.description }}
                       </p>
                     </div>
-                    <Toggle
-                      v-model="
-                        authSourceDefaults[authSource.source].grant_on_signup
-                      "
-                      :data-testid="`auth-source-${authSource.source}-enabled`"
-                    />
                   </div>
 
                   <div
-                    v-if="authSourceDefaults[authSource.source].grant_on_signup"
                     :data-testid="`auth-source-${authSource.source}-panel`"
                     class="mt-4 space-y-4 border-t border-gray-100 pt-4 dark:border-dark-700"
                   >
-                    <p class="text-sm text-gray-500 dark:text-gray-400">
-                      {{ t("admin.settings.authSourceDefaults.enabledHint") }}
-                    </p>
+                    <div
+                      class="grid grid-cols-1 gap-4 md:grid-cols-2"
+                    >
+                      <div
+                        class="flex items-center justify-between rounded border border-gray-200 px-4 py-3 dark:border-dark-700"
+                      >
+                        <div>
+                          <label
+                            class="font-medium text-gray-900 dark:text-white"
+                          >
+                            {{ t("admin.settings.authSourceDefaults.grantOnSignupLabel") }}
+                          </label>
+                          <p
+                            class="mt-0.5 text-xs text-gray-500 dark:text-gray-400"
+                          >
+                            {{ t("admin.settings.authSourceDefaults.grantOnSignupHint") }}
+                          </p>
+                        </div>
+                        <Toggle
+                          v-model="
+                            authSourceDefaults[authSource.source].grant_on_signup
+                          "
+                          :data-testid="`auth-source-${authSource.source}-enabled`"
+                        />
+                      </div>
+
+                      <div
+                        class="flex items-center justify-between rounded border border-gray-200 px-4 py-3 dark:border-dark-700"
+                      >
+                        <div>
+                          <label
+                            class="font-medium text-gray-900 dark:text-white"
+                          >
+                            {{ t("admin.settings.authSourceDefaults.grantOnFirstBindLabel") }}
+                          </label>
+                          <p
+                            class="mt-0.5 text-xs text-gray-500 dark:text-gray-400"
+                          >
+                            {{ t("admin.settings.authSourceDefaults.grantOnFirstBindHint") }}
+                          </p>
+                        </div>
+                        <Toggle
+                          v-model="
+                            authSourceDefaults[authSource.source]
+                              .grant_on_first_bind
+                          "
+                          :data-testid="`auth-source-${authSource.source}-first-bind-enabled`"
+                        />
+                      </div>
+                    </div>
 
                     <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                       <div>
                         <label
                           class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
                         >
-                          {{ t("admin.settings.defaults.defaultBalance") }}
+                          {{ t("admin.settings.authSourceDefaults.bonusBalanceLabel") }}
                         </label>
                         <input
                           v-model.number="
@@ -2410,41 +2450,18 @@
                         <label
                           class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
                         >
-                          {{ t("admin.settings.defaults.defaultConcurrency") }}
+                          {{ t("admin.settings.authSourceDefaults.bonusConcurrencyLabel") }}
                         </label>
                         <input
                           v-model.number="
                             authSourceDefaults[authSource.source].concurrency
                           "
                           type="number"
-                          min="1"
+                          min="0"
                           class="input"
-                          placeholder="5"
+                          placeholder="0"
                         />
                       </div>
-                    </div>
-
-                    <div
-                      class="flex items-center justify-between rounded border border-gray-200 px-4 py-3 dark:border-dark-700"
-                    >
-                      <div>
-                        <label
-                          class="font-medium text-gray-900 dark:text-white"
-                        >
-                          {{ t("admin.settings.authSourceDefaults.grantOnFirstBindLabel") }}
-                        </label>
-                        <p
-                          class="mt-0.5 text-xs text-gray-500 dark:text-gray-400"
-                        >
-                          {{ t("admin.settings.authSourceDefaults.grantOnFirstBindHint") }}
-                        </p>
-                      </div>
-                      <Toggle
-                        v-model="
-                          authSourceDefaults[authSource.source]
-                            .grant_on_first_bind
-                        "
-                      />
                     </div>
 
                     <div class="mb-3 flex items-center justify-between">
@@ -2467,7 +2484,7 @@
                         :disabled="subscriptionGroups.length === 0"
                       >
                         {{
-                          t("admin.settings.defaults.addDefaultSubscription")
+                          t("admin.settings.authSourceDefaults.addBonusSubscription")
                         }}
                       </button>
                     </div>
@@ -2494,14 +2511,14 @@
                           <label
                             class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
                           >
-                            {{ t("admin.settings.defaults.subscriptionGroup") }}
+                            {{ t("admin.settings.authSourceDefaults.subscriptionGroupLabel") }}
                           </label>
                           <Select
                             v-model="item.group_id"
                             class="default-sub-group-select"
                             :options="defaultSubscriptionGroupOptions"
                             :placeholder="
-                              t('admin.settings.defaults.subscriptionGroup')
+                              t('admin.settings.authSourceDefaults.subscriptionGroupLabel')
                             "
                           >
                             <template #selected="{ option }">
@@ -2530,7 +2547,7 @@
                               />
                               <span v-else class="text-gray-400">
                                 {{
-                                  t("admin.settings.defaults.subscriptionGroup")
+                                  t("admin.settings.authSourceDefaults.subscriptionGroupLabel")
                                 }}
                               </span>
                             </template>
@@ -5932,6 +5949,44 @@ function findDuplicateDefaultSubscription(
   });
 }
 
+function isAuthSourceBonusEnabled(source: AuthSourceType): boolean {
+  const current = authSourceDefaults[source];
+  return current.grant_on_signup || current.grant_on_first_bind;
+}
+
+function dedupeDefaultSubscriptions(
+  subscriptions: DefaultSubscriptionSetting[],
+): DefaultSubscriptionSetting[] {
+  const seenGroupIDs = new Set<number>();
+
+  return subscriptions.filter((item) => {
+    if (seenGroupIDs.has(item.group_id)) {
+      return false;
+    }
+
+    seenGroupIDs.add(item.group_id);
+    return true;
+  });
+}
+
+function buildAuthSourceDefaultsForSubmit(): AuthSourceDefaultsState {
+  return authSourceDefaultsMeta.value.reduce((acc, authSource) => {
+    const current = authSourceDefaults[authSource.source];
+    const normalizedSubscriptions = normalizeDefaultSubscriptionSettings(
+      current.subscriptions,
+    );
+
+    acc[authSource.source] = {
+      ...current,
+      subscriptions: isAuthSourceBonusEnabled(authSource.source)
+        ? normalizedSubscriptions
+        : dedupeDefaultSubscriptions(normalizedSubscriptions),
+    };
+
+    return acc;
+  }, {} as AuthSourceDefaultsState);
+}
+
 async function saveSettings() {
   saving.value = true;
   try {
@@ -5983,13 +6038,15 @@ async function saveSettings() {
       return;
     }
 
+    const authSourceDefaultsForSubmit = buildAuthSourceDefaultsForSubmit();
+
     for (const authSource of authSourceDefaultsMeta.value) {
-      authSourceDefaults[authSource.source].subscriptions =
-        normalizeDefaultSubscriptionSettings(
-          authSourceDefaults[authSource.source].subscriptions,
-        );
+      if (!isAuthSourceBonusEnabled(authSource.source)) {
+        continue;
+      }
+
       const duplicate = findDuplicateDefaultSubscription(
-        authSourceDefaults[authSource.source].subscriptions,
+        authSourceDefaultsForSubmit[authSource.source].subscriptions,
       );
       if (duplicate) {
         appStore.showError(
@@ -6202,7 +6259,7 @@ async function saveSettings() {
       available_channels_enabled: form.available_channels_enabled,
     };
 
-    appendAuthSourceDefaultsToUpdateRequest(payload, authSourceDefaults);
+    appendAuthSourceDefaultsToUpdateRequest(payload, authSourceDefaultsForSubmit);
 
     const updated = await adminAPI.settings.updateSettings(payload);
     for (const [key, value] of Object.entries(updated)) {

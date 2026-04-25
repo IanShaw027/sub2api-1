@@ -173,7 +173,7 @@ var (
 
 const (
 	defaultAuthSourceBalance     = 0
-	defaultAuthSourceConcurrency = 5
+	defaultAuthSourceConcurrency = 0
 	defaultWeChatConnectMode     = "open"
 	defaultWeChatConnectScopes   = "snsapi_login"
 	defaultWeChatConnectFrontend = "/auth/wechat/callback"
@@ -1778,20 +1778,14 @@ func (s *SettingService) GetAuthSourceDefaultSettings(ctx context.Context) (*Aut
 }
 
 func (s *SettingService) ResolveAuthSourceGrantSettings(ctx context.Context, signupSource string, firstBind bool) (ProviderDefaultGrantSettings, bool, error) {
-	result := ProviderDefaultGrantSettings{
-		Balance:       s.GetDefaultBalance(ctx),
-		Concurrency:   s.GetDefaultConcurrency(ctx),
-		Subscriptions: s.GetDefaultSubscriptions(ctx),
-	}
-
 	defaults, err := s.GetAuthSourceDefaultSettings(ctx)
 	if err != nil {
-		return result, false, err
+		return ProviderDefaultGrantSettings{}, false, err
 	}
 
 	providerDefaults, ok := authSourceSignupSettings(defaults, signupSource)
 	if !ok {
-		return result, false, nil
+		return ProviderDefaultGrantSettings{}, false, nil
 	}
 
 	enabled := providerDefaults.GrantOnSignup
@@ -1799,10 +1793,10 @@ func (s *SettingService) ResolveAuthSourceGrantSettings(ctx context.Context, sig
 		enabled = providerDefaults.GrantOnFirstBind
 	}
 	if !enabled {
-		return result, false, nil
+		return ProviderDefaultGrantSettings{}, false, nil
 	}
 
-	return mergeProviderDefaultGrantSettings(result, providerDefaults), true, nil
+	return providerDefaults, true, nil
 }
 
 func (s *SettingService) UpdateAuthSourceDefaultSettings(ctx context.Context, settings *AuthSourceDefaultSettings) error {
@@ -2466,28 +2460,6 @@ func writeProviderDefaultGrantUpdates(updates map[string]string, keys authSource
 	updates[keys.subscriptions] = string(raw)
 	updates[keys.grantOnSignup] = strconv.FormatBool(settings.GrantOnSignup)
 	updates[keys.grantOnFirstBind] = strconv.FormatBool(settings.GrantOnFirstBind)
-}
-
-func mergeProviderDefaultGrantSettings(globalDefaults ProviderDefaultGrantSettings, providerDefaults ProviderDefaultGrantSettings) ProviderDefaultGrantSettings {
-	result := ProviderDefaultGrantSettings{
-		Balance:          globalDefaults.Balance,
-		Concurrency:      globalDefaults.Concurrency,
-		Subscriptions:    append([]DefaultSubscriptionSetting(nil), globalDefaults.Subscriptions...),
-		GrantOnSignup:    providerDefaults.GrantOnSignup,
-		GrantOnFirstBind: providerDefaults.GrantOnFirstBind,
-	}
-
-	if providerDefaults.Balance != defaultAuthSourceBalance {
-		result.Balance = providerDefaults.Balance
-	}
-	if providerDefaults.Concurrency > 0 && providerDefaults.Concurrency != defaultAuthSourceConcurrency {
-		result.Concurrency = providerDefaults.Concurrency
-	}
-	if len(providerDefaults.Subscriptions) > 0 {
-		result.Subscriptions = append([]DefaultSubscriptionSetting(nil), providerDefaults.Subscriptions...)
-	}
-
-	return result
 }
 
 func parseTablePreferences(defaultPageSizeRaw, optionsRaw string) (int, []int) {

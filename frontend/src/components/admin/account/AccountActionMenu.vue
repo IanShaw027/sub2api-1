@@ -32,7 +32,7 @@
                 ]"
               >
                 <Icon name="link" size="sm" />
-                {{ isKiroOAuth ? t('admin.accounts.kiro.manualUpdateAction') : t('admin.accounts.reAuthorize') }}
+                {{ t('admin.accounts.reAuthorize') }}
               </button>
               <button @click="$emit('refresh-token', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-purple-600 hover:bg-gray-100 dark:hover:bg-dark-700">
                 <Icon name="refresh" size="sm" />
@@ -89,7 +89,7 @@ const hasRecoverableState = computed(() => {
 const isAntigravityOAuth = computed(() => props.account?.platform === 'antigravity' && props.account?.type === 'oauth')
 const isOpenAIOAuth = computed(() => props.account?.platform === 'openai' && props.account?.type === 'oauth')
 const isKiroOAuth = computed(() => props.account?.platform === 'kiro' && props.account?.type === 'oauth')
-const supportsReauth = computed(() => !isKiroOAuth.value)
+const supportsReauth = computed(() => props.account?.type === 'oauth' || props.account?.type === 'setup-token')
 const supportsPrivacy = computed(() => isAntigravityOAuth.value || isOpenAIOAuth.value)
 const hasQuotaLimit = computed(() => {
   return (props.account?.type === 'apikey' || props.account?.type === 'bedrock') && (
