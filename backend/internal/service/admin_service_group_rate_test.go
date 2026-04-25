@@ -222,4 +222,20 @@ func TestAdminService_BatchSetGroupRPMOverrides(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, infraerrors.Code(err))
 		require.Zero(t, repo.rpmSyncedGroupID)
 	})
+
+	t.Run("dedupes duplicate user ids before sync", func(t *testing.T) {
+		repo := &userGroupRateRepoStubForGroupRate{}
+		svc := &adminServiceImpl{userGroupRateRepo: repo}
+		override := 20
+
+		err := svc.BatchSetGroupRPMOverrides(context.Background(), 10, []GroupRPMOverrideInput{
+			{UserID: 2, RPMOverride: &override},
+			{UserID: 2, RPMOverride: nil}, // 后值覆盖前值
+		})
+		require.NoError(t, err)
+		require.Equal(t, int64(10), repo.rpmSyncedGroupID)
+		require.Len(t, repo.rpmSyncedEntries, 1)
+		require.Equal(t, int64(2), repo.rpmSyncedEntries[0].UserID)
+		require.Nil(t, repo.rpmSyncedEntries[0].RPMOverride)
+	})
 }

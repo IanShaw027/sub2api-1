@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -302,11 +303,25 @@ func (r *userGroupRateRepository) SyncGroupRateMultipliers(ctx context.Context, 
 //   - 未出现的用户行：rpm_override 归 NULL；若 rate_multiplier 也为 NULL 则整行删除。
 //   - 出现的用户行：若 RPMOverride 为 nil 则清空；非 nil 则 upsert。
 func (r *userGroupRateRepository) SyncGroupRPMOverrides(ctx context.Context, groupID int64, entries []service.GroupRPMOverrideInput) error {
-	keepUserIDs := make([]int64, 0, len(entries))
-	var clearUserIDs []int64
-	upsertUserIDs := make([]int64, 0, len(entries))
-	upsertValues := make([]int32, 0, len(entries))
+	deduped := make([]service.GroupRPMOverrideInput, 0, len(entries))
+	dedupIndex := make(map[int64]int, len(entries))
 	for _, e := range entries {
+		if e.RPMOverride != nil && *e.RPMOverride < 0 {
+			return fmt.Errorf("rpm_override must be >= 0 (user_id=%d)", e.UserID)
+		}
+		if idx, ok := dedupIndex[e.UserID]; ok {
+			deduped[idx] = e
+			continue
+		}
+		dedupIndex[e.UserID] = len(deduped)
+		deduped = append(deduped, e)
+	}
+
+	keepUserIDs := make([]int64, 0, len(deduped))
+	var clearUserIDs []int64
+	upsertUserIDs := make([]int64, 0, len(deduped))
+	upsertValues := make([]int32, 0, len(deduped))
+	for _, e := range deduped {
 		keepUserIDs = append(keepUserIDs, e.UserID)
 		if e.RPMOverride == nil {
 			clearUserIDs = append(clearUserIDs, e.UserID)

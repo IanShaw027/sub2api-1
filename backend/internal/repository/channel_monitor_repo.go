@@ -3,13 +3,17 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"entgo.io/ent/dialect"
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitor"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitorhistory"
+	"github.com/Wei-Shaw/sub2api/ent/channelmonitorrequesttemplate"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
 )
@@ -24,6 +28,8 @@ type channelMonitorRepository struct {
 	client *dbent.Client
 	db     *sql.DB
 }
+
+const channelMonitorRunLockReleaseTimeout = 2 * time.Second
 
 // NewChannelMonitorRepository 创建仓储实例。
 func NewChannelMonitorRepository(client *dbent.Client, db *sql.DB) service.ChannelMonitorRepository {
@@ -56,7 +62,7 @@ func (r *channelMonitorRepository) Create(ctx context.Context, m *service.Channe
 
 	created, err := builder.Save(ctx)
 	if err != nil {
-		return translatePersistenceError(err, service.ErrChannelMonitorNotFound, nil)
+		return translateChannelMonitorWriteError(err, service.ErrChannelMonitorNotFound)
 	}
 	m.ID = created.ID
 	m.CreatedAt = created.CreatedAt
@@ -101,7 +107,7 @@ func (r *channelMonitorRepository) Update(ctx context.Context, m *service.Channe
 
 	updated, err := updater.Save(ctx)
 	if err != nil {
-		return translatePersistenceError(err, service.ErrChannelMonitorNotFound, nil)
+		return translateChannelMonitorWriteError(err, service.ErrChannelMonitorNotFound)
 	}
 	m.UpdatedAt = updated.UpdatedAt
 	return nil
@@ -113,6 +119,16 @@ func (r *channelMonitorRepository) Delete(ctx context.Context, id int64) error {
 		return translatePersistenceError(err, service.ErrChannelMonitorNotFound, nil)
 	}
 	return nil
+}
+
+func (r *channelMonitorRepository) GetTemplateByID(ctx context.Context, id int64) (*service.ChannelMonitorRequestTemplate, error) {
+	row, err := r.client.ChannelMonitorRequestTemplate.Query().
+		Where(channelmonitorrequesttemplate.IDEQ(id)).
+		Only(ctx)
+	if err != nil {
+		return nil, translatePersistenceError(err, service.ErrChannelMonitorTemplateNotFound, nil)
+	}
+	return entToServiceTemplate(row), nil
 }
 
 func (r *channelMonitorRepository) List(ctx context.Context, params service.ChannelMonitorListParams) ([]*service.ChannelMonitor, int64, error) {
@@ -175,6 +191,41 @@ func (r *channelMonitorRepository) ListEnabled(ctx context.Context) ([]*service.
 		out = append(out, entToServiceMonitor(row))
 	}
 	return out, nil
+}
+
+// AcquireChannelMonitorRunLock 获取单 monitor 的分布式执行锁。
+// 仅在 Postgres 方言启用；其他方言回退为 no-op（acquired=true）。
+func (r *channelMonitorRepository) AcquireChannelMonitorRunLock(ctx context.Context, monitorID int64) (release func(), acquired bool, err error) {
+	if r == nil || r.db == nil || r.client == nil || r.client.Driver().Dialect() != dialect.Postgres {
+		return nil, true, nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	lockID := advisoryLockHash(fmt.Sprintf("channel_monitor:run:%d", monitorID))
+	conn, err := r.db.Conn(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("acquire monitor lock conn: %w", err)
+	}
+
+	var locked bool
+	if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", lockID).Scan(&locked); err != nil {
+		_ = conn.Close()
+		return nil, false, fmt.Errorf("acquire monitor lock: %w", err)
+	}
+	if !locked {
+		_ = conn.Close()
+		return nil, false, nil
+	}
+
+	release = func() {
+		unlockCtx, cancel := context.WithTimeout(context.Background(), channelMonitorRunLockReleaseTimeout)
+		defer cancel()
+		_, _ = conn.ExecContext(unlockCtx, "SELECT pg_advisory_unlock($1)", lockID)
+		_ = conn.Close()
+	}
+	return release, true, nil
 }
 
 func (r *channelMonitorRepository) MarkChecked(ctx context.Context, id int64, checkedAt time.Time) error {
@@ -296,9 +347,8 @@ func assignNullInt(dst **int, n sql.NullInt64) {
 // ComputeAvailability 计算指定窗口内每个模型的可用率与平均延迟。
 // "可用" = status IN (operational, degraded)。
 //
-// 数据来源：明细表只保留 1 天；窗口前其余天数走聚合表。
-// 明细保留 30 天（monitorHistoryRetentionDays），窗口 <= 30 天时直接扫 histories，
-// 精度到秒，避免与聚合表 UNION 带来的 UTC 日切精度损失。
+// 当前读路径统一使用明细表（checked_at 秒级窗口），不混读日聚合表，
+// 避免 UTC 日切边界带来的精度损失。rollup 由 maintenance 维护，供后续长窗口场景扩展。
 func (r *channelMonitorRepository) ComputeAvailability(ctx context.Context, monitorID int64, windowDays int) ([]*service.ChannelMonitorAvailability, error) {
 	if windowDays <= 0 {
 		windowDays = 7
@@ -495,7 +545,7 @@ func clampTimelineLimit(n int) int {
 }
 
 // ComputeAvailabilityForMonitors 一次性计算多个监控在某个窗口内的每模型可用率与平均延迟。
-// 明细保留 30 天，直接扫 histories（窗口 <= 30 天时无需聚合）。
+// 与 ComputeAvailability 一致：当前仅扫明细表，不混读 rollup。
 func (r *channelMonitorRepository) ComputeAvailabilityForMonitors(ctx context.Context, ids []int64, windowDays int) (map[int64][]*service.ChannelMonitorAvailability, error) {
 	out := make(map[int64][]*service.ChannelMonitorAvailability, len(ids))
 	if len(ids) == 0 {
@@ -543,12 +593,13 @@ func (r *channelMonitorRepository) ComputeAvailabilityForMonitors(ctx context.Co
 
 // ---------- 聚合维护 ----------
 
-// UpsertDailyRollupsFor 把 targetDate 当天（[targetDate, targetDate+1d)）的明细
+// UpsertDailyRollupsFor 把 targetDate 当天（UTC，[targetDate, targetDate+1d)）的明细
 // 按 (monitor_id, model, bucket_date) 聚合写入 channel_monitor_daily_rollups。
 //   - 用 ON CONFLICT (monitor_id, model, bucket_date) DO UPDATE 实现幂等回填，
 //     重复执行只会用最新统计覆盖；
-//   - $1::date 让 PG 自动把入参 truncate 到 UTC 日期，调用方不需要预处理 targetDate。
+//   - 时间窗口与 bucket_date 显式按 UTC 解释，避免受 DB session timezone 影响。
 func (r *channelMonitorRepository) UpsertDailyRollupsFor(ctx context.Context, targetDate time.Time) (int64, error) {
+	targetDateUTC := targetDate.UTC().Format("2006-01-02")
 	const q = `
 		INSERT INTO channel_monitor_daily_rollups (
 		    monitor_id, model, bucket_date,
@@ -574,8 +625,8 @@ func (r *channelMonitorRepository) UpsertDailyRollupsFor(ctx context.Context, ta
 		    COUNT(ping_latency_ms)                                           AS count_ping_latency,
 		    NOW()
 		FROM channel_monitor_histories
-		WHERE checked_at >= $1::date
-		  AND checked_at <  ($1::date + INTERVAL '1 day')
+		WHERE checked_at >= ($1::date::timestamp AT TIME ZONE 'UTC')
+		  AND checked_at <  (($1::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'UTC')
 		GROUP BY monitor_id, model
 		ON CONFLICT (monitor_id, model, bucket_date) DO UPDATE SET
 		    total_checks        = EXCLUDED.total_checks,
@@ -590,7 +641,7 @@ func (r *channelMonitorRepository) UpsertDailyRollupsFor(ctx context.Context, ta
 		    count_ping_latency  = EXCLUDED.count_ping_latency,
 		    computed_at         = NOW()
 	`
-	res, err := r.db.ExecContext(ctx, q, targetDate)
+	res, err := r.db.ExecContext(ctx, q, targetDateUTC)
 	if err != nil {
 		return 0, fmt.Errorf("upsert daily rollups for %s: %w", targetDate.Format("2006-01-02"), err)
 	}
@@ -603,7 +654,7 @@ func (r *channelMonitorRepository) UpsertDailyRollupsFor(ctx context.Context, ta
 
 // DeleteRollupsBefore 物理删 bucket_date < beforeDate 的聚合行，同样分批。
 func (r *channelMonitorRepository) DeleteRollupsBefore(ctx context.Context, beforeDate time.Time) (int64, error) {
-	return deleteChannelMonitorBatched(ctx, r.db, channelMonitorPruneRollupSQL, beforeDate)
+	return deleteChannelMonitorBatched(ctx, r.db, channelMonitorPruneRollupSQL, beforeDate.UTC())
 }
 
 // channelMonitorPruneBatchSize 单批删除上限。与 ops_cleanup_service 保持一致的 5000，
@@ -611,24 +662,25 @@ func (r *channelMonitorRepository) DeleteRollupsBefore(ctx context.Context, befo
 const channelMonitorPruneBatchSize = 5000
 
 // channelMonitorPruneHistorySQL 分批物理删明细表过期行。
+// ORDER BY (checked_at, id) 对齐清理条件，便于命中 checked_at 前缀索引。
 const channelMonitorPruneHistorySQL = `
 WITH batch AS (
     SELECT id FROM channel_monitor_histories
     WHERE checked_at < $1
-    ORDER BY id
+    ORDER BY checked_at, id
     LIMIT $2
 )
 DELETE FROM channel_monitor_histories
 WHERE id IN (SELECT id FROM batch)
 `
 
-// channelMonitorPruneRollupSQL 分批物理删 rollup 表过期行。bucket_date 需要 ::date 转型
-// 保证与 DATE 列一致比较。
+// channelMonitorPruneRollupSQL 分批物理删 rollup 表过期行。
+// ORDER BY (bucket_date, id) 对齐清理条件，便于命中 bucket_date 前缀索引。
 const channelMonitorPruneRollupSQL = `
 WITH batch AS (
     SELECT id FROM channel_monitor_daily_rollups
     WHERE bucket_date < $1::date
-    ORDER BY id
+    ORDER BY bucket_date, id
     LIMIT $2
 )
 DELETE FROM channel_monitor_daily_rollups
@@ -671,12 +723,14 @@ func (r *channelMonitorRepository) LoadAggregationWatermark(ctx context.Context)
 	if !t.Valid {
 		return nil, nil
 	}
-	return &t.Time, nil
+	v := t.Time.UTC()
+	return &v, nil
 }
 
 // UpdateAggregationWatermark 更新 watermark（UPSERT 到 id=1）。
-// $1::date 让 PG 把入参 truncate 到 UTC 日期，与 last_aggregated_date 列的 DATE 类型一致。
+// 传入 UTC 日期字符串，避免受 DB session timezone 影响。
 func (r *channelMonitorRepository) UpdateAggregationWatermark(ctx context.Context, date time.Time) error {
+	dateUTC := date.UTC().Format("2006-01-02")
 	const q = `
 		INSERT INTO channel_monitor_aggregation_watermark (id, last_aggregated_date, updated_at)
 		VALUES (1, $1::date, NOW())
@@ -684,8 +738,29 @@ func (r *channelMonitorRepository) UpdateAggregationWatermark(ctx context.Contex
 		    last_aggregated_date = EXCLUDED.last_aggregated_date,
 		    updated_at           = NOW()
 	`
-	if _, err := r.db.ExecContext(ctx, q, date); err != nil {
+	if _, err := r.db.ExecContext(ctx, q, dateUTC); err != nil {
 		return fmt.Errorf("update aggregation watermark: %w", err)
+	}
+	return nil
+}
+
+// translateChannelMonitorWriteError 优先把 template_id FK 违规翻译成业务错误，
+// 其余情况沿用通用 not found 翻译。
+func translateChannelMonitorWriteError(err error, notFound *infraerrors.ApplicationError) error {
+	if fkErr := translateChannelMonitorTemplateFKError(err); fkErr != nil {
+		return fkErr
+	}
+	return translatePersistenceError(err, notFound, nil)
+}
+
+// translateChannelMonitorTemplateFKError 将 channel_monitors_template_id_fkey 违规映射为模板不存在。
+func translateChannelMonitorTemplateFKError(err error) error {
+	var pgErr *pq.Error
+	if !errors.As(err, &pgErr) {
+		return nil
+	}
+	if pgErr.Code == "23503" && string(pgErr.Constraint) == "channel_monitors_template_id_fkey" {
+		return service.ErrChannelMonitorTemplateNotFound.WithCause(err)
 	}
 	return nil
 }

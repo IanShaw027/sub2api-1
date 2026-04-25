@@ -641,6 +641,10 @@ func (s *adminServiceImpl) GetUser(ctx context.Context, id int64) (*User, error)
 }
 
 func (s *adminServiceImpl) CreateUser(ctx context.Context, input *CreateUserInput) (*User, error) {
+	if input.RPMLimit < 0 {
+		return nil, infraerrors.BadRequest("INVALID_RPM_LIMIT", "rpm_limit must be >= 0")
+	}
+
 	user := &User{
 		Email:         input.Email,
 		Username:      input.Username,
@@ -729,6 +733,9 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 	}
 
 	if input.RPMLimit != nil {
+		if *input.RPMLimit < 0 {
+			return nil, infraerrors.BadRequest("INVALID_RPM_LIMIT", "rpm_limit must be >= 0")
+		}
 		user.RPMLimit = *input.RPMLimit
 	}
 
@@ -1327,6 +1334,9 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	if input.RateMultiplier <= 0 {
 		return nil, errors.New("rate_multiplier must be > 0")
 	}
+	if input.RPMLimit < 0 {
+		return nil, infraerrors.BadRequest("INVALID_RPM_LIMIT", "group rpm_limit must be >= 0")
+	}
 
 	platform := input.Platform
 	if platform == "" {
@@ -1664,6 +1674,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		group.MessagesDispatchModelConfig = normalizeOpenAIMessagesDispatchModelConfig(*input.MessagesDispatchModelConfig)
 	}
 	if input.RPMLimit != nil {
+		if *input.RPMLimit < 0 {
+			return nil, infraerrors.BadRequest("INVALID_RPM_LIMIT", "group rpm_limit must be >= 0")
+		}
 		group.RPMLimit = *input.RPMLimit
 	}
 	sanitizeGroupMessagesDispatchFields(group)
@@ -1826,7 +1839,7 @@ func (s *adminServiceImpl) ClearGroupRPMOverrides(ctx context.Context, groupID i
 	if err := s.userGroupRateRepo.ClearGroupRPMOverrides(ctx, groupID); err != nil {
 		return err
 	}
-	// RPM override 已嵌入 auth cache snapshot (v7)，变更后必须失效相关缓存。
+	// RPM override 已嵌入 auth cache snapshot (v8)，变更后必须失效相关缓存。
 	if s.authCacheInvalidator != nil {
 		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, groupID)
 	}
@@ -1837,15 +1850,24 @@ func (s *adminServiceImpl) BatchSetGroupRPMOverrides(ctx context.Context, groupI
 	if s.userGroupRateRepo == nil {
 		return nil
 	}
+	deduped := make([]GroupRPMOverrideInput, 0, len(entries))
+	dedupIndex := make(map[int64]int, len(entries))
 	for _, e := range entries {
 		if e.RPMOverride != nil && *e.RPMOverride < 0 {
 			return infraerrors.BadRequest("INVALID_RPM_OVERRIDE", fmt.Sprintf("rpm_override must be >= 0 (user_id=%d)", e.UserID))
 		}
+		if idx, ok := dedupIndex[e.UserID]; ok {
+			// 同一 user_id 重复出现时，后值覆盖前值，避免批量 upsert 的冲突错误。
+			deduped[idx] = e
+			continue
+		}
+		dedupIndex[e.UserID] = len(deduped)
+		deduped = append(deduped, e)
 	}
-	if err := s.userGroupRateRepo.SyncGroupRPMOverrides(ctx, groupID, entries); err != nil {
+	if err := s.userGroupRateRepo.SyncGroupRPMOverrides(ctx, groupID, deduped); err != nil {
 		return err
 	}
-	// RPM override 已嵌入 auth cache snapshot (v7)，变更后必须失效相关缓存。
+	// RPM override 已嵌入 auth cache snapshot (v8)，变更后必须失效相关缓存。
 	if s.authCacheInvalidator != nil {
 		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, groupID)
 	}
@@ -2194,8 +2216,12 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if input.Notes != nil {
 		account.Notes = normalizeAccountNotes(input.Notes)
 	}
-	if len(input.Credentials) > 0 {
-		account.Credentials = input.Credentials
+	if input.Credentials != nil {
+		if account.Platform == PlatformKiro {
+			account.Credentials = mergeKiroCredentialsForAccountUpdate(account.Type, account.Credentials, input.Credentials)
+		} else if len(input.Credentials) > 0 {
+			account.Credentials = input.Credentials
+		}
 	}
 	if account.Platform == PlatformKiro {
 		if err := validateKiroAccountCredentials(account.Type, account.Credentials); err != nil {

@@ -1,5 +1,5 @@
 -- Migration: 126_add_channel_monitor_aggregation
--- 渠道监控日聚合：把 channel_monitor_histories 的明细按天聚合，明细只保留 1 天，
+-- 渠道监控日聚合：把 channel_monitor_histories 的明细按天聚合，当前明细保留 30 天，
 -- 聚合保留 30 天。明细和聚合表都用软删除（deleted_at），由 ops cleanup 任务每天
 -- 凌晨随运维监控清理一起跑（共享 cron）。
 --
@@ -11,7 +11,7 @@
 --     方便后续按窗口任意求加权可用率和均值。
 --   - watermark 表只有一行（id=1），记录最近一次聚合到达的日期，避免重启后重复
 --     扫全表。
---   - rollup 上 (bucket_date) 索引服务清理任务的 DELETE WHERE bucket_date < cutoff。
+--   - rollup 上 (bucket_date, id) 索引服务清理任务的分批删除。
 
 -- 1) 给历史明细表加软删除字段
 ALTER TABLE channel_monitor_histories
@@ -42,8 +42,8 @@ CREATE TABLE IF NOT EXISTS channel_monitor_daily_rollups (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_monitor_daily_rollups_unique
     ON channel_monitor_daily_rollups (monitor_id, model, bucket_date);
-CREATE INDEX IF NOT EXISTS idx_channel_monitor_daily_rollups_bucket
-    ON channel_monitor_daily_rollups (bucket_date);
+CREATE INDEX IF NOT EXISTS idx_channel_monitor_daily_rollups_bucket_id
+    ON channel_monitor_daily_rollups (bucket_date, id);
 CREATE INDEX IF NOT EXISTS idx_channel_monitor_daily_rollups_deleted_at
     ON channel_monitor_daily_rollups (deleted_at);
 

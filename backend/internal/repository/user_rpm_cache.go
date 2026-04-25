@@ -12,17 +12,31 @@ import (
 // 用户/分组级 RPM 计数器 Redis 实现。
 //
 // 设计说明：
-//   - key 形式：rpm:ug:{uid}:{gid}:{minute}、rpm:u:{uid}:{minute}
+//   - 新 key（Cluster 同槽）：
+//   - rpm:ug:{uid:minute}:{gid}
+//   - rpm:u:{uid:minute}
+//   - 旧 key（兼容迁移）：
+//   - rpm:ug:uid:gid:minute
+//   - rpm:u:uid:minute
 //   - 时间来源：rdb.Time()（Redis 服务端时间），避免多实例时钟漂移。
-//   - 原子操作：TxPipeline (MULTI/EXEC) 执行 INCR+EXPIRE，兼容 Redis Cluster。
+//   - 原子操作：Lua 单 key执行 INCR+EXPIRE，避免多 key transaction 触发 CROSSSLOT。
+//   - 兼容策略：双写新/旧 key，返回 max(new, legacy)；滚动升级期间与旧版本计数保持一致。
 //   - TTL：120s，覆盖当前分钟窗口 + 少量冗余。
 //   - 返回值语义：超限判断由调用方（billing_cache_service.checkRPM）与 RPMLimit 比较完成。
 const (
-	userGroupRPMKeyPrefix = "rpm:ug:"
-	userRPMKeyPrefix      = "rpm:u:"
+	userGroupRPMLegacyKeyPrefix = "rpm:ug:"
+	userRPMLegacyKeyPrefix      = "rpm:u:"
+	userGroupRPMClusterKey      = "rpm:ug:"
+	userRPMClusterKey           = "rpm:u:"
 
 	userRPMKeyTTL = 120 * time.Second
 )
+
+var userRPMIncrExpireScript = redis.NewScript(`
+local count = redis.call("INCR", KEYS[1])
+redis.call("EXPIRE", KEYS[1], ARGV[1])
+return count
+`)
 
 type userRPMCacheImpl struct {
 	rdb *redis.Client
@@ -42,35 +56,129 @@ func (c *userRPMCacheImpl) minuteTS(ctx context.Context) (int64, error) {
 	return t.Unix() / 60, nil
 }
 
-// atomicIncr 原子 INCR+EXPIRE。
-func (c *userRPMCacheImpl) atomicIncr(ctx context.Context, key string) (int, error) {
-	pipe := c.rdb.TxPipeline()
-	incr := pipe.Incr(ctx, key)
-	pipe.Expire(ctx, key, userRPMKeyTTL)
-	if _, err := pipe.Exec(ctx); err != nil {
-		return 0, fmt.Errorf("user rpm increment: %w", err)
+func userGroupRPMClusterSlotKey(userID, groupID, minute int64) string {
+	return fmt.Sprintf("%s{%d:%d}:%d", userGroupRPMClusterKey, userID, minute, groupID)
+}
+
+func userRPMClusterSlotKey(userID, minute int64) string {
+	return fmt.Sprintf("%s{%d:%d}", userRPMClusterKey, userID, minute)
+}
+
+func userGroupRPMLegacyKey(userID, groupID, minute int64) string {
+	return fmt.Sprintf("%s%d:%d:%d", userGroupRPMLegacyKeyPrefix, userID, groupID, minute)
+}
+
+func userRPMLegacyKey(userID, minute int64) string {
+	return fmt.Sprintf("%s%d:%d", userRPMLegacyKeyPrefix, userID, minute)
+}
+
+// incrWithTTL 对单 key 执行原子 INCR+EXPIRE。
+func (c *userRPMCacheImpl) incrWithTTL(ctx context.Context, key string) (int, error) {
+	count, err := userRPMIncrExpireScript.Run(
+		ctx,
+		c.rdb,
+		[]string{key},
+		int64(userRPMKeyTTL/time.Second),
+	).Int64()
+	if err != nil {
+		return 0, fmt.Errorf("user rpm increment key=%s: %w", key, err)
 	}
-	return int(incr.Val()), nil
+	return int(count), nil
+}
+
+// incrWithLegacyCompat 双写新/旧 key，返回两者较大值，保证滚动升级期间计数连续。
+func (c *userRPMCacheImpl) incrWithLegacyCompat(ctx context.Context, clusterKey, legacyKey string) (int, error) {
+	clusterCount, err := c.incrWithTTL(ctx, clusterKey)
+	if err != nil {
+		return 0, err
+	}
+	if legacyKey == "" || legacyKey == clusterKey {
+		return clusterCount, nil
+	}
+	legacyCount, err := c.incrWithTTL(ctx, legacyKey)
+	if err != nil {
+		return 0, err
+	}
+	if legacyCount > clusterCount {
+		return legacyCount, nil
+	}
+	return clusterCount, nil
+}
+
+func (c *userRPMCacheImpl) getRPMValue(ctx context.Context, key string) (int, error) {
+	val, err := c.rdb.Get(ctx, key).Int()
+	if err == redis.Nil {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("user rpm get key=%s: %w", key, err)
+	}
+	return val, nil
+}
+
+func (c *userRPMCacheImpl) getWithLegacyCompat(ctx context.Context, clusterKey, legacyKey string) (int, error) {
+	clusterVal, err := c.getRPMValue(ctx, clusterKey)
+	if err != nil {
+		return 0, err
+	}
+	if legacyKey == "" || legacyKey == clusterKey {
+		return clusterVal, nil
+	}
+	legacyVal, err := c.getRPMValue(ctx, legacyKey)
+	if err != nil {
+		return 0, err
+	}
+	if legacyVal > clusterVal {
+		return legacyVal, nil
+	}
+	return clusterVal, nil
+}
+
+// IncrementUserAndGroupRPM 在同一 Redis 分钟时间源下递增 user-group 与 user 计数器。
+// 仅在需要同时递增两个计数器时使用；调用方通过 incGroup/incUser 控制分支。
+func (c *userRPMCacheImpl) IncrementUserAndGroupRPM(ctx context.Context, userID, groupID int64, incGroup, incUser bool) (groupCount, userCount int, err error) {
+	if !incGroup && !incUser {
+		return 0, 0, nil
+	}
+
+	minute, err := c.minuteTS(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	if incGroup {
+		groupCount, err = c.incrWithLegacyCompat(
+			ctx,
+			userGroupRPMClusterSlotKey(userID, groupID, minute),
+			userGroupRPMLegacyKey(userID, groupID, minute),
+		)
+		if err != nil {
+			return 0, 0, err
+		}
+	}
+	if incUser {
+		userCount, err = c.incrWithLegacyCompat(
+			ctx,
+			userRPMClusterSlotKey(userID, minute),
+			userRPMLegacyKey(userID, minute),
+		)
+		if err != nil {
+			return 0, 0, err
+		}
+	}
+	return groupCount, userCount, nil
 }
 
 // IncrementUserGroupRPM 递增 (user, group) 分钟计数。
 func (c *userRPMCacheImpl) IncrementUserGroupRPM(ctx context.Context, userID, groupID int64) (int, error) {
-	minute, err := c.minuteTS(ctx)
-	if err != nil {
-		return 0, err
-	}
-	key := fmt.Sprintf("%s%d:%d:%d", userGroupRPMKeyPrefix, userID, groupID, minute)
-	return c.atomicIncr(ctx, key)
+	groupCount, _, err := c.IncrementUserAndGroupRPM(ctx, userID, groupID, true, false)
+	return groupCount, err
 }
 
 // IncrementUserRPM 递增用户分钟计数。
 func (c *userRPMCacheImpl) IncrementUserRPM(ctx context.Context, userID int64) (int, error) {
-	minute, err := c.minuteTS(ctx)
-	if err != nil {
-		return 0, err
-	}
-	key := fmt.Sprintf("%s%d:%d", userRPMKeyPrefix, userID, minute)
-	return c.atomicIncr(ctx, key)
+	_, userCount, err := c.IncrementUserAndGroupRPM(ctx, userID, 0, false, true)
+	return userCount, err
 }
 
 // GetUserGroupRPM 获取 (user, group) 当前分钟已用 RPM（只读）。
@@ -79,11 +187,11 @@ func (c *userRPMCacheImpl) GetUserGroupRPM(ctx context.Context, userID, groupID 
 	if err != nil {
 		return 0, err
 	}
-	key := fmt.Sprintf("%s%d:%d:%d", userGroupRPMKeyPrefix, userID, groupID, minute)
-	val, err := c.rdb.Get(ctx, key).Int()
-	if err == redis.Nil {
-		return 0, nil
-	}
+	val, err := c.getWithLegacyCompat(
+		ctx,
+		userGroupRPMClusterSlotKey(userID, groupID, minute),
+		userGroupRPMLegacyKey(userID, groupID, minute),
+	)
 	if err != nil {
 		return 0, fmt.Errorf("user group rpm get: %w", err)
 	}
@@ -96,11 +204,11 @@ func (c *userRPMCacheImpl) GetUserRPM(ctx context.Context, userID int64) (int, e
 	if err != nil {
 		return 0, err
 	}
-	key := fmt.Sprintf("%s%d:%d", userRPMKeyPrefix, userID, minute)
-	val, err := c.rdb.Get(ctx, key).Int()
-	if err == redis.Nil {
-		return 0, nil
-	}
+	val, err := c.getWithLegacyCompat(
+		ctx,
+		userRPMClusterSlotKey(userID, minute),
+		userRPMLegacyKey(userID, minute),
+	)
 	if err != nil {
 		return 0, fmt.Errorf("user rpm get: %w", err)
 	}

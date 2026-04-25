@@ -16,11 +16,20 @@ import (
 type userRPMCacheStub struct {
 	userGroupCalls int32
 	userCalls      int32
+	combinedCalls  int32
+	forceCombined  bool
 
-	userGroupCounts []int // 依次返回的计数值
-	userGroupErr    error
-	userCounts      []int
-	userErr         error
+	userGroupCounts  []int // 依次返回的计数值
+	userGroupErr     error
+	userCounts       []int
+	userErr          error
+	combinedGroup    []int
+	combinedUser     []int
+	combinedErr      error
+	combinedIncGroup []bool
+	combinedIncUser  []bool
+	combinedUserIDs  []int64
+	combinedGroupIDs []int64
 }
 
 func (s *userRPMCacheStub) IncrementUserGroupRPM(_ context.Context, _, _ int64) (int, error) {
@@ -43,6 +52,52 @@ func (s *userRPMCacheStub) IncrementUserRPM(_ context.Context, _ int64) (int, er
 		return s.userCounts[idx], nil
 	}
 	return 1, nil
+}
+
+func (s *userRPMCacheStub) IncrementUserAndGroupRPM(_ context.Context, userID, groupID int64, incGroup, incUser bool) (int, int, error) {
+	idx := int(atomic.AddInt32(&s.combinedCalls, 1)) - 1
+	s.combinedIncGroup = append(s.combinedIncGroup, incGroup)
+	s.combinedIncUser = append(s.combinedIncUser, incUser)
+	s.combinedUserIDs = append(s.combinedUserIDs, userID)
+	s.combinedGroupIDs = append(s.combinedGroupIDs, groupID)
+	if s.combinedErr != nil {
+		return 0, 0, s.combinedErr
+	}
+	if !s.forceCombined && len(s.combinedGroup) == 0 && len(s.combinedUser) == 0 {
+		groupCount := 0
+		userCount := 0
+		var err error
+		if incGroup {
+			groupCount, err = s.IncrementUserGroupRPM(context.Background(), userID, groupID)
+			if err != nil {
+				return 0, 0, err
+			}
+		}
+		if incUser {
+			userCount, err = s.IncrementUserRPM(context.Background(), userID)
+			if err != nil {
+				return 0, 0, err
+			}
+		}
+		return groupCount, userCount, nil
+	}
+	groupCount := 0
+	userCount := 0
+	if incGroup {
+		if idx < len(s.combinedGroup) {
+			groupCount = s.combinedGroup[idx]
+		} else {
+			groupCount = 1
+		}
+	}
+	if incUser {
+		if idx < len(s.combinedUser) {
+			userCount = s.combinedUser[idx]
+		} else {
+			userCount = 1
+		}
+	}
+	return groupCount, userCount, nil
 }
 
 func (s *userRPMCacheStub) GetUserGroupRPM(_ context.Context, _, _ int64) (int, error) {
@@ -94,8 +149,8 @@ func TestBillingCacheService_CheckRPM_OverrideTakesPrecedenceOverGroup(t *testin
 	require.ErrorIs(t, svc.checkRPM(context.Background(), user, group), ErrGroupRPMExceeded)
 
 	require.EqualValues(t, 3, atomic.LoadInt32(&cache.userGroupCalls), "override 命中分支应走 user-group 计数")
-	// 并行设计：前 2 次 override 未超→继续检查 user；第 3 次 override 超了→直接 return，不检查 user
-	require.EqualValues(t, 2, atomic.LoadInt32(&cache.userCalls), "override 超限前 user 计数器应被调用")
+	// combined 计数路径下，group/user 在每次请求内并行计数。
+	require.EqualValues(t, 3, atomic.LoadInt32(&cache.userCalls), "combined 路径应每次都递增 user 计数器")
 	require.EqualValues(t, 3, atomic.LoadInt32(&repo.calls))
 }
 
@@ -163,8 +218,7 @@ func TestBillingCacheService_CheckRPM_NilOverrideFallsThroughToGroup(t *testing.
 	require.ErrorIs(t, svc.checkRPM(context.Background(), user, group), ErrGroupRPMExceeded) // ug=6 > 5
 
 	require.EqualValues(t, 2, atomic.LoadInt32(&cache.userGroupCalls))
-	// 并行模式：第 1 次 group 没超 → 继续检查 user；第 2 次 group 超了 → 直接 return，不检查 user
-	require.EqualValues(t, 1, atomic.LoadInt32(&cache.userCalls), "group 未超时 user 也应检查；group 超时直接返回")
+	require.EqualValues(t, 2, atomic.LoadInt32(&cache.userCalls), "combined 路径下 group 超限当次也会并行递增 user")
 }
 
 func TestBillingCacheService_CheckRPM_OverrideLookupErrorFallsThroughToGroup(t *testing.T) {
@@ -250,4 +304,42 @@ func TestBillingCacheService_CheckRPM_NilUserIsNoop(t *testing.T) {
 	require.EqualValues(t, 0, atomic.LoadInt32(&cache.userGroupCalls))
 	require.EqualValues(t, 0, atomic.LoadInt32(&cache.userCalls))
 	require.EqualValues(t, 0, atomic.LoadInt32(&repo.calls))
+}
+
+func TestBillingCacheService_CheckRPM_UsesCombinedIncrementForGroupAndUser(t *testing.T) {
+	cache := &userRPMCacheStub{
+		forceCombined: true,
+		combinedGroup: []int{1, 2, 3},
+		combinedUser:  []int{1, 2, 3},
+	}
+	svc := newBillingServiceForRPM(t, cache, nil)
+
+	user := &User{ID: 1, RPMLimit: 2}
+	group := &Group{ID: 10, RPMLimit: 100}
+
+	require.NoError(t, svc.checkRPM(context.Background(), user, group))
+	require.NoError(t, svc.checkRPM(context.Background(), user, group))
+	require.ErrorIs(t, svc.checkRPM(context.Background(), user, group), ErrUserRPMExceeded)
+
+	require.EqualValues(t, 3, atomic.LoadInt32(&cache.combinedCalls))
+	require.EqualValues(t, 0, atomic.LoadInt32(&cache.userGroupCalls))
+	require.EqualValues(t, 0, atomic.LoadInt32(&cache.userCalls))
+	require.Equal(t, []bool{true, true, true}, cache.combinedIncGroup)
+	require.Equal(t, []bool{true, true, true}, cache.combinedIncUser)
+	require.Equal(t, []int64{1, 1, 1}, cache.combinedUserIDs)
+	require.Equal(t, []int64{10, 10, 10}, cache.combinedGroupIDs)
+}
+
+func TestBillingCacheService_CheckRPM_SnapshotAbsentOverrideSkipsDBLookup(t *testing.T) {
+	cache := &userRPMCacheStub{userGroupCounts: []int{1}}
+	repo := &rpmOverrideRepoStub{override: nil}
+	svc := newBillingServiceForRPM(t, cache, repo)
+
+	absent := userGroupRPMOverrideAbsentSentinel
+	user := &User{ID: 1, RPMLimit: 0, UserGroupRPMOverride: &absent}
+	group := &Group{ID: 10, RPMLimit: 5}
+
+	require.NoError(t, svc.checkRPM(context.Background(), user, group))
+	require.EqualValues(t, 0, atomic.LoadInt32(&repo.calls), "已知无 override 时不应回源查询")
+	require.EqualValues(t, 1, atomic.LoadInt32(&cache.userGroupCalls))
 }

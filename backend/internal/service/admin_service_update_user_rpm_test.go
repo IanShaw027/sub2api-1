@@ -4,8 +4,10 @@ package service
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -66,4 +68,35 @@ func TestAdminService_UpdateUser_NoInvalidateWhenRPMLimitUnchanged(t *testing.T)
 	})
 	require.NoError(t, err)
 	require.Empty(t, invalidator.userIDs, "只改 username 不应触发认证缓存失效")
+}
+
+func TestAdminService_UpdateUser_RejectsNegativeRPMLimit(t *testing.T) {
+	base := &userRepoStub{user: &User{ID: 42, Email: "u@example.com", RPMLimit: 10}}
+	repo := &rpmUserRepoStub{userRepoStub: base}
+	svc := &adminServiceImpl{
+		userRepo:       repo,
+		redeemCodeRepo: &redeemRepoStub{},
+	}
+
+	negative := -1
+	_, err := svc.UpdateUser(context.Background(), 42, &UpdateUserInput{
+		RPMLimit: &negative,
+	})
+	require.Error(t, err)
+	require.Equal(t, http.StatusBadRequest, infraerrors.Code(err))
+	require.Nil(t, repo.lastUpdated)
+}
+
+func TestAdminService_CreateUser_RejectsNegativeRPMLimit(t *testing.T) {
+	repo := &userRepoStub{}
+	svc := &adminServiceImpl{userRepo: repo}
+
+	_, err := svc.CreateUser(context.Background(), &CreateUserInput{
+		Email:       "u@example.com",
+		Password:    "pass",
+		RPMLimit:    -1,
+		Concurrency: 1,
+	})
+	require.Error(t, err)
+	require.Equal(t, http.StatusBadRequest, infraerrors.Code(err))
 }

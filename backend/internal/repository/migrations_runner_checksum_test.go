@@ -153,6 +153,30 @@ func TestIsMigrationChecksumCompatible(t *testing.T) {
 		}
 	})
 
+	t.Run("131历史checksum可兼容当前版本", func(t *testing.T) {
+		for _, dbChecksum := range []string{
+			"9fd0a6021290b24c7e76d4ff6405824eef528a6afe969e845c8cc3bf8053ba15",
+			"706c8102d96d0a10f2e2a23156a8cd8b414a241591fd65ab3e26425b2a54fe29",
+			"c4b74b9dd08e3634ac9b752376e92ce41f27fa0cb8046d7932944ca61e5f351c",
+		} {
+			ok := isMigrationChecksumCompatible(
+				"131_affiliate_rebate_hardening.sql",
+				dbChecksum,
+				"00b2290e6646666df46409564b545b1de91b222db8f3ca0c992164a6dc4034e7",
+			)
+			require.True(t, ok)
+		}
+	})
+
+	t.Run("131回滚到历史文件checksum时仍兼容", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"131_affiliate_rebate_hardening.sql",
+			"00b2290e6646666df46409564b545b1de91b222db8f3ca0c992164a6dc4034e7",
+			"9fd0a6021290b24c7e76d4ff6405824eef528a6afe969e845c8cc3bf8053ba15",
+		)
+		require.True(t, ok)
+	})
+
 	t.Run("119未知checksum不兼容", func(t *testing.T) {
 		ok := isMigrationChecksumCompatible(
 			"119_enforce_payment_orders_out_trade_no_unique.sql",

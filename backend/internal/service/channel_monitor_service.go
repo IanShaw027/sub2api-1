@@ -55,6 +55,14 @@ type ChannelMonitorRepository interface {
 	LoadAggregationWatermark(ctx context.Context) (*time.Time, error)
 	// UpdateAggregationWatermark 写 watermark（UPSERT 到 id=1）。
 	UpdateAggregationWatermark(ctx context.Context, date time.Time) error
+	// GetTemplateByID 返回模板 provider 信息，供 monitor create/update 做 template 绑定校验。
+	GetTemplateByID(ctx context.Context, id int64) (*ChannelMonitorRequestTemplate, error)
+}
+
+// channelMonitorRunLockRepository 是可选能力：为 runner 提供分布式单监控执行锁。
+// 不并入 ChannelMonitorRepository 主接口，避免影响大量测试 stub。
+type channelMonitorRunLockRepository interface {
+	AcquireChannelMonitorRunLock(ctx context.Context, monitorID int64) (release func(), acquired bool, err error)
 }
 
 // ChannelMonitorService 渠道监控管理服务。
@@ -111,6 +119,9 @@ func (s *ChannelMonitorService) Create(ctx context.Context, p ChannelMonitorCrea
 		return nil, err
 	}
 	if err := validateExtraHeaders(p.ExtraHeaders); err != nil {
+		return nil, err
+	}
+	if err := s.validateTemplateBinding(ctx, p.Provider, p.TemplateID); err != nil {
 		return nil, err
 	}
 	encrypted, err := s.encryptor.Encrypt(p.APIKey)
@@ -174,6 +185,9 @@ func (s *ChannelMonitorService) Update(ctx context.Context, id int64, p ChannelM
 	if err := applyMonitorUpdate(existing, p); err != nil {
 		return nil, err
 	}
+	if err := s.validateTemplateBinding(ctx, existing.Provider, existing.TemplateID); err != nil {
+		return nil, err
+	}
 
 	newPlainAPIKey, apiKeyUpdated, err := s.applyAPIKeyUpdate(existing, p.APIKey)
 	if err != nil {
@@ -196,6 +210,24 @@ func (s *ChannelMonitorService) Update(ctx context.Context, id int64, p ChannelM
 		s.scheduler.Schedule(existing)
 	}
 	return existing, nil
+}
+
+// validateTemplateBinding 校验 monitor 的 template_id：
+//   - template_id 为空：不校验
+//   - template 必须存在
+//   - template.provider 必须与 monitor.provider 一致
+func (s *ChannelMonitorService) validateTemplateBinding(ctx context.Context, provider string, templateID *int64) error {
+	if templateID == nil {
+		return nil
+	}
+	tpl, err := s.repo.GetTemplateByID(ctx, *templateID)
+	if err != nil {
+		return err
+	}
+	if tpl.Provider != provider {
+		return ErrChannelMonitorTemplateProviderMismatch
+	}
+	return nil
 }
 
 // applyAPIKeyUpdate 处理 Update 中的 APIKey 字段：
@@ -318,6 +350,19 @@ func (s *ChannelMonitorService) runChecksConcurrent(ctx context.Context, m *Chan
 	}
 	_ = eg.Wait()
 	return results
+}
+
+// AcquireChannelMonitorRunLock 为 runner 提供可选的分布式执行锁。
+// 当 repo 未实现该能力时返回 acquired=true，保持单实例/测试环境行为不变。
+func (s *ChannelMonitorService) AcquireChannelMonitorRunLock(ctx context.Context, monitorID int64) (func(), bool, error) {
+	if s == nil || s.repo == nil {
+		return nil, true, nil
+	}
+	lockRepo, ok := s.repo.(channelMonitorRunLockRepository)
+	if !ok {
+		return nil, true, nil
+	}
+	return lockRepo.AcquireChannelMonitorRunLock(ctx, monitorID)
 }
 
 // ---------- 调度器协作 ----------

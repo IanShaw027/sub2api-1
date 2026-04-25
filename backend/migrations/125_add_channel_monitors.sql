@@ -11,7 +11,7 @@
 --   - history 表通过 ON DELETE CASCADE 自动清理已删除监控的历史。
 --   - (enabled, last_checked_at) 索引服务于调度器扫描“到期需要检测”的监控。
 --   - histories 上 (monitor_id, model, checked_at DESC) 服务用户视图聚合查询；
---     单独的 (checked_at) 索引服务定期清理 30 天前数据的 DELETE。
+--     (checked_at, id) 索引服务按时间窗口分批清理过期明细。
 
 CREATE TABLE IF NOT EXISTS channel_monitors (
     id                BIGSERIAL PRIMARY KEY,
@@ -54,5 +54,5 @@ CREATE TABLE IF NOT EXISTS channel_monitor_histories (
 
 CREATE INDEX IF NOT EXISTS idx_channel_monitor_histories_monitor_model_checked
     ON channel_monitor_histories (monitor_id, model, checked_at DESC);
-CREATE INDEX IF NOT EXISTS idx_channel_monitor_histories_checked_at
-    ON channel_monitor_histories (checked_at);
+CREATE INDEX IF NOT EXISTS idx_channel_monitor_histories_checked_at_id
+    ON channel_monitor_histories (checked_at, id);

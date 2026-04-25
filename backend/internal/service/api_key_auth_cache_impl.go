@@ -14,7 +14,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 7 // v7: added UserGroupRPMOverride on user snapshot
+const apiKeyAuthSnapshotVersion = 8 // v8: negative-cache absent UserGroupRPMOverride on user snapshot
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int
@@ -239,10 +239,16 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 	// 填充 (user, group) RPM override —— snapshot 构建时查一次 DB，后续请求零 DB 往返。
 	if apiKey.GroupID != nil && *apiKey.GroupID > 0 && s.userGroupRateRepo != nil {
 		override, err := s.userGroupRateRepo.GetRPMOverrideByUserAndGroup(ctx, apiKey.UserID, *apiKey.GroupID)
-		if err == nil && override != nil {
-			snapshot.User.UserGroupRPMOverride = override
+		if err == nil {
+			if override != nil {
+				snapshot.User.UserGroupRPMOverride = override
+			} else {
+				// 用负值哨兵表达"已确认无 override"，避免 checkRPM 每请求回源 DB。
+				absent := userGroupRPMOverrideAbsentSentinel
+				snapshot.User.UserGroupRPMOverride = &absent
+			}
 		}
-		// 查询失败或无 override 时留 nil，checkRPM 会回退到 DB 查询
+		// 查询失败时留 nil，checkRPM 会回退到 DB 查询
 	}
 	if apiKey.Group != nil {
 		snapshot.Group = &APIKeyAuthGroupSnapshot{

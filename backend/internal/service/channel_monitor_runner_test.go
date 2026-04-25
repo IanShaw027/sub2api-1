@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/alitto/pond/v2"
 )
 
 // stubMonitorSvc 实现 monitorRunnerSvc，用于隔离 runner 与真实 service/repo。
@@ -15,9 +17,39 @@ type stubMonitorSvc struct {
 	enabled    []*ChannelMonitor
 	runCount   atomic.Int64
 	runCalled  chan int64 // 每次 RunCheck 触发时 push 一次（缓冲足够大避免阻塞）
+	runDone    chan int64 // RunCheck 返回时 push 一次（用于断言取消是否生效）
 	runErr     error
 	listErr    error
 	runHoldFor time.Duration // RunCheck 内额外阻塞的时长，用来测试 Stop 等待行为
+	blockUntil <-chan struct{}
+	lockErr    error
+	locker     *monitorRunLockStub
+}
+
+type monitorRunLockStub struct {
+	mu   sync.Mutex
+	held map[int64]struct{}
+}
+
+func newMonitorRunLockStub() *monitorRunLockStub {
+	return &monitorRunLockStub{held: make(map[int64]struct{})}
+}
+
+func (s *monitorRunLockStub) Acquire(id int64) (func(), bool) {
+	s.mu.Lock()
+	if _, exists := s.held[id]; exists {
+		s.mu.Unlock()
+		return nil, false
+	}
+	s.held[id] = struct{}{}
+	s.mu.Unlock()
+
+	release := func() {
+		s.mu.Lock()
+		delete(s.held, id)
+		s.mu.Unlock()
+	}
+	return release, true
 }
 
 func (s *stubMonitorSvc) ListEnabledMonitors(_ context.Context) ([]*ChannelMonitor, error) {
@@ -41,7 +73,30 @@ func (s *stubMonitorSvc) RunCheck(ctx context.Context, id int64) ([]*CheckResult
 		case <-ctx.Done():
 		}
 	}
+	if s.blockUntil != nil {
+		select {
+		case <-s.blockUntil:
+		case <-ctx.Done():
+		}
+	}
+	if s.runDone != nil {
+		select {
+		case s.runDone <- id:
+		default:
+		}
+	}
 	return nil, s.runErr
+}
+
+func (s *stubMonitorSvc) AcquireChannelMonitorRunLock(_ context.Context, id int64) (func(), bool, error) {
+	if s.lockErr != nil {
+		return nil, false, s.lockErr
+	}
+	if s.locker == nil {
+		return nil, true, nil
+	}
+	release, acquired := s.locker.Acquire(id)
+	return release, acquired, nil
 }
 
 func newRunnerForTest(svc monitorRunnerSvc) *ChannelMonitorRunner {
@@ -240,6 +295,38 @@ func TestStop_WaitsForInFlightCheck(t *testing.T) {
 	}
 }
 
+// TestUnschedule_CancelsInFlightCheck 验证 Unschedule 会取消 in-flight RunCheck 的 ctx。
+func TestUnschedule_CancelsInFlightCheck(t *testing.T) {
+	svc := &stubMonitorSvc{
+		runCalled: make(chan int64, 1),
+		runDone:   make(chan int64, 1),
+		// 永不主动释放；只能依赖 ctx.Done() 返回。
+		blockUntil: make(chan struct{}),
+	}
+	r := newRunnerForTest(svc)
+	r.Start()
+	r.Schedule(&ChannelMonitor{ID: 11, Enabled: true, IntervalSeconds: 60})
+
+	select {
+	case <-svc.runCalled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first fire never happened")
+	}
+
+	r.Unschedule(11)
+
+	select {
+	case id := <-svc.runDone:
+		if id != 11 {
+			t.Fatalf("expected canceled run for id=11, got %d", id)
+		}
+	case <-time.After(1500 * time.Millisecond):
+		t.Fatal("unschedule did not cancel in-flight RunCheck within 1.5s")
+	}
+
+	stoppedWithin(t, r, 3*time.Second)
+}
+
 // TestInFlight_PoolFullReleasesSlot 直接驱动 fire 路径，模拟 pool.TrySubmit 失败时 inFlight 必须释放。
 // 用一个小型 stub pool 替换 r.pool 不便（pond.Pool 是接口但 mock 麻烦），
 // 改为：占满 inFlight 后直接 fire，验证不会在 inFlight 空槽时永久卡住。
@@ -258,6 +345,61 @@ func TestInFlight_AcquireReleaseSymmetric(t *testing.T) {
 		t.Fatal("acquire after release should succeed")
 	}
 	r.releaseInFlight(42)
+}
+
+// TestFire_PoolFullDropsAndReleasesInFlight 验证 queue=0 时 worker 忙会触发 TrySubmit=false，
+// 且被丢弃任务对应的 inFlight 槽会被释放。
+func TestFire_PoolFullDropsAndReleasesInFlight(t *testing.T) {
+	block := make(chan struct{})
+	svc := &stubMonitorSvc{blockUntil: block}
+	r := newRunnerForTest(svc)
+	r.pool = pond.NewPool(1, pond.WithQueueSize(0))
+	r.Start()
+
+	r.fire(context.Background(), &scheduledMonitor{id: 1, name: "m1"})
+	waitFor(t, time.Second, "task 1 in-flight", func() bool { return !r.tryAcquireInFlight(1) })
+
+	r.fire(context.Background(), &scheduledMonitor{id: 2, name: "m2"})
+	if !r.tryAcquireInFlight(2) {
+		t.Fatal("dropped task should release inFlight slot for id=2")
+	}
+	r.releaseInFlight(2)
+
+	close(block)
+	stoppedWithin(t, r, 3*time.Second)
+}
+
+// TestRunOne_DistributedLockContentionSkipsDuplicate 验证多 runner 竞争同一 monitor 锁时只有一方执行 RunCheck。
+func TestRunOne_DistributedLockContentionSkipsDuplicate(t *testing.T) {
+	block := make(chan struct{})
+	svc := &stubMonitorSvc{
+		runCalled:  make(chan int64, 4),
+		blockUntil: block,
+		locker:     newMonitorRunLockStub(),
+	}
+	r1 := newRunnerForTest(svc)
+	r2 := newRunnerForTest(svc)
+	r1.Start()
+	r2.Start()
+
+	task := &scheduledMonitor{id: 88, name: "m88"}
+	r1.fire(context.Background(), task)
+	select {
+	case <-svc.runCalled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("runner #1 did not start RunCheck")
+	}
+
+	r2.fire(context.Background(), task)
+	// r1 仍持有锁时，r2 应直接跳过，不会触发第二次 RunCheck。
+	time.Sleep(100 * time.Millisecond)
+	if got := svc.runCount.Load(); got != 1 {
+		t.Fatalf("expected only one RunCheck under lock contention, got %d", got)
+	}
+
+	close(block)
+	stoppedWithin(t, r1, 3*time.Second)
+	stoppedWithin(t, r2, 3*time.Second)
 }
 
 // stoppedWithin 在 timeout 内并行调用 Stop，超时则 Fatal。验证 Stop 不会阻塞。

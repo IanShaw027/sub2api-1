@@ -30,6 +30,12 @@ type monitorRunnerSvc interface {
 	RunCheck(ctx context.Context, id int64) ([]*CheckResult, error)
 }
 
+// monitorRunnerDistributedLocker 可选分布式锁能力：
+// 当 svc 实现该接口时，runner 会在 RunCheck 前尝试获取单 monitor 锁，竞争失败则跳过本轮。
+type monitorRunnerDistributedLocker interface {
+	AcquireChannelMonitorRunLock(ctx context.Context, monitorID int64) (release func(), acquired bool, err error)
+}
+
 // ChannelMonitorRunner 渠道监控调度器。
 //
 // 设计：
@@ -86,11 +92,12 @@ func newChannelMonitorRunner(svc monitorRunnerSvc, settingService *SettingServic
 	return &ChannelMonitorRunner{
 		svc:            svc,
 		settingService: settingService,
-		pool:           pond.NewPool(monitorWorkerConcurrency),
-		parentCtx:      ctx,
-		parentCancel:   cancel,
-		tasks:          make(map[int64]*scheduledMonitor),
-		inFlight:       make(map[int64]struct{}),
+		// queue=0: 不排队。worker 全忙时 TrySubmit 立即失败并丢弃本次检测（与 fire 注释一致）。
+		pool:         pond.NewPool(monitorWorkerConcurrency, pond.WithQueueSize(0)),
+		parentCtx:    ctx,
+		parentCancel: cancel,
+		tasks:        make(map[int64]*scheduledMonitor),
+		inFlight:     make(map[int64]struct{}),
 	}
 }
 
@@ -241,7 +248,7 @@ func (r *ChannelMonitorRunner) fire(ctx context.Context, task *scheduledMonitor)
 		return
 	}
 	if _, ok := r.pool.TrySubmit(func() {
-		r.runOne(task.id, task.name)
+		r.runOne(ctx, task.id, task.name)
 	}); !ok {
 		// 池满：丢弃本次检测，但必须释放已占用的 inFlight 槽，否则该 monitor 会被永久卡住。
 		r.releaseInFlight(task.id)
@@ -271,8 +278,23 @@ func (r *ChannelMonitorRunner) releaseInFlight(id int64) {
 
 // runOne 执行单个监控的检测。所有错误只记日志，不熔断。
 // 任务结束时（含 panic recover）必须释放 in-flight 槽。
-func (r *ChannelMonitorRunner) runOne(id int64, name string) {
-	ctx, cancel := context.WithTimeout(context.Background(), monitorRequestTimeout+monitorPingTimeout+monitorRunOneBuffer)
+func (r *ChannelMonitorRunner) runOne(parentCtx context.Context, id int64, name string) {
+	release, acquired, err := r.acquireDistributedRunLock(parentCtx, id)
+	if err != nil {
+		slog.Warn("channel_monitor: acquire distributed lock failed",
+			"monitor_id", id, "name", name, "error", err)
+		return
+	}
+	if !acquired {
+		slog.Debug("channel_monitor: distributed lock busy, skip run",
+			"monitor_id", id, "name", name)
+		return
+	}
+	if release != nil {
+		defer release()
+	}
+
+	ctx, cancel := context.WithTimeout(parentCtx, monitorRequestTimeout+monitorPingTimeout+monitorRunOneBuffer)
 	defer cancel()
 
 	defer r.releaseInFlight(id)
@@ -288,4 +310,12 @@ func (r *ChannelMonitorRunner) runOne(id int64, name string) {
 		slog.Warn("channel_monitor: run check failed",
 			"monitor_id", id, "name", name, "error", err)
 	}
+}
+
+func (r *ChannelMonitorRunner) acquireDistributedRunLock(ctx context.Context, monitorID int64) (func(), bool, error) {
+	locker, ok := r.svc.(monitorRunnerDistributedLocker)
+	if !ok {
+		return nil, true, nil
+	}
+	return locker.AcquireChannelMonitorRunLock(ctx, monitorID)
 }
