@@ -97,7 +97,7 @@ function buildAccount() {
 function mountModal() {
   return mount(AccountTestModal, {
     props: {
-      show: true,
+      show: false,
       account: buildAccount()
     },
     global: {
@@ -138,12 +138,14 @@ describe('AccountTestModal', () => {
   it('posts compact mode for OpenAI compact probe', async () => {
     const wrapper = mountModal()
 
+    await wrapper.setProps({ show: true })
     await flushPromises()
     ;(wrapper.vm as any).selectedModelId = 'gpt-5.4'
     ;(wrapper.vm as any).testMode = 'compact'
     await (wrapper.vm as any).startTest()
     await flushPromises()
 
+    expect(getAvailableModelsMock).toHaveBeenCalledTimes(1)
     expect(global.fetch).toHaveBeenCalledTimes(1)
     const [, options] = (global.fetch as any).mock.calls[0]
     expect(JSON.parse(options.body)).toMatchObject({
@@ -158,6 +160,7 @@ describe('AccountTestModal', () => {
     ])
     const wrapper = mountModal()
 
+    await wrapper.setProps({ show: true })
     await flushPromises()
     ;(wrapper.vm as any).selectedModelId = 'gpt-image-1'
     ;(wrapper.vm as any).testMode = 'compact'
@@ -171,7 +174,7 @@ describe('AccountTestModal', () => {
     expect(JSON.parse(options.body)).toMatchObject({
       model_id: 'gpt-image-1',
       prompt: 'draw a cat',
-      mode: 'compact',
+      mode: 'default',
       test_mode: 'web2api'
     })
   })

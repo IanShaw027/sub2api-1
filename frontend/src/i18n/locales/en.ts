@@ -3712,6 +3712,7 @@ export default {
         refreshTokenPlaceholderEdit: 'Paste a new refresh token or keep the current value',
         refreshTokenHintEdit: 'Replace this whenever the upstream login changes. The server cannot recover a missing refresh token later.',
         refreshTokenRequired: 'Kiro refresh token is required',
+        singleRefreshTokenOnly: 'Re-authorization accepts one Kiro refresh token at a time',
         failedToValidateRT: 'Failed to validate Kiro refresh token',
         validating: 'Validating...',
         validateAndCreate: 'Validate & Create',

@@ -274,7 +274,7 @@
             <Icon name="key" size="sm" class="text-cyan-500" />
             {{ t('admin.accounts.kiro.refreshTokenLabel') }}
             <span
-              v-if="parsedRefreshTokenCount > 1"
+              v-if="supportsBatchRefreshToken && parsedRefreshTokenCount > 1"
               class="rounded-full bg-cyan-500 px-2 py-0.5 text-xs text-white"
             >
               {{ t('admin.accounts.oauth.keysCount', { count: parsedRefreshTokenCount }) }}
@@ -284,9 +284,9 @@
             v-model="manualRefreshToken"
             rows="4"
             class="input w-full resize-y font-mono text-sm"
-            :placeholder="t('admin.accounts.kiro.refreshTokenPlaceholderBatch')"
+            :placeholder="refreshTokenPlaceholder"
           />
-          <p v-if="parsedRefreshTokenCount > 1" class="mt-1 text-xs text-cyan-600 dark:text-cyan-400">
+          <p v-if="supportsBatchRefreshToken && parsedRefreshTokenCount > 1" class="mt-1 text-xs text-cyan-600 dark:text-cyan-400">
             {{ t('admin.accounts.oauth.batchCreateAccounts', { count: parsedRefreshTokenCount }) }}
           </p>
         </div>
@@ -496,6 +496,12 @@ const submitRefreshTokenLabel = computed(() => (
     ? t('admin.accounts.reAuthorize')
     : t('admin.accounts.kiro.validateAndCreate')
 ))
+const supportsBatchRefreshToken = computed(() => props.mode !== 'reauth')
+const refreshTokenPlaceholder = computed(() => (
+  supportsBatchRefreshToken.value
+    ? t('admin.accounts.kiro.refreshTokenPlaceholderBatch')
+    : t('admin.accounts.kiro.refreshTokenPlaceholderEdit')
+))
 const parsedRefreshTokenCount = computed(() => (
   manualRefreshToken.value
     .split('\n')
@@ -561,6 +567,10 @@ const handleSubmitRefreshToken = () => {
 
   if (!manualRefreshToken.value.trim()) {
     localError.value = t('admin.accounts.kiro.refreshTokenRequired')
+    return
+  }
+  if (!supportsBatchRefreshToken.value && parsedRefreshTokenCount.value > 1) {
+    localError.value = t('admin.accounts.kiro.singleRefreshTokenOnly')
     return
   }
 

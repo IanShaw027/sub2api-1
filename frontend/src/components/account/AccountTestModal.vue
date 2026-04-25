@@ -414,7 +414,6 @@ watch(
       testPrompt.value = "";
       selectedOpenAIImageTestMode.value = defaultOpenAIImageTestMode;
       resetState();
-      await loadAvailableModels();
       testMode.value = "default";
       await loadAvailableModels();
     } else {
@@ -529,7 +528,10 @@ const startTest = async () => {
       body: JSON.stringify({
         model_id: selectedModelId.value,
         prompt: supportsImageTest.value ? testPrompt.value.trim() : "",
-        mode: isOpenAIAccount.value ? testMode.value : "default",
+        mode:
+          isOpenAIAccount.value
+            ? (supportsOpenAIImageTest.value ? "default" : testMode.value)
+            : undefined,
         test_mode: supportsOpenAIImageTest.value
           ? selectedOpenAIImageTestMode.value
           : undefined,

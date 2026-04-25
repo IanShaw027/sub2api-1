@@ -85,7 +85,7 @@ describe('KiroAuthorizationFlow', () => {
 
     await wrapper.get('input[value="refresh_token"]').setValue()
     await wrapper
-      .get('textarea[placeholder="admin.accounts.kiro.refreshTokenPlaceholderBatch"]')
+      .get('textarea[placeholder="admin.accounts.kiro.refreshTokenPlaceholderEdit"]')
       .setValue('rt-reauth')
     await wrapper
       .get('input[placeholder="admin.accounts.kiro.clientSecretPlaceholder"]')
@@ -106,5 +106,19 @@ describe('KiroAuthorizationFlow', () => {
       }
     ]])
     expect(wrapper.emitted('submit')).toBeUndefined()
+  })
+
+  it('rejects multiline manual refresh-token input during reauth', async () => {
+    const wrapper = mountComponent({ mode: 'reauth' })
+
+    await wrapper.get('input[value="refresh_token"]').setValue()
+    await wrapper
+      .get('textarea[placeholder="admin.accounts.kiro.refreshTokenPlaceholderEdit"]')
+      .setValue('rt-one\nrt-two')
+
+    await findButtonByText(wrapper, 'admin.accounts.reAuthorize').trigger('click')
+
+    expect(wrapper.text()).toContain('admin.accounts.kiro.singleRefreshTokenOnly')
+    expect(wrapper.emitted('submit-refresh-token')).toBeUndefined()
   })
 })

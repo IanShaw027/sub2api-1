@@ -90,6 +90,17 @@
         />
       </div>
 
+      <div v-if="isOpenAIAccount && !supportsOpenAIImageTest" class="space-y-1.5">
+        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+          {{ t('admin.accounts.openai.testMode') }}
+        </label>
+        <Select
+          v-model="testMode"
+          :options="openAITestModeOptions"
+          :disabled="status === 'connecting'"
+        />
+      </div>
+
       <!-- Terminal Output -->
       <div class="group relative">
         <div
@@ -336,6 +347,11 @@ const generatedImages = ref<PreviewImage[]>([]);
 const previewImageUrl = ref("");
 const defaultOpenAIImageTestMode = "codex";
 const selectedOpenAIImageTestMode = ref(defaultOpenAIImageTestMode);
+const testMode = ref<"default" | "compact">("default");
+const openAITestModeOptions = computed(() => [
+  { value: "default", label: t("admin.accounts.openai.testModeDefault") },
+  { value: "compact", label: t("admin.accounts.openai.testModeCompact") },
+]);
 const prioritizedGeminiModels = [
   "gemini-3.1-flash-image",
   "gemini-2.5-flash-image",
@@ -397,6 +413,7 @@ watch(
     if (newVal && props.account) {
       testPrompt.value = "";
       selectedOpenAIImageTestMode.value = defaultOpenAIImageTestMode;
+      testMode.value = "default";
       resetState();
       await loadAvailableModels();
     } else {
@@ -511,6 +528,10 @@ const startTest = async () => {
       body: JSON.stringify({
         model_id: selectedModelId.value,
         prompt: supportsImageTest.value ? testPrompt.value.trim() : "",
+        mode:
+          isOpenAIAccount.value
+            ? (supportsOpenAIImageTest.value ? "default" : testMode.value)
+            : undefined,
         test_mode: supportsOpenAIImageTest.value
           ? selectedOpenAIImageTestMode.value
           : undefined,

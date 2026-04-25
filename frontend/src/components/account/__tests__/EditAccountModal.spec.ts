@@ -206,17 +206,28 @@ describe('EditAccountModal', () => {
     })
   })
 
-  it('falls back to legacy related-model coverage when OpenAI or Anthropic accounts have no explicit whitelist', async () => {
+  it('preserves allow-all model access when OpenAI or Anthropic accounts have no explicit whitelist', async () => {
     const openAIAccount = buildAccount()
     openAIAccount.credentials = {
       api_key: 'sk-test',
       base_url: 'https://api.openai.com'
     }
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    getSettingsMock.mockReset()
+    getWebSearchEmulationConfigMock.mockReset()
+    listTlsFingerprintProfilesMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    getSettingsMock.mockResolvedValue({})
+    getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
+    listTlsFingerprintProfilesMock.mockResolvedValue([])
+    updateAccountMock.mockResolvedValue(openAIAccount)
 
     const openAIWrapper = mountModal(openAIAccount)
     await openAIWrapper.setProps({ show: true })
-    expect(openAIWrapper.get('[data-testid="model-whitelist-value"]').text()).toContain('gpt-4o')
-    expect(openAIWrapper.get('[data-testid="model-whitelist-value"]').text()).toContain('gpt-4o-mini')
+    expect(openAIWrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('')
+    await openAIWrapper.get('form#edit-account-form').trigger('submit.prevent')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('model_mapping')
 
     const anthropicWrapper = mountModal({
       ...buildAccount(),
@@ -229,8 +240,7 @@ describe('EditAccountModal', () => {
       }
     } as any)
     await anthropicWrapper.setProps({ show: true })
-    expect(anthropicWrapper.get('[data-testid="model-whitelist-value"]').text()).toContain('claude-sonnet-4')
-    expect(anthropicWrapper.get('[data-testid="model-whitelist-value"]').text()).toContain('claude-3-7-sonnet')
+    expect(anthropicWrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('')
   })
 
   it('removes Kiro runtime version overrides from extra while keeping account credentials', async () => {

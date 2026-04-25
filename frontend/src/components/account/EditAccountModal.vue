@@ -2190,7 +2190,6 @@ import {
 } from '@/utils/openaiWsMode'
 import {
   getPresetMappingsByPlatform,
-  getModelsByPlatform,
   commonErrorCodes,
   buildModelMappingObject,
   isValidWildcardPattern
@@ -2801,13 +2800,6 @@ watch(
   { immediate: true }
 )
 
-const getLegacyDefaultWhitelistModels = (platform?: string) => {
-  if (platform === 'openai' || platform === 'anthropic' || platform === 'claude') {
-    return [...getModelsByPlatform(platform)]
-  }
-  return []
-}
-
 const loadModelRestrictionFromCredentials = (platform: string, credentials?: Record<string, unknown>) => {
   const existingMappings = credentials?.model_mapping as Record<string, string> | undefined
   if (existingMappings && typeof existingMappings === 'object') {
@@ -2828,7 +2820,7 @@ const loadModelRestrictionFromCredentials = (platform: string, credentials?: Rec
 
   modelRestrictionMode.value = 'whitelist'
   modelMappings.value = []
-  allowedModels.value = getLegacyDefaultWhitelistModels(platform)
+  allowedModels.value = []
 }
 // Model mapping helpers
 const addModelMapping = () => {
