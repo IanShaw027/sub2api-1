@@ -79,6 +79,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 
 	setOpsRequestContext(c, reqModel, reqStream, body)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
+	h.emitGatewayDebugTimelineRequestReceived(c, "chat_completions", requestStart, apiKey, subject.UserID, reqModel, reqStream, len(body))
 
 	// 解析渠道级模型映射
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
@@ -92,7 +93,9 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 	routingStart := time.Now()
 
+	userSlotWaitStart := time.Now()
 	userReleaseFunc, acquired := h.acquireResponsesUserSlot(c, subject.UserID, subject.Concurrency, reqStream, &streamStarted, reqLog)
+	userSlotWaitMs := time.Since(userSlotWaitStart).Milliseconds()
 	if !acquired {
 		return
 	}
@@ -180,13 +183,16 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		account := selection.Account
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai_chat_completions.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
-		_ = scheduleDecision
 		setOpsSelectedAccount(c, account.ID, account.Platform)
+		h.emitGatewayDebugTimelineAccountSelected(c, "chat_completions", requestStart, apiKey, account, reqModel, reqStream, scheduleDecision, switchCount)
 
+		accountSlotWaitStart := time.Now()
 		accountReleaseFunc, acquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, reqStream, &streamStarted, reqLog)
+		accountSlotWaitMs := time.Since(accountSlotWaitStart).Milliseconds()
 		if !acquired {
 			return
 		}
+		h.emitGatewayDebugTimelineSlotAcquired(c, "chat_completions", requestStart, apiKey, account, reqModel, reqStream, userSlotWaitMs, accountSlotWaitMs)
 
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 		forwardStart := time.Now()
@@ -214,6 +220,25 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		if err != nil {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
+				h.emitOpenAIForwardLatencyAudit(c, openAIForwardLatencyAuditInput{
+					RouteComponent:     "handler.openai_gateway.chat_completions",
+					EndpointKind:       "chat_completions",
+					Outcome:            "failover",
+					RequestStart:       requestStart,
+					RoutingStart:       routingStart,
+					ForwardStart:       forwardStart,
+					UserSlotWaitMs:     userSlotWaitMs,
+					AccountSlotWaitMs:  accountSlotWaitMs,
+					ForwardDurationMs:  forwardDurationMs,
+					ScheduleDecision:   scheduleDecision,
+					Account:            account,
+					APIKey:             apiKey,
+					RequestedModel:     reqModel,
+					Stream:             reqStream,
+					SwitchCount:        switchCount,
+					UpstreamStatusCode: failoverErr.StatusCode,
+					Err:                err,
+				})
 				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
 				// Pool mode: retry on the same account
 				if failoverErr.RetryableOnSameAccount {
@@ -250,6 +275,24 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 				)
 				continue
 			}
+			h.emitOpenAIForwardLatencyAudit(c, openAIForwardLatencyAuditInput{
+				RouteComponent:    "handler.openai_gateway.chat_completions",
+				EndpointKind:      "chat_completions",
+				Outcome:           "error",
+				RequestStart:      requestStart,
+				RoutingStart:      routingStart,
+				ForwardStart:      forwardStart,
+				UserSlotWaitMs:    userSlotWaitMs,
+				AccountSlotWaitMs: accountSlotWaitMs,
+				ForwardDurationMs: forwardDurationMs,
+				ScheduleDecision:  scheduleDecision,
+				Account:           account,
+				APIKey:            apiKey,
+				RequestedModel:    reqModel,
+				Stream:            reqStream,
+				SwitchCount:       switchCount,
+				Err:               err,
+			})
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
 			wroteFallback := h.ensureForwardErrorResponse(c, streamStarted)
 			reqLog.Warn("openai_chat_completions.forward_failed",
@@ -264,6 +307,24 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		} else {
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, nil)
 		}
+		h.emitOpenAIForwardLatencyAudit(c, openAIForwardLatencyAuditInput{
+			RouteComponent:    "handler.openai_gateway.chat_completions",
+			EndpointKind:      "chat_completions",
+			Outcome:           "success",
+			RequestStart:      requestStart,
+			RoutingStart:      routingStart,
+			ForwardStart:      forwardStart,
+			UserSlotWaitMs:    userSlotWaitMs,
+			AccountSlotWaitMs: accountSlotWaitMs,
+			ForwardDurationMs: forwardDurationMs,
+			ScheduleDecision:  scheduleDecision,
+			Account:           account,
+			APIKey:            apiKey,
+			Result:            result,
+			RequestedModel:    reqModel,
+			Stream:            reqStream,
+			SwitchCount:       switchCount,
+		})
 
 		userAgent := c.GetHeader("User-Agent")
 		clientIP := ip.GetClientIP(c)

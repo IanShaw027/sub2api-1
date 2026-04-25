@@ -605,6 +605,8 @@ type GatewayConfig struct {
 	OpenAIPassthroughAllowTimeoutHeaders bool `mapstructure:"openai_passthrough_allow_timeout_headers"`
 	// OpenAIWS: OpenAI Responses WebSocket 配置（默认开启，可按需回滚到 HTTP）
 	OpenAIWS GatewayOpenAIWSConfig `mapstructure:"openai_ws"`
+	// DebugTimeline: 全平台请求链路调试时间线。默认关闭；开启后按天写独立 JSONL 文件。
+	DebugTimeline GatewayDebugTimelineConfig `mapstructure:"debug_timeline"`
 
 	// HTTP 上游连接池配置（性能优化：支持高并发场景调优）
 	// MaxIdleConns: 所有主机的最大空闲连接总数
@@ -803,6 +805,13 @@ type GatewayOpenAIWSConfig struct {
 	StickyPreviousResponseTTLSeconds int `mapstructure:"sticky_previous_response_ttl_seconds"`
 
 	SchedulerScoreWeights GatewayOpenAIWSSchedulerScoreWeights `mapstructure:"scheduler_score_weights"`
+}
+
+type GatewayDebugTimelineConfig struct {
+	Enabled       bool   `mapstructure:"enabled"`
+	Directory     string `mapstructure:"directory"`
+	RetentionDays int    `mapstructure:"retention_days"`
+	MaxSizeMB     int64  `mapstructure:"max_size_mb"`
 }
 
 // GatewayOpenAIWSSchedulerScoreWeights 账号调度打分权重。
@@ -1643,6 +1652,10 @@ func setDefaults() {
 	viper.SetDefault("gateway.max_account_switches_gemini", 3)
 	viper.SetDefault("gateway.force_codex_cli", false)
 	viper.SetDefault("gateway.openai_passthrough_allow_timeout_headers", false)
+	viper.SetDefault("gateway.debug_timeline.enabled", false)
+	viper.SetDefault("gateway.debug_timeline.directory", "logs/gateway-debug")
+	viper.SetDefault("gateway.debug_timeline.retention_days", 7)
+	viper.SetDefault("gateway.debug_timeline.max_size_mb", int64(1024))
 	// OpenAI Responses WebSocket（默认开启；可通过 force_http 紧急回滚）
 	viper.SetDefault("gateway.openai_ws.enabled", true)
 	viper.SetDefault("gateway.openai_ws.mode_router_v2_enabled", false)
@@ -2293,6 +2306,12 @@ func (c *Config) Validate() error {
 	if c.Gateway.StreamKeepaliveInterval != 0 &&
 		(c.Gateway.StreamKeepaliveInterval < 5 || c.Gateway.StreamKeepaliveInterval > 30) {
 		return fmt.Errorf("gateway.stream_keepalive_interval must be 0 or between 5-30 seconds")
+	}
+	if c.Gateway.DebugTimeline.RetentionDays < 0 {
+		return fmt.Errorf("gateway.debug_timeline.retention_days must be non-negative")
+	}
+	if c.Gateway.DebugTimeline.MaxSizeMB < 0 {
+		return fmt.Errorf("gateway.debug_timeline.max_size_mb must be non-negative")
 	}
 	// 兼容旧键 sticky_previous_response_ttl_seconds
 	if c.Gateway.OpenAIWS.StickyResponseIDTTLSeconds <= 0 && c.Gateway.OpenAIWS.StickyPreviousResponseTTLSeconds > 0 {

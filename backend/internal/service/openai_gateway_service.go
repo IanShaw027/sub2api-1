@@ -275,6 +275,12 @@ type OpenAIForwardResult struct {
 	// This is set by the Anthropic Messages conversion path where
 	// the mapped upstream model differs from the client-facing model.
 	BillingModel string
+	// TokenBillingModel overrides token cost calculation when an image request
+	// also produces response-side tokens billed against a different model.
+	TokenBillingModel string
+	// ImageUsageTokenBilling means image generation usage contains billable
+	// image API tokens; when true, image_count is used only as metadata.
+	ImageUsageTokenBilling bool
 	// UpstreamModel is the actual model sent to the upstream provider after mapping.
 	// Empty when no mapping was applied (requested model was used as-is).
 	UpstreamModel string
@@ -3094,6 +3100,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 
 		// Send request
+		SetOpsLatencyMs(c, OpsOpenAIForwardPrepareLatencyMsKey, time.Since(startTime).Milliseconds())
 		upstreamStart := time.Now()
 		resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
@@ -3470,6 +3477,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		c.Set("openai_passthrough", true)
 	}
 
+	SetOpsLatencyMs(c, OpsOpenAIForwardPrepareLatencyMsKey, time.Since(startTime).Milliseconds())
 	upstreamStart := time.Now()
 	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
@@ -5887,9 +5895,20 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 	serviceTier string,
 ) (*CostBreakdown, error) {
 	if result != nil && result.ImageCount > 0 {
-		return s.calculateOpenAIImageCost(ctx, billingModel, apiKey, result, multiplier), nil
+		return s.calculateOpenAIImageRequestCost(ctx, result, apiKey, billingModel, multiplier, tokens, serviceTier)
 	}
-	if s.resolver != nil && apiKey.Group != nil {
+	return s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier)
+}
+
+func (s *OpenAIGatewayService) calculateOpenAITokenUsageCost(
+	ctx context.Context,
+	apiKey *APIKey,
+	billingModel string,
+	multiplier float64,
+	tokens UsageTokens,
+	serviceTier string,
+) (*CostBreakdown, error) {
+	if s.resolver != nil && apiKey != nil && apiKey.Group != nil {
 		gid := apiKey.Group.ID
 		return s.billingService.CalculateCostUnified(CostInput{
 			Ctx:            ctx,
@@ -5903,6 +5922,69 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		})
 	}
 	return s.billingService.CalculateCostWithServiceTier(billingModel, tokens, multiplier, serviceTier)
+}
+
+func (s *OpenAIGatewayService) calculateOpenAIImageRequestCost(
+	ctx context.Context,
+	result *OpenAIForwardResult,
+	apiKey *APIKey,
+	billingModel string,
+	multiplier float64,
+	tokens UsageTokens,
+	serviceTier string,
+) (*CostBreakdown, error) {
+	hasTokens := usageTokensHaveBillableTokens(tokens)
+	tokenBillingModel := strings.TrimSpace(result.TokenBillingModel)
+	if tokenBillingModel == "" {
+		tokenBillingModel = billingModel
+	}
+
+	if result.ImageUsageTokenBilling && hasTokens {
+		cost, err := s.calculateOpenAITokenUsageCost(ctx, apiKey, tokenBillingModel, multiplier, tokens, serviceTier)
+		if cost != nil {
+			cost.BillingMode = string(BillingModeImage)
+		}
+		return cost, err
+	}
+
+	imageCost := s.calculateOpenAIImageCost(ctx, billingModel, apiKey, result, multiplier)
+	if !hasTokens {
+		return imageCost, nil
+	}
+
+	tokenCost, err := s.calculateOpenAITokenUsageCost(ctx, apiKey, tokenBillingModel, multiplier, tokens, serviceTier)
+	if err != nil {
+		logger.LegacyPrintf("service.openai_gateway", "Calculate image response token cost failed: %v", err)
+		return imageCost, nil
+	}
+	return mergeCostBreakdowns(string(BillingModeImage), tokenCost, imageCost), nil
+}
+
+func usageTokensHaveBillableTokens(tokens UsageTokens) bool {
+	return tokens.InputTokens > 0 ||
+		tokens.OutputTokens > 0 ||
+		tokens.CacheCreationTokens > 0 ||
+		tokens.CacheReadTokens > 0 ||
+		tokens.CacheCreation5mTokens > 0 ||
+		tokens.CacheCreation1hTokens > 0 ||
+		tokens.ImageOutputTokens > 0
+}
+
+func mergeCostBreakdowns(billingMode string, parts ...*CostBreakdown) *CostBreakdown {
+	out := &CostBreakdown{BillingMode: billingMode}
+	for _, part := range parts {
+		if part == nil {
+			continue
+		}
+		out.InputCost += part.InputCost
+		out.OutputCost += part.OutputCost
+		out.ImageOutputCost += part.ImageOutputCost
+		out.CacheCreationCost += part.CacheCreationCost
+		out.CacheReadCost += part.CacheReadCost
+		out.TotalCost += part.TotalCost
+		out.ActualCost += part.ActualCost
+	}
+	return out
 }
 
 func (s *OpenAIGatewayService) calculateOpenAIImageCost(
@@ -5919,7 +6001,7 @@ func (s *OpenAIGatewayService) calculateOpenAIImageCost(
 			Ctx:            ctx,
 			Model:          billingModel,
 			GroupID:        &gid,
-			RequestCount:   1,
+			RequestCount:   result.ImageCount,
 			SizeTier:       result.ImageSize,
 			RateMultiplier: multiplier,
 			Resolver:       s.resolver,

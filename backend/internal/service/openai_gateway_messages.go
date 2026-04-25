@@ -33,6 +33,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
 	startTime := time.Now()
+	clearOpenAICodexCompatContext(c)
 
 	// 1. Parse Anthropic request
 	var anthropicReq apicompat.AnthropicRequest
@@ -101,6 +102,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if err != nil {
 		return nil, fmt.Errorf("marshal responses request: %w", err)
 	}
+	probeRequestBody := append([]byte(nil), responsesBody...)
 
 	var oauthReqBody map[string]any
 	if account.Type == AccountTypeOAuth {
@@ -109,6 +111,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 			return nil, fmt.Errorf("unmarshal for codex transform: %w", err)
 		}
 		codexResult := applyCodexOAuthTransformWithInputMode(reqBody, false, false, codexTransformInputModePreservePrefix)
+		if c != nil {
+			c.Set(openAICodexTransformObsKey, codexResult.Observability)
+		}
 		forcedTemplateText := ""
 		if s.cfg != nil {
 			forcedTemplateText = s.cfg.Gateway.ForcedCodexInstructionsTemplate
@@ -200,7 +205,10 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	httpCodexCompatRetryTried := false
 	var resp *http.Response
 	for {
+		SetOpsLatencyMs(c, OpsOpenAIForwardPrepareLatencyMsKey, time.Since(startTime).Milliseconds())
+		upstreamStart := time.Now()
 		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if err != nil {
 			safeErr := sanitizeUpstreamErrorMessage(err.Error())
 			setOpsUpstreamError(c, 0, safeErr, "")
@@ -234,6 +242,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 						return nil, fmt.Errorf("remarshal messages compat fallback body: %w", remarshalErr)
 					}
 					httpCodexCompatRetryTried = true
+					if c != nil {
+						c.Set(openAICodexTransformObsKey, codexResult.Observability)
+					}
 					if codexResult.NormalizedModel != "" {
 						upstreamModel = codexResult.NormalizedModel
 					}
@@ -308,6 +319,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 			re := responsesReq.Reasoning.Effort
 			result.ReasoningEffort = &re
 		}
+	}
+	if handleErr == nil && result != nil {
+		emitOpenAICacheProbeEvent(ctx, c, account, probeRequestBody, responsesBody, result, promptCacheKey, false)
 	}
 
 	// Extract and save Codex usage snapshot from response headers (for OAuth accounts)

@@ -111,6 +111,7 @@ func NewGatewayHandler(
 // Messages handles Claude API compatible messages endpoint
 // POST /v1/messages
 func (h *GatewayHandler) Messages(c *gin.Context) {
+	requestStart := time.Now()
 	// 从context获取apiKey和user（ApiKeyAuth中间件已设置）
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
 	if !ok {
@@ -183,6 +184,13 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 	setOpsRequestContext(c, reqModel, reqStream, body)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
+	timelinePlatform := ""
+	if forcePlatform, ok := middleware2.GetForcePlatformFromContext(c); ok {
+		timelinePlatform = forcePlatform
+	} else if apiKey.Group != nil {
+		timelinePlatform = apiKey.Group.Platform
+	}
+	h.emitGatewayDebugTimelineRequestReceived(c, timelinePlatform, "messages", requestStart, apiKey, subject.UserID, reqModel, reqStream, len(body))
 
 	// 验证 model 必填
 	if reqModel == "" {
@@ -224,7 +232,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	}()
 
 	// 1. 首先获取用户并发槽位
+	userSlotWaitStart := time.Now()
 	userReleaseFunc, err := h.concurrencyHelper.AcquireUserSlotWithWait(c, subject.UserID, subject.Concurrency, reqStream, &streamStarted)
+	userSlotWaitMs := time.Since(userSlotWaitStart).Milliseconds()
 	if err != nil {
 		reqLog.Warn("gateway.user_slot_acquire_failed", zap.Error(err))
 		h.handleConcurrencyError(c, err, "user", streamStarted)
@@ -333,6 +343,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			}
 			account := selection.Account
 			setOpsSelectedAccount(c, account.ID, account.Platform)
+			h.emitGatewayDebugTimelineAccountSelected(c, platform, "messages", requestStart, apiKey, account, reqModel, reqStream, fs.SwitchCount)
 
 			// 检查请求拦截（预热请求、SUGGESTION MODE等）
 			if account.IsInterceptWarmupEnabled() {
@@ -352,6 +363,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 			// 3. 获取账号并发槽位
 			accountReleaseFunc := selection.ReleaseFunc
+			accountSlotWaitMs := int64(0)
 			if !selection.Acquired {
 				if selection.WaitPlan == nil {
 					reqLog.Warn("gateway.select_account_no_slot_no_wait_plan",
@@ -384,6 +396,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					}
 				}
 
+				accountSlotWaitStart := time.Now()
 				accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
 					c,
 					account.ID,
@@ -392,6 +405,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					reqStream,
 					&streamStarted,
 				)
+				accountSlotWaitMs = time.Since(accountSlotWaitStart).Milliseconds()
 				if err != nil {
 					reqLog.Warn("gateway.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 					releaseWait()
@@ -406,9 +420,11 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			}
 			// 账号槽位/等待计数需要在超时或断开时安全回收
 			accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
+			h.emitGatewayDebugTimelineSlotAcquired(c, platform, "messages", requestStart, apiKey, account, reqModel, reqStream, userSlotWaitMs, accountSlotWaitMs)
 
 			// 转发请求 - 根据账号平台分流
 			var result *service.ForwardResult
+			forwardStart := time.Now()
 			requestCtx := c.Request.Context()
 			if fs.SwitchCount > 0 {
 				requestCtx = service.WithAccountSwitchCount(requestCtx, fs.SwitchCount, h.metadataBridgeEnabled())
@@ -420,12 +436,14 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			} else {
 				result, err = h.geminiCompatService.Forward(requestCtx, c, account, body)
 			}
+			forwardDurationMs := time.Since(forwardStart).Milliseconds()
 			if accountReleaseFunc != nil {
 				accountReleaseFunc()
 			}
 			if err != nil {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
+					h.emitGatewayDebugTimelineAttemptFinished(c, platform, "messages", "failover", requestStart, apiKey, account, reqModel, reqStream, fs.SwitchCount, forwardDurationMs, result, err)
 					// 流式内容已写入客户端，无法撤销，禁止 failover 以防止流拼接腐化
 					if c.Writer.Size() != writerSizeBeforeForward {
 						h.handleFailoverExhausted(c, failoverErr, service.PlatformGemini, true)
@@ -442,6 +460,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						return
 					}
 				}
+				h.emitGatewayDebugTimelineAttemptFinished(c, platform, "messages", "error", requestStart, apiKey, account, reqModel, reqStream, fs.SwitchCount, forwardDurationMs, result, err)
 				wroteFallback := h.ensureForwardErrorResponse(c, streamStarted)
 				forwardFailedFields := []zap.Field{
 					zap.Int64("account_id", account.ID),
@@ -463,6 +482,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				reqLog.Error("gateway.forward_failed", forwardFailedFields...)
 				return
 			}
+			h.emitGatewayDebugTimelineAttemptFinished(c, platform, "messages", "success", requestStart, apiKey, account, reqModel, reqStream, fs.SwitchCount, forwardDurationMs, result, nil)
 
 			// RPM 计数递增（Forward 成功后）
 			// 注意：TOCTOU 竞态是已知且可接受的设计权衡，与 WindowCost 一致的 soft-limit 模式。
@@ -569,6 +589,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			}
 			account := selection.Account
 			setOpsSelectedAccount(c, account.ID, account.Platform)
+			h.emitGatewayDebugTimelineAccountSelected(c, platform, "messages", requestStart, currentAPIKey, account, reqModel, reqStream, fs.SwitchCount)
 
 			// 检查请求拦截（预热请求、SUGGESTION MODE等）
 			if account.IsInterceptWarmupEnabled() {
@@ -588,6 +609,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 			// 3. 获取账号并发槽位
 			accountReleaseFunc := selection.ReleaseFunc
+			accountSlotWaitMs := int64(0)
 			if !selection.Acquired {
 				if selection.WaitPlan == nil {
 					reqLog.Warn("gateway.select_account_no_slot_no_wait_plan",
@@ -620,6 +642,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					}
 				}
 
+				accountSlotWaitStart := time.Now()
 				accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
 					c,
 					account.ID,
@@ -628,6 +651,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					reqStream,
 					&streamStarted,
 				)
+				accountSlotWaitMs = time.Since(accountSlotWaitStart).Milliseconds()
 				if err != nil {
 					reqLog.Warn("gateway.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 					releaseWait()
@@ -642,6 +666,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			}
 			// 账号槽位/等待计数需要在超时或断开时安全回收
 			accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
+			h.emitGatewayDebugTimelineSlotAcquired(c, platform, "messages", requestStart, currentAPIKey, account, reqModel, reqStream, userSlotWaitMs, accountSlotWaitMs)
 
 			// ===== 用户消息串行队列 START =====
 			var queueRelease func()
@@ -705,6 +730,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// 转发请求 - 根据账号平台分流
 			c.Set("parsed_request", parsedReq)
 			var result *service.ForwardResult
+			forwardStart := time.Now()
 			requestCtx := c.Request.Context()
 			if fs.SwitchCount > 0 {
 				requestCtx = service.WithAccountSwitchCount(requestCtx, fs.SwitchCount, h.metadataBridgeEnabled())
@@ -716,6 +742,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			} else {
 				result, err = h.gatewayService.Forward(requestCtx, c, account, parsedReq)
 			}
+			forwardDurationMs := time.Since(forwardStart).Milliseconds()
 
 			// 兜底释放串行锁（正常情况已通过回调提前释放）
 			if queueRelease != nil {
@@ -783,6 +810,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
+					h.emitGatewayDebugTimelineAttemptFinished(c, platform, "messages", "failover", requestStart, currentAPIKey, account, reqModel, reqStream, fs.SwitchCount, forwardDurationMs, result, err)
 					// 流式内容已写入客户端，无法撤销，禁止 failover 以防止流拼接腐化
 					if c.Writer.Size() != writerSizeBeforeForward {
 						h.handleFailoverExhausted(c, failoverErr, account.Platform, true)
@@ -799,6 +827,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						return
 					}
 				}
+				h.emitGatewayDebugTimelineAttemptFinished(c, platform, "messages", "error", requestStart, currentAPIKey, account, reqModel, reqStream, fs.SwitchCount, forwardDurationMs, result, err)
 				wroteFallback := h.ensureForwardErrorResponse(c, streamStarted)
 				forwardFailedFields := []zap.Field{
 					zap.Int64("account_id", account.ID),
@@ -820,6 +849,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				reqLog.Error("gateway.forward_failed", forwardFailedFields...)
 				return
 			}
+			h.emitGatewayDebugTimelineAttemptFinished(c, platform, "messages", "success", requestStart, currentAPIKey, account, reqModel, reqStream, fs.SwitchCount, forwardDurationMs, result, nil)
 
 			// RPM 计数递增（Forward 成功后）
 			// 注意：TOCTOU 竞态是已知且可接受的设计权衡，与 WindowCost 一致的 soft-limit 模式。
@@ -1811,6 +1841,105 @@ func (h *GatewayHandler) submitUsageRecordTask(task service.UsageRecordTask) {
 		}
 	}()
 	task(ctx)
+}
+
+func (h *GatewayHandler) emitGatewayDebugTimelineRequestReceived(c *gin.Context, platform, endpointKind string, requestStart time.Time, apiKey *service.APIKey, userID int64, requestedModel string, stream bool, bodyBytes int) {
+	if c == nil || !service.GatewayDebugTimelineEnabled(h.cfg) {
+		return
+	}
+	fields := gatewayDebugTimelineFields(apiKey, nil)
+	fields["component"] = "gateway_debug_timeline"
+	fields["platform"] = strings.TrimSpace(platform)
+	fields["endpoint_kind"] = strings.TrimSpace(endpointKind)
+	fields["user_id"] = userID
+	fields["requested_model"] = strings.TrimSpace(requestedModel)
+	fields["stream"] = stream
+	fields["request_body_bytes"] = bodyBytes
+	fields["request_start_unix_ms"] = requestStart.UnixMilli()
+	fields["request_elapsed_ms"] = time.Since(requestStart).Milliseconds()
+	fields["inbound_endpoint"] = GetInboundEndpoint(c)
+	service.WriteGatewayDebugTimelineEvent(h.cfg, c, "request_received", fields)
+}
+
+func (h *GatewayHandler) emitGatewayDebugTimelineAccountSelected(c *gin.Context, platform, endpointKind string, requestStart time.Time, apiKey *service.APIKey, account *service.Account, requestedModel string, stream bool, switchCount int) {
+	if c == nil || !service.GatewayDebugTimelineEnabled(h.cfg) {
+		return
+	}
+	fields := gatewayDebugTimelineFields(apiKey, account)
+	fields["component"] = "gateway_debug_timeline"
+	fields["platform"] = strings.TrimSpace(platform)
+	fields["endpoint_kind"] = strings.TrimSpace(endpointKind)
+	fields["requested_model"] = strings.TrimSpace(requestedModel)
+	fields["stream"] = stream
+	fields["switch_count_before_attempt"] = switchCount
+	fields["request_elapsed_ms"] = time.Since(requestStart).Milliseconds()
+	service.WriteGatewayDebugTimelineEvent(h.cfg, c, "account_selected", fields)
+}
+
+func (h *GatewayHandler) emitGatewayDebugTimelineSlotAcquired(c *gin.Context, platform, endpointKind string, requestStart time.Time, apiKey *service.APIKey, account *service.Account, requestedModel string, stream bool, userSlotWaitMs int64, accountSlotWaitMs int64) {
+	if c == nil || !service.GatewayDebugTimelineEnabled(h.cfg) {
+		return
+	}
+	fields := gatewayDebugTimelineFields(apiKey, account)
+	fields["component"] = "gateway_debug_timeline"
+	fields["platform"] = strings.TrimSpace(platform)
+	fields["endpoint_kind"] = strings.TrimSpace(endpointKind)
+	fields["requested_model"] = strings.TrimSpace(requestedModel)
+	fields["stream"] = stream
+	fields["user_slot_wait_ms"] = userSlotWaitMs
+	fields["account_slot_wait_ms"] = accountSlotWaitMs
+	fields["request_elapsed_ms"] = time.Since(requestStart).Milliseconds()
+	service.WriteGatewayDebugTimelineEvent(h.cfg, c, "concurrency_slots_acquired", fields)
+}
+
+func (h *GatewayHandler) emitGatewayDebugTimelineAttemptFinished(c *gin.Context, platform, endpointKind, outcome string, requestStart time.Time, apiKey *service.APIKey, account *service.Account, requestedModel string, stream bool, switchCount int, forwardDurationMs int64, result *service.ForwardResult, err error) {
+	if c == nil || !service.GatewayDebugTimelineEnabled(h.cfg) {
+		return
+	}
+	fields := gatewayDebugTimelineFields(apiKey, account)
+	fields["component"] = "gateway_debug_timeline"
+	fields["platform"] = strings.TrimSpace(platform)
+	fields["endpoint_kind"] = strings.TrimSpace(endpointKind)
+	fields["outcome"] = strings.TrimSpace(outcome)
+	fields["requested_model"] = strings.TrimSpace(requestedModel)
+	fields["stream"] = stream
+	fields["switch_count_before_attempt"] = switchCount
+	fields["forward_duration_ms"] = forwardDurationMs
+	fields["request_elapsed_ms"] = time.Since(requestStart).Milliseconds()
+	if result != nil {
+		fields["upstream_request_id"] = strings.TrimSpace(result.RequestID)
+		fields["upstream_model"] = strings.TrimSpace(result.UpstreamModel)
+		fields["duration_ms"] = result.Duration.Milliseconds()
+		if result.FirstTokenMs != nil {
+			fields["first_forwardable_event_ms"] = *result.FirstTokenMs
+		}
+		fields["usage_input_tokens"] = result.Usage.InputTokens
+		fields["usage_cache_read_tokens"] = result.Usage.CacheReadInputTokens
+		fields["usage_output_tokens"] = result.Usage.OutputTokens
+	}
+	if err != nil {
+		fields["error"] = trimLogField(err.Error(), 512)
+	}
+	service.WriteGatewayDebugTimelineEvent(h.cfg, c, "attempt_finished", fields)
+}
+
+func gatewayDebugTimelineFields(apiKey *service.APIKey, account *service.Account) map[string]any {
+	fields := make(map[string]any, 12)
+	if apiKey != nil {
+		fields["api_key_id"] = apiKey.ID
+		if apiKey.GroupID != nil {
+			fields["group_id"] = *apiKey.GroupID
+		}
+	}
+	if account != nil {
+		fields["account_id"] = account.ID
+		fields["account_name"] = strings.TrimSpace(account.Name)
+		fields["account_type"] = strings.TrimSpace(string(account.Type))
+		fields["account_platform"] = strings.TrimSpace(account.Platform)
+		fields["account_concurrency"] = account.Concurrency
+		fields["upstream_endpoint"] = GetUpstreamEndpoint(nil, account.Platform)
+	}
+	return fields
 }
 
 // getUserMsgQueueMode 获取当前请求的 UMQ 模式

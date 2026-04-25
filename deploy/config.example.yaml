@@ -231,6 +231,27 @@ gateway:
   # OpenAI 透传模式是否放行客户端超时头（如 x-stainless-timeout）
   # 默认 false：过滤超时头，降低上游提前断流风险。
   openai_passthrough_allow_timeout_headers: false
+  # Gateway request timeline debug logs for all providers. Disabled by default.
+  # 全平台网关请求链路时间线调试日志，默认关闭。
+  #
+  # When enabled, writes JSONL files to:
+  # 启用后写入 JSONL 文件：
+  #   logs/gateway-debug/gateway-timeline-YYYY-MM-DD.log
+  #
+  # It records request received, account selected, concurrency slot acquired,
+  # upstream response header / first forwardable event / completion timings when
+  # the corresponding provider path emits those stages.
+  # 会记录请求接收、账号选择、并发槽位、上游响应头、首个可转发事件、完整结束耗时；
+  # 具体阶段取决于对应平台链路是否已埋点。
+  #
+  # Keep this disabled in normal production traffic. If max_size_mb is reached,
+  # timeline logging stops automatically until the service is restarted or files are cleaned.
+  # 正常生产流量建议关闭。达到 max_size_mb 后会自动停止写入，直到重启或清理文件。
+  debug_timeline:
+    enabled: false
+    directory: "logs/gateway-debug"
+    retention_days: 7
+    max_size_mb: 1024
   # OpenAI Responses WebSocket 配置（默认开启，可按需回滚到 HTTP）
   openai_ws:
     # 新版 WS mode 路由（默认关闭）。关闭时保持当前 legacy 实现行为。

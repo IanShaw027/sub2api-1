@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -207,6 +208,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 
 	setOpsRequestContext(c, reqModel, reqStream, body)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
+	h.emitGatewayDebugTimelineRequestReceived(c, "responses", requestStart, apiKey, subject.UserID, reqModel, reqStream, len(body))
 
 	// 解析渠道级模型映射
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
@@ -227,7 +229,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 	routingStart := time.Now()
 
+	userSlotWaitStart := time.Now()
 	userReleaseFunc, acquired := h.acquireResponsesUserSlot(c, subject.UserID, subject.Concurrency, reqStream, &streamStarted, reqLog)
+	userSlotWaitMs := time.Since(userSlotWaitStart).Milliseconds()
 	if !acquired {
 		return
 	}
@@ -310,11 +314,15 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		setOpsSelectedAccount(c, account.ID, account.Platform)
+		h.emitGatewayDebugTimelineAccountSelected(c, "responses", requestStart, apiKey, account, reqModel, reqStream, scheduleDecision, switchCount)
 
+		accountSlotWaitStart := time.Now()
 		accountReleaseFunc, acquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, reqStream, &streamStarted, reqLog)
+		accountSlotWaitMs := time.Since(accountSlotWaitStart).Milliseconds()
 		if !acquired {
 			return
 		}
+		h.emitGatewayDebugTimelineSlotAcquired(c, "responses", requestStart, apiKey, account, reqModel, reqStream, userSlotWaitMs, accountSlotWaitMs)
 
 		// Forward request
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
@@ -341,6 +349,25 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		if err != nil {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
+				h.emitOpenAIForwardLatencyAudit(c, openAIForwardLatencyAuditInput{
+					RouteComponent:     "handler.openai_gateway.responses",
+					EndpointKind:       "responses",
+					Outcome:            "failover",
+					RequestStart:       requestStart,
+					RoutingStart:       routingStart,
+					ForwardStart:       forwardStart,
+					UserSlotWaitMs:     userSlotWaitMs,
+					AccountSlotWaitMs:  accountSlotWaitMs,
+					ForwardDurationMs:  forwardDurationMs,
+					ScheduleDecision:   scheduleDecision,
+					Account:            account,
+					APIKey:             apiKey,
+					RequestedModel:     reqModel,
+					Stream:             reqStream,
+					SwitchCount:        switchCount,
+					UpstreamStatusCode: failoverErr.StatusCode,
+					Err:                err,
+				})
 				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
 				// 池模式：同账号重试
 				if failoverErr.RetryableOnSameAccount {
@@ -377,6 +404,24 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				)
 				continue
 			}
+			h.emitOpenAIForwardLatencyAudit(c, openAIForwardLatencyAuditInput{
+				RouteComponent:    "handler.openai_gateway.responses",
+				EndpointKind:      "responses",
+				Outcome:           "error",
+				RequestStart:      requestStart,
+				RoutingStart:      routingStart,
+				ForwardStart:      forwardStart,
+				UserSlotWaitMs:    userSlotWaitMs,
+				AccountSlotWaitMs: accountSlotWaitMs,
+				ForwardDurationMs: forwardDurationMs,
+				ScheduleDecision:  scheduleDecision,
+				Account:           account,
+				APIKey:            apiKey,
+				RequestedModel:    reqModel,
+				Stream:            reqStream,
+				SwitchCount:       switchCount,
+				Err:               err,
+			})
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
 			wroteFallback := h.ensureForwardErrorResponse(c, streamStarted)
 			fields := []zap.Field{
@@ -399,6 +444,24 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		} else {
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, nil)
 		}
+		h.emitOpenAIForwardLatencyAudit(c, openAIForwardLatencyAuditInput{
+			RouteComponent:    "handler.openai_gateway.responses",
+			EndpointKind:      "responses",
+			Outcome:           "success",
+			RequestStart:      requestStart,
+			RoutingStart:      routingStart,
+			ForwardStart:      forwardStart,
+			UserSlotWaitMs:    userSlotWaitMs,
+			AccountSlotWaitMs: accountSlotWaitMs,
+			ForwardDurationMs: forwardDurationMs,
+			ScheduleDecision:  scheduleDecision,
+			Account:           account,
+			APIKey:            apiKey,
+			Result:            result,
+			RequestedModel:    reqModel,
+			Stream:            reqStream,
+			SwitchCount:       switchCount,
+		})
 
 		// 捕获请求信息（用于异步记录，避免在 goroutine 中访问 gin.Context）
 		userAgent := c.GetHeader("User-Agent")
@@ -594,6 +657,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 
 	setOpsRequestContext(c, reqModel, reqStream, body)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
+	h.emitGatewayDebugTimelineRequestReceived(c, "messages", requestStart, apiKey, subject.UserID, reqModel, reqStream, len(body))
 
 	// 解析渠道级模型映射
 	channelMappingMsg, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
@@ -608,7 +672,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 	routingStart := time.Now()
 
+	userSlotWaitStart := time.Now()
 	userReleaseFunc, acquired := h.acquireResponsesUserSlot(c, subject.UserID, subject.Concurrency, reqStream, &streamStarted, reqLog)
+	userSlotWaitMs := time.Since(userSlotWaitStart).Milliseconds()
 	if !acquired {
 		return
 	}
@@ -693,13 +759,16 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		account := selection.Account
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai_messages.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
-		_ = scheduleDecision
 		setOpsSelectedAccount(c, account.ID, account.Platform)
+		h.emitGatewayDebugTimelineAccountSelected(c, "messages", requestStart, apiKey, account, reqModel, reqStream, scheduleDecision, switchCount)
 
+		accountSlotWaitStart := time.Now()
 		accountReleaseFunc, acquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, reqStream, &streamStarted, reqLog)
+		accountSlotWaitMs := time.Since(accountSlotWaitStart).Milliseconds()
 		if !acquired {
 			return
 		}
+		h.emitGatewayDebugTimelineSlotAcquired(c, "messages", requestStart, apiKey, account, reqModel, reqStream, userSlotWaitMs, accountSlotWaitMs)
 
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 		forwardStart := time.Now()
@@ -730,6 +799,25 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		if err != nil {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
+				h.emitOpenAIForwardLatencyAudit(c, openAIForwardLatencyAuditInput{
+					RouteComponent:     "handler.openai_gateway.messages",
+					EndpointKind:       "messages",
+					Outcome:            "failover",
+					RequestStart:       requestStart,
+					RoutingStart:       routingStart,
+					ForwardStart:       forwardStart,
+					UserSlotWaitMs:     userSlotWaitMs,
+					AccountSlotWaitMs:  accountSlotWaitMs,
+					ForwardDurationMs:  forwardDurationMs,
+					ScheduleDecision:   scheduleDecision,
+					Account:            account,
+					APIKey:             apiKey,
+					RequestedModel:     reqModel,
+					Stream:             reqStream,
+					SwitchCount:        switchCount,
+					UpstreamStatusCode: failoverErr.StatusCode,
+					Err:                err,
+				})
 				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
 				// 池模式：同账号重试
 				if failoverErr.RetryableOnSameAccount {
@@ -766,6 +854,24 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 				)
 				continue
 			}
+			h.emitOpenAIForwardLatencyAudit(c, openAIForwardLatencyAuditInput{
+				RouteComponent:    "handler.openai_gateway.messages",
+				EndpointKind:      "messages",
+				Outcome:           "error",
+				RequestStart:      requestStart,
+				RoutingStart:      routingStart,
+				ForwardStart:      forwardStart,
+				UserSlotWaitMs:    userSlotWaitMs,
+				AccountSlotWaitMs: accountSlotWaitMs,
+				ForwardDurationMs: forwardDurationMs,
+				ScheduleDecision:  scheduleDecision,
+				Account:           account,
+				APIKey:            apiKey,
+				RequestedModel:    reqModel,
+				Stream:            reqStream,
+				SwitchCount:       switchCount,
+				Err:               err,
+			})
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
 			wroteFallback := h.ensureAnthropicErrorResponse(c, streamStarted)
 			reqLog.Warn("openai_messages.forward_failed",
@@ -780,6 +886,24 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		} else {
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, nil)
 		}
+		h.emitOpenAIForwardLatencyAudit(c, openAIForwardLatencyAuditInput{
+			RouteComponent:    "handler.openai_gateway.messages",
+			EndpointKind:      "messages",
+			Outcome:           "success",
+			RequestStart:      requestStart,
+			RoutingStart:      routingStart,
+			ForwardStart:      forwardStart,
+			UserSlotWaitMs:    userSlotWaitMs,
+			AccountSlotWaitMs: accountSlotWaitMs,
+			ForwardDurationMs: forwardDurationMs,
+			ScheduleDecision:  scheduleDecision,
+			Account:           account,
+			APIKey:            apiKey,
+			Result:            result,
+			RequestedModel:    reqModel,
+			Stream:            reqStream,
+			SwitchCount:       switchCount,
+		})
 
 		userAgent := c.GetHeader("User-Agent")
 		clientIP := ip.GetClientIP(c)
@@ -1046,6 +1170,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 // ResponsesWebSocket handles OpenAI Responses API WebSocket ingress endpoint
 // GET /openai/v1/responses (Upgrade: websocket)
 func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
+	requestStart := time.Now()
 	if !isOpenAIWSUpgradeRequest(c.Request) {
 		h.errorResponse(c, http.StatusUpgradeRequired, "invalid_request_error", "WebSocket upgrade required (Upgrade: websocket)")
 		return
@@ -1077,6 +1202,16 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	reqLog.Info("openai.websocket_ingress_started")
 	clientIP := ip.GetClientIP(c)
 	userAgent := strings.TrimSpace(c.GetHeader("User-Agent"))
+	service.WriteGatewayDebugTimelineEvent(h.cfg, c, "ws_ingress_started", map[string]any{
+		"component":             "gateway_debug_timeline",
+		"endpoint_kind":         "responses_ws",
+		"api_key_id":            apiKey.ID,
+		"group_id":              optionalGroupIDForDebug(apiKey),
+		"user_id":               subject.UserID,
+		"openai_ws_mode":        true,
+		"request_start_unix_ms": requestStart.UnixMilli(),
+		"request_elapsed_ms":    time.Since(requestStart).Milliseconds(),
+	})
 
 	wsConn, err := coderws.Accept(c.Writer, c.Request, &coderws.AcceptOptions{
 		CompressionMode: coderws.CompressionContextTakeover,
@@ -1142,6 +1277,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	)
 	setOpsRequestContext(c, reqModel, true, firstMessage)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeWSV2))
+	h.emitGatewayDebugTimelineRequestReceived(c, "responses_ws", requestStart, apiKey, subject.UserID, reqModel, true, len(firstMessage))
 
 	// 解析渠道级模型映射
 	channelMappingWS, _ := h.gatewayService.ResolveChannelMappingAndRestrict(ctx, apiKey.GroupID, reqModel)
@@ -1161,7 +1297,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	// 必须尽早注册，确保任何 early return 都能释放已获取的并发槽位。
 	defer releaseTurnSlots()
 
+	userSlotWaitStart := time.Now()
 	userReleaseFunc, userAcquired, err := h.concurrencyHelper.TryAcquireUserSlot(ctx, subject.UserID, subject.Concurrency)
+	userSlotWaitMs := time.Since(userSlotWaitStart).Milliseconds()
 	if err != nil {
 		reqLog.Warn("openai.websocket_user_slot_acquire_failed", zap.Error(err))
 		closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to acquire user concurrency slot")
@@ -1206,21 +1344,25 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	}
 
 	account := selection.Account
+	h.emitGatewayDebugTimelineAccountSelected(c, "responses_ws", requestStart, apiKey, account, reqModel, true, scheduleDecision, 0)
 	accountMaxConcurrency := account.Concurrency
 	if selection.WaitPlan != nil && selection.WaitPlan.MaxConcurrency > 0 {
 		accountMaxConcurrency = selection.WaitPlan.MaxConcurrency
 	}
 	accountReleaseFunc := selection.ReleaseFunc
+	accountSlotWaitMs := int64(0)
 	if !selection.Acquired {
 		if selection.WaitPlan == nil {
 			closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "account is busy, please retry later")
 			return
 		}
+		accountSlotWaitStart := time.Now()
 		fastReleaseFunc, fastAcquired, err := h.concurrencyHelper.TryAcquireAccountSlot(
 			ctx,
 			account.ID,
 			selection.WaitPlan.MaxConcurrency,
 		)
+		accountSlotWaitMs = time.Since(accountSlotWaitStart).Milliseconds()
 		if err != nil {
 			reqLog.Warn("openai.websocket_account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 			closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to acquire account concurrency slot")
@@ -1233,6 +1375,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		accountReleaseFunc = fastReleaseFunc
 	}
 	currentAccountRelease = wrapReleaseOnDone(ctx, accountReleaseFunc)
+	h.emitGatewayDebugTimelineSlotAcquired(c, "responses_ws", requestStart, apiKey, account, reqModel, true, userSlotWaitMs, accountSlotWaitMs)
 	if err := h.gatewayService.BindStickySession(ctx, apiKey.GroupID, sessionHash, account.ID); err != nil {
 		reqLog.Warn("openai.websocket_bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 	}
@@ -1285,6 +1428,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		},
 		AfterTurn: func(turn int, result *service.OpenAIForwardResult, turnErr error) {
 			releaseTurnSlots()
+			h.emitGatewayDebugTimelineWSTurnFinished(c, requestStart, apiKey, account, reqModel, turn, result, turnErr)
 			if turnErr != nil || result == nil {
 				return
 			}
@@ -1326,6 +1470,17 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	}
 
 	if err := h.gatewayService.ProxyResponsesWebSocketFromClient(ctx, c, wsConn, account, token, wsFirstMessage, hooks); err != nil {
+		service.WriteGatewayDebugTimelineEvent(h.cfg, c, "ws_ingress_failed", map[string]any{
+			"component":          "gateway_debug_timeline",
+			"endpoint_kind":      "responses_ws",
+			"api_key_id":         apiKey.ID,
+			"group_id":           optionalGroupIDForDebug(apiKey),
+			"account_id":         account.ID,
+			"account_name":       strings.TrimSpace(account.Name),
+			"requested_model":    strings.TrimSpace(reqModel),
+			"request_elapsed_ms": time.Since(requestStart).Milliseconds(),
+			"error":              trimLogField(err.Error(), 512),
+		})
 		h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
 		closeStatus, closeReason := summarizeWSCloseErrorForLog(err)
 		reqLog.Warn("openai.websocket_proxy_failed",
@@ -1343,6 +1498,16 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		return
 	}
 	reqLog.Info("openai.websocket_ingress_closed", zap.Int64("account_id", account.ID))
+	service.WriteGatewayDebugTimelineEvent(h.cfg, c, "ws_ingress_closed", map[string]any{
+		"component":          "gateway_debug_timeline",
+		"endpoint_kind":      "responses_ws",
+		"api_key_id":         apiKey.ID,
+		"group_id":           optionalGroupIDForDebug(apiKey),
+		"account_id":         account.ID,
+		"account_name":       strings.TrimSpace(account.Name),
+		"requested_model":    strings.TrimSpace(reqModel),
+		"request_elapsed_ms": time.Since(requestStart).Milliseconds(),
+	})
 }
 
 func (h *OpenAIGatewayHandler) recoverResponsesPanic(c *gin.Context, streamStarted *bool) {
@@ -1424,6 +1589,315 @@ func (h *OpenAIGatewayHandler) missingResponsesDependencies() []string {
 		missing = append(missing, "concurrencyHelper")
 	}
 	return missing
+}
+
+type openAIForwardLatencyAuditInput struct {
+	RouteComponent     string
+	EndpointKind       string
+	Outcome            string
+	RequestStart       time.Time
+	RoutingStart       time.Time
+	ForwardStart       time.Time
+	UserSlotWaitMs     int64
+	AccountSlotWaitMs  int64
+	ForwardDurationMs  int64
+	ScheduleDecision   service.OpenAIAccountScheduleDecision
+	Account            *service.Account
+	APIKey             *service.APIKey
+	Result             *service.OpenAIForwardResult
+	RequestedModel     string
+	Stream             bool
+	SwitchCount        int
+	UpstreamStatusCode int
+	UpstreamRequestID  string
+	Err                error
+}
+
+func (h *OpenAIGatewayHandler) emitGatewayDebugTimelineRequestReceived(c *gin.Context, endpointKind string, requestStart time.Time, apiKey *service.APIKey, userID int64, requestedModel string, stream bool, bodyBytes int) {
+	if c == nil || !service.GatewayDebugTimelineEnabled(h.cfg) {
+		return
+	}
+	apiKeyID := int64(0)
+	var groupID any
+	if apiKey != nil {
+		apiKeyID = apiKey.ID
+		if apiKey.GroupID != nil {
+			groupID = *apiKey.GroupID
+		}
+	}
+	service.WriteGatewayDebugTimelineEvent(h.cfg, c, "request_received", map[string]any{
+		"component":             "gateway_debug_timeline",
+		"endpoint_kind":         strings.TrimSpace(endpointKind),
+		"api_key_id":            apiKeyID,
+		"group_id":              groupID,
+		"user_id":               userID,
+		"requested_model":       strings.TrimSpace(requestedModel),
+		"stream":                stream,
+		"request_body_bytes":    bodyBytes,
+		"request_start_unix_ms": requestStart.UnixMilli(),
+		"request_elapsed_ms":    time.Since(requestStart).Milliseconds(),
+		"inbound_endpoint":      GetInboundEndpoint(c),
+		"request_user_agent":    strings.TrimSpace(c.GetHeader("User-Agent")),
+	})
+}
+
+func (h *OpenAIGatewayHandler) emitGatewayDebugTimelineAccountSelected(c *gin.Context, endpointKind string, requestStart time.Time, apiKey *service.APIKey, account *service.Account, requestedModel string, stream bool, decision service.OpenAIAccountScheduleDecision, switchCount int) {
+	if c == nil || !service.GatewayDebugTimelineEnabled(h.cfg) {
+		return
+	}
+	fields := openAIGatewayTimelineAccountFields(apiKey, account)
+	fields["component"] = "gateway_debug_timeline"
+	fields["endpoint_kind"] = strings.TrimSpace(endpointKind)
+	fields["requested_model"] = strings.TrimSpace(requestedModel)
+	fields["stream"] = stream
+	fields["scheduler_layer"] = strings.TrimSpace(decision.Layer)
+	fields["scheduler_sticky_previous_hit"] = decision.StickyPreviousHit
+	fields["scheduler_sticky_session_hit"] = decision.StickySessionHit
+	fields["scheduler_candidate_count"] = decision.CandidateCount
+	fields["scheduler_top_k"] = decision.TopK
+	fields["scheduler_latency_ms"] = decision.LatencyMs
+	fields["scheduler_load_skew"] = decision.LoadSkew
+	fields["switch_count_before_attempt"] = switchCount
+	fields["request_elapsed_ms"] = time.Since(requestStart).Milliseconds()
+	service.WriteGatewayDebugTimelineEvent(h.cfg, c, "account_selected", fields)
+}
+
+func (h *OpenAIGatewayHandler) emitGatewayDebugTimelineSlotAcquired(c *gin.Context, endpointKind string, requestStart time.Time, apiKey *service.APIKey, account *service.Account, requestedModel string, stream bool, userSlotWaitMs int64, accountSlotWaitMs int64) {
+	if c == nil || !service.GatewayDebugTimelineEnabled(h.cfg) {
+		return
+	}
+	fields := openAIGatewayTimelineAccountFields(apiKey, account)
+	fields["component"] = "gateway_debug_timeline"
+	fields["endpoint_kind"] = strings.TrimSpace(endpointKind)
+	fields["requested_model"] = strings.TrimSpace(requestedModel)
+	fields["stream"] = stream
+	fields["user_slot_wait_ms"] = userSlotWaitMs
+	fields["account_slot_wait_ms"] = accountSlotWaitMs
+	fields["request_elapsed_ms"] = time.Since(requestStart).Milliseconds()
+	service.WriteGatewayDebugTimelineEvent(h.cfg, c, "concurrency_slots_acquired", fields)
+}
+
+func openAIGatewayTimelineAccountFields(apiKey *service.APIKey, account *service.Account) map[string]any {
+	fields := make(map[string]any, 12)
+	if apiKey != nil {
+		fields["api_key_id"] = apiKey.ID
+		if apiKey.GroupID != nil {
+			fields["group_id"] = *apiKey.GroupID
+		}
+	}
+	if account != nil {
+		fields["account_id"] = account.ID
+		fields["account_name"] = strings.TrimSpace(account.Name)
+		fields["account_type"] = strings.TrimSpace(string(account.Type))
+		fields["account_platform"] = strings.TrimSpace(account.Platform)
+		fields["account_concurrency"] = account.Concurrency
+		fields["upstream_endpoint"] = GetUpstreamEndpoint(nil, account.Platform)
+	}
+	return fields
+}
+
+func optionalGroupIDForDebug(apiKey *service.APIKey) any {
+	if apiKey == nil || apiKey.GroupID == nil {
+		return nil
+	}
+	return *apiKey.GroupID
+}
+
+func (h *OpenAIGatewayHandler) emitGatewayDebugTimelineWSTurnFinished(c *gin.Context, requestStart time.Time, apiKey *service.APIKey, account *service.Account, requestedModel string, turn int, result *service.OpenAIForwardResult, turnErr error) {
+	if c == nil || !service.GatewayDebugTimelineEnabled(h.cfg) {
+		return
+	}
+	fields := openAIGatewayTimelineAccountFields(apiKey, account)
+	fields["component"] = "gateway_debug_timeline"
+	fields["endpoint_kind"] = "responses_ws"
+	fields["requested_model"] = strings.TrimSpace(requestedModel)
+	fields["openai_ws_mode"] = true
+	fields["turn"] = turn
+	fields["request_elapsed_ms"] = time.Since(requestStart).Milliseconds()
+	if result != nil {
+		fields["outcome"] = "success"
+		fields["upstream_request_id"] = strings.TrimSpace(result.RequestID)
+		fields["upstream_model"] = strings.TrimSpace(result.UpstreamModel)
+		fields["duration_ms"] = result.Duration.Milliseconds()
+		if result.FirstTokenMs != nil {
+			fields["first_forwardable_event_ms"] = *result.FirstTokenMs
+		}
+		fields["usage_input_tokens"] = result.Usage.InputTokens
+		fields["usage_cache_read_tokens"] = result.Usage.CacheReadInputTokens
+		fields["usage_output_tokens"] = result.Usage.OutputTokens
+	} else {
+		fields["outcome"] = "error"
+	}
+	if turnErr != nil {
+		fields["outcome"] = "error"
+		fields["error"] = trimLogField(turnErr.Error(), 512)
+	}
+	service.WriteGatewayDebugTimelineEvent(h.cfg, c, "ws_turn_finished", fields)
+}
+
+func (h *OpenAIGatewayHandler) emitOpenAIForwardLatencyAudit(c *gin.Context, input openAIForwardLatencyAuditInput) {
+	if c == nil || !service.GatewayDebugTimelineEnabled(h.cfg) {
+		return
+	}
+	requestID := ""
+	clientRequestID := ""
+	if c.Request != nil {
+		requestID, _ = c.Request.Context().Value(ctxkey.RequestID).(string)
+		clientRequestID, _ = c.Request.Context().Value(ctxkey.ClientRequestID).(string)
+	}
+	if requestID == "" && c.Writer != nil {
+		requestID = strings.TrimSpace(c.Writer.Header().Get("X-Request-Id"))
+	}
+	if clientRequestID == "" {
+		clientRequestID = strings.TrimSpace(c.GetHeader("X-Client-Request-Id"))
+	}
+
+	authLatencyMs, hasAuthLatency := getContextInt64(c, service.OpsAuthLatencyMsKey)
+	routingLatencyMs, hasRoutingLatency := getContextInt64(c, service.OpsRoutingLatencyMsKey)
+	prepareLatencyMs, hasPrepareLatency := getContextInt64(c, service.OpsOpenAIForwardPrepareLatencyMsKey)
+	upstreamHeaderLatencyMs, hasUpstreamLatency := getContextInt64(c, service.OpsUpstreamLatencyMsKey)
+	responseLatencyMs, hasResponseLatency := getContextInt64(c, service.OpsResponseLatencyMsKey)
+	ttftLatencyMs, hasTTFTLatency := getContextInt64(c, service.OpsTimeToFirstTokenMsKey)
+	if input.Result != nil && input.Result.FirstTokenMs != nil {
+		ttftLatencyMs = int64(*input.Result.FirstTokenMs)
+		hasTTFTLatency = true
+	}
+
+	var gatewayAfterHeaderMs any
+	if hasPrepareLatency && hasUpstreamLatency {
+		v := input.ForwardDurationMs - prepareLatencyMs - upstreamHeaderLatencyMs
+		if v < 0 {
+			v = 0
+		}
+		gatewayAfterHeaderMs = v
+	}
+	var upstreamHeaderToFirstEventMs any
+	if hasPrepareLatency && hasUpstreamLatency && hasTTFTLatency {
+		v := ttftLatencyMs - prepareLatencyMs - upstreamHeaderLatencyMs
+		if v < 0 {
+			v = 0
+		}
+		upstreamHeaderToFirstEventMs = v
+	}
+	var postFirstEventMs any
+	if hasTTFTLatency {
+		v := input.ForwardDurationMs - ttftLatencyMs
+		if v < 0 {
+			v = 0
+		}
+		postFirstEventMs = v
+	}
+
+	accountID := int64(0)
+	accountName := ""
+	accountType := ""
+	accountPlatform := ""
+	accountConcurrency := int64(0)
+	if input.Account != nil {
+		accountID = input.Account.ID
+		accountName = strings.TrimSpace(input.Account.Name)
+		accountType = strings.TrimSpace(string(input.Account.Type))
+		accountPlatform = strings.TrimSpace(input.Account.Platform)
+		accountConcurrency = int64(input.Account.Concurrency)
+	}
+	apiKeyID := int64(0)
+	var groupID any
+	if input.APIKey != nil {
+		apiKeyID = input.APIKey.ID
+		if input.APIKey.GroupID != nil {
+			groupID = *input.APIKey.GroupID
+		}
+	}
+	upstreamModel := ""
+	upstreamRequestID := strings.TrimSpace(input.UpstreamRequestID)
+	openAIWSMode := false
+	if input.Result != nil {
+		upstreamModel = strings.TrimSpace(input.Result.UpstreamModel)
+		if upstreamRequestID == "" {
+			upstreamRequestID = strings.TrimSpace(input.Result.RequestID)
+		}
+		openAIWSMode = input.Result.OpenAIWSMode
+	}
+	if upstreamRequestID == "" && c.Writer != nil {
+		upstreamRequestID = strings.TrimSpace(c.Writer.Header().Get("x-request-id"))
+	}
+
+	errText := ""
+	if input.Err != nil {
+		errText = trimLogField(input.Err.Error(), 512)
+	}
+	requestPath := ""
+	if c.Request != nil && c.Request.URL != nil {
+		requestPath = strings.TrimSpace(c.Request.URL.Path)
+	}
+
+	fields := map[string]any{
+		"component":                         "gateway_debug_timeline",
+		"route_component":                   strings.TrimSpace(input.RouteComponent),
+		"endpoint_kind":                     strings.TrimSpace(input.EndpointKind),
+		"outcome":                           strings.TrimSpace(input.Outcome),
+		"request_id":                        strings.TrimSpace(requestID),
+		"client_request_id":                 strings.TrimSpace(clientRequestID),
+		"upstream_request_id":               upstreamRequestID,
+		"api_key_id":                        apiKeyID,
+		"group_id":                          groupID,
+		"account_id":                        accountID,
+		"account_name":                      accountName,
+		"account_type":                      accountType,
+		"account_platform":                  accountPlatform,
+		"account_concurrency":               accountConcurrency,
+		"request_path":                      requestPath,
+		"inbound_endpoint":                  GetInboundEndpoint(c),
+		"upstream_endpoint":                 GetUpstreamEndpoint(c, accountPlatform),
+		"request_user_agent":                strings.TrimSpace(c.GetHeader("User-Agent")),
+		"requested_model":                   strings.TrimSpace(input.RequestedModel),
+		"upstream_model":                    upstreamModel,
+		"stream":                            input.Stream,
+		"openai_ws_mode":                    openAIWSMode,
+		"scheduler_layer":                   strings.TrimSpace(input.ScheduleDecision.Layer),
+		"scheduler_sticky_previous_hit":     input.ScheduleDecision.StickyPreviousHit,
+		"scheduler_sticky_session_hit":      input.ScheduleDecision.StickySessionHit,
+		"scheduler_candidate_count":         input.ScheduleDecision.CandidateCount,
+		"scheduler_top_k":                   input.ScheduleDecision.TopK,
+		"scheduler_latency_ms":              input.ScheduleDecision.LatencyMs,
+		"scheduler_load_skew":               input.ScheduleDecision.LoadSkew,
+		"switch_count_before_attempt":       input.SwitchCount,
+		"auth_latency_ms":                   latencyValue(authLatencyMs, hasAuthLatency),
+		"routing_latency_ms":                latencyValue(routingLatencyMs, hasRoutingLatency),
+		"user_slot_wait_ms":                 input.UserSlotWaitMs,
+		"account_slot_wait_ms":              input.AccountSlotWaitMs,
+		"openai_forward_prepare_ms":         latencyValue(prepareLatencyMs, hasPrepareLatency),
+		"upstream_response_header_ms":       latencyValue(upstreamHeaderLatencyMs, hasUpstreamLatency),
+		"first_forwardable_event_ms":        latencyValue(ttftLatencyMs, hasTTFTLatency),
+		"upstream_header_to_first_event_ms": upstreamHeaderToFirstEventMs,
+		"gateway_after_header_ms":           gatewayAfterHeaderMs,
+		"post_first_event_ms":               postFirstEventMs,
+		"handler_response_latency_ms":       latencyValue(responseLatencyMs, hasResponseLatency),
+		"forward_duration_ms":               input.ForwardDurationMs,
+		"request_total_elapsed_ms":          time.Since(input.RequestStart).Milliseconds(),
+		"request_start_unix_ms":             input.RequestStart.UnixMilli(),
+		"routing_start_unix_ms":             input.RoutingStart.UnixMilli(),
+		"forward_start_unix_ms":             input.ForwardStart.UnixMilli(),
+		"audit_unix_ms":                     time.Now().UnixMilli(),
+		"upstream_status_code":              input.UpstreamStatusCode,
+		"error":                             errText,
+	}
+	service.WriteGatewayDebugTimelineEvent(h.cfg, c, "attempt_finished", fields)
+}
+
+func latencyValue(v int64, ok bool) any {
+	if !ok {
+		return nil
+	}
+	return v
+}
+
+func trimLogField(v string, maxLen int) string {
+	v = strings.TrimSpace(v)
+	if maxLen <= 0 || len(v) <= maxLen {
+		return v
+	}
+	return v[:maxLen]
 }
 
 func getContextInt64(c *gin.Context, key string) (int64, bool) {

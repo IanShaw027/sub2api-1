@@ -2664,7 +2664,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     kiroAuthRegion.value = kiroCredentials?.auth_region || ''
     kiroAPIRegion.value = kiroCredentials?.api_region || ''
     kiroMachineID.value = kiroCredentials?.machine_id || ''
-    loadModelRestrictionFromCredentials(newAccount.platform, kiroCredentials)
+    loadModelRestrictionFromCredentials(kiroCredentials)
   } else {
     kiroAuthMethod.value = 'social'
     kiroRefreshToken.value = ''
@@ -2697,7 +2697,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     editBaseUrl.value = (credentials.base_url as string) || platformDefaultUrl
 
     // Load model mappings and detect mode
-    loadModelRestrictionFromCredentials(newAccount.platform, credentials)
+    loadModelRestrictionFromCredentials(credentials)
 
     // Load pool mode
     poolModeEnabled.value = credentials.pool_mode === true
@@ -2741,7 +2741,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     loadQuotaNotifyFromExtra(bedrockExtra)
 
     // Load model mappings for bedrock
-    loadModelRestrictionFromCredentials(newAccount.platform, bedrockCreds)
+    loadModelRestrictionFromCredentials(bedrockCreds)
   } else if (newAccount.type === 'upstream' && newAccount.credentials) {
     const credentials = newAccount.credentials as Record<string, unknown>
     editBaseUrl.value = (credentials.base_url as string) || ''
@@ -2763,7 +2763,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     // Load model mappings for OpenAI OAuth accounts
     if (newAccount.platform === 'openai' && newAccount.credentials) {
       const oauthCredentials = newAccount.credentials as Record<string, unknown>
-      loadModelRestrictionFromCredentials(newAccount.platform, oauthCredentials)
+      loadModelRestrictionFromCredentials(oauthCredentials)
     } else {
       modelRestrictionMode.value = 'whitelist'
       modelMappings.value = []
@@ -2800,7 +2800,7 @@ watch(
   { immediate: true }
 )
 
-const loadModelRestrictionFromCredentials = (platform: string, credentials?: Record<string, unknown>) => {
+const loadModelRestrictionFromCredentials = (credentials?: Record<string, unknown>) => {
   const existingMappings = credentials?.model_mapping as Record<string, string> | undefined
   if (existingMappings && typeof existingMappings === 'object') {
     const entries = Object.entries(existingMappings)

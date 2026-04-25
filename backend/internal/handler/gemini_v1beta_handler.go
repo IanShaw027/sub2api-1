@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
@@ -133,6 +134,7 @@ func (h *GatewayHandler) GeminiV1BetaGetModel(c *gin.Context) {
 // POST /v1beta/models/{model}:generateContent
 // POST /v1beta/models/{model}:streamGenerateContent?alt=sse
 func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
+	requestStart := time.Now()
 	apiKey, ok := middleware.GetAPIKeyFromContext(c)
 	if !ok || apiKey == nil {
 		googleError(c, http.StatusUnauthorized, "Invalid API key")
@@ -184,6 +186,11 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 
 	setOpsRequestContext(c, modelName, stream, body)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(stream, false)))
+	timelinePlatform := service.PlatformGemini
+	if forcePlatform, ok := middleware.GetForcePlatformFromContext(c); ok && strings.TrimSpace(forcePlatform) != "" {
+		timelinePlatform = forcePlatform
+	}
+	h.emitGatewayDebugTimelineRequestReceived(c, timelinePlatform, "gemini_v1beta_models", requestStart, apiKey, authSubject.UserID, modelName, stream, len(body))
 
 	// 解析渠道级模型映射
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, modelName)
@@ -223,7 +230,9 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	if h.errorPassthroughService != nil {
 		service.BindErrorPassthroughService(c, h.errorPassthroughService)
 	}
+	userSlotWaitStart := time.Now()
 	userReleaseFunc, err := geminiConcurrency.AcquireUserSlotWithWait(c, authSubject.UserID, authSubject.Concurrency, stream, &streamStarted)
+	userSlotWaitMs := time.Since(userSlotWaitStart).Milliseconds()
 	if err != nil {
 		reqLog.Warn("gemini.user_slot_acquire_failed", zap.Error(err))
 		googleError(c, http.StatusTooManyRequests, err.Error())
@@ -385,6 +394,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		}
 		account := selection.Account
 		setOpsSelectedAccount(c, account.ID, account.Platform)
+		h.emitGatewayDebugTimelineAccountSelected(c, account.Platform, "gemini_v1beta_models", requestStart, apiKey, account, reqModel, stream, fs.SwitchCount)
 
 		// 检测账号切换：如果粘性会话绑定的账号与当前选择的账号不同，清除 thoughtSignature
 		// 注意：Gemini 原生 API 的 thoughtSignature 与具体上游账号强相关；跨账号透传会导致 400。
@@ -412,6 +422,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 
 		// 4) account concurrency slot
 		accountReleaseFunc := selection.ReleaseFunc
+		accountSlotWaitMs := int64(0)
 		if !selection.Acquired {
 			if selection.WaitPlan == nil {
 				googleError(c, http.StatusServiceUnavailable, "No available Gemini accounts")
@@ -438,6 +449,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 				}
 			}()
 
+			accountSlotWaitStart := time.Now()
 			accountReleaseFunc, err = geminiConcurrency.AcquireAccountSlotWithWaitTimeout(
 				c,
 				account.ID,
@@ -446,6 +458,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 				stream,
 				&streamStarted,
 			)
+			accountSlotWaitMs = time.Since(accountSlotWaitStart).Milliseconds()
 			if err != nil {
 				reqLog.Warn("gemini.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 				googleError(c, http.StatusTooManyRequests, err.Error())
@@ -461,9 +474,11 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		}
 		// 账号槽位/等待计数需要在超时或断开时安全回收
 		accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
+		h.emitGatewayDebugTimelineSlotAcquired(c, account.Platform, "gemini_v1beta_models", requestStart, apiKey, account, reqModel, stream, userSlotWaitMs, accountSlotWaitMs)
 
 		// 5) forward (根据平台分流)
 		var result *service.ForwardResult
+		forwardStart := time.Now()
 		requestCtx := c.Request.Context()
 		if fs.SwitchCount > 0 {
 			requestCtx = service.WithAccountSwitchCount(requestCtx, fs.SwitchCount, h.metadataBridgeEnabled())
@@ -473,12 +488,14 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		} else {
 			result, err = h.geminiCompatService.ForwardNative(requestCtx, c, account, modelName, action, stream, body)
 		}
+		forwardDurationMs := time.Since(forwardStart).Milliseconds()
 		if accountReleaseFunc != nil {
 			accountReleaseFunc()
 		}
 		if err != nil {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
+				h.emitGatewayDebugTimelineAttemptFinished(c, account.Platform, "gemini_v1beta_models", "failover", requestStart, apiKey, account, reqModel, stream, fs.SwitchCount, forwardDurationMs, result, err)
 				failoverAction := fs.HandleFailoverError(c.Request.Context(), h.gatewayService, account.ID, account.Platform, failoverErr)
 				switch failoverAction {
 				case FailoverContinue:
@@ -490,10 +507,12 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 					return
 				}
 			}
+			h.emitGatewayDebugTimelineAttemptFinished(c, account.Platform, "gemini_v1beta_models", "error", requestStart, apiKey, account, reqModel, stream, fs.SwitchCount, forwardDurationMs, result, err)
 			// ForwardNative already wrote the response
 			reqLog.Error("gemini.forward_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 			return
 		}
+		h.emitGatewayDebugTimelineAttemptFinished(c, account.Platform, "gemini_v1beta_models", "success", requestStart, apiKey, account, reqModel, stream, fs.SwitchCount, forwardDurationMs, result, nil)
 
 		// 捕获请求信息（用于异步记录，避免在 goroutine 中访问 gin.Context）
 		userAgent := c.GetHeader("User-Agent")

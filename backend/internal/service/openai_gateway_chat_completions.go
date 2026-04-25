@@ -215,7 +215,10 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	httpCodexCompatRetryTried := false
 	var resp *http.Response
 	for {
+		SetOpsLatencyMs(c, OpsOpenAIForwardPrepareLatencyMsKey, time.Since(startTime).Milliseconds())
+		upstreamStart := time.Now()
 		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if err != nil {
 			safeErr := sanitizeUpstreamErrorMessage(err.Error())
 			setOpsUpstreamError(c, 0, safeErr, "")

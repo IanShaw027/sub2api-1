@@ -80,6 +80,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 
 	setOpsRequestContext(c, reqModel, reqStream, body)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
+	h.emitGatewayDebugTimelineRequestReceived(c, service.PlatformAnthropic, "responses", requestStart, apiKey, subject.UserID, reqModel, reqStream, len(body))
 
 	// 解析渠道级模型映射
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
@@ -124,7 +125,9 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		}
 	}()
 
+	userSlotWaitStart := time.Now()
 	userReleaseFunc, err := h.concurrencyHelper.AcquireUserSlotWithWait(c, subject.UserID, subject.Concurrency, reqStream, &streamStarted)
+	userSlotWaitMs := time.Since(userSlotWaitStart).Milliseconds()
 	if err != nil {
 		reqLog.Warn("gateway.responses.user_slot_acquire_failed", zap.Error(err))
 		h.handleConcurrencyError(c, err, "user", streamStarted)
@@ -189,14 +192,17 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		}
 		account := selection.Account
 		setOpsSelectedAccount(c, account.ID, account.Platform)
+		h.emitGatewayDebugTimelineAccountSelected(c, account.Platform, "responses", requestStart, apiKey, account, reqModel, reqStream, fs.SwitchCount)
 
 		// 4. Acquire account concurrency slot
 		accountReleaseFunc := selection.ReleaseFunc
+		accountSlotWaitMs := int64(0)
 		if !selection.Acquired {
 			if selection.WaitPlan == nil {
 				h.responsesErrorResponse(c, http.StatusServiceUnavailable, "api_error", "No available accounts")
 				return
 			}
+			accountSlotWaitStart := time.Now()
 			accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
 				c,
 				account.ID,
@@ -205,6 +211,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 				reqStream,
 				&streamStarted,
 			)
+			accountSlotWaitMs = time.Since(accountSlotWaitStart).Milliseconds()
 			if err != nil {
 				reqLog.Warn("gateway.responses.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 				h.handleConcurrencyError(c, err, "account", streamStarted)
@@ -212,6 +219,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 			}
 		}
 		accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
+		h.emitGatewayDebugTimelineSlotAcquired(c, account.Platform, "responses", requestStart, apiKey, account, reqModel, reqStream, userSlotWaitMs, accountSlotWaitMs)
 
 		// 5. Forward request
 		writerSizeBeforeForward := c.Writer.Size()
@@ -219,7 +227,9 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		if channelMapping.Mapped {
 			forwardBody = h.gatewayService.ReplaceModelInBody(body, channelMapping.MappedModel)
 		}
+		forwardStart := time.Now()
 		result, err := h.gatewayService.ForwardAsResponses(c.Request.Context(), c, account, forwardBody, parsedReq)
+		forwardDurationMs := time.Since(forwardStart).Milliseconds()
 
 		if accountReleaseFunc != nil {
 			accountReleaseFunc()
@@ -228,6 +238,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		if err != nil {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
+				h.emitGatewayDebugTimelineAttemptFinished(c, account.Platform, "responses", "failover", requestStart, apiKey, account, reqModel, reqStream, fs.SwitchCount, forwardDurationMs, result, err)
 				// Can't failover if streaming content already sent
 				if c.Writer.Size() != writerSizeBeforeForward {
 					h.handleResponsesFailoverExhausted(c, failoverErr, true)
@@ -244,6 +255,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 					return
 				}
 			}
+			h.emitGatewayDebugTimelineAttemptFinished(c, account.Platform, "responses", "error", requestStart, apiKey, account, reqModel, reqStream, fs.SwitchCount, forwardDurationMs, result, err)
 			h.ensureForwardErrorResponse(c, streamStarted)
 			reqLog.Error("gateway.responses.forward_failed",
 				zap.Int64("account_id", account.ID),
@@ -251,6 +263,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 			)
 			return
 		}
+		h.emitGatewayDebugTimelineAttemptFinished(c, account.Platform, "responses", "success", requestStart, apiKey, account, reqModel, reqStream, fs.SwitchCount, forwardDurationMs, result, nil)
 
 		// 6. Record usage
 		userAgent := c.GetHeader("User-Agent")

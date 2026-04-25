@@ -660,16 +660,17 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 		}
 	}
 	return &OpenAIForwardResult{
-		RequestID:       resp.Header.Get("x-request-id"),
-		Usage:           usage,
-		Model:           requestModel,
-		UpstreamModel:   upstreamModel,
-		Stream:          parsed.Stream,
-		ResponseHeaders: resp.Header.Clone(),
-		Duration:        time.Since(startTime),
-		FirstTokenMs:    firstTokenMs,
-		ImageCount:      imageCount,
-		ImageSize:       parsed.SizeTier,
+		RequestID:              resp.Header.Get("x-request-id"),
+		Usage:                  usage,
+		Model:                  requestModel,
+		UpstreamModel:          upstreamModel,
+		Stream:                 parsed.Stream,
+		ResponseHeaders:        resp.Header.Clone(),
+		Duration:               time.Since(startTime),
+		FirstTokenMs:           firstTokenMs,
+		ImageCount:             imageCount,
+		ImageSize:              parsed.SizeTier,
+		ImageUsageTokenBilling: true,
 	}, nil
 }
 

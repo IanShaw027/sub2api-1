@@ -27,6 +27,9 @@ const (
 	OpsUpstreamLatencyMsKey  = "ops_upstream_latency_ms"
 	OpsResponseLatencyMsKey  = "ops_response_latency_ms"
 	OpsTimeToFirstTokenMsKey = "ops_time_to_first_token_ms"
+	// Time spent inside the OpenAI gateway before the upstream HTTP request is
+	// sent, including request normalization, token lookup, and request build.
+	OpsOpenAIForwardPrepareLatencyMsKey = "ops_openai_forward_prepare_latency_ms"
 	// OpenAI WS 关键观测字段
 	OpsOpenAIWSQueueWaitMsKey = "ops_openai_ws_queue_wait_ms"
 	OpsOpenAIWSConnPickMsKey  = "ops_openai_ws_conn_pick_ms"
