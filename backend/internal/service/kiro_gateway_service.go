@@ -23,6 +23,7 @@ import (
 const (
 	kiroPreludeSize = 12
 	kiroMinMsgSize  = kiroPreludeSize + 4
+	kiroMaxBodySize = 16 << 20
 )
 
 type KiroGatewayService struct {
@@ -49,27 +50,8 @@ func NewKiroGatewayService(
 }
 
 func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest) (*ForwardResult, error) {
-	if account == nil || parsed == nil {
-		return nil, fmt.Errorf("invalid kiro forward args")
-	}
-	requestedModel := parsed.Model
-	if strings.TrimSpace(requestedModel) != "" && mapKiroModel(account, requestedModel) == "" {
-		err := fmt.Errorf("unsupported kiro model: %s", requestedModel)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"type":  "error",
-			"error": gin.H{"type": "invalid_request_error", "message": err.Error()},
-		})
-		return nil, err
-	}
-	if mappedModel, matched := account.ResolveMappedModel(requestedModel); matched {
-		requestedModel = mappedModel
-	}
-	converted, err := kiropkg.ConvertAnthropicRequestWithModel(parsed.Body, requestedModel)
+	converted, err := s.validateAndConvertRequest(c, account, parsed)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"type":  "error",
-			"error": gin.H{"type": "invalid_request_error", "message": err.Error()},
-		})
 		return nil, err
 	}
 
@@ -127,12 +109,54 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 }
 
 func (s *KiroGatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest) error {
+	if _, err := s.validateAndConvertRequest(c, account, parsed); err != nil {
+		return err
+	}
 	inputTokens := kiropkg.EstimateInputTokens(parsed.Body)
 	c.JSON(http.StatusOK, gin.H{"input_tokens": inputTokens})
 	return nil
 }
 
+func (s *KiroGatewayService) validateAndConvertRequest(c *gin.Context, account *Account, parsed *ParsedRequest) (*kiropkg.ConvertResult, error) {
+	if account == nil || parsed == nil {
+		err := fmt.Errorf("invalid kiro request args")
+		writeKiroInvalidRequest(c, err)
+		return nil, err
+	}
+
+	requestedModel := parsed.Model
+	if strings.TrimSpace(requestedModel) != "" && mapKiroModel(account, requestedModel) == "" {
+		err := fmt.Errorf("unsupported kiro model: %s", requestedModel)
+		writeKiroInvalidRequest(c, err)
+		return nil, err
+	}
+	if mappedModel, matched := account.ResolveMappedModel(requestedModel); matched {
+		requestedModel = mappedModel
+	}
+
+	converted, err := kiropkg.ConvertAnthropicRequestWithModel(parsed.Body, requestedModel)
+	if err != nil {
+		writeKiroInvalidRequest(c, err)
+		return nil, err
+	}
+	return converted, nil
+}
+
+func writeKiroInvalidRequest(c *gin.Context, err error) {
+	if c == nil || err == nil {
+		return
+	}
+	c.JSON(http.StatusBadRequest, gin.H{
+		"type":  "error",
+		"error": gin.H{"type": "invalid_request_error", "message": err.Error()},
+	})
+}
+
 func (s *KiroGatewayService) buildRequest(ctx context.Context, account *Account, body []byte, accessToken string) (*http.Request, error) {
+	return buildKiroGenerateAssistantRequest(ctx, account, body, accessToken)
+}
+
+func buildKiroGenerateAssistantRequest(ctx context.Context, account *Account, body []byte, accessToken string) (*http.Request, error) {
 	url := fmt.Sprintf("https://q.%s.amazonaws.com/generateAssistantResponse", KiroRegion(account))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
@@ -145,7 +169,6 @@ func (s *KiroGatewayService) buildRequest(ctx context.Context, account *Account,
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("host", host)
-	req.Header.Set("Connection", "close")
 	req.Header.Set("x-amzn-codewhisperer-optout", "true")
 	req.Header.Set("x-amzn-kiro-agent-mode", "vibe")
 	req.Header.Set("x-amz-user-agent", fmt.Sprintf("aws-sdk-js/1.0.27 KiroIDE-%s-%s", kiroVersion, machineID))
@@ -263,11 +286,6 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 
 func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, account *Account, resp *http.Response, parsed *ParsedRequest, converted *kiropkg.ConvertResult, inputTokens int, start time.Time, fakeCachePlan *kiropkg.FakeCachePlan, fakeCacheHit bool) (*ForwardResult, error) {
 	writer := c.Writer
-	writer.Header().Set("Content-Type", "text/event-stream")
-	writer.Header().Set("Cache-Control", "no-cache")
-	writer.Header().Set("Connection", "keep-alive")
-	writer.Header().Set("X-Accel-Buffering", "no")
-
 	msgID := "msg_" + strings.ReplaceAll(generateRequestID(), "-", "")
 	reader := bufio.NewReader(resp.Body)
 	buffer := make([]byte, 0, 64*1024)
@@ -302,14 +320,22 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 
 				if failureErr := kiroFrameFailure(frame); failureErr != nil {
 					if streamStarted {
+						handledErr := s.handleFrameFailure(ctx, nil, account, frame, failureErr)
 						if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, toolStates); err != nil {
 							return nil, err
 						}
 						textBlockOpen = false
 						_ = writeKiroStreamError(writer, failureErr.Error())
-						s.handleProtocolError(ctx, account, parsed.Model, true, failureErr)
+						var failoverErr *UpstreamFailoverError
+						if handledErr != nil && !errors.As(handledErr, &failoverErr) {
+							return nil, handledErr
+						}
 						return nil, failureErr
 					}
+					c.JSON(http.StatusBadGateway, gin.H{
+						"type":  "error",
+						"error": gin.H{"type": "api_error", "message": failureErr.Error()},
+					})
 					return nil, s.handleFrameFailure(ctx, nil, account, frame, failureErr)
 				}
 
@@ -717,9 +743,12 @@ func writeSSEEvent(w gin.ResponseWriter, event string, payload any) error {
 }
 
 func readAllKiroFrames(body io.Reader) ([]*kiroFrame, error) {
-	raw, err := io.ReadAll(body)
+	raw, err := io.ReadAll(io.LimitReader(body, kiroMaxBodySize+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(raw) > kiroMaxBodySize {
+		return nil, fmt.Errorf("kiro response body exceeded limit %d", kiroMaxBodySize)
 	}
 	if len(raw) == 0 {
 		return nil, errors.New("empty kiro response body")
@@ -762,7 +791,7 @@ func (s *KiroGatewayService) resolveTLSProfile(account *Account) *tlsfingerprint
 	if s == nil || s.tlsFPProfileSvc == nil {
 		return nil
 	}
-	return s.tlsFPProfileSvc.ResolveTLSProfile(account)
+	return resolveKiroTLSProfile(account, s.tlsFPProfileSvc)
 }
 
 func (s *KiroGatewayService) handleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, body []byte) bool {
@@ -870,6 +899,10 @@ func kiroFrameFailureMessage(frame *kiroFrame) string {
 }
 
 func startKiroStream(writer gin.ResponseWriter, msgID, model string, fakeCacheUsage kiropkg.FakeCacheUsage) error {
+	writer.Header().Set("Content-Type", "text/event-stream")
+	writer.Header().Set("Cache-Control", "no-cache")
+	writer.Header().Set("Connection", "keep-alive")
+	writer.Header().Set("X-Accel-Buffering", "no")
 	writer.WriteHeader(http.StatusOK)
 	return writeSSEEvent(writer, "message_start", map[string]any{
 		"type": "message_start",

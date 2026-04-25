@@ -57,7 +57,8 @@ func TestAccountTestService_PersistRefreshedKiroCredentials_InvalidatesTokenCach
 	err := svc.persistRefreshedKiroCredentials(context.Background(), account, newCreds)
 	require.NoError(t, err)
 	require.Equal(t, 1, repo.updateCalls)
-	require.Same(t, account, repo.updatedAcct)
+	require.NotSame(t, account, repo.updatedAcct)
+	require.Equal(t, newCreds, repo.updatedAcct.Credentials)
 	require.Equal(t, "fresh-token", account.GetCredential("access_token"))
 	require.Empty(t, cache.tokens[cacheKey])
 }
@@ -92,5 +93,6 @@ func TestAccountTestService_PersistRefreshedKiroCredentials_UpdateErrorKeepsToke
 	err := svc.persistRefreshedKiroCredentials(context.Background(), account, newCreds)
 	require.EqualError(t, err, "update failed")
 	require.Equal(t, 1, repo.updateCalls)
+	require.Equal(t, "stale-token", account.GetCredential("access_token"))
 	require.Equal(t, "stale-token", cache.tokens[cacheKey])
 }

@@ -10,6 +10,9 @@ import (
 const (
 	kiroTokenRefreshSkew = 3 * time.Minute
 	kiroTokenCacheSkew   = 5 * time.Minute
+	kiroAdminRefreshSkew = 100 * 365 * 24 * time.Hour
+	kiroAdminRefreshWait = 800 * time.Millisecond
+	kiroAdminRefreshPoll = 100 * time.Millisecond
 )
 
 type KiroTokenProvider struct {
@@ -38,6 +41,95 @@ func (p *KiroTokenProvider) SetRefreshAPI(api *OAuthRefreshAPI, executor OAuthRe
 
 func (p *KiroTokenProvider) SetRefreshPolicy(policy ProviderRefreshPolicy) {
 	p.refreshPolicy = policy
+}
+
+func (p *KiroTokenProvider) RefreshAccount(ctx context.Context, account *Account) (*Account, error) {
+	if account == nil {
+		return nil, errors.New("account is nil")
+	}
+	if account.Platform != PlatformKiro || account.Type != AccountTypeOAuth {
+		return nil, errors.New("not a kiro oauth account")
+	}
+
+	if p.refreshAPI != nil && p.executor != nil {
+		result, err := p.refreshAPI.RefreshIfNeeded(ctx, account, p.executor, kiroAdminRefreshSkew)
+		if err != nil {
+			return nil, err
+		}
+		if result != nil {
+			if result.Account != nil {
+				if result.LockHeld {
+					return p.awaitRefreshResult(ctx, account, result.Account)
+				}
+				return result.Account, nil
+			}
+			if result.LockHeld {
+				return p.awaitRefreshResult(ctx, account, nil)
+			}
+		}
+		cloned := *account
+		cloned.Credentials = cloneCredentials(account.Credentials)
+		return &cloned, nil
+	}
+
+	if p.executor == nil {
+		return nil, errors.New("kiro token refresh executor is not configured")
+	}
+
+	newCredentials, err := p.executor.Refresh(ctx, account)
+	if err != nil {
+		return nil, err
+	}
+
+	cloned := *account
+	cloned.Credentials = cloneCredentials(newCredentials)
+	if err := persistAccountCredentials(ctx, p.accountRepo, &cloned, newCredentials); err != nil {
+		return nil, err
+	}
+	return &cloned, nil
+}
+
+func (p *KiroTokenProvider) awaitRefreshResult(ctx context.Context, before *Account, candidate *Account) (*Account, error) {
+	if kiroRefreshStateChanged(before, candidate) {
+		return candidate, nil
+	}
+	if p.accountRepo == nil {
+		return nil, errors.New("kiro token refresh already in progress")
+	}
+
+	deadline := time.NewTimer(kiroAdminRefreshWait)
+	defer deadline.Stop()
+	ticker := time.NewTicker(kiroAdminRefreshPoll)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-deadline.C:
+			return nil, errors.New("kiro token refresh already in progress")
+		case <-ticker.C:
+			latestAccount, err := p.accountRepo.GetByID(ctx, before.ID)
+			if err != nil || latestAccount == nil {
+				continue
+			}
+			if kiroRefreshStateChanged(before, latestAccount) {
+				return latestAccount, nil
+			}
+		}
+	}
+}
+
+func kiroRefreshStateChanged(before, after *Account) bool {
+	if before == nil || after == nil {
+		return false
+	}
+	for _, key := range []string{"_token_version", "access_token", "refresh_token", "expires_at", "profile_arn"} {
+		if before.GetCredential(key) != after.GetCredential(key) {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *KiroTokenProvider) GetAccessToken(ctx context.Context, account *Account) (string, error) {

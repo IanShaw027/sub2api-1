@@ -3,28 +3,53 @@ package admin
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
 
-func TestAccountHandlerRefreshSingleAccount_KiroUsesKiroRefresher(t *testing.T) {
+type kiroHandlerRefreshExecutorStub struct {
+	t            *testing.T
+	credentials  map[string]any
+	refreshCalls int
+}
+
+func (s *kiroHandlerRefreshExecutorStub) CanRefresh(account *service.Account) bool {
+	return account != nil && account.Platform == service.PlatformKiro
+}
+
+func (s *kiroHandlerRefreshExecutorStub) NeedsRefresh(_ *service.Account, _ time.Duration) bool {
+	return true
+}
+
+func (s *kiroHandlerRefreshExecutorStub) Refresh(_ context.Context, account *service.Account) (map[string]any, error) {
+	s.refreshCalls++
+	require.Equal(s.t, service.PlatformKiro, account.Platform)
+	return s.credentials, nil
+}
+
+func (s *kiroHandlerRefreshExecutorStub) CacheKey(account *service.Account) string {
+	return service.KiroTokenCacheKey(account)
+}
+
+func TestAccountHandlerRefreshSingleAccount_KiroUsesTokenProvider(t *testing.T) {
 	t.Parallel()
 
 	adminSvc := newStubAdminService()
-	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
-	var refreshed bool
-	handler.kiroRefresh = func(_ context.Context, account *service.Account) (map[string]any, error) {
-		refreshed = true
-		require.Equal(t, service.PlatformKiro, account.Platform)
-		return map[string]any{
+	provider := service.NewKiroTokenProvider(nil, nil)
+	executor := &kiroHandlerRefreshExecutorStub{
+		t: t,
+		credentials: map[string]any{
 			"access_token":  "fresh-access-token",
 			"refresh_token": "fresh-refresh-token",
 			"expires_at":    "2030-01-01T00:00:00Z",
 			"machine_id":    "machine-1",
-		}, nil
+		},
 	}
+	provider.SetRefreshAPI(nil, executor)
+	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, provider, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	account := &service.Account{
 		ID:       101,
@@ -40,6 +65,6 @@ func TestAccountHandlerRefreshSingleAccount_KiroUsesKiroRefresher(t *testing.T) 
 
 	require.NoError(t, err)
 	require.Empty(t, warning)
-	require.True(t, refreshed)
+	require.Equal(t, 1, executor.refreshCalls)
 	require.NotNil(t, updated)
 }

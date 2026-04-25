@@ -553,6 +553,11 @@ func validateDataAccount(item DataAccount) error {
 	if strings.TrimSpace(item.Platform) == "" {
 		return errors.New("account platform is required")
 	}
+	switch item.Platform {
+	case service.PlatformAnthropic, service.PlatformOpenAI, service.PlatformGemini, service.PlatformAntigravity, service.PlatformSora, service.PlatformKiro:
+	default:
+		return fmt.Errorf("account platform is invalid: %s", item.Platform)
+	}
 	if strings.TrimSpace(item.Type) == "" {
 		return errors.New("account type is required")
 	}
@@ -560,7 +565,7 @@ func validateDataAccount(item DataAccount) error {
 		return errors.New("account credentials is required")
 	}
 	switch item.Type {
-	case service.AccountTypeOAuth, service.AccountTypeSetupToken, service.AccountTypeAPIKey, service.AccountTypeUpstream:
+	case service.AccountTypeOAuth, service.AccountTypeSetupToken, service.AccountTypeAPIKey, service.AccountTypeUpstream, service.AccountTypeBedrock:
 	default:
 		return fmt.Errorf("account type is invalid: %s", item.Type)
 	}

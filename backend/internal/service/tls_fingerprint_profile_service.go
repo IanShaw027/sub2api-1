@@ -168,7 +168,7 @@ func (s *TLSFingerprintProfileService) getRandomProfile() *tlsfingerprint.Profil
 	return profiles[rand.IntN(len(profiles))].ToTLSProfile()
 }
 
-// ResolveTLSProfile 根据 Account 的配置解析出运行时 TLS Profile
+// ResolveTLSProfile 根据 Account 的配置解析出运行时 TLS Profile。
 //
 // 逻辑：
 //  1. 未启用 TLS 指纹 → 返回 nil（不伪装）

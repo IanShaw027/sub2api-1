@@ -5,11 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 )
 
 type KiroUsageLimits struct {
@@ -65,10 +64,14 @@ func (s *KiroUsageService) FetchUsageLimits(ctx context.Context, account *Accoun
 		return nil, fmt.Errorf("account is nil")
 	}
 	host := fmt.Sprintf("q.%s.amazonaws.com", KiroRegion(account))
-	url := fmt.Sprintf("https://%s/getUsageLimits?origin=AI_EDITOR&resourceType=AGENTIC_REQUEST", host)
-	if profileARN := account.GetCredential("profile_arn"); profileARN != "" {
-		url += "&profileArn=" + profileARN
+	params := url.Values{
+		"origin":       {"AI_EDITOR"},
+		"resourceType": {"AGENTIC_REQUEST"},
 	}
+	if profileARN := account.GetCredential("profile_arn"); profileARN != "" {
+		params.Set("profileArn", profileARN)
+	}
+	url := fmt.Sprintf("https://%s/getUsageLimits?%s", host, params.Encode())
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -83,7 +86,6 @@ func (s *KiroUsageService) FetchUsageLimits(ctx context.Context, account *Accoun
 	req.Header.Set("amz-sdk-request", "attempt=1; max=1")
 	req.Header.Set("x-amz-user-agent", fmt.Sprintf("aws-sdk-js/1.0.0 KiroIDE-%s-%s", kiroVersion, machineID))
 	req.Header.Set("User-Agent", fmt.Sprintf("aws-sdk-js/1.0.0 ua/2.1 os/%s lang/js md/nodejs#%s api/codewhispererruntime#1.0.0 m/N,E KiroIDE-%s-%s", KiroSystemVersion(account), KiroNodeVersion(account), kiroVersion, machineID))
-	req.Header.Set("Connection", "close")
 
 	resp, err := doKiroSidecarRequest(req, account, s.httpUpstream, s.tlsFPProfileService, 60*time.Second)
 	if err != nil {
@@ -125,47 +127,11 @@ func doKiroSidecarRequest(
 		)
 	}
 
-	poolSize := normalizeKiroTransportConcurrency(account.Concurrency)
-	client, err := httpclient.GetClient(httpclient.Options{
-		ProxyURL:              accountProxyURL(account),
-		Timeout:               timeout,
-		ResponseHeaderTimeout: timeout,
-		MaxIdleConns:          poolSize * 2,
-		MaxIdleConnsPerHost:   poolSize,
-		MaxConnsPerHost:       poolSize,
-	})
+	client, err := newKiroSidecarHTTPClient(account, tlsFPProfileService, timeout)
 	if err != nil {
 		return nil, err
 	}
 	return client.Do(req)
-}
-
-func resolveKiroTLSProfile(account *Account, tlsFPProfileService *TLSFingerprintProfileService) *tlsfingerprint.Profile {
-	if account == nil || tlsFPProfileService == nil || !isKiroTLSFingerprintEnabled(account) {
-		return nil
-	}
-
-	id := account.GetTLSFingerprintProfileID()
-	if id > 0 {
-		if profile := tlsFPProfileService.GetProfileByID(id); profile != nil {
-			return profile
-		}
-	}
-	if id == -1 {
-		if profile := tlsFPProfileService.getRandomProfile(); profile != nil {
-			return profile
-		}
-	}
-
-	return &tlsfingerprint.Profile{Name: "Built-in Default (Node.js 24.x)"}
-}
-
-func isKiroTLSFingerprintEnabled(account *Account) bool {
-	if account == nil || account.Platform != PlatformKiro || account.Extra == nil {
-		return false
-	}
-	enabled, _ := account.Extra["enable_tls_fingerprint"].(bool)
-	return enabled
 }
 
 func normalizeKiroTransportConcurrency(concurrency int) int {

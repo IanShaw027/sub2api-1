@@ -251,24 +251,12 @@ func (s *AccountTestService) testKiroAccountConnection(c *gin.Context, account *
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to convert Kiro payload: %s", err.Error()))
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("https://q.%s.amazonaws.com/generateAssistantResponse", KiroRegion(account)), bytes.NewReader(converted.Body))
+	req, err := buildKiroGenerateAssistantRequest(ctx, account, converted.Body, accessToken)
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create Kiro request")
 	}
-	machineID := kiropkg.GenerateMachineID(account.GetCredential("machine_id"), "", account.GetCredential("refresh_token"))
-	host := fmt.Sprintf("q.%s.amazonaws.com", KiroRegion(account))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("host", host)
-	req.Header.Set("Connection", "close")
-	req.Header.Set("x-amzn-codewhisperer-optout", "true")
-	req.Header.Set("x-amzn-kiro-agent-mode", "vibe")
-	req.Header.Set("x-amz-user-agent", fmt.Sprintf("aws-sdk-js/1.0.27 KiroIDE-%s-%s", KiroVersion(account), machineID))
-	req.Header.Set("User-Agent", fmt.Sprintf("aws-sdk-js/1.0.27 ua/2.1 os/%s lang/js md/nodejs#%s api/codewhispererstreaming#1.0.27 m/E KiroIDE-%s-%s", KiroSystemVersion(account), KiroNodeVersion(account), KiroVersion(account), machineID))
-	req.Header.Set("amz-sdk-invocation-id", generateRequestID())
-	req.Header.Set("amz-sdk-request", "attempt=1; max=3")
 
-	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, resolveKiroTLSProfile(account, s.tlsFPProfileService))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Kiro request failed: %s", err.Error()))
 	}
@@ -293,10 +281,12 @@ func (s *AccountTestService) testKiroAccountConnection(c *gin.Context, account *
 }
 
 func (s *AccountTestService) persistRefreshedKiroCredentials(ctx context.Context, account *Account, newCreds map[string]any) error {
-	account.Credentials = newCreds
-	if err := s.accountRepo.Update(ctx, account); err != nil {
+	updated := *account
+	updated.Credentials = newCreds
+	if err := s.accountRepo.Update(ctx, &updated); err != nil {
 		return err
 	}
+	account.Credentials = updated.Credentials
 	s.invalidateKiroTokenCache(ctx, account)
 	return nil
 }

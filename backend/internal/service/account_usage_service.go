@@ -103,6 +103,11 @@ type antigravityUsageCache struct {
 	timestamp time.Time
 }
 
+type kiroUsageCache struct {
+	usageInfo *UsageInfo
+	timestamp time.Time
+}
+
 const (
 	apiCacheTTL             = 3 * time.Minute
 	apiErrorCacheTTL        = 1 * time.Minute        // 负缓存 TTL：429 等错误缓存 1 分钟
@@ -118,8 +123,10 @@ type UsageCache struct {
 	apiCache          sync.Map           // accountID -> *apiUsageCache
 	windowStatsCache  sync.Map           // accountID -> *windowStatsCache
 	antigravityCache  sync.Map           // accountID -> *antigravityUsageCache
+	kiroCache         sync.Map           // accountID -> *kiroUsageCache
 	apiFlight         singleflight.Group // 防止同一账号的并发请求击穿缓存（Anthropic）
 	antigravityFlight singleflight.Group // 防止同一 Antigravity 账号的并发请求击穿缓存
+	kiroFlight        singleflight.Group // 防止同一 Kiro 账号的并发请求击穿缓存
 	openAIProbeCache  sync.Map           // accountID -> time.Time
 }
 
@@ -341,7 +348,7 @@ func (s *AccountUsageService) GetUsage(ctx context.Context, accountID int64) (*U
 
 	if account.Platform == PlatformKiro {
 		usage, err := s.getKiroUsage(ctx, account)
-		if err == nil {
+		if err == nil && usage != nil && usage.Error == "" && usage.ErrorCode == "" && !usage.IsForbidden && !usage.NeedsReauth {
 			s.tryClearRecoverableAccountError(ctx, account)
 		}
 		return usage, err
@@ -442,68 +449,180 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 	if account == nil {
 		return nil, fmt.Errorf("account is nil")
 	}
-	kiroHTTPUpstream := s.kiroHTTPUpstream()
-	accessToken := ""
-	if s.kiroTokenProvider != nil {
-		var err error
-		accessToken, err = s.kiroTokenProvider.GetAccessToken(ctx, account)
+	if s.cache != nil {
+		if cached, ok := s.cache.kiroCache.Load(account.ID); ok {
+			if cache, ok := cached.(*kiroUsageCache); ok {
+				ttl := kiroUsageCacheTTL(cache.usageInfo)
+				if time.Since(cache.timestamp) < ttl {
+					usage := cache.usageInfo
+					recalcKiroRemainingSeconds(usage)
+					return usage, nil
+				}
+			}
+		}
+	}
+	loadUsage := func(fetchCtx context.Context) (*UsageInfo, error) {
+		kiroHTTPUpstream := s.kiroHTTPUpstream()
+		accessToken := ""
+		if s.kiroTokenProvider != nil {
+			var err error
+			accessToken, err = s.kiroTokenProvider.GetAccessToken(fetchCtx, account)
+			if err != nil {
+				return buildKiroDegradedUsage(err), nil
+			}
+		} else {
+			accessToken = account.GetCredential("access_token")
+		}
+		if accessToken == "" {
+			refresher := NewKiroTokenRefresher().WithTransport(kiroHTTPUpstream, s.tlsFPProfileService)
+			newCreds, err := refresher.Refresh(fetchCtx, account)
+			if err != nil {
+				return buildKiroDegradedUsage(err), nil
+			}
+			if err := s.persistRefreshedKiroCredentials(fetchCtx, account, newCreds); err != nil {
+				return nil, err
+			}
+			accessToken = account.GetCredential("access_token")
+		}
+
+		usageService := NewKiroUsageService().WithTransport(kiroHTTPUpstream, s.tlsFPProfileService)
+		limits, err := usageService.FetchUsageLimits(fetchCtx, account, accessToken)
 		if err != nil {
-			return nil, err
+			return buildKiroDegradedUsage(err), nil
 		}
-	} else {
-		accessToken = account.GetCredential("access_token")
-	}
-	if accessToken == "" {
-		refresher := NewKiroTokenRefresher().WithTransport(kiroHTTPUpstream, s.tlsFPProfileService)
-		newCreds, err := refresher.Refresh(ctx, account)
-		if err != nil {
-			return nil, err
+
+		currentUsage := limits.CurrentUsage()
+		usageLimit := limits.UsageLimit()
+		remaining := limits.Remaining()
+		utilization := 0.0
+		if usageLimit > 0 {
+			utilization = (currentUsage / usageLimit) * 100
 		}
-		if err := s.persistRefreshedKiroCredentials(ctx, account, newCreds); err != nil {
-			return nil, err
+		var resetAt *time.Time
+		if t := limits.ResetAt(); t != nil {
+			resetAt = t
 		}
-		accessToken = account.GetCredential("access_token")
-	}
 
-	usageService := NewKiroUsageService().WithTransport(kiroHTTPUpstream, s.tlsFPProfileService)
-	limits, err := usageService.FetchUsageLimits(ctx, account, accessToken)
-	if err != nil {
-		return &UsageInfo{
-			Error: "Failed to fetch Kiro usage: " + err.Error(),
-		}, nil
-	}
-
-	currentUsage := limits.CurrentUsage()
-	usageLimit := limits.UsageLimit()
-	remaining := limits.Remaining()
-	utilization := 0.0
-	if usageLimit > 0 {
-		utilization = (currentUsage / usageLimit) * 100
-	}
-	var resetAt *time.Time
-	if t := limits.ResetAt(); t != nil {
-		resetAt = t
-	}
-
-	info := &UsageInfo{
-		KiroSubscriptionTitle: limits.SubscriptionTitle(),
-		KiroCurrentUsage:      currentUsage,
-		KiroUsageLimit:        usageLimit,
-		KiroRemaining:         remaining,
-		KiroQuota: &UsageProgress{
-			Utilization: utilization,
-			ResetsAt:    resetAt,
-			WindowStats: &WindowStats{
-				Requests: 0,
-				Tokens:   0,
-				Cost:     currentUsage,
-				UserCost: currentUsage,
+		info := &UsageInfo{
+			KiroSubscriptionTitle: limits.SubscriptionTitle(),
+			KiroCurrentUsage:      currentUsage,
+			KiroUsageLimit:        usageLimit,
+			KiroRemaining:         remaining,
+			KiroQuota: &UsageProgress{
+				Utilization: utilization,
+				ResetsAt:    resetAt,
+				WindowStats: &WindowStats{
+					Requests: 0,
+					Tokens:   0,
+					Cost:     currentUsage,
+					UserCost: currentUsage,
+				},
 			},
-		},
+		}
+		now := time.Now()
+		info.UpdatedAt = &now
+		recalcKiroRemainingSeconds(info)
+		return info, nil
 	}
+
+	if s.cache == nil {
+		return loadUsage(ctx)
+	}
+
+	flightKey := fmt.Sprintf("kiro-usage:%d", account.ID)
+	result, flightErr, _ := s.cache.kiroFlight.Do(flightKey, func() (any, error) {
+		if cached, ok := s.cache.kiroCache.Load(account.ID); ok {
+			if cache, ok := cached.(*kiroUsageCache); ok {
+				ttl := kiroUsageCacheTTL(cache.usageInfo)
+				if time.Since(cache.timestamp) < ttl {
+					usage := cache.usageInfo
+					recalcKiroRemainingSeconds(usage)
+					return usage, nil
+				}
+			}
+		}
+
+		fetchCtx, fetchCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer fetchCancel()
+
+		usage, err := loadUsage(fetchCtx)
+		if err != nil {
+			return nil, err
+		}
+		s.cache.kiroCache.Store(account.ID, &kiroUsageCache{
+			usageInfo: usage,
+			timestamp: time.Now(),
+		})
+		return usage, nil
+	})
+	if flightErr != nil {
+		return nil, flightErr
+	}
+	usage, ok := result.(*UsageInfo)
+	if !ok || usage == nil {
+		now := time.Now()
+		return &UsageInfo{UpdatedAt: &now}, nil
+	}
+	return usage, nil
+}
+
+func buildKiroDegradedUsage(err error) *UsageInfo {
 	now := time.Now()
-	info.UpdatedAt = &now
-	return info, nil
+	info := &UsageInfo{
+		UpdatedAt: &now,
+		Error:     "Failed to fetch Kiro usage: " + err.Error(),
+	}
+
+	errStr := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(errStr, "returned 401"),
+		strings.Contains(errStr, "invalid_grant"),
+		strings.Contains(errStr, "unauthenticated"),
+		strings.Contains(errStr, "access_token not found"):
+		info.ErrorCode = errorCodeUnauthenticated
+		info.NeedsReauth = true
+	case strings.Contains(errStr, "returned 403"),
+		strings.Contains(errStr, "forbidden"):
+		info.ErrorCode = errorCodeForbidden
+		info.IsForbidden = true
+		info.ForbiddenType = forbiddenTypeForbidden
+		info.ForbiddenReason = err.Error()
+	case strings.Contains(errStr, "returned 429"):
+		info.ErrorCode = errorCodeRateLimited
+	default:
+		info.ErrorCode = errorCodeNetworkError
+	}
+
+	return info
+}
+
+func recalcKiroRemainingSeconds(info *UsageInfo) {
+	if info == nil || info.KiroQuota == nil || info.KiroQuota.ResetsAt == nil {
+		return
+	}
+	remaining := int(time.Until(*info.KiroQuota.ResetsAt).Seconds())
+	if remaining < 0 {
+		remaining = 0
+	}
+	info.KiroQuota.RemainingSeconds = remaining
+}
+
+func kiroUsageCacheTTL(info *UsageInfo) time.Duration {
+	if info == nil {
+		return apiErrorCacheTTL
+	}
+	if info.ErrorCode != "" || info.Error != "" || info.NeedsReauth || info.IsForbidden {
+		return apiErrorCacheTTL
+	}
+	return apiCacheTTL
+}
+
+func (s *AccountUsageService) InvalidateKiroUsageCache(accountID int64) {
+	if s == nil || s.cache == nil || accountID <= 0 {
+		return
+	}
+	s.cache.kiroCache.Delete(accountID)
+	s.cache.kiroFlight.Forget(fmt.Sprintf("kiro-usage:%d", accountID))
 }
 
 func (s *AccountUsageService) kiroHTTPUpstream() HTTPUpstream {
@@ -520,10 +639,13 @@ func (s *AccountUsageService) kiroHTTPUpstream() HTTPUpstream {
 }
 
 func (s *AccountUsageService) persistRefreshedKiroCredentials(ctx context.Context, account *Account, newCreds map[string]any) error {
-	account.Credentials = newCreds
-	if err := s.accountRepo.Update(ctx, account); err != nil {
+	updated := *account
+	updated.Credentials = newCreds
+	if err := s.accountRepo.Update(ctx, &updated); err != nil {
 		return err
 	}
+	account.Credentials = updated.Credentials
+	s.InvalidateKiroUsageCache(account.ID)
 	if s.tokenCacheInvalidator != nil {
 		if err := s.tokenCacheInvalidator.InvalidateToken(ctx, account); err != nil {
 			log.Printf("warning: failed to invalidate Kiro token cache after usage refresh for account %d: %v", account.ID, err)

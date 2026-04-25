@@ -140,7 +140,19 @@ func requiresOAuthOnlyAccount(platform string) bool {
 	}
 }
 
+func validateAccountPlatform(platform string) error {
+	switch strings.TrimSpace(platform) {
+	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformSora, PlatformKiro:
+		return nil
+	default:
+		return infraerrors.BadRequest("UNSUPPORTED_PLATFORM", fmt.Sprintf("unsupported platform: %s", platform))
+	}
+}
+
 func validatePlatformAccountType(platform, accountType string) error {
+	if err := validateAccountPlatform(platform); err != nil {
+		return err
+	}
 	if platform == PlatformKiro && accountType != AccountTypeOAuth {
 		return infraerrors.BadRequest("UNSUPPORTED_ACCOUNT_TYPE", "kiro accounts only support oauth type")
 	}

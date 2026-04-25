@@ -1791,7 +1791,12 @@ func (h *GatewayHandler) submitUsageRecordTask(task service.UsageRecordTask) {
 		return
 	}
 	if h.usageRecordWorkerPool != nil {
-		h.usageRecordWorkerPool.Submit(task)
+		if mode := h.usageRecordWorkerPool.Submit(task); mode != service.UsageRecordSubmitModeDropped {
+			return
+		}
+		logger.L().With(
+			zap.String("component", "handler.gateway.messages"),
+		).Warn("gateway.usage_record_task_dropped")
 		return
 	}
 	// 回退路径：worker 池未注入时同步执行，避免退回到无界 goroutine 模式。

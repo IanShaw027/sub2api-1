@@ -147,7 +147,6 @@ func (r *KiroTokenRefresher) doKiroJSONRequest(ctx context.Context, account *Acc
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("host", host)
-	req.Header.Set("Connection", "close")
 	req.Header.Set("User-Agent", fmt.Sprintf("KiroIDE-%s-%s", KiroVersion(account), machineID))
 	if strings.Contains(url, "oidc.") {
 		req.Header.Set("x-amz-user-agent", "aws-sdk-js/3.738.0 ua/2.1 os/other lang/js md/browser#unknown_unknown api/sso-oidc#3.738.0 m/E KiroIDE")

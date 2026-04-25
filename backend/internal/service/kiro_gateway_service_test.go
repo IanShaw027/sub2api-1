@@ -14,11 +14,123 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/model"
 	kiropkg "github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 	"github.com/gin-gonic/gin"
 	gocache "github.com/patrickmn/go-cache"
 	"github.com/stretchr/testify/require"
 )
+
+func TestKiroGatewayService_ResolveTLSProfile_UsesKiroResolver(t *testing.T) {
+	svc := &KiroGatewayService{
+		tlsFPProfileSvc: &TLSFingerprintProfileService{
+			localCache: map[int64]*model.TLSFingerprintProfile{
+				7: {ID: 7, Name: "Kiro Gateway Profile"},
+			},
+		},
+	}
+
+	profile := svc.resolveTLSProfile(&Account{
+		ID:       88,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			"enable_tls_fingerprint":     true,
+			"tls_fingerprint_profile_id": int64(7),
+		},
+	})
+
+	require.NotNil(t, profile)
+	require.Equal(t, "Kiro Gateway Profile", profile.Name)
+}
+
+func TestKiroGatewayService_BuildRequest_DoesNotForceConnectionClose(t *testing.T) {
+	svc := &KiroGatewayService{}
+
+	req, err := svc.buildRequest(context.Background(), &Account{
+		ID:       90,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "refresh-token",
+		},
+	}, []byte(`{}`), "access-token")
+
+	require.NoError(t, err)
+	require.Empty(t, req.Header.Values("Connection"))
+}
+
+func TestKiroGatewayService_ForwardCountTokens_RejectsUnsupportedModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{}
+
+	err := svc.ForwardCountTokens(context.Background(), c, &Account{
+		ID:       101,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+	}, &ParsedRequest{
+		Model: "claude-opus-4-7",
+		Body: []byte(`{
+			"model":"claude-opus-4-7",
+			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
+		}`),
+	})
+
+	require.Error(t, err)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "unsupported kiro model")
+}
+
+func TestKiroGatewayService_ForwardCountTokens_RejectsInvalidConversationShape(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{}
+
+	err := svc.ForwardCountTokens(context.Background(), c, &Account{
+		ID:       102,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+	}, &ParsedRequest{
+		Model: "claude-sonnet-4-6",
+		Body: []byte(`{
+			"model":"claude-sonnet-4-6",
+			"messages":[{"role":"assistant","content":[{"type":"text","text":"hello"}]}]
+		}`),
+	})
+
+	require.Error(t, err)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "empty messages")
+}
+
+func TestKiroGatewayService_ForwardCountTokens_UsesForwardValidationWithLocalEstimate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{}
+
+	err := svc.ForwardCountTokens(context.Background(), c, &Account{
+		ID:       103,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+	}, &ParsedRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Body: []byte(`{
+			"model":"claude-sonnet-4-5-20250929",
+			"messages":[{"role":"user","content":[{"type":"text","text":"hello from count tokens"}]}]
+		}`),
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, `{"input_tokens":6}`, rec.Body.String())
+}
 
 func TestKiroGatewayService_ForwardNonStream_ExceptionDoesNotCommitFakeCache(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -114,6 +226,39 @@ func TestKiroGatewayService_ForwardStream_ExceptionDoesNotCommitFakeCacheOrEmitF
 	require.NotContains(t, rec.Body.String(), "event: message_stop")
 	_, found := svc.fakeCache.Get(fakeCachePlan.CurrentKey)
 	require.False(t, found, "exception streams must not commit fake cache")
+}
+
+func TestKiroGatewayService_ForwardStream_PreStartExceptionReturnsJSONError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{}
+
+	body := buildKiroTestFrame(t, map[string]string{
+		":event-type":     "exception",
+		":exception-type": "RuntimeException",
+	}, map[string]any{"message": "upstream failed before stream"})
+
+	result, err := svc.forwardStream(
+		context.Background(),
+		c,
+		&Account{ID: 11, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4", Stream: true},
+		&kiropkg.ConvertResult{Model: "claude-sonnet-4.5"},
+		32,
+		time.Now(),
+		nil,
+		false,
+	)
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	require.Contains(t, rec.Body.String(), "upstream failed before stream")
+	require.NotContains(t, rec.Body.String(), "event: message_start")
+	require.Contains(t, rec.Header().Get("Content-Type"), "application/json")
 }
 
 func TestKiroGatewayService_ForwardNonStream_IncompleteFrameDoesNotCommitFakeCache(t *testing.T) {

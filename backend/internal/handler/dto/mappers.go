@@ -378,6 +378,41 @@ func AccountFromService(a *service.Account) *Account {
 	return out
 }
 
+func AccountFromServiceList(a *service.Account) *Account {
+	out := AccountFromService(a)
+	if out == nil {
+		return nil
+	}
+	out.Credentials = sanitizeAccountCredentialsForList(out.Credentials)
+	return out
+}
+
+func sanitizeAccountCredentialsForList(credentials map[string]any) map[string]any {
+	if len(credentials) == 0 {
+		return credentials
+	}
+
+	redactKeys := map[string]struct{}{
+		"access_token":  {},
+		"refresh_token": {},
+		"api_key":       {},
+		"client_secret": {},
+		"client_id":     {},
+		"session_token": {},
+		"password":      {},
+		"cookie":        {},
+	}
+
+	filtered := make(map[string]any, len(credentials))
+	for key, value := range credentials {
+		if _, blocked := redactKeys[key]; blocked {
+			continue
+		}
+		filtered[key] = value
+	}
+	return filtered
+}
+
 func timeToUnixSeconds(value *time.Time) *int64 {
 	if value == nil {
 		return nil
