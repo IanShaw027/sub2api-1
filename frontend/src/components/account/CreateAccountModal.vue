@@ -50,7 +50,7 @@
         <input
           v-model="form.name"
           type="text"
-          required
+          :required="!isOAuthFlow"
           class="input"
           :placeholder="t('admin.accounts.enterAccountName')"
           data-tour="account-form-name"
@@ -718,6 +718,68 @@
         </div>
       </div>
 
+      <!-- Account Type Selection (Kiro - OAuth or API Key) -->
+      <div v-if="form.platform === 'kiro'">
+        <label class="input-label">{{ t('admin.accounts.accountType') }}</label>
+        <div class="mt-2 grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            @click="kiroAccountType = 'oauth'"
+            :class="[
+              'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
+              kiroAccountType === 'oauth'
+                ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/20'
+                : 'border-gray-200 hover:border-cyan-300 dark:border-dark-600 dark:hover:border-cyan-700'
+            ]"
+          >
+            <div
+              :class="[
+                'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+                kiroAccountType === 'oauth'
+                  ? 'bg-cyan-500 text-white'
+                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+              ]"
+            >
+              <Icon name="sparkles" size="sm" />
+            </div>
+            <div>
+              <span class="block text-sm font-medium text-gray-900 dark:text-white">OAuth</span>
+              <span class="text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.accounts.kiro.authorizationDesc') }}
+              </span>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            @click="kiroAccountType = 'apikey'"
+            :class="[
+              'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
+              kiroAccountType === 'apikey'
+                ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/20'
+                : 'border-gray-200 hover:border-cyan-300 dark:border-dark-600 dark:hover:border-cyan-700'
+            ]"
+          >
+            <div
+              :class="[
+                'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+                kiroAccountType === 'apikey'
+                  ? 'bg-cyan-500 text-white'
+                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+              ]"
+            >
+              <Icon name="key" size="sm" />
+            </div>
+            <div>
+              <span class="block text-sm font-medium text-gray-900 dark:text-white">API Key</span>
+              <span class="text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.accounts.kiro.manualApiKeyDesc') }}
+              </span>
+            </div>
+          </button>
+        </div>
+      </div>
+
       <!-- Upstream config (only for Antigravity upstream type) -->
       <div v-if="form.platform === 'antigravity' && antigravityAccountType === 'upstream'" class="space-y-4">
         <div>
@@ -741,6 +803,72 @@
             placeholder="sk-..."
           />
           <p class="input-hint">{{ t('admin.accounts.upstream.apiKeyHint') }}</p>
+        </div>
+      </div>
+
+      <!-- Manual Kiro API Key config -->
+      <div v-if="form.platform === 'kiro' && kiroAccountType === 'apikey'" class="space-y-4">
+        <p class="rounded-lg border border-cyan-200 bg-cyan-50/60 p-3 text-sm text-cyan-800 dark:border-cyan-900/40 dark:bg-cyan-950/20 dark:text-cyan-200">
+          Kiro version、system version、Node.js version 等运行参数由系统配置统一管理。
+        </p>
+        <div>
+          <label class="input-label">{{ t('admin.accounts.apiKeyRequired') }}</label>
+          <input
+            v-model="kiroAPIKeyValue"
+            type="password"
+            required
+            class="input font-mono"
+            :placeholder="t('admin.accounts.kiro.apiKeyPlaceholder')"
+          />
+          <p class="input-hint">{{ t('admin.accounts.kiro.apiKeyHint') }}</p>
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.regionLabel') }}</label>
+            <input
+              v-model="kiroRegion"
+              type="text"
+              class="input font-mono text-sm"
+              :placeholder="t('admin.accounts.kiro.regionPlaceholder')"
+            />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.authRegionLabel') }}</label>
+            <input
+              v-model="kiroAuthRegion"
+              type="text"
+              class="input font-mono text-sm"
+              :placeholder="t('admin.accounts.kiro.optionalPlaceholder')"
+            />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.apiRegionLabel') }}</label>
+            <input
+              v-model="kiroAPIRegion"
+              type="text"
+              class="input font-mono text-sm"
+              :placeholder="t('admin.accounts.kiro.optionalPlaceholder')"
+            />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.profileArnLabel') }}</label>
+            <input
+              v-model="kiroProfileARN"
+              type="text"
+              class="input font-mono text-sm"
+              :placeholder="t('admin.accounts.kiro.optionalPlaceholder')"
+            />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.machineIdLabel') }}</label>
+            <input
+              v-model="kiroMachineID"
+              type="text"
+              class="input font-mono text-sm"
+              :placeholder="t('admin.accounts.kiro.optionalPlaceholder')"
+            />
+          </div>
         </div>
       </div>
 
@@ -863,7 +991,7 @@
       </div>
 
       <!-- API Key input (only for apikey type, excluding Antigravity which has its own fields) -->
-      <div v-if="form.type === 'apikey' && form.platform !== 'antigravity'" class="space-y-4">
+      <div v-if="form.type === 'apikey' && form.platform !== 'antigravity' && form.platform !== 'kiro'" class="space-y-4">
         <div>
           <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
           <input
@@ -2566,10 +2694,10 @@
     <!-- Step 2: OAuth Authorization -->
     <div v-else class="space-y-5">
       <KiroAuthorizationFlow
-        v-if="form.platform === 'kiro'"
+        v-if="form.platform === 'kiro' && form.type === 'oauth'"
         mode="create"
         :auth-url="kiroOAuth.authUrl.value"
-        :callback-base-url="kiroOAuth.callbackBaseUrl.value"
+        :callback-base-url="kiroOAuth.callbackBaseUrl?.value || ''"
         :loading="kiroOAuth.loading.value"
         :error="kiroOAuth.error.value"
         @generate-url="handleGenerateUrl"
@@ -3123,8 +3251,15 @@ loadQuotaNotifyGlobal()
 const mixedScheduling = ref(false) // For antigravity accounts: enable mixed scheduling
 const allowOverages = ref(false) // For antigravity accounts: enable AI Credits overages
 const antigravityAccountType = ref<'oauth' | 'upstream'>('oauth') // For antigravity: oauth or upstream
+const kiroAccountType = ref<'oauth' | 'apikey'>('oauth') // For Kiro: oauth or manual API key
 const upstreamBaseUrl = ref('') // For upstream type: base URL
 const upstreamApiKey = ref('') // For upstream type: API key
+const kiroAPIKeyValue = ref('')
+const kiroRegion = ref('us-east-1')
+const kiroAuthRegion = ref('')
+const kiroAPIRegion = ref('')
+const kiroProfileARN = ref('')
+const kiroMachineID = ref('')
 const antigravityModelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
 const antigravityWhitelistModels = ref<string[]>([])
 const antigravityModelMappings = ref<ModelMapping[]>([])
@@ -3313,6 +3448,9 @@ const isOAuthFlow = computed(() => {
   if (form.platform === 'antigravity' && antigravityAccountType.value === 'upstream') {
     return false
   }
+  if (form.platform === 'kiro') {
+    return kiroAccountType.value === 'oauth'
+  }
   // Bedrock 类型不需要 OAuth 流程
   if (form.platform === 'anthropic' && accountCategory.value === 'bedrock') {
     return false
@@ -3376,19 +3514,19 @@ watch(
 
 // Sync form.type based on accountCategory, addMethod, and platform-specific type
 watch(
-  [accountCategory, addMethod, antigravityAccountType],
-  ([category, method, agType]) => {
-    if (form.platform === 'kiro') {
-      form.type = 'oauth'
+  [() => form.platform, accountCategory, addMethod, antigravityAccountType, kiroAccountType],
+  ([platform, category, method, agType, currentKiroType]) => {
+    if (platform === 'kiro') {
+      form.type = currentKiroType
       return
     }
     // Antigravity upstream 类型（实际创建为 apikey）
-    if (form.platform === 'antigravity' && agType === 'upstream') {
+    if (platform === 'antigravity' && agType === 'upstream') {
       form.type = 'apikey'
       return
     }
     // Bedrock 类型
-    if (form.platform === 'anthropic' && category === 'bedrock') {
+    if (platform === 'anthropic' && category === 'bedrock') {
       form.type = 'bedrock' as AccountType
       return
     }
@@ -3427,6 +3565,13 @@ watch(
     } else if (newPlatform === 'kiro') {
       accountCategory.value = 'oauth-based'
       addMethod.value = 'oauth'
+      kiroAccountType.value = 'oauth'
+      kiroAPIKeyValue.value = ''
+      kiroRegion.value = 'us-east-1'
+      kiroAuthRegion.value = ''
+      kiroAPIRegion.value = ''
+      kiroProfileARN.value = ''
+      kiroMachineID.value = ''
     } else {
       allowOverages.value = false
       antigravityWhitelistModels.value = []
@@ -3861,8 +4006,15 @@ const resetForm = () => {
   customBaseUrl.value = ''
   allowOverages.value = false
   antigravityAccountType.value = 'oauth'
+  kiroAccountType.value = 'oauth'
   upstreamBaseUrl.value = ''
   upstreamApiKey.value = ''
+  kiroAPIKeyValue.value = ''
+  kiroRegion.value = 'us-east-1'
+  kiroAuthRegion.value = ''
+  kiroAPIRegion.value = ''
+  kiroProfileARN.value = ''
+  kiroMachineID.value = ''
   tempUnschedEnabled.value = false
   tempUnschedRules.value = []
   geminiOAuthType.value = 'code_assist'
@@ -3982,6 +4134,14 @@ const normalizePoolModeRetryCount = (value: number) => {
   return normalized
 }
 
+const ensureManualAccountName = () => {
+  if (form.name.trim()) {
+    return true
+  }
+  appStore.showError(t('admin.accounts.pleaseEnterAccountName'))
+  return false
+}
+
 const handleSubmit = async () => {
   // For OAuth-based type, handle OAuth flow (goes to step 2)
   if (isOAuthFlow.value) {
@@ -3995,13 +4155,12 @@ const handleSubmit = async () => {
     return
   }
 
+  if (!ensureManualAccountName()) {
+    return
+  }
+
   // For Bedrock type, create directly
   if (form.platform === 'anthropic' && accountCategory.value === 'bedrock') {
-    if (!form.name.trim()) {
-      appStore.showError(t('admin.accounts.pleaseEnterAccountName'))
-      return
-    }
-
     const credentials: Record<string, unknown> = {
       auth_mode: bedrockAuthMode.value,
       aws_region: bedrockRegion.value.trim() || 'us-east-1',
@@ -4055,10 +4214,6 @@ const handleSubmit = async () => {
 
   // For Antigravity upstream type, create directly
   if (form.platform === 'antigravity' && antigravityAccountType.value === 'upstream') {
-    if (!form.name.trim()) {
-      appStore.showError(t('admin.accounts.pleaseEnterAccountName'))
-      return
-    }
     if (!upstreamBaseUrl.value.trim()) {
       appStore.showError(t('admin.accounts.upstream.pleaseEnterBaseUrl'))
       return
@@ -4088,6 +4243,33 @@ const handleSubmit = async () => {
 
     const extra = buildAntigravityExtra()
     await createAccountAndFinish(form.platform, 'apikey', credentials, extra)
+    return
+  }
+
+  if (form.platform === 'kiro' && kiroAccountType.value === 'apikey') {
+    if (!kiroAPIKeyValue.value.trim()) {
+      appStore.showError(t('admin.accounts.pleaseEnterApiKey'))
+      return
+    }
+
+    const credentials: Record<string, unknown> = {
+      api_key: kiroAPIKeyValue.value.trim(),
+      region: kiroRegion.value.trim() || 'us-east-1'
+    }
+    if (kiroAuthRegion.value.trim()) {
+      credentials.auth_region = kiroAuthRegion.value.trim()
+    }
+    if (kiroAPIRegion.value.trim()) {
+      credentials.api_region = kiroAPIRegion.value.trim()
+    }
+    if (kiroProfileARN.value.trim()) {
+      credentials.profile_arn = kiroProfileARN.value.trim()
+    }
+    if (kiroMachineID.value.trim()) {
+      credentials.machine_id = kiroMachineID.value.trim()
+    }
+
+    await createAccountAndFinish('kiro', 'apikey', credentials)
     return
   }
 
@@ -4251,25 +4433,6 @@ const createAccountAndFinish = async (
     if (Object.keys(quotaExtra).length > 0) {
       finalExtra = quotaExtra
     }
-  }
-  if (platform === 'kiro') {
-    await doCreateAccount({
-      name: nameOverride || form.name,
-      notes: form.notes,
-      platform,
-      type: 'oauth',
-      credentials,
-      extra: finalExtra,
-      proxy_id: form.proxy_id,
-      concurrency: form.concurrency,
-      load_factor: form.load_factor ?? undefined,
-      priority: form.priority,
-      rate_multiplier: form.rate_multiplier,
-      group_ids: form.group_ids,
-      expires_at: form.expires_at,
-      auto_pause_on_expired: autoPauseOnExpired.value
-    })
-    return
   }
   await doCreateAccount({
     name: nameOverride || form.name,

@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	kiropkg "github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
@@ -27,11 +28,15 @@ const (
 )
 
 type KiroGatewayService struct {
-	httpUpstream     HTTPUpstream
-	tokenProvider    *KiroTokenProvider
-	rateLimitService *RateLimitService
-	tlsFPProfileSvc  *TLSFingerprintProfileService
-	fakeCache        *gocache.Cache
+	httpUpstream      HTTPUpstream
+	tokenProvider     *KiroTokenProvider
+	rateLimitService  *RateLimitService
+	tlsFPProfileSvc   *TLSFingerprintProfileService
+	settingService    *SettingService
+	fakeCache         *gocache.Cache
+	fakeCacheMu       sync.Mutex
+	fakeCacheStrategy string
+	fakeCacheGen      uint64
 }
 
 func NewKiroGatewayService(
@@ -39,13 +44,15 @@ func NewKiroGatewayService(
 	tokenProvider *KiroTokenProvider,
 	rateLimitService *RateLimitService,
 	tlsFPProfileSvc *TLSFingerprintProfileService,
+	settingService *SettingService,
 ) *KiroGatewayService {
 	return &KiroGatewayService{
 		httpUpstream:     httpUpstream,
 		tokenProvider:    tokenProvider,
 		rateLimitService: rateLimitService,
 		tlsFPProfileSvc:  tlsFPProfileSvc,
-		fakeCache:        gocache.New(kiropkg.FakeCacheTTL, time.Minute),
+		settingService:   settingService,
+		fakeCache:        gocache.New(kiropkg.DefaultFakeCacheTTL, time.Minute),
 	}
 }
 
@@ -55,16 +62,18 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 		return nil, err
 	}
 
-	accessToken, err := s.tokenProvider.GetAccessToken(ctx, account)
+	accessToken, err := s.resolveAccessToken(ctx, account)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{
 			"type":  "error",
-			"error": gin.H{"type": "api_error", "message": "Failed to refresh Kiro token"},
+			"error": gin.H{"type": "api_error", "message": "Failed to get Kiro access token"},
 		})
 		return nil, err
 	}
 
-	req, err := s.buildRequest(ctx, account, converted.Body, accessToken)
+	runtimeSettings := s.resolveKiroRuntimeSettings(ctx)
+	fakeCachePlan, fakeCacheHit := s.prepareFakeCachePlan(account, parsed, runtimeSettings)
+	req, err := s.buildRequest(ctx, account, converted.Body, accessToken, runtimeSettings)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{
 			"type":  "error",
@@ -101,11 +110,10 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 		return nil, fmt.Errorf("kiro upstream returned %d", resp.StatusCode)
 	}
 	inputTokens := kiropkg.EstimateInputTokens(parsed.Body)
-	fakeCachePlan, fakeCacheHit := s.prepareFakeCachePlan(account, parsed)
 	if parsed.Stream {
-		return s.forwardStream(ctx, c, account, resp, parsed, converted, inputTokens, start, fakeCachePlan, fakeCacheHit)
+		return s.forwardStream(ctx, c, account, resp, parsed, converted, inputTokens, start, fakeCachePlan, fakeCacheHit, runtimeSettings)
 	}
-	return s.forwardNonStream(ctx, c, account, resp, parsed, converted, inputTokens, start, fakeCachePlan, fakeCacheHit)
+	return s.forwardNonStream(ctx, c, account, resp, parsed, converted, inputTokens, start, fakeCachePlan, fakeCacheHit, runtimeSettings)
 }
 
 func (s *KiroGatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest) error {
@@ -124,14 +132,10 @@ func (s *KiroGatewayService) validateAndConvertRequest(c *gin.Context, account *
 		return nil, err
 	}
 
-	requestedModel := parsed.Model
-	if strings.TrimSpace(requestedModel) != "" && mapKiroModel(account, requestedModel) == "" {
-		err := fmt.Errorf("unsupported kiro model: %s", requestedModel)
+	requestedModel, err := resolveKiroRequestedModel(account, parsed.Model)
+	if err != nil {
 		writeKiroInvalidRequest(c, err)
 		return nil, err
-	}
-	if mappedModel, matched := account.ResolveMappedModel(requestedModel); matched {
-		requestedModel = mappedModel
 	}
 
 	converted, err := kiropkg.ConvertAnthropicRequestWithModel(parsed.Body, requestedModel)
@@ -140,6 +144,46 @@ func (s *KiroGatewayService) validateAndConvertRequest(c *gin.Context, account *
 		return nil, err
 	}
 	return converted, nil
+}
+
+func resolveKiroRequestedModel(account *Account, requestedModel string) (string, error) {
+	requestedModel = strings.TrimSpace(requestedModel)
+	if requestedModel == "" {
+		return "", nil
+	}
+	if mapKiroModel(account, requestedModel) == "" {
+		return "", fmt.Errorf("unsupported kiro model: %s", requestedModel)
+	}
+	if account != nil {
+		if mappedModel, matched := account.ResolveMappedModel(requestedModel); matched {
+			return mappedModel, nil
+		}
+	}
+	return requestedModel, nil
+}
+
+func (s *KiroGatewayService) resolveAccessToken(ctx context.Context, account *Account) (string, error) {
+	if account == nil {
+		return "", errors.New("account is nil")
+	}
+	if account.Type == AccountTypeAPIKey {
+		apiKey := strings.TrimSpace(account.GetCredential("api_key"))
+		if apiKey == "" {
+			return "", errors.New("api_key not found in credentials")
+		}
+		return apiKey, nil
+	}
+	if s.tokenProvider == nil {
+		return "", errors.New("kiro token provider is not configured")
+	}
+	return s.tokenProvider.GetAccessToken(ctx, account)
+}
+
+func (s *KiroGatewayService) resolveKiroRuntimeSettings(ctx context.Context) *KiroRuntimeSettings {
+	if s != nil && s.settingService != nil {
+		return s.settingService.GetKiroRuntimeSettings(ctx)
+	}
+	return DefaultKiroRuntimeSettings()
 }
 
 func writeKiroInvalidRequest(c *gin.Context, err error) {
@@ -152,33 +196,37 @@ func writeKiroInvalidRequest(c *gin.Context, err error) {
 	})
 }
 
-func (s *KiroGatewayService) buildRequest(ctx context.Context, account *Account, body []byte, accessToken string) (*http.Request, error) {
-	return buildKiroGenerateAssistantRequest(ctx, account, body, accessToken)
+func (s *KiroGatewayService) buildRequest(ctx context.Context, account *Account, body []byte, accessToken string, runtimeSettings *KiroRuntimeSettings) (*http.Request, error) {
+	return buildKiroGenerateAssistantRequest(ctx, account, body, accessToken, runtimeSettings)
 }
 
-func buildKiroGenerateAssistantRequest(ctx context.Context, account *Account, body []byte, accessToken string) (*http.Request, error) {
+func buildKiroGenerateAssistantRequest(ctx context.Context, account *Account, body []byte, accessToken string, runtimeSettings *KiroRuntimeSettings) (*http.Request, error) {
 	url := fmt.Sprintf("https://q.%s.amazonaws.com/generateAssistantResponse", KiroRegion(account))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 
+	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
 	machineID := kiropkg.GenerateMachineID(account.GetCredential("machine_id"), "", account.GetCredential("refresh_token"))
 	host := fmt.Sprintf("q.%s.amazonaws.com", KiroRegion(account))
-	kiroVersion := KiroVersion(account)
+	kiroVersion := runtimeSettings.KiroVersion
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("host", host)
 	req.Header.Set("x-amzn-codewhisperer-optout", "true")
 	req.Header.Set("x-amzn-kiro-agent-mode", "vibe")
 	req.Header.Set("x-amz-user-agent", fmt.Sprintf("aws-sdk-js/1.0.27 KiroIDE-%s-%s", kiroVersion, machineID))
-	req.Header.Set("User-Agent", fmt.Sprintf("aws-sdk-js/1.0.27 ua/2.1 os/%s lang/js md/nodejs#%s api/codewhispererstreaming#1.0.27 m/E KiroIDE-%s-%s", KiroSystemVersion(account), KiroNodeVersion(account), kiroVersion, machineID))
+	req.Header.Set("User-Agent", fmt.Sprintf("aws-sdk-js/1.0.27 ua/2.1 os/%s lang/js md/nodejs#%s api/codewhispererstreaming#1.0.27 m/E KiroIDE-%s-%s", runtimeSettings.SystemVersion, runtimeSettings.NodeVersion, kiroVersion, machineID))
+	if runtimeSettings.KiroCommit != "" {
+		req.Header.Set("x-amzn-kiro-commit", runtimeSettings.KiroCommit)
+	}
 	req.Header.Set("amz-sdk-invocation-id", generateRequestID())
 	req.Header.Set("amz-sdk-request", "attempt=1; max=3")
 	return req, nil
 }
 
-func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Context, account *Account, resp *http.Response, parsed *ParsedRequest, converted *kiropkg.ConvertResult, inputTokens int, start time.Time, fakeCachePlan *kiropkg.FakeCachePlan, fakeCacheHit bool) (*ForwardResult, error) {
+func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Context, account *Account, resp *http.Response, parsed *ParsedRequest, converted *kiropkg.ConvertResult, inputTokens int, start time.Time, fakeCachePlan *kiropkg.FakeCachePlan, fakeCacheHit kiropkg.FakeCacheHitState, runtimeSettings *KiroRuntimeSettings) (*ForwardResult, error) {
 	frames, err := readAllKiroFrames(resp.Body)
 	if err != nil {
 		s.handleProtocolError(ctx, account, parsed.Model, false, err)
@@ -248,10 +296,10 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 	if contextInputTokens > 0 {
 		inputTokens = contextInputTokens
 	}
-	fakeCacheUsage := resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, inputTokens)
+	fakeCacheUsage := resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, inputTokens, runtimeSettings)
 	inputTokens = fakeCacheUsage.InputTokens
 	outputTokens := kiropkg.EstimateOutputTokens(textBuilder.String())
-	s.commitFakeCachePlan(fakeCachePlan)
+	s.commitFakeCachePlan(fakeCachePlan, runtimeSettings)
 
 	c.JSON(http.StatusOK, gin.H{
 		"id":            "msg_" + strings.ReplaceAll(generateRequestID(), "-", ""),
@@ -284,7 +332,7 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 	}, nil
 }
 
-func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, account *Account, resp *http.Response, parsed *ParsedRequest, converted *kiropkg.ConvertResult, inputTokens int, start time.Time, fakeCachePlan *kiropkg.FakeCachePlan, fakeCacheHit bool) (*ForwardResult, error) {
+func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, account *Account, resp *http.Response, parsed *ParsedRequest, converted *kiropkg.ConvertResult, inputTokens int, start time.Time, fakeCachePlan *kiropkg.FakeCachePlan, fakeCacheHit kiropkg.FakeCacheHitState, runtimeSettings *KiroRuntimeSettings) (*ForwardResult, error) {
 	writer := c.Writer
 	msgID := "msg_" + strings.ReplaceAll(generateRequestID(), "-", "")
 	reader := bufio.NewReader(resp.Body)
@@ -352,7 +400,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						if parsed.OnUpstreamAccepted != nil {
 							parsed.OnUpstreamAccepted()
 						}
-						if err := startKiroStream(writer, msgID, parsed.Model, resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, initialInputTokens)); err != nil {
+						if err := startKiroStream(writer, msgID, parsed.Model, resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, initialInputTokens, runtimeSettings)); err != nil {
 							return nil, err
 						}
 						streamStarted = true
@@ -398,7 +446,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						if parsed.OnUpstreamAccepted != nil {
 							parsed.OnUpstreamAccepted()
 						}
-						if err := startKiroStream(writer, msgID, parsed.Model, resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, initialInputTokens)); err != nil {
+						if err := startKiroStream(writer, msgID, parsed.Model, resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, initialInputTokens, runtimeSettings)); err != nil {
 							return nil, err
 						}
 						streamStarted = true
@@ -507,7 +555,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	if contextInputTokens > 0 {
 		inputTokens = contextInputTokens
 	}
-	finalFakeCacheUsage := resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, inputTokens)
+	finalFakeCacheUsage := resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, inputTokens, runtimeSettings)
 	inputTokens = finalFakeCacheUsage.InputTokens
 	outputTokens := kiropkg.EstimateOutputTokens(outputBuilder.String())
 	if err := writeSSEEvent(writer, "message_delta", map[string]any{
@@ -525,7 +573,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	if err := writeSSEEvent(writer, "message_stop", map[string]any{"type": "message_stop"}); err != nil {
 		return nil, err
 	}
-	s.commitFakeCachePlan(fakeCachePlan)
+	s.commitFakeCachePlan(fakeCachePlan, runtimeSettings)
 
 	return &ForwardResult{
 		RequestID:     resp.Header.Get("x-amzn-requestid"),
@@ -543,39 +591,107 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	}, nil
 }
 
-func (s *KiroGatewayService) prepareFakeCachePlan(account *Account, parsed *ParsedRequest) (*kiropkg.FakeCachePlan, bool) {
+func (s *KiroGatewayService) prepareFakeCachePlan(account *Account, parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) (*kiropkg.FakeCachePlan, kiropkg.FakeCacheHitState) {
 	if s == nil || account == nil || parsed == nil {
-		return nil, false
+		return nil, kiropkg.FakeCacheHitState{}
 	}
 
 	plan, err := kiropkg.BuildFakeCachePlan(parsed.Body, account.ID, parsed.Model)
 	if err != nil || plan == nil {
-		return nil, false
+		return nil, kiropkg.FakeCacheHitState{}
 	}
 
-	hit := false
-	if s.fakeCache != nil && plan.PreviousKey != "" {
-		_, hit = s.fakeCache.Get(plan.PreviousKey)
+	hit := kiropkg.FakeCacheHitState{}
+	if s.fakeCache != nil {
+		strategy := kiroFakeCacheStrategy(runtimeSettings)
+		s.fakeCacheMu.Lock()
+		s.refreshFakeCacheStrategyLocked(strategy)
+		plan.CacheStrategy = s.fakeCacheStrategy
+		plan.CacheStrategyGeneration = s.fakeCacheGen
+		if plan.IndependentKey != "" {
+			_, hit.Independent = s.fakeCache.Get(plan.IndependentKey)
+		}
+		if plan.PreviousPrefixKey != "" {
+			_, hit.Prefix = s.fakeCache.Get(plan.PreviousPrefixKey)
+		}
+		s.fakeCacheMu.Unlock()
 	}
 
 	return plan, hit
 }
 
-func (s *KiroGatewayService) commitFakeCachePlan(plan *kiropkg.FakeCachePlan) {
-	if s == nil || s.fakeCache == nil || plan == nil || plan.CurrentKey == "" || plan.CurrentCacheableTokens <= 0 {
+func (s *KiroGatewayService) commitFakeCachePlan(plan *kiropkg.FakeCachePlan, runtimeSettings *KiroRuntimeSettings) {
+	if s == nil || s.fakeCache == nil || plan == nil {
 		return
 	}
-	s.fakeCache.Set(plan.CurrentKey, struct{}{}, gocache.DefaultExpiration)
+	strategy := kiroFakeCacheStrategy(runtimeSettings)
+	s.fakeCacheMu.Lock()
+	defer s.fakeCacheMu.Unlock()
+	if plan.CacheStrategy == "" || plan.CacheStrategyGeneration == 0 {
+		return
+	}
+	if strategy != plan.CacheStrategy || s.fakeCacheStrategy != plan.CacheStrategy || s.fakeCacheGen != plan.CacheStrategyGeneration {
+		return
+	}
+	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
+	if plan.IndependentKey != "" && plan.IndependentCacheableTokens > 0 {
+		s.fakeCache.Set(plan.IndependentKey, struct{}{}, time.Duration(runtimeSettings.CacheIndependentTTLSecs)*time.Second)
+	}
+	if plan.CurrentPrefixKey != "" && plan.CurrentPrefixCacheableTokens > 0 {
+		s.fakeCache.Set(plan.CurrentPrefixKey, struct{}{}, time.Duration(runtimeSettings.CachePrefixTTLSecs)*time.Second)
+		return
+	}
+	if plan.CurrentKey != "" && plan.CurrentCacheableTokens > 0 {
+		s.fakeCache.Set(plan.CurrentKey, struct{}{}, time.Duration(runtimeSettings.CachePrefixTTLSecs)*time.Second)
+	}
 }
 
-func resolveKiroFakeCacheUsage(plan *kiropkg.FakeCachePlan, hit bool, totalInputTokens int) kiropkg.FakeCacheUsage {
+func (s *KiroGatewayService) refreshFakeCacheStrategy(runtimeSettings *KiroRuntimeSettings) {
+	if s == nil || s.fakeCache == nil {
+		return
+	}
+	strategy := kiroFakeCacheStrategy(runtimeSettings)
+	s.fakeCacheMu.Lock()
+	defer s.fakeCacheMu.Unlock()
+	s.refreshFakeCacheStrategyLocked(strategy)
+}
+
+func kiroFakeCacheStrategy(runtimeSettings *KiroRuntimeSettings) string {
+	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
+	return fmt.Sprintf(
+		"hit:%d|min:%d|ind:%d|prefix:%d",
+		runtimeSettings.CacheHitRateScale,
+		runtimeSettings.CacheMinBlockTokens,
+		runtimeSettings.CacheIndependentTTLSecs,
+		runtimeSettings.CachePrefixTTLSecs,
+	)
+}
+
+func (s *KiroGatewayService) refreshFakeCacheStrategyLocked(strategy string) {
+	if s.fakeCacheStrategy == "" {
+		s.fakeCacheStrategy = strategy
+		s.fakeCacheGen = 1
+		return
+	}
+	if s.fakeCacheStrategy != strategy {
+		s.fakeCache.Flush()
+		s.fakeCacheStrategy = strategy
+		s.fakeCacheGen++
+	}
+}
+
+func resolveKiroFakeCacheUsage(plan *kiropkg.FakeCachePlan, hit kiropkg.FakeCacheHitState, totalInputTokens int, runtimeSettings *KiroRuntimeSettings) kiropkg.FakeCacheUsage {
 	if totalInputTokens < 0 {
 		totalInputTokens = 0
 	}
 	if plan == nil {
 		return kiropkg.FakeCacheUsage{InputTokens: totalInputTokens}
 	}
-	return plan.ResolveUsage(totalInputTokens, hit)
+	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
+	return plan.ResolveUsageWithConfig(totalInputTokens, hit, kiropkg.FakeCacheUsageConfig{
+		HitRateScale:   runtimeSettings.CacheHitRateScale,
+		MinBlockTokens: runtimeSettings.CacheMinBlockTokens,
+	})
 }
 
 type kiroFrame struct {

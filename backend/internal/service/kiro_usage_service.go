@@ -44,6 +44,7 @@ type KiroFreeTrial struct {
 type KiroUsageService struct {
 	httpUpstream        HTTPUpstream
 	tlsFPProfileService *TLSFingerprintProfileService
+	settingService      *SettingService
 }
 
 func NewKiroUsageService() *KiroUsageService {
@@ -56,6 +57,14 @@ func (s *KiroUsageService) WithTransport(httpUpstream HTTPUpstream, tlsFPProfile
 	}
 	s.httpUpstream = httpUpstream
 	s.tlsFPProfileService = tlsFPProfileService
+	return s
+}
+
+func (s *KiroUsageService) WithSettingService(settingService *SettingService) *KiroUsageService {
+	if s == nil {
+		return nil
+	}
+	s.settingService = settingService
 	return s
 }
 
@@ -78,14 +87,21 @@ func (s *KiroUsageService) FetchUsageLimits(ctx context.Context, account *Accoun
 		return nil, err
 	}
 
+	runtimeSettings := DefaultKiroRuntimeSettings()
+	if s != nil && s.settingService != nil {
+		runtimeSettings = s.settingService.GetKiroRuntimeSettings(ctx)
+	}
 	machineID := kiro.GenerateMachineID(account.GetCredential("machine_id"), "", account.GetCredential("refresh_token"))
-	kiroVersion := KiroVersion(account)
+	kiroVersion := runtimeSettings.KiroVersion
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("host", host)
 	req.Header.Set("amz-sdk-invocation-id", generateRequestID())
 	req.Header.Set("amz-sdk-request", "attempt=1; max=1")
 	req.Header.Set("x-amz-user-agent", fmt.Sprintf("aws-sdk-js/1.0.0 KiroIDE-%s-%s", kiroVersion, machineID))
-	req.Header.Set("User-Agent", fmt.Sprintf("aws-sdk-js/1.0.0 ua/2.1 os/%s lang/js md/nodejs#%s api/codewhispererruntime#1.0.0 m/N,E KiroIDE-%s-%s", KiroSystemVersion(account), KiroNodeVersion(account), kiroVersion, machineID))
+	req.Header.Set("User-Agent", fmt.Sprintf("aws-sdk-js/1.0.0 ua/2.1 os/%s lang/js md/nodejs#%s api/codewhispererruntime#1.0.0 m/N,E KiroIDE-%s-%s", runtimeSettings.SystemVersion, runtimeSettings.NodeVersion, kiroVersion, machineID))
+	if runtimeSettings.KiroCommit != "" {
+		req.Header.Set("x-amzn-kiro-commit", runtimeSettings.KiroCommit)
+	}
 
 	resp, err := doKiroSidecarRequest(req, account, s.httpUpstream, s.tlsFPProfileService, 60*time.Second)
 	if err != nil {

@@ -97,11 +97,8 @@ func (h *KiroOAuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	authMethod := strings.ToLower(strings.TrimSpace(stringCredentialValue(req.Credentials, "auth_method")))
-	if authMethod == "" {
-		authMethod = "social"
-	}
-	if authMethod == "idc" {
+	authMethod := service.NormalizeKiroAuthMethod(req.Credentials)
+	if service.KiroAuthMethodUsesIDCRefresh(authMethod) {
 		clientID := strings.TrimSpace(stringCredentialValue(req.Credentials, "client_id"))
 		clientSecret := strings.TrimSpace(stringCredentialValue(req.Credentials, "client_secret"))
 		if clientID == "" || clientSecret == "" {

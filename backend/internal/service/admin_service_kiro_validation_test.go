@@ -1,5 +1,3 @@
-//go:build unit
-
 package service
 
 import (
@@ -11,7 +9,7 @@ import (
 )
 
 type accountRepoStubForAdminCreateValidation struct {
-	mockAccountRepoForGemini
+	kiroDefaultAccountRepoStub
 	createCalled     bool
 	bindGroupsCalled bool
 }
@@ -27,27 +25,30 @@ func (s *accountRepoStubForAdminCreateValidation) BindGroups(_ context.Context, 
 	return nil
 }
 
-func TestAdminServiceCreateAccount_RejectsNonOAuthKiroType(t *testing.T) {
+func TestAdminServiceCreateAccount_AllowsKiroAPIKeyType(t *testing.T) {
 	t.Parallel()
 
-	svc := &adminServiceImpl{accountRepo: &mockAccountRepoForGemini{}}
+	repo := &accountRepoStubForAdminCreateValidation{}
+	svc := &adminServiceImpl{accountRepo: repo}
 
 	account, err := svc.CreateAccount(context.Background(), &CreateAccountInput{
-		Name:        "kiro-key",
-		Platform:    PlatformKiro,
-		Type:        AccountTypeAPIKey,
-		Credentials: map[string]any{"api_key": "sk-test"},
+		Name:                 "kiro-key",
+		Platform:             PlatformKiro,
+		Type:                 AccountTypeAPIKey,
+		Credentials:          map[string]any{"api_key": "sk-test"},
+		SkipDefaultGroupBind: true,
 	})
 
-	require.Nil(t, account)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "kiro accounts only support oauth type")
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.True(t, repo.createCalled)
+	require.Equal(t, AccountTypeAPIKey, account.Type)
 }
 
 func TestAdminServiceCreateAccount_RejectsInvalidKiroCredentials(t *testing.T) {
 	t.Parallel()
 
-	svc := &adminServiceImpl{accountRepo: &mockAccountRepoForGemini{}}
+	svc := &adminServiceImpl{accountRepo: &kiroDefaultAccountRepoStub{}}
 
 	account, err := svc.CreateAccount(context.Background(), &CreateAccountInput{
 		Name:        "kiro-oauth",
@@ -61,10 +62,10 @@ func TestAdminServiceCreateAccount_RejectsInvalidKiroCredentials(t *testing.T) {
 	require.Contains(t, err.Error(), "kiro refresh_token is required")
 }
 
-func TestAdminServiceUpdateAccount_RejectsNonOAuthKiroType(t *testing.T) {
+func TestAdminServiceUpdateAccount_AllowsSwitchToKiroAPIKeyType(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockAccountRepoForGemini{
+	repo := &kiroDefaultAccountRepoStub{
 		accountsByID: map[int64]*Account{
 			55: {
 				ID:       55,
@@ -81,18 +82,20 @@ func TestAdminServiceUpdateAccount_RejectsNonOAuthKiroType(t *testing.T) {
 	svc := &adminServiceImpl{accountRepo: repo}
 
 	account, err := svc.UpdateAccount(context.Background(), 55, &UpdateAccountInput{
-		Type: AccountTypeAPIKey,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-test"},
 	})
 
-	require.Nil(t, account)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "kiro accounts only support oauth type")
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.Equal(t, AccountTypeAPIKey, account.Type)
+	require.Equal(t, "sk-test", account.GetCredential("api_key"))
 }
 
 func TestAdminServiceUpdateAccount_RejectsInvalidKiroIDCFields(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockAccountRepoForGemini{
+	repo := &kiroDefaultAccountRepoStub{
 		accountsByID: map[int64]*Account{
 			55: {
 				ID:       55,
@@ -124,7 +127,7 @@ func TestAdminServiceUpdateAccount_RejectsInvalidKiroIDCFields(t *testing.T) {
 func TestAdminServiceBulkUpdateAccounts_RejectsInvalidMergedKiroCredentials(t *testing.T) {
 	t.Parallel()
 
-	repo := &accountRepoStubForBulkUpdate{
+	repo := &kiroDefaultAccountRepoStub{
 		getByIDsAccounts: []*Account{
 			{
 				ID:       77,
@@ -158,7 +161,7 @@ func TestAdminServiceCreateAccount_ValidatesGroupsBeforePersist(t *testing.T) {
 	repo := &accountRepoStubForAdminCreateValidation{}
 	svc := &adminServiceImpl{
 		accountRepo: repo,
-		groupRepo:   &groupRepoStubForAdmin{getErr: ErrGroupNotFound},
+		groupRepo:   &kiroDefaultGroupRepoStub{getErr: ErrGroupNotFound},
 	}
 
 	account, err := svc.CreateAccount(context.Background(), &CreateAccountInput{
@@ -191,4 +194,29 @@ func TestValidateKiroCredentials_AcceptsUnixSecondsExpiresAt(t *testing.T) {
 		"expires_at":    time.Now().Add(time.Hour).Unix(),
 	})
 	require.NoError(t, err)
+}
+
+func TestValidateKiroCredentials_RequiresIDCSecretsForAllIDCRefreshMethods(t *testing.T) {
+	t.Parallel()
+
+	for _, authMethod := range []string{"idc", "builder-id", "iam"} {
+		err := validateKiroCredentials(map[string]any{
+			"refresh_token": "rt",
+			"auth_method":   authMethod,
+			"client_id":     "client-only",
+		})
+		require.Error(t, err, authMethod)
+		require.Contains(t, err.Error(), "kiro idc client_id and client_secret are required", authMethod)
+	}
+}
+
+func TestNormalizeKiroAuthMethod_InfersIDCFromClientCredentials(t *testing.T) {
+	t.Parallel()
+
+	got := NormalizeKiroAuthMethod(map[string]any{
+		"refresh_token": "rt",
+		"client_id":     "client-id",
+		"client_secret": "client-secret",
+	})
+	require.Equal(t, "idc", got)
 }

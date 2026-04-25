@@ -2058,7 +2058,7 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 		return nil, err
 	}
 	if input.Platform == PlatformKiro {
-		if err := validateKiroCredentials(input.Credentials); err != nil {
+		if err := validateKiroAccountCredentials(input.Type, input.Credentials); err != nil {
 			return nil, err
 		}
 	}
@@ -2198,7 +2198,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		account.Credentials = input.Credentials
 	}
 	if account.Platform == PlatformKiro {
-		if err := validateKiroCredentials(account.Credentials); err != nil {
+		if err := validateKiroAccountCredentials(account.Type, account.Credentials); err != nil {
 			return nil, err
 		}
 	}
@@ -2382,7 +2382,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 			if account == nil || account.Platform != PlatformKiro {
 				continue
 			}
-			if err := validateKiroCredentials(MergeCredentials(account.Credentials, input.Credentials)); err != nil {
+			if err := validateKiroAccountCredentials(account.Type, MergeCredentials(account.Credentials, input.Credentials)); err != nil {
 				return nil, err
 			}
 		}

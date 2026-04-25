@@ -240,6 +240,14 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		EnableMetadataPassthrough:              settings.EnableMetadataPassthrough,
 		EnableCCHSigning:                       settings.EnableCCHSigning,
 		WebSearchEmulationEnabled:              settings.WebSearchEmulationEnabled,
+		KiroDefaultVersion:                     settings.KiroDefaultVersion,
+		KiroDefaultCommit:                      settings.KiroDefaultCommit,
+		KiroDefaultSystemVersion:               settings.KiroDefaultSystemVersion,
+		KiroDefaultNodeVersion:                 settings.KiroDefaultNodeVersion,
+		KiroCacheHitRateScale:                  settings.KiroCacheHitRateScale,
+		KiroCacheMinBlockTokens:                settings.KiroCacheMinBlockTokens,
+		KiroCacheIndependentTTLSeconds:         settings.KiroCacheIndependentTTLSeconds,
+		KiroCachePrefixTTLSeconds:              settings.KiroCachePrefixTTLSeconds,
 		PaymentVisibleMethodAlipaySource:       settings.PaymentVisibleMethodAlipaySource,
 		PaymentVisibleMethodWxpaySource:        settings.PaymentVisibleMethodWxpaySource,
 		PaymentVisibleMethodAlipayEnabled:      settings.PaymentVisibleMethodAlipayEnabled,
@@ -434,6 +442,16 @@ type UpdateSettingsRequest struct {
 	EnableMetadataPassthrough    *bool `json:"enable_metadata_passthrough"`
 	EnableCCHSigning             *bool `json:"enable_cch_signing"`
 
+	// Kiro runtime defaults
+	KiroDefaultVersion             *string `json:"kiro_version"`
+	KiroDefaultCommit              *string `json:"kiro_commit"`
+	KiroDefaultSystemVersion       *string `json:"system_version"`
+	KiroDefaultNodeVersion         *string `json:"node_version"`
+	KiroCacheHitRateScale          *int    `json:"cache_hit_rate_scale"`
+	KiroCacheMinBlockTokens        *int    `json:"cache_min_block_tokens"`
+	KiroCacheIndependentTTLSeconds *int    `json:"cache_independent_ttl_seconds"`
+	KiroCachePrefixTTLSeconds      *int    `json:"cache_prefix_ttl_seconds"`
+
 	// Payment visible method routing
 	PaymentVisibleMethodAlipaySource  *string `json:"payment_visible_method_alipay_source"`
 	PaymentVisibleMethodWxpaySource   *string `json:"payment_visible_method_wxpay_source"`
@@ -560,6 +578,37 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	req.AuthSourceDefaultLinuxDoSubscriptions = normalizeOptionalDefaultSubscriptions(req.AuthSourceDefaultLinuxDoSubscriptions)
 	req.AuthSourceDefaultOIDCSubscriptions = normalizeOptionalDefaultSubscriptions(req.AuthSourceDefaultOIDCSubscriptions)
 	req.AuthSourceDefaultWeChatSubscriptions = normalizeOptionalDefaultSubscriptions(req.AuthSourceDefaultWeChatSubscriptions)
+	if req.KiroCacheHitRateScale != nil && (*req.KiroCacheHitRateScale < 0 || *req.KiroCacheHitRateScale > 100) {
+		response.BadRequest(c, "Kiro cache hit rate scale must be between 0 and 100")
+		return
+	}
+	if req.KiroCacheMinBlockTokens != nil &&
+		(*req.KiroCacheMinBlockTokens < 0 || *req.KiroCacheMinBlockTokens > service.KiroCacheMinBlockTokensMax) {
+		response.BadRequest(c, fmt.Sprintf("Kiro cache min block tokens must be between 0 and %d", service.KiroCacheMinBlockTokensMax))
+		return
+	}
+	if req.KiroCacheIndependentTTLSeconds != nil &&
+		(*req.KiroCacheIndependentTTLSeconds < 60 || *req.KiroCacheIndependentTTLSeconds > 86400) {
+		response.BadRequest(c, "Kiro independent TTL must be between 60 and 86400 seconds")
+		return
+	}
+	if req.KiroCachePrefixTTLSeconds != nil &&
+		(*req.KiroCachePrefixTTLSeconds < 60 || *req.KiroCachePrefixTTLSeconds > 3600) {
+		response.BadRequest(c, "Kiro prefix TTL must be between 60 and 3600 seconds")
+		return
+	}
+	effectiveKiroIndependentTTLSeconds := previousSettings.KiroCacheIndependentTTLSeconds
+	if req.KiroCacheIndependentTTLSeconds != nil {
+		effectiveKiroIndependentTTLSeconds = *req.KiroCacheIndependentTTLSeconds
+	}
+	effectiveKiroPrefixTTLSeconds := previousSettings.KiroCachePrefixTTLSeconds
+	if req.KiroCachePrefixTTLSeconds != nil {
+		effectiveKiroPrefixTTLSeconds = *req.KiroCachePrefixTTLSeconds
+	}
+	if effectiveKiroPrefixTTLSeconds > effectiveKiroIndependentTTLSeconds {
+		response.BadRequest(c, "Kiro prefix TTL cannot exceed independent TTL")
+		return
+	}
 
 	// SMTP 配置保护：如果请求中 smtp_host 为空但数据库中已有配置，则保留已有 SMTP 配置
 	// 防止前端加载设置失败时空表单覆盖已保存的 SMTP 配置
@@ -1257,6 +1306,54 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.EnableCCHSigning
 		}(),
+		KiroDefaultVersion: func() string {
+			if req.KiroDefaultVersion != nil {
+				return strings.TrimSpace(*req.KiroDefaultVersion)
+			}
+			return previousSettings.KiroDefaultVersion
+		}(),
+		KiroDefaultCommit: func() string {
+			if req.KiroDefaultCommit != nil {
+				return strings.TrimSpace(*req.KiroDefaultCommit)
+			}
+			return previousSettings.KiroDefaultCommit
+		}(),
+		KiroDefaultSystemVersion: func() string {
+			if req.KiroDefaultSystemVersion != nil {
+				return strings.TrimSpace(*req.KiroDefaultSystemVersion)
+			}
+			return previousSettings.KiroDefaultSystemVersion
+		}(),
+		KiroDefaultNodeVersion: func() string {
+			if req.KiroDefaultNodeVersion != nil {
+				return strings.TrimSpace(*req.KiroDefaultNodeVersion)
+			}
+			return previousSettings.KiroDefaultNodeVersion
+		}(),
+		KiroCacheHitRateScale: func() int {
+			if req.KiroCacheHitRateScale != nil {
+				return *req.KiroCacheHitRateScale
+			}
+			return previousSettings.KiroCacheHitRateScale
+		}(),
+		KiroCacheMinBlockTokens: func() int {
+			if req.KiroCacheMinBlockTokens != nil {
+				return *req.KiroCacheMinBlockTokens
+			}
+			return previousSettings.KiroCacheMinBlockTokens
+		}(),
+		KiroCacheIndependentTTLSeconds: func() int {
+			if req.KiroCacheIndependentTTLSeconds != nil {
+				return *req.KiroCacheIndependentTTLSeconds
+			}
+			return previousSettings.KiroCacheIndependentTTLSeconds
+		}(),
+		KiroCachePrefixTTLSeconds: func() int {
+			if req.KiroCachePrefixTTLSeconds != nil {
+				return *req.KiroCachePrefixTTLSeconds
+			}
+			return previousSettings.KiroCachePrefixTTLSeconds
+		}(),
 		PaymentVisibleMethodAlipaySource: func() string {
 			if req.PaymentVisibleMethodAlipaySource != nil {
 				return strings.TrimSpace(*req.PaymentVisibleMethodAlipaySource)
@@ -1543,6 +1640,14 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		EnableFingerprintUnification:           updatedSettings.EnableFingerprintUnification,
 		EnableMetadataPassthrough:              updatedSettings.EnableMetadataPassthrough,
 		EnableCCHSigning:                       updatedSettings.EnableCCHSigning,
+		KiroDefaultVersion:                     updatedSettings.KiroDefaultVersion,
+		KiroDefaultCommit:                      updatedSettings.KiroDefaultCommit,
+		KiroDefaultSystemVersion:               updatedSettings.KiroDefaultSystemVersion,
+		KiroDefaultNodeVersion:                 updatedSettings.KiroDefaultNodeVersion,
+		KiroCacheHitRateScale:                  updatedSettings.KiroCacheHitRateScale,
+		KiroCacheMinBlockTokens:                updatedSettings.KiroCacheMinBlockTokens,
+		KiroCacheIndependentTTLSeconds:         updatedSettings.KiroCacheIndependentTTLSeconds,
+		KiroCachePrefixTTLSeconds:              updatedSettings.KiroCachePrefixTTLSeconds,
 		PaymentVisibleMethodAlipaySource:       updatedSettings.PaymentVisibleMethodAlipaySource,
 		PaymentVisibleMethodWxpaySource:        updatedSettings.PaymentVisibleMethodWxpaySource,
 		PaymentVisibleMethodAlipayEnabled:      updatedSettings.PaymentVisibleMethodAlipayEnabled,

@@ -3647,7 +3647,7 @@ export default {
         step2Authorize: '打开链接并完成 Kiro 授权',
         step2AuthorizeHint: '浏览器完成授权后，复制地址栏中的完整回调地址。粘贴完整 URL 即可，不需要手动提取参数。',
         step3PasteCallback: '粘贴完整回调地址',
-        callbackUrlPlaceholder: '粘贴完整 Kiro 回调地址，例如 http://localhost:1455/oauth/callback?...',
+        callbackUrlPlaceholder: '粘贴完整 Kiro 回调地址，例如 http://localhost:3128/oauth/callback?...',
         callbackUrlHint: '支持直接粘贴完整回调地址、仅路径，或仅查询串。系统会自动解析并完成兑换。',
         callbackUrlRequired: '请先粘贴完整的 Kiro 回调地址',
         callbackBaseUrlHint: '本次授权使用的回调基地址：{value}',
@@ -3709,6 +3709,9 @@ export default {
         kiroVersionLabel: 'Kiro 版本',
         systemVersionLabel: '系统版本',
         nodeVersionLabel: 'Node.js 版本',
+        manualApiKeyDesc: '手工录入 Kiro API Key 或可直连上游的 Bearer Token。',
+        apiKeyPlaceholder: '输入 Kiro API Key 或 Bearer Token',
+        apiKeyHint: '填写 Kiro API Key 或兼容上游的 Bearer Token。',
         usageSummary: '已用 ${used} / 限额 ${limit} · 剩余 ${remaining}'
       },
       // Test Modal
@@ -5345,6 +5348,38 @@ export default {
         maxVersionPlaceholder: "例如 2.5.0",
         maxVersionHint:
           "拒绝高于此版本的 Claude Code 客户端请求（semver 格式）。留空则不限制最高版本。",
+      },
+      kiroRuntime: {
+        title: "Kiro 运行默认值",
+        description: "配置 Kiro 全局运行默认值与缓存参数，供新请求复用。",
+        kiroVersion: "Kiro 版本",
+        kiroVersionPlaceholder: "例如 0.10.0",
+        kiroCommit: "Kiro Commit",
+        kiroCommitPlaceholder: "例如 a1b2c3d4",
+        systemVersion: "系统版本",
+        systemVersionPlaceholder: "例如 darwin#24.6.0",
+        nodeVersion: "Node.js 版本",
+        nodeVersionPlaceholder: "例如 22.21.1",
+        cacheHitRateScale: "缓存命中率缩放",
+        cacheHitRateScalePlaceholder: "0 - 100",
+        cacheHitRateScaleHint: "范围 0-100，按百分比填写。",
+        cacheMinBlockTokens: "缓存最小块 Token 数",
+        cacheMinBlockTokensPlaceholder: ">= 0",
+        cacheMinBlockTokensHint: "大于等于 0。",
+        cacheIndependentTtlSeconds: "独立缓存 TTL（秒）",
+        cacheIndependentTtlSecondsPlaceholder: "60 - 86400",
+        cacheIndependentTtlSecondsHint: "范围 60-86400 秒。",
+        cachePrefixTtlSeconds: "前缀缓存 TTL（秒）",
+        cachePrefixTtlSecondsPlaceholder: "60 - 3600",
+        cachePrefixTtlSecondsHint: "范围 60-3600 秒，且不能大于独立缓存 TTL。",
+        cache_hit_rate_scale_range: "缓存命中率缩放必须在 0-100 之间。",
+        cache_min_block_tokens_range: "缓存最小块 Token 数必须大于等于 0。",
+        cache_independent_ttl_seconds_range:
+          "独立缓存 TTL 必须在 60-86400 秒之间。",
+        cache_prefix_ttl_seconds_range:
+          "前缀缓存 TTL 必须在 60-3600 秒之间。",
+        cache_prefix_ttl_seconds_exceeds_independent:
+          "前缀缓存 TTL 不能大于独立缓存 TTL。",
       },
       scheduling: {
         title: "网关调度设置",

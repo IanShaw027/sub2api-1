@@ -5,6 +5,18 @@ import { adminAPI } from '@/api/admin'
 import type { KiroAccountExtra, KiroCredentials } from '@/types'
 import type { KiroTokenInfo } from '@/api/admin/kiro'
 
+const KIRO_RUNTIME_EXTRA_KEYS = ['kiro_version', 'kiro_commit', 'system_version', 'node_version'] as const
+
+export const stripKiroRuntimeExtra = (
+  extra?: Record<string, unknown> | null
+): Record<string, unknown> => {
+  const cleaned = { ...(extra || {}) }
+  for (const key of KIRO_RUNTIME_EXTRA_KEYS) {
+    delete cleaned[key]
+  }
+  return cleaned
+}
+
 export function useKiroOAuth() {
   const appStore = useAppStore()
   const { t } = useI18n()
@@ -121,16 +133,14 @@ export function useKiroOAuth() {
     tokenInfo: KiroTokenInfo,
     overrides?: KiroAccountExtra & Record<string, unknown>
   ): Record<string, unknown> => {
-    const extra: Record<string, unknown> = {
-      kiro_version: overrides?.kiro_version || '0.10.0',
-      system_version: overrides?.system_version || 'darwin#24.6.0',
-      node_version: overrides?.node_version || '22.21.1'
-    }
+    const extra: Record<string, unknown> = stripKiroRuntimeExtra(overrides)
 
     if (tokenInfo.email) extra.email = tokenInfo.email
     if (tokenInfo.name) extra.name = tokenInfo.name
     if (tokenInfo.login_provider) extra.login_provider = tokenInfo.login_provider
-    if (tokenInfo.plan_name) extra.subscription_type = tokenInfo.plan_name
+    if (tokenInfo.subscription_type || tokenInfo.plan_name) {
+      extra.subscription_type = tokenInfo.subscription_type || tokenInfo.plan_name
+    }
     if (tokenInfo.plan_tier) extra.subscription_tier = tokenInfo.plan_tier
     if (tokenInfo.usage_reset_at) extra.usage_reset_at = tokenInfo.usage_reset_at
     if (tokenInfo.status) extra.kiro_status = tokenInfo.status

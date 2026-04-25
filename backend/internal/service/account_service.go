@@ -153,8 +153,8 @@ func validatePlatformAccountType(platform, accountType string) error {
 	if err := validateAccountPlatform(platform); err != nil {
 		return err
 	}
-	if platform == PlatformKiro && accountType != AccountTypeOAuth {
-		return infraerrors.BadRequest("UNSUPPORTED_ACCOUNT_TYPE", "kiro accounts only support oauth type")
+	if platform == PlatformKiro && accountType != AccountTypeOAuth && accountType != AccountTypeAPIKey {
+		return infraerrors.BadRequest("UNSUPPORTED_ACCOUNT_TYPE", "kiro accounts only support oauth or apikey type")
 	}
 	return nil
 }
@@ -164,11 +164,8 @@ func validateKiroCredentials(credentials map[string]any) error {
 	if refreshToken == "" {
 		return infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro refresh_token is required")
 	}
-	authMethod := strings.TrimSpace(stringCredential(credentials, "auth_method"))
-	if authMethod == "" {
-		authMethod = "social"
-	}
-	if authMethod == "idc" {
+	authMethod := NormalizeKiroAuthMethod(credentials)
+	if KiroAuthMethodUsesIDCRefresh(authMethod) {
 		if strings.TrimSpace(stringCredential(credentials, "client_id")) == "" || strings.TrimSpace(stringCredential(credentials, "client_secret")) == "" {
 			return infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro idc client_id and client_secret are required")
 		}
@@ -179,6 +176,47 @@ func validateKiroCredentials(credentials map[string]any) error {
 		}
 	}
 	return nil
+}
+
+func validateKiroAPIKeyCredentials(credentials map[string]any) error {
+	apiKey := strings.TrimSpace(stringCredential(credentials, "api_key"))
+	if apiKey == "" {
+		return infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro api_key is required")
+	}
+	return nil
+}
+
+func validateKiroAccountCredentials(accountType string, credentials map[string]any) error {
+	switch accountType {
+	case AccountTypeOAuth:
+		return validateKiroCredentials(credentials)
+	case AccountTypeAPIKey:
+		return validateKiroAPIKeyCredentials(credentials)
+	default:
+		return nil
+	}
+}
+
+// KiroAuthMethodUsesIDCRefresh mirrors KiroTokenRefresher.Refresh's IDC/OIDC
+// token refresh branch.
+func KiroAuthMethodUsesIDCRefresh(authMethod string) bool {
+	switch strings.ToLower(strings.TrimSpace(authMethod)) {
+	case "idc", "builder-id", "iam":
+		return true
+	default:
+		return false
+	}
+}
+
+func NormalizeKiroAuthMethod(credentials map[string]any) string {
+	authMethod := strings.ToLower(strings.TrimSpace(stringCredential(credentials, "auth_method")))
+	if authMethod != "" {
+		return authMethod
+	}
+	if strings.TrimSpace(stringCredential(credentials, "client_id")) != "" && strings.TrimSpace(stringCredential(credentials, "client_secret")) != "" {
+		return "idc"
+	}
+	return "social"
 }
 
 func stringCredential(credentials map[string]any, key string) string {
@@ -236,7 +274,7 @@ func (s *AccountService) Create(ctx context.Context, req CreateAccountRequest) (
 		return nil, err
 	}
 	if req.Platform == PlatformKiro {
-		if err := validateKiroCredentials(req.Credentials); err != nil {
+		if err := validateKiroAccountCredentials(req.Type, req.Credentials); err != nil {
 			return nil, err
 		}
 	}
@@ -346,7 +384,7 @@ func (s *AccountService) Update(ctx context.Context, id int64, req UpdateAccount
 		account.Credentials = *req.Credentials
 	}
 	if account.Platform == PlatformKiro {
-		if err := validateKiroCredentials(account.Credentials); err != nil {
+		if err := validateKiroAccountCredentials(account.Type, account.Credentials); err != nil {
 			return nil, err
 		}
 	}

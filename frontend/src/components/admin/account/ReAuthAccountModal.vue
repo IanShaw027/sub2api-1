@@ -121,7 +121,7 @@
       </div>
 
       <KiroAuthorizationFlow
-        v-if="isKiro"
+        v-if="isKiroOAuth"
         mode="reauth"
         :auth-url="kiroOAuth.authUrl.value"
         :callback-base-url="kiroOAuth.callbackBaseUrl.value"
@@ -134,7 +134,7 @@
       />
 
       <OAuthAuthorizationFlow
-        v-else
+        v-else-if="!isKiro"
         ref="oauthFlowRef"
         :add-method="addMethod"
         :auth-url="currentAuthUrl"
@@ -219,7 +219,7 @@ import {
 import { useOpenAIOAuth } from '@/composables/useOpenAIOAuth'
 import { useGeminiOAuth } from '@/composables/useGeminiOAuth'
 import { useAntigravityOAuth } from '@/composables/useAntigravityOAuth'
-import { useKiroOAuth } from '@/composables/useKiroOAuth'
+import { stripKiroRuntimeExtra, useKiroOAuth } from '@/composables/useKiroOAuth'
 import type { Account, KiroAccountExtra, KiroCredentials } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -273,17 +273,18 @@ const isGemini = computed(() => props.account?.platform === 'gemini')
 const isAnthropic = computed(() => props.account?.platform === 'anthropic')
 const isAntigravity = computed(() => props.account?.platform === 'antigravity')
 const isKiro = computed(() => props.account?.platform === 'kiro')
+const isKiroOAuth = computed(() => props.account?.platform === 'kiro' && props.account?.type === 'oauth')
 const kiroCredentials = computed((): KiroCredentials & Record<string, unknown> => {
-  if (props.account?.platform !== 'kiro') {
+  if (!isKiroOAuth.value) {
     return {}
   }
-  return props.account.credentials || {}
+  return props.account?.credentials || {}
 })
 const kiroExtra = computed((): KiroAccountExtra & Record<string, unknown> => {
-  if (props.account?.platform !== 'kiro') {
+  if (!isKiroOAuth.value) {
     return {}
   }
-  return props.account.extra || {}
+  return props.account?.extra || {}
 })
 const dialogTitle = computed(() => t('admin.accounts.reAuthorizeAccount'))
 
@@ -394,7 +395,7 @@ const handleKiroReauthorize = async (payload: {
   credentials: Record<string, unknown>
   extra: Record<string, unknown>
 }) => {
-  if (!props.account) return
+  if (!props.account || !isKiroOAuth.value) return
 
   const tokenInfo = await kiroOAuth.exchangeCallback(payload.callbackUrl, props.account.proxy_id)
   if (!tokenInfo) {
@@ -408,6 +409,7 @@ const handleKiroReauthorize = async (payload: {
     (props.account.extra || {}) as Record<string, unknown>,
     kiroOAuth.buildExtraInfo(tokenInfo, payload.extra)
   )
+  const sanitizedExtra = stripKiroRuntimeExtra(extra)
   const name = kiroOAuth.buildAccountName(tokenInfo, props.account.name)
 
   try {
@@ -415,7 +417,7 @@ const handleKiroReauthorize = async (payload: {
       name,
       type: 'oauth',
       credentials,
-      extra
+      extra: sanitizedExtra
     })
     const updatedAccount = await adminAPI.accounts.clearError(props.account.id)
     appStore.showSuccess(t('admin.accounts.reAuthorizedSuccess'))
@@ -435,8 +437,10 @@ const handleGenerateUrl = async () => {
 
   if (isOpenAILike.value) {
     await openaiOAuth.generateAuthUrl(props.account.proxy_id)
-  } else if (isKiro.value) {
+  } else if (isKiroOAuth.value) {
     await kiroOAuth.generateAuthUrl(props.account.proxy_id)
+  } else if (isKiro.value) {
+    return
   } else if (isGemini.value) {
     const creds = (props.account.credentials || {}) as Record<string, unknown>
     const tierId = typeof creds.tier_id === 'string' ? creds.tier_id : undefined

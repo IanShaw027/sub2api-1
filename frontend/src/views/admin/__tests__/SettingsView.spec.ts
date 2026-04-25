@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 
+import { KIRO_CACHE_MIN_BLOCK_TOKENS_MAX } from "@/api/admin/settings";
 import SettingsView from "../SettingsView.vue";
 
 const {
@@ -151,6 +152,33 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.authSourceDefaults.addBonusSubscription": "添加附加订阅",
     "admin.settings.authSourceDefaults.subscriptionGroupLabel": "订阅分组",
     "admin.settings.authSourceDefaults.noSourceSubscriptions": "当前来源未配置附加订阅。",
+    "admin.settings.kiroRuntime.title": "Kiro 运行默认值",
+    "admin.settings.kiroRuntime.description": "配置 Kiro 全局运行默认值与缓存参数，供新请求复用。",
+    "admin.settings.kiroRuntime.kiroVersion": "Kiro 版本",
+    "admin.settings.kiroRuntime.kiroVersionPlaceholder": "例如 0.10.0",
+    "admin.settings.kiroRuntime.kiroCommit": "Kiro Commit",
+    "admin.settings.kiroRuntime.kiroCommitPlaceholder": "例如 a1b2c3d4",
+    "admin.settings.kiroRuntime.systemVersion": "系统版本",
+    "admin.settings.kiroRuntime.systemVersionPlaceholder": "例如 darwin#24.6.0",
+    "admin.settings.kiroRuntime.nodeVersion": "Node.js 版本",
+    "admin.settings.kiroRuntime.nodeVersionPlaceholder": "例如 22.21.1",
+    "admin.settings.kiroRuntime.cacheHitRateScale": "缓存命中率缩放",
+    "admin.settings.kiroRuntime.cacheHitRateScalePlaceholder": "0 - 100",
+    "admin.settings.kiroRuntime.cacheHitRateScaleHint": "范围 0-100，按百分比填写。",
+    "admin.settings.kiroRuntime.cacheMinBlockTokens": "缓存最小块 Token 数",
+    "admin.settings.kiroRuntime.cacheMinBlockTokensPlaceholder": ">= 0",
+    "admin.settings.kiroRuntime.cacheMinBlockTokensHint": "大于等于 0。",
+    "admin.settings.kiroRuntime.cacheIndependentTtlSeconds": "独立缓存 TTL（秒）",
+    "admin.settings.kiroRuntime.cacheIndependentTtlSecondsPlaceholder": "60 - 86400",
+    "admin.settings.kiroRuntime.cacheIndependentTtlSecondsHint": "范围 60-86400 秒。",
+    "admin.settings.kiroRuntime.cachePrefixTtlSeconds": "前缀缓存 TTL（秒）",
+    "admin.settings.kiroRuntime.cachePrefixTtlSecondsPlaceholder": "60 - 3600",
+    "admin.settings.kiroRuntime.cachePrefixTtlSecondsHint": "范围 60-3600 秒，且不能大于独立缓存 TTL。",
+    "admin.settings.kiroRuntime.cache_hit_rate_scale_range": "缓存命中率缩放必须在 0-100 之间。",
+    "admin.settings.kiroRuntime.cache_min_block_tokens_range": "缓存最小块 Token 数必须大于等于 0。",
+    "admin.settings.kiroRuntime.cache_independent_ttl_seconds_range": "独立缓存 TTL 必须在 60-86400 秒之间。",
+    "admin.settings.kiroRuntime.cache_prefix_ttl_seconds_range": "前缀缓存 TTL 必须在 60-3600 秒之间。",
+    "admin.settings.kiroRuntime.cache_prefix_ttl_seconds_exceeds_independent": "前缀缓存 TTL 不能大于独立缓存 TTL。",
     "admin.settings.paymentVisibleMethods.methodLabel": "{title} 可见方式",
     "admin.settings.paymentVisibleMethods.methodHint": "控制前台结算页是否展示该方式，以及展示时使用的来源键。",
     "admin.settings.paymentVisibleMethods.sourceLabel": "支付来源",
@@ -398,6 +426,14 @@ const baseSettingsResponse = {
   balance_low_notify_recharge_url: "",
   account_quota_notify_enabled: false,
   account_quota_notify_emails: [],
+  kiro_version: "0.10.0",
+  kiro_commit: "",
+  system_version: "darwin#24.6.0",
+  node_version: "22.21.1",
+  cache_hit_rate_scale: 95,
+  cache_min_block_tokens: 1024,
+  cache_independent_ttl_seconds: 3600,
+  cache_prefix_ttl_seconds: 300,
 };
 
 function mountView() {
@@ -448,6 +484,16 @@ async function openUsersTab(wrapper: ReturnType<typeof mountView>) {
 
   expect(usersTabButton).toBeDefined();
   await usersTabButton?.trigger("click");
+  await flushPromises();
+}
+
+async function openGatewayTab(wrapper: ReturnType<typeof mountView>) {
+  const gatewayTabButton = wrapper
+    .findAll("button")
+    .find((node) => node.text().includes("admin.settings.tabs.gateway"));
+
+  expect(gatewayTabButton).toBeDefined();
+  await gatewayTabButton?.trigger("click");
   await flushPromises();
 }
 
@@ -950,5 +996,156 @@ describe("admin SettingsView wechat connect controls", () => {
         oidc_connect_validate_id_token: false,
       }),
     );
+  });
+
+  it("renders kiro runtime defaults from settings and submits normalized values", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    expect(
+      (
+        wrapper.get('[data-testid="kiro-runtime-version"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe("0.10.0");
+    expect(
+      (
+        wrapper.get('[data-testid="kiro-runtime-cache-hit-rate-scale"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe("95");
+
+    await wrapper.get('[data-testid="kiro-runtime-version"]').setValue(" 0.11.0 ");
+    await wrapper
+      .get('[data-testid="kiro-runtime-commit"]')
+      .setValue(" abc123 ");
+    await wrapper
+      .get('[data-testid="kiro-runtime-system-version"]')
+      .setValue(" linux#6.8.0 ");
+    await wrapper
+      .get('[data-testid="kiro-runtime-node-version"]')
+      .setValue(" 24.1.0 ");
+    await wrapper
+      .get('[data-testid="kiro-runtime-cache-hit-rate-scale"]')
+      .setValue("88.6");
+    await wrapper
+      .get('[data-testid="kiro-runtime-cache-min-block-tokens"]')
+      .setValue("2048.9");
+    await wrapper
+      .get('[data-testid="kiro-runtime-cache-independent-ttl-seconds"]')
+      .setValue("7200.2");
+    await wrapper
+      .get('[data-testid="kiro-runtime-cache-prefix-ttl-seconds"]')
+      .setValue("600.7");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kiro_version: "0.11.0",
+        kiro_commit: "abc123",
+        system_version: "linux#6.8.0",
+        node_version: "24.1.0",
+        cache_hit_rate_scale: 88,
+        cache_min_block_tokens: 2048,
+        cache_independent_ttl_seconds: 7200,
+        cache_prefix_ttl_seconds: 600,
+      }),
+    );
+  });
+
+  it("submits default resets when kiro runtime cache fields are cleared", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    await wrapper
+      .get('[data-testid="kiro-runtime-cache-hit-rate-scale"]')
+      .setValue("");
+    await wrapper
+      .get('[data-testid="kiro-runtime-cache-min-block-tokens"]')
+      .setValue("");
+    await wrapper
+      .get('[data-testid="kiro-runtime-cache-independent-ttl-seconds"]')
+      .setValue("");
+    await wrapper
+      .get('[data-testid="kiro-runtime-cache-prefix-ttl-seconds"]')
+      .setValue("");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cache_hit_rate_scale: 95,
+        cache_min_block_tokens: 1024,
+        cache_independent_ttl_seconds: 3600,
+        cache_prefix_ttl_seconds: 300,
+      }),
+    );
+  });
+
+  it("blocks save when kiro prefix ttl exceeds independent ttl", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    await wrapper
+      .get('[data-testid="kiro-runtime-cache-independent-ttl-seconds"]')
+      .setValue("300");
+    await wrapper
+      .get('[data-testid="kiro-runtime-cache-prefix-ttl-seconds"]')
+      .setValue("301");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(showError).toHaveBeenCalledWith(
+      "前缀缓存 TTL 不能大于独立缓存 TTL。",
+    );
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("validates cleared kiro prefix ttl against its default reset value", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    await wrapper
+      .get('[data-testid="kiro-runtime-cache-independent-ttl-seconds"]')
+      .setValue("120");
+    await wrapper
+      .get('[data-testid="kiro-runtime-cache-prefix-ttl-seconds"]')
+      .setValue("");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(showError).toHaveBeenCalledWith(
+      "前缀缓存 TTL 不能大于独立缓存 TTL。",
+    );
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("blocks save when kiro cache min block tokens exceeds the contract max", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    await wrapper
+      .get('[data-testid="kiro-runtime-cache-min-block-tokens"]')
+      .setValue(String(KIRO_CACHE_MIN_BLOCK_TOKENS_MAX + 1));
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(showError).toHaveBeenCalledWith(
+      `缓存最小块 Token 数必须在 0-${KIRO_CACHE_MIN_BLOCK_TOKENS_MAX} 之间。`,
+    );
+    expect(updateSettings).not.toHaveBeenCalled();
   });
 });

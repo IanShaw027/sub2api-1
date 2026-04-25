@@ -36,6 +36,8 @@ var (
 	)
 )
 
+const KiroCacheMinBlockTokensMax = 1 << 20
+
 type SettingRepository interface {
 	Get(ctx context.Context, key string) (*Setting, error)
 	GetValue(ctx context.Context, key string) (string, error)
@@ -95,6 +97,19 @@ var gatewayForwardingSF singleflight.Group
 const gatewayForwardingCacheTTL = 60 * time.Second
 const gatewayForwardingErrorTTL = 5 * time.Second
 const gatewayForwardingDBTimeout = 5 * time.Second
+
+type cachedKiroRuntimeSettings struct {
+	settings  *KiroRuntimeSettings
+	expiresAt int64 // unix nano
+}
+
+var kiroRuntimeSettingsCache atomic.Value // *cachedKiroRuntimeSettings
+var kiroRuntimeSettingsSF singleflight.Group
+var sharedKiroRuntimeSettingService atomic.Pointer[SettingService]
+
+const kiroRuntimeSettingsCacheTTL = 60 * time.Second
+const kiroRuntimeSettingsErrorTTL = 5 * time.Second
+const kiroRuntimeSettingsDBTimeout = 5 * time.Second
 
 // DefaultSubscriptionGroupReader validates group references used by default subscriptions.
 type DefaultSubscriptionGroupReader interface {
@@ -365,10 +380,25 @@ func (s *SettingService) effectiveWeChatConnectOAuthConfig(settings map[string]s
 
 // NewSettingService 创建系统设置服务实例
 func NewSettingService(settingRepo SettingRepository, cfg *config.Config) *SettingService {
-	return &SettingService{
+	svc := &SettingService{
 		settingRepo: settingRepo,
 		cfg:         cfg,
 	}
+	registerKiroRuntimeSettingService(svc)
+	return svc
+}
+
+func registerKiroRuntimeSettingService(settingService *SettingService) {
+	if settingService != nil {
+		sharedKiroRuntimeSettingService.Store(settingService)
+	}
+}
+
+func getSharedKiroRuntimeSettings(ctx context.Context) *KiroRuntimeSettings {
+	if settingService := sharedKiroRuntimeSettingService.Load(); settingService != nil {
+		return settingService.GetKiroRuntimeSettings(ctx)
+	}
+	return DefaultKiroRuntimeSettings()
 }
 
 // SetDefaultSubscriptionGroupReader injects an optional group reader for default subscription validation.
@@ -1159,6 +1189,9 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	if err := s.validateDefaultSubscriptionGroups(ctx, settings.DefaultSubscriptions); err != nil {
 		return nil, err
 	}
+	if err := validateKiroRuntimeSettingsForUpdate(settings); err != nil {
+		return nil, err
+	}
 	normalizedWhitelist, err := NormalizeRegistrationEmailSuffixWhitelist(settings.RegistrationEmailSuffixWhitelist)
 	if err != nil {
 		return nil, infraerrors.BadRequest("INVALID_REGISTRATION_EMAIL_SUFFIX_WHITELIST", err.Error())
@@ -1378,6 +1411,24 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyEnableFingerprintUnification] = strconv.FormatBool(settings.EnableFingerprintUnification)
 	updates[SettingKeyEnableMetadataPassthrough] = strconv.FormatBool(settings.EnableMetadataPassthrough)
 	updates[SettingKeyEnableCCHSigning] = strconv.FormatBool(settings.EnableCCHSigning)
+	kiroRuntime := normalizeKiroRuntimeSettings(&KiroRuntimeSettings{
+		KiroVersion:             settings.KiroDefaultVersion,
+		KiroCommit:              settings.KiroDefaultCommit,
+		SystemVersion:           settings.KiroDefaultSystemVersion,
+		NodeVersion:             settings.KiroDefaultNodeVersion,
+		CacheHitRateScale:       settings.KiroCacheHitRateScale,
+		CacheMinBlockTokens:     settings.KiroCacheMinBlockTokens,
+		CacheIndependentTTLSecs: settings.KiroCacheIndependentTTLSeconds,
+		CachePrefixTTLSecs:      settings.KiroCachePrefixTTLSeconds,
+	})
+	updates[SettingKeyKiroDefaultVersion] = kiroRuntime.KiroVersion
+	updates[SettingKeyKiroDefaultCommit] = kiroRuntime.KiroCommit
+	updates[SettingKeyKiroDefaultSystemVersion] = kiroRuntime.SystemVersion
+	updates[SettingKeyKiroDefaultNodeVersion] = kiroRuntime.NodeVersion
+	updates[SettingKeyKiroCacheHitRateScale] = strconv.Itoa(kiroRuntime.CacheHitRateScale)
+	updates[SettingKeyKiroCacheMinBlockTokens] = strconv.Itoa(kiroRuntime.CacheMinBlockTokens)
+	updates[SettingKeyKiroCacheIndependentTTLSeconds] = strconv.Itoa(kiroRuntime.CacheIndependentTTLSecs)
+	updates[SettingKeyKiroCachePrefixTTLSeconds] = strconv.Itoa(kiroRuntime.CachePrefixTTLSecs)
 	updates[SettingPaymentVisibleMethodAlipaySource] = settings.PaymentVisibleMethodAlipaySource
 	updates[SettingPaymentVisibleMethodWxpaySource] = settings.PaymentVisibleMethodWxpaySource
 	updates[SettingPaymentVisibleMethodAlipayEnabled] = strconv.FormatBool(settings.PaymentVisibleMethodAlipayEnabled)
@@ -1442,6 +1493,20 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 		metadataPassthrough:    settings.EnableMetadataPassthrough,
 		cchSigning:             settings.EnableCCHSigning,
 		expiresAt:              time.Now().Add(gatewayForwardingCacheTTL).UnixNano(),
+	})
+	kiroRuntimeSettingsSF.Forget("kiro_runtime")
+	kiroRuntimeSettingsCache.Store(&cachedKiroRuntimeSettings{
+		settings: normalizeKiroRuntimeSettings(&KiroRuntimeSettings{
+			KiroVersion:             settings.KiroDefaultVersion,
+			KiroCommit:              settings.KiroDefaultCommit,
+			SystemVersion:           settings.KiroDefaultSystemVersion,
+			NodeVersion:             settings.KiroDefaultNodeVersion,
+			CacheHitRateScale:       settings.KiroCacheHitRateScale,
+			CacheMinBlockTokens:     settings.KiroCacheMinBlockTokens,
+			CacheIndependentTTLSecs: settings.KiroCacheIndependentTTLSeconds,
+			CachePrefixTTLSecs:      settings.KiroCachePrefixTTLSeconds,
+		}),
+		expiresAt: time.Now().Add(kiroRuntimeSettingsCacheTTL).UnixNano(),
 	})
 	openAIAdvancedSchedulerSettingSF.Forget(openAIAdvancedSchedulerSettingKey)
 	openAIAdvancedSchedulerSettingCache.Store(&cachedOpenAIAdvancedSchedulerSetting{
@@ -2298,6 +2363,15 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 			result.WebSearchEmulationEnabled = wsCfg.Enabled && len(wsCfg.Providers) > 0
 		}
 	}
+	kiroRuntime := parseKiroRuntimeSettingsMap(settings)
+	result.KiroDefaultVersion = kiroRuntime.KiroVersion
+	result.KiroDefaultCommit = kiroRuntime.KiroCommit
+	result.KiroDefaultSystemVersion = kiroRuntime.SystemVersion
+	result.KiroDefaultNodeVersion = kiroRuntime.NodeVersion
+	result.KiroCacheHitRateScale = kiroRuntime.CacheHitRateScale
+	result.KiroCacheMinBlockTokens = kiroRuntime.CacheMinBlockTokens
+	result.KiroCacheIndependentTTLSeconds = kiroRuntime.CacheIndependentTTLSecs
+	result.KiroCachePrefixTTLSeconds = kiroRuntime.CachePrefixTTLSecs
 	result.PaymentVisibleMethodAlipaySource = NormalizeVisibleMethodSource("alipay", settings[SettingPaymentVisibleMethodAlipaySource])
 	result.PaymentVisibleMethodWxpaySource = NormalizeVisibleMethodSource("wxpay", settings[SettingPaymentVisibleMethodWxpaySource])
 	result.PaymentVisibleMethodAlipayEnabled = settings[SettingPaymentVisibleMethodAlipayEnabled] == "true"
@@ -2334,6 +2408,141 @@ func clampAffiliateRebateRate(value float64) float64 {
 		return AffiliateRebateRateMax
 	}
 	return value
+}
+
+func parseKiroRuntimeSettingsMap(settings map[string]string) *KiroRuntimeSettings {
+	result := DefaultKiroRuntimeSettings()
+	if settings == nil {
+		return result
+	}
+
+	result.KiroVersion = firstNonEmpty(strings.TrimSpace(settings[SettingKeyKiroDefaultVersion]), result.KiroVersion)
+	result.KiroCommit = strings.TrimSpace(settings[SettingKeyKiroDefaultCommit])
+	result.SystemVersion = firstNonEmpty(strings.TrimSpace(settings[SettingKeyKiroDefaultSystemVersion]), result.SystemVersion)
+	result.NodeVersion = firstNonEmpty(strings.TrimSpace(settings[SettingKeyKiroDefaultNodeVersion]), result.NodeVersion)
+
+	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyKiroCacheHitRateScale])); err == nil {
+		result.CacheHitRateScale = v
+	}
+	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyKiroCacheMinBlockTokens])); err == nil {
+		result.CacheMinBlockTokens = v
+	}
+	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyKiroCacheIndependentTTLSeconds])); err == nil {
+		result.CacheIndependentTTLSecs = v
+	}
+	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyKiroCachePrefixTTLSeconds])); err == nil {
+		result.CachePrefixTTLSecs = v
+	}
+
+	return normalizeKiroRuntimeSettings(result)
+}
+
+func normalizeKiroRuntimeSettings(settings *KiroRuntimeSettings) *KiroRuntimeSettings {
+	if settings == nil {
+		return DefaultKiroRuntimeSettings()
+	}
+
+	settings.KiroVersion = normalizeKiroHeaderValue(settings.KiroVersion, defaultKiroVersion)
+	settings.KiroCommit = normalizeKiroOptionalHeaderValue(settings.KiroCommit)
+	settings.SystemVersion = normalizeKiroHeaderValue(settings.SystemVersion, defaultKiroSystemVersion)
+	settings.NodeVersion = normalizeKiroHeaderValue(settings.NodeVersion, defaultKiroNodeVersion)
+	settings.CacheHitRateScale = clampInt(settings.CacheHitRateScale, 0, 100, defaultKiroCacheHitRateScale)
+	settings.CacheMinBlockTokens = boundedIntOrDefault(settings.CacheMinBlockTokens, 0, KiroCacheMinBlockTokensMax, defaultKiroCacheMinBlockTokens)
+	settings.CacheIndependentTTLSecs = clampInt(settings.CacheIndependentTTLSecs, 60, 86400, defaultKiroCacheIndependentTTL)
+	settings.CachePrefixTTLSecs = clampInt(settings.CachePrefixTTLSecs, 60, 3600, defaultKiroCachePrefixTTL)
+	if settings.CachePrefixTTLSecs > settings.CacheIndependentTTLSecs {
+		settings.CachePrefixTTLSecs = settings.CacheIndependentTTLSecs
+	}
+	return settings
+}
+
+func validateKiroRuntimeSettingsForUpdate(settings *SystemSettings) error {
+	if settings == nil {
+		return nil
+	}
+	settings.KiroDefaultVersion = strings.TrimSpace(settings.KiroDefaultVersion)
+	settings.KiroDefaultCommit = strings.TrimSpace(settings.KiroDefaultCommit)
+	settings.KiroDefaultSystemVersion = strings.TrimSpace(settings.KiroDefaultSystemVersion)
+	settings.KiroDefaultNodeVersion = strings.TrimSpace(settings.KiroDefaultNodeVersion)
+	if !isSafeKiroHeaderValue(settings.KiroDefaultVersion) {
+		return infraerrors.BadRequest("INVALID_KIRO_RUNTIME_SETTINGS", "Kiro version contains invalid header characters")
+	}
+	if !isSafeKiroHeaderValue(settings.KiroDefaultCommit) {
+		return infraerrors.BadRequest("INVALID_KIRO_RUNTIME_SETTINGS", "Kiro commit contains invalid header characters")
+	}
+	if !isSafeKiroHeaderValue(settings.KiroDefaultSystemVersion) {
+		return infraerrors.BadRequest("INVALID_KIRO_RUNTIME_SETTINGS", "Kiro system version contains invalid header characters")
+	}
+	if !isSafeKiroHeaderValue(settings.KiroDefaultNodeVersion) {
+		return infraerrors.BadRequest("INVALID_KIRO_RUNTIME_SETTINGS", "Kiro node version contains invalid header characters")
+	}
+	if settings.KiroCacheHitRateScale < 0 || settings.KiroCacheHitRateScale > 100 {
+		return infraerrors.BadRequest("INVALID_KIRO_RUNTIME_SETTINGS", "Kiro cache hit rate scale must be between 0 and 100")
+	}
+	if settings.KiroCacheMinBlockTokens < 0 || settings.KiroCacheMinBlockTokens > KiroCacheMinBlockTokensMax {
+		return infraerrors.BadRequest(
+			"INVALID_KIRO_RUNTIME_SETTINGS",
+			fmt.Sprintf("Kiro cache min block tokens must be between 0 and %d", KiroCacheMinBlockTokensMax),
+		)
+	}
+	if settings.KiroCacheIndependentTTLSeconds != 0 &&
+		(settings.KiroCacheIndependentTTLSeconds < 60 || settings.KiroCacheIndependentTTLSeconds > 86400) {
+		return infraerrors.BadRequest("INVALID_KIRO_RUNTIME_SETTINGS", "Kiro independent TTL must be between 60 and 86400 seconds")
+	}
+	if settings.KiroCachePrefixTTLSeconds != 0 &&
+		(settings.KiroCachePrefixTTLSeconds < 60 || settings.KiroCachePrefixTTLSeconds > 3600) {
+		return infraerrors.BadRequest("INVALID_KIRO_RUNTIME_SETTINGS", "Kiro prefix TTL must be between 60 and 3600 seconds")
+	}
+	if settings.KiroCacheIndependentTTLSeconds != 0 &&
+		settings.KiroCachePrefixTTLSeconds != 0 &&
+		settings.KiroCachePrefixTTLSeconds > settings.KiroCacheIndependentTTLSeconds {
+		return infraerrors.BadRequest("INVALID_KIRO_RUNTIME_SETTINGS", "Kiro prefix TTL cannot exceed independent TTL")
+	}
+	return nil
+}
+
+func normalizeKiroHeaderValue(value, fallback string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || !isSafeKiroHeaderValue(trimmed) {
+		return fallback
+	}
+	return trimmed
+}
+
+func normalizeKiroOptionalHeaderValue(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || !isSafeKiroHeaderValue(trimmed) {
+		return ""
+	}
+	return trimmed
+}
+
+func isSafeKiroHeaderValue(value string) bool {
+	for i := 0; i < len(value); i++ {
+		b := value[i]
+		if b < 0x20 || b == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+func boundedIntOrDefault(value, minValue, maxValue, defaultValue int) int {
+	if value < minValue || value > maxValue {
+		return defaultValue
+	}
+	return value
+}
+
+func clampInt(value, minValue, maxValue, defaultValue int) int {
+	switch {
+	case value < minValue:
+		return defaultValue
+	case value > maxValue:
+		return maxValue
+	default:
+		return value
+	}
 }
 
 func clampNonNegativeFloat(value float64) float64 {
@@ -3151,6 +3360,62 @@ func (s *SettingService) IsUngroupedKeySchedulingAllowed(ctx context.Context) bo
 		return false // fail-closed: 查询失败时默认不允许
 	}
 	return value == "true"
+}
+
+func (s *SettingService) GetKiroRuntimeSettings(ctx context.Context) *KiroRuntimeSettings {
+	if cached, ok := kiroRuntimeSettingsCache.Load().(*cachedKiroRuntimeSettings); ok {
+		if cached != nil && cached.settings != nil && time.Now().UnixNano() < cached.expiresAt {
+			cloned := *cached.settings
+			return &cloned
+		}
+	}
+
+	result, err, _ := kiroRuntimeSettingsSF.Do("kiro_runtime", func() (any, error) {
+		if cached, ok := kiroRuntimeSettingsCache.Load().(*cachedKiroRuntimeSettings); ok {
+			if cached != nil && cached.settings != nil && time.Now().UnixNano() < cached.expiresAt {
+				cloned := *cached.settings
+				return &cloned, nil
+			}
+		}
+
+		dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), kiroRuntimeSettingsDBTimeout)
+		defer cancel()
+		values, err := s.settingRepo.GetMultiple(dbCtx, []string{
+			SettingKeyKiroDefaultVersion,
+			SettingKeyKiroDefaultCommit,
+			SettingKeyKiroDefaultSystemVersion,
+			SettingKeyKiroDefaultNodeVersion,
+			SettingKeyKiroCacheHitRateScale,
+			SettingKeyKiroCacheMinBlockTokens,
+			SettingKeyKiroCacheIndependentTTLSeconds,
+			SettingKeyKiroCachePrefixTTLSeconds,
+		})
+		if err != nil {
+			slog.Warn("failed to get kiro runtime settings, falling back to defaults", "error", err)
+			settings := DefaultKiroRuntimeSettings()
+			kiroRuntimeSettingsCache.Store(&cachedKiroRuntimeSettings{
+				settings:  settings,
+				expiresAt: time.Now().Add(kiroRuntimeSettingsErrorTTL).UnixNano(),
+			})
+			cloned := *settings
+			return &cloned, nil
+		}
+
+		settings := parseKiroRuntimeSettingsMap(values)
+		kiroRuntimeSettingsCache.Store(&cachedKiroRuntimeSettings{
+			settings:  settings,
+			expiresAt: time.Now().Add(kiroRuntimeSettingsCacheTTL).UnixNano(),
+		})
+		cloned := *settings
+		return &cloned, nil
+	})
+	if err != nil {
+		return DefaultKiroRuntimeSettings()
+	}
+	if settings, ok := result.(*KiroRuntimeSettings); ok && settings != nil {
+		return settings
+	}
+	return DefaultKiroRuntimeSettings()
 }
 
 // GetClaudeCodeVersionBounds 获取 Claude Code 版本号上下限要求

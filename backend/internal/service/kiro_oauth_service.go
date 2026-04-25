@@ -18,16 +18,18 @@ import (
 const (
 	kiroOAuthPortalURL        = "https://app.kiro.dev/signin"
 	kiroOAuthTokenEndpoint    = "https://prod.us-east-1.auth.desktop.kiro.dev/oauth/token"
-	kiroOAuthDefaultCallback  = "http://localhost:1455"
+	kiroOAuthCallbackBaseURL  = "http://localhost:3128"
 	kiroOAuthSessionTTL       = 30 * time.Minute
 	kiroOAuthDefaultUserAgent = "sub2api Kiro OAuth"
 )
 
 var kiroCodeExchangeFunc = exchangeKiroCodeForToken
+var kiroFindCallbackBaseURLFunc = findKiroCallbackBaseURL
 
 type KiroOAuthSession struct {
 	State           string
 	CodeVerifier    string
+	RedirectURI     string
 	CallbackBaseURL string
 	ProxyURL        string
 	CreatedAt       time.Time
@@ -109,11 +111,12 @@ func NewKiroOAuthService(
 	proxyRepo ProxyRepository,
 	httpUpstream HTTPUpstream,
 	tlsFPProfileService *TLSFingerprintProfileService,
+	settingService *SettingService,
 ) *KiroOAuthService {
 	return &KiroOAuthService{
 		sessionStore: NewKiroOAuthSessionStore(),
 		proxyRepo:    proxyRepo,
-		usageService: NewKiroUsageService().WithTransport(httpUpstream, tlsFPProfileService),
+		usageService: NewKiroUsageService().WithTransport(httpUpstream, tlsFPProfileService).WithSettingService(settingService),
 	}
 }
 
@@ -179,11 +182,16 @@ func (s *KiroOAuthService) GenerateAuthURL(ctx context.Context, proxyID *int64) 
 		}
 	}
 
-	callbackBaseURL := kiroOAuthDefaultCallback
+	callbackBaseURL, err := kiroFindCallbackBaseURLFunc()
+	if err != nil {
+		return nil, err
+	}
+	redirectURI := strings.TrimSpace(callbackBaseURL)
 	s.sessionStore.Set(sessionID, &KiroOAuthSession{
 		State:           state,
 		CodeVerifier:    codeVerifier,
-		CallbackBaseURL: callbackBaseURL,
+		RedirectURI:     redirectURI,
+		CallbackBaseURL: redirectURI,
 		ProxyURL:        proxyURL,
 		CreatedAt:       time.Now(),
 	})
@@ -192,13 +200,13 @@ func (s *KiroOAuthService) GenerateAuthURL(ctx context.Context, proxyID *int64) 
 	params.Set("state", state)
 	params.Set("code_challenge", generateKiroCodeChallenge(codeVerifier))
 	params.Set("code_challenge_method", "S256")
-	params.Set("redirect_uri", callbackBaseURL)
+	params.Set("redirect_uri", redirectURI)
 	params.Set("redirect_from", "KiroIDE")
 
 	return &KiroAuthURLResult{
 		AuthURL:     kiroOAuthPortalURL + "?" + params.Encode(),
 		SessionID:   sessionID,
-		CallbackURL: callbackBaseURL,
+		CallbackURL: redirectURI,
 	}, nil
 }
 
@@ -208,7 +216,12 @@ func (s *KiroOAuthService) ExchangeCallback(ctx context.Context, input *KiroExch
 		return nil, fmt.Errorf("kiro oauth session not found or expired")
 	}
 
-	parsedURL, err := parseKiroCallbackURL(input.CallbackURL, session.CallbackBaseURL)
+	redirectURI := kiroOAuthSessionRedirectURI(session)
+	callbackBaseURL := strings.TrimSpace(session.CallbackBaseURL)
+	if callbackBaseURL == "" {
+		callbackBaseURL = redirectURI
+	}
+	parsedURL, err := parseKiroCallbackURL(input.CallbackURL, callbackBaseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +267,7 @@ func (s *KiroOAuthService) ExchangeCallback(ctx context.Context, input *KiroExch
 		}
 	}
 
-	tokenPayload, err := kiroCodeExchangeFunc(ctx, code, session.CodeVerifier, session.CallbackBaseURL, proxyURL)
+	tokenPayload, err := kiroCodeExchangeFunc(ctx, code, session.CodeVerifier, redirectURI, proxyURL)
 	if err != nil {
 		return nil, err
 	}
@@ -280,11 +293,6 @@ func (s *KiroOAuthService) enrichTokenInfo(ctx context.Context, tokenInfo *KiroT
 			"region":        firstNonEmptyKiroString(tokenInfo.Region, "us-east-1"),
 			"auth_region":   tokenInfo.AuthRegion,
 			"api_region":    tokenInfo.APIRegion,
-		},
-		Extra: map[string]any{
-			"kiro_version":   "0.10.0",
-			"system_version": "darwin#24.6.0",
-			"node_version":   "22.21.1",
 		},
 		Concurrency: 1,
 	}
@@ -319,6 +327,20 @@ func generateKiroOAuthToken(n int) (string, error) {
 func generateKiroCodeChallenge(codeVerifier string) string {
 	hash := sha256.Sum256([]byte(codeVerifier))
 	return base64.RawURLEncoding.EncodeToString(hash[:])
+}
+
+func findKiroCallbackBaseURL() (string, error) {
+	return kiroOAuthCallbackBaseURL, nil
+}
+
+func kiroOAuthSessionRedirectURI(session *KiroOAuthSession) string {
+	if session == nil {
+		return ""
+	}
+	if redirectURI := strings.TrimSpace(session.RedirectURI); redirectURI != "" {
+		return redirectURI
+	}
+	return strings.TrimSpace(session.CallbackBaseURL)
 }
 
 func parseKiroCallbackURL(rawValue, callbackBaseURL string) (*url.URL, error) {

@@ -238,36 +238,6 @@ func KiroAuthRegion(account *Account) string {
 	return "us-east-1"
 }
 
-func KiroVersion(account *Account) string {
-	if account == nil || account.Extra == nil {
-		return "0.10.0"
-	}
-	if value, ok := account.Extra["kiro_version"].(string); ok && value != "" {
-		return value
-	}
-	return "0.10.0"
-}
-
-func KiroSystemVersion(account *Account) string {
-	if account == nil || account.Extra == nil {
-		return "darwin#24.6.0"
-	}
-	if value, ok := account.Extra["system_version"].(string); ok && value != "" {
-		return value
-	}
-	return "darwin#24.6.0"
-}
-
-func KiroNodeVersion(account *Account) string {
-	if account == nil || account.Extra == nil {
-		return "22.21.1"
-	}
-	if value, ok := account.Extra["node_version"].(string); ok && value != "" {
-		return value
-	}
-	return "22.21.1"
-}
-
 func KiroMachineID(account *Account) string {
 	if account == nil {
 		return ""

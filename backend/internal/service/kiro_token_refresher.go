@@ -15,6 +15,7 @@ import (
 type KiroTokenRefresher struct {
 	httpUpstream        HTTPUpstream
 	tlsFPProfileService *TLSFingerprintProfileService
+	settingService      *SettingService
 }
 
 func NewKiroTokenRefresher() *KiroTokenRefresher {
@@ -27,6 +28,14 @@ func (r *KiroTokenRefresher) WithTransport(httpUpstream HTTPUpstream, tlsFPProfi
 	}
 	r.httpUpstream = httpUpstream
 	r.tlsFPProfileService = tlsFPProfileService
+	return r
+}
+
+func (r *KiroTokenRefresher) WithSettingService(settingService *SettingService) *KiroTokenRefresher {
+	if r == nil {
+		return nil
+	}
+	r.settingService = settingService
 	return r
 }
 
@@ -47,15 +56,6 @@ func (r *KiroTokenRefresher) NeedsRefresh(account *Account, refreshWindow time.D
 }
 
 func (r *KiroTokenRefresher) Refresh(ctx context.Context, account *Account) (map[string]any, error) {
-	authMethod := strings.ToLower(strings.TrimSpace(account.GetCredential("auth_method")))
-	if authMethod == "" {
-		if account.GetCredential("client_id") != "" && account.GetCredential("client_secret") != "" {
-			authMethod = "idc"
-		} else {
-			authMethod = "social"
-		}
-	}
-
 	var (
 		accessToken  string
 		refreshToken string
@@ -64,8 +64,8 @@ func (r *KiroTokenRefresher) Refresh(ctx context.Context, account *Account) (map
 		err          error
 	)
 
-	switch authMethod {
-	case "idc", "builder-id", "iam":
+	switch authMethod := NormalizeKiroAuthMethod(account.Credentials); {
+	case KiroAuthMethodUsesIDCRefresh(authMethod):
 		accessToken, refreshToken, expiresAt, err = r.refreshKiroIDCToken(ctx, account)
 	default:
 		accessToken, refreshToken, expiresAt, profileARN, err = r.refreshKiroSocialToken(ctx, account)
@@ -143,17 +143,26 @@ func (r *KiroTokenRefresher) doKiroJSONRequest(ctx context.Context, account *Acc
 		return err
 	}
 
+	runtimeSettings := DefaultKiroRuntimeSettings()
+	if r != nil && r.settingService != nil {
+		runtimeSettings = r.settingService.GetKiroRuntimeSettings(ctx)
+	}
+	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
 	machineID := kiropkg.GenerateMachineID(account.GetCredential("machine_id"), "", account.GetCredential("refresh_token"))
+	kiroVersion := runtimeSettings.KiroVersion
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("host", host)
-	req.Header.Set("User-Agent", fmt.Sprintf("KiroIDE-%s-%s", KiroVersion(account), machineID))
+	req.Header.Set("User-Agent", fmt.Sprintf("KiroIDE-%s-%s", kiroVersion, machineID))
+	if runtimeSettings.KiroCommit != "" {
+		req.Header.Set("x-amzn-kiro-commit", runtimeSettings.KiroCommit)
+	}
 	if strings.Contains(url, "oidc.") {
-		req.Header.Set("x-amz-user-agent", "aws-sdk-js/3.738.0 ua/2.1 os/other lang/js md/browser#unknown_unknown api/sso-oidc#3.738.0 m/E KiroIDE")
+		req.Header.Set("x-amz-user-agent", fmt.Sprintf("aws-sdk-js/3.738.0 KiroIDE-%s-%s", kiroVersion, machineID))
 		req.Header.Set("Accept", "*/*")
 		req.Header.Set("Accept-Language", "*")
 		req.Header.Set("sec-fetch-mode", "cors")
-		req.Header.Set("User-Agent", "node")
+		req.Header.Set("User-Agent", fmt.Sprintf("aws-sdk-js/3.738.0 ua/2.1 os/%s lang/js md/nodejs#%s api/sso-oidc#3.738.0 m/E KiroIDE-%s-%s", runtimeSettings.SystemVersion, runtimeSettings.NodeVersion, kiroVersion, machineID))
 	}
 
 	resp, err := doKiroSidecarRequest(req, account, r.httpUpstream, r.tlsFPProfileService, 60*time.Second)

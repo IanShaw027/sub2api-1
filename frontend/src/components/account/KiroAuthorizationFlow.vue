@@ -134,6 +134,9 @@
                 {{ t('admin.accounts.kiro.advancedFieldsTitle') }}
               </summary>
               <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <p class="md:col-span-2 text-sm text-cyan-700 dark:text-cyan-300">
+                  Kiro version、system version、Node.js version 等运行参数由系统配置统一管理。
+                </p>
                 <div>
                   <label class="input-label">{{ t('admin.accounts.kiro.regionLabel') }}</label>
                   <input
@@ -178,18 +181,6 @@
                     class="input font-mono text-sm"
                     :placeholder="t('admin.accounts.kiro.optionalPlaceholder')"
                   />
-                </div>
-                <div>
-                  <label class="input-label">{{ t('admin.accounts.kiro.kiroVersionLabel') }}</label>
-                  <input v-model="kiroVersion" type="text" class="input font-mono text-sm" placeholder="0.10.0" />
-                </div>
-                <div>
-                  <label class="input-label">{{ t('admin.accounts.kiro.systemVersionLabel') }}</label>
-                  <input v-model="systemVersion" type="text" class="input font-mono text-sm" placeholder="darwin#24.6.0" />
-                </div>
-                <div>
-                  <label class="input-label">{{ t('admin.accounts.kiro.nodeVersionLabel') }}</label>
-                  <input v-model="nodeVersion" type="text" class="input font-mono text-sm" placeholder="22.21.1" />
                 </div>
               </div>
             </details>
@@ -270,9 +261,6 @@ const region = ref('us-east-1')
 const authRegion = ref('')
 const apiRegion = ref('')
 const machineID = ref('')
-const kiroVersion = ref('0.10.0')
-const systemVersion = ref('darwin#24.6.0')
-const nodeVersion = ref('22.21.1')
 const localError = ref('')
 
 const title = computed(() => (
@@ -295,21 +283,17 @@ const submitLabel = computed(() => (
 
 const resetForm = () => {
   const credentials = props.initialCredentials || {}
-  const extra = props.initialExtra || {}
   callbackUrl.value = ''
   profileARN.value = credentials.profile_arn || ''
   region.value = credentials.region || 'us-east-1'
   authRegion.value = credentials.auth_region || ''
   apiRegion.value = credentials.api_region || ''
   machineID.value = credentials.machine_id || ''
-  kiroVersion.value = extra.kiro_version || '0.10.0'
-  systemVersion.value = extra.system_version || 'darwin#24.6.0'
-  nodeVersion.value = extra.node_version || '22.21.1'
   localError.value = ''
 }
 
 watch(
-  () => [props.initialCredentials, props.initialExtra, props.mode],
+  () => [props.initialCredentials, props.mode],
   () => {
     resetForm()
   },
@@ -336,16 +320,10 @@ const handleSubmit = () => {
   if (profileARN.value.trim()) credentials.profile_arn = profileARN.value.trim()
   if (machineID.value.trim()) credentials.machine_id = machineID.value.trim()
 
-  const extra: KiroAccountExtra & Record<string, unknown> = {
-    kiro_version: kiroVersion.value.trim() || '0.10.0',
-    system_version: systemVersion.value.trim() || 'darwin#24.6.0',
-    node_version: nodeVersion.value.trim() || '22.21.1'
-  }
-
   emit('submit', {
     callbackUrl: callbackUrl.value.trim(),
     credentials,
-    extra
+    extra: {}
   })
 }
 </script>

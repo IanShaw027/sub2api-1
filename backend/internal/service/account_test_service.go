@@ -102,6 +102,7 @@ type AccountTestService struct {
 	httpUpstream              HTTPUpstream
 	cfg                       *config.Config
 	tlsFPProfileService       *TLSFingerprintProfileService
+	settingService            *SettingService
 }
 
 // NewAccountTestService creates a new AccountTestService
@@ -113,6 +114,7 @@ func NewAccountTestService(
 	httpUpstream HTTPUpstream,
 	cfg *config.Config,
 	tlsFPProfileService *TLSFingerprintProfileService,
+	settingService *SettingService,
 ) *AccountTestService {
 	return &AccountTestService{
 		accountRepo:               accountRepo,
@@ -122,6 +124,7 @@ func NewAccountTestService(
 		httpUpstream:              httpUpstream,
 		cfg:                       cfg,
 		tlsFPProfileService:       tlsFPProfileService,
+		settingService:            settingService,
 	}
 }
 
@@ -236,6 +239,10 @@ func (s *AccountTestService) testKiroAccountConnection(c *gin.Context, account *
 	if strings.TrimSpace(testModelID) == "" {
 		testModelID = "claude-sonnet-4-5-20250929"
 	}
+	convertedModelID, err := resolveKiroRequestedModel(account, testModelID)
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Unsupported Kiro model: %s", testModelID))
+	}
 
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
@@ -245,8 +252,11 @@ func (s *AccountTestService) testKiroAccountConnection(c *gin.Context, account *
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
 
 	accessToken := account.GetCredential("access_token")
+	if account.Type == AccountTypeAPIKey {
+		accessToken = account.GetCredential("api_key")
+	}
 	expiresAt := account.GetCredentialAsTime("expires_at")
-	if accessToken == "" || expiresAt == nil || expiresAt.Before(time.Now().Add(3*time.Minute)) {
+	if account.Type == AccountTypeOAuth && (accessToken == "" || expiresAt == nil || expiresAt.Before(time.Now().Add(3*time.Minute))) {
 		if s.kiroTokenProvider == nil {
 			return s.sendErrorAndEnd(c, "Kiro token provider is not configured")
 		}
@@ -261,7 +271,7 @@ func (s *AccountTestService) testKiroAccountConnection(c *gin.Context, account *
 	}
 
 	payload := map[string]any{
-		"model": testModelID,
+		"model": convertedModelID,
 		"messages": []map[string]any{
 			{
 				"role": "user",
@@ -277,12 +287,12 @@ func (s *AccountTestService) testKiroAccountConnection(c *gin.Context, account *
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create Kiro test payload")
 	}
-	converted, err := kiropkg.ConvertAnthropicRequest(body)
+	converted, err := kiropkg.ConvertAnthropicRequestWithModel(body, convertedModelID)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to convert Kiro payload: %s", err.Error()))
 	}
 
-	req, err := buildKiroGenerateAssistantRequest(ctx, account, converted.Body, accessToken)
+	req, err := buildKiroGenerateAssistantRequest(ctx, account, converted.Body, accessToken, s.resolveKiroRuntimeSettings(ctx))
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create Kiro request")
 	}
@@ -309,6 +319,13 @@ func (s *AccountTestService) testKiroAccountConnection(c *gin.Context, account *
 	s.sendEvent(c, TestEvent{Type: "content", Text: "Kiro connection OK"})
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
 	return nil
+}
+
+func (s *AccountTestService) resolveKiroRuntimeSettings(ctx context.Context) *KiroRuntimeSettings {
+	if s != nil && s.settingService != nil {
+		return s.settingService.GetKiroRuntimeSettings(ctx)
+	}
+	return DefaultKiroRuntimeSettings()
 }
 
 // testClaudeAccountConnection tests an Anthropic Claude account's connection

@@ -160,6 +160,16 @@ type SystemSettings struct {
 	// Web Search Emulation
 	WebSearchEmulationEnabled bool // 是否启用 web search 模拟
 
+	// Kiro runtime defaults
+	KiroDefaultVersion             string
+	KiroDefaultCommit              string
+	KiroDefaultSystemVersion       string
+	KiroDefaultNodeVersion         string
+	KiroCacheHitRateScale          int
+	KiroCacheMinBlockTokens        int
+	KiroCacheIndependentTTLSeconds int
+	KiroCachePrefixTTLSeconds      int
+
 	// Payment visible method routing
 	PaymentVisibleMethodAlipaySource  string
 	PaymentVisibleMethodWxpaySource   string
@@ -177,6 +187,40 @@ type SystemSettings struct {
 	// Account quota notification
 	AccountQuotaNotifyEnabled bool
 	AccountQuotaNotifyEmails  []NotifyEmailEntry
+}
+
+type KiroRuntimeSettings struct {
+	KiroVersion             string `json:"kiro_version"`
+	KiroCommit              string `json:"kiro_commit"`
+	SystemVersion           string `json:"system_version"`
+	NodeVersion             string `json:"node_version"`
+	CacheHitRateScale       int    `json:"cache_hit_rate_scale"`
+	CacheMinBlockTokens     int    `json:"cache_min_block_tokens"`
+	CacheIndependentTTLSecs int    `json:"cache_independent_ttl_seconds"`
+	CachePrefixTTLSecs      int    `json:"cache_prefix_ttl_seconds"`
+}
+
+const (
+	defaultKiroVersion             = "0.10.0"
+	defaultKiroSystemVersion       = "darwin#24.6.0"
+	defaultKiroNodeVersion         = "22.21.1"
+	defaultKiroCacheHitRateScale   = 95
+	defaultKiroCacheMinBlockTokens = 1024
+	defaultKiroCacheIndependentTTL = 3600
+	defaultKiroCachePrefixTTL      = 300
+)
+
+func DefaultKiroRuntimeSettings() *KiroRuntimeSettings {
+	return &KiroRuntimeSettings{
+		KiroVersion:             defaultKiroVersion,
+		KiroCommit:              "",
+		SystemVersion:           defaultKiroSystemVersion,
+		NodeVersion:             defaultKiroNodeVersion,
+		CacheHitRateScale:       defaultKiroCacheHitRateScale,
+		CacheMinBlockTokens:     defaultKiroCacheMinBlockTokens,
+		CacheIndependentTTLSecs: defaultKiroCacheIndependentTTL,
+		CachePrefixTTLSecs:      defaultKiroCachePrefixTTL,
+	}
 }
 
 type DefaultSubscriptionSetting struct {

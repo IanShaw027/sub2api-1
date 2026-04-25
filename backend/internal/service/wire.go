@@ -60,9 +60,11 @@ func ProvideTokenRefreshService(
 	privacyClientFactory PrivacyClientFactory,
 	proxyRepo ProxyRepository,
 	refreshAPI *OAuthRefreshAPI,
+	settingService *SettingService,
 ) *TokenRefreshService {
 	svc := NewTokenRefreshService(accountRepo, oauthService, openaiOAuthService, geminiOAuthService, antigravityOAuthService, cacheInvalidator, schedulerCache, cfg, tempUnschedCache)
 	svc.SetKiroTransport(httpUpstream, tlsFPProfileService)
+	svc.SetKiroSettingService(settingService)
 	// 注入 OpenAI privacy opt-out 依赖
 	svc.SetPrivacyDeps(privacyClientFactory, proxyRepo)
 	// 注入统一 OAuth 刷新 API（消除 TokenRefreshService 与 TokenProvider 之间的竞争条件）
@@ -138,9 +140,10 @@ func ProvideKiroTokenProvider(
 	httpUpstream HTTPUpstream,
 	tlsFPProfileService *TLSFingerprintProfileService,
 	refreshAPI *OAuthRefreshAPI,
+	settingService *SettingService,
 ) *KiroTokenProvider {
 	p := NewKiroTokenProvider(accountRepo, tokenCache)
-	executor := NewKiroTokenRefresher().WithTransport(httpUpstream, tlsFPProfileService)
+	executor := NewKiroTokenRefresher().WithTransport(httpUpstream, tlsFPProfileService).WithSettingService(settingService)
 	p.SetRefreshAPI(refreshAPI, executor)
 	p.SetRefreshPolicy(ClaudeProviderRefreshPolicy())
 	return p
@@ -149,8 +152,9 @@ func ProvideKiroTokenProvider(
 func ProvideKiroTokenRefresher(
 	httpUpstream HTTPUpstream,
 	tlsFPProfileService *TLSFingerprintProfileService,
+	settingService *SettingService,
 ) *KiroTokenRefresher {
-	return NewKiroTokenRefresher().WithTransport(httpUpstream, tlsFPProfileService)
+	return NewKiroTokenRefresher().WithTransport(httpUpstream, tlsFPProfileService).WithSettingService(settingService)
 }
 
 // ProvideDashboardAggregationService 创建并启动仪表盘聚合服务

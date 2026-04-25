@@ -3657,7 +3657,7 @@ export default {
         step2Authorize: 'Open the URL and finish Kiro authorization',
         step2AuthorizeHint: 'After authorization finishes in the browser, copy the full callback URL from the address bar. You do not need to extract parameters manually.',
         step3PasteCallback: 'Paste the full callback URL',
-        callbackUrlPlaceholder: 'Paste the full Kiro callback URL, for example http://localhost:1455/oauth/callback?...',
+        callbackUrlPlaceholder: 'Paste the full Kiro callback URL, for example http://localhost:3128/oauth/callback?...',
         callbackUrlHint: 'You can paste the full callback URL, only the path, or only the query string. The server will normalize and exchange it.',
         callbackUrlRequired: 'Paste the full Kiro callback URL first',
         callbackBaseUrlHint: 'Callback base URL for this login: {value}',
@@ -3719,6 +3719,9 @@ export default {
         kiroVersionLabel: 'Kiro Version',
         systemVersionLabel: 'System Version',
         nodeVersionLabel: 'Node Version',
+        manualApiKeyDesc: 'Enter a Kiro API key or a bearer token that can call the upstream directly.',
+        apiKeyPlaceholder: 'Enter Kiro API key or bearer token',
+        apiKeyHint: 'Enter a Kiro API key or a compatible upstream bearer token.',
         usageSummary: 'Used ${used} / Limit ${limit} · Remaining ${remaining}'
       },
       // Test Modal
@@ -5415,6 +5418,42 @@ export default {
         maxVersionPlaceholder: "e.g. 2.5.0",
         maxVersionHint:
           "Reject Claude Code clients above this version (semver format). Leave empty to allow any version.",
+      },
+      kiroRuntime: {
+        title: "Kiro Runtime Defaults",
+        description:
+          "Configure global Kiro runtime defaults and cache parameters for new requests.",
+        kiroVersion: "Kiro Version",
+        kiroVersionPlaceholder: "e.g. 0.10.0",
+        kiroCommit: "Kiro Commit",
+        kiroCommitPlaceholder: "e.g. a1b2c3d4",
+        systemVersion: "System Version",
+        systemVersionPlaceholder: "e.g. darwin#24.6.0",
+        nodeVersion: "Node.js Version",
+        nodeVersionPlaceholder: "e.g. 22.21.1",
+        cacheHitRateScale: "Cache Hit Rate Scale",
+        cacheHitRateScalePlaceholder: "0 - 100",
+        cacheHitRateScaleHint: "Range 0-100, entered as a percentage.",
+        cacheMinBlockTokens: "Cache Min Block Tokens",
+        cacheMinBlockTokensPlaceholder: ">= 0",
+        cacheMinBlockTokensHint: "Must be greater than or equal to 0.",
+        cacheIndependentTtlSeconds: "Independent Cache TTL (seconds)",
+        cacheIndependentTtlSecondsPlaceholder: "60 - 86400",
+        cacheIndependentTtlSecondsHint: "Range 60-86400 seconds.",
+        cachePrefixTtlSeconds: "Prefix Cache TTL (seconds)",
+        cachePrefixTtlSecondsPlaceholder: "60 - 3600",
+        cachePrefixTtlSecondsHint:
+          "Range 60-3600 seconds and must not exceed the independent cache TTL.",
+        cache_hit_rate_scale_range:
+          "Cache hit rate scale must be between 0 and 100.",
+        cache_min_block_tokens_range:
+          "Cache min block tokens must be greater than or equal to 0.",
+        cache_independent_ttl_seconds_range:
+          "Independent cache TTL must be between 60 and 86400 seconds.",
+        cache_prefix_ttl_seconds_range:
+          "Prefix cache TTL must be between 60 and 3600 seconds.",
+        cache_prefix_ttl_seconds_exceeds_independent:
+          "Prefix cache TTL must not exceed the independent cache TTL.",
       },
       scheduling: {
         title: "Gateway Scheduling Settings",

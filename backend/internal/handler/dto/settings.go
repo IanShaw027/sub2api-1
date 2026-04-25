@@ -156,6 +156,16 @@ type SystemSettings struct {
 	// Web Search Emulation
 	WebSearchEmulationEnabled bool `json:"web_search_emulation_enabled"`
 
+	// Kiro runtime defaults
+	KiroDefaultVersion             string `json:"kiro_version"`
+	KiroDefaultCommit              string `json:"kiro_commit"`
+	KiroDefaultSystemVersion       string `json:"system_version"`
+	KiroDefaultNodeVersion         string `json:"node_version"`
+	KiroCacheHitRateScale          int    `json:"cache_hit_rate_scale"`
+	KiroCacheMinBlockTokens        int    `json:"cache_min_block_tokens"`
+	KiroCacheIndependentTTLSeconds int    `json:"cache_independent_ttl_seconds"`
+	KiroCachePrefixTTLSeconds      int    `json:"cache_prefix_ttl_seconds"`
+
 	// Payment visible method routing
 	PaymentVisibleMethodAlipaySource  string `json:"payment_visible_method_alipay_source"`
 	PaymentVisibleMethodWxpaySource   string `json:"payment_visible_method_wxpay_source"`

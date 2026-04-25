@@ -51,6 +51,30 @@ export interface WeChatConnectModeOption {
   labelEn: string;
 }
 
+export type KiroRuntimeValidationError =
+  | "cache_hit_rate_scale_range"
+  | "cache_min_block_tokens_range"
+  | "cache_independent_ttl_seconds_range"
+  | "cache_prefix_ttl_seconds_range"
+  | "cache_prefix_ttl_seconds_exceeds_independent";
+
+export interface KiroRuntimeSettingsInput {
+  kiro_version?: string | null;
+  kiro_commit?: string | null;
+  system_version?: string | null;
+  node_version?: string | null;
+  cache_hit_rate_scale?: number | null;
+  cache_min_block_tokens?: number | null;
+  cache_independent_ttl_seconds?: number | null;
+  cache_prefix_ttl_seconds?: number | null;
+}
+
+export const KIRO_CACHE_HIT_RATE_SCALE_DEFAULT = 95;
+export const KIRO_CACHE_MIN_BLOCK_TOKENS_DEFAULT = 1024;
+export const KIRO_CACHE_MIN_BLOCK_TOKENS_MAX = 1 << 20;
+export const KIRO_CACHE_INDEPENDENT_TTL_SECONDS_DEFAULT = 3600;
+export const KIRO_CACHE_PREFIX_TTL_SECONDS_DEFAULT = 300;
+
 const AUTH_SOURCE_TYPES: AuthSourceType[] = [
   "email",
   "linuxdo",
@@ -254,6 +278,165 @@ export function defaultWeChatConnectScopesForMode(mode: unknown): string {
   }
 }
 
+function normalizeOptionalInteger(value: unknown): number | undefined {
+  if (value == null || value === "") return undefined;
+
+  const normalized = Math.floor(Number(value));
+  return Number.isFinite(normalized) ? normalized : undefined;
+}
+
+function normalizeOptionalIntegerForValidation(
+  value: unknown,
+  resetValue: number,
+): number | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return resetValue;
+
+  return normalizeOptionalInteger(value);
+}
+
+function normalizeOptionalIntegerForUpdate(
+  value: unknown,
+  resetValue: number,
+): number | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return resetValue;
+
+  return normalizeOptionalInteger(value);
+}
+
+export function validateKiroRuntimeSettings(
+  settings: KiroRuntimeSettingsInput,
+): KiroRuntimeValidationError | null {
+  const cacheHitRateScale = normalizeOptionalIntegerForValidation(
+    settings.cache_hit_rate_scale,
+    KIRO_CACHE_HIT_RATE_SCALE_DEFAULT,
+  );
+  if (
+    cacheHitRateScale != null &&
+    (cacheHitRateScale < 0 || cacheHitRateScale > 100)
+  ) {
+    return "cache_hit_rate_scale_range";
+  }
+
+  const cacheMinBlockTokens = normalizeOptionalIntegerForValidation(
+    settings.cache_min_block_tokens,
+    KIRO_CACHE_MIN_BLOCK_TOKENS_DEFAULT,
+  );
+  if (
+    cacheMinBlockTokens != null &&
+    (cacheMinBlockTokens < 0 ||
+      cacheMinBlockTokens > KIRO_CACHE_MIN_BLOCK_TOKENS_MAX)
+  ) {
+    return "cache_min_block_tokens_range";
+  }
+
+  const cacheIndependentTtlSeconds = normalizeOptionalIntegerForValidation(
+    settings.cache_independent_ttl_seconds,
+    KIRO_CACHE_INDEPENDENT_TTL_SECONDS_DEFAULT,
+  );
+  if (
+    cacheIndependentTtlSeconds != null &&
+    (cacheIndependentTtlSeconds < 60 || cacheIndependentTtlSeconds > 86400)
+  ) {
+    return "cache_independent_ttl_seconds_range";
+  }
+
+  const cachePrefixTtlSeconds = normalizeOptionalIntegerForValidation(
+    settings.cache_prefix_ttl_seconds,
+    KIRO_CACHE_PREFIX_TTL_SECONDS_DEFAULT,
+  );
+  if (
+    cachePrefixTtlSeconds != null &&
+    (cachePrefixTtlSeconds < 60 || cachePrefixTtlSeconds > 3600)
+  ) {
+    return "cache_prefix_ttl_seconds_range";
+  }
+
+  if (
+    cacheIndependentTtlSeconds != null &&
+    cachePrefixTtlSeconds != null &&
+    cachePrefixTtlSeconds > cacheIndependentTtlSeconds
+  ) {
+    return "cache_prefix_ttl_seconds_exceeds_independent";
+  }
+
+  return null;
+}
+
+export function normalizeKiroRuntimeSettingsForUpdate(
+  settings: KiroRuntimeSettingsInput,
+): Pick<
+  UpdateSettingsRequest,
+  | "kiro_version"
+  | "kiro_commit"
+  | "system_version"
+  | "node_version"
+  | "cache_hit_rate_scale"
+  | "cache_min_block_tokens"
+  | "cache_independent_ttl_seconds"
+  | "cache_prefix_ttl_seconds"
+> {
+  const payload: Pick<
+    UpdateSettingsRequest,
+    | "kiro_version"
+    | "kiro_commit"
+    | "system_version"
+    | "node_version"
+    | "cache_hit_rate_scale"
+    | "cache_min_block_tokens"
+    | "cache_independent_ttl_seconds"
+    | "cache_prefix_ttl_seconds"
+  > = {};
+
+  if (settings.kiro_version !== undefined) {
+    payload.kiro_version = String(settings.kiro_version ?? "").trim();
+  }
+  if (settings.kiro_commit !== undefined) {
+    payload.kiro_commit = String(settings.kiro_commit ?? "").trim();
+  }
+  if (settings.system_version !== undefined) {
+    payload.system_version = String(settings.system_version ?? "").trim();
+  }
+  if (settings.node_version !== undefined) {
+    payload.node_version = String(settings.node_version ?? "").trim();
+  }
+
+  const cacheHitRateScale = normalizeOptionalIntegerForUpdate(
+    settings.cache_hit_rate_scale,
+    KIRO_CACHE_HIT_RATE_SCALE_DEFAULT,
+  );
+  if (cacheHitRateScale !== undefined) {
+    payload.cache_hit_rate_scale = cacheHitRateScale;
+  }
+
+  const cacheMinBlockTokens = normalizeOptionalIntegerForUpdate(
+    settings.cache_min_block_tokens,
+    KIRO_CACHE_MIN_BLOCK_TOKENS_DEFAULT,
+  );
+  if (cacheMinBlockTokens !== undefined) {
+    payload.cache_min_block_tokens = cacheMinBlockTokens;
+  }
+
+  const cacheIndependentTtlSeconds = normalizeOptionalIntegerForUpdate(
+    settings.cache_independent_ttl_seconds,
+    KIRO_CACHE_INDEPENDENT_TTL_SECONDS_DEFAULT,
+  );
+  if (cacheIndependentTtlSeconds !== undefined) {
+    payload.cache_independent_ttl_seconds = cacheIndependentTtlSeconds;
+  }
+
+  const cachePrefixTtlSeconds = normalizeOptionalIntegerForUpdate(
+    settings.cache_prefix_ttl_seconds,
+    KIRO_CACHE_PREFIX_TTL_SECONDS_DEFAULT,
+  );
+  if (cachePrefixTtlSeconds !== undefined) {
+    payload.cache_prefix_ttl_seconds = cachePrefixTtlSeconds;
+  }
+
+  return payload;
+}
+
 export function resolveWeChatConnectModeCapabilities(
   openEnabled: unknown,
   mpEnabled: unknown,
@@ -437,6 +620,16 @@ export interface SystemSettings {
   min_claude_code_version: string;
   max_claude_code_version: string;
 
+  // Kiro runtime defaults
+  kiro_version?: string;
+  kiro_commit?: string;
+  system_version?: string;
+  node_version?: string;
+  cache_hit_rate_scale?: number | null;
+  cache_min_block_tokens?: number | null;
+  cache_independent_ttl_seconds?: number | null;
+  cache_prefix_ttl_seconds?: number | null;
+
   // 分组隔离
   allow_ungrouped_key_scheduling: boolean;
 
@@ -607,6 +800,14 @@ export interface UpdateSettingsRequest {
   ops_metrics_interval_seconds?: number;
   min_claude_code_version?: string;
   max_claude_code_version?: string;
+  kiro_version?: string;
+  kiro_commit?: string;
+  system_version?: string;
+  node_version?: string;
+  cache_hit_rate_scale?: number;
+  cache_min_block_tokens?: number;
+  cache_independent_ttl_seconds?: number;
+  cache_prefix_ttl_seconds?: number;
   allow_ungrouped_key_scheduling?: boolean;
   enable_fingerprint_unification?: boolean;
   enable_metadata_passthrough?: boolean;

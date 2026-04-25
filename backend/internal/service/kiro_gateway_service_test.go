@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"hash/crc32"
 	"io"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/model"
 	kiropkg "github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/gin-gonic/gin"
 	gocache "github.com/patrickmn/go-cache"
 	"github.com/stretchr/testify/require"
@@ -54,10 +56,220 @@ func TestKiroGatewayService_BuildRequest_DoesNotForceConnectionClose(t *testing.
 		Credentials: map[string]any{
 			"refresh_token": "refresh-token",
 		},
-	}, []byte(`{}`), "access-token")
+	}, []byte(`{}`), "access-token", nil)
 
 	require.NoError(t, err)
 	require.Empty(t, req.Header.Values("Connection"))
+}
+
+func TestKiroGatewayService_BuildRequest_UsesRuntimeSettings(t *testing.T) {
+	svc := &KiroGatewayService{}
+
+	req, err := svc.buildRequest(context.Background(), &Account{
+		ID:       90,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "refresh-token",
+			"machine_id":    "machine-id",
+		},
+	}, []byte(`{}`), "access-token", &KiroRuntimeSettings{
+		KiroVersion:   "0.11.0",
+		KiroCommit:    "commit-123",
+		SystemVersion: "linux#6.8.0",
+		NodeVersion:   "22.22.0",
+	})
+
+	require.NoError(t, err)
+	require.Contains(t, req.Header.Get("x-amz-user-agent"), "KiroIDE-0.11.0-")
+	require.Contains(t, req.Header.Get("User-Agent"), "os/linux#6.8.0")
+	require.Contains(t, req.Header.Get("User-Agent"), "md/nodejs#22.22.0")
+	require.Equal(t, "commit-123", req.Header.Get("x-amzn-kiro-commit"))
+}
+
+func TestKiroGatewayService_ResolveAccessToken_UsesAPIKeyForAPIKeyAccounts(t *testing.T) {
+	svc := &KiroGatewayService{}
+
+	token, err := svc.resolveAccessToken(context.Background(), &Account{
+		ID:       91,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "kiro-api-key",
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "kiro-api-key", token)
+}
+
+func TestKiroGatewayService_RefreshFakeCacheStrategyFlushesExistingEntries(t *testing.T) {
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+	plan := &kiropkg.FakeCachePlan{
+		IndependentKey:             "kiro:test:strategy:independent",
+		IndependentCacheableTokens: 64,
+	}
+	initial := &KiroRuntimeSettings{
+		CacheHitRateScale:       95,
+		CacheMinBlockTokens:     0,
+		CacheIndependentTTLSecs: 3600,
+		CachePrefixTTLSecs:      300,
+	}
+
+	svc.refreshFakeCacheStrategy(initial)
+	plan.CacheStrategy = svc.fakeCacheStrategy
+	plan.CacheStrategyGeneration = svc.fakeCacheGen
+	svc.commitFakeCachePlan(plan, initial)
+	_, found := svc.fakeCache.Get(plan.IndependentKey)
+	require.True(t, found)
+
+	svc.refreshFakeCacheStrategy(&KiroRuntimeSettings{
+		CacheHitRateScale:       50,
+		CacheMinBlockTokens:     0,
+		CacheIndependentTTLSecs: 3600,
+		CachePrefixTTLSecs:      300,
+	})
+	_, found = svc.fakeCache.Get(plan.IndependentKey)
+	require.False(t, found)
+}
+
+func TestKiroGatewayService_CommitFakeCachePlanSkipsStaleStrategyGeneration(t *testing.T) {
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+	oldSettings := &KiroRuntimeSettings{
+		CacheHitRateScale:       95,
+		CacheMinBlockTokens:     0,
+		CacheIndependentTTLSecs: 3600,
+		CachePrefixTTLSecs:      300,
+	}
+	newSettings := &KiroRuntimeSettings{
+		CacheHitRateScale:       50,
+		CacheMinBlockTokens:     0,
+		CacheIndependentTTLSecs: 3600,
+		CachePrefixTTLSecs:      300,
+	}
+	plan := &kiropkg.FakeCachePlan{
+		CurrentKey:              "kiro:test:stale-generation",
+		CurrentCacheableTokens:  64,
+		CacheStrategy:           kiroFakeCacheStrategy(oldSettings),
+		CacheStrategyGeneration: 1,
+	}
+
+	svc.refreshFakeCacheStrategy(oldSettings)
+	svc.refreshFakeCacheStrategy(newSettings)
+	svc.commitFakeCachePlan(plan, oldSettings)
+
+	_, found := svc.fakeCache.Get(plan.CurrentKey)
+	require.False(t, found, "old in-flight requests must not repopulate cache after strategy changes")
+}
+
+func TestKiroGatewayService_CommitFakeCachePlanSkipsConcurrentStaleGenerationAfterFlush(t *testing.T) {
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+	oldSettings := &KiroRuntimeSettings{
+		CacheHitRateScale:       95,
+		CacheMinBlockTokens:     0,
+		CacheIndependentTTLSecs: 3600,
+		CachePrefixTTLSecs:      300,
+	}
+	newSettings := &KiroRuntimeSettings{
+		CacheHitRateScale:       50,
+		CacheMinBlockTokens:     0,
+		CacheIndependentTTLSecs: 3600,
+		CachePrefixTTLSecs:      300,
+	}
+	plan := &kiropkg.FakeCachePlan{
+		CurrentKey:             "kiro:test:concurrent-stale-generation",
+		CurrentCacheableTokens: 64,
+	}
+
+	svc.refreshFakeCacheStrategy(oldSettings)
+	plan.CacheStrategy = svc.fakeCacheStrategy
+	plan.CacheStrategyGeneration = svc.fakeCacheGen
+
+	startCommit := make(chan struct{})
+	commitDone := make(chan struct{})
+	go func() {
+		defer close(commitDone)
+		<-startCommit
+		svc.commitFakeCachePlan(plan, oldSettings)
+	}()
+
+	svc.refreshFakeCacheStrategy(newSettings)
+	close(startCommit)
+	<-commitDone
+
+	_, found := svc.fakeCache.Get(plan.CurrentKey)
+	require.False(t, found, "old in-flight requests must not repopulate cache after a concurrent flush")
+}
+
+func TestKiroGatewayService_ForwardSnapshotsFakeCacheHitBeforeUpstreamRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	sessionID := "123e4567-e89b-12d3-a456-426614174000"
+	longFirstPrompt := strings.Repeat("first prompt token ", 1200)
+	longSecondPrompt := strings.Repeat("second prompt token ", 1200)
+	body := []byte(fmt.Sprintf(`{
+		"model":"claude-sonnet-4-5-20250929",
+		"metadata":{"user_id":"user_x_account__session_%s"},
+		"messages":[
+			{"role":"user","content":%q},
+			{"role":"assistant","content":"ok"},
+			{"role":"user","content":%q}
+		],
+		"max_tokens":128
+	}`, sessionID, longFirstPrompt, longSecondPrompt))
+	plan, err := kiropkg.BuildFakeCachePlan(body, 77, "claude-sonnet-4-5-20250929")
+	require.NoError(t, err)
+	require.NotNil(t, plan)
+	require.NotEmpty(t, plan.PreviousPrefixKey)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+	upstream := &kiroMutatingHTTPUpstream{
+		beforeReturn: func() {
+			// If Forward calculated fake-cache hits after DoWithTLS, this request would
+			// incorrectly count as a cache read.
+			svc.fakeCache.Set(plan.PreviousPrefixKey, struct{}{}, time.Minute)
+		},
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body: io.NopCloser(bytes.NewReader(buildKiroTestFrame(t, map[string]string{
+				":message-type": "event",
+				":event-type":   "assistantResponseEvent",
+			}, map[string]any{"content": "hello from kiro"}))),
+		},
+	}
+	svc.httpUpstream = upstream
+	account := &Account{
+		ID:       77,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "kiro-api-key",
+		},
+	}
+	parsed := &ParsedRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Body:  body,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, parsed)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 1, upstream.calls)
+	require.Zero(t, result.Usage.CacheReadInputTokens)
+	require.Greater(t, result.Usage.CacheCreationInputTokens, 0)
+	require.Equal(t, http.StatusOK, rec.Code)
 }
 
 func TestKiroGatewayService_ForwardCountTokens_RejectsUnsupportedModel(t *testing.T) {
@@ -166,7 +378,8 @@ func TestKiroGatewayService_ForwardNonStream_ExceptionDoesNotCommitFakeCache(t *
 		32,
 		time.Now(),
 		fakeCachePlan,
-		false,
+		kiropkg.FakeCacheHitState{},
+		nil,
 	)
 
 	require.Error(t, err)
@@ -214,7 +427,8 @@ func TestKiroGatewayService_ForwardStream_ExceptionDoesNotCommitFakeCacheOrEmitF
 		32,
 		time.Now(),
 		fakeCachePlan,
-		false,
+		kiropkg.FakeCacheHitState{},
+		nil,
 	)
 
 	require.Error(t, err)
@@ -250,7 +464,8 @@ func TestKiroGatewayService_ForwardStream_PreStartExceptionReturnsJSONError(t *t
 		32,
 		time.Now(),
 		nil,
-		false,
+		kiropkg.FakeCacheHitState{},
+		nil,
 	)
 
 	require.Error(t, err)
@@ -290,7 +505,8 @@ func TestKiroGatewayService_ForwardNonStream_IncompleteFrameDoesNotCommitFakeCac
 		32,
 		time.Now(),
 		fakeCachePlan,
-		false,
+		kiropkg.FakeCacheHitState{},
+		nil,
 	)
 
 	require.Error(t, err)
@@ -329,7 +545,8 @@ func TestKiroGatewayService_ForwardStream_IncompleteFrameDoesNotCommitFakeCacheO
 		32,
 		time.Now(),
 		fakeCachePlan,
-		false,
+		kiropkg.FakeCacheHitState{},
+		nil,
 	)
 
 	require.Error(t, err)
@@ -360,7 +577,8 @@ func TestKiroGatewayService_ForwardNonStream_EmptyBodyFails(t *testing.T) {
 		32,
 		time.Now(),
 		nil,
-		false,
+		kiropkg.FakeCacheHitState{},
+		nil,
 	)
 
 	require.Error(t, err)
@@ -388,7 +606,8 @@ func TestKiroGatewayService_ForwardStream_EmptyBodyFailsWithoutFinalEvents(t *te
 		32,
 		time.Now(),
 		nil,
-		false,
+		kiropkg.FakeCacheHitState{},
+		nil,
 	)
 
 	require.Error(t, err)
@@ -423,7 +642,8 @@ func TestKiroGatewayService_ForwardStream_ContextOnlyBodyFailsWithoutStartingStr
 		32,
 		time.Now(),
 		nil,
-		false,
+		kiropkg.FakeCacheHitState{},
+		nil,
 	)
 
 	require.Error(t, err)
@@ -476,7 +696,8 @@ func TestKiroGatewayService_ForwardStream_ToolFirstUsesMonotonicBlockIndexes(t *
 		32,
 		time.Now(),
 		nil,
-		false,
+		kiropkg.FakeCacheHitState{},
+		nil,
 	)
 
 	require.NoError(t, err)
@@ -521,7 +742,8 @@ func TestKiroGatewayService_ForwardStream_TextToolTextClosesBlocksInOrder(t *tes
 		32,
 		time.Now(),
 		nil,
-		false,
+		kiropkg.FakeCacheHitState{},
+		nil,
 	)
 
 	require.NoError(t, err)
@@ -582,4 +804,23 @@ func buildKiroTestFrame(t *testing.T, headers map[string]string, payload map[str
 	copy(frame[kiroPreludeSize+len(headerBytes):], payloadBytes)
 	binary.BigEndian.PutUint32(frame[totalLength-4:], crc32.ChecksumIEEE(frame[:totalLength-4]))
 	return frame
+}
+
+type kiroMutatingHTTPUpstream struct {
+	calls        int
+	beforeReturn func()
+	resp         *http.Response
+	err          error
+}
+
+func (u *kiroMutatingHTTPUpstream) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
+	return u.DoWithTLS(req, proxyURL, accountID, accountConcurrency, nil)
+}
+
+func (u *kiroMutatingHTTPUpstream) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+	u.calls++
+	if u.beforeReturn != nil {
+		u.beforeReturn()
+	}
+	return u.resp, u.err
 }

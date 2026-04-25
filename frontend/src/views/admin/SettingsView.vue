@@ -2679,6 +2679,198 @@
             </div>
           </div>
 
+          <!-- Kiro Runtime Defaults -->
+          <div class="card">
+            <div
+              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
+            >
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {{ t("admin.settings.kiroRuntime.title") }}
+              </h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {{ t("admin.settings.kiroRuntime.description") }}
+              </p>
+            </div>
+            <div class="space-y-6 p-6">
+              <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                <div>
+                  <label
+                    class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    {{ t("admin.settings.kiroRuntime.kiroVersion") }}
+                  </label>
+                  <input
+                    v-model="form.kiro_version"
+                    type="text"
+                    class="input font-mono text-sm"
+                    data-testid="kiro-runtime-version"
+                    :placeholder="t('admin.settings.kiroRuntime.kiroVersionPlaceholder')"
+                  />
+                </div>
+                <div>
+                  <label
+                    class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    {{ t("admin.settings.kiroRuntime.kiroCommit") }}
+                  </label>
+                  <input
+                    v-model="form.kiro_commit"
+                    type="text"
+                    class="input font-mono text-sm"
+                    data-testid="kiro-runtime-commit"
+                    :placeholder="t('admin.settings.kiroRuntime.kiroCommitPlaceholder')"
+                  />
+                </div>
+                <div>
+                  <label
+                    class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    {{ t("admin.settings.kiroRuntime.systemVersion") }}
+                  </label>
+                  <input
+                    v-model="form.system_version"
+                    type="text"
+                    class="input font-mono text-sm"
+                    data-testid="kiro-runtime-system-version"
+                    :placeholder="t('admin.settings.kiroRuntime.systemVersionPlaceholder')"
+                  />
+                </div>
+                <div>
+                  <label
+                    class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    {{ t("admin.settings.kiroRuntime.nodeVersion") }}
+                  </label>
+                  <input
+                    v-model="form.node_version"
+                    type="text"
+                    class="input font-mono text-sm"
+                    data-testid="kiro-runtime-node-version"
+                    :placeholder="t('admin.settings.kiroRuntime.nodeVersionPlaceholder')"
+                  />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                <div>
+                  <label
+                    class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    {{ t("admin.settings.kiroRuntime.cacheHitRateScale") }}
+                  </label>
+                  <input
+                    :value="form.cache_hit_rate_scale ?? ''"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    class="input"
+                    data-testid="kiro-runtime-cache-hit-rate-scale"
+                    :placeholder="t('admin.settings.kiroRuntime.cacheHitRateScalePlaceholder')"
+                    @input="
+                      form.cache_hit_rate_scale = parseOptionalIntegerInput(
+                        ($event.target as HTMLInputElement).value,
+                      )
+                    "
+                  />
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.kiroRuntime.cacheHitRateScaleHint") }}
+                  </p>
+                </div>
+                <div>
+                  <label
+                    class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    {{ t("admin.settings.kiroRuntime.cacheMinBlockTokens") }}
+                  </label>
+                  <input
+                    :value="form.cache_min_block_tokens ?? ''"
+                    type="number"
+                    min="0"
+                    :max="KIRO_CACHE_MIN_BLOCK_TOKENS_MAX"
+                    step="1"
+                    class="input"
+                    data-testid="kiro-runtime-cache-min-block-tokens"
+                    :placeholder="`0 - ${KIRO_CACHE_MIN_BLOCK_TOKENS_MAX}`"
+                    @input="
+                      form.cache_min_block_tokens = parseOptionalIntegerInput(
+                        ($event.target as HTMLInputElement).value,
+                      )
+                    "
+                  />
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      t("admin.settings.kiroRuntime.cacheMinBlockTokensHint")
+                    }}
+                  </p>
+                </div>
+                <div>
+                  <label
+                    class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    {{
+                      t(
+                        "admin.settings.kiroRuntime.cacheIndependentTtlSeconds",
+                      )
+                    }}
+                  </label>
+                  <input
+                    :value="form.cache_independent_ttl_seconds ?? ''"
+                    type="number"
+                    min="60"
+                    max="86400"
+                    step="1"
+                    class="input"
+                    data-testid="kiro-runtime-cache-independent-ttl-seconds"
+                    :placeholder="t('admin.settings.kiroRuntime.cacheIndependentTtlSecondsPlaceholder')"
+                    @input="
+                      form.cache_independent_ttl_seconds =
+                        parseOptionalIntegerInput(
+                          ($event.target as HTMLInputElement).value,
+                        )
+                    "
+                  />
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      t(
+                        "admin.settings.kiroRuntime.cacheIndependentTtlSecondsHint",
+                      )
+                    }}
+                  </p>
+                </div>
+                <div>
+                  <label
+                    class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    {{ t("admin.settings.kiroRuntime.cachePrefixTtlSeconds") }}
+                  </label>
+                  <input
+                    :value="form.cache_prefix_ttl_seconds ?? ''"
+                    type="number"
+                    min="60"
+                    max="3600"
+                    step="1"
+                    class="input"
+                    data-testid="kiro-runtime-cache-prefix-ttl-seconds"
+                    :placeholder="t('admin.settings.kiroRuntime.cachePrefixTtlSecondsPlaceholder')"
+                    @input="
+                      form.cache_prefix_ttl_seconds = parseOptionalIntegerInput(
+                        ($event.target as HTMLInputElement).value,
+                      )
+                    "
+                  />
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      t(
+                        "admin.settings.kiroRuntime.cachePrefixTtlSecondsHint",
+                      )
+                    }}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Gateway Scheduling Settings -->
           <div class="card">
             <div
@@ -4927,12 +5119,16 @@ import {
   buildAuthSourceDefaultsState,
   defaultWeChatConnectScopesForMode,
   deriveWeChatConnectStoredMode,
+  KIRO_CACHE_MIN_BLOCK_TOKENS_MAX,
+  normalizeKiroRuntimeSettingsForUpdate,
   normalizeDefaultSubscriptionSettings,
   resolveWeChatConnectModeCapabilities,
+  validateKiroRuntimeSettings,
 } from "@/api/admin/settings";
 import type {
   AuthSourceDefaultsState,
   AuthSourceType,
+  KiroRuntimeValidationError,
   SystemSettings,
   UpdateSettingsRequest,
   DefaultSubscriptionSetting,
@@ -4978,6 +5174,19 @@ const adminSettingsStore = useAdminSettingsStore();
 
 function localText(zh: string, en: string): string {
   return locale.value.startsWith("zh") ? zh : en;
+}
+
+function formatKiroRuntimeValidationError(
+  error: KiroRuntimeValidationError,
+): string {
+  if (error === "cache_min_block_tokens_range") {
+    return localText(
+      `缓存最小块 Token 数必须在 0-${KIRO_CACHE_MIN_BLOCK_TOKENS_MAX} 之间。`,
+      `Cache min block tokens must be between 0 and ${KIRO_CACHE_MIN_BLOCK_TOKENS_MAX}.`,
+    );
+  }
+
+  return t(`admin.settings.kiroRuntime.${error}`);
 }
 
 const paymentGuideHref = computed(() =>
@@ -5259,6 +5468,15 @@ const form = reactive<SettingsForm>({
   // Claude Code version check
   min_claude_code_version: "",
   max_claude_code_version: "",
+  // Kiro runtime defaults
+  kiro_version: "0.10.0",
+  kiro_commit: "",
+  system_version: "darwin#24.6.0",
+  node_version: "22.21.1",
+  cache_hit_rate_scale: undefined,
+  cache_min_block_tokens: undefined,
+  cache_independent_ttl_seconds: undefined,
+  cache_prefix_ttl_seconds: undefined,
   // 分组隔离
   allow_ungrouped_key_scheduling: false,
   openai_advanced_scheduler_enabled: false,
@@ -5379,6 +5597,13 @@ function parseSubscribedAt(dateStr: string): number | null {
   if (!dateStr) return null;
   // Parse as UTC to match formatSubscribedAt
   return Math.floor(new Date(dateStr + "T00:00:00Z").getTime() / 1000);
+}
+
+function parseOptionalIntegerInput(value: string): number | null | undefined {
+  if (!value.trim()) return null;
+
+  const normalized = Math.floor(Number(value));
+  return Number.isFinite(normalized) ? normalized : undefined;
 }
 
 function quotaPercentage(provider: WebSearchProviderConfig): number {
@@ -6070,6 +6295,14 @@ async function saveSettings() {
       );
       return;
     }
+
+    const kiroRuntimeValidationError = validateKiroRuntimeSettings(form);
+    if (kiroRuntimeValidationError) {
+      appStore.showError(
+        formatKiroRuntimeValidationError(kiroRuntimeValidationError),
+      );
+      return;
+    }
     // Validate URL fields — novalidate disables browser-native checks, so we validate here
     const isValidHttpUrl = (url: string): boolean => {
       if (!url) return true;
@@ -6258,6 +6491,8 @@ async function saveSettings() {
       // Available Channels feature switch
       available_channels_enabled: form.available_channels_enabled,
     };
+
+    Object.assign(payload, normalizeKiroRuntimeSettingsForUpdate(form));
 
     appendAuthSourceDefaultsToUpdateRequest(payload, authSourceDefaultsForSubmit);
 

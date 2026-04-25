@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+	"github.com/stretchr/testify/require"
 )
 
 type kiroHTTPUpstreamRecorder struct {
@@ -34,6 +36,51 @@ func (r *kiroHTTPUpstreamRecorder) DoWithTLS(req *http.Request, proxyURL string,
 	r.accountConcurrency = accountConcurrency
 	r.profile = profile
 	return r.resp, r.err
+}
+
+type kiroRefresherSettingRepoStub struct {
+	values map[string]string
+}
+
+func (s *kiroRefresherSettingRepoStub) Get(ctx context.Context, key string) (*Setting, error) {
+	panic("unexpected Get call")
+}
+
+func (s *kiroRefresherSettingRepoStub) GetValue(ctx context.Context, key string) (string, error) {
+	if s.values == nil {
+		return "", ErrSettingNotFound
+	}
+	value, ok := s.values[key]
+	if !ok {
+		return "", ErrSettingNotFound
+	}
+	return value, nil
+}
+
+func (s *kiroRefresherSettingRepoStub) Set(ctx context.Context, key, value string) error {
+	panic("unexpected Set call")
+}
+
+func (s *kiroRefresherSettingRepoStub) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
+	result := make(map[string]string, len(keys))
+	for _, key := range keys {
+		if s.values != nil {
+			result[key] = s.values[key]
+		}
+	}
+	return result, nil
+}
+
+func (s *kiroRefresherSettingRepoStub) SetMultiple(ctx context.Context, settings map[string]string) error {
+	panic("unexpected SetMultiple call")
+}
+
+func (s *kiroRefresherSettingRepoStub) GetAll(ctx context.Context) (map[string]string, error) {
+	panic("unexpected GetAll call")
+}
+
+func (s *kiroRefresherSettingRepoStub) Delete(ctx context.Context, key string) error {
+	panic("unexpected Delete call")
 }
 
 func TestKiroUsageService_FetchUsageLimits_UsesHTTPUpstreamTransport(t *testing.T) {
@@ -194,6 +241,58 @@ func TestKiroTokenRefresher_Refresh_UsesHTTPUpstreamTransport(t *testing.T) {
 	if upstream.profile == nil {
 		t.Fatal("expected non-nil TLS profile when Kiro TLS fingerprint is enabled")
 	}
+}
+
+func TestKiroTokenRefresher_Refresh_IDCUsesRuntimeHeaders(t *testing.T) {
+	kiroRuntimeSettingsCache.Store((*cachedKiroRuntimeSettings)(nil))
+	kiroRuntimeSettingsSF.Forget("kiro_runtime")
+
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Body: io.NopCloser(strings.NewReader(`{
+				"accessToken":"new-access-token",
+				"refreshToken":"new-refresh-token",
+				"expiresIn":3600
+			}`)),
+			Header: make(http.Header),
+		},
+	}
+	settings := NewSettingService(&kiroRefresherSettingRepoStub{
+		values: map[string]string{
+			SettingKeyKiroDefaultVersion:       "0.12.0",
+			SettingKeyKiroDefaultCommit:        "commit-runtime",
+			SettingKeyKiroDefaultSystemVersion: "linux#6.9.0",
+			SettingKeyKiroDefaultNodeVersion:   "23.1.0",
+		},
+	}, &config.Config{})
+	refresher := NewKiroTokenRefresher().
+		WithTransport(upstream, &TLSFingerprintProfileService{}).
+		WithSettingService(settings)
+	account := &Account{
+		ID:          9,
+		Platform:    PlatformKiro,
+		Type:        AccountTypeOAuth,
+		Concurrency: 2,
+		Credentials: map[string]any{
+			"refresh_token": "refresh-token",
+			"machine_id":    "machine-3",
+			"auth_method":   "builder-id",
+			"client_id":     "client-id",
+			"client_secret": "client-secret",
+		},
+	}
+
+	creds, err := refresher.Refresh(context.Background(), account)
+	require.NoError(t, err)
+	require.Equal(t, "new-access-token", creds["access_token"])
+	require.NotNil(t, upstream.req)
+	require.Contains(t, upstream.req.URL.String(), "oidc.")
+	require.Contains(t, upstream.req.Header.Get("x-amz-user-agent"), "KiroIDE-0.12.0-")
+	require.Contains(t, upstream.req.Header.Get("User-Agent"), "os/linux#6.9.0")
+	require.Contains(t, upstream.req.Header.Get("User-Agent"), "md/nodejs#23.1.0")
+	require.Contains(t, upstream.req.Header.Get("User-Agent"), "api/sso-oidc#3.738.0")
+	require.Equal(t, "commit-runtime", upstream.req.Header.Get("x-amzn-kiro-commit"))
 }
 
 func TestNewKiroSidecarHTTPClient_UsesTLSFingerprintTransportWhenEnabled(t *testing.T) {

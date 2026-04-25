@@ -2,9 +2,18 @@ import { describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
 import { mount } from '@vue/test-utils'
 
-const { updateAccountMock, checkMixedChannelRiskMock } = vi.hoisted(() => ({
+const {
+  updateAccountMock,
+  checkMixedChannelRiskMock,
+  getSettingsMock,
+  getWebSearchEmulationConfigMock,
+  listTlsFingerprintProfilesMock
+} = vi.hoisted(() => ({
   updateAccountMock: vi.fn(),
-  checkMixedChannelRiskMock: vi.fn()
+  checkMixedChannelRiskMock: vi.fn(),
+  getSettingsMock: vi.fn(),
+  getWebSearchEmulationConfigMock: vi.fn(),
+  listTlsFingerprintProfilesMock: vi.fn()
 }))
 
 vi.mock('@/stores/app', () => ({
@@ -23,6 +32,13 @@ vi.mock('@/stores/auth', () => ({
 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
+    settings: {
+      getSettings: getSettingsMock,
+      getWebSearchEmulationConfig: getWebSearchEmulationConfigMock
+    },
+    tlsFingerprintProfiles: {
+      list: listTlsFingerprintProfilesMock
+    },
     accounts: {
       update: updateAccountMock,
       checkMixedChannelRisk: checkMixedChannelRiskMock
@@ -111,7 +127,7 @@ function buildAccount() {
 function mountModal(account = buildAccount()) {
   return mount(EditAccountModal, {
     props: {
-      show: true,
+      show: false,
       account,
       proxies: [],
       groups: []
@@ -134,10 +150,17 @@ describe('EditAccountModal', () => {
     const account = buildAccount()
     updateAccountMock.mockReset()
     checkMixedChannelRiskMock.mockReset()
+    getSettingsMock.mockReset()
+    getWebSearchEmulationConfigMock.mockReset()
+    listTlsFingerprintProfilesMock.mockReset()
     checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    getSettingsMock.mockResolvedValue({})
+    getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
+    listTlsFingerprintProfilesMock.mockResolvedValue([])
     updateAccountMock.mockResolvedValue(account)
 
     const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
 
     expect(wrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('gpt-5.2')
 
@@ -154,6 +177,190 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.model_mapping).toEqual({
       'gpt-5.2': 'gpt-5.2'
+    })
+  })
+
+  it('removes Kiro runtime version overrides from extra while keeping account credentials', async () => {
+    const account = {
+      id: 2,
+      name: 'Kiro OAuth',
+      notes: '',
+      platform: 'kiro',
+      type: 'oauth',
+      credentials: {
+        refresh_token: 'rt-test',
+        region: 'us-east-1',
+        machine_id: 'machine-1'
+      },
+      extra: {
+        keep_flag: true,
+        kiro_version: '0.9.0',
+        system_version: 'darwin#24.5.0',
+        node_version: '22.20.0'
+      },
+      proxy_id: null,
+      concurrency: 1,
+      priority: 1,
+      rate_multiplier: 1,
+      status: 'active',
+      group_ids: [],
+      expires_at: null,
+      auto_pause_on_expired: false
+    } as any
+
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    getSettingsMock.mockReset()
+    getWebSearchEmulationConfigMock.mockReset()
+    listTlsFingerprintProfilesMock.mockReset()
+    getSettingsMock.mockResolvedValue({})
+    getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
+    listTlsFingerprintProfilesMock.mockResolvedValue([])
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.kiroVersionLabel')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.systemVersionLabel')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.nodeVersionLabel')
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toEqual(
+      expect.objectContaining({
+        refresh_token: 'rt-test',
+        region: 'us-east-1',
+        machine_id: 'machine-1'
+      })
+    )
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toEqual({
+      keep_flag: true
+    })
+  })
+
+  it('submits empty extra when Kiro OAuth only has old runtime overrides', async () => {
+    const account = {
+      id: 3,
+      name: 'Kiro OAuth',
+      notes: '',
+      platform: 'kiro',
+      type: 'oauth',
+      credentials: {
+        refresh_token: 'rt-test',
+        region: 'us-east-1'
+      },
+      extra: {
+        kiro_version: '0.9.0',
+        system_version: 'darwin#24.5.0',
+        node_version: '22.20.0'
+      },
+      proxy_id: null,
+      concurrency: 1,
+      priority: 1,
+      rate_multiplier: 1,
+      status: 'active',
+      group_ids: [],
+      expires_at: null,
+      auto_pause_on_expired: false
+    } as any
+
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    getSettingsMock.mockReset()
+    getWebSearchEmulationConfigMock.mockReset()
+    listTlsFingerprintProfilesMock.mockReset()
+    getSettingsMock.mockResolvedValue({})
+    getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
+    listTlsFingerprintProfilesMock.mockResolvedValue([])
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toEqual({})
+  })
+
+  it('round-trips Kiro API key credentials without generic base_url', async () => {
+    const account = {
+      id: 4,
+      name: 'Kiro API Key',
+      notes: '',
+      platform: 'kiro',
+      type: 'apikey',
+      credentials: {
+        api_key: 'kiro-old-key',
+        region: 'eu-west-1',
+        auth_region: 'us-west-2',
+        api_region: 'us-east-2',
+        profile_arn: 'arn:aws:bedrock:us-east-2:123456789012:inference-profile/demo',
+        machine_id: 'machine-1',
+        base_url: 'https://wrong.example.com',
+        model_whitelist: ['claude-sonnet-4'],
+        model_mapping: {
+          'claude-sonnet-4': 'claude-sonnet-4'
+        },
+        pool_mode: true,
+        pool_mode_retry_count: 3,
+        custom_error_codes_enabled: true,
+        custom_error_codes: [429, 529],
+        custom_error_codes_backoff_ms: 1000
+      },
+      extra: {
+        kiro_version: '0.9.0',
+        quota_limit: 100
+      },
+      proxy_id: null,
+      concurrency: 1,
+      priority: 1,
+      rate_multiplier: 1,
+      status: 'active',
+      group_ids: [],
+      expires_at: null,
+      auto_pause_on_expired: false
+    } as any
+
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    getSettingsMock.mockReset()
+    getWebSearchEmulationConfigMock.mockReset()
+    listTlsFingerprintProfilesMock.mockReset()
+    getSettingsMock.mockResolvedValue({})
+    getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
+    listTlsFingerprintProfilesMock.mockResolvedValue([])
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    expect(wrapper.text()).not.toContain('admin.accounts.baseUrl')
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toEqual(
+      expect.objectContaining({
+        api_key: 'kiro-old-key',
+        region: 'eu-west-1',
+        auth_region: 'us-west-2',
+        api_region: 'us-east-2',
+        profile_arn: 'arn:aws:bedrock:us-east-2:123456789012:inference-profile/demo',
+        machine_id: 'machine-1'
+      })
+    )
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('base_url')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('model_whitelist')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('model_mapping')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('pool_mode')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('pool_mode_retry_count')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('custom_error_codes_enabled')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('custom_error_codes')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('custom_error_codes_backoff_ms')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toEqual({
+      quota_limit: 100
     })
   })
 })
