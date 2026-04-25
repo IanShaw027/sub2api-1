@@ -209,6 +209,18 @@ func (s *PaymentConfigService) GetPaymentConfig(ctx context.Context) (*PaymentCo
 		return nil, fmt.Errorf("get payment config settings: %w", err)
 	}
 	cfg := s.parsePaymentConfig(vals)
+	if s.entClient != nil {
+		instances, err := s.entClient.PaymentProviderInstance.Query().
+			Where(paymentproviderinstance.EnabledEQ(true)).
+			Order(paymentproviderinstance.BySortOrder()).
+			Order(dbent.Asc(paymentproviderinstance.FieldID)).
+			All(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("query enabled payment provider instances: %w", err)
+		}
+		availableSources := buildVisibleMethodSourceAvailability(instances)
+		cfg.EnabledTypes = applyVisibleMethodRoutingToEnabledTypes(cfg.EnabledTypes, vals, availableSources)
+	}
 	// Load Stripe publishable key from the first enabled Stripe provider instance
 	cfg.StripePublishableKey = s.getStripePublishableKey(ctx)
 	return cfg, nil
@@ -262,7 +274,11 @@ func (s *PaymentConfigService) getStripePublishableKey(ctx context.Context) stri
 		Where(
 			paymentproviderinstance.EnabledEQ(true),
 			paymentproviderinstance.ProviderKeyEQ(payment.TypeStripe),
-		).Limit(1).All(ctx)
+		).
+		Order(paymentproviderinstance.BySortOrder()).
+		Order(dbent.Asc(paymentproviderinstance.FieldID)).
+		Limit(1).
+		All(ctx)
 	if err != nil || len(instances) == 0 {
 		return ""
 	}

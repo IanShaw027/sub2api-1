@@ -404,7 +404,7 @@ func TestGetAvailableMethodLimitsUsesConfiguredVisibleMethodSource(t *testing.T)
 	}
 }
 
-func TestGetAvailableMethodLimitsPreservesLegacyCrossProviderBehaviorWhenVisibleMethodSourceMissing(t *testing.T) {
+func TestGetAvailableMethodLimitsFailsClosedWhenVisibleMethodSourceMissing(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)
 
@@ -446,16 +446,12 @@ func TestGetAvailableMethodLimitsPreservesLegacyCrossProviderBehaviorWhenVisible
 	resp, err := svc.GetAvailableMethodLimits(ctx)
 	require.NoError(t, err)
 
-	alipayLimits, ok := resp.Methods[payment.TypeAlipay]
-	require.True(t, ok, "expected alipay limits to remain visible")
-	require.Equal(t, 10.0, alipayLimits.SingleMin)
-	require.Equal(t, 200.0, alipayLimits.SingleMax)
+	_, alipayVisible := resp.Methods[payment.TypeAlipay]
+	require.False(t, alipayVisible, "alipay should be hidden when multiple providers exist without explicit source")
 
-	wxpayLimits, ok := resp.Methods[payment.TypeWxpay]
-	require.True(t, ok, "expected wxpay limits to remain visible")
-	require.Equal(t, 30.0, wxpayLimits.SingleMin)
-	require.Equal(t, 400.0, wxpayLimits.SingleMax)
+	_, wxpayVisible := resp.Methods[payment.TypeWxpay]
+	require.False(t, wxpayVisible, "wxpay should be hidden when multiple providers exist without explicit source")
 
-	require.Equal(t, 10.0, resp.GlobalMin)
-	require.Equal(t, 400.0, resp.GlobalMax)
+	require.Equal(t, 0.0, resp.GlobalMin)
+	require.Equal(t, 0.0, resp.GlobalMax)
 }

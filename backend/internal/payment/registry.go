@@ -10,6 +10,7 @@ import (
 type Registry struct {
 	mu        sync.RWMutex
 	providers map[PaymentType]Provider
+	byKey     map[string]Provider
 }
 
 // ErrProviderNotFound is returned when a requested payment provider is not registered.
@@ -19,6 +20,7 @@ var ErrProviderNotFound = infraerrors.NotFound("PROVIDER_NOT_FOUND", "payment pr
 func NewRegistry() *Registry {
 	return &Registry{
 		providers: make(map[PaymentType]Provider),
+		byKey:     make(map[string]Provider),
 	}
 }
 
@@ -27,6 +29,9 @@ func NewRegistry() *Registry {
 func (r *Registry) Register(p Provider) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if p != nil {
+		r.byKey[p.ProviderKey()] = p
+	}
 	for _, t := range p.SupportedTypes() {
 		r.providers[t] = p
 	}
@@ -47,10 +52,8 @@ func (r *Registry) GetProvider(t PaymentType) (Provider, error) {
 func (r *Registry) GetProviderByKey(key string) (Provider, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	for _, p := range r.providers {
-		if p.ProviderKey() == key {
-			return p, nil
-		}
+	if p, ok := r.byKey[key]; ok {
+		return p, nil
 	}
 	return nil, ErrProviderNotFound
 }
@@ -82,4 +85,5 @@ func (r *Registry) Clear() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.providers = make(map[PaymentType]Provider)
+	r.byKey = make(map[string]Provider)
 }

@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"testing"
+	"time"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
@@ -103,4 +104,96 @@ func TestErrOrderNotFound_DistinctFromOtherErrors(t *testing.T) {
 	wrappedLookupErr := errors.New("lookup order failed for out_trade_no sub2_42: connection refused")
 	require.False(t, errors.Is(wrappedLookupErr, ErrOrderNotFound),
 		"DB connection failures must not masquerade as order-not-found")
+}
+
+func TestConfirmPaymentReturnsErrorWhenOrderGetFails(t *testing.T) {
+	ctx := context.Background()
+	client := newOrderNotFoundTestClient(t)
+	svc := &PaymentService{entClient: client}
+
+	err := svc.confirmPayment(ctx, 999999, "trade-no", 10, payment.TypeStripe, nil)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrOrderNotFound)
+	require.Contains(t, err.Error(), "sub2_999999")
+}
+
+func TestHandlePaymentNotification_LegacyFallbackUnknownOrder_ReturnsSentinel(t *testing.T) {
+	ctx := context.Background()
+	client := newOrderNotFoundTestClient(t)
+	svc := &PaymentService{
+		entClient:       client,
+		providersLoaded: true,
+	}
+
+	notification := &payment.PaymentNotification{
+		OrderID: "sub2_999999",
+		TradeNo: "legacy-trade-missing",
+		Status:  payment.NotificationStatusSuccess,
+		Amount:  100,
+	}
+
+	err := svc.HandlePaymentNotification(ctx, notification, payment.TypeStripe)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrOrderNotFound)
+	require.Contains(t, err.Error(), notification.OrderID)
+}
+
+func TestConfirmPaymentIsIdempotentForPaidAndRecharging(t *testing.T) {
+	ctx := context.Background()
+	client := newOrderNotFoundTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("paid-idempotent@example.com").
+		SetPasswordHash("hash").
+		SetUsername("paid-idempotent").
+		Save(ctx)
+	require.NoError(t, err)
+
+	paidOrder, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(100).
+		SetPayAmount(100).
+		SetFeeRate(0).
+		SetRechargeCode("IDEMPOTENT-PAID").
+		SetOutTradeNo("sub2_idempotent_paid").
+		SetPaymentType(payment.TypeStripe).
+		SetPaymentTradeNo("trade-existing").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPaid).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("example.com").
+		Save(ctx)
+	require.NoError(t, err)
+	rechargingOrder, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(100).
+		SetPayAmount(100).
+		SetFeeRate(0).
+		SetRechargeCode("IDEMPOTENT-RECHARGING").
+		SetOutTradeNo("sub2_idempotent_recharging").
+		SetPaymentType(payment.TypeStripe).
+		SetPaymentTradeNo("trade-existing").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusRecharging).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{
+		entClient: client,
+		registry:  payment.NewRegistry(),
+	}
+
+	err = svc.confirmPayment(ctx, paidOrder.ID, "trade-existing", paidOrder.PayAmount, payment.TypeStripe, nil)
+	require.NoError(t, err)
+
+	err = svc.confirmPayment(ctx, rechargingOrder.ID, "trade-existing", rechargingOrder.PayAmount, payment.TypeStripe, nil)
+	require.NoError(t, err)
 }

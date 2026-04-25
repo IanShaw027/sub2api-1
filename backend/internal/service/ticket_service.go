@@ -236,7 +236,7 @@ func (s *TicketService) CloseForUser(ctx context.Context, userID, ticketID int64
 	if ticket.UserID != userID {
 		return ErrTicketForbidden
 	}
-	if ticket.Status == SupportTicketStatusClosed {
+	if ticket.Status == SupportTicketStatusClosed || ticket.Status == SupportTicketStatusWithdrawn {
 		return ErrTicketCannotClose
 	}
 	now := time.Now()
@@ -438,5 +438,5 @@ func validateSupportTicketPayload(category string, payload json.RawMessage) erro
 }
 
 func isTicketReplyLocked(status string) bool {
-	return status == SupportTicketStatusResolved || status == SupportTicketStatusClosed
+	return status == SupportTicketStatusResolved || status == SupportTicketStatusClosed || status == SupportTicketStatusWithdrawn
 }

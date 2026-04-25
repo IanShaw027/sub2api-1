@@ -125,6 +125,41 @@ func TestTicketServiceReplyForAdminRejectsLockedTicket(t *testing.T) {
 	require.ErrorIs(t, err, ErrTicketReplyLocked)
 }
 
+func TestTicketServiceReplyForUserRejectsWithdrawnTicket(t *testing.T) {
+	svc := NewTicketService(&ticketRepoStub{
+		ticket: &SupportTicket{ID: 1, UserID: 9, Status: SupportTicketStatusWithdrawn},
+	}, &announcementUserRepoStub{})
+
+	err := svc.ReplyForUser(context.Background(), 1, CreateSupportTicketMessageInput{
+		UserID:  9,
+		Content: "hello",
+	})
+
+	require.ErrorIs(t, err, ErrTicketReplyLocked)
+}
+
+func TestTicketServiceReplyForAdminRejectsWithdrawnTicket(t *testing.T) {
+	svc := NewTicketService(&ticketRepoStub{
+		ticket: &SupportTicket{ID: 1, UserID: 9, Status: SupportTicketStatusWithdrawn},
+	}, &announcementUserRepoStub{})
+
+	err := svc.ReplyForAdmin(context.Background(), 1, CreateSupportTicketMessageInput{
+		UserID:  1,
+		Content: "done",
+	})
+
+	require.ErrorIs(t, err, ErrTicketReplyLocked)
+}
+
+func TestTicketServiceCloseForUserRejectsWithdrawnTicket(t *testing.T) {
+	svc := NewTicketService(&ticketRepoStub{
+		ticket: &SupportTicket{ID: 1, UserID: 9, Status: SupportTicketStatusWithdrawn},
+	}, &announcementUserRepoStub{})
+
+	err := svc.CloseForUser(context.Background(), 9, 1)
+	require.ErrorIs(t, err, ErrTicketCannotClose)
+}
+
 type ticketUserRepoStub struct {
 	announcementUserRepoStub
 	user       *User

@@ -4,18 +4,25 @@ package handler
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/enttest"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
 )
 
 func TestWriteSuccessResponse(t *testing.T) {
@@ -140,6 +147,36 @@ func TestWebhookConstants(t *testing.T) {
 	})
 }
 
+func TestHandleNotify_LegacyFallbackMissingOrder_AcksStripe(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	client := newPaymentWebhookHandlerTestClient(t)
+	registry := payment.NewRegistry()
+	registry.Register(webhookHandlerProviderStub{
+		key: payment.TypeStripe,
+		notification: &payment.PaymentNotification{
+			OrderID: "sub2_987654",
+			TradeNo: "stripe-legacy-missing-order",
+			Status:  payment.NotificationStatusSuccess,
+			Amount:  100,
+		},
+	})
+	paymentService := service.NewPaymentService(client, registry, nil, nil, nil, nil, nil, nil, nil)
+	h := NewPaymentWebhookHandler(paymentService, registry)
+
+	body := `{"data":{"object":{"metadata":{"out_trade_no":"sub2_987654"}}}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/payment/webhook/stripe", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+
+	h.handleNotify(c, payment.TypeStripe)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Empty(t, w.Body.String())
+}
+
 func TestExtractOutTradeNo(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -164,6 +201,18 @@ func TestExtractOutTradeNo(t *testing.T) {
 			providerKey: "wxpay",
 			rawBody:     "{}",
 			want:        "",
+		},
+		{
+			name:        "stripe nested metadata",
+			providerKey: payment.TypeStripe,
+			rawBody:     `{"data":{"object":{"metadata":{"out_trade_no":"sub2_789"}}}}`,
+			want:        "sub2_789",
+		},
+		{
+			name:        "wxpay resource out_trade_no",
+			providerKey: payment.TypeWxpay,
+			rawBody:     `{"resource":{"out_trade_no":"sub2_900"}}`,
+			want:        "sub2_900",
 		},
 	}
 
@@ -220,7 +269,7 @@ type webhookHandlerProviderStub struct {
 	verifyErr    error
 }
 
-func (p webhookHandlerProviderStub) Name() string { return p.key }
+func (p webhookHandlerProviderStub) Name() string        { return p.key }
 func (p webhookHandlerProviderStub) ProviderKey() string { return p.key }
 func (p webhookHandlerProviderStub) SupportedTypes() []payment.PaymentType {
 	return []payment.PaymentType{payment.PaymentType(p.key)}
@@ -239,4 +288,20 @@ func (p webhookHandlerProviderStub) VerifyNotification(context.Context, string, 
 }
 func (p webhookHandlerProviderStub) Refund(context.Context, payment.RefundRequest) (*payment.RefundResponse, error) {
 	panic("unexpected call")
+}
+
+func newPaymentWebhookHandlerTestClient(t *testing.T) *dbent.Client {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", "file:payment_webhook_handler?mode=memory&cache=shared&_fk=1")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	_, err = db.Exec("PRAGMA foreign_keys = ON")
+	require.NoError(t, err)
+
+	drv := entsql.OpenDB(dialect.SQLite, db)
+	client := enttest.NewClient(t, enttest.WithOptions(dbent.Driver(drv)))
+	t.Cleanup(func() { _ = client.Close() })
+	return client
 }

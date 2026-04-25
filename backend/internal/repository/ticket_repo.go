@@ -6,23 +6,40 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/lib/pq"
 )
 
 type ticketRepository struct {
 	db *sql.DB
 }
 
+const createSubmittedMaxTicketNoAttempts = 3
+
 func NewTicketRepository(db *sql.DB) service.SupportTicketRepository {
 	return &ticketRepository{db: db}
 }
 
 func (r *ticketRepository) CreateSubmitted(ctx context.Context, ticket *service.SupportTicket, revision *service.SupportTicketRevision, systemMessage *service.SupportTicketMessage) error {
+	for attempt := 1; attempt <= createSubmittedMaxTicketNoAttempts; attempt++ {
+		if err := r.createSubmittedOnce(ctx, ticket, revision, systemMessage); err != nil {
+			if isSupportTicketNoUniqueViolation(err) && attempt < createSubmittedMaxTicketNoAttempts {
+				continue
+			}
+			return err
+		}
+		return nil
+	}
+	return fmt.Errorf("create support ticket exhausted retries")
+}
+
+func (r *ticketRepository) createSubmittedOnce(ctx context.Context, ticket *service.SupportTicket, revision *service.SupportTicketRevision, systemMessage *service.SupportTicketMessage) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -145,11 +162,16 @@ func (r *ticketRepository) ListMessages(ctx context.Context, ticketID int64) ([]
 }
 
 func (r *ticketRepository) UpdateAfterUserWithdraw(ctx context.Context, ticketID int64, withdrawnAt time.Time, systemMessage *service.SupportTicketMessage) error {
-	return r.withTicketUpdateTx(ctx, ticketID, func(tx *sql.Tx) error {
+	return r.withTicketUpdateTx(ctx, ticketID, func(tx *sql.Tx, locked *lockedTicketState) error {
+		if locked.status != service.SupportTicketStatusSubmitted &&
+			locked.status != service.SupportTicketStatusProcessing &&
+			locked.status != service.SupportTicketStatusWaitingAdmin {
+			return service.ErrTicketCannotWithdraw
+		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE support_tickets
 			SET status = $2, withdrawn_at = $3, latest_message_at = $3, last_reply_role = $4,
-				unread_by_user = FALSE, unread_by_admin = TRUE, updated_at = NOW()
+				unread_by_user = FALSE, unread_by_admin = TRUE, closed_at = NULL, updated_at = NOW()
 			WHERE id = $1
 		`, ticketID, service.SupportTicketStatusWithdrawn, withdrawnAt, service.SupportTicketSenderRoleSystem); err != nil {
 			return err
@@ -159,16 +181,24 @@ func (r *ticketRepository) UpdateAfterUserWithdraw(ctx context.Context, ticketID
 }
 
 func (r *ticketRepository) UpdateEditableContent(ctx context.Context, ticketID int64, title string, formPayload json.RawMessage) error {
-	_, err := r.db.ExecContext(ctx, `
-		UPDATE support_tickets
-		SET title = $2, current_form_payload = $3, updated_at = NOW()
-		WHERE id = $1
-	`, ticketID, title, []byte(formPayload))
-	return err
+	return r.withTicketUpdateTx(ctx, ticketID, func(tx *sql.Tx, locked *lockedTicketState) error {
+		if locked.status != service.SupportTicketStatusWithdrawn {
+			return service.ErrTicketNotEditable
+		}
+		_, err := tx.ExecContext(ctx, `
+			UPDATE support_tickets
+			SET title = $2, current_form_payload = $3, updated_at = NOW()
+			WHERE id = $1
+		`, ticketID, title, []byte(formPayload))
+		return err
+	})
 }
 
 func (r *ticketRepository) Resubmit(ctx context.Context, ticketID int64, ticket *service.SupportTicket, revision *service.SupportTicketRevision, systemMessage *service.SupportTicketMessage) error {
-	return r.withTicketUpdateTx(ctx, ticketID, func(tx *sql.Tx) error {
+	return r.withTicketUpdateTx(ctx, ticketID, func(tx *sql.Tx, locked *lockedTicketState) error {
+		if locked.status != service.SupportTicketStatusWithdrawn {
+			return service.ErrTicketNotEditable
+		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE support_tickets
 			SET title = $2, status = $3, current_form_payload = $4, current_revision_no = $5,
@@ -189,11 +219,14 @@ func (r *ticketRepository) Resubmit(ctx context.Context, ticketID int64, ticket 
 }
 
 func (r *ticketRepository) CloseByUser(ctx context.Context, ticketID int64, closedAt time.Time, systemMessage *service.SupportTicketMessage) error {
-	return r.withTicketUpdateTx(ctx, ticketID, func(tx *sql.Tx) error {
+	return r.withTicketUpdateTx(ctx, ticketID, func(tx *sql.Tx, locked *lockedTicketState) error {
+		if locked.status == service.SupportTicketStatusClosed || locked.status == service.SupportTicketStatusWithdrawn {
+			return service.ErrTicketCannotClose
+		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE support_tickets
 			SET status = $2, closed_at = $3, latest_message_at = $3, last_reply_role = $4,
-				unread_by_user = FALSE, unread_by_admin = TRUE, updated_at = NOW()
+				unread_by_user = FALSE, unread_by_admin = TRUE, withdrawn_at = NULL, updated_at = NOW()
 			WHERE id = $1
 		`, ticketID, service.SupportTicketStatusClosed, closedAt, service.SupportTicketSenderRoleSystem); err != nil {
 			return err
@@ -203,7 +236,12 @@ func (r *ticketRepository) CloseByUser(ctx context.Context, ticketID int64, clos
 }
 
 func (r *ticketRepository) AddReply(ctx context.Context, ticketID int64, message *service.SupportTicketMessage, lastReplyRole string, unreadByUser, unreadByAdmin bool, nextStatus string) error {
-	return r.withTicketUpdateTx(ctx, ticketID, func(tx *sql.Tx) error {
+	return r.withTicketUpdateTx(ctx, ticketID, func(tx *sql.Tx, locked *lockedTicketState) error {
+		if locked.status == service.SupportTicketStatusResolved ||
+			locked.status == service.SupportTicketStatusClosed ||
+			locked.status == service.SupportTicketStatusWithdrawn {
+			return service.ErrTicketReplyLocked
+		}
 		if err := insertTicketMessage(ctx, tx, ticketID, message); err != nil {
 			return err
 		}
@@ -218,11 +256,20 @@ func (r *ticketRepository) AddReply(ctx context.Context, ticketID int64, message
 }
 
 func (r *ticketRepository) UpdateStatusByAdmin(ctx context.Context, ticketID int64, status string, closedAt *time.Time, systemMessage *service.SupportTicketMessage) error {
-	return r.withTicketUpdateTx(ctx, ticketID, func(tx *sql.Tx) error {
+	return r.withTicketUpdateTx(ctx, ticketID, func(tx *sql.Tx, locked *lockedTicketState) error {
+		if locked.status == service.SupportTicketStatusClosed && status != service.SupportTicketStatusClosed {
+			return service.ErrTicketStatusLocked
+		}
+		if locked.status == service.SupportTicketStatusResolved && status != service.SupportTicketStatusResolved && status != service.SupportTicketStatusClosed {
+			return service.ErrTicketStatusLocked
+		}
+		if locked.status == service.SupportTicketStatusWithdrawn {
+			return service.ErrTicketStatusLocked
+		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE support_tickets
 			SET status = $2, closed_at = $3, latest_message_at = $4, last_reply_role = $5,
-				unread_by_user = TRUE, unread_by_admin = FALSE, updated_at = NOW()
+				unread_by_user = TRUE, unread_by_admin = FALSE, withdrawn_at = NULL, updated_at = NOW()
 			WHERE id = $1
 		`, ticketID, status, closedAt, systemMessage.CreatedAt, service.SupportTicketSenderRoleSystem); err != nil {
 			return err
@@ -241,21 +288,30 @@ func (r *ticketRepository) MarkReadByAdmin(ctx context.Context, ticketID int64) 
 	return err
 }
 
-func (r *ticketRepository) withTicketUpdateTx(ctx context.Context, ticketID int64, fn func(tx *sql.Tx) error) error {
+type lockedTicketState struct {
+	status string
+}
+
+func (r *ticketRepository) withTicketUpdateTx(ctx context.Context, ticketID int64, fn func(tx *sql.Tx, locked *lockedTicketState) error) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var exists bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM support_tickets WHERE id = $1)`, ticketID).Scan(&exists); err != nil {
+	locked := &lockedTicketState{}
+	if err := tx.QueryRowContext(ctx, `
+		SELECT status
+		FROM support_tickets
+		WHERE id = $1
+		FOR UPDATE
+	`, ticketID).Scan(&locked.status); err != nil {
+		if err == sql.ErrNoRows {
+			return service.ErrTicketNotFound
+		}
 		return err
 	}
-	if !exists {
-		return service.ErrTicketNotFound
-	}
-	if err := fn(tx); err != nil {
+	if err := fn(tx, locked); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -403,4 +459,25 @@ func generateTicketNo(now time.Time) string {
 		return fmt.Sprintf("TK%s%s", now.Format("20060102150405"), hex.EncodeToString(suffix[:]))
 	}
 	return fmt.Sprintf("TK%s%016x", now.Format("20060102150405"), uint64(now.UnixNano()))
+}
+
+func isSupportTicketNoUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) && pqErr != nil {
+		if string(pqErr.Code) != "23505" {
+			return false
+		}
+		constraint := strings.ToLower(strings.TrimSpace(pqErr.Constraint))
+		if constraint != "" {
+			return constraint == "support_tickets_ticket_no_key"
+		}
+		msg := strings.ToLower(pqErr.Message)
+		detail := strings.ToLower(pqErr.Detail)
+		return strings.Contains(msg, "ticket_no") || strings.Contains(detail, "ticket_no")
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "support_tickets.ticket_no")
 }

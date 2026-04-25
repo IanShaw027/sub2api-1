@@ -94,6 +94,9 @@ func (s *affiliateRepoStub) ListInviteeLedger(ctx context.Context, inviterID, in
 func (s *affiliateRepoStub) CountRebatedInvitees(ctx context.Context, inviterID int64) (int, error) {
 	return s.rebatedCount, nil
 }
+func (s *affiliateRepoStub) ListAdminAffiliateStats(ctx context.Context, params AdminAffiliateListParams) ([]AdminAffiliateStatsRow, int64, error) {
+	return nil, 0, nil
+}
 
 func TestAccrueInviteRebate_ClampsToCapAndClaimsSlot(t *testing.T) {
 	ctx := context.Background()

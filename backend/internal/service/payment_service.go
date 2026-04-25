@@ -184,6 +184,7 @@ type PaymentService struct {
 	groupRepo        GroupRepository
 	resumeService    *PaymentResumeService
 	affiliateService *AffiliateService
+	commitPaymentTx  func(tx *dbent.Tx) error
 }
 
 func NewPaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService) *PaymentService {
@@ -216,6 +217,8 @@ func (s *PaymentService) RefreshProviders(ctx context.Context) {
 func (s *PaymentService) loadProviders(ctx context.Context) {
 	instances, err := s.entClient.PaymentProviderInstance.Query().
 		Where(paymentproviderinstance.EnabledEQ(true)).
+		Order(paymentproviderinstance.BySortOrder()).
+		Order(dbent.Asc(paymentproviderinstance.FieldID)).
 		All(ctx)
 	if err != nil {
 		slog.Error("[PaymentService] failed to query provider instances", "error", err)
@@ -255,6 +258,13 @@ func psErrMsg(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+func (s *PaymentService) commitTx(tx *dbent.Tx) error {
+	if s != nil && s.commitPaymentTx != nil {
+		return s.commitPaymentTx(tx)
+	}
+	return tx.Commit()
 }
 
 func psNilIfEmpty(s string) *string {

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -87,7 +88,7 @@ func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string)
 			c.String(http.StatusBadRequest, "verify failed")
 			return
 		}
-		writeSuccessResponse(c, providerKey)
+		c.String(http.StatusInternalServerError, "provider resolution failed")
 		return
 	}
 
@@ -146,9 +147,56 @@ func extractOutTradeNo(rawBody, providerKey string) string {
 		if err == nil {
 			return values.Get("out_trade_no")
 		}
+	case payment.TypeStripe, payment.TypeWxpay:
+		// Structured JSON webhooks (Stripe and some WxPay-compatible gateways)
+		// may carry out_trade_no in nested metadata. Best-effort extraction avoids
+		// ambiguous multi-instance fallback when an order binding exists.
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(rawBody), &payload); err != nil {
+			return ""
+		}
+		if outTradeNo := findOutTradeNoInJSON(payload); outTradeNo != "" {
+			return outTradeNo
+		}
 	}
-	// For other providers (Stripe, Alipay direct, WxPay direct), the registry
-	// typically has only one instance, so no instance lookup is needed.
+	return ""
+}
+
+func findOutTradeNoInJSON(payload map[string]any) string {
+	if payload == nil {
+		return ""
+	}
+	candidates := []string{
+		readNestedJSONString(payload, "out_trade_no"),
+		readNestedJSONString(payload, "metadata", "out_trade_no"),
+		readNestedJSONString(payload, "data", "object", "metadata", "out_trade_no"),
+		readNestedJSONString(payload, "data", "object", "client_reference_id"),
+		readNestedJSONString(payload, "resource", "out_trade_no"),
+	}
+	for _, candidate := range candidates {
+		if value := strings.TrimSpace(candidate); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func readNestedJSONString(root map[string]any, path ...string) string {
+	var cur any = root
+	for _, key := range path {
+		obj, ok := cur.(map[string]any)
+		if !ok {
+			return ""
+		}
+		next, ok := obj[key]
+		if !ok {
+			return ""
+		}
+		cur = next
+	}
+	if str, ok := cur.(string); ok {
+		return str
+	}
 	return ""
 }
 

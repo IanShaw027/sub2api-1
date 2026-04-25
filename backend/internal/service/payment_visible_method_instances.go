@@ -193,7 +193,10 @@ func (s *PaymentConfigService) resolveVisibleMethodProviderKey(
 			return "", err
 		}
 		if providerKey == "" {
-			return "", nil
+			return "", infraerrors.BadRequest(
+				"INVALID_PAYMENT_VISIBLE_METHOD_SOURCE",
+				fmt.Sprintf("%s source is required when multiple provider instances are enabled", method),
+			)
 		}
 		selected := selectVisibleMethodInstanceByProviderKey(matching, providerKey)
 		if selected == nil {
@@ -236,7 +239,7 @@ func (s *PaymentConfigService) resolveEnabledVisibleMethodInstance(
 		if len(matching) == 0 {
 			return nil, nil
 		}
-		return &dbent.PaymentProviderInstance{ProviderKey: ""}, nil
+		return nil, fmt.Errorf("visible payment method %s has no configured source provider", method)
 	}
 	return selectVisibleMethodInstanceByProviderKey(matching, providerKey), nil
 }

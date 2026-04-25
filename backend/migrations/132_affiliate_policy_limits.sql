@@ -3,8 +3,7 @@ VALUES
     ('affiliate_enabled', 'false', NOW()),
     ('affiliate_rebate_cap', '0', NOW()),
     ('affiliate_rebate_invitee_limit', '0', NOW()),
-    ('affiliate_signup_bonus', '0', NOW()),
-    ('ticket_enabled', 'false', NOW())
+    ('affiliate_signup_bonus', '0', NOW())
 ON CONFLICT (key) DO NOTHING;
 
 ALTER TABLE user_affiliate_ledger
@@ -18,6 +17,23 @@ ON user_affiliate_ledger(user_id, source_user_id);
 
 CREATE INDEX IF NOT EXISTS idx_user_affiliate_ledger_order
 ON user_affiliate_ledger(source_order_id);
+
+WITH ranked AS (
+    SELECT id,
+           ROW_NUMBER() OVER (PARTITION BY user_id, source_order_id, action ORDER BY id) AS rn
+    FROM user_affiliate_ledger
+    WHERE action = 'accrue'
+      AND source_order_id IS NOT NULL
+)
+DELETE FROM user_affiliate_ledger l
+USING ranked r
+WHERE l.id = r.id
+  AND r.rn > 1;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_affiliate_ledger_order_action_unique
+ON user_affiliate_ledger(user_id, source_order_id, action)
+WHERE source_order_id IS NOT NULL
+  AND action = 'accrue';
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_user_affiliate_signup_bonus_once
 ON user_affiliate_ledger(user_id, action)

@@ -4,6 +4,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -125,9 +126,13 @@ func TestAffiliateRepository_AccrueQuota_ReusesOuterTransaction(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, bound, "invitee must bind to inviter")
 
-	applied, err := repo.AccrueQuota(txCtx, inviter.ID, invitee.ID, 3.5)
+	applied, err := repo.AccrueQuota(txCtx, service.AffiliateAccrualInput{
+		InviterID:     inviter.ID,
+		InviteeUserID: invitee.ID,
+		Amount:        3.5,
+	})
 	require.NoError(t, err)
-	require.True(t, applied, "AccrueQuota must report applied=true")
+	require.InDelta(t, 3.5, applied, 1e-9)
 
 	// Visible inside the outer tx.
 	innerQuota := querySingleFloat(t, txCtx, client,
@@ -217,4 +222,77 @@ func TestAffiliateRepository_ApplySignupBonus_IsIdempotentAcrossMigratedSchema(t
 	ledgerCount := querySingleInt(t, txCtx, client,
 		"SELECT COUNT(*) FROM user_affiliate_ledger WHERE user_id = $1 AND action = 'signup_bonus'", u.ID)
 	require.Equal(t, 1, ledgerCount)
+}
+
+func TestAffiliateRepository_AccrueQuota_IdempotentBySourceOrder(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	repo := NewAffiliateRepository(client, integrationDB)
+
+	inviter := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-idempotent-inviter-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+	invitee := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-idempotent-invitee-%d@example.com", time.Now().UnixNano()+1),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+
+	_, err := repo.EnsureUserAffiliate(txCtx, inviter.ID)
+	require.NoError(t, err)
+	_, err = repo.EnsureUserAffiliate(txCtx, invitee.ID)
+	require.NoError(t, err)
+	bound, err := repo.BindInviter(txCtx, invitee.ID, inviter.ID)
+	require.NoError(t, err)
+	require.True(t, bound)
+
+	firstApplied, err := repo.AccrueQuota(txCtx, service.AffiliateAccrualInput{
+		InviterID:     inviter.ID,
+		InviteeUserID: invitee.ID,
+		Amount:        2.25,
+		SourceOrderID: 912345,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 2.25, firstApplied, 1e-9)
+
+	secondApplied, err := repo.AccrueQuota(txCtx, service.AffiliateAccrualInput{
+		InviterID:     inviter.ID,
+		InviteeUserID: invitee.ID,
+		Amount:        2.25,
+		SourceOrderID: 912345,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 0.0, secondApplied, 1e-9)
+
+	quota := querySingleFloat(t, txCtx, client,
+		"SELECT aff_quota::double precision FROM user_affiliates WHERE user_id = $1", inviter.ID)
+	require.InDelta(t, 2.25, quota, 1e-9)
+
+	ledgerCount := querySingleInt(t, txCtx, client, `
+SELECT COUNT(*)
+FROM user_affiliate_ledger
+WHERE user_id = $1
+  AND action = 'accrue'
+  AND source_order_id = $2`, inviter.ID, int64(912345))
+	require.Equal(t, 1, ledgerCount)
+}
+
+func TestAffiliateRepository_EnsureUserAffiliate_ReturnsErrUserNotFoundOnMissingUser(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	repo := NewAffiliateRepository(client, integrationDB)
+	_, err := repo.EnsureUserAffiliate(txCtx, 9_999_999_999)
+	require.True(t, errors.Is(err, service.ErrUserNotFound))
 }

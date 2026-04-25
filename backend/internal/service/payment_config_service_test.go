@@ -13,6 +13,7 @@ import (
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
+	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 )
 
@@ -304,7 +305,7 @@ func TestBuildVisibleMethodSourceAvailability(t *testing.T) {
 	}
 }
 
-func TestGetPaymentConfigKeepsStoredEnabledTypes(t *testing.T) {
+func TestGetPaymentConfigHonorsVisibleMethodSettings(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)
 
@@ -318,12 +319,36 @@ func TestGetPaymentConfigKeepsStoredEnabledTypes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create easypay instance: %v", err)
 	}
+	_, err = client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeWxpay).
+		SetName("Official WxPay").
+		SetConfig("{}").
+		SetSupportedTypes("wxpay").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create wxpay instance: %v", err)
+	}
+	_, err = client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("Stripe").
+		SetConfig("{}").
+		SetSupportedTypes("stripe").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create stripe instance: %v", err)
+	}
 
 	svc := &PaymentConfigService{
 		entClient: client,
 		settingRepo: &paymentConfigSettingRepoStub{
 			values: map[string]string{
-				SettingEnabledPaymentTypes: "alipay,wxpay,stripe",
+				SettingEnabledPaymentTypes:               "alipay,wxpay,stripe",
+				SettingPaymentVisibleMethodAlipayEnabled: "true",
+				SettingPaymentVisibleMethodAlipaySource:  VisibleMethodSourceEasyPayAlipay,
+				SettingPaymentVisibleMethodWxpayEnabled:  "false",
+				SettingPaymentVisibleMethodWxpaySource:   VisibleMethodSourceOfficialWechat,
 			},
 		},
 	}
@@ -333,7 +358,7 @@ func TestGetPaymentConfigKeepsStoredEnabledTypes(t *testing.T) {
 		t.Fatalf("GetPaymentConfig returned error: %v", err)
 	}
 
-	want := []string{payment.TypeAlipay, payment.TypeWxpay, payment.TypeStripe}
+	want := []string{payment.TypeAlipay, payment.TypeStripe}
 	if len(cfg.EnabledTypes) != len(want) {
 		t.Fatalf("EnabledTypes len = %d, want %d (%v)", len(cfg.EnabledTypes), len(want), cfg.EnabledTypes)
 	}
@@ -342,6 +367,84 @@ func TestGetPaymentConfigKeepsStoredEnabledTypes(t *testing.T) {
 			t.Fatalf("EnabledTypes[%d] = %q, want %q (full=%v)", i, cfg.EnabledTypes[i], want[i], cfg.EnabledTypes)
 		}
 	}
+}
+
+func TestGetPaymentConfigFailsClosedWhenVisibleMethodSourceMissing(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+
+	_, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeAlipay).
+		SetName("Official Alipay").
+		SetConfig("{}").
+		SetSupportedTypes("alipay").
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeEasyPay).
+		SetName("EasyPay Alipay").
+		SetConfig("{}").
+		SetSupportedTypes("alipay").
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("Stripe").
+		SetConfig("{}").
+		SetSupportedTypes("stripe").
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentConfigService{
+		entClient: client,
+		settingRepo: &paymentConfigSettingRepoStub{
+			values: map[string]string{
+				SettingEnabledPaymentTypes:               "alipay,stripe",
+				SettingPaymentVisibleMethodAlipayEnabled: "true",
+			},
+		},
+	}
+
+	cfg, err := svc.GetPaymentConfig(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{payment.TypeStripe}, cfg.EnabledTypes)
+}
+
+func TestGetPaymentConfigSelectsStripePublishableKeyDeterministically(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+
+	_, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("Stripe B").
+		SetConfig(`{"publishableKey":"pk_test_b"}`).
+		SetSupportedTypes("stripe").
+		SetSortOrder(20).
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("Stripe A").
+		SetConfig(`{"publishableKey":"pk_test_a"}`).
+		SetSupportedTypes("stripe").
+		SetSortOrder(10).
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentConfigService{
+		entClient:   client,
+		settingRepo: &paymentConfigSettingRepoStub{values: map[string]string{}},
+	}
+
+	cfg, err := svc.GetPaymentConfig(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "pk_test_a", cfg.StripePublishableKey)
 }
 
 func newPaymentConfigServiceTestClient(t *testing.T) *dbent.Client {

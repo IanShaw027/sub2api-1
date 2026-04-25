@@ -363,6 +363,22 @@ func TestGetWebhookProvidersRejectAmbiguousFallbackForNonWxpay(t *testing.T) {
 	require.Contains(t, err.Error(), "ambiguous")
 }
 
+func TestGetWebhookProvidersReturnsOrderLookupError(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	require.NoError(t, client.Close())
+
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        payment.NewRegistry(),
+		providersLoaded: true,
+	}
+
+	_, err := svc.GetWebhookProviders(ctx, payment.TypeStripe, "sub2_lookup_error")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "query payment order by out_trade_no")
+}
+
 func TestGetWebhookProviderAllowsSingleInstanceRegistryFallback(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)

@@ -25,6 +25,25 @@ CREATE INDEX IF NOT EXISTS idx_support_tickets_created_at ON support_tickets(cre
 CREATE INDEX IF NOT EXISTS idx_support_tickets_updated_at ON support_tickets(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_support_tickets_latest_message_at ON support_tickets(latest_message_at DESC);
 
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'support_tickets_category_check') THEN
+        ALTER TABLE support_tickets
+            ADD CONSTRAINT support_tickets_category_check
+            CHECK (category IN ('consult', 'refund', 'concurrency_apply', 'rate_apply', 'other')) NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'support_tickets_status_check') THEN
+        ALTER TABLE support_tickets
+            ADD CONSTRAINT support_tickets_status_check
+            CHECK (status IN ('submitted', 'processing', 'waiting_user', 'waiting_admin', 'resolved', 'closed', 'withdrawn')) NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'support_tickets_last_reply_role_check') THEN
+        ALTER TABLE support_tickets
+            ADD CONSTRAINT support_tickets_last_reply_role_check
+            CHECK (last_reply_role IN ('user', 'admin', 'system')) NOT VALID;
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS support_ticket_messages (
     id BIGSERIAL PRIMARY KEY,
     ticket_id BIGINT NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
@@ -39,6 +58,20 @@ CREATE TABLE IF NOT EXISTS support_ticket_messages (
 
 CREATE INDEX IF NOT EXISTS idx_support_ticket_messages_ticket_id ON support_ticket_messages(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_support_ticket_messages_created_at ON support_ticket_messages(ticket_id, created_at, id);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'support_ticket_messages_sender_role_check') THEN
+        ALTER TABLE support_ticket_messages
+            ADD CONSTRAINT support_ticket_messages_sender_role_check
+            CHECK (sender_role IN ('user', 'admin', 'system')) NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'support_ticket_messages_message_type_check') THEN
+        ALTER TABLE support_ticket_messages
+            ADD CONSTRAINT support_ticket_messages_message_type_check
+            CHECK (message_type IN ('message', 'system')) NOT VALID;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS support_ticket_revisions (
     id BIGSERIAL PRIMARY KEY,

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/user"
@@ -184,6 +183,37 @@ WHERE user_id = $1
 			inviteeSlotClaimed = true
 		}
 
+		var sourceOrderID any
+		if input.SourceOrderID > 0 {
+			sourceOrderID = input.SourceOrderID
+		}
+		claimRows, err := txClient.QueryContext(txCtx, `
+	INSERT INTO user_affiliate_ledger (user_id, action, amount, source_user_id, source_order_id, base_amount, rebate_rate, invitee_slot_claimed, created_at, updated_at)
+	VALUES ($1, 'accrue', $2, $3, $4, $5, $6, $7, NOW(), NOW())
+	ON CONFLICT (user_id, source_order_id, action)
+		WHERE source_order_id IS NOT NULL AND action = 'accrue'
+	DO NOTHING
+	RETURNING id`, input.InviterID, amount, input.InviteeUserID, sourceOrderID, input.BaseAmount, input.RebateRate, inviteeSlotClaimed)
+		if err != nil {
+			return fmt.Errorf("insert affiliate accrue ledger: %w", err)
+		}
+		inserted := false
+		if claimRows.Next() {
+			var ledgerID int64
+			if err := claimRows.Scan(&ledgerID); err != nil {
+				_ = claimRows.Close()
+				return err
+			}
+			inserted = true
+		}
+		if err := claimRows.Close(); err != nil {
+			return err
+		}
+		if !inserted {
+			appliedAmount = 0
+			return nil
+		}
+
 		res, err := txClient.ExecContext(txCtx,
 			"UPDATE user_affiliates SET aff_quota = aff_quota + $1, aff_history_quota = aff_history_quota + $1, updated_at = NOW() WHERE user_id = $2",
 			amount, input.InviterID,
@@ -193,18 +223,7 @@ WHERE user_id = $1
 		}
 		affected, _ := res.RowsAffected()
 		if affected == 0 {
-			appliedAmount = 0
-			return nil
-		}
-
-		var sourceOrderID any
-		if input.SourceOrderID > 0 {
-			sourceOrderID = input.SourceOrderID
-		}
-		if _, err = txClient.ExecContext(txCtx, `
-	INSERT INTO user_affiliate_ledger (user_id, action, amount, source_user_id, source_order_id, base_amount, rebate_rate, invitee_slot_claimed, created_at, updated_at)
-	VALUES ($1, 'accrue', $2, $3, $4, $5, $6, $7, NOW(), NOW())`, input.InviterID, amount, input.InviteeUserID, sourceOrderID, input.BaseAmount, input.RebateRate, inviteeSlotClaimed); err != nil {
-			return fmt.Errorf("insert affiliate accrue ledger: %w", err)
+			return service.ErrUserNotFound
 		}
 
 		appliedAmount = amount
@@ -350,7 +369,7 @@ func (r *affiliateRepository) ListInvitees(ctx context.Context, inviterID int64,
 	SELECT ua.user_id,
 	       COALESCE(u.email, ''),
 	       COALESCE(u.username, ''),
-	       ua.created_at,
+	       u.created_at,
 	       COALESCE(SUM(CASE WHEN l.action = 'accrue' THEN l.base_amount ELSE 0 END), 0)::double precision AS total_consumed,
 	       COALESCE(SUM(CASE WHEN l.action = 'accrue' THEN l.amount ELSE 0 END), 0)::double precision AS total_rebate,
 	       COALESCE(BOOL_OR(l.invitee_slot_claimed), false) AS rebate_slot_claimed
@@ -358,8 +377,8 @@ func (r *affiliateRepository) ListInvitees(ctx context.Context, inviterID int64,
 	LEFT JOIN users u ON u.id = ua.user_id
 	LEFT JOIN user_affiliate_ledger l ON l.user_id = ua.inviter_id AND l.source_user_id = ua.user_id
 	WHERE ua.inviter_id = $1
-	GROUP BY ua.user_id, u.email, u.username, ua.created_at
-	ORDER BY ua.created_at DESC
+	GROUP BY ua.user_id, u.email, u.username, u.created_at
+	ORDER BY u.created_at DESC NULLS LAST, ua.user_id DESC
 	LIMIT $2`, inviterID, limit)
 	if err != nil {
 		return nil, err
@@ -369,11 +388,13 @@ func (r *affiliateRepository) ListInvitees(ctx context.Context, inviterID int64,
 	invitees := make([]service.AffiliateInvitee, 0)
 	for rows.Next() {
 		var item service.AffiliateInvitee
-		var createdAt time.Time
+		var createdAt sql.NullTime
 		if err := rows.Scan(&item.UserID, &item.Email, &item.Username, &createdAt, &item.TotalConsumed, &item.TotalRebate, &item.RebateSlotClaimed); err != nil {
 			return nil, err
 		}
-		item.CreatedAt = &createdAt
+		if createdAt.Valid {
+			item.CreatedAt = &createdAt.Time
+		}
 		invitees = append(invitees, item)
 	}
 	if err := rows.Err(); err != nil {
@@ -453,7 +474,7 @@ func (r *affiliateRepository) ListAdminAffiliateStats(ctx context.Context, param
 		return []service.AdminAffiliateStatsRow{}, 0, nil
 	}
 
-	periodInviteFilter, periodInviteArgs := buildAdminAffiliateDateFilter("invitee.created_at", params)
+	periodInviteFilter, periodInviteArgs := buildAdminAffiliateDateFilter("iu.created_at", params)
 	periodLedgerFilter, periodLedgerArgs := buildAdminAffiliateDateFilter("l.created_at", params)
 	queryArgs := make([]any, 0, len(periodInviteArgs)+len(periodLedgerArgs)+len(args)+2)
 	queryArgs = append(queryArgs, periodInviteArgs...)
@@ -479,11 +500,13 @@ SELECT ua.user_id,
          FROM user_affiliate_ledger l
          WHERE l.user_id = ua.user_id
            AND l.action = 'accrue'
+           AND l.invitee_slot_claimed = true
            AND l.source_user_id IS NOT NULL
        ), 0)::integer AS rebated_invitee_count,
        COALESCE((
          SELECT COUNT(*)
          FROM user_affiliates invitee
+         LEFT JOIN users iu ON iu.id = invitee.user_id
          WHERE invitee.inviter_id = ua.user_id%s
        ), 0)::integer AS period_invited_count,
        COALESCE((
@@ -550,7 +573,7 @@ func buildAdminAffiliateStatsWhere(params service.AdminAffiliateListParams) (str
 		))
 	}
 	if params.StartAt != nil || params.EndAt != nil {
-		inviteeDateFilter, inviteeArgs := buildAdminAffiliateDateFilter("invitee.created_at", params)
+		inviteeDateFilter, inviteeArgs := buildAdminAffiliateDateFilter("iu.created_at", params)
 		ledgerDateFilter, ledgerArgs := buildAdminAffiliateDateFilter("l.created_at", params)
 		offset := len(args)
 		inviteeDateFilter = rebasePostgresPlaceholders(inviteeDateFilter, offset)
@@ -560,6 +583,7 @@ func buildAdminAffiliateStatsWhere(params service.AdminAffiliateListParams) (str
 		clauses = append(clauses, fmt.Sprintf(`(
 			EXISTS (
 				SELECT 1 FROM user_affiliates invitee
+				LEFT JOIN users iu ON iu.id = invitee.user_id
 				WHERE invitee.inviter_id = ua.user_id%s
 			)
 			OR EXISTS (
@@ -685,6 +709,9 @@ ON CONFLICT (user_id) DO NOTHING`, userID, code)
 		}
 		if isAffiliateUniqueViolation(insertErr) {
 			continue
+		}
+		if isAffiliateForeignKeyViolation(insertErr) {
+			return nil, service.ErrUserNotFound
 		}
 		return nil, insertErr
 	}
@@ -817,6 +844,14 @@ func isAffiliateUniqueViolation(err error) bool {
 	var pqErr *pq.Error
 	if errors.As(err, &pqErr) {
 		return string(pqErr.Code) == "23505"
+	}
+	return false
+}
+
+func isAffiliateForeignKeyViolation(err error) bool {
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) {
+		return string(pqErr.Code) == "23503"
 	}
 	return false
 }
