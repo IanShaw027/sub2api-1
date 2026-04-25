@@ -230,6 +230,7 @@ func (h *AnnouncementHandler) ListReadStatus(c *gin.Context) {
 	}
 
 	page, pageSize := response.ParsePagination(c)
+	readStatus := service.NormalizeAnnouncementReadStatus(strings.TrimSpace(c.Query("read_status")))
 	params := pagination.PaginationParams{
 		Page:      page,
 		PageSize:  pageSize,
@@ -246,6 +247,7 @@ func (h *AnnouncementHandler) ListReadStatus(c *gin.Context) {
 		announcementID,
 		params,
 		search,
+		readStatus,
 	)
 	if err != nil {
 		response.ErrorFrom(c, err)

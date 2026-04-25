@@ -92,4 +92,47 @@ describe('AnnouncementReadStatusDialog', () => {
 
     expect(getReadStatus).toHaveBeenCalledTimes(1)
   })
+
+  it('passes read status filter to the admin API', async () => {
+    getReadStatus.mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      page_size: 20,
+      pages: 0,
+    })
+
+    const wrapper = mount(AnnouncementReadStatusDialog, {
+      props: {
+        show: true,
+        announcementId: 1,
+      },
+      global: {
+        stubs: {
+          BaseDialog: BaseDialogStub,
+          DataTable: true,
+          Pagination: true,
+          Icon: true,
+          Select: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const setupState = (wrapper.vm as any).$?.setupState
+    setupState.readStatusFilter = 'unread'
+    await setupState.handleReadStatusChange()
+    await flushPromises()
+
+    expect(getReadStatus).toHaveBeenLastCalledWith(
+      1,
+      1,
+      20,
+      expect.objectContaining({
+        read_status: 'unread',
+      }),
+      expect.any(Object),
+    )
+  })
 })

@@ -11,6 +11,8 @@ import type {
   UpdateAnnouncementRequest
 } from '@/types'
 
+export type AnnouncementReadStatusFilter = 'all' | 'read' | 'unread'
+
 export async function list(
   page: number = 1,
   pageSize: number = 20,
@@ -57,6 +59,7 @@ export async function getReadStatus(
   pageSize: number = 20,
   filters?: {
     search?: string
+    read_status?: AnnouncementReadStatusFilter
     sort_by?: string
     sort_order?: 'asc' | 'desc'
   },

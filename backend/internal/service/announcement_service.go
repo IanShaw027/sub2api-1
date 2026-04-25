@@ -335,6 +335,7 @@ func (s *AnnouncementService) ListUserReadStatus(
 	announcementID int64,
 	params pagination.PaginationParams,
 	search string,
+	readStatus string,
 ) ([]AnnouncementUserReadStatus, *pagination.PaginationResult, error) {
 	ann, err := s.announcementRepo.GetByID(ctx, announcementID)
 	if err != nil {
@@ -342,7 +343,9 @@ func (s *AnnouncementService) ListUserReadStatus(
 	}
 
 	filters := UserListFilters{
-		Search: strings.TrimSpace(search),
+		Search:                 strings.TrimSpace(search),
+		AnnouncementID:         &announcementID,
+		AnnouncementReadStatus: NormalizeAnnouncementReadStatus(strings.TrimSpace(readStatus)),
 	}
 
 	users, page, err := s.userRepo.ListWithFilters(ctx, params, filters)

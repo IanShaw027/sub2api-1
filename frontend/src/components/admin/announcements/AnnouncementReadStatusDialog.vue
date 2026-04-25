@@ -7,13 +7,19 @@
   >
     <div class="space-y-4">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div class="flex-1">
+        <div class="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
           <input
             v-model="search"
             type="text"
-            class="input"
+            class="input flex-1"
             :placeholder="t('admin.announcements.searchUsers')"
             @input="handleSearch"
+          />
+          <Select
+            v-model="readStatusFilter"
+            :options="readStatusOptions"
+            class="w-full sm:w-40"
+            @change="handleReadStatusChange"
           />
         </div>
         <button @click="load" :disabled="loading" class="btn btn-secondary" :title="t('common.refresh')">
@@ -83,6 +89,8 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Icon from '@/components/icons/Icon.vue'
+import Select from '@/components/common/Select.vue'
+import type { AnnouncementReadStatusFilter } from '@/api/admin/announcements'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -98,6 +106,7 @@ const emit = defineEmits<{
 
 const loading = ref(false)
 const search = ref('')
+const readStatusFilter = ref<AnnouncementReadStatusFilter>('all')
 
 const pagination = reactive({
   page: 1,
@@ -112,6 +121,11 @@ const sortState = reactive({
 })
 
 const items = ref<AnnouncementUserReadStatus[]>([])
+const readStatusOptions = computed(() => [
+  { value: 'all' as AnnouncementReadStatusFilter, label: t('common.all') },
+  { value: 'read' as AnnouncementReadStatusFilter, label: t('announcements.read') },
+  { value: 'unread' as AnnouncementReadStatusFilter, label: t('announcements.unread') }
+])
 
 const columns = computed<Column[]>(() => [
   { key: 'email', label: t('common.email'), sortable: true },
@@ -127,6 +141,7 @@ let searchDebounceTimer: number | null = null
 function resetDialogState() {
   loading.value = false
   search.value = ''
+  readStatusFilter.value = 'all'
   items.value = []
   pagination.page = 1
   pagination.total = 0
@@ -163,6 +178,7 @@ async function load() {
       pagination.page_size,
       {
         search: search.value,
+        read_status: readStatusFilter.value,
         sort_by: sortState.sort_by,
         sort_order: sortState.sort_order
       },
@@ -209,6 +225,11 @@ function handlePageSizeChange(pageSize: number) {
 function handleSort(key: string, order: 'asc' | 'desc') {
   sortState.sort_by = key
   sortState.sort_order = order
+  pagination.page = 1
+  load()
+}
+
+function handleReadStatusChange() {
   pagination.page = 1
   load()
 }

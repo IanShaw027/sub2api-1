@@ -10,6 +10,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
 	"github.com/Wei-Shaw/sub2api/ent/authidentitychannel"
@@ -427,6 +428,19 @@ func (r *userRepository) ListWithFilters(ctx context.Context, params pagination.
 		q = q.Where(dbuser.HasAllowedGroupsWith(
 			dbgroup.NameContainsFold(filters.GroupName),
 		))
+	}
+	if filters.AnnouncementID != nil && *filters.AnnouncementID > 0 {
+		readStatus := service.NormalizeAnnouncementReadStatus(filters.AnnouncementReadStatus)
+		switch readStatus {
+		case service.AnnouncementReadStatusRead:
+			q = q.Where(dbuser.HasAnnouncementReadsWith(
+				announcementread.AnnouncementIDEQ(*filters.AnnouncementID),
+			))
+		case service.AnnouncementReadStatusUnread:
+			q = q.Where(dbuser.Not(dbuser.HasAnnouncementReadsWith(
+				announcementread.AnnouncementIDEQ(*filters.AnnouncementID),
+			)))
+		}
 	}
 
 	// If attribute filters are specified, we need to filter by user IDs first
