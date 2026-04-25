@@ -57,6 +57,53 @@ func TestNormalizeOpenAICompactRequestBodyForTest_AlreadyNormalized(t *testing.T
 	require.Equal(t, string(original), string(normalized))
 }
 
+func TestNormalizeOpenAICompactRequestBodyForTest_AddsToolSearchForDeferredTools(t *testing.T) {
+	t.Parallel()
+
+	original := []byte(`{
+		"model":"gpt-5.5",
+		"input":[],
+		"tools":[{"type":"function","name":"bash","defer_loading":true}]
+	}`)
+
+	normalized, changed, err := NormalizeOpenAICompactRequestBodyForTest(original)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.True(t, gjson.GetBytes(normalized, "tools.0.defer_loading").Bool())
+	require.Equal(t, "tool_search", gjson.GetBytes(normalized, "tools.1.type").String())
+}
+
+func TestNormalizeOpenAICompactRequestBodyForTest_PreservesExistingToolSearch(t *testing.T) {
+	t.Parallel()
+
+	original := []byte(`{
+		"model":"gpt-5.5",
+		"input":[],
+		"tools":[{"type":"function","name":"bash","defer_loading":true},{"type":"tool_search","mode":"existing"}]
+	}`)
+
+	normalized, changed, err := NormalizeOpenAICompactRequestBodyForTest(original)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.JSONEq(t, string(original), string(normalized))
+}
+
+func TestNormalizeOpenAICompactRequestBodyForTest_AddsToolSearchForObjectDeferredTools(t *testing.T) {
+	t.Parallel()
+
+	original := []byte(`{
+		"model":"gpt-5.5",
+		"input":[],
+		"tools":{"defer_loading":true}
+	}`)
+
+	normalized, changed, err := NormalizeOpenAICompactRequestBodyForTest(original)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.True(t, gjson.GetBytes(normalized, "tools.defer_loading").Bool())
+	require.Equal(t, "tool_search", gjson.GetBytes(normalized, "tools.tool_search.type").String())
+}
+
 func TestOpenAIGatewayService_Forward_OAuthCompactUsesCodexShape(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
@@ -123,7 +170,9 @@ func TestOpenAIGatewayService_Forward_OAuthCompactUsesCodexShape(t *testing.T) {
 
 	require.Equal(t, "gpt-5.4", gjson.GetBytes(upstream.lastBody, "model").String())
 	require.Equal(t, "compact me", gjson.GetBytes(upstream.lastBody, "input.0.content.0.text").String())
-	require.Equal(t, "local-test-instructions", gjson.GetBytes(upstream.lastBody, "instructions").String())
+	instructions := gjson.GetBytes(upstream.lastBody, "instructions").String()
+	require.Contains(t, instructions, "local-test-instructions")
+	require.Contains(t, instructions, codexImageGenerationBridgeMarker)
 	require.Equal(t, "apply_patch", gjson.GetBytes(upstream.lastBody, "tools.0.function.name").String())
 	require.True(t, gjson.GetBytes(upstream.lastBody, "parallel_tool_calls").Bool())
 	require.Equal(t, "high", gjson.GetBytes(upstream.lastBody, "reasoning.effort").String())

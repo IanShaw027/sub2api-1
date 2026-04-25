@@ -4538,7 +4538,11 @@ func normalizeOpenAICompactRequestBody(body []byte) ([]byte, bool, error) {
 		if !value.Exists() {
 			continue
 		}
-		next, err := sjson.SetRawBytes(normalized, field, []byte(value.Raw))
+		raw := []byte(value.Raw)
+		if field == "tools" {
+			raw, _ = ensureOpenAICompactDeferredToolSearch(raw)
+		}
+		next, err := sjson.SetRawBytes(normalized, field, raw)
 		if err != nil {
 			return body, false, fmt.Errorf("normalize compact body %s: %w", field, err)
 		}
@@ -4549,6 +4553,56 @@ func normalizeOpenAICompactRequestBody(body []byte) ([]byte, bool, error) {
 		return body, false, nil
 	}
 	return normalized, true, nil
+}
+
+func ensureOpenAICompactDeferredToolSearch(rawTools []byte) ([]byte, bool) {
+	var parsed any
+	if err := json.Unmarshal(rawTools, &parsed); err != nil {
+		return rawTools, false
+	}
+
+	switch tools := parsed.(type) {
+	case []any:
+		hasDeferred := false
+		hasToolSearch := false
+		for _, rawTool := range tools {
+			tool, ok := rawTool.(map[string]any)
+			if !ok {
+				continue
+			}
+			if v, _ := tool["defer_loading"].(bool); v {
+				hasDeferred = true
+			}
+			if strings.TrimSpace(firstNonEmptyString(tool["type"])) == "tool_search" {
+				hasToolSearch = true
+			}
+		}
+		if !hasDeferred || hasToolSearch {
+			return rawTools, false
+		}
+		tools = append(tools, map[string]any{"type": "tool_search"})
+		encoded, err := json.Marshal(tools)
+		if err != nil {
+			return rawTools, false
+		}
+		return encoded, true
+	case map[string]any:
+		deferLoading, _ := tools["defer_loading"].(bool)
+		if !deferLoading {
+			return rawTools, false
+		}
+		if _, ok := tools["tool_search"]; ok {
+			return rawTools, false
+		}
+		tools["tool_search"] = map[string]any{"type": "tool_search"}
+		encoded, err := json.Marshal(tools)
+		if err != nil {
+			return rawTools, false
+		}
+		return encoded, true
+	default:
+		return rawTools, false
+	}
 }
 
 func resolveOpenAICompactSessionID(c *gin.Context) string {

@@ -287,7 +287,7 @@ func TestForwardAsAnthropic_OrdersPromptCacheKeyBeforeInputAfterCodexTransform(t
 	require.NotNil(t, result)
 
 	bodyStr := string(upstream.lastBody)
-	modelPos := strings.Index(bodyStr, `"model":"gpt-5.1"`)
+	modelPos := strings.Index(bodyStr, `"model":"gpt-5.1-codex"`)
 	promptCachePos := strings.Index(bodyStr, `"prompt_cache_key":"session-ordered"`)
 	inputPos := strings.Index(bodyStr, `"input":`)
 	require.NotEqual(t, -1, modelPos)

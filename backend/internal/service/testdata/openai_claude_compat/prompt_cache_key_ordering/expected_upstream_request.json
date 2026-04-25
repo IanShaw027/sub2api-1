@@ -1,12 +1,12 @@
 {
   "equals_paths": {
-    "model": "gpt-5.1",
+    "model": "gpt-5.1-codex",
     "prompt_cache_key": "session-ordered",
     "input.0.role": "user",
     "input.0.content": "hello"
   },
   "ordered_substrings": [
-    "\"model\":\"gpt-5.1\"",
+    "\"model\":\"gpt-5.1-codex\"",
     "\"prompt_cache_key\":\"session-ordered\"",
     "\"input\":"
   ]

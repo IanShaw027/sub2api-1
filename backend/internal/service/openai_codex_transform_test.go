@@ -401,6 +401,54 @@ func TestApplyCodexOAuthTransform_CompactForcesNonStreaming(t *testing.T) {
 	require.True(t, result.Modified)
 }
 
+func TestApplyCodexOAuthTransform_CompactAddsToolSearchForDeferredTools(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.5",
+		"tools": []any{map[string]any{"type": "function", "name": "bash", "defer_loading": true}},
+	}
+
+	result := applyCodexOAuthTransform(reqBody, true, true)
+
+	require.True(t, result.Modified)
+	tools, ok := reqBody["tools"].([]any)
+	require.True(t, ok)
+	require.Len(t, tools, 2)
+	toolSearch, ok := tools[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "tool_search", toolSearch["type"])
+}
+
+func TestApplyCodexOAuthTransform_CompactPreservesExistingToolSearch(t *testing.T) {
+	existing := map[string]any{"type": "tool_search", "mode": "existing"}
+	reqBody := map[string]any{
+		"model": "gpt-5.5",
+		"tools": []any{map[string]any{"type": "function", "name": "bash", "defer_loading": true}, existing},
+	}
+
+	applyCodexOAuthTransform(reqBody, true, true)
+
+	tools, ok := reqBody["tools"].([]any)
+	require.True(t, ok)
+	require.Len(t, tools, 2)
+	require.Equal(t, existing, tools[1])
+}
+
+func TestApplyCodexOAuthTransform_CompactAddsToolSearchForObjectDeferredTools(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.5",
+		"tools": map[string]any{"defer_loading": true},
+	}
+
+	result := applyCodexOAuthTransform(reqBody, true, true)
+
+	require.True(t, result.Modified)
+	tools, ok := reqBody["tools"].(map[string]any)
+	require.True(t, ok)
+	toolSearch, ok := tools["tool_search"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "tool_search", toolSearch["type"])
+}
+
 func TestApplyCodexOAuthTransform_NonContinuationDefaultsStoreFalseAndStripsIDs(t *testing.T) {
 	// 非续链场景：未设置 store 时默认 false，并移除 input 中的 id。
 

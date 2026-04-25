@@ -121,6 +121,9 @@ func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact
 			delete(reqBody, "stream")
 			result.Modified = true
 		}
+		if ensureCompactDeferredToolSearchInMap(reqBody) {
+			result.Modified = true
+		}
 	} else {
 		// OAuth 走 ChatGPT internal API 时，store 必须为 false；显式 true 也会强制覆盖。
 		// 避免上游返回 "Store must be set to false"。
@@ -254,6 +257,48 @@ func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact
 	}
 
 	return result
+}
+
+func ensureCompactDeferredToolSearchInMap(reqBody map[string]any) bool {
+	rawTools, ok := reqBody["tools"]
+	if !ok || rawTools == nil {
+		return false
+	}
+
+	switch tools := rawTools.(type) {
+	case []any:
+		hasDeferred := false
+		hasToolSearch := false
+		for _, rawTool := range tools {
+			tool, ok := rawTool.(map[string]any)
+			if !ok {
+				continue
+			}
+			if v, _ := tool["defer_loading"].(bool); v {
+				hasDeferred = true
+			}
+			if strings.TrimSpace(firstNonEmptyString(tool["type"])) == "tool_search" {
+				hasToolSearch = true
+			}
+		}
+		if !hasDeferred || hasToolSearch {
+			return false
+		}
+		reqBody["tools"] = append(tools, map[string]any{"type": "tool_search"})
+		return true
+	case map[string]any:
+		deferLoading, _ := tools["defer_loading"].(bool)
+		if !deferLoading {
+			return false
+		}
+		if _, ok := tools["tool_search"]; ok {
+			return false
+		}
+		tools["tool_search"] = map[string]any{"type": "tool_search"}
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeCodexToolChoice(reqBody map[string]any) bool {
