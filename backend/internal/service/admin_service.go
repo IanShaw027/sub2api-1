@@ -213,7 +213,7 @@ type CreateGroupInput struct {
 
 type UpdateGroupInput struct {
 	Name             string
-	Description      string
+	Description      *string
 	Platform         string
 	RateMultiplier   *float64 // 使用指针以支持设置为0
 	IsExclusive      *bool
@@ -1436,7 +1436,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	}
 
 	// require_oauth_only: 过滤掉 apikey 类型账号
-	if group.RequireOAuthOnly && (group.Platform == PlatformOpenAI || group.Platform == PlatformAntigravity || group.Platform == PlatformAnthropic || group.Platform == PlatformGemini) && len(accountIDsToCopy) > 0 {
+	if group.RequireOAuthOnly && requiresOAuthOnlyAccount(group.Platform) && len(accountIDsToCopy) > 0 {
 		accounts, err := s.accountRepo.GetByIDs(ctx, accountIDsToCopy)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch accounts for oauth filter: %w", err)
@@ -1561,8 +1561,8 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	if input.Name != "" {
 		group.Name = input.Name
 	}
-	if input.Description != "" {
-		group.Description = input.Description
+	if input.Description != nil {
+		group.Description = *input.Description
 	}
 	if input.Platform != "" {
 		group.Platform = input.Platform
@@ -1716,7 +1716,7 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		}
 
 		// require_oauth_only: 过滤掉 apikey 类型账号
-		if group.RequireOAuthOnly && (group.Platform == PlatformOpenAI || group.Platform == PlatformAntigravity || group.Platform == PlatformAnthropic || group.Platform == PlatformGemini) && len(accountIDsToCopy) > 0 {
+		if group.RequireOAuthOnly && requiresOAuthOnlyAccount(group.Platform) && len(accountIDsToCopy) > 0 {
 			accounts, err := s.accountRepo.GetByIDs(ctx, accountIDsToCopy)
 			if err != nil {
 				return nil, fmt.Errorf("failed to fetch accounts for oauth filter: %w", err)
@@ -2054,6 +2054,15 @@ func (s *adminServiceImpl) GetAccountsByIDs(ctx context.Context, ids []int64) ([
 }
 
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
+	if err := validatePlatformAccountType(input.Platform, input.Type); err != nil {
+		return nil, err
+	}
+	if input.Platform == PlatformKiro {
+		if err := validateKiroCredentials(input.Credentials); err != nil {
+			return nil, err
+		}
+	}
+
 	// 绑定分组
 	groupIDs := input.GroupIDs
 	// 如果没有指定分组,自动绑定对应平台的默认分组
@@ -2067,6 +2076,15 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 					break
 				}
 			}
+		}
+	}
+
+	if len(groupIDs) > 0 {
+		if err := s.validateGroupIDsExist(ctx, groupIDs); err != nil {
+			return nil, err
+		}
+		if err := s.validateOAuthOnlyGroups(ctx, input.Type, groupIDs); err != nil {
+			return nil, err
 		}
 	}
 
@@ -2170,11 +2188,19 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if input.Type != "" {
 		account.Type = input.Type
 	}
+	if err := validatePlatformAccountType(account.Platform, account.Type); err != nil {
+		return nil, err
+	}
 	if input.Notes != nil {
 		account.Notes = normalizeAccountNotes(input.Notes)
 	}
 	if len(input.Credentials) > 0 {
 		account.Credentials = input.Credentials
+	}
+	if account.Platform == PlatformKiro {
+		if err := validateKiroCredentials(account.Credentials); err != nil {
+			return nil, err
+		}
 	}
 	// Extra 使用 map：需要区分“未提供(nil)”与“显式清空({})”。
 	// 关闭配额限制时前端会删除 quota_* 键并提交 extra:{}，此时也必须落库。
@@ -2255,6 +2281,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		if err := s.validateGroupIDsExist(ctx, *input.GroupIDs); err != nil {
 			return nil, err
 		}
+		if err := s.validateOAuthOnlyGroups(ctx, account.Type, *input.GroupIDs); err != nil {
+			return nil, err
+		}
 
 		// 检查混合渠道风险（除非用户已确认）
 		if !input.SkipMixedChannelCheck {
@@ -2303,17 +2332,22 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 
 	needMixedChannelCheck := input.GroupIDs != nil && !input.SkipMixedChannelCheck
 
-	// 预加载账号平台信息（混合渠道检查需要）。
+	// 预加载账号信息，用于存在性校验、混合渠道检查、Kiro 凭据校验和 OAuth-only 分组校验。
+	accountByID := map[int64]*Account{}
 	platformByID := map[int64]string{}
-	if needMixedChannelCheck {
-		accounts, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
-		if err != nil {
-			return nil, err
+	accounts, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, account := range accounts {
+		if account != nil {
+			accountByID[account.ID] = account
+			platformByID[account.ID] = account.Platform
 		}
-		for _, account := range accounts {
-			if account != nil {
-				platformByID[account.ID] = account.Platform
-			}
+	}
+	for _, accountID := range input.AccountIDs {
+		if accountByID[accountID] == nil {
+			return nil, fmt.Errorf("account %d not found", accountID)
 		}
 	}
 
@@ -2325,6 +2359,30 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 				continue
 			}
 			if err := s.checkMixedChannelRisk(ctx, accountID, platform, *input.GroupIDs); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if input.GroupIDs != nil {
+		for _, accountID := range input.AccountIDs {
+			account := accountByID[accountID]
+			if account == nil {
+				continue
+			}
+			if err := s.validateOAuthOnlyGroups(ctx, account.Type, *input.GroupIDs); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if len(input.Credentials) > 0 {
+		for _, accountID := range input.AccountIDs {
+			account := accountByID[accountID]
+			if account == nil || account.Platform != PlatformKiro {
+				continue
+			}
+			if err := validateKiroCredentials(MergeCredentials(account.Credentials, input.Credentials)); err != nil {
 				return nil, err
 			}
 		}
@@ -2373,8 +2431,12 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 
 	// Run bulk update for column/jsonb fields first.
-	if _, err := s.accountRepo.BulkUpdate(ctx, input.AccountIDs, repoUpdates); err != nil {
+	affected, err := s.accountRepo.BulkUpdate(ctx, input.AccountIDs, repoUpdates)
+	if err != nil {
 		return nil, err
+	}
+	if affected != int64(len(input.AccountIDs)) {
+		return nil, fmt.Errorf("bulk update affected %d of %d accounts", affected, len(input.AccountIDs))
 	}
 
 	// Handle group bindings per account (requires individual operations).
@@ -3091,6 +3153,22 @@ func (s *adminServiceImpl) validateGroupIDsExist(ctx context.Context, groupIDs [
 	for _, groupID := range groupIDs {
 		if _, err := s.groupRepo.GetByID(ctx, groupID); err != nil {
 			return fmt.Errorf("get group: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *adminServiceImpl) validateOAuthOnlyGroups(ctx context.Context, accountType string, groupIDs []int64) error {
+	if accountType != AccountTypeAPIKey || len(groupIDs) == 0 {
+		return nil
+	}
+	for _, groupID := range groupIDs {
+		group, err := s.groupRepo.GetByID(ctx, groupID)
+		if err != nil {
+			return err
+		}
+		if group.RequireOAuthOnly && requiresOAuthOnlyAccount(group.Platform) {
+			return fmt.Errorf("分组 [%s] 仅允许 OAuth 账号，apikey 类型账号无法加入", group.Name)
 		}
 	}
 	return nil

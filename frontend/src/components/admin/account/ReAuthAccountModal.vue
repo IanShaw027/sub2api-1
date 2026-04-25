@@ -1,7 +1,7 @@
 <template>
   <BaseDialog
     :show="show"
-    :title="t('admin.accounts.reAuthorizeAccount')"
+    :title="dialogTitle"
     width="normal"
     @close="handleClose"
   >
@@ -20,7 +20,9 @@
                   ? 'from-blue-500 to-blue-600'
                   : isAntigravity
                     ? 'from-purple-500 to-purple-600'
-                    : 'from-orange-500 to-orange-600'
+                    : isKiro
+                      ? 'from-cyan-500 to-sky-600'
+                      : 'from-orange-500 to-orange-600'
             ]"
           >
             <Icon name="sparkles" size="md" class="text-white" />
@@ -37,10 +39,67 @@
                     ? t('admin.accounts.geminiAccount')
                     : isAntigravity
                       ? t('admin.accounts.antigravityAccount')
-                      : t('admin.accounts.claudeCodeAccount')
+                      : isKiro
+                        ? t('admin.accounts.kiroAccount')
+                        : t('admin.accounts.claudeCodeAccount')
               }}
             </span>
           </div>
+        </div>
+      </div>
+
+      <div
+        v-if="isKiro"
+        class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-200"
+      >
+        <div class="font-medium">
+          {{ t('admin.accounts.kiro.manualUpdateTitle') }}
+        </div>
+        <p class="mt-1">
+          {{ t('admin.accounts.kiro.manualUpdateDesc') }}
+        </p>
+        <ul class="mt-3 list-disc space-y-1 pl-5">
+          <li>{{ t('admin.accounts.kiro.manualUpdateStepRefresh') }}</li>
+          <li>{{ t('admin.accounts.kiro.manualUpdateStepIDC') }}</li>
+          <li>{{ t('admin.accounts.kiro.manualUpdateStepVersions') }}</li>
+        </ul>
+        <div class="mt-3 flex flex-wrap gap-2 text-xs">
+          <span class="rounded-full bg-white/70 px-2 py-1 dark:bg-black/10">
+            {{ t('admin.accounts.kiro.manualUpdateCurrentAuth', { value: kiroAuthMethodLabel }) }}
+          </span>
+          <span class="rounded-full bg-white/70 px-2 py-1 dark:bg-black/10">
+            {{ t('admin.accounts.kiro.manualUpdateCurrentRegion', { value: kiroRegionLabel }) }}
+          </span>
+          <span
+            v-if="kiroUsesIDC"
+            class="rounded-full bg-white/70 px-2 py-1 dark:bg-black/10"
+          >
+            {{
+              kiroHasIDCClient
+                ? t('admin.accounts.kiro.manualUpdateIDCConfigured')
+                : t('admin.accounts.kiro.manualUpdateIDCMissing')
+            }}
+          </span>
+        </div>
+        <p class="mt-3 text-xs text-amber-700/90 dark:text-amber-200/90">
+          {{ t('admin.accounts.kiro.manualUpdateFooterHint') }}
+        </p>
+        <div class="mt-4 rounded-lg border border-amber-300/70 bg-white/70 p-3 dark:border-amber-800/60 dark:bg-black/10">
+          <div class="font-medium text-amber-900 dark:text-amber-100">
+            {{ t('admin.accounts.kiro.refreshNowTitle') }}
+          </div>
+          <p class="mt-1 text-xs text-amber-800/90 dark:text-amber-200/90">
+            {{ t('admin.accounts.kiro.refreshNowDesc') }}
+          </p>
+          <p v-if="kiroRefreshBlockedReason" class="mt-2 text-xs text-amber-900/80 dark:text-amber-100/90">
+            {{ kiroRefreshBlockedReason }}
+          </p>
+          <p v-else class="mt-2 text-xs text-amber-900/80 dark:text-amber-100/90">
+            {{ t('admin.accounts.kiro.refreshNowHint') }}
+          </p>
+          <p v-if="kiroRefreshError" class="mt-2 text-xs text-red-700 dark:text-red-300">
+            {{ kiroRefreshError }}
+          </p>
         </div>
       </div>
 
@@ -117,6 +176,7 @@
       </div>
 
       <OAuthAuthorizationFlow
+        v-if="!isKiro"
         ref="oauthFlowRef"
         :add-method="addMethod"
         :auth-url="currentAuthUrl"
@@ -141,8 +201,49 @@
         <button type="button" class="btn btn-secondary" @click="handleClose">
           {{ t('common.cancel') }}
         </button>
+        <div v-if="isKiro" class="flex gap-3">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            @click="handleOpenEditor"
+          >
+            {{ t('admin.accounts.kiro.openEditorAction') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary"
+            :disabled="!kiroCanRefresh || kiroRefreshLoading"
+            @click="handleKiroRefresh"
+          >
+            <svg
+              v-if="kiroRefreshLoading"
+              class="-ml-1 mr-2 h-4 w-4 animate-spin"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                class="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                stroke-width="4"
+              ></circle>
+              <path
+                class="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              ></path>
+            </svg>
+            {{
+              kiroRefreshLoading
+                ? t('admin.accounts.oauth.verifying')
+                : t('admin.accounts.kiro.refreshNowAction')
+            }}
+          </button>
+        </div>
         <button
-          v-if="isManualInputMethod"
+          v-if="!isKiro && isManualInputMethod"
           type="button"
           :disabled="!canExchangeCode"
           class="btn btn-primary"
@@ -192,7 +293,7 @@ import {
 import { useOpenAIOAuth } from '@/composables/useOpenAIOAuth'
 import { useGeminiOAuth } from '@/composables/useGeminiOAuth'
 import { useAntigravityOAuth } from '@/composables/useAntigravityOAuth'
-import type { Account } from '@/types'
+import type { Account, KiroCredentials } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import OAuthAuthorizationFlow from '@/components/account/OAuthAuthorizationFlow.vue'
@@ -217,6 +318,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   close: []
   reauthorized: [account: Account]
+  openEditor: [account: Account]
 }>()
 
 const appStore = useAppStore()
@@ -234,6 +336,8 @@ const oauthFlowRef = ref<OAuthFlowExposed | null>(null)
 // State
 const addMethod = ref<AddMethod>('oauth')
 const geminiOAuthType = ref<'code_assist' | 'google_one' | 'ai_studio'>('code_assist')
+const kiroRefreshLoading = ref(false)
+const kiroRefreshError = ref('')
 
 // Computed - check platform
 const isOpenAI = computed(() => props.account?.platform === 'openai')
@@ -241,27 +345,62 @@ const isOpenAILike = computed(() => isOpenAI.value)
 const isGemini = computed(() => props.account?.platform === 'gemini')
 const isAnthropic = computed(() => props.account?.platform === 'anthropic')
 const isAntigravity = computed(() => props.account?.platform === 'antigravity')
+const isKiro = computed(() => props.account?.platform === 'kiro')
+const kiroCredentials = computed((): KiroCredentials & Record<string, unknown> => {
+  if (props.account?.platform !== 'kiro') {
+    return {}
+  }
+  return props.account.credentials || {}
+})
+const kiroUsesIDC = computed(() => kiroCredentials.value.auth_method === 'idc')
+const kiroHasIDCClient = computed(() => (
+  Boolean(kiroCredentials.value.client_id?.trim()) &&
+  Boolean(kiroCredentials.value.client_secret?.trim())
+))
+const kiroHasRefreshToken = computed(() => Boolean(kiroCredentials.value.refresh_token?.trim()))
+const kiroCanRefresh = computed(() => kiroHasRefreshToken.value && (!kiroUsesIDC.value || kiroHasIDCClient.value))
+const kiroRefreshBlockedReason = computed(() => {
+  if (!isKiro.value) return ''
+  if (!kiroHasRefreshToken.value) return t('admin.accounts.kiro.refreshNowMissingRefreshToken')
+  if (kiroUsesIDC.value && !kiroHasIDCClient.value) return t('admin.accounts.kiro.refreshNowMissingIDC')
+  return ''
+})
+const kiroRegionLabel = computed(() => kiroCredentials.value.region || 'us-east-1')
+const kiroAuthMethodLabel = computed(() => (
+  kiroUsesIDC.value
+    ? t('admin.accounts.kiro.authMethodIDC')
+    : t('admin.accounts.kiro.authMethodSocial')
+))
+const dialogTitle = computed(() => (
+  isKiro.value
+    ? t('admin.accounts.kiro.manualUpdateDialogTitle')
+    : t('admin.accounts.reAuthorizeAccount')
+))
 
 // Computed - current OAuth state based on platform
 const currentAuthUrl = computed(() => {
+  if (isKiro.value) return ''
   if (isOpenAILike.value) return openaiOAuth.authUrl.value
   if (isGemini.value) return geminiOAuth.authUrl.value
   if (isAntigravity.value) return antigravityOAuth.authUrl.value
   return claudeOAuth.authUrl.value
 })
 const currentSessionId = computed(() => {
+  if (isKiro.value) return ''
   if (isOpenAILike.value) return openaiOAuth.sessionId.value
   if (isGemini.value) return geminiOAuth.sessionId.value
   if (isAntigravity.value) return antigravityOAuth.sessionId.value
   return claudeOAuth.sessionId.value
 })
 const currentLoading = computed(() => {
+  if (isKiro.value) return false
   if (isOpenAILike.value) return openaiOAuth.loading.value
   if (isGemini.value) return geminiOAuth.loading.value
   if (isAntigravity.value) return antigravityOAuth.loading.value
   return claudeOAuth.loading.value
 })
 const currentError = computed(() => {
+  if (isKiro.value) return ''
   if (isOpenAILike.value) return openaiOAuth.error.value
   if (isGemini.value) return geminiOAuth.error.value
   if (isAntigravity.value) return antigravityOAuth.error.value
@@ -312,6 +451,8 @@ watch(
 const resetState = () => {
   addMethod.value = 'oauth'
   geminiOAuthType.value = 'code_assist'
+  kiroRefreshLoading.value = false
+  kiroRefreshError.value = ''
   claudeOAuth.resetState()
   openaiOAuth.resetState()
   geminiOAuth.resetState()
@@ -323,8 +464,47 @@ const handleClose = () => {
   emit('close')
 }
 
+const handleOpenEditor = () => {
+  if (!props.account) return
+  emit('openEditor', props.account)
+  emit('close')
+}
+
+const handleKiroRefresh = async () => {
+  if (!props.account) return
+  if (!kiroCanRefresh.value) {
+    const message = kiroRefreshBlockedReason.value || t('admin.accounts.kiro.refreshNowFailed')
+    kiroRefreshError.value = message
+    appStore.showError(message)
+    return
+  }
+
+  kiroRefreshLoading.value = true
+  kiroRefreshError.value = ''
+
+  try {
+    const updatedAccount = await adminAPI.accounts.refreshCredentials(props.account.id)
+    appStore.showSuccess(t('admin.accounts.kiro.refreshNowSuccess'))
+    emit('reauthorized', updatedAccount)
+    handleClose()
+  } catch (error: any) {
+    const message =
+      error?.response?.data?.detail ||
+      error?.message ||
+      t('admin.accounts.kiro.refreshNowFailed')
+    kiroRefreshError.value = message
+    appStore.showError(message)
+  } finally {
+    kiroRefreshLoading.value = false
+  }
+}
+
 const handleGenerateUrl = async () => {
   if (!props.account) return
+  if (isKiro.value) {
+    appStore.showError(t('admin.accounts.reAuthorizeUnavailableKiro'))
+    return
+  }
 
   if (isOpenAILike.value) {
     await openaiOAuth.generateAuthUrl(props.account.proxy_id)
@@ -342,6 +522,10 @@ const handleGenerateUrl = async () => {
 
 const handleExchangeCode = async () => {
   if (!props.account) return
+  if (isKiro.value) {
+    appStore.showError(t('admin.accounts.reAuthorizeUnavailableKiro'))
+    return
+  }
 
   const authCode = oauthFlowRef.value?.authCode || ''
   if (!authCode.trim()) return
@@ -499,7 +683,7 @@ const handleExchangeCode = async () => {
 }
 
 const handleCookieAuth = async (sessionKey: string) => {
-  if (!props.account || isOpenAILike.value) return
+  if (!props.account || isOpenAILike.value || isKiro.value) return
 
   claudeOAuth.loading.value = true
   claudeOAuth.error.value = ''

@@ -24,6 +24,20 @@ func newUsageRecordTestPool(t *testing.T) *service.UsageRecordWorkerPool {
 	return pool
 }
 
+func newDroppedUsageRecordTestPool(t *testing.T) *service.UsageRecordWorkerPool {
+	t.Helper()
+	pool := service.NewUsageRecordWorkerPoolWithOptions(service.UsageRecordWorkerPoolOptions{
+		WorkerCount:           1,
+		QueueSize:             1,
+		TaskTimeout:           time.Second,
+		OverflowPolicy:        "drop",
+		OverflowSamplePercent: 0,
+		AutoScaleEnabled:      false,
+	})
+	t.Cleanup(pool.Stop)
+	return pool
+}
+
 func TestGatewayHandlerSubmitUsageRecordTask_WithPool(t *testing.T) {
 	pool := newUsageRecordTestPool(t)
 	h := &GatewayHandler{usageRecordWorkerPool: pool}
@@ -77,6 +91,35 @@ func TestGatewayHandlerSubmitUsageRecordTask_WithoutPool_TaskPanicRecovered(t *t
 	require.True(t, called.Load(), "panic 后后续任务应仍可执行")
 }
 
+func TestGatewayHandlerSubmitUsageRecordTask_WithDroppedPoolDropsTask(t *testing.T) {
+	pool := newDroppedUsageRecordTestPool(t)
+	h := &GatewayHandler{usageRecordWorkerPool: pool}
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	h.submitUsageRecordTask(func(ctx context.Context) {
+		close(started)
+		<-release
+	})
+	<-started
+
+	h.submitUsageRecordTask(func(ctx context.Context) {
+		<-release
+	})
+
+	done := make(chan struct{})
+	h.submitUsageRecordTask(func(ctx context.Context) {
+		close(done)
+	})
+
+	select {
+	case <-done:
+		t.Fatal("dropped task should not execute")
+	case <-time.After(150 * time.Millisecond):
+	}
+	close(release)
+}
+
 func TestOpenAIGatewayHandlerSubmitUsageRecordTask_WithPool(t *testing.T) {
 	pool := newUsageRecordTestPool(t)
 	h := &OpenAIGatewayHandler{usageRecordWorkerPool: pool}
@@ -128,4 +171,33 @@ func TestOpenAIGatewayHandlerSubmitUsageRecordTask_WithoutPool_TaskPanicRecovere
 		called.Store(true)
 	})
 	require.True(t, called.Load(), "panic 后后续任务应仍可执行")
+}
+
+func TestOpenAIGatewayHandlerSubmitUsageRecordTask_WithDroppedPoolDropsTask(t *testing.T) {
+	pool := newDroppedUsageRecordTestPool(t)
+	h := &OpenAIGatewayHandler{usageRecordWorkerPool: pool}
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	h.submitUsageRecordTask(func(ctx context.Context) {
+		close(started)
+		<-release
+	})
+	<-started
+
+	h.submitUsageRecordTask(func(ctx context.Context) {
+		<-release
+	})
+
+	done := make(chan struct{})
+	h.submitUsageRecordTask(func(ctx context.Context) {
+		close(done)
+	})
+
+	select {
+	case <-done:
+		t.Fatal("dropped task should not execute")
+	case <-time.After(150 * time.Millisecond):
+	}
+	close(release)
 }

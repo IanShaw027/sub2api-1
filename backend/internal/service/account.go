@@ -164,6 +164,10 @@ func (a *Account) IsGemini() bool {
 	return a.Platform == PlatformGemini
 }
 
+func (a *Account) IsKiro() bool {
+	return a != nil && a.Platform == PlatformKiro
+}
+
 func (a *Account) GeminiOAuthType() string {
 	if a.Platform != PlatformGemini || a.Type != AccountTypeOAuth {
 		return ""
@@ -192,6 +196,9 @@ func (a *Account) IsGeminiCodeAssist() bool {
 }
 
 func (a *Account) CanGetUsage() bool {
+	if a.Platform == PlatformKiro {
+		return false
+	}
 	return a.Type == AccountTypeOAuth
 }
 
@@ -1263,12 +1270,16 @@ func (a *Account) IsAnthropicOAuthOrSetupToken() bool {
 	return a.Platform == PlatformAnthropic && (a.Type == AccountTypeOAuth || a.Type == AccountTypeSetupToken)
 }
 
-// IsTLSFingerprintEnabled 检查是否启用 TLS 指纹伪装
-// 仅适用于 Anthropic OAuth/SetupToken 类型账号
-// 启用后将模拟 Claude Code (Node.js) 客户端的 TLS 握手特征
+// IsTLSFingerprintEnabled 检查是否启用 TLS 指纹伪装。
+// 当前支持：
+// 1. Anthropic OAuth/SetupToken
+// 2. Kiro OAuth
+// 启用后将模拟对应客户端的 TLS 握手特征。
 func (a *Account) IsTLSFingerprintEnabled() bool {
-	// 仅支持 Anthropic OAuth/SetupToken 账号
-	if !a.IsAnthropicOAuthOrSetupToken() {
+	if a == nil {
+		return false
+	}
+	if !a.IsAnthropicOAuthOrSetupToken() && (a.Platform != PlatformKiro || a.Type != AccountTypeOAuth) {
 		return false
 	}
 	if a.Extra == nil {

@@ -22,6 +22,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
@@ -50,6 +51,7 @@ type AccountHandler struct {
 	openaiOAuthService      *service.OpenAIOAuthService
 	geminiOAuthService      *service.GeminiOAuthService
 	antigravityOAuthService *service.AntigravityOAuthService
+	kiroTokenProvider       *service.KiroTokenProvider
 	rateLimitService        *service.RateLimitService
 	accountUsageService     *service.AccountUsageService
 	accountTestService      *service.AccountTestService
@@ -67,6 +69,7 @@ func NewAccountHandler(
 	openaiOAuthService *service.OpenAIOAuthService,
 	geminiOAuthService *service.GeminiOAuthService,
 	antigravityOAuthService *service.AntigravityOAuthService,
+	kiroTokenProvider *service.KiroTokenProvider,
 	rateLimitService *service.RateLimitService,
 	accountUsageService *service.AccountUsageService,
 	accountTestService *service.AccountTestService,
@@ -82,6 +85,7 @@ func NewAccountHandler(
 		openaiOAuthService:      openaiOAuthService,
 		geminiOAuthService:      geminiOAuthService,
 		antigravityOAuthService: antigravityOAuthService,
+		kiroTokenProvider:       kiroTokenProvider,
 		rateLimitService:        rateLimitService,
 		accountUsageService:     accountUsageService,
 		accountTestService:      accountTestService,
@@ -93,11 +97,18 @@ func NewAccountHandler(
 	}
 }
 
+func (h *AccountHandler) SetKiroTokenProvider(provider *service.KiroTokenProvider) {
+	if h == nil {
+		return
+	}
+	h.kiroTokenProvider = provider
+}
+
 // CreateAccountRequest represents create account request
 type CreateAccountRequest struct {
 	Name                    string         `json:"name" binding:"required"`
 	Notes                   *string        `json:"notes"`
-	Platform                string         `json:"platform" binding:"required"`
+	Platform                string         `json:"platform" binding:"required,oneof=anthropic openai gemini antigravity sora kiro"`
 	Type                    string         `json:"type" binding:"required,oneof=oauth setup-token apikey upstream bedrock"`
 	Credentials             map[string]any `json:"credentials" binding:"required"`
 	Extra                   map[string]any `json:"extra"`
@@ -342,7 +353,7 @@ func (h *AccountHandler) List(c *gin.Context) {
 	for i := range accounts {
 		acc := &accounts[i]
 		item := AccountWithConcurrency{
-			Account:            dto.AccountFromService(acc),
+			Account:            dto.AccountFromServiceList(acc),
 			CurrentConcurrency: concurrencyCounts[acc.ID],
 		}
 
@@ -626,6 +637,12 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	if req.Credentials != nil && account.Type == service.AccountTypeOAuth && h.tokenCacheInvalidator != nil {
+		if err := h.tokenCacheInvalidator.InvalidateToken(c.Request.Context(), account); err != nil {
+			log.Printf("[WARN] Failed to invalidate token cache for account %d after update: %v", account.ID, err)
+		}
+	}
+	h.invalidateKiroUsageCache(account)
 
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
 }
@@ -695,6 +712,9 @@ func (h *AccountHandler) Test(c *gin.Context) {
 		if _, err := h.rateLimitService.RecoverAccountAfterSuccessfulTest(c.Request.Context(), accountID); err != nil {
 			_ = c.Error(err)
 		}
+	}
+	if account, err := h.adminService.GetAccount(c.Request.Context(), accountID); err == nil {
+		h.invalidateKiroUsageCache(account)
 	}
 }
 
@@ -788,7 +808,11 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 		return nil, "", infraerrors.BadRequest("NOT_OAUTH", "cannot refresh non-OAuth account")
 	}
 
-	var newCredentials map[string]any
+	var (
+		newCredentials map[string]any
+		updatedAccount *service.Account
+		err            error
+	)
 
 	if account.IsOpenAI() {
 		tokenInfo, err := h.openaiOAuthService.RefreshAccountToken(ctx, account)
@@ -855,6 +879,15 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 				return nil, "", fmt.Errorf("failed to clear account error: %w", clearErr)
 			}
 		}
+	} else if account.Platform == service.PlatformKiro {
+		if h.kiroTokenProvider == nil {
+			return nil, "", fmt.Errorf("kiro token provider is not configured")
+		}
+		refreshedAccount, err := h.kiroTokenProvider.RefreshAccount(ctx, account)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to refresh credentials: %w", err)
+		}
+		updatedAccount = refreshedAccount
 	} else {
 		// Use Anthropic/Claude OAuth service to refresh token
 		tokenInfo, err := h.oauthService.RefreshAccountToken(ctx, account)
@@ -881,11 +914,13 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 		}
 	}
 
-	updatedAccount, err := h.adminService.UpdateAccount(ctx, account.ID, &service.UpdateAccountInput{
-		Credentials: newCredentials,
-	})
-	if err != nil {
-		return nil, "", err
+	if account.Platform != service.PlatformKiro {
+		updatedAccount, err = h.adminService.UpdateAccount(ctx, account.ID, &service.UpdateAccountInput{
+			Credentials: newCredentials,
+		})
+		if err != nil {
+			return nil, "", err
+		}
 	}
 
 	// 刷新成功后，清除 token 缓存，确保下次请求使用新 token
@@ -893,6 +928,14 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 		if invalidateErr := h.tokenCacheInvalidator.InvalidateToken(ctx, updatedAccount); invalidateErr != nil {
 			log.Printf("[WARN] Failed to invalidate token cache for account %d: %v", updatedAccount.ID, invalidateErr)
 		}
+	}
+	if account.Platform == service.PlatformKiro {
+		h.invalidateKiroUsageCache(updatedAccount)
+		clearedAccount, clearErr := h.adminService.ClearAccountError(ctx, updatedAccount.ID)
+		if clearErr != nil {
+			return nil, "", fmt.Errorf("failed to clear account error: %w", clearErr)
+		}
+		updatedAccount = clearedAccount
 	}
 
 	// OpenAI OAuth: 刷新成功后检查并设置 privacy_mode
@@ -989,6 +1032,7 @@ func (h *AccountHandler) ClearError(c *gin.Context) {
 			log.Printf("[WARN] Failed to invalidate token cache for account %d: %v", accountID, invalidateErr)
 		}
 	}
+	h.invalidateKiroUsageCache(account)
 
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
 }
@@ -1040,6 +1084,7 @@ func (h *AccountHandler) BatchClearError(c *gin.Context) {
 					log.Printf("[WARN] Failed to invalidate token cache for account %d: %v", accountID, invalidateErr)
 				}
 			}
+			h.invalidateKiroUsageCache(account)
 
 			mu.Lock()
 			successCount++
@@ -1333,7 +1378,8 @@ func (h *AccountHandler) BatchUpdateCredentials(c *gin.Context) {
 	results := make([]gin.H, 0, len(updates))
 	for _, u := range updates {
 		updateInput := &service.UpdateAccountInput{Credentials: u.Credentials}
-		if _, err := h.adminService.UpdateAccount(ctx, u.ID, updateInput); err != nil {
+		account, err := h.adminService.UpdateAccount(ctx, u.ID, updateInput)
+		if err != nil {
 			failed++
 			failedIDs = append(failedIDs, u.ID)
 			results = append(results, gin.H{
@@ -1343,6 +1389,12 @@ func (h *AccountHandler) BatchUpdateCredentials(c *gin.Context) {
 			})
 			continue
 		}
+		if account.Type == service.AccountTypeOAuth && h.tokenCacheInvalidator != nil {
+			if err := h.tokenCacheInvalidator.InvalidateToken(ctx, account); err != nil {
+				log.Printf("[WARN] Failed to invalidate token cache for account %d after bulk credential update: %v", account.ID, err)
+			}
+		}
+		h.invalidateKiroUsageCache(account)
 		success++
 		successIDs = append(successIDs, u.ID)
 		results = append(results, gin.H{
@@ -1428,8 +1480,28 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	for _, accountID := range result.SuccessIDs {
+		account, getErr := h.adminService.GetAccount(c.Request.Context(), accountID)
+		if getErr != nil {
+			log.Printf("[WARN] Failed to load account %d after bulk update: %v", accountID, getErr)
+			continue
+		}
+		if len(req.Credentials) > 0 && h.tokenCacheInvalidator != nil && account.Type == service.AccountTypeOAuth {
+			if invalidateErr := h.tokenCacheInvalidator.InvalidateToken(c.Request.Context(), account); invalidateErr != nil {
+				log.Printf("[WARN] Failed to invalidate token cache for account %d after bulk update: %v", account.ID, invalidateErr)
+			}
+		}
+		h.invalidateKiroUsageCache(account)
+	}
 
 	response.Success(c, result)
+}
+
+func (h *AccountHandler) invalidateKiroUsageCache(account *service.Account) {
+	if h == nil || h.accountUsageService == nil || account == nil || account.Platform != service.PlatformKiro {
+		return
+	}
+	h.accountUsageService.InvalidateKiroUsageCache(account.ID)
 }
 
 // ========== OAuth Handlers ==========
@@ -1884,6 +1956,36 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 	if account.Platform == service.PlatformAntigravity {
 		// 直接复用 antigravity.DefaultModels()，与 /v1/models 端点保持同步
 		response.Success(c, antigravity.DefaultModels())
+		return
+	}
+
+	if account.Platform == service.PlatformKiro {
+		mapping := account.GetModelMapping()
+		if len(mapping) == 0 {
+			response.Success(c, kiro.DefaultModels)
+			return
+		}
+
+		var models []claude.Model
+		for requestedModel := range mapping {
+			var found bool
+			for _, dm := range kiro.DefaultModels {
+				if dm.ID == requestedModel {
+					models = append(models, dm)
+					found = true
+					break
+				}
+			}
+			if !found {
+				models = append(models, claude.Model{
+					ID:          requestedModel,
+					Type:        "model",
+					DisplayName: requestedModel,
+					CreatedAt:   "",
+				})
+			}
+		}
+		response.Success(c, models)
 		return
 	}
 

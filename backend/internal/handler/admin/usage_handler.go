@@ -173,19 +173,19 @@ func (h *UsageHandler) List(c *gin.Context) {
 		SortOrder: c.DefaultQuery("sort_order", "desc"),
 	}
 	filters := usagestats.UsageLogFilters{
-		UserID:      userID,
-		APIKeyID:    apiKeyID,
-		AccountID:   accountID,
-		GroupID:     groupID,
-		Model:       model,
-		RequestType: requestType,
-		Stream:      stream,
-		BillingType: billingType,
-		BillingMode: billingMode,
+		UserID:       userID,
+		APIKeyID:     apiKeyID,
+		AccountID:    accountID,
+		GroupID:      groupID,
+		Model:        model,
+		RequestType:  requestType,
+		Stream:       stream,
+		BillingType:  billingType,
+		BillingMode:  billingMode,
 		ExcludeAdmin: excludeAdmin,
-		StartTime:   startTime,
-		EndTime:     endTime,
-		ExactTotal:  exactTotal,
+		StartTime:    startTime,
+		EndTime:      endTime,
+		ExactTotal:   exactTotal,
 	}
 
 	records, result, err := h.usageService.ListWithFilters(c.Request.Context(), params, filters)
@@ -315,18 +315,18 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 
 	// Build filters and call GetStatsWithFilters
 	filters := usagestats.UsageLogFilters{
-		UserID:      userID,
-		APIKeyID:    apiKeyID,
-		AccountID:   accountID,
-		GroupID:     groupID,
-		Model:       model,
-		RequestType: requestType,
-		Stream:      stream,
-		BillingType: billingType,
-		BillingMode: billingMode,
+		UserID:       userID,
+		APIKeyID:     apiKeyID,
+		AccountID:    accountID,
+		GroupID:      groupID,
+		Model:        model,
+		RequestType:  requestType,
+		Stream:       stream,
+		BillingType:  billingType,
+		BillingMode:  billingMode,
 		ExcludeAdmin: excludeAdmin,
-		StartTime:   &startTime,
-		EndTime:     &endTime,
+		StartTime:    &startTime,
+		EndTime:      &endTime,
 	}
 
 	stats, err := h.usageService.GetStatsWithFilters(c.Request.Context(), filters)

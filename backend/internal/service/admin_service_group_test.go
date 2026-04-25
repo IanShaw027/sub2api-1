@@ -947,3 +947,25 @@ func TestAdminService_UpdateGroup_InvalidRequestFallbackAllowsAntigravity(t *tes
 	require.NotNil(t, repo.updated)
 	require.Equal(t, fallbackID, *repo.updated.FallbackGroupIDOnInvalidRequest)
 }
+
+func TestAdminService_UpdateGroup_AllowsClearingDescription(t *testing.T) {
+	existing := &Group{
+		ID:          1,
+		Name:        "existing",
+		Description: "old description",
+		Platform:    PlatformAnthropic,
+		Status:      StatusActive,
+	}
+	repo := &groupRepoStubForAdmin{getByID: existing}
+	svc := &adminServiceImpl{groupRepo: repo}
+	empty := ""
+
+	group, err := svc.UpdateGroup(context.Background(), existing.ID, &UpdateGroupInput{
+		Description: &empty,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, group)
+	require.NotNil(t, repo.updated)
+	require.Equal(t, "", repo.updated.Description)
+}

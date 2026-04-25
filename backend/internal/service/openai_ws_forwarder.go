@@ -2594,9 +2594,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		for key, value := range buildOpenAIWSClientMetadataValues(c, strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)), account) {
 			next, setErr := applyPayloadMutation(normalized, "client_metadata."+key, value)
-				if setErr != nil {
-					return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", setErr)
-				}
+			if setErr != nil {
+				return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", setErr)
+			}
 			normalized = next
 		}
 		upstreamModel := normalizeOpenAIModelForUpstream(account, account.GetMappedModel(originalModel))

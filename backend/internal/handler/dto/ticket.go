@@ -31,15 +31,15 @@ type SupportTicket struct {
 }
 
 type SupportTicketMessage struct {
-	ID                   int64      `json:"id"`
-	TicketID             int64      `json:"ticket_id"`
-	SenderRole           string     `json:"sender_role"`
-	SenderUserID         *int64     `json:"sender_user_id,omitempty"`
-	SenderNameSnapshot   string     `json:"sender_name_snapshot"`
-	SenderAvatarSnapshot string     `json:"sender_avatar_snapshot"`
-	MessageType          string     `json:"message_type"`
-	Content              string     `json:"content"`
-	CreatedAt            time.Time  `json:"created_at"`
+	ID                   int64     `json:"id"`
+	TicketID             int64     `json:"ticket_id"`
+	SenderRole           string    `json:"sender_role"`
+	SenderUserID         *int64    `json:"sender_user_id,omitempty"`
+	SenderNameSnapshot   string    `json:"sender_name_snapshot"`
+	SenderAvatarSnapshot string    `json:"sender_avatar_snapshot"`
+	MessageType          string    `json:"message_type"`
+	Content              string    `json:"content"`
+	CreatedAt            time.Time `json:"created_at"`
 }
 
 func SupportTicketFromService(item *service.SupportTicket) *SupportTicket {

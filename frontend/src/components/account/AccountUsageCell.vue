@@ -142,6 +142,46 @@
       <div v-else class="text-xs text-gray-400">-</div>
     </template>
 
+    <!-- Kiro OAuth accounts: total quota display -->
+    <template v-else-if="account.platform === 'kiro' && account.type === 'oauth'">
+      <div v-if="loading" class="space-y-1.5">
+        <div class="flex items-center gap-1">
+          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
+        </div>
+      </div>
+      <div v-else-if="error" class="text-xs text-red-500">
+        {{ error }}
+      </div>
+      <div v-else-if="usageInfo?.error" class="text-xs text-amber-600 dark:text-amber-400 truncate max-w-[220px]" :title="usageInfo.error">
+        {{ usageInfo.error }}
+      </div>
+      <div v-else-if="needsReauth" class="space-y-1">
+        <span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
+          {{ t('admin.accounts.needsReauth') }}
+        </span>
+      </div>
+      <div v-else-if="usageInfo?.kiro_quota" class="space-y-1">
+        <div v-if="usageInfo.kiro_subscription_title" class="mb-1 flex items-center gap-1">
+          <span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">
+            {{ usageInfo.kiro_subscription_title }}
+          </span>
+        </div>
+        <UsageProgressBar
+          :label="kiroUsageLabel"
+          :utilization="usageInfo.kiro_quota.utilization"
+          :resets-at="usageInfo.kiro_quota.resets_at"
+          :window-stats="kiroQuotaStats"
+          color="cyan"
+        />
+        <div class="text-[10px] text-gray-500 dark:text-gray-400">
+          {{ kiroUsageSummary }}
+        </div>
+      </div>
+      <div v-else class="text-xs text-gray-400">-</div>
+    </template>
+
     <!-- Antigravity OAuth accounts: fetch usage from API -->
     <template v-else-if="account.platform === 'antigravity' && account.type === 'oauth'">
       <!-- 账户类型徽章 -->
@@ -503,6 +543,9 @@ const shouldFetchUsage = computed(() => {
   if (props.account.platform === 'gemini') {
     return true
   }
+  if (props.account.platform === 'kiro') {
+    return props.account.type === 'oauth'
+  }
   if (props.account.platform === 'antigravity') {
     return props.account.type === 'oauth'
   }
@@ -527,6 +570,24 @@ const hasOpenAIUsageFallback = computed(() => {
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return false
   return !!usageInfo.value?.five_hour || !!usageInfo.value?.seven_day
 })
+
+const kiroQuotaStats = computed<WindowStats | null>(() => {
+  if (props.account.platform !== 'kiro') return null
+  if (usageInfo.value?.kiro_quota?.window_stats) return usageInfo.value.kiro_quota.window_stats
+  return null
+})
+
+const kiroUsageLabel = computed(() => {
+  const limit = usageInfo.value?.kiro_usage_limit
+  if (typeof limit !== 'number' || Number.isNaN(limit) || limit <= 0) return '$0'
+  return `$${formatKiroMoney(limit)}`
+})
+
+const kiroUsageSummary = computed(() => t('admin.accounts.kiro.usageSummary', {
+  used: formatKiroMoney(usageInfo.value?.kiro_current_usage),
+  limit: formatKiroMoney(usageInfo.value?.kiro_usage_limit),
+  remaining: formatKiroMoney(usageInfo.value?.kiro_remaining)
+}))
 
 const openAIUsageRefreshKey = computed(() => buildOpenAIUsageRefreshKey(props.account))
 
@@ -943,6 +1004,13 @@ const copyValidationURL = async () => {
   } catch {
     // fallback: ignore
   }
+}
+
+const formatKiroMoney = (value?: number | null) => {
+  if (value == null || Number.isNaN(value)) return '0'
+  if (value >= 100) return value.toFixed(0)
+  if (value >= 10) return value.toFixed(1)
+  return value.toFixed(2)
 }
 
 const isAnthropicOAuthOrSetupToken = computed(() => {

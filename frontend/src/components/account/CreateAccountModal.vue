@@ -70,7 +70,7 @@
       <!-- Platform Selection - Segmented Control Style -->
       <div>
         <label class="input-label">{{ t('admin.accounts.platform') }}</label>
-        <div class="mt-2 flex rounded-lg bg-gray-100 p-1 dark:bg-dark-700" data-tour="account-form-platform">
+        <div class="mt-2 flex flex-wrap rounded-lg bg-gray-100 p-1 dark:bg-dark-700" data-tour="account-form-platform">
           <button
             type="button"
             @click="form.platform = 'anthropic'"
@@ -147,6 +147,119 @@
             <Icon name="cloud" size="sm" />
             Antigravity
           </button>
+          <button
+            type="button"
+            @click="form.platform = 'kiro'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'kiro'
+                ? 'bg-white text-cyan-600 shadow-sm dark:bg-dark-600 dark:text-cyan-400'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M5 3h3v7l6-7h4l-7 8 8 10h-4l-6-8-1 1v7H5z" />
+            </svg>
+            Kiro
+          </button>
+        </div>
+      </div>
+
+      <div
+        v-if="form.platform === 'kiro'"
+        class="space-y-4 rounded-lg border border-cyan-200 bg-cyan-50/60 p-4 dark:border-cyan-900/40 dark:bg-cyan-950/20"
+      >
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.authMethodLabel') }}</label>
+            <p class="input-hint">{{ t('admin.accounts.kiro.authMethodHint') }}</p>
+          </div>
+          <select v-model="kiroAuthMethod" class="input w-36">
+            <option value="social">{{ t('admin.accounts.kiro.authMethodSocial') }}</option>
+            <option value="idc">{{ t('admin.accounts.kiro.authMethodIDC') }}</option>
+          </select>
+        </div>
+        <div>
+          <label class="input-label">{{ t('admin.accounts.kiro.refreshTokenLabel') }}</label>
+          <textarea
+            v-model="kiroRefreshToken"
+            rows="4"
+            class="input font-mono text-sm"
+            :placeholder="t('admin.accounts.kiro.refreshTokenPlaceholder')"
+          />
+        </div>
+        <div>
+          <label class="input-label">{{ t('admin.accounts.kiro.accessTokenLabel') }}</label>
+          <textarea
+            v-model="kiroAccessToken"
+            rows="3"
+            class="input font-mono text-sm"
+            :placeholder="t('admin.accounts.kiro.accessTokenPlaceholder')"
+          />
+          <p class="input-hint">{{ t('admin.accounts.kiro.accessTokenHintCreate') }}</p>
+        </div>
+        <div v-if="kiroAuthMethod === 'idc'" class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.clientIdLabel') }}</label>
+            <input v-model="kiroClientID" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.clientIdPlaceholder')" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.clientSecretLabel') }}</label>
+            <input
+              v-model="kiroClientSecret"
+              type="password"
+              class="input font-mono text-sm"
+              :placeholder="t('admin.accounts.kiro.clientSecretPlaceholder')"
+            />
+          </div>
+        </div>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.expiresAtLabel') }}</label>
+            <input
+              v-model="kiroExpiresAtInput"
+              type="datetime-local"
+              class="input"
+            />
+            <p class="input-hint">{{ t('admin.accounts.kiro.expiresAtHintCreate') }}</p>
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.regionLabel') }}</label>
+            <input v-model="kiroRegion" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.regionPlaceholder')" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.authRegionLabel') }}</label>
+            <input v-model="kiroAuthRegion" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.optionalPlaceholder')" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.apiRegionLabel') }}</label>
+            <input v-model="kiroAPIRegion" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.optionalPlaceholder')" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.profileArnLabel') }}</label>
+            <input v-model="kiroProfileARN" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.optionalPlaceholder')" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.machineIdLabel') }}</label>
+            <input v-model="kiroMachineID" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.optionalPlaceholder')" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.kiroVersionLabel') }}</label>
+            <input v-model="kiroVersion" type="text" class="input font-mono text-sm" placeholder="0.10.0" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.systemVersionLabel') }}</label>
+            <input
+              v-model="kiroSystemVersion"
+              type="text"
+              class="input font-mono text-sm"
+              placeholder="darwin#24.6.0"
+            />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.nodeVersionLabel') }}</label>
+            <input v-model="kiroNodeVersion" type="text" class="input font-mono text-sm" placeholder="22.21.1" />
+          </div>
         </div>
       </div>
 
@@ -2918,7 +3031,9 @@ import type {
   AccountPlatform,
   AccountType,
   CheckMixedChannelResponse,
-  CreateAccountRequest
+  CreateAccountRequest,
+  KiroCredentials,
+  KiroAccountExtra
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -3116,6 +3231,20 @@ const getAntigravityModelMappingKey = createStableObjectKeyResolver<ModelMapping
 const getTempUnschedRuleKey = createStableObjectKeyResolver<TempUnschedRuleForm>('create-temp-unsched-rule')
 const geminiOAuthType = ref<'code_assist' | 'google_one' | 'ai_studio'>('google_one')
 const geminiAIStudioOAuthEnabled = ref(false)
+const kiroAuthMethod = ref<'social' | 'idc'>('social')
+const kiroAccessToken = ref('')
+const kiroExpiresAtInput = ref('')
+const kiroRefreshToken = ref('')
+const kiroClientID = ref('')
+const kiroClientSecret = ref('')
+const kiroProfileARN = ref('')
+const kiroRegion = ref('us-east-1')
+const kiroAuthRegion = ref('')
+const kiroAPIRegion = ref('')
+const kiroMachineID = ref('')
+const kiroVersion = ref('0.10.0')
+const kiroSystemVersion = ref('darwin#24.6.0')
+const kiroNodeVersion = ref('22.21.1')
 
 function buildAntigravityExtra(): Record<string, unknown> | undefined {
   const extra: Record<string, unknown> = {}
@@ -3279,6 +3408,9 @@ const form = reactive({
 
 // Helper to check if current type needs OAuth flow
 const isOAuthFlow = computed(() => {
+  if (form.platform === 'kiro') {
+    return false
+  }
   // Antigravity upstream 类型不需要 OAuth 流程
   if (form.platform === 'antigravity' && antigravityAccountType.value === 'upstream') {
     return false
@@ -3348,6 +3480,10 @@ watch(
 watch(
   [accountCategory, addMethod, antigravityAccountType],
   ([category, method, agType]) => {
+    if (form.platform === 'kiro') {
+      form.type = 'oauth'
+      return
+    }
     // Antigravity upstream 类型（实际创建为 apikey）
     if (form.platform === 'antigravity' && agType === 'upstream') {
       form.type = 'apikey'
@@ -3390,6 +3526,9 @@ watch(
       antigravityWhitelistModels.value = []
       accountCategory.value = 'oauth-based'
       antigravityAccountType.value = 'oauth'
+    } else if (newPlatform === 'kiro') {
+      accountCategory.value = 'oauth-based'
+      addMethod.value = 'oauth'
     } else {
       allowOverages.value = false
       antigravityWhitelistModels.value = []
@@ -3424,6 +3563,23 @@ watch(
 
     geminiOAuth.resetState()
     antigravityOAuth.resetState()
+
+    if (newPlatform !== 'kiro') {
+      kiroAuthMethod.value = 'social'
+      kiroAccessToken.value = ''
+      kiroExpiresAtInput.value = ''
+      kiroRefreshToken.value = ''
+      kiroClientID.value = ''
+      kiroClientSecret.value = ''
+      kiroProfileARN.value = ''
+      kiroRegion.value = 'us-east-1'
+      kiroAuthRegion.value = ''
+      kiroAPIRegion.value = ''
+      kiroMachineID.value = ''
+      kiroVersion.value = '0.10.0'
+      kiroSystemVersion.value = 'darwin#24.6.0'
+      kiroNodeVersion.value = '22.21.1'
+    }
   }
 )
 
@@ -3831,6 +3987,20 @@ const resetForm = () => {
   geminiTierGoogleOne.value = 'google_one_free'
   geminiTierGcp.value = 'gcp_standard'
   geminiTierAIStudio.value = 'aistudio_free'
+  kiroAuthMethod.value = 'social'
+  kiroAccessToken.value = ''
+  kiroExpiresAtInput.value = ''
+  kiroRefreshToken.value = ''
+  kiroClientID.value = ''
+  kiroClientSecret.value = ''
+  kiroProfileARN.value = ''
+  kiroRegion.value = 'us-east-1'
+  kiroAuthRegion.value = ''
+  kiroAPIRegion.value = ''
+  kiroMachineID.value = ''
+  kiroVersion.value = '0.10.0'
+  kiroSystemVersion.value = 'darwin#24.6.0'
+  kiroNodeVersion.value = '22.21.1'
   oauth.resetState()
   openaiOAuth.resetState()
   geminiOAuth.resetState()
@@ -3944,6 +4114,56 @@ const normalizePoolModeRetryCount = (value: number) => {
 }
 
 const handleSubmit = async () => {
+  if (form.platform === 'kiro') {
+    if (!form.name.trim()) {
+      appStore.showError(t('admin.accounts.pleaseEnterAccountName'))
+      return
+    }
+    if (!kiroRefreshToken.value.trim()) {
+      appStore.showError(t('admin.accounts.kiro.refreshTokenRequired'))
+      return
+    }
+    if (
+      kiroAuthMethod.value === 'idc' &&
+      (!kiroClientID.value.trim() || !kiroClientSecret.value.trim())
+    ) {
+      appStore.showError(t('admin.accounts.kiro.idcClientRequired'))
+      return
+    }
+
+    const expiresAt = kiroExpiresAtInput.value.trim()
+      ? new Date(kiroExpiresAtInput.value)
+      : null
+    if (expiresAt && Number.isNaN(expiresAt.getTime())) {
+      appStore.showError(t('admin.accounts.kiro.expiresAtInvalid'))
+      return
+    }
+
+    const credentials: KiroCredentials & Record<string, unknown> = {
+      refresh_token: kiroRefreshToken.value.trim(),
+      auth_method: kiroAuthMethod.value,
+      region: kiroRegion.value.trim() || 'us-east-1'
+    }
+    if (kiroAccessToken.value.trim()) credentials.access_token = kiroAccessToken.value.trim()
+    if (kiroClientID.value.trim()) credentials.client_id = kiroClientID.value.trim()
+    if (kiroClientSecret.value.trim()) credentials.client_secret = kiroClientSecret.value.trim()
+    if (kiroProfileARN.value.trim()) credentials.profile_arn = kiroProfileARN.value.trim()
+    if (kiroAuthRegion.value.trim()) credentials.auth_region = kiroAuthRegion.value.trim()
+    if (kiroAPIRegion.value.trim()) credentials.api_region = kiroAPIRegion.value.trim()
+    if (kiroMachineID.value.trim()) credentials.machine_id = kiroMachineID.value.trim()
+    if (expiresAt) credentials.expires_at = expiresAt.toISOString()
+
+    const extra: KiroAccountExtra & Record<string, unknown> = {
+      kiro_version: kiroVersion.value.trim() || '0.10.0',
+      system_version: kiroSystemVersion.value.trim() || 'darwin#24.6.0',
+      node_version: kiroNodeVersion.value.trim() || '22.21.1'
+    }
+
+    applyInterceptWarmup(credentials, interceptWarmupRequests.value, 'create')
+    await createAccountAndFinish('kiro', 'oauth', credentials, extra)
+    return
+  }
+
   // For OAuth-based type, handle OAuth flow (goes to step 2)
   if (isOAuthFlow.value) {
     if (!form.name.trim()) {
@@ -4197,6 +4417,25 @@ const createAccountAndFinish = async (
     if (Object.keys(quotaExtra).length > 0) {
       finalExtra = quotaExtra
     }
+  }
+  if (platform === 'kiro') {
+    await doCreateAccount({
+      name: form.name,
+      notes: form.notes,
+      platform,
+      type: 'oauth',
+      credentials,
+      extra: finalExtra,
+      proxy_id: form.proxy_id,
+      concurrency: form.concurrency,
+      load_factor: form.load_factor ?? undefined,
+      priority: form.priority,
+      rate_multiplier: form.rate_multiplier,
+      group_ids: form.group_ids,
+      expires_at: form.expires_at,
+      auto_pause_on_expired: autoPauseOnExpired.value
+    })
+    return
   }
   await doCreateAccount({
     name: form.name,

@@ -152,7 +152,8 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	}
 	logger.L().Debug("openai chat_completions: model mapping applied", logFields...)
 
-	if account.Type == AccountTypeOAuth {
+	switch account.Type {
+	case AccountTypeOAuth:
 		var reqBody map[string]any
 		if err := json.Unmarshal(responsesBody, &reqBody); err != nil {
 			return nil, fmt.Errorf("unmarshal for compat transform: %w", err)
@@ -171,7 +172,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		if err != nil {
 			return nil, fmt.Errorf("remarshal after compat transform: %w", err)
 		}
-	} else if account.Type == AccountTypeAPIKey {
+	case AccountTypeAPIKey:
 		// For API key accounts (including OpenAI-compatible upstream gateways),
 		// propagate promptCacheKey without rewriting the entire body unless needed.
 		if trimmedKey := strings.TrimSpace(promptCacheKey); trimmedKey != "" {

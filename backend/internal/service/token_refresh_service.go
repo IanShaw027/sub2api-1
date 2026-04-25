@@ -21,6 +21,7 @@ type TokenRefreshService struct {
 	accountRepo      AccountRepository
 	refreshers       []TokenRefresher
 	executors        []OAuthRefreshExecutor // 与 refreshers 一一对应的 executor（带 CacheKey）
+	kiroRefresher    *KiroTokenRefresher
 	refreshPolicy    BackgroundRefreshPolicy
 	cfg              *config.TokenRefreshConfig
 	cacheInvalidator TokenCacheInvalidator
@@ -64,6 +65,8 @@ func NewTokenRefreshService(
 	claudeRefresher := NewClaudeTokenRefresher(oauthService)
 	geminiRefresher := NewGeminiTokenRefresher(geminiOAuthService)
 	agRefresher := NewAntigravityTokenRefresher(antigravityOAuthService)
+	kiroRefresher := NewKiroTokenRefresher()
+	s.kiroRefresher = kiroRefresher
 
 	// 注册平台特定的刷新器（TokenRefresher 接口）
 	s.refreshers = []TokenRefresher{
@@ -71,6 +74,7 @@ func NewTokenRefreshService(
 		openAIRefresher,
 		geminiRefresher,
 		agRefresher,
+		kiroRefresher,
 	}
 
 	// 注册对应的 OAuthRefreshExecutor（带 CacheKey 方法）
@@ -79,9 +83,17 @@ func NewTokenRefreshService(
 		openAIRefresher,
 		geminiRefresher,
 		agRefresher,
+		kiroRefresher,
 	}
 
 	return s
+}
+
+func (s *TokenRefreshService) SetKiroTransport(httpUpstream HTTPUpstream, tlsFPProfileService *TLSFingerprintProfileService) {
+	if s == nil || s.kiroRefresher == nil {
+		return
+	}
+	s.kiroRefresher.WithTransport(httpUpstream, tlsFPProfileService)
 }
 
 // SetPrivacyDeps 注入 OpenAI privacy opt-out 所需依赖

@@ -75,7 +75,13 @@ func (s *accountRepoStubForBulkUpdate) ListByGroup(_ context.Context, groupID in
 
 // TestAdminService_BulkUpdateAccounts_AllSuccessIDs 验证批量更新成功时返回 success_ids/failed_ids。
 func TestAdminService_BulkUpdateAccounts_AllSuccessIDs(t *testing.T) {
-	repo := &accountRepoStubForBulkUpdate{}
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: PlatformAnthropic, Type: AccountTypeOAuth},
+			{ID: 2, Platform: PlatformAnthropic, Type: AccountTypeOAuth},
+			{ID: 3, Platform: PlatformAnthropic, Type: AccountTypeOAuth},
+		},
+	}
 	svc := &adminServiceImpl{accountRepo: repo}
 
 	schedulable := true
@@ -98,6 +104,11 @@ func TestAdminService_BulkUpdateAccounts_PartialFailureIDs(t *testing.T) {
 	repo := &accountRepoStubForBulkUpdate{
 		bindGroupErrByID: map[int64]error{
 			2: errors.New("bind failed"),
+		},
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: PlatformAnthropic, Type: AccountTypeOAuth},
+			{ID: 2, Platform: PlatformAnthropic, Type: AccountTypeOAuth},
+			{ID: 3, Platform: PlatformAnthropic, Type: AccountTypeOAuth},
 		},
 	}
 	svc := &adminServiceImpl{
