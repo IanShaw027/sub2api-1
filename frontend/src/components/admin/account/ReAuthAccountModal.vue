@@ -131,6 +131,7 @@
         :initial-extra="kiroExtra"
         @generate-url="handleGenerateUrl"
         @submit="handleKiroReauthorize"
+        @submit-refresh-token="handleKiroValidateRT"
       />
 
       <OAuthAuthorizationFlow
@@ -220,6 +221,7 @@ import { useOpenAIOAuth } from '@/composables/useOpenAIOAuth'
 import { useGeminiOAuth } from '@/composables/useGeminiOAuth'
 import { useAntigravityOAuth } from '@/composables/useAntigravityOAuth'
 import { stripKiroRuntimeExtra, useKiroOAuth } from '@/composables/useKiroOAuth'
+import type { KiroTokenInfo } from '@/api/admin/kiro'
 import type { Account, KiroAccountExtra, KiroCredentials } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -381,12 +383,53 @@ const handleOpenEditor = () => {
 }
 
 const mergeRecord = (
-  base?: Record<string, unknown> | null,
-  patch?: Record<string, unknown> | null
+  ...sources: Array<Record<string, unknown> | null | undefined>
 ): Record<string, unknown> => {
-  return {
-    ...(base || {}),
-    ...(patch || {})
+  return sources.reduce<Record<string, unknown>>((merged, source) => {
+    return {
+      ...merged,
+      ...(source || {})
+    }
+  }, {})
+}
+
+const stripEmptyRecordValues = (
+  record?: Record<string, unknown> | null
+): Record<string, unknown> => {
+  return Object.fromEntries(
+    Object.entries(record || {}).filter(([, value]) => {
+      if (value === null || value === undefined) {
+        return false
+      }
+      return typeof value !== 'string' || value.trim() !== ''
+    })
+  )
+}
+
+const finishKiroReauthorization = async (
+  name: string,
+  credentials: Record<string, unknown>,
+  extra: Record<string, unknown>
+) => {
+  if (!props.account) return
+
+  try {
+    await adminAPI.accounts.update(props.account.id, {
+      name,
+      type: 'oauth',
+      credentials,
+      extra
+    })
+    const updatedAccount = await adminAPI.accounts.clearError(props.account.id)
+    appStore.showSuccess(t('admin.accounts.reAuthorizedSuccess'))
+    emit('reauthorized', updatedAccount)
+    handleClose()
+  } catch (error: any) {
+    const message =
+      error?.response?.data?.detail ||
+      error?.message ||
+      t('admin.accounts.oauth.authFailed')
+    appStore.showError(message)
   }
 }
 
@@ -412,24 +455,37 @@ const handleKiroReauthorize = async (payload: {
   const sanitizedExtra = stripKiroRuntimeExtra(extra)
   const name = kiroOAuth.buildAccountName(tokenInfo, props.account.name)
 
-  try {
-    await adminAPI.accounts.update(props.account.id, {
-      name,
-      type: 'oauth',
-      credentials,
-      extra: sanitizedExtra
-    })
-    const updatedAccount = await adminAPI.accounts.clearError(props.account.id)
-    appStore.showSuccess(t('admin.accounts.reAuthorizedSuccess'))
-    emit('reauthorized', updatedAccount)
-    handleClose()
-  } catch (error: any) {
-    const message =
-      error?.response?.data?.detail ||
-      error?.message ||
-      t('admin.accounts.oauth.authFailed')
-    appStore.showError(message)
+  await finishKiroReauthorization(name, credentials, sanitizedExtra)
+}
+
+const handleKiroValidateRT = async (payload: {
+  credentials: Record<string, unknown>
+  extra: Record<string, unknown>
+}) => {
+  if (!props.account || !isKiroOAuth.value) return
+
+  const validatedCredentials = await kiroOAuth.validateRefreshToken(
+    payload.credentials,
+    payload.extra,
+    props.account.proxy_id
+  )
+  if (!validatedCredentials) {
+    return
   }
+
+  const tokenInfo = validatedCredentials as KiroTokenInfo
+  const credentials = stripEmptyRecordValues(mergeRecord(
+    (props.account.credentials || {}) as Record<string, unknown>,
+    payload.credentials,
+    validatedCredentials
+  ))
+  const extra = stripKiroRuntimeExtra(stripEmptyRecordValues(mergeRecord(
+    (props.account.extra || {}) as Record<string, unknown>,
+    kiroOAuth.buildExtraInfo(tokenInfo, payload.extra)
+  )))
+  const name = kiroOAuth.buildAccountName(tokenInfo, props.account.name)
+
+  await finishKiroReauthorization(name, credentials, extra)
 }
 
 const handleGenerateUrl = async () => {

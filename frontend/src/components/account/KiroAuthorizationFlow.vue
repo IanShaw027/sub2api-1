@@ -19,7 +19,7 @@
         {{ t('admin.accounts.kiro.followSteps') }}
       </p>
 
-      <div v-if="showInputModeSelection" class="rounded-lg border border-cyan-300 bg-white/80 p-4 dark:border-cyan-700 dark:bg-gray-800/80">
+      <div class="rounded-lg border border-cyan-300 bg-white/80 p-4 dark:border-cyan-700 dark:bg-gray-800/80">
         <label class="mb-3 block text-sm font-medium text-cyan-900 dark:text-cyan-100">
           {{ t('admin.accounts.inputMethod') }}
         </label>
@@ -408,7 +408,7 @@
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
-          {{ loading ? t('admin.accounts.kiro.validating') : t('admin.accounts.kiro.validateAndCreate') }}
+          {{ loading ? t('admin.accounts.kiro.validating') : submitRefreshTokenLabel }}
         </button>
       </div>
     </div>
@@ -491,7 +491,11 @@ const submitLabel = computed(() => (
     : t('admin.accounts.oauth.completeAuth')
 ))
 
-const showInputModeSelection = computed(() => props.mode === 'create')
+const submitRefreshTokenLabel = computed(() => (
+  props.mode === 'reauth'
+    ? t('admin.accounts.reAuthorize')
+    : t('admin.accounts.kiro.validateAndCreate')
+))
 const parsedRefreshTokenCount = computed(() => (
   manualRefreshToken.value
     .split('\n')

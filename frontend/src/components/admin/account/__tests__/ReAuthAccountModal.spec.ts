@@ -6,6 +6,7 @@ const {
   updateAccountMock,
   clearErrorMock,
   exchangeCallbackMock,
+  validateRefreshTokenMock,
   buildCredentialsMock,
   buildExtraInfoMock,
   buildAccountNameMock
@@ -13,6 +14,7 @@ const {
   updateAccountMock: vi.fn(),
   clearErrorMock: vi.fn(),
   exchangeCallbackMock: vi.fn(),
+  validateRefreshTokenMock: vi.fn(),
   buildCredentialsMock: vi.fn(),
   buildExtraInfoMock: vi.fn(),
   buildAccountNameMock: vi.fn()
@@ -46,6 +48,7 @@ function buildOAuthComposable() {
     resetState: vi.fn(),
     generateAuthUrl: vi.fn(),
     exchangeAuthCode: vi.fn(),
+    validateRefreshToken: vi.fn(),
     buildCredentials: vi.fn(() => ({})),
     buildExtraInfo: vi.fn(() => ({})),
     buildAccountName: vi.fn((_tokenInfo?: unknown, name?: string) => name || 'Account')
@@ -85,6 +88,7 @@ vi.mock('@/composables/useKiroOAuth', () => ({
     resetState: vi.fn(),
     generateAuthUrl: vi.fn(),
     exchangeCallback: exchangeCallbackMock,
+    validateRefreshToken: validateRefreshTokenMock,
     buildCredentials: buildCredentialsMock,
     buildExtraInfo: buildExtraInfoMock,
     buildAccountName: buildAccountNameMock
@@ -116,9 +120,39 @@ const BaseDialogStub = defineComponent({
 
 const KiroAuthorizationFlowStub = defineComponent({
   name: 'KiroAuthorizationFlow',
-  emits: ['submit'],
+  props: {
+    mode: {
+      type: String,
+      default: ''
+    },
+    authUrl: {
+      type: String,
+      default: ''
+    },
+    callbackBaseUrl: {
+      type: String,
+      default: ''
+    },
+    loading: {
+      type: Boolean,
+      default: false
+    },
+    error: {
+      type: String,
+      default: ''
+    },
+    initialCredentials: {
+      type: Object,
+      default: () => ({})
+    },
+    initialExtra: {
+      type: Object,
+      default: () => ({})
+    }
+  },
+  emits: ['generate-url', 'submit', 'submit-refresh-token'],
   setup(_, { emit }) {
-    return () =>
+    return () => [
       h('button', {
         'data-testid': 'kiro-flow-submit',
         type: 'button',
@@ -127,7 +161,25 @@ const KiroAuthorizationFlowStub = defineComponent({
           credentials: { machine_id: 'machine-1' },
           extra: { kiro_version: 'old-runtime', keep_flag: true }
         })
-      }, 'submit kiro')
+      }, 'submit kiro'),
+      h('button', {
+        'data-testid': 'kiro-flow-submit-refresh-token',
+        type: 'button',
+        onClick: () => emit('submit-refresh-token', {
+          credentials: {
+            refresh_token: 'refresh-manual',
+            auth_method: 'social',
+            region: 'eu-west-1',
+            machine_id: 'machine-2'
+          },
+          extra: {
+            keep_flag: false,
+            custom_note: 'manual',
+            system_version: 'runtime-only'
+          }
+        })
+      }, 'submit kiro refresh token')
+    ]
   }
 })
 
@@ -194,6 +246,7 @@ describe('admin ReAuthAccountModal', () => {
     updateAccountMock.mockReset()
     clearErrorMock.mockReset()
     exchangeCallbackMock.mockReset()
+    validateRefreshTokenMock.mockReset()
     buildCredentialsMock.mockReset()
     buildExtraInfoMock.mockReset()
     buildAccountNameMock.mockReset()
@@ -203,14 +256,28 @@ describe('admin ReAuthAccountModal', () => {
       refresh_token: 'refresh-new',
       expires_at: '2026-04-25T00:00:00Z'
     })
+    validateRefreshTokenMock.mockResolvedValue({
+      access_token: 'access-validated',
+      refresh_token: 'refresh-validated',
+      expires_at: '2026-05-01T00:00:00Z',
+      email: 'manual@example.com',
+      plan_name: 'Kiro Pro'
+    })
     buildCredentialsMock.mockReturnValue({
       access_token: 'access-new',
       refresh_token: 'refresh-new',
       region: 'us-east-1'
     })
-    buildExtraInfoMock.mockReturnValue({
-      keep_flag: true,
-      kiro_version: 'old-runtime'
+    buildExtraInfoMock.mockImplementation((tokenInfo?: any, overrides?: Record<string, unknown>) => {
+      const extra: Record<string, unknown> = { ...(overrides || {}) }
+      delete extra.kiro_version
+      delete extra.system_version
+      delete extra.node_version
+      if (tokenInfo?.email) extra.email = tokenInfo.email
+      if (tokenInfo?.subscription_type || tokenInfo?.plan_name) {
+        extra.subscription_type = tokenInfo.subscription_type || tokenInfo.plan_name
+      }
+      return extra
     })
     buildAccountNameMock.mockReturnValue('Kiro OAuth')
     updateAccountMock.mockResolvedValue({})
@@ -225,12 +292,16 @@ describe('admin ReAuthAccountModal', () => {
     expect(updateAccountMock).not.toHaveBeenCalled()
   })
 
-  it('reauthorizes Kiro OAuth accounts without preserving runtime-only extra fields', async () => {
+  it('reauthorizes Kiro OAuth accounts from callback submission without preserving runtime-only extra fields', async () => {
     const wrapper = mountModal(buildKiroAccount('oauth'))
 
     await wrapper.get('[data-testid="kiro-flow-submit"]').trigger('click')
     await flushPromises()
 
+    expect(exchangeCallbackMock).toHaveBeenCalledWith(
+      'http://localhost:3128/callback?code=abc',
+      null
+    )
     expect(updateAccountMock).toHaveBeenCalledWith(42, expect.objectContaining({
       name: 'Kiro OAuth',
       type: 'oauth',
@@ -241,6 +312,49 @@ describe('admin ReAuthAccountModal', () => {
         keep_flag: true
       }
     }))
+    expect(clearErrorMock).toHaveBeenCalledWith(42)
+  })
+
+  it('reauthorizes Kiro OAuth accounts from manual refresh token submission with merged sanitized data', async () => {
+    const wrapper = mountModal(buildKiroAccount('oauth'))
+
+    await wrapper.get('[data-testid="kiro-flow-submit-refresh-token"]').trigger('click')
+    await flushPromises()
+
+    expect(validateRefreshTokenMock).toHaveBeenCalledWith(
+      {
+        refresh_token: 'refresh-manual',
+        auth_method: 'social',
+        region: 'eu-west-1',
+        machine_id: 'machine-2'
+      },
+      {
+        keep_flag: false,
+        custom_note: 'manual',
+        system_version: 'runtime-only'
+      },
+      null
+    )
+    expect(updateAccountMock).toHaveBeenCalledWith(42, {
+      name: 'Kiro OAuth',
+      type: 'oauth',
+      credentials: {
+        refresh_token: 'refresh-validated',
+        region: 'eu-west-1',
+        auth_method: 'social',
+        machine_id: 'machine-2',
+        access_token: 'access-validated',
+        expires_at: '2026-05-01T00:00:00Z',
+        email: 'manual@example.com',
+        plan_name: 'Kiro Pro'
+      },
+      extra: {
+        keep_flag: false,
+        custom_note: 'manual',
+        email: 'manual@example.com',
+        subscription_type: 'Kiro Pro'
+      }
+    })
     expect(clearErrorMock).toHaveBeenCalledWith(42)
   })
 })
