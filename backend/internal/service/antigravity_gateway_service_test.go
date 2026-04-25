@@ -712,7 +712,7 @@ func TestAntigravityGatewayService_ForwardGemini_ModelNotFoundFallbackSuccessRec
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, originalModel, result.Model)
-	require.Equal(t, mappedModel, result.UpstreamModel)
+	require.Equal(t, fallbackModel, result.UpstreamModel)
 	require.Len(t, upstream.requestBodies, 2)
 	require.Contains(t, string(upstream.requestBodies[1]), `"model":"`+fallbackModel+`"`)
 

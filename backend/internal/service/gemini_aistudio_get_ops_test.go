@@ -14,6 +14,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type geminiAIStudioErrReadCloser struct {
+	err error
+}
+
+func (r geminiAIStudioErrReadCloser) Read([]byte) (int, error) {
+	return 0, r.err
+}
+
+func (r geminiAIStudioErrReadCloser) Close() error {
+	return nil
+}
+
 func TestGeminiMessagesCompatService_ForwardAIStudioGET_SetsOpsUpstreamLatency(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
@@ -94,6 +106,65 @@ func TestGeminiMessagesCompatService_ForwardAIStudioGET_TooLargeBodyReturnsError
 	upstreamMessage, ok := c.Get(OpsUpstreamErrorMessageKey)
 	require.True(t, ok)
 	require.Equal(t, "upstream response too large", upstreamMessage)
+}
+
+func TestGeminiMessagesCompatService_ForwardAIStudioGET_ReadErrorRecordsOpsContext(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1beta/models", nil)
+
+	upstream := &geminiCompatHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Header: http.Header{
+				"Content-Type": []string{"application/json"},
+				"X-Request-Id": []string{"rid-aistudio-read"},
+			},
+			Body: geminiAIStudioErrReadCloser{err: errors.New("read tcp reset by peer")},
+		},
+	}
+
+	svc := &GeminiMessagesCompatService{
+		httpUpstream: upstream,
+		cfg:          &config.Config{},
+	}
+
+	result, err := svc.ForwardAIStudioGET(context.Background(), c, &Account{
+		ID:          1,
+		Name:        "gemini-aistudio",
+		Platform:    PlatformGemini,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "gemini-key",
+			"base_url": "https://generativelanguage.googleapis.com",
+		},
+	}, "/v1beta/models")
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Contains(t, err.Error(), "read ai studio get response failed")
+
+	statusCode, ok := c.Get(OpsUpstreamStatusCodeKey)
+	require.True(t, ok)
+	require.Equal(t, http.StatusOK, statusCode)
+
+	upstreamMessage, ok := c.Get(OpsUpstreamErrorMessageKey)
+	require.True(t, ok)
+	require.Equal(t, "read tcp reset by peer", upstreamMessage)
+
+	raw, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := raw.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 1)
+	require.Equal(t, "upstream_read_error", events[0].Kind)
+	require.Equal(t, http.StatusOK, events[0].UpstreamStatusCode)
+	require.Equal(t, "rid-aistudio-read", events[0].UpstreamRequestID)
+	require.Contains(t, events[0].UpstreamURL, "/v1beta/models")
 }
 
 func TestGeminiMessagesCompatService_ForwardAIStudioGET_RequestErrorRecordsOpsContext(t *testing.T) {

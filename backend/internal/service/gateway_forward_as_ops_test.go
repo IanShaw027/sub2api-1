@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +21,7 @@ type queuedGatewayOpsAttempt struct {
 	statusCode int
 	requestID  string
 	body       string
+	err        error
 }
 
 type queuedGatewayOpsUpstream struct {
@@ -41,6 +44,9 @@ func (u *queuedGatewayOpsUpstream) DoWithTLS(req *http.Request, proxyURL string,
 		idx = len(u.attempts) - 1
 	}
 	attempt := u.attempts[idx]
+	if attempt.err != nil {
+		return nil, attempt.err
+	}
 	return &http.Response{
 		StatusCode: attempt.statusCode,
 		Header: http.Header{
@@ -498,4 +504,256 @@ func TestGatewayService_Forward_BedrockRecordsLatencyAndFailoverFields(t *testin
 	require.Equal(t, account.Name, events[0].AccountName)
 	require.Contains(t, events[0].UpstreamURL, "bedrock-runtime")
 	require.Contains(t, events[0].UpstreamURL, "/invoke")
+}
+
+func TestGatewayService_Forward_NativeMessagesSignatureRetryFinalHTTPErrorUsesFilteredBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	upstream := &queuedGatewayOpsUpstream{
+		attempts: []queuedGatewayOpsAttempt{
+			{
+				statusCode: http.StatusBadRequest,
+				requestID:  "rid-signature-original",
+				body:       `{"error":{"message":"Invalid \u0060signature\u0060 in \u0060thinking\u0060 block","type":"invalid_request_error"}}`,
+			},
+			{
+				statusCode: http.StatusBadRequest,
+				requestID:  "rid-signature-filtered",
+				body:       `{"error":{"message":"filtered retry invalid request","type":"invalid_request_error"}}`,
+			},
+		},
+	}
+
+	rectifierJSON, err := json.Marshal(&RectifierSettings{
+		Enabled:                true,
+		APIKeySignatureEnabled: true,
+	})
+	require.NoError(t, err)
+
+	svc := &GatewayService{
+		cfg: &config.Config{
+			Gateway: config.GatewayConfig{
+				MaxLineSize:                  defaultMaxLineSize,
+				LogUpstreamErrorBody:         true,
+				LogUpstreamErrorBodyMaxBytes: 1024,
+			},
+		},
+		httpUpstream:     upstream,
+		rateLimitService: &RateLimitService{},
+		settingService: &SettingService{settingRepo: &countTokensSettingRepoStub{
+			values: map[string]string{
+				SettingKeyRectifierSettings: string(rectifierJSON),
+			},
+		}},
+	}
+
+	account := newAnthropicAPIKeyAccountForTest()
+	account.ID = 406
+	account.Name = "anthropic-native-signature-retry-final"
+	account.Extra = nil
+
+	originalBody := []byte(`{"model":"claude-3-5-sonnet","thinking":{"type":"enabled","budget_tokens":1200},"messages":[{"role":"user","content":[{"type":"thinking","thinking":"chain","signature":"bad-sig"},{"type":"text","text":"hello"}]}],"stream":false}`)
+	result, err := svc.Forward(context.Background(), c, account, &ParsedRequest{
+		Body:   originalBody,
+		Model:  "claude-3-5-sonnet",
+		Stream: false,
+	})
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Equal(t, 2, upstream.calls, "signature rectifier should perform one retry attempt")
+
+	filteredBody := strings.TrimSpace(string(FilterThinkingBlocksForRetry(originalBody)))
+
+	rawEvents, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := rawEvents.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 2)
+	require.Equal(t, "signature_error", events[0].Kind)
+	require.Equal(t, strings.TrimSpace(string(originalBody)), events[0].UpstreamRequestBody)
+	require.Equal(t, "http_error", events[1].Kind)
+	require.Equal(t, "rid-signature-filtered", events[1].UpstreamRequestID)
+	require.Equal(t, filteredBody, events[1].UpstreamRequestBody)
+
+	rawBody, ok := c.Get(OpsUpstreamRequestBodyKey)
+	require.True(t, ok)
+	bodyBytes, ok := rawBody.([]byte)
+	require.True(t, ok)
+	require.Equal(t, filteredBody, strings.TrimSpace(string(bodyBytes)))
+}
+
+func TestGatewayService_Forward_NativeMessagesSignatureRetryRequestErrorRecordsFilteredBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	upstream := &queuedGatewayOpsUpstream{
+		attempts: []queuedGatewayOpsAttempt{
+			{
+				statusCode: http.StatusBadRequest,
+				requestID:  "rid-signature-original",
+				body:       `{"error":{"message":"Invalid \u0060signature\u0060 in \u0060thinking\u0060 block","type":"invalid_request_error"}}`,
+			},
+			{
+				err: errors.New("dial tcp: thinking retry failed"),
+			},
+		},
+	}
+
+	rectifierJSON, err := json.Marshal(&RectifierSettings{
+		Enabled:                true,
+		APIKeySignatureEnabled: true,
+	})
+	require.NoError(t, err)
+
+	svc := &GatewayService{
+		cfg: &config.Config{
+			Gateway: config.GatewayConfig{
+				MaxLineSize:                  defaultMaxLineSize,
+				LogUpstreamErrorBody:         true,
+				LogUpstreamErrorBodyMaxBytes: 1024,
+			},
+		},
+		httpUpstream:     upstream,
+		rateLimitService: &RateLimitService{},
+		settingService: &SettingService{settingRepo: &countTokensSettingRepoStub{
+			values: map[string]string{
+				SettingKeyRectifierSettings: string(rectifierJSON),
+			},
+		}},
+	}
+
+	account := newAnthropicAPIKeyAccountForTest()
+	account.ID = 408
+	account.Name = "anthropic-native-signature-retry-request-error"
+	account.Extra = nil
+
+	originalBody := []byte(`{"model":"claude-3-5-sonnet","thinking":{"type":"enabled","budget_tokens":1200},"messages":[{"role":"user","content":[{"type":"thinking","thinking":"chain","signature":"bad-sig"},{"type":"text","text":"hello"}]}],"stream":false}`)
+	result, err := svc.Forward(context.Background(), c, account, &ParsedRequest{
+		Body:   originalBody,
+		Model:  "claude-3-5-sonnet",
+		Stream: false,
+	})
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Equal(t, 2, upstream.calls, "signature rectifier should perform one retry attempt")
+
+	filteredBody := strings.TrimSpace(string(FilterThinkingBlocksForRetry(originalBody)))
+
+	rawEvents, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := rawEvents.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 3)
+	require.Equal(t, "signature_error", events[0].Kind)
+	require.Equal(t, strings.TrimSpace(string(originalBody)), events[0].UpstreamRequestBody)
+	require.Equal(t, "signature_retry_request_error", events[1].Kind)
+	require.Equal(t, filteredBody, events[1].UpstreamRequestBody)
+	require.Contains(t, events[1].Message, "thinking retry failed")
+	require.Equal(t, "http_error", events[2].Kind)
+	require.Equal(t, strings.TrimSpace(string(originalBody)), events[2].UpstreamRequestBody)
+
+	rawBody, ok := c.Get(OpsUpstreamRequestBodyKey)
+	require.True(t, ok)
+	bodyBytes, ok := rawBody.([]byte)
+	require.True(t, ok)
+	require.Equal(t, strings.TrimSpace(string(originalBody)), strings.TrimSpace(string(bodyBytes)))
+}
+
+func TestGatewayService_Forward_NativeMessagesToolDowngradeRetryRequestErrorUsesToolFilteredBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	upstream := &queuedGatewayOpsUpstream{
+		attempts: []queuedGatewayOpsAttempt{
+			{
+				statusCode: http.StatusBadRequest,
+				requestID:  "rid-signature-original",
+				body:       `{"error":{"message":"Invalid \u0060signature\u0060 in \u0060thinking\u0060 block","type":"invalid_request_error"}}`,
+			},
+			{
+				statusCode: http.StatusBadRequest,
+				requestID:  "rid-signature-thinking-retry",
+				body:       `{"error":{"message":"Invalid signature in tool_use block","type":"invalid_request_error"}}`,
+			},
+			{
+				err: errors.New("dial tcp: tool downgrade retry failed"),
+			},
+		},
+	}
+
+	rectifierJSON, err := json.Marshal(&RectifierSettings{
+		Enabled:                true,
+		APIKeySignatureEnabled: true,
+	})
+	require.NoError(t, err)
+
+	svc := &GatewayService{
+		cfg: &config.Config{
+			Gateway: config.GatewayConfig{
+				MaxLineSize:                  defaultMaxLineSize,
+				LogUpstreamErrorBody:         true,
+				LogUpstreamErrorBodyMaxBytes: 1024,
+			},
+		},
+		httpUpstream:     upstream,
+		rateLimitService: &RateLimitService{},
+		settingService: &SettingService{settingRepo: &countTokensSettingRepoStub{
+			values: map[string]string{
+				SettingKeyRectifierSettings: string(rectifierJSON),
+			},
+		}},
+	}
+
+	account := newAnthropicAPIKeyAccountForTest()
+	account.ID = 407
+	account.Name = "anthropic-native-signature-tool-retry"
+	account.Extra = nil
+
+	originalBody := []byte(`{"model":"claude-3-5-sonnet","thinking":{"type":"enabled","budget_tokens":1200},"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"chain","signature":"bad-sig"},{"type":"tool_use","id":"toolu_1","name":"lookup","input":{"q":"hello"}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"world"}]}],"stream":false}`)
+	result, err := svc.Forward(context.Background(), c, account, &ParsedRequest{
+		Body:   originalBody,
+		Model:  "claude-3-5-sonnet",
+		Stream: false,
+	})
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Equal(t, 3, upstream.calls, "tool-downgrade signature rectifier should perform a second-stage retry")
+
+	filteredThinkingBody := strings.TrimSpace(string(FilterThinkingBlocksForRetry(originalBody)))
+	filteredToolsBody := strings.TrimSpace(string(FilterSignatureSensitiveBlocksForRetry(originalBody)))
+
+	rawEvents, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := rawEvents.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 4)
+	require.Equal(t, "signature_error", events[0].Kind)
+	require.Equal(t, strings.TrimSpace(string(originalBody)), events[0].UpstreamRequestBody)
+	require.Equal(t, "signature_retry_thinking", events[1].Kind)
+	require.Equal(t, filteredThinkingBody, events[1].UpstreamRequestBody)
+	require.Equal(t, "signature_retry_tools_request_error", events[2].Kind)
+	require.Equal(t, filteredToolsBody, events[2].UpstreamRequestBody)
+	require.Contains(t, events[2].Message, "tool downgrade retry failed")
+	require.Equal(t, "http_error", events[3].Kind)
+	require.Equal(t, "rid-signature-thinking-retry", events[3].UpstreamRequestID)
+	require.Equal(t, filteredThinkingBody, events[3].UpstreamRequestBody)
+
+	rawBody, ok := c.Get(OpsUpstreamRequestBodyKey)
+	require.True(t, ok)
+	bodyBytes, ok := rawBody.([]byte)
+	require.True(t, ok)
+	require.Equal(t, filteredThinkingBody, strings.TrimSpace(string(bodyBytes)))
 }

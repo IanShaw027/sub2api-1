@@ -272,6 +272,8 @@ func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParam
 			s.updateAccountModelRateLimitInCache(p.ctx, p.account, modelName, resetAt)
 		}
 
+		s.appendCoveredSmartRetryEvent(p, resp, respBody, baseURL)
+
 		// 返回账号切换信号，让上层切换账号重试
 		return &smartRetryResult{
 			action: smartRetryActionBreakWithResp,
@@ -446,6 +448,8 @@ func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParam
 		if s.cache != nil && p.sessionHash != "" {
 			_ = s.cache.DeleteSessionAccountID(p.ctx, p.groupID, p.sessionHash)
 		}
+
+		s.appendCoveredSmartRetryEvent(p, resp, respBody, baseURL)
 
 		// 返回账号切换信号，让上层切换账号重试
 		return &smartRetryResult{
@@ -2304,6 +2308,7 @@ func (s *AntigravityGatewayService) ForwardGemini(ctx context.Context, c *gin.Co
 								Message:            sanitizeUpstreamErrorMessage(fmt.Sprintf("fallback succeeded with model: %s", fallbackModel)),
 							})
 							_ = resp.Body.Close()
+							billingModel = fallbackModel
 							resp = fallbackResp
 						} else if fallbackResp != nil {
 							fallbackRespBody, _ := io.ReadAll(io.LimitReader(fallbackResp.Body, 64<<10))
@@ -2566,7 +2571,7 @@ handleSuccess:
 
 	// 判断是否为图片生成模型
 	imageCount := 0
-	if isImageGenerationModel(mappedModel) {
+	if isImageGenerationModel(billingModel) {
 		// Gemini 图片生成 API 每次请求只生成一张图片（API 限制）
 		imageCount = 1
 	}

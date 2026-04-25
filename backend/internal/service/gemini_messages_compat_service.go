@@ -1046,7 +1046,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 	// 图片生成计费
 	imageCount := 0
 	imageSize := s.extractImageSize(body)
-	if isImageGenerationModel(originalModel) {
+	if isImageGenerationModel(mappedModel) {
 		imageCount = 1
 	}
 
@@ -1551,7 +1551,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 	// 图片生成计费
 	imageCount := 0
 	imageSize := s.extractImageSize(body)
-	if isImageGenerationModel(originalModel) {
+	if isImageGenerationModel(mappedModel) {
 		imageCount = 1
 	}
 
@@ -2625,6 +2625,18 @@ func (s *GeminiMessagesCompatService) ForwardAIStudioGET(ctx context.Context, c 
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, geminiAIStudioGETMaxBodyBytes+1))
 	if err != nil {
+		safeErr := sanitizeUpstreamErrorMessage(err.Error())
+		setOpsUpstreamError(c, resp.StatusCode, safeErr, "")
+		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+			Platform:           account.Platform,
+			AccountID:          account.ID,
+			AccountName:        account.Name,
+			UpstreamStatusCode: resp.StatusCode,
+			UpstreamRequestID:  upstreamRequestIDFromHeader(resp.Header),
+			UpstreamURL:        safeUpstreamURL(fullURL),
+			Kind:               "upstream_read_error",
+			Message:            safeErr,
+		})
 		return nil, fmt.Errorf("read ai studio get response failed: %w", err)
 	}
 	if len(body) > geminiAIStudioGETMaxBodyBytes {

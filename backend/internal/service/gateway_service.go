@@ -4310,6 +4310,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	var resp *http.Response
 	retryStart := time.Now()
 	for attempt := 1; attempt <= maxRetryAttempts; attempt++ {
+		setOpsUpstreamRequestBody(c, body)
 		// 构建上游请求（每次重试需要重新构建，因为请求体需要重新读取）
 		upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, reqStream)
 		upstreamReq, err := s.buildUpstreamRequest(upstreamCtx, c, account, body, token, tokenType, reqModel, reqStream, shouldMimicClaudeCode)
@@ -4398,6 +4399,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 					retryReq, buildErr := s.buildUpstreamRequest(retryCtx, c, account, filteredBody, token, tokenType, reqModel, reqStream, shouldMimicClaudeCode)
 					releaseRetryCtx()
 					if buildErr == nil {
+						setOpsUpstreamRequestBody(c, filteredBody)
 						retryResp, retryErr := doUpstreamWithOpsLatency(retryReq)
 						if retryErr == nil {
 							if retryResp.StatusCode < 400 {
@@ -4433,6 +4435,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 									retryReq2, buildErr2 := s.buildUpstreamRequest(retryCtx2, c, account, filteredBody2, token, tokenType, reqModel, reqStream, shouldMimicClaudeCode)
 									releaseRetryCtx2()
 									if buildErr2 == nil {
+										setOpsUpstreamRequestBody(c, filteredBody2)
 										retryResp2, retryErr2 := doUpstreamWithOpsLatency(retryReq2)
 										if retryErr2 == nil {
 											resp = retryResp2
@@ -4450,8 +4453,10 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 											Kind:               "signature_retry_tools_request_error",
 											Message:            sanitizeUpstreamErrorMessage(retryErr2.Error()),
 										})
+										setOpsUpstreamRequestBody(c, filteredBody)
 										logger.LegacyPrintf("service.gateway", "Account %d: tool-downgrade signature retry failed: %v", account.ID, retryErr2)
 									} else {
+										setOpsUpstreamRequestBody(c, filteredBody)
 										logger.LegacyPrintf("service.gateway", "Account %d: tool-downgrade signature retry build failed: %v", account.ID, buildErr2)
 									}
 								}
@@ -4468,6 +4473,17 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 						if retryResp != nil && retryResp.Body != nil {
 							_ = retryResp.Body.Close()
 						}
+						appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+							Platform:            account.Platform,
+							AccountID:           account.ID,
+							AccountName:         account.Name,
+							UpstreamStatusCode:  0,
+							UpstreamURL:         safeUpstreamURL(retryReq.URL.String()),
+							UpstreamRequestBody: strings.TrimSpace(string(filteredBody)),
+							Kind:                "signature_retry_request_error",
+							Message:             sanitizeUpstreamErrorMessage(retryErr.Error()),
+						})
+						setOpsUpstreamRequestBody(c, body)
 						logger.LegacyPrintf("service.gateway", "Account %d: signature error retry failed: %v", account.ID, retryErr)
 					} else {
 						logger.LegacyPrintf("service.gateway", "Account %d: signature error retry build request failed: %v", account.ID, buildErr)
