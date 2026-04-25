@@ -12,6 +12,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestNormalizeOpenAIImageTestMode(t *testing.T) {
@@ -90,6 +91,42 @@ func TestAccountTestService_OpenAIImageOAuthDefaultCallsImagesEndpoint(t *testin
 	require.Contains(t, rec.Body.String(), "\"success\":true")
 	require.Equal(t, "codex_cli_rs", upstream.lastReq.Header.Get("originator"))
 	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
+}
+
+func TestAccountTestService_OpenAIImageOAuthIgnoresCompactProbeMode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/1/test", nil)
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body: io.NopCloser(strings.NewReader(
+				"data: {\"type\":\"response.output_item.done\",\"item\":{\"id\":\"ig_123\",\"type\":\"image_generation_call\",\"result\":\"aGVsbG8=\",\"output_format\":\"png\"}}\n\n" +
+					"data: {\"type\":\"response.completed\",\"response\":{\"created_at\":1710000006,\"output\":[]}}\n\n" +
+					"data: [DONE]\n\n",
+			)),
+		},
+	}
+	svc := &AccountTestService{httpUpstream: upstream, cfg: &config.Config{}}
+	account := &Account{
+		ID:       54,
+		Name:     "openai-oauth",
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token": "token-123",
+		},
+	}
+
+	err := svc.testOpenAIAccountConnection(c, account, "gpt-image-2", "draw a cat", AccountTestModeCompact)
+	require.NoError(t, err)
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, chatgptCodexURL, upstream.lastReq.URL.String())
+	require.NotContains(t, upstream.lastReq.URL.String(), "/compact")
+	require.Equal(t, "gpt-image-2", gjson.GetBytes(upstream.lastBody, "tools.0.model").String())
 }
 
 func TestAccountTestService_OpenAIImageOAuthPreservesInboundOriginator(t *testing.T) {

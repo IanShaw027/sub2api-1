@@ -569,10 +569,6 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	// Align test routing with gateway behavior: OpenAI accounts apply normal
 	// account model mapping, and compact mode applies compact-only mapping on top.
 	testModelID = account.GetMappedModel(testModelID)
-	if mode == AccountTestModeCompact {
-		testModelID = resolveOpenAICompactForwardModel(account, testModelID)
-		return s.testOpenAICompactConnection(c, account, testModelID)
-	}
 
 	// Route to image generation test if an image model is selected
 	if isOpenAIImageModel(testModelID) {
@@ -594,6 +590,10 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		default:
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Unsupported OpenAI image test mode: %s", resolveOpenAIImageExecutionMode(c)))
 		}
+	}
+	if mode == AccountTestModeCompact {
+		testModelID = resolveOpenAICompactForwardModel(account, testModelID)
+		return s.testOpenAICompactConnection(c, account, testModelID)
 	}
 
 	// Determine authentication method and API URL
@@ -752,13 +752,11 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+authToken)
-	req.Header.Set("OpenAI-Beta", "responses=experimental")
 	req.Header.Set("Originator", "codex_cli_rs")
 	req.Header.Set("User-Agent", codexCLIUserAgent)
 	req.Header.Set("Version", codexCLIVersion)
 	probeSessionID := compactProbeSessionID(account.ID)
 	req.Header.Set("Session_ID", probeSessionID)
-	req.Header.Set("Conversation_ID", probeSessionID)
 
 	if isOAuth {
 		req.Host = "chatgpt.com"

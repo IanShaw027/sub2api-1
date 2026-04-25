@@ -104,6 +104,9 @@ func TestIsOpenAIRemoteCompactPath(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodPost, "/responses/compact/", nil)
 	require.True(t, isOpenAIRemoteCompactPath(c))
 
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses/compact/detail", nil)
+	require.True(t, isOpenAIRemoteCompactPath(c))
+
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 	require.False(t, isOpenAIRemoteCompactPath(c))
 }
