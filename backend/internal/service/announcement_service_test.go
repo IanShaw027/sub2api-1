@@ -10,7 +10,7 @@ import (
 )
 
 type announcementRepoStub struct {
-	item *Announcement
+	item   *Announcement
 	active []Announcement
 }
 
@@ -70,10 +70,12 @@ func (*announcementUserRepoStub) GetByID(context.Context, int64) (*User, error) 
 	return &User{ID: 1, Balance: 10}, nil
 }
 func (*announcementUserRepoStub) GetByEmail(context.Context, string) (*User, error) { return nil, nil }
-func (*announcementUserRepoStub) GetFirstAdmin(context.Context) (*User, error) { return nil, nil }
-func (*announcementUserRepoStub) Update(context.Context, *User) error { return nil }
-func (*announcementUserRepoStub) Delete(context.Context, int64) error { return nil }
-func (*announcementUserRepoStub) GetUserAvatar(context.Context, int64) (*UserAvatar, error) { return nil, nil }
+func (*announcementUserRepoStub) GetFirstAdmin(context.Context) (*User, error)      { return nil, nil }
+func (*announcementUserRepoStub) Update(context.Context, *User) error               { return nil }
+func (*announcementUserRepoStub) Delete(context.Context, int64) error               { return nil }
+func (*announcementUserRepoStub) GetUserAvatar(context.Context, int64) (*UserAvatar, error) {
+	return nil, nil
+}
 func (*announcementUserRepoStub) UpsertUserAvatar(context.Context, int64, UpsertUserAvatarInput) (*UserAvatar, error) {
 	return nil, nil
 }
@@ -87,27 +89,43 @@ func (*announcementUserRepoStub) ListWithFilters(context.Context, pagination.Pag
 func (*announcementUserRepoStub) GetLatestUsedAtByUserIDs(context.Context, []int64) (map[int64]*time.Time, error) {
 	return nil, nil
 }
-func (*announcementUserRepoStub) GetLatestUsedAtByUserID(context.Context, int64) (*time.Time, error) { return nil, nil }
-func (*announcementUserRepoStub) UpdateUserLastActiveAt(context.Context, int64, time.Time) error { return nil }
+func (*announcementUserRepoStub) GetLatestUsedAtByUserID(context.Context, int64) (*time.Time, error) {
+	return nil, nil
+}
+func (*announcementUserRepoStub) UpdateUserLastActiveAt(context.Context, int64, time.Time) error {
+	return nil
+}
 func (*announcementUserRepoStub) UpdateBalance(context.Context, int64, float64) error { return nil }
 func (*announcementUserRepoStub) DeductBalance(context.Context, int64, float64) error { return nil }
 func (*announcementUserRepoStub) UpdateConcurrency(context.Context, int64, int) error { return nil }
-func (*announcementUserRepoStub) ExistsByEmail(context.Context, string) (bool, error) { return false, nil }
-func (*announcementUserRepoStub) RemoveGroupFromAllowedGroups(context.Context, int64) (int64, error) { return 0, nil }
-func (*announcementUserRepoStub) AddGroupToAllowedGroups(context.Context, int64, int64) error { return nil }
-func (*announcementUserRepoStub) RemoveGroupFromUserAllowedGroups(context.Context, int64, int64) error { return nil }
+func (*announcementUserRepoStub) ExistsByEmail(context.Context, string) (bool, error) {
+	return false, nil
+}
+func (*announcementUserRepoStub) RemoveGroupFromAllowedGroups(context.Context, int64) (int64, error) {
+	return 0, nil
+}
+func (*announcementUserRepoStub) AddGroupToAllowedGroups(context.Context, int64, int64) error {
+	return nil
+}
+func (*announcementUserRepoStub) RemoveGroupFromUserAllowedGroups(context.Context, int64, int64) error {
+	return nil
+}
 func (*announcementUserRepoStub) ListUserAuthIdentities(context.Context, int64) ([]UserAuthIdentityRecord, error) {
 	return nil, nil
 }
-func (*announcementUserRepoStub) UnbindUserAuthProvider(context.Context, int64, string) error { return nil }
+func (*announcementUserRepoStub) UnbindUserAuthProvider(context.Context, int64, string) error {
+	return nil
+}
 func (*announcementUserRepoStub) UpdateTotpSecret(context.Context, int64, *string) error { return nil }
-func (*announcementUserRepoStub) EnableTotp(context.Context, int64) error { return nil }
-func (*announcementUserRepoStub) DisableTotp(context.Context, int64) error { return nil }
+func (*announcementUserRepoStub) EnableTotp(context.Context, int64) error                { return nil }
+func (*announcementUserRepoStub) DisableTotp(context.Context, int64) error               { return nil }
 
 type announcementUserSubRepoStub struct{}
 
 func (*announcementUserSubRepoStub) Create(context.Context, *UserSubscription) error { return nil }
-func (*announcementUserSubRepoStub) GetByID(context.Context, int64) (*UserSubscription, error) { return nil, nil }
+func (*announcementUserSubRepoStub) GetByID(context.Context, int64) (*UserSubscription, error) {
+	return nil, nil
+}
 func (*announcementUserSubRepoStub) GetByUserIDAndGroupID(context.Context, int64, int64) (*UserSubscription, error) {
 	return nil, nil
 }
@@ -115,7 +133,7 @@ func (*announcementUserSubRepoStub) GetActiveByUserIDAndGroupID(context.Context,
 	return nil, nil
 }
 func (*announcementUserSubRepoStub) Update(context.Context, *UserSubscription) error { return nil }
-func (*announcementUserSubRepoStub) Delete(context.Context, int64) error { return nil }
+func (*announcementUserSubRepoStub) Delete(context.Context, int64) error             { return nil }
 func (*announcementUserSubRepoStub) ListByUserID(context.Context, int64) ([]UserSubscription, error) {
 	return nil, nil
 }
@@ -132,14 +150,24 @@ func (*announcementUserSubRepoStub) ExistsByUserIDAndGroupID(context.Context, in
 	return false, nil
 }
 func (*announcementUserSubRepoStub) ExtendExpiry(context.Context, int64, time.Time) error { return nil }
-func (*announcementUserSubRepoStub) UpdateStatus(context.Context, int64, string) error { return nil }
-func (*announcementUserSubRepoStub) UpdateNotes(context.Context, int64, string) error { return nil }
-func (*announcementUserSubRepoStub) ActivateWindows(context.Context, int64, time.Time) error { return nil }
-func (*announcementUserSubRepoStub) ResetDailyUsage(context.Context, int64, time.Time) error { return nil }
-func (*announcementUserSubRepoStub) ResetWeeklyUsage(context.Context, int64, time.Time) error { return nil }
-func (*announcementUserSubRepoStub) ResetMonthlyUsage(context.Context, int64, time.Time) error { return nil }
+func (*announcementUserSubRepoStub) UpdateStatus(context.Context, int64, string) error    { return nil }
+func (*announcementUserSubRepoStub) UpdateNotes(context.Context, int64, string) error     { return nil }
+func (*announcementUserSubRepoStub) ActivateWindows(context.Context, int64, time.Time) error {
+	return nil
+}
+func (*announcementUserSubRepoStub) ResetDailyUsage(context.Context, int64, time.Time) error {
+	return nil
+}
+func (*announcementUserSubRepoStub) ResetWeeklyUsage(context.Context, int64, time.Time) error {
+	return nil
+}
+func (*announcementUserSubRepoStub) ResetMonthlyUsage(context.Context, int64, time.Time) error {
+	return nil
+}
 func (*announcementUserSubRepoStub) IncrementUsage(context.Context, int64, float64) error { return nil }
-func (*announcementUserSubRepoStub) BatchUpdateExpiredStatus(context.Context) (int64, error) { return 0, nil }
+func (*announcementUserSubRepoStub) BatchUpdateExpiredStatus(context.Context) (int64, error) {
+	return 0, nil
+}
 
 func TestAnnouncementServiceCreateRejectsEqualStartEndTimes(t *testing.T) {
 	repo := &announcementRepoStub{}

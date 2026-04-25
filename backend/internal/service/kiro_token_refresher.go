@@ -58,7 +58,7 @@ func (r *KiroTokenRefresher) Refresh(ctx context.Context, account *Account) (map
 
 	var (
 		accessToken  string
-		refreshToken = account.GetCredential("refresh_token")
+		refreshToken string
 		expiresAt    string
 		profileARN   string
 		err          error

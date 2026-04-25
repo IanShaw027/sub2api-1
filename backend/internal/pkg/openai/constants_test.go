@@ -15,4 +15,3 @@ func TestDefaultModelsIncludeGPT55(t *testing.T) {
 		t.Fatalf("DefaultModels should include gpt-5.5")
 	}
 }
-

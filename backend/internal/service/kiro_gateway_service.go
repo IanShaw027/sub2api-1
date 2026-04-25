@@ -204,12 +204,12 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 		switch frame.EventType {
 		case "assistantResponseEvent":
 			if content := stringField(frame.Payload, "content"); content != "" {
-				textBuilder.WriteString(content)
+				_, _ = textBuilder.WriteString(content)
 				hasVisibleOutput = true
 			}
 		case "toolUseEvent":
 			state := ensureKiroToolState(toolBuffers, stringField(frame.Payload, "toolUseId"), stringField(frame.Payload, "name"))
-			state.InputBuilder.WriteString(stringField(frame.Payload, "input"))
+			_, _ = state.InputBuilder.WriteString(stringField(frame.Payload, "input"))
 			if booleanField(frame.Payload, "stop") {
 				state.Stopped = true
 				input := map[string]any{}
@@ -376,7 +376,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 							return nil, err
 						}
 					}
-					outputBuilder.WriteString(content)
+					_, _ = outputBuilder.WriteString(content)
 					if err := writeSSEEvent(writer, "content_block_delta", map[string]any{
 						"type":  "content_block_delta",
 						"index": textBlockIndex,
@@ -483,7 +483,6 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 				if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, toolStates); err != nil {
 					return nil, err
 				}
-				textBlockOpen = false
 				_ = writeKiroStreamError(writer, readErr.Error())
 			}
 			s.handleProtocolError(ctx, account, parsed.Model, true, readErr)

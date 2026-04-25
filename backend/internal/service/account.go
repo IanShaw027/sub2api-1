@@ -1279,7 +1279,7 @@ func (a *Account) IsTLSFingerprintEnabled() bool {
 	if a == nil {
 		return false
 	}
-	if !(a.IsAnthropicOAuthOrSetupToken() || (a.Platform == PlatformKiro && a.Type == AccountTypeOAuth)) {
+	if !a.IsAnthropicOAuthOrSetupToken() && (a.Platform != PlatformKiro || a.Type != AccountTypeOAuth) {
 		return false
 	}
 	if a.Extra == nil {

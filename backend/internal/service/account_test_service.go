@@ -312,36 +312,6 @@ func (s *AccountTestService) testKiroAccountConnection(c *gin.Context, account *
 	return nil
 }
 
-func (s *AccountTestService) persistRefreshedKiroCredentials(ctx context.Context, account *Account, newCreds map[string]any) error {
-	updated := *account
-	updated.Credentials = newCreds
-	if err := s.accountRepo.Update(ctx, &updated); err != nil {
-		return err
-	}
-	account.Credentials = updated.Credentials
-	s.invalidateKiroTokenCache(ctx, account)
-	return nil
-}
-
-func (s *AccountTestService) invalidateKiroTokenCache(ctx context.Context, account *Account) {
-	if s == nil || account == nil || account.Platform != PlatformKiro || account.Type != AccountTypeOAuth {
-		return
-	}
-	var tokenCache GeminiTokenCache
-	switch {
-	case s.kiroTokenProvider != nil:
-		tokenCache = s.kiroTokenProvider.tokenCache
-	case s.geminiTokenProvider != nil:
-		tokenCache = s.geminiTokenProvider.tokenCache
-	}
-	if tokenCache == nil {
-		return
-	}
-	if err := tokenCache.DeleteAccessToken(ctx, KiroTokenCacheKey(account)); err != nil {
-		log.Printf("warning: failed to invalidate Kiro token cache for account %d: %v", account.ID, err)
-	}
-}
-
 // testClaudeAccountConnection tests an Anthropic Claude account's connection
 func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account *Account, modelID string) error {
 	ctx := c.Request.Context()

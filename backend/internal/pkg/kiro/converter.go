@@ -506,8 +506,7 @@ func stringField(obj map[string]any, key string) string {
 	if obj == nil {
 		return ""
 	}
-	value, _ := obj[key]
-	switch v := value.(type) {
+	switch v := obj[key].(type) {
 	case string:
 		return strings.TrimSpace(v)
 	default:
