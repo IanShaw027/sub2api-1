@@ -8,8 +8,9 @@ const LOCALE_KEY = 'sub2api_locale'
 const DEFAULT_LOCALE: LocaleCode = 'en'
 
 const localeLoaders: Record<LocaleCode, () => Promise<{ default: LocaleMessages }>> = {
-  en: () => import('./locales/en'),
-  zh: () => import('./locales/zh')
+  // Keep locale resources out of the TS typecheck path and lazy-load them per language.
+  en: () => import('./locales/en.json'),
+  zh: () => import('./locales/zh.json')
 }
 
 function isLocaleCode(value: string): value is LocaleCode {
