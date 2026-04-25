@@ -1,6 +1,5 @@
 import { onMounted, onUnmounted, nextTick } from 'vue'
-import { driver, type Driver, type DriveStep } from 'driver.js'
-import 'driver.js/dist/driver.css'
+import type { Driver, DriveStep } from 'driver.js'
 import { useAuthStore as useUserStore } from '@/stores/auth'
 import { useOnboardingStore } from '@/stores/onboarding'
 import { useI18n } from 'vue-i18n'
@@ -47,6 +46,8 @@ export function useOnboardingTour(options: OnboardingOptions) {
 
   // 使用 store 管理的全局 driver 实例
   let driverInstance: Driver | null = onboardingStore.getDriverInstance()
+  let driverRuntimePromise: Promise<typeof import('driver.js')> | null = null
+  let driverStylesPromise: Promise<unknown> | null = null
   let currentClickListener: {
     element: HTMLElement
     handler: () => void
@@ -56,6 +57,17 @@ export function useOnboardingTour(options: OnboardingOptions) {
   } | null = null
   let autoStartTimer: ReturnType<typeof setTimeout> | null = null
   let globalKeyboardHandler: ((e: KeyboardEvent) => void) | null = null
+
+  const loadDriverRuntime = async () => {
+    if (!driverStylesPromise) {
+      driverStylesPromise = import('driver.js/dist/driver.css')
+    }
+    if (!driverRuntimePromise) {
+      driverRuntimePromise = import('driver.js')
+    }
+    await driverStylesPromise
+    return driverRuntimePromise
+  }
 
   const getStorageKey = () => {
     const baseKey = options.storageKey ?? 'onboarding_tour'
@@ -109,6 +121,8 @@ export function useOnboardingTour(options: OnboardingOptions) {
     if (driverInstance) {
       driverInstance.destroy()
     }
+
+    const { driver } = await loadDriverRuntime()
 
     // 创建新的 driver 实例并存储到 store
     driverInstance = driver({

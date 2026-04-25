@@ -283,7 +283,7 @@
                 <div class="pl-6">
                   <div
                     class="markdown-body prose prose-sm max-w-none dark:prose-invert"
-                    v-html="renderMarkdown(selectedAnnouncement.content)"
+                    v-html="renderedDetailContent"
                   ></div>
                 </div>
               </div>
@@ -331,8 +331,6 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { storeToRefs } from 'pinia'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
 import { useAppStore } from '@/stores/app'
 import { useAnnouncementStore } from '@/stores/announcements'
 import { formatRelativeTime, formatRelativeWithDateTime } from '@/utils/format'
@@ -343,11 +341,29 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const announcementStore = useAnnouncementStore()
 
-// Configure marked
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-})
+type MarkdownRenderer = {
+  parse: (markdown: string) => string
+  sanitize: (html: string) => string
+}
+
+let markdownRendererPromise: Promise<MarkdownRenderer> | null = null
+function getMarkdownRenderer(): Promise<MarkdownRenderer> {
+  if (!markdownRendererPromise) {
+    markdownRendererPromise = Promise.all([import('marked'), import('dompurify')]).then(
+      ([{ marked }, { default: DOMPurify }]) => {
+        marked.setOptions({
+          breaks: true,
+          gfm: true,
+        })
+        return {
+          parse: (markdown: string) => marked.parse(markdown) as string,
+          sanitize: (html: string) => DOMPurify.sanitize(html),
+        }
+      }
+    )
+  }
+  return markdownRendererPromise
+}
 
 // Use store state (storeToRefs for reactivity)
 const { announcements, loading, readStatus } = storeToRefs(announcementStore)
@@ -383,12 +399,14 @@ const emptyDescription = computed(() => {
 const isModalOpen = ref(false)
 const detailModalOpen = ref(false)
 const selectedAnnouncement = ref<UserAnnouncement | null>(null)
+const renderedDetailContent = ref('')
+let markdownRenderId = 0
 
 // Methods
-function renderMarkdown(content: string): string {
+async function renderMarkdown(content: string): Promise<string> {
   if (!content) return ''
-  const html = marked.parse(content) as string
-  return DOMPurify.sanitize(html)
+  const renderer = await getMarkdownRenderer()
+  return renderer.sanitize(renderer.parse(content))
 }
 
 function openModal() {
@@ -465,6 +483,22 @@ onBeforeUnmount(() => {
   document.removeEventListener('keydown', handleEscape)
   document.body.style.overflow = ''
 })
+
+watch(
+  () => selectedAnnouncement.value?.content,
+  async (content) => {
+    const currentRenderId = ++markdownRenderId
+    renderedDetailContent.value = ''
+    if (!content) {
+      return
+    }
+    const html = await renderMarkdown(content)
+    if (currentRenderId === markdownRenderId) {
+      renderedDetailContent.value = html
+    }
+  },
+  { immediate: true }
+)
 
 watch(
   [isModalOpen, detailModalOpen, () => announcementStore.currentPopup],

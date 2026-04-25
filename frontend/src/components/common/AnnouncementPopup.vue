@@ -84,31 +84,66 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
 import { useAnnouncementStore } from '@/stores/announcements'
 import { formatRelativeWithDateTime } from '@/utils/format'
 
 const { t } = useI18n()
 const announcementStore = useAnnouncementStore()
 
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-})
+type MarkdownRenderer = {
+  parse: (markdown: string) => string
+  sanitize: (html: string) => string
+}
 
-const renderedContent = computed(() => {
-  const content = announcementStore.currentPopup?.content
+let markdownRendererPromise: Promise<MarkdownRenderer> | null = null
+function getMarkdownRenderer(): Promise<MarkdownRenderer> {
+  if (!markdownRendererPromise) {
+    markdownRendererPromise = Promise.all([import('marked'), import('dompurify')]).then(
+      ([{ marked }, { default: DOMPurify }]) => {
+        marked.setOptions({
+          breaks: true,
+          gfm: true,
+        })
+        return {
+          parse: (markdown: string) => marked.parse(markdown) as string,
+          sanitize: (html: string) => DOMPurify.sanitize(html),
+        }
+      }
+    )
+  }
+  return markdownRendererPromise
+}
+
+const renderedContent = ref('')
+let markdownRenderId = 0
+
+async function renderMarkdown(content: string): Promise<string> {
   if (!content) return ''
-  const html = marked.parse(content) as string
-  return DOMPurify.sanitize(html)
-})
+  const renderer = await getMarkdownRenderer()
+  return renderer.sanitize(renderer.parse(content))
+}
 
 function handleDismiss() {
   announcementStore.dismissPopup()
 }
+
+watch(
+  () => announcementStore.currentPopup?.content,
+  async (content) => {
+    const currentRenderId = ++markdownRenderId
+    renderedContent.value = ''
+    if (!content) {
+      return
+    }
+    const html = await renderMarkdown(content)
+    if (currentRenderId === markdownRenderId) {
+      renderedContent.value = html
+    }
+  },
+  { immediate: true }
+)
 
 // Manage body overflow — only set, never unset (bell component handles restore)
 watch(
