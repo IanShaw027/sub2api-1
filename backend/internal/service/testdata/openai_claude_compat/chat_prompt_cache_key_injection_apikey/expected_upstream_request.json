@@ -1,0 +1,9 @@
+{
+  "equals_paths": {
+    "model": "gpt-5.1",
+    "prompt_cache_key": "session-apikey",
+    "input.0.role": "user",
+    "input.0.content": "hello",
+    "stream": true
+  }
+}

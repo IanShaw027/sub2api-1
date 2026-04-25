@@ -21,6 +21,12 @@ const (
 )
 
 const (
+	AnnouncementReadStatusAll    = "all"
+	AnnouncementReadStatusRead   = "read"
+	AnnouncementReadStatusUnread = "unread"
+)
+
+const (
 	AnnouncementConditionTypeSubscription = domain.AnnouncementConditionTypeSubscription
 	AnnouncementConditionTypeBalance      = domain.AnnouncementConditionTypeBalance
 )
@@ -53,6 +59,17 @@ var (
 		"starts_at must be before ends_at",
 	)
 )
+
+func NormalizeAnnouncementReadStatus(v string) string {
+	switch v {
+	case AnnouncementReadStatusRead:
+		return AnnouncementReadStatusRead
+	case AnnouncementReadStatusUnread:
+		return AnnouncementReadStatusUnread
+	default:
+		return AnnouncementReadStatusAll
+	}
+}
 
 type AnnouncementTargeting = domain.AnnouncementTargeting
 

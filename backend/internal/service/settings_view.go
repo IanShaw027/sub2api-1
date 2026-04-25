@@ -94,6 +94,7 @@ type SystemSettings struct {
 	SiteSubtitle                string
 	APIBaseURL                  string
 	ContactInfo                 string
+	SupportQRCodes              string
 	DocURL                      string
 	HomeContent                 string
 	HideCcsImportButton         bool
@@ -104,11 +105,15 @@ type SystemSettings struct {
 	CustomMenuItems             string // JSON array of custom menu items
 	CustomEndpoints             string // JSON array of custom endpoints
 
-	DefaultConcurrency   int
-	DefaultBalance       float64
-	AffiliateRebateRate  float64
-	DefaultUserRPMLimit  int
-	DefaultSubscriptions []DefaultSubscriptionSetting
+	DefaultConcurrency          int
+	DefaultBalance              float64
+	AffiliateEnabled            bool
+	AffiliateRebateRate         float64
+	AffiliateRebateCap          float64
+	AffiliateRebateInviteeLimit int
+	AffiliateSignupBonus        float64
+	DefaultUserRPMLimit         int
+	DefaultSubscriptions        []DefaultSubscriptionSetting
 
 	// Model fallback configuration
 	EnableModelFallback      bool   `json:"enable_model_fallback"`
@@ -133,6 +138,9 @@ type SystemSettings struct {
 
 	// Available Channels feature (user-facing aggregate view)
 	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
+
+	// Ticket feature
+	TicketEnabled bool `json:"ticket_enabled"`
 
 	// Claude Code version check
 	MinClaudeCodeVersion string
@@ -192,6 +200,7 @@ type PublicSettings struct {
 	SiteSubtitle                     string
 	APIBaseURL                       string
 	ContactInfo                      string
+	SupportQRCodes                   string
 	DocURL                           string
 	HomeContent                      string
 	HideCcsImportButton              bool
@@ -210,6 +219,8 @@ type PublicSettings struct {
 	WeChatOAuthMobileEnabled bool
 	BackendModeEnabled       bool
 	PaymentEnabled           bool
+	AffiliateEnabled         bool `json:"affiliate_enabled"`
+	TicketEnabled            bool `json:"ticket_enabled"`
 	OIDCOAuthEnabled         bool
 	OIDCOAuthProviderName    string
 	Version                  string

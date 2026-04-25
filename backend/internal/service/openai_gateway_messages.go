@@ -43,11 +43,16 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	applyOpenAICompatModelNormalization(&anthropicReq)
 	normalizedModel := anthropicReq.Model
 	clientStream := anthropicReq.Stream // client's original stream preference
+	toolNameMap := anthropicToolNameMap(anthropicReq.Tools)
+	stripAnthropicBillingHeaderFromSystem(&anthropicReq)
 
 	// 2. Convert Anthropic → Responses
 	responsesReq, err := apicompat.AnthropicToResponses(&anthropicReq)
 	if err != nil {
 		return nil, fmt.Errorf("convert anthropic to responses: %w", err)
+	}
+	if IsClaudeCodeClient(c.Request.Context()) {
+		apicompat.AugmentClaudeToolDescriptions(responsesReq.Tools)
 	}
 
 	// Upstream always uses streaming (upstream may not support sync mode).
@@ -90,6 +95,11 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		if s.cfg != nil {
 			forcedTemplateText = s.cfg.Gateway.ForcedCodexInstructionsTemplate
 		}
+		if IsClaudeCodeClient(c.Request.Context()) &&
+			strings.TrimSpace(forcedTemplateText) == "" &&
+			applyEmbeddedDefaultInstructions(reqBody) {
+			codexResult.Modified = true
+		}
 		templateUpstreamModel := upstreamModel
 		if codexResult.NormalizedModel != "" {
 			templateUpstreamModel = codexResult.NormalizedModel
@@ -115,7 +125,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		// OAuth codex transform forces stream=true upstream, so always use
 		// the streaming response handler regardless of what the client asked.
 		isStream = true
-		responsesBody, err = json.Marshal(reqBody)
+		responsesBody, err = marshalOpenAIResponsesRequestBodyOrdered(reqBody)
 		if err != nil {
 			return nil, fmt.Errorf("remarshal after codex transform: %w", err)
 		}
@@ -134,7 +144,8 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 			}
 			if existing, ok := reqBody["prompt_cache_key"].(string); !ok || strings.TrimSpace(existing) == "" {
 				reqBody["prompt_cache_key"] = trimmedKey
-				updated, err := json.Marshal(reqBody)
+				recordOpenAICompatPromptCacheInjected()
+				updated, err := marshalOpenAIResponsesRequestBodyOrdered(reqBody)
 				if err != nil {
 					return nil, fmt.Errorf("remarshal after prompt cache key injection: %w", err)
 				}
@@ -150,14 +161,14 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	}
 
 	// 6. Build upstream request
-	upstreamReq, err := s.buildUpstreamRequest(ctx, c, account, responsesBody, token, isStream, promptCacheKey, false)
+	upstreamReq, err := s.buildUpstreamRequest(ctx, c, account, responsesBody, token, isStream, promptCacheKey, isOpenAICodexOfficialClientRequest(c))
 	if err != nil {
 		return nil, fmt.Errorf("build upstream request: %w", err)
 	}
 
 	// Override session_id with a deterministic UUID derived from the isolated
 	// session key, ensuring different API keys produce different upstream sessions.
-	if promptCacheKey != "" {
+	if account.Type == AccountTypeAPIKey && promptCacheKey != "" {
 		apiKeyID := getAPIKeyIDFromContext(c)
 		upstreamReq.Header.Set("session_id", generateSessionUUID(isolateOpenAISessionID(apiKeyID, promptCacheKey)))
 	}
@@ -186,6 +197,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 
 	// 8. Handle error response with failover
 	if resp.StatusCode >= 400 {
+		recordOpenAICompatUpstreamStatus(upstreamModel, resp.StatusCode)
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
@@ -229,10 +241,10 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	var result *OpenAIForwardResult
 	var handleErr error
 	if clientStream {
-		result, handleErr = s.handleAnthropicStreamingResponse(resp, c, originalModel, billingModel, upstreamModel, startTime)
+		result, handleErr = s.handleAnthropicStreamingResponse(resp, c, originalModel, billingModel, upstreamModel, toolNameMap, startTime)
 	} else {
 		// Client wants JSON: buffer the streaming response and assemble a JSON reply.
-		result, handleErr = s.handleAnthropicBufferedStreamingResponse(resp, c, originalModel, billingModel, upstreamModel, startTime)
+		result, handleErr = s.handleAnthropicBufferedStreamingResponse(resp, c, originalModel, billingModel, upstreamModel, toolNameMap, startTime)
 	}
 
 	// Propagate ServiceTier and ReasoningEffort to result for billing
@@ -279,6 +291,7 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 	originalModel string,
 	billingModel string,
 	upstreamModel string,
+	toolNameMap map[string]string,
 	startTime time.Time,
 ) (*OpenAIForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
@@ -316,7 +329,8 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 
 		// Terminal events carry the complete ResponsesResponse with output + usage.
 		if (event.Type == "response.completed" || event.Type == "response.done" ||
-			event.Type == "response.incomplete" || event.Type == "response.failed") &&
+			event.Type == "response.incomplete" || event.Type == "response.failed" ||
+			event.Type == "response.cancelled" || event.Type == "response.canceled") &&
 			event.Response != nil {
 			finalResponse = event.Response
 			if event.Response.Usage != nil {
@@ -349,7 +363,7 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 	// accumulated delta events so the client receives the full content.
 	acc.SupplementResponseOutput(finalResponse)
 
-	anthropicResp := apicompat.ResponsesToAnthropic(finalResponse, originalModel)
+	anthropicResp := apicompat.ResponsesToAnthropic(finalResponse, originalModel, toolNameMap)
 
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -378,6 +392,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	originalModel string,
 	billingModel string,
 	upstreamModel string,
+	toolNameMap map[string]string,
 	startTime time.Time,
 ) (*OpenAIForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
@@ -393,6 +408,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 
 	state := apicompat.NewResponsesEventToAnthropicState()
 	state.Model = originalModel
+	state.ToolNameMap = toolNameMap
 	var usage OpenAIUsage
 	var firstTokenMs *int
 	firstChunk := true
@@ -437,7 +453,9 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		}
 
 		// Extract usage from completion events
-		if (event.Type == "response.completed" || event.Type == "response.incomplete" || event.Type == "response.failed") &&
+		if (event.Type == "response.completed" || event.Type == "response.done" ||
+			event.Type == "response.incomplete" || event.Type == "response.failed" ||
+			event.Type == "response.cancelled" || event.Type == "response.canceled") &&
 			event.Response != nil && event.Response.Usage != nil {
 			usage = OpenAIUsage{
 				InputTokens:  event.Response.Usage.InputTokens,
@@ -596,4 +614,94 @@ func writeAnthropicError(c *gin.Context, statusCode int, errType, message string
 			"message": message,
 		},
 	})
+}
+
+func anthropicToolNameMap(tools []apicompat.AnthropicTool) map[string]string {
+	nameMap := make(map[string]string, len(tools))
+	for _, tool := range tools {
+		if tool.Name == "" {
+			continue
+		}
+		canonical := strings.ToLower(strings.TrimLeft(strings.TrimSpace(tool.Name), "_"))
+		if canonical == "" {
+			continue
+		}
+		if _, exists := nameMap[canonical]; exists {
+			continue
+		}
+		nameMap[canonical] = tool.Name
+	}
+	return nameMap
+}
+
+func stripAnthropicBillingHeaderFromSystem(req *apicompat.AnthropicRequest) {
+	if req == nil || len(req.System) == 0 {
+		return
+	}
+
+	if cleaned, ok := stripAnthropicBillingHeaderFromRawSystem(req.System); ok {
+		req.System = cleaned
+	}
+}
+
+func stripAnthropicBillingHeaderFromRawSystem(raw json.RawMessage) (json.RawMessage, bool) {
+	var systemText string
+	if err := json.Unmarshal(raw, &systemText); err == nil {
+		cleaned, changed := stripAnthropicBillingHeaderText(systemText)
+		if !changed {
+			return raw, false
+		}
+		encoded, err := json.Marshal(cleaned)
+		if err != nil {
+			return raw, false
+		}
+		return encoded, true
+	}
+
+	var blocks []apicompat.AnthropicContentBlock
+	if err := json.Unmarshal(raw, &blocks); err != nil {
+		return raw, false
+	}
+
+	filtered := make([]apicompat.AnthropicContentBlock, 0, len(blocks))
+	changed := false
+	for _, block := range blocks {
+		if block.Type == "text" {
+			cleaned, textChanged := stripAnthropicBillingHeaderText(block.Text)
+			if textChanged {
+				changed = true
+				block.Text = cleaned
+			}
+			if textChanged && strings.TrimSpace(block.Text) == "" {
+				continue
+			}
+		}
+		filtered = append(filtered, block)
+	}
+	if !changed {
+		return raw, false
+	}
+
+	encoded, err := json.Marshal(filtered)
+	if err != nil {
+		return raw, false
+	}
+	return encoded, true
+}
+
+func stripAnthropicBillingHeaderText(text string) (string, bool) {
+	lines := strings.Split(text, "\n")
+	filtered := make([]string, 0, len(lines))
+	changed := false
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "x-anthropic-billing-header:") {
+			changed = true
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	if !changed {
+		return text, false
+	}
+	return strings.TrimSpace(strings.Join(filtered, "\n")), true
 }

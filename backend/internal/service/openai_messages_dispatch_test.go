@@ -25,3 +25,19 @@ func TestNormalizeOpenAIMessagesDispatchModelConfig(t *testing.T) {
 		"claude-sonnet-4-5-20250929": "gpt-5.2",
 	}, cfg.ExactModelMappings)
 }
+
+func TestNormalizeOpenAIMessagesDispatchModelConfig_PreservesSparkTargets(t *testing.T) {
+	t.Parallel()
+
+	cfg := normalizeOpenAIMessagesDispatchModelConfig(OpenAIMessagesDispatchModelConfig{
+		HaikuMappedModel: " gpt-5.3-codex-spark ",
+		ExactModelMappings: map[string]string{
+			" claude-haiku-4-5-20251001 ": " gpt-5.3-codex-spark-high ",
+		},
+	})
+
+	require.Equal(t, "gpt-5.3-codex-spark", cfg.HaikuMappedModel)
+	require.Equal(t, map[string]string{
+		"claude-haiku-4-5-20251001": "gpt-5.3-codex-spark",
+	}, cfg.ExactModelMappings)
+}

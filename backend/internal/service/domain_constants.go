@@ -20,9 +20,13 @@ const (
 
 // Affiliate rebate settings
 const (
-	AffiliateRebateRateDefault = 20.0
-	AffiliateRebateRateMin     = 0.0
-	AffiliateRebateRateMax     = 100.0
+	AffiliateRebateRateDefault          = 20.0
+	AffiliateRebateRateMin              = 0.0
+	AffiliateRebateRateMax              = 100.0
+	AffiliateRebateCapDefault           = 0.0
+	AffiliateSignupBonusDefault         = 0.0
+	AffiliateRebateInviteeLimitDefault  = 0
+	AffiliateRebateInviteeLimitDisabled = 0
 )
 
 // Platform constants
@@ -96,7 +100,12 @@ const (
 	SettingKeyPasswordResetEnabled             = "password_reset_enabled"              // 是否启用忘记密码功能（需要先开启邮件验证）
 	SettingKeyFrontendURL                      = "frontend_url"                        // 前端基础URL，用于生成邮件中的重置密码链接
 	SettingKeyInvitationCodeEnabled            = "invitation_code_enabled"             // 是否启用邀请码注册
+	SettingKeyAffiliateEnabled                 = "affiliate_enabled"                   // 是否启用邀请返利
 	SettingKeyAffiliateRebateRate              = "affiliate_rebate_rate"               // 邀请返利比例（百分比，0-100）
+	SettingKeyAffiliateRebateCap               = "affiliate_rebate_cap"                // 每个邀请人累计返利上限，0=不限
+	SettingKeyAffiliateRebateInviteeLimit      = "affiliate_rebate_invitee_limit"      // 每个邀请人最多已返利消费人数，0=不限
+	SettingKeyAffiliateSignupBonus             = "affiliate_signup_bonus"              // 通过邀请链接注册的新用户余额奖励
+	SettingKeyTicketEnabled                    = "ticket_enabled"                      // 是否启用工单模块
 
 	// 邮件服务设置
 	SettingKeySMTPHost     = "smtp_host"      // SMTP服务器地址
@@ -170,6 +179,7 @@ const (
 	SettingKeySiteSubtitle                = "site_subtitle"                 // 网站副标题
 	SettingKeyAPIBaseURL                  = "api_base_url"                  // API端点地址（用于客户端配置和导入）
 	SettingKeyContactInfo                 = "contact_info"                  // 客服联系方式
+	SettingKeySupportQRCodes              = "support_qr_codes"              // 客服二维码列表（JSON 数组）
 	SettingKeyDocURL                      = "doc_url"                       // 文档链接
 	SettingKeyHomeContent                 = "home_content"                  // 首页内容（支持 Markdown/HTML，或 URL 作为 iframe src）
 	SettingKeyHideCcsImportButton         = "hide_ccs_import_button"        // 是否隐藏 API Keys 页面的导入 CCS 按钮
@@ -179,6 +189,7 @@ const (
 	SettingKeyTablePageSizeOptions        = "table_page_size_options"       // 表格可选每页条数（JSON 数组）
 	SettingKeyCustomMenuItems             = "custom_menu_items"             // 自定义菜单项（JSON 数组）
 	SettingKeyCustomEndpoints             = "custom_endpoints"              // 自定义端点列表（JSON 数组）
+	SettingKeyAdminTicketReplyTemplates   = "admin_ticket_reply_templates"  // 管理员工单常用回复模板（JSON 数组）
 
 	// 默认配置
 	SettingKeyDefaultConcurrency   = "default_concurrency"    // 新用户默认并发量

@@ -159,6 +159,7 @@ func (s *AuthService) RegisterOAuthEmailAccount(
 		}
 		return nil, nil, ErrServiceUnavailable
 	}
+	s.recordSignupGrantHistory(ctx, user.ID, signupSource, grantPlan)
 
 	tokenPair, err := s.GenerateTokenPair(ctx, user, "")
 	if err != nil {

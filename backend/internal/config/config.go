@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -1287,10 +1288,26 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	cfg.Log.Output.FilePath = strings.TrimSpace(cfg.Log.Output.FilePath)
 	cfg.Gateway.ForcedCodexInstructionsTemplateFile = strings.TrimSpace(cfg.Gateway.ForcedCodexInstructionsTemplateFile)
 	if cfg.Gateway.ForcedCodexInstructionsTemplateFile != "" {
-		content, err := os.ReadFile(cfg.Gateway.ForcedCodexInstructionsTemplateFile)
-		if err != nil {
-			return nil, fmt.Errorf("read forced codex instructions template %q: %w", cfg.Gateway.ForcedCodexInstructionsTemplateFile, err)
+		templatePath := cfg.Gateway.ForcedCodexInstructionsTemplateFile
+		configFileUsed := strings.TrimSpace(viper.ConfigFileUsed())
+		if !filepath.IsAbs(templatePath) {
+			if configFileUsed != "" {
+				templatePath = filepath.Join(filepath.Dir(configFileUsed), templatePath)
+			}
 		}
+		content, err := os.ReadFile(templatePath)
+		if err != nil && configFileUsed != "" && !filepath.IsAbs(cfg.Gateway.ForcedCodexInstructionsTemplateFile) {
+			fallbackPath := filepath.Join(filepath.Dir(filepath.Dir(configFileUsed)), "deploy", filepath.Clean(cfg.Gateway.ForcedCodexInstructionsTemplateFile))
+			if fallbackContent, fallbackErr := os.ReadFile(fallbackPath); fallbackErr == nil {
+				content = fallbackContent
+				templatePath = fallbackPath
+				err = nil
+			}
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read forced codex instructions template %q: %w", templatePath, err)
+		}
+		cfg.Gateway.ForcedCodexInstructionsTemplateFile = templatePath
 		cfg.Gateway.ForcedCodexInstructionsTemplate = string(content)
 	}
 

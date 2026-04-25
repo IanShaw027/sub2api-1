@@ -317,14 +317,14 @@ export const useAuthStore = defineStore('auth', () => {
    * @returns Promise resolving to the newly registered and authenticated user
    * @throws Error if registration fails
    */
-  async function register(userData: RegisterRequest): Promise<User> {
+  async function register(userData: RegisterRequest): Promise<AuthResponse> {
     try {
       const response = await authAPI.register(userData)
 
       // Use the common helper to set auth state
       setAuthFromResponse(response)
 
-      return user.value!
+      return response
     } catch (error) {
       // Clear any partial state on error
       clearAuth({ preservePendingAuthSession: pendingAuthSession.value !== null })

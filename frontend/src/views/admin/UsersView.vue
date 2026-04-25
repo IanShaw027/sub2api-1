@@ -246,7 +246,7 @@
           :sort-storage-key="USER_SORT_STORAGE_KEY"
           @sort="handleSort"
         >
-          <template #cell-email="{ value }">
+          <template #cell-email="{ value, row }">
             <div class="flex items-center gap-2">
               <div
                 class="flex h-8 w-8 items-center justify-center rounded-full bg-primary-100 dark:bg-primary-900/30"
@@ -255,7 +255,13 @@
                   {{ value.charAt(0).toUpperCase() }}
                 </span>
               </div>
-              <span class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
+              <button
+                type="button"
+                class="font-medium text-gray-900 underline decoration-dashed decoration-gray-300 underline-offset-4 transition-colors hover:text-primary-600 dark:text-white dark:decoration-dark-500 dark:hover:text-primary-400"
+                @click="handleUserUsageJump(row)"
+              >
+                {{ value }}
+              </button>
             </div>
           </template>
 
@@ -650,6 +656,32 @@ import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryM
 import GroupReplaceModal from '@/components/admin/user/GroupReplaceModal.vue'
 
 const appStore = useAppStore()
+const ADMIN_USAGE_BASE_URL = 'https://crs.qazwc.com/admin/usage'
+
+const formatLocalDate = (date: Date): string => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const getLast24HoursRangeDates = (): { startDate: string; endDate: string } => {
+  const endDate = new Date()
+  const startDate = new Date(endDate.getTime() - 24 * 60 * 60 * 1000)
+  return {
+    startDate: formatLocalDate(startDate),
+    endDate: formatLocalDate(endDate)
+  }
+}
+
+const handleUserUsageJump = (user: AdminUser) => {
+  const { startDate, endDate } = getLast24HoursRangeDates()
+  const targetUrl = new URL(ADMIN_USAGE_BASE_URL)
+  targetUrl.searchParams.set('user_id', String(user.id))
+  targetUrl.searchParams.set('start_date', startDate)
+  targetUrl.searchParams.set('end_date', endDate)
+  window.open(targetUrl.toString(), '_self')
+}
 
 // Generate dynamic attribute columns from enabled definitions
 const attributeColumns = computed<Column[]>(() =>

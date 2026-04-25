@@ -4,7 +4,12 @@
  */
 
 import { apiClient } from "../client";
-import type { CustomMenuItem, CustomEndpoint, NotifyEmailEntry } from "@/types";
+import type {
+  CustomMenuItem,
+  CustomEndpoint,
+  NotifyEmailEntry,
+  SupportQRCodeEntry,
+} from "@/types";
 
 export interface DefaultSubscriptionSetting {
   group_id: number;
@@ -308,7 +313,12 @@ export interface SystemSettings {
   totp_encryption_key_configured: boolean; // TOTP 加密密钥是否已配置
   // Default settings
   default_balance: number;
+  affiliate_enabled: boolean;
   affiliate_rebate_rate: number;
+  affiliate_rebate_cap: number;
+  affiliate_rebate_invitee_limit: number;
+  affiliate_signup_bonus: number;
+  ticket_enabled: boolean;
   default_concurrency: number;
   default_user_rpm_limit: number;
   default_subscriptions: DefaultSubscriptionSetting[];
@@ -339,6 +349,7 @@ export interface SystemSettings {
   site_subtitle: string;
   api_base_url: string;
   contact_info: string;
+  support_qr_codes: SupportQRCodeEntry[];
   doc_url: string;
   home_content: string;
   hide_ccs_import_button: boolean;
@@ -490,7 +501,12 @@ export interface UpdateSettingsRequest {
   invitation_code_enabled?: boolean;
   totp_enabled?: boolean; // TOTP 双因素认证
   default_balance?: number;
+  affiliate_enabled?: boolean;
   affiliate_rebate_rate?: number;
+  affiliate_rebate_cap?: number;
+  affiliate_rebate_invitee_limit?: number;
+  affiliate_signup_bonus?: number;
+  ticket_enabled?: boolean;
   default_concurrency?: number;
   default_user_rpm_limit?: number;
   default_subscriptions?: DefaultSubscriptionSetting[];
@@ -520,6 +536,7 @@ export interface UpdateSettingsRequest {
   site_subtitle?: string;
   api_base_url?: string;
   contact_info?: string;
+  support_qr_codes?: SupportQRCodeEntry[];
   doc_url?: string;
   home_content?: string;
   hide_ccs_import_button?: boolean;

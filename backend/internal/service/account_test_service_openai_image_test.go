@@ -12,6 +12,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestNormalizeOpenAIImageTestMode(t *testing.T) {
+	require.Equal(t, "codex", NormalizeOpenAIImageTestMode("codex"))
+	require.Equal(t, "codex", NormalizeOpenAIImageTestMode("image_api"))
+	require.Equal(t, "web2api", NormalizeOpenAIImageTestMode("web2api"))
+	require.Equal(t, "", NormalizeOpenAIImageTestMode("responses-tool"))
+}
+
+func TestResolveOpenAIImageExecutionMode_DefaultsToCodex(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	require.Equal(t, "codex", resolveOpenAIImageExecutionMode(c))
+
+	c.Set(AccountTestContextRequestedModeKey, "web2api")
+	require.Equal(t, "web2api", resolveOpenAIImageExecutionMode(c))
+}
+
 func TestAccountTestService_OpenAIImageOAuthHandlesOutputItemDoneFallback(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()

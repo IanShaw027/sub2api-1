@@ -144,6 +144,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		zap.Bool("responses_shape", isResponsesShape),
 	}
 	if compatPromptCacheInjected {
+		recordOpenAICompatPromptCacheInjected()
 		logFields = append(logFields,
 			zap.Bool("compat_prompt_cache_key_injected", true),
 			zap.String("compat_prompt_cache_key_sha256", hashSensitiveValueForLog(promptCacheKey)),
@@ -154,8 +155,9 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	if account.Type == AccountTypeOAuth {
 		var reqBody map[string]any
 		if err := json.Unmarshal(responsesBody, &reqBody); err != nil {
-			return nil, fmt.Errorf("unmarshal for codex transform: %w", err)
+			return nil, fmt.Errorf("unmarshal for compat transform: %w", err)
 		}
+		applyEmbeddedDefaultInstructions(reqBody)
 		codexResult := applyCodexOAuthTransform(reqBody, false, false)
 		if codexResult.NormalizedModel != "" {
 			upstreamModel = codexResult.NormalizedModel
@@ -165,9 +167,23 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		} else if promptCacheKey != "" {
 			reqBody["prompt_cache_key"] = promptCacheKey
 		}
-		responsesBody, err = json.Marshal(reqBody)
+		responsesBody, err = marshalOpenAIResponsesRequestBodyOrdered(reqBody)
 		if err != nil {
-			return nil, fmt.Errorf("remarshal after codex transform: %w", err)
+			return nil, fmt.Errorf("remarshal after compat transform: %w", err)
+		}
+	} else if account.Type == AccountTypeAPIKey {
+		// For API key accounts (including OpenAI-compatible upstream gateways),
+		// propagate promptCacheKey without rewriting the entire body unless needed.
+		if trimmedKey := strings.TrimSpace(promptCacheKey); trimmedKey != "" {
+			existingPromptCacheKey := gjson.GetBytes(responsesBody, "prompt_cache_key")
+			if !existingPromptCacheKey.Exists() || existingPromptCacheKey.Type != gjson.String || strings.TrimSpace(existingPromptCacheKey.String()) == "" {
+				updated, setErr := sjson.SetBytes(responsesBody, "prompt_cache_key", trimmedKey)
+				if setErr != nil {
+					return nil, fmt.Errorf("inject prompt_cache_key for compat body: %w", setErr)
+				}
+				responsesBody = updated
+				recordOpenAICompatPromptCacheInjected()
+			}
 		}
 	}
 
@@ -178,13 +194,14 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	}
 
 	// 6. Build upstream request
-	upstreamReq, err := s.buildUpstreamRequest(ctx, c, account, responsesBody, token, true, promptCacheKey, false)
+	upstreamReq, err := s.buildUpstreamRequest(ctx, c, account, responsesBody, token, true, promptCacheKey, isOpenAICodexOfficialClientRequest(c))
 	if err != nil {
 		return nil, fmt.Errorf("build upstream request: %w", err)
 	}
 
-	if promptCacheKey != "" {
-		upstreamReq.Header.Set("session_id", generateSessionUUID(promptCacheKey))
+	if account.Type == AccountTypeAPIKey && promptCacheKey != "" {
+		apiKeyID := getAPIKeyIDFromContext(c)
+		upstreamReq.Header.Set("session_id", generateSessionUUID(isolateOpenAISessionID(apiKeyID, promptCacheKey)))
 	}
 
 	// 7. Send request
@@ -211,6 +228,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 
 	// 8. Handle error response with failover
 	if resp.StatusCode >= 400 {
+		recordOpenAICompatUpstreamStatus(upstreamModel, resp.StatusCode)
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))

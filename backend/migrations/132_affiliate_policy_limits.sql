@@ -1,0 +1,29 @@
+INSERT INTO settings (key, value, updated_at)
+VALUES
+    ('affiliate_enabled', 'false', NOW()),
+    ('affiliate_rebate_cap', '0', NOW()),
+    ('affiliate_rebate_invitee_limit', '0', NOW()),
+    ('affiliate_signup_bonus', '0', NOW()),
+    ('ticket_enabled', 'false', NOW())
+ON CONFLICT (key) DO NOTHING;
+
+ALTER TABLE user_affiliate_ledger
+    ADD COLUMN IF NOT EXISTS source_order_id BIGINT NULL REFERENCES payment_orders(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS base_amount DECIMAL(20,8) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS rebate_rate DECIMAL(10,4) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS invitee_slot_claimed BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_user_affiliate_ledger_source_user
+ON user_affiliate_ledger(user_id, source_user_id);
+
+CREATE INDEX IF NOT EXISTS idx_user_affiliate_ledger_order
+ON user_affiliate_ledger(source_order_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_affiliate_signup_bonus_once
+ON user_affiliate_ledger(user_id, action)
+WHERE action = 'signup_bonus';
+
+COMMENT ON COLUMN user_affiliate_ledger.source_order_id IS '触发邀请返利的支付订单ID';
+COMMENT ON COLUMN user_affiliate_ledger.base_amount IS '触发返利的用户消费金额';
+COMMENT ON COLUMN user_affiliate_ledger.rebate_rate IS '返利发生时使用的百分比';
+COMMENT ON COLUMN user_affiliate_ledger.invitee_slot_claimed IS '该流水是否占用被邀请消费人数名额';

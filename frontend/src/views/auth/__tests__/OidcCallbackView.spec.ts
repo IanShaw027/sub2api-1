@@ -488,6 +488,54 @@ describe('OidcCallbackView', () => {
     expect(replace).toHaveBeenCalledWith('/welcome')
   })
 
+  it('starts with an empty create-account email when the upstream provider did not return one', async () => {
+    exchangePendingOAuthCompletion.mockResolvedValue({
+      error: 'email_required',
+      redirect: '/welcome',
+      adoption_required: true
+    })
+    apiClientPost.mockResolvedValue({
+      data: {
+        access_token: 'new-access-token',
+        refresh_token: 'new-refresh-token',
+        expires_in: 3600,
+        token_type: 'Bearer'
+      }
+    })
+    setToken.mockResolvedValue({})
+
+    const wrapper = mount(OidcCallbackView, {
+      global: {
+        stubs: {
+          AuthLayout: { template: '<div><slot /></div>' },
+          Icon: true,
+          RouterLink: { template: '<a><slot /></a>' },
+          transition: false
+        }
+      }
+    })
+
+    await flushPromises()
+
+    const emailInput = wrapper.get('[data-testid="oidc-create-account-email"]')
+    expect((emailInput.element as HTMLInputElement).value).toBe('')
+
+    await emailInput.setValue('typed@example.com')
+    await wrapper.get('[data-testid="oidc-create-account-password"]').setValue('secret-123')
+    await wrapper.get('[data-testid="oidc-create-account-verify-code"]').setValue('246810')
+    await wrapper.get('[data-testid="oidc-create-account-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(apiClientPost).toHaveBeenCalledWith('/auth/oauth/pending/create-account', {
+      email: 'typed@example.com',
+      password: 'secret-123',
+      verify_code: '246810',
+      invitation_code: undefined,
+      adopt_display_name: false,
+      adopt_avatar: false
+    })
+  })
+
   it('switches to bind-login when create-account returns EMAIL_EXISTS', async () => {
     exchangePendingOAuthCompletion.mockResolvedValue({
       error: 'email_required',

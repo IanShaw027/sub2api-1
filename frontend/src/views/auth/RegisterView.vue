@@ -723,7 +723,7 @@ async function handleRegister(): Promise<void> {
     }
 
     // Otherwise, directly register
-    await authStore.register({
+    const registerResponse = await authStore.register({
       email: formData.email,
       password: formData.password,
       turnstile_token: turnstileEnabled.value ? turnstileToken.value : undefined,
@@ -733,7 +733,10 @@ async function handleRegister(): Promise<void> {
     })
 
     // Show success toast
-    appStore.showSuccess(t('auth.accountCreatedSuccess', { siteName: siteName.value }))
+    const successMessages = registerResponse.messages?.length
+      ? registerResponse.messages.join('\n')
+      : t('auth.accountCreatedSuccess', { siteName: siteName.value })
+    appStore.showSuccess(successMessages)
 
     // Redirect to dashboard
     await router.push('/dashboard')

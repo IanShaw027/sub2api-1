@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 
@@ -18,13 +19,14 @@ import (
 
 // AuthHandler handles authentication-related requests
 type AuthHandler struct {
-	cfg           *config.Config
-	authService   *service.AuthService
-	userService   *service.UserService
-	settingSvc    *service.SettingService
-	promoService  *service.PromoService
-	redeemService *service.RedeemService
-	totpService   *service.TotpService
+	cfg              *config.Config
+	authService      *service.AuthService
+	userService      *service.UserService
+	settingSvc       *service.SettingService
+	promoService     *service.PromoService
+	redeemService    *service.RedeemService
+	totpService      *service.TotpService
+	affiliateService *service.AffiliateService
 }
 
 // NewAuthHandler creates a new AuthHandler
@@ -38,6 +40,10 @@ func NewAuthHandler(cfg *config.Config, authService *service.AuthService, userSe
 		redeemService: redeemService,
 		totpService:   totpService,
 	}
+}
+
+func (h *AuthHandler) SetAffiliateService(affiliateService *service.AffiliateService) {
+	h.affiliateService = affiliateService
 }
 
 // RegisterRequest represents the registration request payload
@@ -77,6 +83,7 @@ type AuthResponse struct {
 	ExpiresIn    int       `json:"expires_in,omitempty"`    // 新增：Access Token有效期（秒）
 	TokenType    string    `json:"token_type"`
 	User         *dto.User `json:"user"`
+	Messages     []string  `json:"messages,omitempty"`
 }
 
 func ensureLoginUserActive(user *service.User) error {
@@ -91,7 +98,7 @@ func ensureLoginUserActive(user *service.User) error {
 
 // respondWithTokenPair 生成 Token 对并返回认证响应
 // 如果 Token 对生成失败，回退到只返回 Access Token（向后兼容）
-func (h *AuthHandler) respondWithTokenPair(c *gin.Context, user *service.User) {
+func (h *AuthHandler) respondWithTokenPair(c *gin.Context, user *service.User, messages ...string) {
 	if err := ensureLoginUserActive(user); err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -110,6 +117,7 @@ func (h *AuthHandler) respondWithTokenPair(c *gin.Context, user *service.User) {
 			AccessToken: token,
 			TokenType:   "Bearer",
 			User:        dto.UserFromService(user),
+			Messages:    compactMessages(messages),
 		})
 		return
 	}
@@ -119,7 +127,21 @@ func (h *AuthHandler) respondWithTokenPair(c *gin.Context, user *service.User) {
 		ExpiresIn:    tokenPair.ExpiresIn,
 		TokenType:    "Bearer",
 		User:         dto.UserFromService(user),
+		Messages:     compactMessages(messages),
 	})
+}
+
+func compactMessages(messages []string) []string {
+	out := make([]string, 0, len(messages))
+	for _, message := range messages {
+		if strings.TrimSpace(message) != "" {
+			out = append(out, message)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (h *AuthHandler) ensureBackendModeAllowsUser(ctx context.Context, user *service.User) error {
@@ -178,8 +200,19 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	messages := h.registrationSuccessMessages(user)
+	h.respondWithTokenPair(c, user, messages...)
+}
 
-	h.respondWithTokenPair(c, user)
+func (h *AuthHandler) registrationSuccessMessages(user *service.User) []string {
+	messages := make([]string, 0, 3)
+	if user != nil && user.Balance > 0 {
+		messages = append(messages, fmt.Sprintf("注册成功，当前账户余额 %.2f。", user.Balance))
+	}
+	if user != nil && len(user.RuntimeMessages) > 0 {
+		messages = append(messages, user.RuntimeMessages...)
+	}
+	return messages
 }
 
 // SendVerifyCode 发送邮箱验证码
@@ -408,6 +441,7 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	h.userService.TouchLastActiveForUser(c.Request.Context(), user)
 
 	identities, err := h.userService.GetProfileIdentitySummaries(c.Request.Context(), subject.UserID, user)
 	if err != nil {

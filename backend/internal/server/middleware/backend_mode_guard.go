@@ -76,3 +76,25 @@ func BackendModeAuthGuard(settingService *service.SettingService) gin.HandlerFun
 		c.Abort()
 	}
 }
+
+func TicketFeatureGuard(settingService *service.SettingService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if settingService == nil || settingService.IsTicketEnabled(c.Request.Context()) {
+			c.Next()
+			return
+		}
+		response.Forbidden(c, "Ticket module is disabled.")
+		c.Abort()
+	}
+}
+
+func AffiliateFeatureGuard(settingService *service.SettingService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if settingService == nil || settingService.IsAffiliateEnabled(c.Request.Context()) {
+			c.Next()
+			return
+		}
+		response.Forbidden(c, "Affiliate module is disabled.")
+		c.Abort()
+	}
+}

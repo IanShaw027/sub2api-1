@@ -33,16 +33,6 @@ vi.mock('vue-i18n', async (importOriginal) => {
         if (key === 'profile.memberSince') return 'Member Since'
         if (key === 'profile.administrator') return 'Administrator'
         if (key === 'profile.user') return 'User'
-        if (key === 'profile.authBindings.providers.email') return 'Email'
-        if (key === 'profile.authBindings.providers.linuxdo') return 'LinuxDo'
-        if (key === 'profile.authBindings.providers.wechat') return 'WeChat'
-        if (key === 'profile.authBindings.providers.oidc') return params?.providerName || 'OIDC'
-        if (key === 'profile.authBindings.source.avatar') {
-          return `Avatar synced from ${params?.providerName || 'provider'}`
-        }
-        if (key === 'profile.authBindings.source.username') {
-          return `Username synced from ${params?.providerName || 'provider'}`
-        }
         return key
       }
     })
@@ -89,29 +79,7 @@ describe('ProfileInfoCard', () => {
     expect(wrapper.get('[data-testid="profile-auth-bindings-panel"]').exists()).toBe(true)
   })
 
-  it('renders third-party source hints from profile sources', () => {
-    const wrapper = mount(ProfileInfoCard, {
-      props: {
-        user: createUser({
-          avatar_url: 'https://cdn.example.com/linuxdo.png',
-          profile_sources: {
-            avatar: { provider: 'linuxdo', source: 'linuxdo' },
-            username: { provider: 'linuxdo', source: 'linuxdo' }
-          }
-        })
-      },
-      global: {
-        stubs: {
-          Icon: true
-        }
-      }
-    })
-
-    expect(wrapper.text()).toContain('Avatar synced from LinuxDo')
-    expect(wrapper.text()).toContain('Username synced from LinuxDo')
-  })
-
-  it('uses the configured OIDC provider name in source hints', () => {
+  it('does not render profile source summaries anymore', () => {
     const wrapper = mount(ProfileInfoCard, {
       props: {
         user: createUser({
@@ -128,7 +96,8 @@ describe('ProfileInfoCard', () => {
       }
     })
 
-    expect(wrapper.text()).toContain('Username synced from ExampleID')
+    expect(wrapper.text()).not.toContain('Profile Sources')
+    expect(wrapper.find('[data-testid="profile-side-column"]').exists()).toBe(false)
   })
 
   it('does not display synthetic oauth-only emails as a real bound email', () => {
@@ -190,7 +159,7 @@ describe('ProfileInfoCard', () => {
     expect(wrapper.get('[data-testid="profile-overview-metric-member-since"]').text()).toContain('Member Since')
     expect(wrapper.find('[data-testid="profile-info-summary-grid"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="profile-main-column"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="profile-side-column"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="profile-side-column"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="profile-basics-panel"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="profile-auth-bindings-panel"]').exists()).toBe(true)
   })

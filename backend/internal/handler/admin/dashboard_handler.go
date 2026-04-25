@@ -189,7 +189,7 @@ func (h *DashboardHandler) GetRealtimeMetrics(c *gin.Context) {
 
 // GetUsageTrend handles getting usage trend data
 // GET /api/v1/admin/dashboard/trend
-// Query params: start_date, end_date (YYYY-MM-DD), granularity (day/hour), user_id, api_key_id, model, account_id, group_id, request_type, stream, billing_type
+// Query params: start_date, end_date (YYYY-MM-DD), granularity (day/hour), user_id, api_key_id, model, account_id, group_id, request_type, stream, billing_type, billing_mode
 func (h *DashboardHandler) GetUsageTrend(c *gin.Context) {
 	startTime, endTime := parseTimeRange(c)
 	granularity := c.DefaultQuery("granularity", "day")
@@ -200,6 +200,7 @@ func (h *DashboardHandler) GetUsageTrend(c *gin.Context) {
 	var requestType *int16
 	var stream *bool
 	var billingType *int8
+	billingMode := strings.TrimSpace(c.Query("billing_mode"))
 
 	if userIDStr := c.Query("user_id"); userIDStr != "" {
 		if id, err := strconv.ParseInt(userIDStr, 10, 64); err == nil {
@@ -250,7 +251,7 @@ func (h *DashboardHandler) GetUsageTrend(c *gin.Context) {
 		}
 	}
 
-	trend, hit, err := h.getUsageTrendCached(c.Request.Context(), startTime, endTime, granularity, userID, apiKeyID, accountID, groupID, model, requestType, stream, billingType)
+	trend, hit, err := h.getUsageTrendCached(c.Request.Context(), startTime, endTime, granularity, userID, apiKeyID, accountID, groupID, model, requestType, stream, billingType, billingMode)
 	if err != nil {
 		response.Error(c, 500, "Failed to get usage trend")
 		return
@@ -267,7 +268,7 @@ func (h *DashboardHandler) GetUsageTrend(c *gin.Context) {
 
 // GetModelStats handles getting model usage statistics
 // GET /api/v1/admin/dashboard/models
-// Query params: start_date, end_date (YYYY-MM-DD), user_id, api_key_id, account_id, group_id, request_type, stream, billing_type
+// Query params: start_date, end_date (YYYY-MM-DD), user_id, api_key_id, account_id, group_id, request_type, stream, billing_type, billing_mode
 func (h *DashboardHandler) GetModelStats(c *gin.Context) {
 	startTime, endTime := parseTimeRange(c)
 
@@ -277,6 +278,7 @@ func (h *DashboardHandler) GetModelStats(c *gin.Context) {
 	var requestType *int16
 	var stream *bool
 	var billingType *int8
+	billingMode := strings.TrimSpace(c.Query("billing_mode"))
 
 	if userIDStr := c.Query("user_id"); userIDStr != "" {
 		if id, err := strconv.ParseInt(userIDStr, 10, 64); err == nil {
@@ -331,7 +333,7 @@ func (h *DashboardHandler) GetModelStats(c *gin.Context) {
 		}
 	}
 
-	stats, hit, err := h.getModelStatsCached(c.Request.Context(), startTime, endTime, userID, apiKeyID, accountID, groupID, modelSource, requestType, stream, billingType)
+	stats, hit, err := h.getModelStatsCached(c.Request.Context(), startTime, endTime, userID, apiKeyID, accountID, groupID, modelSource, requestType, stream, billingType, billingMode)
 	if err != nil {
 		response.Error(c, 500, "Failed to get model statistics")
 		return
@@ -347,7 +349,7 @@ func (h *DashboardHandler) GetModelStats(c *gin.Context) {
 
 // GetGroupStats handles getting group usage statistics
 // GET /api/v1/admin/dashboard/groups
-// Query params: start_date, end_date (YYYY-MM-DD), user_id, api_key_id, account_id, group_id, request_type, stream, billing_type
+// Query params: start_date, end_date (YYYY-MM-DD), user_id, api_key_id, account_id, group_id, request_type, stream, billing_type, billing_mode
 func (h *DashboardHandler) GetGroupStats(c *gin.Context) {
 	startTime, endTime := parseTimeRange(c)
 
@@ -355,6 +357,7 @@ func (h *DashboardHandler) GetGroupStats(c *gin.Context) {
 	var requestType *int16
 	var stream *bool
 	var billingType *int8
+	billingMode := strings.TrimSpace(c.Query("billing_mode"))
 
 	if userIDStr := c.Query("user_id"); userIDStr != "" {
 		if id, err := strconv.ParseInt(userIDStr, 10, 64); err == nil {
@@ -402,7 +405,7 @@ func (h *DashboardHandler) GetGroupStats(c *gin.Context) {
 		}
 	}
 
-	stats, hit, err := h.getGroupStatsCached(c.Request.Context(), startTime, endTime, userID, apiKeyID, accountID, groupID, requestType, stream, billingType)
+	stats, hit, err := h.getGroupStatsCached(c.Request.Context(), startTime, endTime, userID, apiKeyID, accountID, groupID, requestType, stream, billingType, billingMode)
 	if err != nil {
 		response.Error(c, 500, "Failed to get group statistics")
 		return
@@ -616,7 +619,7 @@ func (h *DashboardHandler) GetBatchAPIKeysUsage(c *gin.Context) {
 
 // GetUserBreakdown handles getting per-user usage breakdown within a dimension.
 // GET /api/v1/admin/dashboard/user-breakdown
-// Query params: start_date, end_date, group_id, model, endpoint, endpoint_type, limit
+// Query params: start_date, end_date, group_id, model, endpoint, endpoint_type, limit, billing_type, billing_mode, exclude_admin
 func (h *DashboardHandler) GetUserBreakdown(c *gin.Context) {
 	startTime, endTime := parseTimeRange(c)
 
@@ -652,11 +655,14 @@ func (h *DashboardHandler) GetUserBreakdown(c *gin.Context) {
 			dim.AccountID = id
 		}
 	}
-	if v := c.Query("request_type"); v != "" {
-		if rt, err := strconv.ParseInt(v, 10, 16); err == nil {
-			rtVal := int16(rt)
-			dim.RequestType = &rtVal
+	if requestTypeStr := strings.TrimSpace(c.Query("request_type")); requestTypeStr != "" {
+		parsed, err := service.ParseUsageRequestType(requestTypeStr)
+		if err != nil {
+			response.BadRequest(c, err.Error())
+			return
 		}
+		rtVal := int16(parsed)
+		dim.RequestType = &rtVal
 	}
 	if v := c.Query("stream"); v != "" {
 		if s, err := strconv.ParseBool(v); err == nil {
@@ -669,6 +675,8 @@ func (h *DashboardHandler) GetUserBreakdown(c *gin.Context) {
 			dim.BillingType = &btVal
 		}
 	}
+	dim.BillingMode = strings.TrimSpace(c.Query("billing_mode"))
+	dim.ExcludeAdmin = parseBoolQueryWithDefault(c.Query("exclude_admin"), false)
 
 	limit := 50
 	if v := c.Query("limit"); v != "" {

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -90,6 +91,31 @@ func TestApplyCodexOAuthTransform_ToolContinuationNormalizesToolReferenceIDsOnly
 	second, ok := input[1].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "fc1", second["call_id"])
+}
+
+func TestApplyCodexOAuthTransform_ToolContinuationNormalizesBuiltInSearchCallAndOutputIDs(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.2",
+		"input": []any{
+			map[string]any{"type": "tool_search_call", "call_id": "call_search_1"},
+			map[string]any{"type": "tool_search_output", "call_id": "call_search_1", "output": "ok"},
+		},
+		"tool_choice": "auto",
+	}
+
+	applyCodexOAuthTransform(reqBody, false, false)
+
+	input, ok := reqBody["input"].([]any)
+	require.True(t, ok)
+	require.Len(t, input, 2)
+
+	searchCall, ok := input[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "fcsearch_1", searchCall["call_id"])
+
+	searchOutput, ok := input[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "fcsearch_1", searchOutput["call_id"])
 }
 
 func TestApplyCodexOAuthTransform_ToolSearchOutputPreservesCallID(t *testing.T) {
@@ -373,6 +399,54 @@ func TestApplyCodexOAuthTransform_CompactForcesNonStreaming(t *testing.T) {
 	_, hasStream := reqBody["stream"]
 	require.False(t, hasStream)
 	require.True(t, result.Modified)
+}
+
+func TestApplyCodexOAuthTransform_CompactAddsToolSearchForDeferredTools(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.5",
+		"tools": []any{map[string]any{"type": "function", "name": "bash", "defer_loading": true}},
+	}
+
+	result := applyCodexOAuthTransform(reqBody, true, true)
+
+	require.True(t, result.Modified)
+	tools, ok := reqBody["tools"].([]any)
+	require.True(t, ok)
+	require.Len(t, tools, 2)
+	toolSearch, ok := tools[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "tool_search", toolSearch["type"])
+}
+
+func TestApplyCodexOAuthTransform_CompactPreservesExistingToolSearch(t *testing.T) {
+	existing := map[string]any{"type": "tool_search", "mode": "existing"}
+	reqBody := map[string]any{
+		"model": "gpt-5.5",
+		"tools": []any{map[string]any{"type": "function", "name": "bash", "defer_loading": true}, existing},
+	}
+
+	applyCodexOAuthTransform(reqBody, true, true)
+
+	tools, ok := reqBody["tools"].([]any)
+	require.True(t, ok)
+	require.Len(t, tools, 2)
+	require.Equal(t, existing, tools[1])
+}
+
+func TestApplyCodexOAuthTransform_CompactAddsToolSearchForObjectDeferredTools(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.5",
+		"tools": map[string]any{"defer_loading": true},
+	}
+
+	result := applyCodexOAuthTransform(reqBody, true, true)
+
+	require.True(t, result.Modified)
+	tools, ok := reqBody["tools"].(map[string]any)
+	require.True(t, ok)
+	toolSearch, ok := tools["tool_search"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "tool_search", toolSearch["type"])
 }
 
 func TestApplyCodexOAuthTransform_NonContinuationDefaultsStoreFalseAndStripsIDs(t *testing.T) {
@@ -786,17 +860,17 @@ func TestNormalizeCodexModel_Gpt53(t *testing.T) {
 
 func TestNormalizeCodexModel_RemovedModelsFallbackToSupportedTargets(t *testing.T) {
 	cases := map[string]string{
-		"":                   "gpt-5.4",
-		"gpt-5":              "gpt-5.4",
-		"gpt-5-mini":         "gpt-5.4",
-		"gpt-5-nano":         "gpt-5.4",
-		"gpt-5.1":            "gpt-5.4",
-		"gpt-5.1-codex":      "gpt-5.3-codex",
-		"gpt-5.1-codex-max":  "gpt-5.3-codex",
-		"gpt-5.1-codex-mini": "gpt-5.3-codex",
-		"gpt-5.2-codex":      "gpt-5.2",
-		"codex-mini-latest":  "gpt-5.3-codex",
-		"gpt-5-codex":        "gpt-5.3-codex",
+		"":                   "gpt-5.1",
+		"gpt-5":              "gpt-5.1",
+		"gpt-5-mini":         "gpt-5.1",
+		"gpt-5-nano":         "gpt-5.1",
+		"gpt-5.1":            "gpt-5.1",
+		"gpt-5.1-codex":      "gpt-5.1-codex",
+		"gpt-5.1-codex-max":  "gpt-5.1-codex-max",
+		"gpt-5.1-codex-mini": "gpt-5.1-codex-mini",
+		"gpt-5.2-codex":      "gpt-5.2-codex",
+		"codex-mini-latest":  "gpt-5.1-codex-mini",
+		"gpt-5-codex":        "gpt-5.1-codex",
 	}
 
 	for input, expected := range cases {
@@ -819,7 +893,7 @@ func TestApplyCodexOAuthTransform_PreservesBareSparkModel(t *testing.T) {
 	require.False(t, store)
 }
 
-func TestApplyCodexOAuthTransform_TrimmedModelWithoutPolicyRewrite(t *testing.T) {
+func TestApplyCodexOAuthTransform_TrimmedSparkModelPreservesStableTarget(t *testing.T) {
 	reqBody := map[string]any{
 		"model": "  gpt-5.3-codex-spark  ",
 		"input": []any{},
@@ -863,6 +937,27 @@ func TestApplyCodexOAuthTransform_CodexCLI_SuppliesDefaultWhenEmpty(t *testing.T
 	require.True(t, ok)
 	require.NotEmpty(t, instructions)
 	require.True(t, result.Modified)
+}
+
+func TestApplyInstructions_DoesNotInjectLongDefaultInstructionsForNonCodexCLI(t *testing.T) {
+	reqBody := map[string]any{}
+
+	changed := applyInstructions(reqBody, false)
+
+	require.False(t, changed)
+	_, exists := reqBody["instructions"]
+	require.False(t, exists)
+}
+
+func TestApplyEmbeddedDefaultInstructions_OnlyFillsWhenInstructionsEmpty(t *testing.T) {
+	reqBody := map[string]any{}
+
+	changed := applyEmbeddedDefaultInstructions(reqBody)
+
+	require.True(t, changed)
+	instructions, ok := reqBody["instructions"].(string)
+	require.True(t, ok)
+	require.NotEmpty(t, strings.TrimSpace(instructions))
 }
 
 func TestApplyCodexOAuthTransform_NonCodexCLI_PreservesExistingInstructions(t *testing.T) {

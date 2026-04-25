@@ -390,7 +390,7 @@ func (s *PaymentService) applyAffiliateRebateForOrder(ctx context.Context, o *db
 		return
 	}
 
-	rebateAmount, err := s.affiliateService.AccrueInviteRebate(txCtx, o.UserID, o.Amount)
+	rebateAmount, err := s.affiliateService.AccrueInviteRebateForOrder(txCtx, o.UserID, o.ID, o.Amount)
 	if err != nil {
 		s.writeAuditLog(ctx, o.ID, "AFFILIATE_REBATE_FAILED", "system", map[string]any{
 			"error": err.Error(),

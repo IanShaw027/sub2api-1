@@ -259,6 +259,7 @@ describe('useAppStore', () => {
         site_logo: '/logo.png',
         version: '1.0.0',
         contact_info: 'test@test.com',
+        support_qr_codes: [{ image_url: 'https://cdn.example.com/support.png', note: '客服' }],
         api_base_url: 'https://api.test.com',
         doc_url: 'https://docs.test.com',
       }
@@ -310,6 +311,7 @@ describe('useAppStore', () => {
         site_subtitle: '',
         api_base_url: '',
         contact_info: '',
+        support_qr_codes: [],
         doc_url: '',
         home_content: '',
         hide_ccs_import_button: false,

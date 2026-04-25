@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -72,6 +73,48 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_MultipartEdit(t *testing.T
 	require.Equal(t, "2K", parsed.SizeTier)
 	require.Len(t, parsed.Uploads, 1)
 	require.Equal(t, OpenAIImagesCapabilityNative, parsed.RequiredCapability)
+}
+
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_MultipartEditSupportsMultipleImages(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("model", "gpt-image-2"))
+	require.NoError(t, writer.WriteField("prompt", "blend both references"))
+
+	partA, err := writer.CreateFormFile("image", "source-a.png")
+	require.NoError(t, err)
+	_, err = partA.Write([]byte("fake-image-a"))
+	require.NoError(t, err)
+
+	partB, err := writer.CreateFormFile("image", "source-b.png")
+	require.NoError(t, err)
+	_, err = partB.Write([]byte("fake-image-b"))
+	require.NoError(t, err)
+
+	partC, err := writer.CreateFormFile("image[2]", "source-c.png")
+	require.NoError(t, err)
+	_, err = partC.Write([]byte("fake-image-c"))
+	require.NoError(t, err)
+
+	require.NoError(t, writer.Close())
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/edits", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	svc := &OpenAIGatewayService{}
+	parsed, err := svc.ParseOpenAIImagesRequest(c, body.Bytes())
+	require.NoError(t, err)
+	require.NotNil(t, parsed)
+	require.True(t, parsed.IsEdits())
+	require.Len(t, parsed.Uploads, 3)
+	require.Equal(t, "source-a.png", parsed.Uploads[0].FileName)
+	require.Equal(t, "source-b.png", parsed.Uploads[1].FileName)
+	require.Equal(t, "source-c.png", parsed.Uploads[2].FileName)
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_MultipartEditWithMaskAndNativeOptions(t *testing.T) {
@@ -177,6 +220,52 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsNonImageModel(t *te
 	require.ErrorContains(t, err, `images endpoint requires an image model, got "gpt-5.4"`)
 }
 
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_Images2APIJSONEndpoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat"}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images2api/generations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	svc := &OpenAIGatewayService{}
+	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+	require.NotNil(t, parsed)
+	require.Equal(t, openAIImages2APIGenerationsEndpoint, parsed.Endpoint)
+	require.True(t, parsed.IsLegacyBridge())
+}
+
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_Images2APIMultipartEdit(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("model", "gpt-image-2"))
+	require.NoError(t, writer.WriteField("prompt", "replace background"))
+	part, err := writer.CreateFormFile("image", "source.png")
+	require.NoError(t, err)
+	_, err = part.Write([]byte("fake-image-bytes"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images2api/edits", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	svc := &OpenAIGatewayService{}
+	parsed, err := svc.ParseOpenAIImagesRequest(c, body.Bytes())
+	require.NoError(t, err)
+	require.NotNil(t, parsed)
+	require.Equal(t, openAIImages2APIEditsEndpoint, parsed.Endpoint)
+	require.True(t, parsed.IsLegacyBridge())
+	require.True(t, parsed.IsEdits())
+}
+
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_JSONEditURLs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{
@@ -211,6 +300,126 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_JSONEditURLs(t *testing.T)
 	require.Equal(t, OpenAIImagesCapabilityNative, parsed.RequiredCapability)
 }
 
+func TestRewriteOpenAIImagesMultipartModel_PreservesMultipleImageParts(t *testing.T) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("model", "gpt-image-2"))
+	require.NoError(t, writer.WriteField("prompt", "blend both references"))
+
+	partA, err := writer.CreateFormFile("image", "source-a.png")
+	require.NoError(t, err)
+	_, err = partA.Write([]byte("fake-image-a"))
+	require.NoError(t, err)
+
+	partB, err := writer.CreateFormFile("image", "source-b.png")
+	require.NoError(t, err)
+	_, err = partB.Write([]byte("fake-image-b"))
+	require.NoError(t, err)
+
+	require.NoError(t, writer.Close())
+
+	rewrittenBody, rewrittenType, err := rewriteOpenAIImagesMultipartModel(body.Bytes(), writer.FormDataContentType(), "mapped-image-model")
+	require.NoError(t, err)
+
+	reader := multipart.NewReader(bytes.NewReader(rewrittenBody), mustMultipartBoundary(t, rewrittenType))
+	modelValues := make([]string, 0, 1)
+	fileNames := make([]string, 0, 2)
+	fileBodies := make([]string, 0, 2)
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+
+		payload, readErr := io.ReadAll(part)
+		require.NoError(t, readErr)
+
+		if part.FileName() != "" {
+			fileNames = append(fileNames, part.FileName())
+			fileBodies = append(fileBodies, string(payload))
+			continue
+		}
+		if part.FormName() == "model" {
+			modelValues = append(modelValues, string(payload))
+		}
+	}
+
+	require.Equal(t, []string{"mapped-image-model"}, modelValues)
+	require.Equal(t, []string{"source-a.png", "source-b.png"}, fileNames)
+	require.Equal(t, []string{"fake-image-a", "fake-image-b"}, fileBodies)
+}
+
+func TestBuildOpenAIImageConversationRequest_MultiImageEditPreservesAllUploads(t *testing.T) {
+	parsed := &OpenAIImagesRequest{
+		Endpoint: openAIImages2APIEditsEndpoint,
+		Prompt:   "merge these references",
+		Uploads: []OpenAIImagesUpload{
+			{FieldName: "image", FileName: "source-a.png"},
+			{FieldName: "image", FileName: "source-b.png"},
+		},
+	}
+	uploads := []openAIUploadedImage{
+		{FileID: "file-a", FileName: "source-a.png", FileSize: 11, MimeType: "image/png"},
+		{FileID: "file-b", FileName: "source-b.png", FileSize: 12, MimeType: "image/png"},
+	}
+
+	payload := buildOpenAIImageConversationRequest(parsed, "parent-msg", uploads)
+	messages, ok := payload["messages"].([]any)
+	require.True(t, ok)
+	require.Len(t, messages, 1)
+
+	message, ok := messages[0].(map[string]any)
+	require.True(t, ok)
+	content, ok := message["content"].(map[string]any)
+	require.True(t, ok)
+	parts, ok := content["parts"].([]any)
+	require.True(t, ok)
+	require.Len(t, parts, 3)
+
+	firstPointer, ok := parts[0].(map[string]any)
+	require.True(t, ok)
+	secondPointer, ok := parts[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "file-service://file-a", firstPointer["asset_pointer"])
+	require.Equal(t, "file-service://file-b", secondPointer["asset_pointer"])
+	require.Equal(t, "merge these references", parts[2])
+}
+
+func TestShouldUseLegacyOpenAIImagesBridge(t *testing.T) {
+	tests := []struct {
+		name    string
+		account *Account
+		parsed  *OpenAIImagesRequest
+		want    bool
+	}{
+		{
+			name:    "oauth images2api uses legacy bridge",
+			account: &Account{Type: AccountTypeOAuth},
+			parsed:  &OpenAIImagesRequest{Endpoint: openAIImages2APIGenerationsEndpoint},
+			want:    true,
+		},
+		{
+			name:    "oauth images uses codex path",
+			account: &Account{Type: AccountTypeOAuth},
+			parsed:  &OpenAIImagesRequest{Endpoint: openAIImagesGenerationsEndpoint},
+			want:    false,
+		},
+		{
+			name:    "apikey images2api stays standard forwarding",
+			account: &Account{Type: AccountTypeAPIKey},
+			parsed:  &OpenAIImagesRequest{Endpoint: openAIImages2APIGenerationsEndpoint},
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, shouldUseLegacyOpenAIImagesBridge(tt.account, tt.parsed))
+		})
+	}
+}
+
 func TestCollectOpenAIImagePointers_RecognizesDirectAssets(t *testing.T) {
 	items := collectOpenAIImagePointers([]byte(`{
 		"revised_prompt": "cat astronaut",
@@ -238,6 +447,14 @@ func TestCollectOpenAIImagePointers_RecognizesDirectAssets(t *testing.T) {
 	require.True(t, sawBase64)
 	require.True(t, sawURL)
 	require.True(t, sawPointer)
+}
+
+func mustMultipartBoundary(t *testing.T, contentType string) string {
+	t.Helper()
+	_, params, err := mime.ParseMediaType(contentType)
+	require.NoError(t, err)
+	require.NotEmpty(t, params["boundary"])
+	return params["boundary"]
 }
 
 func TestResolveOpenAIImageBytes_PrefersInlineBase64(t *testing.T) {

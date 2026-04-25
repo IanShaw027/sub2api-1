@@ -25,8 +25,13 @@ func RegisterUserRoutes(
 			user.GET("/profile", h.User.GetProfile)
 			user.PUT("/password", h.User.ChangePassword)
 			user.PUT("", h.User.UpdateProfile)
-			user.GET("/aff", h.User.GetAffiliate)
-			user.POST("/aff/transfer", h.User.TransferAffiliateQuota)
+			aff := user.Group("/aff")
+			aff.Use(middleware.AffiliateFeatureGuard(settingService))
+			{
+				aff.GET("", h.User.GetAffiliate)
+				aff.GET("/invitees/:id/ledger", h.User.GetAffiliateInviteeLedger)
+				aff.POST("/transfer", h.User.TransferAffiliateQuota)
+			}
 			user.POST("/account-bindings/email/send-code", h.User.SendEmailBindingCode)
 			user.POST("/account-bindings/email", h.User.BindEmailIdentity)
 			user.DELETE("/account-bindings/:provider", h.User.UnbindIdentity)
@@ -96,11 +101,26 @@ func RegisterUserRoutes(
 			announcements.POST("/:id/read", h.Announcement.MarkRead)
 		}
 
+		tickets := authenticated.Group("/tickets")
+		tickets.Use(middleware.TicketFeatureGuard(settingService))
+		{
+			tickets.GET("", h.Ticket.List)
+			tickets.POST("", h.Ticket.Create)
+			tickets.GET("/:id", h.Ticket.GetByID)
+			tickets.PATCH("/:id", h.Ticket.Update)
+			tickets.POST("/:id/submit", h.Ticket.Resubmit)
+			tickets.POST("/:id/withdraw", h.Ticket.Withdraw)
+			tickets.POST("/:id/close", h.Ticket.Close)
+			tickets.GET("/:id/messages", h.Ticket.ListMessages)
+			tickets.POST("/:id/messages", h.Ticket.Reply)
+		}
+
 		// 卡密兑换
 		redeem := authenticated.Group("/redeem")
 		{
 			redeem.POST("", h.Redeem.Redeem)
 			redeem.GET("/history", h.Redeem.GetHistory)
+			redeem.GET("/history-page", h.Redeem.GetHistoryPaginated)
 		}
 
 		// 用户订阅

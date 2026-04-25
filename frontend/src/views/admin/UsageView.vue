@@ -22,7 +22,7 @@
             </div>
           </div>
         </div>
-        <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div v-if="!filters.exclude_admin" class="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <ModelDistributionChart
             v-model:source="modelDistributionSource"
             v-model:metric="modelDistributionMetric"
@@ -46,7 +46,7 @@
             :filters="breakdownFilters"
           />
         </div>
-        <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div class="grid grid-cols-1 gap-6" :class="{ 'lg:grid-cols-2': !filters.exclude_admin }">
           <EndpointDistributionChart
             v-model:source="endpointDistributionSource"
             v-model:metric="endpointDistributionMetric"
@@ -61,7 +61,7 @@
             :end-date="endDate"
             :filters="breakdownFilters"
           />
-          <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" />
+          <TokenUsageTrend v-if="!filters.exclude_admin" :trend-data="trendData" :loading="chartsLoading" />
         </div>
       </div>
       <UsageFilters v-model="filters" :start-date="startDate" :end-date="endDate" :exporting="exporting" @change="applyFilters" @refresh="refreshData" @reset="resetFilters" @cleanup="openCleanupDialog" @export="exportToExcel">
@@ -181,14 +181,38 @@ const cleanupDialogVisible = ref(false)
 const showBalanceHistoryModal = ref(false)
 const balanceHistoryUser = ref<AdminUser | null>(null)
 
+const buildSharedFilterParams = (): AdminUsageQueryParams => {
+  const requestType = filters.value.request_type
+  const legacyStream = requestType ? requestTypeToLegacyStream(requestType) : filters.value.stream
+
+  return {
+    user_id: filters.value.user_id,
+    model: filters.value.model,
+    api_key_id: filters.value.api_key_id,
+    account_id: filters.value.account_id,
+    group_id: filters.value.group_id,
+    request_type: requestType,
+    stream: legacyStream === null ? undefined : legacyStream,
+    billing_type: filters.value.billing_type,
+    billing_mode: filters.value.billing_mode,
+    exclude_admin: filters.value.exclude_admin,
+    start_date: filters.value.start_date || startDate.value,
+    end_date: filters.value.end_date || endDate.value
+  }
+}
+
 const breakdownFilters = computed(() => {
+  const sharedFilters = buildSharedFilterParams()
   const f: Record<string, any> = {}
-  if (filters.value.user_id) f.user_id = filters.value.user_id
-  if (filters.value.api_key_id) f.api_key_id = filters.value.api_key_id
-  if (filters.value.account_id) f.account_id = filters.value.account_id
-  if (filters.value.group_id) f.group_id = filters.value.group_id
-  if (filters.value.request_type != null) f.request_type = filters.value.request_type
-  if (filters.value.billing_type != null) f.billing_type = filters.value.billing_type
+  if (sharedFilters.user_id) f.user_id = sharedFilters.user_id
+  if (sharedFilters.model) f.model = sharedFilters.model
+  if (sharedFilters.api_key_id) f.api_key_id = sharedFilters.api_key_id
+  if (sharedFilters.account_id) f.account_id = sharedFilters.account_id
+  if (sharedFilters.group_id) f.group_id = sharedFilters.group_id
+  if (sharedFilters.request_type != null) f.request_type = sharedFilters.request_type
+  if (sharedFilters.billing_type != null) f.billing_type = sharedFilters.billing_type
+  if (sharedFilters.billing_mode) f.billing_mode = sharedFilters.billing_mode
+  if (sharedFilters.exclude_admin) f.exclude_admin = true
   return f
 })
 
@@ -226,7 +250,16 @@ const getGranularityForRange = (start: string, end: string): 'day' | 'hour' => {
 }
 const defaultRange = getLast24HoursRangeDates()
 const startDate = ref(defaultRange.start); const endDate = ref(defaultRange.end)
-const filters = ref<AdminUsageQueryParams>({ user_id: undefined, model: undefined, group_id: undefined, request_type: undefined, billing_type: null, start_date: startDate.value, end_date: endDate.value })
+const filters = ref<AdminUsageQueryParams>({
+  user_id: undefined,
+  model: undefined,
+  group_id: undefined,
+  request_type: undefined,
+  billing_type: null,
+  exclude_admin: false,
+  start_date: startDate.value,
+  end_date: endDate.value
+})
 const pagination = reactive({ page: 1, page_size: getPersistedPageSize(), total: 0 })
 const sortState = reactive({
   sort_by: 'created_at',
@@ -260,6 +293,7 @@ const applyRouteQueryFilters = () => {
   filters.value = {
     ...filters.value,
     user_id: queryUserId,
+    exclude_admin: filters.value.exclude_admin ?? false,
     start_date: startDate.value,
     end_date: endDate.value
   }
@@ -283,14 +317,12 @@ const buildUsageListParams = (
   pageSize: number,
   exactTotal: boolean
 ): AdminUsageQueryParams => {
-  const requestType = filters.value.request_type
-  const legacyStream = requestType ? requestTypeToLegacyStream(requestType) : filters.value.stream
   return {
     page,
     page_size: pageSize,
     exact_total: exactTotal,
-    ...filters.value,
-    stream: legacyStream === null ? undefined : legacyStream,
+    ...buildSharedFilterParams(),
+    billing_mode: filters.value.billing_mode,
     sort_by: sortState.sort_by,
     sort_order: sortState.sort_order
   }
@@ -310,9 +342,7 @@ const loadStats = async () => {
   const seq = ++statsReqSeq
   endpointStatsLoading.value = true
   try {
-    const requestType = filters.value.request_type
-    const legacyStream = requestType ? requestTypeToLegacyStream(requestType) : filters.value.stream
-    const s = await adminAPI.usage.getStats({ ...filters.value, stream: legacyStream === null ? undefined : legacyStream })
+    const s = await adminAPI.usage.getStats(buildSharedFilterParams())
     if (seq !== statsReqSeq) return
     usageStats.value = s
     inboundEndpointStats.value = s.endpoints || []
@@ -339,6 +369,10 @@ const resetModelStatsCache = () => {
 }
 
 const loadModelStats = async (source: ModelDistributionSource, force = false) => {
+  if (filters.value.exclude_admin) {
+    resetModelStatsCache()
+    return
+  }
   if (!force && loadedModelSources[source]) {
     return
   }
@@ -346,22 +380,10 @@ const loadModelStats = async (source: ModelDistributionSource, force = false) =>
   const seq = ++modelStatsReqSeq
   modelStatsLoading.value = true
   try {
-    const requestType = filters.value.request_type
-    const legacyStream = requestType ? requestTypeToLegacyStream(requestType) : filters.value.stream
-    const baseParams = {
-      start_date: filters.value.start_date || startDate.value,
-      end_date: filters.value.end_date || endDate.value,
-      user_id: filters.value.user_id,
-      model: filters.value.model,
-      api_key_id: filters.value.api_key_id,
-      account_id: filters.value.account_id,
-      group_id: filters.value.group_id,
-      request_type: requestType,
-      stream: legacyStream === null ? undefined : legacyStream,
-      billing_type: filters.value.billing_type,
-    }
-
-    const response = await adminAPI.dashboard.getModelStats({ ...baseParams, model_source: source })
+    const response = await adminAPI.dashboard.getModelStats({
+      ...buildSharedFilterParams(),
+      model_source: source
+    })
 
     if (seq !== modelStatsReqSeq) return
 
@@ -391,23 +413,18 @@ const loadModelStats = async (source: ModelDistributionSource, force = false) =>
 }
 
 const loadChartData = async () => {
+  if (filters.value.exclude_admin) {
+    trendData.value = []
+    groupStats.value = []
+    chartsLoading.value = false
+    return
+  }
   const seq = ++chartReqSeq
   chartsLoading.value = true
   try {
-    const requestType = filters.value.request_type
-    const legacyStream = requestType ? requestTypeToLegacyStream(requestType) : filters.value.stream
     const snapshot = await adminAPI.dashboard.getSnapshotV2({
-      start_date: filters.value.start_date || startDate.value,
-      end_date: filters.value.end_date || endDate.value,
+      ...buildSharedFilterParams(),
       granularity: granularity.value,
-      user_id: filters.value.user_id,
-      model: filters.value.model,
-      api_key_id: filters.value.api_key_id,
-      account_id: filters.value.account_id,
-      group_id: filters.value.group_id,
-      request_type: requestType,
-      stream: legacyStream === null ? undefined : legacyStream,
-      billing_type: filters.value.billing_type,
       include_stats: false,
       include_trend: true,
       include_model_stats: false,
@@ -438,7 +455,14 @@ const resetFilters = () => {
   const range = getLast24HoursRangeDates()
   startDate.value = range.start
   endDate.value = range.end
-  filters.value = { start_date: startDate.value, end_date: endDate.value, request_type: undefined, billing_type: null, billing_mode: undefined }
+  filters.value = {
+    start_date: startDate.value,
+    end_date: endDate.value,
+    request_type: undefined,
+    billing_type: null,
+    billing_mode: undefined,
+    exclude_admin: false
+  }
   granularity.value = getGranularityForRange(startDate.value, endDate.value)
   applyFilters()
 }
@@ -599,10 +623,12 @@ onMounted(() => {
   applyRouteQueryFilters()
   loadLogs()
   loadStats()
-  loadModelStats(modelDistributionSource.value, true)
-  window.setTimeout(() => {
-    void loadChartData()
-  }, 120)
+  if (!filters.value.exclude_admin) {
+    loadModelStats(modelDistributionSource.value, true)
+    window.setTimeout(() => {
+      void loadChartData()
+    }, 120)
+  }
   loadSavedColumns()
   document.addEventListener('click', handleColumnClickOutside)
 })

@@ -112,3 +112,39 @@ VALUES ($1, $2, 0, 0, NOW(), NOW())`, u.ID, affCode)
 		"SELECT balance::double precision FROM users WHERE id = $1", u.ID)
 	require.InDelta(t, 3.21, persistedBalance, 1e-9)
 }
+
+func TestAffiliateRepository_ApplySignupBonus_IsIdempotentAcrossMigratedSchema(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	repo := NewAffiliateRepository(client, integrationDB)
+
+	u := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-signup-bonus-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Balance:      6.25,
+		Concurrency:  5,
+	})
+
+	applied, balance, err := repo.ApplySignupBonus(txCtx, u.ID, 8.5)
+	require.NoError(t, err)
+	require.True(t, applied)
+	require.InDelta(t, 14.75, balance, 1e-9)
+
+	applied, balance, err = repo.ApplySignupBonus(txCtx, u.ID, 8.5)
+	require.NoError(t, err)
+	require.False(t, applied)
+	require.InDelta(t, 0.0, balance, 1e-9)
+
+	persistedBalance := querySingleFloat(t, txCtx, client,
+		"SELECT balance::double precision FROM users WHERE id = $1", u.ID)
+	require.InDelta(t, 14.75, persistedBalance, 1e-9)
+
+	ledgerCount := querySingleInt(t, txCtx, client,
+		"SELECT COUNT(*) FROM user_affiliate_ledger WHERE user_id = $1 AND action = 'signup_bonus'", u.ID)
+	require.Equal(t, 1, ledgerCount)
+}

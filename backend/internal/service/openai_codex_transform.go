@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 )
 
 var codexModelMap = map[string]string{
 	"gpt-5.5":                    "gpt-5.5",
 	"gpt-5.4":                    "gpt-5.4",
 	"gpt-5.4-mini":               "gpt-5.4-mini",
+	"gpt-5.4-nano":               "gpt-5.4-nano",
 	"gpt-5.4-none":               "gpt-5.4",
 	"gpt-5.4-low":                "gpt-5.4",
 	"gpt-5.4-medium":             "gpt-5.4",
@@ -32,12 +35,43 @@ var codexModelMap = map[string]string{
 	"gpt-5.3-codex-medium":       "gpt-5.3-codex",
 	"gpt-5.3-codex-high":         "gpt-5.3-codex",
 	"gpt-5.3-codex-xhigh":        "gpt-5.3-codex",
+	"gpt-5.1-codex":              "gpt-5.1-codex",
+	"gpt-5.1-codex-low":          "gpt-5.1-codex",
+	"gpt-5.1-codex-medium":       "gpt-5.1-codex",
+	"gpt-5.1-codex-high":         "gpt-5.1-codex",
+	"gpt-5.1-codex-max":          "gpt-5.1-codex-max",
+	"gpt-5.1-codex-max-low":      "gpt-5.1-codex-max",
+	"gpt-5.1-codex-max-medium":   "gpt-5.1-codex-max",
+	"gpt-5.1-codex-max-high":     "gpt-5.1-codex-max",
+	"gpt-5.1-codex-max-xhigh":    "gpt-5.1-codex-max",
 	"gpt-5.2":                    "gpt-5.2",
 	"gpt-5.2-none":               "gpt-5.2",
 	"gpt-5.2-low":                "gpt-5.2",
 	"gpt-5.2-medium":             "gpt-5.2",
 	"gpt-5.2-high":               "gpt-5.2",
 	"gpt-5.2-xhigh":              "gpt-5.2",
+	"gpt-5.2-codex":              "gpt-5.2-codex",
+	"gpt-5.2-codex-low":          "gpt-5.2-codex",
+	"gpt-5.2-codex-medium":       "gpt-5.2-codex",
+	"gpt-5.2-codex-high":         "gpt-5.2-codex",
+	"gpt-5.2-codex-xhigh":        "gpt-5.2-codex",
+	"gpt-5.1-codex-mini":         "gpt-5.1-codex-mini",
+	"gpt-5.1-codex-mini-medium":  "gpt-5.1-codex-mini",
+	"gpt-5.1-codex-mini-high":    "gpt-5.1-codex-mini",
+	"gpt-5.1":                    "gpt-5.1",
+	"gpt-5.1-none":               "gpt-5.1",
+	"gpt-5.1-low":                "gpt-5.1",
+	"gpt-5.1-medium":             "gpt-5.1",
+	"gpt-5.1-high":               "gpt-5.1",
+	"gpt-5.1-chat-latest":        "gpt-5.1",
+	"gpt-5-codex":                "gpt-5.1-codex",
+	"codex-mini-latest":          "gpt-5.1-codex-mini",
+	"gpt-5-codex-mini":           "gpt-5.1-codex-mini",
+	"gpt-5-codex-mini-medium":    "gpt-5.1-codex-mini",
+	"gpt-5-codex-mini-high":      "gpt-5.1-codex-mini",
+	"gpt-5":                      "gpt-5.1",
+	"gpt-5-mini":                 "gpt-5.1",
+	"gpt-5-nano":                 "gpt-5.1",
 }
 
 type codexTransformResult struct {
@@ -57,18 +91,25 @@ func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact
 	result := codexTransformResult{}
 	// 工具续链需求会影响存储策略与 input 过滤逻辑。
 	needsToolContinuation := NeedsToolContinuation(reqBody)
+	if needsToolContinuation {
+		recordOpenAICompatToolContinuationDetected()
+	}
 
 	model := ""
 	if v, ok := reqBody["model"].(string); ok {
 		model = v
 	}
-	normalizedModel := strings.TrimSpace(model)
-	if normalizedModel != "" {
-		if model != normalizedModel {
-			reqBody["model"] = normalizedModel
+	profile := ResolveCodexRequestProfile(model)
+	if profile.UpstreamModel != "" {
+		if model != profile.UpstreamModel {
+			reqBody["model"] = profile.UpstreamModel
 			result.Modified = true
 		}
-		result.NormalizedModel = normalizedModel
+		result.NormalizedModel = profile.UpstreamModel
+	}
+	normalizedModel := result.NormalizedModel
+	if normalizedModel == "" {
+		normalizedModel = model
 	}
 
 	if isCompact {
@@ -78,6 +119,9 @@ func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact
 		}
 		if _, ok := reqBody["stream"]; ok {
 			delete(reqBody, "stream")
+			result.Modified = true
+		}
+		if ensureCompactDeferredToolSearchInMap(reqBody) {
 			result.Modified = true
 		}
 	} else {
@@ -94,11 +138,9 @@ func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact
 	}
 
 	// Strip parameters unsupported by codex models via the Responses API.
-	for _, key := range []string{
+	unsupportedKeys := []string{
 		"max_output_tokens",
 		"max_completion_tokens",
-		"temperature",
-		"top_p",
 		"frequency_penalty",
 		"presence_penalty",
 		// prompt_cache_retention is a newer Responses API parameter (cache TTL).
@@ -109,9 +151,17 @@ func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact
 		// it earlier too, but we keep this line so other OAuth callers are
 		// equally protected.
 		"prompt_cache_retention",
-	} {
+	}
+	if !profile.SupportsTemperature {
+		unsupportedKeys = append(unsupportedKeys, "temperature")
+	}
+	if !profile.SupportsTopP {
+		unsupportedKeys = append(unsupportedKeys, "top_p")
+	}
+	for _, key := range unsupportedKeys {
 		if _, ok := reqBody[key]; ok {
 			delete(reqBody, key)
+			recordOpenAICompatStrippedField(key)
 			result.Modified = true
 		}
 	}
@@ -207,6 +257,48 @@ func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact
 	}
 
 	return result
+}
+
+func ensureCompactDeferredToolSearchInMap(reqBody map[string]any) bool {
+	rawTools, ok := reqBody["tools"]
+	if !ok || rawTools == nil {
+		return false
+	}
+
+	switch tools := rawTools.(type) {
+	case []any:
+		hasDeferred := false
+		hasToolSearch := false
+		for _, rawTool := range tools {
+			tool, ok := rawTool.(map[string]any)
+			if !ok {
+				continue
+			}
+			if v, _ := tool["defer_loading"].(bool); v {
+				hasDeferred = true
+			}
+			if strings.TrimSpace(firstNonEmptyString(tool["type"])) == "tool_search" {
+				hasToolSearch = true
+			}
+		}
+		if !hasDeferred || hasToolSearch {
+			return false
+		}
+		reqBody["tools"] = append(tools, map[string]any{"type": "tool_search"})
+		return true
+	case map[string]any:
+		deferLoading, _ := tools["defer_loading"].(bool)
+		if !deferLoading {
+			return false
+		}
+		if _, ok := tools["tool_search"]; ok {
+			return false
+		}
+		tools["tool_search"] = map[string]any{"type": "tool_search"}
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeCodexToolChoice(reqBody map[string]any) bool {
@@ -389,7 +481,7 @@ func stringifyCodexContentText(value any) string {
 func normalizeCodexModel(model string) string {
 	model = strings.TrimSpace(model)
 	if model == "" {
-		return "gpt-5.4"
+		return "gpt-5.1"
 	}
 	if isOpenAIImageGenerationModel(model) {
 		return model
@@ -413,8 +505,14 @@ func normalizeCodexModel(model string) string {
 	if strings.Contains(normalized, "gpt-5.4-mini") || strings.Contains(normalized, "gpt 5.4 mini") {
 		return "gpt-5.4-mini"
 	}
+	if strings.Contains(normalized, "gpt-5.4-nano") || strings.Contains(normalized, "gpt 5.4 nano") {
+		return "gpt-5.4-nano"
+	}
 	if strings.Contains(normalized, "gpt-5.4") || strings.Contains(normalized, "gpt 5.4") {
 		return "gpt-5.4"
+	}
+	if strings.Contains(normalized, "gpt-5.2-codex") || strings.Contains(normalized, "gpt 5.2 codex") {
+		return "gpt-5.2-codex"
 	}
 	if strings.Contains(normalized, "gpt-5.2") || strings.Contains(normalized, "gpt 5.2") {
 		return "gpt-5.2"
@@ -428,14 +526,31 @@ func normalizeCodexModel(model string) string {
 	if strings.Contains(normalized, "gpt-5.3") || strings.Contains(normalized, "gpt 5.3") {
 		return "gpt-5.3-codex"
 	}
+	if strings.Contains(normalized, "gpt-5.1-codex-max") || strings.Contains(normalized, "gpt 5.1 codex max") {
+		return "gpt-5.1-codex-max"
+	}
+	if strings.Contains(normalized, "gpt-5.1-codex-mini") || strings.Contains(normalized, "gpt 5.1 codex mini") {
+		return "gpt-5.1-codex-mini"
+	}
+	if strings.Contains(normalized, "codex-mini-latest") ||
+		strings.Contains(normalized, "gpt-5-codex-mini") ||
+		strings.Contains(normalized, "gpt 5 codex mini") {
+		return "gpt-5.1-codex-mini"
+	}
+	if strings.Contains(normalized, "gpt-5.1-codex") || strings.Contains(normalized, "gpt 5.1 codex") {
+		return "gpt-5.1-codex"
+	}
+	if strings.Contains(normalized, "gpt-5.1") || strings.Contains(normalized, "gpt 5.1") {
+		return "gpt-5.1"
+	}
 	if strings.Contains(normalized, "codex") {
-		return "gpt-5.3-codex"
+		return "gpt-5.1-codex"
 	}
 	if strings.Contains(normalized, "gpt-5") || strings.Contains(normalized, "gpt 5") {
-		return "gpt-5.4"
+		return "gpt-5.1"
 	}
 
-	return "gpt-5.4"
+	return "gpt-5.1"
 }
 
 func isCodexSparkModel(model string) bool {
@@ -817,10 +932,21 @@ func extractSystemMessagesFromInput(reqBody map[string]any) bool {
 
 // applyInstructions 处理 instructions 字段：仅在 instructions 为空时填充默认值。
 func applyInstructions(reqBody map[string]any, isCodexCLI bool) bool {
+	if !isCodexCLI {
+		return false
+	}
+	return applyEmbeddedDefaultInstructions(reqBody)
+}
+
+func applyEmbeddedDefaultInstructions(reqBody map[string]any) bool {
 	if !isInstructionsEmpty(reqBody) {
 		return false
 	}
-	reqBody["instructions"] = "You are a helpful coding assistant."
+	instructions := strings.TrimSpace(openai.DefaultInstructions)
+	if instructions == "" {
+		instructions = "You are a helpful coding assistant."
+	}
+	reqBody["instructions"] = instructions
 	return true
 }
 

@@ -59,6 +59,7 @@ type DashboardStats struct {
 	TotalCost                float64 `json:"total_cost"`         // 累计标准计费
 	TotalActualCost          float64 `json:"total_actual_cost"`  // 累计实际扣除
 	TotalAccountCost         float64 `json:"total_account_cost"` // 累计账号成本
+	TotalAverageRequestPrice float64 `json:"total_average_request_price"`
 
 	// 今日 Token 使用统计
 	TodayRequests            int64   `json:"today_requests"`
@@ -70,6 +71,7 @@ type DashboardStats struct {
 	TodayCost                float64 `json:"today_cost"`         // 今日标准计费
 	TodayActualCost          float64 `json:"today_actual_cost"`  // 今日实际扣除
 	TodayAccountCost         float64 `json:"today_account_cost"` // 今日账号成本
+	TodayAverageRequestPrice float64 `json:"today_average_request_price"`
 
 	// 系统运行统计
 	AverageDurationMs float64 `json:"average_duration_ms"` // 平均响应时间
@@ -181,12 +183,14 @@ type UserBreakdownDimension struct {
 	Endpoint     string // filter by endpoint value (non-empty to enable)
 	EndpointType string // "inbound", "upstream", or "path"
 	// Additional filter conditions
-	UserID      int64  // filter by user_id (>0 to enable)
-	APIKeyID    int64  // filter by api_key_id (>0 to enable)
-	AccountID   int64  // filter by account_id (>0 to enable)
-	RequestType *int16 // filter by request_type (non-nil to enable)
-	Stream      *bool  // filter by stream flag (non-nil to enable)
-	BillingType *int8  // filter by billing_type (non-nil to enable)
+	UserID       int64  // filter by user_id (>0 to enable)
+	APIKeyID     int64  // filter by api_key_id (>0 to enable)
+	AccountID    int64  // filter by account_id (>0 to enable)
+	RequestType  *int16 // filter by request_type (non-nil to enable)
+	Stream       *bool  // filter by stream flag (non-nil to enable)
+	BillingType  *int8  // filter by billing_type (non-nil to enable)
+	BillingMode  string // filter by billing_mode (non-empty to enable)
+	ExcludeAdmin bool   // exclude admin users when true
 }
 
 // APIKeyUsageTrendPoint represents API key usage trend data point
@@ -213,6 +217,7 @@ type UserDashboardStats struct {
 	TotalTokens              int64   `json:"total_tokens"`
 	TotalCost                float64 `json:"total_cost"`        // 累计标准计费
 	TotalActualCost          float64 `json:"total_actual_cost"` // 累计实际扣除
+	TotalAverageRequestPrice float64 `json:"total_average_request_price"`
 
 	// 今日 Token 使用统计
 	TodayRequests            int64   `json:"today_requests"`
@@ -223,6 +228,7 @@ type UserDashboardStats struct {
 	TodayTokens              int64   `json:"today_tokens"`
 	TodayCost                float64 `json:"today_cost"`        // 今日标准计费
 	TodayActualCost          float64 `json:"today_actual_cost"` // 今日实际扣除
+	TodayAverageRequestPrice float64 `json:"today_average_request_price"`
 
 	// 性能统计
 	AverageDurationMs float64 `json:"average_duration_ms"`
@@ -234,17 +240,18 @@ type UserDashboardStats struct {
 
 // UsageLogFilters represents filters for usage log queries
 type UsageLogFilters struct {
-	UserID      int64
-	APIKeyID    int64
-	AccountID   int64
-	GroupID     int64
-	Model       string
-	RequestType *int16
-	Stream      *bool
-	BillingType *int8
-	BillingMode string
-	StartTime   *time.Time
-	EndTime     *time.Time
+	UserID       int64
+	APIKeyID     int64
+	AccountID    int64
+	GroupID      int64
+	Model        string
+	RequestType  *int16
+	Stream       *bool
+	BillingType  *int8
+	BillingMode  string
+	ExcludeAdmin bool
+	StartTime    *time.Time
+	EndTime      *time.Time
 	// ExactTotal requests exact COUNT(*) for pagination. Default false for fast large-table paging.
 	ExactTotal bool
 }

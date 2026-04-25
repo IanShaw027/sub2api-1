@@ -3,12 +3,23 @@
     <div class="space-y-6">
       <div v-if="loading" class="flex items-center justify-center py-12"><LoadingSpinner /></div>
       <template v-else-if="stats">
-        <UserDashboardStats :stats="stats" :balance="user?.balance || 0" :is-simple="authStore.isSimpleMode" />
+        <UserDashboardStats
+          :stats="stats"
+          :balance="user?.balance || 0"
+          :is-simple="authStore.isSimpleMode"
+          @balance-history="showBalanceHistory = true"
+        />
         <UserDashboardCharts v-model:startDate="startDate" v-model:endDate="endDate" v-model:granularity="granularity" :loading="loadingCharts" :trend="trendData" :models="modelStats" @dateRangeChange="loadCharts" @granularityChange="loadCharts" @refresh="refreshAll" />
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div class="lg:col-span-2"><UserDashboardRecentUsage :data="recentUsage" :loading="loadingUsage" /></div>
           <div class="lg:col-span-1"><UserDashboardQuickActions /></div>
         </div>
+        <UserBalanceHistoryModal
+          :show="showBalanceHistory"
+          :email="user?.email"
+          :balance="user?.balance || 0"
+          @close="showBalanceHistory = false"
+        />
       </template>
     </div>
   </AppLayout>
@@ -19,11 +30,13 @@ import { ref, computed, onMounted } from 'vue'; import { useAuthStore } from '@/
 import AppLayout from '@/components/layout/AppLayout.vue'; import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import UserDashboardStats from '@/components/user/dashboard/UserDashboardStats.vue'; import UserDashboardCharts from '@/components/user/dashboard/UserDashboardCharts.vue'
 import UserDashboardRecentUsage from '@/components/user/dashboard/UserDashboardRecentUsage.vue'; import UserDashboardQuickActions from '@/components/user/dashboard/UserDashboardQuickActions.vue'
+import UserBalanceHistoryModal from '@/components/user/UserBalanceHistoryModal.vue'
 import type { UsageLog, TrendDataPoint, ModelStat } from '@/types'
 
 const authStore = useAuthStore(); const user = computed(() => authStore.user)
 const stats = ref<UserStatsType | null>(null); const loading = ref(false); const loadingUsage = ref(false); const loadingCharts = ref(false)
 const trendData = ref<TrendDataPoint[]>([]); const modelStats = ref<ModelStat[]>([]); const recentUsage = ref<UsageLog[]>([])
+const showBalanceHistory = ref(false)
 
 const formatLD = (d: Date) => d.toISOString().split('T')[0]
 const startDate = ref(formatLD(new Date(Date.now() - 6 * 86400000))); const endDate = ref(formatLD(new Date())); const granularity = ref('day')

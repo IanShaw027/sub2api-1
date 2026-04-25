@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -409,6 +410,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyPromoCodeEnabled,
 		SettingKeyPasswordResetEnabled,
 		SettingKeyInvitationCodeEnabled,
+		SettingKeyAffiliateEnabled,
 		SettingKeyTotpEnabled,
 		SettingKeyTurnstileEnabled,
 		SettingKeyTurnstileSiteKey,
@@ -417,6 +419,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeySiteSubtitle,
 		SettingKeyAPIBaseURL,
 		SettingKeyContactInfo,
+		SettingKeySupportQRCodes,
 		SettingKeyDocURL,
 		SettingKeyHomeContent,
 		SettingKeyHideCcsImportButton,
@@ -445,6 +448,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyWeChatConnectFrontendRedirectURL,
 		SettingKeyBackendModeEnabled,
 		SettingPaymentEnabled,
+		SettingKeyTicketEnabled,
 		SettingKeyOIDCConnectEnabled,
 		SettingKeyOIDCConnectProviderName,
 		SettingKeyBalanceLowNotifyEnabled,
@@ -514,6 +518,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SiteSubtitle:                     s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
 		APIBaseURL:                       settings[SettingKeyAPIBaseURL],
 		ContactInfo:                      settings[SettingKeyContactInfo],
+		SupportQRCodes:                   settings[SettingKeySupportQRCodes],
 		DocURL:                           settings[SettingKeyDocURL],
 		HomeContent:                      settings[SettingKeyHomeContent],
 		HideCcsImportButton:              settings[SettingKeyHideCcsImportButton] == "true",
@@ -530,6 +535,8 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		WeChatOAuthMobileEnabled:         weChatMobileEnabled,
 		BackendModeEnabled:               settings[SettingKeyBackendModeEnabled] == "true",
 		PaymentEnabled:                   settings[SettingPaymentEnabled] == "true",
+		AffiliateEnabled:                 settings[SettingKeyAffiliateEnabled] == "true",
+		TicketEnabled:                    settings[SettingKeyTicketEnabled] == "true",
 		OIDCOAuthEnabled:                 oidcEnabled,
 		OIDCOAuthProviderName:            oidcProviderName,
 		BalanceLowNotifyEnabled:          settings[SettingKeyBalanceLowNotifyEnabled] == "true",
@@ -657,6 +664,7 @@ type PublicSettingsInjectionPayload struct {
 	SiteSubtitle                     string          `json:"site_subtitle"`
 	APIBaseURL                       string          `json:"api_base_url"`
 	ContactInfo                      string          `json:"contact_info"`
+	SupportQRCodes                   json.RawMessage `json:"support_qr_codes"`
 	DocURL                           string          `json:"doc_url"`
 	HomeContent                      string          `json:"home_content"`
 	HideCcsImportButton              bool            `json:"hide_ccs_import_button"`
@@ -675,6 +683,8 @@ type PublicSettingsInjectionPayload struct {
 	OIDCOAuthProviderName            string          `json:"oidc_oauth_provider_name"`
 	BackendModeEnabled               bool            `json:"backend_mode_enabled"`
 	PaymentEnabled                   bool            `json:"payment_enabled"`
+	AffiliateEnabled                 bool            `json:"affiliate_enabled"`
+	TicketEnabled                    bool            `json:"ticket_enabled"`
 	Version                          string          `json:"version"`
 	BalanceLowNotifyEnabled          bool            `json:"balance_low_notify_enabled"`
 	AccountQuotaNotifyEnabled        bool            `json:"account_quota_notify_enabled"`
@@ -712,6 +722,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		SiteSubtitle:                     settings.SiteSubtitle,
 		APIBaseURL:                       settings.APIBaseURL,
 		ContactInfo:                      settings.ContactInfo,
+		SupportQRCodes:                   safeRawJSONArray(settings.SupportQRCodes),
 		DocURL:                           settings.DocURL,
 		HomeContent:                      settings.HomeContent,
 		HideCcsImportButton:              settings.HideCcsImportButton,
@@ -730,6 +741,8 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		OIDCOAuthProviderName:            settings.OIDCOAuthProviderName,
 		BackendModeEnabled:               settings.BackendModeEnabled,
 		PaymentEnabled:                   settings.PaymentEnabled,
+		AffiliateEnabled:                 settings.AffiliateEnabled,
+		TicketEnabled:                    settings.TicketEnabled,
 		Version:                          s.version,
 		BalanceLowNotifyEnabled:          settings.BalanceLowNotifyEnabled,
 		AccountQuotaNotifyEnabled:        settings.AccountQuotaNotifyEnabled,
@@ -846,6 +859,144 @@ func safeRawJSONArray(raw string) json.RawMessage {
 		return json.RawMessage(raw)
 	}
 	return json.RawMessage("[]")
+}
+
+func safeJSONString(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "[]"
+	}
+	if json.Valid([]byte(raw)) {
+		return raw
+	}
+	return "[]"
+}
+
+type AdminTicketReplyTemplate struct {
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	Content string `json:"content"`
+}
+
+func newAdminTicketReplyTemplateID() (string, error) {
+	var buf [8]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return "", fmt.Errorf("generate template id: %w", err)
+	}
+	return hex.EncodeToString(buf[:]), nil
+}
+
+func normalizeAdminTicketReplyTemplates(templates []AdminTicketReplyTemplate) ([]AdminTicketReplyTemplate, error) {
+	if len(templates) == 0 {
+		return []AdminTicketReplyTemplate{}, nil
+	}
+	if len(templates) > 100 {
+		return nil, infraerrors.BadRequest("INVALID_TICKET_REPLY_TEMPLATES", "too many ticket reply templates")
+	}
+
+	normalized := make([]AdminTicketReplyTemplate, 0, len(templates))
+	seenIDs := make(map[string]struct{}, len(templates))
+	for _, tpl := range templates {
+		title := strings.TrimSpace(tpl.Title)
+		content := strings.TrimSpace(tpl.Content)
+		if title == "" || content == "" {
+			return nil, infraerrors.BadRequest("INVALID_TICKET_REPLY_TEMPLATES", "template title and content are required")
+		}
+		if len([]rune(title)) > 80 {
+			return nil, infraerrors.BadRequest("INVALID_TICKET_REPLY_TEMPLATES", "template title is too long")
+		}
+		if len([]rune(content)) > 4000 {
+			return nil, infraerrors.BadRequest("INVALID_TICKET_REPLY_TEMPLATES", "template content is too long")
+		}
+
+		id := strings.TrimSpace(tpl.ID)
+		if id == "" {
+			var err error
+			id, err = newAdminTicketReplyTemplateID()
+			if err != nil {
+				return nil, err
+			}
+		}
+		if _, ok := seenIDs[id]; ok {
+			return nil, infraerrors.BadRequest("INVALID_TICKET_REPLY_TEMPLATES", "duplicate template id")
+		}
+		seenIDs[id] = struct{}{}
+		normalized = append(normalized, AdminTicketReplyTemplate{
+			ID:      id,
+			Title:   title,
+			Content: content,
+		})
+	}
+	return normalized, nil
+}
+
+func normalizeStoredAdminTicketReplyTemplates(templates []AdminTicketReplyTemplate) []AdminTicketReplyTemplate {
+	if len(templates) == 0 {
+		return []AdminTicketReplyTemplate{}
+	}
+
+	normalized := make([]AdminTicketReplyTemplate, 0, len(templates))
+	seenIDs := make(map[string]struct{}, len(templates))
+	for i, tpl := range templates {
+		id := stableStoredAdminTicketReplyTemplateID(tpl, i, seenIDs)
+		seenIDs[id] = struct{}{}
+		normalized = append(normalized, AdminTicketReplyTemplate{
+			ID:      id,
+			Title:   strings.TrimSpace(tpl.Title),
+			Content: strings.TrimSpace(tpl.Content),
+		})
+	}
+	return normalized
+}
+
+func stableStoredAdminTicketReplyTemplateID(tpl AdminTicketReplyTemplate, index int, seenIDs map[string]struct{}) string {
+	if id := strings.TrimSpace(tpl.ID); id != "" {
+		if _, exists := seenIDs[id]; !exists {
+			return id
+		}
+	}
+
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%d\x00%s\x00%s\x00%s", index, strings.TrimSpace(tpl.ID), strings.TrimSpace(tpl.Title), strings.TrimSpace(tpl.Content))))
+	base := hex.EncodeToString(sum[:8])
+	candidate := base
+	for suffix := 1; ; suffix++ {
+		if _, exists := seenIDs[candidate]; !exists {
+			return candidate
+		}
+		candidate = fmt.Sprintf("%s_%d", base, suffix)
+	}
+}
+
+func (s *SettingService) GetAdminTicketReplyTemplates(ctx context.Context) ([]AdminTicketReplyTemplate, error) {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyAdminTicketReplyTemplates)
+	if err != nil {
+		if errors.Is(err, ErrSettingNotFound) {
+			return []AdminTicketReplyTemplate{}, nil
+		}
+		return nil, err
+	}
+	raw := strings.TrimSpace(value)
+	if raw == "" {
+		return []AdminTicketReplyTemplate{}, nil
+	}
+
+	var templates []AdminTicketReplyTemplate
+	if err := json.Unmarshal([]byte(raw), &templates); err != nil {
+		return nil, infraerrors.InternalServer("INVALID_TICKET_REPLY_TEMPLATES", "stored ticket reply templates are invalid")
+	}
+	return normalizeStoredAdminTicketReplyTemplates(templates), nil
+}
+
+func (s *SettingService) SetAdminTicketReplyTemplates(ctx context.Context, templates []AdminTicketReplyTemplate) error {
+	normalized, err := normalizeAdminTicketReplyTemplates(templates)
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(normalized)
+	if err != nil {
+		return fmt.Errorf("marshal ticket reply templates: %w", err)
+	}
+	return s.settingRepo.Set(ctx, SettingKeyAdminTicketReplyTemplates, string(data))
 }
 
 // GetFrameSrcOrigins returns deduplicated http(s) origins from home_content URL,
@@ -1147,6 +1298,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeySiteSubtitle] = settings.SiteSubtitle
 	updates[SettingKeyAPIBaseURL] = settings.APIBaseURL
 	updates[SettingKeyContactInfo] = settings.ContactInfo
+	updates[SettingKeySupportQRCodes] = safeJSONString(settings.SupportQRCodes)
 	updates[SettingKeyDocURL] = settings.DocURL
 	updates[SettingKeyHomeContent] = settings.HomeContent
 	updates[SettingKeyHideCcsImportButton] = strconv.FormatBool(settings.HideCcsImportButton)
@@ -1168,8 +1320,12 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	// 默认配置
 	updates[SettingKeyDefaultConcurrency] = strconv.Itoa(settings.DefaultConcurrency)
 	updates[SettingKeyDefaultBalance] = strconv.FormatFloat(settings.DefaultBalance, 'f', 8, 64)
+	updates[SettingKeyAffiliateEnabled] = strconv.FormatBool(settings.AffiliateEnabled)
 	settings.AffiliateRebateRate = clampAffiliateRebateRate(settings.AffiliateRebateRate)
 	updates[SettingKeyAffiliateRebateRate] = strconv.FormatFloat(settings.AffiliateRebateRate, 'f', 8, 64)
+	updates[SettingKeyAffiliateRebateCap] = strconv.FormatFloat(clampNonNegativeFloat(settings.AffiliateRebateCap), 'f', 8, 64)
+	updates[SettingKeyAffiliateRebateInviteeLimit] = strconv.Itoa(clampNonNegativeInt(settings.AffiliateRebateInviteeLimit))
+	updates[SettingKeyAffiliateSignupBonus] = strconv.FormatFloat(clampNonNegativeFloat(settings.AffiliateSignupBonus), 'f', 8, 64)
 	updates[SettingKeyDefaultUserRPMLimit] = strconv.Itoa(settings.DefaultUserRPMLimit)
 	defaultSubsJSON, err := json.Marshal(settings.DefaultSubscriptions)
 	if err != nil {
@@ -1204,6 +1360,9 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 
 	// Available channels feature switch
 	updates[SettingKeyAvailableChannelsEnabled] = strconv.FormatBool(settings.AvailableChannelsEnabled)
+
+	// Ticket feature switch
+	updates[SettingKeyTicketEnabled] = strconv.FormatBool(settings.TicketEnabled)
 
 	// Claude Code version check
 	updates[SettingKeyMinClaudeCodeVersion] = settings.MinClaudeCodeVersion
@@ -1503,6 +1662,22 @@ func (s *SettingService) IsTotpEnabled(ctx context.Context) bool {
 	return value == "true"
 }
 
+func (s *SettingService) IsTicketEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyTicketEnabled)
+	if err != nil {
+		return false
+	}
+	return value == "true"
+}
+
+func (s *SettingService) IsAffiliateEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyAffiliateEnabled)
+	if err != nil {
+		return false
+	}
+	return value == "true"
+}
+
 // IsTotpEncryptionKeyConfigured 检查 TOTP 加密密钥是否已手动配置
 // 只有手动配置了密钥才允许在管理后台启用 TOTP 功能
 func (s *SettingService) IsTotpEncryptionKeyConfigured() bool {
@@ -1676,6 +1851,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyPromoCodeEnabled:                         "true", // 默认启用优惠码功能
 		SettingKeySiteName:                                 "Sub2API",
 		SettingKeySiteLogo:                                 "",
+		SettingKeySupportQRCodes:                           "[]",
 		SettingKeyPurchaseSubscriptionEnabled:              "false",
 		SettingKeyPurchaseSubscriptionURL:                  "",
 		SettingKeyTableDefaultPageSize:                     "20",
@@ -1722,7 +1898,12 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyOIDCConnectUserInfoUsernamePath:          "",
 		SettingKeyDefaultConcurrency:                       strconv.Itoa(s.cfg.Default.UserConcurrency),
 		SettingKeyDefaultBalance:                           strconv.FormatFloat(s.cfg.Default.UserBalance, 'f', 8, 64),
+		SettingKeyAffiliateEnabled:                         "false",
 		SettingKeyAffiliateRebateRate:                      strconv.FormatFloat(AffiliateRebateRateDefault, 'f', 8, 64),
+		SettingKeyAffiliateRebateCap:                       strconv.FormatFloat(AffiliateRebateCapDefault, 'f', 8, 64),
+		SettingKeyAffiliateRebateInviteeLimit:              strconv.Itoa(AffiliateRebateInviteeLimitDefault),
+		SettingKeyAffiliateSignupBonus:                     strconv.FormatFloat(AffiliateSignupBonusDefault, 'f', 8, 64),
+		SettingKeyTicketEnabled:                            "false",
 		SettingKeyDefaultUserRPMLimit:                      "0",
 		SettingKeyDefaultSubscriptions:                     "[]",
 		SettingKeyAuthSourceDefaultEmailBalance:            "0",
@@ -1813,6 +1994,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		SiteSubtitle:                     s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
 		APIBaseURL:                       settings[SettingKeyAPIBaseURL],
 		ContactInfo:                      settings[SettingKeyContactInfo],
+		SupportQRCodes:                   settings[SettingKeySupportQRCodes],
 		DocURL:                           settings[SettingKeyDocURL],
 		HomeContent:                      settings[SettingKeyHomeContent],
 		HideCcsImportButton:              settings[SettingKeyHideCcsImportButton] == "true",
@@ -1855,6 +2037,11 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	} else {
 		result.AffiliateRebateRate = AffiliateRebateRateDefault
 	}
+	result.AffiliateEnabled = settings[SettingKeyAffiliateEnabled] == "true"
+	result.AffiliateRebateCap = parseNonNegativeFloatSetting(settings[SettingKeyAffiliateRebateCap], AffiliateRebateCapDefault)
+	result.AffiliateRebateInviteeLimit = parseNonNegativeIntSetting(settings[SettingKeyAffiliateRebateInviteeLimit], AffiliateRebateInviteeLimitDefault)
+	result.AffiliateSignupBonus = parseNonNegativeFloatSetting(settings[SettingKeyAffiliateSignupBonus], AffiliateSignupBonusDefault)
+	result.TicketEnabled = settings[SettingKeyTicketEnabled] == "true"
 	result.DefaultSubscriptions = parseDefaultSubscriptions(settings[SettingKeyDefaultSubscriptions])
 
 	// 敏感信息直接返回，方便测试连接时使用
@@ -2091,6 +2278,9 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	// Available channels feature (default: disabled; strict true)
 	result.AvailableChannelsEnabled = settings[SettingKeyAvailableChannelsEnabled] == "true"
 
+	// Ticket feature (default: disabled; strict true)
+	result.TicketEnabled = settings[SettingKeyTicketEnabled] == "true"
+
 	// Claude Code version check
 	result.MinClaudeCodeVersion = settings[SettingKeyMinClaudeCodeVersion]
 	result.MaxClaudeCodeVersion = settings[SettingKeyMaxClaudeCodeVersion]
@@ -2150,6 +2340,36 @@ func clampAffiliateRebateRate(value float64) float64 {
 		return AffiliateRebateRateMax
 	}
 	return value
+}
+
+func clampNonNegativeFloat(value float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+		return 0
+	}
+	return value
+}
+
+func clampNonNegativeInt(value int) int {
+	if value < 0 {
+		return 0
+	}
+	return value
+}
+
+func parseNonNegativeFloatSetting(raw string, fallback float64) float64 {
+	value, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil {
+		return fallback
+	}
+	return clampNonNegativeFloat(value)
+}
+
+func parseNonNegativeIntSetting(raw string, fallback int) int {
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return fallback
+	}
+	return clampNonNegativeInt(value)
 }
 
 func isFalseSettingValue(value string) bool {

@@ -35,19 +35,36 @@ func TestParsePricingData_ParsesPriorityAndServiceTierFields(t *testing.T) {
 	require.True(t, pricing.SupportsServiceTier)
 }
 
-func TestGetModelPricing_Gpt53CodexSparkUsesGpt51CodexPricing(t *testing.T) {
+func TestGetModelPricing_Gpt53CodexSparkUsesExactPricingWhenAvailable(t *testing.T) {
 	sparkPricing := &LiteLLMModelPricing{InputCostPerToken: 1}
-	gpt53Pricing := &LiteLLMModelPricing{InputCostPerToken: 9}
+	gpt51Pricing := &LiteLLMModelPricing{InputCostPerToken: 9}
 
 	svc := &PricingService{
 		pricingData: map[string]*LiteLLMModelPricing{
-			"gpt-5.1-codex": sparkPricing,
-			"gpt-5.3":       gpt53Pricing,
+			"gpt-5.3-codex-spark": sparkPricing,
+			"gpt-5.1-codex":       gpt51Pricing,
 		},
 	}
 
 	got := svc.GetModelPricing("gpt-5.3-codex-spark")
 	require.Same(t, sparkPricing, got)
+}
+
+func TestGetModelPricing_Gpt53CodexSparkUsesDedicatedStaticFallbackWhenRemoteMissing(t *testing.T) {
+	svc := &PricingService{
+		pricingData: map[string]*LiteLLMModelPricing{
+			"gpt-5.1-codex": {InputCostPerToken: 1.25e-6},
+		},
+	}
+
+	got := svc.GetModelPricing("gpt-5.3-codex-spark")
+	require.NotNil(t, got)
+	require.InDelta(t, 1.75e-6, got.InputCostPerToken, 1e-12)
+	require.InDelta(t, 1.4e-5, got.OutputCostPerToken, 1e-12)
+	require.InDelta(t, 1.75e-7, got.CacheReadInputTokenCost, 1e-12)
+	require.InDelta(t, 3.5e-6, got.InputCostPerTokenPriority, 1e-12)
+	require.InDelta(t, 2.8e-5, got.OutputCostPerTokenPriority, 1e-12)
+	require.InDelta(t, 3.5e-7, got.CacheReadInputTokenCostPriority, 1e-12)
 }
 
 func TestGetModelPricing_Gpt53CodexFallbackStillUsesGpt52Codex(t *testing.T) {

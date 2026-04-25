@@ -123,6 +123,12 @@ scripts
 code-reviews/
 #AGENTS.md
 backend/cmd/server/server
+/sub2api
+/data/.installed
+/data/config.yaml
+/data/logs/
+/data/model_pricing.json
+/data/model_pricing.sha256
 deploy/docker-compose.override.yml
 .gocache/
 vite.config.js

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
@@ -196,6 +197,34 @@ func (h *UserHandler) GetAffiliate(c *gin.Context) {
 		return
 	}
 	response.Success(c, detail)
+}
+
+// GetAffiliateInviteeLedger returns rebate ledger rows for one invited user.
+// GET /api/v1/user/aff/invitees/:id/ledger
+func (h *UserHandler) GetAffiliateInviteeLedger(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	inviteeID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || inviteeID <= 0 {
+		response.BadRequest(c, "Invalid invitee id")
+		return
+	}
+
+	affiliateSvc, err := h.affiliateServiceOrErr()
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	entries, err := affiliateSvc.GetInviteeLedger(c.Request.Context(), subject.UserID, inviteeID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"items": entries})
 }
 
 // TransferAffiliateQuota transfers all available affiliate quota into current balance.

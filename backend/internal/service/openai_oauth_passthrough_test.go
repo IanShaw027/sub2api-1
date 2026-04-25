@@ -259,10 +259,28 @@ func TestOpenAIGatewayService_OAuthPassthrough_CompactUsesJSONAndKeepsNonStreami
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses/compact", bytes.NewReader(nil))
+	c.Request.Header.Set("Accept", "*/*")
 	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.1.0")
 	c.Request.Header.Set("Content-Type", "application/json")
+	c.Request.Header.Set("Session_Id", "cache-123")
+	c.Request.Header.Set("X-Codex-Installation-Id", "inst-123")
+	c.Request.Header.Set("X-Codex-Window-Id", "cache-123:0")
+	c.Request.Header.Set("Originator", "codex_exec")
 
-	originalBody := []byte(`{"model":"gpt-5.1-codex","stream":true,"store":true,"instructions":"local-test-instructions","input":[{"type":"text","text":"compact me"}]}`)
+	originalBody := []byte(`{
+		"model":"gpt-5.1-codex",
+		"stream":true,
+		"store":true,
+		"instructions":"local-test-instructions",
+		"input":[{"type":"text","text":"compact me"}],
+		"tools":[{"type":"function","function":{"name":"apply_patch"}}],
+		"parallel_tool_calls":true,
+		"reasoning":{"effort":"high"},
+		"text":{"verbosity":"low"},
+		"prompt_cache_key":"cache-123",
+		"metadata":{"source":"test"},
+		"max_output_tokens":64
+	}`)
 
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
@@ -299,9 +317,21 @@ func TestOpenAIGatewayService_OAuthPassthrough_CompactUsesJSONAndKeepsNonStreami
 	require.Equal(t, "gpt-5.1-codex", gjson.GetBytes(upstream.lastBody, "model").String())
 	require.Equal(t, "compact me", gjson.GetBytes(upstream.lastBody, "input.0.text").String())
 	require.Equal(t, "local-test-instructions", strings.TrimSpace(gjson.GetBytes(upstream.lastBody, "instructions").String()))
-	require.Equal(t, "application/json", upstream.lastReq.Header.Get("Accept"))
-	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("Version"))
-	require.NotEmpty(t, upstream.lastReq.Header.Get("Session_Id"))
+	require.Equal(t, "apply_patch", gjson.GetBytes(upstream.lastBody, "tools.0.function.name").String())
+	require.True(t, gjson.GetBytes(upstream.lastBody, "parallel_tool_calls").Bool())
+	require.Equal(t, "high", gjson.GetBytes(upstream.lastBody, "reasoning.effort").String())
+	require.Equal(t, "low", gjson.GetBytes(upstream.lastBody, "text.verbosity").String())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "metadata").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "max_output_tokens").Exists())
+	require.Equal(t, "*/*", upstream.lastReq.Header.Get("Accept"))
+	require.Empty(t, upstream.lastReq.Header.Get("Version"))
+	require.Empty(t, upstream.lastReq.Header.Get("OpenAI-Beta"))
+	require.Equal(t, "cache-123", upstream.lastReq.Header.Get("Session_Id"))
+	require.Empty(t, upstream.lastReq.Header.Get("Conversation_Id"))
+	require.Equal(t, "inst-123", upstream.lastReq.Header.Get("X-Codex-Installation-Id"))
+	require.Equal(t, "cache-123:0", upstream.lastReq.Header.Get("X-Codex-Window-Id"))
+	require.Equal(t, "codex_exec", upstream.lastReq.Header.Get("Originator"))
 	require.Equal(t, "chatgpt.com", upstream.lastReq.Host)
 	require.Equal(t, "chatgpt-acc", upstream.lastReq.Header.Get("chatgpt-account-id"))
 	require.Contains(t, rec.Body.String(), `"id":"cmp_123"`)
@@ -325,8 +355,15 @@ func TestOpenAIGatewayService_OAuthPassthrough_CodexMissingInstructionsRejectedB
 	upstream := &httpUpstreamRecorder{
 		resp: &http.Response{
 			StatusCode: http.StatusOK,
-			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid"}},
-			Body:       io.NopCloser(strings.NewReader(`{"output":[],"usage":{"input_tokens":1,"output_tokens":1}}`)),
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid"}},
+			Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+				`data: {"type":"response.output_text.delta","delta":"h"}`,
+				"",
+				`data: {"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}}}}`,
+				"",
+				"data: [DONE]",
+				"",
+			}, "\n"))),
 		},
 	}
 
@@ -358,6 +395,62 @@ func TestOpenAIGatewayService_OAuthPassthrough_CodexMissingInstructionsRejectedB
 	require.True(t, logSink.ContainsMessage("OpenAI passthrough 本地拦截：Codex 请求缺少有效 instructions"))
 	require.True(t, logSink.ContainsFieldValue("request_user_agent", "codex_cli_rs/0.98.0 (Windows 10.0.19045; x86_64) unknown"))
 	require.True(t, logSink.ContainsFieldValue("reject_reason", "instructions_missing"))
+}
+
+func TestEnsureOpenAIPassthroughInstructions_ChatCompletionsPathInjectsDefaultInstructions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(nil))
+
+	originalBody := []byte(`{"model":"gpt-5.1-codex-max","stream":false,"store":true,"input":[{"type":"text","text":"hi"}]}`)
+	updatedBody, changed, err := ensureOpenAIPassthroughInstructions(c, "gpt-5.1-codex-max", originalBody)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.NotEmpty(t, strings.TrimSpace(gjson.GetBytes(updatedBody, "instructions").String()))
+}
+
+func TestEnsureOpenAIPassthroughInstructions_ChatCompletionsPathInjectsDefaultInstructionsForGenericResponsesModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(nil))
+
+	originalBody := []byte(`{"model":"gpt-5.4","stream":false,"store":true,"input":[{"type":"text","text":"hi"}]}`)
+	updatedBody, changed, err := ensureOpenAIPassthroughInstructions(c, "gpt-5.4", originalBody)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.NotEmpty(t, strings.TrimSpace(gjson.GetBytes(updatedBody, "instructions").String()))
+}
+
+func TestEnsureOpenAIPassthroughInstructions_ResponsesPathDoesNotInjectDefaultInstructions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+
+	originalBody := []byte(`{"model":"gpt-5.1-codex-max","stream":false,"store":true,"input":[{"type":"text","text":"hi"}]}`)
+	updatedBody, changed, err := ensureOpenAIPassthroughInstructions(c, "gpt-5.1-codex-max", originalBody)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.JSONEq(t, string(originalBody), string(updatedBody))
+}
+
+func TestEnsureOpenAIPassthroughInstructions_RawResponsesPathDoesNotInjectDefaultInstructions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/responses", bytes.NewReader(nil))
+
+	originalBody := []byte(`{"model":"gpt-5.1-codex-max","stream":false,"store":true,"input":[{"type":"text","text":"hi"}]}`)
+	updatedBody, changed, err := ensureOpenAIPassthroughInstructions(c, "gpt-5.1-codex-max", originalBody)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.JSONEq(t, string(originalBody), string(updatedBody))
 }
 
 func TestOpenAIGatewayService_OAuthPassthrough_DisabledUsesLegacyTransform(t *testing.T) {
@@ -456,7 +549,7 @@ func TestOpenAIGatewayService_OAuthPassthrough_ResponseHeadersAllowXCodex(t *tes
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
 	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.1.0")
 
-	originalBody := []byte(`{"model":"gpt-5.2","stream":true,"input":[{"type":"text","text":"hi"}]}`)
+	originalBody := []byte(`{"model":"gpt-5.2","stream":true,"instructions":"local-test-instructions","input":[{"type":"text","text":"hi"}]}`)
 
 	headers := make(http.Header)
 	headers.Set("Content-Type", "application/json")
@@ -514,7 +607,7 @@ func TestOpenAIGatewayService_OAuthPassthrough_UpstreamErrorIncludesPassthroughF
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
 	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.1.0")
 
-	originalBody := []byte(`{"model":"gpt-5.2","stream":false,"input":[{"type":"text","text":"hi"}]}`)
+	originalBody := []byte(`{"model":"gpt-5.2","stream":false,"instructions":"local-test-instructions","input":[{"type":"text","text":"hi"}]}`)
 
 	resp := &http.Response{
 		StatusCode: http.StatusBadRequest,
@@ -694,7 +787,7 @@ func TestOpenAIGatewayService_OpenAIPassthrough_429And529TriggerFailover(t *test
 	}
 }
 
-func TestOpenAIGatewayService_OAuthPassthrough_NonCodexUAFallbackToCodexUA(t *testing.T) {
+func TestOpenAIGatewayService_OAuthPassthrough_NonCodexUAPreservesUserAgentWithoutForceCodexCLI(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	rec := httptest.NewRecorder()
@@ -703,7 +796,7 @@ func TestOpenAIGatewayService_OAuthPassthrough_NonCodexUAFallbackToCodexUA(t *te
 	// Non-Codex UA
 	c.Request.Header.Set("User-Agent", "curl/8.0")
 
-	inputBody := []byte(`{"model":"gpt-5.2","stream":false,"store":true,"input":[{"type":"text","text":"hi"}]}`)
+	inputBody := []byte(`{"model":"gpt-5.2","stream":false,"store":true,"instructions":"local-test-instructions","input":[{"type":"text","text":"hi"}]}`)
 
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
@@ -734,7 +827,8 @@ func TestOpenAIGatewayService_OAuthPassthrough_NonCodexUAFallbackToCodexUA(t *te
 	require.NoError(t, err)
 	require.Equal(t, false, gjson.GetBytes(upstream.lastBody, "store").Bool())
 	require.Equal(t, true, gjson.GetBytes(upstream.lastBody, "stream").Bool())
-	require.Equal(t, "codex_cli_rs/0.104.0", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, "curl/8.0", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, "opencode", upstream.lastReq.Header.Get("Originator"))
 }
 
 func TestOpenAIGatewayService_CodexCLIOnly_RejectsNonCodexClient(t *testing.T) {
@@ -794,7 +888,7 @@ func TestOpenAIGatewayService_CodexCLIOnly_AllowOfficialClientFamilies(t *testin
 				c.Request.Header.Set("originator", tt.originator)
 			}
 
-			inputBody := []byte(`{"model":"gpt-5.2","stream":false,"store":true,"input":[{"type":"text","text":"hi"}]}`)
+			inputBody := []byte(`{"model":"gpt-5.2","stream":false,"store":true,"instructions":"local-test-instructions","input":[{"type":"text","text":"hi"}]}`)
 
 			resp := &http.Response{
 				StatusCode: http.StatusOK,
@@ -836,7 +930,7 @@ func TestOpenAIGatewayService_OAuthPassthrough_StreamingSetsFirstTokenMs(t *test
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
 	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.1.0")
 
-	originalBody := []byte(`{"model":"gpt-5.2","stream":true,"service_tier":"fast","input":[{"type":"text","text":"hi"}]}`)
+	originalBody := []byte(`{"model":"gpt-5.2","stream":true,"service_tier":"fast","instructions":"local-test-instructions","input":[{"type":"text","text":"hi"}]}`)
 
 	upstreamSSE := strings.Join([]string{
 		`data: {"type":"response.output_text.delta","delta":"h"}`,
@@ -890,7 +984,7 @@ func TestOpenAIGatewayService_OAuthPassthrough_StreamClientDisconnectStillCollec
 	// 首次写入成功，后续写入失败，模拟客户端中途断开。
 	c.Writer = &failingGinWriter{ResponseWriter: c.Writer, failAfter: 1}
 
-	originalBody := []byte(`{"model":"gpt-5.2","stream":true,"input":[{"type":"text","text":"hi"}]}`)
+	originalBody := []byte(`{"model":"gpt-5.2","stream":true,"instructions":"local-test-instructions","input":[{"type":"text","text":"hi"}]}`)
 
 	upstreamSSE := strings.Join([]string{
 		`data: {"type":"response.output_text.delta","delta":"h"}`,
@@ -994,7 +1088,7 @@ func TestOpenAIGatewayService_OAuthPassthrough_WarnOnTimeoutHeadersForStream(t *
 	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.1.0")
 	c.Request.Header.Set("x-stainless-timeout", "10000")
 
-	originalBody := []byte(`{"model":"gpt-5.2","stream":true,"input":[{"type":"text","text":"hi"}]}`)
+	originalBody := []byte(`{"model":"gpt-5.2","stream":true,"instructions":"local-test-instructions","input":[{"type":"text","text":"hi"}]}`)
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "X-Request-Id": []string{"rid-timeout"}},
@@ -1034,7 +1128,7 @@ func TestOpenAIGatewayService_OAuthPassthrough_InfoWhenStreamEndsWithoutDone(t *
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
 	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.1.0")
 
-	originalBody := []byte(`{"model":"gpt-5.2","stream":true,"input":[{"type":"text","text":"hi"}]}`)
+	originalBody := []byte(`{"model":"gpt-5.2","stream":true,"instructions":"local-test-instructions","input":[{"type":"text","text":"hi"}]}`)
 	// 注意：刻意不发送 [DONE]，模拟上游中途断流。
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
@@ -1076,7 +1170,7 @@ func TestOpenAIGatewayService_OAuthPassthrough_DefaultFiltersTimeoutHeaders(t *t
 	c.Request.Header.Set("x-stainless-timeout", "120000")
 	c.Request.Header.Set("X-Test", "keep")
 
-	originalBody := []byte(`{"model":"gpt-5.2","stream":true,"input":[{"type":"text","text":"hi"}]}`)
+	originalBody := []byte(`{"model":"gpt-5.2","stream":true,"instructions":"local-test-instructions","input":[{"type":"text","text":"hi"}]}`)
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "X-Request-Id": []string{"rid-filter-default"}},
@@ -1122,7 +1216,7 @@ func TestOpenAIGatewayService_OAuthPassthrough_AllowTimeoutHeadersWhenConfigured
 	c.Request.Header.Set("x-stainless-timeout", "120000")
 	c.Request.Header.Set("X-Test", "keep")
 
-	originalBody := []byte(`{"model":"gpt-5.2","stream":true,"input":[{"type":"text","text":"hi"}]}`)
+	originalBody := []byte(`{"model":"gpt-5.2","stream":true,"instructions":"local-test-instructions","input":[{"type":"text","text":"hi"}]}`)
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "X-Request-Id": []string{"rid-filter-allow"}},

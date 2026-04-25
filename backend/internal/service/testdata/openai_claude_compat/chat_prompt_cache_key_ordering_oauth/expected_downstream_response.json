@@ -1,0 +1,11 @@
+{
+  "equals_paths": {
+    "id": "resp_chat_fixture_oauth",
+    "object": "chat.completion",
+    "model": "gpt-5.1-codex",
+    "choices.0.message.role": "assistant",
+    "choices.0.message.content": "ok",
+    "usage.prompt_tokens": 5,
+    "usage.completion_tokens": 2
+  }
+}

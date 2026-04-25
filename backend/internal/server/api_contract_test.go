@@ -691,6 +691,7 @@ func TestAPIContracts(t *testing.T) {
 						"site_subtitle": "Subtitle",
 						"api_base_url": "https://api.example.com",
 					"contact_info": "support",
+					"support_qr_codes": [],
 					"doc_url": "https://docs.example.com",
 					"auth_source_default_email_balance": 0,
 					"auth_source_default_email_concurrency": 5,
@@ -885,6 +886,7 @@ func TestAPIContracts(t *testing.T) {
 					"site_subtitle": "Subscription to API Conversion Platform",
 					"api_base_url": "",
 					"contact_info": "",
+					"support_qr_codes": [],
 					"doc_url": "",
 					"home_content": "",
 					"hide_ccs_import_button": false,
@@ -2119,11 +2121,11 @@ func (r *stubUsageLogRepo) GetDashboardStats(ctx context.Context) (*usagestats.D
 	return nil, errors.New("not implemented")
 }
 
-func (r *stubUsageLogRepo) GetUsageTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8) ([]usagestats.TrendDataPoint, error) {
+func (r *stubUsageLogRepo) GetUsageTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8, billingMode string) ([]usagestats.TrendDataPoint, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (r *stubUsageLogRepo) GetModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8) ([]usagestats.ModelStat, error) {
+func (r *stubUsageLogRepo) GetModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8, billingMode string) ([]usagestats.ModelStat, error) {
 	return nil, errors.New("not implemented")
 }
 
@@ -2135,7 +2137,7 @@ func (r *stubUsageLogRepo) GetUpstreamEndpointStatsWithFilters(ctx context.Conte
 	return nil, errors.New("not implemented")
 }
 
-func (r *stubUsageLogRepo) GetGroupStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8) ([]usagestats.GroupStat, error) {
+func (r *stubUsageLogRepo) GetGroupStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8, billingMode string) ([]usagestats.GroupStat, error) {
 	return nil, errors.New("not implemented")
 }
 

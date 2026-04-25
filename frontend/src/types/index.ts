@@ -130,6 +130,30 @@ export interface AffiliateInvitee {
   email: string
   username: string
   created_at?: string
+  total_consumed: number
+  total_rebate: number
+  rebate_slot_claimed: boolean
+}
+
+export interface AffiliatePolicy {
+  enabled: boolean
+  rebate_rate: number
+  rebate_cap: number
+  invitee_limit: number
+  signup_bonus: number
+  policy_text: string
+}
+
+export interface AffiliateLedgerEntry {
+  id: number
+  created_at: string
+  action: string
+  amount: number
+  source_user_id?: number | null
+  source_order_id?: number | null
+  base_amount: number
+  rebate_rate: number
+  invitee_slot_claimed: boolean
 }
 
 export interface UserAffiliateDetail {
@@ -139,6 +163,10 @@ export interface UserAffiliateDetail {
   aff_count: number
   aff_quota: number
   aff_history_quota: number
+  invited_count: number
+  rebated_invitee_count: number
+  remaining_rebate_slots?: number | null
+  policy: AffiliatePolicy
   invitees: AffiliateInvitee[]
 }
 
@@ -174,6 +202,11 @@ export interface CustomEndpoint {
   description: string
 }
 
+export interface SupportQRCodeEntry {
+  image_url: string
+  note?: string
+}
+
 export interface PublicSettings {
   registration_enabled: boolean
   email_verify_enabled: boolean
@@ -189,10 +222,13 @@ export interface PublicSettings {
   site_subtitle: string
   api_base_url: string
   contact_info: string
+  support_qr_codes: SupportQRCodeEntry[]
   doc_url: string
   home_content: string
   hide_ccs_import_button: boolean
   payment_enabled: boolean
+  affiliate_enabled: boolean
+  ticket_enabled: boolean
   table_default_page_size: number
   table_page_size_options: number[]
   custom_menu_items: CustomMenuItem[]
@@ -220,6 +256,7 @@ export interface AuthResponse {
   expires_in?: number     // New: Access Token expiry time in seconds
   token_type: string
   user: User & { run_mode?: 'standard' | 'simple' }
+  messages?: string[]
 }
 
 export interface CurrentUserResponse extends User {
@@ -261,6 +298,7 @@ export interface UpdateSubscriptionRequest {
 
 export type AnnouncementStatus = 'draft' | 'active' | 'archived'
 export type AnnouncementNotifyMode = 'silent' | 'popup'
+export type AnnouncementReadStatusFilter = 'all' | 'read' | 'unread'
 
 export type AnnouncementConditionType = 'subscription' | 'balance'
 
@@ -335,6 +373,46 @@ export interface AnnouncementUserReadStatus {
   balance: number
   eligible: boolean
   read_at?: string
+}
+
+export type TicketCategory = 'consult' | 'refund' | 'concurrency_apply' | 'rate_apply' | 'other'
+export type TicketStatus = 'submitted' | 'processing' | 'waiting_user' | 'waiting_admin' | 'resolved' | 'closed' | 'withdrawn'
+export type TicketSenderRole = 'user' | 'admin' | 'system'
+export type TicketMessageType = 'message' | 'system'
+
+export interface SupportTicket {
+  id: number
+  ticket_no: string
+  user_id: number
+  user_name: string
+  user_email: string
+  user_avatar_url: string
+  category: TicketCategory
+  title: string
+  status: TicketStatus
+  current_form_payload: Record<string, unknown>
+  current_revision_no: number
+  latest_message_at: string
+  last_reply_role: TicketSenderRole
+  unread_by_user: boolean
+  unread_by_admin: boolean
+  submitted_at?: string | null
+  closed_at?: string | null
+  withdrawn_at?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SupportTicketMessage {
+  id: number
+  ticket_id: number
+  sender_role: TicketSenderRole
+  sender_user_id?: number | null
+  sender_name_snapshot: string
+  sender_avatar_snapshot: string
+  message_type: TicketMessageType
+  content: string
+  created_at: string
 }
 
 // ==================== Proxy Node Types ====================

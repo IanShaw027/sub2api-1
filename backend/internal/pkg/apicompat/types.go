@@ -6,6 +6,18 @@ package apicompat
 
 import "encoding/json"
 
+const anthropicToolResultEnvelopeFormat = "anthropic_tool_result_v1"
+
+type anthropicToolReferenceEnvelope struct {
+	ToolName string `json:"tool_name"`
+}
+
+type anthropicToolResultEnvelope struct {
+	Format         string                           `json:"sub2api_format"`
+	Text           []string                         `json:"text,omitempty"`
+	ToolReferences []anthropicToolReferenceEnvelope `json:"tool_references,omitempty"`
+}
+
 // ---------------------------------------------------------------------------
 // Anthropic Messages API types
 // ---------------------------------------------------------------------------
@@ -50,16 +62,22 @@ type AnthropicContentBlock struct {
 	// type=text
 	Text string `json:"text,omitempty"`
 
+	// type=document
+	Title string `json:"title,omitempty"`
+
 	// type=thinking
 	Thinking string `json:"thinking,omitempty"`
 
-	// type=image
+	// type=image | document
 	Source *AnthropicImageSource `json:"source,omitempty"`
 
 	// type=tool_use
 	ID    string          `json:"id,omitempty"`
 	Name  string          `json:"name,omitempty"`
 	Input json.RawMessage `json:"input,omitempty"`
+
+	// type=tool_reference
+	ToolName string `json:"tool_name,omitempty"`
 
 	// type=tool_result
 	ToolUseID string          `json:"tool_use_id,omitempty"`
@@ -72,6 +90,8 @@ type AnthropicImageSource struct {
 	Type      string `json:"type"` // "base64"
 	MediaType string `json:"media_type"`
 	Data      string `json:"data"`
+	URL       string `json:"url,omitempty"`
+	FileID    string `json:"file_id,omitempty"`
 }
 
 // AnthropicTool describes a tool available to the model.
@@ -80,6 +100,7 @@ type AnthropicTool struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
 	InputSchema json.RawMessage `json:"input_schema"` // JSON Schema object
+	Strict      *bool           `json:"strict,omitempty"`
 }
 
 // AnthropicResponse is the non-streaming response from POST /v1/messages.
@@ -151,19 +172,20 @@ type AnthropicDelta struct {
 
 // ResponsesRequest is the request body for POST /v1/responses.
 type ResponsesRequest struct {
-	Model           string              `json:"model"`
-	Instructions    string              `json:"instructions,omitempty"`
-	Input           json.RawMessage     `json:"input"` // string or []ResponsesInputItem
-	MaxOutputTokens *int                `json:"max_output_tokens,omitempty"`
-	Temperature     *float64            `json:"temperature,omitempty"`
-	TopP            *float64            `json:"top_p,omitempty"`
-	Stream          bool                `json:"stream,omitempty"`
-	Tools           []ResponsesTool     `json:"tools,omitempty"`
-	Include         []string            `json:"include,omitempty"`
-	Store           *bool               `json:"store,omitempty"`
-	Reasoning       *ResponsesReasoning `json:"reasoning,omitempty"`
-	ToolChoice      json.RawMessage     `json:"tool_choice,omitempty"`
-	ServiceTier     string              `json:"service_tier,omitempty"`
+	Model             string              `json:"model"`
+	Instructions      string              `json:"instructions,omitempty"`
+	Input             json.RawMessage     `json:"input"` // string or []ResponsesInputItem
+	MaxOutputTokens   *int                `json:"max_output_tokens,omitempty"`
+	Temperature       *float64            `json:"temperature,omitempty"`
+	TopP              *float64            `json:"top_p,omitempty"`
+	Stream            bool                `json:"stream,omitempty"`
+	Tools             []ResponsesTool     `json:"tools,omitempty"`
+	Include           []string            `json:"include,omitempty"`
+	Store             *bool               `json:"store,omitempty"`
+	Reasoning         *ResponsesReasoning `json:"reasoning,omitempty"`
+	ToolChoice        json.RawMessage     `json:"tool_choice,omitempty"`
+	ParallelToolCalls *bool               `json:"parallel_tool_calls,omitempty"`
+	ServiceTier       string              `json:"service_tier,omitempty"`
 }
 
 // ResponsesReasoning configures reasoning effort in the Responses API.
@@ -194,9 +216,24 @@ type ResponsesInputItem struct {
 
 // ResponsesContentPart is a typed content part in a Responses message.
 type ResponsesContentPart struct {
-	Type     string `json:"type"` // "input_text" | "output_text" | "input_image"
-	Text     string `json:"text,omitempty"`
-	ImageURL string `json:"image_url,omitempty"` // data URI for input_image
+	Type        string                `json:"type"` // "input_text" | "output_text" | "input_image"
+	Text        string                `json:"text,omitempty"`
+	Refusal     string                `json:"refusal,omitempty"`
+	ImageURL    string                `json:"image_url,omitempty"` // data URI for input_image
+	FileData    string                `json:"file_data,omitempty"`
+	FileURL     string                `json:"file_url,omitempty"`
+	FileID      string                `json:"file_id,omitempty"`
+	Filename    string                `json:"filename,omitempty"`
+	Annotations []ResponsesAnnotation `json:"annotations,omitempty"`
+}
+
+// ResponsesAnnotation describes an annotation attached to an output_text part.
+type ResponsesAnnotation struct {
+	Type       string `json:"type"` // "url_citation"
+	URL        string `json:"url,omitempty"`
+	Title      string `json:"title,omitempty"`
+	StartIndex int    `json:"start_index,omitempty"`
+	EndIndex   int    `json:"end_index,omitempty"`
 }
 
 // ResponsesTool describes a tool in the Responses API.
@@ -260,8 +297,16 @@ type ResponsesOutput struct {
 
 // WebSearchAction describes the search action in a web_search_call output item.
 type WebSearchAction struct {
-	Type  string `json:"type,omitempty"`  // "search"
-	Query string `json:"query,omitempty"` // primary search query
+	Type    string                     `json:"type,omitempty"`  // "search"
+	Query   string                     `json:"query,omitempty"` // primary search query
+	Sources []ResponsesWebSearchSource `json:"sources,omitempty"`
+}
+
+// ResponsesWebSearchSource describes one source surfaced by a web search tool call.
+type ResponsesWebSearchSource struct {
+	Type  string `json:"type,omitempty"` // "url"
+	URL   string `json:"url,omitempty"`
+	Title string `json:"title,omitempty"`
 }
 
 // ResponsesSummary is a summary text block inside a reasoning output.

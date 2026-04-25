@@ -209,6 +209,24 @@ interface NavItem {
   featureFlag?: () => boolean | undefined
 }
 
+function dedupeSelfNavItems(items: NavItem[]): NavItem[] {
+  const seenPaths = new Set<string>()
+  const seenLabels = new Set<string>()
+  const out: NavItem[] = []
+
+  for (const item of items) {
+    const normalizedPath = item.path.trim()
+    const normalizedLabel = item.label.trim()
+    if (normalizedPath && seenPaths.has(normalizedPath)) continue
+    if (normalizedLabel && seenLabels.has(normalizedLabel)) continue
+    if (normalizedPath) seenPaths.add(normalizedPath)
+    if (normalizedLabel) seenLabels.add(normalizedLabel)
+    out.push(item)
+  }
+
+  return out
+}
+
 // applyFeatureFlags 递归过滤掉 featureFlag() === false 的节点（含子节点）。
 // 使用 `!== false` 宽容语义：undefined（设置未加载）或 true 都视为显示。
 function applyFeatureFlags(items: NavItem[]): NavItem[] {
@@ -453,6 +471,21 @@ const BellIcon = {
     )
 }
 
+const TicketListIcon = {
+  render: () =>
+    h(
+      'svg',
+      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
+      [
+        h('path', {
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'M9 5.25H7.5A2.25 2.25 0 005.25 7.5v10.5a2.25 2.25 0 002.25 2.25h9A2.25 2.25 0 0018.75 18V7.5a2.25 2.25 0 00-2.25-2.25H15m-6 0A2.25 2.25 0 0011.25 7.5h1.5A2.25 2.25 0 0015 5.25m-6 0A2.25 2.25 0 0111.25 3h1.5A2.25 2.25 0 0115 5.25m-6 4.5h6.75m-6.75 3h6.75m-6.75 3h3.75'
+        })
+      ]
+    )
+}
+
 const TicketIcon = {
   render: () =>
     h(
@@ -633,6 +666,8 @@ const ChevronDownIcon = {
 // yet. Admin-only flags (not in public settings) stay inline below.
 const flagChannelMonitor = makeSidebarFlag(FeatureFlags.channelMonitor)
 const flagPayment = makeSidebarFlag(FeatureFlags.payment)
+const flagAffiliate = makeSidebarFlag(FeatureFlags.affiliate)
+const flagTicket = makeSidebarFlag(FeatureFlags.ticket)
 const flagAvailableChannels = makeSidebarFlag(FeatureFlags.availableChannels)
 const flagOpsMonitoring = () => adminSettingsStore.opsMonitoringEnabled
 const flagAdminPayment = () => adminSettingsStore.paymentEnabled
@@ -650,13 +685,14 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
   items.push(
     { path: '/keys', label: t('nav.apiKeys'), icon: KeyIcon },
     { path: '/usage', label: t('nav.usage'), icon: ChartIcon, hideInSimpleMode: true },
+    { path: '/tickets', label: t('nav.tickets'), icon: TicketListIcon, hideInSimpleMode: true, featureFlag: flagTicket },
     { path: '/available-channels', label: t('nav.availableChannels'), icon: ChannelIcon, hideInSimpleMode: true, featureFlag: flagAvailableChannels },
     { path: '/monitor', label: t('nav.channelStatus'), icon: SignalIcon, featureFlag: flagChannelMonitor },
     { path: '/subscriptions', label: t('nav.mySubscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
     { path: '/purchase', label: t('nav.buySubscription'), icon: RechargeSubscriptionIcon, hideInSimpleMode: true, featureFlag: flagPayment },
     { path: '/orders', label: t('nav.myOrders'), icon: OrderListIcon, hideInSimpleMode: true, featureFlag: flagPayment },
     { path: '/redeem', label: t('nav.redeem'), icon: GiftIcon, hideInSimpleMode: true },
-    { path: '/affiliate', label: t('nav.affiliate'), icon: UsersIcon, hideInSimpleMode: true },
+    { path: '/affiliate', label: t('nav.affiliate'), icon: UsersIcon, hideInSimpleMode: true, featureFlag: flagAffiliate },
     { path: '/profile', label: t('nav.profile'), icon: UserIcon },
     ...customMenuItemsForUser.value.map((item): NavItem => ({
       path: `/custom/${item.id}`,
@@ -665,7 +701,7 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
       iconSvg: item.icon_svg,
     })),
   )
-  return items
+  return dedupeSelfNavItems(items)
 }
 
 // finalizeNav 合并三重过滤：featureFlag 过滤 + simple 模式过滤。
@@ -717,6 +753,7 @@ const adminNavItems = computed((): NavItem[] => {
     { path: '/admin/subscriptions', label: t('nav.subscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
     { path: '/admin/accounts', label: t('nav.accounts'), icon: GlobeIcon },
     { path: '/admin/announcements', label: t('nav.announcements'), icon: BellIcon },
+    { path: '/admin/tickets', label: t('nav.tickets'), icon: TicketListIcon, featureFlag: flagTicket },
     { path: '/admin/proxies', label: t('nav.proxies'), icon: ServerIcon },
     { path: '/admin/redeem', label: t('nav.redeemCodes'), icon: TicketIcon, hideInSimpleMode: true },
     { path: '/admin/promo-codes', label: t('nav.promoCodes'), icon: GiftIcon, hideInSimpleMode: true },

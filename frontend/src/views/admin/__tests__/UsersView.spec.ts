@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import type { AdminUser } from '@/types'
@@ -83,6 +83,7 @@ const DataTableStub = {
       <div data-test="columns">{{ columns.map(col => col.key).join(',') }}</div>
       <button data-test="sort-last-used" @click="$emit('sort', 'last_used_at', 'desc')">sort</button>
       <div v-for="row in data" :key="row.id">
+        <slot name="cell-email" :value="row.email" :row="row" />
         <slot name="cell-last_used_at" :value="row.last_used_at" :row="row" />
       </div>
     </div>
@@ -90,8 +91,13 @@ const DataTableStub = {
 }
 
 describe('admin UsersView', () => {
+  const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
   beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-24T12:00:00Z'))
     localStorage.clear()
+    openSpy.mockClear()
 
     listUsers.mockReset()
     getAllGroups.mockReset()
@@ -110,6 +116,10 @@ describe('admin UsersView', () => {
     getBatchUsersUsage.mockResolvedValue({ stats: {} })
     listEnabledDefinitions.mockResolvedValue([])
     getBatchUserAttributes.mockResolvedValue({ values: {} })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('shows active, used, and created activity columns in order and requests last_used_at sort', async () => {
@@ -159,6 +169,45 @@ describe('admin UsersView', () => {
         sort_order: 'desc'
       }),
       expect.any(Object)
+    )
+  })
+
+  it('jumps to admin usage for the clicked user with the default date range', async () => {
+    const wrapper = mount(UsersView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          EmptyState: true,
+          GroupBadge: true,
+          Select: true,
+          UserAttributesConfigModal: true,
+          UserConcurrencyCell: true,
+          UserCreateModal: true,
+          UserEditModal: true,
+          UserApiKeysModal: true,
+          UserAllowedGroupsModal: true,
+          UserBalanceModal: true,
+          UserBalanceHistoryModal: true,
+          GroupReplaceModal: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    await wrapper.get('button[type="button"].font-medium').trigger('click')
+
+    expect(openSpy).toHaveBeenCalledWith(
+      'https://crs.qazwc.com/admin/usage?user_id=42&start_date=2026-04-23&end_date=2026-04-24',
+      '_self'
     )
   })
 })

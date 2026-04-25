@@ -149,6 +149,59 @@ func TestGetModelPricing_OpenAIGPT54MiniFallback(t *testing.T) {
 	require.Zero(t, pricing.LongContextInputThreshold)
 }
 
+func TestGetModelPricing_OpenAIGPT51AndCodexFallbacks(t *testing.T) {
+	svc := newTestBillingService()
+
+	tests := []struct {
+		model               string
+		expectedInput       float64
+		expectedCachedInput float64
+		expectedOutput      float64
+	}{
+		{
+			model:               "gpt-5.1",
+			expectedInput:       1.25e-6,
+			expectedCachedInput: 0.125e-6,
+			expectedOutput:      10e-6,
+		},
+		{
+			model:               "gpt-5.2-codex",
+			expectedInput:       1.75e-6,
+			expectedCachedInput: 0.175e-6,
+			expectedOutput:      14e-6,
+		},
+		{
+			model:               "gpt-5.1-codex",
+			expectedInput:       1.25e-6,
+			expectedCachedInput: 0.125e-6,
+			expectedOutput:      10e-6,
+		},
+		{
+			model:               "gpt-5.1-codex-mini",
+			expectedInput:       0.25e-6,
+			expectedCachedInput: 0.025e-6,
+			expectedOutput:      2e-6,
+		},
+		{
+			model:               "gpt-5.1-codex-max",
+			expectedInput:       1.25e-6,
+			expectedCachedInput: 0.125e-6,
+			expectedOutput:      10e-6,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			pricing, err := svc.GetModelPricing(tt.model)
+			require.NoError(t, err)
+			require.NotNil(t, pricing)
+			require.InDelta(t, tt.expectedInput, pricing.InputPricePerToken, 1e-12)
+			require.InDelta(t, tt.expectedCachedInput, pricing.CacheReadPricePerToken, 1e-12)
+			require.InDelta(t, tt.expectedOutput, pricing.OutputPricePerToken, 1e-12)
+		})
+	}
+}
+
 func TestCalculateCost_OpenAIGPT54LongContextAppliesWholeSessionMultipliers(t *testing.T) {
 	svc := newTestBillingService()
 
@@ -186,10 +239,13 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 		{name: "openai gpt5.4", model: "gpt-5.4", expectedInput: 2.5e-6},
 		{name: "openai gpt5.4 mini", model: "gpt-5.4-mini", expectedInput: 7.5e-7},
 		{name: "openai gpt5.3 codex", model: "gpt-5.3-codex", expectedInput: 1.5e-6},
-		{name: "openai gpt5.3 codex spark", model: "gpt-5.3-codex-spark", expectedInput: 1.5e-6},
-		{name: "openai legacy gpt5.1 falls back to gpt5.4", model: "gpt-5.1", expectedInput: 2.5e-6},
-		{name: "openai legacy gpt5.1 codex falls back to gpt5.3 codex", model: "gpt-5.1-codex", expectedInput: 1.5e-6},
-		{name: "openai legacy codex mini latest falls back to gpt5.3 codex", model: "codex-mini-latest", expectedInput: 1.5e-6},
+		{name: "openai gpt5.3 codex spark", model: "gpt-5.3-codex-spark", expectedInput: 1.75e-6},
+		{name: "openai gpt5.2 codex", model: "gpt-5.2-codex", expectedInput: 1.75e-6},
+		{name: "openai gpt5.1 maps to gpt5.1 pricing", model: "gpt-5.1", expectedInput: 1.25e-6},
+		{name: "openai gpt5.1 codex maps to gpt5.1 codex pricing", model: "gpt-5.1-codex", expectedInput: 1.25e-6},
+		{name: "openai gpt5.1 codex mini maps to mini pricing", model: "gpt-5.1-codex-mini", expectedInput: 0.25e-6},
+		{name: "openai gpt5.1 codex max maps to max pricing", model: "gpt-5.1-codex-max", expectedInput: 1.25e-6},
+		{name: "openai codex mini latest alias maps to gpt5.1 codex mini", model: "codex-mini-latest", expectedInput: 0.25e-6},
 		{name: "openai unknown no fallback", model: "gpt-unknown-model", expectNilPricing: true},
 		{name: "non supported family", model: "qwen-max", expectNilPricing: true},
 	}

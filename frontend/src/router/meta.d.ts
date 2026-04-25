@@ -50,6 +50,18 @@ declare module 'vue-router' {
     requiresPayment?: boolean
 
     /**
+     * Whether this route requires ticket module to be enabled
+     * @default false
+     */
+    requiresTicket?: boolean
+
+    /**
+     * Whether this route requires affiliate rebates to be enabled
+     * @default false
+     */
+    requiresAffiliate?: boolean
+
+    /**
      * i18n key for the page title
      */
     titleKey?: string

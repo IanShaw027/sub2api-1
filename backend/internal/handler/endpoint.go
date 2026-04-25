@@ -15,12 +15,14 @@ import (
 // ──────────────────────────────────────────────────────────
 
 const (
-	EndpointMessages          = "/v1/messages"
-	EndpointChatCompletions   = "/v1/chat/completions"
-	EndpointResponses         = "/v1/responses"
-	EndpointImagesGenerations = "/v1/images/generations"
-	EndpointImagesEdits       = "/v1/images/edits"
-	EndpointGeminiModels      = "/v1beta/models"
+	EndpointMessages              = "/v1/messages"
+	EndpointChatCompletions       = "/v1/chat/completions"
+	EndpointResponses             = "/v1/responses"
+	EndpointImagesGenerations     = "/v1/images/generations"
+	EndpointImagesEdits           = "/v1/images/edits"
+	EndpointImages2APIGenerations = "/v1/images2api/generations"
+	EndpointImages2APIEdits       = "/v1/images2api/edits"
+	EndpointGeminiModels          = "/v1beta/models"
 )
 
 // gin.Context keys used by the middleware and helpers below.
@@ -46,6 +48,10 @@ func NormalizeInboundEndpoint(path string) string {
 		return EndpointChatCompletions
 	case strings.Contains(path, EndpointMessages):
 		return EndpointMessages
+	case strings.Contains(path, EndpointImages2APIGenerations) || strings.Contains(path, "/images2api/generations"):
+		return EndpointImages2APIGenerations
+	case strings.Contains(path, EndpointImages2APIEdits) || strings.Contains(path, "/images2api/edits"):
+		return EndpointImages2APIEdits
 	case strings.Contains(path, EndpointImagesGenerations) || strings.Contains(path, "/images/generations"):
 		return EndpointImagesGenerations
 	case strings.Contains(path, EndpointImagesEdits) || strings.Contains(path, "/images/edits"):
@@ -75,7 +81,8 @@ func DeriveUpstreamEndpoint(inbound, rawRequestPath, platform string) string {
 
 	switch platform {
 	case service.PlatformOpenAI:
-		if inbound == EndpointImagesGenerations || inbound == EndpointImagesEdits {
+		if inbound == EndpointImagesGenerations || inbound == EndpointImagesEdits ||
+			inbound == EndpointImages2APIGenerations || inbound == EndpointImages2APIEdits {
 			return inbound
 		}
 		// OpenAI forwards everything to the Responses API.

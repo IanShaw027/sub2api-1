@@ -84,6 +84,7 @@ export const adminPaymentAPI = {
     start_date?: string
     end_date?: string
     order_type?: string
+    timezone?: string
   }) {
     return apiClient.get<BasePaginationResponse<PaymentOrder>>('/admin/payment/orders', { params })
   },

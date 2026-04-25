@@ -27,7 +27,7 @@ func AnthropicToResponses(req *AnthropicRequest) (*ResponsesRequest, error) {
 		Temperature: req.Temperature,
 		TopP:        req.TopP,
 		Stream:      req.Stream,
-		Include:     []string{"reasoning.encrypted_content"},
+		Include:     responsesIncludeForAnthropicTools(req.Tools),
 	}
 
 	storeFalse := false
@@ -60,11 +60,12 @@ func AnthropicToResponses(req *AnthropicRequest) (*ResponsesRequest, error) {
 
 	// Convert tool_choice
 	if len(req.ToolChoice) > 0 {
-		tc, err := convertAnthropicToolChoiceToResponses(req.ToolChoice)
+		tc, parallelToolCalls, err := convertAnthropicToolChoiceToResponses(req.ToolChoice)
 		if err != nil {
 			return nil, fmt.Errorf("convert tool_choice: %w", err)
 		}
 		out.ToolChoice = tc
+		out.ParallelToolCalls = parallelToolCalls
 	}
 
 	return out, nil
@@ -76,30 +77,52 @@ func AnthropicToResponses(req *AnthropicRequest) (*ResponsesRequest, error) {
 //	{"type":"any"}             → "required"
 //	{"type":"none"}            → "none"
 //	{"type":"tool","name":"X"} → {"type":"function","function":{"name":"X"}}
-func convertAnthropicToolChoiceToResponses(raw json.RawMessage) (json.RawMessage, error) {
+func responsesIncludeForAnthropicTools(tools []AnthropicTool) []string {
+	include := []string{"reasoning.encrypted_content"}
+	for _, tool := range tools {
+		if strings.HasPrefix(tool.Type, "web_search") {
+			include = append(include, "web_search_call.action.sources")
+			break
+		}
+	}
+	return include
+}
+
+func convertAnthropicToolChoiceToResponses(raw json.RawMessage) (json.RawMessage, *bool, error) {
 	var tc struct {
-		Type string `json:"type"`
-		Name string `json:"name"`
+		Type                   string `json:"type"`
+		Name                   string `json:"name"`
+		DisableParallelToolUse bool   `json:"disable_parallel_tool_use,omitempty"`
 	}
 	if err := json.Unmarshal(raw, &tc); err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+
+	var parallelToolCalls *bool
+	if tc.DisableParallelToolUse {
+		v := false
+		parallelToolCalls = &v
 	}
 
 	switch tc.Type {
 	case "auto":
-		return json.Marshal("auto")
+		out, err := json.Marshal("auto")
+		return out, parallelToolCalls, err
 	case "any":
-		return json.Marshal("required")
+		out, err := json.Marshal("required")
+		return out, parallelToolCalls, err
 	case "none":
-		return json.Marshal("none")
+		out, err := json.Marshal("none")
+		return out, parallelToolCalls, err
 	case "tool":
-		return json.Marshal(map[string]any{
+		out, err := json.Marshal(map[string]any{
 			"type":     "function",
 			"function": map[string]string{"name": tc.Name},
 		})
+		return out, parallelToolCalls, err
 	default:
 		// Pass through unknown types as-is
-		return raw, nil
+		return raw, parallelToolCalls, nil
 	}
 }
 
@@ -210,6 +233,10 @@ func anthropicUserToResponses(raw json.RawMessage) ([]ResponsesInputItem, error)
 			if b.Text != "" {
 				parts = append(parts, ResponsesContentPart{Type: "input_text", Text: b.Text})
 			}
+		case "document":
+			if part := anthropicDocumentToResponsesPart(b); part != nil {
+				parts = append(parts, *part)
+			}
 		case "image":
 			if uri := anthropicImageToDataURI(b.Source); uri != "" {
 				parts = append(parts, ResponsesContentPart{Type: "input_image", ImageURL: uri})
@@ -219,6 +246,12 @@ func anthropicUserToResponses(raw json.RawMessage) ([]ResponsesInputItem, error)
 	parts = append(parts, toolResultImageParts...)
 
 	if len(parts) > 0 {
+		if text, ok := collapseResponsesPlainTextParts(parts); ok {
+			content, _ := json.Marshal(text)
+			out = append(out, ResponsesInputItem{Role: "user", Content: content})
+			return out, nil
+		}
+
 		content, err := json.Marshal(parts)
 		if err != nil {
 			return nil, err
@@ -227,6 +260,21 @@ func anthropicUserToResponses(raw json.RawMessage) ([]ResponsesInputItem, error)
 	}
 
 	return out, nil
+}
+
+func collapseResponsesPlainTextParts(parts []ResponsesContentPart) (string, bool) {
+	if len(parts) == 0 {
+		return "", false
+	}
+
+	texts := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part.Type != "input_text" {
+			return "", false
+		}
+		texts = append(texts, part.Text)
+	}
+	return strings.Join(texts, ""), true
 }
 
 // anthropicAssistantToResponses handles an Anthropic assistant message.
@@ -319,6 +367,39 @@ func anthropicImageToDataURI(src *AnthropicImageSource) string {
 	return "data:" + mediaType + ";base64," + src.Data
 }
 
+func anthropicDocumentToResponsesPart(b AnthropicContentBlock) *ResponsesContentPart {
+	if b.Source == nil {
+		return nil
+	}
+
+	part := &ResponsesContentPart{
+		Type:     "input_file",
+		Filename: strings.TrimSpace(b.Title),
+	}
+
+	switch strings.ToLower(strings.TrimSpace(b.Source.Type)) {
+	case "base64":
+		if b.Source.Data == "" {
+			return nil
+		}
+		part.FileData = b.Source.Data
+	case "url":
+		if b.Source.URL == "" {
+			return nil
+		}
+		part.FileURL = b.Source.URL
+	case "file":
+		if b.Source.FileID == "" {
+			return nil
+		}
+		part.FileID = b.Source.FileID
+	default:
+		return nil
+	}
+
+	return part
+}
+
 // convertToolResultOutput extracts text and image content from a tool_result
 // block. Returns the text as a string for the function_call_output Output
 // field, plus any image parts that must be sent in a separate user message
@@ -346,6 +427,7 @@ func convertToolResultOutput(b AnthropicContentBlock) (string, []ResponsesConten
 	// Separate text (for function_call_output) from images (for user message).
 	var textParts []string
 	var imageParts []ResponsesContentPart
+	var toolReferences []anthropicToolReferenceEnvelope
 	for _, ib := range inner {
 		switch ib.Type {
 		case "text":
@@ -356,6 +438,21 @@ func convertToolResultOutput(b AnthropicContentBlock) (string, []ResponsesConten
 			if uri := anthropicImageToDataURI(ib.Source); uri != "" {
 				imageParts = append(imageParts, ResponsesContentPart{Type: "input_image", ImageURL: uri})
 			}
+		case "tool_reference":
+			if ib.ToolName != "" {
+				toolReferences = append(toolReferences, anthropicToolReferenceEnvelope{ToolName: ib.ToolName})
+			}
+		}
+	}
+
+	if len(toolReferences) > 0 {
+		payload, err := json.Marshal(anthropicToolResultEnvelope{
+			Format:         anthropicToolResultEnvelopeFormat,
+			Text:           textParts,
+			ToolReferences: toolReferences,
+		})
+		if err == nil {
+			return string(payload), imageParts
 		}
 	}
 
@@ -410,11 +507,66 @@ func convertAnthropicToolsToResponses(tools []AnthropicTool) []ResponsesTool {
 		out = append(out, ResponsesTool{
 			Type:        "function",
 			Name:        t.Name,
-			Description: t.Description,
+			Description: strings.TrimSpace(t.Description),
 			Parameters:  normalizeToolParameters(t.InputSchema),
+			Strict:      t.Strict,
 		})
 	}
 	return out
+}
+
+func AugmentClaudeToolDescriptions(tools []ResponsesTool) {
+	for i := range tools {
+		if tools[i].Type != "function" || tools[i].Name == "" {
+			continue
+		}
+		tools[i].Description = augmentClaudeToolDescription(tools[i].Name, tools[i].Description)
+	}
+}
+
+func augmentClaudeToolDescription(name, description string) string {
+	guidance := claudeToolRoutingGuidance(name)
+	description = strings.TrimSpace(description)
+	if guidance == "" {
+		return description
+	}
+	if description == "" {
+		return guidance
+	}
+	if strings.Contains(description, guidance) {
+		return description
+	}
+	return guidance + "\n\n" + description
+}
+
+func claudeToolRoutingGuidance(name string) string {
+	switch canonicalClaudeToolName(name) {
+	case "read":
+		return "Use this when you need the exact contents of a known file in the local workspace."
+	case "grep":
+		return "Use this when you need to search the local workspace for specific text, symbols, or patterns."
+	case "glob":
+		return "Use this when you need to discover files by path pattern, extension, or directory structure."
+	case "edit":
+		return "Use this when you need to modify an existing local file in place."
+	case "write":
+		return "Use this when you need to create a file or replace the full contents of a local file."
+	case "bash":
+		return "Use this when you need shell commands, build steps, tests, or repository state that Read, Grep, and Glob cannot provide."
+	case "websearch":
+		return "Use this when you need current external information across multiple sources."
+	case "webfetch":
+		return "Use this when a specific URL is already known and the exact page contents matter."
+	case "toolsearch":
+		return "Use this when you need to discover which local or MCP-backed tool should be called next."
+	case "askuserquestion":
+		return "Use this when a missing human decision would materially change the work."
+	case "teamcreate":
+		return "Use this when the task can be split into independent sub-agents that should work in parallel."
+	case "sendmessage":
+		return "Use this when you need to coordinate with an existing teammate or return structured status to the team lead."
+	}
+	return ""
 }
 
 // normalizeToolParameters ensures the tool parameter schema is valid for

@@ -117,7 +117,7 @@
 
               <!-- Key Exists -->
               <div v-else class="space-y-4">
-                <div class="flex items-center justify-between">
+	            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <label
                       class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -2157,31 +2157,6 @@
                   <label
                     class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
                   >
-                    {{ t("admin.settings.defaults.affiliateRebateRate") }}
-                  </label>
-                  <div class="relative">
-                    <input
-                      v-model.number="form.affiliate_rebate_rate"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="100"
-                      class="input pr-8"
-                      placeholder="20"
-                    />
-                    <span
-                      class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
-                      >%</span
-                    >
-                  </div>
-                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                    {{ t("admin.settings.defaults.affiliateRebateRateHint") }}
-                  </p>
-                </div>
-                <div>
-                  <label
-                    class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
-                  >
                     {{ t("admin.settings.defaults.defaultConcurrency") }}
                   </label>
                   <input
@@ -3507,21 +3482,77 @@
                 </button>
               </div>
 
-              <!-- Contact Info -->
+              <!-- Support QR Codes -->
               <div>
                 <label
                   class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
                 >
-                  {{ t("admin.settings.site.contactInfo") }}
+                  {{ t("admin.settings.site.supportQRCodes") }}
                 </label>
-                <input
-                  v-model="form.contact_info"
-                  type="text"
-                  class="input"
-                  :placeholder="t('admin.settings.site.contactInfoPlaceholder')"
-                />
+                <div class="space-y-4">
+                  <div
+                    v-for="(item, index) in form.support_qr_codes"
+                    :key="`support-qr-${index}`"
+                    class="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 dark:border-dark-700 dark:bg-dark-900/40"
+                  >
+                    <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+                      <div class="space-y-4">
+                        <ImageUpload
+                          v-model="item.image_url"
+                          mode="image"
+                          :upload-label="t('admin.settings.site.uploadQRCode')"
+                          :remove-label="t('admin.settings.site.remove')"
+                          :hint="t('admin.settings.site.supportQRCodeImageHint')"
+                          :max-size="500 * 1024"
+                        />
+                        <div>
+                          <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            {{ t("admin.settings.site.supportQRCodeNote") }}
+                          </label>
+                          <input
+                            v-model="item.note"
+                            type="text"
+                            class="input"
+                            :placeholder="t('admin.settings.site.supportQRCodeNotePlaceholder')"
+                          />
+                        </div>
+                      </div>
+                      <div class="flex justify-end lg:justify-start">
+                        <button
+                          type="button"
+                          class="btn btn-secondary btn-sm text-red-600 hover:text-red-700 dark:text-red-400"
+                          @click="removeSupportQRCode(index)"
+                        >
+                          <Icon name="trash" size="sm" class="mr-1.5" :stroke-width="2" />
+                          {{ t("admin.settings.site.remove") }}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    class="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 px-4 py-2.5 text-sm text-gray-500 transition-colors hover:border-primary-400 hover:text-primary-600 dark:border-dark-600 dark:text-gray-400 dark:hover:border-primary-500 dark:hover:text-primary-400"
+                    @click="addSupportQRCode"
+                  >
+                    <svg
+                      class="h-4 w-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M12 4v16m8-8H4"
+                      />
+                    </svg>
+                    {{ t("admin.settings.site.addSupportQRCode") }}
+                  </button>
+                </div>
                 <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                  {{ t("admin.settings.site.contactInfoHint") }}
+                  {{ t("admin.settings.site.supportQRCodesHint") }}
                 </p>
               </div>
 
@@ -3795,10 +3826,83 @@
         <!-- Tab: Features (功能开关) -->
         <div v-show="activeTab === 'features'" class="space-y-6">
 
-        <div class="card">
-          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
-            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-              {{ t('admin.settings.features.channelMonitor.title') }}
+	        <div class="card">
+	          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+	            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+	              {{ t('admin.settings.features.affiliate.title') }}
+	            </h2>
+	            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+	              {{ t('admin.settings.features.affiliate.description') }}
+	            </p>
+	          </div>
+	          <div class="space-y-5 p-6">
+	            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+	              <div>
+	                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+	                  {{ t('admin.settings.features.affiliate.enabled') }}
+	                </label>
+	                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+	                  {{ t('admin.settings.features.affiliate.enabledHint') }}
+	                </p>
+	              </div>
+	              <Toggle v-model="form.affiliate_enabled" />
+	            </div>
+	            <div v-if="form.affiliate_enabled" class="grid grid-cols-1 gap-6 md:grid-cols-2">
+	              <div>
+	                <label class="input-label">{{ t('admin.settings.features.affiliate.rebateRate') }}</label>
+	                <div class="relative">
+	                  <input v-model.number="form.affiliate_rebate_rate" type="number" step="0.01" min="0" max="100" class="input pr-8" />
+	                  <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">%</span>
+	                </div>
+	                <p class="mt-1 text-xs text-gray-400">{{ t('admin.settings.features.affiliate.rebateRateHint') }}</p>
+	              </div>
+	              <div>
+	                <label class="input-label">{{ t('admin.settings.features.affiliate.rebateCap') }}</label>
+	                <input v-model.number="form.affiliate_rebate_cap" type="number" step="0.01" min="0" class="input" />
+	                <p class="mt-1 text-xs text-gray-400">{{ t('admin.settings.features.affiliate.rebateCapHint') }}</p>
+	              </div>
+	              <div>
+	                <label class="input-label">{{ t('admin.settings.features.affiliate.inviteeLimit') }}</label>
+	                <input v-model.number="form.affiliate_rebate_invitee_limit" type="number" step="1" min="0" class="input" />
+	                <p class="mt-1 text-xs text-gray-400">{{ t('admin.settings.features.affiliate.inviteeLimitHint') }}</p>
+	              </div>
+	              <div>
+	                <label class="input-label">{{ t('admin.settings.features.affiliate.signupBonus') }}</label>
+	                <input v-model.number="form.affiliate_signup_bonus" type="number" step="0.01" min="0" class="input" />
+	                <p class="mt-1 text-xs text-gray-400">{{ t('admin.settings.features.affiliate.signupBonusHint') }}</p>
+	              </div>
+	            </div>
+	          </div>
+	        </div>
+
+	        <div class="card">
+	          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+	            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+	              {{ t('admin.settings.features.ticket.title') }}
+	            </h2>
+	            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+	              {{ t('admin.settings.features.ticket.description') }}
+	            </p>
+	          </div>
+	          <div class="space-y-5 p-6">
+	            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+	              <div>
+	                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+	                  {{ t('admin.settings.features.ticket.enabled') }}
+	                </label>
+	                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+	                  {{ t('admin.settings.features.ticket.enabledHint') }}
+	                </p>
+	              </div>
+	              <Toggle v-model="form.ticket_enabled" />
+	            </div>
+	          </div>
+	        </div>
+
+	        <div class="card">
+	          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+	            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+	              {{ t('admin.settings.features.channelMonitor.title') }}
             </h2>
             <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
               {{ t('admin.settings.features.channelMonitor.description') }}
@@ -3814,7 +3918,7 @@
             </p>
           </div>
           <div class="space-y-5 p-6">
-            <div class="flex items-center justify-between">
+	            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {{ t('admin.settings.features.channelMonitor.enabled') }}
@@ -4820,7 +4924,12 @@ import type {
   WebSearchProviderConfig,
   WebSearchTestResult,
 } from "@/api/admin/settings";
-import type { AdminGroup, Proxy, NotifyEmailEntry } from "@/types";
+import type {
+  AdminGroup,
+  Proxy,
+  NotifyEmailEntry,
+  SupportQRCodeEntry,
+} from "@/types";
 import type { ProviderInstance } from "@/types/payment";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import Icon from "@/components/icons/Icon.vue";
@@ -4997,7 +5106,12 @@ const form = reactive<SettingsForm>({
   totp_enabled: false,
   totp_encryption_key_configured: false,
   default_balance: 0,
+  affiliate_enabled: false,
   affiliate_rebate_rate: 20,
+  affiliate_rebate_cap: 0,
+  affiliate_rebate_invitee_limit: 0,
+  affiliate_signup_bonus: 0,
+  ticket_enabled: false,
   default_concurrency: 1,
   default_subscriptions: [],
   force_email_on_third_party_signup: false,
@@ -5007,6 +5121,7 @@ const form = reactive<SettingsForm>({
   site_subtitle: "Subscription to API Conversion Platform",
   api_base_url: "",
   contact_info: "",
+  support_qr_codes: [] as SupportQRCodeEntry[],
   doc_url: "",
   home_content: "",
   backend_mode_enabled: false,
@@ -5606,6 +5721,17 @@ function removeEndpoint(index: number) {
   form.custom_endpoints.splice(index, 1);
 }
 
+function addSupportQRCode() {
+  form.support_qr_codes.push({
+    image_url: "",
+    note: "",
+  });
+}
+
+function removeSupportQRCode(index: number) {
+  form.support_qr_codes.splice(index, 1);
+}
+
 function formatTablePageSizeOptions(options: number[]): string {
   return options.join(", ");
 }
@@ -5920,10 +6046,15 @@ async function saveSettings() {
       password_reset_enabled: form.password_reset_enabled,
       totp_enabled: form.totp_enabled,
       default_balance: form.default_balance,
+      affiliate_enabled: form.affiliate_enabled,
       affiliate_rebate_rate: Math.min(
         100,
         Math.max(0, Number(form.affiliate_rebate_rate) || 0),
       ),
+      affiliate_rebate_cap: Math.max(0, Number(form.affiliate_rebate_cap) || 0),
+      affiliate_rebate_invitee_limit: Math.max(0, Math.floor(Number(form.affiliate_rebate_invitee_limit) || 0)),
+      affiliate_signup_bonus: Math.max(0, Number(form.affiliate_signup_bonus) || 0),
+      ticket_enabled: form.ticket_enabled,
       default_concurrency: form.default_concurrency,
       default_subscriptions: normalizedDefaultSubscriptions,
       force_email_on_third_party_signup: form.force_email_on_third_party_signup,
@@ -5933,6 +6064,12 @@ async function saveSettings() {
       site_subtitle: form.site_subtitle,
       api_base_url: form.api_base_url,
       contact_info: form.contact_info,
+      support_qr_codes: form.support_qr_codes
+        .map((item) => ({
+          image_url: item.image_url.trim(),
+          note: item.note?.trim() || "",
+        }))
+        .filter((item) => item.image_url),
       doc_url: form.doc_url,
       home_content: form.home_content,
       backend_mode_enabled: form.backend_mode_enabled,

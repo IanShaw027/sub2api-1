@@ -52,6 +52,33 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+func mustMarshalSupportQRCodes(entries *[]dto.SupportQRCodeEntry) string {
+	if entries == nil || len(*entries) == 0 {
+		return "[]"
+	}
+
+	normalized := make([]dto.SupportQRCodeEntry, 0, len(*entries))
+	for _, entry := range *entries {
+		imageURL := strings.TrimSpace(entry.ImageURL)
+		if imageURL == "" {
+			continue
+		}
+		normalized = append(normalized, dto.SupportQRCodeEntry{
+			ImageURL: imageURL,
+			Note:     strings.TrimSpace(entry.Note),
+		})
+	}
+	if len(normalized) == 0 {
+		return "[]"
+	}
+
+	raw, err := json.Marshal(normalized)
+	if err != nil {
+		return "[]"
+	}
+	return string(raw)
+}
+
 // SettingHandler 系统设置处理器
 type SettingHandler struct {
 	settingService       *service.SettingService
@@ -174,6 +201,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		SiteSubtitle:                           settings.SiteSubtitle,
 		APIBaseURL:                             settings.APIBaseURL,
 		ContactInfo:                            settings.ContactInfo,
+		SupportQRCodes:                         dto.ParseSupportQRCodes(settings.SupportQRCodes),
 		DocURL:                                 settings.DocURL,
 		HomeContent:                            settings.HomeContent,
 		HideCcsImportButton:                    settings.HideCcsImportButton,
@@ -185,7 +213,12 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		CustomEndpoints:                        dto.ParseCustomEndpoints(settings.CustomEndpoints),
 		DefaultConcurrency:                     settings.DefaultConcurrency,
 		DefaultBalance:                         settings.DefaultBalance,
+		AffiliateEnabled:                       settings.AffiliateEnabled,
 		AffiliateRebateRate:                    settings.AffiliateRebateRate,
+		AffiliateRebateCap:                     settings.AffiliateRebateCap,
+		AffiliateRebateInviteeLimit:            settings.AffiliateRebateInviteeLimit,
+		AffiliateSignupBonus:                   settings.AffiliateSignupBonus,
+		TicketEnabled:                          settings.TicketEnabled,
 		DefaultUserRPMLimit:                    settings.DefaultUserRPMLimit,
 		DefaultSubscriptions:                   defaultSubscriptions,
 		EnableModelFallback:                    settings.EnableModelFallback,
@@ -321,25 +354,31 @@ type UpdateSettingsRequest struct {
 	OIDCConnectUserInfoUsernamePath string `json:"oidc_connect_userinfo_username_path"`
 
 	// OEM设置
-	SiteName                    string                `json:"site_name"`
-	SiteLogo                    string                `json:"site_logo"`
-	SiteSubtitle                string                `json:"site_subtitle"`
-	APIBaseURL                  string                `json:"api_base_url"`
-	ContactInfo                 string                `json:"contact_info"`
-	DocURL                      string                `json:"doc_url"`
-	HomeContent                 string                `json:"home_content"`
-	HideCcsImportButton         bool                  `json:"hide_ccs_import_button"`
-	PurchaseSubscriptionEnabled *bool                 `json:"purchase_subscription_enabled"`
-	PurchaseSubscriptionURL     *string               `json:"purchase_subscription_url"`
-	TableDefaultPageSize        int                   `json:"table_default_page_size"`
-	TablePageSizeOptions        []int                 `json:"table_page_size_options"`
-	CustomMenuItems             *[]dto.CustomMenuItem `json:"custom_menu_items"`
-	CustomEndpoints             *[]dto.CustomEndpoint `json:"custom_endpoints"`
+	SiteName                    string                    `json:"site_name"`
+	SiteLogo                    string                    `json:"site_logo"`
+	SiteSubtitle                string                    `json:"site_subtitle"`
+	APIBaseURL                  string                    `json:"api_base_url"`
+	ContactInfo                 string                    `json:"contact_info"`
+	SupportQRCodes              *[]dto.SupportQRCodeEntry `json:"support_qr_codes"`
+	DocURL                      string                    `json:"doc_url"`
+	HomeContent                 string                    `json:"home_content"`
+	HideCcsImportButton         bool                      `json:"hide_ccs_import_button"`
+	PurchaseSubscriptionEnabled *bool                     `json:"purchase_subscription_enabled"`
+	PurchaseSubscriptionURL     *string                   `json:"purchase_subscription_url"`
+	TableDefaultPageSize        int                       `json:"table_default_page_size"`
+	TablePageSizeOptions        []int                     `json:"table_page_size_options"`
+	CustomMenuItems             *[]dto.CustomMenuItem     `json:"custom_menu_items"`
+	CustomEndpoints             *[]dto.CustomEndpoint     `json:"custom_endpoints"`
 
 	// 默认配置
 	DefaultConcurrency                       int                               `json:"default_concurrency"`
 	DefaultBalance                           float64                           `json:"default_balance"`
+	AffiliateEnabled                         *bool                             `json:"affiliate_enabled"`
 	AffiliateRebateRate                      *float64                          `json:"affiliate_rebate_rate"`
+	AffiliateRebateCap                       *float64                          `json:"affiliate_rebate_cap"`
+	AffiliateRebateInviteeLimit              *int                              `json:"affiliate_rebate_invitee_limit"`
+	AffiliateSignupBonus                     *float64                          `json:"affiliate_signup_bonus"`
+	TicketEnabled                            *bool                             `json:"ticket_enabled"`
 	DefaultUserRPMLimit                      int                               `json:"default_user_rpm_limit"`
 	DefaultSubscriptions                     []dto.DefaultSubscriptionSetting  `json:"default_subscriptions"`
 	AuthSourceDefaultEmailBalance            *float64                          `json:"auth_source_default_email_balance"`
@@ -479,6 +518,27 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	}
 	if affiliateRebateRate > service.AffiliateRebateRateMax {
 		affiliateRebateRate = service.AffiliateRebateRateMax
+	}
+	affiliateRebateCap := previousSettings.AffiliateRebateCap
+	if req.AffiliateRebateCap != nil {
+		affiliateRebateCap = *req.AffiliateRebateCap
+	}
+	if affiliateRebateCap < 0 {
+		affiliateRebateCap = 0
+	}
+	affiliateRebateInviteeLimit := previousSettings.AffiliateRebateInviteeLimit
+	if req.AffiliateRebateInviteeLimit != nil {
+		affiliateRebateInviteeLimit = *req.AffiliateRebateInviteeLimit
+	}
+	if affiliateRebateInviteeLimit < 0 {
+		affiliateRebateInviteeLimit = 0
+	}
+	affiliateSignupBonus := previousSettings.AffiliateSignupBonus
+	if req.AffiliateSignupBonus != nil {
+		affiliateSignupBonus = *req.AffiliateSignupBonus
+	}
+	if affiliateSignupBonus < 0 {
+		affiliateSignupBonus = 0
 	}
 	// 通用表格配置：兼容旧客户端未传字段时保留当前值。
 	if req.TableDefaultPageSize <= 0 {
@@ -856,6 +916,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	if req.PurchaseSubscriptionURL != nil {
 		purchaseURL = strings.TrimSpace(*req.PurchaseSubscriptionURL)
 	}
+	supportQRCodes := previousSettings.SupportQRCodes
+	if req.SupportQRCodes != nil {
+		supportQRCodes = mustMarshalSupportQRCodes(req.SupportQRCodes)
+	}
 
 	// - 启用时要求 URL 合法且非空
 	// - 禁用时允许为空；若提供了 URL 也做基本校验，避免误配置
@@ -1120,6 +1184,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		SiteSubtitle:                     req.SiteSubtitle,
 		APIBaseURL:                       req.APIBaseURL,
 		ContactInfo:                      req.ContactInfo,
+		SupportQRCodes:                   supportQRCodes,
 		DocURL:                           req.DocURL,
 		HomeContent:                      req.HomeContent,
 		HideCcsImportButton:              req.HideCcsImportButton,
@@ -1131,7 +1196,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		CustomEndpoints:                  customEndpointsJSON,
 		DefaultConcurrency:               req.DefaultConcurrency,
 		DefaultBalance:                   req.DefaultBalance,
+		AffiliateEnabled:                 boolValueOrDefault(req.AffiliateEnabled, previousSettings.AffiliateEnabled),
 		AffiliateRebateRate:              affiliateRebateRate,
+		AffiliateRebateCap:               affiliateRebateCap,
+		AffiliateRebateInviteeLimit:      affiliateRebateInviteeLimit,
+		AffiliateSignupBonus:             affiliateSignupBonus,
+		TicketEnabled:                    boolValueOrDefault(req.TicketEnabled, previousSettings.TicketEnabled),
 		DefaultUserRPMLimit:              req.DefaultUserRPMLimit,
 		DefaultSubscriptions:             defaultSubscriptions,
 		EnableModelFallback:              req.EnableModelFallback,
@@ -1435,6 +1505,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		SiteSubtitle:                           updatedSettings.SiteSubtitle,
 		APIBaseURL:                             updatedSettings.APIBaseURL,
 		ContactInfo:                            updatedSettings.ContactInfo,
+		SupportQRCodes:                         dto.ParseSupportQRCodes(updatedSettings.SupportQRCodes),
 		DocURL:                                 updatedSettings.DocURL,
 		HomeContent:                            updatedSettings.HomeContent,
 		HideCcsImportButton:                    updatedSettings.HideCcsImportButton,
@@ -1446,7 +1517,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		CustomEndpoints:                        dto.ParseCustomEndpoints(updatedSettings.CustomEndpoints),
 		DefaultConcurrency:                     updatedSettings.DefaultConcurrency,
 		DefaultBalance:                         updatedSettings.DefaultBalance,
+		AffiliateEnabled:                       updatedSettings.AffiliateEnabled,
 		AffiliateRebateRate:                    updatedSettings.AffiliateRebateRate,
+		AffiliateRebateCap:                     updatedSettings.AffiliateRebateCap,
+		AffiliateRebateInviteeLimit:            updatedSettings.AffiliateRebateInviteeLimit,
+		AffiliateSignupBonus:                   updatedSettings.AffiliateSignupBonus,
+		TicketEnabled:                          updatedSettings.TicketEnabled,
 		DefaultUserRPMLimit:                    updatedSettings.DefaultUserRPMLimit,
 		DefaultSubscriptions:                   updatedDefaultSubscriptions,
 		EnableModelFallback:                    updatedSettings.EnableModelFallback,
@@ -1737,6 +1813,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.ContactInfo != after.ContactInfo {
 		changed = append(changed, "contact_info")
 	}
+	if before.SupportQRCodes != after.SupportQRCodes {
+		changed = append(changed, "support_qr_codes")
+	}
 	if before.DocURL != after.DocURL {
 		changed = append(changed, "doc_url")
 	}
@@ -1752,8 +1831,23 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.DefaultBalance != after.DefaultBalance {
 		changed = append(changed, "default_balance")
 	}
+	if before.AffiliateEnabled != after.AffiliateEnabled {
+		changed = append(changed, "affiliate_enabled")
+	}
 	if before.AffiliateRebateRate != after.AffiliateRebateRate {
 		changed = append(changed, "affiliate_rebate_rate")
+	}
+	if before.AffiliateRebateCap != after.AffiliateRebateCap {
+		changed = append(changed, "affiliate_rebate_cap")
+	}
+	if before.AffiliateRebateInviteeLimit != after.AffiliateRebateInviteeLimit {
+		changed = append(changed, "affiliate_rebate_invitee_limit")
+	}
+	if before.AffiliateSignupBonus != after.AffiliateSignupBonus {
+		changed = append(changed, "affiliate_signup_bonus")
+	}
+	if before.TicketEnabled != after.TicketEnabled {
+		changed = append(changed, "ticket_enabled")
 	}
 	if !equalDefaultSubscriptions(before.DefaultSubscriptions, after.DefaultSubscriptions) {
 		changed = append(changed, "default_subscriptions")
