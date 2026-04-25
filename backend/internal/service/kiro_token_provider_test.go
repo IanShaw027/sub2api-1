@@ -204,3 +204,64 @@ func TestKiroTokenProvider_GetAccessTokenReturnsRefreshError(t *testing.T) {
 	require.Empty(t, token)
 	require.Equal(t, "stale-access", account.GetCredential("access_token"))
 }
+
+func TestKiroTokenProvider_GetAccessToken_WaitsForLockHolderToPersist(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		ID:       57,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "stale-refresh",
+			"expires_at":    time.Now().Add(-time.Minute).UTC().Format(time.RFC3339),
+		},
+	}
+	repo := &refreshAPIAccountRepo{account: &Account{
+		ID:          account.ID,
+		Platform:    account.Platform,
+		Type:        account.Type,
+		Credentials: cloneCredentials(account.Credentials),
+	}}
+	cache := &refreshAPICacheStub{lockResult: false}
+	provider := NewKiroTokenProvider(repo, cache)
+	provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), &refreshAPIExecutorStub{needsRefresh: true})
+
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		repo.account.Credentials["access_token"] = "fresh-access"
+		repo.account.Credentials["refresh_token"] = "fresh-refresh"
+		repo.account.Credentials["_token_version"] = "123"
+	}()
+
+	token, err := provider.GetAccessToken(context.Background(), account)
+	require.NoError(t, err)
+	require.Equal(t, "fresh-access", token)
+	require.Equal(t, "fresh-access", account.GetCredential("access_token"))
+	require.Equal(t, "fresh-refresh", account.GetCredential("refresh_token"))
+}
+
+func TestKiroTokenProvider_GetAccessToken_LockHeldWithoutUpdateReturnsError(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		ID:       58,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "stale-refresh",
+			"expires_at":    time.Now().Add(-time.Minute).UTC().Format(time.RFC3339),
+		},
+	}
+	repo := &refreshAPIAccountRepo{account: account}
+	cache := &refreshAPICacheStub{lockResult: false}
+	provider := NewKiroTokenProvider(repo, cache)
+	provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), &refreshAPIExecutorStub{needsRefresh: true})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	token, err := provider.GetAccessToken(ctx, account)
+	require.Error(t, err)
+	require.Empty(t, token)
+}

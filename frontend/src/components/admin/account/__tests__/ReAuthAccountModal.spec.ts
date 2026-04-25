@@ -434,4 +434,109 @@ describe('admin ReAuthAccountModal', () => {
     }))
     expect(clearErrorMock).toHaveBeenCalledWith(42)
   })
+
+  it('keeps Kiro batch refresh-token reauth guarded while per-token validation toggles loading', async () => {
+    let resolveFirstValidation: ((value: Record<string, unknown>) => void) | undefined
+    validateRefreshTokenMock
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveFirstValidation = resolve
+      }))
+      .mockImplementation(async (credentials: Record<string, unknown>) => ({
+        access_token: `access-${credentials.refresh_token}`,
+        refresh_token: `validated-${credentials.refresh_token}`,
+        expires_at: '2026-05-01T00:00:00Z',
+        email: `${credentials.refresh_token}@example.com`,
+        plan_name: 'Kiro Pro'
+      }))
+    buildAccountNameMock.mockImplementation((tokenInfo?: any) => `Kiro ${tokenInfo?.email || 'OAuth'}`)
+    const wrapper = mountModal(buildKiroAccount('oauth'))
+    const payload = {
+      credentials: {
+        refresh_token: 'rt-one\nrt-two',
+        auth_method: 'social',
+        region: 'eu-west-1'
+      },
+      extra: {}
+    }
+
+    wrapper.getComponent(KiroAuthorizationFlowStub).vm.$emit('submit-refresh-token', payload)
+    await flushPromises()
+    wrapper.getComponent(KiroAuthorizationFlowStub).vm.$emit('submit-refresh-token', payload)
+    await flushPromises()
+
+    expect(validateRefreshTokenMock).toHaveBeenCalledTimes(1)
+
+    resolveFirstValidation?.({
+      access_token: 'access-rt-one',
+      refresh_token: 'validated-rt-one',
+      expires_at: '2026-05-01T00:00:00Z',
+      email: 'rt-one@example.com',
+      plan_name: 'Kiro Pro'
+    })
+    await flushPromises()
+
+    expect(validateRefreshTokenMock).toHaveBeenCalledTimes(2)
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('removes stale IDC credentials when Kiro reauth switches back to social refresh tokens', async () => {
+    const account = buildKiroAccount('oauth')
+    account.credentials = {
+      refresh_token: 'rt-old',
+      auth_method: 'idc',
+      client_id: 'old-client',
+      client_secret: 'old-secret',
+      issuer_url: 'https://old-idc.example.com',
+      idc_region: 'us-west-2',
+      region: 'us-east-1'
+    }
+    const wrapper = mountModal(account)
+
+    await wrapper.get('[data-testid="kiro-flow-submit-refresh-token"]').trigger('click')
+    await flushPromises()
+
+    const credentials = updateAccountMock.mock.calls[0]?.[1]?.credentials
+    expect(credentials).toEqual(expect.objectContaining({
+      auth_method: 'social',
+      refresh_token: 'refresh-validated'
+    }))
+    expect(credentials).not.toHaveProperty('client_id')
+    expect(credentials).not.toHaveProperty('client_secret')
+    expect(credentials).not.toHaveProperty('issuer_url')
+    expect(credentials).not.toHaveProperty('idc_region')
+  })
+
+  it('removes stale IDC credentials when Kiro callback reauth switches back to social credentials', async () => {
+    const account = buildKiroAccount('oauth')
+    account.credentials = {
+      refresh_token: 'rt-old',
+      auth_method: 'idc',
+      client_id: 'old-client',
+      client_secret: 'old-secret',
+      issuer_url: 'https://old-idc.example.com',
+      idc_region: 'us-west-2',
+      region: 'us-east-1'
+    }
+    buildCredentialsMock.mockReturnValue({
+      access_token: 'access-new',
+      refresh_token: 'refresh-new',
+      auth_method: 'social',
+      region: 'us-east-1'
+    })
+    const wrapper = mountModal(account)
+
+    await wrapper.get('[data-testid="kiro-flow-submit"]').trigger('click')
+    await flushPromises()
+
+    const credentials = updateAccountMock.mock.calls[0]?.[1]?.credentials
+    expect(credentials).toEqual(expect.objectContaining({
+      auth_method: 'social',
+      refresh_token: 'refresh-new'
+    }))
+    expect(credentials).not.toHaveProperty('client_id')
+    expect(credentials).not.toHaveProperty('client_secret')
+    expect(credentials).not.toHaveProperty('issuer_url')
+    expect(credentials).not.toHaveProperty('idc_region')
+  })
 })

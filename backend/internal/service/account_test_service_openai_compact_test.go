@@ -154,6 +154,10 @@ func TestAccountTestService_TestAccountConnection_OpenAICompactAPIKeyUsesCompact
 	require.NoError(t, err)
 
 	require.Equal(t, "https://example.com/v1/responses/compact", upstream.lastReq.URL.String())
+	require.Empty(t, upstream.lastReq.Header.Get("Originator"))
+	require.Empty(t, upstream.lastReq.Header.Get("Version"))
+	require.Empty(t, upstream.lastReq.Header.Get("Session_Id"))
+	require.NotEqual(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, "gpt-5.4-openai-compact", gjson.GetBytes(upstream.lastBody, "model").String())
 	updates := <-updateCalls
 	require.Equal(t, true, updates["openai_compact_supported"])

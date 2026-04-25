@@ -205,14 +205,11 @@ func KiroAuthMethodUsesIDCRefresh(authMethod string) bool {
 
 func NormalizeKiroAuthMethod(credentials map[string]any) string {
 	authMethod := normalizeKiroAuthMethodValue(stringCredential(credentials, "auth_method"))
-	if authMethod == "idc" {
+	if authMethod != "" {
 		return authMethod
 	}
 	if strings.TrimSpace(stringCredential(credentials, "client_id")) != "" && strings.TrimSpace(stringCredential(credentials, "client_secret")) != "" {
 		return "idc"
-	}
-	if authMethod != "" {
-		return authMethod
 	}
 	for _, key := range []string{"provider", "login_provider", "login_option"} {
 		if authMethod := normalizeKiroAuthMethodValue(stringCredential(credentials, key)); authMethod != "" {
@@ -399,11 +396,6 @@ func (s *AccountService) Update(ctx context.Context, id int64, req UpdateAccount
 	if req.Credentials != nil {
 		account.Credentials = *req.Credentials
 	}
-	if account.Platform == PlatformKiro {
-		if err := validateKiroAccountCredentials(account.Type, account.Credentials); err != nil {
-			return nil, err
-		}
-	}
 
 	if req.Extra != nil {
 		account.Extra = *req.Extra
@@ -437,6 +429,11 @@ func (s *AccountService) Update(ctx context.Context, id int64, req UpdateAccount
 			return nil, err
 		}
 		if err := s.validateOAuthOnlyGroups(ctx, account.Type, *req.GroupIDs); err != nil {
+			return nil, err
+		}
+	}
+	if account.Platform == PlatformKiro {
+		if err := validateKiroAccountCredentials(account.Type, account.Credentials); err != nil {
 			return nil, err
 		}
 	}

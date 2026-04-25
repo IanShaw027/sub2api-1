@@ -64,7 +64,7 @@ func AntigravityProviderRefreshPolicy() ProviderRefreshPolicy {
 func KiroProviderRefreshPolicy() ProviderRefreshPolicy {
 	return ProviderRefreshPolicy{
 		OnRefreshError: ProviderRefreshErrorReturn,
-		OnLockHeld:     ProviderLockHeldUseExistingToken,
+		OnLockHeld:     ProviderLockHeldWaitForCache,
 		FailureTTL:     0,
 	}
 }

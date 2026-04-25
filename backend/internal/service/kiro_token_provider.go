@@ -166,6 +166,15 @@ func (p *KiroTokenProvider) GetAccessToken(ctx context.Context, account *Account
 					return token, nil
 				}
 			}
+			if p.refreshPolicy.OnLockHeld == ProviderLockHeldWaitForCache {
+				refreshedAccount, waitErr := p.awaitRefreshResult(ctx, account, nil)
+				if waitErr != nil {
+					return "", waitErr
+				}
+				copyKiroAccountRuntimeState(callerAccount, refreshedAccount)
+				account = callerAccount
+				expiresAt = account.GetCredentialAsTime("expires_at")
+			}
 		} else if result.Account != nil {
 			copyKiroAccountRuntimeState(callerAccount, result.Account)
 			account = callerAccount

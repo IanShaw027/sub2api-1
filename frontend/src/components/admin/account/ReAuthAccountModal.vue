@@ -125,7 +125,7 @@
         mode="reauth"
         :auth-url="kiroOAuth.authUrl.value"
         :callback-base-url="kiroOAuth.callbackBaseUrl.value"
-        :loading="kiroOAuth.loading.value"
+        :loading="kiroReauthLoading"
         :error="kiroOAuth.error.value"
         :initial-credentials="kiroCredentials"
         :initial-extra="kiroExtra"
@@ -267,6 +267,7 @@ const oauthFlowRef = ref<OAuthFlowExposed | null>(null)
 // State
 const addMethod = ref<AddMethod>('oauth')
 const geminiOAuthType = ref<'code_assist' | 'google_one' | 'ai_studio'>('code_assist')
+const kiroBatchReauthLoading = ref(false)
 
 // Computed - check platform
 const isOpenAI = computed(() => props.account?.platform === 'openai')
@@ -312,6 +313,7 @@ const currentLoading = computed(() => {
   if (isAntigravity.value) return antigravityOAuth.loading.value
   return claudeOAuth.loading.value
 })
+const kiroReauthLoading = computed(() => kiroOAuth.loading.value || kiroBatchReauthLoading.value)
 const currentError = computed(() => {
   if (isKiro.value) return ''
   if (isOpenAILike.value) return openaiOAuth.error.value
@@ -406,6 +408,21 @@ const stripEmptyRecordValues = (
   )
 }
 
+const sanitizeKiroCredentialsForAuthMethod = (
+  credentials: Record<string, unknown>
+): Record<string, unknown> => {
+  const sanitized = { ...credentials }
+  if (sanitized.auth_method !== 'idc') {
+    delete sanitized.client_id
+    delete sanitized.client_secret
+    delete sanitized.issuer_url
+    delete sanitized.idc_region
+    delete sanitized.scopes
+    delete sanitized.login_hint
+  }
+  return sanitized
+}
+
 const finishKiroReauthorization = async (
   name: string,
   credentials: Record<string, unknown>,
@@ -444,10 +461,10 @@ const handleKiroReauthorize = async (payload: {
   if (!tokenInfo) {
     return
   }
-  const credentials = mergeRecord(
+  const credentials = sanitizeKiroCredentialsForAuthMethod(mergeRecord(
     (props.account.credentials || {}) as Record<string, unknown>,
     kiroOAuth.buildCredentials(tokenInfo, payload.credentials)
-  )
+  ))
   const extra = mergeRecord(
     (props.account.extra || {}) as Record<string, unknown>,
     kiroOAuth.buildExtraInfo(tokenInfo, payload.extra)
@@ -463,6 +480,7 @@ const handleKiroValidateRT = async (payload: {
   extra: Record<string, unknown>
 }) => {
   if (!props.account || !isKiroOAuth.value) return
+  if (kiroBatchReauthLoading.value) return
 
   const refreshTokens = String(payload.credentials.refresh_token || '')
     .split('\n')
@@ -474,6 +492,7 @@ const handleKiroValidateRT = async (payload: {
     return
   }
 
+  kiroBatchReauthLoading.value = true
   kiroOAuth.loading.value = true
   kiroOAuth.error.value = ''
 
@@ -502,11 +521,11 @@ const handleKiroValidateRT = async (payload: {
         }
 
         const tokenInfo = validatedCredentials as KiroTokenInfo
-        const credentials = stripEmptyRecordValues(mergeRecord(
+        const credentials = sanitizeKiroCredentialsForAuthMethod(stripEmptyRecordValues(mergeRecord(
           (props.account.credentials || {}) as Record<string, unknown>,
           manualCredentials,
           validatedCredentials
-        ))
+        )))
         const extra = stripKiroRuntimeExtra(stripEmptyRecordValues(mergeRecord(
           (props.account.extra || {}) as Record<string, unknown>,
           kiroOAuth.buildExtraInfo(tokenInfo, payload.extra)
@@ -574,6 +593,7 @@ const handleKiroValidateRT = async (payload: {
       appStore.showError(t('admin.accounts.oauth.batchFailed'))
     }
   } finally {
+    kiroBatchReauthLoading.value = false
     kiroOAuth.loading.value = false
   }
 }
