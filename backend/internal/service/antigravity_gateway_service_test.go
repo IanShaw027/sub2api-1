@@ -206,6 +206,45 @@ func (s *antigravitySettingRepoStub) Delete(ctx context.Context, key string) err
 	panic("unexpected Delete call")
 }
 
+type antigravityFallbackSettingRepoStub struct {
+	values map[string]string
+}
+
+func (s *antigravityFallbackSettingRepoStub) Get(ctx context.Context, key string) (*Setting, error) {
+	panic("unexpected Get call")
+}
+
+func (s *antigravityFallbackSettingRepoStub) GetValue(ctx context.Context, key string) (string, error) {
+	if s.values == nil {
+		return "", ErrSettingNotFound
+	}
+	value, ok := s.values[key]
+	if !ok {
+		return "", ErrSettingNotFound
+	}
+	return value, nil
+}
+
+func (s *antigravityFallbackSettingRepoStub) Set(ctx context.Context, key, value string) error {
+	panic("unexpected Set call")
+}
+
+func (s *antigravityFallbackSettingRepoStub) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
+	panic("unexpected GetMultiple call")
+}
+
+func (s *antigravityFallbackSettingRepoStub) SetMultiple(ctx context.Context, settings map[string]string) error {
+	panic("unexpected SetMultiple call")
+}
+
+func (s *antigravityFallbackSettingRepoStub) GetAll(ctx context.Context) (map[string]string, error) {
+	panic("unexpected GetAll call")
+}
+
+func (s *antigravityFallbackSettingRepoStub) Delete(ctx context.Context, key string) error {
+	panic("unexpected Delete call")
+}
+
 func TestAntigravityGatewayService_Forward_PromptTooLong(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	writer := httptest.NewRecorder()
@@ -598,6 +637,96 @@ func TestAntigravityGatewayService_ForwardGemini_BillsWithMappedModel(t *testing
 	require.NotNil(t, result)
 	require.Equal(t, "gemini-2.5-flash", result.Model)
 	require.Equal(t, mappedModel, result.UpstreamModel)
+}
+
+func TestAntigravityGatewayService_ForwardGemini_ModelNotFoundFallbackSuccessRecordsOpsEvents(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	writer := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(writer)
+
+	body, err := json.Marshal(map[string]any{
+		"contents": []map[string]any{
+			{"role": "user", "parts": []map[string]any{{"text": "hello"}}},
+		},
+	})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/antigravity/v1beta/models/gemini-3.1-pro-preview:streamGenerateContent", bytes.NewReader(body))
+	c.Request = req
+
+	firstRespBody := []byte(`{"response":{"error":{"code":404,"message":"model not found: gemini-3.1-pro-high","status":"NOT_FOUND"}}}`)
+	secondRespBody := []byte("data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":8,\"candidatesTokenCount\":3}}}\n\n")
+	upstream := &queuedHTTPUpstreamStub{
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusNotFound,
+				Header: http.Header{
+					"Content-Type": []string{"application/json"},
+					"X-Request-Id": []string{"req-model-fallback-1"},
+				},
+				Body: io.NopCloser(bytes.NewReader(firstRespBody)),
+			},
+			{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Type": []string{"text/event-stream"},
+					"X-Request-Id": []string{"req-model-fallback-2"},
+				},
+				Body: io.NopCloser(bytes.NewReader(secondRespBody)),
+			},
+		},
+	}
+
+	settingSvc := NewSettingService(&antigravityFallbackSettingRepoStub{
+		values: map[string]string{
+			SettingKeyEnableModelFallback:      "true",
+			SettingKeyFallbackModelAntigravity: "gemini-2.5-pro",
+		},
+	}, &config.Config{Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize}})
+
+	svc := &AntigravityGatewayService{
+		settingService: settingSvc,
+		tokenProvider:  &AntigravityTokenProvider{},
+		httpUpstream:   upstream,
+	}
+
+	const originalModel = "gemini-3.1-pro-preview"
+	const mappedModel = "gemini-3.1-pro-high"
+	const fallbackModel = "gemini-2.5-pro"
+	account := &Account{
+		ID:          9,
+		Name:        "acc-gemini-model-fallback",
+		Platform:    PlatformAntigravity,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "token",
+			"model_mapping": map[string]any{
+				originalModel: mappedModel,
+			},
+		},
+	}
+
+	result, err := svc.ForwardGemini(context.Background(), c, account, originalModel, "streamGenerateContent", true, body, false)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, originalModel, result.Model)
+	require.Equal(t, mappedModel, result.UpstreamModel)
+	require.Len(t, upstream.requestBodies, 2)
+	require.Contains(t, string(upstream.requestBodies[1]), `"model":"`+fallbackModel+`"`)
+
+	raw, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := raw.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.GreaterOrEqual(t, len(events), 3)
+	require.Equal(t, "model_fallback_source", events[0].Kind)
+	require.Equal(t, http.StatusNotFound, events[0].UpstreamStatusCode)
+	require.Equal(t, "model_fallback_attempt", events[1].Kind)
+	require.Equal(t, "model_fallback_success", events[2].Kind)
+	require.Equal(t, http.StatusOK, events[2].UpstreamStatusCode)
+	require.Equal(t, "req-model-fallback-2", events[2].UpstreamRequestID)
 }
 
 func TestAntigravityGatewayService_ForwardGemini_RetriesCorruptedThoughtSignature(t *testing.T) {

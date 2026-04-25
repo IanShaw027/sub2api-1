@@ -61,6 +61,9 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 	if err != nil {
 		return nil, err
 	}
+	if c != nil && converted != nil {
+		setOpsUpstreamRequestBody(c, converted.Body)
+	}
 
 	accessToken, err := s.resolveAccessToken(ctx, account)
 	if err != nil {
@@ -84,8 +87,10 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 
 	start := time.Now()
 	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, s.resolveTLSProfile(account))
+	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(start).Milliseconds())
 	if err != nil {
 		s.handleUpstreamError(ctx, account, http.StatusBadGateway, http.Header{}, []byte(err.Error()))
+		s.recordOpsRequestError(c, account, req.URL.String(), err)
 		c.JSON(http.StatusBadGateway, gin.H{
 			"type":  "error",
 			"error": gin.H{"type": "api_error", "message": "Kiro upstream request failed"},
@@ -97,6 +102,7 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		s.handleUpstreamError(ctx, account, resp.StatusCode, resp.Header, body)
+		s.recordOpsHTTPError(c, account, req.URL.String(), resp.StatusCode, resp.Header, body)
 		if shouldKiroFailover(resp.StatusCode) {
 			return nil, &UpstreamFailoverError{
 				StatusCode:   resp.StatusCode,
@@ -229,7 +235,7 @@ func buildKiroGenerateAssistantRequest(ctx context.Context, account *Account, bo
 func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Context, account *Account, resp *http.Response, parsed *ParsedRequest, converted *kiropkg.ConvertResult, inputTokens int, start time.Time, fakeCachePlan *kiropkg.FakeCachePlan, fakeCacheHit kiropkg.FakeCacheHitState, runtimeSettings *KiroRuntimeSettings) (*ForwardResult, error) {
 	frames, err := readAllKiroFrames(resp.Body)
 	if err != nil {
-		s.handleProtocolError(ctx, account, parsed.Model, false, err)
+		s.handleProtocolError(ctx, c, account, parsed.Model, false, err)
 		c.JSON(http.StatusBadGateway, gin.H{
 			"type":  "error",
 			"error": gin.H{"type": "api_error", "message": "Failed to decode Kiro response"},
@@ -246,18 +252,18 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 
 	for _, frame := range frames {
 		if failureErr := kiroFrameFailure(frame); failureErr != nil {
-			return nil, s.handleFrameFailure(ctx, c, account, frame, failureErr)
+			return nil, s.handleFrameFailure(ctx, c, account, resp.Header.Get("x-amzn-requestid"), frame, failureErr, true)
 		}
 
 		switch frame.EventType {
 		case "assistantResponseEvent":
-			if content := stringField(frame.Payload, "content"); content != "" {
+			if content := rawStringField(frame.Payload, "content"); content != "" {
 				_, _ = textBuilder.WriteString(content)
 				hasVisibleOutput = true
 			}
 		case "toolUseEvent":
-			state := ensureKiroToolState(toolBuffers, stringField(frame.Payload, "toolUseId"), stringField(frame.Payload, "name"))
-			_, _ = state.InputBuilder.WriteString(stringField(frame.Payload, "input"))
+			state := ensureKiroToolState(toolBuffers, controlStringField(frame.Payload, "toolUseId"), controlStringField(frame.Payload, "name"))
+			_, _ = state.InputBuilder.WriteString(rawStringField(frame.Payload, "input"))
 			if booleanField(frame.Payload, "stop") {
 				state.Stopped = true
 				input := map[string]any{}
@@ -277,7 +283,7 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 	}
 	if !hasVisibleOutput {
 		emptyErr := errors.New("kiro response contained no assistant output")
-		s.handleProtocolError(ctx, account, parsed.Model, false, emptyErr)
+		s.handleProtocolError(ctx, c, account, parsed.Model, false, emptyErr)
 		c.JSON(http.StatusBadGateway, gin.H{
 			"type":  "error",
 			"error": gin.H{"type": "api_error", "message": "Kiro upstream returned no assistant output"},
@@ -356,13 +362,13 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			buffer = append(buffer, chunk[:n]...)
 			if len(buffer) > kiroMaxBodySize {
 				err := fmt.Errorf("kiro stream buffer exceeded limit %d", kiroMaxBodySize)
-				s.handleProtocolError(ctx, account, parsed.Model, true, err)
+				s.handleProtocolError(ctx, c, account, parsed.Model, true, err)
 				return nil, err
 			}
 			for {
 				frame, consumed, ok, err := parseKiroFrame(buffer)
 				if err != nil {
-					s.handleProtocolError(ctx, account, parsed.Model, true, err)
+					s.handleProtocolError(ctx, c, account, parsed.Model, true, err)
 					return nil, err
 				}
 				if !ok {
@@ -373,7 +379,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 
 				if failureErr := kiroFrameFailure(frame); failureErr != nil {
 					if streamStarted {
-						handledErr := s.handleFrameFailure(ctx, nil, account, frame, failureErr)
+						handledErr := s.handleFrameFailure(ctx, c, account, resp.Header.Get("x-amzn-requestid"), frame, failureErr, false)
 						if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, toolStates); err != nil {
 							return nil, err
 						}
@@ -384,16 +390,12 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						}
 						return nil, failureErr
 					}
-					c.JSON(http.StatusBadGateway, gin.H{
-						"type":  "error",
-						"error": gin.H{"type": "api_error", "message": failureErr.Error()},
-					})
-					return nil, s.handleFrameFailure(ctx, nil, account, frame, failureErr)
+					return nil, s.handleFrameFailure(ctx, c, account, resp.Header.Get("x-amzn-requestid"), frame, failureErr, true)
 				}
 
 				switch frame.EventType {
 				case "assistantResponseEvent":
-					content := stringField(frame.Payload, "content")
+					content := rawStringField(frame.Payload, "content")
 					if content == "" {
 						continue
 					}
@@ -441,8 +443,8 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						return nil, err
 					}
 				case "toolUseEvent":
-					toolUseID := stringField(frame.Payload, "toolUseId")
-					state := ensureKiroToolState(toolStates, toolUseID, stringField(frame.Payload, "name"))
+					toolUseID := controlStringField(frame.Payload, "toolUseId")
+					state := ensureKiroToolState(toolStates, toolUseID, controlStringField(frame.Payload, "name"))
 					if !streamStarted {
 						initialInputTokens := inputTokens
 						if contextInputTokens > 0 {
@@ -482,7 +484,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 							return nil, err
 						}
 					}
-					inputChunk := stringField(frame.Payload, "input")
+					inputChunk := rawStringField(frame.Payload, "input")
 					if inputChunk != "" {
 						_, _ = state.InputBuilder.WriteString(inputChunk)
 						if err := writeSSEEvent(writer, "content_block_delta", map[string]any{
@@ -522,12 +524,12 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						}
 						_ = writeKiroStreamError(writer, incompleteErr.Error())
 					}
-					s.handleProtocolError(ctx, account, parsed.Model, true, incompleteErr)
+					s.handleProtocolError(ctx, c, account, parsed.Model, true, incompleteErr)
 					return nil, incompleteErr
 				}
 				if framesSeen == 0 {
 					emptyErr := errors.New("empty kiro response body")
-					s.handleProtocolError(ctx, account, parsed.Model, true, emptyErr)
+					s.handleProtocolError(ctx, c, account, parsed.Model, true, emptyErr)
 					return nil, emptyErr
 				}
 				break
@@ -538,13 +540,13 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 				}
 				_ = writeKiroStreamError(writer, readErr.Error())
 			}
-			s.handleProtocolError(ctx, account, parsed.Model, true, readErr)
+			s.handleProtocolError(ctx, c, account, parsed.Model, true, readErr)
 			return nil, readErr
 		}
 	}
 	if !streamStarted || (outputBuilder.Len() == 0 && completedToolUses == 0) {
 		emptyErr := errors.New("kiro response contained no assistant output")
-		s.handleProtocolError(ctx, account, parsed.Model, true, emptyErr)
+		s.handleProtocolError(ctx, c, account, parsed.Model, true, emptyErr)
 		return nil, emptyErr
 	}
 
@@ -922,11 +924,12 @@ func (s *KiroGatewayService) handleUpstreamError(ctx context.Context, account *A
 	return s.rateLimitService.HandleUpstreamError(ctx, account, statusCode, headers, body)
 }
 
-func (s *KiroGatewayService) handleProtocolError(ctx context.Context, account *Account, model string, isStream bool, err error) {
+func (s *KiroGatewayService) handleProtocolError(ctx context.Context, c *gin.Context, account *Account, model string, isStream bool, err error) {
 	if err == nil {
 		return
 	}
 	body := []byte(err.Error())
+	s.recordOpsProtocolError(c, account, err)
 	if isStream && errors.Is(err, io.ErrUnexpectedEOF) && s != nil && s.rateLimitService != nil {
 		s.rateLimitService.HandleStreamTimeout(ctx, account, model)
 		return
@@ -934,12 +937,13 @@ func (s *KiroGatewayService) handleProtocolError(ctx context.Context, account *A
 	s.handleUpstreamError(ctx, account, http.StatusBadGateway, http.Header{}, body)
 }
 
-func (s *KiroGatewayService) handleFrameFailure(ctx context.Context, c *gin.Context, account *Account, frame *kiroFrame, failureErr error) error {
+func (s *KiroGatewayService) handleFrameFailure(ctx context.Context, c *gin.Context, account *Account, upstreamRequestID string, frame *kiroFrame, failureErr error, writeClientError bool) error {
 	if failureErr == nil {
 		return nil
 	}
 	statusCode := kiroFrameFailureStatusCode(frame)
 	body := []byte(failureErr.Error())
+	s.recordOpsFrameFailure(c, account, upstreamRequestID, statusCode, failureErr)
 	s.handleUpstreamError(ctx, account, statusCode, http.Header{}, body)
 	if shouldKiroFailover(statusCode) {
 		return &UpstreamFailoverError{
@@ -947,13 +951,84 @@ func (s *KiroGatewayService) handleFrameFailure(ctx context.Context, c *gin.Cont
 			ResponseBody: body,
 		}
 	}
-	if c != nil {
+	if writeClientError && c != nil {
 		c.JSON(http.StatusBadGateway, gin.H{
 			"type":  "error",
 			"error": gin.H{"type": "api_error", "message": failureErr.Error()},
 		})
 	}
 	return failureErr
+}
+
+func (s *KiroGatewayService) recordOpsRequestError(c *gin.Context, account *Account, upstreamURL string, err error) {
+	if err == nil {
+		return
+	}
+	s.recordOpsErrorEvent(c, account, 0, "", upstreamURL, "request_error", err.Error(), "")
+}
+
+func (s *KiroGatewayService) recordOpsHTTPError(c *gin.Context, account *Account, upstreamURL string, statusCode int, headers http.Header, body []byte) {
+	detail := kiroErrorDetailFromBody(body)
+	if detail == "" {
+		detail = truncateString(strings.TrimSpace(string(body)), 2048)
+	}
+	requestID := strings.TrimSpace(headers.Get("x-amzn-requestid"))
+	if requestID == "" {
+		requestID = strings.TrimSpace(headers.Get("x-request-id"))
+	}
+	s.recordOpsErrorEvent(
+		c,
+		account,
+		statusCode,
+		requestID,
+		upstreamURL,
+		"http_error",
+		fmt.Sprintf("Kiro upstream returned %d", statusCode),
+		detail,
+	)
+}
+
+func (s *KiroGatewayService) recordOpsProtocolError(c *gin.Context, account *Account, err error) {
+	if err == nil {
+		return
+	}
+	s.recordOpsErrorEvent(c, account, 0, "", "", "request_error", err.Error(), "")
+}
+
+func (s *KiroGatewayService) recordOpsFrameFailure(c *gin.Context, account *Account, upstreamRequestID string, statusCode int, failureErr error) {
+	if failureErr == nil {
+		return
+	}
+	s.recordOpsErrorEvent(c, account, statusCode, upstreamRequestID, "", "http_error", failureErr.Error(), "")
+}
+
+func (s *KiroGatewayService) recordOpsErrorEvent(
+	c *gin.Context,
+	account *Account,
+	statusCode int,
+	upstreamRequestID string,
+	upstreamURL string,
+	kind string,
+	message string,
+	detail string,
+) {
+	if c == nil || account == nil {
+		return
+	}
+	message = sanitizeUpstreamErrorMessage(message)
+	detail = strings.TrimSpace(detail)
+	SetOpsUpstreamError(c, statusCode, message, detail)
+	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+		Platform:           account.Platform,
+		AccountID:          account.ID,
+		AccountName:        account.Name,
+		UpstreamStatusCode: statusCode,
+		UpstreamRequestID:  strings.TrimSpace(upstreamRequestID),
+		UpstreamURL:        safeUpstreamURL(upstreamURL),
+		Kind:               kind,
+		Message:            message,
+		Detail:             detail,
+	})
 }
 
 func kiroFrameFailure(frame *kiroFrame) error {
@@ -1012,7 +1087,7 @@ func kiroFrameFailureMessage(frame *kiroFrame) string {
 	}
 
 	for _, key := range []string{"message", "Message", "errorMessage", "error_message"} {
-		if value := stringField(frame.Payload, key); value != "" {
+		if value := controlStringField(frame.Payload, key); value != "" {
 			return value
 		}
 	}
@@ -1079,14 +1154,18 @@ func writeKiroStreamError(writer gin.ResponseWriter, message string) error {
 	})
 }
 
-func stringField(obj map[string]any, key string) string {
+func rawStringField(obj map[string]any, key string) string {
 	if obj == nil {
 		return ""
 	}
 	if value, ok := obj[key].(string); ok {
-		return strings.TrimSpace(value)
+		return value
 	}
 	return ""
+}
+
+func controlStringField(obj map[string]any, key string) string {
+	return strings.TrimSpace(rawStringField(obj, key))
 }
 
 func booleanField(obj map[string]any, key string) bool {

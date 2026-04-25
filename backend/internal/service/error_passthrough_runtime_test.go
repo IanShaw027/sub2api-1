@@ -50,7 +50,7 @@ func TestGatewayHandleErrorResponse_NoRuleKeepsDefault(t *testing.T) {
 	}
 	account := &Account{ID: 11, Platform: PlatformAnthropic, Type: AccountTypeAPIKey}
 
-	_, err := svc.handleErrorResponse(context.Background(), resp, c, account)
+	_, err := svc.handleErrorResponse(context.Background(), resp, c, account, "")
 	require.Error(t, err)
 	assert.Equal(t, http.StatusBadGateway, rec.Code)
 
@@ -127,7 +127,7 @@ func TestGatewayHandleErrorResponse_AppliesRuleFor422(t *testing.T) {
 	}
 	account := &Account{ID: 1, Platform: PlatformAnthropic, Type: AccountTypeAPIKey}
 
-	_, err := svc.handleErrorResponse(context.Background(), resp, c, account)
+	_, err := svc.handleErrorResponse(context.Background(), resp, c, account, "")
 	require.Error(t, err)
 	assert.Equal(t, http.StatusTeapot, rec.Code)
 

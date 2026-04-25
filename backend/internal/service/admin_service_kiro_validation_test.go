@@ -124,6 +124,84 @@ func TestAdminServiceUpdateAccount_RejectsInvalidKiroIDCFields(t *testing.T) {
 	require.Contains(t, err.Error(), "kiro idc client_id and client_secret are required")
 }
 
+func TestAdminServiceUpdateAccount_PreservesOmittedKiroOAuthSecrets(t *testing.T) {
+	t.Parallel()
+
+	repo := &kiroDefaultAccountRepoStub{
+		accountsByID: map[int64]*Account{
+			55: {
+				ID:       55,
+				Name:     "kiro-oauth",
+				Platform: PlatformKiro,
+				Type:     AccountTypeOAuth,
+				Status:   StatusActive,
+				Credentials: map[string]any{
+					"refresh_token": "old-refresh",
+					"access_token":  "old-access",
+					"expires_at":    "1735689600",
+					"client_id":     "old-client-id",
+					"client_secret": "old-client-secret",
+					"auth_method":   "idc",
+					"profile_arn":   "arn:aws:kiro:old",
+				},
+			},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	account, err := svc.UpdateAccount(context.Background(), 55, &UpdateAccountInput{
+		Credentials: map[string]any{
+			"auth_method": "social",
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.Equal(t, "old-refresh", account.GetCredential("refresh_token"))
+	require.Equal(t, "old-access", account.GetCredential("access_token"))
+	require.Equal(t, "1735689600", account.GetCredential("expires_at"))
+	require.Equal(t, "old-client-id", account.GetCredential("client_id"))
+	require.Equal(t, "old-client-secret", account.GetCredential("client_secret"))
+	require.Equal(t, "social", account.GetCredential("auth_method"))
+	_, hasProfileArn := account.Credentials["profile_arn"]
+	require.False(t, hasProfileArn)
+}
+
+func TestAdminServiceUpdateAccount_PreservesOmittedKiroAPIKeySecret(t *testing.T) {
+	t.Parallel()
+
+	repo := &kiroDefaultAccountRepoStub{
+		accountsByID: map[int64]*Account{
+			56: {
+				ID:       56,
+				Name:     "kiro-apikey",
+				Platform: PlatformKiro,
+				Type:     AccountTypeAPIKey,
+				Status:   StatusActive,
+				Credentials: map[string]any{
+					"api_key": "old-api-key",
+					"region":  "us-east-1",
+					"model":   "legacy-model",
+				},
+			},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	account, err := svc.UpdateAccount(context.Background(), 56, &UpdateAccountInput{
+		Credentials: map[string]any{
+			"region": "eu-west-1",
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.Equal(t, "old-api-key", account.GetCredential("api_key"))
+	require.Equal(t, "eu-west-1", account.GetCredential("region"))
+	_, hasModel := account.Credentials["model"]
+	require.False(t, hasModel)
+}
+
 func TestAdminServiceBulkUpdateAccounts_RejectsInvalidMergedKiroCredentials(t *testing.T) {
 	t.Parallel()
 

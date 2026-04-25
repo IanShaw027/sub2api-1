@@ -501,6 +501,34 @@ func parseOpenAIWSErrorEventFields(message []byte) (code string, errType string,
 	return strings.TrimSpace(values[0].String()), strings.TrimSpace(values[1].String()), strings.TrimSpace(values[2].String())
 }
 
+func parseOpenAIWSResponseFailedErrorFields(message []byte) (code string, errType string, errMessage string) {
+	if len(message) == 0 {
+		return "", "", ""
+	}
+	values := gjson.GetManyBytes(
+		message,
+		"response.error.code",
+		"response.error.type",
+		"response.error.message",
+		"error.code",
+		"error.type",
+		"error.message",
+	)
+	code = strings.TrimSpace(values[0].String())
+	if code == "" {
+		code = strings.TrimSpace(values[3].String())
+	}
+	errType = strings.TrimSpace(values[1].String())
+	if errType == "" {
+		errType = strings.TrimSpace(values[4].String())
+	}
+	errMessage = strings.TrimSpace(values[2].String())
+	if errMessage == "" {
+		errMessage = strings.TrimSpace(values[5].String())
+	}
+	return code, errType, errMessage
+}
+
 func summarizeOpenAIWSErrorEventFieldsFromRaw(codeRaw, errTypeRaw, errMessageRaw string) (code string, errType string, errMessage string) {
 	code = truncateOpenAIWSLogValue(codeRaw, openAIWSLogValueMaxLen)
 	errType = truncateOpenAIWSLogValue(errTypeRaw, openAIWSLogValueMaxLen)
@@ -2236,6 +2264,32 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 		if openAIWSEventShouldParseUsage(eventType) {
 			parseOpenAIWSResponseUsageFromCompletedEvent(message, usage)
+		}
+		if eventType == "response.failed" {
+			failedMessage := extractOpenAISSEErrorMessage(message)
+			if failedMessage == "" {
+				failedMessage = "Upstream websocket response failed"
+			}
+			if !wroteDownstream && openAIStreamFailedEventShouldFailover(message, failedMessage) {
+				lease.MarkBroken()
+				return nil, wrapOpenAIWSFallback("response_failed", errors.New(failedMessage))
+			}
+			errCodeRaw, errTypeRaw, _ := parseOpenAIWSResponseFailedErrorFields(message)
+			statusCode := openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
+			setOpsUpstreamError(c, statusCode, failedMessage, "")
+			if reqStream && !clientDisconnected {
+				flushBufferedStreamEvents("response_failed")
+				emitStreamMessage(message, true)
+			}
+			if !reqStream {
+				c.JSON(statusCode, gin.H{
+					"error": gin.H{
+						"type":    "upstream_error",
+						"message": failedMessage,
+					},
+				})
+			}
+			return nil, fmt.Errorf("openai ws response failed: %s", failedMessage)
 		}
 
 		if eventType == "error" {

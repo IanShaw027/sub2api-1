@@ -6,9 +6,11 @@ import (
 	"bytes"
 	"context"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -94,6 +96,11 @@ func (m *mockSmartRetryUpstream) DoWithTLS(req *http.Request, proxyURL string, a
 
 // TestHandleSmartRetry_URLLevelRateLimit 测试 URL 级别限流切换
 func TestHandleSmartRetry_URLLevelRateLimit(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/antigravity/v1beta/models/gemini:generateContent", nil)
+
 	account := &Account{
 		ID:       1,
 		Name:     "acc-1",
@@ -115,6 +122,7 @@ func TestHandleSmartRetry_URLLevelRateLimit(t *testing.T) {
 		accessToken: "token",
 		action:      "generateContent",
 		body:        []byte(`{"input":"test"}`),
+		c:           c,
 		handleError: func(ctx context.Context, prefix string, account *Account, statusCode int, headers http.Header, body []byte, requestedModel string, groupID int64, sessionHash string, isStickySession bool) *handleModelRateLimitResult {
 			return nil
 		},
@@ -130,6 +138,14 @@ func TestHandleSmartRetry_URLLevelRateLimit(t *testing.T) {
 	require.Nil(t, result.resp)
 	require.Nil(t, result.err)
 	require.Nil(t, result.switchError)
+
+	raw, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := raw.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 1)
+	require.Equal(t, "retry", events[0].Kind)
+	require.Equal(t, http.StatusTooManyRequests, events[0].UpstreamStatusCode)
 }
 
 // TestHandleSmartRetry_LongDelay_ReturnsSwitchError 测试 retryDelay >= 阈值时返回 switchError
@@ -193,6 +209,11 @@ func TestHandleSmartRetry_LongDelay_ReturnsSwitchError(t *testing.T) {
 
 // TestHandleSmartRetry_ShortDelay_SmartRetrySuccess 测试智能重试成功
 func TestHandleSmartRetry_ShortDelay_SmartRetrySuccess(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/antigravity/v1beta/models/gemini:generateContent", nil)
+
 	successResp := &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{},
@@ -233,6 +254,7 @@ func TestHandleSmartRetry_ShortDelay_SmartRetrySuccess(t *testing.T) {
 		accessToken:  "token",
 		action:       "generateContent",
 		body:         []byte(`{"input":"test"}`),
+		c:            c,
 		httpUpstream: upstream,
 		handleError: func(ctx context.Context, prefix string, account *Account, statusCode int, headers http.Header, body []byte, requestedModel string, groupID int64, sessionHash string, isStickySession bool) *handleModelRateLimitResult {
 			return nil
@@ -251,6 +273,14 @@ func TestHandleSmartRetry_ShortDelay_SmartRetrySuccess(t *testing.T) {
 	require.Nil(t, result.err)
 	require.Nil(t, result.switchError, "should not return switchError on success")
 	require.Len(t, upstream.calls, 1, "should have made one retry call")
+
+	raw, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := raw.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 1)
+	require.Equal(t, "retry", events[0].Kind)
+	require.Equal(t, http.StatusTooManyRequests, events[0].UpstreamStatusCode)
 }
 
 // TestHandleSmartRetry_ShortDelay_SmartRetryFailed_ReturnsSwitchError 测试智能重试失败后返回 switchError

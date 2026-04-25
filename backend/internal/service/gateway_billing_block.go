@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/tidwall/gjson"
 )
@@ -27,16 +28,25 @@ const fingerprintSalt = "59cf53e54c78"
 func computeClaudeCodeFingerprint(body []byte, version string) string {
 	firstText := extractFirstUserText(body)
 	indices := []int{4, 7, 20}
-	chars := make([]byte, 0, 3)
+	runes := []rune(firstText)
+	chars := make([]rune, 0, 3)
 	for _, i := range indices {
-		if i < len(firstText) {
-			chars = append(chars, firstText[i])
+		if i < len(runes) {
+			chars = append(chars, runes[i])
 		} else {
 			chars = append(chars, '0')
 		}
 	}
 	sum := sha256.Sum256([]byte(fingerprintSalt + string(chars) + version))
 	return hex.EncodeToString(sum[:])[:3]
+}
+
+func composeClaudeCodeBillingVersion(body []byte, version string) string {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s.%s", version, computeClaudeCodeFingerprint(body, version))
 }
 
 // extractFirstUserText 提取 messages 中第一条 user 消息的首段 text 内容。
@@ -86,10 +96,13 @@ func buildBillingAttributionBlockJSON(body []byte, cliVersion string) ([]byte, e
 	if cliVersion == "" {
 		return nil, fmt.Errorf("cliVersion required")
 	}
-	fp := computeClaudeCodeFingerprint(body, cliVersion)
+	billingVersion := composeClaudeCodeBillingVersion(body, cliVersion)
+	if billingVersion == "" {
+		return nil, fmt.Errorf("cliVersion required")
+	}
 	text := fmt.Sprintf(
-		"x-anthropic-billing-header: cc_version=%s.%s; cc_entrypoint=cli; cch=00000;",
-		cliVersion, fp,
+		"x-anthropic-billing-header: cc_version=%s; cc_entrypoint=cli; cch=00000;",
+		billingVersion,
 	)
 	return json.Marshal(map[string]string{
 		"type": "text",

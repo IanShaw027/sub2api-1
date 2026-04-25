@@ -389,6 +389,14 @@ func TestKiroGatewayService_ForwardNonStream_ExceptionDoesNotCommitFakeCache(t *
 	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Empty(t, rec.Body.String())
+	v, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := v.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 1)
+	require.Equal(t, "http_error", events[0].Kind)
+	require.Equal(t, http.StatusBadGateway, events[0].UpstreamStatusCode)
+	require.Contains(t, events[0].Message, "kiro upstream returned exception frame")
 	_, found := svc.fakeCache.Get(fakeCachePlan.CurrentKey)
 	require.False(t, found, "exception responses must not commit fake cache")
 }
@@ -438,11 +446,88 @@ func TestKiroGatewayService_ForwardStream_ExceptionDoesNotCommitFakeCacheOrEmitF
 	require.Contains(t, rec.Body.String(), "event: error")
 	require.NotContains(t, rec.Body.String(), "event: message_delta")
 	require.NotContains(t, rec.Body.String(), "event: message_stop")
+	v, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := v.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 1)
+	require.Equal(t, "http_error", events[0].Kind)
+	require.Equal(t, http.StatusBadGateway, events[0].UpstreamStatusCode)
+	require.Contains(t, events[0].Message, "kiro upstream returned exception frame")
 	_, found := svc.fakeCache.Get(fakeCachePlan.CurrentKey)
 	require.False(t, found, "exception streams must not commit fake cache")
 }
 
-func TestKiroGatewayService_ForwardStream_PreStartExceptionReturnsJSONError(t *testing.T) {
+func TestKiroGatewayService_Forward_HTTPErrorRecordsOpsContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Header: http.Header{
+				"X-Amzn-Requestid": []string{"kiro-request-123"},
+			},
+			Body: io.NopCloser(strings.NewReader(`{"error":"invalid_request","message":"selected model is not available for this account"}`)),
+		},
+	}
+	svc := &KiroGatewayService{
+		httpUpstream: upstream,
+	}
+
+	result, err := svc.Forward(
+		context.Background(),
+		c,
+		&Account{
+			ID:       7,
+			Name:     "Kiro Gateway",
+			Platform: PlatformKiro,
+			Type:     AccountTypeAPIKey,
+			Credentials: map[string]any{
+				"api_key": "kiro-api-key",
+			},
+		},
+		&ParsedRequest{
+			Model: "claude-sonnet-4-5-20250929",
+			Body: []byte(`{
+				"model":"claude-sonnet-4-5-20250929",
+				"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
+			}`),
+		},
+	)
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	statusCodeValue, ok := c.Get(OpsUpstreamStatusCodeKey)
+	require.True(t, ok)
+	require.Equal(t, http.StatusBadRequest, statusCodeValue)
+	messageValue, ok := c.Get(OpsUpstreamErrorMessageKey)
+	require.True(t, ok)
+	require.Equal(t, "Kiro upstream returned 400", messageValue)
+	detailValue, ok := c.Get(OpsUpstreamErrorDetailKey)
+	require.True(t, ok)
+	require.Equal(t, "invalid_request: selected model is not available for this account", detailValue)
+	v, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := v.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 1)
+	require.Equal(t, "http_error", events[0].Kind)
+	require.Equal(t, http.StatusBadRequest, events[0].UpstreamStatusCode)
+	require.Equal(t, "kiro-request-123", events[0].UpstreamRequestID)
+	require.Equal(t, "https://q.us-east-1.amazonaws.com/generateAssistantResponse", events[0].UpstreamURL)
+	require.Equal(t, "Kiro upstream returned 400", events[0].Message)
+	require.Equal(t, "invalid_request: selected model is not available for this account", events[0].Detail)
+	sentBody, readErr := io.ReadAll(upstream.req.Body)
+	require.NoError(t, readErr)
+	require.Equal(t, string(sentBody), events[0].UpstreamRequestBody)
+	require.Contains(t, events[0].UpstreamRequestBody, `"modelId":"claude-sonnet-4.5"`)
+	require.NotContains(t, events[0].UpstreamRequestBody, `"model":"claude-sonnet-4-5-20250929"`)
+}
+
+func TestKiroGatewayService_ForwardStream_PreStartExceptionReturnsFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	rec := httptest.NewRecorder()
@@ -470,10 +555,12 @@ func TestKiroGatewayService_ForwardStream_PreStartExceptionReturnsJSONError(t *t
 
 	require.Error(t, err)
 	require.Nil(t, result)
-	require.Equal(t, http.StatusBadGateway, rec.Code)
-	require.Contains(t, rec.Body.String(), "upstream failed before stream")
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Empty(t, rec.Body.String())
 	require.NotContains(t, rec.Body.String(), "event: message_start")
-	require.Contains(t, rec.Header().Get("Content-Type"), "application/json")
 }
 
 func TestKiroGatewayService_ForwardNonStream_IncompleteFrameDoesNotCommitFakeCache(t *testing.T) {
@@ -782,6 +869,73 @@ func TestKiroGatewayService_ForwardStream_TextToolTextClosesBlocksInOrder(t *tes
 	require.Less(t, toolStart1, toolStop1)
 	require.Less(t, toolStop1, textStart2)
 	require.Less(t, textStart2, textStop2)
+}
+
+func TestKiroGatewayService_ForwardStream_PreservesWhitespaceInContentAndInputDeltas(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+
+	body := bytes.Join([][]byte{
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": "  keep text delta spaces  "}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "toolUseEvent",
+		}, map[string]any{
+			"toolUseId": " tool-1 ",
+			"name":      " search ",
+			"input":     " {\"q\":\" value with spaces \"} ",
+			"stop":      true,
+		}),
+	}, nil)
+
+	result, err := svc.forwardStream(
+		context.Background(),
+		c,
+		&Account{ID: 6, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4", Stream: true},
+		&kiropkg.ConvertResult{Model: "claude-sonnet-4.5"},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	var textDelta, inputDelta string
+	for _, line := range strings.Split(rec.Body.String(), "\n") {
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &payload); err != nil {
+			continue
+		}
+		delta, _ := payload["delta"].(map[string]any)
+		deltaType, _ := delta["type"].(string)
+		switch deltaType {
+		case "text_delta":
+			textDelta, _ = delta["text"].(string)
+		case "input_json_delta":
+			inputDelta, _ = delta["partial_json"].(string)
+		}
+	}
+
+	require.Equal(t, "  keep text delta spaces  ", textDelta)
+	require.Equal(t, " {\"q\":\" value with spaces \"} ", inputDelta)
+	require.Contains(t, rec.Body.String(), `"id":"tool-1"`, "tool_use id should still be normalized as a control field")
+	require.Contains(t, rec.Body.String(), `"name":"search"`, "tool_use name should still be normalized as a control field")
 }
 
 func buildKiroTestFrame(t *testing.T, headers map[string]string, payload map[string]any) []byte {

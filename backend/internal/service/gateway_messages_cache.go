@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
@@ -137,5 +138,9 @@ func injectCacheControlOnLastContentBlock(body []byte, idx int, msg *gjson.Resul
 // mustJSONString 把一个 Go string 序列化为合法 JSON string（含引号），
 // 用于 sjson.SetRawBytes 场景下手工拼 JSON。
 func mustJSONString(s string) string {
-	return fmt.Sprintf("%q", s)
+	b, err := json.Marshal(s)
+	if err != nil {
+		return `""`
+	}
+	return string(b)
 }

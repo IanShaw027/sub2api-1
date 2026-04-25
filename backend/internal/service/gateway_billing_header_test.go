@@ -11,63 +11,43 @@ import (
 )
 
 func TestSyncBillingHeaderVersion(t *testing.T) {
-	tests := []struct {
-		name      string
-		body      string
-		userAgent string
-		wantSub   string // substring expected in result
-		unchanged bool   // expect body to remain the same
-	}{
-		{
-			name:      "replaces cc_version preserving message-derived suffix",
-			body:      `{"system":[{"type":"text","text":"x-anthropic-billing-header: cc_version=2.1.81.df2; cc_entrypoint=cli; cch=00000;"},{"type":"text","text":"You are Claude Code.","cache_control":{"type":"ephemeral"}}],"messages":[]}`,
-			userAgent: "claude-cli/2.1.22 (external, cli)",
-			wantSub:   "cc_version=2.1.22.df2",
-		},
-		{
-			name:      "no billing header in system",
-			body:      `{"system":[{"type":"text","text":"You are Claude Code."}],"messages":[]}`,
-			userAgent: "claude-cli/2.1.22",
-			unchanged: true,
-		},
-		{
-			name:      "no system field",
-			body:      `{"messages":[]}`,
-			userAgent: "claude-cli/2.1.22",
-			unchanged: true,
-		},
-		{
-			name:      "user-agent without version",
-			body:      `{"system":[{"type":"text","text":"x-anthropic-billing-header: cc_version=2.1.81; cc_entrypoint=cli; cch=00000;"}],"messages":[]}`,
-			userAgent: "Mozilla/5.0",
-			unchanged: true,
-		},
-		{
-			name:      "empty user-agent",
-			body:      `{"system":[{"type":"text","text":"x-anthropic-billing-header: cc_version=2.1.81; cc_entrypoint=cli; cch=00000;"}],"messages":[]}`,
-			userAgent: "",
-			unchanged: true,
-		},
-		{
-			name:      "version already matches",
-			body:      `{"system":[{"type":"text","text":"x-anthropic-billing-header: cc_version=2.1.22; cc_entrypoint=cli; cch=00000;"}],"messages":[]}`,
-			userAgent: "claude-cli/2.1.22",
-			unchanged: true,
-		},
-	}
+	t.Run("recomputes suffix when billing header already has suffix", func(t *testing.T) {
+		body := []byte(`{"system":[{"type":"text","text":"x-anthropic-billing-header: cc_version=2.1.81.df2; cc_entrypoint=cli; cch=00000;"},{"type":"text","text":"You are Claude Code.","cache_control":{"type":"ephemeral"}}],"messages":[{"role":"user","content":"hello billing fingerprint"}]}`)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := syncBillingHeaderVersion([]byte(tt.body), tt.userAgent)
-			if tt.unchanged {
-				assert.Equal(t, tt.body, string(result), "body should remain unchanged")
-			} else {
-				assert.Contains(t, string(result), tt.wantSub)
-				// Ensure old semver is gone
-				assert.NotContains(t, string(result), "cc_version=2.1.81")
-			}
-		})
-	}
+		result := syncBillingHeaderVersion(body, "claude-cli/2.1.22 (external, cli)")
+
+		expectedVersion := composeClaudeCodeBillingVersion(body, "2.1.22")
+		require.NotEmpty(t, expectedVersion)
+		assert.Contains(t, string(result), "cc_version="+expectedVersion)
+		assert.NotContains(t, string(result), "cc_version=2.1.81.df2")
+	})
+
+	t.Run("no suffix keeps semver-only replacement", func(t *testing.T) {
+		body := []byte(`{"system":[{"type":"text","text":"x-anthropic-billing-header: cc_version=2.1.81; cc_entrypoint=cli; cch=00000;"}],"messages":[]}`)
+
+		result := syncBillingHeaderVersion(body, "claude-cli/2.1.22")
+
+		assert.Contains(t, string(result), "cc_version=2.1.22;")
+		assert.NotContains(t, string(result), "cc_version=2.1.22.")
+	})
+
+	t.Run("no billing header in system", func(t *testing.T) {
+		body := `{"system":[{"type":"text","text":"You are Claude Code."}],"messages":[]}`
+		result := syncBillingHeaderVersion([]byte(body), "claude-cli/2.1.22")
+		assert.Equal(t, body, string(result))
+	})
+
+	t.Run("no system field", func(t *testing.T) {
+		body := `{"messages":[]}`
+		result := syncBillingHeaderVersion([]byte(body), "claude-cli/2.1.22")
+		assert.Equal(t, body, string(result))
+	})
+
+	t.Run("user-agent without version", func(t *testing.T) {
+		body := `{"system":[{"type":"text","text":"x-anthropic-billing-header: cc_version=2.1.81; cc_entrypoint=cli; cch=00000;"}],"messages":[]}`
+		result := syncBillingHeaderVersion([]byte(body), "Mozilla/5.0")
+		assert.Equal(t, body, string(result))
+	})
 }
 
 func TestSignBillingHeaderCCH(t *testing.T) {

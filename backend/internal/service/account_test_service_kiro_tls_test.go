@@ -281,3 +281,39 @@ func TestAccountTestService_TestKiroAccountConnection_UsesAccountModelMapping(t 
 	require.Equal(t, kiropkg.MapModel("claude-sonnet-4-5-20250929"), payload.ConversationState.CurrentMessage.UserInputMessage.ModelID)
 	require.Contains(t, rec.Body.String(), "Kiro connection OK")
 }
+
+func TestAccountTestService_TestKiroAccountConnection_IncludesUpstreamErrorDetail(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/kiro/test", nil)
+
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Header:     make(http.Header),
+			Body: io.NopCloser(bytes.NewReader([]byte(`{
+				"error":"invalid_request",
+				"message":"selected model is not available for this account"
+			}`))),
+		},
+	}
+	svc := &AccountTestService{
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:       95,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "kiro-manual-token",
+		},
+	}
+
+	err := svc.testKiroAccountConnection(c, account, "claude-sonnet-4-5-20250929")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Kiro API returned 400")
+	require.Contains(t, err.Error(), "selected model is not available for this account")
+	require.Contains(t, rec.Body.String(), "selected model is not available for this account")
+}

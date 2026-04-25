@@ -2802,8 +2802,16 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 		}
 
-		// Remove unsupported fields (not supported by upstream OpenAI API)
-		unsupportedFields := []string{"prompt_cache_retention", "safety_identifier"}
+		// Keep this list semantically aligned with cursorResponsesUnsupportedFields
+		// in openai_gateway_chat_completions.go so direct /v1/responses and
+		// responses-shaped /v1/chat/completions short-circuit apply the same
+		// unsupported-parameter stripping behavior.
+		unsupportedFields := []string{
+			"prompt_cache_retention",
+			"safety_identifier",
+			"metadata",
+			"stream_options",
+		}
 		for _, unsupportedField := range unsupportedFields {
 			if _, has := reqBody[unsupportedField]; has {
 				delete(reqBody, unsupportedField)

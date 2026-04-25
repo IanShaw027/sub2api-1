@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
@@ -386,4 +387,59 @@ func testResponsesCompletedSSE(model string) string {
 		"data: [DONE]",
 		"",
 	}, "\n")
+}
+
+func TestHandleChatStreamingResponse_ResponseFailedEmitsErrorSignalWithoutDone(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_chat_failed_stream"}},
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`data: {"type":"response.created","response":{"id":"resp_failed_stream"}}`,
+			`data: {"type":"response.failed","response":{"status":"failed","error":{"message":"upstream stream failed"}}}`,
+			`data: [DONE]`,
+			"",
+		}, "\n"))),
+	}
+
+	svc := &OpenAIGatewayService{}
+	result, err := svc.handleChatStreamingResponse(resp, c, "gpt-5.1", "gpt-5.1", "gpt-5.1", false, time.Now())
+	require.Error(t, err)
+	require.NotNil(t, result)
+	require.Contains(t, err.Error(), "upstream response failed")
+	require.Contains(t, rec.Body.String(), `"error":{"message":"upstream stream failed","type":"upstream_error"}`)
+	require.NotContains(t, rec.Body.String(), "data: [DONE]")
+}
+
+func TestHandleChatBufferedStreamingResponse_ResponseFailedReturnsJSONError(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_chat_failed_buffered"}},
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`data: {"type":"response.failed","response":{"status":"failed","error":{"message":"buffered upstream failed"}}}`,
+			`data: [DONE]`,
+			"",
+		}, "\n"))),
+	}
+
+	svc := &OpenAIGatewayService{}
+	result, err := svc.handleChatBufferedStreamingResponse(resp, c, "gpt-5.1", "gpt-5.1", "gpt-5.1", time.Now())
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	require.Contains(t, rec.Body.String(), `"type":"upstream_error"`)
+	require.Contains(t, rec.Body.String(), "buffered upstream failed")
 }

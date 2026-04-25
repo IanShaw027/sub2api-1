@@ -73,7 +73,7 @@ func ResponsesToChatCompletions(resp *ResponsesResponse, model string) *ChatComp
 		msg.ReasoningContent = reasoningText
 	}
 
-	finishReason := responsesStatusToChatFinishReason(resp.Status, resp.IncompleteDetails, toolCalls)
+	finishReason := responsesStatusToChatFinishReason(resp.Status, resp.IncompleteDetails, resp.Error, toolCalls)
 
 	out.Choices = []ChatChoice{{
 		Index:        0,
@@ -98,7 +98,7 @@ func ResponsesToChatCompletions(resp *ResponsesResponse, model string) *ChatComp
 	return out
 }
 
-func responsesStatusToChatFinishReason(status string, details *ResponsesIncompleteDetails, toolCalls []ChatToolCall) string {
+func responsesStatusToChatFinishReason(status string, details *ResponsesIncompleteDetails, failedErr *ResponsesError, toolCalls []ChatToolCall) string {
 	switch status {
 	case "incomplete":
 		if details != nil && details.Reason == "max_output_tokens" {
@@ -110,9 +110,43 @@ func responsesStatusToChatFinishReason(status string, details *ResponsesIncomple
 			return "tool_calls"
 		}
 		return "stop"
+	case "failed":
+		return responsesFailedToChatFinishReason(failedErr)
 	default:
 		return "stop"
 	}
+}
+
+func responsesFailedToChatFinishReason(failedErr *ResponsesError) string {
+	if responsesErrorLooksLikeContentFilter(failedErr) {
+		return "content_filter"
+	}
+	return "error"
+}
+
+func responsesErrorLooksLikeContentFilter(failedErr *ResponsesError) bool {
+	if failedErr == nil {
+		return false
+	}
+	combined := strings.ToLower(strings.TrimSpace(failedErr.Code + " " + failedErr.Message))
+	if combined == "" {
+		return false
+	}
+	contentFilterMarkers := []string{
+		"content_filter",
+		"content policy",
+		"content_policy",
+		"policy_violation",
+		"safety",
+		"not allowed",
+		"high-risk cyber",
+	}
+	for _, marker := range contentFilterMarkers {
+		if strings.Contains(combined, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // ---------------------------------------------------------------------------
@@ -316,6 +350,8 @@ func resToChatHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 			if state.SawToolCall {
 				finishReason = "tool_calls"
 			}
+		case "failed":
+			finishReason = responsesFailedToChatFinishReason(evt.Response.Error)
 		}
 	} else if state.SawToolCall {
 		finishReason = "tool_calls"

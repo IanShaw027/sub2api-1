@@ -283,7 +283,7 @@ func parseOpenAIImagesMultipartRequest(body []byte, contentType string, req *Ope
 			continue
 		}
 
-		data, err := io.ReadAll(io.LimitReader(part, openAIImageMaxUploadPartSize))
+		data, err := readAllWithLimitDetection(part, int64(openAIImageMaxUploadPartSize))
 		_ = part.Close()
 		if err != nil {
 			return fmt.Errorf("read multipart field %s: %w", name, err)
@@ -386,6 +386,23 @@ func parseOpenAIImagesMultipartRequest(body []byte, contentType string, req *Ope
 		return fmt.Errorf("image file is required")
 	}
 	return nil
+}
+
+func readAllWithLimitDetection(r io.Reader, limit int64) ([]byte, error) {
+	if r == nil {
+		return nil, fmt.Errorf("reader is nil")
+	}
+	if limit <= 0 {
+		return io.ReadAll(r)
+	}
+	data, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("payload exceeds %d bytes", limit)
+	}
+	return data, nil
 }
 
 func parseOpenAIImageDimensions(_ textproto.MIMEHeader) (int, int) {
@@ -1262,7 +1279,11 @@ func downloadOpenAIImageBytes(ctx context.Context, client *req.Client, headers h
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, newOpenAIImageStatusError(resp, "download image bytes failed")
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, openAIImageMaxDownloadBytes))
+	data, err := readAllWithLimitDetection(resp.Body, int64(openAIImageMaxDownloadBytes))
+	if err != nil {
+		return nil, fmt.Errorf("download image bytes failed: %w", err)
+	}
+	return data, nil
 }
 
 type openAIImageStatusError struct {

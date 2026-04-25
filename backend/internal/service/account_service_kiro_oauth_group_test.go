@@ -238,3 +238,83 @@ func TestNormalizeKiroAuthMethod_CanonicalizesIDCAliases(t *testing.T) {
 		})
 	}
 }
+
+func TestAccountService_Update_PreservesOmittedKiroOAuthSecrets(t *testing.T) {
+	t.Parallel()
+
+	accountRepo := &accountRepoStubForOAuthOnlyGroup{
+		getByIDAccount: &Account{
+			ID:       12,
+			Name:     "kiro-oauth",
+			Platform: PlatformKiro,
+			Type:     AccountTypeOAuth,
+			Status:   StatusActive,
+			Credentials: map[string]any{
+				"refresh_token": "old-refresh",
+				"access_token":  "old-access",
+				"expires_at":    "1735689600",
+				"client_id":     "old-client-id",
+				"client_secret": "old-client-secret",
+				"auth_method":   "idc",
+				"profile_arn":   "arn:aws:kiro:old",
+			},
+		},
+	}
+	svc := &AccountService{
+		accountRepo: accountRepo,
+		groupRepo:   &groupRepoStubForOAuthOnlyGroup{},
+	}
+
+	_, err := svc.Update(context.Background(), 12, UpdateAccountRequest{
+		Credentials: &map[string]any{
+			"auth_method": "social",
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, accountRepo.updatedAccount)
+	require.Equal(t, "old-refresh", accountRepo.updatedAccount.GetCredential("refresh_token"))
+	require.Equal(t, "old-access", accountRepo.updatedAccount.GetCredential("access_token"))
+	require.Equal(t, "1735689600", accountRepo.updatedAccount.GetCredential("expires_at"))
+	require.Equal(t, "old-client-id", accountRepo.updatedAccount.GetCredential("client_id"))
+	require.Equal(t, "old-client-secret", accountRepo.updatedAccount.GetCredential("client_secret"))
+	require.Equal(t, "social", accountRepo.updatedAccount.GetCredential("auth_method"))
+	_, hasProfileArn := accountRepo.updatedAccount.Credentials["profile_arn"]
+	require.False(t, hasProfileArn)
+}
+
+func TestAccountService_Update_PreservesOmittedKiroAPIKeySecret(t *testing.T) {
+	t.Parallel()
+
+	accountRepo := &accountRepoStubForOAuthOnlyGroup{
+		getByIDAccount: &Account{
+			ID:       13,
+			Name:     "kiro-apikey",
+			Platform: PlatformKiro,
+			Type:     AccountTypeAPIKey,
+			Status:   StatusActive,
+			Credentials: map[string]any{
+				"api_key": "old-api-key",
+				"region":  "us-east-1",
+				"model":   "legacy-model",
+			},
+		},
+	}
+	svc := &AccountService{
+		accountRepo: accountRepo,
+		groupRepo:   &groupRepoStubForOAuthOnlyGroup{},
+	}
+
+	_, err := svc.Update(context.Background(), 13, UpdateAccountRequest{
+		Credentials: &map[string]any{
+			"region": "eu-west-1",
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, accountRepo.updatedAccount)
+	require.Equal(t, "old-api-key", accountRepo.updatedAccount.GetCredential("api_key"))
+	require.Equal(t, "eu-west-1", accountRepo.updatedAccount.GetCredential("region"))
+	_, hasModel := accountRepo.updatedAccount.Credentials["model"]
+	require.False(t, hasModel)
+}

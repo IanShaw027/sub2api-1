@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -192,12 +193,43 @@ func (s *AntigravityGatewayService) attemptCreditsOveragesRetry(
 		return &creditsOveragesRetryResult{handled: true}
 	}
 
+	setOpsUpstreamRequestBody(p.c, creditsBody)
+	creditsStart := time.Now()
 	creditsResp, err := p.httpUpstream.Do(creditsReq, p.proxyURL, p.account.ID, p.account.Concurrency)
+	SetOpsLatencyMs(p.c, OpsUpstreamLatencyMsKey, time.Since(creditsStart).Milliseconds())
 	if err == nil && creditsResp != nil && creditsResp.StatusCode < 400 {
 		s.clearCreditsExhausted(p.ctx, p.account)
 		logger.LegacyPrintf("service.antigravity_gateway", "%s status=%d credit_overages_success model=%s account=%d",
 			p.prefix, creditsResp.StatusCode, modelKey, p.account.ID)
 		return &creditsOveragesRetryResult{handled: true, resp: creditsResp}
+	}
+	if err != nil {
+		appendOpsUpstreamError(p.c, OpsUpstreamErrorEvent{
+			Platform:           p.account.Platform,
+			AccountID:          p.account.ID,
+			AccountName:        p.account.Name,
+			UpstreamStatusCode: 0,
+			UpstreamURL:        safeUpstreamURL(creditsReq.URL.String()),
+			Kind:               "request_error",
+			Message:            sanitizeUpstreamErrorMessage(err.Error()),
+		})
+	} else if creditsResp != nil {
+		creditsRespBody, _ := io.ReadAll(io.LimitReader(creditsResp.Body, 64<<10))
+		_ = creditsResp.Body.Close()
+		creditsResp.Body = io.NopCloser(bytes.NewReader(creditsRespBody))
+		upstreamMsg := strings.TrimSpace(extractAntigravityErrorMessage(creditsRespBody))
+		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+		appendOpsUpstreamError(p.c, OpsUpstreamErrorEvent{
+			Platform:           p.account.Platform,
+			AccountID:          p.account.ID,
+			AccountName:        p.account.Name,
+			UpstreamStatusCode: creditsResp.StatusCode,
+			UpstreamRequestID:  upstreamRequestIDFromHeader(creditsResp.Header),
+			UpstreamURL:        safeUpstreamURL(creditsReq.URL.String()),
+			Kind:               "http_error",
+			Message:            upstreamMsg,
+			Detail:             truncateString(string(creditsRespBody), 2048),
+		})
 	}
 
 	s.handleCreditsRetryFailure(p.ctx, p.prefix, modelKey, p.account, creditsResp, err)

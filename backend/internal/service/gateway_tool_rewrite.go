@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"math/rand"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
@@ -235,20 +236,24 @@ func applyToolsLastCacheBreakpoint(body []byte) []byte {
 	}
 	lastIdx := len(arr) - 1
 	existingCC := arr[lastIdx].Get("cache_control")
-
-	if existingCC.Exists() && existingCC.Get("ttl").String() != "" {
-		return body
-	}
+	pathPrefix := "tools." + strconv.Itoa(lastIdx) + ".cache_control"
 
 	if existingCC.Exists() {
-		if next, err := sjson.SetBytes(body, fmt.Sprintf("tools.%d.cache_control.ttl", lastIdx), claude.DefaultCacheControlTTL); err == nil {
+		// Keep any client ttl, but always normalize to Claude Code's ephemeral type.
+		if next, err := sjson.SetBytes(body, pathPrefix+".type", "ephemeral"); err == nil {
+			body = next
+		}
+		if existingCC.Get("ttl").String() != "" {
+			return body
+		}
+		if next, err := sjson.SetBytes(body, pathPrefix+".ttl", claude.DefaultCacheControlTTL); err == nil {
 			body = next
 		}
 		return body
 	}
 
 	raw := fmt.Sprintf(`{"type":"ephemeral","ttl":%q}`, claude.DefaultCacheControlTTL)
-	if next, err := sjson.SetRawBytes(body, fmt.Sprintf("tools.%d.cache_control", lastIdx), []byte(raw)); err == nil {
+	if next, err := sjson.SetRawBytes(body, pathPrefix, []byte(raw)); err == nil {
 		body = next
 	}
 	return body

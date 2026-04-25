@@ -197,6 +197,49 @@ func validateKiroAccountCredentials(accountType string, credentials map[string]a
 	}
 }
 
+var (
+	kiroOAuthCredentialKeysToPreserve = []string{
+		"refresh_token",
+		"access_token",
+		"expires_at",
+		"client_id",
+		"client_secret",
+	}
+	kiroAPIKeyCredentialKeysToPreserve = []string{"api_key"}
+	kiroAllCredentialKeysToPreserve    = []string{
+		"refresh_token",
+		"access_token",
+		"expires_at",
+		"client_id",
+		"client_secret",
+		"api_key",
+	}
+)
+
+func mergeKiroCredentialsForAccountUpdate(accountType string, existing, incoming map[string]any) map[string]any {
+	merged := cloneCredentials(incoming)
+	for _, key := range kiroCredentialKeysForType(accountType) {
+		if _, provided := incoming[key]; provided {
+			continue
+		}
+		if value, ok := existing[key]; ok {
+			merged[key] = value
+		}
+	}
+	return merged
+}
+
+func kiroCredentialKeysForType(accountType string) []string {
+	switch accountType {
+	case AccountTypeOAuth:
+		return kiroOAuthCredentialKeysToPreserve
+	case AccountTypeAPIKey:
+		return kiroAPIKeyCredentialKeysToPreserve
+	default:
+		return kiroAllCredentialKeysToPreserve
+	}
+}
+
 // KiroAuthMethodUsesIDCRefresh mirrors KiroTokenRefresher.Refresh's IDC/OIDC
 // token refresh branch.
 func KiroAuthMethodUsesIDCRefresh(authMethod string) bool {
@@ -394,7 +437,11 @@ func (s *AccountService) Update(ctx context.Context, id int64, req UpdateAccount
 	}
 
 	if req.Credentials != nil {
-		account.Credentials = *req.Credentials
+		nextCredentials := *req.Credentials
+		if account.Platform == PlatformKiro {
+			nextCredentials = mergeKiroCredentialsForAccountUpdate(account.Type, account.Credentials, nextCredentials)
+		}
+		account.Credentials = nextCredentials
 	}
 
 	if req.Extra != nil {

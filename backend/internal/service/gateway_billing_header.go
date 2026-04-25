@@ -10,9 +10,8 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-// ccVersionInBillingRe matches the semver part of cc_version (X.Y.Z), preserving
-// the trailing message-derived suffix (e.g. ".c02") if present.
-var ccVersionInBillingRe = regexp.MustCompile(`cc_version=\d+\.\d+\.\d+`)
+// ccVersionInBillingRe matches cc_version with optional message-derived suffix.
+var ccVersionInBillingRe = regexp.MustCompile(`cc_version=\d+\.\d+\.\d+(?:\.[0-9a-zA-Z]+)?`)
 
 // cchPlaceholderRe matches the cch=00000 placeholder in billing header text,
 // scoped to x-anthropic-billing-header to avoid touching user content.
@@ -34,12 +33,16 @@ func syncBillingHeaderVersion(body []byte, userAgent string) []byte {
 		return body
 	}
 
-	replacement := "cc_version=" + version
+	fingerprintedVersion := composeClaudeCodeBillingVersion(body, version)
 	idx := 0
 	systemResult.ForEach(func(_, item gjson.Result) bool {
 		text := item.Get("text")
 		if text.Exists() && text.Type == gjson.String &&
 			strings.HasPrefix(text.String(), "x-anthropic-billing-header") {
+			replacement := "cc_version=" + version
+			if strings.Count(ccVersionInBillingRe.FindString(text.String()), ".") >= 3 && fingerprintedVersion != "" {
+				replacement = "cc_version=" + fingerprintedVersion
+			}
 			newText := ccVersionInBillingRe.ReplaceAllString(text.String(), replacement)
 			if newText != text.String() {
 				if updated, err := sjson.SetBytes(body, fmt.Sprintf("system.%d.text", idx), newText); err == nil {

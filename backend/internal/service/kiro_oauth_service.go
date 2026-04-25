@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -161,6 +162,10 @@ type KiroTokenInfo struct {
 }
 
 func (s *KiroOAuthService) GenerateAuthURL(ctx context.Context, proxyID *int64) (*KiroAuthURLResult, error) {
+	if s == nil || s.sessionStore == nil {
+		return nil, fmt.Errorf("kiro oauth service is unavailable")
+	}
+
 	state, err := generateKiroOAuthToken(32)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate kiro oauth state: %w", err)
@@ -176,6 +181,9 @@ func (s *KiroOAuthService) GenerateAuthURL(ctx context.Context, proxyID *int64) 
 
 	var proxyURL string
 	if proxyID != nil {
+		if s.proxyRepo == nil {
+			return nil, fmt.Errorf("kiro proxy repository is unavailable")
+		}
 		proxy, err := s.proxyRepo.GetByID(ctx, *proxyID)
 		if err == nil && proxy != nil {
 			proxyURL = proxy.URL()
@@ -211,9 +219,22 @@ func (s *KiroOAuthService) GenerateAuthURL(ctx context.Context, proxyID *int64) 
 }
 
 func (s *KiroOAuthService) ExchangeCallback(ctx context.Context, input *KiroExchangeCallbackInput) (*KiroTokenInfo, error) {
+	if s == nil || s.sessionStore == nil {
+		return nil, fmt.Errorf("kiro oauth service is unavailable")
+	}
+	if input == nil {
+		return nil, fmt.Errorf("kiro callback input is required")
+	}
+	if strings.TrimSpace(input.SessionID) == "" {
+		return nil, fmt.Errorf("kiro callback session id is required")
+	}
+	if strings.TrimSpace(input.CallbackURL) == "" {
+		return nil, fmt.Errorf("kiro callback URL is required")
+	}
+
 	session, ok := s.sessionStore.Get(input.SessionID)
 	if !ok {
-		return nil, fmt.Errorf("kiro oauth session not found or expired")
+		return nil, fmt.Errorf("Kiro 授权会话不存在或已过期。请重新生成授权链接，并在当前弹窗同一轮流程中于 30 分钟内完成授权后，再粘贴最新地址栏中的完整回调 URL")
 	}
 
 	redirectURI := kiroOAuthSessionRedirectURI(session)
@@ -240,7 +261,7 @@ func (s *KiroOAuthService) ExchangeCallback(ctx context.Context, input *KiroExch
 	}
 
 	if state := strings.TrimSpace(query.Get("state")); state == "" || state != session.State {
-		return nil, fmt.Errorf("invalid kiro oauth state")
+		return nil, fmt.Errorf("Kiro 授权状态不匹配：你粘贴的回调地址不属于当前这次授权流程。请重新生成授权链接，并在同一标签页完成授权后，把最新地址栏中的完整回调 URL 粘贴回来；不要刷新页面、不要再次点击生成，且需在 30 分钟内完成")
 	}
 
 	loginOption := strings.ToLower(strings.TrimSpace(firstNonEmptyKiroString(
@@ -261,6 +282,9 @@ func (s *KiroOAuthService) ExchangeCallback(ctx context.Context, input *KiroExch
 
 	proxyURL := session.ProxyURL
 	if input.ProxyID != nil {
+		if s.proxyRepo == nil {
+			return nil, fmt.Errorf("kiro proxy repository is unavailable")
+		}
 		proxy, err := s.proxyRepo.GetByID(ctx, *input.ProxyID)
 		if err == nil && proxy != nil {
 			proxyURL = proxy.URL()
@@ -384,6 +408,9 @@ func kiroTokenInfoMap(tokenInfo *KiroTokenInfo) map[string]any {
 }
 
 func (s *KiroOAuthService) Stop() {
+	if s == nil || s.sessionStore == nil {
+		return
+	}
 	s.sessionStore.Stop()
 }
 
@@ -525,12 +552,17 @@ func exchangeKiroCodeForToken(
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	var raw any
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return nil, fmt.Errorf("failed to decode kiro oauth token response: %w", err)
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read kiro oauth token response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("kiro oauth/token upstream returned %d", resp.StatusCode)
+		return nil, buildKiroOAuthTokenExchangeError(resp.StatusCode, bodyBytes)
+	}
+
+	var raw any
+	if err := json.Unmarshal(bodyBytes, &raw); err != nil {
+		return nil, fmt.Errorf("failed to decode kiro oauth token response: %w", err)
 	}
 
 	payload := unwrapKiroOAuthResponse(raw)

@@ -169,6 +169,8 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 	fs := NewFailoverState(h.maxAccountSwitches, false)
 
 	for {
+		routingAttemptStart := time.Now()
+
 		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionHash, reqModel, fs.FailedAccountIDs, "", int64(0))
 		if err != nil {
 			if len(fs.FailedAccountIDs) == 0 {
@@ -227,6 +229,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		if channelMapping.Mapped {
 			forwardBody = h.gatewayService.ReplaceModelInBody(body, channelMapping.MappedModel)
 		}
+		recordOpsRoutingLatency(c, routingAttemptStart)
 		forwardStart := time.Now()
 		result, err := h.gatewayService.ForwardAsResponses(c.Request.Context(), c, account, forwardBody, parsedReq)
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
@@ -234,6 +237,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		if accountReleaseFunc != nil {
 			accountReleaseFunc()
 		}
+		recordOpsForwardLatencies(c, forwardDurationMs, result, err)
 
 		if err != nil {
 			var failoverErr *service.UpstreamFailoverError

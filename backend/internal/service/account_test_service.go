@@ -15,14 +15,18 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	kiropkg "github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
+	pkglogger "github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -31,6 +35,7 @@ import (
 // sseDataPrefix matches SSE data lines with optional whitespace after colon.
 // Some upstream APIs return non-standard "data:" without space (should be "data: ").
 var sseDataPrefix = regexp.MustCompile(`^data:\s*`)
+var accountTestReturnedStatusCodePattern = regexp.MustCompile(`\breturned\s+(\d{3})\b`)
 
 const (
 	testClaudeAPIURL   = "https://api.anthropic.com/v1/messages?beta=true"
@@ -62,6 +67,11 @@ const (
 const (
 	// AccountTestContextRequestedModeKey stores optional request test_mode on gin context.
 	AccountTestContextRequestedModeKey = "account_test_requested_mode"
+	accountTestOpsAccountIDKey         = "account_test_ops_account_id"
+	accountTestOpsPlatformKey          = "account_test_ops_platform"
+	accountTestOpsTypeKey              = "account_test_ops_type"
+	accountTestOpsNameKey              = "account_test_ops_name"
+	accountTestOpsModelKey             = "account_test_ops_model"
 )
 
 // isOpenAIImageModel checks if the model is an OpenAI image generation model (e.g. gpt-image-2).
@@ -103,6 +113,17 @@ type AccountTestService struct {
 	cfg                       *config.Config
 	tlsFPProfileService       *TLSFingerprintProfileService
 	settingService            *SettingService
+	opsService                *OpsService
+}
+
+func (s *AccountTestService) doUpstreamWithTLS(c *gin.Context, req *http.Request, account *Account, proxyURL string, profile *tlsfingerprint.Profile) (*http.Response, error) {
+	if s == nil || s.httpUpstream == nil {
+		return nil, errors.New("http upstream is not configured")
+	}
+	upstreamStart := time.Now()
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, profile)
+	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
+	return resp, err
 }
 
 // NewAccountTestService creates a new AccountTestService
@@ -115,6 +136,7 @@ func NewAccountTestService(
 	cfg *config.Config,
 	tlsFPProfileService *TLSFingerprintProfileService,
 	settingService *SettingService,
+	opsService *OpsService,
 ) *AccountTestService {
 	return &AccountTestService{
 		accountRepo:               accountRepo,
@@ -125,6 +147,7 @@ func NewAccountTestService(
 		cfg:                       cfg,
 		tlsFPProfileService:       tlsFPProfileService,
 		settingService:            settingService,
+		opsService:                opsService,
 	}
 }
 
@@ -207,12 +230,21 @@ func createTestPayload(modelID string) (map[string]any, error) {
 // mode is optional - "compact" routes OpenAI accounts to the /responses/compact probe path
 func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int64, modelID string, prompt string, mode string) error {
 	ctx := c.Request.Context()
+	requestStart := time.Now()
 
 	// Get account
 	account, err := s.accountRepo.GetByID(ctx, accountID)
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Account not found")
 	}
+	c.Set(accountTestOpsAccountIDKey, account.ID)
+	c.Set(accountTestOpsPlatformKey, account.Platform)
+	c.Set(accountTestOpsTypeKey, account.Type)
+	c.Set(accountTestOpsNameKey, account.Name)
+	if trimmedModelID := strings.TrimSpace(modelID); trimmedModelID != "" {
+		c.Set(accountTestOpsModelKey, trimmedModelID)
+	}
+	SetOpsLatencyMs(c, OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 
 	// Route to platform-specific test method
 	if account.IsOpenAI() {
@@ -234,12 +266,25 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	return s.testClaudeAccountConnection(c, account, modelID)
 }
 
+func setAccountTestOpsModelIfMissing(c *gin.Context, modelID string) {
+	if c == nil {
+		return
+	}
+	if accountTestOpsContextString(c, accountTestOpsModelKey) != "" {
+		return
+	}
+	if trimmed := strings.TrimSpace(modelID); trimmed != "" {
+		c.Set(accountTestOpsModelKey, trimmed)
+	}
+}
+
 func (s *AccountTestService) testKiroAccountConnection(c *gin.Context, account *Account, modelID string) error {
 	ctx := c.Request.Context()
 	testModelID := modelID
 	if strings.TrimSpace(testModelID) == "" {
 		testModelID = "claude-sonnet-4-5-20250929"
 	}
+	setAccountTestOpsModelIfMissing(c, testModelID)
 	convertedModelID, err := resolveKiroRequestedModel(account, testModelID)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Unsupported Kiro model: %s", testModelID))
@@ -298,14 +343,18 @@ func (s *AccountTestService) testKiroAccountConnection(c *gin.Context, account *
 		return s.sendErrorAndEnd(c, "Failed to create Kiro request")
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, resolveKiroTLSProfile(account, s.tlsFPProfileService))
+	resp, err := s.doUpstreamWithTLS(c, req, account, accountProxyURL(account), resolveKiroTLSProfile(account, s.tlsFPProfileService))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Kiro request failed: %s", err.Error()))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Kiro API returned %d", resp.StatusCode))
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return s.sendErrorAndEnd(c, fmt.Sprintf("Kiro API returned %d", resp.StatusCode))
+		}
+		return s.sendErrorAndEnd(c, kiroHTTPStatusErrorMessage("Kiro API", resp.StatusCode, body))
 	}
 	frames, err := readAllKiroFrames(resp.Body)
 	if err != nil {
@@ -338,6 +387,7 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	if testModelID == "" {
 		testModelID = claude.DefaultTestModel
 	}
+	setAccountTestOpsModelIfMissing(c, testModelID)
 
 	// API Key 账号测试连接时也需要应用通配符模型映射。
 	if account.Type == "apikey" {
@@ -429,7 +479,7 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -519,7 +569,7 @@ func (s *AccountTestService) testBedrockAccountConnection(c *gin.Context, ctx co
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, nil)
+	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, nil)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -565,6 +615,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	if testModelID == "" {
 		testModelID = openai.DefaultTestModel
 	}
+	setAccountTestOpsModelIfMissing(c, testModelID)
 
 	// Align test routing with gateway behavior: OpenAI accounts apply normal
 	// account model mapping, and compact mode applies compact-only mapping on top.
@@ -671,7 +722,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -770,7 +821,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
 		if s.accountRepo != nil {
 			updates := buildOpenAICompactProbeExtraUpdates(nil, nil, err, time.Now())
@@ -865,7 +916,7 @@ func (s *AccountTestService) testOpenAIImageAPIEndpoint(c *gin.Context, ctx cont
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -1252,6 +1303,7 @@ func (s *AccountTestService) testGeminiAccountConnection(c *gin.Context, account
 	if testModelID == "" {
 		testModelID = geminicli.DefaultTestModel
 	}
+	setAccountTestOpsModelIfMissing(c, testModelID)
 
 	// For API Key accounts with model mapping, map the model
 	if account.Type == AccountTypeAPIKey {
@@ -1299,7 +1351,7 @@ func (s *AccountTestService) testGeminiAccountConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -1336,6 +1388,7 @@ func (s *AccountTestService) testAntigravityAccountConnection(c *gin.Context, ac
 	if testModelID == "" {
 		testModelID = "claude-sonnet-4-5"
 	}
+	setAccountTestOpsModelIfMissing(c, testModelID)
 
 	if s.antigravityGatewayService == nil {
 		return s.sendErrorAndEnd(c, "Antigravity gateway service not configured")
@@ -1759,8 +1812,384 @@ func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
 // sendErrorAndEnd sends an error event and ends the stream
 func (s *AccountTestService) sendErrorAndEnd(c *gin.Context, errorMsg string) error {
 	log.Printf("Account test error: %s", errorMsg)
+	s.recordOpsError(c, errorMsg)
+	fields := map[string]any{}
+	if c != nil {
+		if v, ok := c.Get(accountTestOpsAccountIDKey); ok {
+			fields["account_id"] = v
+		}
+		if v, ok := c.Get(accountTestOpsPlatformKey); ok {
+			fields["platform"] = v
+		}
+		if v, ok := c.Get(accountTestOpsTypeKey); ok {
+			fields["account_type"] = v
+		}
+		if v, ok := c.Get(accountTestOpsNameKey); ok {
+			fields["account_name"] = v
+		}
+		if c.Request != nil && c.Request.URL != nil {
+			fields["request_path"] = c.Request.URL.Path
+		}
+	}
+	pkglogger.WriteSinkEvent("error", "account.test", errorMsg, fields)
 	s.sendEvent(c, TestEvent{Type: "error", Error: errorMsg})
 	return fmt.Errorf("%s", errorMsg)
+}
+
+type accountTestOpsErrorClassification struct {
+	statusCode         int
+	errorPhase         string
+	errorType          string
+	severity           string
+	errorSource        string
+	errorOwner         string
+	isRetryable        bool
+	isBusinessLimited  bool
+	upstreamStatusCode *int
+	upstreamMessage    *string
+	upstreamDetail     *string
+}
+
+func (s *AccountTestService) recordOpsError(c *gin.Context, errorMsg string) {
+	if s == nil || s.opsService == nil || c == nil {
+		return
+	}
+
+	entry := buildAccountTestOpsErrorEntry(c, errorMsg)
+	if entry == nil {
+		return
+	}
+
+	ctx := context.Background()
+	if c.Request != nil && c.Request.Context() != nil {
+		ctx = c.Request.Context()
+	}
+	writeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	if err := s.opsService.RecordError(writeCtx, entry, nil); err != nil {
+		log.Printf("Account test ops error log failed: %v", err)
+	}
+}
+
+func buildAccountTestOpsErrorEntry(c *gin.Context, errorMsg string) *OpsInsertErrorLogInput {
+	if c == nil {
+		return nil
+	}
+	errorMsg = strings.TrimSpace(errorMsg)
+	if errorMsg == "" {
+		return nil
+	}
+
+	requestType := int16(RequestTypeStream)
+	classification := classifyAccountTestOpsError(errorMsg)
+	requestPath := accountTestOpsRequestPath(c)
+	model := accountTestOpsContextString(c, accountTestOpsModelKey)
+
+	entry := &OpsInsertErrorLogInput{
+		RequestID:       accountTestOpsRequestID(c),
+		ClientRequestID: accountTestOpsClientRequestID(c),
+		AccountID:       accountTestOpsAccountID(c),
+		Platform:        accountTestOpsContextString(c, accountTestOpsPlatformKey),
+		Model:           model,
+		RequestPath:     requestPath,
+		Stream:          true,
+		InboundEndpoint: requestPath,
+		RequestedModel:  model,
+		RequestType:     &requestType,
+		UserAgent: func() string {
+			if c.Request == nil {
+				return ""
+			}
+			return strings.TrimSpace(c.GetHeader("User-Agent"))
+		}(),
+
+		ErrorPhase:        classification.errorPhase,
+		ErrorType:         classification.errorType,
+		Severity:          classification.severity,
+		StatusCode:        classification.statusCode,
+		IsBusinessLimited: classification.isBusinessLimited,
+		IsCountTokens:     false,
+		ErrorMessage:      errorMsg,
+		ErrorBody:         errorMsg,
+		ErrorSource:       classification.errorSource,
+		ErrorOwner:        classification.errorOwner,
+		UpstreamStatusCode: func() *int {
+			return classification.upstreamStatusCode
+		}(),
+		UpstreamErrorMessage: classification.upstreamMessage,
+		UpstreamErrorDetail:  classification.upstreamDetail,
+		IsRetryable:          classification.isRetryable,
+		RetryCount:           0,
+		CreatedAt:            time.Now(),
+	}
+	accountTestApplyOpsLatencyFields(c, entry)
+	return entry
+}
+
+func classifyAccountTestOpsError(errorMsg string) accountTestOpsErrorClassification {
+	lower := strings.ToLower(strings.TrimSpace(errorMsg))
+	statusCode, hasStatus := parseAccountTestReturnedStatusCode(errorMsg)
+	isKiroUpstreamFrameFailure := strings.Contains(lower, "kiro upstream returned exception frame") ||
+		strings.Contains(lower, "kiro upstream returned error frame")
+	classification := accountTestOpsErrorClassification{
+		statusCode:  500,
+		errorPhase:  "internal",
+		errorType:   "api_error",
+		errorSource: "admin_account_test",
+		errorOwner:  "admin",
+	}
+
+	if hasStatus {
+		classification.statusCode = statusCode
+		classification.errorPhase = "upstream"
+		classification.errorType = "upstream_error"
+		classification.errorSource = "upstream_http"
+		classification.errorOwner = "provider"
+		classification.upstreamStatusCode = accountTestIntPtr(statusCode)
+		classification.upstreamMessage = accountTestStringPtr(strings.TrimSpace(errorMsg))
+		if detail := accountTestOpsErrorDetail(errorMsg); detail != "" {
+			classification.upstreamDetail = accountTestStringPtr(detail)
+		}
+	}
+
+	switch {
+	case strings.Contains(lower, "too many requests") || strings.Contains(lower, "rate limit"):
+		classification.statusCode = 429
+		classification.errorPhase = "upstream"
+		classification.errorType = "rate_limit_error"
+		classification.errorSource = "upstream_http"
+		classification.errorOwner = "provider"
+		classification.isBusinessLimited = true
+		if classification.upstreamStatusCode == nil {
+			classification.upstreamStatusCode = accountTestIntPtr(429)
+		}
+		if classification.upstreamMessage == nil {
+			classification.upstreamMessage = accountTestStringPtr(strings.TrimSpace(errorMsg))
+		}
+	case isKiroUpstreamFrameFailure:
+		classification.statusCode = http.StatusBadGateway
+		classification.errorPhase = "upstream"
+		classification.errorType = "upstream_error"
+		classification.errorSource = "upstream_http"
+		classification.errorOwner = "provider"
+		if classification.upstreamStatusCode == nil {
+			classification.upstreamStatusCode = accountTestIntPtr(http.StatusBadGateway)
+		}
+		if classification.upstreamMessage == nil {
+			classification.upstreamMessage = accountTestStringPtr(strings.TrimSpace(errorMsg))
+		}
+	case classification.statusCode == http.StatusUnauthorized || classification.statusCode == http.StatusForbidden ||
+		strings.Contains(lower, "access token") ||
+		strings.Contains(lower, "refresh token") ||
+		strings.Contains(lower, "api key available") ||
+		strings.Contains(lower, "token provider is not configured"):
+		if !hasStatus {
+			classification.statusCode = http.StatusUnauthorized
+		}
+		classification.errorPhase = "auth"
+		classification.errorType = "authentication_error"
+		classification.errorSource = "account_credentials"
+		if !hasStatus {
+			classification.errorOwner = "admin"
+		}
+	case classification.statusCode == http.StatusBadRequest ||
+		strings.Contains(lower, "unsupported") ||
+		strings.Contains(lower, "invalid ") ||
+		strings.Contains(lower, " is required"):
+		if !hasStatus {
+			classification.statusCode = http.StatusBadRequest
+		}
+		classification.errorPhase = "request_validation"
+		classification.errorType = "invalid_request_error"
+		if hasStatus {
+			classification.errorPhase = "upstream"
+			classification.errorSource = "upstream_http"
+			classification.errorOwner = "provider"
+		}
+	case hasStatus ||
+		strings.Contains(lower, "request failed") ||
+		strings.Contains(lower, "stream read error") ||
+		strings.Contains(lower, "failed to decode") ||
+		strings.Contains(lower, "failed to parse response") ||
+		strings.Contains(lower, "failed to parse image response") ||
+		strings.Contains(lower, "no images returned") ||
+		strings.Contains(lower, "poll failed") ||
+		strings.Contains(lower, "image download failed"):
+		if !hasStatus {
+			classification.statusCode = http.StatusBadGateway
+		}
+		classification.errorPhase = "upstream"
+		classification.errorType = "upstream_error"
+		classification.errorSource = "upstream_http"
+		classification.errorOwner = "provider"
+		if classification.upstreamMessage == nil {
+			classification.upstreamMessage = accountTestStringPtr(strings.TrimSpace(errorMsg))
+		}
+	}
+
+	classification.severity = classifyAccountTestOpsSeverity(classification.errorType, classification.statusCode)
+	classification.isRetryable = classifyAccountTestOpsRetryable(classification.errorType, classification.statusCode)
+	return classification
+}
+
+func classifyAccountTestOpsSeverity(errorType string, statusCode int) string {
+	switch errorType {
+	case "invalid_request_error", "authentication_error", "billing_error", "subscription_error":
+		return "P3"
+	}
+	if statusCode >= 500 || statusCode == http.StatusTooManyRequests {
+		return "P1"
+	}
+	if statusCode >= 400 {
+		return "P2"
+	}
+	return "P3"
+}
+
+func classifyAccountTestOpsRetryable(errorType string, statusCode int) bool {
+	switch errorType {
+	case "authentication_error", "invalid_request_error", "billing_error", "subscription_error":
+		return false
+	case "rate_limit_error", "timeout_error":
+		return true
+	case "upstream_error":
+		return statusCode >= 500 || statusCode == http.StatusTooManyRequests
+	default:
+		return statusCode >= 500
+	}
+}
+
+func parseAccountTestReturnedStatusCode(errorMsg string) (int, bool) {
+	match := accountTestReturnedStatusCodePattern.FindStringSubmatch(strings.TrimSpace(errorMsg))
+	if len(match) != 2 {
+		return 0, false
+	}
+	code, err := strconv.Atoi(match[1])
+	if err != nil || code < 100 || code > 599 {
+		return 0, false
+	}
+	return code, true
+}
+
+func accountTestOpsErrorDetail(errorMsg string) string {
+	idx := strings.Index(errorMsg, ":")
+	if idx < 0 || idx+1 >= len(errorMsg) {
+		return ""
+	}
+	return strings.TrimSpace(errorMsg[idx+1:])
+}
+
+func accountTestOpsRequestID(c *gin.Context) string {
+	if c != nil && c.Request != nil {
+		if requestID, _ := c.Request.Context().Value(ctxkey.RequestID).(string); strings.TrimSpace(requestID) != "" {
+			return strings.TrimSpace(requestID)
+		}
+		if requestID := strings.TrimSpace(c.Writer.Header().Get("X-Request-Id")); requestID != "" {
+			return requestID
+		}
+		if requestID := strings.TrimSpace(c.Writer.Header().Get("x-request-id")); requestID != "" {
+			return requestID
+		}
+	}
+	return "acctest_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+}
+
+func accountTestOpsClientRequestID(c *gin.Context) string {
+	if c == nil || c.Request == nil {
+		return ""
+	}
+	if clientRequestID, _ := c.Request.Context().Value(ctxkey.ClientRequestID).(string); strings.TrimSpace(clientRequestID) != "" {
+		return strings.TrimSpace(clientRequestID)
+	}
+	return strings.TrimSpace(c.GetHeader("X-Client-Request-Id"))
+}
+
+func accountTestIntPtr(v int) *int {
+	return &v
+}
+
+func accountTestStringPtr(v string) *string {
+	return &v
+}
+
+func accountTestOpsRequestPath(c *gin.Context) string {
+	if c != nil && c.Request != nil && c.Request.URL != nil {
+		if path := strings.TrimSpace(c.Request.URL.Path); path != "" {
+			return path
+		}
+	}
+	return "/internal/account-tests"
+}
+
+func accountTestOpsContextString(c *gin.Context, key string) string {
+	if c == nil || strings.TrimSpace(key) == "" {
+		return ""
+	}
+	v, ok := c.Get(key)
+	if !ok {
+		return ""
+	}
+	s, _ := v.(string)
+	return strings.TrimSpace(s)
+}
+
+func accountTestOpsAccountID(c *gin.Context) *int64 {
+	if c == nil {
+		return nil
+	}
+	v, ok := c.Get(accountTestOpsAccountIDKey)
+	if !ok {
+		return nil
+	}
+	accountID, ok := v.(int64)
+	if !ok || accountID <= 0 {
+		return nil
+	}
+	return &accountID
+}
+
+func accountTestApplyOpsLatencyFields(c *gin.Context, entry *OpsInsertErrorLogInput) {
+	if c == nil || entry == nil {
+		return
+	}
+	if v, ok := accountTestContextInt64(c, OpsAuthLatencyMsKey); ok {
+		entry.AuthLatencyMs = &v
+	}
+	if v, ok := accountTestContextInt64(c, OpsRoutingLatencyMsKey); ok {
+		entry.RoutingLatencyMs = &v
+	}
+	if v, ok := accountTestContextInt64(c, OpsUpstreamLatencyMsKey); ok {
+		entry.UpstreamLatencyMs = &v
+	}
+	if v, ok := accountTestContextInt64(c, OpsResponseLatencyMsKey); ok {
+		entry.ResponseLatencyMs = &v
+	}
+	if v, ok := accountTestContextInt64(c, OpsTimeToFirstTokenMsKey); ok {
+		entry.TimeToFirstTokenMs = &v
+	}
+}
+
+func accountTestContextInt64(c *gin.Context, key string) (int64, bool) {
+	if c == nil || strings.TrimSpace(key) == "" {
+		return 0, false
+	}
+	v, ok := c.Get(key)
+	if !ok {
+		return 0, false
+	}
+	switch typed := v.(type) {
+	case int64:
+		return typed, true
+	case int:
+		return int64(typed), true
+	case int32:
+		return int64(typed), true
+	case float64:
+		return int64(typed), true
+	default:
+		return 0, false
+	}
 }
 
 // RunTestBackground executes an account test in-memory (no real HTTP client),
@@ -1770,7 +2199,8 @@ func (s *AccountTestService) RunTestBackground(ctx context.Context, accountID in
 
 	w := httptest.NewRecorder()
 	ginCtx, _ := gin.CreateTestContext(w)
-	ginCtx.Request = (&http.Request{}).WithContext(ctx)
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/internal/scheduled-tests/accounts/%d/test", accountID), nil)
+	ginCtx.Request = req.WithContext(ctx)
 
 	testErr := s.TestAccountConnection(ginCtx, accountID, modelID, "", AccountTestModeDefault)
 

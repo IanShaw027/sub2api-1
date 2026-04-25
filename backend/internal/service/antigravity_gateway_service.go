@@ -179,11 +179,43 @@ type smartRetryResult struct {
 	switchError *AntigravityAccountSwitchError // 模型限流时返回账号切换信号
 }
 
+func buildAntigravityOpsUpstreamURL(p antigravityRetryLoopParams, baseURL string) string {
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		return ""
+	}
+	req, err := antigravity.NewAPIRequestWithURL(p.ctx, baseURL, p.action, p.accessToken, p.body)
+	if err != nil || req == nil || req.URL == nil {
+		return safeUpstreamURL(baseURL)
+	}
+	return safeUpstreamURL(req.URL.String())
+}
+
+func (s *AntigravityGatewayService) appendCoveredSmartRetryEvent(p antigravityRetryLoopParams, resp *http.Response, respBody []byte, baseURL string) {
+	if p.c == nil || resp == nil || resp.StatusCode < http.StatusBadRequest {
+		return
+	}
+	upstreamMsg := strings.TrimSpace(extractAntigravityErrorMessage(respBody))
+	upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+	appendOpsUpstreamError(p.c, OpsUpstreamErrorEvent{
+		Platform:           p.account.Platform,
+		AccountID:          p.account.ID,
+		AccountName:        p.account.Name,
+		UpstreamStatusCode: resp.StatusCode,
+		UpstreamRequestID:  upstreamRequestIDFromHeader(resp.Header),
+		UpstreamURL:        buildAntigravityOpsUpstreamURL(p, baseURL),
+		Kind:               "retry",
+		Message:            upstreamMsg,
+		Detail:             s.getUpstreamErrorDetail(respBody),
+	})
+}
+
 // handleSmartRetry 处理 OAuth 账号的智能重试逻辑
 // 将 429/503 限流处理逻辑抽取为独立函数，减少 antigravityRetryLoop 的复杂度
 func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParams, resp *http.Response, respBody []byte, baseURL string, urlIdx int, availableURLs []string) *smartRetryResult {
 	// "Resource has been exhausted" 是 URL 级别限流，切换 URL（仅 429）
 	if resp.StatusCode == http.StatusTooManyRequests && isURLLevelRateLimit(respBody) && urlIdx < len(availableURLs)-1 {
+		s.appendCoveredSmartRetryEvent(p, resp, respBody, baseURL)
 		logger.LegacyPrintf("service.antigravity_gateway", "%s URL fallback (429): %s -> %s", p.prefix, baseURL, availableURLs[urlIdx+1])
 		return &smartRetryResult{action: smartRetryActionContinueURL}
 	}
@@ -204,6 +236,7 @@ func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParam
 		!p.account.isCreditsExhausted() {
 		result := s.attemptCreditsOveragesRetry(p, baseURL, modelName, waitDuration, resp.StatusCode, respBody)
 		if result.handled && result.resp != nil {
+			s.appendCoveredSmartRetryEvent(p, resp, respBody, baseURL)
 			return &smartRetryResult{
 				action: smartRetryActionBreakWithResp,
 				resp:   result.resp,
@@ -217,7 +250,11 @@ func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParam
 		// 谷歌上游 503 (MODEL_CAPACITY_EXHAUSTED) 通常是暂时性的，等几秒就能恢复。
 		// 多账号场景下切换账号是最优选择，但单账号场景下设限流毫无意义（只会导致双重等待）。
 		if resp.StatusCode == http.StatusServiceUnavailable && isSingleAccountRetry(p.ctx) {
-			return s.handleSingleAccountRetryInPlace(p, resp, respBody, baseURL, waitDuration, modelName)
+			result := s.handleSingleAccountRetryInPlace(p, resp, respBody, baseURL, waitDuration, modelName)
+			if result != nil && result.resp != nil && result.resp.StatusCode < http.StatusBadRequest {
+				s.appendCoveredSmartRetryEvent(p, resp, respBody, baseURL)
+			}
+			return result
 		}
 
 		rateLimitDuration := waitDuration
@@ -305,8 +342,11 @@ func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParam
 				}
 			}
 
+			retryStart := time.Now()
 			retryResp, retryErr := p.httpUpstream.Do(retryReq, p.proxyURL, p.account.ID, p.account.Concurrency)
+			SetOpsLatencyMs(p.c, OpsUpstreamLatencyMsKey, time.Since(retryStart).Milliseconds())
 			if retryErr == nil && retryResp != nil && retryResp.StatusCode != http.StatusTooManyRequests && retryResp.StatusCode != http.StatusServiceUnavailable {
+				s.appendCoveredSmartRetryEvent(p, resp, respBody, baseURL)
 				log.Printf("%s status=%d smart_retry_success attempt=%d/%d", p.prefix, retryResp.StatusCode, attempt, maxAttempts)
 				// 重试成功，清除 MODEL_CAPACITY_EXHAUSTED cooldown
 				if isModelCapacityExhausted && modelName != "" {
@@ -490,7 +530,9 @@ func (s *AntigravityGatewayService) handleSingleAccountRetryInPlace(
 			break
 		}
 
+		retryStart := time.Now()
 		retryResp, retryErr := p.httpUpstream.Do(retryReq, p.proxyURL, p.account.ID, p.account.Concurrency)
+		SetOpsLatencyMs(p.c, OpsUpstreamLatencyMsKey, time.Since(retryStart).Milliseconds())
 		if retryErr == nil && retryResp != nil && retryResp.StatusCode != http.StatusTooManyRequests && retryResp.StatusCode != http.StatusServiceUnavailable {
 			logger.LegacyPrintf("service.antigravity_gateway", "%s status=%d single_account_503_retry_success attempt=%d/%d total_waited=%v",
 				p.prefix, retryResp.StatusCode, attempt, antigravitySingleAccountSmartRetryMaxAttempts, totalWaited)
@@ -633,7 +675,9 @@ urlFallbackLoop:
 				p.c.Set(OpsUpstreamRequestBodyKey, string(p.body))
 			}
 
+			upstreamStart := time.Now()
 			resp, err = p.httpUpstream.Do(upstreamReq, p.proxyURL, p.account.ID, p.account.Concurrency)
+			SetOpsLatencyMs(p.c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 			if err == nil && resp == nil {
 				err = errors.New("upstream returned nil response")
 			}
@@ -2216,22 +2260,95 @@ func (s *AntigravityGatewayService) ForwardGemini(ctx context.Context, c *gin.Co
 		// 模型兜底：模型不存在且开启 fallback 时，自动用 fallback 模型重试一次
 		if s.settingService != nil && s.settingService.IsModelFallbackEnabled(ctx) &&
 			isModelNotFoundError(resp.StatusCode, respBody) {
+			originalFallbackMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractAntigravityErrorMessage(respBody)))
+			originalFallbackDetail := s.getUpstreamErrorDetail(respBody)
+			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				Platform:           account.Platform,
+				AccountID:          account.ID,
+				AccountName:        account.Name,
+				UpstreamStatusCode: resp.StatusCode,
+				UpstreamRequestID:  upstreamRequestIDFromHeader(resp.Header),
+				Kind:               "model_fallback_source",
+				Message:            originalFallbackMsg,
+				Detail:             originalFallbackDetail,
+			})
 			fallbackModel := s.settingService.GetFallbackModel(ctx, PlatformAntigravity)
 			if fallbackModel != "" && fallbackModel != mappedModel {
 				logger.LegacyPrintf("service.antigravity_gateway", "[Antigravity] Model not found (%s), retrying with fallback model %s (account: %s)", mappedModel, fallbackModel, account.Name)
+				appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+					Platform:           account.Platform,
+					AccountID:          account.ID,
+					AccountName:        account.Name,
+					UpstreamStatusCode: resp.StatusCode,
+					UpstreamRequestID:  upstreamRequestIDFromHeader(resp.Header),
+					Kind:               "model_fallback_attempt",
+					Message:            sanitizeUpstreamErrorMessage(fmt.Sprintf("fallback retrying model: %s -> %s", mappedModel, fallbackModel)),
+				})
 
 				fallbackWrapped, err := s.wrapV1InternalRequest(projectID, fallbackModel, injectedBody)
 				if err == nil {
 					fallbackReq, err := antigravity.NewAPIRequest(ctx, upstreamAction, accessToken, fallbackWrapped)
 					if err == nil {
+						fallbackStart := time.Now()
 						fallbackResp, err := s.httpUpstream.Do(fallbackReq, proxyURL, account.ID, account.Concurrency)
+						SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(fallbackStart).Milliseconds())
 						if err == nil && fallbackResp.StatusCode < 400 {
+							appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+								Platform:           account.Platform,
+								AccountID:          account.ID,
+								AccountName:        account.Name,
+								UpstreamStatusCode: fallbackResp.StatusCode,
+								UpstreamRequestID:  upstreamRequestIDFromHeader(fallbackResp.Header),
+								UpstreamURL:        safeUpstreamURL(fallbackReq.URL.String()),
+								Kind:               "model_fallback_success",
+								Message:            sanitizeUpstreamErrorMessage(fmt.Sprintf("fallback succeeded with model: %s", fallbackModel)),
+							})
 							_ = resp.Body.Close()
 							resp = fallbackResp
 						} else if fallbackResp != nil {
+							fallbackRespBody, _ := io.ReadAll(io.LimitReader(fallbackResp.Body, 64<<10))
 							_ = fallbackResp.Body.Close()
+							appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+								Platform:           account.Platform,
+								AccountID:          account.ID,
+								AccountName:        account.Name,
+								UpstreamStatusCode: fallbackResp.StatusCode,
+								UpstreamRequestID:  upstreamRequestIDFromHeader(fallbackResp.Header),
+								UpstreamURL:        safeUpstreamURL(fallbackReq.URL.String()),
+								Kind:               "model_fallback_http_error",
+								Message:            sanitizeUpstreamErrorMessage(strings.TrimSpace(extractAntigravityErrorMessage(fallbackRespBody))),
+								Detail:             s.getUpstreamErrorDetail(fallbackRespBody),
+							})
+						} else if err != nil {
+							appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+								Platform:           account.Platform,
+								AccountID:          account.ID,
+								AccountName:        account.Name,
+								UpstreamStatusCode: 0,
+								UpstreamURL:        safeUpstreamURL(fallbackReq.URL.String()),
+								Kind:               "model_fallback_request_error",
+								Message:            sanitizeUpstreamErrorMessage(err.Error()),
+							})
 						}
+					} else {
+						appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+							Platform:           account.Platform,
+							AccountID:          account.ID,
+							AccountName:        account.Name,
+							UpstreamStatusCode: 0,
+							Kind:               "model_fallback_build_error",
+							Message:            sanitizeUpstreamErrorMessage(err.Error()),
+						})
 					}
+				} else {
+					appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+						Platform:           account.Platform,
+						AccountID:          account.ID,
+						AccountName:        account.Name,
+						UpstreamStatusCode: 0,
+						Kind:               "model_fallback_wrap_error",
+						Message:            sanitizeUpstreamErrorMessage(err.Error()),
+					})
 				}
 			}
 		}
@@ -4256,7 +4373,9 @@ func (s *AntigravityGatewayService) ForwardUpstream(ctx context.Context, c *gin.
 	}
 
 	// 发送请求
+	upstreamStart := time.Now()
 	resp, err := s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
+	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
 		logger.LegacyPrintf("service.antigravity_gateway", "%s upstream request failed: %v", prefix, err)
 		return nil, fmt.Errorf("upstream request failed: %w", err)

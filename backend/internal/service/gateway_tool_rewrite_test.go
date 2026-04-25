@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -100,6 +101,13 @@ func TestApplyToolsLastCacheBreakpoint_PassesThroughClientTTL(t *testing.T) {
 	require.Equal(t, "1h", gjson.GetBytes(out, "tools.0.cache_control.ttl").String())
 }
 
+func TestApplyToolsLastCacheBreakpoint_NormalizesTypeToEphemeral(t *testing.T) {
+	body := []byte(`{"tools":[{"name":"a","input_schema":{},"cache_control":{"type":"persistent","ttl":"1h"}}]}`)
+	out := applyToolsLastCacheBreakpoint(body)
+	require.Equal(t, "ephemeral", gjson.GetBytes(out, "tools.0.cache_control.type").String())
+	require.Equal(t, "1h", gjson.GetBytes(out, "tools.0.cache_control.ttl").String())
+}
+
 func TestStripMessageCacheControl(t *testing.T) {
 	body := []byte(`{"messages":[{"role":"user","content":[{"type":"text","text":"hi","cache_control":{"type":"ephemeral"}}]}]}`)
 	out := stripMessageCacheControl(body)
@@ -139,6 +147,15 @@ func TestAddMessageCacheBreakpoints_StringContentPromoted(t *testing.T) {
 	require.Equal(t, "text", gjson.GetBytes(out, "messages.0.content.0.type").String())
 	require.Equal(t, "hi", gjson.GetBytes(out, "messages.0.content.0.text").String())
 	require.Equal(t, "5m", gjson.GetBytes(out, "messages.0.content.0.cache_control.ttl").String())
+}
+
+func TestMustJSONString_ReturnsValidJSONString(t *testing.T) {
+	in := "line1\nline2\t\"quoted\" 😀"
+	raw := mustJSONString(in)
+
+	var decoded string
+	require.NoError(t, json.Unmarshal([]byte(raw), &decoded))
+	require.Equal(t, in, decoded)
 }
 
 func TestBuildToolNameRewriteFromBody_ReverseOrderedByLengthDesc(t *testing.T) {

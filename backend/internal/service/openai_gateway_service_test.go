@@ -558,6 +558,53 @@ func TestOpenAIGatewayService_GenerateSessionHash_ExplicitSignalWinsOverContent(
 	require.NotEqual(t, contentHash, explicitHash, "explicit session_id should override content fallback")
 }
 
+func TestOpenAIGatewayService_Forward_StripsUnsupportedFieldsConsistently(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{
+		"model":"gpt-5.1-codex",
+		"input":"hello",
+		"stream":false,
+		"prompt_cache_retention":"24h",
+		"safety_identifier":"safe-id",
+		"metadata":{"k":"v"},
+		"stream_options":{"include_usage":true}
+	}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid-strip-unsupported"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_strip_1","usage":{"input_tokens":1,"output_tokens":1}}`)),
+		},
+	}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+	account := &Account{
+		ID:          321,
+		Name:        "oauth-strip",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_retention").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "safety_identifier").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "metadata").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "stream_options").Exists())
+}
+
 func TestOpenAIGatewayService_GenerateSessionHash_EmptyBodyStillEmpty(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()

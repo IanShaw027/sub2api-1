@@ -530,6 +530,30 @@ func TestResponsesToChatCompletions_Incomplete(t *testing.T) {
 	assert.Equal(t, "length", chat.Choices[0].FinishReason)
 }
 
+func TestResponsesToChatCompletions_FailedMapsToErrorFinishReason(t *testing.T) {
+	resp := &ResponsesResponse{
+		ID:     "resp_failed",
+		Status: "failed",
+		Error:  &ResponsesError{Code: "server_error", Message: "upstream failed"},
+	}
+
+	chat := ResponsesToChatCompletions(resp, "gpt-4o")
+	require.Len(t, chat.Choices, 1)
+	assert.Equal(t, "error", chat.Choices[0].FinishReason)
+}
+
+func TestResponsesToChatCompletions_FailedPolicyStillMapsToContentFilter(t *testing.T) {
+	resp := &ResponsesResponse{
+		ID:     "resp_failed_policy",
+		Status: "failed",
+		Error:  &ResponsesError{Code: "content_policy_violation", Message: "Request not allowed by safety policy"},
+	}
+
+	chat := ResponsesToChatCompletions(resp, "gpt-4o")
+	require.Len(t, chat.Choices, 1)
+	assert.Equal(t, "content_filter", chat.Choices[0].FinishReason)
+}
+
 func TestResponsesToChatCompletions_CachedTokens(t *testing.T) {
 	resp := &ResponsesResponse{
 		ID:     "resp_cache",
@@ -732,6 +756,38 @@ func TestResponsesEventToChatChunks_CompletedWithToolCalls(t *testing.T) {
 	require.Len(t, chunks, 1)
 	require.NotNil(t, chunks[0].Choices[0].FinishReason)
 	assert.Equal(t, "tool_calls", *chunks[0].Choices[0].FinishReason)
+}
+
+func TestResponsesEventToChatChunks_FailedUsesErrorFinishReason(t *testing.T) {
+	state := NewResponsesEventToChatState()
+	state.Model = "gpt-4o"
+
+	chunks := ResponsesEventToChatChunks(&ResponsesStreamEvent{
+		Type: "response.failed",
+		Response: &ResponsesResponse{
+			Status: "failed",
+			Error:  &ResponsesError{Code: "server_error", Message: "upstream failed"},
+		},
+	}, state)
+	require.Len(t, chunks, 1)
+	require.NotNil(t, chunks[0].Choices[0].FinishReason)
+	assert.Equal(t, "error", *chunks[0].Choices[0].FinishReason)
+}
+
+func TestResponsesEventToChatChunks_FailedPolicyUsesContentFilterFinishReason(t *testing.T) {
+	state := NewResponsesEventToChatState()
+	state.Model = "gpt-4o"
+
+	chunks := ResponsesEventToChatChunks(&ResponsesStreamEvent{
+		Type: "response.failed",
+		Response: &ResponsesResponse{
+			Status: "failed",
+			Error:  &ResponsesError{Code: "content_policy_violation", Message: "Request blocked by policy"},
+		},
+	}, state)
+	require.Len(t, chunks, 1)
+	require.NotNil(t, chunks[0].Choices[0].FinishReason)
+	assert.Equal(t, "content_filter", *chunks[0].Choices[0].FinishReason)
 }
 
 func TestResponsesEventToChatChunks_ReasoningDelta(t *testing.T) {
