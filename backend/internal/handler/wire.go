@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -85,33 +84,6 @@ func ProvideSettingHandler(settingService *service.SettingService, buildInfo Bui
 	return NewSettingHandler(settingService, buildInfo.Version)
 }
 
-func ProvideUserHandler(
-	userService *service.UserService,
-	authService *service.AuthService,
-	emailService *service.EmailService,
-	emailCache service.EmailCache,
-	affiliateService *service.AffiliateService,
-) *UserHandler {
-	handler := NewUserHandler(userService, authService, emailService, emailCache)
-	handler.SetAffiliateService(affiliateService)
-	return handler
-}
-
-func ProvideAuthHandler(
-	cfg *config.Config,
-	authService *service.AuthService,
-	userService *service.UserService,
-	settingService *service.SettingService,
-	promoService *service.PromoService,
-	redeemService *service.RedeemService,
-	totpService *service.TotpService,
-	affiliateService *service.AffiliateService,
-) *AuthHandler {
-	handler := NewAuthHandler(cfg, authService, userService, settingService, promoService, redeemService, totpService)
-	handler.SetAffiliateService(affiliateService)
-	return handler
-}
-
 // ProvideHandlers creates the Handlers struct
 func ProvideHandlers(
 	authHandler *AuthHandler,
@@ -158,8 +130,8 @@ func ProvideHandlers(
 // ProviderSet is the Wire provider set for all handlers
 var ProviderSet = wire.NewSet(
 	// Top-level handlers
-	ProvideAuthHandler,
-	ProvideUserHandler,
+	NewAuthHandler,
+	NewUserHandler,
 	NewAPIKeyHandler,
 	NewUsageHandler,
 	NewRedeemHandler,

@@ -61,7 +61,7 @@ func TestAccountTestService_OpenAIImageOAuthDefaultCallsImagesEndpoint(t *testin
 		},
 	}
 
-	err := svc.testOpenAIAccountConnection(c, account, "gpt-image-2", "draw a cat")
+	err := svc.testOpenAIAccountConnection(c, account, "gpt-image-2", "draw a cat", "")
 	require.NoError(t, err)
 	require.NotNil(t, upstream.lastReq)
 	require.Equal(t, chatgptCodexURL, upstream.lastReq.URL.String())

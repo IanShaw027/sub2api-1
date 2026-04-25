@@ -29,20 +29,15 @@ func NewUserHandler(
 	authService *service.AuthService,
 	emailService *service.EmailService,
 	emailCache service.EmailCache,
+	affiliateService *service.AffiliateService,
 ) *UserHandler {
 	return &UserHandler{
-		userService:  userService,
-		authService:  authService,
-		emailService: emailService,
-		emailCache:   emailCache,
+		userService:      userService,
+		authService:      authService,
+		emailService:     emailService,
+		emailCache:       emailCache,
+		affiliateService: affiliateService,
 	}
-}
-
-func (h *UserHandler) SetAffiliateService(affiliateService *service.AffiliateService) {
-	if h == nil {
-		return
-	}
-	h.affiliateService = affiliateService
 }
 
 // ChangePasswordRequest represents the change password request payload
@@ -185,13 +180,7 @@ func (h *UserHandler) GetAffiliate(c *gin.Context) {
 		return
 	}
 
-	affiliateSvc, err := h.affiliateServiceOrErr()
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-
-	detail, err := affiliateSvc.GetAffiliateDetail(c.Request.Context(), subject.UserID)
+	detail, err := h.affiliateService.GetAffiliateDetail(c.Request.Context(), subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -236,13 +225,7 @@ func (h *UserHandler) TransferAffiliateQuota(c *gin.Context) {
 		return
 	}
 
-	affiliateSvc, err := h.affiliateServiceOrErr()
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-
-	transferred, balance, err := affiliateSvc.TransferAffiliateQuota(c.Request.Context(), subject.UserID)
+	transferred, balance, err := h.affiliateService.TransferAffiliateQuota(c.Request.Context(), subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
