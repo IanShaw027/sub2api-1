@@ -56,6 +56,8 @@ const (
 	openAICompactSessionSeedKey        = "openai_compact_session_seed"
 	// Codex 限额快照仅用于后台展示/诊断，不需要每个成功请求都立即落库。
 	openAICodexSnapshotPersistMinInterval = 30 * time.Second
+	openAICacheProbePrefix4KBytes         = 4 * 1024
+	openAICacheProbePrefix16KBytes        = 16 * 1024
 )
 
 // OpenAI allowed headers whitelist (for non-passthrough).
@@ -1024,6 +1026,224 @@ func hashSensitiveValueForLog(raw string) string {
 	}
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:8])
+}
+
+func hashBytesForLog(raw []byte) string {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return ""
+	}
+	sum := sha256.Sum256(trimmed)
+	return hex.EncodeToString(sum[:8])
+}
+
+func hashBytesPrefixForLog(raw []byte, prefixBytes int) string {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return ""
+	}
+	if prefixBytes > 0 && len(trimmed) > prefixBytes {
+		trimmed = trimmed[:prefixBytes]
+	}
+	sum := sha256.Sum256(trimmed)
+	return hex.EncodeToString(sum[:8])
+}
+
+func openAIBodyFieldRaw(body []byte, field string) []byte {
+	if len(body) == 0 || strings.TrimSpace(field) == "" {
+		return nil
+	}
+	value := gjson.GetBytes(body, field)
+	if !value.Exists() {
+		return nil
+	}
+	return []byte(value.Raw)
+}
+
+func hashOpenAIBodyFieldForLog(body []byte, field string) string {
+	return hashBytesForLog(openAIBodyFieldRaw(body, field))
+}
+
+func hashOpenAIBodyFieldPrefixForLog(body []byte, field string, prefixBytes int) string {
+	return hashBytesPrefixForLog(openAIBodyFieldRaw(body, field), prefixBytes)
+}
+
+func countOpenAIInputItems(body []byte) int {
+	value := gjson.GetBytes(body, "input")
+	if !value.Exists() {
+		return 0
+	}
+	if value.IsArray() {
+		return len(value.Array())
+	}
+	return 1
+}
+
+func describeOpenAIUpstreamSessionSource(c *gin.Context, promptCacheKey string, compactPath bool) (source string, sessionID string) {
+	if c != nil {
+		if sessionID = strings.TrimSpace(c.GetHeader("session_id")); sessionID != "" {
+			return "session_id", sessionID
+		}
+		if sessionID = strings.TrimSpace(c.GetHeader("conversation_id")); sessionID != "" {
+			return "conversation_id", sessionID
+		}
+		if compactPath {
+			if seed, ok := c.Get(openAICompactSessionSeedKey); ok {
+				if seedStr, ok := seed.(string); ok && strings.TrimSpace(seedStr) != "" {
+					return "compact_seed", strings.TrimSpace(seedStr)
+				}
+			}
+		}
+	}
+	if sessionID = strings.TrimSpace(promptCacheKey); sessionID != "" {
+		return "prompt_cache_key", sessionID
+	}
+	if compactPath {
+		return "compact_generated", ""
+	}
+	return "", ""
+}
+
+func generateOpenAISessionHashForLog(c *gin.Context, body []byte) string {
+	if c == nil {
+		return ""
+	}
+	sessionID := strings.TrimSpace(c.GetHeader("session_id"))
+	if sessionID == "" {
+		sessionID = strings.TrimSpace(c.GetHeader("conversation_id"))
+	}
+	if sessionID == "" && len(body) > 0 {
+		sessionID = strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
+	}
+	if sessionID == "" && len(body) > 0 {
+		sessionID = deriveOpenAIContentSessionSeed(body)
+	}
+	if sessionID == "" {
+		return ""
+	}
+	currentHash, _ := deriveOpenAISessionHashes(sessionID)
+	return currentHash
+}
+
+func boolToOptionalAny(ok bool, value any) any {
+	if !ok {
+		return nil
+	}
+	return value
+}
+
+func emitOpenAICacheProbeEvent(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	originalBody []byte,
+	finalBody []byte,
+	result *OpenAIForwardResult,
+	promptCacheKeyForUpstream string,
+	passthrough bool,
+) {
+	if result == nil || account == nil {
+		return
+	}
+
+	inboundModel, inboundStream, inboundPromptCacheKey := extractOpenAIRequestMetaFromBody(originalBody)
+	upstreamModel, upstreamStream, upstreamPromptCacheKey := extractOpenAIRequestMetaFromBody(finalBody)
+	inboundPrevResponseID := strings.TrimSpace(gjson.GetBytes(originalBody, "previous_response_id").String())
+	upstreamPrevResponseID := strings.TrimSpace(gjson.GetBytes(finalBody, "previous_response_id").String())
+
+	if inboundPromptCacheKey == "" &&
+		strings.TrimSpace(promptCacheKeyForUpstream) == "" &&
+		upstreamPromptCacheKey == "" &&
+		result.Usage.CacheReadInputTokens == 0 &&
+		result.Usage.CacheCreationInputTokens == 0 {
+		return
+	}
+
+	compactPath := isOpenAIResponsesCompactPath(c)
+	upstreamSessionSource, upstreamSessionID := describeOpenAIUpstreamSessionSource(c, promptCacheKeyForUpstream, compactPath)
+	stickySessionHash := ""
+	if c != nil {
+		stickySessionHash = shortSessionHash(generateOpenAISessionHashForLog(c, originalBody))
+	}
+	requestID := resolveUsageBillingRequestID(ctx, result.RequestID)
+	billableInputTokens := result.Usage.InputTokens - result.Usage.CacheReadInputTokens
+	if billableInputTokens < 0 {
+		billableInputTokens = 0
+	}
+	requestStore := gjson.GetBytes(originalBody, "store")
+	upstreamStore := gjson.GetBytes(finalBody, "store")
+	requestUserAgent := ""
+	requestPath := ""
+	if c != nil {
+		requestUserAgent = strings.TrimSpace(c.GetHeader("User-Agent"))
+		if c.Request != nil && c.Request.URL != nil {
+			requestPath = strings.TrimSpace(c.Request.URL.Path)
+		}
+	}
+
+	fields := map[string]any{
+		"request_id":                            requestID,
+		"upstream_request_id":                   strings.TrimSpace(result.RequestID),
+		"component":                             "audit.openai_cache_probe",
+		"account_id":                            account.ID,
+		"api_key_id":                            getAPIKeyIDFromContext(c),
+		"platform":                              strings.TrimSpace(string(account.Platform)),
+		"model":                                 strings.TrimSpace(result.Model),
+		"requested_model":                       strings.TrimSpace(inboundModel),
+		"upstream_model":                        firstNonEmptyString(result.UpstreamModel, upstreamModel),
+		"account_type":                          strings.TrimSpace(string(account.Type)),
+		"request_user_agent":                    requestUserAgent,
+		"inbound_endpoint":                      requestPath,
+		"openai_passthrough":                    passthrough,
+		"openai_compact_path":                   compactPath,
+		"codex_official_client":                 isOpenAICodexOfficialClientRequest(c),
+		"sticky_session_hash":                   stickySessionHash,
+		"upstream_session_source":               upstreamSessionSource,
+		"upstream_session_id_sha256":            hashSensitiveValueForLog(upstreamSessionID),
+		"request_prompt_cache_key_sha256":       hashSensitiveValueForLog(inboundPromptCacheKey),
+		"routing_prompt_cache_key_sha256":       hashSensitiveValueForLog(promptCacheKeyForUpstream),
+		"upstream_prompt_cache_key_sha256":      hashSensitiveValueForLog(upstreamPromptCacheKey),
+		"prompt_cache_key_dropped":              inboundPromptCacheKey != "" && upstreamPromptCacheKey == "",
+		"previous_response_id_present":          inboundPrevResponseID != "",
+		"upstream_previous_response_id_present": upstreamPrevResponseID != "",
+		"previous_response_id_dropped":          inboundPrevResponseID != "" && upstreamPrevResponseID == "",
+		"request_body_bytes":                    len(originalBody),
+		"upstream_body_bytes":                   len(finalBody),
+		"request_body_sha256":                   hashBytesForLog(originalBody),
+		"upstream_body_sha256":                  hashBytesForLog(finalBody),
+		"request_body_prefix_4k_sha256":         hashBytesPrefixForLog(originalBody, openAICacheProbePrefix4KBytes),
+		"request_body_prefix_16k_sha256":        hashBytesPrefixForLog(originalBody, openAICacheProbePrefix16KBytes),
+		"upstream_body_prefix_4k_sha256":        hashBytesPrefixForLog(finalBody, openAICacheProbePrefix4KBytes),
+		"upstream_body_prefix_16k_sha256":       hashBytesPrefixForLog(finalBody, openAICacheProbePrefix16KBytes),
+		"request_input_sha256":                  hashOpenAIBodyFieldForLog(originalBody, "input"),
+		"upstream_input_sha256":                 hashOpenAIBodyFieldForLog(finalBody, "input"),
+		"request_input_prefix_4k_sha256":        hashOpenAIBodyFieldPrefixForLog(originalBody, "input", openAICacheProbePrefix4KBytes),
+		"request_input_prefix_16k_sha256":       hashOpenAIBodyFieldPrefixForLog(originalBody, "input", openAICacheProbePrefix16KBytes),
+		"upstream_input_prefix_4k_sha256":       hashOpenAIBodyFieldPrefixForLog(finalBody, "input", openAICacheProbePrefix4KBytes),
+		"upstream_input_prefix_16k_sha256":      hashOpenAIBodyFieldPrefixForLog(finalBody, "input", openAICacheProbePrefix16KBytes),
+		"request_input_items":                   countOpenAIInputItems(originalBody),
+		"upstream_input_items":                  countOpenAIInputItems(finalBody),
+		"body_modified":                         !bytes.Equal(bytes.TrimSpace(originalBody), bytes.TrimSpace(finalBody)),
+		"input_modified":                        hashOpenAIBodyFieldForLog(originalBody, "input") != hashOpenAIBodyFieldForLog(finalBody, "input"),
+		"request_stream":                        inboundStream,
+		"upstream_stream":                       upstreamStream,
+		"stream_changed":                        inboundStream != upstreamStream,
+		"request_store_present":                 requestStore.Exists(),
+		"upstream_store_present":                upstreamStore.Exists(),
+		"store_changed":                         requestStore.Raw != upstreamStore.Raw,
+		"request_store_value":                   boolToOptionalAny(requestStore.Exists(), requestStore.Bool()),
+		"upstream_store_value":                  boolToOptionalAny(upstreamStore.Exists(), upstreamStore.Bool()),
+		"usage_input_tokens":                    result.Usage.InputTokens,
+		"usage_billable_input_tokens":           billableInputTokens,
+		"usage_cache_read_tokens":               result.Usage.CacheReadInputTokens,
+		"usage_cache_creation_tokens":           result.Usage.CacheCreationInputTokens,
+		"usage_output_tokens":                   result.Usage.OutputTokens,
+		"usage_image_output_tokens":             result.Usage.ImageOutputTokens,
+		"service_tier":                          strings.TrimSpace(firstNonEmptyString(result.ServiceTier)),
+		"reasoning_effort":                      strings.TrimSpace(firstNonEmptyString(result.ReasoningEffort)),
+	}
+
+	logger.WriteSinkEvent("info", "audit.openai_cache_probe", "OpenAI cache probe", fields)
 }
 
 func logOpenAIInstructionsRequiredDebug(
@@ -2579,7 +2799,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		reasoningEffort := extractOpenAIReasoningEffort(reqBody, originalModel)
 		serviceTier := extractOpenAIServiceTier(reqBody)
 
-		return &OpenAIForwardResult{
+		result := &OpenAIForwardResult{
 			RequestID:       resp.Header.Get("x-request-id"),
 			Usage:           *usage,
 			Model:           originalModel,
@@ -2590,7 +2810,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			OpenAIWSMode:    false,
 			Duration:        time.Since(startTime),
 			FirstTokenMs:    firstTokenMs,
-		}, nil
+		}
+		emitOpenAICacheProbeEvent(ctx, c, account, originalBody, body, result, promptCacheKey, false)
+		return result, nil
 	}
 }
 
@@ -2604,6 +2826,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	reqStream bool,
 	startTime time.Time,
 ) (*OpenAIForwardResult, error) {
+	originalBody := body
 	promptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
 
 	if account != nil && account.Type == AccountTypeOAuth {
@@ -2767,7 +2990,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		usage = &OpenAIUsage{}
 	}
 
-	return &OpenAIForwardResult{
+	result := &OpenAIForwardResult{
 		RequestID:       resp.Header.Get("x-request-id"),
 		Usage:           *usage,
 		Model:           reqModel,
@@ -2777,7 +3000,9 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		OpenAIWSMode:    false,
 		Duration:        time.Since(startTime),
 		FirstTokenMs:    firstTokenMs,
-	}, nil
+	}
+	emitOpenAICacheProbeEvent(ctx, c, account, originalBody, body, result, promptCacheKey, true)
+	return result, nil
 }
 
 func logOpenAIPassthroughInstructionsRejected(
