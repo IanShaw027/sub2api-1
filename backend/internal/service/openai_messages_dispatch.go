@@ -9,8 +9,38 @@ const (
 )
 
 func normalizeOpenAIMessagesDispatchMappedModel(model string) string {
-	model = NormalizeOpenAICompatRequestedModel(strings.TrimSpace(model))
 	return strings.TrimSpace(model)
+}
+
+func resolveOpenAIMessagesDispatchModel(cfg OpenAIMessagesDispatchModelConfig, requestedModel string) (string, bool) {
+	requestedModel = strings.TrimSpace(requestedModel)
+	if requestedModel == "" {
+		return "", false
+	}
+
+	if mappedModel := strings.TrimSpace(cfg.ExactModelMappings[requestedModel]); mappedModel != "" {
+		return mappedModel, true
+	}
+
+	switch claudeMessagesDispatchFamily(requestedModel) {
+	case "opus":
+		if mappedModel := strings.TrimSpace(cfg.OpusMappedModel); mappedModel != "" {
+			return mappedModel, true
+		}
+		return defaultOpenAIMessagesDispatchOpusMappedModel, false
+	case "sonnet":
+		if mappedModel := strings.TrimSpace(cfg.SonnetMappedModel); mappedModel != "" {
+			return mappedModel, true
+		}
+		return defaultOpenAIMessagesDispatchSonnetMappedModel, false
+	case "haiku":
+		if mappedModel := strings.TrimSpace(cfg.HaikuMappedModel); mappedModel != "" {
+			return mappedModel, true
+		}
+		return defaultOpenAIMessagesDispatchHaikuMappedModel, false
+	default:
+		return "", false
+	}
 }
 
 func normalizeOpenAIMessagesDispatchModelConfig(cfg OpenAIMessagesDispatchModelConfig) OpenAIMessagesDispatchModelConfig {
@@ -56,38 +86,16 @@ func claudeMessagesDispatchFamily(model string) string {
 }
 
 func (g *Group) ResolveMessagesDispatchModel(requestedModel string) string {
+	mappedModel, _ := g.ResolveMessagesDispatchModelWithSource(requestedModel)
+	return mappedModel
+}
+
+func (g *Group) ResolveMessagesDispatchModelWithSource(requestedModel string) (string, bool) {
 	if g == nil {
-		return ""
+		return "", false
 	}
-	requestedModel = strings.TrimSpace(requestedModel)
-	if requestedModel == "" {
-		return ""
-	}
-
 	cfg := normalizeOpenAIMessagesDispatchModelConfig(g.MessagesDispatchModelConfig)
-	if mappedModel := strings.TrimSpace(cfg.ExactModelMappings[requestedModel]); mappedModel != "" {
-		return mappedModel
-	}
-
-	switch claudeMessagesDispatchFamily(requestedModel) {
-	case "opus":
-		if mappedModel := strings.TrimSpace(cfg.OpusMappedModel); mappedModel != "" {
-			return mappedModel
-		}
-		return defaultOpenAIMessagesDispatchOpusMappedModel
-	case "sonnet":
-		if mappedModel := strings.TrimSpace(cfg.SonnetMappedModel); mappedModel != "" {
-			return mappedModel
-		}
-		return defaultOpenAIMessagesDispatchSonnetMappedModel
-	case "haiku":
-		if mappedModel := strings.TrimSpace(cfg.HaikuMappedModel); mappedModel != "" {
-			return mappedModel
-		}
-		return defaultOpenAIMessagesDispatchHaikuMappedModel
-	default:
-		return ""
-	}
+	return resolveOpenAIMessagesDispatchModel(cfg, requestedModel)
 }
 
 func sanitizeGroupMessagesDispatchFields(g *Group) {

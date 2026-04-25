@@ -54,6 +54,17 @@ func resolveOpenAIMessagesDispatchMappedModel(apiKey *service.APIKey, requestedM
 	return strings.TrimSpace(apiKey.Group.ResolveMessagesDispatchModel(requestedModel))
 }
 
+func resolveOpenAIMessagesDispatchForcedModel(apiKey *service.APIKey, requestedModel string) string {
+	if apiKey == nil || apiKey.Group == nil {
+		return ""
+	}
+	mappedModel, explicit := apiKey.Group.ResolveMessagesDispatchModelWithSource(requestedModel)
+	if !explicit {
+		return ""
+	}
+	return strings.TrimSpace(mappedModel)
+}
+
 // NewOpenAIGatewayHandler creates a new OpenAIGatewayHandler
 func NewOpenAIGatewayHandler(
 	gatewayService *service.OpenAIGatewayService,
@@ -387,17 +398,19 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		userAgent := c.GetHeader("User-Agent")
 		clientIP := ip.GetClientIP(c)
 		requestPayloadHash := service.HashUsageRequestPayload(body)
+		inboundEndpoint := GetInboundEndpoint(c)
+		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 
 		// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
-		h.submitUsageRecordTask(func(ctx context.Context) {
+		h.submitUsageRecordTask(wrapUsageRecordTaskWithRequestContext(c, func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 				Result:             result,
 				APIKey:             apiKey,
 				User:               apiKey.User,
 				Account:            account,
 				Subscription:       subscription,
-				InboundEndpoint:    GetInboundEndpoint(c),
-				UpstreamEndpoint:   GetUpstreamEndpoint(c, account.Platform),
+				InboundEndpoint:    inboundEndpoint,
+				UpstreamEndpoint:   upstreamEndpoint,
 				UserAgent:          userAgent,
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
@@ -413,7 +426,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					zap.Int64("account_id", account.ID),
 				).Error("openai.record_usage_failed", zap.Error(err))
 			}
-		})
+		}))
 		reqLog.Debug("openai.request_completed",
 			zap.Int64("account_id", account.ID),
 			zap.Int("switch_count", switchCount),
@@ -567,6 +580,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	reqModel := modelResult.String()
 	routingModel := service.NormalizeOpenAICompatRequestedModel(reqModel)
 	preferredMappedModel := resolveOpenAIMessagesDispatchMappedModel(apiKey, reqModel)
+	forcedMappedModel := resolveOpenAIMessagesDispatchForcedModel(apiKey, reqModel)
 	reqStream := gjson.GetBytes(body, "stream").Bool()
 
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
@@ -633,7 +647,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	for {
 		currentRoutingModel := routingModel
 		if effectiveMappedModel != "" {
-			currentRoutingModel = effectiveMappedModel
+			currentRoutingModel = service.NormalizeOpenAICompatRequestedModel(effectiveMappedModel)
 		}
 		reqLog.Debug("openai_messages.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
 		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithScheduler(
@@ -685,7 +699,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		defaultMappedModel := strings.TrimSpace(effectiveMappedModel)
 		// 应用渠道模型映射到请求体
 		forwardBody := body
-		if channelMappingMsg.Mapped {
+		if forcedMappedModel != "" {
+			service.SetOpenAIMessagesDispatchForcedModel(c, forcedMappedModel)
+		} else if channelMappingMsg.Mapped {
 			forwardBody = h.gatewayService.ReplaceModelInBody(body, channelMappingMsg.MappedModel)
 		}
 		result, err := h.gatewayService.ForwardAsAnthropic(c.Request.Context(), c, account, forwardBody, promptCacheKey, defaultMappedModel)
@@ -760,16 +776,18 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		userAgent := c.GetHeader("User-Agent")
 		clientIP := ip.GetClientIP(c)
 		requestPayloadHash := service.HashUsageRequestPayload(body)
+		inboundEndpoint := GetInboundEndpoint(c)
+		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 
-		h.submitUsageRecordTask(func(ctx context.Context) {
+		h.submitUsageRecordTask(wrapUsageRecordTaskWithRequestContext(c, func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 				Result:             result,
 				APIKey:             apiKey,
 				User:               apiKey.User,
 				Account:            account,
 				Subscription:       subscription,
-				InboundEndpoint:    GetInboundEndpoint(c),
-				UpstreamEndpoint:   GetUpstreamEndpoint(c, account.Platform),
+				InboundEndpoint:    inboundEndpoint,
+				UpstreamEndpoint:   upstreamEndpoint,
 				UserAgent:          userAgent,
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
@@ -785,7 +803,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					zap.Int64("account_id", account.ID),
 				).Error("openai_messages.record_usage_failed", zap.Error(err))
 			}
-		})
+		}))
 		reqLog.Debug("openai_messages.request_completed",
 			zap.Int64("account_id", account.ID),
 			zap.Int("switch_count", switchCount),
@@ -1265,15 +1283,17 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(ctx, account.ID, result.ResponseHeaders)
 			}
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, result.FirstTokenMs)
-			h.submitUsageRecordTask(func(taskCtx context.Context) {
+			inboundEndpoint := GetInboundEndpoint(c)
+			upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+			h.submitUsageRecordTask(wrapUsageRecordTaskWithRequestContext(c, func(taskCtx context.Context) {
 				if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
 					Result:             result,
 					APIKey:             apiKey,
 					User:               apiKey.User,
 					Account:            account,
 					Subscription:       subscription,
-					InboundEndpoint:    GetInboundEndpoint(c),
-					UpstreamEndpoint:   GetUpstreamEndpoint(c, account.Platform),
+					InboundEndpoint:    inboundEndpoint,
+					UpstreamEndpoint:   upstreamEndpoint,
 					UserAgent:          userAgent,
 					IPAddress:          clientIP,
 					RequestPayloadHash: service.HashUsageRequestPayload(firstMessage),
@@ -1286,7 +1306,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 						zap.Error(err),
 					)
 				}
-			})
+			}))
 		},
 	}
 

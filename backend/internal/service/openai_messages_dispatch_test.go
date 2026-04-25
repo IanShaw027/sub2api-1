@@ -18,11 +18,11 @@ func TestNormalizeOpenAIMessagesDispatchModelConfig(t *testing.T) {
 		},
 	})
 
-	require.Equal(t, "gpt-5.4", cfg.OpusMappedModel)
+	require.Equal(t, "gpt-5.4-high", cfg.OpusMappedModel)
 	require.Equal(t, "gpt-5.3-codex", cfg.SonnetMappedModel)
-	require.Equal(t, "gpt-5.4-mini", cfg.HaikuMappedModel)
+	require.Equal(t, "gpt-5.4-mini-medium", cfg.HaikuMappedModel)
 	require.Equal(t, map[string]string{
-		"claude-sonnet-4-5-20250929": "gpt-5.2",
+		"claude-sonnet-4-5-20250929": "gpt-5.2-high",
 	}, cfg.ExactModelMappings)
 }
 
@@ -38,6 +38,33 @@ func TestNormalizeOpenAIMessagesDispatchModelConfig_PreservesSparkTargets(t *tes
 
 	require.Equal(t, "gpt-5.3-codex-spark", cfg.HaikuMappedModel)
 	require.Equal(t, map[string]string{
-		"claude-haiku-4-5-20251001": "gpt-5.3-codex-spark",
+		"claude-haiku-4-5-20251001": "gpt-5.3-codex-spark-high",
 	}, cfg.ExactModelMappings)
+}
+
+func TestResolveMessagesDispatchModelWithSource(t *testing.T) {
+	t.Parallel()
+
+	cfg := normalizeOpenAIMessagesDispatchModelConfig(OpenAIMessagesDispatchModelConfig{
+		SonnetMappedModel: "gpt-5.4-medium",
+		ExactModelMappings: map[string]string{
+			"claude-opus-4-6": "gpt-5.5-high",
+		},
+	})
+
+	mappedModel, explicit := resolveOpenAIMessagesDispatchModel(cfg, "claude-opus-4-6")
+	require.Equal(t, "gpt-5.5-high", mappedModel)
+	require.True(t, explicit)
+
+	mappedModel, explicit = resolveOpenAIMessagesDispatchModel(cfg, "claude-sonnet-4-5-20250929")
+	require.Equal(t, "gpt-5.4-medium", mappedModel)
+	require.True(t, explicit)
+
+	mappedModel, explicit = resolveOpenAIMessagesDispatchModel(OpenAIMessagesDispatchModelConfig{}, "claude-haiku-4-5-20251001")
+	require.Equal(t, defaultOpenAIMessagesDispatchHaikuMappedModel, mappedModel)
+	require.False(t, explicit)
+
+	mappedModel, explicit = resolveOpenAIMessagesDispatchModel(OpenAIMessagesDispatchModelConfig{}, "gpt-5.4")
+	require.Empty(t, mappedModel)
+	require.False(t, explicit)
 }

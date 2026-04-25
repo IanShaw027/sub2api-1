@@ -388,7 +388,7 @@ func TestResolveOpenAIMessagesDispatchMappedModel(t *testing.T) {
 				},
 			},
 		}
-		require.Equal(t, "gpt-5.4-mini", resolveOpenAIMessagesDispatchMappedModel(apiKey, "claude-sonnet-4-5-20250929"))
+		require.Equal(t, "gpt-5.4-mini-high", resolveOpenAIMessagesDispatchMappedModel(apiKey, "claude-sonnet-4-5-20250929"))
 	})
 
 	t.Run("uses_family_default_when_no_override", func(t *testing.T) {
@@ -412,6 +412,44 @@ func TestResolveOpenAIMessagesDispatchMappedModel(t *testing.T) {
 		}
 		require.Empty(t, resolveOpenAIMessagesDispatchMappedModel(apiKey, "gpt-5.4"))
 		require.Equal(t, "gpt-5.3-codex", resolveOpenAIMessagesDispatchMappedModel(apiKey, "claude-sonnet-4-5-20250929"))
+	})
+}
+
+func TestResolveOpenAIMessagesDispatchForcedModel(t *testing.T) {
+	t.Run("exact_claude_model_override_wins", func(t *testing.T) {
+		apiKey := &service.APIKey{
+			Group: &service.Group{
+				MessagesDispatchModelConfig: service.OpenAIMessagesDispatchModelConfig{
+					SonnetMappedModel: "gpt-5.2",
+					ExactModelMappings: map[string]string{
+						"claude-sonnet-4-5-20250929": "gpt-5.4-mini-high",
+					},
+				},
+			},
+		}
+		require.Equal(t, "gpt-5.4-mini-high", resolveOpenAIMessagesDispatchForcedModel(apiKey, "claude-sonnet-4-5-20250929"))
+	})
+
+	t.Run("configured_family_mapping_is_forced", func(t *testing.T) {
+		apiKey := &service.APIKey{
+			Group: &service.Group{
+				MessagesDispatchModelConfig: service.OpenAIMessagesDispatchModelConfig{
+					SonnetMappedModel: "gpt-5.4-medium",
+				},
+			},
+		}
+		require.Equal(t, "gpt-5.4-medium", resolveOpenAIMessagesDispatchForcedModel(apiKey, "claude-sonnet-4-5-20250929"))
+	})
+
+	t.Run("built_in_family_default_is_not_forced", func(t *testing.T) {
+		apiKey := &service.APIKey{Group: &service.Group{}}
+		require.Empty(t, resolveOpenAIMessagesDispatchForcedModel(apiKey, "claude-sonnet-4-5-20250929"))
+	})
+
+	t.Run("returns_empty_for_non_claude_or_missing_group", func(t *testing.T) {
+		require.Empty(t, resolveOpenAIMessagesDispatchForcedModel(nil, "claude-sonnet-4-5-20250929"))
+		require.Empty(t, resolveOpenAIMessagesDispatchForcedModel(&service.APIKey{}, "claude-sonnet-4-5-20250929"))
+		require.Empty(t, resolveOpenAIMessagesDispatchForcedModel(&service.APIKey{Group: &service.Group{}}, "gpt-5.4"))
 	})
 }
 
