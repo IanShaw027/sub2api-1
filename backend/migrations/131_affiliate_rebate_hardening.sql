@@ -1,13 +1,22 @@
 -- 1) Normalize historical affiliate rebate rate values.
 -- Legacy compatibility treated 0<x<=1 as fractional inputs (e.g. 0.2 => 20%).
 -- We now use pure percentage semantics, so convert persisted fractional values once.
-UPDATE settings
-SET value = to_char((value::numeric * 100), 'FM999999990.########'),
+WITH parsed_settings AS (
+    SELECT id,
+           CASE
+               WHEN value ~ '^-?[0-9]+([.][0-9]+)?$' THEN value::numeric
+               ELSE NULL
+           END AS numeric_value
+    FROM settings
+    WHERE key = 'affiliate_rebate_rate'
+)
+UPDATE settings s
+SET value = to_char((p.numeric_value * 100), 'FM999999990.########'),
     updated_at = NOW()
-WHERE key = 'affiliate_rebate_rate'
-  AND value ~ '^-?[0-9]+(\\.[0-9]+)?$'
-  AND value::numeric > 0
-  AND value::numeric <= 1;
+FROM parsed_settings p
+WHERE s.id = p.id
+  AND p.numeric_value > 0
+  AND p.numeric_value <= 1;
 
 -- 2) Affiliate ledger for accrual/transfer traceability.
 CREATE TABLE IF NOT EXISTS user_affiliate_ledger (
