@@ -323,6 +323,9 @@ const buildPayload = (): CreateUsageCleanupTaskRequest | null => {
   if (localFilters.value.billing_type !== null && localFilters.value.billing_type !== undefined) {
     payload.billing_type = localFilters.value.billing_type
   }
+  if (localFilters.value.billing_mode) {
+    payload.billing_mode = localFilters.value.billing_mode
+  }
 
   return payload
 }

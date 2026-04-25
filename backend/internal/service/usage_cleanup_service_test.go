@@ -297,6 +297,25 @@ func TestSanitizeUsageCleanupFiltersInvalidRequestType(t *testing.T) {
 	require.True(t, *filters.Stream)
 }
 
+func TestSanitizeUsageCleanupFiltersBillingMode(t *testing.T) {
+	billingMode := " image "
+	filters := UsageCleanupFilters{BillingMode: &billingMode}
+
+	sanitizeUsageCleanupFilters(&filters)
+
+	require.NotNil(t, filters.BillingMode)
+	require.Equal(t, string(BillingModeImage), *filters.BillingMode)
+}
+
+func TestSanitizeUsageCleanupFiltersInvalidBillingMode(t *testing.T) {
+	billingMode := "unknown"
+	filters := UsageCleanupFilters{BillingMode: &billingMode}
+
+	sanitizeUsageCleanupFilters(&filters)
+
+	require.Nil(t, filters.BillingMode)
+}
+
 func TestDescribeUsageCleanupFiltersIncludesRequestType(t *testing.T) {
 	start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	end := start.Add(24 * time.Hour)
@@ -857,6 +876,7 @@ func TestDescribeUsageCleanupFiltersAllFields(t *testing.T) {
 	model := " gpt-4 "
 	stream := true
 	billingType := int8(2)
+	billingMode := "image"
 	filters := UsageCleanupFilters{
 		StartTime:   start,
 		EndTime:     end,
@@ -867,10 +887,11 @@ func TestDescribeUsageCleanupFiltersAllFields(t *testing.T) {
 		Model:       &model,
 		Stream:      &stream,
 		BillingType: &billingType,
+		BillingMode: &billingMode,
 	}
 
 	desc := describeUsageCleanupFilters(filters)
-	require.Equal(t, "start=2024-02-01T10:00:00Z end=2024-02-01T12:00:00Z user_id=1 api_key_id=2 account_id=3 group_id=4 model=gpt-4 stream=true billing_type=2", desc)
+	require.Equal(t, "start=2024-02-01T10:00:00Z end=2024-02-01T12:00:00Z user_id=1 api_key_id=2 account_id=3 group_id=4 model=gpt-4 stream=true billing_type=2 billing_mode=image", desc)
 }
 
 func TestUsageCleanupServiceIsTaskCanceledNotFound(t *testing.T) {

@@ -77,6 +77,9 @@ func describeUsageCleanupFilters(filters UsageCleanupFilters) string {
 	if filters.BillingType != nil {
 		parts = append(parts, fmt.Sprintf("billing_type=%d", *filters.BillingType))
 	}
+	if filters.BillingMode != nil {
+		parts = append(parts, "billing_mode="+strings.TrimSpace(*filters.BillingMode))
+	}
 	return strings.Join(parts, " ")
 }
 
@@ -383,6 +386,14 @@ func sanitizeUsageCleanupFilters(filters *UsageCleanupFilters) {
 	}
 	if filters.BillingType != nil && *filters.BillingType < 0 {
 		filters.BillingType = nil
+	}
+	if filters.BillingMode != nil {
+		mode := strings.TrimSpace(*filters.BillingMode)
+		if mode == "" || !BillingMode(mode).IsValid() {
+			filters.BillingMode = nil
+		} else {
+			filters.BillingMode = &mode
+		}
 	}
 }
 

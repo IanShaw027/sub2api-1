@@ -449,6 +449,7 @@ func TestBuildUsageCleanupWhere(t *testing.T) {
 	model := " gpt-4 "
 	stream := true
 	billingType := int8(2)
+	billingMode := " image "
 
 	where, args := buildUsageCleanupWhere(service.UsageCleanupFilters{
 		StartTime:   start,
@@ -460,10 +461,11 @@ func TestBuildUsageCleanupWhere(t *testing.T) {
 		Model:       &model,
 		Stream:      &stream,
 		BillingType: &billingType,
+		BillingMode: &billingMode,
 	})
 
-	require.Equal(t, "created_at >= $1 AND created_at <= $2 AND user_id = $3 AND api_key_id = $4 AND account_id = $5 AND group_id = $6 AND model = $7 AND stream = $8 AND billing_type = $9", where)
-	require.Equal(t, []any{start, end, userID, apiKeyID, accountID, groupID, "gpt-4", stream, billingType}, args)
+	require.Equal(t, "created_at >= $1 AND created_at <= $2 AND user_id = $3 AND api_key_id = $4 AND account_id = $5 AND group_id = $6 AND model = $7 AND stream = $8 AND billing_type = $9 AND billing_mode = $10", where)
+	require.Equal(t, []any{start, end, userID, apiKeyID, accountID, groupID, "gpt-4", stream, billingType, "image"}, args)
 }
 
 func TestBuildUsageCleanupWhereRequestTypePriority(t *testing.T) {

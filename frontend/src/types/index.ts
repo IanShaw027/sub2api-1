@@ -1327,6 +1327,7 @@ export interface UsageCleanupFilters {
   request_type?: UsageRequestType | null
   stream?: boolean | null
   billing_type?: number | null
+  billing_mode?: string | null
 }
 
 export interface UsageCleanupTask {

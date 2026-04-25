@@ -54,6 +54,7 @@ type CreateUsageCleanupTaskRequest struct {
 	RequestType *string `json:"request_type"`
 	Stream      *bool   `json:"stream"`
 	BillingType *int8   `json:"billing_type"`
+	BillingMode *string `json:"billing_mode"`
 	Timezone    string  `json:"timezone"`
 }
 
@@ -501,6 +502,7 @@ func (h *UsageHandler) CreateCleanupTask(c *gin.Context) {
 		RequestType: requestType,
 		Stream:      stream,
 		BillingType: req.BillingType,
+		BillingMode: req.BillingMode,
 	}
 
 	var userID any
@@ -535,6 +537,10 @@ func (h *UsageHandler) CreateCleanupTask(c *gin.Context) {
 	if filters.BillingType != nil {
 		billingType = *filters.BillingType
 	}
+	var billingMode any
+	if filters.BillingMode != nil {
+		billingMode = *filters.BillingMode
+	}
 
 	idempotencyPayload := struct {
 		OperatorID int64                         `json:"operator_id"`
@@ -544,7 +550,7 @@ func (h *UsageHandler) CreateCleanupTask(c *gin.Context) {
 		Body:       req,
 	}
 	executeAdminIdempotentJSON(c, "admin.usage.cleanup_tasks.create", idempotencyPayload, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		logger.LegacyPrintf("handler.admin.usage", "[UsageCleanup] 请求创建清理任务: operator=%d start=%s end=%s user_id=%v api_key_id=%v account_id=%v group_id=%v model=%v request_type=%v stream=%v billing_type=%v tz=%q",
+		logger.LegacyPrintf("handler.admin.usage", "[UsageCleanup] 请求创建清理任务: operator=%d start=%s end=%s user_id=%v api_key_id=%v account_id=%v group_id=%v model=%v request_type=%v stream=%v billing_type=%v billing_mode=%v tz=%q",
 			subject.UserID,
 			filters.StartTime.Format(time.RFC3339),
 			filters.EndTime.Format(time.RFC3339),
@@ -556,6 +562,7 @@ func (h *UsageHandler) CreateCleanupTask(c *gin.Context) {
 			requestTypeName,
 			streamValue,
 			billingType,
+			billingMode,
 			req.Timezone,
 		)
 

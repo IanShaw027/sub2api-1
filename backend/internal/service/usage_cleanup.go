@@ -36,6 +36,7 @@ type UsageCleanupFilters struct {
 	RequestType *int16    `json:"request_type,omitempty"`
 	Stream      *bool     `json:"stream,omitempty"`
 	BillingType *int8     `json:"billing_type,omitempty"`
+	BillingMode *string   `json:"billing_mode,omitempty"`
 }
 
 // UsageCleanupTask 表示使用记录清理任务

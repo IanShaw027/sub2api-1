@@ -456,6 +456,7 @@ type UsageCleanupFilters struct {
 	RequestType *string   `json:"request_type,omitempty"`
 	Stream      *bool     `json:"stream,omitempty"`
 	BillingType *int8     `json:"billing_type,omitempty"`
+	BillingMode *string   `json:"billing_mode,omitempty"`
 }
 
 type UsageCleanupTask struct {
