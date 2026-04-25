@@ -2,12 +2,14 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -29,7 +31,7 @@ func TestResolveOpenAIImageExecutionMode_DefaultsToCodex(t *testing.T) {
 	require.Equal(t, "web2api", resolveOpenAIImageExecutionMode(c))
 }
 
-func TestAccountTestService_OpenAIImageOAuthHandlesOutputItemDoneFallback(t *testing.T) {
+func TestAccountTestService_OpenAIImageOAuthDefaultCallsImagesEndpoint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -48,7 +50,7 @@ func TestAccountTestService_OpenAIImageOAuthHandlesOutputItemDoneFallback(t *tes
 			)),
 		},
 	}
-	svc := &AccountTestService{httpUpstream: upstream}
+	svc := &AccountTestService{httpUpstream: upstream, cfg: &config.Config{}}
 	account := &Account{
 		ID:       53,
 		Name:     "openai-oauth",
@@ -59,9 +61,19 @@ func TestAccountTestService_OpenAIImageOAuthHandlesOutputItemDoneFallback(t *tes
 		},
 	}
 
-	err := svc.testOpenAIImageOAuth(c, context.Background(), account, "gpt-image-2", "draw a cat")
+	err := svc.testOpenAIAccountConnection(c, account, "gpt-image-2", "draw a cat")
 	require.NoError(t, err)
-	require.Contains(t, rec.Body.String(), "Calling Codex /responses image tool")
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, chatgptCodexURL, upstream.lastReq.URL.String())
+	require.Equal(t, "Bearer token-123", upstream.lastReq.Header.Get("Authorization"))
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(upstream.lastBody, &body))
+	input := body["input"].([]any)
+	message := input[0].(map[string]any)
+	content := message["content"].([]any)
+	require.Equal(t, "draw a cat", content[0].(map[string]any)["text"])
+	require.Equal(t, false, body["store"])
+	require.Equal(t, "gpt-image-2", body["tools"].([]any)[0].(map[string]any)["model"])
 	require.Contains(t, rec.Body.String(), "data:image/png;base64,aGVsbG8=")
 	require.Contains(t, rec.Body.String(), "\"success\":true")
 	require.Equal(t, "codex_cli_rs", upstream.lastReq.Header.Get("originator"))
