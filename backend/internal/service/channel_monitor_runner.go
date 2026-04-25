@@ -279,6 +279,8 @@ func (r *ChannelMonitorRunner) releaseInFlight(id int64) {
 // runOne 执行单个监控的检测。所有错误只记日志，不熔断。
 // 任务结束时（含 panic recover）必须释放 in-flight 槽。
 func (r *ChannelMonitorRunner) runOne(parentCtx context.Context, id int64, name string) {
+	defer r.releaseInFlight(id)
+
 	release, acquired, err := r.acquireDistributedRunLock(parentCtx, id)
 	if err != nil {
 		slog.Warn("channel_monitor: acquire distributed lock failed",
@@ -296,8 +298,6 @@ func (r *ChannelMonitorRunner) runOne(parentCtx context.Context, id int64, name 
 
 	ctx, cancel := context.WithTimeout(parentCtx, monitorRequestTimeout+monitorPingTimeout+monitorRunOneBuffer)
 	defer cancel()
-
-	defer r.releaseInFlight(id)
 
 	defer func() {
 		if rec := recover(); rec != nil {

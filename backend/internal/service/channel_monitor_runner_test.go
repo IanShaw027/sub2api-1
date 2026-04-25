@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -24,6 +25,7 @@ type stubMonitorSvc struct {
 	blockUntil <-chan struct{}
 	lockErr    error
 	locker     *monitorRunLockStub
+	panicRun   bool
 }
 
 type monitorRunLockStub struct {
@@ -61,6 +63,9 @@ func (s *stubMonitorSvc) ListEnabledMonitors(_ context.Context) ([]*ChannelMonit
 
 func (s *stubMonitorSvc) RunCheck(ctx context.Context, id int64) ([]*CheckResult, error) {
 	s.runCount.Add(1)
+	if s.panicRun {
+		panic("run check panic")
+	}
 	if s.runCalled != nil {
 		select {
 		case s.runCalled <- id:
@@ -270,11 +275,12 @@ func TestStop_DrainsAllGoroutines(t *testing.T) {
 	stoppedWithin(t, r, 3*time.Second)
 }
 
-// TestStop_WaitsForInFlightCheck 验证 Stop 会等待正在执行的 RunCheck 退出（pool.StopAndWait）。
-func TestStop_WaitsForInFlightCheck(t *testing.T) {
+// TestStop_CancelsAndWaitsForInFlightCheck 验证 Stop 会取消并等待正在执行的 RunCheck 退出（pool.StopAndWait）。
+func TestStop_CancelsAndWaitsForInFlightCheck(t *testing.T) {
 	svc := &stubMonitorSvc{
 		runCalled:  make(chan int64, 1),
-		runHoldFor: 200 * time.Millisecond,
+		runDone:    make(chan int64, 1),
+		blockUntil: make(chan struct{}),
 	}
 	r := newRunnerForTest(svc)
 	r.Start()
@@ -286,13 +292,17 @@ func TestStop_WaitsForInFlightCheck(t *testing.T) {
 		t.Fatal("first fire never happened")
 	}
 
-	start := time.Now()
 	stoppedWithin(t, r, 3*time.Second)
-	elapsed := time.Since(start)
-	// Stop 必须等待 in-flight check 跑完（runHoldFor=200ms），耗时下界约 100ms。
-	if elapsed < 100*time.Millisecond {
-		t.Fatalf("Stop returned too fast (%v); did not wait for in-flight check", elapsed)
+
+	select {
+	case <-svc.runDone:
+	default:
+		t.Fatal("Stop returned before in-flight check observed cancellation and exited")
 	}
+	if !r.tryAcquireInFlight(1) {
+		t.Fatal("Stop returned before inFlight slot was released")
+	}
+	r.releaseInFlight(1)
 }
 
 // TestUnschedule_CancelsInFlightCheck 验证 Unschedule 会取消 in-flight RunCheck 的 ctx。
@@ -367,6 +377,63 @@ func TestFire_PoolFullDropsAndReleasesInFlight(t *testing.T) {
 
 	close(block)
 	stoppedWithin(t, r, 3*time.Second)
+}
+
+// TestRunOne_ReleasesInFlightOnAllExitPaths 验证 runOne 的所有退出路径都会释放 inFlight。
+func TestRunOne_ReleasesInFlightOnAllExitPaths(t *testing.T) {
+	tests := []struct {
+		name string
+		svc  *stubMonitorSvc
+		hold func(*testing.T, *stubMonitorSvc, int64) func()
+	}{
+		{
+			name: "distributed lock error",
+			svc:  &stubMonitorSvc{lockErr: errors.New("lock unavailable")},
+		},
+		{
+			name: "distributed lock busy",
+			svc:  &stubMonitorSvc{locker: newMonitorRunLockStub()},
+			hold: func(t *testing.T, svc *stubMonitorSvc, id int64) func() {
+				t.Helper()
+				release, acquired := svc.locker.Acquire(id)
+				if !acquired {
+					t.Fatal("failed to pre-acquire distributed lock")
+				}
+				return release
+			},
+		},
+		{
+			name: "panic",
+			svc:  &stubMonitorSvc{panicRun: true},
+		},
+		{
+			name: "normal completion",
+			svc:  &stubMonitorSvc{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			const id int64 = 123
+			if tt.hold != nil {
+				release := tt.hold(t, tt.svc, id)
+				defer release()
+			}
+
+			r := newRunnerForTest(tt.svc)
+			if !r.tryAcquireInFlight(id) {
+				t.Fatal("failed to pre-acquire inFlight slot")
+			}
+
+			r.runOne(context.Background(), id, "m123")
+
+			if !r.tryAcquireInFlight(id) {
+				t.Fatal("runOne did not release inFlight slot")
+			}
+			r.releaseInFlight(id)
+			r.Stop()
+		})
+	}
 }
 
 // TestRunOne_DistributedLockContentionSkipsDuplicate 验证多 runner 竞争同一 monitor 锁时只有一方执行 RunCheck。
