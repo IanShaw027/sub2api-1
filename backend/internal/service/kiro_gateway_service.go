@@ -431,7 +431,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 					}
 					inputChunk := stringField(frame.Payload, "input")
 					if inputChunk != "" {
-						state.InputBuilder.WriteString(inputChunk)
+						_, _ = state.InputBuilder.WriteString(inputChunk)
 						if err := writeSSEEvent(writer, "content_block_delta", map[string]any{
 							"type":  "content_block_delta",
 							"index": state.BlockIndex,

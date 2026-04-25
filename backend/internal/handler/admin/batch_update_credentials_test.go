@@ -242,8 +242,8 @@ func TestBatchUpdateCredentials_InvalidatesOAuthTokenCache(t *testing.T) {
 
 	body, _ := json.Marshal(BatchUpdateCredentialsRequest{
 		AccountIDs: []int64{1, 2},
-		Field:      "refresh_token",
-		Value:      "new-refresh-token",
+		Field:      "account_uuid",
+		Value:      "new-account-uuid",
 	})
 
 	w := httptest.NewRecorder()
