@@ -80,6 +80,7 @@ type kiroDefaultAccountRepoStub struct {
 	bindGroupsCalls  []int64
 	bulkUpdateErr    error
 	bulkUpdateIDs    []int64
+	bulkUpdateCreds  map[string]any
 	listByGroupData  map[int64][]Account
 	listByGroupErr   map[int64]error
 	createdAccounts  []*Account
@@ -284,6 +285,7 @@ func (s *kiroDefaultAccountRepoStub) UpdateExtra(ctx context.Context, id int64, 
 
 func (s *kiroDefaultAccountRepoStub) BulkUpdate(ctx context.Context, ids []int64, updates AccountBulkUpdate) (int64, error) {
 	s.bulkUpdateIDs = append([]int64{}, ids...)
+	s.bulkUpdateCreds = cloneCredentials(updates.Credentials)
 	if s.bulkUpdateErr != nil {
 		return 0, s.bulkUpdateErr
 	}

@@ -3204,9 +3204,17 @@ const ensureAntigravityMixedChannelConfirmed = async (onConfirm: () => Promise<v
 const formatDateTimeLocal = formatDateTimeLocalInput
 const parseDateTimeLocal = parseDateTimeLocalInput
 
+const parseCredentialExpiresAt = (value: string) => {
+  const trimmed = value.trim()
+  if (!trimmed) return new Date(Number.NaN)
+  if (/^\d+$/.test(trimmed)) {
+    return new Date(Number(trimmed) * 1000)
+  }
+  return new Date(trimmed)
+}
+
 const formatCredentialDateTimeLocal = (value: string) => {
-  if (!value) return ''
-  const parsed = new Date(value)
+  const parsed = parseCredentialExpiresAt(value)
   if (Number.isNaN(parsed.getTime())) return ''
   const year = parsed.getFullYear()
   const month = String(parsed.getMonth() + 1).padStart(2, '0')
@@ -3310,7 +3318,7 @@ const handleSubmit = async () => {
 
     if (props.account.platform === 'kiro' && props.account.type === 'oauth') {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
-      const newCredentials: KiroCredentials & Record<string, unknown> = {}
+      const newCredentials: Record<string, unknown> = {}
       const refreshTokenInput = kiroRefreshToken.value.trim()
       const clientIDInput = kiroClientID.value.trim()
       const clientSecretInput = kiroClientSecret.value.trim()
@@ -3396,12 +3404,12 @@ const handleSubmit = async () => {
 
       if (expiresAt) {
         const currentExpiresAt = readCredentialString(currentCredentials, 'expires_at')
-        const currentExpiresAtMs = currentExpiresAt ? new Date(currentExpiresAt).getTime() : null
+        const currentExpiresAtMs = currentExpiresAt ? parseCredentialExpiresAt(currentExpiresAt).getTime() : null
         if (currentExpiresAtMs !== expiresAt.getTime()) {
           newCredentials.expires_at = expiresAt.toISOString()
         }
       } else if (readCredentialString(currentCredentials, 'expires_at')) {
-        newCredentials.expires_at = ''
+        newCredentials.expires_at = null
       }
 
       const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)

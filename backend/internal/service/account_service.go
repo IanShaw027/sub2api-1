@@ -198,46 +198,58 @@ func validateKiroAccountCredentials(accountType string, credentials map[string]a
 }
 
 var (
-	kiroOAuthCredentialKeysToPreserve = []string{
-		"refresh_token",
-		"access_token",
-		"expires_at",
-		"client_id",
-		"client_secret",
+	kiroOAuthCredentialKeysToDropForTypeSwitch = map[string]struct{}{
+		"access_token":  {},
+		"refresh_token": {},
+		"expires_at":    {},
+		"client_id":     {},
+		"client_secret": {},
+		"auth_method":   {},
 	}
-	kiroAPIKeyCredentialKeysToPreserve = []string{"api_key"}
-	kiroAllCredentialKeysToPreserve    = []string{
-		"refresh_token",
-		"access_token",
-		"expires_at",
-		"client_id",
-		"client_secret",
-		"api_key",
+	kiroAPIKeyCredentialKeysToDropForTypeSwitch = map[string]struct{}{
+		"api_key": {},
 	}
 )
 
 func mergeKiroCredentialsForAccountUpdate(accountType string, existing, incoming map[string]any) map[string]any {
-	merged := cloneCredentials(incoming)
-	for _, key := range kiroCredentialKeysForType(accountType) {
-		if _, provided := incoming[key]; provided {
+	merged := cloneCredentials(existing)
+	dropStaleKiroCredentialsForType(merged, accountType, incoming)
+	for key, value := range incoming {
+		if shouldDeleteKiroCredentialOnUpdate(key, value) {
+			delete(merged, key)
 			continue
 		}
-		if value, ok := existing[key]; ok {
-			merged[key] = value
-		}
+		merged[key] = value
 	}
 	return merged
 }
 
-func kiroCredentialKeysForType(accountType string) []string {
+func dropStaleKiroCredentialsForType(credentials map[string]any, accountType string, incoming map[string]any) {
 	switch accountType {
 	case AccountTypeOAuth:
-		return kiroOAuthCredentialKeysToPreserve
+		if _, hasOAuthSecret := incoming["refresh_token"]; hasOAuthSecret {
+			for key := range kiroAPIKeyCredentialKeysToDropForTypeSwitch {
+				delete(credentials, key)
+			}
+		}
 	case AccountTypeAPIKey:
-		return kiroAPIKeyCredentialKeysToPreserve
-	default:
-		return kiroAllCredentialKeysToPreserve
+		if _, hasAPIKey := incoming["api_key"]; hasAPIKey {
+			for key := range kiroOAuthCredentialKeysToDropForTypeSwitch {
+				delete(credentials, key)
+			}
+		}
 	}
+}
+
+func shouldDeleteKiroCredentialOnUpdate(key string, value any) bool {
+	if key != "expires_at" {
+		return false
+	}
+	if value == nil {
+		return true
+	}
+	typed, ok := value.(string)
+	return ok && strings.TrimSpace(typed) == ""
 }
 
 // KiroAuthMethodUsesIDCRefresh mirrors KiroTokenRefresher.Refresh's IDC/OIDC

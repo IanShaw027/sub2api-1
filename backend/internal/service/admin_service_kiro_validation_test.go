@@ -136,13 +136,21 @@ func TestAdminServiceUpdateAccount_PreservesOmittedKiroOAuthSecrets(t *testing.T
 				Type:     AccountTypeOAuth,
 				Status:   StatusActive,
 				Credentials: map[string]any{
-					"refresh_token": "old-refresh",
-					"access_token":  "old-access",
-					"expires_at":    "1735689600",
-					"client_id":     "old-client-id",
-					"client_secret": "old-client-secret",
-					"auth_method":   "idc",
-					"profile_arn":   "arn:aws:kiro:old",
+					"refresh_token":                  "old-refresh",
+					"access_token":                   "old-access",
+					"expires_at":                     "1735689600",
+					"client_id":                      "old-client-id",
+					"client_secret":                  "old-client-secret",
+					"auth_method":                    "idc",
+					"profile_arn":                    "arn:aws:kiro:old",
+					"auth_region":                    "us-west-2",
+					"api_region":                     "us-east-2",
+					"machine_id":                     "machine-1",
+					"model_mapping":                  map[string]any{"claude-sonnet-4": "claude-sonnet-4"},
+					"temp_unschedulable_enabled":     true,
+					"temp_unschedulable_rules":       []any{map[string]any{"error_code": float64(429), "duration_minutes": float64(10)}},
+					"intercept_warmup_requests":      true,
+					"custom_unrelated_runtime_field": "keep-me",
 				},
 			},
 		},
@@ -163,11 +171,18 @@ func TestAdminServiceUpdateAccount_PreservesOmittedKiroOAuthSecrets(t *testing.T
 	require.Equal(t, "old-client-id", account.GetCredential("client_id"))
 	require.Equal(t, "old-client-secret", account.GetCredential("client_secret"))
 	require.Equal(t, "social", account.GetCredential("auth_method"))
-	_, hasProfileArn := account.Credentials["profile_arn"]
-	require.False(t, hasProfileArn)
+	require.Equal(t, "arn:aws:kiro:old", account.GetCredential("profile_arn"))
+	require.Equal(t, "us-west-2", account.GetCredential("auth_region"))
+	require.Equal(t, "us-east-2", account.GetCredential("api_region"))
+	require.Equal(t, "machine-1", account.GetCredential("machine_id"))
+	require.Equal(t, map[string]any{"claude-sonnet-4": "claude-sonnet-4"}, account.Credentials["model_mapping"])
+	require.Equal(t, true, account.Credentials["temp_unschedulable_enabled"])
+	require.Equal(t, []any{map[string]any{"error_code": float64(429), "duration_minutes": float64(10)}}, account.Credentials["temp_unschedulable_rules"])
+	require.Equal(t, true, account.Credentials["intercept_warmup_requests"])
+	require.Equal(t, "keep-me", account.GetCredential("custom_unrelated_runtime_field"))
 }
 
-func TestAdminServiceUpdateAccount_PreservesOmittedKiroAPIKeySecret(t *testing.T) {
+func TestAdminServiceUpdateAccount_PreservesOmittedKiroAPIKeyCredentials(t *testing.T) {
 	t.Parallel()
 
 	repo := &kiroDefaultAccountRepoStub{
@@ -179,9 +194,14 @@ func TestAdminServiceUpdateAccount_PreservesOmittedKiroAPIKeySecret(t *testing.T
 				Type:     AccountTypeAPIKey,
 				Status:   StatusActive,
 				Credentials: map[string]any{
-					"api_key": "old-api-key",
-					"region":  "us-east-1",
-					"model":   "legacy-model",
+					"api_key":       "old-api-key",
+					"region":        "us-east-1",
+					"model":         "legacy-model",
+					"profile_arn":   "arn:aws:kiro:old",
+					"auth_region":   "us-west-2",
+					"api_region":    "us-east-2",
+					"machine_id":    "machine-1",
+					"model_mapping": map[string]any{"claude-sonnet-4": "claude-sonnet-4"},
 				},
 			},
 		},
@@ -198,8 +218,108 @@ func TestAdminServiceUpdateAccount_PreservesOmittedKiroAPIKeySecret(t *testing.T
 	require.NotNil(t, account)
 	require.Equal(t, "old-api-key", account.GetCredential("api_key"))
 	require.Equal(t, "eu-west-1", account.GetCredential("region"))
-	_, hasModel := account.Credentials["model"]
-	require.False(t, hasModel)
+	require.Equal(t, "legacy-model", account.GetCredential("model"))
+	require.Equal(t, "arn:aws:kiro:old", account.GetCredential("profile_arn"))
+	require.Equal(t, "us-west-2", account.GetCredential("auth_region"))
+	require.Equal(t, "us-east-2", account.GetCredential("api_region"))
+	require.Equal(t, "machine-1", account.GetCredential("machine_id"))
+	require.Equal(t, map[string]any{"claude-sonnet-4": "claude-sonnet-4"}, account.Credentials["model_mapping"])
+}
+
+func TestAdminServiceUpdateAccount_ClearsKiroOAuthExpiresAtWithEmptyString(t *testing.T) {
+	t.Parallel()
+
+	repo := &kiroDefaultAccountRepoStub{
+		accountsByID: map[int64]*Account{
+			57: {
+				ID:       57,
+				Name:     "kiro-oauth",
+				Platform: PlatformKiro,
+				Type:     AccountTypeOAuth,
+				Status:   StatusActive,
+				Credentials: map[string]any{
+					"refresh_token": "rt",
+					"expires_at":    "1735689600",
+				},
+			},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	account, err := svc.UpdateAccount(context.Background(), 57, &UpdateAccountInput{
+		Credentials: map[string]any{
+			"expires_at": "",
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.Equal(t, "rt", account.GetCredential("refresh_token"))
+	require.NotContains(t, account.Credentials, "expires_at")
+}
+
+func TestAdminServiceUpdateAccount_ClearsKiroOAuthExpiresAtWithNull(t *testing.T) {
+	t.Parallel()
+
+	repo := &kiroDefaultAccountRepoStub{
+		accountsByID: map[int64]*Account{
+			58: {
+				ID:       58,
+				Name:     "kiro-oauth",
+				Platform: PlatformKiro,
+				Type:     AccountTypeOAuth,
+				Status:   StatusActive,
+				Credentials: map[string]any{
+					"refresh_token": "rt",
+					"expires_at":    "1735689600",
+				},
+			},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	account, err := svc.UpdateAccount(context.Background(), 58, &UpdateAccountInput{
+		Credentials: map[string]any{
+			"expires_at": nil,
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.Equal(t, "rt", account.GetCredential("refresh_token"))
+	require.NotContains(t, account.Credentials, "expires_at")
+}
+
+func TestAdminServiceUpdateAccount_ClearsKiroModelMappingWithEmptyObject(t *testing.T) {
+	t.Parallel()
+
+	repo := &kiroDefaultAccountRepoStub{
+		accountsByID: map[int64]*Account{
+			59: {
+				ID:       59,
+				Name:     "kiro-oauth",
+				Platform: PlatformKiro,
+				Type:     AccountTypeOAuth,
+				Status:   StatusActive,
+				Credentials: map[string]any{
+					"refresh_token": "rt",
+					"model_mapping": map[string]any{"claude-sonnet-4": "claude-sonnet-4"},
+				},
+			},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	account, err := svc.UpdateAccount(context.Background(), 59, &UpdateAccountInput{
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.Equal(t, "rt", account.GetCredential("refresh_token"))
+	require.Equal(t, map[string]any{}, account.Credentials["model_mapping"])
 }
 
 func TestAdminServiceBulkUpdateAccounts_RejectsInvalidMergedKiroCredentials(t *testing.T) {
@@ -231,6 +351,49 @@ func TestAdminServiceBulkUpdateAccounts_RejectsInvalidMergedKiroCredentials(t *t
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "kiro idc client_id and client_secret are required")
 	require.Empty(t, repo.bulkUpdateIDs)
+}
+
+func TestAdminServiceBulkUpdateAccounts_DoesNotMutateSharedKiroCredentialPayload(t *testing.T) {
+	t.Parallel()
+
+	inputCredentials := map[string]any{
+		"region": "eu-west-1",
+	}
+	repo := &kiroDefaultAccountRepoStub{
+		getByIDsAccounts: []*Account{
+			{
+				ID:       77,
+				Platform: PlatformKiro,
+				Type:     AccountTypeOAuth,
+				Credentials: map[string]any{
+					"refresh_token": "first-refresh",
+					"region":        "us-east-1",
+				},
+			},
+			{
+				ID:       78,
+				Platform: PlatformKiro,
+				Type:     AccountTypeOAuth,
+				Credentials: map[string]any{
+					"refresh_token": "second-refresh",
+					"region":        "us-east-1",
+				},
+			},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs:  []int64{77, 78},
+		Credentials: inputCredentials,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, []int64{77, 78}, repo.bulkUpdateIDs)
+	require.Equal(t, map[string]any{"region": "eu-west-1"}, inputCredentials)
+	require.Equal(t, map[string]any{"region": "eu-west-1"}, repo.bulkUpdateCreds)
+	require.NotContains(t, repo.bulkUpdateCreds, "refresh_token")
 }
 
 func TestAdminServiceCreateAccount_ValidatesGroupsBeforePersist(t *testing.T) {

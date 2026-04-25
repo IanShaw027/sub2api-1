@@ -250,13 +250,21 @@ func TestAccountService_Update_PreservesOmittedKiroOAuthSecrets(t *testing.T) {
 			Type:     AccountTypeOAuth,
 			Status:   StatusActive,
 			Credentials: map[string]any{
-				"refresh_token": "old-refresh",
-				"access_token":  "old-access",
-				"expires_at":    "1735689600",
-				"client_id":     "old-client-id",
-				"client_secret": "old-client-secret",
-				"auth_method":   "idc",
-				"profile_arn":   "arn:aws:kiro:old",
+				"refresh_token":                  "old-refresh",
+				"access_token":                   "old-access",
+				"expires_at":                     "1735689600",
+				"client_id":                      "old-client-id",
+				"client_secret":                  "old-client-secret",
+				"auth_method":                    "idc",
+				"profile_arn":                    "arn:aws:kiro:old",
+				"auth_region":                    "us-west-2",
+				"api_region":                     "us-east-2",
+				"machine_id":                     "machine-1",
+				"model_mapping":                  map[string]any{"claude-sonnet-4": "claude-sonnet-4"},
+				"temp_unschedulable_enabled":     true,
+				"temp_unschedulable_rules":       []any{map[string]any{"error_code": float64(429), "duration_minutes": float64(10)}},
+				"intercept_warmup_requests":      true,
+				"custom_unrelated_runtime_field": "keep-me",
 			},
 		},
 	}
@@ -279,11 +287,18 @@ func TestAccountService_Update_PreservesOmittedKiroOAuthSecrets(t *testing.T) {
 	require.Equal(t, "old-client-id", accountRepo.updatedAccount.GetCredential("client_id"))
 	require.Equal(t, "old-client-secret", accountRepo.updatedAccount.GetCredential("client_secret"))
 	require.Equal(t, "social", accountRepo.updatedAccount.GetCredential("auth_method"))
-	_, hasProfileArn := accountRepo.updatedAccount.Credentials["profile_arn"]
-	require.False(t, hasProfileArn)
+	require.Equal(t, "arn:aws:kiro:old", accountRepo.updatedAccount.GetCredential("profile_arn"))
+	require.Equal(t, "us-west-2", accountRepo.updatedAccount.GetCredential("auth_region"))
+	require.Equal(t, "us-east-2", accountRepo.updatedAccount.GetCredential("api_region"))
+	require.Equal(t, "machine-1", accountRepo.updatedAccount.GetCredential("machine_id"))
+	require.Equal(t, map[string]any{"claude-sonnet-4": "claude-sonnet-4"}, accountRepo.updatedAccount.Credentials["model_mapping"])
+	require.Equal(t, true, accountRepo.updatedAccount.Credentials["temp_unschedulable_enabled"])
+	require.Equal(t, []any{map[string]any{"error_code": float64(429), "duration_minutes": float64(10)}}, accountRepo.updatedAccount.Credentials["temp_unschedulable_rules"])
+	require.Equal(t, true, accountRepo.updatedAccount.Credentials["intercept_warmup_requests"])
+	require.Equal(t, "keep-me", accountRepo.updatedAccount.GetCredential("custom_unrelated_runtime_field"))
 }
 
-func TestAccountService_Update_PreservesOmittedKiroAPIKeySecret(t *testing.T) {
+func TestAccountService_Update_PreservesOmittedKiroAPIKeyCredentials(t *testing.T) {
 	t.Parallel()
 
 	accountRepo := &accountRepoStubForOAuthOnlyGroup{
@@ -294,9 +309,14 @@ func TestAccountService_Update_PreservesOmittedKiroAPIKeySecret(t *testing.T) {
 			Type:     AccountTypeAPIKey,
 			Status:   StatusActive,
 			Credentials: map[string]any{
-				"api_key": "old-api-key",
-				"region":  "us-east-1",
-				"model":   "legacy-model",
+				"api_key":       "old-api-key",
+				"region":        "us-east-1",
+				"model":         "legacy-model",
+				"profile_arn":   "arn:aws:kiro:old",
+				"auth_region":   "us-west-2",
+				"api_region":    "us-east-2",
+				"machine_id":    "machine-1",
+				"model_mapping": map[string]any{"claude-sonnet-4": "claude-sonnet-4"},
 			},
 		},
 	}
@@ -315,6 +335,109 @@ func TestAccountService_Update_PreservesOmittedKiroAPIKeySecret(t *testing.T) {
 	require.NotNil(t, accountRepo.updatedAccount)
 	require.Equal(t, "old-api-key", accountRepo.updatedAccount.GetCredential("api_key"))
 	require.Equal(t, "eu-west-1", accountRepo.updatedAccount.GetCredential("region"))
-	_, hasModel := accountRepo.updatedAccount.Credentials["model"]
-	require.False(t, hasModel)
+	require.Equal(t, "legacy-model", accountRepo.updatedAccount.GetCredential("model"))
+	require.Equal(t, "arn:aws:kiro:old", accountRepo.updatedAccount.GetCredential("profile_arn"))
+	require.Equal(t, "us-west-2", accountRepo.updatedAccount.GetCredential("auth_region"))
+	require.Equal(t, "us-east-2", accountRepo.updatedAccount.GetCredential("api_region"))
+	require.Equal(t, "machine-1", accountRepo.updatedAccount.GetCredential("machine_id"))
+	require.Equal(t, map[string]any{"claude-sonnet-4": "claude-sonnet-4"}, accountRepo.updatedAccount.Credentials["model_mapping"])
+}
+
+func TestAccountService_Update_ClearsKiroOAuthExpiresAtWithEmptyString(t *testing.T) {
+	t.Parallel()
+
+	accountRepo := &accountRepoStubForOAuthOnlyGroup{
+		getByIDAccount: &Account{
+			ID:       14,
+			Name:     "kiro-oauth",
+			Platform: PlatformKiro,
+			Type:     AccountTypeOAuth,
+			Status:   StatusActive,
+			Credentials: map[string]any{
+				"refresh_token": "rt",
+				"expires_at":    "1735689600",
+			},
+		},
+	}
+	svc := &AccountService{
+		accountRepo: accountRepo,
+		groupRepo:   &groupRepoStubForOAuthOnlyGroup{},
+	}
+
+	_, err := svc.Update(context.Background(), 14, UpdateAccountRequest{
+		Credentials: &map[string]any{
+			"expires_at": "",
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, accountRepo.updatedAccount)
+	require.Equal(t, "rt", accountRepo.updatedAccount.GetCredential("refresh_token"))
+	require.NotContains(t, accountRepo.updatedAccount.Credentials, "expires_at")
+}
+
+func TestAccountService_Update_ClearsKiroOAuthExpiresAtWithNull(t *testing.T) {
+	t.Parallel()
+
+	accountRepo := &accountRepoStubForOAuthOnlyGroup{
+		getByIDAccount: &Account{
+			ID:       15,
+			Name:     "kiro-oauth",
+			Platform: PlatformKiro,
+			Type:     AccountTypeOAuth,
+			Status:   StatusActive,
+			Credentials: map[string]any{
+				"refresh_token": "rt",
+				"expires_at":    "1735689600",
+			},
+		},
+	}
+	svc := &AccountService{
+		accountRepo: accountRepo,
+		groupRepo:   &groupRepoStubForOAuthOnlyGroup{},
+	}
+
+	_, err := svc.Update(context.Background(), 15, UpdateAccountRequest{
+		Credentials: &map[string]any{
+			"expires_at": nil,
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, accountRepo.updatedAccount)
+	require.Equal(t, "rt", accountRepo.updatedAccount.GetCredential("refresh_token"))
+	require.NotContains(t, accountRepo.updatedAccount.Credentials, "expires_at")
+}
+
+func TestAccountService_Update_ClearsKiroModelMappingWithEmptyObject(t *testing.T) {
+	t.Parallel()
+
+	accountRepo := &accountRepoStubForOAuthOnlyGroup{
+		getByIDAccount: &Account{
+			ID:       16,
+			Name:     "kiro-oauth",
+			Platform: PlatformKiro,
+			Type:     AccountTypeOAuth,
+			Status:   StatusActive,
+			Credentials: map[string]any{
+				"refresh_token": "rt",
+				"model_mapping": map[string]any{"claude-sonnet-4": "claude-sonnet-4"},
+			},
+		},
+	}
+	svc := &AccountService{
+		accountRepo: accountRepo,
+		groupRepo:   &groupRepoStubForOAuthOnlyGroup{},
+	}
+
+	_, err := svc.Update(context.Background(), 16, UpdateAccountRequest{
+		Credentials: &map[string]any{
+			"model_mapping": map[string]any{},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, accountRepo.updatedAccount)
+	require.Equal(t, "rt", accountRepo.updatedAccount.GetCredential("refresh_token"))
+	require.Equal(t, map[string]any{}, accountRepo.updatedAccount.Credentials["model_mapping"])
 }

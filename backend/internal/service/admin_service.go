@@ -2408,7 +2408,8 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 			if account == nil || account.Platform != PlatformKiro {
 				continue
 			}
-			if err := validateKiroAccountCredentials(account.Type, MergeCredentials(account.Credentials, input.Credentials)); err != nil {
+			mergedCredentials := MergeCredentials(account.Credentials, cloneCredentials(input.Credentials))
+			if err := validateKiroAccountCredentials(account.Type, mergedCredentials); err != nil {
 				return nil, err
 			}
 		}
