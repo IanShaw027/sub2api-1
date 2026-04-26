@@ -462,7 +462,9 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 		runMode = h.cfg.RunMode
 	}
 
-	h.userService.RecordLastActiveForUser(c.Request.Context(), user)
+	if strings.EqualFold(strings.TrimSpace(c.Query("touch_active")), "true") {
+		h.userService.RecordLastActiveForUser(c.Request.Context(), user)
+	}
 	response.Success(c, UserResponse{
 		userProfileResponse: userProfileResponseFromService(user, identities),
 		RunMode:             runMode,

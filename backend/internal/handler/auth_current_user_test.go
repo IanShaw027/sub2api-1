@@ -49,7 +49,7 @@ func TestAuthHandlerGetCurrentUserReturnsProfileCompatibilityFields(t *testing.T
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/me?touch_active=true", nil)
 	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 31})
 
 	handler.GetCurrentUser(c)
@@ -86,4 +86,28 @@ func TestAuthHandlerGetCurrentUserReturnsProfileCompatibilityFields(t *testing.T
 	require.True(t, ok)
 	require.Equal(t, "linuxdo", usernameSource["provider"])
 	require.Equal(t, "linuxdo", usernameSource["source"])
+}
+
+func TestAuthHandlerGetCurrentUserDoesNotTouchLastActiveByDefault(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &userHandlerRepoStub{
+		user: &service.User{
+			ID:     32,
+			Email:  "idle-refresh@example.com",
+			Role:   service.RoleUser,
+			Status: service.StatusActive,
+		},
+	}
+	handler := &AuthHandler{userService: service.NewUserService(repo, nil, nil, nil)}
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 32})
+
+	handler.GetCurrentUser(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Nil(t, repo.user.LastActiveAt)
 }

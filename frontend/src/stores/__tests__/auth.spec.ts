@@ -174,6 +174,7 @@ describe('useAuthStore', () => {
       expect(store.token).toBe('saved-token')
       expect(store.user).toEqual(fakeUser)
       expect(store.isAuthenticated).toBe(true)
+      expect(mockGetCurrentUser).toHaveBeenCalledWith({ touchActive: true })
     })
 
     it('localStorage 无数据时保持未认证状态', () => {
@@ -356,8 +357,22 @@ describe('useAuthStore', () => {
       const result = await store.refreshUser()
 
       expect(result).toEqual(updatedUser)
+      expect(mockGetCurrentUser).toHaveBeenLastCalledWith({})
       expect(store.user).toEqual(updatedUser)
       expect(JSON.parse(localStorage.getItem('auth_user')!)).toEqual(updatedUser)
+    })
+
+    it('显式 touchActive 时刷新当前用户并记录活跃', async () => {
+      mockLogin.mockResolvedValue(fakeAuthResponse)
+      const store = useAuthStore()
+      await store.login({ email: 'test@example.com', password: '123456' })
+
+      mockGetCurrentUser.mockClear()
+      mockGetCurrentUser.mockResolvedValue({ data: fakeUser })
+
+      await store.refreshUser({ touchActive: true })
+
+      expect(mockGetCurrentUser).toHaveBeenCalledWith({ touchActive: true })
     })
 
     it('未认证时抛出错误', async () => {

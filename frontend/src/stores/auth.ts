@@ -114,8 +114,8 @@ export const useAuthStore = defineStore('auth', () => {
         refreshTokenValue.value = savedRefreshToken
         tokenExpiresAt.value = savedExpiresAt ? parseInt(savedExpiresAt, 10) : null
 
-        // Immediately refresh user data from backend (async, don't block)
-        refreshUser().catch((error) => {
+        // Page entry/session restore marks the user as actively visiting the console.
+        refreshUser({ touchActive: true }).catch((error) => {
           console.error('Failed to refresh user on init:', error)
         })
 
@@ -360,7 +360,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     try {
-      const userData = await refreshUser()
+      const userData = await refreshUser({ touchActive: true })
       startAutoRefresh()
 
       // Start proactive token refresh if we have refresh token and expiry info
@@ -410,13 +410,13 @@ export const useAuthStore = defineStore('auth', () => {
    * @returns Promise resolving to the updated user
    * @throws Error if not authenticated or request fails
    */
-  async function refreshUser(): Promise<User> {
+  async function refreshUser(options: { touchActive?: boolean } = {}): Promise<User> {
     if (!token.value) {
       throw new Error('Not authenticated')
     }
 
     try {
-      const response = await authAPI.getCurrentUser()
+      const response = await authAPI.getCurrentUser(options)
       if (response.data.run_mode) {
         runMode.value = response.data.run_mode
       }
