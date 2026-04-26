@@ -232,6 +232,9 @@ const (
 	SettingKeyFallbackModelOpenAI      = "fallback_model_openai"
 	SettingKeyFallbackModelGemini      = "fallback_model_gemini"
 	SettingKeyFallbackModelAntigravity = "fallback_model_antigravity"
+	// Platform default account model config stores per-platform defaults injected
+	// into newly-created account credentials when the request does not provide them.
+	SettingKeyPlatformDefaultAccountModelConfig = "platform_default_account_model_config"
 
 	// Request identity patch (Claude -> Gemini systemInstruction injection)
 	SettingKeyEnableIdentityPatch = "enable_identity_patch"

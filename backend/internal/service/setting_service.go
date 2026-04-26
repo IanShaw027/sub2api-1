@@ -1396,6 +1396,11 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyFallbackModelOpenAI] = settings.FallbackModelOpenAI
 	updates[SettingKeyFallbackModelGemini] = settings.FallbackModelGemini
 	updates[SettingKeyFallbackModelAntigravity] = settings.FallbackModelAntigravity
+	defaultAccountModelConfig, err := encodePlatformDefaultAccountModelConfig(settings.PlatformDefaultAccountModelConfig)
+	if err != nil {
+		return nil, fmt.Errorf("marshal platform default account model config: %w", err)
+	}
+	updates[SettingKeyPlatformDefaultAccountModelConfig] = defaultAccountModelConfig
 
 	// Identity patch configuration (Claude -> Gemini)
 	updates[SettingKeyEnableIdentityPatch] = strconv.FormatBool(settings.EnableIdentityPatch)
@@ -2118,11 +2123,12 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeySMTPPort:                                 "587",
 		SettingKeySMTPUseTLS:                               "false",
 		// Model fallback defaults
-		SettingKeyEnableModelFallback:      "false",
-		SettingKeyFallbackModelAnthropic:   "claude-3-5-sonnet-20241022",
-		SettingKeyFallbackModelOpenAI:      "gpt-4o",
-		SettingKeyFallbackModelGemini:      "gemini-2.5-pro",
-		SettingKeyFallbackModelAntigravity: "gemini-2.5-pro",
+		SettingKeyEnableModelFallback:               "false",
+		SettingKeyFallbackModelAnthropic:            "claude-3-5-sonnet-20241022",
+		SettingKeyFallbackModelOpenAI:               "gpt-4o",
+		SettingKeyFallbackModelGemini:               "gemini-2.5-pro",
+		SettingKeyFallbackModelAntigravity:          "gemini-2.5-pro",
+		SettingKeyPlatformDefaultAccountModelConfig: defaultAccountModelConfigJSON(),
 		// Identity patch defaults
 		SettingKeyEnableIdentityPatch: "true",
 		SettingKeyIdentityPatchPrompt: "",
@@ -2431,6 +2437,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.FallbackModelOpenAI = s.getStringOrDefault(settings, SettingKeyFallbackModelOpenAI, "gpt-4o")
 	result.FallbackModelGemini = s.getStringOrDefault(settings, SettingKeyFallbackModelGemini, "gemini-2.5-pro")
 	result.FallbackModelAntigravity = s.getStringOrDefault(settings, SettingKeyFallbackModelAntigravity, "gemini-2.5-pro")
+	result.PlatformDefaultAccountModelConfig = parsePlatformDefaultAccountModelConfig(settings[SettingKeyPlatformDefaultAccountModelConfig])
 
 	// Identity patch settings (default: enabled, to preserve existing behavior)
 	if v, ok := settings[SettingKeyEnableIdentityPatch]; ok && v != "" {

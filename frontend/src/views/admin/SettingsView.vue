@@ -2916,6 +2916,122 @@
             </div>
           </div>
 
+          <!-- Model Fallback Settings -->
+          <div class="card">
+            <div
+              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
+            >
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {{ localText("模型 Fallback", "Model Fallback") }}
+              </h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {{
+                  localText(
+                    "配置网关在模型不可用或需要降级时使用的系统级兜底模型。",
+                    "Configure system-level fallback models used by the gateway when a requested model needs to be downgraded.",
+                  )
+                }}
+              </p>
+            </div>
+            <div class="space-y-5 p-6">
+              <div class="flex items-center justify-between">
+                <div>
+                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ localText("启用模型 Fallback", "Enable Model Fallback") }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      localText(
+                        "关闭后后端不会使用这些系统级 fallback 模型。",
+                        "When disabled, backend services will not use these system fallback models.",
+                      )
+                    }}
+                  </p>
+                </div>
+                <Toggle v-model="form.enable_model_fallback" />
+              </div>
+              <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div>
+                  <label class="label">Anthropic</label>
+                  <input
+                    v-model="form.fallback_model_anthropic"
+                    type="text"
+                    class="input font-mono text-sm"
+                    placeholder="claude-3-5-sonnet-20241022"
+                  />
+                </div>
+                <div>
+                  <label class="label">OpenAI</label>
+                  <input
+                    v-model="form.fallback_model_openai"
+                    type="text"
+                    class="input font-mono text-sm"
+                    placeholder="gpt-4o"
+                  />
+                </div>
+                <div>
+                  <label class="label">Gemini</label>
+                  <input
+                    v-model="form.fallback_model_gemini"
+                    type="text"
+                    class="input font-mono text-sm"
+                    placeholder="gemini-2.5-pro"
+                  />
+                </div>
+                <div>
+                  <label class="label">Antigravity</label>
+                  <input
+                    v-model="form.fallback_model_antigravity"
+                    type="text"
+                    class="input font-mono text-sm"
+                    placeholder="gemini-2.5-pro"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Platform Default Account Model Config -->
+          <div class="card">
+            <div
+              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
+            >
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {{
+                  localText(
+                    "平台默认账号模型配置",
+                    "Platform Default Account Model Config",
+                  )
+                }}
+              </h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {{
+                  localText(
+                    "新建账号时，如果请求没有显式填写 model_mapping / compact_model_mapping，会按这里的默认值自动写入账号凭证。",
+                    "When creating accounts, defaults here are injected into credentials if model_mapping / compact_model_mapping are not explicitly provided.",
+                  )
+                }}
+              </p>
+            </div>
+            <div class="space-y-3 p-6">
+              <textarea
+                v-model="platformDefaultAccountModelConfigText"
+                rows="12"
+                class="input font-mono text-xs"
+                spellcheck="false"
+                placeholder='{"kiro":{"model_mapping":{"claude-sonnet-4-6":"claude-sonnet-4.6"}}}'
+              />
+              <p class="text-xs text-gray-500 dark:text-gray-400">
+                {{
+                  localText(
+                    "格式：{ platform: { model_whitelist: string[], model_mapping: {from: to}, compact_model_mapping: {from: to} } }。白名单会转成 key=value 的 model_mapping，包含 * 的白名单项会被后端跳过。",
+                    "Format: { platform: { model_whitelist: string[], model_mapping: {from: to}, compact_model_mapping: {from: to} } }. Whitelist entries are converted to key=value model_mapping; entries containing * are skipped by backend.",
+                  )
+                }}
+              </p>
+            </div>
+          </div>
+
           <!-- Gateway Forwarding Behavior -->
           <div class="card">
             <div
@@ -5216,6 +5332,7 @@ import type {
   KiroRuntimeValidationError,
   SystemSettings,
   UpdateSettingsRequest,
+  DefaultAccountModelConfig,
   DefaultSubscriptionSetting,
   WeChatConnectMode,
   WebSearchEmulationConfig,
@@ -5283,6 +5400,65 @@ function formatKiroRuntimeValidationError(
   return t(`admin.settings.kiroRuntime.${error}`);
 }
 
+function validatePlatformDefaultAccountModelConfig(value: Record<string, unknown>): string | null {
+  const isValidMappingPattern = (pattern: string) => {
+    const starIndex = pattern.indexOf("*");
+    return starIndex === -1 || (starIndex === pattern.length - 1 && pattern.lastIndexOf("*") === starIndex);
+  };
+
+  for (const [platform, rawConfig] of Object.entries(value)) {
+    if (!platform.trim()) {
+      return localText("平台名称不能为空。", "Platform name cannot be empty.");
+    }
+    if (!rawConfig || Array.isArray(rawConfig) || typeof rawConfig !== "object") {
+      return localText(
+        `${platform} 的配置必须是对象。`,
+        `Config for ${platform} must be an object.`,
+      );
+    }
+    const config = rawConfig as Record<string, unknown>;
+    if (config.model_whitelist !== undefined) {
+      if (!Array.isArray(config.model_whitelist) || config.model_whitelist.some((item) => typeof item !== "string")) {
+        return localText(
+          `${platform}.model_whitelist 必须是字符串数组。`,
+          `${platform}.model_whitelist must be an array of strings.`,
+        );
+      }
+    }
+    for (const key of ["model_mapping", "compact_model_mapping"]) {
+      const mapping = config[key];
+      if (mapping === undefined) continue;
+      if (!mapping || Array.isArray(mapping) || typeof mapping !== "object") {
+        return localText(
+          `${platform}.${key} 必须是对象。`,
+          `${platform}.${key} must be an object.`,
+        );
+      }
+      for (const [from, to] of Object.entries(mapping as Record<string, unknown>)) {
+        if (!from.trim() || typeof to !== "string" || !to.trim()) {
+          return localText(
+            `${platform}.${key} 只能包含非空字符串到非空字符串的映射。`,
+            `${platform}.${key} must only contain non-empty string-to-string mappings.`,
+          );
+        }
+        if (!isValidMappingPattern(from.trim())) {
+          return localText(
+            `${platform}.${key} 的请求模型通配符 * 只能位于末尾。`,
+            `${platform}.${key} wildcard * is only allowed at the end of the request model.`,
+          );
+        }
+        if (to.includes("*")) {
+          return localText(
+            `${platform}.${key} 的目标模型不能包含通配符 *。`,
+            `${platform}.${key} target model cannot contain wildcard *.`,
+          );
+        }
+      }
+    }
+  }
+  return null;
+}
+
 const paymentGuideHref = computed(() =>
   locale.value.startsWith("zh")
     ? "https://github.com/Wei-Shaw/sub2api/blob/main/docs/PAYMENT_CN.md"
@@ -5327,6 +5503,7 @@ const testEmailAddress = ref("");
 const registrationEmailSuffixWhitelistTags = ref<string[]>([]);
 const registrationEmailSuffixWhitelistDraft = ref("");
 const tablePageSizeOptionsInput = ref("10, 20, 50, 100");
+const platformDefaultAccountModelConfigText = ref("{}");
 
 // Admin API Key 状态
 const adminApiKeyLoading = ref(true);
@@ -5551,6 +5728,7 @@ const form = reactive<SettingsForm>({
   fallback_model_openai: "gpt-4o",
   fallback_model_gemini: "gemini-2.5-pro",
   fallback_model_antigravity: "gemini-2.5-pro",
+  platform_default_account_model_config: {},
   // Identity patch (Claude -> Gemini)
   enable_identity_patch: true,
   identity_patch_prompt: "",
@@ -6121,6 +6299,11 @@ async function loadSettings() {
     form.default_subscriptions = normalizeDefaultSubscriptionSettings(
       settings.default_subscriptions,
     );
+    platformDefaultAccountModelConfigText.value = JSON.stringify(
+      settings.platform_default_account_model_config || {},
+      null,
+      2,
+    );
     registrationEmailSuffixWhitelistTags.value =
       normalizeRegistrationEmailSuffixDomains(
         settings.registration_email_suffix_whitelist,
@@ -6401,6 +6584,27 @@ async function saveSettings() {
       );
       return;
     }
+    let platformDefaultAccountModelConfig: Record<string, DefaultAccountModelConfig> = {};
+    try {
+      const parsed = JSON.parse(platformDefaultAccountModelConfigText.value || "{}");
+      if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+        throw new Error("root must be an object");
+      }
+      const validationError = validatePlatformDefaultAccountModelConfig(parsed as Record<string, unknown>);
+      if (validationError) {
+        appStore.showError(validationError);
+        return;
+      }
+      platformDefaultAccountModelConfig = parsed as Record<string, DefaultAccountModelConfig>;
+    } catch (error) {
+      appStore.showError(
+        localText(
+          "平台默认账号模型配置不是合法 JSON 对象。",
+          "Platform default account model config must be a valid JSON object.",
+        ),
+      );
+      return;
+    }
     // Validate URL fields — novalidate disables browser-native checks, so we validate here
     const isValidHttpUrl = (url: string): boolean => {
       if (!url) return true;
@@ -6537,6 +6741,7 @@ async function saveSettings() {
       fallback_model_openai: form.fallback_model_openai,
       fallback_model_gemini: form.fallback_model_gemini,
       fallback_model_antigravity: form.fallback_model_antigravity,
+      platform_default_account_model_config: platformDefaultAccountModelConfig,
       enable_identity_patch: form.enable_identity_patch,
       identity_patch_prompt: form.identity_patch_prompt,
       min_claude_code_version: form.min_claude_code_version,

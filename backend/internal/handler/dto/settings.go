@@ -123,11 +123,12 @@ type SystemSettings struct {
 	DefaultSubscriptions        []DefaultSubscriptionSetting `json:"default_subscriptions"`
 
 	// Model fallback configuration
-	EnableModelFallback      bool   `json:"enable_model_fallback"`
-	FallbackModelAnthropic   string `json:"fallback_model_anthropic"`
-	FallbackModelOpenAI      string `json:"fallback_model_openai"`
-	FallbackModelGemini      string `json:"fallback_model_gemini"`
-	FallbackModelAntigravity string `json:"fallback_model_antigravity"`
+	EnableModelFallback               bool                                 `json:"enable_model_fallback"`
+	FallbackModelAnthropic            string                               `json:"fallback_model_anthropic"`
+	FallbackModelOpenAI               string                               `json:"fallback_model_openai"`
+	FallbackModelGemini               string                               `json:"fallback_model_gemini"`
+	FallbackModelAntigravity          string                               `json:"fallback_model_antigravity"`
+	PlatformDefaultAccountModelConfig map[string]DefaultAccountModelConfig `json:"platform_default_account_model_config"`
 
 	// Identity patch configuration (Claude -> Gemini)
 	EnableIdentityPatch bool   `json:"enable_identity_patch"`
@@ -224,6 +225,12 @@ type SystemSettings struct {
 type DefaultSubscriptionSetting struct {
 	GroupID      int64 `json:"group_id"`
 	ValidityDays int   `json:"validity_days"`
+}
+
+type DefaultAccountModelConfig struct {
+	ModelWhitelist      []string          `json:"model_whitelist,omitempty"`
+	ModelMapping        map[string]string `json:"model_mapping,omitempty"`
+	CompactModelMapping map[string]string `json:"compact_model_mapping,omitempty"`
 }
 
 type PublicSettings struct {

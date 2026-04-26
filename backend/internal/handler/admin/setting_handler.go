@@ -226,6 +226,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		FallbackModelOpenAI:                    settings.FallbackModelOpenAI,
 		FallbackModelGemini:                    settings.FallbackModelGemini,
 		FallbackModelAntigravity:               settings.FallbackModelAntigravity,
+		PlatformDefaultAccountModelConfig:      toDTODefaultAccountModelConfig(settings.PlatformDefaultAccountModelConfig),
 		EnableIdentityPatch:                    settings.EnableIdentityPatch,
 		IdentityPatchPrompt:                    settings.IdentityPatchPrompt,
 		OpsMonitoringEnabled:                   opsEnabled && settings.OpsMonitoringEnabled,
@@ -416,11 +417,12 @@ type UpdateSettingsRequest struct {
 	ForceEmailOnThirdPartySignup             *bool                             `json:"force_email_on_third_party_signup"`
 
 	// Model fallback configuration
-	EnableModelFallback      bool   `json:"enable_model_fallback"`
-	FallbackModelAnthropic   string `json:"fallback_model_anthropic"`
-	FallbackModelOpenAI      string `json:"fallback_model_openai"`
-	FallbackModelGemini      string `json:"fallback_model_gemini"`
-	FallbackModelAntigravity string `json:"fallback_model_antigravity"`
+	EnableModelFallback               bool                                      `json:"enable_model_fallback"`
+	FallbackModelAnthropic            string                                    `json:"fallback_model_anthropic"`
+	FallbackModelOpenAI               string                                    `json:"fallback_model_openai"`
+	FallbackModelGemini               string                                    `json:"fallback_model_gemini"`
+	FallbackModelAntigravity          string                                    `json:"fallback_model_antigravity"`
+	PlatformDefaultAccountModelConfig *map[string]dto.DefaultAccountModelConfig `json:"platform_default_account_model_config"`
 
 	// Identity patch configuration (Claude -> Gemini)
 	EnableIdentityPatch bool   `json:"enable_identity_patch"`
@@ -506,6 +508,63 @@ type UpdateSettingsRequest struct {
 
 	// Available Channels feature switch (user-facing)
 	AvailableChannelsEnabled *bool `json:"available_channels_enabled"`
+}
+
+func toDTODefaultAccountModelConfig(src map[string]service.DefaultAccountModelConfig) map[string]dto.DefaultAccountModelConfig {
+	if len(src) == 0 {
+		return map[string]dto.DefaultAccountModelConfig{}
+	}
+	out := make(map[string]dto.DefaultAccountModelConfig, len(src))
+	for platform, cfg := range src {
+		out[platform] = dto.DefaultAccountModelConfig{
+			ModelWhitelist:      append([]string(nil), cfg.ModelWhitelist...),
+			ModelMapping:        copyStringMapForSettingsDTO(cfg.ModelMapping),
+			CompactModelMapping: copyStringMapForSettingsDTO(cfg.CompactModelMapping),
+		}
+	}
+	return out
+}
+
+func fromDTODefaultAccountModelConfig(src map[string]dto.DefaultAccountModelConfig) map[string]service.DefaultAccountModelConfig {
+	if len(src) == 0 {
+		return map[string]service.DefaultAccountModelConfig{}
+	}
+	out := make(map[string]service.DefaultAccountModelConfig, len(src))
+	for platform, cfg := range src {
+		out[platform] = service.DefaultAccountModelConfig{
+			ModelWhitelist:      append([]string(nil), cfg.ModelWhitelist...),
+			ModelMapping:        copyStringMapForSettingsDTO(cfg.ModelMapping),
+			CompactModelMapping: copyStringMapForSettingsDTO(cfg.CompactModelMapping),
+		}
+	}
+	return out
+}
+
+func fromOptionalDTODefaultAccountModelConfig(
+	src *map[string]dto.DefaultAccountModelConfig,
+	fallback map[string]service.DefaultAccountModelConfig,
+) map[string]service.DefaultAccountModelConfig {
+	if src == nil {
+		return fallback
+	}
+	return fromDTODefaultAccountModelConfig(*src)
+}
+
+func copyStringMapForSettingsDTO(src map[string]string) map[string]string {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
+}
+
+func defaultAccountModelConfigEqual(a, b map[string]service.DefaultAccountModelConfig) bool {
+	aData, _ := json.Marshal(a)
+	bData, _ := json.Marshal(b)
+	return string(aData) == string(bData)
 }
 
 // UpdateSettings 更新系统设置
@@ -1266,12 +1325,16 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		FallbackModelOpenAI:              req.FallbackModelOpenAI,
 		FallbackModelGemini:              req.FallbackModelGemini,
 		FallbackModelAntigravity:         req.FallbackModelAntigravity,
-		EnableIdentityPatch:              req.EnableIdentityPatch,
-		IdentityPatchPrompt:              req.IdentityPatchPrompt,
-		MinClaudeCodeVersion:             req.MinClaudeCodeVersion,
-		MaxClaudeCodeVersion:             req.MaxClaudeCodeVersion,
-		AllowUngroupedKeyScheduling:      req.AllowUngroupedKeyScheduling,
-		BackendModeEnabled:               req.BackendModeEnabled,
+		PlatformDefaultAccountModelConfig: fromOptionalDTODefaultAccountModelConfig(
+			req.PlatformDefaultAccountModelConfig,
+			previousSettings.PlatformDefaultAccountModelConfig,
+		),
+		EnableIdentityPatch:         req.EnableIdentityPatch,
+		IdentityPatchPrompt:         req.IdentityPatchPrompt,
+		MinClaudeCodeVersion:        req.MinClaudeCodeVersion,
+		MaxClaudeCodeVersion:        req.MaxClaudeCodeVersion,
+		AllowUngroupedKeyScheduling: req.AllowUngroupedKeyScheduling,
+		BackendModeEnabled:          req.BackendModeEnabled,
 		OpsMonitoringEnabled: func() bool {
 			if req.OpsMonitoringEnabled != nil {
 				return *req.OpsMonitoringEnabled
@@ -1659,6 +1722,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		FallbackModelOpenAI:                    updatedSettings.FallbackModelOpenAI,
 		FallbackModelGemini:                    updatedSettings.FallbackModelGemini,
 		FallbackModelAntigravity:               updatedSettings.FallbackModelAntigravity,
+		PlatformDefaultAccountModelConfig:      toDTODefaultAccountModelConfig(updatedSettings.PlatformDefaultAccountModelConfig),
 		EnableIdentityPatch:                    updatedSettings.EnableIdentityPatch,
 		IdentityPatchPrompt:                    updatedSettings.IdentityPatchPrompt,
 		OpsMonitoringEnabled:                   updatedSettings.OpsMonitoringEnabled,
@@ -2007,6 +2071,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.FallbackModelAntigravity != after.FallbackModelAntigravity {
 		changed = append(changed, "fallback_model_antigravity")
+	}
+	if !defaultAccountModelConfigEqual(before.PlatformDefaultAccountModelConfig, after.PlatformDefaultAccountModelConfig) {
+		changed = append(changed, "platform_default_account_model_config")
 	}
 	if before.EnableIdentityPatch != after.EnableIdentityPatch {
 		changed = append(changed, "enable_identity_patch")

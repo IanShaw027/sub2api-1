@@ -12,6 +12,7 @@ import (
 
 type accountRepoStubForBulkUpdate struct {
 	accountRepoStub
+	bulkUpdateCalled bool
 	bulkUpdateErr    error
 	bulkUpdateIDs    []int64
 	bindGroupErrByID map[int64]error
@@ -28,6 +29,7 @@ type accountRepoStubForBulkUpdate struct {
 }
 
 func (s *accountRepoStubForBulkUpdate) BulkUpdate(_ context.Context, ids []int64, _ AccountBulkUpdate) (int64, error) {
+	s.bulkUpdateCalled = true
 	s.bulkUpdateIDs = append([]int64{}, ids...)
 	if s.bulkUpdateErr != nil {
 		return 0, s.bulkUpdateErr
@@ -132,6 +134,35 @@ func TestAdminService_BulkUpdateAccounts_PartialFailureIDs(t *testing.T) {
 	require.ElementsMatch(t, []int64{1, 3}, result.SuccessIDs)
 	require.ElementsMatch(t, []int64{2}, result.FailedIDs)
 	require.Len(t, result.Results, 3)
+}
+
+func TestAdminService_BulkUpdateAccounts_GroupOnlySkipsAccountTableUpdate(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: PlatformAnthropic, Type: AccountTypeOAuth},
+			{ID: 2, Platform: PlatformAnthropic, Type: AccountTypeOAuth},
+		},
+	}
+	svc := &adminServiceImpl{
+		accountRepo: repo,
+		groupRepo:   &groupRepoStubForAdmin{getByID: &Group{ID: 10, Name: "g10"}},
+	}
+
+	groupIDs := []int64{10}
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs:            []int64{1, 2},
+		GroupIDs:              &groupIDs,
+		SkipMixedChannelCheck: true,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, repo.bulkUpdateCalled)
+	require.ElementsMatch(t, []int64{1, 2}, repo.bindGroupsCalls)
+	require.Equal(t, 2, result.Success)
+	require.Equal(t, 0, result.Failed)
+	require.ElementsMatch(t, []int64{1, 2}, result.SuccessIDs)
+	require.Empty(t, result.FailedIDs)
 }
 
 func TestAdminService_BulkUpdateAccounts_NilGroupRepoReturnsError(t *testing.T) {

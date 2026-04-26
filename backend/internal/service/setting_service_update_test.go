@@ -254,3 +254,50 @@ func TestSettingService_UpdateSettings_RejectsInvalidPaymentVisibleMethodSource(
 	require.Equal(t, "INVALID_PAYMENT_VISIBLE_METHOD_SOURCE", infraerrors.Reason(err))
 	require.Nil(t, repo.updates)
 }
+
+func TestSettingService_UpdateSettings_RejectsInvalidPlatformDefaultModelMapping(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  map[string]DefaultAccountModelConfig
+	}{
+		{
+			name: "request wildcard not at end",
+			cfg: map[string]DefaultAccountModelConfig{
+				"kiro": {
+					ModelMapping: map[string]string{"claude-*sonnet": "claude-sonnet-4.6"},
+				},
+			},
+		},
+		{
+			name: "target wildcard",
+			cfg: map[string]DefaultAccountModelConfig{
+				"kiro": {
+					ModelMapping: map[string]string{"claude-sonnet-*": "claude-*"},
+				},
+			},
+		},
+		{
+			name: "compact target wildcard",
+			cfg: map[string]DefaultAccountModelConfig{
+				"openai": {
+					CompactModelMapping: map[string]string{"gpt-5.4": "gpt-*"},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &settingUpdateRepoStub{}
+			svc := NewSettingService(repo, &config.Config{})
+
+			err := svc.UpdateSettings(context.Background(), &SystemSettings{
+				PlatformDefaultAccountModelConfig: tt.cfg,
+			})
+
+			require.Error(t, err)
+			require.Equal(t, "INVALID_PLATFORM_DEFAULT_ACCOUNT_MODEL_CONFIG", infraerrors.Reason(err))
+			require.Nil(t, repo.updates)
+		})
+	}
+}

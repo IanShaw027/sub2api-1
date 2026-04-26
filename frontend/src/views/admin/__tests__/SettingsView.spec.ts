@@ -1089,6 +1089,118 @@ describe("admin SettingsView wechat connect controls", () => {
     );
   });
 
+  it("submits platform default account model config JSON", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const configTextarea = wrapper
+      .findAll("textarea")
+      .find((node) =>
+        (node.element as HTMLTextAreaElement).placeholder.includes(
+          "model_mapping",
+        ),
+      );
+    expect(configTextarea).toBeDefined();
+    await configTextarea?.setValue(
+      JSON.stringify({
+        kiro: {
+          model_whitelist: ["claude-sonnet-4-6"],
+          model_mapping: {
+            "claude-sonnet-4-6": "claude-sonnet-4.6",
+          },
+          compact_model_mapping: {
+            "claude-sonnet-4-6": "claude-haiku-4.5",
+          },
+        },
+      }),
+    );
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        platform_default_account_model_config: {
+          kiro: {
+            model_whitelist: ["claude-sonnet-4-6"],
+            model_mapping: {
+              "claude-sonnet-4-6": "claude-sonnet-4.6",
+            },
+            compact_model_mapping: {
+              "claude-sonnet-4-6": "claude-haiku-4.5",
+            },
+          },
+        },
+      }),
+    );
+  });
+
+  it("blocks malformed platform default account model config JSON shape", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const configTextarea = wrapper
+      .findAll("textarea")
+      .find((node) =>
+        (node.element as HTMLTextAreaElement).placeholder.includes(
+          "model_mapping",
+        ),
+      );
+    expect(configTextarea).toBeDefined();
+    await configTextarea?.setValue(
+      JSON.stringify({
+        kiro: {
+          model_mapping: {
+            "claude-sonnet-4-6": 42,
+          },
+        },
+      }),
+    );
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(showError).toHaveBeenCalledWith(
+      "kiro.model_mapping 只能包含非空字符串到非空字符串的映射。",
+    );
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("blocks invalid platform default account model mapping wildcards", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const configTextarea = wrapper
+      .findAll("textarea")
+      .find((node) =>
+        (node.element as HTMLTextAreaElement).placeholder.includes(
+          "model_mapping",
+        ),
+      );
+    expect(configTextarea).toBeDefined();
+    await configTextarea?.setValue(
+      JSON.stringify({
+        kiro: {
+          model_mapping: {
+            "claude-*sonnet": "claude-*",
+          },
+        },
+      }),
+    );
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(showError).toHaveBeenCalledWith(
+      "kiro.model_mapping 的请求模型通配符 * 只能位于末尾。",
+    );
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
   it("blocks save when kiro prefix ttl exceeds independent ttl", async () => {
     const wrapper = mountView();
 

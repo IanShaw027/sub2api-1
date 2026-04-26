@@ -605,6 +605,7 @@ export interface SystemSettings {
   fallback_model_openai: string;
   fallback_model_gemini: string;
   fallback_model_antigravity: string;
+  platform_default_account_model_config: Record<string, DefaultAccountModelConfig>;
 
   // Identity patch configuration (Claude -> Gemini)
   enable_identity_patch: boolean;
@@ -683,6 +684,12 @@ export interface SystemSettings {
 
   // Available Channels feature switch
   available_channels_enabled: boolean;
+}
+
+export interface DefaultAccountModelConfig {
+  model_whitelist?: string[];
+  model_mapping?: Record<string, string>;
+  compact_model_mapping?: Record<string, string>;
 }
 
 export interface UpdateSettingsRequest {
@@ -796,6 +803,7 @@ export interface UpdateSettingsRequest {
   fallback_model_openai?: string;
   fallback_model_gemini?: string;
   fallback_model_antigravity?: string;
+  platform_default_account_model_config?: Record<string, DefaultAccountModelConfig>;
   enable_identity_patch?: boolean;
   identity_patch_prompt?: string;
   ops_monitoring_enabled?: boolean;

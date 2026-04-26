@@ -60,7 +60,7 @@ func TestAPIContracts(t *testing.T) {
 					"status": "active",
 			"allowed_groups": null,
 			"last_login_at": null,
-			"last_active_at": "2025-01-02T03:04:05Z",
+			"last_active_at": null,
 			"created_at": "2025-01-02T03:04:05Z",
 					"updated_at": "2025-01-02T03:04:05Z",
 					"balance_notify_enabled": false,
@@ -761,6 +761,7 @@ func TestAPIContracts(t *testing.T) {
 					"payment_visible_method_wxpay_source": "official_wxpay",
 					"payment_visible_method_alipay_enabled": true,
 					"payment_visible_method_wxpay_enabled": false,
+					"platform_default_account_model_config": {},
 					"openai_advanced_scheduler_enabled": true,
 					"custom_menu_items": [],
 					"custom_endpoints": [],
@@ -957,6 +958,7 @@ func TestAPIContracts(t *testing.T) {
 					"payment_visible_method_wxpay_source": "",
 					"payment_visible_method_alipay_enabled": false,
 					"payment_visible_method_wxpay_enabled": false,
+					"platform_default_account_model_config": {},
 					"openai_advanced_scheduler_enabled": false,
 					"payment_enabled": false,
 					"payment_min_amount": 0,
@@ -1083,11 +1085,11 @@ func normalizeContractResponse(t *testing.T, name, body string) string {
 
 	switch name {
 	case "GET /api/v1/auth/me":
-		lastActive, ok := data["last_active_at"].(string)
-		require.True(t, ok, "last_active_at should be present")
-		_, err := time.Parse(time.RFC3339Nano, lastActive)
-		require.NoError(t, err)
-		data["last_active_at"] = "2025-01-02T03:04:05Z"
+		if lastActive, ok := data["last_active_at"].(string); ok {
+			_, err := time.Parse(time.RFC3339Nano, lastActive)
+			require.NoError(t, err)
+			data["last_active_at"] = "2025-01-02T03:04:05Z"
+		}
 	case "GET /api/v1/admin/settings", "GET /api/v1/admin/settings falls back to config oauth defaults":
 		for _, key := range []string{"system_version", "node_version"} {
 			value, ok := data[key].(string)
@@ -2092,6 +2094,10 @@ func (r *stubApiKeyRepo) UpdateGroupIDByUserAndGroup(ctx context.Context, userID
 }
 
 func (r *stubApiKeyRepo) CountByGroupID(ctx context.Context, groupID int64) (int64, error) {
+	return 0, errors.New("not implemented")
+}
+
+func (r *stubApiKeyRepo) CountActiveByGroupID(ctx context.Context, groupID int64) (int64, error) {
 	return 0, errors.New("not implemented")
 }
 

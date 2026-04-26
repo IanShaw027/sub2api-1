@@ -2141,6 +2141,12 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	if err := validatePlatformAccountType(input.Platform, input.Type); err != nil {
 		return nil, err
 	}
+	if s.settingService != nil {
+		defaults := s.settingService.GetPlatformDefaultAccountModelConfig(ctx)
+		if cfg, ok := defaults[strings.ToLower(strings.TrimSpace(input.Platform))]; ok {
+			input.Credentials = applyDefaultAccountModelConfig(input.Credentials, cfg)
+		}
+	}
 	if input.Platform == PlatformKiro {
 		if err := validateKiroAccountCredentials(input.Type, input.Credentials); err != nil {
 			return nil, err
@@ -2279,10 +2285,8 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		account.Notes = normalizeAccountNotes(input.Notes)
 	}
 	if input.Credentials != nil {
-		if account.Platform == PlatformKiro {
-			account.Credentials = mergeKiroCredentialsForAccountUpdate(account.Type, account.Credentials, input.Credentials)
-		} else if len(input.Credentials) > 0 {
-			account.Credentials = input.Credentials
+		if len(input.Credentials) > 0 {
+			account.Credentials = mergeAccountCredentialsForAccountUpdate(account.Platform, account.Type, account.Credentials, input.Credentials)
 		}
 	}
 	if account.Platform == PlatformKiro {
@@ -2519,13 +2523,16 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		repoUpdates.Schedulable = input.Schedulable
 	}
 
-	// Run bulk update for column/jsonb fields first.
-	affected, err := s.accountRepo.BulkUpdate(ctx, input.AccountIDs, repoUpdates)
-	if err != nil {
-		return nil, err
-	}
-	if affected != int64(len(input.AccountIDs)) {
-		return nil, fmt.Errorf("bulk update affected %d of %d accounts", affected, len(input.AccountIDs))
+	// Run bulk update for column/jsonb fields first. Group-only edits have no
+	// account-table SET clauses, so they should go straight to BindGroups.
+	if hasAccountBulkUpdateFields(repoUpdates) {
+		affected, err := s.accountRepo.BulkUpdate(ctx, input.AccountIDs, repoUpdates)
+		if err != nil {
+			return nil, err
+		}
+		if affected != int64(len(input.AccountIDs)) {
+			return nil, fmt.Errorf("bulk update affected %d of %d accounts", affected, len(input.AccountIDs))
+		}
 	}
 
 	// Handle group bindings per account (requires individual operations).
@@ -2550,6 +2557,19 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 
 	return result, nil
+}
+
+func hasAccountBulkUpdateFields(updates AccountBulkUpdate) bool {
+	return updates.Name != nil ||
+		updates.ProxyID != nil ||
+		updates.Concurrency != nil ||
+		updates.Priority != nil ||
+		updates.RateMultiplier != nil ||
+		updates.LoadFactor != nil ||
+		updates.Status != nil ||
+		updates.Schedulable != nil ||
+		len(updates.Credentials) > 0 ||
+		len(updates.Extra) > 0
 }
 
 func (s *adminServiceImpl) DeleteAccount(ctx context.Context, id int64) error {
