@@ -483,9 +483,9 @@ gateway:
 
 - `cors.allowed_origins` 配置 CORS 白名单
 - `security.url_allowlist` 配置上游/价格数据/CRS 主机白名单
-- `security.url_allowlist.enabled` 可关闭 URL 校验（慎用）
-- `security.url_allowlist.allow_insecure_http` 关闭校验时允许 HTTP URL
-- `security.url_allowlist.allow_private_hosts` 允许私有/本地 IP 地址
+- `security.url_allowlist.enabled` 强制上游/价格数据/CRS 主机白名单校验；仅可信开发/测试环境才应关闭
+- `security.url_allowlist.allow_insecure_http` 仅在可信开发/测试环境允许 HTTP URL
+- `security.url_allowlist.allow_private_hosts` 仅在可信内网部署允许私有/本地 IP 地址
 - `security.response_headers.enabled` 可启用可配置响应头过滤（关闭时使用默认白名单）
 - `security.csp` 配置 Content-Security-Policy
 - `billing.circuit_breaker` 计费异常时 fail-closed
@@ -502,7 +502,7 @@ gateway:
 
 **⚠️ 安全警告：HTTP URL 配置**
 
-当 `security.url_allowlist.enabled=false` 时，系统默认执行最小 URL 校验，**拒绝 HTTP URL**，仅允许 HTTPS。要允许 HTTP URL（例如用于开发或内网测试），必须显式设置：
+默认部署保持 `security.url_allowlist.enabled=true`，会拒绝不在白名单内的主机。仅在可信开发或内网测试环境中，才应关闭白名单匹配；关闭后系统仍默认拒绝 HTTP URL，除非显式覆盖：
 
 ```yaml
 security:

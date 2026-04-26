@@ -451,9 +451,9 @@ Additional security-related options are available in `config.yaml`:
 
 - `cors.allowed_origins` for CORS allowlist
 - `security.url_allowlist` for upstream/pricing/CRS host allowlists
-- `security.url_allowlist.enabled` to disable URL validation (use with caution)
-- `security.url_allowlist.allow_insecure_http` to allow HTTP URLs when validation is disabled
-- `security.url_allowlist.allow_private_hosts` to allow private/local IP addresses
+- `security.url_allowlist.enabled` to enforce upstream/pricing/CRS host validation; disabling it is for trusted dev/test only
+- `security.url_allowlist.allow_insecure_http` to allow HTTP URLs only in trusted dev/test deployments
+- `security.url_allowlist.allow_private_hosts` to allow private/local IP addresses only in trusted internal deployments
 - `security.response_headers.enabled` to enable configurable response header filtering (disabled uses default allowlist)
 - `security.csp` to control Content-Security-Policy headers
 - `billing.circuit_breaker` to fail closed on billing errors
@@ -462,7 +462,7 @@ Additional security-related options are available in `config.yaml`:
 
 **⚠️ Security Warning: HTTP URL Configuration**
 
-When `security.url_allowlist.enabled=false`, the system performs minimal URL validation by default, **rejecting HTTP URLs** and only allowing HTTPS. To allow HTTP URLs (e.g., for development or internal testing), you must explicitly set:
+The default deployment keeps `security.url_allowlist.enabled=true` and rejects hosts outside the configured allowlists. For trusted development or internal testing only, you can disable allowlist matching; with allowlist disabled the system still rejects HTTP URLs unless explicitly overridden:
 
 ```yaml
 security:
