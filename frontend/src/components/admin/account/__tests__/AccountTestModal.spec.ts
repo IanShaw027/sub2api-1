@@ -86,8 +86,36 @@ function mountModal(account: Record<string, unknown> = {
   })
 }
 
+function mountOpenModal(account: Record<string, unknown> = {
+  id: 42,
+  name: 'Gemini Image Test',
+  platform: 'gemini',
+  type: 'apikey',
+  status: 'active'
+}) {
+  return mount(AccountTestModal, {
+    props: {
+      show: true,
+      account
+    } as any,
+    global: {
+      stubs: {
+        BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' },
+        Select: { template: '<div class="select-stub"></div>' },
+        TextArea: {
+          props: ['modelValue'],
+          emits: ['update:modelValue'],
+          template: '<textarea class="textarea-stub" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />'
+        },
+        Icon: true
+      }
+    }
+  })
+}
+
 describe('AccountTestModal', () => {
   beforeEach(() => {
+    getAvailableModels.mockClear()
     getAvailableModels.mockResolvedValue([
       { id: 'gemini-2.0-flash', display_name: 'Gemini 2.0 Flash' },
       { id: 'gemini-2.5-flash-image', display_name: 'Gemini 2.5 Flash Image' },
@@ -114,6 +142,17 @@ describe('AccountTestModal', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it('初始打开时会立即加载测试模型', async () => {
+    const wrapper = mountOpenModal()
+
+    await flushPromises()
+
+    expect(getAvailableModels).toHaveBeenCalledTimes(1)
+    expect(getAvailableModels).toHaveBeenCalledWith(42)
+    expect((wrapper.vm as any).availableModels.length).toBeGreaterThan(0)
+    expect((wrapper.vm as any).selectedModelId).toBe('gemini-3.1-flash-image')
   })
 
   it('gemini 图片模型测试会携带提示词并渲染图片预览', async () => {

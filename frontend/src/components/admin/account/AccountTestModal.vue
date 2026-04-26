@@ -406,22 +406,6 @@ const sortTestModels = (models: ClaudeModel[]) => {
   });
 };
 
-// Load available models when modal opens
-watch(
-  () => props.show,
-  async (newVal) => {
-    if (newVal && props.account) {
-      testPrompt.value = "";
-      selectedOpenAIImageTestMode.value = defaultOpenAIImageTestMode;
-      testMode.value = "default";
-      resetState();
-      await loadAvailableModels();
-    } else {
-      abortStream();
-    }
-  },
-);
-
 watch(selectedModelId, () => {
   if (supportsImageTest.value && !testPrompt.value.trim()) {
     testPrompt.value = t("admin.accounts.imagePromptDefault");
@@ -482,6 +466,24 @@ const abortStream = () => {
     abortController = null;
   }
 };
+
+// The modal is mounted with show=true, so initial model loading must run
+// immediately after helper functions are initialized.
+watch(
+  () => props.show,
+  async (newVal) => {
+    if (newVal && props.account) {
+      testPrompt.value = "";
+      selectedOpenAIImageTestMode.value = defaultOpenAIImageTestMode;
+      testMode.value = "default";
+      resetState();
+      await loadAvailableModels();
+    } else {
+      abortStream();
+    }
+  },
+  { immediate: true },
+);
 
 const addLine = (text: string, className: string = "text-gray-300") => {
   outputLines.value.push({ text, class: className });
