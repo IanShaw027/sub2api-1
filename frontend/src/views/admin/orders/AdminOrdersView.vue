@@ -128,6 +128,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminPaymentAPI } from '@/api/admin/payment'
+import type { AdminPaymentOrderDetail } from '@/api/admin/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { formatOrderDateTime } from '@/components/payment/orderUtils'
 import type { PaymentOrder } from '@/types/payment'
@@ -236,9 +237,9 @@ async function showOrderDetail(order: PaymentOrder) {
   showDetailDialog.value = true
   try {
     const res = await adminPaymentAPI.getOrder(order.id)
-    const data = res.data as unknown as Record<string, unknown>
-    if (data.order) selectedOrder.value = data.order as PaymentOrder
-    orderAuditLogs.value = ((data.auditLogs || data.audit_logs || []) as unknown) as AuditLog[]
+    const data = res.data as AdminPaymentOrderDetail & { audit_logs?: AuditLog[] }
+    if (data.order) selectedOrder.value = data.order
+    orderAuditLogs.value = (data.auditLogs || data.audit_logs || []) as AuditLog[]
   } catch (_err: unknown) { /* keep cached order data */ }
 }
 

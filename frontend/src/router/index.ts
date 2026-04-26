@@ -649,7 +649,11 @@ const routes: RouteRecordRaw[] = [
 ]
 
 async function ensurePublicSettingsForOptInRoute(to: RouteLocationNormalized): Promise<void> {
-  if (to.meta?.requiresTicket !== true && to.meta?.requiresAffiliate !== true) {
+  if (
+    to.meta?.requiresTicket !== true
+    && to.meta?.requiresAffiliate !== true
+    && to.meta?.requiresAvailableChannels !== true
+  ) {
     return
   }
   const appStore = useAppStore()

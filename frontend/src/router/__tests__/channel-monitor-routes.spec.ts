@@ -11,6 +11,8 @@ const authStore = vi.hoisted(() => ({
 const appStore = vi.hoisted(() => ({
   siteName: 'Sub2API',
   backendModeEnabled: false,
+  publicSettingsLoaded: true,
+  fetchPublicSettings: vi.fn(),
   cachedPublicSettings: {
     channel_monitor_enabled: false,
     available_channels_enabled: false,
@@ -64,6 +66,8 @@ describe('channel monitor routes', () => {
     authStore.isAdmin = true
     authStore.isSimpleMode = false
     appStore.backendModeEnabled = false
+    appStore.publicSettingsLoaded = true
+    appStore.fetchPublicSettings.mockReset()
     appStore.cachedPublicSettings = { channel_monitor_enabled: false, available_channels_enabled: false }
     window.scrollTo = vi.fn()
   })
@@ -96,5 +100,25 @@ describe('channel monitor routes', () => {
     await router.push('/available-channels')
 
     expect(router.currentRoute.value.path).toBe('/dashboard')
+  })
+
+  it('loads public settings before evaluating direct available channels navigation', async () => {
+    authStore.isAdmin = false
+    appStore.publicSettingsLoaded = false
+    appStore.cachedPublicSettings = { channel_monitor_enabled: false }
+    appStore.fetchPublicSettings.mockImplementation(async () => {
+      appStore.publicSettingsLoaded = true
+      appStore.cachedPublicSettings = {
+        channel_monitor_enabled: false,
+        available_channels_enabled: true,
+      }
+      return appStore.cachedPublicSettings
+    })
+    const { default: router } = await import('@/router')
+
+    await router.push('/available-channels')
+
+    expect(appStore.fetchPublicSettings).toHaveBeenCalledTimes(1)
+    expect(router.currentRoute.value.path).toBe('/available-channels')
   })
 })
