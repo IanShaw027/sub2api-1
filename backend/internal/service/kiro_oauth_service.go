@@ -145,6 +145,7 @@ type KiroTokenInfo struct {
 	AuthRegion       string `json:"auth_region,omitempty"`
 	APIRegion        string `json:"api_region,omitempty"`
 	ProfileARN       string `json:"profile_arn,omitempty"`
+	ProfileID        string `json:"profile_id,omitempty"`
 	Email            string `json:"email,omitempty"`
 	Name             string `json:"name,omitempty"`
 	UserID           string `json:"user_id,omitempty"`
@@ -379,6 +380,7 @@ func kiroTokenInfoMap(tokenInfo *KiroTokenInfo) map[string]any {
 		"auth_region":       tokenInfo.AuthRegion,
 		"api_region":        tokenInfo.APIRegion,
 		"profile_arn":       tokenInfo.ProfileARN,
+		"profile_id":        tokenInfo.ProfileID,
 		"email":             tokenInfo.Email,
 		"name":              tokenInfo.Name,
 		"user_id":           tokenInfo.UserID,
@@ -615,6 +617,10 @@ func buildKiroTokenInfo(payload map[string]any, query url.Values, loginOption st
 	)
 	apiRegion := profileARNRegion(profileARN)
 	region := firstNonEmptyKiroString(apiRegion, authRegion, "us-east-1")
+	profileID := firstNonEmptyKiroString(
+		pickKiroString(payload, []string{"profileId"}, []string{"profile_id"}),
+		profileARNProfileID(profileARN),
+	)
 
 	email := firstNonEmptyKiroString(
 		pickKiroString(payload, []string{"email"}, []string{"userEmail"}),
@@ -634,7 +640,7 @@ func buildKiroTokenInfo(payload map[string]any, query url.Values, loginOption st
 		pickKiroString(payload, []string{"userId"}, []string{"user_id"}, []string{"sub"}, []string{"accountId"}),
 		pickKiroStringFromMap(idClaims, []string{"sub"}, []string{"user_id"}, []string{"uid"}),
 		pickKiroStringFromMap(accessClaims, []string{"sub"}, []string{"user_id"}, []string{"uid"}),
-		profileARN,
+		profileID,
 	)
 
 	loginProvider := normalizeKiroProvider(firstNonEmptyKiroString(
@@ -656,6 +662,7 @@ func buildKiroTokenInfo(payload map[string]any, query url.Values, loginOption st
 		AuthRegion:       firstNonEmptyKiroString(authRegion, region),
 		APIRegion:        firstNonEmptyKiroString(apiRegion, region),
 		ProfileARN:       profileARN,
+		ProfileID:        profileID,
 		Email:            email,
 		Name:             name,
 		UserID:           userID,
@@ -709,6 +716,25 @@ func profileARNRegion(profileARN string) string {
 		return ""
 	}
 	return strings.TrimSpace(parts[3])
+}
+
+func profileARNProfileID(profileARN string) string {
+	profileARN = strings.TrimSpace(profileARN)
+	if profileARN == "" {
+		return ""
+	}
+	if idx := strings.LastIndex(profileARN, "/"); idx >= 0 && idx+1 < len(profileARN) {
+		return strings.TrimSpace(profileARN[idx+1:])
+	}
+	parts := strings.Split(profileARN, ":")
+	if len(parts) > 0 {
+		resource := strings.TrimSpace(parts[len(parts)-1])
+		if idx := strings.LastIndex(resource, "/"); idx >= 0 && idx+1 < len(resource) {
+			return strings.TrimSpace(resource[idx+1:])
+		}
+		return resource
+	}
+	return ""
 }
 
 func decodeKiroJWTClaims(token string) map[string]any {

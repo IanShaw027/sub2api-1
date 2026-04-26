@@ -105,6 +105,12 @@ func kiroHTTPStatusErrorMessage(prefix string, statusCode int, body []byte) stri
 	}
 }
 
+func kiroSafeHTTPStatusErrorMessage(prefix string, statusCode int, body []byte) string {
+	message := kiroHTTPStatusErrorMessage(prefix, statusCode, body)
+	message = sanitizeUpstreamErrorMessage(message)
+	return truncateString(message, 2048)
+}
+
 func buildKiroOAuthTokenExchangeError(statusCode int, body []byte) error {
 	detail := kiroErrorDetailFromBody(body)
 	if statusCode == http.StatusBadRequest {

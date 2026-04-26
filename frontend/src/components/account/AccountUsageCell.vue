@@ -178,6 +178,16 @@
         <div class="text-[10px] text-gray-500 dark:text-gray-400">
           {{ kiroUsageSummary }}
         </div>
+        <div v-if="kiroQuotaBreakdownSummary.length" class="space-y-0.5 text-[10px] text-gray-500 dark:text-gray-400">
+          <div
+            v-for="item in kiroQuotaBreakdownSummary"
+            :key="item.key"
+            class="flex items-center justify-between gap-2"
+          >
+            <span>{{ item.label }}</span>
+            <span class="tabular-nums">{{ item.summary }}</span>
+          </div>
+        </div>
       </div>
       <div v-else class="text-xs text-gray-400">-</div>
     </template>
@@ -482,7 +492,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
-import type { Account, AccountUsageInfo, GeminiCredentials, WindowStats } from '@/types'
+import type { Account, AccountUsageInfo, GeminiCredentials, KiroQuotaBreakdown, WindowStats } from '@/types'
 import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
 import { formatCompactNumber } from '@/utils/format'
@@ -588,6 +598,38 @@ const kiroUsageSummary = computed(() => t('admin.accounts.kiro.usageSummary', {
   limit: formatKiroMoney(usageInfo.value?.kiro_usage_limit),
   remaining: formatKiroMoney(usageInfo.value?.kiro_remaining)
 }))
+
+const formatKiroQuotaBreakdownSummary = (quota?: KiroQuotaBreakdown | null) => {
+  if (!quota) return ''
+  return t('admin.accounts.kiro.quotaPartSummary', {
+    used: formatKiroMoney(quota.current_usage),
+    limit: formatKiroMoney(quota.usage_limit),
+    remaining: formatKiroMoney(quota.remaining)
+  })
+}
+
+const kiroQuotaBreakdownSummary = computed(() => {
+  const info = usageInfo.value
+  if (!info) return []
+
+  return [
+    {
+      key: 'monthly',
+      label: t('admin.accounts.kiro.monthlyQuota'),
+      summary: formatKiroQuotaBreakdownSummary(info.kiro_monthly_quota)
+    },
+    {
+      key: 'bonus',
+      label: t('admin.accounts.kiro.bonusQuota'),
+      summary: formatKiroQuotaBreakdownSummary(info.kiro_bonus_quota)
+    },
+    {
+      key: 'free_trial',
+      label: t('admin.accounts.kiro.freeTrialQuota'),
+      summary: formatKiroQuotaBreakdownSummary(info.kiro_free_trial_quota)
+    }
+  ].filter((item) => item.summary)
+})
 
 const openAIUsageRefreshKey = computed(() => buildOpenAIUsageRefreshKey(props.account))
 

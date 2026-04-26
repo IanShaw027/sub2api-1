@@ -34,6 +34,7 @@ export interface KiroTokenInfo {
   auth_region?: string
   api_region?: string
   profile_arn?: string
+  profile_id?: string
   email?: string
   name?: string
   user_id?: string

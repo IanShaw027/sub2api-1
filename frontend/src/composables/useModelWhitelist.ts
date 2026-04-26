@@ -39,16 +39,90 @@ export const claudeModels = [
 ]
 
 const kiroModels = [
+  'claude-haiku-4.5',
+  'claude-haiku-4.5-thinking',
+  'claude-haiku-4.5-1m',
+  'claude-haiku-4.5-thinking-1m',
+  'claude-haiku-4.6',
+  'claude-haiku-4.6-thinking',
+  'claude-haiku-4.6-1m',
+  'claude-haiku-4.6-thinking-1m',
+  'claude-haiku-4.7',
+  'claude-haiku-4.7-thinking',
+  'claude-haiku-4.7-1m',
+  'claude-haiku-4.7-thinking-1m',
   'claude-sonnet-4.5',
   'claude-sonnet-4.5-thinking',
+  'claude-sonnet-4.5-1m',
+  'claude-sonnet-4.5-thinking-1m',
   'claude-sonnet-4.6',
   'claude-sonnet-4.6-thinking',
+  'claude-sonnet-4.6-1m',
+  'claude-sonnet-4.6-thinking-1m',
+  'claude-sonnet-4.7',
+  'claude-sonnet-4.7-thinking',
+  'claude-sonnet-4.7-1m',
+  'claude-sonnet-4.7-thinking-1m',
   'claude-opus-4.5',
   'claude-opus-4.5-thinking',
+  'claude-opus-4.5-1m',
+  'claude-opus-4.5-thinking-1m',
   'claude-opus-4.6',
   'claude-opus-4.6-thinking',
-  'claude-haiku-4.5',
-  'claude-haiku-4.5-thinking'
+  'claude-opus-4.6-1m',
+  'claude-opus-4.6-thinking-1m',
+  'claude-opus-4.7',
+  'claude-opus-4.7-thinking',
+  'claude-opus-4.7-1m',
+  'claude-opus-4.7-thinking-1m',
+  'claude-haiku-4-5',
+  'claude-haiku-4-5-thinking',
+  'claude-haiku-4-5-20251001',
+  'claude-haiku-4-5-20251001-thinking',
+  'claude-haiku-4-5-20251001-1m',
+  'claude-haiku-4-5-20251001-thinking-1m',
+  'claude-haiku-4-5-1m',
+  'claude-haiku-4-5-thinking-1m',
+  'claude-haiku-4-6',
+  'claude-haiku-4-6-thinking',
+  'claude-haiku-4-6-1m',
+  'claude-haiku-4-6-thinking-1m',
+  'claude-haiku-4-7',
+  'claude-haiku-4-7-thinking',
+  'claude-haiku-4-7-1m',
+  'claude-haiku-4-7-thinking-1m',
+  'claude-sonnet-4-5',
+  'claude-sonnet-4-5-thinking',
+  'claude-sonnet-4-5-20250929',
+  'claude-sonnet-4-5-20250929-thinking',
+  'claude-sonnet-4-5-20250929-1m',
+  'claude-sonnet-4-5-20250929-thinking-1m',
+  'claude-sonnet-4-5-1m',
+  'claude-sonnet-4-5-thinking-1m',
+  'claude-sonnet-4-6',
+  'claude-sonnet-4-6-thinking',
+  'claude-sonnet-4-6-1m',
+  'claude-sonnet-4-6-thinking-1m',
+  'claude-sonnet-4-7',
+  'claude-sonnet-4-7-thinking',
+  'claude-sonnet-4-7-1m',
+  'claude-sonnet-4-7-thinking-1m',
+  'claude-opus-4-5',
+  'claude-opus-4-5-thinking',
+  'claude-opus-4-5-20251101',
+  'claude-opus-4-5-20251101-thinking',
+  'claude-opus-4-5-20251101-1m',
+  'claude-opus-4-5-20251101-thinking-1m',
+  'claude-opus-4-5-1m',
+  'claude-opus-4-5-thinking-1m',
+  'claude-opus-4-6',
+  'claude-opus-4-6-thinking',
+  'claude-opus-4-6-1m',
+  'claude-opus-4-6-thinking-1m',
+  'claude-opus-4-7',
+  'claude-opus-4-7-thinking',
+  'claude-opus-4-7-1m',
+  'claude-opus-4-7-thinking-1m'
 ]
 
 // Google Gemini
@@ -221,9 +295,10 @@ const perplexityModels = [
 ]
 
 // 所有模型（去重）
-const allModelsList: string[] = [
+const allModelsList: string[] = Array.from(new Set([
   ...openaiModels,
   ...claudeModels,
+  ...kiroModels,
   ...geminiModels,
   ...zhipuModels,
   ...qwenModels,
@@ -240,7 +315,7 @@ const allModelsList: string[] = [
   ...sparkModels,
   ...hunyuanModels,
   ...perplexityModels
-]
+]))
 
 // 转换为下拉选项格式
 export const allModels = allModelsList.map(m => ({ value: m, label: m }))
@@ -262,9 +337,12 @@ const anthropicPresetMappings = [
 ]
 
 const kiroPresetMappings = [
+  { label: 'Kiro 4.5/4.6/4.7', from: 'claude-*', to: 'claude-sonnet-4.6', color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400' },
   { label: 'Sonnet 4.6', from: 'claude-sonnet-4.6', to: 'claude-sonnet-4.6', color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400' },
   { label: 'Sonnet 4.6 Thinking', from: 'claude-sonnet-4.6-thinking', to: 'claude-sonnet-4.6-thinking', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-400' },
   { label: 'Sonnet 4.5', from: 'claude-sonnet-4.5', to: 'claude-sonnet-4.5', color: 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400' },
+  { label: 'Opus 4.7', from: 'claude-opus-4.7', to: 'claude-opus-4.7', color: 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-400' },
+  { label: 'Opus 4.7 Thinking', from: 'claude-opus-4.7-thinking', to: 'claude-opus-4.7-thinking', color: 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-400' },
   { label: 'Opus 4.6', from: 'claude-opus-4.6', to: 'claude-opus-4.6', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400' },
   { label: 'Opus 4.5', from: 'claude-opus-4.5', to: 'claude-opus-4.5', color: 'bg-fuchsia-100 text-fuchsia-700 hover:bg-fuchsia-200 dark:bg-fuchsia-900/30 dark:text-fuchsia-400' },
   { label: 'Haiku 4.5', from: 'claude-haiku-4.5', to: 'claude-haiku-4.5', color: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400' }

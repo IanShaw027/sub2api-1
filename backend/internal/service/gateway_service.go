@@ -8506,13 +8506,34 @@ func mapKiroModel(account *Account, requestedModel string) string {
 	}
 	effectiveModel := requestedModel
 	if account != nil {
-		if mappedModel, matched := account.ResolveMappedModel(requestedModel); matched {
+		if mappedModel, matched := resolveKiroMappedModel(account, requestedModel); matched {
 			effectiveModel = mappedModel
 		} else if len(account.GetModelMapping()) > 0 {
 			return ""
 		}
 	}
 	return kiro.MapModel(effectiveModel)
+}
+
+func resolveKiroMappedModel(account *Account, requestedModel string) (string, bool) {
+	if account == nil {
+		return requestedModel, false
+	}
+	if mappedModel, matched := account.ResolveMappedModel(requestedModel); matched {
+		return mappedModel, true
+	}
+
+	requestedKiroModel := kiro.MapModel(requestedModel)
+	if requestedKiroModel == "" {
+		return requestedModel, false
+	}
+
+	for from, to := range account.GetModelMapping() {
+		if kiro.MapModel(from) == requestedKiroModel {
+			return to, true
+		}
+	}
+	return requestedModel, false
 }
 
 // needsUpstreamChannelRestrictionCheck 判断是否需要在调度循环中逐账号检查上游模型的渠道限制。

@@ -844,6 +844,7 @@ export interface KiroCredentials {
   auth_region?: string
   api_region?: string
   profile_arn?: string
+  profile_id?: string
   machine_id?: string
   model_mapping?: Record<string, string>
 }
@@ -1011,6 +1012,14 @@ export interface AntigravityModelQuota {
   reset_time: string  // 重置时间 ISO8601
 }
 
+export interface KiroQuotaBreakdown {
+  current_usage: number
+  usage_limit: number
+  remaining: number
+  utilization: number
+  resets_at?: string | null
+}
+
 export interface AccountUsageInfo {
   source?: 'passive' | 'active'
   updated_at: string | null
@@ -1022,6 +1031,10 @@ export interface AccountUsageInfo {
   kiro_current_usage?: number
   kiro_usage_limit?: number
   kiro_remaining?: number
+  kiro_monthly_quota?: KiroQuotaBreakdown | null
+  kiro_bonus_quota?: KiroQuotaBreakdown | null
+  kiro_free_trial_quota?: KiroQuotaBreakdown | null
+  kiro_total_quota?: KiroQuotaBreakdown | null
   gemini_shared_daily?: UsageProgress | null
   gemini_pro_daily?: UsageProgress | null
   gemini_flash_daily?: UsageProgress | null
@@ -1225,6 +1238,8 @@ export interface AdminDataImportResult {
   proxy_reused: number
   proxy_failed: number
   account_created: number
+  account_updated?: number
+  account_skipped?: number
   account_failed: number
   errors?: AdminDataImportError[]
 }

@@ -61,6 +61,12 @@ const (
 	openAI403CounterWindowMinutes   = 180
 )
 
+const (
+	kiroTransient429DefaultCooldown = time.Minute
+	kiroTransient429MinCooldown     = 5 * time.Second
+	kiroTransient429MaxCooldown     = 5 * time.Minute
+)
+
 // NewRateLimitService 创建RateLimitService实例
 func NewRateLimitService(accountRepo AccountRepository, usageRepo UsageLogRepository, cfg *config.Config, geminiQuotaService *GeminiQuotaService, tempUnschedCache TempUnschedCache) *RateLimitService {
 	return &RateLimitService{
@@ -817,6 +823,10 @@ func (s *RateLimitService) handleCustomErrorCode(ctx context.Context, account *A
 // handle429 处理429限流错误
 // 解析响应头获取重置时间，标记账号为限流状态
 func (s *RateLimitService) handle429(ctx context.Context, account *Account, headers http.Header, responseBody []byte) {
+	if account.Platform == PlatformKiro && s.handleKiro429(ctx, account, headers, responseBody) {
+		return
+	}
+
 	// 1. OpenAI 平台：优先尝试解析 x-codex-* 响应头（用于 rate_limit_exceeded）
 	if account.Platform == PlatformOpenAI {
 		s.persistOpenAICodexSnapshot(ctx, account, headers)
@@ -927,6 +937,111 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 	}
 
 	slog.Info("account_rate_limited", "account_id", account.ID, "reset_at", resetAt)
+}
+
+func (s *RateLimitService) handleKiro429(ctx context.Context, account *Account, headers http.Header, responseBody []byte) bool {
+	if account == nil || account.Platform != PlatformKiro {
+		return false
+	}
+	if isKiroQuotaExhausted429(responseBody) {
+		return false
+	}
+
+	now := time.Now()
+	cooldown := kiroTransient429Cooldown(headers, now)
+	until := now.Add(cooldown)
+	state := &TempUnschedState{
+		UntilUnix:       until.Unix(),
+		TriggeredAtUnix: now.Unix(),
+		StatusCode:      http.StatusTooManyRequests,
+		MatchedKeyword:  "kiro_transient_429",
+		RuleIndex:       -1,
+		ErrorMessage:    truncateTempUnschedMessage(responseBody, tempUnschedMessageMaxBytes),
+	}
+
+	reason := "Kiro transient 429"
+	if raw, err := json.Marshal(state); err == nil {
+		reason = string(raw)
+	}
+	if err := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason); err != nil {
+		slog.Warn("kiro_429_set_temp_unschedulable_failed", "account_id", account.ID, "error", err)
+		return false
+	}
+	if s.tempUnschedCache != nil {
+		if err := s.tempUnschedCache.SetTempUnsched(ctx, account.ID, state); err != nil {
+			slog.Warn("kiro_429_temp_unsched_cache_set_failed", "account_id", account.ID, "error", err)
+		}
+	}
+
+	slog.Warn("kiro_429_temp_unschedulable", "account_id", account.ID, "until", until, "cooldown", cooldown)
+	return true
+}
+
+func kiroTransient429Cooldown(headers http.Header, now time.Time) time.Duration {
+	if headers != nil {
+		if retryAfter := strings.TrimSpace(headers.Get("Retry-After")); retryAfter != "" {
+			if seconds, err := strconv.Atoi(retryAfter); err == nil && seconds > 0 {
+				return clampKiroTransient429Cooldown(time.Duration(seconds) * time.Second)
+			}
+			if retryAt, err := http.ParseTime(retryAfter); err == nil {
+				if cooldown := retryAt.Sub(now); cooldown > 0 {
+					return clampKiroTransient429Cooldown(cooldown)
+				}
+			}
+		}
+	}
+	return kiroTransient429DefaultCooldown
+}
+
+func clampKiroTransient429Cooldown(cooldown time.Duration) time.Duration {
+	if cooldown < kiroTransient429MinCooldown {
+		return kiroTransient429MinCooldown
+	}
+	if cooldown > kiroTransient429MaxCooldown {
+		return kiroTransient429MaxCooldown
+	}
+	return cooldown
+}
+
+func isKiroQuotaExhausted429(responseBody []byte) bool {
+	if len(responseBody) == 0 {
+		return false
+	}
+
+	var parts []string
+	for _, path := range []string{
+		"__type",
+		"code",
+		"message",
+		"error",
+		"error.code",
+		"error.message",
+		"Error.Code",
+		"Error.Message",
+	} {
+		if value := strings.TrimSpace(gjson.GetBytes(responseBody, path).String()); value != "" {
+			parts = append(parts, value)
+		}
+	}
+	if msg := strings.TrimSpace(extractUpstreamErrorMessage(responseBody)); msg != "" {
+		parts = append(parts, msg)
+	}
+	parts = append(parts, string(responseBody))
+	text := strings.ToLower(strings.Join(parts, " "))
+
+	if strings.Contains(text, "servicequotaexceeded") || strings.Contains(text, "quotaexceeded") {
+		return true
+	}
+	if strings.Contains(text, "quota") && (strings.Contains(text, "exceeded") || strings.Contains(text, "exhausted") || strings.Contains(text, "reached") || strings.Contains(text, "used up")) {
+		return true
+	}
+	if strings.Contains(text, "usage limit") && (strings.Contains(text, "exceeded") || strings.Contains(text, "exhausted") || strings.Contains(text, "reached")) {
+		return true
+	}
+	if strings.Contains(text, "monthly limit") || strings.Contains(text, "subscription limit") || strings.Contains(text, "free trial limit") {
+		return true
+	}
+	return false
 }
 
 // calculateOpenAI429ResetTime 从 OpenAI 429 响应头计算正确的重置时间

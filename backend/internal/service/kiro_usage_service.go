@@ -191,14 +191,35 @@ func (k *KiroUsageLimits) SubscriptionTitle() string {
 }
 
 func (k *KiroUsageLimits) CurrentUsage() float64 {
+	return k.MonthlyCurrentUsage() + k.FreeTrialCurrentUsage() + k.BonusCurrentUsage()
+}
+
+func (k *KiroUsageLimits) UsageLimit() float64 {
+	return k.MonthlyUsageLimit() + k.FreeTrialUsageLimit() + k.BonusUsageLimit()
+}
+
+func (k *KiroUsageLimits) MonthlyCurrentUsage() float64 {
 	breakdown := k.primaryBreakdown()
 	if breakdown == nil {
 		return 0
 	}
-	total := breakdown.CurrentUsageWithPrecision
-	if breakdown.FreeTrialInfo != nil && breakdown.FreeTrialInfo.isActive() {
-		total += breakdown.FreeTrialInfo.CurrentUsageWithPrecision
+	return breakdown.CurrentUsageWithPrecision
+}
+
+func (k *KiroUsageLimits) MonthlyUsageLimit() float64 {
+	breakdown := k.primaryBreakdown()
+	if breakdown == nil {
+		return 0
 	}
+	return breakdown.UsageLimitWithPrecision
+}
+
+func (k *KiroUsageLimits) BonusCurrentUsage() float64 {
+	breakdown := k.primaryBreakdown()
+	if breakdown == nil {
+		return 0
+	}
+	total := 0.0
 	for _, bonus := range breakdown.Bonuses {
 		if bonus.isActive() {
 			total += bonus.CurrentUsage
@@ -207,21 +228,40 @@ func (k *KiroUsageLimits) CurrentUsage() float64 {
 	return total
 }
 
-func (k *KiroUsageLimits) UsageLimit() float64 {
+func (k *KiroUsageLimits) BonusUsageLimit() float64 {
 	breakdown := k.primaryBreakdown()
 	if breakdown == nil {
 		return 0
 	}
-	total := breakdown.UsageLimitWithPrecision
-	if breakdown.FreeTrialInfo != nil && breakdown.FreeTrialInfo.isActive() {
-		total += breakdown.FreeTrialInfo.UsageLimitWithPrecision
-	}
+	total := 0.0
 	for _, bonus := range breakdown.Bonuses {
 		if bonus.isActive() {
 			total += bonus.UsageLimit
 		}
 	}
 	return total
+}
+
+func (k *KiroUsageLimits) FreeTrialCurrentUsage() float64 {
+	breakdown := k.primaryBreakdown()
+	if breakdown == nil {
+		return 0
+	}
+	if breakdown.FreeTrialInfo != nil && breakdown.FreeTrialInfo.isActive() {
+		return breakdown.FreeTrialInfo.CurrentUsageWithPrecision
+	}
+	return 0
+}
+
+func (k *KiroUsageLimits) FreeTrialUsageLimit() float64 {
+	breakdown := k.primaryBreakdown()
+	if breakdown == nil {
+		return 0
+	}
+	if breakdown.FreeTrialInfo != nil && breakdown.FreeTrialInfo.isActive() {
+		return breakdown.FreeTrialInfo.UsageLimitWithPrecision
+	}
+	return 0
 }
 
 func (k *KiroUsageLimits) Remaining() float64 {

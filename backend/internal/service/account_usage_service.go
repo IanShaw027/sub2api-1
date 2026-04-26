@@ -183,6 +183,15 @@ type AICredit struct {
 	MinimumBalance float64 `json:"minimum_balance,omitempty"`
 }
 
+// KiroQuotaBreakdown 表示 Kiro 月度、赠送、试用或总额度的拆分信息。
+type KiroQuotaBreakdown struct {
+	CurrentUsage float64    `json:"current_usage"`
+	UsageLimit   float64    `json:"usage_limit"`
+	Remaining    float64    `json:"remaining"`
+	Utilization  float64    `json:"utilization"`
+	ResetsAt     *time.Time `json:"resets_at,omitempty"`
+}
+
 // UsageInfo 账号使用量信息
 type UsageInfo struct {
 	Source             string         `json:"source,omitempty"`               // "passive" or "active"
@@ -215,10 +224,14 @@ type UsageInfo struct {
 	ModelForwardingRules map[string]string `json:"model_forwarding_rules,omitempty"`
 
 	// Kiro 账号额度信息
-	KiroSubscriptionTitle string  `json:"kiro_subscription_title,omitempty"`
-	KiroCurrentUsage      float64 `json:"kiro_current_usage,omitempty"`
-	KiroUsageLimit        float64 `json:"kiro_usage_limit,omitempty"`
-	KiroRemaining         float64 `json:"kiro_remaining,omitempty"`
+	KiroSubscriptionTitle string              `json:"kiro_subscription_title,omitempty"`
+	KiroCurrentUsage      float64             `json:"kiro_current_usage,omitempty"`
+	KiroUsageLimit        float64             `json:"kiro_usage_limit,omitempty"`
+	KiroRemaining         float64             `json:"kiro_remaining,omitempty"`
+	KiroMonthlyQuota      *KiroQuotaBreakdown `json:"kiro_monthly_quota,omitempty"`
+	KiroBonusQuota        *KiroQuotaBreakdown `json:"kiro_bonus_quota,omitempty"`
+	KiroFreeTrialQuota    *KiroQuotaBreakdown `json:"kiro_free_trial_quota,omitempty"`
+	KiroTotalQuota        *KiroQuotaBreakdown `json:"kiro_total_quota,omitempty"`
 
 	// Antigravity 账号是否被上游禁止 (HTTP 403)
 	IsForbidden     bool   `json:"is_forbidden,omitempty"`
@@ -515,11 +528,19 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 			resetAt = t
 		}
 
+		monthlyQuota := buildKiroQuotaBreakdown(limits.MonthlyCurrentUsage(), limits.MonthlyUsageLimit(), resetAt)
+		bonusQuota := buildKiroQuotaBreakdown(limits.BonusCurrentUsage(), limits.BonusUsageLimit(), nil)
+		freeTrialQuota := buildKiroQuotaBreakdown(limits.FreeTrialCurrentUsage(), limits.FreeTrialUsageLimit(), nil)
+		totalQuota := buildKiroQuotaBreakdown(currentUsage, usageLimit, resetAt)
 		info := &UsageInfo{
 			KiroSubscriptionTitle: limits.SubscriptionTitle(),
 			KiroCurrentUsage:      currentUsage,
 			KiroUsageLimit:        usageLimit,
 			KiroRemaining:         remaining,
+			KiroMonthlyQuota:      monthlyQuota,
+			KiroBonusQuota:        bonusQuota,
+			KiroFreeTrialQuota:    freeTrialQuota,
+			KiroTotalQuota:        totalQuota,
 			KiroQuota: &UsageProgress{
 				Utilization: utilization,
 				ResetsAt:    resetAt,
@@ -606,6 +627,27 @@ func buildKiroDegradedUsage(err error) *UsageInfo {
 	}
 
 	return info
+}
+
+func buildKiroQuotaBreakdown(currentUsage, usageLimit float64, resetAt *time.Time) *KiroQuotaBreakdown {
+	if currentUsage <= 0 && usageLimit <= 0 {
+		return nil
+	}
+	remaining := usageLimit - currentUsage
+	if remaining < 0 {
+		remaining = 0
+	}
+	utilization := 0.0
+	if usageLimit > 0 {
+		utilization = (currentUsage / usageLimit) * 100
+	}
+	return &KiroQuotaBreakdown{
+		CurrentUsage: currentUsage,
+		UsageLimit:   usageLimit,
+		Remaining:    remaining,
+		Utilization:  utilization,
+		ResetsAt:     resetAt,
+	}
 }
 
 func recalcKiroRemainingSeconds(info *UsageInfo) {

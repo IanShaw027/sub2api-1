@@ -284,9 +284,9 @@ func TestKiroGatewayService_ForwardCountTokens_RejectsUnsupportedModel(t *testin
 		Platform: PlatformKiro,
 		Type:     AccountTypeOAuth,
 	}, &ParsedRequest{
-		Model: "claude-opus-4-7",
+		Model: "claude-unknown-9-9",
 		Body: []byte(`{
-			"model":"claude-opus-4-7",
+			"model":"claude-unknown-9-9",
 			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
 		}`),
 	})
@@ -294,6 +294,26 @@ func TestKiroGatewayService_ForwardCountTokens_RejectsUnsupportedModel(t *testin
 	require.Error(t, err)
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.Contains(t, rec.Body.String(), "unsupported kiro model")
+}
+
+func TestMapKiroModel_MatchesClaudeCodeAliasesAgainstConfiguredKiroModels(t *testing.T) {
+	account := &Account{
+		ID:       103,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{
+				"claude-sonnet-4.6":    "claude-sonnet-4.6",
+				"claude-sonnet-4.6-1m": "claude-sonnet-4.6-1m",
+				"claude-opus-4.7":      "claude-opus-4.7",
+				"claude-opus-4.7-1m":   "claude-opus-4.7-1m",
+			},
+		},
+	}
+
+	require.Equal(t, "claude-sonnet-4.6", mapKiroModel(account, "claude-sonnet-4-6"))
+	require.Equal(t, "claude-sonnet-4.6-1m", mapKiroModel(account, "claude-sonnet-4-6-1m"))
+	require.Equal(t, "claude-opus-4.7-1m", mapKiroModel(account, "claude-opus-4-7-1m"))
 }
 
 func TestKiroGatewayService_ForwardCountTokens_RejectsInvalidConversationShape(t *testing.T) {
@@ -500,12 +520,14 @@ func TestKiroGatewayService_Forward_HTTPErrorRecordsOpsContext(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, result)
 	require.Equal(t, http.StatusBadGateway, rec.Code)
+	require.Contains(t, rec.Body.String(), "Kiro upstream returned 400: invalid_request: selected model is not available for this account")
+	require.ErrorContains(t, err, "Kiro upstream returned 400: invalid_request: selected model is not available for this account")
 	statusCodeValue, ok := c.Get(OpsUpstreamStatusCodeKey)
 	require.True(t, ok)
 	require.Equal(t, http.StatusBadRequest, statusCodeValue)
 	messageValue, ok := c.Get(OpsUpstreamErrorMessageKey)
 	require.True(t, ok)
-	require.Equal(t, "Kiro upstream returned 400", messageValue)
+	require.Equal(t, "Kiro upstream returned 400: invalid_request: selected model is not available for this account", messageValue)
 	detailValue, ok := c.Get(OpsUpstreamErrorDetailKey)
 	require.True(t, ok)
 	require.Equal(t, "invalid_request: selected model is not available for this account", detailValue)
@@ -518,7 +540,7 @@ func TestKiroGatewayService_Forward_HTTPErrorRecordsOpsContext(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, events[0].UpstreamStatusCode)
 	require.Equal(t, "kiro-request-123", events[0].UpstreamRequestID)
 	require.Equal(t, "https://q.us-east-1.amazonaws.com/generateAssistantResponse", events[0].UpstreamURL)
-	require.Equal(t, "Kiro upstream returned 400", events[0].Message)
+	require.Equal(t, "Kiro upstream returned 400: invalid_request: selected model is not available for this account", events[0].Message)
 	require.Equal(t, "invalid_request: selected model is not available for this account", events[0].Detail)
 	sentBody, readErr := io.ReadAll(upstream.req.Body)
 	require.NoError(t, readErr)

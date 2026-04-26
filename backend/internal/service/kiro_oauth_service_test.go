@@ -129,6 +129,19 @@ func TestKiroOAuthServiceExchangeCallbackUsesCallbackPathAndLoginOptionForTokenE
 	}
 }
 
+func TestBuildKiroTokenInfoExtractsProfileIDFromARN(t *testing.T) {
+	tokenInfo := buildKiroTokenInfo(map[string]any{
+		"profileArn": "arn:aws:codewhisperer:us-east-1:699475941385:profile/EHGA3GRVQMUK",
+	}, url.Values{}, "social")
+
+	if tokenInfo.ProfileID != "EHGA3GRVQMUK" {
+		t.Fatalf("profile_id mismatch: got=%q", tokenInfo.ProfileID)
+	}
+	if tokenInfo.UserID != "EHGA3GRVQMUK" {
+		t.Fatalf("user_id should use profile_id fallback, got=%q", tokenInfo.UserID)
+	}
+}
+
 func TestKiroOAuthServiceExchangeCallbackUsesCallbackPathForManualFullCallback(t *testing.T) {
 	svc := NewKiroOAuthService(&kiroDefaultProxyRepoStub{}, nil, nil, nil)
 	svc.usageService = nil

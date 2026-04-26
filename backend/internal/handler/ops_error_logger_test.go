@@ -195,6 +195,56 @@ func TestOpsCaptureWriterPool_ResetOnRelease(t *testing.T) {
 	require.Zero(t, reused.buf.Len(), "writer should be reset before reuse")
 }
 
+func TestOpsErrorLoggerMiddleware_RecordsNoAvailableAccounts(t *testing.T) {
+	resetOpsErrorLoggerStateForTest(t)
+	t.Cleanup(func() { resetOpsErrorLoggerStateForTest(t) })
+	gin.SetMode(gin.TestMode)
+
+	// Keep the worker pool disabled so the test can inspect the enqueued job
+	// deterministically instead of racing the async batch writer.
+	opsErrorLogOnce.Do(func() {})
+	opsErrorLogMu.Lock()
+	opsErrorLogQueue = make(chan opsErrorLogJob, 1)
+	opsErrorLogMu.Unlock()
+
+	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := gin.New()
+	r.POST("/backend-api/codex/responses", OpsErrorLoggerMiddleware(ops), func(c *gin.Context) {
+		body := []byte(`{"model":"claude-sonnet-4-5-20250929","input":"hi"}`)
+		setOpsRequestContext(c, "claude-sonnet-4-5-20250929", false, body)
+		setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": gin.H{
+				"message": "No available accounts: no available accounts",
+				"type":    "api_error",
+			},
+			"type": "error",
+		})
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/backend-api/codex/responses", nil)
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	require.Equal(t, int64(1), OpsErrorLogEnqueuedTotal())
+	require.Equal(t, int64(1), OpsErrorLogQueueLength())
+
+	select {
+	case job := <-opsErrorLogQueue:
+		opsErrorLogQueueLen.Add(-1)
+		require.NotNil(t, job.entry)
+		require.Equal(t, "routing", job.entry.ErrorPhase)
+		require.Equal(t, "api_error", job.entry.ErrorType)
+		require.Equal(t, http.StatusServiceUnavailable, job.entry.StatusCode)
+		require.Contains(t, job.entry.ErrorMessage, "No available accounts")
+		require.Equal(t, "gateway", job.entry.ErrorSource)
+		require.Equal(t, "platform", job.entry.ErrorOwner)
+	default:
+		t.Fatal("expected no-available-accounts error to be enqueued")
+	}
+}
+
 func TestOpsErrorLoggerMiddleware_DoesNotBreakOuterMiddlewares(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

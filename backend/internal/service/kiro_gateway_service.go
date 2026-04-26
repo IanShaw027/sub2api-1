@@ -109,11 +109,12 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 				ResponseBody: body,
 			}
 		}
+		upstreamMessage := kiroSafeHTTPStatusErrorMessage("Kiro upstream", resp.StatusCode, body)
 		c.JSON(http.StatusBadGateway, gin.H{
 			"type":  "error",
-			"error": gin.H{"type": "api_error", "message": fmt.Sprintf("Kiro upstream returned %d", resp.StatusCode)},
+			"error": gin.H{"type": "api_error", "message": upstreamMessage},
 		})
-		return nil, fmt.Errorf("kiro upstream returned %d", resp.StatusCode)
+		return nil, fmt.Errorf("%s", upstreamMessage)
 	}
 	inputTokens := kiropkg.EstimateInputTokens(parsed.Body)
 	if parsed.Stream {
@@ -160,10 +161,8 @@ func resolveKiroRequestedModel(account *Account, requestedModel string) (string,
 	if mapKiroModel(account, requestedModel) == "" {
 		return "", fmt.Errorf("unsupported kiro model: %s", requestedModel)
 	}
-	if account != nil {
-		if mappedModel, matched := account.ResolveMappedModel(requestedModel); matched {
-			return mappedModel, nil
-		}
+	if mappedModel, matched := resolveKiroMappedModel(account, requestedModel); matched {
+		return mappedModel, nil
 	}
 	return requestedModel, nil
 }
@@ -983,7 +982,7 @@ func (s *KiroGatewayService) recordOpsHTTPError(c *gin.Context, account *Account
 		requestID,
 		upstreamURL,
 		"http_error",
-		fmt.Sprintf("Kiro upstream returned %d", statusCode),
+		kiroSafeHTTPStatusErrorMessage("Kiro upstream", statusCode, body),
 		detail,
 	)
 }

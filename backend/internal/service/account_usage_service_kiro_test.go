@@ -254,6 +254,70 @@ func TestAccountUsageService_GetUsage_KiroCachesSuccessfulUsage(t *testing.T) {
 	require.GreaterOrEqual(t, second.KiroQuota.RemainingSeconds, 0)
 }
 
+func TestAccountUsageService_GetUsage_KiroSeparatesMonthlyBonusAndFreeTrialQuota(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		ID:       70,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":  "access-token",
+			"refresh_token": "refresh-token",
+		},
+	}
+	repo := &kiroUsageAccountRepo{account: account}
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Body: io.NopCloser(strings.NewReader(`{
+				"subscriptionInfo":{"subscriptionTitle":"Kiro Pro"},
+				"usageBreakdownList":[{
+					"currentUsageWithPrecision":12.5,
+					"usageLimitWithPrecision":100,
+					"nextDateReset":4102444800,
+					"bonuses":[
+						{"currentUsage":2,"usageLimit":20,"status":"ACTIVE"},
+						{"currentUsage":99,"usageLimit":99,"status":"EXPIRED"}
+					],
+					"freeTrialInfo":{
+						"currentUsageWithPrecision":1.5,
+						"usageLimitWithPrecision":10,
+						"freeTrialStatus":"ACTIVE"
+					}
+				}]
+			}`)),
+			Header: make(http.Header),
+		},
+	}
+	svc := &AccountUsageService{
+		accountRepo: repo,
+		usageFetcher: &kiroUsageFetcherStub{
+			upstream: upstream,
+		},
+	}
+
+	usage, err := svc.GetUsage(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.NotNil(t, usage)
+	require.Equal(t, 16.0, usage.KiroCurrentUsage)
+	require.Equal(t, 130.0, usage.KiroUsageLimit)
+	require.Equal(t, 114.0, usage.KiroRemaining)
+	require.NotNil(t, usage.KiroMonthlyQuota)
+	require.Equal(t, 12.5, usage.KiroMonthlyQuota.CurrentUsage)
+	require.Equal(t, 100.0, usage.KiroMonthlyQuota.UsageLimit)
+	require.NotNil(t, usage.KiroBonusQuota)
+	require.Equal(t, 2.0, usage.KiroBonusQuota.CurrentUsage)
+	require.Equal(t, 20.0, usage.KiroBonusQuota.UsageLimit)
+	require.NotNil(t, usage.KiroFreeTrialQuota)
+	require.Equal(t, 1.5, usage.KiroFreeTrialQuota.CurrentUsage)
+	require.Equal(t, 10.0, usage.KiroFreeTrialQuota.UsageLimit)
+	require.NotNil(t, usage.KiroTotalQuota)
+	require.Equal(t, 16.0, usage.KiroTotalQuota.CurrentUsage)
+	require.Equal(t, 130.0, usage.KiroTotalQuota.UsageLimit)
+}
+
 func TestAccountUsageService_GetUsage_KiroRefreshUsesAssignedProxy(t *testing.T) {
 	t.Parallel()
 
