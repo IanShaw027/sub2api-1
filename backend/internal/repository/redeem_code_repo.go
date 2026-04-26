@@ -303,6 +303,82 @@ func (r *redeemCodeRepository) SumPositiveBalanceByUser(ctx context.Context, use
 	return result[0].Sum, nil
 }
 
+func (r *redeemCodeRepository) GetStats(ctx context.Context) (*service.RedeemCodeStats, error) {
+	client := clientFromContext(ctx, r.client)
+
+	total, err := client.RedeemCode.Query().Count(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	stats := &service.RedeemCodeStats{
+		TotalCodes: int64(total),
+		ByType:     map[string]int64{},
+	}
+
+	var valueRows []struct {
+		Sum float64 `json:"sum"`
+	}
+	if err := client.RedeemCode.Query().
+		Aggregate(dbent.As(dbent.Sum(redeemcode.FieldValue), "sum")).
+		Scan(ctx, &valueRows); err != nil {
+		return nil, err
+	}
+	if len(valueRows) > 0 {
+		stats.TotalValue = valueRows[0].Sum
+	}
+
+	var distributedRows []struct {
+		Sum float64 `json:"sum"`
+	}
+	if err := client.RedeemCode.Query().
+		Where(redeemcode.StatusEQ(service.StatusUsed)).
+		Aggregate(dbent.As(dbent.Sum(redeemcode.FieldValue), "sum")).
+		Scan(ctx, &distributedRows); err != nil {
+		return nil, err
+	}
+	if len(distributedRows) > 0 {
+		stats.TotalValueDistributed = distributedRows[0].Sum
+	}
+
+	var statusRows []struct {
+		Status string `json:"status"`
+		Count  int64  `json:"count"`
+	}
+	if err := client.RedeemCode.Query().
+		GroupBy(redeemcode.FieldStatus).
+		Aggregate(dbent.As(dbent.Count(), "count")).
+		Scan(ctx, &statusRows); err != nil {
+		return nil, err
+	}
+	for _, row := range statusRows {
+		switch row.Status {
+		case service.StatusUnused:
+			stats.UnusedCodes = row.Count
+		case service.StatusUsed:
+			stats.UsedCodes = row.Count
+		case service.StatusExpired:
+			stats.ExpiredCodes = row.Count
+		}
+	}
+
+	var typeRows []struct {
+		Type  string `json:"type"`
+		Count int64  `json:"count"`
+	}
+	if err := client.RedeemCode.Query().
+		GroupBy(redeemcode.FieldType).
+		Aggregate(dbent.As(dbent.Count(), "count")).
+		Scan(ctx, &typeRows); err != nil {
+		return nil, err
+	}
+	for _, row := range typeRows {
+		stats.ByType[row.Type] = row.Count
+	}
+
+	return stats, nil
+}
+
 func redeemCodeEntityToService(m *dbent.RedeemCode) *service.RedeemCode {
 	if m == nil {
 		return nil

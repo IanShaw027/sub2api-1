@@ -1799,6 +1799,10 @@ func (stubRedeemCodeRepo) SumPositiveBalanceByUser(ctx context.Context, userID i
 	return 0, errors.New("not implemented")
 }
 
+func (stubRedeemCodeRepo) GetStats(ctx context.Context) (*service.RedeemCodeStats, error) {
+	return &service.RedeemCodeStats{ByType: map[string]int64{}}, nil
+}
+
 type stubUserSubscriptionRepo struct {
 	byUser       map[int64][]service.UserSubscription
 	activeByUser map[int64][]service.UserSubscription

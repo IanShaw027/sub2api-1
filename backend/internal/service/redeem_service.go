@@ -54,6 +54,17 @@ type RedeemCodeRepository interface {
 	ListByUserPaginated(ctx context.Context, userID int64, params pagination.PaginationParams, codeType string) ([]RedeemCode, *pagination.PaginationResult, error)
 	// SumPositiveBalanceByUser returns the total recharged amount (sum of positive balance values) for a user.
 	SumPositiveBalanceByUser(ctx context.Context, userID int64) (float64, error)
+	GetStats(ctx context.Context) (*RedeemCodeStats, error)
+}
+
+type RedeemCodeStats struct {
+	TotalCodes            int64
+	UnusedCodes           int64
+	UsedCodes             int64
+	ExpiredCodes          int64
+	TotalValue            float64
+	TotalValueDistributed float64
+	ByType                map[string]int64
 }
 
 // GenerateCodesRequest 生成兑换码请求
@@ -467,15 +478,26 @@ func (s *RedeemService) Delete(ctx context.Context, id int64) error {
 
 // GetStats 获取兑换码统计信息
 func (s *RedeemService) GetStats(ctx context.Context) (map[string]any, error) {
-	// TODO: 实现统计逻辑
-	// 统计未使用、已使用的兑换码数量
-	// 统计总面值等
-
+	repoStats, err := s.redeemRepo.GetStats(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if repoStats == nil {
+		repoStats = &RedeemCodeStats{}
+	}
+	byType := repoStats.ByType
+	if byType == nil {
+		byType = map[string]int64{}
+	}
 	stats := map[string]any{
-		"total_codes":  0,
-		"unused_codes": 0,
-		"used_codes":   0,
-		"total_value":  0.0,
+		"total_codes":             repoStats.TotalCodes,
+		"unused_codes":            repoStats.UnusedCodes,
+		"used_codes":              repoStats.UsedCodes,
+		"total_value":             repoStats.TotalValue,
+		"active_codes":            repoStats.UnusedCodes,
+		"expired_codes":           repoStats.ExpiredCodes,
+		"total_value_distributed": repoStats.TotalValueDistributed,
+		"by_type":                 byType,
 	}
 
 	return stats, nil

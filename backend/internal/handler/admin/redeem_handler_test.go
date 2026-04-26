@@ -2,16 +2,64 @@ package admin
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type redeemStatsHandlerRepo struct{}
+
+func (redeemStatsHandlerRepo) Create(context.Context, *service.RedeemCode) error {
+	panic("unexpected Create call")
+}
+func (redeemStatsHandlerRepo) CreateBatch(context.Context, []service.RedeemCode) error {
+	panic("unexpected CreateBatch call")
+}
+func (redeemStatsHandlerRepo) GetByID(context.Context, int64) (*service.RedeemCode, error) {
+	panic("unexpected GetByID call")
+}
+func (redeemStatsHandlerRepo) GetByCode(context.Context, string) (*service.RedeemCode, error) {
+	panic("unexpected GetByCode call")
+}
+func (redeemStatsHandlerRepo) Update(context.Context, *service.RedeemCode) error {
+	panic("unexpected Update call")
+}
+func (redeemStatsHandlerRepo) Delete(context.Context, int64) error { panic("unexpected Delete call") }
+func (redeemStatsHandlerRepo) Use(context.Context, int64, int64) error {
+	panic("unexpected Use call")
+}
+func (redeemStatsHandlerRepo) List(context.Context, pagination.PaginationParams) ([]service.RedeemCode, *pagination.PaginationResult, error) {
+	panic("unexpected List call")
+}
+func (redeemStatsHandlerRepo) ListWithFilters(context.Context, pagination.PaginationParams, string, string, string) ([]service.RedeemCode, *pagination.PaginationResult, error) {
+	panic("unexpected ListWithFilters call")
+}
+func (redeemStatsHandlerRepo) ListByUser(context.Context, int64, int) ([]service.RedeemCode, error) {
+	panic("unexpected ListByUser call")
+}
+func (redeemStatsHandlerRepo) ListByUserPaginated(context.Context, int64, pagination.PaginationParams, string) ([]service.RedeemCode, *pagination.PaginationResult, error) {
+	panic("unexpected ListByUserPaginated call")
+}
+func (redeemStatsHandlerRepo) SumPositiveBalanceByUser(context.Context, int64) (float64, error) {
+	panic("unexpected SumPositiveBalanceByUser call")
+}
+func (redeemStatsHandlerRepo) GetStats(context.Context) (*service.RedeemCodeStats, error) {
+	return &service.RedeemCodeStats{
+		TotalCodes:  4,
+		UnusedCodes: 1,
+		UsedCodes:   2,
+		TotalValue:  42,
+		ByType:      map[string]int64{service.RedeemTypeBalance: 4},
+	}, nil
+}
 
 // newCreateAndRedeemHandler creates a RedeemHandler with a non-nil (but minimal)
 // RedeemService so that CreateAndRedeem's nil guard passes and we can test the
@@ -138,4 +186,26 @@ func TestCreateAndRedeem_BalanceIgnoresSubscriptionFields(t *testing.T) {
 
 	assert.NotEqual(t, http.StatusBadRequest, code,
 		"balance type should not require group_id or validity_days")
+}
+
+func TestRedeemHandlerGetStatsUsesRedeemService(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	redeemService := service.NewRedeemService(redeemStatsHandlerRepo{}, nil, nil, nil, nil, nil, nil)
+	handler := NewRedeemHandler(newStubAdminService(), redeemService)
+	router.GET("/api/v1/admin/redeem-codes/stats", handler.GetStats)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/redeem-codes/stats", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var body struct {
+		Data map[string]any `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, float64(4), body.Data["total_codes"])
+	require.Equal(t, float64(1), body.Data["unused_codes"])
+	require.Equal(t, float64(2), body.Data["used_codes"])
+	require.Equal(t, float64(42), body.Data["total_value"])
 }
