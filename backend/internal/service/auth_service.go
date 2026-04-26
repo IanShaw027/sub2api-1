@@ -897,16 +897,18 @@ func (s *AuthService) updateUserSignupSource(ctx context.Context, userID int64, 
 	}
 }
 
-func (s *AuthService) touchUserLogin(ctx context.Context, userID int64) {
+func (s *AuthService) touchUserLogin(ctx context.Context, userID int64) *time.Time {
 	if s == nil || s.entClient == nil || userID <= 0 {
-		return
+		return nil
 	}
 	now := time.Now().UTC()
 	if err := s.entClient.User.UpdateOneID(userID).
 		SetLastLoginAt(now).
 		Exec(ctx); err != nil {
 		logger.LegacyPrintf("service.auth", "[Auth] Failed to touch last login timestamp: user_id=%d err=%v", userID, err)
+		return nil
 	}
+	return &now
 }
 
 func (s *AuthService) backfillEmailIdentityOnSuccessfulLogin(ctx context.Context, user *User) {

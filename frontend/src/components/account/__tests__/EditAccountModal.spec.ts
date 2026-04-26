@@ -544,6 +544,48 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toBeUndefined()
   })
 
+  it('does not clear Kiro OAuth numeric Unix-second expires_at when saved unchanged', async () => {
+    const account = {
+      id: 9,
+      name: 'Kiro OAuth',
+      notes: '',
+      platform: 'kiro',
+      type: 'oauth',
+      credentials: {
+        refresh_token: 'rt-test',
+        expires_at: 1777638600,
+        region: 'us-east-1',
+        auth_method: 'social'
+      },
+      extra: {},
+      proxy_id: null,
+      concurrency: 1,
+      priority: 1,
+      rate_multiplier: 1,
+      status: 'active',
+      group_ids: [],
+      expires_at: null,
+      auto_pause_on_expired: false
+    } as any
+
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    getSettingsMock.mockReset()
+    getWebSearchEmulationConfigMock.mockReset()
+    listTlsFingerprintProfilesMock.mockReset()
+    getSettingsMock.mockResolvedValue({})
+    getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
+    listTlsFingerprintProfilesMock.mockResolvedValue([])
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toBeUndefined()
+  })
+
   it('submits OpenAI compact mode and compact-only model mapping', async () => {
     const account = buildAccount()
     account.extra = {

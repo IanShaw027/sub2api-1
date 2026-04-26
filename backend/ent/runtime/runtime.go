@@ -1833,6 +1833,10 @@ func init() {
 	userDescRpmLimit := userFields[19].Descriptor()
 	// user.DefaultRpmLimit holds the default value on creation for the rpm_limit field.
 	user.DefaultRpmLimit = userDescRpmLimit.Default.(int)
+	// userDescTokenVersion is the schema descriptor for token_version field.
+	userDescTokenVersion := userFields[20].Descriptor()
+	// user.DefaultTokenVersion holds the default value on creation for the token_version field.
+	user.DefaultTokenVersion = userDescTokenVersion.Default.(int64)
 	userallowedgroupFields := schema.UserAllowedGroup{}.Fields()
 	_ = userallowedgroupFields
 	// userallowedgroupDescCreatedAt is the schema descriptor for created_at field.

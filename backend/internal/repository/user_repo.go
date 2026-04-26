@@ -95,6 +95,7 @@ func (r *userRepository) Create(ctx context.Context, userIn *service.User) error
 		SetNillableLastLoginAt(userIn.LastLoginAt).
 		SetNillableLastActiveAt(userIn.LastActiveAt).
 		SetRpmLimit(userIn.RPMLimit).
+		SetTokenVersion(userIn.TokenVersion).
 		Save(txCtx)
 	if err != nil {
 		return translatePersistenceError(err, nil, service.ErrEmailExists)
@@ -222,7 +223,8 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User) error
 		SetNillableBalanceNotifyThreshold(userIn.BalanceNotifyThreshold).
 		SetBalanceNotifyExtraEmails(marshalExtraEmails(userIn.BalanceNotifyExtraEmails)).
 		SetTotalRecharged(userIn.TotalRecharged).
-		SetRpmLimit(userIn.RPMLimit)
+		SetRpmLimit(userIn.RPMLimit).
+		SetTokenVersion(userIn.TokenVersion)
 	if userIn.SignupSource != "" {
 		updateOp = updateOp.SetSignupSource(userIn.SignupSource)
 	}
@@ -935,6 +937,8 @@ func applyUserEntityToService(dst *service.User, src *dbent.User) {
 	dst.SignupSource = src.SignupSource
 	dst.LastLoginAt = src.LastLoginAt
 	dst.LastActiveAt = src.LastActiveAt
+	dst.TokenVersion = src.TokenVersion
+	dst.TokenVersionResolved = false
 	dst.CreatedAt = src.CreatedAt
 	dst.UpdatedAt = src.UpdatedAt
 }

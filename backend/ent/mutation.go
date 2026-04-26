@@ -37455,6 +37455,8 @@ type UserMutation struct {
 	addtotal_recharged            *float64
 	rpm_limit                     *int
 	addrpm_limit                  *int
+	token_version                 *int64
+	addtoken_version              *int64
 	clearedFields                 map[string]struct{}
 	api_keys                      map[int64]struct{}
 	removedapi_keys               map[int64]struct{}
@@ -38602,6 +38604,62 @@ func (m *UserMutation) ResetRpmLimit() {
 	m.addrpm_limit = nil
 }
 
+// SetTokenVersion sets the "token_version" field.
+func (m *UserMutation) SetTokenVersion(i int64) {
+	m.token_version = &i
+	m.addtoken_version = nil
+}
+
+// TokenVersion returns the value of the "token_version" field in the mutation.
+func (m *UserMutation) TokenVersion() (r int64, exists bool) {
+	v := m.token_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTokenVersion returns the old "token_version" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldTokenVersion(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTokenVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTokenVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTokenVersion: %w", err)
+	}
+	return oldValue.TokenVersion, nil
+}
+
+// AddTokenVersion adds i to the "token_version" field.
+func (m *UserMutation) AddTokenVersion(i int64) {
+	if m.addtoken_version != nil {
+		*m.addtoken_version += i
+	} else {
+		m.addtoken_version = &i
+	}
+}
+
+// AddedTokenVersion returns the value that was added to the "token_version" field in this mutation.
+func (m *UserMutation) AddedTokenVersion() (r int64, exists bool) {
+	v := m.addtoken_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTokenVersion resets all changes to the "token_version" field.
+func (m *UserMutation) ResetTokenVersion() {
+	m.token_version = nil
+	m.addtoken_version = nil
+}
+
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by ids.
 func (m *UserMutation) AddAPIKeyIDs(ids ...int64) {
 	if m.api_keys == nil {
@@ -39284,7 +39342,7 @@ func (m *UserMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserMutation) Fields() []string {
-	fields := make([]string, 0, 23)
+	fields := make([]string, 0, 24)
 	if m.created_at != nil {
 		fields = append(fields, user.FieldCreatedAt)
 	}
@@ -39354,6 +39412,9 @@ func (m *UserMutation) Fields() []string {
 	if m.rpm_limit != nil {
 		fields = append(fields, user.FieldRpmLimit)
 	}
+	if m.token_version != nil {
+		fields = append(fields, user.FieldTokenVersion)
+	}
 	return fields
 }
 
@@ -39408,6 +39469,8 @@ func (m *UserMutation) Field(name string) (ent.Value, bool) {
 		return m.TotalRecharged()
 	case user.FieldRpmLimit:
 		return m.RpmLimit()
+	case user.FieldTokenVersion:
+		return m.TokenVersion()
 	}
 	return nil, false
 }
@@ -39463,6 +39526,8 @@ func (m *UserMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldTotalRecharged(ctx)
 	case user.FieldRpmLimit:
 		return m.OldRpmLimit(ctx)
+	case user.FieldTokenVersion:
+		return m.OldTokenVersion(ctx)
 	}
 	return nil, fmt.Errorf("unknown User field %s", name)
 }
@@ -39633,6 +39698,13 @@ func (m *UserMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetRpmLimit(v)
 		return nil
+	case user.FieldTokenVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTokenVersion(v)
+		return nil
 	}
 	return fmt.Errorf("unknown User field %s", name)
 }
@@ -39656,6 +39728,9 @@ func (m *UserMutation) AddedFields() []string {
 	if m.addrpm_limit != nil {
 		fields = append(fields, user.FieldRpmLimit)
 	}
+	if m.addtoken_version != nil {
+		fields = append(fields, user.FieldTokenVersion)
+	}
 	return fields
 }
 
@@ -39674,6 +39749,8 @@ func (m *UserMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedTotalRecharged()
 	case user.FieldRpmLimit:
 		return m.AddedRpmLimit()
+	case user.FieldTokenVersion:
+		return m.AddedTokenVersion()
 	}
 	return nil, false
 }
@@ -39717,6 +39794,13 @@ func (m *UserMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddRpmLimit(v)
+		return nil
+	case user.FieldTokenVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTokenVersion(v)
 		return nil
 	}
 	return fmt.Errorf("unknown User numeric field %s", name)
@@ -39852,6 +39936,9 @@ func (m *UserMutation) ResetField(name string) error {
 		return nil
 	case user.FieldRpmLimit:
 		m.ResetRpmLimit()
+		return nil
+	case user.FieldTokenVersion:
+		m.ResetTokenVersion()
 		return nil
 	}
 	return fmt.Errorf("unknown User field %s", name)

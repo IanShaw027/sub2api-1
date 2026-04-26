@@ -139,11 +139,17 @@ type queuedHTTPUpstreamStub struct {
 	responses     []*http.Response
 	errors        []error
 	requestBodies [][]byte
+	requestURLs   []string
 	callCount     int
 	onCall        func(*http.Request, *queuedHTTPUpstreamStub)
 }
 
 func (s *queuedHTTPUpstreamStub) Do(req *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
+	if req != nil && req.URL != nil {
+		s.requestURLs = append(s.requestURLs, req.URL.String())
+	} else {
+		s.requestURLs = append(s.requestURLs, "")
+	}
 	if req != nil && req.Body != nil {
 		body, _ := io.ReadAll(req.Body)
 		s.requestBodies = append(s.requestBodies, body)
@@ -641,6 +647,13 @@ func TestAntigravityGatewayService_ForwardGemini_BillsWithMappedModel(t *testing
 
 func TestAntigravityGatewayService_ForwardGemini_ModelNotFoundFallbackSuccessRecordsOpsEvents(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	t.Setenv(antigravityForwardBaseURLEnv, "")
+	oldBaseURLs := append([]string(nil), antigravity.BaseURLs...)
+	defer func() {
+		antigravity.BaseURLs = oldBaseURLs
+	}()
+	antigravity.BaseURLs = []string{"https://daily.example.test", "https://prod.example.test"}
+
 	writer := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(writer)
 
@@ -715,6 +728,9 @@ func TestAntigravityGatewayService_ForwardGemini_ModelNotFoundFallbackSuccessRec
 	require.Equal(t, fallbackModel, result.UpstreamModel)
 	require.Len(t, upstream.requestBodies, 2)
 	require.Contains(t, string(upstream.requestBodies[1]), `"model":"`+fallbackModel+`"`)
+	require.Len(t, upstream.requestURLs, 2)
+	require.Contains(t, upstream.requestURLs[0], "https://daily.example.test/")
+	require.Contains(t, upstream.requestURLs[1], "https://daily.example.test/")
 
 	raw, ok := c.Get(OpsUpstreamErrorsKey)
 	require.True(t, ok)
@@ -727,6 +743,7 @@ func TestAntigravityGatewayService_ForwardGemini_ModelNotFoundFallbackSuccessRec
 	require.Equal(t, "model_fallback_success", events[2].Kind)
 	require.Equal(t, http.StatusOK, events[2].UpstreamStatusCode)
 	require.Equal(t, "req-model-fallback-2", events[2].UpstreamRequestID)
+	require.Contains(t, events[2].UpstreamURL, "https://daily.example.test/")
 }
 
 func TestAntigravityGatewayService_ForwardGemini_RetriesCorruptedThoughtSignature(t *testing.T) {

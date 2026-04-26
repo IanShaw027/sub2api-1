@@ -375,12 +375,12 @@ func (s *AuthService) ValidatePasswordCredentials(ctx context.Context, email, pa
 
 // RecordSuccessfulLogin updates last-login activity after a non-standard login
 // flow finishes with a real session.
-func (s *AuthService) RecordSuccessfulLogin(ctx context.Context, userID int64) {
+func (s *AuthService) RecordSuccessfulLogin(ctx context.Context, userID int64) *time.Time {
 	if s != nil && s.userRepo != nil && userID > 0 {
 		user, err := s.userRepo.GetByID(ctx, userID)
 		if err == nil && user != nil && !isReservedEmail(user.Email) {
 			s.backfillEmailIdentityOnSuccessfulLogin(ctx, user)
 		}
 	}
-	s.touchUserLogin(ctx, userID)
+	return s.touchUserLogin(ctx, userID)
 }

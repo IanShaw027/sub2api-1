@@ -54,6 +54,34 @@ func TestUserRepositoryGetByEmailNormalizesLegacySpacingAndCase(t *testing.T) {
 	require.Equal(t, " Legacy@Example.com ", got.Email)
 }
 
+func TestUserRepositoryPersistsTokenVersion(t *testing.T) {
+	repo, _ := newUserEntRepo(t)
+	ctx := context.Background()
+
+	user := &service.User{
+		Email:        "token-version@example.com",
+		Username:     "token-version-user",
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		TokenVersion: 7,
+	}
+	require.NoError(t, repo.Create(ctx, user))
+
+	got, err := repo.GetByID(ctx, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(7), got.TokenVersion)
+	require.False(t, got.TokenVersionResolved)
+
+	got.TokenVersion = 8
+	require.NoError(t, repo.Update(ctx, got))
+
+	reloaded, err := repo.GetByID(ctx, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(8), reloaded.TokenVersion)
+	require.False(t, reloaded.TokenVersionResolved)
+}
+
 func TestUserRepositoryExistsByEmailNormalizesLegacySpacingAndCase(t *testing.T) {
 	repo, _ := newUserEntRepo(t)
 	ctx := context.Background()

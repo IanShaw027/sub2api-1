@@ -2291,7 +2291,8 @@ func (s *AntigravityGatewayService) ForwardGemini(ctx context.Context, c *gin.Co
 
 				fallbackWrapped, err := s.wrapV1InternalRequest(projectID, fallbackModel, injectedBody)
 				if err == nil {
-					fallbackReq, err := antigravity.NewAPIRequest(ctx, upstreamAction, accessToken, fallbackWrapped)
+					fallbackBaseURL := resolveAntigravityForwardBaseURL()
+					fallbackReq, err := antigravity.NewAPIRequestWithURL(ctx, fallbackBaseURL, upstreamAction, accessToken, fallbackWrapped)
 					if err == nil {
 						fallbackStart := time.Now()
 						fallbackResp, err := s.httpUpstream.Do(fallbackReq, proxyURL, account.ID, account.Concurrency)

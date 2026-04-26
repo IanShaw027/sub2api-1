@@ -298,6 +298,49 @@ func TestGeminiMessagesCompatServiceForward_ImageBillingUsesMappedUpstreamModel(
 	require.Contains(t, httpStub.lastReq.URL.String(), "/models/gemini-2.5-flash-image:")
 }
 
+func TestGeminiMessagesCompatServiceForward_OAuthImageBillingUsesMappedUpstreamModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	httpStub := &geminiCompatHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"x-request-id": []string{"gemini-oauth-image-req-1"}},
+			Body:       io.NopCloser(strings.NewReader(`{"candidates":[{"content":{"parts":[{"text":"done"}]}}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}`)),
+		},
+	}
+	svc := &GeminiMessagesCompatService{
+		httpUpstream:  httpStub,
+		cfg:           &config.Config{},
+		tokenProvider: NewGeminiTokenProvider(nil, nil, nil),
+	}
+	account := &Account{
+		ID:       1,
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token": "oauth-token",
+			"expires_at":   time.Now().Add(time.Hour).Format(time.RFC3339),
+			"model_mapping": map[string]any{
+				"draw-alias": "gemini-2.5-flash-image",
+			},
+		},
+	}
+	body := []byte(`{"model":"draw-alias","max_tokens":16,"messages":[{"role":"user","content":"draw a cat"}]}`)
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "draw-alias", result.Model)
+	require.Equal(t, "gemini-2.5-flash-image", result.UpstreamModel)
+	require.Equal(t, 1, result.ImageCount)
+	require.NotNil(t, httpStub.lastReq)
+	require.Contains(t, httpStub.lastReq.URL.String(), "/models/gemini-2.5-flash-image:")
+}
+
 func TestGeminiMessagesCompatServiceForward_NormalizesWebSearchToolForAIStudio(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

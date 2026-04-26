@@ -583,10 +583,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 	}
 
 	originalModel := req.Model
-	mappedModel := req.Model
-	if account.Type == AccountTypeAPIKey {
-		mappedModel = account.GetMappedModel(req.Model)
-	}
+	mappedModel := account.GetMappedModel(req.Model)
 
 	geminiReq, err := convertClaudeMessagesToGeminiGenerateContent(body)
 	if err != nil {
@@ -1100,10 +1097,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 	// `thoughtSignature` to avoid frequent INVALID_ARGUMENT 400s.
 	body = ensureGeminiFunctionCallThoughtSignatures(body)
 
-	mappedModel := originalModel
-	if account.Type == AccountTypeAPIKey {
-		mappedModel = account.GetMappedModel(originalModel)
-	}
+	mappedModel := account.GetMappedModel(originalModel)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -2641,6 +2635,16 @@ func (s *GeminiMessagesCompatService) ForwardAIStudioGET(ctx context.Context, c 
 	}
 	if len(body) > geminiAIStudioGETMaxBodyBytes {
 		setOpsUpstreamError(c, http.StatusBadGateway, "upstream response too large", "")
+		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+			Platform:           account.Platform,
+			AccountID:          account.ID,
+			AccountName:        account.Name,
+			UpstreamStatusCode: http.StatusBadGateway,
+			UpstreamRequestID:  upstreamRequestIDFromHeader(resp.Header),
+			UpstreamURL:        safeUpstreamURL(fullURL),
+			Kind:               "upstream_response_too_large",
+			Message:            "upstream response too large",
+		})
 		return nil, fmt.Errorf("ai studio get upstream response too large: limit=%d", geminiAIStudioGETMaxBodyBytes)
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {

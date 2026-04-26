@@ -3204,16 +3204,19 @@ const ensureAntigravityMixedChannelConfirmed = async (onConfirm: () => Promise<v
 const formatDateTimeLocal = formatDateTimeLocalInput
 const parseDateTimeLocal = parseDateTimeLocalInput
 
-const parseCredentialExpiresAt = (value: string) => {
-  const trimmed = value.trim()
-  if (!trimmed) return new Date(Number.NaN)
-  if (/^\d+$/.test(trimmed)) {
-    return new Date(Number(trimmed) * 1000)
+const parseCredentialExpiresAt = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return new Date(value * 1000)
+  }
+  const trimmed = String(value ?? '').trim()
+	if (!trimmed) return new Date(Number.NaN)
+	if (/^\d+$/.test(trimmed)) {
+		return new Date(Number(trimmed) * 1000)
   }
   return new Date(trimmed)
 }
 
-const formatCredentialDateTimeLocal = (value: string) => {
+const formatCredentialDateTimeLocal = (value: unknown) => {
   const parsed = parseCredentialExpiresAt(value)
   if (Number.isNaN(parsed.getTime())) return ''
   const year = parsed.getFullYear()
@@ -3226,6 +3229,7 @@ const formatCredentialDateTimeLocal = (value: string) => {
 
 const readCredentialString = (credentials: Record<string, unknown>, key: string) => {
   const value = credentials[key]
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
   return typeof value === 'string' ? value.trim() : ''
 }
 

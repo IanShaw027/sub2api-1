@@ -78,8 +78,11 @@ func TestGeminiMessagesCompatService_ForwardAIStudioGET_TooLargeBodyReturnsError
 	upstream := &geminiCompatHTTPUpstreamStub{
 		response: &http.Response{
 			StatusCode: http.StatusOK,
-			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body:       io.NopCloser(strings.NewReader(oversized)),
+			Header: http.Header{
+				"Content-Type": []string{"application/json"},
+				"X-Request-Id": []string{"rid-aistudio-too-large"},
+			},
+			Body: io.NopCloser(strings.NewReader(oversized)),
 		},
 	}
 
@@ -106,6 +109,16 @@ func TestGeminiMessagesCompatService_ForwardAIStudioGET_TooLargeBodyReturnsError
 	upstreamMessage, ok := c.Get(OpsUpstreamErrorMessageKey)
 	require.True(t, ok)
 	require.Equal(t, "upstream response too large", upstreamMessage)
+
+	raw, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := raw.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 1)
+	require.Equal(t, "upstream_response_too_large", events[0].Kind)
+	require.Equal(t, http.StatusBadGateway, events[0].UpstreamStatusCode)
+	require.Equal(t, "rid-aistudio-too-large", events[0].UpstreamRequestID)
+	require.Contains(t, events[0].UpstreamURL, "/v1beta/models")
 }
 
 func TestGeminiMessagesCompatService_ForwardAIStudioGET_ReadErrorRecordsOpsContext(t *testing.T) {

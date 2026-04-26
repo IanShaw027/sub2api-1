@@ -668,6 +668,79 @@ func TestGatewayService_Forward_NativeMessagesSignatureRetryRequestErrorRecordsF
 	require.Equal(t, strings.TrimSpace(string(originalBody)), strings.TrimSpace(string(bodyBytes)))
 }
 
+func TestGatewayService_Forward_NativeMessagesBudgetRetryFinalHTTPErrorUsesRectifiedBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	upstream := &queuedGatewayOpsUpstream{
+		attempts: []queuedGatewayOpsAttempt{
+			{
+				statusCode: http.StatusBadRequest,
+				requestID:  "rid-budget-original",
+				body:       `{"error":{"message":"thinking.budget_tokens input should be greater than or equal to 1024","type":"invalid_request_error"}}`,
+			},
+			{
+				statusCode: http.StatusBadRequest,
+				requestID:  "rid-budget-rectified",
+				body:       `{"error":{"message":"rectified budget retry still invalid","type":"invalid_request_error"}}`,
+			},
+		},
+	}
+
+	svc := &GatewayService{
+		cfg: &config.Config{
+			Gateway: config.GatewayConfig{
+				MaxLineSize:                  defaultMaxLineSize,
+				LogUpstreamErrorBody:         true,
+				LogUpstreamErrorBodyMaxBytes: 1024,
+			},
+		},
+		httpUpstream:     upstream,
+		rateLimitService: &RateLimitService{},
+		settingService:   &SettingService{settingRepo: &countTokensSettingRepoStub{}},
+	}
+
+	account := newAnthropicAPIKeyAccountForTest()
+	account.ID = 409
+	account.Name = "anthropic-native-budget-retry-final"
+	account.Extra = nil
+
+	originalBody := []byte(`{"model":"claude-3-5-sonnet","thinking":{"type":"enabled","budget_tokens":1200},"max_tokens":1000,"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}],"stream":false}`)
+	result, err := svc.Forward(context.Background(), c, account, &ParsedRequest{
+		Body:   originalBody,
+		Model:  "claude-3-5-sonnet",
+		Stream: false,
+	})
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Equal(t, 2, upstream.calls, "budget rectifier should perform one retry attempt")
+
+	rectifiedBody, applied := RectifyThinkingBudget(originalBody)
+	require.True(t, applied)
+	rectifiedBodyString := strings.TrimSpace(string(rectifiedBody))
+
+	rawEvents, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := rawEvents.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 2)
+	require.Equal(t, "budget_constraint_error", events[0].Kind)
+	require.Equal(t, strings.TrimSpace(string(originalBody)), events[0].UpstreamRequestBody)
+	require.Equal(t, "http_error", events[1].Kind)
+	require.Equal(t, "rid-budget-rectified", events[1].UpstreamRequestID)
+	require.Equal(t, rectifiedBodyString, events[1].UpstreamRequestBody)
+
+	rawBody, ok := c.Get(OpsUpstreamRequestBodyKey)
+	require.True(t, ok)
+	bodyBytes, ok := rawBody.([]byte)
+	require.True(t, ok)
+	require.Equal(t, rectifiedBodyString, strings.TrimSpace(string(bodyBytes)))
+}
+
 func TestGatewayService_Forward_NativeMessagesToolDowngradeRetryRequestErrorUsesToolFilteredBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

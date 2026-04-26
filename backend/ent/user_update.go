@@ -410,6 +410,27 @@ func (_u *UserUpdate) AddRpmLimit(v int) *UserUpdate {
 	return _u
 }
 
+// SetTokenVersion sets the "token_version" field.
+func (_u *UserUpdate) SetTokenVersion(v int64) *UserUpdate {
+	_u.mutation.ResetTokenVersion()
+	_u.mutation.SetTokenVersion(v)
+	return _u
+}
+
+// SetNillableTokenVersion sets the "token_version" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableTokenVersion(v *int64) *UserUpdate {
+	if v != nil {
+		_u.SetTokenVersion(*v)
+	}
+	return _u
+}
+
+// AddTokenVersion adds value to the "token_version" field.
+func (_u *UserUpdate) AddTokenVersion(v int64) *UserUpdate {
+	_u.mutation.AddTokenVersion(v)
+	return _u
+}
+
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by IDs.
 func (_u *UserUpdate) AddAPIKeyIDs(ids ...int64) *UserUpdate {
 	_u.mutation.AddAPIKeyIDs(ids...)
@@ -1034,6 +1055,12 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedRpmLimit(); ok {
 		_spec.AddField(user.FieldRpmLimit, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.TokenVersion(); ok {
+		_spec.SetField(user.FieldTokenVersion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedTokenVersion(); ok {
+		_spec.AddField(user.FieldTokenVersion, field.TypeInt64, value)
 	}
 	if _u.mutation.APIKeysCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -1978,6 +2005,27 @@ func (_u *UserUpdateOne) AddRpmLimit(v int) *UserUpdateOne {
 	return _u
 }
 
+// SetTokenVersion sets the "token_version" field.
+func (_u *UserUpdateOne) SetTokenVersion(v int64) *UserUpdateOne {
+	_u.mutation.ResetTokenVersion()
+	_u.mutation.SetTokenVersion(v)
+	return _u
+}
+
+// SetNillableTokenVersion sets the "token_version" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableTokenVersion(v *int64) *UserUpdateOne {
+	if v != nil {
+		_u.SetTokenVersion(*v)
+	}
+	return _u
+}
+
+// AddTokenVersion adds value to the "token_version" field.
+func (_u *UserUpdateOne) AddTokenVersion(v int64) *UserUpdateOne {
+	_u.mutation.AddTokenVersion(v)
+	return _u
+}
+
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by IDs.
 func (_u *UserUpdateOne) AddAPIKeyIDs(ids ...int64) *UserUpdateOne {
 	_u.mutation.AddAPIKeyIDs(ids...)
@@ -2632,6 +2680,12 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 	}
 	if value, ok := _u.mutation.AddedRpmLimit(); ok {
 		_spec.AddField(user.FieldRpmLimit, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.TokenVersion(); ok {
+		_spec.SetField(user.FieldTokenVersion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedTokenVersion(); ok {
+		_spec.AddField(user.FieldTokenVersion, field.TypeInt64, value)
 	}
 	if _u.mutation.APIKeysCleared() {
 		edge := &sqlgraph.EdgeSpec{
