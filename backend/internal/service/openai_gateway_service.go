@@ -4655,8 +4655,21 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 		errType = "api_error"
 	}
 
-	writeError(c, resp.StatusCode, errType, upstreamMsg)
+	writeError(c, resp.StatusCode, errType, safeCompatUpstreamErrorMessage(resp.StatusCode))
 	return nil, fmt.Errorf("upstream error: %d %s", resp.StatusCode, upstreamMsg)
+}
+
+func safeCompatUpstreamErrorMessage(statusCode int) string {
+	switch {
+	case statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden:
+		return "Upstream authentication failed"
+	case statusCode == http.StatusTooManyRequests:
+		return "Upstream rate limit exceeded"
+	case statusCode >= http.StatusInternalServerError:
+		return "Upstream service temporarily unavailable"
+	default:
+		return "Upstream request failed"
+	}
 }
 
 // openaiStreamingResult streaming response result

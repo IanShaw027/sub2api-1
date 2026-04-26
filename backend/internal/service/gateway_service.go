@@ -568,6 +568,32 @@ type GatewayService struct {
 	balanceNotifyService  *BalanceNotifyService
 }
 
+func (s *GatewayService) logUpstreamError(prefix string, account *Account, resp *http.Response, body []byte) {
+	accountID := int64(0)
+	accountName := ""
+	if account != nil {
+		accountID = account.ID
+		accountName = account.Name
+	}
+	status := 0
+	requestID := ""
+	if resp != nil {
+		status = resp.StatusCode
+		requestID = resp.Header.Get("x-request-id")
+	}
+	if s != nil && s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
+		maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
+		if maxBytes <= 0 {
+			maxBytes = 1000
+		}
+		logger.LegacyPrintf("service.gateway", "%s: Account=%d(%s) Status=%d RequestID=%s Body=%s",
+			prefix, accountID, accountName, status, requestID, truncateString(string(body), maxBytes))
+		return
+	}
+	logger.LegacyPrintf("service.gateway", "%s: Account=%d(%s) Status=%d RequestID=%s Body=<redacted>",
+		prefix, accountID, accountName, status, requestID)
+}
+
 // NewGatewayService creates a new GatewayService
 func NewGatewayService(
 	accountRepo AccountRepository,
@@ -4619,9 +4645,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 			_ = resp.Body.Close()
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
 
-			// 调试日志：打印重试耗尽后的错误响应
-			logger.LegacyPrintf("service.gateway", "[Forward] Upstream error (retry exhausted, failover): Account=%d(%s) Status=%d RequestID=%s Body=%s",
-				account.ID, account.Name, resp.StatusCode, resp.Header.Get("x-request-id"), truncateString(string(respBody), 1000))
+			s.logUpstreamError("[Forward] Upstream error (retry exhausted, failover)", account, resp, respBody)
 
 			s.handleRetryExhaustedSideEffects(ctx, resp, account)
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -4655,9 +4679,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
 
-		// 调试日志：打印上游错误响应
-		logger.LegacyPrintf("service.gateway", "[Forward] Upstream error (failover): Account=%d(%s) Status=%d RequestID=%s Body=%s",
-			account.ID, account.Name, resp.StatusCode, resp.Header.Get("x-request-id"), truncateString(string(respBody), 1000))
+		s.logUpstreamError("[Forward] Upstream error (failover)", account, resp, respBody)
 
 		s.handleFailoverSideEffects(ctx, resp, account)
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -4944,8 +4966,7 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 			_ = resp.Body.Close()
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
 
-			logger.LegacyPrintf("service.gateway", "[Anthropic Passthrough] Upstream error (retry exhausted, failover): Account=%d(%s) Status=%d RequestID=%s Body=%s",
-				account.ID, account.Name, resp.StatusCode, resp.Header.Get("x-request-id"), truncateString(string(respBody), 1000))
+			s.logUpstreamError("[Anthropic Passthrough] Upstream error (retry exhausted, failover)", account, resp, respBody)
 
 			s.handleRetryExhaustedSideEffects(ctx, resp, account)
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -4979,8 +5000,7 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
 
-		logger.LegacyPrintf("service.gateway", "[Anthropic Passthrough] Upstream error (failover): Account=%d(%s) Status=%d RequestID=%s Body=%s",
-			account.ID, account.Name, resp.StatusCode, resp.Header.Get("x-request-id"), truncateString(string(respBody), 1000))
+		s.logUpstreamError("[Anthropic Passthrough] Upstream error (failover)", account, resp, respBody)
 
 		s.handleFailoverSideEffects(ctx, resp, account)
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{

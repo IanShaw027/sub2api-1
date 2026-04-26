@@ -52,6 +52,28 @@ func TestNormalizeResponsesBodyServiceTier(t *testing.T) {
 	require.False(t, gjson.GetBytes(body, "service_tier").Exists())
 }
 
+func TestHandleCompatErrorResponseDoesNotExposeUpstreamMessageByDefault(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+	account := &Account{ID: 1, Name: "openai-oauth", Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	resp := &http.Response{
+		StatusCode: http.StatusForbidden,
+		Header:     http.Header{"x-request-id": []string{"rid-sensitive"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"sensitive prompt fragment access_token=secret"}}`)),
+	}
+
+	_, err := svc.handleCompatErrorResponse(resp, c, account, writeChatCompletionsError)
+	require.Error(t, err)
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.NotContains(t, rec.Body.String(), "sensitive prompt fragment")
+	require.NotContains(t, rec.Body.String(), "secret")
+	require.Contains(t, rec.Body.String(), "Upstream authentication failed")
+}
+
 func TestForwardAsChatCompletions_OAuth_OrdersPromptCacheKeyBeforeInputAfterCodexTransform(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)

@@ -362,6 +362,7 @@ func AccountFromService(a *service.Account) *Account {
 		return nil
 	}
 	out := AccountFromServiceShallow(a)
+	out.Credentials = sanitizeAccountCredentialsForList(out.Credentials)
 	out.Proxy = ProxyFromService(a.Proxy)
 	if len(a.AccountGroups) > 0 {
 		out.AccountGroups = make([]AccountGroup, 0, len(a.AccountGroups))
@@ -384,7 +385,6 @@ func AccountFromServiceList(a *service.Account) *Account {
 	if out == nil {
 		return nil
 	}
-	out.Credentials = sanitizeAccountCredentialsForList(out.Credentials)
 	return out
 }
 

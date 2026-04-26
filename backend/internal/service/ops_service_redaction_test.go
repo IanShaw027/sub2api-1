@@ -1,8 +1,11 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestIsSensitiveKey_TokenBudgetKeysNotRedacted(t *testing.T) {
@@ -96,4 +99,27 @@ func TestShrinkToEssentials_IncludesThinking(t *testing.T) {
 	if _, ok := out["thinking"]; !ok {
 		t.Fatalf("expected thinking to be included in essentials: %#v", out)
 	}
+}
+
+func TestGetErrorLogByIDSanitizesStoredRequestDetails(t *testing.T) {
+	t.Parallel()
+
+	svc := NewOpsService(&opsRepoMock{
+		GetErrorLogByIDFn: func(ctx context.Context, id int64) (*OpsErrorLogDetail, error) {
+			return &OpsErrorLogDetail{
+				RequestBody:    `{"model":"claude-3","access_token":"secret-token","messages":[{"role":"user","content":"hi"}]}`,
+				RequestHeaders: `{"authorization":"Bearer secret","cookie":"sid=secret","anthropic-version":"2023-06-01"}`,
+			}, nil
+		},
+	}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	detail, err := svc.GetErrorLogByID(context.Background(), 123)
+	require.NoError(t, err)
+	require.NotContains(t, detail.RequestBody, "secret-token")
+	require.Contains(t, detail.RequestBody, `"access_token":"[REDACTED]"`)
+	require.NotContains(t, detail.RequestHeaders, "Bearer secret")
+	require.NotContains(t, detail.RequestHeaders, "sid=secret")
+	require.Contains(t, detail.RequestHeaders, `"authorization":"[REDACTED]"`)
+	require.Contains(t, detail.RequestHeaders, `"cookie":"[REDACTED]"`)
+	require.Contains(t, detail.RequestHeaders, `"anthropic-version":"2023-06-01"`)
 }

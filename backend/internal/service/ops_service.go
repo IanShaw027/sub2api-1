@@ -360,7 +360,27 @@ func (s *OpsService) GetErrorLogByID(ctx context.Context, id int64) (*OpsErrorLo
 		}
 		return nil, infraerrors.InternalServer("OPS_ERROR_LOAD_FAILED", "Failed to load ops error log").WithCause(err)
 	}
+	sanitizeOpsErrorLogDetailForOutput(detail)
 	return detail, nil
+}
+
+func sanitizeOpsErrorLogDetailForOutput(detail *OpsErrorLogDetail) {
+	if detail == nil {
+		return
+	}
+	detail.RequestBody = sanitizeStoredOpsJSONForOutput(detail.RequestBody, opsMaxStoredRequestBodyBytes)
+	detail.RequestHeaders = sanitizeStoredOpsJSONForOutput(detail.RequestHeaders, 16*1024)
+}
+
+func sanitizeStoredOpsJSONForOutput(raw string, maxBytes int) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "null" {
+		return ""
+	}
+	if sanitized, _, _ := sanitizeAndTrimRequestBody([]byte(raw), maxBytes); sanitized != "" {
+		return sanitized
+	}
+	return truncateString(raw, maxBytes)
 }
 
 func (s *OpsService) ListRetryAttemptsByErrorID(ctx context.Context, errorID int64, limit int) ([]*OpsRetryAttempt, error) {
