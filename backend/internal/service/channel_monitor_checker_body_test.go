@@ -17,7 +17,7 @@ import (
 func swapMonitorHTTPClient(t *testing.T) {
 	t.Helper()
 	orig := monitorHTTPClient
-	monitorHTTPClient = &http.Client{Timeout: 5 * time.Second}
+	monitorHTTPClient = &http.Client{Timeout: 5 * time.Second, CheckRedirect: blockMonitorRedirect}
 	t.Cleanup(func() { monitorHTTPClient = orig })
 }
 
@@ -88,9 +88,12 @@ func TestRunCheckForModel_MergeMode_UserFieldsWinButDenyListProtects(t *testing.
 			"messages":   []any{},        // 同上，被挡
 		},
 		ExtraHeaders: map[string]string{
-			"User-Agent":     "claude-cli/1.0",
-			"Content-Length": "999", // 黑名单
-			"x-custom":       "ok",
+			"User-Agent":        "claude-cli/1.0",
+			"Content-Length":    "999", // 黑名单
+			"x-api-key":         "attacker",
+			"Authorization":     "Bearer attacker",
+			"anthropic-version": "bad-version",
+			"x-custom":          "ok",
 		},
 	}
 	_ = runCheckForModel(context.Background(), MonitorProviderAnthropic, endpoint, "sk-fake", "claude-x", opts)
@@ -117,6 +120,15 @@ func TestRunCheckForModel_MergeMode_UserFieldsWinButDenyListProtects(t *testing.
 	}
 	if h.lastHeaders.Get("x-custom") != "ok" {
 		t.Errorf("extra custom header should be present, got %q", h.lastHeaders.Get("x-custom"))
+	}
+	if h.lastHeaders.Get("x-api-key") != "sk-fake" {
+		t.Errorf("x-api-key should keep adapter credential, got %q", h.lastHeaders.Get("x-api-key"))
+	}
+	if h.lastHeaders.Get("Authorization") != "" {
+		t.Errorf("authorization should be blocked for Anthropic checks, got %q", h.lastHeaders.Get("Authorization"))
+	}
+	if h.lastHeaders.Get("anthropic-version") != monitorAnthropicAPIVersion {
+		t.Errorf("anthropic-version should keep adapter protocol value, got %q", h.lastHeaders.Get("anthropic-version"))
 	}
 	// Content-Length 黑名单：会被 net/http 自动重算，但不应由用户的 "999" 决定。
 	// 我们无法直接断言丢弃（http.Client 总会填上），只断言请求成功即可。
@@ -169,5 +181,35 @@ func TestRunCheckForModel_ReplaceMode_EmptyResponseIsFailed(t *testing.T) {
 	}
 	if !strings.Contains(res.Message, "replace-mode") {
 		t.Errorf("failure message should hint replace-mode, got %q", res.Message)
+	}
+}
+
+func TestPostRawJSON_DoesNotFollowRedirects(t *testing.T) {
+	swapMonitorHTTPClient(t)
+
+	targetHit := false
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		targetHit = true
+		if r.Header.Get("x-api-key") != "" {
+			t.Errorf("credential header leaked to redirect target: %q", r.Header.Get("x-api-key"))
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(target.Close)
+
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusFound)
+	}))
+	t.Cleanup(redirector.Close)
+
+	_, status, err := postRawJSON(context.Background(), redirector.URL, []byte(`{}`), map[string]string{"x-api-key": "sk-fake"})
+	if err != nil {
+		t.Fatalf("postRawJSON should return the redirect response without error, got %v", err)
+	}
+	if status != http.StatusFound {
+		t.Fatalf("expected redirect status %d, got %d", http.StatusFound, status)
+	}
+	if targetHit {
+		t.Fatal("monitor HTTP client followed redirect to target")
 	}
 }

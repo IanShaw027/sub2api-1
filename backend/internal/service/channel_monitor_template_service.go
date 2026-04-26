@@ -206,14 +206,20 @@ func validateBodyModeParams(mode string, body map[string]any) error {
 // headerNameRegex 合法 header 名：RFC 7230 token（ASCII 可见字符减特殊符号）。
 var headerNameRegex = regexp.MustCompile(`^[A-Za-z0-9!#$%&'*+\-.^_` + "`" + `|~]+$`)
 
-// forbiddenHeaderNames hop-by-hop + HTTP 客户端自管的 header；禁止用户覆盖，
-// 否则会让 Go http.Client 行为异常（双重 Content-Length、连接复用错乱等）。
+// forbiddenHeaderNames 禁止用户覆盖 hop-by-hop、HTTP 客户端自管、provider 鉴权与协议 header，
+// 避免连接行为异常、凭证替换以及 provider 协议约束被模板绕过。
 var forbiddenHeaderNames = map[string]bool{
 	"host":              true,
 	"content-length":    true,
 	"content-encoding":  true,
 	"transfer-encoding": true,
 	"connection":        true,
+
+	"authorization":       true,
+	"proxy-authorization": true,
+	"x-api-key":           true,
+	"x-goog-api-key":      true,
+	"anthropic-version":   true,
 }
 
 // IsForbiddenHeaderName 对外暴露，checker 运行时也会再过滤一次做兜底。

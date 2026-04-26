@@ -34,13 +34,17 @@ func newSSRFSafeHTTPClient(timeout time.Duration) *http.Client {
 		TLSHandshakeTimeout:   monitorTLSHandshakeTimeout,
 		ResponseHeaderTimeout: monitorResponseHeaderTimeout,
 	}
-	return &http.Client{Timeout: timeout, Transport: tr}
+	return &http.Client{Timeout: timeout, Transport: tr, CheckRedirect: blockMonitorRedirect}
+}
+
+func blockMonitorRedirect(_ *http.Request, _ []*http.Request) error {
+	return http.ErrUseLastResponse
 }
 
 // CheckOptions 承载一次检测的自定义入参。
 // 所有字段都是可选（零值即等价于"用默认行为"）。
 type CheckOptions struct {
-	// ExtraHeaders 用户自定义 HTTP 头（merge 到 adapter 默认 headers，用户优先）。
+	// ExtraHeaders 用户自定义 HTTP 头；允许覆盖普通头，但禁止覆盖鉴权/协议/客户端自管头。
 	ExtraHeaders map[string]string
 	// BodyOverrideMode: off | merge | replace
 	BodyOverrideMode string

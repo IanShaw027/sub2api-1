@@ -363,6 +363,21 @@ func TestGetWebhookProvidersRejectAmbiguousFallbackForNonWxpay(t *testing.T) {
 	require.Contains(t, err.Error(), "ambiguous")
 }
 
+func TestGetWebhookProvidersUnknownOrderReturnsSentinel(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        payment.NewRegistry(),
+		providersLoaded: true,
+	}
+
+	_, err := svc.GetWebhookProviders(ctx, payment.TypeStripe, "sub2_missing_webhook_order")
+	require.ErrorIs(t, err, ErrOrderNotFound)
+	require.Contains(t, err.Error(), "sub2_missing_webhook_order")
+}
+
 func TestGetWebhookProvidersReturnsOrderLookupError(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)

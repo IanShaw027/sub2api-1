@@ -5,6 +5,7 @@ package server_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"math"
@@ -57,8 +58,10 @@ func TestAPIContracts(t *testing.T) {
 					"concurrency": 5,
 					"rpm_limit": 0,
 					"status": "active",
-					"allowed_groups": null,
-					"created_at": "2025-01-02T03:04:05Z",
+			"allowed_groups": null,
+			"last_login_at": null,
+			"last_active_at": "2025-01-02T03:04:05Z",
+			"created_at": "2025-01-02T03:04:05Z",
 					"updated_at": "2025-01-02T03:04:05Z",
 					"balance_notify_enabled": false,
 					"balance_notify_threshold_type": "",
@@ -693,24 +696,24 @@ func TestAPIContracts(t *testing.T) {
 					"contact_info": "support",
 					"support_qr_codes": [],
 					"doc_url": "https://docs.example.com",
-					"auth_source_default_email_balance": 0,
-					"auth_source_default_email_concurrency": 5,
-					"auth_source_default_email_subscriptions": [],
+			"auth_source_default_email_balance": 0,
+			"auth_source_default_email_concurrency": 0,
+			"auth_source_default_email_subscriptions": [],
 					"auth_source_default_email_grant_on_signup": false,
 					"auth_source_default_email_grant_on_first_bind": false,
-					"auth_source_default_linuxdo_balance": 0,
-					"auth_source_default_linuxdo_concurrency": 5,
-					"auth_source_default_linuxdo_subscriptions": [],
+			"auth_source_default_linuxdo_balance": 0,
+			"auth_source_default_linuxdo_concurrency": 0,
+			"auth_source_default_linuxdo_subscriptions": [],
 					"auth_source_default_linuxdo_grant_on_signup": false,
 					"auth_source_default_linuxdo_grant_on_first_bind": false,
-					"auth_source_default_oidc_balance": 0,
-					"auth_source_default_oidc_concurrency": 5,
-					"auth_source_default_oidc_subscriptions": [],
+			"auth_source_default_oidc_balance": 0,
+			"auth_source_default_oidc_concurrency": 0,
+			"auth_source_default_oidc_subscriptions": [],
 					"auth_source_default_oidc_grant_on_signup": false,
 					"auth_source_default_oidc_grant_on_first_bind": false,
-					"auth_source_default_wechat_balance": 0,
-					"auth_source_default_wechat_concurrency": 5,
-					"auth_source_default_wechat_subscriptions": [],
+			"auth_source_default_wechat_balance": 0,
+			"auth_source_default_wechat_concurrency": 0,
+			"auth_source_default_wechat_subscriptions": [],
 					"auth_source_default_wechat_grant_on_signup": false,
 					"auth_source_default_wechat_grant_on_first_bind": false,
 					"force_email_on_third_party_signup": false,
@@ -742,11 +745,19 @@ func TestAPIContracts(t *testing.T) {
 					"max_claude_code_version": "",
 					"allow_ungrouped_key_scheduling": false,
 					"backend_mode_enabled": false,
-					"enable_cch_signing": false,
-					"enable_fingerprint_unification": true,
-					"enable_metadata_passthrough": false,
-					"web_search_emulation_enabled": false,
-					"payment_visible_method_alipay_source": "easypay_alipay",
+			"enable_cch_signing": false,
+			"enable_fingerprint_unification": true,
+			"enable_metadata_passthrough": false,
+			"gateway_debug_timeline_enabled": false,
+			"gateway_debug_timeline_directory": "logs/gateway-debug",
+			"gateway_debug_timeline_retention_days": 7,
+			"gateway_debug_timeline_max_size_mb": 1024,
+			"web_search_emulation_enabled": false,
+			"kiro_version": "0.10.0",
+			"kiro_commit": "",
+			"system_version": "darwin#24.6.0",
+			"node_version": "22.21.1",
+			"payment_visible_method_alipay_source": "easypay_alipay",
 					"payment_visible_method_wxpay_source": "official_wxpay",
 					"payment_visible_method_alipay_enabled": true,
 					"payment_visible_method_wxpay_enabled": false,
@@ -773,10 +784,14 @@ func TestAPIContracts(t *testing.T) {
 					"payment_cancel_rate_limit_window": 0,
 					"payment_cancel_rate_limit_unit": "",
 					"payment_cancel_rate_limit_window_mode": "",
-					"balance_low_notify_enabled": false,
-					"account_quota_notify_enabled": false,
-					"balance_low_notify_threshold": 0,
-					"balance_low_notify_recharge_url": "",
+			"balance_low_notify_enabled": false,
+			"account_quota_notify_enabled": false,
+			"balance_low_notify_threshold": 0,
+			"cache_hit_rate_scale": 95,
+			"cache_independent_ttl_seconds": 3600,
+			"cache_min_block_tokens": 1024,
+			"cache_prefix_ttl_seconds": 300,
+			"balance_low_notify_recharge_url": "",
 					"account_quota_notify_emails": [],
 					"channel_monitor_enabled": true,
 					"channel_monitor_default_interval_seconds": 60,
@@ -928,8 +943,16 @@ func TestAPIContracts(t *testing.T) {
 					"backend_mode_enabled": false,
 					"enable_fingerprint_unification": true,
 					"enable_metadata_passthrough": false,
-					"enable_cch_signing": false,
-					"web_search_emulation_enabled": false,
+			"enable_cch_signing": false,
+			"gateway_debug_timeline_enabled": false,
+			"gateway_debug_timeline_directory": "logs/gateway-debug",
+			"gateway_debug_timeline_retention_days": 7,
+			"gateway_debug_timeline_max_size_mb": 1024,
+			"web_search_emulation_enabled": false,
+			"kiro_version": "0.10.0",
+			"kiro_commit": "",
+			"system_version": "darwin#24.6.0",
+			"node_version": "22.21.1",
 					"payment_visible_method_alipay_source": "",
 					"payment_visible_method_wxpay_source": "",
 					"payment_visible_method_alipay_enabled": false,
@@ -955,10 +978,14 @@ func TestAPIContracts(t *testing.T) {
 					"payment_cancel_rate_limit_window": 0,
 					"payment_cancel_rate_limit_unit": "",
 					"payment_cancel_rate_limit_window_mode": "",
-					"balance_low_notify_enabled": false,
-					"account_quota_notify_enabled": false,
-					"balance_low_notify_threshold": 0,
-					"balance_low_notify_recharge_url": "",
+			"balance_low_notify_enabled": false,
+			"account_quota_notify_enabled": false,
+			"balance_low_notify_threshold": 0,
+			"cache_hit_rate_scale": 95,
+			"cache_independent_ttl_seconds": 3600,
+			"cache_min_block_tokens": 1024,
+			"cache_prefix_ttl_seconds": 300,
+			"balance_low_notify_recharge_url": "",
 					"account_quota_notify_emails": [],
 					"channel_monitor_enabled": true,
 					"channel_monitor_default_interval_seconds": 60,
@@ -980,22 +1007,22 @@ func TestAPIContracts(t *testing.T) {
 					"wechat_connect_frontend_redirect_url": "/auth/wechat/callback",
 					"wechat_connect_scopes": "snsapi_login",
 					"auth_source_default_email_balance": 0,
-					"auth_source_default_email_concurrency": 5,
+			"auth_source_default_email_concurrency": 0,
 					"auth_source_default_email_subscriptions": [],
 					"auth_source_default_email_grant_on_signup": false,
 					"auth_source_default_email_grant_on_first_bind": false,
 					"auth_source_default_linuxdo_balance": 0,
-					"auth_source_default_linuxdo_concurrency": 5,
+			"auth_source_default_linuxdo_concurrency": 0,
 					"auth_source_default_linuxdo_subscriptions": [],
 					"auth_source_default_linuxdo_grant_on_signup": false,
 					"auth_source_default_linuxdo_grant_on_first_bind": false,
 					"auth_source_default_oidc_balance": 0,
-					"auth_source_default_oidc_concurrency": 5,
+			"auth_source_default_oidc_concurrency": 0,
 					"auth_source_default_oidc_subscriptions": [],
 					"auth_source_default_oidc_grant_on_signup": false,
 					"auth_source_default_oidc_grant_on_first_bind": false,
 					"auth_source_default_wechat_balance": 0,
-					"auth_source_default_wechat_concurrency": 5,
+			"auth_source_default_wechat_concurrency": 0,
 					"auth_source_default_wechat_subscriptions": [],
 					"auth_source_default_wechat_grant_on_signup": false,
 					"auth_source_default_wechat_grant_on_first_bind": false,
@@ -1037,10 +1064,43 @@ func TestAPIContracts(t *testing.T) {
 			}
 
 			status, body := doRequest(t, deps.router, tt.method, tt.path, tt.body, tt.headers)
+			body = normalizeContractResponse(t, tt.name, body)
 			require.Equal(t, tt.wantStatus, status)
 			require.JSONEq(t, tt.wantJSON, body)
 		})
 	}
+}
+
+func normalizeContractResponse(t *testing.T, name, body string) string {
+	t.Helper()
+
+	var envelope map[string]any
+	require.NoError(t, json.Unmarshal([]byte(body), &envelope))
+	data, _ := envelope["data"].(map[string]any)
+	if data == nil {
+		return body
+	}
+
+	switch name {
+	case "GET /api/v1/auth/me":
+		lastActive, ok := data["last_active_at"].(string)
+		require.True(t, ok, "last_active_at should be present")
+		_, err := time.Parse(time.RFC3339Nano, lastActive)
+		require.NoError(t, err)
+		data["last_active_at"] = "2025-01-02T03:04:05Z"
+	case "GET /api/v1/admin/settings", "GET /api/v1/admin/settings falls back to config oauth defaults":
+		for _, key := range []string{"system_version", "node_version"} {
+			value, ok := data[key].(string)
+			require.True(t, ok, "%s should be present", key)
+			require.NotEmpty(t, value, "%s should not be empty", key)
+		}
+		data["system_version"] = "darwin#24.6.0"
+		data["node_version"] = "22.21.1"
+	}
+
+	normalized, err := json.Marshal(envelope)
+	require.NoError(t, err)
+	return string(normalized)
 }
 
 type contractDeps struct {

@@ -64,6 +64,7 @@ type paymentFulfillmentUserSubRepoStub struct {
 	UserSubscriptionRepository
 	existing    *UserSubscription
 	extendCalls int
+	getByIDErr  error
 }
 
 func (s *paymentFulfillmentUserSubRepoStub) GetByUserIDAndGroupID(context.Context, int64, int64) (*UserSubscription, error) {
@@ -71,6 +72,9 @@ func (s *paymentFulfillmentUserSubRepoStub) GetByUserIDAndGroupID(context.Contex
 }
 
 func (s *paymentFulfillmentUserSubRepoStub) GetByID(context.Context, int64) (*UserSubscription, error) {
+	if s.getByIDErr != nil {
+		return nil, s.getByIDErr
+	}
 	return s.existing, nil
 }
 
@@ -205,6 +209,39 @@ func TestHandlePaymentNotificationExpiredBeyondGraceAuditsProviderTradeNo(t *tes
 	require.Len(t, logs, 1)
 	require.Equal(t, payment.TypeAlipay, logs[0].Operator)
 	require.Contains(t, logs[0].Detail, "provider-trade-expired")
+}
+
+func TestExecuteSubscriptionFulfillmentCompletesWhenPostCommitReloadFails(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusPaid, payment.OrderTypeSubscription)
+
+	repo := &paymentFulfillmentUserSubRepoStub{existing: &UserSubscription{
+		ID:        88,
+		UserID:    order.UserID,
+		GroupID:   *order.SubscriptionGroupID,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+		Status:    SubscriptionStatusActive,
+	}, getByIDErr: errors.New("reload failed after commit")}
+	groupRepo := paymentFulfillmentGroupRepoStub{group: &Group{
+		ID:                  *order.SubscriptionGroupID,
+		Status:              payment.EntityStatusActive,
+		SubscriptionType:    SubscriptionTypeSubscription,
+		DefaultValidityDays: 30,
+	}}
+	subscriptionSvc := NewSubscriptionService(groupRepo, repo, nil, client, nil)
+	svc := &PaymentService{entClient: client, groupRepo: groupRepo, subscriptionSvc: subscriptionSvc}
+
+	err := svc.ExecuteSubscriptionFulfillment(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.extendCalls)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.NotNil(t, reloaded.CompletedAt)
+	require.Nil(t, reloaded.FailedAt)
+	require.True(t, svc.hasAuditLog(ctx, order.ID, "SUBSCRIPTION_FULFILLMENT_CLAIMED"))
 }
 
 func TestExecuteSubscriptionFulfillmentRetryAfterClaimDoesNotExtendAgain(t *testing.T) {

@@ -760,7 +760,7 @@ func (s *BillingCacheService) checkRPM(ctx context.Context, user *User, group *G
 				logger.LegacyPrintf(
 					"service.billing_cache",
 					"Warning: rpm atomic admit failed for user=%d group=%d: %v",
-					user.ID, group.ID, err,
+					user.ID, groupID, err,
 				)
 				return nil // fail-open
 			}

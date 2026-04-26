@@ -147,6 +147,44 @@ func TestWebhookConstants(t *testing.T) {
 	})
 }
 
+func TestHandleNotify_ProviderResolutionMissingOrder_AcksStripe(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	client := newPaymentWebhookHandlerTestClient(t)
+	_, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("stripe-a").
+		SetConfig("{}").
+		SetSupportedTypes("stripe").
+		SetEnabled(true).
+		Save(context.Background())
+	require.NoError(t, err)
+	_, err = client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("stripe-b").
+		SetConfig("{}").
+		SetSupportedTypes("stripe").
+		SetEnabled(true).
+		Save(context.Background())
+	require.NoError(t, err)
+
+	registry := payment.NewRegistry()
+	paymentService := service.NewPaymentService(client, registry, nil, nil, nil, nil, nil, nil, nil)
+	h := NewPaymentWebhookHandler(paymentService, registry)
+
+	body := `{"data":{"object":{"metadata":{"out_trade_no":"sub2_resolution_missing_order"}}}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/payment/webhook/stripe", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+
+	h.handleNotify(c, payment.TypeStripe)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Empty(t, w.Body.String())
+}
+
 func TestHandleNotify_LegacyFallbackMissingOrder_AcksStripe(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

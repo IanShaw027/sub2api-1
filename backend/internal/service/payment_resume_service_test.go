@@ -625,7 +625,7 @@ func TestVisibleMethodLoadBalancerUsesConfiguredSourceWhenMultipleProvidersEnabl
 	}
 }
 
-func TestVisibleMethodLoadBalancerPreservesLegacyCrossProviderRoutingWhenSourceMissing(t *testing.T) {
+func TestVisibleMethodLoadBalancerRejectsAmbiguousCrossProviderRoutingWhenSourceMissing(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -667,14 +667,14 @@ func TestVisibleMethodLoadBalancerPreservesLegacyCrossProviderRoutingWhenSourceM
 	lb := newVisibleMethodLoadBalancer(inner, configService)
 
 	_, err = lb.SelectInstance(ctx, "", payment.TypeAlipay, payment.StrategyRoundRobin, 9.9)
-	if err != nil {
-		t.Fatalf("SelectInstance returned error: %v", err)
+	if err == nil {
+		t.Fatal("SelectInstance should reject ambiguous visible method routing when multiple providers exist without source")
 	}
-	if inner.lastProviderKey != "" {
-		t.Fatalf("lastProviderKey = %q, want legacy cross-provider empty key", inner.lastProviderKey)
+	if infraerrors.Reason(err) != "INVALID_PAYMENT_VISIBLE_METHOD_SOURCE" {
+		t.Fatalf("Reason(err) = %q, want %q", infraerrors.Reason(err), "INVALID_PAYMENT_VISIBLE_METHOD_SOURCE")
 	}
-	if inner.lastPaymentType != payment.TypeAlipay {
-		t.Fatalf("lastPaymentType = %q, want %q", inner.lastPaymentType, payment.TypeAlipay)
+	if inner.lastProviderKey != "" || inner.lastPaymentType != "" {
+		t.Fatalf("inner load balancer should not be called, got provider=%q type=%q", inner.lastProviderKey, inner.lastPaymentType)
 	}
 }
 

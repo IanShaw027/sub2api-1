@@ -289,9 +289,7 @@ func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder) e
 
 	switch action {
 	case redeemActionSkipCompleted:
-		if err := s.applyAffiliateRebateForOrder(ctx, o); err != nil {
-			return err
-		}
+		s.applyAffiliateRebateBestEffort(ctx, o)
 		// Code already created and redeemed — just mark completed
 		return s.markCompleted(ctx, o, "RECHARGE_SUCCESS")
 	case redeemActionCreate:
@@ -305,10 +303,14 @@ func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder) e
 	if _, err := s.redeemService.Redeem(ctx, o.UserID, o.RechargeCode); err != nil {
 		return fmt.Errorf("redeem balance: %w", err)
 	}
-	if err := s.applyAffiliateRebateForOrder(ctx, o); err != nil {
-		return err
-	}
+	s.applyAffiliateRebateBestEffort(ctx, o)
 	return s.markCompleted(ctx, o, "RECHARGE_SUCCESS")
+}
+
+func (s *PaymentService) applyAffiliateRebateBestEffort(ctx context.Context, o *dbent.PaymentOrder) {
+	if err := s.applyAffiliateRebateForOrder(ctx, o); err != nil {
+		slog.Error("affiliate rebate failed after balance fulfillment", "orderID", o.ID, "error", err)
+	}
 }
 
 func (s *PaymentService) markCompleted(ctx context.Context, o *dbent.PaymentOrder, auditAction string) error {

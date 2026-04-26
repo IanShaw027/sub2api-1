@@ -105,7 +105,7 @@ func (s *paymentFulfillmentAffiliateRepoStub) ListAdminAffiliateStats(context.Co
 	return nil, 0, nil
 }
 
-func TestExecuteBalanceFulfillment_AffiliateAccrualFailureMarksOrderFailed(t *testing.T) {
+func TestExecuteBalanceFulfillment_AffiliateAccrualFailureCompletesOrder(t *testing.T) {
 	ctx := context.Background()
 	client := newOrderNotFoundTestClient(t)
 
@@ -173,17 +173,17 @@ func TestExecuteBalanceFulfillment_AffiliateAccrualFailureMarksOrderFailed(t *te
 	}
 
 	err = svc.ExecuteBalanceFulfillment(ctx, order.ID)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "accrue invite rebate")
+	require.NoError(t, err)
 
 	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
-	require.Equal(t, OrderStatusFailed, reloaded.Status)
-	require.Nil(t, reloaded.CompletedAt)
-	require.NotNil(t, reloaded.FailedAt)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.NotNil(t, reloaded.CompletedAt)
+	require.Nil(t, reloaded.FailedAt)
+	require.True(t, svc.hasAuditLog(ctx, order.ID, "AFFILIATE_REBATE_FAILED"))
 }
 
-func TestExecuteBalanceFulfillment_AffiliateCommitFailureMarksOrderFailed(t *testing.T) {
+func TestExecuteBalanceFulfillment_AffiliateCommitFailureCompletesOrder(t *testing.T) {
 	ctx := context.Background()
 	client := newOrderNotFoundTestClient(t)
 
@@ -252,12 +252,12 @@ func TestExecuteBalanceFulfillment_AffiliateCommitFailureMarksOrderFailed(t *tes
 	}
 
 	err = svc.ExecuteBalanceFulfillment(ctx, order.ID)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "commit affiliate rebate tx")
+	require.NoError(t, err)
 
 	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
-	require.Equal(t, OrderStatusFailed, reloaded.Status)
-	require.Nil(t, reloaded.CompletedAt)
-	require.NotNil(t, reloaded.FailedAt)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.NotNil(t, reloaded.CompletedAt)
+	require.Nil(t, reloaded.FailedAt)
+	require.True(t, svc.hasAuditLog(ctx, order.ID, "AFFILIATE_REBATE_FAILED"))
 }

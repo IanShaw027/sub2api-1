@@ -45,14 +45,22 @@ local inc_group = tonumber(ARGV[2]) == 1
 local inc_user = tonumber(ARGV[3]) == 1
 local group_limit = tonumber(ARGV[4]) or 0
 local user_limit = tonumber(ARGV[5]) or 0
+local legacy_group_count = tonumber(ARGV[6]) or 0
+local legacy_user_count = tonumber(ARGV[7]) or 0
 local group_count = 0
 local user_count = 0
 
 if inc_group then
   group_count = tonumber(redis.call("GET", KEYS[1]) or "0")
+  if legacy_group_count > group_count then
+    group_count = legacy_group_count
+  end
 end
 if inc_user then
   user_count = tonumber(redis.call("GET", KEYS[2]) or "0")
+  if legacy_user_count > user_count then
+    user_count = legacy_user_count
+  end
 end
 
 if inc_group and group_limit > 0 and group_count + 1 > group_limit then
@@ -217,6 +225,20 @@ func (c *userRPMCacheImpl) TryIncrementUserAndGroupRPM(ctx context.Context, user
 
 	clusterGroupKey := userGroupRPMClusterSlotKey(userID, groupID, minute)
 	clusterUserKey := userRPMClusterSlotKey(userID, minute)
+	legacyGroupCount := 0
+	if incGroup {
+		legacyGroupCount, err = c.getRPMValue(ctx, userGroupRPMLegacyKey(userID, groupID, minute))
+		if err != nil {
+			return 0, 0, false, err
+		}
+	}
+	legacyUserCount := 0
+	if incUser {
+		legacyUserCount, err = c.getRPMValue(ctx, userRPMLegacyKey(userID, minute))
+		if err != nil {
+			return 0, 0, false, err
+		}
+	}
 	incGroupArg := 0
 	if incGroup {
 		incGroupArg = 1
@@ -235,6 +257,8 @@ func (c *userRPMCacheImpl) TryIncrementUserAndGroupRPM(ctx context.Context, user
 		incUserArg,
 		groupLimit,
 		userLimit,
+		legacyGroupCount,
+		legacyUserCount,
 	).Slice()
 	if err != nil {
 		return 0, 0, false, fmt.Errorf("user rpm atomic admit: %w", err)

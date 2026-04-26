@@ -274,9 +274,24 @@ func (s *SubscriptionService) AssignOrExtendSubscription(ctx context.Context, in
 			}()
 		}
 
-		// 返回更新后的订阅
-		sub, err := s.userSubRepo.GetByID(ctx, existingSub.ID)
-		return sub, true, err // true 表示是续期
+		// 返回更新后的订阅。写入和提交已经成功后，最终读取失败不能再向上冒泡，
+		// 否则支付履约重试会把已续期订单当作未完成再次续期。
+		if sub, err := s.userSubRepo.GetByID(ctx, existingSub.ID); err == nil {
+			return sub, true, nil // true 表示是续期
+		} else {
+			log.Printf("reload extended subscription failed: subscriptionID=%d error=%v", existingSub.ID, err)
+		}
+		updated := *existingSub
+		updated.ExpiresAt = newExpiresAt
+		updated.Status = SubscriptionStatusActive
+		if input.Notes != "" {
+			updated.Notes = existingSub.Notes
+			if updated.Notes != "" {
+				updated.Notes += "\n"
+			}
+			updated.Notes += input.Notes
+		}
+		return &updated, true, nil // true 表示是续期
 	}
 
 	// 没有订阅，创建新订阅
