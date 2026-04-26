@@ -3,9 +3,14 @@ package service
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/http"
+	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyutil"
 )
 
 var (
@@ -54,8 +59,15 @@ type UpdateProxyRequest struct {
 
 // ProxyService 代理管理服务
 type ProxyService struct {
-	proxyRepo ProxyRepository
+	proxyRepo             ProxyRepository
+	testConnectionURL     string
+	testConnectionTimeout time.Duration
 }
+
+const (
+	defaultProxyTestConnectionURL     = "http://www.gstatic.com/generate_204"
+	defaultProxyTestConnectionTimeout = 5 * time.Second
+)
 
 // NewProxyService 创建代理服务实例
 func NewProxyService(proxyRepo ProxyRepository) *ProxyService {
@@ -169,16 +181,57 @@ func (s *ProxyService) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
-// TestConnection 测试代理连接（需要实现具体测试逻辑）
+// TestConnection 测试代理连接
 func (s *ProxyService) TestConnection(ctx context.Context, id int64) error {
 	proxy, err := s.proxyRepo.GetByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("get proxy: %w", err)
 	}
 
-	// TODO: 实现代理连接测试逻辑
-	// 可以尝试通过代理发送测试请求
-	_ = proxy
+	_, parsedProxy, err := proxyurl.Parse(proxy.URL())
+	if err != nil {
+		return fmt.Errorf("parse proxy URL: %w", err)
+	}
+
+	timeout := s.testConnectionTimeout
+	if timeout <= 0 {
+		timeout = defaultProxyTestConnectionTimeout
+	}
+
+	targetURL := s.testConnectionURL
+	if targetURL == "" {
+		targetURL = defaultProxyTestConnectionURL
+	}
+
+	transport := &http.Transport{
+		DialContext: (&net.Dialer{Timeout: timeout}).DialContext,
+	}
+	if err := proxyutil.ConfigureTransportProxy(transport, parsedProxy); err != nil {
+		return fmt.Errorf("configure proxy: %w", err)
+	}
+	defer transport.CloseIdleConnections()
+
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   timeout,
+	}
+
+	testCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(testCtx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		return fmt.Errorf("create proxy test request: %w", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("test proxy connection: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("test proxy connection: status %d", resp.StatusCode)
+	}
 
 	return nil
 }

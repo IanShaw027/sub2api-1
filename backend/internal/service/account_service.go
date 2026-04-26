@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -176,6 +178,56 @@ func validateKiroCredentials(credentials map[string]any) error {
 		}
 	}
 	return nil
+}
+
+func validateCredentialsBaseURL(platform, raw string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parsed, err := url.ParseRequestURI(raw)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("%s base_url is invalid", platform)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("%s base_url is invalid", platform)
+	}
+	return nil
+}
+
+func validateAPIKeyCredentials(account *Account) error {
+	if account == nil {
+		return errors.New("account is nil")
+	}
+	apiKey := strings.TrimSpace(account.GetCredential("api_key"))
+	if apiKey == "" {
+		return fmt.Errorf("%s api_key is required", account.Platform)
+	}
+	return validateCredentialsBaseURL(account.Platform, account.GetCredential("base_url"))
+}
+
+func validateOAuthCredentials(account *Account) error {
+	if account == nil {
+		return errors.New("account is nil")
+	}
+	if strings.TrimSpace(account.GetCredential("access_token")) == "" && strings.TrimSpace(account.GetCredential("refresh_token")) == "" {
+		return fmt.Errorf("%s access_token or refresh_token is required", account.Platform)
+	}
+	return nil
+}
+
+func validateAccountTestCredentials(account *Account) error {
+	if account == nil {
+		return errors.New("account is nil")
+	}
+	switch account.Type {
+	case AccountTypeAPIKey:
+		return validateAPIKeyCredentials(account)
+	case AccountTypeOAuth, AccountTypeSetupToken:
+		return validateOAuthCredentials(account)
+	default:
+		return fmt.Errorf("unsupported account type for %s: %s", account.Platform, account.Type)
+	}
 }
 
 func validateKiroAPIKeyCredentials(credentials map[string]any) error {
@@ -624,17 +676,9 @@ func (s *AccountService) TestCredentials(ctx context.Context, id int64) error {
 		return fmt.Errorf("get account: %w", err)
 	}
 
-	// 根据平台执行不同的测试逻辑
 	switch account.Platform {
-	case PlatformAnthropic:
-		// TODO: 测试Anthropic API凭证
-		return nil
-	case PlatformOpenAI:
-		// TODO: 测试OpenAI API凭证
-		return nil
-	case PlatformGemini:
-		// TODO: 测试Gemini API凭证
-		return nil
+	case PlatformAnthropic, PlatformOpenAI, PlatformGemini:
+		return validateAccountTestCredentials(account)
 	default:
 		return fmt.Errorf("unsupported platform: %s", account.Platform)
 	}
