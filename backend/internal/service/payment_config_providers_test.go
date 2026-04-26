@@ -19,6 +19,61 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestPaymentConfigServiceDecryptConfigPlaintextAndLegacyGate(t *testing.T) {
+	key := []byte("0123456789abcdef0123456789abcdef")
+	plaintextJSON := `{"appId":"app-123","secret":"sec-xyz"}`
+	legacyEncrypted, err := payment.Encrypt(plaintextJSON, key)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name          string
+		stored        string
+		fallbackValue string
+		want          map[string]string
+	}{
+		{
+			name:   "plaintext JSON parses without fallback",
+			stored: plaintextJSON,
+			want:   map[string]string{"appId": "app-123", "secret": "sec-xyz"},
+		},
+		{
+			name:   "legacy ciphertext decrypts by default",
+			stored: legacyEncrypted,
+			want:   map[string]string{"appId": "app-123", "secret": "sec-xyz"},
+		},
+		{
+			name:          "legacy ciphertext is empty when fallback disabled",
+			stored:        legacyEncrypted,
+			fallbackValue: "false",
+			want:          nil,
+		},
+		{
+			name:          "plaintext JSON still parses when fallback disabled",
+			stored:        plaintextJSON,
+			fallbackValue: "false",
+			want:          map[string]string{"appId": "app-123", "secret": "sec-xyz"},
+		},
+		{
+			name:          "garbage remains empty when fallback disabled",
+			stored:        "not-json-and-not-ciphertext",
+			fallbackValue: "false",
+			want:          nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.fallbackValue != "" {
+				t.Setenv(payment.LegacyConfigCiphertextFallbackEnv, tt.fallbackValue)
+			}
+			svc := &PaymentConfigService{encryptionKey: key}
+			got, err := svc.decryptConfig(tt.stored)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestValidateProviderRequest(t *testing.T) {
 	t.Parallel()
 

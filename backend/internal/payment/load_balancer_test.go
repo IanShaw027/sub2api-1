@@ -4,6 +4,7 @@ package payment
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -475,8 +476,6 @@ func TestStartOfDay(t *testing.T) {
 }
 
 func TestDecryptConfig_PlaintextAndLegacyCompat(t *testing.T) {
-	t.Parallel()
-
 	key := make([]byte, AES256KeySize)
 	for i := range key {
 		key[i] = byte(i + 1)
@@ -494,10 +493,11 @@ func TestDecryptConfig_PlaintextAndLegacyCompat(t *testing.T) {
 	}
 
 	tests := []struct {
-		name   string
-		stored string
-		key    []byte
-		want   map[string]string
+		name          string
+		stored        string
+		key           []byte
+		fallbackValue string
+		want          map[string]string
 	}{
 		{
 			name:   "empty stored returns nil map",
@@ -524,6 +524,20 @@ func TestDecryptConfig_PlaintextAndLegacyCompat(t *testing.T) {
 			want:   map[string]string{"appId": "app-123", "secret": "sec-xyz"},
 		},
 		{
+			name:          "legacy ciphertext with correct key treated as empty when fallback disabled",
+			stored:        legacyEncrypted,
+			key:           key,
+			fallbackValue: "false",
+			want:          nil,
+		},
+		{
+			name:          "plaintext JSON still parses when fallback disabled",
+			stored:        plaintextJSON,
+			key:           key,
+			fallbackValue: "false",
+			want:          map[string]string{"appId": "app-123", "secret": "sec-xyz"},
+		},
+		{
 			name:   "legacy ciphertext with no key treated as empty",
 			stored: legacyEncrypted,
 			key:    nil,
@@ -545,7 +559,9 @@ func TestDecryptConfig_PlaintextAndLegacyCompat(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+			if tt.fallbackValue != "" {
+				t.Setenv(LegacyConfigCiphertextFallbackEnv, tt.fallbackValue)
+			}
 			lb := NewDefaultLoadBalancer(nil, tt.key)
 			got, err := lb.decryptConfig(tt.stored)
 			if err != nil {
@@ -553,6 +569,31 @@ func TestDecryptConfig_PlaintextAndLegacyCompat(t *testing.T) {
 			}
 			if !stringMapEqual(got, tt.want) {
 				t.Fatalf("decryptConfig = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLegacyConfigCiphertextFallbackEnabled(t *testing.T) {
+	tests := []struct {
+		value string
+		want  bool
+	}{
+		{value: "", want: true},
+		{value: "true", want: true},
+		{value: "1", want: true},
+		{value: "false", want: false},
+		{value: "0", want: false},
+		{value: "off", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%q", tt.value), func(t *testing.T) {
+			if tt.value != "" {
+				t.Setenv(LegacyConfigCiphertextFallbackEnv, tt.value)
+			}
+			if got := LegacyConfigCiphertextFallbackEnabled(); got != tt.want {
+				t.Fatalf("LegacyConfigCiphertextFallbackEnabled() = %v, want %v", got, tt.want)
 			}
 		})
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -49,6 +50,11 @@ type contextKey string
 
 const wxpayJSAPIAppIDContextKey contextKey = "payment.wxpay.jsapi_app_id"
 
+// LegacyConfigCiphertextFallbackEnv controls the deprecated AES-GCM provider
+// config fallback. Default-on preserves existing ciphertext rows until operators
+// have re-saved provider instances as plaintext JSON.
+const LegacyConfigCiphertextFallbackEnv = "PAYMENT_LEGACY_CONFIG_CIPHERTEXT_FALLBACK"
+
 // NewDefaultLoadBalancer creates a new load balancer.
 func NewDefaultLoadBalancer(db *dbent.Client, encryptionKey []byte) *DefaultLoadBalancer {
 	return &DefaultLoadBalancer{db: db, encryptionKey: encryptionKey}
@@ -68,6 +74,18 @@ func wxpayJSAPIAppIDFromContext(ctx context.Context) string {
 	}
 	appID, _ := ctx.Value(wxpayJSAPIAppIDContextKey).(string)
 	return strings.TrimSpace(appID)
+}
+
+// LegacyConfigCiphertextFallbackEnabled returns whether legacy provider config
+// ciphertext should still be accepted. Only explicit false-like values disable
+// it so upgrades do not silently strand existing encrypted provider configs.
+func LegacyConfigCiphertextFallbackEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(LegacyConfigCiphertextFallbackEnv))) {
+	case "0", "false", "off", "no", "disabled":
+		return false
+	default:
+		return true
+	}
 }
 
 // instanceCandidate pairs an instance with its pre-fetched daily usage.
@@ -315,15 +333,15 @@ func (lb *DefaultLoadBalancer) buildSelection(selected *dbent.PaymentProviderIns
 }
 
 // decryptConfig parses a stored provider config.
-// New records are plaintext JSON; legacy records are AES-256-GCM ciphertext.
+// New records are plaintext JSON; legacy records may be AES-256-GCM ciphertext.
 // Unreadable values (legacy ciphertext without a valid key, or malformed data)
 // are treated as empty so the service keeps running while the admin re-enters
 // the config via the UI.
 //
-// TODO(deprecated-legacy-ciphertext): The AES fallback branch below is a
-// transitional compatibility shim for pre-plaintext records. Remove it (and
-// the encryptionKey field + the Decrypt import) after a few releases once all
-// live deployments have re-saved their provider configs through the UI.
+// Deprecated legacy ciphertext support remains default-on because there is no
+// schema marker proving all existing rows have been re-saved as plaintext JSON.
+// Operators can set PAYMENT_LEGACY_CONFIG_CIPHERTEXT_FALLBACK=false after
+// migration to make unreadable ciphertext behave like any other malformed value.
 func (lb *DefaultLoadBalancer) decryptConfig(stored string) (map[string]string, error) {
 	if stored == "" {
 		return nil, nil
@@ -333,7 +351,7 @@ func (lb *DefaultLoadBalancer) decryptConfig(stored string) (map[string]string, 
 		return config, nil
 	}
 	// Deprecated: legacy AES-256-GCM ciphertext fallback — scheduled for removal.
-	if len(lb.encryptionKey) == AES256KeySize {
+	if LegacyConfigCiphertextFallbackEnabled() && len(lb.encryptionKey) == AES256KeySize {
 		//nolint:staticcheck // SA1019: intentional legacy fallback, scheduled for removal
 		if plaintext, err := Decrypt(stored, lb.encryptionKey); err == nil {
 			if err := json.Unmarshal([]byte(plaintext), &config); err == nil {
