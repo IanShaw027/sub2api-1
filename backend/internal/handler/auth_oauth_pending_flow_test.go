@@ -441,9 +441,9 @@ func TestExchangePendingOAuthCompletionBindCurrentUserOwnershipConflict(t *testi
 
 	handler.ExchangePendingOAuthCompletion(ginCtx)
 
-	require.Equal(t, http.StatusInternalServerError, recorder.Code)
+	require.Equal(t, http.StatusConflict, recorder.Code)
 	payload := decodeJSONBody(t, recorder)
-	require.Equal(t, "PENDING_AUTH_ADOPTION_APPLY_FAILED", payload["reason"])
+	require.Equal(t, "AUTH_IDENTITY_OWNERSHIP_CONFLICT", payload["reason"])
 
 	identity, err := client.AuthIdentity.Get(ctx, existingIdentity.ID)
 	require.NoError(t, err)
@@ -908,6 +908,77 @@ func TestExchangePendingOAuthCompletionRejectsDisabledTargetUser(t *testing.T) {
 	storedSession, err := client.PendingAuthSession.Get(ctx, session.ID)
 	require.NoError(t, err)
 	require.Nil(t, storedSession.ConsumedAt)
+}
+
+func TestExchangePendingOAuthCompletionRejectsDisabledBindCurrentUser(t *testing.T) {
+	handler, client := newOAuthPendingFlowTestHandlerWithDependencies(t, oauthPendingFlowTestHandlerOptions{
+		settingValues: map[string]string{
+			service.SettingKeyAuthSourceDefaultOIDCBalance:          "8",
+			service.SettingKeyAuthSourceDefaultOIDCConcurrency:      "2",
+			service.SettingKeyAuthSourceDefaultOIDCGrantOnFirstBind: "true",
+		},
+	})
+	ctx := context.Background()
+
+	userEntity, err := client.User.Create().
+		SetEmail("disabled-bind@example.com").
+		SetUsername("disabled-bind-user").
+		SetPasswordHash("hash").
+		SetRole(service.RoleUser).
+		SetStatus(service.StatusDisabled).
+		SetBalance(1.5).
+		SetConcurrency(4).
+		Save(ctx)
+	require.NoError(t, err)
+
+	session, err := client.PendingAuthSession.Create().
+		SetSessionToken("disabled-bind-session-token").
+		SetIntent("bind_current_user").
+		SetProviderType("oidc").
+		SetProviderKey("https://issuer.example").
+		SetProviderSubject("disabled-bind-subject").
+		SetTargetUserID(userEntity.ID).
+		SetResolvedEmail(userEntity.Email).
+		SetBrowserSessionKey("disabled-bind-browser-session-key").
+		SetLocalFlowState(map[string]any{
+			oauthCompletionResponseKey: map[string]any{
+				"redirect": "/profile",
+			},
+		}).
+		SetExpiresAt(time.Now().UTC().Add(10 * time.Minute)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	ginCtx, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/oauth/pending/exchange", nil)
+	req.AddCookie(&http.Cookie{Name: oauthPendingSessionCookieName, Value: encodeCookieValue(session.SessionToken)})
+	req.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue("disabled-bind-browser-session-key")})
+	ginCtx.Request = req
+
+	handler.ExchangePendingOAuthCompletion(ginCtx)
+
+	require.Equal(t, http.StatusForbidden, recorder.Code)
+
+	identityCount, err := client.AuthIdentity.Query().
+		Where(
+			authidentity.ProviderTypeEQ("oidc"),
+			authidentity.ProviderKeyEQ("https://issuer.example"),
+			authidentity.ProviderSubjectEQ("disabled-bind-subject"),
+		).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, identityCount)
+
+	storedSession, err := client.PendingAuthSession.Get(ctx, session.ID)
+	require.NoError(t, err)
+	require.Nil(t, storedSession.ConsumedAt)
+
+	storedUser, err := client.User.Get(ctx, userEntity.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1.5, storedUser.Balance)
+	require.Equal(t, 4, storedUser.Concurrency)
+	require.Equal(t, 0, countProviderGrantRecords(t, client, userEntity.ID, "oidc", "first_bind"))
 }
 
 func TestNormalizePendingOAuthCompletionResponseScrubsLegacyTokenPayload(t *testing.T) {
@@ -2004,6 +2075,7 @@ func TestBindOIDCOAuthLoginReturns2FAChallengeWhenUserHasTotp(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, loginSession)
 	require.NotNil(t, loginSession.PendingOAuthBind)
+	require.Equal(t, oauthPendingFlowResolvedTokenVersion(existingUser), loginSession.TokenVersion)
 	require.Equal(t, session.SessionToken, loginSession.PendingOAuthBind.PendingSessionToken)
 	require.Equal(t, session.BrowserSessionKey, loginSession.PendingOAuthBind.BrowserSessionKey)
 
@@ -2020,6 +2092,58 @@ func TestBindOIDCOAuthLoginReturns2FAChallengeWhenUserHasTotp(t *testing.T) {
 	storedSession, err := client.PendingAuthSession.Get(ctx, session.ID)
 	require.NoError(t, err)
 	require.Nil(t, storedSession.ConsumedAt)
+}
+
+func TestLogin2FARejectsSessionAfterTokenVersionChange(t *testing.T) {
+	totpCache := &oauthPendingFlowTotpCacheStub{}
+	handler, client := newOAuthPendingFlowTestHandlerWithDependencies(t, oauthPendingFlowTestHandlerOptions{
+		settingValues: map[string]string{
+			service.SettingKeyTotpEnabled: "true",
+		},
+		totpCache:     totpCache,
+		totpEncryptor: oauthPendingFlowTotpEncryptorStub{},
+	})
+	ctx := context.Background()
+
+	passwordHash, err := handler.authService.HashPassword("secret-123")
+	require.NoError(t, err)
+	totpEnabledAt := time.Now().UTC().Add(-time.Hour)
+	secret := "JBSWY3DPEHPK3PXP"
+
+	existingUser, err := client.User.Create().
+		SetEmail("revoked-2fa@example.com").
+		SetUsername("revoked-2fa-user").
+		SetPasswordHash(passwordHash).
+		SetRole(service.RoleUser).
+		SetStatus(service.StatusActive).
+		SetTokenVersion(3).
+		SetTotpEnabled(true).
+		SetTotpSecretEncrypted(secret).
+		SetTotpEnabledAt(totpEnabledAt).
+		Save(ctx)
+	require.NoError(t, err)
+
+	tempToken, err := handler.totpService.CreateLoginSession(ctx, existingUser.ID, existingUser.Email, existingUser.TokenVersion)
+	require.NoError(t, err)
+	_, err = client.User.UpdateOneID(existingUser.ID).SetTokenVersion(existingUser.TokenVersion + 1).Save(ctx)
+	require.NoError(t, err)
+	code, err := totp.GenerateCode(secret, time.Now().UTC())
+	require.NoError(t, err)
+
+	body := bytes.NewBufferString(`{"temp_token":"` + tempToken + `","totp_code":"` + code + `"}`)
+	recorder := httptest.NewRecorder()
+	ginCtx, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login/2fa", body)
+	req.Header.Set("Content-Type", "application/json")
+	ginCtx.Request = req
+
+	handler.Login2FA(ginCtx)
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Contains(t, recorder.Body.String(), "Invalid or expired 2FA session")
+	loginSession, err := totpCache.GetLoginSession(ctx, tempToken)
+	require.NoError(t, err)
+	require.Nil(t, loginSession)
 }
 
 func TestLogin2FACompletesPendingOAuthBindAndConsumesSession(t *testing.T) {
@@ -2088,6 +2212,7 @@ func TestLogin2FACompletesPendingOAuthBindAndConsumesSession(t *testing.T) {
 		existingUser.Email,
 		session.SessionToken,
 		session.BrowserSessionKey,
+		oauthPendingFlowResolvedTokenVersion(existingUser),
 	)
 	require.NoError(t, err)
 
@@ -2141,6 +2266,14 @@ func TestLogin2FACompletesPendingOAuthBindAndConsumesSession(t *testing.T) {
 	require.Equal(t, 6, storedUser.Concurrency)
 	require.Equal(t, 1, countProviderGrantRecords(t, client, existingUser.ID, "oidc", "first_bind"))
 	require.Empty(t, defaultSubAssigner.calls)
+}
+
+func oauthPendingFlowResolvedTokenVersion(user *dbent.User) int64 {
+	return service.ResolveUserTokenVersion(&service.User{
+		Email:        user.Email,
+		PasswordHash: user.PasswordHash,
+		TokenVersion: user.TokenVersion,
+	})
 }
 
 func newOAuthPendingFlowTestHandler(t *testing.T, invitationEnabled bool) (*AuthHandler, *dbent.Client) {

@@ -272,7 +272,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// Check if TOTP 2FA is enabled for this user
 	if h.totpService != nil && h.settingSvc.IsTotpEnabled(c.Request.Context()) && user.TotpEnabled {
 		// Create a temporary login session for 2FA
-		tempToken, err := h.totpService.CreateLoginSession(c.Request.Context(), user.ID, user.Email)
+		tempToken, err := h.totpService.CreateLoginSession(c.Request.Context(), user.ID, user.Email, service.ResolveUserTokenVersion(user))
 		if err != nil {
 			response.InternalError(c, "Failed to create 2FA session")
 			return
@@ -356,6 +356,11 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	if session.TokenVersion != service.ResolveUserTokenVersion(user) {
+		_ = h.totpService.DeleteLoginSession(c.Request.Context(), req.TempToken)
+		response.BadRequest(c, "Invalid or expired 2FA session")
+		return
+	}
 
 	if err := h.ensureBackendModeAllowsUser(c.Request.Context(), user); err != nil {
 		response.ErrorFrom(c, err)
@@ -384,26 +389,19 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 			response.ErrorFrom(c, err)
 			return
 		}
-		if err := applyPendingOAuthBinding(
+		if err := applyPendingOAuthBindingAndConsumeSession(
 			c.Request.Context(),
 			h.entClient(),
 			h.authService,
 			h.userService,
+			h,
 			pendingSession,
 			decision,
-			&user.ID,
+			user.ID,
 			true,
 			true,
 		); err != nil {
 			response.ErrorFrom(c, infraerrors.InternalServer("PENDING_AUTH_BIND_APPLY_FAILED", "failed to bind pending oauth identity").WithCause(err))
-			return
-		}
-		if _, err := pendingSvc.ConsumeBrowserSession(
-			c.Request.Context(),
-			pendingSession.SessionToken,
-			pendingSession.BrowserSessionKey,
-		); err != nil {
-			response.ErrorFrom(c, err)
 			return
 		}
 

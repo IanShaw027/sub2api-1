@@ -1216,8 +1216,10 @@ func consumePendingOAuthBrowserSessionTx(
 		return service.ErrPendingAuthBrowserMismatch
 	}
 
+	sanitizedLocalFlowState := sanitizePendingOAuthLocalFlowState(storedSession.LocalFlowState)
 	if _, err := tx.Client().PendingAuthSession.UpdateOneID(storedSession.ID).
 		SetConsumedAt(now).
+		SetLocalFlowState(sanitizedLocalFlowState).
 		SetCompletionCodeHash("").
 		ClearCompletionCodeExpiresAt().
 		Save(ctx); err != nil {
@@ -1227,14 +1229,98 @@ func consumePendingOAuthBrowserSessionTx(
 	return nil
 }
 
+func sanitizePendingOAuthLocalFlowState(localFlowState map[string]any) map[string]any {
+	sanitized := copyOAuthPendingMap(localFlowState)
+	if len(sanitized) == 0 {
+		return sanitized
+	}
+
+	rawCompletion, ok := sanitized[oauthCompletionResponseKey]
+	if !ok {
+		return sanitized
+	}
+	completion, ok := rawCompletion.(map[string]any)
+	if !ok {
+		return sanitized
+	}
+
+	cleanedCompletion := copyOAuthPendingMap(completion)
+	for _, key := range []string{"access_token", "refresh_token", "expires_in", "token_type"} {
+		delete(cleanedCompletion, key)
+	}
+	sanitized[oauthCompletionResponseKey] = cleanedCompletion
+	return sanitized
+}
+
+func copyOAuthPendingMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func ensurePendingOAuthTargetUserAllowedTx(
+	ctx context.Context,
+	tx *dbent.Tx,
+	authHandler *AuthHandler,
+	targetUserID int64,
+) error {
+	if tx == nil || targetUserID <= 0 {
+		return infraerrors.Unauthorized("INVALID_USER", "user not found")
+	}
+	userEntity, err := tx.Client().User.Get(ctx, targetUserID)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return service.ErrUserNotFound
+		}
+		return err
+	}
+	user := &service.User{
+		ID:      userEntity.ID,
+		Email:   userEntity.Email,
+		Role:    userEntity.Role,
+		Status:  userEntity.Status,
+		Balance: userEntity.Balance,
+	}
+	if err := ensureLoginUserActive(user); err != nil {
+		return err
+	}
+	if authHandler != nil {
+		if err := authHandler.ensureBackendModeAllowsUser(ctx, user); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func applyPendingOAuthAdoptionAndConsumeSession(
 	ctx context.Context,
 	client *dbent.Client,
 	authService *service.AuthService,
 	userService *service.UserService,
+	authHandler *AuthHandler,
 	session *dbent.PendingAuthSession,
 	decision *dbent.IdentityAdoptionDecision,
 	userID int64,
+) error {
+	return applyPendingOAuthBindingAndConsumeSession(ctx, client, authService, userService, authHandler, session, decision, userID, false, strings.EqualFold(strings.TrimSpace(session.Intent), "bind_current_user"))
+}
+
+func applyPendingOAuthBindingAndConsumeSession(
+	ctx context.Context,
+	client *dbent.Client,
+	authService *service.AuthService,
+	userService *service.UserService,
+	authHandler *AuthHandler,
+	session *dbent.PendingAuthSession,
+	decision *dbent.IdentityAdoptionDecision,
+	userID int64,
+	forceBind bool,
+	applyFirstBindDefaults bool,
 ) error {
 	if client == nil {
 		return infraerrors.ServiceUnavailable("PENDING_AUTH_NOT_READY", "pending auth service is not ready")
@@ -1250,7 +1336,10 @@ func applyPendingOAuthAdoptionAndConsumeSession(
 	defer func() { _ = tx.Rollback() }()
 
 	txCtx := dbent.NewTxContext(ctx, tx)
-	if err := applyPendingOAuthAdoption(txCtx, client, authService, userService, session, decision, &userID); err != nil {
+	if err := ensurePendingOAuthTargetUserAllowedTx(txCtx, tx, authHandler, userID); err != nil {
+		return err
+	}
+	if err := applyPendingOAuthBinding(txCtx, client, authService, userService, session, decision, &userID, forceBind, applyFirstBindDefaults); err != nil {
 		return err
 	}
 	if err := consumePendingOAuthBrowserSessionTx(txCtx, tx, session); err != nil {
@@ -1540,7 +1629,7 @@ func (h *AuthHandler) bindPendingOAuthLogin(c *gin.Context, provider string) {
 		return
 	}
 
-	pendingSvc, session, clearCookies, err := readPendingOAuthBrowserSession(c, h)
+	_, session, clearCookies, err := readPendingOAuthBrowserSession(c, h)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -1576,6 +1665,7 @@ func (h *AuthHandler) bindPendingOAuthLogin(c *gin.Context, provider string) {
 			user.Email,
 			session.SessionToken,
 			session.BrowserSessionKey,
+			service.ResolveUserTokenVersion(user),
 		)
 		if err != nil {
 			response.InternalError(c, "Failed to create 2FA session")
@@ -1588,7 +1678,7 @@ func (h *AuthHandler) bindPendingOAuthLogin(c *gin.Context, provider string) {
 		})
 		return
 	}
-	if err := applyPendingOAuthBinding(c.Request.Context(), h.entClient(), h.authService, h.userService, session, decision, &user.ID, true, true); err != nil {
+	if err := applyPendingOAuthBindingAndConsumeSession(c.Request.Context(), h.entClient(), h.authService, h.userService, h, session, decision, user.ID, true, true); err != nil {
 		respondPendingOAuthBindingApplyError(c, err)
 		return
 	}
@@ -1599,12 +1689,6 @@ func (h *AuthHandler) bindPendingOAuthLogin(c *gin.Context, provider string) {
 		response.InternalError(c, "Failed to generate token pair")
 		return
 	}
-	if _, err := pendingSvc.ConsumeBrowserSession(c.Request.Context(), session.SessionToken, session.BrowserSessionKey); err != nil {
-		clearCookies()
-		response.ErrorFrom(c, err)
-		return
-	}
-
 	clearCookies()
 	writeOAuthTokenPairResponse(c, tokenPair)
 }
@@ -1916,14 +2000,18 @@ func (h *AuthHandler) ExchangePendingOAuthCompletion(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	if err := applyPendingOAuthAdoption(c.Request.Context(), h.entClient(), h.authService, h.userService, session, decision, session.TargetUserID); err != nil {
-		response.ErrorFrom(c, infraerrors.InternalServer("PENDING_AUTH_ADOPTION_APPLY_FAILED", "failed to apply oauth profile adoption").WithCause(err))
-		return
+	targetUserID := int64(0)
+	if session.TargetUserID != nil && *session.TargetUserID > 0 {
+		targetUserID = *session.TargetUserID
+	} else {
+		targetUserID, err = resolvePendingOAuthTargetUserID(c.Request.Context(), h.entClient(), session)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
 	}
-
-	if _, err := svc.ConsumeBrowserSession(c.Request.Context(), sessionToken, browserSessionKey); err != nil {
-		clearCookies()
-		response.ErrorFrom(c, err)
+	if err := applyPendingOAuthAdoptionAndConsumeSession(c.Request.Context(), h.entClient(), h.authService, h.userService, h, session, decision, targetUserID); err != nil {
+		respondPendingOAuthBindingApplyError(c, err)
 		return
 	}
 

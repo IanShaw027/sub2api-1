@@ -1619,6 +1619,10 @@ func hashToken(token string) string {
 	return hex.EncodeToString(hash[:])
 }
 
+func ResolveUserTokenVersion(user *User) int64 {
+	return resolvedTokenVersion(user)
+}
+
 func resolvedTokenVersion(user *User) int64 {
 	if user == nil {
 		return 0
