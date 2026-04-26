@@ -13,6 +13,7 @@ const appStore = vi.hoisted(() => ({
   backendModeEnabled: false,
   cachedPublicSettings: {
     channel_monitor_enabled: false,
+    available_channels_enabled: false,
   },
 }))
 
@@ -63,7 +64,7 @@ describe('channel monitor routes', () => {
     authStore.isAdmin = true
     authStore.isSimpleMode = false
     appStore.backendModeEnabled = false
-    appStore.cachedPublicSettings = { channel_monitor_enabled: false }
+    appStore.cachedPublicSettings = { channel_monitor_enabled: false, available_channels_enabled: false }
     window.scrollTo = vi.fn()
   })
 
@@ -80,5 +81,20 @@ describe('channel monitor routes', () => {
     await router.push('/monitor')
 
     expect(router.currentRoute.value.path).toBe('/admin/dashboard')
+  })
+
+  it('marks available channels as requiring the available channels feature', async () => {
+    const { default: router } = await import('@/router')
+
+    expect(router.getRoutes().find((route) => route.path === '/available-channels')?.meta.requiresAvailableChannels).toBe(true)
+  })
+
+  it('redirects direct available channels navigation when the feature is disabled', async () => {
+    authStore.isAdmin = false
+    const { default: router } = await import('@/router')
+
+    await router.push('/available-channels')
+
+    expect(router.currentRoute.value.path).toBe('/dashboard')
   })
 })

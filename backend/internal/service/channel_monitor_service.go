@@ -289,6 +289,9 @@ func (s *ChannelMonitorService) RunCheck(ctx context.Context, id int64) ([]*Chec
 	if err != nil {
 		return nil, err
 	}
+	if !m.Enabled {
+		return nil, ErrChannelMonitorDisabled
+	}
 	if m.APIKeyDecryptFailed {
 		return nil, ErrChannelMonitorAPIKeyDecryptFailed
 	}

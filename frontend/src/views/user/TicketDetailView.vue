@@ -158,6 +158,9 @@ async function withdrawAndEdit() {
 }
 
 async function saveAndSubmit(form: { category: TicketCategory; title: string; form_payload: Record<string, unknown> }) {
+  if (!ticket.value) {
+    return
+  }
   const validationKey = validateTicketPayload(form.category, form.title, form.form_payload)
   if (validationKey) {
     appStore.showError(t(validationKey))
@@ -165,7 +168,10 @@ async function saveAndSubmit(form: { category: TicketCategory; title: string; fo
   }
   try {
     submittingEdit.value = true
-    await ticketsAPI.submitTicket(ticketID.value, form)
+    await ticketsAPI.submitTicket(ticketID.value, {
+      ...form,
+      expected_revision_no: ticket.value.current_revision_no,
+    })
     editing.value = false
     await loadDetail()
     appStore.showSuccess(t('tickets.messages.resubmitted'))

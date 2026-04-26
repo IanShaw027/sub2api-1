@@ -508,8 +508,8 @@ func TestOIDCOAuthCallbackCreatesChoicePendingSessionWhenSignupRequiresInvite(t 
 		PreferredUsername: "oidc_invite",
 		DisplayName:       "OIDC Invite Display",
 		AvatarURL:         "https://cdn.example/oidc-invite.png",
-		Email:             "oidc-invite@example.com",
-		EmailVerified:     true,
+		Email:             "victim@example.com",
+		EmailVerified:     false,
 	})
 	defer cleanup()
 
@@ -542,11 +542,19 @@ func TestOIDCOAuthCallbackCreatesChoicePendingSessionWhenSignupRequiresInvite(t 
 	require.NoError(t, err)
 	require.Equal(t, oauthIntentLogin, session.Intent)
 	require.Nil(t, session.TargetUserID)
+	expectedEmail := oidcSyntheticEmailFromIdentityKey(oidcIdentityKey(cfg.IssuerURL, "oidc-subject-invite"))
+	require.Equal(t, expectedEmail, session.ResolvedEmail)
+	require.Equal(t, "victim@example.com", session.UpstreamIdentityClaims["email"])
+	require.Equal(t, "victim@example.com", session.UpstreamIdentityClaims["compat_email"])
+	require.Equal(t, false, session.UpstreamIdentityClaims["email_verified"])
 
 	completion, ok := session.LocalFlowState[oauthCompletionResponseKey].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, oauthPendingChoiceStep, completion["step"])
 	require.Equal(t, "/dashboard", completion["redirect"])
+	require.Equal(t, "victim@example.com", completion["email"])
+	require.Equal(t, expectedEmail, completion["resolved_email"])
+	require.Equal(t, "victim@example.com", completion["compat_email"])
 	require.Equal(t, "third_party_signup", completion["choice_reason"])
 }
 

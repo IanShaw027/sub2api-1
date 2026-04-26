@@ -40,20 +40,23 @@ const (
 )
 
 var (
-	ErrTicketNotFound        = infraerrors.NotFound("TICKET_NOT_FOUND", "ticket not found")
-	ErrTicketInvalidCategory = infraerrors.BadRequest("TICKET_CATEGORY_INVALID", "ticket category is invalid")
-	ErrTicketInvalidTitle    = infraerrors.BadRequest("TICKET_TITLE_INVALID", "ticket title is invalid")
-	ErrTicketPayloadRequired = infraerrors.BadRequest("TICKET_PAYLOAD_REQUIRED", "ticket form payload is required")
-	ErrTicketPayloadInvalid  = infraerrors.BadRequest("TICKET_PAYLOAD_INVALID", "ticket form payload is invalid")
-	ErrTicketMessageRequired = infraerrors.BadRequest("TICKET_MESSAGE_REQUIRED", "ticket message is required")
-	ErrTicketMessageTooLarge = infraerrors.BadRequest("TICKET_MESSAGE_TOO_LARGE", "ticket message is too large")
-	ErrTicketNotEditable     = infraerrors.BadRequest("TICKET_NOT_EDITABLE", "ticket is not editable in current status")
-	ErrTicketCannotWithdraw  = infraerrors.BadRequest("TICKET_WITHDRAW_INVALID", "ticket cannot be withdrawn in current status")
-	ErrTicketCannotClose     = infraerrors.BadRequest("TICKET_CLOSE_INVALID", "ticket cannot be closed in current status")
-	ErrTicketInvalidStatus   = infraerrors.BadRequest("TICKET_STATUS_INVALID", "ticket status is invalid")
-	ErrTicketReplyLocked     = infraerrors.BadRequest("TICKET_REPLY_LOCKED", "ticket cannot receive replies in current status")
-	ErrTicketForbidden       = infraerrors.Forbidden("TICKET_FORBIDDEN", "ticket is not accessible")
-	ErrTicketStatusLocked    = infraerrors.BadRequest("TICKET_STATUS_LOCKED", "ticket status can no longer be changed")
+	ErrTicketNotFound                = infraerrors.NotFound("TICKET_NOT_FOUND", "ticket not found")
+	ErrTicketInvalidCategory         = infraerrors.BadRequest("TICKET_CATEGORY_INVALID", "ticket category is invalid")
+	ErrTicketInvalidTitle            = infraerrors.BadRequest("TICKET_TITLE_INVALID", "ticket title is invalid")
+	ErrTicketPayloadRequired         = infraerrors.BadRequest("TICKET_PAYLOAD_REQUIRED", "ticket form payload is required")
+	ErrTicketPayloadInvalid          = infraerrors.BadRequest("TICKET_PAYLOAD_INVALID", "ticket form payload is invalid")
+	ErrTicketMessageRequired         = infraerrors.BadRequest("TICKET_MESSAGE_REQUIRED", "ticket message is required")
+	ErrTicketMessageTooLarge         = infraerrors.BadRequest("TICKET_MESSAGE_TOO_LARGE", "ticket message is too large")
+	ErrTicketNotEditable             = infraerrors.BadRequest("TICKET_NOT_EDITABLE", "ticket is not editable in current status")
+	ErrTicketCannotWithdraw          = infraerrors.BadRequest("TICKET_WITHDRAW_INVALID", "ticket cannot be withdrawn in current status")
+	ErrTicketCannotClose             = infraerrors.BadRequest("TICKET_CLOSE_INVALID", "ticket cannot be closed in current status")
+	ErrTicketInvalidStatus           = infraerrors.BadRequest("TICKET_STATUS_INVALID", "ticket status is invalid")
+	ErrTicketReplyLocked             = infraerrors.BadRequest("TICKET_REPLY_LOCKED", "ticket cannot receive replies in current status")
+	ErrTicketForbidden               = infraerrors.Forbidden("TICKET_FORBIDDEN", "ticket is not accessible")
+	ErrTicketStatusLocked            = infraerrors.BadRequest("TICKET_STATUS_LOCKED", "ticket status can no longer be changed")
+	ErrTicketStatusInvalidTransition = infraerrors.BadRequest("TICKET_STATUS_TRANSITION_INVALID", "ticket status transition is invalid")
+	ErrTicketRevisionRequired        = infraerrors.BadRequest("TICKET_REVISION_REQUIRED", "ticket revision is required")
+	ErrTicketRevisionConflict        = infraerrors.Conflict("TICKET_REVISION_CONFLICT", "ticket revision has changed")
 )
 
 type SupportTicket struct {
@@ -119,9 +122,10 @@ type CreateSupportTicketInput struct {
 }
 
 type UpdateSupportTicketInput struct {
-	UserID      int64
-	Title       string
-	FormPayload json.RawMessage
+	UserID             int64
+	Title              string
+	FormPayload        json.RawMessage
+	ExpectedRevisionNo int
 }
 
 type CreateSupportTicketMessageInput struct {
@@ -141,8 +145,8 @@ type SupportTicketRepository interface {
 	ListForAdmin(ctx context.Context, params pagination.PaginationParams, filters SupportTicketListFilters) ([]SupportTicket, *pagination.PaginationResult, error)
 	ListMessages(ctx context.Context, ticketID int64) ([]SupportTicketMessage, error)
 	UpdateAfterUserWithdraw(ctx context.Context, ticketID int64, withdrawnAt time.Time, systemMessage *SupportTicketMessage) error
-	UpdateEditableContent(ctx context.Context, ticketID int64, title string, formPayload json.RawMessage) error
-	Resubmit(ctx context.Context, ticketID int64, ticket *SupportTicket, revision *SupportTicketRevision, systemMessage *SupportTicketMessage) error
+	UpdateEditableContent(ctx context.Context, ticketID int64, title string, formPayload json.RawMessage, expectedRevisionNo int) error
+	Resubmit(ctx context.Context, ticketID int64, ticket *SupportTicket, revision *SupportTicketRevision, systemMessage *SupportTicketMessage, expectedRevisionNo int) error
 	CloseByUser(ctx context.Context, ticketID int64, closedAt time.Time, systemMessage *SupportTicketMessage) error
 	AddReply(ctx context.Context, ticketID int64, message *SupportTicketMessage, lastReplyRole string, unreadByUser, unreadByAdmin bool, nextStatus string) error
 	UpdateStatusByAdmin(ctx context.Context, ticketID int64, status string, closedAt *time.Time, systemMessage *SupportTicketMessage) error

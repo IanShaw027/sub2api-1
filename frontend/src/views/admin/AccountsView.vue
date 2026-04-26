@@ -317,6 +317,7 @@
       :account="reAuthAcc"
       @close="closeReAuthModal"
       @reauthorized="handleAccountUpdated"
+      @refresh="reload"
       @open-editor="handleOpenEditorFromReAuth"
     />
     <AccountTestModal v-if="showTest && testingAcc" :show="showTest" :account="testingAcc" @close="closeTestModal" />

@@ -218,6 +218,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
+      requiresAvailableChannels: true,
       title: 'Available Channels',
       titleKey: 'availableChannels.title',
       descriptionKey: 'availableChannels.description'
@@ -796,6 +797,11 @@ router.beforeEach((to, _from, next) => {
   }
 
   if (to.meta.requiresChannelMonitor === true && !isChannelMonitorRouteEnabled()) {
+    next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+    return
+  }
+
+  if (to.meta.requiresAvailableChannels === true && !isFeatureFlagEnabled(FeatureFlags.availableChannels)) {
     next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
     return
   }

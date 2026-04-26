@@ -350,7 +350,11 @@ func (h *AuthHandler) OIDCOAuthCallback(c *gin.Context) {
 	if compatEmail == "" && idClaims != nil {
 		compatEmail = strings.TrimSpace(idClaims.Email)
 	}
-	email := compatEmail
+	email := oidcSyntheticEmailFromIdentityKey(oidcIdentityKey(issuer, subject))
+	suggestedEmail := compatEmail
+	if suggestedEmail == "" {
+		suggestedEmail = email
+	}
 	username := firstNonEmpty(
 		userInfoClaims.Username,
 		func() string {
@@ -373,7 +377,7 @@ func (h *AuthHandler) OIDCOAuthCallback(c *gin.Context) {
 		ProviderSubject: subject,
 	}
 	upstreamClaims := map[string]any{
-		"email":             email,
+		"email":             compatEmail,
 		"username":          username,
 		"subject":           subject,
 		"issuer":            issuer,
@@ -387,7 +391,7 @@ func (h *AuthHandler) OIDCOAuthCallback(c *gin.Context) {
 		}(), username),
 		"suggested_avatar_url": userInfoClaims.AvatarURL,
 	}
-	if compatEmail != "" && !strings.EqualFold(strings.TrimSpace(compatEmail), strings.TrimSpace(email)) {
+	if compatEmail != "" {
 		upstreamClaims["compat_email"] = compatEmail
 	}
 	if intent == oauthIntentBindCurrentUser {
@@ -400,7 +404,7 @@ func (h *AuthHandler) OIDCOAuthCallback(c *gin.Context) {
 			Intent:                 oauthIntentBindCurrentUser,
 			Identity:               identityRef,
 			TargetUserID:           &targetUserID,
-			ResolvedEmail:          email,
+			ResolvedEmail:          compatEmail,
 			RedirectTo:             redirectTo,
 			BrowserSessionKey:      browserSessionKey,
 			UpstreamIdentityClaims: upstreamClaims,
@@ -457,7 +461,7 @@ func (h *AuthHandler) OIDCOAuthCallback(c *gin.Context) {
 		if err := h.createOIDCOAuthChoicePendingSession(
 			c,
 			identityRef,
-			email,
+			suggestedEmail,
 			email,
 			redirectTo,
 			browserSessionKey,
@@ -476,7 +480,7 @@ func (h *AuthHandler) OIDCOAuthCallback(c *gin.Context) {
 	if err := h.createOIDCOAuthChoicePendingSession(
 		c,
 		identityRef,
-		email,
+		suggestedEmail,
 		email,
 		redirectTo,
 		browserSessionKey,
@@ -550,6 +554,7 @@ func (h *AuthHandler) createOIDCOAuthChoicePendingSession(
 	}
 	if compatEmailUser != nil {
 		completionResponse["email"] = strings.TrimSpace(compatEmailUser.Email)
+		completionResponse["resolved_email"] = strings.TrimSpace(compatEmailUser.Email)
 		completionResponse["existing_account_email"] = strings.TrimSpace(compatEmailUser.Email)
 		completionResponse["existing_account_bindable"] = true
 		completionResponse["choice_reason"] = "compat_email_match"
@@ -558,7 +563,7 @@ func (h *AuthHandler) createOIDCOAuthChoicePendingSession(
 		completionResponse["choice_reason"] = "force_email_on_signup"
 	}
 
-	resolvedChoiceEmail := suggestionEmail
+	resolvedChoiceEmail := canonicalEmail
 	if compatEmailUser != nil {
 		resolvedChoiceEmail = strings.TrimSpace(compatEmailUser.Email)
 	}

@@ -248,6 +248,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   close: []
   reauthorized: [account: Account]
+  refresh: []
   openEditor: [account: Account]
 }>()
 
@@ -406,6 +407,12 @@ const stripEmptyRecordValues = (
       return typeof value !== 'string' || value.trim() !== ''
     })
   )
+}
+
+const emitKiroBatchRefresh = (refreshTokenCount: number, successCount: number) => {
+  if (refreshTokenCount > 1 && successCount > 1) {
+    emit('refresh')
+  }
 }
 
 const sanitizeKiroCredentialsForAuthMethod = (
@@ -579,6 +586,7 @@ const handleKiroValidateRT = async (payload: {
       if (updatedAccount) {
         emit('reauthorized', updatedAccount)
       }
+      emitKiroBatchRefresh(refreshTokens.length, successCount)
       handleClose()
     } else if (successCount > 0 && failedCount > 0) {
       appStore.showWarning(
@@ -588,6 +596,7 @@ const handleKiroValidateRT = async (payload: {
       if (updatedAccount) {
         emit('reauthorized', updatedAccount)
       }
+      emitKiroBatchRefresh(refreshTokens.length, successCount)
     } else {
       kiroOAuth.error.value = errors.join('\n')
       appStore.showError(t('admin.accounts.oauth.batchFailed'))

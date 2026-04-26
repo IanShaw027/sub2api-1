@@ -16,6 +16,7 @@ interface TicketUpsertPayload {
   title: string
   category?: TicketCategory
   form_payload: Record<string, unknown>
+  expected_revision_no: number
 }
 
 interface TicketCreatePayload {

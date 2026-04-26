@@ -124,7 +124,7 @@ export function useAntigravityOAuth() {
       expiresAt = tokenInfo.expires_at.trim()
     }
 
-    return {
+    return stripEmptyCredentialValues({
       access_token: tokenInfo.access_token,
       refresh_token: tokenInfo.refresh_token,
       token_type: tokenInfo.token_type,
@@ -132,7 +132,17 @@ export function useAntigravityOAuth() {
       project_id: tokenInfo.project_id,
       email: tokenInfo.email,
       plan_type: tokenInfo.plan_type
-    }
+    })
+  }
+
+  const stripEmptyCredentialValues = (credentials: Record<string, unknown>): Record<string, unknown> => {
+    return Object.fromEntries(
+      Object.entries(credentials).filter(([, value]) => {
+        if (value === undefined || value === null) return false
+        if (typeof value === 'string' && value.trim() === '') return false
+        return true
+      })
+    )
   }
 
   const buildExtraInfo = (tokenInfo: AntigravityTokenInfo): Record<string, unknown> | undefined => {

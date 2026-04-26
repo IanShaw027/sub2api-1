@@ -157,11 +157,11 @@ func (*ticketHandlerRepoStub) UpdateAfterUserWithdraw(context.Context, int64, ti
 	return nil
 }
 
-func (*ticketHandlerRepoStub) UpdateEditableContent(context.Context, int64, string, json.RawMessage) error {
+func (*ticketHandlerRepoStub) UpdateEditableContent(context.Context, int64, string, json.RawMessage, int) error {
 	return nil
 }
 
-func (*ticketHandlerRepoStub) Resubmit(context.Context, int64, *service.SupportTicket, *service.SupportTicketRevision, *service.SupportTicketMessage) error {
+func (*ticketHandlerRepoStub) Resubmit(context.Context, int64, *service.SupportTicket, *service.SupportTicketRevision, *service.SupportTicketMessage, int) error {
 	return nil
 }
 

@@ -564,7 +564,7 @@ func TestLinuxDoOAuthCallbackCreatesChoicePendingSessionWhenSignupRequiresInvite
 			_, _ = w.Write([]byte(`{"access_token":"linuxdo-access","token_type":"Bearer","expires_in":3600}`))
 		case "/userinfo":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"id":"654","username":"linuxdo_invite","name":"Need Invite","avatar_url":"https://cdn.example/invite.png"}`))
+			_, _ = w.Write([]byte(`{"id":"654","username":"linuxdo_invite","name":"Need Invite","avatar_url":"https://cdn.example/invite.png","email":"victim@example.com"}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -611,11 +611,85 @@ func TestLinuxDoOAuthCallbackCreatesChoicePendingSessionWhenSignupRequiresInvite
 	require.NoError(t, err)
 	require.Equal(t, oauthIntentLogin, session.Intent)
 	require.Nil(t, session.TargetUserID)
+	require.Equal(t, linuxDoSyntheticEmail("654"), session.ResolvedEmail)
+	require.Equal(t, "victim@example.com", session.UpstreamIdentityClaims["email"])
+	require.Equal(t, "victim@example.com", session.UpstreamIdentityClaims["compat_email"])
 
 	completion, ok := session.LocalFlowState[oauthCompletionResponseKey].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, oauthPendingChoiceStep, completion["step"])
 	require.Equal(t, "/dashboard", completion["redirect"])
+	require.Equal(t, "victim@example.com", completion["email"])
+	require.Equal(t, linuxDoSyntheticEmail("654"), completion["resolved_email"])
+	require.Equal(t, "victim@example.com", completion["compat_email"])
+	require.Equal(t, "third_party_signup", completion["choice_reason"])
+}
+
+func TestLinuxDoOAuthCallbackUsesSyntheticEmailWhenProviderOmitsEmail(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/token":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"linuxdo-access","token_type":"Bearer","expires_in":3600}`))
+		case "/userinfo":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"987","username":"linuxdo_no_email","name":"No Email"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	handler, client := newLinuxDoOAuthHandlerAndClient(t, true, config.LinuxDoConnectConfig{
+		Enabled:             true,
+		ClientID:            "linuxdo-client",
+		ClientSecret:        "linuxdo-secret",
+		AuthorizeURL:        upstream.URL + "/authorize",
+		TokenURL:            upstream.URL + "/token",
+		UserInfoURL:         upstream.URL + "/userinfo",
+		Scopes:              "read",
+		RedirectURL:         "https://api.example.com/api/v1/auth/oauth/linuxdo/callback",
+		FrontendRedirectURL: "/auth/linuxdo/callback",
+		TokenAuthMethod:     "client_secret_post",
+		UsePKCE:             true,
+	})
+	t.Cleanup(func() { _ = client.Close() })
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/oauth/linuxdo/callback?code=code-no-email&state=state-no-email", nil)
+	req.AddCookie(encodedCookie(linuxDoOAuthStateCookieName, "state-no-email"))
+	req.AddCookie(encodedCookie(linuxDoOAuthRedirectCookie, "/dashboard"))
+	req.AddCookie(encodedCookie(linuxDoOAuthVerifierCookie, "verifier-no-email"))
+	req.AddCookie(encodedCookie(linuxDoOAuthIntentCookieName, oauthIntentLogin))
+	req.AddCookie(encodedCookie(oauthPendingBrowserCookieName, "browser-no-email"))
+	c.Request = req
+
+	handler.LinuxDoOAuthCallback(c)
+
+	require.Equal(t, http.StatusFound, recorder.Code)
+	require.Equal(t, "/auth/linuxdo/callback", recorder.Header().Get("Location"))
+
+	sessionCookie := findCookie(recorder.Result().Cookies(), oauthPendingSessionCookieName)
+	require.NotNil(t, sessionCookie)
+
+	ctx := context.Background()
+	session, err := client.PendingAuthSession.Query().
+		Where(pendingauthsession.SessionTokenEQ(decodeCookieValueForTest(t, sessionCookie.Value))).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, oauthIntentLogin, session.Intent)
+	require.Nil(t, session.TargetUserID)
+	require.Equal(t, linuxDoSyntheticEmail("987"), session.ResolvedEmail)
+	require.Equal(t, "", session.UpstreamIdentityClaims["email"])
+	require.NotContains(t, session.UpstreamIdentityClaims, "compat_email")
+
+	completion, ok := session.LocalFlowState[oauthCompletionResponseKey].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, oauthPendingChoiceStep, completion["step"])
+	require.Equal(t, linuxDoSyntheticEmail("987"), completion["email"])
+	require.Equal(t, linuxDoSyntheticEmail("987"), completion["resolved_email"])
+	require.NotContains(t, completion, "compat_email")
 	require.Equal(t, "third_party_signup", completion["choice_reason"])
 }
 

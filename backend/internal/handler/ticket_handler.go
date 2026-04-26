@@ -32,8 +32,9 @@ type CreateTicketRequest struct {
 }
 
 type UpdateTicketRequest struct {
-	Title       string          `json:"title" binding:"required"`
-	FormPayload json.RawMessage `json:"form_payload" binding:"required"`
+	Title              string          `json:"title" binding:"required"`
+	FormPayload        json.RawMessage `json:"form_payload" binding:"required"`
+	ExpectedRevisionNo int             `json:"expected_revision_no"`
 }
 
 type CreateTicketMessageRequest struct {
@@ -200,9 +201,10 @@ func (h *TicketHandler) Update(c *gin.Context) {
 		return
 	}
 	if err := h.ticketService.UpdateEditable(c.Request.Context(), service.UpdateSupportTicketInput{
-		UserID:      subject.UserID,
-		Title:       req.Title,
-		FormPayload: req.FormPayload,
+		UserID:             subject.UserID,
+		Title:              req.Title,
+		FormPayload:        req.FormPayload,
+		ExpectedRevisionNo: expectedTicketRevisionNo(c, req.ExpectedRevisionNo),
 	}, ticketID); err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -227,14 +229,31 @@ func (h *TicketHandler) Resubmit(c *gin.Context) {
 		return
 	}
 	if err := h.ticketService.Resubmit(c.Request.Context(), service.UpdateSupportTicketInput{
-		UserID:      subject.UserID,
-		Title:       req.Title,
-		FormPayload: req.FormPayload,
+		UserID:             subject.UserID,
+		Title:              req.Title,
+		FormPayload:        req.FormPayload,
+		ExpectedRevisionNo: expectedTicketRevisionNo(c, req.ExpectedRevisionNo),
 	}, ticketID); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "ok"})
+}
+
+func expectedTicketRevisionNo(c *gin.Context, payloadRevisionNo int) int {
+	if payloadRevisionNo > 0 {
+		return payloadRevisionNo
+	}
+	headerValue := strings.TrimSpace(c.GetHeader("If-Match"))
+	headerValue = strings.Trim(headerValue, `"`)
+	if headerValue == "" {
+		return 0
+	}
+	revisionNo, err := strconv.Atoi(headerValue)
+	if err != nil || revisionNo <= 0 {
+		return 0
+	}
+	return revisionNo
 }
 
 func (h *TicketHandler) Close(c *gin.Context) {

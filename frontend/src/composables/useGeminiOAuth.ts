@@ -135,7 +135,7 @@ export function useGeminiOAuth() {
       expiresAt = tokenInfo.expires_at.trim()
     }
 
-    return {
+    return stripEmptyCredentialValues({
       access_token: tokenInfo.access_token,
       refresh_token: tokenInfo.refresh_token,
       token_type: tokenInfo.token_type,
@@ -144,7 +144,17 @@ export function useGeminiOAuth() {
       project_id: tokenInfo.project_id,
       oauth_type: tokenInfo.oauth_type,
       tier_id: tokenInfo.tier_id
-    }
+    })
+  }
+
+  const stripEmptyCredentialValues = (credentials: Record<string, unknown>): Record<string, unknown> => {
+    return Object.fromEntries(
+      Object.entries(credentials).filter(([, value]) => {
+        if (value === undefined || value === null) return false
+        if (typeof value === 'string' && value.trim() === '') return false
+        return true
+      })
+    )
   }
 
   const buildExtraInfo = (tokenInfo: GeminiTokenInfo): Record<string, unknown> | undefined => {

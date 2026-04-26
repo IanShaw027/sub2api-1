@@ -203,7 +203,7 @@ func (s *PaymentService) PrepareRefund(ctx context.Context, oid int64, amt float
 	if err != nil {
 		return nil, nil, infraerrors.NotFound("NOT_FOUND", "order not found")
 	}
-	ok := []string{OrderStatusCompleted, OrderStatusRefundRequested, OrderStatusRefundFailed}
+	ok := []string{OrderStatusCompleted, OrderStatusRefundRequested, OrderStatusPartiallyRefunded, OrderStatusRefundFailed}
 	if !psSliceContains(ok, o.Status) {
 		return nil, nil, infraerrors.BadRequest("INVALID_STATUS", "order status does not allow refund")
 	}
@@ -224,10 +224,11 @@ func (s *PaymentService) PrepareRefund(ctx context.Context, oid int64, amt float
 		return nil, nil, infraerrors.BadRequest("INVALID_AMOUNT", "invalid refund amount")
 	}
 	if amt <= 0 {
-		amt = o.Amount
+		amt = remainingRefundAmount(o)
 	}
-	if amountCentsGreaterThan(amt, o.Amount) {
-		return nil, nil, infraerrors.BadRequest("REFUND_AMOUNT_EXCEEDED", "refund amount exceeds recharge")
+	remaining := remainingRefundAmount(o)
+	if amountCentsGreaterThan(amt, remaining) {
+		return nil, nil, infraerrors.BadRequest("REFUND_AMOUNT_EXCEEDED", "refund amount exceeds remaining refundable amount")
 	}
 	ga := calculateGatewayRefundAmount(o.Amount, o.PayAmount, amt)
 	rr := strings.TrimSpace(reason)
@@ -273,7 +274,7 @@ func (s *PaymentService) prepDeduct(ctx context.Context, o *dbent.PaymentOrder, 
 }
 
 func (s *PaymentService) ExecuteRefund(ctx context.Context, p *RefundPlan) (*RefundResult, error) {
-	c, err := s.entClient.PaymentOrder.Update().Where(paymentorder.IDEQ(p.OrderID), paymentorder.StatusIn(OrderStatusCompleted, OrderStatusRefundRequested, OrderStatusRefundFailed)).SetStatus(OrderStatusRefunding).Save(ctx)
+	c, err := s.entClient.PaymentOrder.Update().Where(paymentorder.IDEQ(p.OrderID), paymentorder.StatusIn(OrderStatusCompleted, OrderStatusRefundRequested, OrderStatusPartiallyRefunded, OrderStatusRefundFailed)).SetStatus(OrderStatusRefunding).Save(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("lock: %w", err)
 	}
@@ -374,17 +375,29 @@ func (s *PaymentService) handleGwFail(ctx context.Context, p *RefundPlan, gErr e
 }
 
 func (s *PaymentService) markRefundOk(ctx context.Context, p *RefundPlan) (*RefundResult, error) {
+	totalRefunded := p.Order.RefundAmount + p.RefundAmount
 	fs := OrderStatusRefunded
-	if p.RefundAmount < p.Order.Amount {
+	if amountCentsGreaterThan(p.Order.Amount, totalRefunded) {
 		fs = OrderStatusPartiallyRefunded
 	}
 	now := time.Now()
-	_, err := s.entClient.PaymentOrder.UpdateOneID(p.OrderID).SetStatus(fs).SetRefundAmount(p.RefundAmount).SetRefundReason(p.Reason).SetRefundAt(now).SetForceRefund(p.Force).Save(ctx)
+	_, err := s.entClient.PaymentOrder.UpdateOneID(p.OrderID).SetStatus(fs).SetRefundAmount(totalRefunded).SetRefundReason(p.Reason).SetRefundAt(now).SetForceRefund(p.Force).Save(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("mark refund: %w", err)
 	}
-	s.writeAuditLog(ctx, p.OrderID, "REFUND_SUCCESS", "admin", map[string]any{"refundAmount": p.RefundAmount, "reason": p.Reason, "balanceDeducted": p.BalanceToDeduct, "force": p.Force})
+	s.writeAuditLog(ctx, p.OrderID, "REFUND_SUCCESS", "admin", map[string]any{"refundAmount": p.RefundAmount, "totalRefunded": totalRefunded, "reason": p.Reason, "balanceDeducted": p.BalanceToDeduct, "force": p.Force})
 	return &RefundResult{Success: true, BalanceDeducted: p.BalanceToDeduct, SubDaysDeducted: p.SubDaysToDeduct}, nil
+}
+
+func remainingRefundAmount(o *dbent.PaymentOrder) float64 {
+	if o == nil {
+		return 0
+	}
+	remaining := o.Amount - o.RefundAmount
+	if remaining <= 0 {
+		return 0
+	}
+	return remaining
 }
 
 func (s *PaymentService) RollbackRefund(ctx context.Context, p *RefundPlan, gErr error) bool {
@@ -407,8 +420,8 @@ func (s *PaymentService) RollbackRefund(ctx context.Context, p *RefundPlan, gErr
 
 func (s *PaymentService) restoreStatus(ctx context.Context, p *RefundPlan) {
 	rs := OrderStatusCompleted
-	if p.Order.Status == OrderStatusRefundRequested {
-		rs = OrderStatusRefundRequested
+	if p.Order.Status == OrderStatusRefundRequested || p.Order.Status == OrderStatusPartiallyRefunded {
+		rs = p.Order.Status
 	}
 	_, _ = s.entClient.PaymentOrder.UpdateOneID(p.OrderID).SetStatus(rs).Save(ctx)
 }

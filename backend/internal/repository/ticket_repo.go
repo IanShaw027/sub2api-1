@@ -180,10 +180,13 @@ func (r *ticketRepository) UpdateAfterUserWithdraw(ctx context.Context, ticketID
 	})
 }
 
-func (r *ticketRepository) UpdateEditableContent(ctx context.Context, ticketID int64, title string, formPayload json.RawMessage) error {
+func (r *ticketRepository) UpdateEditableContent(ctx context.Context, ticketID int64, title string, formPayload json.RawMessage, expectedRevisionNo int) error {
 	return r.withTicketUpdateTx(ctx, ticketID, func(tx *sql.Tx, locked *lockedTicketState) error {
 		if locked.status != service.SupportTicketStatusWithdrawn {
 			return service.ErrTicketNotEditable
+		}
+		if locked.currentRevisionNo != expectedRevisionNo {
+			return service.ErrTicketRevisionConflict
 		}
 		_, err := tx.ExecContext(ctx, `
 			UPDATE support_tickets
@@ -194,10 +197,13 @@ func (r *ticketRepository) UpdateEditableContent(ctx context.Context, ticketID i
 	})
 }
 
-func (r *ticketRepository) Resubmit(ctx context.Context, ticketID int64, ticket *service.SupportTicket, revision *service.SupportTicketRevision, systemMessage *service.SupportTicketMessage) error {
+func (r *ticketRepository) Resubmit(ctx context.Context, ticketID int64, ticket *service.SupportTicket, revision *service.SupportTicketRevision, systemMessage *service.SupportTicketMessage, expectedRevisionNo int) error {
 	return r.withTicketUpdateTx(ctx, ticketID, func(tx *sql.Tx, locked *lockedTicketState) error {
 		if locked.status != service.SupportTicketStatusWithdrawn {
 			return service.ErrTicketNotEditable
+		}
+		if locked.currentRevisionNo != expectedRevisionNo {
+			return service.ErrTicketRevisionConflict
 		}
 		nextRevision := locked.currentRevisionNo + 1
 		ticket.CurrentRevisionNo = nextRevision
@@ -269,6 +275,9 @@ func (r *ticketRepository) UpdateStatusByAdmin(ctx context.Context, ticketID int
 		if locked.status == service.SupportTicketStatusWithdrawn {
 			return service.ErrTicketStatusLocked
 		}
+		if !isAdminManualStatusTransitionAllowed(locked.status, locked.lastReplyRole, status) {
+			return service.ErrTicketStatusInvalidTransition
+		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE support_tickets
 			SET status = $2, closed_at = $3, latest_message_at = $4, last_reply_role = $5,
@@ -294,6 +303,7 @@ func (r *ticketRepository) MarkReadByAdmin(ctx context.Context, ticketID int64) 
 type lockedTicketState struct {
 	status            string
 	currentRevisionNo int
+	lastReplyRole     string
 }
 
 func (r *ticketRepository) withTicketUpdateTx(ctx context.Context, ticketID int64, fn func(tx *sql.Tx, locked *lockedTicketState) error) error {
@@ -305,11 +315,11 @@ func (r *ticketRepository) withTicketUpdateTx(ctx context.Context, ticketID int6
 
 	locked := &lockedTicketState{}
 	if err := tx.QueryRowContext(ctx, `
-		SELECT status, current_revision_no
-		FROM support_tickets
-		WHERE id = $1
-		FOR UPDATE
-	`, ticketID).Scan(&locked.status, &locked.currentRevisionNo); err != nil {
+		SELECT status, current_revision_no, last_reply_role
+			FROM support_tickets
+			WHERE id = $1
+			FOR UPDATE
+		`, ticketID).Scan(&locked.status, &locked.currentRevisionNo, &locked.lastReplyRole); err != nil {
 		if err == sql.ErrNoRows {
 			return service.ErrTicketNotFound
 		}
@@ -319,6 +329,16 @@ func (r *ticketRepository) withTicketUpdateTx(ctx context.Context, ticketID int6
 		return err
 	}
 	return tx.Commit()
+}
+
+func isAdminManualStatusTransitionAllowed(currentStatus, lastReplyRole, nextStatus string) bool {
+	if currentStatus == nextStatus {
+		return true
+	}
+	if nextStatus == service.SupportTicketStatusWaitingUser || nextStatus == service.SupportTicketStatusResolved {
+		return lastReplyRole == service.SupportTicketSenderRoleAdmin
+	}
+	return true
 }
 
 func insertTicketMessage(ctx context.Context, tx *sql.Tx, ticketID int64, message *service.SupportTicketMessage) error {

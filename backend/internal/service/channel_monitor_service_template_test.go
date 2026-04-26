@@ -329,6 +329,45 @@ func TestChannelMonitorManualRun_UsesSchedulerPolicy(t *testing.T) {
 	}
 }
 
+func TestChannelMonitorRunCheck_RejectsDisabledMonitor(t *testing.T) {
+	insertHistoryCalled := false
+	markCheckedCalled := false
+	repo := &channelMonitorRepoStub{
+		getByIDFn: func(context.Context, int64) (*ChannelMonitor, error) {
+			return &ChannelMonitor{
+				ID:              17,
+				Name:            "disabled",
+				Provider:        MonitorProviderOpenAI,
+				Endpoint:        "https://api.openai.com",
+				APIKey:          "enc:sk",
+				PrimaryModel:    "gpt-4.1",
+				Enabled:         false,
+				IntervalSeconds: 60,
+			}, nil
+		},
+		insertHistoryFn: func(context.Context, []*ChannelMonitorHistoryRow) error {
+			insertHistoryCalled = true
+			return nil
+		},
+		markCheckedFn: func(context.Context, int64, time.Time) error {
+			markCheckedCalled = true
+			return nil
+		},
+	}
+	svc := NewChannelMonitorService(repo, channelMonitorEncryptorStub{})
+
+	results, err := svc.RunCheck(context.Background(), 17)
+	if !errors.Is(err, ErrChannelMonitorDisabled) {
+		t.Fatalf("expected ErrChannelMonitorDisabled, got %v", err)
+	}
+	if results != nil {
+		t.Fatalf("expected no results for disabled monitor, got %#v", results)
+	}
+	if insertHistoryCalled || markCheckedCalled {
+		t.Fatal("disabled monitor should not persist check results")
+	}
+}
+
 type manualRunSchedulerStub struct {
 	runFn func(context.Context, int64) ([]*CheckResult, error)
 }

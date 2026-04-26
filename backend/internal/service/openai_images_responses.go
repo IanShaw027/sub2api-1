@@ -574,6 +574,9 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthNonStreamingResponse(
 	}
 
 	var usage OpenAIUsage
+	if parsedUsage, ok := extractOpenAIUsageFromJSONBytes(body); ok {
+		usage = parsedUsage
+	}
 	for _, line := range bytes.Split(body, []byte("\n")) {
 		line = bytes.TrimRight(line, "\r")
 		data, ok := extractOpenAISSEDataLine(string(line))

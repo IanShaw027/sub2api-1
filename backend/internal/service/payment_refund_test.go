@@ -184,3 +184,88 @@ func TestGwRefundRejectsAlipayMerchantIdentitySnapshotMismatch(t *testing.T) {
 	})
 	require.ErrorContains(t, err, "alipay app_id mismatch")
 }
+
+func TestPartialRefundAllowsRemainingRefundAndMarksFinalRefunded(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("refund-partial@example.com").
+		SetPasswordHash("hash").
+		SetUsername("refund-partial-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	inst, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeAlipay).
+		SetName("alipay-partial-refund-instance").
+		SetConfig("{}").
+		SetSupportedTypes("alipay").
+		SetEnabled(true).
+		SetRefundEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	instID := strconv.FormatInt(inst.ID, 10)
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(100).
+		SetPayAmount(100).
+		SetFeeRate(0).
+		SetRechargeCode("REFUND-PARTIAL-ORDER").
+		SetOutTradeNo("sub2_refund_partial_order").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("trade-partial-refund").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusCompleted).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(time.Now()).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(instID).
+		SetProviderKey(payment.TypeAlipay).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{
+		entClient: client,
+	}
+
+	plan, result, err := svc.PrepareRefund(ctx, order.ID, 30, "first partial", false, false)
+	require.NoError(t, err)
+	require.Nil(t, result)
+	require.Equal(t, 30.0, plan.RefundAmount)
+	require.Equal(t, 30.0, plan.GatewayAmount)
+	plan.Order.PaymentTradeNo = ""
+	result, err = svc.ExecuteRefund(ctx, plan)
+	require.NoError(t, err)
+	require.True(t, result.Success)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPartiallyRefunded, reloaded.Status)
+	require.Equal(t, 30.0, reloaded.RefundAmount)
+
+	plan, result, err = svc.PrepareRefund(ctx, order.ID, 70.01, "too much", false, false)
+	require.Nil(t, plan)
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Equal(t, "REFUND_AMOUNT_EXCEEDED", infraerrors.Reason(err))
+
+	plan, result, err = svc.PrepareRefund(ctx, order.ID, 70, "final partial", false, false)
+	require.NoError(t, err)
+	require.Nil(t, result)
+	require.Equal(t, 70.0, plan.RefundAmount)
+	require.Equal(t, 70.0, plan.GatewayAmount)
+	plan.Order.PaymentTradeNo = ""
+	result, err = svc.ExecuteRefund(ctx, plan)
+	require.NoError(t, err)
+	require.True(t, result.Success)
+
+	reloaded, err = client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusRefunded, reloaded.Status)
+	require.Equal(t, 100.0, reloaded.RefundAmount)
+}

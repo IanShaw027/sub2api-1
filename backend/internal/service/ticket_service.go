@@ -100,10 +100,6 @@ func (s *TicketService) GetForUser(ctx context.Context, userID, ticketID int64) 
 	if ticket.UserID != userID {
 		return nil, ErrTicketForbidden
 	}
-	if err := s.ticketRepo.MarkReadByUser(ctx, ticketID); err != nil {
-		return nil, fmt.Errorf("mark ticket read by user: %w", err)
-	}
-	ticket.UnreadByUser = false
 	return ticket, nil
 }
 
@@ -112,25 +108,23 @@ func (s *TicketService) GetForAdmin(ctx context.Context, ticketID int64) (*Suppo
 	if err != nil {
 		return nil, err
 	}
-	if err := s.ticketRepo.MarkReadByAdmin(ctx, ticketID); err != nil {
-		return nil, fmt.Errorf("mark ticket read by admin: %w", err)
-	}
-	ticket.UnreadByAdmin = false
 	return ticket, nil
 }
 
 func (s *TicketService) ListForUser(ctx context.Context, userID int64, params pagination.PaginationParams, filters SupportTicketListFilters) ([]SupportTicket, *pagination.PaginationResult, error) {
-	filters.Category = NormalizeSupportTicketCategory(filters.Category)
-	if filters.Status != "" {
-		filters.Status = NormalizeSupportTicketStatus(filters.Status)
+	var err error
+	filters, err = normalizeSupportTicketListFilters(filters)
+	if err != nil {
+		return nil, nil, err
 	}
 	return s.ticketRepo.ListForUser(ctx, userID, params, filters)
 }
 
 func (s *TicketService) ListForAdmin(ctx context.Context, params pagination.PaginationParams, filters SupportTicketListFilters) ([]SupportTicket, *pagination.PaginationResult, error) {
-	filters.Category = NormalizeSupportTicketCategory(filters.Category)
-	if filters.Status != "" {
-		filters.Status = NormalizeSupportTicketStatus(filters.Status)
+	var err error
+	filters, err = normalizeSupportTicketListFilters(filters)
+	if err != nil {
+		return nil, nil, err
 	}
 	return s.ticketRepo.ListForAdmin(ctx, params, filters)
 }
@@ -143,17 +137,28 @@ func (s *TicketService) ListMessagesForUser(ctx context.Context, userID, ticketI
 	if ticket.UserID != userID {
 		return nil, ErrTicketForbidden
 	}
+	items, err := s.ticketRepo.ListMessages(ctx, ticketID)
+	if err != nil {
+		return nil, err
+	}
 	if err := s.ticketRepo.MarkReadByUser(ctx, ticketID); err != nil {
 		return nil, fmt.Errorf("mark ticket read by user: %w", err)
 	}
-	return s.ticketRepo.ListMessages(ctx, ticketID)
+	return items, nil
 }
 
 func (s *TicketService) ListMessagesForAdmin(ctx context.Context, ticketID int64) ([]SupportTicketMessage, error) {
-	if _, err := s.GetForAdmin(ctx, ticketID); err != nil {
+	if _, err := s.ticketRepo.GetByID(ctx, ticketID); err != nil {
 		return nil, err
 	}
-	return s.ticketRepo.ListMessages(ctx, ticketID)
+	items, err := s.ticketRepo.ListMessages(ctx, ticketID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ticketRepo.MarkReadByAdmin(ctx, ticketID); err != nil {
+		return nil, fmt.Errorf("mark ticket read by admin: %w", err)
+	}
+	return items, nil
 }
 
 func (s *TicketService) Withdraw(ctx context.Context, userID, ticketID int64) error {
@@ -172,6 +177,9 @@ func (s *TicketService) Withdraw(ctx context.Context, userID, ticketID int64) er
 }
 
 func (s *TicketService) UpdateEditable(ctx context.Context, input UpdateSupportTicketInput, ticketID int64) error {
+	if input.ExpectedRevisionNo <= 0 {
+		return ErrTicketRevisionRequired
+	}
 	ticket, err := s.ticketRepo.GetByID(ctx, ticketID)
 	if err != nil {
 		return err
@@ -196,10 +204,13 @@ func (s *TicketService) UpdateEditable(ctx context.Context, input UpdateSupportT
 	if err := validateSupportTicketPayload(ticket.Category, payload); err != nil {
 		return err
 	}
-	return s.ticketRepo.UpdateEditableContent(ctx, ticketID, title, payload)
+	return s.ticketRepo.UpdateEditableContent(ctx, ticketID, title, payload, input.ExpectedRevisionNo)
 }
 
 func (s *TicketService) Resubmit(ctx context.Context, input UpdateSupportTicketInput, ticketID int64) error {
+	if input.ExpectedRevisionNo <= 0 {
+		return ErrTicketRevisionRequired
+	}
 	ticket, err := s.ticketRepo.GetByID(ctx, ticketID)
 	if err != nil {
 		return err
@@ -242,7 +253,7 @@ func (s *TicketService) Resubmit(ctx context.Context, input UpdateSupportTicketI
 		SubmittedBy: &input.UserID,
 		SubmittedAt: now,
 	}
-	return s.ticketRepo.Resubmit(ctx, ticketID, nextTicket, revision, newSystemTicketMessage("用户更新了工单内容并重新提交。", now))
+	return s.ticketRepo.Resubmit(ctx, ticketID, nextTicket, revision, newSystemTicketMessage("用户更新了工单内容并重新提交。", now), input.ExpectedRevisionNo)
 }
 
 func (s *TicketService) CloseForUser(ctx context.Context, userID, ticketID int64) error {
@@ -338,6 +349,9 @@ func (s *TicketService) UpdateStatusByAdmin(ctx context.Context, ticketID int64,
 	if ticket.Status == SupportTicketStatusResolved && status != SupportTicketStatusResolved && status != SupportTicketStatusClosed {
 		return ErrTicketStatusLocked
 	}
+	if !isAdminManualStatusTransitionAllowed(ticket.Status, ticket.LastReplyRole, status) {
+		return ErrTicketStatusInvalidTransition
+	}
 	var content string
 	switch status {
 	case SupportTicketStatusProcessing:
@@ -359,6 +373,38 @@ func (s *TicketService) UpdateStatusByAdmin(ctx context.Context, ticketID int64,
 		closedAt = &now
 	}
 	return s.ticketRepo.UpdateStatusByAdmin(ctx, ticketID, status, closedAt, newSystemTicketMessage(content, now))
+}
+
+func normalizeSupportTicketListFilters(filters SupportTicketListFilters) (SupportTicketListFilters, error) {
+	categoryInput := strings.TrimSpace(filters.Category)
+	if categoryInput != "" {
+		filters.Category = NormalizeSupportTicketCategory(categoryInput)
+		if filters.Category == "" {
+			return filters, ErrTicketInvalidCategory
+		}
+	} else {
+		filters.Category = ""
+	}
+	statusInput := strings.TrimSpace(filters.Status)
+	if statusInput != "" {
+		filters.Status = NormalizeSupportTicketStatus(statusInput)
+		if filters.Status == "" {
+			return filters, ErrTicketInvalidStatus
+		}
+	} else {
+		filters.Status = ""
+	}
+	return filters, nil
+}
+
+func isAdminManualStatusTransitionAllowed(currentStatus, lastReplyRole, nextStatus string) bool {
+	if currentStatus == nextStatus {
+		return true
+	}
+	if nextStatus == SupportTicketStatusWaitingUser || nextStatus == SupportTicketStatusResolved {
+		return lastReplyRole == SupportTicketSenderRoleAdmin
+	}
+	return true
 }
 
 func normalizeTicketPayload(payload json.RawMessage) json.RawMessage {

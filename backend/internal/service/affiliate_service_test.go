@@ -98,6 +98,20 @@ func (s *affiliateRepoStub) ListAdminAffiliateStats(ctx context.Context, params 
 	return nil, 0, nil
 }
 
+func TestBindInviterByCodeNilServiceReturnsServiceUnavailable(t *testing.T) {
+	t.Parallel()
+
+	var svc *AffiliateService
+	err := svc.BindInviterByCode(context.Background(), 1, "ABCDEFGHJKLM")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "affiliate service unavailable")
+
+	svc = &AffiliateService{settingRepo: &affiliateSettingRepoStub{value: "true"}}
+	err = svc.BindInviterByCode(context.Background(), 1, "ABCDEFGHJKLM")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "affiliate service unavailable")
+}
+
 func TestAccrueInviteRebate_ClampsToCapAndClaimsSlot(t *testing.T) {
 	ctx := context.Background()
 	inviterID := int64(10)

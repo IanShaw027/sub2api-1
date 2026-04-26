@@ -176,8 +176,11 @@ func findOutTradeNoInJSON(payload map[string]any) string {
 	}
 	candidates := []string{
 		readNestedJSONString(payload, "out_trade_no"),
+		readNestedJSONString(payload, "orderId"),
 		readNestedJSONString(payload, "metadata", "out_trade_no"),
+		readNestedJSONString(payload, "metadata", "orderId"),
 		readNestedJSONString(payload, "data", "object", "metadata", "out_trade_no"),
+		readNestedJSONString(payload, "data", "object", "metadata", "orderId"),
 		readNestedJSONString(payload, "data", "object", "client_reference_id"),
 		readNestedJSONString(payload, "resource", "out_trade_no"),
 	}

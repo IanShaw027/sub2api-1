@@ -246,20 +246,24 @@ func (h *AuthHandler) LinuxDoOAuthCallback(c *gin.Context) {
 		return
 	}
 	compatEmail := strings.TrimSpace(email)
-	email = compatEmail
+	email = linuxDoSyntheticEmail(subject)
+	suggestedEmail := compatEmail
+	if suggestedEmail == "" {
+		suggestedEmail = email
+	}
 	identityKey := service.PendingAuthIdentityKey{
 		ProviderType:    "linuxdo",
 		ProviderKey:     "linuxdo",
 		ProviderSubject: subject,
 	}
 	upstreamClaims := map[string]any{
-		"email":                  email,
+		"email":                  compatEmail,
 		"username":               username,
 		"subject":                subject,
 		"suggested_display_name": displayName,
 		"suggested_avatar_url":   avatarURL,
 	}
-	if compatEmail != "" && !strings.EqualFold(strings.TrimSpace(compatEmail), strings.TrimSpace(email)) {
+	if compatEmail != "" {
 		upstreamClaims["compat_email"] = compatEmail
 	}
 	if intent == oauthIntentBindCurrentUser {
@@ -272,7 +276,7 @@ func (h *AuthHandler) LinuxDoOAuthCallback(c *gin.Context) {
 			Intent:                 oauthIntentBindCurrentUser,
 			Identity:               identityKey,
 			TargetUserID:           &targetUserID,
-			ResolvedEmail:          email,
+			ResolvedEmail:          compatEmail,
 			RedirectTo:             redirectTo,
 			BrowserSessionKey:      browserSessionKey,
 			UpstreamIdentityClaims: upstreamClaims,
@@ -320,7 +324,7 @@ func (h *AuthHandler) LinuxDoOAuthCallback(c *gin.Context) {
 	if err := h.createLinuxDoOAuthChoicePendingSession(
 		c,
 		identityKey,
-		email,
+		suggestedEmail,
 		email,
 		redirectTo,
 		browserSessionKey,
@@ -399,9 +403,10 @@ func (h *AuthHandler) createLinuxDoOAuthChoicePendingSession(
 	if strings.TrimSpace(compatEmail) != "" {
 		completionResponse["compat_email"] = strings.TrimSpace(compatEmail)
 	}
-	resolvedChoiceEmail := suggestionEmail
+	resolvedChoiceEmail := canonicalEmail
 	if compatEmailUser != nil {
 		completionResponse["email"] = strings.TrimSpace(compatEmailUser.Email)
+		completionResponse["resolved_email"] = strings.TrimSpace(compatEmailUser.Email)
 		completionResponse["existing_account_email"] = strings.TrimSpace(compatEmailUser.Email)
 		completionResponse["existing_account_bindable"] = true
 		completionResponse["choice_reason"] = "compat_email_match"

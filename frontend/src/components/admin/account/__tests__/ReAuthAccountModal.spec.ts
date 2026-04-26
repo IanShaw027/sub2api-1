@@ -433,6 +433,7 @@ describe('admin ReAuthAccountModal', () => {
       })
     }))
     expect(clearErrorMock).toHaveBeenCalledWith(42)
+    expect(wrapper.emitted('refresh')).toHaveLength(1)
   })
 
   it('keeps Kiro batch refresh-token reauth guarded while per-token validation toggles loading', async () => {
@@ -478,6 +479,38 @@ describe('admin ReAuthAccountModal', () => {
     expect(validateRefreshTokenMock).toHaveBeenCalledTimes(2)
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     expect(createAccountMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('requests a list refresh when Kiro multiline reauth creates accounts before a later validation failure', async () => {
+    validateRefreshTokenMock
+      .mockImplementationOnce(async (credentials: Record<string, unknown>) => ({
+        access_token: `access-${credentials.refresh_token}`,
+        refresh_token: `validated-${credentials.refresh_token}`,
+        email: `${credentials.refresh_token}@example.com`
+      }))
+      .mockImplementationOnce(async (credentials: Record<string, unknown>) => ({
+        access_token: `access-${credentials.refresh_token}`,
+        refresh_token: `validated-${credentials.refresh_token}`,
+        email: `${credentials.refresh_token}@example.com`
+      }))
+      .mockResolvedValueOnce(null)
+    buildAccountNameMock.mockImplementation((tokenInfo?: any) => `Kiro ${tokenInfo?.email || 'OAuth'}`)
+    const wrapper = mountModal(buildKiroAccount('oauth'))
+
+    wrapper.getComponent(KiroAuthorizationFlowStub).vm.$emit('submit-refresh-token', {
+      credentials: {
+        refresh_token: 'rt-one\nrt-two\nrt-three',
+        auth_method: 'social',
+        region: 'eu-west-1'
+      },
+      extra: {}
+    })
+    await flushPromises()
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('reauthorized')).toHaveLength(1)
+    expect(wrapper.emitted('refresh')).toHaveLength(1)
   })
 
   it('removes stale IDC credentials when Kiro reauth switches back to social refresh tokens', async () => {

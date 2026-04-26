@@ -14,10 +14,17 @@ import (
 )
 
 type ticketRepoStub struct {
-	ticket        *SupportTicket
-	createdTicket *SupportTicket
-	replyMessage  *SupportTicketMessage
-	nextStatus    string
+	ticket                   *SupportTicket
+	createdTicket            *SupportTicket
+	replyMessage             *SupportTicketMessage
+	nextStatus               string
+	listForUserFilters       SupportTicketListFilters
+	listForAdminFilters      SupportTicketListFilters
+	markReadByUserCount      int
+	markReadByAdminCount     int
+	listMessagesErr          error
+	updateExpectedRevision   int
+	resubmitExpectedRevision int
 }
 
 func (s *ticketRepoStub) CreateSubmitted(_ context.Context, ticket *SupportTicket, _ *SupportTicketRevision, _ *SupportTicketMessage) error {
@@ -39,27 +46,34 @@ func (s *ticketRepoStub) GetByID(context.Context, int64) (*SupportTicket, error)
 	return s.ticket, nil
 }
 
-func (*ticketRepoStub) ListForUser(context.Context, int64, pagination.PaginationParams, SupportTicketListFilters) ([]SupportTicket, *pagination.PaginationResult, error) {
-	return nil, nil, nil
+func (s *ticketRepoStub) ListForUser(_ context.Context, _ int64, _ pagination.PaginationParams, filters SupportTicketListFilters) ([]SupportTicket, *pagination.PaginationResult, error) {
+	s.listForUserFilters = filters
+	return nil, &pagination.PaginationResult{}, nil
 }
 
-func (*ticketRepoStub) ListForAdmin(context.Context, pagination.PaginationParams, SupportTicketListFilters) ([]SupportTicket, *pagination.PaginationResult, error) {
-	return nil, nil, nil
+func (s *ticketRepoStub) ListForAdmin(_ context.Context, _ pagination.PaginationParams, filters SupportTicketListFilters) ([]SupportTicket, *pagination.PaginationResult, error) {
+	s.listForAdminFilters = filters
+	return nil, &pagination.PaginationResult{}, nil
 }
 
-func (*ticketRepoStub) ListMessages(context.Context, int64) ([]SupportTicketMessage, error) {
-	return nil, nil
+func (s *ticketRepoStub) ListMessages(context.Context, int64) ([]SupportTicketMessage, error) {
+	if s.listMessagesErr != nil {
+		return nil, s.listMessagesErr
+	}
+	return []SupportTicketMessage{{ID: 1}}, nil
 }
 
 func (*ticketRepoStub) UpdateAfterUserWithdraw(context.Context, int64, time.Time, *SupportTicketMessage) error {
 	return nil
 }
 
-func (*ticketRepoStub) UpdateEditableContent(context.Context, int64, string, json.RawMessage) error {
+func (s *ticketRepoStub) UpdateEditableContent(_ context.Context, _ int64, _ string, _ json.RawMessage, expectedRevisionNo int) error {
+	s.updateExpectedRevision = expectedRevisionNo
 	return nil
 }
 
-func (*ticketRepoStub) Resubmit(context.Context, int64, *SupportTicket, *SupportTicketRevision, *SupportTicketMessage) error {
+func (s *ticketRepoStub) Resubmit(_ context.Context, _ int64, _ *SupportTicket, _ *SupportTicketRevision, _ *SupportTicketMessage, expectedRevisionNo int) error {
+	s.resubmitExpectedRevision = expectedRevisionNo
 	return nil
 }
 
@@ -80,12 +94,62 @@ func (*ticketRepoStub) UpdateStatusByAdmin(context.Context, int64, string, *time
 	return nil
 }
 
-func (*ticketRepoStub) MarkReadByUser(context.Context, int64) error {
+func (s *ticketRepoStub) MarkReadByUser(context.Context, int64) error {
+	s.markReadByUserCount++
 	return nil
 }
 
-func (*ticketRepoStub) MarkReadByAdmin(context.Context, int64) error {
+func (s *ticketRepoStub) MarkReadByAdmin(context.Context, int64) error {
+	s.markReadByAdminCount++
 	return nil
+}
+
+func TestTicketServiceListRejectsInvalidFilters(t *testing.T) {
+	svc := NewTicketService(&ticketRepoStub{}, &announcementUserRepoStub{})
+
+	_, _, err := svc.ListForUser(context.Background(), 1, pagination.PaginationParams{}, SupportTicketListFilters{Status: "invalid"})
+	require.ErrorIs(t, err, ErrTicketInvalidStatus)
+
+	_, _, err = svc.ListForAdmin(context.Background(), pagination.PaginationParams{}, SupportTicketListFilters{Category: "invalid"})
+	require.ErrorIs(t, err, ErrTicketInvalidCategory)
+}
+
+func TestTicketServiceListAllowsEmptyAndNormalizesValidFilters(t *testing.T) {
+	repo := &ticketRepoStub{}
+	svc := NewTicketService(repo, &announcementUserRepoStub{})
+
+	_, _, err := svc.ListForUser(context.Background(), 1, pagination.PaginationParams{}, SupportTicketListFilters{Status: " waiting_admin ", Category: " consult "})
+
+	require.NoError(t, err)
+	require.Equal(t, SupportTicketStatusWaitingAdmin, repo.listForUserFilters.Status)
+	require.Equal(t, SupportTicketCategoryConsult, repo.listForUserFilters.Category)
+}
+
+func TestTicketServiceGetDetailDoesNotMarkRead(t *testing.T) {
+	repo := &ticketRepoStub{ticket: &SupportTicket{ID: 1, UserID: 9, Status: SupportTicketStatusSubmitted, UnreadByUser: true, UnreadByAdmin: true}}
+	svc := NewTicketService(repo, &announcementUserRepoStub{})
+
+	_, err := svc.GetForUser(context.Background(), 9, 1)
+	require.NoError(t, err)
+	_, err = svc.GetForAdmin(context.Background(), 1)
+	require.NoError(t, err)
+
+	require.Zero(t, repo.markReadByUserCount)
+	require.Zero(t, repo.markReadByAdminCount)
+}
+
+func TestTicketServiceListMessagesMarksReadOnlyAfterSuccessfulList(t *testing.T) {
+	repo := &ticketRepoStub{ticket: &SupportTicket{ID: 1, UserID: 9, Status: SupportTicketStatusSubmitted}, listMessagesErr: errors.New("list failed")}
+	svc := NewTicketService(repo, &announcementUserRepoStub{})
+
+	_, err := svc.ListMessagesForUser(context.Background(), 9, 1)
+	require.Error(t, err)
+	require.Zero(t, repo.markReadByUserCount)
+
+	repo.listMessagesErr = nil
+	_, err = svc.ListMessagesForUser(context.Background(), 9, 1)
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.markReadByUserCount)
 }
 
 func TestTicketServiceCreateRejectsCategorySpecificIncompletePayload(t *testing.T) {
@@ -216,6 +280,61 @@ func TestTicketServiceCloseForUserRejectsWithdrawnTicket(t *testing.T) {
 
 	err := svc.CloseForUser(context.Background(), 9, 1)
 	require.ErrorIs(t, err, ErrTicketCannotClose)
+}
+
+func TestTicketServiceAdminStatusRejectsWaitingUserWithoutAdminReply(t *testing.T) {
+	svc := NewTicketService(&ticketRepoStub{
+		ticket: &SupportTicket{ID: 1, UserID: 9, Status: SupportTicketStatusSubmitted, LastReplyRole: SupportTicketSenderRoleSystem},
+	}, &announcementUserRepoStub{})
+
+	err := svc.UpdateStatusByAdmin(context.Background(), 1, AdminSupportTicketStatusUpdateInput{AdminUserID: 7, Status: SupportTicketStatusWaitingUser})
+	require.ErrorIs(t, err, ErrTicketStatusInvalidTransition)
+}
+
+func TestTicketServiceAdminStatusRejectsResolvedWithoutAdminReply(t *testing.T) {
+	svc := NewTicketService(&ticketRepoStub{
+		ticket: &SupportTicket{ID: 1, UserID: 9, Status: SupportTicketStatusWaitingAdmin, LastReplyRole: SupportTicketSenderRoleUser},
+	}, &announcementUserRepoStub{})
+
+	err := svc.UpdateStatusByAdmin(context.Background(), 1, AdminSupportTicketStatusUpdateInput{AdminUserID: 7, Status: SupportTicketStatusResolved})
+	require.ErrorIs(t, err, ErrTicketStatusInvalidTransition)
+}
+
+func TestTicketServiceAdminStatusAllowsResolvedAfterAdminReply(t *testing.T) {
+	svc := NewTicketService(&ticketRepoStub{
+		ticket: &SupportTicket{ID: 1, UserID: 9, Status: SupportTicketStatusWaitingUser, LastReplyRole: SupportTicketSenderRoleAdmin},
+	}, &announcementUserRepoStub{})
+
+	err := svc.UpdateStatusByAdmin(context.Background(), 1, AdminSupportTicketStatusUpdateInput{AdminUserID: 7, Status: SupportTicketStatusResolved})
+	require.NoError(t, err)
+}
+
+func TestTicketServiceUpdateEditableRequiresRevision(t *testing.T) {
+	svc := NewTicketService(&ticketRepoStub{
+		ticket: &SupportTicket{ID: 1, UserID: 9, Status: SupportTicketStatusWithdrawn, Category: SupportTicketCategoryConsult},
+	}, &announcementUserRepoStub{})
+
+	err := svc.UpdateEditable(context.Background(), UpdateSupportTicketInput{
+		UserID:      9,
+		Title:       "need help",
+		FormPayload: json.RawMessage(`{"question":"hello"}`),
+	}, 1)
+	require.ErrorIs(t, err, ErrTicketRevisionRequired)
+}
+
+func TestTicketServiceResubmitPassesExpectedRevision(t *testing.T) {
+	repo := &ticketRepoStub{ticket: &SupportTicket{ID: 1, UserID: 9, Status: SupportTicketStatusWithdrawn, Category: SupportTicketCategoryConsult, CurrentRevisionNo: 3}}
+	svc := NewTicketService(repo, &announcementUserRepoStub{})
+
+	err := svc.Resubmit(context.Background(), UpdateSupportTicketInput{
+		UserID:             9,
+		Title:              "need help",
+		FormPayload:        json.RawMessage(`{"question":"hello"}`),
+		ExpectedRevisionNo: 3,
+	}, 1)
+
+	require.NoError(t, err)
+	require.Equal(t, 3, repo.resubmitExpectedRevision)
 }
 
 type ticketUserRepoStub struct {

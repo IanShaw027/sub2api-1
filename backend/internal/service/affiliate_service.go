@@ -244,14 +244,14 @@ func (s *AffiliateService) BindInviterByCode(ctx context.Context, userID int64, 
 	if code == "" {
 		return nil
 	}
+	if s == nil || s.repo == nil {
+		return infraerrors.ServiceUnavailable("SERVICE_UNAVAILABLE", "affiliate service unavailable")
+	}
 	if !s.LoadPolicy(ctx).Enabled {
 		return nil
 	}
 	if !isValidAffiliateCodeFormat(code) {
 		return ErrAffiliateCodeInvalid
-	}
-	if s == nil || s.repo == nil {
-		return infraerrors.ServiceUnavailable("SERVICE_UNAVAILABLE", "affiliate service unavailable")
 	}
 
 	selfSummary, err := s.repo.EnsureUserAffiliate(ctx, userID)

@@ -730,7 +730,7 @@ func TestOpenAIGatewayServiceForwardImages_OAuthNonStreamingUsesJSONAccept(t *te
 				"Content-Type": []string{"application/json"},
 				"X-Request-Id": []string{"req_img_json"},
 			},
-			Body: io.NopCloser(strings.NewReader(`{"id":"resp_img_json","object":"response","status":"completed","created_at":1710000100,"output":[{"type":"image_generation_call","result":"aGVsbG8=","revised_prompt":"draw a cat","output_format":"png"}],"tool_usage":{"image_gen":{"images":1}}}`)),
+			Body: io.NopCloser(strings.NewReader(`{"id":"resp_img_json","object":"response","status":"completed","created_at":1710000100,"usage":{"input_tokens":31,"output_tokens":42,"input_tokens_details":{"cached_tokens":5},"output_tokens_details":{"image_tokens":17}},"output":[{"type":"image_generation_call","result":"aGVsbG8=","revised_prompt":"draw a cat","output_format":"png"}],"tool_usage":{"image_gen":{"images":1}}}`)),
 		},
 	}
 	svc.httpUpstream = upstream
@@ -750,6 +750,12 @@ func TestOpenAIGatewayServiceForwardImages_OAuthNonStreamingUsesJSONAccept(t *te
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.False(t, result.Stream)
+	require.True(t, result.ImageUsageTokenBilling)
+	require.Equal(t, openAIImagesResponsesMainModel, result.TokenBillingModel)
+	require.Equal(t, 31, result.Usage.InputTokens)
+	require.Equal(t, 42, result.Usage.OutputTokens)
+	require.Equal(t, 5, result.Usage.CacheReadInputTokens)
+	require.Equal(t, 17, result.Usage.ImageOutputTokens)
 	require.NotNil(t, upstream.lastReq)
 	require.Equal(t, "application/json", upstream.lastReq.Header.Get("Accept"))
 	require.False(t, gjson.GetBytes(upstream.lastBody, "stream").Bool())
@@ -932,9 +938,9 @@ func TestBuildOpenAIImagesResponsesRequest_RejectsMultipleImages(t *testing.T) {
 	require.Contains(t, err.Error(), "n > 1")
 }
 
-func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsMultipleImages(t *testing.T) {
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_NativeAllowsMultipleImages(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","n":2}`)
+	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","n":2,"quality":"high"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -944,9 +950,10 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsMultipleImages(t *t
 
 	svc := &OpenAIGatewayService{}
 	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
-	require.Nil(t, parsed)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "n > 1")
+	require.NoError(t, err)
+	require.NotNil(t, parsed)
+	require.Equal(t, 2, parsed.N)
+	require.Equal(t, OpenAIImagesCapabilityNative, parsed.RequiredCapability)
 }
 
 func TestOpenAIGatewayServiceForwardImages_OAuthStreamingRejectsOversizedLine(t *testing.T) {

@@ -123,8 +123,13 @@ func TestMigrationsRunner_ChannelMonitorRequestTemplateSchemaStayAligned(t *test
 
 	requireIndex(t, tx, "channel_monitor_request_templates", "channelmonitorrequesttemplate_provider_name")
 	requireIndexAbsent(t, tx, "channel_monitor_request_templates", "channel_monitor_request_templates_provider_name")
+	requireIndex(t, tx, "channel_monitors", "channelmonitor_template_id")
+	requireIndexAbsent(t, tx, "channel_monitors", "idx_channel_monitors_template_id")
+	requireNonPartialIndexDefinition(t, tx, "channel_monitors", "channelmonitor_template_id", "template_id")
 	requireConstraint(t, tx, "channel_monitors", "channel_monitors_channel_monitor_request_templates_request_template")
 	requireForeignKeyOnDelete(t, tx, "channel_monitors", "template_id", "channel_monitor_request_templates", "SET NULL")
+	requireColumnAbsent(t, tx, "channel_monitor_histories", "deleted_at")
+	requireColumnAbsent(t, tx, "channel_monitor_daily_rollups", "deleted_at")
 }
 
 func requireConstraint(t *testing.T, tx *sql.Tx, table, constraint string) {
@@ -206,6 +211,45 @@ WHERE ns.nspname = 'public'
 	for _, fragment := range fragments {
 		require.Contains(t, def, fragment, "expected index definition for %s.%s to contain %q", table, index, fragment)
 	}
+}
+
+func requireNonPartialIndexDefinition(t *testing.T, tx *sql.Tx, table, index string, fragments ...string) {
+	t.Helper()
+
+	var def string
+	err := tx.QueryRowContext(context.Background(), `
+SELECT pg_get_indexdef(i.indexrelid)
+FROM pg_class idx
+JOIN pg_index i ON i.indexrelid = idx.oid
+JOIN pg_class tbl ON tbl.oid = i.indrelid
+JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
+WHERE ns.nspname = 'public'
+  AND tbl.relname = $1
+  AND idx.relname = $2
+	`, table, index).Scan(&def)
+	require.NoError(t, err, "query index definition for %s.%s", table, index)
+	require.NotContains(t, def, " WHERE ", "expected index %s on %s to be non-partial", index, table)
+
+	for _, fragment := range fragments {
+		require.Contains(t, def, fragment, "expected index definition for %s.%s to contain %q", table, index, fragment)
+	}
+}
+
+func requireColumnAbsent(t *testing.T, tx *sql.Tx, table, column string) {
+	t.Helper()
+
+	var exists bool
+	err := tx.QueryRowContext(context.Background(), `
+SELECT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = $1
+      AND column_name = $2
+)
+	`, table, column).Scan(&exists)
+	require.NoError(t, err, "query information_schema.columns for %s.%s", table, column)
+	require.False(t, exists, "expected column %s.%s to be absent", table, column)
 }
 
 func requireForeignKeyOnDelete(t *testing.T, tx *sql.Tx, table, column, refTable, expected string) {

@@ -227,6 +227,7 @@
   },
   "common": {
     "loading": "加载中...",
+    "login": "登录",
     "justNow": "刚刚",
     "save": "保存",
     "saved": "保存成功",

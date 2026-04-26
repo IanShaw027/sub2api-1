@@ -39,6 +39,16 @@ redis.call("EXPIRE", KEYS[1], ARGV[1])
 return count
 `)
 
+var userRPMIncrExpireAdmitScript = redis.NewScript(`
+local count = redis.call("INCR", KEYS[1])
+redis.call("EXPIRE", KEYS[1], ARGV[1])
+local limit = tonumber(ARGV[2]) or 0
+if limit > 0 and count > limit then
+  return {count, 0}
+end
+return {count, 1}
+`)
+
 var userRPMAtomicAdmitScript = redis.NewScript(`
 local ttl = tonumber(ARGV[1])
 local inc_group = tonumber(ARGV[2]) == 1
@@ -127,6 +137,23 @@ func (c *userRPMCacheImpl) incrWithTTL(ctx context.Context, key string) (int, er
 		return 0, fmt.Errorf("user rpm increment key=%s: %w", key, err)
 	}
 	return int(count), nil
+}
+
+func (c *userRPMCacheImpl) incrWithTTLAdmit(ctx context.Context, key string, limit int) (int, bool, error) {
+	vals, err := userRPMIncrExpireAdmitScript.Run(
+		ctx,
+		c.rdb,
+		[]string{key},
+		int64(userRPMKeyTTL/time.Second),
+		limit,
+	).Slice()
+	if err != nil {
+		return 0, false, fmt.Errorf("user rpm increment admit key=%s: %w", key, err)
+	}
+	if len(vals) != 2 {
+		return 0, false, fmt.Errorf("user rpm increment admit returned %d values", len(vals))
+	}
+	return redisInt(vals[0]), redisInt(vals[1]) == 1, nil
 }
 
 // incrWithLegacyCompat 双写新/旧 key，返回两者较大值，保证滚动升级期间计数连续。
@@ -275,21 +302,29 @@ func (c *userRPMCacheImpl) TryIncrementUserAndGroupRPM(ctx context.Context, user
 	}
 
 	if incGroup {
-		legacyCount, err := c.incrWithTTL(ctx, userGroupRPMLegacyKey(userID, groupID, minute))
+		var legacyAdmitted bool
+		legacyCount, legacyAdmitted, err := c.incrWithTTLAdmit(ctx, userGroupRPMLegacyKey(userID, groupID, minute), groupLimit)
 		if err != nil {
 			return 0, 0, false, err
 		}
 		if legacyCount > groupCount {
 			groupCount = legacyCount
 		}
+		if !legacyAdmitted {
+			return groupCount, userCount, false, nil
+		}
 	}
 	if incUser {
-		legacyCount, err := c.incrWithTTL(ctx, userRPMLegacyKey(userID, minute))
+		var legacyAdmitted bool
+		legacyCount, legacyAdmitted, err := c.incrWithTTLAdmit(ctx, userRPMLegacyKey(userID, minute), userLimit)
 		if err != nil {
 			return 0, 0, false, err
 		}
 		if legacyCount > userCount {
 			userCount = legacyCount
+		}
+		if !legacyAdmitted {
+			return groupCount, userCount, false, nil
 		}
 	}
 	return groupCount, userCount, true, nil

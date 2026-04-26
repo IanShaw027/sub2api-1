@@ -227,6 +227,7 @@
   },
   "common": {
     "loading": "Loading...",
+    "login": "Login",
     "justNow": "just now",
     "save": "Save",
     "saved": "Saved successfully",
@@ -1817,6 +1818,7 @@
     "groups": {
       "title": "Group Management",
       "description": "Manage API key groups and rate multipliers",
+      "failedToSave": "Failed to save group",
       "searchGroups": "Search groups...",
       "createGroup": "Create Group",
       "editGroup": "Edit Group",
@@ -4029,7 +4031,12 @@
         "6h": "Last 6 hours",
         "24h": "Last 24 hours",
         "7d": "Last 7 days",
-        "30d": "Last 30 days"
+        "30d": "Last 30 days",
+        "custom": "Custom"
+      },
+      "customTimeRange": {
+        "startTime": "Start time",
+        "endTime": "End time"
       },
       "openaiTokenStats": {
         "title": "OpenAI Token Request Stats",
@@ -4054,6 +4061,7 @@
       "fullscreen": {
         "enter": "Enter Fullscreen"
       },
+      "result": "Result",
       "diagnosis": {
         "title": "Smart Diagnosis",
         "footer": "Automated diagnostic suggestions based on current metrics",

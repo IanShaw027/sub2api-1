@@ -26,11 +26,16 @@ const (
 // ChannelMonitorHandler 渠道监控管理后台 handler。
 type ChannelMonitorHandler struct {
 	monitorService *service.ChannelMonitorService
+	settingService *service.SettingService
 }
 
 // NewChannelMonitorHandler 创建 handler。
-func NewChannelMonitorHandler(monitorService *service.ChannelMonitorService) *ChannelMonitorHandler {
-	return &ChannelMonitorHandler{monitorService: monitorService}
+func NewChannelMonitorHandler(monitorService *service.ChannelMonitorService, settingServices ...*service.SettingService) *ChannelMonitorHandler {
+	var settingService *service.SettingService
+	if len(settingServices) > 0 {
+		settingService = settingServices[0]
+	}
+	return &ChannelMonitorHandler{monitorService: monitorService, settingService: settingService}
 }
 
 // --- Request / Response ---
@@ -210,10 +215,30 @@ func parseListEnabled(raw string) *bool {
 	}
 }
 
+// featureEnabled returns the runtime feature switch. Nil settingService keeps
+// unit-test compatibility and treats the feature as enabled.
+func (h *ChannelMonitorHandler) featureEnabled(c *gin.Context) bool {
+	if h.settingService == nil {
+		return true
+	}
+	return h.settingService.GetChannelMonitorRuntime(c.Request.Context()).Enabled
+}
+
+func (h *ChannelMonitorHandler) requireFeatureEnabled(c *gin.Context) bool {
+	if h.featureEnabled(c) {
+		return true
+	}
+	response.ErrorFrom(c, service.ErrChannelMonitorDisabled)
+	return false
+}
+
 // --- Handlers ---
 
 // List GET /api/v1/admin/channel-monitors
 func (h *ChannelMonitorHandler) List(c *gin.Context) {
+	if !h.requireFeatureEnabled(c) {
+		return
+	}
 	page, pageSize := response.ParsePagination(c)
 	if pageSize > monitorMaxPageSize {
 		pageSize = monitorMaxPageSize
@@ -273,6 +298,9 @@ func buildListItemResponse(m *service.ChannelMonitor, summary service.MonitorSta
 
 // Get GET /api/v1/admin/channel-monitors/:id
 func (h *ChannelMonitorHandler) Get(c *gin.Context) {
+	if !h.requireFeatureEnabled(c) {
+		return
+	}
 	id, ok := ParseChannelMonitorID(c)
 	if !ok {
 		return
@@ -287,6 +315,9 @@ func (h *ChannelMonitorHandler) Get(c *gin.Context) {
 
 // Create POST /api/v1/admin/channel-monitors
 func (h *ChannelMonitorHandler) Create(c *gin.Context) {
+	if !h.requireFeatureEnabled(c) {
+		return
+	}
 	var req channelMonitorCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.ErrorFrom(c, infraerrors.BadRequest("VALIDATION_ERROR", err.Error()))
@@ -325,6 +356,9 @@ func (h *ChannelMonitorHandler) Create(c *gin.Context) {
 
 // Update PUT /api/v1/admin/channel-monitors/:id
 func (h *ChannelMonitorHandler) Update(c *gin.Context) {
+	if !h.requireFeatureEnabled(c) {
+		return
+	}
 	id, ok := ParseChannelMonitorID(c)
 	if !ok {
 		return
@@ -360,6 +394,9 @@ func (h *ChannelMonitorHandler) Update(c *gin.Context) {
 
 // Delete DELETE /api/v1/admin/channel-monitors/:id
 func (h *ChannelMonitorHandler) Delete(c *gin.Context) {
+	if !h.requireFeatureEnabled(c) {
+		return
+	}
 	id, ok := ParseChannelMonitorID(c)
 	if !ok {
 		return
@@ -373,6 +410,9 @@ func (h *ChannelMonitorHandler) Delete(c *gin.Context) {
 
 // Run POST /api/v1/admin/channel-monitors/:id/run
 func (h *ChannelMonitorHandler) Run(c *gin.Context) {
+	if !h.requireFeatureEnabled(c) {
+		return
+	}
 	id, ok := ParseChannelMonitorID(c)
 	if !ok {
 		return
@@ -391,6 +431,9 @@ func (h *ChannelMonitorHandler) Run(c *gin.Context) {
 
 // History GET /api/v1/admin/channel-monitors/:id/history
 func (h *ChannelMonitorHandler) History(c *gin.Context) {
+	if !h.requireFeatureEnabled(c) {
+		return
+	}
 	id, ok := ParseChannelMonitorID(c)
 	if !ok {
 		return

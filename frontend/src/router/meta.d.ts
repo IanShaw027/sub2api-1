@@ -68,6 +68,12 @@ declare module 'vue-router' {
     requiresChannelMonitor?: boolean
 
     /**
+     * Whether this route requires available channels to be enabled
+     * @default false
+     */
+    requiresAvailableChannels?: boolean
+
+    /**
      * i18n key for the page title
      */
     titleKey?: string
