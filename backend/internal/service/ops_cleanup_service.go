@@ -37,8 +37,8 @@ return 0
 // - Multi-instance: best-effort Redis leader lock so only one node runs cleanup.
 // - Safety: deletes in batches to avoid long transactions.
 //
-// 附带：在 runCleanupOnce 末尾调用 ChannelMonitorService.RunDailyMaintenance，
-// 统一共享 cron schedule + leader lock + heartbeat，避免再引一套调度。
+// 附带：同一个 cron/leader lock 还会触发 ChannelMonitorService.RunDailyMaintenance，
+// 即使 ops cleanup 本身关闭，也避免 channel monitor 历史和 rollup 无人维护。
 type OpsCleanupService struct {
 	opsRepo           OpsRepository
 	db                *sql.DB
@@ -77,14 +77,10 @@ func (s *OpsCleanupService) Start() {
 	if s == nil {
 		return
 	}
-	if s.cfg != nil && !s.cfg.Ops.Enabled {
+	if !s.shouldStartScheduler() {
 		return
 	}
-	if s.cfg != nil && !s.cfg.Ops.Cleanup.Enabled {
-		logger.LegacyPrintf("service.ops_cleanup", "[OpsCleanup] not started (disabled)")
-		return
-	}
-	if s.opsRepo == nil || s.db == nil {
+	if s.db == nil || (s.opsCleanupEnabled() && s.opsRepo == nil) {
 		logger.LegacyPrintf("service.ops_cleanup", "[OpsCleanup] not started (missing deps)")
 		return
 	}
@@ -110,8 +106,22 @@ func (s *OpsCleanupService) Start() {
 		}
 		s.cron = c
 		s.cron.Start()
-		logger.LegacyPrintf("service.ops_cleanup", "[OpsCleanup] started (schedule=%q tz=%s)", schedule, loc.String())
+		logger.LegacyPrintf("service.ops_cleanup", "[OpsCleanup] started (schedule=%q tz=%s ops_cleanup=%t channel_monitor_maintenance=%t)", schedule, loc.String(), s.opsCleanupEnabled(), s.channelMonitorSvc != nil)
 	})
+}
+
+func (s *OpsCleanupService) shouldStartScheduler() bool {
+	if s == nil {
+		return false
+	}
+	return s.opsCleanupEnabled() || s.channelMonitorSvc != nil
+}
+
+func (s *OpsCleanupService) opsCleanupEnabled() bool {
+	if s == nil || s.cfg == nil {
+		return true
+	}
+	return s.cfg.Ops.Enabled && s.cfg.Ops.Cleanup.Enabled
 }
 
 func (s *OpsCleanupService) Stop() {
@@ -131,7 +141,7 @@ func (s *OpsCleanupService) Stop() {
 }
 
 func (s *OpsCleanupService) runScheduled() {
-	if s == nil || s.db == nil || s.opsRepo == nil {
+	if s == nil || s.db == nil {
 		return
 	}
 
@@ -190,10 +200,34 @@ func (s *OpsCleanupService) runCleanupOnce(ctx context.Context) (opsCleanupDelet
 		return out, nil
 	}
 
+	if s.opsCleanupEnabled() && s.opsRepo == nil {
+		return out, fmt.Errorf("ops cleanup repository is not configured")
+	}
+
 	batchSize := 5000
 
 	now := time.Now().UTC()
 
+	if s.opsCleanupEnabled() {
+		out, err := s.runOpsCleanupSteps(ctx, out, batchSize, now)
+		if err != nil {
+			return out, err
+		}
+	}
+
+	// Channel monitor 每日维护（聚合昨日明细 + 软删过期明细/聚合）。
+	// 失败只记日志，不影响 ops 清理的成功状态（与 ops 各步骤风格一致）；
+	// 维护本身已经把每步错误打到 slog，heartbeat result 不再分项记录。
+	if s.channelMonitorSvc != nil {
+		if err := s.channelMonitorSvc.RunDailyMaintenance(ctx); err != nil {
+			logger.LegacyPrintf("service.ops_cleanup", "[OpsCleanup] channel monitor maintenance failed: %v", err)
+		}
+	}
+
+	return out, nil
+}
+
+func (s *OpsCleanupService) runOpsCleanupSteps(ctx context.Context, out opsCleanupDeletedCounts, batchSize int, now time.Time) (opsCleanupDeletedCounts, error) {
 	// Error-like tables: error logs / retry attempts / alert events.
 	if days := s.cfg.Ops.Cleanup.ErrorLogRetentionDays; days > 0 {
 		cutoff := now.AddDate(0, 0, -days)
@@ -252,15 +286,6 @@ func (s *OpsCleanupService) runCleanupOnce(ctx context.Context) (opsCleanupDelet
 			return out, err
 		}
 		out.dailyPreagg = n
-	}
-
-	// Channel monitor 每日维护（聚合昨日明细 + 软删过期明细/聚合）。
-	// 失败只记日志，不影响 ops 清理的成功状态（与 ops 各步骤风格一致）；
-	// 维护本身已经把每步错误打到 slog，heartbeat result 不再分项记录。
-	if s.channelMonitorSvc != nil {
-		if err := s.channelMonitorSvc.RunDailyMaintenance(ctx); err != nil {
-			logger.LegacyPrintf("service.ops_cleanup", "[OpsCleanup] channel monitor maintenance failed: %v", err)
-		}
 	}
 
 	return out, nil

@@ -42,6 +42,15 @@
                 <p class="truncate text-sm text-gray-600 dark:text-gray-300">
                   {{ primaryEmailDisplay }}
                 </p>
+                <div v-if="profileSourceHints.length" data-testid="profile-source-hints" class="flex flex-wrap gap-2 pt-1">
+                  <span
+                    v-for="hint in profileSourceHints"
+                    :key="hint"
+                    class="rounded-full bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 ring-1 ring-primary-100 dark:bg-primary-950/40 dark:text-primary-300 dark:ring-primary-900/50"
+                  >
+                    {{ hint }}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -146,7 +155,7 @@ import { useI18n } from 'vue-i18n'
 import ProfileAvatarCard from '@/components/user/profile/ProfileAvatarCard.vue'
 import ProfileEditForm from '@/components/user/profile/ProfileEditForm.vue'
 import ProfileIdentityBindingsSection from '@/components/user/profile/ProfileIdentityBindingsSection.vue'
-import type { User, UserAuthBindingStatus } from '@/types'
+import type { User, UserAuthBindingStatus, UserProfileSourceContext } from '@/types'
 
 const emit = defineEmits<{
   'balance-history': []
@@ -207,6 +216,25 @@ const primaryEmailDisplay = computed(() => {
   return email
 })
 const avatarInitial = computed(() => displayName.value.charAt(0).toUpperCase() || 'U')
+const profileSourceHints = computed(() => {
+  const hints: string[] = []
+  const avatarProvider = resolveProfileSourceProvider(props.user?.profile_sources?.avatar ?? props.user?.avatar_source)
+  const usernameProvider = resolveProfileSourceProvider(
+    props.user?.profile_sources?.username
+      ?? props.user?.profile_sources?.display_name
+      ?? props.user?.profile_sources?.nickname
+      ?? props.user?.username_source
+      ?? props.user?.display_name_source
+      ?? props.user?.nickname_source,
+  )
+  if (avatarProvider) {
+    hints.push(t('profile.identity.source.avatar', { providerName: avatarProvider }))
+  }
+  if (usernameProvider) {
+    hints.push(t('profile.identity.source.username', { providerName: usernameProvider }))
+  }
+  return hints
+})
 const memberSinceLabel = computed(() => {
   const raw = props.user?.created_at?.trim()
   if (!raw) {
@@ -226,5 +254,25 @@ const memberSinceLabel = computed(() => {
 
 function formatCurrency(value: number): string {
   return `$${value.toFixed(2)}`
+}
+
+function resolveProfileSourceProvider(source: string | UserProfileSourceContext | null | undefined): string {
+  if (!source) return ''
+  if (typeof source === 'string') {
+    return formatProviderLabel(source)
+  }
+  return source.provider_label?.trim()
+    || source.label?.trim()
+    || formatProviderLabel(source.provider || source.source || '')
+}
+
+function formatProviderLabel(provider: string): string {
+  const normalized = provider.trim().toLowerCase()
+  if (!normalized) return ''
+  if (normalized === 'oidc') return props.oidcProviderName || 'OIDC'
+  if (normalized === 'linuxdo') return 'LinuxDo'
+  if (normalized === 'wechat') return 'WeChat'
+  if (normalized === 'email') return 'Email'
+  return provider.trim()
 }
 </script>

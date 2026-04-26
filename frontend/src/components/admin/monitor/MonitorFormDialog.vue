@@ -312,14 +312,17 @@ const providerOptions = computed<ProviderOption[]>(() => [
   { value: PROVIDER_GEMINI, label: t('monitorCommon.providers.gemini') },
 ])
 
-// Clear api_key whenever provider changes to avoid cross-provider key mismatch.
-// Editing mode loads api_key='' via loadFromMonitor and only sets it on user
-// typing, so clearing on provider change is always a safe no-op until the user
-// picks a new key.
-// 同时清空 template_id（模板有 provider 归属，跨平台不通用）。
+let hydratingForm = false
+
+// Clear provider-specific fields only when the user changes provider. Loading an
+// existing monitor also assigns form.provider and must preserve template_id.
 watch(() => form.provider, () => {
+  if (hydratingForm) return
   form.api_key = ''
   form.template_id = null
+  form.extra_headers = {}
+  form.body_override_mode = 'off'
+  form.body_override = null
 })
 
 function resetForm() {
@@ -339,8 +342,9 @@ function resetForm() {
 }
 
 function loadFromMonitor(m: ChannelMonitor) {
-  form.name = m.name
-  form.provider = m.provider
+	hydratingForm = true
+	form.name = m.name
+	form.provider = m.provider
   form.endpoint = m.endpoint
   form.api_key = ''
   form.primary_model = m.primary_model
@@ -349,9 +353,10 @@ function loadFromMonitor(m: ChannelMonitor) {
   form.interval_seconds = m.interval_seconds || systemDefaultInterval.value
   form.enabled = m.enabled
   form.template_id = m.template_id ?? null
-  form.extra_headers = { ...(m.extra_headers || {}) }
-  form.body_override_mode = m.body_override_mode || 'off'
-  form.body_override = m.body_override ? { ...m.body_override } : null
+	form.extra_headers = { ...(m.extra_headers || {}) }
+	form.body_override_mode = m.body_override_mode || 'off'
+	form.body_override = m.body_override ? { ...m.body_override } : null
+	hydratingForm = false
 }
 
 // Re-sync form whenever the dialog is opened or the target monitor changes.

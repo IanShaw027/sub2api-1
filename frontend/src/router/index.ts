@@ -3,7 +3,7 @@
  * Defines all application routes with lazy loading and navigation guards
  */
 
-import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { createRouter, createWebHistory, type RouteLocationNormalized, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
@@ -648,6 +648,17 @@ const routes: RouteRecordRaw[] = [
   }
 ]
 
+async function ensurePublicSettingsForOptInRoute(to: RouteLocationNormalized): Promise<void> {
+  if (to.meta?.requiresTicket !== true && to.meta?.requiresAffiliate !== true) {
+    return
+  }
+  const appStore = useAppStore()
+  if (appStore.publicSettingsLoaded) {
+    return
+  }
+  await appStore.fetchPublicSettings()
+}
+
 /**
  * Create router instance
  */
@@ -699,7 +710,7 @@ function isBackendModePublicRouteAllowed(path: string, hasPendingAuthSession: bo
   return false
 }
 
-router.beforeEach((to, _from, next) => {
+router.beforeEach(async (to, _from, next) => {
   // 开始导航加载状态
   navigationLoading.startNavigation()
 
@@ -783,6 +794,8 @@ router.beforeEach((to, _from, next) => {
     next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
     return
   }
+
+  await ensurePublicSettingsForOptInRoute(to)
 
   // Check ticket module requirement
   if (to.meta.requiresTicket === true && !isFeatureFlagEnabled(FeatureFlags.ticket)) {

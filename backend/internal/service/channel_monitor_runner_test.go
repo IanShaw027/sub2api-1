@@ -376,25 +376,85 @@ func TestInFlight_AcquireReleaseSymmetric(t *testing.T) {
 	r.releaseInFlight(42)
 }
 
-// TestFire_PoolFullDropsAndReleasesInFlight 验证 queue=0 时 worker 忙会触发 TrySubmit=false，
-// 且被丢弃任务对应的 inFlight 槽会被释放。
-func TestFire_PoolFullDropsAndReleasesInFlight(t *testing.T) {
+// TestFire_PoolFullRunsSynchronously 验证 worker 池满时不会丢弃检测，而是同步执行本次任务。
+func TestFire_PoolFullRunsSynchronously(t *testing.T) {
 	block := make(chan struct{})
-	svc := &stubMonitorSvc{blockUntil: block}
+	svc := &stubMonitorSvc{runCalled: make(chan int64, 4), blockUntil: block}
 	r := newRunnerForTest(svc)
 	r.pool = pond.NewPool(1, pond.WithQueueSize(0))
 	r.Start()
 
 	r.fire(context.Background(), &scheduledMonitor{id: 1, name: "m1"})
-	waitFor(t, time.Second, "task 1 in-flight", func() bool { return !r.tryAcquireInFlight(1) })
-
-	r.fire(context.Background(), &scheduledMonitor{id: 2, name: "m2"})
-	if !r.tryAcquireInFlight(2) {
-		t.Fatal("dropped task should release inFlight slot for id=2")
+	select {
+	case <-svc.runCalled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("task 1 never started")
 	}
-	r.releaseInFlight(2)
+
+	done := make(chan struct{})
+	go func() {
+		r.fire(context.Background(), &scheduledMonitor{id: 2, name: "m2"})
+		close(done)
+	}()
+	select {
+	case id := <-svc.runCalled:
+		if id != 2 {
+			t.Fatalf("expected synchronous run for id=2, got %d", id)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("pool-full fire did not execute synchronously")
+	}
+	select {
+	case <-done:
+		t.Fatal("synchronous fallback should stay blocked until RunCheck returns")
+	case <-time.After(50 * time.Millisecond):
+	}
 
 	close(block)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("synchronous fallback did not return after RunCheck completed")
+	}
+	waitFor(t, time.Second, "task 2 in-flight released", func() bool {
+		if !r.tryAcquireInFlight(2) {
+			return false
+		}
+		r.releaseInFlight(2)
+		return true
+	})
+	stoppedWithin(t, r, 3*time.Second)
+}
+
+func TestFire_PoolQueueBuffersBurst(t *testing.T) {
+	block := make(chan struct{})
+	svc := &stubMonitorSvc{runCalled: make(chan int64, 4), blockUntil: block}
+	r := newRunnerForTest(svc)
+	r.pool = pond.NewPool(1, pond.WithQueueSize(1))
+	r.Start()
+
+	r.fire(context.Background(), &scheduledMonitor{id: 1, name: "m1"})
+	select {
+	case <-svc.runCalled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("task 1 never started")
+	}
+
+	r.fire(context.Background(), &scheduledMonitor{id: 2, name: "m2"})
+	if r.tryAcquireInFlight(2) {
+		r.releaseInFlight(2)
+		t.Fatal("queued task should keep inFlight slot until it runs")
+	}
+
+	close(block)
+	select {
+	case id := <-svc.runCalled:
+		if id != 2 {
+			t.Fatalf("expected queued task id=2, got %d", id)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("queued task did not run")
+	}
 	stoppedWithin(t, r, 3*time.Second)
 }
 

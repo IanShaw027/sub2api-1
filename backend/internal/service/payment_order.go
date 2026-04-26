@@ -88,8 +88,13 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 }
 
 func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrderRequest, cfg *PaymentConfig) (*dbent.SubscriptionPlan, error) {
+	_ = ctx
 	if req.OrderType == payment.OrderTypeBalance && cfg.BalanceDisabled {
 		return nil, infraerrors.Forbidden("BALANCE_PAYMENT_DISABLED", "balance recharge has been disabled")
+	}
+	if !paymentConfigTypeEnabled(cfg, req.PaymentType) {
+		return nil, infraerrors.Forbidden("PAYMENT_METHOD_DISABLED", "method_not_configured").
+			WithMetadata(map[string]string{"payment_type": req.PaymentType})
 	}
 	if req.OrderType == payment.OrderTypeSubscription {
 		return s.validateSubOrder(ctx, req)
@@ -102,6 +107,22 @@ func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrder
 			WithMetadata(map[string]string{"min": fmt.Sprintf("%.2f", cfg.MinAmount), "max": fmt.Sprintf("%.2f", cfg.MaxAmount)})
 	}
 	return nil, nil
+}
+
+func paymentConfigTypeEnabled(cfg *PaymentConfig, paymentType string) bool {
+	if cfg == nil {
+		return false
+	}
+	paymentType = NormalizeVisibleMethod(paymentType)
+	if paymentType == "" {
+		return false
+	}
+	for _, enabledType := range cfg.EnabledTypes {
+		if NormalizeVisibleMethod(enabledType) == paymentType {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *PaymentService) validateSubOrder(ctx context.Context, req CreateOrderRequest) (*dbent.SubscriptionPlan, error) {

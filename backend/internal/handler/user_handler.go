@@ -213,7 +213,18 @@ func (h *UserHandler) GetAffiliateInviteeLedger(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, gin.H{"items": entries})
+	items := make([]gin.H, 0, len(entries))
+	for _, entry := range entries {
+		items = append(items, gin.H{
+			"id":                   entry.ID,
+			"created_at":           entry.CreatedAt,
+			"amount":               entry.Amount,
+			"base_amount":          entry.BaseAmount,
+			"rebate_rate":          entry.RebateRate,
+			"invitee_slot_claimed": entry.InviteeSlotClaimed,
+		})
+	}
+	response.Success(c, gin.H{"items": items})
 }
 
 // TransferAffiliateQuota transfers all available affiliate quota into current balance.

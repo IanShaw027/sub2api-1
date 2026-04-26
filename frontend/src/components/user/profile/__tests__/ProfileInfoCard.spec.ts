@@ -33,6 +33,8 @@ vi.mock('vue-i18n', async (importOriginal) => {
         if (key === 'profile.memberSince') return 'Member Since'
         if (key === 'profile.administrator') return 'Administrator'
         if (key === 'profile.user') return 'User'
+        if (key === 'profile.identity.source.avatar') return `Avatar from ${_params?.providerName}`
+        if (key === 'profile.identity.source.username') return `Nickname from ${_params?.providerName}`
         return key
       }
     })
@@ -79,11 +81,12 @@ describe('ProfileInfoCard', () => {
     expect(wrapper.get('[data-testid="profile-auth-bindings-panel"]').exists()).toBe(true)
   })
 
-  it('does not render profile source summaries anymore', () => {
+  it('renders compact profile source hints without restoring the old side column', () => {
     const wrapper = mount(ProfileInfoCard, {
       props: {
         user: createUser({
           profile_sources: {
+            avatar: { provider: 'linuxdo', source: 'linuxdo' },
             username: { provider: 'oidc', source: 'oidc' }
           }
         }),
@@ -96,7 +99,8 @@ describe('ProfileInfoCard', () => {
       }
     })
 
-    expect(wrapper.text()).not.toContain('Profile Sources')
+    expect(wrapper.get('[data-testid="profile-source-hints"]').text()).toContain('Avatar from LinuxDo')
+    expect(wrapper.get('[data-testid="profile-source-hints"]').text()).toContain('Nickname from ExampleID')
     expect(wrapper.find('[data-testid="profile-side-column"]').exists()).toBe(false)
   })
 

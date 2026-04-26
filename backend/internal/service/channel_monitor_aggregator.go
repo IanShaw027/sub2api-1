@@ -22,14 +22,20 @@ func (s *ChannelMonitorService) BatchMonitorStatusSummary(
 	primaryByID map[int64]string,
 	extrasByID map[int64][]string,
 ) map[int64]MonitorStatusSummary {
+	latestMap := s.batchLatest(ctx, ids)
+	return s.batchMonitorStatusSummaryWithLatest(ctx, ids, primaryByID, extrasByID, latestMap)
+}
+
+func (s *ChannelMonitorService) batchMonitorStatusSummaryWithLatest(
+	ctx context.Context,
+	ids []int64,
+	primaryByID map[int64]string,
+	extrasByID map[int64][]string,
+	latestMap map[int64][]*ChannelMonitorLatest,
+) map[int64]MonitorStatusSummary {
 	out := make(map[int64]MonitorStatusSummary, len(ids))
 	if len(ids) == 0 {
 		return out
-	}
-	latestMap, err := s.repo.ListLatestForMonitorIDs(ctx, ids)
-	if err != nil {
-		slog.Warn("channel_monitor: batch load latest failed", "error", err)
-		latestMap = map[int64][]*ChannelMonitorLatest{}
 	}
 	availMap, err := s.repo.ComputeAvailabilityForMonitors(ctx, ids, monitorAvailability7Days)
 	if err != nil {
@@ -65,8 +71,8 @@ func (s *ChannelMonitorService) ListUserView(ctx context.Context) ([]*UserMonito
 	}
 
 	ids, primaryByID, extrasByID := collectMonitorIndexes(monitors)
-	summaries := s.BatchMonitorStatusSummary(ctx, ids, primaryByID, extrasByID)
 	latestMap := s.batchLatest(ctx, ids)
+	summaries := s.batchMonitorStatusSummaryWithLatest(ctx, ids, primaryByID, extrasByID, latestMap)
 	timelineMap := s.batchTimeline(ctx, ids, primaryByID)
 
 	views := make([]*UserMonitorView, 0, len(monitors))

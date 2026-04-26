@@ -182,23 +182,12 @@ func (s *PaymentConfigService) resolveVisibleMethodProviderKey(
 	method string,
 	matching []*dbent.PaymentProviderInstance,
 ) (string, error) {
-	switch providerKeys := distinctVisibleMethodProviderKeys(matching); len(providerKeys) {
-	case 0:
-		return "", nil
-	case 1:
-		return strings.TrimSpace(providerKeys[0]), nil
-	default:
-		providerKey, err := s.resolveVisibleMethodSourceProviderKey(ctx, method)
-		if err != nil {
-			return "", err
-		}
-		if providerKey == "" {
-			return "", infraerrors.BadRequest(
-				"INVALID_PAYMENT_VISIBLE_METHOD_SOURCE",
-				fmt.Sprintf("%s source is required when multiple provider instances are enabled", method),
-			)
-		}
-		selected := selectVisibleMethodInstanceByProviderKey(matching, providerKey)
+	configuredProviderKey, err := s.resolveVisibleMethodSourceProviderKey(ctx, method)
+	if err != nil {
+		return "", err
+	}
+	if configuredProviderKey != "" {
+		selected := selectVisibleMethodInstanceByProviderKey(matching, configuredProviderKey)
 		if selected == nil {
 			return "", infraerrors.BadRequest(
 				"INVALID_PAYMENT_VISIBLE_METHOD_SOURCE",
@@ -206,6 +195,18 @@ func (s *PaymentConfigService) resolveVisibleMethodProviderKey(
 			)
 		}
 		return strings.TrimSpace(selected.ProviderKey), nil
+	}
+
+	switch providerKeys := distinctVisibleMethodProviderKeys(matching); len(providerKeys) {
+	case 0:
+		return "", nil
+	case 1:
+		return strings.TrimSpace(providerKeys[0]), nil
+	default:
+		return "", infraerrors.BadRequest(
+			"INVALID_PAYMENT_VISIBLE_METHOD_SOURCE",
+			fmt.Sprintf("%s source is required when multiple provider instances are enabled", method),
+		)
 	}
 }
 

@@ -160,7 +160,6 @@ func (s *AuthService) RegisterOAuthEmailAccount(
 		}
 		return nil, nil, ErrServiceUnavailable
 	}
-	s.recordSignupGrantHistory(ctx, user.ID, signupSource, grantPlan)
 
 	tokenPair, err := s.GenerateTokenPair(ctx, user, "")
 	if err != nil {
@@ -196,7 +195,9 @@ func (s *AuthService) FinalizeOAuthEmailAccount(
 
 	s.updateOAuthSignupSource(ctx, user.ID, signupSource)
 	grantPlan := s.resolveSignupGrantPlan(ctx, signupSource)
+	s.recordSignupGrantHistory(ctx, user.ID, signupSource, grantPlan)
 	s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
+	appendRuntimeMessage(user, buildSignupGrantMessage(grantPlan))
 	if s.affiliateService != nil {
 		if _, err := s.affiliateService.EnsureUserAffiliate(ctx, user.ID); err != nil {
 			logger.LegacyPrintf("service.auth", "[Auth] Failed to initialize affiliate profile for oauth user %d: %v", user.ID, err)

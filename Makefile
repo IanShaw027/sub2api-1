@@ -44,8 +44,12 @@ test-frontend:
 	@pnpm --dir frontend run lint:check
 	@pnpm --dir frontend run typecheck
 	@$(MAKE) test-frontend-ci
+	@pnpm --dir frontend run build
 
 test-frontend-ci:
+	@pnpm --dir frontend run test:run
+
+test-frontend-smoke:
 	@pnpm --dir frontend exec vitest run $(FRONTEND_CI_VITEST)
 
 test-datamanagementd:

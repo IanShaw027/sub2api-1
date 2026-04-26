@@ -7056,7 +7056,7 @@ function togglePaymentType(type: string) {
 
 async function disableProvidersByType(type: string) {
   const matching = providers.value.filter(
-    (p) => p.provider_key === type && p.enabled,
+    (p) => p.enabled && getProviderVisibleMethods(p).includes(type as "alipay" | "wxpay"),
   );
   for (const p of matching) {
     try {

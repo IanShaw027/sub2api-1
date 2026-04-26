@@ -1935,8 +1935,7 @@ func (h *OpenAIGatewayHandler) submitUsageRecordTask(task service.UsageRecordTas
 		}
 		logger.L().With(
 			zap.String("component", "handler.openai_gateway.responses"),
-		).Warn("openai.usage_record_task_dropped")
-		return
+		).Warn("openai.usage_record_task_sync_after_drop")
 	}
 	// 回退路径：worker 池未注入时同步执行，避免退回到无界 goroutine 模式。
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -382,6 +382,15 @@ function persistRecoverySnapshot(snapshot: PaymentRecoverySnapshot) {
   writePaymentRecoverySnapshot(window.localStorage, snapshot, PAYMENT_RECOVERY_STORAGE_KEY)
 }
 
+function markRecoveryRedirected(snapshot: PaymentRecoverySnapshot) {
+  if (snapshot.launchKind !== 'redirect_waiting' || snapshot.redirected) {
+    return
+  }
+  const redirectedSnapshot = { ...snapshot, redirected: true }
+  paymentState.value = redirectedSnapshot
+  persistRecoverySnapshot(redirectedSnapshot)
+}
+
 function removeRecoverySnapshot() {
   if (typeof window === 'undefined') return
   clearPaymentRecoverySnapshot(window.localStorage, PAYMENT_RECOVERY_STORAGE_KEY)
@@ -789,6 +798,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
     }
     if (decision.kind === 'redirect_waiting' && decision.paymentState.payUrl) {
       if (isMobileDevice()) {
+        markRecoveryRedirected(decision.paymentState)
         window.location.href = decision.paymentState.payUrl
         return
       }

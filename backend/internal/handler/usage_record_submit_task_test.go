@@ -91,7 +91,7 @@ func TestGatewayHandlerSubmitUsageRecordTask_WithoutPool_TaskPanicRecovered(t *t
 	require.True(t, called.Load(), "panic 后后续任务应仍可执行")
 }
 
-func TestGatewayHandlerSubmitUsageRecordTask_WithDroppedPoolDropsTask(t *testing.T) {
+func TestGatewayHandlerSubmitUsageRecordTask_WithDroppedPoolRunsTaskSynchronously(t *testing.T) {
 	pool := newDroppedUsageRecordTestPool(t)
 	h := &GatewayHandler{usageRecordWorkerPool: pool}
 
@@ -109,13 +109,16 @@ func TestGatewayHandlerSubmitUsageRecordTask_WithDroppedPoolDropsTask(t *testing
 
 	done := make(chan struct{})
 	h.submitUsageRecordTask(func(ctx context.Context) {
+		if _, ok := ctx.Deadline(); !ok {
+			t.Fatal("expected deadline in sync fallback context")
+		}
 		close(done)
 	})
 
 	select {
 	case <-done:
-		t.Fatal("dropped task should not execute")
-	case <-time.After(150 * time.Millisecond):
+	case <-time.After(time.Second):
+		t.Fatal("dropped task should execute synchronously")
 	}
 	close(release)
 }
@@ -173,7 +176,7 @@ func TestOpenAIGatewayHandlerSubmitUsageRecordTask_WithoutPool_TaskPanicRecovere
 	require.True(t, called.Load(), "panic 后后续任务应仍可执行")
 }
 
-func TestOpenAIGatewayHandlerSubmitUsageRecordTask_WithDroppedPoolDropsTask(t *testing.T) {
+func TestOpenAIGatewayHandlerSubmitUsageRecordTask_WithDroppedPoolRunsTaskSynchronously(t *testing.T) {
 	pool := newDroppedUsageRecordTestPool(t)
 	h := &OpenAIGatewayHandler{usageRecordWorkerPool: pool}
 
@@ -191,13 +194,16 @@ func TestOpenAIGatewayHandlerSubmitUsageRecordTask_WithDroppedPoolDropsTask(t *t
 
 	done := make(chan struct{})
 	h.submitUsageRecordTask(func(ctx context.Context) {
+		if _, ok := ctx.Deadline(); !ok {
+			t.Fatal("expected deadline in sync fallback context")
+		}
 		close(done)
 	})
 
 	select {
 	case <-done:
-		t.Fatal("dropped task should not execute")
-	case <-time.After(150 * time.Millisecond):
+	case <-time.After(time.Second):
+		t.Fatal("dropped task should execute synchronously")
 	}
 	close(release)
 }

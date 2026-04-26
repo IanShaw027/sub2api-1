@@ -27,8 +27,9 @@ const (
 	// 用于限制首次上线回填（30 天）+ 少量余量，避免长事务。
 	monitorMaintenanceMaxDaysPerRun = 35
 	// monitorWorkerConcurrency 调度器并发执行的监控数（pond 池容量）。
-	// runner 使用 queue=0（不排队），超出并发的触发会直接 drop（TrySubmit=false）。
+	// runner 额外提供短队列缓冲，避免启动或同 tick 批量触发时因 worker 忙而直接漏检。
 	monitorWorkerConcurrency = 5
+	monitorWorkerQueueSize   = monitorWorkerConcurrency * 4
 	// monitorStartupLoadTimeout Start 时一次性加载所有 enabled monitor 的总超时。
 	monitorStartupLoadTimeout = 10 * time.Second
 	// monitorMinIntervalSeconds / monitorMaxIntervalSeconds 用户配置的检测间隔上下限。

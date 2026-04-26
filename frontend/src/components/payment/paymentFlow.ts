@@ -41,6 +41,8 @@ export interface PaymentRecoverySnapshot {
   orderType: OrderType | ''
   paymentMode: string
   resumeToken: string
+  launchKind?: PaymentLaunchKind
+  redirected?: boolean
   createdAt: number
 }
 
@@ -157,17 +159,19 @@ export function decidePaymentLaunch(
     const payUrl = kind === 'stripe_popup'
       ? context.stripePopupUrl || context.stripeRouteUrl || ''
       : context.stripeRouteUrl || context.stripePopupUrl || ''
-    const paymentState = { ...baseState, payUrl }
+    const paymentState = { ...baseState, payUrl, launchKind: kind }
     return { kind, paymentState, recovery: paymentState, stripeMethod }
   }
 
   if (result.result_type === 'oauth_required' && result.oauth?.authorize_url) {
-    return { kind: 'wechat_oauth', paymentState: baseState, recovery: baseState, oauth: result.oauth }
+    const paymentState = { ...baseState, launchKind: 'wechat_oauth' as PaymentLaunchKind }
+    return { kind: 'wechat_oauth', paymentState, recovery: paymentState, oauth: result.oauth }
   }
 
   const jsapiPayload = result.jsapi ?? result.jsapi_payload
   if (result.result_type === 'jsapi_ready' && jsapiPayload) {
-    return { kind: 'wechat_jsapi', paymentState: baseState, recovery: baseState, jsapi: jsapiPayload }
+    const paymentState = { ...baseState, launchKind: 'wechat_jsapi' as PaymentLaunchKind }
+    return { kind: 'wechat_jsapi', paymentState, recovery: paymentState, jsapi: jsapiPayload }
   }
 
   const normalizedPaymentMode = baseState.paymentMode.trim().toLowerCase()
@@ -179,19 +183,23 @@ export function decidePaymentLaunch(
     || (!prefersRedirect && !!baseState.qrCode)
 
   if (visibleMethod === 'wxpay' && context.isWechatBrowser && baseState.payUrl && !baseState.qrCode) {
-    return { kind: 'redirect_waiting', paymentState: baseState, recovery: baseState }
+    const paymentState = { ...baseState, launchKind: 'redirect_waiting' as PaymentLaunchKind }
+    return { kind: 'redirect_waiting', paymentState, recovery: paymentState }
   }
 
   if (prefersRedirect && baseState.payUrl) {
-    return { kind: 'redirect_waiting', paymentState: baseState, recovery: baseState }
+    const paymentState = { ...baseState, launchKind: 'redirect_waiting' as PaymentLaunchKind }
+    return { kind: 'redirect_waiting', paymentState, recovery: paymentState }
   }
 
   if (prefersQr && baseState.qrCode) {
-    return { kind: 'qr_waiting', paymentState: baseState, recovery: baseState }
+    const paymentState = { ...baseState, launchKind: 'qr_waiting' as PaymentLaunchKind }
+    return { kind: 'qr_waiting', paymentState, recovery: paymentState }
   }
 
   if (baseState.payUrl) {
-    return { kind: 'redirect_waiting', paymentState: baseState, recovery: baseState }
+    const paymentState = { ...baseState, launchKind: 'redirect_waiting' as PaymentLaunchKind }
+    return { kind: 'redirect_waiting', paymentState, recovery: paymentState }
   }
 
   return { kind: 'unhandled', paymentState: baseState, recovery: baseState }
@@ -269,9 +277,21 @@ export function readPaymentRecoverySnapshot(
       orderType: parsed.orderType === 'subscription' ? 'subscription' : 'balance',
       paymentMode: parsed.paymentMode,
       resumeToken: parsed.resumeToken,
+      launchKind: isPaymentLaunchKind(parsed.launchKind) ? parsed.launchKind : undefined,
+      redirected: parsed.redirected === true,
       createdAt: parsed.createdAt,
     }
   } catch {
     return null
   }
+}
+
+function isPaymentLaunchKind(value: unknown): value is PaymentLaunchKind {
+  return value === 'qr_waiting'
+    || value === 'redirect_waiting'
+    || value === 'stripe_popup'
+    || value === 'stripe_route'
+    || value === 'wechat_oauth'
+    || value === 'wechat_jsapi'
+    || value === 'unhandled'
 }

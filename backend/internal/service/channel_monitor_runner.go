@@ -45,8 +45,8 @@ type monitorRunnerDistributedLocker interface {
 //   - Start 时一次性加载所有 enabled monitor 并为每个建立任务
 //   - Service 在 Create/Update/Delete 后通过 MonitorScheduler 接口回调，
 //     即时重建/取消对应任务（无需轮询 DB）
-//   - 实际 HTTP 检测交给 pond 池（容量 monitorWorkerConcurrency），
-//     防止突发并发拖垮上游
+//   - 实际 HTTP 检测交给 pond 池（容量 monitorWorkerConcurrency + 有界队列），
+//     防止突发并发拖垮上游，同时避免瞬时 worker 忙导致漏检
 //
 // 历史清理与日聚合维护由 OpsCleanupService 的 cron 触发
 // ChannelMonitorService.RunDailyMaintenance（复用 leader lock + heartbeat），
@@ -94,12 +94,11 @@ func newChannelMonitorRunner(svc monitorRunnerSvc, settingService *SettingServic
 	return &ChannelMonitorRunner{
 		svc:            svc,
 		settingService: settingService,
-		// queue=0: 不排队。worker 全忙时 TrySubmit 立即失败并丢弃本次检测（与 fire 注释一致）。
-		pool:         pond.NewPool(monitorWorkerConcurrency, pond.WithQueueSize(0)),
-		parentCtx:    ctx,
-		parentCancel: cancel,
-		tasks:        make(map[int64]*scheduledMonitor),
-		inFlight:     make(map[int64]struct{}),
+		pool:           pond.NewPool(monitorWorkerConcurrency, pond.WithQueueSize(monitorWorkerQueueSize)),
+		parentCtx:      ctx,
+		parentCancel:   cancel,
+		tasks:          make(map[int64]*scheduledMonitor),
+		inFlight:       make(map[int64]struct{}),
 	}
 }
 
@@ -242,7 +241,7 @@ func (r *ChannelMonitorRunner) runScheduled(ctx context.Context, task *scheduled
 }
 
 // fire 提交一次检测到 worker 池。功能开关关闭时跳过本次（不取消任务，
-// 重新启用时立即恢复）；池满或重复在飞时也跳过。
+// 重新启用时立即恢复）；重复在飞时跳过。池满时同步执行，避免漏检。
 func (r *ChannelMonitorRunner) fire(ctx context.Context, task *scheduledMonitor) {
 	if r.settingService != nil && !r.settingService.GetChannelMonitorRuntime(ctx).Enabled {
 		return
@@ -255,10 +254,9 @@ func (r *ChannelMonitorRunner) fire(ctx context.Context, task *scheduledMonitor)
 	if _, ok := r.pool.TrySubmit(func() {
 		r.runOne(ctx, task.id, task.name)
 	}); !ok {
-		// 池满：丢弃本次检测，但必须释放已占用的 inFlight 槽，否则该 monitor 会被永久卡住。
-		r.releaseInFlight(task.id)
-		slog.Warn("channel_monitor: worker pool full, skip submission",
+		slog.Warn("channel_monitor: worker pool full, run synchronously",
 			"monitor_id", task.id, "name", task.name)
+		r.runOne(ctx, task.id, task.name)
 	}
 }
 
