@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -356,14 +357,27 @@ func (h *GroupHandler) GetStats(c *gin.Context) {
 		return
 	}
 
-	// Return mock data for now
-	response.Success(c, gin.H{
-		"total_api_keys":  0,
-		"active_api_keys": 0,
-		"total_requests":  0,
-		"total_cost":      0.0,
-	})
-	_ = groupID // TODO: implement actual stats
+	stats, err := h.adminService.GetGroupStats(c.Request.Context(), groupID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	if h.dashboardService != nil {
+		usageStats, err := h.dashboardService.GetGroupStatsWithFilters(c.Request.Context(), time.Time{}, time.Now(), 0, 0, 0, groupID, nil, nil, nil, "")
+		if err != nil {
+			response.Error(c, 500, "Failed to get group usage stats")
+			return
+		}
+		for _, usage := range usageStats {
+			if usage.GroupID == groupID {
+				stats.TotalRequests += usage.Requests
+				stats.TotalCost += usage.Cost
+			}
+		}
+	}
+
+	response.Success(c, stats)
 }
 
 // GetUsageSummary returns today's and cumulative cost for all groups.

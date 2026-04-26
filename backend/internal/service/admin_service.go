@@ -48,6 +48,7 @@ type AdminService interface {
 	CreateGroup(ctx context.Context, input *CreateGroupInput) (*Group, error)
 	UpdateGroup(ctx context.Context, id int64, input *UpdateGroupInput) (*Group, error)
 	DeleteGroup(ctx context.Context, id int64) error
+	GetGroupStats(ctx context.Context, groupID int64) (*GroupStats, error)
 	GetGroupAPIKeys(ctx context.Context, groupID int64, page, pageSize int) ([]APIKey, int64, error)
 	GetGroupRateMultipliers(ctx context.Context, groupID int64) ([]UserGroupRateEntry, error)
 	ClearGroupRateMultipliers(ctx context.Context, groupID int64) error
@@ -108,6 +109,13 @@ type AdminService interface {
 	BatchDeleteRedeemCodes(ctx context.Context, ids []int64) (int64, error)
 	ExpireRedeemCode(ctx context.Context, id int64) (*RedeemCode, error)
 	ResetAccountQuota(ctx context.Context, id int64) error
+}
+
+type GroupStats struct {
+	TotalAPIKeys  int64   `json:"total_api_keys"`
+	ActiveAPIKeys int64   `json:"active_api_keys"`
+	TotalRequests int64   `json:"total_requests"`
+	TotalCost     float64 `json:"total_cost"`
 }
 
 // CreateUserInput represents input for creating a new user via admin operations.
@@ -493,27 +501,58 @@ var ErrRPMStatusUnavailable = infraerrors.New(http.StatusNotImplemented, "RPM_ST
 
 // adminServiceImpl implements AdminService
 type adminServiceImpl struct {
-	userRepo             UserRepository
-	groupRepo            GroupRepository
-	accountRepo          AccountRepository
-	proxyRepo            ProxyRepository
-	apiKeyRepo           APIKeyRepository
-	redeemCodeRepo       RedeemCodeRepository
-	userGroupRateRepo    UserGroupRateRepository
-	userRPMCache         UserRPMCache
-	billingCacheService  *BillingCacheService
-	proxyProber          ProxyExitInfoProber
-	proxyLatencyCache    ProxyLatencyCache
-	authCacheInvalidator APIKeyAuthCacheInvalidator
-	entClient            *dbent.Client // 用于开启数据库事务
-	settingService       *SettingService
-	defaultSubAssigner   DefaultSubscriptionAssigner
-	userSubRepo          UserSubscriptionRepository
-	privacyClientFactory PrivacyClientFactory
+	userRepo              UserRepository
+	groupRepo             GroupRepository
+	accountRepo           AccountRepository
+	proxyRepo             ProxyRepository
+	apiKeyRepo            APIKeyRepository
+	redeemCodeRepo        RedeemCodeRepository
+	userGroupRateRepo     UserGroupRateRepository
+	userRPMCache          UserRPMCache
+	billingCacheService   *BillingCacheService
+	proxyProber           ProxyExitInfoProber
+	proxyLatencyCache     ProxyLatencyCache
+	authCacheInvalidator  APIKeyAuthCacheInvalidator
+	entClient             *dbent.Client // 用于开启数据库事务
+	settingService        *SettingService
+	defaultSubAssigner    DefaultSubscriptionAssigner
+	userSubRepo           UserSubscriptionRepository
+	privacyClientFactory  PrivacyClientFactory
+	oauthRefreshAPI       *OAuthRefreshAPI
+	oauthRefreshExecutors []OAuthRefreshExecutor
 }
 
 type userGroupRateBatchReader interface {
 	GetByUserIDs(ctx context.Context, userIDs []int64) (map[int64]map[int64]float64, error)
+}
+
+func (s *adminServiceImpl) SetAccountCredentialRefreshers(refreshAPI *OAuthRefreshAPI, executors ...OAuthRefreshExecutor) {
+	s.oauthRefreshAPI = refreshAPI
+	s.oauthRefreshExecutors = executors
+}
+
+func ConfigureAdminAccountCredentialRefreshers(
+	adminService *adminServiceImpl,
+	refreshAPI *OAuthRefreshAPI,
+	oauthService *OAuthService,
+	openaiOAuthService *OpenAIOAuthService,
+	geminiOAuthService *GeminiOAuthService,
+	antigravityOAuthService *AntigravityOAuthService,
+	kiroRefresher *KiroTokenRefresher,
+	accountRepo AccountRepository,
+) AdminService {
+	if adminService == nil {
+		return nil
+	}
+	adminService.SetAccountCredentialRefreshers(
+		refreshAPI,
+		NewClaudeTokenRefresher(oauthService),
+		NewOpenAITokenRefresher(openaiOAuthService, accountRepo),
+		NewGeminiTokenRefresher(geminiOAuthService),
+		NewAntigravityTokenRefresher(antigravityOAuthService),
+		kiroRefresher,
+	)
+	return adminService
 }
 
 // NewAdminService creates a new AdminService
@@ -535,7 +574,7 @@ func NewAdminService(
 	defaultSubAssigner DefaultSubscriptionAssigner,
 	userSubRepo UserSubscriptionRepository,
 	privacyClientFactory PrivacyClientFactory,
-) AdminService {
+) *adminServiceImpl {
 	return &adminServiceImpl{
 		userRepo:             userRepo,
 		groupRepo:            groupRepo,
@@ -962,6 +1001,29 @@ func (s *adminServiceImpl) GetUserUsageStats(ctx context.Context, userID int64, 
 		"total_cost":      0.0,
 		"total_tokens":    0,
 		"avg_duration_ms": 0,
+	}, nil
+}
+
+func (s *adminServiceImpl) GetGroupStats(ctx context.Context, groupID int64) (*GroupStats, error) {
+	if groupID <= 0 {
+		return nil, infraerrors.BadRequest("INVALID_GROUP_ID", "group_id must be greater than 0")
+	}
+	if s.apiKeyRepo == nil {
+		return nil, infraerrors.InternalServer("API_KEY_REPOSITORY_UNAVAILABLE", "api key repository is unavailable")
+	}
+
+	total, err := s.apiKeyRepo.CountByGroupID(ctx, groupID)
+	if err != nil {
+		return nil, fmt.Errorf("count api keys by group: %w", err)
+	}
+	active, err := s.apiKeyRepo.CountActiveByGroupID(ctx, groupID)
+	if err != nil {
+		return nil, fmt.Errorf("count active api keys by group: %w", err)
+	}
+
+	return &GroupStats{
+		TotalAPIKeys:  total,
+		ActiveAPIKeys: active,
 	}, nil
 }
 
@@ -2502,8 +2564,53 @@ func (s *adminServiceImpl) RefreshAccountCredentials(ctx context.Context, id int
 	if err != nil {
 		return nil, err
 	}
-	// TODO: Implement refresh logic
-	return account, nil
+	if account == nil {
+		return nil, ErrAccountNotFound
+	}
+	if !account.IsOAuth() {
+		return nil, infraerrors.BadRequest("NOT_OAUTH", "cannot refresh non-OAuth account")
+	}
+	if strings.TrimSpace(account.GetCredential("refresh_token")) == "" {
+		return nil, infraerrors.BadRequest("MISSING_REFRESH_TOKEN", "account has no refresh_token credentials")
+	}
+
+	executor := s.findAccountCredentialRefreshExecutor(account)
+	if executor == nil {
+		return nil, infraerrors.BadRequest("UNSUPPORTED_REFRESH_PLATFORM", fmt.Sprintf("refresh credentials is not supported for platform %s", account.Platform))
+	}
+
+	refreshAPI := s.oauthRefreshAPI
+	if refreshAPI == nil {
+		refreshAPI = NewOAuthRefreshAPI(s.accountRepo, nil)
+	}
+	result, err := refreshAPI.RefreshIfNeeded(ctx, account, alwaysRefreshExecutor{OAuthRefreshExecutor: executor}, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to refresh account credentials: %w", err)
+	}
+	if result != nil && result.LockHeld {
+		return nil, infraerrors.New(http.StatusConflict, "REFRESH_IN_PROGRESS", "account credential refresh is already in progress")
+	}
+	if result != nil && result.Account != nil {
+		return result.Account, nil
+	}
+	return s.accountRepo.GetByID(ctx, id)
+}
+
+func (s *adminServiceImpl) findAccountCredentialRefreshExecutor(account *Account) OAuthRefreshExecutor {
+	for _, executor := range s.oauthRefreshExecutors {
+		if executor != nil && executor.CanRefresh(account) {
+			return executor
+		}
+	}
+	return nil
+}
+
+type alwaysRefreshExecutor struct {
+	OAuthRefreshExecutor
+}
+
+func (e alwaysRefreshExecutor) NeedsRefresh(account *Account, refreshWindow time.Duration) bool {
+	return true
 }
 
 func (s *adminServiceImpl) ClearAccountError(ctx context.Context, id int64) (*Account, error) {

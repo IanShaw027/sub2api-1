@@ -115,6 +115,9 @@ func (s *apiKeyRepoStub) UpdateGroupIDByUserAndGroup(ctx context.Context, userID
 func (s *apiKeyRepoStub) CountByGroupID(ctx context.Context, groupID int64) (int64, error) {
 	panic("unexpected CountByGroupID call")
 }
+func (s *apiKeyRepoStub) CountActiveByGroupID(ctx context.Context, groupID int64) (int64, error) {
+	panic("unexpected CountActiveByGroupID call")
+}
 
 func (s *apiKeyRepoStub) ListKeysByUserID(ctx context.Context, userID int64) ([]string, error) {
 	panic("unexpected ListKeysByUserID call")

@@ -271,6 +271,21 @@ func (s *stubAdminService) DeleteGroup(ctx context.Context, id int64) error {
 	return nil
 }
 
+func (s *stubAdminService) GetGroupStats(ctx context.Context, groupID int64) (*service.GroupStats, error) {
+	var total int64
+	var active int64
+	for _, key := range s.apiKeys {
+		if key.GroupID == nil || *key.GroupID != groupID {
+			continue
+		}
+		total++
+		if key.Status == service.StatusActive {
+			active++
+		}
+	}
+	return &service.GroupStats{TotalAPIKeys: total, ActiveAPIKeys: active}, nil
+}
+
 func (s *stubAdminService) GetGroupAPIKeys(ctx context.Context, groupID int64, page, pageSize int) ([]service.APIKey, int64, error) {
 	return s.apiKeys, int64(len(s.apiKeys)), nil
 }

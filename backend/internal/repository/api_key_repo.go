@@ -12,6 +12,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
 	"github.com/Wei-Shaw/sub2api/ent/user"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -470,6 +471,11 @@ func (r *apiKeyRepository) UpdateGroupIDByUserAndGroup(ctx context.Context, user
 // CountByGroupID 获取分组的 API Key 数量
 func (r *apiKeyRepository) CountByGroupID(ctx context.Context, groupID int64) (int64, error) {
 	count, err := r.activeQuery().Where(apikey.GroupIDEQ(groupID)).Count(ctx)
+	return int64(count), err
+}
+
+func (r *apiKeyRepository) CountActiveByGroupID(ctx context.Context, groupID int64) (int64, error) {
+	count, err := r.activeQuery().Where(apikey.GroupIDEQ(groupID), apikey.StatusEQ(domain.StatusActive)).Count(ctx)
 	return int64(count), err
 }
 
