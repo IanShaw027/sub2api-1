@@ -68,9 +68,9 @@ func (h *TicketHandler) List(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	out := make([]dto.SupportTicket, 0, len(items))
+	out := make([]dto.UserSupportTicket, 0, len(items))
 	for i := range items {
-		out = append(out, *dto.SupportTicketFromService(&items[i]))
+		out = append(out, *dto.UserSupportTicketFromService(&items[i]))
 	}
 	response.Paginated(c, out, result.Total, page, pageSize)
 }
@@ -96,7 +96,7 @@ func (h *TicketHandler) Create(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, dto.SupportTicketFromService(item))
+	response.Success(c, dto.UserSupportTicketFromService(item))
 }
 
 func (h *TicketHandler) GetByID(c *gin.Context) {
@@ -115,7 +115,7 @@ func (h *TicketHandler) GetByID(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, dto.SupportTicketFromService(item))
+	response.Success(c, dto.UserSupportTicketFromService(item))
 }
 
 func (h *TicketHandler) ListMessages(c *gin.Context) {

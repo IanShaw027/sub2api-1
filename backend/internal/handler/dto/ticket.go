@@ -30,6 +30,25 @@ type SupportTicket struct {
 	UpdatedAt          time.Time       `json:"updated_at"`
 }
 
+type UserSupportTicket struct {
+	ID                 int64           `json:"id"`
+	TicketNo           string          `json:"ticket_no"`
+	Category           string          `json:"category"`
+	Title              string          `json:"title"`
+	Status             string          `json:"status"`
+	CurrentFormPayload json.RawMessage `json:"current_form_payload"`
+	CurrentRevisionNo  int             `json:"current_revision_no"`
+	LatestMessageAt    time.Time       `json:"latest_message_at"`
+	LastReplyRole      string          `json:"last_reply_role"`
+	UnreadByUser       bool            `json:"unread_by_user"`
+	UnreadByAdmin      bool            `json:"unread_by_admin"`
+	SubmittedAt        *time.Time      `json:"submitted_at,omitempty"`
+	ClosedAt           *time.Time      `json:"closed_at,omitempty"`
+	WithdrawnAt        *time.Time      `json:"withdrawn_at,omitempty"`
+	CreatedAt          time.Time       `json:"created_at"`
+	UpdatedAt          time.Time       `json:"updated_at"`
+}
+
 type SupportTicketMessage struct {
 	ID                   int64     `json:"id"`
 	TicketID             int64     `json:"ticket_id"`
@@ -53,6 +72,30 @@ func SupportTicketFromService(item *service.SupportTicket) *SupportTicket {
 		UserName:           item.UserName,
 		UserEmail:          item.UserEmail,
 		UserAvatarURL:      item.UserAvatarURL,
+		Category:           item.Category,
+		Title:              item.Title,
+		Status:             item.Status,
+		CurrentFormPayload: item.CurrentFormPayload,
+		CurrentRevisionNo:  item.CurrentRevisionNo,
+		LatestMessageAt:    item.LatestMessageAt,
+		LastReplyRole:      item.LastReplyRole,
+		UnreadByUser:       item.UnreadByUser,
+		UnreadByAdmin:      item.UnreadByAdmin,
+		SubmittedAt:        item.SubmittedAt,
+		ClosedAt:           item.ClosedAt,
+		WithdrawnAt:        item.WithdrawnAt,
+		CreatedAt:          item.CreatedAt,
+		UpdatedAt:          item.UpdatedAt,
+	}
+}
+
+func UserSupportTicketFromService(item *service.SupportTicket) *UserSupportTicket {
+	if item == nil {
+		return nil
+	}
+	return &UserSupportTicket{
+		ID:                 item.ID,
+		TicketNo:           item.TicketNo,
 		Category:           item.Category,
 		Title:              item.Title,
 		Status:             item.Status,

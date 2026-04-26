@@ -2,7 +2,7 @@
   <AppLayout>
     <MonitorHero
       :overall-status="overallStatus"
-      :interval-seconds="DEFAULT_INTERVAL_SECONDS"
+      :interval-seconds="refreshIntervalSeconds"
       :window="currentWindow"
       :loading="loading"
       :auto-refresh="autoRefresh"
@@ -46,8 +46,9 @@ import MonitorHero, {
 } from '@/components/user/monitor/MonitorHero.vue'
 import MonitorCardGrid from '@/components/user/monitor/MonitorCardGrid.vue'
 import MonitorDetailDialog from '@/components/user/MonitorDetailDialog.vue'
-import { DEFAULT_INTERVAL_SECONDS, STATUS_OPERATIONAL } from '@/constants/channelMonitor'
+import { STATUS_OPERATIONAL } from '@/constants/channelMonitor'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
+import { getChannelMonitorRefreshIntervalSeconds } from '@/utils/featureFlags'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -62,10 +63,12 @@ const detailTarget = ref<UserMonitorView | null>(null)
 
 let abortController: AbortController | null = null
 
+const refreshIntervalSeconds = computed(() => getChannelMonitorRefreshIntervalSeconds())
+
 const autoRefresh = useAutoRefresh({
   storageKey: 'channel-status-auto-refresh',
   intervals: [30, 60, 120] as const,
-  defaultInterval: DEFAULT_INTERVAL_SECONDS,
+  defaultInterval: refreshIntervalSeconds.value,
   onRefresh: () => reload(true),
   shouldPause: () => document.hidden || loading.value,
 })
@@ -102,7 +105,7 @@ async function reload(silent = false) {
   } finally {
     if (abortController === ctrl) {
       if (!silent) loading.value = false
-      countdown.value = DEFAULT_INTERVAL_SECONDS
+      countdown.value = refreshIntervalSeconds.value
       abortController = null
     }
   }

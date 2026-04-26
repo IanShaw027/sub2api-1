@@ -173,6 +173,9 @@ func validateCreateParams(p ChannelMonitorCreateParams) error {
 	if strings.TrimSpace(p.PrimaryModel) == "" {
 		return ErrChannelMonitorMissingPrimaryModel
 	}
+	if err := validateExtraModels(p.ExtraModels); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -292,6 +295,14 @@ func (s *ChannelMonitorService) RunCheck(ctx context.Context, id int64) ([]*Chec
 	results := s.runChecksConcurrent(ctx, m)
 	s.persistCheckResults(ctx, m, results)
 	return results, nil
+}
+
+// RunManual executes one monitor through the injected scheduler policy when available.
+func (s *ChannelMonitorService) RunManual(ctx context.Context, id int64) ([]*CheckResult, error) {
+	if s.scheduler != nil {
+		return s.scheduler.RunManual(ctx, id)
+	}
+	return s.RunCheck(ctx, id)
 }
 
 // persistCheckResults 写入本次检测的历史记录并更新 last_checked_at。
@@ -533,6 +544,9 @@ func applyMonitorUpdate(existing *ChannelMonitor, p ChannelMonitorUpdateParams) 
 		existing.PrimaryModel = strings.TrimSpace(*p.PrimaryModel)
 	}
 	if p.ExtraModels != nil {
+		if err := validateExtraModels(*p.ExtraModels); err != nil {
+			return err
+		}
 		existing.ExtraModels = normalizeModels(*p.ExtraModels)
 	}
 	if p.GroupName != nil {

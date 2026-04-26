@@ -108,6 +108,39 @@ func (s *userRPMCacheStub) GetUserRPM(_ context.Context, _ int64) (int, error) {
 	return 0, nil
 }
 
+type userRPMAtomicAdmitStub struct {
+	userRPMCacheStub
+
+	tryCalls       int32
+	tryGroupCount  int
+	tryUserCount   int
+	tryGroupCounts []int
+	tryUserCounts  []int
+}
+
+func (s *userRPMAtomicAdmitStub) TryIncrementUserAndGroupRPM(_ context.Context, _ int64, _ int64, groupLimit, userLimit int, incGroup, incUser bool) (int, int, bool, error) {
+	atomic.AddInt32(&s.tryCalls, 1)
+	nextGroup := s.tryGroupCount
+	nextUser := s.tryUserCount
+	if incGroup {
+		nextGroup++
+	}
+	if incUser {
+		nextUser++
+	}
+	if incGroup && groupLimit > 0 && nextGroup > groupLimit {
+		return s.tryGroupCount, s.tryUserCount, false, nil
+	}
+	if incUser && userLimit > 0 && nextUser > userLimit {
+		return s.tryGroupCount, s.tryUserCount, false, nil
+	}
+	s.tryGroupCount = nextGroup
+	s.tryUserCount = nextUser
+	s.tryGroupCounts = append(s.tryGroupCounts, s.tryGroupCount)
+	s.tryUserCounts = append(s.tryUserCounts, s.tryUserCount)
+	return s.tryGroupCount, s.tryUserCount, true, nil
+}
+
 // rpmOverrideRepoStub 专用于 checkRPM 分支测试，只实现必要方法。
 type rpmOverrideRepoStub struct {
 	UserGroupRateRepository
@@ -328,6 +361,25 @@ func TestBillingCacheService_CheckRPM_UsesCombinedIncrementForGroupAndUser(t *te
 	require.Equal(t, []bool{true, true, true}, cache.combinedIncUser)
 	require.Equal(t, []int64{1, 1, 1}, cache.combinedUserIDs)
 	require.Equal(t, []int64{10, 10, 10}, cache.combinedGroupIDs)
+}
+
+func TestBillingCacheService_CheckRPM_AtomicAdmitRejectsWithoutPollutingCounters(t *testing.T) {
+	cache := &userRPMAtomicAdmitStub{}
+	svc := newBillingServiceForRPM(t, cache, nil)
+
+	user := &User{ID: 1, RPMLimit: 2}
+	group := &Group{ID: 10, RPMLimit: 2}
+
+	require.NoError(t, svc.checkRPM(context.Background(), user, group))
+	require.NoError(t, svc.checkRPM(context.Background(), user, group))
+	require.ErrorIs(t, svc.checkRPM(context.Background(), user, group), ErrGroupRPMExceeded)
+
+	require.EqualValues(t, 3, atomic.LoadInt32(&cache.tryCalls))
+	require.Equal(t, []int{1, 2}, cache.tryGroupCounts)
+	require.Equal(t, []int{1, 2}, cache.tryUserCounts)
+	require.Equal(t, 2, cache.tryGroupCount)
+	require.Equal(t, 2, cache.tryUserCount)
+	require.EqualValues(t, 0, atomic.LoadInt32(&cache.combinedCalls), "atomic admit path should avoid increment-then-check pollution")
 }
 
 func TestBillingCacheService_CheckRPM_SnapshotAbsentOverrideSkipsDBLookup(t *testing.T) {

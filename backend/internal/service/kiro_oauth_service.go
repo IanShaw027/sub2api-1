@@ -185,9 +185,13 @@ func (s *KiroOAuthService) GenerateAuthURL(ctx context.Context, proxyID *int64) 
 			return nil, fmt.Errorf("kiro proxy repository is unavailable")
 		}
 		proxy, err := s.proxyRepo.GetByID(ctx, *proxyID)
-		if err == nil && proxy != nil {
-			proxyURL = proxy.URL()
+		if err != nil {
+			return nil, err
 		}
+		if proxy == nil {
+			return nil, ErrProxyNotFound
+		}
+		proxyURL = proxy.URL()
 	}
 
 	callbackBaseURL, err := kiroFindCallbackBaseURLFunc()
@@ -281,15 +285,6 @@ func (s *KiroOAuthService) ExchangeCallback(ctx context.Context, input *KiroExch
 	}
 
 	proxyURL := session.ProxyURL
-	if input.ProxyID != nil {
-		if s.proxyRepo == nil {
-			return nil, fmt.Errorf("kiro proxy repository is unavailable")
-		}
-		proxy, err := s.proxyRepo.GetByID(ctx, *input.ProxyID)
-		if err == nil && proxy != nil {
-			proxyURL = proxy.URL()
-		}
-	}
 
 	tokenExchangeRedirectURI := buildKiroTokenExchangeRedirectURI(redirectURI, parsedURL, loginOption)
 	tokenPayload, err := kiroCodeExchangeFunc(ctx, code, session.CodeVerifier, tokenExchangeRedirectURI, proxyURL)

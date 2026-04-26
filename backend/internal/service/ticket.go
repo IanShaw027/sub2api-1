@@ -46,6 +46,7 @@ var (
 	ErrTicketPayloadRequired = infraerrors.BadRequest("TICKET_PAYLOAD_REQUIRED", "ticket form payload is required")
 	ErrTicketPayloadInvalid  = infraerrors.BadRequest("TICKET_PAYLOAD_INVALID", "ticket form payload is invalid")
 	ErrTicketMessageRequired = infraerrors.BadRequest("TICKET_MESSAGE_REQUIRED", "ticket message is required")
+	ErrTicketMessageTooLarge = infraerrors.BadRequest("TICKET_MESSAGE_TOO_LARGE", "ticket message is too large")
 	ErrTicketNotEditable     = infraerrors.BadRequest("TICKET_NOT_EDITABLE", "ticket is not editable in current status")
 	ErrTicketCannotWithdraw  = infraerrors.BadRequest("TICKET_WITHDRAW_INVALID", "ticket cannot be withdrawn in current status")
 	ErrTicketCannotClose     = infraerrors.BadRequest("TICKET_CLOSE_INVALID", "ticket cannot be closed in current status")

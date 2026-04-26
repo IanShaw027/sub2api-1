@@ -9,7 +9,7 @@ import { useAppStore } from '@/stores/app'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
 import { useNavigationLoadingState } from '@/composables/useNavigationLoading'
 import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
-import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
+import { FeatureFlags, isChannelMonitorRouteEnabled, isFeatureFlagEnabled } from '@/utils/featureFlags'
 import { resolveDocumentTitle } from './title'
 
 /**
@@ -444,6 +444,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: true,
+      requiresChannelMonitor: true,
       title: 'Channel Monitor',
       titleKey: 'admin.channelMonitor.title',
       descriptionKey: 'admin.channelMonitor.description'
@@ -456,6 +457,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
+      requiresChannelMonitor: true,
       title: 'Channel Status',
       titleKey: 'nav.channelStatus'
     }
@@ -789,6 +791,11 @@ router.beforeEach((to, _from, next) => {
 
   // Check affiliate module requirement
   if (to.meta.requiresAffiliate === true && !isFeatureFlagEnabled(FeatureFlags.affiliate)) {
+    next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+    return
+  }
+
+  if (to.meta.requiresChannelMonitor === true && !isChannelMonitorRouteEnabled()) {
     next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
     return
   }

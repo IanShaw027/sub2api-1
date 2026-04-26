@@ -118,6 +118,34 @@ func TestMigrationsRunner_AuthIdentityAndPaymentSchemaStayAligned(t *testing.T) 
 	requireIndexAbsent(t, tx, "payment_orders", "paymentorder_out_trade_no_unique")
 }
 
+func TestMigrationsRunner_ChannelMonitorRequestTemplateSchemaStayAligned(t *testing.T) {
+	tx := testTx(t)
+
+	requireIndex(t, tx, "channel_monitor_request_templates", "channelmonitorrequesttemplate_provider_name")
+	requireIndexAbsent(t, tx, "channel_monitor_request_templates", "channel_monitor_request_templates_provider_name")
+	requireConstraint(t, tx, "channel_monitors", "channel_monitors_channel_monitor_request_templates_request_template")
+	requireForeignKeyOnDelete(t, tx, "channel_monitors", "template_id", "channel_monitor_request_templates", "SET NULL")
+}
+
+func requireConstraint(t *testing.T, tx *sql.Tx, table, constraint string) {
+	t.Helper()
+
+	var exists bool
+	err := tx.QueryRowContext(context.Background(), `
+SELECT EXISTS (
+	SELECT 1
+	FROM pg_constraint c
+	JOIN pg_class tbl ON tbl.oid = c.conrelid
+	JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
+	WHERE ns.nspname = 'public'
+	  AND tbl.relname = $1
+	  AND c.conname = $2
+)
+`, table, constraint).Scan(&exists)
+	require.NoError(t, err, "query pg_constraint for %s.%s", table, constraint)
+	require.True(t, exists, "expected constraint %s on %s", constraint, table)
+}
+
 func requireIndex(t *testing.T, tx *sql.Tx, table, index string) {
 	t.Helper()
 

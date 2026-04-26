@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -13,6 +14,9 @@ type channelMonitorRepoStub struct {
 	createFn        func(ctx context.Context, m *ChannelMonitor) error
 	getByIDFn       func(ctx context.Context, id int64) (*ChannelMonitor, error)
 	updateFn        func(ctx context.Context, m *ChannelMonitor) error
+	insertHistoryFn func(ctx context.Context, rows []*ChannelMonitorHistoryRow) error
+	markCheckedFn   func(ctx context.Context, id int64, checkedAt time.Time) error
+	lockFn          func(ctx context.Context, monitorID int64) (func(), bool, error)
 	getTemplateByID func(ctx context.Context, id int64) (*ChannelMonitorRequestTemplate, error)
 }
 
@@ -41,8 +45,16 @@ func (s *channelMonitorRepoStub) List(context.Context, ChannelMonitorListParams)
 func (s *channelMonitorRepoStub) ListEnabled(context.Context) ([]*ChannelMonitor, error) {
 	return nil, nil
 }
-func (s *channelMonitorRepoStub) MarkChecked(context.Context, int64, time.Time) error { return nil }
-func (s *channelMonitorRepoStub) InsertHistoryBatch(context.Context, []*ChannelMonitorHistoryRow) error {
+func (s *channelMonitorRepoStub) MarkChecked(ctx context.Context, id int64, checkedAt time.Time) error {
+	if s.markCheckedFn != nil {
+		return s.markCheckedFn(ctx, id, checkedAt)
+	}
+	return nil
+}
+func (s *channelMonitorRepoStub) InsertHistoryBatch(ctx context.Context, rows []*ChannelMonitorHistoryRow) error {
+	if s.insertHistoryFn != nil {
+		return s.insertHistoryFn(ctx, rows)
+	}
 	return nil
 }
 func (s *channelMonitorRepoStub) DeleteHistoryBefore(context.Context, time.Time) (int64, error) {
@@ -83,6 +95,13 @@ func (s *channelMonitorRepoStub) GetTemplateByID(ctx context.Context, id int64) 
 		return s.getTemplateByID(ctx, id)
 	}
 	return nil, ErrChannelMonitorTemplateNotFound
+}
+
+func (s *channelMonitorRepoStub) AcquireChannelMonitorRunLock(ctx context.Context, monitorID int64) (func(), bool, error) {
+	if s.lockFn != nil {
+		return s.lockFn(ctx, monitorID)
+	}
+	return nil, true, nil
 }
 
 type channelMonitorEncryptorStub struct{}
@@ -189,6 +208,135 @@ func TestChannelMonitorUpdate_ProviderChangeViolatesTemplateProvider(t *testing.
 	if updated {
 		t.Fatal("repo.Update should not be called on provider mismatch")
 	}
+}
+
+func TestChannelMonitorCreate_RejectsTooManyExtraModels(t *testing.T) {
+	created := false
+	repo := &channelMonitorRepoStub{createFn: func(context.Context, *ChannelMonitor) error {
+		created = true
+		return nil
+	}}
+	svc := NewChannelMonitorService(repo, channelMonitorEncryptorStub{})
+	extras := make([]string, monitorExtraModelsMaxCount+1)
+	for i := range extras {
+		extras[i] = "model"
+	}
+
+	_, err := svc.Create(context.Background(), ChannelMonitorCreateParams{
+		Name:            "m1",
+		Provider:        MonitorProviderOpenAI,
+		Endpoint:        "https://api.openai.com",
+		APIKey:          "sk",
+		PrimaryModel:    "gpt-4.1",
+		ExtraModels:     extras,
+		Enabled:         true,
+		IntervalSeconds: 60,
+	})
+	if !errors.Is(err, ErrChannelMonitorExtraModelsTooMany) {
+		t.Fatalf("expected ErrChannelMonitorExtraModelsTooMany, got %v", err)
+	}
+	if created {
+		t.Fatal("repo.Create should not be called for too many extra models")
+	}
+}
+
+func TestChannelMonitorCreate_RejectsTooLongExtraModel(t *testing.T) {
+	repo := &channelMonitorRepoStub{createFn: func(context.Context, *ChannelMonitor) error {
+		t.Fatal("repo.Create should not be called for too long extra model")
+		return nil
+	}}
+	svc := NewChannelMonitorService(repo, channelMonitorEncryptorStub{})
+	_, err := svc.Create(context.Background(), ChannelMonitorCreateParams{
+		Name:            "m1",
+		Provider:        MonitorProviderOpenAI,
+		Endpoint:        "https://api.openai.com",
+		APIKey:          "sk",
+		PrimaryModel:    "gpt-4.1",
+		ExtraModels:     []string{strings.Repeat("x", monitorExtraModelMaxLength+1)},
+		Enabled:         true,
+		IntervalSeconds: 60,
+	})
+	if !errors.Is(err, ErrChannelMonitorExtraModelTooLong) {
+		t.Fatalf("expected ErrChannelMonitorExtraModelTooLong, got %v", err)
+	}
+}
+
+func TestChannelMonitorUpdate_RejectsTooManyExtraModels(t *testing.T) {
+	updated := false
+	repo := &channelMonitorRepoStub{
+		getByIDFn: func(context.Context, int64) (*ChannelMonitor, error) {
+			return &ChannelMonitor{
+				ID:              1,
+				Name:            "m1",
+				Provider:        MonitorProviderOpenAI,
+				Endpoint:        "https://api.openai.com",
+				APIKey:          "enc:sk",
+				PrimaryModel:    "gpt-4.1",
+				Enabled:         true,
+				IntervalSeconds: 60,
+			}, nil
+		},
+		updateFn: func(context.Context, *ChannelMonitor) error {
+			updated = true
+			return nil
+		},
+	}
+	svc := NewChannelMonitorService(repo, channelMonitorEncryptorStub{})
+	extras := make([]string, monitorExtraModelsMaxCount+1)
+	for i := range extras {
+		extras[i] = "model"
+	}
+
+	_, err := svc.Update(context.Background(), 1, ChannelMonitorUpdateParams{ExtraModels: &extras})
+	if !errors.Is(err, ErrChannelMonitorExtraModelsTooMany) {
+		t.Fatalf("expected ErrChannelMonitorExtraModelsTooMany, got %v", err)
+	}
+	if updated {
+		t.Fatal("repo.Update should not be called for too many extra models")
+	}
+}
+
+func TestChannelMonitorManualRun_UsesSchedulerPolicy(t *testing.T) {
+	directRunCalled := false
+	schedulerRunCalled := false
+	repo := &channelMonitorRepoStub{
+		getByIDFn: func(context.Context, int64) (*ChannelMonitor, error) {
+			directRunCalled = true
+			return nil, ErrChannelMonitorNotFound
+		},
+	}
+	svc := NewChannelMonitorService(repo, channelMonitorEncryptorStub{})
+	svc.SetScheduler(manualRunSchedulerStub{runFn: func(ctx context.Context, id int64) ([]*CheckResult, error) {
+		schedulerRunCalled = true
+		if id != 9 {
+			t.Fatalf("expected monitor id=9, got %d", id)
+		}
+		return []*CheckResult{{Model: "gpt-4.1", Status: MonitorStatusOperational}}, nil
+	}})
+
+	results, err := svc.RunManual(context.Background(), 9)
+	if err != nil {
+		t.Fatalf("RunManual returned error: %v", err)
+	}
+	if len(results) != 1 || results[0].Model != "gpt-4.1" {
+		t.Fatalf("unexpected manual run results: %#v", results)
+	}
+	if !schedulerRunCalled {
+		t.Fatal("scheduler policy was not used")
+	}
+	if directRunCalled {
+		t.Fatal("RunManual should not bypass scheduler policy with direct RunCheck")
+	}
+}
+
+type manualRunSchedulerStub struct {
+	runFn func(context.Context, int64) ([]*CheckResult, error)
+}
+
+func (s manualRunSchedulerStub) Schedule(*ChannelMonitor) {}
+func (s manualRunSchedulerStub) Unschedule(int64)         {}
+func (s manualRunSchedulerStub) RunManual(ctx context.Context, id int64) ([]*CheckResult, error) {
+	return s.runFn(ctx, id)
 }
 
 func ptrInt64CM(v int64) *int64 { return &v }

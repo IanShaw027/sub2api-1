@@ -4,14 +4,29 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"math"
+	"strconv"
 	"testing"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/enttest"
+	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	"github.com/stretchr/testify/require"
+
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/stretchr/testify/assert"
+	_ "modernc.org/sqlite"
 )
+
+func TestCalculateGatewayRefundAmountUsesStrictCentComparison(t *testing.T) {
+	got := calculateGatewayRefundAmount(100, 80, 99.99)
+	require.True(t, math.Abs(got-79.99) < 0.000001, "got %.8f", got)
+}
 
 type paymentFulfillmentTestProvider struct {
 	key            string
@@ -34,6 +49,204 @@ func (p paymentFulfillmentTestProvider) VerifyNotification(ctx context.Context, 
 }
 func (p paymentFulfillmentTestProvider) Refund(ctx context.Context, req payment.RefundRequest) (*payment.RefundResponse, error) {
 	panic("unexpected call")
+}
+
+type paymentFulfillmentGroupRepoStub struct {
+	GroupRepository
+	group *Group
+}
+
+func (s paymentFulfillmentGroupRepoStub) GetByID(context.Context, int64) (*Group, error) {
+	return s.group, nil
+}
+
+type paymentFulfillmentUserSubRepoStub struct {
+	UserSubscriptionRepository
+	existing    *UserSubscription
+	extendCalls int
+}
+
+func (s *paymentFulfillmentUserSubRepoStub) GetByUserIDAndGroupID(context.Context, int64, int64) (*UserSubscription, error) {
+	return s.existing, nil
+}
+
+func (s *paymentFulfillmentUserSubRepoStub) GetByID(context.Context, int64) (*UserSubscription, error) {
+	return s.existing, nil
+}
+
+func (s *paymentFulfillmentUserSubRepoStub) ExtendExpiry(context.Context, int64, time.Time) error {
+	s.extendCalls++
+	return nil
+}
+
+func (s *paymentFulfillmentUserSubRepoStub) UpdateStatus(context.Context, int64, string) error {
+	return nil
+}
+
+func (s *paymentFulfillmentUserSubRepoStub) UpdateNotes(context.Context, int64, string) error {
+	return nil
+}
+
+func newPaymentFulfillmentTestClient(t *testing.T) *dbent.Client {
+	t.Helper()
+
+	dbName := "file:payment_fulfillment_" + strconv.FormatInt(time.Now().UnixNano(), 10) + "?mode=memory&cache=shared&_fk=1"
+	db, err := sql.Open("sqlite", dbName)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	_, err = db.Exec("PRAGMA foreign_keys = ON")
+	require.NoError(t, err)
+
+	drv := entsql.OpenDB(dialect.SQLite, db)
+	client := enttest.NewClient(t, enttest.WithOptions(dbent.Driver(drv)))
+	t.Cleanup(func() { _ = client.Close() })
+	return client
+}
+
+func createPaymentFulfillmentOrder(t *testing.T, client *dbent.Client, status string, orderType string) *dbent.PaymentOrder {
+	t.Helper()
+	ctx := context.Background()
+
+	user, err := client.User.Create().
+		SetEmail("fulfillment@example.com").
+		SetPasswordHash("hash").
+		SetUsername("fulfillment-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	create := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(100).
+		SetPayAmount(100).
+		SetFeeRate(0).
+		SetRechargeCode("FULFILLMENT-CODE").
+		SetOutTradeNo("sub2_fulfillment_order").
+		SetPaymentTradeNo("").
+		SetPaymentType(payment.TypeAlipay).
+		SetOrderType(orderType).
+		SetStatus(status).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com")
+	if orderType == payment.OrderTypeSubscription {
+		gid := int64(10)
+		days := 30
+		create.SetSubscriptionGroupID(gid).SetSubscriptionDays(days)
+	}
+	order, err := create.Save(ctx)
+	require.NoError(t, err)
+	return order
+}
+
+func TestHandlePaymentNotificationCancelledOrderDoesNotFulfill(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusCancelled, payment.OrderTypeBalance)
+
+	svc := &PaymentService{entClient: client}
+	err := svc.HandlePaymentNotification(ctx, &payment.PaymentNotification{
+		OrderID: order.OutTradeNo,
+		TradeNo: "provider-trade-cancelled",
+		Amount:  100,
+		Status:  payment.NotificationStatusSuccess,
+	}, payment.TypeAlipay)
+	require.NoError(t, err)
+
+	got, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCancelled, got.Status)
+	require.Empty(t, got.PaymentTradeNo)
+	require.Nil(t, got.PaidAt)
+	orderID := strconv.FormatInt(order.ID, 10)
+
+	paidCount, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(orderID), paymentauditlog.ActionEQ("ORDER_PAID")).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, paidCount)
+
+	lateCount, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(orderID), paymentauditlog.ActionEQ("PAYMENT_AFTER_CANCELLED")).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, lateCount)
+}
+
+func TestHandlePaymentNotificationExpiredBeyondGraceAuditsProviderTradeNo(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusExpired, payment.OrderTypeBalance)
+	_, err := client.PaymentOrder.UpdateOneID(order.ID).SetUpdatedAt(time.Now().Add(-2 * paymentGraceMinutes * time.Minute)).Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{entClient: client}
+	err = svc.HandlePaymentNotification(ctx, &payment.PaymentNotification{
+		OrderID: order.OutTradeNo,
+		TradeNo: "provider-trade-expired",
+		Amount:  100,
+		Status:  payment.NotificationStatusSuccess,
+	}, payment.TypeAlipay)
+	require.NoError(t, err)
+
+	got, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusExpired, got.Status)
+	require.Empty(t, got.PaymentTradeNo)
+	require.Nil(t, got.PaidAt)
+	orderID := strconv.FormatInt(order.ID, 10)
+
+	logs, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(orderID), paymentauditlog.ActionEQ("PAYMENT_AFTER_EXPIRY")).
+		All(ctx)
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+	require.Equal(t, payment.TypeAlipay, logs[0].Operator)
+	require.Contains(t, logs[0].Detail, "provider-trade-expired")
+}
+
+func TestExecuteSubscriptionFulfillmentRetryAfterClaimDoesNotExtendAgain(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusFailed, payment.OrderTypeSubscription)
+
+	repo := &paymentFulfillmentUserSubRepoStub{existing: &UserSubscription{
+		ID:        77,
+		UserID:    order.UserID,
+		GroupID:   *order.SubscriptionGroupID,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+		Status:    SubscriptionStatusActive,
+	}}
+	groupRepo := paymentFulfillmentGroupRepoStub{group: &Group{
+		ID:                  *order.SubscriptionGroupID,
+		Status:              payment.EntityStatusActive,
+		SubscriptionType:    SubscriptionTypeSubscription,
+		DefaultValidityDays: 30,
+	}}
+	subscriptionSvc := NewSubscriptionService(groupRepo, repo, nil, client, nil)
+	svc := &PaymentService{entClient: client, groupRepo: groupRepo, subscriptionSvc: subscriptionSvc}
+
+	err := svc.ExecuteSubscriptionFulfillment(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.extendCalls)
+
+	_, err = client.PaymentOrder.UpdateOneID(order.ID).
+		SetStatus(OrderStatusFailed).
+		ClearCompletedAt().
+		Save(ctx)
+	require.NoError(t, err)
+
+	err = svc.ExecuteSubscriptionFulfillment(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.extendCalls)
+
+	claimCount, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ("SUBSCRIPTION_FULFILLMENT_CLAIMED")).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, claimCount)
 }
 
 // ---------------------------------------------------------------------------

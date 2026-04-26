@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -1047,6 +1048,73 @@ func TestCreateOIDCOAuthAccountCreatesUserBindsIdentityAndConsumesSession(t *tes
 	storedSession, err := client.PendingAuthSession.Get(ctx, session.ID)
 	require.NoError(t, err)
 	require.NotNil(t, storedSession.ConsumedAt)
+}
+
+func TestCreateOIDCOAuthAccountBindsAffiliateCode(t *testing.T) {
+	handler, client := newOAuthPendingFlowTestHandlerWithDependencies(t, oauthPendingFlowTestHandlerOptions{
+		emailVerifyEnabled: true,
+		emailCache: &oauthPendingFlowEmailCacheStub{
+			verificationCodes: map[string]*service.VerificationCodeData{
+				"fresh@example.com": {
+					Code:      "246810",
+					CreatedAt: time.Now().UTC(),
+					ExpiresAt: time.Now().UTC().Add(15 * time.Minute),
+				},
+			},
+		},
+		settingValues: map[string]string{
+			service.SettingKeyAffiliateEnabled:     "true",
+			service.SettingKeyAffiliateSignupBonus: "1.5",
+		},
+	})
+	ctx := context.Background()
+
+	inviter, err := client.User.Create().
+		SetEmail("inviter@example.com").
+		SetUsername("inviter").
+		SetPasswordHash("hash").
+		SetRole(service.RoleUser).
+		SetStatus(service.StatusActive).
+		Save(ctx)
+	require.NoError(t, err)
+	err = client.Driver().Exec(ctx, `
+INSERT INTO user_affiliates (user_id, aff_code, aff_quota, aff_history_quota, created_at, updated_at)
+VALUES (?, ?, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, []any{inviter.ID, "ABCDEFGH2345"}, nil)
+	require.NoError(t, err)
+	lastOAuthPendingFlowAffiliateRepo.summaries[inviter.ID] = &service.AffiliateSummary{UserID: inviter.ID, AffCode: "ABCDEFGH2345"}
+	lastOAuthPendingFlowAffiliateRepo.byCode["ABCDEFGH2345"] = lastOAuthPendingFlowAffiliateRepo.summaries[inviter.ID]
+
+	session, err := client.PendingAuthSession.Create().
+		SetSessionToken("create-account-aff-session-token").
+		SetIntent("login").
+		SetProviderType("oidc").
+		SetProviderKey("https://issuer.example").
+		SetProviderSubject("oidc-create-aff-123").
+		SetBrowserSessionKey("create-account-aff-browser-session-key").
+		SetUpstreamIdentityClaims(map[string]any{"username": "oidc_user"}).
+		SetRedirectTo("/profile").
+		SetExpiresAt(time.Now().UTC().Add(10 * time.Minute)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	body := bytes.NewBufferString(`{"email":"fresh@example.com","verify_code":"246810","password":"secret-123","aff_code":"ABCDEFGH2345"}`)
+	recorder := httptest.NewRecorder()
+	ginCtx, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/oauth/oidc/create-account", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: oauthPendingSessionCookieName, Value: encodeCookieValue(session.SessionToken)})
+	req.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue("create-account-aff-browser-session-key")})
+	ginCtx.Request = req
+
+	handler.CreateOIDCOAuthAccount(ginCtx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	createdUser, err := client.User.Query().Where(dbuser.EmailEQ("fresh@example.com")).Only(ctx)
+	require.NoError(t, err)
+
+	inviterID, ok := lastOAuthPendingFlowAffiliateRepo.boundInviters[createdUser.ID]
+	require.True(t, ok)
+	require.Equal(t, inviter.ID, inviterID)
 }
 
 func TestCreateOIDCOAuthAccountExistingEmailReturnsChoicePendingSessionState(t *testing.T) {
@@ -2126,6 +2194,76 @@ type oauthPendingFlowTestHandlerOptions struct {
 	userRepoOptions    oauthPendingFlowUserRepoOptions
 }
 
+var lastOAuthPendingFlowAffiliateRepo *oauthPendingFlowAffiliateRepoStub
+
+type oauthPendingFlowAffiliateRepoStub struct {
+	summaries       map[int64]*service.AffiliateSummary
+	byCode          map[string]*service.AffiliateSummary
+	boundInviters   map[int64]int64
+	signupBonusSeen map[int64]bool
+}
+
+func newOAuthPendingFlowAffiliateRepoStub() *oauthPendingFlowAffiliateRepoStub {
+	return &oauthPendingFlowAffiliateRepoStub{
+		summaries:       make(map[int64]*service.AffiliateSummary),
+		byCode:          make(map[string]*service.AffiliateSummary),
+		boundInviters:   make(map[int64]int64),
+		signupBonusSeen: make(map[int64]bool),
+	}
+}
+
+func (r *oauthPendingFlowAffiliateRepoStub) EnsureUserAffiliate(ctx context.Context, userID int64) (*service.AffiliateSummary, error) {
+	if summary := r.summaries[userID]; summary != nil {
+		return summary, nil
+	}
+	summary := &service.AffiliateSummary{UserID: userID, AffCode: "AUTO" + strconv.FormatInt(userID, 10)}
+	r.summaries[userID] = summary
+	r.byCode[summary.AffCode] = summary
+	return summary, nil
+}
+
+func (r *oauthPendingFlowAffiliateRepoStub) GetAffiliateByCode(ctx context.Context, code string) (*service.AffiliateSummary, error) {
+	if summary := r.byCode[code]; summary != nil {
+		return summary, nil
+	}
+	return nil, service.ErrAffiliateProfileNotFound
+}
+
+func (r *oauthPendingFlowAffiliateRepoStub) BindInviter(ctx context.Context, userID, inviterID int64) (bool, error) {
+	if _, exists := r.boundInviters[userID]; exists {
+		return false, nil
+	}
+	r.boundInviters[userID] = inviterID
+	return true, nil
+}
+
+func (r *oauthPendingFlowAffiliateRepoStub) ApplySignupBonus(ctx context.Context, userID int64, amount float64) (bool, float64, error) {
+	if r.signupBonusSeen[userID] {
+		return false, 0, nil
+	}
+	r.signupBonusSeen[userID] = true
+	return true, amount, nil
+}
+
+func (r *oauthPendingFlowAffiliateRepoStub) AccrueQuota(context.Context, service.AffiliateAccrualInput) (float64, error) {
+	panic("unexpected AccrueQuota call")
+}
+func (r *oauthPendingFlowAffiliateRepoStub) TransferQuotaToBalance(context.Context, int64) (float64, float64, error) {
+	panic("unexpected TransferQuotaToBalance call")
+}
+func (r *oauthPendingFlowAffiliateRepoStub) ListInvitees(context.Context, int64, int) ([]service.AffiliateInvitee, error) {
+	panic("unexpected ListInvitees call")
+}
+func (r *oauthPendingFlowAffiliateRepoStub) ListInviteeLedger(context.Context, int64, int64, int) ([]service.AffiliateLedgerEntry, error) {
+	panic("unexpected ListInviteeLedger call")
+}
+func (r *oauthPendingFlowAffiliateRepoStub) CountRebatedInvitees(context.Context, int64) (int, error) {
+	panic("unexpected CountRebatedInvitees call")
+}
+func (r *oauthPendingFlowAffiliateRepoStub) ListAdminAffiliateStats(context.Context, service.AdminAffiliateListParams) ([]service.AdminAffiliateStatsRow, int64, error) {
+	panic("unexpected ListAdminAffiliateStats call")
+}
+
 func newOAuthPendingFlowTestHandlerWithDependencies(
 	t *testing.T,
 	options oauthPendingFlowTestHandlerOptions,
@@ -2149,7 +2287,7 @@ CREATE TABLE IF NOT EXISTS user_provider_default_grants (
 )`)
 	require.NoError(t, err)
 	_, err = db.Exec(`
-CREATE TABLE IF NOT EXISTS user_avatars (
+	CREATE TABLE IF NOT EXISTS user_avatars (
 	user_id INTEGER PRIMARY KEY,
 	storage_provider TEXT NOT NULL,
 	storage_key TEXT NOT NULL DEFAULT '',
@@ -2157,6 +2295,33 @@ CREATE TABLE IF NOT EXISTS user_avatars (
 	content_type TEXT NOT NULL DEFAULT '',
 	byte_size INTEGER NOT NULL DEFAULT 0,
 	sha256 TEXT NOT NULL DEFAULT '',
+	updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`)
+	require.NoError(t, err)
+	_, err = db.Exec(`
+CREATE TABLE IF NOT EXISTS user_affiliates (
+	user_id INTEGER PRIMARY KEY,
+	aff_code TEXT NOT NULL UNIQUE,
+	inviter_id INTEGER NULL,
+	aff_count INTEGER NOT NULL DEFAULT 0,
+	aff_quota REAL NOT NULL DEFAULT 0,
+	aff_history_quota REAL NOT NULL DEFAULT 0,
+	created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`)
+	require.NoError(t, err)
+	_, err = db.Exec(`
+CREATE TABLE IF NOT EXISTS user_affiliate_ledger (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL,
+	action TEXT NOT NULL,
+	amount REAL NOT NULL,
+	source_user_id INTEGER NULL,
+	source_order_id INTEGER NULL,
+	base_amount REAL NULL,
+	rebate_rate REAL NULL,
+	invitee_slot_claimed BOOLEAN NOT NULL DEFAULT 0,
+	created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`)
 	require.NoError(t, err)
@@ -2198,6 +2363,9 @@ CREATE TABLE IF NOT EXISTS user_avatars (
 			},
 		}, options.emailCache)
 	}
+	affiliateRepo := newOAuthPendingFlowAffiliateRepoStub()
+	lastOAuthPendingFlowAffiliateRepo = affiliateRepo
+	affiliateSvc := service.NewAffiliateService(affiliateRepo, &oauthPendingFlowSettingRepoStub{values: settingValues}, nil, nil)
 	authSvc := service.NewAuthService(
 		client,
 		userRepo,
@@ -2210,7 +2378,7 @@ CREATE TABLE IF NOT EXISTS user_avatars (
 		nil,
 		nil,
 		options.defaultSubAssigner,
-		nil,
+		affiliateSvc,
 	)
 	userSvc := service.NewUserService(userRepo, nil, nil, nil)
 	var totpSvc *service.TotpService

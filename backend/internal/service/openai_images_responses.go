@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -203,6 +204,9 @@ func openAIImageUploadToDataURL(upload OpenAIImagesUpload) (string, error) {
 func buildOpenAIImagesResponsesRequest(parsed *OpenAIImagesRequest, toolModel string) ([]byte, error) {
 	if parsed == nil {
 		return nil, fmt.Errorf("parsed images request is required")
+	}
+	if parsed.N > 1 {
+		return nil, fmt.Errorf("n > 1 is not supported for OAuth/Codex image responses")
 	}
 	prompt := strings.TrimSpace(parsed.Prompt)
 	if prompt == "" {
@@ -625,7 +629,16 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 		format = "b64_json"
 	}
 
-	reader := bufio.NewReader(resp.Body)
+	maxLineSize := defaultMaxLineSize
+	if s.cfg != nil && s.cfg.Gateway.MaxLineSize > 0 {
+		maxLineSize = s.cfg.Gateway.MaxLineSize
+	}
+	scanner := bufio.NewScanner(resp.Body)
+	initialBufferSize := min(64*1024, maxLineSize)
+	if initialBufferSize < 1 {
+		initialBufferSize = 1
+	}
+	scanner.Buffer(make([]byte, 0, initialBufferSize), maxLineSize)
 	usage := OpenAIUsage{}
 	imageCount := 0
 	var firstTokenMs *int
@@ -635,136 +648,134 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 	streamMeta := openAIResponsesImageResult{Model: strings.TrimSpace(fallbackModel)}
 	var createdAt int64
 
-	for {
-		line, err := reader.ReadBytes('\n')
-		if len(line) > 0 {
-			trimmedLine := strings.TrimRight(string(line), "\r\n")
-			data, ok := extractOpenAISSEDataLine(trimmedLine)
-			if ok && data != "" && data != "[DONE]" {
-				if firstTokenMs == nil {
-					ms := int(time.Since(startTime).Milliseconds())
-					firstTokenMs = &ms
+	for scanner.Scan() {
+		trimmedLine := strings.TrimRight(scanner.Text(), "\r\n")
+		data, ok := extractOpenAISSEDataLine(trimmedLine)
+		if ok && data != "" && data != "[DONE]" {
+			if firstTokenMs == nil {
+				ms := int(time.Since(startTime).Milliseconds())
+				firstTokenMs = &ms
+			}
+			dataBytes := []byte(data)
+			s.parseSSEUsageBytes(dataBytes, &usage)
+			if gjson.ValidBytes(dataBytes) {
+				if meta, eventCreatedAt, ok := extractOpenAIResponsesImageMetaFromLifecycleEvent(dataBytes); ok {
+					mergeOpenAIResponsesImageMeta(&streamMeta, meta)
+					if eventCreatedAt > 0 {
+						createdAt = eventCreatedAt
+					}
 				}
-				dataBytes := []byte(data)
-				s.parseSSEUsageBytes(dataBytes, &usage)
-				if gjson.ValidBytes(dataBytes) {
-					if meta, eventCreatedAt, ok := extractOpenAIResponsesImageMetaFromLifecycleEvent(dataBytes); ok {
-						mergeOpenAIResponsesImageMeta(&streamMeta, meta)
-						if eventCreatedAt > 0 {
-							createdAt = eventCreatedAt
-						}
-					}
-					switch gjson.GetBytes(dataBytes, "type").String() {
-					case "response.image_generation_call.partial_image":
-						b64 := strings.TrimSpace(gjson.GetBytes(dataBytes, "partial_image_b64").String())
-						if b64 != "" {
-							eventName := streamPrefix + ".partial_image"
-							partialMeta := streamMeta
-							mergeOpenAIResponsesImageMeta(&partialMeta, openAIResponsesImageResult{
-								OutputFormat: strings.TrimSpace(gjson.GetBytes(dataBytes, "output_format").String()),
-								Background:   strings.TrimSpace(gjson.GetBytes(dataBytes, "background").String()),
-							})
-							payload := buildOpenAIImagesStreamPartialPayload(
-								eventName,
-								b64,
-								gjson.GetBytes(dataBytes, "partial_image_index").Int(),
-								format,
-								createdAt,
-								partialMeta,
-							)
-							if writeErr := s.writeOpenAIImagesStreamEvent(c, flusher, eventName, payload); writeErr != nil {
-								return OpenAIUsage{}, imageCount, firstTokenMs, writeErr
-							}
-						}
-					case "response.output_item.done":
-						img, itemID, ok, extractErr := extractOpenAIImageFromResponsesOutputItemDone(dataBytes)
-						if extractErr != nil {
-							_ = s.writeOpenAIImagesStreamEvent(c, flusher, "error", buildOpenAIImagesStreamErrorBody(extractErr.Error()))
-							return OpenAIUsage{}, imageCount, firstTokenMs, extractErr
-						}
-						if !ok {
-							break
-						}
-						mergeOpenAIResponsesImageMeta(&streamMeta, img)
-						mergeOpenAIResponsesImageMeta(&img, streamMeta)
-						key := openAIResponsesImageResultKey(itemID, img)
-						if _, exists := emitted[key]; exists {
-							break
-						}
-						if _, exists := pendingSeen[key]; exists {
-							break
-						}
-						pendingSeen[key] = struct{}{}
-						pendingResults = append(pendingResults, img)
-					case "response.completed":
-						results, _, usageRaw, firstMeta, extractErr := extractOpenAIImagesFromResponsesCompleted(dataBytes)
-						if extractErr != nil {
-							_ = s.writeOpenAIImagesStreamEvent(c, flusher, "error", buildOpenAIImagesStreamErrorBody(extractErr.Error()))
-							return OpenAIUsage{}, imageCount, firstTokenMs, extractErr
-						}
-						mergeOpenAIResponsesImageMeta(&streamMeta, firstMeta)
-						finalResults := make([]openAIResponsesImageResult, 0, len(results)+len(pendingResults))
-						finalSeen := make(map[string]struct{})
-						for _, img := range results {
-							mergeOpenAIResponsesImageMeta(&img, streamMeta)
-							appendOpenAIResponsesImageResultDedup(&finalResults, finalSeen, "", img)
-						}
-						for _, img := range pendingResults {
-							mergeOpenAIResponsesImageMeta(&img, streamMeta)
-							appendOpenAIResponsesImageResultDedup(&finalResults, finalSeen, "", img)
-						}
-						if len(finalResults) == 0 {
-							err = fmt.Errorf("upstream did not return image output")
-							_ = s.writeOpenAIImagesStreamEvent(c, flusher, "error", buildOpenAIImagesStreamErrorBody(err.Error()))
-							return OpenAIUsage{}, imageCount, firstTokenMs, err
-						}
-						eventName := streamPrefix + ".completed"
-						for _, img := range finalResults {
-							key := openAIResponsesImageResultKey("", img)
-							if _, exists := emitted[key]; exists {
-								continue
-							}
-							payload := buildOpenAIImagesStreamCompletedPayload(eventName, img, format, createdAt, usageRaw)
-							if writeErr := s.writeOpenAIImagesStreamEvent(c, flusher, eventName, payload); writeErr != nil {
-								return OpenAIUsage{}, imageCount, firstTokenMs, writeErr
-							}
-							emitted[key] = struct{}{}
-						}
-						imageCount = len(emitted)
-						return usage, imageCount, firstTokenMs, nil
-					case "response.failed":
-						failedMessage := extractOpenAISSEErrorMessage(dataBytes)
-						if failedMessage == "" {
-							failedMessage = "upstream image response failed"
-						}
-						errCodeRaw, errTypeRaw, _ := parseOpenAIWSResponseFailedErrorFields(dataBytes)
-						upstreamStatus := openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
-						upstreamDetail := s.openAIImagesStreamFailedDetail(dataBytes)
-						setOpsUpstreamError(c, upstreamStatus, failedMessage, upstreamDetail)
-						appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-							Platform:           account.Platform,
-							AccountID:          account.ID,
-							AccountName:        account.Name,
-							UpstreamStatusCode: upstreamStatus,
-							UpstreamRequestID:  strings.TrimSpace(resp.Header.Get("x-request-id")),
-							UpstreamURL:        safeUpstreamURL(upstreamURL),
-							Kind:               "http_error",
-							Message:            failedMessage,
-							Detail:             upstreamDetail,
+				switch gjson.GetBytes(dataBytes, "type").String() {
+				case "response.image_generation_call.partial_image":
+					b64 := strings.TrimSpace(gjson.GetBytes(dataBytes, "partial_image_b64").String())
+					if b64 != "" {
+						eventName := streamPrefix + ".partial_image"
+						partialMeta := streamMeta
+						mergeOpenAIResponsesImageMeta(&partialMeta, openAIResponsesImageResult{
+							OutputFormat: strings.TrimSpace(gjson.GetBytes(dataBytes, "output_format").String()),
+							Background:   strings.TrimSpace(gjson.GetBytes(dataBytes, "background").String()),
 						})
-						_ = s.writeOpenAIImagesStreamEvent(c, flusher, "error", buildOpenAIImagesStreamErrorBody(failedMessage))
-						return OpenAIUsage{}, imageCount, firstTokenMs, fmt.Errorf("upstream image response failed: %s", failedMessage)
+						payload := buildOpenAIImagesStreamPartialPayload(
+							eventName,
+							b64,
+							gjson.GetBytes(dataBytes, "partial_image_index").Int(),
+							format,
+							createdAt,
+							partialMeta,
+						)
+						if writeErr := s.writeOpenAIImagesStreamEvent(c, flusher, eventName, payload); writeErr != nil {
+							return OpenAIUsage{}, imageCount, firstTokenMs, writeErr
+						}
 					}
+				case "response.output_item.done":
+					img, itemID, ok, extractErr := extractOpenAIImageFromResponsesOutputItemDone(dataBytes)
+					if extractErr != nil {
+						_ = s.writeOpenAIImagesStreamEvent(c, flusher, "error", buildOpenAIImagesStreamErrorBody(extractErr.Error()))
+						return OpenAIUsage{}, imageCount, firstTokenMs, extractErr
+					}
+					if !ok {
+						break
+					}
+					mergeOpenAIResponsesImageMeta(&streamMeta, img)
+					mergeOpenAIResponsesImageMeta(&img, streamMeta)
+					key := openAIResponsesImageResultKey(itemID, img)
+					if _, exists := emitted[key]; exists {
+						break
+					}
+					if _, exists := pendingSeen[key]; exists {
+						break
+					}
+					pendingSeen[key] = struct{}{}
+					pendingResults = append(pendingResults, img)
+				case "response.completed":
+					results, _, usageRaw, firstMeta, extractErr := extractOpenAIImagesFromResponsesCompleted(dataBytes)
+					if extractErr != nil {
+						_ = s.writeOpenAIImagesStreamEvent(c, flusher, "error", buildOpenAIImagesStreamErrorBody(extractErr.Error()))
+						return OpenAIUsage{}, imageCount, firstTokenMs, extractErr
+					}
+					mergeOpenAIResponsesImageMeta(&streamMeta, firstMeta)
+					finalResults := make([]openAIResponsesImageResult, 0, len(results)+len(pendingResults))
+					finalSeen := make(map[string]struct{})
+					for _, img := range results {
+						mergeOpenAIResponsesImageMeta(&img, streamMeta)
+						appendOpenAIResponsesImageResultDedup(&finalResults, finalSeen, "", img)
+					}
+					for _, img := range pendingResults {
+						mergeOpenAIResponsesImageMeta(&img, streamMeta)
+						appendOpenAIResponsesImageResultDedup(&finalResults, finalSeen, "", img)
+					}
+					if len(finalResults) == 0 {
+						err := fmt.Errorf("upstream did not return image output")
+						_ = s.writeOpenAIImagesStreamEvent(c, flusher, "error", buildOpenAIImagesStreamErrorBody(err.Error()))
+						return OpenAIUsage{}, imageCount, firstTokenMs, err
+					}
+					eventName := streamPrefix + ".completed"
+					for _, img := range finalResults {
+						key := openAIResponsesImageResultKey("", img)
+						if _, exists := emitted[key]; exists {
+							continue
+						}
+						payload := buildOpenAIImagesStreamCompletedPayload(eventName, img, format, createdAt, usageRaw)
+						if writeErr := s.writeOpenAIImagesStreamEvent(c, flusher, eventName, payload); writeErr != nil {
+							return OpenAIUsage{}, imageCount, firstTokenMs, writeErr
+						}
+						emitted[key] = struct{}{}
+					}
+					imageCount = len(emitted)
+					return usage, imageCount, firstTokenMs, nil
+				case "response.failed":
+					failedMessage := extractOpenAISSEErrorMessage(dataBytes)
+					if failedMessage == "" {
+						failedMessage = "upstream image response failed"
+					}
+					errCodeRaw, errTypeRaw, _ := parseOpenAIWSResponseFailedErrorFields(dataBytes)
+					upstreamStatus := openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
+					upstreamDetail := s.openAIImagesStreamFailedDetail(dataBytes)
+					setOpsUpstreamError(c, upstreamStatus, failedMessage, upstreamDetail)
+					appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+						Platform:           account.Platform,
+						AccountID:          account.ID,
+						AccountName:        account.Name,
+						UpstreamStatusCode: upstreamStatus,
+						UpstreamRequestID:  strings.TrimSpace(resp.Header.Get("x-request-id")),
+						UpstreamURL:        safeUpstreamURL(upstreamURL),
+						Kind:               "http_error",
+						Message:            failedMessage,
+						Detail:             upstreamDetail,
+					})
+					_ = s.writeOpenAIImagesStreamEvent(c, flusher, "error", buildOpenAIImagesStreamErrorBody(failedMessage))
+					return OpenAIUsage{}, imageCount, firstTokenMs, fmt.Errorf("upstream image response failed: %s", failedMessage)
 				}
 			}
 		}
-		if err == io.EOF {
-			break
+	}
+	if err := scanner.Err(); err != nil {
+		streamErr := err
+		if errors.Is(err, bufio.ErrTooLong) {
+			streamErr = fmt.Errorf("upstream image stream exceeded maximum token size of %d bytes", maxLineSize)
 		}
-		if err != nil {
-			_ = s.writeOpenAIImagesStreamEvent(c, flusher, "error", buildOpenAIImagesStreamErrorBody(err.Error()))
-			return OpenAIUsage{}, imageCount, firstTokenMs, err
-		}
+		_ = s.writeOpenAIImagesStreamEvent(c, flusher, "error", buildOpenAIImagesStreamErrorBody(streamErr.Error()))
+		return OpenAIUsage{}, imageCount, firstTokenMs, streamErr
 	}
 
 	if imageCount > 0 {

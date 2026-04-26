@@ -7,8 +7,19 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+)
+
+const (
+	supportTicketTitleMaxRunes       = 80
+	supportTicketTitleMaxBytes       = 240
+	supportTicketPayloadMaxBytes     = 16 * 1024
+	supportTicketPayloadMaxFields    = 32
+	supportTicketPayloadMaxFieldName = 64
+	supportTicketPayloadMaxDepth     = 4
+	supportTicketReplyMaxBytes       = 8 * 1024
 )
 
 type TicketService struct {
@@ -28,13 +39,16 @@ func (s *TicketService) Create(ctx context.Context, input CreateSupportTicketInp
 	if category == "" {
 		return nil, ErrTicketInvalidCategory
 	}
-	title := strings.TrimSpace(input.Title)
-	if title == "" || len(title) > 200 {
+	title, err := normalizeSupportTicketTitle(input.Title)
+	if err != nil {
 		return nil, ErrTicketInvalidTitle
 	}
 	payload := normalizeTicketPayload(input.FormPayload)
 	if len(payload) == 0 {
 		return nil, ErrTicketPayloadRequired
+	}
+	if err := validateSupportTicketPayloadShape(payload); err != nil {
+		return nil, err
 	}
 	if err := validateSupportTicketPayload(category, payload); err != nil {
 		return nil, err
@@ -168,13 +182,16 @@ func (s *TicketService) UpdateEditable(ctx context.Context, input UpdateSupportT
 	if ticket.Status != SupportTicketStatusWithdrawn {
 		return ErrTicketNotEditable
 	}
-	title := strings.TrimSpace(input.Title)
-	if title == "" || len(title) > 200 {
+	title, err := normalizeSupportTicketTitle(input.Title)
+	if err != nil {
 		return ErrTicketInvalidTitle
 	}
 	payload := normalizeTicketPayload(input.FormPayload)
 	if len(payload) == 0 {
 		return ErrTicketPayloadRequired
+	}
+	if err := validateSupportTicketPayloadShape(payload); err != nil {
+		return err
 	}
 	if err := validateSupportTicketPayload(ticket.Category, payload); err != nil {
 		return err
@@ -193,25 +210,26 @@ func (s *TicketService) Resubmit(ctx context.Context, input UpdateSupportTicketI
 	if ticket.Status != SupportTicketStatusWithdrawn {
 		return ErrTicketNotEditable
 	}
-	title := strings.TrimSpace(input.Title)
-	if title == "" || len(title) > 200 {
+	title, err := normalizeSupportTicketTitle(input.Title)
+	if err != nil {
 		return ErrTicketInvalidTitle
 	}
 	payload := normalizeTicketPayload(input.FormPayload)
 	if len(payload) == 0 {
 		return ErrTicketPayloadRequired
 	}
+	if err := validateSupportTicketPayloadShape(payload); err != nil {
+		return err
+	}
 	if err := validateSupportTicketPayload(ticket.Category, payload); err != nil {
 		return err
 	}
 	now := time.Now()
-	nextRevision := ticket.CurrentRevisionNo + 1
 	submittedAt := now
 	nextTicket := &SupportTicket{
 		Title:              title,
 		Status:             SupportTicketStatusSubmitted,
 		CurrentFormPayload: payload,
-		CurrentRevisionNo:  nextRevision,
 		LatestMessageAt:    now,
 		LastReplyRole:      SupportTicketSenderRoleSystem,
 		UnreadByUser:       false,
@@ -219,7 +237,6 @@ func (s *TicketService) Resubmit(ctx context.Context, input UpdateSupportTicketI
 		SubmittedAt:        &submittedAt,
 	}
 	revision := &SupportTicketRevision{
-		RevisionNo:  nextRevision,
 		Title:       title,
 		FormPayload: payload,
 		SubmittedBy: &input.UserID,
@@ -255,8 +272,8 @@ func (s *TicketService) ReplyForUser(ctx context.Context, ticketID int64, input 
 		return ErrTicketReplyLocked
 	}
 	content := strings.TrimSpace(input.Content)
-	if content == "" {
-		return ErrTicketMessageRequired
+	if err := validateSupportTicketReplyContent(content); err != nil {
+		return err
 	}
 	user, err := s.userRepo.GetByID(ctx, input.UserID)
 	if err != nil {
@@ -278,8 +295,8 @@ func (s *TicketService) ReplyForUser(ctx context.Context, ticketID int64, input 
 
 func (s *TicketService) ReplyForAdmin(ctx context.Context, ticketID int64, input CreateSupportTicketMessageInput) error {
 	content := strings.TrimSpace(input.Content)
-	if content == "" {
-		return ErrTicketMessageRequired
+	if err := validateSupportTicketReplyContent(content); err != nil {
+		return err
 	}
 	ticket, err := s.ticketRepo.GetByID(ctx, ticketID)
 	if err != nil {
@@ -358,6 +375,75 @@ func normalizeTicketPayload(payload json.RawMessage) json.RawMessage {
 		return nil
 	}
 	return normalized
+}
+
+func normalizeSupportTicketTitle(title string) (string, error) {
+	trimmed := strings.TrimSpace(title)
+	if trimmed == "" || utf8.RuneCountInString(trimmed) > supportTicketTitleMaxRunes || len(trimmed) > supportTicketTitleMaxBytes {
+		return "", ErrTicketInvalidTitle
+	}
+	return trimmed, nil
+}
+
+func validateSupportTicketReplyContent(content string) error {
+	if content == "" {
+		return ErrTicketMessageRequired
+	}
+	if len(content) > supportTicketReplyMaxBytes {
+		return ErrTicketMessageTooLarge
+	}
+	return nil
+}
+
+func validateSupportTicketPayloadShape(payload json.RawMessage) error {
+	if len(payload) > supportTicketPayloadMaxBytes {
+		return ErrTicketPayloadInvalid
+	}
+	var decoded any
+	decoder := json.NewDecoder(strings.NewReader(string(payload)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&decoded); err != nil {
+		return ErrTicketPayloadInvalid
+	}
+	root, ok := decoded.(map[string]any)
+	if !ok || len(root) == 0 || len(root) > supportTicketPayloadMaxFields {
+		return ErrTicketPayloadInvalid
+	}
+	return validateSupportTicketPayloadValue(root, 1)
+}
+
+func validateSupportTicketPayloadValue(value any, depth int) error {
+	if depth > supportTicketPayloadMaxDepth {
+		return ErrTicketPayloadInvalid
+	}
+	switch typed := value.(type) {
+	case map[string]any:
+		if len(typed) > supportTicketPayloadMaxFields {
+			return ErrTicketPayloadInvalid
+		}
+		for key, child := range typed {
+			if strings.TrimSpace(key) == "" || len(key) > supportTicketPayloadMaxFieldName {
+				return ErrTicketPayloadInvalid
+			}
+			if err := validateSupportTicketPayloadValue(child, depth+1); err != nil {
+				return err
+			}
+		}
+	case []any:
+		if len(typed) > supportTicketPayloadMaxFields {
+			return ErrTicketPayloadInvalid
+		}
+		for _, child := range typed {
+			if err := validateSupportTicketPayloadValue(child, depth+1); err != nil {
+				return err
+			}
+		}
+	case string, json.Number, bool, nil:
+		return nil
+	default:
+		return ErrTicketPayloadInvalid
+	}
+	return nil
 }
 
 func newSystemTicketMessage(content string, createdAt time.Time) *SupportTicketMessage {

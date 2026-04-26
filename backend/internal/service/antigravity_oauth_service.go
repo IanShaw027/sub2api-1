@@ -48,10 +48,17 @@ func (s *AntigravityOAuthService) GenerateAuthURL(ctx context.Context, proxyID *
 
 	var proxyURL string
 	if proxyID != nil {
-		proxy, err := s.proxyRepo.GetByID(ctx, *proxyID)
-		if err == nil && proxy != nil {
-			proxyURL = proxy.URL()
+		if s.proxyRepo == nil {
+			return nil, fmt.Errorf("proxy repository is unavailable")
 		}
+		proxy, err := s.proxyRepo.GetByID(ctx, *proxyID)
+		if err != nil {
+			return nil, err
+		}
+		if proxy == nil {
+			return nil, ErrProxyNotFound
+		}
+		proxyURL = proxy.URL()
 	}
 
 	session := &antigravity.OAuthSession{
@@ -105,14 +112,7 @@ func (s *AntigravityOAuthService) ExchangeCode(ctx context.Context, input *Antig
 		return nil, fmt.Errorf("state 无效")
 	}
 
-	// 确定代理 URL
 	proxyURL := session.ProxyURL
-	if input.ProxyID != nil {
-		proxy, err := s.proxyRepo.GetByID(ctx, *input.ProxyID)
-		if err == nil && proxy != nil {
-			proxyURL = proxy.URL()
-		}
-	}
 
 	client, err := antigravity.NewClient(proxyURL)
 	if err != nil {

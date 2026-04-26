@@ -81,7 +81,7 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 
 		ch.normalizeBillingModelSource()
 
-		supported := ch.SupportedModels()
+		supported := filterCapabilityModelsForAvailable(ch.SupportedModels())
 		s.fillGlobalPricingFallback(supported)
 
 		out = append(out, AvailableChannel{
@@ -114,12 +114,29 @@ func (s *ChannelService) fillGlobalPricingFallback(models []SupportedModel) {
 		if models[i].Pricing != nil {
 			continue
 		}
-		lp := s.pricingService.GetModelPricing(models[i].Name)
+		lookupName := models[i].PricingLookupName
+		if lookupName == "" {
+			lookupName = models[i].Name
+		}
+		lp := s.pricingService.GetModelPricing(lookupName)
 		if lp == nil {
 			continue
 		}
 		models[i].Pricing = synthesizePricingFromLiteLLM(lp)
 	}
+}
+
+// filterCapabilityModelsForAvailable keeps only models backed by channel mapping/capability
+// for the user-facing available-channels view. Pricing-only catalog entries are not
+// schedulability proof and must not be presented as available models.
+func filterCapabilityModelsForAvailable(models []SupportedModel) []SupportedModel {
+	out := make([]SupportedModel, 0, len(models))
+	for i := range models {
+		if models[i].IsCapability {
+			out = append(out, models[i])
+		}
+	}
+	return out
 }
 
 // synthesizePricingFromLiteLLM 把 LiteLLM 的定价数据转成 ChannelModelPricing 形态，

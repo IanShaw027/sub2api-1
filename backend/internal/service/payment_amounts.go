@@ -22,11 +22,26 @@ func calculateCreditedBalance(paymentAmount, multiplier float64) float64 {
 		InexactFloat64()
 }
 
+func amountToCents(amount float64) int64 {
+	return decimal.NewFromFloat(amount).
+		Round(2).
+		Mul(decimal.NewFromInt(100)).
+		IntPart()
+}
+
+func amountCentsEqual(left, right float64) bool {
+	return amountToCents(left) == amountToCents(right)
+}
+
+func amountCentsGreaterThan(left, right float64) bool {
+	return amountToCents(left) > amountToCents(right)
+}
+
 func calculateGatewayRefundAmount(orderAmount, payAmount, refundAmount float64) float64 {
 	if orderAmount <= 0 || payAmount <= 0 || refundAmount <= 0 {
 		return 0
 	}
-	if math.Abs(refundAmount-orderAmount) <= amountToleranceCNY {
+	if amountCentsEqual(refundAmount, orderAmount) {
 		return decimal.NewFromFloat(payAmount).Round(2).InexactFloat64()
 	}
 	return decimal.NewFromFloat(payAmount).

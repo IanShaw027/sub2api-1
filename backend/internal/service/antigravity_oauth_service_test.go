@@ -1,8 +1,106 @@
 package service
 
 import (
+	"context"
+	"fmt"
+	"strings"
 	"testing"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 )
+
+func TestAntigravityOAuthServiceGenerateAuthURLFailsWhenProxyMissing(t *testing.T) {
+	proxyID := int64(404)
+	svc := NewAntigravityOAuthService(&mockAntigravityProxyRepo{})
+
+	_, err := svc.GenerateAuthURL(context.Background(), &proxyID)
+
+	if err == nil || !strings.Contains(err.Error(), "proxy not found") {
+		t.Fatalf("expected proxy not found error, got %v", err)
+	}
+}
+
+func TestAntigravityOAuthServiceExchangeCodeRejectsProxyOverride(t *testing.T) {
+	proxyID := int64(1)
+	overrideProxyID := int64(2)
+	svc := NewAntigravityOAuthService(&mockAntigravityProxyRepo{
+		getByIDFunc: func(ctx context.Context, id int64) (*Proxy, error) {
+			if id == proxyID {
+				return &Proxy{ID: id, Protocol: "http", Host: "session.proxy", Port: 8080}, nil
+			}
+			if id == overrideProxyID {
+				return &Proxy{ID: id, Protocol: "http", Host: "override.proxy", Port: 8080}, nil
+			}
+			return nil, fmt.Errorf("proxy not found")
+		},
+	})
+
+	result, err := svc.GenerateAuthURL(context.Background(), &proxyID)
+	if err != nil {
+		t.Fatalf("GenerateAuthURL returned error: %v", err)
+	}
+
+	_, err = svc.ExchangeCode(context.Background(), &AntigravityExchangeCodeInput{
+		SessionID: result.SessionID,
+		State:     result.State,
+		Code:      "code-1",
+		ProxyID:   &overrideProxyID,
+	})
+	if err == nil || strings.Contains(err.Error(), "override.proxy") {
+		t.Fatalf("expected exchange to ignore override proxy, got %v", err)
+	}
+}
+
+type mockAntigravityProxyRepo struct {
+	getByIDFunc func(ctx context.Context, id int64) (*Proxy, error)
+}
+
+func (m *mockAntigravityProxyRepo) Create(context.Context, *Proxy) error { panic("not impl") }
+
+func (m *mockAntigravityProxyRepo) GetByID(ctx context.Context, id int64) (*Proxy, error) {
+	if m.getByIDFunc != nil {
+		return m.getByIDFunc(ctx, id)
+	}
+	return nil, fmt.Errorf("proxy not found")
+}
+
+func (m *mockAntigravityProxyRepo) ListByIDs(context.Context, []int64) ([]Proxy, error) {
+	panic("not impl")
+}
+
+func (m *mockAntigravityProxyRepo) Update(context.Context, *Proxy) error { panic("not impl") }
+
+func (m *mockAntigravityProxyRepo) Delete(context.Context, int64) error { panic("not impl") }
+
+func (m *mockAntigravityProxyRepo) List(context.Context, pagination.PaginationParams) ([]Proxy, *pagination.PaginationResult, error) {
+	panic("not impl")
+}
+
+func (m *mockAntigravityProxyRepo) ListWithFilters(context.Context, pagination.PaginationParams, string, string, string) ([]Proxy, *pagination.PaginationResult, error) {
+	panic("not impl")
+}
+
+func (m *mockAntigravityProxyRepo) ListWithFiltersAndAccountCount(context.Context, pagination.PaginationParams, string, string, string) ([]ProxyWithAccountCount, *pagination.PaginationResult, error) {
+	panic("not impl")
+}
+
+func (m *mockAntigravityProxyRepo) ListActive(context.Context) ([]Proxy, error) { panic("not impl") }
+
+func (m *mockAntigravityProxyRepo) ListActiveWithAccountCount(context.Context) ([]ProxyWithAccountCount, error) {
+	panic("not impl")
+}
+
+func (m *mockAntigravityProxyRepo) ExistsByHostPortAuth(context.Context, string, int, string, string) (bool, error) {
+	panic("not impl")
+}
+
+func (m *mockAntigravityProxyRepo) CountAccountsByProxyID(context.Context, int64) (int64, error) {
+	panic("not impl")
+}
+
+func (m *mockAntigravityProxyRepo) ListAccountSummariesByProxyID(context.Context, int64) ([]ProxyAccountSummary, error) {
+	panic("not impl")
+}
 
 func TestResolveDefaultTierID(t *testing.T) {
 	t.Parallel()

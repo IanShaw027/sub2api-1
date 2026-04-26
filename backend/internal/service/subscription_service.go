@@ -209,23 +209,36 @@ func (s *SubscriptionService) AssignOrExtendSubscription(ctx context.Context, in
 			newExpiresAt = MaxExpiresAt
 		}
 
-		// 开启事务：ExtendExpiry + UpdateStatus + UpdateNotes 在同一事务中完成
-		tx, err := s.entClient.Tx(ctx)
-		if err != nil {
-			return nil, false, fmt.Errorf("begin transaction: %w", err)
+		// 开启事务：ExtendExpiry + UpdateStatus + UpdateNotes 在同一事务中完成。
+		// 若调用方已经在 ent 事务中，复用外层事务，避免嵌套事务提交破坏原子性。
+		txCtx := ctx
+		var tx *dbent.Tx
+		if existingTx := dbent.TxFromContext(ctx); existingTx != nil {
+			tx = existingTx
+		} else {
+			var err error
+			tx, err = s.entClient.Tx(ctx)
+			if err != nil {
+				return nil, false, fmt.Errorf("begin transaction: %w", err)
+			}
+			txCtx = dbent.NewTxContext(ctx, tx)
 		}
-		txCtx := dbent.NewTxContext(ctx, tx)
+		rollback := func() {
+			if dbent.TxFromContext(ctx) == nil && tx != nil {
+				_ = tx.Rollback()
+			}
+		}
 
 		// 更新过期时间
 		if err := s.userSubRepo.ExtendExpiry(txCtx, existingSub.ID, newExpiresAt); err != nil {
-			_ = tx.Rollback()
+			rollback()
 			return nil, false, fmt.Errorf("extend subscription: %w", err)
 		}
 
 		// 如果订阅已过期或被暂停，恢复为active状态
 		if existingSub.Status != SubscriptionStatusActive {
 			if err := s.userSubRepo.UpdateStatus(txCtx, existingSub.ID, SubscriptionStatusActive); err != nil {
-				_ = tx.Rollback()
+				rollback()
 				return nil, false, fmt.Errorf("update subscription status: %w", err)
 			}
 		}
@@ -238,14 +251,16 @@ func (s *SubscriptionService) AssignOrExtendSubscription(ctx context.Context, in
 			}
 			newNotes += input.Notes
 			if err := s.userSubRepo.UpdateNotes(txCtx, existingSub.ID, newNotes); err != nil {
-				_ = tx.Rollback()
+				rollback()
 				return nil, false, fmt.Errorf("update subscription notes: %w", err)
 			}
 		}
 
 		// 提交事务
-		if err := tx.Commit(); err != nil {
-			return nil, false, fmt.Errorf("commit transaction: %w", err)
+		if dbent.TxFromContext(ctx) == nil {
+			if err := tx.Commit(); err != nil {
+				return nil, false, fmt.Errorf("commit transaction: %w", err)
+			}
 		}
 
 		// 失效订阅缓存

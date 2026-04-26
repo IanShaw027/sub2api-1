@@ -10,6 +10,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 )
 
 func normalizeOAuthSignupSource(signupSource string) string {
@@ -175,6 +176,7 @@ func (s *AuthService) FinalizeOAuthEmailAccount(
 	ctx context.Context,
 	user *User,
 	invitationCode string,
+	affiliateCode string,
 	signupSource string,
 ) error {
 	if s == nil || user == nil || user.ID <= 0 {
@@ -195,6 +197,21 @@ func (s *AuthService) FinalizeOAuthEmailAccount(
 	s.updateOAuthSignupSource(ctx, user.ID, signupSource)
 	grantPlan := s.resolveSignupGrantPlan(ctx, signupSource)
 	s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
+	if s.affiliateService != nil {
+		if _, err := s.affiliateService.EnsureUserAffiliate(ctx, user.ID); err != nil {
+			logger.LegacyPrintf("service.auth", "[Auth] Failed to initialize affiliate profile for oauth user %d: %v", user.ID, err)
+		}
+		if code := strings.TrimSpace(affiliateCode); code != "" {
+			if err := s.affiliateService.BindInviterByCode(ctx, user.ID, code); err != nil {
+				logger.LegacyPrintf("service.auth", "[Auth] Failed to bind affiliate inviter for oauth user %d: %v", user.ID, err)
+			} else if bonus, _, err := s.affiliateService.ApplySignupBonus(ctx, user.ID); err != nil {
+				logger.LegacyPrintf("service.auth", "[Auth] Failed to apply affiliate signup bonus for oauth user %d: %v", user.ID, err)
+			} else if bonus > 0 {
+				user.Balance += bonus
+				appendRuntimeMessage(user, fmt.Sprintf("通过邀请链接注册奖励 %.2f 余额已发放。", bonus))
+			}
+		}
+	}
 	return nil
 }
 

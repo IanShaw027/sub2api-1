@@ -15,10 +15,10 @@ func TestTicketRepositoryAddReplyRejectsWithdrawnTicket(t *testing.T) {
 	repo := &ticketRepository{db: db}
 
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT status\\s+FROM support_tickets\\s+WHERE id = \\$1\\s+FOR UPDATE").
+	mock.ExpectQuery("SELECT status, current_revision_no\\s+FROM support_tickets\\s+WHERE id = \\$1\\s+FOR UPDATE").
 		WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).
-			AddRow(service.SupportTicketStatusWithdrawn))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "current_revision_no"}).
+			AddRow(service.SupportTicketStatusWithdrawn, 1))
 	mock.ExpectRollback()
 
 	err := repo.AddReply(context.Background(), 1, &service.SupportTicketMessage{
@@ -36,10 +36,10 @@ func TestTicketRepositoryCloseByUserRejectsWithdrawnTicket(t *testing.T) {
 	repo := &ticketRepository{db: db}
 
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT status\\s+FROM support_tickets\\s+WHERE id = \\$1\\s+FOR UPDATE").
+	mock.ExpectQuery("SELECT status, current_revision_no\\s+FROM support_tickets\\s+WHERE id = \\$1\\s+FOR UPDATE").
 		WithArgs(int64(9)).
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).
-			AddRow(service.SupportTicketStatusWithdrawn))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "current_revision_no"}).
+			AddRow(service.SupportTicketStatusWithdrawn, 1))
 	mock.ExpectRollback()
 
 	err := repo.CloseByUser(context.Background(), 9, time.Now(), repoSystemMessage("close", time.Now()))
@@ -52,10 +52,10 @@ func TestTicketRepositoryWithdrawRejectsDisallowedStatus(t *testing.T) {
 	repo := &ticketRepository{db: db}
 
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT status\\s+FROM support_tickets\\s+WHERE id = \\$1\\s+FOR UPDATE").
+	mock.ExpectQuery("SELECT status, current_revision_no\\s+FROM support_tickets\\s+WHERE id = \\$1\\s+FOR UPDATE").
 		WithArgs(int64(3)).
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).
-			AddRow(service.SupportTicketStatusWaitingUser))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "current_revision_no"}).
+			AddRow(service.SupportTicketStatusWaitingUser, 1))
 	mock.ExpectRollback()
 
 	err := repo.UpdateAfterUserWithdraw(context.Background(), 3, time.Now(), repoSystemMessage("withdraw", time.Now()))
@@ -70,10 +70,10 @@ func TestTicketRepositoryCloseByUserUsesLockedTransition(t *testing.T) {
 	systemMessage := repoSystemMessage("close", closedAt)
 
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT status\\s+FROM support_tickets\\s+WHERE id = \\$1\\s+FOR UPDATE").
+	mock.ExpectQuery("SELECT status, current_revision_no\\s+FROM support_tickets\\s+WHERE id = \\$1\\s+FOR UPDATE").
 		WithArgs(int64(5)).
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).
-			AddRow(service.SupportTicketStatusProcessing))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "current_revision_no"}).
+			AddRow(service.SupportTicketStatusProcessing, 1))
 	mock.ExpectExec("UPDATE support_tickets\\s+SET status = \\$2, closed_at = \\$3, latest_message_at = \\$3, last_reply_role = \\$4,\\s+unread_by_user = FALSE, unread_by_admin = TRUE, withdrawn_at = NULL, updated_at = NOW\\(\\)\\s+WHERE id = \\$1").
 		WithArgs(int64(5), service.SupportTicketStatusClosed, closedAt, service.SupportTicketSenderRoleSystem).
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -93,6 +93,61 @@ func TestTicketRepositoryCloseByUserUsesLockedTransition(t *testing.T) {
 
 	err := repo.CloseByUser(context.Background(), 5, closedAt, systemMessage)
 	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestTicketRepositoryResubmitUsesLockedRevision(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &ticketRepository{db: db}
+	now := time.Now()
+	ticket := &service.SupportTicket{
+		Title:              "updated",
+		Status:             service.SupportTicketStatusSubmitted,
+		CurrentFormPayload: []byte(`{"question":"updated"}`),
+		CurrentRevisionNo:  1,
+		LatestMessageAt:    now,
+		LastReplyRole:      service.SupportTicketSenderRoleSystem,
+		UnreadByUser:       false,
+		UnreadByAdmin:      true,
+		SubmittedAt:        &now,
+	}
+	revision := &service.SupportTicketRevision{
+		RevisionNo:  1,
+		Title:       "updated",
+		FormPayload: []byte(`{"question":"updated"}`),
+		SubmittedAt: now,
+	}
+	systemMessage := repoSystemMessage("resubmit", now)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT status, current_revision_no\\s+FROM support_tickets\\s+WHERE id = \\$1\\s+FOR UPDATE").
+		WithArgs(int64(8)).
+		WillReturnRows(sqlmock.NewRows([]string{"status", "current_revision_no"}).
+			AddRow(service.SupportTicketStatusWithdrawn, 4))
+	mock.ExpectExec("UPDATE support_tickets").
+		WithArgs(int64(8), ticket.Title, ticket.Status, []byte(ticket.CurrentFormPayload), 5, ticket.LatestMessageAt, ticket.LastReplyRole, ticket.UnreadByUser, ticket.UnreadByAdmin, ticket.SubmittedAt).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO support_ticket_revisions").
+		WithArgs(int64(8), 5, revision.Title, []byte(revision.FormPayload), revision.SubmittedBy, revision.SubmittedAt).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery("INSERT INTO support_ticket_messages").
+		WithArgs(
+			int64(8),
+			systemMessage.SenderRole,
+			systemMessage.SenderUserID,
+			systemMessage.SenderNameSnapshot,
+			systemMessage.SenderAvatarSnapshot,
+			systemMessage.MessageType,
+			systemMessage.Content,
+			systemMessage.CreatedAt,
+		).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(1)))
+	mock.ExpectCommit()
+
+	err := repo.Resubmit(context.Background(), 8, ticket, revision, systemMessage)
+	require.NoError(t, err)
+	require.Equal(t, 5, ticket.CurrentRevisionNo)
+	require.Equal(t, 5, revision.RevisionNo)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

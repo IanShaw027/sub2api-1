@@ -26,6 +26,18 @@ func validateInterval(sec int) error {
 	return nil
 }
 
+func validateExtraModels(models []string) error {
+	if len(models) > monitorExtraModelsMaxCount {
+		return ErrChannelMonitorExtraModelsTooMany
+	}
+	for _, model := range models {
+		if len(strings.TrimSpace(model)) > monitorExtraModelMaxLength {
+			return ErrChannelMonitorExtraModelTooLong
+		}
+	}
+	return nil
+}
+
 // validateEndpoint 校验 endpoint：
 //   - scheme 强制 https（拒绝 http，避免明文凭证 + 部分 SSRF 利用面）
 //   - 必须为 origin（无 path/query/fragment），防止用户填 https://api.openai.com/v1

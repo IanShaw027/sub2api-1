@@ -753,16 +753,26 @@ func translateChannelMonitorWriteError(err error, notFound *infraerrors.Applicat
 	return translatePersistenceError(err, notFound, nil)
 }
 
-// translateChannelMonitorTemplateFKError 将 channel_monitors_template_id_fkey 违规映射为模板不存在。
+// translateChannelMonitorTemplateFKError 将 template_id FK 违规映射为模板不存在。
 func translateChannelMonitorTemplateFKError(err error) error {
 	var pgErr *pq.Error
 	if !errors.As(err, &pgErr) {
 		return nil
 	}
-	if pgErr.Code == "23503" && string(pgErr.Constraint) == "channel_monitors_template_id_fkey" {
+	if pgErr.Code == "23503" && isChannelMonitorTemplateFKConstraint(string(pgErr.Constraint)) {
 		return service.ErrChannelMonitorTemplateNotFound.WithCause(err)
 	}
 	return nil
+}
+
+func isChannelMonitorTemplateFKConstraint(constraint string) bool {
+	switch constraint {
+	case "channel_monitors_template_id_fkey",
+		"channel_monitors_channel_monitor_request_templates_request_template":
+		return true
+	default:
+		return false
+	}
 }
 
 // ---------- helpers ----------

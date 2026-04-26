@@ -256,6 +256,13 @@ const { t } = useI18n()
 type DistributionMetric = 'tokens' | 'actual_cost'
 type ModelSource = 'requested' | 'upstream' | 'mapping'
 type RankingDisplayItem = UserSpendingRankingItem & { isOther?: boolean }
+type DisplayModelStat = ModelStat & {
+  requests: number
+  total_tokens: number
+  cost: number
+  actual_cost: number
+  account_cost: number
+}
 const props = withDefaults(defineProps<{
   modelStats: ModelStat[]
   upstreamModelStats?: ModelStat[]
@@ -345,6 +352,19 @@ const chartColors = [
   '#a855f7'
 ]
 
+const asNumber = (value: number | null | undefined): number => {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+const normalizeModelStat = (stat: ModelStat): DisplayModelStat => ({
+  ...stat,
+  requests: asNumber(stat.requests),
+  total_tokens: asNumber(stat.total_tokens),
+  cost: asNumber(stat.cost),
+  actual_cost: asNumber(stat.actual_cost),
+  account_cost: asNumber(stat.account_cost),
+})
+
 const displayModelStats = computed(() => {
   const sourceStats = props.source === 'upstream'
     ? props.upstreamModelStats
@@ -354,7 +374,7 @@ const displayModelStats = computed(() => {
   if (!sourceStats?.length) return []
 
   const metricKey = props.metric === 'actual_cost' ? 'actual_cost' : 'total_tokens'
-  return [...sourceStats].sort((a, b) => b[metricKey] - a[metricKey])
+  return sourceStats.map(normalizeModelStat).sort((a, b) => b[metricKey] - a[metricKey])
 })
 
 const chartData = computed(() => {
@@ -470,7 +490,8 @@ const rankingDoughnutOptions = computed(() => ({
   }
 }))
 
-const formatTokens = (value: number): string => {
+const formatTokens = (value: number | null | undefined): string => {
+  value = asNumber(value)
   if (value >= 1_000_000_000) {
     return `${(value / 1_000_000_000).toFixed(2)}B`
   } else if (value >= 1_000_000) {
@@ -481,7 +502,8 @@ const formatTokens = (value: number): string => {
   return value.toLocaleString()
 }
 
-const formatNumber = (value: number): string => {
+const formatNumber = (value: number | null | undefined): string => {
+  value = asNumber(value)
   return value.toLocaleString()
 }
 
@@ -495,7 +517,8 @@ const getRankingRowLabel = (item: RankingDisplayItem): string => {
   return getRankingUserLabel(item)
 }
 
-const formatCost = (value: number): string => {
+const formatCost = (value: number | null | undefined): string => {
+  value = asNumber(value)
   if (value >= 1000) {
     return (value / 1000).toFixed(2) + 'K'
   } else if (value >= 1) {

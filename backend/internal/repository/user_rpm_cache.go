@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -36,6 +37,40 @@ var userRPMIncrExpireScript = redis.NewScript(`
 local count = redis.call("INCR", KEYS[1])
 redis.call("EXPIRE", KEYS[1], ARGV[1])
 return count
+`)
+
+var userRPMAtomicAdmitScript = redis.NewScript(`
+local ttl = tonumber(ARGV[1])
+local inc_group = tonumber(ARGV[2]) == 1
+local inc_user = tonumber(ARGV[3]) == 1
+local group_limit = tonumber(ARGV[4]) or 0
+local user_limit = tonumber(ARGV[5]) or 0
+local group_count = 0
+local user_count = 0
+
+if inc_group then
+  group_count = tonumber(redis.call("GET", KEYS[1]) or "0")
+end
+if inc_user then
+  user_count = tonumber(redis.call("GET", KEYS[2]) or "0")
+end
+
+if inc_group and group_limit > 0 and group_count + 1 > group_limit then
+  return {group_count, user_count, 0}
+end
+if inc_user and user_limit > 0 and user_count + 1 > user_limit then
+  return {group_count, user_count, 0}
+end
+
+if inc_group then
+  group_count = redis.call("INCR", KEYS[1])
+  redis.call("EXPIRE", KEYS[1], ttl)
+end
+if inc_user then
+  user_count = redis.call("INCR", KEYS[2])
+  redis.call("EXPIRE", KEYS[2], ttl)
+end
+return {group_count, user_count, 1}
 `)
 
 type userRPMCacheImpl struct {
@@ -167,6 +202,92 @@ func (c *userRPMCacheImpl) IncrementUserAndGroupRPM(ctx context.Context, userID,
 		}
 	}
 	return groupCount, userCount, nil
+}
+
+// TryIncrementUserAndGroupRPM 原子检查并递增 user-group 与 user 计数。
+func (c *userRPMCacheImpl) TryIncrementUserAndGroupRPM(ctx context.Context, userID, groupID int64, groupLimit, userLimit int, incGroup, incUser bool) (groupCount, userCount int, admitted bool, err error) {
+	if !incGroup && !incUser {
+		return 0, 0, true, nil
+	}
+
+	minute, err := c.minuteTS(ctx)
+	if err != nil {
+		return 0, 0, false, err
+	}
+
+	clusterGroupKey := userGroupRPMClusterSlotKey(userID, groupID, minute)
+	clusterUserKey := userRPMClusterSlotKey(userID, minute)
+	incGroupArg := 0
+	if incGroup {
+		incGroupArg = 1
+	}
+	incUserArg := 0
+	if incUser {
+		incUserArg = 1
+	}
+
+	vals, err := userRPMAtomicAdmitScript.Run(
+		ctx,
+		c.rdb,
+		[]string{clusterGroupKey, clusterUserKey},
+		int64(userRPMKeyTTL/time.Second),
+		incGroupArg,
+		incUserArg,
+		groupLimit,
+		userLimit,
+	).Slice()
+	if err != nil {
+		return 0, 0, false, fmt.Errorf("user rpm atomic admit: %w", err)
+	}
+	if len(vals) != 3 {
+		return 0, 0, false, fmt.Errorf("user rpm atomic admit returned %d values", len(vals))
+	}
+
+	groupCount = redisInt(vals[0])
+	userCount = redisInt(vals[1])
+	admitted = redisInt(vals[2]) == 1
+	if !admitted {
+		return groupCount, userCount, false, nil
+	}
+
+	if incGroup {
+		legacyCount, err := c.incrWithTTL(ctx, userGroupRPMLegacyKey(userID, groupID, minute))
+		if err != nil {
+			return 0, 0, false, err
+		}
+		if legacyCount > groupCount {
+			groupCount = legacyCount
+		}
+	}
+	if incUser {
+		legacyCount, err := c.incrWithTTL(ctx, userRPMLegacyKey(userID, minute))
+		if err != nil {
+			return 0, 0, false, err
+		}
+		if legacyCount > userCount {
+			userCount = legacyCount
+		}
+	}
+	return groupCount, userCount, true, nil
+}
+
+func redisInt(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case uint64:
+		return int(n)
+	case string:
+		parsed, _ := strconv.Atoi(n)
+		return parsed
+	case []byte:
+		parsed, _ := strconv.Atoi(string(n))
+		return parsed
+	default:
+		return 0
+	}
 }
 
 // IncrementUserGroupRPM 递增 (user, group) 分钟计数。

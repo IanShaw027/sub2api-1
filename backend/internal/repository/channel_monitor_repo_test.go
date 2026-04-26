@@ -11,10 +11,15 @@ import (
 )
 
 func TestTranslateChannelMonitorTemplateFKError(t *testing.T) {
-	err := &pq.Error{Code: "23503", Constraint: "channel_monitors_template_id_fkey"}
-	got := translateChannelMonitorTemplateFKError(err)
-	if !errors.Is(got, service.ErrChannelMonitorTemplateNotFound) {
-		t.Fatalf("expected ErrChannelMonitorTemplateNotFound, got %v", got)
+	for _, constraint := range []string{
+		"channel_monitors_template_id_fkey",
+		"channel_monitors_channel_monitor_request_templates_request_template",
+	} {
+		err := &pq.Error{Code: "23503", Constraint: constraint}
+		got := translateChannelMonitorTemplateFKError(err)
+		if !errors.Is(got, service.ErrChannelMonitorTemplateNotFound) {
+			t.Fatalf("expected ErrChannelMonitorTemplateNotFound for %s, got %v", constraint, got)
+		}
 	}
 }
 

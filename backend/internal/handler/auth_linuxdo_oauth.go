@@ -1109,7 +1109,14 @@ func (h *AuthHandler) readOAuthBindUserIDFromCookie(c *gin.Context, cookieName s
 	if err != nil {
 		return 0, err
 	}
-	return parseOAuthBindUserCookieValue(value, h.oauthBindCookieSecret())
+	userID, err := parseOAuthBindUserCookieValue(value, h.oauthBindCookieSecret())
+	if err != nil {
+		return 0, err
+	}
+	if subject, ok := servermiddleware.GetAuthSubjectFromContext(c); ok && subject.UserID > 0 && subject.UserID != userID {
+		return 0, infraerrors.Unauthorized("AUTH_REQUIRED", "current user does not match oauth bind target")
+	}
+	return userID, nil
 }
 
 func (h *AuthHandler) oauthBindCookieSecret() string {

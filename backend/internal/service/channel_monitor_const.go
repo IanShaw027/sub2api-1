@@ -34,6 +34,10 @@ const (
 	// monitorMinIntervalSeconds / monitorMaxIntervalSeconds 用户配置的检测间隔上下限。
 	monitorMinIntervalSeconds = 15
 	monitorMaxIntervalSeconds = 3600
+	// monitorExtraModelsMaxCount 限制单个 monitor 的附加模型数量，避免一次检测扇出过大。
+	monitorExtraModelsMaxCount = 20
+	// monitorExtraModelMaxLength 限制单个附加模型名称长度，与 primary_model 的 API 上限保持一致。
+	monitorExtraModelMaxLength = 200
 	// monitorMessageMaxBytes message 字段最大字节数（与 schema/migration 一致）。
 	monitorMessageMaxBytes = 500
 	// monitorResponseMaxBytes 单次模型响应最大读取字节，防止 OOM。
@@ -136,6 +140,18 @@ var (
 	)
 	ErrChannelMonitorMissingPrimaryModel = infraerrors.BadRequest(
 		"CHANNEL_MONITOR_MISSING_PRIMARY_MODEL", "primary_model is required",
+	)
+	ErrChannelMonitorExtraModelsTooMany = infraerrors.BadRequest(
+		"CHANNEL_MONITOR_EXTRA_MODELS_TOO_MANY", "extra_models has too many items",
+	)
+	ErrChannelMonitorExtraModelTooLong = infraerrors.BadRequest(
+		"CHANNEL_MONITOR_EXTRA_MODEL_TOO_LONG", "extra_models item is too long",
+	)
+	ErrChannelMonitorDisabled = infraerrors.Forbidden(
+		"CHANNEL_MONITOR_DISABLED", "channel monitor feature is disabled",
+	)
+	ErrChannelMonitorRunInFlight = infraerrors.Conflict(
+		"CHANNEL_MONITOR_RUN_IN_FLIGHT", "channel monitor run is already in flight",
 	)
 	ErrChannelMonitorAPIKeyDecryptFailed = infraerrors.InternalServer(
 		"CHANNEL_MONITOR_KEY_DECRYPT_FAILED", "api key decryption failed; please re-edit the monitor with a fresh key",

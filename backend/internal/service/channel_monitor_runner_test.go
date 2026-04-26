@@ -261,6 +261,25 @@ func TestStart_LoadsAllEnabledMonitors(t *testing.T) {
 	stoppedWithin(t, r, 3*time.Second)
 }
 
+// TestStart_LoadFailureAllowsRetry 验证启动加载失败不会永久占用 started 状态，
+// 后续 Start 能重新加载并调度 enabled monitor。
+func TestStart_LoadFailureAllowsRetry(t *testing.T) {
+	svc := &stubMonitorSvc{listErr: errors.New("database unavailable")}
+	r := newRunnerForTest(svc)
+
+	r.Start()
+	if got := runnerTaskCount(r); got != 0 {
+		t.Fatalf("expected no tasks after failed startup load, got %d", got)
+	}
+
+	svc.listErr = nil
+	svc.enabled = []*ChannelMonitor{{ID: 42, Enabled: true, IntervalSeconds: 60}}
+	r.Start()
+	waitFor(t, 2*time.Second, "task scheduled after retry", func() bool { return runnerTaskCount(r) == 1 })
+
+	stoppedWithin(t, r, 3*time.Second)
+}
+
 // TestStop_DrainsAllGoroutines 验证 Stop 会等待所有调度 goroutine 退出（无游离）。
 func TestStop_DrainsAllGoroutines(t *testing.T) {
 	svc := &stubMonitorSvc{}
@@ -467,6 +486,74 @@ func TestRunOne_DistributedLockContentionSkipsDuplicate(t *testing.T) {
 	close(block)
 	stoppedWithin(t, r1, 3*time.Second)
 	stoppedWithin(t, r2, 3*time.Second)
+}
+
+func TestRunManual_RespectsFeatureSwitch(t *testing.T) {
+	svc := &stubMonitorSvc{}
+	settings := NewSettingService(&settingPublicRepoStub{values: map[string]string{
+		SettingKeyChannelMonitorEnabled: "false",
+	}}, nil)
+	r := newChannelMonitorRunner(svc, settings)
+	r.Start()
+
+	_, err := r.RunManual(context.Background(), 12)
+	if !errors.Is(err, ErrChannelMonitorDisabled) {
+		t.Fatalf("expected ErrChannelMonitorDisabled, got %v", err)
+	}
+	if got := svc.runCount.Load(); got != 0 {
+		t.Fatalf("RunCheck should not be called when feature is disabled, got %d", got)
+	}
+
+	stoppedWithin(t, r, 3*time.Second)
+}
+
+func TestRunManual_RejectsConcurrentRun(t *testing.T) {
+	block := make(chan struct{})
+	svc := &stubMonitorSvc{runCalled: make(chan int64, 1), blockUntil: block}
+	r := newRunnerForTest(svc)
+	r.Start()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := r.RunManual(context.Background(), 33)
+		done <- err
+	}()
+	select {
+	case <-svc.runCalled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first manual run did not start")
+	}
+
+	_, err := r.RunManual(context.Background(), 33)
+	if !errors.Is(err, ErrChannelMonitorRunInFlight) {
+		t.Fatalf("expected ErrChannelMonitorRunInFlight, got %v", err)
+	}
+
+	close(block)
+	if err := <-done; err != nil {
+		t.Fatalf("first manual run returned error: %v", err)
+	}
+	stoppedWithin(t, r, 3*time.Second)
+}
+
+func TestRunManual_RespectsDistributedLock(t *testing.T) {
+	svc := &stubMonitorSvc{locker: newMonitorRunLockStub()}
+	release, acquired := svc.locker.Acquire(44)
+	if !acquired {
+		t.Fatal("failed to pre-acquire distributed lock")
+	}
+	defer release()
+
+	r := newRunnerForTest(svc)
+	r.Start()
+	_, err := r.RunManual(context.Background(), 44)
+	if !errors.Is(err, ErrChannelMonitorRunInFlight) {
+		t.Fatalf("expected ErrChannelMonitorRunInFlight under lock contention, got %v", err)
+	}
+	if got := svc.runCount.Load(); got != 0 {
+		t.Fatalf("RunCheck should not be called when distributed lock is busy, got %d", got)
+	}
+	stoppedWithin(t, r, 3*time.Second)
 }
 
 // stoppedWithin 在 timeout 内并行调用 Stop，超时则 Fatal。验证 Stop 不会阻塞。

@@ -693,6 +693,10 @@ type userRPMCombinedIncrementer interface {
 	IncrementUserAndGroupRPM(ctx context.Context, userID, groupID int64, incGroup, incUser bool) (groupCount, userCount int, err error)
 }
 
+type userRPMAtomicAdmitter interface {
+	TryIncrementUserAndGroupRPM(ctx context.Context, userID, groupID int64, groupLimit, userLimit int, incGroup, incUser bool) (groupCount, userCount int, admitted bool, err error)
+}
+
 // checkRPM 执行 RPM 限流，所有适用的限制同时生效，任一超限即拒绝：
 //
 //  1. (用户, 分组) rpm_override       — 最细粒度：管理员为特定用户在特定分组设定的专属限额。
@@ -745,6 +749,34 @@ func (s *BillingCacheService) checkRPM(ctx context.Context, user *User, group *G
 	}
 
 	shouldCheckUser := user.RPMLimit > 0
+	if shouldCheckGroup || shouldCheckUser {
+		if admitter, ok := s.userRPMCache.(userRPMAtomicAdmitter); ok {
+			groupID := int64(0)
+			if group != nil {
+				groupID = group.ID
+			}
+			groupCount, userCount, admitted, err := admitter.TryIncrementUserAndGroupRPM(ctx, user.ID, groupID, groupLimit, user.RPMLimit, shouldCheckGroup, shouldCheckUser)
+			if err != nil {
+				logger.LegacyPrintf(
+					"service.billing_cache",
+					"Warning: rpm atomic admit failed for user=%d group=%d: %v",
+					user.ID, group.ID, err,
+				)
+				return nil // fail-open
+			}
+			if !admitted {
+				if shouldCheckGroup && groupLimit > 0 && groupCount >= groupLimit {
+					return ErrGroupRPMExceeded
+				}
+				if shouldCheckUser && user.RPMLimit > 0 && userCount >= user.RPMLimit {
+					return ErrUserRPMExceeded
+				}
+				return ErrUserRPMExceeded
+			}
+			return nil
+		}
+	}
+
 	if shouldCheckGroup && shouldCheckUser {
 		if combined, ok := s.userRPMCache.(userRPMCombinedIncrementer); ok {
 			groupCount, userCount, err := combined.IncrementUserAndGroupRPM(ctx, user.ID, group.ID, true, true)

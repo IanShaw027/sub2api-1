@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -97,6 +99,62 @@ func TestTicketServiceCreateRejectsCategorySpecificIncompletePayload(t *testing.
 	})
 
 	require.ErrorIs(t, err, ErrTicketPayloadInvalid)
+}
+
+func TestTicketServiceCreateRejectsOversizedTitle(t *testing.T) {
+	svc := NewTicketService(&ticketRepoStub{}, &announcementUserRepoStub{})
+
+	_, err := svc.Create(context.Background(), CreateSupportTicketInput{
+		UserID:      1,
+		Category:    SupportTicketCategoryConsult,
+		Title:       strings.Repeat("中", 81),
+		FormPayload: json.RawMessage(`{"question":"hello"}`),
+	})
+
+	require.ErrorIs(t, err, ErrTicketInvalidTitle)
+}
+
+func TestTicketServiceCreateRejectsOversizedPayload(t *testing.T) {
+	svc := NewTicketService(&ticketRepoStub{}, &announcementUserRepoStub{})
+
+	_, err := svc.Create(context.Background(), CreateSupportTicketInput{
+		UserID:      1,
+		Category:    SupportTicketCategoryConsult,
+		Title:       "need help",
+		FormPayload: json.RawMessage(`{"question":"` + strings.Repeat("a", 20*1024) + `"}`),
+	})
+
+	require.ErrorIs(t, err, ErrTicketPayloadInvalid)
+}
+
+func TestTicketServiceCreateRejectsPayloadWithTooManyFields(t *testing.T) {
+	fields := []string{`"question":"hello"`}
+	for i := range 40 {
+		fields = append(fields, `"extra_`+strconv.Itoa(i)+`":"x"`)
+	}
+	svc := NewTicketService(&ticketRepoStub{}, &announcementUserRepoStub{})
+
+	_, err := svc.Create(context.Background(), CreateSupportTicketInput{
+		UserID:      1,
+		Category:    SupportTicketCategoryConsult,
+		Title:       "need help",
+		FormPayload: json.RawMessage(`{` + strings.Join(fields, ",") + `}`),
+	})
+
+	require.ErrorIs(t, err, ErrTicketPayloadInvalid)
+}
+
+func TestTicketServiceReplyForUserRejectsOversizedContent(t *testing.T) {
+	svc := NewTicketService(&ticketRepoStub{
+		ticket: &SupportTicket{ID: 1, UserID: 9, Status: SupportTicketStatusSubmitted},
+	}, &announcementUserRepoStub{})
+
+	err := svc.ReplyForUser(context.Background(), 1, CreateSupportTicketMessageInput{
+		UserID:  9,
+		Content: strings.Repeat("a", 10*1024),
+	})
+
+	require.ErrorIs(t, err, ErrTicketMessageTooLarge)
 }
 
 func TestTicketServiceReplyForUserRejectsLockedTicket(t *testing.T) {

@@ -103,7 +103,7 @@ func (s *PaymentService) confirmPayment(ctx context.Context, oid int64, tradeNo 
 		})
 		return fmt.Errorf("invalid paid amount from provider: %v", paid)
 	}
-	if math.Abs(paid-o.PayAmount) > amountToleranceCNY {
+	if !amountCentsEqual(paid, o.PayAmount) {
 		s.writeAuditLog(ctx, o.ID, "PAYMENT_AMOUNT_MISMATCH", pk, map[string]any{"expected": o.PayAmount, "paid": paid, "tradeNo": tradeNo})
 		return fmt.Errorf("amount mismatch: expected %.2f, got %.2f", o.PayAmount, paid)
 	}
@@ -141,7 +141,6 @@ func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, trad
 		paymentorder.IDEQ(o.ID),
 		paymentorder.Or(
 			paymentorder.StatusEQ(OrderStatusPending),
-			paymentorder.StatusEQ(OrderStatusCancelled),
 			paymentorder.And(
 				paymentorder.StatusEQ(OrderStatusExpired),
 				paymentorder.UpdatedAtGTE(grace),
@@ -152,9 +151,9 @@ func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, trad
 		return fmt.Errorf("update to PAID: %w", err)
 	}
 	if c == 0 {
-		return s.alreadyProcessed(ctx, o)
+		return s.alreadyProcessed(ctx, o, tradeNo, paid, pk)
 	}
-	if previousStatus == OrderStatusCancelled || previousStatus == OrderStatusExpired {
+	if previousStatus == OrderStatusExpired {
 		slog.Info("order recovered from webhook payment success",
 			"orderID", o.ID,
 			"previousStatus", previousStatus,
@@ -172,7 +171,7 @@ func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, trad
 	return s.executeFulfillment(ctx, o.ID)
 }
 
-func (s *PaymentService) alreadyProcessed(ctx context.Context, o *dbent.PaymentOrder) error {
+func (s *PaymentService) alreadyProcessed(ctx context.Context, o *dbent.PaymentOrder, tradeNo string, paid float64, pk string) error {
 	cur, err := s.entClient.PaymentOrder.Get(ctx, o.ID)
 	if err != nil {
 		return nil
@@ -184,16 +183,35 @@ func (s *PaymentService) alreadyProcessed(ctx context.Context, o *dbent.PaymentO
 		return s.executeFulfillment(ctx, o.ID)
 	case OrderStatusPaid, OrderStatusRecharging:
 		return nil
+	case OrderStatusCancelled:
+		slog.Warn("webhook payment success for cancelled order",
+			"orderID", o.ID,
+			"status", cur.Status,
+			"tradeNo", tradeNo,
+			"provider", pk,
+		)
+		s.writeAuditLog(ctx, o.ID, "PAYMENT_AFTER_CANCELLED", pk, map[string]any{
+			"status":     cur.Status,
+			"updatedAt":  cur.UpdatedAt,
+			"tradeNo":    tradeNo,
+			"paidAmount": paid,
+			"reason":     "payment arrived after cancellation",
+		})
+		return nil
 	case OrderStatusExpired:
 		slog.Warn("webhook payment success for expired order beyond grace period",
 			"orderID", o.ID,
 			"status", cur.Status,
 			"updatedAt", cur.UpdatedAt,
+			"tradeNo", tradeNo,
+			"provider", pk,
 		)
-		s.writeAuditLog(ctx, o.ID, "PAYMENT_AFTER_EXPIRY", "system", map[string]any{
-			"status":    cur.Status,
-			"updatedAt": cur.UpdatedAt,
-			"reason":    "payment arrived after expiry grace period",
+		s.writeAuditLog(ctx, o.ID, "PAYMENT_AFTER_EXPIRY", pk, map[string]any{
+			"status":     cur.Status,
+			"updatedAt":  cur.UpdatedAt,
+			"tradeNo":    tradeNo,
+			"paidAmount": paid,
+			"reason":     "payment arrived after expiry grace period",
 		})
 		return nil
 	default:
@@ -345,18 +363,74 @@ func (s *PaymentService) doSub(ctx context.Context, o *dbent.PaymentOrder) error
 	if err != nil || g.Status != payment.EntityStatusActive {
 		return fmt.Errorf("group %d no longer exists or inactive", gid)
 	}
-	// Idempotency: check audit log to see if subscription was already assigned.
-	// Prevents double-extension on retry after markCompleted fails.
-	if s.hasAuditLog(ctx, o.ID, "SUBSCRIPTION_SUCCESS") {
+	claimed, err := s.tryClaimSubscriptionFulfillmentAudit(ctx, o, gid, days)
+	if err != nil {
+		return fmt.Errorf("claim subscription fulfillment: %w", err)
+	}
+	if !claimed {
 		slog.Info("subscription already assigned for order, skipping", "orderID", o.ID, "groupID", gid)
 		return s.markCompleted(ctx, o, "SUBSCRIPTION_SUCCESS")
 	}
 	orderNote := fmt.Sprintf("payment order %d", o.ID)
 	_, _, err = s.subscriptionSvc.AssignOrExtendSubscription(ctx, &AssignSubscriptionInput{UserID: o.UserID, GroupID: gid, ValidityDays: days, AssignedBy: 0, Notes: orderNote})
 	if err != nil {
+		s.releaseSubscriptionFulfillmentClaim(ctx, o.ID)
 		return fmt.Errorf("assign subscription: %w", err)
 	}
 	return s.markCompleted(ctx, o, "SUBSCRIPTION_SUCCESS")
+}
+
+func (s *PaymentService) tryClaimSubscriptionFulfillmentAudit(ctx context.Context, o *dbent.PaymentOrder, groupID int64, days int) (bool, error) {
+	if s == nil || s.entClient == nil || o == nil {
+		return false, errors.New("nil payment service")
+	}
+	oid := strconv.FormatInt(o.ID, 10)
+	detail, _ := json.Marshal(map[string]any{
+		"groupID":      groupID,
+		"days":         days,
+		"rechargeCode": o.RechargeCode,
+		"status":       "reserved",
+	})
+	rows, err := s.entClient.QueryContext(ctx, `
+	INSERT INTO payment_audit_logs (order_id, action, detail, operator, created_at)
+	SELECT $1, 'SUBSCRIPTION_FULFILLMENT_CLAIMED', $2, 'system', CURRENT_TIMESTAMP
+	WHERE NOT EXISTS (
+		SELECT 1
+		FROM payment_audit_logs
+		WHERE order_id = $1
+		  AND action IN ('SUBSCRIPTION_FULFILLMENT_CLAIMED', 'SUBSCRIPTION_SUCCESS')
+	)
+	RETURNING id`, oid, string(detail))
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	var claimID int64
+	if err := rows.Scan(&claimID); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *PaymentService) releaseSubscriptionFulfillmentClaim(ctx context.Context, orderID int64) {
+	if s == nil || s.entClient == nil {
+		return
+	}
+	_, err := s.entClient.PaymentAuditLog.Delete().
+		Where(
+			paymentauditlog.OrderIDEQ(strconv.FormatInt(orderID, 10)),
+			paymentauditlog.ActionEQ("SUBSCRIPTION_FULFILLMENT_CLAIMED"),
+		).
+		Exec(ctx)
+	if err != nil {
+		slog.Error("release subscription fulfillment claim failed", "orderID", orderID, "error", err)
+	}
 }
 
 func (s *PaymentService) hasAuditLog(ctx context.Context, orderID int64, action string) bool {

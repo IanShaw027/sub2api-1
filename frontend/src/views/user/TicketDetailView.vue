@@ -165,7 +165,6 @@ async function saveAndSubmit(form: { category: TicketCategory; title: string; fo
   }
   try {
     submittingEdit.value = true
-    await ticketsAPI.updateTicket(ticketID.value, form)
     await ticketsAPI.submitTicket(ticketID.value, form)
     editing.value = false
     await loadDetail()

@@ -199,6 +199,9 @@ func (r *ticketRepository) Resubmit(ctx context.Context, ticketID int64, ticket 
 		if locked.status != service.SupportTicketStatusWithdrawn {
 			return service.ErrTicketNotEditable
 		}
+		nextRevision := locked.currentRevisionNo + 1
+		ticket.CurrentRevisionNo = nextRevision
+		revision.RevisionNo = nextRevision
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE support_tickets
 			SET title = $2, status = $3, current_form_payload = $4, current_revision_no = $5,
@@ -289,7 +292,8 @@ func (r *ticketRepository) MarkReadByAdmin(ctx context.Context, ticketID int64) 
 }
 
 type lockedTicketState struct {
-	status string
+	status            string
+	currentRevisionNo int
 }
 
 func (r *ticketRepository) withTicketUpdateTx(ctx context.Context, ticketID int64, fn func(tx *sql.Tx, locked *lockedTicketState) error) error {
@@ -301,11 +305,11 @@ func (r *ticketRepository) withTicketUpdateTx(ctx context.Context, ticketID int6
 
 	locked := &lockedTicketState{}
 	if err := tx.QueryRowContext(ctx, `
-		SELECT status
+		SELECT status, current_revision_no
 		FROM support_tickets
 		WHERE id = $1
 		FOR UPDATE
-	`, ticketID).Scan(&locked.status); err != nil {
+	`, ticketID).Scan(&locked.status, &locked.currentRevisionNo); err != nil {
 		if err == sql.ErrNoRows {
 			return service.ErrTicketNotFound
 		}

@@ -614,6 +614,47 @@ func TestOIDCOAuthCallbackCreatesBindPendingSessionForCurrentUser(t *testing.T) 
 	require.Equal(t, 1, userCount)
 }
 
+func TestOIDCOAuthCallbackBindRejectsCookieWhenCurrentSubjectDiffers(t *testing.T) {
+	cfg, cleanup := newOIDCTestProvider(t, oidcProviderFixture{
+		Subject:           "oidc-subject-bind-mismatch",
+		PreferredUsername: "oidc_bind",
+		DisplayName:       "OIDC Bind Display",
+		Email:             "oidc-bind@example.com",
+		EmailVerified:     true,
+	})
+	defer cleanup()
+
+	handler, client := newOIDCOAuthHandlerAndClient(t, false, cfg)
+	t.Cleanup(func() { _ = client.Close() })
+
+	ctx := context.Background()
+	cookieUser, err := client.User.Create().SetEmail("cookie@example.com").SetUsername("cookie-user").SetPasswordHash("hash").SetRole(service.RoleUser).SetStatus(service.StatusActive).Save(ctx)
+	require.NoError(t, err)
+	currentUser, err := client.User.Create().SetEmail("current@example.com").SetUsername("current-user").SetPasswordHash("hash").SetRole(service.RoleUser).SetStatus(service.StatusActive).Save(ctx)
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/oauth/oidc/callback?code=oidc-code&state=state-bind", nil)
+	req.AddCookie(encodedCookie(oidcOAuthStateCookieName, "state-bind"))
+	req.AddCookie(encodedCookie(oidcOAuthRedirectCookie, "/settings/connections"))
+	req.AddCookie(encodedCookie(oidcOAuthVerifierCookie, "verifier-bind"))
+	req.AddCookie(encodedCookie(oidcOAuthNonceCookie, "nonce-oidc-subject-bind-mismatch"))
+	req.AddCookie(encodedCookie(oidcOAuthIntentCookieName, oauthIntentBindCurrentUser))
+	req.AddCookie(encodedCookie(oidcOAuthBindUserCookieName, buildEncodedOAuthBindUserCookie(t, cookieUser.ID, "test-secret")))
+	req.AddCookie(encodedCookie(oauthPendingBrowserCookieName, "browser-bind"))
+	c.Request = req
+	c.Set(string(servermiddleware.ContextKeyUser), servermiddleware.AuthSubject{UserID: currentUser.ID})
+
+	handler.OIDCOAuthCallback(c)
+
+	require.Equal(t, http.StatusFound, recorder.Code)
+	assertOAuthRedirectError(t, recorder.Header().Get("Location"), "invalid_state", "invalid oauth bind target")
+	count, err := client.PendingAuthSession.Query().Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, count)
+}
+
 func TestCompleteOIDCOAuthRegistrationAppliesPendingAdoptionDecision(t *testing.T) {
 	handler, client := newOAuthPendingFlowTestHandler(t, false)
 	ctx := context.Background()

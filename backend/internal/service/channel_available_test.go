@@ -7,6 +7,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
@@ -76,6 +77,13 @@ func newAvailableChannelService(channels []Channel, groupRepo GroupRepository) *
 		listAllFn: func(ctx context.Context) ([]Channel, error) { return channels, nil },
 	}
 	return NewChannelService(repo, groupRepo, nil, nil)
+}
+
+func newAvailableChannelServiceWithPricing(channels []Channel, groupRepo GroupRepository, pricingService *PricingService) *ChannelService {
+	repo := &mockChannelRepository{
+		listAllFn: func(ctx context.Context) ([]Channel, error) { return channels, nil },
+	}
+	return NewChannelService(repo, groupRepo, nil, pricingService)
 }
 
 func TestListAvailable_EmptyActiveGroups_NoGroupsAttached(t *testing.T) {
@@ -174,4 +182,59 @@ func TestListAvailable_DefaultsEmptyBillingModelSource(t *testing.T) {
 	}
 	require.Equal(t, BillingModelSourceChannelMapped, byName["empty"])
 	require.Equal(t, BillingModelSourceUpstream, byName["explicit"])
+}
+
+func TestListAvailable_UsesMappingTargetForGlobalPricingFallback(t *testing.T) {
+	// 用户看到的是 src，但真实计费/lookup 应按 channel mapping 后的 target 查全局价格。
+	pricingSvc := NewPricingService(&config.Config{}, nil)
+	pricingSvc.pricingData = map[string]*LiteLLMModelPricing{
+		"served-model": {InputCostPerToken: 2e-6},
+	}
+	channels := []Channel{{
+		ID:       1,
+		Name:     "mapped",
+		Status:   StatusActive,
+		GroupIDs: []int64{1},
+		ModelMapping: map[string]map[string]string{
+			"anthropic": {"display-src": "served-model"},
+		},
+	}}
+	svc := newAvailableChannelServiceWithPricing(channels, &stubGroupRepoForAvailable{
+		activeGroups: []Group{{ID: 1, Name: "g1", Platform: "anthropic"}},
+	}, pricingSvc)
+
+	out, err := svc.ListAvailable(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.Len(t, out[0].SupportedModels, 1)
+	require.Equal(t, "display-src", out[0].SupportedModels[0].Name)
+	require.NotNil(t, out[0].SupportedModels[0].Pricing)
+	require.NotNil(t, out[0].SupportedModels[0].Pricing.InputPrice)
+	require.InDelta(t, 2e-6, *out[0].SupportedModels[0].Pricing.InputPrice, 1e-12)
+}
+
+func TestListAvailable_FiltersPricingOnlyModelsBySchedulableCapabilities(t *testing.T) {
+	// 用户侧 available 必须按真实可调度能力裁剪：pricing catalog 里有但账号不可调度的模型不能展示。
+	channels := []Channel{{
+		ID:       1,
+		Name:     "catalog-vs-capability",
+		Status:   StatusActive,
+		GroupIDs: []int64{1},
+		ModelMapping: map[string]map[string]string{
+			"anthropic": {"schedulable-model": "schedulable-model"},
+		},
+		ModelPricing: []ChannelModelPricing{
+			{ID: 10, Platform: "anthropic", Models: []string{"schedulable-model"}, InputPrice: testPtrFloat64(1e-6)},
+			{ID: 11, Platform: "anthropic", Models: []string{"pricing-only-model"}, InputPrice: testPtrFloat64(9e-6)},
+		},
+	}}
+	svc := newAvailableChannelService(channels, &stubGroupRepoForAvailable{
+		activeGroups: []Group{{ID: 1, Name: "g1", Platform: "anthropic"}},
+	})
+
+	out, err := svc.ListAvailable(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.Len(t, out[0].SupportedModels, 1)
+	require.Equal(t, "schedulable-model", out[0].SupportedModels[0].Name)
 }

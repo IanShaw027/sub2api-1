@@ -13,6 +13,8 @@ const {
   getTicket,
   listTicketMessages,
   replyTicket,
+  updateTicket,
+  submitTicket,
   getAvailable,
   getUserGroupRates,
   showError,
@@ -21,6 +23,8 @@ const {
   getTicket: vi.fn(),
   listTicketMessages: vi.fn(),
   replyTicket: vi.fn(),
+  updateTicket: vi.fn(),
+  submitTicket: vi.fn(),
   getAvailable: vi.fn(),
   getUserGroupRates: vi.fn(),
   showError: vi.fn(),
@@ -34,8 +38,8 @@ vi.mock('@/api/tickets', () => ({
     replyTicket,
     withdrawTicket: vi.fn(),
     closeTicket: vi.fn(),
-    updateTicket: vi.fn(),
-    submitTicket: vi.fn(),
+    updateTicket,
+    submitTicket,
   },
 }))
 
@@ -79,6 +83,8 @@ describe('user TicketDetailView', () => {
     getTicket.mockReset()
     listTicketMessages.mockReset()
     replyTicket.mockReset()
+    updateTicket.mockReset()
+    submitTicket.mockReset()
     getAvailable.mockReset()
     getUserGroupRates.mockReset()
     showError.mockReset()
@@ -191,5 +197,52 @@ describe('user TicketDetailView', () => {
     expect(wrapper.get('[data-test="show-composer"]').text()).toBe('false')
     expect(wrapper.text()).toContain('tickets.actions.edit')
     expect(wrapper.text()).not.toContain('tickets.actions.close')
+  })
+
+  it('resubmits withdrawn edits with one submit request', async () => {
+    routeState.query = { edit: '1' }
+    getTicket.mockResolvedValueOnce({
+      id: 42,
+      ticket_no: 'TK-42',
+      category: 'consult',
+      title: 'Need help',
+      status: 'withdrawn',
+      current_form_payload: { question: 'old' },
+    })
+    submitTicket.mockResolvedValueOnce({ message: 'ok' })
+    getTicket.mockResolvedValueOnce({
+      id: 42,
+      ticket_no: 'TK-42',
+      category: 'consult',
+      title: 'Need help again',
+      status: 'submitted',
+      current_form_payload: { question: 'new' },
+    })
+
+    const wrapper = mount(TicketDetailView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TicketConversationPane: true,
+          TicketDetailPane: true,
+          TicketEditorCard: {
+            emits: ['submit'],
+            template: '<button type="button" class="resubmit" @click="$emit(\'submit\', { category: \'consult\', title: \'Need help again\', form_payload: { question: \'new\' } })">submit</button>',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+    await wrapper.get('.resubmit').trigger('click')
+    await flushPromises()
+
+    expect(updateTicket).not.toHaveBeenCalled()
+    expect(submitTicket).toHaveBeenCalledTimes(1)
+    expect(submitTicket).toHaveBeenCalledWith(42, {
+      category: 'consult',
+      title: 'Need help again',
+      form_payload: { question: 'new' },
+    })
   })
 })

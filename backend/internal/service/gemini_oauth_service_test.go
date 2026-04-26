@@ -141,6 +141,63 @@ func TestGeminiOAuthService_GenerateAuthURL_RedirectURIStrategy(t *testing.T) {
 	}
 }
 
+func TestGeminiOAuthServiceGenerateAuthURLFailsWhenProxyMissing(t *testing.T) {
+	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
+	proxyID := int64(404)
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, &mockGeminiOAuthClient{}, nil, nil, &config.Config{})
+
+	_, err := svc.GenerateAuthURL(context.Background(), &proxyID, "https://example.com/auth/callback", "", "code_assist", "")
+
+	if err == nil || !strings.Contains(err.Error(), "proxy not found") {
+		t.Fatalf("expected proxy not found error, got %v", err)
+	}
+}
+
+func TestGeminiOAuthServiceExchangeCodeUsesSessionProxyAndRejectsOverride(t *testing.T) {
+	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
+	proxyID := int64(1)
+	overrideProxyID := int64(2)
+	var gotProxyURL string
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{
+		getByIDFunc: func(ctx context.Context, id int64) (*Proxy, error) {
+			if id == proxyID {
+				return &Proxy{ID: id, Protocol: "http", Host: "session.proxy", Port: 8080}, nil
+			}
+			if id == overrideProxyID {
+				return &Proxy{ID: id, Protocol: "http", Host: "override.proxy", Port: 8080}, nil
+			}
+			return nil, fmt.Errorf("proxy not found")
+		},
+	}, &mockGeminiOAuthClient{
+		exchangeCodeFunc: func(ctx context.Context, oauthType, code, codeVerifier, redirectURI, proxyURL string) (*geminicli.TokenResponse, error) {
+			gotProxyURL = proxyURL
+			return &geminicli.TokenResponse{AccessToken: "access", RefreshToken: "refresh", TokenType: "Bearer", ExpiresIn: 3600}, nil
+		},
+	}, &mockGeminiCodeAssistClient{
+		loadCodeAssistFunc: func(ctx context.Context, accessToken, proxyURL string, req *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
+			return &geminicli.LoadCodeAssistResponse{CloudAICompanionProject: "project-1"}, nil
+		},
+	}, nil, &config.Config{})
+
+	result, err := svc.GenerateAuthURL(context.Background(), &proxyID, "https://example.com/auth/callback", "project-1", "code_assist", "")
+	if err != nil {
+		t.Fatalf("GenerateAuthURL returned error: %v", err)
+	}
+
+	_, err = svc.ExchangeCode(context.Background(), &GeminiExchangeCodeInput{
+		SessionID: result.SessionID,
+		Code:      "code-1",
+		State:     result.State,
+		ProxyID:   &overrideProxyID,
+	})
+	if err != nil {
+		t.Fatalf("ExchangeCode returned error: %v", err)
+	}
+	if gotProxyURL != "http://session.proxy:8080" {
+		t.Fatalf("ExchangeCode proxy = %q, want session proxy", gotProxyURL)
+	}
+}
+
 // =====================
 // 新增测试：validateTierID
 // =====================

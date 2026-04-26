@@ -17,6 +17,8 @@ type MonitorScheduler interface {
 	Schedule(m *ChannelMonitor)
 	// Unschedule 取消指定监控的定时任务（若存在）。
 	Unschedule(id int64)
+	// RunManual 通过与自动调度相同的 feature switch、in-flight 和分布式锁策略执行一次检测。
+	RunManual(ctx context.Context, id int64) ([]*CheckResult, error)
 }
 
 // monitorRunnerSvc 抽出 runner 实际依赖的两个 service 方法：
@@ -119,6 +121,9 @@ func (r *ChannelMonitorRunner) Start() {
 	defer cancel()
 	enabled, err := r.svc.ListEnabledMonitors(ctx)
 	if err != nil {
+		r.mu.Lock()
+		r.started = false
+		r.mu.Unlock()
 		slog.Error("channel_monitor: load enabled monitors failed at startup", "error", err)
 		return
 	}
@@ -310,6 +315,32 @@ func (r *ChannelMonitorRunner) runOne(parentCtx context.Context, id int64, name 
 		slog.Warn("channel_monitor: run check failed",
 			"monitor_id", id, "name", name, "error", err)
 	}
+}
+
+// RunManual 同步执行一次监控检测，复用自动调度的开关、in-flight 与分布式锁策略。
+func (r *ChannelMonitorRunner) RunManual(ctx context.Context, id int64) ([]*CheckResult, error) {
+	if r == nil || r.svc == nil {
+		return nil, ErrChannelMonitorNotFound
+	}
+	if r.settingService != nil && !r.settingService.GetChannelMonitorRuntime(ctx).Enabled {
+		return nil, ErrChannelMonitorDisabled
+	}
+	if !r.tryAcquireInFlight(id) {
+		return nil, ErrChannelMonitorRunInFlight
+	}
+	defer r.releaseInFlight(id)
+
+	release, acquired, err := r.acquireDistributedRunLock(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !acquired {
+		return nil, ErrChannelMonitorRunInFlight
+	}
+	if release != nil {
+		defer release()
+	}
+	return r.svc.RunCheck(ctx, id)
 }
 
 func (r *ChannelMonitorRunner) acquireDistributedRunLock(ctx context.Context, monitorID int64) (func(), bool, error) {
