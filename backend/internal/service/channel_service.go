@@ -142,6 +142,7 @@ const (
 type ChannelService struct {
 	repo                 ChannelRepository
 	groupRepo            GroupRepository
+	accountRepo          AccountRepository
 	authCacheInvalidator APIKeyAuthCacheInvalidator
 	pricingService       *PricingService // 用于「可用渠道」展示时回落到全局定价；可为 nil（测试场景）
 
@@ -160,6 +161,16 @@ func NewChannelService(repo ChannelRepository, groupRepo GroupRepository, authCa
 		pricingService:       pricingService,
 	}
 	return s
+}
+
+// SetAccountRepository injects the account repository for cold-path display helpers.
+// It is optional so older tests and focused service construction can keep using
+// NewChannelService without wiring account dependencies.
+func (s *ChannelService) SetAccountRepository(accountRepo AccountRepository) {
+	if s == nil {
+		return
+	}
+	s.accountRepo = accountRepo
 }
 
 // loadCache 加载或返回缓存的渠道数据

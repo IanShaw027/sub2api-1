@@ -55,7 +55,14 @@ globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserv
 
 // Vue Test Utils 全局配置
 config.global.stubs = {
-  // 可以在这里添加全局 stub
+  RouterLink: {
+    props: ['to'],
+    template: '<a :href="typeof to === \'string\' ? to : to?.path"><slot /></a>',
+  },
+  'router-link': {
+    props: ['to'],
+    template: '<a :href="typeof to === \'string\' ? to : to?.path"><slot /></a>',
+  },
 }
 
 // 设置全局测试超时

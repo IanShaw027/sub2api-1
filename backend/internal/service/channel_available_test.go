@@ -17,9 +17,23 @@ import (
 // listActiveErr 非 nil 时，ListActive 返回该错误用于错误传播测试。
 // listActiveCalls 记录调用次数，用于断言「失败短路时不再访问 groupRepo」等行为。
 type stubGroupRepoForAvailable struct {
+	GroupRepository
 	activeGroups    []Group
 	listActiveErr   error
 	listActiveCalls int
+}
+
+type stubAccountRepoForAvailable struct {
+	AccountRepository
+	accountsByGroupPlatform map[availableGroupPlatformKey][]Account
+	listErr                 error
+}
+
+func (s *stubAccountRepoForAvailable) ListSchedulableByGroupIDAndPlatform(ctx context.Context, groupID int64, platform string) ([]Account, error) {
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
+	return s.accountsByGroupPlatform[availableGroupPlatformKey{groupID: groupID, platform: platform}], nil
 }
 
 func (s *stubGroupRepoForAvailable) ListActive(ctx context.Context) ([]Group, error) {
@@ -30,24 +44,6 @@ func (s *stubGroupRepoForAvailable) ListActive(ctx context.Context) ([]Group, er
 	return s.activeGroups, nil
 }
 
-func (s *stubGroupRepoForAvailable) Create(ctx context.Context, group *Group) error { return nil }
-func (s *stubGroupRepoForAvailable) GetByID(ctx context.Context, id int64) (*Group, error) {
-	return nil, nil
-}
-func (s *stubGroupRepoForAvailable) GetByIDLite(ctx context.Context, id int64) (*Group, error) {
-	return nil, nil
-}
-func (s *stubGroupRepoForAvailable) Update(ctx context.Context, group *Group) error { return nil }
-func (s *stubGroupRepoForAvailable) Delete(ctx context.Context, id int64) error     { return nil }
-func (s *stubGroupRepoForAvailable) DeleteCascade(ctx context.Context, id int64) ([]int64, error) {
-	return nil, nil
-}
-func (s *stubGroupRepoForAvailable) List(ctx context.Context, params pagination.PaginationParams) ([]Group, *pagination.PaginationResult, error) {
-	return nil, nil, nil
-}
-func (s *stubGroupRepoForAvailable) ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, status, search string, isExclusive *bool) ([]Group, *pagination.PaginationResult, error) {
-	return nil, nil, nil
-}
 func (s *stubGroupRepoForAvailable) ListActiveByPlatform(ctx context.Context, platform string) ([]Group, error) {
 	return nil, nil
 }
@@ -84,6 +80,12 @@ func newAvailableChannelServiceWithPricing(channels []Channel, groupRepo GroupRe
 		listAllFn: func(ctx context.Context) ([]Channel, error) { return channels, nil },
 	}
 	return NewChannelService(repo, groupRepo, nil, pricingService)
+}
+
+func newAvailableChannelServiceWithAccounts(channels []Channel, groupRepo GroupRepository, accountRepo AccountRepository) *ChannelService {
+	svc := newAvailableChannelService(channels, groupRepo)
+	svc.SetAccountRepository(accountRepo)
+	return svc
 }
 
 func TestListAvailable_EmptyActiveGroups_NoGroupsAttached(t *testing.T) {
@@ -237,4 +239,77 @@ func TestListAvailable_FiltersPricingOnlyModelsBySchedulableCapabilities(t *test
 	require.Len(t, out, 1)
 	require.Len(t, out[0].SupportedModels, 1)
 	require.Equal(t, "schedulable-model", out[0].SupportedModels[0].Name)
+}
+
+func TestListAvailable_FiltersModelsBySchedulableAccountCapabilities(t *testing.T) {
+	channels := []Channel{{
+		ID:       1,
+		Name:     "account-capability",
+		Status:   StatusActive,
+		GroupIDs: []int64{1},
+		ModelMapping: map[string]map[string]string{
+			"anthropic": {
+				"supported-model":   "supported-model",
+				"unsupported-model": "unsupported-model",
+			},
+		},
+	}}
+	groupRepo := &stubGroupRepoForAvailable{
+		activeGroups: []Group{{ID: 1, Name: "g1", Platform: "anthropic"}},
+	}
+	accountRepo := &stubAccountRepoForAvailable{
+		accountsByGroupPlatform: map[availableGroupPlatformKey][]Account{
+			{groupID: 1, platform: "anthropic"}: {{
+				ID:          10,
+				Platform:    "anthropic",
+				Status:      StatusActive,
+				Schedulable: true,
+				Credentials: map[string]any{
+					"model_mapping": map[string]any{"supported-model": "supported-model"},
+				},
+			}},
+		},
+	}
+	svc := newAvailableChannelServiceWithAccounts(channels, groupRepo, accountRepo)
+
+	out, err := svc.ListAvailable(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.Len(t, out[0].SupportedModels, 1)
+	require.Equal(t, "supported-model", out[0].SupportedModels[0].Name)
+}
+
+func TestListAvailable_UnrestrictedSchedulableAccountPreservesChannelCapabilities(t *testing.T) {
+	channels := []Channel{{
+		ID:       1,
+		Name:     "unrestricted-account",
+		Status:   StatusActive,
+		GroupIDs: []int64{1},
+		ModelMapping: map[string]map[string]string{
+			"anthropic": {
+				"model-a": "model-a",
+				"model-b": "model-b",
+			},
+		},
+	}}
+	groupRepo := &stubGroupRepoForAvailable{
+		activeGroups: []Group{{ID: 1, Name: "g1", Platform: "anthropic"}},
+	}
+	accountRepo := &stubAccountRepoForAvailable{
+		accountsByGroupPlatform: map[availableGroupPlatformKey][]Account{
+			{groupID: 1, platform: "anthropic"}: {{
+				ID:          10,
+				Platform:    "anthropic",
+				Status:      StatusActive,
+				Schedulable: true,
+				Credentials: map[string]any{},
+			}},
+		},
+	}
+	svc := newAvailableChannelServiceWithAccounts(channels, groupRepo, accountRepo)
+
+	out, err := svc.ListAvailable(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.ElementsMatch(t, []string{"model-a", "model-b"}, []string{out[0].SupportedModels[0].Name, out[0].SupportedModels[1].Name})
 }

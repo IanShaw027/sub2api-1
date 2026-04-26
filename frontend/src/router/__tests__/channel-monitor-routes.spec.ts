@@ -36,6 +36,18 @@ vi.mock('@/composables/useNavigationLoading', () => ({
   }),
 }))
 
+
+vi.mock('@/i18n', () => ({
+  i18n: {
+    global: {
+      t: (key: string) => ({
+        'nav.channelStatus': 'Channel Monitor',
+        'admin.dashboard.title': 'Admin Dashboard',
+      }[key] ?? key),
+    },
+  },
+}))
+
 vi.mock('@/composables/useRoutePrefetch', () => ({
   useRoutePrefetch: () => ({
     triggerPrefetch: vi.fn(),

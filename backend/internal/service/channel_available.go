@@ -82,6 +82,10 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 		ch.normalizeBillingModelSource()
 
 		supported := filterCapabilityModelsForAvailable(ch.SupportedModels())
+		supported, err = s.filterAvailableModelsBySchedulableAccounts(ctx, groups, supported)
+		if err != nil {
+			return nil, err
+		}
 		s.fillGlobalPricingFallback(supported)
 
 		out = append(out, AvailableChannel{
@@ -100,6 +104,69 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
 	})
 	return out, nil
+}
+
+type availableGroupPlatformKey struct {
+	groupID  int64
+	platform string
+}
+
+// filterAvailableModelsBySchedulableAccounts intersects channel-advertised capabilities
+// with currently schedulable account capabilities for the active groups attached to
+// the channel. Accounts with no model_mapping are treated as unrestricted for that
+// platform, so they preserve the channel capability list instead of trying to
+// synthesize an infinite model catalog.
+func (s *ChannelService) filterAvailableModelsBySchedulableAccounts(ctx context.Context, groups []AvailableGroupRef, models []SupportedModel) ([]SupportedModel, error) {
+	if s.accountRepo == nil || len(groups) == 0 || len(models) == 0 {
+		return models, nil
+	}
+
+	accountsByKey := make(map[availableGroupPlatformKey][]Account, len(groups))
+	for _, group := range groups {
+		key := availableGroupPlatformKey{groupID: group.ID, platform: group.Platform}
+		if _, ok := accountsByKey[key]; ok {
+			continue
+		}
+		accounts, err := s.accountRepo.ListSchedulableByGroupIDAndPlatform(ctx, group.ID, group.Platform)
+		if err != nil {
+			return nil, fmt.Errorf("list schedulable accounts for available channel group %d platform %s: %w", group.ID, group.Platform, err)
+		}
+		accountsByKey[key] = accounts
+	}
+
+	out := make([]SupportedModel, 0, len(models))
+	for _, model := range models {
+		if schedulableAccountsSupportModel(groups, accountsByKey, model) {
+			out = append(out, model)
+		}
+	}
+	return out, nil
+}
+
+func schedulableAccountsSupportModel(groups []AvailableGroupRef, accountsByKey map[availableGroupPlatformKey][]Account, model SupportedModel) bool {
+	for _, group := range groups {
+		if group.Platform != model.Platform {
+			continue
+		}
+		accounts := accountsByKey[availableGroupPlatformKey{groupID: group.ID, platform: group.Platform}]
+		for i := range accounts {
+			if accountSupportsAvailableModel(&accounts[i], model.Name) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func accountSupportsAvailableModel(account *Account, modelName string) bool {
+	if account == nil || !account.IsSchedulable() {
+		return false
+	}
+	mapping := account.GetModelMapping()
+	if len(mapping) == 0 {
+		return true
+	}
+	return account.IsModelSupported(modelName)
 }
 
 // fillGlobalPricingFallback 对未命中渠道定价的支持模型，从全局 LiteLLM 数据合成一份
