@@ -6,7 +6,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"math"
+	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -143,6 +145,80 @@ func createPaymentFulfillmentOrder(t *testing.T, client *dbent.Client, status st
 	order, err := create.Save(ctx)
 	require.NoError(t, err)
 	return order
+}
+
+func TestExecuteBalanceFulfillmentRollsBackCreditWhenCompletionUpdateFails(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusPaid, payment.OrderTypeBalance)
+
+	svc := &PaymentService{entClient: client}
+
+	trigger := fmt.Sprintf(`
+		CREATE TRIGGER fail_balance_completion
+		BEFORE UPDATE OF status ON payment_orders
+		WHEN NEW.id = %d AND NEW.status = '%s'
+		BEGIN
+			SELECT RAISE(FAIL, 'forced completion failure');
+		END;
+	`, order.ID, OrderStatusCompleted)
+	_, err := client.ExecContext(ctx, trigger)
+	require.NoError(t, err)
+
+	err = svc.ExecuteBalanceFulfillment(ctx, order.ID)
+	require.Error(t, err)
+
+	gotOrder, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusFailed, gotOrder.Status)
+	require.NotNil(t, gotOrder.FailedAt)
+
+	gotUser, err := client.User.Get(ctx, order.UserID)
+	require.NoError(t, err)
+	require.Zero(t, gotUser.Balance)
+	require.Zero(t, gotUser.TotalRecharged)
+
+	codeCount, err := client.RedeemCode.Query().Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, codeCount)
+
+	successCount, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ("RECHARGE_SUCCESS")).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, successCount)
+}
+
+func TestConfirmPaymentRejectsStripeCurrencyMismatch(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusPending, payment.OrderTypeBalance)
+	_, err := client.PaymentOrder.UpdateOneID(order.ID).
+		SetPaymentType(payment.TypeStripe).
+		SetPaymentTradeNo("pi_currency_mismatch").
+		SetProviderKey(payment.TypeStripe).
+		SetProviderSnapshot(map[string]any{
+			"schema_version": 2,
+			"provider_key":   payment.TypeStripe,
+			"currency":       "CNY",
+		}).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{entClient: client}
+	err = svc.HandlePaymentNotification(ctx, &payment.PaymentNotification{
+		OrderID:  order.OutTradeNo,
+		TradeNo:  "pi_currency_mismatch",
+		Amount:   100,
+		Status:   payment.NotificationStatusSuccess,
+		Metadata: map[string]string{"currency": "usd"},
+	}, payment.TypeStripe)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "stripe currency mismatch")
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPending, reloaded.Status)
 }
 
 func TestHandlePaymentNotificationCancelledOrderDoesNotFulfill(t *testing.T) {
@@ -284,6 +360,38 @@ func TestExecuteSubscriptionFulfillmentRetryAfterClaimDoesNotExtendAgain(t *test
 		Count(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, claimCount)
+}
+
+func TestTryClaimSubscriptionFulfillmentAuditSkipsExistingSuccessSentinel(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusPaid, payment.OrderTypeSubscription)
+	svc := &PaymentService{entClient: client}
+
+	svc.writeAuditLog(ctx, order.ID, "SUBSCRIPTION_SUCCESS", "system", map[string]any{"status": "completed"})
+
+	claimed, err := svc.tryClaimSubscriptionFulfillmentAudit(ctx, order, *order.SubscriptionGroupID, *order.SubscriptionDays)
+	require.NoError(t, err)
+	require.False(t, claimed)
+
+	claimCount, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ("SUBSCRIPTION_FULFILLMENT_CLAIMED")).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, claimCount)
+}
+
+func TestSubscriptionFulfillmentClaimMigrationIncludesSubscriptionSentinels(t *testing.T) {
+	body, err := os.ReadFile("../../migrations/138_subscription_fulfillment_claim_unique_notx.sql")
+	require.NoError(t, err)
+	sql := string(body)
+	require.Contains(t, sql, "idx_payment_audit_logs_order_action_uniq")
+	require.Contains(t, sql, "SUBSCRIPTION_FULFILLMENT_CLAIMED")
+	require.Contains(t, sql, "SUBSCRIPTION_SUCCESS")
+	require.Contains(t, sql, "AFFILIATE_REBATE_APPLIED")
+	require.Contains(t, sql, "AFFILIATE_REBATE_SKIPPED")
+	require.Contains(t, sql, "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS")
+	require.Contains(t, sql, "DROP INDEX CONCURRENTLY IF EXISTS")
 }
 
 // ---------------------------------------------------------------------------

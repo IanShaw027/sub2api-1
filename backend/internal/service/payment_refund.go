@@ -162,7 +162,7 @@ func (s *PaymentService) RequestRefund(ctx context.Context, oid, uid int64, reas
 	nr := strings.TrimSpace(reason)
 	now := time.Now()
 	by := fmt.Sprintf("%d", uid)
-	c, err := s.entClient.PaymentOrder.Update().Where(paymentorder.IDEQ(oid), paymentorder.UserIDEQ(uid), paymentorder.StatusEQ(OrderStatusCompleted), paymentorder.OrderTypeEQ(payment.OrderTypeBalance)).SetStatus(OrderStatusRefundRequested).SetRefundRequestedAt(now).SetRefundRequestReason(nr).SetRefundRequestedBy(by).SetRefundAmount(o.Amount).Save(ctx)
+	c, err := s.entClient.PaymentOrder.Update().Where(paymentorder.IDEQ(oid), paymentorder.UserIDEQ(uid), paymentorder.StatusEQ(OrderStatusCompleted), paymentorder.OrderTypeEQ(payment.OrderTypeBalance)).SetStatus(OrderStatusRefundRequested).SetRefundRequestedAt(now).SetRefundRequestReason(nr).SetRefundRequestedBy(by).Save(ctx)
 	if err != nil {
 		return fmt.Errorf("update: %w", err)
 	}
@@ -316,37 +316,56 @@ func (s *PaymentService) ExecuteRefund(ctx context.Context, p *RefundPlan) (*Ref
 			p.SubDaysToDeduct = 0
 		}
 	}
-	if err := s.gwRefund(ctx, p); err != nil {
+	refundResp, err := s.gwRefund(ctx, p)
+	if err != nil {
 		return s.handleGwFail(ctx, p, err)
 	}
-	return s.markRefundOk(ctx, p)
+	return s.handleRefundProviderResponse(ctx, p, refundResp)
 }
 
-func (s *PaymentService) gwRefund(ctx context.Context, p *RefundPlan) error {
+func (s *PaymentService) gwRefund(ctx context.Context, p *RefundPlan) (*payment.RefundResponse, error) {
 	if p.Order.PaymentTradeNo == "" {
 		s.writeAuditLog(ctx, p.Order.ID, "REFUND_NO_TRADE_NO", "admin", map[string]any{"detail": "skipped"})
-		return nil
+		return &payment.RefundResponse{Status: payment.ProviderStatusSuccess}, nil
 	}
 
 	// Use the exact provider instance that created this order, not a random one
 	// from the registry. Each instance has its own merchant credentials.
 	prov, err := s.getRefundProvider(ctx, p.Order)
 	if err != nil {
-		return fmt.Errorf("get refund provider: %w", err)
+		return nil, fmt.Errorf("get refund provider: %w", err)
 	}
 	if err := validateProviderSnapshotMetadata(p.Order, prov.ProviderKey(), providerMerchantIdentityMetadata(prov)); err != nil {
 		s.writeAuditLog(ctx, p.Order.ID, "REFUND_PROVIDER_METADATA_MISMATCH", "admin", map[string]any{
 			"detail": err.Error(),
 		})
-		return err
+		return nil, err
 	}
-	_, err = prov.Refund(ctx, payment.RefundRequest{
+	refundResp, err := prov.Refund(ctx, payment.RefundRequest{
 		TradeNo: p.Order.PaymentTradeNo,
 		OrderID: p.Order.OutTradeNo,
 		Amount:  strconv.FormatFloat(p.GatewayAmount, 'f', 2, 64),
 		Reason:  p.Reason,
 	})
-	return err
+	return refundResp, err
+}
+
+func (s *PaymentService) handleRefundProviderResponse(ctx context.Context, p *RefundPlan, resp *payment.RefundResponse) (*RefundResult, error) {
+	status := ""
+	refundID := ""
+	if resp != nil {
+		status = strings.TrimSpace(strings.ToLower(resp.Status))
+		refundID = strings.TrimSpace(resp.RefundID)
+	}
+	if status == "" || status == payment.ProviderStatusSuccess {
+		return s.markRefundOk(ctx, p)
+	}
+	if status == payment.ProviderStatusPending {
+		s.restoreStatus(ctx, p)
+		s.writeAuditLog(ctx, p.OrderID, "REFUND_GATEWAY_PENDING", "admin", map[string]any{"refundID": refundID, "refundAmount": p.RefundAmount, "reason": p.Reason})
+		return &RefundResult{Success: false, Warning: "gateway refund is pending confirmation"}, nil
+	}
+	return s.handleGwFail(ctx, p, fmt.Errorf("gateway refund status: %s", status))
 }
 
 // getRefundProvider creates a provider using the order's original instance config.

@@ -290,6 +290,9 @@ func buildPaymentOrderProviderSnapshot(sel *payment.InstanceSelection, req Creat
 			snapshot["merchant_id"] = merchantID
 		}
 	}
+	if providerKey == payment.TypeStripe {
+		snapshot["currency"] = "CNY"
+	}
 
 	if len(snapshot) == 1 {
 		return nil

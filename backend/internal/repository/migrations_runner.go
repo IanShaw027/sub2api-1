@@ -53,6 +53,8 @@ const migrationsLockRetryInterval = 500 * time.Millisecond
 const nonTransactionalMigrationSuffix = "_notx.sql"
 const paymentOrdersOutTradeNoUniqueMigration = "120_enforce_payment_orders_out_trade_no_unique_notx.sql"
 const paymentOrdersOutTradeNoUniqueIndex = "paymentorder_out_trade_no_unique"
+const subscriptionFulfillmentClaimUniqueMigration = "138_subscription_fulfillment_claim_unique_notx.sql"
+const subscriptionFulfillmentClaimUniqueIndex = "idx_payment_audit_logs_order_action_uniq"
 
 type migrationChecksumCompatibilityRule struct {
 	fileChecksum       string
@@ -259,6 +261,8 @@ func prepareNonTransactionalMigration(ctx context.Context, db *sql.DB, name stri
 	switch name {
 	case paymentOrdersOutTradeNoUniqueMigration:
 		return preparePaymentOrdersOutTradeNoUniqueMigration(ctx, db)
+	case subscriptionFulfillmentClaimUniqueMigration:
+		return prepareInvalidIndexRetry(ctx, db, subscriptionFulfillmentClaimUniqueIndex)
 	default:
 		return nil
 	}
@@ -277,16 +281,20 @@ func preparePaymentOrdersOutTradeNoUniqueMigration(ctx context.Context, db *sql.
 		)
 	}
 
-	invalid, err := indexIsInvalid(ctx, db, paymentOrdersOutTradeNoUniqueIndex)
+	return prepareInvalidIndexRetry(ctx, db, paymentOrdersOutTradeNoUniqueIndex)
+}
+
+func prepareInvalidIndexRetry(ctx context.Context, db *sql.DB, indexName string) error {
+	invalid, err := indexIsInvalid(ctx, db, indexName)
 	if err != nil {
-		return fmt.Errorf("check invalid index %s: %w", paymentOrdersOutTradeNoUniqueIndex, err)
+		return fmt.Errorf("check invalid index %s: %w", indexName, err)
 	}
 	if !invalid {
 		return nil
 	}
 
-	if _, err := db.ExecContext(ctx, fmt.Sprintf("DROP INDEX CONCURRENTLY IF EXISTS %s", paymentOrdersOutTradeNoUniqueIndex)); err != nil {
-		return fmt.Errorf("drop invalid index %s: %w", paymentOrdersOutTradeNoUniqueIndex, err)
+	if _, err := db.ExecContext(ctx, fmt.Sprintf("DROP INDEX CONCURRENTLY IF EXISTS %s", indexName)); err != nil {
+		return fmt.Errorf("drop invalid index %s: %w", indexName, err)
 	}
 	return nil
 }

@@ -14,6 +14,8 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
+	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
@@ -283,6 +285,9 @@ func resolveRedeemAction(existing *RedeemCode, lookupErr error) redeemAction {
 }
 
 func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder) error {
+	if s.entClient != nil {
+		return s.doBalanceInTx(ctx, o)
+	}
 	// Idempotency: check if redeem code already exists (from a previous partial run)
 	existing, lookupErr := s.redeemService.GetByCode(ctx, o.RechargeCode)
 	action := resolveRedeemAction(existing, lookupErr)
@@ -307,6 +312,80 @@ func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder) e
 	return s.markCompleted(ctx, o, "RECHARGE_SUCCESS")
 }
 
+func (s *PaymentService) doBalanceInTx(ctx context.Context, o *dbent.PaymentOrder) error {
+	tx, err := s.entClient.Tx(ctx)
+	if err != nil {
+		return fmt.Errorf("begin balance fulfillment transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	txClient := tx.Client()
+	existing, lookupErr := txClient.RedeemCode.Query().Where(redeemcode.CodeEQ(o.RechargeCode)).Only(ctx)
+	if lookupErr != nil && !dbent.IsNotFound(lookupErr) {
+		return fmt.Errorf("get redeem code: %w", lookupErr)
+	}
+
+	if existing != nil && existing.Status == StatusUsed {
+		s.applyAffiliateRebateBestEffort(ctx, o)
+		if err := s.markCompletedWithClient(ctx, txClient, o, "RECHARGE_SUCCESS"); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}
+
+	if existing == nil {
+		existing, err = txClient.RedeemCode.Create().
+			SetCode(o.RechargeCode).
+			SetType(RedeemTypeBalance).
+			SetValue(o.Amount).
+			SetStatus(StatusUnused).
+			Save(ctx)
+		if err != nil {
+			return fmt.Errorf("create redeem code: %w", err)
+		}
+	}
+
+	now := time.Now()
+	affected, err := txClient.RedeemCode.Update().
+		Where(redeemcode.IDEQ(existing.ID), redeemcode.StatusEQ(StatusUnused)).
+		SetStatus(StatusUsed).
+		SetUsedBy(o.UserID).
+		SetUsedAt(now).
+		Save(ctx)
+	if err != nil {
+		return fmt.Errorf("mark code as used: %w", err)
+	}
+	if affected == 0 {
+		return ErrRedeemCodeUsed
+	}
+
+	userBalance, err := txClient.User.Query().Where(user.IDEQ(o.UserID)).Only(ctx)
+	if err != nil {
+		return fmt.Errorf("get user: %w", err)
+	}
+	amount := existing.Value
+	if amount < 0 && userBalance.Balance+amount < 0 {
+		amount = -userBalance.Balance
+	}
+	update := txClient.User.Update().Where(user.IDEQ(o.UserID)).AddBalance(amount)
+	if amount > 0 {
+		update = update.AddTotalRecharged(amount)
+	}
+	c, err := update.Save(ctx)
+	if err != nil {
+		return fmt.Errorf("update user balance: %w", err)
+	}
+	if c == 0 {
+		return ErrUserNotFound
+	}
+
+	s.applyAffiliateRebateBestEffort(ctx, o)
+	if err := s.markCompletedWithClient(ctx, txClient, o, "RECHARGE_SUCCESS"); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (s *PaymentService) applyAffiliateRebateBestEffort(ctx context.Context, o *dbent.PaymentOrder) {
 	if err := s.applyAffiliateRebateForOrder(ctx, o); err != nil {
 		slog.Error("affiliate rebate failed after balance fulfillment", "orderID", o.ID, "error", err)
@@ -314,12 +393,16 @@ func (s *PaymentService) applyAffiliateRebateBestEffort(ctx context.Context, o *
 }
 
 func (s *PaymentService) markCompleted(ctx context.Context, o *dbent.PaymentOrder, auditAction string) error {
+	return s.markCompletedWithClient(ctx, s.entClient, o, auditAction)
+}
+
+func (s *PaymentService) markCompletedWithClient(ctx context.Context, client *dbent.Client, o *dbent.PaymentOrder, auditAction string) error {
 	now := time.Now()
-	_, err := s.entClient.PaymentOrder.Update().Where(paymentorder.IDEQ(o.ID), paymentorder.StatusEQ(OrderStatusRecharging)).SetStatus(OrderStatusCompleted).SetCompletedAt(now).Save(ctx)
+	_, err := client.PaymentOrder.Update().Where(paymentorder.IDEQ(o.ID), paymentorder.StatusEQ(OrderStatusRecharging)).SetStatus(OrderStatusCompleted).SetCompletedAt(now).Save(ctx)
 	if err != nil {
 		return fmt.Errorf("mark completed: %w", err)
 	}
-	s.writeAuditLog(ctx, o.ID, auditAction, "system", map[string]any{
+	s.writeAuditLogWithClient(ctx, client, o.ID, auditAction, "system", map[string]any{
 		"rechargeCode":   o.RechargeCode,
 		"creditedAmount": o.Amount,
 		"payAmount":      o.PayAmount,
@@ -404,6 +487,9 @@ func (s *PaymentService) tryClaimSubscriptionFulfillmentAudit(ctx context.Contex
 	)
 	RETURNING id`, oid, string(detail))
 	if err != nil {
+		if isSubscriptionFulfillmentClaimConflict(err) {
+			return false, nil
+		}
 		return false, err
 	}
 	defer func() { _ = rows.Close() }()
@@ -418,6 +504,15 @@ func (s *PaymentService) tryClaimSubscriptionFulfillmentAudit(ctx context.Contex
 		return false, err
 	}
 	return true, nil
+}
+
+func isSubscriptionFulfillmentClaimConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unique") &&
+		(strings.Contains(msg, "payment_audit_logs") || strings.Contains(msg, "idx_payment_audit_logs_order_action_uniq"))
 }
 
 func (s *PaymentService) releaseSubscriptionFulfillmentClaim(ctx context.Context, orderID int64) {

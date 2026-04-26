@@ -147,6 +147,17 @@ func TestBuildPaymentOrderProviderSnapshot_IncludesAlipayMerchantIdentity(t *tes
 	require.NotContains(t, snapshot, "privateKey")
 }
 
+func TestBuildPaymentOrderProviderSnapshot_IncludesStripeCurrency(t *testing.T) {
+	t.Parallel()
+
+	snapshot := buildPaymentOrderProviderSnapshot(&payment.InstanceSelection{
+		InstanceID:  "77",
+		ProviderKey: payment.TypeStripe,
+	}, CreateOrderRequest{})
+
+	require.Equal(t, "CNY", snapshot["currency"])
+}
+
 func TestBuildPaymentOrderProviderSnapshot_IncludesEasyPayMerchantIdentity(t *testing.T) {
 	t.Parallel()
 

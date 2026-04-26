@@ -174,12 +174,18 @@ func parseStripePaymentIntent(event *stripe.Event, status string, rawBody string
 	if err := json.Unmarshal(event.Data.Raw, &pi); err != nil {
 		return nil, fmt.Errorf("stripe parse payment_intent: %w", err)
 	}
+	metadata := map[string]string{}
+	if currency := strings.TrimSpace(string(pi.Currency)); currency != "" {
+		metadata["currency"] = currency
+	}
+
 	return &payment.PaymentNotification{
-		TradeNo: pi.ID,
-		OrderID: pi.Metadata["orderId"],
-		Amount:  payment.FenToYuan(pi.Amount),
-		Status:  status,
-		RawData: rawBody,
+		TradeNo:  pi.ID,
+		OrderID:  pi.Metadata["orderId"],
+		Amount:   payment.FenToYuan(pi.Amount),
+		Status:   status,
+		RawData:  rawBody,
+		Metadata: metadata,
 	}, nil
 }
 

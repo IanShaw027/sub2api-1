@@ -50,5 +50,8 @@ func (PaymentAuditLog) Fields() []ent.Field {
 func (PaymentAuditLog) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("order_id"),
+		index.Fields("order_id", "action").
+			Unique().
+			Annotations(entsql.IndexWhere("action IN ('AFFILIATE_REBATE_APPLIED', 'AFFILIATE_REBATE_SKIPPED', 'SUBSCRIPTION_FULFILLMENT_CLAIMED', 'SUBSCRIPTION_SUCCESS')")),
 	}
 }

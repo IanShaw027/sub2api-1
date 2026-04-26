@@ -194,6 +194,48 @@ DROP INDEX CONCURRENTLY IF EXISTS paymentorder_out_trade_no;
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestApplyMigrationsFS_SubscriptionFulfillmentClaimUniqueMigration_DropsInvalidIndexBeforeRetry(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	prepareMigrationsBootstrapExpectations(mock)
+	mock.ExpectQuery("SELECT checksum FROM schema_migrations WHERE filename = \\$1").
+		WithArgs("138_subscription_fulfillment_claim_unique_notx.sql").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT EXISTS \\(").
+		WithArgs("idx_payment_audit_logs_order_action_uniq").
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectExec("DROP INDEX CONCURRENTLY IF EXISTS idx_payment_audit_logs_order_action_uniq").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("DROP INDEX CONCURRENTLY IF EXISTS idx_payment_audit_logs_order_action_uniq").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_payment_audit_logs_order_action_uniq").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("INSERT INTO schema_migrations \\(filename, checksum\\) VALUES \\(\\$1, \\$2\\)").
+		WithArgs("138_subscription_fulfillment_claim_unique_notx.sql", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("SELECT pg_advisory_unlock\\(\\$1\\)").
+		WithArgs(migrationsAdvisoryLockID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	fsys := fstest.MapFS{
+		"138_subscription_fulfillment_claim_unique_notx.sql": &fstest.MapFile{
+			Data: []byte(`
+DROP INDEX CONCURRENTLY IF EXISTS idx_payment_audit_logs_order_action_uniq;
+
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_payment_audit_logs_order_action_uniq
+    ON payment_audit_logs(order_id, action)
+    WHERE action IN ('AFFILIATE_REBATE_APPLIED', 'AFFILIATE_REBATE_SKIPPED', 'SUBSCRIPTION_FULFILLMENT_CLAIMED', 'SUBSCRIPTION_SUCCESS');
+`),
+		},
+	}
+
+	err = applyMigrationsFS(context.Background(), db, fsys)
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestApplyMigrationsFS_TransactionalMigration(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
