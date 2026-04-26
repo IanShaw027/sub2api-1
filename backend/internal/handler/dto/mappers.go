@@ -362,7 +362,7 @@ func AccountFromService(a *service.Account) *Account {
 		return nil
 	}
 	out := AccountFromServiceShallow(a)
-	out.Credentials = sanitizeAccountCredentialsForList(out.Credentials)
+	out.Credentials = sanitizeAccountCredentialsForList(a.Platform, out.Credentials)
 	out.Proxy = ProxyFromService(a.Proxy)
 	if len(a.AccountGroups) > 0 {
 		out.AccountGroups = make([]AccountGroup, 0, len(a.AccountGroups))
@@ -388,7 +388,7 @@ func AccountFromServiceList(a *service.Account) *Account {
 	return out
 }
 
-func sanitizeAccountCredentialsForList(credentials map[string]any) map[string]any {
+func sanitizeAccountCredentialsForList(platform string, credentials map[string]any) map[string]any {
 	if len(credentials) == 0 {
 		return credentials
 	}
@@ -402,6 +402,11 @@ func sanitizeAccountCredentialsForList(credentials map[string]any) map[string]an
 		"session_token": {},
 		"password":      {},
 		"cookie":        {},
+	}
+	if platform == service.PlatformKiro {
+		for _, key := range []string{"region", "auth_region", "api_region", "profile_arn", "machine_id"} {
+			redactKeys[key] = struct{}{}
+		}
 	}
 
 	filtered := make(map[string]any, len(credentials))

@@ -26,130 +26,25 @@
         <p class="input-hint">{{ t('admin.accounts.notesHint') }}</p>
       </div>
 
-      <div
-        v-if="account.platform === 'kiro' && account.type === 'oauth'"
-        class="space-y-4 rounded-lg border border-cyan-200 bg-cyan-50/60 p-4 dark:border-cyan-900/40 dark:bg-cyan-950/20"
-      >
-        <div class="flex items-center justify-between gap-4">
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.authMethodLabel') }}</label>
-            <p class="input-hint">{{ t('admin.accounts.kiro.authMethodHint') }}</p>
-          </div>
-          <select v-model="kiroAuthMethod" class="input w-36">
-            <option value="social">{{ t('admin.accounts.kiro.authMethodSocial') }}</option>
-            <option value="idc">{{ t('admin.accounts.kiro.authMethodIDC') }}</option>
-          </select>
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.accounts.kiro.refreshTokenLabel') }}</label>
-          <textarea
-            v-model="kiroRefreshToken"
-            rows="4"
-            class="input font-mono text-sm"
-            :placeholder="t('admin.accounts.kiro.refreshTokenPlaceholderEdit')"
-          />
-          <p class="input-hint">{{ t('admin.accounts.kiro.refreshTokenHintEdit') }}</p>
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.accounts.kiro.accessTokenLabel') }}</label>
-          <textarea
-            v-model="kiroAccessToken"
-            rows="3"
-            class="input font-mono text-sm"
-            :placeholder="t('admin.accounts.kiro.accessTokenPlaceholderEdit')"
-          />
-          <p class="input-hint">{{ t('admin.accounts.kiro.accessTokenHintEdit') }}</p>
-          <p class="input-hint">{{ t('admin.accounts.kiro.accessTokenAutoClearHintEdit') }}</p>
-        </div>
-        <div v-if="kiroAuthMethod === 'idc'" class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.clientIdLabel') }}</label>
-            <input v-model="kiroClientID" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.clientIdPlaceholder')" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.clientSecretLabel') }}</label>
-            <input
-              v-model="kiroClientSecret"
-              type="password"
-              class="input font-mono text-sm"
-              :placeholder="t('admin.accounts.kiro.clientSecretPlaceholderEdit')"
-            />
-          </div>
-        </div>
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <p class="md:col-span-2 text-sm text-cyan-800 dark:text-cyan-200">
-            Kiro version、system version、Node.js version 等运行参数由系统配置统一管理。
-          </p>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.expiresAtLabel') }}</label>
-            <input v-model="kiroExpiresAtInput" type="datetime-local" class="input" />
-            <p class="input-hint">{{ t('admin.accounts.kiro.expiresAtHintEdit') }}</p>
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.regionLabel') }}</label>
-            <input v-model="kiroRegion" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.regionPlaceholder')" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.authRegionLabel') }}</label>
-            <input v-model="kiroAuthRegion" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.optionalPlaceholder')" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.apiRegionLabel') }}</label>
-            <input v-model="kiroAPIRegion" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.optionalPlaceholder')" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.profileArnLabel') }}</label>
-            <input v-model="kiroProfileARN" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.optionalPlaceholder')" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.machineIdLabel') }}</label>
-            <input v-model="kiroMachineID" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.optionalPlaceholder')" />
-          </div>
-        </div>
-      </div>
-
       <!-- Kiro API Key fields -->
       <div
         v-if="account.platform === 'kiro' && account.type === 'apikey'"
         class="space-y-4 rounded-lg border border-cyan-200 bg-cyan-50/60 p-4 dark:border-cyan-900/40 dark:bg-cyan-950/20"
       >
-        <p class="text-sm text-cyan-800 dark:text-cyan-200">
-          Kiro version、system version、Node.js version 等运行参数由系统配置统一管理。
-        </p>
-        <div>
-          <label class="input-label">{{ t('admin.accounts.apiKey') }}</label>
-          <input
-            v-model="editApiKey"
-            type="password"
-            class="input font-mono"
-            autocomplete="new-password"
-            data-1p-ignore
-            data-lpignore="true"
-            data-bwignore="true"
-            :placeholder="t('admin.accounts.kiro.apiKeyPlaceholder')"
-          />
-          <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
-        </div>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.regionLabel') }}</label>
-            <input v-model="kiroRegion" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.regionPlaceholder')" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.authRegionLabel') }}</label>
-            <input v-model="kiroAuthRegion" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.optionalPlaceholder')" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.apiRegionLabel') }}</label>
-            <input v-model="kiroAPIRegion" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.optionalPlaceholder')" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.profileArnLabel') }}</label>
-            <input v-model="kiroProfileARN" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.optionalPlaceholder')" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.machineIdLabel') }}</label>
-            <input v-model="kiroMachineID" type="text" class="input font-mono text-sm" :placeholder="t('admin.accounts.kiro.optionalPlaceholder')" />
+          <div class="md:col-span-2">
+            <label class="input-label">{{ t('admin.accounts.apiKey') }}</label>
+            <input
+              v-model="editApiKey"
+              type="password"
+              class="input font-mono"
+              autocomplete="new-password"
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore="true"
+              :placeholder="t('admin.accounts.kiro.apiKeyPlaceholder')"
+            />
+            <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
           </div>
         </div>
       </div>
@@ -250,20 +145,28 @@
             </div>
           </div>
 
-          <div v-else class="mb-3 rounded-lg border border-dashed border-gray-300 p-4 text-center dark:border-dark-500">
-            <p class="text-sm text-gray-500 dark:text-gray-400">
-              {{ t('admin.accounts.noMappingsConfigured') }}
-            </p>
-          </div>
+          <button
+            type="button"
+            @click="addModelMapping"
+            class="mb-3 w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
+          >
+            <svg
+              class="mr-1 inline h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 4v16m8-8H4"
+              />
+            </svg>
+            {{ t('admin.accounts.addMapping') }}
+          </button>
 
           <div class="flex flex-wrap gap-2">
-            <button
-              type="button"
-              @click="addModelMapping"
-              class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-dark-500 dark:text-gray-300 dark:hover:bg-dark-700"
-            >
-              + {{ t('admin.accounts.addMapping') }}
-            </button>
             <button
               v-for="preset in presetMappings"
               :key="'kiro-preset-' + preset.from"
@@ -2275,17 +2178,6 @@ const getModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-mod
 const getOpenAICompactModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-openai-compact-model-mapping')
 const getAntigravityModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-antigravity-model-mapping')
 const getTempUnschedRuleKey = createStableObjectKeyResolver<TempUnschedRuleForm>('edit-temp-unsched-rule')
-const kiroAuthMethod = ref<'social' | 'idc'>('social')
-const kiroRefreshToken = ref('')
-const kiroAccessToken = ref('')
-const kiroExpiresAtInput = ref('')
-const kiroClientID = ref('')
-const kiroClientSecret = ref('')
-const kiroProfileARN = ref('')
-const kiroRegion = ref('us-east-1')
-const kiroAuthRegion = ref('')
-const kiroAPIRegion = ref('')
-const kiroMachineID = ref('')
 
 const showMixedChannelWarning = ref(false)
 const mixedChannelWarningDetails = ref<{ groupName: string; currentPlatform: string; otherPlatform: string } | null>(
@@ -2649,34 +2541,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   if (newAccount.platform === 'kiro') {
     const kiroCredentials = (newAccount.credentials || {}) as KiroCredentials & Record<string, unknown>
 
-    kiroAuthMethod.value = newAccount.type === 'oauth'
-      ? (kiroCredentials?.auth_method || 'social') as 'social' | 'idc'
-      : 'social'
-    kiroRefreshToken.value = ''
-    kiroAccessToken.value = ''
-    kiroExpiresAtInput.value = newAccount.type === 'oauth'
-      ? formatCredentialDateTimeLocal(kiroCredentials?.expires_at || '')
-      : ''
-    kiroClientID.value = ''
-    kiroClientSecret.value = ''
-    kiroProfileARN.value = kiroCredentials?.profile_arn || ''
-    kiroRegion.value = kiroCredentials?.region || 'us-east-1'
-    kiroAuthRegion.value = kiroCredentials?.auth_region || ''
-    kiroAPIRegion.value = kiroCredentials?.api_region || ''
-    kiroMachineID.value = kiroCredentials?.machine_id || ''
-    loadModelRestrictionFromCredentials(kiroCredentials)
-  } else {
-    kiroAuthMethod.value = 'social'
-    kiroRefreshToken.value = ''
-    kiroAccessToken.value = ''
-    kiroExpiresAtInput.value = ''
-    kiroClientID.value = ''
-    kiroClientSecret.value = ''
-    kiroProfileARN.value = ''
-    kiroRegion.value = 'us-east-1'
-    kiroAuthRegion.value = ''
-    kiroAPIRegion.value = ''
-    kiroMachineID.value = ''
+    loadModelRestrictionFromCredentials(kiroCredentials, { forceMappingMode: true })
   }
 
   // Initialize API Key fields for apikey type
@@ -2800,11 +2665,14 @@ watch(
   { immediate: true }
 )
 
-const loadModelRestrictionFromCredentials = (credentials?: Record<string, unknown>) => {
+const loadModelRestrictionFromCredentials = (
+  credentials?: Record<string, unknown>,
+  options: { forceMappingMode?: boolean } = {}
+) => {
   const existingMappings = credentials?.model_mapping as Record<string, string> | undefined
   if (existingMappings && typeof existingMappings === 'object') {
     const entries = Object.entries(existingMappings)
-    const isWhitelistMode = entries.length > 0 && entries.every(([from, to]) => from === to)
+    const isWhitelistMode = !options.forceMappingMode && entries.length > 0 && entries.every(([from, to]) => from === to)
 
     if (isWhitelistMode) {
       modelRestrictionMode.value = 'whitelist'
@@ -2991,6 +2859,38 @@ const applyTempUnschedConfig = (credentials: Record<string, unknown>) => {
 
   credentials.temp_unschedulable_enabled = true
   credentials.temp_unschedulable_rules = rules
+  return true
+}
+
+const applyTempUnschedPatch = (
+  credentials: Record<string, unknown>,
+  currentCredentials: Record<string, unknown>
+) => {
+  const currentTempUnschedEnabled = currentCredentials.temp_unschedulable_enabled === true
+  const currentTempUnschedRules = Array.isArray(currentCredentials.temp_unschedulable_rules)
+    ? currentCredentials.temp_unschedulable_rules
+    : []
+
+  if (!tempUnschedEnabled.value) {
+    if (currentTempUnschedEnabled || currentTempUnschedRules.length > 0) {
+      credentials.temp_unschedulable_enabled = false
+      credentials.temp_unschedulable_rules = []
+    }
+    return true
+  }
+
+  const nextTempUnschedRules = buildTempUnschedRules(tempUnschedRules.value)
+  if (nextTempUnschedRules.length === 0) {
+    appStore.showError(t('admin.accounts.tempUnschedulable.rulesInvalid'))
+    return false
+  }
+  if (
+    !currentTempUnschedEnabled ||
+    credentialsValueChanged(currentTempUnschedRules, nextTempUnschedRules)
+  ) {
+    credentials.temp_unschedulable_enabled = true
+    credentials.temp_unschedulable_rules = nextTempUnschedRules
+  }
   return true
 }
 
@@ -3204,35 +3104,6 @@ const ensureAntigravityMixedChannelConfirmed = async (onConfirm: () => Promise<v
 const formatDateTimeLocal = formatDateTimeLocalInput
 const parseDateTimeLocal = parseDateTimeLocalInput
 
-const parseCredentialExpiresAt = (value: unknown) => {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return new Date(value * 1000)
-  }
-  const trimmed = String(value ?? '').trim()
-	if (!trimmed) return new Date(Number.NaN)
-	if (/^\d+$/.test(trimmed)) {
-		return new Date(Number(trimmed) * 1000)
-  }
-  return new Date(trimmed)
-}
-
-const formatCredentialDateTimeLocal = (value: unknown) => {
-  const parsed = parseCredentialExpiresAt(value)
-  if (Number.isNaN(parsed.getTime())) return ''
-  const year = parsed.getFullYear()
-  const month = String(parsed.getMonth() + 1).padStart(2, '0')
-  const day = String(parsed.getDate()).padStart(2, '0')
-  const hours = String(parsed.getHours()).padStart(2, '0')
-  const minutes = String(parsed.getMinutes()).padStart(2, '0')
-  return `${year}-${month}-${day}T${hours}:${minutes}`
-}
-
-const readCredentialString = (credentials: Record<string, unknown>, key: string) => {
-  const value = credentials[key]
-  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
-  return typeof value === 'string' ? value.trim() : ''
-}
-
 const stableSerializeCredentialValue = (value: unknown): string => {
   if (Array.isArray(value)) {
     return `[${value.map((item) => stableSerializeCredentialValue(item)).join(',')}]`
@@ -3251,17 +3122,19 @@ const stableSerializeCredentialValue = (value: unknown): string => {
 const credentialsValueChanged = (current: unknown, next: unknown) =>
   stableSerializeCredentialValue(current) !== stableSerializeCredentialValue(next)
 
-const setKiroStringCredentialIfChanged = (
-  target: Record<string, unknown>,
-  currentCredentials: Record<string, unknown>,
-  key: string,
-  nextValue: string
-) => {
-  const normalizedNext = nextValue.trim()
-  const normalizedCurrent = readCredentialString(currentCredentials, key)
-  if (normalizedNext !== normalizedCurrent) {
-    target[key] = normalizedNext
+const validateModelMappingRows = () => {
+  if (modelRestrictionMode.value !== 'mapping') return true
+  const invalid = modelMappings.value.find((mapping) => {
+    const from = mapping.from.trim()
+    const to = mapping.to.trim()
+    if (!from && !to) return false
+    return !from || !to || !isValidWildcardPattern(from) || to.includes('*')
+  })
+  if (invalid) {
+    appStore.showError(t('admin.accounts.invalidModelMapping'))
+    return false
   }
+  return true
 }
 
 // Methods
@@ -3303,6 +3176,9 @@ const handleSubmit = async () => {
     appStore.showError(t('admin.accounts.pleaseSelectStatus'))
     return
   }
+  if (!validateModelMappingRows()) {
+    return
+  }
 
   const updatePayload: UpdateAccountRequest = { ...form }
   try {
@@ -3323,59 +3199,6 @@ const handleSubmit = async () => {
     if (props.account.platform === 'kiro' && props.account.type === 'oauth') {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
       const newCredentials: Record<string, unknown> = {}
-      const refreshTokenInput = kiroRefreshToken.value.trim()
-      const clientIDInput = kiroClientID.value.trim()
-      const clientSecretInput = kiroClientSecret.value.trim()
-      const currentAuthMethod = readCredentialString(currentCredentials, 'auth_method') || 'social'
-      const authMethodChanged = kiroAuthMethod.value !== currentAuthMethod
-
-      if (
-        kiroAuthMethod.value === 'idc' &&
-        authMethodChanged &&
-        (!clientIDInput || !clientSecretInput)
-      ) {
-        appStore.showError(t('admin.accounts.kiro.idcClientRequired'))
-        return
-      }
-
-      const expiresAt = kiroExpiresAtInput.value.trim()
-        ? new Date(kiroExpiresAtInput.value)
-        : null
-      if (expiresAt && Number.isNaN(expiresAt.getTime())) {
-        appStore.showError(t('admin.accounts.kiro.expiresAtInvalid'))
-        return
-      }
-
-      if (refreshTokenInput) {
-        newCredentials.refresh_token = refreshTokenInput
-      }
-      const accessTokenInput = kiroAccessToken.value.trim()
-      if (accessTokenInput) {
-        newCredentials.access_token = accessTokenInput
-      }
-      if (authMethodChanged) {
-        newCredentials.auth_method = kiroAuthMethod.value
-      }
-
-      const nextRegion = kiroRegion.value.trim() || 'us-east-1'
-      const currentRegion = readCredentialString(currentCredentials, 'region') || 'us-east-1'
-      if (nextRegion !== currentRegion) {
-        newCredentials.region = nextRegion
-      }
-
-      if (kiroAuthMethod.value === 'idc') {
-        if (clientIDInput && clientIDInput !== readCredentialString(currentCredentials, 'client_id')) {
-          newCredentials.client_id = clientIDInput
-        }
-        if (clientSecretInput) {
-          newCredentials.client_secret = clientSecretInput
-        }
-      }
-
-      setKiroStringCredentialIfChanged(newCredentials, currentCredentials, 'profile_arn', kiroProfileARN.value)
-      setKiroStringCredentialIfChanged(newCredentials, currentCredentials, 'auth_region', kiroAuthRegion.value)
-      setKiroStringCredentialIfChanged(newCredentials, currentCredentials, 'api_region', kiroAPIRegion.value)
-      setKiroStringCredentialIfChanged(newCredentials, currentCredentials, 'machine_id', kiroMachineID.value)
 
       const currentInterceptWarmup = currentCredentials.intercept_warmup_requests === true
       if (interceptWarmupRequests.value !== currentInterceptWarmup) {
@@ -3406,16 +3229,6 @@ const handleSubmit = async () => {
         }
       }
 
-      if (expiresAt) {
-        const currentExpiresAt = readCredentialString(currentCredentials, 'expires_at')
-        const currentExpiresAtMs = currentExpiresAt ? parseCredentialExpiresAt(currentExpiresAt).getTime() : null
-        if (currentExpiresAtMs !== expiresAt.getTime()) {
-          newCredentials.expires_at = expiresAt.toISOString()
-        }
-      } else if (readCredentialString(currentCredentials, 'expires_at')) {
-        newCredentials.expires_at = null
-      }
-
       const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
       const currentModelMapping = currentCredentials.model_mapping as Record<string, string> | undefined
       if (modelMapping) {
@@ -3436,21 +3249,9 @@ const handleSubmit = async () => {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
       const newCredentials: Record<string, unknown> = {}
 
-      const apiKeyInput = editApiKey.value.trim()
-      if (apiKeyInput) {
-        newCredentials.api_key = apiKeyInput
+      if (editApiKey.value.trim()) {
+        newCredentials.api_key = editApiKey.value.trim()
       }
-
-      const nextRegion = kiroRegion.value.trim() || 'us-east-1'
-      const currentRegion = readCredentialString(currentCredentials, 'region') || 'us-east-1'
-      if (nextRegion !== currentRegion) {
-        newCredentials.region = nextRegion
-      }
-
-      setKiroStringCredentialIfChanged(newCredentials, currentCredentials, 'auth_region', kiroAuthRegion.value)
-      setKiroStringCredentialIfChanged(newCredentials, currentCredentials, 'api_region', kiroAPIRegion.value)
-      setKiroStringCredentialIfChanged(newCredentials, currentCredentials, 'profile_arn', kiroProfileARN.value)
-      setKiroStringCredentialIfChanged(newCredentials, currentCredentials, 'machine_id', kiroMachineID.value)
 
       const currentInterceptWarmup = currentCredentials.intercept_warmup_requests === true
       if (interceptWarmupRequests.value !== currentInterceptWarmup) {
@@ -3630,7 +3431,7 @@ const handleSubmit = async () => {
       }
 
       updatePayload.credentials = newCredentials
-    } else {
+    } else if (!(props.account.platform === 'openai' && props.account.type === 'oauth')) {
       // For oauth/setup-token types, only update intercept_warmup_requests if changed
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
       const newCredentials: Record<string, unknown> = { ...currentCredentials }
@@ -3645,30 +3446,42 @@ const handleSubmit = async () => {
 
     // OpenAI OAuth: persist model mapping to credentials
     if (props.account.platform === 'openai' && props.account.type === 'oauth') {
-      const currentCredentials = (updatePayload.credentials as Record<string, unknown>) ||
-        ((props.account.credentials as Record<string, unknown>) || {})
-      const newCredentials: Record<string, unknown> = { ...currentCredentials }
+      const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
+      const newCredentials: Record<string, unknown> = {}
       const shouldApplyModelMapping = !openaiPassthroughEnabled.value
+
+      const currentInterceptWarmup = currentCredentials.intercept_warmup_requests === true
+      if (interceptWarmupRequests.value !== currentInterceptWarmup) {
+        newCredentials.intercept_warmup_requests = interceptWarmupRequests.value
+      }
+      if (!applyTempUnschedPatch(newCredentials, currentCredentials)) {
+        return
+      }
 
       if (shouldApplyModelMapping) {
         const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
         if (modelMapping) {
-          newCredentials.model_mapping = modelMapping
-        } else {
-          delete newCredentials.model_mapping
+          if (credentialsValueChanged(currentCredentials.model_mapping || {}, modelMapping)) {
+            newCredentials.model_mapping = modelMapping
+          }
+        } else if (currentCredentials.model_mapping && Object.keys(currentCredentials.model_mapping as Record<string, unknown>).length > 0) {
+          newCredentials.model_mapping = {}
         }
-      } else if (currentCredentials.model_mapping) {
-        // 透传模式保留现有映射
-        newCredentials.model_mapping = currentCredentials.model_mapping
       }
       const compactModelMapping = buildModelMappingObject('mapping', [], openAICompactModelMappings.value)
       if (compactModelMapping) {
-        newCredentials.compact_model_mapping = compactModelMapping
-      } else {
-        delete newCredentials.compact_model_mapping
+        if (credentialsValueChanged(currentCredentials.compact_model_mapping || {}, compactModelMapping)) {
+          newCredentials.compact_model_mapping = compactModelMapping
+        }
+      } else if (currentCredentials.compact_model_mapping && Object.keys(currentCredentials.compact_model_mapping as Record<string, unknown>).length > 0) {
+        newCredentials.compact_model_mapping = {}
       }
 
-      updatePayload.credentials = newCredentials
+      if (Object.keys(newCredentials).length > 0) {
+        updatePayload.credentials = newCredentials
+      } else {
+        delete updatePayload.credentials
+      }
     }
 
     // Antigravity: persist model mapping to credentials (applies to all antigravity types)

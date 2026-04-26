@@ -290,6 +290,12 @@ describe('EditAccountModal', () => {
     expect(wrapper.text()).not.toContain('admin.accounts.kiro.kiroVersionLabel')
     expect(wrapper.text()).not.toContain('admin.accounts.kiro.systemVersionLabel')
     expect(wrapper.text()).not.toContain('admin.accounts.kiro.nodeVersionLabel')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.refreshTokenLabel')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.accessTokenLabel')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.clientSecretLabel')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.expiresAtLabel')
+    expect((wrapper.get('input[placeholder="admin.accounts.requestModel"]').element as HTMLInputElement).value).toBe('claude-sonnet-4')
+    expect((wrapper.get('input[placeholder="admin.accounts.actualModel"]').element as HTMLInputElement).value).toBe('claude-sonnet-4')
 
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
 
@@ -344,7 +350,7 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toEqual({})
   })
 
-  it('updates changed Kiro API key metadata without resending hidden api_key credentials', async () => {
+  it('updates changed Kiro API key credentials and metadata', async () => {
     const account = {
       id: 4,
       name: 'Kiro API Key',
@@ -397,15 +403,16 @@ describe('EditAccountModal', () => {
     await wrapper.setProps({ show: true })
 
     expect(wrapper.text()).not.toContain('admin.accounts.baseUrl')
-    await wrapper.get('input[placeholder="admin.accounts.kiro.regionPlaceholder"]').setValue('us-east-2')
+    const apiKeyInput = wrapper.get('input[placeholder="admin.accounts.kiro.apiKeyPlaceholder"]')
+    await apiKeyInput.setValue('kiro-new-key')
+    expect(wrapper.find('input[placeholder="admin.accounts.kiro.regionPlaceholder"]').exists()).toBe(false)
 
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
 
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toEqual({
-      region: 'us-east-2'
+      api_key: 'kiro-new-key'
     })
-    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('api_key')
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('base_url')
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toEqual({
       quota_limit: 100
@@ -446,18 +453,16 @@ describe('EditAccountModal', () => {
 
     const wrapper = mountModal(account)
     await wrapper.setProps({ show: true })
-    await wrapper.get('input[placeholder="admin.accounts.kiro.regionPlaceholder"]').setValue('eu-west-1')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.refreshTokenLabel')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.clientSecretLabel')
+    expect(wrapper.find('input[placeholder="admin.accounts.kiro.regionPlaceholder"]').exists()).toBe(false)
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
 
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
-    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toEqual({
-      region: 'eu-west-1'
-    })
-    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('refresh_token')
-    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('client_secret')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toBeUndefined()
   })
 
-  it('sends null when clearing Kiro OAuth expires_at', async () => {
+  it('does not expose or mutate Kiro OAuth authentication credentials', async () => {
     const account = {
       id: 7,
       name: 'Kiro OAuth',
@@ -466,6 +471,9 @@ describe('EditAccountModal', () => {
       type: 'oauth',
       credentials: {
         refresh_token: 'rt-test',
+        access_token: 'at-test',
+        client_id: 'client-id',
+        client_secret: 'client-secret',
         expires_at: '2026-05-01T12:30:00Z',
         region: 'us-east-1',
         auth_method: 'social'
@@ -493,93 +501,12 @@ describe('EditAccountModal', () => {
 
     const wrapper = mountModal(account)
     await wrapper.setProps({ show: true })
-    await wrapper.get('input[type="datetime-local"]').setValue('')
-    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
-
-    expect(updateAccountMock).toHaveBeenCalledTimes(1)
-    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toEqual({
-      expires_at: null
-    })
-  })
-
-  it('does not clear Kiro OAuth Unix-second expires_at when saved unchanged', async () => {
-    const account = {
-      id: 8,
-      name: 'Kiro OAuth',
-      notes: '',
-      platform: 'kiro',
-      type: 'oauth',
-      credentials: {
-        refresh_token: 'rt-test',
-        expires_at: '1777638600',
-        region: 'us-east-1',
-        auth_method: 'social'
-      },
-      extra: {},
-      proxy_id: null,
-      concurrency: 1,
-      priority: 1,
-      rate_multiplier: 1,
-      status: 'active',
-      group_ids: [],
-      expires_at: null,
-      auto_pause_on_expired: false
-    } as any
-
-    updateAccountMock.mockReset()
-    checkMixedChannelRiskMock.mockReset()
-    getSettingsMock.mockReset()
-    getWebSearchEmulationConfigMock.mockReset()
-    listTlsFingerprintProfilesMock.mockReset()
-    getSettingsMock.mockResolvedValue({})
-    getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
-    listTlsFingerprintProfilesMock.mockResolvedValue([])
-    updateAccountMock.mockResolvedValue(account)
-
-    const wrapper = mountModal(account)
-    await wrapper.setProps({ show: true })
-    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
-
-    expect(updateAccountMock).toHaveBeenCalledTimes(1)
-    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toBeUndefined()
-  })
-
-  it('does not clear Kiro OAuth numeric Unix-second expires_at when saved unchanged', async () => {
-    const account = {
-      id: 9,
-      name: 'Kiro OAuth',
-      notes: '',
-      platform: 'kiro',
-      type: 'oauth',
-      credentials: {
-        refresh_token: 'rt-test',
-        expires_at: 1777638600,
-        region: 'us-east-1',
-        auth_method: 'social'
-      },
-      extra: {},
-      proxy_id: null,
-      concurrency: 1,
-      priority: 1,
-      rate_multiplier: 1,
-      status: 'active',
-      group_ids: [],
-      expires_at: null,
-      auto_pause_on_expired: false
-    } as any
-
-    updateAccountMock.mockReset()
-    checkMixedChannelRiskMock.mockReset()
-    getSettingsMock.mockReset()
-    getWebSearchEmulationConfigMock.mockReset()
-    listTlsFingerprintProfilesMock.mockReset()
-    getSettingsMock.mockResolvedValue({})
-    getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
-    listTlsFingerprintProfilesMock.mockResolvedValue([])
-    updateAccountMock.mockResolvedValue(account)
-
-    const wrapper = mountModal(account)
-    await wrapper.setProps({ show: true })
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.authManagedByReauth')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.refreshTokenLabel')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.accessTokenLabel')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.clientIdLabel')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.clientSecretLabel')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.expiresAtLabel')
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
 
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
@@ -611,6 +538,45 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.compact_model_mapping).toEqual({
       'gpt-5.4': 'gpt-5.4-openai-compact'
     })
+  })
+
+  it('submits only an OpenAI OAuth credential patch when details are sanitized', async () => {
+    const account = buildAccount()
+    account.platform = 'openai'
+    account.type = 'oauth'
+    account.credentials = {
+      email: 'user@example.com',
+      id_token: 'redacted-detail-id-token',
+      model_mapping: {
+        'gpt-5.2': 'gpt-5.2'
+      }
+    }
+
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    getSettingsMock.mockReset()
+    getWebSearchEmulationConfigMock.mockReset()
+    listTlsFingerprintProfilesMock.mockReset()
+    getSettingsMock.mockResolvedValue({})
+    getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
+    listTlsFingerprintProfilesMock.mockResolvedValue([])
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+    await wrapper.get('[data-testid="rewrite-to-snapshot"]').trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toEqual({
+      model_mapping: {
+        'gpt-5.2-2025-12-11': 'gpt-5.2-2025-12-11'
+      }
+    })
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('email')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('id_token')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('access_token')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('refresh_token')
   })
 
   it('updates the OpenAI compact status label from current form state', async () => {

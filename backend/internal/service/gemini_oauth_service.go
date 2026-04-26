@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,6 +40,8 @@ const (
 )
 
 const (
+	googleOAuthUserInfoURL = "https://www.googleapis.com/oauth2/v3/userinfo"
+
 	GB = 1024 * 1024 * 1024
 	TB = 1024 * GB
 
@@ -209,6 +212,7 @@ type GeminiTokenInfo struct {
 	TokenType    string         `json:"token_type"`
 	Scope        string         `json:"scope,omitempty"`
 	ProjectID    string         `json:"project_id,omitempty"`
+	Email        string         `json:"email,omitempty"`
 	OAuthType    string         `json:"oauth_type,omitempty"` // "code_assist" 或 "ai_studio"
 	TierID       string         `json:"tier_id,omitempty"`    // Canonical tier id (e.g. google_one_free, gcp_standard, aistudio_free)
 	Extra        map[string]any `json:"extra,omitempty"`      // Drive metadata
@@ -509,6 +513,8 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 	sessionProjectID := strings.TrimSpace(session.ProjectID)
 	s.sessionStore.Delete(input.SessionID)
 
+	email := s.extractEmailFromTokenResponse(ctx, tokenResp, proxyURL)
+
 	// 计算过期时间：减去 5 分钟安全时间窗口（考虑网络延迟和时钟偏差）
 	// 同时设置下界保护，防止 expires_in 过小导致过去时间（引发刷新风暴）
 	const safetyWindow = 300 // 5 minutes
@@ -631,6 +637,7 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 				ExpiresAt:    expiresAt,
 				Scope:        tokenResp.Scope,
 				ProjectID:    projectID,
+				Email:        email,
 				TierID:       tierID,
 				OAuthType:    oauthType,
 				Extra: map[string]any{
@@ -665,6 +672,7 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 		ExpiresAt:    expiresAt,
 		Scope:        tokenResp.Scope,
 		ProjectID:    projectID,
+		Email:        email,
 		TierID:       tierID,
 		OAuthType:    oauthType,
 	}
@@ -703,6 +711,7 @@ func (s *GeminiOAuthService) RefreshToken(ctx context.Context, oauthType, refres
 				ExpiresIn:    tokenResp.ExpiresIn,
 				ExpiresAt:    expiresAt,
 				Scope:        tokenResp.Scope,
+				Email:        s.extractEmailFromTokenResponse(ctx, tokenResp, proxyURL),
 			}, nil
 		}
 
@@ -786,6 +795,10 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 	}
 
 	tokenInfo.OAuthType = oauthType
+
+	if existingEmail := strings.TrimSpace(account.GetCredential("email")); existingEmail != "" && tokenInfo.Email == "" {
+		tokenInfo.Email = existingEmail
+	}
 
 	// Preserve account's project_id when present.
 	existingProjectID := strings.TrimSpace(account.GetCredential("project_id"))
@@ -894,6 +907,9 @@ func (s *GeminiOAuthService) BuildAccountCredentials(tokenInfo *GeminiTokenInfo)
 	if tokenInfo.ProjectID != "" {
 		creds["project_id"] = tokenInfo.ProjectID
 	}
+	if tokenInfo.Email != "" {
+		creds["email"] = tokenInfo.Email
+	}
 	if tokenInfo.TierID != "" {
 		// Validate tier_id before storing
 		if err := validateTierID(tokenInfo.TierID); err == nil {
@@ -918,6 +934,105 @@ func (s *GeminiOAuthService) BuildAccountCredentials(tokenInfo *GeminiTokenInfo)
 
 func (s *GeminiOAuthService) Stop() {
 	s.sessionStore.Stop()
+}
+
+func (s *GeminiOAuthService) extractEmailFromTokenResponse(ctx context.Context, tokenResp *geminicli.TokenResponse, proxyURL string) string {
+	if tokenResp == nil {
+		return ""
+	}
+	if email := extractEmailFromGeminiIDToken(tokenResp.IDToken); email != "" {
+		return email
+	}
+	if !geminiTokenScopeHasUserInfoEmail(tokenResp.Scope) {
+		return ""
+	}
+	email, err := fetchGeminiUserInfoEmail(ctx, tokenResp.AccessToken, proxyURL)
+	if err != nil {
+		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] WARNING: Failed to fetch userinfo email: %v", err)
+		return ""
+	}
+	return email
+}
+
+func geminiTokenScopeHasUserInfoEmail(scope string) bool {
+	for _, part := range strings.Fields(scope) {
+		if part == "email" || part == "https://www.googleapis.com/auth/userinfo.email" {
+			return true
+		}
+	}
+	return false
+}
+
+func extractEmailFromGeminiIDToken(idToken string) string {
+	idToken = strings.TrimSpace(idToken)
+	if idToken == "" {
+		return ""
+	}
+	parts := strings.Split(idToken, ".")
+	if len(parts) < 2 {
+		return ""
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ""
+	}
+	var claims struct {
+		Email         string `json:"email"`
+		EmailVerified any    `json:"email_verified"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(claims.Email)
+}
+
+func fetchGeminiUserInfoEmail(ctx context.Context, accessToken, proxyURL string) (string, error) {
+	accessToken = strings.TrimSpace(accessToken)
+	if accessToken == "" {
+		return "", errors.New("access token is empty")
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, googleOAuthUserInfoURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create userinfo request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("User-Agent", geminicli.GeminiCLIUserAgent)
+
+	client, err := httpclient.GetClient(httpclient.Options{
+		ProxyURL:           strings.TrimSpace(proxyURL),
+		Timeout:            10 * time.Second,
+		ValidateResolvedIP: true,
+	})
+	if err != nil {
+		return "", fmt.Errorf("create http client failed: %w", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("userinfo request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read userinfo response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("userinfo HTTP %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var info struct {
+		Email string `json:"email"`
+	}
+	if err := json.Unmarshal(bodyBytes, &info); err != nil {
+		return "", fmt.Errorf("failed to parse userinfo response: %w", err)
+	}
+	email := strings.TrimSpace(info.Email)
+	if email == "" {
+		return "", errors.New("userinfo response missing email")
+	}
+	return email, nil
 }
 
 func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, proxyURL string) (string, string, error) {

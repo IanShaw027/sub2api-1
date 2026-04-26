@@ -17,6 +17,11 @@ type dataResponse struct {
 	Data dataPayload `json:"data"`
 }
 
+type dataImportResponse struct {
+	Code int              `json:"code"`
+	Data DataImportResult `json:"data"`
+}
+
 type dataPayload struct {
 	Type     string        `json:"type"`
 	Version  int           `json:"version"`
@@ -275,4 +280,148 @@ func TestImportDataReusesProxyAndSkipsDefaultGroup(t *testing.T) {
 	require.Len(t, adminSvc.createdProxies, 0)
 	require.Len(t, adminSvc.createdAccounts, 1)
 	require.True(t, adminSvc.createdAccounts[0].SkipDefaultGroupBind)
+}
+
+func TestImportDataDedupIgnoreSkipsExistingAccount(t *testing.T) {
+	router, adminSvc := setupAccountDataRouter()
+	adminSvc.accounts = []service.Account{
+		{
+			ID:          10,
+			Name:        "existing",
+			Platform:    service.PlatformOpenAI,
+			Type:        service.AccountTypeOAuth,
+			Credentials: map[string]any{"refresh_token": "rt-1"},
+		},
+	}
+
+	dataPayload := map[string]any{
+		"data": map[string]any{
+			"type":    dataType,
+			"version": dataVersion,
+			"proxies": []map[string]any{},
+			"accounts": []map[string]any{
+				{
+					"name":        "imported",
+					"platform":    service.PlatformOpenAI,
+					"type":        service.AccountTypeOAuth,
+					"credentials": map[string]any{"refresh_token": "rt-1", "access_token": "new-at"},
+					"concurrency": 3,
+					"priority":    50,
+				},
+			},
+		},
+		"skip_default_group_bind": true,
+		"dedup_mode":              dataImportDedupModeIgnore,
+	}
+
+	body, _ := json.Marshal(dataPayload)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/data", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dataImportResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, 1, resp.Data.AccountSkipped)
+	require.Len(t, adminSvc.createdAccounts, 0)
+	require.Len(t, adminSvc.updatedAccounts, 0)
+}
+
+func TestImportDataDedupOverwriteUpdatesExistingAccount(t *testing.T) {
+	router, adminSvc := setupAccountDataRouter()
+	adminSvc.accounts = []service.Account{
+		{
+			ID:          10,
+			Name:        "existing",
+			Platform:    service.PlatformKiro,
+			Type:        service.AccountTypeOAuth,
+			Credentials: map[string]any{"profile_id": "PROFILE1", "refresh_token": "old-rt"},
+		},
+	}
+
+	dataPayload := map[string]any{
+		"data": map[string]any{
+			"type":    dataType,
+			"version": dataVersion,
+			"proxies": []map[string]any{},
+			"accounts": []map[string]any{
+				{
+					"name":        "imported",
+					"platform":    service.PlatformKiro,
+					"type":        service.AccountTypeOAuth,
+					"credentials": map[string]any{"profile_id": "PROFILE1", "refresh_token": "new-rt"},
+					"extra":       map[string]any{"plan_name": "Pro"},
+					"concurrency": 5,
+					"priority":    60,
+				},
+			},
+		},
+		"skip_default_group_bind": true,
+		"dedup_mode":              dataImportDedupModeOverwrite,
+	}
+
+	body, _ := json.Marshal(dataPayload)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/data", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dataImportResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, 1, resp.Data.AccountUpdated)
+	require.Len(t, adminSvc.createdAccounts, 0)
+	require.Len(t, adminSvc.updatedAccounts, 1)
+	require.Equal(t, int64(10), adminSvc.updatedAccountIDs[0])
+	require.Equal(t, "imported", adminSvc.updatedAccounts[0].Name)
+	require.Equal(t, service.AccountTypeOAuth, adminSvc.updatedAccounts[0].Type)
+	require.Equal(t, map[string]any{"profile_id": "PROFILE1", "refresh_token": "new-rt"}, adminSvc.updatedAccounts[0].Credentials)
+	require.Equal(t, map[string]any{"plan_name": "Pro"}, adminSvc.updatedAccounts[0].Extra)
+}
+
+func TestImportDataDedupOverwriteDoesNotClearMissingOptionalFields(t *testing.T) {
+	router, adminSvc := setupAccountDataRouter()
+	adminSvc.accounts = []service.Account{
+		{
+			ID:          10,
+			Name:        "existing",
+			Platform:    service.PlatformOpenAI,
+			Type:        service.AccountTypeOAuth,
+			Credentials: map[string]any{"chatgpt_account_id": "acct-1"},
+			Extra:       map[string]any{"keep": "existing"},
+		},
+	}
+
+	dataPayload := map[string]any{
+		"data": map[string]any{
+			"type":    dataType,
+			"version": dataVersion,
+			"proxies": []map[string]any{},
+			"accounts": []map[string]any{
+				{
+					"name":        "imported",
+					"platform":    service.PlatformOpenAI,
+					"type":        service.AccountTypeOAuth,
+					"credentials": map[string]any{"chatgpt_account_id": "acct-1", "access_token": "new-at"},
+					"concurrency": 5,
+					"priority":    60,
+				},
+			},
+		},
+		"skip_default_group_bind": true,
+		"dedup_mode":              dataImportDedupModeOverwrite,
+	}
+
+	body, _ := json.Marshal(dataPayload)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/data", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	require.Len(t, adminSvc.updatedAccounts, 1)
+	require.Nil(t, adminSvc.updatedAccounts[0].ProxyID)
+	require.Nil(t, adminSvc.updatedAccounts[0].ExpiresAt)
+	require.Nil(t, adminSvc.updatedAccounts[0].Extra)
 }

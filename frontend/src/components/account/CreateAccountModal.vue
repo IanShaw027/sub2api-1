@@ -52,7 +52,7 @@
           type="text"
           :required="!isOAuthFlow"
           class="input"
-          :placeholder="t('admin.accounts.enterAccountName')"
+          :placeholder="accountNamePlaceholder"
           data-tour="account-form-name"
         />
       </div>
@@ -3295,6 +3295,12 @@ const apiKeyHint = computed(() => {
   if (form.platform === 'gemini') return t('admin.accounts.gemini.apiKeyHint')
   return t('admin.accounts.apiKeyHint')
 })
+
+const accountNamePlaceholder = computed(() =>
+  isOAuthFlow.value
+    ? t('admin.accounts.accountNameOAuthPlaceholder')
+    : t('admin.accounts.accountNameRequiredPlaceholder')
+)
 
 interface Props {
   show: boolean

@@ -18,10 +18,13 @@ import (
 )
 
 const (
-	dataType       = "sub2api-data"
-	legacyDataType = "sub2api-bundle"
-	dataVersion    = 1
-	dataPageCap    = 1000
+	dataType                     = "sub2api-data"
+	legacyDataType               = "sub2api-bundle"
+	dataVersion                  = 1
+	dataPageCap                  = 1000
+	dataImportDedupModeNone      = "none"
+	dataImportDedupModeOverwrite = "overwrite"
+	dataImportDedupModeIgnore    = "ignore"
 )
 
 type DataPayload struct {
@@ -61,6 +64,7 @@ type DataAccount struct {
 type DataImportRequest struct {
 	Data                 DataPayload `json:"data"`
 	SkipDefaultGroupBind *bool       `json:"skip_default_group_bind"`
+	DedupMode            string      `json:"dedup_mode"`
 }
 
 type DataImportResult struct {
@@ -68,6 +72,8 @@ type DataImportResult struct {
 	ProxyReused    int               `json:"proxy_reused"`
 	ProxyFailed    int               `json:"proxy_failed"`
 	AccountCreated int               `json:"account_created"`
+	AccountUpdated int               `json:"account_updated"`
+	AccountSkipped int               `json:"account_skipped"`
 	AccountFailed  int               `json:"account_failed"`
 	Errors         []DataImportError `json:"errors,omitempty"`
 }
@@ -194,6 +200,7 @@ func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) 
 	if req.SkipDefaultGroupBind != nil {
 		skipDefaultGroupBind = *req.SkipDefaultGroupBind
 	}
+	dedupMode := normalizeDataImportDedupMode(req.DedupMode)
 
 	dataPayload := req.Data
 	result := DataImportResult{}
@@ -270,6 +277,18 @@ func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) 
 
 	// 收集需要异步设置隐私的 Antigravity OAuth 账号
 	var privacyAccounts []*service.Account
+	accountDedupIndex := map[string]int64{}
+	if dedupMode != dataImportDedupModeNone {
+		existingAccounts, err := h.listAccountsFiltered(ctx, "", "", "", "", 0, "", "created_at", "asc")
+		if err != nil {
+			return result, err
+		}
+		for i := range existingAccounts {
+			if key, ok := buildDataAccountDedupKey(existingAccounts[i].Platform, existingAccounts[i].Type, existingAccounts[i].Credentials); ok {
+				accountDedupIndex[key] = existingAccounts[i].ID
+			}
+		}
+	}
 
 	for i := range dataPayload.Accounts {
 		item := dataPayload.Accounts[i]
@@ -300,6 +319,50 @@ func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) 
 		}
 
 		enrichCredentialsFromIDToken(&item)
+		dedupKey, hasDedupKey := buildDataAccountDedupKey(item.Platform, item.Type, item.Credentials)
+		if dedupMode != dataImportDedupModeNone && hasDedupKey {
+			if existingID, exists := accountDedupIndex[dedupKey]; exists {
+				if dedupMode == dataImportDedupModeIgnore {
+					result.AccountSkipped++
+					continue
+				}
+				proxyIDForUpdate := proxyID
+				if item.ProxyKey == nil || strings.TrimSpace(*item.ProxyKey) == "" {
+					proxyIDForUpdate = nil
+				}
+				expiresAtForUpdate := item.ExpiresAt
+				extraForUpdate := item.Extra
+				updated, updateErr := h.adminService.UpdateAccount(ctx, existingID, &service.UpdateAccountInput{
+					Name:                  item.Name,
+					Notes:                 item.Notes,
+					Type:                  item.Type,
+					Credentials:           item.Credentials,
+					Extra:                 extraForUpdate,
+					ProxyID:               proxyIDForUpdate,
+					Concurrency:           &item.Concurrency,
+					Priority:              &item.Priority,
+					RateMultiplier:        item.RateMultiplier,
+					GroupIDs:              nil,
+					ExpiresAt:             expiresAtForUpdate,
+					AutoPauseOnExpired:    item.AutoPauseOnExpired,
+					SkipMixedChannelCheck: true,
+				})
+				if updateErr != nil {
+					result.AccountFailed++
+					result.Errors = append(result.Errors, DataImportError{
+						Kind:    "account",
+						Name:    item.Name,
+						Message: updateErr.Error(),
+					})
+					continue
+				}
+				if updated != nil && updated.Platform == service.PlatformAntigravity && updated.Type == service.AccountTypeOAuth {
+					privacyAccounts = append(privacyAccounts, updated)
+				}
+				result.AccountUpdated++
+				continue
+			}
+		}
 
 		accountInput := &service.CreateAccountInput{
 			Name:                 item.Name,
@@ -332,6 +395,9 @@ func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) 
 		if created.Platform == service.PlatformAntigravity && created.Type == service.AccountTypeOAuth {
 			privacyAccounts = append(privacyAccounts, created)
 		}
+		if dedupMode != dataImportDedupModeNone && hasDedupKey {
+			accountDedupIndex[dedupKey] = created.ID
+		}
 		result.AccountCreated++
 	}
 
@@ -353,6 +419,113 @@ func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) 
 	}
 
 	return result, nil
+}
+
+func normalizeDataImportDedupMode(mode string) string {
+	switch strings.TrimSpace(strings.ToLower(mode)) {
+	case "", dataImportDedupModeNone:
+		return dataImportDedupModeNone
+	case dataImportDedupModeOverwrite:
+		return dataImportDedupModeOverwrite
+	case dataImportDedupModeIgnore:
+		return dataImportDedupModeIgnore
+	default:
+		return dataImportDedupModeNone
+	}
+}
+
+func buildDataAccountDedupKey(platform, accountType string, credentials map[string]any) (string, bool) {
+	platform = strings.ToLower(strings.TrimSpace(platform))
+	accountType = strings.ToLower(strings.TrimSpace(accountType))
+	if platform == "" || accountType == "" || len(credentials) == 0 {
+		return "", false
+	}
+	switch accountType {
+	case service.AccountTypeOAuth, service.AccountTypeSetupToken:
+		return buildOAuthDataAccountDedupKey(platform, accountType, credentials)
+	case service.AccountTypeAPIKey, service.AccountTypeUpstream:
+		return buildAPIKeyDataAccountDedupKey(platform, accountType, credentials)
+	case service.AccountTypeBedrock:
+		return buildBedrockDataAccountDedupKey(platform, accountType, credentials)
+	default:
+		return "", false
+	}
+}
+
+func buildOAuthDataAccountDedupKey(platform, accountType string, credentials map[string]any) (string, bool) {
+	if platform == service.PlatformKiro {
+		if value := credentialString(credentials, "profile_id"); value != "" {
+			return strings.Join([]string{platform, accountType, "profile_id", value}, "|"), true
+		}
+	}
+	for _, key := range []string{
+		"profile_id",
+		"chatgpt_account_id",
+		"account_uuid",
+		"user_uuid",
+		"chatgpt_user_id",
+		"user_id",
+		"subject",
+		"refresh_token",
+	} {
+		if value := credentialString(credentials, key); value != "" && !strings.HasPrefix(value, "arn:") {
+			return strings.Join([]string{platform, accountType, key, value}, "|"), true
+		}
+	}
+	if email := credentialString(credentials, "email"); email != "" {
+		for _, detailKey := range []string{"profile_id", "project_id", "workspace_id", "organization_id", "org_uuid", "tier_id"} {
+			if detail := credentialString(credentials, detailKey); detail != "" {
+				return strings.Join([]string{platform, accountType, "email+" + detailKey, email, detail}, "|"), true
+			}
+		}
+		return strings.Join([]string{platform, accountType, "email", email}, "|"), true
+	}
+	if email := credentialString(credentials, "email_address"); email != "" {
+		for _, detailKey := range []string{"account_uuid", "org_uuid", "organization_id"} {
+			if detail := credentialString(credentials, detailKey); detail != "" {
+				return strings.Join([]string{platform, accountType, "email_address+" + detailKey, email, detail}, "|"), true
+			}
+		}
+		return strings.Join([]string{platform, accountType, "email_address", email}, "|"), true
+	}
+	return "", false
+}
+
+func buildAPIKeyDataAccountDedupKey(platform, accountType string, credentials map[string]any) (string, bool) {
+	apiKey := credentialString(credentials, "api_key")
+	if apiKey == "" {
+		return "", false
+	}
+	if baseURL := credentialString(credentials, "base_url"); baseURL != "" {
+		return strings.Join([]string{platform, accountType, "base_url+api_key", baseURL, apiKey}, "|"), true
+	}
+	return strings.Join([]string{platform, accountType, "api_key", apiKey}, "|"), true
+}
+
+func buildBedrockDataAccountDedupKey(platform, accountType string, credentials map[string]any) (string, bool) {
+	if apiKey := credentialString(credentials, "api_key"); apiKey != "" {
+		return strings.Join([]string{platform, accountType, "api_key", apiKey}, "|"), true
+	}
+	accessKeyID := credentialString(credentials, "aws_access_key_id")
+	if accessKeyID == "" {
+		return "", false
+	}
+	region := credentialString(credentials, "aws_region")
+	return strings.Join([]string{platform, accountType, "aws_access_key_id+region", accessKeyID, region}, "|"), true
+}
+
+func credentialString(credentials map[string]any, key string) string {
+	if credentials == nil {
+		return ""
+	}
+	switch value := credentials[key].(type) {
+	case string:
+		return strings.TrimSpace(value)
+	case fmt.Stringer:
+		return strings.TrimSpace(value.String())
+	default:
+		return ""
+	}
 }
 
 func (h *AccountHandler) listAllProxies(ctx context.Context) ([]service.Proxy, error) {

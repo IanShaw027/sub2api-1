@@ -267,6 +267,9 @@ func mergeKiroCredentialsForAccountUpdate(accountType string, existing, incoming
 	merged := cloneCredentials(existing)
 	dropStaleKiroCredentialsForType(merged, accountType, incoming)
 	for key, value := range incoming {
+		if shouldIgnoreKiroCredentialPatch(accountType, key) {
+			continue
+		}
 		if shouldDeleteKiroCredentialOnUpdate(key, value) {
 			delete(merged, key)
 			continue
@@ -274,6 +277,70 @@ func mergeKiroCredentialsForAccountUpdate(accountType string, existing, incoming
 		merged[key] = value
 	}
 	return merged
+}
+
+func shouldIgnoreKiroCredentialPatch(accountType, key string) bool {
+	if accountType != AccountTypeOAuth {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "access_token", "refresh_token", "expires_at", "client_id", "client_secret", "auth_method":
+		return true
+	default:
+		return false
+	}
+}
+
+func mergeAccountCredentialsForAccountUpdate(platform, accountType string, existing, incoming map[string]any) map[string]any {
+	if platform == PlatformKiro {
+		return mergeKiroCredentialsForAccountUpdate(accountType, existing, incoming)
+	}
+
+	merged := cloneCredentials(existing)
+	for key, value := range incoming {
+		if shouldIgnoreSensitiveCredentialPatch(key, value) {
+			continue
+		}
+		if shouldDeleteCredentialOnUpdate(key, value) {
+			delete(merged, key)
+			continue
+		}
+		merged[key] = value
+	}
+	return merged
+}
+
+func shouldIgnoreSensitiveCredentialPatch(key string, value any) bool {
+	if !isSensitiveCredentialKey(key) {
+		return false
+	}
+	return credentialPatchValueIsEmpty(value)
+}
+
+func shouldDeleteCredentialOnUpdate(key string, value any) bool {
+	if isSensitiveCredentialKey(key) {
+		return false
+	}
+	return value == nil
+}
+
+func isSensitiveCredentialKey(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "access_token", "refresh_token", "api_key", "client_secret", "client_id", "session_token", "password", "cookie":
+		return true
+	default:
+		return false
+	}
+}
+
+func credentialPatchValueIsEmpty(value any) bool {
+	if value == nil {
+		return true
+	}
+	if text, ok := value.(string); ok {
+		return strings.TrimSpace(text) == ""
+	}
+	return false
 }
 
 func dropStaleKiroCredentialsForType(credentials map[string]any, accountType string, incoming map[string]any) {
@@ -502,10 +569,7 @@ func (s *AccountService) Update(ctx context.Context, id int64, req UpdateAccount
 
 	if req.Credentials != nil {
 		nextCredentials := *req.Credentials
-		if account.Platform == PlatformKiro {
-			nextCredentials = mergeKiroCredentialsForAccountUpdate(account.Type, account.Credentials, nextCredentials)
-		}
-		account.Credentials = nextCredentials
+		account.Credentials = mergeAccountCredentialsForAccountUpdate(account.Platform, account.Type, account.Credentials, nextCredentials)
 	}
 
 	if req.Extra != nil {

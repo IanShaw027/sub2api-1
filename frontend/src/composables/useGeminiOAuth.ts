@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
+import { formatOAuthAccountName } from '@/utils/oauthAccountName'
 import type {
   GeminiAuthUrlRequest,
   GeminiExchangeCodeRequest,
@@ -15,6 +16,7 @@ export interface GeminiTokenInfo {
   scope?: string
   expires_at?: number | string
   project_id?: string
+  email?: string
   oauth_type?: string
   tier_id?: string
   extra?: Record<string, unknown>
@@ -142,6 +144,7 @@ export function useGeminiOAuth() {
       expires_at: expiresAt,
       scope: tokenInfo.scope,
       project_id: tokenInfo.project_id,
+      email: tokenInfo.email,
       oauth_type: tokenInfo.oauth_type,
       tier_id: tokenInfo.tier_id
     })
@@ -164,6 +167,9 @@ export function useGeminiOAuth() {
     if (tokenInfo.tier_id) {
       extra.subscription_type = tokenInfo.tier_id
     }
+    if (tokenInfo.email) {
+      extra.email = tokenInfo.email
+    }
     if (tokenInfo.oauth_type) {
       extra.oauth_type = tokenInfo.oauth_type
     }
@@ -171,16 +177,17 @@ export function useGeminiOAuth() {
   }
 
   const buildAccountName = (tokenInfo: GeminiTokenInfo, fallbackName?: string): string => {
-    if (fallbackName?.trim()) {
-      return fallbackName.trim()
-    }
-    if (tokenInfo.tier_id?.trim()) {
-      return `Gemini ${tokenInfo.tier_id.trim()}`
-    }
-    if (tokenInfo.oauth_type?.trim()) {
-      return `Gemini ${tokenInfo.oauth_type.trim()}`
-    }
-    return 'Gemini OAuth Account'
+    const primary = tokenInfo.email || tokenInfo.project_id
+    return formatOAuthAccountName({
+      manualName: fallbackName,
+      primary,
+      details: tokenInfo.email
+        ? [tokenInfo.project_id, tokenInfo.tier_id, tokenInfo.oauth_type]
+        : [tokenInfo.tier_id, tokenInfo.oauth_type],
+      platformLabel: 'Gemini',
+      fallbackDetail: tokenInfo.tier_id || tokenInfo.oauth_type,
+      defaultName: 'Gemini OAuth Account'
+    })
   }
 
   const getCapabilities = async (): Promise<GeminiOAuthCapabilities | null> => {

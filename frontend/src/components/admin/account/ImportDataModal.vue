@@ -17,6 +17,16 @@
       </div>
 
       <div>
+        <label class="input-label">{{ t('admin.accounts.dataImportDedupMode') }}</label>
+        <select v-model="dedupMode" class="input">
+          <option value="none">{{ t('admin.accounts.dataImportDedupNone') }}</option>
+          <option value="overwrite">{{ t('admin.accounts.dataImportDedupOverwrite') }}</option>
+          <option value="ignore">{{ t('admin.accounts.dataImportDedupIgnore') }}</option>
+        </select>
+        <p class="input-hint">{{ t('admin.accounts.dataImportDedupHint') }}</p>
+      </div>
+
+      <div>
         <label class="input-label">{{ t('admin.accounts.dataImportFile') }}</label>
         <div
           class="flex items-center justify-between gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-3 dark:border-dark-600 dark:bg-dark-800"
@@ -110,6 +120,7 @@ const appStore = useAppStore()
 const importing = ref(false)
 const file = ref<File | null>(null)
 const result = ref<AdminDataImportResult | null>(null)
+const dedupMode = ref<'none' | 'overwrite' | 'ignore'>('none')
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const fileName = computed(() => file.value?.name || '')
@@ -122,6 +133,7 @@ watch(
     if (open) {
       file.value = null
       result.value = null
+      dedupMode.value = 'none'
       if (fileInput.value) {
         fileInput.value.value = ''
       }
@@ -174,13 +186,16 @@ const handleImport = async () => {
 
     const res = await adminAPI.accounts.importData({
       data: dataPayload,
-      skip_default_group_bind: true
+      skip_default_group_bind: true,
+      dedup_mode: dedupMode.value
     })
 
     result.value = res
 
     const msgParams: Record<string, unknown> = {
       account_created: res.account_created,
+      account_updated: res.account_updated ?? 0,
+      account_skipped: res.account_skipped ?? 0,
       account_failed: res.account_failed,
       proxy_created: res.proxy_created,
       proxy_reused: res.proxy_reused,

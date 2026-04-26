@@ -46,3 +46,15 @@ describe('useAntigravityOAuth.buildCredentials', () => {
     expect(credentials).not.toHaveProperty('refresh_token')
   })
 })
+
+describe('useAntigravityOAuth.buildAccountName', () => {
+  it('uses manual name first and otherwise formats email with project or plan context', () => {
+    const oauth = useAntigravityOAuth()
+
+    expect(oauth.buildAccountName({ email: 'user@example.com', project_id: 'project-1' }, ' Manual ')).toBe('Manual')
+    expect(oauth.buildAccountName({ email: 'user@example.com', project_id: 'project-1' })).toBe('user@example.com (project-1)')
+    expect(oauth.buildAccountName({ email: 'user@example.com', plan_type: 'Pro' })).toBe('user@example.com (Pro)')
+    expect(oauth.buildAccountName({ plan_type: 'Pro' })).toBe('Antigravity Pro')
+    expect(oauth.buildAccountName({})).toBe('Antigravity OAuth Account')
+  })
+})

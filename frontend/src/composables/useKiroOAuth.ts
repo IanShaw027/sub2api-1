@@ -4,6 +4,7 @@ import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
 import type { KiroAccountExtra, KiroCredentials } from '@/types'
 import type { KiroAuthUrlRequest, KiroExchangeCallbackRequest, KiroTokenInfo } from '@/api/admin/kiro'
+import { formatOAuthAccountName } from '@/utils/oauthAccountName'
 
 const KIRO_RUNTIME_EXTRA_KEYS = ['kiro_version', 'kiro_commit', 'system_version', 'node_version'] as const
 
@@ -138,6 +139,7 @@ export function useKiroOAuth() {
     if (tokenInfo.auth_region) credentials.auth_region = tokenInfo.auth_region
     if (tokenInfo.api_region) credentials.api_region = tokenInfo.api_region
     if (tokenInfo.profile_arn) credentials.profile_arn = tokenInfo.profile_arn
+    if (tokenInfo.profile_id) credentials.profile_id = tokenInfo.profile_id
     if (tokenInfo.user_id) credentials.user_id = tokenInfo.user_id
     if (tokenInfo.email) credentials.email = tokenInfo.email
     if (tokenInfo.login_provider) credentials.login_provider = tokenInfo.login_provider
@@ -168,6 +170,7 @@ export function useKiroOAuth() {
     const extra: Record<string, unknown> = stripKiroRuntimeExtra(overrides)
 
     if (tokenInfo.email) extra.email = tokenInfo.email
+    if (tokenInfo.profile_id) extra.profile_id = tokenInfo.profile_id
     if (tokenInfo.name) extra.name = tokenInfo.name
     if (tokenInfo.login_provider) extra.login_provider = tokenInfo.login_provider
     if (tokenInfo.subscription_type || tokenInfo.plan_name) {
@@ -182,28 +185,23 @@ export function useKiroOAuth() {
   }
 
   const buildAccountName = (tokenInfo: KiroTokenInfo, fallbackName?: string): string => {
-    const explicitName = fallbackName?.trim()
-    if (explicitName) {
-      return explicitName
-    }
-
-    const identityName = tokenInfo.name?.trim() || tokenInfo.email?.trim() || tokenInfo.user_id?.trim()
-    if (identityName) {
-      return identityName
-    }
-
     const subscriptionLabel = (
       tokenInfo.subscription_type?.trim() ||
       tokenInfo.plan_name?.trim() ||
       tokenInfo.plan_tier?.trim()
     )
-    if (subscriptionLabel) {
-      return subscriptionLabel.toLowerCase().startsWith('kiro')
-        ? subscriptionLabel
-        : `Kiro ${subscriptionLabel}`
-    }
+    const normalizedSubscription = subscriptionLabel?.toLowerCase().startsWith('kiro')
+      ? subscriptionLabel
+      : subscriptionLabel
 
-    return ''
+    return formatOAuthAccountName({
+      manualName: fallbackName,
+      primary: tokenInfo.email || tokenInfo.name || tokenInfo.profile_id || tokenInfo.user_id,
+      details: [tokenInfo.profile_id],
+      platformLabel: 'Kiro',
+      fallbackDetail: normalizedSubscription,
+      defaultName: ''
+    })
   }
 
   return {

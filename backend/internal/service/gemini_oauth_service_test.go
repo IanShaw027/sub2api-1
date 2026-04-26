@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net/url"
 	"strings"
@@ -557,6 +558,7 @@ func TestGeminiOAuthService_BuildAccountCredentials(t *testing.T) {
 			TokenType:    "Bearer",
 			Scope:        "openid email",
 			ProjectID:    "my-project",
+			Email:        "user@example.com",
 			TierID:       "gcp_standard",
 			OAuthType:    "code_assist",
 			Extra: map[string]any{
@@ -571,6 +573,7 @@ func TestGeminiOAuthService_BuildAccountCredentials(t *testing.T) {
 		assertCredStr(t, creds, "token_type", "Bearer")
 		assertCredStr(t, creds, "scope", "openid email")
 		assertCredStr(t, creds, "project_id", "my-project")
+		assertCredStr(t, creds, "email", "user@example.com")
 		assertCredStr(t, creds, "tier_id", "gcp_standard")
 		assertCredStr(t, creds, "oauth_type", "code_assist")
 		assertCredStr(t, creds, "expires_at", "1700000000")
@@ -593,7 +596,7 @@ func TestGeminiOAuthService_BuildAccountCredentials(t *testing.T) {
 		assertCredStr(t, creds, "expires_at", "1700000000")
 
 		// 可选字段不应存在
-		for _, key := range []string{"refresh_token", "token_type", "scope", "project_id", "tier_id", "oauth_type"} {
+		for _, key := range []string{"refresh_token", "token_type", "scope", "project_id", "email", "tier_id", "oauth_type"} {
 			if _, ok := creds[key]; ok {
 				t.Fatalf("不应包含空字段 %q", key)
 			}
@@ -645,6 +648,29 @@ func TestGeminiOAuthService_BuildAccountCredentials(t *testing.T) {
 			t.Fatalf("creds 字段数量不匹配: got=%d want=3, keys=%v", len(creds), credKeys(creds))
 		}
 	})
+}
+
+func TestExtractEmailFromGeminiIDToken(t *testing.T) {
+	t.Parallel()
+
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`))
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"email":"user@example.com","email_verified":true}`))
+
+	got := extractEmailFromGeminiIDToken(header + "." + payload + ".")
+	if got != "user@example.com" {
+		t.Fatalf("email mismatch: got=%q", got)
+	}
+}
+
+func TestGeminiTokenScopeHasUserInfoEmail(t *testing.T) {
+	t.Parallel()
+
+	if !geminiTokenScopeHasUserInfoEmail("https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email") {
+		t.Fatal("expected userinfo.email scope to be detected")
+	}
+	if geminiTokenScopeHasUserInfoEmail("https://www.googleapis.com/auth/cloud-platform") {
+		t.Fatal("did not expect userinfo.email scope")
+	}
 }
 
 // =====================
@@ -1038,6 +1064,7 @@ func TestGeminiOAuthService_RefreshAccountToken_AIStudio(t *testing.T) {
 			"refresh_token": "old-rt",
 			"oauth_type":    "ai_studio",
 			"tier_id":       "aistudio_free",
+			"email":         "existing@example.com",
 		},
 	}
 
@@ -1050,6 +1077,9 @@ func TestGeminiOAuthService_RefreshAccountToken_AIStudio(t *testing.T) {
 	}
 	if info.OAuthType != "ai_studio" {
 		t.Fatalf("OAuthType 不匹配: got=%q", info.OAuthType)
+	}
+	if info.Email != "existing@example.com" {
+		t.Fatalf("Email 应保留旧值: got=%q", info.Email)
 	}
 }
 

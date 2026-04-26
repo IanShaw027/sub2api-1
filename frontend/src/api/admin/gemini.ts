@@ -40,6 +40,7 @@ export type GeminiTokenInfo = {
   expires_in?: number
   expires_at?: number
   project_id?: string
+  email?: string
   oauth_type?: string
   tier_id?: string
   extra?: Record<string, unknown>

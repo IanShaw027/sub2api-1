@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
 import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
+import { formatOAuthAccountName } from '@/utils/oauthAccountName'
 
 export interface OpenAITokenInfo {
   access_token?: string
@@ -247,17 +248,14 @@ export function useOpenAIOAuth() {
   }
 
   const buildAccountName = (tokenInfo: OpenAITokenInfo, fallbackName?: string): string => {
-    const manualName = fallbackName?.trim()
-    if (manualName) {
-      return manualName
-    }
-
-    const baseName = tokenInfo.name?.trim() || tokenInfo.email?.trim() || 'OpenAI OAuth Account'
-    const workspaceName = tokenInfo.workspace_name?.trim()
-    if (!workspaceName) {
-      return baseName
-    }
-    return `[${workspaceName}]${baseName}`
+    return formatOAuthAccountName({
+      manualName: fallbackName,
+      primary: tokenInfo.email || tokenInfo.name,
+      details: [tokenInfo.workspace_name, tokenInfo.workspace_id],
+      platformLabel: 'OpenAI',
+      fallbackDetail: tokenInfo.plan_type,
+      defaultName: 'OpenAI OAuth Account'
+    })
   }
 
   return {

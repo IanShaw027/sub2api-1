@@ -78,3 +78,15 @@ describe('useOpenAIOAuth.exchangeAuthCode', () => {
     )
   })
 })
+
+describe('useOpenAIOAuth.buildAccountName', () => {
+  it('uses manual name first and otherwise formats identity with workspace context', () => {
+    const oauth = useOpenAIOAuth()
+
+    expect(oauth.buildAccountName({ email: 'user@example.com', workspace_name: 'Team A' }, ' Manual ')).toBe('Manual')
+    expect(oauth.buildAccountName({ email: 'user@example.com', workspace_name: 'Team A' })).toBe('user@example.com (Team A)')
+    expect(oauth.buildAccountName({ name: 'OpenAI User', workspace_id: 'ws-123' })).toBe('OpenAI User (ws-123)')
+    expect(oauth.buildAccountName({ plan_type: 'Pro' })).toBe('OpenAI Pro')
+    expect(oauth.buildAccountName({})).toBe('OpenAI OAuth Account')
+  })
+})

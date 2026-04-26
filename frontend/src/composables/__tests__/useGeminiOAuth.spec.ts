@@ -33,14 +33,34 @@ describe('useGeminiOAuth.buildCredentials', () => {
       token_type: undefined,
       expires_at: 1714032000,
       scope: null,
-      project_id: 'project-1'
+      project_id: 'project-1',
+      email: 'user@example.com'
     })
 
     expect(credentials).toEqual({
       access_token: 'access-new',
       expires_at: '1714032000',
-      project_id: 'project-1'
+      project_id: 'project-1',
+      email: 'user@example.com'
     })
     expect(credentials).not.toHaveProperty('refresh_token')
+  })
+})
+
+describe('useGeminiOAuth.buildAccountName', () => {
+  it('uses manual name first and otherwise formats project with tier or OAuth type context', () => {
+    const oauth = useGeminiOAuth()
+
+    expect(oauth.buildAccountName({ project_id: 'project-1', tier_id: 'Pro' }, ' Manual ')).toBe('Manual')
+    expect(oauth.buildAccountName({ email: 'user@example.com', project_id: 'project-1' })).toBe(
+      'user@example.com (project-1)'
+    )
+    expect(oauth.buildAccountName({ email: 'user@example.com', tier_id: 'Pro' })).toBe(
+      'user@example.com (Pro)'
+    )
+    expect(oauth.buildAccountName({ project_id: 'project-1', tier_id: 'Pro' })).toBe('project-1 (Pro)')
+    expect(oauth.buildAccountName({ project_id: 'project-1', oauth_type: 'code_assist' })).toBe('project-1 (code_assist)')
+    expect(oauth.buildAccountName({ tier_id: 'Google One Ultra' })).toBe('Gemini Google One Ultra')
+    expect(oauth.buildAccountName({})).toBe('Gemini OAuth Account')
   })
 })

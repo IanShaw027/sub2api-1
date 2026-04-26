@@ -136,7 +136,7 @@ func TestAccountService_Create_RejectsInvalidKiroCredentials(t *testing.T) {
 	require.ErrorContains(t, err, "kiro refresh_token is required")
 }
 
-func TestAccountService_Update_RejectsInvalidKiroIDCFields(t *testing.T) {
+func TestAccountService_Update_IgnoresInvalidKiroIDCAuthPatches(t *testing.T) {
 	t.Parallel()
 
 	for _, authMethod := range []string{"idc", "IDC", "builder-id", "builderid", "awsidc", "iam"} {
@@ -168,8 +168,11 @@ func TestAccountService_Update_RejectsInvalidKiroIDCFields(t *testing.T) {
 					"client_id":     "client-id",
 				},
 			})
-			require.Error(t, err)
-			require.ErrorContains(t, err, "kiro idc client_id and client_secret are required")
+			require.NoError(t, err)
+			require.NotNil(t, accountRepo.updatedAccount)
+			require.Equal(t, "refresh-token", accountRepo.updatedAccount.GetCredential("refresh_token"))
+			require.Empty(t, accountRepo.updatedAccount.GetCredential("auth_method"))
+			require.Empty(t, accountRepo.updatedAccount.GetCredential("client_id"))
 		})
 	}
 }
@@ -239,7 +242,7 @@ func TestNormalizeKiroAuthMethod_CanonicalizesIDCAliases(t *testing.T) {
 	}
 }
 
-func TestAccountService_Update_PreservesOmittedKiroOAuthSecrets(t *testing.T) {
+func TestAccountService_Update_IgnoresKiroOAuthAuthCredentialPatches(t *testing.T) {
 	t.Parallel()
 
 	accountRepo := &accountRepoStubForOAuthOnlyGroup{
@@ -275,7 +278,17 @@ func TestAccountService_Update_PreservesOmittedKiroOAuthSecrets(t *testing.T) {
 
 	_, err := svc.Update(context.Background(), 12, UpdateAccountRequest{
 		Credentials: &map[string]any{
-			"auth_method": "social",
+			"refresh_token": "new-refresh",
+			"access_token":  "new-access",
+			"expires_at":    nil,
+			"client_id":     "new-client-id",
+			"client_secret": "new-client-secret",
+			"auth_method":   "social",
+			"profile_arn":   "arn:aws:kiro:new",
+			"auth_region":   "eu-west-1",
+			"api_region":    "eu-central-1",
+			"machine_id":    "machine-2",
+			"model_mapping": map[string]any{"claude-sonnet-4.6": "claude-sonnet-4.6"},
 		},
 	})
 
@@ -286,12 +299,12 @@ func TestAccountService_Update_PreservesOmittedKiroOAuthSecrets(t *testing.T) {
 	require.Equal(t, "1735689600", accountRepo.updatedAccount.GetCredential("expires_at"))
 	require.Equal(t, "old-client-id", accountRepo.updatedAccount.GetCredential("client_id"))
 	require.Equal(t, "old-client-secret", accountRepo.updatedAccount.GetCredential("client_secret"))
-	require.Equal(t, "social", accountRepo.updatedAccount.GetCredential("auth_method"))
-	require.Equal(t, "arn:aws:kiro:old", accountRepo.updatedAccount.GetCredential("profile_arn"))
-	require.Equal(t, "us-west-2", accountRepo.updatedAccount.GetCredential("auth_region"))
-	require.Equal(t, "us-east-2", accountRepo.updatedAccount.GetCredential("api_region"))
-	require.Equal(t, "machine-1", accountRepo.updatedAccount.GetCredential("machine_id"))
-	require.Equal(t, map[string]any{"claude-sonnet-4": "claude-sonnet-4"}, accountRepo.updatedAccount.Credentials["model_mapping"])
+	require.Equal(t, "idc", accountRepo.updatedAccount.GetCredential("auth_method"))
+	require.Equal(t, "arn:aws:kiro:new", accountRepo.updatedAccount.GetCredential("profile_arn"))
+	require.Equal(t, "eu-west-1", accountRepo.updatedAccount.GetCredential("auth_region"))
+	require.Equal(t, "eu-central-1", accountRepo.updatedAccount.GetCredential("api_region"))
+	require.Equal(t, "machine-2", accountRepo.updatedAccount.GetCredential("machine_id"))
+	require.Equal(t, map[string]any{"claude-sonnet-4.6": "claude-sonnet-4.6"}, accountRepo.updatedAccount.Credentials["model_mapping"])
 	require.Equal(t, true, accountRepo.updatedAccount.Credentials["temp_unschedulable_enabled"])
 	require.Equal(t, []any{map[string]any{"error_code": float64(429), "duration_minutes": float64(10)}}, accountRepo.updatedAccount.Credentials["temp_unschedulable_rules"])
 	require.Equal(t, true, accountRepo.updatedAccount.Credentials["intercept_warmup_requests"])
@@ -343,7 +356,7 @@ func TestAccountService_Update_PreservesOmittedKiroAPIKeyCredentials(t *testing.
 	require.Equal(t, map[string]any{"claude-sonnet-4": "claude-sonnet-4"}, accountRepo.updatedAccount.Credentials["model_mapping"])
 }
 
-func TestAccountService_Update_ClearsKiroOAuthExpiresAtWithEmptyString(t *testing.T) {
+func TestAccountService_Update_IgnoresKiroOAuthExpiresAtEmptyStringPatch(t *testing.T) {
 	t.Parallel()
 
 	accountRepo := &accountRepoStubForOAuthOnlyGroup{
@@ -373,10 +386,10 @@ func TestAccountService_Update_ClearsKiroOAuthExpiresAtWithEmptyString(t *testin
 	require.NoError(t, err)
 	require.NotNil(t, accountRepo.updatedAccount)
 	require.Equal(t, "rt", accountRepo.updatedAccount.GetCredential("refresh_token"))
-	require.NotContains(t, accountRepo.updatedAccount.Credentials, "expires_at")
+	require.Equal(t, "1735689600", accountRepo.updatedAccount.GetCredential("expires_at"))
 }
 
-func TestAccountService_Update_ClearsKiroOAuthExpiresAtWithNull(t *testing.T) {
+func TestAccountService_Update_IgnoresKiroOAuthExpiresAtNullPatch(t *testing.T) {
 	t.Parallel()
 
 	accountRepo := &accountRepoStubForOAuthOnlyGroup{
@@ -406,7 +419,7 @@ func TestAccountService_Update_ClearsKiroOAuthExpiresAtWithNull(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, accountRepo.updatedAccount)
 	require.Equal(t, "rt", accountRepo.updatedAccount.GetCredential("refresh_token"))
-	require.NotContains(t, accountRepo.updatedAccount.Credentials, "expires_at")
+	require.Equal(t, "1735689600", accountRepo.updatedAccount.GetCredential("expires_at"))
 }
 
 func TestAccountService_Update_ClearsKiroModelMappingWithEmptyObject(t *testing.T) {
