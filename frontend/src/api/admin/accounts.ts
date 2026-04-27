@@ -144,6 +144,14 @@ export async function update(id: number, updates: UpdateAccountRequest): Promise
   return data
 }
 
+export async function reauthorizeKiroOAuth(
+  id: number,
+  updates: Pick<UpdateAccountRequest, 'name' | 'credentials' | 'extra'>
+): Promise<Account> {
+  const { data } = await apiClient.post<Account>(`/admin/accounts/${id}/kiro-reauthorize`, updates)
+  return data
+}
+
 /**
  * Check mixed-channel risk for account-group binding.
  */
@@ -635,6 +643,7 @@ export const accountsAPI = {
   getById,
   create,
   update,
+  reauthorizeKiroOAuth,
   checkMixedChannelRisk,
   delete: deleteAccount,
   toggleStatus,

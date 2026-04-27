@@ -120,3 +120,159 @@ func TestAdminServiceUpdateAccountAllowsExplicitSensitiveCredentialReplacement(t
 	require.Equal(t, "new-access", updated.GetCredential("access_token"))
 	require.Equal(t, "new-refresh", updated.GetCredential("refresh_token"))
 }
+
+func TestAdminServiceUpdateKiroAccountDeletesLegacyModelWhitelistPatch(t *testing.T) {
+	t.Parallel()
+
+	repo := &kiroDefaultAccountRepoStub{
+		accountsByID: map[int64]*Account{
+			45: {
+				ID:       45,
+				Name:     "kiro-oauth",
+				Platform: PlatformKiro,
+				Type:     AccountTypeOAuth,
+				Status:   StatusActive,
+				Credentials: map[string]any{
+					"refresh_token":   "old-refresh",
+					"access_token":    "old-access",
+					"model_whitelist": []any{"claude-sonnet-4.5"},
+					"model_mapping":   map[string]any{"claude-sonnet-4.5": "claude-sonnet-4.5"},
+				},
+			},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	updated, err := svc.UpdateAccount(context.Background(), 45, &UpdateAccountInput{
+		Credentials: map[string]any{
+			"model_whitelist": nil,
+			"model_mapping":   map[string]any{"claude-sonnet-*": "claude-sonnet-4.5"},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	require.Equal(t, "old-refresh", updated.GetCredential("refresh_token"))
+	require.Equal(t, "old-access", updated.GetCredential("access_token"))
+	require.NotContains(t, updated.Credentials, "model_whitelist")
+	require.Equal(t, map[string]any{"claude-sonnet-*": "claude-sonnet-4.5"}, updated.Credentials["model_mapping"])
+}
+
+func TestAdminServiceUpdateKiroOAuthIgnoresSensitiveCredentialsWithoutTrustedFlag(t *testing.T) {
+	t.Parallel()
+
+	repo := &kiroDefaultAccountRepoStub{
+		accountsByID: map[int64]*Account{
+			46: {
+				ID:       46,
+				Name:     "kiro-oauth",
+				Platform: PlatformKiro,
+				Type:     AccountTypeOAuth,
+				Status:   StatusActive,
+				Credentials: map[string]any{
+					"refresh_token": "old-refresh",
+					"access_token":  "old-access",
+					"auth_method":   "social",
+					"model_mapping": map[string]any{"claude-sonnet-*": "claude-sonnet-4.5"},
+				},
+			},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	updated, err := svc.UpdateAccount(context.Background(), 46, &UpdateAccountInput{
+		Credentials: map[string]any{
+			"refresh_token": "new-refresh",
+			"access_token":  "new-access",
+			"auth_method":   "idc",
+			"model_mapping": nil,
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "old-refresh", updated.GetCredential("refresh_token"))
+	require.Equal(t, "old-access", updated.GetCredential("access_token"))
+	require.Equal(t, "social", updated.GetCredential("auth_method"))
+	require.NotContains(t, updated.Credentials, "model_mapping")
+}
+
+func TestAdminServiceUpdateKiroOAuthAllowsTrustedSensitiveCredentialReplacement(t *testing.T) {
+	t.Parallel()
+
+	repo := &kiroDefaultAccountRepoStub{
+		accountsByID: map[int64]*Account{
+			47: {
+				ID:       47,
+				Name:     "kiro-oauth",
+				Platform: PlatformKiro,
+				Type:     AccountTypeOAuth,
+				Status:   StatusActive,
+				Credentials: map[string]any{
+					"refresh_token": "old-refresh",
+					"access_token":  "old-access",
+					"auth_method":   "idc",
+					"client_id":     "old-client",
+					"client_secret": "old-secret",
+				},
+			},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	updated, err := svc.UpdateAccount(context.Background(), 47, &UpdateAccountInput{
+		Credentials: map[string]any{
+			"refresh_token": "new-refresh",
+			"access_token":  "new-access",
+			"auth_method":   "social",
+		},
+		AllowSensitiveCredentials: true,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "new-refresh", updated.GetCredential("refresh_token"))
+	require.Equal(t, "new-access", updated.GetCredential("access_token"))
+	require.Equal(t, "social", updated.GetCredential("auth_method"))
+	require.NotContains(t, updated.Credentials, "client_id")
+	require.NotContains(t, updated.Credentials, "client_secret")
+}
+
+func TestAdminServiceBulkUpdateKiroCredentialsUsesKiroMerge(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		ID:       48,
+		Name:     "kiro-oauth",
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Status:   StatusActive,
+		Credentials: map[string]any{
+			"refresh_token":   "old-refresh",
+			"access_token":    "old-access",
+			"auth_method":     "social",
+			"model_whitelist": []any{"claude-sonnet-4.5"},
+		},
+	}
+	repo := &kiroDefaultAccountRepoStub{
+		getByIDsAccounts: []*Account{account},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs: []int64{48},
+		Credentials: map[string]any{
+			"refresh_token":   "new-refresh",
+			"access_token":    "new-access",
+			"model_whitelist": nil,
+			"model_mapping":   map[string]any{"claude-haiku-*": "claude-haiku-4.5"},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Success)
+	require.Len(t, repo.updatedAccounts, 1)
+	require.Equal(t, "old-refresh", repo.updatedAccounts[0].GetCredential("refresh_token"))
+	require.Equal(t, "old-access", repo.updatedAccounts[0].GetCredential("access_token"))
+	require.NotContains(t, repo.updatedAccounts[0].Credentials, "model_whitelist")
+	require.Equal(t, map[string]any{"claude-haiku-*": "claude-haiku-4.5"}, repo.updatedAccounts[0].Credentials["model_mapping"])
+	require.Empty(t, repo.bulkUpdateCreds)
+}

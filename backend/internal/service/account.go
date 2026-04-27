@@ -64,6 +64,7 @@ type Account struct {
 	modelMappingCacheRawPtr         uintptr
 	modelMappingCacheRawLen         int
 	modelMappingCacheRawSig         uint64
+	modelMappingCacheWhitelistSig   uint64
 }
 
 type TempUnschedulableRule struct {
@@ -452,16 +453,20 @@ func stringMappingFromRaw(raw any) map[string]string {
 
 func (a *Account) GetModelMapping() map[string]string {
 	credentialsPtr := mapPtr(a.Credentials)
-	rawMapping, _ := a.Credentials["model_mapping"].(map[string]any)
+	rawModelMapping := a.Credentials["model_mapping"]
+	_, hasModelMapping := a.Credentials["model_mapping"]
+	rawMapping, _ := rawModelMapping.(map[string]any)
 	rawPtr := mapPtr(rawMapping)
 	rawLen := len(rawMapping)
 	rawSig := uint64(0)
 	rawSigReady := false
+	whitelistSig := modelWhitelistSignature(a.Credentials["model_whitelist"])
 
 	if a.modelMappingCacheReady &&
 		a.modelMappingCacheCredentialsPtr == credentialsPtr &&
 		a.modelMappingCacheRawPtr == rawPtr &&
-		a.modelMappingCacheRawLen == rawLen {
+		a.modelMappingCacheRawLen == rawLen &&
+		a.modelMappingCacheWhitelistSig == whitelistSig {
 		rawSig = modelMappingSignature(rawMapping)
 		rawSigReady = true
 		if a.modelMappingCacheRawSig == rawSig {
@@ -469,7 +474,7 @@ func (a *Account) GetModelMapping() map[string]string {
 		}
 	}
 
-	mapping := a.resolveModelMapping(rawMapping)
+	mapping := a.resolveModelMapping(rawMapping, hasModelMapping)
 	if !rawSigReady {
 		rawSig = modelMappingSignature(rawMapping)
 	}
@@ -480,10 +485,11 @@ func (a *Account) GetModelMapping() map[string]string {
 	a.modelMappingCacheRawPtr = rawPtr
 	a.modelMappingCacheRawLen = rawLen
 	a.modelMappingCacheRawSig = rawSig
+	a.modelMappingCacheWhitelistSig = whitelistSig
 	return mapping
 }
 
-func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]string {
+func (a *Account) resolveModelMapping(rawMapping map[string]any, hasModelMapping bool) map[string]string {
 	if a.Credentials == nil {
 		// Antigravity 平台使用默认映射
 		if a.Platform == domain.PlatformAntigravity {
@@ -497,6 +503,9 @@ func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]stri
 		if a.Platform == domain.PlatformAntigravity {
 			return domain.DefaultAntigravityModelMapping
 		}
+		if !hasModelMapping {
+			return legacyModelWhitelistMapping(a.Credentials["model_whitelist"])
+		}
 		return nil
 	}
 
@@ -504,6 +513,13 @@ func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]stri
 	for k, v := range rawMapping {
 		if s, ok := v.(string); ok {
 			result[k] = s
+		}
+	}
+	if a.Platform == PlatformKiro {
+		for k, v := range legacyModelWhitelistMapping(a.Credentials["model_whitelist"]) {
+			if _, exists := result[k]; !exists {
+				result[k] = v
+			}
 		}
 	}
 	if len(result) > 0 {
@@ -522,6 +538,43 @@ func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]stri
 		return domain.DefaultAntigravityModelMapping
 	}
 	return nil
+}
+
+func legacyModelWhitelistMapping(raw any) map[string]string {
+	models := stringsFromRawSlice(raw)
+	if len(models) == 0 {
+		return nil
+	}
+	mapping := make(map[string]string, len(models))
+	for _, model := range models {
+		mapping[model] = model
+	}
+	return mapping
+}
+
+func stringsFromRawSlice(raw any) []string {
+	switch values := raw.(type) {
+	case []any:
+		result := make([]string, 0, len(values))
+		for _, value := range values {
+			if text, ok := value.(string); ok {
+				if trimmed := strings.TrimSpace(text); trimmed != "" {
+					result = append(result, trimmed)
+				}
+			}
+		}
+		return result
+	case []string:
+		result := make([]string, 0, len(values))
+		for _, value := range values {
+			if trimmed := strings.TrimSpace(value); trimmed != "" {
+				result = append(result, trimmed)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
 }
 
 func mapPtr(m map[string]any) uintptr {
@@ -550,6 +603,20 @@ func modelMappingSignature(rawMapping map[string]any) uint64 {
 		} else {
 			_, _ = h.Write([]byte{1})
 		}
+		_, _ = h.Write([]byte{0xff})
+	}
+	return h.Sum64()
+}
+
+func modelWhitelistSignature(raw any) uint64 {
+	models := stringsFromRawSlice(raw)
+	if len(models) == 0 {
+		return 0
+	}
+	sort.Strings(models)
+	h := fnv.New64a()
+	for _, model := range models {
+		_, _ = h.Write([]byte(model))
 		_, _ = h.Write([]byte{0xff})
 	}
 	return h.Sum64()
@@ -644,15 +711,25 @@ func (a *Account) ResolveMappedModel(requestedModel string) (mappedModel string,
 		return requestedModel, false
 	}
 	if mappedModel, matched := resolveRequestedModelInMapping(mapping, requestedModel); matched {
+		if a.usesModelWhitelistMapping() && strings.Contains(mappedModel, "*") {
+			return requestedModel, true
+		}
 		return mappedModel, true
 	}
 	normalized := normalizeRequestedModelForLookup(a.Platform, requestedModel)
 	if normalized != requestedModel {
 		if mappedModel, matched := resolveRequestedModelInMapping(mapping, normalized); matched {
+			if a.usesModelWhitelistMapping() && strings.Contains(mappedModel, "*") {
+				return normalized, true
+			}
 			return mappedModel, true
 		}
 	}
 	return requestedModel, false
+}
+
+func (a *Account) usesModelWhitelistMapping() bool {
+	return a != nil && len(stringsFromRawSlice(a.Credentials["model_whitelist"])) > 0
 }
 
 // GetOpenAICompactMode returns the compact routing mode for an OpenAI account.

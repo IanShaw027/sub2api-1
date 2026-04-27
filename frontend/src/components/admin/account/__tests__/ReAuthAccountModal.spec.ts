@@ -4,6 +4,7 @@ import { defineComponent, h, ref } from 'vue'
 
 const {
   updateAccountMock,
+  reauthorizeKiroOAuthMock,
   createAccountMock,
   clearErrorMock,
   exchangeCallbackMock,
@@ -13,6 +14,7 @@ const {
   buildAccountNameMock
 } = vi.hoisted(() => ({
   updateAccountMock: vi.fn(),
+  reauthorizeKiroOAuthMock: vi.fn(),
   createAccountMock: vi.fn(),
   clearErrorMock: vi.fn(),
   exchangeCallbackMock: vi.fn(),
@@ -34,6 +36,7 @@ vi.mock('@/api/admin', () => ({
   adminAPI: {
     accounts: {
       update: updateAccountMock,
+      reauthorizeKiroOAuth: reauthorizeKiroOAuthMock,
       create: createAccountMock,
       clearError: clearErrorMock
     }
@@ -248,6 +251,7 @@ function mountModal(account = buildKiroAccount('apikey')) {
 describe('admin ReAuthAccountModal', () => {
   beforeEach(() => {
     updateAccountMock.mockReset()
+    reauthorizeKiroOAuthMock.mockReset()
     createAccountMock.mockReset()
     clearErrorMock.mockReset()
     exchangeCallbackMock.mockReset()
@@ -287,6 +291,7 @@ describe('admin ReAuthAccountModal', () => {
     })
     buildAccountNameMock.mockReturnValue('Kiro OAuth')
     updateAccountMock.mockResolvedValue({})
+    reauthorizeKiroOAuthMock.mockResolvedValue({})
     clearErrorMock.mockResolvedValue(buildKiroAccount('oauth'))
   })
 
@@ -296,6 +301,7 @@ describe('admin ReAuthAccountModal', () => {
     expect(wrapper.find('[data-testid="kiro-flow-submit"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="oauth-flow"]').exists()).toBe(false)
     expect(updateAccountMock).not.toHaveBeenCalled()
+    expect(reauthorizeKiroOAuthMock).not.toHaveBeenCalled()
   })
 
   it('reauthorizes Kiro OAuth accounts from callback submission without preserving runtime-only extra fields', async () => {
@@ -308,9 +314,8 @@ describe('admin ReAuthAccountModal', () => {
       'http://localhost:3128/callback?code=abc',
       null
     )
-    expect(updateAccountMock).toHaveBeenCalledWith(42, expect.objectContaining({
+    expect(reauthorizeKiroOAuthMock).toHaveBeenCalledWith(42, expect.objectContaining({
       name: 'Kiro OAuth',
-      type: 'oauth',
       credentials: expect.objectContaining({
         refresh_token: 'refresh-new'
       }),
@@ -341,9 +346,8 @@ describe('admin ReAuthAccountModal', () => {
       },
       null
     )
-    expect(updateAccountMock).toHaveBeenCalledWith(42, {
+    expect(reauthorizeKiroOAuthMock).toHaveBeenCalledWith(42, {
       name: 'Kiro OAuth',
-      type: 'oauth',
       credentials: {
         refresh_token: 'refresh-validated',
         region: 'eu-west-1',
@@ -415,9 +419,8 @@ describe('admin ReAuthAccountModal', () => {
       },
       null
     )
-    expect(updateAccountMock).toHaveBeenCalledWith(42, expect.objectContaining({
+    expect(reauthorizeKiroOAuthMock).toHaveBeenCalledWith(42, expect.objectContaining({
       name: 'Kiro rt-one@example.com #1',
-      type: 'oauth',
       credentials: expect.objectContaining({
         refresh_token: 'validated-rt-one',
         access_token: 'access-rt-one'
@@ -477,7 +480,7 @@ describe('admin ReAuthAccountModal', () => {
     await flushPromises()
 
     expect(validateRefreshTokenMock).toHaveBeenCalledTimes(2)
-    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(reauthorizeKiroOAuthMock).toHaveBeenCalledTimes(1)
     expect(createAccountMock).toHaveBeenCalledTimes(1)
   })
 
@@ -507,7 +510,7 @@ describe('admin ReAuthAccountModal', () => {
     })
     await flushPromises()
 
-    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(reauthorizeKiroOAuthMock).toHaveBeenCalledTimes(1)
     expect(createAccountMock).toHaveBeenCalledTimes(1)
     expect(wrapper.emitted('reauthorized')).toHaveLength(1)
     expect(wrapper.emitted('refresh')).toHaveLength(1)
@@ -529,7 +532,7 @@ describe('admin ReAuthAccountModal', () => {
     await wrapper.get('[data-testid="kiro-flow-submit-refresh-token"]').trigger('click')
     await flushPromises()
 
-    const credentials = updateAccountMock.mock.calls[0]?.[1]?.credentials
+    const credentials = reauthorizeKiroOAuthMock.mock.calls[0]?.[1]?.credentials
     expect(credentials).toEqual(expect.objectContaining({
       auth_method: 'social',
       refresh_token: 'refresh-validated'
@@ -562,7 +565,7 @@ describe('admin ReAuthAccountModal', () => {
     await wrapper.get('[data-testid="kiro-flow-submit"]').trigger('click')
     await flushPromises()
 
-    const credentials = updateAccountMock.mock.calls[0]?.[1]?.credentials
+    const credentials = reauthorizeKiroOAuthMock.mock.calls[0]?.[1]?.credentials
     expect(credentials).toEqual(expect.objectContaining({
       auth_method: 'social',
       refresh_token: 'refresh-new'

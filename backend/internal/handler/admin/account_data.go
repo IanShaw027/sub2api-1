@@ -333,19 +333,20 @@ func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) 
 				expiresAtForUpdate := item.ExpiresAt
 				extraForUpdate := item.Extra
 				updated, updateErr := h.adminService.UpdateAccount(ctx, existingID, &service.UpdateAccountInput{
-					Name:                  item.Name,
-					Notes:                 item.Notes,
-					Type:                  item.Type,
-					Credentials:           item.Credentials,
-					Extra:                 extraForUpdate,
-					ProxyID:               proxyIDForUpdate,
-					Concurrency:           &item.Concurrency,
-					Priority:              &item.Priority,
-					RateMultiplier:        item.RateMultiplier,
-					GroupIDs:              nil,
-					ExpiresAt:             expiresAtForUpdate,
-					AutoPauseOnExpired:    item.AutoPauseOnExpired,
-					SkipMixedChannelCheck: true,
+					Name:                      item.Name,
+					Notes:                     item.Notes,
+					Type:                      item.Type,
+					Credentials:               item.Credentials,
+					Extra:                     extraForUpdate,
+					ProxyID:                   proxyIDForUpdate,
+					Concurrency:               &item.Concurrency,
+					Priority:                  &item.Priority,
+					RateMultiplier:            item.RateMultiplier,
+					GroupIDs:                  nil,
+					ExpiresAt:                 expiresAtForUpdate,
+					AutoPauseOnExpired:        item.AutoPauseOnExpired,
+					SkipMixedChannelCheck:     true,
+					AllowSensitiveCredentials: true,
 				})
 				if updateErr != nil {
 					result.AccountFailed++

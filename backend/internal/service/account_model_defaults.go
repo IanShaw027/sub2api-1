@@ -163,6 +163,11 @@ func applyDefaultAccountModelConfig(credentials map[string]any, cfg DefaultAccou
 	for k, v := range credentials {
 		out[k] = v
 	}
+	if _, exists := out["model_whitelist"]; !exists {
+		if whitelist := normalizeDefaultModelWhitelist(cfg.ModelWhitelist); len(whitelist) > 0 {
+			out["model_whitelist"] = whitelist
+		}
+	}
 	if _, exists := out["model_mapping"]; !exists {
 		mapping := buildDefaultModelMapping(cfg)
 		if len(mapping) > 0 {
@@ -187,14 +192,7 @@ func stringMapToAnyMap(src map[string]string) map[string]any {
 }
 
 func buildDefaultModelMapping(cfg DefaultAccountModelConfig) map[string]string {
-	mapping := make(map[string]string, len(cfg.ModelWhitelist)+len(cfg.ModelMapping))
-	for _, model := range cfg.ModelWhitelist {
-		model = strings.TrimSpace(model)
-		if model == "" || strings.Contains(model, "*") {
-			continue
-		}
-		mapping[model] = model
-	}
+	mapping := make(map[string]string, len(cfg.ModelMapping))
 	for from, to := range cfg.ModelMapping {
 		from = strings.TrimSpace(from)
 		to = strings.TrimSpace(to)
@@ -207,6 +205,20 @@ func buildDefaultModelMapping(cfg DefaultAccountModelConfig) map[string]string {
 		return nil
 	}
 	return mapping
+}
+
+func normalizeDefaultModelWhitelist(models []string) []string {
+	if len(models) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(models))
+	for _, model := range models {
+		model = strings.TrimSpace(model)
+		if model != "" {
+			result = append(result, model)
+		}
+	}
+	return result
 }
 
 func copyStringMap(src map[string]string) map[string]string {

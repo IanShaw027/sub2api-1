@@ -143,6 +143,12 @@ type UpdateAccountRequest struct {
 	ConfirmMixedChannelRisk *bool          `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
 }
 
+type KiroReauthorizeAccountRequest struct {
+	Name        string         `json:"name"`
+	Credentials map[string]any `json:"credentials" binding:"required"`
+	Extra       map[string]any `json:"extra"`
+}
+
 // BulkUpdateAccountsRequest represents the payload for bulk editing accounts
 type BulkUpdateAccountsRequest struct {
 	AccountIDs              []int64        `json:"account_ids" binding:"required,min=1"`
@@ -645,6 +651,49 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	h.invalidateKiroUsageCache(account)
 
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
+}
+
+func (h *AccountHandler) ReauthorizeKiroOAuth(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+
+	var req KiroReauthorizeAccountRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	account, err := h.adminService.GetAccount(c.Request.Context(), accountID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if account.Platform != service.PlatformKiro || account.Type != service.AccountTypeOAuth {
+		response.BadRequest(c, "account is not a Kiro OAuth account")
+		return
+	}
+
+	updated, err := h.adminService.UpdateAccount(c.Request.Context(), accountID, &service.UpdateAccountInput{
+		Name:                      req.Name,
+		Type:                      service.AccountTypeOAuth,
+		Credentials:               req.Credentials,
+		Extra:                     req.Extra,
+		AllowSensitiveCredentials: true,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if h.tokenCacheInvalidator != nil {
+		if err := h.tokenCacheInvalidator.InvalidateToken(c.Request.Context(), updated); err != nil {
+			log.Printf("[WARN] Failed to invalidate token cache for account %d after Kiro reauthorize: %v", updated.ID, err)
+		}
+	}
+	h.invalidateKiroUsageCache(updated)
+	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), updated))
 }
 
 // Delete handles deleting an account

@@ -3672,7 +3672,7 @@ watch(
         .then(profiles => { tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name })) })
         .catch(() => { tlsFingerprintProfiles.value = [] })
       // Modal opened - fill related models
-      allowedModels.value = [...getModelsByPlatform(form.platform)]
+      allowedModels.value = form.platform === 'kiro' ? [] : [...getModelsByPlatform(form.platform)]
       // Antigravity: 默认使用映射模式并填充默认映射
       if (form.platform === 'antigravity') {
         antigravityModelRestrictionMode.value = 'mapping'
@@ -3832,8 +3832,8 @@ const handleSelectGeminiOAuthType = (oauthType: 'code_assist' | 'google_one' | '
 // Auto-fill related models when switching to whitelist mode or changing platform
 watch(
   [modelRestrictionMode, () => form.platform],
-  ([newMode]) => {
-    if (newMode === 'whitelist') {
+  ([newMode, platform]) => {
+    if (newMode === 'whitelist' && platform !== 'kiro') {
       allowedModels.value = [...getModelsByPlatform(form.platform)]
     }
   }
@@ -4464,10 +4464,7 @@ const handleSubmit = async () => {
     if (kiroMachineID.value.trim()) {
       credentials.machine_id = kiroMachineID.value.trim()
     }
-    const modelMapping = buildKiroModelMapping()
-    if (modelMapping) {
-      credentials.model_mapping = modelMapping
-    }
+    applyKiroModelRestriction(credentials)
 
     await createAccountAndFinish('kiro', 'apikey', credentials)
     return
@@ -4581,6 +4578,13 @@ const buildKiroModelMapping = () => buildModelMappingObject(
   modelMappings.value
 )
 
+const applyKiroModelRestriction = (credentials: Record<string, unknown>) => {
+  const modelMapping = buildKiroModelMapping()
+  if (modelMapping) {
+    credentials.model_mapping = modelMapping
+  }
+}
+
 const handleKiroAuthorize = async (payload: {
   callbackUrl: string
   credentials: Record<string, unknown>
@@ -4592,10 +4596,7 @@ const handleKiroAuthorize = async (payload: {
   }
   const credentials = kiroOAuth.buildCredentials(tokenInfo, payload.credentials)
   const extra = kiroOAuth.buildExtraInfo(tokenInfo, payload.extra)
-  const modelMapping = buildKiroModelMapping()
-  if (modelMapping) {
-    credentials.model_mapping = modelMapping
-  }
+  applyKiroModelRestriction(credentials)
   applyInterceptWarmup(credentials, interceptWarmupRequests.value, 'create')
   await createAccountAndFinish('kiro', 'oauth', credentials, extra, kiroOAuth.buildAccountName(tokenInfo, form.name))
 }
@@ -4643,10 +4644,7 @@ const handleKiroValidateRT = async (payload: {
         const tokenInfo = validatedCredentials as KiroTokenInfo
         const credentials = { ...validatedCredentials }
         const extra = kiroOAuth.buildExtraInfo(tokenInfo, payload.extra)
-        const modelMapping = buildKiroModelMapping()
-        if (modelMapping) {
-          credentials.model_mapping = modelMapping
-        }
+        applyKiroModelRestriction(credentials)
         applyInterceptWarmup(credentials, interceptWarmupRequests.value, 'create')
         if (!applyTempUnschedConfig(credentials)) {
           return

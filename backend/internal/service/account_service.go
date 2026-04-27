@@ -263,14 +263,14 @@ var (
 	}
 )
 
-func mergeKiroCredentialsForAccountUpdate(accountType string, existing, incoming map[string]any) map[string]any {
+func mergeKiroCredentialsForAccountUpdate(accountType string, existing, incoming map[string]any, allowSensitiveCredentials bool) map[string]any {
 	merged := cloneCredentials(existing)
-	dropStaleKiroCredentialsForType(merged, accountType, incoming)
+	dropStaleKiroCredentialsForType(merged, accountType, incoming, allowSensitiveCredentials)
 	for key, value := range incoming {
-		if shouldIgnoreKiroCredentialPatch(accountType, key) {
+		if shouldIgnoreKiroCredentialPatch(accountType, key, allowSensitiveCredentials) {
 			continue
 		}
-		if shouldDeleteKiroCredentialOnUpdate(key, value) {
+		if shouldDeleteKiroCredentialOnUpdate(key, value, allowSensitiveCredentials) {
 			delete(merged, key)
 			continue
 		}
@@ -279,7 +279,10 @@ func mergeKiroCredentialsForAccountUpdate(accountType string, existing, incoming
 	return merged
 }
 
-func shouldIgnoreKiroCredentialPatch(accountType, key string) bool {
+func shouldIgnoreKiroCredentialPatch(accountType, key string, allowSensitiveCredentials bool) bool {
+	if allowSensitiveCredentials {
+		return false
+	}
 	if accountType != AccountTypeOAuth {
 		return false
 	}
@@ -291,9 +294,9 @@ func shouldIgnoreKiroCredentialPatch(accountType, key string) bool {
 	}
 }
 
-func mergeAccountCredentialsForAccountUpdate(platform, accountType string, existing, incoming map[string]any) map[string]any {
+func mergeAccountCredentialsForAccountUpdate(platform, accountType string, existing, incoming map[string]any, allowSensitiveCredentials bool) map[string]any {
 	if platform == PlatformKiro {
-		return mergeKiroCredentialsForAccountUpdate(accountType, existing, incoming)
+		return mergeKiroCredentialsForAccountUpdate(accountType, existing, incoming, allowSensitiveCredentials)
 	}
 
 	merged := cloneCredentials(existing)
@@ -343,12 +346,19 @@ func credentialPatchValueIsEmpty(value any) bool {
 	return false
 }
 
-func dropStaleKiroCredentialsForType(credentials map[string]any, accountType string, incoming map[string]any) {
+func dropStaleKiroCredentialsForType(credentials map[string]any, accountType string, incoming map[string]any, allowSensitiveCredentials bool) {
 	switch accountType {
 	case AccountTypeOAuth:
 		if _, hasOAuthSecret := incoming["refresh_token"]; hasOAuthSecret {
 			for key := range kiroAPIKeyCredentialKeysToDropForTypeSwitch {
 				delete(credentials, key)
+			}
+		}
+		if allowSensitiveCredentials {
+			if method, ok := incoming["auth_method"].(string); ok && !KiroAuthMethodUsesIDCRefresh(method) {
+				for _, key := range []string{"client_id", "client_secret", "issuer_url", "idc_region", "scopes", "login_hint"} {
+					delete(credentials, key)
+				}
 			}
 		}
 	case AccountTypeAPIKey:
@@ -360,15 +370,22 @@ func dropStaleKiroCredentialsForType(credentials map[string]any, accountType str
 	}
 }
 
-func shouldDeleteKiroCredentialOnUpdate(key string, value any) bool {
-	if key != "expires_at" {
-		return false
-	}
-	if value == nil {
+func shouldDeleteKiroCredentialOnUpdate(key string, value any, allowSensitiveCredentials bool) bool {
+	if allowSensitiveCredentials && value == nil {
 		return true
 	}
-	typed, ok := value.(string)
-	return ok && strings.TrimSpace(typed) == ""
+	switch key {
+	case "expires_at":
+		if value == nil {
+			return true
+		}
+		typed, ok := value.(string)
+		return ok && strings.TrimSpace(typed) == ""
+	case "model_whitelist":
+		return value == nil
+	default:
+		return shouldDeleteCredentialOnUpdate(key, value)
+	}
 }
 
 // KiroAuthMethodUsesIDCRefresh mirrors KiroTokenRefresher.Refresh's IDC/OIDC
@@ -569,7 +586,7 @@ func (s *AccountService) Update(ctx context.Context, id int64, req UpdateAccount
 
 	if req.Credentials != nil {
 		nextCredentials := *req.Credentials
-		account.Credentials = mergeAccountCredentialsForAccountUpdate(account.Platform, account.Type, account.Credentials, nextCredentials)
+		account.Credentials = mergeAccountCredentialsForAccountUpdate(account.Platform, account.Type, account.Credentials, nextCredentials, false)
 	}
 
 	if req.Extra != nil {

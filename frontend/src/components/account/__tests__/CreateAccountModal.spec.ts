@@ -340,6 +340,7 @@ describe('CreateAccountModal', () => {
         region: 'us-east-1'
       })
     }))
+    expect(createMock.mock.calls[0]?.[0]?.credentials).not.toHaveProperty('model_mapping')
     expect(createMock.mock.calls[0]?.[0]?.extra).toBeUndefined()
     expect(wrapper.find('[data-testid="kiro-flow"]').exists()).toBe(false)
   })
@@ -437,5 +438,6 @@ describe('CreateAccountModal', () => {
         subscription_type: 'Kiro Pro'
       })
     }))
+    expect(createMock.mock.calls[0]?.[0]?.credentials).not.toHaveProperty('model_mapping')
   })
 })

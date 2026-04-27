@@ -86,6 +86,15 @@ func TestMatchWildcardMappingResult(t *testing.T) {
 			expected:       "claude-mapped",
 			matched:        true,
 		},
+		{
+			name: "wildcard target remains literal outside model_whitelist",
+			mapping: map[string]string{
+				"claude-*": "claude-*",
+			},
+			requestedModel: "claude-opus-4-5",
+			expected:       "claude-*",
+			matched:        true,
+		},
 
 		// 无匹配返回原始模型
 		{
@@ -359,6 +368,27 @@ func TestAccountResolveMappedModel(t *testing.T) {
 			expectedMatch:  true,
 		},
 		{
+			name: "wildcard identity mapping stays literal without model_whitelist",
+			credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"gpt-*": "gpt-*",
+				},
+			},
+			requestedModel: "gpt-5.4",
+			expectedModel:  "gpt-*",
+			expectedMatch:  true,
+		},
+		{
+			name:     "kiro model_whitelist wildcard maps to requested model",
+			platform: PlatformKiro,
+			credentials: map[string]any{
+				"model_whitelist": []any{"claude-haiku-*"},
+			},
+			requestedModel: "claude-haiku-4.5",
+			expectedModel:  "claude-haiku-4.5",
+			expectedMatch:  true,
+		},
+		{
 			name:     "gemini customtools alias reports normalized match",
 			platform: PlatformGemini,
 			credentials: map[string]any{
@@ -479,6 +509,43 @@ func TestAccountGetModelMapping_CacheInvalidatesOnCredentialsReplace(t *testing.
 	second := account.GetModelMapping()
 	if second["claude-3-5-sonnet"] != "upstream-b" {
 		t.Fatalf("expected cache invalidated after credentials replace, got: %v", second)
+	}
+}
+
+func TestAccountGetModelMapping_UsesLegacyModelWhitelistWhenMappingAbsent(t *testing.T) {
+	account := &Account{
+		Platform: PlatformKiro,
+		Credentials: map[string]any{
+			"model_whitelist": []any{"claude-sonnet-4.5", "claude-haiku-*"},
+		},
+	}
+
+	mapping := account.GetModelMapping()
+	if mapping["claude-sonnet-4.5"] != "claude-sonnet-4.5" {
+		t.Fatalf("expected exact legacy whitelist passthrough, got: %v", mapping)
+	}
+	if !account.IsModelSupported("claude-haiku-4.5") {
+		t.Fatalf("expected wildcard legacy whitelist to support matching requests")
+	}
+	if mapped := account.GetMappedModel("claude-haiku-4.5"); mapped != "claude-haiku-4.5" {
+		t.Fatalf("expected wildcard legacy whitelist to map to requested model, got: %q", mapped)
+	}
+	if account.IsModelSupported("claude-opus-4.5") {
+		t.Fatalf("did not expect unmatched model to be supported")
+	}
+}
+
+func TestAccountGetModelMapping_ModelMappingEmptyOverridesLegacyWhitelist(t *testing.T) {
+	account := &Account{
+		Platform: PlatformKiro,
+		Credentials: map[string]any{
+			"model_mapping":   map[string]any{},
+			"model_whitelist": []any{"claude-sonnet-4.5"},
+		},
+	}
+
+	if mapping := account.GetModelMapping(); len(mapping) != 0 {
+		t.Fatalf("expected explicit empty model_mapping to allow all, got: %v", mapping)
 	}
 }
 

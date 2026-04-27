@@ -2541,7 +2541,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   if (newAccount.platform === 'kiro') {
     const kiroCredentials = (newAccount.credentials || {}) as KiroCredentials & Record<string, unknown>
 
-    loadModelRestrictionFromCredentials(kiroCredentials, { forceMappingMode: true })
+    loadModelRestrictionFromCredentials(kiroCredentials)
   }
 
   // Initialize API Key fields for apikey type
@@ -2669,20 +2669,36 @@ const loadModelRestrictionFromCredentials = (
   credentials?: Record<string, unknown>,
   options: { forceMappingMode?: boolean } = {}
 ) => {
+  const existingWhitelist = credentials?.model_whitelist
+  const whitelistModels = Array.isArray(existingWhitelist)
+    ? existingWhitelist
+      .map((model) => String(model).trim())
+      .filter((model) => model.length > 0)
+    : []
+
   const existingMappings = credentials?.model_mapping as Record<string, string> | undefined
   if (existingMappings && typeof existingMappings === 'object') {
     const entries = Object.entries(existingMappings)
-    const isWhitelistMode = !options.forceMappingMode && entries.length > 0 && entries.every(([from, to]) => from === to)
+    modelMappings.value = entries.map(([from, to]) => ({ from, to }))
 
-    if (isWhitelistMode) {
+    const isWhitelistMode = !options.forceMappingMode && entries.length > 0 && entries.every(([from, to]) => from === to)
+    if (whitelistModels.length > 0) {
+      modelRestrictionMode.value = 'whitelist'
+      allowedModels.value = whitelistModels
+    } else if (isWhitelistMode) {
       modelRestrictionMode.value = 'whitelist'
       allowedModels.value = entries.map(([from]) => from)
-      modelMappings.value = []
     } else {
       modelRestrictionMode.value = 'mapping'
-      modelMappings.value = entries.map(([from, to]) => ({ from, to }))
-      allowedModels.value = []
+      allowedModels.value = whitelistModels
     }
+    return
+  }
+
+  if (whitelistModels.length > 0) {
+    modelRestrictionMode.value = 'whitelist'
+    allowedModels.value = whitelistModels
+    modelMappings.value = whitelistModels.map((model) => ({ from: model, to: model }))
     return
   }
 
@@ -3122,6 +3138,28 @@ const stableSerializeCredentialValue = (value: unknown): string => {
 const credentialsValueChanged = (current: unknown, next: unknown) =>
   stableSerializeCredentialValue(current) !== stableSerializeCredentialValue(next)
 
+const applyKiroModelRestrictionPatch = (
+  newCredentials: Record<string, unknown>,
+  currentCredentials: Record<string, unknown>
+) => {
+  const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
+  const currentModelMapping = currentCredentials.model_mapping as Record<string, string> | undefined
+  if (modelMapping) {
+    if (credentialsValueChanged(currentModelMapping || {}, modelMapping)) {
+      newCredentials.model_mapping = modelMapping
+    }
+  } else if (currentModelMapping && Object.keys(currentModelMapping).length > 0) {
+    newCredentials.model_mapping = {}
+  }
+
+  const currentModelWhitelist = Array.isArray(currentCredentials.model_whitelist)
+    ? currentCredentials.model_whitelist
+    : []
+  if (currentModelWhitelist.length > 0) {
+    newCredentials.model_whitelist = null
+  }
+}
+
 const validateModelMappingRows = () => {
   if (modelRestrictionMode.value !== 'mapping') return true
   const invalid = modelMappings.value.find((mapping) => {
@@ -3229,15 +3267,7 @@ const handleSubmit = async () => {
         }
       }
 
-      const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
-      const currentModelMapping = currentCredentials.model_mapping as Record<string, string> | undefined
-      if (modelMapping) {
-        if (credentialsValueChanged(currentModelMapping || {}, modelMapping)) {
-          newCredentials.model_mapping = modelMapping
-        }
-      } else if (currentModelMapping && Object.keys(currentModelMapping).length > 0) {
-        newCredentials.model_mapping = {}
-      }
+      applyKiroModelRestrictionPatch(newCredentials, currentCredentials)
 
       if (Object.keys(newCredentials).length > 0) {
         updatePayload.credentials = newCredentials
@@ -3258,15 +3288,7 @@ const handleSubmit = async () => {
         newCredentials.intercept_warmup_requests = interceptWarmupRequests.value
       }
 
-      const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
-      const currentModelMapping = currentCredentials.model_mapping as Record<string, string> | undefined
-      if (modelMapping) {
-        if (credentialsValueChanged(currentModelMapping || {}, modelMapping)) {
-          newCredentials.model_mapping = modelMapping
-        }
-      } else if (currentModelMapping && Object.keys(currentModelMapping).length > 0) {
-        newCredentials.model_mapping = {}
-      }
+      applyKiroModelRestrictionPatch(newCredentials, currentCredentials)
 
       const currentTempUnschedEnabled = currentCredentials.temp_unschedulable_enabled === true
       const currentTempUnschedRules = Array.isArray(currentCredentials.temp_unschedulable_rules)

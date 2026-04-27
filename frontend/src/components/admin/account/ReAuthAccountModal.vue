@@ -438,9 +438,8 @@ const finishKiroReauthorization = async (
   if (!props.account) return
 
   try {
-    await adminAPI.accounts.update(props.account.id, {
+    await adminAPI.accounts.reauthorizeKiroOAuth(props.account.id, {
       name,
-      type: 'oauth',
       credentials,
       extra
     })
@@ -541,9 +540,8 @@ const handleKiroValidateRT = async (payload: {
         const name = refreshTokens.length > 1 ? `${baseName} #${i + 1}` : baseName
 
         if (successCount === 0) {
-          await adminAPI.accounts.update(props.account.id, {
+          await adminAPI.accounts.reauthorizeKiroOAuth(props.account.id, {
             name,
-            type: 'oauth',
             credentials,
             extra
           })

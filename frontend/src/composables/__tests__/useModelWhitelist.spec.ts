@@ -4,7 +4,7 @@ vi.mock('@/api/admin/accounts', () => ({
   getAntigravityDefaultModelMapping: vi.fn()
 }))
 
-import { buildModelMappingObject, getModelsByPlatform } from '../useModelWhitelist'
+import { buildModelMappingObject, getModelsByPlatform, getPresetMappingsByPlatform } from '../useModelWhitelist'
 
 describe('useModelWhitelist', () => {
   it('openai 模型列表包含 GPT-5.4 官方快照', () => {
@@ -82,5 +82,15 @@ describe('useModelWhitelist', () => {
     expect(mapping).toEqual({
       'gpt-5.4-mini': 'gpt-5.4-mini'
     })
+  })
+
+  it('Kiro 快速映射按模型族通用映射到 4.5', () => {
+    const presets = getPresetMappingsByPlatform('kiro')
+
+    expect(presets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ from: 'claude-haiku-*', to: 'claude-haiku-4.5' }),
+      expect.objectContaining({ from: 'claude-sonnet-*', to: 'claude-sonnet-4.5' }),
+      expect.objectContaining({ from: 'claude-opus-*', to: 'claude-opus-4.5' })
+    ]))
   })
 })

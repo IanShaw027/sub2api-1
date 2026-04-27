@@ -3,6 +3,7 @@ package dto
 
 import (
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -411,7 +412,7 @@ func sanitizeAccountCredentialsForList(platform string, credentials map[string]a
 
 	filtered := make(map[string]any, len(credentials))
 	for key, value := range credentials {
-		if _, blocked := redactKeys[key]; blocked {
+		if _, blocked := redactKeys[strings.ToLower(strings.TrimSpace(key))]; blocked {
 			continue
 		}
 		filtered[key] = value

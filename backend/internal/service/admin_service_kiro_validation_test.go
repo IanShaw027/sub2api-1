@@ -342,9 +342,9 @@ func TestAdminServiceBulkUpdateAccounts_RejectsInvalidMergedKiroCredentials(t *t
 			{
 				ID:       77,
 				Platform: PlatformKiro,
-				Type:     AccountTypeOAuth,
+				Type:     AccountTypeAPIKey,
 				Credentials: map[string]any{
-					"refresh_token": "rt",
+					"api_key": "kiro-token",
 				},
 			},
 		},
@@ -354,14 +354,13 @@ func TestAdminServiceBulkUpdateAccounts_RejectsInvalidMergedKiroCredentials(t *t
 	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
 		AccountIDs: []int64{77},
 		Credentials: map[string]any{
-			"auth_method": "idc",
-			"client_id":   "client-only",
+			"api_key": "",
 		},
 	})
 
 	require.Nil(t, result)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "kiro idc client_id and client_secret are required")
+	require.Contains(t, err.Error(), "kiro api_key is required")
 	require.Empty(t, repo.bulkUpdateIDs)
 }
 
@@ -402,10 +401,14 @@ func TestAdminServiceBulkUpdateAccounts_DoesNotMutateSharedKiroCredentialPayload
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, []int64{77, 78}, repo.bulkUpdateIDs)
+	require.Empty(t, repo.bulkUpdateIDs)
 	require.Equal(t, map[string]any{"region": "eu-west-1"}, inputCredentials)
-	require.Equal(t, map[string]any{"region": "eu-west-1"}, repo.bulkUpdateCreds)
-	require.NotContains(t, repo.bulkUpdateCreds, "refresh_token")
+	require.Empty(t, repo.bulkUpdateCreds)
+	require.Len(t, repo.updatedAccounts, 2)
+	require.Equal(t, "first-refresh", repo.updatedAccounts[0].GetCredential("refresh_token"))
+	require.Equal(t, "second-refresh", repo.updatedAccounts[1].GetCredential("refresh_token"))
+	require.Equal(t, "eu-west-1", repo.updatedAccounts[0].GetCredential("region"))
+	require.Equal(t, "eu-west-1", repo.updatedAccounts[1].GetCredential("region"))
 }
 
 func TestAdminServiceCreateAccount_ValidatesGroupsBeforePersist(t *testing.T) {

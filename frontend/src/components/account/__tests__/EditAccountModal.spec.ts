@@ -255,7 +255,7 @@ describe('EditAccountModal', () => {
         region: 'us-east-1',
         machine_id: 'machine-1',
         model_mapping: {
-          'claude-sonnet-4': 'claude-sonnet-4'
+          'claude-sonnet-*': 'claude-sonnet-4.5'
         }
       },
       extra: {
@@ -294,8 +294,8 @@ describe('EditAccountModal', () => {
     expect(wrapper.text()).not.toContain('admin.accounts.kiro.accessTokenLabel')
     expect(wrapper.text()).not.toContain('admin.accounts.kiro.clientSecretLabel')
     expect(wrapper.text()).not.toContain('admin.accounts.kiro.expiresAtLabel')
-    expect((wrapper.get('input[placeholder="admin.accounts.requestModel"]').element as HTMLInputElement).value).toBe('claude-sonnet-4')
-    expect((wrapper.get('input[placeholder="admin.accounts.actualModel"]').element as HTMLInputElement).value).toBe('claude-sonnet-4')
+    expect((wrapper.get('input[placeholder="admin.accounts.requestModel"]').element as HTMLInputElement).value).toBe('claude-sonnet-*')
+    expect((wrapper.get('input[placeholder="admin.accounts.actualModel"]').element as HTMLInputElement).value).toBe('claude-sonnet-4.5')
 
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
 
@@ -348,6 +348,64 @@ describe('EditAccountModal', () => {
 
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toEqual({})
+  })
+
+  it('rehydrates Kiro legacy model_whitelist but persists through model_mapping', async () => {
+    const account = {
+      id: 8,
+      name: 'Kiro OAuth',
+      notes: '',
+      platform: 'kiro',
+      type: 'oauth',
+      credentials: {
+        model_whitelist: ['claude-sonnet-4.5'],
+        model_mapping: {
+          'claude-sonnet-4.5': 'claude-sonnet-4.5'
+        }
+      },
+      extra: {},
+      proxy_id: null,
+      concurrency: 1,
+      priority: 1,
+      rate_multiplier: 1,
+      status: 'active',
+      group_ids: [],
+      expires_at: null,
+      auto_pause_on_expired: false
+    } as any
+
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    getSettingsMock.mockReset()
+    getWebSearchEmulationConfigMock.mockReset()
+    listTlsFingerprintProfilesMock.mockReset()
+    getSettingsMock.mockResolvedValue({})
+    getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
+    listTlsFingerprintProfilesMock.mockResolvedValue([])
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    expect(wrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('claude-sonnet-4.5')
+
+    const mappingButton = wrapper.findAll('button').find((btn) => btn.text().includes('admin.accounts.modelMapping'))
+    expect(mappingButton).toBeTruthy()
+    await mappingButton!.trigger('click')
+    expect((wrapper.get('input[placeholder="admin.accounts.requestModel"]').element as HTMLInputElement).value).toBe('claude-sonnet-4.5')
+    expect((wrapper.get('input[placeholder="admin.accounts.actualModel"]').element as HTMLInputElement).value).toBe('claude-sonnet-4.5')
+
+    const whitelistButton = wrapper.findAll('button').find((btn) => btn.text().includes('admin.accounts.modelWhitelist'))
+    expect(whitelistButton).toBeTruthy()
+    await whitelistButton!.trigger('click')
+    await wrapper.get('[data-testid="rewrite-to-snapshot"]').trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.model_whitelist).toBeNull()
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.model_mapping).toEqual({
+      'gpt-5.2-2025-12-11': 'gpt-5.2-2025-12-11'
+    })
   })
 
   it('updates changed Kiro API key credentials and metadata', async () => {
@@ -411,7 +469,8 @@ describe('EditAccountModal', () => {
 
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toEqual({
-      api_key: 'kiro-new-key'
+      api_key: 'kiro-new-key',
+      model_whitelist: null
     })
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('base_url')
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toEqual({

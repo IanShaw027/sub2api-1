@@ -69,13 +69,12 @@ func TestAdminServiceCreateAccount_InjectsPlatformDefaultModelConfig(t *testing.
 
 	require.NoError(t, err)
 	require.NotNil(t, account)
+	require.ElementsMatch(t, []string{"claude-sonnet-4-5-20250929", "claude-*"}, account.Credentials["model_whitelist"])
 	require.Equal(t, map[string]any{
-		"claude-sonnet-4-5-20250929": "claude-sonnet-4-5-20250929",
-		"claude-opus-4-6":            "claude-sonnet-4-5-20250929",
+		"claude-opus-4-6": "claude-sonnet-4-5-20250929",
 	}, account.Credentials["model_mapping"])
 	require.Equal(t, map[string]string{
-		"claude-sonnet-4-5-20250929": "claude-sonnet-4-5-20250929",
-		"claude-opus-4-6":            "claude-sonnet-4-5-20250929",
+		"claude-opus-4-6": "claude-sonnet-4-5-20250929",
 	}, account.GetModelMapping())
 	require.Equal(t, map[string]string{
 		"claude-sonnet-4-6": "claude-sonnet-4-5-20250929",

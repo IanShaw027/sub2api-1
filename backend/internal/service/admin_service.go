@@ -279,21 +279,22 @@ type CreateAccountInput struct {
 }
 
 type UpdateAccountInput struct {
-	Name                  string
-	Notes                 *string
-	Type                  string // Account type: oauth, setup-token, apikey
-	Credentials           map[string]any
-	Extra                 map[string]any
-	ProxyID               *int64
-	Concurrency           *int     // 使用指针区分"未提供"和"设置为0"
-	Priority              *int     // 使用指针区分"未提供"和"设置为0"
-	RateMultiplier        *float64 // 账号计费倍率（>=0，允许 0）
-	LoadFactor            *int
-	Status                string
-	GroupIDs              *[]int64
-	ExpiresAt             *int64
-	AutoPauseOnExpired    *bool
-	SkipMixedChannelCheck bool // 跳过混合渠道检查（用户已确认风险）
+	Name                      string
+	Notes                     *string
+	Type                      string // Account type: oauth, setup-token, apikey
+	Credentials               map[string]any
+	Extra                     map[string]any
+	ProxyID                   *int64
+	Concurrency               *int     // 使用指针区分"未提供"和"设置为0"
+	Priority                  *int     // 使用指针区分"未提供"和"设置为0"
+	RateMultiplier            *float64 // 账号计费倍率（>=0，允许 0）
+	LoadFactor                *int
+	Status                    string
+	GroupIDs                  *[]int64
+	ExpiresAt                 *int64
+	AutoPauseOnExpired        *bool
+	SkipMixedChannelCheck     bool // 跳过混合渠道检查（用户已确认风险）
+	AllowSensitiveCredentials bool // 仅用于重新授权/导入覆盖等受信路径
 }
 
 // BulkUpdateAccountsInput describes the payload for bulk updating accounts.
@@ -2286,7 +2287,13 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 	if input.Credentials != nil {
 		if len(input.Credentials) > 0 {
-			account.Credentials = mergeAccountCredentialsForAccountUpdate(account.Platform, account.Type, account.Credentials, input.Credentials)
+			account.Credentials = mergeAccountCredentialsForAccountUpdate(
+				account.Platform,
+				account.Type,
+				account.Credentials,
+				input.Credentials,
+				input.AllowSensitiveCredentials,
+			)
 		}
 	}
 	if account.Platform == PlatformKiro {
@@ -2468,15 +2475,20 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		}
 	}
 
+	kiroCredentialUpdateIDs := make([]int64, 0)
 	if len(input.Credentials) > 0 {
 		for _, accountID := range input.AccountIDs {
 			account := accountByID[accountID]
-			if account == nil || account.Platform != PlatformKiro {
+			if account == nil {
 				continue
 			}
-			mergedCredentials := MergeCredentials(account.Credentials, cloneCredentials(input.Credentials))
-			if err := validateKiroAccountCredentials(account.Type, mergedCredentials); err != nil {
-				return nil, err
+			if account.Platform == PlatformKiro {
+				mergedCredentials := mergeAccountCredentialsForAccountUpdate(account.Platform, account.Type, account.Credentials, input.Credentials, false)
+				if err := validateKiroAccountCredentials(account.Type, mergedCredentials); err != nil {
+					return nil, err
+				}
+				kiroCredentialUpdateIDs = append(kiroCredentialUpdateIDs, accountID)
+				continue
 			}
 		}
 	}
@@ -2485,6 +2497,23 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		if *input.RateMultiplier < 0 {
 			return nil, errors.New("rate_multiplier must be >= 0")
 		}
+	}
+	if input.LoadFactor != nil && *input.LoadFactor > 10000 {
+		return nil, errors.New("load_factor must be <= 10000")
+	}
+
+	if len(kiroCredentialUpdateIDs) > 0 {
+		for _, accountID := range input.AccountIDs {
+			account := accountByID[accountID]
+			if account == nil {
+				continue
+			}
+			applyBulkUpdateInputToAccount(account, input)
+			if err := s.accountRepo.Update(ctx, account); err != nil {
+				return nil, err
+			}
+		}
+		return s.finishBulkUpdateGroupBindings(ctx, input, result)
 	}
 
 	// Prepare bulk updates for columns and JSONB fields.
@@ -2510,8 +2539,6 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	if input.LoadFactor != nil {
 		if *input.LoadFactor <= 0 {
 			repoUpdates.LoadFactor = nil // 0 或负数表示清除
-		} else if *input.LoadFactor > 10000 {
-			return nil, errors.New("load_factor must be <= 10000")
 		} else {
 			repoUpdates.LoadFactor = input.LoadFactor
 		}
@@ -2534,8 +2561,10 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 			return nil, fmt.Errorf("bulk update affected %d of %d accounts", affected, len(input.AccountIDs))
 		}
 	}
+	return s.finishBulkUpdateGroupBindings(ctx, input, result)
+}
 
-	// Handle group bindings per account (requires individual operations).
+func (s *adminServiceImpl) finishBulkUpdateGroupBindings(ctx context.Context, input *BulkUpdateAccountsInput, result *BulkUpdateAccountsResult) (*BulkUpdateAccountsResult, error) {
 	for _, accountID := range input.AccountIDs {
 		entry := BulkUpdateAccountResult{AccountID: accountID}
 
@@ -2557,6 +2586,46 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 
 	return result, nil
+}
+
+func applyBulkUpdateInputToAccount(account *Account, input *BulkUpdateAccountsInput) {
+	if account == nil || input == nil {
+		return
+	}
+	if input.Name != "" {
+		account.Name = input.Name
+	}
+	if input.ProxyID != nil {
+		account.ProxyID = input.ProxyID
+	}
+	if input.Concurrency != nil {
+		account.Concurrency = *input.Concurrency
+	}
+	if input.Priority != nil {
+		account.Priority = *input.Priority
+	}
+	if input.RateMultiplier != nil {
+		account.RateMultiplier = input.RateMultiplier
+	}
+	if input.LoadFactor != nil {
+		if *input.LoadFactor <= 0 {
+			account.LoadFactor = nil
+		} else {
+			account.LoadFactor = input.LoadFactor
+		}
+	}
+	if input.Status != "" {
+		account.Status = input.Status
+	}
+	if input.Schedulable != nil {
+		account.Schedulable = *input.Schedulable
+	}
+	if len(input.Credentials) > 0 {
+		account.Credentials = mergeAccountCredentialsForAccountUpdate(account.Platform, account.Type, account.Credentials, input.Credentials, false)
+	}
+	if len(input.Extra) > 0 {
+		account.Extra = MergeCredentials(account.Extra, input.Extra)
+	}
 }
 
 func hasAccountBulkUpdateFields(updates AccountBulkUpdate) bool {
