@@ -465,15 +465,7 @@ func applyVisibleMethodRoutingToEnabledTypes(base []string, vals map[string]stri
 	}
 
 	for _, paymentType := range base {
-		visibleMethod := NormalizeVisibleMethod(paymentType)
-		switch visibleMethod {
-		case payment.TypeAlipay, payment.TypeWxpay:
-			if shouldExpose[visibleMethod] {
-				appendType(visibleMethod)
-			}
-		default:
-			appendType(visibleMethod)
-		}
+		appendType(paymentType)
 	}
 
 	for _, visibleMethod := range []string{payment.TypeAlipay, payment.TypeWxpay} {

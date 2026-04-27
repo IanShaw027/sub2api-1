@@ -246,7 +246,7 @@ func TestApplyVisibleMethodRoutingToEnabledTypes(t *testing.T) {
 	}
 
 	got := applyVisibleMethodRoutingToEnabledTypes(base, vals, available)
-	want := []string{"alipay", "stripe"}
+	want := []string{"alipay", "wxpay", "stripe"}
 	if len(got) != len(want) {
 		t.Fatalf("applyVisibleMethodRoutingToEnabledTypes len = %d, want %d (%v)", len(got), len(want), got)
 	}
@@ -358,7 +358,7 @@ func TestGetPaymentConfigHonorsVisibleMethodSettings(t *testing.T) {
 		t.Fatalf("GetPaymentConfig returned error: %v", err)
 	}
 
-	want := []string{payment.TypeAlipay, payment.TypeStripe}
+	want := []string{payment.TypeAlipay, payment.TypeWxpay, payment.TypeStripe}
 	if len(cfg.EnabledTypes) != len(want) {
 		t.Fatalf("EnabledTypes len = %d, want %d (%v)", len(cfg.EnabledTypes), len(want), cfg.EnabledTypes)
 	}
@@ -369,7 +369,7 @@ func TestGetPaymentConfigHonorsVisibleMethodSettings(t *testing.T) {
 	}
 }
 
-func TestGetPaymentConfigFailsClosedWhenVisibleMethodSourceMissing(t *testing.T) {
+func TestGetPaymentConfigPreservesStoredEnabledTypesWhenVisibleMethodSourceMissing(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)
 
@@ -410,7 +410,42 @@ func TestGetPaymentConfigFailsClosedWhenVisibleMethodSourceMissing(t *testing.T)
 
 	cfg, err := svc.GetPaymentConfig(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{payment.TypeStripe}, cfg.EnabledTypes)
+	require.Equal(t, []string{payment.TypeAlipay, payment.TypeStripe}, cfg.EnabledTypes)
+}
+
+func TestGetPaymentConfigPreservesStoredEnabledTypesWithoutLegacyVisibleMethodRouting(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+
+	_, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeAlipay).
+		SetName("Official Alipay").
+		SetConfig("{}").
+		SetSupportedTypes("alipay").
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeWxpay).
+		SetName("Official WxPay").
+		SetConfig("{}").
+		SetSupportedTypes("wxpay").
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentConfigService{
+		entClient: client,
+		settingRepo: &paymentConfigSettingRepoStub{
+			values: map[string]string{
+				SettingEnabledPaymentTypes: "alipay,wxpay",
+			},
+		},
+	}
+
+	cfg, err := svc.GetPaymentConfig(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{payment.TypeAlipay, payment.TypeWxpay}, cfg.EnabledTypes)
 }
 
 func TestGetPaymentConfigSelectsStripePublishableKeyDeterministically(t *testing.T) {
