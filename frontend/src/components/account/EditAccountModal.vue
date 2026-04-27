@@ -2665,10 +2665,10 @@ watch(
   { immediate: true }
 )
 
-const loadModelRestrictionFromCredentials = (
+function loadModelRestrictionFromCredentials(
   credentials?: Record<string, unknown>,
   options: { forceMappingMode?: boolean } = {}
-) => {
+) {
   const existingWhitelist = credentials?.model_whitelist
   const whitelistModels = Array.isArray(existingWhitelist)
     ? existingWhitelist
