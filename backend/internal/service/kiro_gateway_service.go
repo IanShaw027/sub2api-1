@@ -172,38 +172,12 @@ func resolveKiroRequestedModelForRequest(account *Account, parsed *ParsedRequest
 	if parsed == nil {
 		return "", fmt.Errorf("invalid kiro request args")
 	}
-	requestedModel, err := resolveKiroRequestedModel(account, parsed.Model)
-	if err != nil {
-		return "", err
-	}
-	if !shouldUseKiroThinkingModel(parsed, runtimeSettings) {
-		return requestedModel, nil
-	}
-	finalModel := applyKiroThinkingModelVariant(requestedModel)
-	if finalModel != requestedModel && !kiroFinalModelAllowedByAccount(account, finalModel) {
-		return "", fmt.Errorf("kiro model %s is not enabled for this account", finalModel)
-	}
-	return finalModel, nil
-}
-
-func kiroFinalModelAllowedByAccount(account *Account, finalModel string) bool {
-	if account == nil || len(account.GetModelMapping()) == 0 {
-		return true
-	}
-	return account.IsModelSupported(finalModel)
-}
-
-func shouldUseKiroThinkingModel(parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) bool {
-	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
-	if runtimeSettings.ThinkingMode != KiroThinkingModeModel && runtimeSettings.ThinkingMode != KiroThinkingModeModelAndSimulate {
-		return false
-	}
-	return shouldApplyKiroThinking(parsed, runtimeSettings)
+	return resolveKiroRequestedModel(account, parsed.Model)
 }
 
 func shouldSimulateKiroThinking(parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) bool {
 	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
-	if runtimeSettings.ThinkingMode != KiroThinkingModeSimulate && runtimeSettings.ThinkingMode != KiroThinkingModeModelAndSimulate {
+	if runtimeSettings.ThinkingMode != KiroThinkingModeSimulate {
 		return false
 	}
 	return shouldApplyKiroThinking(parsed, runtimeSettings)
@@ -244,26 +218,6 @@ func kiroThinkingEffortRank(effort string) int {
 	default:
 		return 2
 	}
-}
-
-func applyKiroThinkingModelVariant(model string) string {
-	model = strings.TrimSpace(model)
-	if model == "" {
-		return model
-	}
-	if strings.Contains(strings.ToLower(model), "-thinking") {
-		return model
-	}
-	if strings.HasSuffix(strings.ToLower(model), "-1m") {
-		candidate := strings.TrimSuffix(model, "-1m") + "-thinking-1m"
-		if kiropkg.MapModel(candidate) != "" {
-			return candidate
-		}
-	}
-	if candidate := model + "-thinking"; kiropkg.MapModel(candidate) != "" {
-		return candidate
-	}
-	return model
 }
 
 func renderKiroThinkingSimulation(parsed *ParsedRequest, converted *kiropkg.ConvertResult, runtimeSettings *KiroRuntimeSettings) string {
@@ -390,7 +344,6 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 	toolUses := make([]map[string]any, 0)
 	toolBuffers := make(map[string]*kiroToolState)
 	stopReason := "end_turn"
-	contextInputTokens := 0
 	hasVisibleOutput := false
 
 	for _, frame := range frames {
@@ -423,8 +376,6 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 				stopReason = "tool_use"
 				hasVisibleOutput = true
 			}
-		case "contextUsageEvent":
-			contextInputTokens = contextUsageToTokens(numberField(frame.Payload, "contextUsagePercentage"))
 		}
 	}
 	if !hasVisibleOutput {
@@ -449,9 +400,6 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 		content = append(content, map[string]any{"type": "text", "text": text})
 	}
 	content = append(content, toolUses...)
-	if contextInputTokens > 0 {
-		inputTokens = contextInputTokens
-	}
 	fakeCacheUsage := resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, inputTokens, runtimeSettings)
 	inputTokens = fakeCacheUsage.InputTokens
 	outputTokens := estimateKiroOutputTokens(textBuilder.String()+simulatedThinking, toolOutputBuilder.String())
@@ -502,14 +450,10 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	var outputBuilder strings.Builder
 	var toolOutputBuilder strings.Builder
 	stopReason := "end_turn"
-	contextInputTokens := 0
 	framesSeen := 0
 	completedToolUses := 0
 	simulatedThinking := renderKiroThinkingSimulation(parsed, converted, runtimeSettings)
 	startStream := func(initialInputTokens int) error {
-		if contextInputTokens > 0 {
-			initialInputTokens = contextInputTokens
-		}
 		if parsed.OnUpstreamAccepted != nil {
 			parsed.OnUpstreamAccepted()
 		}
@@ -665,8 +609,6 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 							return nil, err
 						}
 					}
-				case "contextUsageEvent":
-					contextInputTokens = contextUsageToTokens(numberField(frame.Payload, "contextUsagePercentage"))
 				}
 			}
 		}
@@ -715,9 +657,6 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		}
 	}
 
-	if contextInputTokens > 0 {
-		inputTokens = contextInputTokens
-	}
 	finalFakeCacheUsage := resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, inputTokens, runtimeSettings)
 	inputTokens = finalFakeCacheUsage.InputTokens
 	outputTokens := estimateKiroOutputTokens(outputBuilder.String()+simulatedThinking, toolOutputBuilder.String())
@@ -1366,21 +1305,4 @@ func booleanField(obj map[string]any, key string) bool {
 		return value
 	}
 	return false
-}
-
-func numberField(obj map[string]any, key string) float64 {
-	if obj == nil {
-		return 0
-	}
-	if value, ok := obj[key].(float64); ok {
-		return value
-	}
-	return 0
-}
-
-func contextUsageToTokens(percentage float64) int {
-	if percentage <= 0 {
-		return 0
-	}
-	return int((percentage * 1000000.0) / 100.0)
 }

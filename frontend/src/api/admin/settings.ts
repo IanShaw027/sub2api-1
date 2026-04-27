@@ -61,9 +61,7 @@ export type KiroRuntimeValidationError =
 
 export type KiroThinkingMode =
   | "off"
-  | "model"
-  | "simulate"
-  | "model_and_simulate";
+  | "simulate";
 
 export type KiroThinkingEffortThreshold =
   | "minimal"
@@ -92,7 +90,7 @@ export const KIRO_CACHE_MIN_BLOCK_TOKENS_DEFAULT = 1024;
 export const KIRO_CACHE_MIN_BLOCK_TOKENS_MAX = 1 << 20;
 export const KIRO_CACHE_INDEPENDENT_TTL_SECONDS_DEFAULT = 3600;
 export const KIRO_CACHE_PREFIX_TTL_SECONDS_DEFAULT = 300;
-export const KIRO_THINKING_MODE_DEFAULT: KiroThinkingMode = "model";
+export const KIRO_THINKING_MODE_DEFAULT: KiroThinkingMode = "simulate";
 export const KIRO_THINKING_EFFORT_THRESHOLD_DEFAULT: KiroThinkingEffortThreshold =
   "medium";
 export const KIRO_THINKING_SIMULATION_TEMPLATE_DEFAULT =

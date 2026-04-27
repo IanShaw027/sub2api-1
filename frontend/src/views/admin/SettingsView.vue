@@ -7192,14 +7192,9 @@ const betaPolicyScopeOptions = computed(() => [
 ]);
 
 const kiroThinkingModeOptions = computed(() => [
-  { value: "model", label: t("admin.settings.kiroRuntime.thinkingModeModel") },
   {
     value: "simulate",
     label: t("admin.settings.kiroRuntime.thinkingModeSimulate"),
-  },
-  {
-    value: "model_and_simulate",
-    label: t("admin.settings.kiroRuntime.thinkingModeModelAndSimulate"),
   },
   { value: "off", label: t("admin.settings.kiroRuntime.thinkingModeOff") },
 ]);

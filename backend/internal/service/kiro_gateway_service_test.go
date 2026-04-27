@@ -316,7 +316,7 @@ func TestMapKiroModel_MatchesClaudeCodeAliasesAgainstConfiguredKiroModels(t *tes
 	require.Equal(t, "claude-opus-4.7-1m", mapKiroModel(account, "claude-opus-4-7-1m"))
 }
 
-func TestResolveKiroRequestedModelForRequest_UsesThinkingVariantWhenEnabled(t *testing.T) {
+func TestResolveKiroRequestedModelForRequest_DefaultSimulationKeepsMappedModel(t *testing.T) {
 	account := &Account{ID: 104, Platform: PlatformKiro, Type: AccountTypeOAuth}
 
 	model, err := resolveKiroRequestedModelForRequest(account, &ParsedRequest{
@@ -326,11 +326,11 @@ func TestResolveKiroRequestedModelForRequest_UsesThinkingVariantWhenEnabled(t *t
 	}, nil)
 
 	require.NoError(t, err)
-	require.Equal(t, "claude-sonnet-4-5-thinking", model)
-	require.Equal(t, "claude-sonnet-4.5-thinking", kiropkg.MapModel(model))
+	require.Equal(t, "claude-sonnet-4-5", model)
+	require.Equal(t, "claude-sonnet-4.5", kiropkg.MapModel(model))
 }
 
-func TestResolveKiroRequestedModelForRequest_PreservesOneMillionThinkingVariant(t *testing.T) {
+func TestResolveKiroRequestedModelForRequest_PreservesOneMillionMappedModel(t *testing.T) {
 	account := &Account{ID: 105, Platform: PlatformKiro, Type: AccountTypeOAuth}
 
 	model, err := resolveKiroRequestedModelForRequest(account, &ParsedRequest{
@@ -340,8 +340,8 @@ func TestResolveKiroRequestedModelForRequest_PreservesOneMillionThinkingVariant(
 	}, nil)
 
 	require.NoError(t, err)
-	require.Equal(t, "claude-sonnet-4-5-20250929-thinking-1m", model)
-	require.Equal(t, "claude-sonnet-4.5-thinking-1m", kiropkg.MapModel(model))
+	require.Equal(t, "claude-sonnet-4-5-20250929-1m", model)
+	require.Equal(t, "claude-sonnet-4.5-1m", kiropkg.MapModel(model))
 }
 
 func TestResolveKiroRequestedModelForRequest_LowEffortDoesNotUseThinkingVariant(t *testing.T) {
@@ -361,15 +361,14 @@ func TestResolveKiroRequestedModelForRequest_LowEffortDoesNotUseThinkingVariant(
 	}
 }
 
-func TestResolveKiroRequestedModelForRequest_AppliesThinkingAfterModelMapping(t *testing.T) {
+func TestResolveKiroRequestedModelForRequest_KeepsAccountMappedModelForThinkingRequests(t *testing.T) {
 	account := &Account{
 		ID:       107,
 		Platform: PlatformKiro,
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
 			"model_mapping": map[string]any{
-				"claude-sonnet-4-5":          "claude-sonnet-4.5",
-				"claude-sonnet-4.5-thinking": "claude-sonnet-4.5-thinking",
+				"claude-sonnet-4-5": "claude-sonnet-4.5",
 			},
 		},
 	}
@@ -381,11 +380,11 @@ func TestResolveKiroRequestedModelForRequest_AppliesThinkingAfterModelMapping(t 
 	}, nil)
 
 	require.NoError(t, err)
-	require.Equal(t, "claude-sonnet-4.5-thinking", model)
-	require.Equal(t, "claude-sonnet-4.5-thinking", kiropkg.MapModel(model))
+	require.Equal(t, "claude-sonnet-4.5", model)
+	require.Equal(t, "claude-sonnet-4.5", kiropkg.MapModel(model))
 }
 
-func TestResolveKiroRequestedModelForRequest_RejectsThinkingVariantOutsideAccountMapping(t *testing.T) {
+func TestResolveKiroRequestedModelForRequest_DoesNotRequireThinkingVariantInAccountMapping(t *testing.T) {
 	account := &Account{
 		ID:       109,
 		Platform: PlatformKiro,
@@ -403,9 +402,8 @@ func TestResolveKiroRequestedModelForRequest_RejectsThinkingVariantOutsideAccoun
 		OutputEffort:    "medium",
 	}, nil)
 
-	require.Error(t, err)
-	require.Empty(t, model)
-	require.Contains(t, err.Error(), "not enabled")
+	require.NoError(t, err)
+	require.Equal(t, "claude-sonnet-4.5", model)
 }
 
 func TestResolveKiroRequestedModelForRequest_SimulateModeDoesNotUseThinkingVariant(t *testing.T) {
@@ -889,6 +887,47 @@ func TestKiroGatewayService_ForwardStream_ContextOnlyBodyFailsWithoutStartingStr
 	require.Error(t, err)
 	require.Nil(t, result)
 	require.NotContains(t, rec.Body.String(), "event: message_start")
+}
+
+func TestKiroGatewayService_ForwardStream_DoesNotBillContextUsagePercentageAsInputTokens(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+
+	body := append(
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "contextUsageEvent",
+		}, map[string]any{"contextUsagePercentage": 30}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": "ok"})...,
+	)
+
+	result, err := svc.forwardStream(
+		context.Background(),
+		c,
+		&Account{ID: 4, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4", Stream: true},
+		&kiropkg.ConvertResult{Model: "claude-sonnet-4.6"},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 32, result.Usage.InputTokens)
+	require.Contains(t, rec.Body.String(), `"input_tokens":32`)
+	require.NotContains(t, rec.Body.String(), `"input_tokens":300000`)
 }
 
 func TestParseKiroFrame_RejectsOversizedHeaderLength(t *testing.T) {

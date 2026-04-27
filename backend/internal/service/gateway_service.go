@@ -3598,25 +3598,7 @@ func (s *GatewayService) isModelSupportedByAccountWithContext(ctx context.Contex
 		if strings.TrimSpace(requestedModel) == "" {
 			return true
 		}
-		mapped := mapKiroModel(account, requestedModel)
-		if mapped == "" {
-			return false
-		}
-		if thinkingEnabled, ok := ThinkingEnabledFromContext(ctx); ok && thinkingEnabled {
-			outputEffort, _ := OutputEffortFromContext(ctx)
-			runtimeSettings := DefaultKiroRuntimeSettings()
-			if s.settingService != nil {
-				runtimeSettings = s.settingService.GetKiroRuntimeSettings(ctx)
-			}
-			parsed := &ParsedRequest{ThinkingEnabled: true, OutputEffort: outputEffort}
-			if shouldUseKiroThinkingModel(parsed, runtimeSettings) {
-				finalModel := applyKiroThinkingModelVariant(mapped)
-				if finalModel != mapped {
-					return kiro.MapModel(finalModel) != "" && kiroFinalModelAllowedByAccount(account, finalModel)
-				}
-			}
-		}
-		return true
+		return mapKiroModel(account, requestedModel) != ""
 	}
 	if account.Platform == PlatformAntigravity {
 		if strings.TrimSpace(requestedModel) == "" {

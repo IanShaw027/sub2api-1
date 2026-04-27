@@ -203,14 +203,14 @@ func TestFakeCachePlanResolveUsage(t *testing.T) {
 
 	miss := plan.ResolveUsage(140, false)
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              140,
+		InputTokens:              40,
 		CacheCreationInputTokens: 100,
 		CacheReadInputTokens:     0,
 	}, miss)
 
 	hit := plan.ResolveUsage(140, true)
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              80,
+		InputTokens:              40,
 		CacheCreationInputTokens: 40,
 		CacheReadInputTokens:     60,
 	}, hit)
@@ -249,7 +249,7 @@ func TestFakeCachePlanResolveUsageWithConfig_ScalesCacheReadAndHonorsMinBlock(t 
 	})
 
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              64,
+		InputTokens:              40,
 		CacheCreationInputTokens: 24,
 		CacheReadInputTokens:     76,
 	}, usage)
@@ -268,7 +268,7 @@ func TestFakeCachePlanResolveUsageWithConfig_ZeroHitRateScaleIsValid(t *testing.
 	})
 
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              140,
+		InputTokens:              40,
 		CacheCreationInputTokens: 100,
 		CacheReadInputTokens:     0,
 	}, usage)
@@ -293,7 +293,7 @@ func TestFakeCachePlanResolveUsageWithConfig_DropsSmallBlocks(t *testing.T) {
 	})
 
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              100,
+		InputTokens:              60,
 		CacheCreationInputTokens: 40,
 		CacheReadInputTokens:     40,
 	}, usage)

@@ -2701,9 +2701,9 @@ func normalizeKiroThinkingMode(value string) string {
 	case KiroThinkingModeSimulate:
 		return KiroThinkingModeSimulate
 	case KiroThinkingModeModelAndSimulate:
-		return KiroThinkingModeModelAndSimulate
+		return KiroThinkingModeSimulate
 	case KiroThinkingModeModel:
-		return KiroThinkingModeModel
+		return KiroThinkingModeSimulate
 	default:
 		return defaultKiroThinkingMode
 	}

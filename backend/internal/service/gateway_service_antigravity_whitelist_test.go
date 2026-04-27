@@ -177,7 +177,7 @@ func TestGatewayService_isModelSupportedByAccountWithContext_ThinkingMode(t *tes
 	}
 }
 
-func TestGatewayService_isModelSupportedByAccountWithContext_KiroThinkingUsesFinalModel(t *testing.T) {
+func TestGatewayService_isModelSupportedByAccountWithContext_KiroThinkingKeepsMappedModel(t *testing.T) {
 	svc := &GatewayService{}
 	account := &Account{
 		Platform: PlatformKiro,
@@ -190,7 +190,7 @@ func TestGatewayService_isModelSupportedByAccountWithContext_KiroThinkingUsesFin
 	}
 
 	highThinkingCtx := WithOutputEffort(WithThinkingEnabled(context.Background(), true, false), "high")
-	require.False(t, svc.isModelSupportedByAccountWithContext(highThinkingCtx, account, "claude-sonnet-4-5"))
+	require.True(t, svc.isModelSupportedByAccountWithContext(highThinkingCtx, account, "claude-sonnet-4-5"))
 
 	lowThinkingCtx := WithOutputEffort(WithThinkingEnabled(context.Background(), true, false), "low")
 	require.True(t, svc.isModelSupportedByAccountWithContext(lowThinkingCtx, account, "claude-sonnet-4-5"))

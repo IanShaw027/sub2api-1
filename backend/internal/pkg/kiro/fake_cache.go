@@ -159,7 +159,7 @@ func (p *FakeCachePlan) ResolveUsageWithConfig(totalInputTokens int, hit FakeCac
 		cacheWrite += unscaledRead - scaledRead
 		cacheWrite = clampFakeCacheTokens(cacheWrite, totalInputTokens-cacheRead)
 	}
-	inputTokens := totalInputTokens - cacheRead
+	inputTokens := totalInputTokens - cacheRead - cacheWrite
 	if inputTokens < 0 {
 		inputTokens = 0
 	}

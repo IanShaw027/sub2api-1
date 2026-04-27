@@ -225,7 +225,7 @@ const (
 	defaultKiroCacheMinBlockTokens        = 1024
 	defaultKiroCacheIndependentTTL        = 3600
 	defaultKiroCachePrefixTTL             = 300
-	defaultKiroThinkingMode               = KiroThinkingModeModel
+	defaultKiroThinkingMode               = KiroThinkingModeSimulate
 	defaultKiroThinkingEffortThreshold    = "medium"
 	defaultKiroThinkingSimulationTemplate = "Using Kiro simulated thinking with {effort} effort for {model}. {detail}"
 )
