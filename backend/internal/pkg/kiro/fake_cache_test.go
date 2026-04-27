@@ -197,8 +197,10 @@ func TestBuildFakeCachePlanPrefixKeysIncludeAssistantAndToolHistory(t *testing.T
 
 func TestFakeCachePlanResolveUsage(t *testing.T) {
 	plan := &FakeCachePlan{
-		PreviousCacheableTokens: 60,
-		CurrentCacheableTokens:  100,
+		PreviousPrefixCacheableTokens: 60,
+		CurrentPrefixCacheableTokens:  100,
+		CurrentPrefixKey:              "prefix:current",
+		PreviousPrefixKey:             "prefix:previous",
 	}
 
 	miss := plan.ResolveUsage(140, false)
@@ -218,8 +220,10 @@ func TestFakeCachePlanResolveUsage(t *testing.T) {
 
 func TestFakeCachePlanResolveUsageClampsOversizedCache(t *testing.T) {
 	plan := &FakeCachePlan{
-		PreviousCacheableTokens: 120,
-		CurrentCacheableTokens:  160,
+		PreviousPrefixCacheableTokens: 120,
+		CurrentPrefixCacheableTokens:  160,
+		CurrentPrefixKey:              "prefix:current",
+		PreviousPrefixKey:             "prefix:previous",
 	}
 
 	hit := plan.ResolveUsage(90, true)
@@ -248,17 +252,27 @@ func TestFakeCachePlanResolveUsageWithConfig_ScalesCacheReadAndHonorsMinBlock(t 
 		MinBlockTokens: 16,
 	})
 
+	// With 95% hit rate:
+	// - Independent: 20 tokens (hit)
+	// - PreviousPrefix: 60 tokens (hit)
+	// - CurrentPrefix: 80 tokens (20 new)
+	// Total cache read before scaling: 80 (20 + 60)
+	// After 95% scaling: 76 tokens
+	// Cache write: 20 tokens (80 - 60, new content)
+	// Regular input: 44 tokens (140 - 76 - 20)
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              40,
-		CacheCreationInputTokens: 24,
-		CacheReadInputTokens:     76,
+		InputTokens:              44, // Increased due to 5% cache miss
+		CacheCreationInputTokens: 20, // Only new content, not affected by hit rate
+		CacheReadInputTokens:     76, // 95% of 80
 	}, usage)
 }
 
 func TestFakeCachePlanResolveUsageWithConfig_ZeroHitRateScaleIsValid(t *testing.T) {
 	plan := &FakeCachePlan{
-		CurrentCacheableTokens:  100,
-		PreviousCacheableTokens: 60,
+		CurrentPrefixCacheableTokens:  100,
+		PreviousPrefixCacheableTokens: 60,
+		CurrentPrefixKey:              "prefix:current",
+		PreviousPrefixKey:             "prefix:previous",
 	}
 
 	usage := plan.ResolveUsageWithConfig(140, FakeCacheHitState{
@@ -267,10 +281,12 @@ func TestFakeCachePlanResolveUsageWithConfig_ZeroHitRateScaleIsValid(t *testing.
 		HitRateScale: 0,
 	})
 
+	// With 0% hit rate, all cache reads should become regular input tokens
+	// Cache write should remain the same (40 tokens for the new content)
 	require.Equal(t, FakeCacheUsage{
-		InputTokens:              40,
-		CacheCreationInputTokens: 100,
-		CacheReadInputTokens:     0,
+		InputTokens:              100, // 40 (non-cached) + 60 (failed cache read)
+		CacheCreationInputTokens: 40,  // Only new content (100 - 60)
+		CacheReadInputTokens:     0,   // No cache hits with 0% rate
 	}, usage)
 }
 
@@ -296,6 +312,33 @@ func TestFakeCachePlanResolveUsageWithConfig_DropsSmallBlocks(t *testing.T) {
 		InputTokens:              60,
 		CacheCreationInputTokens: 40,
 		CacheReadInputTokens:     40,
+	}, usage)
+}
+
+func TestFakeCachePlanResolveUsageWithConfig_NoSessionID(t *testing.T) {
+	// When there's no session ID, all keys are empty
+	// Should return all tokens as regular input, no cache simulation
+	plan := &FakeCachePlan{
+		CurrentCacheableTokens:  1000,
+		PreviousCacheableTokens: 0,
+		IndependentKey:          "",
+		CurrentPrefixKey:        "",
+		PreviousPrefixKey:       "",
+	}
+
+	usage := plan.ResolveUsageWithConfig(1000, FakeCacheHitState{
+		Independent: false,
+		Prefix:      false,
+	}, FakeCacheUsageConfig{
+		HitRateScale:   95,
+		MinBlockTokens: 1024,
+	})
+
+	// Should NOT simulate cache when no session ID
+	require.Equal(t, FakeCacheUsage{
+		InputTokens:              1000,
+		CacheCreationInputTokens: 0,
+		CacheReadInputTokens:     0,
 	}, usage)
 }
 
