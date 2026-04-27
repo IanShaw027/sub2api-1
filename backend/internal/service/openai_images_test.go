@@ -613,12 +613,12 @@ func TestOpenAIGatewayServiceForwardImages_OAuthUsesResponsesAPI(t *testing.T) {
 	require.Equal(t, chatgptCodexURL, upstream.lastReq.URL.String())
 	require.Equal(t, "chatgpt.com", upstream.lastReq.Host)
 	require.Equal(t, "application/json", upstream.lastReq.Header.Get("Content-Type"))
-	require.Equal(t, "application/json", upstream.lastReq.Header.Get("Accept"))
+	require.Equal(t, "text/event-stream", upstream.lastReq.Header.Get("Accept"))
 	require.Equal(t, "acct-123", upstream.lastReq.Header.Get("chatgpt-account-id"))
 	require.Equal(t, "responses=experimental", upstream.lastReq.Header.Get("OpenAI-Beta"))
 
 	require.Equal(t, openAIImagesResponsesMainModel, gjson.GetBytes(upstream.lastBody, "model").String())
-	require.False(t, gjson.GetBytes(upstream.lastBody, "stream").Bool())
+	require.True(t, gjson.GetBytes(upstream.lastBody, "stream").Bool())
 	require.Equal(t, "image_generation", gjson.GetBytes(upstream.lastBody, "tools.0.type").String())
 	require.Equal(t, "generate", gjson.GetBytes(upstream.lastBody, "tools.0.action").String())
 	require.Equal(t, "gpt-image-2", gjson.GetBytes(upstream.lastBody, "tools.0.model").String())
@@ -709,7 +709,7 @@ func TestOpenAIGatewayServiceForwardImages_OAuthStreamingTransformsEvents(t *tes
 	require.False(t, gjson.Get(completed.Data, "revised_prompt").Exists())
 }
 
-func TestOpenAIGatewayServiceForwardImages_OAuthNonStreamingUsesJSONAccept(t *testing.T) {
+func TestOpenAIGatewayServiceForwardImages_OAuthNonStreamingUsesStreamingUpstream(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","stream":false}`)
 
@@ -757,8 +757,8 @@ func TestOpenAIGatewayServiceForwardImages_OAuthNonStreamingUsesJSONAccept(t *te
 	require.Equal(t, 5, result.Usage.CacheReadInputTokens)
 	require.Equal(t, 17, result.Usage.ImageOutputTokens)
 	require.NotNil(t, upstream.lastReq)
-	require.Equal(t, "application/json", upstream.lastReq.Header.Get("Accept"))
-	require.False(t, gjson.GetBytes(upstream.lastBody, "stream").Bool())
+	require.Equal(t, "text/event-stream", upstream.lastReq.Header.Get("Accept"))
+	require.True(t, gjson.GetBytes(upstream.lastBody, "stream").Bool())
 	require.Equal(t, "aGVsbG8=", gjson.Get(rec.Body.String(), "data.0.b64_json").String())
 }
 

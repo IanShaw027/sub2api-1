@@ -69,6 +69,7 @@ func TestAccountTestService_OpenAIImageOAuthDefaultCallsImagesEndpoint(t *testin
 	require.Equal(t, "Bearer token-123", upstream.lastReq.Header.Get("Authorization"))
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(upstream.lastBody, &body))
+	require.Equal(t, true, body["stream"])
 	input, ok := body["input"].([]any)
 	require.True(t, ok)
 	require.Len(t, input, 1)
@@ -91,6 +92,9 @@ func TestAccountTestService_OpenAIImageOAuthDefaultCallsImagesEndpoint(t *testin
 	require.Contains(t, rec.Body.String(), "\"success\":true")
 	require.Equal(t, "codex_cli_rs", upstream.lastReq.Header.Get("originator"))
 	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, "text/event-stream", upstream.lastReq.Header.Get("Accept"))
+	require.LessOrEqual(t, len(upstream.lastReq.Header.Get("session_id")), 64)
+	require.NotContains(t, upstream.lastReq.Header.Get("session_id"), "draw a cat")
 }
 
 func TestAccountTestService_OpenAIImageOAuthIgnoresCompactProbeMode(t *testing.T) {
@@ -126,6 +130,7 @@ func TestAccountTestService_OpenAIImageOAuthIgnoresCompactProbeMode(t *testing.T
 	require.NotNil(t, upstream.lastReq)
 	require.Equal(t, chatgptCodexURL, upstream.lastReq.URL.String())
 	require.NotContains(t, upstream.lastReq.URL.String(), "/compact")
+	require.True(t, gjson.GetBytes(upstream.lastBody, "stream").Bool())
 	require.Equal(t, "gpt-image-2", gjson.GetBytes(upstream.lastBody, "tools.0.model").String())
 }
 

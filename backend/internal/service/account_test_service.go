@@ -965,6 +965,7 @@ func (s *AccountTestService) testOpenAIImageGatewayEndpoint(c *gin.Context, ctx 
 		"prompt":          prompt,
 		"n":               1,
 		"response_format": "b64_json",
+		"stream":          true,
 	}
 	payloadBytes, _ := json.Marshal(payload)
 
@@ -977,7 +978,7 @@ func (s *AccountTestService) testOpenAIImageGatewayEndpoint(c *gin.Context, ctx 
 
 	req := httptest.NewRequest(http.MethodPost, endpointPath, bytes.NewReader(payloadBytes)).WithContext(ctx)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("User-Agent", outboundUserAgent)
 	req.Header.Set("originator", outboundOriginator)
 	c.Request = req
@@ -1009,22 +1010,15 @@ func (s *AccountTestService) testOpenAIImageGatewayEndpoint(c *gin.Context, ctx 
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Images API request failed: %s", err.Error()))
 	}
 
-	var response struct {
-		Data []struct {
-			B64JSON       string `json:"b64_json"`
-			URL           string `json:"url"`
-			RevisedPrompt string `json:"revised_prompt"`
-		} `json:"data"`
-		OutputFormat string `json:"output_format"`
-	}
-	if err := json.Unmarshal(imageRec.Body.Bytes(), &response); err != nil {
+	images, err := collectOpenAIImageTestResults(imageRec.Body.Bytes())
+	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to parse image response: %s", err.Error()))
 	}
-	if len(response.Data) == 0 {
+	if len(images) == 0 {
 		return s.sendErrorAndEnd(c, "No images returned from API")
 	}
-	mimeType := openAIImageOutputMIMEType(response.OutputFormat)
-	for _, item := range response.Data {
+	for _, item := range images {
+		mimeType := openAIImageOutputMIMEType(item.OutputFormat)
 		if item.RevisedPrompt != "" {
 			s.sendEvent(c, TestEvent{Type: "content", Text: item.RevisedPrompt})
 		}
@@ -1042,6 +1036,44 @@ func (s *AccountTestService) testOpenAIImageGatewayEndpoint(c *gin.Context, ctx 
 
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
 	return nil
+}
+
+type openAIImageTestResult struct {
+	B64JSON       string `json:"b64_json"`
+	URL           string `json:"url"`
+	RevisedPrompt string `json:"revised_prompt"`
+	OutputFormat  string `json:"output_format"`
+}
+
+func collectOpenAIImageTestResults(body []byte) ([]openAIImageTestResult, error) {
+	var response struct {
+		Data         []openAIImageTestResult `json:"data"`
+		OutputFormat string                  `json:"output_format"`
+	}
+	if err := json.Unmarshal(body, &response); err == nil {
+		for i := range response.Data {
+			if response.Data[i].OutputFormat == "" {
+				response.Data[i].OutputFormat = response.OutputFormat
+			}
+		}
+		return response.Data, nil
+	}
+
+	results := make([]openAIImageTestResult, 0, 1)
+	for _, line := range strings.Split(string(body), "\n") {
+		data, ok := extractOpenAISSEDataLine(strings.TrimRight(line, "\r"))
+		if !ok || data == "" || data == "[DONE]" {
+			continue
+		}
+		var item openAIImageTestResult
+		if err := json.Unmarshal([]byte(data), &item); err != nil {
+			continue
+		}
+		if item.URL != "" || item.B64JSON != "" {
+			results = append(results, item)
+		}
+	}
+	return results, nil
 }
 
 func (s *AccountTestService) testOpenAIImageWeb2API(c *gin.Context, ctx context.Context, account *Account, modelID, prompt string) error {

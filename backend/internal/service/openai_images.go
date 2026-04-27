@@ -124,7 +124,8 @@ func (r *OpenAIImagesRequest) StickySessionSeed() string {
 	if strings.TrimSpace(r.Prompt) == "" && r.bodyHash != "" {
 		seed += "|body=" + r.bodyHash
 	}
-	return seed
+	sum := sha256.Sum256([]byte(seed))
+	return "openai-images-" + hex.EncodeToString(sum[:8])
 }
 
 func (s *OpenAIGatewayService) ParseOpenAIImagesRequest(c *gin.Context, body []byte) (*OpenAIImagesRequest, error) {
