@@ -124,6 +124,7 @@ code-reviews/
 #AGENTS.md
 backend/cmd/server/server
 /sub2api
+/sub2api.new
 /data/.installed
 /data/config.yaml
 /data/logs/
