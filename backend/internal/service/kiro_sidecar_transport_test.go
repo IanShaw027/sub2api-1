@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -298,6 +299,54 @@ func TestKiroTokenRefresher_Refresh_IDCUsesRuntimeHeaders(t *testing.T) {
 	require.Contains(t, upstream.req.Header.Get("User-Agent"), "md/nodejs#23.1.0")
 	require.Contains(t, upstream.req.Header.Get("User-Agent"), "api/sso-oidc#3.738.0")
 	require.Equal(t, "commit-runtime", upstream.req.Header.Get("x-amzn-kiro-commit"))
+}
+
+func TestKiroTokenRefresher_Refresh_IDCUsesJSONTokenPayload(t *testing.T) {
+	var requestBody string
+	upstream := &kiroHTTPUpstreamRecorder{
+		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+			body, err := io.ReadAll(req.Body)
+			require.NoError(t, err)
+			requestBody = string(body)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body: io.NopCloser(strings.NewReader(`{
+					"accessToken":"new-access-token",
+					"refreshToken":"new-refresh-token",
+					"expiresIn":3600
+				}`)),
+				Header: make(http.Header),
+			}, nil
+		},
+	}
+	refresher := NewKiroTokenRefresher().WithTransport(upstream, &TLSFingerprintProfileService{})
+	account := &Account{
+		ID:       12,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "refresh-token",
+			"auth_method":   "idc",
+			"client_id":     "client-id",
+			"client_secret": "client-secret",
+		},
+	}
+
+	_, err := refresher.Refresh(context.Background(), account)
+
+	require.NoError(t, err)
+	require.NotNil(t, upstream.req)
+	require.Contains(t, upstream.req.URL.String(), "oidc.")
+	require.Equal(t, "application/json", upstream.req.Header.Get("Content-Type"))
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(requestBody), &payload))
+	require.Equal(t, map[string]any{
+		"clientId":     "client-id",
+		"clientSecret": "client-secret",
+		"grantType":    "refresh_token",
+		"refreshToken": "refresh-token",
+	}, payload)
 }
 
 func TestKiroTokenRefresher_Refresh_IDCDoesNotFallbackToSocial(t *testing.T) {

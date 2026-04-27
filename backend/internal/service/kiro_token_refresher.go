@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -135,16 +134,16 @@ func (r *KiroTokenRefresher) refreshKiroSocialToken(ctx context.Context, account
 }
 
 func (r *KiroTokenRefresher) refreshKiroIDCToken(ctx context.Context, account *Account) (accessToken, refreshToken, expiresAt string, err error) {
-	payload := url.Values{
-		"client_id":     []string{account.GetCredential("client_id")},
-		"client_secret": []string{account.GetCredential("client_secret")},
-		"refresh_token": []string{account.GetCredential("refresh_token")},
-		"grant_type":    []string{"refresh_token"},
+	payload := map[string]any{
+		"clientId":     account.GetCredential("client_id"),
+		"clientSecret": account.GetCredential("client_secret"),
+		"refreshToken": account.GetCredential("refresh_token"),
+		"grantType":    "refresh_token",
 	}
 	url := fmt.Sprintf("https://oidc.%s.amazonaws.com/token", KiroAuthRegion(account))
 	host := fmt.Sprintf("oidc.%s.amazonaws.com", KiroAuthRegion(account))
 	var out kiroRefreshResponse
-	if err = r.doKiroFormRequest(ctx, account, url, host, payload, &out); err != nil {
+	if err = r.doKiroJSONRequest(ctx, account, url, host, payload, &out); err != nil {
 		return "", "", "", fmt.Errorf("kiro idc refresh failed: %w", err)
 	}
 	refreshToken = out.RefreshToken
@@ -172,15 +171,6 @@ func (r *KiroTokenRefresher) doKiroJSONRequest(ctx context.Context, account *Acc
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	return r.doKiroRequest(req, account, host, out)
-}
-
-func (r *KiroTokenRefresher) doKiroFormRequest(ctx context.Context, account *Account, url, host string, payload url.Values, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(payload.Encode()))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return r.doKiroRequest(req, account, host, out)
 }
 
