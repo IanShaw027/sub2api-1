@@ -181,6 +181,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 	// 在请求上下文中记录 thinking 状态，供 Antigravity 最终模型 key 推导/模型维度限流使用
 	c.Request = c.Request.WithContext(service.WithThinkingEnabled(c.Request.Context(), parsedReq.ThinkingEnabled, h.metadataBridgeEnabled()))
+	c.Request = c.Request.WithContext(service.WithOutputEffort(c.Request.Context(), parsedReq.OutputEffort))
 
 	setOpsRequestContext(c, reqModel, reqStream, body)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
@@ -263,8 +264,30 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		return
 	}
 
+	// 获取平台：优先使用强制平台（/antigravity 路由，中间件已设置 request.Context），否则使用分组平台
+	platform := ""
+	if forcePlatform, ok := middleware2.GetForcePlatformFromContext(c); ok {
+		platform = forcePlatform
+	} else if apiKey.Group != nil {
+		platform = apiKey.Group.Platform
+	}
+
 	// 设置请求所属分组 ID（用于渠道级功能判断，如 WebSearch 模拟）
 	parsedReq.GroupID = apiKey.GroupID
+
+	if platform == service.PlatformKiro {
+		sessionSeed := service.KiroExplicitSessionSeed(
+			body,
+			c.GetHeader("X-Claude-Code-Session-Id"),
+			c.GetHeader("session_id"),
+			c.GetHeader("conversation_id"),
+		)
+		if updatedBody, metadataUserID, changed := service.EnsureKiroMetadataUserIDForSession(parsedReq.Body, parsedReq.MetadataUserID, sessionSeed); changed {
+			body = updatedBody
+			parsedReq.Body = updatedBody
+			parsedReq.MetadataUserID = metadataUserID
+		}
+	}
 
 	// 计算粘性会话hash
 	parsedReq.SessionContext = &service.SessionContext{
@@ -273,14 +296,6 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		APIKeyID:  apiKey.ID,
 	}
 	sessionHash := h.gatewayService.GenerateSessionHash(parsedReq)
-
-	// 获取平台：优先使用强制平台（/antigravity 路由，中间件已设置 request.Context），否则使用分组平台
-	platform := ""
-	if forcePlatform, ok := middleware2.GetForcePlatformFromContext(c); ok {
-		platform = forcePlatform
-	} else if apiKey.Group != nil {
-		platform = apiKey.Group.Platform
-	}
 	sessionKey := sessionHash
 	if platform == service.PlatformGemini && sessionHash != "" {
 		sessionKey = "gemini:" + sessionHash
@@ -1503,6 +1518,7 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 	reqLog = reqLog.With(zap.String("model", parsedReq.Model), zap.Bool("stream", parsedReq.Stream))
 	// 在请求上下文中记录 thinking 状态，供 Antigravity 最终模型 key 推导/模型维度限流使用
 	c.Request = c.Request.WithContext(service.WithThinkingEnabled(c.Request.Context(), parsedReq.ThinkingEnabled, h.metadataBridgeEnabled()))
+	c.Request = c.Request.WithContext(service.WithOutputEffort(c.Request.Context(), parsedReq.OutputEffort))
 
 	// 验证 model 必填
 	if parsedReq.Model == "" {

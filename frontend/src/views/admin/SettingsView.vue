@@ -183,6 +183,72 @@
                   </p>
                 </div>
               </div>
+
+              <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-700">
+                <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+                  {{ t("admin.settings.kiroRuntime.thinkingTitle") }}
+                </h3>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.settings.kiroRuntime.thinkingDescription") }}
+                </p>
+                <div class="mt-4 grid grid-cols-1 gap-6 lg:grid-cols-2">
+                  <div>
+                    <label
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ t("admin.settings.kiroRuntime.thinkingMode") }}
+                    </label>
+                    <Select
+                      v-model="form.kiro_thinking_mode"
+                      :options="kiroThinkingModeOptions"
+                    />
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.kiroRuntime.thinkingModeHint") }}
+                    </p>
+                  </div>
+                  <div>
+                    <label
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ t("admin.settings.kiroRuntime.thinkingEffortThreshold") }}
+                    </label>
+                    <Select
+                      v-model="form.kiro_thinking_effort_threshold"
+                      :options="kiroThinkingEffortOptions"
+                    />
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{
+                        t(
+                          "admin.settings.kiroRuntime.thinkingEffortThresholdHint",
+                        )
+                      }}
+                    </p>
+                  </div>
+                </div>
+                <div class="mt-4">
+                  <label
+                    class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    {{ t("admin.settings.kiroRuntime.thinkingSimulationTemplate") }}
+                  </label>
+                  <textarea
+                    v-model="form.kiro_thinking_simulation_template"
+                    rows="3"
+                    class="input min-h-[86px] font-mono text-sm"
+                    data-testid="kiro-runtime-thinking-template"
+                    :placeholder="
+                      t(
+                        'admin.settings.kiroRuntime.thinkingSimulationTemplatePlaceholder',
+                      )
+                    "
+                  />
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      t("admin.settings.kiroRuntime.thinkingSimulationTemplateHint")
+                    }}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -3024,8 +3090,8 @@
               <p class="text-xs text-gray-500 dark:text-gray-400">
                 {{
                   localText(
-                    "格式：{ platform: { model_whitelist: string[], model_mapping: {from: to}, compact_model_mapping: {from: to} } }。白名单会转成 key=value 的 model_mapping，包含 * 的白名单项会被后端跳过。",
-                    "Format: { platform: { model_whitelist: string[], model_mapping: {from: to}, compact_model_mapping: {from: to} } }. Whitelist entries are converted to key=value model_mapping; entries containing * are skipped by backend.",
+                    "格式：{ platform: { model_whitelist: string[], model_mapping: {from: to}, compact_model_mapping: {from: to} } }。白名单用于模型限制，支持末尾 * 通配符。",
+                    "Format: { platform: { model_whitelist: string[], model_mapping: {from: to}, compact_model_mapping: {from: to} } }. Whitelist entries restrict models and support trailing * wildcards.",
                   )
                 }}
               </p>
@@ -5321,6 +5387,9 @@ import {
   defaultWeChatConnectScopesForMode,
   deriveWeChatConnectStoredMode,
   KIRO_CACHE_MIN_BLOCK_TOKENS_MAX,
+  KIRO_THINKING_EFFORT_THRESHOLD_DEFAULT,
+  KIRO_THINKING_MODE_DEFAULT,
+  KIRO_THINKING_SIMULATION_TEMPLATE_DEFAULT,
   normalizeKiroRuntimeSettingsForUpdate,
   normalizeDefaultSubscriptionSettings,
   resolveWeChatConnectModeCapabilities,
@@ -5749,6 +5818,9 @@ const form = reactive<SettingsForm>({
   cache_min_block_tokens: undefined,
   cache_independent_ttl_seconds: undefined,
   cache_prefix_ttl_seconds: undefined,
+  kiro_thinking_mode: KIRO_THINKING_MODE_DEFAULT,
+  kiro_thinking_effort_threshold: KIRO_THINKING_EFFORT_THRESHOLD_DEFAULT,
+  kiro_thinking_simulation_template: KIRO_THINKING_SIMULATION_TEMPLATE_DEFAULT,
   // 分组隔离
   allow_ungrouped_key_scheduling: false,
   openai_advanced_scheduler_enabled: false,
@@ -7117,6 +7189,28 @@ const betaPolicyScopeOptions = computed(() => [
   { value: "oauth", label: t("admin.settings.betaPolicy.scopeOAuth") },
   { value: "apikey", label: t("admin.settings.betaPolicy.scopeAPIKey") },
   { value: "bedrock", label: t("admin.settings.betaPolicy.scopeBedrock") },
+]);
+
+const kiroThinkingModeOptions = computed(() => [
+  { value: "model", label: t("admin.settings.kiroRuntime.thinkingModeModel") },
+  {
+    value: "simulate",
+    label: t("admin.settings.kiroRuntime.thinkingModeSimulate"),
+  },
+  {
+    value: "model_and_simulate",
+    label: t("admin.settings.kiroRuntime.thinkingModeModelAndSimulate"),
+  },
+  { value: "off", label: t("admin.settings.kiroRuntime.thinkingModeOff") },
+]);
+
+const kiroThinkingEffortOptions = computed(() => [
+  { value: "minimal", label: t("admin.settings.kiroRuntime.effortMinimal") },
+  { value: "low", label: t("admin.settings.kiroRuntime.effortLow") },
+  { value: "medium", label: t("admin.settings.kiroRuntime.effortMedium") },
+  { value: "high", label: t("admin.settings.kiroRuntime.effortHigh") },
+  { value: "xhigh", label: t("admin.settings.kiroRuntime.effortXHigh") },
+  { value: "max", label: t("admin.settings.kiroRuntime.effortMax") },
 ]);
 
 // Beta Policy 方法

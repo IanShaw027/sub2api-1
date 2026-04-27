@@ -170,6 +170,9 @@ type SystemSettings struct {
 	KiroCacheMinBlockTokens        int    `json:"cache_min_block_tokens"`
 	KiroCacheIndependentTTLSeconds int    `json:"cache_independent_ttl_seconds"`
 	KiroCachePrefixTTLSeconds      int    `json:"cache_prefix_ttl_seconds"`
+	KiroThinkingMode               string `json:"kiro_thinking_mode"`
+	KiroThinkingEffortThreshold    string `json:"kiro_thinking_effort_threshold"`
+	KiroThinkingSimulationTemplate string `json:"kiro_thinking_simulation_template"`
 
 	// Payment visible method routing
 	PaymentVisibleMethodAlipaySource  string `json:"payment_visible_method_alipay_source"`

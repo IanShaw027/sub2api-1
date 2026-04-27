@@ -101,6 +101,37 @@ func TestShrinkToEssentials_IncludesThinking(t *testing.T) {
 	}
 }
 
+func TestShrinkToEssentials_PreservesKiroModelID(t *testing.T) {
+	t.Parallel()
+
+	root := map[string]any{
+		"conversationState": map[string]any{
+			"currentMessage": map[string]any{
+				"userInputMessage": map[string]any{
+					"content": "large prompt body",
+					"modelId": "claude-sonnet-4.6",
+					"origin":  "AI_EDITOR",
+				},
+			},
+			"history": []any{
+				map[string]any{"userInputMessage": map[string]any{"content": "old", "modelId": "claude-haiku-4.5"}},
+				map[string]any{"userInputMessage": map[string]any{"content": "last", "modelId": "claude-sonnet-4.6"}},
+			},
+		},
+	}
+
+	out := shrinkToEssentials(root)
+	conversationState, ok := out["conversationState"].(map[string]any)
+	require.True(t, ok)
+	currentMessage, ok := conversationState["currentMessage"].(map[string]any)
+	require.True(t, ok)
+	userInputMessage, ok := currentMessage["userInputMessage"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "claude-sonnet-4.6", userInputMessage["modelId"])
+	require.NotContains(t, userInputMessage, "content")
+	require.Equal(t, true, out["request_body_truncated"])
+}
+
 func TestGetErrorLogByIDSanitizesStoredRequestDetails(t *testing.T) {
 	t.Parallel()
 

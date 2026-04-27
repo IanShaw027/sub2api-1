@@ -716,6 +716,43 @@ func shrinkToEssentials(root map[string]any) map[string]any {
 			out["contents"] = []any{arr[len(arr)-1]}
 		}
 	}
+	if conversationState, ok := root["conversationState"].(map[string]any); ok {
+		if kiroState := shrinkKiroConversationState(conversationState); len(kiroState) > 0 {
+			out["conversationState"] = kiroState
+			out["request_body_truncated"] = true
+		}
+	}
+	return out
+}
+
+func shrinkKiroConversationState(conversationState map[string]any) map[string]any {
+	out := make(map[string]any)
+	if currentMessage, ok := conversationState["currentMessage"].(map[string]any); ok {
+		if userInputMessage, ok := currentMessage["userInputMessage"].(map[string]any); ok {
+			if current := shrinkKiroUserInputMessage(userInputMessage); len(current) > 0 {
+				out["currentMessage"] = map[string]any{"userInputMessage": current}
+			}
+		}
+	}
+	if history, ok := conversationState["history"].([]any); ok && len(history) > 0 {
+		if last, ok := history[len(history)-1].(map[string]any); ok {
+			if userInputMessage, ok := last["userInputMessage"].(map[string]any); ok {
+				if lastUser := shrinkKiroUserInputMessage(userInputMessage); len(lastUser) > 0 {
+					out["history"] = []any{map[string]any{"userInputMessage": lastUser}}
+				}
+			}
+		}
+	}
+	return out
+}
+
+func shrinkKiroUserInputMessage(message map[string]any) map[string]any {
+	out := make(map[string]any)
+	for _, key := range []string{"modelId", "origin"} {
+		if value, ok := message[key]; ok {
+			out[key] = value
+		}
+	}
 	return out
 }
 

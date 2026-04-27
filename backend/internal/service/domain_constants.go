@@ -385,6 +385,9 @@ const (
 	SettingKeyKiroCacheMinBlockTokens        = "kiro_cache_min_block_tokens"
 	SettingKeyKiroCacheIndependentTTLSeconds = "kiro_cache_independent_ttl_seconds"
 	SettingKeyKiroCachePrefixTTLSeconds      = "kiro_cache_prefix_ttl_seconds"
+	SettingKeyKiroThinkingMode               = "kiro_thinking_mode"
+	SettingKeyKiroThinkingEffortThreshold    = "kiro_thinking_effort_threshold"
+	SettingKeyKiroThinkingSimulationTemplate = "kiro_thinking_simulation_template"
 )
 
 // AdminAPIKeyPrefix is the prefix for admin API keys (distinct from user "sk-" keys).

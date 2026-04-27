@@ -20,6 +20,7 @@ const (
 	// retry the specific upstream attempt (not just the client request).
 	// This value is sanitized+trimmed before being persisted.
 	OpsUpstreamRequestBodyKey = "ops_upstream_request_body"
+	OpsUpstreamModelKey       = "ops_upstream_model"
 
 	// Optional stage latencies (milliseconds) for troubleshooting and alerting.
 	OpsAuthLatencyMsKey      = "ops_auth_latency_ms"
@@ -47,6 +48,15 @@ func setOpsUpstreamRequestBody(c *gin.Context, body []byte) {
 	}
 	// 热路径避免 string(body) 额外分配，按需在落库前再转换。
 	c.Set(OpsUpstreamRequestBodyKey, body)
+}
+
+func SetOpsUpstreamModel(c *gin.Context, model string) {
+	if c == nil {
+		return
+	}
+	if model = strings.TrimSpace(model); model != "" {
+		c.Set(OpsUpstreamModelKey, model)
+	}
 }
 
 func SetOpsLatencyMs(c *gin.Context, key string, value int64) {

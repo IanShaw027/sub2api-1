@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -50,6 +51,29 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func validateCustomMenuPageURL(raw string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return fmt.Errorf("empty url")
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return err
+	}
+	if !u.IsAbs() {
+		return fmt.Errorf("must be absolute")
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+	default:
+		return fmt.Errorf("unsupported scheme: %s", u.Scheme)
+	}
+	if strings.TrimSpace(u.Host) == "" {
+		return fmt.Errorf("missing host")
+	}
+	return nil
 }
 
 func mustMarshalSupportQRCodes(entries *[]dto.SupportQRCodeEntry) string {
@@ -253,6 +277,9 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		KiroCacheMinBlockTokens:                settings.KiroCacheMinBlockTokens,
 		KiroCacheIndependentTTLSeconds:         settings.KiroCacheIndependentTTLSeconds,
 		KiroCachePrefixTTLSeconds:              settings.KiroCachePrefixTTLSeconds,
+		KiroThinkingMode:                       settings.KiroThinkingMode,
+		KiroThinkingEffortThreshold:            settings.KiroThinkingEffortThreshold,
+		KiroThinkingSimulationTemplate:         settings.KiroThinkingSimulationTemplate,
 		PaymentVisibleMethodAlipaySource:       settings.PaymentVisibleMethodAlipaySource,
 		PaymentVisibleMethodWxpaySource:        settings.PaymentVisibleMethodWxpaySource,
 		PaymentVisibleMethodAlipayEnabled:      settings.PaymentVisibleMethodAlipayEnabled,
@@ -461,6 +488,9 @@ type UpdateSettingsRequest struct {
 	KiroCacheMinBlockTokens        *int    `json:"cache_min_block_tokens"`
 	KiroCacheIndependentTTLSeconds *int    `json:"cache_independent_ttl_seconds"`
 	KiroCachePrefixTTLSeconds      *int    `json:"cache_prefix_ttl_seconds"`
+	KiroThinkingMode               *string `json:"kiro_thinking_mode"`
+	KiroThinkingEffortThreshold    *string `json:"kiro_thinking_effort_threshold"`
+	KiroThinkingSimulationTemplate *string `json:"kiro_thinking_simulation_template"`
 
 	// Payment visible method routing
 	PaymentVisibleMethodAlipaySource  *string `json:"payment_visible_method_alipay_source"`
@@ -1089,18 +1119,20 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				response.BadRequest(c, "Custom menu item label is too long (max 50 characters)")
 				return
 			}
-			if strings.TrimSpace(item.URL) == "" {
+			itemURL := strings.TrimSpace(item.URL)
+			if itemURL == "" {
 				response.BadRequest(c, "Custom menu item URL is required")
 				return
 			}
-			if len(item.URL) > maxMenuItemURLLen {
+			if len(itemURL) > maxMenuItemURLLen {
 				response.BadRequest(c, "Custom menu item URL is too long (max 2048 characters)")
 				return
 			}
-			if err := config.ValidateAbsoluteHTTPURL(strings.TrimSpace(item.URL)); err != nil {
+			if err := validateCustomMenuPageURL(itemURL); err != nil {
 				response.BadRequest(c, "Custom menu item URL must be an absolute http(s) URL")
 				return
 			}
+			items[i].URL = itemURL
 			if item.Visibility != "user" && item.Visibility != "admin" {
 				response.BadRequest(c, "Custom menu item visibility must be 'user' or 'admin'")
 				return
@@ -1449,6 +1481,24 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.KiroCachePrefixTTLSeconds
 		}(),
+		KiroThinkingMode: func() string {
+			if req.KiroThinkingMode != nil {
+				return strings.TrimSpace(*req.KiroThinkingMode)
+			}
+			return previousSettings.KiroThinkingMode
+		}(),
+		KiroThinkingEffortThreshold: func() string {
+			if req.KiroThinkingEffortThreshold != nil {
+				return strings.TrimSpace(*req.KiroThinkingEffortThreshold)
+			}
+			return previousSettings.KiroThinkingEffortThreshold
+		}(),
+		KiroThinkingSimulationTemplate: func() string {
+			if req.KiroThinkingSimulationTemplate != nil {
+				return strings.TrimSpace(*req.KiroThinkingSimulationTemplate)
+			}
+			return previousSettings.KiroThinkingSimulationTemplate
+		}(),
 		PaymentVisibleMethodAlipaySource: func() string {
 			if req.PaymentVisibleMethodAlipaySource != nil {
 				return strings.TrimSpace(*req.PaymentVisibleMethodAlipaySource)
@@ -1748,6 +1798,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		KiroCacheMinBlockTokens:                updatedSettings.KiroCacheMinBlockTokens,
 		KiroCacheIndependentTTLSeconds:         updatedSettings.KiroCacheIndependentTTLSeconds,
 		KiroCachePrefixTTLSeconds:              updatedSettings.KiroCachePrefixTTLSeconds,
+		KiroThinkingMode:                       updatedSettings.KiroThinkingMode,
+		KiroThinkingEffortThreshold:            updatedSettings.KiroThinkingEffortThreshold,
+		KiroThinkingSimulationTemplate:         updatedSettings.KiroThinkingSimulationTemplate,
 		PaymentVisibleMethodAlipaySource:       updatedSettings.PaymentVisibleMethodAlipaySource,
 		PaymentVisibleMethodWxpaySource:        updatedSettings.PaymentVisibleMethodWxpaySource,
 		PaymentVisibleMethodAlipayEnabled:      updatedSettings.PaymentVisibleMethodAlipayEnabled,

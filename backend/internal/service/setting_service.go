@@ -1451,14 +1451,17 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyGatewayDebugTimelineRetentionDays] = strconv.Itoa(gatewayDebugTimeline.RetentionDays)
 	updates[SettingKeyGatewayDebugTimelineMaxSizeMB] = strconv.FormatInt(gatewayDebugTimeline.MaxSizeMB, 10)
 	kiroRuntime := normalizeKiroRuntimeSettings(&KiroRuntimeSettings{
-		KiroVersion:             settings.KiroDefaultVersion,
-		KiroCommit:              settings.KiroDefaultCommit,
-		SystemVersion:           settings.KiroDefaultSystemVersion,
-		NodeVersion:             settings.KiroDefaultNodeVersion,
-		CacheHitRateScale:       settings.KiroCacheHitRateScale,
-		CacheMinBlockTokens:     settings.KiroCacheMinBlockTokens,
-		CacheIndependentTTLSecs: settings.KiroCacheIndependentTTLSeconds,
-		CachePrefixTTLSecs:      settings.KiroCachePrefixTTLSeconds,
+		KiroVersion:                settings.KiroDefaultVersion,
+		KiroCommit:                 settings.KiroDefaultCommit,
+		SystemVersion:              settings.KiroDefaultSystemVersion,
+		NodeVersion:                settings.KiroDefaultNodeVersion,
+		CacheHitRateScale:          settings.KiroCacheHitRateScale,
+		CacheMinBlockTokens:        settings.KiroCacheMinBlockTokens,
+		CacheIndependentTTLSecs:    settings.KiroCacheIndependentTTLSeconds,
+		CachePrefixTTLSecs:         settings.KiroCachePrefixTTLSeconds,
+		ThinkingMode:               settings.KiroThinkingMode,
+		ThinkingEffortThreshold:    settings.KiroThinkingEffortThreshold,
+		ThinkingSimulationTemplate: settings.KiroThinkingSimulationTemplate,
 	})
 	updates[SettingKeyKiroDefaultVersion] = kiroRuntime.KiroVersion
 	updates[SettingKeyKiroDefaultCommit] = kiroRuntime.KiroCommit
@@ -1468,6 +1471,9 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyKiroCacheMinBlockTokens] = strconv.Itoa(kiroRuntime.CacheMinBlockTokens)
 	updates[SettingKeyKiroCacheIndependentTTLSeconds] = strconv.Itoa(kiroRuntime.CacheIndependentTTLSecs)
 	updates[SettingKeyKiroCachePrefixTTLSeconds] = strconv.Itoa(kiroRuntime.CachePrefixTTLSecs)
+	updates[SettingKeyKiroThinkingMode] = kiroRuntime.ThinkingMode
+	updates[SettingKeyKiroThinkingEffortThreshold] = kiroRuntime.ThinkingEffortThreshold
+	updates[SettingKeyKiroThinkingSimulationTemplate] = kiroRuntime.ThinkingSimulationTemplate
 	updates[SettingPaymentVisibleMethodAlipaySource] = settings.PaymentVisibleMethodAlipaySource
 	updates[SettingPaymentVisibleMethodWxpaySource] = settings.PaymentVisibleMethodWxpaySource
 	updates[SettingPaymentVisibleMethodAlipayEnabled] = strconv.FormatBool(settings.PaymentVisibleMethodAlipayEnabled)
@@ -1547,14 +1553,17 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	kiroRuntimeSettingsSF.Forget("kiro_runtime")
 	kiroRuntimeSettingsCache.Store(&cachedKiroRuntimeSettings{
 		settings: normalizeKiroRuntimeSettings(&KiroRuntimeSettings{
-			KiroVersion:             settings.KiroDefaultVersion,
-			KiroCommit:              settings.KiroDefaultCommit,
-			SystemVersion:           settings.KiroDefaultSystemVersion,
-			NodeVersion:             settings.KiroDefaultNodeVersion,
-			CacheHitRateScale:       settings.KiroCacheHitRateScale,
-			CacheMinBlockTokens:     settings.KiroCacheMinBlockTokens,
-			CacheIndependentTTLSecs: settings.KiroCacheIndependentTTLSeconds,
-			CachePrefixTTLSecs:      settings.KiroCachePrefixTTLSeconds,
+			KiroVersion:                settings.KiroDefaultVersion,
+			KiroCommit:                 settings.KiroDefaultCommit,
+			SystemVersion:              settings.KiroDefaultSystemVersion,
+			NodeVersion:                settings.KiroDefaultNodeVersion,
+			CacheHitRateScale:          settings.KiroCacheHitRateScale,
+			CacheMinBlockTokens:        settings.KiroCacheMinBlockTokens,
+			CacheIndependentTTLSecs:    settings.KiroCacheIndependentTTLSeconds,
+			CachePrefixTTLSecs:         settings.KiroCachePrefixTTLSeconds,
+			ThinkingMode:               settings.KiroThinkingMode,
+			ThinkingEffortThreshold:    settings.KiroThinkingEffortThreshold,
+			ThinkingSimulationTemplate: settings.KiroThinkingSimulationTemplate,
 		}),
 		expiresAt: time.Now().Add(kiroRuntimeSettingsCacheTTL).UnixNano(),
 	})
@@ -2157,6 +2166,17 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingPaymentVisibleMethodAlipayEnabled: "false",
 		SettingPaymentVisibleMethodWxpayEnabled:  "false",
 		openAIAdvancedSchedulerSettingKey:        "false",
+		SettingKeyKiroDefaultVersion:             defaultKiroVersion,
+		SettingKeyKiroDefaultCommit:              "",
+		SettingKeyKiroDefaultSystemVersion:       defaultKiroSystemVersion,
+		SettingKeyKiroDefaultNodeVersion:         defaultKiroNodeVersion,
+		SettingKeyKiroCacheHitRateScale:          strconv.Itoa(defaultKiroCacheHitRateScale),
+		SettingKeyKiroCacheMinBlockTokens:        strconv.Itoa(defaultKiroCacheMinBlockTokens),
+		SettingKeyKiroCacheIndependentTTLSeconds: strconv.Itoa(defaultKiroCacheIndependentTTL),
+		SettingKeyKiroCachePrefixTTLSeconds:      strconv.Itoa(defaultKiroCachePrefixTTL),
+		SettingKeyKiroThinkingMode:               defaultKiroThinkingMode,
+		SettingKeyKiroThinkingEffortThreshold:    defaultKiroThinkingEffortThreshold,
+		SettingKeyKiroThinkingSimulationTemplate: defaultKiroThinkingSimulationTemplate,
 	}
 
 	return s.settingRepo.SetMultiple(ctx, defaults)
@@ -2513,6 +2533,9 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.KiroCacheMinBlockTokens = kiroRuntime.CacheMinBlockTokens
 	result.KiroCacheIndependentTTLSeconds = kiroRuntime.CacheIndependentTTLSecs
 	result.KiroCachePrefixTTLSeconds = kiroRuntime.CachePrefixTTLSecs
+	result.KiroThinkingMode = kiroRuntime.ThinkingMode
+	result.KiroThinkingEffortThreshold = kiroRuntime.ThinkingEffortThreshold
+	result.KiroThinkingSimulationTemplate = kiroRuntime.ThinkingSimulationTemplate
 	result.PaymentVisibleMethodAlipaySource = NormalizeVisibleMethodSource("alipay", settings[SettingPaymentVisibleMethodAlipaySource])
 	result.PaymentVisibleMethodWxpaySource = NormalizeVisibleMethodSource("wxpay", settings[SettingPaymentVisibleMethodWxpaySource])
 	result.PaymentVisibleMethodAlipayEnabled = settings[SettingPaymentVisibleMethodAlipayEnabled] == "true"
@@ -2574,6 +2597,9 @@ func parseKiroRuntimeSettingsMap(settings map[string]string) *KiroRuntimeSetting
 	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyKiroCachePrefixTTLSeconds])); err == nil {
 		result.CachePrefixTTLSecs = v
 	}
+	result.ThinkingMode = strings.TrimSpace(settings[SettingKeyKiroThinkingMode])
+	result.ThinkingEffortThreshold = strings.TrimSpace(settings[SettingKeyKiroThinkingEffortThreshold])
+	result.ThinkingSimulationTemplate = strings.TrimSpace(settings[SettingKeyKiroThinkingSimulationTemplate])
 
 	return normalizeKiroRuntimeSettings(result)
 }
@@ -2594,6 +2620,9 @@ func normalizeKiroRuntimeSettings(settings *KiroRuntimeSettings) *KiroRuntimeSet
 	if settings.CachePrefixTTLSecs > settings.CacheIndependentTTLSecs {
 		settings.CachePrefixTTLSecs = settings.CacheIndependentTTLSecs
 	}
+	settings.ThinkingMode = normalizeKiroThinkingMode(settings.ThinkingMode)
+	settings.ThinkingEffortThreshold = normalizeKiroThinkingEffortThreshold(settings.ThinkingEffortThreshold)
+	settings.ThinkingSimulationTemplate = normalizeKiroThinkingSimulationTemplate(settings.ThinkingSimulationTemplate)
 	return settings
 }
 
@@ -2605,6 +2634,13 @@ func validateKiroRuntimeSettingsForUpdate(settings *SystemSettings) error {
 	settings.KiroDefaultCommit = strings.TrimSpace(settings.KiroDefaultCommit)
 	settings.KiroDefaultSystemVersion = strings.TrimSpace(settings.KiroDefaultSystemVersion)
 	settings.KiroDefaultNodeVersion = strings.TrimSpace(settings.KiroDefaultNodeVersion)
+	kiroThinkingSimulationTemplate := strings.TrimSpace(settings.KiroThinkingSimulationTemplate)
+	if len([]rune(kiroThinkingSimulationTemplate)) > 2000 {
+		return infraerrors.BadRequest("INVALID_KIRO_RUNTIME_SETTINGS", "Kiro thinking simulation template must not exceed 2000 characters")
+	}
+	settings.KiroThinkingMode = normalizeKiroThinkingMode(settings.KiroThinkingMode)
+	settings.KiroThinkingEffortThreshold = normalizeKiroThinkingEffortThreshold(settings.KiroThinkingEffortThreshold)
+	settings.KiroThinkingSimulationTemplate = normalizeKiroThinkingSimulationTemplate(kiroThinkingSimulationTemplate)
 	if !isSafeKiroHeaderValue(settings.KiroDefaultVersion) {
 		return infraerrors.BadRequest("INVALID_KIRO_RUNTIME_SETTINGS", "Kiro version contains invalid header characters")
 	}
@@ -2654,6 +2690,39 @@ func normalizeKiroOptionalHeaderValue(value string) string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" || !isSafeKiroHeaderValue(trimmed) {
 		return ""
+	}
+	return trimmed
+}
+
+func normalizeKiroThinkingMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case KiroThinkingModeOff:
+		return KiroThinkingModeOff
+	case KiroThinkingModeSimulate:
+		return KiroThinkingModeSimulate
+	case KiroThinkingModeModelAndSimulate:
+		return KiroThinkingModeModelAndSimulate
+	case KiroThinkingModeModel:
+		return KiroThinkingModeModel
+	default:
+		return defaultKiroThinkingMode
+	}
+}
+
+func normalizeKiroThinkingEffortThreshold(value string) string {
+	if effort := NormalizeClaudeOutputEffort(value); effort != nil {
+		return *effort
+	}
+	return defaultKiroThinkingEffortThreshold
+}
+
+func normalizeKiroThinkingSimulationTemplate(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return defaultKiroThinkingSimulationTemplate
+	}
+	if len([]rune(trimmed)) > 2000 {
+		return string([]rune(trimmed)[:2000])
 	}
 	return trimmed
 }
@@ -3530,6 +3599,9 @@ func (s *SettingService) GetKiroRuntimeSettings(ctx context.Context) *KiroRuntim
 			SettingKeyKiroCacheMinBlockTokens,
 			SettingKeyKiroCacheIndependentTTLSeconds,
 			SettingKeyKiroCachePrefixTTLSeconds,
+			SettingKeyKiroThinkingMode,
+			SettingKeyKiroThinkingEffortThreshold,
+			SettingKeyKiroThinkingSimulationTemplate,
 		})
 		if err != nil {
 			slog.Warn("failed to get kiro runtime settings, falling back to defaults", "error", err)

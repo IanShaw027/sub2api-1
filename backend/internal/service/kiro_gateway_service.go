@@ -57,12 +57,14 @@ func NewKiroGatewayService(
 }
 
 func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest) (*ForwardResult, error) {
-	converted, err := s.validateAndConvertRequest(c, account, parsed)
+	runtimeSettings := s.resolveKiroRuntimeSettings(ctx)
+	converted, err := s.validateAndConvertRequest(c, account, parsed, runtimeSettings)
 	if err != nil {
 		return nil, err
 	}
 	if c != nil && converted != nil {
 		setOpsUpstreamRequestBody(c, converted.Body)
+		SetOpsUpstreamModel(c, converted.Model)
 	}
 
 	accessToken, err := s.resolveAccessToken(ctx, account)
@@ -74,7 +76,6 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 		return nil, err
 	}
 
-	runtimeSettings := s.resolveKiroRuntimeSettings(ctx)
 	fakeCachePlan, fakeCacheHit := s.prepareFakeCachePlan(account, parsed, runtimeSettings)
 	req, err := s.buildRequest(ctx, account, converted.Body, accessToken, runtimeSettings)
 	if err != nil {
@@ -124,7 +125,7 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 }
 
 func (s *KiroGatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest) error {
-	if _, err := s.validateAndConvertRequest(c, account, parsed); err != nil {
+	if _, err := s.validateAndConvertRequest(c, account, parsed, s.resolveKiroRuntimeSettings(ctx)); err != nil {
 		return err
 	}
 	inputTokens := kiropkg.EstimateInputTokens(parsed.Body)
@@ -132,14 +133,14 @@ func (s *KiroGatewayService) ForwardCountTokens(ctx context.Context, c *gin.Cont
 	return nil
 }
 
-func (s *KiroGatewayService) validateAndConvertRequest(c *gin.Context, account *Account, parsed *ParsedRequest) (*kiropkg.ConvertResult, error) {
+func (s *KiroGatewayService) validateAndConvertRequest(c *gin.Context, account *Account, parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) (*kiropkg.ConvertResult, error) {
 	if account == nil || parsed == nil {
 		err := fmt.Errorf("invalid kiro request args")
 		writeKiroInvalidRequest(c, err)
 		return nil, err
 	}
 
-	requestedModel, err := resolveKiroRequestedModel(account, parsed.Model)
+	requestedModel, err := resolveKiroRequestedModelForRequest(account, parsed, runtimeSettings)
 	if err != nil {
 		writeKiroInvalidRequest(c, err)
 		return nil, err
@@ -165,6 +166,148 @@ func resolveKiroRequestedModel(account *Account, requestedModel string) (string,
 		return mappedModel, nil
 	}
 	return requestedModel, nil
+}
+
+func resolveKiroRequestedModelForRequest(account *Account, parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) (string, error) {
+	if parsed == nil {
+		return "", fmt.Errorf("invalid kiro request args")
+	}
+	requestedModel, err := resolveKiroRequestedModel(account, parsed.Model)
+	if err != nil {
+		return "", err
+	}
+	if !shouldUseKiroThinkingModel(parsed, runtimeSettings) {
+		return requestedModel, nil
+	}
+	finalModel := applyKiroThinkingModelVariant(requestedModel)
+	if finalModel != requestedModel && !kiroFinalModelAllowedByAccount(account, finalModel) {
+		return "", fmt.Errorf("kiro model %s is not enabled for this account", finalModel)
+	}
+	return finalModel, nil
+}
+
+func kiroFinalModelAllowedByAccount(account *Account, finalModel string) bool {
+	if account == nil || len(account.GetModelMapping()) == 0 {
+		return true
+	}
+	return account.IsModelSupported(finalModel)
+}
+
+func shouldUseKiroThinkingModel(parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) bool {
+	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
+	if runtimeSettings.ThinkingMode != KiroThinkingModeModel && runtimeSettings.ThinkingMode != KiroThinkingModeModelAndSimulate {
+		return false
+	}
+	return shouldApplyKiroThinking(parsed, runtimeSettings)
+}
+
+func shouldSimulateKiroThinking(parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) bool {
+	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
+	if runtimeSettings.ThinkingMode != KiroThinkingModeSimulate && runtimeSettings.ThinkingMode != KiroThinkingModeModelAndSimulate {
+		return false
+	}
+	return shouldApplyKiroThinking(parsed, runtimeSettings)
+}
+
+func shouldApplyKiroThinking(parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) bool {
+	if parsed == nil || !parsed.ThinkingEnabled {
+		return false
+	}
+	effort := normalizedKiroRequestThinkingEffort(parsed)
+	threshold := normalizeKiroThinkingEffortThreshold(runtimeSettings.ThinkingEffortThreshold)
+	return kiroThinkingEffortRank(effort) >= kiroThinkingEffortRank(threshold)
+}
+
+func normalizedKiroRequestThinkingEffort(parsed *ParsedRequest) string {
+	if parsed != nil {
+		if effort := NormalizeClaudeOutputEffort(parsed.OutputEffort); effort != nil {
+			return *effort
+		}
+	}
+	return defaultKiroThinkingEffortThreshold
+}
+
+func kiroThinkingEffortRank(effort string) int {
+	switch normalizeKiroThinkingEffortThreshold(effort) {
+	case "minimal":
+		return 0
+	case "low":
+		return 1
+	case "medium":
+		return 2
+	case "high":
+		return 3
+	case "xhigh":
+		return 4
+	case "max":
+		return 5
+	default:
+		return 2
+	}
+}
+
+func applyKiroThinkingModelVariant(model string) string {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return model
+	}
+	if strings.Contains(strings.ToLower(model), "-thinking") {
+		return model
+	}
+	if strings.HasSuffix(strings.ToLower(model), "-1m") {
+		candidate := strings.TrimSuffix(model, "-1m") + "-thinking-1m"
+		if kiropkg.MapModel(candidate) != "" {
+			return candidate
+		}
+	}
+	if candidate := model + "-thinking"; kiropkg.MapModel(candidate) != "" {
+		return candidate
+	}
+	return model
+}
+
+func renderKiroThinkingSimulation(parsed *ParsedRequest, converted *kiropkg.ConvertResult, runtimeSettings *KiroRuntimeSettings) string {
+	if !shouldSimulateKiroThinking(parsed, runtimeSettings) {
+		return ""
+	}
+	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
+	effort := normalizedKiroRequestThinkingEffort(parsed)
+	model := ""
+	if parsed != nil {
+		model = strings.TrimSpace(parsed.Model)
+	}
+	upstreamModel := model
+	if converted != nil && strings.TrimSpace(converted.Model) != "" {
+		upstreamModel = strings.TrimSpace(converted.Model)
+	}
+	if model == "" {
+		model = upstreamModel
+	}
+	detail := kiroThinkingSimulationDetail(effort)
+	text := runtimeSettings.ThinkingSimulationTemplate
+	replacements := map[string]string{
+		"{effort}":         effort,
+		"{model}":          model,
+		"{upstream_model}": upstreamModel,
+		"{detail}":         detail,
+	}
+	for placeholder, value := range replacements {
+		text = strings.ReplaceAll(text, placeholder, value)
+	}
+	return strings.TrimSpace(text)
+}
+
+func kiroThinkingSimulationDetail(effort string) string {
+	switch normalizeKiroThinkingEffortThreshold(effort) {
+	case "minimal", "low":
+		return "Checking the immediate response path."
+	case "high":
+		return "Checking constraints, tool state, and likely failure modes before answering."
+	case "xhigh", "max":
+		return "Performing a deeper pass over constraints, tool state, edge cases, and response structure before answering."
+	default:
+		return "Planning the response before answering."
+	}
 }
 
 func (s *KiroGatewayService) resolveAccessToken(ctx context.Context, account *Account) (string, error) {
@@ -243,6 +386,7 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 	}
 
 	textBuilder := strings.Builder{}
+	toolOutputBuilder := strings.Builder{}
 	toolUses := make([]map[string]any, 0)
 	toolBuffers := make(map[string]*kiroToolState)
 	stopReason := "end_turn"
@@ -262,9 +406,12 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 			}
 		case "toolUseEvent":
 			state := ensureKiroToolState(toolBuffers, controlStringField(frame.Payload, "toolUseId"), controlStringField(frame.Payload, "name"))
-			_, _ = state.InputBuilder.WriteString(rawStringField(frame.Payload, "input"))
+			inputChunk := rawStringField(frame.Payload, "input")
+			_, _ = state.InputBuilder.WriteString(inputChunk)
+			_, _ = toolOutputBuilder.WriteString(inputChunk)
 			if booleanField(frame.Payload, "stop") {
 				state.Stopped = true
+				_, _ = toolOutputBuilder.WriteString(state.Name)
 				input := map[string]any{}
 				_ = json.Unmarshal([]byte(state.InputBuilder.String()), &input)
 				toolUses = append(toolUses, map[string]any{
@@ -293,7 +440,11 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 		parsed.OnUpstreamAccepted()
 	}
 
+	simulatedThinking := renderKiroThinkingSimulation(parsed, converted, runtimeSettings)
 	content := make([]map[string]any, 0)
+	if simulatedThinking != "" {
+		content = append(content, map[string]any{"type": "thinking", "thinking": simulatedThinking})
+	}
 	if text := textBuilder.String(); text != "" {
 		content = append(content, map[string]any{"type": "text", "text": text})
 	}
@@ -303,7 +454,7 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 	}
 	fakeCacheUsage := resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, inputTokens, runtimeSettings)
 	inputTokens = fakeCacheUsage.InputTokens
-	outputTokens := kiropkg.EstimateOutputTokens(textBuilder.String())
+	outputTokens := estimateKiroOutputTokens(textBuilder.String()+simulatedThinking, toolOutputBuilder.String())
 	s.commitFakeCachePlan(fakeCachePlan, runtimeSettings)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -349,10 +500,30 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	toolStates := make(map[string]*kiroToolState)
 	var firstTokenMs *int
 	var outputBuilder strings.Builder
+	var toolOutputBuilder strings.Builder
 	stopReason := "end_turn"
 	contextInputTokens := 0
 	framesSeen := 0
 	completedToolUses := 0
+	simulatedThinking := renderKiroThinkingSimulation(parsed, converted, runtimeSettings)
+	startStream := func(initialInputTokens int) error {
+		if contextInputTokens > 0 {
+			initialInputTokens = contextInputTokens
+		}
+		if parsed.OnUpstreamAccepted != nil {
+			parsed.OnUpstreamAccepted()
+		}
+		if err := startKiroStream(writer, msgID, parsed.Model, resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, initialInputTokens, runtimeSettings)); err != nil {
+			return err
+		}
+		streamStarted = true
+		if simulatedThinking == "" {
+			return nil
+		}
+		blockIndex := nextBlockIndex
+		nextBlockIndex++
+		return writeKiroThinkingBlock(writer, blockIndex, simulatedThinking)
+	}
 
 	for {
 		chunk := make([]byte, 4096)
@@ -399,17 +570,9 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						continue
 					}
 					if !streamStarted {
-						initialInputTokens := inputTokens
-						if contextInputTokens > 0 {
-							initialInputTokens = contextInputTokens
-						}
-						if parsed.OnUpstreamAccepted != nil {
-							parsed.OnUpstreamAccepted()
-						}
-						if err := startKiroStream(writer, msgID, parsed.Model, resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, initialInputTokens, runtimeSettings)); err != nil {
+						if err := startStream(inputTokens); err != nil {
 							return nil, err
 						}
-						streamStarted = true
 					}
 					if firstTokenMs == nil {
 						v := int(time.Since(start).Milliseconds())
@@ -445,17 +608,9 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 					toolUseID := controlStringField(frame.Payload, "toolUseId")
 					state := ensureKiroToolState(toolStates, toolUseID, controlStringField(frame.Payload, "name"))
 					if !streamStarted {
-						initialInputTokens := inputTokens
-						if contextInputTokens > 0 {
-							initialInputTokens = contextInputTokens
-						}
-						if parsed.OnUpstreamAccepted != nil {
-							parsed.OnUpstreamAccepted()
-						}
-						if err := startKiroStream(writer, msgID, parsed.Model, resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, initialInputTokens, runtimeSettings)); err != nil {
+						if err := startStream(inputTokens); err != nil {
 							return nil, err
 						}
-						streamStarted = true
 					}
 					if !state.Started {
 						if textBlockOpen {
@@ -486,6 +641,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 					inputChunk := rawStringField(frame.Payload, "input")
 					if inputChunk != "" {
 						_, _ = state.InputBuilder.WriteString(inputChunk)
+						_, _ = toolOutputBuilder.WriteString(inputChunk)
 						if err := writeSSEEvent(writer, "content_block_delta", map[string]any{
 							"type":  "content_block_delta",
 							"index": state.BlockIndex,
@@ -501,6 +657,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						stopReason = "tool_use"
 						state.Stopped = true
 						completedToolUses++
+						_, _ = toolOutputBuilder.WriteString(state.Name)
 						if err := writeSSEEvent(writer, "content_block_stop", map[string]any{
 							"type":  "content_block_stop",
 							"index": state.BlockIndex,
@@ -563,7 +720,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	}
 	finalFakeCacheUsage := resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, inputTokens, runtimeSettings)
 	inputTokens = finalFakeCacheUsage.InputTokens
-	outputTokens := kiropkg.EstimateOutputTokens(outputBuilder.String())
+	outputTokens := estimateKiroOutputTokens(outputBuilder.String()+simulatedThinking, toolOutputBuilder.String())
 	if err := writeSSEEvent(writer, "message_delta", map[string]any{
 		"type":  "message_delta",
 		"delta": map[string]any{"stop_reason": stopReason, "stop_sequence": nil},
@@ -595,6 +752,40 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			CacheReadInputTokens:     finalFakeCacheUsage.CacheReadInputTokens,
 		},
 	}, nil
+}
+
+func estimateKiroOutputTokens(textOutput, toolOutput string) int {
+	return kiropkg.EstimateOutputTokens(textOutput + toolOutput)
+}
+
+func writeKiroThinkingBlock(writer gin.ResponseWriter, index int, thinking string) error {
+	if thinking == "" {
+		return nil
+	}
+	if err := writeSSEEvent(writer, "content_block_start", map[string]any{
+		"type":  "content_block_start",
+		"index": index,
+		"content_block": map[string]any{
+			"type":     "thinking",
+			"thinking": "",
+		},
+	}); err != nil {
+		return err
+	}
+	if err := writeSSEEvent(writer, "content_block_delta", map[string]any{
+		"type":  "content_block_delta",
+		"index": index,
+		"delta": map[string]any{
+			"type":     "thinking_delta",
+			"thinking": thinking,
+		},
+	}); err != nil {
+		return err
+	}
+	return writeSSEEvent(writer, "content_block_stop", map[string]any{
+		"type":  "content_block_stop",
+		"index": index,
+	})
 }
 
 func (s *KiroGatewayService) prepareFakeCachePlan(account *Account, parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) (*kiropkg.FakeCachePlan, kiropkg.FakeCacheHitState) {

@@ -56,7 +56,22 @@ export type KiroRuntimeValidationError =
   | "cache_min_block_tokens_range"
   | "cache_independent_ttl_seconds_range"
   | "cache_prefix_ttl_seconds_range"
-  | "cache_prefix_ttl_seconds_exceeds_independent";
+  | "cache_prefix_ttl_seconds_exceeds_independent"
+  | "kiro_thinking_simulation_template_length";
+
+export type KiroThinkingMode =
+  | "off"
+  | "model"
+  | "simulate"
+  | "model_and_simulate";
+
+export type KiroThinkingEffortThreshold =
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max";
 
 export interface KiroRuntimeSettingsInput {
   kiro_version?: string | null;
@@ -67,6 +82,9 @@ export interface KiroRuntimeSettingsInput {
   cache_min_block_tokens?: number | null;
   cache_independent_ttl_seconds?: number | null;
   cache_prefix_ttl_seconds?: number | null;
+  kiro_thinking_mode?: KiroThinkingMode | string | null;
+  kiro_thinking_effort_threshold?: KiroThinkingEffortThreshold | string | null;
+  kiro_thinking_simulation_template?: string | null;
 }
 
 export const KIRO_CACHE_HIT_RATE_SCALE_DEFAULT = 95;
@@ -74,6 +92,11 @@ export const KIRO_CACHE_MIN_BLOCK_TOKENS_DEFAULT = 1024;
 export const KIRO_CACHE_MIN_BLOCK_TOKENS_MAX = 1 << 20;
 export const KIRO_CACHE_INDEPENDENT_TTL_SECONDS_DEFAULT = 3600;
 export const KIRO_CACHE_PREFIX_TTL_SECONDS_DEFAULT = 300;
+export const KIRO_THINKING_MODE_DEFAULT: KiroThinkingMode = "model";
+export const KIRO_THINKING_EFFORT_THRESHOLD_DEFAULT: KiroThinkingEffortThreshold =
+  "medium";
+export const KIRO_THINKING_SIMULATION_TEMPLATE_DEFAULT =
+  "Using Kiro simulated thinking with {effort} effort for {model}. {detail}";
 
 const AUTH_SOURCE_TYPES: AuthSourceType[] = [
   "email",
@@ -361,6 +384,13 @@ export function validateKiroRuntimeSettings(
     return "cache_prefix_ttl_seconds_exceeds_independent";
   }
 
+  if (
+    [...String(settings.kiro_thinking_simulation_template ?? "").trim()]
+      .length > 2000
+  ) {
+    return "kiro_thinking_simulation_template_length";
+  }
+
   return null;
 }
 
@@ -376,6 +406,9 @@ export function normalizeKiroRuntimeSettingsForUpdate(
   | "cache_min_block_tokens"
   | "cache_independent_ttl_seconds"
   | "cache_prefix_ttl_seconds"
+  | "kiro_thinking_mode"
+  | "kiro_thinking_effort_threshold"
+  | "kiro_thinking_simulation_template"
 > {
   const payload: Pick<
     UpdateSettingsRequest,
@@ -387,6 +420,9 @@ export function normalizeKiroRuntimeSettingsForUpdate(
     | "cache_min_block_tokens"
     | "cache_independent_ttl_seconds"
     | "cache_prefix_ttl_seconds"
+    | "kiro_thinking_mode"
+    | "kiro_thinking_effort_threshold"
+    | "kiro_thinking_simulation_template"
   > = {};
 
   if (settings.kiro_version !== undefined) {
@@ -432,6 +468,23 @@ export function normalizeKiroRuntimeSettingsForUpdate(
   );
   if (cachePrefixTtlSeconds !== undefined) {
     payload.cache_prefix_ttl_seconds = cachePrefixTtlSeconds;
+  }
+  if (settings.kiro_thinking_mode !== undefined) {
+    payload.kiro_thinking_mode = String(
+      settings.kiro_thinking_mode || KIRO_THINKING_MODE_DEFAULT,
+    ).trim();
+  }
+  if (settings.kiro_thinking_effort_threshold !== undefined) {
+    payload.kiro_thinking_effort_threshold = String(
+      settings.kiro_thinking_effort_threshold ||
+        KIRO_THINKING_EFFORT_THRESHOLD_DEFAULT,
+    ).trim();
+  }
+  if (settings.kiro_thinking_simulation_template !== undefined) {
+    payload.kiro_thinking_simulation_template = String(
+      settings.kiro_thinking_simulation_template ||
+        KIRO_THINKING_SIMULATION_TEMPLATE_DEFAULT,
+    ).trim();
   }
 
   return payload;
@@ -630,6 +683,9 @@ export interface SystemSettings {
   cache_min_block_tokens?: number | null;
   cache_independent_ttl_seconds?: number | null;
   cache_prefix_ttl_seconds?: number | null;
+  kiro_thinking_mode?: KiroThinkingMode | string;
+  kiro_thinking_effort_threshold?: KiroThinkingEffortThreshold | string;
+  kiro_thinking_simulation_template?: string;
 
   // 分组隔离
   allow_ungrouped_key_scheduling: boolean;
@@ -820,6 +876,9 @@ export interface UpdateSettingsRequest {
   cache_min_block_tokens?: number;
   cache_independent_ttl_seconds?: number;
   cache_prefix_ttl_seconds?: number;
+  kiro_thinking_mode?: KiroThinkingMode | string;
+  kiro_thinking_effort_threshold?: KiroThinkingEffortThreshold | string;
+  kiro_thinking_simulation_template?: string;
   allow_ungrouped_key_scheduling?: boolean;
   enable_fingerprint_unification?: boolean;
   enable_metadata_passthrough?: boolean;

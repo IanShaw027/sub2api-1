@@ -177,6 +177,25 @@ func TestGatewayService_isModelSupportedByAccountWithContext_ThinkingMode(t *tes
 	}
 }
 
+func TestGatewayService_isModelSupportedByAccountWithContext_KiroThinkingUsesFinalModel(t *testing.T) {
+	svc := &GatewayService{}
+	account := &Account{
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{
+				"claude-sonnet-4-5": "claude-sonnet-4.5",
+			},
+		},
+	}
+
+	highThinkingCtx := WithOutputEffort(WithThinkingEnabled(context.Background(), true, false), "high")
+	require.False(t, svc.isModelSupportedByAccountWithContext(highThinkingCtx, account, "claude-sonnet-4-5"))
+
+	lowThinkingCtx := WithOutputEffort(WithThinkingEnabled(context.Background(), true, false), "low")
+	require.True(t, svc.isModelSupportedByAccountWithContext(lowThinkingCtx, account, "claude-sonnet-4-5"))
+}
+
 // TestGatewayService_isModelSupportedByAccount_CustomMappingNotInDefault 测试自定义模型映射中
 // 不在 DefaultAntigravityModelMapping 中的模型能通过调度
 func TestGatewayService_isModelSupportedByAccount_CustomMappingNotInDefault(t *testing.T) {

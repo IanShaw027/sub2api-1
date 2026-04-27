@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -81,6 +82,43 @@ type ParsedRequest struct {
 	// OnUpstreamAccepted 上游接受请求后立即调用（用于提前释放串行锁）
 	// 流式请求在收到 2xx 响应头后调用，避免持锁等流完成
 	OnUpstreamAccepted func()
+}
+
+func KiroExplicitSessionSeed(body []byte, headerValues ...string) string {
+	for _, value := range headerValues {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
+}
+
+func EnsureKiroMetadataUserIDForSession(body []byte, existingMetadataUserID, sessionSeed string) ([]byte, string, bool) {
+	sessionSeed = strings.TrimSpace(sessionSeed)
+	existingMetadataUserID = strings.TrimSpace(existingMetadataUserID)
+	existingParsed := ParseMetadataUserID(existingMetadataUserID)
+	if sessionSeed == "" {
+		if existingParsed != nil {
+			return body, existingMetadataUserID, false
+		}
+		return body, existingMetadataUserID, false
+	}
+
+	sessionID := GenerateSessionUUID("kiro:" + sessionSeed)
+	if existingParsed != nil && existingParsed.SessionID == sessionID {
+		return body, existingMetadataUserID, false
+	}
+	if len(body) == 0 {
+		return body, existingMetadataUserID, false
+	}
+
+	deviceHash := sha256.Sum256([]byte("kiro-device:" + sessionSeed))
+	metadataUserID := FormatMetadataUserID(fmt.Sprintf("%x", deviceHash[:]), "", sessionID, "")
+	updated, err := sjson.SetBytes(body, "metadata.user_id", metadataUserID)
+	if err != nil {
+		return body, existingMetadataUserID, false
+	}
+	return updated, metadataUserID, true
 }
 
 // NormalizeSessionUserAgent reduces UA noise for sticky-session and digest hashing.
@@ -962,7 +1000,7 @@ func NormalizeClaudeOutputEffort(raw string) *string {
 		return nil
 	}
 	switch value {
-	case "low", "medium", "high", "xhigh", "max":
+	case "minimal", "low", "medium", "high", "xhigh", "max":
 		return &value
 	default:
 		return nil

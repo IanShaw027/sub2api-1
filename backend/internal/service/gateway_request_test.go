@@ -10,6 +10,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestParseGatewayRequest(t *testing.T) {
@@ -23,6 +24,54 @@ func TestParseGatewayRequest(t *testing.T) {
 	require.NotNil(t, parsed.System)
 	require.Len(t, parsed.Messages, 1)
 	require.False(t, parsed.ThinkingEnabled)
+}
+
+func TestKiroExplicitSessionSeedPrefersHeadersThenPromptCacheKey(t *testing.T) {
+	body := []byte(`{"prompt_cache_key":"body-cache-key"}`)
+
+	require.Equal(t, "header-session", KiroExplicitSessionSeed(body, "", " header-session ", "conversation"))
+	require.Equal(t, "body-cache-key", KiroExplicitSessionSeed(body, "", ""))
+	require.Empty(t, KiroExplicitSessionSeed([]byte(`{}`), "", ""))
+}
+
+func TestEnsureKiroMetadataUserIDForSessionInjectsStableLegacyMetadata(t *testing.T) {
+	body := []byte(`{"model":"claude-sonnet-4","messages":[{"role":"user","content":"hello"}]}`)
+
+	updated, metadataUserID, changed := EnsureKiroMetadataUserIDForSession(body, "", "session-seed")
+	require.True(t, changed)
+	require.NotEqual(t, string(body), string(updated))
+	require.NotEmpty(t, metadataUserID)
+
+	parsed := ParseMetadataUserID(metadataUserID)
+	require.NotNil(t, parsed)
+	require.Equal(t, GenerateSessionUUID("kiro:session-seed"), parsed.SessionID)
+	require.Equal(t, metadataUserID, gjson.GetBytes(updated, "metadata.user_id").String())
+
+	updatedAgain, metadataUserIDAgain, changedAgain := EnsureKiroMetadataUserIDForSession(updated, metadataUserID, "session-seed")
+	require.False(t, changedAgain)
+	require.Equal(t, string(updated), string(updatedAgain))
+	require.Equal(t, metadataUserID, metadataUserIDAgain)
+}
+
+func TestEnsureKiroMetadataUserIDForSessionOverridesChangingMetadataWhenExplicitSeedExists(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-sonnet-4",
+		"metadata":{"user_id":"user_a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2_account__session_aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"},
+		"messages":[{"role":"user","content":"hello"}]
+	}`)
+
+	updated, metadataUserID, changed := EnsureKiroMetadataUserIDForSession(
+		body,
+		"user_a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2_account__session_aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",
+		"stable-session",
+	)
+
+	require.True(t, changed)
+	parsed := ParseMetadataUserID(metadataUserID)
+	require.NotNil(t, parsed)
+	require.Equal(t, GenerateSessionUUID("kiro:stable-session"), parsed.SessionID)
+	require.Equal(t, metadataUserID, gjson.GetBytes(updated, "metadata.user_id").String())
+	require.NotContains(t, metadataUserID, "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa")
 }
 
 func TestParseGatewayRequest_ThinkingEnabled(t *testing.T) {
@@ -1185,6 +1234,7 @@ func TestNormalizeClaudeOutputEffort(t *testing.T) {
 		want  *string
 	}{
 		{"low", strPtr("low")},
+		{"minimal", strPtr("minimal")},
 		{"medium", strPtr("medium")},
 		{"high", strPtr("high")},
 		{"max", strPtr("max")},

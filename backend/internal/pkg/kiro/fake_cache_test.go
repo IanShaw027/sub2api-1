@@ -45,6 +45,21 @@ func TestBuildFakeCachePlanBuildsStableScopedKeys(t *testing.T) {
 	require.Contains(t, plan.CurrentKey, "acct:7:model:claude-sonnet-4:session:123e4567-e89b-12d3-a456-426614174000")
 }
 
+func TestBuildFakeCachePlanAcceptsJSONMetadataUserID(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-sonnet-4",
+		"metadata":{"user_id":"{\"device_id\":\"device\",\"account_uuid\":\"\",\"session_id\":\"123e4567-e89b-12d3-a456-426614174000\"}"},
+		"messages":[
+			{"role":"user","content":"hello"}
+		]
+	}`)
+
+	plan, err := BuildFakeCachePlan(body, 7, "claude-sonnet-4")
+	require.NoError(t, err)
+	require.NotNil(t, plan)
+	require.Contains(t, plan.CurrentKey, "session:123e4567-e89b-12d3-a456-426614174000")
+}
+
 func TestBuildFakeCachePlanBindsPrefixKeysToIndependentChain(t *testing.T) {
 	base := requireFakeCachePlan(t, `{
 		"model":"claude-sonnet-4",

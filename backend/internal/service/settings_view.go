@@ -175,6 +175,9 @@ type SystemSettings struct {
 	KiroCacheMinBlockTokens        int
 	KiroCacheIndependentTTLSeconds int
 	KiroCachePrefixTTLSeconds      int
+	KiroThinkingMode               string
+	KiroThinkingEffortThreshold    string
+	KiroThinkingSimulationTemplate string
 
 	// Payment visible method routing
 	PaymentVisibleMethodAlipaySource  string
@@ -196,36 +199,50 @@ type SystemSettings struct {
 }
 
 type KiroRuntimeSettings struct {
-	KiroVersion             string `json:"kiro_version"`
-	KiroCommit              string `json:"kiro_commit"`
-	SystemVersion           string `json:"system_version"`
-	NodeVersion             string `json:"node_version"`
-	CacheHitRateScale       int    `json:"cache_hit_rate_scale"`
-	CacheMinBlockTokens     int    `json:"cache_min_block_tokens"`
-	CacheIndependentTTLSecs int    `json:"cache_independent_ttl_seconds"`
-	CachePrefixTTLSecs      int    `json:"cache_prefix_ttl_seconds"`
+	KiroVersion                string `json:"kiro_version"`
+	KiroCommit                 string `json:"kiro_commit"`
+	SystemVersion              string `json:"system_version"`
+	NodeVersion                string `json:"node_version"`
+	CacheHitRateScale          int    `json:"cache_hit_rate_scale"`
+	CacheMinBlockTokens        int    `json:"cache_min_block_tokens"`
+	CacheIndependentTTLSecs    int    `json:"cache_independent_ttl_seconds"`
+	CachePrefixTTLSecs         int    `json:"cache_prefix_ttl_seconds"`
+	ThinkingMode               string `json:"thinking_mode"`
+	ThinkingEffortThreshold    string `json:"thinking_effort_threshold"`
+	ThinkingSimulationTemplate string `json:"thinking_simulation_template"`
 }
 
 const (
-	defaultKiroVersion             = "0.10.0"
-	defaultKiroSystemVersion       = "darwin#24.6.0"
-	defaultKiroNodeVersion         = "22.21.1"
-	defaultKiroCacheHitRateScale   = 95
-	defaultKiroCacheMinBlockTokens = 1024
-	defaultKiroCacheIndependentTTL = 3600
-	defaultKiroCachePrefixTTL      = 300
+	KiroThinkingModeOff              = "off"
+	KiroThinkingModeModel            = "model"
+	KiroThinkingModeSimulate         = "simulate"
+	KiroThinkingModeModelAndSimulate = "model_and_simulate"
+
+	defaultKiroVersion                    = "0.10.0"
+	defaultKiroSystemVersion              = "darwin#24.6.0"
+	defaultKiroNodeVersion                = "22.21.1"
+	defaultKiroCacheHitRateScale          = 95
+	defaultKiroCacheMinBlockTokens        = 1024
+	defaultKiroCacheIndependentTTL        = 3600
+	defaultKiroCachePrefixTTL             = 300
+	defaultKiroThinkingMode               = KiroThinkingModeModel
+	defaultKiroThinkingEffortThreshold    = "medium"
+	defaultKiroThinkingSimulationTemplate = "Using Kiro simulated thinking with {effort} effort for {model}. {detail}"
 )
 
 func DefaultKiroRuntimeSettings() *KiroRuntimeSettings {
 	return &KiroRuntimeSettings{
-		KiroVersion:             defaultKiroVersion,
-		KiroCommit:              "",
-		SystemVersion:           defaultKiroSystemVersion,
-		NodeVersion:             defaultKiroNodeVersion,
-		CacheHitRateScale:       defaultKiroCacheHitRateScale,
-		CacheMinBlockTokens:     defaultKiroCacheMinBlockTokens,
-		CacheIndependentTTLSecs: defaultKiroCacheIndependentTTL,
-		CachePrefixTTLSecs:      defaultKiroCachePrefixTTL,
+		KiroVersion:                defaultKiroVersion,
+		KiroCommit:                 "",
+		SystemVersion:              defaultKiroSystemVersion,
+		NodeVersion:                defaultKiroNodeVersion,
+		CacheHitRateScale:          defaultKiroCacheHitRateScale,
+		CacheMinBlockTokens:        defaultKiroCacheMinBlockTokens,
+		CacheIndependentTTLSecs:    defaultKiroCacheIndependentTTL,
+		CachePrefixTTLSecs:         defaultKiroCachePrefixTTL,
+		ThinkingMode:               defaultKiroThinkingMode,
+		ThinkingEffortThreshold:    defaultKiroThinkingEffortThreshold,
+		ThinkingSimulationTemplate: defaultKiroThinkingSimulationTemplate,
 	}
 }
 

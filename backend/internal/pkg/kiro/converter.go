@@ -442,6 +442,16 @@ func extractSessionID(req map[string]any) string {
 	if userID == "" {
 		return ""
 	}
+	if strings.HasPrefix(strings.TrimSpace(userID), "{") {
+		var parsed struct {
+			SessionID string `json:"session_id"`
+		}
+		if err := json.Unmarshal([]byte(userID), &parsed); err == nil {
+			if _, err := uuid.Parse(parsed.SessionID); err == nil {
+				return parsed.SessionID
+			}
+		}
+	}
 	pos := strings.Index(userID, "session_")
 	if pos < 0 {
 		return ""
