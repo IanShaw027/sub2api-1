@@ -136,23 +136,11 @@ func EstimateInputTokens(body []byte) int {
 			_, _ = builder.WriteString("\n")
 		}
 	}
-	return roughTokenCount(builder.String())
+	return AccurateTokenCount(builder.String())
 }
 
 func EstimateOutputTokens(text string) int {
-	return roughTokenCount(text)
-}
-
-func roughTokenCount(text string) int {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return 0
-	}
-	runes := len([]rune(text))
-	if runes <= 0 {
-		return 0
-	}
-	return (runes + 3) / 4
+	return AccurateTokenCount(text)
 }
 
 func trimTrailingNonUserMessages(messages []any) []any {

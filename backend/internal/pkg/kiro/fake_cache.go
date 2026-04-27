@@ -83,12 +83,12 @@ func BuildFakeCachePlan(body []byte, accountID int64, requestedModel string) (*F
 	}
 	if independentChain != "" {
 		plan.IndependentKey = fakeCacheKey(scope+":independent", independentChain)
-		plan.IndependentCacheableTokens = roughTokenCount(independentChain)
+		plan.IndependentCacheableTokens = AccurateTokenCount(independentChain)
 	}
 	prefixScope := scope + ":prefix:independent:" + fakeCacheDigest(independentChain)
 	if currentPrefixChain != "" {
 		plan.CurrentPrefixKey = fakeCacheKey(prefixScope, currentPrefixChain)
-		plan.CurrentPrefixCacheableTokens = roughTokenCount(currentPrefixChain)
+		plan.CurrentPrefixCacheableTokens = AccurateTokenCount(currentPrefixChain)
 		plan.CurrentKey = plan.CurrentPrefixKey
 	}
 	plan.CurrentCacheableTokens = plan.IndependentCacheableTokens + plan.CurrentPrefixCacheableTokens
@@ -96,7 +96,7 @@ func BuildFakeCachePlan(body []byte, accountID int64, requestedModel string) (*F
 	previousPrefixChain := buildFakeCachePrefixChain(rawMessages, false)
 	if previousPrefixChain != "" {
 		plan.PreviousPrefixKey = fakeCacheKey(prefixScope, previousPrefixChain)
-		plan.PreviousPrefixCacheableTokens = roughTokenCount(previousPrefixChain)
+		plan.PreviousPrefixCacheableTokens = AccurateTokenCount(previousPrefixChain)
 		plan.PreviousKey = plan.PreviousPrefixKey
 	}
 	plan.PreviousCacheableTokens = plan.IndependentCacheableTokens + plan.PreviousPrefixCacheableTokens
@@ -124,10 +124,11 @@ func (p *FakeCachePlan) ResolveUsageWithConfig(totalInputTokens int, hit FakeCac
 	independentCurrent := clampFakeCacheTokens(applyMinBlockTokens(p.IndependentCacheableTokens, config.MinBlockTokens), totalInputTokens)
 	currentPrefix := clampFakeCacheTokens(applyMinBlockTokens(p.CurrentPrefixCacheableTokens, config.MinBlockTokens), totalInputTokens)
 	previousPrefix := clampFakeCacheTokens(applyMinBlockTokens(p.PreviousPrefixCacheableTokens, config.MinBlockTokens), totalInputTokens)
-	if independentCurrent == 0 && currentPrefix == 0 && previousPrefix == 0 &&
-		p.IndependentKey == "" && p.CurrentPrefixKey == "" && p.PreviousPrefixKey == "" {
-		currentPrefix = clampFakeCacheTokens(applyMinBlockTokens(p.CurrentCacheableTokens, config.MinBlockTokens), totalInputTokens)
-		previousPrefix = clampFakeCacheTokens(applyMinBlockTokens(p.PreviousCacheableTokens, config.MinBlockTokens), totalInputTokens)
+
+	// If all keys are empty (no session ID), don't simulate cache at all
+	// This prevents incorrect statistics where all input tokens are counted as cache creation
+	if p.IndependentKey == "" && p.CurrentPrefixKey == "" && p.PreviousPrefixKey == "" {
+		return FakeCacheUsage{InputTokens: totalInputTokens}
 	}
 
 	cacheRead := 0
@@ -149,16 +150,18 @@ func (p *FakeCachePlan) ResolveUsageWithConfig(totalInputTokens int, hit FakeCac
 	cacheRead = clampFakeCacheTokens(cacheRead, totalInputTokens)
 	cacheWrite = clampFakeCacheTokens(cacheWrite, totalInputTokens-cacheRead)
 
+	// Apply hit rate scaling: reduce cache read and increase regular input tokens
+	// This simulates a lower cache hit rate without artificially inflating cache writes
 	if config.HitRateScale < 100 {
-		unscaledRead := cacheRead
 		scaledRead := cacheRead * config.HitRateScale / 100
 		if scaledRead < 0 {
 			scaledRead = 0
 		}
 		cacheRead = scaledRead
-		cacheWrite += unscaledRead - scaledRead
-		cacheWrite = clampFakeCacheTokens(cacheWrite, totalInputTokens-cacheRead)
+		// The difference goes to regular input tokens, not cache write
+		// This correctly models cache misses
 	}
+
 	inputTokens := totalInputTokens - cacheRead - cacheWrite
 	if inputTokens < 0 {
 		inputTokens = 0
