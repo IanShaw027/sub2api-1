@@ -155,14 +155,16 @@ func TestIsMigrationChecksumCompatible(t *testing.T) {
 
 	t.Run("131历史checksum可兼容当前版本", func(t *testing.T) {
 		for _, dbChecksum := range []string{
+			"00b2290e6646666df46409564b545b1de91b222db8f3ca0c992164a6dc4034e7",
 			"9fd0a6021290b24c7e76d4ff6405824eef528a6afe969e845c8cc3bf8053ba15",
 			"706c8102d96d0a10f2e2a23156a8cd8b414a241591fd65ab3e26425b2a54fe29",
 			"c4b74b9dd08e3634ac9b752376e92ce41f27fa0cb8046d7932944ca61e5f351c",
+			"b20a2678be74db6a5a9a376004f4bf5bc7844ab46ee2f1e09194e8b1c48d49fd",
 		} {
 			ok := isMigrationChecksumCompatible(
 				"131_affiliate_rebate_hardening.sql",
 				dbChecksum,
-				"00b2290e6646666df46409564b545b1de91b222db8f3ca0c992164a6dc4034e7",
+				"da8f7e442df20609449c51b13c250a2f79d3bb95c50f1c11b96b8108e5dddb02",
 			)
 			require.True(t, ok)
 		}
@@ -171,8 +173,26 @@ func TestIsMigrationChecksumCompatible(t *testing.T) {
 	t.Run("131回滚到历史文件checksum时仍兼容", func(t *testing.T) {
 		ok := isMigrationChecksumCompatible(
 			"131_affiliate_rebate_hardening.sql",
-			"00b2290e6646666df46409564b545b1de91b222db8f3ca0c992164a6dc4034e7",
+			"da8f7e442df20609449c51b13c250a2f79d3bb95c50f1c11b96b8108e5dddb02",
 			"9fd0a6021290b24c7e76d4ff6405824eef528a6afe969e845c8cc3bf8053ba15",
+		)
+		require.True(t, ok)
+	})
+
+	t.Run("132历史checksum可兼容当前版本", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"132_affiliate_policy_limits.sql",
+			"51f95d399e30dc499e9d1bc3bdefc5a7f5b358726ac83242ec64a363a6bfe092",
+			"1b06272a1b5ed48a0cd4aaef5abf2ef098232cf011f49d309d586acb31b687b7",
+		)
+		require.True(t, ok)
+	})
+
+	t.Run("138历史checksum可兼容当前版本", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"138_subscription_fulfillment_claim_unique_notx.sql",
+			"fcdbbbcfa9010f6b2b0e9b6210a63d103eec5081358e70f591dec8a818c93009",
+			"7ba1fae1789f8845d5b7f7afba11ad1fb87849e45edb4a50b4687a4ab82f8d94",
 		)
 		require.True(t, ok)
 	})

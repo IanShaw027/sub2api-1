@@ -36,6 +36,9 @@ COMMENT ON TABLE user_affiliate_ledger IS '邀请返利资金流水（累计/转
 COMMENT ON COLUMN user_affiliate_ledger.action IS 'accrue|transfer';
 
 -- 3) Enforce idempotency only for affiliate rebate audit actions.
+-- The hot partial unique index rollout moved to
+-- 138_subscription_fulfillment_claim_unique_notx.sql so Postgres upgrades do
+-- not build it inside this transaction.
 WITH ranked AS (
     SELECT id,
            ROW_NUMBER() OVER (PARTITION BY order_id, action ORDER BY id) AS rn
@@ -46,12 +49,6 @@ DELETE FROM payment_audit_logs p
 USING ranked r
 WHERE p.id = r.id
   AND r.rn > 1;
-
-DROP INDEX IF EXISTS idx_payment_audit_logs_order_action_uniq;
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_audit_logs_order_action_uniq
-ON payment_audit_logs(order_id, action)
-WHERE action IN ('AFFILIATE_REBATE_APPLIED', 'AFFILIATE_REBATE_SKIPPED');
 
 -- 4) Prevent retroactive affiliate rebate issuance for legacy completed balance orders.
 INSERT INTO payment_audit_logs (order_id, action, detail, operator, created_at)

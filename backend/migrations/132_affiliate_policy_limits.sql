@@ -29,15 +29,9 @@ DELETE FROM user_affiliate_ledger l
 USING ranked r
 WHERE l.id = r.id
   AND r.rn > 1;
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_user_affiliate_ledger_order_action_unique
-ON user_affiliate_ledger(user_id, source_order_id, action)
-WHERE source_order_id IS NOT NULL
-  AND action = 'accrue';
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_user_affiliate_signup_bonus_once
-ON user_affiliate_ledger(user_id, action)
-WHERE action = 'signup_bonus';
+-- The hot unique index rollout moved to
+-- 138_subscription_fulfillment_claim_unique_notx.sql so upgrades use
+-- concurrent unique-index builds outside this transaction.
 
 COMMENT ON COLUMN user_affiliate_ledger.source_order_id IS '触发邀请返利的支付订单ID';
 COMMENT ON COLUMN user_affiliate_ledger.base_amount IS '触发返利的用户消费金额';

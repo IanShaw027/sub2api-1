@@ -78,6 +78,32 @@ func TestMigration119DefersPaymentIndexRolloutToOnlineFollowup(t *testing.T) {
 	require.Contains(t, alignmentSQL, "RENAME TO paymentorder_out_trade_no")
 }
 
+func TestAffiliateMigrationsDeferHotUniqueIndexesToOnlineFollowup(t *testing.T) {
+	content131, err := FS.ReadFile("131_affiliate_rebate_hardening.sql")
+	require.NoError(t, err)
+
+	sql131 := string(content131)
+	require.NotContains(t, sql131, "CREATE UNIQUE INDEX")
+	require.NotContains(t, sql131, "DROP INDEX")
+
+	content132, err := FS.ReadFile("132_affiliate_policy_limits.sql")
+	require.NoError(t, err)
+
+	sql132 := string(content132)
+	require.NotContains(t, sql132, "CREATE UNIQUE INDEX")
+
+	followupContent, err := FS.ReadFile("138_subscription_fulfillment_claim_unique_notx.sql")
+	require.NoError(t, err)
+
+	followupSQL := string(followupContent)
+	require.Contains(t, followupSQL, "duplicate payment_audit_logs/order_id+action precheck")
+	require.Contains(t, followupSQL, "user_affiliate_ledger/user_id+source_order_id+action precheck")
+	require.Contains(t, followupSQL, "user_affiliate_ledger/user_id+action precheck")
+	require.Contains(t, followupSQL, "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_payment_audit_logs_order_action_uniq")
+	require.Contains(t, followupSQL, "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_user_affiliate_ledger_order_action_unique")
+	require.Contains(t, followupSQL, "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_user_affiliate_signup_bonus_once")
+}
+
 func TestMigration110SeedsAuthSourceSignupGrantsDisabledByDefault(t *testing.T) {
 	content, err := FS.ReadFile("110_pending_auth_and_provider_default_grants.sql")
 	require.NoError(t, err)

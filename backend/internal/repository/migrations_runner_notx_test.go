@@ -206,14 +206,34 @@ func TestApplyMigrationsFS_SubscriptionFulfillmentClaimUniqueMigration_DropsInva
 	mock.ExpectQuery("SELECT checksum FROM schema_migrations WHERE filename = \\$1").
 		WithArgs("138_subscription_fulfillment_claim_unique_notx.sql").
 		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT order_id, action, COUNT\\(\\*\\) AS duplicate_count FROM payment_audit_logs").
+		WillReturnRows(sqlmock.NewRows([]string{"order_id", "action", "duplicate_count"}))
+	mock.ExpectQuery("SELECT user_id, source_order_id, action, COUNT\\(\\*\\) AS duplicate_count FROM user_affiliate_ledger").
+		WillReturnRows(sqlmock.NewRows([]string{"user_id", "source_order_id", "action", "duplicate_count"}))
+	mock.ExpectQuery("SELECT user_id, action, COUNT\\(\\*\\) AS duplicate_count FROM user_affiliate_ledger").
+		WillReturnRows(sqlmock.NewRows([]string{"user_id", "action", "duplicate_count"}))
 	mock.ExpectQuery("SELECT EXISTS \\(").
 		WithArgs("idx_payment_audit_logs_order_action_uniq").
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
 	mock.ExpectExec("DROP INDEX CONCURRENTLY IF EXISTS idx_payment_audit_logs_order_action_uniq").
 		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery("SELECT EXISTS \\(").
+		WithArgs("idx_user_affiliate_ledger_order_action_unique").
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectExec("DROP INDEX CONCURRENTLY IF EXISTS idx_user_affiliate_ledger_order_action_unique").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery("SELECT EXISTS \\(").
+		WithArgs("idx_user_affiliate_signup_bonus_once").
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectExec("DROP INDEX CONCURRENTLY IF EXISTS idx_user_affiliate_signup_bonus_once").
+		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("DROP INDEX CONCURRENTLY IF EXISTS idx_payment_audit_logs_order_action_uniq").
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_payment_audit_logs_order_action_uniq").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_user_affiliate_ledger_order_action_unique").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_user_affiliate_signup_bonus_once").
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("INSERT INTO schema_migrations \\(filename, checksum\\) VALUES \\(\\$1, \\$2\\)").
 		WithArgs("138_subscription_fulfillment_claim_unique_notx.sql", sqlmock.AnyArg()).
@@ -231,12 +251,55 @@ DROP INDEX CONCURRENTLY IF EXISTS idx_payment_audit_logs_order_action_uniq;
 CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_payment_audit_logs_order_action_uniq
     ON payment_audit_logs(order_id, action)
     WHERE action IN ('AFFILIATE_REBATE_APPLIED', 'AFFILIATE_REBATE_SKIPPED', 'SUBSCRIPTION_FULFILLMENT_CLAIMED', 'SUBSCRIPTION_SUCCESS');
+
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_user_affiliate_ledger_order_action_unique
+    ON user_affiliate_ledger(user_id, source_order_id, action)
+    WHERE source_order_id IS NOT NULL
+      AND action = 'accrue';
+
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_user_affiliate_signup_bonus_once
+    ON user_affiliate_ledger(user_id, action)
+    WHERE action = 'signup_bonus';
 `),
 		},
 	}
 
 	err = applyMigrationsFS(context.Background(), db, fsys)
 	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestApplyMigrationsFS_SubscriptionFulfillmentClaimUniqueMigration_FailsFastOnDuplicatePrecheck(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	prepareMigrationsBootstrapExpectations(mock)
+	mock.ExpectQuery("SELECT checksum FROM schema_migrations WHERE filename = \\$1").
+		WithArgs("138_subscription_fulfillment_claim_unique_notx.sql").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT order_id, action, COUNT\\(\\*\\) AS duplicate_count FROM payment_audit_logs").
+		WillReturnRows(sqlmock.NewRows([]string{"order_id", "action", "duplicate_count"}).AddRow("order-1", "SUBSCRIPTION_SUCCESS", 2))
+	mock.ExpectExec("SELECT pg_advisory_unlock\\(\\$1\\)").
+		WithArgs(migrationsAdvisoryLockID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	fsys := fstest.MapFS{
+		"138_subscription_fulfillment_claim_unique_notx.sql": &fstest.MapFile{
+			Data: []byte(`
+DROP INDEX CONCURRENTLY IF EXISTS idx_payment_audit_logs_order_action_uniq;
+
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_payment_audit_logs_order_action_uniq
+    ON payment_audit_logs(order_id, action)
+    WHERE action IN ('AFFILIATE_REBATE_APPLIED', 'AFFILIATE_REBATE_SKIPPED', 'SUBSCRIPTION_FULFILLMENT_CLAIMED', 'SUBSCRIPTION_SUCCESS');
+`),
+		},
+	}
+
+	err = applyMigrationsFS(context.Background(), db, fsys)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "duplicate payment_audit_logs rows block 138_subscription_fulfillment_claim_unique_notx.sql")
+	require.Contains(t, err.Error(), "order-1/SUBSCRIPTION_SUCCESS")
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

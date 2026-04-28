@@ -55,6 +55,8 @@ const paymentOrdersOutTradeNoUniqueMigration = "120_enforce_payment_orders_out_t
 const paymentOrdersOutTradeNoUniqueIndex = "paymentorder_out_trade_no_unique"
 const subscriptionFulfillmentClaimUniqueMigration = "138_subscription_fulfillment_claim_unique_notx.sql"
 const subscriptionFulfillmentClaimUniqueIndex = "idx_payment_audit_logs_order_action_uniq"
+const affiliateLedgerOrderActionUniqueIndex = "idx_user_affiliate_ledger_order_action_unique"
+const affiliateSignupBonusOnceIndex = "idx_user_affiliate_signup_bonus_once"
 
 type migrationChecksumCompatibilityRule struct {
 	fileChecksum       string
@@ -77,7 +79,9 @@ var migrationChecksumCompatibilityRules = map[string]migrationChecksumCompatibil
 	"119_enforce_payment_orders_out_trade_no_unique.sql":      newMigrationChecksumCompatibilityRule("0bbe809ae48a9d811dabda1ba1c74955bd71c4a9cc610f9128816818dfa6c11e", "ebd2c67cce0116393fb4f1b5d5116a67c6aceb73820dfb5133d1ff6f36d72d34"),
 	"120_enforce_payment_orders_out_trade_no_unique_notx.sql": newMigrationChecksumCompatibilityRule("34aadc0db59a4e390f92a12b73bd74642d9724f33124f73638ae00089ea5e074", "e77921f79d539bc24575cb9c16cbe566d2b23ce816190343d0a7568f6a3fcf61", "707431450603e70a43ce9fbd61e0c12fa67da4875158ccefabacea069587ab22", "04b082b5a239c525154fe9185d324ee2b05ff90da9297e10dba19f9be79aa59a"),
 	"123_fix_legacy_auth_source_grant_on_signup_defaults.sql": newMigrationChecksumCompatibilityRule("2ce43c2cd89e9f9e1febd34a407ed9e84d177386c5544b6f02c1f58a21129f57", "6cd33422f215dcd1f486ab6f35c0ea5805d9ca69bb25906d94bc649156657145"),
-	"131_affiliate_rebate_hardening.sql":                      newMigrationChecksumCompatibilityRule("00b2290e6646666df46409564b545b1de91b222db8f3ca0c992164a6dc4034e7", "9fd0a6021290b24c7e76d4ff6405824eef528a6afe969e845c8cc3bf8053ba15", "706c8102d96d0a10f2e2a23156a8cd8b414a241591fd65ab3e26425b2a54fe29", "c4b74b9dd08e3634ac9b752376e92ce41f27fa0cb8046d7932944ca61e5f351c"),
+	"131_affiliate_rebate_hardening.sql":                      newMigrationChecksumCompatibilityRule("da8f7e442df20609449c51b13c250a2f79d3bb95c50f1c11b96b8108e5dddb02", "00b2290e6646666df46409564b545b1de91b222db8f3ca0c992164a6dc4034e7", "9fd0a6021290b24c7e76d4ff6405824eef528a6afe969e845c8cc3bf8053ba15", "706c8102d96d0a10f2e2a23156a8cd8b414a241591fd65ab3e26425b2a54fe29", "c4b74b9dd08e3634ac9b752376e92ce41f27fa0cb8046d7932944ca61e5f351c", "b20a2678be74db6a5a9a376004f4bf5bc7844ab46ee2f1e09194e8b1c48d49fd"),
+	"132_affiliate_policy_limits.sql":                         newMigrationChecksumCompatibilityRule("1b06272a1b5ed48a0cd4aaef5abf2ef098232cf011f49d309d586acb31b687b7", "51f95d399e30dc499e9d1bc3bdefc5a7f5b358726ac83242ec64a363a6bfe092"),
+	"138_subscription_fulfillment_claim_unique_notx.sql":      newMigrationChecksumCompatibilityRule("7ba1fae1789f8845d5b7f7afba11ad1fb87849e45edb4a50b4687a4ab82f8d94", "fcdbbbcfa9010f6b2b0e9b6210a63d103eec5081358e70f591dec8a818c93009"),
 }
 
 // ApplyMigrations 将嵌入的 SQL 迁移文件应用到指定的数据库。
@@ -262,7 +266,7 @@ func prepareNonTransactionalMigration(ctx context.Context, db *sql.DB, name stri
 	case paymentOrdersOutTradeNoUniqueMigration:
 		return preparePaymentOrdersOutTradeNoUniqueMigration(ctx, db)
 	case subscriptionFulfillmentClaimUniqueMigration:
-		return prepareInvalidIndexRetry(ctx, db, subscriptionFulfillmentClaimUniqueIndex)
+		return prepareSubscriptionFulfillmentClaimUniqueMigration(ctx, db)
 	default:
 		return nil
 	}
@@ -282,6 +286,55 @@ func preparePaymentOrdersOutTradeNoUniqueMigration(ctx context.Context, db *sql.
 	}
 
 	return prepareInvalidIndexRetry(ctx, db, paymentOrdersOutTradeNoUniqueIndex)
+}
+
+func prepareSubscriptionFulfillmentClaimUniqueMigration(ctx context.Context, db *sql.DB) error {
+	auditDuplicates, err := findDuplicatePaymentAuditLogOrderActions(ctx, db)
+	if err != nil {
+		return fmt.Errorf("precheck duplicate payment_audit_logs order_id/action: %w", err)
+	}
+	if len(auditDuplicates) > 0 {
+		return fmt.Errorf(
+			"duplicate payment_audit_logs rows block %s; remediate duplicate order_id/action rows before retrying: %s",
+			subscriptionFulfillmentClaimUniqueMigration,
+			strings.Join(auditDuplicates, ", "),
+		)
+	}
+
+	ledgerDuplicates, err := findDuplicateAffiliateLedgerOrderActions(ctx, db)
+	if err != nil {
+		return fmt.Errorf("precheck duplicate user_affiliate_ledger user_id/source_order_id/action: %w", err)
+	}
+	if len(ledgerDuplicates) > 0 {
+		return fmt.Errorf(
+			"duplicate user_affiliate_ledger accrue rows block %s; remediate duplicate user_id/source_order_id/action rows before retrying: %s",
+			subscriptionFulfillmentClaimUniqueMigration,
+			strings.Join(ledgerDuplicates, ", "),
+		)
+	}
+
+	signupBonusDuplicates, err := findDuplicateAffiliateSignupBonusRows(ctx, db)
+	if err != nil {
+		return fmt.Errorf("precheck duplicate user_affiliate_ledger user_id/action: %w", err)
+	}
+	if len(signupBonusDuplicates) > 0 {
+		return fmt.Errorf(
+			"duplicate user_affiliate_ledger signup_bonus rows block %s; remediate duplicate user_id/action rows before retrying: %s",
+			subscriptionFulfillmentClaimUniqueMigration,
+			strings.Join(signupBonusDuplicates, ", "),
+		)
+	}
+
+	for _, indexName := range []string{
+		subscriptionFulfillmentClaimUniqueIndex,
+		affiliateLedgerOrderActionUniqueIndex,
+		affiliateSignupBonusOnceIndex,
+	} {
+		if err := prepareInvalidIndexRetry(ctx, db, indexName); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func prepareInvalidIndexRetry(ctx context.Context, db *sql.DB, indexName string) error {
@@ -324,6 +377,118 @@ func findDuplicatePaymentOrderOutTradeNos(ctx context.Context, db *sql.DB) ([]st
 			return nil, err
 		}
 		duplicates = append(duplicates, fmt.Sprintf("%s (count=%d)", outTradeNo, duplicateCount))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return duplicates, nil
+}
+
+func findDuplicatePaymentAuditLogOrderActions(ctx context.Context, db *sql.DB) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT order_id, action, COUNT(*) AS duplicate_count
+		FROM payment_audit_logs
+		WHERE action IN (
+			'AFFILIATE_REBATE_APPLIED',
+			'AFFILIATE_REBATE_SKIPPED',
+			'SUBSCRIPTION_FULFILLMENT_CLAIMED',
+			'SUBSCRIPTION_SUCCESS'
+		)
+		GROUP BY order_id, action
+		HAVING COUNT(*) > 1
+		ORDER BY duplicate_count DESC, order_id, action
+		LIMIT 5
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	duplicates := make([]string, 0, 5)
+	for rows.Next() {
+		var (
+			orderID        string
+			action         string
+			duplicateCount int
+		)
+		if err := rows.Scan(&orderID, &action, &duplicateCount); err != nil {
+			return nil, err
+		}
+		duplicates = append(duplicates, fmt.Sprintf("%s/%s (count=%d)", orderID, action, duplicateCount))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return duplicates, nil
+}
+
+func findDuplicateAffiliateLedgerOrderActions(ctx context.Context, db *sql.DB) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT user_id, source_order_id, action, COUNT(*) AS duplicate_count
+		FROM user_affiliate_ledger
+		WHERE source_order_id IS NOT NULL
+		  AND action = 'accrue'
+		GROUP BY user_id, source_order_id, action
+		HAVING COUNT(*) > 1
+		ORDER BY duplicate_count DESC, user_id, source_order_id, action
+		LIMIT 5
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	duplicates := make([]string, 0, 5)
+	for rows.Next() {
+		var (
+			userID         int64
+			sourceOrderID  int64
+			action         string
+			duplicateCount int
+		)
+		if err := rows.Scan(&userID, &sourceOrderID, &action, &duplicateCount); err != nil {
+			return nil, err
+		}
+		duplicates = append(duplicates, fmt.Sprintf("user_id=%d/source_order_id=%d/action=%s (count=%d)", userID, sourceOrderID, action, duplicateCount))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return duplicates, nil
+}
+
+func findDuplicateAffiliateSignupBonusRows(ctx context.Context, db *sql.DB) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT user_id, action, COUNT(*) AS duplicate_count
+		FROM user_affiliate_ledger
+		WHERE action = 'signup_bonus'
+		GROUP BY user_id, action
+		HAVING COUNT(*) > 1
+		ORDER BY duplicate_count DESC, user_id, action
+		LIMIT 5
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	duplicates := make([]string, 0, 5)
+	for rows.Next() {
+		var (
+			userID         int64
+			action         string
+			duplicateCount int
+		)
+		if err := rows.Scan(&userID, &action, &duplicateCount); err != nil {
+			return nil, err
+		}
+		duplicates = append(duplicates, fmt.Sprintf("user_id=%d/action=%s (count=%d)", userID, action, duplicateCount))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
