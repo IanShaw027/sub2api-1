@@ -47,6 +47,7 @@ export interface UsageCleanupFilters {
   stream?: boolean | null
   billing_type?: number | null
   billing_mode?: string | null
+  exclude_admin?: boolean
 }
 
 export interface UsageCleanupTask {
@@ -76,6 +77,7 @@ export interface CreateUsageCleanupTaskRequest {
   stream?: boolean | null
   billing_type?: number | null
   billing_mode?: string | null
+  exclude_admin?: boolean
   timezone?: string
 }
 

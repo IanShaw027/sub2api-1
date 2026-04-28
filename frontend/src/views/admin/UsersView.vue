@@ -654,9 +654,9 @@ import UserAllowedGroupsModal from '@/components/admin/user/UserAllowedGroupsMod
 import UserBalanceModal from '@/components/admin/user/UserBalanceModal.vue'
 import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryModal.vue'
 import GroupReplaceModal from '@/components/admin/user/GroupReplaceModal.vue'
+import { buildAppAbsoluteUrl } from '@/utils/url'
 
 const appStore = useAppStore()
-const ADMIN_USAGE_BASE_URL = 'https://crs.qazwc.com/admin/usage'
 
 const formatLocalDate = (date: Date): string => {
   const year = date.getFullYear()
@@ -676,7 +676,7 @@ const getLast24HoursRangeDates = (): { startDate: string; endDate: string } => {
 
 const handleUserUsageJump = (user: AdminUser) => {
   const { startDate, endDate } = getLast24HoursRangeDates()
-  const targetUrl = new URL(ADMIN_USAGE_BASE_URL)
+  const targetUrl = new URL(buildAppAbsoluteUrl('/admin/usage', window.location.origin))
   targetUrl.searchParams.set('user_id', String(user.id))
   targetUrl.searchParams.set('start_date', startDate)
   targetUrl.searchParams.set('end_date', endDate)

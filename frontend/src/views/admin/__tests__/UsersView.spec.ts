@@ -264,7 +264,7 @@ describe('admin UsersView', () => {
     await wrapper.get('button[type="button"].font-medium').trigger('click')
 
     expect(openSpy).toHaveBeenCalledWith(
-      'https://crs.qazwc.com/admin/usage?user_id=42&start_date=2026-04-23&end_date=2026-04-24',
+      `${window.location.origin}/admin/usage?user_id=42&start_date=2026-04-23&end_date=2026-04-24`,
       '_self'
     )
   })

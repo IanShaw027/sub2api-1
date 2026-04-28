@@ -351,6 +351,46 @@ func TestUsageHandlerCreateCleanupTaskSuccess(t *testing.T) {
 	require.True(t, created.Filters.EndTime.Equal(end))
 }
 
+func TestUsageHandlerCreateCleanupTaskPreservesExcludeAdmin(t *testing.T) {
+	repo := &cleanupRepoStub{}
+	cfg := &config.Config{UsageCleanup: config.UsageCleanupConfig{Enabled: true, MaxRangeDays: 31}}
+	cleanupService := service.NewUsageCleanupService(repo, nil, nil, cfg)
+	router := setupCleanupRouter(cleanupService, 99)
+
+	payload := map[string]any{
+		"start_date":    "2024-01-01",
+		"end_date":      "2024-01-02",
+		"timezone":      "UTC",
+		"exclude_admin": true,
+	}
+	body, err := json.Marshal(payload)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/usage/cleanup-tasks", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			Filters struct {
+				ExcludeAdmin bool `json:"exclude_admin"`
+			} `json:"filters"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+	require.Equal(t, 0, resp.Code)
+	require.True(t, resp.Data.Filters.ExcludeAdmin)
+
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	require.Len(t, repo.created, 1)
+	require.True(t, repo.created[0].Filters.ExcludeAdmin)
+}
+
 func TestUsageHandlerListCleanupTasksUnavailable(t *testing.T) {
 	router := setupCleanupRouter(nil, 0)
 

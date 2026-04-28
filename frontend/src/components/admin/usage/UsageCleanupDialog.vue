@@ -326,6 +326,9 @@ const buildPayload = (): CreateUsageCleanupTaskRequest | null => {
   if (localFilters.value.billing_mode) {
     payload.billing_mode = localFilters.value.billing_mode
   }
+  if (localFilters.value.exclude_admin) {
+    payload.exclude_admin = true
+  }
 
   return payload
 }

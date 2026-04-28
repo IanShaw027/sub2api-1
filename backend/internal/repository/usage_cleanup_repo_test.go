@@ -514,3 +514,17 @@ func TestBuildUsageCleanupWhereModelEmpty(t *testing.T) {
 	require.Equal(t, "created_at >= $1 AND created_at <= $2", where)
 	require.Equal(t, []any{start, end}, args)
 }
+
+func TestBuildUsageCleanupWhereExcludeAdmin(t *testing.T) {
+	start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+
+	where, args := buildUsageCleanupWhere(service.UsageCleanupFilters{
+		StartTime:    start,
+		EndTime:      end,
+		ExcludeAdmin: true,
+	})
+
+	require.Equal(t, "created_at >= $1 AND created_at <= $2 AND NOT EXISTS (SELECT 1 FROM users _ua WHERE _ua.id = user_id AND _ua.role = $3)", where)
+	require.Equal(t, []any{start, end, service.RoleAdmin}, args)
+}

@@ -382,8 +382,10 @@ func buildUsageCleanupWhere(filters service.UsageCleanupFilters) (string, []any)
 		if billingMode != "" {
 			conditions = append(conditions, fmt.Sprintf("billing_mode = $%d", idx))
 			args = append(args, billingMode)
+			idx++
 		}
 	}
+	conditions, args = appendExcludeAdminWhereCondition(conditions, args, "user_id", filters.ExcludeAdmin)
 	return strings.Join(conditions, " AND "), args
 }
 

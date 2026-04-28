@@ -44,18 +44,19 @@ func NewUsageHandler(
 
 // CreateUsageCleanupTaskRequest represents cleanup task creation request
 type CreateUsageCleanupTaskRequest struct {
-	StartDate   string  `json:"start_date"`
-	EndDate     string  `json:"end_date"`
-	UserID      *int64  `json:"user_id"`
-	APIKeyID    *int64  `json:"api_key_id"`
-	AccountID   *int64  `json:"account_id"`
-	GroupID     *int64  `json:"group_id"`
-	Model       *string `json:"model"`
-	RequestType *string `json:"request_type"`
-	Stream      *bool   `json:"stream"`
-	BillingType *int8   `json:"billing_type"`
-	BillingMode *string `json:"billing_mode"`
-	Timezone    string  `json:"timezone"`
+	StartDate    string  `json:"start_date"`
+	EndDate      string  `json:"end_date"`
+	UserID       *int64  `json:"user_id"`
+	APIKeyID     *int64  `json:"api_key_id"`
+	AccountID    *int64  `json:"account_id"`
+	GroupID      *int64  `json:"group_id"`
+	Model        *string `json:"model"`
+	RequestType  *string `json:"request_type"`
+	Stream       *bool   `json:"stream"`
+	BillingType  *int8   `json:"billing_type"`
+	BillingMode  *string `json:"billing_mode"`
+	ExcludeAdmin bool    `json:"exclude_admin"`
+	Timezone     string  `json:"timezone"`
 }
 
 // List handles listing all usage records with filters
@@ -492,17 +493,18 @@ func (h *UsageHandler) CreateCleanupTask(c *gin.Context) {
 	}
 
 	filters := service.UsageCleanupFilters{
-		StartTime:   startTime,
-		EndTime:     endTime,
-		UserID:      req.UserID,
-		APIKeyID:    req.APIKeyID,
-		AccountID:   req.AccountID,
-		GroupID:     req.GroupID,
-		Model:       req.Model,
-		RequestType: requestType,
-		Stream:      stream,
-		BillingType: req.BillingType,
-		BillingMode: req.BillingMode,
+		StartTime:    startTime,
+		EndTime:      endTime,
+		UserID:       req.UserID,
+		APIKeyID:     req.APIKeyID,
+		AccountID:    req.AccountID,
+		GroupID:      req.GroupID,
+		Model:        req.Model,
+		RequestType:  requestType,
+		Stream:       stream,
+		BillingType:  req.BillingType,
+		BillingMode:  req.BillingMode,
+		ExcludeAdmin: req.ExcludeAdmin,
 	}
 
 	var userID any
@@ -541,6 +543,7 @@ func (h *UsageHandler) CreateCleanupTask(c *gin.Context) {
 	if filters.BillingMode != nil {
 		billingMode = *filters.BillingMode
 	}
+	excludeAdmin := filters.ExcludeAdmin
 
 	idempotencyPayload := struct {
 		OperatorID int64                         `json:"operator_id"`
@@ -550,7 +553,7 @@ func (h *UsageHandler) CreateCleanupTask(c *gin.Context) {
 		Body:       req,
 	}
 	executeAdminIdempotentJSON(c, "admin.usage.cleanup_tasks.create", idempotencyPayload, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		logger.LegacyPrintf("handler.admin.usage", "[UsageCleanup] 请求创建清理任务: operator=%d start=%s end=%s user_id=%v api_key_id=%v account_id=%v group_id=%v model=%v request_type=%v stream=%v billing_type=%v billing_mode=%v tz=%q",
+		logger.LegacyPrintf("handler.admin.usage", "[UsageCleanup] 请求创建清理任务: operator=%d start=%s end=%s user_id=%v api_key_id=%v account_id=%v group_id=%v model=%v request_type=%v stream=%v billing_type=%v billing_mode=%v exclude_admin=%t tz=%q",
 			subject.UserID,
 			filters.StartTime.Format(time.RFC3339),
 			filters.EndTime.Format(time.RFC3339),
@@ -563,6 +566,7 @@ func (h *UsageHandler) CreateCleanupTask(c *gin.Context) {
 			streamValue,
 			billingType,
 			billingMode,
+			excludeAdmin,
 			req.Timezone,
 		)
 

@@ -26,17 +26,18 @@ const (
 // - nil 表示未设置该过滤条件
 // - 过滤条件均为精确匹配
 type UsageCleanupFilters struct {
-	StartTime   time.Time `json:"start_time"`
-	EndTime     time.Time `json:"end_time"`
-	UserID      *int64    `json:"user_id,omitempty"`
-	APIKeyID    *int64    `json:"api_key_id,omitempty"`
-	AccountID   *int64    `json:"account_id,omitempty"`
-	GroupID     *int64    `json:"group_id,omitempty"`
-	Model       *string   `json:"model,omitempty"`
-	RequestType *int16    `json:"request_type,omitempty"`
-	Stream      *bool     `json:"stream,omitempty"`
-	BillingType *int8     `json:"billing_type,omitempty"`
-	BillingMode *string   `json:"billing_mode,omitempty"`
+	StartTime    time.Time `json:"start_time"`
+	EndTime      time.Time `json:"end_time"`
+	UserID       *int64    `json:"user_id,omitempty"`
+	APIKeyID     *int64    `json:"api_key_id,omitempty"`
+	AccountID    *int64    `json:"account_id,omitempty"`
+	GroupID      *int64    `json:"group_id,omitempty"`
+	Model        *string   `json:"model,omitempty"`
+	RequestType  *int16    `json:"request_type,omitempty"`
+	Stream       *bool     `json:"stream,omitempty"`
+	BillingType  *int8     `json:"billing_type,omitempty"`
+	BillingMode  *string   `json:"billing_mode,omitempty"`
+	ExcludeAdmin bool      `json:"exclude_admin,omitempty"`
 }
 
 // UsageCleanupTask 表示使用记录清理任务
