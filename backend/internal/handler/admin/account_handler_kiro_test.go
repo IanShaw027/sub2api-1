@@ -1,11 +1,16 @@
 package admin
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,6 +36,57 @@ func (s *kiroHandlerRefreshExecutorStub) Refresh(_ context.Context, account *ser
 
 func (s *kiroHandlerRefreshExecutorStub) CacheKey(account *service.Account) string {
 	return service.KiroTokenCacheKey(account)
+}
+
+type kiroHandlerTokenCacheInvalidatorStub struct {
+	calls []int64
+}
+
+func (s *kiroHandlerTokenCacheInvalidatorStub) InvalidateToken(_ context.Context, account *service.Account) error {
+	if account != nil {
+		s.calls = append(s.calls, account.ID)
+	}
+	return nil
+}
+
+type kiroReauthAdminServiceStub struct {
+	*stubAdminService
+	getAccountResp *service.Account
+	updateResp     *service.Account
+	clearResp      *service.Account
+	clearCalls     int
+	lastUpdateID   int64
+	lastUpdate     *service.UpdateAccountInput
+}
+
+func (s *kiroReauthAdminServiceStub) GetAccount(_ context.Context, id int64) (*service.Account, error) {
+	if s.getAccountResp != nil {
+		account := *s.getAccountResp
+		account.ID = id
+		return &account, nil
+	}
+	return s.stubAdminService.GetAccount(context.Background(), id)
+}
+
+func (s *kiroReauthAdminServiceStub) UpdateAccount(_ context.Context, id int64, input *service.UpdateAccountInput) (*service.Account, error) {
+	s.lastUpdateID = id
+	s.lastUpdate = input
+	if s.updateResp != nil {
+		account := *s.updateResp
+		account.ID = id
+		return &account, nil
+	}
+	return s.stubAdminService.UpdateAccount(context.Background(), id, input)
+}
+
+func (s *kiroReauthAdminServiceStub) ClearAccountError(_ context.Context, id int64) (*service.Account, error) {
+	s.clearCalls++
+	if s.clearResp != nil {
+		account := *s.clearResp
+		account.ID = id
+		return &account, nil
+	}
+	return s.stubAdminService.ClearAccountError(context.Background(), id)
 }
 
 func TestAccountHandlerRefreshSingleAccount_KiroUsesTokenProvider(t *testing.T) {
@@ -67,4 +123,70 @@ func TestAccountHandlerRefreshSingleAccount_KiroUsesTokenProvider(t *testing.T) 
 	require.Empty(t, warning)
 	require.Equal(t, 1, executor.refreshCalls)
 	require.NotNil(t, updated)
+}
+
+func TestAccountHandlerReauthorizeKiroOAuthClearsRecoverableState(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+
+	adminSvc := &kiroReauthAdminServiceStub{
+		stubAdminService: newStubAdminService(),
+		getAccountResp: &service.Account{
+			ID:       66,
+			Platform: service.PlatformKiro,
+			Type:     service.AccountTypeOAuth,
+			Status:   service.StatusError,
+		},
+		updateResp: &service.Account{
+			ID:           66,
+			Platform:     service.PlatformKiro,
+			Type:         service.AccountTypeOAuth,
+			Status:       service.StatusError,
+			ErrorMessage: "expired refresh token",
+		},
+		clearResp: &service.Account{
+			ID:       66,
+			Name:     "kiro-account",
+			Platform: service.PlatformKiro,
+			Type:     service.AccountTypeOAuth,
+			Status:   service.StatusActive,
+		},
+	}
+	invalidator := &kiroHandlerTokenCacheInvalidatorStub{}
+	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, invalidator)
+
+	router := gin.New()
+	router.POST("/api/v1/admin/accounts/:id/reauthorize-kiro-oauth", handler.ReauthorizeKiroOAuth)
+
+	body, err := json.Marshal(KiroReauthorizeAccountRequest{
+		Name: "kiro-account",
+		Credentials: map[string]any{
+			"refresh_token": "fresh-refresh-token",
+		},
+		Extra: map[string]any{
+			"email": "kiro@example.com",
+		},
+	})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/66/reauthorize-kiro-oauth", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, adminSvc.lastUpdate)
+	require.Equal(t, int64(66), adminSvc.lastUpdateID)
+	require.True(t, adminSvc.lastUpdate.AllowSensitiveCredentials)
+	require.Equal(t, 1, adminSvc.clearCalls)
+	require.Equal(t, []int64{66}, invalidator.calls)
+
+	var resp struct {
+		Data struct {
+			Status string `json:"status"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, service.StatusActive, resp.Data.Status)
 }

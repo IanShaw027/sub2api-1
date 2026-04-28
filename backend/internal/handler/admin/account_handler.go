@@ -687,6 +687,11 @@ func (h *AccountHandler) ReauthorizeKiroOAuth(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	updated, err = h.adminService.ClearAccountError(c.Request.Context(), accountID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 	if h.tokenCacheInvalidator != nil {
 		if err := h.tokenCacheInvalidator.InvalidateToken(c.Request.Context(), updated); err != nil {
 			log.Printf("[WARN] Failed to invalidate token cache for account %d after Kiro reauthorize: %v", updated.ID, err)

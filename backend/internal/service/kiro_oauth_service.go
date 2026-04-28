@@ -133,6 +133,23 @@ type KiroExchangeCallbackInput struct {
 	ProxyID     *int64
 }
 
+func (s *KiroOAuthService) resolveProxyURL(ctx context.Context, proxyID *int64, fallbackProxyURL string) (string, error) {
+	if proxyID == nil {
+		return fallbackProxyURL, nil
+	}
+	if s == nil || s.proxyRepo == nil {
+		return "", fmt.Errorf("kiro proxy repository is unavailable")
+	}
+	proxy, err := s.proxyRepo.GetByID(ctx, *proxyID)
+	if err != nil {
+		return "", err
+	}
+	if proxy == nil {
+		return "", ErrProxyNotFound
+	}
+	return proxy.URL(), nil
+}
+
 type KiroTokenInfo struct {
 	AccessToken      string `json:"access_token,omitempty"`
 	RefreshToken     string `json:"refresh_token,omitempty"`
@@ -285,7 +302,10 @@ func (s *KiroOAuthService) ExchangeCallback(ctx context.Context, input *KiroExch
 		}
 	}
 
-	proxyURL := session.ProxyURL
+	proxyURL, err := s.resolveProxyURL(ctx, input.ProxyID, session.ProxyURL)
+	if err != nil {
+		return nil, err
+	}
 
 	tokenExchangeRedirectURI := buildKiroTokenExchangeRedirectURI(redirectURI, parsedURL, loginOption)
 	tokenPayload, err := kiroCodeExchangeFunc(ctx, code, session.CodeVerifier, tokenExchangeRedirectURI, proxyURL)

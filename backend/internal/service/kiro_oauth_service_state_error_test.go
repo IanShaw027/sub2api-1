@@ -97,7 +97,7 @@ func TestKiroOAuthServiceGenerateAuthURLFailsWhenProxyMissing(t *testing.T) {
 	}
 }
 
-func TestKiroOAuthServiceExchangeCallbackUsesSessionProxyAndRejectsOverride(t *testing.T) {
+func TestKiroOAuthServiceExchangeCallbackHonorsExplicitProxyOverride(t *testing.T) {
 	proxyID := int64(1)
 	overrideProxyID := int64(2)
 	svc := NewKiroOAuthService(&kiroDefaultProxyRepoStub{
@@ -144,7 +144,7 @@ func TestKiroOAuthServiceExchangeCallbackUsesSessionProxyAndRejectsOverride(t *t
 	if err != nil {
 		t.Fatalf("ExchangeCallback returned error: %v", err)
 	}
-	if gotProxyURL != "http://session.proxy:8080" {
-		t.Fatalf("ExchangeCallback proxy = %q, want session proxy", gotProxyURL)
+	if gotProxyURL != "http://override.proxy:8080" {
+		t.Fatalf("ExchangeCallback proxy = %q, want explicit override proxy", gotProxyURL)
 	}
 }
