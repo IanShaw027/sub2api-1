@@ -6386,7 +6386,7 @@ func ensureOpenAIPassthroughInstructions(c *gin.Context, reqModel string, body [
 
 func detectOpenAIPassthroughInstructionsRejectReason(c *gin.Context, reqModel string, body []byte) string {
 	_ = reqModel
-	if !isOpenAIResponsesInboundPath(c) {
+	if !isOpenAICodexOfficialClientRequest(c) {
 		return ""
 	}
 

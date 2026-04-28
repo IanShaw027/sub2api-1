@@ -401,6 +401,48 @@ func TestUsageLogRepositoryGetStatsWithFiltersExcludeAdminAppliesToEndpointBreak
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestUsageLogRepositoryGetStatsWithFiltersBillingModeAppliesToEndpointBreakdowns(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+
+	filters := usagestats.UsageLogFilters{
+		BillingMode: "image",
+	}
+
+	mock.ExpectQuery("FROM usage_logs\\s+WHERE billing_mode = \\$1").
+		WithArgs("image").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"total_requests",
+			"total_input_tokens",
+			"total_output_tokens",
+			"total_cache_tokens",
+			"total_cost",
+			"total_actual_cost",
+			"total_account_cost",
+			"avg_duration_ms",
+		}).AddRow(int64(2), int64(3), int64(4), int64(5), 1.5, 1.25, 1.5, 10.0))
+	mock.ExpectQuery("SELECT COALESCE\\(NULLIF\\(TRIM\\(inbound_endpoint\\), ''\\), 'unknown'\\) AS endpoint.*billing_mode = \\$3").
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "image").
+		WillReturnRows(sqlmock.NewRows([]string{"endpoint", "requests", "total_tokens", "cost", "actual_cost"}).
+			AddRow("/v1/images", int64(1), int64(10), 0.5, 0.5))
+	mock.ExpectQuery("SELECT COALESCE\\(NULLIF\\(TRIM\\(upstream_endpoint\\), ''\\), 'unknown'\\) AS endpoint.*billing_mode = \\$3").
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "image").
+		WillReturnRows(sqlmock.NewRows([]string{"endpoint", "requests", "total_tokens", "cost", "actual_cost"}).
+			AddRow("/images", int64(1), int64(10), 0.5, 0.5))
+	mock.ExpectQuery("SELECT CONCAT\\(.*billing_mode = \\$3").
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "image").
+		WillReturnRows(sqlmock.NewRows([]string{"endpoint", "requests", "total_tokens", "cost", "actual_cost"}).
+			AddRow("/v1/images -> /images", int64(1), int64(10), 0.5, 0.5))
+
+	stats, err := repo.GetStatsWithFilters(context.Background(), filters)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), stats.TotalRequests)
+	require.Len(t, stats.Endpoints, 1)
+	require.Len(t, stats.UpstreamEndpoints, 1)
+	require.Len(t, stats.EndpointPaths, 1)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestUsageLogRepositoryGetUserBreakdownStatsAppliesBillingModeAndExcludeAdmin(t *testing.T) {
 	db, mock := newSQLMock(t)
 	repo := &usageLogRepository{sql: db}
