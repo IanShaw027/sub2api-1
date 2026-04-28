@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -25,11 +26,12 @@ func (h *AffiliateHandler) List(c *gin.Context) {
 	}
 
 	page, pageSize := response.ParsePagination(c)
-	startAt, ok := parseAffiliateDateQuery(c, "start_date")
+	userTZ := strings.TrimSpace(c.Query("timezone"))
+	startAt, ok := parseAffiliateDateQuery(c, "start_date", userTZ)
 	if !ok {
 		return
 	}
-	endAt, ok := parseAffiliateDateQuery(c, "end_date")
+	endAt, ok := parseAffiliateDateQuery(c, "end_date", userTZ)
 	if !ok {
 		return
 	}
@@ -56,12 +58,12 @@ func (h *AffiliateHandler) List(c *gin.Context) {
 	response.Paginated(c, items, total, page, pageSize)
 }
 
-func parseAffiliateDateQuery(c *gin.Context, key string) (*time.Time, bool) {
+func parseAffiliateDateQuery(c *gin.Context, key string, userTZ string) (*time.Time, bool) {
 	raw := strings.TrimSpace(c.Query(key))
 	if raw == "" {
 		return nil, true
 	}
-	t, err := time.ParseInLocation(time.DateOnly, raw, time.UTC)
+	t, err := timezone.ParseInUserLocation("2006-01-02", raw, userTZ)
 	if err != nil {
 		response.BadRequest(c, key+" must use YYYY-MM-DD")
 		return nil, false

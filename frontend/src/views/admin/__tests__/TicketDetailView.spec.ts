@@ -231,4 +231,32 @@ describe('admin TicketDetailView reply template menu', () => {
     expect(wrapper.text()).not.toContain('tickets.adminActions')
     expect(wrapper.text()).not.toContain('tickets.statuses.processing')
   })
+
+  it('hides admin status actions that the backend would reject', async () => {
+    getAdminTicket.mockResolvedValueOnce({
+      id: 42,
+      ticket_no: 'TK-42',
+      status: 'submitted',
+      last_reply_role: 'system',
+    })
+
+    const wrapper = mount(TicketDetailView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TicketConversationPane: true,
+          TicketDetailPane: { template: '<div><slot name="actions" /></div>' },
+          TicketReplyTemplatesDialog: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('tickets.statuses.processing')
+    expect(wrapper.text()).toContain('tickets.statuses.waiting_admin')
+    expect(wrapper.text()).toContain('tickets.statuses.closed')
+    expect(wrapper.text()).not.toContain('tickets.statuses.waiting_user')
+    expect(wrapper.text()).not.toContain('tickets.statuses.resolved')
+  })
 })

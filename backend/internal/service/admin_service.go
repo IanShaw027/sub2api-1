@@ -1009,8 +1009,14 @@ func (s *adminServiceImpl) GetGroupStats(ctx context.Context, groupID int64) (*G
 	if groupID <= 0 {
 		return nil, infraerrors.BadRequest("INVALID_GROUP_ID", "group_id must be greater than 0")
 	}
+	if s.groupRepo == nil {
+		return nil, infraerrors.InternalServer("GROUP_REPOSITORY_UNAVAILABLE", "group repository is unavailable")
+	}
 	if s.apiKeyRepo == nil {
 		return nil, infraerrors.InternalServer("API_KEY_REPOSITORY_UNAVAILABLE", "api key repository is unavailable")
+	}
+	if _, err := s.groupRepo.GetByID(ctx, groupID); err != nil {
+		return nil, err
 	}
 
 	total, err := s.apiKeyRepo.CountByGroupID(ctx, groupID)

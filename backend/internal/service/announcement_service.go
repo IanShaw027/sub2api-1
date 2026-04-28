@@ -342,20 +342,15 @@ func (s *AnnouncementService) ListUserReadStatus(
 		return nil, nil, err
 	}
 
-	filters := UserListFilters{
-		Search:                 strings.TrimSpace(search),
-		AnnouncementID:         &announcementID,
-		AnnouncementReadStatus: NormalizeAnnouncementReadStatus(strings.TrimSpace(readStatus)),
-	}
-
-	users, page, err := s.userRepo.ListWithFilters(ctx, params, filters)
+	eligibleUsers, err := s.listEligibleAnnouncementUsers(ctx, ann.Targeting, params, strings.TrimSpace(search))
 	if err != nil {
-		return nil, nil, fmt.Errorf("list users: %w", err)
+		return nil, nil, err
 	}
 
-	userIDs := make([]int64, 0, len(users))
-	for i := range users {
-		userIDs = append(userIDs, users[i].ID)
+	readStatus = NormalizeAnnouncementReadStatus(strings.TrimSpace(readStatus))
+	userIDs := make([]int64, 0, len(eligibleUsers))
+	for i := range eligibleUsers {
+		userIDs = append(userIDs, eligibleUsers[i].ID)
 	}
 
 	readMap, err := s.readRepo.GetReadMapByUsers(ctx, announcementID, userIDs)
@@ -363,36 +358,128 @@ func (s *AnnouncementService) ListUserReadStatus(
 		return nil, nil, fmt.Errorf("get read map: %w", err)
 	}
 
-	out := make([]AnnouncementUserReadStatus, 0, len(users))
-	for i := range users {
-		u := users[i]
-		subs, err := s.userSubRepo.ListActiveByUserID(ctx, u.ID)
-		if err != nil {
-			return nil, nil, fmt.Errorf("list active subscriptions: %w", err)
+	filtered := make([]AnnouncementUserReadStatus, 0, len(eligibleUsers))
+	for i := range eligibleUsers {
+		u := eligibleUsers[i]
+		readAt, ok := readMap[u.ID]
+		if readStatus == AnnouncementReadStatusUnread && ok {
+			continue
 		}
-		activeGroupIDs := make(map[int64]struct{}, len(subs))
-		for j := range subs {
-			activeGroupIDs[subs[j].GroupID] = struct{}{}
+		if readStatus == AnnouncementReadStatusRead && !ok {
+			continue
 		}
 
-		readAt, ok := readMap[u.ID]
 		var ptr *time.Time
 		if ok {
 			t := readAt
 			ptr = &t
 		}
 
-		out = append(out, AnnouncementUserReadStatus{
+		filtered = append(filtered, AnnouncementUserReadStatus{
 			UserID:   u.ID,
 			Email:    u.Email,
 			Username: u.Username,
 			Balance:  u.Balance,
-			Eligible: domain.AnnouncementTargeting(ann.Targeting).Matches(u.Balance, activeGroupIDs),
+			Eligible: true,
 			ReadAt:   ptr,
 		})
 	}
 
-	return out, page, nil
+	page := normalizeAnnouncementReadStatusPage(params, int64(len(filtered)))
+	offset := (page.Page - 1) * page.PageSize
+	if offset >= len(filtered) {
+		return []AnnouncementUserReadStatus{}, page, nil
+	}
+
+	end := offset + page.PageSize
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	return filtered[offset:end], page, nil
+}
+
+func (s *AnnouncementService) listEligibleAnnouncementUsers(
+	ctx context.Context,
+	targeting AnnouncementTargeting,
+	params pagination.PaginationParams,
+	search string,
+) ([]User, error) {
+	eligible := make([]User, 0)
+	filters := UserListFilters{Search: search}
+	batchSize := params.Limit()
+	if batchSize < 200 {
+		batchSize = 200
+	}
+	if batchSize > 1000 {
+		batchSize = 1000
+	}
+
+	batchParams := pagination.PaginationParams{
+		Page:      1,
+		PageSize:  batchSize,
+		SortBy:    params.SortBy,
+		SortOrder: params.SortOrder,
+	}
+
+	for {
+		users, page, err := s.userRepo.ListWithFilters(ctx, batchParams, filters)
+		if err != nil {
+			return nil, fmt.Errorf("list users: %w", err)
+		}
+		if len(users) == 0 {
+			break
+		}
+
+		for i := range users {
+			u := users[i]
+			subs, err := s.userSubRepo.ListActiveByUserID(ctx, u.ID)
+			if err != nil {
+				return nil, fmt.Errorf("list active subscriptions: %w", err)
+			}
+			activeGroupIDs := make(map[int64]struct{}, len(subs))
+			for j := range subs {
+				activeGroupIDs[subs[j].GroupID] = struct{}{}
+			}
+			if !domain.AnnouncementTargeting(targeting).Matches(u.Balance, activeGroupIDs) {
+				continue
+			}
+			eligible = append(eligible, u)
+		}
+
+		if page == nil {
+			if len(users) < batchParams.PageSize {
+				break
+			}
+		} else if page.Pages > 0 {
+			if batchParams.Page >= page.Pages {
+				break
+			}
+		} else if int64(batchParams.Page*batchParams.PageSize) >= page.Total {
+			break
+		}
+
+		batchParams.Page++
+	}
+
+	return eligible, nil
+}
+
+func normalizeAnnouncementReadStatusPage(params pagination.PaginationParams, total int64) *pagination.PaginationResult {
+	page := params.Page
+	if page < 1 {
+		page = 1
+	}
+	pageSize := params.Limit()
+	pages := 0
+	if total > 0 {
+		pages = int((total + int64(pageSize) - 1) / int64(pageSize))
+	}
+	return &pagination.PaginationResult{
+		Total:    total,
+		Page:     page,
+		PageSize: pageSize,
+		Pages:    pages,
+	}
 }
 
 func isValidAnnouncementStatus(status string) bool {

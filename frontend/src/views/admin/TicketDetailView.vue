@@ -91,7 +91,7 @@
             <div v-if="canUpdateStatus" class="space-y-3">
               <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('tickets.adminActions') }}</p>
               <div class="flex flex-wrap gap-3">
-                <button v-for="status in adminStatuses" :key="status" class="btn btn-secondary btn-sm" :disabled="actionLoading || ticket.status === status || isStatusLocked(status)" @click="updateStatus(status)">
+                <button v-for="status in availableAdminStatuses" :key="status" class="btn btn-secondary btn-sm" :disabled="actionLoading || ticket.status === status" @click="updateStatus(status)">
                   {{ t(`tickets.statuses.${status}`) }}
                 </button>
               </div>
@@ -143,15 +143,25 @@ const templateTriggerRef = ref<HTMLButtonElement | null>(null)
 const templateMenuListRef = ref<HTMLElement | null>(null)
 const adminStatuses: TicketStatus[] = ['processing', 'waiting_user', 'waiting_admin', 'resolved', 'closed']
 const canReply = computed(() => !['resolved', 'closed', 'withdrawn'].includes(ticket.value?.status || ''))
-const canUpdateStatus = computed(() => ticket.value?.status !== 'withdrawn')
+const availableAdminStatuses = computed(() => {
+  if (!ticket.value || ticket.value.status === 'withdrawn') {
+    return []
+  }
+
+  return adminStatuses.filter((status) => isAdminStatusActionAllowed(ticket.value!.status, ticket.value!.last_reply_role, status))
+})
+const canUpdateStatus = computed(() => availableAdminStatuses.value.length > 0)
 const ticketID = computed(() => Number(route.params.id))
 let loadDetailRequestID = 0
 
-function isStatusLocked(target: TicketStatus) {
-  if (!ticket.value) return false
-  if (ticket.value.status === 'closed') return target !== 'closed'
-  if (ticket.value.status === 'resolved') return target !== 'resolved' && target !== 'closed'
-  return false
+function isAdminStatusActionAllowed(currentStatus: TicketStatus, lastReplyRole?: SupportTicket['last_reply_role'], nextStatus?: TicketStatus) {
+  if (!nextStatus) return false
+  if (currentStatus === 'closed') return nextStatus === 'closed'
+  if (currentStatus === 'resolved') return nextStatus === 'resolved' || nextStatus === 'closed'
+  if (nextStatus === 'waiting_user' || nextStatus === 'resolved') {
+    return lastReplyRole === 'admin'
+  }
+  return true
 }
 
 async function loadDetail() {

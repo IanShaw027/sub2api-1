@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
@@ -44,7 +47,8 @@ func (s *announcementRepoStub) ListActive(context.Context, time.Time) ([]Announc
 }
 
 type announcementReadRepoStub struct {
-	readMap map[int64]time.Time
+	readMap        map[int64]time.Time
+	readMapByUsers map[int64]time.Time
 }
 
 func (*announcementReadRepoStub) MarkRead(context.Context, int64, int64, time.Time) error {
@@ -55,18 +59,28 @@ func (s *announcementReadRepoStub) GetReadMapByUser(context.Context, int64, []in
 	return s.readMap, nil
 }
 
-func (*announcementReadRepoStub) GetReadMapByUsers(context.Context, int64, []int64) (map[int64]time.Time, error) {
-	return map[int64]time.Time{}, nil
+func (s *announcementReadRepoStub) GetReadMapByUsers(context.Context, int64, []int64) (map[int64]time.Time, error) {
+	if s.readMapByUsers == nil {
+		return map[int64]time.Time{}, nil
+	}
+	return s.readMapByUsers, nil
 }
 
 func (*announcementReadRepoStub) CountByAnnouncementID(context.Context, int64) (int64, error) {
 	return 0, nil
 }
 
-type announcementUserRepoStub struct{}
+type announcementUserRepoStub struct {
+	user            *User
+	users           []User
+	listWithFilters []UserListFilters
+}
 
 func (*announcementUserRepoStub) Create(context.Context, *User) error { return nil }
-func (*announcementUserRepoStub) GetByID(context.Context, int64) (*User, error) {
+func (s *announcementUserRepoStub) GetByID(context.Context, int64) (*User, error) {
+	if s.user != nil {
+		return s.user, nil
+	}
 	return &User{ID: 1, Balance: 10}, nil
 }
 func (*announcementUserRepoStub) GetByEmail(context.Context, string) (*User, error) { return nil, nil }
@@ -83,8 +97,47 @@ func (*announcementUserRepoStub) DeleteUserAvatar(context.Context, int64) error 
 func (*announcementUserRepoStub) List(context.Context, pagination.PaginationParams) ([]User, *pagination.PaginationResult, error) {
 	return nil, nil, nil
 }
-func (*announcementUserRepoStub) ListWithFilters(context.Context, pagination.PaginationParams, UserListFilters) ([]User, *pagination.PaginationResult, error) {
-	return nil, nil, nil
+func (s *announcementUserRepoStub) ListWithFilters(_ context.Context, params pagination.PaginationParams, filters UserListFilters) ([]User, *pagination.PaginationResult, error) {
+	s.listWithFilters = append(s.listWithFilters, filters)
+
+	filtered := make([]User, 0, len(s.users))
+	needle := strings.ToLower(strings.TrimSpace(filters.Search))
+	for _, user := range s.users {
+		if needle != "" {
+			email := strings.ToLower(user.Email)
+			username := strings.ToLower(user.Username)
+			if !strings.Contains(email, needle) && !strings.Contains(username, needle) {
+				continue
+			}
+		}
+		filtered = append(filtered, user)
+	}
+
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].Email < filtered[j].Email
+	})
+
+	limit := params.Limit()
+	offset := params.Offset()
+	if offset >= len(filtered) {
+		return []User{}, &pagination.PaginationResult{
+			Total:    int64(len(filtered)),
+			Page:     params.Page,
+			PageSize: limit,
+			Pages:    pageCount(len(filtered), limit),
+		}, nil
+	}
+
+	end := offset + limit
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	return filtered[offset:end], &pagination.PaginationResult{
+		Total:    int64(len(filtered)),
+		Page:     params.Page,
+		PageSize: limit,
+		Pages:    pageCount(len(filtered), limit),
+	}, nil
 }
 func (*announcementUserRepoStub) GetLatestUsedAtByUserIDs(context.Context, []int64) (map[int64]*time.Time, error) {
 	return nil, nil
@@ -120,7 +173,9 @@ func (*announcementUserRepoStub) UpdateTotpSecret(context.Context, int64, *strin
 func (*announcementUserRepoStub) EnableTotp(context.Context, int64) error                { return nil }
 func (*announcementUserRepoStub) DisableTotp(context.Context, int64) error               { return nil }
 
-type announcementUserSubRepoStub struct{}
+type announcementUserSubRepoStub struct {
+	activeByUserID map[int64][]UserSubscription
+}
 
 func (*announcementUserSubRepoStub) Create(context.Context, *UserSubscription) error { return nil }
 func (*announcementUserSubRepoStub) GetByID(context.Context, int64) (*UserSubscription, error) {
@@ -137,8 +192,11 @@ func (*announcementUserSubRepoStub) Delete(context.Context, int64) error        
 func (*announcementUserSubRepoStub) ListByUserID(context.Context, int64) ([]UserSubscription, error) {
 	return nil, nil
 }
-func (*announcementUserSubRepoStub) ListActiveByUserID(context.Context, int64) ([]UserSubscription, error) {
-	return nil, nil
+func (s *announcementUserSubRepoStub) ListActiveByUserID(_ context.Context, userID int64) ([]UserSubscription, error) {
+	if s.activeByUserID == nil {
+		return nil, nil
+	}
+	return s.activeByUserID[userID], nil
 }
 func (*announcementUserSubRepoStub) ListByGroupID(context.Context, int64, pagination.PaginationParams) ([]UserSubscription, *pagination.PaginationResult, error) {
 	return nil, nil, nil
@@ -244,4 +302,133 @@ func TestAnnouncementServiceListForUserReadStatus(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, read, 1)
 	require.Equal(t, int64(2), read[0].Announcement.ID)
+}
+
+func TestAnnouncementServiceListUserReadStatusPaginatesEligibleRecipientsOnly(t *testing.T) {
+	now := time.Unix(1776790020, 0)
+	announcementID := int64(9)
+	userRepo := &announcementUserRepoStub{
+		users: []User{
+			{ID: 1, Email: "eligible-unread@example.com"},
+			{ID: 2, Email: "ineligible-read@example.com"},
+			{ID: 3, Email: "eligible-read@example.com"},
+		},
+	}
+	readRepo := &announcementReadRepoStub{
+		readMapByUsers: map[int64]time.Time{
+			2: now,
+			3: now,
+		},
+	}
+	userSubRepo := &announcementUserSubRepoStub{
+		activeByUserID: map[int64][]UserSubscription{
+			1: {{GroupID: 7}},
+			3: {{GroupID: 7}},
+		},
+	}
+	repo := &announcementRepoStub{
+		item: &Announcement{
+			ID: announcementID,
+			Targeting: domain.AnnouncementTargeting{
+				AnyOf: []domain.AnnouncementConditionGroup{
+					{
+						AllOf: []domain.AnnouncementCondition{
+							{
+								Type:     domain.AnnouncementConditionTypeSubscription,
+								Operator: domain.AnnouncementOperatorIn,
+								GroupIDs: []int64{7},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	svc := NewAnnouncementService(repo, readRepo, userRepo, userSubRepo)
+
+	items, page, err := svc.ListUserReadStatus(
+		context.Background(),
+		announcementID,
+		pagination.PaginationParams{Page: 2, PageSize: 1, SortBy: "email", SortOrder: "asc"},
+		"",
+		AnnouncementReadStatusAll,
+	)
+
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, int64(2), page.Total)
+	require.Equal(t, 2, page.Pages)
+	require.Equal(t, int64(1), items[0].UserID)
+	require.True(t, items[0].Eligible)
+	require.Nil(t, items[0].ReadAt)
+	require.Len(t, userRepo.listWithFilters, 1)
+	require.Zero(t, userRepo.listWithFilters[0].AnnouncementID)
+	require.Empty(t, userRepo.listWithFilters[0].AnnouncementReadStatus)
+}
+
+func TestAnnouncementServiceListUserReadStatusFiltersUnreadAfterEligibility(t *testing.T) {
+	announcementID := int64(9)
+	userRepo := &announcementUserRepoStub{
+		users: []User{
+			{ID: 1, Email: "eligible-unread@example.com"},
+			{ID: 2, Email: "ineligible-unread@example.com"},
+			{ID: 3, Email: "eligible-read@example.com"},
+		},
+	}
+	readRepo := &announcementReadRepoStub{
+		readMapByUsers: map[int64]time.Time{
+			3: time.Unix(1776790020, 0),
+		},
+	}
+	userSubRepo := &announcementUserSubRepoStub{
+		activeByUserID: map[int64][]UserSubscription{
+			1: {{GroupID: 7}},
+			3: {{GroupID: 7}},
+		},
+	}
+	repo := &announcementRepoStub{
+		item: &Announcement{
+			ID: announcementID,
+			Targeting: domain.AnnouncementTargeting{
+				AnyOf: []domain.AnnouncementConditionGroup{
+					{
+						AllOf: []domain.AnnouncementCondition{
+							{
+								Type:     domain.AnnouncementConditionTypeSubscription,
+								Operator: domain.AnnouncementOperatorIn,
+								GroupIDs: []int64{7},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	svc := NewAnnouncementService(repo, readRepo, userRepo, userSubRepo)
+
+	items, page, err := svc.ListUserReadStatus(
+		context.Background(),
+		announcementID,
+		pagination.PaginationParams{Page: 1, PageSize: 10},
+		"",
+		AnnouncementReadStatusUnread,
+	)
+
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, int64(1), page.Total)
+	require.Equal(t, int64(1), items[0].UserID)
+	require.True(t, items[0].Eligible)
+	require.Nil(t, items[0].ReadAt)
+}
+
+func pageCount(total int, pageSize int) int {
+	if total == 0 || pageSize <= 0 {
+		return 0
+	}
+	pages := total / pageSize
+	if total%pageSize != 0 {
+		pages++
+	}
+	return pages
 }
