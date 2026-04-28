@@ -380,6 +380,111 @@ func TestImportDataDedupOverwriteUpdatesExistingAccount(t *testing.T) {
 	require.Equal(t, map[string]any{"plan_name": "Pro"}, adminSvc.updatedAccounts[0].Extra)
 }
 
+func TestImportDataDedupOverwriteMatchesExistingEmailWhenImportedAccountAddsStableID(t *testing.T) {
+	router, adminSvc := setupAccountDataRouter()
+	adminSvc.accounts = []service.Account{
+		{
+			ID:       10,
+			Name:     "existing",
+			Platform: service.PlatformOpenAI,
+			Type:     service.AccountTypeOAuth,
+			Credentials: map[string]any{
+				"email": "user@example.com",
+			},
+		},
+	}
+
+	dataPayload := map[string]any{
+		"data": map[string]any{
+			"type":    dataType,
+			"version": dataVersion,
+			"proxies": []map[string]any{},
+			"accounts": []map[string]any{
+				{
+					"name":     "imported",
+					"platform": service.PlatformOpenAI,
+					"type":     service.AccountTypeOAuth,
+					"credentials": map[string]any{
+						"email":              "user@example.com",
+						"chatgpt_account_id": "acct-123",
+					},
+					"concurrency": 3,
+					"priority":    50,
+				},
+			},
+		},
+		"skip_default_group_bind": true,
+		"dedup_mode":              dataImportDedupModeOverwrite,
+	}
+
+	body, _ := json.Marshal(dataPayload)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/data", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dataImportResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, 1, resp.Data.AccountUpdated)
+	require.Len(t, adminSvc.createdAccounts, 0)
+	require.Len(t, adminSvc.updatedAccounts, 1)
+	require.Equal(t, int64(10), adminSvc.updatedAccountIDs[0])
+}
+
+func TestImportDataDedupOverwriteMatchesExistingStableIDWhenImportedRefreshTokenRotates(t *testing.T) {
+	router, adminSvc := setupAccountDataRouter()
+	adminSvc.accounts = []service.Account{
+		{
+			ID:       11,
+			Name:     "existing",
+			Platform: service.PlatformOpenAI,
+			Type:     service.AccountTypeOAuth,
+			Credentials: map[string]any{
+				"chatgpt_account_id": "acct-456",
+				"refresh_token":      "old-rt",
+			},
+		},
+	}
+
+	dataPayload := map[string]any{
+		"data": map[string]any{
+			"type":    dataType,
+			"version": dataVersion,
+			"proxies": []map[string]any{},
+			"accounts": []map[string]any{
+				{
+					"name":     "imported",
+					"platform": service.PlatformOpenAI,
+					"type":     service.AccountTypeOAuth,
+					"credentials": map[string]any{
+						"chatgpt_account_id": "acct-456",
+						"refresh_token":      "new-rt",
+					},
+					"concurrency": 3,
+					"priority":    50,
+				},
+			},
+		},
+		"skip_default_group_bind": true,
+		"dedup_mode":              dataImportDedupModeOverwrite,
+	}
+
+	body, _ := json.Marshal(dataPayload)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/data", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dataImportResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, 1, resp.Data.AccountUpdated)
+	require.Len(t, adminSvc.createdAccounts, 0)
+	require.Len(t, adminSvc.updatedAccounts, 1)
+	require.Equal(t, int64(11), adminSvc.updatedAccountIDs[0])
+}
+
 func TestImportDataDedupOverwriteDoesNotClearMissingOptionalFields(t *testing.T) {
 	router, adminSvc := setupAccountDataRouter()
 	adminSvc.accounts = []service.Account{
@@ -424,4 +529,69 @@ func TestImportDataDedupOverwriteDoesNotClearMissingOptionalFields(t *testing.T)
 	require.Nil(t, adminSvc.updatedAccounts[0].ProxyID)
 	require.Nil(t, adminSvc.updatedAccounts[0].ExpiresAt)
 	require.Nil(t, adminSvc.updatedAccounts[0].Extra)
+}
+
+func TestImportDataDedupOverwriteFailsOnAmbiguousWeakIdentifier(t *testing.T) {
+	router, adminSvc := setupAccountDataRouter()
+	adminSvc.accounts = []service.Account{
+		{
+			ID:       21,
+			Name:     "existing-a",
+			Platform: service.PlatformOpenAI,
+			Type:     service.AccountTypeOAuth,
+			Credentials: map[string]any{
+				"email":              "shared@example.com",
+				"chatgpt_account_id": "acct-a",
+			},
+		},
+		{
+			ID:       22,
+			Name:     "existing-b",
+			Platform: service.PlatformOpenAI,
+			Type:     service.AccountTypeOAuth,
+			Credentials: map[string]any{
+				"email":              "shared@example.com",
+				"chatgpt_account_id": "acct-b",
+			},
+		},
+	}
+
+	dataPayload := map[string]any{
+		"data": map[string]any{
+			"type":    dataType,
+			"version": dataVersion,
+			"proxies": []map[string]any{},
+			"accounts": []map[string]any{
+				{
+					"name":     "imported",
+					"platform": service.PlatformOpenAI,
+					"type":     service.AccountTypeOAuth,
+					"credentials": map[string]any{
+						"email": "shared@example.com",
+					},
+					"concurrency": 3,
+					"priority":    50,
+				},
+			},
+		},
+		"skip_default_group_bind": true,
+		"dedup_mode":              dataImportDedupModeOverwrite,
+	}
+
+	body, _ := json.Marshal(dataPayload)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/data", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dataImportResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, 1, resp.Data.AccountFailed)
+	require.Equal(t, 0, resp.Data.AccountUpdated)
+	require.Equal(t, 0, resp.Data.AccountCreated)
+	require.Len(t, adminSvc.updatedAccounts, 0)
+	require.Len(t, adminSvc.createdAccounts, 0)
+	require.Len(t, resp.Data.Errors, 1)
+	require.Contains(t, resp.Data.Errors[0].Message, "ambiguous")
 }

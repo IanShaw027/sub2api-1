@@ -278,15 +278,14 @@ func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) 
 	// 收集需要异步设置隐私的 Antigravity OAuth 账号
 	var privacyAccounts []*service.Account
 	accountDedupIndex := map[string]int64{}
+	ambiguousAccountDedupKeys := map[string]struct{}{}
 	if dedupMode != dataImportDedupModeNone {
 		existingAccounts, err := h.listAccountsFiltered(ctx, "", "", "", "", 0, "", "created_at", "asc")
 		if err != nil {
 			return result, err
 		}
 		for i := range existingAccounts {
-			if key, ok := buildDataAccountDedupKey(existingAccounts[i].Platform, existingAccounts[i].Type, existingAccounts[i].Credentials); ok {
-				accountDedupIndex[key] = existingAccounts[i].ID
-			}
+			addDataAccountDedupKeys(accountDedupIndex, ambiguousAccountDedupKeys, existingAccounts[i].ID, buildDataAccountDedupKeys(existingAccounts[i].Platform, existingAccounts[i].Type, existingAccounts[i].Credentials))
 		}
 	}
 
@@ -319,9 +318,19 @@ func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) 
 		}
 
 		enrichCredentialsFromIDToken(&item)
-		dedupKey, hasDedupKey := buildDataAccountDedupKey(item.Platform, item.Type, item.Credentials)
-		if dedupMode != dataImportDedupModeNone && hasDedupKey {
-			if existingID, exists := accountDedupIndex[dedupKey]; exists {
+		dedupKeys := buildDataAccountDedupKeys(item.Platform, item.Type, item.Credentials)
+		if dedupMode != dataImportDedupModeNone && len(dedupKeys) > 0 {
+			existingID, exists, matchErr := resolveDataAccountDedupMatch(accountDedupIndex, ambiguousAccountDedupKeys, dedupKeys)
+			if matchErr != nil {
+				result.AccountFailed++
+				result.Errors = append(result.Errors, DataImportError{
+					Kind:    "account",
+					Name:    item.Name,
+					Message: matchErr.Error(),
+				})
+				continue
+			}
+			if exists {
 				if dedupMode == dataImportDedupModeIgnore {
 					result.AccountSkipped++
 					continue
@@ -396,8 +405,8 @@ func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) 
 		if created.Platform == service.PlatformAntigravity && created.Type == service.AccountTypeOAuth {
 			privacyAccounts = append(privacyAccounts, created)
 		}
-		if dedupMode != dataImportDedupModeNone && hasDedupKey {
-			accountDedupIndex[dedupKey] = created.ID
+		if dedupMode != dataImportDedupModeNone {
+			addDataAccountDedupKeys(accountDedupIndex, ambiguousAccountDedupKeys, created.ID, buildDataAccountDedupKeys(created.Platform, created.Type, created.Credentials))
 		}
 		result.AccountCreated++
 	}
@@ -436,27 +445,89 @@ func normalizeDataImportDedupMode(mode string) string {
 }
 
 func buildDataAccountDedupKey(platform, accountType string, credentials map[string]any) (string, bool) {
-	platform = strings.ToLower(strings.TrimSpace(platform))
-	accountType = strings.ToLower(strings.TrimSpace(accountType))
-	if platform == "" || accountType == "" || len(credentials) == 0 {
+	keys := buildDataAccountDedupKeys(platform, accountType, credentials)
+	if len(keys) == 0 {
 		return "", false
 	}
-	switch accountType {
-	case service.AccountTypeOAuth, service.AccountTypeSetupToken:
-		return buildOAuthDataAccountDedupKey(platform, accountType, credentials)
-	case service.AccountTypeAPIKey, service.AccountTypeUpstream:
-		return buildAPIKeyDataAccountDedupKey(platform, accountType, credentials)
-	case service.AccountTypeBedrock:
-		return buildBedrockDataAccountDedupKey(platform, accountType, credentials)
-	default:
-		return "", false
+	return keys[0], true
+}
+
+func addDataAccountDedupKeys(index map[string]int64, ambiguous map[string]struct{}, accountID int64, keys []string) {
+	for _, key := range keys {
+		if _, exists := ambiguous[key]; exists {
+			continue
+		}
+		if existingID, exists := index[key]; exists && existingID != accountID {
+			delete(index, key)
+			ambiguous[key] = struct{}{}
+			continue
+		}
+		index[key] = accountID
 	}
 }
 
-func buildOAuthDataAccountDedupKey(platform, accountType string, credentials map[string]any) (string, bool) {
+func resolveDataAccountDedupMatch(index map[string]int64, ambiguous map[string]struct{}, keys []string) (int64, bool, error) {
+	var (
+		matchedID    int64
+		hasMatch     bool
+		hasAmbiguous bool
+	)
+	for _, key := range keys {
+		if _, exists := ambiguous[key]; exists {
+			hasAmbiguous = true
+			continue
+		}
+		id, exists := index[key]
+		if !exists {
+			continue
+		}
+		if !hasMatch {
+			matchedID = id
+			hasMatch = true
+			continue
+		}
+		if matchedID != id {
+			return 0, false, fmt.Errorf("ambiguous dedup match across multiple existing accounts")
+		}
+	}
+	if hasMatch {
+		return matchedID, true, nil
+	}
+	if hasAmbiguous {
+		return 0, false, fmt.Errorf("ambiguous dedup match for weak identifier")
+	}
+	return 0, false, nil
+}
+
+func buildDataAccountDedupKeys(platform, accountType string, credentials map[string]any) []string {
+	platform = strings.ToLower(strings.TrimSpace(platform))
+	accountType = strings.ToLower(strings.TrimSpace(accountType))
+	if platform == "" || accountType == "" || len(credentials) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, 8)
+	switch accountType {
+	case service.AccountTypeOAuth, service.AccountTypeSetupToken:
+		keys = append(keys, buildOAuthDataAccountDedupKeys(platform, accountType, credentials)...)
+	case service.AccountTypeAPIKey, service.AccountTypeUpstream:
+		if key, ok := buildAPIKeyDataAccountDedupKey(platform, accountType, credentials); ok {
+			keys = append(keys, key)
+		}
+	case service.AccountTypeBedrock:
+		if key, ok := buildBedrockDataAccountDedupKey(platform, accountType, credentials); ok {
+			keys = append(keys, key)
+		}
+	default:
+		return nil
+	}
+	return keys
+}
+
+func buildOAuthDataAccountDedupKeys(platform, accountType string, credentials map[string]any) []string {
+	keys := make([]string, 0, 8)
 	if platform == service.PlatformKiro {
 		if value := credentialString(credentials, "profile_id"); value != "" {
-			return strings.Join([]string{platform, accountType, "profile_id", value}, "|"), true
+			keys = append(keys, strings.Join([]string{platform, accountType, "profile_id", value}, "|"))
 		}
 	}
 	for _, key := range []string{
@@ -470,26 +541,26 @@ func buildOAuthDataAccountDedupKey(platform, accountType string, credentials map
 		"refresh_token",
 	} {
 		if value := credentialString(credentials, key); value != "" && !strings.HasPrefix(value, "arn:") {
-			return strings.Join([]string{platform, accountType, key, value}, "|"), true
+			keys = append(keys, strings.Join([]string{platform, accountType, key, value}, "|"))
 		}
 	}
 	if email := credentialString(credentials, "email"); email != "" {
 		for _, detailKey := range []string{"profile_id", "project_id", "workspace_id", "organization_id", "org_uuid", "tier_id"} {
 			if detail := credentialString(credentials, detailKey); detail != "" {
-				return strings.Join([]string{platform, accountType, "email+" + detailKey, email, detail}, "|"), true
+				keys = append(keys, strings.Join([]string{platform, accountType, "email+" + detailKey, email, detail}, "|"))
 			}
 		}
-		return strings.Join([]string{platform, accountType, "email", email}, "|"), true
+		keys = append(keys, strings.Join([]string{platform, accountType, "email", email}, "|"))
 	}
 	if email := credentialString(credentials, "email_address"); email != "" {
 		for _, detailKey := range []string{"account_uuid", "org_uuid", "organization_id"} {
 			if detail := credentialString(credentials, detailKey); detail != "" {
-				return strings.Join([]string{platform, accountType, "email_address+" + detailKey, email, detail}, "|"), true
+				keys = append(keys, strings.Join([]string{platform, accountType, "email_address+" + detailKey, email, detail}, "|"))
 			}
 		}
-		return strings.Join([]string{platform, accountType, "email_address", email}, "|"), true
+		keys = append(keys, strings.Join([]string{platform, accountType, "email_address", email}, "|"))
 	}
-	return "", false
+	return keys
 }
 
 func buildAPIKeyDataAccountDedupKey(platform, accountType string, credentials map[string]any) (string, bool) {

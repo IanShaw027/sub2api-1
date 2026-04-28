@@ -364,6 +364,50 @@ func (s *RedeemCodeRepoSuite) TestListByUser_DefaultLimit() {
 	s.Require().Len(codes, 1)
 }
 
+func (s *RedeemCodeRepoSuite) TestSumPositiveBalanceByUserIncludesAdminBalance() {
+	user := s.createUser(uniqueTestValue(s.T(), "sum-balance") + "@example.com")
+
+	_, err := s.client.RedeemCode.Create().
+		SetCode("SUM-BALANCE").
+		SetType(service.RedeemTypeBalance).
+		SetStatus(service.StatusUsed).
+		SetValue(10).
+		SetNotes("").
+		SetValidityDays(30).
+		SetUsedBy(user.ID).
+		SetUsedAt(time.Now()).
+		Save(s.ctx)
+	s.Require().NoError(err)
+
+	_, err = s.client.RedeemCode.Create().
+		SetCode("SUM-ADMIN-BALANCE").
+		SetType(service.AdjustmentTypeAdminBalance).
+		SetStatus(service.StatusUsed).
+		SetValue(20).
+		SetNotes("").
+		SetValidityDays(30).
+		SetUsedBy(user.ID).
+		SetUsedAt(time.Now()).
+		Save(s.ctx)
+	s.Require().NoError(err)
+
+	_, err = s.client.RedeemCode.Create().
+		SetCode("SUM-NEGATIVE-BALANCE").
+		SetType(service.RedeemTypeBalance).
+		SetStatus(service.StatusUsed).
+		SetValue(-5).
+		SetNotes("").
+		SetValidityDays(30).
+		SetUsedBy(user.ID).
+		SetUsedAt(time.Now()).
+		Save(s.ctx)
+	s.Require().NoError(err)
+
+	total, err := s.repo.SumPositiveBalanceByUser(s.ctx, user.ID)
+	s.Require().NoError(err)
+	s.Require().Equal(float64(30), total)
+}
+
 // --- Combined original test ---
 
 func (s *RedeemCodeRepoSuite) TestCreateBatch_Filters_Use_Idempotency_ListByUser() {
