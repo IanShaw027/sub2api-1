@@ -498,7 +498,8 @@ func buildPublicOrderResult(order *dbent.PaymentOrder) PublicOrderResult {
 }
 
 // VerifyOrderPublic keeps the legacy anonymous out_trade_no lookup available as
-// a compatibility path for older result pages and staggered deploys.
+// a compatibility path for older result pages and preserves upstream
+// reconciliation for flows that do not carry a signed resume token.
 // POST /api/v1/payment/public/orders/verify
 func (h *PaymentHandler) VerifyOrderPublic(c *gin.Context) {
 	var req VerifyOrderRequest

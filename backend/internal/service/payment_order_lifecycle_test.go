@@ -525,6 +525,145 @@ func TestVerifyOrderByOutTradeNoUsesOutTradeNoWhenPaymentTradeNoAlreadyExistsFor
 	require.Equal(t, "upstream-trade-existing", got.PaymentTradeNo)
 }
 
+func TestVerifyOrderByOutTradeNoReconcilesFailedOrderAndBackfillsPaidMetadata(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("checkpaid-failed@example.com").
+		SetPasswordHash("hash").
+		SetUsername("checkpaid-failed-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	failedAt := time.Now().Add(-5 * time.Minute)
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("CHECKPAID-FAILED-RECOVERY").
+		SetOutTradeNo("sub2_checkpaid_failed_recovery").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusFailed).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetFailedAt(failedAt).
+		SetFailedReason("provider callback lost after local failure").
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	registry := payment.NewRegistry()
+	provider := &paymentOrderLifecycleQueryProvider{
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "upstream-trade-failed-recovery",
+			Status:  payment.ProviderStatusPaid,
+			Amount:  88,
+		},
+	}
+	registry.Register(provider)
+
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	got, err := svc.VerifyOrderByOutTradeNo(ctx, order.OutTradeNo, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, provider.queryCalls)
+	require.Equal(t, OrderStatusCompleted, got.Status)
+	require.Equal(t, "upstream-trade-failed-recovery", got.PaymentTradeNo)
+	require.NotNil(t, got.PaidAt)
+	require.Nil(t, got.FailedAt)
+	require.Nil(t, got.FailedReason)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.Equal(t, "upstream-trade-failed-recovery", reloaded.PaymentTradeNo)
+	require.Equal(t, 88.0, reloaded.PayAmount)
+	require.NotNil(t, reloaded.PaidAt)
+	require.NotNil(t, reloaded.CompletedAt)
+	require.Nil(t, reloaded.FailedAt)
+	require.Nil(t, reloaded.FailedReason)
+
+	reloadedUser, err := client.User.Get(ctx, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, 88.0, reloadedUser.Balance)
+	require.Equal(t, 88.0, reloadedUser.TotalRecharged)
+}
+
+func TestVerifyOrderPublicReconcilesLegacyFailedOrderWithoutResumeToken(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("public-failed@example.com").
+		SetPasswordHash("hash").
+		SetUsername("public-failed-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(66).
+		SetPayAmount(66).
+		SetFeeRate(0).
+		SetRechargeCode("PUBLIC-FAILED-RECOVERY").
+		SetOutTradeNo("sub2_public_failed_recovery").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusFailed).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetFailedAt(time.Now().Add(-3 * time.Minute)).
+		SetFailedReason("legacy page reload after local failure").
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	registry := payment.NewRegistry()
+	provider := &paymentOrderLifecycleQueryProvider{
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "upstream-trade-public-recovery",
+			Status:  payment.ProviderStatusPaid,
+			Amount:  66,
+		},
+	}
+	registry.Register(provider)
+
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	got, err := svc.VerifyOrderPublic(ctx, order.OutTradeNo)
+	require.NoError(t, err)
+	require.Equal(t, 1, provider.queryCalls)
+	require.Equal(t, OrderStatusCompleted, got.Status)
+	require.Equal(t, "upstream-trade-public-recovery", got.PaymentTradeNo)
+	require.NotNil(t, got.PaidAt)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.Equal(t, "upstream-trade-public-recovery", reloaded.PaymentTradeNo)
+	require.NotNil(t, reloaded.PaidAt)
+	require.NotNil(t, reloaded.CompletedAt)
+	require.Nil(t, reloaded.FailedAt)
+	require.Nil(t, reloaded.FailedReason)
+}
+
 func TestPaymentOrderAllowsRegistryFallbackOnlyForLegacyOrdersWithoutPinnedProviderState(t *testing.T) {
 	t.Parallel()
 

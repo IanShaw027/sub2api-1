@@ -171,6 +171,13 @@ func (h *UserHandler) affiliateServiceOrErr() (*service.AffiliateService, error)
 	return h.affiliateService, nil
 }
 
+func (h *UserHandler) ensureBackendModeAllowsProfileAuthMutation(ctx context.Context, userID int64) error {
+	if h == nil || h.userService == nil {
+		return nil
+	}
+	return h.userService.EnsureBackendModeAllowsUser(ctx, userID)
+}
+
 // GetAffiliate returns the current user's affiliate details.
 // GET /api/v1/user/aff
 func (h *UserHandler) GetAffiliate(c *gin.Context) {
@@ -266,8 +273,13 @@ type SendEmailBindingCodeRequest struct {
 // StartIdentityBinding returns the backend authorize URL for starting a third-party identity bind flow.
 // POST /api/v1/user/auth-identities/bind/start
 func (h *UserHandler) StartIdentityBinding(c *gin.Context) {
-	if _, ok := middleware2.GetAuthSubjectFromContext(c); !ok {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
 		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	if err := h.ensureBackendModeAllowsProfileAuthMutation(c.Request.Context(), subject.UserID); err != nil {
+		response.ErrorFrom(c, err)
 		return
 	}
 
@@ -278,6 +290,7 @@ func (h *UserHandler) StartIdentityBinding(c *gin.Context) {
 	}
 
 	result, err := h.userService.PrepareIdentityBindingStart(c.Request.Context(), service.StartUserIdentityBindingRequest{
+		UserID:     subject.UserID,
 		Provider:   req.Provider,
 		RedirectTo: req.RedirectTo,
 	})
@@ -295,6 +308,10 @@ func (h *UserHandler) BindEmailIdentity(c *gin.Context) {
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
 	if !ok {
 		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	if err := h.ensureBackendModeAllowsProfileAuthMutation(c.Request.Context(), subject.UserID); err != nil {
+		response.ErrorFrom(c, err)
 		return
 	}
 	if h.authService == nil {
@@ -337,6 +354,10 @@ func (h *UserHandler) UnbindIdentity(c *gin.Context) {
 		response.Unauthorized(c, "User not authenticated")
 		return
 	}
+	if err := h.ensureBackendModeAllowsProfileAuthMutation(c.Request.Context(), subject.UserID); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 
 	updatedUser, unbound, err := h.userService.UnbindUserAuthProviderWithResult(
 		c.Request.Context(),
@@ -369,6 +390,10 @@ func (h *UserHandler) SendEmailBindingCode(c *gin.Context) {
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
 	if !ok {
 		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	if err := h.ensureBackendModeAllowsProfileAuthMutation(c.Request.Context(), subject.UserID); err != nil {
+		response.ErrorFrom(c, err)
 		return
 	}
 	if h.authService == nil {

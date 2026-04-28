@@ -715,7 +715,7 @@ func ensurePendingOAuthRegistrationIdentityAvailable(ctx context.Context, client
 		return nil
 	}
 
-	activeOwner, err := findActiveUserByID(ctx, client, identity.UserID)
+	activeOwner, err := findReclaimBlockingActiveUserByID(ctx, client, identity.UserID)
 	if err != nil {
 		return err
 	}
@@ -766,7 +766,7 @@ func ensurePendingOAuthIdentityForUser(ctx context.Context, tx *dbent.Tx, sessio
 	}
 	if identity != nil {
 		if identity.UserID != userID {
-			activeOwner, err := findActiveUserByID(ctx, client, identity.UserID)
+			activeOwner, err := findReclaimBlockingActiveUserByID(ctx, client, identity.UserID)
 			if err != nil {
 				return nil, err
 			}
@@ -941,7 +941,7 @@ func chooseWeChatIdentityForUser(ctx context.Context, client *dbent.Client, reco
 			continue
 		}
 		if record.UserID != userID {
-			activeOwner, err := findActiveUserByID(ctx, client, record.UserID)
+			activeOwner, err := findReclaimBlockingActiveUserByID(ctx, client, record.UserID)
 			if err != nil {
 				return nil, false, err
 			}
@@ -975,7 +975,7 @@ func chooseWeChatChannelForUser(ctx context.Context, client *dbent.Client, recor
 			continue
 		}
 		if record.Edges.Identity != nil && record.Edges.Identity.UserID != userID {
-			activeOwner, err := findActiveUserByID(ctx, client, record.Edges.Identity.UserID)
+			activeOwner, err := findReclaimBlockingActiveUserByID(ctx, client, record.Edges.Identity.UserID)
 			if err != nil {
 				return nil, false, err
 			}
@@ -1015,6 +1015,14 @@ func findActiveUserByID(ctx context.Context, client *dbent.Client, userID int64)
 		return nil, service.ErrUserNotActive
 	}
 	return userEntity, nil
+}
+
+func findReclaimBlockingActiveUserByID(ctx context.Context, client *dbent.Client, userID int64) (*dbent.User, error) {
+	userEntity, err := findActiveUserByID(ctx, client, userID)
+	if errors.Is(err, service.ErrUserNotActive) {
+		return nil, nil
+	}
+	return userEntity, err
 }
 
 func channelRecordMetadata(channel *dbent.AuthIdentityChannel) map[string]any {

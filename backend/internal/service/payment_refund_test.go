@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -94,7 +95,8 @@ func (r *refundTestUserRepo) EnableTotp(context.Context, int64) error  { panic("
 func (r *refundTestUserRepo) DisableTotp(context.Context, int64) error { panic("unexpected") }
 
 type refundTestProvider struct {
-	status string
+	status      string
+	refundCalls int
 }
 
 func (p *refundTestProvider) Name() string        { return "refund-test" }
@@ -112,6 +114,7 @@ func (p *refundTestProvider) VerifyNotification(context.Context, string, map[str
 	panic("unexpected")
 }
 func (p *refundTestProvider) Refund(context.Context, payment.RefundRequest) (*payment.RefundResponse, error) {
+	p.refundCalls++
 	return &payment.RefundResponse{RefundID: "refund-test-id", Status: p.status}, nil
 }
 
@@ -506,4 +509,85 @@ func TestPartialRefundAllowsRemainingRefundAndMarksFinalRefunded(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, OrderStatusRefunded, reloaded.Status)
 	require.Equal(t, 100.0, reloaded.RefundAmount)
+}
+
+func TestGatewayRefundDoesNotTakeLocalShortcutAfterFailedOrderPaidMetadataRecovery(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("refund-recovered@example.com").
+		SetPasswordHash("hash").
+		SetUsername("refund-recovered-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	inst, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("stripe-refund-recovered-instance").
+		SetConfig("{}").
+		SetSupportedTypes("stripe").
+		SetEnabled(true).
+		SetRefundEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	instID := strconv.FormatInt(inst.ID, 10)
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(100).
+		SetPayAmount(100).
+		SetFeeRate(0).
+		SetRechargeCode("REFUND-RECOVERED-FAILED-ORDER").
+		SetOutTradeNo("sub2_refund_recovered_failed_order").
+		SetPaymentType(payment.TypeStripe).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusFailed).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetFailedAt(time.Now().Add(-10 * time.Minute)).
+		SetFailedReason("create payment returned error after upstream charge").
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(instID).
+		SetProviderKey(payment.TypeStripe).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{
+		entClient:    client,
+		loadBalancer: refundTestLoadBalancer{},
+	}
+
+	recoveredOrder, err := svc.markFailedOrderPaidAndReload(ctx, order.ID, "pi_recovered_paid", 100)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPaid, recoveredOrder.Status)
+	require.Equal(t, "pi_recovered_paid", recoveredOrder.PaymentTradeNo)
+	require.NotNil(t, recoveredOrder.PaidAt)
+	require.Nil(t, recoveredOrder.FailedAt)
+	require.Nil(t, recoveredOrder.FailedReason)
+
+	recoveredOrder, err = client.PaymentOrder.UpdateOneID(order.ID).
+		SetStatus(OrderStatusCompleted).
+		SetCompletedAt(time.Now()).
+		Save(ctx)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, recoveredOrder.Status)
+
+	plan, result, err := svc.PrepareRefund(ctx, order.ID, 100, "refund recovered payment", false, false)
+	require.NoError(t, err)
+	require.Nil(t, result)
+	require.Equal(t, "pi_recovered_paid", plan.Order.PaymentTradeNo)
+
+	_, err = svc.gwRefund(ctx, plan)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "create provider from instance")
+
+	noTradeNoAuditCount, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ("REFUND_NO_TRADE_NO")).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, noTradeNoAuditCount)
 }

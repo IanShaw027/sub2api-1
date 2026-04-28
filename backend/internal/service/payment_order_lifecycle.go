@@ -176,6 +176,18 @@ func (s *PaymentService) checkPaid(ctx context.Context, o *dbent.PaymentOrder) s
 			}
 			notificationTradeNo = upstreamTradeNo
 		}
+		if o.Status == OrderStatusFailed {
+			recoveredOrder, recoverErr := s.markFailedOrderPaidAndReload(ctx, o.ID, notificationTradeNo, resp.Amount)
+			if recoverErr != nil {
+				slog.Error("recover failed order paid metadata during checkPaid failed", "orderID", o.ID, "error", recoverErr)
+				return ""
+			}
+			if err := s.executeFulfillment(ctx, recoveredOrder.ID); err != nil {
+				slog.Error("fulfillment failed during checkPaid", "orderID", o.ID, "error", err)
+				// Still return already_paid — order was paid, fulfillment can be retried
+			}
+			return checkPaidResultAlreadyPaid
+		}
 		if err := s.HandlePaymentNotification(ctx, &payment.PaymentNotification{TradeNo: notificationTradeNo, OrderID: o.OutTradeNo, Amount: resp.Amount, Status: payment.ProviderStatusSuccess, Metadata: resp.Metadata}, prov.ProviderKey()); err != nil {
 			slog.Error("fulfillment failed during checkPaid", "orderID", o.ID, "error", err)
 			// Still return already_paid — order was paid, fulfillment can be retried
@@ -249,6 +261,56 @@ func paymentOrderShouldPersistUpstreamTradeNo(queryRef, upstreamTradeNo, current
 	return true
 }
 
+func (s *PaymentService) markFailedOrderPaidAndReload(ctx context.Context, oid int64, tradeNo string, paid float64) (*dbent.PaymentOrder, error) {
+	o, err := s.entClient.PaymentOrder.Get(ctx, oid)
+	if err != nil {
+		return nil, fmt.Errorf("get failed order: %w", err)
+	}
+	if o.Status != OrderStatusFailed {
+		return o, nil
+	}
+
+	now := time.Now()
+	update := s.entClient.PaymentOrder.Update().
+		Where(paymentorder.IDEQ(oid), paymentorder.StatusEQ(OrderStatusFailed)).
+		SetStatus(OrderStatusPaid).
+		SetPayAmount(paid).
+		ClearFailedAt().
+		ClearFailedReason()
+	if strings.TrimSpace(tradeNo) != "" {
+		update = update.SetPaymentTradeNo(strings.TrimSpace(tradeNo))
+	}
+	if o.PaidAt == nil {
+		update = update.SetPaidAt(now)
+	}
+	updated, err := update.Save(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("backfill failed order paid metadata: %w", err)
+	}
+	if updated > 0 {
+		s.writeAuditLog(ctx, oid, "ORDER_PAID", "system", map[string]any{
+			"tradeNo":         strings.TrimSpace(tradeNo),
+			"paidAmount":      paid,
+			"previous_status": OrderStatusFailed,
+			"reason":          "upstream reconciliation recovered a failed order before fulfillment",
+		})
+	}
+	reloaded, err := s.entClient.PaymentOrder.Get(ctx, oid)
+	if err != nil {
+		return nil, fmt.Errorf("reload recovered order: %w", err)
+	}
+	return reloaded, nil
+}
+
+func paymentOrderStatusAllowsPaidReconciliation(status string) bool {
+	switch status {
+	case OrderStatusPending, OrderStatusExpired, OrderStatusFailed:
+		return true
+	default:
+		return false
+	}
+}
+
 // VerifyOrderByOutTradeNo actively queries the upstream provider to check
 // if a payment was made, and processes it if so. This handles the case where
 // the provider's notify callback was missed (e.g. EasyPay popup mode).
@@ -266,8 +328,7 @@ func (s *PaymentService) VerifyOrderByOutTradeNo(ctx context.Context, outTradeNo
 	if o.UserID != userID {
 		return nil, infraerrors.Forbidden("FORBIDDEN", "no permission for this order")
 	}
-	// Only verify orders that are still pending or recently expired
-	if o.Status == OrderStatusPending || o.Status == OrderStatusExpired {
+	if paymentOrderStatusAllowsPaidReconciliation(o.Status) {
 		result := s.checkPaid(ctx, o)
 		if result == checkPaidResultAlreadyPaid {
 			// Reload order to get updated status
@@ -280,9 +341,9 @@ func (s *PaymentService) VerifyOrderByOutTradeNo(ctx context.Context, outTradeNo
 	return o, nil
 }
 
-// VerifyOrderPublic returns the currently persisted public order state without
-// triggering any upstream reconciliation. Signed resume-token recovery is the
-// only public recovery path allowed to query upstream state.
+// VerifyOrderPublic returns the public order state and preserves the legacy
+// anonymous reconciliation behavior for older result pages that only carry
+// out_trade_no. Signed resume-token recovery remains the stricter preferred path.
 func (s *PaymentService) VerifyOrderPublic(ctx context.Context, outTradeNo string) (*dbent.PaymentOrder, error) {
 	outTradeNo, err := normalizeOrderLookupOutTradeNo(outTradeNo)
 	if err != nil {
@@ -293,6 +354,15 @@ func (s *PaymentService) VerifyOrderPublic(ctx context.Context, outTradeNo strin
 		Only(ctx)
 	if err != nil {
 		return nil, infraerrors.NotFound("NOT_FOUND", "order not found")
+	}
+	if paymentOrderStatusAllowsPaidReconciliation(o.Status) {
+		result := s.checkPaid(ctx, o)
+		if result == checkPaidResultAlreadyPaid {
+			o, err = s.entClient.PaymentOrder.Get(ctx, o.ID)
+			if err != nil {
+				return nil, fmt.Errorf("reload order after public verify reconciliation: %w", err)
+			}
+		}
 	}
 	return o, nil
 }

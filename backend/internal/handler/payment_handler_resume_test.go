@@ -24,6 +24,38 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+type paymentHandlerResumeQueryProvider struct {
+	queryCount int
+	resp       *payment.QueryOrderResponse
+}
+
+func (p *paymentHandlerResumeQueryProvider) Name() string {
+	return "payment-handler-resume-query-provider"
+}
+
+func (p *paymentHandlerResumeQueryProvider) ProviderKey() string { return payment.TypeAlipay }
+
+func (p *paymentHandlerResumeQueryProvider) SupportedTypes() []payment.PaymentType {
+	return []payment.PaymentType{payment.TypeAlipay}
+}
+
+func (p *paymentHandlerResumeQueryProvider) CreatePayment(context.Context, payment.CreatePaymentRequest) (*payment.CreatePaymentResponse, error) {
+	panic("unexpected call")
+}
+
+func (p *paymentHandlerResumeQueryProvider) QueryOrder(context.Context, string) (*payment.QueryOrderResponse, error) {
+	p.queryCount++
+	return p.resp, nil
+}
+
+func (p *paymentHandlerResumeQueryProvider) VerifyNotification(context.Context, string, map[string]string) (*payment.PaymentNotification, error) {
+	panic("unexpected call")
+}
+
+func (p *paymentHandlerResumeQueryProvider) Refund(context.Context, payment.RefundRequest) (*payment.RefundResponse, error) {
+	panic("unexpected call")
+}
+
 func TestApplyWeChatPaymentResumeClaims(t *testing.T) {
 	t.Parallel()
 
@@ -161,6 +193,120 @@ func TestVerifyOrderPublicReturnsLegacyOrderState(t *testing.T) {
 	require.Equal(t, 0.0, resp.Data.RefundAmount)
 	require.NotEmpty(t, resp.Data.CreatedAt)
 	require.NotEmpty(t, resp.Data.ExpiresAt)
+}
+
+func TestVerifyOrderPublicReconcilesLegacyFailedOrderWithoutResumeToken(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+
+	db, err := sql.Open("sqlite", "file:payment_handler_public_verify_failed?mode=memory&cache=shared")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	_, err = db.Exec("PRAGMA foreign_keys = ON")
+	require.NoError(t, err)
+
+	drv := entsql.OpenDB(dialect.SQLite, db)
+	client := enttest.NewClient(t, enttest.WithOptions(dbent.Driver(drv)))
+	t.Cleanup(func() { _ = client.Close() })
+
+	user, err := client.User.Create().
+		SetEmail("public-verify-failed@example.com").
+		SetPasswordHash("hash").
+		SetUsername("public-verify-failed-user").
+		Save(context.Background())
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("PUBLIC-VERIFY-FAILED").
+		SetOutTradeNo("legacy-failed-order-no").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(service.OrderStatusFailed).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetFailedAt(time.Now().Add(-5 * time.Minute)).
+		SetFailedReason("legacy result page re-poll after local failure").
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(context.Background())
+	require.NoError(t, err)
+
+	registry := payment.NewRegistry()
+	provider := &paymentHandlerResumeQueryProvider{
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "upstream-trade-public-handler-recovery",
+			Status:  payment.ProviderStatusPaid,
+			Amount:  88,
+		},
+	}
+	registry.Register(provider)
+
+	paymentSvc := service.NewPaymentService(client, registry, nil, nil, nil, nil, nil, nil, nil)
+	h := NewPaymentHandler(paymentSvc, nil, nil)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/payment/public/orders/verify",
+		bytes.NewBufferString(`{"out_trade_no":"legacy-failed-order-no"}`),
+	)
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	h.VerifyOrderPublic(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Equal(t, 1, provider.queryCount)
+
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			ID           int64   `json:"id"`
+			OutTradeNo   string  `json:"out_trade_no"`
+			Status       string  `json:"status"`
+			PaymentType  string  `json:"payment_type"`
+			PayAmount    float64 `json:"pay_amount"`
+			RefundAmount float64 `json:"refund_amount"`
+			PaidAt       string  `json:"paid_at"`
+			CompletedAt  string  `json:"completed_at"`
+			CreatedAt    string  `json:"created_at"`
+			ExpiresAt    string  `json:"expires_at"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+	require.Equal(t, 0, resp.Code)
+	require.Equal(t, order.ID, resp.Data.ID)
+	require.Equal(t, "legacy-failed-order-no", resp.Data.OutTradeNo)
+	require.Equal(t, service.OrderStatusCompleted, resp.Data.Status)
+	require.Equal(t, payment.TypeAlipay, resp.Data.PaymentType)
+	require.Equal(t, 88.0, resp.Data.PayAmount)
+	require.Equal(t, 0.0, resp.Data.RefundAmount)
+	require.NotEmpty(t, resp.Data.PaidAt)
+	require.NotEmpty(t, resp.Data.CompletedAt)
+	require.NotEmpty(t, resp.Data.CreatedAt)
+	require.NotEmpty(t, resp.Data.ExpiresAt)
+
+	reloadedOrder, err := client.PaymentOrder.Get(context.Background(), order.ID)
+	require.NoError(t, err)
+	require.Equal(t, service.OrderStatusCompleted, reloadedOrder.Status)
+	require.Equal(t, "upstream-trade-public-handler-recovery", reloadedOrder.PaymentTradeNo)
+	require.NotNil(t, reloadedOrder.PaidAt)
+	require.NotNil(t, reloadedOrder.CompletedAt)
+	require.Nil(t, reloadedOrder.FailedAt)
+	require.Nil(t, reloadedOrder.FailedReason)
+
+	reloadedUser, err := client.User.Get(context.Background(), user.ID)
+	require.NoError(t, err)
+	require.Equal(t, 88.0, reloadedUser.Balance)
+	require.Equal(t, 88.0, reloadedUser.TotalRecharged)
 }
 
 func TestResolveOrderPublicByResumeTokenReturnsFrontendContractFields(t *testing.T) {
