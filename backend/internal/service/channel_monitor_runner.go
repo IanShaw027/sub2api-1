@@ -9,6 +9,8 @@ import (
 	"github.com/alitto/pond/v2"
 )
 
+const monitorRuntimeSyncInterval = 250 * time.Millisecond
+
 // MonitorScheduler 调度器接口，供 ChannelMonitorService 在 CRUD 时回调，
 // 用 setter 注入避免 service ↔ runner 的 wire 依赖环。
 type MonitorScheduler interface {
@@ -65,6 +67,8 @@ type ChannelMonitorRunner struct {
 	started bool
 	stopped bool
 
+	suspendedByFeature bool
+
 	// inFlight 跟踪正在执行的 monitor.ID。fire 调度前会检查避免重复提交，
 	// 防止单次检测耗时 > interval 时同一 monitor 被并发执行。
 	inFlight   map[int64]struct{}
@@ -116,20 +120,37 @@ func (r *ChannelMonitorRunner) Start() {
 	r.started = true
 	r.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), monitorStartupLoadTimeout)
-	defer cancel()
-	enabled, err := r.svc.ListEnabledMonitors(ctx)
-	if err != nil {
-		r.mu.Lock()
-		r.started = false
-		r.mu.Unlock()
-		slog.Error("channel_monitor: load enabled monitors failed at startup", "error", err)
+	enabledAtStart := r.isFeatureEnabled(context.Background())
+	if enabledAtStart {
+		ctx, cancel := context.WithTimeout(context.Background(), monitorStartupLoadTimeout)
+		defer cancel()
+		enabled, err := r.svc.ListEnabledMonitors(ctx)
+		if err != nil {
+			r.mu.Lock()
+			r.started = false
+			r.mu.Unlock()
+			slog.Error("channel_monitor: load enabled monitors failed at startup", "error", err)
+			return
+		}
+		for _, m := range enabled {
+			r.Schedule(m)
+		}
+		if r.settingService != nil {
+			r.wg.Add(1)
+			go r.watchRuntime()
+		}
+		slog.Info("channel_monitor: runner started", "scheduled_tasks", len(enabled))
 		return
 	}
-	for _, m := range enabled {
-		r.Schedule(m)
+
+	r.mu.Lock()
+	r.suspendedByFeature = true
+	r.mu.Unlock()
+	if r.settingService != nil {
+		r.wg.Add(1)
+		go r.watchRuntime()
 	}
-	slog.Info("channel_monitor: runner started", "scheduled_tasks", len(enabled))
+	slog.Info("channel_monitor: runner started with feature disabled", "scheduled_tasks", 0)
 }
 
 // Schedule 为指定监控创建（或重置）独立定时任务。
@@ -142,6 +163,10 @@ func (r *ChannelMonitorRunner) Schedule(m *ChannelMonitor) {
 	}
 	if !m.Enabled {
 		r.Unschedule(m.ID)
+		return
+	}
+	if !r.isFeatureEnabled(context.Background()) {
+		r.pauseForDisabledFeature()
 		return
 	}
 	interval := time.Duration(m.IntervalSeconds) * time.Second
@@ -243,7 +268,8 @@ func (r *ChannelMonitorRunner) runScheduled(ctx context.Context, task *scheduled
 // fire 提交一次检测到 worker 池。功能开关关闭时跳过本次（不取消任务，
 // 重新启用时立即恢复）；重复在飞时跳过。池满时同步执行，避免漏检。
 func (r *ChannelMonitorRunner) fire(ctx context.Context, task *scheduledMonitor) {
-	if r.settingService != nil && !r.settingService.GetChannelMonitorRuntime(ctx).Enabled {
+	if !r.isFeatureEnabled(ctx) {
+		r.pauseForDisabledFeature()
 		return
 	}
 	if !r.tryAcquireInFlight(task.id) {
@@ -347,4 +373,92 @@ func (r *ChannelMonitorRunner) acquireDistributedRunLock(ctx context.Context, mo
 		return nil, true, nil
 	}
 	return locker.AcquireChannelMonitorRunLock(ctx, monitorID)
+}
+
+func (r *ChannelMonitorRunner) isFeatureEnabled(ctx context.Context) bool {
+	if r == nil || r.settingService == nil {
+		return true
+	}
+	return r.settingService.GetChannelMonitorRuntime(ctx).Enabled
+}
+
+func (r *ChannelMonitorRunner) pauseForDisabledFeature() {
+	if r == nil {
+		return
+	}
+
+	var cancels []context.CancelFunc
+	r.mu.Lock()
+	if r.stopped {
+		r.mu.Unlock()
+		return
+	}
+	if len(r.tasks) == 0 && r.suspendedByFeature {
+		r.mu.Unlock()
+		return
+	}
+	cancels = make([]context.CancelFunc, 0, len(r.tasks))
+	for id, task := range r.tasks {
+		cancels = append(cancels, task.cancel)
+		delete(r.tasks, id)
+	}
+	r.suspendedByFeature = true
+	r.mu.Unlock()
+
+	for _, cancel := range cancels {
+		cancel()
+	}
+	if len(cancels) > 0 {
+		slog.Info("channel_monitor: feature disabled, quiesced scheduled tasks", "scheduled_tasks", len(cancels))
+	}
+}
+
+func (r *ChannelMonitorRunner) watchRuntime() {
+	defer r.wg.Done()
+
+	ticker := time.NewTicker(monitorRuntimeSyncInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.parentCtx.Done():
+			return
+		case <-ticker.C:
+			r.syncRuntime()
+		}
+	}
+}
+
+func (r *ChannelMonitorRunner) syncRuntime() {
+	if r == nil || r.settingService == nil {
+		return
+	}
+	if !r.isFeatureEnabled(r.parentCtx) {
+		r.pauseForDisabledFeature()
+		return
+	}
+
+	r.mu.Lock()
+	shouldReload := r.suspendedByFeature && !r.stopped
+	r.mu.Unlock()
+	if !shouldReload {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), monitorStartupLoadTimeout)
+	defer cancel()
+	enabled, err := r.svc.ListEnabledMonitors(ctx)
+	if err != nil {
+		slog.Warn("channel_monitor: reload enabled monitors failed after feature re-enable", "error", err)
+		return
+	}
+	for _, m := range enabled {
+		r.Schedule(m)
+	}
+	r.mu.Lock()
+	if !r.stopped {
+		r.suspendedByFeature = false
+	}
+	r.mu.Unlock()
+	slog.Info("channel_monitor: feature re-enabled, restored scheduled tasks", "scheduled_tasks", len(enabled))
 }

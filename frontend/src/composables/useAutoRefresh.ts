@@ -1,9 +1,9 @@
-import { ref, onBeforeUnmount, type Ref } from 'vue'
+import { ref, onBeforeUnmount, unref, watch, type MaybeRef, type Ref } from 'vue'
 
 export interface UseAutoRefreshOptions {
   storageKey: string
   intervals?: readonly number[]
-  defaultInterval?: number
+  defaultInterval?: MaybeRef<number>
   onRefresh: () => Promise<void> | void
   /** Skip tick when this returns true (e.g. modal open, document hidden). */
   shouldPause?: () => boolean
@@ -18,12 +18,19 @@ export function useAutoRefresh(options: UseAutoRefreshOptions) {
     shouldPause,
   } = options
 
+  const resolveDefaultInterval = () => {
+    const resolved = Number(unref(defaultInterval))
+    if (Number.isFinite(resolved) && resolved > 0) return resolved
+    return intervals[intervals.length - 1]
+  }
+
   const enabled = ref(false)
-  const intervalSeconds = ref(defaultInterval ?? intervals[intervals.length - 1])
+  const intervalSeconds = ref(resolveDefaultInterval())
   const countdown = ref(0)
   const fetching = ref(false)
 
   let timerId: number | undefined
+  let usingDefaultInterval = true
 
   function loadFromStorage() {
     try {
@@ -32,7 +39,10 @@ export function useAutoRefresh(options: UseAutoRefreshOptions) {
       const parsed = JSON.parse(saved) as { enabled?: boolean; interval_seconds?: number }
       enabled.value = parsed.enabled === true
       const iv = Number(parsed.interval_seconds)
-      if (intervals.includes(iv as any)) intervalSeconds.value = iv
+      if (intervals.includes(iv as any)) {
+        intervalSeconds.value = iv
+        usingDefaultInterval = iv === resolveDefaultInterval()
+      }
     } catch { /* ignore */ }
   }
 
@@ -85,6 +95,7 @@ export function useAutoRefresh(options: UseAutoRefreshOptions) {
 
   function setInterval_(seconds: number) {
     intervalSeconds.value = seconds
+    usingDefaultInterval = seconds === resolveDefaultInterval()
     saveToStorage()
     if (enabled.value) countdown.value = seconds
   }
@@ -94,6 +105,16 @@ export function useAutoRefresh(options: UseAutoRefreshOptions) {
   }
 
   loadFromStorage()
+
+  watch(
+    () => resolveDefaultInterval(),
+    (seconds) => {
+      if (!usingDefaultInterval) return
+      intervalSeconds.value = seconds
+      saveToStorage()
+      if (enabled.value) countdown.value = seconds
+    },
+  )
 
   onBeforeUnmount(stop)
 

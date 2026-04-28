@@ -616,6 +616,44 @@ func TestRunManual_RespectsDistributedLock(t *testing.T) {
 	stoppedWithin(t, r, 3*time.Second)
 }
 
+func TestRunner_FeatureDisableQuiescesAndReenableReloadsTasks(t *testing.T) {
+	repo := &settingPublicRepoStub{values: map[string]string{
+		SettingKeyChannelMonitorEnabled: "true",
+	}}
+	settings := NewSettingService(repo, nil)
+	svc := &stubMonitorSvc{
+		enabled: []*ChannelMonitor{
+			{ID: 1, Name: "m1", Enabled: true, IntervalSeconds: 1},
+			{ID: 2, Name: "m2", Enabled: true, IntervalSeconds: 1},
+		},
+		runCalled: make(chan int64, 8),
+	}
+	r := newChannelMonitorRunner(svc, settings)
+	r.Start()
+
+	waitFor(t, 2*time.Second, "all tasks scheduled at startup", func() bool {
+		return runnerTaskCount(r) == 2
+	})
+
+	repo.values[SettingKeyChannelMonitorEnabled] = "false"
+	waitFor(t, 2*time.Second, "feature disable should quiesce all tasks", func() bool {
+		return runnerTaskCount(r) == 0
+	})
+
+	runCountAfterDisable := svc.runCount.Load()
+	time.Sleep(1200 * time.Millisecond)
+	if got := svc.runCount.Load(); got != runCountAfterDisable {
+		t.Fatalf("expected no additional runs after quiesce, got %d -> %d", runCountAfterDisable, got)
+	}
+
+	repo.values[SettingKeyChannelMonitorEnabled] = "true"
+	waitFor(t, 2*time.Second, "feature re-enable should reload enabled monitors", func() bool {
+		return runnerTaskCount(r) == 2
+	})
+
+	stoppedWithin(t, r, 3*time.Second)
+}
+
 // stoppedWithin 在 timeout 内并行调用 Stop，超时则 Fatal。验证 Stop 不会阻塞。
 func stoppedWithin(t *testing.T, r *ChannelMonitorRunner, timeout time.Duration) {
 	t.Helper()

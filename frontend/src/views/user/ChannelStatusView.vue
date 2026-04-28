@@ -46,7 +46,7 @@ import MonitorHero, {
 } from '@/components/user/monitor/MonitorHero.vue'
 import MonitorCardGrid from '@/components/user/monitor/MonitorCardGrid.vue'
 import MonitorDetailDialog from '@/components/user/MonitorDetailDialog.vue'
-import { STATUS_OPERATIONAL } from '@/constants/channelMonitor'
+import { getOverallMonitorStatus } from '@/composables/useChannelMonitorFormat'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
 import { getChannelMonitorRefreshIntervalSeconds } from '@/utils/featureFlags'
 
@@ -68,7 +68,7 @@ const refreshIntervalSeconds = computed(() => getChannelMonitorRefreshIntervalSe
 const autoRefresh = useAutoRefresh({
   storageKey: 'channel-status-auto-refresh',
   intervals: [30, 60, 120] as const,
-  defaultInterval: refreshIntervalSeconds.value,
+  defaultInterval: refreshIntervalSeconds,
   onRefresh: () => reload(true),
   shouldPause: () => document.hidden || loading.value,
 })
@@ -76,12 +76,7 @@ const countdown = autoRefresh.countdown
 
 // ── Computed ──
 const overallStatus = computed<OverallStatus>(() => {
-  if (items.value.length === 0) return 'operational'
-  for (const it of items.value) {
-    if (it.primary_status === 'failed' || it.primary_status === 'error') return 'degraded'
-    if (it.primary_status !== STATUS_OPERATIONAL) return 'degraded'
-  }
-  return 'operational'
+  return getOverallMonitorStatus(items.value)
 })
 
 const detailTitle = computed(() => {

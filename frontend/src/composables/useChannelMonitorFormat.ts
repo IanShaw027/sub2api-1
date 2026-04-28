@@ -34,6 +34,20 @@ export interface AvailabilityRow {
   availability_7d: number | null | undefined
 }
 
+export function getOverallMonitorStatus(rows: Pick<AvailabilityRow, 'primary_status'>[]): 'operational' | 'degraded' {
+  for (const row of rows) {
+    switch (row.primary_status) {
+      case STATUS_DEGRADED:
+      case STATUS_FAILED:
+      case STATUS_ERROR:
+        return 'degraded'
+      default:
+        break
+    }
+  }
+  return 'operational'
+}
+
 export function useChannelMonitorFormat() {
   const { t } = useI18n()
 
