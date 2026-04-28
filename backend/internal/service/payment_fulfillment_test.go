@@ -360,6 +360,61 @@ func TestExecuteSubscriptionFulfillmentRetryAfterClaimDoesNotExtendAgain(t *test
 		Count(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, claimCount)
+
+	successCount, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ("SUBSCRIPTION_SUCCESS")).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, successCount)
+}
+
+func TestExecuteSubscriptionFulfillmentRetryWithOrphanedClaimStillAssignsSubscription(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusFailed, payment.OrderTypeSubscription)
+
+	repo := &paymentFulfillmentUserSubRepoStub{existing: &UserSubscription{
+		ID:        66,
+		UserID:    order.UserID,
+		GroupID:   *order.SubscriptionGroupID,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+		Status:    SubscriptionStatusActive,
+	}}
+	groupRepo := paymentFulfillmentGroupRepoStub{group: &Group{
+		ID:                  *order.SubscriptionGroupID,
+		Status:              payment.EntityStatusActive,
+		SubscriptionType:    SubscriptionTypeSubscription,
+		DefaultValidityDays: 30,
+	}}
+	subscriptionSvc := NewSubscriptionService(groupRepo, repo, nil, client, nil)
+	svc := &PaymentService{entClient: client, groupRepo: groupRepo, subscriptionSvc: subscriptionSvc}
+
+	svc.writeAuditLog(ctx, order.ID, "SUBSCRIPTION_FULFILLMENT_CLAIMED", "system", map[string]any{
+		"groupID": *order.SubscriptionGroupID,
+		"days":    *order.SubscriptionDays,
+		"status":  "reserved",
+	})
+
+	err := svc.ExecuteSubscriptionFulfillment(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.extendCalls)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.NotNil(t, reloaded.CompletedAt)
+
+	claimCount, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ("SUBSCRIPTION_FULFILLMENT_CLAIMED")).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, claimCount)
+
+	successCount, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ("SUBSCRIPTION_SUCCESS")).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, successCount)
 }
 
 func TestTryClaimSubscriptionFulfillmentAuditSkipsExistingSuccessSentinel(t *testing.T) {

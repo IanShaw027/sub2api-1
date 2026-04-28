@@ -396,6 +396,19 @@ func (s *PaymentService) markCompleted(ctx context.Context, o *dbent.PaymentOrde
 	return s.markCompletedWithClient(ctx, s.entClient, o, auditAction)
 }
 
+func (s *PaymentService) markCompletedWithoutAudit(ctx context.Context, o *dbent.PaymentOrder) error {
+	now := time.Now()
+	_, err := s.entClient.PaymentOrder.Update().
+		Where(paymentorder.IDEQ(o.ID), paymentorder.StatusEQ(OrderStatusRecharging)).
+		SetStatus(OrderStatusCompleted).
+		SetCompletedAt(now).
+		Save(ctx)
+	if err != nil {
+		return fmt.Errorf("mark completed: %w", err)
+	}
+	return nil
+}
+
 func (s *PaymentService) markCompletedWithClient(ctx context.Context, client *dbent.Client, o *dbent.PaymentOrder, auditAction string) error {
 	now := time.Now()
 	_, err := client.PaymentOrder.Update().Where(paymentorder.IDEQ(o.ID), paymentorder.StatusEQ(OrderStatusRecharging)).SetStatus(OrderStatusCompleted).SetCompletedAt(now).Save(ctx)
@@ -453,8 +466,19 @@ func (s *PaymentService) doSub(ctx context.Context, o *dbent.PaymentOrder) error
 		return fmt.Errorf("claim subscription fulfillment: %w", err)
 	}
 	if !claimed {
-		slog.Info("subscription already assigned for order, skipping", "orderID", o.ID, "groupID", gid)
-		return s.markCompleted(ctx, o, "SUBSCRIPTION_SUCCESS")
+		state, err := s.subscriptionFulfillmentAuditState(ctx, o.ID)
+		if err != nil {
+			return fmt.Errorf("inspect subscription fulfillment claim: %w", err)
+		}
+		switch state {
+		case subscriptionFulfillmentAuditStateSucceeded:
+			slog.Info("subscription already assigned for order, skipping", "orderID", o.ID, "groupID", gid)
+			return s.markCompletedWithoutAudit(ctx, o)
+		case subscriptionFulfillmentAuditStateClaimed:
+			slog.Warn("resuming subscription fulfillment from orphaned claim", "orderID", o.ID, "groupID", gid)
+		default:
+			return errors.New("subscription fulfillment claim missing after claim attempt")
+		}
 	}
 	orderNote := fmt.Sprintf("payment order %d", o.ID)
 	_, _, err = s.subscriptionSvc.AssignOrExtendSubscription(ctx, &AssignSubscriptionInput{UserID: o.UserID, GroupID: gid, ValidityDays: days, AssignedBy: 0, Notes: orderNote})
@@ -464,6 +488,14 @@ func (s *PaymentService) doSub(ctx context.Context, o *dbent.PaymentOrder) error
 	}
 	return s.markCompleted(ctx, o, "SUBSCRIPTION_SUCCESS")
 }
+
+type subscriptionFulfillmentAuditState int
+
+const (
+	subscriptionFulfillmentAuditStateNone subscriptionFulfillmentAuditState = iota
+	subscriptionFulfillmentAuditStateClaimed
+	subscriptionFulfillmentAuditStateSucceeded
+)
 
 func (s *PaymentService) tryClaimSubscriptionFulfillmentAudit(ctx context.Context, o *dbent.PaymentOrder, groupID int64, days int) (bool, error) {
 	if s == nil || s.entClient == nil || o == nil {
@@ -504,6 +536,28 @@ func (s *PaymentService) tryClaimSubscriptionFulfillmentAudit(ctx context.Contex
 		return false, err
 	}
 	return true, nil
+}
+
+func (s *PaymentService) subscriptionFulfillmentAuditState(ctx context.Context, orderID int64) (subscriptionFulfillmentAuditState, error) {
+	logs, err := s.entClient.PaymentAuditLog.Query().
+		Where(
+			paymentauditlog.OrderIDEQ(strconv.FormatInt(orderID, 10)),
+			paymentauditlog.ActionIn("SUBSCRIPTION_FULFILLMENT_CLAIMED", "SUBSCRIPTION_SUCCESS"),
+		).
+		All(ctx)
+	if err != nil {
+		return subscriptionFulfillmentAuditStateNone, err
+	}
+	state := subscriptionFulfillmentAuditStateNone
+	for _, log := range logs {
+		switch log.Action {
+		case "SUBSCRIPTION_SUCCESS":
+			return subscriptionFulfillmentAuditStateSucceeded, nil
+		case "SUBSCRIPTION_FULFILLMENT_CLAIMED":
+			state = subscriptionFulfillmentAuditStateClaimed
+		}
+	}
+	return state, nil
 }
 
 func isSubscriptionFulfillmentClaimConflict(err error) bool {
