@@ -65,6 +65,7 @@ func TestApplyMigrationsFS_NonTransactionalMigration(t *testing.T) {
 	mock.ExpectExec("INSERT INTO schema_migrations \\(filename, checksum\\) VALUES \\(\\$1, \\$2\\)").
 		WithArgs("001_add_idx_notx.sql", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	expectAtlasBaselineAlreadyAligned(mock)
 	mock.ExpectExec("SELECT pg_advisory_unlock\\(\\$1\\)").
 		WithArgs(migrationsAdvisoryLockID).
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -96,6 +97,7 @@ func TestApplyMigrationsFS_NonTransactionalMigration_MultiStatements(t *testing.
 	mock.ExpectExec("INSERT INTO schema_migrations \\(filename, checksum\\) VALUES \\(\\$1, \\$2\\)").
 		WithArgs("001_add_multi_idx_notx.sql", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	expectAtlasBaselineAlreadyAligned(mock)
 	mock.ExpectExec("SELECT pg_advisory_unlock\\(\\$1\\)").
 		WithArgs(migrationsAdvisoryLockID).
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -173,6 +175,7 @@ func TestApplyMigrationsFS_PaymentOrdersOutTradeNoUniqueMigration_DropsInvalidIn
 	mock.ExpectExec("INSERT INTO schema_migrations \\(filename, checksum\\) VALUES \\(\\$1, \\$2\\)").
 		WithArgs("120_enforce_payment_orders_out_trade_no_unique_notx.sql", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	expectAtlasBaselineAlreadyAligned(mock)
 	mock.ExpectExec("SELECT pg_advisory_unlock\\(\\$1\\)").
 		WithArgs(migrationsAdvisoryLockID).
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -215,6 +218,7 @@ func TestApplyMigrationsFS_SubscriptionFulfillmentClaimUniqueMigration_DropsInva
 	mock.ExpectExec("INSERT INTO schema_migrations \\(filename, checksum\\) VALUES \\(\\$1, \\$2\\)").
 		WithArgs("138_subscription_fulfillment_claim_unique_notx.sql", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	expectAtlasBaselineAlreadyAligned(mock)
 	mock.ExpectExec("SELECT pg_advisory_unlock\\(\\$1\\)").
 		WithArgs(migrationsAdvisoryLockID).
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -252,6 +256,7 @@ func TestApplyMigrationsFS_TransactionalMigration(t *testing.T) {
 		WithArgs("001_add_col.sql", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
+	expectAtlasBaselineAlreadyAligned(mock)
 	mock.ExpectExec("SELECT pg_advisory_unlock\\(\\$1\\)").
 		WithArgs(migrationsAdvisoryLockID).
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -273,6 +278,9 @@ func prepareMigrationsBootstrapExpectations(mock sqlmock.Sqlmock) {
 		WillReturnRows(sqlmock.NewRows([]string{"pg_try_advisory_lock"}).AddRow(true))
 	mock.ExpectExec("CREATE TABLE IF NOT EXISTS schema_migrations").
 		WillReturnResult(sqlmock.NewResult(0, 0))
+}
+
+func expectAtlasBaselineAlreadyAligned(mock sqlmock.Sqlmock) {
 	mock.ExpectQuery("SELECT EXISTS \\(").
 		WithArgs("schema_migrations").
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))

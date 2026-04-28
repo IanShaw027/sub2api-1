@@ -140,11 +140,6 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 		return fmt.Errorf("create schema_migrations: %w", err)
 	}
 
-	// 自动对齐 Atlas 基线（如果检测到 legacy schema_migrations 且缺失 atlas_schema_revisions）。
-	if err := ensureAtlasBaselineAligned(ctx, db, fsys); err != nil {
-		return err
-	}
-
 	// 获取所有 .sql 迁移文件并按文件名排序。
 	// 命名规范：使用零填充数字前缀（如 001_init.sql, 002_add_users.sql）。
 	files, err := fs.Glob(fsys, "*.sql")
@@ -254,6 +249,11 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 		}
 	}
 
+	// 只有在 legacy SQL 迁移全部成功后，才为 Atlas 补齐基线，避免失败时错误地将 Atlas 固定到 HEAD。
+	if err := ensureAtlasBaselineAligned(ctx, db); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -347,7 +347,7 @@ func indexIsInvalid(ctx context.Context, db *sql.DB, indexName string) (bool, er
 	return invalid, err
 }
 
-func ensureAtlasBaselineAligned(ctx context.Context, db *sql.DB, fsys fs.FS) error {
+func ensureAtlasBaselineAligned(ctx context.Context, db *sql.DB) error {
 	hasLegacy, err := tableExists(ctx, db, "schema_migrations")
 	if err != nil {
 		return fmt.Errorf("check schema_migrations: %w", err)
@@ -374,7 +374,7 @@ func ensureAtlasBaselineAligned(ctx context.Context, db *sql.DB, fsys fs.FS) err
 		return nil
 	}
 
-	version, description, hash, err := latestMigrationBaseline(fsys)
+	version, description, hash, err := latestAppliedMigrationBaseline(ctx, db)
 	if err != nil {
 		return fmt.Errorf("atlas baseline version: %w", err)
 	}
@@ -400,25 +400,26 @@ func tableExists(ctx context.Context, db *sql.DB, tableName string) (bool, error
 	return exists, err
 }
 
-func latestMigrationBaseline(fsys fs.FS) (string, string, string, error) {
-	files, err := fs.Glob(fsys, "*.sql")
-	if err != nil {
-		return "", "", "", err
-	}
-	if len(files) == 0 {
+func latestAppliedMigrationBaseline(ctx context.Context, db *sql.DB) (string, string, string, error) {
+	var (
+		filename string
+		checksum string
+	)
+	err := db.QueryRowContext(ctx, `
+		SELECT filename, checksum
+		FROM schema_migrations
+		ORDER BY filename DESC
+		LIMIT 1
+	`).Scan(&filename, &checksum)
+	if errors.Is(err, sql.ErrNoRows) {
 		return "baseline", "baseline", "", nil
 	}
-	sort.Strings(files)
-	name := files[len(files)-1]
-	contentBytes, err := fs.ReadFile(fsys, name)
 	if err != nil {
 		return "", "", "", err
 	}
-	content := strings.TrimSpace(string(contentBytes))
-	sum := sha256.Sum256([]byte(content))
-	hash := hex.EncodeToString(sum[:])
-	version := strings.TrimSuffix(name, ".sql")
-	return version, version, hash, nil
+
+	version := strings.TrimSuffix(filename, ".sql")
+	return version, version, checksum, nil
 }
 
 func checksumSet(values ...string) map[string]struct{} {
