@@ -71,7 +71,7 @@
       :data-testid="`${testIdPrefix}-create-account-submit`"
       type="button"
       class="btn btn-primary w-full"
-      :disabled="isSubmitting || !email.trim() || password.length < 6 || (invitationCodeEnabled && !invitationCode.trim())"
+      :disabled="isSubmitting || !email.trim() || password.length < 6 || (emailVerifyEnabled && !verifyCode.trim()) || (invitationCodeEnabled && !invitationCode.trim())"
       @click="handleSubmit"
     >
       {{ isSubmitting ? t('common.processing') : t('auth.createAccount') }}
@@ -125,6 +125,7 @@ const sendCodeError = ref('')
 const sendCodeSuccess = ref(false)
 const countdown = ref(0)
 const invitationCodeEnabled = ref(false)
+const emailVerifyEnabled = ref(false)
 const turnstileEnabled = ref(false)
 const turnstileSiteKey = ref('')
 const turnstileToken = ref('')
@@ -154,6 +155,20 @@ watch(
     }
   }
 )
+
+watch(email, (value, previousValue) => {
+  if (value.trim() === previousValue.trim()) {
+    return
+  }
+  if (!verifyCode.value && !sendCodeSuccess.value && countdown.value <= 0) {
+    return
+  }
+  verifyCode.value = ''
+  sendCodeSuccess.value = false
+  sendCodeError.value = ''
+  clearCountdown()
+  countdown.value = 0
+})
 
 function clearCountdown() {
   if (countdownTimer) {
@@ -240,14 +255,18 @@ async function handleSendCode() {
 
 function handleSubmit() {
   const trimmedEmail = email.value.trim()
+  const trimmedVerifyCode = verifyCode.value.trim()
   if (!trimmedEmail || password.value.length < 6) {
+    return
+  }
+  if (emailVerifyEnabled.value && !trimmedVerifyCode) {
     return
   }
 
   emit('submit', {
     email: trimmedEmail,
     password: password.value,
-    verifyCode: verifyCode.value.trim(),
+    verifyCode: trimmedVerifyCode,
     invitationCode: invitationCode.value.trim() || undefined
   })
 }
@@ -260,10 +279,12 @@ onMounted(async () => {
   try {
     const settings = await getPublicSettings()
     invitationCodeEnabled.value = settings.invitation_code_enabled === true
+    emailVerifyEnabled.value = settings.email_verify_enabled === true
     turnstileEnabled.value = settings.turnstile_enabled === true
     turnstileSiteKey.value = settings.turnstile_site_key || ''
   } catch {
     invitationCodeEnabled.value = false
+    emailVerifyEnabled.value = false
     turnstileEnabled.value = false
     turnstileSiteKey.value = ''
   }

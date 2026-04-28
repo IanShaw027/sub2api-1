@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import TicketDetailView from '../TicketDetailView.vue'
 
-const routeState = reactive<{ params: { id: string }; query: { edit?: string } }>({
+const routeState = reactive<{ path: string; params: { id: string }; query: { edit?: string; foo?: string } }>({
+  path: '/tickets/42',
   params: { id: '42' },
   query: {},
 })
@@ -19,6 +20,7 @@ const {
   getUserGroupRates,
   showError,
   showSuccess,
+  routerReplace,
 } = vi.hoisted(() => ({
   getTicket: vi.fn(),
   listTicketMessages: vi.fn(),
@@ -29,6 +31,7 @@ const {
   getUserGroupRates: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
+  routerReplace: vi.fn(),
 }))
 
 vi.mock('@/api/tickets', () => ({
@@ -64,6 +67,9 @@ vi.mock('@/stores', () => ({
 
 vi.mock('vue-router', () => ({
   useRoute: () => routeState,
+  useRouter: () => ({
+    replace: routerReplace,
+  }),
 }))
 
 vi.mock('vue-i18n', async () => {
@@ -78,6 +84,7 @@ vi.mock('vue-i18n', async () => {
 
 describe('user TicketDetailView', () => {
   beforeEach(() => {
+    routeState.path = '/tickets/42'
     routeState.params.id = '42'
     routeState.query = {}
     getTicket.mockReset()
@@ -89,6 +96,7 @@ describe('user TicketDetailView', () => {
     getUserGroupRates.mockReset()
     showError.mockReset()
     showSuccess.mockReset()
+    routerReplace.mockReset()
 
     getTicket.mockResolvedValue({
       id: 42,
@@ -243,6 +251,78 @@ describe('user TicketDetailView', () => {
       category: 'consult',
       title: 'Need help again',
       form_payload: { question: 'new' },
+    })
+    expect(routerReplace).toHaveBeenCalledWith({
+      path: '/tickets/42',
+      query: {},
+    })
+  })
+
+  it('keeps edit mode synchronized with route query changes', async () => {
+    getTicket.mockResolvedValue({
+      id: 42,
+      ticket_no: 'TK-42',
+      category: 'consult',
+      title: 'Need help',
+      status: 'withdrawn',
+      current_form_payload: {},
+    })
+
+    const wrapper = mount(TicketDetailView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TicketConversationPane: true,
+          TicketDetailPane: true,
+          TicketEditorCard: { template: '<div data-test="editor">editor</div>' },
+        },
+      },
+    })
+
+    await flushPromises()
+    expect(wrapper.find('[data-test="editor"]').exists()).toBe(false)
+
+    routeState.query = { edit: '1' }
+    await flushPromises()
+    expect(wrapper.find('[data-test="editor"]').exists()).toBe(true)
+
+    routeState.query = {}
+    await flushPromises()
+    expect(wrapper.find('[data-test="editor"]').exists()).toBe(false)
+  })
+
+  it('cleans up the edit query when cancelling edit mode', async () => {
+    routeState.query = { edit: '1', foo: 'bar' }
+    getTicket.mockResolvedValue({
+      id: 42,
+      ticket_no: 'TK-42',
+      category: 'consult',
+      title: 'Need help',
+      status: 'withdrawn',
+      current_form_payload: {},
+    })
+
+    const wrapper = mount(TicketDetailView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TicketConversationPane: true,
+          TicketDetailPane: true,
+          TicketEditorCard: {
+            emits: ['cancel'],
+            template: '<button type="button" class="cancel-edit" @click="$emit(\'cancel\')">cancel</button>',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+    await wrapper.get('.cancel-edit').trigger('click')
+    await flushPromises()
+
+    expect(routerReplace).toHaveBeenCalledWith({
+      path: '/tickets/42',
+      query: { foo: 'bar' },
     })
   })
 })

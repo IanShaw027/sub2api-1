@@ -17,7 +17,7 @@
           :available-groups="rateEligibleGroups"
           :user-group-rates="userGroupRates"
           @submit="saveAndSubmit"
-          @cancel="editing = false"
+          @cancel="exitEditMode"
         />
       </div>
 
@@ -43,7 +43,7 @@
             <template #actions>
               <div class="flex flex-wrap gap-3">
                 <button v-if="canWithdraw" class="btn btn-secondary" :disabled="actionLoading" @click="withdrawAndEdit">{{ t('tickets.actions.withdrawEdit') }}</button>
-                <button v-if="ticket.status === 'withdrawn'" class="btn btn-secondary" @click="editing = true">{{ t('tickets.actions.edit') }}</button>
+                <button v-if="ticket.status === 'withdrawn'" class="btn btn-secondary" @click="enterEditMode">{{ t('tickets.actions.edit') }}</button>
                 <button v-if="canClose" class="btn btn-secondary" :disabled="actionLoading" @click="closeCurrentTicket">{{ t('tickets.actions.close') }}</button>
               </div>
             </template>
@@ -56,7 +56,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { useAppStore, useAuthStore } from '@/stores'
@@ -70,6 +70,7 @@ import type { Group, SupportTicket, SupportTicketMessage, TicketCategory } from 
 
 const { t } = useI18n()
 const route = useRoute()
+const router = useRouter()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 
@@ -82,7 +83,7 @@ const messages = ref<SupportTicketMessage[]>([])
 const availableGroups = ref<Group[]>([])
 const userGroupRates = ref<Record<number, number>>({})
 const clearComposerKey = ref(0)
-const editing = ref(route.query.edit === '1')
+const editing = ref(false)
 
 const ticketID = computed(() => Number(route.params.id))
 const canWithdraw = computed(() => ['submitted', 'processing', 'waiting_admin'].includes(ticket.value?.status || ''))
@@ -90,6 +91,38 @@ const canReply = computed(() => !['resolved', 'closed', 'withdrawn'].includes(ti
 const canClose = computed(() => !['closed', 'withdrawn'].includes(ticket.value?.status || ''))
 const rateEligibleGroups = computed(() => availableGroups.value.filter((group) => group.subscription_type === 'standard'))
 let loadDetailRequestID = 0
+
+function syncEditingWithRoute() {
+  editing.value = route.query.edit === '1' && ticket.value?.status === 'withdrawn'
+}
+
+async function replaceEditQuery(edit: boolean) {
+  const nextQuery = { ...route.query }
+  if (edit) {
+    nextQuery.edit = '1'
+  } else {
+    delete nextQuery.edit
+  }
+  await router.replace({
+    path: route.path,
+    query: nextQuery,
+  })
+}
+
+async function enterEditMode() {
+  if (ticket.value?.status !== 'withdrawn') {
+    return
+  }
+  editing.value = true
+  await replaceEditQuery(true)
+}
+
+async function exitEditMode() {
+  editing.value = false
+  if (route.query.edit === '1') {
+    await replaceEditQuery(false)
+  }
+}
 
 async function loadDetail() {
   const requestID = ++loadDetailRequestID
@@ -103,8 +136,11 @@ async function loadDetail() {
       return
     }
     ticket.value = ticketData
-    editing.value = route.query.edit === '1' && ticketData.status === 'withdrawn'
     messages.value = messageData
+    syncEditingWithRoute()
+    if (route.query.edit === '1' && ticketData.status !== 'withdrawn') {
+      void replaceEditQuery(false)
+    }
   } catch (err: any) {
     if (requestID !== loadDetailRequestID) {
       return
@@ -148,7 +184,7 @@ async function withdrawAndEdit() {
     actionLoading.value = true
     await ticketsAPI.withdrawTicket(ticketID.value)
     await loadDetail()
-    editing.value = true
+    await enterEditMode()
     appStore.showSuccess(t('tickets.messages.withdrawn'))
   } catch (err: any) {
     appStore.showError(err?.message || t('common.unknownError'))
@@ -172,7 +208,7 @@ async function saveAndSubmit(form: { category: TicketCategory; title: string; fo
       ...form,
       expected_revision_no: ticket.value.current_revision_no,
     })
-    editing.value = false
+    await exitEditMode()
     await loadDetail()
     appStore.showSuccess(t('tickets.messages.resubmitted'))
   } catch (err: any) {
@@ -200,4 +236,12 @@ onMounted(loadTicketContext)
 watch(ticketID, () => {
   loadDetail()
 }, { immediate: true })
+
+watch(
+  [() => route.query.edit, () => ticket.value?.status],
+  () => {
+    syncEditingWithRoute()
+  },
+  { immediate: true }
+)
 </script>

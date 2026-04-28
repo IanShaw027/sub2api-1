@@ -367,6 +367,46 @@ describe('PaymentView WeChat JSAPI flow', () => {
     })
   })
 
+  it('keeps a matching recovery snapshot when token-only resume retry fails', async () => {
+    routeState.query = {
+      wechat_resume: '1',
+      wechat_resume_token: 'resume-token-keep',
+      payment_type: 'wxpay_direct',
+    }
+    createOrder.mockRejectedValueOnce(new Error('resume failed'))
+    window.localStorage.setItem(PAYMENT_RECOVERY_STORAGE_KEY, JSON.stringify({
+      orderId: 321,
+      amount: 88,
+      qrCode: 'weixin://wxpay/bizpayurl?pr=resume',
+      expiresAt: '2099-01-01T00:10:00.000Z',
+      paymentType: 'wxpay',
+      payUrl: '',
+      outTradeNo: 'sub2_qr_321',
+      clientSecret: '',
+      payAmount: 88,
+      orderType: 'balance',
+      paymentMode: 'native',
+      resumeToken: 'resume-token-keep',
+      createdAt: Date.UTC(2099, 0, 1, 0, 0, 0),
+    }))
+
+    shallowMount(PaymentView, {
+      global: {
+        stubs: {
+          Teleport: true,
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+    await flushPromises()
+
+    expect(createOrder).toHaveBeenCalledWith(expect.objectContaining({
+      wechat_resume_token: 'resume-token-keep',
+    }))
+    expect(window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY)).toContain('"resumeToken":"resume-token-keep"')
+  })
+
   it('falls back to QR flow when mobile WeChat payment is unavailable', async () => {
     routeState.query = {
       wechat_resume: '1',

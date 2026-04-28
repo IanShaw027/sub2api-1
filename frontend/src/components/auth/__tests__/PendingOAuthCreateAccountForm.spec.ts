@@ -202,4 +202,74 @@ describe('PendingOAuthCreateAccountForm', () => {
       turnstile_token: 'turnstile-token'
     })
   })
+
+  it('requires a verification code before submit when email verification is enabled', async () => {
+    getPublicSettings.mockResolvedValue({
+      email_verify_enabled: true,
+      turnstile_enabled: false,
+      turnstile_site_key: ''
+    })
+
+    const wrapper = mount(PendingOAuthCreateAccountForm, {
+      props: {
+        testIdPrefix: 'linuxdo',
+        initialEmail: '',
+        isSubmitting: false
+      }
+    })
+
+    await flushPromises()
+    await wrapper.get('[data-testid="linuxdo-create-account-email"]').setValue('user@example.com')
+    await wrapper.get('[data-testid="linuxdo-create-account-password"]').setValue('secret-123')
+
+    expect(wrapper.get('[data-testid="linuxdo-create-account-submit"]').attributes('disabled')).toBeDefined()
+
+    await wrapper.get('[data-testid="linuxdo-create-account-verify-code"]').setValue('246810')
+    await wrapper.get('form').trigger('submit.prevent')
+
+    expect(wrapper.emitted('submit')).toEqual([
+      [
+        {
+          email: 'user@example.com',
+          password: 'secret-123',
+          verifyCode: '246810'
+        }
+      ]
+    ])
+  })
+
+  it('clears sent-code state when the email changes after requesting a verification code', async () => {
+    getPublicSettings.mockResolvedValue({
+      email_verify_enabled: true,
+      turnstile_enabled: false,
+      turnstile_site_key: ''
+    })
+    sendPendingOAuthVerifyCode.mockResolvedValue({
+      message: 'sent',
+      countdown: 60
+    })
+
+    const wrapper = mount(PendingOAuthCreateAccountForm, {
+      props: {
+        testIdPrefix: 'linuxdo',
+        initialEmail: '',
+        isSubmitting: false
+      }
+    })
+
+    await flushPromises()
+    await wrapper.get('[data-testid="linuxdo-create-account-email"]').setValue('old@example.com')
+    await wrapper.get('[data-testid="linuxdo-create-account-send-code"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="linuxdo-create-account-password"]').setValue('secret-123')
+    await wrapper.get('[data-testid="linuxdo-create-account-verify-code"]').setValue('246810')
+    await wrapper.get('[data-testid="linuxdo-create-account-email"]').setValue('new@example.com')
+    await flushPromises()
+    await wrapper.get('form').trigger('submit.prevent')
+
+    expect(wrapper.get('[data-testid="linuxdo-create-account-verify-code"]').element).toHaveProperty('value', '')
+    expect(wrapper.find('[data-testid="linuxdo-create-account-submit"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.emitted('submit')).toBeUndefined()
+  })
 })

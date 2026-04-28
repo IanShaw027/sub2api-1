@@ -1000,18 +1000,23 @@ onMounted(async () => {
       selectedMethod.value = sorted[0]
     }
     if (typeof window !== 'undefined') {
-      if (hasWechatResumeQuery(route.query)) {
-        removeRecoverySnapshot()
-      }
+      const hasRouteWechatResume = hasWechatResumeQuery(route.query)
       const routeResumeToken = typeof route.query.resume_token === 'string'
         ? route.query.resume_token
         : typeof route.query.wechat_resume_token === 'string'
           ? route.query.wechat_resume_token
           : undefined
-      const restored = readPaymentRecoverySnapshot(
-        window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY),
-        { resumeToken: routeResumeToken },
-      )
+      const restored = hasRouteWechatResume
+        ? (routeResumeToken
+          ? readPaymentRecoverySnapshot(
+            window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY),
+            { resumeToken: routeResumeToken },
+          )
+          : null)
+        : readPaymentRecoverySnapshot(
+          window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY),
+          { resumeToken: routeResumeToken },
+        )
       if (restored) {
         paymentState.value = restored
         paymentPhase.value = 'paying'
