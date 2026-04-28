@@ -9,6 +9,39 @@ type SanitizeOptions = {
   allowDataUrl?: boolean
 }
 
+function normalizeBasePath(baseUrl: string): string {
+  const trimmed = (baseUrl || '/').trim()
+  if (!trimmed || trimmed === '/') {
+    return '/'
+  }
+  return `/${trimmed.replace(/^\/+|\/+$/g, '')}/`
+}
+
+function normalizeAppTarget(path: string): string {
+  const trimmed = path.trim()
+  if (!trimmed) {
+    return '/'
+  }
+  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+}
+
+export function buildAppPath(path: string, baseUrl: string = import.meta.env.BASE_URL): string {
+  const normalizedBase = normalizeBasePath(baseUrl)
+  const normalizedPath = normalizeAppTarget(path)
+  if (normalizedBase === '/') {
+    return normalizedPath
+  }
+  return `${normalizedBase.slice(0, -1)}${normalizedPath}`
+}
+
+export function buildAppAbsoluteUrl(
+  path: string,
+  origin: string,
+  baseUrl: string = import.meta.env.BASE_URL
+): string {
+  return new URL(buildAppPath(path, baseUrl), origin).toString()
+}
+
 export function sanitizeUrl(value: string, options: SanitizeOptions = {}): string {
   const trimmed = value.trim()
   if (!trimmed) {

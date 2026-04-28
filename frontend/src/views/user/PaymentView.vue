@@ -467,7 +467,7 @@ function onPaymentDone() {
 
 function onPaymentSuccess() {
   removeRecoverySnapshot()
-  authStore.refreshUser()
+  authStore.refreshUser({ touchActive: true })
   if (paymentState.value.orderType === 'subscription') {
     subscriptionStore.fetchActiveSubscriptions(true).catch(() => {})
   }

@@ -379,6 +379,20 @@ describe('useAuthStore', () => {
       const store = useAuthStore()
       await expect(store.refreshUser()).rejects.toThrow('Not authenticated')
     })
+
+    it('auto refresh uses touchActive=true', async () => {
+      mockLogin.mockResolvedValue(fakeAuthResponse)
+      mockGetCurrentUser.mockResolvedValue({ data: fakeUser })
+      const store = useAuthStore()
+
+      await store.login({ email: 'test@example.com', password: '123456' })
+
+      mockGetCurrentUser.mockClear()
+      vi.advanceTimersByTime(60_000)
+      await Promise.resolve()
+
+      expect(mockGetCurrentUser).toHaveBeenCalledWith({ touchActive: true })
+    })
   })
 
   // --- isSimpleMode ---

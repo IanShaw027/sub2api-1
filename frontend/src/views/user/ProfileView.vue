@@ -65,7 +65,7 @@ const oidcOAuthEnabled = ref(false)
 const oidcOAuthProviderName = ref('OIDC')
 
 onMounted(async () => {
-  const profileRefresh = authStore.refreshUser().catch((error) => {
+  const profileRefresh = authStore.refreshUser({ touchActive: true }).catch((error) => {
     console.error('Failed to refresh profile:', error)
   })
 

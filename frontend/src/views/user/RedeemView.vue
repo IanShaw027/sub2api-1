@@ -438,7 +438,7 @@ const handleRedeem = async () => {
     redeemResult.value = result
 
     // Refresh user data to get updated balance/concurrency
-    await authStore.refreshUser()
+    await authStore.refreshUser({ touchActive: true })
 
     // If subscription type, immediately refresh subscription status
     if (result.type === 'subscription') {

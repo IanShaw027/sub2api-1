@@ -187,6 +187,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useClipboard } from '@/composables/useClipboard'
 import { formatCurrency, formatDateTime } from '@/utils/format'
 import { extractApiErrorMessage } from '@/utils/apiError'
+import { buildAppAbsoluteUrl, buildAppPath } from '@/utils/url'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -203,8 +204,10 @@ let activeLedgerRequestID = 0
 
 const inviteLink = computed(() => {
   if (!detail.value) return ''
-  if (typeof window === 'undefined') return `/register?aff=${encodeURIComponent(detail.value.aff_code)}`
-  return `${window.location.origin}/register?aff=${encodeURIComponent(detail.value.aff_code)}`
+  const registerTarget = `/register?aff=${encodeURIComponent(detail.value.aff_code)}`
+  const registerPath = buildAppPath(registerTarget)
+  if (typeof window === 'undefined') return registerPath
+  return buildAppAbsoluteUrl(registerTarget, window.location.origin)
 })
 
 function formatCount(value: number): string {
@@ -248,7 +251,7 @@ async function transferQuota(): Promise<void> {
     appStore.showSuccess(t('affiliate.transfer.success', { amount: formatCurrency(resp.transferred_quota) }))
     await Promise.all([
       loadAffiliateDetail(true),
-      authStore.refreshUser().catch(() => undefined),
+      authStore.refreshUser({ touchActive: true }).catch(() => undefined),
     ])
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('affiliate.transferFailed')))

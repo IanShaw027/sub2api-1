@@ -144,7 +144,7 @@ export const useAuthStore = defineStore('auth', () => {
 
     refreshIntervalId = setInterval(() => {
       if (token.value) {
-        refreshUser().catch((error) => {
+        refreshUser({ touchActive: true }).catch((error) => {
           console.error('Auto-refresh user failed:', error)
         })
       }
