@@ -130,6 +130,26 @@ func TestResolveOpenAIForwardModel_PreservesCurrentCodexFallbackTarget(t *testin
 	}
 }
 
+func TestResolveOpenAIForwardModelWithSelectedFallback_UsesFallbackTargetForExplicitCodexRequests(t *testing.T) {
+	account := &Account{
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{
+				"gpt-5.4": "gpt-5.4-mini",
+			},
+		},
+	}
+
+	got := resolveOpenAIForwardModelWithSelectedFallback(account, "gpt-5.1-codex", "gpt-5.4", "gpt-5.4")
+	if got != "gpt-5.4-mini" {
+		t.Fatalf("resolveOpenAIForwardModelWithSelectedFallback(...) = %q, want %q", got, "gpt-5.4-mini")
+	}
+
+	preserved := resolveOpenAIForwardModel(account, "gpt-5.1-codex", "gpt-5.4")
+	if preserved != "gpt-5.1-codex" {
+		t.Fatalf("resolveOpenAIForwardModel(...) = %q, want %q", preserved, "gpt-5.1-codex")
+	}
+}
+
 func TestResolveOpenAICompactForwardModel(t *testing.T) {
 	tests := []struct {
 		name          string

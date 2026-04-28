@@ -114,7 +114,7 @@ func TestForwardAsChatCompletions_OAuth_OrdersPromptCacheKeyBeforeInputAfterCode
 		},
 	}
 
-	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "session-ordered", "gpt-5.1")
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "session-ordered", "gpt-5.1", "")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
@@ -167,7 +167,7 @@ func TestForwardAsChatCompletions_APIKey_IncludesPromptCacheKeyInUpstreamBody(t 
 		},
 	}
 
-	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, " session-apikey ", "gpt-5.1")
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, " session-apikey ", "gpt-5.1", "")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "session-apikey", gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
@@ -210,7 +210,7 @@ func TestForwardAsChatCompletions_APIKey_ReplacesNonStringPromptCacheKeyInUpstre
 		},
 	}
 
-	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "session-apikey", "gpt-5.1")
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "session-apikey", "gpt-5.1", "")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "session-apikey", gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
@@ -254,7 +254,7 @@ func TestForwardAsChatCompletions_APIKey_DoesNotInjectDefaultInstructionsInUpstr
 		},
 	}
 
-	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "gpt-5.1")
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "gpt-5.1", "")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.False(t, gjson.GetBytes(upstream.lastBody, "instructions").Exists())
@@ -297,7 +297,7 @@ func TestForwardAsChatCompletions_APIKeyResponsesShape_PreservesLargeIntegerWith
 		},
 	}
 
-	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "gpt-5.1")
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "gpt-5.1", "")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.JSONEq(t, string(body), string(upstream.lastBody))
@@ -342,10 +342,57 @@ func TestForwardAsChatCompletions_OAuthResponsesShape_IncludesDefaultInstruction
 		},
 	}
 
-	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "gpt-5.1")
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "gpt-5.1", "")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotEmpty(t, strings.TrimSpace(gjson.GetBytes(upstream.lastBody, "instructions").String()))
+}
+
+func TestForwardAsChatCompletions_OAuth_SelectedFallbackModelOverridesExplicitCodexRequest(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"gpt-5.1-codex","messages":[{"role":"user","content":"hello"}],"stream":false}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_chat_selected_fallback"}},
+		Body:       io.NopCloser(strings.NewReader(testResponsesCompletedSSE("gpt-5.4-mini"))),
+	}}
+
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{
+			Security: config.SecurityConfig{
+				URLAllowlist: config.URLAllowlistConfig{
+					Enabled: false,
+				},
+			},
+		},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          1,
+		Name:        "openai-oauth",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+			"model_mapping": map[string]any{
+				"gpt-5.4": "gpt-5.4-mini",
+			},
+		},
+	}
+
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "gpt-5.4", "gpt-5.4")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "gpt-5.4-mini", gjson.GetBytes(upstream.lastBody, "model").String())
 }
 
 func TestForwardAsChatCompletions_OAuth_RetriesCodexCompatFallbackOnce(t *testing.T) {
@@ -394,7 +441,7 @@ func TestForwardAsChatCompletions_OAuth_RetriesCodexCompatFallbackOnce(t *testin
 		},
 	}
 
-	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "gpt-5.4")
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "gpt-5.4", "")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, 2, upstream.callCount)

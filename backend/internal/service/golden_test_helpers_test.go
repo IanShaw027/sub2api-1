@@ -79,7 +79,7 @@ func runForwardAsChatCompletionsGoldenFixture(
 		}
 	}
 
-	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, promptCacheKey, requestModel)
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, promptCacheKey, requestModel, "")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 

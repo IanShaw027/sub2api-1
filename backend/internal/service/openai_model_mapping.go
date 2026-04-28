@@ -6,6 +6,18 @@ import "strings"
 // forwarding. Group-level default mapping only applies when the account itself
 // did not match any explicit model_mapping rule.
 func resolveOpenAIForwardModel(account *Account, requestedModel, defaultMappedModel string) string {
+	return resolveOpenAIForwardModelWithSelectedFallback(account, requestedModel, defaultMappedModel, "")
+}
+
+func resolveOpenAIForwardModelWithSelectedFallback(account *Account, requestedModel, defaultMappedModel, selectedFallbackModel string) string {
+	if selectedFallbackModel = strings.TrimSpace(selectedFallbackModel); selectedFallbackModel != "" {
+		if account == nil {
+			return selectedFallbackModel
+		}
+		mappedModel, _ := account.ResolveMappedModel(selectedFallbackModel)
+		return mappedModel
+	}
+
 	if account == nil {
 		if defaultMappedModel != "" {
 			return defaultMappedModel
