@@ -8,15 +8,17 @@
 - 仅当该 Unix Socket 可连通且 `Health` 成功时，后台“数据管理”才会启用
 - `datamanagementd` 使用 SQLite 持久化元数据，不依赖主库
 
-## 2. 宿主机构建与运行
+## 2. 宿主机运行
 
 ```bash
-cd /opt/sub2api-src/datamanagement
-go build -o /opt/sub2api/datamanagementd ./cmd/datamanagementd
-
 mkdir -p /var/lib/sub2api/datamanagement
 chown -R sub2api:sub2api /var/lib/sub2api/datamanagement
 ```
+
+说明：
+
+- 当前 `sub2api` 仓库只保留 `datamanagementd` 的联动脚本、systemd 示例和文档，不再包含其源码目录。
+- 因此安装时需要准备一个现成的 `datamanagementd` 二进制，再通过下文脚本或 systemd 文件部署。
 
 手动启动示例：
 
@@ -47,11 +49,7 @@ sudo journalctl -u sub2api-datamanagementd -f
 也可以使用一键安装脚本（自动安装二进制 + 注册 systemd）：
 
 ```bash
-# 方式一：使用现成二进制
 sudo ./deploy/install-datamanagementd.sh --binary /path/to/datamanagementd
-
-# 方式二：从源码构建后安装
-sudo ./deploy/install-datamanagementd.sh --source /path/to/sub2api
 ```
 
 ## 4. Docker 部署联动
