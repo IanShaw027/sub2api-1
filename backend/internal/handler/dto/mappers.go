@@ -381,6 +381,22 @@ func AccountFromService(a *service.Account) *Account {
 	return out
 }
 
+func AccountFromServiceDetail(a *service.Account) *Account {
+	if a == nil {
+		return nil
+	}
+	out := AccountFromServiceShallow(a)
+	out.Proxy = ProxyFromService(a.Proxy)
+	if len(a.AccountGroups) > 0 {
+		out.AccountGroups = make([]AccountGroup, 0, len(a.AccountGroups))
+		for i := range a.AccountGroups {
+			ag := a.AccountGroups[i]
+			out.AccountGroups = append(out.AccountGroups, *AccountGroupFromService(&ag))
+		}
+	}
+	return out
+}
+
 func AccountFromServiceList(a *service.Account) *Account {
 	out := AccountFromService(a)
 	if out == nil {

@@ -236,6 +236,44 @@ func TestAdminServiceUpdateKiroOAuthAllowsTrustedSensitiveCredentialReplacement(
 	require.NotContains(t, updated.Credentials, "client_secret")
 }
 
+func TestAdminServiceUpdateOAuthTrustedOverwriteClearsOmittedSensitiveCredentials(t *testing.T) {
+	t.Parallel()
+
+	repo := &kiroDefaultAccountRepoStub{
+		accountsByID: map[int64]*Account{
+			49: {
+				ID:       49,
+				Name:     "openai-oauth",
+				Platform: PlatformOpenAI,
+				Type:     AccountTypeOAuth,
+				Status:   StatusActive,
+				Credentials: map[string]any{
+					"refresh_token": "old-refresh",
+					"access_token":  "old-access",
+					"client_id":     "old-client",
+					"client_secret": "old-secret",
+					"email":         "user@example.com",
+				},
+			},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	updated, err := svc.UpdateAccount(context.Background(), 49, &UpdateAccountInput{
+		Credentials: map[string]any{
+			"email": "user@example.com",
+		},
+		AllowSensitiveCredentials: true,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "user@example.com", updated.GetCredential("email"))
+	require.NotContains(t, updated.Credentials, "refresh_token")
+	require.NotContains(t, updated.Credentials, "access_token")
+	require.NotContains(t, updated.Credentials, "client_id")
+	require.NotContains(t, updated.Credentials, "client_secret")
+}
+
 func TestAdminServiceBulkUpdateKiroCredentialsUsesKiroMerge(t *testing.T) {
 	t.Parallel()
 

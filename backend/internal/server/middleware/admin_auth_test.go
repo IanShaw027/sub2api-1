@@ -83,6 +83,44 @@ func TestAdminAuthJWTValidatesTokenVersion(t *testing.T) {
 		require.Equal(t, http.StatusOK, w.Code)
 	})
 
+	t.Run("legacy_unresolved_token_version_allows", func(t *testing.T) {
+		legacyAdmin := &service.User{
+			ID:           admin.ID,
+			Email:        admin.Email,
+			Role:         admin.Role,
+			Status:       admin.Status,
+			PasswordHash: "hash",
+			TokenVersion: 0,
+			Concurrency:  admin.Concurrency,
+		}
+		token, err := authService.GenerateToken(legacyAdmin)
+		require.NoError(t, err)
+
+		userRepo.getByID = func(ctx context.Context, id int64) (*service.User, error) {
+			if id != legacyAdmin.ID {
+				return nil, service.ErrUserNotFound
+			}
+			clone := *legacyAdmin
+			return &clone, nil
+		}
+		t.Cleanup(func() {
+			userRepo.getByID = func(ctx context.Context, id int64) (*service.User, error) {
+				if id != admin.ID {
+					return nil, service.ErrUserNotFound
+				}
+				clone := *admin
+				return &clone, nil
+			}
+		})
+
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/t", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+	})
+
 	t.Run("websocket_token_version_mismatch_rejected", func(t *testing.T) {
 		token, err := authService.GenerateToken(&service.User{
 			ID:           admin.ID,

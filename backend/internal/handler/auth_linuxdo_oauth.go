@@ -1103,7 +1103,7 @@ func (h *AuthHandler) resolveOAuthBindTargetUserID(c *gin.Context) (*int64, erro
 	if err != nil {
 		return nil, err
 	}
-	if user == nil || !user.IsActive() || claims.TokenVersion != user.TokenVersion {
+	if user == nil || !user.IsActive() || claims.TokenVersion != service.ResolveUserTokenVersion(user) {
 		return nil, service.ErrInvalidToken
 	}
 	return &user.ID, nil

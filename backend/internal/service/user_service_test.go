@@ -346,6 +346,23 @@ func TestRecordLastActiveForUser_UpdatesPassedUser(t *testing.T) {
 	require.WithinDuration(t, repo.updateLastActiveAt[0], *user.LastActiveAt, time.Millisecond)
 }
 
+func TestGetByIDPreservesRawTokenVersion(t *testing.T) {
+	repo := &mockUserRepo{
+		getByIDUser: &User{
+			ID:           77,
+			Email:        "raw-token@example.com",
+			PasswordHash: "pw-hash",
+			TokenVersion: 5,
+		},
+	}
+	svc := NewUserService(repo, nil, nil, nil)
+
+	user, err := svc.GetByID(context.Background(), 77)
+	require.NoError(t, err)
+	require.Equal(t, int64(5), user.TokenVersion)
+	require.False(t, user.TokenVersionResolved)
+}
+
 func TestGetProfileIdentitySummaries_AllowsUnbindWhenAnotherLoginMethodRemains(t *testing.T) {
 	repo := &mockUserRepo{
 		getByIDUser: &User{

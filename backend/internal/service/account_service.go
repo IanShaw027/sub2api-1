@@ -300,7 +300,24 @@ func mergeAccountCredentialsForAccountUpdate(platform, accountType string, exist
 	}
 
 	merged := cloneCredentials(existing)
+	if allowSensitiveCredentials {
+		for key := range merged {
+			if isSensitiveCredentialKey(key) {
+				if _, exists := incoming[key]; !exists {
+					delete(merged, key)
+				}
+			}
+		}
+	}
 	for key, value := range incoming {
+		if allowSensitiveCredentials && isSensitiveCredentialKey(key) {
+			if credentialPatchValueIsEmpty(value) {
+				delete(merged, key)
+				continue
+			}
+			merged[key] = value
+			continue
+		}
 		if shouldIgnoreSensitiveCredentialPatch(key, value) {
 			continue
 		}

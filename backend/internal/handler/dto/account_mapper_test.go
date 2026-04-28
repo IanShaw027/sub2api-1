@@ -40,3 +40,21 @@ func TestAccountFromServiceRedactsSensitiveCredentials(t *testing.T) {
 	require.Contains(t, out.Credentials, "model_whitelist")
 	require.Contains(t, out.Credentials, "model_mapping")
 }
+
+func TestAccountFromServiceDetailKeepsSensitiveCredentials(t *testing.T) {
+	account := &service.Account{Platform: service.PlatformOpenAI, Credentials: map[string]any{
+		"access_token":  "access-secret",
+		"refresh_token": "refresh-secret",
+		"api_key":       "sk-secret",
+		"client_secret": "client-secret",
+		"base_url":      "https://api.example.com",
+	}}
+
+	out := AccountFromServiceDetail(account)
+	require.NotNil(t, out)
+	require.Equal(t, "access-secret", out.Credentials["access_token"])
+	require.Equal(t, "refresh-secret", out.Credentials["refresh_token"])
+	require.Equal(t, "sk-secret", out.Credentials["api_key"])
+	require.Equal(t, "client-secret", out.Credentials["client_secret"])
+	require.Equal(t, "https://api.example.com", out.Credentials["base_url"])
+}

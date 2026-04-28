@@ -185,9 +185,9 @@ type AccountWithConcurrency struct {
 
 const accountListGroupUngroupedQueryValue = "ungrouped"
 
-func (h *AccountHandler) buildAccountResponseWithRuntime(ctx context.Context, account *service.Account) AccountWithConcurrency {
+func (h *AccountHandler) buildAccountResponseWithRuntimeWithMapper(ctx context.Context, account *service.Account, mapper func(*service.Account) *dto.Account) AccountWithConcurrency {
 	item := AccountWithConcurrency{
-		Account:            dto.AccountFromService(account),
+		Account:            mapper(account),
 		CurrentConcurrency: 0,
 	}
 	if account == nil {
@@ -227,6 +227,14 @@ func (h *AccountHandler) buildAccountResponseWithRuntime(ctx context.Context, ac
 	}
 
 	return item
+}
+
+func (h *AccountHandler) buildAccountResponseWithRuntime(ctx context.Context, account *service.Account) AccountWithConcurrency {
+	return h.buildAccountResponseWithRuntimeWithMapper(ctx, account, dto.AccountFromService)
+}
+
+func (h *AccountHandler) buildAccountDetailResponseWithRuntime(ctx context.Context, account *service.Account) AccountWithConcurrency {
+	return h.buildAccountResponseWithRuntimeWithMapper(ctx, account, dto.AccountFromServiceDetail)
 }
 
 // List handles listing all accounts with pagination
@@ -470,7 +478,7 @@ func (h *AccountHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
+	response.Success(c, h.buildAccountDetailResponseWithRuntime(c.Request.Context(), account))
 }
 
 // CheckMixedChannel handles checking mixed channel risk for account-group binding.

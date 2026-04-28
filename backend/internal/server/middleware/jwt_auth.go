@@ -68,7 +68,7 @@ func jwtAuth(authService *service.AuthService, userService jwtUserReader) gin.Ha
 
 		// Security: Validate TokenVersion to ensure token hasn't been invalidated
 		// This check ensures tokens issued before a password change are rejected
-		if claims.TokenVersion != user.TokenVersion {
+		if claims.TokenVersion != service.ResolveUserTokenVersion(user) {
 			AbortWithError(c, 401, "TOKEN_REVOKED", "Token has been revoked (password changed)")
 			return
 		}
