@@ -377,6 +377,93 @@ func TestChatCompletionsToResponses_AssistantThinkingTagPreserved(t *testing.T) 
 	assert.Contains(t, parts[0].Text, "final answer")
 }
 
+func TestChatCompletionsToResponses_LegacyAssistantFunctionCallReplayable(t *testing.T) {
+	req := &ChatCompletionsRequest{
+		Model: "gpt-4o",
+		Messages: []ChatMessage{
+			{Role: "user", Content: json.RawMessage(`"Call ping"`)},
+			{
+				Role: "assistant",
+				FunctionCall: &ChatFunctionCall{
+					Name:      "ping",
+					Arguments: `{"host":"example.com"}`,
+				},
+			},
+			{
+				Role:    "function",
+				Name:    "ping",
+				Content: json.RawMessage(`"pong"`),
+			},
+		},
+	}
+
+	resp, err := ChatCompletionsToResponses(req)
+	require.NoError(t, err)
+
+	var items []ResponsesInputItem
+	require.NoError(t, json.Unmarshal(resp.Input, &items))
+	require.Len(t, items, 3)
+	assert.Equal(t, "user", items[0].Role)
+	assert.Equal(t, "function_call", items[1].Type)
+	assert.Equal(t, "ping", items[1].Name)
+	assert.Equal(t, `{"host":"example.com"}`, items[1].Arguments)
+	assert.NotEmpty(t, items[1].CallID)
+	assert.Equal(t, "function_call_output", items[2].Type)
+	assert.Equal(t, items[1].CallID, items[2].CallID)
+	assert.Equal(t, "pong", items[2].Output)
+}
+
+func TestChatCompletionsToResponses_LegacyAssistantFunctionCallSameNameSequentialCallsKeepDistinctState(t *testing.T) {
+	req := &ChatCompletionsRequest{
+		Model: "gpt-4o",
+		Messages: []ChatMessage{
+			{Role: "user", Content: json.RawMessage(`"Run ping twice"`)},
+			{
+				Role: "assistant",
+				FunctionCall: &ChatFunctionCall{
+					Name:      "ping",
+					Arguments: `{"host":"a.example.com"}`,
+				},
+			},
+			{
+				Role:    "function",
+				Name:    "ping",
+				Content: json.RawMessage(`"pong-a"`),
+			},
+			{
+				Role: "assistant",
+				FunctionCall: &ChatFunctionCall{
+					Name:      "ping",
+					Arguments: `{"host":"b.example.com"}`,
+				},
+			},
+			{
+				Role:    "function",
+				Name:    "ping",
+				Content: json.RawMessage(`"pong-b"`),
+			},
+		},
+	}
+
+	resp, err := ChatCompletionsToResponses(req)
+	require.NoError(t, err)
+
+	var items []ResponsesInputItem
+	require.NoError(t, json.Unmarshal(resp.Input, &items))
+	require.Len(t, items, 5)
+	assert.Equal(t, "function_call", items[1].Type)
+	assert.Equal(t, "function_call_output", items[2].Type)
+	assert.Equal(t, "function_call", items[3].Type)
+	assert.Equal(t, "function_call_output", items[4].Type)
+	assert.NotEmpty(t, items[1].CallID)
+	assert.NotEmpty(t, items[3].CallID)
+	assert.NotEqual(t, items[1].CallID, items[3].CallID)
+	assert.Equal(t, items[1].CallID, items[2].CallID)
+	assert.Equal(t, items[3].CallID, items[4].CallID)
+	assert.Equal(t, "pong-a", items[2].Output)
+	assert.Equal(t, "pong-b", items[4].Output)
+}
+
 // ---------------------------------------------------------------------------
 // ResponsesToChatCompletions tests
 // ---------------------------------------------------------------------------
@@ -530,7 +617,7 @@ func TestResponsesToChatCompletions_Incomplete(t *testing.T) {
 	assert.Equal(t, "length", chat.Choices[0].FinishReason)
 }
 
-func TestResponsesToChatCompletions_FailedMapsToErrorFinishReason(t *testing.T) {
+func TestResponsesToChatCompletions_FailedMapsToStopFinishReason(t *testing.T) {
 	resp := &ResponsesResponse{
 		ID:     "resp_failed",
 		Status: "failed",
@@ -539,7 +626,7 @@ func TestResponsesToChatCompletions_FailedMapsToErrorFinishReason(t *testing.T) 
 
 	chat := ResponsesToChatCompletions(resp, "gpt-4o")
 	require.Len(t, chat.Choices, 1)
-	assert.Equal(t, "error", chat.Choices[0].FinishReason)
+	assert.Equal(t, "stop", chat.Choices[0].FinishReason)
 }
 
 func TestResponsesToChatCompletions_FailedPolicyStillMapsToContentFilter(t *testing.T) {
@@ -758,7 +845,7 @@ func TestResponsesEventToChatChunks_CompletedWithToolCalls(t *testing.T) {
 	assert.Equal(t, "tool_calls", *chunks[0].Choices[0].FinishReason)
 }
 
-func TestResponsesEventToChatChunks_FailedUsesErrorFinishReason(t *testing.T) {
+func TestResponsesEventToChatChunks_FailedUsesStopFinishReason(t *testing.T) {
 	state := NewResponsesEventToChatState()
 	state.Model = "gpt-4o"
 
@@ -771,7 +858,7 @@ func TestResponsesEventToChatChunks_FailedUsesErrorFinishReason(t *testing.T) {
 	}, state)
 	require.Len(t, chunks, 1)
 	require.NotNil(t, chunks[0].Choices[0].FinishReason)
-	assert.Equal(t, "error", *chunks[0].Choices[0].FinishReason)
+	assert.Equal(t, "stop", *chunks[0].Choices[0].FinishReason)
 }
 
 func TestResponsesEventToChatChunks_FailedPolicyUsesContentFilterFinishReason(t *testing.T) {

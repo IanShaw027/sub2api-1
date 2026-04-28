@@ -121,7 +121,8 @@ func responsesFailedToChatFinishReason(failedErr *ResponsesError) string {
 	if responsesErrorLooksLikeContentFilter(failedErr) {
 		return "content_filter"
 	}
-	return "error"
+	// Chat Completions has no generic "error" finish_reason enum.
+	return "stop"
 }
 
 func responsesErrorLooksLikeContentFilter(failedErr *ResponsesError) bool {

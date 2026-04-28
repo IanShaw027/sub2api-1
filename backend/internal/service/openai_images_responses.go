@@ -201,12 +201,22 @@ func openAIImageUploadToDataURL(upload OpenAIImagesUpload) (string, error) {
 	return "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(upload.Data), nil
 }
 
+func openAIImagesResponsesEffectiveN(parsed *OpenAIImagesRequest) int {
+	if parsed == nil {
+		return 1
+	}
+	if parsed.N <= 0 {
+		return 1
+	}
+	if parsed.N > 1 {
+		return 1
+	}
+	return parsed.N
+}
+
 func buildOpenAIImagesResponsesRequest(parsed *OpenAIImagesRequest, toolModel string) ([]byte, error) {
 	if parsed == nil {
 		return nil, fmt.Errorf("parsed images request is required")
-	}
-	if parsed.N > 1 {
-		return nil, fmt.Errorf("n > 1 is not supported for OAuth/Codex image responses")
 	}
 	prompt := strings.TrimSpace(parsed.Prompt)
 	if prompt == "" {
@@ -935,7 +945,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 		}
 	}
 	if imageCount <= 0 {
-		imageCount = parsed.N
+		imageCount = openAIImagesResponsesEffectiveN(parsed)
 	}
 	return &OpenAIForwardResult{
 		RequestID:              resp.Header.Get("x-request-id"),

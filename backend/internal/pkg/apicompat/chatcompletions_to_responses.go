@@ -11,6 +11,45 @@ type chatMessageContent struct {
 	Parts []ChatContentPart
 }
 
+type legacyFunctionCallTracker struct {
+	nextCallID    int
+	pendingByName map[string][]string
+}
+
+func newLegacyFunctionCallTracker() *legacyFunctionCallTracker {
+	return &legacyFunctionCallTracker{
+		pendingByName: make(map[string][]string),
+	}
+}
+
+func (t *legacyFunctionCallTracker) reserve(name string) string {
+	t.nextCallID++
+	callID := fmt.Sprintf("legacy_function_call_%d", t.nextCallID)
+	key := strings.TrimSpace(name)
+	if key != "" {
+		t.pendingByName[key] = append(t.pendingByName[key], callID)
+	}
+	return callID
+}
+
+func (t *legacyFunctionCallTracker) consume(name string) string {
+	key := strings.TrimSpace(name)
+	if key == "" {
+		return ""
+	}
+	queue := t.pendingByName[key]
+	if len(queue) == 0 {
+		return key
+	}
+	callID := queue[0]
+	if len(queue) == 1 {
+		delete(t.pendingByName, key)
+	} else {
+		t.pendingByName[key] = queue[1:]
+	}
+	return callID
+}
+
 // ChatCompletionsToResponses converts a Chat Completions request into a
 // Responses API request. The upstream always streams, so Stream is forced to
 // true. store is always false and reasoning.encrypted_content is always
@@ -87,9 +126,10 @@ func ChatCompletionsToResponses(req *ChatCompletionsRequest) (*ResponsesRequest,
 // convertChatMessagesToResponsesInput converts the Chat Completions messages
 // array into a Responses API input items array.
 func convertChatMessagesToResponsesInput(msgs []ChatMessage) ([]ResponsesInputItem, error) {
+	legacyTracker := newLegacyFunctionCallTracker()
 	var out []ResponsesInputItem
 	for _, m := range msgs {
-		items, err := chatMessageToResponsesItems(m)
+		items, err := chatMessageToResponsesItems(m, legacyTracker)
 		if err != nil {
 			return nil, err
 		}
@@ -100,18 +140,18 @@ func convertChatMessagesToResponsesInput(msgs []ChatMessage) ([]ResponsesInputIt
 
 // chatMessageToResponsesItems converts a single ChatMessage into one or more
 // ResponsesInputItem values.
-func chatMessageToResponsesItems(m ChatMessage) ([]ResponsesInputItem, error) {
+func chatMessageToResponsesItems(m ChatMessage, legacyTracker *legacyFunctionCallTracker) ([]ResponsesInputItem, error) {
 	switch m.Role {
 	case "system":
 		return chatSystemToResponses(m)
 	case "user":
 		return chatUserToResponses(m)
 	case "assistant":
-		return chatAssistantToResponses(m)
+		return chatAssistantToResponses(m, legacyTracker)
 	case "tool":
 		return chatToolToResponses(m)
 	case "function":
-		return chatFunctionToResponses(m)
+		return chatFunctionToResponses(m, legacyTracker)
 	default:
 		return chatUserToResponses(m)
 	}
@@ -148,7 +188,7 @@ func chatUserToResponses(m ChatMessage) ([]ResponsesInputItem, error) {
 // text content and tool_calls, the text is emitted as an assistant message
 // first, then each tool_call becomes a function_call item. If the content is
 // empty/nil and there are tool_calls, only function_call items are emitted.
-func chatAssistantToResponses(m ChatMessage) ([]ResponsesInputItem, error) {
+func chatAssistantToResponses(m ChatMessage, legacyTracker *legacyFunctionCallTracker) ([]ResponsesInputItem, error) {
 	var items []ResponsesInputItem
 
 	// Emit assistant message with output_text if content is non-empty.
@@ -177,6 +217,23 @@ func chatAssistantToResponses(m ChatMessage) ([]ResponsesInputItem, error) {
 			Type:      "function_call",
 			CallID:    tc.ID,
 			Name:      tc.Function.Name,
+			Arguments: args,
+		})
+	}
+
+	if m.FunctionCall != nil {
+		args := m.FunctionCall.Arguments
+		if args == "" {
+			args = "{}"
+		}
+		callID := strings.TrimSpace(m.FunctionCall.Name)
+		if legacyTracker != nil {
+			callID = legacyTracker.reserve(m.FunctionCall.Name)
+		}
+		items = append(items, ResponsesInputItem{
+			Type:      "function_call",
+			CallID:    callID,
+			Name:      m.FunctionCall.Name,
 			Arguments: args,
 		})
 	}
@@ -272,9 +329,10 @@ func chatToolToResponses(m ChatMessage) ([]ResponsesInputItem, error) {
 }
 
 // chatFunctionToResponses converts a legacy function result message
-// (role=function) into a function_call_output item. The Name field is used as
-// call_id since legacy function calls do not carry a separate call_id.
-func chatFunctionToResponses(m ChatMessage) ([]ResponsesInputItem, error) {
+// (role=function) into a function_call_output item. When the transcript
+// previously included assistant.function_call, the tracker reuses that
+// synthetic call_id so repeated legacy calls with the same name stay replayable.
+func chatFunctionToResponses(m ChatMessage, legacyTracker *legacyFunctionCallTracker) ([]ResponsesInputItem, error) {
 	output, err := parseChatContent(m.Content)
 	if err != nil {
 		return nil, err
@@ -282,9 +340,13 @@ func chatFunctionToResponses(m ChatMessage) ([]ResponsesInputItem, error) {
 	if output == "" {
 		output = "(empty)"
 	}
+	callID := strings.TrimSpace(m.Name)
+	if legacyTracker != nil {
+		callID = legacyTracker.consume(m.Name)
+	}
 	return []ResponsesInputItem{{
 		Type:   "function_call_output",
-		CallID: m.Name,
+		CallID: callID,
 		Output: output,
 	}}, nil
 }
