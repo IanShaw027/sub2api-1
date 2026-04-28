@@ -547,7 +547,7 @@ Invalid base URL: invalid url scheme: http
 
 #### HTTP/2 (h2c) 与 HTTP/1.1 回退
 
-后端明文端口默认支持 h2c，并保留 HTTP/1.1 回退用于 WebSocket 与旧客户端。浏览器通常不支持 h2c，性能收益主要在反向代理或内网链路。
+后端明文端口可选支持 h2c；当前默认配置 `server.h2c.enabled=false`，仅在反向代理或内网链路明确需要时开启。同时仍保留 HTTP/1.1 回退用于 WebSocket 与旧客户端。浏览器通常不支持 h2c，性能收益主要在反向代理或内网链路。
 
 **反向代理示例（Caddy）：**
 
