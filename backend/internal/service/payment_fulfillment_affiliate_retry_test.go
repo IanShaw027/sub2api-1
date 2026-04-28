@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -56,6 +57,7 @@ type paymentFulfillmentAffiliateRepoStub struct {
 	summary    *AffiliateSummary
 	accrueErr  error
 	accrueUsed AffiliateAccrualInput
+	accrueHits int
 }
 
 func (s *paymentFulfillmentAffiliateRepoStub) EnsureUserAffiliate(context.Context, int64) (*AffiliateSummary, error) {
@@ -74,6 +76,7 @@ func (s *paymentFulfillmentAffiliateRepoStub) BindInviter(context.Context, int64
 }
 
 func (s *paymentFulfillmentAffiliateRepoStub) AccrueQuota(_ context.Context, input AffiliateAccrualInput) (float64, error) {
+	s.accrueHits++
 	s.accrueUsed = input
 	if s.accrueErr != nil {
 		return 0, s.accrueErr
@@ -201,7 +204,7 @@ func TestExecuteBalanceFulfillment_AffiliateCommitFailureCompletesOrder(t *testi
 		SetAmount(100).
 		SetPayAmount(100).
 		SetFeeRate(0).
-		SetRechargeCode("AFFILIATE-COMMIT-FAIL-RECHARGE-CODE").
+		SetRechargeCode("AFFILIATE-COMMIT-FAIL").
 		SetOutTradeNo("sub2_affiliate_commit_fail").
 		SetPaymentType(payment.TypeStripe).
 		SetPaymentTradeNo("trade-affiliate-commit-fail").
@@ -260,4 +263,91 @@ func TestExecuteBalanceFulfillment_AffiliateCommitFailureCompletesOrder(t *testi
 	require.NotNil(t, reloaded.CompletedAt)
 	require.Nil(t, reloaded.FailedAt)
 	require.True(t, svc.hasAuditLog(ctx, order.ID, "AFFILIATE_REBATE_FAILED"))
+}
+
+func TestExecuteBalanceFulfillment_DoesNotApplyAffiliateRebateBeforeCompletionSucceeds(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusPaid, payment.OrderTypeBalance)
+
+	trigger := fmt.Sprintf(`
+		CREATE TRIGGER fail_balance_completion_with_affiliate
+		BEFORE UPDATE OF status ON payment_orders
+		WHEN NEW.id = %d AND NEW.status = '%s'
+		BEGIN
+			SELECT RAISE(FAIL, 'forced completion failure');
+		END;
+	`, order.ID, OrderStatusCompleted)
+	_, err := client.ExecContext(ctx, trigger)
+	require.NoError(t, err)
+
+	inviterID := int64(9988)
+	affiliateRepo := &paymentFulfillmentAffiliateRepoStub{
+		summary: &AffiliateSummary{
+			UserID:    order.UserID,
+			InviterID: &inviterID,
+		},
+	}
+	affiliateService := &AffiliateService{
+		repo: affiliateRepo,
+		settingRepo: &paymentFulfillmentAffiliateSettingRepoStub{
+			values: map[string]string{
+				SettingKeyAffiliateEnabled:    "true",
+				SettingKeyAffiliateRebateRate: "20",
+			},
+		},
+	}
+
+	svc := &PaymentService{
+		entClient:        client,
+		affiliateService: affiliateService,
+	}
+
+	err = svc.ExecuteBalanceFulfillment(ctx, order.ID)
+	require.Error(t, err)
+	require.Zero(t, affiliateRepo.accrueHits)
+	require.False(t, svc.hasAuditLog(ctx, order.ID, "AFFILIATE_REBATE_APPLIED"))
+	require.False(t, svc.hasAuditLog(ctx, order.ID, "AFFILIATE_REBATE_SKIPPED"))
+	require.False(t, svc.hasAuditLog(ctx, order.ID, "AFFILIATE_REBATE_FAILED"))
+}
+
+func TestRetryFulfillment_CompletedOrderBackfillsMissingAffiliateRebate(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusPaid, payment.OrderTypeBalance)
+	now := time.Now()
+
+	_, err := client.PaymentOrder.UpdateOneID(order.ID).
+		SetStatus(OrderStatusCompleted).
+		SetPaidAt(now).
+		SetCompletedAt(now).
+		Save(ctx)
+	require.NoError(t, err)
+
+	inviterID := int64(7788)
+	affiliateRepo := &paymentFulfillmentAffiliateRepoStub{
+		summary: &AffiliateSummary{
+			UserID:    order.UserID,
+			InviterID: &inviterID,
+		},
+	}
+	affiliateService := &AffiliateService{
+		repo: affiliateRepo,
+		settingRepo: &paymentFulfillmentAffiliateSettingRepoStub{
+			values: map[string]string{
+				SettingKeyAffiliateEnabled:    "true",
+				SettingKeyAffiliateRebateRate: "20",
+			},
+		},
+	}
+
+	svc := &PaymentService{
+		entClient:        client,
+		affiliateService: affiliateService,
+	}
+
+	err = svc.RetryFulfillment(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, affiliateRepo.accrueHits)
+	require.True(t, svc.hasAuditLog(ctx, order.ID, "AFFILIATE_REBATE_APPLIED"))
 }

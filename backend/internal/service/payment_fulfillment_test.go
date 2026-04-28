@@ -449,6 +449,18 @@ func TestSubscriptionFulfillmentClaimMigrationIncludesSubscriptionSentinels(t *t
 	require.Contains(t, sql, "DROP INDEX CONCURRENTLY IF EXISTS")
 }
 
+func TestSubscriptionFulfillmentClaimDedupeMigrationRemovesHistoricalDuplicates(t *testing.T) {
+	body, err := os.ReadFile("../../migrations/137_subscription_fulfillment_claim_dedupe.sql")
+	require.NoError(t, err)
+	sql := string(body)
+	require.Contains(t, sql, "ROW_NUMBER() OVER (PARTITION BY order_id, action ORDER BY id)")
+	require.Contains(t, sql, "DELETE FROM payment_audit_logs")
+	require.Contains(t, sql, "SUBSCRIPTION_FULFILLMENT_CLAIMED")
+	require.Contains(t, sql, "SUBSCRIPTION_SUCCESS")
+	require.Contains(t, sql, "AFFILIATE_REBATE_APPLIED")
+	require.Contains(t, sql, "AFFILIATE_REBATE_SKIPPED")
+}
+
 // ---------------------------------------------------------------------------
 // resolveRedeemAction — pure idempotency decision logic
 // ---------------------------------------------------------------------------

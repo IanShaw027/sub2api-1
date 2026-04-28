@@ -294,9 +294,12 @@ func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder) e
 
 	switch action {
 	case redeemActionSkipCompleted:
-		s.applyAffiliateRebateBestEffort(ctx, o)
 		// Code already created and redeemed — just mark completed
-		return s.markCompleted(ctx, o, "RECHARGE_SUCCESS")
+		if err := s.markCompleted(ctx, o, "RECHARGE_SUCCESS"); err != nil {
+			return err
+		}
+		s.applyAffiliateRebateBestEffort(ctx, o)
+		return nil
 	case redeemActionCreate:
 		rc := &RedeemCode{Code: o.RechargeCode, Type: RedeemTypeBalance, Value: o.Amount, Status: StatusUnused}
 		if err := s.redeemService.CreateCode(ctx, rc); err != nil {
@@ -308,8 +311,11 @@ func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder) e
 	if _, err := s.redeemService.Redeem(ctx, o.UserID, o.RechargeCode); err != nil {
 		return fmt.Errorf("redeem balance: %w", err)
 	}
+	if err := s.markCompleted(ctx, o, "RECHARGE_SUCCESS"); err != nil {
+		return err
+	}
 	s.applyAffiliateRebateBestEffort(ctx, o)
-	return s.markCompleted(ctx, o, "RECHARGE_SUCCESS")
+	return nil
 }
 
 func (s *PaymentService) doBalanceInTx(ctx context.Context, o *dbent.PaymentOrder) error {
@@ -326,11 +332,14 @@ func (s *PaymentService) doBalanceInTx(ctx context.Context, o *dbent.PaymentOrde
 	}
 
 	if existing != nil && existing.Status == StatusUsed {
-		s.applyAffiliateRebateBestEffort(ctx, o)
 		if err := s.markCompletedWithClient(ctx, txClient, o, "RECHARGE_SUCCESS"); err != nil {
 			return err
 		}
-		return tx.Commit()
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		s.applyAffiliateRebateBestEffort(ctx, o)
+		return nil
 	}
 
 	if existing == nil {
@@ -379,11 +388,14 @@ func (s *PaymentService) doBalanceInTx(ctx context.Context, o *dbent.PaymentOrde
 		return ErrUserNotFound
 	}
 
-	s.applyAffiliateRebateBestEffort(ctx, o)
 	if err := s.markCompletedWithClient(ctx, txClient, o, "RECHARGE_SUCCESS"); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.applyAffiliateRebateBestEffort(ctx, o)
+	return nil
 }
 
 func (s *PaymentService) applyAffiliateRebateBestEffort(ctx context.Context, o *dbent.PaymentOrder) {
@@ -780,7 +792,8 @@ func (s *PaymentService) RetryFulfillment(ctx context.Context, oid int64) error 
 		return infraerrors.Conflict("CONFLICT", "order is being processed")
 	}
 	if o.Status == OrderStatusCompleted {
-		return infraerrors.BadRequest("INVALID_STATUS", "order already completed")
+		s.applyAffiliateRebateBestEffort(ctx, o)
+		return nil
 	}
 	if o.Status != OrderStatusFailed && o.Status != OrderStatusPaid {
 		return infraerrors.BadRequest("INVALID_STATUS", "only paid and failed orders can retry")
