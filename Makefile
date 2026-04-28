@@ -1,4 +1,4 @@
-.PHONY: build build-backend build-frontend build-datamanagementd test test-backend test-frontend test-frontend-ci test-datamanagementd secret-scan
+.PHONY: build build-backend build-frontend test test-backend test-frontend test-frontend-ci secret-scan
 
 FRONTEND_CI_VITEST := \
 	src/views/auth/__tests__/LinuxDoCallbackView.spec.ts \
@@ -32,10 +32,6 @@ build-backend:
 build-frontend:
 	@pnpm --dir frontend run build
 
-# 编译 datamanagementd（宿主机数据管理进程）
-build-datamanagementd:
-	@cd datamanagement && go build -o datamanagementd ./cmd/datamanagementd
-
 # 运行测试（后端 + 前端）
 test: test-backend test-frontend
 
@@ -53,9 +49,6 @@ test-frontend-ci:
 
 test-frontend-smoke:
 	@pnpm --dir frontend exec vitest run $(FRONTEND_CI_VITEST)
-
-test-datamanagementd:
-	@cd datamanagement && go test ./...
 
 secret-scan:
 	@python3 tools/secret_scan.py
