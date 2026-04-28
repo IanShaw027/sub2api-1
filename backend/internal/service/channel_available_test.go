@@ -312,3 +312,56 @@ func TestListAvailable_UnrestrictedSchedulableAccountPreservesChannelCapabilitie
 	require.Len(t, out, 1)
 	require.ElementsMatch(t, []string{"model-a", "model-b"}, []string{out[0].SupportedModels[0].Name, out[0].SupportedModels[1].Name})
 }
+
+func TestFilterAvailableModelsForGroups_SamePlatformVisibleSubsetExcludesHiddenGroupModels(t *testing.T) {
+	accountRepo := &stubAccountRepoForAvailable{
+		accountsByGroupPlatform: map[availableGroupPlatformKey][]Account{
+			{groupID: 1, platform: "anthropic"}: {{
+				ID:          10,
+				Platform:    "anthropic",
+				Status:      StatusActive,
+				Schedulable: true,
+				Credentials: map[string]any{
+					"model_mapping": map[string]any{"visible-model": "visible-model"},
+				},
+			}},
+			{groupID: 2, platform: "anthropic"}: {{
+				ID:          20,
+				Platform:    "anthropic",
+				Status:      StatusActive,
+				Schedulable: true,
+				Credentials: map[string]any{
+					"model_mapping": map[string]any{"hidden-model": "hidden-model"},
+				},
+			}},
+		},
+	}
+	svc := newAvailableChannelServiceWithAccounts(nil, &stubGroupRepoForAvailable{}, accountRepo)
+	models := []SupportedModel{
+		{Name: "hidden-model", Platform: "anthropic", IsCapability: true},
+		{Name: "visible-model", Platform: "anthropic", IsCapability: true},
+	}
+	allGroups := []AvailableGroupRef{
+		{ID: 1, Platform: "anthropic"},
+		{ID: 2, Platform: "anthropic"},
+	}
+	visibleGroups := []AvailableGroupRef{
+		{ID: 1, Platform: "anthropic"},
+	}
+
+	allVisible, err := svc.FilterAvailableModelsForGroups(context.Background(), allGroups, models)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"hidden-model", "visible-model"}, supportedModelNames(allVisible))
+
+	filtered, err := svc.FilterAvailableModelsForGroups(context.Background(), visibleGroups, models)
+	require.NoError(t, err)
+	require.Equal(t, []string{"visible-model"}, supportedModelNames(filtered))
+}
+
+func supportedModelNames(models []SupportedModel) []string {
+	names := make([]string, 0, len(models))
+	for _, model := range models {
+		names = append(names, model.Name)
+	}
+	return names
+}

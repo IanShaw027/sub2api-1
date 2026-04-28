@@ -3,6 +3,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,20 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+type stubAvailableChannelAccountRepo struct {
+	service.AccountRepository
+	accountsByGroupPlatform map[availableGroupPlatformKey][]service.Account
+}
+
+type availableGroupPlatformKey struct {
+	groupID  int64
+	platform string
+}
+
+func (s *stubAvailableChannelAccountRepo) ListSchedulableByGroupIDAndPlatform(ctx context.Context, groupID int64, platform string) ([]service.Account, error) {
+	return s.accountsByGroupPlatform[availableGroupPlatformKey{groupID: groupID, platform: platform}], nil
+}
 
 func TestUserAvailableChannel_Unauthenticated401(t *testing.T) {
 	// 没有 AuthSubject 注入时，handler 应返回 401 且不触达 service 依赖。
@@ -154,4 +169,41 @@ func TestBuildPlatformSections_GroupsByPlatform(t *testing.T) {
 	require.Equal(t, int64(2), sections[0].Groups[0].ID)
 	require.Len(t, sections[0].SupportedModels, 1)
 	require.Equal(t, "claude-sonnet-4-6", sections[0].SupportedModels[0].Name)
+}
+
+func TestFilterVisibleSupportedModels_SamePlatformHiddenGroupModelsExcluded(t *testing.T) {
+	svc := service.NewChannelService(nil, nil, nil, nil)
+	svc.SetAccountRepository(&stubAvailableChannelAccountRepo{
+		accountsByGroupPlatform: map[availableGroupPlatformKey][]service.Account{
+			{groupID: 1, platform: "anthropic"}: {{
+				ID:          10,
+				Platform:    "anthropic",
+				Status:      service.StatusActive,
+				Schedulable: true,
+				Credentials: map[string]any{
+					"model_mapping": map[string]any{"visible-model": "visible-model"},
+				},
+			}},
+			{groupID: 2, platform: "anthropic"}: {{
+				ID:          20,
+				Platform:    "anthropic",
+				Status:      service.StatusActive,
+				Schedulable: true,
+				Credentials: map[string]any{
+					"model_mapping": map[string]any{"hidden-model": "hidden-model"},
+				},
+			}},
+		},
+	})
+	h := &AvailableChannelHandler{channelService: svc}
+
+	out, err := h.filterVisibleSupportedModels(context.Background(), []service.SupportedModel{
+		{Name: "visible-model", Platform: "anthropic", IsCapability: true},
+		{Name: "hidden-model", Platform: "anthropic", IsCapability: true},
+	}, []userAvailableGroup{
+		{ID: 1, Platform: "anthropic"},
+	})
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.Equal(t, "visible-model", out[0].Name)
 }

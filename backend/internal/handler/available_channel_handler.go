@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"sort"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -152,6 +153,12 @@ func (h *AvailableChannelHandler) List(c *gin.Context) {
 		if len(visibleGroups) == 0 {
 			continue
 		}
+		visibleSupportedModels, err := h.filterVisibleSupportedModels(c.Request.Context(), ch.SupportedModels, visibleGroups)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		ch.SupportedModels = visibleSupportedModels
 		sections := buildPlatformSections(ch, visibleGroups)
 		if len(sections) == 0 {
 			continue
@@ -164,6 +171,17 @@ func (h *AvailableChannelHandler) List(c *gin.Context) {
 	}
 
 	response.Success(c, out)
+}
+
+func (h *AvailableChannelHandler) filterVisibleSupportedModels(
+	ctx context.Context,
+	models []service.SupportedModel,
+	visibleGroups []userAvailableGroup,
+) ([]service.SupportedModel, error) {
+	if h == nil || h.channelService == nil {
+		return models, nil
+	}
+	return h.channelService.FilterAvailableModelsForGroups(ctx, toServiceAvailableGroupRefs(visibleGroups), models)
 }
 
 // buildPlatformSections 把一个渠道按 visibleGroups 的平台集合拆成有序的 section 列表：
@@ -222,6 +240,21 @@ func filterUserVisibleGroups(
 		})
 	}
 	return visible
+}
+
+func toServiceAvailableGroupRefs(groups []userAvailableGroup) []service.AvailableGroupRef {
+	refs := make([]service.AvailableGroupRef, 0, len(groups))
+	for _, group := range groups {
+		refs = append(refs, service.AvailableGroupRef{
+			ID:               group.ID,
+			Name:             group.Name,
+			Platform:         group.Platform,
+			SubscriptionType: group.SubscriptionType,
+			RateMultiplier:   group.RateMultiplier,
+			IsExclusive:      group.IsExclusive,
+		})
+	}
+	return refs
 }
 
 // toUserSupportedModels 将 service 层支持模型转换为用户 DTO（字段白名单）。

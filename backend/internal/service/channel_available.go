@@ -106,6 +106,14 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 	return out, nil
 }
 
+// FilterAvailableModelsForGroups narrows available-channel supported models to the
+// schedulable capabilities of the provided visible groups. It is used by the
+// user-facing available-channels handler after group visibility filtering so
+// same-platform hidden groups cannot leak their models into the response.
+func (s *ChannelService) FilterAvailableModelsForGroups(ctx context.Context, groups []AvailableGroupRef, models []SupportedModel) ([]SupportedModel, error) {
+	return s.filterAvailableModelsBySchedulableAccounts(ctx, groups, models)
+}
+
 type availableGroupPlatformKey struct {
 	groupID  int64
 	platform string
