@@ -26,15 +26,21 @@ import (
 )
 
 var (
-	ErrUserNotFound             = infraerrors.NotFound("USER_NOT_FOUND", "user not found")
-	ErrPasswordIncorrect        = infraerrors.BadRequest("PASSWORD_INCORRECT", "current password is incorrect")
-	ErrInsufficientPerms        = infraerrors.Forbidden("INSUFFICIENT_PERMISSIONS", "insufficient permissions")
-	ErrNotifyCodeUserRateLimit  = infraerrors.TooManyRequests("NOTIFY_CODE_USER_RATE_LIMIT", "too many verification codes requested, please try again later")
-	ErrAvatarInvalid            = infraerrors.BadRequest("AVATAR_INVALID", "avatar must be a valid image data URL or http(s) URL")
-	ErrAvatarTooLarge           = infraerrors.BadRequest("AVATAR_TOO_LARGE", "avatar image must be 100KB or smaller")
-	ErrAvatarNotImage           = infraerrors.BadRequest("AVATAR_NOT_IMAGE", "avatar content must be an image")
-	ErrIdentityProviderInvalid  = infraerrors.BadRequest("IDENTITY_PROVIDER_INVALID", "identity provider is invalid")
-	ErrIdentityRedirectInvalid  = infraerrors.BadRequest("IDENTITY_REDIRECT_INVALID", "identity redirect path is invalid")
+	ErrUserNotFound                 = infraerrors.NotFound("USER_NOT_FOUND", "user not found")
+	ErrPasswordIncorrect            = infraerrors.BadRequest("PASSWORD_INCORRECT", "current password is incorrect")
+	ErrInsufficientPerms            = infraerrors.Forbidden("INSUFFICIENT_PERMISSIONS", "insufficient permissions")
+	ErrBackendModeAdminOnly         = infraerrors.Forbidden("BACKEND_MODE_ADMIN_ONLY", "Backend mode is active. Only admin login is allowed.")
+	ErrNotifyCodeUserRateLimit      = infraerrors.TooManyRequests("NOTIFY_CODE_USER_RATE_LIMIT", "too many verification codes requested, please try again later")
+	ErrAvatarInvalid                = infraerrors.BadRequest("AVATAR_INVALID", "avatar must be a valid image data URL or http(s) URL")
+	ErrAvatarTooLarge               = infraerrors.BadRequest("AVATAR_TOO_LARGE", "avatar image must be 100KB or smaller")
+	ErrAvatarNotImage               = infraerrors.BadRequest("AVATAR_NOT_IMAGE", "avatar content must be an image")
+	ErrIdentityProviderInvalid      = infraerrors.BadRequest("IDENTITY_PROVIDER_INVALID", "identity provider is invalid")
+	ErrIdentityRedirectInvalid      = infraerrors.BadRequest("IDENTITY_REDIRECT_INVALID", "identity redirect path is invalid")
+	ErrIdentityProviderDisabled     = infraerrors.Forbidden("IDENTITY_PROVIDER_DISABLED", "identity provider is disabled")
+	ErrIdentityProviderAlreadyBound = infraerrors.Conflict(
+		"IDENTITY_PROVIDER_ALREADY_BOUND",
+		"identity provider is already bound",
+	)
 	ErrIdentityUnbindLastMethod = infraerrors.Conflict(
 		"IDENTITY_UNBIND_LAST_METHOD",
 		"bind another sign-in method before unbinding this provider",
@@ -145,6 +151,7 @@ type UserIdentitySummarySet struct {
 }
 
 type StartUserIdentityBindingRequest struct {
+	UserID     int64
 	Provider   string
 	RedirectTo string
 }
@@ -309,10 +316,13 @@ func disableIdentityBindAction(summary *UserIdentitySummary) {
 	summary.BindStartPath = ""
 }
 
-func (s *UserService) PrepareIdentityBindingStart(_ context.Context, req StartUserIdentityBindingRequest) (*StartUserIdentityBindingResult, error) {
+func (s *UserService) PrepareIdentityBindingStart(ctx context.Context, req StartUserIdentityBindingRequest) (*StartUserIdentityBindingResult, error) {
 	provider := normalizeUserIdentityProvider(req.Provider)
 	if provider == "" {
 		return nil, ErrIdentityProviderInvalid
+	}
+	if err := s.ensureIdentityBindingAvailable(ctx, req.UserID, provider); err != nil {
+		return nil, err
 	}
 
 	authorizeURL, err := buildUserIdentityBindAuthorizeURL(provider, req.RedirectTo)
@@ -326,6 +336,71 @@ func (s *UserService) PrepareIdentityBindingStart(_ context.Context, req StartUs
 		Method:             "GET",
 		UseBrowserRedirect: true,
 	}, nil
+}
+
+func (s *UserService) EnsureBackendModeAllowsUser(ctx context.Context, userID int64) error {
+	if !s.isBackendModeEnabled(ctx) {
+		return nil
+	}
+	user, err := s.GetByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return infraerrors.Unauthorized("INVALID_USER", "user not found")
+	}
+	if user.IsAdmin() {
+		return nil
+	}
+	return ErrBackendModeAdminOnly
+}
+
+func (s *UserService) isBackendModeEnabled(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return false
+	}
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyBackendModeEnabled)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(value), "true")
+}
+
+func (s *UserService) ensureIdentityBindingAvailable(ctx context.Context, userID int64, provider string) error {
+	if userID <= 0 {
+		return infraerrors.Unauthorized("INVALID_USER", "user not found")
+	}
+
+	user, err := s.GetByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	summaries, err := s.GetProfileIdentitySummaries(ctx, userID, user)
+	if err != nil {
+		return err
+	}
+
+	summary := identitySummaryForProvider(summaries, provider)
+	if summary.Bound {
+		return ErrIdentityProviderAlreadyBound
+	}
+	if !summary.CanBind {
+		return ErrIdentityProviderDisabled
+	}
+	return nil
+}
+
+func identitySummaryForProvider(summaries UserIdentitySummarySet, provider string) UserIdentitySummary {
+	switch provider {
+	case "linuxdo":
+		return summaries.LinuxDo
+	case "oidc":
+		return summaries.OIDC
+	case "wechat":
+		return summaries.WeChat
+	default:
+		return UserIdentitySummary{}
+	}
 }
 
 func (s *UserService) UnbindUserAuthProvider(ctx context.Context, userID int64, provider string) (*User, error) {

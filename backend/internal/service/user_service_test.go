@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
@@ -562,6 +563,78 @@ func TestGetProfileIdentitySummaries_UsesBindStartRoute(t *testing.T) {
 		"/api/v1/auth/oauth/wechat/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile",
 		summaries.WeChat.BindStartPath,
 	)
+}
+
+func TestPrepareIdentityBindingStart_RejectsDisabledProvider(t *testing.T) {
+	repo := &mockUserRepo{
+		getByIDUser: &User{
+			ID:       17,
+			Email:    "disabled@example.com",
+			Username: "disabled-user",
+			Role:     RoleUser,
+			Status:   StatusActive,
+		},
+		identities: []UserAuthIdentityRecord{
+			{
+				ProviderType:    "email",
+				ProviderKey:     "email",
+				ProviderSubject: "disabled@example.com",
+			},
+		},
+	}
+	settingRepo := &mockUserSettingRepo{
+		values: map[string]string{
+			SettingKeyLinuxDoConnectEnabled: "false",
+		},
+	}
+	svc := NewUserService(repo, settingRepo, nil, nil)
+
+	result, err := svc.PrepareIdentityBindingStart(context.Background(), StartUserIdentityBindingRequest{
+		UserID:     17,
+		Provider:   "linuxdo",
+		RedirectTo: "/settings/profile",
+	})
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Equal(t, 403, infraerrors.Code(err))
+	require.Equal(t, "IDENTITY_PROVIDER_DISABLED", infraerrors.Reason(err))
+}
+
+func TestPrepareIdentityBindingStart_RejectsAlreadyBoundProvider(t *testing.T) {
+	repo := &mockUserRepo{
+		getByIDUser: &User{
+			ID:       18,
+			Email:    "bound@example.com",
+			Username: "bound-user",
+			Role:     RoleUser,
+			Status:   StatusActive,
+		},
+		identities: []UserAuthIdentityRecord{
+			{
+				ProviderType:    "email",
+				ProviderKey:     "email",
+				ProviderSubject: "bound@example.com",
+			},
+			{
+				ProviderType:    "wechat",
+				ProviderKey:     "wechat",
+				ProviderSubject: "wechat-subject-123",
+			},
+		},
+	}
+	svc := NewUserService(repo, nil, nil, nil)
+
+	result, err := svc.PrepareIdentityBindingStart(context.Background(), StartUserIdentityBindingRequest{
+		UserID:     18,
+		Provider:   "wechat",
+		RedirectTo: "/settings/profile",
+	})
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Equal(t, 409, infraerrors.Code(err))
+	require.Equal(t, "IDENTITY_PROVIDER_ALREADY_BOUND", infraerrors.Reason(err))
 }
 
 func TestUpdateBalance_NilBillingCache_NoPanic(t *testing.T) {

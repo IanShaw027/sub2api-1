@@ -25,6 +25,48 @@ type userHandlerRepoStub struct {
 	unbound    []string
 }
 
+type userHandlerSettingRepoStub struct {
+	values map[string]string
+}
+
+func (s *userHandlerSettingRepoStub) Get(context.Context, string) (*service.Setting, error) {
+	return nil, service.ErrSettingNotFound
+}
+
+func (s *userHandlerSettingRepoStub) GetValue(_ context.Context, key string) (string, error) {
+	value, ok := s.values[key]
+	if !ok {
+		return "", service.ErrSettingNotFound
+	}
+	return value, nil
+}
+
+func (s *userHandlerSettingRepoStub) Set(context.Context, string, string) error { return nil }
+
+func (s *userHandlerSettingRepoStub) GetMultiple(_ context.Context, keys []string) (map[string]string, error) {
+	out := make(map[string]string, len(keys))
+	for _, key := range keys {
+		if value, ok := s.values[key]; ok {
+			out[key] = value
+		}
+	}
+	return out, nil
+}
+
+func (s *userHandlerSettingRepoStub) SetMultiple(context.Context, map[string]string) error {
+	return nil
+}
+
+func (s *userHandlerSettingRepoStub) GetAll(context.Context) (map[string]string, error) {
+	out := make(map[string]string, len(s.values))
+	for key, value := range s.values {
+		out[key] = value
+	}
+	return out, nil
+}
+
+func (s *userHandlerSettingRepoStub) Delete(context.Context, string) error { return nil }
+
 func (s *userHandlerRepoStub) Create(context.Context, *service.User) error { return nil }
 func (s *userHandlerRepoStub) GetByID(context.Context, int64) (*service.User, error) {
 	cloned := *s.user
@@ -270,19 +312,19 @@ func TestUserHandlerGetProfileReturnsLegacyCompatibilityFields(t *testing.T) {
 			AvatarURL:    "https://cdn.example.com/linuxdo.png",
 			AvatarSource: "remote_url",
 		},
-			identities: []service.UserAuthIdentityRecord{
-				{
-					ProviderType:    "linuxdo",
-					ProviderKey:     "linuxdo",
-					ProviderSubject: "linuxdo-subject-21",
-					VerifiedAt:      &verifiedAt,
-					Metadata: map[string]any{
-						"username":   "linuxdo-handle",
-						"avatar_url": "https://cdn.example.com/linuxdo.png",
-					},
+		identities: []service.UserAuthIdentityRecord{
+			{
+				ProviderType:    "linuxdo",
+				ProviderKey:     "linuxdo",
+				ProviderSubject: "linuxdo-subject-21",
+				VerifiedAt:      &verifiedAt,
+				Metadata: map[string]any{
+					"username":   "linuxdo-handle",
+					"avatar_url": "https://cdn.example.com/linuxdo.png",
 				},
 			},
-		}
+		},
+	}
 	handler := NewUserHandler(service.NewUserService(repo, nil, nil, nil), nil, nil, nil, nil)
 
 	recorder := httptest.NewRecorder()
@@ -780,4 +822,106 @@ func TestUserHandlerStartIdentityBindingReturnsAuthorizeURL(t *testing.T) {
 	require.Contains(t, resp.Data.AuthorizeURL, "/api/v1/auth/oauth/wechat/bind/start")
 	require.Contains(t, resp.Data.AuthorizeURL, "intent=bind_current_user")
 	require.Contains(t, resp.Data.AuthorizeURL, "redirect=%2Fsettings%2Fprofile")
+}
+
+func TestUserHandlerProfileAuthMutationsRejectBackendModeForNonAdmin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &userHandlerRepoStub{
+		user: &service.User{
+			ID:       11,
+			Email:    "backend-mode@example.com",
+			Username: "backend-mode-user",
+			Role:     service.RoleUser,
+			Status:   service.StatusActive,
+		},
+		identities: []service.UserAuthIdentityRecord{
+			{
+				ProviderType:    "email",
+				ProviderKey:     "email",
+				ProviderSubject: "backend-mode@example.com",
+			},
+			{
+				ProviderType:    "linuxdo",
+				ProviderKey:     "linuxdo",
+				ProviderSubject: "linuxdo-subject-123",
+			},
+		},
+	}
+	settingRepo := &userHandlerSettingRepoStub{
+		values: map[string]string{
+			service.SettingKeyBackendModeEnabled: "true",
+		},
+	}
+	handler := NewUserHandler(service.NewUserService(repo, settingRepo, nil, nil), nil, nil, nil, nil)
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+		params gin.Params
+		invoke func(*UserHandler, *gin.Context)
+	}{
+		{
+			name:   "start_identity_binding",
+			method: http.MethodPost,
+			path:   "/api/v1/user/auth-identities/bind/start",
+			body:   `{"provider":"wechat","redirect_to":"/settings/profile"}`,
+			invoke: func(h *UserHandler, c *gin.Context) { h.StartIdentityBinding(c) },
+		},
+		{
+			name:   "bind_email_identity",
+			method: http.MethodPost,
+			path:   "/api/v1/user/account-bindings/email",
+			body:   `{"email":"new@example.com","verify_code":"123456","password":"new-password"}`,
+			invoke: func(h *UserHandler, c *gin.Context) { h.BindEmailIdentity(c) },
+		},
+		{
+			name:   "send_email_binding_code",
+			method: http.MethodPost,
+			path:   "/api/v1/user/account-bindings/email/send-code",
+			body:   `{"email":"new@example.com"}`,
+			invoke: func(h *UserHandler, c *gin.Context) { h.SendEmailBindingCode(c) },
+		},
+		{
+			name:   "unbind_identity",
+			method: http.MethodDelete,
+			path:   "/api/v1/user/account-bindings/linuxdo",
+			params: gin.Params{{Key: "provider", Value: "linuxdo"}},
+			invoke: func(h *UserHandler, c *gin.Context) { h.UnbindIdentity(c) },
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var body *bytes.Reader
+			if tc.body != "" {
+				body = bytes.NewReader([]byte(tc.body))
+			} else {
+				body = bytes.NewReader(nil)
+			}
+
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(tc.method, tc.path, body)
+			c.Request.Header.Set("Content-Type", "application/json")
+			c.Params = tc.params
+			c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 11})
+
+			tc.invoke(handler, c)
+
+			require.Equal(t, http.StatusForbidden, recorder.Code)
+
+			var resp struct {
+				Code    int    `json:"code"`
+				Message string `json:"message"`
+				Reason  string `json:"reason"`
+			}
+			require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+			require.Equal(t, http.StatusForbidden, resp.Code)
+			require.Equal(t, "BACKEND_MODE_ADMIN_ONLY", resp.Reason)
+			require.Equal(t, "Backend mode is active. Only admin login is allowed.", resp.Message)
+		})
+	}
 }
