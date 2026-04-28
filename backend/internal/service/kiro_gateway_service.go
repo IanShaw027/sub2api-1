@@ -117,7 +117,7 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 		})
 		return nil, fmt.Errorf("%s", upstreamMessage)
 	}
-	inputTokens := kiropkg.EstimateInputTokens(parsed.Body)
+	inputTokens := estimateKiroInputTokens(parsed.Body)
 	if parsed.Stream {
 		return s.forwardStream(ctx, c, account, resp, parsed, converted, inputTokens, start, fakeCachePlan, fakeCacheHit, runtimeSettings)
 	}
@@ -128,9 +128,16 @@ func (s *KiroGatewayService) ForwardCountTokens(ctx context.Context, c *gin.Cont
 	if _, err := s.validateAndConvertRequest(c, account, parsed, s.resolveKiroRuntimeSettings(ctx)); err != nil {
 		return err
 	}
-	inputTokens := kiropkg.EstimateInputTokens(parsed.Body)
+	inputTokens := estimateKiroInputTokens(parsed.Body)
 	c.JSON(http.StatusOK, gin.H{"input_tokens": inputTokens})
 	return nil
+}
+
+// Kiro does not proxy an upstream count_tokens API. Both the count-tokens
+// endpoint and forwarded usage metadata intentionally share the same local
+// tiktoken-backed estimator so callers see one stable contract.
+func estimateKiroInputTokens(body []byte) int {
+	return kiropkg.EstimateInputTokens(body)
 }
 
 func (s *KiroGatewayService) validateAndConvertRequest(c *gin.Context, account *Account, parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) (*kiropkg.ConvertResult, error) {

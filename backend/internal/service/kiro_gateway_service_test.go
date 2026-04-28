@@ -472,6 +472,7 @@ func TestKiroGatewayService_ForwardCountTokens_UsesForwardValidationWithLocalEst
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{}
+	expectedInputTokens := kiropkg.AccurateTokenCount("hello from count tokens")
 
 	err := svc.ForwardCountTokens(context.Background(), c, &Account{
 		ID:       103,
@@ -487,7 +488,8 @@ func TestKiroGatewayService_ForwardCountTokens_UsesForwardValidationWithLocalEst
 
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.JSONEq(t, `{"input_tokens":6}`, rec.Body.String())
+	require.Equal(t, 4, expectedInputTokens, "fixture should lock the tiktoken-backed contract, not the legacy heuristic")
+	require.JSONEq(t, fmt.Sprintf(`{"input_tokens":%d}`, expectedInputTokens), rec.Body.String())
 }
 
 func TestKiroGatewayService_ForwardNonStream_ExceptionDoesNotCommitFakeCache(t *testing.T) {
