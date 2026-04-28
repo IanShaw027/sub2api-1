@@ -127,7 +127,7 @@ func (l refundTestLoadBalancer) SelectInstance(context.Context, string, payment.
 	panic("unexpected")
 }
 
-func TestValidateRefundRequestRejectsLegacyGuessedProviderInstance(t *testing.T) {
+func TestValidateRefundRequestAllowsUniquelyResolvedLegacyProviderInstance(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)
 
@@ -166,6 +166,7 @@ func TestValidateRefundRequestRejectsLegacyGuessedProviderInstance(t *testing.T)
 		SetPaidAt(time.Now()).
 		SetClientIP("127.0.0.1").
 		SetSrcHost("api.example.com").
+		SetProviderKey(payment.TypeAlipay).
 		Save(ctx)
 	require.NoError(t, err)
 
@@ -173,12 +174,12 @@ func TestValidateRefundRequestRejectsLegacyGuessedProviderInstance(t *testing.T)
 		entClient: client,
 	}
 
-	_, err = svc.validateRefundRequest(ctx, order.ID, user.ID)
-	require.Error(t, err)
-	require.Equal(t, "USER_REFUND_DISABLED", infraerrors.Reason(err))
+	validatedOrder, err := svc.validateRefundRequest(ctx, order.ID, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, order.ID, validatedOrder.ID)
 }
 
-func TestPrepareRefundRejectsLegacyGuessedProviderInstance(t *testing.T) {
+func TestPrepareRefundAllowsUniquelyResolvedLegacyProviderInstance(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)
 
@@ -217,6 +218,116 @@ func TestPrepareRefundRejectsLegacyGuessedProviderInstance(t *testing.T) {
 		SetPaidAt(time.Now()).
 		SetClientIP("127.0.0.1").
 		SetSrcHost("api.example.com").
+		SetProviderKey(payment.TypeAlipay).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{
+		entClient: client,
+	}
+
+	plan, result, err := svc.PrepareRefund(ctx, order.ID, 0, "", false, false)
+	require.NotNil(t, plan)
+	require.Nil(t, result)
+	require.NoError(t, err)
+	require.Equal(t, order.ID, plan.OrderID)
+	require.Equal(t, 188.0, plan.RefundAmount)
+}
+
+func TestValidateRefundRequestRejectsAmbiguousLegacyProviderInstance(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("refund-legacy-ambiguous@example.com").
+		SetPasswordHash("hash").
+		SetUsername("refund-legacy-ambiguous-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	for _, name := range []string{"alipay-refund-instance-a", "alipay-refund-instance-b"} {
+		_, err = client.PaymentProviderInstance.Create().
+			SetProviderKey(payment.TypeAlipay).
+			SetName(name).
+			SetConfig("{}").
+			SetSupportedTypes("alipay").
+			SetEnabled(true).
+			SetAllowUserRefund(true).
+			SetRefundEnabled(true).
+			Save(ctx)
+		require.NoError(t, err)
+	}
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("REFUND-LEGACY-AMBIGUOUS-ORDER").
+		SetOutTradeNo("sub2_refund_legacy_ambiguous_order").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("trade-legacy-ambiguous-refund").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusCompleted).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(time.Now()).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderKey(payment.TypeAlipay).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{
+		entClient: client,
+	}
+
+	_, err = svc.validateRefundRequest(ctx, order.ID, user.ID)
+	require.Error(t, err)
+	require.Equal(t, "USER_REFUND_DISABLED", infraerrors.Reason(err))
+}
+
+func TestPrepareRefundRejectsMismatchedLegacyProviderBinding(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("refund-legacy-mismatch@example.com").
+		SetPasswordHash("hash").
+		SetUsername("refund-legacy-mismatch-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeAlipay).
+		SetName("alipay-refund-mismatch-instance").
+		SetConfig("{}").
+		SetSupportedTypes("alipay").
+		SetEnabled(true).
+		SetAllowUserRefund(true).
+		SetRefundEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(188).
+		SetPayAmount(188).
+		SetFeeRate(0).
+		SetRechargeCode("REFUND-LEGACY-MISMATCH-ORDER").
+		SetOutTradeNo("sub2_refund_legacy_mismatch_order").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("trade-legacy-mismatch-refund").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusCompleted).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(time.Now()).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderKey(payment.TypeStripe).
 		Save(ctx)
 	require.NoError(t, err)
 

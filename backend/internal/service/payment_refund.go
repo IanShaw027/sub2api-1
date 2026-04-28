@@ -44,8 +44,9 @@ func (s *PaymentService) getOrderProviderInstance(ctx context.Context, o *dbent.
 }
 
 // getRefundOrderProviderInstance resolves the provider instance for refund paths.
-// Refunds must be pinned to an explicit historical binding, so legacy
-// "best-effort" provider guessing is intentionally not allowed here.
+// Snapshot-backed and pinned orders stay strict. Legacy orders without either
+// binding may fall back only when a single compatible historical instance can
+// be recovered from stored order fields.
 func (s *PaymentService) getRefundOrderProviderInstance(ctx context.Context, o *dbent.PaymentOrder) (*dbent.PaymentProviderInstance, error) {
 	if s == nil || s.entClient == nil || o == nil {
 		return nil, nil
@@ -57,7 +58,7 @@ func (s *PaymentService) getRefundOrderProviderInstance(ctx context.Context, o *
 
 	instIDStr := strings.TrimSpace(psStringValue(o.ProviderInstanceID))
 	if instIDStr == "" {
-		return nil, nil
+		return s.resolveUniqueLegacyOrderProviderInstance(ctx, o)
 	}
 
 	instID, err := strconv.ParseInt(instIDStr, 10, 64)
