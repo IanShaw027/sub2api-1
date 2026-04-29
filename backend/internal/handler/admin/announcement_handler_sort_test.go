@@ -2,8 +2,10 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,24 +45,42 @@ type announcementUserRepoCapture struct {
 	service.UserRepository
 	listParams  pagination.PaginationParams
 	listFilters service.UserListFilters
+	users       []service.User
 }
 
 func (r *announcementUserRepoCapture) ListWithFilters(ctx context.Context, params pagination.PaginationParams, filters service.UserListFilters) ([]service.User, *pagination.PaginationResult, error) {
 	r.listParams = params
 	r.listFilters = filters
-	return []service.User{}, &pagination.PaginationResult{
-		Total:    0,
+	filtered := make([]service.User, 0, len(r.users))
+	needle := strings.ToLower(strings.TrimSpace(filters.Search))
+	for _, user := range r.users {
+		if needle != "" {
+			email := strings.ToLower(user.Email)
+			username := strings.ToLower(user.Username)
+			if !strings.Contains(email, needle) && !strings.Contains(username, needle) {
+				continue
+			}
+		}
+		filtered = append(filtered, user)
+	}
+
+	return filtered, &pagination.PaginationResult{
+		Total:    int64(len(filtered)),
 		Page:     params.Page,
 		PageSize: params.PageSize,
-		Pages:    0,
+		Pages:    1,
 	}, nil
 }
 
 type announcementReadRepoCapture struct {
 	service.AnnouncementReadRepository
+	readMapByUsers map[int64]time.Time
 }
 
 func (r *announcementReadRepoCapture) GetReadMapByUsers(ctx context.Context, announcementID int64, userIDs []int64) (map[int64]time.Time, error) {
+	if r.readMapByUsers != nil {
+		return r.readMapByUsers, nil
+	}
 	return map[int64]time.Time{}, nil
 }
 
@@ -68,11 +88,19 @@ type announcementUserSubRepoCapture struct {
 	service.UserSubscriptionRepository
 }
 
+func (r *announcementUserSubRepoCapture) ListActiveByUserID(ctx context.Context, userID int64) ([]service.UserSubscription, error) {
+	return nil, nil
+}
+
 func newAnnouncementSortTestRouter(announcementRepo *announcementRepoCapture, userRepo *announcementUserRepoCapture) *gin.Engine {
+	return newAnnouncementSortTestRouterWithReadMap(announcementRepo, userRepo, nil)
+}
+
+func newAnnouncementSortTestRouterWithReadMap(announcementRepo *announcementRepoCapture, userRepo *announcementUserRepoCapture, readMap map[int64]time.Time) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	svc := service.NewAnnouncementService(
 		announcementRepo,
-		&announcementReadRepoCapture{},
+		&announcementReadRepoCapture{readMapByUsers: readMap},
 		userRepo,
 		&announcementUserSubRepoCapture{},
 	)
@@ -141,16 +169,33 @@ func TestAdminAnnouncementReadStatusSortDefaults(t *testing.T) {
 
 func TestAdminAnnouncementReadStatusFilterParams(t *testing.T) {
 	announcementRepo := &announcementRepoCapture{}
-	userRepo := &announcementUserRepoCapture{}
-	router := newAnnouncementSortTestRouter(announcementRepo, userRepo)
+	userRepo := &announcementUserRepoCapture{
+		users: []service.User{
+			{ID: 1, Email: "alice-unread@example.com", Username: "alice"},
+			{ID: 2, Email: "alice-read@example.com", Username: "alice"},
+			{ID: 3, Email: "bob-unread@example.com", Username: "bob"},
+		},
+	}
+	router := newAnnouncementSortTestRouterWithReadMap(announcementRepo, userRepo, map[int64]time.Time{
+		2: time.Unix(1776790020, 0),
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/announcements/1/read-status?read_status=unread&search=alice", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.Equal(t, service.AnnouncementReadStatusUnread, userRepo.listFilters.AnnouncementReadStatus)
-	require.NotNil(t, userRepo.listFilters.AnnouncementID)
-	require.EqualValues(t, 1, *userRepo.listFilters.AnnouncementID)
 	require.Equal(t, "alice", userRepo.listFilters.Search)
+
+	var body struct {
+		Data struct {
+			Items []service.AnnouncementUserReadStatus `json:"items"`
+			Total int64                                `json:"total"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.EqualValues(t, 1, body.Data.Total)
+	require.Len(t, body.Data.Items, 1)
+	require.EqualValues(t, 1, body.Data.Items[0].UserID)
+	require.Nil(t, body.Data.Items[0].ReadAt)
 }
