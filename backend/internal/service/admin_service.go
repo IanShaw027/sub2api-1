@@ -69,6 +69,7 @@ type AdminService interface {
 	GetAccountsByIDs(ctx context.Context, ids []int64) ([]*Account, error)
 	CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error)
 	UpdateAccount(ctx context.Context, id int64, input *UpdateAccountInput) (*Account, error)
+	UpdateAccountExtra(ctx context.Context, id int64, updates map[string]any) error
 	DeleteAccount(ctx context.Context, id int64) error
 	RefreshAccountCredentials(ctx context.Context, id int64) (*Account, error)
 	ClearAccountError(ctx context.Context, id int64) (*Account, error)
@@ -194,11 +195,14 @@ type CreateGroupInput struct {
 	WeeklyLimitUSD   *float64 // 周限额 (USD)
 	MonthlyLimitUSD  *float64 // 月限额 (USD)
 	// 图片生成计费配置（仅 antigravity 平台使用）
-	ImagePrice1K    *float64
-	ImagePrice2K    *float64
-	ImagePrice4K    *float64
-	ClaudeCodeOnly  bool   // 仅允许 Claude Code 客户端
-	FallbackGroupID *int64 // 降级分组 ID
+	ImagePrice1K      *float64
+	ImagePrice2K      *float64
+	ImagePrice4K      *float64
+	Images2APIPrice1K *float64
+	Images2APIPrice2K *float64
+	Images2APIPrice4K *float64
+	ClaudeCodeOnly    bool   // 仅允许 Claude Code 客户端
+	FallbackGroupID   *int64 // 降级分组 ID
 	// 无效请求兜底分组 ID（仅 anthropic 平台使用）
 	FallbackGroupIDOnInvalidRequest *int64
 	// 模型路由配置（仅 anthropic 平台使用）
@@ -231,11 +235,14 @@ type UpdateGroupInput struct {
 	WeeklyLimitUSD   *float64 // 周限额 (USD)
 	MonthlyLimitUSD  *float64 // 月限额 (USD)
 	// 图片生成计费配置（仅 antigravity 平台使用）
-	ImagePrice1K    *float64
-	ImagePrice2K    *float64
-	ImagePrice4K    *float64
-	ClaudeCodeOnly  *bool  // 仅允许 Claude Code 客户端
-	FallbackGroupID *int64 // 降级分组 ID
+	ImagePrice1K      *float64
+	ImagePrice2K      *float64
+	ImagePrice4K      *float64
+	Images2APIPrice1K *float64
+	Images2APIPrice2K *float64
+	Images2APIPrice4K *float64
+	ClaudeCodeOnly    *bool  // 仅允许 Claude Code 客户端
+	FallbackGroupID   *int64 // 降级分组 ID
 	// 无效请求兜底分组 ID（仅 anthropic 平台使用）
 	FallbackGroupIDOnInvalidRequest *int64
 	// 模型路由配置（仅 anthropic 平台使用）
@@ -1426,6 +1433,9 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	imagePrice1K := normalizePrice(input.ImagePrice1K)
 	imagePrice2K := normalizePrice(input.ImagePrice2K)
 	imagePrice4K := normalizePrice(input.ImagePrice4K)
+	images2APIPrice1K := normalizePrice(input.Images2APIPrice1K)
+	images2APIPrice2K := normalizePrice(input.Images2APIPrice2K)
+	images2APIPrice4K := normalizePrice(input.Images2APIPrice4K)
 
 	// 校验降级分组
 	if input.FallbackGroupID != nil {
@@ -1496,6 +1506,9 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		ImagePrice1K:                    imagePrice1K,
 		ImagePrice2K:                    imagePrice2K,
 		ImagePrice4K:                    imagePrice4K,
+		Images2APIPrice1K:               images2APIPrice1K,
+		Images2APIPrice2K:               images2APIPrice2K,
+		Images2APIPrice4K:               images2APIPrice4K,
 		ClaudeCodeOnly:                  input.ClaudeCodeOnly,
 		FallbackGroupID:                 input.FallbackGroupID,
 		FallbackGroupIDOnInvalidRequest: fallbackOnInvalidRequest,
@@ -1677,6 +1690,15 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	if input.ImagePrice4K != nil {
 		group.ImagePrice4K = normalizePrice(input.ImagePrice4K)
+	}
+	if input.Images2APIPrice1K != nil {
+		group.Images2APIPrice1K = normalizePrice(input.Images2APIPrice1K)
+	}
+	if input.Images2APIPrice2K != nil {
+		group.Images2APIPrice2K = normalizePrice(input.Images2APIPrice2K)
+	}
+	if input.Images2APIPrice4K != nil {
+		group.Images2APIPrice4K = normalizePrice(input.Images2APIPrice4K)
 	}
 
 	// Claude Code 客户端限制
@@ -2142,6 +2164,10 @@ func (s *adminServiceImpl) GetAccountsByIDs(ctx context.Context, ids []int64) ([
 	}
 
 	return accounts, nil
+}
+
+func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, updates map[string]any) error {
+	return s.accountRepo.UpdateExtra(ctx, id, updates)
 }
 
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {

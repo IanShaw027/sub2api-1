@@ -480,6 +480,8 @@ const getRequestTypeLabel = (log: AdminUsageLog): string => {
   const requestType = resolveUsageRequestType(log)
   if (requestType === 'ws_v2') return t('usage.ws')
   if (requestType === 'stream') return t('usage.stream')
+  if (requestType === 'image_web_bridge') return t('usage.imageWebBridge')
+  if (requestType === 'image') return t('usage.image')
   if (requestType === 'sync') return t('usage.sync')
   return t('usage.unknown')
 }

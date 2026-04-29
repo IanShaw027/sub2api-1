@@ -176,6 +176,33 @@ func TestAdminService_CreateGroup_WithImagePricing(t *testing.T) {
 	require.InDelta(t, 0.30, *repo.created.ImagePrice4K, 0.0001)
 }
 
+func TestAdminService_CreateGroup_WithImages2APIImagePricing(t *testing.T) {
+	repo := &groupRepoStubForAdmin{}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	price1K := 0.11
+	price2K := 0.22
+	price4K := 0.44
+
+	group, err := svc.CreateGroup(context.Background(), &CreateGroupInput{
+		Name:              "test-group",
+		Platform:          PlatformOpenAI,
+		RateMultiplier:    1.0,
+		Images2APIPrice1K: &price1K,
+		Images2APIPrice2K: &price2K,
+		Images2APIPrice4K: &price4K,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, group)
+	require.NotNil(t, repo.created)
+	require.NotNil(t, repo.created.Images2APIPrice1K)
+	require.NotNil(t, repo.created.Images2APIPrice2K)
+	require.NotNil(t, repo.created.Images2APIPrice4K)
+	require.InDelta(t, 0.11, *repo.created.Images2APIPrice1K, 0.0001)
+	require.InDelta(t, 0.22, *repo.created.Images2APIPrice2K, 0.0001)
+	require.InDelta(t, 0.44, *repo.created.Images2APIPrice4K, 0.0001)
+}
+
 // TestAdminService_CreateGroup_NilImagePricing 测试 ImagePrice 为 nil 时正常创建
 func TestAdminService_CreateGroup_NilImagePricing(t *testing.T) {
 	repo := &groupRepoStubForAdmin{}
@@ -266,6 +293,36 @@ func TestAdminService_UpdateGroup_PartialImagePricing(t *testing.T) {
 	require.NotNil(t, repo.updated.ImagePrice2K)
 	require.InDelta(t, 0.15, *repo.updated.ImagePrice2K, 0.0001) // 原值保持
 	require.Nil(t, repo.updated.ImagePrice4K)
+}
+
+func TestAdminService_UpdateGroup_WithImages2APIImagePricing(t *testing.T) {
+	existingGroup := &Group{
+		ID:       1,
+		Name:     "existing-group",
+		Platform: PlatformOpenAI,
+		Status:   StatusActive,
+	}
+	repo := &groupRepoStubForAdmin{getByID: existingGroup}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	price1K := 0.13
+	price2K := 0.26
+	price4K := 0.52
+
+	group, err := svc.UpdateGroup(context.Background(), 1, &UpdateGroupInput{
+		Images2APIPrice1K: &price1K,
+		Images2APIPrice2K: &price2K,
+		Images2APIPrice4K: &price4K,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, group)
+	require.NotNil(t, repo.updated)
+	require.NotNil(t, repo.updated.Images2APIPrice1K)
+	require.NotNil(t, repo.updated.Images2APIPrice2K)
+	require.NotNil(t, repo.updated.Images2APIPrice4K)
+	require.InDelta(t, 0.13, *repo.updated.Images2APIPrice1K, 0.0001)
+	require.InDelta(t, 0.26, *repo.updated.Images2APIPrice2K, 0.0001)
+	require.InDelta(t, 0.52, *repo.updated.Images2APIPrice4K, 0.0001)
 }
 
 func TestAdminService_UpdateGroup_InvalidatesAuthCacheOnRPMLimitChange(t *testing.T) {

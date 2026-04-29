@@ -53,6 +53,9 @@ func (r *groupRepository) Create(ctx context.Context, groupIn *service.Group) er
 		SetNillableImagePrice1k(groupIn.ImagePrice1K).
 		SetNillableImagePrice2k(groupIn.ImagePrice2K).
 		SetNillableImagePrice4k(groupIn.ImagePrice4K).
+		SetNillableImages2apiPrice1k(groupIn.Images2APIPrice1K).
+		SetNillableImages2apiPrice2k(groupIn.Images2APIPrice2K).
+		SetNillableImages2apiPrice4k(groupIn.Images2APIPrice4K).
 		SetDefaultValidityDays(groupIn.DefaultValidityDays).
 		SetClaudeCodeOnly(groupIn.ClaudeCodeOnly).
 		SetNillableFallbackGroupID(groupIn.FallbackGroupID).
@@ -123,6 +126,9 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 		SetNillableImagePrice1k(groupIn.ImagePrice1K).
 		SetNillableImagePrice2k(groupIn.ImagePrice2K).
 		SetNillableImagePrice4k(groupIn.ImagePrice4K).
+		SetNillableImages2apiPrice1k(groupIn.Images2APIPrice1K).
+		SetNillableImages2apiPrice2k(groupIn.Images2APIPrice2K).
+		SetNillableImages2apiPrice4k(groupIn.Images2APIPrice4K).
 		SetDefaultValidityDays(groupIn.DefaultValidityDays).
 		SetClaudeCodeOnly(groupIn.ClaudeCodeOnly).
 		SetModelRoutingEnabled(groupIn.ModelRoutingEnabled).
@@ -164,6 +170,21 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 		builder = builder.SetImagePrice4k(*groupIn.ImagePrice4K)
 	} else {
 		builder = builder.ClearImagePrice4k()
+	}
+	if groupIn.Images2APIPrice1K != nil {
+		builder = builder.SetImages2apiPrice1k(*groupIn.Images2APIPrice1K)
+	} else {
+		builder = builder.ClearImages2apiPrice1k()
+	}
+	if groupIn.Images2APIPrice2K != nil {
+		builder = builder.SetImages2apiPrice2k(*groupIn.Images2APIPrice2K)
+	} else {
+		builder = builder.ClearImages2apiPrice2k()
+	}
+	if groupIn.Images2APIPrice4K != nil {
+		builder = builder.SetImages2apiPrice4k(*groupIn.Images2APIPrice4K)
+	} else {
+		builder = builder.ClearImages2apiPrice4k()
 	}
 
 	// 处理 FallbackGroupID：nil 时清除，否则设置

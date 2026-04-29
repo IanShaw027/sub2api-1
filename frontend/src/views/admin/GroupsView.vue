@@ -665,9 +665,15 @@
           >
             {{ t("admin.groups.imagePricing.title") }}
           </label>
-          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+          <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
             {{ t("admin.groups.imagePricing.description") }}
           </p>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            {{ t("admin.groups.imagePricing.fixedHint") }}
+          </p>
+          <div class="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+            {{ t("admin.groups.imagePricing.images") }}
+          </div>
           <div class="grid grid-cols-3 gap-3">
             <div>
               <label class="input-label">1K ($)</label>
@@ -695,6 +701,44 @@
               <label class="input-label">4K ($)</label>
               <input
                 v-model.number="createForm.image_price_4k"
+                type="number"
+                step="0.001"
+                min="0"
+                class="input"
+                placeholder="0.268"
+              />
+            </div>
+          </div>
+          <div class="mt-4 mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+            {{ t("admin.groups.imagePricing.images2api") }}
+          </div>
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="input-label">1K ($)</label>
+              <input
+                v-model.number="createForm.images2api_price_1k"
+                type="number"
+                step="0.001"
+                min="0"
+                class="input"
+                placeholder="0.134"
+              />
+            </div>
+            <div>
+              <label class="input-label">2K ($)</label>
+              <input
+                v-model.number="createForm.images2api_price_2k"
+                type="number"
+                step="0.001"
+                min="0"
+                class="input"
+                placeholder="0.201"
+              />
+            </div>
+            <div>
+              <label class="input-label">4K ($)</label>
+              <input
+                v-model.number="createForm.images2api_price_4k"
                 type="number"
                 step="0.001"
                 min="0"
@@ -1803,9 +1847,15 @@
           >
             {{ t("admin.groups.imagePricing.title") }}
           </label>
-          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+          <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
             {{ t("admin.groups.imagePricing.description") }}
           </p>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            {{ t("admin.groups.imagePricing.fixedHint") }}
+          </p>
+          <div class="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+            {{ t("admin.groups.imagePricing.images") }}
+          </div>
           <div class="grid grid-cols-3 gap-3">
             <div>
               <label class="input-label">1K ($)</label>
@@ -1833,6 +1883,44 @@
               <label class="input-label">4K ($)</label>
               <input
                 v-model.number="editForm.image_price_4k"
+                type="number"
+                step="0.001"
+                min="0"
+                class="input"
+                placeholder="0.268"
+              />
+            </div>
+          </div>
+          <div class="mt-4 mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+            {{ t("admin.groups.imagePricing.images2api") }}
+          </div>
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="input-label">1K ($)</label>
+              <input
+                v-model.number="editForm.images2api_price_1k"
+                type="number"
+                step="0.001"
+                min="0"
+                class="input"
+                placeholder="0.134"
+              />
+            </div>
+            <div>
+              <label class="input-label">2K ($)</label>
+              <input
+                v-model.number="editForm.images2api_price_2k"
+                type="number"
+                step="0.001"
+                min="0"
+                class="input"
+                placeholder="0.201"
+              />
+            </div>
+            <div>
+              <label class="input-label">4K ($)</label>
+              <input
+                v-model.number="editForm.images2api_price_4k"
                 type="number"
                 step="0.001"
                 min="0"
@@ -3023,6 +3111,9 @@ const createForm = reactive({
   image_price_1k: null as number | null,
   image_price_2k: null as number | null,
   image_price_4k: null as number | null,
+  images2api_price_1k: null as number | null,
+  images2api_price_2k: null as number | null,
+  images2api_price_4k: null as number | null,
   // Claude Code 客户端限制（仅 anthropic 平台使用）
   claude_code_only: false,
   fallback_group_id: null as number | null,
@@ -3305,6 +3396,9 @@ const editForm = reactive({
   image_price_1k: null as number | null,
   image_price_2k: null as number | null,
   image_price_4k: null as number | null,
+  images2api_price_1k: null as number | null,
+  images2api_price_2k: null as number | null,
+  images2api_price_4k: null as number | null,
   // Claude Code 客户端限制（仅 anthropic 平台使用）
   claude_code_only: false,
   fallback_group_id: null as number | null,
@@ -3492,6 +3586,9 @@ const closeCreateModal = () => {
   createForm.image_price_1k = null;
   createForm.image_price_2k = null;
   createForm.image_price_4k = null;
+  createForm.images2api_price_1k = null;
+  createForm.images2api_price_2k = null;
+  createForm.images2api_price_4k = null;
   createForm.claude_code_only = false;
   createForm.fallback_group_id = null;
   createForm.fallback_group_id_on_invalid_request = null;
@@ -3504,7 +3601,7 @@ const closeCreateModal = () => {
   createModelRoutingRules.value = [];
 };
 
-const normalizeOptionalLimit = (
+const normalizeOptionalPositiveNumber = (
   value: number | string | null | undefined,
 ): number | null => {
   if (value === null || value === undefined) {
@@ -3522,6 +3619,9 @@ const normalizeOptionalLimit = (
 
   return Number.isFinite(value) && value > 0 ? value : null;
 };
+
+const normalizeOptionalLimit = normalizeOptionalPositiveNumber;
+const normalizeOptionalImagePrice = normalizeOptionalPositiveNumber;
 
 const handleCreateGroup = async () => {
   if (!createForm.name.trim()) {
@@ -3561,6 +3661,12 @@ const handleCreateGroup = async () => {
     requestData.daily_limit_usd = emptyToNull(requestData.daily_limit_usd);
     requestData.weekly_limit_usd = emptyToNull(requestData.weekly_limit_usd);
     requestData.monthly_limit_usd = emptyToNull(requestData.monthly_limit_usd);
+    requestData.image_price_1k = normalizeOptionalImagePrice(requestData.image_price_1k);
+    requestData.image_price_2k = normalizeOptionalImagePrice(requestData.image_price_2k);
+    requestData.image_price_4k = normalizeOptionalImagePrice(requestData.image_price_4k);
+    requestData.images2api_price_1k = normalizeOptionalImagePrice(requestData.images2api_price_1k);
+    requestData.images2api_price_2k = normalizeOptionalImagePrice(requestData.images2api_price_2k);
+    requestData.images2api_price_4k = normalizeOptionalImagePrice(requestData.images2api_price_4k);
     await adminAPI.groups.create(requestData);
     appStore.showSuccess(t("admin.groups.groupCreated"));
     closeCreateModal();
@@ -3595,6 +3701,9 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.image_price_1k = group.image_price_1k;
   editForm.image_price_2k = group.image_price_2k;
   editForm.image_price_4k = group.image_price_4k;
+  editForm.images2api_price_1k = group.images2api_price_1k;
+  editForm.images2api_price_2k = group.images2api_price_2k;
+  editForm.images2api_price_4k = group.images2api_price_4k;
   editForm.claude_code_only = group.claude_code_only || false;
   editForm.fallback_group_id = group.fallback_group_id;
   editForm.fallback_group_id_on_invalid_request =
@@ -3687,6 +3796,12 @@ const handleUpdateGroup = async () => {
     payload.daily_limit_usd = emptyToNull(payload.daily_limit_usd);
     payload.weekly_limit_usd = emptyToNull(payload.weekly_limit_usd);
     payload.monthly_limit_usd = emptyToNull(payload.monthly_limit_usd);
+    payload.image_price_1k = normalizeOptionalImagePrice(payload.image_price_1k);
+    payload.image_price_2k = normalizeOptionalImagePrice(payload.image_price_2k);
+    payload.image_price_4k = normalizeOptionalImagePrice(payload.image_price_4k);
+    payload.images2api_price_1k = normalizeOptionalImagePrice(payload.images2api_price_1k);
+    payload.images2api_price_2k = normalizeOptionalImagePrice(payload.images2api_price_2k);
+    payload.images2api_price_4k = normalizeOptionalImagePrice(payload.images2api_price_4k);
     await adminAPI.groups.update(editingGroup.value.id, payload);
     appStore.showSuccess(t("admin.groups.groupUpdated"));
     closeEditModal();

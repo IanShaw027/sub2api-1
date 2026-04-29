@@ -356,6 +356,87 @@ func (_u *GroupUpdate) ClearImagePrice4k() *GroupUpdate {
 	return _u
 }
 
+// SetImages2apiPrice1k sets the "images2api_price_1k" field.
+func (_u *GroupUpdate) SetImages2apiPrice1k(v float64) *GroupUpdate {
+	_u.mutation.ResetImages2apiPrice1k()
+	_u.mutation.SetImages2apiPrice1k(v)
+	return _u
+}
+
+// SetNillableImages2apiPrice1k sets the "images2api_price_1k" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableImages2apiPrice1k(v *float64) *GroupUpdate {
+	if v != nil {
+		_u.SetImages2apiPrice1k(*v)
+	}
+	return _u
+}
+
+// AddImages2apiPrice1k adds value to the "images2api_price_1k" field.
+func (_u *GroupUpdate) AddImages2apiPrice1k(v float64) *GroupUpdate {
+	_u.mutation.AddImages2apiPrice1k(v)
+	return _u
+}
+
+// ClearImages2apiPrice1k clears the value of the "images2api_price_1k" field.
+func (_u *GroupUpdate) ClearImages2apiPrice1k() *GroupUpdate {
+	_u.mutation.ClearImages2apiPrice1k()
+	return _u
+}
+
+// SetImages2apiPrice2k sets the "images2api_price_2k" field.
+func (_u *GroupUpdate) SetImages2apiPrice2k(v float64) *GroupUpdate {
+	_u.mutation.ResetImages2apiPrice2k()
+	_u.mutation.SetImages2apiPrice2k(v)
+	return _u
+}
+
+// SetNillableImages2apiPrice2k sets the "images2api_price_2k" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableImages2apiPrice2k(v *float64) *GroupUpdate {
+	if v != nil {
+		_u.SetImages2apiPrice2k(*v)
+	}
+	return _u
+}
+
+// AddImages2apiPrice2k adds value to the "images2api_price_2k" field.
+func (_u *GroupUpdate) AddImages2apiPrice2k(v float64) *GroupUpdate {
+	_u.mutation.AddImages2apiPrice2k(v)
+	return _u
+}
+
+// ClearImages2apiPrice2k clears the value of the "images2api_price_2k" field.
+func (_u *GroupUpdate) ClearImages2apiPrice2k() *GroupUpdate {
+	_u.mutation.ClearImages2apiPrice2k()
+	return _u
+}
+
+// SetImages2apiPrice4k sets the "images2api_price_4k" field.
+func (_u *GroupUpdate) SetImages2apiPrice4k(v float64) *GroupUpdate {
+	_u.mutation.ResetImages2apiPrice4k()
+	_u.mutation.SetImages2apiPrice4k(v)
+	return _u
+}
+
+// SetNillableImages2apiPrice4k sets the "images2api_price_4k" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableImages2apiPrice4k(v *float64) *GroupUpdate {
+	if v != nil {
+		_u.SetImages2apiPrice4k(*v)
+	}
+	return _u
+}
+
+// AddImages2apiPrice4k adds value to the "images2api_price_4k" field.
+func (_u *GroupUpdate) AddImages2apiPrice4k(v float64) *GroupUpdate {
+	_u.mutation.AddImages2apiPrice4k(v)
+	return _u
+}
+
+// ClearImages2apiPrice4k clears the value of the "images2api_price_4k" field.
+func (_u *GroupUpdate) ClearImages2apiPrice4k() *GroupUpdate {
+	_u.mutation.ClearImages2apiPrice4k()
+	return _u
+}
+
 // SetClaudeCodeOnly sets the "claude_code_only" field.
 func (_u *GroupUpdate) SetClaudeCodeOnly(v bool) *GroupUpdate {
 	_u.mutation.SetClaudeCodeOnly(v)
@@ -988,6 +1069,33 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.ImagePrice4kCleared() {
 		_spec.ClearField(group.FieldImagePrice4k, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.Images2apiPrice1k(); ok {
+		_spec.SetField(group.FieldImages2apiPrice1k, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedImages2apiPrice1k(); ok {
+		_spec.AddField(group.FieldImages2apiPrice1k, field.TypeFloat64, value)
+	}
+	if _u.mutation.Images2apiPrice1kCleared() {
+		_spec.ClearField(group.FieldImages2apiPrice1k, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.Images2apiPrice2k(); ok {
+		_spec.SetField(group.FieldImages2apiPrice2k, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedImages2apiPrice2k(); ok {
+		_spec.AddField(group.FieldImages2apiPrice2k, field.TypeFloat64, value)
+	}
+	if _u.mutation.Images2apiPrice2kCleared() {
+		_spec.ClearField(group.FieldImages2apiPrice2k, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.Images2apiPrice4k(); ok {
+		_spec.SetField(group.FieldImages2apiPrice4k, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedImages2apiPrice4k(); ok {
+		_spec.AddField(group.FieldImages2apiPrice4k, field.TypeFloat64, value)
+	}
+	if _u.mutation.Images2apiPrice4kCleared() {
+		_spec.ClearField(group.FieldImages2apiPrice4k, field.TypeFloat64)
 	}
 	if value, ok := _u.mutation.ClaudeCodeOnly(); ok {
 		_spec.SetField(group.FieldClaudeCodeOnly, field.TypeBool, value)
@@ -1691,6 +1799,87 @@ func (_u *GroupUpdateOne) ClearImagePrice4k() *GroupUpdateOne {
 	return _u
 }
 
+// SetImages2apiPrice1k sets the "images2api_price_1k" field.
+func (_u *GroupUpdateOne) SetImages2apiPrice1k(v float64) *GroupUpdateOne {
+	_u.mutation.ResetImages2apiPrice1k()
+	_u.mutation.SetImages2apiPrice1k(v)
+	return _u
+}
+
+// SetNillableImages2apiPrice1k sets the "images2api_price_1k" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableImages2apiPrice1k(v *float64) *GroupUpdateOne {
+	if v != nil {
+		_u.SetImages2apiPrice1k(*v)
+	}
+	return _u
+}
+
+// AddImages2apiPrice1k adds value to the "images2api_price_1k" field.
+func (_u *GroupUpdateOne) AddImages2apiPrice1k(v float64) *GroupUpdateOne {
+	_u.mutation.AddImages2apiPrice1k(v)
+	return _u
+}
+
+// ClearImages2apiPrice1k clears the value of the "images2api_price_1k" field.
+func (_u *GroupUpdateOne) ClearImages2apiPrice1k() *GroupUpdateOne {
+	_u.mutation.ClearImages2apiPrice1k()
+	return _u
+}
+
+// SetImages2apiPrice2k sets the "images2api_price_2k" field.
+func (_u *GroupUpdateOne) SetImages2apiPrice2k(v float64) *GroupUpdateOne {
+	_u.mutation.ResetImages2apiPrice2k()
+	_u.mutation.SetImages2apiPrice2k(v)
+	return _u
+}
+
+// SetNillableImages2apiPrice2k sets the "images2api_price_2k" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableImages2apiPrice2k(v *float64) *GroupUpdateOne {
+	if v != nil {
+		_u.SetImages2apiPrice2k(*v)
+	}
+	return _u
+}
+
+// AddImages2apiPrice2k adds value to the "images2api_price_2k" field.
+func (_u *GroupUpdateOne) AddImages2apiPrice2k(v float64) *GroupUpdateOne {
+	_u.mutation.AddImages2apiPrice2k(v)
+	return _u
+}
+
+// ClearImages2apiPrice2k clears the value of the "images2api_price_2k" field.
+func (_u *GroupUpdateOne) ClearImages2apiPrice2k() *GroupUpdateOne {
+	_u.mutation.ClearImages2apiPrice2k()
+	return _u
+}
+
+// SetImages2apiPrice4k sets the "images2api_price_4k" field.
+func (_u *GroupUpdateOne) SetImages2apiPrice4k(v float64) *GroupUpdateOne {
+	_u.mutation.ResetImages2apiPrice4k()
+	_u.mutation.SetImages2apiPrice4k(v)
+	return _u
+}
+
+// SetNillableImages2apiPrice4k sets the "images2api_price_4k" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableImages2apiPrice4k(v *float64) *GroupUpdateOne {
+	if v != nil {
+		_u.SetImages2apiPrice4k(*v)
+	}
+	return _u
+}
+
+// AddImages2apiPrice4k adds value to the "images2api_price_4k" field.
+func (_u *GroupUpdateOne) AddImages2apiPrice4k(v float64) *GroupUpdateOne {
+	_u.mutation.AddImages2apiPrice4k(v)
+	return _u
+}
+
+// ClearImages2apiPrice4k clears the value of the "images2api_price_4k" field.
+func (_u *GroupUpdateOne) ClearImages2apiPrice4k() *GroupUpdateOne {
+	_u.mutation.ClearImages2apiPrice4k()
+	return _u
+}
+
 // SetClaudeCodeOnly sets the "claude_code_only" field.
 func (_u *GroupUpdateOne) SetClaudeCodeOnly(v bool) *GroupUpdateOne {
 	_u.mutation.SetClaudeCodeOnly(v)
@@ -2353,6 +2542,33 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if _u.mutation.ImagePrice4kCleared() {
 		_spec.ClearField(group.FieldImagePrice4k, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.Images2apiPrice1k(); ok {
+		_spec.SetField(group.FieldImages2apiPrice1k, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedImages2apiPrice1k(); ok {
+		_spec.AddField(group.FieldImages2apiPrice1k, field.TypeFloat64, value)
+	}
+	if _u.mutation.Images2apiPrice1kCleared() {
+		_spec.ClearField(group.FieldImages2apiPrice1k, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.Images2apiPrice2k(); ok {
+		_spec.SetField(group.FieldImages2apiPrice2k, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedImages2apiPrice2k(); ok {
+		_spec.AddField(group.FieldImages2apiPrice2k, field.TypeFloat64, value)
+	}
+	if _u.mutation.Images2apiPrice2kCleared() {
+		_spec.ClearField(group.FieldImages2apiPrice2k, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.Images2apiPrice4k(); ok {
+		_spec.SetField(group.FieldImages2apiPrice4k, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedImages2apiPrice4k(); ok {
+		_spec.AddField(group.FieldImages2apiPrice4k, field.TypeFloat64, value)
+	}
+	if _u.mutation.Images2apiPrice4kCleared() {
+		_spec.ClearField(group.FieldImages2apiPrice4k, field.TypeFloat64)
 	}
 	if value, ok := _u.mutation.ClaudeCodeOnly(); ok {
 		_spec.SetField(group.FieldClaudeCodeOnly, field.TypeBool, value)
