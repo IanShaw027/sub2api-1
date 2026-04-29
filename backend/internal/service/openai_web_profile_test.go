@@ -38,9 +38,8 @@ func TestOpenAIWebProfileResolveJSONBMapAndHeaders(t *testing.T) {
 				"height":              float64(900),
 				"device_scale_factor": float64(2),
 			},
-			"oai_device_id":      "device-123",
-			"oai_session_id":     "session-456",
-			"chatgpt_account_id": "account-789",
+			"oai_device_id":  "device-123",
+			"oai_session_id": "session-456",
 			"cookies": []any{
 				map[string]any{
 					"name":      "__Host-next-auth.csrf-token",
@@ -70,7 +69,6 @@ func TestOpenAIWebProfileResolveJSONBMapAndHeaders(t *testing.T) {
 	require.Equal(t, 2.0, profile.Viewport.DeviceScaleFactor)
 	require.Equal(t, "device-123", profile.OAIDeviceID)
 	require.Equal(t, "session-456", profile.OAISessionID)
-	require.Equal(t, "account-789", profile.ChatGPTAccountID)
 	require.Len(t, profile.Cookies, 1)
 	require.True(t, profile.Cookies[0].HTTPOnly)
 	require.Equal(t, "Lax", profile.Cookies[0].SameSite)
@@ -280,4 +278,67 @@ func TestOpenAIWebProfileReturnsOAIDeviceAndSessionIDs(t *testing.T) {
 	require.NotNil(t, profile)
 	require.Equal(t, "device-id", profile.OAIDeviceID)
 	require.Equal(t, "session-id", profile.OAISessionID)
+}
+
+func TestNormalizeOpenAIWebProfileExtraBuildsFromCredentialsAndCookies(t *testing.T) {
+	extra := NormalizeOpenAIWebProfileExtra(PlatformOpenAI, AccountTypeOAuth, map[string]any{
+		"user_agent":         "Mozilla/5.0 OAuth",
+		"accept_language":    "en-US,en;q=0.9",
+		"sec_ch_ua":          `"Chromium";v="136"`,
+		"chatgpt_account_id": "credential-account-id",
+	}, map[string]any{
+		"cookies": []any{
+			map[string]any{"name": "oai-did", "value": "device-cookie", "domain": ".chatgpt.com", "path": "/"},
+		},
+	})
+
+	profile := ResolveOpenAIWebProfile(&Account{Extra: extra})
+	require.NotNil(t, profile)
+	require.Equal(t, "Mozilla/5.0 OAuth", profile.UserAgent)
+	require.Equal(t, "en-US,en;q=0.9", profile.AcceptLanguage)
+	require.Equal(t, `"Chromium";v="136"`, profile.SecCHUA)
+	require.Equal(t, "device-cookie", profile.OAIDeviceID)
+	require.Len(t, profile.Cookies, 1)
+	_, hasAccountID := extra["web_profile"].(map[string]any)["chatgpt_account_id"]
+	require.False(t, hasAccountID)
+}
+
+func TestNormalizeOpenAIWebProfileExtraUsesStorageStateCookies(t *testing.T) {
+	extra := NormalizeOpenAIWebProfileExtra(PlatformOpenAI, AccountTypeOAuth, nil, map[string]any{
+		"storage_state": map[string]any{
+			"cookies": []any{
+				map[string]any{"name": "oai-did", "value": "device-storage", "domain": ".chatgpt.com", "path": "/"},
+			},
+		},
+	})
+
+	profile := ResolveOpenAIWebProfile(&Account{Extra: extra})
+	require.NotNil(t, profile)
+	require.Equal(t, "device-storage", profile.OAIDeviceID)
+	require.Len(t, profile.Cookies, 1)
+}
+
+func TestNormalizeOpenAIWebProfileExtraPreservesUnknownWebProfileFields(t *testing.T) {
+	extra := NormalizeOpenAIWebProfileExtra(PlatformOpenAI, AccountTypeOAuth, map[string]any{
+		"user_agent": "Mozilla/5.0 Fresh",
+	}, map[string]any{
+		"web_profile": map[string]any{
+			"version":             "1",
+			"user_agent":          "Mozilla/5.0 Old",
+			"custom_fingerprint":  "fp-123",
+			"chatgpt_account_id":  "legacy-chatgpt-account",
+			"account_id":          "legacy-account",
+			"storage_state":       map[string]any{"origins": []any{map[string]any{"origin": "https://chatgpt.com"}}},
+			"experimental_config": map[string]any{"enabled": true},
+		},
+	})
+
+	webProfile, ok := extra["web_profile"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "fp-123", webProfile["custom_fingerprint"])
+	require.Equal(t, map[string]any{"origins": []any{map[string]any{"origin": "https://chatgpt.com"}}}, webProfile["storage_state"])
+	require.Equal(t, map[string]any{"enabled": true}, webProfile["experimental_config"])
+	require.Equal(t, "Mozilla/5.0 Old", webProfile["user_agent"])
+	require.NotContains(t, webProfile, "chatgpt_account_id")
+	require.NotContains(t, webProfile, "account_id")
 }

@@ -2218,6 +2218,8 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 		}
 	}
 
+	input.Extra = NormalizeOpenAIWebProfileExtra(input.Platform, input.Type, input.Credentials, input.Extra)
+
 	account := &Account{
 		Name:        input.Name,
 		Notes:       normalizeAccountNotes(input.Notes),
@@ -2336,6 +2338,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	// Extra 使用 map：需要区分“未提供(nil)”与“显式清空({})”。
 	// 关闭配额限制时前端会删除 quota_* 键并提交 extra:{}，此时也必须落库。
 	if input.Extra != nil {
+		input.Extra = NormalizeOpenAIWebProfileExtra(account.Platform, account.Type, account.Credentials, input.Extra)
 		// 保留配额用量字段，防止编辑账号时意外重置
 		for _, key := range []string{"quota_used", "quota_daily_used", "quota_daily_start", "quota_weekly_used", "quota_weekly_start"} {
 			if v, ok := account.Extra[key]; ok {
@@ -2508,13 +2511,13 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 
 	kiroCredentialUpdateIDs := make([]int64, 0)
-	if len(input.Credentials) > 0 {
+	if len(input.Credentials) > 0 || len(input.Extra) > 0 {
 		for _, accountID := range input.AccountIDs {
 			account := accountByID[accountID]
 			if account == nil {
 				continue
 			}
-			if account.Platform == PlatformKiro {
+			if account.Platform == PlatformKiro && len(input.Credentials) > 0 {
 				mergedCredentials := mergeAccountCredentialsForAccountUpdate(account.Platform, account.Type, account.Credentials, input.Credentials, false)
 				if err := validateKiroAccountCredentials(account.Type, mergedCredentials); err != nil {
 					return nil, err
@@ -2549,9 +2552,19 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 
 	// Prepare bulk updates for columns and JSONB fields.
+	bulkExtra := input.Extra
+	if len(input.Extra) > 0 {
+		for _, accountID := range input.AccountIDs {
+			account := accountByID[accountID]
+			if account != nil && account.Platform == PlatformOpenAI {
+				bulkExtra = nil
+				break
+			}
+		}
+	}
 	repoUpdates := AccountBulkUpdate{
 		Credentials: input.Credentials,
-		Extra:       input.Extra,
+		Extra:       bulkExtra,
 	}
 	if input.Name != "" {
 		repoUpdates.Name = &input.Name
@@ -2584,6 +2597,20 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 
 	// Run bulk update for column/jsonb fields first. Group-only edits have no
 	// account-table SET clauses, so they should go straight to BindGroups.
+	if len(input.Extra) > 0 && bulkExtra == nil {
+		for _, accountID := range input.AccountIDs {
+			account := accountByID[accountID]
+			if account == nil {
+				continue
+			}
+			applyBulkUpdateInputToAccount(account, input)
+			if err := s.accountRepo.Update(ctx, account); err != nil {
+				return nil, err
+			}
+		}
+		return s.finishBulkUpdateGroupBindings(ctx, input, result)
+	}
+
 	if hasAccountBulkUpdateFields(repoUpdates) {
 		affected, err := s.accountRepo.BulkUpdate(ctx, input.AccountIDs, repoUpdates)
 		if err != nil {
@@ -2656,7 +2683,8 @@ func applyBulkUpdateInputToAccount(account *Account, input *BulkUpdateAccountsIn
 		account.Credentials = mergeAccountCredentialsForAccountUpdate(account.Platform, account.Type, account.Credentials, input.Credentials, false)
 	}
 	if len(input.Extra) > 0 {
-		account.Extra = MergeCredentials(account.Extra, input.Extra)
+		mergedExtra := MergeCredentials(account.Extra, input.Extra)
+		account.Extra = NormalizeOpenAIWebProfileExtra(account.Platform, account.Type, account.Credentials, mergedExtra)
 	}
 }
 

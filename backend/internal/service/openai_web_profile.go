@@ -32,7 +32,6 @@ type OpenAIWebProfile struct {
 	Viewport               OpenAIWebProfileViewport
 	OAIDeviceID            string
 	OAISessionID           string
-	ChatGPTAccountID       string
 	Cookies                []OpenAIWebProfileCookie
 }
 
@@ -83,9 +82,8 @@ func ResolveOpenAIWebProfile(account *Account) *OpenAIWebProfile {
 		SecCHUAFullVersion:     stringValue(profileMap["sec_ch_ua_full_version"]),
 		SecCHUAPlatformVersion: stringValue(profileMap["sec_ch_ua_platform_version"]),
 		Timezone:               stringValue(profileMap["timezone"]),
-		OAIDeviceID:            stringValue(profileMap["oai_device_id"]),
-		OAISessionID:           stringValue(profileMap["oai_session_id"]),
-		ChatGPTAccountID:       stringValue(profileMap["chatgpt_account_id"]),
+		OAIDeviceID:            firstStringValue(profileMap, "oai_device_id", "openai_device_id", "oai_did"),
+		OAISessionID:           firstStringValue(profileMap, "oai_session_id", "openai_session_id"),
 	}
 	if viewport, ok := asMap(profileMap["viewport"]); ok {
 		profile.Viewport = OpenAIWebProfileViewport{
@@ -96,6 +94,173 @@ func ResolveOpenAIWebProfile(account *Account) *OpenAIWebProfile {
 	}
 	profile.Cookies = parseOpenAIWebProfileCookies(profileMap["cookies"])
 	return profile
+}
+
+func NormalizeOpenAIWebProfileExtra(platform string, accountType string, credentials map[string]any, extra map[string]any) map[string]any {
+	if strings.ToLower(strings.TrimSpace(platform)) != PlatformOpenAI {
+		return extra
+	}
+	if accountType != AccountTypeOAuth && accountType != AccountTypeAPIKey && accountType != "api_key" {
+		return extra
+	}
+	profile := BuildOpenAIWebProfileFromAccountData(credentials, extra)
+	if profile == nil {
+		return extra
+	}
+	if extra == nil {
+		extra = map[string]any{}
+	}
+	extra[openAIWebProfileExtraKey] = mergeOpenAIWebProfileExtraMap(extra[openAIWebProfileExtraKey], profile)
+	return extra
+}
+
+func mergeOpenAIWebProfileExtraMap(existing any, profile *OpenAIWebProfile) map[string]any {
+	merged := map[string]any{}
+	if existingMap, ok := asMap(existing); ok {
+		for key, value := range existingMap {
+			merged[key] = value
+		}
+	}
+
+	delete(merged, "chatgpt_account_id")
+	delete(merged, "account_id")
+	for key, value := range profile.ToExtraMap() {
+		if isEmptyOpenAIWebProfileExtraValue(value) {
+			continue
+		}
+		merged[key] = value
+	}
+	delete(merged, "chatgpt_account_id")
+	delete(merged, "account_id")
+	return merged
+}
+
+func isEmptyOpenAIWebProfileExtraValue(value any) bool {
+	switch typed := value.(type) {
+	case nil:
+		return true
+	case string:
+		return strings.TrimSpace(typed) == ""
+	case int:
+		return typed == 0
+	case int64:
+		return typed == 0
+	case float64:
+		return typed == 0
+	case map[string]any:
+		return len(typed) == 0
+	case []map[string]any:
+		return len(typed) == 0
+	case []any:
+		return len(typed) == 0
+	}
+	return false
+}
+
+func BuildOpenAIWebProfileFromAccountData(credentials map[string]any, extra map[string]any) *OpenAIWebProfile {
+	profile := ResolveOpenAIWebProfile(&Account{Extra: extra})
+	if profile == nil {
+		profile = &OpenAIWebProfile{}
+	}
+
+	if profile.Source == "" {
+		profile.Source = firstStringValue(extra, "web_profile_source", "source")
+	}
+	if profile.Source == "" {
+		profile.Source = "sub2api/account"
+	}
+	if profile.CapturedAt == "" {
+		profile.CapturedAt = firstStringValue(extra, "web_profile_captured_at", "captured_at")
+	}
+	if profile.UserAgent == "" {
+		profile.UserAgent = firstStringValue(credentials, "user_agent")
+	}
+	if profile.UserAgent == "" {
+		profile.UserAgent = firstStringValue(extra, "user_agent")
+	}
+	if profile.Impersonate == "" {
+		profile.Impersonate = firstStringValue(credentials, "impersonate")
+	}
+	if profile.Impersonate == "" {
+		profile.Impersonate = firstStringValue(extra, "impersonate")
+	}
+	fillOpenAIWebProfileHeaderFields(profile, credentials)
+	fillOpenAIWebProfileHeaderFields(profile, extra)
+
+	if profile.OAIDeviceID == "" {
+		profile.OAIDeviceID = firstStringValue(extra, "oai_device_id", "openai_device_id", "oai_did")
+	}
+	if profile.OAISessionID == "" {
+		profile.OAISessionID = firstStringValue(extra, "oai_session_id", "openai_session_id")
+	}
+	if len(profile.Cookies) == 0 {
+		profile.Cookies = firstOpenAIWebProfileCookies(extra, "cookies", "browser_cookies")
+	}
+	if len(profile.Cookies) == 0 {
+		if storageState, ok := asMap(firstNonNil(mapValue(extra, "storage_state"), mapValue(extra, "browser_storage_state"))); ok {
+			profile.Cookies = parseOpenAIWebProfileCookies(storageState["cookies"])
+		}
+	}
+	if profile.OAIDeviceID == "" {
+		profile.OAIDeviceID = oaiDeviceIDFromCookies(profile.Cookies)
+	}
+
+	if profile.UserAgent == "" && profile.AcceptLanguage == "" && profile.OAIDeviceID == "" && profile.OAISessionID == "" && len(profile.Cookies) == 0 {
+		return nil
+	}
+	return profile
+}
+
+func fillOpenAIWebProfileHeaderFields(profile *OpenAIWebProfile, values map[string]any) {
+	if profile == nil || values == nil {
+		return
+	}
+	if profile.AcceptLanguage == "" {
+		profile.AcceptLanguage = firstStringValue(values, "accept_language", "accept-language")
+	}
+	if profile.SecCHUA == "" {
+		profile.SecCHUA = firstStringValue(values, "sec_ch_ua", "sec-ch-ua")
+	}
+	if profile.SecCHUAMobile == "" {
+		profile.SecCHUAMobile = firstStringValue(values, "sec_ch_ua_mobile", "sec-ch-ua-mobile")
+	}
+	if profile.SecCHUAPlatform == "" {
+		profile.SecCHUAPlatform = firstStringValue(values, "sec_ch_ua_platform", "sec-ch-ua-platform")
+	}
+	if profile.SecCHUAArch == "" {
+		profile.SecCHUAArch = firstStringValue(values, "sec_ch_ua_arch", "sec-ch-ua-arch")
+	}
+	if profile.SecCHUABitness == "" {
+		profile.SecCHUABitness = firstStringValue(values, "sec_ch_ua_bitness", "sec-ch-ua-bitness")
+	}
+	if profile.SecCHUAFullVersion == "" {
+		profile.SecCHUAFullVersion = firstStringValue(values, "sec_ch_ua_full_version", "sec-ch-ua-full-version")
+	}
+	if profile.SecCHUAPlatformVersion == "" {
+		profile.SecCHUAPlatformVersion = firstStringValue(values, "sec_ch_ua_platform_version", "sec-ch-ua-platform-version")
+	}
+	if profile.Timezone == "" {
+		profile.Timezone = firstStringValue(values, "timezone", "timezone_id")
+	}
+}
+
+func firstOpenAIWebProfileCookies(values map[string]any, keys ...string) []OpenAIWebProfileCookie {
+	for _, key := range keys {
+		cookies := parseOpenAIWebProfileCookies(mapValue(values, key))
+		if len(cookies) > 0 {
+			return cookies
+		}
+	}
+	return nil
+}
+
+func oaiDeviceIDFromCookies(cookies []OpenAIWebProfileCookie) string {
+	for _, cookie := range cookies {
+		if strings.EqualFold(cookie.Name, "oai-did") && strings.TrimSpace(cookie.Value) != "" {
+			return strings.TrimSpace(cookie.Value)
+		}
+	}
+	return ""
 }
 
 func (p *OpenAIWebProfile) HeaderValues() http.Header {
@@ -127,7 +292,6 @@ func (p *OpenAIWebProfile) ToExtraMap() map[string]any {
 		"timezone":                   p.Timezone,
 		"oai_device_id":              p.OAIDeviceID,
 		"oai_session_id":             p.OAISessionID,
-		"chatgpt_account_id":         p.ChatGPTAccountID,
 	}
 	if p.Viewport.Width > 0 || p.Viewport.Height > 0 || p.Viewport.DeviceScaleFactor > 0 {
 		result["viewport"] = map[string]any{
@@ -250,7 +414,7 @@ func (p *OpenAIWebProfile) CookieHeaderForHost(host string) string {
 }
 
 func parseOpenAIWebProfileCookies(raw any) []OpenAIWebProfileCookie {
-	rawCookies, ok := raw.([]any)
+	rawCookies, ok := asSlice(raw)
 	if !ok || len(rawCookies) == 0 {
 		return nil
 	}
@@ -416,6 +580,35 @@ func setHeaderIfNotEmpty(headers http.Header, key string, value string) {
 	}
 }
 
+func asSlice(value any) ([]any, bool) {
+	switch typed := value.(type) {
+	case []any:
+		return typed, true
+	case []map[string]any:
+		items := make([]any, 0, len(typed))
+		for _, item := range typed {
+			items = append(items, item)
+		}
+		return items, true
+	case json.RawMessage:
+		var decoded []any
+		if err := json.Unmarshal(typed, &decoded); err == nil {
+			return decoded, true
+		}
+	case []byte:
+		var decoded []any
+		if err := json.Unmarshal(typed, &decoded); err == nil {
+			return decoded, true
+		}
+	case string:
+		var decoded []any
+		if err := json.Unmarshal([]byte(typed), &decoded); err == nil {
+			return decoded, true
+		}
+	}
+	return nil, false
+}
+
 func asMap(value any) (map[string]any, bool) {
 	switch typed := value.(type) {
 	case map[string]any:
@@ -437,6 +630,22 @@ func asMap(value any) (map[string]any, bool) {
 		}
 	}
 	return nil, false
+}
+
+func mapValue(values map[string]any, key string) any {
+	if values == nil {
+		return nil
+	}
+	return values[key]
+}
+
+func firstStringValue(values map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(stringValue(mapValue(values, key))); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func stringValue(value any) string {

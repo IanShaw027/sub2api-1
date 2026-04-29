@@ -56,9 +56,6 @@ func TestOpenAIImagesWebProfileBackendHeadersPreserveBrowserProfileContract(t *t
 	if profile.OAISessionID != "" {
 		mergedHeaders.Set("oai-session-id", profile.OAISessionID)
 	}
-	if profile.ChatGPTAccountID != "" {
-		mergedHeaders.Set("chatgpt-account-id", profile.ChatGPTAccountID)
-	}
 	if cookieHeader := profile.CookieHeaderForHost("chatgpt.com/backend-api/conversation"); cookieHeader != "" {
 		mergedHeaders.Set("Cookie", cookieHeader)
 	}
@@ -77,7 +74,7 @@ func TestOpenAIImagesWebProfileBackendHeadersPreserveBrowserProfileContract(t *t
 	require.Equal(t, `"15.4.0"`, mergedHeaders.Get("Sec-Ch-Ua-Platform-Version"))
 	require.Equal(t, "device-from-profile", mergedHeaders.Get("oai-device-id"))
 	require.Equal(t, "session-from-profile", mergedHeaders.Get("oai-session-id"))
-	require.Equal(t, "profile-account-id", mergedHeaders.Get("chatgpt-account-id"))
+	require.Equal(t, "credential-account-id", mergedHeaders.Get("chatgpt-account-id"))
 	require.Equal(t, "__Secure-next-auth.session-token=profile-session-secret; cf_clearance=clearance-secret", mergedHeaders.Get("Cookie"))
 	require.NotContains(t, mergedHeaders.Get("Cookie"), "api-secret")
 }

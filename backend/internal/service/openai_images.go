@@ -1439,9 +1439,6 @@ func (s *OpenAIGatewayService) buildOpenAIBackendAPIHeaders(account *Account, to
 	if chatgptAccountID := strings.TrimSpace(account.GetChatGPTAccountID()); chatgptAccountID != "" {
 		headers.Set("chatgpt-account-id", chatgptAccountID)
 	}
-	if profile != nil && strings.TrimSpace(profile.ChatGPTAccountID) != "" {
-		headers.Set("chatgpt-account-id", strings.TrimSpace(profile.ChatGPTAccountID))
-	}
 	if profile != nil && strings.TrimSpace(profile.OAIDeviceID) != "" {
 		deviceID = strings.TrimSpace(profile.OAIDeviceID)
 	}
