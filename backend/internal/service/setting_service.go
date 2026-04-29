@@ -416,13 +416,6 @@ func registerKiroRuntimeSettingService(settingService *SettingService) {
 	}
 }
 
-func getSharedKiroRuntimeSettings(ctx context.Context) *KiroRuntimeSettings {
-	if settingService := sharedKiroRuntimeSettingService.Load(); settingService != nil {
-		return settingService.GetKiroRuntimeSettings(ctx)
-	}
-	return DefaultKiroRuntimeSettings()
-}
-
 // SetDefaultSubscriptionGroupReader injects an optional group reader for default subscription validation.
 func (s *SettingService) SetDefaultSubscriptionGroupReader(reader DefaultSubscriptionGroupReader) {
 	s.defaultSubGroupReader = reader

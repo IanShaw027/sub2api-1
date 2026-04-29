@@ -818,18 +818,17 @@ func (h *AccountHandler) ReauthorizeKiroOAuth(c *gin.Context) {
 		return
 	}
 
-	updated, err := h.adminService.UpdateAccount(c.Request.Context(), accountID, &service.UpdateAccountInput{
+	if _, err := h.adminService.UpdateAccount(c.Request.Context(), accountID, &service.UpdateAccountInput{
 		Name:                      req.Name,
 		Type:                      service.AccountTypeOAuth,
 		Credentials:               req.Credentials,
 		Extra:                     req.Extra,
 		AllowSensitiveCredentials: true,
-	})
-	if err != nil {
+	}); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-	updated, err = h.adminService.ClearAccountError(c.Request.Context(), accountID)
+	updated, err := h.adminService.ClearAccountError(c.Request.Context(), accountID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

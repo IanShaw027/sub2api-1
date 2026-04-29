@@ -227,7 +227,7 @@ func (s *ProxyService) TestConnection(ctx context.Context, id int64) error {
 	if err != nil {
 		return fmt.Errorf("test proxy connection: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("test proxy connection: status %d", resp.StatusCode)

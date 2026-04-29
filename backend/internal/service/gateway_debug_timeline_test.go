@@ -54,7 +54,7 @@ func TestWriteGatewayDebugTimelineEventRecoversAfterInitFailure(t *testing.T) {
 func testGatewayDebugTimelineSettingService(t *testing.T, dir string) *SettingService {
 	t.Helper()
 	repo := &gatewayDebugTimelineSettingRepo{values: map[string]string{}}
-	if err := repo.SetMultiple(nil, map[string]string{
+	if err := repo.SetMultiple(context.TODO(), map[string]string{
 		SettingKeyGatewayDebugTimelineEnabled:       "true",
 		SettingKeyGatewayDebugTimelineDirectory:     dir,
 		SettingKeyGatewayDebugTimelineRetentionDays: "7",

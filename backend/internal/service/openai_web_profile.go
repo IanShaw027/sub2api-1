@@ -443,9 +443,9 @@ func stringValue(value any) string {
 	switch typed := value.(type) {
 	case string:
 		return typed
-	case fmt.Stringer:
-		return typed.String()
 	case json.Number:
+		return typed.String()
+	case fmt.Stringer:
 		return typed.String()
 	default:
 		return ""

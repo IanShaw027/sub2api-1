@@ -1356,28 +1356,6 @@ func applyPendingOAuthBindingAndConsumeSession(
 	return tx.Commit()
 }
 
-func applyPendingOAuthAdoption(
-	ctx context.Context,
-	client *dbent.Client,
-	authService *service.AuthService,
-	userService *service.UserService,
-	session *dbent.PendingAuthSession,
-	decision *dbent.IdentityAdoptionDecision,
-	overrideUserID *int64,
-) error {
-	return applyPendingOAuthBinding(
-		ctx,
-		client,
-		authService,
-		userService,
-		session,
-		decision,
-		overrideUserID,
-		false,
-		strings.EqualFold(strings.TrimSpace(session.Intent), "bind_current_user"),
-	)
-}
-
 func applySuggestedProfileToCompletionResponse(payload map[string]any, upstream map[string]any) {
 	if len(payload) == 0 || len(upstream) == 0 {
 		return

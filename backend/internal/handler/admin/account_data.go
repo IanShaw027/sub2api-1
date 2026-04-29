@@ -444,14 +444,6 @@ func normalizeDataImportDedupMode(mode string) string {
 	}
 }
 
-func buildDataAccountDedupKey(platform, accountType string, credentials map[string]any) (string, bool) {
-	keys := buildDataAccountDedupKeys(platform, accountType, credentials)
-	if len(keys) == 0 {
-		return "", false
-	}
-	return keys[0], true
-}
-
 func addDataAccountDedupKeys(index map[string]int64, ambiguous map[string]struct{}, accountID int64, keys []string) {
 	for _, key := range keys {
 		if _, exists := ambiguous[key]; exists {
