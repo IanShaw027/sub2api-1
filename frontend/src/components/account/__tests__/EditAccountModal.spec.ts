@@ -4,12 +4,14 @@ import { mount } from '@vue/test-utils'
 
 const {
   updateAccountMock,
+  importOpenAIWebProfileMock,
   checkMixedChannelRiskMock,
   getSettingsMock,
   getWebSearchEmulationConfigMock,
   listTlsFingerprintProfilesMock
 } = vi.hoisted(() => ({
   updateAccountMock: vi.fn(),
+  importOpenAIWebProfileMock: vi.fn(),
   checkMixedChannelRiskMock: vi.fn(),
   getSettingsMock: vi.fn(),
   getWebSearchEmulationConfigMock: vi.fn(),
@@ -41,6 +43,7 @@ vi.mock('@/api/admin', () => ({
     },
     accounts: {
       update: updateAccountMock,
+      importOpenAIWebProfile: importOpenAIWebProfileMock,
       checkMixedChannelRisk: checkMixedChannelRiskMock
     }
   }
@@ -150,6 +153,19 @@ function buildAccount() {
   } as any
 }
 
+function resetCommonMocks() {
+  updateAccountMock.mockReset()
+  importOpenAIWebProfileMock.mockReset()
+  checkMixedChannelRiskMock.mockReset()
+  getSettingsMock.mockReset()
+  getWebSearchEmulationConfigMock.mockReset()
+  listTlsFingerprintProfilesMock.mockReset()
+  getSettingsMock.mockResolvedValue({})
+  getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
+  listTlsFingerprintProfilesMock.mockResolvedValue([])
+  checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+}
+
 function mountModal(account = buildAccount()) {
   return mount(EditAccountModal, {
     props: {
@@ -172,6 +188,109 @@ function mountModal(account = buildAccount()) {
 }
 
 describe('EditAccountModal', () => {
+  it('shows safe OpenAI WebProfile metadata and import entry', async () => {
+    const account = buildAccount()
+    account.extra = {
+      web_profile: {
+        source: 'browser-capture',
+        captured_at: '2026-04-29T10:00:00Z',
+        user_agent: 'Mozilla/5.0 Chrome/136.0.0.0 Safari/537.36',
+        has_cookie_jar: true,
+        cookie_names_digest: 'sha256:safe-digest',
+        proxy_id: 18,
+        proxy_hash: 'proxy-hash-abc',
+        cookies: [
+          { name: '__Secure-next-auth.session-token', value: 'secret-cookie-value' }
+        ]
+      }
+    }
+
+    resetCommonMocks()
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    const section = wrapper.get('[data-testid="openai-web-profile-section"]')
+    expect(section.text()).toContain('has_web_profile')
+    expect(section.text()).toContain('true')
+    expect(section.text()).toContain('source')
+    expect(section.text()).toContain('browser-capture')
+    expect(section.text()).toContain('captured_at')
+    expect(section.text()).toContain('2026-04-29T10:00:00Z')
+    expect(section.text()).toContain('ua_major')
+    expect(section.text()).toContain('136')
+    expect(section.text()).toContain('has_cookie_jar')
+    expect(section.text()).toContain('cookie_names_digest')
+    expect(section.text()).toContain('sha256:safe-digest')
+    expect(section.text()).toContain('proxy_id')
+    expect(section.text()).toContain('18')
+    expect(section.text()).toContain('proxy_hash')
+    expect(section.text()).toContain('proxy-hash-abc')
+    expect(wrapper.get('[data-testid="openai-web-profile-import-content"]').exists()).toBe(true)
+  })
+
+  it('submits OpenAI WebProfile import without rendering cookie values', async () => {
+    const account = buildAccount()
+    const updatedAccount = {
+      ...account,
+      extra: {
+        web_profile: {
+          source: 'imported',
+          captured_at: '2026-04-29T11:00:00Z',
+          ua_major: 136,
+          has_cookie_jar: true,
+          cookie_names_digest: 'sha256:imported-digest',
+          cookies: [
+            { name: 'oai-did', value: 'new-secret-cookie-value' }
+          ]
+        }
+      }
+    }
+    const pasted = JSON.stringify({ cookies: [{ name: 'oai-did', value: 'pasted-secret-cookie-value' }] })
+
+    resetCommonMocks()
+    importOpenAIWebProfileMock.mockResolvedValue({
+      account: updatedAccount,
+      source: 'imported',
+      captured_at: '2026-04-29T11:00:00Z',
+      ua_major: 136,
+      has_cookie_jar: true,
+      cookie_names_digest: 'sha256:imported-digest'
+    })
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+    await wrapper.get('[data-testid="openai-web-profile-import-content"]').setValue(pasted)
+    await wrapper.get('[data-testid="openai-web-profile-import-submit"]').trigger('click')
+
+    expect(importOpenAIWebProfileMock).toHaveBeenCalledWith(1, { content: pasted })
+    expect(wrapper.emitted('updated')?.[0]).toEqual([updatedAccount])
+    expect(wrapper.text()).toContain('sha256:imported-digest')
+    expect(wrapper.text()).not.toContain('pasted-secret-cookie-value')
+    expect(wrapper.text()).not.toContain('new-secret-cookie-value')
+  })
+
+  it('does not show OpenAI WebProfile controls for non-OpenAI accounts', async () => {
+    resetCommonMocks()
+    const wrapper = mountModal({
+      ...buildAccount(),
+      platform: 'anthropic',
+      credentials: {
+        api_key: 'sk-ant-test',
+        base_url: 'https://api.anthropic.com'
+      },
+      extra: {
+        web_profile: {
+          source: 'should-not-render'
+        }
+      }
+    } as any)
+
+    await wrapper.setProps({ show: true })
+
+    expect(wrapper.find('[data-testid="openai-web-profile-section"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('should-not-render')
+  })
+
   it('reopening the same account rehydrates the OpenAI whitelist from props', async () => {
     const account = buildAccount()
     updateAccountMock.mockReset()
@@ -241,6 +360,42 @@ describe('EditAccountModal', () => {
     } as any)
     await anthropicWrapper.setProps({ show: true })
     expect(anthropicWrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('')
+  })
+
+  it('updates OpenAI TLS fingerprint settings in extra', async () => {
+    const account = {
+      ...buildAccount(),
+      extra: {
+        keep_flag: true,
+        enable_tls_fingerprint: false
+      }
+    }
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    getSettingsMock.mockReset()
+    getWebSearchEmulationConfigMock.mockReset()
+    listTlsFingerprintProfilesMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    getSettingsMock.mockResolvedValue({})
+    getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
+    listTlsFingerprintProfilesMock.mockResolvedValue([{ id: 12, name: 'Chrome 124' }])
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+    await wrapper.vm.$nextTick()
+
+    await wrapper.get('[data-testid="openai-tls-fingerprint-toggle"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.get('[data-testid="openai-tls-fingerprint-profile"]').setValue('12')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toEqual(expect.objectContaining({
+      keep_flag: true,
+      enable_tls_fingerprint: true,
+      tls_fingerprint_profile_id: 12
+    }))
   })
 
   it('removes Kiro runtime version overrides from extra without resending unchanged Kiro OAuth credentials', async () => {

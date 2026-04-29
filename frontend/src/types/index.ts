@@ -570,6 +570,9 @@ export interface Group {
   image_price_1k: number | null
   image_price_2k: number | null
   image_price_4k: number | null
+  images2api_price_1k: number | null
+  images2api_price_2k: number | null
+  images2api_price_4k: number | null
   // Claude Code 客户端限制
   claude_code_only: boolean
   fallback_group_id: number | null
@@ -680,6 +683,9 @@ export interface CreateGroupRequest {
   image_price_1k?: number | null
   image_price_2k?: number | null
   image_price_4k?: number | null
+  images2api_price_1k?: number | null
+  images2api_price_2k?: number | null
+  images2api_price_4k?: number | null
   claude_code_only?: boolean
   fallback_group_id?: number | null
   fallback_group_id_on_invalid_request?: number | null
@@ -711,6 +717,9 @@ export interface UpdateGroupRequest {
   image_price_1k?: number | null
   image_price_2k?: number | null
   image_price_4k?: number | null
+  images2api_price_1k?: number | null
+  images2api_price_2k?: number | null
+  images2api_price_4k?: number | null
   claude_code_only?: boolean
   fallback_group_id?: number | null
   fallback_group_id_on_invalid_request?: number | null
@@ -948,7 +957,7 @@ export interface Account<
   rpm_sticky_buffer?: number | null
   user_msg_queue_mode?: string | null  // "serialize" | "throttle" | null
 
-  // TLS指纹伪装（仅 Anthropic OAuth/SetupToken 账号有效）
+  // TLS指纹伪装（Anthropic OAuth/SetupToken、OpenAI、Kiro OAuth 账号有效）
   enable_tls_fingerprint?: boolean | null
   tls_fingerprint_profile_id?: number | null
 
@@ -1102,6 +1111,45 @@ export interface OpenAICompactState {
   openai_compact_last_error?: string
 }
 
+export interface OpenAIWebProfileCookieState {
+  name?: string
+  domain?: string
+  path?: string
+  secure?: boolean
+  expires?: number
+  httponly?: boolean
+  same_site?: string
+}
+
+export interface OpenAIWebProfileState {
+  source?: string
+  captured_at?: string
+  user_agent?: string
+  ua_major?: number
+  has_cookie_jar?: boolean
+  cookie_names_digest?: string
+  proxy_id?: number | null
+  proxy_hash?: string
+  cookies?: OpenAIWebProfileCookieState[]
+}
+
+export interface OpenAIWebProfileImportRequest {
+  content: string
+}
+
+export interface OpenAIWebProfileImportResult {
+  account?: Account
+  has_web_profile?: boolean
+  source?: string
+  captured_at?: string
+  ua_major?: number
+  has_cookie_jar?: boolean
+  cookie_names_digest?: string
+  proxy_id?: number | null
+  proxy_hash?: string
+  message?: string
+}
+
 export interface CreateAccountRequest<
   TCredentials extends object = AccountDataRecord,
   TExtra extends object = AccountDataRecord,
@@ -1247,7 +1295,7 @@ export interface AdminDataImportResult {
 // ==================== Usage & Redeem Types ====================
 
 export type RedeemCodeType = 'balance' | 'concurrency' | 'subscription' | 'invitation'
-export type UsageRequestType = 'unknown' | 'sync' | 'stream' | 'ws_v2'
+export type UsageRequestType = 'unknown' | 'sync' | 'stream' | 'ws_v2' | 'image' | 'image_web_bridge'
 
 export interface UsageLog {
   id: number

@@ -181,6 +181,9 @@ func groupFromServiceBase(g *service.Group) Group {
 		ImagePrice1K:                    g.ImagePrice1K,
 		ImagePrice2K:                    g.ImagePrice2K,
 		ImagePrice4K:                    g.ImagePrice4K,
+		Images2APIPrice1K:               g.Images2APIPrice1K,
+		Images2APIPrice2K:               g.Images2APIPrice2K,
+		Images2APIPrice4K:               g.Images2APIPrice4K,
 		ClaudeCodeOnly:                  g.ClaudeCodeOnly,
 		FallbackGroupID:                 g.FallbackGroupID,
 		FallbackGroupIDOnInvalidRequest: g.FallbackGroupIDOnInvalidRequest,
@@ -204,7 +207,7 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		Platform:                a.Platform,
 		Type:                    a.Type,
 		Credentials:             a.Credentials,
-		Extra:                   a.Extra,
+		Extra:                   sanitizeAccountExtraForDTO(a.Extra),
 		ProxyID:                 a.ProxyID,
 		Concurrency:             a.Concurrency,
 		LoadFactor:              a.LoadFactor,
@@ -227,6 +230,15 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		SessionWindowEnd:        a.SessionWindowEnd,
 		SessionWindowStatus:     a.SessionWindowStatus,
 		GroupIDs:                a.GroupIDs,
+	}
+
+	if supportsAccountTLSFingerprint(a) {
+		if enabled, ok := boolExtraValue(a.Extra, "enable_tls_fingerprint"); ok {
+			out.EnableTLSFingerprint = &enabled
+		}
+		if profileID := a.GetTLSFingerprintProfileID(); profileID > 0 {
+			out.TLSFingerprintProfileID = &profileID
+		}
 	}
 
 	// 提取 5h 窗口费用控制和会话数量控制配置（仅 Anthropic OAuth/SetupToken 账号有效）
@@ -253,15 +265,6 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		// 用户消息队列模式
 		if mode := a.GetUserMsgQueueMode(); mode != "" {
 			out.UserMsgQueueMode = &mode
-		}
-		// TLS指纹伪装开关
-		if a.IsTLSFingerprintEnabled() {
-			enabled := true
-			out.EnableTLSFingerprint = &enabled
-		}
-		// TLS指纹模板ID
-		if profileID := a.GetTLSFingerprintProfileID(); profileID > 0 {
-			out.TLSFingerprintProfileID = &profileID
 		}
 		// 会话ID伪装开关
 		if a.IsSessionIDMaskingEnabled() {
@@ -358,6 +361,25 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 	return out
 }
 
+func supportsAccountTLSFingerprint(a *service.Account) bool {
+	if a == nil {
+		return false
+	}
+	return a.IsAnthropicOAuthOrSetupToken() || a.Platform == service.PlatformOpenAI || (a.Platform == service.PlatformKiro && a.Type == service.AccountTypeOAuth)
+}
+
+func boolExtraValue(extra map[string]any, key string) (bool, bool) {
+	if extra == nil {
+		return false, false
+	}
+	v, ok := extra[key]
+	if !ok {
+		return false, false
+	}
+	enabled, ok := v.(bool)
+	return enabled, ok
+}
+
 func AccountFromService(a *service.Account) *Account {
 	if a == nil {
 		return nil
@@ -379,6 +401,73 @@ func AccountFromService(a *service.Account) *Account {
 		}
 	}
 	return out
+}
+
+func sanitizeAccountExtraForDTO(extra map[string]any) map[string]any {
+	if len(extra) == 0 {
+		return extra
+	}
+
+	filtered := make(map[string]any, len(extra))
+	for key, value := range extra {
+		if key == "web_profile" {
+			filtered[key] = sanitizeOpenAIWebProfileForDTO(value)
+			continue
+		}
+		filtered[key] = value
+	}
+	return filtered
+}
+
+func sanitizeOpenAIWebProfileForDTO(raw any) any {
+	profile, ok := raw.(map[string]any)
+	if !ok {
+		return raw
+	}
+
+	filtered := make(map[string]any, len(profile))
+	for key, value := range profile {
+		if key == "cookies" {
+			filtered[key] = sanitizeOpenAIWebProfileCookiesForDTO(value)
+			continue
+		}
+		filtered[key] = value
+	}
+	return filtered
+}
+
+func sanitizeOpenAIWebProfileCookiesForDTO(raw any) any {
+	switch cookies := raw.(type) {
+	case []map[string]any:
+		filtered := make([]map[string]any, 0, len(cookies))
+		for _, cookie := range cookies {
+			filtered = append(filtered, sanitizeOpenAIWebProfileCookieForDTO(cookie))
+		}
+		return filtered
+	case []any:
+		filtered := make([]any, 0, len(cookies))
+		for _, cookie := range cookies {
+			if cookieMap, ok := cookie.(map[string]any); ok {
+				filtered = append(filtered, sanitizeOpenAIWebProfileCookieForDTO(cookieMap))
+				continue
+			}
+			filtered = append(filtered, cookie)
+		}
+		return filtered
+	default:
+		return raw
+	}
+}
+
+func sanitizeOpenAIWebProfileCookieForDTO(cookie map[string]any) map[string]any {
+	filtered := make(map[string]any, len(cookie))
+	for key, value := range cookie {
+		if strings.EqualFold(strings.TrimSpace(key), "value") {
+			continue
+		}
+		filtered[key] = value
+	}
+	return filtered
 }
 
 func AccountFromServiceDetail(a *service.Account) *Account {
