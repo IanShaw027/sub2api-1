@@ -436,6 +436,31 @@ func TestTryClaimSubscriptionFulfillmentAuditSkipsExistingSuccessSentinel(t *tes
 	require.Zero(t, claimCount)
 }
 
+func TestTryClaimAffiliateRebateAuditIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusPaid, payment.OrderTypeBalance)
+	svc := &PaymentService{entClient: client}
+
+	claimed, err := svc.tryClaimAffiliateRebateAudit(ctx, client, order.ID, order.Amount)
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	claimed, err = svc.tryClaimAffiliateRebateAudit(ctx, client, order.ID, order.Amount)
+	require.NoError(t, err)
+	require.False(t, claimed)
+
+	entry, err := client.PaymentAuditLog.Query().
+		Where(
+			paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)),
+			paymentauditlog.ActionEQ("AFFILIATE_REBATE_APPLIED"),
+		).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Contains(t, entry.Detail, `"baseAmount":100`)
+	require.Contains(t, entry.Detail, `"status":"reserved"`)
+}
+
 func TestSubscriptionFulfillmentClaimMigrationIncludesSubscriptionSentinels(t *testing.T) {
 	body, err := os.ReadFile("../../migrations/138_subscription_fulfillment_claim_unique_notx.sql")
 	require.NoError(t, err)
