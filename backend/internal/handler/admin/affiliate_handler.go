@@ -58,6 +58,25 @@ func (h *AffiliateHandler) List(c *gin.Context) {
 	response.Paginated(c, items, total, page, pageSize)
 }
 
+func (h *AffiliateHandler) ListInvitees(c *gin.Context) {
+	if h == nil || h.affiliateService == nil {
+		response.InternalError(c, "Affiliate service is not configured")
+		return
+	}
+
+	inviterID, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	items, err := h.affiliateService.ListAdminInvitees(c.Request.Context(), inviterID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"items": items})
+}
+
 func parseAffiliateDateQuery(c *gin.Context, key string, userTZ string) (*time.Time, bool) {
 	raw := strings.TrimSpace(c.Query(key))
 	if raw == "" {

@@ -320,6 +320,7 @@ func registerAffiliateRoutes(admin *gin.RouterGroup, h *handler.Handlers, settin
 	affiliates.Use(middleware.AffiliateFeatureGuard(settingService))
 	{
 		affiliates.GET("", h.Admin.Affiliate.List)
+		affiliates.GET("/:id/invitees", h.Admin.Affiliate.ListInvitees)
 	}
 }
 

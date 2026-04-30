@@ -186,13 +186,35 @@ WHERE user_id = $1
 		var sourceOrderID any
 		if input.SourceOrderID > 0 {
 			sourceOrderID = input.SourceOrderID
+			existingRows, err := txClient.QueryContext(txCtx, `
+SELECT EXISTS(
+  SELECT 1
+  FROM user_affiliate_ledger
+  WHERE user_id = $1
+    AND source_order_id = $2
+    AND action = 'accrue'
+)`, input.InviterID, input.SourceOrderID)
+			if err != nil {
+				return fmt.Errorf("check affiliate order ledger duplicate: %w", err)
+			}
+			var alreadyInserted bool
+			if existingRows.Next() {
+				if err := existingRows.Scan(&alreadyInserted); err != nil {
+					_ = existingRows.Close()
+					return err
+				}
+			}
+			if err := existingRows.Close(); err != nil {
+				return err
+			}
+			if alreadyInserted {
+				appliedAmount = 0
+				return nil
+			}
 		}
 		claimRows, err := txClient.QueryContext(txCtx, `
 	INSERT INTO user_affiliate_ledger (user_id, action, amount, source_user_id, source_order_id, base_amount, rebate_rate, invitee_slot_claimed, created_at, updated_at)
 	VALUES ($1, 'accrue', $2, $3, $4, $5, $6, $7, NOW(), NOW())
-	ON CONFLICT (user_id, source_order_id, action)
-		WHERE source_order_id IS NOT NULL AND action = 'accrue'
-	DO NOTHING
 	RETURNING id`, input.InviterID, amount, input.InviteeUserID, sourceOrderID, input.BaseAmount, input.RebateRate, inviteeSlotClaimed)
 		if err != nil {
 			return fmt.Errorf("insert affiliate accrue ledger: %w", err)

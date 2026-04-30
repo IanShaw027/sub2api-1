@@ -5,6 +5,7 @@
 
 import { apiClient } from '../client'
 import type { PaginatedResponse } from '@/types'
+import type { AffiliateInvitee } from '@/types'
 
 export interface AdminAffiliateSummary {
   user_id: number
@@ -26,6 +27,11 @@ export interface AdminAffiliateListFilters {
   search?: string
   start_date?: string
   end_date?: string
+}
+
+export async function listInvitees(userId: number): Promise<AffiliateInvitee[]> {
+  const { data } = await apiClient.get<{ items: AffiliateInvitee[] }>(`/admin/affiliates/${userId}/invitees`)
+  return data.items || []
 }
 
 export async function list(
@@ -51,6 +57,7 @@ export async function list(
 
 export const affiliateAPI = {
   list,
+  listInvitees,
 }
 
 export default affiliateAPI

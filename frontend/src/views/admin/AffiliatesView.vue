@@ -72,6 +72,17 @@
             </code>
           </template>
 
+          <template #cell-aff_count="{ row, value }">
+            <button
+              type="button"
+              class="font-medium text-primary-600 transition hover:text-primary-700 disabled:cursor-not-allowed disabled:text-gray-400 dark:text-primary-400 dark:hover:text-primary-300 dark:disabled:text-dark-500"
+              :disabled="inviteesLoading && activeInviteeOwner?.user_id === row.user_id"
+              @click="openInvitees(row)"
+            >
+              {{ formatCount(value) }}
+            </button>
+          </template>
+
           <template #cell-aff_quota="{ value }">
             <span class="font-medium text-green-600 dark:text-green-400">
               {{ formatCurrency(value) }}
@@ -103,6 +114,50 @@
         />
       </template>
     </TablePageLayout>
+
+    <BaseDialog
+      :show="inviteesOpen"
+      :title="inviteesDialogTitle"
+      width="extra-wide"
+      :close-on-click-outside="true"
+      @close="closeInvitees"
+    >
+      <div v-if="inviteesLoading" class="py-8 text-center text-sm text-gray-500 dark:text-dark-400">
+        {{ t('common.loading') }}
+      </div>
+      <div
+        v-else-if="invitees.length === 0"
+        class="rounded-xl border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-dark-400"
+      >
+        {{ t('admin.affiliates.invitees.empty') }}
+      </div>
+      <div v-else class="overflow-x-auto">
+        <table class="w-full min-w-[720px] text-left text-sm">
+          <thead>
+            <tr class="border-b border-gray-200 text-gray-500 dark:border-dark-700 dark:text-dark-400">
+              <th class="px-3 py-2 font-medium">{{ t('admin.affiliates.invitees.columns.email') }}</th>
+              <th class="px-3 py-2 font-medium">{{ t('admin.affiliates.invitees.columns.username') }}</th>
+              <th class="px-3 py-2 font-medium">{{ t('admin.affiliates.invitees.columns.joinedAt') }}</th>
+              <th class="px-3 py-2 font-medium">{{ t('admin.affiliates.invitees.columns.consumed') }}</th>
+              <th class="px-3 py-2 font-medium">{{ t('admin.affiliates.invitees.columns.rebate') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="item in invitees"
+              :key="item.user_id"
+              class="border-b border-gray-100 last:border-b-0 dark:border-dark-800"
+            >
+              <td class="px-3 py-3 text-gray-900 dark:text-white">{{ item.email || '-' }}</td>
+              <td class="px-3 py-3 text-gray-700 dark:text-gray-300">{{ item.username || '-' }}</td>
+              <td class="px-3 py-3 text-gray-700 dark:text-gray-300">{{ formatDateTime(item.created_at) || '-' }}</td>
+              <td class="px-3 py-3 text-gray-700 dark:text-gray-300">{{ formatCurrency(item.total_consumed || 0) }}</td>
+              <td class="px-3 py-3 text-gray-700 dark:text-gray-300">{{ formatCurrency(item.total_rebate || 0) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </BaseDialog>
   </AppLayout>
 </template>
 
@@ -111,12 +166,15 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type { AdminAffiliateSummary } from '@/api/admin'
+import type { AffiliateInvitee } from '@/types'
 import { useAppStore } from '@/stores/app'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
-import { formatCurrency } from '@/utils/format'
+import { formatCurrency, formatDateTime } from '@/utils/format'
+import { extractApiErrorMessage } from '@/utils/apiError'
 import type { Column } from '@/components/common/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
@@ -130,6 +188,10 @@ const loading = ref(false)
 const searchQuery = ref('')
 const startDate = ref('')
 const endDate = ref('')
+const inviteesOpen = ref(false)
+const inviteesLoading = ref(false)
+const invitees = ref<AffiliateInvitee[]>([])
+const activeInviteeOwner = ref<AdminAffiliateSummary | null>(null)
 
 const pagination = reactive({
   page: 1,
@@ -150,6 +212,18 @@ const columns = computed<Column[]>(() => [
 
 let abortController: AbortController | null = null
 let searchTimeout: ReturnType<typeof setTimeout> | null = null
+let activeInviteesRequestID = 0
+
+const inviteesDialogTitle = computed(() => {
+  if (!activeInviteeOwner.value) {
+    return t('admin.affiliates.invitees.title')
+  }
+  return t('admin.affiliates.invitees.titleWithUser', {
+    user: activeInviteeOwner.value.email || t('admin.affiliates.userId', { id: activeInviteeOwner.value.user_id }),
+  })
+})
+
+const formatCount = (value: number) => Number(value || 0).toLocaleString()
 
 const loadAffiliates = async () => {
   if (abortController) {
@@ -228,6 +302,39 @@ const handlePageSizeChange = (pageSize: number) => {
   loadAffiliates()
 }
 
+const openInvitees = async (row: AdminAffiliateSummary) => {
+  const requestID = ++activeInviteesRequestID
+  activeInviteeOwner.value = row
+  inviteesOpen.value = true
+  inviteesLoading.value = true
+  invitees.value = []
+
+  try {
+    const items = await adminAPI.affiliate.listInvitees(row.user_id)
+    if (requestID !== activeInviteesRequestID) {
+      return
+    }
+    invitees.value = items
+  } catch (error) {
+    if (requestID !== activeInviteesRequestID) {
+      return
+    }
+    appStore.showError(extractApiErrorMessage(error, t('admin.affiliates.invitees.failedToLoad')))
+  } finally {
+    if (requestID === activeInviteesRequestID) {
+      inviteesLoading.value = false
+    }
+  }
+}
+
+const closeInvitees = () => {
+  activeInviteesRequestID++
+  inviteesOpen.value = false
+  inviteesLoading.value = false
+  invitees.value = []
+  activeInviteeOwner.value = null
+}
+
 onMounted(() => {
   loadAffiliates()
 })
@@ -239,5 +346,6 @@ onUnmounted(() => {
   if (searchTimeout) {
     clearTimeout(searchTimeout)
   }
+  closeInvitees()
 })
 </script>

@@ -239,6 +239,13 @@ func (s *AffiliateService) ListAdminAffiliateStats(ctx context.Context, params A
 	return s.repo.ListAdminAffiliateStats(ctx, params)
 }
 
+func (s *AffiliateService) ListAdminInvitees(ctx context.Context, inviterID int64) ([]AffiliateInvitee, error) {
+	if inviterID <= 0 {
+		return nil, infraerrors.BadRequest("INVALID_USER", "invalid user")
+	}
+	return s.listInvitees(ctx, inviterID)
+}
+
 func (s *AffiliateService) BindInviterByCode(ctx context.Context, userID int64, rawCode string) error {
 	code := strings.ToUpper(strings.TrimSpace(rawCode))
 	if code == "" {
