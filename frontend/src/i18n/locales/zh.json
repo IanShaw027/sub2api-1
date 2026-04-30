@@ -5736,7 +5736,7 @@
       },
       "authSourceDefaults": {
         "title": "来源附加授权",
-        "description": "按第三方认证来源配置附加余额、并发和订阅。注册时会在用户默认值基础上叠加，首次绑定开启后也会叠加；不同来源可累计，同一来源只发一次。",
+        "description": "按第三方认证来源配置附加余额、并发和订阅。启用后，新用户通过该来源注册会在用户默认值基础上叠加发放；开启“首次绑定也生效”后，老用户首次绑定该来源时也会发放，同一来源只发一次。",
         "requireEmailLabel": "第三方注册强制补充邮箱",
         "requireEmailHint": "启用后，Linux DO、OIDC、微信注册缺少邮箱时必须先补充邮箱地址。",
         "sources": {
@@ -5757,10 +5757,10 @@
             "description": "微信注册或首次绑定时可追加的附加权益。"
           }
         },
-        "grantOnSignupLabel": "注册时叠加授权",
-        "grantOnSignupHint": "新用户通过该来源注册时，在用户默认值基础上追加发放。",
-        "grantOnFirstBindLabel": "首次绑定时叠加授权",
-        "grantOnFirstBindHint": "已有账号首次绑定该来源时追加发放；以后重复绑定同一来源不会再获得。",
+        "enabledLabel": "启用来源附加授权",
+        "enabledHint": "开启后，使用该来源注册的新用户会获得下面配置的附加权益。",
+        "grantOnFirstBindLabel": "首次绑定也生效",
+        "grantOnFirstBindHint": "开启后，老用户首次绑定该来源时也会获得同样的附加权益；关闭时仅对通过该来源注册的新用户生效。",
         "bonusBalanceLabel": "附加余额",
         "bonusConcurrencyLabel": "附加并发数",
         "defaultSubscriptionsLabel": "附加订阅",

@@ -26,6 +26,7 @@ describe("admin settings auth source defaults helpers", () => {
     });
 
     expect(state.email).toEqual({
+      enabled: true,
       balance: 9.5,
       concurrency: 3,
       subscriptions: [{ group_id: 1, validity_days: 30 }],
@@ -33,6 +34,7 @@ describe("admin settings auth source defaults helpers", () => {
       grant_on_first_bind: true,
     });
     expect(state.linuxdo).toEqual({
+      enabled: true,
       balance: 6,
       concurrency: 8,
       subscriptions: [{ group_id: 2, validity_days: 60 }],
@@ -40,6 +42,7 @@ describe("admin settings auth source defaults helpers", () => {
       grant_on_first_bind: false,
     });
     expect(state.oidc).toEqual({
+      enabled: false,
       balance: 0,
       concurrency: undefined,
       subscriptions: [],
@@ -47,6 +50,7 @@ describe("admin settings auth source defaults helpers", () => {
       grant_on_first_bind: false,
     });
     expect(state.wechat).toEqual({
+      enabled: false,
       balance: 0,
       concurrency: undefined,
       subscriptions: [],
@@ -59,6 +63,7 @@ describe("admin settings auth source defaults helpers", () => {
     const state = buildAuthSourceDefaultsState({});
 
     expect(state.email.grant_on_signup).toBe(false);
+    expect(state.email.enabled).toBe(false);
     expect(state.linuxdo.grant_on_signup).toBe(false);
     expect(state.oidc.grant_on_signup).toBe(false);
     expect(state.wechat.grant_on_signup).toBe(false);
@@ -71,6 +76,7 @@ describe("admin settings auth source defaults helpers", () => {
 
     appendAuthSourceDefaultsToUpdateRequest(payload, {
       email: {
+        enabled: true,
         balance: 1.25,
         concurrency: 2,
         subscriptions: [{ group_id: 3, validity_days: 7 }],
@@ -78,6 +84,7 @@ describe("admin settings auth source defaults helpers", () => {
         grant_on_first_bind: false,
       },
       linuxdo: {
+        enabled: true,
         balance: 0,
         concurrency: 0,
         subscriptions: [],
@@ -85,6 +92,7 @@ describe("admin settings auth source defaults helpers", () => {
         grant_on_first_bind: true,
       },
       oidc: {
+        enabled: true,
         balance: 4,
         concurrency: 9,
         subscriptions: [{ group_id: 9, validity_days: 90 }],
@@ -92,11 +100,12 @@ describe("admin settings auth source defaults helpers", () => {
         grant_on_first_bind: true,
       },
       wechat: {
+        enabled: false,
         balance: 2,
         concurrency: 5,
         subscriptions: [],
-        grant_on_signup: false,
-        grant_on_first_bind: false,
+        grant_on_signup: true,
+        grant_on_first_bind: true,
       },
     });
 
@@ -112,7 +121,7 @@ describe("admin settings auth source defaults helpers", () => {
       auth_source_default_linuxdo_balance: 0,
       auth_source_default_linuxdo_concurrency: 0,
       auth_source_default_linuxdo_subscriptions: [],
-      auth_source_default_linuxdo_grant_on_signup: false,
+      auth_source_default_linuxdo_grant_on_signup: true,
       auth_source_default_linuxdo_grant_on_first_bind: true,
       auth_source_default_oidc_balance: 4,
       auth_source_default_oidc_concurrency: 9,

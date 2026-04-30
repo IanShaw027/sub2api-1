@@ -19,6 +19,7 @@ export interface DefaultSubscriptionSetting {
 export type AuthSourceType = "email" | "linuxdo" | "oidc" | "wechat";
 
 export interface AuthSourceDefaultsValue {
+  enabled: boolean;
   balance: number;
   concurrency?: number;
   subscriptions: DefaultSubscriptionSetting[];
@@ -207,7 +208,12 @@ export function buildAuthSourceDefaultsState(
   return AUTH_SOURCE_TYPES.reduce((acc, source) => {
     const subscriptions = raw[`auth_source_default_${source}_subscriptions`];
     const concurrency = raw[`auth_source_default_${source}_concurrency`];
+    const grantOnSignup =
+      raw[`auth_source_default_${source}_grant_on_signup`] === true;
+    const grantOnFirstBind =
+      raw[`auth_source_default_${source}_grant_on_first_bind`] === true;
     acc[source] = {
+      enabled: grantOnSignup || grantOnFirstBind,
       balance: Number(
         raw[`auth_source_default_${source}_balance`] ??
           AUTH_SOURCE_DEFAULT_BALANCE,
@@ -219,10 +225,8 @@ export function buildAuthSourceDefaultsState(
           ? (subscriptions as DefaultSubscriptionSetting[])
           : [],
       ),
-      grant_on_signup:
-        raw[`auth_source_default_${source}_grant_on_signup`] === true,
-      grant_on_first_bind:
-        raw[`auth_source_default_${source}_grant_on_first_bind`] === true,
+      grant_on_signup: grantOnSignup,
+      grant_on_first_bind: grantOnFirstBind,
     };
     return acc;
   }, {} as AuthSourceDefaultsState);
@@ -249,9 +253,9 @@ export function appendAuthSourceDefaultsToUpdateRequest(
     target[`auth_source_default_${source}_subscriptions`] =
       normalizeDefaultSubscriptionSettings(current.subscriptions);
     target[`auth_source_default_${source}_grant_on_signup`] =
-      current.grant_on_signup;
+      current.enabled;
     target[`auth_source_default_${source}_grant_on_first_bind`] =
-      current.grant_on_first_bind;
+      current.enabled && current.grant_on_first_bind;
   }
 
   return payload;

@@ -2437,61 +2437,51 @@
                         {{ authSource.description }}
                       </p>
                     </div>
+                    <div
+                      class="mt-4 flex items-center justify-between rounded border border-gray-200 px-4 py-3 md:mt-0 md:min-w-[280px] dark:border-dark-700"
+                    >
+                      <div>
+                        <label class="font-medium text-gray-900 dark:text-white">
+                          {{ t("admin.settings.authSourceDefaults.enabledLabel") }}
+                        </label>
+                        <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                          {{ t("admin.settings.authSourceDefaults.enabledHint") }}
+                        </p>
+                      </div>
+                      <Toggle
+                        v-model="authSourceDefaults[authSource.source].enabled"
+                        :data-testid="`auth-source-${authSource.source}-enabled`"
+                      />
+                    </div>
                   </div>
 
                   <div
+                    v-if="isAuthSourceBonusEnabled(authSource.source)"
                     :data-testid="`auth-source-${authSource.source}-panel`"
                     class="mt-4 space-y-4 border-t border-gray-100 pt-4 dark:border-dark-700"
                   >
                     <div
-                      class="grid grid-cols-1 gap-4 md:grid-cols-2"
+                      class="flex items-center justify-between rounded border border-gray-200 px-4 py-3 dark:border-dark-700"
                     >
-                      <div
-                        class="flex items-center justify-between rounded border border-gray-200 px-4 py-3 dark:border-dark-700"
-                      >
-                        <div>
-                          <label
-                            class="font-medium text-gray-900 dark:text-white"
-                          >
-                            {{ t("admin.settings.authSourceDefaults.grantOnSignupLabel") }}
-                          </label>
-                          <p
-                            class="mt-0.5 text-xs text-gray-500 dark:text-gray-400"
-                          >
-                            {{ t("admin.settings.authSourceDefaults.grantOnSignupHint") }}
-                          </p>
-                        </div>
-                        <Toggle
-                          v-model="
-                            authSourceDefaults[authSource.source].grant_on_signup
-                          "
-                          :data-testid="`auth-source-${authSource.source}-enabled`"
-                        />
+                      <div>
+                        <label
+                          class="font-medium text-gray-900 dark:text-white"
+                        >
+                          {{ t("admin.settings.authSourceDefaults.grantOnFirstBindLabel") }}
+                        </label>
+                        <p
+                          class="mt-0.5 text-xs text-gray-500 dark:text-gray-400"
+                        >
+                          {{ t("admin.settings.authSourceDefaults.grantOnFirstBindHint") }}
+                        </p>
                       </div>
-
-                      <div
-                        class="flex items-center justify-between rounded border border-gray-200 px-4 py-3 dark:border-dark-700"
-                      >
-                        <div>
-                          <label
-                            class="font-medium text-gray-900 dark:text-white"
-                          >
-                            {{ t("admin.settings.authSourceDefaults.grantOnFirstBindLabel") }}
-                          </label>
-                          <p
-                            class="mt-0.5 text-xs text-gray-500 dark:text-gray-400"
-                          >
-                            {{ t("admin.settings.authSourceDefaults.grantOnFirstBindHint") }}
-                          </p>
-                        </div>
-                        <Toggle
-                          v-model="
-                            authSourceDefaults[authSource.source]
-                              .grant_on_first_bind
-                          "
-                          :data-testid="`auth-source-${authSource.source}-first-bind-enabled`"
-                        />
-                      </div>
+                      <Toggle
+                        v-model="
+                          authSourceDefaults[authSource.source]
+                            .grant_on_first_bind
+                        "
+                        :data-testid="`auth-source-${authSource.source}-first-bind-enabled`"
+                      />
                     </div>
 
                     <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -6529,7 +6519,7 @@ function findDuplicateDefaultSubscription(
 
 function isAuthSourceBonusEnabled(source: AuthSourceType): boolean {
   const current = authSourceDefaults[source];
-  return current.grant_on_signup || current.grant_on_first_bind;
+  return current.enabled;
 }
 
 function dedupeDefaultSubscriptions(
@@ -6556,6 +6546,9 @@ function buildAuthSourceDefaultsForSubmit(): AuthSourceDefaultsState {
 
     acc[authSource.source] = {
       ...current,
+      grant_on_signup: current.enabled,
+      grant_on_first_bind:
+        current.enabled && current.grant_on_first_bind,
       subscriptions: isAuthSourceBonusEnabled(authSource.source)
         ? normalizedSubscriptions
         : dedupeDefaultSubscriptions(normalizedSubscriptions),

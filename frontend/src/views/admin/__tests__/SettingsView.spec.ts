@@ -882,26 +882,38 @@ describe("admin SettingsView wechat connect controls", () => {
     ).toContain("密钥已配置");
   });
 
-  it("shows source bonus grants settings without requiring signup grant", async () => {
+  it("shows source bonus grants settings only after the source grant is enabled", async () => {
     const wrapper = mountView();
 
     await flushPromises();
     await openUsersTab(wrapper);
 
     expect(
-      wrapper.find('[data-testid="auth-source-email-panel"]').exists(),
-    ).toBe(true);
-    expect(wrapper.text()).toContain("注册时叠加授权");
-    expect(wrapper.text()).toContain("首次绑定时叠加授权");
-    expect(
       (
         wrapper.get('[data-testid="auth-source-email-enabled"]')
           .element as HTMLInputElement
       ).checked,
     ).toBe(false);
-    expect(wrapper.text()).toContain("附加余额");
-    expect(wrapper.text()).toContain("附加并发数");
-    expect(wrapper.text()).toContain("添加附加订阅");
+    expect(
+      wrapper.find('[data-testid="auth-source-email-panel"]').exists(),
+    ).toBe(false);
+    expect(
+      wrapper
+        .find('[data-testid="auth-source-email-first-bind-enabled"]')
+        .exists(),
+    ).toBe(false);
+
+    await wrapper
+      .get('[data-testid="auth-source-email-enabled"]')
+      .setValue(true);
+
+    const panel = wrapper.get('[data-testid="auth-source-email-panel"]');
+    expect(panel.exists()).toBe(true);
+    expect(
+      wrapper
+        .find('[data-testid="auth-source-email-first-bind-enabled"]')
+        .exists(),
+    ).toBe(true);
   });
 
   it("serializes auth-source grant toggles while preserving omitted and explicit zero concurrency", async () => {
@@ -921,6 +933,7 @@ describe("admin SettingsView wechat connect controls", () => {
     await wrapper
       .get('[data-testid="auth-source-email-enabled"]')
       .setValue(true);
+    await flushPromises();
     await wrapper
       .get('[data-testid="auth-source-email-first-bind-enabled"]')
       .setValue(true);

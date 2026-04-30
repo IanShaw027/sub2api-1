@@ -5560,7 +5560,7 @@
       },
       "authSourceDefaults": {
         "title": "Source Bonus Grants",
-        "description": "Configure extra balance, concurrency, and subscriptions per third-party auth source. They stack on top of user defaults at signup, can also stack on first bind when enabled, accumulate across different sources, and only grant once per source.",
+        "description": "Configure extra balance, concurrency, and subscriptions per third-party auth source. When enabled, new users who register through that source receive these extras on top of the user defaults. If “Also grant on first bind” is enabled, existing users receive the same extras the first time they bind that source. Each source only grants once per user.",
         "requireEmailLabel": "Require email on third-party signup",
         "requireEmailHint": "When enabled, Linux DO, OIDC, and WeChat signups must provide an email before account creation.",
         "sources": {
@@ -5581,10 +5581,10 @@
             "description": "Extra grants that can be added on WeChat signup or first bind."
           }
         },
-        "grantOnSignupLabel": "Grant on signup",
-        "grantOnSignupHint": "Add these extras on top of user defaults when a new user registers through this source.",
-        "grantOnFirstBindLabel": "Grant on first bind",
-        "grantOnFirstBindHint": "Grant these extras when an existing user binds this source for the first time. Rebinding the same source does not grant again.",
+        "enabledLabel": "Enable source bonus grant",
+        "enabledHint": "When enabled, new users who sign up through this source receive the configured extras.",
+        "grantOnFirstBindLabel": "Also grant on first bind",
+        "grantOnFirstBindHint": "When enabled, existing users receive the same extras the first time they bind this source. When disabled, only new signups through this source receive them.",
         "bonusBalanceLabel": "Bonus balance",
         "bonusConcurrencyLabel": "Bonus concurrency",
         "defaultSubscriptionsLabel": "Bonus subscriptions",
