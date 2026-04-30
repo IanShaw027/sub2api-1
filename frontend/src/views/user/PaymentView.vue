@@ -277,6 +277,7 @@ import Icon from '@/components/icons/Icon.vue'
 import type { PaymentMethodOption } from '@/components/payment/PaymentMethodSelector.vue'
 import { buildPaymentErrorToastMessage, describePaymentScenarioError } from './paymentUx'
 import { hasWechatResumeQuery, parseWechatResumeRoute, stripWechatResumeQuery } from './paymentWechatResume'
+import { normalizePaymentPlanValidityUnit } from '@/utils/paymentPlanValidity'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -639,7 +640,8 @@ const renewalPlans = computed(() => {
 
 const planValiditySuffix = computed(() => {
   if (!selectedPlan.value) return ''
-  const u = selectedPlan.value.validity_unit || 'day'
+  const u = normalizePaymentPlanValidityUnit(selectedPlan.value.validity_unit)
+  if (u === 'week') return t('payment.perWeek')
   if (u === 'month') return t('payment.perMonth')
   if (u === 'year') return t('payment.perYear')
   return `${selectedPlan.value.validity_days}${t('payment.days')}`

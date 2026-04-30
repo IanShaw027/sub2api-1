@@ -84,6 +84,12 @@ func TestValidatePlanRequired_TrimmedValidName(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestValidatePlanRequired_InvalidValidityUnit(t *testing.T) {
+	err := validatePlanRequired("Pro", 1, 9.99, 30, "fortnight", nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "validity unit")
+}
+
 func TestValidatePlanRequired_NegativeOriginalPrice(t *testing.T) {
 	neg := -10.0
 	err := validatePlanRequired("Pro", 1, 9.99, 30, "days", &neg)
@@ -185,6 +191,29 @@ func TestValidatePlanPatch_EmptyValidityUnit(t *testing.T) {
 func TestValidatePlanPatch_ValidValidityUnit(t *testing.T) {
 	err := validatePlanPatch(UpdatePlanRequest{ValidityUnit: ptrStr("days")})
 	require.NoError(t, err)
+}
+
+func TestValidatePlanPatch_InvalidValidityUnit(t *testing.T) {
+	err := validatePlanPatch(UpdatePlanRequest{ValidityUnit: ptrStr("fortnight")})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "validity unit")
+}
+
+func TestNormalizePlanValidityUnit(t *testing.T) {
+	require.Equal(t, "day", normalizePlanValidityUnit("day"))
+	require.Equal(t, "day", normalizePlanValidityUnit("days"))
+	require.Equal(t, "week", normalizePlanValidityUnit("weeks"))
+	require.Equal(t, "month", normalizePlanValidityUnit("month"))
+	require.Equal(t, "year", normalizePlanValidityUnit("years"))
+	require.Empty(t, normalizePlanValidityUnit("fortnight"))
+}
+
+func TestComputePlanValidityDays(t *testing.T) {
+	require.Equal(t, 30, computePlanValidityDays(30, "day"))
+	require.Equal(t, 14, computePlanValidityDays(2, "weeks"))
+	require.Equal(t, 90, computePlanValidityDays(3, "months"))
+	require.Equal(t, 365, computePlanValidityDays(1, "year"))
+	require.Equal(t, 5, computePlanValidityDays(5, "fortnight"))
 }
 
 func TestValidatePlanPatch_AllNil(t *testing.T) {

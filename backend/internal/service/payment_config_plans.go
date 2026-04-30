@@ -25,7 +25,7 @@ func validatePlanRequired(name string, groupID int64, price float64, validityDay
 	if validityDays <= 0 {
 		return infraerrors.BadRequest("PLAN_VALIDITY_REQUIRED", "validity days must be > 0")
 	}
-	if strings.TrimSpace(validityUnit) == "" {
+	if normalizePlanValidityUnit(validityUnit) == "" {
 		return infraerrors.BadRequest("PLAN_VALIDITY_UNIT_REQUIRED", "validity unit is required")
 	}
 	if originalPrice != nil && *originalPrice < 0 {
@@ -48,7 +48,7 @@ func validatePlanPatch(req UpdatePlanRequest) error {
 	if req.ValidityDays != nil && *req.ValidityDays <= 0 {
 		return infraerrors.BadRequest("PLAN_VALIDITY_REQUIRED", "validity days must be > 0")
 	}
-	if req.ValidityUnit != nil && strings.TrimSpace(*req.ValidityUnit) == "" {
+	if req.ValidityUnit != nil && normalizePlanValidityUnit(*req.ValidityUnit) == "" {
 		return infraerrors.BadRequest("PLAN_VALIDITY_UNIT_REQUIRED", "validity unit is required")
 	}
 	if req.OriginalPrice != nil && *req.OriginalPrice < 0 {
@@ -124,9 +124,10 @@ func (s *PaymentConfigService) CreatePlan(ctx context.Context, req CreatePlanReq
 	if err := validatePlanRequired(req.Name, req.GroupID, req.Price, req.ValidityDays, req.ValidityUnit, req.OriginalPrice); err != nil {
 		return nil, err
 	}
+	validityUnit := normalizePlanValidityUnit(req.ValidityUnit)
 	b := s.entClient.SubscriptionPlan.Create().
 		SetGroupID(req.GroupID).SetName(req.Name).SetDescription(req.Description).
-		SetPrice(req.Price).SetValidityDays(req.ValidityDays).SetValidityUnit(req.ValidityUnit).
+		SetPrice(req.Price).SetValidityDays(req.ValidityDays).SetValidityUnit(validityUnit).
 		SetFeatures(req.Features).SetProductName(req.ProductName).
 		SetForSale(req.ForSale).SetSortOrder(req.SortOrder)
 	if req.OriginalPrice != nil {
@@ -162,7 +163,7 @@ func (s *PaymentConfigService) UpdatePlan(ctx context.Context, id int64, req Upd
 		u.SetValidityDays(*req.ValidityDays)
 	}
 	if req.ValidityUnit != nil {
-		u.SetValidityUnit(*req.ValidityUnit)
+		u.SetValidityUnit(normalizePlanValidityUnit(*req.ValidityUnit))
 	}
 	if req.Features != nil {
 		u.SetFeatures(*req.Features)

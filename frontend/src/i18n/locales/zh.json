@@ -4053,6 +4053,19 @@
         "historyQuota": "历史返利",
         "periodInvitedCount": "区间邀请人数",
         "periodRebateAmount": "区间返利金额"
+      },
+      "invitees": {
+        "title": "已邀请用户明细",
+        "titleWithUser": "{user} 的已邀请用户明细",
+        "empty": "暂无邀请记录",
+        "failedToLoad": "加载邀请用户明细失败",
+        "columns": {
+          "email": "邮箱",
+          "username": "用户名",
+          "joinedAt": "注册时间",
+          "consumed": "充值总额",
+          "rebate": "返利总额"
+        }
       }
     },
     "usage": {
@@ -6430,10 +6443,12 @@
       "models": "模型"
     },
     "days": "天",
+    "weeks": "周",
     "months": "个月",
     "years": "年",
     "oneMonth": "1 个月",
     "oneYear": "1 年",
+    "perWeek": "周",
     "perMonth": "月",
     "perYear": "年",
     "admin": {
@@ -6457,6 +6472,7 @@
       "days": "天",
       "weeks": "周",
       "months": "月",
+      "years": "年",
       "searchOrders": "搜索订单...",
       "allStatuses": "全部状态",
       "allPaymentTypes": "全部支付方式",

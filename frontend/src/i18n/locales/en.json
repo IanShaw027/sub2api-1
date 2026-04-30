@@ -3877,6 +3877,19 @@
         "historyQuota": "Historical Rebate",
         "periodInvitedCount": "Period Invites",
         "periodRebateAmount": "Period Rebate"
+      },
+      "invitees": {
+        "title": "Invited User Details",
+        "titleWithUser": "Invited User Details for {user}",
+        "empty": "No invited users yet",
+        "failedToLoad": "Failed to load invited user details",
+        "columns": {
+          "email": "Email",
+          "username": "Username",
+          "joinedAt": "Joined At",
+          "consumed": "Total Recharge",
+          "rebate": "Total Rebate"
+        }
       }
     },
     "usage": {
@@ -6254,10 +6267,12 @@
       "models": "Models"
     },
     "days": "days",
+    "weeks": "weeks",
     "months": "months",
     "years": "years",
     "oneMonth": "1 Month",
     "oneYear": "1 Year",
+    "perWeek": "week",
     "perMonth": "month",
     "perYear": "year",
     "admin": {
@@ -6281,6 +6296,7 @@
       "days": "days",
       "weeks": "weeks",
       "months": "months",
+      "years": "years",
       "searchOrders": "Search orders...",
       "allStatuses": "All Statuses",
       "allPaymentTypes": "All Payment Types",

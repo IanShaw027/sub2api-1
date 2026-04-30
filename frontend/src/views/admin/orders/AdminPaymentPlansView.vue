@@ -34,7 +34,7 @@
           </div>
         </template>
         <template #cell-validity_days="{ value, row }">
-          <span class="text-sm">{{ value }} {{ t('payment.admin.' + (row.validity_unit || 'days')) }}</span>
+          <span class="text-sm">{{ value }} {{ t('payment.admin.' + validityUnitLabelKey(row.validity_unit)) }}</span>
         </template>
         <template #cell-for_sale="{ value, row }">
           <button
@@ -90,6 +90,7 @@ import Icon from '@/components/icons/Icon.vue'
 import GroupBadge from '@/components/common/GroupBadge.vue'
 import PlanEditDialog from './PlanEditDialog.vue'
 import { platformTextClass } from '@/utils/platformColors'
+import { normalizePaymentPlanValidityUnit } from '@/utils/paymentPlanValidity'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -115,6 +116,19 @@ function isGroupMissing(id: number): boolean {
 function getPlanNameClass(groupId: number): string {
   const group = getGroup(groupId)
   return group ? platformTextClass(group.platform) : 'text-gray-900 dark:text-white'
+}
+
+function validityUnitLabelKey(unit: string): string {
+  switch (normalizePaymentPlanValidityUnit(unit)) {
+    case 'week':
+      return 'weeks'
+    case 'month':
+      return 'months'
+    case 'year':
+      return 'years'
+    default:
+      return 'days'
+  }
 }
 
 

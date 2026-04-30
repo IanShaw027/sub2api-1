@@ -274,7 +274,7 @@ If you previously used [Sub2ApiPay](https://github.com/touwaeriol/sub2apipay) as
 | Payment Methods | EasyPay, Alipay, WeChat, Stripe | Same |
 | Configuration | Environment variables + separate admin UI | Unified in Sub2API admin dashboard |
 | Top-up Integration | Via Admin API callback | Internal processing, more reliable |
-| Subscription Plans | Supported | Not yet (planned) |
+| Subscription Plans | Supported | Supported |
 | Order Management | Separate admin interface | Integrated in Sub2API admin dashboard |
 
 ### Migration Steps
