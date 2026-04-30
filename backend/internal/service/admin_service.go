@@ -69,6 +69,7 @@ type AdminService interface {
 	GetAccountsByIDs(ctx context.Context, ids []int64) ([]*Account, error)
 	CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error)
 	UpdateAccount(ctx context.Context, id int64, input *UpdateAccountInput) (*Account, error)
+	UpdateAccountExtra(ctx context.Context, id int64, updates map[string]any) error
 	DeleteAccount(ctx context.Context, id int64) error
 	RefreshAccountCredentials(ctx context.Context, id int64) (*Account, error)
 	ClearAccountError(ctx context.Context, id int64) (*Account, error)
@@ -194,11 +195,14 @@ type CreateGroupInput struct {
 	WeeklyLimitUSD   *float64 // 周限额 (USD)
 	MonthlyLimitUSD  *float64 // 月限额 (USD)
 	// 图片生成计费配置（仅 antigravity 平台使用）
-	ImagePrice1K    *float64
-	ImagePrice2K    *float64
-	ImagePrice4K    *float64
-	ClaudeCodeOnly  bool   // 仅允许 Claude Code 客户端
-	FallbackGroupID *int64 // 降级分组 ID
+	ImagePrice1K      *float64
+	ImagePrice2K      *float64
+	ImagePrice4K      *float64
+	Images2APIPrice1K *float64
+	Images2APIPrice2K *float64
+	Images2APIPrice4K *float64
+	ClaudeCodeOnly    bool   // 仅允许 Claude Code 客户端
+	FallbackGroupID   *int64 // 降级分组 ID
 	// 无效请求兜底分组 ID（仅 anthropic 平台使用）
 	FallbackGroupIDOnInvalidRequest *int64
 	// 模型路由配置（仅 anthropic 平台使用）
@@ -231,11 +235,14 @@ type UpdateGroupInput struct {
 	WeeklyLimitUSD   *float64 // 周限额 (USD)
 	MonthlyLimitUSD  *float64 // 月限额 (USD)
 	// 图片生成计费配置（仅 antigravity 平台使用）
-	ImagePrice1K    *float64
-	ImagePrice2K    *float64
-	ImagePrice4K    *float64
-	ClaudeCodeOnly  *bool  // 仅允许 Claude Code 客户端
-	FallbackGroupID *int64 // 降级分组 ID
+	ImagePrice1K      *float64
+	ImagePrice2K      *float64
+	ImagePrice4K      *float64
+	Images2APIPrice1K *float64
+	Images2APIPrice2K *float64
+	Images2APIPrice4K *float64
+	ClaudeCodeOnly    *bool  // 仅允许 Claude Code 客户端
+	FallbackGroupID   *int64 // 降级分组 ID
 	// 无效请求兜底分组 ID（仅 anthropic 平台使用）
 	FallbackGroupIDOnInvalidRequest *int64
 	// 模型路由配置（仅 anthropic 平台使用）
@@ -1426,6 +1433,9 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	imagePrice1K := normalizePrice(input.ImagePrice1K)
 	imagePrice2K := normalizePrice(input.ImagePrice2K)
 	imagePrice4K := normalizePrice(input.ImagePrice4K)
+	images2APIPrice1K := normalizePrice(input.Images2APIPrice1K)
+	images2APIPrice2K := normalizePrice(input.Images2APIPrice2K)
+	images2APIPrice4K := normalizePrice(input.Images2APIPrice4K)
 
 	// 校验降级分组
 	if input.FallbackGroupID != nil {
@@ -1496,6 +1506,9 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		ImagePrice1K:                    imagePrice1K,
 		ImagePrice2K:                    imagePrice2K,
 		ImagePrice4K:                    imagePrice4K,
+		Images2APIPrice1K:               images2APIPrice1K,
+		Images2APIPrice2K:               images2APIPrice2K,
+		Images2APIPrice4K:               images2APIPrice4K,
 		ClaudeCodeOnly:                  input.ClaudeCodeOnly,
 		FallbackGroupID:                 input.FallbackGroupID,
 		FallbackGroupIDOnInvalidRequest: fallbackOnInvalidRequest,
@@ -1677,6 +1690,15 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	if input.ImagePrice4K != nil {
 		group.ImagePrice4K = normalizePrice(input.ImagePrice4K)
+	}
+	if input.Images2APIPrice1K != nil {
+		group.Images2APIPrice1K = normalizePrice(input.Images2APIPrice1K)
+	}
+	if input.Images2APIPrice2K != nil {
+		group.Images2APIPrice2K = normalizePrice(input.Images2APIPrice2K)
+	}
+	if input.Images2APIPrice4K != nil {
+		group.Images2APIPrice4K = normalizePrice(input.Images2APIPrice4K)
 	}
 
 	// Claude Code 客户端限制
@@ -2144,6 +2166,10 @@ func (s *adminServiceImpl) GetAccountsByIDs(ctx context.Context, ids []int64) ([
 	return accounts, nil
 }
 
+func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, updates map[string]any) error {
+	return s.accountRepo.UpdateExtra(ctx, id, updates)
+}
+
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
 	if err := validatePlatformAccountType(input.Platform, input.Type); err != nil {
 		return nil, err
@@ -2191,6 +2217,8 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 			return nil, err
 		}
 	}
+
+	input.Extra = NormalizeOpenAIWebProfileExtra(input.Platform, input.Type, input.Credentials, input.Extra)
 
 	account := &Account{
 		Name:        input.Name,
@@ -2310,6 +2338,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	// Extra 使用 map：需要区分“未提供(nil)”与“显式清空({})”。
 	// 关闭配额限制时前端会删除 quota_* 键并提交 extra:{}，此时也必须落库。
 	if input.Extra != nil {
+		input.Extra = NormalizeOpenAIWebProfileExtra(account.Platform, account.Type, account.Credentials, input.Extra)
 		// 保留配额用量字段，防止编辑账号时意外重置
 		for _, key := range []string{"quota_used", "quota_daily_used", "quota_daily_start", "quota_weekly_used", "quota_weekly_start"} {
 			if v, ok := account.Extra[key]; ok {
@@ -2482,13 +2511,13 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 
 	kiroCredentialUpdateIDs := make([]int64, 0)
-	if len(input.Credentials) > 0 {
+	if len(input.Credentials) > 0 || len(input.Extra) > 0 {
 		for _, accountID := range input.AccountIDs {
 			account := accountByID[accountID]
 			if account == nil {
 				continue
 			}
-			if account.Platform == PlatformKiro {
+			if account.Platform == PlatformKiro && len(input.Credentials) > 0 {
 				mergedCredentials := mergeAccountCredentialsForAccountUpdate(account.Platform, account.Type, account.Credentials, input.Credentials, false)
 				if err := validateKiroAccountCredentials(account.Type, mergedCredentials); err != nil {
 					return nil, err
@@ -2523,9 +2552,19 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 
 	// Prepare bulk updates for columns and JSONB fields.
+	bulkExtra := input.Extra
+	if len(input.Extra) > 0 {
+		for _, accountID := range input.AccountIDs {
+			account := accountByID[accountID]
+			if account != nil && account.Platform == PlatformOpenAI {
+				bulkExtra = nil
+				break
+			}
+		}
+	}
 	repoUpdates := AccountBulkUpdate{
 		Credentials: input.Credentials,
-		Extra:       input.Extra,
+		Extra:       bulkExtra,
 	}
 	if input.Name != "" {
 		repoUpdates.Name = &input.Name
@@ -2558,6 +2597,20 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 
 	// Run bulk update for column/jsonb fields first. Group-only edits have no
 	// account-table SET clauses, so they should go straight to BindGroups.
+	if len(input.Extra) > 0 && bulkExtra == nil {
+		for _, accountID := range input.AccountIDs {
+			account := accountByID[accountID]
+			if account == nil {
+				continue
+			}
+			applyBulkUpdateInputToAccount(account, input)
+			if err := s.accountRepo.Update(ctx, account); err != nil {
+				return nil, err
+			}
+		}
+		return s.finishBulkUpdateGroupBindings(ctx, input, result)
+	}
+
 	if hasAccountBulkUpdateFields(repoUpdates) {
 		affected, err := s.accountRepo.BulkUpdate(ctx, input.AccountIDs, repoUpdates)
 		if err != nil {
@@ -2630,7 +2683,8 @@ func applyBulkUpdateInputToAccount(account *Account, input *BulkUpdateAccountsIn
 		account.Credentials = mergeAccountCredentialsForAccountUpdate(account.Platform, account.Type, account.Credentials, input.Credentials, false)
 	}
 	if len(input.Extra) > 0 {
-		account.Extra = MergeCredentials(account.Extra, input.Extra)
+		mergedExtra := MergeCredentials(account.Extra, input.Extra)
+		account.Extra = NormalizeOpenAIWebProfileExtra(account.Platform, account.Type, account.Credentials, mergedExtra)
 	}
 }
 

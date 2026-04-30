@@ -7655,18 +7655,35 @@ type postUsageBillingParams struct {
 	IsSubscriptionBill    bool
 	AccountRateMultiplier float64
 	APIKeyService         APIKeyQuotaUpdater
+	UsageLog              *UsageLog
+}
+
+func usageBillingRequestType(p *postUsageBillingParams) RequestType {
+	if p == nil || p.UsageLog == nil {
+		return RequestTypeUnknown
+	}
+	return p.UsageLog.EffectiveRequestType()
+}
+
+func isImageUsageBillingRequestType(requestType RequestType) bool {
+	switch requestType.Normalize() {
+	case RequestTypeImage, RequestTypeImageWebBridge:
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *postUsageBillingParams) shouldDeductAPIKeyQuota() bool {
-	return p.Cost.ActualCost > 0 && p.APIKey.Quota > 0 && p.APIKeyService != nil
+	return p.Cost.ActualCost > 0 && p.APIKey.Quota > 0 && p.APIKeyService != nil && !isImageUsageBillingRequestType(usageBillingRequestType(p))
 }
 
 func (p *postUsageBillingParams) shouldUpdateRateLimits() bool {
-	return p.Cost.ActualCost > 0 && p.APIKey.HasRateLimits() && p.APIKeyService != nil
+	return p.Cost.ActualCost > 0 && p.APIKey.HasRateLimits() && p.APIKeyService != nil && !isImageUsageBillingRequestType(usageBillingRequestType(p))
 }
 
 func (p *postUsageBillingParams) shouldUpdateAccountQuota() bool {
-	return p.Cost.TotalCost > 0 && p.Account.IsAPIKeyOrBedrock() && p.Account.HasAnyQuotaLimit()
+	return p.Cost.TotalCost > 0 && p.Account.IsAPIKeyOrBedrock() && p.Account.HasAnyQuotaLimit() && !isImageUsageBillingRequestType(usageBillingRequestType(p))
 }
 
 // postUsageBilling is the legacy fallback billing path used when the unified
@@ -7765,6 +7782,7 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 	if usageLog != nil {
 		cmd.Model = usageLog.Model
 		cmd.BillingType = usageLog.BillingType
+		cmd.RequestType = usageLog.EffectiveRequestType()
 		cmd.InputTokens = usageLog.InputTokens
 		cmd.OutputTokens = usageLog.OutputTokens
 		cmd.CacheCreationTokens = usageLog.CacheCreationTokens
@@ -8190,6 +8208,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		IsSubscriptionBill:    isSubscriptionBilling,
 		AccountRateMultiplier: accountRateMultiplier,
 		APIKeyService:         input.APIKeyService,
+		UsageLog:              usageLog,
 	}, s.billingDeps(), s.usageBillingRepo)
 
 	if billingErr != nil {

@@ -14770,6 +14770,12 @@ type GroupMutation struct {
 	addimage_price_2k                       *float64
 	image_price_4k                          *float64
 	addimage_price_4k                       *float64
+	images2api_price_1k                     *float64
+	addimages2api_price_1k                  *float64
+	images2api_price_2k                     *float64
+	addimages2api_price_2k                  *float64
+	images2api_price_4k                     *float64
+	addimages2api_price_4k                  *float64
 	claude_code_only                        *bool
 	fallback_group_id                       *int64
 	addfallback_group_id                    *int64
@@ -15793,6 +15799,216 @@ func (m *GroupMutation) ResetImagePrice4k() {
 	delete(m.clearedFields, group.FieldImagePrice4k)
 }
 
+// SetImages2apiPrice1k sets the "images2api_price_1k" field.
+func (m *GroupMutation) SetImages2apiPrice1k(f float64) {
+	m.images2api_price_1k = &f
+	m.addimages2api_price_1k = nil
+}
+
+// Images2apiPrice1k returns the value of the "images2api_price_1k" field in the mutation.
+func (m *GroupMutation) Images2apiPrice1k() (r float64, exists bool) {
+	v := m.images2api_price_1k
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldImages2apiPrice1k returns the old "images2api_price_1k" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldImages2apiPrice1k(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldImages2apiPrice1k is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldImages2apiPrice1k requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldImages2apiPrice1k: %w", err)
+	}
+	return oldValue.Images2apiPrice1k, nil
+}
+
+// AddImages2apiPrice1k adds f to the "images2api_price_1k" field.
+func (m *GroupMutation) AddImages2apiPrice1k(f float64) {
+	if m.addimages2api_price_1k != nil {
+		*m.addimages2api_price_1k += f
+	} else {
+		m.addimages2api_price_1k = &f
+	}
+}
+
+// AddedImages2apiPrice1k returns the value that was added to the "images2api_price_1k" field in this mutation.
+func (m *GroupMutation) AddedImages2apiPrice1k() (r float64, exists bool) {
+	v := m.addimages2api_price_1k
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearImages2apiPrice1k clears the value of the "images2api_price_1k" field.
+func (m *GroupMutation) ClearImages2apiPrice1k() {
+	m.images2api_price_1k = nil
+	m.addimages2api_price_1k = nil
+	m.clearedFields[group.FieldImages2apiPrice1k] = struct{}{}
+}
+
+// Images2apiPrice1kCleared returns if the "images2api_price_1k" field was cleared in this mutation.
+func (m *GroupMutation) Images2apiPrice1kCleared() bool {
+	_, ok := m.clearedFields[group.FieldImages2apiPrice1k]
+	return ok
+}
+
+// ResetImages2apiPrice1k resets all changes to the "images2api_price_1k" field.
+func (m *GroupMutation) ResetImages2apiPrice1k() {
+	m.images2api_price_1k = nil
+	m.addimages2api_price_1k = nil
+	delete(m.clearedFields, group.FieldImages2apiPrice1k)
+}
+
+// SetImages2apiPrice2k sets the "images2api_price_2k" field.
+func (m *GroupMutation) SetImages2apiPrice2k(f float64) {
+	m.images2api_price_2k = &f
+	m.addimages2api_price_2k = nil
+}
+
+// Images2apiPrice2k returns the value of the "images2api_price_2k" field in the mutation.
+func (m *GroupMutation) Images2apiPrice2k() (r float64, exists bool) {
+	v := m.images2api_price_2k
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldImages2apiPrice2k returns the old "images2api_price_2k" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldImages2apiPrice2k(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldImages2apiPrice2k is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldImages2apiPrice2k requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldImages2apiPrice2k: %w", err)
+	}
+	return oldValue.Images2apiPrice2k, nil
+}
+
+// AddImages2apiPrice2k adds f to the "images2api_price_2k" field.
+func (m *GroupMutation) AddImages2apiPrice2k(f float64) {
+	if m.addimages2api_price_2k != nil {
+		*m.addimages2api_price_2k += f
+	} else {
+		m.addimages2api_price_2k = &f
+	}
+}
+
+// AddedImages2apiPrice2k returns the value that was added to the "images2api_price_2k" field in this mutation.
+func (m *GroupMutation) AddedImages2apiPrice2k() (r float64, exists bool) {
+	v := m.addimages2api_price_2k
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearImages2apiPrice2k clears the value of the "images2api_price_2k" field.
+func (m *GroupMutation) ClearImages2apiPrice2k() {
+	m.images2api_price_2k = nil
+	m.addimages2api_price_2k = nil
+	m.clearedFields[group.FieldImages2apiPrice2k] = struct{}{}
+}
+
+// Images2apiPrice2kCleared returns if the "images2api_price_2k" field was cleared in this mutation.
+func (m *GroupMutation) Images2apiPrice2kCleared() bool {
+	_, ok := m.clearedFields[group.FieldImages2apiPrice2k]
+	return ok
+}
+
+// ResetImages2apiPrice2k resets all changes to the "images2api_price_2k" field.
+func (m *GroupMutation) ResetImages2apiPrice2k() {
+	m.images2api_price_2k = nil
+	m.addimages2api_price_2k = nil
+	delete(m.clearedFields, group.FieldImages2apiPrice2k)
+}
+
+// SetImages2apiPrice4k sets the "images2api_price_4k" field.
+func (m *GroupMutation) SetImages2apiPrice4k(f float64) {
+	m.images2api_price_4k = &f
+	m.addimages2api_price_4k = nil
+}
+
+// Images2apiPrice4k returns the value of the "images2api_price_4k" field in the mutation.
+func (m *GroupMutation) Images2apiPrice4k() (r float64, exists bool) {
+	v := m.images2api_price_4k
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldImages2apiPrice4k returns the old "images2api_price_4k" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldImages2apiPrice4k(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldImages2apiPrice4k is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldImages2apiPrice4k requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldImages2apiPrice4k: %w", err)
+	}
+	return oldValue.Images2apiPrice4k, nil
+}
+
+// AddImages2apiPrice4k adds f to the "images2api_price_4k" field.
+func (m *GroupMutation) AddImages2apiPrice4k(f float64) {
+	if m.addimages2api_price_4k != nil {
+		*m.addimages2api_price_4k += f
+	} else {
+		m.addimages2api_price_4k = &f
+	}
+}
+
+// AddedImages2apiPrice4k returns the value that was added to the "images2api_price_4k" field in this mutation.
+func (m *GroupMutation) AddedImages2apiPrice4k() (r float64, exists bool) {
+	v := m.addimages2api_price_4k
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearImages2apiPrice4k clears the value of the "images2api_price_4k" field.
+func (m *GroupMutation) ClearImages2apiPrice4k() {
+	m.images2api_price_4k = nil
+	m.addimages2api_price_4k = nil
+	m.clearedFields[group.FieldImages2apiPrice4k] = struct{}{}
+}
+
+// Images2apiPrice4kCleared returns if the "images2api_price_4k" field was cleared in this mutation.
+func (m *GroupMutation) Images2apiPrice4kCleared() bool {
+	_, ok := m.clearedFields[group.FieldImages2apiPrice4k]
+	return ok
+}
+
+// ResetImages2apiPrice4k resets all changes to the "images2api_price_4k" field.
+func (m *GroupMutation) ResetImages2apiPrice4k() {
+	m.images2api_price_4k = nil
+	m.addimages2api_price_4k = nil
+	delete(m.clearedFields, group.FieldImages2apiPrice4k)
+}
+
 // SetClaudeCodeOnly sets the "claude_code_only" field.
 func (m *GroupMutation) SetClaudeCodeOnly(b bool) {
 	m.claude_code_only = &b
@@ -16791,7 +17007,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 31)
+	fields := make([]string, 0, 34)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -16842,6 +17058,15 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.image_price_4k != nil {
 		fields = append(fields, group.FieldImagePrice4k)
+	}
+	if m.images2api_price_1k != nil {
+		fields = append(fields, group.FieldImages2apiPrice1k)
+	}
+	if m.images2api_price_2k != nil {
+		fields = append(fields, group.FieldImages2apiPrice2k)
+	}
+	if m.images2api_price_4k != nil {
+		fields = append(fields, group.FieldImages2apiPrice4k)
 	}
 	if m.claude_code_only != nil {
 		fields = append(fields, group.FieldClaudeCodeOnly)
@@ -16927,6 +17152,12 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.ImagePrice2k()
 	case group.FieldImagePrice4k:
 		return m.ImagePrice4k()
+	case group.FieldImages2apiPrice1k:
+		return m.Images2apiPrice1k()
+	case group.FieldImages2apiPrice2k:
+		return m.Images2apiPrice2k()
+	case group.FieldImages2apiPrice4k:
+		return m.Images2apiPrice4k()
 	case group.FieldClaudeCodeOnly:
 		return m.ClaudeCodeOnly()
 	case group.FieldFallbackGroupID:
@@ -16998,6 +17229,12 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldImagePrice2k(ctx)
 	case group.FieldImagePrice4k:
 		return m.OldImagePrice4k(ctx)
+	case group.FieldImages2apiPrice1k:
+		return m.OldImages2apiPrice1k(ctx)
+	case group.FieldImages2apiPrice2k:
+		return m.OldImages2apiPrice2k(ctx)
+	case group.FieldImages2apiPrice4k:
+		return m.OldImages2apiPrice4k(ctx)
 	case group.FieldClaudeCodeOnly:
 		return m.OldClaudeCodeOnly(ctx)
 	case group.FieldFallbackGroupID:
@@ -17154,6 +17391,27 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetImagePrice4k(v)
 		return nil
+	case group.FieldImages2apiPrice1k:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetImages2apiPrice1k(v)
+		return nil
+	case group.FieldImages2apiPrice2k:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetImages2apiPrice2k(v)
+		return nil
+	case group.FieldImages2apiPrice4k:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetImages2apiPrice4k(v)
+		return nil
 	case group.FieldClaudeCodeOnly:
 		v, ok := value.(bool)
 		if !ok {
@@ -17284,6 +17542,15 @@ func (m *GroupMutation) AddedFields() []string {
 	if m.addimage_price_4k != nil {
 		fields = append(fields, group.FieldImagePrice4k)
 	}
+	if m.addimages2api_price_1k != nil {
+		fields = append(fields, group.FieldImages2apiPrice1k)
+	}
+	if m.addimages2api_price_2k != nil {
+		fields = append(fields, group.FieldImages2apiPrice2k)
+	}
+	if m.addimages2api_price_4k != nil {
+		fields = append(fields, group.FieldImages2apiPrice4k)
+	}
 	if m.addfallback_group_id != nil {
 		fields = append(fields, group.FieldFallbackGroupID)
 	}
@@ -17320,6 +17587,12 @@ func (m *GroupMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedImagePrice2k()
 	case group.FieldImagePrice4k:
 		return m.AddedImagePrice4k()
+	case group.FieldImages2apiPrice1k:
+		return m.AddedImages2apiPrice1k()
+	case group.FieldImages2apiPrice2k:
+		return m.AddedImages2apiPrice2k()
+	case group.FieldImages2apiPrice4k:
+		return m.AddedImages2apiPrice4k()
 	case group.FieldFallbackGroupID:
 		return m.AddedFallbackGroupID()
 	case group.FieldFallbackGroupIDOnInvalidRequest:
@@ -17393,6 +17666,27 @@ func (m *GroupMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddImagePrice4k(v)
 		return nil
+	case group.FieldImages2apiPrice1k:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddImages2apiPrice1k(v)
+		return nil
+	case group.FieldImages2apiPrice2k:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddImages2apiPrice2k(v)
+		return nil
+	case group.FieldImages2apiPrice4k:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddImages2apiPrice4k(v)
+		return nil
 	case group.FieldFallbackGroupID:
 		v, ok := value.(int64)
 		if !ok {
@@ -17453,6 +17747,15 @@ func (m *GroupMutation) ClearedFields() []string {
 	if m.FieldCleared(group.FieldImagePrice4k) {
 		fields = append(fields, group.FieldImagePrice4k)
 	}
+	if m.FieldCleared(group.FieldImages2apiPrice1k) {
+		fields = append(fields, group.FieldImages2apiPrice1k)
+	}
+	if m.FieldCleared(group.FieldImages2apiPrice2k) {
+		fields = append(fields, group.FieldImages2apiPrice2k)
+	}
+	if m.FieldCleared(group.FieldImages2apiPrice4k) {
+		fields = append(fields, group.FieldImages2apiPrice4k)
+	}
 	if m.FieldCleared(group.FieldFallbackGroupID) {
 		fields = append(fields, group.FieldFallbackGroupID)
 	}
@@ -17499,6 +17802,15 @@ func (m *GroupMutation) ClearField(name string) error {
 		return nil
 	case group.FieldImagePrice4k:
 		m.ClearImagePrice4k()
+		return nil
+	case group.FieldImages2apiPrice1k:
+		m.ClearImages2apiPrice1k()
+		return nil
+	case group.FieldImages2apiPrice2k:
+		m.ClearImages2apiPrice2k()
+		return nil
+	case group.FieldImages2apiPrice4k:
+		m.ClearImages2apiPrice4k()
 		return nil
 	case group.FieldFallbackGroupID:
 		m.ClearFallbackGroupID()
@@ -17567,6 +17879,15 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldImagePrice4k:
 		m.ResetImagePrice4k()
+		return nil
+	case group.FieldImages2apiPrice1k:
+		m.ResetImages2apiPrice1k()
+		return nil
+	case group.FieldImages2apiPrice2k:
+		m.ResetImages2apiPrice2k()
+		return nil
+	case group.FieldImages2apiPrice4k:
+		m.ResetImages2apiPrice4k()
 		return nil
 	case group.FieldClaudeCodeOnly:
 		m.ResetClaudeCodeOnly()

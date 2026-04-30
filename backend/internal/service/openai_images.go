@@ -23,6 +23,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -612,7 +613,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 		proxyURL = account.Proxy.URL()
 	}
 	upstreamStart := time.Now()
-	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.resolveOpenAITLSProfile(account))
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
 		safeErr := sanitizeUpstreamErrorMessage(err.Error())
@@ -1420,9 +1421,11 @@ func newOpenAIBackendAPIClient(proxyURL string) (*req.Client, error) {
 
 func (s *OpenAIGatewayService) buildOpenAIBackendAPIHeaders(account *Account, token string) (http.Header, error) {
 	deviceID, sessionID := s.ensureOpenAIImageSessionCredentials(context.Background(), account)
+	profile := ResolveOpenAIWebProfile(account)
 	headers := make(http.Header)
 	headers.Set("Authorization", "Bearer "+token)
 	headers.Set("Accept", "application/json")
+	headers.Set("Accept-Language", "en-US,en;q=0.9")
 	headers.Set("Origin", "https://chatgpt.com")
 	headers.Set("Referer", "https://chatgpt.com/")
 	headers.Set("Sec-Fetch-Dest", "empty")
@@ -1432,17 +1435,211 @@ func (s *OpenAIGatewayService) buildOpenAIBackendAPIHeaders(account *Account, to
 	if customUA := strings.TrimSpace(account.GetOpenAIUserAgent()); customUA != "" {
 		headers.Set("User-Agent", customUA)
 	}
+	ApplyOpenAIWebProfileHeaders(headers, profile)
 	if chatgptAccountID := strings.TrimSpace(account.GetChatGPTAccountID()); chatgptAccountID != "" {
 		headers.Set("chatgpt-account-id", chatgptAccountID)
 	}
+	if profile != nil && strings.TrimSpace(profile.OAIDeviceID) != "" {
+		deviceID = strings.TrimSpace(profile.OAIDeviceID)
+	}
+	if profile != nil && strings.TrimSpace(profile.OAISessionID) != "" {
+		sessionID = strings.TrimSpace(profile.OAISessionID)
+	}
 	if deviceID != "" {
 		headers.Set("oai-device-id", deviceID)
-		headers.Set("Cookie", "oai-did="+deviceID)
 	}
 	if sessionID != "" {
 		headers.Set("oai-session-id", sessionID)
 	}
+	cookieHeader := ""
+	if profile != nil {
+		cookieHeader = profile.CookieHeaderForHost(openAIChatGPTConversationURL)
+	}
+	if deviceID != "" {
+		cookieHeader = mergeOpenAIImageCookieHeader(cookieHeader, "oai-did", deviceID)
+	}
+	if cookieHeader != "" {
+		headers.Set("Cookie", cookieHeader)
+	}
 	return headers, nil
+}
+
+func (s *OpenAIGatewayService) resolveOpenAITLSProfile(account *Account) *tlsfingerprint.Profile {
+	if s == nil || s.tlsFPProfileService == nil {
+		return nil
+	}
+	return s.tlsFPProfileService.ResolveTLSProfile(account)
+}
+
+func mergeOpenAIImageCookieHeader(cookieHeader string, name string, value string) string {
+	name = strings.TrimSpace(name)
+	value = strings.TrimSpace(value)
+	if name == "" || value == "" {
+		return strings.TrimSpace(cookieHeader)
+	}
+	parts := strings.Split(cookieHeader, ";")
+	merged := make([]string, 0, len(parts)+1)
+	found := false
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		cookieName := trimmed
+		if idx := strings.Index(trimmed, "="); idx >= 0 {
+			cookieName = strings.TrimSpace(trimmed[:idx])
+		}
+		if cookieName == name {
+			merged = append(merged, name+"="+value)
+			found = true
+			continue
+		}
+		merged = append(merged, trimmed)
+	}
+	if !found {
+		merged = append(merged, name+"="+value)
+	}
+	return strings.Join(merged, "; ")
+}
+
+func (s *OpenAIGatewayService) recordOpenAIImagesLegacyBridgeTelemetry(c *gin.Context, account *Account, profile *OpenAIWebProfile, proxyURL string) {
+	if c == nil {
+		return
+	}
+	profileTime := parseOpenAIWebProfileCapturedAt(profile)
+	cookieNames := openAIWebProfileCookieNames(profile)
+	proxyID := ""
+	proxyMatch := profile == nil
+	if account != nil && account.ProxyID != nil {
+		proxyID = strconv.FormatInt(*account.ProxyID, 10)
+		if profile != nil && profile.ProxyID > 0 {
+			proxyMatch = profile.ProxyID == *account.ProxyID
+		}
+	} else if profile != nil && profile.ProxyID == 0 {
+		proxyMatch = true
+	}
+	SetOpenAIImagesTelemetryProfile(c, NewOpenAIImagesTelemetryProfileState(OpenAIImagesTelemetryProfileInput{
+		HasWebProfile:   profile != nil,
+		ProfileSource:   openAIWebProfileSource(profile),
+		ProfileTime:     profileTime,
+		CookieNames:     cookieNames,
+		ProxyMatch:      proxyMatch,
+		UserAgent:       openAIWebProfileUserAgent(profile),
+		SecCHUAPresent:  profile != nil && strings.TrimSpace(profile.SecCHUA) != "",
+		CookieJarExists: profile != nil && len(profile.Cookies) > 0,
+	}))
+	SetOpenAIImagesTelemetryNetwork(c, NewOpenAIImagesTelemetryNetworkState(
+		proxyID,
+		proxyURL,
+		"req_impersonate",
+		openAIWebProfileImpersonate(profile),
+		"",
+		openAITLSProfileIDForTelemetry(account),
+		"not_applied",
+	))
+}
+
+func openAIImagesChallengeTelemetryState(reqs *openAIChatRequirements, unsupported string) OpenAIImagesTelemetryChallengeState {
+	return openAIImagesChallengeTelemetryStateWithProof(reqs, "", unsupported)
+}
+
+func openAIImagesChallengeTelemetryStateWithProof(reqs *openAIChatRequirements, proofToken string, unsupported string) OpenAIImagesTelemetryChallengeState {
+	if reqs == nil {
+		return OpenAIImagesTelemetryChallengeState{UnsupportedChallenge: strings.TrimSpace(unsupported)}
+	}
+	return OpenAIImagesTelemetryChallengeState{
+		ArkoseRequired:           reqs.Arkose.Required,
+		TurnstileRequired:        reqs.Turnstile.Required,
+		PoWRequired:              reqs.ProofOfWork.Required,
+		RequirementsTokenPresent: strings.TrimSpace(reqs.Token) != "",
+		ProofTokenPresent:        strings.TrimSpace(proofToken) != "",
+		UnsupportedChallenge:     strings.TrimSpace(unsupported),
+	}
+}
+
+func parseOpenAIWebProfileCapturedAt(profile *OpenAIWebProfile) time.Time {
+	if profile == nil || strings.TrimSpace(profile.CapturedAt) == "" {
+		return time.Time{}
+	}
+	parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(profile.CapturedAt))
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed
+}
+
+func openAIWebProfileCookieNames(profile *OpenAIWebProfile) []string {
+	if profile == nil || len(profile.Cookies) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(profile.Cookies))
+	for _, cookie := range profile.Cookies {
+		if name := strings.TrimSpace(cookie.Name); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+func openAIWebProfileSource(profile *OpenAIWebProfile) string {
+	if profile == nil {
+		return ""
+	}
+	return strings.TrimSpace(profile.Source)
+}
+
+func openAIWebProfileUserAgent(profile *OpenAIWebProfile) string {
+	if profile == nil {
+		return openAIImageBackendUserAgent
+	}
+	if ua := strings.TrimSpace(profile.UserAgent); ua != "" {
+		return ua
+	}
+	return openAIImageBackendUserAgent
+}
+
+func openAIWebProfileImpersonate(profile *OpenAIWebProfile) string {
+	if profile == nil || strings.TrimSpace(profile.Impersonate) == "" {
+		return "chrome"
+	}
+	return strings.TrimSpace(profile.Impersonate)
+}
+
+func openAITLSProfileIDForTelemetry(account *Account) string {
+	if account == nil {
+		return ""
+	}
+	id := account.GetTLSFingerprintProfileID()
+	if id == 0 {
+		return ""
+	}
+	return strconv.FormatInt(id, 10)
+}
+
+func (s *OpenAIGatewayService) persistOpenAIWebProfileResponseCookies(ctx context.Context, account *Account, profile *OpenAIWebProfile, resp *http.Response) {
+	if s == nil || s.accountRepo == nil || account == nil || account.ID == 0 || resp == nil {
+		return
+	}
+	merged, changed := MergeOpenAIWebProfileResponseCookies(profile, resp)
+	if !changed || merged == nil {
+		return
+	}
+	if merged.Version == "" {
+		merged.Version = "1"
+	}
+	if merged.Source == "" {
+		merged.Source = "sub2api-images2api"
+	}
+	merged.CapturedAt = time.Now().UTC().Format(time.RFC3339)
+	if account.Extra == nil {
+		account.Extra = map[string]any{}
+	}
+	account.Extra[openAIWebProfileExtraKey] = merged.ToExtraMap()
+	updateCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := s.accountRepo.UpdateExtra(updateCtx, account.ID, map[string]any{openAIWebProfileExtraKey: merged.ToExtraMap()}); err != nil {
+		logger.LegacyPrintf("service.openai_gateway", "persist openai web profile cookies failed: account=%d err=%v", account.ID, err)
+	}
 }
 
 func (s *OpenAIGatewayService) ensureOpenAIImageSessionCredentials(ctx context.Context, account *Account) (string, string) {
@@ -2072,7 +2269,7 @@ func (s *OpenAIGatewayService) wrapOpenAIImageBackendError(
 		return err
 	}
 
-	upstreamMsg := sanitizeUpstreamErrorMessage(statusErr.Message)
+	upstreamMsg := appendOpenAIImagesTelemetrySummaryToMessage(sanitizeUpstreamErrorMessage(statusErr.Message), GetOpenAIImagesTelemetry(c))
 	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 		Platform:           account.Platform,
 		AccountID:          account.ID,
@@ -2111,6 +2308,18 @@ func (s *OpenAIGatewayService) wrapOpenAIImageBackendError(
 	}
 
 	return statusErr
+}
+
+func appendOpenAIImagesTelemetrySummaryToMessage(message string, telemetry *OpenAIImagesTelemetry) string {
+	message = strings.TrimSpace(message)
+	summary := FormatOpenAIImagesTelemetrySummary(telemetry)
+	if summary == "" {
+		return message
+	}
+	if message == "" {
+		return "openai_images_telemetry: " + summary
+	}
+	return message + " | openai_images_telemetry: " + summary
 }
 
 func openAITimezoneOffsetMinutes() int {
@@ -2225,6 +2434,9 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesLegacyBridge(
 	channelMappedModel string,
 ) (*OpenAIForwardResult, error) {
 	startTime := time.Now()
+	profile := ResolveOpenAIWebProfile(account)
+	proxyURL := resolveOpenAIProxyURL(account)
+	s.recordOpenAIImagesLegacyBridgeTelemetry(c, account, profile, proxyURL)
 	requestModel := strings.TrimSpace(parsed.Model)
 	if mapped := strings.TrimSpace(channelMappedModel); mapped != "" {
 		requestModel = mapped
@@ -2234,7 +2446,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesLegacyBridge(
 	if err != nil {
 		return nil, err
 	}
-	client, err := newOpenAIBackendAPIClient(resolveOpenAIProxyURL(account))
+	client, err := newOpenAIBackendAPIClient(proxyURL)
 	if err != nil {
 		return nil, err
 	}
@@ -2242,33 +2454,57 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesLegacyBridge(
 	if err != nil {
 		return nil, err
 	}
+	bootstrapStart := time.Now()
 	if bootstrapErr := bootstrapOpenAIBackendAPI(ctx, client, headers); bootstrapErr != nil {
 		logger.LegacyPrintf("service.openai_gateway", "OpenAI image bootstrap failed: %v", bootstrapErr)
 	}
+	AppendOpenAIImagesTelemetryStage(c, OpenAIImagesTelemetryStageBootstrap, OpenAIImagesTelemetryStageOption{At: bootstrapStart, LatencyMs: time.Since(bootstrapStart).Milliseconds()})
 
+	requirementsStart := time.Now()
 	chatReqs, err := fetchOpenAIChatRequirements(ctx, client, headers)
 	if err != nil {
 		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, err)
 	}
+	AppendOpenAIImagesTelemetryStage(c, OpenAIImagesTelemetryStageChatRequirements, OpenAIImagesTelemetryStageOption{At: requirementsStart, LatencyMs: time.Since(requirementsStart).Milliseconds()})
 	if chatReqs.Arkose.Required {
+		SetOpenAIImagesTelemetryChallenge(c, openAIImagesChallengeTelemetryState(chatReqs, "arkose"))
 		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, newOpenAIImageSyntheticStatusError(
 			http.StatusForbidden,
 			"chat-requirements requires unsupported challenge (arkose)",
 			openAIChatGPTChatRequirementsURL,
 		))
 	}
+	if chatReqs.Turnstile.Required {
+		SetOpenAIImagesTelemetryChallenge(c, openAIImagesChallengeTelemetryState(chatReqs, "turnstile"))
+		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, newOpenAIImageSyntheticStatusError(
+			http.StatusForbidden,
+			"chat-requirements requires unsupported challenge (turnstile)",
+			openAIChatGPTChatRequirementsURL,
+		))
+	}
 
 	parentMessageID := uuid.NewString()
 	proofToken := generateOpenAIProofToken(chatReqs.ProofOfWork.Required, chatReqs.ProofOfWork.Seed, chatReqs.ProofOfWork.Difficulty, headers.Get("User-Agent"))
+	SetOpenAIImagesTelemetryChallenge(c, openAIImagesChallengeTelemetryStateWithProof(chatReqs, proofToken, ""))
+	initStart := time.Now()
 	_ = initializeOpenAIImageConversation(ctx, client, headers)
+	AppendOpenAIImagesTelemetryStage(c, OpenAIImagesTelemetryStageConversationInit, OpenAIImagesTelemetryStageOption{At: initStart, LatencyMs: time.Since(initStart).Milliseconds()})
+	prepareStart := time.Now()
 	conduitToken, err := prepareOpenAIImageConversation(ctx, client, headers, parsed.Prompt, parentMessageID, chatReqs.Token, proofToken)
 	if err != nil {
 		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, err)
 	}
+	AppendOpenAIImagesTelemetryStage(c, OpenAIImagesTelemetryStagePrepare, OpenAIImagesTelemetryStageOption{At: prepareStart, LatencyMs: time.Since(prepareStart).Milliseconds()})
 
+	uploadStart := time.Now()
 	uploads, err := uploadOpenAIImageFiles(ctx, client, headers, parsed.Uploads)
 	if err != nil {
 		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, err)
+	}
+	if len(parsed.Uploads) > 0 {
+		AppendOpenAIImagesTelemetryStage(c, OpenAIImagesTelemetryStageUploadCreate, OpenAIImagesTelemetryStageOption{At: uploadStart, LatencyMs: time.Since(uploadStart).Milliseconds()})
+		AppendOpenAIImagesTelemetryStage(c, OpenAIImagesTelemetryStageUploadPut, OpenAIImagesTelemetryStageOption{At: uploadStart, LatencyMs: time.Since(uploadStart).Milliseconds()})
+		AppendOpenAIImagesTelemetryStage(c, OpenAIImagesTelemetryStageUploadUploaded, OpenAIImagesTelemetryStageOption{At: uploadStart, LatencyMs: time.Since(uploadStart).Milliseconds()})
 	}
 
 	convReq := buildOpenAIImageConversationRequest(parsed, parentMessageID, uploads)
@@ -2286,6 +2522,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesLegacyBridge(
 		convHeaders.Set("openai-sentinel-proof-token", proofToken)
 	}
 
+	conversationStart := time.Now()
 	resp, err := client.R().
 		SetContext(ctx).
 		DisableAutoReadResponse().
@@ -2295,6 +2532,8 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesLegacyBridge(
 	if err != nil {
 		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, fmt.Errorf("openai image conversation request failed: %w", err))
 	}
+	AppendOpenAIImagesTelemetryStage(c, OpenAIImagesTelemetryStageConversation, OpenAIImagesTelemetryStageOption{At: conversationStart, LatencyMs: time.Since(conversationStart).Milliseconds()})
+	s.persistOpenAIWebProfileResponseCookies(ctx, account, profile, resp.Response)
 	defer func() {
 		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()
@@ -2309,7 +2548,9 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesLegacyBridge(
 		return nil, err
 	}
 	if conversationID != "" && !hasOpenAIFileServicePointerInfos(pointerInfos) {
+		pollStart := time.Now()
 		polledPointers, pollErr := pollOpenAIImageConversation(ctx, client, headers, conversationID)
+		AppendOpenAIImagesTelemetryStage(c, OpenAIImagesTelemetryStagePoll, OpenAIImagesTelemetryStageOption{At: pollStart, LatencyMs: time.Since(pollStart).Milliseconds()})
 		if pollErr != nil {
 			return nil, s.wrapOpenAIImageBackendError(ctx, c, account, pollErr)
 		}
@@ -2320,7 +2561,9 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesLegacyBridge(
 		return nil, fmt.Errorf("openai image conversation returned no downloadable images")
 	}
 
+	downloadStart := time.Now()
 	responseBody, imageCount, err := buildOpenAIImageResponse(ctx, client, headers, conversationID, pointerInfos)
+	AppendOpenAIImagesTelemetryStage(c, OpenAIImagesTelemetryStageDownloadBytes, OpenAIImagesTelemetryStageOption{At: downloadStart, LatencyMs: time.Since(downloadStart).Milliseconds()})
 	if err != nil {
 		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, err)
 	}

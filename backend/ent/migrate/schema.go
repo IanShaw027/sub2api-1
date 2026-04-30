@@ -641,6 +641,9 @@ var (
 		{Name: "image_price_1k", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
 		{Name: "image_price_2k", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
 		{Name: "image_price_4k", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "images2api_price_1k", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "images2api_price_2k", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "images2api_price_4k", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
 		{Name: "claude_code_only", Type: field.TypeBool, Default: false},
 		{Name: "fallback_group_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "fallback_group_id_on_invalid_request", Type: field.TypeInt64, Nullable: true},
@@ -690,7 +693,7 @@ var (
 			{
 				Name:    "group_sort_order",
 				Unique:  false,
-				Columns: []*schema.Column{GroupsColumns[25]},
+				Columns: []*schema.Column{GroupsColumns[28]},
 			},
 		},
 	}
@@ -794,6 +797,14 @@ var (
 				Name:    "paymentauditlog_order_id",
 				Unique:  false,
 				Columns: []*schema.Column{PaymentAuditLogsColumns[1]},
+			},
+			{
+				Name:    "paymentauditlog_order_id_action",
+				Unique:  true,
+				Columns: []*schema.Column{PaymentAuditLogsColumns[1], PaymentAuditLogsColumns[2]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "action IN ('AFFILIATE_REBATE_APPLIED', 'AFFILIATE_REBATE_SKIPPED', 'SUBSCRIPTION_FULFILLMENT_CLAIMED', 'SUBSCRIPTION_SUCCESS')",
+				},
 			},
 		},
 	}

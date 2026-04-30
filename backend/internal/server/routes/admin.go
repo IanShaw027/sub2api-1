@@ -276,6 +276,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		accounts.PUT("/:id", h.Admin.Account.Update)
 		accounts.POST("/:id/kiro-reauthorize", h.Admin.Account.ReauthorizeKiroOAuth)
 		accounts.DELETE("/:id", h.Admin.Account.Delete)
+		accounts.POST("/:id/openai-web-profile/import", h.Admin.Account.ImportOpenAIWebProfile)
 		accounts.POST("/:id/test", h.Admin.Account.Test)
 		accounts.POST("/:id/recover-state", h.Admin.Account.RecoverState)
 		accounts.POST("/:id/refresh", h.Admin.Account.Refresh)

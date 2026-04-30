@@ -256,7 +256,7 @@ func (s *KiroOAuthService) ExchangeCallback(ctx context.Context, input *KiroExch
 
 	session, ok := s.sessionStore.Get(input.SessionID)
 	if !ok {
-		return nil, fmt.Errorf("Kiro 授权会话不存在或已过期。请重新生成授权链接，并在当前弹窗同一轮流程中于 30 分钟内完成授权后，再粘贴最新地址栏中的完整回调 URL")
+		return nil, fmt.Errorf("kiro 授权会话不存在或已过期。请重新生成授权链接，并在当前弹窗同一轮流程中于 30 分钟内完成授权后，再粘贴最新地址栏中的完整回调 URL")
 	}
 
 	redirectURI := kiroOAuthSessionRedirectURI(session)
@@ -283,7 +283,7 @@ func (s *KiroOAuthService) ExchangeCallback(ctx context.Context, input *KiroExch
 	}
 
 	if state := strings.TrimSpace(query.Get("state")); state == "" || state != session.State {
-		return nil, fmt.Errorf("Kiro 授权状态不匹配：你粘贴的回调地址不属于当前这次授权流程。请重新生成授权链接，并在同一标签页完成授权后，把最新地址栏中的完整回调 URL 粘贴回来；不要刷新页面、不要再次点击生成，且需在 30 分钟内完成")
+		return nil, fmt.Errorf("kiro 授权状态不匹配：你粘贴的回调地址不属于当前这次授权流程。请重新生成授权链接，并在同一标签页完成授权后，把最新地址栏中的完整回调 URL 粘贴回来；不要刷新页面、不要再次点击生成，且需在 30 分钟内完成")
 	}
 
 	loginOption := strings.ToLower(strings.TrimSpace(firstNonEmptyKiroString(
@@ -591,7 +591,11 @@ func exchangeKiroCodeForToken(
 }
 
 func buildKiroOAuthTransport(proxyURL string) (*http.Transport, error) {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return nil, fmt.Errorf("default HTTP transport has type %T, want *http.Transport", http.DefaultTransport)
+	}
+	transport := defaultTransport.Clone()
 	transport.Proxy = nil
 	if strings.TrimSpace(proxyURL) == "" {
 		return transport, nil

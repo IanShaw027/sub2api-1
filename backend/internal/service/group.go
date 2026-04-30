@@ -26,9 +26,12 @@ type Group struct {
 	DefaultValidityDays int
 
 	// 图片生成计费配置（antigravity 和 gemini 平台使用）
-	ImagePrice1K *float64
-	ImagePrice2K *float64
-	ImagePrice4K *float64
+	ImagePrice1K      *float64
+	ImagePrice2K      *float64
+	ImagePrice4K      *float64
+	Images2APIPrice1K *float64
+	Images2APIPrice2K *float64
+	Images2APIPrice4K *float64
 
 	// Claude Code 客户端限制
 	ClaudeCodeOnly  bool
@@ -95,6 +98,22 @@ func (g *Group) HasMonthlyLimit() bool {
 // GetImagePrice 根据 image_size 返回对应的图片生成价格
 // 如果分组未配置价格，返回 nil（调用方应使用默认值）
 func (g *Group) GetImagePrice(imageSize string) *float64 {
+	return g.GetImagePriceForRequestType(imageSize, RequestTypeImage)
+}
+
+func (g *Group) GetImagePriceForRequestType(imageSize string, requestType RequestType) *float64 {
+	if requestType == RequestTypeImageWebBridge {
+		switch imageSize {
+		case "1K":
+			return g.Images2APIPrice1K
+		case "2K":
+			return g.Images2APIPrice2K
+		case "4K":
+			return g.Images2APIPrice4K
+		default:
+			return g.Images2APIPrice2K
+		}
+	}
 	switch imageSize {
 	case "1K":
 		return g.ImagePrice1K

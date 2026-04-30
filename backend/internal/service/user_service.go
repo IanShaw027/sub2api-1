@@ -1022,14 +1022,6 @@ func (s *UserService) GetByID(ctx context.Context, id int64) (*User, error) {
 	return user, nil
 }
 
-func normalizeLoadedUserTokenVersion(user *User) {
-	if user == nil || user.TokenVersionResolved {
-		return
-	}
-	user.TokenVersion = resolvedTokenVersion(user)
-	user.TokenVersionResolved = true
-}
-
 // RecordLastActiveForUser records the exact current activity time for user-visible
 // heartbeat endpoints such as /auth/me.
 func (s *UserService) RecordLastActiveForUser(ctx context.Context, user *User) {

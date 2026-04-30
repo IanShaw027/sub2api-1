@@ -869,7 +869,7 @@ func TestExchangePendingOAuthCompletionExistingLoginWithSuggestedProfileSkipsAdo
 	require.NoError(t, err)
 	reloadedUser, err := handler.userService.GetByID(ctx, userEntity.ID)
 	require.NoError(t, err)
-	require.Equal(t, reloadedUser.TokenVersion, claims.TokenVersion)
+	require.Equal(t, service.ResolveUserTokenVersion(reloadedUser), claims.TokenVersion)
 
 	decisionCount, err := client.IdentityAdoptionDecision.Query().
 		Where(identityadoptiondecision.PendingAuthSessionIDEQ(session.ID)).
@@ -2324,7 +2324,7 @@ func TestLogin2FACompletesPendingOAuthBindAndConsumesSession(t *testing.T) {
 	require.NoError(t, err)
 	reloadedUser, err := handler.userService.GetByID(ctx, existingUser.ID)
 	require.NoError(t, err)
-	require.Equal(t, reloadedUser.TokenVersion, claims.TokenVersion)
+	require.Equal(t, service.ResolveUserTokenVersion(reloadedUser), claims.TokenVersion)
 
 	identity, err := client.AuthIdentity.Query().
 		Where(

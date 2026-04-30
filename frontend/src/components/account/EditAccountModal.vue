@@ -1277,6 +1277,97 @@
         </div>
       </div>
 
+      <!-- OpenAI TLS Fingerprint -->
+      <div
+        v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'apikey')"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="flex items-center justify-between">
+          <div>
+            <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.tlsFingerprint.label') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.quotaControl.tlsFingerprint.hint') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            data-testid="openai-tls-fingerprint-toggle"
+            @click="tlsFingerprintEnabled = !tlsFingerprintEnabled"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              tlsFingerprintEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                tlsFingerprintEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+        <div v-if="tlsFingerprintEnabled" class="mt-3">
+          <select v-model="tlsFingerprintProfileId" class="input" data-testid="openai-tls-fingerprint-profile">
+            <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultProfile') }}</option>
+            <option v-if="tlsFingerprintProfiles.length > 0" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
+            <option v-for="p in tlsFingerprintProfiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- OpenAI WebProfile safe metadata and import -->
+      <div
+        v-if="account?.platform === 'openai'"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+        data-testid="openai-web-profile-section"
+      >
+        <div class="mb-3">
+          <label class="input-label mb-0">OpenAI WebProfile</label>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Safe browser profile metadata only. Cookie values are never rendered here.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 gap-2 rounded-lg bg-gray-50 p-3 text-xs dark:bg-dark-700/40 sm:grid-cols-2">
+          <div v-for="row in openAIWebProfileRows" :key="row.label" class="flex justify-between gap-3">
+            <span class="text-gray-500 dark:text-gray-400">{{ row.label }}</span>
+            <span class="break-all text-right font-medium text-gray-800 dark:text-gray-100">{{ row.value }}</span>
+          </div>
+        </div>
+
+        <div class="mt-4 space-y-2">
+          <label class="input-label">Import WebProfile</label>
+          <textarea
+            v-model="openAIWebProfileImportContent"
+            rows="5"
+            class="input font-mono text-xs"
+            data-testid="openai-web-profile-import-content"
+            placeholder="Paste exported WebProfile JSON or text content"
+          ></textarea>
+          <div class="flex items-center justify-between gap-3">
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+              Paste content only; no complex upload is required.
+            </p>
+            <button
+              type="button"
+              class="btn btn-secondary text-sm"
+              data-testid="openai-web-profile-import-submit"
+              :disabled="openAIWebProfileImporting || !openAIWebProfileImportContent.trim()"
+              @click="handleOpenAIWebProfileImport"
+            >
+              {{ openAIWebProfileImporting ? 'Importing...' : 'Import WebProfile' }}
+            </button>
+          </div>
+          <p
+            v-if="openAIWebProfileImportSummary"
+            class="rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700 dark:bg-green-900/20 dark:text-green-300"
+            data-testid="openai-web-profile-import-summary"
+          >
+            {{ openAIWebProfileImportSummary }}
+          </p>
+        </div>
+      </div>
+
       <!-- Anthropic API Key 自动透传开关 -->
       <div
         v-if="account?.platform === 'anthropic' && account?.type === 'apikey'"
@@ -2068,7 +2159,8 @@ import type {
   CheckMixedChannelResponse,
   UpdateAccountRequest,
   KiroCredentials,
-  OpenAICompactMode
+  OpenAICompactMode,
+  OpenAIWebProfileState
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -2187,7 +2279,7 @@ const mixedChannelWarningRawMessage = ref('')
 const mixedChannelWarningAction = ref<(() => Promise<void>) | null>(null)
 const antigravityMixedChannelConfirmed = ref(false)
 
-// Quota control state (Anthropic OAuth/SetupToken only)
+// Quota control state. TLS is also used by OpenAI/Kiro; the rest is Anthropic-only.
 const windowCostEnabled = ref(false)
 const windowCostLimit = ref<number | null>(null)
 const windowCostStickyReserve = ref<number | null>(null)
@@ -2220,6 +2312,9 @@ const openAICompactSupported = ref<boolean | null>(null)
 const openAICompactCheckedAt = ref<string | null>(null)
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
+const openAIWebProfileImportContent = ref('')
+const openAIWebProfileImporting = ref(false)
+const openAIWebProfileImportSummary = ref('')
 const codexCLIOnlyEnabled = ref(false)
 const anthropicPassthroughEnabled = ref(false)
 const webSearchEmulationMode = ref('default')
@@ -2289,6 +2384,81 @@ const openAICompactStatusKey = computed(() => {
       : 'admin.accounts.openai.compactUnsupported'
   }
   return 'admin.accounts.openai.compactUnknown'
+})
+
+const openAIWebProfile = computed<OpenAIWebProfileState | null>(() => {
+  const raw = (props.account?.extra as Record<string, unknown> | undefined)?.web_profile
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null
+  }
+  return raw as OpenAIWebProfileState
+})
+
+const openAIWebProfileCookieNames = computed(() => {
+  const cookies = openAIWebProfile.value?.cookies
+  if (!Array.isArray(cookies)) {
+    return []
+  }
+  return Array.from(new Set(
+    cookies
+      .map((cookie) => String(cookie?.name || '').trim())
+      .filter((name) => name.length > 0)
+  )).sort()
+})
+
+const openAIWebProfileHasCookieJar = computed(() => {
+  if (typeof openAIWebProfile.value?.has_cookie_jar === 'boolean') {
+    return openAIWebProfile.value.has_cookie_jar
+  }
+  return openAIWebProfileCookieNames.value.length > 0
+})
+
+const openAIWebProfileUAMajor = computed(() => {
+  if (typeof openAIWebProfile.value?.ua_major === 'number') {
+    return openAIWebProfile.value.ua_major
+  }
+  const userAgent = String(openAIWebProfile.value?.user_agent || '')
+  const match = userAgent.match(/(?:Chrome|Chromium|CriOS|Edg|OPR)\/(\d+)/)
+  return match ? Number(match[1]) : null
+})
+
+function digestOpenAIWebProfileCookieNames(names: string[]): string {
+  if (names.length === 0) {
+    return ''
+  }
+  let hash = 0x811c9dc5
+  for (const char of names.join('\n')) {
+    hash ^= char.charCodeAt(0)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return `fnv1a:${(hash >>> 0).toString(16).padStart(8, '0')}`
+}
+
+const openAIWebProfileCookieNamesDigest = computed(() => {
+  const profile = openAIWebProfile.value as (OpenAIWebProfileState & { cookie_names_hash?: string }) | null
+  if (!profile) {
+    return ''
+  }
+  return String(
+    profile.cookie_names_digest ||
+    profile.cookie_names_hash ||
+    digestOpenAIWebProfileCookieNames(openAIWebProfileCookieNames.value)
+  )
+})
+
+const openAIWebProfileRows = computed(() => {
+  const profile = openAIWebProfile.value
+  const empty = '-'
+  return [
+    { label: 'has_web_profile', value: profile ? 'true' : 'false' },
+    { label: 'source', value: profile?.source || empty },
+    { label: 'captured_at', value: profile?.captured_at || empty },
+    { label: 'ua_major', value: openAIWebProfileUAMajor.value == null ? empty : String(openAIWebProfileUAMajor.value) },
+    { label: 'has_cookie_jar', value: openAIWebProfileHasCookieJar.value ? 'true' : 'false' },
+    { label: 'cookie_names_digest', value: openAIWebProfileCookieNamesDigest.value || empty },
+    { label: 'proxy_id', value: profile?.proxy_id == null ? empty : String(profile.proxy_id) },
+    { label: 'proxy_hash', value: profile?.proxy_hash || empty }
+  ]
 })
 
 // Computed: current preset mappings based on platform
@@ -2533,7 +2703,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     antigravityModelMappings.value = []
   }
 
-  // Load quota control settings (Anthropic OAuth/SetupToken only)
+  // Load quota/TLS control settings
   loadQuotaControlSettings(newAccount)
 
   loadTempUnschedRules(credentials)
@@ -2736,6 +2906,30 @@ const removeOpenAICompactModelMapping = (index: number) => {
   openAICompactModelMappings.value.splice(index, 1)
 }
 
+const toOptionalNumber = (value: unknown): number | null => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+const applyTLSFingerprintExtra = (extra: Record<string, unknown>) => {
+  if (tlsFingerprintEnabled.value) {
+    extra.enable_tls_fingerprint = true
+    const profileId = toOptionalNumber(tlsFingerprintProfileId.value)
+    if (profileId != null) {
+      extra.tls_fingerprint_profile_id = profileId
+    } else {
+      delete extra.tls_fingerprint_profile_id
+    }
+  } else {
+    delete extra.enable_tls_fingerprint
+    delete extra.tls_fingerprint_profile_id
+  }
+}
+
 const removeAntigravityModelMapping = (index: number) => {
   antigravityModelMappings.value.splice(index, 1)
 }
@@ -2929,7 +3123,7 @@ function loadTempUnschedRules(credentials?: Record<string, unknown>) {
   })
 }
 
-// Load quota control settings from account (Anthropic OAuth/SetupToken only)
+// Load quota/TLS control settings from account
 function loadQuotaControlSettings(account: Account) {
   // Reset all quota control state first
   windowCostEnabled.value = false
@@ -2950,6 +3144,14 @@ function loadQuotaControlSettings(account: Account) {
   cacheTTLOverrideTarget.value = '5m'
   customBaseUrlEnabled.value = false
   customBaseUrl.value = ''
+
+  if (account.platform === 'openai') {
+    if (account.enable_tls_fingerprint === true) {
+      tlsFingerprintEnabled.value = true
+    }
+    tlsFingerprintProfileId.value = account.tls_fingerprint_profile_id ?? null
+    return
+  }
 
   // Remaining quota control settings only apply to Anthropic accounts
   if (account.platform !== 'anthropic') {
@@ -3180,6 +3382,46 @@ const handleClose = () => {
   antigravityMixedChannelConfirmed.value = false
   clearMixedChannelDialog()
   emit('close')
+}
+
+const summarizeOpenAIWebProfileImport = (result: Record<string, unknown>) => {
+  const parts = [
+    result.source ? `source=${result.source}` : '',
+    result.captured_at ? `captured_at=${result.captured_at}` : '',
+    result.ua_major != null ? `ua_major=${result.ua_major}` : '',
+    result.has_cookie_jar != null ? `has_cookie_jar=${Boolean(result.has_cookie_jar)}` : '',
+    result.cookie_names_digest ? `cookie_names_digest=${result.cookie_names_digest}` : '',
+    result.proxy_id != null ? `proxy_id=${result.proxy_id}` : '',
+    result.proxy_hash ? `proxy_hash=${result.proxy_hash}` : ''
+  ].filter(Boolean)
+  return parts.length > 0 ? parts.join(', ') : 'OpenAI WebProfile imported'
+}
+
+const handleOpenAIWebProfileImport = async () => {
+  if (!props.account || props.account.platform !== 'openai') {
+    return
+  }
+  const content = openAIWebProfileImportContent.value.trim()
+  if (!content) {
+    return
+  }
+
+  openAIWebProfileImporting.value = true
+  openAIWebProfileImportSummary.value = ''
+  try {
+    const result = await adminAPI.accounts.importOpenAIWebProfile(props.account.id, { content })
+    const updatedAccount = result.account
+    if (updatedAccount) {
+      emit('updated', updatedAccount)
+    }
+    openAIWebProfileImportSummary.value = summarizeOpenAIWebProfileImport(result as Record<string, unknown>)
+    openAIWebProfileImportContent.value = ''
+    appStore.showSuccess('OpenAI WebProfile imported')
+  } catch (error: any) {
+    appStore.showError(error.message || 'Failed to import OpenAI WebProfile')
+  } finally {
+    openAIWebProfileImporting.value = false
+  }
 }
 
 const submitUpdateAccount = async (accountID: number, updatePayload: UpdateAccountRequest) => {
@@ -3596,18 +3838,7 @@ const handleSubmit = async () => {
       }
       delete newExtra.user_msg_queue_enabled  // 清理旧字段
 
-      // TLS fingerprint setting
-      if (tlsFingerprintEnabled.value) {
-        newExtra.enable_tls_fingerprint = true
-        if (tlsFingerprintProfileId.value) {
-          newExtra.tls_fingerprint_profile_id = tlsFingerprintProfileId.value
-        } else {
-          delete newExtra.tls_fingerprint_profile_id
-        }
-      } else {
-        delete newExtra.enable_tls_fingerprint
-        delete newExtra.tls_fingerprint_profile_id
-      }
+      applyTLSFingerprintExtra(newExtra)
 
       // Session ID masking setting
       if (sessionIdMaskingEnabled.value) {
@@ -3656,7 +3887,7 @@ const handleSubmit = async () => {
 
     // For OpenAI OAuth/API Key accounts, handle passthrough mode in extra
     if (props.account.platform === 'openai' && (props.account.type === 'oauth' || props.account.type === 'apikey')) {
-      const currentExtra = (props.account.extra as Record<string, unknown>) || {}
+      const currentExtra = (updatePayload.extra as Record<string, unknown>) || (props.account.extra as Record<string, unknown>) || {}
       const newExtra: Record<string, unknown> = { ...currentExtra }
       const hadCodexCLIOnlyEnabled = currentExtra.codex_cli_only === true
       if (props.account.type === 'oauth') {
@@ -3690,6 +3921,8 @@ const handleSubmit = async () => {
           delete newExtra.codex_cli_only
         }
       }
+
+      applyTLSFingerprintExtra(newExtra)
 
       updatePayload.extra = newExtra
     }

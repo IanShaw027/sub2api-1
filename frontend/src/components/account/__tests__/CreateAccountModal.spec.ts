@@ -397,6 +397,38 @@ describe('CreateAccountModal', () => {
     expect(createMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('openai_compact_mode')
   })
 
+  it('creates an OpenAI API key account with TLS fingerprint settings', async () => {
+    listTlsFingerprintProfilesMock.mockResolvedValue([{ id: 12, name: 'Chrome 124' }])
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'OpenAI').trigger('click')
+    await nextTick()
+    await findButtonByText(wrapper, 'API Key').trigger('click')
+    await nextTick()
+
+    await wrapper.get('[data-tour="account-form-name"]').setValue('openai-api')
+    await wrapper.get('input[placeholder="sk-proj-..."]').setValue('sk-proj-test')
+    await wrapper.get('[data-testid="openai-tls-fingerprint-toggle"]').trigger('click')
+    await nextTick()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="openai-tls-fingerprint-profile"]').text()).toContain('Chrome 124')
+    await wrapper.get('[data-testid="openai-tls-fingerprint-profile"]').setValue('12')
+    await nextTick()
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'openai-api',
+      platform: 'openai',
+      type: 'apikey',
+      extra: expect.objectContaining({
+        enable_tls_fingerprint: true,
+        tls_fingerprint_profile_id: 12
+      })
+    }))
+  })
+
   it('creates a Kiro OAuth account from manual refresh token input', async () => {
     const wrapper = mountModal()
     await flushPromises()

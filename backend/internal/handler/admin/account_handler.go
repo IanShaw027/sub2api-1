@@ -143,6 +143,10 @@ type UpdateAccountRequest struct {
 	ConfirmMixedChannelRisk *bool          `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
 }
 
+type ImportOpenAIWebProfileRequest struct {
+	WebProfile map[string]any `json:"web_profile"`
+}
+
 type KiroReauthorizeAccountRequest struct {
 	Name        string         `json:"name"`
 	Credentials map[string]any `json:"credentials" binding:"required"`
@@ -661,6 +665,136 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
 }
 
+// ImportOpenAIWebProfile imports a browser profile into an OpenAI account extra.
+// POST /api/v1/admin/accounts/:id/openai-web-profile/import
+func (h *AccountHandler) ImportOpenAIWebProfile(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+
+	var raw map[string]any
+	if err := c.ShouldBindJSON(&raw); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	profileRaw, err := parseOpenAIWebProfileImportPayload(raw)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	account, err := h.adminService.GetAccount(c.Request.Context(), accountID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if account.Platform != service.PlatformOpenAI || (account.Type != service.AccountTypeOAuth && account.Type != service.AccountTypeAPIKey && account.Type != "api_key") {
+		response.BadRequest(c, "account must be an OpenAI OAuth or API key account")
+		return
+	}
+
+	profile := service.ResolveOpenAIWebProfile(&service.Account{Extra: map[string]any{"web_profile": profileRaw}})
+	if profile == nil {
+		response.BadRequest(c, "invalid web_profile")
+		return
+	}
+	if strings.TrimSpace(profile.UserAgent) == "" && strings.TrimSpace(profile.OAIDeviceID) == "" && !openAIWebProfileHasCookies(profile) {
+		response.BadRequest(c, "web_profile must include user_agent, cookies, or oai_device_id")
+		return
+	}
+
+	profileExtra := profile.ToExtraMap()
+	if err := h.adminService.UpdateAccountExtra(c.Request.Context(), accountID, map[string]any{"web_profile": profileExtra}); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	account.Extra = cloneExtraWithOpenAIWebProfile(account.Extra, profileExtra)
+	summary := buildOpenAIWebProfileImportSummary(profile)
+	summary["account"] = h.buildAccountDetailResponseWithRuntime(c.Request.Context(), account)
+	response.Success(c, summary)
+}
+
+func parseOpenAIWebProfileImportPayload(raw map[string]any) (map[string]any, error) {
+	if nested, ok := raw["web_profile"]; ok {
+		nestedProfile, ok := nested.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("web_profile must be an object")
+		}
+		return nestedProfile, nil
+	}
+
+	if content, ok := raw["content"]; ok {
+		text, ok := content.(string)
+		if !ok {
+			return nil, fmt.Errorf("content must be a string")
+		}
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return nil, fmt.Errorf("content is required")
+		}
+		var parsed map[string]any
+		if err := json.Unmarshal([]byte(text), &parsed); err != nil {
+			return nil, fmt.Errorf("content must be valid JSON")
+		}
+		if nested, ok := parsed["web_profile"]; ok {
+			nestedProfile, ok := nested.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("web_profile must be an object")
+			}
+			return nestedProfile, nil
+		}
+		return parsed, nil
+	}
+
+	return raw, nil
+}
+
+func cloneExtraWithOpenAIWebProfile(extra map[string]any, profile map[string]any) map[string]any {
+	cloned := make(map[string]any, len(extra)+1)
+	for key, value := range extra {
+		cloned[key] = value
+	}
+	cloned["web_profile"] = profile
+	return cloned
+}
+
+func buildOpenAIWebProfileImportSummary(profile *service.OpenAIWebProfile) gin.H {
+	if profile == nil {
+		return gin.H{"has_web_profile": false}
+	}
+	cookieNames := make([]string, 0, len(profile.Cookies))
+	for _, cookie := range profile.Cookies {
+		if name := strings.TrimSpace(cookie.Name); name != "" {
+			cookieNames = append(cookieNames, name)
+		}
+	}
+	return gin.H{
+		"has_web_profile":     true,
+		"source":              profile.Source,
+		"captured_at":         profile.CapturedAt,
+		"ua_major":            service.ParseOpenAIImagesTelemetryUAMajor(profile.UserAgent),
+		"has_cookie_jar":      len(profile.Cookies) > 0,
+		"cookie_names_digest": service.DigestOpenAIImagesTelemetryCookieNames(cookieNames),
+		"proxy_id":            profile.ProxyID,
+		"proxy_hash":          profile.ProxyHash,
+	}
+}
+
+func openAIWebProfileHasCookies(profile *service.OpenAIWebProfile) bool {
+	if profile == nil {
+		return false
+	}
+	for _, cookie := range profile.Cookies {
+		if strings.TrimSpace(cookie.Name) != "" || strings.TrimSpace(cookie.Value) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func (h *AccountHandler) ReauthorizeKiroOAuth(c *gin.Context) {
 	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -684,18 +818,17 @@ func (h *AccountHandler) ReauthorizeKiroOAuth(c *gin.Context) {
 		return
 	}
 
-	updated, err := h.adminService.UpdateAccount(c.Request.Context(), accountID, &service.UpdateAccountInput{
+	if _, err := h.adminService.UpdateAccount(c.Request.Context(), accountID, &service.UpdateAccountInput{
 		Name:                      req.Name,
 		Type:                      service.AccountTypeOAuth,
 		Credentials:               req.Credentials,
 		Extra:                     req.Extra,
 		AllowSensitiveCredentials: true,
-	})
-	if err != nil {
+	}); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-	updated, err = h.adminService.ClearAccountError(c.Request.Context(), accountID)
+	updated, err := h.adminService.ClearAccountError(c.Request.Context(), accountID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

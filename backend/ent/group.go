@@ -53,6 +53,12 @@ type Group struct {
 	ImagePrice2k *float64 `json:"image_price_2k,omitempty"`
 	// ImagePrice4k holds the value of the "image_price_4k" field.
 	ImagePrice4k *float64 `json:"image_price_4k,omitempty"`
+	// Images2apiPrice1k holds the value of the "images2api_price_1k" field.
+	Images2apiPrice1k *float64 `json:"images2api_price_1k,omitempty"`
+	// Images2apiPrice2k holds the value of the "images2api_price_2k" field.
+	Images2apiPrice2k *float64 `json:"images2api_price_2k,omitempty"`
+	// Images2apiPrice4k holds the value of the "images2api_price_4k" field.
+	Images2apiPrice4k *float64 `json:"images2api_price_4k,omitempty"`
 	// 是否仅允许 Claude Code 客户端
 	ClaudeCodeOnly bool `json:"claude_code_only,omitempty"`
 	// 非 Claude Code 请求降级使用的分组 ID
@@ -191,7 +197,7 @@ func (*Group) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case group.FieldIsExclusive, group.FieldClaudeCodeOnly, group.FieldModelRoutingEnabled, group.FieldMcpXMLInject, group.FieldAllowMessagesDispatch, group.FieldRequireOauthOnly, group.FieldRequirePrivacySet:
 			values[i] = new(sql.NullBool)
-		case group.FieldRateMultiplier, group.FieldDailyLimitUsd, group.FieldWeeklyLimitUsd, group.FieldMonthlyLimitUsd, group.FieldImagePrice1k, group.FieldImagePrice2k, group.FieldImagePrice4k:
+		case group.FieldRateMultiplier, group.FieldDailyLimitUsd, group.FieldWeeklyLimitUsd, group.FieldMonthlyLimitUsd, group.FieldImagePrice1k, group.FieldImagePrice2k, group.FieldImagePrice4k, group.FieldImages2apiPrice1k, group.FieldImages2apiPrice2k, group.FieldImages2apiPrice4k:
 			values[i] = new(sql.NullFloat64)
 		case group.FieldID, group.FieldDefaultValidityDays, group.FieldFallbackGroupID, group.FieldFallbackGroupIDOnInvalidRequest, group.FieldSortOrder, group.FieldRpmLimit:
 			values[i] = new(sql.NullInt64)
@@ -329,6 +335,27 @@ func (_m *Group) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.ImagePrice4k = new(float64)
 				*_m.ImagePrice4k = value.Float64
+			}
+		case group.FieldImages2apiPrice1k:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field images2api_price_1k", values[i])
+			} else if value.Valid {
+				_m.Images2apiPrice1k = new(float64)
+				*_m.Images2apiPrice1k = value.Float64
+			}
+		case group.FieldImages2apiPrice2k:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field images2api_price_2k", values[i])
+			} else if value.Valid {
+				_m.Images2apiPrice2k = new(float64)
+				*_m.Images2apiPrice2k = value.Float64
+			}
+		case group.FieldImages2apiPrice4k:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field images2api_price_4k", values[i])
+			} else if value.Valid {
+				_m.Images2apiPrice4k = new(float64)
+				*_m.Images2apiPrice4k = value.Float64
 			}
 		case group.FieldClaudeCodeOnly:
 			if value, ok := values[i].(*sql.NullBool); !ok {
@@ -562,6 +589,21 @@ func (_m *Group) String() string {
 	builder.WriteString(", ")
 	if v := _m.ImagePrice4k; v != nil {
 		builder.WriteString("image_price_4k=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.Images2apiPrice1k; v != nil {
+		builder.WriteString("images2api_price_1k=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.Images2apiPrice2k; v != nil {
+		builder.WriteString("images2api_price_2k=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.Images2apiPrice4k; v != nil {
+		builder.WriteString("images2api_price_4k=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")

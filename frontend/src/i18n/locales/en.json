@@ -800,6 +800,8 @@
     "ws": "WS",
     "stream": "Stream",
     "sync": "Sync",
+    "image": "Image",
+    "imageWebBridge": "Images2API",
     "unknown": "Unknown",
     "in": "In",
     "out": "Out",
@@ -1951,7 +1953,10 @@
       },
       "imagePricing": {
         "title": "Image Generation Pricing",
-        "description": "Configure pricing for image generation models. Leave empty to use default prices."
+        "description": "Configure fixed per-group image prices. Leave empty to use default prices.",
+        "images": "Images API",
+        "images2api": "Images2API",
+        "fixedHint": "Fixed per group; not affected by rate multipliers."
       },
       "claudeCode": {
         "title": "Claude Code Client Restriction",

@@ -48,6 +48,16 @@ type OpenAIAccountScheduleRequest struct {
 	ExcludedIDs             map[int64]struct{}
 }
 
+func (r OpenAIAccountScheduleRequest) MaxConcurrencyFor(account *Account) int {
+	if r.RequiredImageCapability != "" {
+		return 1
+	}
+	if account == nil || account.Concurrency <= 0 {
+		return 1
+	}
+	return account.Concurrency
+}
+
 type OpenAIAccountScheduleDecision struct {
 	Layer               string
 	StickyPreviousHit   bool
@@ -358,7 +368,8 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		return nil, nil
 	}
 
-	result, acquireErr := s.service.tryAcquireAccountSlot(ctx, accountID, account.Concurrency)
+	maxConcurrency := req.MaxConcurrencyFor(account)
+	result, acquireErr := s.service.tryAcquireAccountSlot(ctx, accountID, maxConcurrency)
 	if acquireErr == nil && result.Acquired {
 		_ = s.service.refreshStickySessionTTL(ctx, req.GroupID, sessionHash, s.service.openAIWSSessionStickyTTL())
 		return &AccountSelectionResult{
@@ -369,13 +380,13 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	}
 
 	cfg := s.service.schedulingConfig()
-	// WaitPlan.MaxConcurrency 使用 Concurrency（非 EffectiveLoadFactor），因为 WaitPlan 控制的是 Redis 实际并发槽位等待。
+	// WaitPlan.MaxConcurrency 使用实际调度并发槽位；图片请求固定为 1。
 	if s.service.concurrencyService != nil {
 		return &AccountSelectionResult{
 			Account: account,
 			WaitPlan: &AccountWaitPlan{
 				AccountID:      accountID,
-				MaxConcurrency: account.Concurrency,
+				MaxConcurrency: maxConcurrency,
 				Timeout:        cfg.StickySessionWaitTimeout,
 				MaxWaiting:     cfg.StickySessionMaxWaiting,
 			},
@@ -833,7 +844,8 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			compactBlocked = true
 			continue
 		}
-		result, acquireErr := s.service.tryAcquireAccountSlot(ctx, fresh.ID, fresh.Concurrency)
+		maxConcurrency := req.MaxConcurrencyFor(fresh)
+		result, acquireErr := s.service.tryAcquireAccountSlot(ctx, fresh.ID, maxConcurrency)
 		if acquireErr != nil {
 			return nil, candidateCount, topK, loadSkew, acquireErr
 		}
@@ -850,7 +862,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	}
 
 	cfg := s.service.schedulingConfig()
-	// WaitPlan.MaxConcurrency 使用 Concurrency（非 EffectiveLoadFactor），因为 WaitPlan 控制的是 Redis 实际并发槽位等待。
+	// WaitPlan.MaxConcurrency 使用实际调度并发槽位；图片请求固定为 1。
 	for _, candidate := range selectionOrder {
 		fresh := s.service.resolveFreshSchedulableOpenAIAccount(ctx, candidate.account, req.RequestedModel, false)
 		if fresh == nil || !s.isAccountTransportCompatible(fresh, req.RequiredTransport) || !s.isAccountRequestCompatible(fresh, req) {
@@ -868,7 +880,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			Account: fresh,
 			WaitPlan: &AccountWaitPlan{
 				AccountID:      fresh.ID,
-				MaxConcurrency: fresh.Concurrency,
+				MaxConcurrency: req.MaxConcurrencyFor(fresh),
 				Timeout:        cfg.FallbackWaitTimeout,
 				MaxWaiting:     cfg.FallbackMaxWaiting,
 			},
@@ -1031,13 +1043,39 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
 	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, requiredCapability, false)
 	if err == nil && selection != nil && selection.Account != nil {
-		return selection, decision, nil
+		return s.normalizeOpenAIImageSelectionConcurrency(ctx, selection, requiredCapability), decision, nil
 	}
 	// 如果要求 native 能力（如指定了模型）但没有可用的 APIKey 账号，回退到 basic（OAuth 账号）
 	if requiredCapability == OpenAIImagesCapabilityNative {
-		return s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, OpenAIImagesCapabilityBasic, false)
+		selection, decision, err = s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, OpenAIImagesCapabilityBasic, false)
+		return s.normalizeOpenAIImageSelectionConcurrency(ctx, selection, OpenAIImagesCapabilityBasic), decision, err
 	}
 	return selection, decision, err
+}
+
+func (s *OpenAIGatewayService) normalizeOpenAIImageSelectionConcurrency(ctx context.Context, selection *AccountSelectionResult, requiredCapability OpenAIImagesCapability) *AccountSelectionResult {
+	if selection == nil || selection.Account == nil || requiredCapability == "" {
+		return selection
+	}
+	if selection.WaitPlan != nil {
+		selection.WaitPlan.MaxConcurrency = 1
+	}
+	if !selection.Acquired || selection.Account.Concurrency <= 1 || s == nil || s.concurrencyService == nil {
+		return selection
+	}
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
+	}
+	result, err := s.tryAcquireAccountSlot(ctx, selection.Account.ID, 1)
+	if err == nil && result != nil && result.Acquired {
+		selection.ReleaseFunc = result.ReleaseFunc
+		selection.Acquired = true
+		return selection
+	}
+	selection.Acquired = false
+	selection.ReleaseFunc = nil
+	selection.WaitPlan = &AccountWaitPlan{AccountID: selection.Account.ID, MaxConcurrency: 1, Timeout: s.schedulingConfig().FallbackWaitTimeout, MaxWaiting: s.schedulingConfig().FallbackMaxWaiting}
+	return selection
 }
 
 func (s *OpenAIGatewayService) selectAccountWithScheduler(

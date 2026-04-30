@@ -58,3 +58,45 @@ func TestAccountFromServiceDetailKeepsSensitiveCredentials(t *testing.T) {
 	require.Equal(t, "client-secret", out.Credentials["client_secret"])
 	require.Equal(t, "https://api.example.com", out.Credentials["base_url"])
 }
+
+func TestAccountFromServiceExposesOpenAITLSFingerprintConfig(t *testing.T) {
+	account := &service.Account{
+		Platform: service.PlatformOpenAI,
+		Type:     service.AccountTypeOAuth,
+		Extra: map[string]any{
+			"enable_tls_fingerprint":     true,
+			"tls_fingerprint_profile_id": int64(42),
+		},
+	}
+
+	out := AccountFromService(account)
+	require.NotNil(t, out)
+	require.NotNil(t, out.EnableTLSFingerprint)
+	require.True(t, *out.EnableTLSFingerprint)
+	require.NotNil(t, out.TLSFingerprintProfileID)
+	require.Equal(t, int64(42), *out.TLSFingerprintProfileID)
+}
+
+func TestAccountFromServiceRedactsOpenAIWebProfileCookieValues(t *testing.T) {
+	account := &service.Account{
+		Platform: service.PlatformOpenAI,
+		Extra: map[string]any{
+			"web_profile": map[string]any{
+				"user_agent": "Mozilla/5.0 Chrome/136.0.0.0",
+				"cookies": []map[string]any{
+					{"name": "oai-did", "value": "cookie-secret", "domain": ".chatgpt.com", "path": "/"},
+				},
+			},
+		},
+	}
+
+	out := AccountFromServiceDetail(account)
+	require.NotNil(t, out)
+	profile, ok := out.Extra["web_profile"].(map[string]any)
+	require.True(t, ok)
+	cookies, ok := profile["cookies"].([]map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "oai-did", cookies[0]["name"])
+	require.Equal(t, ".chatgpt.com", cookies[0]["domain"])
+	require.NotContains(t, cookies[0], "value")
+}

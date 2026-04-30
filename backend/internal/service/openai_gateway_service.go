@@ -396,6 +396,7 @@ type OpenAIGatewayService struct {
 	resolver              *ModelPricingResolver
 	channelService        *ChannelService
 	balanceNotifyService  *BalanceNotifyService
+	tlsFPProfileService   *TLSFingerprintProfileService
 
 	openaiWSPoolOnce              sync.Once
 	openaiWSStateStoreOnce        sync.Once
@@ -434,6 +435,7 @@ func NewOpenAIGatewayService(
 	resolver *ModelPricingResolver,
 	channelService *ChannelService,
 	balanceNotifyService *BalanceNotifyService,
+	tlsFPProfileService *TLSFingerprintProfileService,
 ) *OpenAIGatewayService {
 	svc := &OpenAIGatewayService{
 		accountRepo:         accountRepo,
@@ -464,6 +466,7 @@ func NewOpenAIGatewayService(
 		resolver:              resolver,
 		channelService:        channelService,
 		balanceNotifyService:  balanceNotifyService,
+		tlsFPProfileService:   tlsFPProfileService,
 		responseHeaderFilter:  compileResponseHeaderFilter(cfg),
 		codexSnapshotThrottle: newAccountWriteThrottle(openAICodexSnapshotPersistMinInterval),
 	}
@@ -5717,6 +5720,7 @@ type OpenAIRecordUsageInput struct {
 	UserAgent          string // 请求的 User-Agent
 	IPAddress          string // 请求的客户端 IP 地址
 	RequestPayloadHash string
+	RequestType        RequestType
 	APIKeyService      APIKeyQuotaUpdater
 	ChannelUsageFields
 }
@@ -5783,7 +5787,11 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if result.ServiceTier != nil {
 		serviceTier = strings.TrimSpace(*result.ServiceTier)
 	}
-	cost, err = s.calculateOpenAIRecordUsageCost(ctx, result, apiKey, modelView.BillingModel, multiplier, tokens, serviceTier)
+	requestType := input.RequestType.Normalize()
+	if requestType == RequestTypeUnknown {
+		requestType = RequestTypeFromLegacy(result.Stream, result.OpenAIWSMode)
+	}
+	cost, err = s.calculateOpenAIRecordUsageCost(ctx, result, apiKey, modelView.BillingModel, multiplier, tokens, serviceTier, requestType)
 	if err != nil {
 		cost = &CostBreakdown{ActualCost: 0}
 	}
@@ -5834,6 +5842,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	usageLog.BillingType = billingType
 	usageLog.Stream = result.Stream
 	usageLog.OpenAIWSMode = result.OpenAIWSMode
+	usageLog.RequestType = requestType
 	usageLog.DurationMs = &durationMs
 	usageLog.FirstTokenMs = result.FirstTokenMs
 	usageLog.CreatedAt = time.Now()
@@ -5894,6 +5903,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			IsSubscriptionBill:    isSubscriptionBilling,
 			AccountRateMultiplier: accountRateMultiplier,
 			APIKeyService:         input.APIKeyService,
+			UsageLog:              usageLog,
 		}, s.billingDeps(), s.usageBillingRepo)
 		return err
 	}()
@@ -5914,9 +5924,10 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 	multiplier float64,
 	tokens UsageTokens,
 	serviceTier string,
+	requestType RequestType,
 ) (*CostBreakdown, error) {
 	if result != nil && result.ImageCount > 0 {
-		return s.calculateOpenAIImageRequestCost(ctx, result, apiKey, billingModel, multiplier, tokens, serviceTier)
+		return s.calculateOpenAIImageRequestCost(ctx, result, apiKey, billingModel, multiplier, tokens, serviceTier, requestType)
 	}
 	return s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier)
 }
@@ -5953,6 +5964,7 @@ func (s *OpenAIGatewayService) calculateOpenAIImageRequestCost(
 	multiplier float64,
 	tokens UsageTokens,
 	serviceTier string,
+	requestType RequestType,
 ) (*CostBreakdown, error) {
 	hasTokens := usageTokensHaveBillableTokens(tokens)
 	tokenBillingModel := strings.TrimSpace(result.TokenBillingModel)
@@ -5968,7 +5980,7 @@ func (s *OpenAIGatewayService) calculateOpenAIImageRequestCost(
 		return cost, err
 	}
 
-	imageCost := s.calculateOpenAIImageCost(ctx, billingModel, apiKey, result, multiplier)
+	imageCost := s.calculateOpenAIImageCost(billingModel, apiKey, result, requestType)
 	if !hasTokens {
 		return imageCost, nil
 	}
@@ -6009,52 +6021,28 @@ func mergeCostBreakdowns(billingMode string, parts ...*CostBreakdown) *CostBreak
 }
 
 func (s *OpenAIGatewayService) calculateOpenAIImageCost(
-	ctx context.Context,
 	billingModel string,
 	apiKey *APIKey,
 	result *OpenAIForwardResult,
-	multiplier float64,
+	requestType RequestType,
 ) *CostBreakdown {
-	if resolved := s.resolveOpenAIChannelPricing(ctx, billingModel, apiKey); resolved != nil &&
-		(resolved.Mode == BillingModePerRequest || resolved.Mode == BillingModeImage) {
-		gid := apiKey.Group.ID
-		cost, err := s.billingService.CalculateCostUnified(CostInput{
-			Ctx:            ctx,
-			Model:          billingModel,
-			GroupID:        &gid,
-			RequestCount:   result.ImageCount,
-			SizeTier:       result.ImageSize,
-			RateMultiplier: multiplier,
-			Resolver:       s.resolver,
-			Resolved:       resolved,
-		})
-		if err == nil {
-			return cost
-		}
-		logger.LegacyPrintf("service.openai_gateway", "Calculate image channel cost failed: %v", err)
-	}
-
 	var groupConfig *ImagePriceConfig
 	if apiKey != nil && apiKey.Group != nil {
+		price1K := apiKey.Group.ImagePrice1K
+		price2K := apiKey.Group.ImagePrice2K
+		price4K := apiKey.Group.ImagePrice4K
+		if requestType.Normalize() == RequestTypeImageWebBridge {
+			price1K = apiKey.Group.Images2APIPrice1K
+			price2K = apiKey.Group.Images2APIPrice2K
+			price4K = apiKey.Group.Images2APIPrice4K
+		}
 		groupConfig = &ImagePriceConfig{
-			Price1K: apiKey.Group.ImagePrice1K,
-			Price2K: apiKey.Group.ImagePrice2K,
-			Price4K: apiKey.Group.ImagePrice4K,
+			Price1K: price1K,
+			Price2K: price2K,
+			Price4K: price4K,
 		}
 	}
-	return s.billingService.CalculateImageCost(billingModel, result.ImageSize, result.ImageCount, groupConfig, multiplier)
-}
-
-func (s *OpenAIGatewayService) resolveOpenAIChannelPricing(ctx context.Context, billingModel string, apiKey *APIKey) *ResolvedPricing {
-	if s.resolver == nil || apiKey == nil || apiKey.Group == nil {
-		return nil
-	}
-	gid := apiKey.Group.ID
-	resolved := s.resolver.Resolve(ctx, PricingInput{Model: billingModel, GroupID: &gid})
-	if resolved.Source == PricingSourceChannel {
-		return resolved
-	}
-	return nil
+	return s.billingService.CalculateImageCost(billingModel, result.ImageSize, result.ImageCount, groupConfig, 1.0)
 }
 
 // ParseCodexRateLimitHeaders extracts Codex usage limits from response headers.

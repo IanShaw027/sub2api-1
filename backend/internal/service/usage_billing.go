@@ -27,6 +27,7 @@ type UsageBillingCommand struct {
 	ServiceTier         string
 	ReasoningEffort     string
 	BillingType         int8
+	RequestType         RequestType
 	InputTokens         int
 	OutputTokens        int
 	CacheCreationTokens int
@@ -56,7 +57,7 @@ func buildUsageBillingFingerprint(c *UsageBillingCommand) string {
 		return ""
 	}
 	raw := fmt.Sprintf(
-		"%d|%d|%d|%s|%s|%s|%s|%d|%d|%d|%d|%d|%d|%s|%d|%0.10f|%0.10f|%0.10f|%0.10f|%0.10f",
+		"%d|%d|%d|%s|%s|%s|%s|%d|%d|%d|%d|%d|%d|%d|%s|%d|%0.10f|%0.10f|%0.10f|%0.10f|%0.10f",
 		c.UserID,
 		c.AccountID,
 		c.APIKeyID,
@@ -65,6 +66,7 @@ func buildUsageBillingFingerprint(c *UsageBillingCommand) string {
 		strings.TrimSpace(c.ServiceTier),
 		strings.TrimSpace(c.ReasoningEffort),
 		c.BillingType,
+		int16(c.RequestType.Normalize()),
 		c.InputTokens,
 		c.OutputTokens,
 		c.CacheCreationTokens,

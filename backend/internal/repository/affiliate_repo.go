@@ -620,7 +620,7 @@ func rebasePostgresPlaceholders(sqlText string, offset int) string {
 	var b strings.Builder
 	for i := 0; i < len(sqlText); i++ {
 		if sqlText[i] != '$' {
-			b.WriteByte(sqlText[i])
+			_ = b.WriteByte(sqlText[i])
 			continue
 		}
 		j := i + 1
@@ -628,14 +628,14 @@ func rebasePostgresPlaceholders(sqlText string, offset int) string {
 			j++
 		}
 		if j == i+1 {
-			b.WriteByte(sqlText[i])
+			_ = b.WriteByte(sqlText[i])
 			continue
 		}
 		var n int
 		for _, c := range sqlText[i+1 : j] {
 			n = n*10 + int(c-'0')
 		}
-		b.WriteString(fmt.Sprintf("$%d", n+offset))
+		_, _ = b.WriteString(fmt.Sprintf("$%d", n+offset))
 		i = j - 1
 	}
 	return b.String()

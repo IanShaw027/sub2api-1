@@ -95,9 +95,12 @@ type Group struct {
 	MonthlyLimitUSD  *float64 `json:"monthly_limit_usd"`
 
 	// 图片生成计费配置（仅 antigravity 平台使用）
-	ImagePrice1K *float64 `json:"image_price_1k"`
-	ImagePrice2K *float64 `json:"image_price_2k"`
-	ImagePrice4K *float64 `json:"image_price_4k"`
+	ImagePrice1K      *float64 `json:"image_price_1k"`
+	ImagePrice2K      *float64 `json:"image_price_2k"`
+	ImagePrice4K      *float64 `json:"image_price_4k"`
+	Images2APIPrice1K *float64 `json:"images2api_price_1k"`
+	Images2APIPrice2K *float64 `json:"images2api_price_2k"`
+	Images2APIPrice4K *float64 `json:"images2api_price_4k"`
 
 	// Claude Code 客户端限制
 	ClaudeCodeOnly  bool   `json:"claude_code_only"`
@@ -197,7 +200,7 @@ type Account struct {
 	RPMStickyBuffer  *int    `json:"rpm_sticky_buffer,omitempty"`
 	UserMsgQueueMode *string `json:"user_msg_queue_mode,omitempty"`
 
-	// TLS指纹伪装（仅 Anthropic OAuth/SetupToken 账号有效）
+	// TLS指纹伪装（Anthropic OAuth/SetupToken、OpenAI、Kiro OAuth 账号有效）
 	// 从 extra 字段提取，方便前端显示和编辑
 	EnableTLSFingerprint    *bool  `json:"enable_tls_fingerprint,omitempty"`
 	TLSFingerprintProfileID *int64 `json:"tls_fingerprint_profile_id,omitempty"`

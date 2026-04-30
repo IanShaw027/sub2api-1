@@ -2632,6 +2632,44 @@
         </div>
       </div>
 
+      <!-- OpenAI TLS Fingerprint -->
+      <div
+        v-if="form.platform === 'openai' && (accountCategory === 'oauth-based' || accountCategory === 'apikey')"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="flex items-center justify-between">
+          <div>
+            <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.tlsFingerprint.label') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.quotaControl.tlsFingerprint.hint') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            data-testid="openai-tls-fingerprint-toggle"
+            @click="tlsFingerprintEnabled = !tlsFingerprintEnabled"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              tlsFingerprintEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                tlsFingerprintEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+        <div v-if="tlsFingerprintEnabled" class="mt-3">
+          <select v-model="tlsFingerprintProfileId" class="input" data-testid="openai-tls-fingerprint-profile">
+            <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultProfile') }}</option>
+            <option v-if="tlsFingerprintProfiles.length > 0" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
+            <option v-for="p in tlsFingerprintProfiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+          </select>
+        </div>
+      </div>
+
       <!-- Anthropic API Key 自动透传开关 -->
       <div
         v-if="form.platform === 'anthropic' && accountCategory === 'apikey'"
@@ -3468,6 +3506,15 @@ function buildAntigravityExtra(): Record<string, unknown> | undefined {
 const buildOpenAICompactModelMapping = () =>
   buildModelMappingObject('mapping', [], openAICompactModelMappings.value)
 
+const toOptionalNumber = (value: unknown): number | null => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
 const showMixedChannelWarning = ref(false)
 const mixedChannelWarningDetails = ref<{ groupName: string; currentPlatform: string; otherPlatform: string } | null>(
   null
@@ -3478,7 +3525,7 @@ const antigravityMixedChannelConfirmed = ref(false)
 const showAdvancedOAuth = ref(false)
 const showGeminiHelpDialog = ref(false)
 
-// Quota control state (Anthropic OAuth/SetupToken only)
+// Quota control state. TLS is also used by OpenAI/Kiro; the rest is Anthropic-only.
 const windowCostEnabled = ref(false)
 const windowCostLimit = ref<number | null>(null)
 const windowCostStickyReserve = ref<number | null>(null)
@@ -3688,7 +3735,8 @@ watch(
     } else {
       resetForm()
     }
-  }
+  },
+  { immediate: true }
 )
 
 // Sync form.type based on accountCategory, addMethod, and platform-specific type
@@ -4260,6 +4308,19 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
     extra.openai_compact_mode = openAICompactMode.value
   } else {
     delete extra.openai_compact_mode
+  }
+
+  if (tlsFingerprintEnabled.value) {
+    extra.enable_tls_fingerprint = true
+    const profileId = toOptionalNumber(tlsFingerprintProfileId.value)
+    if (profileId != null) {
+      extra.tls_fingerprint_profile_id = profileId
+    } else {
+      delete extra.tls_fingerprint_profile_id
+    }
+  } else {
+    delete extra.enable_tls_fingerprint
+    delete extra.tls_fingerprint_profile_id
   }
 
   return Object.keys(extra).length > 0 ? extra : undefined

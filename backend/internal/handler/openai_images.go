@@ -86,7 +86,11 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	} else {
 		setOpsRequestContext(c, parsed.Model, parsed.Stream, body)
 	}
-	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(parsed.Stream, false)))
+	imageRequestType := service.RequestTypeImage
+	if strings.Contains(GetInboundEndpoint(c), "/images2api/") {
+		imageRequestType = service.RequestTypeImageWebBridge
+	}
+	setOpsEndpointContext(c, "", int16(imageRequestType))
 
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, parsed.Model)
 
@@ -280,6 +284,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				UserAgent:          userAgent,
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
+				RequestType:        imageRequestType,
 				APIKeyService:      h.apiKeyService,
 				ChannelUsageFields: channelMapping.ToUsageFields(parsed.Model, result.UpstreamModel),
 			}); err != nil {

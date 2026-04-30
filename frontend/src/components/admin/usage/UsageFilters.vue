@@ -244,6 +244,8 @@ const groupOptions = ref<SelectOption[]>([{ value: null, label: t('admin.usage.a
 const requestTypeOptions = ref<SelectOption[]>([
   { value: null, label: t('admin.usage.allTypes') },
   { value: 'ws_v2', label: t('usage.ws') },
+  { value: 'image_web_bridge', label: t('usage.imageWebBridge') },
+  { value: 'image', label: t('usage.image') },
   { value: 'stream', label: t('usage.stream') },
   { value: 'sync', label: t('usage.sync') }
 ])
