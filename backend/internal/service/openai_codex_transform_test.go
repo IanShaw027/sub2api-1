@@ -778,6 +778,31 @@ func TestApplyCodexImageGenerationBridgeInstructions_SkipsWithoutImageTool(t *te
 	require.Equal(t, "existing instructions", reqBody["instructions"])
 }
 
+func TestApplyCodexOAuthTransform_ForcedPrivateImageToolRequestAddsBridgeAndKeepsStoreFalse(t *testing.T) {
+	reqBody := map[string]any{
+		"model":        "gpt-5.4",
+		"store":        true,
+		"instructions": "existing instructions",
+		"tools": []any{
+			map[string]any{"type": "image_generation", "output_format": "png"},
+		},
+		"input": []any{
+			map[string]any{"type": "text", "text": "draw a cat"},
+		},
+	}
+
+	applyCodexOAuthTransform(reqBody, true, false)
+
+	store, ok := reqBody["store"].(bool)
+	require.True(t, ok)
+	require.False(t, store)
+
+	instructions, ok := reqBody["instructions"].(string)
+	require.True(t, ok)
+	require.Contains(t, instructions, codexImageGenerationBridgeMarker)
+	require.Contains(t, instructions, "Responses native `image_generation` tool")
+}
+
 func TestValidateCodexSparkInputRejectsInputImage(t *testing.T) {
 	reqBody := map[string]any{
 		"model": "gpt-5.3-codex-spark",

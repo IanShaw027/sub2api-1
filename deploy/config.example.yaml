@@ -705,6 +705,27 @@ idempotency:
   cleanup_batch_size: 500
 
 # =============================================================================
+# Media Storage Configuration
+# 媒体存储配置
+# =============================================================================
+media:
+  # 启用后通过 MinIO/S3 接入统一媒体层
+  enabled: false
+  # MinIO/S3 内网地址
+  endpoint: "http://minio:9000"
+  # 对外资源域名，统一保持为 source.qazwc.com
+  public_base_url: "https://source.qazwc.com"
+  access_key_id: ""
+  secret_access_key: ""
+  region: "auto"
+  bucket: "media"
+  force_path_style: true
+  presign_expiry_minutes: 15
+  max_upload_size_bytes: 67108864
+  # 可选：独立签名密钥；为空时回退 JWT secret
+  download_signing_secret: ""
+
+# =============================================================================
 # Concurrency Wait Configuration
 # 并发等待配置
 # =============================================================================

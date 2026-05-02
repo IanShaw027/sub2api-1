@@ -77,6 +77,20 @@ func (_c *GroupCreate) SetName(v string) *GroupCreate {
 	return _c
 }
 
+// SetDisplayName sets the "display_name" field.
+func (_c *GroupCreate) SetDisplayName(v string) *GroupCreate {
+	_c.mutation.SetDisplayName(v)
+	return _c
+}
+
+// SetNillableDisplayName sets the "display_name" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableDisplayName(v *string) *GroupCreate {
+	if v != nil {
+		_c.SetDisplayName(*v)
+	}
+	return _c
+}
+
 // SetDescription sets the "description" field.
 func (_c *GroupCreate) SetDescription(v string) *GroupCreate {
 	_c.mutation.SetDescription(v)
@@ -115,6 +129,20 @@ func (_c *GroupCreate) SetIsExclusive(v bool) *GroupCreate {
 func (_c *GroupCreate) SetNillableIsExclusive(v *bool) *GroupCreate {
 	if v != nil {
 		_c.SetIsExclusive(*v)
+	}
+	return _c
+}
+
+// SetUserSelectable sets the "user_selectable" field.
+func (_c *GroupCreate) SetUserSelectable(v bool) *GroupCreate {
+	_c.mutation.SetUserSelectable(v)
+	return _c
+}
+
+// SetNillableUserSelectable sets the "user_selectable" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableUserSelectable(v *bool) *GroupCreate {
+	if v != nil {
+		_c.SetUserSelectable(*v)
 	}
 	return _c
 }
@@ -630,6 +658,10 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultIsExclusive
 		_c.mutation.SetIsExclusive(v)
 	}
+	if _, ok := _c.mutation.UserSelectable(); !ok {
+		v := group.DefaultUserSelectable
+		_c.mutation.SetUserSelectable(v)
+	}
 	if _, ok := _c.mutation.Status(); !ok {
 		v := group.DefaultStatus
 		_c.mutation.SetStatus(v)
@@ -709,11 +741,19 @@ func (_c *GroupCreate) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Group.name": %w`, err)}
 		}
 	}
+	if v, ok := _c.mutation.DisplayName(); ok {
+		if err := group.DisplayNameValidator(v); err != nil {
+			return &ValidationError{Name: "display_name", err: fmt.Errorf(`ent: validator failed for field "Group.display_name": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.RateMultiplier(); !ok {
 		return &ValidationError{Name: "rate_multiplier", err: errors.New(`ent: missing required field "Group.rate_multiplier"`)}
 	}
 	if _, ok := _c.mutation.IsExclusive(); !ok {
 		return &ValidationError{Name: "is_exclusive", err: errors.New(`ent: missing required field "Group.is_exclusive"`)}
+	}
+	if _, ok := _c.mutation.UserSelectable(); !ok {
+		return &ValidationError{Name: "user_selectable", err: errors.New(`ent: missing required field "Group.user_selectable"`)}
 	}
 	if _, ok := _c.mutation.Status(); !ok {
 		return &ValidationError{Name: "status", err: errors.New(`ent: missing required field "Group.status"`)}
@@ -823,6 +863,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 		_spec.SetField(group.FieldName, field.TypeString, value)
 		_node.Name = value
 	}
+	if value, ok := _c.mutation.DisplayName(); ok {
+		_spec.SetField(group.FieldDisplayName, field.TypeString, value)
+		_node.DisplayName = &value
+	}
 	if value, ok := _c.mutation.Description(); ok {
 		_spec.SetField(group.FieldDescription, field.TypeString, value)
 		_node.Description = &value
@@ -834,6 +878,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.IsExclusive(); ok {
 		_spec.SetField(group.FieldIsExclusive, field.TypeBool, value)
 		_node.IsExclusive = value
+	}
+	if value, ok := _c.mutation.UserSelectable(); ok {
+		_spec.SetField(group.FieldUserSelectable, field.TypeBool, value)
+		_node.UserSelectable = value
 	}
 	if value, ok := _c.mutation.Status(); ok {
 		_spec.SetField(group.FieldStatus, field.TypeString, value)
@@ -1141,6 +1189,24 @@ func (u *GroupUpsert) UpdateName() *GroupUpsert {
 	return u
 }
 
+// SetDisplayName sets the "display_name" field.
+func (u *GroupUpsert) SetDisplayName(v string) *GroupUpsert {
+	u.Set(group.FieldDisplayName, v)
+	return u
+}
+
+// UpdateDisplayName sets the "display_name" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateDisplayName() *GroupUpsert {
+	u.SetExcluded(group.FieldDisplayName)
+	return u
+}
+
+// ClearDisplayName clears the value of the "display_name" field.
+func (u *GroupUpsert) ClearDisplayName() *GroupUpsert {
+	u.SetNull(group.FieldDisplayName)
+	return u
+}
+
 // SetDescription sets the "description" field.
 func (u *GroupUpsert) SetDescription(v string) *GroupUpsert {
 	u.Set(group.FieldDescription, v)
@@ -1186,6 +1252,18 @@ func (u *GroupUpsert) SetIsExclusive(v bool) *GroupUpsert {
 // UpdateIsExclusive sets the "is_exclusive" field to the value that was provided on create.
 func (u *GroupUpsert) UpdateIsExclusive() *GroupUpsert {
 	u.SetExcluded(group.FieldIsExclusive)
+	return u
+}
+
+// SetUserSelectable sets the "user_selectable" field.
+func (u *GroupUpsert) SetUserSelectable(v bool) *GroupUpsert {
+	u.Set(group.FieldUserSelectable, v)
+	return u
+}
+
+// UpdateUserSelectable sets the "user_selectable" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateUserSelectable() *GroupUpsert {
+	u.SetExcluded(group.FieldUserSelectable)
 	return u
 }
 
@@ -1763,6 +1841,27 @@ func (u *GroupUpsertOne) UpdateName() *GroupUpsertOne {
 	})
 }
 
+// SetDisplayName sets the "display_name" field.
+func (u *GroupUpsertOne) SetDisplayName(v string) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetDisplayName(v)
+	})
+}
+
+// UpdateDisplayName sets the "display_name" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateDisplayName() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateDisplayName()
+	})
+}
+
+// ClearDisplayName clears the value of the "display_name" field.
+func (u *GroupUpsertOne) ClearDisplayName() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.ClearDisplayName()
+	})
+}
+
 // SetDescription sets the "description" field.
 func (u *GroupUpsertOne) SetDescription(v string) *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
@@ -1816,6 +1915,20 @@ func (u *GroupUpsertOne) SetIsExclusive(v bool) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdateIsExclusive() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateIsExclusive()
+	})
+}
+
+// SetUserSelectable sets the "user_selectable" field.
+func (u *GroupUpsertOne) SetUserSelectable(v bool) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetUserSelectable(v)
+	})
+}
+
+// UpdateUserSelectable sets the "user_selectable" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateUserSelectable() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateUserSelectable()
 	})
 }
 
@@ -2639,6 +2752,27 @@ func (u *GroupUpsertBulk) UpdateName() *GroupUpsertBulk {
 	})
 }
 
+// SetDisplayName sets the "display_name" field.
+func (u *GroupUpsertBulk) SetDisplayName(v string) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetDisplayName(v)
+	})
+}
+
+// UpdateDisplayName sets the "display_name" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateDisplayName() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateDisplayName()
+	})
+}
+
+// ClearDisplayName clears the value of the "display_name" field.
+func (u *GroupUpsertBulk) ClearDisplayName() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.ClearDisplayName()
+	})
+}
+
 // SetDescription sets the "description" field.
 func (u *GroupUpsertBulk) SetDescription(v string) *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
@@ -2692,6 +2826,20 @@ func (u *GroupUpsertBulk) SetIsExclusive(v bool) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdateIsExclusive() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateIsExclusive()
+	})
+}
+
+// SetUserSelectable sets the "user_selectable" field.
+func (u *GroupUpsertBulk) SetUserSelectable(v bool) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetUserSelectable(v)
+	})
+}
+
+// UpdateUserSelectable sets the "user_selectable" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateUserSelectable() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateUserSelectable()
 	})
 }
 

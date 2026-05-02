@@ -177,6 +177,18 @@ func TestSelectByLRU_NilLastUsedAtWins(t *testing.T) {
 	require.Equal(t, int64(2), result.account.ID)
 }
 
+func TestSelectByLRU_LatestCreatedAtBreaksTie(t *testing.T) {
+	base := time.Now()
+	accounts := []accountWithLoad{
+		{account: &Account{ID: 1, Priority: 1, LastUsedAt: nil, CreatedAt: base.Add(-2 * time.Hour), Type: AccountTypeAPIKey}},
+		{account: &Account{ID: 2, Priority: 1, LastUsedAt: nil, CreatedAt: base.Add(-1 * time.Hour), Type: AccountTypeAPIKey}},
+		{account: &Account{ID: 3, Priority: 1, LastUsedAt: nil, CreatedAt: base, Type: AccountTypeAPIKey}},
+	}
+	result := selectByLRU(accounts, false)
+	require.NotNil(t, result)
+	require.Equal(t, int64(3), result.account.ID)
+}
+
 func TestSelectByLRU_EarliestTimeWins(t *testing.T) {
 	now := time.Now()
 	accounts := []accountWithLoad{

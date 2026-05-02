@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"sort"
+	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -56,10 +57,19 @@ func (h *AvailableChannelHandler) featureEnabled(c *gin.Context) bool {
 type userAvailableGroup struct {
 	ID               int64   `json:"id"`
 	Name             string  `json:"name"`
+	DisplayName      string  `json:"display_name"`
 	Platform         string  `json:"platform"`
 	SubscriptionType string  `json:"subscription_type"`
 	RateMultiplier   float64 `json:"rate_multiplier"`
 	IsExclusive      bool    `json:"is_exclusive"`
+	UserSelectable   bool    `json:"user_selectable"`
+}
+
+func (g userAvailableGroup) DisplayLabel() string {
+	if label := strings.TrimSpace(g.DisplayName); label != "" {
+		return label
+	}
+	return g.Name
 }
 
 // userSupportedModelPricing 用户可见的定价字段白名单。
@@ -128,7 +138,7 @@ func (h *AvailableChannelHandler) List(c *gin.Context) {
 		return
 	}
 
-	userGroups, err := h.apiKeyService.GetAvailableGroups(c.Request.Context(), subject.UserID)
+	userGroups, err := h.apiKeyService.GetAvailableRouteGroups(c.Request.Context(), subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -230,13 +240,19 @@ func filterUserVisibleGroups(
 		if _, ok := allowed[g.ID]; !ok {
 			continue
 		}
+		displayName := strings.TrimSpace(g.DisplayName)
+		if displayName == "" {
+			displayName = g.Name
+		}
 		visible = append(visible, userAvailableGroup{
 			ID:               g.ID,
 			Name:             g.Name,
+			DisplayName:      displayName,
 			Platform:         g.Platform,
 			SubscriptionType: g.SubscriptionType,
 			RateMultiplier:   g.RateMultiplier,
 			IsExclusive:      g.IsExclusive,
+			UserSelectable:   g.UserSelectable,
 		})
 	}
 	return visible
@@ -248,10 +264,12 @@ func toServiceAvailableGroupRefs(groups []userAvailableGroup) []service.Availabl
 		refs = append(refs, service.AvailableGroupRef{
 			ID:               group.ID,
 			Name:             group.Name,
+			DisplayName:      group.DisplayLabel(),
 			Platform:         group.Platform,
 			SubscriptionType: group.SubscriptionType,
 			RateMultiplier:   group.RateMultiplier,
 			IsExclusive:      group.IsExclusive,
+			UserSelectable:   group.UserSelectable,
 		})
 	}
 	return refs

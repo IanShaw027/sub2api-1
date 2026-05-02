@@ -9,6 +9,584 @@ import (
 )
 
 var (
+	// AiAssetsColumns holds the columns for the "ai_assets" table.
+	AiAssetsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "asset_type", Type: field.TypeString, Size: 32, Default: "image"},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "pending"},
+		{Name: "visibility", Type: field.TypeString, Size: 32, Default: "private"},
+		{Name: "moderation_state", Type: field.TypeString, Size: 32, Default: "normal"},
+		{Name: "storage_kind", Type: field.TypeString, Nullable: true, Size: 32},
+		{Name: "storage_path", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "source_url", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "mime_type", Type: field.TypeString, Nullable: true, Size: 100},
+		{Name: "width", Type: field.TypeInt, Nullable: true},
+		{Name: "height", Type: field.TypeInt, Nullable: true},
+		{Name: "byte_size", Type: field.TypeInt64, Nullable: true},
+		{Name: "checksum", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "request_id", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "usage_log_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "generation_job_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "prompt_template_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "session_id", Type: field.TypeInt64, Nullable: true},
+	}
+	// AiAssetsTable holds the schema information for the "ai_assets" table.
+	AiAssetsTable = &schema.Table{
+		Name:       "ai_assets",
+		Columns:    AiAssetsColumns,
+		PrimaryKey: []*schema.Column{AiAssetsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "ai_assets_ai_generation_jobs_assets",
+				Columns:    []*schema.Column{AiAssetsColumns[22]},
+				RefColumns: []*schema.Column{AiGenerationJobsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "ai_assets_ai_prompt_templates_assets",
+				Columns:    []*schema.Column{AiAssetsColumns[23]},
+				RefColumns: []*schema.Column{AiPromptTemplatesColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "ai_assets_ai_sessions_assets",
+				Columns:    []*schema.Column{AiAssetsColumns[24]},
+				RefColumns: []*schema.Column{AiSessionsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "aiasset_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiAssetsColumns[4]},
+			},
+			{
+				Name:    "aiasset_generation_job_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiAssetsColumns[22]},
+			},
+			{
+				Name:    "aiasset_session_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiAssetsColumns[24]},
+			},
+			{
+				Name:    "aiasset_prompt_template_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiAssetsColumns[23]},
+			},
+			{
+				Name:    "aiasset_status",
+				Unique:  false,
+				Columns: []*schema.Column{AiAssetsColumns[6]},
+			},
+			{
+				Name:    "aiasset_visibility",
+				Unique:  false,
+				Columns: []*schema.Column{AiAssetsColumns[7]},
+			},
+			{
+				Name:    "aiasset_moderation_state",
+				Unique:  false,
+				Columns: []*schema.Column{AiAssetsColumns[8]},
+			},
+			{
+				Name:    "aiasset_request_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiAssetsColumns[18]},
+			},
+			{
+				Name:    "aiasset_usage_log_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiAssetsColumns[19]},
+			},
+			{
+				Name:    "aiasset_api_key_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiAssetsColumns[20]},
+			},
+			{
+				Name:    "aiasset_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiAssetsColumns[21]},
+			},
+			{
+				Name:    "aiasset_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{AiAssetsColumns[4], AiAssetsColumns[1]},
+			},
+		},
+	}
+	// AiAuditLogsColumns holds the columns for the "ai_audit_logs" table.
+	AiAuditLogsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "operator_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "owner_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "entity_type", Type: field.TypeString, Size: 64},
+		{Name: "entity_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "action", Type: field.TypeString, Size: 64},
+		{Name: "reason", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "before_state", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "after_state", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "request_id", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "usage_log_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+	}
+	// AiAuditLogsTable holds the schema information for the "ai_audit_logs" table.
+	AiAuditLogsTable = &schema.Table{
+		Name:       "ai_audit_logs",
+		Columns:    AiAuditLogsColumns,
+		PrimaryKey: []*schema.Column{AiAuditLogsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "aiauditlog_operator_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiAuditLogsColumns[1]},
+			},
+			{
+				Name:    "aiauditlog_owner_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiAuditLogsColumns[2]},
+			},
+			{
+				Name:    "aiauditlog_entity_type",
+				Unique:  false,
+				Columns: []*schema.Column{AiAuditLogsColumns[3]},
+			},
+			{
+				Name:    "aiauditlog_entity_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiAuditLogsColumns[4]},
+			},
+			{
+				Name:    "aiauditlog_action",
+				Unique:  false,
+				Columns: []*schema.Column{AiAuditLogsColumns[5]},
+			},
+			{
+				Name:    "aiauditlog_request_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiAuditLogsColumns[9]},
+			},
+			{
+				Name:    "aiauditlog_usage_log_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiAuditLogsColumns[10]},
+			},
+			{
+				Name:    "aiauditlog_api_key_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiAuditLogsColumns[11]},
+			},
+			{
+				Name:    "aiauditlog_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiAuditLogsColumns[12]},
+			},
+			{
+				Name:    "aiauditlog_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{AiAuditLogsColumns[13]},
+			},
+			{
+				Name:    "aiauditlog_entity_type_entity_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{AiAuditLogsColumns[3], AiAuditLogsColumns[4], AiAuditLogsColumns[13]},
+			},
+		},
+	}
+	// AiGenerationJobsColumns holds the columns for the "ai_generation_jobs" table.
+	AiGenerationJobsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "queued"},
+		{Name: "model", Type: field.TypeString, Size: 100},
+		{Name: "prompt", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "negative_prompt", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "size", Type: field.TypeString, Nullable: true, Size: 32},
+		{Name: "image_count", Type: field.TypeInt, Default: 1},
+		{Name: "seed", Type: field.TypeInt64, Nullable: true},
+		{Name: "error_message", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "parameters", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "request_id", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "usage_log_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "prompt_template_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "session_id", Type: field.TypeInt64, Nullable: true},
+	}
+	// AiGenerationJobsTable holds the schema information for the "ai_generation_jobs" table.
+	AiGenerationJobsTable = &schema.Table{
+		Name:       "ai_generation_jobs",
+		Columns:    AiGenerationJobsColumns,
+		PrimaryKey: []*schema.Column{AiGenerationJobsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "ai_generation_jobs_ai_prompt_templates_generation_jobs",
+				Columns:    []*schema.Column{AiGenerationJobsColumns[17]},
+				RefColumns: []*schema.Column{AiPromptTemplatesColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "ai_generation_jobs_ai_sessions_generation_jobs",
+				Columns:    []*schema.Column{AiGenerationJobsColumns[18]},
+				RefColumns: []*schema.Column{AiSessionsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "aigenerationjob_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiGenerationJobsColumns[3]},
+			},
+			{
+				Name:    "aigenerationjob_session_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiGenerationJobsColumns[18]},
+			},
+			{
+				Name:    "aigenerationjob_prompt_template_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiGenerationJobsColumns[17]},
+			},
+			{
+				Name:    "aigenerationjob_status",
+				Unique:  false,
+				Columns: []*schema.Column{AiGenerationJobsColumns[4]},
+			},
+			{
+				Name:    "aigenerationjob_request_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiGenerationJobsColumns[13]},
+			},
+			{
+				Name:    "aigenerationjob_usage_log_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiGenerationJobsColumns[14]},
+			},
+			{
+				Name:    "aigenerationjob_api_key_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiGenerationJobsColumns[15]},
+			},
+			{
+				Name:    "aigenerationjob_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiGenerationJobsColumns[16]},
+			},
+			{
+				Name:    "aigenerationjob_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{AiGenerationJobsColumns[3], AiGenerationJobsColumns[1]},
+			},
+		},
+	}
+	// AiPromptTemplatesColumns holds the columns for the "ai_prompt_templates" table.
+	AiPromptTemplatesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "title", Type: field.TypeString, Size: 200},
+		{Name: "description", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "category", Type: field.TypeString, Nullable: true, Size: 100},
+		{Name: "tags", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "visibility", Type: field.TypeString, Size: 32, Default: "private"},
+		{Name: "moderation_state", Type: field.TypeString, Size: 32, Default: "normal"},
+		{Name: "current_version", Type: field.TypeInt, Default: 1},
+		{Name: "content", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "model_hint", Type: field.TypeString, Nullable: true, Size: 100},
+		{Name: "cover_asset_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "request_id", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "usage_log_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
+	}
+	// AiPromptTemplatesTable holds the schema information for the "ai_prompt_templates" table.
+	AiPromptTemplatesTable = &schema.Table{
+		Name:       "ai_prompt_templates",
+		Columns:    AiPromptTemplatesColumns,
+		PrimaryKey: []*schema.Column{AiPromptTemplatesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "aiprompttemplate_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiPromptTemplatesColumns[4]},
+			},
+			{
+				Name:    "aiprompttemplate_visibility",
+				Unique:  false,
+				Columns: []*schema.Column{AiPromptTemplatesColumns[9]},
+			},
+			{
+				Name:    "aiprompttemplate_moderation_state",
+				Unique:  false,
+				Columns: []*schema.Column{AiPromptTemplatesColumns[10]},
+			},
+			{
+				Name:    "aiprompttemplate_request_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiPromptTemplatesColumns[16]},
+			},
+			{
+				Name:    "aiprompttemplate_usage_log_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiPromptTemplatesColumns[17]},
+			},
+			{
+				Name:    "aiprompttemplate_api_key_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiPromptTemplatesColumns[18]},
+			},
+			{
+				Name:    "aiprompttemplate_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiPromptTemplatesColumns[19]},
+			},
+			{
+				Name:    "aiprompttemplate_user_id_updated_at",
+				Unique:  false,
+				Columns: []*schema.Column{AiPromptTemplatesColumns[4], AiPromptTemplatesColumns[2]},
+			},
+			{
+				Name:    "aiprompttemplate_visibility_moderation_state",
+				Unique:  false,
+				Columns: []*schema.Column{AiPromptTemplatesColumns[9], AiPromptTemplatesColumns[10]},
+			},
+		},
+	}
+	// AiPromptTemplateVersionsColumns holds the columns for the "ai_prompt_template_versions" table.
+	AiPromptTemplateVersionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "version", Type: field.TypeInt},
+		{Name: "title", Type: field.TypeString, Size: 200},
+		{Name: "content", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "model_hint", Type: field.TypeString, Nullable: true, Size: 100},
+		{Name: "variables", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "change_note", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "request_id", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "usage_log_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "template_id", Type: field.TypeInt64},
+	}
+	// AiPromptTemplateVersionsTable holds the schema information for the "ai_prompt_template_versions" table.
+	AiPromptTemplateVersionsTable = &schema.Table{
+		Name:       "ai_prompt_template_versions",
+		Columns:    AiPromptTemplateVersionsColumns,
+		PrimaryKey: []*schema.Column{AiPromptTemplateVersionsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "ai_prompt_template_versions_ai_prompt_templates_versions",
+				Columns:    []*schema.Column{AiPromptTemplateVersionsColumns[15]},
+				RefColumns: []*schema.Column{AiPromptTemplatesColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "aiprompttemplateversion_template_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiPromptTemplateVersionsColumns[15]},
+			},
+			{
+				Name:    "aiprompttemplateversion_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiPromptTemplateVersionsColumns[3]},
+			},
+			{
+				Name:    "aiprompttemplateversion_request_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiPromptTemplateVersionsColumns[11]},
+			},
+			{
+				Name:    "aiprompttemplateversion_usage_log_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiPromptTemplateVersionsColumns[12]},
+			},
+			{
+				Name:    "aiprompttemplateversion_api_key_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiPromptTemplateVersionsColumns[13]},
+			},
+			{
+				Name:    "aiprompttemplateversion_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiPromptTemplateVersionsColumns[14]},
+			},
+			{
+				Name:    "aiprompttemplateversion_template_id_version",
+				Unique:  true,
+				Columns: []*schema.Column{AiPromptTemplateVersionsColumns[15], AiPromptTemplateVersionsColumns[4]},
+			},
+		},
+	}
+	// AiSessionsColumns holds the columns for the "ai_sessions" table.
+	AiSessionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "title", Type: field.TypeString, Size: 200},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "active"},
+		{Name: "system_prompt", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "last_message_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "request_id", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "usage_log_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
+	}
+	// AiSessionsTable holds the schema information for the "ai_sessions" table.
+	AiSessionsTable = &schema.Table{
+		Name:       "ai_sessions",
+		Columns:    AiSessionsColumns,
+		PrimaryKey: []*schema.Column{AiSessionsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "aisession_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSessionsColumns[4]},
+			},
+			{
+				Name:    "aisession_status",
+				Unique:  false,
+				Columns: []*schema.Column{AiSessionsColumns[6]},
+			},
+			{
+				Name:    "aisession_request_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSessionsColumns[10]},
+			},
+			{
+				Name:    "aisession_usage_log_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSessionsColumns[11]},
+			},
+			{
+				Name:    "aisession_api_key_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSessionsColumns[12]},
+			},
+			{
+				Name:    "aisession_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSessionsColumns[13]},
+			},
+			{
+				Name:    "aisession_user_id_updated_at",
+				Unique:  false,
+				Columns: []*schema.Column{AiSessionsColumns[4], AiSessionsColumns[2]},
+			},
+			{
+				Name:    "aisession_user_id_last_message_at",
+				Unique:  false,
+				Columns: []*schema.Column{AiSessionsColumns[4], AiSessionsColumns[9]},
+			},
+		},
+	}
+	// AiSessionMessagesColumns holds the columns for the "ai_session_messages" table.
+	AiSessionMessagesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "reply_to_message_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "role", Type: field.TypeString, Size: 32, Default: "user"},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "accepted"},
+		{Name: "content", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "content_parts", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "model", Type: field.TypeString, Nullable: true, Size: 100},
+		{Name: "provider", Type: field.TypeString, Nullable: true, Size: 50},
+		{Name: "error_message", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "request_id", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "usage_log_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "session_id", Type: field.TypeInt64},
+	}
+	// AiSessionMessagesTable holds the schema information for the "ai_session_messages" table.
+	AiSessionMessagesTable = &schema.Table{
+		Name:       "ai_session_messages",
+		Columns:    AiSessionMessagesColumns,
+		PrimaryKey: []*schema.Column{AiSessionMessagesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "ai_session_messages_ai_sessions_messages",
+				Columns:    []*schema.Column{AiSessionMessagesColumns[17]},
+				RefColumns: []*schema.Column{AiSessionsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "aisessionmessage_session_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSessionMessagesColumns[17]},
+			},
+			{
+				Name:    "aisessionmessage_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSessionMessagesColumns[3]},
+			},
+			{
+				Name:    "aisessionmessage_role",
+				Unique:  false,
+				Columns: []*schema.Column{AiSessionMessagesColumns[5]},
+			},
+			{
+				Name:    "aisessionmessage_status",
+				Unique:  false,
+				Columns: []*schema.Column{AiSessionMessagesColumns[6]},
+			},
+			{
+				Name:    "aisessionmessage_request_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSessionMessagesColumns[13]},
+			},
+			{
+				Name:    "aisessionmessage_usage_log_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSessionMessagesColumns[14]},
+			},
+			{
+				Name:    "aisessionmessage_api_key_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSessionMessagesColumns[15]},
+			},
+			{
+				Name:    "aisessionmessage_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSessionMessagesColumns[16]},
+			},
+			{
+				Name:    "aisessionmessage_session_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{AiSessionMessagesColumns[17], AiSessionMessagesColumns[1]},
+			},
+		},
+	}
 	// APIKeysColumns holds the columns for the "api_keys" table.
 	APIKeysColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -628,9 +1206,11 @@ var (
 		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "name", Type: field.TypeString, Size: 100},
+		{Name: "display_name", Type: field.TypeString, Nullable: true, Size: 100},
 		{Name: "description", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "rate_multiplier", Type: field.TypeFloat64, Default: 1, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
 		{Name: "is_exclusive", Type: field.TypeBool, Default: false},
+		{Name: "user_selectable", Type: field.TypeBool, Default: true},
 		{Name: "status", Type: field.TypeString, Size: 20, Default: "active"},
 		{Name: "platform", Type: field.TypeString, Size: 50, Default: "anthropic"},
 		{Name: "subscription_type", Type: field.TypeString, Size: 20, Default: "standard"},
@@ -668,22 +1248,22 @@ var (
 			{
 				Name:    "group_status",
 				Unique:  false,
-				Columns: []*schema.Column{GroupsColumns[8]},
+				Columns: []*schema.Column{GroupsColumns[10]},
 			},
 			{
 				Name:    "group_platform",
 				Unique:  false,
-				Columns: []*schema.Column{GroupsColumns[9]},
+				Columns: []*schema.Column{GroupsColumns[11]},
 			},
 			{
 				Name:    "group_subscription_type",
 				Unique:  false,
-				Columns: []*schema.Column{GroupsColumns[10]},
+				Columns: []*schema.Column{GroupsColumns[12]},
 			},
 			{
 				Name:    "group_is_exclusive",
 				Unique:  false,
-				Columns: []*schema.Column{GroupsColumns[7]},
+				Columns: []*schema.Column{GroupsColumns[8]},
 			},
 			{
 				Name:    "group_deleted_at",
@@ -693,7 +1273,7 @@ var (
 			{
 				Name:    "group_sort_order",
 				Unique:  false,
-				Columns: []*schema.Column{GroupsColumns[28]},
+				Columns: []*schema.Column{GroupsColumns[30]},
 			},
 		},
 	}
@@ -1690,6 +2270,13 @@ var (
 	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
+		AiAssetsTable,
+		AiAuditLogsTable,
+		AiGenerationJobsTable,
+		AiPromptTemplatesTable,
+		AiPromptTemplateVersionsTable,
+		AiSessionsTable,
+		AiSessionMessagesTable,
 		APIKeysTable,
 		AccountsTable,
 		AccountGroupsTable,
@@ -1728,6 +2315,34 @@ var (
 )
 
 func init() {
+	AiAssetsTable.ForeignKeys[0].RefTable = AiGenerationJobsTable
+	AiAssetsTable.ForeignKeys[1].RefTable = AiPromptTemplatesTable
+	AiAssetsTable.ForeignKeys[2].RefTable = AiSessionsTable
+	AiAssetsTable.Annotation = &entsql.Annotation{
+		Table: "ai_assets",
+	}
+	AiAuditLogsTable.Annotation = &entsql.Annotation{
+		Table: "ai_audit_logs",
+	}
+	AiGenerationJobsTable.ForeignKeys[0].RefTable = AiPromptTemplatesTable
+	AiGenerationJobsTable.ForeignKeys[1].RefTable = AiSessionsTable
+	AiGenerationJobsTable.Annotation = &entsql.Annotation{
+		Table: "ai_generation_jobs",
+	}
+	AiPromptTemplatesTable.Annotation = &entsql.Annotation{
+		Table: "ai_prompt_templates",
+	}
+	AiPromptTemplateVersionsTable.ForeignKeys[0].RefTable = AiPromptTemplatesTable
+	AiPromptTemplateVersionsTable.Annotation = &entsql.Annotation{
+		Table: "ai_prompt_template_versions",
+	}
+	AiSessionsTable.Annotation = &entsql.Annotation{
+		Table: "ai_sessions",
+	}
+	AiSessionMessagesTable.ForeignKeys[0].RefTable = AiSessionsTable
+	AiSessionMessagesTable.Annotation = &entsql.Annotation{
+		Table: "ai_session_messages",
+	}
 	APIKeysTable.ForeignKeys[0].RefTable = GroupsTable
 	APIKeysTable.ForeignKeys[1].RefTable = UsersTable
 	APIKeysTable.Annotation = &entsql.Annotation{

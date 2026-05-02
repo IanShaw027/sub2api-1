@@ -111,3 +111,21 @@ api.sub2api.com {
 		respond "{err.status_code} {err.status_text}"
 	}
 }
+
+source.qazwc.com {
+	@media {
+		path /api/v1/media/public/*
+		path /api/v1/media/download/*
+	}
+	handle @media {
+		reverse_proxy localhost:8080 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+			header_up CF-Connecting-IP {http.request.header.CF-Connecting-IP}
+		}
+	}
+
+	respond 404
+}

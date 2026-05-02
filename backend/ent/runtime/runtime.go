@@ -7,6 +7,13 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
+	"github.com/Wei-Shaw/sub2api/ent/aiasset"
+	"github.com/Wei-Shaw/sub2api/ent/aiauditlog"
+	"github.com/Wei-Shaw/sub2api/ent/aigenerationjob"
+	"github.com/Wei-Shaw/sub2api/ent/aiprompttemplate"
+	"github.com/Wei-Shaw/sub2api/ent/aiprompttemplateversion"
+	"github.com/Wei-Shaw/sub2api/ent/aisession"
+	"github.com/Wei-Shaw/sub2api/ent/aisessionmessage"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
@@ -47,6 +54,414 @@ import (
 // (default values, validators, hooks and policies) and stitches it
 // to their package variables.
 func init() {
+	aiassetMixin := schema.AIAsset{}.Mixin()
+	aiassetMixinHooks1 := aiassetMixin[1].Hooks()
+	aiasset.Hooks[0] = aiassetMixinHooks1[0]
+	aiassetMixinInters1 := aiassetMixin[1].Interceptors()
+	aiasset.Interceptors[0] = aiassetMixinInters1[0]
+	aiassetMixinFields0 := aiassetMixin[0].Fields()
+	_ = aiassetMixinFields0
+	aiassetFields := schema.AIAsset{}.Fields()
+	_ = aiassetFields
+	// aiassetDescCreatedAt is the schema descriptor for created_at field.
+	aiassetDescCreatedAt := aiassetMixinFields0[0].Descriptor()
+	// aiasset.DefaultCreatedAt holds the default value on creation for the created_at field.
+	aiasset.DefaultCreatedAt = aiassetDescCreatedAt.Default.(func() time.Time)
+	// aiassetDescUpdatedAt is the schema descriptor for updated_at field.
+	aiassetDescUpdatedAt := aiassetMixinFields0[1].Descriptor()
+	// aiasset.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	aiasset.DefaultUpdatedAt = aiassetDescUpdatedAt.Default.(func() time.Time)
+	// aiasset.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	aiasset.UpdateDefaultUpdatedAt = aiassetDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// aiassetDescAssetType is the schema descriptor for asset_type field.
+	aiassetDescAssetType := aiassetFields[4].Descriptor()
+	// aiasset.DefaultAssetType holds the default value on creation for the asset_type field.
+	aiasset.DefaultAssetType = aiassetDescAssetType.Default.(string)
+	// aiasset.AssetTypeValidator is a validator for the "asset_type" field. It is called by the builders before save.
+	aiasset.AssetTypeValidator = aiassetDescAssetType.Validators[0].(func(string) error)
+	// aiassetDescStatus is the schema descriptor for status field.
+	aiassetDescStatus := aiassetFields[5].Descriptor()
+	// aiasset.DefaultStatus holds the default value on creation for the status field.
+	aiasset.DefaultStatus = aiassetDescStatus.Default.(string)
+	// aiasset.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	aiasset.StatusValidator = aiassetDescStatus.Validators[0].(func(string) error)
+	// aiassetDescVisibility is the schema descriptor for visibility field.
+	aiassetDescVisibility := aiassetFields[6].Descriptor()
+	// aiasset.DefaultVisibility holds the default value on creation for the visibility field.
+	aiasset.DefaultVisibility = aiassetDescVisibility.Default.(string)
+	// aiasset.VisibilityValidator is a validator for the "visibility" field. It is called by the builders before save.
+	aiasset.VisibilityValidator = aiassetDescVisibility.Validators[0].(func(string) error)
+	// aiassetDescModerationState is the schema descriptor for moderation_state field.
+	aiassetDescModerationState := aiassetFields[7].Descriptor()
+	// aiasset.DefaultModerationState holds the default value on creation for the moderation_state field.
+	aiasset.DefaultModerationState = aiassetDescModerationState.Default.(string)
+	// aiasset.ModerationStateValidator is a validator for the "moderation_state" field. It is called by the builders before save.
+	aiasset.ModerationStateValidator = aiassetDescModerationState.Validators[0].(func(string) error)
+	// aiassetDescStorageKind is the schema descriptor for storage_kind field.
+	aiassetDescStorageKind := aiassetFields[8].Descriptor()
+	// aiasset.StorageKindValidator is a validator for the "storage_kind" field. It is called by the builders before save.
+	aiasset.StorageKindValidator = aiassetDescStorageKind.Validators[0].(func(string) error)
+	// aiassetDescMimeType is the schema descriptor for mime_type field.
+	aiassetDescMimeType := aiassetFields[11].Descriptor()
+	// aiasset.MimeTypeValidator is a validator for the "mime_type" field. It is called by the builders before save.
+	aiasset.MimeTypeValidator = aiassetDescMimeType.Validators[0].(func(string) error)
+	// aiassetDescChecksum is the schema descriptor for checksum field.
+	aiassetDescChecksum := aiassetFields[15].Descriptor()
+	// aiasset.ChecksumValidator is a validator for the "checksum" field. It is called by the builders before save.
+	aiasset.ChecksumValidator = aiassetDescChecksum.Validators[0].(func(string) error)
+	// aiassetDescMetadata is the schema descriptor for metadata field.
+	aiassetDescMetadata := aiassetFields[16].Descriptor()
+	// aiasset.DefaultMetadata holds the default value on creation for the metadata field.
+	aiasset.DefaultMetadata = aiassetDescMetadata.Default.(func() map[string]interface{})
+	// aiassetDescRequestID is the schema descriptor for request_id field.
+	aiassetDescRequestID := aiassetFields[17].Descriptor()
+	// aiasset.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
+	aiasset.RequestIDValidator = aiassetDescRequestID.Validators[0].(func(string) error)
+	aiauditlogFields := schema.AIAuditLog{}.Fields()
+	_ = aiauditlogFields
+	// aiauditlogDescEntityType is the schema descriptor for entity_type field.
+	aiauditlogDescEntityType := aiauditlogFields[2].Descriptor()
+	// aiauditlog.EntityTypeValidator is a validator for the "entity_type" field. It is called by the builders before save.
+	aiauditlog.EntityTypeValidator = func() func(string) error {
+		validators := aiauditlogDescEntityType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(entity_type string) error {
+			for _, fn := range fns {
+				if err := fn(entity_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// aiauditlogDescAction is the schema descriptor for action field.
+	aiauditlogDescAction := aiauditlogFields[4].Descriptor()
+	// aiauditlog.ActionValidator is a validator for the "action" field. It is called by the builders before save.
+	aiauditlog.ActionValidator = func() func(string) error {
+		validators := aiauditlogDescAction.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(action string) error {
+			for _, fn := range fns {
+				if err := fn(action); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// aiauditlogDescBeforeState is the schema descriptor for before_state field.
+	aiauditlogDescBeforeState := aiauditlogFields[6].Descriptor()
+	// aiauditlog.DefaultBeforeState holds the default value on creation for the before_state field.
+	aiauditlog.DefaultBeforeState = aiauditlogDescBeforeState.Default.(func() map[string]interface{})
+	// aiauditlogDescAfterState is the schema descriptor for after_state field.
+	aiauditlogDescAfterState := aiauditlogFields[7].Descriptor()
+	// aiauditlog.DefaultAfterState holds the default value on creation for the after_state field.
+	aiauditlog.DefaultAfterState = aiauditlogDescAfterState.Default.(func() map[string]interface{})
+	// aiauditlogDescRequestID is the schema descriptor for request_id field.
+	aiauditlogDescRequestID := aiauditlogFields[8].Descriptor()
+	// aiauditlog.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
+	aiauditlog.RequestIDValidator = aiauditlogDescRequestID.Validators[0].(func(string) error)
+	// aiauditlogDescCreatedAt is the schema descriptor for created_at field.
+	aiauditlogDescCreatedAt := aiauditlogFields[12].Descriptor()
+	// aiauditlog.DefaultCreatedAt holds the default value on creation for the created_at field.
+	aiauditlog.DefaultCreatedAt = aiauditlogDescCreatedAt.Default.(func() time.Time)
+	aigenerationjobMixin := schema.AIGenerationJob{}.Mixin()
+	aigenerationjobMixinFields0 := aigenerationjobMixin[0].Fields()
+	_ = aigenerationjobMixinFields0
+	aigenerationjobFields := schema.AIGenerationJob{}.Fields()
+	_ = aigenerationjobFields
+	// aigenerationjobDescCreatedAt is the schema descriptor for created_at field.
+	aigenerationjobDescCreatedAt := aigenerationjobMixinFields0[0].Descriptor()
+	// aigenerationjob.DefaultCreatedAt holds the default value on creation for the created_at field.
+	aigenerationjob.DefaultCreatedAt = aigenerationjobDescCreatedAt.Default.(func() time.Time)
+	// aigenerationjobDescUpdatedAt is the schema descriptor for updated_at field.
+	aigenerationjobDescUpdatedAt := aigenerationjobMixinFields0[1].Descriptor()
+	// aigenerationjob.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	aigenerationjob.DefaultUpdatedAt = aigenerationjobDescUpdatedAt.Default.(func() time.Time)
+	// aigenerationjob.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	aigenerationjob.UpdateDefaultUpdatedAt = aigenerationjobDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// aigenerationjobDescStatus is the schema descriptor for status field.
+	aigenerationjobDescStatus := aigenerationjobFields[3].Descriptor()
+	// aigenerationjob.DefaultStatus holds the default value on creation for the status field.
+	aigenerationjob.DefaultStatus = aigenerationjobDescStatus.Default.(string)
+	// aigenerationjob.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	aigenerationjob.StatusValidator = aigenerationjobDescStatus.Validators[0].(func(string) error)
+	// aigenerationjobDescModel is the schema descriptor for model field.
+	aigenerationjobDescModel := aigenerationjobFields[4].Descriptor()
+	// aigenerationjob.ModelValidator is a validator for the "model" field. It is called by the builders before save.
+	aigenerationjob.ModelValidator = func() func(string) error {
+		validators := aigenerationjobDescModel.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(model string) error {
+			for _, fn := range fns {
+				if err := fn(model); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// aigenerationjobDescPrompt is the schema descriptor for prompt field.
+	aigenerationjobDescPrompt := aigenerationjobFields[5].Descriptor()
+	// aigenerationjob.DefaultPrompt holds the default value on creation for the prompt field.
+	aigenerationjob.DefaultPrompt = aigenerationjobDescPrompt.Default.(string)
+	// aigenerationjobDescSize is the schema descriptor for size field.
+	aigenerationjobDescSize := aigenerationjobFields[7].Descriptor()
+	// aigenerationjob.SizeValidator is a validator for the "size" field. It is called by the builders before save.
+	aigenerationjob.SizeValidator = aigenerationjobDescSize.Validators[0].(func(string) error)
+	// aigenerationjobDescImageCount is the schema descriptor for image_count field.
+	aigenerationjobDescImageCount := aigenerationjobFields[8].Descriptor()
+	// aigenerationjob.DefaultImageCount holds the default value on creation for the image_count field.
+	aigenerationjob.DefaultImageCount = aigenerationjobDescImageCount.Default.(int)
+	// aigenerationjobDescParameters is the schema descriptor for parameters field.
+	aigenerationjobDescParameters := aigenerationjobFields[11].Descriptor()
+	// aigenerationjob.DefaultParameters holds the default value on creation for the parameters field.
+	aigenerationjob.DefaultParameters = aigenerationjobDescParameters.Default.(func() map[string]interface{})
+	// aigenerationjobDescRequestID is the schema descriptor for request_id field.
+	aigenerationjobDescRequestID := aigenerationjobFields[12].Descriptor()
+	// aigenerationjob.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
+	aigenerationjob.RequestIDValidator = aigenerationjobDescRequestID.Validators[0].(func(string) error)
+	aiprompttemplateMixin := schema.AIPromptTemplate{}.Mixin()
+	aiprompttemplateMixinHooks1 := aiprompttemplateMixin[1].Hooks()
+	aiprompttemplate.Hooks[0] = aiprompttemplateMixinHooks1[0]
+	aiprompttemplateMixinInters1 := aiprompttemplateMixin[1].Interceptors()
+	aiprompttemplate.Interceptors[0] = aiprompttemplateMixinInters1[0]
+	aiprompttemplateMixinFields0 := aiprompttemplateMixin[0].Fields()
+	_ = aiprompttemplateMixinFields0
+	aiprompttemplateFields := schema.AIPromptTemplate{}.Fields()
+	_ = aiprompttemplateFields
+	// aiprompttemplateDescCreatedAt is the schema descriptor for created_at field.
+	aiprompttemplateDescCreatedAt := aiprompttemplateMixinFields0[0].Descriptor()
+	// aiprompttemplate.DefaultCreatedAt holds the default value on creation for the created_at field.
+	aiprompttemplate.DefaultCreatedAt = aiprompttemplateDescCreatedAt.Default.(func() time.Time)
+	// aiprompttemplateDescUpdatedAt is the schema descriptor for updated_at field.
+	aiprompttemplateDescUpdatedAt := aiprompttemplateMixinFields0[1].Descriptor()
+	// aiprompttemplate.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	aiprompttemplate.DefaultUpdatedAt = aiprompttemplateDescUpdatedAt.Default.(func() time.Time)
+	// aiprompttemplate.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	aiprompttemplate.UpdateDefaultUpdatedAt = aiprompttemplateDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// aiprompttemplateDescTitle is the schema descriptor for title field.
+	aiprompttemplateDescTitle := aiprompttemplateFields[1].Descriptor()
+	// aiprompttemplate.TitleValidator is a validator for the "title" field. It is called by the builders before save.
+	aiprompttemplate.TitleValidator = func() func(string) error {
+		validators := aiprompttemplateDescTitle.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(title string) error {
+			for _, fn := range fns {
+				if err := fn(title); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// aiprompttemplateDescCategory is the schema descriptor for category field.
+	aiprompttemplateDescCategory := aiprompttemplateFields[3].Descriptor()
+	// aiprompttemplate.CategoryValidator is a validator for the "category" field. It is called by the builders before save.
+	aiprompttemplate.CategoryValidator = aiprompttemplateDescCategory.Validators[0].(func(string) error)
+	// aiprompttemplateDescTags is the schema descriptor for tags field.
+	aiprompttemplateDescTags := aiprompttemplateFields[4].Descriptor()
+	// aiprompttemplate.DefaultTags holds the default value on creation for the tags field.
+	aiprompttemplate.DefaultTags = aiprompttemplateDescTags.Default.(func() []string)
+	// aiprompttemplateDescVisibility is the schema descriptor for visibility field.
+	aiprompttemplateDescVisibility := aiprompttemplateFields[5].Descriptor()
+	// aiprompttemplate.DefaultVisibility holds the default value on creation for the visibility field.
+	aiprompttemplate.DefaultVisibility = aiprompttemplateDescVisibility.Default.(string)
+	// aiprompttemplate.VisibilityValidator is a validator for the "visibility" field. It is called by the builders before save.
+	aiprompttemplate.VisibilityValidator = aiprompttemplateDescVisibility.Validators[0].(func(string) error)
+	// aiprompttemplateDescModerationState is the schema descriptor for moderation_state field.
+	aiprompttemplateDescModerationState := aiprompttemplateFields[6].Descriptor()
+	// aiprompttemplate.DefaultModerationState holds the default value on creation for the moderation_state field.
+	aiprompttemplate.DefaultModerationState = aiprompttemplateDescModerationState.Default.(string)
+	// aiprompttemplate.ModerationStateValidator is a validator for the "moderation_state" field. It is called by the builders before save.
+	aiprompttemplate.ModerationStateValidator = aiprompttemplateDescModerationState.Validators[0].(func(string) error)
+	// aiprompttemplateDescCurrentVersion is the schema descriptor for current_version field.
+	aiprompttemplateDescCurrentVersion := aiprompttemplateFields[7].Descriptor()
+	// aiprompttemplate.DefaultCurrentVersion holds the default value on creation for the current_version field.
+	aiprompttemplate.DefaultCurrentVersion = aiprompttemplateDescCurrentVersion.Default.(int)
+	// aiprompttemplateDescContent is the schema descriptor for content field.
+	aiprompttemplateDescContent := aiprompttemplateFields[8].Descriptor()
+	// aiprompttemplate.DefaultContent holds the default value on creation for the content field.
+	aiprompttemplate.DefaultContent = aiprompttemplateDescContent.Default.(string)
+	// aiprompttemplateDescModelHint is the schema descriptor for model_hint field.
+	aiprompttemplateDescModelHint := aiprompttemplateFields[9].Descriptor()
+	// aiprompttemplate.ModelHintValidator is a validator for the "model_hint" field. It is called by the builders before save.
+	aiprompttemplate.ModelHintValidator = aiprompttemplateDescModelHint.Validators[0].(func(string) error)
+	// aiprompttemplateDescMetadata is the schema descriptor for metadata field.
+	aiprompttemplateDescMetadata := aiprompttemplateFields[11].Descriptor()
+	// aiprompttemplate.DefaultMetadata holds the default value on creation for the metadata field.
+	aiprompttemplate.DefaultMetadata = aiprompttemplateDescMetadata.Default.(func() map[string]interface{})
+	// aiprompttemplateDescRequestID is the schema descriptor for request_id field.
+	aiprompttemplateDescRequestID := aiprompttemplateFields[12].Descriptor()
+	// aiprompttemplate.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
+	aiprompttemplate.RequestIDValidator = aiprompttemplateDescRequestID.Validators[0].(func(string) error)
+	aiprompttemplateversionMixin := schema.AIPromptTemplateVersion{}.Mixin()
+	aiprompttemplateversionMixinFields0 := aiprompttemplateversionMixin[0].Fields()
+	_ = aiprompttemplateversionMixinFields0
+	aiprompttemplateversionFields := schema.AIPromptTemplateVersion{}.Fields()
+	_ = aiprompttemplateversionFields
+	// aiprompttemplateversionDescCreatedAt is the schema descriptor for created_at field.
+	aiprompttemplateversionDescCreatedAt := aiprompttemplateversionMixinFields0[0].Descriptor()
+	// aiprompttemplateversion.DefaultCreatedAt holds the default value on creation for the created_at field.
+	aiprompttemplateversion.DefaultCreatedAt = aiprompttemplateversionDescCreatedAt.Default.(func() time.Time)
+	// aiprompttemplateversionDescUpdatedAt is the schema descriptor for updated_at field.
+	aiprompttemplateversionDescUpdatedAt := aiprompttemplateversionMixinFields0[1].Descriptor()
+	// aiprompttemplateversion.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	aiprompttemplateversion.DefaultUpdatedAt = aiprompttemplateversionDescUpdatedAt.Default.(func() time.Time)
+	// aiprompttemplateversion.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	aiprompttemplateversion.UpdateDefaultUpdatedAt = aiprompttemplateversionDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// aiprompttemplateversionDescTitle is the schema descriptor for title field.
+	aiprompttemplateversionDescTitle := aiprompttemplateversionFields[3].Descriptor()
+	// aiprompttemplateversion.TitleValidator is a validator for the "title" field. It is called by the builders before save.
+	aiprompttemplateversion.TitleValidator = func() func(string) error {
+		validators := aiprompttemplateversionDescTitle.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(title string) error {
+			for _, fn := range fns {
+				if err := fn(title); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// aiprompttemplateversionDescContent is the schema descriptor for content field.
+	aiprompttemplateversionDescContent := aiprompttemplateversionFields[4].Descriptor()
+	// aiprompttemplateversion.DefaultContent holds the default value on creation for the content field.
+	aiprompttemplateversion.DefaultContent = aiprompttemplateversionDescContent.Default.(string)
+	// aiprompttemplateversionDescModelHint is the schema descriptor for model_hint field.
+	aiprompttemplateversionDescModelHint := aiprompttemplateversionFields[5].Descriptor()
+	// aiprompttemplateversion.ModelHintValidator is a validator for the "model_hint" field. It is called by the builders before save.
+	aiprompttemplateversion.ModelHintValidator = aiprompttemplateversionDescModelHint.Validators[0].(func(string) error)
+	// aiprompttemplateversionDescVariables is the schema descriptor for variables field.
+	aiprompttemplateversionDescVariables := aiprompttemplateversionFields[6].Descriptor()
+	// aiprompttemplateversion.DefaultVariables holds the default value on creation for the variables field.
+	aiprompttemplateversion.DefaultVariables = aiprompttemplateversionDescVariables.Default.(func() []map[string]interface{})
+	// aiprompttemplateversionDescMetadata is the schema descriptor for metadata field.
+	aiprompttemplateversionDescMetadata := aiprompttemplateversionFields[8].Descriptor()
+	// aiprompttemplateversion.DefaultMetadata holds the default value on creation for the metadata field.
+	aiprompttemplateversion.DefaultMetadata = aiprompttemplateversionDescMetadata.Default.(func() map[string]interface{})
+	// aiprompttemplateversionDescRequestID is the schema descriptor for request_id field.
+	aiprompttemplateversionDescRequestID := aiprompttemplateversionFields[9].Descriptor()
+	// aiprompttemplateversion.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
+	aiprompttemplateversion.RequestIDValidator = aiprompttemplateversionDescRequestID.Validators[0].(func(string) error)
+	aisessionMixin := schema.AISession{}.Mixin()
+	aisessionMixinHooks1 := aisessionMixin[1].Hooks()
+	aisession.Hooks[0] = aisessionMixinHooks1[0]
+	aisessionMixinInters1 := aisessionMixin[1].Interceptors()
+	aisession.Interceptors[0] = aisessionMixinInters1[0]
+	aisessionMixinFields0 := aisessionMixin[0].Fields()
+	_ = aisessionMixinFields0
+	aisessionFields := schema.AISession{}.Fields()
+	_ = aisessionFields
+	// aisessionDescCreatedAt is the schema descriptor for created_at field.
+	aisessionDescCreatedAt := aisessionMixinFields0[0].Descriptor()
+	// aisession.DefaultCreatedAt holds the default value on creation for the created_at field.
+	aisession.DefaultCreatedAt = aisessionDescCreatedAt.Default.(func() time.Time)
+	// aisessionDescUpdatedAt is the schema descriptor for updated_at field.
+	aisessionDescUpdatedAt := aisessionMixinFields0[1].Descriptor()
+	// aisession.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	aisession.DefaultUpdatedAt = aisessionDescUpdatedAt.Default.(func() time.Time)
+	// aisession.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	aisession.UpdateDefaultUpdatedAt = aisessionDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// aisessionDescTitle is the schema descriptor for title field.
+	aisessionDescTitle := aisessionFields[1].Descriptor()
+	// aisession.TitleValidator is a validator for the "title" field. It is called by the builders before save.
+	aisession.TitleValidator = func() func(string) error {
+		validators := aisessionDescTitle.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(title string) error {
+			for _, fn := range fns {
+				if err := fn(title); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// aisessionDescStatus is the schema descriptor for status field.
+	aisessionDescStatus := aisessionFields[2].Descriptor()
+	// aisession.DefaultStatus holds the default value on creation for the status field.
+	aisession.DefaultStatus = aisessionDescStatus.Default.(string)
+	// aisession.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	aisession.StatusValidator = aisessionDescStatus.Validators[0].(func(string) error)
+	// aisessionDescMetadata is the schema descriptor for metadata field.
+	aisessionDescMetadata := aisessionFields[4].Descriptor()
+	// aisession.DefaultMetadata holds the default value on creation for the metadata field.
+	aisession.DefaultMetadata = aisessionDescMetadata.Default.(func() map[string]interface{})
+	// aisessionDescRequestID is the schema descriptor for request_id field.
+	aisessionDescRequestID := aisessionFields[6].Descriptor()
+	// aisession.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
+	aisession.RequestIDValidator = aisessionDescRequestID.Validators[0].(func(string) error)
+	aisessionmessageMixin := schema.AISessionMessage{}.Mixin()
+	aisessionmessageMixinFields0 := aisessionmessageMixin[0].Fields()
+	_ = aisessionmessageMixinFields0
+	aisessionmessageFields := schema.AISessionMessage{}.Fields()
+	_ = aisessionmessageFields
+	// aisessionmessageDescCreatedAt is the schema descriptor for created_at field.
+	aisessionmessageDescCreatedAt := aisessionmessageMixinFields0[0].Descriptor()
+	// aisessionmessage.DefaultCreatedAt holds the default value on creation for the created_at field.
+	aisessionmessage.DefaultCreatedAt = aisessionmessageDescCreatedAt.Default.(func() time.Time)
+	// aisessionmessageDescUpdatedAt is the schema descriptor for updated_at field.
+	aisessionmessageDescUpdatedAt := aisessionmessageMixinFields0[1].Descriptor()
+	// aisessionmessage.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	aisessionmessage.DefaultUpdatedAt = aisessionmessageDescUpdatedAt.Default.(func() time.Time)
+	// aisessionmessage.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	aisessionmessage.UpdateDefaultUpdatedAt = aisessionmessageDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// aisessionmessageDescRole is the schema descriptor for role field.
+	aisessionmessageDescRole := aisessionmessageFields[3].Descriptor()
+	// aisessionmessage.DefaultRole holds the default value on creation for the role field.
+	aisessionmessage.DefaultRole = aisessionmessageDescRole.Default.(string)
+	// aisessionmessage.RoleValidator is a validator for the "role" field. It is called by the builders before save.
+	aisessionmessage.RoleValidator = aisessionmessageDescRole.Validators[0].(func(string) error)
+	// aisessionmessageDescStatus is the schema descriptor for status field.
+	aisessionmessageDescStatus := aisessionmessageFields[4].Descriptor()
+	// aisessionmessage.DefaultStatus holds the default value on creation for the status field.
+	aisessionmessage.DefaultStatus = aisessionmessageDescStatus.Default.(string)
+	// aisessionmessage.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	aisessionmessage.StatusValidator = aisessionmessageDescStatus.Validators[0].(func(string) error)
+	// aisessionmessageDescContent is the schema descriptor for content field.
+	aisessionmessageDescContent := aisessionmessageFields[5].Descriptor()
+	// aisessionmessage.DefaultContent holds the default value on creation for the content field.
+	aisessionmessage.DefaultContent = aisessionmessageDescContent.Default.(string)
+	// aisessionmessageDescContentParts is the schema descriptor for content_parts field.
+	aisessionmessageDescContentParts := aisessionmessageFields[6].Descriptor()
+	// aisessionmessage.DefaultContentParts holds the default value on creation for the content_parts field.
+	aisessionmessage.DefaultContentParts = aisessionmessageDescContentParts.Default.(func() []map[string]interface{})
+	// aisessionmessageDescModel is the schema descriptor for model field.
+	aisessionmessageDescModel := aisessionmessageFields[7].Descriptor()
+	// aisessionmessage.ModelValidator is a validator for the "model" field. It is called by the builders before save.
+	aisessionmessage.ModelValidator = aisessionmessageDescModel.Validators[0].(func(string) error)
+	// aisessionmessageDescProvider is the schema descriptor for provider field.
+	aisessionmessageDescProvider := aisessionmessageFields[8].Descriptor()
+	// aisessionmessage.ProviderValidator is a validator for the "provider" field. It is called by the builders before save.
+	aisessionmessage.ProviderValidator = aisessionmessageDescProvider.Validators[0].(func(string) error)
+	// aisessionmessageDescMetadata is the schema descriptor for metadata field.
+	aisessionmessageDescMetadata := aisessionmessageFields[10].Descriptor()
+	// aisessionmessage.DefaultMetadata holds the default value on creation for the metadata field.
+	aisessionmessage.DefaultMetadata = aisessionmessageDescMetadata.Default.(func() map[string]interface{})
+	// aisessionmessageDescRequestID is the schema descriptor for request_id field.
+	aisessionmessageDescRequestID := aisessionmessageFields[11].Descriptor()
+	// aisessionmessage.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
+	aisessionmessage.RequestIDValidator = aisessionmessageDescRequestID.Validators[0].(func(string) error)
 	apikeyMixin := schema.APIKey{}.Mixin()
 	apikeyMixinHooks1 := apikeyMixin[1].Hooks()
 	apikey.Hooks[0] = apikeyMixinHooks1[0]
@@ -773,80 +1188,88 @@ func init() {
 			return nil
 		}
 	}()
+	// groupDescDisplayName is the schema descriptor for display_name field.
+	groupDescDisplayName := groupFields[1].Descriptor()
+	// group.DisplayNameValidator is a validator for the "display_name" field. It is called by the builders before save.
+	group.DisplayNameValidator = groupDescDisplayName.Validators[0].(func(string) error)
 	// groupDescRateMultiplier is the schema descriptor for rate_multiplier field.
-	groupDescRateMultiplier := groupFields[2].Descriptor()
+	groupDescRateMultiplier := groupFields[3].Descriptor()
 	// group.DefaultRateMultiplier holds the default value on creation for the rate_multiplier field.
 	group.DefaultRateMultiplier = groupDescRateMultiplier.Default.(float64)
 	// groupDescIsExclusive is the schema descriptor for is_exclusive field.
-	groupDescIsExclusive := groupFields[3].Descriptor()
+	groupDescIsExclusive := groupFields[4].Descriptor()
 	// group.DefaultIsExclusive holds the default value on creation for the is_exclusive field.
 	group.DefaultIsExclusive = groupDescIsExclusive.Default.(bool)
+	// groupDescUserSelectable is the schema descriptor for user_selectable field.
+	groupDescUserSelectable := groupFields[5].Descriptor()
+	// group.DefaultUserSelectable holds the default value on creation for the user_selectable field.
+	group.DefaultUserSelectable = groupDescUserSelectable.Default.(bool)
 	// groupDescStatus is the schema descriptor for status field.
-	groupDescStatus := groupFields[4].Descriptor()
+	groupDescStatus := groupFields[6].Descriptor()
 	// group.DefaultStatus holds the default value on creation for the status field.
 	group.DefaultStatus = groupDescStatus.Default.(string)
 	// group.StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	group.StatusValidator = groupDescStatus.Validators[0].(func(string) error)
 	// groupDescPlatform is the schema descriptor for platform field.
-	groupDescPlatform := groupFields[5].Descriptor()
+	groupDescPlatform := groupFields[7].Descriptor()
 	// group.DefaultPlatform holds the default value on creation for the platform field.
 	group.DefaultPlatform = groupDescPlatform.Default.(string)
 	// group.PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
 	group.PlatformValidator = groupDescPlatform.Validators[0].(func(string) error)
 	// groupDescSubscriptionType is the schema descriptor for subscription_type field.
-	groupDescSubscriptionType := groupFields[6].Descriptor()
+	groupDescSubscriptionType := groupFields[8].Descriptor()
 	// group.DefaultSubscriptionType holds the default value on creation for the subscription_type field.
 	group.DefaultSubscriptionType = groupDescSubscriptionType.Default.(string)
 	// group.SubscriptionTypeValidator is a validator for the "subscription_type" field. It is called by the builders before save.
 	group.SubscriptionTypeValidator = groupDescSubscriptionType.Validators[0].(func(string) error)
 	// groupDescDefaultValidityDays is the schema descriptor for default_validity_days field.
-	groupDescDefaultValidityDays := groupFields[10].Descriptor()
+	groupDescDefaultValidityDays := groupFields[12].Descriptor()
 	// group.DefaultDefaultValidityDays holds the default value on creation for the default_validity_days field.
 	group.DefaultDefaultValidityDays = groupDescDefaultValidityDays.Default.(int)
 	// groupDescClaudeCodeOnly is the schema descriptor for claude_code_only field.
-	groupDescClaudeCodeOnly := groupFields[17].Descriptor()
+	groupDescClaudeCodeOnly := groupFields[19].Descriptor()
 	// group.DefaultClaudeCodeOnly holds the default value on creation for the claude_code_only field.
 	group.DefaultClaudeCodeOnly = groupDescClaudeCodeOnly.Default.(bool)
 	// groupDescModelRoutingEnabled is the schema descriptor for model_routing_enabled field.
-	groupDescModelRoutingEnabled := groupFields[21].Descriptor()
+	groupDescModelRoutingEnabled := groupFields[23].Descriptor()
 	// group.DefaultModelRoutingEnabled holds the default value on creation for the model_routing_enabled field.
 	group.DefaultModelRoutingEnabled = groupDescModelRoutingEnabled.Default.(bool)
 	// groupDescMcpXMLInject is the schema descriptor for mcp_xml_inject field.
-	groupDescMcpXMLInject := groupFields[22].Descriptor()
+	groupDescMcpXMLInject := groupFields[24].Descriptor()
 	// group.DefaultMcpXMLInject holds the default value on creation for the mcp_xml_inject field.
 	group.DefaultMcpXMLInject = groupDescMcpXMLInject.Default.(bool)
 	// groupDescSupportedModelScopes is the schema descriptor for supported_model_scopes field.
-	groupDescSupportedModelScopes := groupFields[23].Descriptor()
+	groupDescSupportedModelScopes := groupFields[25].Descriptor()
 	// group.DefaultSupportedModelScopes holds the default value on creation for the supported_model_scopes field.
 	group.DefaultSupportedModelScopes = groupDescSupportedModelScopes.Default.([]string)
 	// groupDescSortOrder is the schema descriptor for sort_order field.
-	groupDescSortOrder := groupFields[24].Descriptor()
+	groupDescSortOrder := groupFields[26].Descriptor()
 	// group.DefaultSortOrder holds the default value on creation for the sort_order field.
 	group.DefaultSortOrder = groupDescSortOrder.Default.(int)
 	// groupDescAllowMessagesDispatch is the schema descriptor for allow_messages_dispatch field.
-	groupDescAllowMessagesDispatch := groupFields[25].Descriptor()
+	groupDescAllowMessagesDispatch := groupFields[27].Descriptor()
 	// group.DefaultAllowMessagesDispatch holds the default value on creation for the allow_messages_dispatch field.
 	group.DefaultAllowMessagesDispatch = groupDescAllowMessagesDispatch.Default.(bool)
 	// groupDescRequireOauthOnly is the schema descriptor for require_oauth_only field.
-	groupDescRequireOauthOnly := groupFields[26].Descriptor()
+	groupDescRequireOauthOnly := groupFields[28].Descriptor()
 	// group.DefaultRequireOauthOnly holds the default value on creation for the require_oauth_only field.
 	group.DefaultRequireOauthOnly = groupDescRequireOauthOnly.Default.(bool)
 	// groupDescRequirePrivacySet is the schema descriptor for require_privacy_set field.
-	groupDescRequirePrivacySet := groupFields[27].Descriptor()
+	groupDescRequirePrivacySet := groupFields[29].Descriptor()
 	// group.DefaultRequirePrivacySet holds the default value on creation for the require_privacy_set field.
 	group.DefaultRequirePrivacySet = groupDescRequirePrivacySet.Default.(bool)
 	// groupDescDefaultMappedModel is the schema descriptor for default_mapped_model field.
-	groupDescDefaultMappedModel := groupFields[28].Descriptor()
+	groupDescDefaultMappedModel := groupFields[30].Descriptor()
 	// group.DefaultDefaultMappedModel holds the default value on creation for the default_mapped_model field.
 	group.DefaultDefaultMappedModel = groupDescDefaultMappedModel.Default.(string)
 	// group.DefaultMappedModelValidator is a validator for the "default_mapped_model" field. It is called by the builders before save.
 	group.DefaultMappedModelValidator = groupDescDefaultMappedModel.Validators[0].(func(string) error)
 	// groupDescMessagesDispatchModelConfig is the schema descriptor for messages_dispatch_model_config field.
-	groupDescMessagesDispatchModelConfig := groupFields[29].Descriptor()
+	groupDescMessagesDispatchModelConfig := groupFields[31].Descriptor()
 	// group.DefaultMessagesDispatchModelConfig holds the default value on creation for the messages_dispatch_model_config field.
 	group.DefaultMessagesDispatchModelConfig = groupDescMessagesDispatchModelConfig.Default.(domain.OpenAIMessagesDispatchModelConfig)
 	// groupDescRpmLimit is the schema descriptor for rpm_limit field.
-	groupDescRpmLimit := groupFields[30].Descriptor()
+	groupDescRpmLimit := groupFields[32].Descriptor()
 	// group.DefaultRpmLimit holds the default value on creation for the rpm_limit field.
 	group.DefaultRpmLimit = groupDescRpmLimit.Default.(int)
 	idempotencyrecordMixin := schema.IdempotencyRecord{}.Mixin()

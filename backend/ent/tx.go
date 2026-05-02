@@ -14,6 +14,20 @@ import (
 // Tx is a transactional client that is created by calling Client.Tx().
 type Tx struct {
 	config
+	// AIAsset is the client for interacting with the AIAsset builders.
+	AIAsset *AIAssetClient
+	// AIAuditLog is the client for interacting with the AIAuditLog builders.
+	AIAuditLog *AIAuditLogClient
+	// AIGenerationJob is the client for interacting with the AIGenerationJob builders.
+	AIGenerationJob *AIGenerationJobClient
+	// AIPromptTemplate is the client for interacting with the AIPromptTemplate builders.
+	AIPromptTemplate *AIPromptTemplateClient
+	// AIPromptTemplateVersion is the client for interacting with the AIPromptTemplateVersion builders.
+	AIPromptTemplateVersion *AIPromptTemplateVersionClient
+	// AISession is the client for interacting with the AISession builders.
+	AISession *AISessionClient
+	// AISessionMessage is the client for interacting with the AISessionMessage builders.
+	AISessionMessage *AISessionMessageClient
 	// APIKey is the client for interacting with the APIKey builders.
 	APIKey *APIKeyClient
 	// Account is the client for interacting with the Account builders.
@@ -213,6 +227,13 @@ func (tx *Tx) Client() *Client {
 }
 
 func (tx *Tx) init() {
+	tx.AIAsset = NewAIAssetClient(tx.config)
+	tx.AIAuditLog = NewAIAuditLogClient(tx.config)
+	tx.AIGenerationJob = NewAIGenerationJobClient(tx.config)
+	tx.AIPromptTemplate = NewAIPromptTemplateClient(tx.config)
+	tx.AIPromptTemplateVersion = NewAIPromptTemplateVersionClient(tx.config)
+	tx.AISession = NewAISessionClient(tx.config)
+	tx.AISessionMessage = NewAISessionMessageClient(tx.config)
 	tx.APIKey = NewAPIKeyClient(tx.config)
 	tx.Account = NewAccountClient(tx.config)
 	tx.AccountGroup = NewAccountGroupClient(tx.config)
@@ -256,7 +277,7 @@ func (tx *Tx) init() {
 // of them in order to commit or rollback the transaction.
 //
 // If a closed transaction is embedded in one of the generated entities, and the entity
-// applies a query, for example: APIKey.QueryXXX(), the query will be executed
+// applies a query, for example: AIAsset.QueryXXX(), the query will be executed
 // through the driver which created this transaction.
 //
 // Note that txDriver is not goroutine safe.

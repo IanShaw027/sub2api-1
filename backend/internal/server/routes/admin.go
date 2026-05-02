@@ -101,6 +101,52 @@ func RegisterAdminRoutes(
 
 		// 渠道监控
 		registerChannelMonitorRoutes(admin, h, settingService)
+
+		// AI 创作中心治理
+		registerAdminAIRoutes(admin, h)
+	}
+}
+
+func registerAdminAIRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	ai := admin.Group("/ai")
+	{
+		ai.GET("/prompt-templates", h.Admin.AI.ListPromptTemplates)
+		ai.GET("/prompt-templates/:id", h.Admin.AI.GetPromptTemplate)
+		ai.PUT("/prompt-templates/:id/moderation", h.Admin.AI.ModeratePromptTemplate)
+
+		ai.GET("/prompts", h.Admin.AI.ListPrompts)
+		ai.PUT("/prompts/:id", h.Admin.AI.UpdatePrompt)
+		ai.DELETE("/prompts/:id", h.Admin.AI.DeletePrompt)
+
+		ai.GET("/generation-jobs", h.Admin.AI.ListGenerationJobs)
+		ai.GET("/generation-jobs/:id", h.Admin.AI.GetGenerationJob)
+		ai.PUT("/generation-jobs/:id/status", h.Admin.AI.ModerateGenerationJob)
+
+		ai.GET("/assets", h.Admin.AI.ListAssets)
+		ai.GET("/assets/:id", h.Admin.AI.GetAsset)
+		ai.PUT("/assets/:id/moderation", h.Admin.AI.ModerateAsset)
+
+		ai.GET("/artworks", h.Admin.AI.ListArtworks)
+		ai.PUT("/artworks/:id", h.Admin.AI.UpdateArtwork)
+		ai.DELETE("/artworks/:id", h.Admin.AI.DeleteArtwork)
+
+		ai.GET("/audit-logs", h.Admin.AI.ListAuditLogs)
+	}
+
+	skills := admin.Group("/skills")
+	{
+		reviews := skills.Group("/reviews")
+		{
+			reviews.GET("", h.Admin.AI.ListSkillReviews)
+			reviews.POST("/:id/approve", h.Admin.AI.ApproveSkillReview)
+			reviews.POST("/:id/reject", h.Admin.AI.RejectSkillReview)
+		}
+
+		skills.GET("/governance", h.Admin.AI.ListSkillGovernance)
+		skills.POST("/:id/disable", h.Admin.AI.DisableSkill)
+		skills.POST("/:id/force-private", h.Admin.AI.ForcePrivateSkill)
+		skills.GET("/runtime", h.Admin.AI.ListSkillRuntime)
+		skills.GET("/settlements", h.Admin.AI.ListSkillSettlements)
 	}
 }
 

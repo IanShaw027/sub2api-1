@@ -7,6 +7,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/integration/skillrunner"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/google/wire"
@@ -208,6 +209,96 @@ func ProvideDeferredService(accountRepo AccountRepository, timingWheel *TimingWh
 	svc := NewDeferredService(accountRepo, timingWheel, 10*time.Second)
 	svc.Start()
 	return svc
+}
+
+type aiSkillBalanceCharger struct {
+	userRepo             UserRepository
+	billingCacheService  *BillingCacheService
+	balanceNotifyService *BalanceNotifyService
+}
+
+func (c *aiSkillBalanceCharger) ChargeUserBalance(ctx context.Context, input AISkillBalanceChargeInput) (*AISkillBalanceChargeResult, error) {
+	if c == nil || c.userRepo == nil {
+		return nil, ErrAISkillBalanceServiceUnavailable
+	}
+	if input.UserID <= 0 || input.Amount <= 0 {
+		return nil, ErrAISkillBalanceServiceUnavailable
+	}
+
+	user, err := c.userRepo.GetByID(ctx, input.UserID)
+	if err != nil {
+		return nil, err
+	}
+
+	oldBalance := user.Balance
+	if err := c.userRepo.DeductBalance(ctx, input.UserID, input.Amount); err != nil {
+		return nil, err
+	}
+	if c.billingCacheService != nil {
+		_ = c.billingCacheService.DeductBalanceCache(ctx, input.UserID, input.Amount)
+	}
+	if c.balanceNotifyService != nil {
+		c.balanceNotifyService.CheckBalanceAfterDeduction(ctx, user, oldBalance, input.Amount)
+	}
+
+	balanceAfter := oldBalance - input.Amount
+	if updated, err := c.userRepo.GetByID(ctx, input.UserID); err == nil {
+		balanceAfter = updated.Balance
+	}
+
+	return &AISkillBalanceChargeResult{
+		ChargedAmount: input.Amount,
+		BalanceAfter:  balanceAfter,
+	}, nil
+}
+
+// ProvideAISkillBalanceCharger wires the current balance stack into skill settlements.
+func ProvideAISkillBalanceCharger(userRepo UserRepository, billingCacheService *BillingCacheService, balanceNotifyService *BalanceNotifyService) AISkillBalanceCharger {
+	return &aiSkillBalanceCharger{
+		userRepo:             userRepo,
+		billingCacheService:  billingCacheService,
+		balanceNotifyService: balanceNotifyService,
+	}
+}
+
+// ProvideAISkillCreatorEarningsCreditor reuses affiliate earnings accrual for skill creator payouts.
+func ProvideAISkillCreatorEarningsCreditor(affiliateService *AffiliateService) AISkillCreatorEarningsCreditor {
+	return affiliateService
+}
+
+func ProvideAISkillRuntimeGateway(openAIGateway *OpenAIGatewayService) AISkillRuntimeGateway {
+	openAIRuntime := NewAISkillOpenAIRuntime(openAIGateway)
+	return NewAISkillRuntimeGateway(
+		openAIRuntime,
+		openAIRuntime,
+		NewAISkillScriptRunnerRuntime(skillrunner.NewScriptRunner()),
+	)
+}
+
+func ProvideAISkillService(repo AISkillRepository) *AISkillService {
+	return NewAISkillService(repo)
+}
+
+func ProvideAISkillVersionService(skillRepo AISkillRepository, versionRepo AISkillVersionRepository, reviewRepo AISkillReviewRepository) *AISkillVersionService {
+	return NewAISkillVersionService(skillRepo, versionRepo, reviewRepo)
+}
+
+func ProvideAISkillReviewService(versionRepo AISkillVersionRepository, reviewRepo AISkillReviewRepository) *AISkillReviewService {
+	return NewAISkillReviewService(versionRepo, reviewRepo)
+}
+
+func ProvideAISkillSettlementService(repo AISkillSettlementRepository, balanceCharger AISkillBalanceCharger, creatorCreditor AISkillCreatorEarningsCreditor) *AISkillSettlementService {
+	return NewAISkillSettlementService(repo, balanceCharger, creatorCreditor)
+}
+
+func ProvideAISkillRunService(
+	skillRepo AISkillRepository,
+	versionRepo AISkillVersionRepository,
+	runRepo AISkillRunRepository,
+	settlementService *AISkillSettlementService,
+	runtimeGateway AISkillRuntimeGateway,
+) *AISkillRunService {
+	return NewAISkillRunService(skillRepo, versionRepo, runRepo, settlementService, runtimeGateway)
 }
 
 // ProvideConcurrencyService creates ConcurrencyService and starts slot cleanup worker.
@@ -521,6 +612,7 @@ var ProviderSet = wire.NewSet(
 	NewBillingService,
 	ProvideBillingCacheService,
 	NewAnnouncementService,
+	NewAICenterService,
 	NewAdminService,
 	ConfigureAdminAccountCredentialRefreshers,
 	ProvideGatewayService,
@@ -562,6 +654,15 @@ var ProviderSet = wire.NewSet(
 	NewTurnstileService,
 	NewSubscriptionService,
 	NewTicketService,
+	NewMediaService,
+	ProvideAISkillBalanceCharger,
+	ProvideAISkillCreatorEarningsCreditor,
+	ProvideAISkillRuntimeGateway,
+	ProvideAISkillService,
+	ProvideAISkillVersionService,
+	ProvideAISkillReviewService,
+	ProvideAISkillSettlementService,
+	ProvideAISkillRunService,
 	wire.Bind(new(DefaultSubscriptionAssigner), new(*SubscriptionService)),
 	ProvideConcurrencyService,
 	ProvideUserMessageQueueService,

@@ -22,6 +22,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
@@ -297,6 +298,28 @@ type OpenAIForwardResult struct {
 	FirstTokenMs    *int
 	ImageCount      int
 	ImageSize       string
+}
+
+type openAIResponsesImageRequestInfo struct {
+	Enabled    bool
+	Model      string
+	ImageCount int
+	ImageSize  string
+}
+
+// ResolveUsageRequestID returns the stable request identifier shared by usage
+// logs and AI center traces. Unlike billing-time fallback logic, it never
+// generates a synthetic ID when no request-scoped identifier exists.
+func ResolveUsageRequestID(ctx context.Context, upstreamRequestID string) string {
+	if ctx != nil {
+		if clientRequestID, _ := ctx.Value(ctxkey.ClientRequestID).(string); strings.TrimSpace(clientRequestID) != "" {
+			return "client:" + strings.TrimSpace(clientRequestID)
+		}
+		if requestID, _ := ctx.Value(ctxkey.RequestID).(string); strings.TrimSpace(requestID) != "" {
+			return "local:" + strings.TrimSpace(requestID)
+		}
+	}
+	return strings.TrimSpace(upstreamRequestID)
 }
 
 type OpenAIWSRetryMetricsSnapshot struct {
@@ -2011,11 +2034,23 @@ func (s *OpenAIGatewayService) isBetterAccount(candidate, current *Account) bool
 		// current 从未使用，保持
 		return false
 	case candidate.LastUsedAt == nil && current.LastUsedAt == nil:
-		// 都未使用，保持
+		if !candidate.CreatedAt.Equal(current.CreatedAt) {
+			return candidate.CreatedAt.After(current.CreatedAt)
+		}
+		// 都未使用且创建时间相同，保持
 		return false
 	default:
-		// 都使用过，选择最久未使用的
-		return candidate.LastUsedAt.Before(*current.LastUsedAt)
+		// 都使用过，先比最后使用时间，再比创建时间
+		if candidate.LastUsedAt.Before(*current.LastUsedAt) {
+			return true
+		}
+		if current.LastUsedAt.Before(*candidate.LastUsedAt) {
+			return false
+		}
+		if !candidate.CreatedAt.Equal(current.CreatedAt) {
+			return candidate.CreatedAt.After(current.CreatedAt)
+		}
+		return false
 	}
 }
 
@@ -2872,6 +2907,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 		reqStream = gjson.GetBytes(body, "stream").Bool()
 	}
+	responsesImageRequestInfo := extractOpenAIResponsesImageRequestInfoFromBody(body)
 
 	// Get access token
 	token, _, err := s.GetAccessToken(ctx, account)
@@ -3087,6 +3123,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				wsAttempts,
 			)
 			wsResult.UpstreamModel = upstreamModel
+			applyOpenAIResponsesImageRequestInfo(wsResult, responsesImageRequestInfo, upstreamModel)
 			return wsResult, nil
 		}
 		s.writeOpenAIWSFallbackErrorResponse(c, account, wsErr)
@@ -3342,6 +3379,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			Duration:        time.Since(startTime),
 			FirstTokenMs:    firstTokenMs,
 		}
+		applyOpenAIResponsesImageRequestInfo(result, responsesImageRequestInfo, upstreamModel)
 		emitOpenAICacheProbeEvent(ctx, c, account, originalBody, body, result, promptCacheKey, false)
 		emitOpenAICodexCompatFallbackEvent(
 			ctx,
@@ -3547,6 +3585,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		usage = &OpenAIUsage{}
 	}
 
+	responsesImageRequestInfo := extractOpenAIResponsesImageRequestInfoFromBody(body)
 	result := &OpenAIForwardResult{
 		RequestID:       resp.Header.Get("x-request-id"),
 		Usage:           *usage,
@@ -3559,6 +3598,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		Duration:        time.Since(startTime),
 		FirstTokenMs:    firstTokenMs,
 	}
+	applyOpenAIResponsesImageRequestInfo(result, responsesImageRequestInfo, upstreamPassthroughModel)
 	emitOpenAICacheProbeEvent(ctx, c, account, originalBody, body, result, promptCacheKey, true)
 	return result, nil
 }
@@ -5143,6 +5183,65 @@ func extractOpenAIUsageFromJSONBytes(body []byte) (OpenAIUsage, bool) {
 	}, true
 }
 
+func extractOpenAIResponsesImageRequestInfoFromBody(body []byte) openAIResponsesImageRequestInfo {
+	info := openAIResponsesImageRequestInfo{}
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return info
+	}
+
+	tools := gjson.GetBytes(body, "tools")
+	if !tools.Exists() || !tools.IsArray() {
+		return info
+	}
+
+	for _, tool := range tools.Array() {
+		if strings.TrimSpace(tool.Get("type").String()) != "image_generation" {
+			continue
+		}
+		info.Enabled = true
+		info.Model = strings.TrimSpace(tool.Get("model").String())
+		if info.Model == "" {
+			info.Model = strings.TrimSpace(gjson.GetBytes(body, "model").String())
+		}
+
+		size := strings.TrimSpace(tool.Get("size").String())
+		if size == "" {
+			size = strings.TrimSpace(gjson.GetBytes(body, "size").String())
+		}
+		info.ImageSize = normalizeOpenAIImageSizeTier(size)
+
+		info.ImageCount = int(gjson.GetBytes(body, "n").Int())
+		if info.ImageCount <= 0 {
+			info.ImageCount = 1
+		}
+		return info
+	}
+
+	return info
+}
+
+func applyOpenAIResponsesImageRequestInfo(result *OpenAIForwardResult, info openAIResponsesImageRequestInfo, tokenBillingModel string) {
+	if result == nil || !info.Enabled {
+		return
+	}
+
+	if info.ImageCount > 0 {
+		result.ImageCount = info.ImageCount
+	}
+	if info.ImageSize != "" {
+		result.ImageSize = info.ImageSize
+	}
+	if imageModel := strings.TrimSpace(info.Model); imageModel != "" {
+		result.Model = imageModel
+		if strings.TrimSpace(result.BillingModel) == "" {
+			result.BillingModel = imageModel
+		}
+	}
+	if trimmedTokenModel := strings.TrimSpace(tokenBillingModel); trimmedTokenModel != "" {
+		result.TokenBillingModel = trimmedTokenModel
+	}
+}
+
 func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, originalModel, mappedModel string) (*OpenAIUsage, error) {
 	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
@@ -5725,11 +5824,63 @@ type OpenAIRecordUsageInput struct {
 	ChannelUsageFields
 }
 
+func normalizeOpenAIRecordUsageRequestType(input *OpenAIRecordUsageInput, result *OpenAIForwardResult) RequestType {
+	if input != nil {
+		if requestType := input.RequestType.Normalize(); requestType != RequestTypeUnknown {
+			return requestType
+		}
+	}
+	if isOpenAIRecordUsageImageRequest(input, result) {
+		if input != nil {
+			if isOpenAIImages2APIBridgePath(input.InboundEndpoint) || isOpenAIImages2APIBridgePath(input.UpstreamEndpoint) {
+				return RequestTypeImageWebBridge
+			}
+		}
+		return RequestTypeImage
+	}
+	if result == nil {
+		return RequestTypeUnknown
+	}
+	return RequestTypeFromLegacy(result.Stream, result.OpenAIWSMode)
+}
+
+func isOpenAIRecordUsageImageRequest(input *OpenAIRecordUsageInput, result *OpenAIForwardResult) bool {
+	if result != nil {
+		if result.ImageCount > 0 || result.Usage.ImageOutputTokens > 0 {
+			return true
+		}
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(result.Model)), "gpt-image-") {
+			return true
+		}
+	}
+	if input == nil {
+		return false
+	}
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(input.OriginalModel)), "gpt-image-") {
+		return true
+	}
+	return isOpenAIImagesPath(input.InboundEndpoint) || isOpenAIImagesPath(input.UpstreamEndpoint)
+}
+
+func isOpenAIImages2APIBridgePath(path string) bool {
+	return strings.Contains(strings.ToLower(strings.TrimSpace(path)), "/images2api/")
+}
+
+func isOpenAIImagesPath(path string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(path))
+	return strings.Contains(normalized, "/images/") || strings.Contains(normalized, "/images2api/")
+}
+
 // RecordUsage records usage and deducts balance
 func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRecordUsageInput) error {
 	result := input.Result
 	if s.rateLimitService != nil && input != nil && input.Account != nil && input.Account.Platform == PlatformOpenAI {
 		s.rateLimitService.ResetOpenAI403Counter(ctx, input.Account.ID)
+	}
+
+	requestType := normalizeOpenAIRecordUsageRequestType(input, result)
+	if isImageUsageBillingRequestType(requestType) && result != nil && result.ImageCount <= 0 {
+		result.ImageCount = 1
 	}
 
 	// 跳过所有 token 均为零的用量记录——上游未返回 usage 时不应写入数据库
@@ -5786,10 +5937,6 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	serviceTier := ""
 	if result.ServiceTier != nil {
 		serviceTier = strings.TrimSpace(*result.ServiceTier)
-	}
-	requestType := input.RequestType.Normalize()
-	if requestType == RequestTypeUnknown {
-		requestType = RequestTypeFromLegacy(result.Stream, result.OpenAIWSMode)
 	}
 	cost, err = s.calculateOpenAIRecordUsageCost(ctx, result, apiKey, modelView.BillingModel, multiplier, tokens, serviceTier, requestType)
 	if err != nil {
@@ -6028,19 +6175,7 @@ func (s *OpenAIGatewayService) calculateOpenAIImageCost(
 ) *CostBreakdown {
 	var groupConfig *ImagePriceConfig
 	if apiKey != nil && apiKey.Group != nil {
-		price1K := apiKey.Group.ImagePrice1K
-		price2K := apiKey.Group.ImagePrice2K
-		price4K := apiKey.Group.ImagePrice4K
-		if requestType.Normalize() == RequestTypeImageWebBridge {
-			price1K = apiKey.Group.Images2APIPrice1K
-			price2K = apiKey.Group.Images2APIPrice2K
-			price4K = apiKey.Group.Images2APIPrice4K
-		}
-		groupConfig = &ImagePriceConfig{
-			Price1K: price1K,
-			Price2K: price2K,
-			Price4K: price4K,
-		}
+		groupConfig = apiKey.Group.GetImagePriceConfigForRequestType(requestType.Normalize())
 	}
 	return s.billingService.CalculateImageCost(billingModel, result.ImageSize, result.ImageCount, groupConfig, 1.0)
 }

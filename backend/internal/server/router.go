@@ -107,7 +107,10 @@ func registerRoutes(
 	v1 := r.Group("/api/v1")
 
 	// 注册各模块路由
+	// 说明：用户侧 AI 路由由 RegisterUserRoutes 统一挂载，管理员侧 AI 路由由 RegisterAdminRoutes 挂载。
+	// 不要在这里再单独调用 RegisterAIRoutes，避免 /user/ai 和 /admin/ai 重复注册。
 	routes.RegisterAuthRoutes(v1, h, jwtAuth, redisClient, settingService)
+	routes.RegisterMediaRoutes(v1, h, jwtAuth, adminAuth, settingService)
 	routes.RegisterUserRoutes(v1, h, jwtAuth, settingService)
 	routes.RegisterAdminRoutes(v1, h, adminAuth, settingService)
 	routes.RegisterGatewayRoutes(r, h, apiKeyAuth, apiKeyService, subscriptionService, opsService, settingService, cfg)

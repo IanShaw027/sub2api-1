@@ -56,10 +56,12 @@ type APIKeyAuthUserSnapshot struct {
 type APIKeyAuthGroupSnapshot struct {
 	ID                              int64    `json:"id"`
 	Name                            string   `json:"name"`
+	DisplayName                     string   `json:"display_name,omitempty"`
 	Platform                        string   `json:"platform"`
 	Status                          string   `json:"status"`
 	SubscriptionType                string   `json:"subscription_type"`
 	RateMultiplier                  float64  `json:"rate_multiplier"`
+	UserSelectable                  bool     `json:"user_selectable"`
 	DailyLimitUSD                   *float64 `json:"daily_limit_usd,omitempty"`
 	WeeklyLimitUSD                  *float64 `json:"weekly_limit_usd,omitempty"`
 	MonthlyLimitUSD                 *float64 `json:"monthly_limit_usd,omitempty"`

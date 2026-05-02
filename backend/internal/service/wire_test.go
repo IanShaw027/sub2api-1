@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -34,4 +35,16 @@ func TestProvideTimingWheelService_Success(t *testing.T) {
 		t.Fatalf("期望 svc 非空，但得到 nil")
 	}
 	svc.Stop()
+}
+
+func TestProvideAISkillRuntimeGateway_UsesRealGateway(t *testing.T) {
+	gateway := ProvideAISkillRuntimeGateway(&OpenAIGatewayService{})
+	if gateway == nil {
+		t.Fatalf("期望 gateway 非空，但得到 nil")
+	}
+
+	_, err := gateway.Execute(context.Background(), AISkillExecutionRequest{Type: "unknown"})
+	if !errors.Is(err, ErrAISkillExecutionSpecInvalid) {
+		t.Fatalf("期望返回 ErrAISkillExecutionSpecInvalid，但得到: %v", err)
+	}
 }

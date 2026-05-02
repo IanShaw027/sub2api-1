@@ -146,6 +146,49 @@ func TestMigrationsRunner_ChannelMonitorRequestTemplateSchemaStayAligned(t *test
 	requireColumnAbsent(t, tx, "channel_monitor_daily_rollups", "deleted_at")
 }
 
+func TestMigrationsRunner_AICenterCoreSchemaStayAligned(t *testing.T) {
+	tx := testTx(t)
+
+	requireColumn(t, tx, "ai_sessions", "user_id", "bigint", 0, false)
+	requireColumn(t, tx, "ai_sessions", "title", "character varying", 200, false)
+	requireColumn(t, tx, "ai_sessions", "deleted_at", "timestamp with time zone", 0, true)
+	requireIndex(t, tx, "ai_sessions", "aisession_user_id_updated_at")
+	requireIndex(t, tx, "ai_sessions", "aisession_user_id_last_message_at")
+
+	requireColumn(t, tx, "ai_session_messages", "session_id", "bigint", 0, false)
+	requireColumn(t, tx, "ai_session_messages", "provider", "character varying", 50, true)
+	requireIndex(t, tx, "ai_session_messages", "aisessionmessage_session_id_created_at")
+	requireForeignKeyOnDelete(t, tx, "ai_session_messages", "session_id", "ai_sessions", "NO ACTION")
+
+	requireColumn(t, tx, "ai_prompt_templates", "visibility", "character varying", 32, false)
+	requireColumn(t, tx, "ai_prompt_templates", "moderation_state", "character varying", 32, false)
+	requireColumn(t, tx, "ai_prompt_templates", "cover_asset_id", "bigint", 0, true)
+	requireIndex(t, tx, "ai_prompt_templates", "aiprompttemplate_visibility_moderation_state")
+
+	requireColumn(t, tx, "ai_prompt_template_versions", "template_id", "bigint", 0, false)
+	requireColumn(t, tx, "ai_prompt_template_versions", "version", "integer", 0, false)
+	requireIndex(t, tx, "ai_prompt_template_versions", "aiprompttemplateversion_template_id_version")
+	requireForeignKeyOnDelete(t, tx, "ai_prompt_template_versions", "template_id", "ai_prompt_templates", "NO ACTION")
+
+	requireColumn(t, tx, "ai_generation_jobs", "prompt_template_id", "bigint", 0, true)
+	requireColumn(t, tx, "ai_generation_jobs", "session_id", "bigint", 0, true)
+	requireIndex(t, tx, "ai_generation_jobs", "aigenerationjob_user_id_created_at")
+	requireForeignKeyOnDelete(t, tx, "ai_generation_jobs", "prompt_template_id", "ai_prompt_templates", "SET NULL")
+	requireForeignKeyOnDelete(t, tx, "ai_generation_jobs", "session_id", "ai_sessions", "SET NULL")
+
+	requireColumn(t, tx, "ai_assets", "storage_kind", "character varying", 32, true)
+	requireColumn(t, tx, "ai_assets", "storage_path", "text", 0, true)
+	requireColumn(t, tx, "ai_assets", "deleted_at", "timestamp with time zone", 0, true)
+	requireIndex(t, tx, "ai_assets", "aiasset_user_id_created_at")
+	requireForeignKeyOnDelete(t, tx, "ai_assets", "generation_job_id", "ai_generation_jobs", "SET NULL")
+	requireForeignKeyOnDelete(t, tx, "ai_assets", "prompt_template_id", "ai_prompt_templates", "SET NULL")
+	requireForeignKeyOnDelete(t, tx, "ai_assets", "session_id", "ai_sessions", "SET NULL")
+
+	requireColumn(t, tx, "ai_audit_logs", "entity_type", "character varying", 64, false)
+	requireColumn(t, tx, "ai_audit_logs", "created_at", "timestamp with time zone", 0, false)
+	requireIndex(t, tx, "ai_audit_logs", "aiauditlog_entity_type_entity_id_created_at")
+}
+
 func requireConstraint(t *testing.T, tx *sql.Tx, table, constraint string) {
 	t.Helper()
 

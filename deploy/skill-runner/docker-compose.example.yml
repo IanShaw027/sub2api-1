@@ -1,0 +1,50 @@
+version: "3.9"
+
+services:
+  skill-python311:
+    image: python:3.11-slim-bookworm
+    user: "65532:65532"
+    working_dir: /workspace/skill
+    command: ["python3.11", "/workspace/skill/main.py"]
+    network_mode: "none"
+    read_only: true
+    tmpfs:
+      - /tmp:size=67108864,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.50
+    volumes:
+      - ../../backend/internal/service/testdata/skills/script_python_echo:/workspace/skill:ro
+      - ./runtime/python:/sandbox:rw
+    environment:
+      SUB2API_SKILL_INPUT: /sandbox/input/request.json
+      SUB2API_SKILL_OUTPUT: /sandbox/output/response.json
+      TMPDIR: /tmp
+
+  skill-node20:
+    image: node:20-bookworm-slim
+    user: "65532:65532"
+    working_dir: /workspace/skill
+    command: ["node", "/workspace/skill/main.mjs"]
+    network_mode: "none"
+    read_only: true
+    tmpfs:
+      - /tmp:size=67108864,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.50
+    volumes:
+      - ../../backend/internal/service/testdata/skills/script_node_echo:/workspace/skill:ro
+      - ./runtime/node:/sandbox:rw
+    environment:
+      SUB2API_SKILL_INPUT: /sandbox/input/request.json
+      SUB2API_SKILL_OUTPUT: /sandbox/output/response.json
+      TMPDIR: /tmp

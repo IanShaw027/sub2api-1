@@ -43,6 +43,8 @@ const (
 	apiKeyLastUsedMinTouch = 30 * time.Second
 	// DB 写失败后的短退避，避免请求路径持续同步重试造成写风暴与高延迟。
 	apiKeyLastUsedFailBackoff = 5 * time.Second
+	// 前台线路选择只需要活跃 Key 的分组集合；单次拉取 10k 足够覆盖常规用户场景。
+	apiKeyRouteSelectionScanLimit = 10000
 )
 
 type APIKeyRepository interface {
@@ -774,6 +776,50 @@ func (s *APIKeyService) GetAvailableGroups(ctx context.Context, userID int64) ([
 	}
 
 	return availableGroups, nil
+}
+
+// GetAvailableRouteGroups 返回当前用户在前台可直接选择的线路列表。
+// 规则：
+// - 只返回活跃分组；
+// - 只返回 user_selectable=true 的分组；
+// - 只返回当前用户至少存在一个 active API Key 绑定到该分组的线路；
+// - 展示名由 Group.DisplayLabel() 兜底到 Name。
+func (s *APIKeyService) GetAvailableRouteGroups(ctx context.Context, userID int64) ([]Group, error) {
+	allGroups, err := s.groupRepo.ListActive(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list active groups: %w", err)
+	}
+
+	keys, err := s.apiKeyRepo.SearchAPIKeys(ctx, userID, "", apiKeyRouteSelectionScanLimit)
+	if err != nil {
+		return nil, fmt.Errorf("list user route keys: %w", err)
+	}
+
+	availableGroupIDs := make(map[int64]struct{}, len(keys))
+	for _, key := range keys {
+		if key.GroupID == nil || *key.GroupID <= 0 {
+			continue
+		}
+		if !key.IsActive() {
+			continue
+		}
+		if err := s.CheckAPIKeyQuotaAndExpiry(&key); err != nil {
+			continue
+		}
+		availableGroupIDs[*key.GroupID] = struct{}{}
+	}
+
+	routes := make([]Group, 0, len(allGroups))
+	for _, group := range allGroups {
+		if !group.CanBeSelectedByUser() {
+			continue
+		}
+		if _, ok := availableGroupIDs[group.ID]; !ok {
+			continue
+		}
+		routes = append(routes, group)
+	}
+	return routes, nil
 }
 
 // canUserBindGroupInternal 内部方法，检查用户是否可以绑定分组（使用预加载的订阅数据）

@@ -331,6 +331,9 @@ func TestAPIContracts(t *testing.T) {
 						"image_price_1k": null,
 						"image_price_2k": null,
 						"image_price_4k": null,
+						"images2api_price_1k": null,
+						"images2api_price_2k": null,
+						"images2api_price_4k": null,
 						"claude_code_only": false,
 						"allow_messages_dispatch": false,
 						"fallback_group_id": null,
@@ -1077,6 +1080,10 @@ func TestAPIContracts(t *testing.T) {
 			require.JSONEq(t, tt.wantJSON, body)
 		})
 	}
+}
+
+func TestSkillCenterContracts(t *testing.T) {
+	runSkillContractCases(t)
 }
 
 func normalizeContractResponse(t *testing.T, name, body string) string {

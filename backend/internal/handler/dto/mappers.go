@@ -169,10 +169,12 @@ func groupFromServiceBase(g *service.Group) Group {
 	return Group{
 		ID:                              g.ID,
 		Name:                            g.Name,
+		DisplayName:                     g.DisplayLabel(),
 		Description:                     g.Description,
 		Platform:                        g.Platform,
 		RateMultiplier:                  g.RateMultiplier,
 		IsExclusive:                     g.IsExclusive,
+		UserSelectable:                  g.UserSelectable,
 		Status:                          g.Status,
 		SubscriptionType:                g.SubscriptionType,
 		DailyLimitUSD:                   g.DailyLimitUSD,

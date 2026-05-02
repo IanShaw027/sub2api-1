@@ -38,6 +38,11 @@ func (Group) Fields() []ent.Field {
 		field.String("name").
 			MaxLen(100).
 			NotEmpty(),
+		field.String("display_name").
+			MaxLen(100).
+			Optional().
+			Nillable().
+			Comment("前台展示名，空值时回退到 name"),
 		field.String("description").
 			Optional().
 			Nillable().
@@ -47,6 +52,9 @@ func (Group) Fields() []ent.Field {
 			Default(1.0),
 		field.Bool("is_exclusive").
 			Default(false),
+		field.Bool("user_selectable").
+			Default(true).
+			Comment("前台是否允许用户直接选择该线路"),
 		field.String("status").
 			MaxLen(20).
 			Default(domain.StatusActive),

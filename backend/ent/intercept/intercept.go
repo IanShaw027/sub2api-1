@@ -10,6 +10,13 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
+	"github.com/Wei-Shaw/sub2api/ent/aiasset"
+	"github.com/Wei-Shaw/sub2api/ent/aiauditlog"
+	"github.com/Wei-Shaw/sub2api/ent/aigenerationjob"
+	"github.com/Wei-Shaw/sub2api/ent/aiprompttemplate"
+	"github.com/Wei-Shaw/sub2api/ent/aiprompttemplateversion"
+	"github.com/Wei-Shaw/sub2api/ent/aisession"
+	"github.com/Wei-Shaw/sub2api/ent/aisessionmessage"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
@@ -99,6 +106,195 @@ func (f TraverseFunc) Traverse(ctx context.Context, q ent.Query) error {
 		return err
 	}
 	return f(ctx, query)
+}
+
+// The AIAssetFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AIAssetFunc func(context.Context, *ent.AIAssetQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AIAssetFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AIAssetQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AIAssetQuery", q)
+}
+
+// The TraverseAIAsset type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAIAsset func(context.Context, *ent.AIAssetQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAIAsset) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAIAsset) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AIAssetQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AIAssetQuery", q)
+}
+
+// The AIAuditLogFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AIAuditLogFunc func(context.Context, *ent.AIAuditLogQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AIAuditLogFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AIAuditLogQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AIAuditLogQuery", q)
+}
+
+// The TraverseAIAuditLog type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAIAuditLog func(context.Context, *ent.AIAuditLogQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAIAuditLog) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAIAuditLog) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AIAuditLogQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AIAuditLogQuery", q)
+}
+
+// The AIGenerationJobFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AIGenerationJobFunc func(context.Context, *ent.AIGenerationJobQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AIGenerationJobFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AIGenerationJobQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AIGenerationJobQuery", q)
+}
+
+// The TraverseAIGenerationJob type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAIGenerationJob func(context.Context, *ent.AIGenerationJobQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAIGenerationJob) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAIGenerationJob) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AIGenerationJobQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AIGenerationJobQuery", q)
+}
+
+// The AIPromptTemplateFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AIPromptTemplateFunc func(context.Context, *ent.AIPromptTemplateQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AIPromptTemplateFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AIPromptTemplateQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AIPromptTemplateQuery", q)
+}
+
+// The TraverseAIPromptTemplate type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAIPromptTemplate func(context.Context, *ent.AIPromptTemplateQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAIPromptTemplate) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAIPromptTemplate) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AIPromptTemplateQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AIPromptTemplateQuery", q)
+}
+
+// The AIPromptTemplateVersionFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AIPromptTemplateVersionFunc func(context.Context, *ent.AIPromptTemplateVersionQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AIPromptTemplateVersionFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AIPromptTemplateVersionQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AIPromptTemplateVersionQuery", q)
+}
+
+// The TraverseAIPromptTemplateVersion type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAIPromptTemplateVersion func(context.Context, *ent.AIPromptTemplateVersionQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAIPromptTemplateVersion) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAIPromptTemplateVersion) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AIPromptTemplateVersionQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AIPromptTemplateVersionQuery", q)
+}
+
+// The AISessionFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AISessionFunc func(context.Context, *ent.AISessionQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AISessionFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AISessionQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AISessionQuery", q)
+}
+
+// The TraverseAISession type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAISession func(context.Context, *ent.AISessionQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAISession) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAISession) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AISessionQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AISessionQuery", q)
+}
+
+// The AISessionMessageFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AISessionMessageFunc func(context.Context, *ent.AISessionMessageQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AISessionMessageFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AISessionMessageQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AISessionMessageQuery", q)
+}
+
+// The TraverseAISessionMessage type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAISessionMessage func(context.Context, *ent.AISessionMessageQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAISessionMessage) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAISessionMessage) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AISessionMessageQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AISessionMessageQuery", q)
 }
 
 // The APIKeyFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -1022,6 +1218,20 @@ func (f TraverseUserSubscription) Traverse(ctx context.Context, q ent.Query) err
 // NewQuery returns the generic Query interface for the given typed query.
 func NewQuery(q ent.Query) (Query, error) {
 	switch q := q.(type) {
+	case *ent.AIAssetQuery:
+		return &query[*ent.AIAssetQuery, predicate.AIAsset, aiasset.OrderOption]{typ: ent.TypeAIAsset, tq: q}, nil
+	case *ent.AIAuditLogQuery:
+		return &query[*ent.AIAuditLogQuery, predicate.AIAuditLog, aiauditlog.OrderOption]{typ: ent.TypeAIAuditLog, tq: q}, nil
+	case *ent.AIGenerationJobQuery:
+		return &query[*ent.AIGenerationJobQuery, predicate.AIGenerationJob, aigenerationjob.OrderOption]{typ: ent.TypeAIGenerationJob, tq: q}, nil
+	case *ent.AIPromptTemplateQuery:
+		return &query[*ent.AIPromptTemplateQuery, predicate.AIPromptTemplate, aiprompttemplate.OrderOption]{typ: ent.TypeAIPromptTemplate, tq: q}, nil
+	case *ent.AIPromptTemplateVersionQuery:
+		return &query[*ent.AIPromptTemplateVersionQuery, predicate.AIPromptTemplateVersion, aiprompttemplateversion.OrderOption]{typ: ent.TypeAIPromptTemplateVersion, tq: q}, nil
+	case *ent.AISessionQuery:
+		return &query[*ent.AISessionQuery, predicate.AISession, aisession.OrderOption]{typ: ent.TypeAISession, tq: q}, nil
+	case *ent.AISessionMessageQuery:
+		return &query[*ent.AISessionMessageQuery, predicate.AISessionMessage, aisessionmessage.OrderOption]{typ: ent.TypeAISessionMessage, tq: q}, nil
 	case *ent.APIKeyQuery:
 		return &query[*ent.APIKeyQuery, predicate.APIKey, apikey.OrderOption]{typ: ent.TypeAPIKey, tq: q}, nil
 	case *ent.AccountQuery:

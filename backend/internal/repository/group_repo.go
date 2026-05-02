@@ -45,6 +45,7 @@ func (r *groupRepository) Create(ctx context.Context, groupIn *service.Group) er
 		SetRateMultiplier(groupIn.RateMultiplier).
 		SetSortOrder(groupIn.SortOrder).
 		SetIsExclusive(groupIn.IsExclusive).
+		SetUserSelectable(groupIn.UserSelectable).
 		SetStatus(groupIn.Status).
 		SetSubscriptionType(groupIn.SubscriptionType).
 		SetNillableDailyLimitUsd(groupIn.DailyLimitUSD).
@@ -68,6 +69,9 @@ func (r *groupRepository) Create(ctx context.Context, groupIn *service.Group) er
 		SetDefaultMappedModel(groupIn.DefaultMappedModel).
 		SetMessagesDispatchModelConfig(groupIn.MessagesDispatchModelConfig).
 		SetRpmLimit(groupIn.RPMLimit)
+	if groupIn.DisplayName != "" {
+		builder = builder.SetDisplayName(groupIn.DisplayName)
+	}
 
 	// 设置模型路由配置
 	if groupIn.ModelRouting != nil {
@@ -118,6 +122,7 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 		SetPlatform(groupIn.Platform).
 		SetRateMultiplier(groupIn.RateMultiplier).
 		SetIsExclusive(groupIn.IsExclusive).
+		SetUserSelectable(groupIn.UserSelectable).
 		SetStatus(groupIn.Status).
 		SetSubscriptionType(groupIn.SubscriptionType).
 		SetNillableDailyLimitUsd(groupIn.DailyLimitUSD).
@@ -171,6 +176,11 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 	} else {
 		builder = builder.ClearImagePrice4k()
 	}
+	if groupIn.DisplayName != "" {
+		builder = builder.SetDisplayName(groupIn.DisplayName)
+	} else {
+		builder = builder.ClearDisplayName()
+	}
 	if groupIn.Images2APIPrice1K != nil {
 		builder = builder.SetImages2apiPrice1k(*groupIn.Images2APIPrice1K)
 	} else {
@@ -199,6 +209,7 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 	} else {
 		builder = builder.ClearFallbackGroupIDOnInvalidRequest()
 	}
+	builder = builder.SetUserSelectable(groupIn.UserSelectable)
 
 	// 处理 ModelRouting：nil 时清除，否则设置
 	if groupIn.ModelRouting != nil {

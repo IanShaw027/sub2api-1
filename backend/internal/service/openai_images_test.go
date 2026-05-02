@@ -940,6 +940,56 @@ func TestBuildOpenAIImagesResponsesRequest_ClampsMultipleImagesToSingleRequest(t
 	require.Equal(t, "draw a cat", gjson.GetBytes(body, "input.0.content.0.text").String())
 }
 
+func TestBuildOpenAIImagesResponsesRequest_ForcedPrivateStoreFalse(t *testing.T) {
+	parsed := &OpenAIImagesRequest{
+		Endpoint: openAIImagesGenerationsEndpoint,
+		Model:    "gpt-image-2",
+		Prompt:   "draw a cat",
+	}
+
+	body, err := buildOpenAIImagesResponsesRequest(parsed, "gpt-image-2")
+	require.NoError(t, err)
+	require.NotNil(t, body)
+	require.False(t, gjson.GetBytes(body, "store").Bool())
+}
+
+func TestBuildOpenAIImagesResponsesRequest_PrivateMediaUploadsBecomeDataURLs(t *testing.T) {
+	parsed := &OpenAIImagesRequest{
+		Endpoint: openAIImagesEditsEndpoint,
+		Model:    "gpt-image-2",
+		Prompt:   "replace background",
+		Uploads: []OpenAIImagesUpload{
+			{
+				FieldName:   "image",
+				FileName:    "source.png",
+				ContentType: "image/png",
+				Data:        []byte("fake-image"),
+			},
+		},
+	}
+
+	body, err := buildOpenAIImagesResponsesRequest(parsed, "gpt-image-2")
+	require.NoError(t, err)
+	require.NotNil(t, body)
+	require.True(t, strings.HasPrefix(gjson.GetBytes(body, "input.0.content.1.image_url").String(), "data:image/png;base64,"))
+}
+
+func TestBuildOpenAIImagesResponsesRequest_PublicMediaURLsRemainExternal(t *testing.T) {
+	parsed := &OpenAIImagesRequest{
+		Endpoint:       openAIImagesEditsEndpoint,
+		Model:          "gpt-image-2",
+		Prompt:         "replace background",
+		InputImageURLs: []string{"https://source.qazwc.com/ai/demo/source.png"},
+		MaskImageURL:   "https://source.qazwc.com/ai/demo/mask.png",
+	}
+
+	body, err := buildOpenAIImagesResponsesRequest(parsed, "gpt-image-2")
+	require.NoError(t, err)
+	require.NotNil(t, body)
+	require.Equal(t, "https://source.qazwc.com/ai/demo/source.png", gjson.GetBytes(body, "input.0.content.1.image_url").String())
+	require.Equal(t, "https://source.qazwc.com/ai/demo/mask.png", gjson.GetBytes(body, "tools.0.input_image_mask.image_url").String())
+}
+
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_NativeAllowsMultipleImages(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","n":2,"quality":"high"}`)

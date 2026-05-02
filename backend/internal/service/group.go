@@ -12,10 +12,12 @@ type OpenAIMessagesDispatchModelConfig = domain.OpenAIMessagesDispatchModelConfi
 type Group struct {
 	ID             int64
 	Name           string
+	DisplayName    string
 	Description    string
 	Platform       string
 	RateMultiplier float64
 	IsExclusive    bool
+	UserSelectable bool
 	Status         string
 	Hydrated       bool // indicates the group was loaded from a trusted repository source
 
@@ -101,6 +103,24 @@ func (g *Group) GetImagePrice(imageSize string) *float64 {
 	return g.GetImagePriceForRequestType(imageSize, RequestTypeImage)
 }
 
+func (g *Group) GetImagePriceConfigForRequestType(requestType RequestType) *ImagePriceConfig {
+	if g == nil {
+		return nil
+	}
+	if requestType == RequestTypeImageWebBridge {
+		return &ImagePriceConfig{
+			Price1K: g.Images2APIPrice1K,
+			Price2K: g.Images2APIPrice2K,
+			Price4K: g.Images2APIPrice4K,
+		}
+	}
+	return &ImagePriceConfig{
+		Price1K: g.ImagePrice1K,
+		Price2K: g.ImagePrice2K,
+		Price4K: g.ImagePrice4K,
+	}
+}
+
 func (g *Group) GetImagePriceForRequestType(imageSize string, requestType RequestType) *float64 {
 	if requestType == RequestTypeImageWebBridge {
 		switch imageSize {
@@ -125,6 +145,20 @@ func (g *Group) GetImagePriceForRequestType(imageSize string, requestType Reques
 		// 未知尺寸默认按 2K 计费
 		return g.ImagePrice2K
 	}
+}
+
+func (g *Group) DisplayLabel() string {
+	if g == nil {
+		return ""
+	}
+	if label := strings.TrimSpace(g.DisplayName); label != "" {
+		return label
+	}
+	return strings.TrimSpace(g.Name)
+}
+
+func (g *Group) CanBeSelectedByUser() bool {
+	return g != nil && g.IsActive() && g.UserSelectable
 }
 
 // IsGroupContextValid reports whether a group from context has the fields required for routing decisions.

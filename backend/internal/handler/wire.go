@@ -1,7 +1,13 @@
 package handler
 
 import (
+	"database/sql"
+
+	"github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
+	"github.com/Wei-Shaw/sub2api/internal/handler/skillkit"
+	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/google/wire"
@@ -9,6 +15,7 @@ import (
 
 // ProvideAdminHandlers creates the AdminHandlers struct
 func ProvideAdminHandlers(
+	aiHandler *admin.AIHandler,
 	dashboardHandler *admin.DashboardHandler,
 	userHandler *admin.UserHandler,
 	groupHandler *admin.GroupHandler,
@@ -30,6 +37,7 @@ func ProvideAdminHandlers(
 	subscriptionHandler *admin.SubscriptionHandler,
 	affiliateHandler *admin.AffiliateHandler,
 	ticketHandler *admin.TicketHandler,
+	mediaHandler *admin.MediaHandler,
 	usageHandler *admin.UsageHandler,
 	userAttributeHandler *admin.UserAttributeHandler,
 	errorPassthroughHandler *admin.ErrorPassthroughHandler,
@@ -42,6 +50,7 @@ func ProvideAdminHandlers(
 	paymentHandler *admin.PaymentHandler,
 ) *AdminHandlers {
 	return &AdminHandlers{
+		AI:                     aiHandler,
 		Dashboard:              dashboardHandler,
 		User:                   userHandler,
 		Group:                  groupHandler,
@@ -63,6 +72,7 @@ func ProvideAdminHandlers(
 		Subscription:           subscriptionHandler,
 		Affiliate:              affiliateHandler,
 		Ticket:                 ticketHandler,
+		Media:                  mediaHandler,
 		Usage:                  usageHandler,
 		UserAttribute:          userAttributeHandler,
 		ErrorPassthrough:       errorPassthroughHandler,
@@ -90,15 +100,43 @@ func ProvideSettingHandler(settingService *service.SettingService, buildInfo Bui
 	return NewSettingHandler(settingService, buildInfo.Version)
 }
 
+func ProvideAISkillModule(
+	cfg *config.Config,
+	entClient *ent.Client,
+	db *sql.DB,
+	domainRepo repository.AISkillRepository,
+	skillService *service.AISkillService,
+	versionService *service.AISkillVersionService,
+	reviewService *service.AISkillReviewService,
+	settlementService *service.AISkillSettlementService,
+	runService *service.AISkillRunService,
+) *skillkit.Module {
+	module := skillkit.NewModule(
+		cfg,
+		entClient,
+		db,
+		domainRepo,
+		skillService,
+		versionService,
+		reviewService,
+		settlementService,
+		runService,
+	)
+	skillkit.SetDefault(module)
+	return module
+}
+
 // ProvideHandlers creates the Handlers struct
 func ProvideHandlers(
 	authHandler *AuthHandler,
+	aiHandler *AIHandler,
 	userHandler *UserHandler,
 	apiKeyHandler *APIKeyHandler,
 	usageHandler *UsageHandler,
 	redeemHandler *RedeemHandler,
 	subscriptionHandler *SubscriptionHandler,
 	ticketHandler *TicketHandler,
+	mediaHandler *MediaHandler,
 	announcementHandler *AnnouncementHandler,
 	channelMonitorUserHandler *ChannelMonitorUserHandler,
 	adminHandlers *AdminHandlers,
@@ -109,17 +147,25 @@ func ProvideHandlers(
 	paymentHandler *PaymentHandler,
 	paymentWebhookHandler *PaymentWebhookHandler,
 	availableChannelHandler *AvailableChannelHandler,
+	_ *skillkit.Module,
+	_ *service.AISkillService,
+	_ *service.AISkillVersionService,
+	_ *service.AISkillReviewService,
+	_ *service.AISkillSettlementService,
+	_ *service.AISkillRunService,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 ) *Handlers {
 	return &Handlers{
 		Auth:             authHandler,
+		AI:               aiHandler,
 		User:             userHandler,
 		APIKey:           apiKeyHandler,
 		Usage:            usageHandler,
 		Redeem:           redeemHandler,
 		Subscription:     subscriptionHandler,
 		Ticket:           ticketHandler,
+		Media:            mediaHandler,
 		Announcement:     announcementHandler,
 		ChannelMonitor:   channelMonitorUserHandler,
 		Admin:            adminHandlers,
@@ -137,12 +183,14 @@ func ProvideHandlers(
 var ProviderSet = wire.NewSet(
 	// Top-level handlers
 	NewAuthHandler,
+	NewAIHandler,
 	NewUserHandler,
 	NewAPIKeyHandler,
 	NewUsageHandler,
 	NewRedeemHandler,
 	NewSubscriptionHandler,
 	NewTicketHandler,
+	NewMediaHandler,
 	NewAnnouncementHandler,
 	NewChannelMonitorUserHandler,
 	NewGatewayHandler,
@@ -154,6 +202,7 @@ var ProviderSet = wire.NewSet(
 	NewAvailableChannelHandler,
 
 	// Admin handlers
+	admin.NewAIHandler,
 	admin.NewDashboardHandler,
 	admin.NewUserHandler,
 	admin.NewGroupHandler,
@@ -175,6 +224,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewSubscriptionHandler,
 	admin.NewAffiliateHandler,
 	admin.NewTicketHandler,
+	admin.NewMediaHandler,
 	admin.NewUsageHandler,
 	admin.NewUserAttributeHandler,
 	admin.NewErrorPassthroughHandler,
@@ -187,6 +237,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewPaymentHandler,
 
 	// AdminHandlers and Handlers constructors
+	ProvideAISkillModule,
 	ProvideAdminHandlers,
 	ProvideHandlers,
 )

@@ -18,6 +18,7 @@ var (
 	ErrAffiliateCodeInvalid     = infraerrors.BadRequest("AFFILIATE_CODE_INVALID", "invalid affiliate code")
 	ErrAffiliateAlreadyBound    = infraerrors.Conflict("AFFILIATE_ALREADY_BOUND", "affiliate inviter already bound")
 	ErrAffiliateQuotaEmpty      = infraerrors.BadRequest("AFFILIATE_QUOTA_EMPTY", "no affiliate quota available to transfer")
+	ErrAffiliateCreatorQuotaUnavailable = infraerrors.ServiceUnavailable("AFFILIATE_CREATOR_QUOTA_UNAVAILABLE", "affiliate creator quota service unavailable")
 )
 
 const (
@@ -150,6 +151,10 @@ type AffiliateRepository interface {
 	ListInviteeLedger(ctx context.Context, inviterID, inviteeUserID int64, limit int) ([]AffiliateLedgerEntry, error)
 	CountRebatedInvitees(ctx context.Context, inviterID int64) (int, error)
 	ListAdminAffiliateStats(ctx context.Context, params AdminAffiliateListParams) ([]AdminAffiliateStatsRow, int64, error)
+}
+
+type affiliateCreatorEarningsRepository interface {
+	CreditCreatorEarnings(ctx context.Context, input AISkillCreatorEarningsInput) (float64, error)
 }
 
 type AffiliateService struct {
@@ -365,6 +370,30 @@ func (s *AffiliateService) TransferAffiliateQuota(ctx context.Context, userID in
 		s.invalidateAffiliateCaches(ctx, userID)
 	}
 	return transferred, balance, nil
+}
+
+func (s *AffiliateService) CreditCreatorEarnings(ctx context.Context, input AISkillCreatorEarningsInput) (float64, error) {
+	if s == nil || s.repo == nil {
+		return 0, ErrAffiliateCreatorQuotaUnavailable
+	}
+	if input.CreatorUserID <= 0 {
+		return 0, infraerrors.BadRequest("AFFILIATE_CREATOR_USER_INVALID", "creator user is invalid")
+	}
+	if input.Amount <= 0 || math.IsNaN(input.Amount) || math.IsInf(input.Amount, 0) {
+		return 0, nil
+	}
+	repo, ok := s.repo.(affiliateCreatorEarningsRepository)
+	if !ok {
+		return 0, ErrAffiliateCreatorQuotaUnavailable
+	}
+	applied, err := repo.CreditCreatorEarnings(ctx, input)
+	if err != nil {
+		return 0, err
+	}
+	if applied > 0 {
+		s.invalidateAffiliateCaches(ctx, input.CreatorUserID)
+	}
+	return applied, nil
 }
 
 func (s *AffiliateService) listInvitees(ctx context.Context, inviterID int64) ([]AffiliateInvitee, error) {

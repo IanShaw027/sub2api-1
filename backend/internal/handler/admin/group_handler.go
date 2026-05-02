@@ -84,10 +84,12 @@ func NewGroupHandler(adminService service.AdminService, dashboardService *servic
 // CreateGroupRequest represents create group request
 type CreateGroupRequest struct {
 	Name             string             `json:"name" binding:"required"`
+	DisplayName      *string            `json:"display_name"`
 	Description      string             `json:"description"`
 	Platform         string             `json:"platform" binding:"omitempty,oneof=anthropic openai gemini antigravity sora kiro"`
 	RateMultiplier   float64            `json:"rate_multiplier"`
 	IsExclusive      bool               `json:"is_exclusive"`
+	UserSelectable   *bool              `json:"user_selectable"`
 	SubscriptionType string             `json:"subscription_type" binding:"omitempty,oneof=standard subscription"`
 	DailyLimitUSD    optionalLimitField `json:"daily_limit_usd"`
 	WeeklyLimitUSD   optionalLimitField `json:"weekly_limit_usd"`
@@ -123,10 +125,12 @@ type CreateGroupRequest struct {
 // UpdateGroupRequest represents update group request
 type UpdateGroupRequest struct {
 	Name             string             `json:"name"`
+	DisplayName      *string            `json:"display_name"`
 	Description      *string            `json:"description"`
 	Platform         string             `json:"platform" binding:"omitempty,oneof=anthropic openai gemini antigravity sora kiro"`
 	RateMultiplier   *float64           `json:"rate_multiplier"`
 	IsExclusive      *bool              `json:"is_exclusive"`
+	UserSelectable   *bool              `json:"user_selectable"`
 	Status           string             `json:"status" binding:"omitempty,oneof=active inactive"`
 	SubscriptionType string             `json:"subscription_type" binding:"omitempty,oneof=standard subscription"`
 	DailyLimitUSD    optionalLimitField `json:"daily_limit_usd"`
@@ -250,10 +254,12 @@ func (h *GroupHandler) Create(c *gin.Context) {
 
 	group, err := h.adminService.CreateGroup(c.Request.Context(), &service.CreateGroupInput{
 		Name:                            req.Name,
+		DisplayName:                     req.DisplayName,
 		Description:                     req.Description,
 		Platform:                        req.Platform,
 		RateMultiplier:                  req.RateMultiplier,
 		IsExclusive:                     req.IsExclusive,
+		UserSelectable:                  req.UserSelectable,
 		SubscriptionType:                req.SubscriptionType,
 		DailyLimitUSD:                   req.DailyLimitUSD.ToServiceInput(),
 		WeeklyLimitUSD:                  req.WeeklyLimitUSD.ToServiceInput(),
@@ -304,10 +310,12 @@ func (h *GroupHandler) Update(c *gin.Context) {
 
 	group, err := h.adminService.UpdateGroup(c.Request.Context(), groupID, &service.UpdateGroupInput{
 		Name:                            req.Name,
+		DisplayName:                     req.DisplayName,
 		Description:                     req.Description,
 		Platform:                        req.Platform,
 		RateMultiplier:                  req.RateMultiplier,
 		IsExclusive:                     req.IsExclusive,
+		UserSelectable:                  req.UserSelectable,
 		Status:                          req.Status,
 		SubscriptionType:                req.SubscriptionType,
 		DailyLimitUSD:                   req.DailyLimitUSD.ToServiceInput(),

@@ -186,10 +186,12 @@ type AdminBoundAuthIdentityChannel struct {
 
 type CreateGroupInput struct {
 	Name             string
+	DisplayName      *string
 	Description      string
 	Platform         string
 	RateMultiplier   float64
 	IsExclusive      bool
+	UserSelectable   *bool
 	SubscriptionType string   // standard/subscription
 	DailyLimitUSD    *float64 // 日限额 (USD)
 	WeeklyLimitUSD   *float64 // 周限额 (USD)
@@ -225,10 +227,12 @@ type CreateGroupInput struct {
 
 type UpdateGroupInput struct {
 	Name             string
+	DisplayName      *string
 	Description      *string
 	Platform         string
 	RateMultiplier   *float64 // 使用指针以支持设置为0
 	IsExclusive      *bool
+	UserSelectable   *bool
 	Status           string
 	SubscriptionType string   // standard/subscription
 	DailyLimitUSD    *float64 // 日限额 (USD)
@@ -1436,6 +1440,10 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	images2APIPrice1K := normalizePrice(input.Images2APIPrice1K)
 	images2APIPrice2K := normalizePrice(input.Images2APIPrice2K)
 	images2APIPrice4K := normalizePrice(input.Images2APIPrice4K)
+	displayName := ""
+	if input.DisplayName != nil {
+		displayName = strings.TrimSpace(*input.DisplayName)
+	}
 
 	// 校验降级分组
 	if input.FallbackGroupID != nil {
@@ -1494,10 +1502,12 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 
 	group := &Group{
 		Name:                            input.Name,
+		DisplayName:                     displayName,
 		Description:                     input.Description,
 		Platform:                        platform,
 		RateMultiplier:                  input.RateMultiplier,
 		IsExclusive:                     input.IsExclusive,
+		UserSelectable:                  true,
 		Status:                          StatusActive,
 		SubscriptionType:                subscriptionType,
 		DailyLimitUSD:                   dailyLimit,
@@ -1521,6 +1531,9 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		DefaultMappedModel:              input.DefaultMappedModel,
 		MessagesDispatchModelConfig:     normalizeOpenAIMessagesDispatchModelConfig(input.MessagesDispatchModelConfig),
 		RPMLimit:                        input.RPMLimit,
+	}
+	if input.UserSelectable != nil {
+		group.UserSelectable = *input.UserSelectable
 	}
 	sanitizeGroupMessagesDispatchFields(group)
 	if err := s.groupRepo.Create(ctx, group); err != nil {
@@ -1656,6 +1669,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	if input.Description != nil {
 		group.Description = *input.Description
 	}
+	if input.DisplayName != nil {
+		group.DisplayName = strings.TrimSpace(*input.DisplayName)
+	}
 	if input.Platform != "" {
 		group.Platform = input.Platform
 	}
@@ -1667,6 +1683,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	if input.IsExclusive != nil {
 		group.IsExclusive = *input.IsExclusive
+	}
+	if input.UserSelectable != nil {
+		group.UserSelectable = *input.UserSelectable
 	}
 	if input.Status != "" {
 		group.Status = input.Status

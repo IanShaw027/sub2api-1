@@ -1,0 +1,12 @@
+apiVersion: skill.sub2api.io/v1alpha1
+kind: Skill
+metadata:
+  name: script_python_echo
+  version: 1.0.0
+  displayName: Python Echo
+  description: Minimal python3.11 script skill sample.
+spec:
+  type: script
+  runtime: python3.11
+  entrypoint: main.py
+  protocol: json-file-v1

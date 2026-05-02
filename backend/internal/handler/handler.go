@@ -6,6 +6,7 @@ import (
 
 // AdminHandlers contains all admin-related HTTP handlers
 type AdminHandlers struct {
+	AI                     *admin.AIHandler
 	Dashboard              *admin.DashboardHandler
 	User                   *admin.UserHandler
 	Group                  *admin.GroupHandler
@@ -27,6 +28,7 @@ type AdminHandlers struct {
 	Subscription           *admin.SubscriptionHandler
 	Affiliate              *admin.AffiliateHandler
 	Ticket                 *admin.TicketHandler
+	Media                  *admin.MediaHandler
 	Usage                  *admin.UsageHandler
 	UserAttribute          *admin.UserAttributeHandler
 	ErrorPassthrough       *admin.ErrorPassthroughHandler
@@ -42,12 +44,14 @@ type AdminHandlers struct {
 // Handlers contains all HTTP handlers
 type Handlers struct {
 	Auth             *AuthHandler
+	AI               *AIHandler
 	User             *UserHandler
 	APIKey           *APIKeyHandler
 	Usage            *UsageHandler
 	Redeem           *RedeemHandler
 	Subscription     *SubscriptionHandler
 	Ticket           *TicketHandler
+	Media            *MediaHandler
 	Announcement     *AnnouncementHandler
 	ChannelMonitor   *ChannelMonitorUserHandler
 	Admin            *AdminHandlers

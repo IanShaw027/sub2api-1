@@ -14,6 +14,13 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
+	"github.com/Wei-Shaw/sub2api/ent/aiasset"
+	"github.com/Wei-Shaw/sub2api/ent/aiauditlog"
+	"github.com/Wei-Shaw/sub2api/ent/aigenerationjob"
+	"github.com/Wei-Shaw/sub2api/ent/aiprompttemplate"
+	"github.com/Wei-Shaw/sub2api/ent/aiprompttemplateversion"
+	"github.com/Wei-Shaw/sub2api/ent/aisession"
+	"github.com/Wei-Shaw/sub2api/ent/aisessionmessage"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
@@ -106,6 +113,13 @@ var (
 func checkColumn(t, c string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
+			aiasset.Table:                       aiasset.ValidColumn,
+			aiauditlog.Table:                    aiauditlog.ValidColumn,
+			aigenerationjob.Table:               aigenerationjob.ValidColumn,
+			aiprompttemplate.Table:              aiprompttemplate.ValidColumn,
+			aiprompttemplateversion.Table:       aiprompttemplateversion.ValidColumn,
+			aisession.Table:                     aisession.ValidColumn,
+			aisessionmessage.Table:              aisessionmessage.ValidColumn,
 			apikey.Table:                        apikey.ValidColumn,
 			account.Table:                       account.ValidColumn,
 			accountgroup.Table:                  accountgroup.ValidColumn,

@@ -90,6 +90,7 @@ type Config struct {
 	Gemini                  GeminiConfig                  `mapstructure:"gemini"`
 	Update                  UpdateConfig                  `mapstructure:"update"`
 	Idempotency             IdempotencyConfig             `mapstructure:"idempotency"`
+	Media                   MediaConfig                   `mapstructure:"media"`
 }
 
 type LogConfig struct {
@@ -151,6 +152,20 @@ type UpdateConfig struct {
 	// 支持 http/https/socks5/socks5h 协议
 	// 例如: "http://127.0.0.1:7890", "socks5://127.0.0.1:1080"
 	ProxyURL string `mapstructure:"proxy_url"`
+}
+
+type MediaConfig struct {
+	Enabled               bool   `mapstructure:"enabled"`
+	Endpoint              string `mapstructure:"endpoint"`
+	PublicBaseURL         string `mapstructure:"public_base_url"`
+	AccessKeyID           string `mapstructure:"access_key_id"`
+	SecretAccessKey       string `mapstructure:"secret_access_key"`
+	Region                string `mapstructure:"region"`
+	Bucket                string `mapstructure:"bucket"`
+	ForcePathStyle        bool   `mapstructure:"force_path_style"`
+	PresignExpiryMinutes  int    `mapstructure:"presign_expiry_minutes"`
+	MaxUploadSizeBytes    int64  `mapstructure:"max_upload_size_bytes"`
+	DownloadSigningSecret string `mapstructure:"download_signing_secret"`
 }
 
 type IdempotencyConfig struct {
@@ -1443,6 +1458,19 @@ func setDefaults() {
 	// Security - disable direct fallback on proxy error
 	viper.SetDefault("security.proxy_fallback.allow_direct_on_error", false)
 
+	// Media storage
+	viper.SetDefault("media.enabled", false)
+	viper.SetDefault("media.endpoint", "")
+	viper.SetDefault("media.public_base_url", "https://source.qazwc.com")
+	viper.SetDefault("media.access_key_id", "")
+	viper.SetDefault("media.secret_access_key", "")
+	viper.SetDefault("media.region", "auto")
+	viper.SetDefault("media.bucket", "media")
+	viper.SetDefault("media.force_path_style", true)
+	viper.SetDefault("media.presign_expiry_minutes", 15)
+	viper.SetDefault("media.max_upload_size_bytes", int64(64*1024*1024))
+	viper.SetDefault("media.download_signing_secret", "")
+
 	// Billing
 	viper.SetDefault("billing.circuit_breaker.enabled", true)
 	viper.SetDefault("billing.circuit_breaker.failure_threshold", 5)
@@ -1862,6 +1890,37 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("server.frontend_url invalid: must not include userinfo")
 		}
 		warnIfInsecureURL("server.frontend_url", c.Server.FrontendURL)
+	}
+	if c.Media.Enabled {
+		if strings.TrimSpace(c.Media.Endpoint) == "" {
+			return fmt.Errorf("media.endpoint is required when media.enabled=true")
+		}
+		if err := ValidateAbsoluteHTTPURL(c.Media.Endpoint); err != nil {
+			return fmt.Errorf("media.endpoint invalid: %w", err)
+		}
+		if strings.TrimSpace(c.Media.PublicBaseURL) == "" {
+			return fmt.Errorf("media.public_base_url is required when media.enabled=true")
+		}
+		if err := ValidateAbsoluteHTTPURL(c.Media.PublicBaseURL); err != nil {
+			return fmt.Errorf("media.public_base_url invalid: %w", err)
+		}
+		if strings.TrimSpace(c.Media.AccessKeyID) == "" {
+			return fmt.Errorf("media.access_key_id is required when media.enabled=true")
+		}
+		if strings.TrimSpace(c.Media.SecretAccessKey) == "" {
+			return fmt.Errorf("media.secret_access_key is required when media.enabled=true")
+		}
+		if strings.TrimSpace(c.Media.Bucket) == "" {
+			return fmt.Errorf("media.bucket is required when media.enabled=true")
+		}
+		if c.Media.PresignExpiryMinutes <= 0 {
+			return fmt.Errorf("media.presign_expiry_minutes must be positive")
+		}
+		if c.Media.MaxUploadSizeBytes <= 0 {
+			return fmt.Errorf("media.max_upload_size_bytes must be positive")
+		}
+		warnIfInsecureURL("media.endpoint", c.Media.Endpoint)
+		warnIfInsecureURL("media.public_base_url", c.Media.PublicBaseURL)
 	}
 	if c.JWT.ExpireHour <= 0 {
 		return fmt.Errorf("jwt.expire_hour must be positive")

@@ -17,6 +17,13 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
+	"github.com/Wei-Shaw/sub2api/ent/aiasset"
+	"github.com/Wei-Shaw/sub2api/ent/aiauditlog"
+	"github.com/Wei-Shaw/sub2api/ent/aigenerationjob"
+	"github.com/Wei-Shaw/sub2api/ent/aiprompttemplate"
+	"github.com/Wei-Shaw/sub2api/ent/aiprompttemplateversion"
+	"github.com/Wei-Shaw/sub2api/ent/aisession"
+	"github.com/Wei-Shaw/sub2api/ent/aisessionmessage"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
@@ -58,6 +65,20 @@ type Client struct {
 	config
 	// Schema is the client for creating, migrating and dropping schema.
 	Schema *migrate.Schema
+	// AIAsset is the client for interacting with the AIAsset builders.
+	AIAsset *AIAssetClient
+	// AIAuditLog is the client for interacting with the AIAuditLog builders.
+	AIAuditLog *AIAuditLogClient
+	// AIGenerationJob is the client for interacting with the AIGenerationJob builders.
+	AIGenerationJob *AIGenerationJobClient
+	// AIPromptTemplate is the client for interacting with the AIPromptTemplate builders.
+	AIPromptTemplate *AIPromptTemplateClient
+	// AIPromptTemplateVersion is the client for interacting with the AIPromptTemplateVersion builders.
+	AIPromptTemplateVersion *AIPromptTemplateVersionClient
+	// AISession is the client for interacting with the AISession builders.
+	AISession *AISessionClient
+	// AISessionMessage is the client for interacting with the AISessionMessage builders.
+	AISessionMessage *AISessionMessageClient
 	// APIKey is the client for interacting with the APIKey builders.
 	APIKey *APIKeyClient
 	// Account is the client for interacting with the Account builders.
@@ -137,6 +158,13 @@ func NewClient(opts ...Option) *Client {
 
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
+	c.AIAsset = NewAIAssetClient(c.config)
+	c.AIAuditLog = NewAIAuditLogClient(c.config)
+	c.AIGenerationJob = NewAIGenerationJobClient(c.config)
+	c.AIPromptTemplate = NewAIPromptTemplateClient(c.config)
+	c.AIPromptTemplateVersion = NewAIPromptTemplateVersionClient(c.config)
+	c.AISession = NewAISessionClient(c.config)
+	c.AISessionMessage = NewAISessionMessageClient(c.config)
 	c.APIKey = NewAPIKeyClient(c.config)
 	c.Account = NewAccountClient(c.config)
 	c.AccountGroup = NewAccountGroupClient(c.config)
@@ -263,6 +291,13 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	return &Tx{
 		ctx:                           ctx,
 		config:                        cfg,
+		AIAsset:                       NewAIAssetClient(cfg),
+		AIAuditLog:                    NewAIAuditLogClient(cfg),
+		AIGenerationJob:               NewAIGenerationJobClient(cfg),
+		AIPromptTemplate:              NewAIPromptTemplateClient(cfg),
+		AIPromptTemplateVersion:       NewAIPromptTemplateVersionClient(cfg),
+		AISession:                     NewAISessionClient(cfg),
+		AISessionMessage:              NewAISessionMessageClient(cfg),
 		APIKey:                        NewAPIKeyClient(cfg),
 		Account:                       NewAccountClient(cfg),
 		AccountGroup:                  NewAccountGroupClient(cfg),
@@ -316,6 +351,13 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	return &Tx{
 		ctx:                           ctx,
 		config:                        cfg,
+		AIAsset:                       NewAIAssetClient(cfg),
+		AIAuditLog:                    NewAIAuditLogClient(cfg),
+		AIGenerationJob:               NewAIGenerationJobClient(cfg),
+		AIPromptTemplate:              NewAIPromptTemplateClient(cfg),
+		AIPromptTemplateVersion:       NewAIPromptTemplateVersionClient(cfg),
+		AISession:                     NewAISessionClient(cfg),
+		AISessionMessage:              NewAISessionMessageClient(cfg),
 		APIKey:                        NewAPIKeyClient(cfg),
 		Account:                       NewAccountClient(cfg),
 		AccountGroup:                  NewAccountGroupClient(cfg),
@@ -356,7 +398,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 // Debug returns a new debug-client. It's used to get verbose logging on specific operations.
 //
 //	client.Debug().
-//		APIKey.
+//		AIAsset.
 //		Query().
 //		Count(ctx)
 func (c *Client) Debug() *Client {
@@ -379,15 +421,17 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.APIKey, c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead,
-		c.AuthIdentity, c.AuthIdentityChannel, c.ChannelMonitor,
-		c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
-		c.ChannelMonitorRequestTemplate, c.ErrorPassthroughRule, c.Group,
-		c.IdempotencyRecord, c.IdentityAdoptionDecision, c.PaymentAuditLog,
-		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
-		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
-		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
+		c.AIAsset, c.AIAuditLog, c.AIGenerationJob, c.AIPromptTemplate,
+		c.AIPromptTemplateVersion, c.AISession, c.AISessionMessage, c.APIKey,
+		c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead, c.AuthIdentity,
+		c.AuthIdentityChannel, c.ChannelMonitor, c.ChannelMonitorDailyRollup,
+		c.ChannelMonitorHistory, c.ChannelMonitorRequestTemplate,
+		c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
+		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
+		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
+		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
+		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
+		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserSubscription,
 	} {
 		n.Use(hooks...)
@@ -398,15 +442,17 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.APIKey, c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead,
-		c.AuthIdentity, c.AuthIdentityChannel, c.ChannelMonitor,
-		c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
-		c.ChannelMonitorRequestTemplate, c.ErrorPassthroughRule, c.Group,
-		c.IdempotencyRecord, c.IdentityAdoptionDecision, c.PaymentAuditLog,
-		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
-		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
-		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
+		c.AIAsset, c.AIAuditLog, c.AIGenerationJob, c.AIPromptTemplate,
+		c.AIPromptTemplateVersion, c.AISession, c.AISessionMessage, c.APIKey,
+		c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead, c.AuthIdentity,
+		c.AuthIdentityChannel, c.ChannelMonitor, c.ChannelMonitorDailyRollup,
+		c.ChannelMonitorHistory, c.ChannelMonitorRequestTemplate,
+		c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
+		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
+		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
+		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
+		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
+		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
@@ -416,6 +462,20 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 // Mutate implements the ent.Mutator interface.
 func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
+	case *AIAssetMutation:
+		return c.AIAsset.mutate(ctx, m)
+	case *AIAuditLogMutation:
+		return c.AIAuditLog.mutate(ctx, m)
+	case *AIGenerationJobMutation:
+		return c.AIGenerationJob.mutate(ctx, m)
+	case *AIPromptTemplateMutation:
+		return c.AIPromptTemplate.mutate(ctx, m)
+	case *AIPromptTemplateVersionMutation:
+		return c.AIPromptTemplateVersion.mutate(ctx, m)
+	case *AISessionMutation:
+		return c.AISession.mutate(ctx, m)
+	case *AISessionMessageMutation:
+		return c.AISessionMessage.mutate(ctx, m)
 	case *APIKeyMutation:
 		return c.APIKey.mutate(ctx, m)
 	case *AccountMutation:
@@ -486,6 +546,1167 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.UserSubscription.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
+	}
+}
+
+// AIAssetClient is a client for the AIAsset schema.
+type AIAssetClient struct {
+	config
+}
+
+// NewAIAssetClient returns a client for the AIAsset from the given config.
+func NewAIAssetClient(c config) *AIAssetClient {
+	return &AIAssetClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `aiasset.Hooks(f(g(h())))`.
+func (c *AIAssetClient) Use(hooks ...Hook) {
+	c.hooks.AIAsset = append(c.hooks.AIAsset, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `aiasset.Intercept(f(g(h())))`.
+func (c *AIAssetClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AIAsset = append(c.inters.AIAsset, interceptors...)
+}
+
+// Create returns a builder for creating a AIAsset entity.
+func (c *AIAssetClient) Create() *AIAssetCreate {
+	mutation := newAIAssetMutation(c.config, OpCreate)
+	return &AIAssetCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AIAsset entities.
+func (c *AIAssetClient) CreateBulk(builders ...*AIAssetCreate) *AIAssetCreateBulk {
+	return &AIAssetCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AIAssetClient) MapCreateBulk(slice any, setFunc func(*AIAssetCreate, int)) *AIAssetCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AIAssetCreateBulk{err: fmt.Errorf("calling to AIAssetClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AIAssetCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AIAssetCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AIAsset.
+func (c *AIAssetClient) Update() *AIAssetUpdate {
+	mutation := newAIAssetMutation(c.config, OpUpdate)
+	return &AIAssetUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AIAssetClient) UpdateOne(_m *AIAsset) *AIAssetUpdateOne {
+	mutation := newAIAssetMutation(c.config, OpUpdateOne, withAIAsset(_m))
+	return &AIAssetUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AIAssetClient) UpdateOneID(id int64) *AIAssetUpdateOne {
+	mutation := newAIAssetMutation(c.config, OpUpdateOne, withAIAssetID(id))
+	return &AIAssetUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AIAsset.
+func (c *AIAssetClient) Delete() *AIAssetDelete {
+	mutation := newAIAssetMutation(c.config, OpDelete)
+	return &AIAssetDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AIAssetClient) DeleteOne(_m *AIAsset) *AIAssetDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AIAssetClient) DeleteOneID(id int64) *AIAssetDeleteOne {
+	builder := c.Delete().Where(aiasset.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AIAssetDeleteOne{builder}
+}
+
+// Query returns a query builder for AIAsset.
+func (c *AIAssetClient) Query() *AIAssetQuery {
+	return &AIAssetQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAIAsset},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AIAsset entity by its id.
+func (c *AIAssetClient) Get(ctx context.Context, id int64) (*AIAsset, error) {
+	return c.Query().Where(aiasset.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AIAssetClient) GetX(ctx context.Context, id int64) *AIAsset {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryGenerationJob queries the generation_job edge of a AIAsset.
+func (c *AIAssetClient) QueryGenerationJob(_m *AIAsset) *AIGenerationJobQuery {
+	query := (&AIGenerationJobClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiasset.Table, aiasset.FieldID, id),
+			sqlgraph.To(aigenerationjob.Table, aigenerationjob.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aiasset.GenerationJobTable, aiasset.GenerationJobColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QuerySession queries the session edge of a AIAsset.
+func (c *AIAssetClient) QuerySession(_m *AIAsset) *AISessionQuery {
+	query := (&AISessionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiasset.Table, aiasset.FieldID, id),
+			sqlgraph.To(aisession.Table, aisession.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aiasset.SessionTable, aiasset.SessionColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryPromptTemplate queries the prompt_template edge of a AIAsset.
+func (c *AIAssetClient) QueryPromptTemplate(_m *AIAsset) *AIPromptTemplateQuery {
+	query := (&AIPromptTemplateClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiasset.Table, aiasset.FieldID, id),
+			sqlgraph.To(aiprompttemplate.Table, aiprompttemplate.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aiasset.PromptTemplateTable, aiasset.PromptTemplateColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *AIAssetClient) Hooks() []Hook {
+	hooks := c.hooks.AIAsset
+	return append(hooks[:len(hooks):len(hooks)], aiasset.Hooks[:]...)
+}
+
+// Interceptors returns the client interceptors.
+func (c *AIAssetClient) Interceptors() []Interceptor {
+	inters := c.inters.AIAsset
+	return append(inters[:len(inters):len(inters)], aiasset.Interceptors[:]...)
+}
+
+func (c *AIAssetClient) mutate(ctx context.Context, m *AIAssetMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AIAssetCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AIAssetUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AIAssetUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AIAssetDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AIAsset mutation op: %q", m.Op())
+	}
+}
+
+// AIAuditLogClient is a client for the AIAuditLog schema.
+type AIAuditLogClient struct {
+	config
+}
+
+// NewAIAuditLogClient returns a client for the AIAuditLog from the given config.
+func NewAIAuditLogClient(c config) *AIAuditLogClient {
+	return &AIAuditLogClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `aiauditlog.Hooks(f(g(h())))`.
+func (c *AIAuditLogClient) Use(hooks ...Hook) {
+	c.hooks.AIAuditLog = append(c.hooks.AIAuditLog, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `aiauditlog.Intercept(f(g(h())))`.
+func (c *AIAuditLogClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AIAuditLog = append(c.inters.AIAuditLog, interceptors...)
+}
+
+// Create returns a builder for creating a AIAuditLog entity.
+func (c *AIAuditLogClient) Create() *AIAuditLogCreate {
+	mutation := newAIAuditLogMutation(c.config, OpCreate)
+	return &AIAuditLogCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AIAuditLog entities.
+func (c *AIAuditLogClient) CreateBulk(builders ...*AIAuditLogCreate) *AIAuditLogCreateBulk {
+	return &AIAuditLogCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AIAuditLogClient) MapCreateBulk(slice any, setFunc func(*AIAuditLogCreate, int)) *AIAuditLogCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AIAuditLogCreateBulk{err: fmt.Errorf("calling to AIAuditLogClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AIAuditLogCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AIAuditLogCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AIAuditLog.
+func (c *AIAuditLogClient) Update() *AIAuditLogUpdate {
+	mutation := newAIAuditLogMutation(c.config, OpUpdate)
+	return &AIAuditLogUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AIAuditLogClient) UpdateOne(_m *AIAuditLog) *AIAuditLogUpdateOne {
+	mutation := newAIAuditLogMutation(c.config, OpUpdateOne, withAIAuditLog(_m))
+	return &AIAuditLogUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AIAuditLogClient) UpdateOneID(id int64) *AIAuditLogUpdateOne {
+	mutation := newAIAuditLogMutation(c.config, OpUpdateOne, withAIAuditLogID(id))
+	return &AIAuditLogUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AIAuditLog.
+func (c *AIAuditLogClient) Delete() *AIAuditLogDelete {
+	mutation := newAIAuditLogMutation(c.config, OpDelete)
+	return &AIAuditLogDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AIAuditLogClient) DeleteOne(_m *AIAuditLog) *AIAuditLogDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AIAuditLogClient) DeleteOneID(id int64) *AIAuditLogDeleteOne {
+	builder := c.Delete().Where(aiauditlog.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AIAuditLogDeleteOne{builder}
+}
+
+// Query returns a query builder for AIAuditLog.
+func (c *AIAuditLogClient) Query() *AIAuditLogQuery {
+	return &AIAuditLogQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAIAuditLog},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AIAuditLog entity by its id.
+func (c *AIAuditLogClient) Get(ctx context.Context, id int64) (*AIAuditLog, error) {
+	return c.Query().Where(aiauditlog.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AIAuditLogClient) GetX(ctx context.Context, id int64) *AIAuditLog {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *AIAuditLogClient) Hooks() []Hook {
+	return c.hooks.AIAuditLog
+}
+
+// Interceptors returns the client interceptors.
+func (c *AIAuditLogClient) Interceptors() []Interceptor {
+	return c.inters.AIAuditLog
+}
+
+func (c *AIAuditLogClient) mutate(ctx context.Context, m *AIAuditLogMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AIAuditLogCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AIAuditLogUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AIAuditLogUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AIAuditLogDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AIAuditLog mutation op: %q", m.Op())
+	}
+}
+
+// AIGenerationJobClient is a client for the AIGenerationJob schema.
+type AIGenerationJobClient struct {
+	config
+}
+
+// NewAIGenerationJobClient returns a client for the AIGenerationJob from the given config.
+func NewAIGenerationJobClient(c config) *AIGenerationJobClient {
+	return &AIGenerationJobClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `aigenerationjob.Hooks(f(g(h())))`.
+func (c *AIGenerationJobClient) Use(hooks ...Hook) {
+	c.hooks.AIGenerationJob = append(c.hooks.AIGenerationJob, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `aigenerationjob.Intercept(f(g(h())))`.
+func (c *AIGenerationJobClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AIGenerationJob = append(c.inters.AIGenerationJob, interceptors...)
+}
+
+// Create returns a builder for creating a AIGenerationJob entity.
+func (c *AIGenerationJobClient) Create() *AIGenerationJobCreate {
+	mutation := newAIGenerationJobMutation(c.config, OpCreate)
+	return &AIGenerationJobCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AIGenerationJob entities.
+func (c *AIGenerationJobClient) CreateBulk(builders ...*AIGenerationJobCreate) *AIGenerationJobCreateBulk {
+	return &AIGenerationJobCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AIGenerationJobClient) MapCreateBulk(slice any, setFunc func(*AIGenerationJobCreate, int)) *AIGenerationJobCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AIGenerationJobCreateBulk{err: fmt.Errorf("calling to AIGenerationJobClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AIGenerationJobCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AIGenerationJobCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AIGenerationJob.
+func (c *AIGenerationJobClient) Update() *AIGenerationJobUpdate {
+	mutation := newAIGenerationJobMutation(c.config, OpUpdate)
+	return &AIGenerationJobUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AIGenerationJobClient) UpdateOne(_m *AIGenerationJob) *AIGenerationJobUpdateOne {
+	mutation := newAIGenerationJobMutation(c.config, OpUpdateOne, withAIGenerationJob(_m))
+	return &AIGenerationJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AIGenerationJobClient) UpdateOneID(id int64) *AIGenerationJobUpdateOne {
+	mutation := newAIGenerationJobMutation(c.config, OpUpdateOne, withAIGenerationJobID(id))
+	return &AIGenerationJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AIGenerationJob.
+func (c *AIGenerationJobClient) Delete() *AIGenerationJobDelete {
+	mutation := newAIGenerationJobMutation(c.config, OpDelete)
+	return &AIGenerationJobDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AIGenerationJobClient) DeleteOne(_m *AIGenerationJob) *AIGenerationJobDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AIGenerationJobClient) DeleteOneID(id int64) *AIGenerationJobDeleteOne {
+	builder := c.Delete().Where(aigenerationjob.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AIGenerationJobDeleteOne{builder}
+}
+
+// Query returns a query builder for AIGenerationJob.
+func (c *AIGenerationJobClient) Query() *AIGenerationJobQuery {
+	return &AIGenerationJobQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAIGenerationJob},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AIGenerationJob entity by its id.
+func (c *AIGenerationJobClient) Get(ctx context.Context, id int64) (*AIGenerationJob, error) {
+	return c.Query().Where(aigenerationjob.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AIGenerationJobClient) GetX(ctx context.Context, id int64) *AIGenerationJob {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QuerySession queries the session edge of a AIGenerationJob.
+func (c *AIGenerationJobClient) QuerySession(_m *AIGenerationJob) *AISessionQuery {
+	query := (&AISessionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aigenerationjob.Table, aigenerationjob.FieldID, id),
+			sqlgraph.To(aisession.Table, aisession.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aigenerationjob.SessionTable, aigenerationjob.SessionColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryPromptTemplate queries the prompt_template edge of a AIGenerationJob.
+func (c *AIGenerationJobClient) QueryPromptTemplate(_m *AIGenerationJob) *AIPromptTemplateQuery {
+	query := (&AIPromptTemplateClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aigenerationjob.Table, aigenerationjob.FieldID, id),
+			sqlgraph.To(aiprompttemplate.Table, aiprompttemplate.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aigenerationjob.PromptTemplateTable, aigenerationjob.PromptTemplateColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryAssets queries the assets edge of a AIGenerationJob.
+func (c *AIGenerationJobClient) QueryAssets(_m *AIGenerationJob) *AIAssetQuery {
+	query := (&AIAssetClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aigenerationjob.Table, aigenerationjob.FieldID, id),
+			sqlgraph.To(aiasset.Table, aiasset.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, aigenerationjob.AssetsTable, aigenerationjob.AssetsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *AIGenerationJobClient) Hooks() []Hook {
+	return c.hooks.AIGenerationJob
+}
+
+// Interceptors returns the client interceptors.
+func (c *AIGenerationJobClient) Interceptors() []Interceptor {
+	return c.inters.AIGenerationJob
+}
+
+func (c *AIGenerationJobClient) mutate(ctx context.Context, m *AIGenerationJobMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AIGenerationJobCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AIGenerationJobUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AIGenerationJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AIGenerationJobDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AIGenerationJob mutation op: %q", m.Op())
+	}
+}
+
+// AIPromptTemplateClient is a client for the AIPromptTemplate schema.
+type AIPromptTemplateClient struct {
+	config
+}
+
+// NewAIPromptTemplateClient returns a client for the AIPromptTemplate from the given config.
+func NewAIPromptTemplateClient(c config) *AIPromptTemplateClient {
+	return &AIPromptTemplateClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `aiprompttemplate.Hooks(f(g(h())))`.
+func (c *AIPromptTemplateClient) Use(hooks ...Hook) {
+	c.hooks.AIPromptTemplate = append(c.hooks.AIPromptTemplate, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `aiprompttemplate.Intercept(f(g(h())))`.
+func (c *AIPromptTemplateClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AIPromptTemplate = append(c.inters.AIPromptTemplate, interceptors...)
+}
+
+// Create returns a builder for creating a AIPromptTemplate entity.
+func (c *AIPromptTemplateClient) Create() *AIPromptTemplateCreate {
+	mutation := newAIPromptTemplateMutation(c.config, OpCreate)
+	return &AIPromptTemplateCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AIPromptTemplate entities.
+func (c *AIPromptTemplateClient) CreateBulk(builders ...*AIPromptTemplateCreate) *AIPromptTemplateCreateBulk {
+	return &AIPromptTemplateCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AIPromptTemplateClient) MapCreateBulk(slice any, setFunc func(*AIPromptTemplateCreate, int)) *AIPromptTemplateCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AIPromptTemplateCreateBulk{err: fmt.Errorf("calling to AIPromptTemplateClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AIPromptTemplateCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AIPromptTemplateCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AIPromptTemplate.
+func (c *AIPromptTemplateClient) Update() *AIPromptTemplateUpdate {
+	mutation := newAIPromptTemplateMutation(c.config, OpUpdate)
+	return &AIPromptTemplateUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AIPromptTemplateClient) UpdateOne(_m *AIPromptTemplate) *AIPromptTemplateUpdateOne {
+	mutation := newAIPromptTemplateMutation(c.config, OpUpdateOne, withAIPromptTemplate(_m))
+	return &AIPromptTemplateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AIPromptTemplateClient) UpdateOneID(id int64) *AIPromptTemplateUpdateOne {
+	mutation := newAIPromptTemplateMutation(c.config, OpUpdateOne, withAIPromptTemplateID(id))
+	return &AIPromptTemplateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AIPromptTemplate.
+func (c *AIPromptTemplateClient) Delete() *AIPromptTemplateDelete {
+	mutation := newAIPromptTemplateMutation(c.config, OpDelete)
+	return &AIPromptTemplateDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AIPromptTemplateClient) DeleteOne(_m *AIPromptTemplate) *AIPromptTemplateDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AIPromptTemplateClient) DeleteOneID(id int64) *AIPromptTemplateDeleteOne {
+	builder := c.Delete().Where(aiprompttemplate.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AIPromptTemplateDeleteOne{builder}
+}
+
+// Query returns a query builder for AIPromptTemplate.
+func (c *AIPromptTemplateClient) Query() *AIPromptTemplateQuery {
+	return &AIPromptTemplateQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAIPromptTemplate},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AIPromptTemplate entity by its id.
+func (c *AIPromptTemplateClient) Get(ctx context.Context, id int64) (*AIPromptTemplate, error) {
+	return c.Query().Where(aiprompttemplate.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AIPromptTemplateClient) GetX(ctx context.Context, id int64) *AIPromptTemplate {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryVersions queries the versions edge of a AIPromptTemplate.
+func (c *AIPromptTemplateClient) QueryVersions(_m *AIPromptTemplate) *AIPromptTemplateVersionQuery {
+	query := (&AIPromptTemplateVersionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiprompttemplate.Table, aiprompttemplate.FieldID, id),
+			sqlgraph.To(aiprompttemplateversion.Table, aiprompttemplateversion.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, aiprompttemplate.VersionsTable, aiprompttemplate.VersionsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryGenerationJobs queries the generation_jobs edge of a AIPromptTemplate.
+func (c *AIPromptTemplateClient) QueryGenerationJobs(_m *AIPromptTemplate) *AIGenerationJobQuery {
+	query := (&AIGenerationJobClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiprompttemplate.Table, aiprompttemplate.FieldID, id),
+			sqlgraph.To(aigenerationjob.Table, aigenerationjob.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, aiprompttemplate.GenerationJobsTable, aiprompttemplate.GenerationJobsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryAssets queries the assets edge of a AIPromptTemplate.
+func (c *AIPromptTemplateClient) QueryAssets(_m *AIPromptTemplate) *AIAssetQuery {
+	query := (&AIAssetClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiprompttemplate.Table, aiprompttemplate.FieldID, id),
+			sqlgraph.To(aiasset.Table, aiasset.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, aiprompttemplate.AssetsTable, aiprompttemplate.AssetsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *AIPromptTemplateClient) Hooks() []Hook {
+	hooks := c.hooks.AIPromptTemplate
+	return append(hooks[:len(hooks):len(hooks)], aiprompttemplate.Hooks[:]...)
+}
+
+// Interceptors returns the client interceptors.
+func (c *AIPromptTemplateClient) Interceptors() []Interceptor {
+	inters := c.inters.AIPromptTemplate
+	return append(inters[:len(inters):len(inters)], aiprompttemplate.Interceptors[:]...)
+}
+
+func (c *AIPromptTemplateClient) mutate(ctx context.Context, m *AIPromptTemplateMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AIPromptTemplateCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AIPromptTemplateUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AIPromptTemplateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AIPromptTemplateDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AIPromptTemplate mutation op: %q", m.Op())
+	}
+}
+
+// AIPromptTemplateVersionClient is a client for the AIPromptTemplateVersion schema.
+type AIPromptTemplateVersionClient struct {
+	config
+}
+
+// NewAIPromptTemplateVersionClient returns a client for the AIPromptTemplateVersion from the given config.
+func NewAIPromptTemplateVersionClient(c config) *AIPromptTemplateVersionClient {
+	return &AIPromptTemplateVersionClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `aiprompttemplateversion.Hooks(f(g(h())))`.
+func (c *AIPromptTemplateVersionClient) Use(hooks ...Hook) {
+	c.hooks.AIPromptTemplateVersion = append(c.hooks.AIPromptTemplateVersion, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `aiprompttemplateversion.Intercept(f(g(h())))`.
+func (c *AIPromptTemplateVersionClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AIPromptTemplateVersion = append(c.inters.AIPromptTemplateVersion, interceptors...)
+}
+
+// Create returns a builder for creating a AIPromptTemplateVersion entity.
+func (c *AIPromptTemplateVersionClient) Create() *AIPromptTemplateVersionCreate {
+	mutation := newAIPromptTemplateVersionMutation(c.config, OpCreate)
+	return &AIPromptTemplateVersionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AIPromptTemplateVersion entities.
+func (c *AIPromptTemplateVersionClient) CreateBulk(builders ...*AIPromptTemplateVersionCreate) *AIPromptTemplateVersionCreateBulk {
+	return &AIPromptTemplateVersionCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AIPromptTemplateVersionClient) MapCreateBulk(slice any, setFunc func(*AIPromptTemplateVersionCreate, int)) *AIPromptTemplateVersionCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AIPromptTemplateVersionCreateBulk{err: fmt.Errorf("calling to AIPromptTemplateVersionClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AIPromptTemplateVersionCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AIPromptTemplateVersionCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AIPromptTemplateVersion.
+func (c *AIPromptTemplateVersionClient) Update() *AIPromptTemplateVersionUpdate {
+	mutation := newAIPromptTemplateVersionMutation(c.config, OpUpdate)
+	return &AIPromptTemplateVersionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AIPromptTemplateVersionClient) UpdateOne(_m *AIPromptTemplateVersion) *AIPromptTemplateVersionUpdateOne {
+	mutation := newAIPromptTemplateVersionMutation(c.config, OpUpdateOne, withAIPromptTemplateVersion(_m))
+	return &AIPromptTemplateVersionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AIPromptTemplateVersionClient) UpdateOneID(id int64) *AIPromptTemplateVersionUpdateOne {
+	mutation := newAIPromptTemplateVersionMutation(c.config, OpUpdateOne, withAIPromptTemplateVersionID(id))
+	return &AIPromptTemplateVersionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AIPromptTemplateVersion.
+func (c *AIPromptTemplateVersionClient) Delete() *AIPromptTemplateVersionDelete {
+	mutation := newAIPromptTemplateVersionMutation(c.config, OpDelete)
+	return &AIPromptTemplateVersionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AIPromptTemplateVersionClient) DeleteOne(_m *AIPromptTemplateVersion) *AIPromptTemplateVersionDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AIPromptTemplateVersionClient) DeleteOneID(id int64) *AIPromptTemplateVersionDeleteOne {
+	builder := c.Delete().Where(aiprompttemplateversion.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AIPromptTemplateVersionDeleteOne{builder}
+}
+
+// Query returns a query builder for AIPromptTemplateVersion.
+func (c *AIPromptTemplateVersionClient) Query() *AIPromptTemplateVersionQuery {
+	return &AIPromptTemplateVersionQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAIPromptTemplateVersion},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AIPromptTemplateVersion entity by its id.
+func (c *AIPromptTemplateVersionClient) Get(ctx context.Context, id int64) (*AIPromptTemplateVersion, error) {
+	return c.Query().Where(aiprompttemplateversion.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AIPromptTemplateVersionClient) GetX(ctx context.Context, id int64) *AIPromptTemplateVersion {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryTemplate queries the template edge of a AIPromptTemplateVersion.
+func (c *AIPromptTemplateVersionClient) QueryTemplate(_m *AIPromptTemplateVersion) *AIPromptTemplateQuery {
+	query := (&AIPromptTemplateClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiprompttemplateversion.Table, aiprompttemplateversion.FieldID, id),
+			sqlgraph.To(aiprompttemplate.Table, aiprompttemplate.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aiprompttemplateversion.TemplateTable, aiprompttemplateversion.TemplateColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *AIPromptTemplateVersionClient) Hooks() []Hook {
+	return c.hooks.AIPromptTemplateVersion
+}
+
+// Interceptors returns the client interceptors.
+func (c *AIPromptTemplateVersionClient) Interceptors() []Interceptor {
+	return c.inters.AIPromptTemplateVersion
+}
+
+func (c *AIPromptTemplateVersionClient) mutate(ctx context.Context, m *AIPromptTemplateVersionMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AIPromptTemplateVersionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AIPromptTemplateVersionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AIPromptTemplateVersionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AIPromptTemplateVersionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AIPromptTemplateVersion mutation op: %q", m.Op())
+	}
+}
+
+// AISessionClient is a client for the AISession schema.
+type AISessionClient struct {
+	config
+}
+
+// NewAISessionClient returns a client for the AISession from the given config.
+func NewAISessionClient(c config) *AISessionClient {
+	return &AISessionClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `aisession.Hooks(f(g(h())))`.
+func (c *AISessionClient) Use(hooks ...Hook) {
+	c.hooks.AISession = append(c.hooks.AISession, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `aisession.Intercept(f(g(h())))`.
+func (c *AISessionClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AISession = append(c.inters.AISession, interceptors...)
+}
+
+// Create returns a builder for creating a AISession entity.
+func (c *AISessionClient) Create() *AISessionCreate {
+	mutation := newAISessionMutation(c.config, OpCreate)
+	return &AISessionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AISession entities.
+func (c *AISessionClient) CreateBulk(builders ...*AISessionCreate) *AISessionCreateBulk {
+	return &AISessionCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AISessionClient) MapCreateBulk(slice any, setFunc func(*AISessionCreate, int)) *AISessionCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AISessionCreateBulk{err: fmt.Errorf("calling to AISessionClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AISessionCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AISessionCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AISession.
+func (c *AISessionClient) Update() *AISessionUpdate {
+	mutation := newAISessionMutation(c.config, OpUpdate)
+	return &AISessionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AISessionClient) UpdateOne(_m *AISession) *AISessionUpdateOne {
+	mutation := newAISessionMutation(c.config, OpUpdateOne, withAISession(_m))
+	return &AISessionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AISessionClient) UpdateOneID(id int64) *AISessionUpdateOne {
+	mutation := newAISessionMutation(c.config, OpUpdateOne, withAISessionID(id))
+	return &AISessionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AISession.
+func (c *AISessionClient) Delete() *AISessionDelete {
+	mutation := newAISessionMutation(c.config, OpDelete)
+	return &AISessionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AISessionClient) DeleteOne(_m *AISession) *AISessionDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AISessionClient) DeleteOneID(id int64) *AISessionDeleteOne {
+	builder := c.Delete().Where(aisession.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AISessionDeleteOne{builder}
+}
+
+// Query returns a query builder for AISession.
+func (c *AISessionClient) Query() *AISessionQuery {
+	return &AISessionQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAISession},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AISession entity by its id.
+func (c *AISessionClient) Get(ctx context.Context, id int64) (*AISession, error) {
+	return c.Query().Where(aisession.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AISessionClient) GetX(ctx context.Context, id int64) *AISession {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryMessages queries the messages edge of a AISession.
+func (c *AISessionClient) QueryMessages(_m *AISession) *AISessionMessageQuery {
+	query := (&AISessionMessageClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aisession.Table, aisession.FieldID, id),
+			sqlgraph.To(aisessionmessage.Table, aisessionmessage.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, aisession.MessagesTable, aisession.MessagesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryGenerationJobs queries the generation_jobs edge of a AISession.
+func (c *AISessionClient) QueryGenerationJobs(_m *AISession) *AIGenerationJobQuery {
+	query := (&AIGenerationJobClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aisession.Table, aisession.FieldID, id),
+			sqlgraph.To(aigenerationjob.Table, aigenerationjob.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, aisession.GenerationJobsTable, aisession.GenerationJobsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryAssets queries the assets edge of a AISession.
+func (c *AISessionClient) QueryAssets(_m *AISession) *AIAssetQuery {
+	query := (&AIAssetClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aisession.Table, aisession.FieldID, id),
+			sqlgraph.To(aiasset.Table, aiasset.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, aisession.AssetsTable, aisession.AssetsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *AISessionClient) Hooks() []Hook {
+	hooks := c.hooks.AISession
+	return append(hooks[:len(hooks):len(hooks)], aisession.Hooks[:]...)
+}
+
+// Interceptors returns the client interceptors.
+func (c *AISessionClient) Interceptors() []Interceptor {
+	inters := c.inters.AISession
+	return append(inters[:len(inters):len(inters)], aisession.Interceptors[:]...)
+}
+
+func (c *AISessionClient) mutate(ctx context.Context, m *AISessionMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AISessionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AISessionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AISessionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AISessionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AISession mutation op: %q", m.Op())
+	}
+}
+
+// AISessionMessageClient is a client for the AISessionMessage schema.
+type AISessionMessageClient struct {
+	config
+}
+
+// NewAISessionMessageClient returns a client for the AISessionMessage from the given config.
+func NewAISessionMessageClient(c config) *AISessionMessageClient {
+	return &AISessionMessageClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `aisessionmessage.Hooks(f(g(h())))`.
+func (c *AISessionMessageClient) Use(hooks ...Hook) {
+	c.hooks.AISessionMessage = append(c.hooks.AISessionMessage, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `aisessionmessage.Intercept(f(g(h())))`.
+func (c *AISessionMessageClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AISessionMessage = append(c.inters.AISessionMessage, interceptors...)
+}
+
+// Create returns a builder for creating a AISessionMessage entity.
+func (c *AISessionMessageClient) Create() *AISessionMessageCreate {
+	mutation := newAISessionMessageMutation(c.config, OpCreate)
+	return &AISessionMessageCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AISessionMessage entities.
+func (c *AISessionMessageClient) CreateBulk(builders ...*AISessionMessageCreate) *AISessionMessageCreateBulk {
+	return &AISessionMessageCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AISessionMessageClient) MapCreateBulk(slice any, setFunc func(*AISessionMessageCreate, int)) *AISessionMessageCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AISessionMessageCreateBulk{err: fmt.Errorf("calling to AISessionMessageClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AISessionMessageCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AISessionMessageCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AISessionMessage.
+func (c *AISessionMessageClient) Update() *AISessionMessageUpdate {
+	mutation := newAISessionMessageMutation(c.config, OpUpdate)
+	return &AISessionMessageUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AISessionMessageClient) UpdateOne(_m *AISessionMessage) *AISessionMessageUpdateOne {
+	mutation := newAISessionMessageMutation(c.config, OpUpdateOne, withAISessionMessage(_m))
+	return &AISessionMessageUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AISessionMessageClient) UpdateOneID(id int64) *AISessionMessageUpdateOne {
+	mutation := newAISessionMessageMutation(c.config, OpUpdateOne, withAISessionMessageID(id))
+	return &AISessionMessageUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AISessionMessage.
+func (c *AISessionMessageClient) Delete() *AISessionMessageDelete {
+	mutation := newAISessionMessageMutation(c.config, OpDelete)
+	return &AISessionMessageDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AISessionMessageClient) DeleteOne(_m *AISessionMessage) *AISessionMessageDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AISessionMessageClient) DeleteOneID(id int64) *AISessionMessageDeleteOne {
+	builder := c.Delete().Where(aisessionmessage.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AISessionMessageDeleteOne{builder}
+}
+
+// Query returns a query builder for AISessionMessage.
+func (c *AISessionMessageClient) Query() *AISessionMessageQuery {
+	return &AISessionMessageQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAISessionMessage},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AISessionMessage entity by its id.
+func (c *AISessionMessageClient) Get(ctx context.Context, id int64) (*AISessionMessage, error) {
+	return c.Query().Where(aisessionmessage.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AISessionMessageClient) GetX(ctx context.Context, id int64) *AISessionMessage {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QuerySession queries the session edge of a AISessionMessage.
+func (c *AISessionMessageClient) QuerySession(_m *AISessionMessage) *AISessionQuery {
+	query := (&AISessionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aisessionmessage.Table, aisessionmessage.FieldID, id),
+			sqlgraph.To(aisession.Table, aisession.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aisessionmessage.SessionTable, aisessionmessage.SessionColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *AISessionMessageClient) Hooks() []Hook {
+	return c.hooks.AISessionMessage
+}
+
+// Interceptors returns the client interceptors.
+func (c *AISessionMessageClient) Interceptors() []Interceptor {
+	return c.inters.AISessionMessage
+}
+
+func (c *AISessionMessageClient) mutate(ctx context.Context, m *AISessionMessageMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AISessionMessageCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AISessionMessageUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AISessionMessageUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AISessionMessageDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AISessionMessage mutation op: %q", m.Op())
 	}
 }
 
@@ -6018,24 +7239,28 @@ func (c *UserSubscriptionClient) mutate(ctx context.Context, m *UserSubscription
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
-		AuthIdentityChannel, ChannelMonitor, ChannelMonitorDailyRollup,
-		ChannelMonitorHistory, ChannelMonitorRequestTemplate, ErrorPassthroughRule,
-		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
-		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
-		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserSubscription []ent.Hook
+		AIAsset, AIAuditLog, AIGenerationJob, AIPromptTemplate, AIPromptTemplateVersion,
+		AISession, AISessionMessage, APIKey, Account, AccountGroup, Announcement,
+		AnnouncementRead, AuthIdentity, AuthIdentityChannel, ChannelMonitor,
+		ChannelMonitorDailyRollup, ChannelMonitorHistory,
+		ChannelMonitorRequestTemplate, ErrorPassthroughRule, Group, IdempotencyRecord,
+		IdentityAdoptionDecision, PaymentAuditLog, PaymentOrder,
+		PaymentProviderInstance, PendingAuthSession, PromoCode, PromoCodeUsage, Proxy,
+		RedeemCode, SecuritySecret, Setting, SubscriptionPlan, TLSFingerprintProfile,
+		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
+		UserAttributeValue, UserSubscription []ent.Hook
 	}
 	inters struct {
-		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
-		AuthIdentityChannel, ChannelMonitor, ChannelMonitorDailyRollup,
-		ChannelMonitorHistory, ChannelMonitorRequestTemplate, ErrorPassthroughRule,
-		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
-		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
-		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserSubscription []ent.Interceptor
+		AIAsset, AIAuditLog, AIGenerationJob, AIPromptTemplate, AIPromptTemplateVersion,
+		AISession, AISessionMessage, APIKey, Account, AccountGroup, Announcement,
+		AnnouncementRead, AuthIdentity, AuthIdentityChannel, ChannelMonitor,
+		ChannelMonitorDailyRollup, ChannelMonitorHistory,
+		ChannelMonitorRequestTemplate, ErrorPassthroughRule, Group, IdempotencyRecord,
+		IdentityAdoptionDecision, PaymentAuditLog, PaymentOrder,
+		PaymentProviderInstance, PendingAuthSession, PromoCode, PromoCodeUsage, Proxy,
+		RedeemCode, SecuritySecret, Setting, SubscriptionPlan, TLSFingerprintProfile,
+		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
+		UserAttributeValue, UserSubscription []ent.Interceptor
 	}
 )
 

@@ -15,10 +15,12 @@ import (
 type AvailableGroupRef struct {
 	ID               int64
 	Name             string
+	DisplayName      string
 	Platform         string
 	SubscriptionType string
 	RateMultiplier   float64
 	IsExclusive      bool
+	UserSelectable   bool
 }
 
 // AvailableChannel 可用渠道视图：用于「可用渠道」页面展示渠道基础信息 +
@@ -61,10 +63,12 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 		groupByID[g.ID] = AvailableGroupRef{
 			ID:               g.ID,
 			Name:             g.Name,
+			DisplayName:      g.DisplayLabel(),
 			Platform:         g.Platform,
 			SubscriptionType: g.SubscriptionType,
 			RateMultiplier:   g.RateMultiplier,
 			IsExclusive:      g.IsExclusive,
+			UserSelectable:   g.UserSelectable,
 		}
 	}
 

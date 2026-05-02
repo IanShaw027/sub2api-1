@@ -6,6 +6,27 @@ import (
 	"entgo.io/ent/dialect/sql"
 )
 
+// AIAsset is the predicate function for aiasset builders.
+type AIAsset func(*sql.Selector)
+
+// AIAuditLog is the predicate function for aiauditlog builders.
+type AIAuditLog func(*sql.Selector)
+
+// AIGenerationJob is the predicate function for aigenerationjob builders.
+type AIGenerationJob func(*sql.Selector)
+
+// AIPromptTemplate is the predicate function for aiprompttemplate builders.
+type AIPromptTemplate func(*sql.Selector)
+
+// AIPromptTemplateVersion is the predicate function for aiprompttemplateversion builders.
+type AIPromptTemplateVersion func(*sql.Selector)
+
+// AISession is the predicate function for aisession builders.
+type AISession func(*sql.Selector)
+
+// AISessionMessage is the predicate function for aisessionmessage builders.
+type AISessionMessage func(*sql.Selector)
+
 // APIKey is the predicate function for apikey builders.
 type APIKey func(*sql.Selector)
 

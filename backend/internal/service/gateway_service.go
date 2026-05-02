@@ -2711,6 +2711,26 @@ func selectByLRU(accounts []accountWithLoad, preferOAuth bool) *accountWithLoad 
 		return &accounts[candidateIdxs[0]]
 	}
 
+	// 3.5 在相同 LastUsedAt 的候选中，优先选择最新创建的账号。
+	var newestCreatedAt time.Time
+	hasCreatedAt := false
+	for _, idx := range candidateIdxs {
+		createdAt := accounts[idx].account.CreatedAt
+		if !hasCreatedAt || createdAt.After(newestCreatedAt) {
+			newestCreatedAt = createdAt
+			hasCreatedAt = true
+		}
+	}
+	if hasCreatedAt {
+		filtered := candidateIdxs[:0]
+		for _, idx := range candidateIdxs {
+			if accounts[idx].account.CreatedAt.Equal(newestCreatedAt) {
+				filtered = append(filtered, idx)
+			}
+		}
+		candidateIdxs = filtered
+	}
+
 	// 4. 如果有多个候选且 preferOAuth，优先选择 OAuth 类型
 	if preferOAuth {
 		var oauthIdxs []int
@@ -2741,12 +2761,27 @@ func sortAccountsByPriorityAndLastUsed(accounts []*Account, preferOAuth bool) {
 		case a.LastUsedAt != nil && b.LastUsedAt == nil:
 			return false
 		case a.LastUsedAt == nil && b.LastUsedAt == nil:
+			if !a.CreatedAt.Equal(b.CreatedAt) {
+				return a.CreatedAt.After(b.CreatedAt)
+			}
 			if preferOAuth && a.Type != b.Type {
 				return a.Type == AccountTypeOAuth
 			}
 			return false
 		default:
-			return a.LastUsedAt.Before(*b.LastUsedAt)
+			if a.LastUsedAt.Before(*b.LastUsedAt) {
+				return true
+			}
+			if b.LastUsedAt.Before(*a.LastUsedAt) {
+				return false
+			}
+			if !a.CreatedAt.Equal(b.CreatedAt) {
+				return a.CreatedAt.After(b.CreatedAt)
+			}
+			if preferOAuth && a.Type != b.Type {
+				return a.Type == AccountTypeOAuth
+			}
+			return false
 		}
 	})
 	shuffleWithinPriorityAndLastUsed(accounts, preferOAuth)
@@ -2781,7 +2816,10 @@ func sameAccountWithLoadGroup(a, b accountWithLoad) bool {
 	if a.loadInfo.LoadRate != b.loadInfo.LoadRate {
 		return false
 	}
-	return sameLastUsedAt(a.account.LastUsedAt, b.account.LastUsedAt)
+	if !sameLastUsedAt(a.account.LastUsedAt, b.account.LastUsedAt) {
+		return false
+	}
+	return a.account.CreatedAt.Equal(b.account.CreatedAt)
 }
 
 // shuffleWithinPriorityAndLastUsed 对排序后的 []*Account 切片，按 (Priority, LastUsedAt) 分组后组内随机打乱。
@@ -2834,7 +2872,10 @@ func sameAccountGroup(a, b *Account) bool {
 	if a.Priority != b.Priority {
 		return false
 	}
-	return sameLastUsedAt(a.LastUsedAt, b.LastUsedAt)
+	if !sameLastUsedAt(a.LastUsedAt, b.LastUsedAt) {
+		return false
+	}
+	return a.CreatedAt.Equal(b.CreatedAt)
 }
 
 // sameLastUsedAt 判断两个 LastUsedAt 是否相同（精度到秒）

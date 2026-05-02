@@ -138,5 +138,29 @@ func RegisterUserRoutes(
 			monitors.GET("", h.ChannelMonitor.List)
 			monitors.GET("/:id/status", h.ChannelMonitor.GetStatus)
 		}
+
+		skills := authenticated.Group("/user/skills")
+		{
+			skills.GET("", h.AI.ListSkills)
+			skills.POST("", h.AI.CreateSkill)
+			skills.GET("/:id", h.AI.GetSkillDetail)
+			skills.PUT("/:id", h.AI.UpdateSkill)
+			skills.POST("/:id/install", h.AI.InstallSkill)
+			skills.POST("/:id/uninstall", h.AI.UninstallSkill)
+
+			skills.GET("/:id/versions", h.AI.ListSkillVersions)
+			skills.POST("/:id/versions", h.AI.CreateSkillVersion)
+			skills.PUT("/:id/versions/:versionId", h.AI.UpdateSkillVersion)
+			skills.POST("/:id/versions/:versionId/submit", h.AI.SubmitSkillVersion)
+			skills.POST("/versions/:versionId/publish", h.AI.PublishSkillVersion)
+
+			skills.GET("/:id/runs", h.AI.ListSkillRuns)
+			skills.POST("/:id/runs", h.AI.RunSkill)
+			skills.POST("/:id/test", h.AI.TestSkill)
+			skills.POST("/:id/use", h.AI.UseSkill)
+			skills.GET("/:id/revenue", h.AI.GetSkillRevenue)
+		}
+
+		registerUserAIRoutes(authenticated, h)
 	}
 }

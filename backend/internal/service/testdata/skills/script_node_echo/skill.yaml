@@ -1,0 +1,12 @@
+apiVersion: skill.sub2api.io/v1alpha1
+kind: Skill
+metadata:
+  name: script_node_echo
+  version: 1.0.0
+  displayName: Node Echo
+  description: Minimal node20 script skill sample.
+spec:
+  type: script
+  runtime: node20
+  entrypoint: main.mjs
+  protocol: json-file-v1

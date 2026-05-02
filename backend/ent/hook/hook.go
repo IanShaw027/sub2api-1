@@ -9,6 +9,90 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent"
 )
 
+// The AIAssetFunc type is an adapter to allow the use of ordinary
+// function as AIAsset mutator.
+type AIAssetFunc func(context.Context, *ent.AIAssetMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AIAssetFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AIAssetMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AIAssetMutation", m)
+}
+
+// The AIAuditLogFunc type is an adapter to allow the use of ordinary
+// function as AIAuditLog mutator.
+type AIAuditLogFunc func(context.Context, *ent.AIAuditLogMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AIAuditLogFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AIAuditLogMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AIAuditLogMutation", m)
+}
+
+// The AIGenerationJobFunc type is an adapter to allow the use of ordinary
+// function as AIGenerationJob mutator.
+type AIGenerationJobFunc func(context.Context, *ent.AIGenerationJobMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AIGenerationJobFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AIGenerationJobMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AIGenerationJobMutation", m)
+}
+
+// The AIPromptTemplateFunc type is an adapter to allow the use of ordinary
+// function as AIPromptTemplate mutator.
+type AIPromptTemplateFunc func(context.Context, *ent.AIPromptTemplateMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AIPromptTemplateFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AIPromptTemplateMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AIPromptTemplateMutation", m)
+}
+
+// The AIPromptTemplateVersionFunc type is an adapter to allow the use of ordinary
+// function as AIPromptTemplateVersion mutator.
+type AIPromptTemplateVersionFunc func(context.Context, *ent.AIPromptTemplateVersionMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AIPromptTemplateVersionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AIPromptTemplateVersionMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AIPromptTemplateVersionMutation", m)
+}
+
+// The AISessionFunc type is an adapter to allow the use of ordinary
+// function as AISession mutator.
+type AISessionFunc func(context.Context, *ent.AISessionMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AISessionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AISessionMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AISessionMutation", m)
+}
+
+// The AISessionMessageFunc type is an adapter to allow the use of ordinary
+// function as AISessionMessage mutator.
+type AISessionMessageFunc func(context.Context, *ent.AISessionMessageMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AISessionMessageFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AISessionMessageMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AISessionMessageMutation", m)
+}
+
 // The APIKeyFunc type is an adapter to allow the use of ordinary
 // function as APIKey mutator.
 type APIKeyFunc func(context.Context, *ent.APIKeyMutation) (ent.Value, error)

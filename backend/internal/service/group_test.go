@@ -90,3 +90,93 @@ func TestGroup_GetImagePrice_PartialConfig(t *testing.T) {
 	require.Nil(t, group.GetImagePrice("2K"))
 	require.Nil(t, group.GetImagePrice("4K"))
 }
+
+func TestGroup_GetImagePriceForRequestType_Images2APITiers(t *testing.T) {
+	price1K := 0.11
+	price2K := 0.22
+	price4K := 0.44
+	group := &Group{
+		Images2APIPrice1K: &price1K,
+		Images2APIPrice2K: &price2K,
+		Images2APIPrice4K: &price4K,
+	}
+
+	result := group.GetImagePriceForRequestType("1K", RequestTypeImageWebBridge)
+	require.NotNil(t, result)
+	require.InDelta(t, 0.11, *result, 0.0001)
+
+	result = group.GetImagePriceForRequestType("2K", RequestTypeImageWebBridge)
+	require.NotNil(t, result)
+	require.InDelta(t, 0.22, *result, 0.0001)
+
+	result = group.GetImagePriceForRequestType("4K", RequestTypeImageWebBridge)
+	require.NotNil(t, result)
+	require.InDelta(t, 0.44, *result, 0.0001)
+}
+
+func TestGroup_GetImagePriceForRequestType_Images2APIUnknownSizeFallsBackTo2K(t *testing.T) {
+	price2K := 0.22
+	group := &Group{
+		Images2APIPrice2K: &price2K,
+	}
+
+	result := group.GetImagePriceForRequestType("unknown", RequestTypeImageWebBridge)
+	require.NotNil(t, result)
+	require.InDelta(t, 0.22, *result, 0.0001)
+}
+
+func TestGroup_GetImagePriceConfigForRequestType_UsesImages2APIConfig(t *testing.T) {
+	price1K := 0.11
+	price2K := 0.22
+	price4K := 0.44
+	group := &Group{
+		Images2APIPrice1K: &price1K,
+		Images2APIPrice2K: &price2K,
+		Images2APIPrice4K: &price4K,
+	}
+
+	config := group.GetImagePriceConfigForRequestType(RequestTypeImageWebBridge)
+	require.NotNil(t, config)
+	require.Equal(t, group.Images2APIPrice1K, config.Price1K)
+	require.Equal(t, group.Images2APIPrice2K, config.Price2K)
+	require.Equal(t, group.Images2APIPrice4K, config.Price4K)
+}
+
+func TestGroup_GetImagePriceConfigForRequestType_UsesStandardImagesConfig(t *testing.T) {
+	price1K := 0.10
+	price2K := 0.20
+	price4K := 0.40
+	group := &Group{
+		ImagePrice1K: &price1K,
+		ImagePrice2K: &price2K,
+		ImagePrice4K: &price4K,
+	}
+
+	config := group.GetImagePriceConfigForRequestType(RequestTypeImage)
+	require.NotNil(t, config)
+	require.Equal(t, group.ImagePrice1K, config.Price1K)
+	require.Equal(t, group.ImagePrice2K, config.Price2K)
+	require.Equal(t, group.ImagePrice4K, config.Price4K)
+}
+
+func TestGroup_DisplayLabel_FallsBackToName(t *testing.T) {
+	group := &Group{Name: "route-a", DisplayName: " "}
+	require.Equal(t, "route-a", group.DisplayLabel())
+}
+
+func TestGroup_DisplayLabel_PrefersDisplayName(t *testing.T) {
+	group := &Group{Name: "route-a", DisplayName: " Route A "}
+	require.Equal(t, "Route A", group.DisplayLabel())
+}
+
+func TestGroup_CanBeSelectedByUser(t *testing.T) {
+	group := &Group{Status: StatusActive, UserSelectable: true}
+	require.True(t, group.CanBeSelectedByUser())
+
+	group.UserSelectable = false
+	require.False(t, group.CanBeSelectedByUser())
+
+	group.Status = StatusDisabled
+	group.UserSelectable = true
+	require.False(t, group.CanBeSelectedByUser())
+}

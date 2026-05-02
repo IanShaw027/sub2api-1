@@ -76,6 +76,26 @@ func (_u *GroupUpdate) SetNillableName(v *string) *GroupUpdate {
 	return _u
 }
 
+// SetDisplayName sets the "display_name" field.
+func (_u *GroupUpdate) SetDisplayName(v string) *GroupUpdate {
+	_u.mutation.SetDisplayName(v)
+	return _u
+}
+
+// SetNillableDisplayName sets the "display_name" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableDisplayName(v *string) *GroupUpdate {
+	if v != nil {
+		_u.SetDisplayName(*v)
+	}
+	return _u
+}
+
+// ClearDisplayName clears the value of the "display_name" field.
+func (_u *GroupUpdate) ClearDisplayName() *GroupUpdate {
+	_u.mutation.ClearDisplayName()
+	return _u
+}
+
 // SetDescription sets the "description" field.
 func (_u *GroupUpdate) SetDescription(v string) *GroupUpdate {
 	_u.mutation.SetDescription(v)
@@ -127,6 +147,20 @@ func (_u *GroupUpdate) SetIsExclusive(v bool) *GroupUpdate {
 func (_u *GroupUpdate) SetNillableIsExclusive(v *bool) *GroupUpdate {
 	if v != nil {
 		_u.SetIsExclusive(*v)
+	}
+	return _u
+}
+
+// SetUserSelectable sets the "user_selectable" field.
+func (_u *GroupUpdate) SetUserSelectable(v bool) *GroupUpdate {
+	_u.mutation.SetUserSelectable(v)
+	return _u
+}
+
+// SetNillableUserSelectable sets the "user_selectable" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableUserSelectable(v *bool) *GroupUpdate {
+	if v != nil {
+		_u.SetUserSelectable(*v)
 	}
 	return _u
 }
@@ -939,6 +973,11 @@ func (_u *GroupUpdate) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Group.name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.DisplayName(); ok {
+		if err := group.DisplayNameValidator(v); err != nil {
+			return &ValidationError{Name: "display_name", err: fmt.Errorf(`ent: validator failed for field "Group.display_name": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Status(); ok {
 		if err := group.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "Group.status": %w`, err)}
@@ -986,6 +1025,12 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(group.FieldName, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.DisplayName(); ok {
+		_spec.SetField(group.FieldDisplayName, field.TypeString, value)
+	}
+	if _u.mutation.DisplayNameCleared() {
+		_spec.ClearField(group.FieldDisplayName, field.TypeString)
+	}
 	if value, ok := _u.mutation.Description(); ok {
 		_spec.SetField(group.FieldDescription, field.TypeString, value)
 	}
@@ -1000,6 +1045,9 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.IsExclusive(); ok {
 		_spec.SetField(group.FieldIsExclusive, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.UserSelectable(); ok {
+		_spec.SetField(group.FieldUserSelectable, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(group.FieldStatus, field.TypeString, value)
@@ -1519,6 +1567,26 @@ func (_u *GroupUpdateOne) SetNillableName(v *string) *GroupUpdateOne {
 	return _u
 }
 
+// SetDisplayName sets the "display_name" field.
+func (_u *GroupUpdateOne) SetDisplayName(v string) *GroupUpdateOne {
+	_u.mutation.SetDisplayName(v)
+	return _u
+}
+
+// SetNillableDisplayName sets the "display_name" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableDisplayName(v *string) *GroupUpdateOne {
+	if v != nil {
+		_u.SetDisplayName(*v)
+	}
+	return _u
+}
+
+// ClearDisplayName clears the value of the "display_name" field.
+func (_u *GroupUpdateOne) ClearDisplayName() *GroupUpdateOne {
+	_u.mutation.ClearDisplayName()
+	return _u
+}
+
 // SetDescription sets the "description" field.
 func (_u *GroupUpdateOne) SetDescription(v string) *GroupUpdateOne {
 	_u.mutation.SetDescription(v)
@@ -1570,6 +1638,20 @@ func (_u *GroupUpdateOne) SetIsExclusive(v bool) *GroupUpdateOne {
 func (_u *GroupUpdateOne) SetNillableIsExclusive(v *bool) *GroupUpdateOne {
 	if v != nil {
 		_u.SetIsExclusive(*v)
+	}
+	return _u
+}
+
+// SetUserSelectable sets the "user_selectable" field.
+func (_u *GroupUpdateOne) SetUserSelectable(v bool) *GroupUpdateOne {
+	_u.mutation.SetUserSelectable(v)
+	return _u
+}
+
+// SetNillableUserSelectable sets the "user_selectable" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableUserSelectable(v *bool) *GroupUpdateOne {
+	if v != nil {
+		_u.SetUserSelectable(*v)
 	}
 	return _u
 }
@@ -2395,6 +2477,11 @@ func (_u *GroupUpdateOne) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Group.name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.DisplayName(); ok {
+		if err := group.DisplayNameValidator(v); err != nil {
+			return &ValidationError{Name: "display_name", err: fmt.Errorf(`ent: validator failed for field "Group.display_name": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Status(); ok {
 		if err := group.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "Group.status": %w`, err)}
@@ -2459,6 +2546,12 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(group.FieldName, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.DisplayName(); ok {
+		_spec.SetField(group.FieldDisplayName, field.TypeString, value)
+	}
+	if _u.mutation.DisplayNameCleared() {
+		_spec.ClearField(group.FieldDisplayName, field.TypeString)
+	}
 	if value, ok := _u.mutation.Description(); ok {
 		_spec.SetField(group.FieldDescription, field.TypeString, value)
 	}
@@ -2473,6 +2566,9 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if value, ok := _u.mutation.IsExclusive(); ok {
 		_spec.SetField(group.FieldIsExclusive, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.UserSelectable(); ok {
+		_spec.SetField(group.FieldUserSelectable, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(group.FieldStatus, field.TypeString, value)
