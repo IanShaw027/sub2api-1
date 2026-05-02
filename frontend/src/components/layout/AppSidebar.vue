@@ -501,6 +501,96 @@ const TicketIcon = {
     )
 }
 
+const AiChatIcon = {
+  render: () =>
+    h(
+      'svg',
+      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
+      [
+        h('path', {
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'M7.5 12.75h.008v.008H7.5v-.008zm4.5 0h.008v.008H12v-.008zm4.5 0h.008v.008H16.5v-.008zM21 12c0 4.418-4.03 8-9 8a10.5 10.5 0 01-4-.762L3 21l1.762-5A7.96 7.96 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z'
+        })
+      ]
+    )
+}
+
+const AiImageIcon = {
+  render: () =>
+    h(
+      'svg',
+      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
+      [
+        h('path', {
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'M3.75 4.5h16.5v15H3.75zM8.25 9A1.5 1.5 0 1112 9a1.5 1.5 0 01-3.75 0zm-1.5 7.5 3-3 2.25 2.25 4.5-4.5 3.75 3.75'
+        })
+      ]
+    )
+}
+
+const AiGalleryIcon = {
+  render: () =>
+    h(
+      'svg',
+      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
+      [
+        h('path', {
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'M6.75 3.75h10.5A2.25 2.25 0 0119.5 6v12a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 18V6a2.25 2.25 0 012.25-2.25zm0 0V18m0-12 4.5 4.5m0 0 2.25-2.25M18 18l-4.5-4.5'
+        })
+      ]
+    )
+}
+
+const AiPromptIcon = {
+  render: () =>
+    h(
+      'svg',
+      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
+      [
+        h('path', {
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'M4.5 6.75A2.25 2.25 0 016.75 4.5h10.5a2.25 2.25 0 012.25 2.25v6a2.25 2.25 0 01-2.25 2.25H10.5L6 19.5v-4.5H6.75A2.25 2.25 0 014.5 12.75v-6zM8.25 8.25h7.5m-7.5 3h4.5'
+        })
+      ]
+    )
+}
+
+const AiShieldIcon = {
+  render: () =>
+    h(
+      'svg',
+      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
+      [
+        h('path', {
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'M12 3.75 4.5 6.75v5.25c0 4.875 3.375 7.875 7.5 8.25 4.125-.375 7.5-3.375 7.5-8.25V6.75L12 3.75zM9.75 12.75l1.5 1.5 3-3'
+        })
+      ]
+    )
+}
+
+const SkillCenterIcon = {
+  render: () =>
+    h(
+      'svg',
+      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
+      [
+        h('path', {
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'm3.75 7.5 8.25-4.5 8.25 4.5m-16.5 0V16.5L12 21l8.25-4.5V7.5m-8.25 4.5v9m0-9 8.25-4.5m-8.25 4.5L3.75 7.5'
+        })
+      ]
+    )
+}
+
 const CogIcon = {
   render: () =>
     h(
@@ -687,6 +777,12 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
     { path: '/usage', label: t('nav.usage'), icon: ChartIcon, hideInSimpleMode: true },
     { path: '/tickets', label: t('nav.tickets'), icon: TicketListIcon, hideInSimpleMode: true, featureFlag: flagTicket },
     { path: '/available-channels', label: t('nav.availableChannels'), icon: ChannelIcon, hideInSimpleMode: true, featureFlag: flagAvailableChannels },
+    { path: '/ai/chat', label: t('nav.aiChat', 'AI 对话'), icon: AiChatIcon },
+    { path: '/ai/image', label: t('nav.aiImage', 'AI 生图'), icon: AiImageIcon },
+    { path: '/ai/gallery', label: t('nav.aiGallery', '画廊'), icon: AiGalleryIcon },
+    { path: '/ai/prompts', label: t('nav.aiPrompts', '提示词库'), icon: AiPromptIcon },
+    { path: '/skills', label: t('nav.skillsCenter', '技能中心'), icon: SkillCenterIcon },
+    { path: '/skills/installed', label: t('nav.installedSkills', '已安装技能'), icon: SkillCenterIcon },
     { path: '/monitor', label: t('nav.channelStatus'), icon: SignalIcon, featureFlag: flagChannelMonitor },
     { path: '/subscriptions', label: t('nav.mySubscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
     { path: '/purchase', label: t('nav.buySubscription'), icon: RechargeSubscriptionIcon, hideInSimpleMode: true, featureFlag: flagPayment },
@@ -754,6 +850,30 @@ const adminNavItems = computed((): NavItem[] => {
     { path: '/admin/accounts', label: t('nav.accounts'), icon: GlobeIcon },
     { path: '/admin/announcements', label: t('nav.announcements'), icon: BellIcon },
     { path: '/admin/tickets', label: t('nav.tickets'), icon: TicketListIcon, featureFlag: flagTicket },
+    {
+      path: '/admin/ai',
+      label: t('nav.aiGovernance', 'AI 治理'),
+      icon: AiShieldIcon,
+      hideInSimpleMode: true,
+      expandOnly: true,
+      children: [
+        { path: '/admin/ai/prompts', label: t('ai.promptGovernance.title', '提示词治理'), icon: AiPromptIcon },
+        { path: '/admin/ai/artworks', label: t('ai.artworkGovernance.title', '作品治理'), icon: AiGalleryIcon },
+      ],
+    },
+    {
+      path: '/admin/skills',
+      label: t('nav.skillGovernance', '技能治理'),
+      icon: SkillCenterIcon,
+      hideInSimpleMode: true,
+      expandOnly: true,
+      children: [
+        { path: '/admin/skills/review', label: t('skills.admin.review.title', '技能审核'), icon: TicketListIcon },
+        { path: '/admin/skills/governance', label: t('skills.admin.governance.title', '技能治理'), icon: AiShieldIcon },
+        { path: '/admin/skills/runtime', label: t('skills.admin.runtime.title', '运行监控'), icon: SignalIcon },
+        { path: '/admin/skills/settlements', label: t('skills.admin.settlement.title', '技能结算'), icon: CreditCardIcon },
+      ],
+    },
     { path: '/admin/proxies', label: t('nav.proxies'), icon: ServerIcon },
     { path: '/admin/redeem', label: t('nav.redeemCodes'), icon: TicketIcon, hideInSimpleMode: true },
     { path: '/admin/promo-codes', label: t('nav.promoCodes'), icon: GiftIcon, hideInSimpleMode: true },

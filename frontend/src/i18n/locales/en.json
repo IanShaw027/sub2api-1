@@ -290,6 +290,8 @@
     "saving": "Saving...",
     "selectedCount": "({count} selected)",
     "refresh": "Refresh",
+    "createdAt": "Created At",
+    "updatedAt": "Updated At",
     "selectAll": "Select all",
     "autoRefresh": {
       "title": "Auto Refresh",
@@ -359,7 +361,206 @@
     "channelManagement": "Channels",
     "channelPricing": "Channel Pricing",
     "channelMonitor": "Channel Monitor",
-    "channelStatus": "Channel Status"
+    "channelStatus": "Channel Status",
+    "aiChat": "AI Chat",
+    "aiImage": "AI Image",
+    "aiGallery": "AI Gallery",
+    "aiPrompts": "Prompt Library",
+    "aiGovernance": "AI Governance",
+    "skillsCenter": "Skill Center",
+    "installedSkills": "Installed Skills"
+  },
+  "ai": {
+    "center": { "label": "AI Studio" },
+    "line": {
+      "selector": "Line",
+      "availableKeys": "Available keys",
+      "platform": "Platform",
+      "unassigned": "Unassigned"
+    },
+    "chat": {
+      "title": "AI Chat",
+      "subtitle": "Pick a line and an entry first. The UI auto-selects an available key internally.",
+      "entry": "Entry",
+      "responses": "Responses",
+      "chatCompletions": "Chat Completions",
+      "entryHint": "Responses is preferred; the choice is sent directly to the backend.",
+      "runtimeLabel": "runtime",
+      "responsesLabel": "responses",
+      "send": "Send",
+      "quickPrompts": "Quick Prompts",
+      "noPrompts": "No prompts yet",
+      "noPromptsDesc": "Create templates in the prompt library.",
+      "emptyTitle": "Start a conversation",
+      "emptyDesc": "Choose a line and an entry, then type your request.",
+      "placeholder": "Describe what you want...",
+      "hint": "Keys stay hidden and are only selected internally.",
+      "welcome": "Choose a line first, then start chatting."
+    },
+    "image": {
+      "title": "AI Image",
+      "subtitle": "Supports generation and editing. Submitted results go to the gallery.",
+      "mode": "Mode",
+      "modeGenerate": "Generate",
+      "modeEdit": "Edit",
+      "generateHint": "Fill in the prompt to generate. Keys stay hidden in the UI.",
+      "editHint": "Upload a source image and optional mask. The line still selects the key internally.",
+      "generate": "Generate",
+      "submitGenerate": "Generate Now",
+      "submitEdit": "Submit Edit",
+      "artworkTitle": "Artwork Title",
+      "artworkTitlePlaceholder": "Optional",
+      "sourceImage": "Source Image",
+      "uploadSource": "Upload Source",
+      "removeSource": "Remove Source",
+      "sourceHint": "Editing requires a source image and supports data URL uploads.",
+      "maskImage": "Mask (Optional)",
+      "uploadMask": "Upload Mask",
+      "removeMask": "Remove Mask",
+      "maskHint": "Mask is optional. If omitted, the backend edits the source image directly.",
+      "assetRefs": "Reference Existing Assets",
+      "assetRefsHint": "Use an existing artwork as the source image or mask.",
+      "useAsSource": "Use as Source",
+      "useAsMask": "Use as Mask",
+      "editAvailable": "Edit capability enabled",
+      "editUnavailable": "Runtime has not enabled editing",
+      "prompt": "Prompt",
+      "promptPlaceholder": "Describe subject, scene, light and style.",
+      "negativePrompt": "Negative Prompt",
+      "negativePromptPlaceholder": "Optional",
+      "style": "Style",
+      "size": "Size",
+      "visibility": "Visibility",
+      "recent": "Recent works",
+      "noRecent": "No artworks yet",
+      "noRecentDesc": "Generated or edited pieces will appear here.",
+      "created": "Artwork generated",
+      "edited": "Edit request submitted",
+      "styles": {
+        "cinematic": "Cinematic",
+        "illustration": "Illustration",
+        "editorial": "Editorial",
+        "product": "Product",
+        "anime": "Anime",
+        "sketch": "Sketch"
+      }
+    },
+    "gallery": {
+      "title": "Gallery",
+      "subtitle": "Filter and browse with a masonry layout.",
+      "searchPlaceholder": "Search title, prompt, tags",
+      "open": "Open gallery",
+      "emptyTitle": "No artworks",
+      "emptyDesc": "Generate some artworks first.",
+      "featured": "Featured",
+      "featuredOnly": "Featured only",
+      "normalOnly": "Non-featured",
+      "feature": "Feature",
+      "unfeature": "Unfeature"
+    },
+    "prompt": {
+      "title": "Title",
+      "visibility": "Visibility",
+      "status": "Status",
+      "line": "Line",
+      "tags": "Tags",
+      "tagsPlaceholder": "Comma separated",
+      "description": "Description",
+      "descriptionPlaceholder": "Optional notes",
+      "content": "Prompt",
+      "contentPlaceholder": "Write the prompt here",
+      "public": "Public",
+      "private": "Private",
+      "draft": "Draft",
+      "published": "Published",
+      "archived": "Archived",
+      "hidden": "Hidden",
+      "clone": "Clone",
+      "makePublic": "Make public",
+      "makePrivate": "Make private",
+      "noLine": "No line",
+      "owner": "Owner",
+      "saved": "Prompt updated",
+      "created": "Prompt created",
+      "cloned": "Prompt cloned",
+      "deleted": "Prompt deleted",
+      "delete": "Delete Prompt",
+      "deleteConfirm": "This action cannot be undone."
+    },
+    "promptLibrary": {
+      "title": "Prompt Library",
+      "subtitle": "Supports public/private, clone, edit, and delete.",
+      "create": "New Prompt",
+      "scope": "Scope",
+      "mine": "Mine only",
+      "emptyTitle": "No prompts yet",
+      "emptyDesc": "Create a new template or clone a public one."
+    },
+    "promptGovernance": {
+      "title": "Prompt Governance",
+      "subtitle": "Review and manage prompt templates.",
+      "editTitle": "Manage Prompt",
+      "emptyTitle": "No prompt records",
+      "emptyDesc": "User-created prompts will appear here."
+    },
+    "artwork": {
+      "title": "Artwork",
+      "pending": "Pending",
+      "succeeded": "Done",
+      "failed": "Failed",
+      "deleted": "Deleted",
+      "delete": "Delete Artwork",
+      "deleteConfirm": "This action cannot be undone."
+    },
+    "artworkGovernance": {
+      "title": "Artwork Governance",
+      "subtitle": "Review and manage generated artwork.",
+      "emptyTitle": "No artworks records",
+      "emptyDesc": "Generated artworks will appear here."
+    }
+  },
+  "skills": {
+    "center": {
+      "label": "Skill Center"
+    },
+    "market": {
+      "title": "Skill Market",
+      "subtitle": "Browse marketplace skills, install them, inspect details, and prepare variables for later runs."
+    },
+    "installed": {
+      "title": "Installed Skills",
+      "subtitle": "Focus on the skills you already installed so you can jump back into details, versions, and runs quickly.",
+      "emptyTitle": "No installed skills yet",
+      "emptyDescription": "Install a few skills from the market first.",
+      "installedOnly": "Installed",
+      "notInstalledOnly": "Not Installed"
+    },
+    "my": {
+      "title": "My Skills",
+      "subtitle": "Manage the skills you created or published, then continue into versions, runs, and revenue."
+    },
+    "editor": {
+      "title": "Skill Editor",
+      "create": "Create Skill",
+      "edit": "Edit Skill",
+      "subtitle": "Supports prompt_chat, prompt_image, and script skills with configurable variable schemas."
+    },
+    "detail": {
+      "title": "Skill Detail",
+      "subtitle": "Review the skill overview, exposed variables, version summary, and installation notes."
+    },
+    "versions": {
+      "title": "Version Management",
+      "subtitle": "Manage release cadence, changelogs, the current version, and visibility."
+    },
+    "runs": {
+      "title": "Run History",
+      "subtitle": "Inspect recent executions, statuses, latency, and output summaries for a skill."
+    },
+    "revenue": {
+      "title": "Revenue",
+      "subtitle": "Review sales and execution revenue, along with the related order details."
+    }
   },
   "auth": {
     "welcomeBack": "Welcome Back",

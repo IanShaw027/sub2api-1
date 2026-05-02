@@ -290,6 +290,8 @@
     "saving": "保存中...",
     "selectedCount": "（已选 {count} 个）",
     "refresh": "刷新",
+    "createdAt": "创建时间",
+    "updatedAt": "更新时间",
     "selectAll": "全选",
     "autoRefresh": {
       "title": "自动刷新",
@@ -359,7 +361,206 @@
     "channelManagement": "渠道管理",
     "channelPricing": "渠道定价",
     "channelMonitor": "渠道监控",
-    "channelStatus": "渠道状态"
+    "channelStatus": "渠道状态",
+    "aiChat": "AI 对话",
+    "aiImage": "AI 生图",
+    "aiGallery": "画廊",
+    "aiPrompts": "提示词库",
+    "aiGovernance": "AI 治理",
+    "skillsCenter": "技能中心",
+    "installedSkills": "已安装技能"
+  },
+  "ai": {
+    "center": { "label": "AI 创作中心" },
+    "line": {
+      "selector": "线路",
+      "availableKeys": "可用 key",
+      "platform": "平台",
+      "unassigned": "未分配线路"
+    },
+    "chat": {
+      "title": "AI 对话",
+      "subtitle": "先选线路，再选入口，界面会在内部自动选用可用 key。",
+      "entry": "入口",
+      "responses": "Responses",
+      "chatCompletions": "Chat Completions",
+      "entryHint": "优先使用 responses 入口；切换后会直接传给后端。",
+      "runtimeLabel": "runtime",
+      "responsesLabel": "responses",
+      "send": "发送",
+      "quickPrompts": "快捷提示词",
+      "noPrompts": "暂无提示词",
+      "noPromptsDesc": "去提示词库创建模板吧。",
+      "emptyTitle": "开始一段对话",
+      "emptyDesc": "选择线路和入口后输入你的需求。",
+      "placeholder": "输入你的需求...",
+      "hint": "key 不会在界面中暴露，只会在内部自动选择。",
+      "welcome": "先选线路，再开始对话。"
+    },
+    "image": {
+      "title": "AI 生图",
+      "subtitle": "支持生成和编辑，提交后进入画廊。",
+      "mode": "模式",
+      "modeGenerate": "生成",
+      "modeEdit": "编辑",
+      "generateHint": "仅填写提示词即可生成，key 不会在界面中暴露。",
+      "editHint": "上传原图后可选遮罩编辑，key 仍由线路内自动选取。",
+      "generate": "立即生成",
+      "submitGenerate": "立即生成",
+      "submitEdit": "提交编辑",
+      "artworkTitle": "作品标题",
+      "artworkTitlePlaceholder": "可选",
+      "sourceImage": "原图",
+      "uploadSource": "上传原图",
+      "removeSource": "移除原图",
+      "sourceHint": "编辑模式需要原图，支持上传图片数据 URL。",
+      "maskImage": "遮罩（可选）",
+      "uploadMask": "上传遮罩",
+      "removeMask": "移除遮罩",
+      "maskHint": "遮罩可选；不上传时，后端按原图编辑。",
+      "assetRefs": "引用已有资产",
+      "assetRefsHint": "可直接把现有作品作为原图或遮罩。",
+      "useAsSource": "用作原图",
+      "useAsMask": "用作遮罩",
+      "editAvailable": "编辑能力已启用",
+      "editUnavailable": "当前 runtime 未启用编辑能力",
+      "prompt": "正向提示词",
+      "promptPlaceholder": "描述主体、场景、光线和风格。",
+      "negativePrompt": "反向提示词",
+      "negativePromptPlaceholder": "可选",
+      "style": "风格",
+      "size": "尺寸",
+      "visibility": "可见性",
+      "recent": "最近作品",
+      "noRecent": "还没有作品",
+      "noRecentDesc": "生成或编辑后的作品会自动出现在这里。",
+      "created": "作品已生成",
+      "edited": "编辑请求已提交",
+      "styles": {
+        "cinematic": "电影感",
+        "illustration": "插画",
+        "editorial": "杂志大片",
+        "product": "产品视觉",
+        "anime": "动漫",
+        "sketch": "草图"
+      }
+    },
+    "gallery": {
+      "title": "画廊",
+      "subtitle": "支持筛选和瀑布流浏览。",
+      "searchPlaceholder": "搜标题、提示词、标签",
+      "open": "打开画廊",
+      "emptyTitle": "暂无作品",
+      "emptyDesc": "先去 AI 生图 创建一些作品。",
+      "featured": "精选",
+      "featuredOnly": "仅精选",
+      "normalOnly": "非精选",
+      "feature": "设为精选",
+      "unfeature": "取消精选"
+    },
+    "prompt": {
+      "title": "标题",
+      "visibility": "可见性",
+      "status": "状态",
+      "line": "线路",
+      "tags": "标签",
+      "tagsPlaceholder": "用逗号分隔",
+      "description": "简介",
+      "descriptionPlaceholder": "可选说明",
+      "content": "提示词",
+      "contentPlaceholder": "输入提示词内容",
+      "public": "公开",
+      "private": "私有",
+      "draft": "草稿",
+      "published": "已发布",
+      "archived": "已归档",
+      "hidden": "隐藏",
+      "clone": "克隆",
+      "makePublic": "转公开",
+      "makePrivate": "转私有",
+      "noLine": "不绑定线路",
+      "owner": "作者",
+      "saved": "提示词已更新",
+      "created": "提示词已创建",
+      "cloned": "提示词已克隆",
+      "deleted": "提示词已删除",
+      "delete": "删除提示词",
+      "deleteConfirm": "删除后不可恢复，确认继续？"
+    },
+    "promptLibrary": {
+      "title": "提示词库",
+      "subtitle": "支持公开/私有、克隆、编辑、删除。",
+      "create": "新建提示词",
+      "scope": "范围",
+      "mine": "仅我的",
+      "emptyTitle": "暂无提示词",
+      "emptyDesc": "创建一个新模板，或克隆公开模板作为你的私有版本。"
+    },
+    "promptGovernance": {
+      "title": "提示词治理",
+      "subtitle": "审核和管理提示词模板。",
+      "editTitle": "治理提示词",
+      "emptyTitle": "暂无提示词记录",
+      "emptyDesc": "用户创建或克隆后的提示词会出现在这里。"
+    },
+    "artwork": {
+      "title": "作品",
+      "pending": "处理中",
+      "succeeded": "已完成",
+      "failed": "失败",
+      "deleted": "已删除",
+      "delete": "删除作品",
+      "deleteConfirm": "删除后不可恢复，确认继续？"
+    },
+    "artworkGovernance": {
+      "title": "作品治理",
+      "subtitle": "审核和管理生成作品。",
+      "emptyTitle": "暂无作品记录",
+      "emptyDesc": "用户生成的作品会在这里等待治理。"
+    }
+  },
+  "skills": {
+    "center": {
+      "label": "技能中心"
+    },
+    "market": {
+      "title": "技能市场",
+      "subtitle": "浏览技能市场、安装技能、查看详情，并为后续运行准备变量输入。"
+    },
+    "installed": {
+      "title": "已安装技能",
+      "subtitle": "集中查看你已经安装的技能，便于继续进入详情、版本和运行操作。",
+      "emptyTitle": "还没有已安装技能",
+      "emptyDescription": "先去技能市场安装一些技能。",
+      "installedOnly": "已安装",
+      "notInstalledOnly": "未安装"
+    },
+    "my": {
+      "title": "我的技能",
+      "subtitle": "管理自己创建或上架的技能，并继续查看版本、运行记录和收益。"
+    },
+    "editor": {
+      "title": "技能编辑器",
+      "create": "创建技能",
+      "edit": "编辑技能",
+      "subtitle": "支持 prompt_chat、prompt_image 和 script，并可配置变量 schema。"
+    },
+    "detail": {
+      "title": "技能详情",
+      "subtitle": "查看技能说明、变量配置、版本概览与安装信息。"
+    },
+    "versions": {
+      "title": "版本管理",
+      "subtitle": "管理发布节奏、版本说明、当前版本和可见性。"
+    },
+    "runs": {
+      "title": "运行记录",
+      "subtitle": "按技能查看最近执行历史、运行状态、耗时和产出摘要。"
+    },
+    "revenue": {
+      "title": "收益页",
+      "subtitle": "查看技能销售、执行带来的收益，以及订单明细。"
+    }
   },
   "auth": {
     "welcomeBack": "欢迎回来",

@@ -30,3 +30,19 @@ describe('AppSidebar header styles', () => {
     expect(sidebarBrandBlockMatch?.[0]).not.toContain('overflow: hidden;')
   })
 })
+
+describe('AppSidebar skill navigation', () => {
+  it('includes a direct installed-skills entry for the user menu', () => {
+    expect(componentSource).toContain("path: '/skills/installed'")
+    expect(componentSource).toContain("t('nav.installedSkills', '已安装技能')")
+  })
+
+  it('includes an admin skill governance group with review, runtime and settlement entries', () => {
+    expect(componentSource).toContain("path: '/admin/skills'")
+    expect(componentSource).toContain("t('nav.skillGovernance', '技能治理')")
+    expect(componentSource).toContain("path: '/admin/skills/review'")
+    expect(componentSource).toContain("path: '/admin/skills/governance'")
+    expect(componentSource).toContain("path: '/admin/skills/runtime'")
+    expect(componentSource).toContain("path: '/admin/skills/settlements'")
+  })
+})

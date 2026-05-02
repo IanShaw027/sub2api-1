@@ -163,6 +163,171 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/ai',
+    redirect: '/ai/chat'
+  },
+  {
+    path: '/ai/chat',
+    name: 'AIChat',
+    component: () => import('@/views/user/AIChatView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'AI Chat',
+      titleKey: 'ai.chat.title',
+      descriptionKey: 'ai.chat.subtitle'
+    }
+  },
+  {
+    path: '/ai/image',
+    name: 'AIImage',
+    component: () => import('@/views/user/AIImageView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'AI Image',
+      titleKey: 'ai.image.title',
+      descriptionKey: 'ai.image.subtitle'
+    }
+  },
+  {
+    path: '/ai/gallery',
+    name: 'AIGallery',
+    component: () => import('@/views/user/AIGalleryView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'AI Gallery',
+      titleKey: 'ai.gallery.title',
+      descriptionKey: 'ai.gallery.subtitle'
+    }
+  },
+  {
+    path: '/ai/prompts',
+    name: 'AIPromptLibrary',
+    component: () => import('@/views/user/AIPromptLibraryView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'AI Prompts',
+      titleKey: 'ai.promptLibrary.title',
+      descriptionKey: 'ai.promptLibrary.subtitle'
+    }
+  },
+  {
+    path: '/skills',
+    redirect: '/skills/market'
+  },
+  {
+    path: '/skills/market',
+    name: 'SkillMarket',
+    component: () => import('@/views/user/SkillMarketView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Skill Market',
+      titleKey: 'skills.market.title',
+      descriptionKey: 'skills.market.subtitle'
+    }
+  },
+  {
+    path: '/skills/installed',
+    name: 'SkillInstalled',
+    component: () => import('@/views/user/SkillMarketView.vue'),
+    props: { installedOnly: true },
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Installed Skills',
+      titleKey: 'skills.installed.title',
+      descriptionKey: 'skills.installed.subtitle'
+    }
+  },
+  {
+    path: '/skills/mine',
+    name: 'SkillMine',
+    component: () => import('@/views/user/SkillMySkillsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'My Skills',
+      titleKey: 'skills.my.title',
+      descriptionKey: 'skills.my.subtitle'
+    }
+  },
+  {
+    path: '/skills/new',
+    name: 'SkillCreate',
+    component: () => import('@/views/user/SkillEditorView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Create Skill',
+      titleKey: 'skills.editor.create',
+      descriptionKey: 'skills.editor.subtitle'
+    }
+  },
+  {
+    path: '/skills/:id/edit',
+    name: 'SkillEdit',
+    component: () => import('@/views/user/SkillEditorView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Edit Skill',
+      titleKey: 'skills.editor.edit',
+      descriptionKey: 'skills.editor.subtitle'
+    }
+  },
+  {
+    path: '/skills/:id/versions',
+    name: 'SkillVersions',
+    component: () => import('@/views/user/SkillVersionsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Skill Versions',
+      titleKey: 'skills.versions.title',
+      descriptionKey: 'skills.versions.subtitle'
+    }
+  },
+  {
+    path: '/skills/:id/runs',
+    name: 'SkillRuns',
+    component: () => import('@/views/user/SkillRunsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Skill Runs',
+      titleKey: 'skills.runs.title',
+      descriptionKey: 'skills.runs.subtitle'
+    }
+  },
+  {
+    path: '/skills/:id/revenue',
+    name: 'SkillRevenue',
+    component: () => import('@/views/user/SkillRevenueView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Skill Revenue',
+      titleKey: 'skills.revenue.title',
+      descriptionKey: 'skills.revenue.subtitle'
+    }
+  },
+  {
+    path: '/skills/:id',
+    name: 'SkillDetail',
+    component: () => import('@/views/user/SkillDetailView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Skill Detail',
+      titleKey: 'skills.detail.title',
+      descriptionKey: 'skills.detail.subtitle'
+    }
+  },
+  {
     path: '/keys',
     name: 'Keys',
     component: () => import('@/views/user/KeysView.vue'),
@@ -373,6 +538,14 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/admin',
     redirect: '/admin/dashboard'
+  },
+  {
+    path: '/admin/ai',
+    redirect: '/admin/ai/prompts'
+  },
+  {
+    path: '/admin/skills',
+    redirect: '/admin/skills/governance'
   },
   {
     path: '/admin/dashboard',
@@ -595,6 +768,74 @@ const routes: RouteRecordRaw[] = [
       title: 'Usage Records',
       titleKey: 'admin.usage.title',
       descriptionKey: 'admin.usage.description'
+    }
+  },
+  {
+    path: '/admin/ai/prompts',
+    name: 'AdminAIPrompts',
+    component: () => import('@/views/admin/AIPromptGovernanceView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'AI Prompt Governance',
+      titleKey: 'ai.promptGovernance.title',
+      descriptionKey: 'ai.promptGovernance.subtitle'
+    }
+  },
+  {
+    path: '/admin/ai/artworks',
+    name: 'AdminAIArtworks',
+    component: () => import('@/views/admin/AIArtworkGovernanceView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'AI Artwork Governance',
+      titleKey: 'ai.artworkGovernance.title',
+      descriptionKey: 'ai.artworkGovernance.subtitle'
+    }
+  },
+  {
+    path: '/admin/skills/review',
+    name: 'AdminSkillReview',
+    component: () => import('@/views/admin/SkillReviewView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Skill Review',
+      descriptionKey: 'skills.admin.review.searchPlaceholder'
+    }
+  },
+  {
+    path: '/admin/skills/governance',
+    name: 'AdminSkillGovernance',
+    component: () => import('@/views/admin/SkillGovernanceView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Skill Governance',
+      descriptionKey: 'skills.admin.governance.searchPlaceholder'
+    }
+  },
+  {
+    path: '/admin/skills/runtime',
+    name: 'AdminSkillRuntime',
+    component: () => import('@/views/admin/SkillRuntimeMonitorView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Skill Runtime Monitor',
+      descriptionKey: 'skills.admin.runtime.searchPlaceholder'
+    }
+  },
+  {
+    path: '/admin/skills/settlements',
+    name: 'AdminSkillSettlements',
+    component: () => import('@/views/admin/SkillSettlementView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Skill Settlements',
+      descriptionKey: 'skills.admin.settlement.searchPlaceholder'
     }
   },
 

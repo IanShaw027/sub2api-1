@@ -498,6 +498,157 @@ export interface PaginatedResponse<T> {
   pages: number
 }
 
+// ==================== AI Studio Types ====================
+
+export type AiVisibility = 'public' | 'private'
+export type AiPromptStatus = 'draft' | 'published' | 'archived' | 'hidden'
+export type AiArtworkStatus = 'pending' | 'succeeded' | 'failed' | 'hidden' | 'deleted'
+export type AiChatRole = 'system' | 'user' | 'assistant'
+
+export interface AiLineOption {
+  group_id: number
+  label: string
+  platform: GroupPlatform
+  description?: string | null
+  keys: AiLineKeyOption[]
+  key_ids: number[]
+  key_count: number
+  default_key_id: number | null
+}
+
+export interface AiLineKeyOption {
+  id: number
+  name: string
+}
+
+export interface AiRuntimeResponse {
+  lines?: AiLineOption[]
+  items?: AiLineOption[]
+  data?: AiLineOption[]
+}
+
+export interface AiChatMessage {
+  id: string
+  role: AiChatRole
+  content: string
+  created_at: string
+  line_id?: number | null
+  line_name?: string | null
+  model?: string | null
+}
+
+export interface AiPromptTemplate {
+  id: number
+  title: string
+  content: string
+  description?: string | null
+  tags: string[]
+  visibility: AiVisibility
+  status: AiPromptStatus
+  line_id?: number | null
+  line_name?: string | null
+  owner_id?: number | null
+  owner_name?: string | null
+  is_mine?: boolean
+  cloned_from_id?: number | null
+  usage_count?: number
+  featured?: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface AiArtwork {
+  id: number
+  title: string
+  prompt: string
+  negative_prompt?: string | null
+  visibility: AiVisibility
+  status: AiArtworkStatus
+  image_url: string
+  thumbnail_url?: string | null
+  line_id?: number | null
+  line_name?: string | null
+  owner_id?: number | null
+  owner_name?: string | null
+  width?: number | null
+  height?: number | null
+  size?: string | null
+  style?: string | null
+  tags: string[]
+  featured?: boolean
+  prompt_template_id?: number | null
+  likes?: number
+  views?: number
+  created_at: string
+  updated_at: string
+}
+
+export interface AiPromptListFilters {
+  search?: string
+  visibility?: AiVisibility | 'all'
+  status?: AiPromptStatus | 'all'
+  line_id?: number | 'all' | null
+  mine_only?: boolean
+}
+
+export interface AiArtworkListFilters {
+  search?: string
+  visibility?: AiVisibility | 'all'
+  status?: AiArtworkStatus | 'all'
+  line_id?: number | 'all' | null
+  style?: string
+  owner_id?: number
+  featured?: boolean
+}
+
+export interface CreateAiPromptRequest {
+  title: string
+  content: string
+  description?: string
+  tags?: string[]
+  visibility?: AiVisibility
+  status?: AiPromptStatus
+  line_id?: number | null
+}
+
+export interface UpdateAiPromptRequest extends Partial<CreateAiPromptRequest> {}
+
+export interface CreateAiArtworkRequest {
+  title?: string
+  prompt: string
+  negative_prompt?: string
+  visibility?: AiVisibility
+  mode?: 'generate' | 'edit'
+  line_id?: number | null
+  key_id?: number | null
+  size?: string
+  style?: string
+  tags?: string[]
+  prompt_template_id?: number | null
+  source_image?: string | null
+  mask_image?: string | null
+}
+
+export interface UpdateAiArtworkRequest {
+  title?: string
+  visibility?: AiVisibility
+  status?: AiArtworkStatus
+  featured?: boolean
+  tags?: string[]
+}
+
+export interface CreateAiChatRequest {
+  prompt: string
+  line_id?: number | null
+  key_id?: number | null
+  prompt_template_id?: number | null
+  history?: AiChatMessage[]
+}
+
+export interface AiChatResponse {
+  message: AiChatMessage
+}
+
 // ==================== UI State Types ====================
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning'
@@ -556,6 +707,7 @@ export interface OpenAIMessagesDispatchModelConfig {
 export interface Group {
   id: number
   name: string
+  display_name?: string | null
   description: string | null
   platform: GroupPlatform
   rate_multiplier: number
