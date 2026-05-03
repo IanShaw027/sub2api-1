@@ -335,7 +335,7 @@
       <div v-else class="text-xs text-gray-400">-</div>
     </template>
 
-    <!-- Gemini platform: show quota + local usage window -->
+    <!-- Gemini platform: align with Antigravity-style family windows -->
     <template v-else-if="account.platform === 'gemini'">
       <!-- Auth Type + Tier Badge (first line) -->
       <div v-if="geminiAuthTypeLabel" class="mb-1 flex items-center gap-1">
@@ -392,8 +392,7 @@
         <div v-else-if="error" class="text-xs text-red-500">
           {{ error }}
         </div>
-        <!-- Gemini: show daily usage bars when available -->
-        <div v-else-if="geminiUsageAvailable" class="space-y-1">
+        <div v-else-if="geminiUsageBars.length" class="space-y-1">
           <UsageProgressBar
             v-for="bar in geminiUsageBars"
             :key="bar.key"
@@ -403,11 +402,7 @@
             :window-stats="bar.windowStats"
             :color="bar.color"
           />
-          <p class="mt-1 text-[9px] leading-tight text-gray-400 dark:text-gray-500 italic">
-            * {{ t('admin.accounts.gemini.quotaPolicy.simulatedNote') || 'Simulated quota' }}
-          </p>
         </div>
-        <!-- AI Studio Client OAuth: show unlimited flow (no usage tracking) -->
         <div v-else class="text-xs text-gray-400">
           {{ t('admin.accounts.gemini.rateLimit.unlimited') }}
         </div>
@@ -563,17 +558,6 @@ const shouldFetchUsage = computed(() => {
     return props.account.type === 'oauth'
   }
   return false
-})
-
-const geminiUsageAvailable = computed(() => {
-  return (
-    !!usageInfo.value?.gemini_shared_daily ||
-    !!usageInfo.value?.gemini_pro_daily ||
-    !!usageInfo.value?.gemini_flash_daily ||
-    !!usageInfo.value?.gemini_shared_minute ||
-    !!usageInfo.value?.gemini_pro_minute ||
-    !!usageInfo.value?.gemini_flash_minute
-  )
 })
 
 const hasOpenAIUsageFallback = computed(() => {
@@ -897,70 +881,53 @@ const geminiQuotaPolicyDocsUrl = computed(() => {
   return 'https://ai.google.dev/pricing'
 })
 
-const geminiUsesSharedDaily = computed(() => {
-  if (props.account.platform !== 'gemini') return false
-  // Per requirement: Google One & GCP are shared RPD pools (no per-model breakdown).
-  return (
-    !!usageInfo.value?.gemini_shared_daily ||
-    !!usageInfo.value?.gemini_shared_minute ||
-    geminiOAuthType.value === 'google_one' ||
-    isGeminiCodeAssist.value
-  )
-})
+type GeminiWindowBar = {
+  key: string
+  label: string
+  utilization: number
+  resetsAt: string | null
+  windowStats?: WindowStats | null
+  color: 'indigo' | 'emerald'
+}
+
+const pickGeminiWindowBar = (
+  family: 'pro' | 'flash',
+  label: string,
+  color: 'indigo' | 'emerald'
+): GeminiWindowBar | null => {
+  const daily = family === 'pro'
+    ? usageInfo.value?.gemini_pro_daily
+    : usageInfo.value?.gemini_flash_daily
+  const minute = family === 'pro'
+    ? usageInfo.value?.gemini_pro_minute
+    : usageInfo.value?.gemini_flash_minute
+  const window = daily || minute
+  const sharedWindow = daily
+    ? usageInfo.value?.gemini_shared_daily
+    : minute
+      ? usageInfo.value?.gemini_shared_minute
+      : null
+
+  if (!window) return null
+
+  return {
+    key: `${family}_${daily ? 'daily' : 'minute'}`,
+    label,
+    utilization: Math.max(window.utilization, sharedWindow?.utilization ?? 0),
+    resetsAt: sharedWindow?.resets_at ?? window.resets_at,
+    windowStats: window.window_stats,
+    color
+  }
+}
 
 const geminiUsageBars = computed(() => {
   if (props.account.platform !== 'gemini') return []
-  if (!usageInfo.value) return []
+  const bars = [
+    pickGeminiWindowBar('pro', t('admin.accounts.usageWindow.geminiProDaily'), 'indigo'),
+    pickGeminiWindowBar('flash', t('admin.accounts.usageWindow.geminiFlashDaily'), 'emerald')
+  ]
 
-  const bars: Array<{
-    key: string
-    label: string
-    utilization: number
-    resetsAt: string | null
-    windowStats?: WindowStats | null
-    color: 'indigo' | 'emerald'
-  }> = []
-
-  if (geminiUsesSharedDaily.value) {
-    const sharedDaily = usageInfo.value.gemini_shared_daily
-    if (sharedDaily) {
-      bars.push({
-        key: 'shared_daily',
-        label: '1d',
-        utilization: sharedDaily.utilization,
-        resetsAt: sharedDaily.resets_at,
-        windowStats: sharedDaily.window_stats,
-        color: 'indigo'
-      })
-    }
-    return bars
-  }
-
-  const pro = usageInfo.value.gemini_pro_daily
-  if (pro) {
-    bars.push({
-      key: 'pro_daily',
-      label: 'pro',
-      utilization: pro.utilization,
-      resetsAt: pro.resets_at,
-      windowStats: pro.window_stats,
-      color: 'indigo'
-      })
-  }
-
-  const flash = usageInfo.value.gemini_flash_daily
-  if (flash) {
-    bars.push({
-      key: 'flash_daily',
-      label: 'flash',
-      utilization: flash.utilization,
-      resetsAt: flash.resets_at,
-      windowStats: flash.window_stats,
-      color: 'emerald'
-    })
-  }
-
-  return bars
+  return bars.filter((bar): bar is GeminiWindowBar => bar !== null)
 })
 
 // 账户类型显示标签

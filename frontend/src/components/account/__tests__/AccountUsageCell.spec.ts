@@ -605,4 +605,120 @@ describe('AccountUsageCell', () => {
 
 		expect(wrapper.text().trim()).toBe('-')
   })
+
+  it('Gemini 共享池账号按 Pro / Flash 两类展示时间窗口', async () => {
+    getUsage.mockResolvedValue({
+      gemini_pro_daily: {
+        utilization: 25,
+        resets_at: '2026-03-08T08:00:00Z',
+        remaining_seconds: 3600,
+        window_stats: {
+          requests: 5,
+          tokens: 5000,
+          cost: 0.05
+        }
+      },
+      gemini_flash_daily: {
+        utilization: 40,
+        resets_at: '2026-03-08T08:00:00Z',
+        remaining_seconds: 3600,
+        window_stats: {
+          requests: 12,
+          tokens: 12000,
+          cost: 0.03
+        }
+      },
+      gemini_shared_daily: {
+        utilization: 65,
+        resets_at: '2026-03-08T08:00:00Z',
+        remaining_seconds: 3600
+      }
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 4001,
+          platform: 'gemini',
+          type: 'oauth',
+          credentials: {
+            oauth_type: 'google_one',
+            tier_id: 'google_ai_pro'
+          },
+          extra: {}
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'resetsAt', 'windowStats', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.tokens }}</div>'
+          },
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(getUsage).toHaveBeenCalledWith(4001, undefined)
+    expect(wrapper.text()).toContain('admin.accounts.usageWindow.geminiProDaily|65|5000')
+    expect(wrapper.text()).toContain('admin.accounts.usageWindow.geminiFlashDaily|65|12000')
+  })
+
+  it('Gemini 在无日窗口时回退显示分钟窗口', async () => {
+    getUsage.mockResolvedValue({
+      gemini_pro_minute: {
+        utilization: 60,
+        resets_at: '2026-03-08T00:01:00Z',
+        remaining_seconds: 30,
+        window_stats: {
+          requests: 3,
+          tokens: 300,
+          cost: 0.01
+        }
+      },
+      gemini_flash_minute: {
+        utilization: 10,
+        resets_at: '2026-03-08T00:01:00Z',
+        remaining_seconds: 30,
+        window_stats: {
+          requests: 4,
+          tokens: 400,
+          cost: 0.01
+        }
+      }
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 4002,
+          platform: 'gemini',
+          type: 'oauth',
+          credentials: {
+            oauth_type: 'ai_studio',
+            tier_id: 'aistudio_paid'
+          },
+          extra: {}
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'resetsAt', 'windowStats', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.tokens }}</div>'
+          },
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(getUsage).toHaveBeenCalledWith(4002, undefined)
+    expect(wrapper.text()).toContain('admin.accounts.usageWindow.geminiProDaily|60|300')
+    expect(wrapper.text()).toContain('admin.accounts.usageWindow.geminiFlashDaily|10|400')
+    expect(wrapper.text()).not.toContain('admin.accounts.gemini.rateLimit.unlimited')
+  })
 })
