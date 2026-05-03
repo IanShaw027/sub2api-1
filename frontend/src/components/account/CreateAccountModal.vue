@@ -2825,7 +2825,7 @@
         :show-access-token-option="false"
         :platform="form.platform"
         :show-project-id="geminiOAuthType === 'code_assist'"
-        :show-project-id-recovery="geminiOAuthType === 'google_one'"
+        :show-project-id-recovery="form.platform === 'gemini'"
         @generate-url="handleGenerateUrl"
         @cookie-auth="handleCookieAuth"
         @validate-refresh-token="handleValidateRefreshToken"
@@ -3210,6 +3210,7 @@ interface OAuthFlowExposed {
   authCode: string
   oauthState: string
   projectId: string
+  requiresProjectIdRecovery: boolean
   sessionKey: string
   refreshToken: string
   sessionToken: string
@@ -3604,7 +3605,10 @@ const canExchangeCode = computed(() => {
     return authCode.trim() && openaiOAuth.sessionId.value && !openaiOAuth.loading.value
   }
   if (form.platform === 'gemini') {
-    return authCode.trim() && geminiOAuth.sessionId.value && !geminiOAuth.loading.value
+    return authCode.trim() &&
+      geminiOAuth.sessionId.value &&
+      !geminiOAuth.loading.value &&
+      !oauthFlowRef.value?.requiresProjectIdRecovery
   }
   if (form.platform === 'antigravity') {
     return authCode.trim() && antigravityOAuth.sessionId.value && !antigravityOAuth.loading.value

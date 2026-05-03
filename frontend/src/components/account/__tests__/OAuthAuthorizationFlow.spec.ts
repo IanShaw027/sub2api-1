@@ -65,4 +65,32 @@ describe('OAuthAuthorizationFlow', () => {
 
     expect(wrapper.emitted('generate-url')).toEqual([[]])
   })
+
+  it('does not reveal project id recovery for unrelated Gemini errors', () => {
+    const wrapper = mountComponent({
+      showProjectId: false,
+      showProjectIdRecovery: true,
+      error: 'admin.accounts.oauth.gemini.failedToExchangeCode'
+    })
+
+    expect(wrapper.text()).not.toContain('admin.accounts.oauth.gemini.projectIdRecoveryTitle')
+  })
+
+  it('clears parsed oauth state when regenerating a Gemini auth URL', async () => {
+    const wrapper = mountComponent({
+      authUrl: 'https://example.com/oauth'
+    })
+
+    await wrapper.get('textarea').setValue('http://localhost/callback?code=abc&state=stale-state')
+    expect((wrapper.vm as any).$?.exposed?.oauthState?.value).toBe('stale-state')
+
+    const regenerateButton = wrapper.findAll('button').find((candidate) =>
+      candidate.text().includes('admin.accounts.oauth.regenerate')
+    )
+    expect(regenerateButton).toBeTruthy()
+    await regenerateButton!.trigger('click')
+
+    expect((wrapper.vm as any).$?.exposed?.oauthState?.value).toBe('')
+    expect(wrapper.emitted('generate-url')).toEqual([[]])
+  })
 })

@@ -19,7 +19,7 @@
         </div>
 
         <div
-          v-if="platform === 'gemini'"
+          v-if="platform === 'gemini' && (showProjectId || showGeminiProjectRecoveryStep)"
           class="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/30"
         >
           <p class="text-sm font-medium text-amber-900 dark:text-amber-200">
@@ -740,8 +740,11 @@ const oauthImportantNotice = computed(() => {
   if (props.platform === 'antigravity') return t('admin.accounts.oauth.antigravity.importantNotice')
   return ''
 })
+const isGeminiProjectIdError = computed(
+  () => props.platform === 'gemini' && props.error === t('admin.accounts.oauth.gemini.missingProjectId')
+)
 const showGeminiProjectRecoveryStep = computed(
-  () => props.platform === 'gemini' && props.showProjectIdRecovery && !!props.error
+  () => props.platform === 'gemini' && props.showProjectIdRecovery && isGeminiProjectIdError.value
 )
 
 // Local state
@@ -780,6 +783,15 @@ const parsedRefreshTokenCount = computed(() => {
 watch(inputMethod, (newVal) => {
   emit('update:inputMethod', newVal)
 })
+
+watch(
+  () => props.sessionId,
+  (newSessionId, oldSessionId) => {
+    if (newSessionId && newSessionId !== oldSessionId) {
+      oauthState.value = ''
+    }
+  }
+)
 
 // Auto-extract code from callback URL (OpenAI/Gemini/Antigravity)
 // e.g., http://localhost:8085/callback?code=xxx...&state=...
@@ -828,6 +840,7 @@ const handleCopyUrl = () => {
 
 const handleRegenerate = () => {
   authCodeInput.value = ''
+  oauthState.value = ''
   emit('generate-url')
 }
 
@@ -852,6 +865,7 @@ defineExpose({
   authCode: authCodeInput,
   oauthState,
   projectId,
+  requiresProjectIdRecovery: showGeminiProjectRecoveryStep,
   sessionKey: sessionKeyInput,
   refreshToken: refreshTokenInput,
   sessionToken: sessionTokenInput,

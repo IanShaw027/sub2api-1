@@ -138,7 +138,7 @@
         :method-label="t('admin.accounts.inputMethod')"
         :platform="isOpenAI ? 'openai' : isGemini ? 'gemini' : isAntigravity ? 'antigravity' : 'anthropic'"
         :show-project-id="isGemini && geminiOAuthType === 'code_assist'"
-        :show-project-id-recovery="isGemini && geminiOAuthType === 'google_one'"
+        :show-project-id-recovery="isGemini"
         @generate-url="handleGenerateUrl"
         @cookie-auth="handleCookieAuth"
       />
@@ -212,6 +212,7 @@ interface OAuthFlowExposed {
   authCode: string
   oauthState: string
   projectId: string
+  requiresProjectIdRecovery: boolean
   sessionKey: string
   inputMethod: AuthInputMethod
   reset: () => void
@@ -287,7 +288,7 @@ const canExchangeCode = computed(() => {
   const authCode = oauthFlowRef.value?.authCode || ''
   const sessionId = currentSessionId.value
   const loading = currentLoading.value
-  return authCode.trim() && sessionId && !loading
+  return authCode.trim() && sessionId && !loading && !oauthFlowRef.value?.requiresProjectIdRecovery
 })
 
 const isLegacyGeminiCustomOAuth = computed(() => isGemini.value && geminiOAuthType.value === 'ai_studio')
