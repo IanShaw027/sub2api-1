@@ -5,18 +5,21 @@ import { adminAPI } from '@/api/admin'
 import { formatOAuthAccountName } from '@/utils/oauthAccountName'
 import type {
   GeminiAuthUrlRequest,
-  GeminiExchangeCodeRequest,
-  GeminiOAuthCapabilities
+  GeminiExchangeCodeRequest
 } from '@/api/admin/gemini'
 
 export interface GeminiTokenInfo {
   access_token?: string
   refresh_token?: string
+  id_token?: string
   token_type?: string
   scope?: string
   expires_at?: number | string
   project_id?: string
   email?: string
+  auth_id?: string
+  name?: string
+  plan_name?: string
   oauth_type?: string
   tier_id?: string
   extra?: Record<string, unknown>
@@ -58,7 +61,7 @@ export function useGeminiOAuth() {
       if (proxyId) payload.proxy_id = proxyId
       const trimmedProjectID = projectId?.trim()
       if (trimmedProjectID) payload.project_id = trimmedProjectID
-      if (oauthType === 'code_assist' || oauthType === 'google_one' || oauthType === 'ai_studio') {
+      if (oauthType === 'code_assist' || oauthType === 'google_one') {
         payload.oauth_type = oauthType
       }
       const trimmedTierID = tierId?.trim()
@@ -104,8 +107,7 @@ export function useGeminiOAuth() {
       if (params.proxyId) payload.proxy_id = params.proxyId
       if (
         params.oauthType === 'code_assist' ||
-        params.oauthType === 'google_one' ||
-        params.oauthType === 'ai_studio'
+        params.oauthType === 'google_one'
       ) {
         payload.oauth_type = params.oauthType
       }
@@ -117,7 +119,11 @@ export function useGeminiOAuth() {
     } catch (err: any) {
       // Check for specific missing project_id error
       const errorMessage = err.message || err.response?.data?.message || ''
-      if (errorMessage.includes('missing project_id')) {
+      if (
+        errorMessage.includes('missing project_id') ||
+        errorMessage.includes('require a project_id') ||
+        errorMessage.includes('no project_id available')
+      ) {
         error.value = t('admin.accounts.oauth.gemini.missingProjectId')
       } else {
         error.value = errorMessage || t('admin.accounts.oauth.gemini.failedToExchangeCode')
@@ -140,11 +146,16 @@ export function useGeminiOAuth() {
     return stripEmptyCredentialValues({
       access_token: tokenInfo.access_token,
       refresh_token: tokenInfo.refresh_token,
+      id_token: tokenInfo.id_token,
       token_type: tokenInfo.token_type,
       expires_at: expiresAt,
       scope: tokenInfo.scope,
       project_id: tokenInfo.project_id,
       email: tokenInfo.email,
+      auth_id: tokenInfo.auth_id,
+      subject: tokenInfo.auth_id,
+      name: tokenInfo.name,
+      plan_name: tokenInfo.plan_name,
       oauth_type: tokenInfo.oauth_type,
       tier_id: tokenInfo.tier_id
     })
@@ -167,8 +178,18 @@ export function useGeminiOAuth() {
     if (tokenInfo.tier_id) {
       extra.subscription_type = tokenInfo.tier_id
     }
+    if (tokenInfo.plan_name) {
+      extra.plan_name = tokenInfo.plan_name
+      extra.subscription_type = tokenInfo.plan_name
+    }
     if (tokenInfo.email) {
       extra.email = tokenInfo.email
+    }
+    if (tokenInfo.name) {
+      extra.name = tokenInfo.name
+    }
+    if (tokenInfo.auth_id) {
+      extra.auth_id = tokenInfo.auth_id
     }
     if (tokenInfo.oauth_type) {
       extra.oauth_type = tokenInfo.oauth_type
@@ -177,26 +198,17 @@ export function useGeminiOAuth() {
   }
 
   const buildAccountName = (tokenInfo: GeminiTokenInfo, fallbackName?: string): string => {
-    const primary = tokenInfo.email || tokenInfo.project_id
+    const primary = tokenInfo.email || tokenInfo.name || tokenInfo.project_id
     return formatOAuthAccountName({
       manualName: fallbackName,
       primary,
-      details: tokenInfo.email
-        ? [tokenInfo.project_id, tokenInfo.tier_id, tokenInfo.oauth_type]
-        : [tokenInfo.tier_id, tokenInfo.oauth_type],
+      details: tokenInfo.email || tokenInfo.name
+        ? [tokenInfo.project_id, tokenInfo.plan_name, tokenInfo.tier_id, tokenInfo.oauth_type]
+        : [tokenInfo.plan_name, tokenInfo.tier_id, tokenInfo.oauth_type],
       platformLabel: 'Gemini',
-      fallbackDetail: tokenInfo.tier_id || tokenInfo.oauth_type,
+      fallbackDetail: tokenInfo.plan_name || tokenInfo.tier_id || tokenInfo.oauth_type,
       defaultName: 'Gemini OAuth Account'
     })
-  }
-
-  const getCapabilities = async (): Promise<GeminiOAuthCapabilities | null> => {
-    try {
-      return await adminAPI.gemini.getCapabilities()
-    } catch (err: any) {
-      // Capabilities are optional for older servers; don't block the UI.
-      return null
-    }
   }
 
   return {
@@ -210,7 +222,6 @@ export function useGeminiOAuth() {
     exchangeAuthCode,
     buildCredentials,
     buildExtraInfo,
-    buildAccountName,
-    getCapabilities
+    buildAccountName
   }
 }

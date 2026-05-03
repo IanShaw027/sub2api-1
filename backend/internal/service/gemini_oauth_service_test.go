@@ -553,12 +553,16 @@ func TestGeminiOAuthService_BuildAccountCredentials(t *testing.T) {
 		tokenInfo := &GeminiTokenInfo{
 			AccessToken:  "access-123",
 			RefreshToken: "refresh-456",
+			IDToken:      "id-token-789",
 			ExpiresIn:    3600,
 			ExpiresAt:    1700000000,
 			TokenType:    "Bearer",
 			Scope:        "openid email",
 			ProjectID:    "my-project",
 			Email:        "user@example.com",
+			AuthID:       "subject-123",
+			Name:         "Example User",
+			PlanName:     "Gemini Code Assist in Google One AI Pro",
 			TierID:       "gcp_standard",
 			OAuthType:    "code_assist",
 			Extra: map[string]any{
@@ -570,10 +574,15 @@ func TestGeminiOAuthService_BuildAccountCredentials(t *testing.T) {
 
 		assertCredStr(t, creds, "access_token", "access-123")
 		assertCredStr(t, creds, "refresh_token", "refresh-456")
+		assertCredStr(t, creds, "id_token", "id-token-789")
 		assertCredStr(t, creds, "token_type", "Bearer")
 		assertCredStr(t, creds, "scope", "openid email")
 		assertCredStr(t, creds, "project_id", "my-project")
 		assertCredStr(t, creds, "email", "user@example.com")
+		assertCredStr(t, creds, "auth_id", "subject-123")
+		assertCredStr(t, creds, "subject", "subject-123")
+		assertCredStr(t, creds, "name", "Example User")
+		assertCredStr(t, creds, "plan_name", "Gemini Code Assist in Google One AI Pro")
 		assertCredStr(t, creds, "tier_id", "gcp_standard")
 		assertCredStr(t, creds, "oauth_type", "code_assist")
 		assertCredStr(t, creds, "expires_at", "1700000000")
@@ -596,7 +605,7 @@ func TestGeminiOAuthService_BuildAccountCredentials(t *testing.T) {
 		assertCredStr(t, creds, "expires_at", "1700000000")
 
 		// 可选字段不应存在
-		for _, key := range []string{"refresh_token", "token_type", "scope", "project_id", "email", "tier_id", "oauth_type"} {
+		for _, key := range []string{"refresh_token", "id_token", "token_type", "scope", "project_id", "email", "auth_id", "subject", "name", "plan_name", "tier_id", "oauth_type"} {
 			if _, ok := creds[key]; ok {
 				t.Fatalf("不应包含空字段 %q", key)
 			}

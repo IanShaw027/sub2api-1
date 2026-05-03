@@ -11,15 +11,10 @@ export interface GeminiAuthUrlResponse {
   state: string
 }
 
-export interface GeminiOAuthCapabilities {
-  ai_studio_oauth_enabled: boolean
-  required_redirect_uris: string[]
-}
-
 export interface GeminiAuthUrlRequest {
   proxy_id?: number
   project_id?: string
-  oauth_type?: 'code_assist' | 'google_one' | 'ai_studio'
+  oauth_type?: 'code_assist' | 'google_one'
   tier_id?: string
 }
 
@@ -28,19 +23,23 @@ export interface GeminiExchangeCodeRequest {
   state: string
   code: string
   proxy_id?: number
-  oauth_type?: 'code_assist' | 'google_one' | 'ai_studio'
+  oauth_type?: 'code_assist' | 'google_one'
   tier_id?: string
 }
 
 export type GeminiTokenInfo = {
   access_token?: string
   refresh_token?: string
+  id_token?: string
   token_type?: string
   scope?: string
   expires_in?: number
   expires_at?: number
   project_id?: string
   email?: string
+  auth_id?: string
+  name?: string
+  plan_name?: string
   oauth_type?: string
   tier_id?: string
   extra?: Record<string, unknown>
@@ -65,9 +64,4 @@ export async function exchangeCode(payload: GeminiExchangeCodeRequest): Promise<
   return data
 }
 
-export async function getCapabilities(): Promise<GeminiOAuthCapabilities> {
-  const { data } = await apiClient.get<GeminiOAuthCapabilities>('/admin/gemini/oauth/capabilities')
-  return data
-}
-
-export default { generateAuthUrl, exchangeCode, getCapabilities }
+export default { generateAuthUrl, exchangeCode }

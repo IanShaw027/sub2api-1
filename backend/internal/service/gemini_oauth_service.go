@@ -207,15 +207,25 @@ type GeminiExchangeCodeInput struct {
 type GeminiTokenInfo struct {
 	AccessToken  string         `json:"access_token"`
 	RefreshToken string         `json:"refresh_token"`
+	IDToken      string         `json:"id_token,omitempty"`
 	ExpiresIn    int64          `json:"expires_in"`
 	ExpiresAt    int64          `json:"expires_at"`
 	TokenType    string         `json:"token_type"`
 	Scope        string         `json:"scope,omitempty"`
 	ProjectID    string         `json:"project_id,omitempty"`
 	Email        string         `json:"email,omitempty"`
+	AuthID       string         `json:"auth_id,omitempty"`
+	Name         string         `json:"name,omitempty"`
+	PlanName     string         `json:"plan_name,omitempty"`
 	OAuthType    string         `json:"oauth_type,omitempty"` // "code_assist" 或 "ai_studio"
 	TierID       string         `json:"tier_id,omitempty"`    // Canonical tier id (e.g. google_one_free, gcp_standard, aistudio_free)
 	Extra        map[string]any `json:"extra,omitempty"`      // Drive metadata
+}
+
+type geminiOAuthProfile struct {
+	Email   string
+	Subject string
+	Name    string
 }
 
 // validateTierID validates tier_id format and length
@@ -513,7 +523,8 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 	sessionProjectID := strings.TrimSpace(session.ProjectID)
 	s.sessionStore.Delete(input.SessionID)
 
-	email := s.extractEmailFromTokenResponse(ctx, tokenResp, proxyURL)
+	profile := s.extractProfileFromTokenResponse(ctx, tokenResp, proxyURL)
+	email := profile.Email
 
 	// 计算过期时间：减去 5 分钟安全时间窗口（考虑网络延迟和时钟偏差）
 	// 同时设置下界保护，防止 expires_in 过小导致过去时间（引发刷新风暴）
@@ -632,12 +643,16 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 			tokenInfo := &GeminiTokenInfo{
 				AccessToken:  tokenResp.AccessToken,
 				RefreshToken: tokenResp.RefreshToken,
+				IDToken:      tokenResp.IDToken,
 				TokenType:    tokenResp.TokenType,
 				ExpiresIn:    tokenResp.ExpiresIn,
 				ExpiresAt:    expiresAt,
 				Scope:        tokenResp.Scope,
 				ProjectID:    projectID,
 				Email:        email,
+				AuthID:       profile.Subject,
+				Name:         profile.Name,
+				PlanName:     geminiPlanNameForTier(tierID),
 				TierID:       tierID,
 				OAuthType:    oauthType,
 				Extra: map[string]any{
@@ -667,12 +682,16 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 	result := &GeminiTokenInfo{
 		AccessToken:  tokenResp.AccessToken,
 		RefreshToken: tokenResp.RefreshToken,
+		IDToken:      tokenResp.IDToken,
 		TokenType:    tokenResp.TokenType,
 		ExpiresIn:    tokenResp.ExpiresIn,
 		ExpiresAt:    expiresAt,
 		Scope:        tokenResp.Scope,
 		ProjectID:    projectID,
 		Email:        email,
+		AuthID:       profile.Subject,
+		Name:         profile.Name,
+		PlanName:     geminiPlanNameForTier(tierID),
 		TierID:       tierID,
 		OAuthType:    oauthType,
 	}
@@ -695,6 +714,7 @@ func (s *GeminiOAuthService) RefreshToken(ctx context.Context, oauthType, refres
 
 		tokenResp, err := s.oauthClient.RefreshToken(ctx, oauthType, refreshToken, proxyURL)
 		if err == nil {
+			profile := s.extractProfileFromTokenResponse(ctx, tokenResp, proxyURL)
 			// 计算过期时间：减去 5 分钟安全时间窗口（考虑网络延迟和时钟偏差）
 			// 同时设置下界保护，防止 expires_in 过小导致过去时间（引发刷新风暴）
 			const safetyWindow = 300 // 5 minutes
@@ -707,11 +727,14 @@ func (s *GeminiOAuthService) RefreshToken(ctx context.Context, oauthType, refres
 			return &GeminiTokenInfo{
 				AccessToken:  tokenResp.AccessToken,
 				RefreshToken: tokenResp.RefreshToken,
+				IDToken:      tokenResp.IDToken,
 				TokenType:    tokenResp.TokenType,
 				ExpiresIn:    tokenResp.ExpiresIn,
 				ExpiresAt:    expiresAt,
 				Scope:        tokenResp.Scope,
-				Email:        s.extractEmailFromTokenResponse(ctx, tokenResp, proxyURL),
+				Email:        profile.Email,
+				AuthID:       profile.Subject,
+				Name:         profile.Name,
 			}, nil
 		}
 
@@ -795,9 +818,16 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 	}
 
 	tokenInfo.OAuthType = oauthType
+	tokenInfo.PlanName = geminiPlanNameForTier(tokenInfo.TierID)
 
 	if existingEmail := strings.TrimSpace(account.GetCredential("email")); existingEmail != "" && tokenInfo.Email == "" {
 		tokenInfo.Email = existingEmail
+	}
+	if existingAuthID := strings.TrimSpace(account.GetCredential("auth_id")); existingAuthID != "" && tokenInfo.AuthID == "" {
+		tokenInfo.AuthID = existingAuthID
+	}
+	if existingName := strings.TrimSpace(account.GetCredential("name")); existingName != "" && tokenInfo.Name == "" {
+		tokenInfo.Name = existingName
 	}
 
 	// Preserve account's project_id when present.
@@ -886,6 +916,7 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 			}
 		}
 	}
+	tokenInfo.PlanName = geminiPlanNameForTier(tokenInfo.TierID)
 
 	return tokenInfo, nil
 }
@@ -898,6 +929,9 @@ func (s *GeminiOAuthService) BuildAccountCredentials(tokenInfo *GeminiTokenInfo)
 	if tokenInfo.RefreshToken != "" {
 		creds["refresh_token"] = tokenInfo.RefreshToken
 	}
+	if tokenInfo.IDToken != "" {
+		creds["id_token"] = tokenInfo.IDToken
+	}
 	if tokenInfo.TokenType != "" {
 		creds["token_type"] = tokenInfo.TokenType
 	}
@@ -909,6 +943,16 @@ func (s *GeminiOAuthService) BuildAccountCredentials(tokenInfo *GeminiTokenInfo)
 	}
 	if tokenInfo.Email != "" {
 		creds["email"] = tokenInfo.Email
+	}
+	if tokenInfo.AuthID != "" {
+		creds["auth_id"] = tokenInfo.AuthID
+		creds["subject"] = tokenInfo.AuthID
+	}
+	if tokenInfo.Name != "" {
+		creds["name"] = tokenInfo.Name
+	}
+	if tokenInfo.PlanName != "" {
+		creds["plan_name"] = tokenInfo.PlanName
 	}
 	if tokenInfo.TierID != "" {
 		// Validate tier_id before storing
@@ -936,65 +980,80 @@ func (s *GeminiOAuthService) Stop() {
 	s.sessionStore.Stop()
 }
 
-func (s *GeminiOAuthService) extractEmailFromTokenResponse(ctx context.Context, tokenResp *geminicli.TokenResponse, proxyURL string) string {
+func (s *GeminiOAuthService) extractProfileFromTokenResponse(ctx context.Context, tokenResp *geminicli.TokenResponse, proxyURL string) geminiOAuthProfile {
 	if tokenResp == nil {
-		return ""
+		return geminiOAuthProfile{}
 	}
-	if email := extractEmailFromGeminiIDToken(tokenResp.IDToken); email != "" {
-		return email
+	profile := extractGeminiProfileFromIDToken(tokenResp.IDToken)
+	if !geminiTokenScopeHasUserInfo(tokenResp.Scope) {
+		return profile
 	}
-	if !geminiTokenScopeHasUserInfoEmail(tokenResp.Scope) {
-		return ""
-	}
-	email, err := fetchGeminiUserInfoEmail(ctx, tokenResp.AccessToken, proxyURL)
+	userInfo, err := fetchGeminiUserInfo(ctx, tokenResp.AccessToken, proxyURL)
 	if err != nil {
-		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] WARNING: Failed to fetch userinfo email: %v", err)
-		return ""
+		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] WARNING: Failed to fetch userinfo profile: %v", err)
+		return profile
 	}
-	return email
+	if profile.Email == "" {
+		profile.Email = userInfo.Email
+	}
+	if profile.Subject == "" {
+		profile.Subject = userInfo.Subject
+	}
+	if profile.Name == "" {
+		profile.Name = userInfo.Name
+	}
+	return profile
 }
 
-func geminiTokenScopeHasUserInfoEmail(scope string) bool {
+func geminiTokenScopeHasUserInfo(scope string) bool {
 	for _, part := range strings.Fields(scope) {
-		if part == "email" || part == "https://www.googleapis.com/auth/userinfo.email" {
+		if part == "email" ||
+			part == "profile" ||
+			part == "https://www.googleapis.com/auth/userinfo.email" ||
+			part == "https://www.googleapis.com/auth/userinfo.profile" {
 			return true
 		}
 	}
 	return false
 }
 
-func extractEmailFromGeminiIDToken(idToken string) string {
+func extractGeminiProfileFromIDToken(idToken string) geminiOAuthProfile {
 	idToken = strings.TrimSpace(idToken)
 	if idToken == "" {
-		return ""
+		return geminiOAuthProfile{}
 	}
 	parts := strings.Split(idToken, ".")
 	if len(parts) < 2 {
-		return ""
+		return geminiOAuthProfile{}
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return ""
+		return geminiOAuthProfile{}
 	}
 	var claims struct {
-		Email         string `json:"email"`
-		EmailVerified any    `json:"email_verified"`
+		Email   string `json:"email"`
+		Subject string `json:"sub"`
+		Name    string `json:"name"`
 	}
 	if err := json.Unmarshal(payload, &claims); err != nil {
-		return ""
+		return geminiOAuthProfile{}
 	}
-	return strings.TrimSpace(claims.Email)
+	return geminiOAuthProfile{
+		Email:   strings.TrimSpace(claims.Email),
+		Subject: strings.TrimSpace(claims.Subject),
+		Name:    strings.TrimSpace(claims.Name),
+	}
 }
 
-func fetchGeminiUserInfoEmail(ctx context.Context, accessToken, proxyURL string) (string, error) {
+func fetchGeminiUserInfo(ctx context.Context, accessToken, proxyURL string) (geminiOAuthProfile, error) {
 	accessToken = strings.TrimSpace(accessToken)
 	if accessToken == "" {
-		return "", errors.New("access token is empty")
+		return geminiOAuthProfile{}, errors.New("access token is empty")
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, googleOAuthUserInfoURL, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to create userinfo request: %w", err)
+		return geminiOAuthProfile{}, fmt.Errorf("failed to create userinfo request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("User-Agent", geminicli.GeminiCLIUserAgent)
@@ -1005,34 +1064,61 @@ func fetchGeminiUserInfoEmail(ctx context.Context, accessToken, proxyURL string)
 		ValidateResolvedIP: true,
 	})
 	if err != nil {
-		return "", fmt.Errorf("create http client failed: %w", err)
+		return geminiOAuthProfile{}, fmt.Errorf("create http client failed: %w", err)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("userinfo request failed: %w", err)
+		return geminiOAuthProfile{}, fmt.Errorf("userinfo request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("failed to read userinfo response: %w", err)
+		return geminiOAuthProfile{}, fmt.Errorf("failed to read userinfo response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("userinfo HTTP %d: %s", resp.StatusCode, string(bodyBytes))
+		return geminiOAuthProfile{}, fmt.Errorf("userinfo HTTP %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	var info struct {
 		Email string `json:"email"`
+		Sub   string `json:"sub"`
+		Name  string `json:"name"`
 	}
 	if err := json.Unmarshal(bodyBytes, &info); err != nil {
-		return "", fmt.Errorf("failed to parse userinfo response: %w", err)
+		return geminiOAuthProfile{}, fmt.Errorf("failed to parse userinfo response: %w", err)
 	}
-	email := strings.TrimSpace(info.Email)
-	if email == "" {
-		return "", errors.New("userinfo response missing email")
+	profile := geminiOAuthProfile{
+		Email:   strings.TrimSpace(info.Email),
+		Subject: strings.TrimSpace(info.Sub),
+		Name:    strings.TrimSpace(info.Name),
 	}
-	return email, nil
+	if profile.Email == "" && profile.Subject == "" && profile.Name == "" {
+		return geminiOAuthProfile{}, errors.New("userinfo response missing profile fields")
+	}
+	return profile, nil
+}
+
+func geminiPlanNameForTier(tierID string) string {
+	switch canonicalGeminiTierID(tierID) {
+	case GeminiTierGoogleAIPro:
+		return "Gemini Code Assist in Google One AI Pro"
+	case GeminiTierGoogleAIUltra:
+		return "Gemini Code Assist in Google One AI Ultra"
+	case GeminiTierGoogleOneFree:
+		return "Gemini Code Assist in Google One Free"
+	case GeminiTierGCPEnterprise:
+		return "Gemini Code Assist Enterprise"
+	case GeminiTierGCPStandard:
+		return "Gemini Code Assist Standard"
+	case GeminiTierAIStudioPaid:
+		return "Google AI Studio Pay-as-you-go"
+	case GeminiTierAIStudioFree:
+		return "Google AI Studio Free"
+	default:
+		return ""
+	}
 }
 
 func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, proxyURL string) (string, string, error) {
