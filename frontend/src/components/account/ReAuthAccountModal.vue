@@ -100,7 +100,7 @@
                   ? 'Google One'
                   : geminiOAuthType === 'code_assist'
                     ? t('admin.accounts.gemini.oauthType.builtInTitle')
-                    : t('admin.accounts.gemini.oauthType.customTitle')
+                    : t('admin.accounts.oauth.gemini.legacyCustomOAuthRemoved')
               }}
             </span>
             <span class="text-xs text-gray-500 dark:text-gray-400">
@@ -109,14 +109,22 @@
                   ? '个人账号'
                   : geminiOAuthType === 'code_assist'
                     ? t('admin.accounts.gemini.oauthType.builtInDesc')
-                    : t('admin.accounts.gemini.oauthType.customDesc')
+                    : t('admin.accounts.oauth.gemini.legacyCustomOAuthRemovedDesc')
               }}
             </span>
           </div>
         </div>
       </div>
 
+      <div
+        v-if="isLegacyGeminiCustomOAuth"
+        class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700/40 dark:bg-amber-900/20 dark:text-amber-200"
+      >
+        {{ t('admin.accounts.oauth.gemini.legacyCustomOAuthRemovedDesc') }}
+      </div>
+
       <OAuthAuthorizationFlow
+        v-else
         ref="oauthFlowRef"
         :add-method="addMethod"
         :auth-url="currentAuthUrl"
@@ -130,6 +138,7 @@
         :method-label="t('admin.accounts.inputMethod')"
         :platform="isOpenAI ? 'openai' : isGemini ? 'gemini' : isAntigravity ? 'antigravity' : 'anthropic'"
         :show-project-id="isGemini && geminiOAuthType === 'code_assist'"
+        :show-project-id-recovery="isGemini && geminiOAuthType === 'google_one'"
         @generate-url="handleGenerateUrl"
         @cookie-auth="handleCookieAuth"
       />
@@ -142,7 +151,7 @@
           {{ t('common.cancel') }}
         </button>
         <button
-          v-if="isManualInputMethod"
+          v-if="isManualInputMethod && !isLegacyGeminiCustomOAuth"
           type="button"
           :disabled="!canExchangeCode"
           class="btn btn-primary"
@@ -281,6 +290,8 @@ const canExchangeCode = computed(() => {
   return authCode.trim() && sessionId && !loading
 })
 
+const isLegacyGeminiCustomOAuth = computed(() => isGemini.value && geminiOAuthType.value === 'ai_studio')
+
 // Watchers
 watch(
   () => props.show,
@@ -305,7 +316,8 @@ watch(
     } else {
       resetState()
     }
-  }
+  },
+  { immediate: true }
 )
 
 // Methods
@@ -339,9 +351,13 @@ const handleGenerateUrl = async () => {
   if (isOpenAILike.value) {
     await openaiOAuth.generateAuthUrl(props.account.proxy_id)
   } else if (isGemini.value) {
+    if (isLegacyGeminiCustomOAuth.value) {
+      appStore.showError(t('admin.accounts.oauth.gemini.legacyCustomOAuthRemoved'))
+      return
+    }
     const creds = (props.account.credentials || {}) as Record<string, unknown>
     const tierId = typeof creds.tier_id === 'string' ? creds.tier_id : undefined
-    const projectId = geminiOAuthType.value === 'code_assist' ? oauthFlowRef.value?.projectId : undefined
+    const projectId = oauthFlowRef.value?.projectId
     await geminiOAuth.generateAuthUrl(props.account.proxy_id, projectId, geminiOAuthType.value, tierId)
   } else if (isAntigravity.value) {
     await antigravityOAuth.generateAuthUrl(props.account.proxy_id)

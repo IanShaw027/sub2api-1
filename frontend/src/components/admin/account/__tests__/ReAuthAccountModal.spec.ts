@@ -231,6 +231,30 @@ function buildKiroAccount(type: 'oauth' | 'apikey') {
   } as any
 }
 
+function buildGeminiLegacyOAuthAccount() {
+  return {
+    id: 43,
+    name: 'Legacy Gemini OAuth',
+    notes: '',
+    platform: 'gemini',
+    type: 'oauth',
+    credentials: {
+      oauth_type: 'ai_studio',
+      tier_id: 'aistudio_paid'
+    },
+    extra: {},
+    proxy_id: null,
+    concurrency: 1,
+    priority: 1,
+    rate_multiplier: 1,
+    status: 'error',
+    error_message: 'expired',
+    group_ids: [],
+    expires_at: null,
+    auto_pause_on_expired: false
+  } as any
+}
+
 function mountModal(account = buildKiroAccount('apikey')) {
   return mount(ReAuthAccountModal, {
     props: {
@@ -302,6 +326,14 @@ describe('admin ReAuthAccountModal', () => {
     expect(wrapper.find('[data-testid="oauth-flow"]').exists()).toBe(false)
     expect(updateAccountMock).not.toHaveBeenCalled()
     expect(reauthorizeKiroOAuthMock).not.toHaveBeenCalled()
+  })
+
+  it('hides reauth form actions for legacy Gemini AI Studio OAuth accounts', () => {
+    const wrapper = mountModal(buildGeminiLegacyOAuthAccount())
+
+    expect(wrapper.find('[data-testid="oauth-flow"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('admin.accounts.oauth.gemini.legacyCustomOAuthRemovedDesc')
+    expect(wrapper.findAll('button').some((button) => button.text().includes('admin.accounts.oauth.completeAuth'))).toBe(false)
   })
 
   it('reauthorizes Kiro OAuth accounts from callback submission without preserving runtime-only extra fields', async () => {

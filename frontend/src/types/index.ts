@@ -972,7 +972,7 @@ export interface GeminiCredentials {
   // OAuth authentication
   access_token?: string
   refresh_token?: string
-  oauth_type?: 'code_assist' | 'google_one' | 'ai_studio' | string
+  oauth_type?: 'code_assist' | 'google_one' | string
   tier_id?:
     | 'google_one_free'
     | 'google_ai_pro'

@@ -528,100 +528,6 @@
             </button>
           </div>
 
-          <!-- Advanced Options Toggle -->
-          <div class="mt-3">
-            <button
-              type="button"
-              @click="showAdvancedOAuth = !showAdvancedOAuth"
-              class="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
-            >
-              <svg
-                :class="['h-4 w-4 transition-transform', showAdvancedOAuth ? 'rotate-90' : '']"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
-              <span>{{ showAdvancedOAuth ? '隐藏' : '显示' }}高级选项（自建 OAuth Client）</span>
-            </button>
-          </div>
-
-          <!-- Custom OAuth Client (Advanced) -->
-          <div v-if="showAdvancedOAuth" class="mt-3 group relative">
-            <button
-              type="button"
-              :disabled="!geminiAIStudioOAuthEnabled"
-              @click="handleSelectGeminiOAuthType('ai_studio')"
-              :class="[
-                'flex w-full items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
-                !geminiAIStudioOAuthEnabled ? 'cursor-not-allowed opacity-60' : '',
-                geminiOAuthType === 'ai_studio'
-                  ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20'
-                  : 'border-gray-200 hover:border-amber-300 dark:border-dark-600 dark:hover:border-amber-700'
-              ]"
-            >
-              <div
-                :class="[
-                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
-                  geminiOAuthType === 'ai_studio'
-                    ? 'bg-amber-500 text-white'
-                    : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
-                ]"
-              >
-                <svg
-                  class="h-4 w-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"
-                  />
-                </svg>
-              </div>
-              <div class="min-w-0">
-                <span class="block text-sm font-medium text-gray-900 dark:text-white">
-                  {{ t('admin.accounts.gemini.oauthType.customTitle') }}
-                </span>
-                <span class="text-xs text-gray-500 dark:text-gray-400">
-                  {{ t('admin.accounts.gemini.oauthType.customDesc') }}
-                </span>
-                <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  {{ t('admin.accounts.gemini.oauthType.customRequirement') }}
-                </div>
-                <div class="mt-2 flex flex-wrap gap-1">
-                  <span
-                    class="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
-                  >
-                    {{ t('admin.accounts.gemini.oauthType.badges.orgManaged') }}
-                  </span>
-                  <span
-                    class="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
-                  >
-                    {{ t('admin.accounts.gemini.oauthType.badges.adminRequired') }}
-                  </span>
-                </div>
-              </div>
-              <span
-                v-if="!geminiAIStudioOAuthEnabled"
-                class="ml-auto shrink-0 rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
-              >
-                {{ t('admin.accounts.oauth.gemini.aiStudioNotConfiguredShort') }}
-              </span>
-            </button>
-
-            <div
-              v-if="!geminiAIStudioOAuthEnabled"
-              class="pointer-events-none absolute right-0 top-full z-50 mt-2 w-80 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
-            >
-              {{ t('admin.accounts.oauth.gemini.aiStudioNotConfiguredTip') }}
-            </div>
-          </div>
         </div>
 
         <!-- Tier selection (used as fallback when auto-detection is unavailable/fails) -->
@@ -2919,6 +2825,7 @@
         :show-access-token-option="false"
         :platform="form.platform"
         :show-project-id="geminiOAuthType === 'code_assist'"
+        :show-project-id-recovery="geminiOAuthType === 'google_one'"
         @generate-url="handleGenerateUrl"
         @cookie-auth="handleCookieAuth"
         @validate-refresh-token="handleValidateRefreshToken"
@@ -3488,8 +3395,7 @@ const getModelMappingKey = createStableObjectKeyResolver<ModelMapping>('create-m
 const getOpenAICompactModelMappingKey = createStableObjectKeyResolver<ModelMapping>('create-openai-compact-model-mapping')
 const getAntigravityModelMappingKey = createStableObjectKeyResolver<ModelMapping>('create-antigravity-model-mapping')
 const getTempUnschedRuleKey = createStableObjectKeyResolver<TempUnschedRuleForm>('create-temp-unsched-rule')
-const geminiOAuthType = ref<'code_assist' | 'google_one' | 'ai_studio'>('google_one')
-const geminiAIStudioOAuthEnabled = ref(false)
+const geminiOAuthType = ref<'code_assist' | 'google_one'>('google_one')
 const openAICompactModeOptions = computed(() => [
   { value: 'auto', label: t('admin.accounts.openai.compactModeAuto') },
   { value: 'force_on', label: t('admin.accounts.openai.compactModeForceOn') },
@@ -3522,7 +3428,6 @@ const mixedChannelWarningDetails = ref<{ groupName: string; currentPlatform: str
 const mixedChannelWarningRawMessage = ref('')
 const mixedChannelWarningAction = ref<(() => Promise<void>) | null>(null)
 const antigravityMixedChannelConfirmed = ref(false)
-const showAdvancedOAuth = ref(false)
 const showGeminiHelpDialog = ref(false)
 
 // Quota control state. TLS is also used by OpenAI/Kiro; the rest is Anthropic-only.
@@ -3562,10 +3467,8 @@ const geminiSelectedTier = computed(() => {
   switch (geminiOAuthType.value) {
     case 'google_one':
       return geminiTierGoogleOne.value
-    case 'code_assist':
-      return geminiTierGcp.value
     default:
-      return geminiTierAIStudio.value
+      return geminiTierGcp.value
   }
 })
 
@@ -3853,27 +3756,7 @@ watch(
   }
 )
 
-watch(
-  [() => props.show, () => form.platform, accountCategory],
-  async ([show, platform, category]) => {
-    if (!show || platform !== 'gemini' || category !== 'oauth-based') {
-      geminiAIStudioOAuthEnabled.value = false
-      return
-    }
-    const caps = await geminiOAuth.getCapabilities()
-    geminiAIStudioOAuthEnabled.value = !!caps?.ai_studio_oauth_enabled
-    if (!geminiAIStudioOAuthEnabled.value && geminiOAuthType.value === 'ai_studio') {
-      geminiOAuthType.value = 'code_assist'
-    }
-  },
-  { immediate: true }
-)
-
-const handleSelectGeminiOAuthType = (oauthType: 'code_assist' | 'google_one' | 'ai_studio') => {
-  if (oauthType === 'ai_studio' && !geminiAIStudioOAuthEnabled.value) {
-    appStore.showError(t('admin.accounts.oauth.gemini.aiStudioNotConfigured'))
-    return
-  }
+const handleSelectGeminiOAuthType = (oauthType: 'code_assist' | 'google_one') => {
   geminiOAuthType.value = oauthType
 }
 
@@ -4256,7 +4139,7 @@ const resetForm = () => {
   kiroMachineID.value = ''
   tempUnschedEnabled.value = false
   tempUnschedRules.value = []
-  geminiOAuthType.value = 'code_assist'
+  geminiOAuthType.value = 'google_one'
   geminiTierGoogleOne.value = 'google_one_free'
   geminiTierGcp.value = 'gcp_standard'
   geminiTierAIStudio.value = 'aistudio_free'

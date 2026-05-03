@@ -28,7 +28,7 @@ func (h *GeminiOAuthHandler) GetCapabilities(c *gin.Context) {
 type GeminiGenerateAuthURLRequest struct {
 	ProxyID   *int64 `json:"proxy_id"`
 	ProjectID string `json:"project_id"`
-	// OAuth 类型: "code_assist" (需要 project_id) 或 "ai_studio" (不需要 project_id)
+	// OAuth 类型: "code_assist" 或 "google_one"
 	// 默认为 "code_assist" 以保持向后兼容
 	OAuthType string `json:"oauth_type"`
 	// TierID is a user-selected tier to be used when auto detection is unavailable or fails.
@@ -49,8 +49,12 @@ func (h *GeminiOAuthHandler) GenerateAuthURL(c *gin.Context) {
 	if oauthType == "" {
 		oauthType = "code_assist"
 	}
-	if oauthType != "code_assist" && oauthType != "google_one" && oauthType != "ai_studio" {
-		response.BadRequest(c, "Invalid oauth_type: must be 'code_assist', 'google_one', or 'ai_studio'")
+	if oauthType == "ai_studio" {
+		response.BadRequest(c, "AI Studio OAuth has been removed. Use a Gemini API Key account instead.")
+		return
+	}
+	if oauthType != "code_assist" && oauthType != "google_one" {
+		response.BadRequest(c, "Invalid oauth_type: must be 'code_assist' or 'google_one'")
 		return
 	}
 
@@ -81,7 +85,7 @@ type GeminiExchangeCodeRequest struct {
 	State     string `json:"state" binding:"required"`
 	Code      string `json:"code" binding:"required"`
 	ProxyID   *int64 `json:"proxy_id"`
-	// OAuth 类型: "code_assist" 或 "ai_studio"，需要与 GenerateAuthURL 时的类型一致
+	// OAuth 类型: "code_assist" 或 "google_one"，需要与 GenerateAuthURL 时的类型一致
 	OAuthType string `json:"oauth_type"`
 	// TierID is a user-selected tier to be used when auto detection is unavailable or fails.
 	// This field is optional; when omitted, the server uses the tier stored in the OAuth session.
@@ -102,8 +106,12 @@ func (h *GeminiOAuthHandler) ExchangeCode(c *gin.Context) {
 	if oauthType == "" {
 		oauthType = "code_assist"
 	}
-	if oauthType != "code_assist" && oauthType != "google_one" && oauthType != "ai_studio" {
-		response.BadRequest(c, "Invalid oauth_type: must be 'code_assist', 'google_one', or 'ai_studio'")
+	if oauthType == "ai_studio" {
+		response.BadRequest(c, "AI Studio OAuth has been removed. Use a Gemini API Key account instead.")
+		return
+	}
+	if oauthType != "code_assist" && oauthType != "google_one" {
+		response.BadRequest(c, "Invalid oauth_type: must be 'code_assist' or 'google_one'")
 		return
 	}
 
