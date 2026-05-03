@@ -3621,6 +3621,11 @@
           "unlimited": "无限流",
           "limited": "限流 {time}",
           "now": "现在"
+        },
+        "details": {
+          "subscription": "订阅",
+          "scope": "权限",
+          "credits": "积分"
         }
       },
       "reAuthorizeAccount": "重新授权账号",

@@ -3475,6 +3475,11 @@
           "unlimited": "Unlimited",
           "limited": "Rate limited {time}",
           "now": "now"
+        },
+        "details": {
+          "subscription": "Subscription",
+          "scope": "Scope",
+          "credits": "Credits"
         }
       },
       "reAuthorizeAccount": "Re-Authorize Account",

@@ -965,6 +965,11 @@ export interface ProxyQualityCheckResult {
 }
 
 // Gemini credentials structure for OAuth and API Key authentication
+export interface GeminiAvailableCredit {
+  creditType?: string
+  creditAmount?: string
+}
+
 export interface GeminiCredentials {
   // API Key authentication
   api_key?: string
@@ -972,6 +977,12 @@ export interface GeminiCredentials {
   // OAuth authentication
   access_token?: string
   refresh_token?: string
+  id_token?: string
+  email?: string
+  auth_id?: string
+  subject?: string
+  name?: string
+  plan_name?: string
   oauth_type?: 'code_assist' | 'google_one' | string
   tier_id?:
     | 'google_one_free'
@@ -989,6 +1000,13 @@ export interface GeminiCredentials {
   token_type?: string
   scope?: string
   expires_at?: string
+  gemini_current_tier_id?: string
+  gemini_current_tier_name?: string
+  gemini_paid_tier_id?: string
+  gemini_paid_tier_name?: string
+  gemini_has_onboarded_previously?: boolean
+  gemini_available_credits?: GeminiAvailableCredit[]
+  gemini_code_assist_updated_at?: string
   model_mapping?: Record<string, string>
 }
 

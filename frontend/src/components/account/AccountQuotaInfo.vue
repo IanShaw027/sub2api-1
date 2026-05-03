@@ -1,36 +1,62 @@
 <template>
-  <div v-if="shouldShowQuota">
-    <!-- First line: Platform + Tier Badge -->
-    <div class="mb-1 flex items-center gap-1">
-      <span :class="['badge text-xs px-2 py-0.5 rounded font-medium', tierBadgeClass]">
+  <div v-if="shouldShowQuota" class="space-y-1">
+    <div class="flex items-center gap-1">
+      <span :class="['badge rounded px-1.5 py-0.5 text-[10px] font-medium', tierBadgeClass]">
         {{ tierLabel }}
+      </span>
+      <span class="group relative cursor-help">
+        <svg
+          class="h-3.5 w-3.5 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+          fill="currentColor"
+          viewBox="0 0 20 20"
+        >
+          <path
+            fill-rule="evenodd"
+            d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z"
+            clip-rule="evenodd"
+          />
+        </svg>
+        <span
+          class="pointer-events-none absolute left-0 top-full z-50 mt-1 w-80 whitespace-normal break-words rounded bg-gray-900 px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:bg-gray-700"
+        >
+          <div class="mb-1 font-semibold">{{ t('admin.accounts.gemini.quotaPolicy.title') }}</div>
+          <div class="mb-2 text-gray-300">{{ t('admin.accounts.gemini.quotaPolicy.note') }}</div>
+          <div class="space-y-1">
+            <div><strong>{{ quotaPolicyChannel }}:</strong></div>
+            <div class="pl-2">• {{ quotaPolicyLimits }}</div>
+            <div class="mt-2">
+              <a
+                :href="quotaPolicyDocsUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-blue-400 hover:text-blue-300 underline"
+              >
+                {{ t('admin.accounts.gemini.quotaPolicy.columns.docs') }} →
+              </a>
+            </div>
+          </div>
+        </span>
       </span>
     </div>
 
-    <!-- Usage status: unlimited flow or rate limit -->
-    <div class="text-xs text-gray-400 dark:text-gray-500">
-      <span v-if="!isRateLimited">
-        {{ t('admin.accounts.gemini.rateLimit.unlimited') }}
-      </span>
-      <span
-        v-else
-        :class="[
-          'font-medium',
-          isUrgent
-            ? 'text-red-600 dark:text-red-400 animate-pulse'
-            : 'text-amber-600 dark:text-amber-400'
-        ]"
+    <div v-if="detailRows.length" class="space-y-0.5 text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">
+      <div
+        v-for="row in detailRows"
+        :key="row.label"
+        class="truncate"
+        :title="row.value"
       >
-        {{ t('admin.accounts.gemini.rateLimit.limited', { time: resetCountdown }) }}
-      </span>
+        <span class="text-gray-400 dark:text-gray-500">{{ row.label }}:</span>
+        {{ row.value }}
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onUnmounted } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { Account, GeminiCredentials } from '@/types'
+import type { Account, GeminiAvailableCredit, GeminiCredentials } from '@/types'
 
 const props = defineProps<{
   account: Account
@@ -38,161 +64,183 @@ const props = defineProps<{
 
 const { t } = useI18n()
 
-const now = ref(new Date())
-let timer: ReturnType<typeof setInterval> | null = null
+type DetailRow = {
+  label: string
+  value: string
+}
 
-// 是否为 Code Assist OAuth
-// 判断逻辑与后端保持一致：project_id 存在即为 Code Assist
+const geminiCredentials = computed(() => (props.account.credentials || {}) as GeminiCredentials)
+
+const normalizeGeminiOAuthType = (oauthType?: string | null): 'code_assist' | 'google_one' | null => {
+  const normalized = (oauthType || '').trim().toLowerCase()
+  if (normalized === 'code_assist' || normalized === 'google_one') return normalized
+  return null
+}
+
 const isCodeAssist = computed(() => {
-  const creds = props.account.credentials as GeminiCredentials | undefined
-  // 显式为 code_assist，或 legacy 情况（oauth_type 为空但 project_id 存在）
-  return creds?.oauth_type === 'code_assist' || (!creds?.oauth_type && !!creds?.project_id)
+  const oauthType = normalizeGeminiOAuthType(geminiCredentials.value.oauth_type)
+  return oauthType === 'code_assist'
 })
 
-// 是否为 Google One OAuth
 const isGoogleOne = computed(() => {
-  const creds = props.account.credentials as GeminiCredentials | undefined
-  return creds?.oauth_type === 'google_one'
+  const oauthType = normalizeGeminiOAuthType(geminiCredentials.value.oauth_type)
+  return oauthType === 'google_one'
 })
 
-// 是否应该显示配额信息
-const shouldShowQuota = computed(() => {
-  return props.account.platform === 'gemini'
-})
+const shouldShowQuota = computed(() => props.account.platform === 'gemini')
 
-// Tier 标签文本
+const canonicalTier = computed(() => (geminiCredentials.value.tier_id || '').toString().trim().toLowerCase())
+const legacyTier = computed(() => (geminiCredentials.value.tier_id || '').toString().trim().toUpperCase())
+
 const tierLabel = computed(() => {
-  const creds = props.account.credentials as GeminiCredentials | undefined
-
   if (isCodeAssist.value) {
-    const tier = (creds?.tier_id || '').toString().trim().toLowerCase()
-    if (tier === 'gcp_enterprise') return 'GCP Enterprise'
-    if (tier === 'gcp_standard') return 'GCP Standard'
-    // Backward compatibility
-    const upper = (creds?.tier_id || '').toString().trim().toUpperCase()
-    if (upper.includes('ULTRA') || upper.includes('ENTERPRISE')) return 'GCP Enterprise'
-    if (upper) return `GCP ${upper}`
+    if (canonicalTier.value === 'gcp_enterprise') return 'GCP Enterprise'
+    if (canonicalTier.value === 'gcp_standard') return 'GCP Standard'
+    if (legacyTier.value.includes('ULTRA') || legacyTier.value.includes('ENTERPRISE')) return 'GCP Enterprise'
+    if (legacyTier.value) return `GCP ${legacyTier.value}`
     return 'GCP'
   }
 
   if (isGoogleOne.value) {
-    const tier = (creds?.tier_id || '').toString().trim().toLowerCase()
-    if (tier === 'google_ai_ultra') return 'Google AI Ultra'
-    if (tier === 'google_ai_pro') return 'Google AI Pro'
-    if (tier === 'google_one_free') return 'Google One Free'
-    // Backward compatibility
-    const upper = (creds?.tier_id || '').toString().trim().toUpperCase()
-    if (upper === 'AI_PREMIUM') return 'Google AI Pro'
-    if (upper === 'GOOGLE_ONE_UNLIMITED') return 'Google AI Ultra'
-    if (upper) return `Google One ${upper}`
+    if (canonicalTier.value === 'google_ai_ultra') return 'Google AI Ultra'
+    if (canonicalTier.value === 'google_ai_pro') return 'Google AI Pro'
+    if (canonicalTier.value === 'google_one_free') return 'Google One Free'
+    if (legacyTier.value === 'AI_PREMIUM') return 'Google AI Pro'
+    if (legacyTier.value === 'GOOGLE_ONE_UNLIMITED') return 'Google AI Ultra'
+    if (legacyTier.value) return `Google One ${legacyTier.value}`
     return 'Google One'
   }
 
-  // API Key: 显示 AI Studio
-  const tier = (creds?.tier_id || '').toString().trim().toLowerCase()
-  if (tier === 'aistudio_paid') return 'AI Studio Pay-as-you-go'
-  if (tier === 'aistudio_free') return 'AI Studio Free Tier'
+  if (canonicalTier.value === 'aistudio_paid') return 'AI Studio Pay-as-you-go'
+  if (canonicalTier.value === 'aistudio_free') return 'AI Studio Free Tier'
   return 'AI Studio'
 })
 
-// Tier Badge 样式（统一样式）
 const tierBadgeClass = computed(() => {
-  const creds = props.account.credentials as GeminiCredentials | undefined
-
   if (isCodeAssist.value) {
-    const tier = (creds?.tier_id || '').toString().trim().toLowerCase()
-    if (tier === 'gcp_enterprise') return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
-    if (tier === 'gcp_standard') return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
-    // Backward compatibility
-    const upper = (creds?.tier_id || '').toString().trim().toUpperCase()
-    if (upper.includes('ULTRA') || upper.includes('ENTERPRISE')) return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
+    if (canonicalTier.value === 'gcp_enterprise' || legacyTier.value.includes('ULTRA') || legacyTier.value.includes('ENTERPRISE')) {
+      return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
+    }
     return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
   }
 
   if (isGoogleOne.value) {
-    const tier = (creds?.tier_id || '').toString().trim().toLowerCase()
-    if (tier === 'google_ai_ultra') return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
-    if (tier === 'google_ai_pro') return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
-    if (tier === 'google_one_free') return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-    // Backward compatibility
-    const upper = (creds?.tier_id || '').toString().trim().toUpperCase()
-    if (upper === 'GOOGLE_ONE_UNLIMITED') return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
-    if (upper === 'AI_PREMIUM') return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
+    if (canonicalTier.value === 'google_ai_ultra' || legacyTier.value === 'GOOGLE_ONE_UNLIMITED') {
+      return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
+    }
+    if (canonicalTier.value === 'google_ai_pro' || legacyTier.value === 'AI_PREMIUM') {
+      return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
+    }
     return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
   }
 
-  // AI Studio 默认样式：蓝色
-  const tier = (creds?.tier_id || '').toString().trim().toLowerCase()
-  if (tier === 'aistudio_paid') return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
-  if (tier === 'aistudio_free') return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+  if (canonicalTier.value === 'aistudio_paid') return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
+  if (canonicalTier.value === 'aistudio_free') return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
   return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
 })
 
-// 是否限流
-const isRateLimited = computed(() => {
-  if (!props.account.rate_limit_reset_at) return false
-  const resetTime = Date.parse(props.account.rate_limit_reset_at)
-  // 防护：如果日期解析失败（NaN），则认为未限流
-  if (Number.isNaN(resetTime)) return false
-  return resetTime > now.value.getTime()
-})
-
-// 倒计时文本
-const resetCountdown = computed(() => {
-  if (!props.account.rate_limit_reset_at) return ''
-  const resetTime = Date.parse(props.account.rate_limit_reset_at)
-  // 防护：如果日期解析失败，显示 "-"
-  if (Number.isNaN(resetTime)) return '-'
-
-  const diffMs = resetTime - now.value.getTime()
-  if (diffMs <= 0) return t('admin.accounts.gemini.rateLimit.now')
-
-  const diffSeconds = Math.floor(diffMs / 1000)
-  const diffMinutes = Math.floor(diffSeconds / 60)
-  const diffHours = Math.floor(diffMinutes / 60)
-
-  if (diffMinutes < 1) return `${diffSeconds}s`
-  if (diffHours < 1) {
-    const secs = diffSeconds % 60
-    return `${diffMinutes}m ${secs}s`
+const quotaPolicyChannel = computed(() => {
+  if (isCodeAssist.value) {
+    return t('admin.accounts.gemini.quotaPolicy.rows.gcp.channel')
   }
-  const mins = diffMinutes % 60
-  return `${diffHours}h ${mins}m`
-})
-
-// 是否紧急（< 1分钟）
-const isUrgent = computed(() => {
-  if (!props.account.rate_limit_reset_at) return false
-  const resetTime = Date.parse(props.account.rate_limit_reset_at)
-  // 防护：如果日期解析失败，返回 false
-  if (Number.isNaN(resetTime)) return false
-
-  const diffMs = resetTime - now.value.getTime()
-  return diffMs > 0 && diffMs < 60000
-})
-
-// 监听限流状态，动态启动/停止定时器
-watch(
-  () => isRateLimited.value,
-  (limited) => {
-    if (limited && !timer) {
-      // 进入限流状态，启动定时器
-      timer = setInterval(() => {
-        now.value = new Date()
-      }, 1000)
-    } else if (!limited && timer) {
-      // 解除限流，停止定时器
-      clearInterval(timer)
-      timer = null
-    }
-  },
-  { immediate: true } // 立即执行，确保挂载时已限流的情况也能启动定时器
-)
-
-onUnmounted(() => {
-  if (timer !== null) {
-    clearInterval(timer)
-    timer = null
+  if (isGoogleOne.value) {
+    return t('admin.accounts.gemini.quotaPolicy.rows.googleOne.channel')
   }
+  return t('admin.accounts.gemini.quotaPolicy.rows.aiStudio.channel')
+})
+
+const quotaPolicyLimits = computed(() => {
+  if (isCodeAssist.value) {
+    return canonicalTier.value === 'gcp_enterprise'
+      ? t('admin.accounts.gemini.quotaPolicy.rows.gcp.limitsEnterprise')
+      : t('admin.accounts.gemini.quotaPolicy.rows.gcp.limitsStandard')
+  }
+
+  if (isGoogleOne.value) {
+    if (canonicalTier.value === 'google_ai_ultra') return t('admin.accounts.gemini.quotaPolicy.rows.googleOne.limitsUltra')
+    if (canonicalTier.value === 'google_ai_pro') return t('admin.accounts.gemini.quotaPolicy.rows.googleOne.limitsPro')
+    return t('admin.accounts.gemini.quotaPolicy.rows.googleOne.limitsFree')
+  }
+
+  return canonicalTier.value === 'aistudio_paid'
+    ? t('admin.accounts.gemini.quotaPolicy.rows.aiStudio.limitsPaid')
+    : t('admin.accounts.gemini.quotaPolicy.rows.aiStudio.limitsFree')
+})
+
+const quotaPolicyDocsUrl = computed(() => {
+  if (isCodeAssist.value || isGoogleOne.value) {
+    return 'https://developers.google.com/gemini-code-assist/resources/code_assist_quota'
+  }
+  return 'https://ai.google.dev/gemini-api/docs/rate-limits'
+})
+
+const scopeLabelMap: Record<string, string> = {
+  openid: 'OpenID',
+  email: 'Email',
+  profile: 'Profile',
+  'https://www.googleapis.com/auth/userinfo.email': 'UserInfo Email',
+  'https://www.googleapis.com/auth/userinfo.profile': 'UserInfo Profile',
+  'https://www.googleapis.com/auth/cloud-platform': 'Cloud Platform'
+}
+
+const scopeSummary = computed(() => {
+  const scope = (geminiCredentials.value.scope || '').trim()
+  if (!scope) return ''
+  const labels = scope
+    .split(/\s+/)
+    .map(value => value.trim())
+    .filter(Boolean)
+    .map(value => scopeLabelMap[value] || value)
+  return labels.join(', ')
+})
+
+const planSummary = computed(() => {
+  const planName = (geminiCredentials.value.plan_name || '').trim()
+  if (planName) return planName
+  const paidTierName = (geminiCredentials.value.gemini_paid_tier_name || '').trim()
+  if (paidTierName) return paidTierName
+  const currentTierName = (geminiCredentials.value.gemini_current_tier_name || '').trim()
+  if (currentTierName) return currentTierName
+  return ''
+})
+
+const creditsSummary = computed(() => {
+  const credits = geminiCredentials.value.gemini_available_credits
+  if (!Array.isArray(credits) || credits.length === 0) return ''
+  return credits
+    .map((credit: GeminiAvailableCredit) => {
+      const type = (credit.creditType || '').trim()
+      const amount = (credit.creditAmount || '').trim()
+      if (!type && !amount) return ''
+      const typeLabel = type === 'GOOGLE_ONE_AI' ? 'Google One AI' : type || t('admin.accounts.gemini.details.credits')
+      return amount ? `${typeLabel} ${amount}` : typeLabel
+    })
+    .filter(Boolean)
+    .join(' / ')
+})
+
+const projectId = computed(() => (geminiCredentials.value.project_id || '').trim())
+const email = computed(() => (geminiCredentials.value.email || '').trim())
+
+const detailRows = computed<DetailRow[]>(() => {
+  const rows: DetailRow[] = []
+
+  if (planSummary.value) {
+    rows.push({ label: t('admin.accounts.gemini.details.subscription'), value: planSummary.value })
+  }
+  if (email.value) {
+    rows.push({ label: t('common.email'), value: email.value })
+  }
+  if (projectId.value) {
+    rows.push({ label: t('admin.accounts.oauth.gemini.projectIdLabel'), value: projectId.value })
+  }
+  if (scopeSummary.value) {
+    rows.push({ label: t('admin.accounts.gemini.details.scope'), value: scopeSummary.value })
+  }
+  if (creditsSummary.value) {
+    rows.push({ label: t('admin.accounts.gemini.details.credits'), value: creditsSummary.value })
+  }
+
+  return rows
 })
 </script>

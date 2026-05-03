@@ -291,6 +291,40 @@ describe('EditAccountModal', () => {
     expect(wrapper.text()).not.toContain('should-not-render')
   })
 
+  it('shows Gemini read-only account summary in edit modal', async () => {
+    resetCommonMocks()
+    const wrapper = mountModal({
+      ...buildAccount(),
+      id: 9,
+      name: 'Gemini OAuth',
+      platform: 'gemini',
+      type: 'oauth',
+      credentials: {
+        oauth_type: 'google_one',
+        tier_id: 'google_ai_pro',
+        plan_name: 'Gemini Code Assist in Google One AI Pro',
+        email: 'gemini@example.com',
+        project_id: 'refreshing-center-hnmwg',
+        scope: 'openid https://www.googleapis.com/auth/cloud-platform',
+        gemini_available_credits: [
+          {
+            creditType: 'GOOGLE_ONE_AI',
+            creditAmount: '100'
+          }
+        ]
+      }
+    } as any)
+
+    await wrapper.setProps({ show: true })
+
+    const section = wrapper.get('[data-testid="gemini-account-summary-section"]')
+    expect(section.text()).toContain('admin.accounts.geminiAccount')
+    expect(section.text()).toContain('Gemini Code Assist in Google One AI Pro')
+    expect(section.text()).toContain('gemini@example.com')
+    expect(section.text()).toContain('refreshing-center-hnmwg')
+    expect(section.text()).toContain('Google One AI 100')
+  })
+
   it('reopening the same account rehydrates the OpenAI whitelist from props', async () => {
     const account = buildAccount()
     updateAccountMock.mockReset()
