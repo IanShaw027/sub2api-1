@@ -29,7 +29,6 @@ type GeminiGenerateAuthURLRequest struct {
 	ProxyID   *int64 `json:"proxy_id"`
 	ProjectID string `json:"project_id"`
 	// OAuth 类型: "code_assist" 或 "google_one"
-	// 默认为 "code_assist" 以保持向后兼容
 	OAuthType string `json:"oauth_type"`
 	// TierID is a user-selected tier to be used when auto detection is unavailable or fails.
 	TierID string `json:"tier_id"`
@@ -44,13 +43,13 @@ func (h *GeminiOAuthHandler) GenerateAuthURL(c *gin.Context) {
 		return
 	}
 
-	// 默认使用 code_assist 以保持向后兼容
 	oauthType := strings.TrimSpace(req.OAuthType)
-	if oauthType == "" {
-		oauthType = "code_assist"
-	}
 	if oauthType == "ai_studio" {
 		response.BadRequest(c, "AI Studio OAuth has been removed. Use a Gemini API Key account instead.")
+		return
+	}
+	if oauthType == "" {
+		response.BadRequest(c, "Missing oauth_type: must be 'code_assist' or 'google_one'")
 		return
 	}
 	if oauthType != "code_assist" && oauthType != "google_one" {
@@ -101,13 +100,13 @@ func (h *GeminiOAuthHandler) ExchangeCode(c *gin.Context) {
 		return
 	}
 
-	// 默认使用 code_assist 以保持向后兼容
 	oauthType := strings.TrimSpace(req.OAuthType)
-	if oauthType == "" {
-		oauthType = "code_assist"
-	}
 	if oauthType == "ai_studio" {
 		response.BadRequest(c, "AI Studio OAuth has been removed. Use a Gemini API Key account instead.")
+		return
+	}
+	if oauthType == "" {
+		response.BadRequest(c, "Missing oauth_type: must be 'code_assist' or 'google_one'")
 		return
 	}
 	if oauthType != "code_assist" && oauthType != "google_one" {
