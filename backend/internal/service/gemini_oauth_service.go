@@ -85,8 +85,6 @@ func NewGeminiOAuthService(
 
 func (s *GeminiOAuthService) GetOAuthConfig() *GeminiOAuthCapabilities {
 	return &GeminiOAuthCapabilities{
-		// Legacy field retained for API compatibility. Gemini OAuth only supports
-		// Google One and GCP Code Assist now.
 		AIStudioOAuthEnabled: false,
 		RequiredRedirectURIs: []string{geminicli.AIStudioOAuthRedirectURI},
 	}
@@ -99,9 +97,6 @@ type GeminiAuthURLResult struct {
 }
 
 func (s *GeminiOAuthService) GenerateAuthURL(ctx context.Context, proxyID *int64, redirectURI, projectID, oauthType, tierID string) (*GeminiAuthURLResult, error) {
-	if isRemovedGeminiOAuthType(oauthType, tierID, "") {
-		return nil, fmt.Errorf("AI Studio OAuth has been removed. Use a Gemini API Key account instead")
-	}
 	oauthType = resolveGeminiOAuthType(oauthType, tierID, projectID, "")
 	if oauthType == "" {
 		return nil, fmt.Errorf("missing oauth_type: must be 'code_assist' or 'google_one'")
@@ -141,7 +136,6 @@ func (s *GeminiOAuthService) GenerateAuthURL(ctx context.Context, proxyID *int64
 		ClientSecret: s.cfg.Gemini.OAuth.ClientSecret,
 		Scopes:       s.cfg.Gemini.OAuth.Scopes,
 	}
-	// Force use of built-in Gemini CLI OAuth client for all supported Gemini OAuth flows.
 	oauthCfg.ClientID = ""
 	oauthCfg.ClientSecret = ""
 
@@ -305,13 +299,6 @@ func canonicalGeminiTierIDForOAuthType(oauthType, tierID string) string {
 		default:
 			return ""
 		}
-	case "ai_studio":
-		switch canonical {
-		case GeminiTierAIStudioFree, GeminiTierAIStudioPaid:
-			return canonical
-		default:
-			return ""
-		}
 	default:
 		// Unknown oauth type: accept canonical tier.
 		return canonical
@@ -327,23 +314,9 @@ func normalizeGeminiOAuthType(oauthType string) string {
 	}
 }
 
-func isRemovedGeminiOAuthType(rawOAuthType, tierID, planName string) bool {
-	if strings.EqualFold(strings.TrimSpace(rawOAuthType), "ai_studio") {
-		return true
-	}
-	if canonicalGeminiTierIDForOAuthType("ai_studio", tierID) != "" {
-		return true
-	}
-	return strings.Contains(strings.ToLower(strings.TrimSpace(planName)), "ai studio")
-}
-
 func resolveGeminiOAuthType(rawOAuthType, tierID, _ string, planName string) string {
 	if normalized := normalizeGeminiOAuthType(rawOAuthType); normalized != "" {
 		return normalized
-	}
-
-	if isRemovedGeminiOAuthType(rawOAuthType, tierID, planName) {
-		return ""
 	}
 
 	if canonicalGeminiTierIDForOAuthType("google_one", tierID) != "" {
@@ -524,9 +497,6 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 	if strings.TrimSpace(rawOAuthType) == "" {
 		rawOAuthType = input.OAuthType
 	}
-	if isRemovedGeminiOAuthType(rawOAuthType, input.TierID, "") {
-		return nil, fmt.Errorf("AI Studio OAuth has been removed. Use a Gemini API Key account instead")
-	}
 	oauthType := resolveGeminiOAuthType(rawOAuthType, input.TierID, session.ProjectID, "")
 	if oauthType == "" {
 		return nil, fmt.Errorf("missing oauth_type: must be 'code_assist' or 'google_one'")
@@ -534,7 +504,14 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] OAuth Type: %s", oauthType)
 	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Project ID from session: %s", session.ProjectID)
 
-	// code_assist/google_one always uses the built-in client and its fixed redirect URI.
+	_, err := geminicli.EffectiveOAuthConfig(geminicli.OAuthConfig{
+		ClientID:     s.cfg.Gemini.OAuth.ClientID,
+		ClientSecret: s.cfg.Gemini.OAuth.ClientSecret,
+		Scopes:       s.cfg.Gemini.OAuth.Scopes,
+	}, oauthType)
+	if err != nil {
+		return nil, err
+	}
 	redirectURI = geminicli.GeminiCLIRedirectURI
 
 	tokenResp, err := s.oauthClient.ExchangeCode(ctx, oauthType, input.Code, session.CodeVerifier, redirectURI, proxyURL)
@@ -794,9 +771,6 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 	tierIDHint := account.GetCredential("tier_id")
 	projectIDHint := account.GetCredential("project_id")
 	planNameHint := account.GetCredential("plan_name")
-	if isRemovedGeminiOAuthType(rawOAuthType, tierIDHint, planNameHint) {
-		return nil, fmt.Errorf("AI Studio OAuth has been removed. Re-authorize this Gemini account using Google One or GCP Code Assist, or switch it to a Gemini API Key account")
-	}
 	oauthType := resolveGeminiOAuthType(rawOAuthType, tierIDHint, projectIDHint, planNameHint)
 	if oauthType == "" {
 		return nil, fmt.Errorf("missing oauth_type and unable to infer a supported Gemini OAuth flow from stored credentials; please re-authorize this account")
@@ -1147,6 +1121,14 @@ func extractGeminiProfileFromIDToken(idToken string) geminiOAuthProfile {
 		Subject: strings.TrimSpace(claims.Subject),
 		Name:    strings.TrimSpace(claims.Name),
 	}
+}
+
+func geminiTokenScopeHasUserInfoEmail(scope string) bool {
+	return geminiTokenScopeHasUserInfo(scope)
+}
+
+func extractEmailFromGeminiIDToken(idToken string) string {
+	return extractGeminiProfileFromIDToken(idToken).Email
 }
 
 func fetchGeminiUserInfo(ctx context.Context, accessToken, proxyURL string) (geminiOAuthProfile, error) {

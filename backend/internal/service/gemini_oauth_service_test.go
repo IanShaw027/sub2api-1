@@ -86,16 +86,6 @@ func TestGeminiOAuthService_GenerateAuthURL_RedirectURIStrategy(t *testing.T) {
 			wantProjectID: "my-gcp-project",
 		},
 		{
-			name: "ai_studio is rejected",
-			cfg: &config.Config{
-				Gemini: config.GeminiConfig{
-					OAuth: config.GeminiOAuthConfig{},
-				},
-			},
-			oauthType:     "ai_studio",
-			wantErrSubstr: "AI Studio OAuth has been removed",
-		},
-		{
 			name: "missing oauth type is rejected instead of guessing from project",
 			cfg: &config.Config{
 				Gemini: config.GeminiConfig{
@@ -347,12 +337,6 @@ func TestCanonicalGeminiTierIDForOAuthType(t *testing.T) {
 		{name: "code_assist + aistudio_free 被过滤", oauthType: "code_assist", tierID: "aistudio_free", want: ""},
 		{name: "code_assist + STANDARD 遗留映射", oauthType: "code_assist", tierID: "STANDARD", want: GeminiTierGCPStandard},
 		{name: "code_assist + standard-tier kebab", oauthType: "code_assist", tierID: "standard-tier", want: GeminiTierGCPStandard},
-
-		// ai_studio 类型过滤
-		{name: "ai_studio + aistudio_free", oauthType: "ai_studio", tierID: "aistudio_free", want: GeminiTierAIStudioFree},
-		{name: "ai_studio + aistudio_paid", oauthType: "ai_studio", tierID: "aistudio_paid", want: GeminiTierAIStudioPaid},
-		{name: "ai_studio + gcp_standard 被过滤", oauthType: "ai_studio", tierID: "gcp_standard", want: ""},
-		{name: "ai_studio + google_one_free 被过滤", oauthType: "ai_studio", tierID: "google_one_free", want: ""},
 
 		// 空值
 		{name: "空 tierID", oauthType: "google_one", tierID: "", want: ""},
@@ -1122,7 +1106,7 @@ func TestGeminiOAuthService_RefreshAccountToken_AIStudio(t *testing.T) {
 	if err == nil {
 		t.Fatal("legacy ai_studio 账号应被拒绝")
 	}
-	if !strings.Contains(err.Error(), "AI Studio OAuth has been removed") {
+	if !strings.Contains(err.Error(), "missing oauth_type and unable to infer") {
 		t.Fatalf("错误信息不匹配: got=%q", err.Error())
 	}
 }
@@ -1660,7 +1644,7 @@ func TestGeminiOAuthService_ExchangeCode_RejectsLegacyAIStudioSession(t *testing
 	if err == nil {
 		t.Fatal("legacy ai_studio session 应被拒绝")
 	}
-	if !strings.Contains(err.Error(), "AI Studio OAuth has been removed") {
+	if !strings.Contains(err.Error(), "missing oauth_type") {
 		t.Fatalf("错误信息不匹配: got=%q", err.Error())
 	}
 }

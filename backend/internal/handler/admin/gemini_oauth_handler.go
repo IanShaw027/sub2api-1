@@ -44,13 +44,8 @@ func (h *GeminiOAuthHandler) GenerateAuthURL(c *gin.Context) {
 	}
 
 	oauthType := strings.TrimSpace(req.OAuthType)
-	if oauthType == "ai_studio" {
-		response.BadRequest(c, "AI Studio OAuth has been removed. Use a Gemini API Key account instead.")
-		return
-	}
 	if oauthType == "" {
-		response.BadRequest(c, "Missing oauth_type: must be 'code_assist' or 'google_one'")
-		return
+		oauthType = "code_assist"
 	}
 	if oauthType != "code_assist" && oauthType != "google_one" {
 		response.BadRequest(c, "Invalid oauth_type: must be 'code_assist' or 'google_one'")
@@ -101,13 +96,8 @@ func (h *GeminiOAuthHandler) ExchangeCode(c *gin.Context) {
 	}
 
 	oauthType := strings.TrimSpace(req.OAuthType)
-	if oauthType == "ai_studio" {
-		response.BadRequest(c, "AI Studio OAuth has been removed. Use a Gemini API Key account instead.")
-		return
-	}
 	if oauthType == "" {
-		response.BadRequest(c, "Missing oauth_type: must be 'code_assist' or 'google_one'")
-		return
+		oauthType = "code_assist"
 	}
 	if oauthType != "code_assist" && oauthType != "google_one" {
 		response.BadRequest(c, "Invalid oauth_type: must be 'code_assist' or 'google_one'")

@@ -122,7 +122,9 @@ export function useGeminiOAuth() {
       if (
         errorMessage.includes('missing project_id') ||
         errorMessage.includes('require a project_id') ||
-        errorMessage.includes('no project_id available')
+        errorMessage.includes('no project_id available') ||
+        errorMessage.includes('failed to auto-detect project_id') ||
+        errorMessage.includes('empty result')
       ) {
         error.value = t('admin.accounts.oauth.gemini.missingProjectId')
       } else {

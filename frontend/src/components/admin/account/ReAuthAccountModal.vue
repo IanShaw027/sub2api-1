@@ -88,43 +88,29 @@
               'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
               geminiOAuthType === 'google_one'
                 ? 'bg-purple-500 text-white'
-                : geminiOAuthType === 'code_assist'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-amber-500 text-white'
+                : 'bg-blue-500 text-white'
             ]"
           >
             <Icon v-if="geminiOAuthType === 'google_one'" name="user" size="sm" />
-            <Icon v-else-if="geminiOAuthType === 'code_assist'" name="cloud" size="sm" />
-            <Icon v-else name="sparkles" size="sm" />
+            <Icon v-else name="cloud" size="sm" />
           </div>
           <div>
             <span class="block text-sm font-medium text-gray-900 dark:text-white">
               {{
                 geminiOAuthType === 'google_one'
                   ? 'Google One'
-                  : geminiOAuthType === 'code_assist'
-                    ? t('admin.accounts.gemini.oauthType.builtInTitle')
-                    : t('admin.accounts.oauth.gemini.legacyCustomOAuthRemoved')
+                  : t('admin.accounts.gemini.oauthType.builtInTitle')
               }}
             </span>
             <span class="text-xs text-gray-500 dark:text-gray-400">
               {{
                 geminiOAuthType === 'google_one'
                   ? '个人账号'
-                  : geminiOAuthType === 'code_assist'
-                    ? t('admin.accounts.gemini.oauthType.builtInDesc')
-                    : t('admin.accounts.oauth.gemini.legacyCustomOAuthRemovedDesc')
+                  : t('admin.accounts.gemini.oauthType.builtInDesc')
               }}
             </span>
           </div>
         </div>
-      </div>
-
-      <div
-        v-if="isLegacyGeminiCustomOAuth"
-        class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700/40 dark:bg-amber-900/20 dark:text-amber-200"
-      >
-        {{ t('admin.accounts.oauth.gemini.legacyCustomOAuthRemovedDesc') }}
       </div>
 
       <KiroAuthorizationFlow
@@ -142,7 +128,7 @@
       />
 
       <OAuthAuthorizationFlow
-        v-else-if="!isKiro && !isLegacyGeminiCustomOAuth"
+        v-else-if="!isKiro"
         ref="oauthFlowRef"
         :add-method="addMethod"
         :auth-url="currentAuthUrl"
@@ -178,7 +164,7 @@
           </button>
         </div>
         <button
-          v-if="!isKiro && isManualInputMethod && !isLegacyGeminiCustomOAuth"
+          v-if="!isKiro && isManualInputMethod"
           type="button"
           :disabled="!canExchangeCode"
           class="btn btn-primary"
@@ -276,7 +262,7 @@ const oauthFlowRef = ref<OAuthFlowExposed | null>(null)
 
 // State
 const addMethod = ref<AddMethod>('oauth')
-const geminiOAuthType = ref<'code_assist' | 'google_one' | 'ai_studio'>('code_assist')
+const geminiOAuthType = ref<'code_assist' | 'google_one'>('code_assist')
 const kiroBatchReauthLoading = ref(false)
 
 // Computed - check platform
@@ -345,8 +331,6 @@ const canExchangeCode = computed(() => {
   return authCode.trim() && sessionId && !loading && !oauthFlowRef.value?.requiresProjectIdRecovery
 })
 
-const isLegacyGeminiCustomOAuth = computed(() => isGemini.value && geminiOAuthType.value === 'ai_studio')
-
 // Watchers
 watch(
   () => props.show,
@@ -362,11 +346,7 @@ watch(
       if (isGemini.value) {
         const creds = (props.account.credentials || {}) as Record<string, unknown>
         geminiOAuthType.value =
-          creds.oauth_type === 'google_one'
-            ? 'google_one'
-            : creds.oauth_type === 'ai_studio'
-              ? 'ai_studio'
-              : 'code_assist'
+          creds.oauth_type === 'google_one' ? 'google_one' : 'code_assist'
       }
     } else {
       resetState()
@@ -627,13 +607,9 @@ const handleGenerateUrl = async () => {
   } else if (isKiro.value) {
     return
   } else if (isGemini.value) {
-    if (isLegacyGeminiCustomOAuth.value) {
-      appStore.showError(t('admin.accounts.oauth.gemini.legacyCustomOAuthRemoved'))
-      return
-    }
     const creds = (props.account.credentials || {}) as Record<string, unknown>
     const tierId = typeof creds.tier_id === 'string' ? creds.tier_id : undefined
-    const projectId = oauthFlowRef.value?.projectId
+    const projectId = geminiOAuthType.value === 'code_assist' ? oauthFlowRef.value?.projectId : undefined
     await geminiOAuth.generateAuthUrl(props.account.proxy_id, projectId, geminiOAuthType.value, tierId)
   } else if (isAntigravity.value) {
     await antigravityOAuth.generateAuthUrl(props.account.proxy_id)

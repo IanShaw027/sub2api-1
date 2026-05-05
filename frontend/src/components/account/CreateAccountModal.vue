@@ -3762,6 +3762,11 @@ watch(
 
 const handleSelectGeminiOAuthType = (oauthType: 'code_assist' | 'google_one') => {
   geminiOAuthType.value = oauthType
+  if (oauthType !== 'code_assist') {
+    if (oauthFlowRef.value) {
+      oauthFlowRef.value.projectId = ''
+    }
+  }
 }
 
 // Auto-fill related models when switching to whitelist mode or changing platform
@@ -4499,9 +4504,10 @@ const handleGenerateUrl = async () => {
   } else if (form.platform === 'openai') {
     await openaiOAuth.generateAuthUrl(form.proxy_id)
   } else if (form.platform === 'gemini') {
+    const projectId = geminiOAuthType.value === 'code_assist' ? oauthFlowRef.value?.projectId : undefined
     await geminiOAuth.generateAuthUrl(
       form.proxy_id,
-      oauthFlowRef.value?.projectId,
+      projectId,
       geminiOAuthType.value,
       geminiSelectedTier.value
     )

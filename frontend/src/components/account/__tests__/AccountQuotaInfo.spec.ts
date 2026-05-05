@@ -51,10 +51,12 @@ describe('AccountQuotaInfo', () => {
           credentials: {
             oauth_type: 'google_one',
             tier_id: 'google_ai_pro',
-            plan_name: 'Gemini Code Assist in Google One AI Pro',
             email: 'user@example.com',
             project_id: 'refreshing-center-hnmwg',
-            scope: 'openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/cloud-platform',
+            scope: 'openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/cloud-platform'
+          },
+          extra: {
+            plan_name: 'Gemini Code Assist in Google One AI Pro',
             gemini_available_credits: [
               {
                 creditType: 'GOOGLE_ONE_AI',
@@ -73,6 +75,23 @@ describe('AccountQuotaInfo', () => {
     expect(wrapper.text()).toContain('OpenID')
     expect(wrapper.text()).toContain('Cloud Platform')
     expect(wrapper.text()).toContain('Google One AI 100')
+  })
+
+  it('shows Gemini rate limit countdown when account is limited', () => {
+    const future = new Date(Date.now() + 90_000).toISOString()
+    const wrapper = mount(AccountQuotaInfo, {
+      props: {
+        account: makeAccount({
+          credentials: {
+            oauth_type: 'code_assist',
+            tier_id: 'gcp_standard'
+          },
+          rate_limit_reset_at: future
+        })
+      }
+    })
+
+    expect(wrapper.text()).toContain('admin.accounts.gemini.rateLimit.limited')
   })
 
   it('falls back to ai studio badge for api key accounts without oauth metadata', () => {

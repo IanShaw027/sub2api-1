@@ -725,6 +725,28 @@ const pickGeminiWindowBar = (
 
 const geminiUsageBars = computed(() => {
   if (props.account.platform !== 'gemini') return []
+  const sharedDaily = usageInfo.value?.gemini_shared_daily
+  const sharedMinute = usageInfo.value?.gemini_shared_minute
+  const hasFamilyWindows =
+    !!usageInfo.value?.gemini_pro_daily ||
+    !!usageInfo.value?.gemini_flash_daily ||
+    !!usageInfo.value?.gemini_pro_minute ||
+    !!usageInfo.value?.gemini_flash_minute
+
+  if (!hasFamilyWindows && (sharedDaily || sharedMinute)) {
+    const sharedWindow = sharedDaily || sharedMinute
+    return [
+      {
+        key: sharedDaily ? 'shared_daily' : 'shared_minute',
+        label: sharedDaily ? '1d' : '1m',
+        utilization: sharedWindow?.utilization ?? 0,
+        resetsAt: sharedWindow?.resets_at ?? null,
+        windowStats: sharedWindow?.window_stats ?? null,
+        color: 'indigo' as const
+      }
+    ]
+  }
+
   const bars = [
     pickGeminiWindowBar('pro', t('admin.accounts.usageWindow.geminiProDaily'), 'indigo'),
     pickGeminiWindowBar('flash', t('admin.accounts.usageWindow.geminiFlashDaily'), 'emerald')

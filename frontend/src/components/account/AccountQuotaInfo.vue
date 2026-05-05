@@ -39,6 +39,23 @@
       </span>
     </div>
 
+    <div class="text-xs text-gray-400 dark:text-gray-500">
+      <span v-if="!isRateLimited">
+        {{ t('admin.accounts.gemini.rateLimit.unlimited') }}
+      </span>
+      <span
+        v-else
+        :class="[
+          'font-medium',
+          isUrgent
+            ? 'text-red-600 dark:text-red-400 animate-pulse'
+            : 'text-amber-600 dark:text-amber-400'
+        ]"
+      >
+        {{ t('admin.accounts.gemini.rateLimit.limited', { time: resetCountdown }) }}
+      </span>
+    </div>
+
     <div v-if="detailRows.length" class="space-y-0.5 text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">
       <div
         v-for="row in detailRows"
@@ -54,9 +71,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { Account, GeminiAvailableCredit, GeminiCredentials } from '@/types'
+import type { Account, GeminiAvailableCredit } from '@/types'
 
 const props = defineProps<{
   account: Account
@@ -69,7 +86,15 @@ type DetailRow = {
   value: string
 }
 
-const geminiCredentials = computed(() => (props.account.credentials || {}) as GeminiCredentials)
+const geminiCredentials = computed(() => ({
+  ...(props.account.credentials || {}),
+  ...(props.account.extra || {})
+}) as Record<string, unknown>)
+
+const geminiValue = (key: string): string => {
+  const value = geminiCredentials.value[key]
+  return typeof value === 'string' ? value.trim() : ''
+}
 
 const normalizeGeminiOAuthType = (oauthType?: string | null): 'code_assist' | 'google_one' | null => {
   const normalized = (oauthType || '').trim().toLowerCase()
@@ -77,20 +102,71 @@ const normalizeGeminiOAuthType = (oauthType?: string | null): 'code_assist' | 'g
   return null
 }
 
+const now = ref(new Date())
+let timer: ReturnType<typeof setInterval> | null = null
+
 const isCodeAssist = computed(() => {
-  const oauthType = normalizeGeminiOAuthType(geminiCredentials.value.oauth_type)
+  const oauthType = normalizeGeminiOAuthType(geminiValue('oauth_type'))
   return oauthType === 'code_assist'
 })
 
 const isGoogleOne = computed(() => {
-  const oauthType = normalizeGeminiOAuthType(geminiCredentials.value.oauth_type)
+  const oauthType = normalizeGeminiOAuthType(geminiValue('oauth_type'))
   return oauthType === 'google_one'
 })
 
 const shouldShowQuota = computed(() => props.account.platform === 'gemini')
 
-const canonicalTier = computed(() => (geminiCredentials.value.tier_id || '').toString().trim().toLowerCase())
-const legacyTier = computed(() => (geminiCredentials.value.tier_id || '').toString().trim().toUpperCase())
+const isRateLimited = computed(() => {
+  if (!props.account.rate_limit_reset_at) return false
+  const resetTime = Date.parse(props.account.rate_limit_reset_at)
+  if (Number.isNaN(resetTime)) return false
+  return resetTime > now.value.getTime()
+})
+
+const resetCountdown = computed(() => {
+  if (!props.account.rate_limit_reset_at) return ''
+  const resetTime = Date.parse(props.account.rate_limit_reset_at)
+  if (Number.isNaN(resetTime)) return '-'
+
+  const diffMs = resetTime - now.value.getTime()
+  if (diffMs <= 0) return t('admin.accounts.gemini.rateLimit.now')
+
+  const diffSeconds = Math.floor(diffMs / 1000)
+  const diffMinutes = Math.floor(diffSeconds / 60)
+  const diffHours = Math.floor(diffMinutes / 60)
+
+  if (diffMinutes < 1) return `${diffSeconds}s`
+  if (diffHours < 1) {
+    const secs = diffSeconds % 60
+    return `${diffMinutes}m ${secs}s`
+  }
+  const mins = diffMinutes % 60
+  return `${diffHours}h ${mins}m`
+})
+
+const isUrgent = computed(() => {
+  if (!props.account.rate_limit_reset_at) return false
+  const resetTime = Date.parse(props.account.rate_limit_reset_at)
+  if (Number.isNaN(resetTime)) return false
+  const diffMs = resetTime - now.value.getTime()
+  return diffMs > 0 && diffMs < 60000
+})
+
+const canonicalTier = computed(() => {
+  const tier =
+    geminiValue('tier_id') ||
+    geminiValue('gemini_current_tier_id') ||
+    geminiValue('gemini_paid_tier_id')
+  return tier.toLowerCase()
+})
+const legacyTier = computed(() => {
+  const tier =
+    geminiValue('tier_id') ||
+    geminiValue('gemini_current_tier_id') ||
+    geminiValue('gemini_paid_tier_id')
+  return tier.toUpperCase()
+})
 
 const tierLabel = computed(() => {
   if (isCodeAssist.value) {
@@ -184,7 +260,7 @@ const scopeLabelMap: Record<string, string> = {
 }
 
 const scopeSummary = computed(() => {
-  const scope = (geminiCredentials.value.scope || '').trim()
+  const scope = geminiValue('scope')
   if (!scope) return ''
   const labels = scope
     .split(/\s+/)
@@ -195,17 +271,17 @@ const scopeSummary = computed(() => {
 })
 
 const planSummary = computed(() => {
-  const planName = (geminiCredentials.value.plan_name || '').trim()
+  const planName = geminiValue('plan_name')
   if (planName) return planName
-  const paidTierName = (geminiCredentials.value.gemini_paid_tier_name || '').trim()
+  const paidTierName = geminiValue('gemini_paid_tier_name')
   if (paidTierName) return paidTierName
-  const currentTierName = (geminiCredentials.value.gemini_current_tier_name || '').trim()
+  const currentTierName = geminiValue('gemini_current_tier_name')
   if (currentTierName) return currentTierName
   return ''
 })
 
 const creditsSummary = computed(() => {
-  const credits = geminiCredentials.value.gemini_available_credits
+  const credits = geminiCredentials.value.gemini_available_credits as GeminiAvailableCredit[] | undefined
   if (!Array.isArray(credits) || credits.length === 0) return ''
   return credits
     .map((credit: GeminiAvailableCredit) => {
@@ -219,8 +295,8 @@ const creditsSummary = computed(() => {
     .join(' / ')
 })
 
-const projectId = computed(() => (geminiCredentials.value.project_id || '').trim())
-const email = computed(() => (geminiCredentials.value.email || '').trim())
+const projectId = computed(() => geminiValue('project_id'))
+const email = computed(() => geminiValue('email'))
 
 const detailRows = computed<DetailRow[]>(() => {
   const rows: DetailRow[] = []
@@ -242,5 +318,27 @@ const detailRows = computed<DetailRow[]>(() => {
   }
 
   return rows
+})
+
+watch(
+  () => isRateLimited.value,
+  (limited) => {
+    if (limited && !timer) {
+      timer = setInterval(() => {
+        now.value = new Date()
+      }, 1000)
+    } else if (!limited && timer) {
+      clearInterval(timer)
+      timer = null
+    }
+  },
+  { immediate: true }
+)
+
+onUnmounted(() => {
+  if (timer) {
+    clearInterval(timer)
+    timer = null
+  }
 })
 </script>

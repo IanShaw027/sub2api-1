@@ -22,6 +22,7 @@ vi.mock('@/api/admin', () => ({
 }))
 
 import { useGeminiOAuth } from '@/composables/useGeminiOAuth'
+import { adminAPI } from '@/api/admin'
 
 describe('useGeminiOAuth.buildCredentials', () => {
   it('omits empty refresh tokens so reauth keeps the existing token and keeps aligned Gemini fields', () => {
@@ -96,5 +97,22 @@ describe('useGeminiOAuth.buildAccountName', () => {
     )
     expect(oauth.buildAccountName({ tier_id: 'Google One Ultra' })).toBe('Gemini Google One Ultra')
     expect(oauth.buildAccountName({})).toBe('Gemini OAuth Account')
+  })
+})
+
+describe('useGeminiOAuth.exchangeAuthCode', () => {
+  it('maps real project auto-detect failures to the recovery error key', async () => {
+    vi.mocked(adminAPI.gemini.exchangeCode).mockRejectedValueOnce(new Error('failed to auto-detect project_id: empty result'))
+    const oauth = useGeminiOAuth()
+
+    const result = await oauth.exchangeAuthCode({
+      code: 'code',
+      sessionId: 'session',
+      state: 'state',
+      oauthType: 'code_assist'
+    })
+
+    expect(result).toBeNull()
+    expect(oauth.error.value).toBe('admin.accounts.oauth.gemini.missingProjectId')
   })
 })
