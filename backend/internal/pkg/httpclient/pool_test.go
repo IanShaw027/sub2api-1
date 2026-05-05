@@ -1,115 +1,148 @@
 package httpclient
 
 import (
+	"context"
 	"errors"
-	"io"
-	"net/http"
-	"strings"
-	"sync/atomic"
+	"net"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
-type roundTripFunc func(*http.Request) (*http.Response, error)
+func TestValidatedDialContext_PinsResolvedIPAddress(t *testing.T) {
+	originalLookup := validatedLookupIPAddr
+	originalBaseDial := validatedBaseDialContext
+	defer func() {
+		validatedLookupIPAddr = originalLookup
+		validatedBaseDialContext = originalBaseDial
+	}()
 
-func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return f(req)
-}
-
-func TestValidatedTransport_CacheHostValidation(t *testing.T) {
-	originalValidate := validateResolvedIP
-	defer func() { validateResolvedIP = originalValidate }()
-
-	var validateCalls int32
-	validateResolvedIP = func(host string) error {
-		atomic.AddInt32(&validateCalls, 1)
+	var lookupCalls int32
+	validatedLookupIPAddr = func(_ context.Context, host string) ([]net.IPAddr, error) {
+		lookupCalls++
 		require.Equal(t, "api.openai.com", host)
-		return nil
+		return []net.IPAddr{{IP: net.ParseIP("203.0.113.10")}}, nil
 	}
 
-	var baseCalls int32
-	base := roundTripFunc(func(_ *http.Request) (*http.Response, error) {
-		atomic.AddInt32(&baseCalls, 1)
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{}`)),
-			Header:     make(http.Header),
-		}, nil
-	})
+	var dialedAddr string
+	validatedBaseDialContext = func(_ context.Context, _, addr string) (net.Conn, error) {
+		dialedAddr = addr
+		left, right := net.Pipe()
+		go func() { _ = right.Close() }()
+		return left, nil
+	}
 
-	now := time.Unix(1730000000, 0)
-	transport := newValidatedTransport(base)
-	transport.now = func() time.Time { return now }
-
-	req, err := http.NewRequest(http.MethodGet, "https://api.openai.com/v1/responses", nil)
+	transport, err := buildTransport(Options{ValidateResolvedIP: true})
 	require.NoError(t, err)
 
-	_, err = transport.RoundTrip(req)
+	conn, err := transport.DialContext(context.Background(), "tcp", "api.openai.com:443")
 	require.NoError(t, err)
-	_, err = transport.RoundTrip(req)
-	require.NoError(t, err)
+	require.NoError(t, conn.Close())
 
-	require.Equal(t, int32(1), atomic.LoadInt32(&validateCalls))
-	require.Equal(t, int32(2), atomic.LoadInt32(&baseCalls))
+	require.Equal(t, "203.0.113.10:443", dialedAddr)
+	require.EqualValues(t, 1, lookupCalls)
 }
 
-func TestValidatedTransport_ExpiredCacheTriggersRevalidation(t *testing.T) {
-	originalValidate := validateResolvedIP
-	defer func() { validateResolvedIP = originalValidate }()
+func TestValidatedDialContext_CachesResolvedIPAddress(t *testing.T) {
+	originalLookup := validatedLookupIPAddr
+	originalBaseDial := validatedBaseDialContext
+	defer func() {
+		validatedLookupIPAddr = originalLookup
+		validatedBaseDialContext = originalBaseDial
+	}()
 
-	var validateCalls int32
-	validateResolvedIP = func(_ string) error {
-		atomic.AddInt32(&validateCalls, 1)
-		return nil
+	var lookupCalls int32
+	validatedLookupIPAddr = func(_ context.Context, host string) ([]net.IPAddr, error) {
+		lookupCalls++
+		require.Equal(t, "api.openai.com", host)
+		return []net.IPAddr{{IP: net.ParseIP("203.0.113.11")}}, nil
 	}
 
-	base := roundTripFunc(func(_ *http.Request) (*http.Response, error) {
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{}`)),
-			Header:     make(http.Header),
+	var dialed []string
+	validatedBaseDialContext = func(_ context.Context, _, addr string) (net.Conn, error) {
+		dialed = append(dialed, addr)
+		left, right := net.Pipe()
+		go func() { _ = right.Close() }()
+		return left, nil
+	}
+
+	transport, err := buildTransport(Options{ValidateResolvedIP: true})
+	require.NoError(t, err)
+
+	conn, err := transport.DialContext(context.Background(), "tcp", "api.openai.com:443")
+	require.NoError(t, err)
+	require.NoError(t, conn.Close())
+
+	conn, err = transport.DialContext(context.Background(), "tcp", "api.openai.com:443")
+	require.NoError(t, err)
+	require.NoError(t, conn.Close())
+
+	require.EqualValues(t, 1, lookupCalls)
+	require.Equal(t, []string{"203.0.113.11:443", "203.0.113.11:443"}, dialed)
+}
+
+func TestValidatedDialContext_RejectsUnsafeResolvedIP(t *testing.T) {
+	originalLookup := validatedLookupIPAddr
+	originalBaseDial := validatedBaseDialContext
+	defer func() {
+		validatedLookupIPAddr = originalLookup
+		validatedBaseDialContext = originalBaseDial
+	}()
+
+	validatedLookupIPAddr = func(_ context.Context, _ string) ([]net.IPAddr, error) {
+		return []net.IPAddr{
+			{IP: net.ParseIP("203.0.113.12")},
+			{IP: net.ParseIP("127.0.0.1")},
 		}, nil
-	})
+	}
 
-	now := time.Unix(1730001000, 0)
-	transport := newValidatedTransport(base)
-	transport.now = func() time.Time { return now }
+	called := false
+	validatedBaseDialContext = func(_ context.Context, _, _ string) (net.Conn, error) {
+		called = true
+		return nil, errors.New("unexpected dial")
+	}
 
-	req, err := http.NewRequest(http.MethodGet, "https://api.openai.com/v1/responses", nil)
+	transport, err := buildTransport(Options{ValidateResolvedIP: true})
 	require.NoError(t, err)
 
-	_, err = transport.RoundTrip(req)
+	_, err = transport.DialContext(context.Background(), "tcp", "api.openai.com:443")
+	require.Error(t, err)
+	require.False(t, called)
+}
+
+func TestValidatedDialContext_ExpiredCacheRevalidates(t *testing.T) {
+	dialed := make([]string, 0, 2)
+	now := time.Unix(1730000000, 0)
+
+	vt := &validatedTransport{
+		base: func(_ context.Context, _, addr string) (net.Conn, error) {
+			dialed = append(dialed, addr)
+			left, right := net.Pipe()
+			go func() { _ = right.Close() }()
+			return left, nil
+		},
+		lookup: func(_ context.Context, host string) ([]net.IPAddr, error) {
+			require.Equal(t, "api.openai.com", host)
+			switch len(dialed) {
+			case 0:
+				return []net.IPAddr{{IP: net.ParseIP("203.0.113.20")}}, nil
+			default:
+				return []net.IPAddr{{IP: net.ParseIP("203.0.113.21")}}, nil
+			}
+		},
+		now: func() time.Time { return now },
+	}
+
+	conn, err := vt.DialContext(context.Background(), "tcp", "api.openai.com:443")
 	require.NoError(t, err)
+	require.NoError(t, conn.Close())
 
 	now = now.Add(validatedHostTTL + time.Second)
-	_, err = transport.RoundTrip(req)
+
+	conn, err = vt.DialContext(context.Background(), "tcp", "api.openai.com:443")
 	require.NoError(t, err)
+	require.NoError(t, conn.Close())
 
-	require.Equal(t, int32(2), atomic.LoadInt32(&validateCalls))
-}
-
-func TestValidatedTransport_ValidationErrorStopsRoundTrip(t *testing.T) {
-	originalValidate := validateResolvedIP
-	defer func() { validateResolvedIP = originalValidate }()
-
-	expectedErr := errors.New("dns rebinding rejected")
-	validateResolvedIP = func(_ string) error {
-		return expectedErr
-	}
-
-	var baseCalls int32
-	base := roundTripFunc(func(_ *http.Request) (*http.Response, error) {
-		atomic.AddInt32(&baseCalls, 1)
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
-	})
-
-	transport := newValidatedTransport(base)
-	req, err := http.NewRequest(http.MethodGet, "https://api.openai.com/v1/responses", nil)
-	require.NoError(t, err)
-
-	_, err = transport.RoundTrip(req)
-	require.ErrorIs(t, err, expectedErr)
-	require.Equal(t, int32(0), atomic.LoadInt32(&baseCalls))
+	require.Equal(t, []string{"203.0.113.20:443", "203.0.113.21:443"}, dialed)
 }

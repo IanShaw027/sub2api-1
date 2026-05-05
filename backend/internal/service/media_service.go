@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -510,6 +511,35 @@ func (s *MediaService) buildObjectKey(bizType, bizID, fileName, contentType stri
 
 func (s *MediaService) isEnabled() bool {
 	return s != nil && s.cfg != nil && s.cfg.Media.Enabled
+}
+
+func ParseManagedMediaID(mediaService *MediaService, raw string) (int64, bool) {
+	if mediaService == nil {
+		return 0, false
+	}
+	base := strings.TrimRight(strings.TrimSpace(mediaService.publicBaseURL()), "/")
+	if base == "" {
+		return 0, false
+	}
+	for _, prefix := range []string{
+		base + "/api/v1/media/public/",
+		base + "/api/v1/media/download/",
+	} {
+		if strings.HasPrefix(raw, prefix) {
+			remainder := strings.TrimPrefix(raw, prefix)
+			if idx := strings.IndexAny(remainder, "?#"); idx >= 0 {
+				remainder = remainder[:idx]
+			}
+			if idx := strings.IndexRune(remainder, '/'); idx >= 0 {
+				remainder = remainder[:idx]
+			}
+			id, err := strconv.ParseInt(strings.TrimSpace(remainder), 10, 64)
+			if err == nil && id > 0 {
+				return id, true
+			}
+		}
+	}
+	return 0, false
 }
 
 func (s *MediaService) bucket() string {
