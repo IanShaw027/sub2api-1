@@ -255,11 +255,27 @@ func TestAffiliateRepository_AccrueQuota_IdempotentBySourceOrder(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, bound)
 
+	sourceOrder, err := client.PaymentOrder.Create().
+		SetUserID(invitee.ID).
+		SetUserEmail(invitee.Email).
+		SetUserName(invitee.Username).
+		SetAmount(2.25).
+		SetPayAmount(2.25).
+		SetFeeRate(0).
+		SetRechargeCode(fmt.Sprintf("AFFILIATE-SOURCE-%d", time.Now().UnixNano())).
+		SetOutTradeNo(fmt.Sprintf("sub2_affiliate_source_%d", time.Now().UnixNano())).
+		SetPaymentType("alipay").
+		SetPaymentTradeNo("").
+		SetOrderType("balance").
+		SetStatus("COMPLETED").
+		Save(txCtx)
+	require.NoError(t, err)
+
 	firstApplied, err := repo.AccrueQuota(txCtx, service.AffiliateAccrualInput{
 		InviterID:     inviter.ID,
 		InviteeUserID: invitee.ID,
 		Amount:        2.25,
-		SourceOrderID: 912345,
+		SourceOrderID: sourceOrder.ID,
 	})
 	require.NoError(t, err)
 	require.InDelta(t, 2.25, firstApplied, 1e-9)
@@ -268,7 +284,7 @@ func TestAffiliateRepository_AccrueQuota_IdempotentBySourceOrder(t *testing.T) {
 		InviterID:     inviter.ID,
 		InviteeUserID: invitee.ID,
 		Amount:        2.25,
-		SourceOrderID: 912345,
+		SourceOrderID: sourceOrder.ID,
 	})
 	require.NoError(t, err)
 	require.InDelta(t, 0.0, secondApplied, 1e-9)
@@ -282,7 +298,7 @@ SELECT COUNT(*)
 FROM user_affiliate_ledger
 WHERE user_id = $1
   AND action = 'accrue'
-  AND source_order_id = $2`, inviter.ID, int64(912345))
+  AND source_order_id = $2`, inviter.ID, sourceOrder.ID)
 	require.Equal(t, 1, ledgerCount)
 }
 
