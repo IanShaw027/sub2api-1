@@ -490,8 +490,6 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 	proxyURL := session.ProxyURL
 	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] ProxyURL: %s", proxyURL)
 
-	redirectURI := session.RedirectURI
-
 	// Resolve oauth_type early using the session first, then the request fallback.
 	rawOAuthType := session.OAuthType
 	if strings.TrimSpace(rawOAuthType) == "" {
@@ -512,7 +510,7 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 	if err != nil {
 		return nil, err
 	}
-	redirectURI = geminicli.GeminiCLIRedirectURI
+	redirectURI := geminicli.GeminiCLIRedirectURI
 
 	tokenResp, err := s.oauthClient.ExchangeCode(ctx, oauthType, input.Code, session.CodeVerifier, redirectURI, proxyURL)
 	if err != nil {
@@ -1121,14 +1119,6 @@ func extractGeminiProfileFromIDToken(idToken string) geminiOAuthProfile {
 		Subject: strings.TrimSpace(claims.Subject),
 		Name:    strings.TrimSpace(claims.Name),
 	}
-}
-
-func geminiTokenScopeHasUserInfoEmail(scope string) bool {
-	return geminiTokenScopeHasUserInfo(scope)
-}
-
-func extractEmailFromGeminiIDToken(idToken string) string {
-	return extractGeminiProfileFromIDToken(idToken).Email
 }
 
 func fetchGeminiUserInfo(ctx context.Context, accessToken, proxyURL string) (geminiOAuthProfile, error) {

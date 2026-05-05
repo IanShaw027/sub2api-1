@@ -275,7 +275,7 @@ type AICenterRepository interface {
 }
 
 type AICenterService struct {
-	repo        AICenterRepository
+	repo         AICenterRepository
 	mediaService *MediaService
 }
 
@@ -333,20 +333,4 @@ func cloneAIMapSlice(src []map[string]any) []map[string]any {
 		dst = append(dst, cloneAIMap(src[i]))
 	}
 	return dst
-}
-
-func normalizeAIPromptScope(raw string) string {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "library":
-		return "library"
-	case "all":
-		return "all"
-	default:
-		return "mine"
-	}
-}
-
-func applyAIWriteDefaults(trace AIWriteTrace, userID int64) AITraceRef {
-	trace = normalizeAIWriteTrace(context.Background(), trace)
-	return trace
 }

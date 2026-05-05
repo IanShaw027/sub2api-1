@@ -542,14 +542,18 @@ func SkillReviewSummaryFromItems(items []SkillReviewItem) map[string]any {
 	for _, item := range items {
 		switch item.ReviewStatus {
 		case "approved":
-			summary["approved_count"] = summary["approved_count"].(int) + 1
+			count, _ := summary["approved_count"].(int)
+			summary["approved_count"] = count + 1
 		case "rejected":
-			summary["rejected_count"] = summary["rejected_count"].(int) + 1
+			count, _ := summary["rejected_count"].(int)
+			summary["rejected_count"] = count + 1
 		default:
-			summary["pending_count"] = summary["pending_count"].(int) + 1
+			count, _ := summary["pending_count"].(int)
+			summary["pending_count"] = count + 1
 		}
 		if item.RiskLevel == "high" {
-			summary["high_risk_count"] = summary["high_risk_count"].(int) + 1
+			count, _ := summary["high_risk_count"].(int)
+			summary["high_risk_count"] = count + 1
 		}
 	}
 	return summary
@@ -566,14 +570,18 @@ func SkillGovernanceSummaryFromItems(items []SkillGovernanceItem) map[string]any
 	for _, item := range items {
 		switch item.GovernanceStatus {
 		case "online":
-			summary["online_count"] = summary["online_count"].(int) + 1
+			count, _ := summary["online_count"].(int)
+			summary["online_count"] = count + 1
 		case "force_private":
-			summary["force_private_count"] = summary["force_private_count"].(int) + 1
+			count, _ := summary["force_private_count"].(int)
+			summary["force_private_count"] = count + 1
 		case "disabled":
-			summary["disabled_count"] = summary["disabled_count"].(int) + 1
+			count, _ := summary["disabled_count"].(int)
+			summary["disabled_count"] = count + 1
 		}
 		if item.LatestReviewStatus == "pending" {
-			summary["pending_versions_count"] = summary["pending_versions_count"].(int) + 1
+			count, _ := summary["pending_versions_count"].(int)
+			summary["pending_versions_count"] = count + 1
 		}
 	}
 	return summary
@@ -596,18 +604,22 @@ func SkillRuntimeSummaryFromItems(items []SkillRuntimeItem) map[string]any {
 	var p95Max float64
 	for _, item := range items {
 		if item.Requests24H > 0 {
-			summary["active_skills"] = summary["active_skills"].(int) + 1
+			count, _ := summary["active_skills"].(int)
+			summary["active_skills"] = count + 1
 		}
-		summary["requests_24h"] = summary["requests_24h"].(int64) + item.Requests24H
+		requests, _ := summary["requests_24h"].(int64)
+		summary["requests_24h"] = requests + item.Requests24H
 		successSum += item.SuccessRate
 		if item.P95LatencyMS > p95Max {
 			p95Max = item.P95LatencyMS
 		}
 		switch item.HealthStatus {
 		case "warning":
-			summary["warning_count"] = summary["warning_count"].(int) + 1
+			count, _ := summary["warning_count"].(int)
+			summary["warning_count"] = count + 1
 		case "critical":
-			summary["critical_count"] = summary["critical_count"].(int) + 1
+			count, _ := summary["critical_count"].(int)
+			summary["critical_count"] = count + 1
 		}
 	}
 	summary["success_rate"] = successSum / float64(len(items))
@@ -627,12 +639,16 @@ func SkillSettlementSummaryFromItems(items []SkillSettlementItem) map[string]any
 		summary["currency"] = fallbackString(item.Currency, "CNY")
 		switch item.SettlementStatus {
 		case "settled":
-			summary["settled_amount"] = summary["settled_amount"].(float64) + item.PayoutAmount
+			amount, _ := summary["settled_amount"].(float64)
+			summary["settled_amount"] = amount + item.PayoutAmount
 		default:
-			summary["pending_amount"] = summary["pending_amount"].(float64) + item.PayoutAmount
-			summary["pending_skill_count"] = summary["pending_skill_count"].(int) + 1
+			amount, _ := summary["pending_amount"].(float64)
+			summary["pending_amount"] = amount + item.PayoutAmount
+			count, _ := summary["pending_skill_count"].(int)
+			summary["pending_skill_count"] = count + 1
 		}
-		summary["frozen_amount"] = summary["frozen_amount"].(float64) + item.FrozenAmount
+		amount, _ := summary["frozen_amount"].(float64)
+		summary["frozen_amount"] = amount + item.FrozenAmount
 	}
 	return summary
 }

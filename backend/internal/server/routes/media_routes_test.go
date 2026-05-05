@@ -31,21 +31,21 @@ func TestRegisterMediaRoutesIncludesPublicUserAndAdminEndpoints(t *testing.T) {
 	)
 
 	expected := map[string]struct{}{
-		http.MethodGet + " /api/v1/media/public/:id":                   {},
-		http.MethodGet + " /api/v1/media/public/:id/thumbnail":         {},
-		http.MethodGet + " /api/v1/media/download/:id":                 {},
-		http.MethodGet + " /api/v1/media/download/:id/thumbnail":       {},
-		http.MethodPost + " /api/v1/media/upload":                      {},
-		http.MethodGet + " /api/v1/media/:id":                          {},
-		http.MethodDelete + " /api/v1/media/:id":                       {},
-		http.MethodPost + " /api/v1/media/:id/visibility":              {},
-		http.MethodPost + " /api/v1/media/:id/presign-download":        {},
-		http.MethodGet + " /api/v1/admin/media":                        {},
-		http.MethodPost + " /api/v1/admin/media/upload":                {},
-		http.MethodGet + " /api/v1/admin/media/:id":                    {},
-		http.MethodDelete + " /api/v1/admin/media/:id":                 {},
-		http.MethodPost + " /api/v1/admin/media/:id/visibility":        {},
-		http.MethodPost + " /api/v1/admin/media/:id/presign-download":  {},
+		http.MethodGet + " /api/v1/media/public/:id":                  {},
+		http.MethodGet + " /api/v1/media/public/:id/thumbnail":        {},
+		http.MethodGet + " /api/v1/media/download/:id":                {},
+		http.MethodGet + " /api/v1/media/download/:id/thumbnail":      {},
+		http.MethodPost + " /api/v1/media/upload":                     {},
+		http.MethodGet + " /api/v1/media/:id":                         {},
+		http.MethodDelete + " /api/v1/media/:id":                      {},
+		http.MethodPost + " /api/v1/media/:id/visibility":             {},
+		http.MethodPost + " /api/v1/media/:id/presign-download":       {},
+		http.MethodGet + " /api/v1/admin/media":                       {},
+		http.MethodPost + " /api/v1/admin/media/upload":               {},
+		http.MethodGet + " /api/v1/admin/media/:id":                   {},
+		http.MethodDelete + " /api/v1/admin/media/:id":                {},
+		http.MethodPost + " /api/v1/admin/media/:id/visibility":       {},
+		http.MethodPost + " /api/v1/admin/media/:id/presign-download": {},
 	}
 
 	for _, route := range router.Routes() {

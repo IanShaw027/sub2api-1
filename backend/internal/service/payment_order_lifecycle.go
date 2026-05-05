@@ -311,6 +311,15 @@ func paymentOrderStatusAllowsPaidReconciliation(status string) bool {
 	}
 }
 
+func paymentOrderStatusAllowsPublicPaidReconciliation(status string) bool {
+	switch status {
+	case OrderStatusExpired, OrderStatusFailed:
+		return true
+	default:
+		return false
+	}
+}
+
 // VerifyOrderByOutTradeNo actively queries the upstream provider to check
 // if a payment was made, and processes it if so. This handles the case where
 // the provider's notify callback was missed (e.g. EasyPay popup mode).
@@ -355,7 +364,7 @@ func (s *PaymentService) VerifyOrderPublic(ctx context.Context, outTradeNo strin
 	if err != nil {
 		return nil, infraerrors.NotFound("NOT_FOUND", "order not found")
 	}
-	if paymentOrderStatusAllowsPaidReconciliation(o.Status) {
+	if paymentOrderStatusAllowsPublicPaidReconciliation(o.Status) {
 		result := s.checkPaid(ctx, o)
 		if result == checkPaidResultAlreadyPaid {
 			o, err = s.entClient.PaymentOrder.Get(ctx, o.ID)

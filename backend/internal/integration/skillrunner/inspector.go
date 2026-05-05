@@ -155,7 +155,7 @@ func decodeManifest(file *zip.File, maxBytes uint64) (Manifest, error) {
 	if err != nil {
 		return Manifest{}, fmt.Errorf("open %s: %w", ManifestFile, err)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	limited := io.LimitReader(reader, int64(maxBytes))
 	var manifest Manifest
@@ -286,7 +286,7 @@ func validateEntrypoint(runtimeID, entrypoint string) error {
 			return fmt.Errorf("python3.11 entrypoint must end with .py")
 		}
 	case RuntimeNode20:
-		if !(strings.HasSuffix(entrypoint, ".js") || strings.HasSuffix(entrypoint, ".mjs") || strings.HasSuffix(entrypoint, ".cjs")) {
+		if !strings.HasSuffix(entrypoint, ".js") && !strings.HasSuffix(entrypoint, ".mjs") && !strings.HasSuffix(entrypoint, ".cjs") {
 			return fmt.Errorf("node20 entrypoint must end with .js, .mjs or .cjs")
 		}
 	default:

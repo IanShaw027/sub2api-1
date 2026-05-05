@@ -206,13 +206,13 @@ type PlanRequest struct {
 }
 
 type DispatchRequest struct {
-	Bundle         *Bundle         `json:"bundle"`
-	Review         ReviewGate      `json:"review"`
-	Archive        []byte          `json:"archive,omitempty"`
-	HostSkillDir   string          `json:"hostSkillDir,omitempty"`
-	HostScratchDir string          `json:"hostScratchDir,omitempty"`
-	Input          any             `json:"input,omitempty"`
-	Environment    map[string]any  `json:"environment,omitempty"`
+	Bundle         *Bundle        `json:"bundle"`
+	Review         ReviewGate     `json:"review"`
+	Archive        []byte         `json:"archive,omitempty"`
+	HostSkillDir   string         `json:"hostSkillDir,omitempty"`
+	HostScratchDir string         `json:"hostScratchDir,omitempty"`
+	Input          any            `json:"input,omitempty"`
+	Environment    map[string]any `json:"environment,omitempty"`
 }
 
 type DispatchResult struct {
@@ -230,15 +230,15 @@ type Runner interface {
 }
 
 type ScriptRunner struct {
-	Inspector *BundleInspector
-	Planner   *DockerPlanner
+	Inspector  *BundleInspector
+	Planner    *DockerPlanner
 	Dispatcher *LocalDispatcher
 }
 
 func NewScriptRunner() *ScriptRunner {
 	return &ScriptRunner{
-		Inspector: NewBundleInspector(ArchiveConstraints{}, nil),
-		Planner:   NewDockerPlanner(SandboxPolicy{}, nil),
+		Inspector:  NewBundleInspector(ArchiveConstraints{}, nil),
+		Planner:    NewDockerPlanner(SandboxPolicy{}, nil),
 		Dispatcher: NewLocalDispatcher(SandboxPolicy{}, nil),
 	}
 }

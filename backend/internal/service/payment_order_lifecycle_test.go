@@ -10,6 +10,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
+	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
@@ -242,10 +243,15 @@ func TestVerifyOrderByOutTradeNoBackfillsTradeNoFromPaidQuery(t *testing.T) {
 	require.Equal(t, OrderStatusCompleted, reloaded.Status)
 	require.Equal(t, "upstream-trade-123", reloaded.PaymentTradeNo)
 
-	require.Equal(t, 88.0, userRepo.getByIDUser.Balance)
-	require.Len(t, redeemRepo.useCalls, 1)
-	require.Equal(t, int64(1), redeemRepo.useCalls[0].id)
-	require.Equal(t, user.ID, redeemRepo.useCalls[0].userID)
+	reloadedUser, err := client.User.Get(ctx, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, 88.0, reloadedUser.Balance)
+
+	redeemCode, err := client.RedeemCode.Query().Where(redeemcode.CodeEQ(order.RechargeCode)).Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, StatusUsed, redeemCode.Status)
+	require.NotNil(t, redeemCode.UsedBy)
+	require.Equal(t, user.ID, *redeemCode.UsedBy)
 }
 
 func TestVerifyOrderByOutTradeNoRetriesZeroAmountPaidQueryOnce(t *testing.T) {

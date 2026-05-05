@@ -879,25 +879,6 @@ func aiSkillRowsAffected(result sql.Result) (int64, error) {
 	return result.RowsAffected()
 }
 
-func aiSkillScanSingleBool(ctx context.Context, q aiSkillQueryExecer, query string, args ...any) (bool, error) {
-	rows, err := q.QueryContext(ctx, query, args...)
-	if err != nil {
-		return false, err
-	}
-	defer func() { _ = rows.Close() }()
-	if !rows.Next() {
-		if err := rows.Err(); err != nil {
-			return false, err
-		}
-		return false, nil
-	}
-	var value bool
-	if err := rows.Scan(&value); err != nil {
-		return false, err
-	}
-	return value, rows.Err()
-}
-
 func aiSkillPrepareSkill(skill *domain.AISkill) error {
 	if skill == nil {
 		return nil

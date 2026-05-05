@@ -701,7 +701,7 @@ func TestExtractEmailFromGeminiIDToken(t *testing.T) {
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`))
 	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"email":"user@example.com","email_verified":true}`))
 
-	got := extractEmailFromGeminiIDToken(header + "." + payload + ".")
+	got := extractGeminiProfileFromIDToken(header + "." + payload + ".").Email
 	if got != "user@example.com" {
 		t.Fatalf("email mismatch: got=%q", got)
 	}
@@ -710,10 +710,10 @@ func TestExtractEmailFromGeminiIDToken(t *testing.T) {
 func TestGeminiTokenScopeHasUserInfoEmail(t *testing.T) {
 	t.Parallel()
 
-	if !geminiTokenScopeHasUserInfoEmail("https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email") {
+	if !geminiTokenScopeHasUserInfo("https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email") {
 		t.Fatal("expected userinfo.email scope to be detected")
 	}
-	if geminiTokenScopeHasUserInfoEmail("https://www.googleapis.com/auth/cloud-platform") {
+	if geminiTokenScopeHasUserInfo("https://www.googleapis.com/auth/cloud-platform") {
 		t.Fatal("did not expect userinfo.email scope")
 	}
 }

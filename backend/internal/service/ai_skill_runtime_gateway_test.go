@@ -6,7 +6,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -178,8 +177,10 @@ func TestAISkillRuntimeGatewayExecutesPromptImageThroughImagesRuntime(t *testing
 func TestAISkillScriptRunnerRuntimeDispatchesBundle(t *testing.T) {
 	t.Parallel()
 
-	archive := buildAISkillArchiveFromDir(t, "/opt/sub2api/backend/internal/service/testdata/skills/script_python_echo")
 	runtime := NewAISkillScriptRunnerRuntime(skillrunner.NewScriptRunner())
+	archive := buildAISkillArchiveFromDir(t, filepath.Join("testdata", "skills", "script_python_echo"))
+	archivePath := filepath.Join(t.TempDir(), "script_python_echo.zip")
+	require.NoError(t, os.WriteFile(archivePath, archive, 0o600))
 
 	result, err := runtime.ExecuteScript(context.Background(), AISkillScriptRuntimeInput{
 		RunID:          51,
@@ -191,7 +192,7 @@ func TestAISkillScriptRunnerRuntimeDispatchesBundle(t *testing.T) {
 		ScriptName:     "script_python_echo",
 		EntryPoint:     "main.py",
 		Protocol:       skillrunner.ProtocolJSONFileV1,
-		ArchiveBase64:  base64.StdEncoding.EncodeToString(archive),
+		ArchivePath:    archivePath,
 		TimeoutSeconds: 45,
 		Environment: map[string]string{
 			"SUBJECT": "{{subject}}",

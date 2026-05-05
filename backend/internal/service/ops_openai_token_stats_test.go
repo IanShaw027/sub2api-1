@@ -65,7 +65,7 @@ func TestOpsServiceGetOpenAITokenStats_Validation(t *testing.T) {
 			filter: &OpsOpenAITokenStatsFilter{
 				StartTime: now.Add(-time.Hour),
 				EndTime:   now,
-				GroupID:   int64Ptr(0),
+				GroupID:   opsTokenStatsInt64Ptr(0),
 			},
 			wantCode:   400,
 			wantReason: "OPS_GROUP_ID_INVALID",
@@ -159,4 +159,4 @@ func TestOpsServiceGetOpenAITokenStats_RepoUnavailable(t *testing.T) {
 	require.Equal(t, "OPS_REPO_UNAVAILABLE", infraerrors.Reason(err))
 }
 
-func int64Ptr(v int64) *int64 { return &v }
+func opsTokenStatsInt64Ptr(v int64) *int64 { return &v }
