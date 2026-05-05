@@ -122,26 +122,16 @@ func (r *affiliateRepository) AccrueQuota(ctx context.Context, input service.Aff
 	var appliedAmount float64
 	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
 		var historyQuota float64
-		{
-			rows, err := txClient.QueryContext(txCtx, `
+		err := scanSingleRow(txCtx, txClient, `
 SELECT aff_history_quota::double precision
 FROM user_affiliates
 WHERE user_id = $1
-FOR UPDATE`, input.InviterID)
-			if err != nil {
-				return fmt.Errorf("lock affiliate inviter: %w", err)
-			}
-			defer func() { _ = rows.Close() }()
-
-			if !rows.Next() {
-				if err := rows.Err(); err != nil {
-					return err
-				}
+FOR UPDATE`, []any{input.InviterID}, &historyQuota)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
 				return service.ErrUserNotFound
 			}
-			if err := rows.Scan(&historyQuota); err != nil {
-				return err
-			}
+			return fmt.Errorf("lock affiliate inviter: %w", err)
 		}
 
 		amount := input.Amount
@@ -160,23 +150,14 @@ FOR UPDATE`, input.InviterID)
 
 		if input.PerInviteeCap > 0 {
 			var inviteeTotal float64
-			{
-				rows, err := txClient.QueryContext(txCtx, `
+			err := scanSingleRow(txCtx, txClient, `
 SELECT COALESCE(SUM(amount), 0)::double precision
 FROM user_affiliate_ledger
 WHERE user_id = $1
   AND source_user_id = $2
-  AND action = 'accrue'`, input.InviterID, input.InviteeUserID)
-				if err != nil {
-					return fmt.Errorf("query affiliate invitee accrued amount: %w", err)
-				}
-				defer func() { _ = rows.Close() }()
-
-				if rows.Next() {
-					if err := rows.Scan(&inviteeTotal); err != nil {
-						return err
-					}
-				}
+  AND action = 'accrue'`, []any{input.InviterID, input.InviteeUserID}, &inviteeTotal)
+			if err != nil {
+				return fmt.Errorf("query affiliate invitee accrued amount: %w", err)
 			}
 			remainingInviteeCap := input.PerInviteeCap - inviteeTotal
 			if remainingInviteeCap <= 0 {
@@ -192,25 +173,16 @@ WHERE user_id = $1
 
 		if input.SourceOrderID > 0 {
 			var alreadyInserted bool
-			{
-				rows, err := txClient.QueryContext(txCtx, `
+			err := scanSingleRow(txCtx, txClient, `
 SELECT EXISTS(
   SELECT 1
   FROM user_affiliate_ledger
   WHERE user_id = $1
     AND source_order_id = $2
     AND action = 'accrue'
-)`, input.InviterID, input.SourceOrderID)
-				if err != nil {
-					return fmt.Errorf("check affiliate order ledger duplicate: %w", err)
-				}
-				defer func() { _ = rows.Close() }()
-
-				if rows.Next() {
-					if err := rows.Scan(&alreadyInserted); err != nil {
-						return err
-					}
-				}
+)`, []any{input.InviterID, input.SourceOrderID}, &alreadyInserted)
+			if err != nil {
+				return fmt.Errorf("check affiliate order ledger duplicate: %w", err)
 			}
 			if alreadyInserted {
 				return nil
@@ -219,7 +191,8 @@ SELECT EXISTS(
 
 		inviteeSlotClaimed := false
 		{
-			rows, err := txClient.QueryContext(txCtx, `
+			var alreadyClaimed bool
+			err := scanSingleRow(txCtx, txClient, `
 SELECT EXISTS(
   SELECT 1
   FROM user_affiliate_ledger
@@ -227,39 +200,22 @@ SELECT EXISTS(
     AND source_user_id = $2
     AND action = 'accrue'
     AND invitee_slot_claimed = true
-)`, input.InviterID, input.InviteeUserID)
+)`, []any{input.InviterID, input.InviteeUserID}, &alreadyClaimed)
 			if err != nil {
 				return fmt.Errorf("check affiliate invitee slot: %w", err)
-			}
-			defer func() { _ = rows.Close() }()
-
-			var alreadyClaimed bool
-			if rows.Next() {
-				if err := rows.Scan(&alreadyClaimed); err != nil {
-					return err
-				}
 			}
 			if !alreadyClaimed {
 				if input.InviteeLimit > 0 {
 					var rebatedCount int
-					{
-						rows, err := txClient.QueryContext(txCtx, `
+					err := scanSingleRow(txCtx, txClient, `
 SELECT COUNT(DISTINCT source_user_id)
 FROM user_affiliate_ledger
 WHERE user_id = $1
   AND action = 'accrue'
   AND invitee_slot_claimed = true
-  AND source_user_id IS NOT NULL`, input.InviterID)
-						if err != nil {
-							return fmt.Errorf("count affiliate invitee slots: %w", err)
-						}
-						defer func() { _ = rows.Close() }()
-
-						if rows.Next() {
-							if err := rows.Scan(&rebatedCount); err != nil {
-								return err
-							}
-						}
+  AND source_user_id IS NOT NULL`, []any{input.InviterID}, &rebatedCount)
+					if err != nil {
+						return fmt.Errorf("count affiliate invitee slots: %w", err)
 					}
 					if rebatedCount >= input.InviteeLimit {
 						return nil

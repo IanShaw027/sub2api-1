@@ -219,6 +219,7 @@ func TestAffiliateRepository_AccrueQuota_IdempotentBySourceOrder(t *testing.T) {
 		SetPaymentTradeNo("").
 		SetOrderType("balance").
 		SetStatus("COMPLETED").
+		SetExpiresAt(time.Now().Add(24 * time.Hour)).
 		Save(txCtx)
 	require.NoError(t, err)
 
@@ -449,6 +450,7 @@ func TestAffiliateRepository_ListInviteesIncludesHistoricalConsumptionAndSlotCla
 		SetPaymentTradeNo("").
 		SetOrderType("balance").
 		SetStatus("COMPLETED").
+		SetExpiresAt(time.Now().Add(24 * time.Hour)).
 		Save(txCtx)
 	require.NoError(t, err)
 
