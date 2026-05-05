@@ -5,17 +5,18 @@ package service
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"image"
 	"image/png"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
@@ -54,6 +55,34 @@ type mockUserRepoTxState struct {
 
 type mockUserSettingRepo struct {
 	values map[string]string
+}
+
+type userServiceMediaRepo struct {
+	nextID int64
+}
+
+func (r *userServiceMediaRepo) Create(_ context.Context, asset *MediaAsset) error {
+	r.nextID++
+	asset.ID = r.nextID
+	return nil
+}
+
+func (*userServiceMediaRepo) GetByID(context.Context, int64) (*MediaAsset, error) { return nil, nil }
+func (*userServiceMediaRepo) List(context.Context, pagination.PaginationParams, MediaListFilters) ([]MediaAsset, *pagination.PaginationResult, error) {
+	return nil, nil, nil
+}
+func (*userServiceMediaRepo) UpdateVisibility(context.Context, int64, string) error { return nil }
+func (*userServiceMediaRepo) MarkDeleted(context.Context, int64, time.Time) error   { return nil }
+
+func newUserServiceMediaService() *MediaService {
+	cfg := &config.Config{}
+	cfg.Media.Enabled = true
+	cfg.Media.Bucket = "media"
+	cfg.Media.PublicBaseURL = "https://source.qazwc.com"
+	cfg.Media.MaxUploadSizeBytes = 64 << 20
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
+	return NewMediaService(&userServiceMediaRepo{}, &mediaIngestTestStore{}, cfg)
 }
 
 func (m *mockUserSettingRepo) Get(context.Context, string) (*Setting, error) {
@@ -726,7 +755,6 @@ func TestNewUserService_FieldsAssignment(t *testing.T) {
 func TestUpdateProfile_StoresInlineAvatarWithinLimit(t *testing.T) {
 	raw := []byte("small-avatar")
 	dataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(raw)
-	expectedSum := sha256.Sum256(raw)
 	repo := &mockUserRepo{
 		getByIDUser: &User{
 			ID:       7,
@@ -734,22 +762,23 @@ func TestUpdateProfile_StoresInlineAvatarWithinLimit(t *testing.T) {
 			Username: "avatar-user",
 		},
 	}
-	svc := NewUserService(repo, nil, nil, nil)
+	svc := NewUserService(repo, nil, nil, nil, newUserServiceMediaService())
 
 	updated, err := svc.UpdateProfile(context.Background(), 7, UpdateProfileRequest{
 		AvatarURL: &dataURL,
 	})
 	require.NoError(t, err)
 	require.Len(t, repo.upsertAvatarArgs, 1)
-	require.Equal(t, "inline", repo.upsertAvatarArgs[0].StorageProvider)
+	require.Equal(t, "media", repo.upsertAvatarArgs[0].StorageProvider)
+	require.NotEmpty(t, repo.upsertAvatarArgs[0].StorageKey)
 	require.Equal(t, "image/png", repo.upsertAvatarArgs[0].ContentType)
 	require.Equal(t, len(raw), repo.upsertAvatarArgs[0].ByteSize)
-	require.Equal(t, hex.EncodeToString(expectedSum[:]), repo.upsertAvatarArgs[0].SHA256)
-	require.Equal(t, dataURL, updated.AvatarURL)
-	require.Equal(t, "inline", updated.AvatarSource)
+	require.NotEmpty(t, repo.upsertAvatarArgs[0].SHA256)
+	require.Equal(t, "https://source.qazwc.com/api/v1/media/public/1", updated.AvatarURL)
+	require.Equal(t, "media", updated.AvatarSource)
 	require.Equal(t, "image/png", updated.AvatarMIME)
 	require.Equal(t, len(raw), updated.AvatarByteSize)
-	require.Equal(t, hex.EncodeToString(expectedSum[:]), updated.AvatarSHA256)
+	require.NotEmpty(t, updated.AvatarSHA256)
 }
 
 func TestUpdateProfile_CompressesInlineAvatarToTwentyKilobytes(t *testing.T) {
@@ -785,21 +814,21 @@ func TestUpdateProfile_CompressesInlineAvatarToTwentyKilobytes(t *testing.T) {
 			Username: "avatar-compress",
 		},
 	}
-	svc := NewUserService(repo, nil, nil, nil)
+	svc := NewUserService(repo, nil, nil, nil, newUserServiceMediaService())
 
 	updated, err := svc.UpdateProfile(context.Background(), 17, UpdateProfileRequest{
 		AvatarURL: &dataURL,
 	})
 	require.NoError(t, err)
 	require.Len(t, repo.upsertAvatarArgs, 1)
-	require.Equal(t, "inline", repo.upsertAvatarArgs[0].StorageProvider)
+	require.Equal(t, "media", repo.upsertAvatarArgs[0].StorageProvider)
 	require.LessOrEqual(t, repo.upsertAvatarArgs[0].ByteSize, 20*1024)
 	require.Equal(t, "image/jpeg", repo.upsertAvatarArgs[0].ContentType)
-	require.Contains(t, repo.upsertAvatarArgs[0].URL, "data:image/jpeg;base64,")
-	require.Equal(t, "inline", updated.AvatarSource)
+	require.Equal(t, "https://source.qazwc.com/api/v1/media/public/1", repo.upsertAvatarArgs[0].URL)
+	require.Equal(t, "media", updated.AvatarSource)
 	require.Equal(t, "image/jpeg", updated.AvatarMIME)
 	require.LessOrEqual(t, updated.AvatarByteSize, 20*1024)
-	require.Contains(t, updated.AvatarURL, "data:image/jpeg;base64,")
+	require.Equal(t, "https://source.qazwc.com/api/v1/media/public/1", updated.AvatarURL)
 	require.NotEmpty(t, updated.AvatarSHA256)
 }
 
@@ -825,7 +854,13 @@ func TestUpdateProfile_RejectsInlineAvatarOverLimit(t *testing.T) {
 }
 
 func TestUpdateProfile_StoresRemoteAvatarURL(t *testing.T) {
-	remoteURL := "https://cdn.example.com/avatar.png"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("remote-avatar"))
+	}))
+	defer server.Close()
+
+	remoteURL := server.URL + "/avatar.png"
 	repo := &mockUserRepo{
 		getByIDUser: &User{
 			ID:       9,
@@ -833,18 +868,18 @@ func TestUpdateProfile_StoresRemoteAvatarURL(t *testing.T) {
 			Username: "remote-avatar",
 		},
 	}
-	svc := NewUserService(repo, nil, nil, nil)
+	svc := NewUserService(repo, nil, nil, nil, newUserServiceMediaService())
 
 	updated, err := svc.UpdateProfile(context.Background(), 9, UpdateProfileRequest{
 		AvatarURL: &remoteURL,
 	})
 	require.NoError(t, err)
 	require.Len(t, repo.upsertAvatarArgs, 1)
-	require.Equal(t, "remote_url", repo.upsertAvatarArgs[0].StorageProvider)
-	require.Equal(t, remoteURL, repo.upsertAvatarArgs[0].URL)
-	require.Equal(t, remoteURL, updated.AvatarURL)
-	require.Equal(t, "remote_url", updated.AvatarSource)
-	require.Zero(t, updated.AvatarByteSize)
+	require.Equal(t, "media", repo.upsertAvatarArgs[0].StorageProvider)
+	require.Equal(t, "https://source.qazwc.com/api/v1/media/public/1", repo.upsertAvatarArgs[0].URL)
+	require.Equal(t, "https://source.qazwc.com/api/v1/media/public/1", updated.AvatarURL)
+	require.Equal(t, "media", updated.AvatarSource)
+	require.NotZero(t, updated.AvatarByteSize)
 }
 
 func TestUpdateProfile_DeletesAvatarOnEmptyString(t *testing.T) {

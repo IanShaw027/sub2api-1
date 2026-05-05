@@ -6,6 +6,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/color"
+	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -258,6 +262,153 @@ func TestExchangePendingOAuthCompletionSkipsInvalidAvatarAdoptionWithoutBlocking
 		Only(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, consumed.ConsumedAt)
+}
+
+func TestExchangePendingOAuthCompletionStoresAdoptedAvatarInSharedMedia(t *testing.T) {
+	mediaService := newOAuthPendingFlowMediaService()
+	handler, client := newOAuthPendingFlowTestHandlerWithDependencies(t, oauthPendingFlowTestHandlerOptions{
+		mediaService: mediaService,
+	})
+	ctx := context.Background()
+
+	avatarBytes := buildOAuthPendingFlowTestPNG(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(avatarBytes)
+	}))
+	defer server.Close()
+
+	userEntity, err := client.User.Create().
+		SetEmail("media-avatar@example.com").
+		SetUsername("legacy-name").
+		SetPasswordHash("hash").
+		SetRole(service.RoleUser).
+		SetStatus(service.StatusActive).
+		Save(ctx)
+	require.NoError(t, err)
+
+	session, err := client.PendingAuthSession.Create().
+		SetSessionToken("pending-media-avatar-token").
+		SetIntent("login").
+		SetProviderType("linuxdo").
+		SetProviderKey("linuxdo").
+		SetProviderSubject("media-avatar-123").
+		SetTargetUserID(userEntity.ID).
+		SetResolvedEmail(userEntity.Email).
+		SetBrowserSessionKey("browser-media-avatar-key").
+		SetUpstreamIdentityClaims(map[string]any{
+			"username":               "linuxdo_user",
+			"suggested_display_name": "Alice Example",
+			"suggested_avatar_url":   server.URL + "/avatars/alice.png",
+		}).
+		SetLocalFlowState(map[string]any{
+			oauthCompletionResponseKey: map[string]any{
+				"access_token": "access-token",
+				"redirect":     "/dashboard",
+			},
+		}).
+		SetExpiresAt(time.Now().UTC().Add(10 * time.Minute)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	body := bytes.NewBufferString(`{"adopt_display_name":true,"adopt_avatar":true}`)
+	recorder := httptest.NewRecorder()
+	ginCtx, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/oauth/pending/exchange", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: oauthPendingSessionCookieName, Value: encodeCookieValue(session.SessionToken)})
+	req.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue("browser-media-avatar-key")})
+	ginCtx.Request = req
+
+	handler.ExchangePendingOAuthCompletion(ginCtx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	data := decodeJSONResponseData(t, recorder)
+	require.Equal(t, mediaService.PublicURL(1, service.MediaVisibilityPublic), data["suggested_avatar_url"])
+	require.Equal(t, mediaService.PublicURL(1, service.MediaVisibilityPublic), data["avatar_url"])
+
+	identity, err := client.AuthIdentity.Query().
+		Where(
+			authidentity.ProviderTypeEQ("linuxdo"),
+			authidentity.ProviderKeyEQ("linuxdo"),
+			authidentity.ProviderSubjectEQ("media-avatar-123"),
+		).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "Alice Example", identity.Metadata["display_name"])
+	require.Equal(t, mediaService.PublicURL(1, service.MediaVisibilityPublic), identity.Metadata["suggested_avatar_url"])
+	require.Equal(t, mediaService.PublicURL(1, service.MediaVisibilityPublic), identity.Metadata["avatar_url"])
+
+	avatar := loadUserAvatarRecord(t, client, userEntity.ID)
+	require.NotNil(t, avatar)
+	require.Equal(t, "media", avatar.StorageProvider)
+	require.Equal(t, mediaService.PublicURL(1, service.MediaVisibilityPublic), avatar.URL)
+}
+
+func TestExchangePendingOAuthCompletionKeepsCompletionWhenAvatarAdoptionIsBlockedByAllowlist(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Media.Enabled = true
+	cfg.Media.Bucket = "media"
+	cfg.Media.PublicBaseURL = "https://source.qazwc.com"
+	cfg.Media.MaxUploadSizeBytes = 64 << 20
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = false
+	mediaService := service.NewMediaService(&oauthPendingFlowMediaRepoStub{}, &oauthPendingFlowMediaStoreStub{}, cfg)
+	handler, client := newOAuthPendingFlowTestHandlerWithDependencies(t, oauthPendingFlowTestHandlerOptions{
+		mediaService: mediaService,
+	})
+	ctx := context.Background()
+
+	userEntity, err := client.User.Create().
+		SetEmail("blocked-avatar@example.com").
+		SetUsername("legacy-name").
+		SetPasswordHash("hash").
+		SetRole(service.RoleUser).
+		SetStatus(service.StatusActive).
+		Save(ctx)
+	require.NoError(t, err)
+
+	session, err := client.PendingAuthSession.Create().
+		SetSessionToken("pending-blocked-avatar-token").
+		SetIntent("login").
+		SetProviderType("linuxdo").
+		SetProviderKey("linuxdo").
+		SetProviderSubject("blocked-avatar-123").
+		SetTargetUserID(userEntity.ID).
+		SetResolvedEmail(userEntity.Email).
+		SetBrowserSessionKey("browser-blocked-avatar-key").
+		SetUpstreamIdentityClaims(map[string]any{
+			"username":               "linuxdo_user",
+			"suggested_display_name": "Alice Example",
+			"suggested_avatar_url":   "http://127.0.0.1:65535/avatar.png",
+		}).
+		SetLocalFlowState(map[string]any{
+			oauthCompletionResponseKey: map[string]any{
+				"access_token": "access-token",
+				"redirect":     "/dashboard",
+			},
+		}).
+		SetExpiresAt(time.Now().UTC().Add(10 * time.Minute)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	body := bytes.NewBufferString(`{"adopt_display_name":true,"adopt_avatar":true}`)
+	recorder := httptest.NewRecorder()
+	ginCtx, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/oauth/pending/exchange", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: oauthPendingSessionCookieName, Value: encodeCookieValue(session.SessionToken)})
+	req.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue("browser-blocked-avatar-key")})
+	ginCtx.Request = req
+
+	handler.ExchangePendingOAuthCompletion(ginCtx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	data := decodeJSONResponseData(t, recorder)
+	require.NotEmpty(t, data["access_token"])
+
+	avatar := loadUserAvatarRecord(t, client, userEntity.ID)
+	require.Nil(t, avatar)
 }
 
 func TestExchangePendingOAuthCompletionBindCurrentUserPreviewThenFinalizeBindsIdentityWithoutAdoption(t *testing.T) {
@@ -1679,6 +1830,93 @@ func TestCreateOIDCOAuthAccountRollsBackPostBindFailureBeforeIdentityCanCommit(t
 	require.Nil(t, storedSession.ConsumedAt)
 }
 
+func TestCreateOIDCOAuthAccountCleansUpUploadedAvatarMediaWhenPostBindFailureRollsBack(t *testing.T) {
+	mediaService, mediaRepo, mediaStore := newOAuthPendingFlowMediaServiceWithStubs()
+	handler, client := newOAuthPendingFlowTestHandlerWithDependencies(t, oauthPendingFlowTestHandlerOptions{
+		emailVerifyEnabled: true,
+		emailCache: &oauthPendingFlowEmailCacheStub{
+			verificationCodes: map[string]*service.VerificationCodeData{
+				"fresh@example.com": {
+					Code:      "246810",
+					CreatedAt: time.Now().UTC(),
+					ExpiresAt: time.Now().UTC().Add(15 * time.Minute),
+				},
+			},
+		},
+		mediaService: mediaService,
+		userRepoOptions: oauthPendingFlowUserRepoOptions{
+			rejectDeleteWhileAuthIdentityExists: true,
+		},
+	})
+	ctx := context.Background()
+
+	avatarBytes := buildOAuthPendingFlowTestPNG(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(avatarBytes)
+	}))
+	defer server.Close()
+
+	session, err := client.PendingAuthSession.Create().
+		SetSessionToken("create-account-avatar-cleanup-session-token").
+		SetIntent("login").
+		SetProviderType("oidc").
+		SetProviderKey("https://issuer.example").
+		SetProviderSubject("oidc-avatar-cleanup-123").
+		SetBrowserSessionKey("create-account-avatar-cleanup-browser-session-key").
+		SetUpstreamIdentityClaims(map[string]any{
+			"username":             "oidc_user",
+			"suggested_avatar_url": server.URL + "/avatars/alice.png",
+		}).
+		SetRedirectTo("/profile").
+		SetExpiresAt(time.Now().UTC().Add(10 * time.Minute)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	pendingOAuthCreateAccountPreCommitHook = func(context.Context, *dbent.PendingAuthSession) error {
+		return errors.New("forced post-bind failure")
+	}
+	t.Cleanup(func() {
+		pendingOAuthCreateAccountPreCommitHook = nil
+	})
+
+	body := bytes.NewBufferString(`{"email":"fresh@example.com","verify_code":"246810","password":"secret-123","adopt_display_name":false,"adopt_avatar":true}`)
+	recorder := httptest.NewRecorder()
+	ginCtx, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/oauth/oidc/create-account", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: oauthPendingSessionCookieName, Value: encodeCookieValue(session.SessionToken)})
+	req.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue("create-account-avatar-cleanup-browser-session-key")})
+	ginCtx.Request = req
+
+	handler.CreateOIDCOAuthAccount(ginCtx)
+
+	require.Equal(t, http.StatusInternalServerError, recorder.Code)
+
+	userCount, err := client.User.Query().Where(dbuser.EmailEQ("fresh@example.com")).Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, userCount)
+
+	identityCount, err := client.AuthIdentity.Query().
+		Where(
+			authidentity.ProviderTypeEQ("oidc"),
+			authidentity.ProviderKeyEQ("https://issuer.example"),
+			authidentity.ProviderSubjectEQ("oidc-avatar-cleanup-123"),
+		).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, identityCount)
+
+	require.Len(t, mediaRepo.deletedIDs, 1)
+	require.Equal(t, int64(1), mediaRepo.deletedIDs[0])
+	require.NotEmpty(t, mediaStore.uploadedObjectKeys)
+	require.NotEmpty(t, mediaStore.deletedObjectKeys)
+
+	storedSession, err := client.PendingAuthSession.Get(ctx, session.ID)
+	require.NoError(t, err)
+	require.Nil(t, storedSession.ConsumedAt)
+}
+
 func TestBindOIDCOAuthLoginBindsExistingUserAndConsumesSession(t *testing.T) {
 	handler, client := newOAuthPendingFlowTestHandler(t, false)
 	ctx := context.Background()
@@ -2404,11 +2642,101 @@ type oauthPendingFlowTestHandlerOptions struct {
 	invitationEnabled  bool
 	emailVerifyEnabled bool
 	emailCache         service.EmailCache
+	mediaService       *service.MediaService
 	settingValues      map[string]string
 	defaultSubAssigner service.DefaultSubscriptionAssigner
 	totpCache          service.TotpCache
 	totpEncryptor      service.SecretEncryptor
 	userRepoOptions    oauthPendingFlowUserRepoOptions
+}
+
+type oauthPendingFlowMediaRepoStub struct {
+	nextID     int64
+	assets     map[int64]*service.MediaAsset
+	deletedIDs []int64
+}
+
+func (r *oauthPendingFlowMediaRepoStub) Create(_ context.Context, asset *service.MediaAsset) error {
+	r.nextID++
+	asset.ID = r.nextID
+	if r.assets == nil {
+		r.assets = make(map[int64]*service.MediaAsset)
+	}
+	cloned := *asset
+	r.assets[asset.ID] = &cloned
+	return nil
+}
+
+func (r *oauthPendingFlowMediaRepoStub) GetByID(_ context.Context, id int64) (*service.MediaAsset, error) {
+	if r.assets == nil || r.assets[id] == nil {
+		return nil, service.ErrMediaNotFound
+	}
+	cloned := *r.assets[id]
+	return &cloned, nil
+}
+
+func (*oauthPendingFlowMediaRepoStub) List(context.Context, pagination.PaginationParams, service.MediaListFilters) ([]service.MediaAsset, *pagination.PaginationResult, error) {
+	return nil, nil, nil
+}
+
+func (*oauthPendingFlowMediaRepoStub) UpdateVisibility(context.Context, int64, string) error {
+	return nil
+}
+func (r *oauthPendingFlowMediaRepoStub) MarkDeleted(_ context.Context, id int64, _ time.Time) error {
+	if r.assets == nil || r.assets[id] == nil {
+		return service.ErrMediaNotFound
+	}
+	r.deletedIDs = append(r.deletedIDs, id)
+	r.assets[id].Status = service.MediaStatusDeleted
+	return nil
+}
+
+type oauthPendingFlowMediaStoreStub struct {
+	uploadedBucket      string
+	uploadedObjectKey   string
+	uploadedBody        []byte
+	uploadedContentType string
+	uploadedObjectKeys  []string
+	deletedObjectKeys   []string
+}
+
+func (s *oauthPendingFlowMediaStoreStub) Upload(_ context.Context, bucket, objectKey string, body []byte, contentType string) error {
+	s.uploadedBucket = bucket
+	s.uploadedObjectKey = objectKey
+	s.uploadedBody = append([]byte(nil), body...)
+	s.uploadedContentType = contentType
+	s.uploadedObjectKeys = append(s.uploadedObjectKeys, objectKey)
+	return nil
+}
+
+func (*oauthPendingFlowMediaStoreStub) Download(context.Context, string, string) (io.ReadCloser, error) {
+	return nil, nil
+}
+
+func (s *oauthPendingFlowMediaStoreStub) Delete(_ context.Context, _ string, objectKey string) error {
+	s.deletedObjectKeys = append(s.deletedObjectKeys, objectKey)
+	return nil
+}
+func (*oauthPendingFlowMediaStoreStub) Stat(context.Context, string, string) (int64, error) {
+	return 0, nil
+}
+
+func newOAuthPendingFlowMediaService() *service.MediaService {
+	mediaService, _, _ := newOAuthPendingFlowMediaServiceWithStubs()
+	return mediaService
+}
+
+func newOAuthPendingFlowMediaServiceWithStubs() (*service.MediaService, *oauthPendingFlowMediaRepoStub, *oauthPendingFlowMediaStoreStub) {
+	cfg := &config.Config{}
+	cfg.Media.Enabled = true
+	cfg.Media.Bucket = "media"
+	cfg.Media.PublicBaseURL = "https://source.qazwc.com"
+	cfg.Media.MaxUploadSizeBytes = 64 << 20
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
+	repo := &oauthPendingFlowMediaRepoStub{}
+	store := &oauthPendingFlowMediaStoreStub{}
+	return service.NewMediaService(repo, store, cfg), repo, store
 }
 
 var lastOAuthPendingFlowAffiliateRepo *oauthPendingFlowAffiliateRepoStub
@@ -2427,6 +2755,20 @@ func newOAuthPendingFlowAffiliateRepoStub() *oauthPendingFlowAffiliateRepoStub {
 		boundInviters:   make(map[int64]int64),
 		signupBonusSeen: make(map[int64]bool),
 	}
+}
+
+func buildOAuthPendingFlowTestPNG(t *testing.T) []byte {
+	t.Helper()
+
+	img := image.NewRGBA(image.Rect(0, 0, 8, 8))
+	for y := 0; y < 8; y++ {
+		for x := 0; x < 8; x++ {
+			img.SetRGBA(x, y, color.RGBA{R: uint8(x * 31), G: uint8(y * 31), B: 127, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	require.NoError(t, png.Encode(&buf, img))
+	return buf.Bytes()
 }
 
 func (r *oauthPendingFlowAffiliateRepoStub) EnsureUserAffiliate(ctx context.Context, userID int64) (*service.AffiliateSummary, error) {
@@ -2597,7 +2939,7 @@ CREATE TABLE IF NOT EXISTS user_affiliate_ledger (
 		options.defaultSubAssigner,
 		affiliateSvc,
 	)
-	userSvc := service.NewUserService(userRepo, nil, nil, nil)
+	userSvc := service.NewUserService(userRepo, nil, nil, nil, options.mediaService)
 	var totpSvc *service.TotpService
 	if options.totpCache != nil || options.totpEncryptor != nil {
 		totpCache := options.totpCache

@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -188,6 +189,8 @@ type UserAvatar struct {
 	SHA256          string
 }
 
+type AvatarCleanupFunc func(context.Context) error
+
 type UpsertUserAvatarInput struct {
 	StorageProvider string
 	StorageKey      string
@@ -213,16 +216,27 @@ type UserService struct {
 	settingRepo          SettingRepository
 	authCacheInvalidator APIKeyAuthCacheInvalidator
 	billingCache         BillingCache
+	mediaService         *MediaService
 }
 
 // NewUserService 创建用户服务实例
-func NewUserService(userRepo UserRepository, settingRepo SettingRepository, authCacheInvalidator APIKeyAuthCacheInvalidator, billingCache BillingCache) *UserService {
-	return &UserService{
+func NewUserService(
+	userRepo UserRepository,
+	settingRepo SettingRepository,
+	authCacheInvalidator APIKeyAuthCacheInvalidator,
+	billingCache BillingCache,
+	mediaServices ...*MediaService,
+) *UserService {
+	svc := &UserService{
 		userRepo:             userRepo,
 		settingRepo:          settingRepo,
 		authCacheInvalidator: authCacheInvalidator,
 		billingCache:         billingCache,
 	}
+	if len(mediaServices) > 0 {
+		svc.mediaService = mediaServices[0]
+	}
+	return svc
 }
 
 // GetFirstAdmin 获取首个管理员用户（用于 Admin API Key 认证）
@@ -479,6 +493,7 @@ func (s *UserService) updateProfile(ctx context.Context, userID int64, req Updat
 		return nil, 0, fmt.Errorf("get user: %w", err)
 	}
 	oldConcurrency := user.Concurrency
+	var avatarCleanup AvatarCleanupFunc
 
 	// 更新字段
 	if req.Email != nil {
@@ -498,10 +513,11 @@ func (s *UserService) updateProfile(ctx context.Context, userID int64, req Updat
 	}
 
 	if req.AvatarURL != nil {
-		avatar, err := s.SetAvatar(ctx, userID, *req.AvatarURL)
+		avatar, cleanup, err := s.SetAvatarWithCleanup(ctx, userID, *req.AvatarURL)
 		if err != nil {
 			return nil, oldConcurrency, err
 		}
+		avatarCleanup = cleanup
 		applyUserAvatar(user, avatar)
 	}
 
@@ -521,6 +537,7 @@ func (s *UserService) updateProfile(ctx context.Context, userID int64, req Updat
 	}
 
 	if err := s.userRepo.Update(ctx, user); err != nil {
+		runAvatarCleanupBestEffort(ctx, avatarCleanup, "cleanup uploaded avatar after profile update failure")
 		return nil, oldConcurrency, fmt.Errorf("update user: %w", err)
 	}
 
@@ -528,24 +545,136 @@ func (s *UserService) updateProfile(ctx context.Context, userID int64, req Updat
 }
 
 func (s *UserService) SetAvatar(ctx context.Context, userID int64, raw string) (*UserAvatar, error) {
+	avatar, _, err := s.SetAvatarWithCleanup(ctx, userID, raw)
+	return avatar, err
+}
+
+func (s *UserService) SetAvatarWithCleanup(ctx context.Context, userID int64, raw string) (*UserAvatar, AvatarCleanupFunc, error) {
 	avatarValue := strings.TrimSpace(raw)
 	if avatarValue == "" {
 		if err := s.userRepo.DeleteUserAvatar(ctx, userID); err != nil {
-			return nil, fmt.Errorf("delete avatar: %w", err)
+			return nil, nil, fmt.Errorf("delete avatar: %w", err)
 		}
-		return nil, nil
+		return nil, nil, nil
+	}
+
+	if s.mediaService != nil && s.mediaService.isEnabled() {
+		return s.setAvatarViaMedia(ctx, userID, avatarValue)
 	}
 
 	avatarInput, err := normalizeUserAvatarInput(avatarValue)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	avatar, err := s.userRepo.UpsertUserAvatar(ctx, userID, avatarInput)
 	if err != nil {
-		return nil, fmt.Errorf("upsert avatar: %w", err)
+		return nil, nil, fmt.Errorf("upsert avatar: %w", err)
 	}
-	return avatar, nil
+	return avatar, nil, nil
+}
+
+func (s *UserService) setAvatarViaMedia(ctx context.Context, userID int64, raw string) (*UserAvatar, AvatarCleanupFunc, error) {
+	if mediaID, ok := ParseManagedMediaID(s.mediaService, raw); ok {
+		asset, err := s.mediaService.repo.GetByID(ctx, mediaID)
+		if err == nil && asset != nil && asset.Status == MediaStatusActive {
+			publicURL := s.mediaService.PublicURL(asset.ID, asset.Visibility)
+			if strings.TrimSpace(publicURL) != "" {
+				avatar, upsertErr := s.userRepo.UpsertUserAvatar(ctx, userID, UpsertUserAvatarInput{
+					StorageProvider: "media",
+					StorageKey:      asset.ObjectKey,
+					URL:             publicURL,
+					ContentType:     asset.MIMEType,
+					ByteSize:        int(asset.SizeBytes),
+					SHA256:          asset.SHA256,
+				})
+				if upsertErr != nil {
+					return nil, nil, fmt.Errorf("upsert avatar: %w", upsertErr)
+				}
+				return avatar, nil, nil
+			}
+		}
+
+		avatarInput, err := normalizeUserAvatarInput(raw)
+		if err != nil {
+			return nil, nil, err
+		}
+		avatar, err := s.userRepo.UpsertUserAvatar(ctx, userID, avatarInput)
+		if err != nil {
+			return nil, nil, fmt.Errorf("upsert avatar: %w", err)
+		}
+		return avatar, nil, nil
+	}
+
+	body, contentType, fileName, err := resolveImageReference(
+		ctx,
+		s.mediaService.cfg,
+		raw,
+		"avatar-"+strconv.FormatInt(userID, 10),
+		s.mediaService.maxUploadSizeBytes(),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(body) > targetAvatarBytes {
+		body, contentType, err = compressInlineAvatar(body)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	sum := sha256.Sum256(body)
+	width, height := detectImageDimensions(body)
+	ownerUserID := userID
+	uploaded, err := s.mediaService.Upload(ctx, UploadMediaInput{
+		BizType:     "avatar",
+		BizID:       strconv.FormatInt(userID, 10),
+		Visibility:  MediaVisibilityPublic,
+		OwnerUserID: &ownerUserID,
+		FileName:    fileName,
+		ContentType: contentType,
+		SizeBytes:   int64(len(body)),
+		SHA256:      hex.EncodeToString(sum[:]),
+		Width:       width,
+		Height:      height,
+		File:        body,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	cleanup := func(cleanupCtx context.Context) error {
+		if uploaded == nil || s == nil || s.mediaService == nil || uploaded.ID <= 0 {
+			return nil
+		}
+		return s.mediaService.DeleteForAdmin(cleanupCtx, uploaded.ID)
+	}
+	publicURL := s.mediaService.PublicURL(uploaded.ID, uploaded.Visibility)
+	if strings.TrimSpace(publicURL) == "" {
+		runAvatarCleanupBestEffort(ctx, cleanup, "cleanup uploaded avatar after missing public url")
+		return nil, nil, ErrMediaStorageDisabled
+	}
+	avatar, err := s.userRepo.UpsertUserAvatar(ctx, userID, UpsertUserAvatarInput{
+		StorageProvider: "media",
+		StorageKey:      uploaded.ObjectKey,
+		URL:             publicURL,
+		ContentType:     uploaded.MIMEType,
+		ByteSize:        int(uploaded.SizeBytes),
+		SHA256:          uploaded.SHA256,
+	})
+	if err != nil {
+		runAvatarCleanupBestEffort(ctx, cleanup, "cleanup uploaded avatar after avatar upsert failure")
+		return nil, nil, fmt.Errorf("upsert avatar: %w", err)
+	}
+	return avatar, cleanup, nil
+}
+
+func runAvatarCleanupBestEffort(ctx context.Context, cleanup AvatarCleanupFunc, reason string) {
+	if cleanup == nil {
+		return
+	}
+	if err := cleanup(ctx); err != nil {
+		slog.Warn("avatar media cleanup failed", "reason", reason, "error", err)
+	}
 }
 
 func applyUserAvatar(user *User, avatar *UserAvatar) {
