@@ -1,14 +1,18 @@
 package admin
 
 import (
+	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -111,11 +115,20 @@ type SettingHandler struct {
 	opsService           *service.OpsService
 	paymentConfigService *service.PaymentConfigService
 	paymentService       *service.PaymentService
+	mediaService         *service.MediaService
 }
 
 // NewSettingHandler 创建系统设置处理器
-func NewSettingHandler(settingService *service.SettingService, emailService *service.EmailService, turnstileService *service.TurnstileService, opsService *service.OpsService, paymentConfigService *service.PaymentConfigService, paymentService *service.PaymentService) *SettingHandler {
-	return &SettingHandler{
+func NewSettingHandler(
+	settingService *service.SettingService,
+	emailService *service.EmailService,
+	turnstileService *service.TurnstileService,
+	opsService *service.OpsService,
+	paymentConfigService *service.PaymentConfigService,
+	paymentService *service.PaymentService,
+	mediaServices ...*service.MediaService,
+) *SettingHandler {
+	handler := &SettingHandler{
 		settingService:       settingService,
 		emailService:         emailService,
 		turnstileService:     turnstileService,
@@ -123,6 +136,150 @@ func NewSettingHandler(settingService *service.SettingService, emailService *ser
 		paymentConfigService: paymentConfigService,
 		paymentService:       paymentService,
 	}
+	if len(mediaServices) > 0 {
+		handler.mediaService = mediaServices[0]
+	}
+	return handler
+}
+
+func (h *SettingHandler) ingestSettingsMediaReferences(ctx context.Context, req *UpdateSettingsRequest) ([]int64, error) {
+	if h == nil || h.mediaService == nil || !h.mediaService.RuntimeInfo().Enabled {
+		return nil, nil
+	}
+	createdAssetIDs := make([]int64, 0, 3)
+	if value := strings.TrimSpace(req.SiteLogo); value != "" {
+		publicURL, assetID, err := h.ingestPublicImage(ctx, "site_logo", "default", value, "site-logo")
+		if assetID > 0 {
+			createdAssetIDs = append(createdAssetIDs, assetID)
+		}
+		if err != nil {
+			return createdAssetIDs, err
+		}
+		req.SiteLogo = publicURL
+	}
+	if req.SupportQRCodes != nil {
+		for idx := range *req.SupportQRCodes {
+			value := strings.TrimSpace((*req.SupportQRCodes)[idx].ImageURL)
+			if value == "" {
+				continue
+			}
+			publicURL, assetID, err := h.ingestPublicImage(ctx, "support_qr", fmt.Sprintf("%d", idx+1), value, fmt.Sprintf("support-qr-%d", idx+1))
+			if assetID > 0 {
+				createdAssetIDs = append(createdAssetIDs, assetID)
+			}
+			if err != nil {
+				return createdAssetIDs, err
+			}
+			(*req.SupportQRCodes)[idx].ImageURL = publicURL
+		}
+	}
+	if req.PaymentHelpImageURL != nil && strings.TrimSpace(*req.PaymentHelpImageURL) != "" {
+		publicURL, assetID, err := h.ingestPublicImage(ctx, "payment_help", "default", strings.TrimSpace(*req.PaymentHelpImageURL), "payment-help")
+		if assetID > 0 {
+			createdAssetIDs = append(createdAssetIDs, assetID)
+		}
+		if err != nil {
+			return createdAssetIDs, err
+		}
+		req.PaymentHelpImageURL = &publicURL
+	}
+	return createdAssetIDs, nil
+}
+
+func (h *SettingHandler) ingestPublicImage(ctx context.Context, bizType, bizID, raw, fileName string) (string, int64, error) {
+	if publicURL, ok := h.normalizeManagedMediaURL(raw); ok {
+		return publicURL, 0, nil
+	}
+	asset, err := h.mediaService.IngestImageReference(ctx, service.IngestImageReferenceInput{
+		BizType:    bizType,
+		BizID:      bizID,
+		Visibility: service.MediaVisibilityPublic,
+		Source:     raw,
+		FileName:   fileName,
+	})
+	if err != nil {
+		return "", 0, err
+	}
+	publicURL := strings.TrimSpace(h.mediaService.PublicURL(asset.ID, asset.Visibility))
+	if publicURL == "" {
+		return "", asset.ID, service.ErrMediaStorageDisabled
+	}
+	return publicURL, asset.ID, nil
+}
+
+func (h *SettingHandler) cleanupIngestedSettingsMediaReferences(ctx context.Context, assetIDs []int64) {
+	if h == nil || h.mediaService == nil {
+		return
+	}
+	for i := len(assetIDs) - 1; i >= 0; i-- {
+		if assetIDs[i] <= 0 {
+			continue
+		}
+		if err := h.mediaService.DeleteForAdmin(ctx, assetIDs[i]); err != nil {
+			slog.Warn("failed to cleanup migrated settings media", "media_id", assetIDs[i], "error", err)
+		}
+	}
+}
+
+func (h *SettingHandler) normalizeManagedMediaURL(raw string) (string, bool) {
+	id, ok := h.parseManagedMediaID(raw)
+	if !ok {
+		return "", false
+	}
+	publicURL := strings.TrimSpace(h.mediaService.PublicURL(id, service.MediaVisibilityPublic))
+	if publicURL == "" {
+		return "", false
+	}
+	return publicURL, true
+}
+
+func (h *SettingHandler) parseManagedMediaID(raw string) (int64, bool) {
+	if h == nil || h.mediaService == nil {
+		return 0, false
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, false
+	}
+	if id, ok := service.ParseManagedMediaID(h.mediaService, raw); ok {
+		return id, true
+	}
+	if id, ok := parseManagedMediaIDFromPath(raw); ok {
+		return id, true
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return 0, false
+	}
+	return parseManagedMediaIDFromPath(parsed.Path)
+}
+
+func parseManagedMediaIDFromPath(raw string) (int64, bool) {
+	remainder := strings.TrimSpace(raw)
+	if remainder == "" {
+		return 0, false
+	}
+	if idx := strings.IndexAny(remainder, "?#"); idx >= 0 {
+		remainder = remainder[:idx]
+	}
+	for _, prefix := range []string{
+		"/api/v1/media/public/",
+		"/api/v1/media/download/",
+	} {
+		if !strings.HasPrefix(remainder, prefix) {
+			continue
+		}
+		remainder = strings.TrimPrefix(remainder, prefix)
+		if idx := strings.IndexRune(remainder, '/'); idx >= 0 {
+			remainder = remainder[:idx]
+		}
+		id, err := strconv.ParseInt(strings.TrimSpace(remainder), 10, 64)
+		if err == nil && id > 0 {
+			return id, true
+		}
+		return 0, false
+	}
+	return 0, false
 }
 
 // GetSettings 获取所有系统设置
@@ -600,11 +757,24 @@ func defaultAccountModelConfigEqual(a, b map[string]service.DefaultAccountModelC
 // UpdateSettings 更新系统设置
 // PUT /api/v1/admin/settings
 func (h *SettingHandler) UpdateSettings(c *gin.Context) {
+	rawBody, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		response.BadRequest(c, "Invalid request: unable to read request body")
+		return
+	}
+	var rawFields map[string]json.RawMessage
+	if err := json.Unmarshal(rawBody, &rawFields); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	c.Request.Body = io.NopCloser(bytes.NewReader(rawBody))
+
 	var req UpdateSettingsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	_, hasSiteLogoField := rawFields["site_logo"]
 
 	previousSettings, err := h.settingService.GetAllSettings(c.Request.Context())
 	if err != nil {
@@ -616,7 +786,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-
 	// 验证参数
 	if req.DefaultConcurrency < 1 {
 		req.DefaultConcurrency = 1
@@ -1053,6 +1222,14 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		}
 	}
 
+	createdMediaAssetIDs := []int64{}
+	rollbackMigratedMedia := true
+	defer func() {
+		if rollbackMigratedMedia {
+			h.cleanupIngestedSettingsMediaReferences(c.Request.Context(), createdMediaAssetIDs)
+		}
+	}()
+
 	// “购买订阅”页面配置验证
 	purchaseEnabled := previousSettings.PurchaseSubscriptionEnabled
 	if req.PurchaseSubscriptionEnabled != nil {
@@ -1061,10 +1238,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	purchaseURL := previousSettings.PurchaseSubscriptionURL
 	if req.PurchaseSubscriptionURL != nil {
 		purchaseURL = strings.TrimSpace(*req.PurchaseSubscriptionURL)
-	}
-	supportQRCodes := previousSettings.SupportQRCodes
-	if req.SupportQRCodes != nil {
-		supportQRCodes = mustMarshalSupportQRCodes(req.SupportQRCodes)
 	}
 
 	// - 启用时要求 URL 合法且非空
@@ -1266,6 +1439,17 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		}
 	}
 
+	createdMediaAssetIDs, err = h.ingestSettingsMediaReferences(c.Request.Context(), &req)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	supportQRCodes := previousSettings.SupportQRCodes
+	if req.SupportQRCodes != nil {
+		supportQRCodes = mustMarshalSupportQRCodes(req.SupportQRCodes)
+	}
+
 	settings := &service.SystemSettings{
 		RegistrationEnabled:              req.RegistrationEnabled,
 		EmailVerifyEnabled:               req.EmailVerifyEnabled,
@@ -1328,35 +1512,40 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		OIDCConnectUserInfoIDPath:        req.OIDCConnectUserInfoIDPath,
 		OIDCConnectUserInfoUsernamePath:  req.OIDCConnectUserInfoUsernamePath,
 		SiteName:                         req.SiteName,
-		SiteLogo:                         req.SiteLogo,
-		SiteSubtitle:                     req.SiteSubtitle,
-		APIBaseURL:                       req.APIBaseURL,
-		ContactInfo:                      req.ContactInfo,
-		SupportQRCodes:                   supportQRCodes,
-		DocURL:                           req.DocURL,
-		HomeContent:                      req.HomeContent,
-		HideCcsImportButton:              req.HideCcsImportButton,
-		PurchaseSubscriptionEnabled:      purchaseEnabled,
-		PurchaseSubscriptionURL:          purchaseURL,
-		TableDefaultPageSize:             req.TableDefaultPageSize,
-		TablePageSizeOptions:             req.TablePageSizeOptions,
-		CustomMenuItems:                  customMenuJSON,
-		CustomEndpoints:                  customEndpointsJSON,
-		DefaultConcurrency:               req.DefaultConcurrency,
-		DefaultBalance:                   req.DefaultBalance,
-		AffiliateEnabled:                 boolValueOrDefault(req.AffiliateEnabled, previousSettings.AffiliateEnabled),
-		AffiliateRebateRate:              affiliateRebateRate,
-		AffiliateRebateCap:               affiliateRebateCap,
-		AffiliateRebateInviteeLimit:      affiliateRebateInviteeLimit,
-		AffiliateSignupBonus:             affiliateSignupBonus,
-		TicketEnabled:                    boolValueOrDefault(req.TicketEnabled, previousSettings.TicketEnabled),
-		DefaultUserRPMLimit:              req.DefaultUserRPMLimit,
-		DefaultSubscriptions:             defaultSubscriptions,
-		EnableModelFallback:              req.EnableModelFallback,
-		FallbackModelAnthropic:           req.FallbackModelAnthropic,
-		FallbackModelOpenAI:              req.FallbackModelOpenAI,
-		FallbackModelGemini:              req.FallbackModelGemini,
-		FallbackModelAntigravity:         req.FallbackModelAntigravity,
+		SiteLogo: func() string {
+			if hasSiteLogoField {
+				return strings.TrimSpace(req.SiteLogo)
+			}
+			return previousSettings.SiteLogo
+		}(),
+		SiteSubtitle:                req.SiteSubtitle,
+		APIBaseURL:                  req.APIBaseURL,
+		ContactInfo:                 req.ContactInfo,
+		SupportQRCodes:              supportQRCodes,
+		DocURL:                      req.DocURL,
+		HomeContent:                 req.HomeContent,
+		HideCcsImportButton:         req.HideCcsImportButton,
+		PurchaseSubscriptionEnabled: purchaseEnabled,
+		PurchaseSubscriptionURL:     purchaseURL,
+		TableDefaultPageSize:        req.TableDefaultPageSize,
+		TablePageSizeOptions:        req.TablePageSizeOptions,
+		CustomMenuItems:             customMenuJSON,
+		CustomEndpoints:             customEndpointsJSON,
+		DefaultConcurrency:          req.DefaultConcurrency,
+		DefaultBalance:              req.DefaultBalance,
+		AffiliateEnabled:            boolValueOrDefault(req.AffiliateEnabled, previousSettings.AffiliateEnabled),
+		AffiliateRebateRate:         affiliateRebateRate,
+		AffiliateRebateCap:          affiliateRebateCap,
+		AffiliateRebateInviteeLimit: affiliateRebateInviteeLimit,
+		AffiliateSignupBonus:        affiliateSignupBonus,
+		TicketEnabled:               boolValueOrDefault(req.TicketEnabled, previousSettings.TicketEnabled),
+		DefaultUserRPMLimit:         req.DefaultUserRPMLimit,
+		DefaultSubscriptions:        defaultSubscriptions,
+		EnableModelFallback:         req.EnableModelFallback,
+		FallbackModelAnthropic:      req.FallbackModelAnthropic,
+		FallbackModelOpenAI:         req.FallbackModelOpenAI,
+		FallbackModelGemini:         req.FallbackModelGemini,
+		FallbackModelAntigravity:    req.FallbackModelAntigravity,
 		PlatformDefaultAccountModelConfig: fromOptionalDTODefaultAccountModelConfig(
 			req.PlatformDefaultAccountModelConfig,
 			previousSettings.PlatformDefaultAccountModelConfig,
@@ -1618,28 +1807,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	// Update payment configuration (integrated into system settings).
 	// Skip if no payment fields were provided (prevents accidental wipe).
 	if h.paymentConfigService != nil && hasPaymentFields(req) {
-		paymentReq := service.UpdatePaymentConfigRequest{
-			Enabled:                   req.PaymentEnabled,
-			MinAmount:                 req.PaymentMinAmount,
-			MaxAmount:                 req.PaymentMaxAmount,
-			DailyLimit:                req.PaymentDailyLimit,
-			OrderTimeoutMin:           req.PaymentOrderTimeoutMin,
-			MaxPendingOrders:          req.PaymentMaxPendingOrders,
-			EnabledTypes:              req.PaymentEnabledTypes,
-			BalanceDisabled:           req.PaymentBalanceDisabled,
-			BalanceRechargeMultiplier: req.PaymentBalanceRechargeMultiplier,
-			RechargeFeeRate:           req.PaymentRechargeFeeRate,
-			LoadBalanceStrategy:       req.PaymentLoadBalanceStrat,
-			ProductNamePrefix:         req.PaymentProductNamePrefix,
-			ProductNameSuffix:         req.PaymentProductNameSuffix,
-			HelpImageURL:              req.PaymentHelpImageURL,
-			HelpText:                  req.PaymentHelpText,
-			CancelRateLimitEnabled:    req.PaymentCancelRateLimitEnabled,
-			CancelRateLimitMax:        req.PaymentCancelRateLimitMax,
-			CancelRateLimitWindow:     req.PaymentCancelRateLimitWindow,
-			CancelRateLimitUnit:       req.PaymentCancelRateLimitUnit,
-			CancelRateLimitMode:       req.PaymentCancelRateLimitMode,
+		currentPaymentCfg, err := h.paymentConfigService.GetPaymentConfig(c.Request.Context())
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
 		}
+		paymentReq := mergePaymentConfigUpdate(req, currentPaymentCfg)
 		if err := h.paymentConfigService.UpdatePaymentConfig(c.Request.Context(), paymentReq); err != nil {
 			response.ErrorFrom(c, err)
 			return
@@ -1680,6 +1853,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		updatedPaymentCfg = &service.PaymentConfig{}
 	}
 
+	rollbackMigratedMedia = false
 	payload := dto.SystemSettings{
 		RegistrationEnabled:                    updatedSettings.RegistrationEnabled,
 		EmailVerifyEnabled:                     updatedSettings.EmailVerifyEnabled,
@@ -1838,6 +2012,69 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AvailableChannelsEnabled: updatedSettings.AvailableChannelsEnabled,
 	}
 	response.Success(c, systemSettingsResponseData(payload, updatedAuthSourceDefaults))
+}
+
+func mergePaymentConfigUpdate(req UpdateSettingsRequest, current *service.PaymentConfig) service.UpdatePaymentConfigRequest {
+	if current == nil {
+		current = &service.PaymentConfig{}
+	}
+	return service.UpdatePaymentConfigRequest{
+		Enabled:                   boolPtrValueOrDefault(req.PaymentEnabled, current.Enabled),
+		MinAmount:                 float64PtrValueOrDefault(req.PaymentMinAmount, current.MinAmount),
+		MaxAmount:                 float64PtrValueOrDefault(req.PaymentMaxAmount, current.MaxAmount),
+		DailyLimit:                float64PtrValueOrDefault(req.PaymentDailyLimit, current.DailyLimit),
+		OrderTimeoutMin:           intPtrValueOrDefault(req.PaymentOrderTimeoutMin, current.OrderTimeoutMin),
+		MaxPendingOrders:          intPtrValueOrDefault(req.PaymentMaxPendingOrders, current.MaxPendingOrders),
+		EnabledTypes:              stringSliceValueOrDefault(req.PaymentEnabledTypes, current.EnabledTypes),
+		BalanceDisabled:           boolPtrValueOrDefault(req.PaymentBalanceDisabled, current.BalanceDisabled),
+		BalanceRechargeMultiplier: float64PtrValueOrDefault(req.PaymentBalanceRechargeMultiplier, current.BalanceRechargeMultiplier),
+		RechargeFeeRate:           float64PtrValueOrDefault(req.PaymentRechargeFeeRate, current.RechargeFeeRate),
+		LoadBalanceStrategy:       stringPtrValueOrDefault(req.PaymentLoadBalanceStrat, current.LoadBalanceStrategy),
+		ProductNamePrefix:         stringPtrValueOrDefault(req.PaymentProductNamePrefix, current.ProductNamePrefix),
+		ProductNameSuffix:         stringPtrValueOrDefault(req.PaymentProductNameSuffix, current.ProductNameSuffix),
+		HelpImageURL:              stringPtrValueOrDefault(req.PaymentHelpImageURL, current.HelpImageURL),
+		HelpText:                  stringPtrValueOrDefault(req.PaymentHelpText, current.HelpText),
+		CancelRateLimitEnabled:    boolPtrValueOrDefault(req.PaymentCancelRateLimitEnabled, current.CancelRateLimitEnabled),
+		CancelRateLimitMax:        intPtrValueOrDefault(req.PaymentCancelRateLimitMax, current.CancelRateLimitMax),
+		CancelRateLimitWindow:     intPtrValueOrDefault(req.PaymentCancelRateLimitWindow, current.CancelRateLimitWindow),
+		CancelRateLimitUnit:       stringPtrValueOrDefault(req.PaymentCancelRateLimitUnit, current.CancelRateLimitUnit),
+		CancelRateLimitMode:       stringPtrValueOrDefault(req.PaymentCancelRateLimitMode, current.CancelRateLimitMode),
+	}
+}
+
+func boolPtrValueOrDefault(value *bool, fallback bool) *bool {
+	if value != nil {
+		return value
+	}
+	return &fallback
+}
+
+func float64PtrValueOrDefault(value *float64, fallback float64) *float64 {
+	if value != nil {
+		return value
+	}
+	return &fallback
+}
+
+func intPtrValueOrDefault(value *int, fallback int) *int {
+	if value != nil {
+		return value
+	}
+	return &fallback
+}
+
+func stringPtrValueOrDefault(value *string, fallback string) *string {
+	if value != nil {
+		return value
+	}
+	return &fallback
+}
+
+func stringSliceValueOrDefault(value []string, fallback []string) []string {
+	if value != nil {
+		return append([]string(nil), value...)
+	}
+	return append([]string(nil), fallback...)
 }
 
 // hasPaymentFields returns true if any payment-related field was explicitly provided.
