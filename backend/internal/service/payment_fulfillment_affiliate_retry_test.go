@@ -87,6 +87,12 @@ func (s *paymentFulfillmentAffiliateRepoStub) AccrueQuota(_ context.Context, inp
 func (s *paymentFulfillmentAffiliateRepoStub) ApplySignupBonus(context.Context, int64, float64) (bool, float64, error) {
 	return false, 0, nil
 }
+func (s *paymentFulfillmentAffiliateRepoStub) GetAccruedRebateFromInvitee(context.Context, int64, int64) (float64, error) {
+	return 0, nil
+}
+func (s *paymentFulfillmentAffiliateRepoStub) ThawFrozenQuota(context.Context, int64) (float64, error) {
+	return 0, nil
+}
 
 func (s *paymentFulfillmentAffiliateRepoStub) TransferQuotaToBalance(context.Context, int64) (float64, float64, error) {
 	return 0, 0, nil
@@ -106,6 +112,33 @@ func (s *paymentFulfillmentAffiliateRepoStub) CountRebatedInvitees(context.Conte
 
 func (s *paymentFulfillmentAffiliateRepoStub) ListAdminAffiliateStats(context.Context, AdminAffiliateListParams) ([]AdminAffiliateStatsRow, int64, error) {
 	return nil, 0, nil
+}
+func (s *paymentFulfillmentAffiliateRepoStub) UpdateUserAffCode(context.Context, int64, string) error {
+	return nil
+}
+func (s *paymentFulfillmentAffiliateRepoStub) ResetUserAffCode(context.Context, int64) (string, error) {
+	return "", nil
+}
+func (s *paymentFulfillmentAffiliateRepoStub) SetUserRebateRate(context.Context, int64, *float64) error {
+	return nil
+}
+func (s *paymentFulfillmentAffiliateRepoStub) BatchSetUserRebateRate(context.Context, []int64, *float64) error {
+	return nil
+}
+func (s *paymentFulfillmentAffiliateRepoStub) ListUsersWithCustomSettings(context.Context, AffiliateAdminFilter) ([]AffiliateAdminEntry, int64, error) {
+	return nil, 0, nil
+}
+func (s *paymentFulfillmentAffiliateRepoStub) ListAffiliateInviteRecords(context.Context, AffiliateRecordFilter) ([]AffiliateInviteRecord, int64, error) {
+	return nil, 0, nil
+}
+func (s *paymentFulfillmentAffiliateRepoStub) ListAffiliateRebateRecords(context.Context, AffiliateRecordFilter) ([]AffiliateRebateRecord, int64, error) {
+	return nil, 0, nil
+}
+func (s *paymentFulfillmentAffiliateRepoStub) ListAffiliateTransferRecords(context.Context, AffiliateRecordFilter) ([]AffiliateTransferRecord, int64, error) {
+	return nil, 0, nil
+}
+func (s *paymentFulfillmentAffiliateRepoStub) GetAffiliateUserOverview(context.Context, int64) (*AffiliateUserOverview, error) {
+	return nil, nil
 }
 
 func TestExecuteBalanceFulfillment_AffiliateAccrualFailureCompletesOrder(t *testing.T) {

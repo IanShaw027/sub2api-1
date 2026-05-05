@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -43,7 +44,7 @@ func TestApplyCodexOAuthTransform_ToolContinuationPreservesInput(t *testing.T) {
 	require.Equal(t, "fc1", second["call_id"])
 }
 
-func TestApplyCodexOAuthTransform_ToolContinuationPreservesNativeMessageAndReasoningIDs(t *testing.T) {
+func TestApplyCodexOAuthTransform_ToolContinuationPreservesNativeMessageIDsAndDropsReasoningReferences(t *testing.T) {
 	reqBody := map[string]any{
 		"model": "gpt-5.2",
 		"input": []any{
@@ -59,7 +60,7 @@ func TestApplyCodexOAuthTransform_ToolContinuationPreservesNativeMessageAndReaso
 
 	input, ok := reqBody["input"].([]any)
 	require.True(t, ok)
-	require.Len(t, input, 4)
+	require.Len(t, input, 3)
 
 	first, ok := input[0].(map[string]any)
 	require.True(t, ok)
@@ -68,18 +69,13 @@ func TestApplyCodexOAuthTransform_ToolContinuationPreservesNativeMessageAndReaso
 
 	second, ok := input[1].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "reasoning", second["type"])
-	require.Equal(t, "rs_123", second["id"])
+	require.Equal(t, "input_text", second["type"])
+	require.Equal(t, "txt_123", second["id"])
 
 	third, ok := input[2].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "input_text", third["type"])
-	require.Equal(t, "txt_123", third["id"])
-
-	fourth, ok := input[3].(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, "item_reference", fourth["type"])
-	require.Equal(t, "ref_123", fourth["id"])
+	require.Equal(t, "item_reference", third["type"])
+	require.Equal(t, "ref_123", third["id"])
 }
 
 func TestApplyCodexOAuthTransform_ToolContinuationNormalizesToolReferenceIDsOnly(t *testing.T) {
@@ -287,6 +283,44 @@ func TestApplyCodexOAuthTransform_PreservesKnownToolChoice(t *testing.T) {
 	choice, ok := reqBody["tool_choice"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "custom", choice["type"])
+}
+
+func TestApplyCodexOAuthTransform_NormalizesLegacyFunctionToolChoice(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.4",
+		"tools": []any{
+			map[string]any{"type": "function", "name": "shell"},
+		},
+		"tool_choice": map[string]any{
+			"type":     "function",
+			"function": map[string]any{"name": "shell"},
+		},
+	}
+
+	applyCodexOAuthTransform(reqBody, true, false)
+
+	choice, ok := reqBody["tool_choice"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "function", choice["type"])
+	require.Equal(t, "shell", choice["name"])
+	require.NotContains(t, choice, "function")
+}
+
+func TestApplyCodexOAuthTransform_DowngradesMissingFunctionToolChoice(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.4",
+		"tools": []any{
+			map[string]any{"type": "function", "name": "shell"},
+		},
+		"tool_choice": map[string]any{
+			"type":     "function",
+			"function": map[string]any{"name": "missing"},
+		},
+	}
+
+	applyCodexOAuthTransform(reqBody, true, false)
+
+	require.Equal(t, "auto", reqBody["tool_choice"])
 }
 
 func TestApplyCodexOAuthTransform_AddsFallbackNameForFunctionCallInput(t *testing.T) {
@@ -565,10 +599,11 @@ func TestApplyCodexOAuthTransform_InputSchemaFallbackDropsOrdinaryInputIDs(t *te
 	require.True(t, result.Modified)
 	input, ok := reqBody["input"].([]any)
 	require.True(t, ok)
-	require.Len(t, input, 3)
+	require.Len(t, input, 2)
 	for _, raw := range input {
 		item, ok := raw.(map[string]any)
 		require.True(t, ok)
+		require.NotEqual(t, "reasoning", item["type"])
 		_, hasID := item["id"]
 		require.False(t, hasID)
 	}
@@ -1279,6 +1314,27 @@ func TestApplyCodexOAuthTransform_StripsPromptCacheRetention(t *testing.T) {
 		"prompt_cache_retention must be stripped before forwarding to Codex upstream")
 }
 
+func TestApplyCodexOAuthTransform_StripsChatGPTInternalUnsupportedFields(t *testing.T) {
+	reqBody := map[string]any{
+		"model":                  "gpt-5.4",
+		"user":                   "user_123",
+		"metadata":               map[string]any{"trace_id": "abc"},
+		"prompt_cache_retention": "24h",
+		"safety_identifier":      "sid",
+		"stream_options":         map[string]any{"include_usage": true},
+		"input": []any{
+			map[string]any{"role": "user", "content": "hi"},
+		},
+	}
+
+	result := applyCodexOAuthTransform(reqBody, true, false)
+
+	require.True(t, result.Modified)
+	for _, field := range openAIChatGPTInternalUnsupportedFields {
+		require.NotContains(t, reqBody, field)
+	}
+}
+
 func TestApplyCodexOAuthTransform_ExtractsSystemMessages(t *testing.T) {
 	reqBody := map[string]any{
 		"model": "gpt-5.1",
@@ -1322,6 +1378,59 @@ func TestIsInstructionsEmpty(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := isInstructionsEmpty(tt.reqBody)
 			require.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestFilterCodexInput_DropsReasoningItemsRegardlessOfPreserveReferences(t *testing.T) {
+	// Reasoning items in input[] reference rs_* IDs that were emitted by
+	// chatgpt.com under store=false (forced by applyCodexOAuthTransform).
+	// They are never persisted upstream, so forwarding them produces a
+	// guaranteed 404 ("Item with id 'rs_...' not found"). Drop them
+	// regardless of preserveReferences. See: Wei-Shaw/sub2api issue #1957.
+
+	build := func() []any {
+		return []any{
+			map[string]any{"type": "message", "id": "msg_0", "role": "user", "content": "hi"},
+			map[string]any{
+				"type":    "reasoning",
+				"id":      "rs_0672f12450da0b9c0169f07220a6c08198b68c2455ced99344",
+				"summary": []any{},
+			},
+			map[string]any{"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "tool"},
+			map[string]any{"type": "function_call_output", "call_id": "call_1", "output": "{}"},
+		}
+	}
+
+	for _, preserve := range []bool{true, false} {
+		preserve := preserve
+		t.Run(fmt.Sprintf("preserveReferences=%v", preserve), func(t *testing.T) {
+			filtered, _ := filterCodexInput(build(), preserve)
+
+			for _, raw := range filtered {
+				item, ok := raw.(map[string]any)
+				require.True(t, ok)
+				require.NotEqual(t, "reasoning", item["type"],
+					"reasoning items must be dropped from input on the OAuth path")
+				if id, ok := item["id"].(string); ok {
+					require.False(t, strings.HasPrefix(id, "rs_"),
+						"no item carrying an rs_* id should survive the filter")
+				}
+			}
+
+			// Sanity check: the non-reasoning items should still be present.
+			gotTypes := make(map[string]int)
+			for _, raw := range filtered {
+				item, ok := raw.(map[string]any)
+				require.True(t, ok)
+				typ, ok := item["type"].(string)
+				require.True(t, ok)
+				gotTypes[typ]++
+			}
+			require.Equal(t, 1, gotTypes["message"])
+			require.Equal(t, 1, gotTypes["function_call"])
+			require.Equal(t, 1, gotTypes["function_call_output"])
+			require.Equal(t, 0, gotTypes["reasoning"])
 		})
 	}
 }

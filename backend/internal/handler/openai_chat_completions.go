@@ -199,7 +199,10 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		forwardStart := time.Now()
 
 		selectedFallbackModel := strings.TrimSpace(c.GetString("openai_chat_completions_fallback_model"))
-		defaultMappedModel := resolveOpenAIForwardDefaultMappedModel(apiKey, "")
+		defaultMappedModel := ""
+		if apiKey.Group != nil {
+			defaultMappedModel = strings.TrimSpace(apiKey.Group.DefaultMappedModel)
+		}
 		forwardBody := body
 		if channelMapping.Mapped {
 			forwardBody = h.gatewayService.ReplaceModelInBody(body, channelMapping.MappedModel)

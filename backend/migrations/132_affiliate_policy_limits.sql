@@ -12,6 +12,14 @@ ALTER TABLE user_affiliate_ledger
     ADD COLUMN IF NOT EXISTS rebate_rate DECIMAL(10,4) NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS invitee_slot_claimed BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- Legacy accrue rows predate invitee_slot_claimed. Mark them as claimed so
+-- historical rebated invitees keep counting toward the new stats/limit logic.
+UPDATE user_affiliate_ledger
+SET invitee_slot_claimed = TRUE
+WHERE action = 'accrue'
+  AND source_user_id IS NOT NULL
+  AND invitee_slot_claimed = FALSE;
+
 CREATE INDEX IF NOT EXISTS idx_user_affiliate_ledger_source_user
 ON user_affiliate_ledger(user_id, source_user_id);
 

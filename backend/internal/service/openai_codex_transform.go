@@ -118,6 +118,14 @@ type codexInputFilterOptions struct {
 	dropNonToolItemIDs         bool
 }
 
+var openAIChatGPTInternalUnsupportedFields = []string{
+	"user",
+	"metadata",
+	"prompt_cache_retention",
+	"safety_identifier",
+	"stream_options",
+}
+
 const (
 	codexImageGenerationBridgeMarker = "<sub2api-codex-image-generation>"
 	codexImageGenerationBridgeText   = codexImageGenerationBridgeMarker + "\nWhen the user asks for raster image generation or editing, use the OpenAI Responses native `image_generation` tool attached to this request. The local Codex client may not expose an `image_gen` namespace, but that does not mean image generation is unavailable. Do not ask the user to switch to CLI fallback solely because `image_gen` is absent.\n</sub2api-codex-image-generation>"
@@ -203,6 +211,11 @@ func applyCodexOAuthTransformWithInputModeAndFallbackReason(
 
 	// Strip parameters unsupported by codex models via the Responses API.
 	unsupportedKeys := []string{
+		"user",
+		"metadata",
+		"prompt_cache_retention",
+		"safety_identifier",
+		"stream_options",
 		"max_output_tokens",
 		"max_completion_tokens",
 		"frequency_penalty",
@@ -420,11 +433,36 @@ func normalizeCodexToolChoice(reqBody map[string]any) bool {
 		return false
 	}
 	choiceType := strings.TrimSpace(firstNonEmptyString(choiceMap["type"]))
-	if choiceType == "" || codexToolsContainType(reqBody["tools"], choiceType) {
+	if choiceType == "" {
+		return false
+	}
+	if choiceType == "function" {
+		name := codexToolChoiceFunctionName(choiceMap)
+		if name == "" || !codexToolsContainFunctionName(reqBody["tools"], name) {
+			reqBody["tool_choice"] = "auto"
+			return true
+		}
+		reqBody["tool_choice"] = map[string]any{
+			"type": "function",
+			"name": name,
+		}
+		return true
+	}
+	if codexToolsContainType(reqBody["tools"], choiceType) {
 		return false
 	}
 	reqBody["tool_choice"] = "auto"
 	return true
+}
+
+func codexToolChoiceFunctionName(choice map[string]any) string {
+	if name := strings.TrimSpace(firstNonEmptyString(choice["name"])); name != "" {
+		return name
+	}
+	if fn, ok := choice["function"].(map[string]any); ok {
+		return strings.TrimSpace(firstNonEmptyString(fn["name"]))
+	}
+	return ""
 }
 
 func codexToolsContainType(rawTools any, toolType string) bool {
@@ -438,6 +476,26 @@ func codexToolsContainType(rawTools any, toolType string) bool {
 			continue
 		}
 		if strings.TrimSpace(firstNonEmptyString(tool["type"])) == toolType {
+			return true
+		}
+	}
+	return false
+}
+
+func codexToolsContainFunctionName(rawTools any, name string) bool {
+	tools, ok := rawTools.([]any)
+	if !ok || strings.TrimSpace(name) == "" {
+		return false
+	}
+	for _, rawTool := range tools {
+		tool, ok := rawTool.(map[string]any)
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(firstNonEmptyString(tool["type"])) != "function" {
+			continue
+		}
+		if strings.TrimSpace(firstNonEmptyString(tool["name"])) == strings.TrimSpace(name) {
 			return true
 		}
 	}
@@ -659,7 +717,7 @@ func normalizeCodexModel(model string) string {
 		return "gpt-5.1"
 	}
 
-	return "gpt-5.1"
+	return strings.TrimSpace(modelID)
 }
 
 func isCodexSparkModel(model string) bool {
@@ -1112,6 +1170,12 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]a
 			continue
 		}
 		typ, _ := m["type"].(string)
+		if typ == "reasoning" {
+			if id, _ := m["id"].(string); strings.HasPrefix(strings.TrimSpace(id), "rs_") {
+				modified = true
+				continue
+			}
+		}
 
 		// 仅修正真正的 tool/function call 标识，避免误改普通 message/reasoning id；
 		// 若 item_reference 指向 legacy call_* 标识，则仅修正该引用本身。

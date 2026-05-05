@@ -401,6 +401,11 @@ const stripEmptyRecordValues = (
   )
 }
 
+const geminiReauthTierID = (tierID: unknown): string | undefined => {
+  if (geminiOAuthType.value === 'code_assist') return 'gcp_enterprise'
+  return typeof tierID === 'string' ? tierID : undefined
+}
+
 const emitKiroBatchRefresh = (refreshTokenCount: number, successCount: number) => {
   if (refreshTokenCount > 1 && successCount > 1) {
     emit('refresh')
@@ -608,7 +613,7 @@ const handleGenerateUrl = async () => {
     return
   } else if (isGemini.value) {
     const creds = (props.account.credentials || {}) as Record<string, unknown>
-    const tierId = typeof creds.tier_id === 'string' ? creds.tier_id : undefined
+    const tierId = geminiReauthTierID(creds.tier_id)
     const projectId = geminiOAuthType.value === 'code_assist' ? oauthFlowRef.value?.projectId : undefined
     await geminiOAuth.generateAuthUrl(props.account.proxy_id, projectId, geminiOAuthType.value, tierId)
   } else if (isAntigravity.value) {
@@ -688,7 +693,7 @@ const handleExchangeCode = async () => {
       state: stateToUse,
       proxyId: props.account.proxy_id,
       oauthType: geminiOAuthType.value,
-      tierId: typeof (props.account.credentials as any)?.tier_id === 'string' ? ((props.account.credentials as any).tier_id as string) : undefined
+      tierId: geminiReauthTierID((props.account.credentials as any)?.tier_id)
     })
     if (!tokenInfo) return
 

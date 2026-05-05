@@ -91,6 +91,8 @@ describe('AccountQuotaInfo', () => {
       }
     })
 
+    expect(wrapper.text()).toContain('GCP Enterprise')
+    expect(wrapper.text()).not.toContain('GCP Standard')
     expect(wrapper.text()).toContain('admin.accounts.gemini.rateLimit.limited')
   })
 

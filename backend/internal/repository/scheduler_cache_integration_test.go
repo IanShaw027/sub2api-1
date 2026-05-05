@@ -4,6 +4,8 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +13,228 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
+
+func TestSchedulerCacheUnlockBucketValidatesToken(t *testing.T) {
+	ctx := context.Background()
+	rdb := testRedis(t)
+	cache := NewSchedulerCache(rdb)
+
+	bucket := service.SchedulerBucket{GroupID: 9, Platform: service.PlatformOpenAI, Mode: service.SchedulerModeSingle}
+	lockCtx1 := service.WithSchedulerBucketLockTokenCarrier(ctx)
+	ok, err := cache.TryLockBucket(lockCtx1, bucket, 50*time.Millisecond)
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	time.Sleep(80 * time.Millisecond)
+
+	lockCtx2 := service.WithSchedulerBucketLockTokenCarrier(ctx)
+	ok, err = cache.TryLockBucket(lockCtx2, bucket, time.Second)
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	require.NoError(t, cache.UnlockBucket(lockCtx1, bucket))
+
+	lockKey := schedulerBucketKey(schedulerLockPrefix, bucket)
+	lockVal, err := rdb.Get(ctx, lockKey).Result()
+	require.NoError(t, err)
+	require.Equal(t, service.SchedulerBucketLockToken(lockCtx2), lockVal)
+
+	lockCtx3 := service.WithSchedulerBucketLockTokenCarrier(ctx)
+	ok, err = cache.TryLockBucket(lockCtx3, bucket, time.Second)
+	require.NoError(t, err)
+	require.False(t, ok)
+
+	require.NoError(t, cache.UnlockBucket(lockCtx2, bucket))
+
+	ok, err = cache.TryLockBucket(lockCtx3, bucket, time.Second)
+	require.NoError(t, err)
+	require.True(t, ok)
+}
+
+func TestSchedulerCacheSetSnapshotLosingCASDoesNotPolluteSharedAccountCache(t *testing.T) {
+	ctx := context.Background()
+	rdb := testRedis(t)
+	cache := NewSchedulerCache(rdb)
+
+	bucket := service.SchedulerBucket{GroupID: 7, Platform: service.PlatformAnthropic, Mode: service.SchedulerModeSingle}
+	account := service.Account{
+		ID:       501,
+		Name:     "stale-rebuild",
+		Platform: service.PlatformAnthropic,
+		Type:     service.AccountTypeAPIKey,
+		Status:   service.StatusActive,
+		Credentials: map[string]any{
+			"api_key": "stale-key",
+		},
+	}
+	current := &service.Account{
+		ID:       account.ID,
+		Name:     "current-cache",
+		Platform: service.PlatformAnthropic,
+		Type:     service.AccountTypeAPIKey,
+		Status:   service.StatusActive,
+		Credentials: map[string]any{
+			"api_key": "current-key",
+		},
+	}
+	require.NoError(t, cache.SetAccount(ctx, current))
+
+	activeKey := schedulerBucketKey(schedulerActivePrefix, bucket)
+	versionKey := schedulerBucketKey(schedulerVersionPrefix, bucket)
+	require.NoError(t, rdb.Set(ctx, activeKey, "5", 0).Err())
+	require.NoError(t, rdb.Set(ctx, versionKey, "0", 0).Err())
+
+	require.NoError(t, cache.SetSnapshot(ctx, bucket, []service.Account{account}))
+
+	got, err := cache.GetAccount(ctx, account.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, "current-key", got.GetCredential("api_key"))
+
+	version, err := rdb.Get(ctx, activeKey).Result()
+	require.NoError(t, err)
+	require.Equal(t, "5", version)
+
+	exists, err := rdb.Exists(ctx, schedulerSnapshotKey(bucket, "1")).Result()
+	require.NoError(t, err)
+	require.Zero(t, exists)
+}
+
+func TestSchedulerCacheSetSnapshotChunkCASWindowDoesNotOverwriteNewerSharedAccountCache(t *testing.T) {
+	ctx := context.Background()
+	bucket := service.SchedulerBucket{GroupID: 17, Platform: service.PlatformAnthropic, Mode: service.SchedulerModeSingle}
+	activeKey := schedulerBucketKey(schedulerActivePrefix, bucket)
+	versionKey := schedulerBucketKey(schedulerVersionPrefix, bucket)
+
+	staleAccounts := []service.Account{
+		{
+			ID:       701,
+			Name:     "stale-first",
+			Platform: service.PlatformAnthropic,
+			Type:     service.AccountTypeAPIKey,
+			Status:   service.StatusActive,
+			Credentials: map[string]any{
+				"api_key": "stale-first-key",
+			},
+		},
+		{
+			ID:       702,
+			Name:     "stale-second",
+			Platform: service.PlatformAnthropic,
+			Type:     service.AccountTypeAPIKey,
+			Status:   service.StatusActive,
+			Credentials: map[string]any{
+				"api_key": "stale-second-key",
+			},
+		},
+	}
+	currentAccounts := []service.Account{
+		{
+			ID:       701,
+			Name:     "current-first",
+			Platform: service.PlatformAnthropic,
+			Type:     service.AccountTypeAPIKey,
+			Status:   service.StatusActive,
+			Credentials: map[string]any{
+				"api_key": "current-first-key",
+			},
+		},
+		{
+			ID:       702,
+			Name:     "current-second",
+			Platform: service.PlatformAnthropic,
+			Type:     service.AccountTypeAPIKey,
+			Status:   service.StatusActive,
+			Credentials: map[string]any{
+				"api_key": "current-second-key",
+			},
+		},
+	}
+
+	var mutatorErr error
+	rdb := testRedis(t)
+	cache := newSchedulerCacheWithChunkSizes(rdb, defaultSchedulerSnapshotMGetChunkSize, 1)
+	hookCalls := 0
+	prevHook := schedulerBeforeAccountChunkWriteHook
+	schedulerBeforeAccountChunkWriteHook = func(ctx context.Context, hookActiveKey, version string) {
+		hookCalls++
+		if hookCalls != 2 {
+			return
+		}
+		pipe := rdb.Pipeline()
+		pipe.Set(ctx, hookActiveKey, "2", 0)
+		pipe.Set(ctx, versionKey, "2", 0)
+		for _, account := range currentAccounts {
+			fullPayload, err := json.Marshal(account)
+			if err != nil {
+				mutatorErr = err
+				return
+			}
+			metaPayload, err := json.Marshal(buildSchedulerMetadataAccount(account))
+			if err != nil {
+				mutatorErr = err
+				return
+			}
+			id := strconv.FormatInt(account.ID, 10)
+			pipe.Set(ctx, schedulerAccountKey(id), fullPayload, 0)
+			pipe.Set(ctx, schedulerAccountMetaKey(id), metaPayload, 0)
+		}
+		if _, err := pipe.Exec(ctx); err != nil {
+			mutatorErr = err
+		}
+	}
+	t.Cleanup(func() {
+		schedulerBeforeAccountChunkWriteHook = prevHook
+	})
+
+	require.NoError(t, rdb.Set(ctx, activeKey, "0", 0).Err())
+	require.NoError(t, rdb.Set(ctx, versionKey, "0", 0).Err())
+	require.NoError(t, cache.SetSnapshot(ctx, bucket, staleAccounts))
+	require.NoError(t, mutatorErr)
+	require.Equal(t, 2, hookCalls)
+
+	activeVersion, err := rdb.Get(ctx, activeKey).Result()
+	require.NoError(t, err)
+	require.Equal(t, "2", activeVersion)
+
+	first, err := cache.GetAccount(ctx, staleAccounts[0].ID)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	require.Equal(t, "current-first-key", first.GetCredential("api_key"))
+
+	second, err := cache.GetAccount(ctx, staleAccounts[1].ID)
+	require.NoError(t, err)
+	require.NotNil(t, second)
+	require.Equal(t, "current-second-key", second.GetCredential("api_key"))
+}
+
+func TestSchedulerCacheGetSnapshotReflectsUpdateLastUsedHotPath(t *testing.T) {
+	ctx := context.Background()
+	rdb := testRedis(t)
+	cache := NewSchedulerCache(rdb)
+
+	bucket := service.SchedulerBucket{GroupID: 11, Platform: service.PlatformGemini, Mode: service.SchedulerModeSingle}
+	account := service.Account{
+		ID:          808,
+		Name:        "snapshot-account",
+		Platform:    service.PlatformGemini,
+		Type:        service.AccountTypeOAuth,
+		Status:      service.StatusActive,
+		Schedulable: true,
+	}
+
+	require.NoError(t, cache.SetSnapshot(ctx, bucket, []service.Account{account}))
+	usedAt := time.Now().UTC().Truncate(time.Second)
+	require.NoError(t, cache.UpdateLastUsed(ctx, map[int64]time.Time{account.ID: usedAt}))
+
+	snapshot, hit, err := cache.GetSnapshot(ctx, bucket)
+	require.NoError(t, err)
+	require.True(t, hit)
+	require.Len(t, snapshot, 1)
+	require.Equal(t, "snapshot-account", snapshot[0].Name)
+	require.NotNil(t, snapshot[0].LastUsedAt)
+	require.WithinDuration(t, usedAt, *snapshot[0].LastUsedAt, time.Second)
+}
 
 func TestSchedulerCacheSnapshotUsesSlimMetadataButKeepsFullAccount(t *testing.T) {
 	ctx := context.Background()
@@ -56,6 +280,15 @@ func TestSchedulerCacheSnapshotUsesSlimMetadataButKeepsFullAccount(t *testing.T)
 		SessionWindowStart:     &now,
 		SessionWindowEnd:       &windowEnd,
 		SessionWindowStatus:    "active",
+		GroupIDs:               []int64{bucket.GroupID},
+		AccountGroups: []service.AccountGroup{
+			{
+				AccountID: 101,
+				GroupID:   bucket.GroupID,
+				Priority:  5,
+				Group:     &service.Group{ID: bucket.GroupID, Name: "gemini-group"},
+			},
+		},
 	}
 
 	require.NoError(t, cache.SetSnapshot(ctx, bucket, []service.Account{account}))
@@ -79,10 +312,17 @@ func TestSchedulerCacheSnapshotUsesSlimMetadataButKeepsFullAccount(t *testing.T)
 	require.Equal(t, 4, got.GetMaxSessions())
 	require.Equal(t, 11, got.GetSessionIdleTimeoutMinutes())
 	require.Nil(t, got.Extra["unused_large_field"])
+	require.Equal(t, []int64{bucket.GroupID}, got.GroupIDs)
+	require.Len(t, got.AccountGroups, 1)
+	require.Equal(t, account.ID, got.AccountGroups[0].AccountID)
+	require.Equal(t, bucket.GroupID, got.AccountGroups[0].GroupID)
+	require.Nil(t, got.AccountGroups[0].Group)
 
 	full, err := cache.GetAccount(ctx, account.ID)
 	require.NoError(t, err)
 	require.NotNil(t, full)
 	require.Equal(t, "secret-access-token", full.GetCredential("access_token"))
 	require.Equal(t, strings.Repeat("x", 4096), full.GetCredential("huge_blob"))
+	require.Len(t, full.AccountGroups, 1)
+	require.NotNil(t, full.AccountGroups[0].Group)
 }

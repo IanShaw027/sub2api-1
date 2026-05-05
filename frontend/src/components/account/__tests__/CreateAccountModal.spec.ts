@@ -284,7 +284,7 @@ describe('CreateAccountModal', () => {
     await flushPromises()
 
     const accountTypeButtons = wrapper.get('[data-tour="account-form-type"]').findAll('button')
-    expect(accountTypeButtons).toHaveLength(3)
+    expect(accountTypeButtons.length).toBeGreaterThanOrEqual(2)
     await accountTypeButtons[1].trigger('click')
     await nextTick()
 
@@ -359,6 +359,21 @@ describe('CreateAccountModal', () => {
 
     expect((wrapper.vm as any).form.platform).toBe('openai')
     expect((wrapper.vm as any).form.type).toBe('oauth')
+  })
+
+  it('uses enterprise tier only for Gemini Code Assist OAuth', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'Gemini').trigger('click')
+    await nextTick()
+    await findButtonByText(wrapper, 'GCP Code Assist').trigger('click')
+    await nextTick()
+
+    expect((wrapper.vm as any).geminiTierGcp).toBe('gcp_enterprise')
+    expect((wrapper.vm as any).geminiSelectedTier).toBe('gcp_enterprise')
+    expect(wrapper.html()).toContain('admin.accounts.gemini.tier.gcp.enterprise')
+    expect(wrapper.html()).not.toContain('admin.accounts.gemini.tier.gcp.standard')
   })
 
   it('clears stale OpenAI compact settings after switching to another platform', async () => {

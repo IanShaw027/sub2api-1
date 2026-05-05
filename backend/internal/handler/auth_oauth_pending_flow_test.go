@@ -2803,9 +2803,15 @@ func (r *oauthPendingFlowAffiliateRepoStub) ApplySignupBonus(ctx context.Context
 	r.signupBonusSeen[userID] = true
 	return true, amount, nil
 }
+func (r *oauthPendingFlowAffiliateRepoStub) GetAccruedRebateFromInvitee(context.Context, int64, int64) (float64, error) {
+	panic("unexpected GetAccruedRebateFromInvitee call")
+}
 
 func (r *oauthPendingFlowAffiliateRepoStub) AccrueQuota(context.Context, service.AffiliateAccrualInput) (float64, error) {
 	panic("unexpected AccrueQuota call")
+}
+func (r *oauthPendingFlowAffiliateRepoStub) ThawFrozenQuota(context.Context, int64) (float64, error) {
+	panic("unexpected ThawFrozenQuota call")
 }
 func (r *oauthPendingFlowAffiliateRepoStub) TransferQuotaToBalance(context.Context, int64) (float64, float64, error) {
 	panic("unexpected TransferQuotaToBalance call")
@@ -2821,6 +2827,33 @@ func (r *oauthPendingFlowAffiliateRepoStub) CountRebatedInvitees(context.Context
 }
 func (r *oauthPendingFlowAffiliateRepoStub) ListAdminAffiliateStats(context.Context, service.AdminAffiliateListParams) ([]service.AdminAffiliateStatsRow, int64, error) {
 	panic("unexpected ListAdminAffiliateStats call")
+}
+func (r *oauthPendingFlowAffiliateRepoStub) UpdateUserAffCode(context.Context, int64, string) error {
+	panic("unexpected UpdateUserAffCode call")
+}
+func (r *oauthPendingFlowAffiliateRepoStub) ResetUserAffCode(context.Context, int64) (string, error) {
+	panic("unexpected ResetUserAffCode call")
+}
+func (r *oauthPendingFlowAffiliateRepoStub) SetUserRebateRate(context.Context, int64, *float64) error {
+	panic("unexpected SetUserRebateRate call")
+}
+func (r *oauthPendingFlowAffiliateRepoStub) BatchSetUserRebateRate(context.Context, []int64, *float64) error {
+	panic("unexpected BatchSetUserRebateRate call")
+}
+func (r *oauthPendingFlowAffiliateRepoStub) ListUsersWithCustomSettings(context.Context, service.AffiliateAdminFilter) ([]service.AffiliateAdminEntry, int64, error) {
+	panic("unexpected ListUsersWithCustomSettings call")
+}
+func (r *oauthPendingFlowAffiliateRepoStub) ListAffiliateInviteRecords(context.Context, service.AffiliateRecordFilter) ([]service.AffiliateInviteRecord, int64, error) {
+	panic("unexpected ListAffiliateInviteRecords call")
+}
+func (r *oauthPendingFlowAffiliateRepoStub) ListAffiliateRebateRecords(context.Context, service.AffiliateRecordFilter) ([]service.AffiliateRebateRecord, int64, error) {
+	panic("unexpected ListAffiliateRebateRecords call")
+}
+func (r *oauthPendingFlowAffiliateRepoStub) ListAffiliateTransferRecords(context.Context, service.AffiliateRecordFilter) ([]service.AffiliateTransferRecord, int64, error) {
+	panic("unexpected ListAffiliateTransferRecords call")
+}
+func (r *oauthPendingFlowAffiliateRepoStub) GetAffiliateUserOverview(context.Context, int64) (*service.AffiliateUserOverview, error) {
+	panic("unexpected GetAffiliateUserOverview call")
 }
 
 func newOAuthPendingFlowTestHandlerWithDependencies(

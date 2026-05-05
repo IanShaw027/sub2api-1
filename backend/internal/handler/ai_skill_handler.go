@@ -1044,11 +1044,6 @@ func (h *AIHandler) storeSkillAttachmentMedia(ctx context.Context, userID int64,
 	return h.storeSkillMediaReferenceWithIDBestEffort(ctx, userID, "ai_skill_run_attachment", source, fileName)
 }
 
-func (h *AIHandler) storeSkillMediaReference(ctx context.Context, userID int64, bizType, source, fileName string) (string, error) {
-	storedMedia, err := h.storeSkillMediaReferenceWithID(ctx, userID, bizType, source, fileName)
-	return storedMedia.URL, err
-}
-
 func (h *AIHandler) storeSkillMediaReferenceWithIDBestEffort(ctx context.Context, userID int64, bizType, source, fileName string) (skillMediaReference, error) {
 	source = strings.TrimSpace(source)
 	if source == "" {

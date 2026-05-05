@@ -112,15 +112,18 @@ type SystemSettings struct {
 	CustomMenuItems             []CustomMenuItem     `json:"custom_menu_items"`
 	CustomEndpoints             []CustomEndpoint     `json:"custom_endpoints"`
 
-	DefaultConcurrency          int                          `json:"default_concurrency"`
-	DefaultBalance              float64                      `json:"default_balance"`
-	AffiliateEnabled            bool                         `json:"affiliate_enabled"`
-	AffiliateRebateRate         float64                      `json:"affiliate_rebate_rate"`
-	AffiliateRebateCap          float64                      `json:"affiliate_rebate_cap"`
-	AffiliateRebateInviteeLimit int                          `json:"affiliate_rebate_invitee_limit"`
-	AffiliateSignupBonus        float64                      `json:"affiliate_signup_bonus"`
-	DefaultUserRPMLimit         int                          `json:"default_user_rpm_limit"`
-	DefaultSubscriptions        []DefaultSubscriptionSetting `json:"default_subscriptions"`
+	DefaultConcurrency           int                          `json:"default_concurrency"`
+	DefaultBalance               float64                      `json:"default_balance"`
+	AffiliateEnabled             bool                         `json:"affiliate_enabled"`
+	AffiliateRebateRate          float64                      `json:"affiliate_rebate_rate"`
+	AffiliateRebateCap           float64                      `json:"affiliate_rebate_cap"`
+	AffiliateRebateInviteeLimit  int                          `json:"affiliate_rebate_invitee_limit"`
+	AffiliateSignupBonus         float64                      `json:"affiliate_signup_bonus"`
+	AffiliateRebateFreezeHours   int                          `json:"affiliate_rebate_freeze_hours"`
+	AffiliateRebateDurationDays  int                          `json:"affiliate_rebate_duration_days"`
+	AffiliateRebatePerInviteeCap float64                      `json:"affiliate_rebate_per_invitee_cap"`
+	DefaultUserRPMLimit          int                          `json:"default_user_rpm_limit"`
+	DefaultSubscriptions         []DefaultSubscriptionSetting `json:"default_subscriptions"`
 
 	// Model fallback configuration
 	EnableModelFallback               bool                                 `json:"enable_model_fallback"`
@@ -150,13 +153,14 @@ type SystemSettings struct {
 	BackendModeEnabled bool `json:"backend_mode_enabled"`
 
 	// Gateway forwarding behavior
-	EnableFingerprintUnification      bool   `json:"enable_fingerprint_unification"`
-	EnableMetadataPassthrough         bool   `json:"enable_metadata_passthrough"`
-	EnableCCHSigning                  bool   `json:"enable_cch_signing"`
-	GatewayDebugTimelineEnabled       bool   `json:"gateway_debug_timeline_enabled"`
-	GatewayDebugTimelineDirectory     string `json:"gateway_debug_timeline_directory"`
-	GatewayDebugTimelineRetentionDays int    `json:"gateway_debug_timeline_retention_days"`
-	GatewayDebugTimelineMaxSizeMB     int64  `json:"gateway_debug_timeline_max_size_mb"`
+	EnableFingerprintUnification       bool   `json:"enable_fingerprint_unification"`
+	EnableMetadataPassthrough          bool   `json:"enable_metadata_passthrough"`
+	EnableCCHSigning                   bool   `json:"enable_cch_signing"`
+	GatewayDebugTimelineEnabled        bool   `json:"gateway_debug_timeline_enabled"`
+	GatewayDebugTimelineDirectory      string `json:"gateway_debug_timeline_directory"`
+	GatewayDebugTimelineRetentionDays  int    `json:"gateway_debug_timeline_retention_days"`
+	GatewayDebugTimelineMaxSizeMB      int64  `json:"gateway_debug_timeline_max_size_mb"`
+	EnableAnthropicCacheTTL1hInjection bool   `json:"enable_anthropic_cache_ttl_1h_injection"`
 
 	// Web Search Emulation
 	WebSearchEmulationEnabled bool `json:"web_search_emulation_enabled"`
@@ -223,6 +227,9 @@ type SystemSettings struct {
 
 	// Ticket feature switch
 	TicketEnabled bool `json:"ticket_enabled"`
+
+	// OpenAI fast/flex policy
+	OpenAIFastPolicySettings *OpenAIFastPolicySettings `json:"openai_fast_policy_settings,omitempty"`
 }
 
 type DefaultSubscriptionSetting struct {
@@ -324,6 +331,22 @@ type BetaPolicyRule struct {
 // BetaPolicySettings Beta 策略配置 DTO
 type BetaPolicySettings struct {
 	Rules []BetaPolicyRule `json:"rules"`
+}
+
+// OpenAIFastPolicyRule OpenAI fast/flex 策略规则 DTO
+type OpenAIFastPolicyRule struct {
+	ServiceTier          string   `json:"service_tier"`
+	Action               string   `json:"action"`
+	Scope                string   `json:"scope"`
+	ErrorMessage         string   `json:"error_message,omitempty"`
+	ModelWhitelist       []string `json:"model_whitelist,omitempty"`
+	FallbackAction       string   `json:"fallback_action,omitempty"`
+	FallbackErrorMessage string   `json:"fallback_error_message,omitempty"`
+}
+
+// OpenAIFastPolicySettings OpenAI fast 策略配置 DTO
+type OpenAIFastPolicySettings struct {
+	Rules []OpenAIFastPolicyRule `json:"rules"`
 }
 
 // ParseCustomMenuItems parses a JSON string into a slice of CustomMenuItem.

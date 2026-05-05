@@ -46,3 +46,15 @@ describe('AppSidebar skill navigation', () => {
     expect(componentSource).toContain("path: '/admin/skills/settlements'")
   })
 })
+
+describe('AppSidebar affiliate admin navigation', () => {
+  it('keeps a single admin affiliates root entry and exposes the records as its children', () => {
+    const affiliateRootEntries = componentSource.match(/path: '\/admin\/affiliates'/g) ?? []
+
+    expect(affiliateRootEntries).toHaveLength(1)
+    expect(componentSource).toContain("label: t('nav.affiliateManagement')")
+    expect(componentSource).toContain("path: '/admin/affiliates/invites'")
+    expect(componentSource).toContain("path: '/admin/affiliates/rebates'")
+    expect(componentSource).toContain("path: '/admin/affiliates/transfers'")
+  })
+})

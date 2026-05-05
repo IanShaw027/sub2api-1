@@ -41,6 +41,7 @@ func TestNormalizeOpenAICompactRequestBodyForTest_UsesCodexShape(t *testing.T) {
 		"instructions":"local-test-instructions",
 		"tools":[{"type":"function","function":{"name":"apply_patch"}}],
 		"parallel_tool_calls":true,
+		"previous_response_id":"resp_123",
 		"reasoning":{"effort":"high"},
 		"text":{"verbosity":"low"}
 	}`, string(normalized))

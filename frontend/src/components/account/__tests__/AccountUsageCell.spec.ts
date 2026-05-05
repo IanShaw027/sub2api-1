@@ -57,6 +57,19 @@ function makeAccount(overrides: Partial<Account>): Account {
 describe('AccountUsageCell', () => {
   beforeEach(() => {
     getUsage.mockReset()
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation(() => ({
+        matches: true,
+        media: '(min-width: 768px)',
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      }))
+    })
   })
 
   it('Antigravity 图片用量会聚合新旧 image 模型', async () => {
@@ -134,6 +147,61 @@ describe('AccountUsageCell', () => {
 
     expect(wrapper.text()).toContain('admin.accounts.aiCreditsBalance')
     expect(wrapper.text()).toContain('25')
+  })
+
+  it('Anthropic service_account 会拉取并展示用量窗口', async () => {
+    getUsage.mockResolvedValue({
+      five_hour: {
+        utilization: 31,
+        resets_at: '2026-03-08T12:00:00Z',
+        remaining_seconds: 3600,
+        window_stats: {
+          requests: 5,
+          tokens: 500,
+          cost: 0.05,
+          standard_cost: 0.05,
+          user_cost: 0.05
+        }
+      },
+      seven_day: {
+        utilization: 62,
+        resets_at: '2026-03-13T12:00:00Z',
+        remaining_seconds: 3600,
+        window_stats: {
+          requests: 8,
+          tokens: 800,
+          cost: 0.08,
+          standard_cost: 0.08,
+          user_cost: 0.08
+        }
+      }
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 1003,
+          platform: 'anthropic',
+          type: 'service_account',
+          extra: {}
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'resetsAt', 'windowStats', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ resetsAt }}</div>'
+          },
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(getUsage).toHaveBeenCalledWith(1003, 'passive')
+    expect(wrapper.text()).toContain('5h|31|2026-03-08T12:00:00Z')
+    expect(wrapper.text()).toContain('7d|62|2026-03-13T12:00:00Z')
   })
 
 
@@ -764,5 +832,44 @@ describe('AccountUsageCell', () => {
 
     expect(wrapper.text()).toContain('1d|73|17000')
     expect(wrapper.text()).not.toContain('admin.accounts.gemini.rateLimit.unlimited')
+  })
+
+  it('Vertex 账号会在 Gemini 用量窗口里展示 today stats 徽章', async () => {
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 4004,
+          platform: 'gemini',
+          type: 'service_account',
+          credentials: {
+            tier_id: 'vertex',
+            project_id: 'vertex-proj',
+            client_email: 'svc@vertex-proj.iam.gserviceaccount.com',
+            location: 'global'
+          },
+          extra: {}
+        }),
+        todayStats: {
+          requests: 0,
+          tokens: 0,
+          cost: 0,
+          standard_cost: 0,
+          user_cost: 0
+        }
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: true,
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('0 req')
+    expect(wrapper.text()).toContain('0')
+    expect(wrapper.text()).toContain('A $0.00')
+    expect(wrapper.text()).toContain('U $0.00')
   })
 })

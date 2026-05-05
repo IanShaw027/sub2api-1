@@ -9,6 +9,7 @@ const {
   clearErrorMock,
   exchangeCallbackMock,
   validateRefreshTokenMock,
+  geminiGenerateAuthUrlMock,
   buildCredentialsMock,
   buildExtraInfoMock,
   buildAccountNameMock
@@ -19,6 +20,7 @@ const {
   clearErrorMock: vi.fn(),
   exchangeCallbackMock: vi.fn(),
   validateRefreshTokenMock: vi.fn(),
+  geminiGenerateAuthUrlMock: vi.fn(),
   buildCredentialsMock: vi.fn(),
   buildExtraInfoMock: vi.fn(),
   buildAccountNameMock: vi.fn()
@@ -71,7 +73,10 @@ vi.mock('@/composables/useOpenAIOAuth', () => ({
 }))
 
 vi.mock('@/composables/useGeminiOAuth', () => ({
-  useGeminiOAuth: () => buildOAuthComposable()
+  useGeminiOAuth: () => ({
+    ...buildOAuthComposable(),
+    generateAuthUrl: geminiGenerateAuthUrlMock
+  })
 }))
 
 vi.mock('@/composables/useAntigravityOAuth', () => ({
@@ -192,7 +197,8 @@ const KiroAuthorizationFlowStub = defineComponent({
 
 const OAuthAuthorizationFlowStub = defineComponent({
   name: 'OAuthAuthorizationFlow',
-  setup(_, { expose }) {
+  emits: ['generate-url'],
+  setup(_, { expose, emit }) {
     expose({
       authCode: '',
       oauthState: '',
@@ -201,7 +207,14 @@ const OAuthAuthorizationFlowStub = defineComponent({
       inputMethod: 'manual',
       reset: vi.fn()
     })
-    return () => h('div', { 'data-testid': 'oauth-flow' })
+    return () => [
+      h('div', { 'data-testid': 'oauth-flow' }),
+      h('button', {
+        'data-testid': 'oauth-flow-generate-url',
+        type: 'button',
+        onClick: () => emit('generate-url')
+      }, 'generate oauth url')
+    ]
   }
 })
 
@@ -280,6 +293,7 @@ describe('admin ReAuthAccountModal', () => {
     clearErrorMock.mockReset()
     exchangeCallbackMock.mockReset()
     validateRefreshTokenMock.mockReset()
+    geminiGenerateAuthUrlMock.mockReset()
     buildCredentialsMock.mockReset()
     buildExtraInfoMock.mockReset()
     buildAccountNameMock.mockReset()
@@ -333,6 +347,26 @@ describe('admin ReAuthAccountModal', () => {
 
     expect(wrapper.find('[data-testid="oauth-flow"]').exists()).toBe(true)
     expect(wrapper.findAll('button').some((button) => button.text().includes('admin.accounts.oauth.completeAuth'))).toBe(true)
+  })
+
+  it('normalizes Gemini Code Assist tier to enterprise before generating reauth URL', async () => {
+    const wrapper = mountModal({
+      ...buildGeminiOAuthAccount(),
+      credentials: {
+        oauth_type: 'code_assist',
+        tier_id: 'gcp_standard'
+      }
+    })
+
+    await wrapper.get('[data-testid="oauth-flow-generate-url"]').trigger('click')
+    await flushPromises()
+
+    expect(geminiGenerateAuthUrlMock).toHaveBeenCalledWith(
+      null,
+      '',
+      'code_assist',
+      'gcp_enterprise'
+    )
   })
 
   it('reauthorizes Kiro OAuth accounts from callback submission without preserving runtime-only extra fields', async () => {

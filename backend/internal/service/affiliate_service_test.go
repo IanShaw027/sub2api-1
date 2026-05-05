@@ -56,11 +56,13 @@ func TestAffiliateRebateRatePercentSemantics(t *testing.T) {
 }
 
 type affiliateRepoStub struct {
-	summary      *AffiliateSummary
-	inviter      *AffiliateSummary
-	invitees     []AffiliateInvitee
-	rebatedCount int
-	accrual      AffiliateAccrualInput
+	summary        *AffiliateSummary
+	inviter        *AffiliateSummary
+	invitees       []AffiliateInvitee
+	rebatedCount   int
+	accrual        AffiliateAccrualInput
+	setRateCalls   int
+	batchRateCalls int
 }
 
 func (s *affiliateRepoStub) EnsureUserAffiliate(ctx context.Context, userID int64) (*AffiliateSummary, error) {
@@ -82,6 +84,12 @@ func (s *affiliateRepoStub) AccrueQuota(ctx context.Context, input AffiliateAccr
 func (s *affiliateRepoStub) ApplySignupBonus(ctx context.Context, userID int64, amount float64) (bool, float64, error) {
 	return true, amount, nil
 }
+func (s *affiliateRepoStub) GetAccruedRebateFromInvitee(context.Context, int64, int64) (float64, error) {
+	return 0, nil
+}
+func (s *affiliateRepoStub) ThawFrozenQuota(context.Context, int64) (float64, error) {
+	return 0, nil
+}
 func (s *affiliateRepoStub) TransferQuotaToBalance(ctx context.Context, userID int64) (float64, float64, error) {
 	return 0, 0, nil
 }
@@ -96,6 +104,35 @@ func (s *affiliateRepoStub) CountRebatedInvitees(ctx context.Context, inviterID 
 }
 func (s *affiliateRepoStub) ListAdminAffiliateStats(ctx context.Context, params AdminAffiliateListParams) ([]AdminAffiliateStatsRow, int64, error) {
 	return nil, 0, nil
+}
+func (s *affiliateRepoStub) UpdateUserAffCode(context.Context, int64, string) error {
+	return nil
+}
+func (s *affiliateRepoStub) ResetUserAffCode(context.Context, int64) (string, error) {
+	return "", nil
+}
+func (s *affiliateRepoStub) SetUserRebateRate(context.Context, int64, *float64) error {
+	s.setRateCalls++
+	return nil
+}
+func (s *affiliateRepoStub) BatchSetUserRebateRate(context.Context, []int64, *float64) error {
+	s.batchRateCalls++
+	return nil
+}
+func (s *affiliateRepoStub) ListUsersWithCustomSettings(context.Context, AffiliateAdminFilter) ([]AffiliateAdminEntry, int64, error) {
+	return nil, 0, nil
+}
+func (s *affiliateRepoStub) ListAffiliateInviteRecords(context.Context, AffiliateRecordFilter) ([]AffiliateInviteRecord, int64, error) {
+	return nil, 0, nil
+}
+func (s *affiliateRepoStub) ListAffiliateRebateRecords(context.Context, AffiliateRecordFilter) ([]AffiliateRebateRecord, int64, error) {
+	return nil, 0, nil
+}
+func (s *affiliateRepoStub) ListAffiliateTransferRecords(context.Context, AffiliateRecordFilter) ([]AffiliateTransferRecord, int64, error) {
+	return nil, 0, nil
+}
+func (s *affiliateRepoStub) GetAffiliateUserOverview(context.Context, int64) (*AffiliateUserOverview, error) {
+	return nil, nil
 }
 
 func TestBindInviterByCodeNilServiceReturnsServiceUnavailable(t *testing.T) {
@@ -133,6 +170,51 @@ func TestAccrueInviteRebate_ClampsToCapAndClaimsSlot(t *testing.T) {
 	require.Equal(t, 100.0, repo.accrual.RebateCap)
 }
 
+func TestAccrueInviteRebate_PassesFreezeAndPerInviteePolicy(t *testing.T) {
+	ctx := context.Background()
+	inviterID := int64(10)
+	repo := &affiliateRepoStub{
+		summary: &AffiliateSummary{UserID: 20, InviterID: &inviterID},
+		inviter: &AffiliateSummary{UserID: inviterID, AffHistoryQuota: 12},
+	}
+	svc := &AffiliateService{repo: repo, settingRepo: &affiliateSettingRepoStub{values: map[string]string{
+		SettingKeyAffiliateEnabled:             "true",
+		SettingKeyAffiliateRebateRate:          "15",
+		SettingKeyAffiliateRebateCap:           "88",
+		SettingKeyAffiliateRebateInviteeLimit:  "5",
+		SettingKeyAffiliateRebateFreezeHours:   "24",
+		SettingKeyAffiliateRebatePerInviteeCap: "66.5",
+		SettingKeyAffiliateRebateDurationDays:  "30",
+	}}}
+
+	rebate, err := svc.AccrueInviteRebateForOrder(ctx, 20, 1234, 200)
+	require.NoError(t, err)
+	require.Equal(t, 30.0, rebate)
+	require.Equal(t, int64(1234), repo.accrual.SourceOrderID)
+	require.Equal(t, 88.0, repo.accrual.RebateCap)
+	require.Equal(t, 5, repo.accrual.InviteeLimit)
+	require.Equal(t, 24, repo.accrual.FreezeHours)
+	require.Equal(t, 66.5, repo.accrual.PerInviteeCap)
+}
+
+func TestAccrueInviteRebate_ClampsStoredCustomRateTo100Percent(t *testing.T) {
+	ctx := context.Background()
+	inviterID := int64(10)
+	invalidRate := 150.0
+	repo := &affiliateRepoStub{
+		summary: &AffiliateSummary{UserID: 20, InviterID: &inviterID},
+		inviter: &AffiliateSummary{UserID: inviterID, AffRebateRatePercent: &invalidRate},
+	}
+	svc := &AffiliateService{repo: repo, settingRepo: &affiliateSettingRepoStub{values: map[string]string{
+		SettingKeyAffiliateEnabled: "true",
+	}}}
+
+	rebate, err := svc.AccrueInviteRebateForOrder(ctx, 20, 88, 100)
+	require.NoError(t, err)
+	require.Equal(t, 100.0, rebate)
+	require.Equal(t, 100.0, repo.accrual.RebateRate)
+}
+
 func TestAccrueInviteRebate_RejectsNewInviteeWhenSlotLimitReached(t *testing.T) {
 	ctx := context.Background()
 	inviterID := int64(10)
@@ -151,6 +233,46 @@ func TestAccrueInviteRebate_RejectsNewInviteeWhenSlotLimitReached(t *testing.T) 
 	require.NoError(t, err)
 	require.Equal(t, 10.0, rebate)
 	require.Equal(t, 1, repo.accrual.InviteeLimit)
+}
+
+func TestAdminSetUserRebateRateRejectsOutOfRange(t *testing.T) {
+	ctx := context.Background()
+	repo := &affiliateRepoStub{}
+	svc := &AffiliateService{repo: repo, settingRepo: &affiliateSettingRepoStub{value: "true"}}
+
+	for _, tc := range []struct {
+		name string
+		rate float64
+	}{
+		{name: "negative", rate: -1},
+		{name: "above max", rate: 100.01},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := svc.AdminSetUserRebateRate(ctx, 1, &tc.rate)
+			require.ErrorIs(t, err, ErrAffiliateRebateRateInvalid)
+			require.Equal(t, 0, repo.setRateCalls)
+		})
+	}
+}
+
+func TestAdminBatchSetUserRebateRateRejectsOutOfRange(t *testing.T) {
+	ctx := context.Background()
+	repo := &affiliateRepoStub{}
+	svc := &AffiliateService{repo: repo, settingRepo: &affiliateSettingRepoStub{value: "true"}}
+
+	for _, tc := range []struct {
+		name string
+		rate float64
+	}{
+		{name: "negative", rate: -0.5},
+		{name: "above max", rate: 101},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := svc.AdminBatchSetUserRebateRate(ctx, []int64{1, 2}, &tc.rate)
+			require.ErrorIs(t, err, ErrAffiliateRebateRateInvalid)
+			require.Equal(t, 0, repo.batchRateCalls)
+		})
+	}
 }
 
 func TestMaskEmail(t *testing.T) {
