@@ -2,6 +2,8 @@ package handler
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
@@ -168,14 +170,19 @@ func (h *AIHandler) CreateSkill(c *gin.Context) {
 		return
 	}
 	executeUserIdempotentJSON(c, "skills:create", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
+		metadata, cleanupIDs, err := h.buildSkillMetadata(ctx, subject.UserID, req, nil)
+		if err != nil {
+			return nil, err
+		}
 		created, err := module.SkillService.CreateSkill(ctx, subject.UserID, &service.AICreateSkillInput{
 			Name:        strings.TrimSpace(req.Name),
 			Description: req.Description,
 			Type:        strings.TrimSpace(req.Type),
-			Metadata:    buildSkillMetadata(req, nil),
+			Metadata:    metadata,
 			Trace:       buildUserAITrace(req.Trace),
 		})
 		if err != nil {
+			h.cleanupSkillMedia(ctx, subject.UserID, cleanupIDs)
 			return nil, err
 		}
 		skill, loadErr := module.DomainRepo.GetSkillByUserAndID(ctx, subject.UserID, created.ID)
@@ -211,13 +218,18 @@ func (h *AIHandler) UpdateSkill(c *gin.Context) {
 		if err != nil {
 			return nil, err
 		}
+		metadata, cleanupIDs, err := h.buildSkillMetadata(ctx, subject.UserID, req, current.Metadata)
+		if err != nil {
+			return nil, err
+		}
 		updated, err := module.SkillService.UpdateSkill(ctx, subject.UserID, skillID, &service.AIUpdateSkillInput{
 			Name:        stringPtrNullable(req.Name),
 			Description: stringDoublePtr(req.Description),
-			Metadata:    mapPtr(buildSkillMetadata(req, current.Metadata)),
+			Metadata:    mapPtr(metadata),
 			Trace:       buildUserAITrace(req.Trace),
 		})
 		if err != nil {
+			h.cleanupSkillMedia(ctx, subject.UserID, cleanupIDs)
 			return nil, err
 		}
 		skill, loadErr := module.DomainRepo.GetSkillByUserAndID(ctx, subject.UserID, updated.ID)
@@ -552,16 +564,21 @@ func (h *AIHandler) RunSkill(c *gin.Context) {
 		return
 	}
 	executeUserIdempotentJSON(c, "skills:runs:create", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
+		attachments, cleanupIDs, err := h.buildRunAttachments(ctx, subject.UserID, req.Attachments)
+		if err != nil {
+			return nil, err
+		}
 		result, err := module.RunService.Execute(ctx, subject.UserID, &service.AISkillRunInput{
 			SkillID:        skillID,
 			VersionID:      req.VersionID,
 			Mode:           strings.TrimSpace(req.Mode),
 			Parameters:     req.Parameters,
-			Attachments:    buildRunAttachments(req.Attachments),
+			Attachments:    attachments,
 			IdempotencyKey: strings.TrimSpace(req.IdempotencyKey),
 			Trace:          buildUserAITrace(req.Trace),
 		})
 		if err != nil {
+			h.cleanupSkillMedia(ctx, subject.UserID, cleanupIDs)
 			return nil, err
 		}
 		return result, nil
@@ -770,12 +787,22 @@ func loadSkillVersionPointers(ctx context.Context, module *skillkit.Module, skil
 	return latestVersion, currentVersion, nil
 }
 
-func buildSkillMetadata(req skillUpsertRequest, base map[string]any) map[string]any {
+func (h *AIHandler) buildSkillMetadata(ctx context.Context, userID int64, req skillUpsertRequest, base map[string]any) (map[string]any, []int64, error) {
 	metadata := cloneStringAnyMap(base)
+	cleanupIDs := make([]int64, 0, 1)
 	metadata["slug"] = strings.TrimSpace(req.Slug)
 	metadata["status"] = skillFirstNonEmpty(req.Status, "draft")
 	metadata["tagline"] = strings.TrimSpace(req.Tagline)
-	metadata["cover_image_url"] = trimPtr(req.CoverImageURL)
+	if req.CoverImageURL != nil {
+		coverImage, err := h.storeSkillCoverImage(ctx, userID, trimPtr(req.CoverImageURL))
+		if err != nil {
+			return nil, nil, err
+		}
+		metadata["cover_image_url"] = coverImage.URL
+		if coverImage.Created && coverImage.MediaID != nil {
+			cleanupIDs = append(cleanupIDs, *coverImage.MediaID)
+		}
+	}
 	metadata["source_locked"] = req.SourceLocked
 	metadata["variable_schema"] = req.VariableSchema
 	metadata["content"] = req.Content
@@ -794,7 +821,7 @@ func buildSkillMetadata(req skillUpsertRequest, base map[string]any) map[string]
 	if visibility := normalizeSkillVisibility(req.Visibility); visibility != "" {
 		metadata["visibility"] = visibility
 	}
-	return metadata
+	return metadata, cleanupIDs, nil
 }
 
 func buildCreateVersionInput(skill *domain.AISkill, req skillVersionRequest) *service.AICreateSkillVersionInput {
@@ -948,28 +975,188 @@ func mergeSkillVersionRequest(req skillVersionRequest, version *domain.AISkillVe
 	return req
 }
 
-func buildRunAttachments(items []map[string]any) []service.AISkillRunAttachment {
+func (h *AIHandler) buildRunAttachments(ctx context.Context, userID int64, items []map[string]any) ([]service.AISkillRunAttachment, []int64, error) {
 	if len(items) == 0 {
-		return nil
+		return nil, nil, nil
 	}
 	out := make([]service.AISkillRunAttachment, 0, len(items))
+	cleanupIDs := make([]int64, 0, len(items))
 	for _, item := range items {
 		attachment := service.AISkillRunAttachment{
 			URL:      mapString(item, "url"),
 			Purpose:  mapString(item, "purpose"),
 			FileName: mapString(item, "file_name"),
 		}
-		if value, ok := item["asset_id"].(float64); ok {
-			id := int64(value)
+		if id, ok := int64FromAny(item["asset_id"]); ok {
 			attachment.AssetID = &id
 		}
-		if value, ok := item["media_id"].(float64); ok {
-			id := int64(value)
+		if id, ok := int64FromAny(item["media_id"]); ok {
 			attachment.MediaID = &id
+		}
+		if attachment.AssetID == nil && attachment.MediaID == nil {
+			storedMedia, err := h.storeSkillAttachmentMedia(ctx, userID, attachment.URL, attachment.FileName)
+			if err != nil {
+				return nil, nil, err
+			}
+			attachment.URL = storedMedia.URL
+			if storedMedia.MediaID != nil {
+				attachment.MediaID = storedMedia.MediaID
+				if storedMedia.Created {
+					cleanupIDs = append(cleanupIDs, *storedMedia.MediaID)
+				}
+			}
+		} else if strings.TrimSpace(attachment.URL) == "" {
+			attachment.URL = h.skillManagedMediaURL(attachment.MediaID, attachment.AssetID)
 		}
 		out = append(out, attachment)
 	}
-	return out
+	return out, cleanupIDs, nil
+}
+
+func (h *AIHandler) normalizeSkillCoverImage(ctx context.Context, req *skillUpsertRequest, bizID string) error {
+	if req == nil || req.CoverImageURL == nil {
+		return nil
+	}
+	value := strings.TrimSpace(*req.CoverImageURL)
+	if value == "" {
+		return nil
+	}
+	storedMedia, err := h.storeSkillCoverImage(ctx, 0, value)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(storedMedia.URL) != "" {
+		req.CoverImageURL = &storedMedia.URL
+	}
+	return nil
+}
+
+func (h *AIHandler) buildRunAttachmentsWithMedia(ctx context.Context, userID int64, items []map[string]any) ([]service.AISkillRunAttachment, error) {
+	attachments, _, err := h.buildRunAttachments(ctx, userID, items)
+	return attachments, err
+}
+
+func (h *AIHandler) storeSkillCoverImage(ctx context.Context, userID int64, source string) (skillMediaReference, error) {
+	return h.storeSkillMediaReferenceWithIDBestEffort(ctx, userID, "ai_skill_cover", source, "")
+}
+
+func (h *AIHandler) storeSkillAttachmentMedia(ctx context.Context, userID int64, source, fileName string) (skillMediaReference, error) {
+	return h.storeSkillMediaReferenceWithIDBestEffort(ctx, userID, "ai_skill_run_attachment", source, fileName)
+}
+
+func (h *AIHandler) storeSkillMediaReference(ctx context.Context, userID int64, bizType, source, fileName string) (string, error) {
+	storedMedia, err := h.storeSkillMediaReferenceWithID(ctx, userID, bizType, source, fileName)
+	return storedMedia.URL, err
+}
+
+func (h *AIHandler) storeSkillMediaReferenceWithIDBestEffort(ctx context.Context, userID int64, bizType, source, fileName string) (skillMediaReference, error) {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return skillMediaReference{}, nil
+	}
+	storedMedia, err := h.storeSkillMediaReferenceWithID(ctx, userID, bizType, source, fileName)
+	if err != nil {
+		return skillMediaReference{URL: source}, nil
+	}
+	if strings.TrimSpace(storedMedia.URL) == "" {
+		storedMedia.URL = source
+	}
+	return storedMedia, nil
+}
+
+type skillMediaReference struct {
+	URL     string
+	MediaID *int64
+	Created bool
+}
+
+func (h *AIHandler) storeSkillMediaReferenceWithID(ctx context.Context, userID int64, bizType, source, fileName string) (skillMediaReference, error) {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return skillMediaReference{}, nil
+	}
+	if h == nil || h.mediaService == nil || !h.mediaService.RuntimeInfo().Enabled {
+		return skillMediaReference{URL: source}, nil
+	}
+	if mediaID, ok := service.ParseManagedMediaID(h.mediaService, source); ok {
+		return skillMediaReference{URL: source, MediaID: &mediaID}, nil
+	}
+	bizID := fmt.Sprintf("user-%d", userID)
+	var ownerUserID *int64
+	if userID > 0 {
+		ownerUserID = &userID
+	} else {
+		bizID = bizType
+	}
+	asset, err := h.mediaService.IngestImageReference(ctx, service.IngestImageReferenceInput{
+		BizType:     bizType,
+		BizID:       bizID,
+		Visibility:  service.MediaVisibilityPublic,
+		OwnerUserID: ownerUserID,
+		Source:      source,
+		FileName:    fileName,
+	})
+	if err != nil {
+		return skillMediaReference{}, err
+	}
+	storedURL := h.mediaService.PublicURL(asset.ID, asset.Visibility)
+	if strings.TrimSpace(storedURL) == "" {
+		storedURL = source
+	}
+	return skillMediaReference{URL: storedURL, MediaID: &asset.ID, Created: true}, nil
+}
+
+func (h *AIHandler) cleanupSkillMedia(ctx context.Context, userID int64, mediaIDs []int64) {
+	if h == nil || h.mediaService == nil || userID <= 0 || len(mediaIDs) == 0 {
+		return
+	}
+	seen := make(map[int64]struct{}, len(mediaIDs))
+	for _, mediaID := range mediaIDs {
+		if mediaID <= 0 {
+			continue
+		}
+		if _, ok := seen[mediaID]; ok {
+			continue
+		}
+		seen[mediaID] = struct{}{}
+		_ = h.mediaService.DeleteForUser(ctx, userID, mediaID)
+	}
+}
+
+func (h *AIHandler) skillManagedMediaURL(primaryID, fallbackID *int64) string {
+	if h == nil || h.mediaService == nil {
+		return ""
+	}
+	if primaryID != nil && *primaryID > 0 {
+		if url := h.mediaService.PublicURL(*primaryID, service.MediaVisibilityPublic); strings.TrimSpace(url) != "" {
+			return url
+		}
+	}
+	if fallbackID != nil && *fallbackID > 0 {
+		return h.mediaService.PublicURL(*fallbackID, service.MediaVisibilityPublic)
+	}
+	return ""
+}
+
+func int64FromAny(value any) (int64, bool) {
+	switch v := value.(type) {
+	case int64:
+		return v, true
+	case int:
+		return int64(v), true
+	case int32:
+		return int64(v), true
+	case float64:
+		return int64(v), true
+	case float32:
+		return int64(v), true
+	case string:
+		id, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		if err == nil {
+			return id, true
+		}
+	}
+	return 0, false
 }
 
 func skillPagination(c *gin.Context) pagination.PaginationParams {
