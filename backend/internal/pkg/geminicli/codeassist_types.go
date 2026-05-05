@@ -7,7 +7,8 @@ import (
 
 // LoadCodeAssistRequest matches done-hub's internal Code Assist call.
 type LoadCodeAssistRequest struct {
-	Metadata LoadCodeAssistMetadata `json:"metadata"`
+	CloudAICompanionProject string                 `json:"cloudaicompanionProject,omitempty"`
+	Metadata                LoadCodeAssistMetadata `json:"metadata"`
 }
 
 type LoadCodeAssistMetadata struct {
@@ -17,7 +18,15 @@ type LoadCodeAssistMetadata struct {
 }
 
 type TierInfo struct {
-	ID string `json:"id"`
+	ID                     string            `json:"id"`
+	Name                   string            `json:"name,omitempty"`
+	HasOnboardedPreviously *bool             `json:"hasOnboardedPreviously,omitempty"`
+	AvailableCredits       []AvailableCredit `json:"availableCredits,omitempty"`
+}
+
+type AvailableCredit struct {
+	CreditType   string `json:"creditType,omitempty"`
+	CreditAmount string `json:"creditAmount,omitempty"`
 }
 
 // UnmarshalJSON supports both legacy string tiers and object tiers.

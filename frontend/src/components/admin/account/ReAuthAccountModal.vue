@@ -88,32 +88,25 @@
               'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
               geminiOAuthType === 'google_one'
                 ? 'bg-purple-500 text-white'
-                : geminiOAuthType === 'code_assist'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-amber-500 text-white'
+                : 'bg-blue-500 text-white'
             ]"
           >
             <Icon v-if="geminiOAuthType === 'google_one'" name="user" size="sm" />
-            <Icon v-else-if="geminiOAuthType === 'code_assist'" name="cloud" size="sm" />
-            <Icon v-else name="sparkles" size="sm" />
+            <Icon v-else name="cloud" size="sm" />
           </div>
           <div>
             <span class="block text-sm font-medium text-gray-900 dark:text-white">
               {{
                 geminiOAuthType === 'google_one'
                   ? 'Google One'
-                  : geminiOAuthType === 'code_assist'
-                    ? t('admin.accounts.gemini.oauthType.builtInTitle')
-                    : t('admin.accounts.gemini.oauthType.customTitle')
+                  : t('admin.accounts.gemini.oauthType.builtInTitle')
               }}
             </span>
             <span class="text-xs text-gray-500 dark:text-gray-400">
               {{
                 geminiOAuthType === 'google_one'
                   ? '个人账号'
-                  : geminiOAuthType === 'code_assist'
-                    ? t('admin.accounts.gemini.oauthType.builtInDesc')
-                    : t('admin.accounts.gemini.oauthType.customDesc')
+                  : t('admin.accounts.gemini.oauthType.builtInDesc')
               }}
             </span>
           </div>
@@ -149,6 +142,7 @@
         :method-label="t('admin.accounts.inputMethod')"
         :platform="isOpenAI ? 'openai' : isGemini ? 'gemini' : isAntigravity ? 'antigravity' : 'anthropic'"
         :show-project-id="isGemini && geminiOAuthType === 'code_assist'"
+        :show-project-id-recovery="isGemini"
         @generate-url="handleGenerateUrl"
         @cookie-auth="handleCookieAuth"
       />
@@ -234,6 +228,7 @@ interface OAuthFlowExposed {
   authCode: string
   oauthState: string
   projectId: string
+  requiresProjectIdRecovery: boolean
   sessionKey: string
   inputMethod: AuthInputMethod
   reset: () => void
@@ -267,7 +262,7 @@ const oauthFlowRef = ref<OAuthFlowExposed | null>(null)
 
 // State
 const addMethod = ref<AddMethod>('oauth')
-const geminiOAuthType = ref<'code_assist' | 'google_one' | 'ai_studio'>('code_assist')
+const geminiOAuthType = ref<'code_assist' | 'google_one'>('code_assist')
 const kiroBatchReauthLoading = ref(false)
 
 // Computed - check platform
@@ -333,7 +328,7 @@ const canExchangeCode = computed(() => {
   const authCode = oauthFlowRef.value?.authCode || ''
   const sessionId = currentSessionId.value
   const loading = currentLoading.value
-  return authCode.trim() && sessionId && !loading
+  return authCode.trim() && sessionId && !loading && !oauthFlowRef.value?.requiresProjectIdRecovery
 })
 
 // Watchers
@@ -351,16 +346,13 @@ watch(
       if (isGemini.value) {
         const creds = (props.account.credentials || {}) as Record<string, unknown>
         geminiOAuthType.value =
-          creds.oauth_type === 'google_one'
-            ? 'google_one'
-            : creds.oauth_type === 'ai_studio'
-              ? 'ai_studio'
-              : 'code_assist'
+          creds.oauth_type === 'google_one' ? 'google_one' : 'code_assist'
       }
     } else {
       resetState()
     }
-  }
+  },
+  { immediate: true }
 )
 
 // Methods

@@ -32,10 +32,10 @@ const (
 )
 
 type serviceRepoAdapter struct {
-	domainRepo       repository.AISkillRepository
-	db               *sql.DB
-	balanceCharger   service.AISkillBalanceCharger
-	creatorCreditor  service.AISkillCreatorEarningsCreditor
+	domainRepo      repository.AISkillRepository
+	db              *sql.DB
+	balanceCharger  service.AISkillBalanceCharger
+	creatorCreditor service.AISkillCreatorEarningsCreditor
 }
 
 func (a *serviceRepoAdapter) CreateSkill(ctx context.Context, skill *service.AISkill) error {
@@ -525,26 +525,26 @@ func serviceVersionToDomain(version *service.AISkillVersion) *domain.AISkillVers
 		}
 	}
 	return &domain.AISkillVersion{
-		ID:            version.ID,
-		SkillID:       version.SkillID,
-		UserID:        version.CreatorUserID,
-		Version:       version.Version,
-		ReviewStatus:  domainReviewStatus(version.Status),
-		ContentFormat: contentFormat,
-		Runtime:       runtime,
-		SourceContent: sourceContent,
-		Config:        config,
-		InputSchema:   inputSchema,
-		OutputSchema:  outputSchema,
-		ChangeNote:    version.ChangeNote,
-		SubmittedAt:   version.SubmittedAt,
-		ReviewedAt:    version.ReviewedAt,
+		ID:             version.ID,
+		SkillID:        version.SkillID,
+		UserID:         version.CreatorUserID,
+		Version:        version.Version,
+		ReviewStatus:   domainReviewStatus(version.Status),
+		ContentFormat:  contentFormat,
+		Runtime:        runtime,
+		SourceContent:  sourceContent,
+		Config:         config,
+		InputSchema:    inputSchema,
+		OutputSchema:   outputSchema,
+		ChangeNote:     version.ChangeNote,
+		SubmittedAt:    version.SubmittedAt,
+		ReviewedAt:     version.ReviewedAt,
 		ReviewerUserID: version.ReviewerUserID,
-		ReviewNote:    version.ReviewComment,
-		Metadata:      meta,
-		Trace:         version.Trace,
-		CreatedAt:     version.CreatedAt,
-		UpdatedAt:     version.UpdatedAt,
+		ReviewNote:     version.ReviewComment,
+		Metadata:       meta,
+		Trace:          version.Trace,
+		CreatedAt:      version.CreatedAt,
+		UpdatedAt:      version.UpdatedAt,
 	}
 }
 
@@ -553,7 +553,7 @@ func domainVersionToService(version *domain.AISkillVersion) *service.AISkillVers
 		return nil
 	}
 	meta := cloneMap(version.Metadata)
-	if sourceContent := strings.TrimSpace(version.SourceContent); sourceContent != "" {
+	if sourceContent := version.SourceContent; strings.TrimSpace(sourceContent) != "" {
 		if content, ok := meta[metaKeySkillContent].(map[string]any); ok {
 			cloned := cloneMap(content)
 			if readString(cloned, "source_code") == "" {
@@ -657,20 +657,20 @@ func serviceSettlementToDomain(settlement *service.AISkillSettlement) *domain.AI
 	meta["failure_reason"] = settlement.FailureReason
 	meta["service_status"] = settlement.Status
 	return &domain.AISkillSettlement{
-		ID:                   settlement.ID,
-		SkillID:              settlement.SkillID,
-		VersionID:            settlement.VersionID,
-		RunID:                settlement.RunID,
-		OwnerUserID:          settlement.CreatorUserID,
-		BuyerUserID:          settlement.BuyerUserID,
-		Status:               domainSettlementStatus(settlement.Status),
-		BillingMode:          domain.AISkillBillingModePerRequest,
-		Amount:               settlement.TotalAmount,
-		QuotaAmount:          settlement.CreatorAmount,
-		Metadata:             meta,
-		Trace:                settlement.Trace,
-		CreatedAt:            settlement.CreatedAt,
-		UpdatedAt:            settlement.UpdatedAt,
+		ID:          settlement.ID,
+		SkillID:     settlement.SkillID,
+		VersionID:   settlement.VersionID,
+		RunID:       settlement.RunID,
+		OwnerUserID: settlement.CreatorUserID,
+		BuyerUserID: settlement.BuyerUserID,
+		Status:      domainSettlementStatus(settlement.Status),
+		BillingMode: domain.AISkillBillingModePerRequest,
+		Amount:      settlement.TotalAmount,
+		QuotaAmount: settlement.CreatorAmount,
+		Metadata:    meta,
+		Trace:       settlement.Trace,
+		CreatedAt:   settlement.CreatedAt,
+		UpdatedAt:   settlement.UpdatedAt,
 	}
 }
 
@@ -1073,8 +1073,10 @@ func readFloat(meta map[string]any, key string) float64 {
 		return out
 	case string:
 		var out float64
-		fmt.Sscan(strings.TrimSpace(v), &out)
-		return out
+		if _, err := fmt.Sscan(strings.TrimSpace(v), &out); err == nil {
+			return out
+		}
+		return 0
 	default:
 		return 0
 	}

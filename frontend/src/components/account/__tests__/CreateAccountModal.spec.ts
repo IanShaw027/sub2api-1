@@ -122,7 +122,6 @@ function buildOAuthComposable() {
     buildAccountName: vi.fn((_tokenInfo?: unknown, name?: string) => name || 'auto-generated'),
     parseSessionKeys: vi.fn(() => []),
     validateRefreshToken: vi.fn(),
-    getCapabilities: vi.fn().mockResolvedValue({ ai_studio_oauth_enabled: false }),
     exchangeCallback: vi.fn()
   }
 }

@@ -5,8 +5,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 )
 
 const (
@@ -65,19 +65,19 @@ type MediaListFilters struct {
 }
 
 type UploadMediaInput struct {
-	BizType            string
-	BizID              string
-	Visibility         string
-	OwnerUserID        *int64
-	FileName           string
-	ContentType        string
-	SizeBytes          int64
-	SHA256             string
-	Width              *int
-	Height             *int
-	File               []byte
-	ThumbnailFileName  string
-	ThumbnailFile      []byte
+	BizType           string
+	BizID             string
+	Visibility        string
+	OwnerUserID       *int64
+	FileName          string
+	ContentType       string
+	SizeBytes         int64
+	SHA256            string
+	Width             *int
+	Height            *int
+	File              []byte
+	ThumbnailFileName string
+	ThumbnailFile     []byte
 }
 
 type UpdateMediaVisibilityInput struct {
@@ -90,20 +90,20 @@ type MediaDownloadURL struct {
 }
 
 type MediaRuntimeInfo struct {
-	Enabled                         bool     `json:"enabled"`
-	Bucket                          string   `json:"bucket,omitempty"`
-	PublicBaseURL                   string   `json:"public_base_url,omitempty"`
-	SourceDomain                    string   `json:"source_domain,omitempty"`
-	PresignExpiryMinutes            int      `json:"presign_expiry_minutes"`
-	MaxUploadSizeBytes              int64    `json:"max_upload_size_bytes"`
-	DefaultVisibility               string   `json:"default_visibility"`
-	UploadEndpoint                  string   `json:"upload_endpoint"`
-	PublicEndpointTemplate          string   `json:"public_endpoint_template"`
-	ThumbnailEndpointTemplate       string   `json:"thumbnail_endpoint_template"`
-	DownloadEndpointTemplate        string   `json:"download_endpoint_template"`
-	ThumbnailDownloadTemplate       string   `json:"thumbnail_download_endpoint_template"`
-	SupportedBizTypes               []string `json:"supported_biz_types"`
-	ThumbnailEnabled                bool     `json:"thumbnail_enabled"`
+	Enabled                   bool     `json:"enabled"`
+	Bucket                    string   `json:"bucket,omitempty"`
+	PublicBaseURL             string   `json:"public_base_url,omitempty"`
+	SourceDomain              string   `json:"source_domain,omitempty"`
+	PresignExpiryMinutes      int      `json:"presign_expiry_minutes"`
+	MaxUploadSizeBytes        int64    `json:"max_upload_size_bytes"`
+	DefaultVisibility         string   `json:"default_visibility"`
+	UploadEndpoint            string   `json:"upload_endpoint"`
+	PublicEndpointTemplate    string   `json:"public_endpoint_template"`
+	ThumbnailEndpointTemplate string   `json:"thumbnail_endpoint_template"`
+	DownloadEndpointTemplate  string   `json:"download_endpoint_template"`
+	ThumbnailDownloadTemplate string   `json:"thumbnail_download_endpoint_template"`
+	SupportedBizTypes         []string `json:"supported_biz_types"`
+	ThumbnailEnabled          bool     `json:"thumbnail_enabled"`
 }
 
 type MediaObjectStream struct {

@@ -7,7 +7,51 @@
         <Icon name="link" size="md" class="text-white" />
       </div>
       <div class="flex-1">
-        <h4 class="mb-3 font-semibold text-blue-900 dark:text-blue-200">{{ oauthTitle }}</h4>
+        <div class="mb-3 flex items-center gap-2">
+          <h4 class="font-semibold text-blue-900 dark:text-blue-200">{{ oauthTitle }}</h4>
+          <span
+            v-if="platform === 'gemini'"
+            class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+          >
+            <Icon name="infoCircle" size="xs" class="mr-1" />
+            {{ t('admin.accounts.oauth.gemini.projectTipBadge') }}
+          </span>
+        </div>
+
+        <div
+          v-if="platform === 'gemini' && (showProjectId || showGeminiProjectRecoveryStep)"
+          class="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/30"
+        >
+          <p class="text-sm font-medium text-amber-900 dark:text-amber-200">
+            {{ t('admin.accounts.oauth.gemini.projectTipTitle') }}
+          </p>
+          <p class="mt-1 text-xs text-amber-800 dark:text-amber-300">
+            {{ t('admin.accounts.oauth.gemini.projectTipIntro') }}
+          </p>
+          <ol class="mt-2 list-inside list-decimal space-y-1 text-xs text-amber-800 dark:text-amber-300">
+            <li>{{ t('admin.accounts.oauth.gemini.projectTipStepProject') }}</li>
+            <li>{{ t('admin.accounts.oauth.gemini.projectTipStepIam') }}</li>
+            <li>{{ t('admin.accounts.oauth.gemini.projectTipStepApi') }}</li>
+          </ol>
+          <div class="mt-2 flex flex-wrap gap-2 text-xs">
+            <a
+              href="https://console.cloud.google.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex items-center gap-1 text-amber-900 underline hover:text-amber-700 dark:text-amber-200 dark:hover:text-amber-100"
+            >
+              {{ t('admin.accounts.oauth.gemini.projectConsoleLink') }}
+            </a>
+            <a
+              href="https://console.cloud.google.com/apis/library/cloudaicompanion.googleapis.com?orgonly=true"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex items-center gap-1 text-amber-900 underline hover:text-amber-700 dark:text-amber-200 dark:hover:text-amber-100"
+            >
+              {{ t('admin.accounts.oauth.gemini.projectApiLink') }}
+            </a>
+          </div>
+        </div>
 
         <!-- Auth Method Selection -->
         <div v-if="showMethodSelection" class="mb-4">
@@ -513,8 +557,8 @@
                         :stroke-width="2"
                       />
                       <div class="text-sm text-amber-800 dark:text-amber-300">
-                        <p class="font-semibold">{{ $t('admin.accounts.oauth.gemini.stateWarningTitle') }}</p>
-                        <p class="mt-1">{{ $t('admin.accounts.oauth.gemini.stateWarningDesc') }}</p>
+                        <p class="font-semibold">{{ t('admin.accounts.oauth.gemini.stateWarningTitle') }}</p>
+                        <p class="mt-1">{{ t('admin.accounts.oauth.gemini.stateWarningDesc') }}</p>
                       </div>
                     </div>
                   </div>
@@ -529,6 +573,77 @@
                     {{ error }}
                   </p>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            v-if="showGeminiProjectRecoveryStep"
+            class="rounded-lg border border-amber-300 bg-white/80 p-4 dark:border-amber-600 dark:bg-gray-800/80"
+          >
+            <div class="flex items-start gap-3">
+              <div
+                class="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white"
+              >
+                4
+              </div>
+              <div class="flex-1">
+                <p class="mb-2 font-medium text-amber-900 dark:text-amber-200">
+                  {{ t('admin.accounts.oauth.gemini.projectIdRecoveryTitle') }}
+                </p>
+                <p class="mb-3 text-sm text-amber-800 dark:text-amber-300">
+                  {{ t('admin.accounts.oauth.gemini.projectIdRecoveryDesc') }}
+                </p>
+                <label class="input-label flex items-center gap-2">
+                  {{ t('admin.accounts.oauth.gemini.projectIdLabel') }}
+                  <a
+                    href="https://console.cloud.google.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center gap-1 text-xs font-normal text-blue-500 hover:text-blue-600 dark:text-blue-400"
+                  >
+                    <Icon name="infoCircle" size="xs" />
+                    {{ t('admin.accounts.oauth.gemini.howToGetProjectId') }}
+                  </a>
+                </label>
+                <input
+                  v-model="projectId"
+                  type="text"
+                  class="input w-full font-mono text-sm"
+                  :placeholder="t('admin.accounts.oauth.gemini.projectIdPlaceholder')"
+                />
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.accounts.oauth.gemini.projectIdHint') }}
+                </p>
+                <button
+                  type="button"
+                  class="btn btn-primary mt-3 text-sm"
+                  :disabled="loading"
+                  @click="authUrl ? handleRegenerate() : handleGenerateUrl()"
+                >
+                  <Icon v-if="!loading" name="refresh" size="sm" class="mr-2" />
+                  <svg
+                    v-else
+                    class="-ml-1 mr-2 h-4 w-4 animate-spin"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      class="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      stroke-width="4"
+                    ></circle>
+                    <path
+                      class="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
+                  </svg>
+                  {{ authUrl ? t('admin.accounts.oauth.regenerate') : oauthGenerateAuthUrl }}
+                </button>
               </div>
             </div>
           </div>
@@ -563,6 +678,7 @@ interface Props {
   showAccessTokenOption?: boolean
   platform?: AccountPlatform // Platform type for different UI/text
   showProjectId?: boolean // New prop to control project ID visibility
+  showProjectIdRecovery?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -580,7 +696,8 @@ const props = withDefaults(defineProps<Props>(), {
   showSessionTokenOption: false,
   showAccessTokenOption: false,
   platform: 'anthropic',
-  showProjectId: true
+  showProjectId: true,
+  showProjectIdRecovery: false
 })
 
 const emit = defineEmits<{
@@ -623,6 +740,12 @@ const oauthImportantNotice = computed(() => {
   if (props.platform === 'antigravity') return t('admin.accounts.oauth.antigravity.importantNotice')
   return ''
 })
+const isGeminiProjectIdError = computed(
+  () => props.platform === 'gemini' && props.error === t('admin.accounts.oauth.gemini.missingProjectId')
+)
+const showGeminiProjectRecoveryStep = computed(
+  () => props.platform === 'gemini' && props.showProjectIdRecovery && isGeminiProjectIdError.value
+)
 
 // Local state
 const inputMethod = ref<AuthInputMethod>(props.showCookieOption ? 'manual' : 'manual')
@@ -660,6 +783,15 @@ const parsedRefreshTokenCount = computed(() => {
 watch(inputMethod, (newVal) => {
   emit('update:inputMethod', newVal)
 })
+
+watch(
+  () => props.sessionId,
+  (newSessionId, oldSessionId) => {
+    if (newSessionId && newSessionId !== oldSessionId) {
+      oauthState.value = ''
+    }
+  }
+)
 
 // Auto-extract code from callback URL (OpenAI/Gemini/Antigravity)
 // e.g., http://localhost:8085/callback?code=xxx...&state=...
@@ -708,6 +840,7 @@ const handleCopyUrl = () => {
 
 const handleRegenerate = () => {
   authCodeInput.value = ''
+  oauthState.value = ''
   emit('generate-url')
 }
 
@@ -732,6 +865,7 @@ defineExpose({
   authCode: authCodeInput,
   oauthState,
   projectId,
+  requiresProjectIdRecovery: showGeminiProjectRecoveryStep,
   sessionKey: sessionKeyInput,
   refreshToken: refreshTokenInput,
   sessionToken: sessionTokenInput,

@@ -1162,8 +1162,10 @@ func readFloat(meta map[string]any, key string) float64 {
 		return out
 	case string:
 		var out float64
-		fmt.Sscan(strings.TrimSpace(v), &out)
-		return out
+		if _, err := fmt.Sscan(strings.TrimSpace(v), &out); err == nil {
+			return out
+		}
+		return 0
 	default:
 		return 0
 	}

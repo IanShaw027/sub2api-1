@@ -104,7 +104,7 @@ func (p *GeminiTokenProvider) GetAccessToken(ctx context.Context, account *Accou
 
 	// project_id is optional now:
 	// - If present: use Code Assist API (requires project_id)
-	// - If absent: use AI Studio API with OAuth token.
+	// - If absent: continue with the stored OAuth token.
 	projectID := strings.TrimSpace(account.GetCredential("project_id"))
 	autoDetectProjectID := account.GetCredential("auto_detect_project_id") == "true"
 
@@ -120,13 +120,13 @@ func (p *GeminiTokenProvider) GetAccessToken(ctx context.Context, account *Accou
 			}
 		}
 
-		detected, tierID, err := p.geminiOAuthService.fetchProjectID(ctx, accessToken, proxyURL)
+		snapshot, err := p.geminiOAuthService.fetchProjectID(ctx, accessToken, proxyURL)
 		if err != nil {
-			log.Printf("[GeminiTokenProvider] Auto-detect project_id failed: %v, fallback to AI Studio API mode", err)
+			log.Printf("[GeminiTokenProvider] Auto-detect project_id failed: %v, keeping token without project_id", err)
 			return accessToken, nil
 		}
-		detected = strings.TrimSpace(detected)
-		tierID = strings.TrimSpace(tierID)
+		detected := strings.TrimSpace(snapshot.ProjectID)
+		tierID := strings.TrimSpace(snapshot.TierID)
 		if detected != "" {
 			if account.Credentials == nil {
 				account.Credentials = make(map[string]any)

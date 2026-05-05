@@ -30,7 +30,7 @@ func newAISkillRunServiceTestStore() *aiSkillRunServiceTestStore {
 func (s *aiSkillRunServiceTestStore) CreateSkill(_ context.Context, skill *AISkill) error {
 	skill.ID = s.nextSkillID
 	s.nextSkillID++
-	s.skills[skill.ID] = cloneAISkillEntity(skill)
+	s.skills[skill.ID] = cloneAISkillEntityForRunRuntime(skill)
 	return nil
 }
 
@@ -39,7 +39,7 @@ func (s *aiSkillRunServiceTestStore) GetSkillByID(_ context.Context, id int64) (
 	if !ok {
 		return nil, ErrAISkillNotFound
 	}
-	return cloneAISkillEntity(skill), nil
+	return cloneAISkillEntityForRunRuntime(skill), nil
 }
 
 func (s *aiSkillRunServiceTestStore) GetSkillByCreatorAndID(_ context.Context, creatorUserID, id int64) (*AISkill, error) {
@@ -47,21 +47,21 @@ func (s *aiSkillRunServiceTestStore) GetSkillByCreatorAndID(_ context.Context, c
 	if !ok || skill.CreatorUserID != creatorUserID {
 		return nil, ErrAISkillNotFound
 	}
-	return cloneAISkillEntity(skill), nil
+	return cloneAISkillEntityForRunRuntime(skill), nil
 }
 
 func (s *aiSkillRunServiceTestStore) UpdateSkill(_ context.Context, skill *AISkill) error {
 	if _, ok := s.skills[skill.ID]; !ok {
 		return ErrAISkillNotFound
 	}
-	s.skills[skill.ID] = cloneAISkillEntity(skill)
+	s.skills[skill.ID] = cloneAISkillEntityForRunRuntime(skill)
 	return nil
 }
 
 func (s *aiSkillRunServiceTestStore) CreateVersion(_ context.Context, version *AISkillVersion) error {
 	version.ID = s.nextVersionID
 	s.nextVersionID++
-	s.versions[version.ID] = cloneAISkillVersionEntity(version)
+	s.versions[version.ID] = cloneAISkillVersionEntityForRunRuntime(version)
 	return nil
 }
 
@@ -70,7 +70,7 @@ func (s *aiSkillRunServiceTestStore) GetVersionByID(_ context.Context, id int64)
 	if !ok {
 		return nil, ErrAISkillVersionNotFound
 	}
-	return cloneAISkillVersionEntity(version), nil
+	return cloneAISkillVersionEntityForRunRuntime(version), nil
 }
 
 func (s *aiSkillRunServiceTestStore) GetVersionByCreatorAndID(_ context.Context, creatorUserID, id int64) (*AISkillVersion, error) {
@@ -78,13 +78,13 @@ func (s *aiSkillRunServiceTestStore) GetVersionByCreatorAndID(_ context.Context,
 	if !ok || version.CreatorUserID != creatorUserID {
 		return nil, ErrAISkillVersionNotFound
 	}
-	return cloneAISkillVersionEntity(version), nil
+	return cloneAISkillVersionEntityForRunRuntime(version), nil
 }
 
 func (s *aiSkillRunServiceTestStore) GetLatestApprovedVersionBySkillID(_ context.Context, skillID int64) (*AISkillVersion, error) {
 	for _, version := range s.versions {
 		if version.SkillID == skillID && normalizeAISkillVersionStatus(version.Status) == AISkillVersionStatusApproved {
-			return cloneAISkillVersionEntity(version), nil
+			return cloneAISkillVersionEntityForRunRuntime(version), nil
 		}
 	}
 	return nil, ErrAISkillVersionNotFound
@@ -94,14 +94,14 @@ func (s *aiSkillRunServiceTestStore) UpdateVersion(_ context.Context, version *A
 	if _, ok := s.versions[version.ID]; !ok {
 		return ErrAISkillVersionNotFound
 	}
-	s.versions[version.ID] = cloneAISkillVersionEntity(version)
+	s.versions[version.ID] = cloneAISkillVersionEntityForRunRuntime(version)
 	return nil
 }
 
 func (s *aiSkillRunServiceTestStore) CreateRun(_ context.Context, run *AISkillRun) error {
 	run.ID = s.nextRunID
 	s.nextRunID++
-	s.runs[run.ID] = cloneAISkillRunEntity(run)
+	s.runs[run.ID] = cloneAISkillRunEntityForRunRuntime(run)
 	return nil
 }
 
@@ -110,14 +110,14 @@ func (s *aiSkillRunServiceTestStore) GetRunByID(_ context.Context, id int64) (*A
 	if !ok {
 		return nil, ErrAISkillRunNotFound
 	}
-	return cloneAISkillRunEntity(run), nil
+	return cloneAISkillRunEntityForRunRuntime(run), nil
 }
 
 func (s *aiSkillRunServiceTestStore) UpdateRun(_ context.Context, run *AISkillRun) error {
 	if _, ok := s.runs[run.ID]; !ok {
 		return ErrAISkillRunNotFound
 	}
-	s.runs[run.ID] = cloneAISkillRunEntity(run)
+	s.runs[run.ID] = cloneAISkillRunEntityForRunRuntime(run)
 	return nil
 }
 
@@ -154,7 +154,7 @@ func (r *aiSkillRunServiceTestRuntime) Execute(_ context.Context, req AISkillExe
 	return &copy, nil
 }
 
-func TestAISkillRunServiceExecuteFailedDispatchDoesNotCharge(t *testing.T) {
+func TestAISkillRunServiceExecuteFailedDispatchDoesNotChargeRuntimeStore(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -216,7 +216,7 @@ func TestAISkillRunServiceExecuteFailedDispatchDoesNotCharge(t *testing.T) {
 	require.Empty(t, run.Output)
 }
 
-func cloneAISkillEntity(skill *AISkill) *AISkill {
+func cloneAISkillEntityForRunRuntime(skill *AISkill) *AISkill {
 	if skill == nil {
 		return nil
 	}
@@ -225,7 +225,7 @@ func cloneAISkillEntity(skill *AISkill) *AISkill {
 	return &copy
 }
 
-func cloneAISkillVersionEntity(version *AISkillVersion) *AISkillVersion {
+func cloneAISkillVersionEntityForRunRuntime(version *AISkillVersion) *AISkillVersion {
 	if version == nil {
 		return nil
 	}
@@ -260,7 +260,7 @@ func cloneAISkillVersionEntity(version *AISkillVersion) *AISkillVersion {
 	return &copy
 }
 
-func cloneAISkillRunEntity(run *AISkillRun) *AISkillRun {
+func cloneAISkillRunEntityForRunRuntime(run *AISkillRun) *AISkillRun {
 	if run == nil {
 		return nil
 	}

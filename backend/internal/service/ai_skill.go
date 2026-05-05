@@ -79,16 +79,16 @@ var (
 )
 
 type AISkill struct {
-	ID           int64          `json:"id"`
-	CreatorUserID int64         `json:"creator_user_id"`
-	Name         string         `json:"name"`
-	Description  string         `json:"description,omitempty"`
-	Type         string         `json:"type"`
-	LatestVersion int           `json:"latest_version"`
-	Metadata     map[string]any `json:"metadata,omitempty"`
-	Trace        AITraceRef     `json:"trace"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
+	ID            int64          `json:"id"`
+	CreatorUserID int64          `json:"creator_user_id"`
+	Name          string         `json:"name"`
+	Description   string         `json:"description,omitempty"`
+	Type          string         `json:"type"`
+	LatestVersion int            `json:"latest_version"`
+	Metadata      map[string]any `json:"metadata,omitempty"`
+	Trace         AITraceRef     `json:"trace"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
 }
 
 type AISkillBillingPolicy struct {
@@ -143,33 +143,33 @@ type AISkillExecutionSpec struct {
 }
 
 type AISkillVersion struct {
-	ID            int64                `json:"id"`
-	SkillID        int64               `json:"skill_id"`
-	CreatorUserID  int64               `json:"creator_user_id"`
-	Version        int                 `json:"version"`
-	Type           string              `json:"type"`
-	Status         string              `json:"status"`
+	ID             int64                `json:"id"`
+	SkillID        int64                `json:"skill_id"`
+	CreatorUserID  int64                `json:"creator_user_id"`
+	Version        int                  `json:"version"`
+	Type           string               `json:"type"`
+	Status         string               `json:"status"`
 	ExecutionSpec  AISkillExecutionSpec `json:"execution_spec"`
 	BillingPolicy  AISkillBillingPolicy `json:"billing_policy"`
-	ChangeNote     string              `json:"change_note,omitempty"`
-	ReviewComment  string              `json:"review_comment,omitempty"`
-	Metadata       map[string]any      `json:"metadata,omitempty"`
-	SubmittedAt    *time.Time          `json:"submitted_at,omitempty"`
-	ReviewedAt     *time.Time          `json:"reviewed_at,omitempty"`
-	ApprovedAt     *time.Time          `json:"approved_at,omitempty"`
-	RejectedAt     *time.Time          `json:"rejected_at,omitempty"`
-	DisabledAt     *time.Time          `json:"disabled_at,omitempty"`
-	ReviewerUserID *int64              `json:"reviewer_user_id,omitempty"`
-	Trace          AITraceRef          `json:"trace"`
-	CreatedAt      time.Time           `json:"created_at"`
-	UpdatedAt      time.Time           `json:"updated_at"`
+	ChangeNote     string               `json:"change_note,omitempty"`
+	ReviewComment  string               `json:"review_comment,omitempty"`
+	Metadata       map[string]any       `json:"metadata,omitempty"`
+	SubmittedAt    *time.Time           `json:"submitted_at,omitempty"`
+	ReviewedAt     *time.Time           `json:"reviewed_at,omitempty"`
+	ApprovedAt     *time.Time           `json:"approved_at,omitempty"`
+	RejectedAt     *time.Time           `json:"rejected_at,omitempty"`
+	DisabledAt     *time.Time           `json:"disabled_at,omitempty"`
+	ReviewerUserID *int64               `json:"reviewer_user_id,omitempty"`
+	Trace          AITraceRef           `json:"trace"`
+	CreatedAt      time.Time            `json:"created_at"`
+	UpdatedAt      time.Time            `json:"updated_at"`
 }
 
 type AISkillReview struct {
 	ID             int64          `json:"id"`
-	SkillID         int64         `json:"skill_id"`
-	VersionID       int64         `json:"version_id"`
-	OperatorUserID  int64         `json:"operator_user_id"`
+	SkillID        int64          `json:"skill_id"`
+	VersionID      int64          `json:"version_id"`
+	OperatorUserID int64          `json:"operator_user_id"`
 	Action         string         `json:"action"`
 	StatusFrom     string         `json:"status_from,omitempty"`
 	StatusTo       string         `json:"status_to,omitempty"`
@@ -188,27 +188,27 @@ type AISkillRunAttachment struct {
 }
 
 type AISkillRun struct {
-	ID            int64                 `json:"id"`
-	SkillID        int64                `json:"skill_id"`
-	VersionID      int64                `json:"version_id"`
-	UserID         int64                `json:"user_id"`
-	Mode           string               `json:"mode"`
-	Type           string               `json:"type"`
-	Status         string               `json:"status"`
-	BillingMode    string               `json:"billing_mode,omitempty"`
-	ChargeAmount   float64              `json:"charge_amount"`
-	Currency       string               `json:"currency,omitempty"`
-	SettlementID   *int64               `json:"settlement_id,omitempty"`
-	Provider       string               `json:"provider,omitempty"`
-	ExternalJobID  string               `json:"external_job_id,omitempty"`
-	Parameters     map[string]any       `json:"parameters,omitempty"`
-	Attachments    []AISkillRunAttachment `json:"attachments,omitempty"`
-	Metadata       map[string]any       `json:"metadata,omitempty"`
-	Output         map[string]any       `json:"output,omitempty"`
-	ErrorMessage   string               `json:"error_message,omitempty"`
-	Trace          AITraceRef           `json:"trace"`
-	CreatedAt      time.Time            `json:"created_at"`
-	UpdatedAt      time.Time            `json:"updated_at"`
+	ID            int64                  `json:"id"`
+	SkillID       int64                  `json:"skill_id"`
+	VersionID     int64                  `json:"version_id"`
+	UserID        int64                  `json:"user_id"`
+	Mode          string                 `json:"mode"`
+	Type          string                 `json:"type"`
+	Status        string                 `json:"status"`
+	BillingMode   string                 `json:"billing_mode,omitempty"`
+	ChargeAmount  float64                `json:"charge_amount"`
+	Currency      string                 `json:"currency,omitempty"`
+	SettlementID  *int64                 `json:"settlement_id,omitempty"`
+	Provider      string                 `json:"provider,omitempty"`
+	ExternalJobID string                 `json:"external_job_id,omitempty"`
+	Parameters    map[string]any         `json:"parameters,omitempty"`
+	Attachments   []AISkillRunAttachment `json:"attachments,omitempty"`
+	Metadata      map[string]any         `json:"metadata,omitempty"`
+	Output        map[string]any         `json:"output,omitempty"`
+	ErrorMessage  string                 `json:"error_message,omitempty"`
+	Trace         AITraceRef             `json:"trace"`
+	CreatedAt     time.Time              `json:"created_at"`
+	UpdatedAt     time.Time              `json:"updated_at"`
 }
 
 type AISkillSettlement struct {
@@ -235,23 +235,23 @@ type AISkillSettlement struct {
 }
 
 type AISkillPromptChatExecution struct {
-	Model              string               `json:"model,omitempty"`
-	SystemPrompt       string               `json:"system_prompt,omitempty"`
-	UserPromptTemplate string               `json:"user_prompt_template"`
-	Variables          []map[string]any     `json:"variables,omitempty"`
-	ResponseFormat     map[string]any       `json:"response_format,omitempty"`
-	Parameters         map[string]any       `json:"parameters,omitempty"`
+	Model              string                 `json:"model,omitempty"`
+	SystemPrompt       string                 `json:"system_prompt,omitempty"`
+	UserPromptTemplate string                 `json:"user_prompt_template"`
+	Variables          []map[string]any       `json:"variables,omitempty"`
+	ResponseFormat     map[string]any         `json:"response_format,omitempty"`
+	Parameters         map[string]any         `json:"parameters,omitempty"`
 	Attachments        []AISkillRunAttachment `json:"attachments,omitempty"`
 }
 
 type AISkillPromptImageExecution struct {
-	Model                  string               `json:"model,omitempty"`
-	PromptTemplate         string               `json:"prompt_template"`
-	NegativePromptTemplate string               `json:"negative_prompt_template,omitempty"`
-	Size                   string               `json:"size,omitempty"`
-	ImageCount             int                  `json:"image_count,omitempty"`
-	Variables              []map[string]any     `json:"variables,omitempty"`
-	Parameters             map[string]any       `json:"parameters,omitempty"`
+	Model                  string                 `json:"model,omitempty"`
+	PromptTemplate         string                 `json:"prompt_template"`
+	NegativePromptTemplate string                 `json:"negative_prompt_template,omitempty"`
+	Size                   string                 `json:"size,omitempty"`
+	ImageCount             int                    `json:"image_count,omitempty"`
+	Variables              []map[string]any       `json:"variables,omitempty"`
+	Parameters             map[string]any         `json:"parameters,omitempty"`
 	Attachments            []AISkillRunAttachment `json:"attachments,omitempty"`
 }
 
@@ -269,26 +269,26 @@ type AISkillScriptExecution struct {
 }
 
 type AISkillExecutionRequest struct {
-	RunID        int64                   `json:"run_id"`
-	SkillID      int64                   `json:"skill_id"`
-	VersionID    int64                   `json:"version_id"`
-	UserID       int64                   `json:"user_id"`
-	Mode         string                  `json:"mode"`
-	Type         string                  `json:"type"`
-	Skill        *AISkill                `json:"skill,omitempty"`
-	Version      *AISkillVersion         `json:"version,omitempty"`
-	Settlement   *AISkillSettlement      `json:"settlement,omitempty"`
-	PromptChat   *AISkillPromptChatExecution  `json:"prompt_chat,omitempty"`
-	PromptImage  *AISkillPromptImageExecution `json:"prompt_image,omitempty"`
-	Script       *AISkillScriptExecution      `json:"script,omitempty"`
-	Trace        AITraceRef              `json:"trace"`
+	RunID       int64                        `json:"run_id"`
+	SkillID     int64                        `json:"skill_id"`
+	VersionID   int64                        `json:"version_id"`
+	UserID      int64                        `json:"user_id"`
+	Mode        string                       `json:"mode"`
+	Type        string                       `json:"type"`
+	Skill       *AISkill                     `json:"skill,omitempty"`
+	Version     *AISkillVersion              `json:"version,omitempty"`
+	Settlement  *AISkillSettlement           `json:"settlement,omitempty"`
+	PromptChat  *AISkillPromptChatExecution  `json:"prompt_chat,omitempty"`
+	PromptImage *AISkillPromptImageExecution `json:"prompt_image,omitempty"`
+	Script      *AISkillScriptExecution      `json:"script,omitempty"`
+	Trace       AITraceRef                   `json:"trace"`
 }
 
 type AISkillPreparedRun struct {
-	Skill      *AISkill             `json:"skill,omitempty"`
-	Version    *AISkillVersion      `json:"version,omitempty"`
-	Run        *AISkillRun          `json:"run,omitempty"`
-	Settlement *AISkillSettlement   `json:"settlement,omitempty"`
+	Skill      *AISkill                 `json:"skill,omitempty"`
+	Version    *AISkillVersion          `json:"version,omitempty"`
+	Run        *AISkillRun              `json:"run,omitempty"`
+	Settlement *AISkillSettlement       `json:"settlement,omitempty"`
 	Execution  *AISkillExecutionRequest `json:"execution,omitempty"`
 }
 
@@ -301,7 +301,7 @@ type AISkillDispatchResult struct {
 }
 
 type AISkillRunResult struct {
-	Prepared *AISkillPreparedRun `json:"prepared,omitempty"`
+	Prepared *AISkillPreparedRun    `json:"prepared,omitempty"`
 	Dispatch *AISkillDispatchResult `json:"dispatch,omitempty"`
 }
 
@@ -358,14 +358,14 @@ type AIReviewSkillVersionInput struct {
 }
 
 type AISkillRunInput struct {
-	SkillID      int64
-	VersionID    *int64
-	Mode         string
-	Parameters   map[string]any
-	Attachments  []AISkillRunAttachment
-	Metadata     map[string]any
+	SkillID        int64
+	VersionID      *int64
+	Mode           string
+	Parameters     map[string]any
+	Attachments    []AISkillRunAttachment
+	Metadata       map[string]any
 	IdempotencyKey string
-	Trace        AIWriteTrace
+	Trace          AIWriteTrace
 }
 
 type AISkillSettleInput struct {
@@ -483,29 +483,29 @@ type AISkillOpenAIImageRuntime interface {
 }
 
 type AISkillScriptRuntimeInput struct {
-	RunID      int64
-	SkillID    int64
-	VersionID  int64
-	UserID     int64
-	Mode       string
-	Runtime    string
-	ScriptName string
-	EntryPoint string
-	Protocol   string
-	ArchivePath string
-	ArchiveBase64 string
+	RunID          int64
+	SkillID        int64
+	VersionID      int64
+	UserID         int64
+	Mode           string
+	Runtime        string
+	ScriptName     string
+	EntryPoint     string
+	Protocol       string
+	ArchivePath    string
+	ArchiveBase64  string
 	TimeoutSeconds int
-	Environment map[string]string
-	Arguments   []map[string]any
-	Parameters  map[string]any
-	Trace       AITraceRef
+	Environment    map[string]string
+	Arguments      []map[string]any
+	Parameters     map[string]any
+	Trace          AITraceRef
 }
 
 type AISkillScriptRuntimeResult struct {
-	Status       string         `json:"status,omitempty"`
-	ExternalJobID string        `json:"external_job_id,omitempty"`
-	Output       map[string]any `json:"output,omitempty"`
-	Metadata     map[string]any `json:"metadata,omitempty"`
+	Status        string         `json:"status,omitempty"`
+	ExternalJobID string         `json:"external_job_id,omitempty"`
+	Output        map[string]any `json:"output,omitempty"`
+	Metadata      map[string]any `json:"metadata,omitempty"`
 }
 
 type AISkillScriptRuntime interface {
@@ -787,9 +787,7 @@ func cloneAISkillRunAttachments(src []AISkillRunAttachment) []AISkillRunAttachme
 		return []AISkillRunAttachment{}
 	}
 	dst := make([]AISkillRunAttachment, 0, len(src))
-	for i := range src {
-		dst = append(dst, src[i])
-	}
+	dst = append(dst, src...)
 	return dst
 }
 

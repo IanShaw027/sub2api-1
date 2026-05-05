@@ -9,14 +9,16 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
 
 func TestAISkillRepositoryListSkillsFiltersByCategory(t *testing.T) {
 	ctx, repo := newAISkillRepoFilterTestContext(t)
+	owner := mustCreateUser(t, repo.client, &service.User{Email: "ai-skill-filter-category@example.com"})
 
 	first := createAISkillRepoFilterTestSkill(t, ctx, repo, &domain.AISkill{
-		UserID:           4101,
+		UserID:           owner.ID,
 		Type:             domain.AISkillTypeScript,
 		Title:            "Automation One",
 		Category:         "automation",
@@ -25,7 +27,7 @@ func TestAISkillRepositoryListSkillsFiltersByCategory(t *testing.T) {
 		BillingMode:      domain.AISkillBillingModePerRequest,
 	})
 	createAISkillRepoFilterTestSkill(t, ctx, repo, &domain.AISkill{
-		UserID:           4101,
+		UserID:           owner.ID,
 		Type:             domain.AISkillTypeScript,
 		Title:            "Writing One",
 		Category:         "writing",
@@ -34,7 +36,7 @@ func TestAISkillRepositoryListSkillsFiltersByCategory(t *testing.T) {
 		BillingMode:      domain.AISkillBillingModePerRequest,
 	})
 	second := createAISkillRepoFilterTestSkill(t, ctx, repo, &domain.AISkill{
-		UserID:           4101,
+		UserID:           owner.ID,
 		Type:             domain.AISkillTypePromptChat,
 		Title:            "Automation Two",
 		Category:         "automation",
@@ -43,7 +45,7 @@ func TestAISkillRepositoryListSkillsFiltersByCategory(t *testing.T) {
 		BillingMode:      domain.AISkillBillingModePerRequest,
 	})
 
-	items, result, err := repo.ListSkills(ctx, 4101, false, pagination.PaginationParams{Page: 1, PageSize: 20}, domain.AISkillListFilter{
+	items, result, err := repo.ListSkills(ctx, owner.ID, false, pagination.PaginationParams{Page: 1, PageSize: 20}, domain.AISkillListFilter{
 		Scope:    domain.AISkillScopeMine,
 		Category: "automation",
 	})
@@ -55,9 +57,10 @@ func TestAISkillRepositoryListSkillsFiltersByCategory(t *testing.T) {
 
 func TestAISkillRepositoryListSkillsFiltersByStatus(t *testing.T) {
 	ctx, repo := newAISkillRepoFilterTestContext(t)
+	owner := mustCreateUser(t, repo.client, &service.User{Email: "ai-skill-filter-status@example.com"})
 
 	draft := createAISkillRepoFilterTestSkill(t, ctx, repo, &domain.AISkill{
-		UserID:           4201,
+		UserID:           owner.ID,
 		Type:             domain.AISkillTypeScript,
 		Title:            "Draft Skill",
 		Category:         "automation",
@@ -66,7 +69,7 @@ func TestAISkillRepositoryListSkillsFiltersByStatus(t *testing.T) {
 		BillingMode:      domain.AISkillBillingModePerRequest,
 	})
 	archived := createAISkillRepoFilterTestSkill(t, ctx, repo, &domain.AISkill{
-		UserID:           4201,
+		UserID:           owner.ID,
 		Type:             domain.AISkillTypeScript,
 		Title:            "Archived Skill",
 		Category:         "automation",
@@ -78,7 +81,7 @@ func TestAISkillRepositoryListSkillsFiltersByStatus(t *testing.T) {
 		},
 	})
 	published := createAISkillRepoFilterTestSkill(t, ctx, repo, &domain.AISkill{
-		UserID:           4201,
+		UserID:           owner.ID,
 		Type:             domain.AISkillTypePromptChat,
 		Title:            "Published Skill",
 		Category:         "automation",
@@ -87,21 +90,21 @@ func TestAISkillRepositoryListSkillsFiltersByStatus(t *testing.T) {
 		BillingMode:      domain.AISkillBillingModePerRequest,
 	})
 
-	draftItems, _, err := repo.ListSkills(ctx, 4201, false, pagination.PaginationParams{Page: 1, PageSize: 20}, domain.AISkillListFilter{
+	draftItems, _, err := repo.ListSkills(ctx, owner.ID, false, pagination.PaginationParams{Page: 1, PageSize: 20}, domain.AISkillListFilter{
 		Scope:  domain.AISkillScopeMine,
 		Status: "draft",
 	})
 	require.NoError(t, err)
 	require.ElementsMatch(t, []int64{draft.ID}, aiSkillRepoFilterTestIDs(draftItems))
 
-	archivedItems, _, err := repo.ListSkills(ctx, 4201, false, pagination.PaginationParams{Page: 1, PageSize: 20}, domain.AISkillListFilter{
+	archivedItems, _, err := repo.ListSkills(ctx, owner.ID, false, pagination.PaginationParams{Page: 1, PageSize: 20}, domain.AISkillListFilter{
 		Scope:  domain.AISkillScopeMine,
 		Status: "archived",
 	})
 	require.NoError(t, err)
 	require.ElementsMatch(t, []int64{archived.ID}, aiSkillRepoFilterTestIDs(archivedItems))
 
-	publishedItems, _, err := repo.ListSkills(ctx, 4201, false, pagination.PaginationParams{Page: 1, PageSize: 20}, domain.AISkillListFilter{
+	publishedItems, _, err := repo.ListSkills(ctx, owner.ID, false, pagination.PaginationParams{Page: 1, PageSize: 20}, domain.AISkillListFilter{
 		Scope:  domain.AISkillScopeMine,
 		Status: "published",
 	})
@@ -111,13 +114,16 @@ func TestAISkillRepositoryListSkillsFiltersByStatus(t *testing.T) {
 
 func TestAISkillRepositoryListSkillsFiltersByInstalled(t *testing.T) {
 	ctx, repo := newAISkillRepoFilterTestContext(t)
+	installedOwner := mustCreateUser(t, repo.client, &service.User{Email: "ai-skill-filter-installed-owner@example.com"})
+	notInstalledOwner := mustCreateUser(t, repo.client, &service.User{Email: "ai-skill-filter-not-installed-owner@example.com"})
+	viewer := mustCreateUser(t, repo.client, &service.User{Email: "ai-skill-filter-viewer@example.com"})
 
-	installedSkill := createAISkillRepoFilterPublishedSkill(t, ctx, repo, 4301, "Installed Skill", "automation")
-	notInstalledSkill := createAISkillRepoFilterPublishedSkill(t, ctx, repo, 4302, "Not Installed Skill", "automation")
-	require.NoError(t, repo.SetSkillInstall(ctx, installedSkill.ID, 4999, true))
+	installedSkill := createAISkillRepoFilterPublishedSkill(t, ctx, repo, installedOwner.ID, "Installed Skill", "automation")
+	notInstalledSkill := createAISkillRepoFilterPublishedSkill(t, ctx, repo, notInstalledOwner.ID, "Not Installed Skill", "automation")
+	require.NoError(t, repo.SetSkillInstall(ctx, installedSkill.ID, viewer.ID, true))
 
 	installed := true
-	installedItems, result, err := repo.ListSkills(ctx, 4999, false, pagination.PaginationParams{Page: 1, PageSize: 20}, domain.AISkillListFilter{
+	installedItems, result, err := repo.ListSkills(ctx, viewer.ID, false, pagination.PaginationParams{Page: 1, PageSize: 20}, domain.AISkillListFilter{
 		Scope:     domain.AISkillScopeLibrary,
 		Installed: &installed,
 	})
@@ -127,7 +133,7 @@ func TestAISkillRepositoryListSkillsFiltersByInstalled(t *testing.T) {
 	require.ElementsMatch(t, []int64{installedSkill.ID}, aiSkillRepoFilterTestIDs(installedItems))
 
 	notInstalled := false
-	notInstalledItems, _, err := repo.ListSkills(ctx, 4999, false, pagination.PaginationParams{Page: 1, PageSize: 20}, domain.AISkillListFilter{
+	notInstalledItems, _, err := repo.ListSkills(ctx, viewer.ID, false, pagination.PaginationParams{Page: 1, PageSize: 20}, domain.AISkillListFilter{
 		Scope:     domain.AISkillScopeLibrary,
 		Installed: &notInstalled,
 	})
@@ -137,11 +143,14 @@ func TestAISkillRepositoryListSkillsFiltersByInstalled(t *testing.T) {
 
 func TestAISkillRepositoryListSkillsFiltersByPriceMode(t *testing.T) {
 	ctx, repo := newAISkillRepoFilterTestContext(t)
+	freeOwner := mustCreateUser(t, repo.client, &service.User{Email: "ai-skill-filter-free-owner@example.com"})
+	paidOwner := mustCreateUser(t, repo.client, &service.User{Email: "ai-skill-filter-paid-owner@example.com"})
+	viewer := mustCreateUser(t, repo.client, &service.User{Email: "ai-skill-filter-price-viewer@example.com"})
 
-	freeSkill := createAISkillRepoFilterPublishedSkillWithPrice(t, ctx, repo, 4401, "Free Skill", "automation", 0)
-	paidSkill := createAISkillRepoFilterPublishedSkillWithPrice(t, ctx, repo, 4402, "Paid Skill", "automation", 19.9)
+	freeSkill := createAISkillRepoFilterPublishedSkillWithPrice(t, ctx, repo, freeOwner.ID, "Free Skill", "automation", 0)
+	paidSkill := createAISkillRepoFilterPublishedSkillWithPrice(t, ctx, repo, paidOwner.ID, "Paid Skill", "automation", 19.9)
 
-	paidItems, result, err := repo.ListSkills(ctx, 4999, false, pagination.PaginationParams{Page: 1, PageSize: 20}, domain.AISkillListFilter{
+	paidItems, result, err := repo.ListSkills(ctx, viewer.ID, false, pagination.PaginationParams{Page: 1, PageSize: 20}, domain.AISkillListFilter{
 		Scope:     domain.AISkillScopeLibrary,
 		PriceMode: domain.AISkillPriceModePaid,
 	})
@@ -150,7 +159,7 @@ func TestAISkillRepositoryListSkillsFiltersByPriceMode(t *testing.T) {
 	require.Equal(t, int64(1), result.Total)
 	require.ElementsMatch(t, []int64{paidSkill.ID}, aiSkillRepoFilterTestIDs(paidItems))
 
-	freeItems, _, err := repo.ListSkills(ctx, 4999, false, pagination.PaginationParams{Page: 1, PageSize: 20}, domain.AISkillListFilter{
+	freeItems, _, err := repo.ListSkills(ctx, viewer.ID, false, pagination.PaginationParams{Page: 1, PageSize: 20}, domain.AISkillListFilter{
 		Scope:     domain.AISkillScopeLibrary,
 		PriceMode: domain.AISkillPriceModeFree,
 	})

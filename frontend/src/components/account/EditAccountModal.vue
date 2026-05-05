@@ -26,6 +26,15 @@
         <p class="input-hint">{{ t('admin.accounts.notesHint') }}</p>
       </div>
 
+      <div
+        v-if="account.platform === 'gemini'"
+        data-testid="gemini-account-summary-section"
+        class="rounded-lg border border-blue-200 bg-blue-50/60 p-4 dark:border-blue-900/40 dark:bg-blue-950/20"
+      >
+        <label class="input-label">{{ t('admin.accounts.geminiAccount') }}</label>
+        <AccountQuotaInfo :account="account" />
+      </div>
+
       <!-- Kiro API Key fields -->
       <div
         v-if="account.platform === 'kiro' && account.type === 'apikey'"
@@ -2168,6 +2177,7 @@ import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
+import AccountQuotaInfo from '@/components/account/AccountQuotaInfo.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import { applyInterceptWarmup } from '@/components/account/credentialsBuilder'

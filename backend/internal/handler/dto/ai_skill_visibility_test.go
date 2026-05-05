@@ -23,11 +23,11 @@ func TestSkillDetailFromDomainHidesSourceAndRawMetadataWithoutSourceAccess(t *te
 		PublishedVersionID: &currentVersionID,
 		LatestVersion:      1,
 		Metadata: map[string]any{
-			"slug":          "paid-skill",
-			"status":        "published",
-			"readme":        "safe readme",
-			"install_note":  "safe install note",
-			"examples":      []any{"example prompt"},
+			"slug":         "paid-skill",
+			"status":       "published",
+			"readme":       "safe readme",
+			"install_note": "safe install note",
+			"examples":     []any{"example prompt"},
 			"variable_schema": []any{
 				map[string]any{"key": "topic", "type": "string"},
 			},

@@ -6,10 +6,10 @@ func TestEffectivePromptTemplateVisibility_ForcedPrivateAndBlockedBecomePrivate(
 	t.Parallel()
 
 	cases := []struct {
-		name           string
-		visibility     string
+		name            string
+		visibility      string
 		moderationState string
-		want           string
+		want            string
 	}{
 		{name: "public forced private", visibility: AIVisibilityPublic, moderationState: AIModerationStateForcedPrivate, want: AIVisibilityPrivate},
 		{name: "unlisted forced private", visibility: AIVisibilityUnlisted, moderationState: AIModerationStateForcedPrivate, want: AIVisibilityPrivate},

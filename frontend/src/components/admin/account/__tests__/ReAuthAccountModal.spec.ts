@@ -231,6 +231,30 @@ function buildKiroAccount(type: 'oauth' | 'apikey') {
   } as any
 }
 
+function buildGeminiOAuthAccount() {
+  return {
+    id: 43,
+    name: 'Gemini OAuth',
+    notes: '',
+    platform: 'gemini',
+    type: 'oauth',
+    credentials: {
+      oauth_type: 'google_one',
+      tier_id: 'google_ai_pro'
+    },
+    extra: {},
+    proxy_id: null,
+    concurrency: 1,
+    priority: 1,
+    rate_multiplier: 1,
+    status: 'error',
+    error_message: 'expired',
+    group_ids: [],
+    expires_at: null,
+    auto_pause_on_expired: false
+  } as any
+}
+
 function mountModal(account = buildKiroAccount('apikey')) {
   return mount(ReAuthAccountModal, {
     props: {
@@ -302,6 +326,13 @@ describe('admin ReAuthAccountModal', () => {
     expect(wrapper.find('[data-testid="oauth-flow"]').exists()).toBe(false)
     expect(updateAccountMock).not.toHaveBeenCalled()
     expect(reauthorizeKiroOAuthMock).not.toHaveBeenCalled()
+  })
+
+  it('reauthorizes Gemini Google One accounts through the OAuth flow', () => {
+    const wrapper = mountModal(buildGeminiOAuthAccount())
+
+    expect(wrapper.find('[data-testid="oauth-flow"]').exists()).toBe(true)
+    expect(wrapper.findAll('button').some((button) => button.text().includes('admin.accounts.oauth.completeAuth'))).toBe(true)
   })
 
   it('reauthorizes Kiro OAuth accounts from callback submission without preserving runtime-only extra fields', async () => {

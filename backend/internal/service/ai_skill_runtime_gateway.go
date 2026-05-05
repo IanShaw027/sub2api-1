@@ -1219,19 +1219,19 @@ func sanitizeAISkillScriptBundleName(raw string) string {
 	for _, r := range trimmed {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			builder.WriteRune(r)
+			_, _ = builder.WriteRune(r)
 			lastSeparator = false
 		case r == '-' || r == '_':
 			if builder.Len() == 0 || lastSeparator {
 				continue
 			}
-			builder.WriteRune(r)
+			_, _ = builder.WriteRune(r)
 			lastSeparator = true
 		default:
 			if builder.Len() == 0 || lastSeparator {
 				continue
 			}
-			builder.WriteByte('-')
+			_ = builder.WriteByte('-')
 			lastSeparator = true
 		}
 	}
@@ -1301,7 +1301,7 @@ func truncateAISkillScriptText(raw string, maxBytes int) string {
 		if size+runeSize > maxBytes {
 			break
 		}
-		builder.WriteRune(r)
+		_, _ = builder.WriteRune(r)
 		size += runeSize
 	}
 	return builder.String()

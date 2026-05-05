@@ -21,7 +21,7 @@ func NewQueries(db *sql.DB) *Queries {
 }
 
 type RunRecord struct {
-	ID           int64
+	ID            int64
 	SkillID       int64
 	SkillName     string
 	VersionID     *int64
@@ -120,27 +120,27 @@ type GovernanceRecord struct {
 }
 
 type RuntimeRecord struct {
-	ID           int64
-	SkillID       int64
-	SkillName     string
-	SkillSlug     string
+	ID             int64
+	SkillID        int64
+	SkillName      string
+	SkillSlug      string
 	CurrentVersion string
-	HealthStatus  string
-	Requests24H   int64
-	SuccessRate   float64
-	AvgLatencyMS  float64
-	P95LatencyMS  float64
-	ErrorRate     float64
-	QueueDepth    int64
-	LastError     string
-	LastRunAt     *time.Time
-	LastAlertAt   *time.Time
+	HealthStatus   string
+	Requests24H    int64
+	SuccessRate    float64
+	AvgLatencyMS   float64
+	P95LatencyMS   float64
+	ErrorRate      float64
+	QueueDepth     int64
+	LastError      string
+	LastRunAt      *time.Time
+	LastAlertAt    *time.Time
 }
 
 type RuntimeEvent struct {
 	ID          int64
-	SkillID       *int64
-	SkillName     string
+	SkillID     *int64
+	SkillName   string
 	Level       string
 	Message     string
 	MetricName  string
@@ -149,7 +149,7 @@ type RuntimeEvent struct {
 }
 
 type SettlementRecord struct {
-	ID               int64
+	ID                int64
 	SkillID           int64
 	SkillName         string
 	SkillSlug         string
@@ -224,11 +224,11 @@ LIMIT $`+fmt.Sprint(len(listArgs)-1)+` OFFSET $`+fmt.Sprint(len(listArgs)), list
 	records := make([]RunRecord, 0)
 	for rows.Next() {
 		var (
-			record              RunRecord
-			versionIDValue      sql.NullInt64
-			durationMS          sql.NullFloat64
-			startedAt           sql.NullTime
-			finishedAt          sql.NullTime
+			record         RunRecord
+			versionIDValue sql.NullInt64
+			durationMS     sql.NullFloat64
+			startedAt      sql.NullTime
+			finishedAt     sql.NullTime
 		)
 		if err := rows.Scan(
 			&record.ID,
@@ -577,7 +577,7 @@ LIMIT $`+fmt.Sprint(len(listArgs)-1)+` OFFSET $`+fmt.Sprint(len(listArgs)), list
 	for rows.Next() {
 		var (
 			item     GovernanceRecord
-			tagsJSON  []byte
+			tagsJSON []byte
 		)
 		if err := rows.Scan(
 			&item.ID,

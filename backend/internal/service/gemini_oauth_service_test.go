@@ -86,14 +86,14 @@ func TestGeminiOAuthService_GenerateAuthURL_RedirectURIStrategy(t *testing.T) {
 			wantProjectID: "my-gcp-project",
 		},
 		{
-			name: "ai_studio requires custom client",
+			name: "missing oauth type is rejected instead of guessing from project",
 			cfg: &config.Config{
 				Gemini: config.GeminiConfig{
 					OAuth: config.GeminiOAuthConfig{},
 				},
 			},
-			oauthType:     "ai_studio",
-			wantErrSubstr: "AI Studio OAuth requires a custom OAuth Client",
+			projectID:     "my-gcp-project",
+			wantErrSubstr: "missing oauth_type",
 		},
 	}
 
@@ -338,12 +338,6 @@ func TestCanonicalGeminiTierIDForOAuthType(t *testing.T) {
 		{name: "code_assist + STANDARD 遗留映射", oauthType: "code_assist", tierID: "STANDARD", want: GeminiTierGCPStandard},
 		{name: "code_assist + standard-tier kebab", oauthType: "code_assist", tierID: "standard-tier", want: GeminiTierGCPStandard},
 
-		// ai_studio 类型过滤
-		{name: "ai_studio + aistudio_free", oauthType: "ai_studio", tierID: "aistudio_free", want: GeminiTierAIStudioFree},
-		{name: "ai_studio + aistudio_paid", oauthType: "ai_studio", tierID: "aistudio_paid", want: GeminiTierAIStudioPaid},
-		{name: "ai_studio + gcp_standard 被过滤", oauthType: "ai_studio", tierID: "gcp_standard", want: ""},
-		{name: "ai_studio + google_one_free 被过滤", oauthType: "ai_studio", tierID: "google_one_free", want: ""},
-
 		// 空值
 		{name: "空 tierID", oauthType: "google_one", tierID: "", want: ""},
 		{name: "空 oauthType + 有效 tierID", oauthType: "", tierID: "gcp_standard", want: GeminiTierGCPStandard},
@@ -553,16 +547,25 @@ func TestGeminiOAuthService_BuildAccountCredentials(t *testing.T) {
 		tokenInfo := &GeminiTokenInfo{
 			AccessToken:  "access-123",
 			RefreshToken: "refresh-456",
+			IDToken:      "id-token-789",
 			ExpiresIn:    3600,
 			ExpiresAt:    1700000000,
 			TokenType:    "Bearer",
 			Scope:        "openid email",
 			ProjectID:    "my-project",
 			Email:        "user@example.com",
+			AuthID:       "subject-123",
+			Name:         "Example User",
+			PlanName:     "Gemini Code Assist in Google One AI Pro",
 			TierID:       "gcp_standard",
 			OAuthType:    "code_assist",
 			Extra: map[string]any{
-				"drive_storage_limit": int64(2199023255552),
+				"drive_storage_limit":             int64(2199023255552),
+				"gemini_paid_tier_id":             "g1-pro-tier",
+				"gemini_has_onboarded_previously": true,
+				"gemini_available_credits": []geminicli.AvailableCredit{
+					{CreditType: "GOOGLE_ONE_AI", CreditAmount: "100"},
+				},
 			},
 		}
 
@@ -570,16 +573,27 @@ func TestGeminiOAuthService_BuildAccountCredentials(t *testing.T) {
 
 		assertCredStr(t, creds, "access_token", "access-123")
 		assertCredStr(t, creds, "refresh_token", "refresh-456")
+		assertCredStr(t, creds, "id_token", "id-token-789")
 		assertCredStr(t, creds, "token_type", "Bearer")
 		assertCredStr(t, creds, "scope", "openid email")
 		assertCredStr(t, creds, "project_id", "my-project")
 		assertCredStr(t, creds, "email", "user@example.com")
+		assertCredStr(t, creds, "auth_id", "subject-123")
+		assertCredStr(t, creds, "subject", "subject-123")
+		assertCredStr(t, creds, "name", "Example User")
+		assertCredStr(t, creds, "plan_name", "Gemini Code Assist in Google One AI Pro")
 		assertCredStr(t, creds, "tier_id", "gcp_standard")
 		assertCredStr(t, creds, "oauth_type", "code_assist")
 		assertCredStr(t, creds, "expires_at", "1700000000")
 
 		if _, ok := creds["drive_storage_limit"]; !ok {
 			t.Fatal("extra 字段 drive_storage_limit 未包含在 creds 中")
+		}
+		if _, ok := creds["gemini_paid_tier_id"]; !ok {
+			t.Fatal("extra 字段 gemini_paid_tier_id 未包含在 creds 中")
+		}
+		if _, ok := creds["gemini_available_credits"]; !ok {
+			t.Fatal("extra 字段 gemini_available_credits 未包含在 creds 中")
 		}
 	})
 
@@ -596,7 +610,7 @@ func TestGeminiOAuthService_BuildAccountCredentials(t *testing.T) {
 		assertCredStr(t, creds, "expires_at", "1700000000")
 
 		// 可选字段不应存在
-		for _, key := range []string{"refresh_token", "token_type", "scope", "project_id", "email", "tier_id", "oauth_type"} {
+		for _, key := range []string{"refresh_token", "id_token", "token_type", "scope", "project_id", "email", "auth_id", "subject", "name", "plan_name", "tier_id", "oauth_type"} {
 			if _, ok := creds[key]; ok {
 				t.Fatalf("不应包含空字段 %q", key)
 			}
@@ -650,13 +664,44 @@ func TestGeminiOAuthService_BuildAccountCredentials(t *testing.T) {
 	})
 }
 
+func TestBuildGeminiCodeAssistExtra(t *testing.T) {
+	t.Parallel()
+
+	hasOnboarded := true
+	extra := buildGeminiCodeAssistExtra(&geminicli.LoadCodeAssistResponse{
+		CurrentTier: &geminicli.TierInfo{
+			ID:                     "g1-pro-tier",
+			Name:                   "Google One AI Pro",
+			HasOnboardedPreviously: &hasOnboarded,
+		},
+		PaidTier: &geminicli.TierInfo{
+			ID:   "g1-pro-tier",
+			Name: "Gemini Code Assist in Google One AI Pro",
+			AvailableCredits: []geminicli.AvailableCredit{
+				{CreditType: "GOOGLE_ONE_AI", CreditAmount: "100"},
+			},
+		},
+	})
+
+	assertCredStr(t, extra, "gemini_current_tier_id", "g1-pro-tier")
+	assertCredStr(t, extra, "gemini_current_tier_name", "Google One AI Pro")
+	assertCredStr(t, extra, "gemini_paid_tier_id", "g1-pro-tier")
+	assertCredStr(t, extra, "gemini_paid_tier_name", "Gemini Code Assist in Google One AI Pro")
+	if onboarded, ok := extra["gemini_has_onboarded_previously"].(bool); !ok || !onboarded {
+		t.Fatalf("gemini_has_onboarded_previously mismatch: %#v", extra["gemini_has_onboarded_previously"])
+	}
+	if _, ok := extra["gemini_available_credits"]; !ok {
+		t.Fatal("gemini_available_credits should be present")
+	}
+}
+
 func TestExtractEmailFromGeminiIDToken(t *testing.T) {
 	t.Parallel()
 
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`))
 	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"email":"user@example.com","email_verified":true}`))
 
-	got := extractEmailFromGeminiIDToken(header + "." + payload + ".")
+	got := extractGeminiProfileFromIDToken(header + "." + payload + ".").Email
 	if got != "user@example.com" {
 		t.Fatalf("email mismatch: got=%q", got)
 	}
@@ -665,10 +710,10 @@ func TestExtractEmailFromGeminiIDToken(t *testing.T) {
 func TestGeminiTokenScopeHasUserInfoEmail(t *testing.T) {
 	t.Parallel()
 
-	if !geminiTokenScopeHasUserInfoEmail("https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email") {
+	if !geminiTokenScopeHasUserInfo("https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email") {
 		t.Fatal("expected userinfo.email scope to be detected")
 	}
-	if geminiTokenScopeHasUserInfoEmail("https://www.googleapis.com/auth/cloud-platform") {
+	if geminiTokenScopeHasUserInfo("https://www.googleapis.com/auth/cloud-platform") {
 		t.Fatal("did not expect userinfo.email scope")
 	}
 }
@@ -738,7 +783,7 @@ func TestGeminiOAuthService_GetOAuthConfig(t *testing.T) {
 					},
 				},
 			},
-			wantEnabled: true,
+			wantEnabled: false,
 		},
 		{
 			name: "带空白的自定义客户端",
@@ -750,7 +795,7 @@ func TestGeminiOAuthService_GetOAuthConfig(t *testing.T) {
 					},
 				},
 			},
-			wantEnabled: true,
+			wantEnabled: false,
 		},
 		{
 			name: "纯空白字符串不算配置",
@@ -1042,18 +1087,7 @@ func TestGeminiOAuthService_RefreshAccountToken_NoRefreshToken(t *testing.T) {
 func TestGeminiOAuthService_RefreshAccountToken_AIStudio(t *testing.T) {
 	t.Parallel()
 
-	client := &mockGeminiOAuthClient{
-		refreshTokenFunc: func(ctx context.Context, oauthType, refreshToken, proxyURL string) (*geminicli.TokenResponse, error) {
-			return &geminicli.TokenResponse{
-				AccessToken:  "refreshed-at",
-				RefreshToken: "refreshed-rt",
-				ExpiresIn:    3600,
-				TokenType:    "Bearer",
-			}, nil
-		},
-	}
-
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, nil, nil, &config.Config{})
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, nil, nil, nil, &config.Config{})
 	defer svc.Stop()
 
 	account := &Account{
@@ -1068,18 +1102,12 @@ func TestGeminiOAuthService_RefreshAccountToken_AIStudio(t *testing.T) {
 		},
 	}
 
-	info, err := svc.RefreshAccountToken(context.Background(), account)
-	if err != nil {
-		t.Fatalf("RefreshAccountToken 返回错误: %v", err)
+	_, err := svc.RefreshAccountToken(context.Background(), account)
+	if err == nil {
+		t.Fatal("legacy ai_studio 账号应被拒绝")
 	}
-	if info.AccessToken != "refreshed-at" {
-		t.Fatalf("AccessToken 不匹配: got=%q", info.AccessToken)
-	}
-	if info.OAuthType != "ai_studio" {
-		t.Fatalf("OAuthType 不匹配: got=%q", info.OAuthType)
-	}
-	if info.Email != "existing@example.com" {
-		t.Fatalf("Email 应保留旧值: got=%q", info.Email)
+	if !strings.Contains(err.Error(), "missing oauth_type and unable to infer") {
+		t.Fatalf("错误信息不匹配: got=%q", err.Error())
 	}
 }
 
@@ -1126,13 +1154,13 @@ func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_WithProjectID(t *test
 	}
 }
 
-func TestGeminiOAuthService_RefreshAccountToken_DefaultOAuthType(t *testing.T) {
+func TestGeminiOAuthService_RefreshAccountToken_InferOAuthTypeFromTier(t *testing.T) {
 	t.Parallel()
 
 	client := &mockGeminiOAuthClient{
 		refreshTokenFunc: func(ctx context.Context, oauthType, refreshToken, proxyURL string) (*geminicli.TokenResponse, error) {
 			if oauthType != "code_assist" {
-				t.Errorf("默认 oauthType 应为 code_assist: got=%q", oauthType)
+				t.Errorf("应按 tier 推断 oauthType=code_assist: got=%q", oauthType)
 			}
 			return &geminicli.TokenResponse{
 				AccessToken: "refreshed",
@@ -1160,7 +1188,78 @@ func TestGeminiOAuthService_RefreshAccountToken_DefaultOAuthType(t *testing.T) {
 		t.Fatalf("RefreshAccountToken 返回错误: %v", err)
 	}
 	if info.OAuthType != "code_assist" {
-		t.Fatalf("OAuthType 应默认为 code_assist: got=%q", info.OAuthType)
+		t.Fatalf("OAuthType 应推断为 code_assist: got=%q", info.OAuthType)
+	}
+}
+
+func TestGeminiOAuthService_RefreshAccountToken_InferGoogleOneOAuthType(t *testing.T) {
+	t.Parallel()
+
+	client := &mockGeminiOAuthClient{
+		refreshTokenFunc: func(ctx context.Context, oauthType, refreshToken, proxyURL string) (*geminicli.TokenResponse, error) {
+			if oauthType != "google_one" {
+				t.Errorf("应按 tier 推断 oauthType=google_one: got=%q", oauthType)
+			}
+			return &geminicli.TokenResponse{
+				AccessToken: "refreshed",
+				ExpiresIn:   3600,
+			}, nil
+		},
+	}
+
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, nil, &mockDriveClient{}, &config.Config{})
+	defer svc.Stop()
+
+	account := &Account{
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "old-rt",
+			"tier_id":       "google_ai_pro",
+		},
+	}
+
+	info, err := svc.RefreshAccountToken(context.Background(), account)
+	if err != nil {
+		t.Fatalf("RefreshAccountToken 返回错误: %v", err)
+	}
+	if info.OAuthType != "google_one" {
+		t.Fatalf("OAuthType 应推断为 google_one: got=%q", info.OAuthType)
+	}
+}
+
+func TestGeminiOAuthService_RefreshAccountToken_RejectsUnknownOAuthTypeHeuristic(t *testing.T) {
+	t.Parallel()
+
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, nil, nil, nil, &config.Config{})
+	defer svc.Stop()
+
+	account := &Account{
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "old-rt",
+			"project_id":    "proj",
+		},
+	}
+
+	_, err := svc.RefreshAccountToken(context.Background(), account)
+	if err == nil {
+		t.Fatal("缺少 oauth_type/tier_id 的旧账号应返回错误")
+	}
+	if !strings.Contains(err.Error(), "unable to infer") {
+		t.Fatalf("错误信息不匹配: got=%q", err.Error())
+	}
+}
+
+func TestResolveGeminiOAuthType_DoesNotGuessFromProjectID(t *testing.T) {
+	t.Parallel()
+
+	if got := resolveGeminiOAuthType("", "", "project-1", ""); got != "" {
+		t.Fatalf("resolveGeminiOAuthType should not guess from project_id: got=%q", got)
+	}
+	if got := resolveGeminiOAuthType("", "aistudio_free", "", ""); got != "" {
+		t.Fatalf("resolveGeminiOAuthType should not resurrect ai_studio: got=%q", got)
 	}
 }
 
@@ -1379,25 +1478,15 @@ func TestGeminiOAuthService_RefreshAccountToken_GoogleOne_NoTierID_DefaultsFree(
 	}
 }
 
-func TestGeminiOAuthService_RefreshAccountToken_UnauthorizedClient_Fallback(t *testing.T) {
+func TestGeminiOAuthService_RefreshAccountToken_UnauthorizedClient_NoLegacyFallback(t *testing.T) {
 	t.Parallel()
 
-	callCount := 0
 	client := &mockGeminiOAuthClient{
 		refreshTokenFunc: func(ctx context.Context, oauthType, refreshToken, proxyURL string) (*geminicli.TokenResponse, error) {
-			callCount++
-			if oauthType == "code_assist" {
-				return nil, fmt.Errorf("unauthorized_client: client mismatch")
-			}
-			// ai_studio 路径成功
-			return &geminicli.TokenResponse{
-				AccessToken: "recovered",
-				ExpiresIn:   3600,
-			}, nil
+			return nil, fmt.Errorf("unauthorized_client: client mismatch")
 		},
 	}
 
-	// 启用自定义 OAuth 客户端以触发 fallback 路径
 	cfg := &config.Config{
 		Gemini: config.GeminiConfig{
 			OAuth: config.GeminiOAuthConfig{
@@ -1422,11 +1511,11 @@ func TestGeminiOAuthService_RefreshAccountToken_UnauthorizedClient_Fallback(t *t
 	}
 
 	info, err := svc.RefreshAccountToken(context.Background(), account)
-	if err != nil {
-		t.Fatalf("RefreshAccountToken 应在 fallback 后成功: %v", err)
+	if err == nil {
+		t.Fatalf("legacy fallback 已移除，不应成功: %#v", info)
 	}
-	if info.AccessToken != "recovered" {
-		t.Fatalf("AccessToken 不匹配: got=%q", info.AccessToken)
+	if !strings.Contains(err.Error(), "OAuth client mismatch") {
+		t.Fatalf("错误应包含 OAuth client mismatch: got=%q", err.Error())
 	}
 }
 
@@ -1531,6 +1620,32 @@ func TestGeminiOAuthService_ExchangeCode_EmptyState(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("应返回错误（空 state）")
+	}
+}
+
+func TestGeminiOAuthService_ExchangeCode_RejectsLegacyAIStudioSession(t *testing.T) {
+	t.Parallel()
+
+	svc := NewGeminiOAuthService(nil, nil, nil, nil, &config.Config{})
+	defer svc.Stop()
+
+	svc.sessionStore.Set("legacy-session", &geminicli.OAuthSession{
+		State:        "state",
+		CodeVerifier: "verifier",
+		OAuthType:    "ai_studio",
+		CreatedAt:    time.Now(),
+	})
+
+	_, err := svc.ExchangeCode(context.Background(), &GeminiExchangeCodeInput{
+		SessionID: "legacy-session",
+		State:     "state",
+		Code:      "code",
+	})
+	if err == nil {
+		t.Fatal("legacy ai_studio session 应被拒绝")
+	}
+	if !strings.Contains(err.Error(), "missing oauth_type") {
+		t.Fatalf("错误信息不匹配: got=%q", err.Error())
 	}
 }
 

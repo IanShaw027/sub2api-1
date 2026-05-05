@@ -90,7 +90,7 @@ func (h *AIHandler) ListSkills(c *gin.Context) {
 		Installed:     normalizeSkillInstalledFilter(c.Query("installed")),
 	}
 	if priceMode := strings.TrimSpace(c.Query("price_mode")); priceMode != "" && !strings.EqualFold(priceMode, "all") {
-		filter.PriceMode = priceMode
+		filter.PriceMode = strings.ToLower(priceMode)
 	}
 
 	items, result, err := module.DomainRepo.ListSkills(c.Request.Context(), subject.UserID, false, params, filter)

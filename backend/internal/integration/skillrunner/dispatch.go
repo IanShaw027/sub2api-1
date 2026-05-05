@@ -146,13 +146,13 @@ func extractArchiveFile(file *zip.File, targetDir, cleanedPath string) error {
 	if err != nil {
 		return fmt.Errorf("open archive entry %q: %w", cleanedPath, err)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	dst, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, file.Mode())
 	if err != nil {
 		return fmt.Errorf("create archive file %q: %w", cleanedPath, err)
 	}
-	defer dst.Close()
+	defer func() { _ = dst.Close() }()
 
 	if _, err := io.Copy(dst, reader); err != nil {
 		return fmt.Errorf("extract archive file %q: %w", cleanedPath, err)

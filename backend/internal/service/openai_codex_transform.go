@@ -292,6 +292,9 @@ func applyCodexOAuthTransformWithInputModeAndFallbackReason(
 		result.Modified = true
 		result.Observability.DefaultInstructionsApplied = true
 	}
+	if !isCodexSparkModel(normalizedModel) && applyCodexImageGenerationBridgeInstructions(reqBody) {
+		result.Modified = true
+	}
 	if isCodexSparkModel(normalizedModel) && applyCodexSparkImageUnsupportedInstructions(reqBody) {
 		result.Modified = true
 		result.Observability.SparkInstructionsApplied = true

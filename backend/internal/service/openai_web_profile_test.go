@@ -299,7 +299,9 @@ func TestNormalizeOpenAIWebProfileExtraBuildsFromCredentialsAndCookies(t *testin
 	require.Equal(t, `"Chromium";v="136"`, profile.SecCHUA)
 	require.Equal(t, "device-cookie", profile.OAIDeviceID)
 	require.Len(t, profile.Cookies, 1)
-	_, hasAccountID := extra["web_profile"].(map[string]any)["chatgpt_account_id"]
+	webProfile, ok := extra["web_profile"].(map[string]any)
+	require.True(t, ok)
+	_, hasAccountID := webProfile["chatgpt_account_id"]
 	require.False(t, hasAccountID)
 }
 

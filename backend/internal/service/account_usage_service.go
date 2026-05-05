@@ -1018,6 +1018,8 @@ func (s *AccountUsageService) getGeminiUsage(ctx context.Context, account *Accou
 		totalTokens := dayTotals.ProTokens + dayTotals.FlashTokens
 		totalCost := dayTotals.ProCost + dayTotals.FlashCost
 		usage.GeminiSharedDaily = buildGeminiUsageProgress(totalReq, quota.SharedRPD, dailyResetAt, totalTokens, totalCost, now)
+		usage.GeminiProDaily = buildGeminiUsageProgress(dayTotals.ProRequests, quota.SharedRPD, dailyResetAt, dayTotals.ProTokens, dayTotals.ProCost, now)
+		usage.GeminiFlashDaily = buildGeminiUsageProgress(dayTotals.FlashRequests, quota.SharedRPD, dailyResetAt, dayTotals.FlashTokens, dayTotals.FlashCost, now)
 	} else {
 		usage.GeminiProDaily = buildGeminiUsageProgress(dayTotals.ProRequests, quota.ProRPD, dailyResetAt, dayTotals.ProTokens, dayTotals.ProCost, now)
 		usage.GeminiFlashDaily = buildGeminiUsageProgress(dayTotals.FlashRequests, quota.FlashRPD, dailyResetAt, dayTotals.FlashTokens, dayTotals.FlashCost, now)
@@ -1037,6 +1039,8 @@ func (s *AccountUsageService) getGeminiUsage(ctx context.Context, account *Accou
 		totalTokens := minuteTotals.ProTokens + minuteTotals.FlashTokens
 		totalCost := minuteTotals.ProCost + minuteTotals.FlashCost
 		usage.GeminiSharedMinute = buildGeminiUsageProgress(totalReq, quota.SharedRPM, minuteResetAt, totalTokens, totalCost, now)
+		usage.GeminiProMinute = buildGeminiUsageProgress(minuteTotals.ProRequests, quota.SharedRPM, minuteResetAt, minuteTotals.ProTokens, minuteTotals.ProCost, now)
+		usage.GeminiFlashMinute = buildGeminiUsageProgress(minuteTotals.FlashRequests, quota.SharedRPM, minuteResetAt, minuteTotals.FlashTokens, minuteTotals.FlashCost, now)
 	} else {
 		usage.GeminiProMinute = buildGeminiUsageProgress(minuteTotals.ProRequests, quota.ProRPM, minuteResetAt, minuteTotals.ProTokens, minuteTotals.ProCost, now)
 		usage.GeminiFlashMinute = buildGeminiUsageProgress(minuteTotals.FlashRequests, quota.FlashRPM, minuteResetAt, minuteTotals.FlashTokens, minuteTotals.FlashCost, now)

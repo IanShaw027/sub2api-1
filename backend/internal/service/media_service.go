@@ -10,8 +10,8 @@ import (
 	"image"
 	"image/color"
 	stddraw "image/draw"
-	"image/jpeg"
 	_ "image/gif"
+	"image/jpeg"
 	_ "image/png"
 	"mime"
 	"net/http"
@@ -593,11 +593,11 @@ func normalizeMediaToken(raw string) string {
 	for _, r := range raw {
 		switch {
 		case r >= 'a' && r <= 'z':
-			builder.WriteRune(r)
+			_, _ = builder.WriteRune(r)
 		case r >= '0' && r <= '9':
-			builder.WriteRune(r)
+			_, _ = builder.WriteRune(r)
 		case r == '-', r == '_', r == '.':
-			builder.WriteRune(r)
+			_, _ = builder.WriteRune(r)
 		}
 	}
 	return builder.String()
@@ -612,15 +612,15 @@ func sanitizeMediaFileName(fileName string) string {
 	for _, r := range name {
 		switch {
 		case r >= 'a' && r <= 'z':
-			builder.WriteRune(r)
+			_, _ = builder.WriteRune(r)
 		case r >= 'A' && r <= 'Z':
-			builder.WriteRune(r)
+			_, _ = builder.WriteRune(r)
 		case r >= '0' && r <= '9':
-			builder.WriteRune(r)
+			_, _ = builder.WriteRune(r)
 		case r == '-', r == '_', r == '.':
-			builder.WriteRune(r)
+			_, _ = builder.WriteRune(r)
 		default:
-			builder.WriteByte('-')
+			_ = builder.WriteByte('-')
 		}
 	}
 	sanitized := strings.Trim(builder.String(), ".-")

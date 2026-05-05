@@ -27,22 +27,22 @@ func TestRegisterUserRoutesIncludesSkillEndpoints(t *testing.T) {
 	)
 
 	expected := map[string]struct{}{
-		http.MethodGet + " /api/v1/user/skills":                                {},
-		http.MethodPost + " /api/v1/user/skills":                               {},
-		http.MethodGet + " /api/v1/user/skills/:id":                            {},
-		http.MethodPut + " /api/v1/user/skills/:id":                            {},
-		http.MethodPost + " /api/v1/user/skills/:id/install":                   {},
-		http.MethodPost + " /api/v1/user/skills/:id/uninstall":                 {},
-		http.MethodGet + " /api/v1/user/skills/:id/versions":                   {},
-		http.MethodPost + " /api/v1/user/skills/:id/versions":                  {},
-		http.MethodPut + " /api/v1/user/skills/:id/versions/:versionId":        {},
+		http.MethodGet + " /api/v1/user/skills":                                 {},
+		http.MethodPost + " /api/v1/user/skills":                                {},
+		http.MethodGet + " /api/v1/user/skills/:id":                             {},
+		http.MethodPut + " /api/v1/user/skills/:id":                             {},
+		http.MethodPost + " /api/v1/user/skills/:id/install":                    {},
+		http.MethodPost + " /api/v1/user/skills/:id/uninstall":                  {},
+		http.MethodGet + " /api/v1/user/skills/:id/versions":                    {},
+		http.MethodPost + " /api/v1/user/skills/:id/versions":                   {},
+		http.MethodPut + " /api/v1/user/skills/:id/versions/:versionId":         {},
 		http.MethodPost + " /api/v1/user/skills/:id/versions/:versionId/submit": {},
-		http.MethodPost + " /api/v1/user/skills/versions/:versionId/publish":   {},
-		http.MethodGet + " /api/v1/user/skills/:id/runs":                       {},
-		http.MethodPost + " /api/v1/user/skills/:id/runs":                      {},
-		http.MethodPost + " /api/v1/user/skills/:id/test":                      {},
-		http.MethodPost + " /api/v1/user/skills/:id/use":                       {},
-		http.MethodGet + " /api/v1/user/skills/:id/revenue":                    {},
+		http.MethodPost + " /api/v1/user/skills/versions/:versionId/publish":    {},
+		http.MethodGet + " /api/v1/user/skills/:id/runs":                        {},
+		http.MethodPost + " /api/v1/user/skills/:id/runs":                       {},
+		http.MethodPost + " /api/v1/user/skills/:id/test":                       {},
+		http.MethodPost + " /api/v1/user/skills/:id/use":                        {},
+		http.MethodGet + " /api/v1/user/skills/:id/revenue":                     {},
 	}
 
 	for _, route := range router.Routes() {
