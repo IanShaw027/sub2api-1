@@ -67,10 +67,15 @@ func (s *GatewayService) ForwardAsResponses(
 		anthropicReq.Stream = true
 		originalModel := responsesReq.Model
 		mappedModel := originalModel
-		if account.Type == AccountTypeAPIKey {
+		if account.Type == AccountTypeAPIKey || account.Type == AccountTypeServiceAccount {
 			mappedModel = account.GetMappedModel(originalModel)
 		}
-		if mappedModel == originalModel && account.Platform == PlatformAnthropic && account.Type != AccountTypeAPIKey {
+		if mappedModel == originalModel && account.Platform == PlatformAnthropic && account.Type == AccountTypeServiceAccount {
+			normalized := normalizeVertexAnthropicModelID(claude.NormalizeModelID(originalModel))
+			if normalized != originalModel {
+				mappedModel = normalized
+			}
+		} else if mappedModel == originalModel && account.Platform == PlatformAnthropic && account.Type != AccountTypeAPIKey {
 			normalized := claude.NormalizeModelID(originalModel)
 			if normalized != originalModel {
 				mappedModel = normalized

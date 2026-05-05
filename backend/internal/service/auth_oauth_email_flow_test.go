@@ -22,6 +22,119 @@ type redeemCodeRepoStub struct {
 	updateCalls []*RedeemCode
 }
 
+type oauthEmailFlowAffiliateRepoStub struct {
+	selfSummary           *AffiliateSummary
+	inviterSummary        *AffiliateSummary
+	lookupCode            string
+	bindCalls             []struct{ userID, inviterID int64 }
+	applySignupBonusCalls []struct {
+		userID int64
+		amount float64
+	}
+}
+
+func (s *oauthEmailFlowAffiliateRepoStub) EnsureUserAffiliate(_ context.Context, userID int64) (*AffiliateSummary, error) {
+	if s.selfSummary != nil && s.selfSummary.UserID == userID {
+		return s.selfSummary, nil
+	}
+	if s.inviterSummary != nil && s.inviterSummary.UserID == userID {
+		return s.inviterSummary, nil
+	}
+	return &AffiliateSummary{UserID: userID}, nil
+}
+
+func (s *oauthEmailFlowAffiliateRepoStub) GetAffiliateByCode(_ context.Context, code string) (*AffiliateSummary, error) {
+	s.lookupCode = code
+	if s.inviterSummary == nil {
+		return nil, ErrAffiliateProfileNotFound
+	}
+	return s.inviterSummary, nil
+}
+
+func (s *oauthEmailFlowAffiliateRepoStub) BindInviter(_ context.Context, userID, inviterID int64) (bool, error) {
+	s.bindCalls = append(s.bindCalls, struct{ userID, inviterID int64 }{userID: userID, inviterID: inviterID})
+	if s.selfSummary != nil && s.selfSummary.UserID == userID {
+		s.selfSummary.InviterID = &inviterID
+	}
+	return true, nil
+}
+
+func (s *oauthEmailFlowAffiliateRepoStub) AccrueQuota(context.Context, AffiliateAccrualInput) (float64, error) {
+	panic("unexpected AccrueQuota call")
+}
+
+func (s *oauthEmailFlowAffiliateRepoStub) ApplySignupBonus(_ context.Context, userID int64, amount float64) (bool, float64, error) {
+	s.applySignupBonusCalls = append(s.applySignupBonusCalls, struct {
+		userID int64
+		amount float64
+	}{userID: userID, amount: amount})
+	return true, amount, nil
+}
+
+func (s *oauthEmailFlowAffiliateRepoStub) GetAccruedRebateFromInvitee(context.Context, int64, int64) (float64, error) {
+	panic("unexpected GetAccruedRebateFromInvitee call")
+}
+
+func (s *oauthEmailFlowAffiliateRepoStub) ThawFrozenQuota(context.Context, int64) (float64, error) {
+	panic("unexpected ThawFrozenQuota call")
+}
+
+func (s *oauthEmailFlowAffiliateRepoStub) TransferQuotaToBalance(context.Context, int64) (float64, float64, error) {
+	panic("unexpected TransferQuotaToBalance call")
+}
+
+func (s *oauthEmailFlowAffiliateRepoStub) ListInvitees(context.Context, int64, int) ([]AffiliateInvitee, error) {
+	panic("unexpected ListInvitees call")
+}
+
+func (s *oauthEmailFlowAffiliateRepoStub) ListInviteeLedger(context.Context, int64, int64, int) ([]AffiliateLedgerEntry, error) {
+	panic("unexpected ListInviteeLedger call")
+}
+
+func (s *oauthEmailFlowAffiliateRepoStub) CountRebatedInvitees(context.Context, int64) (int, error) {
+	panic("unexpected CountRebatedInvitees call")
+}
+
+func (s *oauthEmailFlowAffiliateRepoStub) ListAdminAffiliateStats(context.Context, AdminAffiliateListParams) ([]AdminAffiliateStatsRow, int64, error) {
+	panic("unexpected ListAdminAffiliateStats call")
+}
+
+func (s *oauthEmailFlowAffiliateRepoStub) UpdateUserAffCode(context.Context, int64, string) error {
+	panic("unexpected UpdateUserAffCode call")
+}
+
+func (s *oauthEmailFlowAffiliateRepoStub) ResetUserAffCode(context.Context, int64) (string, error) {
+	panic("unexpected ResetUserAffCode call")
+}
+
+func (s *oauthEmailFlowAffiliateRepoStub) SetUserRebateRate(context.Context, int64, *float64) error {
+	panic("unexpected SetUserRebateRate call")
+}
+
+func (s *oauthEmailFlowAffiliateRepoStub) BatchSetUserRebateRate(context.Context, []int64, *float64) error {
+	panic("unexpected BatchSetUserRebateRate call")
+}
+
+func (s *oauthEmailFlowAffiliateRepoStub) ListUsersWithCustomSettings(context.Context, AffiliateAdminFilter) ([]AffiliateAdminEntry, int64, error) {
+	panic("unexpected ListUsersWithCustomSettings call")
+}
+
+func (s *oauthEmailFlowAffiliateRepoStub) ListAffiliateInviteRecords(context.Context, AffiliateRecordFilter) ([]AffiliateInviteRecord, int64, error) {
+	panic("unexpected ListAffiliateInviteRecords call")
+}
+
+func (s *oauthEmailFlowAffiliateRepoStub) ListAffiliateRebateRecords(context.Context, AffiliateRecordFilter) ([]AffiliateRebateRecord, int64, error) {
+	panic("unexpected ListAffiliateRebateRecords call")
+}
+
+func (s *oauthEmailFlowAffiliateRepoStub) ListAffiliateTransferRecords(context.Context, AffiliateRecordFilter) ([]AffiliateTransferRecord, int64, error) {
+	panic("unexpected ListAffiliateTransferRecords call")
+}
+
+func (s *oauthEmailFlowAffiliateRepoStub) GetAffiliateUserOverview(context.Context, int64) (*AffiliateUserOverview, error) {
+	panic("unexpected GetAffiliateUserOverview call")
+}
+
 func (s *redeemCodeRepoStub) Create(context.Context, *RedeemCode) error {
 	panic("unexpected Create call")
 }
@@ -268,6 +381,36 @@ func TestRegisterOAuthEmailAccountFallsBackUnknownSignupSourceToEmail(t *testing
 	require.NotNil(t, user)
 	require.Len(t, userRepo.created, 1)
 	require.Equal(t, "email", userRepo.created[0].SignupSource)
+}
+
+func TestFinalizeOAuthEmailAccountBindsTrimmedAffiliateCodeAndSignupBonus(t *testing.T) {
+	affiliateRepo := &oauthEmailFlowAffiliateRepoStub{
+		selfSummary:    &AffiliateSummary{UserID: 42},
+		inviterSummary: &AffiliateSummary{UserID: 7, AffCode: "ABCDEFGH2345"},
+	}
+	authService := newOAuthEmailFlowAuthService(
+		&userRepoStub{},
+		&redeemCodeRepoStub{},
+		&refreshTokenCacheStub{},
+		map[string]string{},
+		&emailCacheStub{},
+	)
+	authService.affiliateService = NewAffiliateService(affiliateRepo, &settingRepoStub{values: map[string]string{
+		SettingKeyAffiliateEnabled:     "true",
+		SettingKeyAffiliateSignupBonus: "1.5",
+	}}, nil, nil)
+
+	user := &User{ID: 42, Balance: 10}
+	err := authService.FinalizeOAuthEmailAccount(context.Background(), user, "", " abcdefgh2345 ", " OIDC ")
+
+	require.NoError(t, err)
+	require.Equal(t, "ABCDEFGH2345", affiliateRepo.lookupCode)
+	require.Len(t, affiliateRepo.bindCalls, 1)
+	require.Equal(t, int64(42), affiliateRepo.bindCalls[0].userID)
+	require.Equal(t, int64(7), affiliateRepo.bindCalls[0].inviterID)
+	require.Len(t, affiliateRepo.applySignupBonusCalls, 1)
+	require.Equal(t, 1.5, affiliateRepo.applySignupBonusCalls[0].amount)
+	require.Equal(t, 11.5, user.Balance)
 }
 
 func TestRollbackOAuthEmailAccountCreationRestoresInvitationUsage(t *testing.T) {

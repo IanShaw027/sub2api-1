@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -24,6 +25,76 @@ const (
 
 	defaultSchedulerSnapshotMGetChunkSize  = 128
 	defaultSchedulerSnapshotWriteChunkSize = 256
+
+	// snapshotGraceTTLSeconds 旧快照过期的宽限期（秒）。
+	// 替代立即 DEL，让正在读取旧版本的 reader 有足够时间完成 ZRANGE。
+	snapshotGraceTTLSeconds = 60
+)
+
+var (
+	// activateSnapshotScript 原子 CAS 切换快照版本。
+	// 仅当新版本号 >= 当前激活版本时才切换，防止并发写入导致版本回滚。
+	// 旧快照使用 EXPIRE 设置宽限期而非立即 DEL，避免与 reader 竞态。
+	//
+	// KEYS[1] = activeKey     (sched:active:{bucket})
+	// KEYS[2] = readyKey      (sched:ready:{bucket})
+	// KEYS[3] = bucketSetKey  (sched:buckets)
+	// KEYS[4] = snapshotKey   (新写入的快照 key)
+	// ARGV[1] = 新版本号字符串
+	// ARGV[2] = bucket 字符串 (用于 SADD)
+	// ARGV[3] = 快照 key 前缀 (用于构造旧快照 key)
+	// ARGV[4] = 宽限期 TTL 秒数
+	//
+	// 返回 1 = 已激活, 0 = 版本过旧未激活
+	activateSnapshotScript = redis.NewScript(`
+local currentActive = redis.call('GET', KEYS[1])
+local newVersion = tonumber(ARGV[1])
+
+if currentActive ~= false then
+	local curVersion = tonumber(currentActive)
+	if curVersion and newVersion < curVersion then
+		redis.call('DEL', KEYS[4])
+		return 0
+	end
+end
+
+redis.call('SET', KEYS[1], ARGV[1])
+redis.call('SET', KEYS[2], '1')
+redis.call('SADD', KEYS[3], ARGV[2])
+
+if currentActive ~= false and currentActive ~= ARGV[1] then
+	redis.call('EXPIRE', ARGV[3] .. currentActive, tonumber(ARGV[4]))
+end
+
+return 1
+`)
+
+	unlockBucketScript = redis.NewScript(`
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+	return redis.call('DEL', KEYS[1])
+end
+return 0
+`)
+
+	writeAccountsChunkIfActiveScript = redis.NewScript(`
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+	return 0
+end
+
+local argIndex = 2
+for keyIndex = 2, #KEYS do
+	redis.call('SET', KEYS[keyIndex], ARGV[argIndex])
+	argIndex = argIndex + 1
+end
+
+return 1
+`)
+
+	schedulerLockTokenCounter uint64
+	// schedulerBeforeAccountChunkWriteHook is a narrow test seam used by scheduler
+	// cache integration tests to deterministically reproduce the race window
+	// between the active-version check and the chunk write.
+	schedulerBeforeAccountChunkWriteHook func(ctx context.Context, activeKey, version string)
 )
 
 type schedulerCache struct {
@@ -108,9 +179,9 @@ func (c *schedulerCache) GetSnapshot(ctx context.Context, bucket service.Schedul
 }
 
 func (c *schedulerCache) SetSnapshot(ctx context.Context, bucket service.SchedulerBucket, accounts []service.Account) error {
-	activeKey := schedulerBucketKey(schedulerActivePrefix, bucket)
-	oldActive, _ := c.rdb.Get(ctx, activeKey).Result()
-
+	// Phase 1: 分配新版本号并写入快照数据。
+	// INCR 保证每个调用方获得唯一递增版本号。
+	// 写入的 snapshotKey 是新的版本化 key，reader 尚不知晓，因此无竞态。
 	versionKey := schedulerBucketKey(schedulerVersionPrefix, bucket)
 	version, err := c.rdb.Incr(ctx, versionKey).Result()
 	if err != nil {
@@ -120,11 +191,6 @@ func (c *schedulerCache) SetSnapshot(ctx context.Context, bucket service.Schedul
 	versionStr := strconv.FormatInt(version, 10)
 	snapshotKey := schedulerSnapshotKey(bucket, versionStr)
 
-	if err := c.writeAccounts(ctx, accounts); err != nil {
-		return err
-	}
-
-	pipe := c.rdb.Pipeline()
 	if len(accounts) > 0 {
 		// 使用序号作为 score，保持数据库返回的排序语义。
 		members := make([]redis.Z, 0, len(accounts))
@@ -134,6 +200,7 @@ func (c *schedulerCache) SetSnapshot(ctx context.Context, bucket service.Schedul
 				Member: strconv.FormatInt(account.ID, 10),
 			})
 		}
+		pipe := c.rdb.Pipeline()
 		for start := 0; start < len(members); start += c.writeChunkSize {
 			end := start + c.writeChunkSize
 			if end > len(members) {
@@ -141,21 +208,31 @@ func (c *schedulerCache) SetSnapshot(ctx context.Context, bucket service.Schedul
 			}
 			pipe.ZAdd(ctx, snapshotKey, members[start:end]...)
 		}
-	} else {
-		pipe.Del(ctx, snapshotKey)
+		if _, err := pipe.Exec(ctx); err != nil {
+			return err
+		}
 	}
-	pipe.Set(ctx, activeKey, versionStr, 0)
-	pipe.Set(ctx, schedulerBucketKey(schedulerReadyPrefix, bucket), "1", 0)
-	pipe.SAdd(ctx, schedulerBucketSetKey, bucket.String())
-	if _, err := pipe.Exec(ctx); err != nil {
+
+	// Phase 2: 原子 CAS 激活版本。
+	// Lua 脚本保证：仅当新版本 >= 当前激活版本时才切换 active 指针，
+	// 防止并发写入导致版本回滚。
+	// 旧快照使用 EXPIRE 宽限期而非立即 DEL，避免 reader 竞态。
+	activeKey := schedulerBucketKey(schedulerActivePrefix, bucket)
+	readyKey := schedulerBucketKey(schedulerReadyPrefix, bucket)
+	snapshotKeyPrefix := fmt.Sprintf("%s%d:%s:%s:v", schedulerSnapshotPrefix, bucket.GroupID, bucket.Platform, bucket.Mode)
+
+	keys := []string{activeKey, readyKey, schedulerBucketSetKey, snapshotKey}
+	args := []any{versionStr, bucket.String(), snapshotKeyPrefix, snapshotGraceTTLSeconds}
+
+	activated, err := activateSnapshotScript.Run(ctx, c.rdb, keys, args...).Int64()
+	if err != nil {
 		return err
 	}
-
-	if oldActive != "" && oldActive != versionStr {
-		_ = c.rdb.Del(ctx, schedulerSnapshotKey(bucket, oldActive)).Err()
+	if activated == 0 {
+		return nil
 	}
 
-	return nil
+	return c.writeAccountsIfActiveVersion(ctx, activeKey, versionStr, accounts)
 }
 
 func (c *schedulerCache) GetAccount(ctx context.Context, accountID int64) (*service.Account, error) {
@@ -229,7 +306,23 @@ func (c *schedulerCache) UpdateLastUsed(ctx context.Context, updates map[int64]t
 
 func (c *schedulerCache) TryLockBucket(ctx context.Context, bucket service.SchedulerBucket, ttl time.Duration) (bool, error) {
 	key := schedulerBucketKey(schedulerLockPrefix, bucket)
-	return c.rdb.SetNX(ctx, key, time.Now().UnixNano(), ttl).Result()
+	token := nextSchedulerLockToken()
+	ok, err := c.rdb.SetNX(ctx, key, token, ttl).Result()
+	if err != nil || !ok {
+		return ok, err
+	}
+	service.SetSchedulerBucketLockToken(ctx, token)
+	return true, nil
+}
+
+func (c *schedulerCache) UnlockBucket(ctx context.Context, bucket service.SchedulerBucket) error {
+	token := service.SchedulerBucketLockToken(ctx)
+	if token == "" {
+		return nil
+	}
+	key := schedulerBucketKey(schedulerLockPrefix, bucket)
+	_, err := unlockBucketScript.Run(ctx, c.rdb, []string{key}, token).Result()
+	return err
 }
 
 func (c *schedulerCache) ListBuckets(ctx context.Context) ([]service.SchedulerBucket, error) {
@@ -347,6 +440,53 @@ func (c *schedulerCache) writeAccounts(ctx context.Context, accounts []service.A
 	return flush()
 }
 
+func (c *schedulerCache) writeAccountsIfActiveVersion(ctx context.Context, activeKey, version string, accounts []service.Account) error {
+	if len(accounts) == 0 {
+		return nil
+	}
+
+	flush := func(chunkKeys []string, chunkArgs []any) error {
+		if len(chunkKeys) == 1 {
+			return nil
+		}
+		if schedulerBeforeAccountChunkWriteHook != nil {
+			schedulerBeforeAccountChunkWriteHook(ctx, activeKey, version)
+		}
+		_, err := writeAccountsChunkIfActiveScript.Run(ctx, c.rdb, chunkKeys, chunkArgs...).Result()
+		return err
+	}
+
+	chunkKeys := make([]string, 1, 1+c.writeChunkSize*2)
+	chunkKeys[0] = activeKey
+	chunkArgs := make([]any, 1, 1+c.writeChunkSize*2)
+	chunkArgs[0] = version
+	pending := 0
+	for _, account := range accounts {
+		fullPayload, err := json.Marshal(account)
+		if err != nil {
+			return err
+		}
+		metaPayload, err := json.Marshal(buildSchedulerMetadataAccount(account))
+		if err != nil {
+			return err
+		}
+
+		id := strconv.FormatInt(account.ID, 10)
+		chunkKeys = append(chunkKeys, schedulerAccountKey(id), schedulerAccountMetaKey(id))
+		chunkArgs = append(chunkArgs, fullPayload, metaPayload)
+		pending++
+		if pending >= c.writeChunkSize {
+			if err := flush(chunkKeys, chunkArgs); err != nil {
+				return err
+			}
+			chunkKeys = chunkKeys[:1]
+			chunkArgs = chunkArgs[:1]
+			pending = 0
+		}
+	}
+
+	return flush(chunkKeys, chunkArgs)
+}
 func (c *schedulerCache) mgetChunked(ctx context.Context, keys []string) ([]any, error) {
 	if len(keys) == 0 {
 		return []any{}, nil
@@ -369,6 +509,11 @@ func (c *schedulerCache) mgetChunked(ctx context.Context, keys []string) ([]any,
 		out = append(out, part...)
 	}
 	return out, nil
+}
+
+func nextSchedulerLockToken() string {
+	seq := atomic.AddUint64(&schedulerLockTokenCounter, 1)
+	return fmt.Sprintf("%d-%d", time.Now().UnixNano(), seq)
 }
 
 func buildSchedulerMetadataAccount(account service.Account) service.Account {
@@ -394,9 +539,67 @@ func buildSchedulerMetadataAccount(account service.Account) service.Account {
 		SessionWindowStart:      account.SessionWindowStart,
 		SessionWindowEnd:        account.SessionWindowEnd,
 		SessionWindowStatus:     account.SessionWindowStatus,
+		AccountGroups:           filterSchedulerAccountGroups(account.AccountGroups),
+		GroupIDs:                filterSchedulerGroupIDs(account.GroupIDs, account.AccountGroups),
 		Credentials:             filterSchedulerCredentials(account.Credentials),
 		Extra:                   filterSchedulerExtra(account.Extra),
 	}
+}
+
+func filterSchedulerAccountGroups(accountGroups []service.AccountGroup) []service.AccountGroup {
+	if len(accountGroups) == 0 {
+		return nil
+	}
+
+	filtered := make([]service.AccountGroup, 0, len(accountGroups))
+	for _, ag := range accountGroups {
+		if ag.GroupID <= 0 {
+			continue
+		}
+		filtered = append(filtered, service.AccountGroup{
+			AccountID: ag.AccountID,
+			GroupID:   ag.GroupID,
+			Priority:  ag.Priority,
+			CreatedAt: ag.CreatedAt,
+		})
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
+}
+
+func filterSchedulerGroupIDs(groupIDs []int64, accountGroups []service.AccountGroup) []int64 {
+	if len(groupIDs) == 0 && len(accountGroups) == 0 {
+		return nil
+	}
+
+	seen := make(map[int64]struct{}, len(groupIDs)+len(accountGroups))
+	filtered := make([]int64, 0, len(groupIDs)+len(accountGroups))
+	for _, id := range groupIDs {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		filtered = append(filtered, id)
+	}
+	for _, ag := range accountGroups {
+		if ag.GroupID <= 0 {
+			continue
+		}
+		if _, ok := seen[ag.GroupID]; ok {
+			continue
+		}
+		seen[ag.GroupID] = struct{}{}
+		filtered = append(filtered, ag.GroupID)
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
 }
 
 func filterSchedulerCredentials(credentials map[string]any) map[string]any {

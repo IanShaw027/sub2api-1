@@ -170,11 +170,7 @@ const legacyTier = computed(() => {
 
 const tierLabel = computed(() => {
   if (isCodeAssist.value) {
-    if (canonicalTier.value === 'gcp_enterprise') return 'GCP Enterprise'
-    if (canonicalTier.value === 'gcp_standard') return 'GCP Standard'
-    if (legacyTier.value.includes('ULTRA') || legacyTier.value.includes('ENTERPRISE')) return 'GCP Enterprise'
-    if (legacyTier.value) return `GCP ${legacyTier.value}`
-    return 'GCP'
+    return 'GCP Enterprise'
   }
 
   if (isGoogleOne.value) {
@@ -194,10 +190,7 @@ const tierLabel = computed(() => {
 
 const tierBadgeClass = computed(() => {
   if (isCodeAssist.value) {
-    if (canonicalTier.value === 'gcp_enterprise' || legacyTier.value.includes('ULTRA') || legacyTier.value.includes('ENTERPRISE')) {
-      return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
-    }
-    return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
+    return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
   }
 
   if (isGoogleOne.value) {
@@ -227,9 +220,7 @@ const quotaPolicyChannel = computed(() => {
 
 const quotaPolicyLimits = computed(() => {
   if (isCodeAssist.value) {
-    return canonicalTier.value === 'gcp_enterprise'
-      ? t('admin.accounts.gemini.quotaPolicy.rows.gcp.limitsEnterprise')
-      : t('admin.accounts.gemini.quotaPolicy.rows.gcp.limitsStandard')
+    return t('admin.accounts.gemini.quotaPolicy.rows.gcp.limitsEnterprise')
   }
 
   if (isGoogleOne.value) {

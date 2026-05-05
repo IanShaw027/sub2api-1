@@ -20,6 +20,15 @@ import (
 	"go.uber.org/zap"
 )
 
+func isAnthropicResponsesTerminalEvent(eventType string) bool {
+	switch strings.TrimSpace(eventType) {
+	case "response.completed", "response.done", "response.incomplete", "response.failed", "response.cancelled", "response.canceled":
+		return true
+	default:
+		return false
+	}
+}
+
 // ForwardAsAnthropic accepts an Anthropic Messages request body, converts it
 // to OpenAI Responses API format, forwards to the OpenAI upstream, and converts
 // the response back to Anthropic Messages format. This enables Claude Code
@@ -103,6 +112,8 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		return nil, fmt.Errorf("marshal responses request: %w", err)
 	}
 	probeRequestBody := append([]byte(nil), responsesBody...)
+	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
+	defer releaseUpstreamCtx()
 
 	var oauthReqBody map[string]any
 	if account.Type == AccountTypeOAuth {
@@ -185,7 +196,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	}
 
 	// 6. Build upstream request
-	upstreamReq, err := s.buildUpstreamRequest(ctx, c, account, responsesBody, token, isStream, promptCacheKey, isOpenAICodexOfficialClientRequest(c))
+	upstreamReq, err := s.buildUpstreamRequest(upstreamCtx, c, account, responsesBody, token, isStream, promptCacheKey, isOpenAICodexOfficialClientRequest(c))
 	if err != nil {
 		return nil, fmt.Errorf("build upstream request: %w", err)
 	}
@@ -251,7 +262,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 					if codexResult.Modified {
 						responsesBody = updatedBody
 						promptCacheKey = updatedPromptCacheKey
-						upstreamReq, err = s.buildUpstreamRequest(ctx, c, account, responsesBody, token, isStream, promptCacheKey, isOpenAICodexOfficialClientRequest(c))
+						upstreamReq, err = s.buildUpstreamRequest(upstreamCtx, c, account, responsesBody, token, isStream, promptCacheKey, isOpenAICodexOfficialClientRequest(c))
 						if err != nil {
 							return nil, fmt.Errorf("build upstream request after messages compat fallback: %w", err)
 						}
@@ -393,10 +404,7 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 		acc.ProcessEvent(&event)
 
 		// Terminal events carry the complete ResponsesResponse with output + usage.
-		if (event.Type == "response.completed" || event.Type == "response.done" ||
-			event.Type == "response.incomplete" || event.Type == "response.failed" ||
-			event.Type == "response.cancelled" || event.Type == "response.canceled") &&
-			event.Response != nil {
+		if isAnthropicResponsesTerminalEvent(event.Type) && event.Response != nil {
 			finalResponse = event.Response
 			if event.Response.Usage != nil {
 				usage = OpenAIUsage{
@@ -407,6 +415,7 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 					usage.CacheReadInputTokens = event.Response.Usage.InputTokensDetails.CachedTokens
 				}
 			}
+			break
 		}
 	}
 
@@ -421,7 +430,7 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 
 	if finalResponse == nil {
 		writeAnthropicError(c, http.StatusBadGateway, "api_error", "Upstream stream ended without a terminal response event")
-		return nil, fmt.Errorf("upstream stream ended without terminal event")
+		return nil, fmt.Errorf("stream usage incomplete: missing terminal event")
 	}
 
 	// When the terminal event has an empty output array, reconstruct from
@@ -477,6 +486,8 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	var usage OpenAIUsage
 	var firstTokenMs *int
 	firstChunk := true
+	sawTerminalEvent := false
+	clientDisconnected := false
 
 	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
@@ -500,7 +511,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	}
 
 	// processDataLine handles a single "data: ..." SSE line from upstream.
-	// Returns (clientDisconnected bool).
+	// Returns true once a terminal event has been processed.
 	processDataLine := func(payload string) bool {
 		if firstChunk {
 			firstChunk = false
@@ -518,10 +529,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		}
 
 		// Extract usage from completion events
-		if (event.Type == "response.completed" || event.Type == "response.done" ||
-			event.Type == "response.incomplete" || event.Type == "response.failed" ||
-			event.Type == "response.cancelled" || event.Type == "response.canceled") &&
-			event.Response != nil && event.Response.Usage != nil {
+		if isAnthropicResponsesTerminalEvent(event.Type) && event.Response != nil && event.Response.Usage != nil {
 			usage = OpenAIUsage{
 				InputTokens:  event.Response.Usage.InputTokens,
 				OutputTokens: event.Response.Usage.OutputTokens,
@@ -529,6 +537,9 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			if event.Response.Usage.InputTokensDetails != nil {
 				usage.CacheReadInputTokens = event.Response.Usage.InputTokensDetails.CachedTokens
 			}
+		}
+		if isAnthropicResponsesTerminalEvent(event.Type) {
+			sawTerminalEvent = true
 		}
 
 		// Convert to Anthropic events
@@ -542,21 +553,31 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				)
 				continue
 			}
+			if clientDisconnected {
+				continue
+			}
 			if _, err := fmt.Fprint(c.Writer, sse); err != nil {
+				clientDisconnected = true
 				logger.L().Info("openai messages stream: client disconnected",
 					zap.String("request_id", requestID),
 				)
-				return true
 			}
 		}
-		if len(events) > 0 {
+		if len(events) > 0 && !clientDisconnected {
 			c.Writer.Flush()
 		}
-		return false
+		return sawTerminalEvent
 	}
 
 	// finalizeStream sends any remaining Anthropic events and returns the result.
 	finalizeStream := func() (*OpenAIForwardResult, error) {
+		if !sawTerminalEvent {
+			writeAnthropicError(c, http.StatusBadGateway, "api_error", "Upstream stream ended without a terminal response event")
+			return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
+		}
+		if clientDisconnected {
+			return resultWithUsage(), nil
+		}
 		if finalEvents := apicompat.FinalizeResponsesAnthropicStream(state); len(finalEvents) > 0 {
 			for _, evt := range finalEvents {
 				sse, err := apicompat.ResponsesAnthropicEventToSSE(evt)
@@ -594,7 +615,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				continue
 			}
 			if processDataLine(line[6:]) {
-				return resultWithUsage(), nil
+				return finalizeStream()
 			}
 		}
 		handleScanErr(scanner.Err())
@@ -650,7 +671,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				continue
 			}
 			if processDataLine(line[6:]) {
-				return resultWithUsage(), nil
+				return finalizeStream()
 			}
 
 		case <-keepaliveTicker.C:
@@ -658,14 +679,19 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				continue
 			}
 			// Send Anthropic-format ping event
+			if clientDisconnected {
+				continue
+			}
 			if _, err := fmt.Fprint(c.Writer, "event: ping\ndata: {\"type\":\"ping\"}\n\n"); err != nil {
+				clientDisconnected = true
 				// Client disconnected
 				logger.L().Info("openai messages stream: client disconnected during keepalive",
 					zap.String("request_id", requestID),
 				)
-				return resultWithUsage(), nil
 			}
-			c.Writer.Flush()
+			if !clientDisconnected {
+				c.Writer.Flush()
+			}
 		}
 	}
 }

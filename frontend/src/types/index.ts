@@ -163,11 +163,14 @@ export interface UserAffiliateDetail {
   inviter_id?: number | null
   aff_count: number
   aff_quota: number
+  aff_frozen_quota: number
   aff_history_quota: number
   invited_count: number
   rebated_invitee_count: number
   remaining_rebate_slots?: number | null
   policy: AffiliatePolicy
+  /** 当前用户作为邀请人时实际生效的返利比例（专属覆盖全局）。0-100。 */
+  effective_rebate_rate_percent: number
   invitees: AffiliateInvitee[]
 }
 
@@ -890,7 +893,7 @@ export interface UpdateGroupRequest {
 // ==================== Account & Proxy Types ====================
 
 export type AccountPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'sora' | 'kiro'
-export type AccountType = 'oauth' | 'setup-token' | 'apikey' | 'upstream' | 'bedrock'
+export type AccountType = 'oauth' | 'setup-token' | 'apikey' | 'upstream' | 'bedrock' | 'service_account'
 export type OAuthAddMethod = 'oauth' | 'setup-token'
 export type ProxyProtocol = 'http' | 'https' | 'socks5' | 'socks5h'
 export type AccountDataRecord = Record<string, unknown>

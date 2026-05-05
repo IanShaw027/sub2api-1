@@ -1443,6 +1443,58 @@ func TestAnthropicToResponses_ToolChoiceSpecific(t *testing.T) {
 	assert.Equal(t, "get_weather", fn["name"])
 }
 
+func TestResponsesToAnthropicRequest_ToolChoiceSpecificLegacyShape(t *testing.T) {
+	req := &ResponsesRequest{
+		Model:      "gpt-5.2",
+		Input:      json.RawMessage(`[{"role":"user","content":"Hello"}]`),
+		ToolChoice: json.RawMessage(`{"type":"function","function":{"name":"get_weather"}}`),
+	}
+
+	out, err := ResponsesToAnthropicRequest(req)
+	require.NoError(t, err)
+
+	var tc map[string]any
+	require.NoError(t, json.Unmarshal(out.ToolChoice, &tc))
+	assert.Equal(t, "tool", tc["type"])
+	assert.Equal(t, "get_weather", tc["name"])
+}
+
+func TestResponsesToAnthropicRequest_ToolChoiceSpecificNewShape(t *testing.T) {
+	req := &ResponsesRequest{
+		Model:      "gpt-5.2",
+		Input:      json.RawMessage(`[{"role":"user","content":"Hello"}]`),
+		ToolChoice: json.RawMessage(`{"type":"function","name":"get_weather"}`),
+	}
+
+	out, err := ResponsesToAnthropicRequest(req)
+	require.NoError(t, err)
+
+	var tc map[string]any
+	require.NoError(t, json.Unmarshal(out.ToolChoice, &tc))
+	assert.Equal(t, "tool", tc["type"])
+	assert.Equal(t, "get_weather", tc["name"])
+}
+
+func TestResponsesToAnthropicRequest_ToolChoiceAutoObjectPreservesDisableParallelToolUse(t *testing.T) {
+	req := &ResponsesRequest{
+		Model:      "gpt-5.2",
+		Input:      json.RawMessage(`[{"role":"user","content":"Hello"}]`),
+		ToolChoice: json.RawMessage(`{"type":"auto"}`),
+		ParallelToolCalls: func() *bool {
+			v := false
+			return &v
+		}(),
+	}
+
+	out, err := ResponsesToAnthropicRequest(req)
+	require.NoError(t, err)
+
+	var tc map[string]any
+	require.NoError(t, json.Unmarshal(out.ToolChoice, &tc))
+	assert.Equal(t, "auto", tc["type"])
+	assert.Equal(t, true, tc["disable_parallel_tool_use"])
+}
+
 // ---------------------------------------------------------------------------
 // Image content block conversion tests
 // ---------------------------------------------------------------------------

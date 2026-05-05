@@ -25,7 +25,6 @@ func (f userServiceMediaAvatarRoundTripperFunc) RoundTrip(req *http.Request) (*h
 }
 
 type userServiceMediaAvatarRepo struct {
-	nextID          int64
 	getByIDUser     *User
 	upsertAvatarArg []UpsertUserAvatarInput
 	deleteAvatarIDs []int64

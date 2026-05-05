@@ -554,6 +554,9 @@ export interface SystemSettings {
   affiliate_rebate_invitee_limit: number;
   affiliate_signup_bonus: number;
   ticket_enabled: boolean;
+  affiliate_rebate_freeze_hours: number;
+  affiliate_rebate_duration_days: number;
+  affiliate_rebate_per_invitee_cap: number;
   default_concurrency: number;
   default_user_rpm_limit: number;
   default_subscriptions: DefaultSubscriptionSetting[];
@@ -700,6 +703,7 @@ export interface SystemSettings {
   gateway_debug_timeline_directory: string;
   gateway_debug_timeline_retention_days: number;
   gateway_debug_timeline_max_size_mb: number;
+  enable_anthropic_cache_ttl_1h_injection: boolean;
   web_search_emulation_enabled?: boolean;
 
   // Payment configuration
@@ -742,6 +746,9 @@ export interface SystemSettings {
 
   // Available Channels feature switch
   available_channels_enabled: boolean;
+
+  // OpenAI fast/flex policy
+  openai_fast_policy_settings?: OpenAIFastPolicySettings;
 }
 
 export interface DefaultAccountModelConfig {
@@ -766,6 +773,9 @@ export interface UpdateSettingsRequest {
   affiliate_rebate_invitee_limit?: number;
   affiliate_signup_bonus?: number;
   ticket_enabled?: boolean;
+  affiliate_rebate_freeze_hours?: number;
+  affiliate_rebate_duration_days?: number;
+  affiliate_rebate_per_invitee_cap?: number;
   default_concurrency?: number;
   default_user_rpm_limit?: number;
   default_subscriptions?: DefaultSubscriptionSetting[];
@@ -889,6 +899,7 @@ export interface UpdateSettingsRequest {
   gateway_debug_timeline_directory?: string;
   gateway_debug_timeline_retention_days?: number;
   gateway_debug_timeline_max_size_mb?: number;
+  enable_anthropic_cache_ttl_1h_injection?: boolean;
   // Payment configuration
   payment_enabled?: boolean;
   payment_min_amount?: number;
@@ -928,6 +939,9 @@ export interface UpdateSettingsRequest {
 
   // Available Channels feature switch
   available_channels_enabled?: boolean;
+
+  // OpenAI fast/flex policy
+  openai_fast_policy_settings?: OpenAIFastPolicySettings;
 }
 
 /**
@@ -1153,6 +1167,29 @@ export async function updateRectifierSettings(
     settings,
   );
   return data;
+}
+
+// ==================== OpenAI Fast Policy Settings ====================
+
+/**
+ * OpenAI fast/flex policy rule interface.
+ * Matches backend dto.OpenAIFastPolicyRule.
+ */
+export interface OpenAIFastPolicyRule {
+  service_tier: "all" | "priority" | "flex";
+  action: "pass" | "filter" | "block";
+  scope: "all" | "oauth" | "apikey" | "bedrock";
+  error_message?: string;
+  model_whitelist?: string[];
+  fallback_action?: "pass" | "filter" | "block";
+  fallback_error_message?: string;
+}
+
+/**
+ * OpenAI fast/flex policy settings interface.
+ */
+export interface OpenAIFastPolicySettings {
+  rules: OpenAIFastPolicyRule[];
 }
 
 // ==================== Beta Policy Settings ====================

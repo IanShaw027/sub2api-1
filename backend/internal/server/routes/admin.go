@@ -365,8 +365,15 @@ func registerAffiliateRoutes(admin *gin.RouterGroup, h *handler.Handlers, settin
 	affiliates := admin.Group("/affiliates")
 	affiliates.Use(middleware.AffiliateFeatureGuard(settingService))
 	{
-		affiliates.GET("", h.Admin.Affiliate.List)
-		affiliates.GET("/:id/invitees", h.Admin.Affiliate.ListInvitees)
+		affiliates.GET("/users", h.Admin.Affiliate.ListUsers)
+		affiliates.PUT("/users/:user_id", h.Admin.Affiliate.UpdateUserSettings)
+		affiliates.DELETE("/users/:user_id", h.Admin.Affiliate.ClearUserSettings)
+		affiliates.POST("/users/batch-rate", h.Admin.Affiliate.BatchSetRate)
+		affiliates.GET("/users/lookup", h.Admin.Affiliate.LookupUsers)
+		affiliates.GET("/users/:user_id/overview", h.Admin.Affiliate.GetUserOverview)
+		affiliates.GET("/invites", h.Admin.Affiliate.ListInviteRecords)
+		affiliates.GET("/rebates", h.Admin.Affiliate.ListRebateRecords)
+		affiliates.GET("/transfers", h.Admin.Affiliate.ListTransferRecords)
 	}
 }
 

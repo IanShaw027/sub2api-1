@@ -597,21 +597,29 @@ RETURNING `+aiSkillVersionSelectColumns,
 		if err != nil {
 			return translatePersistenceError(err, nil, domain.ErrAISkillVersionAlreadyExists)
 		}
-		defer func() { _ = rows.Close() }()
 		if !rows.Next() {
+			closeErr := rows.Close()
 			if err := rows.Err(); err != nil {
 				return err
+			}
+			if closeErr != nil {
+				return closeErr
 			}
 			return domain.ErrAISkillVersionNotFound
 		}
 		saved, err := aiSkillScanVersion(rows)
 		if err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if err := rows.Close(); err != nil {
 			return err
 		}
 		*version = *saved
-		if err := rows.Err(); err != nil {
-			return err
-		}
 
 		_, err = q.ExecContext(txCtx, `
 UPDATE ai_skills

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -19,6 +20,8 @@ import (
 type settingHandlerRepoStub struct {
 	values      map[string]string
 	lastUpdates map[string]string
+	setFailKey  string
+	setFailErr  error
 }
 
 func (s *settingHandlerRepoStub) Get(ctx context.Context, key string) (*service.Setting, error) {
@@ -26,10 +29,27 @@ func (s *settingHandlerRepoStub) Get(ctx context.Context, key string) (*service.
 }
 
 func (s *settingHandlerRepoStub) GetValue(ctx context.Context, key string) (string, error) {
-	panic("unexpected GetValue call")
+	if s.values != nil {
+		if value, ok := s.values[key]; ok {
+			return value, nil
+		}
+	}
+	return "", nil
 }
 
 func (s *settingHandlerRepoStub) Set(ctx context.Context, key, value string) error {
+	if s.setFailKey == key {
+		if s.setFailErr != nil {
+			err := s.setFailErr
+			s.setFailErr = nil
+			return err
+		}
+		if s.values == nil {
+			s.values = map[string]string{}
+		}
+		s.values[key] = value
+		return nil
+	}
 	panic("unexpected Set call")
 }
 
@@ -77,7 +97,12 @@ func (s *failingAuthSourceSettingsRepoStub) Get(ctx context.Context, key string)
 }
 
 func (s *failingAuthSourceSettingsRepoStub) GetValue(ctx context.Context, key string) (string, error) {
-	panic("unexpected GetValue call")
+	if s.values != nil {
+		if value, ok := s.values[key]; ok {
+			return value, nil
+		}
+	}
+	return "", nil
 }
 
 func (s *failingAuthSourceSettingsRepoStub) Set(ctx context.Context, key, value string) error {
@@ -199,6 +224,112 @@ func TestSettingHandler_UpdateSettings_PreservesOmittedAuthSourceDefaults(t *tes
 	require.Equal(t, 12.75, data["auth_source_default_email_balance"])
 	require.Equal(t, float64(8), data["auth_source_default_email_concurrency"])
 	require.Equal(t, true, data["force_email_on_third_party_signup"])
+}
+
+func TestSettingHandler_UpdateSettings_PersistsOpenAIFastPolicySettings(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &settingHandlerRepoStub{
+		values: map[string]string{
+			service.SettingKeyRegistrationEnabled: "false",
+			service.SettingKeyPromoCodeEnabled:    "true",
+		},
+		setFailKey: service.SettingKeyOpenAIFastPolicySettings,
+	}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+
+	body := map[string]any{
+		"registration_enabled": true,
+		"promo_code_enabled":   true,
+		"openai_fast_policy_settings": map[string]any{
+			"rules": []map[string]any{
+				{
+					"service_tier":    "flex",
+					"action":          "block",
+					"scope":           "oauth",
+					"model_whitelist": []string{"gpt-5.5*"},
+					"fallback_action": "pass",
+				},
+			},
+		},
+	}
+	rawBody, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateSettings(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(
+		t,
+		`{"rules":[{"service_tier":"flex","action":"block","scope":"oauth","model_whitelist":["gpt-5.5*"],"fallback_action":"pass"}]}`,
+		repo.values[service.SettingKeyOpenAIFastPolicySettings],
+	)
+
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	data, ok := resp.Data.(map[string]any)
+	require.True(t, ok)
+	fastPolicy, ok := data["openai_fast_policy_settings"].(map[string]any)
+	require.True(t, ok)
+	rules, ok := fastPolicy["rules"].([]any)
+	require.True(t, ok)
+	require.Len(t, rules, 1)
+	rule, ok := rules[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "flex", rule["service_tier"])
+	require.Equal(t, "block", rule["action"])
+	require.Equal(t, "oauth", rule["scope"])
+}
+
+func TestSettingHandler_UpdateSettings_RollsBackOnFastPolicySaveFailure(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &settingHandlerRepoStub{
+		values: map[string]string{
+			service.SettingKeyRegistrationEnabled:           "false",
+			service.SettingKeyPromoCodeEnabled:              "false",
+			service.SettingKeyAuthSourceDefaultEmailBalance: "9.5",
+			service.SettingKeyOpenAIFastPolicySettings:      `{"rules":[{"service_tier":"priority","action":"filter","scope":"all"}]}`,
+		},
+		setFailKey: service.SettingKeyOpenAIFastPolicySettings,
+		setFailErr: errors.New("fast policy write failed"),
+	}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+
+	body := map[string]any{
+		"registration_enabled":              true,
+		"promo_code_enabled":                true,
+		"auth_source_default_email_balance": 12.75,
+		"openai_fast_policy_settings": map[string]any{
+			"rules": []map[string]any{
+				{
+					"service_tier": "priority",
+					"action":       "block",
+					"scope":        "all",
+				},
+			},
+		},
+	}
+	rawBody, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateSettings(c)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Equal(t, "false", repo.values[service.SettingKeyRegistrationEnabled])
+	require.Equal(t, "false", repo.values[service.SettingKeyPromoCodeEnabled])
+	require.Equal(t, "9.50000000", repo.values[service.SettingKeyAuthSourceDefaultEmailBalance])
+	require.Equal(t, `{"rules":[{"service_tier":"priority","action":"filter","scope":"all"}]}`, repo.values[service.SettingKeyOpenAIFastPolicySettings])
 }
 
 func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedScheduler(t *testing.T) {
@@ -491,6 +622,8 @@ func TestDiffSettings_IncludesAuthSourceDefaultsAndForceEmail(t *testing.T) {
 			},
 			ForceEmailOnThirdPartySignup: true,
 		},
+		nil,
+		nil,
 		UpdateSettingsRequest{},
 	)
 
@@ -500,4 +633,59 @@ func TestDiffSettings_IncludesAuthSourceDefaultsAndForceEmail(t *testing.T) {
 	require.Contains(t, changed, "auth_source_default_email_grant_on_signup")
 	require.Contains(t, changed, "auth_source_default_email_grant_on_first_bind")
 	require.Contains(t, changed, "force_email_on_third_party_signup")
+}
+
+func TestDiffSettings_IncludesOpenAIFastPolicySettings(t *testing.T) {
+	changed := diffSettings(
+		&service.SystemSettings{},
+		&service.SystemSettings{},
+		&service.AuthSourceDefaultSettings{},
+		&service.AuthSourceDefaultSettings{},
+		&service.OpenAIFastPolicySettings{
+			Rules: []service.OpenAIFastPolicyRule{{
+				ServiceTier: service.OpenAIFastTierPriority,
+				Action:      service.BetaPolicyActionFilter,
+				Scope:       service.BetaPolicyScopeAll,
+			}},
+		},
+		&service.OpenAIFastPolicySettings{
+			Rules: []service.OpenAIFastPolicyRule{{
+				ServiceTier: service.OpenAIFastTierFlex,
+				Action:      service.BetaPolicyActionBlock,
+				Scope:       service.BetaPolicyScopeOAuth,
+			}},
+		},
+		UpdateSettingsRequest{
+			OpenAIFastPolicySettings: &dto.OpenAIFastPolicySettings{
+				Rules: []dto.OpenAIFastPolicyRule{{
+					ServiceTier: "flex",
+					Action:      "block",
+					Scope:       "oauth",
+				}},
+			},
+		},
+	)
+
+	require.Contains(t, changed, "openai_fast_policy_settings")
+}
+
+func TestDiffSettings_DoesNotDuplicateAffiliateEnabled(t *testing.T) {
+	changed := diffSettings(
+		&service.SystemSettings{AffiliateEnabled: false},
+		&service.SystemSettings{AffiliateEnabled: true},
+		&service.AuthSourceDefaultSettings{},
+		&service.AuthSourceDefaultSettings{},
+		nil,
+		nil,
+		UpdateSettingsRequest{},
+	)
+
+	count := 0
+	for _, field := range changed {
+		if field == "affiliate_enabled" {
+			count++
+		}
+	}
+
+	require.Equal(t, 1, count)
 }

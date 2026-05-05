@@ -206,11 +206,31 @@ func createAISkillRepoFilterPublishedSkill(t *testing.T, ctx context.Context, re
 		SkillID:       skill.ID,
 		UserID:        ownerUserID,
 		Version:       1,
-		ReviewStatus:  domain.AISkillVersionReviewStatusApproved,
 		Runtime:       "python3.11",
 		SourceContent: "print('ok')",
 	}
-	require.NoError(t, repo.CreateSkillVersion(ctx, version))
+	q, err := repo.execer(ctx)
+	require.NoError(t, err)
+	require.NoError(t, scanSingleRow(ctx, q, `
+INSERT INTO ai_skill_versions (
+    skill_id, user_id, version, review_status,
+    runtime, source_content,
+    config, input_schema, output_schema, metadata,
+    reviewed_at, created_at, updated_at
+) VALUES (
+    $1, $2, $3, $4,
+    $5, $6,
+    '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb,
+    NOW(), NOW(), NOW()
+)
+RETURNING id`, []any{
+		version.SkillID,
+		version.UserID,
+		version.Version,
+		domain.AISkillVersionReviewStatusApproved,
+		version.Runtime,
+		version.SourceContent,
+	}, &version.ID))
 
 	currentVersionID := version.ID
 	skill.CurrentVersionID = &currentVersionID
@@ -250,11 +270,31 @@ func createAISkillRepoFilterPublishedSkillWithPrice(t *testing.T, ctx context.Co
 		SkillID:       skill.ID,
 		UserID:        ownerUserID,
 		Version:       1,
-		ReviewStatus:  domain.AISkillVersionReviewStatusApproved,
 		Runtime:       "python3.11",
 		SourceContent: "print('ok')",
 	}
-	require.NoError(t, repo.CreateSkillVersion(ctx, version))
+	q, err := repo.execer(ctx)
+	require.NoError(t, err)
+	require.NoError(t, scanSingleRow(ctx, q, `
+INSERT INTO ai_skill_versions (
+    skill_id, user_id, version, review_status,
+    runtime, source_content,
+    config, input_schema, output_schema, metadata,
+    reviewed_at, created_at, updated_at
+) VALUES (
+    $1, $2, $3, $4,
+    $5, $6,
+    '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb,
+    NOW(), NOW(), NOW()
+)
+RETURNING id`, []any{
+		version.SkillID,
+		version.UserID,
+		version.Version,
+		domain.AISkillVersionReviewStatusApproved,
+		version.Runtime,
+		version.SourceContent,
+	}, &version.ID))
 
 	currentVersionID := version.ID
 	skill.CurrentVersionID = &currentVersionID

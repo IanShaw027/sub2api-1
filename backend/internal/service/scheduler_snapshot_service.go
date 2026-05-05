@@ -20,6 +20,39 @@ var (
 
 const outboxEventTimeout = 2 * time.Minute
 
+type schedulerBucketLockTokenContextKey struct{}
+
+type schedulerBucketLockTokenCarrier struct {
+	token string
+}
+
+func WithSchedulerBucketLockTokenCarrier(parent context.Context) context.Context {
+	if parent == nil {
+		parent = context.Background()
+	}
+	if parent.Value(schedulerBucketLockTokenContextKey{}) != nil {
+		return parent
+	}
+	return context.WithValue(parent, schedulerBucketLockTokenContextKey{}, &schedulerBucketLockTokenCarrier{})
+}
+
+func SetSchedulerBucketLockToken(ctx context.Context, token string) bool {
+	carrier, ok := ctx.Value(schedulerBucketLockTokenContextKey{}).(*schedulerBucketLockTokenCarrier)
+	if !ok || carrier == nil {
+		return false
+	}
+	carrier.token = token
+	return true
+}
+
+func SchedulerBucketLockToken(ctx context.Context) string {
+	carrier, ok := ctx.Value(schedulerBucketLockTokenContextKey{}).(*schedulerBucketLockTokenCarrier)
+	if !ok || carrier == nil {
+		return ""
+	}
+	return carrier.token
+}
+
 // batchSeenKey tracks which (groupID, platform) bucket sets have already been
 // rebuilt within a single pollOutbox call, to avoid redundant work when multiple
 // account_changed events share the same groups.
@@ -537,15 +570,19 @@ func (s *SchedulerSnapshotService) rebuildBucket(ctx context.Context, bucket Sch
 	if s.cache == nil {
 		return ErrSchedulerCacheNotReady
 	}
-	ok, err := s.cache.TryLockBucket(ctx, bucket, 30*time.Second)
+	lockCtx := WithSchedulerBucketLockTokenCarrier(ctx)
+	ok, err := s.cache.TryLockBucket(lockCtx, bucket, 30*time.Second)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return nil
 	}
+	defer func() {
+		_ = s.cache.UnlockBucket(lockCtx, bucket)
+	}()
 
-	rebuildCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	rebuildCtx, cancel := context.WithTimeout(lockCtx, 30*time.Second)
 	defer cancel()
 
 	accounts, err := s.loadAccountsFromDB(rebuildCtx, bucket, bucket.Mode == SchedulerModeMixed)

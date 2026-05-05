@@ -4,8 +4,8 @@ package repository
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -79,6 +79,26 @@ VALUES ($1, $2, $3, $3, NOW(), NOW())`, u.ID, affCode, 12.34)
 	ledgerCount := querySingleInt(t, txCtx, client,
 		"SELECT COUNT(*) FROM user_affiliate_ledger WHERE user_id = $1 AND action = 'transfer'", u.ID)
 	require.Equal(t, 1, ledgerCount)
+
+	rows, err := client.QueryContext(txCtx, `
+SELECT amount::double precision,
+       balance_after::double precision,
+       aff_quota_after::double precision,
+       aff_frozen_quota_after::double precision,
+       aff_history_quota_after::double precision
+FROM user_affiliate_ledger
+WHERE user_id = $1 AND action = 'transfer'
+LIMIT 1`, u.ID)
+	require.NoError(t, err)
+	defer func() { _ = rows.Close() }()
+	require.True(t, rows.Next(), "expected transfer ledger")
+	var amount, balanceAfter, quotaAfter, frozenAfter, historyAfter float64
+	require.NoError(t, rows.Scan(&amount, &balanceAfter, &quotaAfter, &frozenAfter, &historyAfter))
+	require.InDelta(t, 12.34, amount, 1e-9)
+	require.InDelta(t, 17.84, balanceAfter, 1e-9)
+	require.InDelta(t, 0.0, quotaAfter, 1e-9)
+	require.InDelta(t, 0.0, frozenAfter, 1e-9)
+	require.InDelta(t, 12.34, historyAfter, 1e-9)
 }
 
 // TestAffiliateRepository_AccrueQuota_ReusesOuterTransaction guards the
@@ -155,75 +175,6 @@ func TestAffiliateRepository_AccrueQuota_ReusesOuterTransaction(t *testing.T) {
 		"AccrueQuota must propagate the outer tx — found persisted rows after rollback")
 }
 
-func TestAffiliateRepository_TransferQuotaToBalance_EmptyQuota(t *testing.T) {
-	ctx := context.Background()
-	tx := testEntTx(t)
-	txCtx := dbent.NewTxContext(ctx, tx)
-	client := tx.Client()
-
-	repo := NewAffiliateRepository(client, integrationDB)
-
-	u := mustCreateUser(t, client, &service.User{
-		Email:        fmt.Sprintf("affiliate-empty-%d@example.com", time.Now().UnixNano()),
-		PasswordHash: "hash",
-		Role:         service.RoleUser,
-		Status:       service.StatusActive,
-		Balance:      3.21,
-		Concurrency:  5,
-	})
-
-	affCode := fmt.Sprintf("AFF%09d", time.Now().UnixNano()%1_000_000_000)
-	_, err := client.ExecContext(txCtx, `
-INSERT INTO user_affiliates (user_id, aff_code, aff_quota, aff_history_quota, created_at, updated_at)
-VALUES ($1, $2, 0, 0, NOW(), NOW())`, u.ID, affCode)
-	require.NoError(t, err)
-
-	transferred, balance, err := repo.TransferQuotaToBalance(txCtx, u.ID)
-	require.ErrorIs(t, err, service.ErrAffiliateQuotaEmpty)
-	require.InDelta(t, 0.0, transferred, 1e-9)
-	require.InDelta(t, 0.0, balance, 1e-9)
-
-	persistedBalance := querySingleFloat(t, txCtx, client,
-		"SELECT balance::double precision FROM users WHERE id = $1", u.ID)
-	require.InDelta(t, 3.21, persistedBalance, 1e-9)
-}
-
-func TestAffiliateRepository_ApplySignupBonus_IsIdempotentAcrossMigratedSchema(t *testing.T) {
-	ctx := context.Background()
-	tx := testEntTx(t)
-	txCtx := dbent.NewTxContext(ctx, tx)
-	client := tx.Client()
-
-	repo := NewAffiliateRepository(client, integrationDB)
-
-	u := mustCreateUser(t, client, &service.User{
-		Email:        fmt.Sprintf("affiliate-signup-bonus-%d@example.com", time.Now().UnixNano()),
-		PasswordHash: "hash",
-		Role:         service.RoleUser,
-		Status:       service.StatusActive,
-		Balance:      6.25,
-		Concurrency:  5,
-	})
-
-	applied, balance, err := repo.ApplySignupBonus(txCtx, u.ID, 8.5)
-	require.NoError(t, err)
-	require.True(t, applied)
-	require.InDelta(t, 14.75, balance, 1e-9)
-
-	applied, balance, err = repo.ApplySignupBonus(txCtx, u.ID, 8.5)
-	require.NoError(t, err)
-	require.False(t, applied)
-	require.InDelta(t, 0.0, balance, 1e-9)
-
-	persistedBalance := querySingleFloat(t, txCtx, client,
-		"SELECT balance::double precision FROM users WHERE id = $1", u.ID)
-	require.InDelta(t, 14.75, persistedBalance, 1e-9)
-
-	ledgerCount := querySingleInt(t, txCtx, client,
-		"SELECT COUNT(*) FROM user_affiliate_ledger WHERE user_id = $1 AND action = 'signup_bonus'", u.ID)
-	require.Equal(t, 1, ledgerCount)
-}
-
 func TestAffiliateRepository_AccrueQuota_IdempotentBySourceOrder(t *testing.T) {
 	ctx := context.Background()
 	tx := testEntTx(t)
@@ -233,14 +184,14 @@ func TestAffiliateRepository_AccrueQuota_IdempotentBySourceOrder(t *testing.T) {
 	repo := NewAffiliateRepository(client, integrationDB)
 
 	inviter := mustCreateUser(t, client, &service.User{
-		Email:        fmt.Sprintf("affiliate-idempotent-inviter-%d@example.com", time.Now().UnixNano()),
+		Email:        fmt.Sprintf("affiliate-idem-inviter-%d@example.com", time.Now().UnixNano()),
 		PasswordHash: "hash",
 		Role:         service.RoleUser,
 		Status:       service.StatusActive,
 		Concurrency:  5,
 	})
 	invitee := mustCreateUser(t, client, &service.User{
-		Email:        fmt.Sprintf("affiliate-idempotent-invitee-%d@example.com", time.Now().UnixNano()+1),
+		Email:        fmt.Sprintf("affiliate-idem-invitee-%d@example.com", time.Now().UnixNano()+1),
 		PasswordHash: "hash",
 		Role:         service.RoleUser,
 		Status:       service.StatusActive,
@@ -262,12 +213,15 @@ func TestAffiliateRepository_AccrueQuota_IdempotentBySourceOrder(t *testing.T) {
 		SetAmount(2.25).
 		SetPayAmount(2.25).
 		SetFeeRate(0).
-		SetRechargeCode(fmt.Sprintf("AFFILIATE-SOURCE-%d", time.Now().UnixNano())).
-		SetOutTradeNo(fmt.Sprintf("sub2_affiliate_source_%d", time.Now().UnixNano())).
+		SetRechargeCode(fmt.Sprintf("AFFILIATE-IDEM-%d", time.Now().UnixNano())).
+		SetOutTradeNo(fmt.Sprintf("sub2_affiliate_idem_%d", time.Now().UnixNano())).
 		SetPaymentType("alipay").
 		SetPaymentTradeNo("").
 		SetOrderType("balance").
 		SetStatus("COMPLETED").
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetExpiresAt(time.Now().Add(24 * time.Hour)).
 		Save(txCtx)
 	require.NoError(t, err)
 
@@ -302,13 +256,487 @@ WHERE user_id = $1
 	require.Equal(t, 1, ledgerCount)
 }
 
-func TestAffiliateRepository_EnsureUserAffiliate_ReturnsErrUserNotFoundOnMissingUser(t *testing.T) {
+func TestAffiliateRepository_AccrueQuota_ClampsByGlobalAndPerInviteeCaps(t *testing.T) {
 	ctx := context.Background()
 	tx := testEntTx(t)
 	txCtx := dbent.NewTxContext(ctx, tx)
 	client := tx.Client()
 
 	repo := NewAffiliateRepository(client, integrationDB)
-	_, err := repo.EnsureUserAffiliate(txCtx, 9_999_999_999)
-	require.True(t, errors.Is(err, service.ErrUserNotFound))
+
+	inviter := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-cap-inviter-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+	inviteeA := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-cap-invitee-a-%d@example.com", time.Now().UnixNano()+1),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+	inviteeB := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-cap-invitee-b-%d@example.com", time.Now().UnixNano()+2),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+
+	for _, userID := range []int64{inviter.ID, inviteeA.ID, inviteeB.ID} {
+		_, err := repo.EnsureUserAffiliate(txCtx, userID)
+		require.NoError(t, err)
+	}
+	bound, err := repo.BindInviter(txCtx, inviteeA.ID, inviter.ID)
+	require.NoError(t, err)
+	require.True(t, bound)
+	bound, err = repo.BindInviter(txCtx, inviteeB.ID, inviter.ID)
+	require.NoError(t, err)
+	require.True(t, bound)
+
+	applied, err := repo.AccrueQuota(txCtx, service.AffiliateAccrualInput{
+		InviterID:     inviter.ID,
+		InviteeUserID: inviteeA.ID,
+		Amount:        8,
+		RebateCap:     100,
+		PerInviteeCap: 10,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 8.0, applied, 1e-9)
+
+	applied, err = repo.AccrueQuota(txCtx, service.AffiliateAccrualInput{
+		InviterID:     inviter.ID,
+		InviteeUserID: inviteeA.ID,
+		Amount:        8,
+		RebateCap:     100,
+		PerInviteeCap: 10,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 2.0, applied, 1e-9)
+
+	applied, err = repo.AccrueQuota(txCtx, service.AffiliateAccrualInput{
+		InviterID:     inviter.ID,
+		InviteeUserID: inviteeB.ID,
+		Amount:        95,
+		RebateCap:     15,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 5.0, applied, 1e-9)
+
+	quota := querySingleFloat(t, txCtx, client,
+		"SELECT aff_quota::double precision FROM user_affiliates WHERE user_id = $1", inviter.ID)
+	require.InDelta(t, 15.0, quota, 1e-9)
+}
+
+func TestAffiliateRepository_AccrueQuota_EnforcesInviteeLimitOnlyForNewSlots(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	repo := NewAffiliateRepository(client, integrationDB)
+
+	inviter := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-slot-inviter-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+	inviteeA := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-slot-invitee-a-%d@example.com", time.Now().UnixNano()+1),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+	inviteeB := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-slot-invitee-b-%d@example.com", time.Now().UnixNano()+2),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+
+	for _, userID := range []int64{inviter.ID, inviteeA.ID, inviteeB.ID} {
+		_, err := repo.EnsureUserAffiliate(txCtx, userID)
+		require.NoError(t, err)
+	}
+	bound, err := repo.BindInviter(txCtx, inviteeA.ID, inviter.ID)
+	require.NoError(t, err)
+	require.True(t, bound)
+	bound, err = repo.BindInviter(txCtx, inviteeB.ID, inviter.ID)
+	require.NoError(t, err)
+	require.True(t, bound)
+
+	firstApplied, err := repo.AccrueQuota(txCtx, service.AffiliateAccrualInput{
+		InviterID:     inviter.ID,
+		InviteeUserID: inviteeA.ID,
+		Amount:        3,
+		InviteeLimit:  1,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 3.0, firstApplied, 1e-9)
+
+	repeatApplied, err := repo.AccrueQuota(txCtx, service.AffiliateAccrualInput{
+		InviterID:     inviter.ID,
+		InviteeUserID: inviteeA.ID,
+		Amount:        2,
+		InviteeLimit:  1,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 2.0, repeatApplied, 1e-9)
+
+	blockedApplied, err := repo.AccrueQuota(txCtx, service.AffiliateAccrualInput{
+		InviterID:     inviter.ID,
+		InviteeUserID: inviteeB.ID,
+		Amount:        4,
+		InviteeLimit:  1,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 0.0, blockedApplied, 1e-9)
+
+	slotCount := querySingleInt(t, txCtx, client, `
+SELECT COUNT(DISTINCT source_user_id)
+FROM user_affiliate_ledger
+WHERE user_id = $1
+  AND action = 'accrue'
+	AND invitee_slot_claimed = true`, inviter.ID)
+	require.Equal(t, 1, slotCount)
+}
+
+func TestAffiliateRepository_ListInviteesIncludesHistoricalConsumptionAndSlotClaim(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	repo := NewAffiliateRepository(client, integrationDB)
+
+	inviter := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-list-inviter-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+	invitee := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-list-invitee-%d@example.com", time.Now().UnixNano()+1),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+
+	_, err := repo.EnsureUserAffiliate(txCtx, inviter.ID)
+	require.NoError(t, err)
+	_, err = repo.EnsureUserAffiliate(txCtx, invitee.ID)
+	require.NoError(t, err)
+	bound, err := repo.BindInviter(txCtx, invitee.ID, inviter.ID)
+	require.NoError(t, err)
+	require.True(t, bound)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(invitee.ID).
+		SetUserEmail(invitee.Email).
+		SetUserName(invitee.Username).
+		SetAmount(23.5).
+		SetPayAmount(23.5).
+		SetFeeRate(0).
+		SetRechargeCode(fmt.Sprintf("AFFILIATE-LIST-%d", time.Now().UnixNano())).
+		SetOutTradeNo(fmt.Sprintf("sub2_affiliate_list_%d", time.Now().UnixNano())).
+		SetPaymentType("alipay").
+		SetPaymentTradeNo("").
+		SetOrderType("balance").
+		SetStatus("COMPLETED").
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetExpiresAt(time.Now().Add(24 * time.Hour)).
+		Save(txCtx)
+	require.NoError(t, err)
+
+	applied, err := repo.AccrueQuota(txCtx, service.AffiliateAccrualInput{
+		InviterID:     inviter.ID,
+		InviteeUserID: invitee.ID,
+		Amount:        4.7,
+		BaseAmount:    0,
+		RebateRate:    20,
+		SourceOrderID: order.ID,
+		RebateCap:     100,
+		InviteeLimit:  1,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 4.7, applied, 1e-9)
+
+	invitees, err := repo.ListInvitees(txCtx, inviter.ID, 10)
+	require.NoError(t, err)
+	require.Len(t, invitees, 1)
+
+	got := invitees[0]
+	require.Equal(t, invitee.ID, got.UserID)
+	require.InDelta(t, 23.5, got.TotalConsumed, 1e-9)
+	require.InDelta(t, 4.7, got.TotalRebate, 1e-9)
+	require.True(t, got.RebateSlotClaimed)
+}
+
+func TestAffiliateMigration132BackfillsHistoricalInviteeSlots(t *testing.T) {
+	content, err := os.ReadFile("../../migrations/132_affiliate_policy_limits.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "UPDATE user_affiliate_ledger")
+	require.Contains(t, sql, "invitee_slot_claimed = TRUE")
+	require.Contains(t, sql, "action = 'accrue'")
+	require.Contains(t, sql, "source_user_id IS NOT NULL")
+}
+
+func TestAffiliateRepository_TransferQuotaToBalance_EmptyQuota(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	repo := NewAffiliateRepository(client, integrationDB)
+
+	u := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-empty-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Balance:      3.21,
+		Concurrency:  5,
+	})
+
+	affCode := fmt.Sprintf("AFF%09d", time.Now().UnixNano()%1_000_000_000)
+	_, err := client.ExecContext(txCtx, `
+INSERT INTO user_affiliates (user_id, aff_code, aff_quota, aff_history_quota, created_at, updated_at)
+VALUES ($1, $2, 0, 0, NOW(), NOW())`, u.ID, affCode)
+	require.NoError(t, err)
+
+	transferred, balance, err := repo.TransferQuotaToBalance(txCtx, u.ID)
+	require.ErrorIs(t, err, service.ErrAffiliateQuotaEmpty)
+	require.InDelta(t, 0.0, transferred, 1e-9)
+	require.InDelta(t, 0.0, balance, 1e-9)
+
+	persistedBalance := querySingleFloat(t, txCtx, client,
+		"SELECT balance::double precision FROM users WHERE id = $1", u.ID)
+	require.InDelta(t, 3.21, persistedBalance, 1e-9)
+}
+
+// TestAffiliateRepository_AdminCustomCode covers the success path of admin
+// invite-code rewrite + reset within a shared test transaction:
+// - UpdateUserAffCode replaces aff_code, sets aff_code_custom=true, lookup works
+// - the old code can no longer be found
+// - ResetUserAffCode reverts aff_code_custom and assigns a new system-format code
+//
+// The conflict path (duplicate code → ErrAffiliateCodeTaken) lives in its own
+// test because a unique-violation aborts the surrounding Postgres tx, which
+// would poison subsequent assertions in the same transaction.
+func TestAffiliateRepository_AdminCustomCode(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	repo := NewAffiliateRepository(client, integrationDB)
+
+	u := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-custom-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+	})
+
+	original, err := repo.EnsureUserAffiliate(txCtx, u.ID)
+	require.NoError(t, err)
+	require.False(t, original.AffCodeCustom, "system-generated codes start as non-custom")
+	originalCode := original.AffCode
+
+	// Rewrite to a custom code
+	customCode := fmt.Sprintf("VIP%09d", time.Now().UnixNano()%1_000_000_000)
+	require.NoError(t, repo.UpdateUserAffCode(txCtx, u.ID, customCode))
+
+	updated, err := repo.EnsureUserAffiliate(txCtx, u.ID)
+	require.NoError(t, err)
+	require.Equal(t, customCode, updated.AffCode)
+	require.True(t, updated.AffCodeCustom)
+
+	// Lookup by new custom code finds the user
+	byCode, err := repo.GetAffiliateByCode(txCtx, customCode)
+	require.NoError(t, err)
+	require.Equal(t, u.ID, byCode.UserID)
+
+	// Old system code should no longer match
+	_, err = repo.GetAffiliateByCode(txCtx, originalCode)
+	require.ErrorIs(t, err, service.ErrAffiliateProfileNotFound)
+
+	// Reset back to a fresh system code, clears custom flag
+	newSysCode, err := repo.ResetUserAffCode(txCtx, u.ID)
+	require.NoError(t, err)
+	require.NotEqual(t, customCode, newSysCode)
+
+	reset, err := repo.EnsureUserAffiliate(txCtx, u.ID)
+	require.NoError(t, err)
+	require.Equal(t, newSysCode, reset.AffCode)
+	require.False(t, reset.AffCodeCustom)
+
+	// The old custom code is now free again
+	_, err = repo.GetAffiliateByCode(txCtx, customCode)
+	require.ErrorIs(t, err, service.ErrAffiliateProfileNotFound)
+}
+
+// TestAffiliateRepository_AdminCustomCode_Conflict isolates the unique-violation
+// path. PostgreSQL aborts the enclosing tx when a unique constraint fires, so
+// this test must be the only assertion and run in its own tx — production
+// callers each have their own outer tx, so this matches real behavior.
+func TestAffiliateRepository_AdminCustomCode_Conflict(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	repo := NewAffiliateRepository(client, integrationDB)
+
+	taker := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-conflict-taker-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser, Status: service.StatusActive,
+	})
+	requester := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-conflict-req-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser, Status: service.StatusActive,
+	})
+
+	takenCode := fmt.Sprintf("HOT%09d", time.Now().UnixNano()%1_000_000_000)
+	require.NoError(t, repo.UpdateUserAffCode(txCtx, taker.ID, takenCode))
+
+	// Now requester tries to grab the same code → conflict.
+	err := repo.UpdateUserAffCode(txCtx, requester.ID, takenCode)
+	require.ErrorIs(t, err, service.ErrAffiliateCodeTaken)
+}
+
+// TestAffiliateRepository_AdminRebateRate covers per-user exclusive rate
+// set/clear and the Batch variant including NULL semantics.
+func TestAffiliateRepository_AdminRebateRate(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	repo := NewAffiliateRepository(client, integrationDB)
+
+	u1 := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-rate-%d-a@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+	})
+	u2 := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-rate-%d-b@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+	})
+
+	// Set exclusive rate for u1
+	rate := 42.5
+	require.NoError(t, repo.SetUserRebateRate(txCtx, u1.ID, &rate))
+
+	got, err := repo.EnsureUserAffiliate(txCtx, u1.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got.AffRebateRatePercent)
+	require.InDelta(t, 42.5, *got.AffRebateRatePercent, 1e-9)
+
+	// Clear exclusive rate
+	require.NoError(t, repo.SetUserRebateRate(txCtx, u1.ID, nil))
+	cleared, err := repo.EnsureUserAffiliate(txCtx, u1.ID)
+	require.NoError(t, err)
+	require.Nil(t, cleared.AffRebateRatePercent)
+
+	// Batch set both users
+	batchRate := 15.0
+	require.NoError(t, repo.BatchSetUserRebateRate(txCtx, []int64{u1.ID, u2.ID}, &batchRate))
+
+	for _, uid := range []int64{u1.ID, u2.ID} {
+		v, err := repo.EnsureUserAffiliate(txCtx, uid)
+		require.NoError(t, err)
+		require.NotNil(t, v.AffRebateRatePercent)
+		require.InDelta(t, 15.0, *v.AffRebateRatePercent, 1e-9)
+	}
+
+	// Batch clear
+	require.NoError(t, repo.BatchSetUserRebateRate(txCtx, []int64{u1.ID, u2.ID}, nil))
+	for _, uid := range []int64{u1.ID, u2.ID} {
+		v, err := repo.EnsureUserAffiliate(txCtx, uid)
+		require.NoError(t, err)
+		require.Nil(t, v.AffRebateRatePercent)
+	}
+}
+
+// TestAffiliateRepository_ListUsersWithCustomSettings verifies the admin list
+// only includes users with at least one override applied.
+func TestAffiliateRepository_ListUsersWithCustomSettings(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	repo := NewAffiliateRepository(client, integrationDB)
+
+	// User without any custom config — should NOT appear in the list.
+	plainEmail := fmt.Sprintf("affiliate-plain-%d@example.com", time.Now().UnixNano())
+	uPlain := mustCreateUser(t, client, &service.User{
+		Email: plainEmail, PasswordHash: "hash",
+		Role: service.RoleUser, Status: service.StatusActive,
+	})
+	_, err := repo.EnsureUserAffiliate(txCtx, uPlain.ID)
+	require.NoError(t, err)
+
+	// User with a custom code — should appear.
+	uCode := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-codeonly-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser, Status: service.StatusActive,
+	})
+	require.NoError(t, repo.UpdateUserAffCode(txCtx, uCode.ID, fmt.Sprintf("VIP%09d", time.Now().UnixNano()%1_000_000_000)))
+
+	// User with only an exclusive rate — should appear.
+	uRate := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-rateonly-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser, Status: service.StatusActive,
+	})
+	r := 33.3
+	require.NoError(t, repo.SetUserRebateRate(txCtx, uRate.ID, &r))
+
+	entries, total, err := repo.ListUsersWithCustomSettings(txCtx, service.AffiliateAdminFilter{
+		Page: 1, PageSize: 100,
+	})
+	require.NoError(t, err)
+
+	// Build a quick lookup to assert per-user attributes (other tests may have
+	// inserted custom rows in the same DB; we only care about our 3).
+	byUserID := make(map[int64]service.AffiliateAdminEntry, len(entries))
+	for _, e := range entries {
+		byUserID[e.UserID] = e
+	}
+
+	require.NotContains(t, byUserID, uPlain.ID, "users without overrides must not appear")
+
+	codeEntry, ok := byUserID[uCode.ID]
+	require.True(t, ok, "custom-code user missing from list")
+	require.True(t, codeEntry.AffCodeCustom)
+	require.Nil(t, codeEntry.AffRebateRatePercent)
+
+	rateEntry, ok := byUserID[uRate.ID]
+	require.True(t, ok, "custom-rate user missing from list")
+	require.False(t, rateEntry.AffCodeCustom)
+	require.NotNil(t, rateEntry.AffRebateRatePercent)
+	require.InDelta(t, 33.3, *rateEntry.AffRebateRatePercent, 1e-9)
+
+	require.GreaterOrEqual(t, total, int64(2), "total must include at least our 2 custom rows")
 }

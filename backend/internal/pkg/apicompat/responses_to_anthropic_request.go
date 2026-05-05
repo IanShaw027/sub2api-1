@@ -470,6 +470,7 @@ func normalizeAnthropicInputSchema(schema json.RawMessage) json.RawMessage {
 //	"required"                                 → {"type":"any"}
 //	"none"                                     → {"type":"none"}
 //	{"type":"function","function":{"name":"X"}} → {"type":"tool","name":"X"}
+//	{"type":"function","name":"X"}              → {"type":"tool","name":"X"}
 func convertResponsesToAnthropicToolChoice(raw json.RawMessage, parallelToolCalls *bool) (json.RawMessage, error) {
 	disableParallel := parallelToolCalls != nil && !*parallelToolCalls
 
@@ -491,12 +492,28 @@ func convertResponsesToAnthropicToolChoice(raw json.RawMessage, parallelToolCall
 	// Try as object with type=function
 	var tc struct {
 		Type     string `json:"type"`
+		Name     string `json:"name"`
 		Function struct {
 			Name string `json:"name"`
 		} `json:"function"`
 	}
-	if err := json.Unmarshal(raw, &tc); err == nil && tc.Type == "function" && tc.Function.Name != "" {
-		return marshalAnthropicToolChoice("tool", tc.Function.Name, disableParallel)
+	if err := json.Unmarshal(raw, &tc); err == nil {
+		switch tc.Type {
+		case "auto":
+			return marshalAnthropicToolChoice("auto", "", disableParallel)
+		case "required":
+			return marshalAnthropicToolChoice("any", "", disableParallel)
+		case "none":
+			return marshalAnthropicToolChoice("none", "", disableParallel)
+		case "function":
+			name := strings.TrimSpace(tc.Name)
+			if name == "" {
+				name = strings.TrimSpace(tc.Function.Name)
+			}
+			if name != "" {
+				return marshalAnthropicToolChoice("tool", name, disableParallel)
+			}
+		}
 	}
 
 	// Pass through unknown

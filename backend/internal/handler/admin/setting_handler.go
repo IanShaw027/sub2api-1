@@ -400,6 +400,9 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		AffiliateRebateInviteeLimit:            settings.AffiliateRebateInviteeLimit,
 		AffiliateSignupBonus:                   settings.AffiliateSignupBonus,
 		TicketEnabled:                          settings.TicketEnabled,
+		AffiliateRebateFreezeHours:             settings.AffiliateRebateFreezeHours,
+		AffiliateRebateDurationDays:            settings.AffiliateRebateDurationDays,
+		AffiliateRebatePerInviteeCap:           settings.AffiliateRebatePerInviteeCap,
 		DefaultUserRPMLimit:                    settings.DefaultUserRPMLimit,
 		DefaultSubscriptions:                   defaultSubscriptions,
 		EnableModelFallback:                    settings.EnableModelFallback,
@@ -425,6 +428,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		GatewayDebugTimelineDirectory:          settings.GatewayDebugTimelineDirectory,
 		GatewayDebugTimelineRetentionDays:      settings.GatewayDebugTimelineRetentionDays,
 		GatewayDebugTimelineMaxSizeMB:          settings.GatewayDebugTimelineMaxSizeMB,
+		EnableAnthropicCacheTTL1hInjection:     settings.EnableAnthropicCacheTTL1hInjection,
 		WebSearchEmulationEnabled:              settings.WebSearchEmulationEnabled,
 		KiroDefaultVersion:                     settings.KiroDefaultVersion,
 		KiroDefaultCommit:                      settings.KiroDefaultCommit,
@@ -473,7 +477,49 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 
 		AvailableChannelsEnabled: settings.AvailableChannelsEnabled,
 	}
+
+	// OpenAI fast policy (stored under a dedicated setting key)
+	if fastPolicy, err := h.settingService.GetOpenAIFastPolicySettings(c.Request.Context()); err != nil {
+		slog.Error("openai_fast_policy_settings_get_failed", "error", err)
+	} else if fastPolicy != nil {
+		payload.OpenAIFastPolicySettings = openaiFastPolicySettingsToDTO(fastPolicy)
+	}
+
 	response.Success(c, systemSettingsResponseData(payload, authSourceDefaults))
+}
+
+// openaiFastPolicySettingsToDTO converts service -> dto for OpenAI fast policy.
+func openaiFastPolicySettingsToDTO(s *service.OpenAIFastPolicySettings) *dto.OpenAIFastPolicySettings {
+	if s == nil {
+		return nil
+	}
+	rules := make([]dto.OpenAIFastPolicyRule, len(s.Rules))
+	for i, r := range s.Rules {
+		rules[i] = dto.OpenAIFastPolicyRule(r)
+	}
+	return &dto.OpenAIFastPolicySettings{Rules: rules}
+}
+
+// openaiFastPolicySettingsFromDTO converts dto -> service for OpenAI fast policy.
+//
+// 规范化 ServiceTier：在 DTO 进入 service 层之前统一把空字符串归一为
+// service.OpenAIFastTierAny ("all")，避免管理员保存时空串与 "all" 同时
+// 表达"匹配任意 tier"造成数据库取值的二义性。其它非空值原样透传，由
+// service.SetOpenAIFastPolicySettings 负责合法值校验。
+func openaiFastPolicySettingsFromDTO(s *dto.OpenAIFastPolicySettings) *service.OpenAIFastPolicySettings {
+	if s == nil {
+		return nil
+	}
+	rules := make([]service.OpenAIFastPolicyRule, len(s.Rules))
+	for i, r := range s.Rules {
+		rules[i] = service.OpenAIFastPolicyRule(r)
+		tier := strings.ToLower(strings.TrimSpace(rules[i].ServiceTier))
+		if tier == "" {
+			tier = service.OpenAIFastTierAny
+		}
+		rules[i].ServiceTier = tier
+	}
+	return &service.OpenAIFastPolicySettings{Rules: rules}
 }
 
 // UpdateSettingsRequest 更新设置请求
@@ -576,6 +622,9 @@ type UpdateSettingsRequest struct {
 	AffiliateRebateInviteeLimit              *int                              `json:"affiliate_rebate_invitee_limit"`
 	AffiliateSignupBonus                     *float64                          `json:"affiliate_signup_bonus"`
 	TicketEnabled                            *bool                             `json:"ticket_enabled"`
+	AffiliateRebateFreezeHours               *int                              `json:"affiliate_rebate_freeze_hours"`
+	AffiliateRebateDurationDays              *int                              `json:"affiliate_rebate_duration_days"`
+	AffiliateRebatePerInviteeCap             *float64                          `json:"affiliate_rebate_per_invitee_cap"`
 	DefaultUserRPMLimit                      int                               `json:"default_user_rpm_limit"`
 	DefaultSubscriptions                     []dto.DefaultSubscriptionSetting  `json:"default_subscriptions"`
 	AuthSourceDefaultEmailBalance            *float64                          `json:"auth_source_default_email_balance"`
@@ -637,17 +686,18 @@ type UpdateSettingsRequest struct {
 	GatewayDebugTimelineMaxSizeMB     *int64  `json:"gateway_debug_timeline_max_size_mb"`
 
 	// Kiro runtime defaults
-	KiroDefaultVersion             *string `json:"kiro_version"`
-	KiroDefaultCommit              *string `json:"kiro_commit"`
-	KiroDefaultSystemVersion       *string `json:"system_version"`
-	KiroDefaultNodeVersion         *string `json:"node_version"`
-	KiroCacheHitRateScale          *int    `json:"cache_hit_rate_scale"`
-	KiroCacheMinBlockTokens        *int    `json:"cache_min_block_tokens"`
-	KiroCacheIndependentTTLSeconds *int    `json:"cache_independent_ttl_seconds"`
-	KiroCachePrefixTTLSeconds      *int    `json:"cache_prefix_ttl_seconds"`
-	KiroThinkingMode               *string `json:"kiro_thinking_mode"`
-	KiroThinkingEffortThreshold    *string `json:"kiro_thinking_effort_threshold"`
-	KiroThinkingSimulationTemplate *string `json:"kiro_thinking_simulation_template"`
+	KiroDefaultVersion                 *string `json:"kiro_version"`
+	KiroDefaultCommit                  *string `json:"kiro_commit"`
+	KiroDefaultSystemVersion           *string `json:"system_version"`
+	KiroDefaultNodeVersion             *string `json:"node_version"`
+	KiroCacheHitRateScale              *int    `json:"cache_hit_rate_scale"`
+	KiroCacheMinBlockTokens            *int    `json:"cache_min_block_tokens"`
+	KiroCacheIndependentTTLSeconds     *int    `json:"cache_independent_ttl_seconds"`
+	KiroCachePrefixTTLSeconds          *int    `json:"cache_prefix_ttl_seconds"`
+	KiroThinkingMode                   *string `json:"kiro_thinking_mode"`
+	KiroThinkingEffortThreshold        *string `json:"kiro_thinking_effort_threshold"`
+	KiroThinkingSimulationTemplate     *string `json:"kiro_thinking_simulation_template"`
+	EnableAnthropicCacheTTL1hInjection *bool   `json:"enable_anthropic_cache_ttl_1h_injection"`
 
 	// Payment visible method routing
 	PaymentVisibleMethodAlipaySource  *string `json:"payment_visible_method_alipay_source"`
@@ -695,6 +745,9 @@ type UpdateSettingsRequest struct {
 
 	// Available Channels feature switch (user-facing)
 	AvailableChannelsEnabled *bool `json:"available_channels_enabled"`
+
+	// OpenAI fast/flex policy (optional, only updated when provided)
+	OpenAIFastPolicySettings *dto.OpenAIFastPolicySettings `json:"openai_fast_policy_settings,omitempty"`
 }
 
 func toDTODefaultAccountModelConfig(src map[string]service.DefaultAccountModelConfig) map[string]dto.DefaultAccountModelConfig {
@@ -775,7 +828,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		return
 	}
 	_, hasSiteLogoField := rawFields["site_logo"]
-
 	previousSettings, err := h.settingService.GetAllSettings(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -786,6 +838,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	previousFastPolicy, err := h.settingService.GetOpenAIFastPolicySettings(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
 	// 验证参数
 	if req.DefaultConcurrency < 1 {
 		req.DefaultConcurrency = 1
@@ -823,6 +881,33 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	}
 	if affiliateSignupBonus < 0 {
 		affiliateSignupBonus = 0
+	}
+	affiliateRebateFreezeHours := previousSettings.AffiliateRebateFreezeHours
+	if req.AffiliateRebateFreezeHours != nil {
+		affiliateRebateFreezeHours = *req.AffiliateRebateFreezeHours
+	}
+	if affiliateRebateFreezeHours < 0 {
+		affiliateRebateFreezeHours = service.AffiliateRebateFreezeHoursDefault
+	}
+	if affiliateRebateFreezeHours > service.AffiliateRebateFreezeHoursMax {
+		affiliateRebateFreezeHours = service.AffiliateRebateFreezeHoursMax
+	}
+	affiliateRebateDurationDays := previousSettings.AffiliateRebateDurationDays
+	if req.AffiliateRebateDurationDays != nil {
+		affiliateRebateDurationDays = *req.AffiliateRebateDurationDays
+	}
+	if affiliateRebateDurationDays < 0 {
+		affiliateRebateDurationDays = service.AffiliateRebateDurationDaysDefault
+	}
+	if affiliateRebateDurationDays > service.AffiliateRebateDurationDaysMax {
+		affiliateRebateDurationDays = service.AffiliateRebateDurationDaysMax
+	}
+	affiliateRebatePerInviteeCap := previousSettings.AffiliateRebatePerInviteeCap
+	if req.AffiliateRebatePerInviteeCap != nil {
+		affiliateRebatePerInviteeCap = *req.AffiliateRebatePerInviteeCap
+	}
+	if affiliateRebatePerInviteeCap < 0 {
+		affiliateRebatePerInviteeCap = service.AffiliateRebatePerInviteeCapDefault
 	}
 	// 通用表格配置：兼容旧客户端未传字段时保留当前值。
 	if req.TableDefaultPageSize <= 0 {
@@ -1518,34 +1603,37 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.SiteLogo
 		}(),
-		SiteSubtitle:                req.SiteSubtitle,
-		APIBaseURL:                  req.APIBaseURL,
-		ContactInfo:                 req.ContactInfo,
-		SupportQRCodes:              supportQRCodes,
-		DocURL:                      req.DocURL,
-		HomeContent:                 req.HomeContent,
-		HideCcsImportButton:         req.HideCcsImportButton,
-		PurchaseSubscriptionEnabled: purchaseEnabled,
-		PurchaseSubscriptionURL:     purchaseURL,
-		TableDefaultPageSize:        req.TableDefaultPageSize,
-		TablePageSizeOptions:        req.TablePageSizeOptions,
-		CustomMenuItems:             customMenuJSON,
-		CustomEndpoints:             customEndpointsJSON,
-		DefaultConcurrency:          req.DefaultConcurrency,
-		DefaultBalance:              req.DefaultBalance,
-		AffiliateEnabled:            boolValueOrDefault(req.AffiliateEnabled, previousSettings.AffiliateEnabled),
-		AffiliateRebateRate:         affiliateRebateRate,
-		AffiliateRebateCap:          affiliateRebateCap,
-		AffiliateRebateInviteeLimit: affiliateRebateInviteeLimit,
-		AffiliateSignupBonus:        affiliateSignupBonus,
-		TicketEnabled:               boolValueOrDefault(req.TicketEnabled, previousSettings.TicketEnabled),
-		DefaultUserRPMLimit:         req.DefaultUserRPMLimit,
-		DefaultSubscriptions:        defaultSubscriptions,
-		EnableModelFallback:         req.EnableModelFallback,
-		FallbackModelAnthropic:      req.FallbackModelAnthropic,
-		FallbackModelOpenAI:         req.FallbackModelOpenAI,
-		FallbackModelGemini:         req.FallbackModelGemini,
-		FallbackModelAntigravity:    req.FallbackModelAntigravity,
+		SiteSubtitle:                 req.SiteSubtitle,
+		APIBaseURL:                   req.APIBaseURL,
+		ContactInfo:                  req.ContactInfo,
+		SupportQRCodes:               supportQRCodes,
+		DocURL:                       req.DocURL,
+		HomeContent:                  req.HomeContent,
+		HideCcsImportButton:          req.HideCcsImportButton,
+		PurchaseSubscriptionEnabled:  purchaseEnabled,
+		PurchaseSubscriptionURL:      purchaseURL,
+		TableDefaultPageSize:         req.TableDefaultPageSize,
+		TablePageSizeOptions:         req.TablePageSizeOptions,
+		CustomMenuItems:              customMenuJSON,
+		CustomEndpoints:              customEndpointsJSON,
+		DefaultConcurrency:           req.DefaultConcurrency,
+		DefaultBalance:               req.DefaultBalance,
+		AffiliateEnabled:             boolValueOrDefault(req.AffiliateEnabled, previousSettings.AffiliateEnabled),
+		AffiliateRebateRate:          affiliateRebateRate,
+		AffiliateRebateCap:           affiliateRebateCap,
+		AffiliateRebateInviteeLimit:  affiliateRebateInviteeLimit,
+		AffiliateSignupBonus:         affiliateSignupBonus,
+		TicketEnabled:                boolValueOrDefault(req.TicketEnabled, previousSettings.TicketEnabled),
+		AffiliateRebateFreezeHours:   affiliateRebateFreezeHours,
+		AffiliateRebateDurationDays:  affiliateRebateDurationDays,
+		AffiliateRebatePerInviteeCap: affiliateRebatePerInviteeCap,
+		DefaultUserRPMLimit:          req.DefaultUserRPMLimit,
+		DefaultSubscriptions:         defaultSubscriptions,
+		EnableModelFallback:          req.EnableModelFallback,
+		FallbackModelAnthropic:       req.FallbackModelAnthropic,
+		FallbackModelOpenAI:          req.FallbackModelOpenAI,
+		FallbackModelGemini:          req.FallbackModelGemini,
+		FallbackModelAntigravity:     req.FallbackModelAntigravity,
 		PlatformDefaultAccountModelConfig: fromOptionalDTODefaultAccountModelConfig(
 			req.PlatformDefaultAccountModelConfig,
 			previousSettings.PlatformDefaultAccountModelConfig,
@@ -1688,6 +1776,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.KiroThinkingSimulationTemplate
 		}(),
+		EnableAnthropicCacheTTL1hInjection: func() bool {
+			if req.EnableAnthropicCacheTTL1hInjection != nil {
+				return *req.EnableAnthropicCacheTTL1hInjection
+			}
+			return previousSettings.EnableAnthropicCacheTTL1hInjection
+		}(),
 		PaymentVisibleMethodAlipaySource: func() string {
 			if req.PaymentVisibleMethodAlipaySource != nil {
 				return strings.TrimSpace(*req.PaymentVisibleMethodAlipaySource)
@@ -1804,6 +1898,19 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		return
 	}
 
+	// Update OpenAI fast policy (stored under dedicated key, only when provided).
+	if req.OpenAIFastPolicySettings != nil {
+		if err := h.settingService.SetOpenAIFastPolicySettings(c.Request.Context(), openaiFastPolicySettingsFromDTO(req.OpenAIFastPolicySettings)); err != nil {
+			rollbackErr := h.rollbackAdminSettingsUpdate(c.Request.Context(), previousSettings, previousAuthSourceDefaults, previousFastPolicy)
+			if rollbackErr != nil {
+				response.ErrorFrom(c, fmt.Errorf("rollback admin settings update after fast policy save failure: %w", rollbackErr))
+				return
+			}
+			response.BadRequest(c, err.Error())
+			return
+		}
+	}
+
 	// Update payment configuration (integrated into system settings).
 	// Skip if no payment fields were provided (prevents accidental wipe).
 	if h.paymentConfigService != nil && hasPaymentFields(req) {
@@ -1823,7 +1930,13 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		}
 	}
 
-	h.auditSettingsUpdate(c, previousSettings, settings, previousAuthSourceDefaults, authSourceDefaults, req)
+	updatedFastPolicy, err := h.settingService.GetOpenAIFastPolicySettings(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	h.auditSettingsUpdate(c, previousSettings, settings, previousAuthSourceDefaults, authSourceDefaults, previousFastPolicy, updatedFastPolicy, req)
 
 	// 重新获取设置返回
 	updatedSettings, err := h.settingService.GetAllSettings(c.Request.Context())
@@ -1939,6 +2052,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AffiliateRebateInviteeLimit:            updatedSettings.AffiliateRebateInviteeLimit,
 		AffiliateSignupBonus:                   updatedSettings.AffiliateSignupBonus,
 		TicketEnabled:                          updatedSettings.TicketEnabled,
+		AffiliateRebateFreezeHours:             updatedSettings.AffiliateRebateFreezeHours,
+		AffiliateRebateDurationDays:            updatedSettings.AffiliateRebateDurationDays,
+		AffiliateRebatePerInviteeCap:           updatedSettings.AffiliateRebatePerInviteeCap,
 		DefaultUserRPMLimit:                    updatedSettings.DefaultUserRPMLimit,
 		DefaultSubscriptions:                   updatedDefaultSubscriptions,
 		EnableModelFallback:                    updatedSettings.EnableModelFallback,
@@ -1975,6 +2091,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		KiroThinkingMode:                       updatedSettings.KiroThinkingMode,
 		KiroThinkingEffortThreshold:            updatedSettings.KiroThinkingEffortThreshold,
 		KiroThinkingSimulationTemplate:         updatedSettings.KiroThinkingSimulationTemplate,
+		EnableAnthropicCacheTTL1hInjection:     updatedSettings.EnableAnthropicCacheTTL1hInjection,
 		PaymentVisibleMethodAlipaySource:       updatedSettings.PaymentVisibleMethodAlipaySource,
 		PaymentVisibleMethodWxpaySource:        updatedSettings.PaymentVisibleMethodWxpaySource,
 		PaymentVisibleMethodAlipayEnabled:      updatedSettings.PaymentVisibleMethodAlipayEnabled,
@@ -2010,6 +2127,11 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ChannelMonitorDefaultIntervalSeconds: updatedSettings.ChannelMonitorDefaultIntervalSeconds,
 
 		AvailableChannelsEnabled: updatedSettings.AvailableChannelsEnabled,
+	}
+	if fastPolicy, err := h.settingService.GetOpenAIFastPolicySettings(c.Request.Context()); err != nil {
+		slog.Error("openai_fast_policy_settings_get_failed", "error", err)
+	} else if fastPolicy != nil {
+		payload.OpenAIFastPolicySettings = openaiFastPolicySettingsToDTO(fastPolicy)
 	}
 	response.Success(c, systemSettingsResponseData(payload, updatedAuthSourceDefaults))
 }
@@ -2091,12 +2213,12 @@ func hasPaymentFields(req UpdateSettingsRequest) bool {
 		req.PaymentCancelRateLimitUnit != nil || req.PaymentCancelRateLimitMode != nil
 }
 
-func (h *SettingHandler) auditSettingsUpdate(c *gin.Context, before *service.SystemSettings, after *service.SystemSettings, beforeAuthSourceDefaults *service.AuthSourceDefaultSettings, afterAuthSourceDefaults *service.AuthSourceDefaultSettings, req UpdateSettingsRequest) {
+func (h *SettingHandler) auditSettingsUpdate(c *gin.Context, before *service.SystemSettings, after *service.SystemSettings, beforeAuthSourceDefaults *service.AuthSourceDefaultSettings, afterAuthSourceDefaults *service.AuthSourceDefaultSettings, beforeFastPolicy *service.OpenAIFastPolicySettings, afterFastPolicy *service.OpenAIFastPolicySettings, req UpdateSettingsRequest) {
 	if before == nil || after == nil {
 		return
 	}
 
-	changed := diffSettings(before, after, beforeAuthSourceDefaults, afterAuthSourceDefaults, req)
+	changed := diffSettings(before, after, beforeAuthSourceDefaults, afterAuthSourceDefaults, beforeFastPolicy, afterFastPolicy, req)
 	if len(changed) == 0 {
 		return
 	}
@@ -2111,7 +2233,7 @@ func (h *SettingHandler) auditSettingsUpdate(c *gin.Context, before *service.Sys
 	)
 }
 
-func diffSettings(before *service.SystemSettings, after *service.SystemSettings, beforeAuthSourceDefaults *service.AuthSourceDefaultSettings, afterAuthSourceDefaults *service.AuthSourceDefaultSettings, req UpdateSettingsRequest) []string {
+func diffSettings(before *service.SystemSettings, after *service.SystemSettings, beforeAuthSourceDefaults *service.AuthSourceDefaultSettings, afterAuthSourceDefaults *service.AuthSourceDefaultSettings, beforeFastPolicy *service.OpenAIFastPolicySettings, afterFastPolicy *service.OpenAIFastPolicySettings, req UpdateSettingsRequest) []string {
 	changed := make([]string, 0, 20)
 	if before.RegistrationEnabled != after.RegistrationEnabled {
 		changed = append(changed, "registration_enabled")
@@ -2344,6 +2466,15 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.TicketEnabled != after.TicketEnabled {
 		changed = append(changed, "ticket_enabled")
 	}
+	if before.AffiliateRebateFreezeHours != after.AffiliateRebateFreezeHours {
+		changed = append(changed, "affiliate_rebate_freeze_hours")
+	}
+	if before.AffiliateRebateDurationDays != after.AffiliateRebateDurationDays {
+		changed = append(changed, "affiliate_rebate_duration_days")
+	}
+	if before.AffiliateRebatePerInviteeCap != after.AffiliateRebatePerInviteeCap {
+		changed = append(changed, "affiliate_rebate_per_invitee_cap")
+	}
 	if !equalDefaultSubscriptions(before.DefaultSubscriptions, after.DefaultSubscriptions) {
 		changed = append(changed, "default_subscriptions")
 	}
@@ -2434,6 +2565,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.GatewayDebugTimelineMaxSizeMB != after.GatewayDebugTimelineMaxSizeMB {
 		changed = append(changed, "gateway_debug_timeline_max_size_mb")
 	}
+	if before.EnableAnthropicCacheTTL1hInjection != after.EnableAnthropicCacheTTL1hInjection {
+		changed = append(changed, "enable_anthropic_cache_ttl_1h_injection")
+	}
 	if before.PaymentVisibleMethodAlipaySource != after.PaymentVisibleMethodAlipaySource {
 		changed = append(changed, "payment_visible_method_alipay_source")
 	}
@@ -2474,8 +2608,44 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.AvailableChannelsEnabled != after.AvailableChannelsEnabled {
 		changed = append(changed, "available_channels_enabled")
 	}
+	if req.OpenAIFastPolicySettings != nil && !openAIFastPolicySettingsEqual(beforeFastPolicy, afterFastPolicy) {
+		changed = append(changed, "openai_fast_policy_settings")
+	}
 	changed = appendAuthSourceDefaultChanges(changed, beforeAuthSourceDefaults, afterAuthSourceDefaults)
 	return changed
+}
+
+func (h *SettingHandler) rollbackAdminSettingsUpdate(ctx context.Context, previousSettings *service.SystemSettings, previousAuthSourceDefaults *service.AuthSourceDefaultSettings, previousFastPolicy *service.OpenAIFastPolicySettings) error {
+	var firstErr error
+
+	if previousSettings != nil && previousAuthSourceDefaults != nil {
+		if err := h.settingService.UpdateSettingsWithAuthSourceDefaults(ctx, previousSettings, previousAuthSourceDefaults); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+
+	if previousFastPolicy != nil {
+		if err := h.settingService.SetOpenAIFastPolicySettings(ctx, previousFastPolicy); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+
+	return firstErr
+}
+
+func openAIFastPolicySettingsEqual(before, after *service.OpenAIFastPolicySettings) bool {
+	if before == nil || after == nil {
+		return before == nil && after == nil
+	}
+	beforeJSON, err := json.Marshal(before)
+	if err != nil {
+		return false
+	}
+	afterJSON, err := json.Marshal(after)
+	if err != nil {
+		return false
+	}
+	return string(beforeJSON) == string(afterJSON)
 }
 
 func appendAuthSourceDefaultChanges(changed []string, before *service.AuthSourceDefaultSettings, after *service.AuthSourceDefaultSettings) []string {
