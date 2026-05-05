@@ -109,6 +109,9 @@ func ResponsesToAnthropic(resp *ResponsesResponse, model string, nameMaps ...map
 	out.Content = blocks
 
 	out.StopReason = responsesStatusToAnthropicStopReason(resp.Status, resp.IncompleteDetails, resp.Output, blocks)
+	if out.StopReason == "refusal" {
+		out.StopDetails = refusalStopDetails()
+	}
 
 	if resp.Usage != nil {
 		out.Usage = AnthropicUsage{
@@ -121,6 +124,10 @@ func ResponsesToAnthropic(resp *ResponsesResponse, model string, nameMaps ...map
 	}
 
 	return out
+}
+
+func refusalStopDetails() *AnthropicStopDetails {
+	return &AnthropicStopDetails{Type: "refusal"}
 }
 
 func responsesStatusToAnthropicStopReason(
@@ -259,7 +266,13 @@ func ResponsesAnthropicEventToSSE(evt AnthropicStreamEvent) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("event: %s\ndata: %s\n\n", evt.Type, data), nil
+
+	sse := fmt.Sprintf("event: %s\ndata: %s\n\n", evt.Type, data)
+	if evt.Type == "message_start" {
+		// Keep the post-start ping explicit for current Claude-compatible consumers.
+		sse += "event: ping\ndata: {\"type\":\"ping\"}\n\n"
+	}
+	return sse, nil
 }
 
 // --- internal handlers ---
@@ -287,8 +300,10 @@ func resToAnthHandleCreated(evt *ResponsesStreamEvent, state *ResponsesEventToAn
 			Content: []AnthropicContentBlock{},
 			Model:   state.Model,
 			Usage: AnthropicUsage{
-				InputTokens:  0,
-				OutputTokens: 0,
+				InputTokens:              0,
+				OutputTokens:             0,
+				CacheCreationInputTokens: 0,
+				CacheReadInputTokens:     0,
 			},
 		},
 	}}
@@ -341,7 +356,7 @@ func resToAnthHandleOutputItemAdded(evt *ResponsesStreamEvent, state *ResponsesE
 		return events
 
 	case "message":
-		return nil
+		return closeCurrentBlock(state)
 	}
 
 	return nil
@@ -501,6 +516,7 @@ func resToAnthHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 	events = append(events, closeCurrentBlock(state)...)
 
 	stopReason := "end_turn"
+	var stopDetails *AnthropicStopDetails
 	if evt.Response != nil {
 		if evt.Response.Usage != nil {
 			state.InputTokens = evt.Response.Usage.InputTokens
@@ -517,6 +533,7 @@ func resToAnthHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 					stopReason = "max_tokens"
 				case "content_filter":
 					stopReason = "refusal"
+					stopDetails = refusalStopDetails()
 				case "model_context_window_exceeded":
 					stopReason = "model_context_window_exceeded"
 				}
@@ -524,6 +541,7 @@ func resToAnthHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 		case "completed":
 			if responsesOutputHasRefusal(evt.Response.Output) {
 				stopReason = "refusal"
+				stopDetails = refusalStopDetails()
 				break
 			}
 			if state.ContentBlockIndex > 0 && state.CurrentBlockType == "tool_use" {
@@ -555,7 +573,8 @@ func resToAnthHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 		AnthropicStreamEvent{
 			Type: "message_delta",
 			Delta: &AnthropicDelta{
-				StopReason: stopReason,
+				StopReason:  stopReason,
+				StopDetails: stopDetails,
 			},
 			Usage: &AnthropicUsage{
 				InputTokens:          state.InputTokens,

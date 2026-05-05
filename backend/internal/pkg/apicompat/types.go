@@ -124,7 +124,8 @@ type AnthropicResponse struct {
 	Role         string                  `json:"role"` // "assistant"
 	Content      []AnthropicContentBlock `json:"content"`
 	Model        string                  `json:"model"`
-	StopReason   string                  `json:"stop_reason"`
+	StopReason   string                  `json:"stop_reason,omitempty"`
+	StopDetails  *AnthropicStopDetails   `json:"stop_details,omitempty"`
 	StopSequence *string                 `json:"stop_sequence,omitempty"`
 	Usage        AnthropicUsage          `json:"usage"`
 }
@@ -135,6 +136,13 @@ type AnthropicUsage struct {
 	OutputTokens             int `json:"output_tokens"`
 	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+}
+
+// AnthropicStopDetails carries structured refusal details.
+type AnthropicStopDetails struct {
+	Type        string  `json:"type"` // "refusal"
+	Category    *string `json:"category,omitempty"`
+	Explanation *string `json:"explanation,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -159,6 +167,45 @@ type AnthropicStreamEvent struct {
 	Usage *AnthropicUsage `json:"usage,omitempty"`
 }
 
+// MarshalJSON preserves Anthropic's message_start wire shape while keeping the
+// shared AnthropicResponse struct usable for non-streaming responses.
+func (evt AnthropicStreamEvent) MarshalJSON() ([]byte, error) {
+	type anthropicStreamEventAlias AnthropicStreamEvent
+	if evt.Type != "message_start" || evt.Message == nil {
+		return json.Marshal(anthropicStreamEventAlias(evt))
+	}
+
+	type anthropicMessageStartPayload struct {
+		ID           string                  `json:"id"`
+		Type         string                  `json:"type"`
+		Role         string                  `json:"role"`
+		Content      []AnthropicContentBlock `json:"content"`
+		Model        string                  `json:"model"`
+		StopReason   *string                 `json:"stop_reason"`
+		StopDetails  *AnthropicStopDetails   `json:"stop_details,omitempty"`
+		StopSequence *string                 `json:"stop_sequence"`
+		Usage        AnthropicUsage          `json:"usage"`
+	}
+
+	return json.Marshal(struct {
+		Type    string                       `json:"type"`
+		Message anthropicMessageStartPayload `json:"message"`
+	}{
+		Type: evt.Type,
+		Message: anthropicMessageStartPayload{
+			ID:           evt.Message.ID,
+			Type:         evt.Message.Type,
+			Role:         evt.Message.Role,
+			Content:      evt.Message.Content,
+			Model:        evt.Message.Model,
+			StopReason:   nil,
+			StopDetails:  evt.Message.StopDetails,
+			StopSequence: nil,
+			Usage:        evt.Message.Usage,
+		},
+	})
+}
+
 // AnthropicDelta carries incremental content in streaming events.
 type AnthropicDelta struct {
 	Type string `json:"type,omitempty"` // "text_delta" | "input_json_delta" | "thinking_delta" | "signature_delta"
@@ -176,8 +223,9 @@ type AnthropicDelta struct {
 	Signature string `json:"signature,omitempty"`
 
 	// message_delta fields
-	StopReason   string  `json:"stop_reason,omitempty"`
-	StopSequence *string `json:"stop_sequence,omitempty"`
+	StopReason   string                `json:"stop_reason,omitempty"`
+	StopDetails  *AnthropicStopDetails `json:"stop_details,omitempty"`
+	StopSequence *string               `json:"stop_sequence,omitempty"`
 }
 
 // ---------------------------------------------------------------------------

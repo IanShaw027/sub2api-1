@@ -35,123 +35,162 @@ func (s *GatewayService) ForwardAsResponses(
 	body []byte,
 	parsed *ParsedRequest,
 ) (*ForwardResult, error) {
+	_ = parsed
 	startTime := time.Now()
 
-	// 1. Parse Responses request
-	var responsesReq apicompat.ResponsesRequest
-	if err := json.Unmarshal(body, &responsesReq); err != nil {
-		return nil, fmt.Errorf("parse responses request: %w", err)
-	}
-	originalModel := responsesReq.Model
-	clientStream := responsesReq.Stream
-
-	// 2. Convert Responses → Anthropic
-	anthropicReq, err := apicompat.ResponsesToAnthropicRequest(&responsesReq)
+	ingressPlan, err := prepareResponsesAnthropicIngress(body)
 	if err != nil {
-		return nil, fmt.Errorf("convert responses to anthropic: %w", err)
+		return nil, err
 	}
 
-	// 3. Force upstream streaming (Anthropic works best with streaming)
-	anthropicReq.Stream = true
-	reqStream := true
-
-	// 4. Model mapping
-	mappedModel := originalModel
-	reasoningEffort := ExtractResponsesReasoningEffortFromBody(body)
-	if account.Type == AccountTypeAPIKey || account.Type == AccountTypeServiceAccount {
-		mappedModel = account.GetMappedModel(originalModel)
+	type responsesAnthropicAttempt struct {
+		requestBody           []byte
+		anthropicBody         []byte
+		originalModel         string
+		mappedModel           string
+		clientStream          bool
+		reasoningEffort       *string
+		shouldMimicClaudeCode bool
 	}
-	if mappedModel == originalModel && account.Platform == PlatformAnthropic && account.Type == AccountTypeServiceAccount {
-		normalized := normalizeVertexAnthropicModelID(claude.NormalizeModelID(originalModel))
-		if normalized != originalModel {
-			mappedModel = normalized
+
+	buildAttempt := func(requestBody []byte) (*responsesAnthropicAttempt, error) {
+		var responsesReq apicompat.ResponsesRequest
+		if err := json.Unmarshal(requestBody, &responsesReq); err != nil {
+			return nil, fmt.Errorf("parse responses request: %w", err)
 		}
-	} else if mappedModel == originalModel && account.Platform == PlatformAnthropic && account.Type != AccountTypeAPIKey {
-		normalized := claude.NormalizeModelID(originalModel)
-		if normalized != originalModel {
-			mappedModel = normalized
+
+		anthropicReq, err := apicompat.ResponsesToAnthropicRequest(&responsesReq)
+		if err != nil {
+			return nil, fmt.Errorf("convert responses to anthropic: %w", err)
 		}
+
+		anthropicReq.Stream = true
+		originalModel := responsesReq.Model
+		mappedModel := originalModel
+		if account.Type == AccountTypeAPIKey || account.Type == AccountTypeServiceAccount {
+			mappedModel = account.GetMappedModel(originalModel)
+		}
+		if mappedModel == originalModel && account.Platform == PlatformAnthropic && account.Type == AccountTypeServiceAccount {
+			normalized := normalizeVertexAnthropicModelID(claude.NormalizeModelID(originalModel))
+			if normalized != originalModel {
+				mappedModel = normalized
+			}
+		} else if mappedModel == originalModel && account.Platform == PlatformAnthropic && account.Type != AccountTypeAPIKey {
+			normalized := claude.NormalizeModelID(originalModel)
+			if normalized != originalModel {
+				mappedModel = normalized
+			}
+		}
+		anthropicReq.Model = mappedModel
+
+		logger.L().Debug("gateway forward_as_responses: model mapping applied",
+			zap.Int64("account_id", account.ID),
+			zap.String("original_model", originalModel),
+			zap.String("mapped_model", mappedModel),
+			zap.Bool("client_stream", responsesReq.Stream),
+		)
+
+		anthropicBody, err := json.Marshal(anthropicReq)
+		if err != nil {
+			return nil, fmt.Errorf("marshal anthropic request: %w", err)
+		}
+
+		isClaudeCode := false
+		shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCode
+		if shouldMimicClaudeCode {
+			anthropicBody = s.applyClaudeCodeOAuthMimicryToBody(ctx, c, account, anthropicBody, anthropicReq.System, mappedModel)
+		}
+		anthropicBody = enforceCacheControlLimit(anthropicBody)
+
+		return &responsesAnthropicAttempt{
+			requestBody:           requestBody,
+			anthropicBody:         anthropicBody,
+			originalModel:         originalModel,
+			mappedModel:           mappedModel,
+			clientStream:          responsesReq.Stream,
+			reasoningEffort:       ExtractResponsesReasoningEffortFromBody(requestBody),
+			shouldMimicClaudeCode: shouldMimicClaudeCode,
+		}, nil
 	}
-	anthropicReq.Model = mappedModel
 
-	logger.L().Debug("gateway forward_as_responses: model mapping applied",
-		zap.Int64("account_id", account.ID),
-		zap.String("original_model", originalModel),
-		zap.String("mapped_model", mappedModel),
-		zap.Bool("client_stream", clientStream),
-	)
-
-	// 5. Marshal Anthropic request body
-	anthropicBody, err := json.Marshal(anthropicReq)
-	if err != nil {
-		return nil, fmt.Errorf("marshal anthropic request: %w", err)
-	}
-
-	// 6. Apply Claude Code mimicry for OAuth accounts (non-Claude-Code endpoints).
-	// OpenAI Responses 协议进来的请求永远不是 Claude Code 客户端，所以对 OAuth 账号
-	// 必须完整执行 /v1/messages 主路径上的伪装链路（system 重写 + normalize + metadata 注入），
-	// 否则会被 Anthropic 判为第三方应用并扣 extra usage。
-	// 见 applyClaudeCodeOAuthMimicryToBody 的 godoc。
-	isClaudeCode := false
-	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCode
-
-	if shouldMimicClaudeCode {
-		anthropicBody = s.applyClaudeCodeOAuthMimicryToBody(ctx, c, account, anthropicBody, anthropicReq.System, mappedModel)
-	}
-
-	// 7. Enforce cache_control block limit
-	anthropicBody = enforceCacheControlLimit(anthropicBody)
-
-	// 8. Get access token
+	// 1. Get access token
 	token, tokenType, err := s.GetAccessToken(ctx, account)
 	if err != nil {
 		return nil, fmt.Errorf("get access token: %w", err)
 	}
 
-	// 9. Get proxy URL
+	// 2. Get proxy URL
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
 
-	// 10. Build upstream request
-	upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, reqStream)
-	upstreamReq, err := s.buildUpstreamRequest(upstreamCtx, c, account, anthropicBody, token, tokenType, mappedModel, reqStream, shouldMimicClaudeCode)
-	releaseUpstreamCtx()
-	if err != nil {
-		return nil, fmt.Errorf("build upstream request: %w", err)
-	}
-	setOpsUpstreamRequestBody(c, anthropicBody)
+	// 3. Build upstream request(s) and send, with at most one full-replay retry.
+	reqStream := true
+	currentBody := ingressPlan.PrimaryBody
+	fullReplayRetried := false
 
-	// 11. Send request
-	upstreamStart := time.Now()
-	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
-	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
-	if err != nil {
-		if resp != nil && resp.Body != nil {
-			_ = resp.Body.Close()
+	var (
+		attempt     *responsesAnthropicAttempt
+		resp        *http.Response
+		upstreamReq *http.Request
+	)
+
+	for {
+		attempt, err = buildAttempt(currentBody)
+		if err != nil {
+			return nil, err
 		}
-		safeErr := sanitizeUpstreamErrorMessage(err.Error())
-		setOpsUpstreamError(c, 0, safeErr, "")
-		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-			Platform:           account.Platform,
-			AccountID:          account.ID,
-			AccountName:        account.Name,
-			UpstreamStatusCode: 0,
-			UpstreamURL:        safeUpstreamURL(upstreamReq.URL.String()),
-			Kind:               "request_error",
-			Message:            safeErr,
-		})
-		writeResponsesError(c, http.StatusBadGateway, "server_error", "Upstream request failed")
-		return nil, fmt.Errorf("upstream request failed: %s", safeErr)
-	}
-	defer func() { _ = resp.Body.Close() }()
 
-	// 12. Handle error response with failover
-	if resp.StatusCode >= 400 {
+		upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, reqStream)
+		upstreamReq, err = s.buildUpstreamRequest(upstreamCtx, c, account, attempt.anthropicBody, token, tokenType, attempt.mappedModel, reqStream, attempt.shouldMimicClaudeCode)
+		releaseUpstreamCtx()
+		if err != nil {
+			return nil, fmt.Errorf("build upstream request: %w", err)
+		}
+		setOpsUpstreamRequestBody(c, attempt.anthropicBody)
+
+		upstreamStart := time.Now()
+		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
+		if err != nil {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+			safeErr := sanitizeUpstreamErrorMessage(err.Error())
+			setOpsUpstreamError(c, 0, safeErr, "")
+			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				Platform:           account.Platform,
+				AccountID:          account.ID,
+				AccountName:        account.Name,
+				UpstreamStatusCode: 0,
+				UpstreamURL:        safeUpstreamURL(upstreamReq.URL.String()),
+				Kind:               "request_error",
+				Message:            safeErr,
+			})
+			writeResponsesError(c, http.StatusBadGateway, "server_error", "Upstream request failed")
+			return nil, fmt.Errorf("upstream request failed: %s", safeErr)
+		}
+
+		if resp.StatusCode < 400 {
+			break
+		}
+
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
+
+		failure := classifyResponsesAnthropicFailure(resp.StatusCode, respBody)
+		if !fullReplayRetried && failure.RetryWithFullReplay && ingressPlan.CanRetryWithFullReplay() {
+			fullReplayRetried = true
+			currentBody = ingressPlan.FullReplayBody
+			logger.L().Info("gateway forward_as_responses: retrying once with full replay input",
+				zap.Int64("account_id", account.ID),
+				zap.String("reason", failure.Reason),
+				zap.String("source", ingressPlan.FullReplaySource),
+			)
+			continue
+		}
 
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
@@ -185,7 +224,6 @@ func (s *GatewayService) ForwardAsResponses(
 			}
 		}
 
-		// Non-failover error: return Responses-formatted error to client
 		setOpsUpstreamError(c, resp.StatusCode, upstreamMsg, upstreamDetail)
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 			Platform:           account.Platform,
@@ -201,14 +239,15 @@ func (s *GatewayService) ForwardAsResponses(
 		writeResponsesError(c, mapUpstreamStatusCode(resp.StatusCode), "server_error", upstreamMsg)
 		return nil, fmt.Errorf("upstream error: %d %s", resp.StatusCode, upstreamMsg)
 	}
+	defer func() { _ = resp.Body.Close() }()
 
-	// 13. Handle normal response (convert Anthropic → Responses)
+	// 4. Handle normal response (convert Anthropic → Responses)
 	var result *ForwardResult
 	var handleErr error
-	if clientStream {
-		result, handleErr = s.handleResponsesStreamingResponse(resp, c, originalModel, mappedModel, reasoningEffort, startTime)
+	if attempt.clientStream {
+		result, handleErr = s.handleResponsesStreamingResponse(resp, c, attempt.originalModel, attempt.mappedModel, attempt.reasoningEffort, startTime)
 	} else {
-		result, handleErr = s.handleResponsesBufferedStreamingResponse(resp, c, originalModel, mappedModel, reasoningEffort, startTime)
+		result, handleErr = s.handleResponsesBufferedStreamingResponse(resp, c, attempt.originalModel, attempt.mappedModel, attempt.reasoningEffort, startTime)
 	}
 
 	return result, handleErr

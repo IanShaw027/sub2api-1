@@ -3,6 +3,7 @@
 package service
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,8 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestExtractResponsesReasoningEffortFromBody(t *testing.T) {
@@ -91,4 +94,136 @@ func TestHandleResponsesStreamingResponse_PreservesMessageStartCacheUsage(t *tes
 	require.Equal(t, 11, result.Usage.CacheReadInputTokens)
 	require.Equal(t, 4, result.Usage.CacheCreationInputTokens)
 	require.Contains(t, rec.Body.String(), `response.completed`)
+}
+
+func TestPrepareResponsesAnthropicIngress_PreservesInputWhenMessagesAreEmptyOrUnsupported(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		body []byte
+	}{
+		{
+			name: "empty messages",
+			body: []byte(`{"model":"claude-sonnet-4.5","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}],"messages":[],"previous_response_id":"resp_stale"}`),
+		},
+		{
+			name: "unsupported messages",
+			body: []byte(`{"model":"claude-sonnet-4.5","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}],"messages":[{"role":"developer","content":"ignore me"}],"previous_response_id":"resp_stale"}`),
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			plan, err := prepareResponsesAnthropicIngress(tt.body)
+			require.NoError(t, err)
+			require.Equal(t, string(tt.body), string(plan.PrimaryBody))
+			require.True(t, plan.CanRetryWithFullReplay())
+			require.Equal(t, "input", plan.FullReplaySource)
+			require.False(t, gjson.GetBytes(plan.FullReplayBody, "messages").Exists())
+			require.False(t, gjson.GetBytes(plan.FullReplayBody, "previous_response_id").Exists())
+			require.Equal(t, "function_call_output", gjson.GetBytes(plan.FullReplayBody, "input.0.type").String())
+			require.Equal(t, "call_1", gjson.GetBytes(plan.FullReplayBody, "input.0.call_id").String())
+		})
+	}
+}
+
+func TestPrepareResponsesAnthropicIngress_FallsBackToLegacyMessagesWhenInputMissing(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"model":"claude-sonnet-4.5","messages":[{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"q\":\"hello\"}"}}]},{"role":"tool","tool_call_id":"call_1","content":"ok"}],"previous_response_id":"resp_stale"}`)
+
+	plan, err := prepareResponsesAnthropicIngress(body)
+	require.NoError(t, err)
+	require.NotEqual(t, string(body), string(plan.PrimaryBody))
+	require.Empty(t, plan.FullReplayBody)
+	require.Empty(t, plan.FullReplaySource)
+	require.False(t, gjson.GetBytes(plan.PrimaryBody, "messages").Exists())
+	require.False(t, gjson.GetBytes(plan.PrimaryBody, "previous_response_id").Exists())
+	require.Equal(t, "function_call", gjson.GetBytes(plan.PrimaryBody, "input.0.type").String())
+	require.Equal(t, "function_call_output", gjson.GetBytes(plan.PrimaryBody, "input.1.type").String())
+}
+
+func TestClassifyResponsesAnthropicFailure(t *testing.T) {
+	t.Parallel()
+
+	classification := classifyResponsesAnthropicFailure(http.StatusBadRequest, []byte(`{"error":{"type":"invalid_request_error","message":"previous response not found for continuation anchor"}}`))
+	require.Equal(t, "previous_response_not_found", classification.Reason)
+	require.True(t, classification.RetryWithFullReplay)
+
+	classification = classifyResponsesAnthropicFailure(http.StatusBadRequest, []byte(`{"error":{"type":"invalid_request_error","message":"tool_result block missing matching tool_use block"}}`))
+	require.Equal(t, "tool_continuation", classification.Reason)
+	require.True(t, classification.RetryWithFullReplay)
+
+	classification = classifyResponsesAnthropicFailure(http.StatusUnprocessableEntity, []byte(`{"error":{"type":"invalid_request_error","message":"previous response not found for continuation anchor"}}`))
+	require.Equal(t, "previous_response_not_found", classification.Reason)
+	require.True(t, classification.RetryWithFullReplay)
+
+	classification = classifyResponsesAnthropicFailure(http.StatusUnauthorized, []byte(`{"error":{"type":"authentication_error","message":"bad auth"}}`))
+	require.Empty(t, classification.Reason)
+	require.False(t, classification.RetryWithFullReplay)
+}
+
+func TestForwardAsResponses_RetriesFullReplayOnceOnContinuationFailure(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"claude-sonnet-4.5","stream":false,"input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}],"messages":[{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"q\":\"hello\"}"}}]},{"role":"tool","tool_call_id":"call_1","content":"ok"}],"previous_response_id":"resp_anchor_1"}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(string(body)))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamSequenceRecorder{
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","message":"previous response not found for continuation anchor"}}`)),
+			},
+			{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Type": []string{"text/event-stream"},
+					"x-request-id": []string{"rid_replay_ok"},
+				},
+				Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+					`event: message_start`,
+					`data: {"type":"message_start","message":{"id":"msg_replay","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4.5","stop_reason":"","usage":{"input_tokens":12}}}`,
+					``,
+					`event: content_block_start`,
+					`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":"replayed ok"}}`,
+					``,
+					`event: message_delta`,
+					`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":4}}`,
+					``,
+				}, "\n"))),
+			},
+		},
+	}
+
+	svc := &GatewayService{
+		cfg: &config.Config{
+			Security: config.SecurityConfig{
+				URLAllowlist: config.URLAllowlistConfig{
+					Enabled:           false,
+					AllowInsecureHTTP: true,
+				},
+			},
+		},
+		httpUpstream: upstream,
+	}
+	account := newAnthropicAPIKeyAccountForTest()
+	account.Extra = nil
+
+	result, err := svc.ForwardAsResponses(context.Background(), c, account, body, nil)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 2, upstream.callCount)
+	require.Equal(t, "user", gjson.GetBytes(upstream.bodies[0], "messages.0.role").String())
+	require.Equal(t, "tool_result", gjson.GetBytes(upstream.bodies[0], "messages.0.content.0.type").String())
+	require.Equal(t, "user", gjson.GetBytes(upstream.bodies[1], "messages.0.role").String())
+	require.False(t, gjson.GetBytes(upstream.bodies[1], "messages.1").Exists())
+	require.Equal(t, "tool_result", gjson.GetBytes(upstream.bodies[1], "messages.0.content.0.type").String())
+	require.Contains(t, rec.Body.String(), `"replayed ok"`)
 }
