@@ -23,10 +23,11 @@ func swapMonitorHTTPClient(t *testing.T) {
 
 // captureHandler 把每次收到的请求 body 和 headers 存起来，测试断言用。
 type captureHandler struct {
-	lastBody    map[string]any
-	lastHeaders http.Header
-	respondText string // 写到 Anthropic content[0].text 里（校验用）
-	status      int
+	lastBody       map[string]any
+	lastHeaders    http.Header
+	respondText    string // 写到 Anthropic content[0].text 里（校验用）
+	respondContent []map[string]any
+	status         int
 }
 
 func (h *captureHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -41,11 +42,15 @@ func (h *captureHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(h.status)
-	// 构造 Anthropic 格式的响应：content[0].text = h.respondText
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"content": []map[string]any{
+	content := h.respondContent
+	if len(content) == 0 {
+		// 构造 Anthropic 格式的响应：content[0].text = h.respondText
+		content = []map[string]any{
 			{"type": "text", "text": h.respondText},
-		},
+		}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"content": content,
 	})
 }
 
@@ -181,6 +186,26 @@ func TestRunCheckForModel_ReplaceMode_EmptyResponseIsFailed(t *testing.T) {
 	}
 	if !strings.Contains(res.Message, "replace-mode") {
 		t.Errorf("failure message should hint replace-mode, got %q", res.Message)
+	}
+}
+
+func TestRunCheckForModel_ReplaceMode_AnthropicThinkingFallbackUsesTextBlock(t *testing.T) {
+	h := &captureHandler{
+		respondContent: []map[string]any{
+			{"type": "thinking", "thinking": "internal reasoning"},
+			{"type": "text", "text": "Hey there. What can I help you with?"},
+		},
+	}
+	endpoint := setupFakeAnthropic(t, h)
+
+	opts := &CheckOptions{
+		BodyOverrideMode: MonitorBodyOverrideModeReplace,
+		BodyOverride:     map[string]any{"model": "x", "messages": []any{}},
+	}
+	res := runCheckForModel(context.Background(), MonitorProviderAnthropic, endpoint, "sk-fake", "claude-x", opts)
+
+	if res.Status != MonitorStatusOperational {
+		t.Errorf("replace mode should use first text block after thinking, got status=%s message=%q", res.Status, res.Message)
 	}
 }
 

@@ -162,6 +162,7 @@ type providerAdapter struct {
 	buildBody    func(model, prompt string) ([]byte, error)
 	buildHeaders func(apiKey string) map[string]string
 	textPath     string // gjson 提取响应文本的 path
+	extractText  func(respBytes []byte, textPath string) string
 }
 
 // providerAdapters 全部已支持的 provider。键值即 MonitorProvider* 字符串。
@@ -198,7 +199,8 @@ var providerAdapters = map[string]providerAdapter{
 				"anthropic-version": monitorAnthropicAPIVersion,
 			}
 		},
-		textPath: "content.0.text",
+		textPath:    "content.0.text",
+		extractText: extractAnthropicMonitorText,
 	},
 	MonitorProviderGemini: {
 		// Gemini 把 model 名写在 URL path 上：/v1beta/models/{model}:generateContent
@@ -249,7 +251,31 @@ func callProvider(ctx context.Context, provider, endpoint, apiKey, model, prompt
 	if err != nil {
 		return "", "", status, err
 	}
-	return gjson.GetBytes(respBytes, adapter.textPath).String(), string(respBytes), status, nil
+	return extractMonitorResponseText(adapter, respBytes), string(respBytes), status, nil
+}
+
+func extractMonitorResponseText(adapter providerAdapter, respBytes []byte) string {
+	if adapter.extractText != nil {
+		return adapter.extractText(respBytes, adapter.textPath)
+	}
+	return gjson.GetBytes(respBytes, adapter.textPath).String()
+}
+
+func extractAnthropicMonitorText(respBytes []byte, textPath string) string {
+	text := strings.TrimSpace(gjson.GetBytes(respBytes, textPath).String())
+	if text != "" {
+		return text
+	}
+	for _, block := range gjson.GetBytes(respBytes, "content").Array() {
+		if block.Get("type").String() != "text" {
+			continue
+		}
+		text = strings.TrimSpace(block.Get("text").String())
+		if text != "" {
+			return text
+		}
+	}
+	return ""
 }
 
 // mergeHeaders 把用户自定义 headers 合并到 adapter 默认 headers 上。
