@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"net/http"
 	"strings"
 	"time"
 
@@ -238,4 +239,11 @@ func safeUpstreamURL(rawURL string) string {
 		rawURL = rawURL[:idx]
 	}
 	return rawURL
+}
+
+func safeUpstreamURLFromResponse(resp *http.Response) string {
+	if resp == nil || resp.Request == nil || resp.Request.URL == nil {
+		return ""
+	}
+	return safeUpstreamURL(resp.Request.URL.String())
 }

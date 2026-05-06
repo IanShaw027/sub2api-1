@@ -168,3 +168,23 @@ func TestMigration134AddsAffiliateLedgerAuditFieldsWithoutJSONCast(t *testing.T)
 	require.Contains(t, sql, "COUNT(*) OVER (PARTITION BY ual.id) AS ledger_match_count")
 	require.NotContains(t, sql, "detail::jsonb")
 }
+
+func TestMigration134AddsImageGenerationGroupControlsWithoutRepricingExistingColumns(t *testing.T) {
+	content, err := FS.ReadFile("134_image_generation_group_controls.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS allow_image_generation BOOLEAN NOT NULL DEFAULT false")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS image_rate_independent BOOLEAN NOT NULL DEFAULT false")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS image_rate_multiplier DECIMAL(10,4) NOT NULL DEFAULT 1.0")
+	require.Contains(t, sql, "WHERE platform IN ('openai', 'gemini', 'antigravity')")
+	require.Contains(t, sql, "SET image_rate_independent = false,")
+	require.Contains(t, sql, "image_rate_multiplier = 1.0")
+	require.Contains(t, sql, "COMMENT ON COLUMN groups.allow_image_generation")
+	require.Contains(t, sql, "COMMENT ON COLUMN groups.image_rate_independent")
+	require.Contains(t, sql, "COMMENT ON COLUMN groups.image_rate_multiplier")
+	require.NotContains(t, sql, "ALTER COLUMN image_price_1k")
+	require.NotContains(t, sql, "ALTER COLUMN image_price_2k")
+	require.NotContains(t, sql, "ALTER COLUMN image_price_4k")
+	require.NotContains(t, sql, "UPDATE groups\nSET image_price_")
+}

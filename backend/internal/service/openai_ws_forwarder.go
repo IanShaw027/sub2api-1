@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
@@ -93,6 +94,20 @@ func (e *openAIWSFallbackError) Unwrap() error {
 
 func wrapOpenAIWSFallback(reason string, err error) error {
 	return &openAIWSFallbackError{Reason: strings.TrimSpace(reason), Err: err}
+}
+
+type openAIWSResponseFailedError struct {
+	code      string
+	errType   string
+	message   string
+	retryable bool
+}
+
+func (e *openAIWSResponseFailedError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return strings.TrimSpace(e.message)
 }
 
 // OpenAIWSClientCloseError 表示应以指定 WebSocket close code 主动关闭客户端连接的错误。
@@ -280,79 +295,6 @@ func isolateOpenAIWSWindowID(apiKeyID int64, raw string) string {
 	return isolateOpenAISessionID(apiKeyID, sessionPart) + suffix
 }
 
-func buildOpenAIWSClientMetadataValues(c *gin.Context, turnMetadata string, account *Account) map[string]string {
-	values := map[string]string{}
-	allowOAuthOnlyHeaders := account == nil || account.Type == AccountTypeOAuth
-	if metadata := strings.TrimSpace(turnMetadata); metadata != "" && allowOAuthOnlyHeaders {
-		values[openAIWSTurnMetadataHeader] = metadata
-	}
-	if c == nil || c.Request == nil {
-		if len(values) == 0 {
-			return nil
-		}
-		return values
-	}
-
-	apiKeyID := int64(0)
-	isolateSessionDerivedValues := false
-	if account != nil && account.Type == AccountTypeOAuth {
-		apiKeyID = getAPIKeyIDFromContext(c)
-		isolateSessionDerivedValues = true
-	}
-
-	for _, key := range []string{
-		"x-codex-installation-id",
-		openAIWSWindowIDHeader,
-		"x-codex-beta-features",
-		"x-client-request-id",
-	} {
-		if !allowOAuthOnlyHeaders && openaiOAuthOnlyHeaders[key] {
-			continue
-		}
-		value := strings.TrimSpace(c.GetHeader(key))
-		if value == "" {
-			continue
-		}
-		if key == openAIWSWindowIDHeader && isolateSessionDerivedValues {
-			value = isolateOpenAIWSWindowID(apiKeyID, value)
-		}
-		values[key] = value
-	}
-	if len(values) == 0 {
-		return nil
-	}
-	return values
-}
-
-func mergeOpenAIWSClientMetadata(payload map[string]any, metadataValues map[string]string) {
-	if len(payload) == 0 || len(metadataValues) == 0 {
-		return
-	}
-
-	switch existing := payload["client_metadata"].(type) {
-	case map[string]any:
-		for k, v := range metadataValues {
-			existing[k] = v
-		}
-		payload["client_metadata"] = existing
-	case map[string]string:
-		next := make(map[string]any, len(existing)+len(metadataValues))
-		for k, v := range existing {
-			next[k] = v
-		}
-		for k, v := range metadataValues {
-			next[k] = v
-		}
-		payload["client_metadata"] = next
-	default:
-		next := make(map[string]any, len(metadataValues))
-		for k, v := range metadataValues {
-			next[k] = v
-		}
-		payload["client_metadata"] = next
-	}
-}
-
 func resolveOpenAIWSSessionHeaders(c *gin.Context, promptCacheKey string) openAIWSSessionHeaderResolution {
 	resolution := openAIWSSessionHeaderResolution{
 		SessionSource:      "none",
@@ -472,6 +414,16 @@ func parseOpenAIWSEventEnvelope(message []byte) (eventType string, responseID st
 	return eventType, responseID, values[3]
 }
 
+func parseOpenAIWSResponseFailedErrorFields(message []byte) (code string, errType string, errMessage string) {
+	if len(message) == 0 {
+		return "", "", ""
+	}
+	code = strings.TrimSpace(gjson.GetBytes(message, "response.error.code").String())
+	errType = strings.TrimSpace(gjson.GetBytes(message, "response.error.type").String())
+	errMessage = strings.TrimSpace(gjson.GetBytes(message, "response.error.message").String())
+	return code, errType, errMessage
+}
+
 func openAIWSMessageLikelyContainsToolCalls(message []byte) bool {
 	if len(message) == 0 {
 		return false
@@ -502,34 +454,6 @@ func parseOpenAIWSErrorEventFields(message []byte) (code string, errType string,
 	}
 	values := gjson.GetManyBytes(message, "error.code", "error.type", "error.message")
 	return strings.TrimSpace(values[0].String()), strings.TrimSpace(values[1].String()), strings.TrimSpace(values[2].String())
-}
-
-func parseOpenAIWSResponseFailedErrorFields(message []byte) (code string, errType string, errMessage string) {
-	if len(message) == 0 {
-		return "", "", ""
-	}
-	values := gjson.GetManyBytes(
-		message,
-		"response.error.code",
-		"response.error.type",
-		"response.error.message",
-		"error.code",
-		"error.type",
-		"error.message",
-	)
-	code = strings.TrimSpace(values[0].String())
-	if code == "" {
-		code = strings.TrimSpace(values[3].String())
-	}
-	errType = strings.TrimSpace(values[1].String())
-	if errType == "" {
-		errType = strings.TrimSpace(values[4].String())
-	}
-	errMessage = strings.TrimSpace(values[2].String())
-	if errMessage == "" {
-		errMessage = strings.TrimSpace(values[5].String())
-	}
-	return code, errType, errMessage
 }
 
 func summarizeOpenAIWSErrorEventFieldsFromRaw(codeRaw, errTypeRaw, errMessageRaw string) (code string, errType string, errMessage string) {
@@ -1235,52 +1159,53 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 ) (http.Header, openAIWSSessionHeaderResolution) {
 	headers := make(http.Header)
 	headers.Set("authorization", "Bearer "+token)
+	_ = turnState
+	_ = turnMetadata
 
 	sessionResolution := resolveOpenAIWSSessionHeaders(c, promptCacheKey)
 	if c != nil && c.Request != nil {
 		if v := strings.TrimSpace(c.Request.Header.Get("accept-language")); v != "" {
 			headers.Set("accept-language", v)
 		}
-		for _, key := range []string{"x-codex-installation-id", openAIWSWindowIDHeader, "x-codex-beta-features", "x-client-request-id"} {
-			if account != nil && account.Type != AccountTypeOAuth && openaiOAuthOnlyHeaders[key] {
-				continue
-			}
-			if v := strings.TrimSpace(c.Request.Header.Get(key)); v != "" {
-				if key == openAIWSWindowIDHeader && account != nil && account.Type == AccountTypeOAuth {
-					v = isolateOpenAIWSWindowID(getAPIKeyIDFromContext(c), v)
-				}
-				headers.Set(key, v)
-			}
-		}
 	}
-	if sessionResolution.SessionID != "" {
-		sessionID := sessionResolution.SessionID
-		if account != nil && account.Type == AccountTypeOAuth {
-			sessionID = isolateOpenAISessionID(getAPIKeyIDFromContext(c), sessionID)
+	// OAuth 账号：将 apiKeyID 混入 session 标识符，防止跨用户会话碰撞。
+	if account != nil && account.Type == AccountTypeOAuth {
+		apiKeyID := getAPIKeyIDFromContext(c)
+		if sessionResolution.SessionID != "" {
+			headers.Set("session_id", isolateOpenAISessionID(apiKeyID, sessionResolution.SessionID))
 		}
-		headers.Set("session_id", sessionID)
-	}
-	if sessionResolution.ConversationID != "" {
-		conversationID := sessionResolution.ConversationID
-		if account != nil && account.Type == AccountTypeOAuth {
-			conversationID = isolateOpenAISessionID(getAPIKeyIDFromContext(c), conversationID)
+		if sessionResolution.ConversationID != "" {
+			headers.Set("conversation_id", isolateOpenAISessionID(apiKeyID, sessionResolution.ConversationID))
 		}
-		headers.Set("conversation_id", conversationID)
 	} else {
-		headers.Del("conversation_id")
-	}
-	if state := strings.TrimSpace(turnState); state != "" && (account == nil || account.Type == AccountTypeOAuth) {
-		headers.Set(openAIWSTurnStateHeader, state)
-	}
-	if metadata := strings.TrimSpace(turnMetadata); metadata != "" && (account == nil || account.Type == AccountTypeOAuth) {
-		headers.Set(openAIWSTurnMetadataHeader, metadata)
+		if sessionResolution.SessionID != "" {
+			headers.Set("session_id", sessionResolution.SessionID)
+		}
+		if sessionResolution.ConversationID != "" {
+			headers.Set("conversation_id", sessionResolution.ConversationID)
+		}
 	}
 
 	if account != nil && account.Type == AccountTypeOAuth {
+		apiKeyID := getAPIKeyIDFromContext(c)
 		if chatgptAccountID := account.GetChatGPTAccountID(); chatgptAccountID != "" {
 			headers.Set("chatgpt-account-id", chatgptAccountID)
 		}
 		headers.Set("originator", resolveOpenAIUpstreamOriginator(c, isCodexCLI))
+		if c != nil {
+			if windowID := strings.TrimSpace(c.GetHeader(openAIWSWindowIDHeader)); windowID != "" {
+				headers.Set(openAIWSWindowIDHeader, isolateOpenAIWSWindowID(apiKeyID, windowID))
+			}
+			if betaFeatures := strings.TrimSpace(c.GetHeader("x-codex-beta-features")); betaFeatures != "" {
+				headers.Set("x-codex-beta-features", betaFeatures)
+			}
+			if clientRequestID := strings.TrimSpace(c.GetHeader("x-client-request-id")); clientRequestID != "" {
+				headers.Set("x-client-request-id", clientRequestID)
+			}
+			if installationID := strings.TrimSpace(c.GetHeader("x-codex-installation-id")); installationID != "" {
+				headers.Set("x-codex-installation-id", installationID)
+			}
+		}
 	}
 
 	betaValue := openAIWSBetaV2Value
@@ -1328,17 +1253,48 @@ func (s *OpenAIGatewayService) buildOpenAIWSCreatePayload(reqBody map[string]any
 	return payload
 }
 
-func setOpenAIWSClientMetadata(payload map[string]any, metadataValues map[string]string) {
-	mergeOpenAIWSClientMetadata(payload, metadataValues)
+func setOpenAIWSClientMetadataField(payload map[string]any, key string, value string) {
+	if len(payload) == 0 {
+		return
+	}
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+	if key == "" || value == "" {
+		return
+	}
+
+	switch existing := payload["client_metadata"].(type) {
+	case map[string]any:
+		existing[key] = value
+		payload["client_metadata"] = existing
+	case map[string]string:
+		next := make(map[string]any, len(existing)+1)
+		for k, v := range existing {
+			next[k] = v
+		}
+		next[key] = value
+		payload["client_metadata"] = next
+	default:
+		payload["client_metadata"] = map[string]any{
+			key: value,
+		}
+	}
 }
 
 func setOpenAIWSTurnMetadata(payload map[string]any, turnMetadata string) {
-	if strings.TrimSpace(turnMetadata) == "" {
+	setOpenAIWSClientMetadataField(payload, openAIWSTurnMetadataHeader, turnMetadata)
+}
+
+func (s *OpenAIGatewayService) attachOpenAIWSOAuthClientMetadata(payload map[string]any, c *gin.Context) {
+	if len(payload) == 0 || c == nil {
 		return
 	}
-	setOpenAIWSClientMetadata(payload, map[string]string{
-		openAIWSTurnMetadataHeader: strings.TrimSpace(turnMetadata),
-	})
+	setOpenAIWSClientMetadataField(payload, "x-codex-installation-id", c.GetHeader("x-codex-installation-id"))
+	setOpenAIWSClientMetadataField(payload, "x-codex-beta-features", c.GetHeader("x-codex-beta-features"))
+	setOpenAIWSClientMetadataField(payload, "x-client-request-id", c.GetHeader("x-client-request-id"))
+	if windowID := strings.TrimSpace(c.GetHeader(openAIWSWindowIDHeader)); windowID != "" {
+		setOpenAIWSClientMetadataField(payload, openAIWSWindowIDHeader, isolateOpenAIWSWindowID(getAPIKeyIDFromContext(c), windowID))
+	}
 }
 
 func (s *OpenAIGatewayService) isOpenAIWSStoreRecoveryAllowed(account *Account) bool {
@@ -1821,6 +1777,12 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	}
 	wsHost := "-"
 	wsPath := "-"
+	accountID := int64(0)
+	accountType := ""
+	if account != nil {
+		accountID = account.ID
+		accountType = account.Type
+	}
 	if parsed, parseErr := url.Parse(wsURL); parseErr == nil && parsed != nil {
 		if h := strings.TrimSpace(parsed.Host); h != "" {
 			wsHost = normalizeOpenAIWSLogValue(h)
@@ -1831,13 +1793,16 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	}
 	logOpenAIWSModeDebug(
 		"dial_target account_id=%d account_type=%s ws_host=%s ws_path=%s",
-		account.ID,
-		account.Type,
+		accountID,
+		accountType,
 		wsHost,
 		wsPath,
 	)
 
 	payload := s.buildOpenAIWSCreatePayload(reqBody, account)
+	if account != nil && account.Type == AccountTypeOAuth {
+		s.attachOpenAIWSOAuthClientMetadata(payload, c)
+	}
 	payloadStrategy, removedKeys := applyOpenAIWSRetryPayloadStrategy(payload, attempt)
 	previousResponseID := openAIWSPayloadString(payload, "previous_response_id")
 	previousResponseIDKind := ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
@@ -1862,7 +1827,6 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		turnState = strings.TrimSpace(c.GetHeader(openAIWSTurnStateHeader))
 		turnMetadata = strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader))
 	}
-	setOpenAIWSClientMetadata(payload, buildOpenAIWSClientMetadataValues(c, turnMetadata, account))
 	payloadEventType := openAIWSPayloadString(payload, "type")
 	if payloadEventType == "" {
 		payloadEventType = "response.create"
@@ -2098,6 +2062,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	}
 
 	usage := &OpenAIUsage{}
+	imageCounter := newOpenAIImageOutputCounter()
 	var firstTokenMs *int
 	responseID := ""
 	var finalResponse []byte
@@ -2279,32 +2244,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		if openAIWSEventShouldParseUsage(eventType) {
 			parseOpenAIWSResponseUsageFromCompletedEvent(message, usage)
 		}
-		if eventType == "response.failed" {
-			failedMessage := extractOpenAISSEErrorMessage(message)
-			if failedMessage == "" {
-				failedMessage = "Upstream websocket response failed"
-			}
-			if !wroteDownstream && openAIStreamFailedEventShouldFailover(message, failedMessage) {
-				lease.MarkBroken()
-				return nil, wrapOpenAIWSFallback("response_failed", errors.New(failedMessage))
-			}
-			errCodeRaw, errTypeRaw, _ := parseOpenAIWSResponseFailedErrorFields(message)
-			statusCode := openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
-			setOpsUpstreamError(c, statusCode, failedMessage, "")
-			if reqStream && !clientDisconnected {
-				flushBufferedStreamEvents("response_failed")
-				emitStreamMessage(message, true)
-			}
-			if !reqStream {
-				c.JSON(statusCode, gin.H{
-					"error": gin.H{
-						"type":    "upstream_error",
-						"message": failedMessage,
-					},
-				})
-			}
-			return nil, fmt.Errorf("openai ws response failed: %s", failedMessage)
-		}
+		imageCounter.AddSSEData(message)
 
 		if eventType == "error" {
 			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(message)
@@ -2372,6 +2312,30 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				})
 			}
 			return nil, fmt.Errorf("openai ws error event: %s", errMsg)
+		}
+		if eventType == "response.failed" {
+			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSResponseFailedErrorFields(message)
+			errMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(errMsgRaw))
+			if errMsg == "" {
+				errMsg = "Upstream response failed"
+			}
+			failedErr := &openAIWSResponseFailedError{
+				code:      errCodeRaw,
+				errType:   errTypeRaw,
+				message:   errMsg,
+				retryable: openAIStreamFailedEventShouldFailover(message, errMsg),
+			}
+			lease.MarkBroken()
+			if !wroteDownstream {
+				return nil, wrapOpenAIWSFallback("response_failed", failedErr)
+			}
+			statusCode := openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
+			setOpsUpstreamError(c, statusCode, errMsg, "")
+			if reqStream && !clientDisconnected {
+				flushBufferedStreamEvents("response_failed")
+				emitStreamMessage(message, true)
+			}
+			return nil, fmt.Errorf("upstream response failed: %s", errMsg)
 		}
 
 		if reqStream {
@@ -2477,6 +2441,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		Usage:           *usage,
 		Model:           originalModel,
 		UpstreamModel:   mappedModel,
+		ImageCount:      imageCounter.Count(),
 		ServiceTier:     extractOpenAIServiceTier(reqBody),
 		ReasoningEffort: extractOpenAIReasoningEffort(reqBody, originalModel),
 		Stream:          reqStream,
@@ -2583,6 +2548,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		promptCacheKey     string
 		previousResponseID string
 		originalModel      string
+		imageBillingModel  string
+		imageSizeTier      string
 		payloadBytes       int
 	}
 
@@ -2600,13 +2567,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		switch path {
 		case "type", "model":
 			payload[path] = value
+		case "client_metadata." + openAIWSTurnMetadataHeader:
+			setOpenAIWSTurnMetadata(payload, fmt.Sprintf("%v", value))
 		default:
-			if strings.HasPrefix(path, "client_metadata.") {
-				setOpenAIWSClientMetadata(payload, map[string]string{
-					strings.TrimPrefix(path, "client_metadata."): fmt.Sprintf("%v", value),
-				})
-				break
-			}
 			return nil, err
 		}
 		rebuilt, marshalErr := json.Marshal(payload)
@@ -2669,8 +2632,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				nil,
 			)
 		}
-		for key, value := range buildOpenAIWSClientMetadataValues(c, strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)), account) {
-			next, setErr := applyPayloadMutation(normalized, "client_metadata."+key, value)
+		if turnMetadata := strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)); turnMetadata != "" {
+			next, setErr := applyPayloadMutation(normalized, "client_metadata."+openAIWSTurnMetadataHeader, turnMetadata)
 			if setErr != nil {
 				return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", setErr)
 			}
@@ -2683,6 +2646,19 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", setErr)
 			}
 			normalized = next
+		}
+		imageIntent := IsImageGenerationIntent(openAIResponsesEndpoint, originalModel, normalized)
+		if imageIntent && !GroupAllowsImageGeneration(apiKeyGroup(getAPIKeyFromContext(c))) {
+			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, ImageGenerationPermissionMessage(), nil)
+		}
+		imageBillingModel := ""
+		imageSizeTier := ""
+		if imageIntent {
+			var imageCfgErr error
+			imageBillingModel, imageSizeTier, imageCfgErr = resolveOpenAIResponsesImageBillingConfigFromBody(normalized, originalModel)
+			if imageCfgErr != nil {
+				return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, imageCfgErr.Error(), imageCfgErr)
+			}
 		}
 
 		// Apply OpenAI Fast Policy on the response.create frame using the same
@@ -2729,6 +2705,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			promptCacheKey:     promptCacheKey,
 			previousResponseID: previousResponseID,
 			originalModel:      originalModel,
+			imageBillingModel:  imageBillingModel,
+			imageSizeTier:      imageSizeTier,
 			payloadBytes:       len(normalized),
 		}, nil
 	}
@@ -2763,7 +2741,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 	}
 
-	isCodexCLI := isOpenAICodexOfficialClientRequest(c)
+	isCodexCLI := openai.IsCodexOfficialClientByHeaders(c.GetHeader("User-Agent"), c.GetHeader("originator")) || (s.cfg != nil && s.cfg.Gateway.ForceCodexCLI)
 	wsHeaders, _ := s.buildOpenAIWSHeaders(c, account, token, wsDecision, isCodexCLI, turnState, strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)), firstPayload.promptCacheKey)
 	baseAcquireReq := openAIWSAcquireRequest{
 		Account: account,
@@ -2930,7 +2908,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		return payload, nil
 	}
 
-	sendAndRelay := func(turn int, lease *openAIWSConnLease, payload []byte, payloadBytes int, originalModel string) (*OpenAIForwardResult, error) {
+	sendAndRelay := func(turn int, lease *openAIWSConnLease, payload []byte, payloadBytes int, originalModel string, imageBillingModel string, imageSizeTier string) (*OpenAIForwardResult, error) {
 		if lease == nil {
 			return nil, errors.New("upstream websocket lease is nil")
 		}
@@ -2955,6 +2933,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 
 		responseID := ""
 		usage := OpenAIUsage{}
+		imageCounter := newOpenAIImageOutputCounter()
 		var firstTokenMs *int
 		reqStream := openAIWSPayloadBoolFromRaw(payload, "stream", true)
 		turnPreviousResponseID := openAIWSPayloadStringFromRaw(payload, "previous_response_id")
@@ -3076,6 +3055,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			if openAIWSEventShouldParseUsage(eventType) {
 				parseOpenAIWSResponseUsageFromCompletedEvent(upstreamMessage, &usage)
 			}
+			imageCounter.AddSSEData(upstreamMessage)
 
 			if !clientDisconnected {
 				if needModelReplace && len(mappedModelBytes) > 0 && openAIWSEventMayContainModel(eventType) && bytes.Contains(upstreamMessage, mappedModelBytes) {
@@ -3135,7 +3115,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 						clientDisconnected,
 					)
 				}
-				return &OpenAIForwardResult{
+				imageCount := imageCounter.Count()
+				result := &OpenAIForwardResult{
 					RequestID:       responseID,
 					Usage:           usage,
 					Model:           originalModel,
@@ -3147,13 +3128,21 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					ResponseHeaders: lease.HandshakeHeaders(),
 					Duration:        time.Since(turnStart),
 					FirstTokenMs:    firstTokenMs,
-				}, nil
+				}
+				if imageCount > 0 {
+					result.ImageCount = imageCount
+					result.ImageSize = imageSizeTier
+					result.BillingModel = imageBillingModel
+				}
+				return result, nil
 			}
 		}
 	}
 
 	currentPayload := firstPayload.payloadRaw
 	currentOriginalModel := firstPayload.originalModel
+	currentImageBillingModel := firstPayload.imageBillingModel
+	currentImageSizeTier := firstPayload.imageSizeTier
 	currentPayloadBytes := firstPayload.payloadBytes
 	isStrictAffinityTurn := func(payload []byte) bool {
 		if !storeDisabled {
@@ -3240,6 +3229,12 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			return false
 		}
 		if turnPrevRecoveryTried || !s.openAIWSIngressPreviousResponseRecoveryEnabled() {
+			return false
+		}
+		// 携带 function_call_output 的请求不能丢弃 previous_response_id：
+		// 上游 API 需要 response chain 来匹配 tool_result 与之前的 tool_use，
+		// 丢弃后会导致 "No tool call found for function call output" 400 错误。
+		if gjson.GetBytes(currentPayload, `input.#(type=="function_call_output")`).Exists() {
 			return false
 		}
 		if isStrictAffinityTurn(currentPayload) {
@@ -3508,7 +3503,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					truncateOpenAIWSLogValue(pingErr.Error(), openAIWSLogValueMaxLen),
 				)
 				if forcePreferredConn {
-					if !turnPrevRecoveryTried && currentPreviousResponseID != "" {
+					// 携带 function_call_output 的请求不能丢弃 previous_response_id：
+					// 上游 API 需要 response chain 来匹配 tool_result 与之前的 tool_use，
+					// 丢弃后会导致 "No tool call found for function call output" 400 错误。
+					hasFCOutput := gjson.GetBytes(currentPayload, `input.#(type=="function_call_output")`).Exists()
+					if !turnPrevRecoveryTried && currentPreviousResponseID != "" && !hasFCOutput {
 						updatedPayload, removed, dropErr := dropPreviousResponseIDFromRawPayload(currentPayload)
 						if dropErr != nil || !removed {
 							reason := "not_removed"
@@ -3598,7 +3597,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			)
 		}
 
-		result, relayErr := sendAndRelay(turn, sessionLease, currentPayload, currentPayloadBytes, currentOriginalModel)
+		result, relayErr := sendAndRelay(turn, sessionLease, currentPayload, currentPayloadBytes, currentOriginalModel, currentImageBillingModel, currentImageSizeTier)
 		if relayErr != nil {
 			lastTurnClean = false
 			if recoverIngressPrevResponseNotFound(relayErr, turn, connID) {
@@ -3720,6 +3719,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		currentPayload = nextPayload.payloadRaw
 		currentOriginalModel = nextPayload.originalModel
+		currentImageBillingModel = nextPayload.imageBillingModel
+		currentImageSizeTier = nextPayload.imageSizeTier
 		currentPayloadBytes = nextPayload.payloadBytes
 		storeDisabled = s.isOpenAIWSStoreDisabledInRequestRaw(currentPayload, account)
 		if !storeDisabled {

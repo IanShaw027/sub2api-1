@@ -24,6 +24,12 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aiprompttemplateversion"
 	"github.com/Wei-Shaw/sub2api/ent/aisession"
 	"github.com/Wei-Shaw/sub2api/ent/aisessionmessage"
+	"github.com/Wei-Shaw/sub2api/ent/aiskill"
+	"github.com/Wei-Shaw/sub2api/ent/aiskilllike"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillreview"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillrun"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillsettlement"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillversion"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
@@ -79,6 +85,18 @@ type Client struct {
 	AISession *AISessionClient
 	// AISessionMessage is the client for interacting with the AISessionMessage builders.
 	AISessionMessage *AISessionMessageClient
+	// AISkill is the client for interacting with the AISkill builders.
+	AISkill *AISkillClient
+	// AISkillLike is the client for interacting with the AISkillLike builders.
+	AISkillLike *AISkillLikeClient
+	// AISkillReview is the client for interacting with the AISkillReview builders.
+	AISkillReview *AISkillReviewClient
+	// AISkillRun is the client for interacting with the AISkillRun builders.
+	AISkillRun *AISkillRunClient
+	// AISkillSettlement is the client for interacting with the AISkillSettlement builders.
+	AISkillSettlement *AISkillSettlementClient
+	// AISkillVersion is the client for interacting with the AISkillVersion builders.
+	AISkillVersion *AISkillVersionClient
 	// APIKey is the client for interacting with the APIKey builders.
 	APIKey *APIKeyClient
 	// Account is the client for interacting with the Account builders.
@@ -165,6 +183,12 @@ func (c *Client) init() {
 	c.AIPromptTemplateVersion = NewAIPromptTemplateVersionClient(c.config)
 	c.AISession = NewAISessionClient(c.config)
 	c.AISessionMessage = NewAISessionMessageClient(c.config)
+	c.AISkill = NewAISkillClient(c.config)
+	c.AISkillLike = NewAISkillLikeClient(c.config)
+	c.AISkillReview = NewAISkillReviewClient(c.config)
+	c.AISkillRun = NewAISkillRunClient(c.config)
+	c.AISkillSettlement = NewAISkillSettlementClient(c.config)
+	c.AISkillVersion = NewAISkillVersionClient(c.config)
 	c.APIKey = NewAPIKeyClient(c.config)
 	c.Account = NewAccountClient(c.config)
 	c.AccountGroup = NewAccountGroupClient(c.config)
@@ -298,6 +322,12 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		AIPromptTemplateVersion:       NewAIPromptTemplateVersionClient(cfg),
 		AISession:                     NewAISessionClient(cfg),
 		AISessionMessage:              NewAISessionMessageClient(cfg),
+		AISkill:                       NewAISkillClient(cfg),
+		AISkillLike:                   NewAISkillLikeClient(cfg),
+		AISkillReview:                 NewAISkillReviewClient(cfg),
+		AISkillRun:                    NewAISkillRunClient(cfg),
+		AISkillSettlement:             NewAISkillSettlementClient(cfg),
+		AISkillVersion:                NewAISkillVersionClient(cfg),
 		APIKey:                        NewAPIKeyClient(cfg),
 		Account:                       NewAccountClient(cfg),
 		AccountGroup:                  NewAccountGroupClient(cfg),
@@ -358,6 +388,12 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		AIPromptTemplateVersion:       NewAIPromptTemplateVersionClient(cfg),
 		AISession:                     NewAISessionClient(cfg),
 		AISessionMessage:              NewAISessionMessageClient(cfg),
+		AISkill:                       NewAISkillClient(cfg),
+		AISkillLike:                   NewAISkillLikeClient(cfg),
+		AISkillReview:                 NewAISkillReviewClient(cfg),
+		AISkillRun:                    NewAISkillRunClient(cfg),
+		AISkillSettlement:             NewAISkillSettlementClient(cfg),
+		AISkillVersion:                NewAISkillVersionClient(cfg),
 		APIKey:                        NewAPIKeyClient(cfg),
 		Account:                       NewAccountClient(cfg),
 		AccountGroup:                  NewAccountGroupClient(cfg),
@@ -422,16 +458,17 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.AIAsset, c.AIAuditLog, c.AIGenerationJob, c.AIPromptTemplate,
-		c.AIPromptTemplateVersion, c.AISession, c.AISessionMessage, c.APIKey,
-		c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead, c.AuthIdentity,
-		c.AuthIdentityChannel, c.ChannelMonitor, c.ChannelMonitorDailyRollup,
-		c.ChannelMonitorHistory, c.ChannelMonitorRequestTemplate,
-		c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
-		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
-		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
-		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
-		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
-		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
+		c.AIPromptTemplateVersion, c.AISession, c.AISessionMessage, c.AISkill,
+		c.AISkillLike, c.AISkillReview, c.AISkillRun, c.AISkillSettlement,
+		c.AISkillVersion, c.APIKey, c.Account, c.AccountGroup, c.Announcement,
+		c.AnnouncementRead, c.AuthIdentity, c.AuthIdentityChannel, c.ChannelMonitor,
+		c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
+		c.ChannelMonitorRequestTemplate, c.ErrorPassthroughRule, c.Group,
+		c.IdempotencyRecord, c.IdentityAdoptionDecision, c.PaymentAuditLog,
+		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
+		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
+		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
+		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserSubscription,
 	} {
 		n.Use(hooks...)
@@ -443,16 +480,17 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.AIAsset, c.AIAuditLog, c.AIGenerationJob, c.AIPromptTemplate,
-		c.AIPromptTemplateVersion, c.AISession, c.AISessionMessage, c.APIKey,
-		c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead, c.AuthIdentity,
-		c.AuthIdentityChannel, c.ChannelMonitor, c.ChannelMonitorDailyRollup,
-		c.ChannelMonitorHistory, c.ChannelMonitorRequestTemplate,
-		c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
-		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
-		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
-		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
-		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
-		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
+		c.AIPromptTemplateVersion, c.AISession, c.AISessionMessage, c.AISkill,
+		c.AISkillLike, c.AISkillReview, c.AISkillRun, c.AISkillSettlement,
+		c.AISkillVersion, c.APIKey, c.Account, c.AccountGroup, c.Announcement,
+		c.AnnouncementRead, c.AuthIdentity, c.AuthIdentityChannel, c.ChannelMonitor,
+		c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
+		c.ChannelMonitorRequestTemplate, c.ErrorPassthroughRule, c.Group,
+		c.IdempotencyRecord, c.IdentityAdoptionDecision, c.PaymentAuditLog,
+		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
+		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
+		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
+		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
@@ -476,6 +514,18 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.AISession.mutate(ctx, m)
 	case *AISessionMessageMutation:
 		return c.AISessionMessage.mutate(ctx, m)
+	case *AISkillMutation:
+		return c.AISkill.mutate(ctx, m)
+	case *AISkillLikeMutation:
+		return c.AISkillLike.mutate(ctx, m)
+	case *AISkillReviewMutation:
+		return c.AISkillReview.mutate(ctx, m)
+	case *AISkillRunMutation:
+		return c.AISkillRun.mutate(ctx, m)
+	case *AISkillSettlementMutation:
+		return c.AISkillSettlement.mutate(ctx, m)
+	case *AISkillVersionMutation:
+		return c.AISkillVersion.mutate(ctx, m)
 	case *APIKeyMutation:
 		return c.APIKey.mutate(ctx, m)
 	case *AccountMutation:
@@ -1707,6 +1757,1096 @@ func (c *AISessionMessageClient) mutate(ctx context.Context, m *AISessionMessage
 		return (&AISessionMessageDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown AISessionMessage mutation op: %q", m.Op())
+	}
+}
+
+// AISkillClient is a client for the AISkill schema.
+type AISkillClient struct {
+	config
+}
+
+// NewAISkillClient returns a client for the AISkill from the given config.
+func NewAISkillClient(c config) *AISkillClient {
+	return &AISkillClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `aiskill.Hooks(f(g(h())))`.
+func (c *AISkillClient) Use(hooks ...Hook) {
+	c.hooks.AISkill = append(c.hooks.AISkill, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `aiskill.Intercept(f(g(h())))`.
+func (c *AISkillClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AISkill = append(c.inters.AISkill, interceptors...)
+}
+
+// Create returns a builder for creating a AISkill entity.
+func (c *AISkillClient) Create() *AISkillCreate {
+	mutation := newAISkillMutation(c.config, OpCreate)
+	return &AISkillCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AISkill entities.
+func (c *AISkillClient) CreateBulk(builders ...*AISkillCreate) *AISkillCreateBulk {
+	return &AISkillCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AISkillClient) MapCreateBulk(slice any, setFunc func(*AISkillCreate, int)) *AISkillCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AISkillCreateBulk{err: fmt.Errorf("calling to AISkillClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AISkillCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AISkillCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AISkill.
+func (c *AISkillClient) Update() *AISkillUpdate {
+	mutation := newAISkillMutation(c.config, OpUpdate)
+	return &AISkillUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AISkillClient) UpdateOne(_m *AISkill) *AISkillUpdateOne {
+	mutation := newAISkillMutation(c.config, OpUpdateOne, withAISkill(_m))
+	return &AISkillUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AISkillClient) UpdateOneID(id int64) *AISkillUpdateOne {
+	mutation := newAISkillMutation(c.config, OpUpdateOne, withAISkillID(id))
+	return &AISkillUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AISkill.
+func (c *AISkillClient) Delete() *AISkillDelete {
+	mutation := newAISkillMutation(c.config, OpDelete)
+	return &AISkillDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AISkillClient) DeleteOne(_m *AISkill) *AISkillDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AISkillClient) DeleteOneID(id int64) *AISkillDeleteOne {
+	builder := c.Delete().Where(aiskill.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AISkillDeleteOne{builder}
+}
+
+// Query returns a query builder for AISkill.
+func (c *AISkillClient) Query() *AISkillQuery {
+	return &AISkillQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAISkill},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AISkill entity by its id.
+func (c *AISkillClient) Get(ctx context.Context, id int64) (*AISkill, error) {
+	return c.Query().Where(aiskill.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AISkillClient) GetX(ctx context.Context, id int64) *AISkill {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryVersions queries the versions edge of a AISkill.
+func (c *AISkillClient) QueryVersions(_m *AISkill) *AISkillVersionQuery {
+	query := (&AISkillVersionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskill.Table, aiskill.FieldID, id),
+			sqlgraph.To(aiskillversion.Table, aiskillversion.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, aiskill.VersionsTable, aiskill.VersionsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryRuns queries the runs edge of a AISkill.
+func (c *AISkillClient) QueryRuns(_m *AISkill) *AISkillRunQuery {
+	query := (&AISkillRunClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskill.Table, aiskill.FieldID, id),
+			sqlgraph.To(aiskillrun.Table, aiskillrun.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, aiskill.RunsTable, aiskill.RunsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryReviews queries the reviews edge of a AISkill.
+func (c *AISkillClient) QueryReviews(_m *AISkill) *AISkillReviewQuery {
+	query := (&AISkillReviewClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskill.Table, aiskill.FieldID, id),
+			sqlgraph.To(aiskillreview.Table, aiskillreview.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, aiskill.ReviewsTable, aiskill.ReviewsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryLikes queries the likes edge of a AISkill.
+func (c *AISkillClient) QueryLikes(_m *AISkill) *AISkillLikeQuery {
+	query := (&AISkillLikeClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskill.Table, aiskill.FieldID, id),
+			sqlgraph.To(aiskilllike.Table, aiskilllike.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, aiskill.LikesTable, aiskill.LikesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QuerySettlements queries the settlements edge of a AISkill.
+func (c *AISkillClient) QuerySettlements(_m *AISkill) *AISkillSettlementQuery {
+	query := (&AISkillSettlementClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskill.Table, aiskill.FieldID, id),
+			sqlgraph.To(aiskillsettlement.Table, aiskillsettlement.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, aiskill.SettlementsTable, aiskill.SettlementsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *AISkillClient) Hooks() []Hook {
+	hooks := c.hooks.AISkill
+	return append(hooks[:len(hooks):len(hooks)], aiskill.Hooks[:]...)
+}
+
+// Interceptors returns the client interceptors.
+func (c *AISkillClient) Interceptors() []Interceptor {
+	inters := c.inters.AISkill
+	return append(inters[:len(inters):len(inters)], aiskill.Interceptors[:]...)
+}
+
+func (c *AISkillClient) mutate(ctx context.Context, m *AISkillMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AISkillCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AISkillUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AISkillUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AISkillDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AISkill mutation op: %q", m.Op())
+	}
+}
+
+// AISkillLikeClient is a client for the AISkillLike schema.
+type AISkillLikeClient struct {
+	config
+}
+
+// NewAISkillLikeClient returns a client for the AISkillLike from the given config.
+func NewAISkillLikeClient(c config) *AISkillLikeClient {
+	return &AISkillLikeClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `aiskilllike.Hooks(f(g(h())))`.
+func (c *AISkillLikeClient) Use(hooks ...Hook) {
+	c.hooks.AISkillLike = append(c.hooks.AISkillLike, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `aiskilllike.Intercept(f(g(h())))`.
+func (c *AISkillLikeClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AISkillLike = append(c.inters.AISkillLike, interceptors...)
+}
+
+// Create returns a builder for creating a AISkillLike entity.
+func (c *AISkillLikeClient) Create() *AISkillLikeCreate {
+	mutation := newAISkillLikeMutation(c.config, OpCreate)
+	return &AISkillLikeCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AISkillLike entities.
+func (c *AISkillLikeClient) CreateBulk(builders ...*AISkillLikeCreate) *AISkillLikeCreateBulk {
+	return &AISkillLikeCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AISkillLikeClient) MapCreateBulk(slice any, setFunc func(*AISkillLikeCreate, int)) *AISkillLikeCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AISkillLikeCreateBulk{err: fmt.Errorf("calling to AISkillLikeClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AISkillLikeCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AISkillLikeCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AISkillLike.
+func (c *AISkillLikeClient) Update() *AISkillLikeUpdate {
+	mutation := newAISkillLikeMutation(c.config, OpUpdate)
+	return &AISkillLikeUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AISkillLikeClient) UpdateOne(_m *AISkillLike) *AISkillLikeUpdateOne {
+	mutation := newAISkillLikeMutation(c.config, OpUpdateOne, withAISkillLike(_m))
+	return &AISkillLikeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AISkillLikeClient) UpdateOneID(id int64) *AISkillLikeUpdateOne {
+	mutation := newAISkillLikeMutation(c.config, OpUpdateOne, withAISkillLikeID(id))
+	return &AISkillLikeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AISkillLike.
+func (c *AISkillLikeClient) Delete() *AISkillLikeDelete {
+	mutation := newAISkillLikeMutation(c.config, OpDelete)
+	return &AISkillLikeDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AISkillLikeClient) DeleteOne(_m *AISkillLike) *AISkillLikeDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AISkillLikeClient) DeleteOneID(id int64) *AISkillLikeDeleteOne {
+	builder := c.Delete().Where(aiskilllike.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AISkillLikeDeleteOne{builder}
+}
+
+// Query returns a query builder for AISkillLike.
+func (c *AISkillLikeClient) Query() *AISkillLikeQuery {
+	return &AISkillLikeQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAISkillLike},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AISkillLike entity by its id.
+func (c *AISkillLikeClient) Get(ctx context.Context, id int64) (*AISkillLike, error) {
+	return c.Query().Where(aiskilllike.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AISkillLikeClient) GetX(ctx context.Context, id int64) *AISkillLike {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QuerySkill queries the skill edge of a AISkillLike.
+func (c *AISkillLikeClient) QuerySkill(_m *AISkillLike) *AISkillQuery {
+	query := (&AISkillClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskilllike.Table, aiskilllike.FieldID, id),
+			sqlgraph.To(aiskill.Table, aiskill.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aiskilllike.SkillTable, aiskilllike.SkillColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *AISkillLikeClient) Hooks() []Hook {
+	return c.hooks.AISkillLike
+}
+
+// Interceptors returns the client interceptors.
+func (c *AISkillLikeClient) Interceptors() []Interceptor {
+	return c.inters.AISkillLike
+}
+
+func (c *AISkillLikeClient) mutate(ctx context.Context, m *AISkillLikeMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AISkillLikeCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AISkillLikeUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AISkillLikeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AISkillLikeDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AISkillLike mutation op: %q", m.Op())
+	}
+}
+
+// AISkillReviewClient is a client for the AISkillReview schema.
+type AISkillReviewClient struct {
+	config
+}
+
+// NewAISkillReviewClient returns a client for the AISkillReview from the given config.
+func NewAISkillReviewClient(c config) *AISkillReviewClient {
+	return &AISkillReviewClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `aiskillreview.Hooks(f(g(h())))`.
+func (c *AISkillReviewClient) Use(hooks ...Hook) {
+	c.hooks.AISkillReview = append(c.hooks.AISkillReview, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `aiskillreview.Intercept(f(g(h())))`.
+func (c *AISkillReviewClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AISkillReview = append(c.inters.AISkillReview, interceptors...)
+}
+
+// Create returns a builder for creating a AISkillReview entity.
+func (c *AISkillReviewClient) Create() *AISkillReviewCreate {
+	mutation := newAISkillReviewMutation(c.config, OpCreate)
+	return &AISkillReviewCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AISkillReview entities.
+func (c *AISkillReviewClient) CreateBulk(builders ...*AISkillReviewCreate) *AISkillReviewCreateBulk {
+	return &AISkillReviewCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AISkillReviewClient) MapCreateBulk(slice any, setFunc func(*AISkillReviewCreate, int)) *AISkillReviewCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AISkillReviewCreateBulk{err: fmt.Errorf("calling to AISkillReviewClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AISkillReviewCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AISkillReviewCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AISkillReview.
+func (c *AISkillReviewClient) Update() *AISkillReviewUpdate {
+	mutation := newAISkillReviewMutation(c.config, OpUpdate)
+	return &AISkillReviewUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AISkillReviewClient) UpdateOne(_m *AISkillReview) *AISkillReviewUpdateOne {
+	mutation := newAISkillReviewMutation(c.config, OpUpdateOne, withAISkillReview(_m))
+	return &AISkillReviewUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AISkillReviewClient) UpdateOneID(id int64) *AISkillReviewUpdateOne {
+	mutation := newAISkillReviewMutation(c.config, OpUpdateOne, withAISkillReviewID(id))
+	return &AISkillReviewUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AISkillReview.
+func (c *AISkillReviewClient) Delete() *AISkillReviewDelete {
+	mutation := newAISkillReviewMutation(c.config, OpDelete)
+	return &AISkillReviewDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AISkillReviewClient) DeleteOne(_m *AISkillReview) *AISkillReviewDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AISkillReviewClient) DeleteOneID(id int64) *AISkillReviewDeleteOne {
+	builder := c.Delete().Where(aiskillreview.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AISkillReviewDeleteOne{builder}
+}
+
+// Query returns a query builder for AISkillReview.
+func (c *AISkillReviewClient) Query() *AISkillReviewQuery {
+	return &AISkillReviewQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAISkillReview},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AISkillReview entity by its id.
+func (c *AISkillReviewClient) Get(ctx context.Context, id int64) (*AISkillReview, error) {
+	return c.Query().Where(aiskillreview.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AISkillReviewClient) GetX(ctx context.Context, id int64) *AISkillReview {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QuerySkill queries the skill edge of a AISkillReview.
+func (c *AISkillReviewClient) QuerySkill(_m *AISkillReview) *AISkillQuery {
+	query := (&AISkillClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskillreview.Table, aiskillreview.FieldID, id),
+			sqlgraph.To(aiskill.Table, aiskill.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aiskillreview.SkillTable, aiskillreview.SkillColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryVersion queries the version edge of a AISkillReview.
+func (c *AISkillReviewClient) QueryVersion(_m *AISkillReview) *AISkillVersionQuery {
+	query := (&AISkillVersionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskillreview.Table, aiskillreview.FieldID, id),
+			sqlgraph.To(aiskillversion.Table, aiskillversion.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aiskillreview.VersionTable, aiskillreview.VersionColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *AISkillReviewClient) Hooks() []Hook {
+	return c.hooks.AISkillReview
+}
+
+// Interceptors returns the client interceptors.
+func (c *AISkillReviewClient) Interceptors() []Interceptor {
+	return c.inters.AISkillReview
+}
+
+func (c *AISkillReviewClient) mutate(ctx context.Context, m *AISkillReviewMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AISkillReviewCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AISkillReviewUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AISkillReviewUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AISkillReviewDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AISkillReview mutation op: %q", m.Op())
+	}
+}
+
+// AISkillRunClient is a client for the AISkillRun schema.
+type AISkillRunClient struct {
+	config
+}
+
+// NewAISkillRunClient returns a client for the AISkillRun from the given config.
+func NewAISkillRunClient(c config) *AISkillRunClient {
+	return &AISkillRunClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `aiskillrun.Hooks(f(g(h())))`.
+func (c *AISkillRunClient) Use(hooks ...Hook) {
+	c.hooks.AISkillRun = append(c.hooks.AISkillRun, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `aiskillrun.Intercept(f(g(h())))`.
+func (c *AISkillRunClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AISkillRun = append(c.inters.AISkillRun, interceptors...)
+}
+
+// Create returns a builder for creating a AISkillRun entity.
+func (c *AISkillRunClient) Create() *AISkillRunCreate {
+	mutation := newAISkillRunMutation(c.config, OpCreate)
+	return &AISkillRunCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AISkillRun entities.
+func (c *AISkillRunClient) CreateBulk(builders ...*AISkillRunCreate) *AISkillRunCreateBulk {
+	return &AISkillRunCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AISkillRunClient) MapCreateBulk(slice any, setFunc func(*AISkillRunCreate, int)) *AISkillRunCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AISkillRunCreateBulk{err: fmt.Errorf("calling to AISkillRunClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AISkillRunCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AISkillRunCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AISkillRun.
+func (c *AISkillRunClient) Update() *AISkillRunUpdate {
+	mutation := newAISkillRunMutation(c.config, OpUpdate)
+	return &AISkillRunUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AISkillRunClient) UpdateOne(_m *AISkillRun) *AISkillRunUpdateOne {
+	mutation := newAISkillRunMutation(c.config, OpUpdateOne, withAISkillRun(_m))
+	return &AISkillRunUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AISkillRunClient) UpdateOneID(id int64) *AISkillRunUpdateOne {
+	mutation := newAISkillRunMutation(c.config, OpUpdateOne, withAISkillRunID(id))
+	return &AISkillRunUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AISkillRun.
+func (c *AISkillRunClient) Delete() *AISkillRunDelete {
+	mutation := newAISkillRunMutation(c.config, OpDelete)
+	return &AISkillRunDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AISkillRunClient) DeleteOne(_m *AISkillRun) *AISkillRunDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AISkillRunClient) DeleteOneID(id int64) *AISkillRunDeleteOne {
+	builder := c.Delete().Where(aiskillrun.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AISkillRunDeleteOne{builder}
+}
+
+// Query returns a query builder for AISkillRun.
+func (c *AISkillRunClient) Query() *AISkillRunQuery {
+	return &AISkillRunQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAISkillRun},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AISkillRun entity by its id.
+func (c *AISkillRunClient) Get(ctx context.Context, id int64) (*AISkillRun, error) {
+	return c.Query().Where(aiskillrun.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AISkillRunClient) GetX(ctx context.Context, id int64) *AISkillRun {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QuerySkill queries the skill edge of a AISkillRun.
+func (c *AISkillRunClient) QuerySkill(_m *AISkillRun) *AISkillQuery {
+	query := (&AISkillClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskillrun.Table, aiskillrun.FieldID, id),
+			sqlgraph.To(aiskill.Table, aiskill.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aiskillrun.SkillTable, aiskillrun.SkillColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryVersion queries the version edge of a AISkillRun.
+func (c *AISkillRunClient) QueryVersion(_m *AISkillRun) *AISkillVersionQuery {
+	query := (&AISkillVersionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskillrun.Table, aiskillrun.FieldID, id),
+			sqlgraph.To(aiskillversion.Table, aiskillversion.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aiskillrun.VersionTable, aiskillrun.VersionColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QuerySettlements queries the settlements edge of a AISkillRun.
+func (c *AISkillRunClient) QuerySettlements(_m *AISkillRun) *AISkillSettlementQuery {
+	query := (&AISkillSettlementClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskillrun.Table, aiskillrun.FieldID, id),
+			sqlgraph.To(aiskillsettlement.Table, aiskillsettlement.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, aiskillrun.SettlementsTable, aiskillrun.SettlementsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *AISkillRunClient) Hooks() []Hook {
+	return c.hooks.AISkillRun
+}
+
+// Interceptors returns the client interceptors.
+func (c *AISkillRunClient) Interceptors() []Interceptor {
+	return c.inters.AISkillRun
+}
+
+func (c *AISkillRunClient) mutate(ctx context.Context, m *AISkillRunMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AISkillRunCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AISkillRunUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AISkillRunUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AISkillRunDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AISkillRun mutation op: %q", m.Op())
+	}
+}
+
+// AISkillSettlementClient is a client for the AISkillSettlement schema.
+type AISkillSettlementClient struct {
+	config
+}
+
+// NewAISkillSettlementClient returns a client for the AISkillSettlement from the given config.
+func NewAISkillSettlementClient(c config) *AISkillSettlementClient {
+	return &AISkillSettlementClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `aiskillsettlement.Hooks(f(g(h())))`.
+func (c *AISkillSettlementClient) Use(hooks ...Hook) {
+	c.hooks.AISkillSettlement = append(c.hooks.AISkillSettlement, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `aiskillsettlement.Intercept(f(g(h())))`.
+func (c *AISkillSettlementClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AISkillSettlement = append(c.inters.AISkillSettlement, interceptors...)
+}
+
+// Create returns a builder for creating a AISkillSettlement entity.
+func (c *AISkillSettlementClient) Create() *AISkillSettlementCreate {
+	mutation := newAISkillSettlementMutation(c.config, OpCreate)
+	return &AISkillSettlementCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AISkillSettlement entities.
+func (c *AISkillSettlementClient) CreateBulk(builders ...*AISkillSettlementCreate) *AISkillSettlementCreateBulk {
+	return &AISkillSettlementCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AISkillSettlementClient) MapCreateBulk(slice any, setFunc func(*AISkillSettlementCreate, int)) *AISkillSettlementCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AISkillSettlementCreateBulk{err: fmt.Errorf("calling to AISkillSettlementClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AISkillSettlementCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AISkillSettlementCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AISkillSettlement.
+func (c *AISkillSettlementClient) Update() *AISkillSettlementUpdate {
+	mutation := newAISkillSettlementMutation(c.config, OpUpdate)
+	return &AISkillSettlementUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AISkillSettlementClient) UpdateOne(_m *AISkillSettlement) *AISkillSettlementUpdateOne {
+	mutation := newAISkillSettlementMutation(c.config, OpUpdateOne, withAISkillSettlement(_m))
+	return &AISkillSettlementUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AISkillSettlementClient) UpdateOneID(id int64) *AISkillSettlementUpdateOne {
+	mutation := newAISkillSettlementMutation(c.config, OpUpdateOne, withAISkillSettlementID(id))
+	return &AISkillSettlementUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AISkillSettlement.
+func (c *AISkillSettlementClient) Delete() *AISkillSettlementDelete {
+	mutation := newAISkillSettlementMutation(c.config, OpDelete)
+	return &AISkillSettlementDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AISkillSettlementClient) DeleteOne(_m *AISkillSettlement) *AISkillSettlementDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AISkillSettlementClient) DeleteOneID(id int64) *AISkillSettlementDeleteOne {
+	builder := c.Delete().Where(aiskillsettlement.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AISkillSettlementDeleteOne{builder}
+}
+
+// Query returns a query builder for AISkillSettlement.
+func (c *AISkillSettlementClient) Query() *AISkillSettlementQuery {
+	return &AISkillSettlementQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAISkillSettlement},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AISkillSettlement entity by its id.
+func (c *AISkillSettlementClient) Get(ctx context.Context, id int64) (*AISkillSettlement, error) {
+	return c.Query().Where(aiskillsettlement.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AISkillSettlementClient) GetX(ctx context.Context, id int64) *AISkillSettlement {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QuerySkill queries the skill edge of a AISkillSettlement.
+func (c *AISkillSettlementClient) QuerySkill(_m *AISkillSettlement) *AISkillQuery {
+	query := (&AISkillClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskillsettlement.Table, aiskillsettlement.FieldID, id),
+			sqlgraph.To(aiskill.Table, aiskill.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aiskillsettlement.SkillTable, aiskillsettlement.SkillColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryVersion queries the version edge of a AISkillSettlement.
+func (c *AISkillSettlementClient) QueryVersion(_m *AISkillSettlement) *AISkillVersionQuery {
+	query := (&AISkillVersionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskillsettlement.Table, aiskillsettlement.FieldID, id),
+			sqlgraph.To(aiskillversion.Table, aiskillversion.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aiskillsettlement.VersionTable, aiskillsettlement.VersionColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryRun queries the run edge of a AISkillSettlement.
+func (c *AISkillSettlementClient) QueryRun(_m *AISkillSettlement) *AISkillRunQuery {
+	query := (&AISkillRunClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskillsettlement.Table, aiskillsettlement.FieldID, id),
+			sqlgraph.To(aiskillrun.Table, aiskillrun.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aiskillsettlement.RunTable, aiskillsettlement.RunColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *AISkillSettlementClient) Hooks() []Hook {
+	return c.hooks.AISkillSettlement
+}
+
+// Interceptors returns the client interceptors.
+func (c *AISkillSettlementClient) Interceptors() []Interceptor {
+	return c.inters.AISkillSettlement
+}
+
+func (c *AISkillSettlementClient) mutate(ctx context.Context, m *AISkillSettlementMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AISkillSettlementCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AISkillSettlementUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AISkillSettlementUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AISkillSettlementDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AISkillSettlement mutation op: %q", m.Op())
+	}
+}
+
+// AISkillVersionClient is a client for the AISkillVersion schema.
+type AISkillVersionClient struct {
+	config
+}
+
+// NewAISkillVersionClient returns a client for the AISkillVersion from the given config.
+func NewAISkillVersionClient(c config) *AISkillVersionClient {
+	return &AISkillVersionClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `aiskillversion.Hooks(f(g(h())))`.
+func (c *AISkillVersionClient) Use(hooks ...Hook) {
+	c.hooks.AISkillVersion = append(c.hooks.AISkillVersion, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `aiskillversion.Intercept(f(g(h())))`.
+func (c *AISkillVersionClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AISkillVersion = append(c.inters.AISkillVersion, interceptors...)
+}
+
+// Create returns a builder for creating a AISkillVersion entity.
+func (c *AISkillVersionClient) Create() *AISkillVersionCreate {
+	mutation := newAISkillVersionMutation(c.config, OpCreate)
+	return &AISkillVersionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AISkillVersion entities.
+func (c *AISkillVersionClient) CreateBulk(builders ...*AISkillVersionCreate) *AISkillVersionCreateBulk {
+	return &AISkillVersionCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AISkillVersionClient) MapCreateBulk(slice any, setFunc func(*AISkillVersionCreate, int)) *AISkillVersionCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AISkillVersionCreateBulk{err: fmt.Errorf("calling to AISkillVersionClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AISkillVersionCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AISkillVersionCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AISkillVersion.
+func (c *AISkillVersionClient) Update() *AISkillVersionUpdate {
+	mutation := newAISkillVersionMutation(c.config, OpUpdate)
+	return &AISkillVersionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AISkillVersionClient) UpdateOne(_m *AISkillVersion) *AISkillVersionUpdateOne {
+	mutation := newAISkillVersionMutation(c.config, OpUpdateOne, withAISkillVersion(_m))
+	return &AISkillVersionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AISkillVersionClient) UpdateOneID(id int64) *AISkillVersionUpdateOne {
+	mutation := newAISkillVersionMutation(c.config, OpUpdateOne, withAISkillVersionID(id))
+	return &AISkillVersionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AISkillVersion.
+func (c *AISkillVersionClient) Delete() *AISkillVersionDelete {
+	mutation := newAISkillVersionMutation(c.config, OpDelete)
+	return &AISkillVersionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AISkillVersionClient) DeleteOne(_m *AISkillVersion) *AISkillVersionDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AISkillVersionClient) DeleteOneID(id int64) *AISkillVersionDeleteOne {
+	builder := c.Delete().Where(aiskillversion.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AISkillVersionDeleteOne{builder}
+}
+
+// Query returns a query builder for AISkillVersion.
+func (c *AISkillVersionClient) Query() *AISkillVersionQuery {
+	return &AISkillVersionQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAISkillVersion},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AISkillVersion entity by its id.
+func (c *AISkillVersionClient) Get(ctx context.Context, id int64) (*AISkillVersion, error) {
+	return c.Query().Where(aiskillversion.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AISkillVersionClient) GetX(ctx context.Context, id int64) *AISkillVersion {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QuerySkill queries the skill edge of a AISkillVersion.
+func (c *AISkillVersionClient) QuerySkill(_m *AISkillVersion) *AISkillQuery {
+	query := (&AISkillClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskillversion.Table, aiskillversion.FieldID, id),
+			sqlgraph.To(aiskill.Table, aiskill.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aiskillversion.SkillTable, aiskillversion.SkillColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryRuns queries the runs edge of a AISkillVersion.
+func (c *AISkillVersionClient) QueryRuns(_m *AISkillVersion) *AISkillRunQuery {
+	query := (&AISkillRunClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskillversion.Table, aiskillversion.FieldID, id),
+			sqlgraph.To(aiskillrun.Table, aiskillrun.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, aiskillversion.RunsTable, aiskillversion.RunsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryReviews queries the reviews edge of a AISkillVersion.
+func (c *AISkillVersionClient) QueryReviews(_m *AISkillVersion) *AISkillReviewQuery {
+	query := (&AISkillReviewClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskillversion.Table, aiskillversion.FieldID, id),
+			sqlgraph.To(aiskillreview.Table, aiskillreview.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, aiskillversion.ReviewsTable, aiskillversion.ReviewsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QuerySettlements queries the settlements edge of a AISkillVersion.
+func (c *AISkillVersionClient) QuerySettlements(_m *AISkillVersion) *AISkillSettlementQuery {
+	query := (&AISkillSettlementClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskillversion.Table, aiskillversion.FieldID, id),
+			sqlgraph.To(aiskillsettlement.Table, aiskillsettlement.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, aiskillversion.SettlementsTable, aiskillversion.SettlementsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *AISkillVersionClient) Hooks() []Hook {
+	hooks := c.hooks.AISkillVersion
+	return append(hooks[:len(hooks):len(hooks)], aiskillversion.Hooks[:]...)
+}
+
+// Interceptors returns the client interceptors.
+func (c *AISkillVersionClient) Interceptors() []Interceptor {
+	inters := c.inters.AISkillVersion
+	return append(inters[:len(inters):len(inters)], aiskillversion.Interceptors[:]...)
+}
+
+func (c *AISkillVersionClient) mutate(ctx context.Context, m *AISkillVersionMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AISkillVersionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AISkillVersionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AISkillVersionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AISkillVersionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AISkillVersion mutation op: %q", m.Op())
 	}
 }
 
@@ -7240,7 +8380,8 @@ func (c *UserSubscriptionClient) mutate(ctx context.Context, m *UserSubscription
 type (
 	hooks struct {
 		AIAsset, AIAuditLog, AIGenerationJob, AIPromptTemplate, AIPromptTemplateVersion,
-		AISession, AISessionMessage, APIKey, Account, AccountGroup, Announcement,
+		AISession, AISessionMessage, AISkill, AISkillLike, AISkillReview, AISkillRun,
+		AISkillSettlement, AISkillVersion, APIKey, Account, AccountGroup, Announcement,
 		AnnouncementRead, AuthIdentity, AuthIdentityChannel, ChannelMonitor,
 		ChannelMonitorDailyRollup, ChannelMonitorHistory,
 		ChannelMonitorRequestTemplate, ErrorPassthroughRule, Group, IdempotencyRecord,
@@ -7252,7 +8393,8 @@ type (
 	}
 	inters struct {
 		AIAsset, AIAuditLog, AIGenerationJob, AIPromptTemplate, AIPromptTemplateVersion,
-		AISession, AISessionMessage, APIKey, Account, AccountGroup, Announcement,
+		AISession, AISessionMessage, AISkill, AISkillLike, AISkillReview, AISkillRun,
+		AISkillSettlement, AISkillVersion, APIKey, Account, AccountGroup, Announcement,
 		AnnouncementRead, AuthIdentity, AuthIdentityChannel, ChannelMonitor,
 		ChannelMonitorDailyRollup, ChannelMonitorHistory,
 		ChannelMonitorRequestTemplate, ErrorPassthroughRule, Group, IdempotencyRecord,

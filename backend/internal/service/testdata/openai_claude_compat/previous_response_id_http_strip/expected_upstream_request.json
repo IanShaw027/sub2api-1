@@ -1,6 +1,6 @@
 {
   "equals_paths": {
-    "model": "gpt-5.1",
+    "model": "gpt-5.4",
     "input.0.role": "user",
     "input.0.content": "hello"
   },

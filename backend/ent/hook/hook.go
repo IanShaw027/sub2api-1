@@ -93,6 +93,78 @@ func (f AISessionMessageFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.V
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AISessionMessageMutation", m)
 }
 
+// The AISkillFunc type is an adapter to allow the use of ordinary
+// function as AISkill mutator.
+type AISkillFunc func(context.Context, *ent.AISkillMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AISkillFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AISkillMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AISkillMutation", m)
+}
+
+// The AISkillLikeFunc type is an adapter to allow the use of ordinary
+// function as AISkillLike mutator.
+type AISkillLikeFunc func(context.Context, *ent.AISkillLikeMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AISkillLikeFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AISkillLikeMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AISkillLikeMutation", m)
+}
+
+// The AISkillReviewFunc type is an adapter to allow the use of ordinary
+// function as AISkillReview mutator.
+type AISkillReviewFunc func(context.Context, *ent.AISkillReviewMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AISkillReviewFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AISkillReviewMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AISkillReviewMutation", m)
+}
+
+// The AISkillRunFunc type is an adapter to allow the use of ordinary
+// function as AISkillRun mutator.
+type AISkillRunFunc func(context.Context, *ent.AISkillRunMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AISkillRunFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AISkillRunMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AISkillRunMutation", m)
+}
+
+// The AISkillSettlementFunc type is an adapter to allow the use of ordinary
+// function as AISkillSettlement mutator.
+type AISkillSettlementFunc func(context.Context, *ent.AISkillSettlementMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AISkillSettlementFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AISkillSettlementMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AISkillSettlementMutation", m)
+}
+
+// The AISkillVersionFunc type is an adapter to allow the use of ordinary
+// function as AISkillVersion mutator.
+type AISkillVersionFunc func(context.Context, *ent.AISkillVersionMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AISkillVersionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AISkillVersionMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AISkillVersionMutation", m)
+}
+
 // The APIKeyFunc type is an adapter to allow the use of ordinary
 // function as APIKey mutator.
 type APIKeyFunc func(context.Context, *ent.APIKeyMutation) (ent.Value, error)

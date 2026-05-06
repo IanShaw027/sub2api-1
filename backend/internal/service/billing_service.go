@@ -331,8 +331,7 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	}
 
 	// OpenAI 仅匹配已知 GPT-5/Codex 族，避免未知 OpenAI 型号误计价。
-	if strings.Contains(modelLower, "gpt-5") || strings.Contains(modelLower, "codex") {
-		normalized := normalizeCodexModel(modelLower)
+	if normalized := normalizeOpenAIPricingFallbackModel(modelLower); normalized != "" {
 		switch normalized {
 		case "gpt-5.5":
 			return s.fallbackPrices["gpt-5.5"]
@@ -362,6 +361,45 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	}
 
 	return nil
+}
+
+func normalizeOpenAIPricingFallbackModel(model string) string {
+	canonical := canonicalizeOpenAIModelAliasSpelling(model)
+	if canonical == "" {
+		return ""
+	}
+
+	// 定价回退保留账单族群，不复用上游路由归一化里的跨版本折叠。
+	switch {
+	case strings.HasPrefix(canonical, "gpt-5.5"):
+		return "gpt-5.5"
+	case strings.HasPrefix(canonical, "gpt-5.4-mini"):
+		return "gpt-5.4-mini"
+	case strings.HasPrefix(canonical, "gpt-5.4-nano"):
+		return "gpt-5.4-nano"
+	case strings.HasPrefix(canonical, "gpt-5.4"):
+		return "gpt-5.4"
+	case strings.HasPrefix(canonical, "gpt-5.3-codex-spark"):
+		return "gpt-5.3-codex-spark"
+	case strings.HasPrefix(canonical, "gpt-5.3-codex"):
+		return "gpt-5.3-codex"
+	case strings.HasPrefix(canonical, "gpt-5.2-codex"):
+		return "gpt-5.2-codex"
+	case strings.HasPrefix(canonical, "gpt-5.2"):
+		return "gpt-5.2"
+	case strings.HasPrefix(canonical, "gpt-5.1-codex-mini"),
+		strings.HasPrefix(canonical, "codex-mini-latest"),
+		strings.HasPrefix(canonical, "gpt-5-codex-mini"):
+		return "gpt-5.1-codex-mini"
+	case strings.HasPrefix(canonical, "gpt-5.1-codex-max"):
+		return "gpt-5.1-codex-max"
+	case strings.HasPrefix(canonical, "gpt-5.1-codex"):
+		return "gpt-5.1-codex"
+	case strings.HasPrefix(canonical, "gpt-5.1"):
+		return "gpt-5.1"
+	default:
+		return normalizeKnownOpenAICodexModel(canonical)
+	}
 }
 
 // GetModelPricing 获取模型价格配置
@@ -693,13 +731,10 @@ func (s *BillingService) shouldApplySessionLongContextPricing(tokens UsageTokens
 }
 
 func isOpenAIGPT54Model(model string) bool {
-	trimmed := strings.TrimSpace(strings.ToLower(model))
-	// 仅当模型字符串实际属于 GPT-5/Codex 族时才做归一判定，避免 normalizeCodexModel
-	// 的默认兜底把非 OpenAI 模型（claude-*、gemini-*、gpt-4o）误识别为 gpt-5.4。
-	if !strings.Contains(trimmed, "gpt-5") && !strings.Contains(trimmed, "codex") {
-		return false
-	}
-	normalized := normalizeCodexModel(trimmed)
+	// 仅当模型字符串实际属于已知 GPT-5/Codex 族时才做归一判定，避免
+	// normalizeCodexModel 的默认兜底把非 OpenAI 模型（claude-*、gemini-*、gpt-4o）
+	// 误识别为 gpt-5.4。
+	normalized := normalizeOpenAIPricingFallbackModel(model)
 	return normalized == "gpt-5.4" || normalized == "gpt-5.5"
 }
 

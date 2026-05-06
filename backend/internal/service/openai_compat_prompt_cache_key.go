@@ -9,6 +9,7 @@ import (
 
 const compatPromptCacheKeyPrefix = "compat_cc_"
 const compatAnthropicPromptCacheKeyPrefix = "compat_msg_"
+const anthropicCachePromptCacheKeyPrefix = "anthropic-cache-"
 
 func shouldAutoInjectPromptCacheKeyForCompat(model string) bool {
 	return ResolveOpenAIModelCapabilities(model).SupportsCompatPromptCacheKey
@@ -89,6 +90,10 @@ func deriveAnthropicCompatPromptCacheKey(req *apicompat.AnthropicRequest, mapped
 			seedParts = append(seedParts, "tools="+normalizeCompatSeedJSON(raw))
 		}
 	}
+	if anchors := collectAnthropicCacheAnchors(req); len(anchors) > 0 {
+		seedParts = append(seedParts, anchors...)
+		return anthropicCachePromptCacheKeyPrefix + hashSensitiveValueForLog(strings.Join(seedParts, "|"))
+	}
 	if len(req.System) > 0 {
 		seedParts = append(seedParts, "system="+normalizeCompatSeedJSON(req.System))
 	}
@@ -118,4 +123,43 @@ func normalizeCompatSeedJSON(v json.RawMessage) string {
 		return string(v)
 	}
 	return string(out)
+}
+
+func collectAnthropicCacheAnchors(req *apicompat.AnthropicRequest) []string {
+	if req == nil {
+		return nil
+	}
+	var anchors []string
+	if anchor := extractAnthropicCacheAnchor(req.System); anchor != "" {
+		anchors = append(anchors, "system_anchor="+anchor)
+	}
+	for _, msg := range req.Messages {
+		if anchor := extractAnthropicCacheAnchor(msg.Content); anchor != "" {
+			anchors = append(anchors, "message_anchor="+strings.TrimSpace(msg.Role)+":"+anchor)
+		}
+	}
+	return anchors
+}
+
+func extractAnthropicCacheAnchor(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var items []map[string]any
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return ""
+	}
+	for _, item := range items {
+		cacheControl, ok := item["cache_control"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(firstNonEmptyString(cacheControl["type"])) == "" {
+			continue
+		}
+		if text := strings.TrimSpace(firstNonEmptyString(item["text"])); text != "" {
+			return text
+		}
+	}
+	return ""
 }

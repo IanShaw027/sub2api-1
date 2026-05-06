@@ -21,6 +21,12 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aiprompttemplateversion"
 	"github.com/Wei-Shaw/sub2api/ent/aisession"
 	"github.com/Wei-Shaw/sub2api/ent/aisessionmessage"
+	"github.com/Wei-Shaw/sub2api/ent/aiskill"
+	"github.com/Wei-Shaw/sub2api/ent/aiskilllike"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillreview"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillrun"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillsettlement"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillversion"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
@@ -73,6 +79,12 @@ const (
 	TypeAIPromptTemplateVersion       = "AIPromptTemplateVersion"
 	TypeAISession                     = "AISession"
 	TypeAISessionMessage              = "AISessionMessage"
+	TypeAISkill                       = "AISkill"
+	TypeAISkillLike                   = "AISkillLike"
+	TypeAISkillReview                 = "AISkillReview"
+	TypeAISkillRun                    = "AISkillRun"
+	TypeAISkillSettlement             = "AISkillSettlement"
+	TypeAISkillVersion                = "AISkillVersion"
 	TypeAPIKey                        = "APIKey"
 	TypeAccount                       = "Account"
 	TypeAccountGroup                  = "AccountGroup"
@@ -12017,6 +12029,11028 @@ func (m *AISessionMessageMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown AISessionMessage edge %s", name)
+}
+
+// AISkillMutation represents an operation that mutates the AISkill nodes in the graph.
+type AISkillMutation struct {
+	config
+	op                            Op
+	typ                           string
+	id                            *int64
+	created_at                    *time.Time
+	updated_at                    *time.Time
+	deleted_at                    *time.Time
+	user_id                       *int64
+	adduser_id                    *int64
+	skill_type                    *string
+	title                         *string
+	summary                       *string
+	description                   *string
+	category                      *string
+	tags                          *[]string
+	appendtags                    []string
+	visibility                    *string
+	source_visibility             *string
+	billing_mode                  *string
+	price                         *float64
+	addprice                      *float64
+	current_version_id            *int64
+	addcurrent_version_id         *int64
+	published_version_id          *int64
+	addpublished_version_id       *int64
+	latest_approved_version_id    *int64
+	addlatest_approved_version_id *int64
+	latest_version                *int
+	addlatest_version             *int
+	like_count                    *int
+	addlike_count                 *int
+	run_count                     *int
+	addrun_count                  *int
+	total_income                  *float64
+	addtotal_income               *float64
+	cover_asset_id                *int64
+	addcover_asset_id             *int64
+	metadata                      *map[string]interface{}
+	request_id                    *string
+	usage_log_id                  *int64
+	addusage_log_id               *int64
+	api_key_id                    *int64
+	addapi_key_id                 *int64
+	group_id                      *int64
+	addgroup_id                   *int64
+	clearedFields                 map[string]struct{}
+	versions                      map[int64]struct{}
+	removedversions               map[int64]struct{}
+	clearedversions               bool
+	runs                          map[int64]struct{}
+	removedruns                   map[int64]struct{}
+	clearedruns                   bool
+	reviews                       map[int64]struct{}
+	removedreviews                map[int64]struct{}
+	clearedreviews                bool
+	likes                         map[int64]struct{}
+	removedlikes                  map[int64]struct{}
+	clearedlikes                  bool
+	settlements                   map[int64]struct{}
+	removedsettlements            map[int64]struct{}
+	clearedsettlements            bool
+	done                          bool
+	oldValue                      func(context.Context) (*AISkill, error)
+	predicates                    []predicate.AISkill
+}
+
+var _ ent.Mutation = (*AISkillMutation)(nil)
+
+// aiskillOption allows management of the mutation configuration using functional options.
+type aiskillOption func(*AISkillMutation)
+
+// newAISkillMutation creates new mutation for the AISkill entity.
+func newAISkillMutation(c config, op Op, opts ...aiskillOption) *AISkillMutation {
+	m := &AISkillMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAISkill,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAISkillID sets the ID field of the mutation.
+func withAISkillID(id int64) aiskillOption {
+	return func(m *AISkillMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *AISkill
+		)
+		m.oldValue = func(ctx context.Context) (*AISkill, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().AISkill.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAISkill sets the old AISkill of the mutation.
+func withAISkill(node *AISkill) aiskillOption {
+	return func(m *AISkillMutation) {
+		m.oldValue = func(context.Context) (*AISkill, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AISkillMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AISkillMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *AISkillMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *AISkillMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().AISkill.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *AISkillMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *AISkillMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *AISkillMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *AISkillMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *AISkillMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *AISkillMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (m *AISkillMutation) SetDeletedAt(t time.Time) {
+	m.deleted_at = &t
+}
+
+// DeletedAt returns the value of the "deleted_at" field in the mutation.
+func (m *AISkillMutation) DeletedAt() (r time.Time, exists bool) {
+	v := m.deleted_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDeletedAt returns the old "deleted_at" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldDeletedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDeletedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDeletedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDeletedAt: %w", err)
+	}
+	return oldValue.DeletedAt, nil
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (m *AISkillMutation) ClearDeletedAt() {
+	m.deleted_at = nil
+	m.clearedFields[aiskill.FieldDeletedAt] = struct{}{}
+}
+
+// DeletedAtCleared returns if the "deleted_at" field was cleared in this mutation.
+func (m *AISkillMutation) DeletedAtCleared() bool {
+	_, ok := m.clearedFields[aiskill.FieldDeletedAt]
+	return ok
+}
+
+// ResetDeletedAt resets all changes to the "deleted_at" field.
+func (m *AISkillMutation) ResetDeletedAt() {
+	m.deleted_at = nil
+	delete(m.clearedFields, aiskill.FieldDeletedAt)
+}
+
+// SetUserID sets the "user_id" field.
+func (m *AISkillMutation) SetUserID(i int64) {
+	m.user_id = &i
+	m.adduser_id = nil
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *AISkillMutation) UserID() (r int64, exists bool) {
+	v := m.user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// AddUserID adds i to the "user_id" field.
+func (m *AISkillMutation) AddUserID(i int64) {
+	if m.adduser_id != nil {
+		*m.adduser_id += i
+	} else {
+		m.adduser_id = &i
+	}
+}
+
+// AddedUserID returns the value that was added to the "user_id" field in this mutation.
+func (m *AISkillMutation) AddedUserID() (r int64, exists bool) {
+	v := m.adduser_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *AISkillMutation) ResetUserID() {
+	m.user_id = nil
+	m.adduser_id = nil
+}
+
+// SetSkillType sets the "skill_type" field.
+func (m *AISkillMutation) SetSkillType(s string) {
+	m.skill_type = &s
+}
+
+// SkillType returns the value of the "skill_type" field in the mutation.
+func (m *AISkillMutation) SkillType() (r string, exists bool) {
+	v := m.skill_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSkillType returns the old "skill_type" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldSkillType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSkillType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSkillType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSkillType: %w", err)
+	}
+	return oldValue.SkillType, nil
+}
+
+// ResetSkillType resets all changes to the "skill_type" field.
+func (m *AISkillMutation) ResetSkillType() {
+	m.skill_type = nil
+}
+
+// SetTitle sets the "title" field.
+func (m *AISkillMutation) SetTitle(s string) {
+	m.title = &s
+}
+
+// Title returns the value of the "title" field in the mutation.
+func (m *AISkillMutation) Title() (r string, exists bool) {
+	v := m.title
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTitle returns the old "title" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldTitle(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTitle is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTitle requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTitle: %w", err)
+	}
+	return oldValue.Title, nil
+}
+
+// ResetTitle resets all changes to the "title" field.
+func (m *AISkillMutation) ResetTitle() {
+	m.title = nil
+}
+
+// SetSummary sets the "summary" field.
+func (m *AISkillMutation) SetSummary(s string) {
+	m.summary = &s
+}
+
+// Summary returns the value of the "summary" field in the mutation.
+func (m *AISkillMutation) Summary() (r string, exists bool) {
+	v := m.summary
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSummary returns the old "summary" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldSummary(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSummary is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSummary requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSummary: %w", err)
+	}
+	return oldValue.Summary, nil
+}
+
+// ClearSummary clears the value of the "summary" field.
+func (m *AISkillMutation) ClearSummary() {
+	m.summary = nil
+	m.clearedFields[aiskill.FieldSummary] = struct{}{}
+}
+
+// SummaryCleared returns if the "summary" field was cleared in this mutation.
+func (m *AISkillMutation) SummaryCleared() bool {
+	_, ok := m.clearedFields[aiskill.FieldSummary]
+	return ok
+}
+
+// ResetSummary resets all changes to the "summary" field.
+func (m *AISkillMutation) ResetSummary() {
+	m.summary = nil
+	delete(m.clearedFields, aiskill.FieldSummary)
+}
+
+// SetDescription sets the "description" field.
+func (m *AISkillMutation) SetDescription(s string) {
+	m.description = &s
+}
+
+// Description returns the value of the "description" field in the mutation.
+func (m *AISkillMutation) Description() (r string, exists bool) {
+	v := m.description
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDescription returns the old "description" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldDescription(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDescription is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDescription requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDescription: %w", err)
+	}
+	return oldValue.Description, nil
+}
+
+// ClearDescription clears the value of the "description" field.
+func (m *AISkillMutation) ClearDescription() {
+	m.description = nil
+	m.clearedFields[aiskill.FieldDescription] = struct{}{}
+}
+
+// DescriptionCleared returns if the "description" field was cleared in this mutation.
+func (m *AISkillMutation) DescriptionCleared() bool {
+	_, ok := m.clearedFields[aiskill.FieldDescription]
+	return ok
+}
+
+// ResetDescription resets all changes to the "description" field.
+func (m *AISkillMutation) ResetDescription() {
+	m.description = nil
+	delete(m.clearedFields, aiskill.FieldDescription)
+}
+
+// SetCategory sets the "category" field.
+func (m *AISkillMutation) SetCategory(s string) {
+	m.category = &s
+}
+
+// Category returns the value of the "category" field in the mutation.
+func (m *AISkillMutation) Category() (r string, exists bool) {
+	v := m.category
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCategory returns the old "category" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldCategory(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCategory is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCategory requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCategory: %w", err)
+	}
+	return oldValue.Category, nil
+}
+
+// ClearCategory clears the value of the "category" field.
+func (m *AISkillMutation) ClearCategory() {
+	m.category = nil
+	m.clearedFields[aiskill.FieldCategory] = struct{}{}
+}
+
+// CategoryCleared returns if the "category" field was cleared in this mutation.
+func (m *AISkillMutation) CategoryCleared() bool {
+	_, ok := m.clearedFields[aiskill.FieldCategory]
+	return ok
+}
+
+// ResetCategory resets all changes to the "category" field.
+func (m *AISkillMutation) ResetCategory() {
+	m.category = nil
+	delete(m.clearedFields, aiskill.FieldCategory)
+}
+
+// SetTags sets the "tags" field.
+func (m *AISkillMutation) SetTags(s []string) {
+	m.tags = &s
+	m.appendtags = nil
+}
+
+// Tags returns the value of the "tags" field in the mutation.
+func (m *AISkillMutation) Tags() (r []string, exists bool) {
+	v := m.tags
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTags returns the old "tags" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldTags(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTags is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTags requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTags: %w", err)
+	}
+	return oldValue.Tags, nil
+}
+
+// AppendTags adds s to the "tags" field.
+func (m *AISkillMutation) AppendTags(s []string) {
+	m.appendtags = append(m.appendtags, s...)
+}
+
+// AppendedTags returns the list of values that were appended to the "tags" field in this mutation.
+func (m *AISkillMutation) AppendedTags() ([]string, bool) {
+	if len(m.appendtags) == 0 {
+		return nil, false
+	}
+	return m.appendtags, true
+}
+
+// ResetTags resets all changes to the "tags" field.
+func (m *AISkillMutation) ResetTags() {
+	m.tags = nil
+	m.appendtags = nil
+}
+
+// SetVisibility sets the "visibility" field.
+func (m *AISkillMutation) SetVisibility(s string) {
+	m.visibility = &s
+}
+
+// Visibility returns the value of the "visibility" field in the mutation.
+func (m *AISkillMutation) Visibility() (r string, exists bool) {
+	v := m.visibility
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVisibility returns the old "visibility" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldVisibility(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVisibility is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVisibility requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVisibility: %w", err)
+	}
+	return oldValue.Visibility, nil
+}
+
+// ResetVisibility resets all changes to the "visibility" field.
+func (m *AISkillMutation) ResetVisibility() {
+	m.visibility = nil
+}
+
+// SetSourceVisibility sets the "source_visibility" field.
+func (m *AISkillMutation) SetSourceVisibility(s string) {
+	m.source_visibility = &s
+}
+
+// SourceVisibility returns the value of the "source_visibility" field in the mutation.
+func (m *AISkillMutation) SourceVisibility() (r string, exists bool) {
+	v := m.source_visibility
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSourceVisibility returns the old "source_visibility" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldSourceVisibility(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSourceVisibility is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSourceVisibility requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSourceVisibility: %w", err)
+	}
+	return oldValue.SourceVisibility, nil
+}
+
+// ResetSourceVisibility resets all changes to the "source_visibility" field.
+func (m *AISkillMutation) ResetSourceVisibility() {
+	m.source_visibility = nil
+}
+
+// SetBillingMode sets the "billing_mode" field.
+func (m *AISkillMutation) SetBillingMode(s string) {
+	m.billing_mode = &s
+}
+
+// BillingMode returns the value of the "billing_mode" field in the mutation.
+func (m *AISkillMutation) BillingMode() (r string, exists bool) {
+	v := m.billing_mode
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBillingMode returns the old "billing_mode" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldBillingMode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBillingMode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBillingMode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBillingMode: %w", err)
+	}
+	return oldValue.BillingMode, nil
+}
+
+// ResetBillingMode resets all changes to the "billing_mode" field.
+func (m *AISkillMutation) ResetBillingMode() {
+	m.billing_mode = nil
+}
+
+// SetPrice sets the "price" field.
+func (m *AISkillMutation) SetPrice(f float64) {
+	m.price = &f
+	m.addprice = nil
+}
+
+// Price returns the value of the "price" field in the mutation.
+func (m *AISkillMutation) Price() (r float64, exists bool) {
+	v := m.price
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPrice returns the old "price" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldPrice(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPrice is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPrice requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPrice: %w", err)
+	}
+	return oldValue.Price, nil
+}
+
+// AddPrice adds f to the "price" field.
+func (m *AISkillMutation) AddPrice(f float64) {
+	if m.addprice != nil {
+		*m.addprice += f
+	} else {
+		m.addprice = &f
+	}
+}
+
+// AddedPrice returns the value that was added to the "price" field in this mutation.
+func (m *AISkillMutation) AddedPrice() (r float64, exists bool) {
+	v := m.addprice
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPrice resets all changes to the "price" field.
+func (m *AISkillMutation) ResetPrice() {
+	m.price = nil
+	m.addprice = nil
+}
+
+// SetCurrentVersionID sets the "current_version_id" field.
+func (m *AISkillMutation) SetCurrentVersionID(i int64) {
+	m.current_version_id = &i
+	m.addcurrent_version_id = nil
+}
+
+// CurrentVersionID returns the value of the "current_version_id" field in the mutation.
+func (m *AISkillMutation) CurrentVersionID() (r int64, exists bool) {
+	v := m.current_version_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCurrentVersionID returns the old "current_version_id" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldCurrentVersionID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCurrentVersionID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCurrentVersionID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCurrentVersionID: %w", err)
+	}
+	return oldValue.CurrentVersionID, nil
+}
+
+// AddCurrentVersionID adds i to the "current_version_id" field.
+func (m *AISkillMutation) AddCurrentVersionID(i int64) {
+	if m.addcurrent_version_id != nil {
+		*m.addcurrent_version_id += i
+	} else {
+		m.addcurrent_version_id = &i
+	}
+}
+
+// AddedCurrentVersionID returns the value that was added to the "current_version_id" field in this mutation.
+func (m *AISkillMutation) AddedCurrentVersionID() (r int64, exists bool) {
+	v := m.addcurrent_version_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearCurrentVersionID clears the value of the "current_version_id" field.
+func (m *AISkillMutation) ClearCurrentVersionID() {
+	m.current_version_id = nil
+	m.addcurrent_version_id = nil
+	m.clearedFields[aiskill.FieldCurrentVersionID] = struct{}{}
+}
+
+// CurrentVersionIDCleared returns if the "current_version_id" field was cleared in this mutation.
+func (m *AISkillMutation) CurrentVersionIDCleared() bool {
+	_, ok := m.clearedFields[aiskill.FieldCurrentVersionID]
+	return ok
+}
+
+// ResetCurrentVersionID resets all changes to the "current_version_id" field.
+func (m *AISkillMutation) ResetCurrentVersionID() {
+	m.current_version_id = nil
+	m.addcurrent_version_id = nil
+	delete(m.clearedFields, aiskill.FieldCurrentVersionID)
+}
+
+// SetPublishedVersionID sets the "published_version_id" field.
+func (m *AISkillMutation) SetPublishedVersionID(i int64) {
+	m.published_version_id = &i
+	m.addpublished_version_id = nil
+}
+
+// PublishedVersionID returns the value of the "published_version_id" field in the mutation.
+func (m *AISkillMutation) PublishedVersionID() (r int64, exists bool) {
+	v := m.published_version_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPublishedVersionID returns the old "published_version_id" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldPublishedVersionID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPublishedVersionID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPublishedVersionID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPublishedVersionID: %w", err)
+	}
+	return oldValue.PublishedVersionID, nil
+}
+
+// AddPublishedVersionID adds i to the "published_version_id" field.
+func (m *AISkillMutation) AddPublishedVersionID(i int64) {
+	if m.addpublished_version_id != nil {
+		*m.addpublished_version_id += i
+	} else {
+		m.addpublished_version_id = &i
+	}
+}
+
+// AddedPublishedVersionID returns the value that was added to the "published_version_id" field in this mutation.
+func (m *AISkillMutation) AddedPublishedVersionID() (r int64, exists bool) {
+	v := m.addpublished_version_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearPublishedVersionID clears the value of the "published_version_id" field.
+func (m *AISkillMutation) ClearPublishedVersionID() {
+	m.published_version_id = nil
+	m.addpublished_version_id = nil
+	m.clearedFields[aiskill.FieldPublishedVersionID] = struct{}{}
+}
+
+// PublishedVersionIDCleared returns if the "published_version_id" field was cleared in this mutation.
+func (m *AISkillMutation) PublishedVersionIDCleared() bool {
+	_, ok := m.clearedFields[aiskill.FieldPublishedVersionID]
+	return ok
+}
+
+// ResetPublishedVersionID resets all changes to the "published_version_id" field.
+func (m *AISkillMutation) ResetPublishedVersionID() {
+	m.published_version_id = nil
+	m.addpublished_version_id = nil
+	delete(m.clearedFields, aiskill.FieldPublishedVersionID)
+}
+
+// SetLatestApprovedVersionID sets the "latest_approved_version_id" field.
+func (m *AISkillMutation) SetLatestApprovedVersionID(i int64) {
+	m.latest_approved_version_id = &i
+	m.addlatest_approved_version_id = nil
+}
+
+// LatestApprovedVersionID returns the value of the "latest_approved_version_id" field in the mutation.
+func (m *AISkillMutation) LatestApprovedVersionID() (r int64, exists bool) {
+	v := m.latest_approved_version_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLatestApprovedVersionID returns the old "latest_approved_version_id" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldLatestApprovedVersionID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLatestApprovedVersionID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLatestApprovedVersionID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLatestApprovedVersionID: %w", err)
+	}
+	return oldValue.LatestApprovedVersionID, nil
+}
+
+// AddLatestApprovedVersionID adds i to the "latest_approved_version_id" field.
+func (m *AISkillMutation) AddLatestApprovedVersionID(i int64) {
+	if m.addlatest_approved_version_id != nil {
+		*m.addlatest_approved_version_id += i
+	} else {
+		m.addlatest_approved_version_id = &i
+	}
+}
+
+// AddedLatestApprovedVersionID returns the value that was added to the "latest_approved_version_id" field in this mutation.
+func (m *AISkillMutation) AddedLatestApprovedVersionID() (r int64, exists bool) {
+	v := m.addlatest_approved_version_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearLatestApprovedVersionID clears the value of the "latest_approved_version_id" field.
+func (m *AISkillMutation) ClearLatestApprovedVersionID() {
+	m.latest_approved_version_id = nil
+	m.addlatest_approved_version_id = nil
+	m.clearedFields[aiskill.FieldLatestApprovedVersionID] = struct{}{}
+}
+
+// LatestApprovedVersionIDCleared returns if the "latest_approved_version_id" field was cleared in this mutation.
+func (m *AISkillMutation) LatestApprovedVersionIDCleared() bool {
+	_, ok := m.clearedFields[aiskill.FieldLatestApprovedVersionID]
+	return ok
+}
+
+// ResetLatestApprovedVersionID resets all changes to the "latest_approved_version_id" field.
+func (m *AISkillMutation) ResetLatestApprovedVersionID() {
+	m.latest_approved_version_id = nil
+	m.addlatest_approved_version_id = nil
+	delete(m.clearedFields, aiskill.FieldLatestApprovedVersionID)
+}
+
+// SetLatestVersion sets the "latest_version" field.
+func (m *AISkillMutation) SetLatestVersion(i int) {
+	m.latest_version = &i
+	m.addlatest_version = nil
+}
+
+// LatestVersion returns the value of the "latest_version" field in the mutation.
+func (m *AISkillMutation) LatestVersion() (r int, exists bool) {
+	v := m.latest_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLatestVersion returns the old "latest_version" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldLatestVersion(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLatestVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLatestVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLatestVersion: %w", err)
+	}
+	return oldValue.LatestVersion, nil
+}
+
+// AddLatestVersion adds i to the "latest_version" field.
+func (m *AISkillMutation) AddLatestVersion(i int) {
+	if m.addlatest_version != nil {
+		*m.addlatest_version += i
+	} else {
+		m.addlatest_version = &i
+	}
+}
+
+// AddedLatestVersion returns the value that was added to the "latest_version" field in this mutation.
+func (m *AISkillMutation) AddedLatestVersion() (r int, exists bool) {
+	v := m.addlatest_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetLatestVersion resets all changes to the "latest_version" field.
+func (m *AISkillMutation) ResetLatestVersion() {
+	m.latest_version = nil
+	m.addlatest_version = nil
+}
+
+// SetLikeCount sets the "like_count" field.
+func (m *AISkillMutation) SetLikeCount(i int) {
+	m.like_count = &i
+	m.addlike_count = nil
+}
+
+// LikeCount returns the value of the "like_count" field in the mutation.
+func (m *AISkillMutation) LikeCount() (r int, exists bool) {
+	v := m.like_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLikeCount returns the old "like_count" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldLikeCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLikeCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLikeCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLikeCount: %w", err)
+	}
+	return oldValue.LikeCount, nil
+}
+
+// AddLikeCount adds i to the "like_count" field.
+func (m *AISkillMutation) AddLikeCount(i int) {
+	if m.addlike_count != nil {
+		*m.addlike_count += i
+	} else {
+		m.addlike_count = &i
+	}
+}
+
+// AddedLikeCount returns the value that was added to the "like_count" field in this mutation.
+func (m *AISkillMutation) AddedLikeCount() (r int, exists bool) {
+	v := m.addlike_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetLikeCount resets all changes to the "like_count" field.
+func (m *AISkillMutation) ResetLikeCount() {
+	m.like_count = nil
+	m.addlike_count = nil
+}
+
+// SetRunCount sets the "run_count" field.
+func (m *AISkillMutation) SetRunCount(i int) {
+	m.run_count = &i
+	m.addrun_count = nil
+}
+
+// RunCount returns the value of the "run_count" field in the mutation.
+func (m *AISkillMutation) RunCount() (r int, exists bool) {
+	v := m.run_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRunCount returns the old "run_count" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldRunCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRunCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRunCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRunCount: %w", err)
+	}
+	return oldValue.RunCount, nil
+}
+
+// AddRunCount adds i to the "run_count" field.
+func (m *AISkillMutation) AddRunCount(i int) {
+	if m.addrun_count != nil {
+		*m.addrun_count += i
+	} else {
+		m.addrun_count = &i
+	}
+}
+
+// AddedRunCount returns the value that was added to the "run_count" field in this mutation.
+func (m *AISkillMutation) AddedRunCount() (r int, exists bool) {
+	v := m.addrun_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRunCount resets all changes to the "run_count" field.
+func (m *AISkillMutation) ResetRunCount() {
+	m.run_count = nil
+	m.addrun_count = nil
+}
+
+// SetTotalIncome sets the "total_income" field.
+func (m *AISkillMutation) SetTotalIncome(f float64) {
+	m.total_income = &f
+	m.addtotal_income = nil
+}
+
+// TotalIncome returns the value of the "total_income" field in the mutation.
+func (m *AISkillMutation) TotalIncome() (r float64, exists bool) {
+	v := m.total_income
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTotalIncome returns the old "total_income" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldTotalIncome(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTotalIncome is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTotalIncome requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTotalIncome: %w", err)
+	}
+	return oldValue.TotalIncome, nil
+}
+
+// AddTotalIncome adds f to the "total_income" field.
+func (m *AISkillMutation) AddTotalIncome(f float64) {
+	if m.addtotal_income != nil {
+		*m.addtotal_income += f
+	} else {
+		m.addtotal_income = &f
+	}
+}
+
+// AddedTotalIncome returns the value that was added to the "total_income" field in this mutation.
+func (m *AISkillMutation) AddedTotalIncome() (r float64, exists bool) {
+	v := m.addtotal_income
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTotalIncome resets all changes to the "total_income" field.
+func (m *AISkillMutation) ResetTotalIncome() {
+	m.total_income = nil
+	m.addtotal_income = nil
+}
+
+// SetCoverAssetID sets the "cover_asset_id" field.
+func (m *AISkillMutation) SetCoverAssetID(i int64) {
+	m.cover_asset_id = &i
+	m.addcover_asset_id = nil
+}
+
+// CoverAssetID returns the value of the "cover_asset_id" field in the mutation.
+func (m *AISkillMutation) CoverAssetID() (r int64, exists bool) {
+	v := m.cover_asset_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCoverAssetID returns the old "cover_asset_id" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldCoverAssetID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCoverAssetID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCoverAssetID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCoverAssetID: %w", err)
+	}
+	return oldValue.CoverAssetID, nil
+}
+
+// AddCoverAssetID adds i to the "cover_asset_id" field.
+func (m *AISkillMutation) AddCoverAssetID(i int64) {
+	if m.addcover_asset_id != nil {
+		*m.addcover_asset_id += i
+	} else {
+		m.addcover_asset_id = &i
+	}
+}
+
+// AddedCoverAssetID returns the value that was added to the "cover_asset_id" field in this mutation.
+func (m *AISkillMutation) AddedCoverAssetID() (r int64, exists bool) {
+	v := m.addcover_asset_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearCoverAssetID clears the value of the "cover_asset_id" field.
+func (m *AISkillMutation) ClearCoverAssetID() {
+	m.cover_asset_id = nil
+	m.addcover_asset_id = nil
+	m.clearedFields[aiskill.FieldCoverAssetID] = struct{}{}
+}
+
+// CoverAssetIDCleared returns if the "cover_asset_id" field was cleared in this mutation.
+func (m *AISkillMutation) CoverAssetIDCleared() bool {
+	_, ok := m.clearedFields[aiskill.FieldCoverAssetID]
+	return ok
+}
+
+// ResetCoverAssetID resets all changes to the "cover_asset_id" field.
+func (m *AISkillMutation) ResetCoverAssetID() {
+	m.cover_asset_id = nil
+	m.addcover_asset_id = nil
+	delete(m.clearedFields, aiskill.FieldCoverAssetID)
+}
+
+// SetMetadata sets the "metadata" field.
+func (m *AISkillMutation) SetMetadata(value map[string]interface{}) {
+	m.metadata = &value
+}
+
+// Metadata returns the value of the "metadata" field in the mutation.
+func (m *AISkillMutation) Metadata() (r map[string]interface{}, exists bool) {
+	v := m.metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMetadata returns the old "metadata" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldMetadata(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMetadata: %w", err)
+	}
+	return oldValue.Metadata, nil
+}
+
+// ResetMetadata resets all changes to the "metadata" field.
+func (m *AISkillMutation) ResetMetadata() {
+	m.metadata = nil
+}
+
+// SetRequestID sets the "request_id" field.
+func (m *AISkillMutation) SetRequestID(s string) {
+	m.request_id = &s
+}
+
+// RequestID returns the value of the "request_id" field in the mutation.
+func (m *AISkillMutation) RequestID() (r string, exists bool) {
+	v := m.request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestID returns the old "request_id" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldRequestID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestID: %w", err)
+	}
+	return oldValue.RequestID, nil
+}
+
+// ClearRequestID clears the value of the "request_id" field.
+func (m *AISkillMutation) ClearRequestID() {
+	m.request_id = nil
+	m.clearedFields[aiskill.FieldRequestID] = struct{}{}
+}
+
+// RequestIDCleared returns if the "request_id" field was cleared in this mutation.
+func (m *AISkillMutation) RequestIDCleared() bool {
+	_, ok := m.clearedFields[aiskill.FieldRequestID]
+	return ok
+}
+
+// ResetRequestID resets all changes to the "request_id" field.
+func (m *AISkillMutation) ResetRequestID() {
+	m.request_id = nil
+	delete(m.clearedFields, aiskill.FieldRequestID)
+}
+
+// SetUsageLogID sets the "usage_log_id" field.
+func (m *AISkillMutation) SetUsageLogID(i int64) {
+	m.usage_log_id = &i
+	m.addusage_log_id = nil
+}
+
+// UsageLogID returns the value of the "usage_log_id" field in the mutation.
+func (m *AISkillMutation) UsageLogID() (r int64, exists bool) {
+	v := m.usage_log_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageLogID returns the old "usage_log_id" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldUsageLogID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageLogID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageLogID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageLogID: %w", err)
+	}
+	return oldValue.UsageLogID, nil
+}
+
+// AddUsageLogID adds i to the "usage_log_id" field.
+func (m *AISkillMutation) AddUsageLogID(i int64) {
+	if m.addusage_log_id != nil {
+		*m.addusage_log_id += i
+	} else {
+		m.addusage_log_id = &i
+	}
+}
+
+// AddedUsageLogID returns the value that was added to the "usage_log_id" field in this mutation.
+func (m *AISkillMutation) AddedUsageLogID() (r int64, exists bool) {
+	v := m.addusage_log_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearUsageLogID clears the value of the "usage_log_id" field.
+func (m *AISkillMutation) ClearUsageLogID() {
+	m.usage_log_id = nil
+	m.addusage_log_id = nil
+	m.clearedFields[aiskill.FieldUsageLogID] = struct{}{}
+}
+
+// UsageLogIDCleared returns if the "usage_log_id" field was cleared in this mutation.
+func (m *AISkillMutation) UsageLogIDCleared() bool {
+	_, ok := m.clearedFields[aiskill.FieldUsageLogID]
+	return ok
+}
+
+// ResetUsageLogID resets all changes to the "usage_log_id" field.
+func (m *AISkillMutation) ResetUsageLogID() {
+	m.usage_log_id = nil
+	m.addusage_log_id = nil
+	delete(m.clearedFields, aiskill.FieldUsageLogID)
+}
+
+// SetAPIKeyID sets the "api_key_id" field.
+func (m *AISkillMutation) SetAPIKeyID(i int64) {
+	m.api_key_id = &i
+	m.addapi_key_id = nil
+}
+
+// APIKeyID returns the value of the "api_key_id" field in the mutation.
+func (m *AISkillMutation) APIKeyID() (r int64, exists bool) {
+	v := m.api_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAPIKeyID returns the old "api_key_id" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldAPIKeyID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAPIKeyID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAPIKeyID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAPIKeyID: %w", err)
+	}
+	return oldValue.APIKeyID, nil
+}
+
+// AddAPIKeyID adds i to the "api_key_id" field.
+func (m *AISkillMutation) AddAPIKeyID(i int64) {
+	if m.addapi_key_id != nil {
+		*m.addapi_key_id += i
+	} else {
+		m.addapi_key_id = &i
+	}
+}
+
+// AddedAPIKeyID returns the value that was added to the "api_key_id" field in this mutation.
+func (m *AISkillMutation) AddedAPIKeyID() (r int64, exists bool) {
+	v := m.addapi_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearAPIKeyID clears the value of the "api_key_id" field.
+func (m *AISkillMutation) ClearAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+	m.clearedFields[aiskill.FieldAPIKeyID] = struct{}{}
+}
+
+// APIKeyIDCleared returns if the "api_key_id" field was cleared in this mutation.
+func (m *AISkillMutation) APIKeyIDCleared() bool {
+	_, ok := m.clearedFields[aiskill.FieldAPIKeyID]
+	return ok
+}
+
+// ResetAPIKeyID resets all changes to the "api_key_id" field.
+func (m *AISkillMutation) ResetAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+	delete(m.clearedFields, aiskill.FieldAPIKeyID)
+}
+
+// SetGroupID sets the "group_id" field.
+func (m *AISkillMutation) SetGroupID(i int64) {
+	m.group_id = &i
+	m.addgroup_id = nil
+}
+
+// GroupID returns the value of the "group_id" field in the mutation.
+func (m *AISkillMutation) GroupID() (r int64, exists bool) {
+	v := m.group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGroupID returns the old "group_id" field's value of the AISkill entity.
+// If the AISkill object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillMutation) OldGroupID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGroupID: %w", err)
+	}
+	return oldValue.GroupID, nil
+}
+
+// AddGroupID adds i to the "group_id" field.
+func (m *AISkillMutation) AddGroupID(i int64) {
+	if m.addgroup_id != nil {
+		*m.addgroup_id += i
+	} else {
+		m.addgroup_id = &i
+	}
+}
+
+// AddedGroupID returns the value that was added to the "group_id" field in this mutation.
+func (m *AISkillMutation) AddedGroupID() (r int64, exists bool) {
+	v := m.addgroup_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (m *AISkillMutation) ClearGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+	m.clearedFields[aiskill.FieldGroupID] = struct{}{}
+}
+
+// GroupIDCleared returns if the "group_id" field was cleared in this mutation.
+func (m *AISkillMutation) GroupIDCleared() bool {
+	_, ok := m.clearedFields[aiskill.FieldGroupID]
+	return ok
+}
+
+// ResetGroupID resets all changes to the "group_id" field.
+func (m *AISkillMutation) ResetGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+	delete(m.clearedFields, aiskill.FieldGroupID)
+}
+
+// AddVersionIDs adds the "versions" edge to the AISkillVersion entity by ids.
+func (m *AISkillMutation) AddVersionIDs(ids ...int64) {
+	if m.versions == nil {
+		m.versions = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.versions[ids[i]] = struct{}{}
+	}
+}
+
+// ClearVersions clears the "versions" edge to the AISkillVersion entity.
+func (m *AISkillMutation) ClearVersions() {
+	m.clearedversions = true
+}
+
+// VersionsCleared reports if the "versions" edge to the AISkillVersion entity was cleared.
+func (m *AISkillMutation) VersionsCleared() bool {
+	return m.clearedversions
+}
+
+// RemoveVersionIDs removes the "versions" edge to the AISkillVersion entity by IDs.
+func (m *AISkillMutation) RemoveVersionIDs(ids ...int64) {
+	if m.removedversions == nil {
+		m.removedversions = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.versions, ids[i])
+		m.removedversions[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedVersions returns the removed IDs of the "versions" edge to the AISkillVersion entity.
+func (m *AISkillMutation) RemovedVersionsIDs() (ids []int64) {
+	for id := range m.removedversions {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// VersionsIDs returns the "versions" edge IDs in the mutation.
+func (m *AISkillMutation) VersionsIDs() (ids []int64) {
+	for id := range m.versions {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetVersions resets all changes to the "versions" edge.
+func (m *AISkillMutation) ResetVersions() {
+	m.versions = nil
+	m.clearedversions = false
+	m.removedversions = nil
+}
+
+// AddRunIDs adds the "runs" edge to the AISkillRun entity by ids.
+func (m *AISkillMutation) AddRunIDs(ids ...int64) {
+	if m.runs == nil {
+		m.runs = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.runs[ids[i]] = struct{}{}
+	}
+}
+
+// ClearRuns clears the "runs" edge to the AISkillRun entity.
+func (m *AISkillMutation) ClearRuns() {
+	m.clearedruns = true
+}
+
+// RunsCleared reports if the "runs" edge to the AISkillRun entity was cleared.
+func (m *AISkillMutation) RunsCleared() bool {
+	return m.clearedruns
+}
+
+// RemoveRunIDs removes the "runs" edge to the AISkillRun entity by IDs.
+func (m *AISkillMutation) RemoveRunIDs(ids ...int64) {
+	if m.removedruns == nil {
+		m.removedruns = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.runs, ids[i])
+		m.removedruns[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedRuns returns the removed IDs of the "runs" edge to the AISkillRun entity.
+func (m *AISkillMutation) RemovedRunsIDs() (ids []int64) {
+	for id := range m.removedruns {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// RunsIDs returns the "runs" edge IDs in the mutation.
+func (m *AISkillMutation) RunsIDs() (ids []int64) {
+	for id := range m.runs {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetRuns resets all changes to the "runs" edge.
+func (m *AISkillMutation) ResetRuns() {
+	m.runs = nil
+	m.clearedruns = false
+	m.removedruns = nil
+}
+
+// AddReviewIDs adds the "reviews" edge to the AISkillReview entity by ids.
+func (m *AISkillMutation) AddReviewIDs(ids ...int64) {
+	if m.reviews == nil {
+		m.reviews = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.reviews[ids[i]] = struct{}{}
+	}
+}
+
+// ClearReviews clears the "reviews" edge to the AISkillReview entity.
+func (m *AISkillMutation) ClearReviews() {
+	m.clearedreviews = true
+}
+
+// ReviewsCleared reports if the "reviews" edge to the AISkillReview entity was cleared.
+func (m *AISkillMutation) ReviewsCleared() bool {
+	return m.clearedreviews
+}
+
+// RemoveReviewIDs removes the "reviews" edge to the AISkillReview entity by IDs.
+func (m *AISkillMutation) RemoveReviewIDs(ids ...int64) {
+	if m.removedreviews == nil {
+		m.removedreviews = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.reviews, ids[i])
+		m.removedreviews[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedReviews returns the removed IDs of the "reviews" edge to the AISkillReview entity.
+func (m *AISkillMutation) RemovedReviewsIDs() (ids []int64) {
+	for id := range m.removedreviews {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ReviewsIDs returns the "reviews" edge IDs in the mutation.
+func (m *AISkillMutation) ReviewsIDs() (ids []int64) {
+	for id := range m.reviews {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetReviews resets all changes to the "reviews" edge.
+func (m *AISkillMutation) ResetReviews() {
+	m.reviews = nil
+	m.clearedreviews = false
+	m.removedreviews = nil
+}
+
+// AddLikeIDs adds the "likes" edge to the AISkillLike entity by ids.
+func (m *AISkillMutation) AddLikeIDs(ids ...int64) {
+	if m.likes == nil {
+		m.likes = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.likes[ids[i]] = struct{}{}
+	}
+}
+
+// ClearLikes clears the "likes" edge to the AISkillLike entity.
+func (m *AISkillMutation) ClearLikes() {
+	m.clearedlikes = true
+}
+
+// LikesCleared reports if the "likes" edge to the AISkillLike entity was cleared.
+func (m *AISkillMutation) LikesCleared() bool {
+	return m.clearedlikes
+}
+
+// RemoveLikeIDs removes the "likes" edge to the AISkillLike entity by IDs.
+func (m *AISkillMutation) RemoveLikeIDs(ids ...int64) {
+	if m.removedlikes == nil {
+		m.removedlikes = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.likes, ids[i])
+		m.removedlikes[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedLikes returns the removed IDs of the "likes" edge to the AISkillLike entity.
+func (m *AISkillMutation) RemovedLikesIDs() (ids []int64) {
+	for id := range m.removedlikes {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// LikesIDs returns the "likes" edge IDs in the mutation.
+func (m *AISkillMutation) LikesIDs() (ids []int64) {
+	for id := range m.likes {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetLikes resets all changes to the "likes" edge.
+func (m *AISkillMutation) ResetLikes() {
+	m.likes = nil
+	m.clearedlikes = false
+	m.removedlikes = nil
+}
+
+// AddSettlementIDs adds the "settlements" edge to the AISkillSettlement entity by ids.
+func (m *AISkillMutation) AddSettlementIDs(ids ...int64) {
+	if m.settlements == nil {
+		m.settlements = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.settlements[ids[i]] = struct{}{}
+	}
+}
+
+// ClearSettlements clears the "settlements" edge to the AISkillSettlement entity.
+func (m *AISkillMutation) ClearSettlements() {
+	m.clearedsettlements = true
+}
+
+// SettlementsCleared reports if the "settlements" edge to the AISkillSettlement entity was cleared.
+func (m *AISkillMutation) SettlementsCleared() bool {
+	return m.clearedsettlements
+}
+
+// RemoveSettlementIDs removes the "settlements" edge to the AISkillSettlement entity by IDs.
+func (m *AISkillMutation) RemoveSettlementIDs(ids ...int64) {
+	if m.removedsettlements == nil {
+		m.removedsettlements = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.settlements, ids[i])
+		m.removedsettlements[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedSettlements returns the removed IDs of the "settlements" edge to the AISkillSettlement entity.
+func (m *AISkillMutation) RemovedSettlementsIDs() (ids []int64) {
+	for id := range m.removedsettlements {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// SettlementsIDs returns the "settlements" edge IDs in the mutation.
+func (m *AISkillMutation) SettlementsIDs() (ids []int64) {
+	for id := range m.settlements {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetSettlements resets all changes to the "settlements" edge.
+func (m *AISkillMutation) ResetSettlements() {
+	m.settlements = nil
+	m.clearedsettlements = false
+	m.removedsettlements = nil
+}
+
+// Where appends a list predicates to the AISkillMutation builder.
+func (m *AISkillMutation) Where(ps ...predicate.AISkill) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AISkillMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AISkillMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AISkill, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AISkillMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AISkillMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AISkill).
+func (m *AISkillMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AISkillMutation) Fields() []string {
+	fields := make([]string, 0, 27)
+	if m.created_at != nil {
+		fields = append(fields, aiskill.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, aiskill.FieldUpdatedAt)
+	}
+	if m.deleted_at != nil {
+		fields = append(fields, aiskill.FieldDeletedAt)
+	}
+	if m.user_id != nil {
+		fields = append(fields, aiskill.FieldUserID)
+	}
+	if m.skill_type != nil {
+		fields = append(fields, aiskill.FieldSkillType)
+	}
+	if m.title != nil {
+		fields = append(fields, aiskill.FieldTitle)
+	}
+	if m.summary != nil {
+		fields = append(fields, aiskill.FieldSummary)
+	}
+	if m.description != nil {
+		fields = append(fields, aiskill.FieldDescription)
+	}
+	if m.category != nil {
+		fields = append(fields, aiskill.FieldCategory)
+	}
+	if m.tags != nil {
+		fields = append(fields, aiskill.FieldTags)
+	}
+	if m.visibility != nil {
+		fields = append(fields, aiskill.FieldVisibility)
+	}
+	if m.source_visibility != nil {
+		fields = append(fields, aiskill.FieldSourceVisibility)
+	}
+	if m.billing_mode != nil {
+		fields = append(fields, aiskill.FieldBillingMode)
+	}
+	if m.price != nil {
+		fields = append(fields, aiskill.FieldPrice)
+	}
+	if m.current_version_id != nil {
+		fields = append(fields, aiskill.FieldCurrentVersionID)
+	}
+	if m.published_version_id != nil {
+		fields = append(fields, aiskill.FieldPublishedVersionID)
+	}
+	if m.latest_approved_version_id != nil {
+		fields = append(fields, aiskill.FieldLatestApprovedVersionID)
+	}
+	if m.latest_version != nil {
+		fields = append(fields, aiskill.FieldLatestVersion)
+	}
+	if m.like_count != nil {
+		fields = append(fields, aiskill.FieldLikeCount)
+	}
+	if m.run_count != nil {
+		fields = append(fields, aiskill.FieldRunCount)
+	}
+	if m.total_income != nil {
+		fields = append(fields, aiskill.FieldTotalIncome)
+	}
+	if m.cover_asset_id != nil {
+		fields = append(fields, aiskill.FieldCoverAssetID)
+	}
+	if m.metadata != nil {
+		fields = append(fields, aiskill.FieldMetadata)
+	}
+	if m.request_id != nil {
+		fields = append(fields, aiskill.FieldRequestID)
+	}
+	if m.usage_log_id != nil {
+		fields = append(fields, aiskill.FieldUsageLogID)
+	}
+	if m.api_key_id != nil {
+		fields = append(fields, aiskill.FieldAPIKeyID)
+	}
+	if m.group_id != nil {
+		fields = append(fields, aiskill.FieldGroupID)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AISkillMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case aiskill.FieldCreatedAt:
+		return m.CreatedAt()
+	case aiskill.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case aiskill.FieldDeletedAt:
+		return m.DeletedAt()
+	case aiskill.FieldUserID:
+		return m.UserID()
+	case aiskill.FieldSkillType:
+		return m.SkillType()
+	case aiskill.FieldTitle:
+		return m.Title()
+	case aiskill.FieldSummary:
+		return m.Summary()
+	case aiskill.FieldDescription:
+		return m.Description()
+	case aiskill.FieldCategory:
+		return m.Category()
+	case aiskill.FieldTags:
+		return m.Tags()
+	case aiskill.FieldVisibility:
+		return m.Visibility()
+	case aiskill.FieldSourceVisibility:
+		return m.SourceVisibility()
+	case aiskill.FieldBillingMode:
+		return m.BillingMode()
+	case aiskill.FieldPrice:
+		return m.Price()
+	case aiskill.FieldCurrentVersionID:
+		return m.CurrentVersionID()
+	case aiskill.FieldPublishedVersionID:
+		return m.PublishedVersionID()
+	case aiskill.FieldLatestApprovedVersionID:
+		return m.LatestApprovedVersionID()
+	case aiskill.FieldLatestVersion:
+		return m.LatestVersion()
+	case aiskill.FieldLikeCount:
+		return m.LikeCount()
+	case aiskill.FieldRunCount:
+		return m.RunCount()
+	case aiskill.FieldTotalIncome:
+		return m.TotalIncome()
+	case aiskill.FieldCoverAssetID:
+		return m.CoverAssetID()
+	case aiskill.FieldMetadata:
+		return m.Metadata()
+	case aiskill.FieldRequestID:
+		return m.RequestID()
+	case aiskill.FieldUsageLogID:
+		return m.UsageLogID()
+	case aiskill.FieldAPIKeyID:
+		return m.APIKeyID()
+	case aiskill.FieldGroupID:
+		return m.GroupID()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AISkillMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case aiskill.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case aiskill.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case aiskill.FieldDeletedAt:
+		return m.OldDeletedAt(ctx)
+	case aiskill.FieldUserID:
+		return m.OldUserID(ctx)
+	case aiskill.FieldSkillType:
+		return m.OldSkillType(ctx)
+	case aiskill.FieldTitle:
+		return m.OldTitle(ctx)
+	case aiskill.FieldSummary:
+		return m.OldSummary(ctx)
+	case aiskill.FieldDescription:
+		return m.OldDescription(ctx)
+	case aiskill.FieldCategory:
+		return m.OldCategory(ctx)
+	case aiskill.FieldTags:
+		return m.OldTags(ctx)
+	case aiskill.FieldVisibility:
+		return m.OldVisibility(ctx)
+	case aiskill.FieldSourceVisibility:
+		return m.OldSourceVisibility(ctx)
+	case aiskill.FieldBillingMode:
+		return m.OldBillingMode(ctx)
+	case aiskill.FieldPrice:
+		return m.OldPrice(ctx)
+	case aiskill.FieldCurrentVersionID:
+		return m.OldCurrentVersionID(ctx)
+	case aiskill.FieldPublishedVersionID:
+		return m.OldPublishedVersionID(ctx)
+	case aiskill.FieldLatestApprovedVersionID:
+		return m.OldLatestApprovedVersionID(ctx)
+	case aiskill.FieldLatestVersion:
+		return m.OldLatestVersion(ctx)
+	case aiskill.FieldLikeCount:
+		return m.OldLikeCount(ctx)
+	case aiskill.FieldRunCount:
+		return m.OldRunCount(ctx)
+	case aiskill.FieldTotalIncome:
+		return m.OldTotalIncome(ctx)
+	case aiskill.FieldCoverAssetID:
+		return m.OldCoverAssetID(ctx)
+	case aiskill.FieldMetadata:
+		return m.OldMetadata(ctx)
+	case aiskill.FieldRequestID:
+		return m.OldRequestID(ctx)
+	case aiskill.FieldUsageLogID:
+		return m.OldUsageLogID(ctx)
+	case aiskill.FieldAPIKeyID:
+		return m.OldAPIKeyID(ctx)
+	case aiskill.FieldGroupID:
+		return m.OldGroupID(ctx)
+	}
+	return nil, fmt.Errorf("unknown AISkill field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AISkillMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case aiskill.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case aiskill.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case aiskill.FieldDeletedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDeletedAt(v)
+		return nil
+	case aiskill.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case aiskill.FieldSkillType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSkillType(v)
+		return nil
+	case aiskill.FieldTitle:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTitle(v)
+		return nil
+	case aiskill.FieldSummary:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSummary(v)
+		return nil
+	case aiskill.FieldDescription:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDescription(v)
+		return nil
+	case aiskill.FieldCategory:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCategory(v)
+		return nil
+	case aiskill.FieldTags:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTags(v)
+		return nil
+	case aiskill.FieldVisibility:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVisibility(v)
+		return nil
+	case aiskill.FieldSourceVisibility:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSourceVisibility(v)
+		return nil
+	case aiskill.FieldBillingMode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBillingMode(v)
+		return nil
+	case aiskill.FieldPrice:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPrice(v)
+		return nil
+	case aiskill.FieldCurrentVersionID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCurrentVersionID(v)
+		return nil
+	case aiskill.FieldPublishedVersionID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPublishedVersionID(v)
+		return nil
+	case aiskill.FieldLatestApprovedVersionID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLatestApprovedVersionID(v)
+		return nil
+	case aiskill.FieldLatestVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLatestVersion(v)
+		return nil
+	case aiskill.FieldLikeCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLikeCount(v)
+		return nil
+	case aiskill.FieldRunCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRunCount(v)
+		return nil
+	case aiskill.FieldTotalIncome:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTotalIncome(v)
+		return nil
+	case aiskill.FieldCoverAssetID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCoverAssetID(v)
+		return nil
+	case aiskill.FieldMetadata:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMetadata(v)
+		return nil
+	case aiskill.FieldRequestID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestID(v)
+		return nil
+	case aiskill.FieldUsageLogID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageLogID(v)
+		return nil
+	case aiskill.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAPIKeyID(v)
+		return nil
+	case aiskill.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGroupID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AISkill field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AISkillMutation) AddedFields() []string {
+	var fields []string
+	if m.adduser_id != nil {
+		fields = append(fields, aiskill.FieldUserID)
+	}
+	if m.addprice != nil {
+		fields = append(fields, aiskill.FieldPrice)
+	}
+	if m.addcurrent_version_id != nil {
+		fields = append(fields, aiskill.FieldCurrentVersionID)
+	}
+	if m.addpublished_version_id != nil {
+		fields = append(fields, aiskill.FieldPublishedVersionID)
+	}
+	if m.addlatest_approved_version_id != nil {
+		fields = append(fields, aiskill.FieldLatestApprovedVersionID)
+	}
+	if m.addlatest_version != nil {
+		fields = append(fields, aiskill.FieldLatestVersion)
+	}
+	if m.addlike_count != nil {
+		fields = append(fields, aiskill.FieldLikeCount)
+	}
+	if m.addrun_count != nil {
+		fields = append(fields, aiskill.FieldRunCount)
+	}
+	if m.addtotal_income != nil {
+		fields = append(fields, aiskill.FieldTotalIncome)
+	}
+	if m.addcover_asset_id != nil {
+		fields = append(fields, aiskill.FieldCoverAssetID)
+	}
+	if m.addusage_log_id != nil {
+		fields = append(fields, aiskill.FieldUsageLogID)
+	}
+	if m.addapi_key_id != nil {
+		fields = append(fields, aiskill.FieldAPIKeyID)
+	}
+	if m.addgroup_id != nil {
+		fields = append(fields, aiskill.FieldGroupID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AISkillMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case aiskill.FieldUserID:
+		return m.AddedUserID()
+	case aiskill.FieldPrice:
+		return m.AddedPrice()
+	case aiskill.FieldCurrentVersionID:
+		return m.AddedCurrentVersionID()
+	case aiskill.FieldPublishedVersionID:
+		return m.AddedPublishedVersionID()
+	case aiskill.FieldLatestApprovedVersionID:
+		return m.AddedLatestApprovedVersionID()
+	case aiskill.FieldLatestVersion:
+		return m.AddedLatestVersion()
+	case aiskill.FieldLikeCount:
+		return m.AddedLikeCount()
+	case aiskill.FieldRunCount:
+		return m.AddedRunCount()
+	case aiskill.FieldTotalIncome:
+		return m.AddedTotalIncome()
+	case aiskill.FieldCoverAssetID:
+		return m.AddedCoverAssetID()
+	case aiskill.FieldUsageLogID:
+		return m.AddedUsageLogID()
+	case aiskill.FieldAPIKeyID:
+		return m.AddedAPIKeyID()
+	case aiskill.FieldGroupID:
+		return m.AddedGroupID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AISkillMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case aiskill.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUserID(v)
+		return nil
+	case aiskill.FieldPrice:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPrice(v)
+		return nil
+	case aiskill.FieldCurrentVersionID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCurrentVersionID(v)
+		return nil
+	case aiskill.FieldPublishedVersionID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPublishedVersionID(v)
+		return nil
+	case aiskill.FieldLatestApprovedVersionID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLatestApprovedVersionID(v)
+		return nil
+	case aiskill.FieldLatestVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLatestVersion(v)
+		return nil
+	case aiskill.FieldLikeCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLikeCount(v)
+		return nil
+	case aiskill.FieldRunCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRunCount(v)
+		return nil
+	case aiskill.FieldTotalIncome:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTotalIncome(v)
+		return nil
+	case aiskill.FieldCoverAssetID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCoverAssetID(v)
+		return nil
+	case aiskill.FieldUsageLogID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUsageLogID(v)
+		return nil
+	case aiskill.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAPIKeyID(v)
+		return nil
+	case aiskill.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddGroupID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AISkill numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AISkillMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(aiskill.FieldDeletedAt) {
+		fields = append(fields, aiskill.FieldDeletedAt)
+	}
+	if m.FieldCleared(aiskill.FieldSummary) {
+		fields = append(fields, aiskill.FieldSummary)
+	}
+	if m.FieldCleared(aiskill.FieldDescription) {
+		fields = append(fields, aiskill.FieldDescription)
+	}
+	if m.FieldCleared(aiskill.FieldCategory) {
+		fields = append(fields, aiskill.FieldCategory)
+	}
+	if m.FieldCleared(aiskill.FieldCurrentVersionID) {
+		fields = append(fields, aiskill.FieldCurrentVersionID)
+	}
+	if m.FieldCleared(aiskill.FieldPublishedVersionID) {
+		fields = append(fields, aiskill.FieldPublishedVersionID)
+	}
+	if m.FieldCleared(aiskill.FieldLatestApprovedVersionID) {
+		fields = append(fields, aiskill.FieldLatestApprovedVersionID)
+	}
+	if m.FieldCleared(aiskill.FieldCoverAssetID) {
+		fields = append(fields, aiskill.FieldCoverAssetID)
+	}
+	if m.FieldCleared(aiskill.FieldRequestID) {
+		fields = append(fields, aiskill.FieldRequestID)
+	}
+	if m.FieldCleared(aiskill.FieldUsageLogID) {
+		fields = append(fields, aiskill.FieldUsageLogID)
+	}
+	if m.FieldCleared(aiskill.FieldAPIKeyID) {
+		fields = append(fields, aiskill.FieldAPIKeyID)
+	}
+	if m.FieldCleared(aiskill.FieldGroupID) {
+		fields = append(fields, aiskill.FieldGroupID)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AISkillMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AISkillMutation) ClearField(name string) error {
+	switch name {
+	case aiskill.FieldDeletedAt:
+		m.ClearDeletedAt()
+		return nil
+	case aiskill.FieldSummary:
+		m.ClearSummary()
+		return nil
+	case aiskill.FieldDescription:
+		m.ClearDescription()
+		return nil
+	case aiskill.FieldCategory:
+		m.ClearCategory()
+		return nil
+	case aiskill.FieldCurrentVersionID:
+		m.ClearCurrentVersionID()
+		return nil
+	case aiskill.FieldPublishedVersionID:
+		m.ClearPublishedVersionID()
+		return nil
+	case aiskill.FieldLatestApprovedVersionID:
+		m.ClearLatestApprovedVersionID()
+		return nil
+	case aiskill.FieldCoverAssetID:
+		m.ClearCoverAssetID()
+		return nil
+	case aiskill.FieldRequestID:
+		m.ClearRequestID()
+		return nil
+	case aiskill.FieldUsageLogID:
+		m.ClearUsageLogID()
+		return nil
+	case aiskill.FieldAPIKeyID:
+		m.ClearAPIKeyID()
+		return nil
+	case aiskill.FieldGroupID:
+		m.ClearGroupID()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkill nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AISkillMutation) ResetField(name string) error {
+	switch name {
+	case aiskill.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case aiskill.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case aiskill.FieldDeletedAt:
+		m.ResetDeletedAt()
+		return nil
+	case aiskill.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case aiskill.FieldSkillType:
+		m.ResetSkillType()
+		return nil
+	case aiskill.FieldTitle:
+		m.ResetTitle()
+		return nil
+	case aiskill.FieldSummary:
+		m.ResetSummary()
+		return nil
+	case aiskill.FieldDescription:
+		m.ResetDescription()
+		return nil
+	case aiskill.FieldCategory:
+		m.ResetCategory()
+		return nil
+	case aiskill.FieldTags:
+		m.ResetTags()
+		return nil
+	case aiskill.FieldVisibility:
+		m.ResetVisibility()
+		return nil
+	case aiskill.FieldSourceVisibility:
+		m.ResetSourceVisibility()
+		return nil
+	case aiskill.FieldBillingMode:
+		m.ResetBillingMode()
+		return nil
+	case aiskill.FieldPrice:
+		m.ResetPrice()
+		return nil
+	case aiskill.FieldCurrentVersionID:
+		m.ResetCurrentVersionID()
+		return nil
+	case aiskill.FieldPublishedVersionID:
+		m.ResetPublishedVersionID()
+		return nil
+	case aiskill.FieldLatestApprovedVersionID:
+		m.ResetLatestApprovedVersionID()
+		return nil
+	case aiskill.FieldLatestVersion:
+		m.ResetLatestVersion()
+		return nil
+	case aiskill.FieldLikeCount:
+		m.ResetLikeCount()
+		return nil
+	case aiskill.FieldRunCount:
+		m.ResetRunCount()
+		return nil
+	case aiskill.FieldTotalIncome:
+		m.ResetTotalIncome()
+		return nil
+	case aiskill.FieldCoverAssetID:
+		m.ResetCoverAssetID()
+		return nil
+	case aiskill.FieldMetadata:
+		m.ResetMetadata()
+		return nil
+	case aiskill.FieldRequestID:
+		m.ResetRequestID()
+		return nil
+	case aiskill.FieldUsageLogID:
+		m.ResetUsageLogID()
+		return nil
+	case aiskill.FieldAPIKeyID:
+		m.ResetAPIKeyID()
+		return nil
+	case aiskill.FieldGroupID:
+		m.ResetGroupID()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkill field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AISkillMutation) AddedEdges() []string {
+	edges := make([]string, 0, 5)
+	if m.versions != nil {
+		edges = append(edges, aiskill.EdgeVersions)
+	}
+	if m.runs != nil {
+		edges = append(edges, aiskill.EdgeRuns)
+	}
+	if m.reviews != nil {
+		edges = append(edges, aiskill.EdgeReviews)
+	}
+	if m.likes != nil {
+		edges = append(edges, aiskill.EdgeLikes)
+	}
+	if m.settlements != nil {
+		edges = append(edges, aiskill.EdgeSettlements)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AISkillMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case aiskill.EdgeVersions:
+		ids := make([]ent.Value, 0, len(m.versions))
+		for id := range m.versions {
+			ids = append(ids, id)
+		}
+		return ids
+	case aiskill.EdgeRuns:
+		ids := make([]ent.Value, 0, len(m.runs))
+		for id := range m.runs {
+			ids = append(ids, id)
+		}
+		return ids
+	case aiskill.EdgeReviews:
+		ids := make([]ent.Value, 0, len(m.reviews))
+		for id := range m.reviews {
+			ids = append(ids, id)
+		}
+		return ids
+	case aiskill.EdgeLikes:
+		ids := make([]ent.Value, 0, len(m.likes))
+		for id := range m.likes {
+			ids = append(ids, id)
+		}
+		return ids
+	case aiskill.EdgeSettlements:
+		ids := make([]ent.Value, 0, len(m.settlements))
+		for id := range m.settlements {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AISkillMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 5)
+	if m.removedversions != nil {
+		edges = append(edges, aiskill.EdgeVersions)
+	}
+	if m.removedruns != nil {
+		edges = append(edges, aiskill.EdgeRuns)
+	}
+	if m.removedreviews != nil {
+		edges = append(edges, aiskill.EdgeReviews)
+	}
+	if m.removedlikes != nil {
+		edges = append(edges, aiskill.EdgeLikes)
+	}
+	if m.removedsettlements != nil {
+		edges = append(edges, aiskill.EdgeSettlements)
+	}
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AISkillMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case aiskill.EdgeVersions:
+		ids := make([]ent.Value, 0, len(m.removedversions))
+		for id := range m.removedversions {
+			ids = append(ids, id)
+		}
+		return ids
+	case aiskill.EdgeRuns:
+		ids := make([]ent.Value, 0, len(m.removedruns))
+		for id := range m.removedruns {
+			ids = append(ids, id)
+		}
+		return ids
+	case aiskill.EdgeReviews:
+		ids := make([]ent.Value, 0, len(m.removedreviews))
+		for id := range m.removedreviews {
+			ids = append(ids, id)
+		}
+		return ids
+	case aiskill.EdgeLikes:
+		ids := make([]ent.Value, 0, len(m.removedlikes))
+		for id := range m.removedlikes {
+			ids = append(ids, id)
+		}
+		return ids
+	case aiskill.EdgeSettlements:
+		ids := make([]ent.Value, 0, len(m.removedsettlements))
+		for id := range m.removedsettlements {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AISkillMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 5)
+	if m.clearedversions {
+		edges = append(edges, aiskill.EdgeVersions)
+	}
+	if m.clearedruns {
+		edges = append(edges, aiskill.EdgeRuns)
+	}
+	if m.clearedreviews {
+		edges = append(edges, aiskill.EdgeReviews)
+	}
+	if m.clearedlikes {
+		edges = append(edges, aiskill.EdgeLikes)
+	}
+	if m.clearedsettlements {
+		edges = append(edges, aiskill.EdgeSettlements)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AISkillMutation) EdgeCleared(name string) bool {
+	switch name {
+	case aiskill.EdgeVersions:
+		return m.clearedversions
+	case aiskill.EdgeRuns:
+		return m.clearedruns
+	case aiskill.EdgeReviews:
+		return m.clearedreviews
+	case aiskill.EdgeLikes:
+		return m.clearedlikes
+	case aiskill.EdgeSettlements:
+		return m.clearedsettlements
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AISkillMutation) ClearEdge(name string) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown AISkill unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AISkillMutation) ResetEdge(name string) error {
+	switch name {
+	case aiskill.EdgeVersions:
+		m.ResetVersions()
+		return nil
+	case aiskill.EdgeRuns:
+		m.ResetRuns()
+		return nil
+	case aiskill.EdgeReviews:
+		m.ResetReviews()
+		return nil
+	case aiskill.EdgeLikes:
+		m.ResetLikes()
+		return nil
+	case aiskill.EdgeSettlements:
+		m.ResetSettlements()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkill edge %s", name)
+}
+
+// AISkillLikeMutation represents an operation that mutates the AISkillLike nodes in the graph.
+type AISkillLikeMutation struct {
+	config
+	op              Op
+	typ             string
+	id              *int64
+	created_at      *time.Time
+	updated_at      *time.Time
+	user_id         *int64
+	adduser_id      *int64
+	request_id      *string
+	usage_log_id    *int64
+	addusage_log_id *int64
+	api_key_id      *int64
+	addapi_key_id   *int64
+	group_id        *int64
+	addgroup_id     *int64
+	clearedFields   map[string]struct{}
+	skill           *int64
+	clearedskill    bool
+	done            bool
+	oldValue        func(context.Context) (*AISkillLike, error)
+	predicates      []predicate.AISkillLike
+}
+
+var _ ent.Mutation = (*AISkillLikeMutation)(nil)
+
+// aiskilllikeOption allows management of the mutation configuration using functional options.
+type aiskilllikeOption func(*AISkillLikeMutation)
+
+// newAISkillLikeMutation creates new mutation for the AISkillLike entity.
+func newAISkillLikeMutation(c config, op Op, opts ...aiskilllikeOption) *AISkillLikeMutation {
+	m := &AISkillLikeMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAISkillLike,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAISkillLikeID sets the ID field of the mutation.
+func withAISkillLikeID(id int64) aiskilllikeOption {
+	return func(m *AISkillLikeMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *AISkillLike
+		)
+		m.oldValue = func(ctx context.Context) (*AISkillLike, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().AISkillLike.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAISkillLike sets the old AISkillLike of the mutation.
+func withAISkillLike(node *AISkillLike) aiskilllikeOption {
+	return func(m *AISkillLikeMutation) {
+		m.oldValue = func(context.Context) (*AISkillLike, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AISkillLikeMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AISkillLikeMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *AISkillLikeMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *AISkillLikeMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().AISkillLike.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *AISkillLikeMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *AISkillLikeMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the AISkillLike entity.
+// If the AISkillLike object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillLikeMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *AISkillLikeMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *AISkillLikeMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *AISkillLikeMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the AISkillLike entity.
+// If the AISkillLike object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillLikeMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *AISkillLikeMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetSkillID sets the "skill_id" field.
+func (m *AISkillLikeMutation) SetSkillID(i int64) {
+	m.skill = &i
+}
+
+// SkillID returns the value of the "skill_id" field in the mutation.
+func (m *AISkillLikeMutation) SkillID() (r int64, exists bool) {
+	v := m.skill
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSkillID returns the old "skill_id" field's value of the AISkillLike entity.
+// If the AISkillLike object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillLikeMutation) OldSkillID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSkillID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSkillID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSkillID: %w", err)
+	}
+	return oldValue.SkillID, nil
+}
+
+// ResetSkillID resets all changes to the "skill_id" field.
+func (m *AISkillLikeMutation) ResetSkillID() {
+	m.skill = nil
+}
+
+// SetUserID sets the "user_id" field.
+func (m *AISkillLikeMutation) SetUserID(i int64) {
+	m.user_id = &i
+	m.adduser_id = nil
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *AISkillLikeMutation) UserID() (r int64, exists bool) {
+	v := m.user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the AISkillLike entity.
+// If the AISkillLike object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillLikeMutation) OldUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// AddUserID adds i to the "user_id" field.
+func (m *AISkillLikeMutation) AddUserID(i int64) {
+	if m.adduser_id != nil {
+		*m.adduser_id += i
+	} else {
+		m.adduser_id = &i
+	}
+}
+
+// AddedUserID returns the value that was added to the "user_id" field in this mutation.
+func (m *AISkillLikeMutation) AddedUserID() (r int64, exists bool) {
+	v := m.adduser_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *AISkillLikeMutation) ResetUserID() {
+	m.user_id = nil
+	m.adduser_id = nil
+}
+
+// SetRequestID sets the "request_id" field.
+func (m *AISkillLikeMutation) SetRequestID(s string) {
+	m.request_id = &s
+}
+
+// RequestID returns the value of the "request_id" field in the mutation.
+func (m *AISkillLikeMutation) RequestID() (r string, exists bool) {
+	v := m.request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestID returns the old "request_id" field's value of the AISkillLike entity.
+// If the AISkillLike object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillLikeMutation) OldRequestID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestID: %w", err)
+	}
+	return oldValue.RequestID, nil
+}
+
+// ClearRequestID clears the value of the "request_id" field.
+func (m *AISkillLikeMutation) ClearRequestID() {
+	m.request_id = nil
+	m.clearedFields[aiskilllike.FieldRequestID] = struct{}{}
+}
+
+// RequestIDCleared returns if the "request_id" field was cleared in this mutation.
+func (m *AISkillLikeMutation) RequestIDCleared() bool {
+	_, ok := m.clearedFields[aiskilllike.FieldRequestID]
+	return ok
+}
+
+// ResetRequestID resets all changes to the "request_id" field.
+func (m *AISkillLikeMutation) ResetRequestID() {
+	m.request_id = nil
+	delete(m.clearedFields, aiskilllike.FieldRequestID)
+}
+
+// SetUsageLogID sets the "usage_log_id" field.
+func (m *AISkillLikeMutation) SetUsageLogID(i int64) {
+	m.usage_log_id = &i
+	m.addusage_log_id = nil
+}
+
+// UsageLogID returns the value of the "usage_log_id" field in the mutation.
+func (m *AISkillLikeMutation) UsageLogID() (r int64, exists bool) {
+	v := m.usage_log_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageLogID returns the old "usage_log_id" field's value of the AISkillLike entity.
+// If the AISkillLike object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillLikeMutation) OldUsageLogID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageLogID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageLogID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageLogID: %w", err)
+	}
+	return oldValue.UsageLogID, nil
+}
+
+// AddUsageLogID adds i to the "usage_log_id" field.
+func (m *AISkillLikeMutation) AddUsageLogID(i int64) {
+	if m.addusage_log_id != nil {
+		*m.addusage_log_id += i
+	} else {
+		m.addusage_log_id = &i
+	}
+}
+
+// AddedUsageLogID returns the value that was added to the "usage_log_id" field in this mutation.
+func (m *AISkillLikeMutation) AddedUsageLogID() (r int64, exists bool) {
+	v := m.addusage_log_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearUsageLogID clears the value of the "usage_log_id" field.
+func (m *AISkillLikeMutation) ClearUsageLogID() {
+	m.usage_log_id = nil
+	m.addusage_log_id = nil
+	m.clearedFields[aiskilllike.FieldUsageLogID] = struct{}{}
+}
+
+// UsageLogIDCleared returns if the "usage_log_id" field was cleared in this mutation.
+func (m *AISkillLikeMutation) UsageLogIDCleared() bool {
+	_, ok := m.clearedFields[aiskilllike.FieldUsageLogID]
+	return ok
+}
+
+// ResetUsageLogID resets all changes to the "usage_log_id" field.
+func (m *AISkillLikeMutation) ResetUsageLogID() {
+	m.usage_log_id = nil
+	m.addusage_log_id = nil
+	delete(m.clearedFields, aiskilllike.FieldUsageLogID)
+}
+
+// SetAPIKeyID sets the "api_key_id" field.
+func (m *AISkillLikeMutation) SetAPIKeyID(i int64) {
+	m.api_key_id = &i
+	m.addapi_key_id = nil
+}
+
+// APIKeyID returns the value of the "api_key_id" field in the mutation.
+func (m *AISkillLikeMutation) APIKeyID() (r int64, exists bool) {
+	v := m.api_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAPIKeyID returns the old "api_key_id" field's value of the AISkillLike entity.
+// If the AISkillLike object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillLikeMutation) OldAPIKeyID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAPIKeyID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAPIKeyID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAPIKeyID: %w", err)
+	}
+	return oldValue.APIKeyID, nil
+}
+
+// AddAPIKeyID adds i to the "api_key_id" field.
+func (m *AISkillLikeMutation) AddAPIKeyID(i int64) {
+	if m.addapi_key_id != nil {
+		*m.addapi_key_id += i
+	} else {
+		m.addapi_key_id = &i
+	}
+}
+
+// AddedAPIKeyID returns the value that was added to the "api_key_id" field in this mutation.
+func (m *AISkillLikeMutation) AddedAPIKeyID() (r int64, exists bool) {
+	v := m.addapi_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearAPIKeyID clears the value of the "api_key_id" field.
+func (m *AISkillLikeMutation) ClearAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+	m.clearedFields[aiskilllike.FieldAPIKeyID] = struct{}{}
+}
+
+// APIKeyIDCleared returns if the "api_key_id" field was cleared in this mutation.
+func (m *AISkillLikeMutation) APIKeyIDCleared() bool {
+	_, ok := m.clearedFields[aiskilllike.FieldAPIKeyID]
+	return ok
+}
+
+// ResetAPIKeyID resets all changes to the "api_key_id" field.
+func (m *AISkillLikeMutation) ResetAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+	delete(m.clearedFields, aiskilllike.FieldAPIKeyID)
+}
+
+// SetGroupID sets the "group_id" field.
+func (m *AISkillLikeMutation) SetGroupID(i int64) {
+	m.group_id = &i
+	m.addgroup_id = nil
+}
+
+// GroupID returns the value of the "group_id" field in the mutation.
+func (m *AISkillLikeMutation) GroupID() (r int64, exists bool) {
+	v := m.group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGroupID returns the old "group_id" field's value of the AISkillLike entity.
+// If the AISkillLike object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillLikeMutation) OldGroupID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGroupID: %w", err)
+	}
+	return oldValue.GroupID, nil
+}
+
+// AddGroupID adds i to the "group_id" field.
+func (m *AISkillLikeMutation) AddGroupID(i int64) {
+	if m.addgroup_id != nil {
+		*m.addgroup_id += i
+	} else {
+		m.addgroup_id = &i
+	}
+}
+
+// AddedGroupID returns the value that was added to the "group_id" field in this mutation.
+func (m *AISkillLikeMutation) AddedGroupID() (r int64, exists bool) {
+	v := m.addgroup_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (m *AISkillLikeMutation) ClearGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+	m.clearedFields[aiskilllike.FieldGroupID] = struct{}{}
+}
+
+// GroupIDCleared returns if the "group_id" field was cleared in this mutation.
+func (m *AISkillLikeMutation) GroupIDCleared() bool {
+	_, ok := m.clearedFields[aiskilllike.FieldGroupID]
+	return ok
+}
+
+// ResetGroupID resets all changes to the "group_id" field.
+func (m *AISkillLikeMutation) ResetGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+	delete(m.clearedFields, aiskilllike.FieldGroupID)
+}
+
+// ClearSkill clears the "skill" edge to the AISkill entity.
+func (m *AISkillLikeMutation) ClearSkill() {
+	m.clearedskill = true
+	m.clearedFields[aiskilllike.FieldSkillID] = struct{}{}
+}
+
+// SkillCleared reports if the "skill" edge to the AISkill entity was cleared.
+func (m *AISkillLikeMutation) SkillCleared() bool {
+	return m.clearedskill
+}
+
+// SkillIDs returns the "skill" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// SkillID instead. It exists only for internal usage by the builders.
+func (m *AISkillLikeMutation) SkillIDs() (ids []int64) {
+	if id := m.skill; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetSkill resets all changes to the "skill" edge.
+func (m *AISkillLikeMutation) ResetSkill() {
+	m.skill = nil
+	m.clearedskill = false
+}
+
+// Where appends a list predicates to the AISkillLikeMutation builder.
+func (m *AISkillLikeMutation) Where(ps ...predicate.AISkillLike) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AISkillLikeMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AISkillLikeMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AISkillLike, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AISkillLikeMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AISkillLikeMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AISkillLike).
+func (m *AISkillLikeMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AISkillLikeMutation) Fields() []string {
+	fields := make([]string, 0, 8)
+	if m.created_at != nil {
+		fields = append(fields, aiskilllike.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, aiskilllike.FieldUpdatedAt)
+	}
+	if m.skill != nil {
+		fields = append(fields, aiskilllike.FieldSkillID)
+	}
+	if m.user_id != nil {
+		fields = append(fields, aiskilllike.FieldUserID)
+	}
+	if m.request_id != nil {
+		fields = append(fields, aiskilllike.FieldRequestID)
+	}
+	if m.usage_log_id != nil {
+		fields = append(fields, aiskilllike.FieldUsageLogID)
+	}
+	if m.api_key_id != nil {
+		fields = append(fields, aiskilllike.FieldAPIKeyID)
+	}
+	if m.group_id != nil {
+		fields = append(fields, aiskilllike.FieldGroupID)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AISkillLikeMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case aiskilllike.FieldCreatedAt:
+		return m.CreatedAt()
+	case aiskilllike.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case aiskilllike.FieldSkillID:
+		return m.SkillID()
+	case aiskilllike.FieldUserID:
+		return m.UserID()
+	case aiskilllike.FieldRequestID:
+		return m.RequestID()
+	case aiskilllike.FieldUsageLogID:
+		return m.UsageLogID()
+	case aiskilllike.FieldAPIKeyID:
+		return m.APIKeyID()
+	case aiskilllike.FieldGroupID:
+		return m.GroupID()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AISkillLikeMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case aiskilllike.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case aiskilllike.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case aiskilllike.FieldSkillID:
+		return m.OldSkillID(ctx)
+	case aiskilllike.FieldUserID:
+		return m.OldUserID(ctx)
+	case aiskilllike.FieldRequestID:
+		return m.OldRequestID(ctx)
+	case aiskilllike.FieldUsageLogID:
+		return m.OldUsageLogID(ctx)
+	case aiskilllike.FieldAPIKeyID:
+		return m.OldAPIKeyID(ctx)
+	case aiskilllike.FieldGroupID:
+		return m.OldGroupID(ctx)
+	}
+	return nil, fmt.Errorf("unknown AISkillLike field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AISkillLikeMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case aiskilllike.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case aiskilllike.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case aiskilllike.FieldSkillID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSkillID(v)
+		return nil
+	case aiskilllike.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case aiskilllike.FieldRequestID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestID(v)
+		return nil
+	case aiskilllike.FieldUsageLogID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageLogID(v)
+		return nil
+	case aiskilllike.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAPIKeyID(v)
+		return nil
+	case aiskilllike.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGroupID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillLike field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AISkillLikeMutation) AddedFields() []string {
+	var fields []string
+	if m.adduser_id != nil {
+		fields = append(fields, aiskilllike.FieldUserID)
+	}
+	if m.addusage_log_id != nil {
+		fields = append(fields, aiskilllike.FieldUsageLogID)
+	}
+	if m.addapi_key_id != nil {
+		fields = append(fields, aiskilllike.FieldAPIKeyID)
+	}
+	if m.addgroup_id != nil {
+		fields = append(fields, aiskilllike.FieldGroupID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AISkillLikeMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case aiskilllike.FieldUserID:
+		return m.AddedUserID()
+	case aiskilllike.FieldUsageLogID:
+		return m.AddedUsageLogID()
+	case aiskilllike.FieldAPIKeyID:
+		return m.AddedAPIKeyID()
+	case aiskilllike.FieldGroupID:
+		return m.AddedGroupID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AISkillLikeMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case aiskilllike.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUserID(v)
+		return nil
+	case aiskilllike.FieldUsageLogID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUsageLogID(v)
+		return nil
+	case aiskilllike.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAPIKeyID(v)
+		return nil
+	case aiskilllike.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddGroupID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillLike numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AISkillLikeMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(aiskilllike.FieldRequestID) {
+		fields = append(fields, aiskilllike.FieldRequestID)
+	}
+	if m.FieldCleared(aiskilllike.FieldUsageLogID) {
+		fields = append(fields, aiskilllike.FieldUsageLogID)
+	}
+	if m.FieldCleared(aiskilllike.FieldAPIKeyID) {
+		fields = append(fields, aiskilllike.FieldAPIKeyID)
+	}
+	if m.FieldCleared(aiskilllike.FieldGroupID) {
+		fields = append(fields, aiskilllike.FieldGroupID)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AISkillLikeMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AISkillLikeMutation) ClearField(name string) error {
+	switch name {
+	case aiskilllike.FieldRequestID:
+		m.ClearRequestID()
+		return nil
+	case aiskilllike.FieldUsageLogID:
+		m.ClearUsageLogID()
+		return nil
+	case aiskilllike.FieldAPIKeyID:
+		m.ClearAPIKeyID()
+		return nil
+	case aiskilllike.FieldGroupID:
+		m.ClearGroupID()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillLike nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AISkillLikeMutation) ResetField(name string) error {
+	switch name {
+	case aiskilllike.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case aiskilllike.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case aiskilllike.FieldSkillID:
+		m.ResetSkillID()
+		return nil
+	case aiskilllike.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case aiskilllike.FieldRequestID:
+		m.ResetRequestID()
+		return nil
+	case aiskilllike.FieldUsageLogID:
+		m.ResetUsageLogID()
+		return nil
+	case aiskilllike.FieldAPIKeyID:
+		m.ResetAPIKeyID()
+		return nil
+	case aiskilllike.FieldGroupID:
+		m.ResetGroupID()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillLike field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AISkillLikeMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.skill != nil {
+		edges = append(edges, aiskilllike.EdgeSkill)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AISkillLikeMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case aiskilllike.EdgeSkill:
+		if id := m.skill; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AISkillLikeMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AISkillLikeMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AISkillLikeMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedskill {
+		edges = append(edges, aiskilllike.EdgeSkill)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AISkillLikeMutation) EdgeCleared(name string) bool {
+	switch name {
+	case aiskilllike.EdgeSkill:
+		return m.clearedskill
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AISkillLikeMutation) ClearEdge(name string) error {
+	switch name {
+	case aiskilllike.EdgeSkill:
+		m.ClearSkill()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillLike unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AISkillLikeMutation) ResetEdge(name string) error {
+	switch name {
+	case aiskilllike.EdgeSkill:
+		m.ResetSkill()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillLike edge %s", name)
+}
+
+// AISkillReviewMutation represents an operation that mutates the AISkillReview nodes in the graph.
+type AISkillReviewMutation struct {
+	config
+	op                   Op
+	typ                  string
+	id                   *int64
+	created_at           *time.Time
+	updated_at           *time.Time
+	submitter_user_id    *int64
+	addsubmitter_user_id *int64
+	reviewer_user_id     *int64
+	addreviewer_user_id  *int64
+	status               *string
+	submit_note          *string
+	review_note          *string
+	snapshot             *map[string]interface{}
+	metadata             *map[string]interface{}
+	reviewed_at          *time.Time
+	request_id           *string
+	usage_log_id         *int64
+	addusage_log_id      *int64
+	api_key_id           *int64
+	addapi_key_id        *int64
+	group_id             *int64
+	addgroup_id          *int64
+	clearedFields        map[string]struct{}
+	skill                *int64
+	clearedskill         bool
+	version              *int64
+	clearedversion       bool
+	done                 bool
+	oldValue             func(context.Context) (*AISkillReview, error)
+	predicates           []predicate.AISkillReview
+}
+
+var _ ent.Mutation = (*AISkillReviewMutation)(nil)
+
+// aiskillreviewOption allows management of the mutation configuration using functional options.
+type aiskillreviewOption func(*AISkillReviewMutation)
+
+// newAISkillReviewMutation creates new mutation for the AISkillReview entity.
+func newAISkillReviewMutation(c config, op Op, opts ...aiskillreviewOption) *AISkillReviewMutation {
+	m := &AISkillReviewMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAISkillReview,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAISkillReviewID sets the ID field of the mutation.
+func withAISkillReviewID(id int64) aiskillreviewOption {
+	return func(m *AISkillReviewMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *AISkillReview
+		)
+		m.oldValue = func(ctx context.Context) (*AISkillReview, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().AISkillReview.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAISkillReview sets the old AISkillReview of the mutation.
+func withAISkillReview(node *AISkillReview) aiskillreviewOption {
+	return func(m *AISkillReviewMutation) {
+		m.oldValue = func(context.Context) (*AISkillReview, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AISkillReviewMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AISkillReviewMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *AISkillReviewMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *AISkillReviewMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().AISkillReview.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *AISkillReviewMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *AISkillReviewMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the AISkillReview entity.
+// If the AISkillReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillReviewMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *AISkillReviewMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *AISkillReviewMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *AISkillReviewMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the AISkillReview entity.
+// If the AISkillReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillReviewMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *AISkillReviewMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetSkillID sets the "skill_id" field.
+func (m *AISkillReviewMutation) SetSkillID(i int64) {
+	m.skill = &i
+}
+
+// SkillID returns the value of the "skill_id" field in the mutation.
+func (m *AISkillReviewMutation) SkillID() (r int64, exists bool) {
+	v := m.skill
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSkillID returns the old "skill_id" field's value of the AISkillReview entity.
+// If the AISkillReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillReviewMutation) OldSkillID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSkillID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSkillID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSkillID: %w", err)
+	}
+	return oldValue.SkillID, nil
+}
+
+// ResetSkillID resets all changes to the "skill_id" field.
+func (m *AISkillReviewMutation) ResetSkillID() {
+	m.skill = nil
+}
+
+// SetVersionID sets the "version_id" field.
+func (m *AISkillReviewMutation) SetVersionID(i int64) {
+	m.version = &i
+}
+
+// VersionID returns the value of the "version_id" field in the mutation.
+func (m *AISkillReviewMutation) VersionID() (r int64, exists bool) {
+	v := m.version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVersionID returns the old "version_id" field's value of the AISkillReview entity.
+// If the AISkillReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillReviewMutation) OldVersionID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVersionID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVersionID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVersionID: %w", err)
+	}
+	return oldValue.VersionID, nil
+}
+
+// ResetVersionID resets all changes to the "version_id" field.
+func (m *AISkillReviewMutation) ResetVersionID() {
+	m.version = nil
+}
+
+// SetSubmitterUserID sets the "submitter_user_id" field.
+func (m *AISkillReviewMutation) SetSubmitterUserID(i int64) {
+	m.submitter_user_id = &i
+	m.addsubmitter_user_id = nil
+}
+
+// SubmitterUserID returns the value of the "submitter_user_id" field in the mutation.
+func (m *AISkillReviewMutation) SubmitterUserID() (r int64, exists bool) {
+	v := m.submitter_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSubmitterUserID returns the old "submitter_user_id" field's value of the AISkillReview entity.
+// If the AISkillReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillReviewMutation) OldSubmitterUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSubmitterUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSubmitterUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSubmitterUserID: %w", err)
+	}
+	return oldValue.SubmitterUserID, nil
+}
+
+// AddSubmitterUserID adds i to the "submitter_user_id" field.
+func (m *AISkillReviewMutation) AddSubmitterUserID(i int64) {
+	if m.addsubmitter_user_id != nil {
+		*m.addsubmitter_user_id += i
+	} else {
+		m.addsubmitter_user_id = &i
+	}
+}
+
+// AddedSubmitterUserID returns the value that was added to the "submitter_user_id" field in this mutation.
+func (m *AISkillReviewMutation) AddedSubmitterUserID() (r int64, exists bool) {
+	v := m.addsubmitter_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSubmitterUserID resets all changes to the "submitter_user_id" field.
+func (m *AISkillReviewMutation) ResetSubmitterUserID() {
+	m.submitter_user_id = nil
+	m.addsubmitter_user_id = nil
+}
+
+// SetReviewerUserID sets the "reviewer_user_id" field.
+func (m *AISkillReviewMutation) SetReviewerUserID(i int64) {
+	m.reviewer_user_id = &i
+	m.addreviewer_user_id = nil
+}
+
+// ReviewerUserID returns the value of the "reviewer_user_id" field in the mutation.
+func (m *AISkillReviewMutation) ReviewerUserID() (r int64, exists bool) {
+	v := m.reviewer_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReviewerUserID returns the old "reviewer_user_id" field's value of the AISkillReview entity.
+// If the AISkillReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillReviewMutation) OldReviewerUserID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReviewerUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReviewerUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReviewerUserID: %w", err)
+	}
+	return oldValue.ReviewerUserID, nil
+}
+
+// AddReviewerUserID adds i to the "reviewer_user_id" field.
+func (m *AISkillReviewMutation) AddReviewerUserID(i int64) {
+	if m.addreviewer_user_id != nil {
+		*m.addreviewer_user_id += i
+	} else {
+		m.addreviewer_user_id = &i
+	}
+}
+
+// AddedReviewerUserID returns the value that was added to the "reviewer_user_id" field in this mutation.
+func (m *AISkillReviewMutation) AddedReviewerUserID() (r int64, exists bool) {
+	v := m.addreviewer_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearReviewerUserID clears the value of the "reviewer_user_id" field.
+func (m *AISkillReviewMutation) ClearReviewerUserID() {
+	m.reviewer_user_id = nil
+	m.addreviewer_user_id = nil
+	m.clearedFields[aiskillreview.FieldReviewerUserID] = struct{}{}
+}
+
+// ReviewerUserIDCleared returns if the "reviewer_user_id" field was cleared in this mutation.
+func (m *AISkillReviewMutation) ReviewerUserIDCleared() bool {
+	_, ok := m.clearedFields[aiskillreview.FieldReviewerUserID]
+	return ok
+}
+
+// ResetReviewerUserID resets all changes to the "reviewer_user_id" field.
+func (m *AISkillReviewMutation) ResetReviewerUserID() {
+	m.reviewer_user_id = nil
+	m.addreviewer_user_id = nil
+	delete(m.clearedFields, aiskillreview.FieldReviewerUserID)
+}
+
+// SetStatus sets the "status" field.
+func (m *AISkillReviewMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *AISkillReviewMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the AISkillReview entity.
+// If the AISkillReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillReviewMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *AISkillReviewMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetSubmitNote sets the "submit_note" field.
+func (m *AISkillReviewMutation) SetSubmitNote(s string) {
+	m.submit_note = &s
+}
+
+// SubmitNote returns the value of the "submit_note" field in the mutation.
+func (m *AISkillReviewMutation) SubmitNote() (r string, exists bool) {
+	v := m.submit_note
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSubmitNote returns the old "submit_note" field's value of the AISkillReview entity.
+// If the AISkillReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillReviewMutation) OldSubmitNote(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSubmitNote is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSubmitNote requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSubmitNote: %w", err)
+	}
+	return oldValue.SubmitNote, nil
+}
+
+// ClearSubmitNote clears the value of the "submit_note" field.
+func (m *AISkillReviewMutation) ClearSubmitNote() {
+	m.submit_note = nil
+	m.clearedFields[aiskillreview.FieldSubmitNote] = struct{}{}
+}
+
+// SubmitNoteCleared returns if the "submit_note" field was cleared in this mutation.
+func (m *AISkillReviewMutation) SubmitNoteCleared() bool {
+	_, ok := m.clearedFields[aiskillreview.FieldSubmitNote]
+	return ok
+}
+
+// ResetSubmitNote resets all changes to the "submit_note" field.
+func (m *AISkillReviewMutation) ResetSubmitNote() {
+	m.submit_note = nil
+	delete(m.clearedFields, aiskillreview.FieldSubmitNote)
+}
+
+// SetReviewNote sets the "review_note" field.
+func (m *AISkillReviewMutation) SetReviewNote(s string) {
+	m.review_note = &s
+}
+
+// ReviewNote returns the value of the "review_note" field in the mutation.
+func (m *AISkillReviewMutation) ReviewNote() (r string, exists bool) {
+	v := m.review_note
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReviewNote returns the old "review_note" field's value of the AISkillReview entity.
+// If the AISkillReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillReviewMutation) OldReviewNote(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReviewNote is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReviewNote requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReviewNote: %w", err)
+	}
+	return oldValue.ReviewNote, nil
+}
+
+// ClearReviewNote clears the value of the "review_note" field.
+func (m *AISkillReviewMutation) ClearReviewNote() {
+	m.review_note = nil
+	m.clearedFields[aiskillreview.FieldReviewNote] = struct{}{}
+}
+
+// ReviewNoteCleared returns if the "review_note" field was cleared in this mutation.
+func (m *AISkillReviewMutation) ReviewNoteCleared() bool {
+	_, ok := m.clearedFields[aiskillreview.FieldReviewNote]
+	return ok
+}
+
+// ResetReviewNote resets all changes to the "review_note" field.
+func (m *AISkillReviewMutation) ResetReviewNote() {
+	m.review_note = nil
+	delete(m.clearedFields, aiskillreview.FieldReviewNote)
+}
+
+// SetSnapshot sets the "snapshot" field.
+func (m *AISkillReviewMutation) SetSnapshot(value map[string]interface{}) {
+	m.snapshot = &value
+}
+
+// Snapshot returns the value of the "snapshot" field in the mutation.
+func (m *AISkillReviewMutation) Snapshot() (r map[string]interface{}, exists bool) {
+	v := m.snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSnapshot returns the old "snapshot" field's value of the AISkillReview entity.
+// If the AISkillReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillReviewMutation) OldSnapshot(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSnapshot: %w", err)
+	}
+	return oldValue.Snapshot, nil
+}
+
+// ResetSnapshot resets all changes to the "snapshot" field.
+func (m *AISkillReviewMutation) ResetSnapshot() {
+	m.snapshot = nil
+}
+
+// SetMetadata sets the "metadata" field.
+func (m *AISkillReviewMutation) SetMetadata(value map[string]interface{}) {
+	m.metadata = &value
+}
+
+// Metadata returns the value of the "metadata" field in the mutation.
+func (m *AISkillReviewMutation) Metadata() (r map[string]interface{}, exists bool) {
+	v := m.metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMetadata returns the old "metadata" field's value of the AISkillReview entity.
+// If the AISkillReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillReviewMutation) OldMetadata(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMetadata: %w", err)
+	}
+	return oldValue.Metadata, nil
+}
+
+// ResetMetadata resets all changes to the "metadata" field.
+func (m *AISkillReviewMutation) ResetMetadata() {
+	m.metadata = nil
+}
+
+// SetReviewedAt sets the "reviewed_at" field.
+func (m *AISkillReviewMutation) SetReviewedAt(t time.Time) {
+	m.reviewed_at = &t
+}
+
+// ReviewedAt returns the value of the "reviewed_at" field in the mutation.
+func (m *AISkillReviewMutation) ReviewedAt() (r time.Time, exists bool) {
+	v := m.reviewed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReviewedAt returns the old "reviewed_at" field's value of the AISkillReview entity.
+// If the AISkillReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillReviewMutation) OldReviewedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReviewedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReviewedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReviewedAt: %w", err)
+	}
+	return oldValue.ReviewedAt, nil
+}
+
+// ClearReviewedAt clears the value of the "reviewed_at" field.
+func (m *AISkillReviewMutation) ClearReviewedAt() {
+	m.reviewed_at = nil
+	m.clearedFields[aiskillreview.FieldReviewedAt] = struct{}{}
+}
+
+// ReviewedAtCleared returns if the "reviewed_at" field was cleared in this mutation.
+func (m *AISkillReviewMutation) ReviewedAtCleared() bool {
+	_, ok := m.clearedFields[aiskillreview.FieldReviewedAt]
+	return ok
+}
+
+// ResetReviewedAt resets all changes to the "reviewed_at" field.
+func (m *AISkillReviewMutation) ResetReviewedAt() {
+	m.reviewed_at = nil
+	delete(m.clearedFields, aiskillreview.FieldReviewedAt)
+}
+
+// SetRequestID sets the "request_id" field.
+func (m *AISkillReviewMutation) SetRequestID(s string) {
+	m.request_id = &s
+}
+
+// RequestID returns the value of the "request_id" field in the mutation.
+func (m *AISkillReviewMutation) RequestID() (r string, exists bool) {
+	v := m.request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestID returns the old "request_id" field's value of the AISkillReview entity.
+// If the AISkillReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillReviewMutation) OldRequestID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestID: %w", err)
+	}
+	return oldValue.RequestID, nil
+}
+
+// ClearRequestID clears the value of the "request_id" field.
+func (m *AISkillReviewMutation) ClearRequestID() {
+	m.request_id = nil
+	m.clearedFields[aiskillreview.FieldRequestID] = struct{}{}
+}
+
+// RequestIDCleared returns if the "request_id" field was cleared in this mutation.
+func (m *AISkillReviewMutation) RequestIDCleared() bool {
+	_, ok := m.clearedFields[aiskillreview.FieldRequestID]
+	return ok
+}
+
+// ResetRequestID resets all changes to the "request_id" field.
+func (m *AISkillReviewMutation) ResetRequestID() {
+	m.request_id = nil
+	delete(m.clearedFields, aiskillreview.FieldRequestID)
+}
+
+// SetUsageLogID sets the "usage_log_id" field.
+func (m *AISkillReviewMutation) SetUsageLogID(i int64) {
+	m.usage_log_id = &i
+	m.addusage_log_id = nil
+}
+
+// UsageLogID returns the value of the "usage_log_id" field in the mutation.
+func (m *AISkillReviewMutation) UsageLogID() (r int64, exists bool) {
+	v := m.usage_log_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageLogID returns the old "usage_log_id" field's value of the AISkillReview entity.
+// If the AISkillReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillReviewMutation) OldUsageLogID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageLogID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageLogID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageLogID: %w", err)
+	}
+	return oldValue.UsageLogID, nil
+}
+
+// AddUsageLogID adds i to the "usage_log_id" field.
+func (m *AISkillReviewMutation) AddUsageLogID(i int64) {
+	if m.addusage_log_id != nil {
+		*m.addusage_log_id += i
+	} else {
+		m.addusage_log_id = &i
+	}
+}
+
+// AddedUsageLogID returns the value that was added to the "usage_log_id" field in this mutation.
+func (m *AISkillReviewMutation) AddedUsageLogID() (r int64, exists bool) {
+	v := m.addusage_log_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearUsageLogID clears the value of the "usage_log_id" field.
+func (m *AISkillReviewMutation) ClearUsageLogID() {
+	m.usage_log_id = nil
+	m.addusage_log_id = nil
+	m.clearedFields[aiskillreview.FieldUsageLogID] = struct{}{}
+}
+
+// UsageLogIDCleared returns if the "usage_log_id" field was cleared in this mutation.
+func (m *AISkillReviewMutation) UsageLogIDCleared() bool {
+	_, ok := m.clearedFields[aiskillreview.FieldUsageLogID]
+	return ok
+}
+
+// ResetUsageLogID resets all changes to the "usage_log_id" field.
+func (m *AISkillReviewMutation) ResetUsageLogID() {
+	m.usage_log_id = nil
+	m.addusage_log_id = nil
+	delete(m.clearedFields, aiskillreview.FieldUsageLogID)
+}
+
+// SetAPIKeyID sets the "api_key_id" field.
+func (m *AISkillReviewMutation) SetAPIKeyID(i int64) {
+	m.api_key_id = &i
+	m.addapi_key_id = nil
+}
+
+// APIKeyID returns the value of the "api_key_id" field in the mutation.
+func (m *AISkillReviewMutation) APIKeyID() (r int64, exists bool) {
+	v := m.api_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAPIKeyID returns the old "api_key_id" field's value of the AISkillReview entity.
+// If the AISkillReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillReviewMutation) OldAPIKeyID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAPIKeyID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAPIKeyID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAPIKeyID: %w", err)
+	}
+	return oldValue.APIKeyID, nil
+}
+
+// AddAPIKeyID adds i to the "api_key_id" field.
+func (m *AISkillReviewMutation) AddAPIKeyID(i int64) {
+	if m.addapi_key_id != nil {
+		*m.addapi_key_id += i
+	} else {
+		m.addapi_key_id = &i
+	}
+}
+
+// AddedAPIKeyID returns the value that was added to the "api_key_id" field in this mutation.
+func (m *AISkillReviewMutation) AddedAPIKeyID() (r int64, exists bool) {
+	v := m.addapi_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearAPIKeyID clears the value of the "api_key_id" field.
+func (m *AISkillReviewMutation) ClearAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+	m.clearedFields[aiskillreview.FieldAPIKeyID] = struct{}{}
+}
+
+// APIKeyIDCleared returns if the "api_key_id" field was cleared in this mutation.
+func (m *AISkillReviewMutation) APIKeyIDCleared() bool {
+	_, ok := m.clearedFields[aiskillreview.FieldAPIKeyID]
+	return ok
+}
+
+// ResetAPIKeyID resets all changes to the "api_key_id" field.
+func (m *AISkillReviewMutation) ResetAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+	delete(m.clearedFields, aiskillreview.FieldAPIKeyID)
+}
+
+// SetGroupID sets the "group_id" field.
+func (m *AISkillReviewMutation) SetGroupID(i int64) {
+	m.group_id = &i
+	m.addgroup_id = nil
+}
+
+// GroupID returns the value of the "group_id" field in the mutation.
+func (m *AISkillReviewMutation) GroupID() (r int64, exists bool) {
+	v := m.group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGroupID returns the old "group_id" field's value of the AISkillReview entity.
+// If the AISkillReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillReviewMutation) OldGroupID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGroupID: %w", err)
+	}
+	return oldValue.GroupID, nil
+}
+
+// AddGroupID adds i to the "group_id" field.
+func (m *AISkillReviewMutation) AddGroupID(i int64) {
+	if m.addgroup_id != nil {
+		*m.addgroup_id += i
+	} else {
+		m.addgroup_id = &i
+	}
+}
+
+// AddedGroupID returns the value that was added to the "group_id" field in this mutation.
+func (m *AISkillReviewMutation) AddedGroupID() (r int64, exists bool) {
+	v := m.addgroup_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (m *AISkillReviewMutation) ClearGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+	m.clearedFields[aiskillreview.FieldGroupID] = struct{}{}
+}
+
+// GroupIDCleared returns if the "group_id" field was cleared in this mutation.
+func (m *AISkillReviewMutation) GroupIDCleared() bool {
+	_, ok := m.clearedFields[aiskillreview.FieldGroupID]
+	return ok
+}
+
+// ResetGroupID resets all changes to the "group_id" field.
+func (m *AISkillReviewMutation) ResetGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+	delete(m.clearedFields, aiskillreview.FieldGroupID)
+}
+
+// ClearSkill clears the "skill" edge to the AISkill entity.
+func (m *AISkillReviewMutation) ClearSkill() {
+	m.clearedskill = true
+	m.clearedFields[aiskillreview.FieldSkillID] = struct{}{}
+}
+
+// SkillCleared reports if the "skill" edge to the AISkill entity was cleared.
+func (m *AISkillReviewMutation) SkillCleared() bool {
+	return m.clearedskill
+}
+
+// SkillIDs returns the "skill" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// SkillID instead. It exists only for internal usage by the builders.
+func (m *AISkillReviewMutation) SkillIDs() (ids []int64) {
+	if id := m.skill; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetSkill resets all changes to the "skill" edge.
+func (m *AISkillReviewMutation) ResetSkill() {
+	m.skill = nil
+	m.clearedskill = false
+}
+
+// ClearVersion clears the "version" edge to the AISkillVersion entity.
+func (m *AISkillReviewMutation) ClearVersion() {
+	m.clearedversion = true
+	m.clearedFields[aiskillreview.FieldVersionID] = struct{}{}
+}
+
+// VersionCleared reports if the "version" edge to the AISkillVersion entity was cleared.
+func (m *AISkillReviewMutation) VersionCleared() bool {
+	return m.clearedversion
+}
+
+// VersionIDs returns the "version" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// VersionID instead. It exists only for internal usage by the builders.
+func (m *AISkillReviewMutation) VersionIDs() (ids []int64) {
+	if id := m.version; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetVersion resets all changes to the "version" edge.
+func (m *AISkillReviewMutation) ResetVersion() {
+	m.version = nil
+	m.clearedversion = false
+}
+
+// Where appends a list predicates to the AISkillReviewMutation builder.
+func (m *AISkillReviewMutation) Where(ps ...predicate.AISkillReview) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AISkillReviewMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AISkillReviewMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AISkillReview, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AISkillReviewMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AISkillReviewMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AISkillReview).
+func (m *AISkillReviewMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AISkillReviewMutation) Fields() []string {
+	fields := make([]string, 0, 16)
+	if m.created_at != nil {
+		fields = append(fields, aiskillreview.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, aiskillreview.FieldUpdatedAt)
+	}
+	if m.skill != nil {
+		fields = append(fields, aiskillreview.FieldSkillID)
+	}
+	if m.version != nil {
+		fields = append(fields, aiskillreview.FieldVersionID)
+	}
+	if m.submitter_user_id != nil {
+		fields = append(fields, aiskillreview.FieldSubmitterUserID)
+	}
+	if m.reviewer_user_id != nil {
+		fields = append(fields, aiskillreview.FieldReviewerUserID)
+	}
+	if m.status != nil {
+		fields = append(fields, aiskillreview.FieldStatus)
+	}
+	if m.submit_note != nil {
+		fields = append(fields, aiskillreview.FieldSubmitNote)
+	}
+	if m.review_note != nil {
+		fields = append(fields, aiskillreview.FieldReviewNote)
+	}
+	if m.snapshot != nil {
+		fields = append(fields, aiskillreview.FieldSnapshot)
+	}
+	if m.metadata != nil {
+		fields = append(fields, aiskillreview.FieldMetadata)
+	}
+	if m.reviewed_at != nil {
+		fields = append(fields, aiskillreview.FieldReviewedAt)
+	}
+	if m.request_id != nil {
+		fields = append(fields, aiskillreview.FieldRequestID)
+	}
+	if m.usage_log_id != nil {
+		fields = append(fields, aiskillreview.FieldUsageLogID)
+	}
+	if m.api_key_id != nil {
+		fields = append(fields, aiskillreview.FieldAPIKeyID)
+	}
+	if m.group_id != nil {
+		fields = append(fields, aiskillreview.FieldGroupID)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AISkillReviewMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case aiskillreview.FieldCreatedAt:
+		return m.CreatedAt()
+	case aiskillreview.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case aiskillreview.FieldSkillID:
+		return m.SkillID()
+	case aiskillreview.FieldVersionID:
+		return m.VersionID()
+	case aiskillreview.FieldSubmitterUserID:
+		return m.SubmitterUserID()
+	case aiskillreview.FieldReviewerUserID:
+		return m.ReviewerUserID()
+	case aiskillreview.FieldStatus:
+		return m.Status()
+	case aiskillreview.FieldSubmitNote:
+		return m.SubmitNote()
+	case aiskillreview.FieldReviewNote:
+		return m.ReviewNote()
+	case aiskillreview.FieldSnapshot:
+		return m.Snapshot()
+	case aiskillreview.FieldMetadata:
+		return m.Metadata()
+	case aiskillreview.FieldReviewedAt:
+		return m.ReviewedAt()
+	case aiskillreview.FieldRequestID:
+		return m.RequestID()
+	case aiskillreview.FieldUsageLogID:
+		return m.UsageLogID()
+	case aiskillreview.FieldAPIKeyID:
+		return m.APIKeyID()
+	case aiskillreview.FieldGroupID:
+		return m.GroupID()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AISkillReviewMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case aiskillreview.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case aiskillreview.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case aiskillreview.FieldSkillID:
+		return m.OldSkillID(ctx)
+	case aiskillreview.FieldVersionID:
+		return m.OldVersionID(ctx)
+	case aiskillreview.FieldSubmitterUserID:
+		return m.OldSubmitterUserID(ctx)
+	case aiskillreview.FieldReviewerUserID:
+		return m.OldReviewerUserID(ctx)
+	case aiskillreview.FieldStatus:
+		return m.OldStatus(ctx)
+	case aiskillreview.FieldSubmitNote:
+		return m.OldSubmitNote(ctx)
+	case aiskillreview.FieldReviewNote:
+		return m.OldReviewNote(ctx)
+	case aiskillreview.FieldSnapshot:
+		return m.OldSnapshot(ctx)
+	case aiskillreview.FieldMetadata:
+		return m.OldMetadata(ctx)
+	case aiskillreview.FieldReviewedAt:
+		return m.OldReviewedAt(ctx)
+	case aiskillreview.FieldRequestID:
+		return m.OldRequestID(ctx)
+	case aiskillreview.FieldUsageLogID:
+		return m.OldUsageLogID(ctx)
+	case aiskillreview.FieldAPIKeyID:
+		return m.OldAPIKeyID(ctx)
+	case aiskillreview.FieldGroupID:
+		return m.OldGroupID(ctx)
+	}
+	return nil, fmt.Errorf("unknown AISkillReview field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AISkillReviewMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case aiskillreview.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case aiskillreview.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case aiskillreview.FieldSkillID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSkillID(v)
+		return nil
+	case aiskillreview.FieldVersionID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVersionID(v)
+		return nil
+	case aiskillreview.FieldSubmitterUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSubmitterUserID(v)
+		return nil
+	case aiskillreview.FieldReviewerUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReviewerUserID(v)
+		return nil
+	case aiskillreview.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case aiskillreview.FieldSubmitNote:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSubmitNote(v)
+		return nil
+	case aiskillreview.FieldReviewNote:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReviewNote(v)
+		return nil
+	case aiskillreview.FieldSnapshot:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSnapshot(v)
+		return nil
+	case aiskillreview.FieldMetadata:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMetadata(v)
+		return nil
+	case aiskillreview.FieldReviewedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReviewedAt(v)
+		return nil
+	case aiskillreview.FieldRequestID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestID(v)
+		return nil
+	case aiskillreview.FieldUsageLogID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageLogID(v)
+		return nil
+	case aiskillreview.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAPIKeyID(v)
+		return nil
+	case aiskillreview.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGroupID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillReview field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AISkillReviewMutation) AddedFields() []string {
+	var fields []string
+	if m.addsubmitter_user_id != nil {
+		fields = append(fields, aiskillreview.FieldSubmitterUserID)
+	}
+	if m.addreviewer_user_id != nil {
+		fields = append(fields, aiskillreview.FieldReviewerUserID)
+	}
+	if m.addusage_log_id != nil {
+		fields = append(fields, aiskillreview.FieldUsageLogID)
+	}
+	if m.addapi_key_id != nil {
+		fields = append(fields, aiskillreview.FieldAPIKeyID)
+	}
+	if m.addgroup_id != nil {
+		fields = append(fields, aiskillreview.FieldGroupID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AISkillReviewMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case aiskillreview.FieldSubmitterUserID:
+		return m.AddedSubmitterUserID()
+	case aiskillreview.FieldReviewerUserID:
+		return m.AddedReviewerUserID()
+	case aiskillreview.FieldUsageLogID:
+		return m.AddedUsageLogID()
+	case aiskillreview.FieldAPIKeyID:
+		return m.AddedAPIKeyID()
+	case aiskillreview.FieldGroupID:
+		return m.AddedGroupID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AISkillReviewMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case aiskillreview.FieldSubmitterUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSubmitterUserID(v)
+		return nil
+	case aiskillreview.FieldReviewerUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddReviewerUserID(v)
+		return nil
+	case aiskillreview.FieldUsageLogID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUsageLogID(v)
+		return nil
+	case aiskillreview.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAPIKeyID(v)
+		return nil
+	case aiskillreview.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddGroupID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillReview numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AISkillReviewMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(aiskillreview.FieldReviewerUserID) {
+		fields = append(fields, aiskillreview.FieldReviewerUserID)
+	}
+	if m.FieldCleared(aiskillreview.FieldSubmitNote) {
+		fields = append(fields, aiskillreview.FieldSubmitNote)
+	}
+	if m.FieldCleared(aiskillreview.FieldReviewNote) {
+		fields = append(fields, aiskillreview.FieldReviewNote)
+	}
+	if m.FieldCleared(aiskillreview.FieldReviewedAt) {
+		fields = append(fields, aiskillreview.FieldReviewedAt)
+	}
+	if m.FieldCleared(aiskillreview.FieldRequestID) {
+		fields = append(fields, aiskillreview.FieldRequestID)
+	}
+	if m.FieldCleared(aiskillreview.FieldUsageLogID) {
+		fields = append(fields, aiskillreview.FieldUsageLogID)
+	}
+	if m.FieldCleared(aiskillreview.FieldAPIKeyID) {
+		fields = append(fields, aiskillreview.FieldAPIKeyID)
+	}
+	if m.FieldCleared(aiskillreview.FieldGroupID) {
+		fields = append(fields, aiskillreview.FieldGroupID)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AISkillReviewMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AISkillReviewMutation) ClearField(name string) error {
+	switch name {
+	case aiskillreview.FieldReviewerUserID:
+		m.ClearReviewerUserID()
+		return nil
+	case aiskillreview.FieldSubmitNote:
+		m.ClearSubmitNote()
+		return nil
+	case aiskillreview.FieldReviewNote:
+		m.ClearReviewNote()
+		return nil
+	case aiskillreview.FieldReviewedAt:
+		m.ClearReviewedAt()
+		return nil
+	case aiskillreview.FieldRequestID:
+		m.ClearRequestID()
+		return nil
+	case aiskillreview.FieldUsageLogID:
+		m.ClearUsageLogID()
+		return nil
+	case aiskillreview.FieldAPIKeyID:
+		m.ClearAPIKeyID()
+		return nil
+	case aiskillreview.FieldGroupID:
+		m.ClearGroupID()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillReview nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AISkillReviewMutation) ResetField(name string) error {
+	switch name {
+	case aiskillreview.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case aiskillreview.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case aiskillreview.FieldSkillID:
+		m.ResetSkillID()
+		return nil
+	case aiskillreview.FieldVersionID:
+		m.ResetVersionID()
+		return nil
+	case aiskillreview.FieldSubmitterUserID:
+		m.ResetSubmitterUserID()
+		return nil
+	case aiskillreview.FieldReviewerUserID:
+		m.ResetReviewerUserID()
+		return nil
+	case aiskillreview.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case aiskillreview.FieldSubmitNote:
+		m.ResetSubmitNote()
+		return nil
+	case aiskillreview.FieldReviewNote:
+		m.ResetReviewNote()
+		return nil
+	case aiskillreview.FieldSnapshot:
+		m.ResetSnapshot()
+		return nil
+	case aiskillreview.FieldMetadata:
+		m.ResetMetadata()
+		return nil
+	case aiskillreview.FieldReviewedAt:
+		m.ResetReviewedAt()
+		return nil
+	case aiskillreview.FieldRequestID:
+		m.ResetRequestID()
+		return nil
+	case aiskillreview.FieldUsageLogID:
+		m.ResetUsageLogID()
+		return nil
+	case aiskillreview.FieldAPIKeyID:
+		m.ResetAPIKeyID()
+		return nil
+	case aiskillreview.FieldGroupID:
+		m.ResetGroupID()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillReview field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AISkillReviewMutation) AddedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.skill != nil {
+		edges = append(edges, aiskillreview.EdgeSkill)
+	}
+	if m.version != nil {
+		edges = append(edges, aiskillreview.EdgeVersion)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AISkillReviewMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case aiskillreview.EdgeSkill:
+		if id := m.skill; id != nil {
+			return []ent.Value{*id}
+		}
+	case aiskillreview.EdgeVersion:
+		if id := m.version; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AISkillReviewMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 2)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AISkillReviewMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AISkillReviewMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.clearedskill {
+		edges = append(edges, aiskillreview.EdgeSkill)
+	}
+	if m.clearedversion {
+		edges = append(edges, aiskillreview.EdgeVersion)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AISkillReviewMutation) EdgeCleared(name string) bool {
+	switch name {
+	case aiskillreview.EdgeSkill:
+		return m.clearedskill
+	case aiskillreview.EdgeVersion:
+		return m.clearedversion
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AISkillReviewMutation) ClearEdge(name string) error {
+	switch name {
+	case aiskillreview.EdgeSkill:
+		m.ClearSkill()
+		return nil
+	case aiskillreview.EdgeVersion:
+		m.ClearVersion()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillReview unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AISkillReviewMutation) ResetEdge(name string) error {
+	switch name {
+	case aiskillreview.EdgeSkill:
+		m.ResetSkill()
+		return nil
+	case aiskillreview.EdgeVersion:
+		m.ResetVersion()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillReview edge %s", name)
+}
+
+// AISkillRunMutation represents an operation that mutates the AISkillRun nodes in the graph.
+type AISkillRunMutation struct {
+	config
+	op                 Op
+	typ                string
+	id                 *int64
+	created_at         *time.Time
+	updated_at         *time.Time
+	user_id            *int64
+	adduser_id         *int64
+	run_mode           *string
+	status             *string
+	billing_mode       *string
+	price              *float64
+	addprice           *float64
+	input_payload      *map[string]interface{}
+	output_payload     *map[string]interface{}
+	error_message      *string
+	metadata           *map[string]interface{}
+	request_id         *string
+	usage_log_id       *int64
+	addusage_log_id    *int64
+	api_key_id         *int64
+	addapi_key_id      *int64
+	group_id           *int64
+	addgroup_id        *int64
+	clearedFields      map[string]struct{}
+	skill              *int64
+	clearedskill       bool
+	version            *int64
+	clearedversion     bool
+	settlements        map[int64]struct{}
+	removedsettlements map[int64]struct{}
+	clearedsettlements bool
+	done               bool
+	oldValue           func(context.Context) (*AISkillRun, error)
+	predicates         []predicate.AISkillRun
+}
+
+var _ ent.Mutation = (*AISkillRunMutation)(nil)
+
+// aiskillrunOption allows management of the mutation configuration using functional options.
+type aiskillrunOption func(*AISkillRunMutation)
+
+// newAISkillRunMutation creates new mutation for the AISkillRun entity.
+func newAISkillRunMutation(c config, op Op, opts ...aiskillrunOption) *AISkillRunMutation {
+	m := &AISkillRunMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAISkillRun,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAISkillRunID sets the ID field of the mutation.
+func withAISkillRunID(id int64) aiskillrunOption {
+	return func(m *AISkillRunMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *AISkillRun
+		)
+		m.oldValue = func(ctx context.Context) (*AISkillRun, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().AISkillRun.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAISkillRun sets the old AISkillRun of the mutation.
+func withAISkillRun(node *AISkillRun) aiskillrunOption {
+	return func(m *AISkillRunMutation) {
+		m.oldValue = func(context.Context) (*AISkillRun, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AISkillRunMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AISkillRunMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *AISkillRunMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *AISkillRunMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().AISkillRun.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *AISkillRunMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *AISkillRunMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the AISkillRun entity.
+// If the AISkillRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillRunMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *AISkillRunMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *AISkillRunMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *AISkillRunMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the AISkillRun entity.
+// If the AISkillRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillRunMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *AISkillRunMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetSkillID sets the "skill_id" field.
+func (m *AISkillRunMutation) SetSkillID(i int64) {
+	m.skill = &i
+}
+
+// SkillID returns the value of the "skill_id" field in the mutation.
+func (m *AISkillRunMutation) SkillID() (r int64, exists bool) {
+	v := m.skill
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSkillID returns the old "skill_id" field's value of the AISkillRun entity.
+// If the AISkillRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillRunMutation) OldSkillID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSkillID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSkillID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSkillID: %w", err)
+	}
+	return oldValue.SkillID, nil
+}
+
+// ResetSkillID resets all changes to the "skill_id" field.
+func (m *AISkillRunMutation) ResetSkillID() {
+	m.skill = nil
+}
+
+// SetVersionID sets the "version_id" field.
+func (m *AISkillRunMutation) SetVersionID(i int64) {
+	m.version = &i
+}
+
+// VersionID returns the value of the "version_id" field in the mutation.
+func (m *AISkillRunMutation) VersionID() (r int64, exists bool) {
+	v := m.version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVersionID returns the old "version_id" field's value of the AISkillRun entity.
+// If the AISkillRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillRunMutation) OldVersionID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVersionID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVersionID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVersionID: %w", err)
+	}
+	return oldValue.VersionID, nil
+}
+
+// ResetVersionID resets all changes to the "version_id" field.
+func (m *AISkillRunMutation) ResetVersionID() {
+	m.version = nil
+}
+
+// SetUserID sets the "user_id" field.
+func (m *AISkillRunMutation) SetUserID(i int64) {
+	m.user_id = &i
+	m.adduser_id = nil
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *AISkillRunMutation) UserID() (r int64, exists bool) {
+	v := m.user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the AISkillRun entity.
+// If the AISkillRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillRunMutation) OldUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// AddUserID adds i to the "user_id" field.
+func (m *AISkillRunMutation) AddUserID(i int64) {
+	if m.adduser_id != nil {
+		*m.adduser_id += i
+	} else {
+		m.adduser_id = &i
+	}
+}
+
+// AddedUserID returns the value that was added to the "user_id" field in this mutation.
+func (m *AISkillRunMutation) AddedUserID() (r int64, exists bool) {
+	v := m.adduser_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *AISkillRunMutation) ResetUserID() {
+	m.user_id = nil
+	m.adduser_id = nil
+}
+
+// SetRunMode sets the "run_mode" field.
+func (m *AISkillRunMutation) SetRunMode(s string) {
+	m.run_mode = &s
+}
+
+// RunMode returns the value of the "run_mode" field in the mutation.
+func (m *AISkillRunMutation) RunMode() (r string, exists bool) {
+	v := m.run_mode
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRunMode returns the old "run_mode" field's value of the AISkillRun entity.
+// If the AISkillRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillRunMutation) OldRunMode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRunMode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRunMode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRunMode: %w", err)
+	}
+	return oldValue.RunMode, nil
+}
+
+// ResetRunMode resets all changes to the "run_mode" field.
+func (m *AISkillRunMutation) ResetRunMode() {
+	m.run_mode = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *AISkillRunMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *AISkillRunMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the AISkillRun entity.
+// If the AISkillRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillRunMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *AISkillRunMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetBillingMode sets the "billing_mode" field.
+func (m *AISkillRunMutation) SetBillingMode(s string) {
+	m.billing_mode = &s
+}
+
+// BillingMode returns the value of the "billing_mode" field in the mutation.
+func (m *AISkillRunMutation) BillingMode() (r string, exists bool) {
+	v := m.billing_mode
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBillingMode returns the old "billing_mode" field's value of the AISkillRun entity.
+// If the AISkillRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillRunMutation) OldBillingMode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBillingMode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBillingMode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBillingMode: %w", err)
+	}
+	return oldValue.BillingMode, nil
+}
+
+// ResetBillingMode resets all changes to the "billing_mode" field.
+func (m *AISkillRunMutation) ResetBillingMode() {
+	m.billing_mode = nil
+}
+
+// SetPrice sets the "price" field.
+func (m *AISkillRunMutation) SetPrice(f float64) {
+	m.price = &f
+	m.addprice = nil
+}
+
+// Price returns the value of the "price" field in the mutation.
+func (m *AISkillRunMutation) Price() (r float64, exists bool) {
+	v := m.price
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPrice returns the old "price" field's value of the AISkillRun entity.
+// If the AISkillRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillRunMutation) OldPrice(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPrice is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPrice requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPrice: %w", err)
+	}
+	return oldValue.Price, nil
+}
+
+// AddPrice adds f to the "price" field.
+func (m *AISkillRunMutation) AddPrice(f float64) {
+	if m.addprice != nil {
+		*m.addprice += f
+	} else {
+		m.addprice = &f
+	}
+}
+
+// AddedPrice returns the value that was added to the "price" field in this mutation.
+func (m *AISkillRunMutation) AddedPrice() (r float64, exists bool) {
+	v := m.addprice
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPrice resets all changes to the "price" field.
+func (m *AISkillRunMutation) ResetPrice() {
+	m.price = nil
+	m.addprice = nil
+}
+
+// SetInputPayload sets the "input_payload" field.
+func (m *AISkillRunMutation) SetInputPayload(value map[string]interface{}) {
+	m.input_payload = &value
+}
+
+// InputPayload returns the value of the "input_payload" field in the mutation.
+func (m *AISkillRunMutation) InputPayload() (r map[string]interface{}, exists bool) {
+	v := m.input_payload
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInputPayload returns the old "input_payload" field's value of the AISkillRun entity.
+// If the AISkillRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillRunMutation) OldInputPayload(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInputPayload is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInputPayload requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInputPayload: %w", err)
+	}
+	return oldValue.InputPayload, nil
+}
+
+// ResetInputPayload resets all changes to the "input_payload" field.
+func (m *AISkillRunMutation) ResetInputPayload() {
+	m.input_payload = nil
+}
+
+// SetOutputPayload sets the "output_payload" field.
+func (m *AISkillRunMutation) SetOutputPayload(value map[string]interface{}) {
+	m.output_payload = &value
+}
+
+// OutputPayload returns the value of the "output_payload" field in the mutation.
+func (m *AISkillRunMutation) OutputPayload() (r map[string]interface{}, exists bool) {
+	v := m.output_payload
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOutputPayload returns the old "output_payload" field's value of the AISkillRun entity.
+// If the AISkillRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillRunMutation) OldOutputPayload(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOutputPayload is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOutputPayload requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOutputPayload: %w", err)
+	}
+	return oldValue.OutputPayload, nil
+}
+
+// ResetOutputPayload resets all changes to the "output_payload" field.
+func (m *AISkillRunMutation) ResetOutputPayload() {
+	m.output_payload = nil
+}
+
+// SetErrorMessage sets the "error_message" field.
+func (m *AISkillRunMutation) SetErrorMessage(s string) {
+	m.error_message = &s
+}
+
+// ErrorMessage returns the value of the "error_message" field in the mutation.
+func (m *AISkillRunMutation) ErrorMessage() (r string, exists bool) {
+	v := m.error_message
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldErrorMessage returns the old "error_message" field's value of the AISkillRun entity.
+// If the AISkillRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillRunMutation) OldErrorMessage(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldErrorMessage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldErrorMessage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldErrorMessage: %w", err)
+	}
+	return oldValue.ErrorMessage, nil
+}
+
+// ClearErrorMessage clears the value of the "error_message" field.
+func (m *AISkillRunMutation) ClearErrorMessage() {
+	m.error_message = nil
+	m.clearedFields[aiskillrun.FieldErrorMessage] = struct{}{}
+}
+
+// ErrorMessageCleared returns if the "error_message" field was cleared in this mutation.
+func (m *AISkillRunMutation) ErrorMessageCleared() bool {
+	_, ok := m.clearedFields[aiskillrun.FieldErrorMessage]
+	return ok
+}
+
+// ResetErrorMessage resets all changes to the "error_message" field.
+func (m *AISkillRunMutation) ResetErrorMessage() {
+	m.error_message = nil
+	delete(m.clearedFields, aiskillrun.FieldErrorMessage)
+}
+
+// SetMetadata sets the "metadata" field.
+func (m *AISkillRunMutation) SetMetadata(value map[string]interface{}) {
+	m.metadata = &value
+}
+
+// Metadata returns the value of the "metadata" field in the mutation.
+func (m *AISkillRunMutation) Metadata() (r map[string]interface{}, exists bool) {
+	v := m.metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMetadata returns the old "metadata" field's value of the AISkillRun entity.
+// If the AISkillRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillRunMutation) OldMetadata(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMetadata: %w", err)
+	}
+	return oldValue.Metadata, nil
+}
+
+// ResetMetadata resets all changes to the "metadata" field.
+func (m *AISkillRunMutation) ResetMetadata() {
+	m.metadata = nil
+}
+
+// SetRequestID sets the "request_id" field.
+func (m *AISkillRunMutation) SetRequestID(s string) {
+	m.request_id = &s
+}
+
+// RequestID returns the value of the "request_id" field in the mutation.
+func (m *AISkillRunMutation) RequestID() (r string, exists bool) {
+	v := m.request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestID returns the old "request_id" field's value of the AISkillRun entity.
+// If the AISkillRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillRunMutation) OldRequestID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestID: %w", err)
+	}
+	return oldValue.RequestID, nil
+}
+
+// ClearRequestID clears the value of the "request_id" field.
+func (m *AISkillRunMutation) ClearRequestID() {
+	m.request_id = nil
+	m.clearedFields[aiskillrun.FieldRequestID] = struct{}{}
+}
+
+// RequestIDCleared returns if the "request_id" field was cleared in this mutation.
+func (m *AISkillRunMutation) RequestIDCleared() bool {
+	_, ok := m.clearedFields[aiskillrun.FieldRequestID]
+	return ok
+}
+
+// ResetRequestID resets all changes to the "request_id" field.
+func (m *AISkillRunMutation) ResetRequestID() {
+	m.request_id = nil
+	delete(m.clearedFields, aiskillrun.FieldRequestID)
+}
+
+// SetUsageLogID sets the "usage_log_id" field.
+func (m *AISkillRunMutation) SetUsageLogID(i int64) {
+	m.usage_log_id = &i
+	m.addusage_log_id = nil
+}
+
+// UsageLogID returns the value of the "usage_log_id" field in the mutation.
+func (m *AISkillRunMutation) UsageLogID() (r int64, exists bool) {
+	v := m.usage_log_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageLogID returns the old "usage_log_id" field's value of the AISkillRun entity.
+// If the AISkillRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillRunMutation) OldUsageLogID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageLogID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageLogID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageLogID: %w", err)
+	}
+	return oldValue.UsageLogID, nil
+}
+
+// AddUsageLogID adds i to the "usage_log_id" field.
+func (m *AISkillRunMutation) AddUsageLogID(i int64) {
+	if m.addusage_log_id != nil {
+		*m.addusage_log_id += i
+	} else {
+		m.addusage_log_id = &i
+	}
+}
+
+// AddedUsageLogID returns the value that was added to the "usage_log_id" field in this mutation.
+func (m *AISkillRunMutation) AddedUsageLogID() (r int64, exists bool) {
+	v := m.addusage_log_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearUsageLogID clears the value of the "usage_log_id" field.
+func (m *AISkillRunMutation) ClearUsageLogID() {
+	m.usage_log_id = nil
+	m.addusage_log_id = nil
+	m.clearedFields[aiskillrun.FieldUsageLogID] = struct{}{}
+}
+
+// UsageLogIDCleared returns if the "usage_log_id" field was cleared in this mutation.
+func (m *AISkillRunMutation) UsageLogIDCleared() bool {
+	_, ok := m.clearedFields[aiskillrun.FieldUsageLogID]
+	return ok
+}
+
+// ResetUsageLogID resets all changes to the "usage_log_id" field.
+func (m *AISkillRunMutation) ResetUsageLogID() {
+	m.usage_log_id = nil
+	m.addusage_log_id = nil
+	delete(m.clearedFields, aiskillrun.FieldUsageLogID)
+}
+
+// SetAPIKeyID sets the "api_key_id" field.
+func (m *AISkillRunMutation) SetAPIKeyID(i int64) {
+	m.api_key_id = &i
+	m.addapi_key_id = nil
+}
+
+// APIKeyID returns the value of the "api_key_id" field in the mutation.
+func (m *AISkillRunMutation) APIKeyID() (r int64, exists bool) {
+	v := m.api_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAPIKeyID returns the old "api_key_id" field's value of the AISkillRun entity.
+// If the AISkillRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillRunMutation) OldAPIKeyID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAPIKeyID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAPIKeyID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAPIKeyID: %w", err)
+	}
+	return oldValue.APIKeyID, nil
+}
+
+// AddAPIKeyID adds i to the "api_key_id" field.
+func (m *AISkillRunMutation) AddAPIKeyID(i int64) {
+	if m.addapi_key_id != nil {
+		*m.addapi_key_id += i
+	} else {
+		m.addapi_key_id = &i
+	}
+}
+
+// AddedAPIKeyID returns the value that was added to the "api_key_id" field in this mutation.
+func (m *AISkillRunMutation) AddedAPIKeyID() (r int64, exists bool) {
+	v := m.addapi_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearAPIKeyID clears the value of the "api_key_id" field.
+func (m *AISkillRunMutation) ClearAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+	m.clearedFields[aiskillrun.FieldAPIKeyID] = struct{}{}
+}
+
+// APIKeyIDCleared returns if the "api_key_id" field was cleared in this mutation.
+func (m *AISkillRunMutation) APIKeyIDCleared() bool {
+	_, ok := m.clearedFields[aiskillrun.FieldAPIKeyID]
+	return ok
+}
+
+// ResetAPIKeyID resets all changes to the "api_key_id" field.
+func (m *AISkillRunMutation) ResetAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+	delete(m.clearedFields, aiskillrun.FieldAPIKeyID)
+}
+
+// SetGroupID sets the "group_id" field.
+func (m *AISkillRunMutation) SetGroupID(i int64) {
+	m.group_id = &i
+	m.addgroup_id = nil
+}
+
+// GroupID returns the value of the "group_id" field in the mutation.
+func (m *AISkillRunMutation) GroupID() (r int64, exists bool) {
+	v := m.group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGroupID returns the old "group_id" field's value of the AISkillRun entity.
+// If the AISkillRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillRunMutation) OldGroupID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGroupID: %w", err)
+	}
+	return oldValue.GroupID, nil
+}
+
+// AddGroupID adds i to the "group_id" field.
+func (m *AISkillRunMutation) AddGroupID(i int64) {
+	if m.addgroup_id != nil {
+		*m.addgroup_id += i
+	} else {
+		m.addgroup_id = &i
+	}
+}
+
+// AddedGroupID returns the value that was added to the "group_id" field in this mutation.
+func (m *AISkillRunMutation) AddedGroupID() (r int64, exists bool) {
+	v := m.addgroup_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (m *AISkillRunMutation) ClearGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+	m.clearedFields[aiskillrun.FieldGroupID] = struct{}{}
+}
+
+// GroupIDCleared returns if the "group_id" field was cleared in this mutation.
+func (m *AISkillRunMutation) GroupIDCleared() bool {
+	_, ok := m.clearedFields[aiskillrun.FieldGroupID]
+	return ok
+}
+
+// ResetGroupID resets all changes to the "group_id" field.
+func (m *AISkillRunMutation) ResetGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+	delete(m.clearedFields, aiskillrun.FieldGroupID)
+}
+
+// ClearSkill clears the "skill" edge to the AISkill entity.
+func (m *AISkillRunMutation) ClearSkill() {
+	m.clearedskill = true
+	m.clearedFields[aiskillrun.FieldSkillID] = struct{}{}
+}
+
+// SkillCleared reports if the "skill" edge to the AISkill entity was cleared.
+func (m *AISkillRunMutation) SkillCleared() bool {
+	return m.clearedskill
+}
+
+// SkillIDs returns the "skill" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// SkillID instead. It exists only for internal usage by the builders.
+func (m *AISkillRunMutation) SkillIDs() (ids []int64) {
+	if id := m.skill; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetSkill resets all changes to the "skill" edge.
+func (m *AISkillRunMutation) ResetSkill() {
+	m.skill = nil
+	m.clearedskill = false
+}
+
+// ClearVersion clears the "version" edge to the AISkillVersion entity.
+func (m *AISkillRunMutation) ClearVersion() {
+	m.clearedversion = true
+	m.clearedFields[aiskillrun.FieldVersionID] = struct{}{}
+}
+
+// VersionCleared reports if the "version" edge to the AISkillVersion entity was cleared.
+func (m *AISkillRunMutation) VersionCleared() bool {
+	return m.clearedversion
+}
+
+// VersionIDs returns the "version" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// VersionID instead. It exists only for internal usage by the builders.
+func (m *AISkillRunMutation) VersionIDs() (ids []int64) {
+	if id := m.version; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetVersion resets all changes to the "version" edge.
+func (m *AISkillRunMutation) ResetVersion() {
+	m.version = nil
+	m.clearedversion = false
+}
+
+// AddSettlementIDs adds the "settlements" edge to the AISkillSettlement entity by ids.
+func (m *AISkillRunMutation) AddSettlementIDs(ids ...int64) {
+	if m.settlements == nil {
+		m.settlements = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.settlements[ids[i]] = struct{}{}
+	}
+}
+
+// ClearSettlements clears the "settlements" edge to the AISkillSettlement entity.
+func (m *AISkillRunMutation) ClearSettlements() {
+	m.clearedsettlements = true
+}
+
+// SettlementsCleared reports if the "settlements" edge to the AISkillSettlement entity was cleared.
+func (m *AISkillRunMutation) SettlementsCleared() bool {
+	return m.clearedsettlements
+}
+
+// RemoveSettlementIDs removes the "settlements" edge to the AISkillSettlement entity by IDs.
+func (m *AISkillRunMutation) RemoveSettlementIDs(ids ...int64) {
+	if m.removedsettlements == nil {
+		m.removedsettlements = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.settlements, ids[i])
+		m.removedsettlements[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedSettlements returns the removed IDs of the "settlements" edge to the AISkillSettlement entity.
+func (m *AISkillRunMutation) RemovedSettlementsIDs() (ids []int64) {
+	for id := range m.removedsettlements {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// SettlementsIDs returns the "settlements" edge IDs in the mutation.
+func (m *AISkillRunMutation) SettlementsIDs() (ids []int64) {
+	for id := range m.settlements {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetSettlements resets all changes to the "settlements" edge.
+func (m *AISkillRunMutation) ResetSettlements() {
+	m.settlements = nil
+	m.clearedsettlements = false
+	m.removedsettlements = nil
+}
+
+// Where appends a list predicates to the AISkillRunMutation builder.
+func (m *AISkillRunMutation) Where(ps ...predicate.AISkillRun) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AISkillRunMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AISkillRunMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AISkillRun, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AISkillRunMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AISkillRunMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AISkillRun).
+func (m *AISkillRunMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AISkillRunMutation) Fields() []string {
+	fields := make([]string, 0, 17)
+	if m.created_at != nil {
+		fields = append(fields, aiskillrun.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, aiskillrun.FieldUpdatedAt)
+	}
+	if m.skill != nil {
+		fields = append(fields, aiskillrun.FieldSkillID)
+	}
+	if m.version != nil {
+		fields = append(fields, aiskillrun.FieldVersionID)
+	}
+	if m.user_id != nil {
+		fields = append(fields, aiskillrun.FieldUserID)
+	}
+	if m.run_mode != nil {
+		fields = append(fields, aiskillrun.FieldRunMode)
+	}
+	if m.status != nil {
+		fields = append(fields, aiskillrun.FieldStatus)
+	}
+	if m.billing_mode != nil {
+		fields = append(fields, aiskillrun.FieldBillingMode)
+	}
+	if m.price != nil {
+		fields = append(fields, aiskillrun.FieldPrice)
+	}
+	if m.input_payload != nil {
+		fields = append(fields, aiskillrun.FieldInputPayload)
+	}
+	if m.output_payload != nil {
+		fields = append(fields, aiskillrun.FieldOutputPayload)
+	}
+	if m.error_message != nil {
+		fields = append(fields, aiskillrun.FieldErrorMessage)
+	}
+	if m.metadata != nil {
+		fields = append(fields, aiskillrun.FieldMetadata)
+	}
+	if m.request_id != nil {
+		fields = append(fields, aiskillrun.FieldRequestID)
+	}
+	if m.usage_log_id != nil {
+		fields = append(fields, aiskillrun.FieldUsageLogID)
+	}
+	if m.api_key_id != nil {
+		fields = append(fields, aiskillrun.FieldAPIKeyID)
+	}
+	if m.group_id != nil {
+		fields = append(fields, aiskillrun.FieldGroupID)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AISkillRunMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case aiskillrun.FieldCreatedAt:
+		return m.CreatedAt()
+	case aiskillrun.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case aiskillrun.FieldSkillID:
+		return m.SkillID()
+	case aiskillrun.FieldVersionID:
+		return m.VersionID()
+	case aiskillrun.FieldUserID:
+		return m.UserID()
+	case aiskillrun.FieldRunMode:
+		return m.RunMode()
+	case aiskillrun.FieldStatus:
+		return m.Status()
+	case aiskillrun.FieldBillingMode:
+		return m.BillingMode()
+	case aiskillrun.FieldPrice:
+		return m.Price()
+	case aiskillrun.FieldInputPayload:
+		return m.InputPayload()
+	case aiskillrun.FieldOutputPayload:
+		return m.OutputPayload()
+	case aiskillrun.FieldErrorMessage:
+		return m.ErrorMessage()
+	case aiskillrun.FieldMetadata:
+		return m.Metadata()
+	case aiskillrun.FieldRequestID:
+		return m.RequestID()
+	case aiskillrun.FieldUsageLogID:
+		return m.UsageLogID()
+	case aiskillrun.FieldAPIKeyID:
+		return m.APIKeyID()
+	case aiskillrun.FieldGroupID:
+		return m.GroupID()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AISkillRunMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case aiskillrun.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case aiskillrun.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case aiskillrun.FieldSkillID:
+		return m.OldSkillID(ctx)
+	case aiskillrun.FieldVersionID:
+		return m.OldVersionID(ctx)
+	case aiskillrun.FieldUserID:
+		return m.OldUserID(ctx)
+	case aiskillrun.FieldRunMode:
+		return m.OldRunMode(ctx)
+	case aiskillrun.FieldStatus:
+		return m.OldStatus(ctx)
+	case aiskillrun.FieldBillingMode:
+		return m.OldBillingMode(ctx)
+	case aiskillrun.FieldPrice:
+		return m.OldPrice(ctx)
+	case aiskillrun.FieldInputPayload:
+		return m.OldInputPayload(ctx)
+	case aiskillrun.FieldOutputPayload:
+		return m.OldOutputPayload(ctx)
+	case aiskillrun.FieldErrorMessage:
+		return m.OldErrorMessage(ctx)
+	case aiskillrun.FieldMetadata:
+		return m.OldMetadata(ctx)
+	case aiskillrun.FieldRequestID:
+		return m.OldRequestID(ctx)
+	case aiskillrun.FieldUsageLogID:
+		return m.OldUsageLogID(ctx)
+	case aiskillrun.FieldAPIKeyID:
+		return m.OldAPIKeyID(ctx)
+	case aiskillrun.FieldGroupID:
+		return m.OldGroupID(ctx)
+	}
+	return nil, fmt.Errorf("unknown AISkillRun field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AISkillRunMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case aiskillrun.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case aiskillrun.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case aiskillrun.FieldSkillID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSkillID(v)
+		return nil
+	case aiskillrun.FieldVersionID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVersionID(v)
+		return nil
+	case aiskillrun.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case aiskillrun.FieldRunMode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRunMode(v)
+		return nil
+	case aiskillrun.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case aiskillrun.FieldBillingMode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBillingMode(v)
+		return nil
+	case aiskillrun.FieldPrice:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPrice(v)
+		return nil
+	case aiskillrun.FieldInputPayload:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInputPayload(v)
+		return nil
+	case aiskillrun.FieldOutputPayload:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOutputPayload(v)
+		return nil
+	case aiskillrun.FieldErrorMessage:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetErrorMessage(v)
+		return nil
+	case aiskillrun.FieldMetadata:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMetadata(v)
+		return nil
+	case aiskillrun.FieldRequestID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestID(v)
+		return nil
+	case aiskillrun.FieldUsageLogID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageLogID(v)
+		return nil
+	case aiskillrun.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAPIKeyID(v)
+		return nil
+	case aiskillrun.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGroupID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillRun field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AISkillRunMutation) AddedFields() []string {
+	var fields []string
+	if m.adduser_id != nil {
+		fields = append(fields, aiskillrun.FieldUserID)
+	}
+	if m.addprice != nil {
+		fields = append(fields, aiskillrun.FieldPrice)
+	}
+	if m.addusage_log_id != nil {
+		fields = append(fields, aiskillrun.FieldUsageLogID)
+	}
+	if m.addapi_key_id != nil {
+		fields = append(fields, aiskillrun.FieldAPIKeyID)
+	}
+	if m.addgroup_id != nil {
+		fields = append(fields, aiskillrun.FieldGroupID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AISkillRunMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case aiskillrun.FieldUserID:
+		return m.AddedUserID()
+	case aiskillrun.FieldPrice:
+		return m.AddedPrice()
+	case aiskillrun.FieldUsageLogID:
+		return m.AddedUsageLogID()
+	case aiskillrun.FieldAPIKeyID:
+		return m.AddedAPIKeyID()
+	case aiskillrun.FieldGroupID:
+		return m.AddedGroupID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AISkillRunMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case aiskillrun.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUserID(v)
+		return nil
+	case aiskillrun.FieldPrice:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPrice(v)
+		return nil
+	case aiskillrun.FieldUsageLogID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUsageLogID(v)
+		return nil
+	case aiskillrun.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAPIKeyID(v)
+		return nil
+	case aiskillrun.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddGroupID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillRun numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AISkillRunMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(aiskillrun.FieldErrorMessage) {
+		fields = append(fields, aiskillrun.FieldErrorMessage)
+	}
+	if m.FieldCleared(aiskillrun.FieldRequestID) {
+		fields = append(fields, aiskillrun.FieldRequestID)
+	}
+	if m.FieldCleared(aiskillrun.FieldUsageLogID) {
+		fields = append(fields, aiskillrun.FieldUsageLogID)
+	}
+	if m.FieldCleared(aiskillrun.FieldAPIKeyID) {
+		fields = append(fields, aiskillrun.FieldAPIKeyID)
+	}
+	if m.FieldCleared(aiskillrun.FieldGroupID) {
+		fields = append(fields, aiskillrun.FieldGroupID)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AISkillRunMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AISkillRunMutation) ClearField(name string) error {
+	switch name {
+	case aiskillrun.FieldErrorMessage:
+		m.ClearErrorMessage()
+		return nil
+	case aiskillrun.FieldRequestID:
+		m.ClearRequestID()
+		return nil
+	case aiskillrun.FieldUsageLogID:
+		m.ClearUsageLogID()
+		return nil
+	case aiskillrun.FieldAPIKeyID:
+		m.ClearAPIKeyID()
+		return nil
+	case aiskillrun.FieldGroupID:
+		m.ClearGroupID()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillRun nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AISkillRunMutation) ResetField(name string) error {
+	switch name {
+	case aiskillrun.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case aiskillrun.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case aiskillrun.FieldSkillID:
+		m.ResetSkillID()
+		return nil
+	case aiskillrun.FieldVersionID:
+		m.ResetVersionID()
+		return nil
+	case aiskillrun.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case aiskillrun.FieldRunMode:
+		m.ResetRunMode()
+		return nil
+	case aiskillrun.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case aiskillrun.FieldBillingMode:
+		m.ResetBillingMode()
+		return nil
+	case aiskillrun.FieldPrice:
+		m.ResetPrice()
+		return nil
+	case aiskillrun.FieldInputPayload:
+		m.ResetInputPayload()
+		return nil
+	case aiskillrun.FieldOutputPayload:
+		m.ResetOutputPayload()
+		return nil
+	case aiskillrun.FieldErrorMessage:
+		m.ResetErrorMessage()
+		return nil
+	case aiskillrun.FieldMetadata:
+		m.ResetMetadata()
+		return nil
+	case aiskillrun.FieldRequestID:
+		m.ResetRequestID()
+		return nil
+	case aiskillrun.FieldUsageLogID:
+		m.ResetUsageLogID()
+		return nil
+	case aiskillrun.FieldAPIKeyID:
+		m.ResetAPIKeyID()
+		return nil
+	case aiskillrun.FieldGroupID:
+		m.ResetGroupID()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillRun field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AISkillRunMutation) AddedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.skill != nil {
+		edges = append(edges, aiskillrun.EdgeSkill)
+	}
+	if m.version != nil {
+		edges = append(edges, aiskillrun.EdgeVersion)
+	}
+	if m.settlements != nil {
+		edges = append(edges, aiskillrun.EdgeSettlements)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AISkillRunMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case aiskillrun.EdgeSkill:
+		if id := m.skill; id != nil {
+			return []ent.Value{*id}
+		}
+	case aiskillrun.EdgeVersion:
+		if id := m.version; id != nil {
+			return []ent.Value{*id}
+		}
+	case aiskillrun.EdgeSettlements:
+		ids := make([]ent.Value, 0, len(m.settlements))
+		for id := range m.settlements {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AISkillRunMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.removedsettlements != nil {
+		edges = append(edges, aiskillrun.EdgeSettlements)
+	}
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AISkillRunMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case aiskillrun.EdgeSettlements:
+		ids := make([]ent.Value, 0, len(m.removedsettlements))
+		for id := range m.removedsettlements {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AISkillRunMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.clearedskill {
+		edges = append(edges, aiskillrun.EdgeSkill)
+	}
+	if m.clearedversion {
+		edges = append(edges, aiskillrun.EdgeVersion)
+	}
+	if m.clearedsettlements {
+		edges = append(edges, aiskillrun.EdgeSettlements)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AISkillRunMutation) EdgeCleared(name string) bool {
+	switch name {
+	case aiskillrun.EdgeSkill:
+		return m.clearedskill
+	case aiskillrun.EdgeVersion:
+		return m.clearedversion
+	case aiskillrun.EdgeSettlements:
+		return m.clearedsettlements
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AISkillRunMutation) ClearEdge(name string) error {
+	switch name {
+	case aiskillrun.EdgeSkill:
+		m.ClearSkill()
+		return nil
+	case aiskillrun.EdgeVersion:
+		m.ClearVersion()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillRun unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AISkillRunMutation) ResetEdge(name string) error {
+	switch name {
+	case aiskillrun.EdgeSkill:
+		m.ResetSkill()
+		return nil
+	case aiskillrun.EdgeVersion:
+		m.ResetVersion()
+		return nil
+	case aiskillrun.EdgeSettlements:
+		m.ResetSettlements()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillRun edge %s", name)
+}
+
+// AISkillSettlementMutation represents an operation that mutates the AISkillSettlement nodes in the graph.
+type AISkillSettlementMutation struct {
+	config
+	op                     Op
+	typ                    string
+	id                     *int64
+	created_at             *time.Time
+	updated_at             *time.Time
+	owner_user_id          *int64
+	addowner_user_id       *int64
+	buyer_user_id          *int64
+	addbuyer_user_id       *int64
+	status                 *string
+	billing_mode           *string
+	amount                 *float64
+	addamount              *float64
+	quota_amount           *float64
+	addquota_amount        *float64
+	quota_applied_at       *time.Time
+	balance_transferred_at *time.Time
+	metadata               *map[string]interface{}
+	request_id             *string
+	usage_log_id           *int64
+	addusage_log_id        *int64
+	api_key_id             *int64
+	addapi_key_id          *int64
+	group_id               *int64
+	addgroup_id            *int64
+	clearedFields          map[string]struct{}
+	skill                  *int64
+	clearedskill           bool
+	version                *int64
+	clearedversion         bool
+	run                    *int64
+	clearedrun             bool
+	done                   bool
+	oldValue               func(context.Context) (*AISkillSettlement, error)
+	predicates             []predicate.AISkillSettlement
+}
+
+var _ ent.Mutation = (*AISkillSettlementMutation)(nil)
+
+// aiskillsettlementOption allows management of the mutation configuration using functional options.
+type aiskillsettlementOption func(*AISkillSettlementMutation)
+
+// newAISkillSettlementMutation creates new mutation for the AISkillSettlement entity.
+func newAISkillSettlementMutation(c config, op Op, opts ...aiskillsettlementOption) *AISkillSettlementMutation {
+	m := &AISkillSettlementMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAISkillSettlement,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAISkillSettlementID sets the ID field of the mutation.
+func withAISkillSettlementID(id int64) aiskillsettlementOption {
+	return func(m *AISkillSettlementMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *AISkillSettlement
+		)
+		m.oldValue = func(ctx context.Context) (*AISkillSettlement, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().AISkillSettlement.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAISkillSettlement sets the old AISkillSettlement of the mutation.
+func withAISkillSettlement(node *AISkillSettlement) aiskillsettlementOption {
+	return func(m *AISkillSettlementMutation) {
+		m.oldValue = func(context.Context) (*AISkillSettlement, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AISkillSettlementMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AISkillSettlementMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *AISkillSettlementMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *AISkillSettlementMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().AISkillSettlement.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *AISkillSettlementMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *AISkillSettlementMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the AISkillSettlement entity.
+// If the AISkillSettlement object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillSettlementMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *AISkillSettlementMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *AISkillSettlementMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *AISkillSettlementMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the AISkillSettlement entity.
+// If the AISkillSettlement object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillSettlementMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *AISkillSettlementMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetSkillID sets the "skill_id" field.
+func (m *AISkillSettlementMutation) SetSkillID(i int64) {
+	m.skill = &i
+}
+
+// SkillID returns the value of the "skill_id" field in the mutation.
+func (m *AISkillSettlementMutation) SkillID() (r int64, exists bool) {
+	v := m.skill
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSkillID returns the old "skill_id" field's value of the AISkillSettlement entity.
+// If the AISkillSettlement object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillSettlementMutation) OldSkillID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSkillID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSkillID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSkillID: %w", err)
+	}
+	return oldValue.SkillID, nil
+}
+
+// ResetSkillID resets all changes to the "skill_id" field.
+func (m *AISkillSettlementMutation) ResetSkillID() {
+	m.skill = nil
+}
+
+// SetVersionID sets the "version_id" field.
+func (m *AISkillSettlementMutation) SetVersionID(i int64) {
+	m.version = &i
+}
+
+// VersionID returns the value of the "version_id" field in the mutation.
+func (m *AISkillSettlementMutation) VersionID() (r int64, exists bool) {
+	v := m.version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVersionID returns the old "version_id" field's value of the AISkillSettlement entity.
+// If the AISkillSettlement object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillSettlementMutation) OldVersionID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVersionID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVersionID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVersionID: %w", err)
+	}
+	return oldValue.VersionID, nil
+}
+
+// ResetVersionID resets all changes to the "version_id" field.
+func (m *AISkillSettlementMutation) ResetVersionID() {
+	m.version = nil
+}
+
+// SetRunID sets the "run_id" field.
+func (m *AISkillSettlementMutation) SetRunID(i int64) {
+	m.run = &i
+}
+
+// RunID returns the value of the "run_id" field in the mutation.
+func (m *AISkillSettlementMutation) RunID() (r int64, exists bool) {
+	v := m.run
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRunID returns the old "run_id" field's value of the AISkillSettlement entity.
+// If the AISkillSettlement object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillSettlementMutation) OldRunID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRunID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRunID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRunID: %w", err)
+	}
+	return oldValue.RunID, nil
+}
+
+// ResetRunID resets all changes to the "run_id" field.
+func (m *AISkillSettlementMutation) ResetRunID() {
+	m.run = nil
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (m *AISkillSettlementMutation) SetOwnerUserID(i int64) {
+	m.owner_user_id = &i
+	m.addowner_user_id = nil
+}
+
+// OwnerUserID returns the value of the "owner_user_id" field in the mutation.
+func (m *AISkillSettlementMutation) OwnerUserID() (r int64, exists bool) {
+	v := m.owner_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOwnerUserID returns the old "owner_user_id" field's value of the AISkillSettlement entity.
+// If the AISkillSettlement object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillSettlementMutation) OldOwnerUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOwnerUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOwnerUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOwnerUserID: %w", err)
+	}
+	return oldValue.OwnerUserID, nil
+}
+
+// AddOwnerUserID adds i to the "owner_user_id" field.
+func (m *AISkillSettlementMutation) AddOwnerUserID(i int64) {
+	if m.addowner_user_id != nil {
+		*m.addowner_user_id += i
+	} else {
+		m.addowner_user_id = &i
+	}
+}
+
+// AddedOwnerUserID returns the value that was added to the "owner_user_id" field in this mutation.
+func (m *AISkillSettlementMutation) AddedOwnerUserID() (r int64, exists bool) {
+	v := m.addowner_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetOwnerUserID resets all changes to the "owner_user_id" field.
+func (m *AISkillSettlementMutation) ResetOwnerUserID() {
+	m.owner_user_id = nil
+	m.addowner_user_id = nil
+}
+
+// SetBuyerUserID sets the "buyer_user_id" field.
+func (m *AISkillSettlementMutation) SetBuyerUserID(i int64) {
+	m.buyer_user_id = &i
+	m.addbuyer_user_id = nil
+}
+
+// BuyerUserID returns the value of the "buyer_user_id" field in the mutation.
+func (m *AISkillSettlementMutation) BuyerUserID() (r int64, exists bool) {
+	v := m.buyer_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBuyerUserID returns the old "buyer_user_id" field's value of the AISkillSettlement entity.
+// If the AISkillSettlement object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillSettlementMutation) OldBuyerUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBuyerUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBuyerUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBuyerUserID: %w", err)
+	}
+	return oldValue.BuyerUserID, nil
+}
+
+// AddBuyerUserID adds i to the "buyer_user_id" field.
+func (m *AISkillSettlementMutation) AddBuyerUserID(i int64) {
+	if m.addbuyer_user_id != nil {
+		*m.addbuyer_user_id += i
+	} else {
+		m.addbuyer_user_id = &i
+	}
+}
+
+// AddedBuyerUserID returns the value that was added to the "buyer_user_id" field in this mutation.
+func (m *AISkillSettlementMutation) AddedBuyerUserID() (r int64, exists bool) {
+	v := m.addbuyer_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetBuyerUserID resets all changes to the "buyer_user_id" field.
+func (m *AISkillSettlementMutation) ResetBuyerUserID() {
+	m.buyer_user_id = nil
+	m.addbuyer_user_id = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *AISkillSettlementMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *AISkillSettlementMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the AISkillSettlement entity.
+// If the AISkillSettlement object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillSettlementMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *AISkillSettlementMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetBillingMode sets the "billing_mode" field.
+func (m *AISkillSettlementMutation) SetBillingMode(s string) {
+	m.billing_mode = &s
+}
+
+// BillingMode returns the value of the "billing_mode" field in the mutation.
+func (m *AISkillSettlementMutation) BillingMode() (r string, exists bool) {
+	v := m.billing_mode
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBillingMode returns the old "billing_mode" field's value of the AISkillSettlement entity.
+// If the AISkillSettlement object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillSettlementMutation) OldBillingMode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBillingMode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBillingMode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBillingMode: %w", err)
+	}
+	return oldValue.BillingMode, nil
+}
+
+// ResetBillingMode resets all changes to the "billing_mode" field.
+func (m *AISkillSettlementMutation) ResetBillingMode() {
+	m.billing_mode = nil
+}
+
+// SetAmount sets the "amount" field.
+func (m *AISkillSettlementMutation) SetAmount(f float64) {
+	m.amount = &f
+	m.addamount = nil
+}
+
+// Amount returns the value of the "amount" field in the mutation.
+func (m *AISkillSettlementMutation) Amount() (r float64, exists bool) {
+	v := m.amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAmount returns the old "amount" field's value of the AISkillSettlement entity.
+// If the AISkillSettlement object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillSettlementMutation) OldAmount(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAmount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAmount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAmount: %w", err)
+	}
+	return oldValue.Amount, nil
+}
+
+// AddAmount adds f to the "amount" field.
+func (m *AISkillSettlementMutation) AddAmount(f float64) {
+	if m.addamount != nil {
+		*m.addamount += f
+	} else {
+		m.addamount = &f
+	}
+}
+
+// AddedAmount returns the value that was added to the "amount" field in this mutation.
+func (m *AISkillSettlementMutation) AddedAmount() (r float64, exists bool) {
+	v := m.addamount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAmount resets all changes to the "amount" field.
+func (m *AISkillSettlementMutation) ResetAmount() {
+	m.amount = nil
+	m.addamount = nil
+}
+
+// SetQuotaAmount sets the "quota_amount" field.
+func (m *AISkillSettlementMutation) SetQuotaAmount(f float64) {
+	m.quota_amount = &f
+	m.addquota_amount = nil
+}
+
+// QuotaAmount returns the value of the "quota_amount" field in the mutation.
+func (m *AISkillSettlementMutation) QuotaAmount() (r float64, exists bool) {
+	v := m.quota_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldQuotaAmount returns the old "quota_amount" field's value of the AISkillSettlement entity.
+// If the AISkillSettlement object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillSettlementMutation) OldQuotaAmount(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldQuotaAmount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldQuotaAmount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldQuotaAmount: %w", err)
+	}
+	return oldValue.QuotaAmount, nil
+}
+
+// AddQuotaAmount adds f to the "quota_amount" field.
+func (m *AISkillSettlementMutation) AddQuotaAmount(f float64) {
+	if m.addquota_amount != nil {
+		*m.addquota_amount += f
+	} else {
+		m.addquota_amount = &f
+	}
+}
+
+// AddedQuotaAmount returns the value that was added to the "quota_amount" field in this mutation.
+func (m *AISkillSettlementMutation) AddedQuotaAmount() (r float64, exists bool) {
+	v := m.addquota_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetQuotaAmount resets all changes to the "quota_amount" field.
+func (m *AISkillSettlementMutation) ResetQuotaAmount() {
+	m.quota_amount = nil
+	m.addquota_amount = nil
+}
+
+// SetQuotaAppliedAt sets the "quota_applied_at" field.
+func (m *AISkillSettlementMutation) SetQuotaAppliedAt(t time.Time) {
+	m.quota_applied_at = &t
+}
+
+// QuotaAppliedAt returns the value of the "quota_applied_at" field in the mutation.
+func (m *AISkillSettlementMutation) QuotaAppliedAt() (r time.Time, exists bool) {
+	v := m.quota_applied_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldQuotaAppliedAt returns the old "quota_applied_at" field's value of the AISkillSettlement entity.
+// If the AISkillSettlement object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillSettlementMutation) OldQuotaAppliedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldQuotaAppliedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldQuotaAppliedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldQuotaAppliedAt: %w", err)
+	}
+	return oldValue.QuotaAppliedAt, nil
+}
+
+// ClearQuotaAppliedAt clears the value of the "quota_applied_at" field.
+func (m *AISkillSettlementMutation) ClearQuotaAppliedAt() {
+	m.quota_applied_at = nil
+	m.clearedFields[aiskillsettlement.FieldQuotaAppliedAt] = struct{}{}
+}
+
+// QuotaAppliedAtCleared returns if the "quota_applied_at" field was cleared in this mutation.
+func (m *AISkillSettlementMutation) QuotaAppliedAtCleared() bool {
+	_, ok := m.clearedFields[aiskillsettlement.FieldQuotaAppliedAt]
+	return ok
+}
+
+// ResetQuotaAppliedAt resets all changes to the "quota_applied_at" field.
+func (m *AISkillSettlementMutation) ResetQuotaAppliedAt() {
+	m.quota_applied_at = nil
+	delete(m.clearedFields, aiskillsettlement.FieldQuotaAppliedAt)
+}
+
+// SetBalanceTransferredAt sets the "balance_transferred_at" field.
+func (m *AISkillSettlementMutation) SetBalanceTransferredAt(t time.Time) {
+	m.balance_transferred_at = &t
+}
+
+// BalanceTransferredAt returns the value of the "balance_transferred_at" field in the mutation.
+func (m *AISkillSettlementMutation) BalanceTransferredAt() (r time.Time, exists bool) {
+	v := m.balance_transferred_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBalanceTransferredAt returns the old "balance_transferred_at" field's value of the AISkillSettlement entity.
+// If the AISkillSettlement object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillSettlementMutation) OldBalanceTransferredAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBalanceTransferredAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBalanceTransferredAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBalanceTransferredAt: %w", err)
+	}
+	return oldValue.BalanceTransferredAt, nil
+}
+
+// ClearBalanceTransferredAt clears the value of the "balance_transferred_at" field.
+func (m *AISkillSettlementMutation) ClearBalanceTransferredAt() {
+	m.balance_transferred_at = nil
+	m.clearedFields[aiskillsettlement.FieldBalanceTransferredAt] = struct{}{}
+}
+
+// BalanceTransferredAtCleared returns if the "balance_transferred_at" field was cleared in this mutation.
+func (m *AISkillSettlementMutation) BalanceTransferredAtCleared() bool {
+	_, ok := m.clearedFields[aiskillsettlement.FieldBalanceTransferredAt]
+	return ok
+}
+
+// ResetBalanceTransferredAt resets all changes to the "balance_transferred_at" field.
+func (m *AISkillSettlementMutation) ResetBalanceTransferredAt() {
+	m.balance_transferred_at = nil
+	delete(m.clearedFields, aiskillsettlement.FieldBalanceTransferredAt)
+}
+
+// SetMetadata sets the "metadata" field.
+func (m *AISkillSettlementMutation) SetMetadata(value map[string]interface{}) {
+	m.metadata = &value
+}
+
+// Metadata returns the value of the "metadata" field in the mutation.
+func (m *AISkillSettlementMutation) Metadata() (r map[string]interface{}, exists bool) {
+	v := m.metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMetadata returns the old "metadata" field's value of the AISkillSettlement entity.
+// If the AISkillSettlement object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillSettlementMutation) OldMetadata(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMetadata: %w", err)
+	}
+	return oldValue.Metadata, nil
+}
+
+// ResetMetadata resets all changes to the "metadata" field.
+func (m *AISkillSettlementMutation) ResetMetadata() {
+	m.metadata = nil
+}
+
+// SetRequestID sets the "request_id" field.
+func (m *AISkillSettlementMutation) SetRequestID(s string) {
+	m.request_id = &s
+}
+
+// RequestID returns the value of the "request_id" field in the mutation.
+func (m *AISkillSettlementMutation) RequestID() (r string, exists bool) {
+	v := m.request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestID returns the old "request_id" field's value of the AISkillSettlement entity.
+// If the AISkillSettlement object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillSettlementMutation) OldRequestID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestID: %w", err)
+	}
+	return oldValue.RequestID, nil
+}
+
+// ClearRequestID clears the value of the "request_id" field.
+func (m *AISkillSettlementMutation) ClearRequestID() {
+	m.request_id = nil
+	m.clearedFields[aiskillsettlement.FieldRequestID] = struct{}{}
+}
+
+// RequestIDCleared returns if the "request_id" field was cleared in this mutation.
+func (m *AISkillSettlementMutation) RequestIDCleared() bool {
+	_, ok := m.clearedFields[aiskillsettlement.FieldRequestID]
+	return ok
+}
+
+// ResetRequestID resets all changes to the "request_id" field.
+func (m *AISkillSettlementMutation) ResetRequestID() {
+	m.request_id = nil
+	delete(m.clearedFields, aiskillsettlement.FieldRequestID)
+}
+
+// SetUsageLogID sets the "usage_log_id" field.
+func (m *AISkillSettlementMutation) SetUsageLogID(i int64) {
+	m.usage_log_id = &i
+	m.addusage_log_id = nil
+}
+
+// UsageLogID returns the value of the "usage_log_id" field in the mutation.
+func (m *AISkillSettlementMutation) UsageLogID() (r int64, exists bool) {
+	v := m.usage_log_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageLogID returns the old "usage_log_id" field's value of the AISkillSettlement entity.
+// If the AISkillSettlement object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillSettlementMutation) OldUsageLogID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageLogID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageLogID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageLogID: %w", err)
+	}
+	return oldValue.UsageLogID, nil
+}
+
+// AddUsageLogID adds i to the "usage_log_id" field.
+func (m *AISkillSettlementMutation) AddUsageLogID(i int64) {
+	if m.addusage_log_id != nil {
+		*m.addusage_log_id += i
+	} else {
+		m.addusage_log_id = &i
+	}
+}
+
+// AddedUsageLogID returns the value that was added to the "usage_log_id" field in this mutation.
+func (m *AISkillSettlementMutation) AddedUsageLogID() (r int64, exists bool) {
+	v := m.addusage_log_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearUsageLogID clears the value of the "usage_log_id" field.
+func (m *AISkillSettlementMutation) ClearUsageLogID() {
+	m.usage_log_id = nil
+	m.addusage_log_id = nil
+	m.clearedFields[aiskillsettlement.FieldUsageLogID] = struct{}{}
+}
+
+// UsageLogIDCleared returns if the "usage_log_id" field was cleared in this mutation.
+func (m *AISkillSettlementMutation) UsageLogIDCleared() bool {
+	_, ok := m.clearedFields[aiskillsettlement.FieldUsageLogID]
+	return ok
+}
+
+// ResetUsageLogID resets all changes to the "usage_log_id" field.
+func (m *AISkillSettlementMutation) ResetUsageLogID() {
+	m.usage_log_id = nil
+	m.addusage_log_id = nil
+	delete(m.clearedFields, aiskillsettlement.FieldUsageLogID)
+}
+
+// SetAPIKeyID sets the "api_key_id" field.
+func (m *AISkillSettlementMutation) SetAPIKeyID(i int64) {
+	m.api_key_id = &i
+	m.addapi_key_id = nil
+}
+
+// APIKeyID returns the value of the "api_key_id" field in the mutation.
+func (m *AISkillSettlementMutation) APIKeyID() (r int64, exists bool) {
+	v := m.api_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAPIKeyID returns the old "api_key_id" field's value of the AISkillSettlement entity.
+// If the AISkillSettlement object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillSettlementMutation) OldAPIKeyID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAPIKeyID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAPIKeyID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAPIKeyID: %w", err)
+	}
+	return oldValue.APIKeyID, nil
+}
+
+// AddAPIKeyID adds i to the "api_key_id" field.
+func (m *AISkillSettlementMutation) AddAPIKeyID(i int64) {
+	if m.addapi_key_id != nil {
+		*m.addapi_key_id += i
+	} else {
+		m.addapi_key_id = &i
+	}
+}
+
+// AddedAPIKeyID returns the value that was added to the "api_key_id" field in this mutation.
+func (m *AISkillSettlementMutation) AddedAPIKeyID() (r int64, exists bool) {
+	v := m.addapi_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearAPIKeyID clears the value of the "api_key_id" field.
+func (m *AISkillSettlementMutation) ClearAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+	m.clearedFields[aiskillsettlement.FieldAPIKeyID] = struct{}{}
+}
+
+// APIKeyIDCleared returns if the "api_key_id" field was cleared in this mutation.
+func (m *AISkillSettlementMutation) APIKeyIDCleared() bool {
+	_, ok := m.clearedFields[aiskillsettlement.FieldAPIKeyID]
+	return ok
+}
+
+// ResetAPIKeyID resets all changes to the "api_key_id" field.
+func (m *AISkillSettlementMutation) ResetAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+	delete(m.clearedFields, aiskillsettlement.FieldAPIKeyID)
+}
+
+// SetGroupID sets the "group_id" field.
+func (m *AISkillSettlementMutation) SetGroupID(i int64) {
+	m.group_id = &i
+	m.addgroup_id = nil
+}
+
+// GroupID returns the value of the "group_id" field in the mutation.
+func (m *AISkillSettlementMutation) GroupID() (r int64, exists bool) {
+	v := m.group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGroupID returns the old "group_id" field's value of the AISkillSettlement entity.
+// If the AISkillSettlement object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillSettlementMutation) OldGroupID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGroupID: %w", err)
+	}
+	return oldValue.GroupID, nil
+}
+
+// AddGroupID adds i to the "group_id" field.
+func (m *AISkillSettlementMutation) AddGroupID(i int64) {
+	if m.addgroup_id != nil {
+		*m.addgroup_id += i
+	} else {
+		m.addgroup_id = &i
+	}
+}
+
+// AddedGroupID returns the value that was added to the "group_id" field in this mutation.
+func (m *AISkillSettlementMutation) AddedGroupID() (r int64, exists bool) {
+	v := m.addgroup_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (m *AISkillSettlementMutation) ClearGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+	m.clearedFields[aiskillsettlement.FieldGroupID] = struct{}{}
+}
+
+// GroupIDCleared returns if the "group_id" field was cleared in this mutation.
+func (m *AISkillSettlementMutation) GroupIDCleared() bool {
+	_, ok := m.clearedFields[aiskillsettlement.FieldGroupID]
+	return ok
+}
+
+// ResetGroupID resets all changes to the "group_id" field.
+func (m *AISkillSettlementMutation) ResetGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+	delete(m.clearedFields, aiskillsettlement.FieldGroupID)
+}
+
+// ClearSkill clears the "skill" edge to the AISkill entity.
+func (m *AISkillSettlementMutation) ClearSkill() {
+	m.clearedskill = true
+	m.clearedFields[aiskillsettlement.FieldSkillID] = struct{}{}
+}
+
+// SkillCleared reports if the "skill" edge to the AISkill entity was cleared.
+func (m *AISkillSettlementMutation) SkillCleared() bool {
+	return m.clearedskill
+}
+
+// SkillIDs returns the "skill" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// SkillID instead. It exists only for internal usage by the builders.
+func (m *AISkillSettlementMutation) SkillIDs() (ids []int64) {
+	if id := m.skill; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetSkill resets all changes to the "skill" edge.
+func (m *AISkillSettlementMutation) ResetSkill() {
+	m.skill = nil
+	m.clearedskill = false
+}
+
+// ClearVersion clears the "version" edge to the AISkillVersion entity.
+func (m *AISkillSettlementMutation) ClearVersion() {
+	m.clearedversion = true
+	m.clearedFields[aiskillsettlement.FieldVersionID] = struct{}{}
+}
+
+// VersionCleared reports if the "version" edge to the AISkillVersion entity was cleared.
+func (m *AISkillSettlementMutation) VersionCleared() bool {
+	return m.clearedversion
+}
+
+// VersionIDs returns the "version" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// VersionID instead. It exists only for internal usage by the builders.
+func (m *AISkillSettlementMutation) VersionIDs() (ids []int64) {
+	if id := m.version; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetVersion resets all changes to the "version" edge.
+func (m *AISkillSettlementMutation) ResetVersion() {
+	m.version = nil
+	m.clearedversion = false
+}
+
+// ClearRun clears the "run" edge to the AISkillRun entity.
+func (m *AISkillSettlementMutation) ClearRun() {
+	m.clearedrun = true
+	m.clearedFields[aiskillsettlement.FieldRunID] = struct{}{}
+}
+
+// RunCleared reports if the "run" edge to the AISkillRun entity was cleared.
+func (m *AISkillSettlementMutation) RunCleared() bool {
+	return m.clearedrun
+}
+
+// RunIDs returns the "run" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// RunID instead. It exists only for internal usage by the builders.
+func (m *AISkillSettlementMutation) RunIDs() (ids []int64) {
+	if id := m.run; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetRun resets all changes to the "run" edge.
+func (m *AISkillSettlementMutation) ResetRun() {
+	m.run = nil
+	m.clearedrun = false
+}
+
+// Where appends a list predicates to the AISkillSettlementMutation builder.
+func (m *AISkillSettlementMutation) Where(ps ...predicate.AISkillSettlement) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AISkillSettlementMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AISkillSettlementMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AISkillSettlement, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AISkillSettlementMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AISkillSettlementMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AISkillSettlement).
+func (m *AISkillSettlementMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AISkillSettlementMutation) Fields() []string {
+	fields := make([]string, 0, 18)
+	if m.created_at != nil {
+		fields = append(fields, aiskillsettlement.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, aiskillsettlement.FieldUpdatedAt)
+	}
+	if m.skill != nil {
+		fields = append(fields, aiskillsettlement.FieldSkillID)
+	}
+	if m.version != nil {
+		fields = append(fields, aiskillsettlement.FieldVersionID)
+	}
+	if m.run != nil {
+		fields = append(fields, aiskillsettlement.FieldRunID)
+	}
+	if m.owner_user_id != nil {
+		fields = append(fields, aiskillsettlement.FieldOwnerUserID)
+	}
+	if m.buyer_user_id != nil {
+		fields = append(fields, aiskillsettlement.FieldBuyerUserID)
+	}
+	if m.status != nil {
+		fields = append(fields, aiskillsettlement.FieldStatus)
+	}
+	if m.billing_mode != nil {
+		fields = append(fields, aiskillsettlement.FieldBillingMode)
+	}
+	if m.amount != nil {
+		fields = append(fields, aiskillsettlement.FieldAmount)
+	}
+	if m.quota_amount != nil {
+		fields = append(fields, aiskillsettlement.FieldQuotaAmount)
+	}
+	if m.quota_applied_at != nil {
+		fields = append(fields, aiskillsettlement.FieldQuotaAppliedAt)
+	}
+	if m.balance_transferred_at != nil {
+		fields = append(fields, aiskillsettlement.FieldBalanceTransferredAt)
+	}
+	if m.metadata != nil {
+		fields = append(fields, aiskillsettlement.FieldMetadata)
+	}
+	if m.request_id != nil {
+		fields = append(fields, aiskillsettlement.FieldRequestID)
+	}
+	if m.usage_log_id != nil {
+		fields = append(fields, aiskillsettlement.FieldUsageLogID)
+	}
+	if m.api_key_id != nil {
+		fields = append(fields, aiskillsettlement.FieldAPIKeyID)
+	}
+	if m.group_id != nil {
+		fields = append(fields, aiskillsettlement.FieldGroupID)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AISkillSettlementMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case aiskillsettlement.FieldCreatedAt:
+		return m.CreatedAt()
+	case aiskillsettlement.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case aiskillsettlement.FieldSkillID:
+		return m.SkillID()
+	case aiskillsettlement.FieldVersionID:
+		return m.VersionID()
+	case aiskillsettlement.FieldRunID:
+		return m.RunID()
+	case aiskillsettlement.FieldOwnerUserID:
+		return m.OwnerUserID()
+	case aiskillsettlement.FieldBuyerUserID:
+		return m.BuyerUserID()
+	case aiskillsettlement.FieldStatus:
+		return m.Status()
+	case aiskillsettlement.FieldBillingMode:
+		return m.BillingMode()
+	case aiskillsettlement.FieldAmount:
+		return m.Amount()
+	case aiskillsettlement.FieldQuotaAmount:
+		return m.QuotaAmount()
+	case aiskillsettlement.FieldQuotaAppliedAt:
+		return m.QuotaAppliedAt()
+	case aiskillsettlement.FieldBalanceTransferredAt:
+		return m.BalanceTransferredAt()
+	case aiskillsettlement.FieldMetadata:
+		return m.Metadata()
+	case aiskillsettlement.FieldRequestID:
+		return m.RequestID()
+	case aiskillsettlement.FieldUsageLogID:
+		return m.UsageLogID()
+	case aiskillsettlement.FieldAPIKeyID:
+		return m.APIKeyID()
+	case aiskillsettlement.FieldGroupID:
+		return m.GroupID()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AISkillSettlementMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case aiskillsettlement.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case aiskillsettlement.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case aiskillsettlement.FieldSkillID:
+		return m.OldSkillID(ctx)
+	case aiskillsettlement.FieldVersionID:
+		return m.OldVersionID(ctx)
+	case aiskillsettlement.FieldRunID:
+		return m.OldRunID(ctx)
+	case aiskillsettlement.FieldOwnerUserID:
+		return m.OldOwnerUserID(ctx)
+	case aiskillsettlement.FieldBuyerUserID:
+		return m.OldBuyerUserID(ctx)
+	case aiskillsettlement.FieldStatus:
+		return m.OldStatus(ctx)
+	case aiskillsettlement.FieldBillingMode:
+		return m.OldBillingMode(ctx)
+	case aiskillsettlement.FieldAmount:
+		return m.OldAmount(ctx)
+	case aiskillsettlement.FieldQuotaAmount:
+		return m.OldQuotaAmount(ctx)
+	case aiskillsettlement.FieldQuotaAppliedAt:
+		return m.OldQuotaAppliedAt(ctx)
+	case aiskillsettlement.FieldBalanceTransferredAt:
+		return m.OldBalanceTransferredAt(ctx)
+	case aiskillsettlement.FieldMetadata:
+		return m.OldMetadata(ctx)
+	case aiskillsettlement.FieldRequestID:
+		return m.OldRequestID(ctx)
+	case aiskillsettlement.FieldUsageLogID:
+		return m.OldUsageLogID(ctx)
+	case aiskillsettlement.FieldAPIKeyID:
+		return m.OldAPIKeyID(ctx)
+	case aiskillsettlement.FieldGroupID:
+		return m.OldGroupID(ctx)
+	}
+	return nil, fmt.Errorf("unknown AISkillSettlement field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AISkillSettlementMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case aiskillsettlement.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case aiskillsettlement.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case aiskillsettlement.FieldSkillID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSkillID(v)
+		return nil
+	case aiskillsettlement.FieldVersionID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVersionID(v)
+		return nil
+	case aiskillsettlement.FieldRunID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRunID(v)
+		return nil
+	case aiskillsettlement.FieldOwnerUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOwnerUserID(v)
+		return nil
+	case aiskillsettlement.FieldBuyerUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBuyerUserID(v)
+		return nil
+	case aiskillsettlement.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case aiskillsettlement.FieldBillingMode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBillingMode(v)
+		return nil
+	case aiskillsettlement.FieldAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAmount(v)
+		return nil
+	case aiskillsettlement.FieldQuotaAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetQuotaAmount(v)
+		return nil
+	case aiskillsettlement.FieldQuotaAppliedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetQuotaAppliedAt(v)
+		return nil
+	case aiskillsettlement.FieldBalanceTransferredAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBalanceTransferredAt(v)
+		return nil
+	case aiskillsettlement.FieldMetadata:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMetadata(v)
+		return nil
+	case aiskillsettlement.FieldRequestID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestID(v)
+		return nil
+	case aiskillsettlement.FieldUsageLogID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageLogID(v)
+		return nil
+	case aiskillsettlement.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAPIKeyID(v)
+		return nil
+	case aiskillsettlement.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGroupID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillSettlement field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AISkillSettlementMutation) AddedFields() []string {
+	var fields []string
+	if m.addowner_user_id != nil {
+		fields = append(fields, aiskillsettlement.FieldOwnerUserID)
+	}
+	if m.addbuyer_user_id != nil {
+		fields = append(fields, aiskillsettlement.FieldBuyerUserID)
+	}
+	if m.addamount != nil {
+		fields = append(fields, aiskillsettlement.FieldAmount)
+	}
+	if m.addquota_amount != nil {
+		fields = append(fields, aiskillsettlement.FieldQuotaAmount)
+	}
+	if m.addusage_log_id != nil {
+		fields = append(fields, aiskillsettlement.FieldUsageLogID)
+	}
+	if m.addapi_key_id != nil {
+		fields = append(fields, aiskillsettlement.FieldAPIKeyID)
+	}
+	if m.addgroup_id != nil {
+		fields = append(fields, aiskillsettlement.FieldGroupID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AISkillSettlementMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case aiskillsettlement.FieldOwnerUserID:
+		return m.AddedOwnerUserID()
+	case aiskillsettlement.FieldBuyerUserID:
+		return m.AddedBuyerUserID()
+	case aiskillsettlement.FieldAmount:
+		return m.AddedAmount()
+	case aiskillsettlement.FieldQuotaAmount:
+		return m.AddedQuotaAmount()
+	case aiskillsettlement.FieldUsageLogID:
+		return m.AddedUsageLogID()
+	case aiskillsettlement.FieldAPIKeyID:
+		return m.AddedAPIKeyID()
+	case aiskillsettlement.FieldGroupID:
+		return m.AddedGroupID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AISkillSettlementMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case aiskillsettlement.FieldOwnerUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddOwnerUserID(v)
+		return nil
+	case aiskillsettlement.FieldBuyerUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddBuyerUserID(v)
+		return nil
+	case aiskillsettlement.FieldAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAmount(v)
+		return nil
+	case aiskillsettlement.FieldQuotaAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddQuotaAmount(v)
+		return nil
+	case aiskillsettlement.FieldUsageLogID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUsageLogID(v)
+		return nil
+	case aiskillsettlement.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAPIKeyID(v)
+		return nil
+	case aiskillsettlement.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddGroupID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillSettlement numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AISkillSettlementMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(aiskillsettlement.FieldQuotaAppliedAt) {
+		fields = append(fields, aiskillsettlement.FieldQuotaAppliedAt)
+	}
+	if m.FieldCleared(aiskillsettlement.FieldBalanceTransferredAt) {
+		fields = append(fields, aiskillsettlement.FieldBalanceTransferredAt)
+	}
+	if m.FieldCleared(aiskillsettlement.FieldRequestID) {
+		fields = append(fields, aiskillsettlement.FieldRequestID)
+	}
+	if m.FieldCleared(aiskillsettlement.FieldUsageLogID) {
+		fields = append(fields, aiskillsettlement.FieldUsageLogID)
+	}
+	if m.FieldCleared(aiskillsettlement.FieldAPIKeyID) {
+		fields = append(fields, aiskillsettlement.FieldAPIKeyID)
+	}
+	if m.FieldCleared(aiskillsettlement.FieldGroupID) {
+		fields = append(fields, aiskillsettlement.FieldGroupID)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AISkillSettlementMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AISkillSettlementMutation) ClearField(name string) error {
+	switch name {
+	case aiskillsettlement.FieldQuotaAppliedAt:
+		m.ClearQuotaAppliedAt()
+		return nil
+	case aiskillsettlement.FieldBalanceTransferredAt:
+		m.ClearBalanceTransferredAt()
+		return nil
+	case aiskillsettlement.FieldRequestID:
+		m.ClearRequestID()
+		return nil
+	case aiskillsettlement.FieldUsageLogID:
+		m.ClearUsageLogID()
+		return nil
+	case aiskillsettlement.FieldAPIKeyID:
+		m.ClearAPIKeyID()
+		return nil
+	case aiskillsettlement.FieldGroupID:
+		m.ClearGroupID()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillSettlement nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AISkillSettlementMutation) ResetField(name string) error {
+	switch name {
+	case aiskillsettlement.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case aiskillsettlement.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case aiskillsettlement.FieldSkillID:
+		m.ResetSkillID()
+		return nil
+	case aiskillsettlement.FieldVersionID:
+		m.ResetVersionID()
+		return nil
+	case aiskillsettlement.FieldRunID:
+		m.ResetRunID()
+		return nil
+	case aiskillsettlement.FieldOwnerUserID:
+		m.ResetOwnerUserID()
+		return nil
+	case aiskillsettlement.FieldBuyerUserID:
+		m.ResetBuyerUserID()
+		return nil
+	case aiskillsettlement.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case aiskillsettlement.FieldBillingMode:
+		m.ResetBillingMode()
+		return nil
+	case aiskillsettlement.FieldAmount:
+		m.ResetAmount()
+		return nil
+	case aiskillsettlement.FieldQuotaAmount:
+		m.ResetQuotaAmount()
+		return nil
+	case aiskillsettlement.FieldQuotaAppliedAt:
+		m.ResetQuotaAppliedAt()
+		return nil
+	case aiskillsettlement.FieldBalanceTransferredAt:
+		m.ResetBalanceTransferredAt()
+		return nil
+	case aiskillsettlement.FieldMetadata:
+		m.ResetMetadata()
+		return nil
+	case aiskillsettlement.FieldRequestID:
+		m.ResetRequestID()
+		return nil
+	case aiskillsettlement.FieldUsageLogID:
+		m.ResetUsageLogID()
+		return nil
+	case aiskillsettlement.FieldAPIKeyID:
+		m.ResetAPIKeyID()
+		return nil
+	case aiskillsettlement.FieldGroupID:
+		m.ResetGroupID()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillSettlement field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AISkillSettlementMutation) AddedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.skill != nil {
+		edges = append(edges, aiskillsettlement.EdgeSkill)
+	}
+	if m.version != nil {
+		edges = append(edges, aiskillsettlement.EdgeVersion)
+	}
+	if m.run != nil {
+		edges = append(edges, aiskillsettlement.EdgeRun)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AISkillSettlementMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case aiskillsettlement.EdgeSkill:
+		if id := m.skill; id != nil {
+			return []ent.Value{*id}
+		}
+	case aiskillsettlement.EdgeVersion:
+		if id := m.version; id != nil {
+			return []ent.Value{*id}
+		}
+	case aiskillsettlement.EdgeRun:
+		if id := m.run; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AISkillSettlementMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 3)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AISkillSettlementMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AISkillSettlementMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.clearedskill {
+		edges = append(edges, aiskillsettlement.EdgeSkill)
+	}
+	if m.clearedversion {
+		edges = append(edges, aiskillsettlement.EdgeVersion)
+	}
+	if m.clearedrun {
+		edges = append(edges, aiskillsettlement.EdgeRun)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AISkillSettlementMutation) EdgeCleared(name string) bool {
+	switch name {
+	case aiskillsettlement.EdgeSkill:
+		return m.clearedskill
+	case aiskillsettlement.EdgeVersion:
+		return m.clearedversion
+	case aiskillsettlement.EdgeRun:
+		return m.clearedrun
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AISkillSettlementMutation) ClearEdge(name string) error {
+	switch name {
+	case aiskillsettlement.EdgeSkill:
+		m.ClearSkill()
+		return nil
+	case aiskillsettlement.EdgeVersion:
+		m.ClearVersion()
+		return nil
+	case aiskillsettlement.EdgeRun:
+		m.ClearRun()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillSettlement unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AISkillSettlementMutation) ResetEdge(name string) error {
+	switch name {
+	case aiskillsettlement.EdgeSkill:
+		m.ResetSkill()
+		return nil
+	case aiskillsettlement.EdgeVersion:
+		m.ResetVersion()
+		return nil
+	case aiskillsettlement.EdgeRun:
+		m.ResetRun()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillSettlement edge %s", name)
+}
+
+// AISkillVersionMutation represents an operation that mutates the AISkillVersion nodes in the graph.
+type AISkillVersionMutation struct {
+	config
+	op                  Op
+	typ                 string
+	id                  *int64
+	created_at          *time.Time
+	updated_at          *time.Time
+	deleted_at          *time.Time
+	user_id             *int64
+	adduser_id          *int64
+	version             *int
+	addversion          *int
+	review_status       *string
+	content_format      *string
+	runtime             *string
+	source_content      *string
+	_config             *map[string]interface{}
+	input_schema        *map[string]interface{}
+	output_schema       *map[string]interface{}
+	change_note         *string
+	submitted_at        *time.Time
+	reviewed_at         *time.Time
+	reviewer_user_id    *int64
+	addreviewer_user_id *int64
+	review_note         *string
+	metadata            *map[string]interface{}
+	request_id          *string
+	usage_log_id        *int64
+	addusage_log_id     *int64
+	api_key_id          *int64
+	addapi_key_id       *int64
+	group_id            *int64
+	addgroup_id         *int64
+	clearedFields       map[string]struct{}
+	skill               *int64
+	clearedskill        bool
+	runs                map[int64]struct{}
+	removedruns         map[int64]struct{}
+	clearedruns         bool
+	reviews             map[int64]struct{}
+	removedreviews      map[int64]struct{}
+	clearedreviews      bool
+	settlements         map[int64]struct{}
+	removedsettlements  map[int64]struct{}
+	clearedsettlements  bool
+	done                bool
+	oldValue            func(context.Context) (*AISkillVersion, error)
+	predicates          []predicate.AISkillVersion
+}
+
+var _ ent.Mutation = (*AISkillVersionMutation)(nil)
+
+// aiskillversionOption allows management of the mutation configuration using functional options.
+type aiskillversionOption func(*AISkillVersionMutation)
+
+// newAISkillVersionMutation creates new mutation for the AISkillVersion entity.
+func newAISkillVersionMutation(c config, op Op, opts ...aiskillversionOption) *AISkillVersionMutation {
+	m := &AISkillVersionMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAISkillVersion,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAISkillVersionID sets the ID field of the mutation.
+func withAISkillVersionID(id int64) aiskillversionOption {
+	return func(m *AISkillVersionMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *AISkillVersion
+		)
+		m.oldValue = func(ctx context.Context) (*AISkillVersion, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().AISkillVersion.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAISkillVersion sets the old AISkillVersion of the mutation.
+func withAISkillVersion(node *AISkillVersion) aiskillversionOption {
+	return func(m *AISkillVersionMutation) {
+		m.oldValue = func(context.Context) (*AISkillVersion, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AISkillVersionMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AISkillVersionMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *AISkillVersionMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *AISkillVersionMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().AISkillVersion.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *AISkillVersionMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *AISkillVersionMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *AISkillVersionMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *AISkillVersionMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *AISkillVersionMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *AISkillVersionMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (m *AISkillVersionMutation) SetDeletedAt(t time.Time) {
+	m.deleted_at = &t
+}
+
+// DeletedAt returns the value of the "deleted_at" field in the mutation.
+func (m *AISkillVersionMutation) DeletedAt() (r time.Time, exists bool) {
+	v := m.deleted_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDeletedAt returns the old "deleted_at" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldDeletedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDeletedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDeletedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDeletedAt: %w", err)
+	}
+	return oldValue.DeletedAt, nil
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (m *AISkillVersionMutation) ClearDeletedAt() {
+	m.deleted_at = nil
+	m.clearedFields[aiskillversion.FieldDeletedAt] = struct{}{}
+}
+
+// DeletedAtCleared returns if the "deleted_at" field was cleared in this mutation.
+func (m *AISkillVersionMutation) DeletedAtCleared() bool {
+	_, ok := m.clearedFields[aiskillversion.FieldDeletedAt]
+	return ok
+}
+
+// ResetDeletedAt resets all changes to the "deleted_at" field.
+func (m *AISkillVersionMutation) ResetDeletedAt() {
+	m.deleted_at = nil
+	delete(m.clearedFields, aiskillversion.FieldDeletedAt)
+}
+
+// SetSkillID sets the "skill_id" field.
+func (m *AISkillVersionMutation) SetSkillID(i int64) {
+	m.skill = &i
+}
+
+// SkillID returns the value of the "skill_id" field in the mutation.
+func (m *AISkillVersionMutation) SkillID() (r int64, exists bool) {
+	v := m.skill
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSkillID returns the old "skill_id" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldSkillID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSkillID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSkillID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSkillID: %w", err)
+	}
+	return oldValue.SkillID, nil
+}
+
+// ResetSkillID resets all changes to the "skill_id" field.
+func (m *AISkillVersionMutation) ResetSkillID() {
+	m.skill = nil
+}
+
+// SetUserID sets the "user_id" field.
+func (m *AISkillVersionMutation) SetUserID(i int64) {
+	m.user_id = &i
+	m.adduser_id = nil
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *AISkillVersionMutation) UserID() (r int64, exists bool) {
+	v := m.user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// AddUserID adds i to the "user_id" field.
+func (m *AISkillVersionMutation) AddUserID(i int64) {
+	if m.adduser_id != nil {
+		*m.adduser_id += i
+	} else {
+		m.adduser_id = &i
+	}
+}
+
+// AddedUserID returns the value that was added to the "user_id" field in this mutation.
+func (m *AISkillVersionMutation) AddedUserID() (r int64, exists bool) {
+	v := m.adduser_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *AISkillVersionMutation) ResetUserID() {
+	m.user_id = nil
+	m.adduser_id = nil
+}
+
+// SetVersion sets the "version" field.
+func (m *AISkillVersionMutation) SetVersion(i int) {
+	m.version = &i
+	m.addversion = nil
+}
+
+// Version returns the value of the "version" field in the mutation.
+func (m *AISkillVersionMutation) Version() (r int, exists bool) {
+	v := m.version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVersion returns the old "version" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldVersion(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVersion: %w", err)
+	}
+	return oldValue.Version, nil
+}
+
+// AddVersion adds i to the "version" field.
+func (m *AISkillVersionMutation) AddVersion(i int) {
+	if m.addversion != nil {
+		*m.addversion += i
+	} else {
+		m.addversion = &i
+	}
+}
+
+// AddedVersion returns the value that was added to the "version" field in this mutation.
+func (m *AISkillVersionMutation) AddedVersion() (r int, exists bool) {
+	v := m.addversion
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetVersion resets all changes to the "version" field.
+func (m *AISkillVersionMutation) ResetVersion() {
+	m.version = nil
+	m.addversion = nil
+}
+
+// SetReviewStatus sets the "review_status" field.
+func (m *AISkillVersionMutation) SetReviewStatus(s string) {
+	m.review_status = &s
+}
+
+// ReviewStatus returns the value of the "review_status" field in the mutation.
+func (m *AISkillVersionMutation) ReviewStatus() (r string, exists bool) {
+	v := m.review_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReviewStatus returns the old "review_status" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldReviewStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReviewStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReviewStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReviewStatus: %w", err)
+	}
+	return oldValue.ReviewStatus, nil
+}
+
+// ResetReviewStatus resets all changes to the "review_status" field.
+func (m *AISkillVersionMutation) ResetReviewStatus() {
+	m.review_status = nil
+}
+
+// SetContentFormat sets the "content_format" field.
+func (m *AISkillVersionMutation) SetContentFormat(s string) {
+	m.content_format = &s
+}
+
+// ContentFormat returns the value of the "content_format" field in the mutation.
+func (m *AISkillVersionMutation) ContentFormat() (r string, exists bool) {
+	v := m.content_format
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldContentFormat returns the old "content_format" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldContentFormat(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldContentFormat is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldContentFormat requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldContentFormat: %w", err)
+	}
+	return oldValue.ContentFormat, nil
+}
+
+// ClearContentFormat clears the value of the "content_format" field.
+func (m *AISkillVersionMutation) ClearContentFormat() {
+	m.content_format = nil
+	m.clearedFields[aiskillversion.FieldContentFormat] = struct{}{}
+}
+
+// ContentFormatCleared returns if the "content_format" field was cleared in this mutation.
+func (m *AISkillVersionMutation) ContentFormatCleared() bool {
+	_, ok := m.clearedFields[aiskillversion.FieldContentFormat]
+	return ok
+}
+
+// ResetContentFormat resets all changes to the "content_format" field.
+func (m *AISkillVersionMutation) ResetContentFormat() {
+	m.content_format = nil
+	delete(m.clearedFields, aiskillversion.FieldContentFormat)
+}
+
+// SetRuntime sets the "runtime" field.
+func (m *AISkillVersionMutation) SetRuntime(s string) {
+	m.runtime = &s
+}
+
+// Runtime returns the value of the "runtime" field in the mutation.
+func (m *AISkillVersionMutation) Runtime() (r string, exists bool) {
+	v := m.runtime
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRuntime returns the old "runtime" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldRuntime(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRuntime is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRuntime requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRuntime: %w", err)
+	}
+	return oldValue.Runtime, nil
+}
+
+// ClearRuntime clears the value of the "runtime" field.
+func (m *AISkillVersionMutation) ClearRuntime() {
+	m.runtime = nil
+	m.clearedFields[aiskillversion.FieldRuntime] = struct{}{}
+}
+
+// RuntimeCleared returns if the "runtime" field was cleared in this mutation.
+func (m *AISkillVersionMutation) RuntimeCleared() bool {
+	_, ok := m.clearedFields[aiskillversion.FieldRuntime]
+	return ok
+}
+
+// ResetRuntime resets all changes to the "runtime" field.
+func (m *AISkillVersionMutation) ResetRuntime() {
+	m.runtime = nil
+	delete(m.clearedFields, aiskillversion.FieldRuntime)
+}
+
+// SetSourceContent sets the "source_content" field.
+func (m *AISkillVersionMutation) SetSourceContent(s string) {
+	m.source_content = &s
+}
+
+// SourceContent returns the value of the "source_content" field in the mutation.
+func (m *AISkillVersionMutation) SourceContent() (r string, exists bool) {
+	v := m.source_content
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSourceContent returns the old "source_content" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldSourceContent(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSourceContent is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSourceContent requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSourceContent: %w", err)
+	}
+	return oldValue.SourceContent, nil
+}
+
+// ResetSourceContent resets all changes to the "source_content" field.
+func (m *AISkillVersionMutation) ResetSourceContent() {
+	m.source_content = nil
+}
+
+// SetConfig sets the "config" field.
+func (m *AISkillVersionMutation) SetConfig(value map[string]interface{}) {
+	m._config = &value
+}
+
+// Config returns the value of the "config" field in the mutation.
+func (m *AISkillVersionMutation) Config() (r map[string]interface{}, exists bool) {
+	v := m._config
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldConfig returns the old "config" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldConfig(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldConfig is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldConfig requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldConfig: %w", err)
+	}
+	return oldValue.Config, nil
+}
+
+// ResetConfig resets all changes to the "config" field.
+func (m *AISkillVersionMutation) ResetConfig() {
+	m._config = nil
+}
+
+// SetInputSchema sets the "input_schema" field.
+func (m *AISkillVersionMutation) SetInputSchema(value map[string]interface{}) {
+	m.input_schema = &value
+}
+
+// InputSchema returns the value of the "input_schema" field in the mutation.
+func (m *AISkillVersionMutation) InputSchema() (r map[string]interface{}, exists bool) {
+	v := m.input_schema
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInputSchema returns the old "input_schema" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldInputSchema(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInputSchema is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInputSchema requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInputSchema: %w", err)
+	}
+	return oldValue.InputSchema, nil
+}
+
+// ResetInputSchema resets all changes to the "input_schema" field.
+func (m *AISkillVersionMutation) ResetInputSchema() {
+	m.input_schema = nil
+}
+
+// SetOutputSchema sets the "output_schema" field.
+func (m *AISkillVersionMutation) SetOutputSchema(value map[string]interface{}) {
+	m.output_schema = &value
+}
+
+// OutputSchema returns the value of the "output_schema" field in the mutation.
+func (m *AISkillVersionMutation) OutputSchema() (r map[string]interface{}, exists bool) {
+	v := m.output_schema
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOutputSchema returns the old "output_schema" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldOutputSchema(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOutputSchema is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOutputSchema requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOutputSchema: %w", err)
+	}
+	return oldValue.OutputSchema, nil
+}
+
+// ResetOutputSchema resets all changes to the "output_schema" field.
+func (m *AISkillVersionMutation) ResetOutputSchema() {
+	m.output_schema = nil
+}
+
+// SetChangeNote sets the "change_note" field.
+func (m *AISkillVersionMutation) SetChangeNote(s string) {
+	m.change_note = &s
+}
+
+// ChangeNote returns the value of the "change_note" field in the mutation.
+func (m *AISkillVersionMutation) ChangeNote() (r string, exists bool) {
+	v := m.change_note
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldChangeNote returns the old "change_note" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldChangeNote(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldChangeNote is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldChangeNote requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldChangeNote: %w", err)
+	}
+	return oldValue.ChangeNote, nil
+}
+
+// ClearChangeNote clears the value of the "change_note" field.
+func (m *AISkillVersionMutation) ClearChangeNote() {
+	m.change_note = nil
+	m.clearedFields[aiskillversion.FieldChangeNote] = struct{}{}
+}
+
+// ChangeNoteCleared returns if the "change_note" field was cleared in this mutation.
+func (m *AISkillVersionMutation) ChangeNoteCleared() bool {
+	_, ok := m.clearedFields[aiskillversion.FieldChangeNote]
+	return ok
+}
+
+// ResetChangeNote resets all changes to the "change_note" field.
+func (m *AISkillVersionMutation) ResetChangeNote() {
+	m.change_note = nil
+	delete(m.clearedFields, aiskillversion.FieldChangeNote)
+}
+
+// SetSubmittedAt sets the "submitted_at" field.
+func (m *AISkillVersionMutation) SetSubmittedAt(t time.Time) {
+	m.submitted_at = &t
+}
+
+// SubmittedAt returns the value of the "submitted_at" field in the mutation.
+func (m *AISkillVersionMutation) SubmittedAt() (r time.Time, exists bool) {
+	v := m.submitted_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSubmittedAt returns the old "submitted_at" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldSubmittedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSubmittedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSubmittedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSubmittedAt: %w", err)
+	}
+	return oldValue.SubmittedAt, nil
+}
+
+// ClearSubmittedAt clears the value of the "submitted_at" field.
+func (m *AISkillVersionMutation) ClearSubmittedAt() {
+	m.submitted_at = nil
+	m.clearedFields[aiskillversion.FieldSubmittedAt] = struct{}{}
+}
+
+// SubmittedAtCleared returns if the "submitted_at" field was cleared in this mutation.
+func (m *AISkillVersionMutation) SubmittedAtCleared() bool {
+	_, ok := m.clearedFields[aiskillversion.FieldSubmittedAt]
+	return ok
+}
+
+// ResetSubmittedAt resets all changes to the "submitted_at" field.
+func (m *AISkillVersionMutation) ResetSubmittedAt() {
+	m.submitted_at = nil
+	delete(m.clearedFields, aiskillversion.FieldSubmittedAt)
+}
+
+// SetReviewedAt sets the "reviewed_at" field.
+func (m *AISkillVersionMutation) SetReviewedAt(t time.Time) {
+	m.reviewed_at = &t
+}
+
+// ReviewedAt returns the value of the "reviewed_at" field in the mutation.
+func (m *AISkillVersionMutation) ReviewedAt() (r time.Time, exists bool) {
+	v := m.reviewed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReviewedAt returns the old "reviewed_at" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldReviewedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReviewedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReviewedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReviewedAt: %w", err)
+	}
+	return oldValue.ReviewedAt, nil
+}
+
+// ClearReviewedAt clears the value of the "reviewed_at" field.
+func (m *AISkillVersionMutation) ClearReviewedAt() {
+	m.reviewed_at = nil
+	m.clearedFields[aiskillversion.FieldReviewedAt] = struct{}{}
+}
+
+// ReviewedAtCleared returns if the "reviewed_at" field was cleared in this mutation.
+func (m *AISkillVersionMutation) ReviewedAtCleared() bool {
+	_, ok := m.clearedFields[aiskillversion.FieldReviewedAt]
+	return ok
+}
+
+// ResetReviewedAt resets all changes to the "reviewed_at" field.
+func (m *AISkillVersionMutation) ResetReviewedAt() {
+	m.reviewed_at = nil
+	delete(m.clearedFields, aiskillversion.FieldReviewedAt)
+}
+
+// SetReviewerUserID sets the "reviewer_user_id" field.
+func (m *AISkillVersionMutation) SetReviewerUserID(i int64) {
+	m.reviewer_user_id = &i
+	m.addreviewer_user_id = nil
+}
+
+// ReviewerUserID returns the value of the "reviewer_user_id" field in the mutation.
+func (m *AISkillVersionMutation) ReviewerUserID() (r int64, exists bool) {
+	v := m.reviewer_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReviewerUserID returns the old "reviewer_user_id" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldReviewerUserID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReviewerUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReviewerUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReviewerUserID: %w", err)
+	}
+	return oldValue.ReviewerUserID, nil
+}
+
+// AddReviewerUserID adds i to the "reviewer_user_id" field.
+func (m *AISkillVersionMutation) AddReviewerUserID(i int64) {
+	if m.addreviewer_user_id != nil {
+		*m.addreviewer_user_id += i
+	} else {
+		m.addreviewer_user_id = &i
+	}
+}
+
+// AddedReviewerUserID returns the value that was added to the "reviewer_user_id" field in this mutation.
+func (m *AISkillVersionMutation) AddedReviewerUserID() (r int64, exists bool) {
+	v := m.addreviewer_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearReviewerUserID clears the value of the "reviewer_user_id" field.
+func (m *AISkillVersionMutation) ClearReviewerUserID() {
+	m.reviewer_user_id = nil
+	m.addreviewer_user_id = nil
+	m.clearedFields[aiskillversion.FieldReviewerUserID] = struct{}{}
+}
+
+// ReviewerUserIDCleared returns if the "reviewer_user_id" field was cleared in this mutation.
+func (m *AISkillVersionMutation) ReviewerUserIDCleared() bool {
+	_, ok := m.clearedFields[aiskillversion.FieldReviewerUserID]
+	return ok
+}
+
+// ResetReviewerUserID resets all changes to the "reviewer_user_id" field.
+func (m *AISkillVersionMutation) ResetReviewerUserID() {
+	m.reviewer_user_id = nil
+	m.addreviewer_user_id = nil
+	delete(m.clearedFields, aiskillversion.FieldReviewerUserID)
+}
+
+// SetReviewNote sets the "review_note" field.
+func (m *AISkillVersionMutation) SetReviewNote(s string) {
+	m.review_note = &s
+}
+
+// ReviewNote returns the value of the "review_note" field in the mutation.
+func (m *AISkillVersionMutation) ReviewNote() (r string, exists bool) {
+	v := m.review_note
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReviewNote returns the old "review_note" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldReviewNote(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReviewNote is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReviewNote requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReviewNote: %w", err)
+	}
+	return oldValue.ReviewNote, nil
+}
+
+// ClearReviewNote clears the value of the "review_note" field.
+func (m *AISkillVersionMutation) ClearReviewNote() {
+	m.review_note = nil
+	m.clearedFields[aiskillversion.FieldReviewNote] = struct{}{}
+}
+
+// ReviewNoteCleared returns if the "review_note" field was cleared in this mutation.
+func (m *AISkillVersionMutation) ReviewNoteCleared() bool {
+	_, ok := m.clearedFields[aiskillversion.FieldReviewNote]
+	return ok
+}
+
+// ResetReviewNote resets all changes to the "review_note" field.
+func (m *AISkillVersionMutation) ResetReviewNote() {
+	m.review_note = nil
+	delete(m.clearedFields, aiskillversion.FieldReviewNote)
+}
+
+// SetMetadata sets the "metadata" field.
+func (m *AISkillVersionMutation) SetMetadata(value map[string]interface{}) {
+	m.metadata = &value
+}
+
+// Metadata returns the value of the "metadata" field in the mutation.
+func (m *AISkillVersionMutation) Metadata() (r map[string]interface{}, exists bool) {
+	v := m.metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMetadata returns the old "metadata" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldMetadata(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMetadata: %w", err)
+	}
+	return oldValue.Metadata, nil
+}
+
+// ResetMetadata resets all changes to the "metadata" field.
+func (m *AISkillVersionMutation) ResetMetadata() {
+	m.metadata = nil
+}
+
+// SetRequestID sets the "request_id" field.
+func (m *AISkillVersionMutation) SetRequestID(s string) {
+	m.request_id = &s
+}
+
+// RequestID returns the value of the "request_id" field in the mutation.
+func (m *AISkillVersionMutation) RequestID() (r string, exists bool) {
+	v := m.request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestID returns the old "request_id" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldRequestID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestID: %w", err)
+	}
+	return oldValue.RequestID, nil
+}
+
+// ClearRequestID clears the value of the "request_id" field.
+func (m *AISkillVersionMutation) ClearRequestID() {
+	m.request_id = nil
+	m.clearedFields[aiskillversion.FieldRequestID] = struct{}{}
+}
+
+// RequestIDCleared returns if the "request_id" field was cleared in this mutation.
+func (m *AISkillVersionMutation) RequestIDCleared() bool {
+	_, ok := m.clearedFields[aiskillversion.FieldRequestID]
+	return ok
+}
+
+// ResetRequestID resets all changes to the "request_id" field.
+func (m *AISkillVersionMutation) ResetRequestID() {
+	m.request_id = nil
+	delete(m.clearedFields, aiskillversion.FieldRequestID)
+}
+
+// SetUsageLogID sets the "usage_log_id" field.
+func (m *AISkillVersionMutation) SetUsageLogID(i int64) {
+	m.usage_log_id = &i
+	m.addusage_log_id = nil
+}
+
+// UsageLogID returns the value of the "usage_log_id" field in the mutation.
+func (m *AISkillVersionMutation) UsageLogID() (r int64, exists bool) {
+	v := m.usage_log_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageLogID returns the old "usage_log_id" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldUsageLogID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageLogID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageLogID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageLogID: %w", err)
+	}
+	return oldValue.UsageLogID, nil
+}
+
+// AddUsageLogID adds i to the "usage_log_id" field.
+func (m *AISkillVersionMutation) AddUsageLogID(i int64) {
+	if m.addusage_log_id != nil {
+		*m.addusage_log_id += i
+	} else {
+		m.addusage_log_id = &i
+	}
+}
+
+// AddedUsageLogID returns the value that was added to the "usage_log_id" field in this mutation.
+func (m *AISkillVersionMutation) AddedUsageLogID() (r int64, exists bool) {
+	v := m.addusage_log_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearUsageLogID clears the value of the "usage_log_id" field.
+func (m *AISkillVersionMutation) ClearUsageLogID() {
+	m.usage_log_id = nil
+	m.addusage_log_id = nil
+	m.clearedFields[aiskillversion.FieldUsageLogID] = struct{}{}
+}
+
+// UsageLogIDCleared returns if the "usage_log_id" field was cleared in this mutation.
+func (m *AISkillVersionMutation) UsageLogIDCleared() bool {
+	_, ok := m.clearedFields[aiskillversion.FieldUsageLogID]
+	return ok
+}
+
+// ResetUsageLogID resets all changes to the "usage_log_id" field.
+func (m *AISkillVersionMutation) ResetUsageLogID() {
+	m.usage_log_id = nil
+	m.addusage_log_id = nil
+	delete(m.clearedFields, aiskillversion.FieldUsageLogID)
+}
+
+// SetAPIKeyID sets the "api_key_id" field.
+func (m *AISkillVersionMutation) SetAPIKeyID(i int64) {
+	m.api_key_id = &i
+	m.addapi_key_id = nil
+}
+
+// APIKeyID returns the value of the "api_key_id" field in the mutation.
+func (m *AISkillVersionMutation) APIKeyID() (r int64, exists bool) {
+	v := m.api_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAPIKeyID returns the old "api_key_id" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldAPIKeyID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAPIKeyID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAPIKeyID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAPIKeyID: %w", err)
+	}
+	return oldValue.APIKeyID, nil
+}
+
+// AddAPIKeyID adds i to the "api_key_id" field.
+func (m *AISkillVersionMutation) AddAPIKeyID(i int64) {
+	if m.addapi_key_id != nil {
+		*m.addapi_key_id += i
+	} else {
+		m.addapi_key_id = &i
+	}
+}
+
+// AddedAPIKeyID returns the value that was added to the "api_key_id" field in this mutation.
+func (m *AISkillVersionMutation) AddedAPIKeyID() (r int64, exists bool) {
+	v := m.addapi_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearAPIKeyID clears the value of the "api_key_id" field.
+func (m *AISkillVersionMutation) ClearAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+	m.clearedFields[aiskillversion.FieldAPIKeyID] = struct{}{}
+}
+
+// APIKeyIDCleared returns if the "api_key_id" field was cleared in this mutation.
+func (m *AISkillVersionMutation) APIKeyIDCleared() bool {
+	_, ok := m.clearedFields[aiskillversion.FieldAPIKeyID]
+	return ok
+}
+
+// ResetAPIKeyID resets all changes to the "api_key_id" field.
+func (m *AISkillVersionMutation) ResetAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+	delete(m.clearedFields, aiskillversion.FieldAPIKeyID)
+}
+
+// SetGroupID sets the "group_id" field.
+func (m *AISkillVersionMutation) SetGroupID(i int64) {
+	m.group_id = &i
+	m.addgroup_id = nil
+}
+
+// GroupID returns the value of the "group_id" field in the mutation.
+func (m *AISkillVersionMutation) GroupID() (r int64, exists bool) {
+	v := m.group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGroupID returns the old "group_id" field's value of the AISkillVersion entity.
+// If the AISkillVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AISkillVersionMutation) OldGroupID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGroupID: %w", err)
+	}
+	return oldValue.GroupID, nil
+}
+
+// AddGroupID adds i to the "group_id" field.
+func (m *AISkillVersionMutation) AddGroupID(i int64) {
+	if m.addgroup_id != nil {
+		*m.addgroup_id += i
+	} else {
+		m.addgroup_id = &i
+	}
+}
+
+// AddedGroupID returns the value that was added to the "group_id" field in this mutation.
+func (m *AISkillVersionMutation) AddedGroupID() (r int64, exists bool) {
+	v := m.addgroup_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (m *AISkillVersionMutation) ClearGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+	m.clearedFields[aiskillversion.FieldGroupID] = struct{}{}
+}
+
+// GroupIDCleared returns if the "group_id" field was cleared in this mutation.
+func (m *AISkillVersionMutation) GroupIDCleared() bool {
+	_, ok := m.clearedFields[aiskillversion.FieldGroupID]
+	return ok
+}
+
+// ResetGroupID resets all changes to the "group_id" field.
+func (m *AISkillVersionMutation) ResetGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+	delete(m.clearedFields, aiskillversion.FieldGroupID)
+}
+
+// ClearSkill clears the "skill" edge to the AISkill entity.
+func (m *AISkillVersionMutation) ClearSkill() {
+	m.clearedskill = true
+	m.clearedFields[aiskillversion.FieldSkillID] = struct{}{}
+}
+
+// SkillCleared reports if the "skill" edge to the AISkill entity was cleared.
+func (m *AISkillVersionMutation) SkillCleared() bool {
+	return m.clearedskill
+}
+
+// SkillIDs returns the "skill" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// SkillID instead. It exists only for internal usage by the builders.
+func (m *AISkillVersionMutation) SkillIDs() (ids []int64) {
+	if id := m.skill; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetSkill resets all changes to the "skill" edge.
+func (m *AISkillVersionMutation) ResetSkill() {
+	m.skill = nil
+	m.clearedskill = false
+}
+
+// AddRunIDs adds the "runs" edge to the AISkillRun entity by ids.
+func (m *AISkillVersionMutation) AddRunIDs(ids ...int64) {
+	if m.runs == nil {
+		m.runs = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.runs[ids[i]] = struct{}{}
+	}
+}
+
+// ClearRuns clears the "runs" edge to the AISkillRun entity.
+func (m *AISkillVersionMutation) ClearRuns() {
+	m.clearedruns = true
+}
+
+// RunsCleared reports if the "runs" edge to the AISkillRun entity was cleared.
+func (m *AISkillVersionMutation) RunsCleared() bool {
+	return m.clearedruns
+}
+
+// RemoveRunIDs removes the "runs" edge to the AISkillRun entity by IDs.
+func (m *AISkillVersionMutation) RemoveRunIDs(ids ...int64) {
+	if m.removedruns == nil {
+		m.removedruns = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.runs, ids[i])
+		m.removedruns[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedRuns returns the removed IDs of the "runs" edge to the AISkillRun entity.
+func (m *AISkillVersionMutation) RemovedRunsIDs() (ids []int64) {
+	for id := range m.removedruns {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// RunsIDs returns the "runs" edge IDs in the mutation.
+func (m *AISkillVersionMutation) RunsIDs() (ids []int64) {
+	for id := range m.runs {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetRuns resets all changes to the "runs" edge.
+func (m *AISkillVersionMutation) ResetRuns() {
+	m.runs = nil
+	m.clearedruns = false
+	m.removedruns = nil
+}
+
+// AddReviewIDs adds the "reviews" edge to the AISkillReview entity by ids.
+func (m *AISkillVersionMutation) AddReviewIDs(ids ...int64) {
+	if m.reviews == nil {
+		m.reviews = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.reviews[ids[i]] = struct{}{}
+	}
+}
+
+// ClearReviews clears the "reviews" edge to the AISkillReview entity.
+func (m *AISkillVersionMutation) ClearReviews() {
+	m.clearedreviews = true
+}
+
+// ReviewsCleared reports if the "reviews" edge to the AISkillReview entity was cleared.
+func (m *AISkillVersionMutation) ReviewsCleared() bool {
+	return m.clearedreviews
+}
+
+// RemoveReviewIDs removes the "reviews" edge to the AISkillReview entity by IDs.
+func (m *AISkillVersionMutation) RemoveReviewIDs(ids ...int64) {
+	if m.removedreviews == nil {
+		m.removedreviews = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.reviews, ids[i])
+		m.removedreviews[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedReviews returns the removed IDs of the "reviews" edge to the AISkillReview entity.
+func (m *AISkillVersionMutation) RemovedReviewsIDs() (ids []int64) {
+	for id := range m.removedreviews {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ReviewsIDs returns the "reviews" edge IDs in the mutation.
+func (m *AISkillVersionMutation) ReviewsIDs() (ids []int64) {
+	for id := range m.reviews {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetReviews resets all changes to the "reviews" edge.
+func (m *AISkillVersionMutation) ResetReviews() {
+	m.reviews = nil
+	m.clearedreviews = false
+	m.removedreviews = nil
+}
+
+// AddSettlementIDs adds the "settlements" edge to the AISkillSettlement entity by ids.
+func (m *AISkillVersionMutation) AddSettlementIDs(ids ...int64) {
+	if m.settlements == nil {
+		m.settlements = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.settlements[ids[i]] = struct{}{}
+	}
+}
+
+// ClearSettlements clears the "settlements" edge to the AISkillSettlement entity.
+func (m *AISkillVersionMutation) ClearSettlements() {
+	m.clearedsettlements = true
+}
+
+// SettlementsCleared reports if the "settlements" edge to the AISkillSettlement entity was cleared.
+func (m *AISkillVersionMutation) SettlementsCleared() bool {
+	return m.clearedsettlements
+}
+
+// RemoveSettlementIDs removes the "settlements" edge to the AISkillSettlement entity by IDs.
+func (m *AISkillVersionMutation) RemoveSettlementIDs(ids ...int64) {
+	if m.removedsettlements == nil {
+		m.removedsettlements = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.settlements, ids[i])
+		m.removedsettlements[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedSettlements returns the removed IDs of the "settlements" edge to the AISkillSettlement entity.
+func (m *AISkillVersionMutation) RemovedSettlementsIDs() (ids []int64) {
+	for id := range m.removedsettlements {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// SettlementsIDs returns the "settlements" edge IDs in the mutation.
+func (m *AISkillVersionMutation) SettlementsIDs() (ids []int64) {
+	for id := range m.settlements {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetSettlements resets all changes to the "settlements" edge.
+func (m *AISkillVersionMutation) ResetSettlements() {
+	m.settlements = nil
+	m.clearedsettlements = false
+	m.removedsettlements = nil
+}
+
+// Where appends a list predicates to the AISkillVersionMutation builder.
+func (m *AISkillVersionMutation) Where(ps ...predicate.AISkillVersion) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AISkillVersionMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AISkillVersionMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AISkillVersion, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AISkillVersionMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AISkillVersionMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AISkillVersion).
+func (m *AISkillVersionMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AISkillVersionMutation) Fields() []string {
+	fields := make([]string, 0, 23)
+	if m.created_at != nil {
+		fields = append(fields, aiskillversion.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, aiskillversion.FieldUpdatedAt)
+	}
+	if m.deleted_at != nil {
+		fields = append(fields, aiskillversion.FieldDeletedAt)
+	}
+	if m.skill != nil {
+		fields = append(fields, aiskillversion.FieldSkillID)
+	}
+	if m.user_id != nil {
+		fields = append(fields, aiskillversion.FieldUserID)
+	}
+	if m.version != nil {
+		fields = append(fields, aiskillversion.FieldVersion)
+	}
+	if m.review_status != nil {
+		fields = append(fields, aiskillversion.FieldReviewStatus)
+	}
+	if m.content_format != nil {
+		fields = append(fields, aiskillversion.FieldContentFormat)
+	}
+	if m.runtime != nil {
+		fields = append(fields, aiskillversion.FieldRuntime)
+	}
+	if m.source_content != nil {
+		fields = append(fields, aiskillversion.FieldSourceContent)
+	}
+	if m._config != nil {
+		fields = append(fields, aiskillversion.FieldConfig)
+	}
+	if m.input_schema != nil {
+		fields = append(fields, aiskillversion.FieldInputSchema)
+	}
+	if m.output_schema != nil {
+		fields = append(fields, aiskillversion.FieldOutputSchema)
+	}
+	if m.change_note != nil {
+		fields = append(fields, aiskillversion.FieldChangeNote)
+	}
+	if m.submitted_at != nil {
+		fields = append(fields, aiskillversion.FieldSubmittedAt)
+	}
+	if m.reviewed_at != nil {
+		fields = append(fields, aiskillversion.FieldReviewedAt)
+	}
+	if m.reviewer_user_id != nil {
+		fields = append(fields, aiskillversion.FieldReviewerUserID)
+	}
+	if m.review_note != nil {
+		fields = append(fields, aiskillversion.FieldReviewNote)
+	}
+	if m.metadata != nil {
+		fields = append(fields, aiskillversion.FieldMetadata)
+	}
+	if m.request_id != nil {
+		fields = append(fields, aiskillversion.FieldRequestID)
+	}
+	if m.usage_log_id != nil {
+		fields = append(fields, aiskillversion.FieldUsageLogID)
+	}
+	if m.api_key_id != nil {
+		fields = append(fields, aiskillversion.FieldAPIKeyID)
+	}
+	if m.group_id != nil {
+		fields = append(fields, aiskillversion.FieldGroupID)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AISkillVersionMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case aiskillversion.FieldCreatedAt:
+		return m.CreatedAt()
+	case aiskillversion.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case aiskillversion.FieldDeletedAt:
+		return m.DeletedAt()
+	case aiskillversion.FieldSkillID:
+		return m.SkillID()
+	case aiskillversion.FieldUserID:
+		return m.UserID()
+	case aiskillversion.FieldVersion:
+		return m.Version()
+	case aiskillversion.FieldReviewStatus:
+		return m.ReviewStatus()
+	case aiskillversion.FieldContentFormat:
+		return m.ContentFormat()
+	case aiskillversion.FieldRuntime:
+		return m.Runtime()
+	case aiskillversion.FieldSourceContent:
+		return m.SourceContent()
+	case aiskillversion.FieldConfig:
+		return m.Config()
+	case aiskillversion.FieldInputSchema:
+		return m.InputSchema()
+	case aiskillversion.FieldOutputSchema:
+		return m.OutputSchema()
+	case aiskillversion.FieldChangeNote:
+		return m.ChangeNote()
+	case aiskillversion.FieldSubmittedAt:
+		return m.SubmittedAt()
+	case aiskillversion.FieldReviewedAt:
+		return m.ReviewedAt()
+	case aiskillversion.FieldReviewerUserID:
+		return m.ReviewerUserID()
+	case aiskillversion.FieldReviewNote:
+		return m.ReviewNote()
+	case aiskillversion.FieldMetadata:
+		return m.Metadata()
+	case aiskillversion.FieldRequestID:
+		return m.RequestID()
+	case aiskillversion.FieldUsageLogID:
+		return m.UsageLogID()
+	case aiskillversion.FieldAPIKeyID:
+		return m.APIKeyID()
+	case aiskillversion.FieldGroupID:
+		return m.GroupID()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AISkillVersionMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case aiskillversion.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case aiskillversion.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case aiskillversion.FieldDeletedAt:
+		return m.OldDeletedAt(ctx)
+	case aiskillversion.FieldSkillID:
+		return m.OldSkillID(ctx)
+	case aiskillversion.FieldUserID:
+		return m.OldUserID(ctx)
+	case aiskillversion.FieldVersion:
+		return m.OldVersion(ctx)
+	case aiskillversion.FieldReviewStatus:
+		return m.OldReviewStatus(ctx)
+	case aiskillversion.FieldContentFormat:
+		return m.OldContentFormat(ctx)
+	case aiskillversion.FieldRuntime:
+		return m.OldRuntime(ctx)
+	case aiskillversion.FieldSourceContent:
+		return m.OldSourceContent(ctx)
+	case aiskillversion.FieldConfig:
+		return m.OldConfig(ctx)
+	case aiskillversion.FieldInputSchema:
+		return m.OldInputSchema(ctx)
+	case aiskillversion.FieldOutputSchema:
+		return m.OldOutputSchema(ctx)
+	case aiskillversion.FieldChangeNote:
+		return m.OldChangeNote(ctx)
+	case aiskillversion.FieldSubmittedAt:
+		return m.OldSubmittedAt(ctx)
+	case aiskillversion.FieldReviewedAt:
+		return m.OldReviewedAt(ctx)
+	case aiskillversion.FieldReviewerUserID:
+		return m.OldReviewerUserID(ctx)
+	case aiskillversion.FieldReviewNote:
+		return m.OldReviewNote(ctx)
+	case aiskillversion.FieldMetadata:
+		return m.OldMetadata(ctx)
+	case aiskillversion.FieldRequestID:
+		return m.OldRequestID(ctx)
+	case aiskillversion.FieldUsageLogID:
+		return m.OldUsageLogID(ctx)
+	case aiskillversion.FieldAPIKeyID:
+		return m.OldAPIKeyID(ctx)
+	case aiskillversion.FieldGroupID:
+		return m.OldGroupID(ctx)
+	}
+	return nil, fmt.Errorf("unknown AISkillVersion field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AISkillVersionMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case aiskillversion.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case aiskillversion.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case aiskillversion.FieldDeletedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDeletedAt(v)
+		return nil
+	case aiskillversion.FieldSkillID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSkillID(v)
+		return nil
+	case aiskillversion.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case aiskillversion.FieldVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVersion(v)
+		return nil
+	case aiskillversion.FieldReviewStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReviewStatus(v)
+		return nil
+	case aiskillversion.FieldContentFormat:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetContentFormat(v)
+		return nil
+	case aiskillversion.FieldRuntime:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRuntime(v)
+		return nil
+	case aiskillversion.FieldSourceContent:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSourceContent(v)
+		return nil
+	case aiskillversion.FieldConfig:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetConfig(v)
+		return nil
+	case aiskillversion.FieldInputSchema:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInputSchema(v)
+		return nil
+	case aiskillversion.FieldOutputSchema:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOutputSchema(v)
+		return nil
+	case aiskillversion.FieldChangeNote:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetChangeNote(v)
+		return nil
+	case aiskillversion.FieldSubmittedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSubmittedAt(v)
+		return nil
+	case aiskillversion.FieldReviewedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReviewedAt(v)
+		return nil
+	case aiskillversion.FieldReviewerUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReviewerUserID(v)
+		return nil
+	case aiskillversion.FieldReviewNote:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReviewNote(v)
+		return nil
+	case aiskillversion.FieldMetadata:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMetadata(v)
+		return nil
+	case aiskillversion.FieldRequestID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestID(v)
+		return nil
+	case aiskillversion.FieldUsageLogID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageLogID(v)
+		return nil
+	case aiskillversion.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAPIKeyID(v)
+		return nil
+	case aiskillversion.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGroupID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillVersion field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AISkillVersionMutation) AddedFields() []string {
+	var fields []string
+	if m.adduser_id != nil {
+		fields = append(fields, aiskillversion.FieldUserID)
+	}
+	if m.addversion != nil {
+		fields = append(fields, aiskillversion.FieldVersion)
+	}
+	if m.addreviewer_user_id != nil {
+		fields = append(fields, aiskillversion.FieldReviewerUserID)
+	}
+	if m.addusage_log_id != nil {
+		fields = append(fields, aiskillversion.FieldUsageLogID)
+	}
+	if m.addapi_key_id != nil {
+		fields = append(fields, aiskillversion.FieldAPIKeyID)
+	}
+	if m.addgroup_id != nil {
+		fields = append(fields, aiskillversion.FieldGroupID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AISkillVersionMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case aiskillversion.FieldUserID:
+		return m.AddedUserID()
+	case aiskillversion.FieldVersion:
+		return m.AddedVersion()
+	case aiskillversion.FieldReviewerUserID:
+		return m.AddedReviewerUserID()
+	case aiskillversion.FieldUsageLogID:
+		return m.AddedUsageLogID()
+	case aiskillversion.FieldAPIKeyID:
+		return m.AddedAPIKeyID()
+	case aiskillversion.FieldGroupID:
+		return m.AddedGroupID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AISkillVersionMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case aiskillversion.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUserID(v)
+		return nil
+	case aiskillversion.FieldVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddVersion(v)
+		return nil
+	case aiskillversion.FieldReviewerUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddReviewerUserID(v)
+		return nil
+	case aiskillversion.FieldUsageLogID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUsageLogID(v)
+		return nil
+	case aiskillversion.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAPIKeyID(v)
+		return nil
+	case aiskillversion.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddGroupID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillVersion numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AISkillVersionMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(aiskillversion.FieldDeletedAt) {
+		fields = append(fields, aiskillversion.FieldDeletedAt)
+	}
+	if m.FieldCleared(aiskillversion.FieldContentFormat) {
+		fields = append(fields, aiskillversion.FieldContentFormat)
+	}
+	if m.FieldCleared(aiskillversion.FieldRuntime) {
+		fields = append(fields, aiskillversion.FieldRuntime)
+	}
+	if m.FieldCleared(aiskillversion.FieldChangeNote) {
+		fields = append(fields, aiskillversion.FieldChangeNote)
+	}
+	if m.FieldCleared(aiskillversion.FieldSubmittedAt) {
+		fields = append(fields, aiskillversion.FieldSubmittedAt)
+	}
+	if m.FieldCleared(aiskillversion.FieldReviewedAt) {
+		fields = append(fields, aiskillversion.FieldReviewedAt)
+	}
+	if m.FieldCleared(aiskillversion.FieldReviewerUserID) {
+		fields = append(fields, aiskillversion.FieldReviewerUserID)
+	}
+	if m.FieldCleared(aiskillversion.FieldReviewNote) {
+		fields = append(fields, aiskillversion.FieldReviewNote)
+	}
+	if m.FieldCleared(aiskillversion.FieldRequestID) {
+		fields = append(fields, aiskillversion.FieldRequestID)
+	}
+	if m.FieldCleared(aiskillversion.FieldUsageLogID) {
+		fields = append(fields, aiskillversion.FieldUsageLogID)
+	}
+	if m.FieldCleared(aiskillversion.FieldAPIKeyID) {
+		fields = append(fields, aiskillversion.FieldAPIKeyID)
+	}
+	if m.FieldCleared(aiskillversion.FieldGroupID) {
+		fields = append(fields, aiskillversion.FieldGroupID)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AISkillVersionMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AISkillVersionMutation) ClearField(name string) error {
+	switch name {
+	case aiskillversion.FieldDeletedAt:
+		m.ClearDeletedAt()
+		return nil
+	case aiskillversion.FieldContentFormat:
+		m.ClearContentFormat()
+		return nil
+	case aiskillversion.FieldRuntime:
+		m.ClearRuntime()
+		return nil
+	case aiskillversion.FieldChangeNote:
+		m.ClearChangeNote()
+		return nil
+	case aiskillversion.FieldSubmittedAt:
+		m.ClearSubmittedAt()
+		return nil
+	case aiskillversion.FieldReviewedAt:
+		m.ClearReviewedAt()
+		return nil
+	case aiskillversion.FieldReviewerUserID:
+		m.ClearReviewerUserID()
+		return nil
+	case aiskillversion.FieldReviewNote:
+		m.ClearReviewNote()
+		return nil
+	case aiskillversion.FieldRequestID:
+		m.ClearRequestID()
+		return nil
+	case aiskillversion.FieldUsageLogID:
+		m.ClearUsageLogID()
+		return nil
+	case aiskillversion.FieldAPIKeyID:
+		m.ClearAPIKeyID()
+		return nil
+	case aiskillversion.FieldGroupID:
+		m.ClearGroupID()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillVersion nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AISkillVersionMutation) ResetField(name string) error {
+	switch name {
+	case aiskillversion.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case aiskillversion.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case aiskillversion.FieldDeletedAt:
+		m.ResetDeletedAt()
+		return nil
+	case aiskillversion.FieldSkillID:
+		m.ResetSkillID()
+		return nil
+	case aiskillversion.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case aiskillversion.FieldVersion:
+		m.ResetVersion()
+		return nil
+	case aiskillversion.FieldReviewStatus:
+		m.ResetReviewStatus()
+		return nil
+	case aiskillversion.FieldContentFormat:
+		m.ResetContentFormat()
+		return nil
+	case aiskillversion.FieldRuntime:
+		m.ResetRuntime()
+		return nil
+	case aiskillversion.FieldSourceContent:
+		m.ResetSourceContent()
+		return nil
+	case aiskillversion.FieldConfig:
+		m.ResetConfig()
+		return nil
+	case aiskillversion.FieldInputSchema:
+		m.ResetInputSchema()
+		return nil
+	case aiskillversion.FieldOutputSchema:
+		m.ResetOutputSchema()
+		return nil
+	case aiskillversion.FieldChangeNote:
+		m.ResetChangeNote()
+		return nil
+	case aiskillversion.FieldSubmittedAt:
+		m.ResetSubmittedAt()
+		return nil
+	case aiskillversion.FieldReviewedAt:
+		m.ResetReviewedAt()
+		return nil
+	case aiskillversion.FieldReviewerUserID:
+		m.ResetReviewerUserID()
+		return nil
+	case aiskillversion.FieldReviewNote:
+		m.ResetReviewNote()
+		return nil
+	case aiskillversion.FieldMetadata:
+		m.ResetMetadata()
+		return nil
+	case aiskillversion.FieldRequestID:
+		m.ResetRequestID()
+		return nil
+	case aiskillversion.FieldUsageLogID:
+		m.ResetUsageLogID()
+		return nil
+	case aiskillversion.FieldAPIKeyID:
+		m.ResetAPIKeyID()
+		return nil
+	case aiskillversion.FieldGroupID:
+		m.ResetGroupID()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillVersion field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AISkillVersionMutation) AddedEdges() []string {
+	edges := make([]string, 0, 4)
+	if m.skill != nil {
+		edges = append(edges, aiskillversion.EdgeSkill)
+	}
+	if m.runs != nil {
+		edges = append(edges, aiskillversion.EdgeRuns)
+	}
+	if m.reviews != nil {
+		edges = append(edges, aiskillversion.EdgeReviews)
+	}
+	if m.settlements != nil {
+		edges = append(edges, aiskillversion.EdgeSettlements)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AISkillVersionMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case aiskillversion.EdgeSkill:
+		if id := m.skill; id != nil {
+			return []ent.Value{*id}
+		}
+	case aiskillversion.EdgeRuns:
+		ids := make([]ent.Value, 0, len(m.runs))
+		for id := range m.runs {
+			ids = append(ids, id)
+		}
+		return ids
+	case aiskillversion.EdgeReviews:
+		ids := make([]ent.Value, 0, len(m.reviews))
+		for id := range m.reviews {
+			ids = append(ids, id)
+		}
+		return ids
+	case aiskillversion.EdgeSettlements:
+		ids := make([]ent.Value, 0, len(m.settlements))
+		for id := range m.settlements {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AISkillVersionMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 4)
+	if m.removedruns != nil {
+		edges = append(edges, aiskillversion.EdgeRuns)
+	}
+	if m.removedreviews != nil {
+		edges = append(edges, aiskillversion.EdgeReviews)
+	}
+	if m.removedsettlements != nil {
+		edges = append(edges, aiskillversion.EdgeSettlements)
+	}
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AISkillVersionMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case aiskillversion.EdgeRuns:
+		ids := make([]ent.Value, 0, len(m.removedruns))
+		for id := range m.removedruns {
+			ids = append(ids, id)
+		}
+		return ids
+	case aiskillversion.EdgeReviews:
+		ids := make([]ent.Value, 0, len(m.removedreviews))
+		for id := range m.removedreviews {
+			ids = append(ids, id)
+		}
+		return ids
+	case aiskillversion.EdgeSettlements:
+		ids := make([]ent.Value, 0, len(m.removedsettlements))
+		for id := range m.removedsettlements {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AISkillVersionMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 4)
+	if m.clearedskill {
+		edges = append(edges, aiskillversion.EdgeSkill)
+	}
+	if m.clearedruns {
+		edges = append(edges, aiskillversion.EdgeRuns)
+	}
+	if m.clearedreviews {
+		edges = append(edges, aiskillversion.EdgeReviews)
+	}
+	if m.clearedsettlements {
+		edges = append(edges, aiskillversion.EdgeSettlements)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AISkillVersionMutation) EdgeCleared(name string) bool {
+	switch name {
+	case aiskillversion.EdgeSkill:
+		return m.clearedskill
+	case aiskillversion.EdgeRuns:
+		return m.clearedruns
+	case aiskillversion.EdgeReviews:
+		return m.clearedreviews
+	case aiskillversion.EdgeSettlements:
+		return m.clearedsettlements
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AISkillVersionMutation) ClearEdge(name string) error {
+	switch name {
+	case aiskillversion.EdgeSkill:
+		m.ClearSkill()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillVersion unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AISkillVersionMutation) ResetEdge(name string) error {
+	switch name {
+	case aiskillversion.EdgeSkill:
+		m.ResetSkill()
+		return nil
+	case aiskillversion.EdgeRuns:
+		m.ResetRuns()
+		return nil
+	case aiskillversion.EdgeReviews:
+		m.ResetReviews()
+		return nil
+	case aiskillversion.EdgeSettlements:
+		m.ResetSettlements()
+		return nil
+	}
+	return fmt.Errorf("unknown AISkillVersion edge %s", name)
 }
 
 // APIKeyMutation represents an operation that mutates the APIKey nodes in the graph.
@@ -26690,6 +37724,10 @@ type GroupMutation struct {
 	addmonthly_limit_usd                    *float64
 	default_validity_days                   *int
 	adddefault_validity_days                *int
+	allow_image_generation                  *bool
+	image_rate_independent                  *bool
+	image_rate_multiplier                   *float64
+	addimage_rate_multiplier                *float64
 	image_price_1k                          *float64
 	addimage_price_1k                       *float64
 	image_price_2k                          *float64
@@ -27598,6 +38636,134 @@ func (m *GroupMutation) AddedDefaultValidityDays() (r int, exists bool) {
 func (m *GroupMutation) ResetDefaultValidityDays() {
 	m.default_validity_days = nil
 	m.adddefault_validity_days = nil
+}
+
+// SetAllowImageGeneration sets the "allow_image_generation" field.
+func (m *GroupMutation) SetAllowImageGeneration(b bool) {
+	m.allow_image_generation = &b
+}
+
+// AllowImageGeneration returns the value of the "allow_image_generation" field in the mutation.
+func (m *GroupMutation) AllowImageGeneration() (r bool, exists bool) {
+	v := m.allow_image_generation
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAllowImageGeneration returns the old "allow_image_generation" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldAllowImageGeneration(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAllowImageGeneration is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAllowImageGeneration requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAllowImageGeneration: %w", err)
+	}
+	return oldValue.AllowImageGeneration, nil
+}
+
+// ResetAllowImageGeneration resets all changes to the "allow_image_generation" field.
+func (m *GroupMutation) ResetAllowImageGeneration() {
+	m.allow_image_generation = nil
+}
+
+// SetImageRateIndependent sets the "image_rate_independent" field.
+func (m *GroupMutation) SetImageRateIndependent(b bool) {
+	m.image_rate_independent = &b
+}
+
+// ImageRateIndependent returns the value of the "image_rate_independent" field in the mutation.
+func (m *GroupMutation) ImageRateIndependent() (r bool, exists bool) {
+	v := m.image_rate_independent
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldImageRateIndependent returns the old "image_rate_independent" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldImageRateIndependent(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldImageRateIndependent is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldImageRateIndependent requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldImageRateIndependent: %w", err)
+	}
+	return oldValue.ImageRateIndependent, nil
+}
+
+// ResetImageRateIndependent resets all changes to the "image_rate_independent" field.
+func (m *GroupMutation) ResetImageRateIndependent() {
+	m.image_rate_independent = nil
+}
+
+// SetImageRateMultiplier sets the "image_rate_multiplier" field.
+func (m *GroupMutation) SetImageRateMultiplier(f float64) {
+	m.image_rate_multiplier = &f
+	m.addimage_rate_multiplier = nil
+}
+
+// ImageRateMultiplier returns the value of the "image_rate_multiplier" field in the mutation.
+func (m *GroupMutation) ImageRateMultiplier() (r float64, exists bool) {
+	v := m.image_rate_multiplier
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldImageRateMultiplier returns the old "image_rate_multiplier" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldImageRateMultiplier(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldImageRateMultiplier is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldImageRateMultiplier requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldImageRateMultiplier: %w", err)
+	}
+	return oldValue.ImageRateMultiplier, nil
+}
+
+// AddImageRateMultiplier adds f to the "image_rate_multiplier" field.
+func (m *GroupMutation) AddImageRateMultiplier(f float64) {
+	if m.addimage_rate_multiplier != nil {
+		*m.addimage_rate_multiplier += f
+	} else {
+		m.addimage_rate_multiplier = &f
+	}
+}
+
+// AddedImageRateMultiplier returns the value that was added to the "image_rate_multiplier" field in this mutation.
+func (m *GroupMutation) AddedImageRateMultiplier() (r float64, exists bool) {
+	v := m.addimage_rate_multiplier
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetImageRateMultiplier resets all changes to the "image_rate_multiplier" field.
+func (m *GroupMutation) ResetImageRateMultiplier() {
+	m.image_rate_multiplier = nil
+	m.addimage_rate_multiplier = nil
 }
 
 // SetImagePrice1k sets the "image_price_1k" field.
@@ -29018,7 +40184,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 36)
+	fields := make([]string, 0, 39)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -29066,6 +40232,15 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.default_validity_days != nil {
 		fields = append(fields, group.FieldDefaultValidityDays)
+	}
+	if m.allow_image_generation != nil {
+		fields = append(fields, group.FieldAllowImageGeneration)
+	}
+	if m.image_rate_independent != nil {
+		fields = append(fields, group.FieldImageRateIndependent)
+	}
+	if m.image_rate_multiplier != nil {
+		fields = append(fields, group.FieldImageRateMultiplier)
 	}
 	if m.image_price_1k != nil {
 		fields = append(fields, group.FieldImagePrice1k)
@@ -29167,6 +40342,12 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.MonthlyLimitUsd()
 	case group.FieldDefaultValidityDays:
 		return m.DefaultValidityDays()
+	case group.FieldAllowImageGeneration:
+		return m.AllowImageGeneration()
+	case group.FieldImageRateIndependent:
+		return m.ImageRateIndependent()
+	case group.FieldImageRateMultiplier:
+		return m.ImageRateMultiplier()
 	case group.FieldImagePrice1k:
 		return m.ImagePrice1k()
 	case group.FieldImagePrice2k:
@@ -29248,6 +40429,12 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldMonthlyLimitUsd(ctx)
 	case group.FieldDefaultValidityDays:
 		return m.OldDefaultValidityDays(ctx)
+	case group.FieldAllowImageGeneration:
+		return m.OldAllowImageGeneration(ctx)
+	case group.FieldImageRateIndependent:
+		return m.OldImageRateIndependent(ctx)
+	case group.FieldImageRateMultiplier:
+		return m.OldImageRateMultiplier(ctx)
 	case group.FieldImagePrice1k:
 		return m.OldImagePrice1k(ctx)
 	case group.FieldImagePrice2k:
@@ -29408,6 +40595,27 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetDefaultValidityDays(v)
+		return nil
+	case group.FieldAllowImageGeneration:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAllowImageGeneration(v)
+		return nil
+	case group.FieldImageRateIndependent:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetImageRateIndependent(v)
+		return nil
+	case group.FieldImageRateMultiplier:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetImageRateMultiplier(v)
 		return nil
 	case group.FieldImagePrice1k:
 		v, ok := value.(float64)
@@ -29572,6 +40780,9 @@ func (m *GroupMutation) AddedFields() []string {
 	if m.adddefault_validity_days != nil {
 		fields = append(fields, group.FieldDefaultValidityDays)
 	}
+	if m.addimage_rate_multiplier != nil {
+		fields = append(fields, group.FieldImageRateMultiplier)
+	}
 	if m.addimage_price_1k != nil {
 		fields = append(fields, group.FieldImagePrice1k)
 	}
@@ -29620,6 +40831,8 @@ func (m *GroupMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedMonthlyLimitUsd()
 	case group.FieldDefaultValidityDays:
 		return m.AddedDefaultValidityDays()
+	case group.FieldImageRateMultiplier:
+		return m.AddedImageRateMultiplier()
 	case group.FieldImagePrice1k:
 		return m.AddedImagePrice1k()
 	case group.FieldImagePrice2k:
@@ -29683,6 +40896,13 @@ func (m *GroupMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddDefaultValidityDays(v)
+		return nil
+	case group.FieldImageRateMultiplier:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddImageRateMultiplier(v)
 		return nil
 	case group.FieldImagePrice1k:
 		v, ok := value.(float64)
@@ -29921,6 +41141,15 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldDefaultValidityDays:
 		m.ResetDefaultValidityDays()
+		return nil
+	case group.FieldAllowImageGeneration:
+		m.ResetAllowImageGeneration()
+		return nil
+	case group.FieldImageRateIndependent:
+		m.ResetImageRateIndependent()
+		return nil
+	case group.FieldImageRateMultiplier:
+		m.ResetImageRateMultiplier()
 		return nil
 	case group.FieldImagePrice1k:
 		m.ResetImagePrice1k()

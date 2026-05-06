@@ -21,6 +21,12 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aiprompttemplateversion"
 	"github.com/Wei-Shaw/sub2api/ent/aisession"
 	"github.com/Wei-Shaw/sub2api/ent/aisessionmessage"
+	"github.com/Wei-Shaw/sub2api/ent/aiskill"
+	"github.com/Wei-Shaw/sub2api/ent/aiskilllike"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillreview"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillrun"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillsettlement"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillversion"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
@@ -120,6 +126,12 @@ func checkColumn(t, c string) error {
 			aiprompttemplateversion.Table:       aiprompttemplateversion.ValidColumn,
 			aisession.Table:                     aisession.ValidColumn,
 			aisessionmessage.Table:              aisessionmessage.ValidColumn,
+			aiskill.Table:                       aiskill.ValidColumn,
+			aiskilllike.Table:                   aiskilllike.ValidColumn,
+			aiskillreview.Table:                 aiskillreview.ValidColumn,
+			aiskillrun.Table:                    aiskillrun.ValidColumn,
+			aiskillsettlement.Table:             aiskillsettlement.ValidColumn,
+			aiskillversion.Table:                aiskillversion.ValidColumn,
 			apikey.Table:                        apikey.ValidColumn,
 			account.Table:                       account.ValidColumn,
 			accountgroup.Table:                  accountgroup.ValidColumn,

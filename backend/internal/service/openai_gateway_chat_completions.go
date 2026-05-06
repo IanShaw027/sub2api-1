@@ -182,7 +182,8 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		}
 		if codexResult.PromptCacheKey != "" {
 			promptCacheKey = codexResult.PromptCacheKey
-		} else if promptCacheKey != "" {
+		}
+		if promptCacheKey != "" {
 			reqBody["prompt_cache_key"] = promptCacheKey
 		}
 		responsesBody, err = marshalOpenAIResponsesRequestBodyOrdered(reqBody)

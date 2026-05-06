@@ -476,6 +476,7 @@ func (s *PricingService) loadPricingData(filePath string) error {
 func (s *PricingService) useFallbackPricing() error {
 	fallbackFile := s.cfg.Pricing.FallbackFile
 
+	//nolint:gosec // fallbackFile comes from trusted service config, not request input.
 	if _, err := os.Stat(fallbackFile); os.IsNotExist(err) {
 		return fmt.Errorf("fallback file not found: %s", fallbackFile)
 	}
@@ -483,12 +484,14 @@ func (s *PricingService) useFallbackPricing() error {
 	logger.LegacyPrintf("service.pricing", "[Pricing] Using fallback file: %s", fallbackFile)
 
 	// 复制到数据目录
+	//nolint:gosec // fallbackFile comes from trusted service config, not request input.
 	data, err := os.ReadFile(fallbackFile)
 	if err != nil {
 		return fmt.Errorf("read fallback failed: %w", err)
 	}
 
 	pricingFile := s.getPricingFilePath()
+	//nolint:gosec // pricingFile is derived from trusted service config/data dir, not request input.
 	if err := os.WriteFile(pricingFile, data, 0644); err != nil {
 		logger.LegacyPrintf("service.pricing", "[Pricing] Failed to copy fallback: %v", err)
 	}
@@ -636,6 +639,9 @@ func normalizeModelNameForPricing(model string) string {
 	}
 
 	model = strings.TrimLeft(model, "/")
+	if canonical := canonicalizeOpenAIModelAliasSpelling(model); canonical != "" {
+		return canonical
+	}
 	return model
 }
 

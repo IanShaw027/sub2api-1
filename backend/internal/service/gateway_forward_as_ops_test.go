@@ -49,6 +49,7 @@ func (u *queuedGatewayOpsUpstream) DoWithTLS(req *http.Request, proxyURL string,
 	}
 	return &http.Response{
 		StatusCode: attempt.statusCode,
+		Request:    req,
 		Header: http.Header{
 			"Content-Type": []string{"application/json"},
 			"X-Request-Id": []string{attempt.requestID},
@@ -659,13 +660,13 @@ func TestGatewayService_Forward_NativeMessagesSignatureRetryRequestErrorRecordsF
 	require.Equal(t, filteredBody, events[1].UpstreamRequestBody)
 	require.Contains(t, events[1].Message, "thinking retry failed")
 	require.Equal(t, "http_error", events[2].Kind)
-	require.Equal(t, strings.TrimSpace(string(originalBody)), events[2].UpstreamRequestBody)
+	require.Equal(t, filteredBody, events[2].UpstreamRequestBody)
 
 	rawBody, ok := c.Get(OpsUpstreamRequestBodyKey)
 	require.True(t, ok)
 	bodyBytes, ok := rawBody.([]byte)
 	require.True(t, ok)
-	require.Equal(t, strings.TrimSpace(string(originalBody)), strings.TrimSpace(string(bodyBytes)))
+	require.Equal(t, filteredBody, strings.TrimSpace(string(bodyBytes)))
 }
 
 func TestGatewayService_Forward_NativeMessagesBudgetRetryFinalHTTPErrorUsesRectifiedBody(t *testing.T) {

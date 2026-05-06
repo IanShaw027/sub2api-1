@@ -35,43 +35,43 @@ var codexModelMap = map[string]string{
 	"gpt-5.3-codex-medium":       "gpt-5.3-codex",
 	"gpt-5.3-codex-high":         "gpt-5.3-codex",
 	"gpt-5.3-codex-xhigh":        "gpt-5.3-codex",
-	"gpt-5.1-codex":              "gpt-5.1-codex",
-	"gpt-5.1-codex-low":          "gpt-5.1-codex",
-	"gpt-5.1-codex-medium":       "gpt-5.1-codex",
-	"gpt-5.1-codex-high":         "gpt-5.1-codex",
-	"gpt-5.1-codex-max":          "gpt-5.1-codex-max",
-	"gpt-5.1-codex-max-low":      "gpt-5.1-codex-max",
-	"gpt-5.1-codex-max-medium":   "gpt-5.1-codex-max",
-	"gpt-5.1-codex-max-high":     "gpt-5.1-codex-max",
-	"gpt-5.1-codex-max-xhigh":    "gpt-5.1-codex-max",
+	"gpt-5.1-codex":              "gpt-5.3-codex",
+	"gpt-5.1-codex-low":          "gpt-5.3-codex",
+	"gpt-5.1-codex-medium":       "gpt-5.3-codex",
+	"gpt-5.1-codex-high":         "gpt-5.3-codex",
+	"gpt-5.1-codex-max":          "gpt-5.3-codex",
+	"gpt-5.1-codex-max-low":      "gpt-5.3-codex",
+	"gpt-5.1-codex-max-medium":   "gpt-5.3-codex",
+	"gpt-5.1-codex-max-high":     "gpt-5.3-codex",
+	"gpt-5.1-codex-max-xhigh":    "gpt-5.3-codex",
 	"gpt-5.2":                    "gpt-5.2",
 	"gpt-5.2-none":               "gpt-5.2",
 	"gpt-5.2-low":                "gpt-5.2",
 	"gpt-5.2-medium":             "gpt-5.2",
 	"gpt-5.2-high":               "gpt-5.2",
 	"gpt-5.2-xhigh":              "gpt-5.2",
-	"gpt-5.2-codex":              "gpt-5.2-codex",
-	"gpt-5.2-codex-low":          "gpt-5.2-codex",
-	"gpt-5.2-codex-medium":       "gpt-5.2-codex",
-	"gpt-5.2-codex-high":         "gpt-5.2-codex",
-	"gpt-5.2-codex-xhigh":        "gpt-5.2-codex",
-	"gpt-5.1-codex-mini":         "gpt-5.1-codex-mini",
-	"gpt-5.1-codex-mini-medium":  "gpt-5.1-codex-mini",
-	"gpt-5.1-codex-mini-high":    "gpt-5.1-codex-mini",
-	"gpt-5.1":                    "gpt-5.1",
-	"gpt-5.1-none":               "gpt-5.1",
-	"gpt-5.1-low":                "gpt-5.1",
-	"gpt-5.1-medium":             "gpt-5.1",
-	"gpt-5.1-high":               "gpt-5.1",
-	"gpt-5.1-chat-latest":        "gpt-5.1",
-	"gpt-5-codex":                "gpt-5.1-codex",
-	"codex-mini-latest":          "gpt-5.1-codex-mini",
-	"gpt-5-codex-mini":           "gpt-5.1-codex-mini",
-	"gpt-5-codex-mini-medium":    "gpt-5.1-codex-mini",
-	"gpt-5-codex-mini-high":      "gpt-5.1-codex-mini",
-	"gpt-5":                      "gpt-5.1",
-	"gpt-5-mini":                 "gpt-5.1",
-	"gpt-5-nano":                 "gpt-5.1",
+	"gpt-5.2-codex":              "gpt-5.2",
+	"gpt-5.2-codex-low":          "gpt-5.2",
+	"gpt-5.2-codex-medium":       "gpt-5.2",
+	"gpt-5.2-codex-high":         "gpt-5.2",
+	"gpt-5.2-codex-xhigh":        "gpt-5.2",
+	"gpt-5.1-codex-mini":         "gpt-5.3-codex",
+	"gpt-5.1-codex-mini-medium":  "gpt-5.3-codex",
+	"gpt-5.1-codex-mini-high":    "gpt-5.3-codex",
+	"gpt-5.1":                    "gpt-5.4",
+	"gpt-5.1-none":               "gpt-5.4",
+	"gpt-5.1-low":                "gpt-5.4",
+	"gpt-5.1-medium":             "gpt-5.4",
+	"gpt-5.1-high":               "gpt-5.4",
+	"gpt-5.1-chat-latest":        "gpt-5.4",
+	"gpt-5-codex":                "gpt-5.3-codex",
+	"codex-mini-latest":          "gpt-5.3-codex",
+	"gpt-5-codex-mini":           "gpt-5.3-codex",
+	"gpt-5-codex-mini-medium":    "gpt-5.3-codex",
+	"gpt-5-codex-mini-high":      "gpt-5.3-codex",
+	"gpt-5":                      "gpt-5.4",
+	"gpt-5-mini":                 "gpt-5.4",
+	"gpt-5-nano":                 "gpt-5.4",
 }
 
 type codexTransformResult struct {
@@ -118,6 +118,11 @@ type codexInputFilterOptions struct {
 	dropNonToolItemIDs         bool
 }
 
+type codexOAuthTransformOptions struct {
+	SkipDefaultInstructions bool
+	PreserveToolCallIDs     bool
+}
+
 var openAIChatGPTInternalUnsupportedFields = []string{
 	"user",
 	"metadata",
@@ -144,6 +149,29 @@ func applyCodexOAuthTransformWithInputMode(
 	inputMode codexTransformInputMode,
 ) codexTransformResult {
 	return applyCodexOAuthTransformWithInputModeAndFallbackReason(reqBody, isCodexCLI, isCompact, inputMode, "")
+}
+
+func applyCodexOAuthTransformWithOptions(reqBody map[string]any, opts codexOAuthTransformOptions) codexTransformResult {
+	result := applyCodexOAuthTransform(reqBody, false, false)
+	if opts.SkipDefaultInstructions {
+		if instructions, ok := reqBody["instructions"].(string); ok {
+			defaultInstructions := strings.TrimSpace(openai.DefaultInstructions)
+			if defaultInstructions == "" {
+				defaultInstructions = "You are a helpful coding assistant."
+			}
+			if strings.TrimSpace(instructions) == defaultInstructions {
+				delete(reqBody, "instructions")
+				result.Modified = true
+				result.Observability.DefaultInstructionsApplied = false
+			}
+		}
+	}
+	if v, ok := reqBody["prompt_cache_key"].(string); ok {
+		result.PromptCacheKey = strings.TrimSpace(v)
+		delete(reqBody, "prompt_cache_key")
+		result.Modified = true
+	}
+	return result
 }
 
 func applyCodexOAuthTransformWithInputModeAndFallbackReason(
@@ -331,6 +359,10 @@ func applyCodexOAuthTransformWithInputModeAndFallbackReason(
 		}
 		filterOptions := codexInputFilterOptions{
 			rewriteToolContinuationIDs: hasCodexToolContinuationInput(input),
+		}
+		if !filterOptions.rewriteToolContinuationIDs {
+			filterOptions.dropItemReferences = true
+			filterOptions.dropNonToolItemIDs = inputMode != codexTransformInputModePreservePrefix
 		}
 		if inputMode == codexTransformInputModePreservePrefix {
 			filterOptions.rewriteToolContinuationIDs = false
@@ -648,7 +680,7 @@ func stringifyCodexContentText(value any) string {
 func normalizeCodexModel(model string) string {
 	model = strings.TrimSpace(model)
 	if model == "" {
-		return "gpt-5.1"
+		return "gpt-5.4"
 	}
 	if isOpenAIImageGenerationModel(model) {
 		return model
@@ -658,6 +690,9 @@ func normalizeCodexModel(model string) string {
 	if strings.Contains(modelID, "/") {
 		parts := strings.Split(modelID, "/")
 		modelID = parts[len(parts)-1]
+	}
+	if canonical := canonicalizeOpenAIModelAliasSpelling(modelID); canonical != "" {
+		modelID = canonical
 	}
 
 	if mapped := getNormalizedCodexModel(modelID); mapped != "" {
@@ -678,12 +713,6 @@ func normalizeCodexModel(model string) string {
 	if strings.Contains(normalized, "gpt-5.4") || strings.Contains(normalized, "gpt 5.4") {
 		return "gpt-5.4"
 	}
-	if strings.Contains(normalized, "gpt-5.2-codex") || strings.Contains(normalized, "gpt 5.2 codex") {
-		return "gpt-5.2-codex"
-	}
-	if strings.Contains(normalized, "gpt-5.2") || strings.Contains(normalized, "gpt 5.2") {
-		return "gpt-5.2"
-	}
 	if strings.Contains(normalized, "gpt-5.3-codex-spark") || strings.Contains(normalized, "gpt 5.3 codex spark") {
 		return "gpt-5.3-codex-spark"
 	}
@@ -693,28 +722,40 @@ func normalizeCodexModel(model string) string {
 	if strings.Contains(normalized, "gpt-5.3") || strings.Contains(normalized, "gpt 5.3") {
 		return "gpt-5.3-codex"
 	}
+	if strings.Contains(normalized, "gpt-5.2-codex") || strings.Contains(normalized, "gpt 5.2 codex") {
+		return "gpt-5.2"
+	}
+	if strings.Contains(normalized, "gpt-5.2") || strings.Contains(normalized, "gpt 5.2") {
+		return "gpt-5.2"
+	}
 	if strings.Contains(normalized, "gpt-5.1-codex-max") || strings.Contains(normalized, "gpt 5.1 codex max") {
-		return "gpt-5.1-codex-max"
+		return "gpt-5.3-codex"
 	}
 	if strings.Contains(normalized, "gpt-5.1-codex-mini") || strings.Contains(normalized, "gpt 5.1 codex mini") {
-		return "gpt-5.1-codex-mini"
+		return "gpt-5.3-codex"
 	}
 	if strings.Contains(normalized, "codex-mini-latest") ||
 		strings.Contains(normalized, "gpt-5-codex-mini") ||
 		strings.Contains(normalized, "gpt 5 codex mini") {
-		return "gpt-5.1-codex-mini"
+		return "gpt-5.3-codex"
 	}
 	if strings.Contains(normalized, "gpt-5.1-codex") || strings.Contains(normalized, "gpt 5.1 codex") {
-		return "gpt-5.1-codex"
+		return "gpt-5.3-codex"
 	}
 	if strings.Contains(normalized, "gpt-5.1") || strings.Contains(normalized, "gpt 5.1") {
-		return "gpt-5.1"
+		return "gpt-5.4"
+	}
+	if strings.Contains(normalized, "gpt-5-mini") || strings.Contains(normalized, "gpt 5 mini") {
+		return "gpt-5.4"
+	}
+	if strings.Contains(normalized, "gpt-5-nano") || strings.Contains(normalized, "gpt 5 nano") {
+		return "gpt-5.4"
 	}
 	if strings.Contains(normalized, "codex") {
-		return "gpt-5.1-codex"
+		return "gpt-5.3-codex"
 	}
 	if strings.Contains(normalized, "gpt-5") || strings.Contains(normalized, "gpt 5") {
-		return "gpt-5.1"
+		return "gpt-5.4"
 	}
 
 	return strings.TrimSpace(modelID)
@@ -1151,13 +1192,13 @@ func hasCodexToolContinuationInput(input []any) bool {
 	return false
 }
 
-// filterCodexInput applies only hard compatibility fixes to Codex input.
-// rewriteToolContinuationIDs is intentionally narrower than NeedsToolContinuation:
-// tools/tool_choice alone should not rewrite ordinary input ids or references.
-func filterCodexInput(input []any, rewriteToolContinuationIDs bool) ([]any, bool) {
-	return filterCodexInputWithOptions(input, codexInputFilterOptions{
+func filterCodexInput(input []any, rewriteToolContinuationIDs bool) []any {
+	filtered, _ := filterCodexInputWithOptions(input, codexInputFilterOptions{
 		rewriteToolContinuationIDs: rewriteToolContinuationIDs,
+		dropItemReferences:         !rewriteToolContinuationIDs,
+		dropNonToolItemIDs:         !rewriteToolContinuationIDs,
 	})
+	return filtered
 }
 
 func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]any, bool) {
@@ -1267,7 +1308,7 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]a
 			}
 		}
 
-		if opts.dropNonToolItemIDs && !isCodexToolCallItemType(typ) {
+		if opts.dropNonToolItemIDs && !isCodexToolCallItemType(typ) && !codexInputItemPreservesID(typ) {
 			if _, exists := newItem["id"]; exists {
 				ensureCopy()
 				delete(newItem, "id")
@@ -1304,6 +1345,15 @@ func isCodexToolCallItemType(typ string) bool {
 func codexInputItemRequiresName(typ string) bool {
 	switch strings.TrimSpace(typ) {
 	case "function_call", "custom_tool_call", "mcp_tool_call":
+		return true
+	default:
+		return false
+	}
+}
+
+func codexInputItemPreservesID(typ string) bool {
+	switch strings.TrimSpace(typ) {
+	case "image_generation_call", "web_search_call":
 		return true
 	default:
 		return false

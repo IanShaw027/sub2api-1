@@ -9,7 +9,14 @@ const (
 )
 
 func normalizeOpenAIMessagesDispatchMappedModel(model string) string {
-	return strings.TrimSpace(model)
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return ""
+	}
+	if normalized := canonicalizeOpenAIModelAliasSpelling(model); normalized != "" {
+		return normalized
+	}
+	return model
 }
 
 func resolveOpenAIMessagesDispatchModel(cfg OpenAIMessagesDispatchModelConfig, requestedModel string) (string, bool) {
