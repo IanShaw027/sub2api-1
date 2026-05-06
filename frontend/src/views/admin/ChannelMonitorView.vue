@@ -15,57 +15,121 @@
       </template>
 
       <template #table>
-        <DataTable :columns="columns" :data="monitors" :loading="loading">
-          <template #cell-name="{ row, value }">
-            <div class="flex items-center gap-1.5">
-              <span class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
-              <HelpTooltip v-if="row.api_key_decrypt_failed" :content="t('admin.channelMonitor.apiKeyDecryptFailed')">
-                <Icon name="exclamationTriangle" size="sm" class="text-red-500" />
-              </HelpTooltip>
-            </div>
+        <div class="space-y-6">
+          <template v-if="groupedMonitors.length === 0">
+            <DataTable :columns="columns" :data="monitors" :loading="loading">
+              <template #cell-name="{ row, value }">
+                <div class="flex items-center gap-1.5">
+                  <span class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
+                  <HelpTooltip v-if="row.api_key_decrypt_failed" :content="t('admin.channelMonitor.apiKeyDecryptFailed')">
+                    <Icon name="exclamationTriangle" size="sm" class="text-red-500" />
+                  </HelpTooltip>
+                </div>
+              </template>
+
+              <template #cell-provider="{ row }">
+                <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" :class="providerBadgeClass(row.provider)">
+                  {{ providerLabel(row.provider) }}
+                </span>
+              </template>
+
+              <template #cell-primary_model="{ row }">
+                <MonitorPrimaryModelCell :row="row" />
+              </template>
+
+              <template #cell-availability_7d="{ row }">
+                <span class="text-sm text-gray-900 dark:text-gray-100">{{ formatAvailability(row) }}</span>
+              </template>
+
+              <template #cell-latency="{ row }">
+                <span class="text-sm text-gray-900 dark:text-gray-100">{{ formatLatency(row.primary_latency_ms) }}</span>
+              </template>
+
+              <template #cell-enabled="{ row }">
+                <Toggle :modelValue="row.enabled" @update:modelValue="toggleEnabled(row)" />
+              </template>
+
+              <template #cell-actions="{ row }">
+                <MonitorActionsCell
+                  :row="row"
+                  :running="runningId === row.id"
+                  @run="handleRunNow"
+                  @edit="openEditDialog"
+                  @delete="handleDelete"
+                />
+              </template>
+
+              <template #empty>
+                <EmptyState
+                  :title="t('admin.channelMonitor.noMonitorsYet')"
+                  :description="t('admin.channelMonitor.createFirstMonitor')"
+                  :action-text="t('admin.channelMonitor.createButton')"
+                  @action="openCreateDialog"
+                />
+              </template>
+            </DataTable>
           </template>
 
-          <template #cell-provider="{ row }">
-            <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" :class="providerBadgeClass(row.provider)">
-              {{ providerLabel(row.provider) }}
-            </span>
-          </template>
+          <template v-else>
+            <section
+              v-for="group in groupedMonitors"
+              :key="group.provider"
+              class="space-y-3"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <div class="flex items-center gap-2">
+                  <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" :class="providerBadgeClass(group.provider)">
+                    {{ providerLabel(group.provider) }}
+                  </span>
+                  <span class="text-sm text-gray-500 dark:text-gray-400">{{ group.items.length }}</span>
+                </div>
+              </div>
 
-          <template #cell-primary_model="{ row }">
-            <MonitorPrimaryModelCell :row="row" />
-          </template>
+              <DataTable :columns="columns" :data="group.items" :loading="loading">
+                <template #cell-name="{ row, value }">
+                  <div class="flex items-center gap-1.5">
+                    <span class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
+                    <HelpTooltip v-if="row.api_key_decrypt_failed" :content="t('admin.channelMonitor.apiKeyDecryptFailed')">
+                      <Icon name="exclamationTriangle" size="sm" class="text-red-500" />
+                    </HelpTooltip>
+                  </div>
+                </template>
 
-          <template #cell-availability_7d="{ row }">
-            <span class="text-sm text-gray-900 dark:text-gray-100">{{ formatAvailability(row) }}</span>
-          </template>
+                <template #cell-provider="{ row }">
+                  <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" :class="providerBadgeClass(row.provider)">
+                    {{ providerLabel(row.provider) }}
+                  </span>
+                </template>
 
-          <template #cell-latency="{ row }">
-            <span class="text-sm text-gray-900 dark:text-gray-100">{{ formatLatency(row.primary_latency_ms) }}</span>
-          </template>
+                <template #cell-primary_model="{ row }">
+                  <MonitorPrimaryModelCell :row="row" />
+                </template>
 
-          <template #cell-enabled="{ row }">
-            <Toggle :modelValue="row.enabled" @update:modelValue="toggleEnabled(row)" />
-          </template>
+                <template #cell-availability_7d="{ row }">
+                  <span class="text-sm text-gray-900 dark:text-gray-100">{{ formatAvailability(row) }}</span>
+                </template>
 
-          <template #cell-actions="{ row }">
-            <MonitorActionsCell
-              :row="row"
-              :running="runningId === row.id"
-              @run="handleRunNow"
-              @edit="openEditDialog"
-              @delete="handleDelete"
-            />
-          </template>
+                <template #cell-latency="{ row }">
+                  <span class="text-sm text-gray-900 dark:text-gray-100">{{ formatLatency(row.primary_latency_ms) }}</span>
+                </template>
 
-          <template #empty>
-            <EmptyState
-              :title="t('admin.channelMonitor.noMonitorsYet')"
-              :description="t('admin.channelMonitor.createFirstMonitor')"
-              :action-text="t('admin.channelMonitor.createButton')"
-              @action="openCreateDialog"
-            />
+                <template #cell-enabled="{ row }">
+                  <Toggle :modelValue="row.enabled" @update:modelValue="toggleEnabled(row)" />
+                </template>
+
+                <template #cell-actions="{ row }">
+                  <MonitorActionsCell
+                    :row="row"
+                    :running="runningId === row.id"
+                    @run="handleRunNow"
+                    @edit="openEditDialog"
+                    @delete="handleDelete"
+                  />
+                </template>
+              </DataTable>
+            </section>
           </template>
-        </DataTable>
+        </div>
       </template>
 
       <template #pagination>
@@ -142,6 +206,7 @@ import MonitorPrimaryModelCell from '@/components/admin/monitor/MonitorPrimaryMo
 import MonitorActionsCell from '@/components/admin/monitor/MonitorActionsCell.vue'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
+import { PROVIDERS } from '@/constants/channelMonitor'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -180,6 +245,21 @@ const columns = computed<Column[]>(() => [
   { key: 'enabled', label: t('admin.channelMonitor.columns.enabled'), sortable: false },
   { key: 'actions', label: t('admin.channelMonitor.columns.actions'), sortable: false },
 ])
+
+const groupedMonitors = computed(() => {
+  if (loading.value || monitors.value.length === 0) return []
+  const order = new Map<string, number>(PROVIDERS.map((provider, index) => [provider, index]))
+  const groups = new Map<string, ChannelMonitor[]>()
+  for (const monitor of monitors.value) {
+    const key = monitor.provider || ''
+    const items = groups.get(key)
+    if (items) items.push(monitor)
+    else groups.set(key, [monitor])
+  }
+  return Array.from(groups.entries())
+    .sort(([a], [b]) => (order.get(a) ?? Number.MAX_SAFE_INTEGER) - (order.get(b) ?? Number.MAX_SAFE_INTEGER) || a.localeCompare(b))
+    .map(([provider, items]) => ({ provider, items }))
+})
 
 const deleteConfirmMessage = computed(() => {
   const name = deleting.value?.name || ''

@@ -4958,6 +4958,13 @@
         "payment": "Payment"
       },
       "features": {
+        "aiStudio": {
+          "title": "AI Studio",
+          "description": "Controls the user-facing AI Studio entry points and the admin governance pages. Disabling it hides or redirects the related sidebar items and routes.",
+          "configureLink": "Open AI Studio",
+          "enabled": "Enable AI Studio",
+          "enabledHint": "When off, both the front-end AI features and the admin governance entry are hidden."
+        },
         "affiliate": {
           "title": "Affiliate Rebates",
           "description": "Control affiliate rebates, rebate cap, eligible invitee slots, and invited-user signup bonus.",

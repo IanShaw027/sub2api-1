@@ -89,6 +89,12 @@ function buildPublicSettings(overrides: Partial<WeChatPublicSettings> = {}): WeC
     balance_low_notify_enabled: false,
     account_quota_notify_enabled: false,
     balance_low_notify_threshold: 0,
+    channel_monitor_enabled: true,
+    channel_monitor_default_interval_seconds: 60,
+    ai_studio_enabled: false,
+    available_channels_enabled: false,
+    affiliate_enabled: false,
+    ticket_enabled: false,
     ...overrides,
   }
 }

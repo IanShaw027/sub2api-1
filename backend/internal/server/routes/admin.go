@@ -103,12 +103,13 @@ func RegisterAdminRoutes(
 		registerChannelMonitorRoutes(admin, h, settingService)
 
 		// AI 创作中心治理
-		registerAdminAIRoutes(admin, h)
+		registerAdminAIRoutes(admin, h, settingService)
 	}
 }
 
-func registerAdminAIRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+func registerAdminAIRoutes(admin *gin.RouterGroup, h *handler.Handlers, settingService *service.SettingService) {
 	ai := admin.Group("/ai")
+	ai.Use(aiStudioFeatureGuard(settingService))
 	{
 		ai.GET("/prompt-templates", h.Admin.AI.ListPromptTemplates)
 		ai.GET("/prompt-templates/:id", h.Admin.AI.GetPromptTemplate)

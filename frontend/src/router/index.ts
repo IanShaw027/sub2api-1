@@ -173,6 +173,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
+      requiresAiStudio: true,
       title: 'AI Chat',
       titleKey: 'ai.chat.title',
       descriptionKey: 'ai.chat.subtitle'
@@ -185,6 +186,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
+      requiresAiStudio: true,
       title: 'AI Image',
       titleKey: 'ai.image.title',
       descriptionKey: 'ai.image.subtitle'
@@ -197,6 +199,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
+      requiresAiStudio: true,
       title: 'AI Gallery',
       titleKey: 'ai.gallery.title',
       descriptionKey: 'ai.gallery.subtitle'
@@ -209,6 +212,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
+      requiresAiStudio: true,
       title: 'AI Prompts',
       titleKey: 'ai.promptLibrary.title',
       descriptionKey: 'ai.promptLibrary.subtitle'
@@ -764,6 +768,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: true,
+      requiresAiStudio: true,
       title: 'AI Prompt Governance',
       titleKey: 'ai.promptGovernance.title',
       descriptionKey: 'ai.promptGovernance.subtitle'
@@ -776,6 +781,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: true,
+      requiresAiStudio: true,
       title: 'AI Artwork Governance',
       titleKey: 'ai.artworkGovernance.title',
       descriptionKey: 'ai.artworkGovernance.subtitle'
@@ -925,6 +931,7 @@ async function ensurePublicSettingsForOptInRoute(to: RouteLocationNormalized): P
   if (
     to.meta?.requiresTicket !== true
     && to.meta?.requiresAffiliate !== true
+    && to.meta?.requiresAiStudio !== true
     && to.meta?.requiresAvailableChannels !== true
   ) {
     return
@@ -1082,6 +1089,11 @@ router.beforeEach(async (to, _from, next) => {
 
   // Check affiliate module requirement
   if (to.meta.requiresAffiliate === true && !isFeatureFlagEnabled(FeatureFlags.affiliate)) {
+    next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+    return
+  }
+
+  if (to.meta.requiresAiStudio === true && !isFeatureFlagEnabled(FeatureFlags.aiStudio)) {
     next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
     return
   }

@@ -151,3 +151,15 @@ func TestSettingService_GetPublicSettings_FallsBackToConfigForWeChatOAuthCapabil
 	require.False(t, settings.WeChatOAuthMPEnabled)
 	require.False(t, settings.WeChatOAuthMobileEnabled)
 }
+
+func TestSettingService_GetAIStudioRuntime_RespectsOptInFlag(t *testing.T) {
+	svc := NewSettingService(&settingPublicRepoStub{values: map[string]string{}}, &config.Config{})
+	require.False(t, svc.GetAIStudioRuntime(context.Background()).Enabled)
+
+	svc = NewSettingService(&settingPublicRepoStub{
+		values: map[string]string{
+			SettingKeyAIStudioEnabled: "true",
+		},
+	}, &config.Config{})
+	require.True(t, svc.GetAIStudioRuntime(context.Background()).Enabled)
+}

@@ -2,7 +2,9 @@ package routes
 
 import (
 	"github.com/Wei-Shaw/sub2api/internal/handler"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -14,18 +16,40 @@ func RegisterAIRoutes(
 	h *handler.Handlers,
 	jwtAuth middleware.JWTAuthMiddleware,
 	adminAuth middleware.AdminAuthMiddleware,
+	settingServices ...*service.SettingService,
 ) {
+	settingService := firstAIStudioSettingService(settingServices)
+
 	authenticated := v1.Group("")
 	authenticated.Use(gin.HandlerFunc(jwtAuth))
-	registerUserAIRoutes(authenticated, h)
+	registerUserAIRoutes(authenticated, h, settingService)
 
 	admin := v1.Group("/admin")
 	admin.Use(gin.HandlerFunc(adminAuth))
-	registerAdminAIRoutes(admin, h)
+	registerAdminAIRoutes(admin, h, settingService)
 }
 
-func registerUserAIRoutes(authenticated *gin.RouterGroup, h *handler.Handlers) {
+func firstAIStudioSettingService(settingServices []*service.SettingService) *service.SettingService {
+	if len(settingServices) == 0 {
+		return nil
+	}
+	return settingServices[0]
+}
+
+func aiStudioFeatureGuard(settingService *service.SettingService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if settingService != nil && settingService.GetAIStudioRuntime(c.Request.Context()).Enabled {
+			c.Next()
+			return
+		}
+		response.ErrorFrom(c, service.ErrAIStudioDisabled)
+		c.Abort()
+	}
+}
+
+func registerUserAIRoutes(authenticated *gin.RouterGroup, h *handler.Handlers, settingService *service.SettingService) {
 	userAI := authenticated.Group("/user/ai")
+	userAI.Use(aiStudioFeatureGuard(settingService))
 	{
 		userAI.GET("/runtime", h.AI.GetRuntime)
 		userAI.GET("/sessions", h.AI.ListSessions)

@@ -5134,6 +5134,13 @@
         "payment": "支付设置"
       },
       "features": {
+        "aiStudio": {
+          "title": "AI 创作中心",
+          "description": "控制 AI 创作中心的用户入口和管理入口。关闭后相关侧边栏与路由将隐藏或跳转。",
+          "configureLink": "前往 AI 创作中心",
+          "enabled": "启用 AI 创作中心",
+          "enabledHint": "关闭后前台 AI 功能和后台治理入口都不可见。"
+        },
         "affiliate": {
           "title": "邀请返利",
           "description": "控制用户邀请返利功能、返利上限、可返利人数和新用户邀请奖励。",

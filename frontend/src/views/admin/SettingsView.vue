@@ -4702,6 +4702,39 @@
         <!-- Tab: Features (功能开关) -->
         <div v-show="activeTab === 'features'" class="space-y-6">
 
+          <div class="card">
+            <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {{ t('admin.settings.features.aiStudio.title') }}
+              </h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {{ t('admin.settings.features.aiStudio.description') }}
+              </p>
+              <p class="mt-1.5 text-xs">
+                <router-link
+                  to="/ai/chat"
+                  class="inline-flex items-center gap-1 text-primary-600 hover:underline dark:text-primary-400"
+                >
+                  {{ t('admin.settings.features.aiStudio.configureLink') }}
+                  <span aria-hidden="true">→</span>
+                </router-link>
+              </p>
+            </div>
+            <div class="space-y-5 p-6">
+              <div class="flex items-center justify-between">
+                <div>
+                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t('admin.settings.features.aiStudio.enabled') }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.settings.features.aiStudio.enabledHint') }}
+                  </p>
+                </div>
+                <Toggle v-model="form.ai_studio_enabled" />
+              </div>
+            </div>
+          </div>
+
 	        <div class="card">
 	          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
 	            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
@@ -6621,6 +6654,7 @@ const form = reactive<SettingsForm>({
   balance_low_notify_recharge_url: "",
   account_quota_notify_enabled: false,
   account_quota_notify_emails: [] as NotifyEmailEntry[],
+  ai_studio_enabled: false,
   // Channel Monitor feature switch
   channel_monitor_enabled: true,
   channel_monitor_default_interval_seconds: 60,
@@ -7678,6 +7712,7 @@ async function saveSettings() {
       account_quota_notify_emails: (
         form.account_quota_notify_emails || []
       ).filter((e) => e.email.trim() !== ""),
+      ai_studio_enabled: form.ai_studio_enabled,
       // Channel Monitor feature switch
       channel_monitor_enabled: form.channel_monitor_enabled,
       channel_monitor_default_interval_seconds:

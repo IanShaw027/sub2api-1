@@ -62,6 +62,12 @@ declare module 'vue-router' {
     requiresAffiliate?: boolean
 
     /**
+     * Whether this route requires AI Studio to be enabled
+     * @default false
+     */
+    requiresAiStudio?: boolean
+
+    /**
      * Whether this route requires channel monitor to be enabled
      * @default false
      */

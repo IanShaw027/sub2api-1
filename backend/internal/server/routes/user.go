@@ -161,6 +161,6 @@ func RegisterUserRoutes(
 			skills.GET("/:id/revenue", h.AI.GetSkillRevenue)
 		}
 
-		registerUserAIRoutes(authenticated, h)
+		registerUserAIRoutes(authenticated, h, settingService)
 	}
 }

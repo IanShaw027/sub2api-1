@@ -219,6 +219,7 @@ type SystemSettings struct {
 	AccountQuotaNotifyEmails    []NotifyEmailEntry `json:"account_quota_notify_emails"`
 
 	// Channel Monitor feature switch
+	AIStudioEnabled                  bool `json:"ai_studio_enabled"`
 	ChannelMonitorEnabled                bool `json:"channel_monitor_enabled"`
 	ChannelMonitorDefaultIntervalSeconds int  `json:"channel_monitor_default_interval_seconds"`
 
@@ -291,6 +292,7 @@ type PublicSettings struct {
 	ChannelMonitorDefaultIntervalSeconds int  `json:"channel_monitor_default_interval_seconds"`
 
 	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
+	AIStudioEnabled          bool `json:"ai_studio_enabled"`
 }
 
 // OverloadCooldownSettings 529过载冷却配置 DTO

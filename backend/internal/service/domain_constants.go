@@ -283,6 +283,10 @@ const (
 	// Channel Monitor (渠道监控)
 	// =========================
 
+	// SettingKeyAIStudioEnabled is a DB-backed soft switch for AI 创作中心.
+	// When false: sidebar entries and AI routes are hidden / redirected.
+	SettingKeyAIStudioEnabled = "ai_studio_enabled"
+
 	// SettingKeyChannelMonitorEnabled is a DB-backed soft switch for the channel monitor feature.
 	// When false: runner skips scheduling and user-facing endpoints return an empty list.
 	SettingKeyChannelMonitorEnabled = "channel_monitor_enabled"

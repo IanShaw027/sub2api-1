@@ -400,6 +400,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		AffiliateRebateInviteeLimit:            settings.AffiliateRebateInviteeLimit,
 		AffiliateSignupBonus:                   settings.AffiliateSignupBonus,
 		TicketEnabled:                          settings.TicketEnabled,
+		AIStudioEnabled:                        settings.AIStudioEnabled,
 		AffiliateRebateFreezeHours:             settings.AffiliateRebateFreezeHours,
 		AffiliateRebateDurationDays:            settings.AffiliateRebateDurationDays,
 		AffiliateRebatePerInviteeCap:           settings.AffiliateRebatePerInviteeCap,
@@ -740,6 +741,7 @@ type UpdateSettingsRequest struct {
 	PaymentCancelRateLimitMode    *string `json:"payment_cancel_rate_limit_window_mode"`
 
 	// Channel Monitor feature switch
+	AIStudioEnabled                  *bool `json:"ai_studio_enabled"`
 	ChannelMonitorEnabled                *bool `json:"channel_monitor_enabled"`
 	ChannelMonitorDefaultIntervalSeconds *int  `json:"channel_monitor_default_interval_seconds"`
 
@@ -1842,6 +1844,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.AccountQuotaNotifyEmails
 		}(),
+		AIStudioEnabled: func() bool {
+			if req.AIStudioEnabled != nil {
+				return *req.AIStudioEnabled
+			}
+			return previousSettings.AIStudioEnabled
+		}(),
 		ChannelMonitorEnabled: func() bool {
 			if req.ChannelMonitorEnabled != nil {
 				return *req.ChannelMonitorEnabled
@@ -2052,6 +2060,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AffiliateRebateInviteeLimit:            updatedSettings.AffiliateRebateInviteeLimit,
 		AffiliateSignupBonus:                   updatedSettings.AffiliateSignupBonus,
 		TicketEnabled:                          updatedSettings.TicketEnabled,
+		AIStudioEnabled:                        updatedSettings.AIStudioEnabled,
 		AffiliateRebateFreezeHours:             updatedSettings.AffiliateRebateFreezeHours,
 		AffiliateRebateDurationDays:            updatedSettings.AffiliateRebateDurationDays,
 		AffiliateRebatePerInviteeCap:           updatedSettings.AffiliateRebatePerInviteeCap,
@@ -2465,6 +2474,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.TicketEnabled != after.TicketEnabled {
 		changed = append(changed, "ticket_enabled")
+	}
+	if before.AIStudioEnabled != after.AIStudioEnabled {
+		changed = append(changed, "ai_studio_enabled")
 	}
 	if before.AffiliateRebateFreezeHours != after.AffiliateRebateFreezeHours {
 		changed = append(changed, "affiliate_rebate_freeze_hours")

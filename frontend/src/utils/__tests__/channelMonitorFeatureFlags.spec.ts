@@ -41,6 +41,7 @@ function publicSettings(overrides: Partial<PublicSettings> = {}): PublicSettings
     balance_low_notify_threshold: 0,
     channel_monitor_enabled: true,
     channel_monitor_default_interval_seconds: 60,
+    ai_studio_enabled: false,
     available_channels_enabled: false,
     ...overrides,
   }
@@ -65,5 +66,16 @@ describe('channel monitor feature flag helpers', () => {
     const { getChannelMonitorRefreshIntervalSeconds } = await import('@/utils/featureFlags')
 
     expect(getChannelMonitorRefreshIntervalSeconds()).toBe(120)
+  })
+
+  it('keeps AI studio hidden unless explicitly enabled', async () => {
+    const appStore = useAppStore()
+    const { FeatureFlags, isFeatureFlagEnabled } = await import('@/utils/featureFlags')
+
+    appStore.cachedPublicSettings = publicSettings({ ai_studio_enabled: false })
+    expect(isFeatureFlagEnabled(FeatureFlags.aiStudio)).toBe(false)
+
+    appStore.cachedPublicSettings = publicSettings({ ai_studio_enabled: true })
+    expect(isFeatureFlagEnabled(FeatureFlags.aiStudio)).toBe(true)
   })
 })

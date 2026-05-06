@@ -98,6 +98,11 @@ function defineFlag<K extends BooleanPublicSettingsKey>(
  * public-settings-driven switch; see the "Adding a new flag" checklist above.
  */
 export const FeatureFlags = {
+  aiStudio: defineFlag({
+    key: 'ai_studio_enabled',
+    mode: 'opt-in',
+    label: 'AI Studio',
+  }),
   channelMonitor: defineFlag({
     key: 'channel_monitor_enabled',
     mode: 'opt-out',
