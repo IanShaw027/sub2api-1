@@ -56,15 +56,14 @@ type geminiUsageTotalsBatchProvider interface {
 const geminiPrecheckCacheTTL = time.Minute
 
 const (
-	openAI403CooldownMinutesDefault = 10
-	openAI403DisableThreshold       = 3
-	openAI403CounterWindowMinutes   = 180
+	defaultRateLimit429CooldownSeconds = 5
+	maxRateLimit429CooldownSeconds     = 7200
 )
 
 const (
-	kiroTransient429DefaultCooldown = time.Minute
-	kiroTransient429MinCooldown     = 5 * time.Second
-	kiroTransient429MaxCooldown     = 5 * time.Minute
+	openAI403CooldownMinutesDefault = 10
+	openAI403DisableThreshold       = 3
+	openAI403CounterWindowMinutes   = 180
 )
 
 // NewRateLimitService 创建RateLimitService实例
@@ -823,10 +822,6 @@ func (s *RateLimitService) handleCustomErrorCode(ctx context.Context, account *A
 // handle429 处理429限流错误
 // 解析响应头获取重置时间，标记账号为限流状态
 func (s *RateLimitService) handle429(ctx context.Context, account *Account, headers http.Header, responseBody []byte) {
-	if account.Platform == PlatformKiro && s.handleKiro429(ctx, account, headers, responseBody) {
-		return
-	}
-
 	// 1. OpenAI 平台：优先尝试解析 x-codex-* 响应头（用于 rate_limit_exceeded）
 	if account.Platform == PlatformOpenAI {
 		s.persistOpenAICodexSnapshot(ctx, account, headers)
@@ -901,12 +896,8 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 			return
 		}
 
-		// 其他平台：没有重置时间，使用默认5分钟
-		resetAt := time.Now().Add(5 * time.Minute)
-		slog.Warn("rate_limit_no_reset_time", "account_id", account.ID, "platform", account.Platform, "using_default", "5m")
-		if err := s.accountRepo.SetRateLimited(ctx, account.ID, resetAt); err != nil {
-			slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
-		}
+		// 其他平台：没有重置时间，使用可配置的秒级默认回避，避免误伤长时间不可调度。
+		s.apply429FallbackRateLimit(ctx, account, "no_reset_time")
 		return
 	}
 
@@ -914,10 +905,7 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 	ts, err := strconv.ParseInt(resetTimestamp, 10, 64)
 	if err != nil {
 		slog.Warn("rate_limit_reset_parse_failed", "reset_timestamp", resetTimestamp, "error", err)
-		resetAt := time.Now().Add(5 * time.Minute)
-		if err := s.accountRepo.SetRateLimited(ctx, account.ID, resetAt); err != nil {
-			slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
-		}
+		s.apply429FallbackRateLimit(ctx, account, "reset_parse_failed")
 		return
 	}
 
@@ -939,109 +927,46 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 	slog.Info("account_rate_limited", "account_id", account.ID, "reset_at", resetAt)
 }
 
-func (s *RateLimitService) handleKiro429(ctx context.Context, account *Account, headers http.Header, responseBody []byte) bool {
-	if account == nil || account.Platform != PlatformKiro {
-		return false
-	}
-	if isKiroQuotaExhausted429(responseBody) {
-		return false
-	}
-
-	now := time.Now()
-	cooldown := kiroTransient429Cooldown(headers, now)
-	until := now.Add(cooldown)
-	state := &TempUnschedState{
-		UntilUnix:       until.Unix(),
-		TriggeredAtUnix: now.Unix(),
-		StatusCode:      http.StatusTooManyRequests,
-		MatchedKeyword:  "kiro_transient_429",
-		RuleIndex:       -1,
-		ErrorMessage:    truncateTempUnschedMessage(responseBody, tempUnschedMessageMaxBytes),
+func (s *RateLimitService) apply429FallbackRateLimit(ctx context.Context, account *Account, reason string) {
+	cooldown, enabled := s.get429FallbackCooldown(ctx, account)
+	if !enabled {
+		slog.Info("rate_limit_429_fallback_ignored", "account_id", account.ID, "platform", account.Platform, "reason", reason)
+		return
 	}
 
-	reason := "Kiro transient 429"
-	if raw, err := json.Marshal(state); err == nil {
-		reason = string(raw)
+	resetAt := time.Now().Add(cooldown)
+	slog.Warn("rate_limit_429_fallback_used", "account_id", account.ID, "platform", account.Platform, "reason", reason, "using_default", cooldown.String())
+	if err := s.accountRepo.SetRateLimited(ctx, account.ID, resetAt); err != nil {
+		slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
 	}
-	if err := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason); err != nil {
-		slog.Warn("kiro_429_set_temp_unschedulable_failed", "account_id", account.ID, "error", err)
-		return false
-	}
-	if s.tempUnschedCache != nil {
-		if err := s.tempUnschedCache.SetTempUnsched(ctx, account.ID, state); err != nil {
-			slog.Warn("kiro_429_temp_unsched_cache_set_failed", "account_id", account.ID, "error", err)
-		}
-	}
-
-	slog.Warn("kiro_429_temp_unschedulable", "account_id", account.ID, "until", until, "cooldown", cooldown)
-	return true
 }
 
-func kiroTransient429Cooldown(headers http.Header, now time.Time) time.Duration {
-	if headers != nil {
-		if retryAfter := strings.TrimSpace(headers.Get("Retry-After")); retryAfter != "" {
-			if seconds, err := strconv.Atoi(retryAfter); err == nil && seconds > 0 {
-				return clampKiroTransient429Cooldown(time.Duration(seconds) * time.Second)
+func (s *RateLimitService) get429FallbackCooldown(ctx context.Context, account *Account) (time.Duration, bool) {
+	if s.settingService != nil {
+		settings, err := s.settingService.GetRateLimit429CooldownSettings(ctx)
+		if err == nil && settings != nil {
+			if !settings.Enabled {
+				return 0, false
 			}
-			if retryAt, err := http.ParseTime(retryAfter); err == nil {
-				if cooldown := retryAt.Sub(now); cooldown > 0 {
-					return clampKiroTransient429Cooldown(cooldown)
-				}
-			}
+			seconds := clampRateLimit429CooldownSeconds(settings.CooldownSeconds)
+			return time.Duration(seconds) * time.Second, true
 		}
+		slog.Warn("rate_limit_429_settings_read_failed", "account_id", account.ID, "error", err)
 	}
-	return kiroTransient429DefaultCooldown
+
+	seconds := defaultRateLimit429CooldownSeconds
+	seconds = clampRateLimit429CooldownSeconds(seconds)
+	return time.Duration(seconds) * time.Second, true
 }
 
-func clampKiroTransient429Cooldown(cooldown time.Duration) time.Duration {
-	if cooldown < kiroTransient429MinCooldown {
-		return kiroTransient429MinCooldown
+func clampRateLimit429CooldownSeconds(seconds int) int {
+	if seconds < 1 {
+		return 1
 	}
-	if cooldown > kiroTransient429MaxCooldown {
-		return kiroTransient429MaxCooldown
+	if seconds > maxRateLimit429CooldownSeconds {
+		return maxRateLimit429CooldownSeconds
 	}
-	return cooldown
-}
-
-func isKiroQuotaExhausted429(responseBody []byte) bool {
-	if len(responseBody) == 0 {
-		return false
-	}
-
-	var parts []string
-	for _, path := range []string{
-		"__type",
-		"code",
-		"message",
-		"error",
-		"error.code",
-		"error.message",
-		"Error.Code",
-		"Error.Message",
-	} {
-		if value := strings.TrimSpace(gjson.GetBytes(responseBody, path).String()); value != "" {
-			parts = append(parts, value)
-		}
-	}
-	if msg := strings.TrimSpace(extractUpstreamErrorMessage(responseBody)); msg != "" {
-		parts = append(parts, msg)
-	}
-	parts = append(parts, string(responseBody))
-	text := strings.ToLower(strings.Join(parts, " "))
-
-	if strings.Contains(text, "servicequotaexceeded") || strings.Contains(text, "quotaexceeded") {
-		return true
-	}
-	if strings.Contains(text, "quota") && (strings.Contains(text, "exceeded") || strings.Contains(text, "exhausted") || strings.Contains(text, "reached") || strings.Contains(text, "used up")) {
-		return true
-	}
-	if strings.Contains(text, "usage limit") && (strings.Contains(text, "exceeded") || strings.Contains(text, "exhausted") || strings.Contains(text, "reached")) {
-		return true
-	}
-	if strings.Contains(text, "monthly limit") || strings.Contains(text, "subscription limit") || strings.Contains(text, "free trial limit") {
-		return true
-	}
-	return false
+	return seconds
 }
 
 // calculateOpenAI429ResetTime 从 OpenAI 429 响应头计算正确的重置时间

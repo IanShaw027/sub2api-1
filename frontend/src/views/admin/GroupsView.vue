@@ -104,8 +104,6 @@
                   ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
                   : value === 'openai'
                     ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                    : value === 'kiro'
-                      ? 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400'
                     : value === 'antigravity'
                       ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
                       : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
@@ -665,14 +663,42 @@
           >
             {{ t("admin.groups.imagePricing.title") }}
           </label>
-          <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
+          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
             {{ t("admin.groups.imagePricing.description") }}
           </p>
-          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            {{ t("admin.groups.imagePricing.fixedHint") }}
-          </p>
-          <div class="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-            {{ t("admin.groups.imagePricing.images") }}
+          <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                v-model="createForm.allow_image_generation"
+                type="checkbox"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              {{ t("admin.groups.imagePricing.allowImageGeneration") }}
+            </label>
+            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                v-model="createForm.image_rate_independent"
+                type="checkbox"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              {{ t("admin.groups.imagePricing.independentMultiplier") }}
+            </label>
+          </div>
+          <div
+            v-if="createForm.image_rate_independent"
+            class="mb-4"
+          >
+            <label class="input-label">{{
+              t("admin.groups.imagePricing.imageMultiplier")
+            }}</label>
+            <input
+              v-model.number="createForm.image_rate_multiplier"
+              type="number"
+              step="0.0001"
+              min="0"
+              class="input"
+              placeholder="1"
+            />
           </div>
           <div class="grid grid-cols-3 gap-3">
             <div>
@@ -709,42 +735,20 @@
               />
             </div>
           </div>
-          <div class="mt-4 mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-            {{ t("admin.groups.imagePricing.images2api") }}
-          </div>
-          <div class="grid grid-cols-3 gap-3">
-            <div>
-              <label class="input-label">1K ($)</label>
-              <input
-                v-model.number="createForm.images2api_price_1k"
-                type="number"
-                step="0.001"
-                min="0"
-                class="input"
-                placeholder="0.134"
-              />
+          <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+            {{ t("admin.groups.imagePricing.modeHint") }}
+          </p>
+          <div class="mt-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+            <div class="mb-1 font-medium">
+              {{ t("admin.groups.imagePricing.finalPricePreview") }}
             </div>
-            <div>
-              <label class="input-label">2K ($)</label>
-              <input
-                v-model.number="createForm.images2api_price_2k"
-                type="number"
-                step="0.001"
-                min="0"
-                class="input"
-                placeholder="0.201"
-              />
-            </div>
-            <div>
-              <label class="input-label">4K ($)</label>
-              <input
-                v-model.number="createForm.images2api_price_4k"
-                type="number"
-                step="0.001"
-                min="0"
-                class="input"
-                placeholder="0.268"
-              />
+            <div class="grid grid-cols-3 gap-2">
+              <div
+                v-for="item in createImageFinalPricePreview"
+                :key="item.label"
+              >
+                {{ item.label }}: {{ item.value }}
+              </div>
             </div>
           </div>
         </div>
@@ -1183,10 +1187,10 @@
           </div>
         </div>
 
-        <!-- 账号过滤控制 (OpenAI/Antigravity/Anthropic/Gemini/Kiro) -->
+        <!-- 账号过滤控制 (OpenAI/Antigravity/Anthropic/Gemini) -->
         <div
           v-if="
-            ['openai', 'antigravity', 'anthropic', 'gemini', 'kiro'].includes(
+            ['openai', 'antigravity', 'anthropic', 'gemini'].includes(
               createForm.platform,
             )
           "
@@ -1234,10 +1238,7 @@
           </div>
 
           <!-- require_privacy_set toggle -->
-          <div
-            v-if="['openai', 'antigravity'].includes(createForm.platform)"
-            class="flex items-center justify-between"
-          >
+          <div class="flex items-center justify-between">
             <div>
               <label class="text-sm text-gray-600 dark:text-gray-400"
                 >仅允许隐私保护已设置的账号</label
@@ -1847,14 +1848,42 @@
           >
             {{ t("admin.groups.imagePricing.title") }}
           </label>
-          <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
+          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
             {{ t("admin.groups.imagePricing.description") }}
           </p>
-          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            {{ t("admin.groups.imagePricing.fixedHint") }}
-          </p>
-          <div class="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-            {{ t("admin.groups.imagePricing.images") }}
+          <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                v-model="editForm.allow_image_generation"
+                type="checkbox"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              {{ t("admin.groups.imagePricing.allowImageGeneration") }}
+            </label>
+            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                v-model="editForm.image_rate_independent"
+                type="checkbox"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              {{ t("admin.groups.imagePricing.independentMultiplier") }}
+            </label>
+          </div>
+          <div
+            v-if="editForm.image_rate_independent"
+            class="mb-4"
+          >
+            <label class="input-label">{{
+              t("admin.groups.imagePricing.imageMultiplier")
+            }}</label>
+            <input
+              v-model.number="editForm.image_rate_multiplier"
+              type="number"
+              step="0.0001"
+              min="0"
+              class="input"
+              placeholder="1"
+            />
           </div>
           <div class="grid grid-cols-3 gap-3">
             <div>
@@ -1891,42 +1920,20 @@
               />
             </div>
           </div>
-          <div class="mt-4 mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-            {{ t("admin.groups.imagePricing.images2api") }}
-          </div>
-          <div class="grid grid-cols-3 gap-3">
-            <div>
-              <label class="input-label">1K ($)</label>
-              <input
-                v-model.number="editForm.images2api_price_1k"
-                type="number"
-                step="0.001"
-                min="0"
-                class="input"
-                placeholder="0.134"
-              />
+          <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+            {{ t("admin.groups.imagePricing.modeHint") }}
+          </p>
+          <div class="mt-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+            <div class="mb-1 font-medium">
+              {{ t("admin.groups.imagePricing.finalPricePreview") }}
             </div>
-            <div>
-              <label class="input-label">2K ($)</label>
-              <input
-                v-model.number="editForm.images2api_price_2k"
-                type="number"
-                step="0.001"
-                min="0"
-                class="input"
-                placeholder="0.201"
-              />
-            </div>
-            <div>
-              <label class="input-label">4K ($)</label>
-              <input
-                v-model.number="editForm.images2api_price_4k"
-                type="number"
-                step="0.001"
-                min="0"
-                class="input"
-                placeholder="0.268"
-              />
+            <div class="grid grid-cols-3 gap-2">
+              <div
+                v-for="item in editImageFinalPricePreview"
+                :key="item.label"
+              >
+                {{ item.label }}: {{ item.value }}
+              </div>
             </div>
           </div>
         </div>
@@ -2361,10 +2368,10 @@
           </div>
         </div>
 
-        <!-- 账号过滤控制 (OpenAI/Antigravity/Anthropic/Gemini/Kiro) -->
+        <!-- 账号过滤控制 (OpenAI/Antigravity/Anthropic/Gemini) -->
         <div
           v-if="
-            ['openai', 'antigravity', 'anthropic', 'gemini', 'kiro'].includes(
+            ['openai', 'antigravity', 'anthropic', 'gemini'].includes(
               editForm.platform,
             )
           "
@@ -2412,10 +2419,7 @@
           </div>
 
           <!-- require_privacy_set toggle -->
-          <div
-            v-if="['openai', 'antigravity'].includes(editForm.platform)"
-            class="flex items-center justify-between"
-          >
+          <div class="flex items-center justify-between">
             <div>
               <label class="text-sm text-gray-600 dark:text-gray-400"
                 >仅允许隐私保护已设置的账号</label
@@ -2921,7 +2925,6 @@ const platformOptions = computed(() => [
   { value: "openai", label: "OpenAI" },
   { value: "gemini", label: "Gemini" },
   { value: "antigravity", label: "Antigravity" },
-  { value: "kiro", label: "Kiro" },
 ]);
 
 const platformFilterOptions = computed(() => [
@@ -2930,7 +2933,6 @@ const platformFilterOptions = computed(() => [
   { value: "openai", label: "OpenAI" },
   { value: "gemini", label: "Gemini" },
   { value: "antigravity", label: "Antigravity" },
-  { value: "kiro", label: "Kiro" },
 ]);
 
 const editStatusOptions = computed(() => [
@@ -3107,13 +3109,13 @@ const createForm = reactive({
   daily_limit_usd: null as number | null,
   weekly_limit_usd: null as number | null,
   monthly_limit_usd: null as number | null,
-  // 图片生成计费配置（仅 antigravity 平台使用）
+  // 图片生成计费配置
+  allow_image_generation: false,
+  image_rate_independent: false,
+  image_rate_multiplier: 1,
   image_price_1k: null as number | null,
   image_price_2k: null as number | null,
   image_price_4k: null as number | null,
-  images2api_price_1k: null as number | null,
-  images2api_price_2k: null as number | null,
-  images2api_price_4k: null as number | null,
   // Claude Code 客户端限制（仅 anthropic 平台使用）
   claude_code_only: false,
   fallback_group_id: null as number | null,
@@ -3392,13 +3394,13 @@ const editForm = reactive({
   daily_limit_usd: null as number | null,
   weekly_limit_usd: null as number | null,
   monthly_limit_usd: null as number | null,
-  // 图片生成计费配置（仅 antigravity 平台使用）
+  // 图片生成计费配置
+  allow_image_generation: false,
+  image_rate_independent: false,
+  image_rate_multiplier: 1,
   image_price_1k: null as number | null,
   image_price_2k: null as number | null,
   image_price_4k: null as number | null,
-  images2api_price_1k: null as number | null,
-  images2api_price_2k: null as number | null,
-  images2api_price_4k: null as number | null,
   // Claude Code 客户端限制（仅 anthropic 平台使用）
   claude_code_only: false,
   fallback_group_id: null as number | null,
@@ -3424,6 +3426,62 @@ const editForm = reactive({
   // 分组级 RPM 限制（每用户每分钟最大请求数；0 = 不限制）
   rpm_limit: 0 as number,
 });
+
+type ImagePricingFormState = {
+  rate_multiplier: number;
+  image_rate_independent: boolean;
+  image_rate_multiplier: number;
+  image_price_1k: number | string | null;
+  image_price_2k: number | string | null;
+  image_price_4k: number | string | null;
+};
+
+const imagePricingTiers = [
+  { key: "image_price_1k", label: "1K" },
+  { key: "image_price_2k", label: "2K" },
+  { key: "image_price_4k", label: "4K" },
+] as const;
+
+const normalizePreviewNumber = (value: number | string | null | undefined, fallback = 0) => {
+  if (value === null || value === undefined || value === "") {
+    return fallback;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const formatImagePricePreview = (value: number | string | null | undefined) => {
+  if (value === null || value === undefined || value === "") {
+    return t("admin.groups.imagePricing.notConfigured");
+  }
+  const price = Number(value);
+  if (!Number.isFinite(price) || price < 0) {
+    return t("admin.groups.imagePricing.notConfigured");
+  }
+  return `$${price.toFixed(6).replace(/0+$/, "").replace(/\.$/, "")}`;
+};
+
+const buildImageFinalPricePreview = (form: ImagePricingFormState) => {
+  const multiplier = form.image_rate_independent
+    ? normalizePreviewNumber(form.image_rate_multiplier, 1)
+    : normalizePreviewNumber(form.rate_multiplier, 1);
+  return imagePricingTiers.map((tier) => {
+    const basePrice = normalizePreviewNumber(form[tier.key]);
+    return {
+      label: tier.label,
+      value: basePrice > 0
+        ? formatImagePricePreview(basePrice * multiplier)
+        : t("admin.groups.imagePricing.notConfigured"),
+    };
+  });
+};
+
+const createImageFinalPricePreview = computed(() =>
+  buildImageFinalPricePreview(createForm),
+);
+const editImageFinalPricePreview = computed(() =>
+  buildImageFinalPricePreview(editForm),
+);
 
 // 根据分组类型返回不同的删除确认消息
 const deleteConfirmMessage = computed(() => {
@@ -3583,12 +3641,12 @@ const closeCreateModal = () => {
   createForm.daily_limit_usd = null;
   createForm.weekly_limit_usd = null;
   createForm.monthly_limit_usd = null;
+  createForm.allow_image_generation = false;
+  createForm.image_rate_independent = false;
+  createForm.image_rate_multiplier = 1;
   createForm.image_price_1k = null;
   createForm.image_price_2k = null;
   createForm.image_price_4k = null;
-  createForm.images2api_price_1k = null;
-  createForm.images2api_price_2k = null;
-  createForm.images2api_price_4k = null;
   createForm.claude_code_only = false;
   createForm.fallback_group_id = null;
   createForm.fallback_group_id_on_invalid_request = null;
@@ -3601,7 +3659,7 @@ const closeCreateModal = () => {
   createModelRoutingRules.value = [];
 };
 
-const normalizeOptionalPositiveNumber = (
+const normalizeOptionalLimit = (
   value: number | string | null | undefined,
 ): number | null => {
   if (value === null || value === undefined) {
@@ -3620,8 +3678,15 @@ const normalizeOptionalPositiveNumber = (
   return Number.isFinite(value) && value > 0 ? value : null;
 };
 
-const normalizeOptionalLimit = normalizeOptionalPositiveNumber;
-const normalizeOptionalImagePrice = normalizeOptionalPositiveNumber;
+const normalizeImageRateMultiplier = (
+  value: number | string | null | undefined,
+): number => {
+  if (value === null || value === undefined || value === "") {
+    return 1;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 1;
+};
 
 const handleCreateGroup = async () => {
   if (!createForm.name.trim()) {
@@ -3661,12 +3726,9 @@ const handleCreateGroup = async () => {
     requestData.daily_limit_usd = emptyToNull(requestData.daily_limit_usd);
     requestData.weekly_limit_usd = emptyToNull(requestData.weekly_limit_usd);
     requestData.monthly_limit_usd = emptyToNull(requestData.monthly_limit_usd);
-    requestData.image_price_1k = normalizeOptionalImagePrice(requestData.image_price_1k);
-    requestData.image_price_2k = normalizeOptionalImagePrice(requestData.image_price_2k);
-    requestData.image_price_4k = normalizeOptionalImagePrice(requestData.image_price_4k);
-    requestData.images2api_price_1k = normalizeOptionalImagePrice(requestData.images2api_price_1k);
-    requestData.images2api_price_2k = normalizeOptionalImagePrice(requestData.images2api_price_2k);
-    requestData.images2api_price_4k = normalizeOptionalImagePrice(requestData.images2api_price_4k);
+    requestData.image_rate_multiplier = normalizeImageRateMultiplier(
+      requestData.image_rate_multiplier,
+    );
     await adminAPI.groups.create(requestData);
     appStore.showSuccess(t("admin.groups.groupCreated"));
     closeCreateModal();
@@ -3698,12 +3760,12 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.daily_limit_usd = group.daily_limit_usd;
   editForm.weekly_limit_usd = group.weekly_limit_usd;
   editForm.monthly_limit_usd = group.monthly_limit_usd;
+  editForm.allow_image_generation = group.allow_image_generation ?? false;
+  editForm.image_rate_independent = group.image_rate_independent ?? false;
+  editForm.image_rate_multiplier = group.image_rate_multiplier ?? 1;
   editForm.image_price_1k = group.image_price_1k;
   editForm.image_price_2k = group.image_price_2k;
   editForm.image_price_4k = group.image_price_4k;
-  editForm.images2api_price_1k = group.images2api_price_1k;
-  editForm.images2api_price_2k = group.images2api_price_2k;
-  editForm.images2api_price_4k = group.images2api_price_4k;
   editForm.claude_code_only = group.claude_code_only || false;
   editForm.fallback_group_id = group.fallback_group_id;
   editForm.fallback_group_id_on_invalid_request =
@@ -3761,7 +3823,6 @@ const handleUpdateGroup = async () => {
     // 转换 fallback_group_id: null -> 0 (后端使用 0 表示清除)
     const payload = {
       ...editForm,
-      description: editForm.description.trim(),
       daily_limit_usd: normalizeOptionalLimit(
         editForm.daily_limit_usd as number | string | null,
       ),
@@ -3796,12 +3857,9 @@ const handleUpdateGroup = async () => {
     payload.daily_limit_usd = emptyToNull(payload.daily_limit_usd);
     payload.weekly_limit_usd = emptyToNull(payload.weekly_limit_usd);
     payload.monthly_limit_usd = emptyToNull(payload.monthly_limit_usd);
-    payload.image_price_1k = normalizeOptionalImagePrice(payload.image_price_1k);
-    payload.image_price_2k = normalizeOptionalImagePrice(payload.image_price_2k);
-    payload.image_price_4k = normalizeOptionalImagePrice(payload.image_price_4k);
-    payload.images2api_price_1k = normalizeOptionalImagePrice(payload.images2api_price_1k);
-    payload.images2api_price_2k = normalizeOptionalImagePrice(payload.images2api_price_2k);
-    payload.images2api_price_4k = normalizeOptionalImagePrice(payload.images2api_price_4k);
+    payload.image_rate_multiplier = normalizeImageRateMultiplier(
+      payload.image_rate_multiplier,
+    );
     await adminAPI.groups.update(editingGroup.value.id, payload);
     appStore.showSuccess(t("admin.groups.groupUpdated"));
     closeEditModal();
@@ -3892,7 +3950,7 @@ watch(
     if (newVal !== "openai") {
       resetMessagesDispatchFormState(createForm);
     }
-    if (!["openai", "antigravity", "anthropic", "gemini", "kiro"].includes(newVal)) {
+    if (!["openai", "antigravity", "anthropic", "gemini"].includes(newVal)) {
       createForm.require_oauth_only = false;
       createForm.require_privacy_set = false;
     }
@@ -3908,7 +3966,7 @@ watch(
     if (newVal !== "openai") {
       resetMessagesDispatchFormState(editForm);
     }
-    if (!["openai", "antigravity", "anthropic", "gemini", "kiro"].includes(newVal)) {
+    if (!["openai", "antigravity", "anthropic", "gemini"].includes(newVal)) {
       editForm.require_oauth_only = false;
       editForm.require_privacy_set = false;
     }

@@ -17,6 +17,12 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aiprompttemplateversion"
 	"github.com/Wei-Shaw/sub2api/ent/aisession"
 	"github.com/Wei-Shaw/sub2api/ent/aisessionmessage"
+	"github.com/Wei-Shaw/sub2api/ent/aiskill"
+	"github.com/Wei-Shaw/sub2api/ent/aiskilllike"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillreview"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillrun"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillsettlement"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillversion"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
@@ -295,6 +301,168 @@ func (f TraverseAISessionMessage) Traverse(ctx context.Context, q ent.Query) err
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *ent.AISessionMessageQuery", q)
+}
+
+// The AISkillFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AISkillFunc func(context.Context, *ent.AISkillQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AISkillFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AISkillQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AISkillQuery", q)
+}
+
+// The TraverseAISkill type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAISkill func(context.Context, *ent.AISkillQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAISkill) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAISkill) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AISkillQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AISkillQuery", q)
+}
+
+// The AISkillLikeFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AISkillLikeFunc func(context.Context, *ent.AISkillLikeQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AISkillLikeFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AISkillLikeQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AISkillLikeQuery", q)
+}
+
+// The TraverseAISkillLike type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAISkillLike func(context.Context, *ent.AISkillLikeQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAISkillLike) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAISkillLike) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AISkillLikeQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AISkillLikeQuery", q)
+}
+
+// The AISkillReviewFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AISkillReviewFunc func(context.Context, *ent.AISkillReviewQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AISkillReviewFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AISkillReviewQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AISkillReviewQuery", q)
+}
+
+// The TraverseAISkillReview type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAISkillReview func(context.Context, *ent.AISkillReviewQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAISkillReview) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAISkillReview) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AISkillReviewQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AISkillReviewQuery", q)
+}
+
+// The AISkillRunFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AISkillRunFunc func(context.Context, *ent.AISkillRunQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AISkillRunFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AISkillRunQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AISkillRunQuery", q)
+}
+
+// The TraverseAISkillRun type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAISkillRun func(context.Context, *ent.AISkillRunQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAISkillRun) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAISkillRun) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AISkillRunQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AISkillRunQuery", q)
+}
+
+// The AISkillSettlementFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AISkillSettlementFunc func(context.Context, *ent.AISkillSettlementQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AISkillSettlementFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AISkillSettlementQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AISkillSettlementQuery", q)
+}
+
+// The TraverseAISkillSettlement type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAISkillSettlement func(context.Context, *ent.AISkillSettlementQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAISkillSettlement) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAISkillSettlement) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AISkillSettlementQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AISkillSettlementQuery", q)
+}
+
+// The AISkillVersionFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AISkillVersionFunc func(context.Context, *ent.AISkillVersionQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AISkillVersionFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AISkillVersionQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AISkillVersionQuery", q)
+}
+
+// The TraverseAISkillVersion type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAISkillVersion func(context.Context, *ent.AISkillVersionQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAISkillVersion) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAISkillVersion) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AISkillVersionQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AISkillVersionQuery", q)
 }
 
 // The APIKeyFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -1232,6 +1400,18 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.AISessionQuery, predicate.AISession, aisession.OrderOption]{typ: ent.TypeAISession, tq: q}, nil
 	case *ent.AISessionMessageQuery:
 		return &query[*ent.AISessionMessageQuery, predicate.AISessionMessage, aisessionmessage.OrderOption]{typ: ent.TypeAISessionMessage, tq: q}, nil
+	case *ent.AISkillQuery:
+		return &query[*ent.AISkillQuery, predicate.AISkill, aiskill.OrderOption]{typ: ent.TypeAISkill, tq: q}, nil
+	case *ent.AISkillLikeQuery:
+		return &query[*ent.AISkillLikeQuery, predicate.AISkillLike, aiskilllike.OrderOption]{typ: ent.TypeAISkillLike, tq: q}, nil
+	case *ent.AISkillReviewQuery:
+		return &query[*ent.AISkillReviewQuery, predicate.AISkillReview, aiskillreview.OrderOption]{typ: ent.TypeAISkillReview, tq: q}, nil
+	case *ent.AISkillRunQuery:
+		return &query[*ent.AISkillRunQuery, predicate.AISkillRun, aiskillrun.OrderOption]{typ: ent.TypeAISkillRun, tq: q}, nil
+	case *ent.AISkillSettlementQuery:
+		return &query[*ent.AISkillSettlementQuery, predicate.AISkillSettlement, aiskillsettlement.OrderOption]{typ: ent.TypeAISkillSettlement, tq: q}, nil
+	case *ent.AISkillVersionQuery:
+		return &query[*ent.AISkillVersionQuery, predicate.AISkillVersion, aiskillversion.OrderOption]{typ: ent.TypeAISkillVersion, tq: q}, nil
 	case *ent.APIKeyQuery:
 		return &query[*ent.APIKeyQuery, predicate.APIKey, apikey.OrderOption]{typ: ent.TypeAPIKey, tq: q}, nil
 	case *ent.AccountQuery:

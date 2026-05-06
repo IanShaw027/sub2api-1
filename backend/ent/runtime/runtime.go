@@ -14,6 +14,12 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aiprompttemplateversion"
 	"github.com/Wei-Shaw/sub2api/ent/aisession"
 	"github.com/Wei-Shaw/sub2api/ent/aisessionmessage"
+	"github.com/Wei-Shaw/sub2api/ent/aiskill"
+	"github.com/Wei-Shaw/sub2api/ent/aiskilllike"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillreview"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillrun"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillsettlement"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillversion"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
@@ -462,6 +468,320 @@ func init() {
 	aisessionmessageDescRequestID := aisessionmessageFields[11].Descriptor()
 	// aisessionmessage.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
 	aisessionmessage.RequestIDValidator = aisessionmessageDescRequestID.Validators[0].(func(string) error)
+	aiskillMixin := schema.AISkill{}.Mixin()
+	aiskillMixinHooks1 := aiskillMixin[1].Hooks()
+	aiskill.Hooks[0] = aiskillMixinHooks1[0]
+	aiskillMixinInters1 := aiskillMixin[1].Interceptors()
+	aiskill.Interceptors[0] = aiskillMixinInters1[0]
+	aiskillMixinFields0 := aiskillMixin[0].Fields()
+	_ = aiskillMixinFields0
+	aiskillFields := schema.AISkill{}.Fields()
+	_ = aiskillFields
+	// aiskillDescCreatedAt is the schema descriptor for created_at field.
+	aiskillDescCreatedAt := aiskillMixinFields0[0].Descriptor()
+	// aiskill.DefaultCreatedAt holds the default value on creation for the created_at field.
+	aiskill.DefaultCreatedAt = aiskillDescCreatedAt.Default.(func() time.Time)
+	// aiskillDescUpdatedAt is the schema descriptor for updated_at field.
+	aiskillDescUpdatedAt := aiskillMixinFields0[1].Descriptor()
+	// aiskill.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	aiskill.DefaultUpdatedAt = aiskillDescUpdatedAt.Default.(func() time.Time)
+	// aiskill.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	aiskill.UpdateDefaultUpdatedAt = aiskillDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// aiskillDescSkillType is the schema descriptor for skill_type field.
+	aiskillDescSkillType := aiskillFields[1].Descriptor()
+	// aiskill.SkillTypeValidator is a validator for the "skill_type" field. It is called by the builders before save.
+	aiskill.SkillTypeValidator = func() func(string) error {
+		validators := aiskillDescSkillType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(skill_type string) error {
+			for _, fn := range fns {
+				if err := fn(skill_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// aiskillDescTitle is the schema descriptor for title field.
+	aiskillDescTitle := aiskillFields[2].Descriptor()
+	// aiskill.TitleValidator is a validator for the "title" field. It is called by the builders before save.
+	aiskill.TitleValidator = func() func(string) error {
+		validators := aiskillDescTitle.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(title string) error {
+			for _, fn := range fns {
+				if err := fn(title); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// aiskillDescCategory is the schema descriptor for category field.
+	aiskillDescCategory := aiskillFields[5].Descriptor()
+	// aiskill.CategoryValidator is a validator for the "category" field. It is called by the builders before save.
+	aiskill.CategoryValidator = aiskillDescCategory.Validators[0].(func(string) error)
+	// aiskillDescTags is the schema descriptor for tags field.
+	aiskillDescTags := aiskillFields[6].Descriptor()
+	// aiskill.DefaultTags holds the default value on creation for the tags field.
+	aiskill.DefaultTags = aiskillDescTags.Default.(func() []string)
+	// aiskillDescVisibility is the schema descriptor for visibility field.
+	aiskillDescVisibility := aiskillFields[7].Descriptor()
+	// aiskill.DefaultVisibility holds the default value on creation for the visibility field.
+	aiskill.DefaultVisibility = aiskillDescVisibility.Default.(string)
+	// aiskill.VisibilityValidator is a validator for the "visibility" field. It is called by the builders before save.
+	aiskill.VisibilityValidator = aiskillDescVisibility.Validators[0].(func(string) error)
+	// aiskillDescSourceVisibility is the schema descriptor for source_visibility field.
+	aiskillDescSourceVisibility := aiskillFields[8].Descriptor()
+	// aiskill.DefaultSourceVisibility holds the default value on creation for the source_visibility field.
+	aiskill.DefaultSourceVisibility = aiskillDescSourceVisibility.Default.(string)
+	// aiskill.SourceVisibilityValidator is a validator for the "source_visibility" field. It is called by the builders before save.
+	aiskill.SourceVisibilityValidator = aiskillDescSourceVisibility.Validators[0].(func(string) error)
+	// aiskillDescBillingMode is the schema descriptor for billing_mode field.
+	aiskillDescBillingMode := aiskillFields[9].Descriptor()
+	// aiskill.DefaultBillingMode holds the default value on creation for the billing_mode field.
+	aiskill.DefaultBillingMode = aiskillDescBillingMode.Default.(string)
+	// aiskill.BillingModeValidator is a validator for the "billing_mode" field. It is called by the builders before save.
+	aiskill.BillingModeValidator = aiskillDescBillingMode.Validators[0].(func(string) error)
+	// aiskillDescPrice is the schema descriptor for price field.
+	aiskillDescPrice := aiskillFields[10].Descriptor()
+	// aiskill.DefaultPrice holds the default value on creation for the price field.
+	aiskill.DefaultPrice = aiskillDescPrice.Default.(float64)
+	// aiskillDescLatestVersion is the schema descriptor for latest_version field.
+	aiskillDescLatestVersion := aiskillFields[14].Descriptor()
+	// aiskill.DefaultLatestVersion holds the default value on creation for the latest_version field.
+	aiskill.DefaultLatestVersion = aiskillDescLatestVersion.Default.(int)
+	// aiskillDescLikeCount is the schema descriptor for like_count field.
+	aiskillDescLikeCount := aiskillFields[15].Descriptor()
+	// aiskill.DefaultLikeCount holds the default value on creation for the like_count field.
+	aiskill.DefaultLikeCount = aiskillDescLikeCount.Default.(int)
+	// aiskillDescRunCount is the schema descriptor for run_count field.
+	aiskillDescRunCount := aiskillFields[16].Descriptor()
+	// aiskill.DefaultRunCount holds the default value on creation for the run_count field.
+	aiskill.DefaultRunCount = aiskillDescRunCount.Default.(int)
+	// aiskillDescTotalIncome is the schema descriptor for total_income field.
+	aiskillDescTotalIncome := aiskillFields[17].Descriptor()
+	// aiskill.DefaultTotalIncome holds the default value on creation for the total_income field.
+	aiskill.DefaultTotalIncome = aiskillDescTotalIncome.Default.(float64)
+	// aiskillDescMetadata is the schema descriptor for metadata field.
+	aiskillDescMetadata := aiskillFields[19].Descriptor()
+	// aiskill.DefaultMetadata holds the default value on creation for the metadata field.
+	aiskill.DefaultMetadata = aiskillDescMetadata.Default.(func() map[string]interface{})
+	// aiskillDescRequestID is the schema descriptor for request_id field.
+	aiskillDescRequestID := aiskillFields[20].Descriptor()
+	// aiskill.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
+	aiskill.RequestIDValidator = aiskillDescRequestID.Validators[0].(func(string) error)
+	aiskilllikeMixin := schema.AISkillLike{}.Mixin()
+	aiskilllikeMixinFields0 := aiskilllikeMixin[0].Fields()
+	_ = aiskilllikeMixinFields0
+	aiskilllikeFields := schema.AISkillLike{}.Fields()
+	_ = aiskilllikeFields
+	// aiskilllikeDescCreatedAt is the schema descriptor for created_at field.
+	aiskilllikeDescCreatedAt := aiskilllikeMixinFields0[0].Descriptor()
+	// aiskilllike.DefaultCreatedAt holds the default value on creation for the created_at field.
+	aiskilllike.DefaultCreatedAt = aiskilllikeDescCreatedAt.Default.(func() time.Time)
+	// aiskilllikeDescUpdatedAt is the schema descriptor for updated_at field.
+	aiskilllikeDescUpdatedAt := aiskilllikeMixinFields0[1].Descriptor()
+	// aiskilllike.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	aiskilllike.DefaultUpdatedAt = aiskilllikeDescUpdatedAt.Default.(func() time.Time)
+	// aiskilllike.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	aiskilllike.UpdateDefaultUpdatedAt = aiskilllikeDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// aiskilllikeDescRequestID is the schema descriptor for request_id field.
+	aiskilllikeDescRequestID := aiskilllikeFields[2].Descriptor()
+	// aiskilllike.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
+	aiskilllike.RequestIDValidator = aiskilllikeDescRequestID.Validators[0].(func(string) error)
+	aiskillreviewMixin := schema.AISkillReview{}.Mixin()
+	aiskillreviewMixinFields0 := aiskillreviewMixin[0].Fields()
+	_ = aiskillreviewMixinFields0
+	aiskillreviewFields := schema.AISkillReview{}.Fields()
+	_ = aiskillreviewFields
+	// aiskillreviewDescCreatedAt is the schema descriptor for created_at field.
+	aiskillreviewDescCreatedAt := aiskillreviewMixinFields0[0].Descriptor()
+	// aiskillreview.DefaultCreatedAt holds the default value on creation for the created_at field.
+	aiskillreview.DefaultCreatedAt = aiskillreviewDescCreatedAt.Default.(func() time.Time)
+	// aiskillreviewDescUpdatedAt is the schema descriptor for updated_at field.
+	aiskillreviewDescUpdatedAt := aiskillreviewMixinFields0[1].Descriptor()
+	// aiskillreview.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	aiskillreview.DefaultUpdatedAt = aiskillreviewDescUpdatedAt.Default.(func() time.Time)
+	// aiskillreview.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	aiskillreview.UpdateDefaultUpdatedAt = aiskillreviewDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// aiskillreviewDescStatus is the schema descriptor for status field.
+	aiskillreviewDescStatus := aiskillreviewFields[4].Descriptor()
+	// aiskillreview.DefaultStatus holds the default value on creation for the status field.
+	aiskillreview.DefaultStatus = aiskillreviewDescStatus.Default.(string)
+	// aiskillreview.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	aiskillreview.StatusValidator = aiskillreviewDescStatus.Validators[0].(func(string) error)
+	// aiskillreviewDescSnapshot is the schema descriptor for snapshot field.
+	aiskillreviewDescSnapshot := aiskillreviewFields[7].Descriptor()
+	// aiskillreview.DefaultSnapshot holds the default value on creation for the snapshot field.
+	aiskillreview.DefaultSnapshot = aiskillreviewDescSnapshot.Default.(func() map[string]interface{})
+	// aiskillreviewDescMetadata is the schema descriptor for metadata field.
+	aiskillreviewDescMetadata := aiskillreviewFields[8].Descriptor()
+	// aiskillreview.DefaultMetadata holds the default value on creation for the metadata field.
+	aiskillreview.DefaultMetadata = aiskillreviewDescMetadata.Default.(func() map[string]interface{})
+	// aiskillreviewDescRequestID is the schema descriptor for request_id field.
+	aiskillreviewDescRequestID := aiskillreviewFields[10].Descriptor()
+	// aiskillreview.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
+	aiskillreview.RequestIDValidator = aiskillreviewDescRequestID.Validators[0].(func(string) error)
+	aiskillrunMixin := schema.AISkillRun{}.Mixin()
+	aiskillrunMixinFields0 := aiskillrunMixin[0].Fields()
+	_ = aiskillrunMixinFields0
+	aiskillrunFields := schema.AISkillRun{}.Fields()
+	_ = aiskillrunFields
+	// aiskillrunDescCreatedAt is the schema descriptor for created_at field.
+	aiskillrunDescCreatedAt := aiskillrunMixinFields0[0].Descriptor()
+	// aiskillrun.DefaultCreatedAt holds the default value on creation for the created_at field.
+	aiskillrun.DefaultCreatedAt = aiskillrunDescCreatedAt.Default.(func() time.Time)
+	// aiskillrunDescUpdatedAt is the schema descriptor for updated_at field.
+	aiskillrunDescUpdatedAt := aiskillrunMixinFields0[1].Descriptor()
+	// aiskillrun.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	aiskillrun.DefaultUpdatedAt = aiskillrunDescUpdatedAt.Default.(func() time.Time)
+	// aiskillrun.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	aiskillrun.UpdateDefaultUpdatedAt = aiskillrunDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// aiskillrunDescRunMode is the schema descriptor for run_mode field.
+	aiskillrunDescRunMode := aiskillrunFields[3].Descriptor()
+	// aiskillrun.DefaultRunMode holds the default value on creation for the run_mode field.
+	aiskillrun.DefaultRunMode = aiskillrunDescRunMode.Default.(string)
+	// aiskillrun.RunModeValidator is a validator for the "run_mode" field. It is called by the builders before save.
+	aiskillrun.RunModeValidator = aiskillrunDescRunMode.Validators[0].(func(string) error)
+	// aiskillrunDescStatus is the schema descriptor for status field.
+	aiskillrunDescStatus := aiskillrunFields[4].Descriptor()
+	// aiskillrun.DefaultStatus holds the default value on creation for the status field.
+	aiskillrun.DefaultStatus = aiskillrunDescStatus.Default.(string)
+	// aiskillrun.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	aiskillrun.StatusValidator = aiskillrunDescStatus.Validators[0].(func(string) error)
+	// aiskillrunDescBillingMode is the schema descriptor for billing_mode field.
+	aiskillrunDescBillingMode := aiskillrunFields[5].Descriptor()
+	// aiskillrun.DefaultBillingMode holds the default value on creation for the billing_mode field.
+	aiskillrun.DefaultBillingMode = aiskillrunDescBillingMode.Default.(string)
+	// aiskillrun.BillingModeValidator is a validator for the "billing_mode" field. It is called by the builders before save.
+	aiskillrun.BillingModeValidator = aiskillrunDescBillingMode.Validators[0].(func(string) error)
+	// aiskillrunDescPrice is the schema descriptor for price field.
+	aiskillrunDescPrice := aiskillrunFields[6].Descriptor()
+	// aiskillrun.DefaultPrice holds the default value on creation for the price field.
+	aiskillrun.DefaultPrice = aiskillrunDescPrice.Default.(float64)
+	// aiskillrunDescInputPayload is the schema descriptor for input_payload field.
+	aiskillrunDescInputPayload := aiskillrunFields[7].Descriptor()
+	// aiskillrun.DefaultInputPayload holds the default value on creation for the input_payload field.
+	aiskillrun.DefaultInputPayload = aiskillrunDescInputPayload.Default.(func() map[string]interface{})
+	// aiskillrunDescOutputPayload is the schema descriptor for output_payload field.
+	aiskillrunDescOutputPayload := aiskillrunFields[8].Descriptor()
+	// aiskillrun.DefaultOutputPayload holds the default value on creation for the output_payload field.
+	aiskillrun.DefaultOutputPayload = aiskillrunDescOutputPayload.Default.(func() map[string]interface{})
+	// aiskillrunDescMetadata is the schema descriptor for metadata field.
+	aiskillrunDescMetadata := aiskillrunFields[10].Descriptor()
+	// aiskillrun.DefaultMetadata holds the default value on creation for the metadata field.
+	aiskillrun.DefaultMetadata = aiskillrunDescMetadata.Default.(func() map[string]interface{})
+	// aiskillrunDescRequestID is the schema descriptor for request_id field.
+	aiskillrunDescRequestID := aiskillrunFields[11].Descriptor()
+	// aiskillrun.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
+	aiskillrun.RequestIDValidator = aiskillrunDescRequestID.Validators[0].(func(string) error)
+	aiskillsettlementMixin := schema.AISkillSettlement{}.Mixin()
+	aiskillsettlementMixinFields0 := aiskillsettlementMixin[0].Fields()
+	_ = aiskillsettlementMixinFields0
+	aiskillsettlementFields := schema.AISkillSettlement{}.Fields()
+	_ = aiskillsettlementFields
+	// aiskillsettlementDescCreatedAt is the schema descriptor for created_at field.
+	aiskillsettlementDescCreatedAt := aiskillsettlementMixinFields0[0].Descriptor()
+	// aiskillsettlement.DefaultCreatedAt holds the default value on creation for the created_at field.
+	aiskillsettlement.DefaultCreatedAt = aiskillsettlementDescCreatedAt.Default.(func() time.Time)
+	// aiskillsettlementDescUpdatedAt is the schema descriptor for updated_at field.
+	aiskillsettlementDescUpdatedAt := aiskillsettlementMixinFields0[1].Descriptor()
+	// aiskillsettlement.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	aiskillsettlement.DefaultUpdatedAt = aiskillsettlementDescUpdatedAt.Default.(func() time.Time)
+	// aiskillsettlement.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	aiskillsettlement.UpdateDefaultUpdatedAt = aiskillsettlementDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// aiskillsettlementDescStatus is the schema descriptor for status field.
+	aiskillsettlementDescStatus := aiskillsettlementFields[5].Descriptor()
+	// aiskillsettlement.DefaultStatus holds the default value on creation for the status field.
+	aiskillsettlement.DefaultStatus = aiskillsettlementDescStatus.Default.(string)
+	// aiskillsettlement.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	aiskillsettlement.StatusValidator = aiskillsettlementDescStatus.Validators[0].(func(string) error)
+	// aiskillsettlementDescBillingMode is the schema descriptor for billing_mode field.
+	aiskillsettlementDescBillingMode := aiskillsettlementFields[6].Descriptor()
+	// aiskillsettlement.DefaultBillingMode holds the default value on creation for the billing_mode field.
+	aiskillsettlement.DefaultBillingMode = aiskillsettlementDescBillingMode.Default.(string)
+	// aiskillsettlement.BillingModeValidator is a validator for the "billing_mode" field. It is called by the builders before save.
+	aiskillsettlement.BillingModeValidator = aiskillsettlementDescBillingMode.Validators[0].(func(string) error)
+	// aiskillsettlementDescAmount is the schema descriptor for amount field.
+	aiskillsettlementDescAmount := aiskillsettlementFields[7].Descriptor()
+	// aiskillsettlement.DefaultAmount holds the default value on creation for the amount field.
+	aiskillsettlement.DefaultAmount = aiskillsettlementDescAmount.Default.(float64)
+	// aiskillsettlementDescQuotaAmount is the schema descriptor for quota_amount field.
+	aiskillsettlementDescQuotaAmount := aiskillsettlementFields[8].Descriptor()
+	// aiskillsettlement.DefaultQuotaAmount holds the default value on creation for the quota_amount field.
+	aiskillsettlement.DefaultQuotaAmount = aiskillsettlementDescQuotaAmount.Default.(float64)
+	// aiskillsettlementDescMetadata is the schema descriptor for metadata field.
+	aiskillsettlementDescMetadata := aiskillsettlementFields[11].Descriptor()
+	// aiskillsettlement.DefaultMetadata holds the default value on creation for the metadata field.
+	aiskillsettlement.DefaultMetadata = aiskillsettlementDescMetadata.Default.(func() map[string]interface{})
+	// aiskillsettlementDescRequestID is the schema descriptor for request_id field.
+	aiskillsettlementDescRequestID := aiskillsettlementFields[12].Descriptor()
+	// aiskillsettlement.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
+	aiskillsettlement.RequestIDValidator = aiskillsettlementDescRequestID.Validators[0].(func(string) error)
+	aiskillversionMixin := schema.AISkillVersion{}.Mixin()
+	aiskillversionMixinHooks1 := aiskillversionMixin[1].Hooks()
+	aiskillversion.Hooks[0] = aiskillversionMixinHooks1[0]
+	aiskillversionMixinInters1 := aiskillversionMixin[1].Interceptors()
+	aiskillversion.Interceptors[0] = aiskillversionMixinInters1[0]
+	aiskillversionMixinFields0 := aiskillversionMixin[0].Fields()
+	_ = aiskillversionMixinFields0
+	aiskillversionFields := schema.AISkillVersion{}.Fields()
+	_ = aiskillversionFields
+	// aiskillversionDescCreatedAt is the schema descriptor for created_at field.
+	aiskillversionDescCreatedAt := aiskillversionMixinFields0[0].Descriptor()
+	// aiskillversion.DefaultCreatedAt holds the default value on creation for the created_at field.
+	aiskillversion.DefaultCreatedAt = aiskillversionDescCreatedAt.Default.(func() time.Time)
+	// aiskillversionDescUpdatedAt is the schema descriptor for updated_at field.
+	aiskillversionDescUpdatedAt := aiskillversionMixinFields0[1].Descriptor()
+	// aiskillversion.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	aiskillversion.DefaultUpdatedAt = aiskillversionDescUpdatedAt.Default.(func() time.Time)
+	// aiskillversion.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	aiskillversion.UpdateDefaultUpdatedAt = aiskillversionDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// aiskillversionDescReviewStatus is the schema descriptor for review_status field.
+	aiskillversionDescReviewStatus := aiskillversionFields[3].Descriptor()
+	// aiskillversion.DefaultReviewStatus holds the default value on creation for the review_status field.
+	aiskillversion.DefaultReviewStatus = aiskillversionDescReviewStatus.Default.(string)
+	// aiskillversion.ReviewStatusValidator is a validator for the "review_status" field. It is called by the builders before save.
+	aiskillversion.ReviewStatusValidator = aiskillversionDescReviewStatus.Validators[0].(func(string) error)
+	// aiskillversionDescContentFormat is the schema descriptor for content_format field.
+	aiskillversionDescContentFormat := aiskillversionFields[4].Descriptor()
+	// aiskillversion.ContentFormatValidator is a validator for the "content_format" field. It is called by the builders before save.
+	aiskillversion.ContentFormatValidator = aiskillversionDescContentFormat.Validators[0].(func(string) error)
+	// aiskillversionDescRuntime is the schema descriptor for runtime field.
+	aiskillversionDescRuntime := aiskillversionFields[5].Descriptor()
+	// aiskillversion.RuntimeValidator is a validator for the "runtime" field. It is called by the builders before save.
+	aiskillversion.RuntimeValidator = aiskillversionDescRuntime.Validators[0].(func(string) error)
+	// aiskillversionDescSourceContent is the schema descriptor for source_content field.
+	aiskillversionDescSourceContent := aiskillversionFields[6].Descriptor()
+	// aiskillversion.DefaultSourceContent holds the default value on creation for the source_content field.
+	aiskillversion.DefaultSourceContent = aiskillversionDescSourceContent.Default.(string)
+	// aiskillversionDescConfig is the schema descriptor for config field.
+	aiskillversionDescConfig := aiskillversionFields[7].Descriptor()
+	// aiskillversion.DefaultConfig holds the default value on creation for the config field.
+	aiskillversion.DefaultConfig = aiskillversionDescConfig.Default.(func() map[string]interface{})
+	// aiskillversionDescInputSchema is the schema descriptor for input_schema field.
+	aiskillversionDescInputSchema := aiskillversionFields[8].Descriptor()
+	// aiskillversion.DefaultInputSchema holds the default value on creation for the input_schema field.
+	aiskillversion.DefaultInputSchema = aiskillversionDescInputSchema.Default.(func() map[string]interface{})
+	// aiskillversionDescOutputSchema is the schema descriptor for output_schema field.
+	aiskillversionDescOutputSchema := aiskillversionFields[9].Descriptor()
+	// aiskillversion.DefaultOutputSchema holds the default value on creation for the output_schema field.
+	aiskillversion.DefaultOutputSchema = aiskillversionDescOutputSchema.Default.(func() map[string]interface{})
+	// aiskillversionDescMetadata is the schema descriptor for metadata field.
+	aiskillversionDescMetadata := aiskillversionFields[15].Descriptor()
+	// aiskillversion.DefaultMetadata holds the default value on creation for the metadata field.
+	aiskillversion.DefaultMetadata = aiskillversionDescMetadata.Default.(func() map[string]interface{})
+	// aiskillversionDescRequestID is the schema descriptor for request_id field.
+	aiskillversionDescRequestID := aiskillversionFields[16].Descriptor()
+	// aiskillversion.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
+	aiskillversion.RequestIDValidator = aiskillversionDescRequestID.Validators[0].(func(string) error)
 	apikeyMixin := schema.APIKey{}.Mixin()
 	apikeyMixinHooks1 := apikeyMixin[1].Hooks()
 	apikey.Hooks[0] = apikeyMixinHooks1[0]
@@ -1226,50 +1546,62 @@ func init() {
 	groupDescDefaultValidityDays := groupFields[12].Descriptor()
 	// group.DefaultDefaultValidityDays holds the default value on creation for the default_validity_days field.
 	group.DefaultDefaultValidityDays = groupDescDefaultValidityDays.Default.(int)
+	// groupDescAllowImageGeneration is the schema descriptor for allow_image_generation field.
+	groupDescAllowImageGeneration := groupFields[13].Descriptor()
+	// group.DefaultAllowImageGeneration holds the default value on creation for the allow_image_generation field.
+	group.DefaultAllowImageGeneration = groupDescAllowImageGeneration.Default.(bool)
+	// groupDescImageRateIndependent is the schema descriptor for image_rate_independent field.
+	groupDescImageRateIndependent := groupFields[14].Descriptor()
+	// group.DefaultImageRateIndependent holds the default value on creation for the image_rate_independent field.
+	group.DefaultImageRateIndependent = groupDescImageRateIndependent.Default.(bool)
+	// groupDescImageRateMultiplier is the schema descriptor for image_rate_multiplier field.
+	groupDescImageRateMultiplier := groupFields[15].Descriptor()
+	// group.DefaultImageRateMultiplier holds the default value on creation for the image_rate_multiplier field.
+	group.DefaultImageRateMultiplier = groupDescImageRateMultiplier.Default.(float64)
 	// groupDescClaudeCodeOnly is the schema descriptor for claude_code_only field.
-	groupDescClaudeCodeOnly := groupFields[19].Descriptor()
+	groupDescClaudeCodeOnly := groupFields[22].Descriptor()
 	// group.DefaultClaudeCodeOnly holds the default value on creation for the claude_code_only field.
 	group.DefaultClaudeCodeOnly = groupDescClaudeCodeOnly.Default.(bool)
 	// groupDescModelRoutingEnabled is the schema descriptor for model_routing_enabled field.
-	groupDescModelRoutingEnabled := groupFields[23].Descriptor()
+	groupDescModelRoutingEnabled := groupFields[26].Descriptor()
 	// group.DefaultModelRoutingEnabled holds the default value on creation for the model_routing_enabled field.
 	group.DefaultModelRoutingEnabled = groupDescModelRoutingEnabled.Default.(bool)
 	// groupDescMcpXMLInject is the schema descriptor for mcp_xml_inject field.
-	groupDescMcpXMLInject := groupFields[24].Descriptor()
+	groupDescMcpXMLInject := groupFields[27].Descriptor()
 	// group.DefaultMcpXMLInject holds the default value on creation for the mcp_xml_inject field.
 	group.DefaultMcpXMLInject = groupDescMcpXMLInject.Default.(bool)
 	// groupDescSupportedModelScopes is the schema descriptor for supported_model_scopes field.
-	groupDescSupportedModelScopes := groupFields[25].Descriptor()
+	groupDescSupportedModelScopes := groupFields[28].Descriptor()
 	// group.DefaultSupportedModelScopes holds the default value on creation for the supported_model_scopes field.
 	group.DefaultSupportedModelScopes = groupDescSupportedModelScopes.Default.([]string)
 	// groupDescSortOrder is the schema descriptor for sort_order field.
-	groupDescSortOrder := groupFields[26].Descriptor()
+	groupDescSortOrder := groupFields[29].Descriptor()
 	// group.DefaultSortOrder holds the default value on creation for the sort_order field.
 	group.DefaultSortOrder = groupDescSortOrder.Default.(int)
 	// groupDescAllowMessagesDispatch is the schema descriptor for allow_messages_dispatch field.
-	groupDescAllowMessagesDispatch := groupFields[27].Descriptor()
+	groupDescAllowMessagesDispatch := groupFields[30].Descriptor()
 	// group.DefaultAllowMessagesDispatch holds the default value on creation for the allow_messages_dispatch field.
 	group.DefaultAllowMessagesDispatch = groupDescAllowMessagesDispatch.Default.(bool)
 	// groupDescRequireOauthOnly is the schema descriptor for require_oauth_only field.
-	groupDescRequireOauthOnly := groupFields[28].Descriptor()
+	groupDescRequireOauthOnly := groupFields[31].Descriptor()
 	// group.DefaultRequireOauthOnly holds the default value on creation for the require_oauth_only field.
 	group.DefaultRequireOauthOnly = groupDescRequireOauthOnly.Default.(bool)
 	// groupDescRequirePrivacySet is the schema descriptor for require_privacy_set field.
-	groupDescRequirePrivacySet := groupFields[29].Descriptor()
+	groupDescRequirePrivacySet := groupFields[32].Descriptor()
 	// group.DefaultRequirePrivacySet holds the default value on creation for the require_privacy_set field.
 	group.DefaultRequirePrivacySet = groupDescRequirePrivacySet.Default.(bool)
 	// groupDescDefaultMappedModel is the schema descriptor for default_mapped_model field.
-	groupDescDefaultMappedModel := groupFields[30].Descriptor()
+	groupDescDefaultMappedModel := groupFields[33].Descriptor()
 	// group.DefaultDefaultMappedModel holds the default value on creation for the default_mapped_model field.
 	group.DefaultDefaultMappedModel = groupDescDefaultMappedModel.Default.(string)
 	// group.DefaultMappedModelValidator is a validator for the "default_mapped_model" field. It is called by the builders before save.
 	group.DefaultMappedModelValidator = groupDescDefaultMappedModel.Validators[0].(func(string) error)
 	// groupDescMessagesDispatchModelConfig is the schema descriptor for messages_dispatch_model_config field.
-	groupDescMessagesDispatchModelConfig := groupFields[31].Descriptor()
+	groupDescMessagesDispatchModelConfig := groupFields[34].Descriptor()
 	// group.DefaultMessagesDispatchModelConfig holds the default value on creation for the messages_dispatch_model_config field.
 	group.DefaultMessagesDispatchModelConfig = groupDescMessagesDispatchModelConfig.Default.(domain.OpenAIMessagesDispatchModelConfig)
 	// groupDescRpmLimit is the schema descriptor for rpm_limit field.
-	groupDescRpmLimit := groupFields[32].Descriptor()
+	groupDescRpmLimit := groupFields[35].Descriptor()
 	// group.DefaultRpmLimit holds the default value on creation for the rpm_limit field.
 	group.DefaultRpmLimit = groupDescRpmLimit.Default.(int)
 	idempotencyrecordMixin := schema.IdempotencyRecord{}.Mixin()

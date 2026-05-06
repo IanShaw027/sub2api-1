@@ -27,6 +27,24 @@ type AISession func(*sql.Selector)
 // AISessionMessage is the predicate function for aisessionmessage builders.
 type AISessionMessage func(*sql.Selector)
 
+// AISkill is the predicate function for aiskill builders.
+type AISkill func(*sql.Selector)
+
+// AISkillLike is the predicate function for aiskilllike builders.
+type AISkillLike func(*sql.Selector)
+
+// AISkillReview is the predicate function for aiskillreview builders.
+type AISkillReview func(*sql.Selector)
+
+// AISkillRun is the predicate function for aiskillrun builders.
+type AISkillRun func(*sql.Selector)
+
+// AISkillSettlement is the predicate function for aiskillsettlement builders.
+type AISkillSettlement func(*sql.Selector)
+
+// AISkillVersion is the predicate function for aiskillversion builders.
+type AISkillVersion func(*sql.Selector)
+
 // APIKey is the predicate function for apikey builders.
 type APIKey func(*sql.Selector)
 

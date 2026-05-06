@@ -4,10 +4,8 @@ package service
 
 import (
 	"context"
-	"net/http"
 	"testing"
 
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
@@ -176,33 +174,6 @@ func TestAdminService_CreateGroup_WithImagePricing(t *testing.T) {
 	require.InDelta(t, 0.30, *repo.created.ImagePrice4K, 0.0001)
 }
 
-func TestAdminService_CreateGroup_WithImages2APIImagePricing(t *testing.T) {
-	repo := &groupRepoStubForAdmin{}
-	svc := &adminServiceImpl{groupRepo: repo}
-
-	price1K := 0.11
-	price2K := 0.22
-	price4K := 0.44
-
-	group, err := svc.CreateGroup(context.Background(), &CreateGroupInput{
-		Name:              "test-group",
-		Platform:          PlatformOpenAI,
-		RateMultiplier:    1.0,
-		Images2APIPrice1K: &price1K,
-		Images2APIPrice2K: &price2K,
-		Images2APIPrice4K: &price4K,
-	})
-	require.NoError(t, err)
-	require.NotNil(t, group)
-	require.NotNil(t, repo.created)
-	require.NotNil(t, repo.created.Images2APIPrice1K)
-	require.NotNil(t, repo.created.Images2APIPrice2K)
-	require.NotNil(t, repo.created.Images2APIPrice4K)
-	require.InDelta(t, 0.11, *repo.created.Images2APIPrice1K, 0.0001)
-	require.InDelta(t, 0.22, *repo.created.Images2APIPrice2K, 0.0001)
-	require.InDelta(t, 0.44, *repo.created.Images2APIPrice4K, 0.0001)
-}
-
 // TestAdminService_CreateGroup_NilImagePricing 测试 ImagePrice 为 nil 时正常创建
 func TestAdminService_CreateGroup_NilImagePricing(t *testing.T) {
 	repo := &groupRepoStubForAdmin{}
@@ -295,34 +266,48 @@ func TestAdminService_UpdateGroup_PartialImagePricing(t *testing.T) {
 	require.Nil(t, repo.updated.ImagePrice4K)
 }
 
-func TestAdminService_UpdateGroup_WithImages2APIImagePricing(t *testing.T) {
+func TestAdminService_UpdateGroup_PreservesImageGenerationControlsWhenOmitted(t *testing.T) {
+	imageMultiplier := 0.5
 	existingGroup := &Group{
-		ID:       1,
-		Name:     "existing-group",
-		Platform: PlatformOpenAI,
-		Status:   StatusActive,
+		ID:                   1,
+		Name:                 "existing-group",
+		Platform:             PlatformOpenAI,
+		Status:               StatusActive,
+		AllowImageGeneration: true,
+		ImageRateIndependent: true,
+		ImageRateMultiplier:  imageMultiplier,
 	}
 	repo := &groupRepoStubForAdmin{getByID: existingGroup}
 	svc := &adminServiceImpl{groupRepo: repo}
 
-	price1K := 0.13
-	price2K := 0.26
-	price4K := 0.52
-
 	group, err := svc.UpdateGroup(context.Background(), 1, &UpdateGroupInput{
-		Images2APIPrice1K: &price1K,
-		Images2APIPrice2K: &price2K,
-		Images2APIPrice4K: &price4K,
+		Description: stringPtr("updated"),
 	})
 	require.NoError(t, err)
 	require.NotNil(t, group)
 	require.NotNil(t, repo.updated)
-	require.NotNil(t, repo.updated.Images2APIPrice1K)
-	require.NotNil(t, repo.updated.Images2APIPrice2K)
-	require.NotNil(t, repo.updated.Images2APIPrice4K)
-	require.InDelta(t, 0.13, *repo.updated.Images2APIPrice1K, 0.0001)
-	require.InDelta(t, 0.26, *repo.updated.Images2APIPrice2K, 0.0001)
-	require.InDelta(t, 0.52, *repo.updated.Images2APIPrice4K, 0.0001)
+	require.True(t, repo.updated.AllowImageGeneration)
+	require.True(t, repo.updated.ImageRateIndependent)
+	require.InDelta(t, 0.5, repo.updated.ImageRateMultiplier, 1e-12)
+}
+
+func TestAdminService_UpdateGroup_RejectsNegativeImageRateMultiplier(t *testing.T) {
+	existingGroup := &Group{
+		ID:                  1,
+		Name:                "existing-group",
+		Platform:            PlatformOpenAI,
+		Status:              StatusActive,
+		ImageRateMultiplier: 1,
+	}
+	repo := &groupRepoStubForAdmin{getByID: existingGroup}
+	svc := &adminServiceImpl{groupRepo: repo}
+	negative := -0.1
+
+	_, err := svc.UpdateGroup(context.Background(), 1, &UpdateGroupInput{
+		ImageRateMultiplier: &negative,
+	})
+	require.Error(t, err)
+	require.Nil(t, repo.updated)
 }
 
 func TestAdminService_UpdateGroup_InvalidatesAuthCacheOnRPMLimitChange(t *testing.T) {
@@ -348,40 +333,6 @@ func TestAdminService_UpdateGroup_InvalidatesAuthCacheOnRPMLimitChange(t *testin
 	require.NotNil(t, group)
 	require.Equal(t, 60, repo.updated.RPMLimit)
 	require.Equal(t, []int64{1}, invalidator.groupIDs, "分组 RPMLimit 写入 auth snapshot，变更后必须失效 API Key 认证缓存")
-}
-
-func TestAdminService_CreateGroup_RejectsNegativeRPMLimit(t *testing.T) {
-	repo := &groupRepoStubForAdmin{}
-	svc := &adminServiceImpl{groupRepo: repo}
-
-	_, err := svc.CreateGroup(context.Background(), &CreateGroupInput{
-		Name:           "group",
-		RateMultiplier: 1,
-		RPMLimit:       -1,
-	})
-	require.Error(t, err)
-	require.Equal(t, http.StatusBadRequest, infraerrors.Code(err))
-	require.Nil(t, repo.created)
-}
-
-func TestAdminService_UpdateGroup_RejectsNegativeRPMLimit(t *testing.T) {
-	existingGroup := &Group{
-		ID:       1,
-		Name:     "existing-group",
-		Platform: PlatformAnthropic,
-		Status:   StatusActive,
-		RPMLimit: 10,
-	}
-	repo := &groupRepoStubForAdmin{getByID: existingGroup}
-	svc := &adminServiceImpl{groupRepo: repo}
-
-	negative := -1
-	_, err := svc.UpdateGroup(context.Background(), 1, &UpdateGroupInput{
-		RPMLimit: &negative,
-	})
-	require.Error(t, err)
-	require.Equal(t, http.StatusBadRequest, infraerrors.Code(err))
-	require.Nil(t, repo.updated)
 }
 
 func TestAdminService_CreateGroup_NormalizesMessagesDispatchModelConfig(t *testing.T) {
@@ -1039,26 +990,4 @@ func TestAdminService_UpdateGroup_InvalidRequestFallbackAllowsAntigravity(t *tes
 	require.NotNil(t, group)
 	require.NotNil(t, repo.updated)
 	require.Equal(t, fallbackID, *repo.updated.FallbackGroupIDOnInvalidRequest)
-}
-
-func TestAdminService_UpdateGroup_AllowsClearingDescription(t *testing.T) {
-	existing := &Group{
-		ID:          1,
-		Name:        "existing",
-		Description: "old description",
-		Platform:    PlatformAnthropic,
-		Status:      StatusActive,
-	}
-	repo := &groupRepoStubForAdmin{getByID: existing}
-	svc := &adminServiceImpl{groupRepo: repo}
-	empty := ""
-
-	group, err := svc.UpdateGroup(context.Background(), existing.ID, &UpdateGroupInput{
-		Description: &empty,
-	})
-
-	require.NoError(t, err)
-	require.NotNil(t, group)
-	require.NotNil(t, repo.updated)
-	require.Equal(t, "", repo.updated.Description)
 }

@@ -227,10 +227,14 @@ func anthropicUserToResponses(raw json.RawMessage) ([]ResponsesInputItem, error)
 	// Remaining text + image blocks → user message with content parts.
 	// Also include images extracted from tool_results so the model can see them.
 	var parts []ResponsesContentPart
+	hasCacheControlledText := false
 	for _, b := range blocks {
 		switch b.Type {
 		case "text":
 			if b.Text != "" {
+				if b.CacheControl != nil && strings.TrimSpace(b.CacheControl.Type) != "" {
+					hasCacheControlledText = true
+				}
 				parts = append(parts, ResponsesContentPart{Type: "input_text", Text: b.Text})
 			}
 		case "document":
@@ -246,10 +250,12 @@ func anthropicUserToResponses(raw json.RawMessage) ([]ResponsesInputItem, error)
 	parts = append(parts, toolResultImageParts...)
 
 	if len(parts) > 0 {
-		if text, ok := collapseResponsesPlainTextParts(parts); ok {
-			content, _ := json.Marshal(text)
-			out = append(out, ResponsesInputItem{Role: "user", Content: content})
-			return out, nil
+		if !hasCacheControlledText {
+			if text, ok := collapseResponsesPlainTextParts(parts); ok {
+				content, _ := json.Marshal(text)
+				out = append(out, ResponsesInputItem{Role: "user", Content: content})
+				return out, nil
+			}
 		}
 
 		content, err := json.Marshal(parts)

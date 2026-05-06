@@ -587,6 +587,581 @@ var (
 			},
 		},
 	}
+	// AiSkillsColumns holds the columns for the "ai_skills" table.
+	AiSkillsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "skill_type", Type: field.TypeString, Size: 32},
+		{Name: "title", Type: field.TypeString, Size: 200},
+		{Name: "summary", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "description", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "category", Type: field.TypeString, Nullable: true, Size: 100},
+		{Name: "tags", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "visibility", Type: field.TypeString, Size: 32, Default: "private"},
+		{Name: "source_visibility", Type: field.TypeString, Size: 32, Default: "public"},
+		{Name: "billing_mode", Type: field.TypeString, Size: 32, Default: "per_request"},
+		{Name: "price", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
+		{Name: "current_version_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "published_version_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "latest_approved_version_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "latest_version", Type: field.TypeInt, Default: 0},
+		{Name: "like_count", Type: field.TypeInt, Default: 0},
+		{Name: "run_count", Type: field.TypeInt, Default: 0},
+		{Name: "total_income", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
+		{Name: "cover_asset_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "request_id", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "usage_log_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
+	}
+	// AiSkillsTable holds the schema information for the "ai_skills" table.
+	AiSkillsTable = &schema.Table{
+		Name:       "ai_skills",
+		Columns:    AiSkillsColumns,
+		PrimaryKey: []*schema.Column{AiSkillsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "aiskill_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillsColumns[4]},
+			},
+			{
+				Name:    "aiskill_skill_type",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillsColumns[5]},
+			},
+			{
+				Name:    "aiskill_visibility",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillsColumns[11]},
+			},
+			{
+				Name:    "aiskill_source_visibility",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillsColumns[12]},
+			},
+			{
+				Name:    "aiskill_billing_mode",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillsColumns[13]},
+			},
+			{
+				Name:    "aiskill_current_version_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillsColumns[15]},
+			},
+			{
+				Name:    "aiskill_published_version_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillsColumns[16]},
+			},
+			{
+				Name:    "aiskill_latest_approved_version_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillsColumns[17]},
+			},
+			{
+				Name:    "aiskill_cover_asset_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillsColumns[22]},
+			},
+			{
+				Name:    "aiskill_request_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillsColumns[24]},
+			},
+			{
+				Name:    "aiskill_usage_log_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillsColumns[25]},
+			},
+			{
+				Name:    "aiskill_api_key_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillsColumns[26]},
+			},
+			{
+				Name:    "aiskill_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillsColumns[27]},
+			},
+			{
+				Name:    "aiskill_user_id_updated_at",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillsColumns[4], AiSkillsColumns[2]},
+			},
+			{
+				Name:    "aiskill_visibility_published_version_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillsColumns[11], AiSkillsColumns[16]},
+			},
+			{
+				Name:    "aiskill_skill_type_visibility",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillsColumns[5], AiSkillsColumns[11]},
+			},
+		},
+	}
+	// AiSkillLikesColumns holds the columns for the "ai_skill_likes" table.
+	AiSkillLikesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "request_id", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "usage_log_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "skill_id", Type: field.TypeInt64},
+	}
+	// AiSkillLikesTable holds the schema information for the "ai_skill_likes" table.
+	AiSkillLikesTable = &schema.Table{
+		Name:       "ai_skill_likes",
+		Columns:    AiSkillLikesColumns,
+		PrimaryKey: []*schema.Column{AiSkillLikesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "ai_skill_likes_ai_skills_likes",
+				Columns:    []*schema.Column{AiSkillLikesColumns[8]},
+				RefColumns: []*schema.Column{AiSkillsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "aiskilllike_skill_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillLikesColumns[8]},
+			},
+			{
+				Name:    "aiskilllike_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillLikesColumns[3]},
+			},
+			{
+				Name:    "aiskilllike_request_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillLikesColumns[4]},
+			},
+			{
+				Name:    "aiskilllike_usage_log_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillLikesColumns[5]},
+			},
+			{
+				Name:    "aiskilllike_api_key_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillLikesColumns[6]},
+			},
+			{
+				Name:    "aiskilllike_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillLikesColumns[7]},
+			},
+			{
+				Name:    "aiskilllike_skill_id_user_id",
+				Unique:  true,
+				Columns: []*schema.Column{AiSkillLikesColumns[8], AiSkillLikesColumns[3]},
+			},
+		},
+	}
+	// AiSkillReviewsColumns holds the columns for the "ai_skill_reviews" table.
+	AiSkillReviewsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "submitter_user_id", Type: field.TypeInt64},
+		{Name: "reviewer_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "pending"},
+		{Name: "submit_note", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "review_note", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "snapshot", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "reviewed_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "request_id", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "usage_log_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "skill_id", Type: field.TypeInt64},
+		{Name: "version_id", Type: field.TypeInt64},
+	}
+	// AiSkillReviewsTable holds the schema information for the "ai_skill_reviews" table.
+	AiSkillReviewsTable = &schema.Table{
+		Name:       "ai_skill_reviews",
+		Columns:    AiSkillReviewsColumns,
+		PrimaryKey: []*schema.Column{AiSkillReviewsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "ai_skill_reviews_ai_skills_reviews",
+				Columns:    []*schema.Column{AiSkillReviewsColumns[15]},
+				RefColumns: []*schema.Column{AiSkillsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "ai_skill_reviews_ai_skill_versions_reviews",
+				Columns:    []*schema.Column{AiSkillReviewsColumns[16]},
+				RefColumns: []*schema.Column{AiSkillVersionsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "aiskillreview_skill_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillReviewsColumns[15]},
+			},
+			{
+				Name:    "aiskillreview_version_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillReviewsColumns[16]},
+			},
+			{
+				Name:    "aiskillreview_submitter_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillReviewsColumns[3]},
+			},
+			{
+				Name:    "aiskillreview_reviewer_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillReviewsColumns[4]},
+			},
+			{
+				Name:    "aiskillreview_status",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillReviewsColumns[5]},
+			},
+			{
+				Name:    "aiskillreview_reviewed_at",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillReviewsColumns[10]},
+			},
+			{
+				Name:    "aiskillreview_request_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillReviewsColumns[11]},
+			},
+			{
+				Name:    "aiskillreview_usage_log_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillReviewsColumns[12]},
+			},
+			{
+				Name:    "aiskillreview_api_key_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillReviewsColumns[13]},
+			},
+			{
+				Name:    "aiskillreview_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillReviewsColumns[14]},
+			},
+			{
+				Name:    "aiskillreview_version_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillReviewsColumns[16], AiSkillReviewsColumns[5]},
+			},
+		},
+	}
+	// AiSkillRunsColumns holds the columns for the "ai_skill_runs" table.
+	AiSkillRunsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "run_mode", Type: field.TypeString, Size: 32, Default: "use"},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "queued"},
+		{Name: "billing_mode", Type: field.TypeString, Size: 32, Default: "per_request"},
+		{Name: "price", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
+		{Name: "input_payload", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "output_payload", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "error_message", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "request_id", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "usage_log_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "skill_id", Type: field.TypeInt64},
+		{Name: "version_id", Type: field.TypeInt64},
+	}
+	// AiSkillRunsTable holds the schema information for the "ai_skill_runs" table.
+	AiSkillRunsTable = &schema.Table{
+		Name:       "ai_skill_runs",
+		Columns:    AiSkillRunsColumns,
+		PrimaryKey: []*schema.Column{AiSkillRunsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "ai_skill_runs_ai_skills_runs",
+				Columns:    []*schema.Column{AiSkillRunsColumns[16]},
+				RefColumns: []*schema.Column{AiSkillsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "ai_skill_runs_ai_skill_versions_runs",
+				Columns:    []*schema.Column{AiSkillRunsColumns[17]},
+				RefColumns: []*schema.Column{AiSkillVersionsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "aiskillrun_skill_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillRunsColumns[16]},
+			},
+			{
+				Name:    "aiskillrun_version_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillRunsColumns[17]},
+			},
+			{
+				Name:    "aiskillrun_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillRunsColumns[3]},
+			},
+			{
+				Name:    "aiskillrun_run_mode",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillRunsColumns[4]},
+			},
+			{
+				Name:    "aiskillrun_status",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillRunsColumns[5]},
+			},
+			{
+				Name:    "aiskillrun_request_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillRunsColumns[12]},
+			},
+			{
+				Name:    "aiskillrun_usage_log_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillRunsColumns[13]},
+			},
+			{
+				Name:    "aiskillrun_api_key_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillRunsColumns[14]},
+			},
+			{
+				Name:    "aiskillrun_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillRunsColumns[15]},
+			},
+			{
+				Name:    "aiskillrun_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillRunsColumns[3], AiSkillRunsColumns[1]},
+			},
+		},
+	}
+	// AiSkillSettlementsColumns holds the columns for the "ai_skill_settlements" table.
+	AiSkillSettlementsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "owner_user_id", Type: field.TypeInt64},
+		{Name: "buyer_user_id", Type: field.TypeInt64},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "pending"},
+		{Name: "billing_mode", Type: field.TypeString, Size: 32, Default: "per_request"},
+		{Name: "amount", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
+		{Name: "quota_amount", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
+		{Name: "quota_applied_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "balance_transferred_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "request_id", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "usage_log_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "skill_id", Type: field.TypeInt64},
+		{Name: "run_id", Type: field.TypeInt64},
+		{Name: "version_id", Type: field.TypeInt64},
+	}
+	// AiSkillSettlementsTable holds the schema information for the "ai_skill_settlements" table.
+	AiSkillSettlementsTable = &schema.Table{
+		Name:       "ai_skill_settlements",
+		Columns:    AiSkillSettlementsColumns,
+		PrimaryKey: []*schema.Column{AiSkillSettlementsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "ai_skill_settlements_ai_skills_settlements",
+				Columns:    []*schema.Column{AiSkillSettlementsColumns[16]},
+				RefColumns: []*schema.Column{AiSkillsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "ai_skill_settlements_ai_skill_runs_settlements",
+				Columns:    []*schema.Column{AiSkillSettlementsColumns[17]},
+				RefColumns: []*schema.Column{AiSkillRunsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "ai_skill_settlements_ai_skill_versions_settlements",
+				Columns:    []*schema.Column{AiSkillSettlementsColumns[18]},
+				RefColumns: []*schema.Column{AiSkillVersionsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "aiskillsettlement_skill_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillSettlementsColumns[16]},
+			},
+			{
+				Name:    "aiskillsettlement_version_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillSettlementsColumns[18]},
+			},
+			{
+				Name:    "aiskillsettlement_run_id",
+				Unique:  true,
+				Columns: []*schema.Column{AiSkillSettlementsColumns[17]},
+			},
+			{
+				Name:    "aiskillsettlement_owner_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillSettlementsColumns[3]},
+			},
+			{
+				Name:    "aiskillsettlement_buyer_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillSettlementsColumns[4]},
+			},
+			{
+				Name:    "aiskillsettlement_status",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillSettlementsColumns[5]},
+			},
+			{
+				Name:    "aiskillsettlement_request_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillSettlementsColumns[12]},
+			},
+			{
+				Name:    "aiskillsettlement_usage_log_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillSettlementsColumns[13]},
+			},
+			{
+				Name:    "aiskillsettlement_api_key_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillSettlementsColumns[14]},
+			},
+			{
+				Name:    "aiskillsettlement_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillSettlementsColumns[15]},
+			},
+			{
+				Name:    "aiskillsettlement_owner_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillSettlementsColumns[3], AiSkillSettlementsColumns[1]},
+			},
+		},
+	}
+	// AiSkillVersionsColumns holds the columns for the "ai_skill_versions" table.
+	AiSkillVersionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "version", Type: field.TypeInt},
+		{Name: "review_status", Type: field.TypeString, Size: 32, Default: "draft"},
+		{Name: "content_format", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "runtime", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "source_content", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "config", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "input_schema", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "output_schema", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "change_note", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "submitted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "reviewed_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "reviewer_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "review_note", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "request_id", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "usage_log_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "skill_id", Type: field.TypeInt64},
+	}
+	// AiSkillVersionsTable holds the schema information for the "ai_skill_versions" table.
+	AiSkillVersionsTable = &schema.Table{
+		Name:       "ai_skill_versions",
+		Columns:    AiSkillVersionsColumns,
+		PrimaryKey: []*schema.Column{AiSkillVersionsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "ai_skill_versions_ai_skills_versions",
+				Columns:    []*schema.Column{AiSkillVersionsColumns[23]},
+				RefColumns: []*schema.Column{AiSkillsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "aiskillversion_skill_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillVersionsColumns[23]},
+			},
+			{
+				Name:    "aiskillversion_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillVersionsColumns[4]},
+			},
+			{
+				Name:    "aiskillversion_review_status",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillVersionsColumns[6]},
+			},
+			{
+				Name:    "aiskillversion_reviewer_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillVersionsColumns[16]},
+			},
+			{
+				Name:    "aiskillversion_submitted_at",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillVersionsColumns[14]},
+			},
+			{
+				Name:    "aiskillversion_reviewed_at",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillVersionsColumns[15]},
+			},
+			{
+				Name:    "aiskillversion_request_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillVersionsColumns[19]},
+			},
+			{
+				Name:    "aiskillversion_usage_log_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillVersionsColumns[20]},
+			},
+			{
+				Name:    "aiskillversion_api_key_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillVersionsColumns[21]},
+			},
+			{
+				Name:    "aiskillversion_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{AiSkillVersionsColumns[22]},
+			},
+			{
+				Name:    "aiskillversion_skill_id_version",
+				Unique:  true,
+				Columns: []*schema.Column{AiSkillVersionsColumns[23], AiSkillVersionsColumns[5]},
+			},
+		},
+	}
 	// APIKeysColumns holds the columns for the "api_keys" table.
 	APIKeysColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -1218,6 +1793,9 @@ var (
 		{Name: "weekly_limit_usd", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
 		{Name: "monthly_limit_usd", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
 		{Name: "default_validity_days", Type: field.TypeInt, Default: 30},
+		{Name: "allow_image_generation", Type: field.TypeBool, Default: false},
+		{Name: "image_rate_independent", Type: field.TypeBool, Default: false},
+		{Name: "image_rate_multiplier", Type: field.TypeFloat64, Default: 1, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
 		{Name: "image_price_1k", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
 		{Name: "image_price_2k", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
 		{Name: "image_price_4k", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
@@ -1273,7 +1851,7 @@ var (
 			{
 				Name:    "group_sort_order",
 				Unique:  false,
-				Columns: []*schema.Column{GroupsColumns[30]},
+				Columns: []*schema.Column{GroupsColumns[33]},
 			},
 		},
 	}
@@ -2277,6 +2855,12 @@ var (
 		AiPromptTemplateVersionsTable,
 		AiSessionsTable,
 		AiSessionMessagesTable,
+		AiSkillsTable,
+		AiSkillLikesTable,
+		AiSkillReviewsTable,
+		AiSkillRunsTable,
+		AiSkillSettlementsTable,
+		AiSkillVersionsTable,
 		APIKeysTable,
 		AccountsTable,
 		AccountGroupsTable,
@@ -2342,6 +2926,33 @@ func init() {
 	AiSessionMessagesTable.ForeignKeys[0].RefTable = AiSessionsTable
 	AiSessionMessagesTable.Annotation = &entsql.Annotation{
 		Table: "ai_session_messages",
+	}
+	AiSkillsTable.Annotation = &entsql.Annotation{
+		Table: "ai_skills",
+	}
+	AiSkillLikesTable.ForeignKeys[0].RefTable = AiSkillsTable
+	AiSkillLikesTable.Annotation = &entsql.Annotation{
+		Table: "ai_skill_likes",
+	}
+	AiSkillReviewsTable.ForeignKeys[0].RefTable = AiSkillsTable
+	AiSkillReviewsTable.ForeignKeys[1].RefTable = AiSkillVersionsTable
+	AiSkillReviewsTable.Annotation = &entsql.Annotation{
+		Table: "ai_skill_reviews",
+	}
+	AiSkillRunsTable.ForeignKeys[0].RefTable = AiSkillsTable
+	AiSkillRunsTable.ForeignKeys[1].RefTable = AiSkillVersionsTable
+	AiSkillRunsTable.Annotation = &entsql.Annotation{
+		Table: "ai_skill_runs",
+	}
+	AiSkillSettlementsTable.ForeignKeys[0].RefTable = AiSkillsTable
+	AiSkillSettlementsTable.ForeignKeys[1].RefTable = AiSkillRunsTable
+	AiSkillSettlementsTable.ForeignKeys[2].RefTable = AiSkillVersionsTable
+	AiSkillSettlementsTable.Annotation = &entsql.Annotation{
+		Table: "ai_skill_settlements",
+	}
+	AiSkillVersionsTable.ForeignKeys[0].RefTable = AiSkillsTable
+	AiSkillVersionsTable.Annotation = &entsql.Annotation{
+		Table: "ai_skill_versions",
 	}
 	APIKeysTable.ForeignKeys[0].RefTable = GroupsTable
 	APIKeysTable.ForeignKeys[1].RefTable = UsersTable

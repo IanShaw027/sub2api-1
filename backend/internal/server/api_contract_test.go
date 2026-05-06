@@ -5,7 +5,6 @@ package server_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"math"
@@ -58,11 +57,11 @@ func TestAPIContracts(t *testing.T) {
 					"concurrency": 5,
 					"rpm_limit": 0,
 					"status": "active",
-			"allowed_groups": null,
-			"last_login_at": null,
-			"last_active_at": null,
-			"created_at": "2025-01-02T03:04:05Z",
+					"allowed_groups": null,
+					"created_at": "2025-01-02T03:04:05Z",
 					"updated_at": "2025-01-02T03:04:05Z",
+					"last_login_at": null,
+					"last_active_at": null,
 					"balance_notify_enabled": false,
 					"balance_notify_threshold_type": "",
 					"balance_notify_threshold": null,
@@ -316,16 +315,15 @@ func TestAPIContracts(t *testing.T) {
 				"code": 0,
 				"message": "success",
 				"data": [
-						{
-							"id": 10,
-							"name": "Group One",
-							"display_name": "Group One",
-							"description": "desc",
-							"platform": "anthropic",
-							"rate_multiplier": 1.5,
-							"is_exclusive": false,
-							"user_selectable": false,
-							"status": "active",
+					{
+						"id": 10,
+						"name": "Group One",
+						"display_name": "Group One",
+						"description": "desc",
+						"platform": "anthropic",
+						"rate_multiplier": 1.5,
+						"is_exclusive": false,
+						"status": "active",
 						"subscription_type": "standard",
 						"daily_limit_usd": null,
 						"weekly_limit_usd": null,
@@ -336,12 +334,16 @@ func TestAPIContracts(t *testing.T) {
 						"images2api_price_1k": null,
 						"images2api_price_2k": null,
 						"images2api_price_4k": null,
+						"allow_image_generation": false,
+						"image_rate_independent": false,
+						"image_rate_multiplier": 0,
 						"claude_code_only": false,
 						"allow_messages_dispatch": false,
 						"fallback_group_id": null,
 						"fallback_group_id_on_invalid_request": null,
 						"require_oauth_only": false,
 						"require_privacy_set": false,
+						"user_selectable": false,
 						"rpm_limit": 0,
 						"created_at": "2025-01-02T03:04:05Z",
 						"updated_at": "2025-01-02T03:04:05Z"
@@ -699,41 +701,47 @@ func TestAPIContracts(t *testing.T) {
 						"site_subtitle": "Subtitle",
 						"api_base_url": "https://api.example.com",
 					"contact_info": "support",
-					"support_qr_codes": [],
 					"doc_url": "https://docs.example.com",
-			"auth_source_default_email_balance": 0,
-			"auth_source_default_email_concurrency": 0,
-			"auth_source_default_email_subscriptions": [],
+					"auth_source_default_email_balance": 0,
+					"auth_source_default_email_concurrency": 0,
+					"auth_source_default_email_subscriptions": [],
 					"auth_source_default_email_grant_on_signup": false,
 					"auth_source_default_email_grant_on_first_bind": false,
-			"auth_source_default_linuxdo_balance": 0,
-			"auth_source_default_linuxdo_concurrency": 0,
-			"auth_source_default_linuxdo_subscriptions": [],
+					"auth_source_default_linuxdo_balance": 0,
+					"auth_source_default_linuxdo_concurrency": 0,
+					"auth_source_default_linuxdo_subscriptions": [],
 					"auth_source_default_linuxdo_grant_on_signup": false,
 					"auth_source_default_linuxdo_grant_on_first_bind": false,
-			"auth_source_default_oidc_balance": 0,
-			"auth_source_default_oidc_concurrency": 0,
-			"auth_source_default_oidc_subscriptions": [],
+					"auth_source_default_oidc_balance": 0,
+					"auth_source_default_oidc_concurrency": 0,
+					"auth_source_default_oidc_subscriptions": [],
 					"auth_source_default_oidc_grant_on_signup": false,
 					"auth_source_default_oidc_grant_on_first_bind": false,
-			"auth_source_default_wechat_balance": 0,
-			"auth_source_default_wechat_concurrency": 0,
-			"auth_source_default_wechat_subscriptions": [],
+					"auth_source_default_wechat_balance": 0,
+					"auth_source_default_wechat_concurrency": 0,
+					"auth_source_default_wechat_subscriptions": [],
 					"auth_source_default_wechat_grant_on_signup": false,
 					"auth_source_default_wechat_grant_on_first_bind": false,
 					"force_email_on_third_party_signup": false,
+					"gateway_debug_timeline_directory": "logs/gateway-debug",
+					"gateway_debug_timeline_enabled": false,
+					"gateway_debug_timeline_max_size_mb": 1024,
+					"gateway_debug_timeline_retention_days": 7,
 					"default_concurrency": 5,
 					"default_balance": 1.25,
-						"affiliate_enabled": false,
-						"affiliate_rebate_cap": 0,
-						"affiliate_rebate_invitee_limit": 0,
-						"affiliate_rebate_rate": 20,
-						"affiliate_signup_bonus": 0,
-						"ticket_enabled": false,
-						"affiliate_rebate_freeze_hours": 0,
-						"affiliate_rebate_duration_days": 0,
-						"affiliate_rebate_per_invitee_cap": 0,
-						"default_user_rpm_limit": 0,
+					"kiro_commit": "",
+					"kiro_thinking_effort_threshold": "medium",
+					"kiro_thinking_mode": "simulate",
+					"kiro_thinking_simulation_template": "Using Kiro simulated thinking with {effort} effort for {model}. {detail}",
+					"kiro_version": "0.10.0",
+					"affiliate_rebate_cap": 0,
+					"affiliate_rebate_rate": 20,
+					"affiliate_rebate_freeze_hours": 0,
+					"affiliate_rebate_duration_days": 0,
+					"affiliate_rebate_invitee_limit": 0,
+					"affiliate_rebate_per_invitee_cap": 0,
+					"affiliate_signup_bonus": 0,
+					"default_user_rpm_limit": 0,
 					"default_subscriptions": [],
 					"enable_model_fallback": false,
 					"fallback_model_anthropic": "claude-3-5-sonnet-20241022",
@@ -751,30 +759,24 @@ func TestAPIContracts(t *testing.T) {
 						"table_page_size_options": [10, 20, 50, 100],
 					"min_claude_code_version": "",
 					"max_claude_code_version": "",
+					"node_version": "22.21.1",
 					"allow_ungrouped_key_scheduling": false,
 					"backend_mode_enabled": false,
-				"enable_cch_signing": false,
-				"enable_fingerprint_unification": true,
-				"enable_metadata_passthrough": false,
-				"enable_anthropic_cache_ttl_1h_injection": false,
-				"gateway_debug_timeline_enabled": false,
-				"gateway_debug_timeline_directory": "logs/gateway-debug",
-				"gateway_debug_timeline_retention_days": 7,
-				"gateway_debug_timeline_max_size_mb": 1024,
-				"web_search_emulation_enabled": false,
-				"kiro_version": "0.10.0",
-				"kiro_commit": "",
-				"kiro_thinking_mode": "simulate",
-				"kiro_thinking_effort_threshold": "medium",
-				"kiro_thinking_simulation_template": "Using Kiro simulated thinking with {effort} effort for {model}. {detail}",
-					"system_version": "darwin#24.6.0",
-					"node_version": "22.21.1",
-				"payment_visible_method_alipay_source": "easypay_alipay",
-						"payment_visible_method_wxpay_source": "official_wxpay",
+					"enable_cch_signing": false,
+					"enable_anthropic_cache_ttl_1h_injection": false,
+					"enable_fingerprint_unification": true,
+					"enable_metadata_passthrough": false,
+					"web_search_emulation_enabled": false,
+					"cache_hit_rate_scale": 95,
+					"cache_independent_ttl_seconds": 3600,
+					"cache_min_block_tokens": 1024,
+					"cache_prefix_ttl_seconds": 300,
+					"payment_visible_method_alipay_source": "easypay_alipay",
+					"payment_visible_method_wxpay_source": "official_wxpay",
 					"payment_visible_method_alipay_enabled": true,
 					"payment_visible_method_wxpay_enabled": false,
-					"platform_default_account_model_config": {},
 					"openai_advanced_scheduler_enabled": true,
+					"platform_default_account_model_config": {},
 					"openai_fast_policy_settings": {
 						"rules": [
 							{
@@ -807,15 +809,14 @@ func TestAPIContracts(t *testing.T) {
 					"payment_cancel_rate_limit_window": 0,
 					"payment_cancel_rate_limit_unit": "",
 					"payment_cancel_rate_limit_window_mode": "",
-			"balance_low_notify_enabled": false,
-			"account_quota_notify_enabled": false,
-			"balance_low_notify_threshold": 0,
-			"cache_hit_rate_scale": 95,
-			"cache_independent_ttl_seconds": 3600,
-			"cache_min_block_tokens": 1024,
-			"cache_prefix_ttl_seconds": 300,
-			"balance_low_notify_recharge_url": "",
+					"balance_low_notify_enabled": false,
+					"account_quota_notify_enabled": false,
+					"balance_low_notify_threshold": 0,
+					"balance_low_notify_recharge_url": "",
 					"account_quota_notify_emails": [],
+					"support_qr_codes": [],
+					"system_version": "darwin#24.6.0",
+					"ticket_enabled": false,
 					"channel_monitor_enabled": true,
 					"channel_monitor_default_interval_seconds": 60,
 					"available_channels_enabled": false,
@@ -930,7 +931,6 @@ func TestAPIContracts(t *testing.T) {
 					"site_subtitle": "Subscription to API Conversion Platform",
 					"api_base_url": "",
 					"contact_info": "",
-					"support_qr_codes": [],
 					"doc_url": "",
 					"home_content": "",
 					"hide_ccs_import_button": false,
@@ -942,16 +942,11 @@ func TestAPIContracts(t *testing.T) {
 					"custom_endpoints": [],
 					"default_concurrency": 0,
 					"default_balance": 0,
-						"affiliate_enabled": false,
-						"affiliate_rebate_cap": 0,
-						"affiliate_rebate_invitee_limit": 0,
-						"affiliate_rebate_rate": 20,
-						"affiliate_signup_bonus": 0,
-						"ticket_enabled": false,
-						"affiliate_rebate_freeze_hours": 0,
-						"affiliate_rebate_duration_days": 0,
-						"affiliate_rebate_per_invitee_cap": 0,
-						"default_user_rpm_limit": 0,
+					"affiliate_rebate_rate": 20,
+					"affiliate_rebate_freeze_hours": 0,
+					"affiliate_rebate_duration_days": 0,
+					"affiliate_rebate_per_invitee_cap": 0,
+					"default_user_rpm_limit": 0,
 					"default_subscriptions": [],
 					"enable_model_fallback": false,
 					"fallback_model_anthropic": "claude-3-5-sonnet-20241022",
@@ -970,25 +965,13 @@ func TestAPIContracts(t *testing.T) {
 					"backend_mode_enabled": false,
 					"enable_fingerprint_unification": true,
 					"enable_metadata_passthrough": false,
-				"enable_cch_signing": false,
-				"enable_anthropic_cache_ttl_1h_injection": false,
-				"gateway_debug_timeline_enabled": false,
-				"gateway_debug_timeline_directory": "logs/gateway-debug",
-				"gateway_debug_timeline_retention_days": 7,
-				"gateway_debug_timeline_max_size_mb": 1024,
-				"web_search_emulation_enabled": false,
-				"kiro_version": "0.10.0",
-				"kiro_commit": "",
-				"kiro_thinking_mode": "simulate",
-					"kiro_thinking_effort_threshold": "medium",
-					"kiro_thinking_simulation_template": "Using Kiro simulated thinking with {effort} effort for {model}. {detail}",
-					"system_version": "darwin#24.6.0",
-					"node_version": "22.21.1",
-						"payment_visible_method_alipay_source": "",
+					"enable_cch_signing": false,
+					"enable_anthropic_cache_ttl_1h_injection": false,
+					"web_search_emulation_enabled": false,
+					"payment_visible_method_alipay_source": "",
 					"payment_visible_method_wxpay_source": "",
 					"payment_visible_method_alipay_enabled": false,
 					"payment_visible_method_wxpay_enabled": false,
-					"platform_default_account_model_config": {},
 					"openai_advanced_scheduler_enabled": false,
 					"openai_fast_policy_settings": {
 						"rules": [
@@ -1020,19 +1003,22 @@ func TestAPIContracts(t *testing.T) {
 					"payment_cancel_rate_limit_window": 0,
 					"payment_cancel_rate_limit_unit": "",
 					"payment_cancel_rate_limit_window_mode": "",
-			"balance_low_notify_enabled": false,
-			"account_quota_notify_enabled": false,
-			"balance_low_notify_threshold": 0,
-			"cache_hit_rate_scale": 95,
-			"cache_independent_ttl_seconds": 3600,
-			"cache_min_block_tokens": 1024,
-			"cache_prefix_ttl_seconds": 300,
-			"balance_low_notify_recharge_url": "",
+					"balance_low_notify_enabled": false,
+					"account_quota_notify_enabled": false,
+					"balance_low_notify_threshold": 0,
+					"balance_low_notify_recharge_url": "",
 					"account_quota_notify_emails": [],
+					"cache_hit_rate_scale": 95,
+					"cache_independent_ttl_seconds": 3600,
+					"cache_min_block_tokens": 1024,
+					"cache_prefix_ttl_seconds": 300,
 					"channel_monitor_enabled": true,
 					"channel_monitor_default_interval_seconds": 60,
 					"available_channels_enabled": false,
 					"affiliate_enabled": false,
+					"affiliate_rebate_cap": 0,
+					"affiliate_rebate_invitee_limit": 0,
+					"affiliate_signup_bonus": 0,
 					"wechat_connect_enabled": true,
 					"wechat_connect_app_id": "wx-open-config",
 					"wechat_connect_app_secret_configured": true,
@@ -1050,26 +1036,40 @@ func TestAPIContracts(t *testing.T) {
 					"wechat_connect_frontend_redirect_url": "/auth/wechat/callback",
 					"wechat_connect_scopes": "snsapi_login",
 					"auth_source_default_email_balance": 0,
-			"auth_source_default_email_concurrency": 0,
+					"auth_source_default_email_concurrency": 0,
 					"auth_source_default_email_subscriptions": [],
 					"auth_source_default_email_grant_on_signup": false,
 					"auth_source_default_email_grant_on_first_bind": false,
 					"auth_source_default_linuxdo_balance": 0,
-			"auth_source_default_linuxdo_concurrency": 0,
+					"auth_source_default_linuxdo_concurrency": 0,
 					"auth_source_default_linuxdo_subscriptions": [],
 					"auth_source_default_linuxdo_grant_on_signup": false,
 					"auth_source_default_linuxdo_grant_on_first_bind": false,
 					"auth_source_default_oidc_balance": 0,
-			"auth_source_default_oidc_concurrency": 0,
+					"auth_source_default_oidc_concurrency": 0,
 					"auth_source_default_oidc_subscriptions": [],
 					"auth_source_default_oidc_grant_on_signup": false,
 					"auth_source_default_oidc_grant_on_first_bind": false,
 					"auth_source_default_wechat_balance": 0,
-			"auth_source_default_wechat_concurrency": 0,
+					"auth_source_default_wechat_concurrency": 0,
 					"auth_source_default_wechat_subscriptions": [],
 					"auth_source_default_wechat_grant_on_signup": false,
 					"auth_source_default_wechat_grant_on_first_bind": false,
-					"force_email_on_third_party_signup": false
+					"force_email_on_third_party_signup": false,
+					"gateway_debug_timeline_directory": "logs/gateway-debug",
+					"gateway_debug_timeline_enabled": false,
+					"gateway_debug_timeline_max_size_mb": 1024,
+					"gateway_debug_timeline_retention_days": 7,
+					"kiro_commit": "",
+					"kiro_thinking_effort_threshold": "medium",
+					"kiro_thinking_mode": "simulate",
+					"kiro_thinking_simulation_template": "Using Kiro simulated thinking with {effort} effort for {model}. {detail}",
+					"kiro_version": "0.10.0",
+					"node_version": "22.21.1",
+					"platform_default_account_model_config": {},
+					"support_qr_codes": [],
+					"system_version": "darwin#24.6.0",
+					"ticket_enabled": false
 				}
 			}`,
 		},
@@ -1107,47 +1107,10 @@ func TestAPIContracts(t *testing.T) {
 			}
 
 			status, body := doRequest(t, deps.router, tt.method, tt.path, tt.body, tt.headers)
-			body = normalizeContractResponse(t, tt.name, body)
 			require.Equal(t, tt.wantStatus, status)
 			require.JSONEq(t, tt.wantJSON, body)
 		})
 	}
-}
-
-func TestSkillCenterContracts(t *testing.T) {
-	runSkillContractCases(t)
-}
-
-func normalizeContractResponse(t *testing.T, name, body string) string {
-	t.Helper()
-
-	var envelope map[string]any
-	require.NoError(t, json.Unmarshal([]byte(body), &envelope))
-	data, _ := envelope["data"].(map[string]any)
-	if data == nil {
-		return body
-	}
-
-	switch name {
-	case "GET /api/v1/auth/me":
-		if lastActive, ok := data["last_active_at"].(string); ok {
-			_, err := time.Parse(time.RFC3339Nano, lastActive)
-			require.NoError(t, err)
-			data["last_active_at"] = "2025-01-02T03:04:05Z"
-		}
-	case "GET /api/v1/admin/settings", "GET /api/v1/admin/settings falls back to config oauth defaults":
-		for _, key := range []string{"system_version", "node_version"} {
-			value, ok := data[key].(string)
-			require.True(t, ok, "%s should be present", key)
-			require.NotEmpty(t, value, "%s should not be empty", key)
-		}
-		data["system_version"] = "darwin#24.6.0"
-		data["node_version"] = "22.21.1"
-	}
-
-	normalized, err := json.Marshal(envelope)
-	require.NoError(t, err)
-	return string(normalized)
 }
 
 type contractDeps struct {
@@ -1189,7 +1152,36 @@ func newContractDeps(t *testing.T) *contractDeps {
 	apiKeyCache := stubApiKeyCache{}
 	groupRepo := &stubGroupRepo{}
 	userSubRepo := &stubUserSubscriptionRepo{}
-	accountRepo := stubAccountRepo{}
+	accountRepo := stubAccountRepo{
+		byID: map[int64]*service.Account{
+			101: {
+				ID:             101,
+				Name:           "Account 101",
+				Platform:       service.PlatformOpenAI,
+				Type:           service.AccountTypeOAuth,
+				Status:         service.StatusActive,
+				Schedulable:    true,
+				Concurrency:    1,
+				Priority:       1,
+				RateMultiplier: ptr(1.0),
+				CreatedAt:      now,
+				UpdatedAt:      now,
+			},
+			102: {
+				ID:             102,
+				Name:           "Account 102",
+				Platform:       service.PlatformOpenAI,
+				Type:           service.AccountTypeOAuth,
+				Status:         service.StatusActive,
+				Schedulable:    true,
+				Concurrency:    1,
+				Priority:       1,
+				RateMultiplier: ptr(1.0),
+				CreatedAt:      now,
+				UpdatedAt:      now,
+			},
+		},
+	}
 	proxyRepo := stubProxyRepo{}
 	redeemRepo := &stubRedeemCodeRepo{}
 
@@ -1551,6 +1543,7 @@ func (stubGroupRepo) UpdateSortOrders(ctx context.Context, updates []service.Gro
 
 type stubAccountRepo struct {
 	bulkUpdateIDs []int64
+	byID          map[int64]*service.Account
 }
 
 func (s *stubAccountRepo) Create(ctx context.Context, account *service.Account) error {
@@ -1558,15 +1551,26 @@ func (s *stubAccountRepo) Create(ctx context.Context, account *service.Account) 
 }
 
 func (s *stubAccountRepo) GetByID(ctx context.Context, id int64) (*service.Account, error) {
-	return nil, service.ErrAccountNotFound
+	account, ok := s.byID[id]
+	if !ok {
+		return nil, service.ErrAccountNotFound
+	}
+	clone := *account
+	return &clone, nil
 }
 
 func (s *stubAccountRepo) GetByIDs(ctx context.Context, ids []int64) ([]*service.Account, error) {
-	accounts := make([]*service.Account, 0, len(ids))
+	result := make([]*service.Account, 0, len(ids))
 	for _, id := range ids {
-		accounts = append(accounts, &service.Account{ID: id, Platform: service.PlatformAnthropic, Type: service.AccountTypeOAuth})
+		account, ok := s.byID[id]
+		if !ok {
+			result = append(result, nil)
+			continue
+		}
+		clone := *account
+		result = append(result, &clone)
 	}
-	return accounts, nil
+	return result, nil
 }
 
 func (s *stubAccountRepo) ExistsByID(ctx context.Context, id int64) (bool, error) {
@@ -1582,7 +1586,15 @@ func (s *stubAccountRepo) FindByExtraField(ctx context.Context, key string, valu
 }
 
 func (s *stubAccountRepo) Update(ctx context.Context, account *service.Account) error {
-	return errors.New("not implemented")
+	if account == nil {
+		return errors.New("not implemented")
+	}
+	if s.byID == nil {
+		s.byID = make(map[int64]*service.Account)
+	}
+	clone := *account
+	s.byID[clone.ID] = &clone
+	return nil
 }
 
 func (s *stubAccountRepo) Delete(ctx context.Context, id int64) error {
@@ -1719,6 +1731,36 @@ func (s *stubAccountRepo) ResetQuotaUsed(ctx context.Context, id int64) error {
 
 func (s *stubAccountRepo) BulkUpdate(ctx context.Context, ids []int64, updates service.AccountBulkUpdate) (int64, error) {
 	s.bulkUpdateIDs = append([]int64{}, ids...)
+	if s.byID == nil {
+		s.byID = make(map[int64]*service.Account)
+	}
+	for _, id := range ids {
+		account, ok := s.byID[id]
+		if !ok {
+			continue
+		}
+		if updates.Schedulable != nil {
+			account.Schedulable = *updates.Schedulable
+		}
+		if updates.Status != nil {
+			account.Status = *updates.Status
+		}
+		if updates.RateMultiplier != nil {
+			account.RateMultiplier = ptr(*updates.RateMultiplier)
+		}
+		if updates.Concurrency != nil {
+			account.Concurrency = *updates.Concurrency
+		}
+		if updates.Priority != nil {
+			account.Priority = *updates.Priority
+		}
+		if updates.LoadFactor != nil {
+			account.LoadFactor = ptr(*updates.LoadFactor)
+		}
+		if updates.ProxyID != nil {
+			account.ProxyID = updates.ProxyID
+		}
+	}
 	return int64(len(ids)), nil
 }
 
@@ -1847,7 +1889,9 @@ func (stubRedeemCodeRepo) SumPositiveBalanceByUser(ctx context.Context, userID i
 }
 
 func (stubRedeemCodeRepo) GetStats(ctx context.Context) (*service.RedeemCodeStats, error) {
-	return &service.RedeemCodeStats{ByType: map[string]int64{}}, nil
+	return &service.RedeemCodeStats{
+		ByType: make(map[string]int64),
+	}, nil
 }
 
 type stubUserSubscriptionRepo struct {
@@ -2143,7 +2187,16 @@ func (r *stubApiKeyRepo) CountByGroupID(ctx context.Context, groupID int64) (int
 }
 
 func (r *stubApiKeyRepo) CountActiveByGroupID(ctx context.Context, groupID int64) (int64, error) {
-	return 0, errors.New("not implemented")
+	var count int64
+	for _, key := range r.byID {
+		if key.GroupID == nil || *key.GroupID != groupID {
+			continue
+		}
+		if key.Status == service.StatusActive {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func (r *stubApiKeyRepo) ListKeysByUserID(ctx context.Context, userID int64) ([]string, error) {

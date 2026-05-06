@@ -28,6 +28,18 @@ type Tx struct {
 	AISession *AISessionClient
 	// AISessionMessage is the client for interacting with the AISessionMessage builders.
 	AISessionMessage *AISessionMessageClient
+	// AISkill is the client for interacting with the AISkill builders.
+	AISkill *AISkillClient
+	// AISkillLike is the client for interacting with the AISkillLike builders.
+	AISkillLike *AISkillLikeClient
+	// AISkillReview is the client for interacting with the AISkillReview builders.
+	AISkillReview *AISkillReviewClient
+	// AISkillRun is the client for interacting with the AISkillRun builders.
+	AISkillRun *AISkillRunClient
+	// AISkillSettlement is the client for interacting with the AISkillSettlement builders.
+	AISkillSettlement *AISkillSettlementClient
+	// AISkillVersion is the client for interacting with the AISkillVersion builders.
+	AISkillVersion *AISkillVersionClient
 	// APIKey is the client for interacting with the APIKey builders.
 	APIKey *APIKeyClient
 	// Account is the client for interacting with the Account builders.
@@ -234,6 +246,12 @@ func (tx *Tx) init() {
 	tx.AIPromptTemplateVersion = NewAIPromptTemplateVersionClient(tx.config)
 	tx.AISession = NewAISessionClient(tx.config)
 	tx.AISessionMessage = NewAISessionMessageClient(tx.config)
+	tx.AISkill = NewAISkillClient(tx.config)
+	tx.AISkillLike = NewAISkillLikeClient(tx.config)
+	tx.AISkillReview = NewAISkillReviewClient(tx.config)
+	tx.AISkillRun = NewAISkillRunClient(tx.config)
+	tx.AISkillSettlement = NewAISkillSettlementClient(tx.config)
+	tx.AISkillVersion = NewAISkillVersionClient(tx.config)
 	tx.APIKey = NewAPIKeyClient(tx.config)
 	tx.Account = NewAccountClient(tx.config)
 	tx.AccountGroup = NewAccountGroupClient(tx.config)

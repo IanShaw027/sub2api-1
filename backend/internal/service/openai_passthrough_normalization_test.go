@@ -31,3 +31,15 @@ func TestNormalizeOpenAIPassthroughOAuthBody_CompactRemovesUnsupportedUser(t *te
 	require.False(t, gjson.GetBytes(normalized, "stream").Exists())
 	require.False(t, gjson.GetBytes(normalized, "store").Exists())
 }
+
+func TestNormalizeOpenAIPassthroughOAuthBody_PreservesPromptCacheFriendlyOrdering(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.2","stream":false,"store":true,"prompt_cache_key":"cache-ordered-123","instructions":"local-test-instructions","input":"hello ordered world"}`)
+
+	normalized, changed, err := normalizeOpenAIPassthroughOAuthBody(body, false)
+	require.NoError(t, err)
+	require.True(t, changed)
+	requireOrderedJSONKeys(t, normalized, "model", "instructions", "prompt_cache_key", "input")
+	require.True(t, gjson.GetBytes(normalized, "stream").Bool())
+	require.False(t, gjson.GetBytes(normalized, "store").Bool())
+	require.Equal(t, "hello ordered world", gjson.GetBytes(normalized, "input.0.content").String())
+}

@@ -1950,7 +1950,7 @@ func (h *GatewayHandler) emitGatewayDebugTimelineAttemptFinished(c *gin.Context,
 		fields["usage_output_tokens"] = result.Usage.OutputTokens
 	}
 	if err != nil {
-		fields["error"] = trimLogField(err.Error(), 512)
+		fields["error"] = truncateString(err.Error(), 512)
 	}
 	service.WriteGatewayDebugTimelineEvent(h.settingService, c, "attempt_finished", fields)
 }

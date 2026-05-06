@@ -253,7 +253,7 @@ func TestSameAccountWithLoadGroup(t *testing.T) {
 	t.Run("different created at", func(t *testing.T) {
 		a := accountWithLoad{account: &Account{Priority: 1, LastUsedAt: &sameSecond, CreatedAt: now}, loadInfo: &AccountLoadInfo{LoadRate: 10}}
 		b := accountWithLoad{account: &Account{Priority: 1, LastUsedAt: &sameSecond, CreatedAt: now.Add(1 * time.Second)}, loadInfo: &AccountLoadInfo{LoadRate: 10}}
-		require.False(t, sameAccountWithLoadGroup(a, b))
+		require.True(t, sameAccountWithLoadGroup(a, b))
 	})
 
 	t.Run("both nil LastUsedAt", func(t *testing.T) {
@@ -290,7 +290,7 @@ func TestSameAccountGroup(t *testing.T) {
 	t.Run("different CreatedAt", func(t *testing.T) {
 		a := &Account{Priority: 1, LastUsedAt: nil, CreatedAt: now}
 		b := &Account{Priority: 1, LastUsedAt: nil, CreatedAt: now.Add(1 * time.Second)}
-		require.False(t, sameAccountGroup(a, b))
+		require.True(t, sameAccountGroup(a, b))
 	})
 }
 

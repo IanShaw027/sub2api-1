@@ -12,10 +12,11 @@ type usageModelViewInput struct {
 }
 
 type usageModelView struct {
-	RequestedModel        string
-	BillingModel          string
-	UpstreamModel         string
-	UsageLogUpstreamModel *string
+	RequestedModel         string
+	BillingModel           string
+	BillingModelCandidates []string
+	UpstreamModel          string
+	UsageLogUpstreamModel  *string
 }
 
 func resolveUsageModelView(input usageModelViewInput) usageModelView {
@@ -42,11 +43,19 @@ func resolveUsageModelView(input usageModelViewInput) usageModelView {
 	}
 
 	upstreamModel := strings.TrimSpace(input.UpstreamModel)
+	billingModelCandidates := usageBillingModelCandidates(
+		billingModel,
+		upstreamModel,
+		strings.TrimSpace(input.ResultModel),
+		strings.TrimSpace(input.OriginalModel),
+		channelMappedModel,
+	)
 
 	return usageModelView{
-		RequestedModel:        requestedModel,
-		BillingModel:          billingModel,
-		UpstreamModel:         upstreamModel,
-		UsageLogUpstreamModel: optionalNonEqualStringPtr(upstreamModel, strings.TrimSpace(input.ResultModel)),
+		RequestedModel:         requestedModel,
+		BillingModel:           billingModel,
+		BillingModelCandidates: billingModelCandidates,
+		UpstreamModel:          upstreamModel,
+		UsageLogUpstreamModel:  optionalNonEqualStringPtr(upstreamModel, strings.TrimSpace(input.ResultModel)),
 	}
 }

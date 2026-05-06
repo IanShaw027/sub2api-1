@@ -14,7 +14,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 8 // v8: negative-cache absent UserGroupRPMOverride on user snapshot
+const apiKeyAuthSnapshotVersion = 8 // v8: added group image generation controls
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int
@@ -239,36 +239,28 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 	// 填充 (user, group) RPM override —— snapshot 构建时查一次 DB，后续请求零 DB 往返。
 	if apiKey.GroupID != nil && *apiKey.GroupID > 0 && s.userGroupRateRepo != nil {
 		override, err := s.userGroupRateRepo.GetRPMOverrideByUserAndGroup(ctx, apiKey.UserID, *apiKey.GroupID)
-		if err == nil {
-			if override != nil {
-				snapshot.User.UserGroupRPMOverride = override
-			} else {
-				// 用负值哨兵表达"已确认无 override"，避免 checkRPM 每请求回源 DB。
-				absent := userGroupRPMOverrideAbsentSentinel
-				snapshot.User.UserGroupRPMOverride = &absent
-			}
+		if err == nil && override != nil {
+			snapshot.User.UserGroupRPMOverride = override
 		}
-		// 查询失败时留 nil，checkRPM 会回退到 DB 查询
+		// 查询失败或无 override 时留 nil，checkRPM 会回退到 DB 查询
 	}
 	if apiKey.Group != nil {
 		snapshot.Group = &APIKeyAuthGroupSnapshot{
 			ID:                              apiKey.Group.ID,
 			Name:                            apiKey.Group.Name,
-			DisplayName:                     apiKey.Group.DisplayName,
 			Platform:                        apiKey.Group.Platform,
 			Status:                          apiKey.Group.Status,
 			SubscriptionType:                apiKey.Group.SubscriptionType,
 			RateMultiplier:                  apiKey.Group.RateMultiplier,
-			UserSelectable:                  apiKey.Group.UserSelectable,
 			DailyLimitUSD:                   apiKey.Group.DailyLimitUSD,
 			WeeklyLimitUSD:                  apiKey.Group.WeeklyLimitUSD,
 			MonthlyLimitUSD:                 apiKey.Group.MonthlyLimitUSD,
+			AllowImageGeneration:            apiKey.Group.AllowImageGeneration,
+			ImageRateIndependent:            apiKey.Group.ImageRateIndependent,
+			ImageRateMultiplier:             apiKey.Group.ImageRateMultiplier,
 			ImagePrice1K:                    apiKey.Group.ImagePrice1K,
 			ImagePrice2K:                    apiKey.Group.ImagePrice2K,
 			ImagePrice4K:                    apiKey.Group.ImagePrice4K,
-			Images2APIPrice1K:               apiKey.Group.Images2APIPrice1K,
-			Images2APIPrice2K:               apiKey.Group.Images2APIPrice2K,
-			Images2APIPrice4K:               apiKey.Group.Images2APIPrice4K,
 			ClaudeCodeOnly:                  apiKey.Group.ClaudeCodeOnly,
 			FallbackGroupID:                 apiKey.Group.FallbackGroupID,
 			FallbackGroupIDOnInvalidRequest: apiKey.Group.FallbackGroupIDOnInvalidRequest,
@@ -324,22 +316,20 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 		apiKey.Group = &Group{
 			ID:                              snapshot.Group.ID,
 			Name:                            snapshot.Group.Name,
-			DisplayName:                     snapshot.Group.DisplayName,
 			Platform:                        snapshot.Group.Platform,
 			Status:                          snapshot.Group.Status,
 			Hydrated:                        true,
 			SubscriptionType:                snapshot.Group.SubscriptionType,
 			RateMultiplier:                  snapshot.Group.RateMultiplier,
-			UserSelectable:                  snapshot.Group.UserSelectable,
 			DailyLimitUSD:                   snapshot.Group.DailyLimitUSD,
 			WeeklyLimitUSD:                  snapshot.Group.WeeklyLimitUSD,
 			MonthlyLimitUSD:                 snapshot.Group.MonthlyLimitUSD,
+			AllowImageGeneration:            snapshot.Group.AllowImageGeneration,
+			ImageRateIndependent:            snapshot.Group.ImageRateIndependent,
+			ImageRateMultiplier:             snapshot.Group.ImageRateMultiplier,
 			ImagePrice1K:                    snapshot.Group.ImagePrice1K,
 			ImagePrice2K:                    snapshot.Group.ImagePrice2K,
 			ImagePrice4K:                    snapshot.Group.ImagePrice4K,
-			Images2APIPrice1K:               snapshot.Group.Images2APIPrice1K,
-			Images2APIPrice2K:               snapshot.Group.Images2APIPrice2K,
-			Images2APIPrice4K:               snapshot.Group.Images2APIPrice4K,
 			ClaudeCodeOnly:                  snapshot.Group.ClaudeCodeOnly,
 			FallbackGroupID:                 snapshot.Group.FallbackGroupID,
 			FallbackGroupIDOnInvalidRequest: snapshot.Group.FallbackGroupIDOnInvalidRequest,
