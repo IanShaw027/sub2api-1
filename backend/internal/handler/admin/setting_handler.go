@@ -741,7 +741,7 @@ type UpdateSettingsRequest struct {
 	PaymentCancelRateLimitMode    *string `json:"payment_cancel_rate_limit_window_mode"`
 
 	// Channel Monitor feature switch
-	AIStudioEnabled                  *bool `json:"ai_studio_enabled"`
+	AIStudioEnabled                      *bool `json:"ai_studio_enabled"`
 	ChannelMonitorEnabled                *bool `json:"channel_monitor_enabled"`
 	ChannelMonitorDefaultIntervalSeconds *int  `json:"channel_monitor_default_interval_seconds"`
 
@@ -1905,6 +1905,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	rollbackMigratedMedia = false
 
 	// Update OpenAI fast policy (stored under dedicated key, only when provided).
 	if req.OpenAIFastPolicySettings != nil {
@@ -1914,6 +1915,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				response.ErrorFrom(c, fmt.Errorf("rollback admin settings update after fast policy save failure: %w", rollbackErr))
 				return
 			}
+			h.cleanupIngestedSettingsMediaReferences(c.Request.Context(), createdMediaAssetIDs)
 			response.BadRequest(c, err.Error())
 			return
 		}
@@ -1974,7 +1976,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		updatedPaymentCfg = &service.PaymentConfig{}
 	}
 
-	rollbackMigratedMedia = false
 	payload := dto.SystemSettings{
 		RegistrationEnabled:                    updatedSettings.RegistrationEnabled,
 		EmailVerifyEnabled:                     updatedSettings.EmailVerifyEnabled,

@@ -91,6 +91,44 @@ func (s *failingSettingHandlerRepoStub) SetMultiple(context.Context, map[string]
 	return s.setMultipleErr
 }
 
+type paymentConfigReadbackFailRepoStub struct {
+	settingHandlerRepoStub
+	getMultipleErr error
+}
+
+func (s *paymentConfigReadbackFailRepoStub) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
+	for _, key := range keys {
+		switch key {
+		case service.SettingPaymentEnabled,
+			service.SettingMinRechargeAmount,
+			service.SettingMaxRechargeAmount,
+			service.SettingDailyRechargeLimit,
+			service.SettingOrderTimeoutMinutes,
+			service.SettingMaxPendingOrders,
+			service.SettingEnabledPaymentTypes,
+			service.SettingBalancePayDisabled,
+			service.SettingBalanceRechargeMult,
+			service.SettingRechargeFeeRate,
+			service.SettingLoadBalanceStrategy,
+			service.SettingProductNamePrefix,
+			service.SettingProductNameSuffix,
+			service.SettingHelpImageURL,
+			service.SettingHelpText,
+			service.SettingCancelRateLimitOn,
+			service.SettingCancelRateLimitMax,
+			service.SettingCancelWindowSize,
+			service.SettingCancelWindowUnit,
+			service.SettingCancelWindowMode,
+			service.SettingPaymentVisibleMethodAlipayEnabled,
+			service.SettingPaymentVisibleMethodAlipaySource,
+			service.SettingPaymentVisibleMethodWxpayEnabled,
+			service.SettingPaymentVisibleMethodWxpaySource:
+			return nil, s.getMultipleErr
+		}
+	}
+	return s.settingHandlerRepoStub.GetMultiple(ctx, keys)
+}
+
 func buildSettingHandlerTestPNGDataURL(t *testing.T) string {
 	t.Helper()
 
@@ -332,6 +370,113 @@ func TestSettingHandler_UpdateSettings_CleansUpMigratedMediaWhenPersistenceFails
 	handler.UpdateSettings(c)
 
 	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Equal(t, int64(1), mediaRepo.nextID)
+	require.Len(t, mediaRepo.assets, 1)
+	require.Len(t, mediaRepo.deletedIDs, 1)
+	require.Equal(t, int64(1), mediaRepo.deletedIDs[0])
+	require.NotNil(t, mediaRepo.assets[1])
+	require.Equal(t, service.MediaStatusDeleted, mediaRepo.assets[1].Status)
+	require.Greater(t, mediaStore.deleteCount, 0)
+	require.Equal(t, "https://legacy.example/logo.png", repo.values[service.SettingKeySiteLogo])
+}
+
+func TestSettingHandler_UpdateSettings_KeepsMigratedMediaWhenPaymentConfigReadbackFailsAfterPersistence(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &paymentConfigReadbackFailRepoStub{
+		settingHandlerRepoStub: settingHandlerRepoStub{
+			values: map[string]string{
+				service.SettingKeyPromoCodeEnabled: "true",
+				service.SettingKeySiteLogo:         "https://legacy.example/logo.png",
+			},
+		},
+		getMultipleErr: errors.New("payment config readback failed"),
+	}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	paymentCfgSvc := service.NewPaymentConfigService(nil, repo, nil)
+	mediaRepo := &settingHandlerMediaRepoStub{}
+	mediaStore := &settingHandlerMediaStoreStub{}
+	mediaSvc := service.NewMediaService(mediaRepo, mediaStore, &config.Config{
+		Media: config.MediaConfig{
+			Enabled:            true,
+			Bucket:             "media",
+			PublicBaseURL:      "https://media.example",
+			MaxUploadSizeBytes: 1024 * 1024,
+		},
+	})
+	handler := NewSettingHandler(svc, nil, nil, nil, paymentCfgSvc, nil, mediaSvc)
+
+	body := map[string]any{
+		"promo_code_enabled": true,
+		"site_logo":          buildSettingHandlerTestPNGDataURL(t),
+		"payment_enabled":    true,
+	}
+	rawBody, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateSettings(c)
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Equal(t, int64(1), mediaRepo.nextID)
+	require.Len(t, mediaRepo.assets, 1)
+	require.Empty(t, mediaRepo.deletedIDs)
+	require.NotNil(t, mediaRepo.assets[1])
+	require.NotEqual(t, service.MediaStatusDeleted, mediaRepo.assets[1].Status)
+	require.Zero(t, mediaStore.deleteCount)
+	require.Equal(t, "https://media.example/api/v1/media/public/1", repo.values[service.SettingKeySiteLogo])
+}
+
+func TestSettingHandler_UpdateSettings_CleansUpMigratedMediaWhenFastPolicySaveFailsAndRollbackSucceeds(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &settingHandlerRepoStub{
+		values: map[string]string{
+			service.SettingKeyPromoCodeEnabled:         "true",
+			service.SettingKeySiteLogo:                 "https://legacy.example/logo.png",
+			service.SettingKeyOpenAIFastPolicySettings: `{"rules":[]}`,
+		},
+		setFailKey: service.SettingKeyOpenAIFastPolicySettings,
+		setFailErr: errors.New("fast policy save failed"),
+	}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	paymentCfgSvc := service.NewPaymentConfigService(nil, repo, nil)
+	mediaRepo := &settingHandlerMediaRepoStub{}
+	mediaStore := &settingHandlerMediaStoreStub{}
+	mediaSvc := service.NewMediaService(mediaRepo, mediaStore, &config.Config{
+		Media: config.MediaConfig{
+			Enabled:            true,
+			Bucket:             "media",
+			PublicBaseURL:      "https://media.example",
+			MaxUploadSizeBytes: 1024 * 1024,
+		},
+	})
+	handler := NewSettingHandler(svc, nil, nil, nil, paymentCfgSvc, nil, mediaSvc)
+
+	body := map[string]any{
+		"promo_code_enabled": true,
+		"site_logo":          buildSettingHandlerTestPNGDataURL(t),
+		"openai_fast_policy_settings": map[string]any{
+			"rules": []map[string]any{
+				{"service_tier": "", "action": "pass", "scope": "all"},
+			},
+		},
+	}
+	rawBody, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateSettings(c)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.Equal(t, int64(1), mediaRepo.nextID)
 	require.Len(t, mediaRepo.assets, 1)
 	require.Len(t, mediaRepo.deletedIDs, 1)

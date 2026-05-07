@@ -68,6 +68,7 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 		PaymentEnabled:                   settings.PaymentEnabled,
 		AffiliateEnabled:                 settings.AffiliateEnabled,
 		TicketEnabled:                    settings.TicketEnabled,
+		AIStudioEnabled:                  settings.AIStudioEnabled,
 		Version:                          h.version,
 		BalanceLowNotifyEnabled:          settings.BalanceLowNotifyEnabled,
 		AccountQuotaNotifyEnabled:        settings.AccountQuotaNotifyEnabled,
