@@ -147,6 +147,12 @@ func (s *AISkillRunService) Execute(ctx context.Context, userID int64, input *AI
 	if err := s.runRepo.UpdateRun(ctx, prepared.Run); err != nil {
 		return nil, err
 	}
+	if prepared.Run.Status != AISkillRunStatusSucceeded {
+		return &AISkillRunResult{
+			Prepared: prepared,
+			Dispatch: dispatch,
+		}, nil
+	}
 	settlement, err := s.settlementService.Settle(ctx, AISkillSettleInput{
 		RunID:         prepared.Run.ID,
 		SkillID:       prepared.Skill.ID,

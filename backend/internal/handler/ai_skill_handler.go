@@ -110,9 +110,10 @@ func (h *AIHandler) ListSkills(c *gin.Context) {
 	for i := range items {
 		skill := &items[i]
 		applySkillInstallMetadata(skill, installStates[skill.ID], installCounts[skill.ID])
-		latestVersion, currentVersion, _ := loadSkillVersionPointers(c.Request.Context(), module, skill)
+		latestVersion, currentVersion, _ := loadSkillVersionPointers(c.Request.Context(), module, skill, subject.UserID)
+		viewSkill := skillViewForViewer(skill, subject.UserID)
 		out = append(out, *dto.SkillSummaryFromDomain(
-			skill,
+			viewSkill,
 			subject.UserID,
 			domain.CanReadAISkillSource(skill.UserID, subject.UserID, false, skill.Visibility, skill.SourceVisibility, skill.Price, skill.PublishedVersionID),
 			latestVersion,
@@ -146,12 +147,12 @@ func (h *AIHandler) GetSkillDetail(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	latestVersion, currentVersion, err := loadSkillVersionPointers(c.Request.Context(), module, skill)
+	latestVersion, currentVersion, err := loadSkillVersionPointers(c.Request.Context(), module, skill, subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, dto.SkillDetailFromDomain(skill, subject.UserID, canViewSource, latestVersion, currentVersion))
+	response.Success(c, dto.SkillDetailFromDomain(skillViewForViewer(skill, subject.UserID), subject.UserID, canViewSource, latestVersion, currentVersion))
 }
 
 func (h *AIHandler) CreateSkill(c *gin.Context) {
@@ -236,7 +237,7 @@ func (h *AIHandler) UpdateSkill(c *gin.Context) {
 		if loadErr != nil {
 			return nil, loadErr
 		}
-		latestVersion, currentVersion, loadErr := loadSkillVersionPointers(ctx, module, skill)
+		latestVersion, currentVersion, loadErr := loadSkillVersionPointers(ctx, module, skill, subject.UserID)
 		if loadErr != nil {
 			return nil, loadErr
 		}
@@ -342,12 +343,16 @@ func (h *AIHandler) ListSkillVersions(c *gin.Context) {
 		return
 	}
 	out := make([]dto.SkillVersionRecord, 0, len(versions))
+	currentVersionID := skill.CurrentVersionID
+	if skill.UserID != subject.UserID {
+		currentVersionID = skill.PublishedVersionID
+	}
 	for i := range versions {
 		version := &versions[i]
-		if skill.UserID != subject.UserID && dto.SkillVersionSummaryFromDomain(version, skill.CurrentVersionID).Status == "draft" {
+		if !skillVersionVisibleToViewer(skill.UserID, subject.UserID, version) {
 			continue
 		}
-		out = append(out, *dto.SkillVersionRecordFromDomain(version, skill.CurrentVersionID, canViewSource))
+		out = append(out, *dto.SkillVersionRecordFromDomain(version, currentVersionID, canViewSource))
 	}
 	page, pageSize := response.ParsePagination(c)
 	result := paginateVersionRecords(out, page, pageSize)
@@ -755,7 +760,7 @@ func applySkillInstallMetadata(skill *domain.AISkill, installed bool, installCou
 	skill.Metadata["install_count"] = installCount
 }
 
-func loadSkillVersionPointers(ctx context.Context, module *skillkit.Module, skill *domain.AISkill) (*domain.AISkillVersion, *domain.AISkillVersion, error) {
+func loadSkillVersionPointers(ctx context.Context, module *skillkit.Module, skill *domain.AISkill, viewerUserID int64) (*domain.AISkillVersion, *domain.AISkillVersion, error) {
 	if skill == nil {
 		return nil, nil, nil
 	}
@@ -763,12 +768,21 @@ func loadSkillVersionPointers(ctx context.Context, module *skillkit.Module, skil
 	if err != nil {
 		return nil, nil, err
 	}
+	latestVersion, currentVersion := selectSkillVersionPointersForViewer(skill, versions, viewerUserID)
+	return latestVersion, currentVersion, nil
+}
+
+func selectSkillVersionPointersForViewer(skill *domain.AISkill, versions []domain.AISkillVersion, viewerUserID int64) (*domain.AISkillVersion, *domain.AISkillVersion) {
+	if skill == nil {
+		return nil, nil
+	}
 	var latestVersion *domain.AISkillVersion
 	var currentVersion *domain.AISkillVersion
 	var publishedVersion *domain.AISkillVersion
+	owned := skill.UserID > 0 && skill.UserID == viewerUserID
 	for i := range versions {
 		version := versions[i]
-		if latestVersion == nil {
+		if owned && latestVersion == nil {
 			copyVersion := version
 			latestVersion = &copyVersion
 		}
@@ -780,11 +794,48 @@ func loadSkillVersionPointers(ctx context.Context, module *skillkit.Module, skil
 			copyVersion := version
 			publishedVersion = &copyVersion
 		}
+		if !owned && latestVersion == nil && skillVersionVisibleToViewer(skill.UserID, viewerUserID, &version) {
+			copyVersion := version
+			latestVersion = &copyVersion
+		}
+	}
+	if !owned {
+		if publishedVersion != nil && skillVersionVisibleToViewer(skill.UserID, viewerUserID, publishedVersion) {
+			return publishedVersion, publishedVersion
+		}
+		return latestVersion, nil
 	}
 	if latestVersion == nil {
 		latestVersion = publishedVersion
 	}
-	return latestVersion, currentVersion, nil
+	return latestVersion, currentVersion
+}
+
+func skillVersionVisibleToViewer(ownerUserID, viewerUserID int64, version *domain.AISkillVersion) bool {
+	if version == nil {
+		return false
+	}
+	if ownerUserID > 0 && ownerUserID == viewerUserID {
+		return true
+	}
+	return domain.CanUseAISkillVersion(version.ReviewStatus)
+}
+
+func skillViewForViewer(skill *domain.AISkill, viewerUserID int64) *domain.AISkill {
+	if skill == nil {
+		return nil
+	}
+	if skill.UserID > 0 && skill.UserID == viewerUserID {
+		return skill
+	}
+	view := *skill
+	if skill.PublishedVersionID == nil {
+		view.CurrentVersionID = nil
+		return &view
+	}
+	publishedVersionID := *skill.PublishedVersionID
+	view.CurrentVersionID = &publishedVersionID
+	return &view
 }
 
 func (h *AIHandler) buildSkillMetadata(ctx context.Context, userID int64, req skillUpsertRequest, base map[string]any) (map[string]any, []int64, error) {

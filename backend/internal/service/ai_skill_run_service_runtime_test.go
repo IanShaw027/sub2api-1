@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/integration/skillrunner"
 	"github.com/stretchr/testify/require"
 )
 
@@ -121,9 +122,12 @@ func (s *aiSkillRunServiceTestStore) UpdateRun(_ context.Context, run *AISkillRu
 	return nil
 }
 
-type aiSkillRunServiceTestSettlementRepo struct{}
+type aiSkillRunServiceTestSettlementRepo struct {
+	created []*AISkillSettlement
+}
 
-func (r *aiSkillRunServiceTestSettlementRepo) CreateSettlement(context.Context, *AISkillSettlement) error {
+func (r *aiSkillRunServiceTestSettlementRepo) CreateSettlement(_ context.Context, settlement *AISkillSettlement) error {
+	r.created = append(r.created, settlement)
 	return nil
 }
 
@@ -214,6 +218,70 @@ func TestAISkillRunServiceExecuteFailedDispatchDoesNotChargeRuntimeStore(t *test
 	require.Empty(t, run.BillingMode)
 	require.Empty(t, run.Currency)
 	require.Empty(t, run.Output)
+}
+
+func TestAISkillRunServiceExecuteScriptDispatchDoesNotSettle(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newAISkillRunServiceTestStore()
+	skill := &AISkill{
+		CreatorUserID: 902,
+		Name:          "Script Skill",
+		Type:          AISkillTypeScript,
+	}
+	require.NoError(t, store.CreateSkill(ctx, skill))
+	version := &AISkillVersion{
+		SkillID:       skill.ID,
+		CreatorUserID: skill.CreatorUserID,
+		Version:       1,
+		Type:          skill.Type,
+		Status:        AISkillVersionStatusApproved,
+		ExecutionSpec: AISkillExecutionSpec{
+			Type: AISkillTypeScript,
+			Script: &AISkillScriptSpec{
+				Runtime:    skillrunner.RuntimeNode20,
+				EntryPoint: "main.mjs",
+				Protocol:   skillrunner.ProtocolJSONFileV1,
+			},
+		},
+		BillingPolicy: AISkillBillingPolicy{
+			Mode:                   AISkillBillingModePerRun,
+			PricePerRun:            3.5,
+			PlatformCommissionRate: 0.2,
+		},
+		Metadata: map[string]any{
+			"source_code": "console.log('hello')",
+		},
+	}
+	require.NoError(t, store.CreateVersion(ctx, version))
+
+	settlementSvc := NewAISkillSettlementService(&aiSkillRunServiceTestSettlementRepo{}, nil, nil)
+	runtime := &aiSkillRunServiceTestRuntime{
+		result: &AISkillDispatchResult{
+			Status:        AISkillRunStatusDispatched,
+			Provider:      "skillrunner",
+			ExternalJobID: "skillrunner:1",
+			Output:        map[string]any{"plan": map[string]any{"mode": "dispatch"}},
+		},
+	}
+	runSvc := NewAISkillRunService(store, store, store, settlementSvc, runtime)
+
+	result, err := runSvc.Execute(ctx, 903, &AISkillRunInput{
+		SkillID:   skill.ID,
+		VersionID: aiSkillRunServiceTestInt64Ptr(version.ID),
+		Mode:      AISkillRunModeUse,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, runtime.requests, 1)
+	require.Equal(t, AISkillRunStatusDispatched, result.Dispatch.Status)
+	require.Equal(t, AISkillRunStatusDispatched, result.Prepared.Run.Status)
+	require.Empty(t, settlementSvc.repo.(*aiSkillRunServiceTestSettlementRepo).created)
+	require.Equal(t, 0.0, result.Prepared.Run.ChargeAmount)
+	require.Empty(t, result.Prepared.Run.BillingMode)
+	require.Empty(t, result.Prepared.Run.Currency)
+	require.Nil(t, result.Prepared.Run.SettlementID)
 }
 
 func cloneAISkillEntityForRunRuntime(skill *AISkill) *AISkill {
