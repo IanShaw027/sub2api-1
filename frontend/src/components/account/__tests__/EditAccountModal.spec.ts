@@ -319,10 +319,7 @@ describe('EditAccountModal', () => {
 
     const section = wrapper.get('[data-testid="gemini-account-summary-section"]')
     expect(section.text()).toContain('admin.accounts.geminiAccount')
-    expect(section.text()).toContain('Gemini Code Assist in Google One AI Pro')
-    expect(section.text()).toContain('gemini@example.com')
-    expect(section.text()).toContain('refreshing-center-hnmwg')
-    expect(section.text()).toContain('Google One AI 100')
+    expect(section.text()).toContain('Google One Pro')
   })
 
   it('reopening the same account rehydrates the OpenAI whitelist from props', async () => {

@@ -259,6 +259,7 @@ import type { SelectOption } from '@/components/common/Select.vue'
 import ToggleSwitch from './ToggleSwitch.vue'
 import type { ProviderInstance } from '@/types/payment'
 import type { TypeOption } from './providerConfig'
+import { paymentMethodDisplayKey } from '@/utils/i18n'
 import {
   PROVIDER_CONFIG_FIELDS,
   PROVIDER_SUPPORTED_TYPES,
@@ -348,7 +349,7 @@ const availableTypes = computed(() => {
   // Resolve i18n labels for types not in allPaymentTypes (e.g. card, link inside stripe)
   return base.map(opt =>
     opt.label === opt.value
-      ? { ...opt, label: t(`payment.methods.${opt.value}`, opt.value) }
+      ? { ...opt, label: t(paymentMethodDisplayKey(opt.value), opt.value) }
       : opt,
   )
 })

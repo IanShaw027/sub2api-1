@@ -77,7 +77,7 @@
 
       <template #cell-order_type="{ value }">
         <span class="text-sm text-gray-700 dark:text-gray-300">
-          {{ t('payment.admin.' + value + 'Order', value) }}
+          {{ t(paymentOrderTypeI18nKey(value), value) }}
         </span>
       </template>
 
@@ -143,7 +143,7 @@ import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { statusBadgeClass, canRefund, formatOrderDateTime } from '@/components/payment/orderUtils'
-import { paymentMethodDisplayKey, paymentStatusI18nKey } from '@/utils/i18n'
+import { paymentMethodDisplayKey, paymentOrderTypeI18nKey, paymentStatusI18nKey } from '@/utils/i18n'
 
 const { t } = useI18n()
 

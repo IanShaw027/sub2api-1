@@ -24,7 +24,7 @@
       </div>
     </template>
     <template #cell-payment_type="{ value }">
-      <span class="text-sm text-gray-700 dark:text-gray-300">{{ t('payment.methods.' + value, value) }}</span>
+      <span class="text-sm text-gray-700 dark:text-gray-300">{{ t(paymentMethodDisplayKey(value), value) }}</span>
     </template>
     <template #cell-status="{ value }">
       <OrderStatusBadge :status="value" />
@@ -45,6 +45,7 @@ import type { PaymentOrder } from '@/types/payment'
 import type { Column } from '@/components/common/types'
 import DataTable from '@/components/common/DataTable.vue'
 import OrderStatusBadge from '@/components/payment/OrderStatusBadge.vue'
+import { paymentMethodDisplayKey } from '@/utils/i18n'
 
 const { t } = useI18n()
 

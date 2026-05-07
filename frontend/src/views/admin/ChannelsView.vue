@@ -167,7 +167,7 @@
             :class="activeTab === section.platform ? 'channel-tab-active' : 'channel-tab-inactive'"
           >
             <PlatformIcon :platform="section.platform" size="xs" :class="platformTextClass(section.platform)" />
-            <span :class="platformTextClass(section.platform)">{{ t('admin.groups.platforms.' + section.platform, section.platform) }}</span>
+            <span :class="platformTextClass(section.platform)">{{ t(groupPlatformI18nKey(section.platform), groupPlatformFallbackLabel(section.platform)) }}</span>
           </button>
         </div>
 
@@ -247,7 +247,7 @@
                     @change="togglePlatform(p)"
                   />
                   <PlatformIcon :platform="p" size="xs" :class="platformTextClass(p)" />
-                  <span :class="platformTextClass(p)">{{ t('admin.groups.platforms.' + p, p) }}</span>
+                  <span :class="platformTextClass(p)">{{ t(groupPlatformI18nKey(p), groupPlatformFallbackLabel(p)) }}</span>
                 </label>
               </div>
             </div>
@@ -595,6 +595,7 @@ import type { PricingFormEntry } from '@/components/admin/channel/types'
 import { mTokToPerToken, perTokenToMTok, apiIntervalsToForm, formIntervalsToAPI, findModelConflict, validateIntervals } from '@/components/admin/channel/types'
 import type { AdminGroup, GroupPlatform } from '@/types'
 import type { Column } from '@/components/common/types'
+import { groupPlatformFallbackLabel, groupPlatformI18nKey } from '@/utils/i18n'
 import { platformTextClass, platformBadgeLightClass } from '@/utils/platformColors'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
@@ -1320,14 +1321,14 @@ async function handleSubmit() {
   // Check for pricing entries with empty models (would be silently skipped)
   for (const section of form.platforms.filter(s => s.enabled)) {
     if (section.group_ids.length === 0) {
-      const platformLabel = t('admin.groups.platforms.' + section.platform, section.platform)
+      const platformLabel = t(groupPlatformI18nKey(section.platform), groupPlatformFallbackLabel(section.platform))
       appStore.showError(t('admin.channels.noGroupsSelected', { platform: platformLabel }, `${platformLabel} 平台未选择分组，请至少选择一个分组或禁用该平台`))
       activeTab.value = section.platform
       return
     }
     for (const entry of section.model_pricing) {
       if (entry.models.length === 0) {
-        const platformLabel = t('admin.groups.platforms.' + section.platform, section.platform)
+        const platformLabel = t(groupPlatformI18nKey(section.platform), groupPlatformFallbackLabel(section.platform))
         appStore.showError(t('admin.channels.emptyModelsInPricing', { platform: platformLabel }, `${platformLabel} 平台下有定价条目未添加模型，请添加模型或删除该条目`))
         activeTab.value = section.platform
         return
@@ -1387,7 +1388,7 @@ async function handleSubmit() {
       if (!entry.intervals || entry.intervals.length === 0) continue
       const intervalErr = validateIntervals(entry.intervals)
       if (intervalErr) {
-        const platformLabel = t('admin.groups.platforms.' + section.platform, section.platform)
+        const platformLabel = t(groupPlatformI18nKey(section.platform), groupPlatformFallbackLabel(section.platform))
         const modelLabel = entry.models.join(', ') || t('admin.channels.form.unnamed')
         appStore.showError(`${platformLabel} - ${modelLabel}: ${intervalErr}`)
         activeTab.value = section.platform

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { defineComponent, h, nextTick } from 'vue'
 
 import UsageView from '../UsageView.vue'
 
@@ -70,8 +70,30 @@ vi.mock('vue-i18n', async () => {
 
 const AppLayoutStub = { template: '<div><slot /></div>' }
 const TablePageLayoutStub = {
-  template: '<div><slot name="actions" /><slot name="filters" /><slot /></div>',
+  template: '<div><slot name="actions" /><slot name="filters" /><slot name="table" /><slot /></div>',
 }
+const DataTableStub = defineComponent({
+  name: 'DataTableStub',
+  props: {
+    columns: { type: Array, required: true },
+    data: { type: Array, required: true },
+  },
+  setup(props, { slots }) {
+    return () => h('div', [
+      ...(props.data as Array<Record<string, unknown>>).flatMap((row, rowIndex) =>
+        (props.columns as Array<{ key: string }>).map((col) => {
+          const slotName = `cell-${col.key}`
+          const slot = slots[slotName]
+          const value = row[col.key]
+          return h('div', { key: `${rowIndex}-${String(col.key)}` }, slot
+            ? slot({ value, row })
+            : String(value ?? ''),
+          )
+        }),
+      ),
+    ])
+  },
+})
 
 describe('user UsageView tooltip', () => {
   beforeEach(() => {
@@ -145,6 +167,7 @@ describe('user UsageView tooltip', () => {
           TablePageLayout: TablePageLayoutStub,
           Pagination: true,
           EmptyState: true,
+          DataTable: DataTableStub,
           Select: true,
           DateRangePicker: true,
           Icon: true,
@@ -243,6 +266,7 @@ describe('user UsageView tooltip', () => {
           TablePageLayout: TablePageLayoutStub,
           Pagination: true,
           EmptyState: true,
+          DataTable: DataTableStub,
           Select: true,
           DateRangePicker: true,
           Icon: true,
@@ -324,6 +348,7 @@ describe('user UsageView tooltip', () => {
           TablePageLayout: TablePageLayoutStub,
           Pagination: true,
           EmptyState: true,
+          DataTable: DataTableStub,
           Select: true,
           DateRangePicker: true,
           Icon: true,

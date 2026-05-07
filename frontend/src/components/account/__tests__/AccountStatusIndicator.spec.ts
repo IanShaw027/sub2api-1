@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import AccountStatusIndicator from '../AccountStatusIndicator.vue'
 import type { Account } from '@/types'
+import { accountStatusI18nKey, paymentOrderTypeI18nKey } from '@/utils/i18n'
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
@@ -43,6 +44,14 @@ function makeAccount(overrides: Partial<Account>): Account {
 }
 
 describe('AccountStatusIndicator', () => {
+  it('normalizes historical account status aliases to canonical i18n keys', () => {
+    expect(accountStatusI18nKey('temp_unschedulable')).toBe('admin.accounts.status.tempUnschedulable')
+  })
+
+  it('normalizes payment order type aliases to canonical admin i18n keys', () => {
+    expect(paymentOrderTypeI18nKey('BALANCE')).toBe('payment.admin.balanceOrder')
+  })
+
   it('模型限流 + overages 启用 + 无 AICredits key → 显示 ⚡ (credits_active)', () => {
     const wrapper = mount(AccountStatusIndicator, {
       props: {

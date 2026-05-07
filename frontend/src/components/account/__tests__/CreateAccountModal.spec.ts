@@ -162,10 +162,16 @@ vi.mock('@/composables/useKiroOAuth', () => ({
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
+  const translations: Record<string, string> = {
+    'admin.accounts.apiKey': '__API_KEY__',
+    'admin.accounts.types.oauth': '__OAUTH__',
+    'admin.accounts.vertexLabel': '__VERTEX__',
+    'admin.accounts.vertexDesc': '__SERVICE_ACCOUNT__'
+  }
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => key
+      t: (key: string) => translations[key] ?? key
     })
   }
 })
@@ -259,6 +265,13 @@ function findButtonByText(wrapper: VueWrapper<any>, text: string) {
   return button!
 }
 
+function findAccountTypeButton(wrapper: VueWrapper<any>, index: number) {
+  const buttons = wrapper.get('[data-tour="account-form-type"]').findAll('button')
+  const button = buttons[index]
+  expect(button, `account type button at index ${index} should exist`).toBeTruthy()
+  return button
+}
+
 describe('CreateAccountModal', () => {
   beforeEach(() => {
     showErrorMock.mockReset()
@@ -302,9 +315,7 @@ describe('CreateAccountModal', () => {
     const wrapper = mountModal()
     await flushPromises()
 
-    const accountTypeButtons = wrapper.get('[data-tour="account-form-type"]').findAll('button')
-    expect(accountTypeButtons.length).toBeGreaterThanOrEqual(2)
-    await accountTypeButtons[1].trigger('click')
+    await findAccountTypeButton(wrapper, 1).trigger('click')
     await nextTick()
 
     const nameInput = wrapper.get('[data-tour="account-form-name"]')
@@ -341,7 +352,7 @@ describe('CreateAccountModal', () => {
 
     await findButtonByText(wrapper, 'Kiro').trigger('click')
     await nextTick()
-    await findButtonByText(wrapper, 'API Key').trigger('click')
+    await findAccountTypeButton(wrapper, 1).trigger('click')
     await nextTick()
 
     await wrapper.get('[data-tour="account-form-name"]').setValue('kiro-api')
@@ -369,7 +380,7 @@ describe('CreateAccountModal', () => {
 
     await findButtonByText(wrapper, 'Kiro').trigger('click')
     await nextTick()
-    await findButtonByText(wrapper, 'API Key').trigger('click')
+    await findAccountTypeButton(wrapper, 1).trigger('click')
     await nextTick()
     expect((wrapper.vm as any).form.type).toBe('apikey')
 
@@ -471,7 +482,7 @@ describe('CreateAccountModal', () => {
     await nextTick()
     await findButtonByText(wrapper, 'OpenAI').trigger('click')
     await nextTick()
-    await findButtonByText(wrapper, 'API Key').trigger('click')
+    await findAccountTypeButton(wrapper, 1).trigger('click')
     await nextTick()
 
     await wrapper.get('[data-tour="account-form-name"]').setValue('openai-api')
@@ -497,7 +508,7 @@ describe('CreateAccountModal', () => {
 
     await findButtonByText(wrapper, 'OpenAI').trigger('click')
     await nextTick()
-    await findButtonByText(wrapper, 'API Key').trigger('click')
+    await findAccountTypeButton(wrapper, 1).trigger('click')
     await nextTick()
 
     await wrapper.get('[data-tour="account-form-name"]').setValue('openai-api')
@@ -564,5 +575,19 @@ describe('CreateAccountModal', () => {
       })
     }))
     expect(createMock.mock.calls[0]?.[0]?.credentials).not.toHaveProperty('model_mapping')
+  })
+
+  it('renders localized account type entry labels instead of hardcoded english copy', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('__VERTEX__')
+    expect(wrapper.text()).toContain('__SERVICE_ACCOUNT__')
+
+    await findButtonByText(wrapper, 'OpenAI').trigger('click')
+    await nextTick()
+
+    expect(wrapper.text()).toContain('__OAUTH__')
+    expect(wrapper.text()).toContain('__API_KEY__')
   })
 })

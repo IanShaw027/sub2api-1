@@ -67,6 +67,125 @@ describe('i18n runtime locale merge', () => {
     expect(messages.admin.ops.healthHelp).toBe('基于 SLA、错误率和资源使用情况的系统整体健康评分')
     expect(messages.admin.accounts.listPendingSyncHint).toBe('列表存在待同步变更，点击同步可补齐最新数据。')
     expect(messages.admin.channels.form.applyPricingToAccountStats).toBe('应用模型定价到账号统计')
+    expect(messages.admin.settings.features.ticket.title).toBe('工单模块')
+    expect(messages.admin.settings.features.ticket.description).toBe(
+      '控制用户端和管理端工单入口。默认关闭，开启后用户可提交工单，管理员可处理工单。'
+    )
+    expect(messages.admin.settings.features.ticket.enabled).toBe('启用工单模块')
+    expect(messages.admin.settings.features.ticket.enabledHint).toBe(
+      '关闭后用户侧和管理侧工单菜单隐藏，工单页面会重定向到仪表盘。'
+    )
+    expect(messages.admin.dashboard.description).toBe('系统概览与统计数据')
+    expect(messages.admin.users.columns.lastLogin).toBe('最后登录时间')
+    expect(messages.admin.users.typeAffiliateBalance).toBe('余额（返利转入）')
+    expect(messages.admin.groups.imagePricing.description).toBe(
+      '配置图片生成能力和图片基础单价，留空则使用默认价格'
+    )
+    expect(messages.admin.groups.imagePricing.allowImageGeneration).toBe('允许当前分组生图')
+    expect(messages.admin.groups.platforms.sora).toBe('Sora')
+    expect(messages.admin.redeem.status.active).toBe('未使用')
+    expect(messages.admin.accounts.accountNameOAuthPlaceholder).toContain('OAuth 可留空')
+    expect(messages.admin.accounts.imageTestRouteLabel).toBe('测试路径')
+    expect(messages.admin.accounts.vertexLabel).toBe('Vertex')
+    expect(messages.admin.accounts.oauth.gemini.aiStudioNotConfiguredShort).toBe('未配置')
+    expect(messages.admin.accounts.gemini.oauthType.badges.adminRequired).toBe('需要管理员')
+    expect(messages.admin.accounts.kiro.refreshNowTitle).toContain('已保存的 refresh token')
+    expect(messages.admin.proxies.description).toBe('管理代理服务器配置')
+    expect(messages.admin.settings.gatewayForwarding.description).toBe(
+      '控制请求转发到上游 OAuth 账号时的行为'
+    )
+    expect(messages.admin.settings.gatewayForwarding.debugTimelineHint).toContain(
+      '详细阶段耗时 JSONL 日志'
+    )
+    expect(messages.admin.settings.gatewayForwarding.debugTimelineDirectory).toBe('日志目录')
+    expect(messages.admin.settings.gatewayForwarding.debugTimelineDirectoryHint).toContain(
+      'gateway-timeline-YYYY-MM-DD.log'
+    )
+    expect(messages.admin.settings.gatewayForwarding.debugTimelineMaxSizeMB).toBe('最大占用 MB')
+    expect(messages.admin.settings.gatewayForwarding.anthropicCacheTTL1hInjection).toBe(
+      'Anthropic 缓存 TTL 注入'
+    )
+    expect(messages.admin.settings.gatewayForwarding.anthropicCacheTTL1hInjectionHint).toContain(
+      'ephemeral 缓存块强制写入 1h'
+    )
+    expect(messages.admin.ops.settings.title).toBe('运维监控设置')
+    expect(messages.admin.ops.settings.retentionDaysHint).toContain(
+      '填 0 表示每次定时清理时清空所有历史'
+    )
+    expect(messages.admin.ops.settings.validation.title).toBe('请修复以下问题')
+    expect(messages.admin.ops.settings.validation.retentionDaysRange).toBe(
+      '保留天数必须在 0-365 天之间（0 = 每次清理都清空历史）'
+    )
+  })
+
+  it('keeps runtime english overrides aligned with locale json semantics', async () => {
+    const { loadLocaleMessages } = await import('../index')
+
+    await loadLocaleMessages('en')
+
+    expect(setLocaleMessage).toHaveBeenCalledTimes(1)
+    const [, messages] = setLocaleMessage.mock.calls[0]
+    expect(messages.admin.settings.features.ticket.title).toBe('Ticket Module')
+    expect(messages.admin.settings.features.ticket.description).toBe(
+      'Controls user and admin ticket entry points. Disabled by default; enable it to let users submit tickets and admins process them.'
+    )
+    expect(messages.admin.settings.features.ticket.enabled).toBe('Enable Tickets')
+    expect(messages.admin.settings.features.ticket.enabledHint).toBe(
+      'When off, ticket menus are hidden and ticket pages redirect to the dashboard.'
+    )
+    expect(messages.admin.dashboard.description).toBe('System overview and real-time statistics')
+    expect(messages.admin.users.columns.lastLogin).toBe('Last Login')
+    expect(messages.admin.users.typeAffiliateBalance).toBe('Balance (Affiliate Transfer)')
+    expect(messages.admin.groups.imagePricing.description).toBe(
+      'Configure image generation access and base image prices. Leave empty to use default prices.'
+    )
+    expect(messages.admin.groups.imagePricing.allowImageGeneration).toBe(
+      'Allow image generation for this group'
+    )
+    expect(messages.admin.groups.platforms.sora).toBe('Sora')
+    expect(messages.admin.redeem.status.active).toBe('Unused')
+    expect(messages.admin.accounts.accountNameOAuthPlaceholder).toContain(
+      'Optional for OAuth'
+    )
+    expect(messages.admin.accounts.imageTestRouteLabel).toBe('Test route')
+    expect(messages.admin.accounts.vertexLabel).toBe('Vertex')
+    expect(messages.admin.accounts.oauth.gemini.aiStudioNotConfiguredShort).toBe(
+      'Not configured'
+    )
+    expect(messages.admin.accounts.gemini.oauthType.badges.adminRequired).toBe(
+      'Admin required'
+    )
+    expect(messages.admin.accounts.kiro.refreshNowTitle).toContain(
+      'stored refresh token'
+    )
+    expect(messages.admin.proxies.description).toBe('Manage proxy servers for accounts')
+    expect(messages.admin.settings.gatewayForwarding.description).toBe(
+      'Control how requests are forwarded to upstream OAuth accounts'
+    )
+    expect(messages.admin.settings.gatewayForwarding.debugTimelineHint).toContain(
+      'per-stage JSONL timing logs'
+    )
+    expect(messages.admin.settings.gatewayForwarding.debugTimelineDirectory).toBe('Log Directory')
+    expect(messages.admin.settings.gatewayForwarding.debugTimelineDirectoryHint).toContain(
+      'gateway-timeline-YYYY-MM-DD.log'
+    )
+    expect(messages.admin.settings.gatewayForwarding.debugTimelineMaxSizeMB).toBe('Max Size MB')
+    expect(messages.admin.settings.gatewayForwarding.anthropicCacheTTL1hInjection).toBe(
+      'Anthropic Cache TTL Injection'
+    )
+    expect(messages.admin.settings.gatewayForwarding.anthropicCacheTTL1hInjectionHint).toContain(
+      'forced to 1h'
+    )
+    expect(messages.admin.ops.settings.title).toBe('Ops Monitoring Settings')
+    expect(messages.admin.ops.settings.retentionDaysHint).toContain(
+      'Set to 0 to wipe all history on every scheduled cleanup'
+    )
+    expect(messages.admin.ops.settings.validation.title).toBe(
+      'Please fix the following issues'
+    )
+    expect(messages.admin.ops.settings.validation.retentionDaysRange).toBe(
+      'Retention days must be between 0 and 365 (0 = wipe all on every cleanup)'
+    )
   })
 
   it('loads english fallback messages before the current locale during init', async () => {

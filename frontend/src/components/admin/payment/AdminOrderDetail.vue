@@ -42,7 +42,7 @@
         <div>
           <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.orderType') }}</p>
           <p class="text-sm text-gray-700 dark:text-gray-300">
-            {{ t('payment.admin.' + order.order_type + 'Order', order.order_type) }}
+            {{ t(paymentOrderTypeI18nKey(order.order_type), order.order_type) }}
           </p>
         </div>
         <div>
@@ -119,7 +119,7 @@ import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import type { PaymentOrder } from '@/types/payment'
 import { statusBadgeClass, canRefund as canRefundStatus, formatOrderDateTime } from '@/components/payment/orderUtils'
-import { paymentMethodDisplayKey, paymentStatusI18nKey } from '@/utils/i18n'
+import { paymentMethodDisplayKey, paymentOrderTypeI18nKey, paymentStatusI18nKey } from '@/utils/i18n'
 
 const { t } = useI18n()
 

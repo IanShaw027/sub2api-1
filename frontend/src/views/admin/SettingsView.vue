@@ -6224,6 +6224,7 @@ import { extractApiErrorMessage, extractI18nErrorMessage } from "@/utils/apiErro
 import { useAppStore } from "@/stores";
 import { useAdminSettingsStore } from "@/stores/adminSettings";
 import { normalizeVisibleMethod } from "@/components/payment/paymentFlow";
+import { paymentMethodDisplayKey } from "@/utils/i18n";
 import {
   isRegistrationEmailSuffixDomainValid,
   normalizeRegistrationEmailSuffixDomain,
@@ -8487,7 +8488,7 @@ function showProviderEnablementConflict(
 ) {
   appStore.showError(
     t("admin.settings.payment.enableConflict", {
-      method: t(`payment.methods.${conflict.method}`),
+      method: t(paymentMethodDisplayKey(conflict.method), conflict.method),
       provider: conflict.conflicting.name,
     }),
   );

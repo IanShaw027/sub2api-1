@@ -63,7 +63,7 @@
             </div>
           </template>
           <template #cell-payment_type="{ row }">
-            {{ t('payment.methods.' + row.payment_type, row.payment_type || '-') }}
+            {{ t(paymentMethodDisplayKey(row.payment_type || ''), row.payment_type || '-') }}
           </template>
           <template #cell-order_status="{ row }">
             <OrderStatusBadge :status="row.order_status" />
@@ -157,6 +157,7 @@ import { affiliatesAPI, type AffiliateInviteRecord, type AffiliateRebateRecord, 
 import type { PaginatedResponse } from '@/types'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { formatDateTime as formatDisplayDateTime } from '@/utils/format'
+import { paymentMethodDisplayKey } from '@/utils/i18n'
 
 type RecordType = 'invites' | 'rebates' | 'transfers'
 type AffiliateRecord = AffiliateInviteRecord | AffiliateRebateRecord | AffiliateTransferRecord

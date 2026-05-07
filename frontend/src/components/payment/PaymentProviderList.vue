@@ -100,6 +100,7 @@ import ProviderCard from './ProviderCard.vue'
 import type { ProviderInstance } from '@/types/payment'
 import type { TypeOption } from './providerConfig'
 import { getAvailableTypes } from './providerConfig'
+import { paymentMethodDisplayKey } from '@/utils/i18n'
 
 const props = defineProps<{
   providers: ProviderInstance[]
@@ -143,7 +144,7 @@ function isEnabled(providerKey: string): boolean {
 function getTypes(providerKey: string): TypeOption[] {
   return getAvailableTypes(providerKey, props.allPaymentTypes, props.redirectLabel)
     .map(opt => opt.label === opt.value
-      ? { ...opt, label: t(`payment.methods.${opt.value}`, opt.value) }
+      ? { ...opt, label: t(paymentMethodDisplayKey(opt.value), opt.value) }
       : opt,
     )
 }

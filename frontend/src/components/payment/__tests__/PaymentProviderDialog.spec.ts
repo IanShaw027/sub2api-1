@@ -8,6 +8,9 @@ const messages: Record<string, string> = {
   'admin.settings.payment.paymentGuideTrigger': 'View payment guide',
   'admin.settings.payment.alipayGuideSummary': 'Desktop prefers QR precreate and falls back to cashier; mobile prefers WAP checkout.',
   'admin.settings.payment.wxpayGuideSummary': 'Desktop prefers Native QR; mobile routes to JSAPI or H5 based on browser context.',
+  'admin.settings.payment.supportedTypes': 'Supported Types',
+  'payment.methods.card': 'Bank Card',
+  'payment.methods.link': 'Link',
 }
 
 vi.mock('vue-i18n', () => ({
@@ -74,5 +77,15 @@ describe('PaymentProviderDialog payment guide', () => {
 
     expect(wrapper.text()).toContain(messages[summaryKey])
     expect(wrapper.find('button[title="View payment guide"]').exists()).toBe(true)
+  })
+
+  it('falls back to translated payment type labels when provider types use raw values', async () => {
+    const wrapper = mountDialog()
+
+    ;(wrapper.vm as unknown as { reset: (key: string) => void }).reset('stripe')
+    await nextTick()
+
+    expect(wrapper.text()).toContain('Bank Card')
+    expect(wrapper.text()).toContain('Link')
   })
 })

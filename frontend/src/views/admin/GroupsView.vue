@@ -110,7 +110,7 @@
               ]"
             >
               <PlatformIcon :platform="value" size="xs" />
-              {{ t(groupPlatformI18nKey(value), value) }}
+              {{ t(groupPlatformI18nKey(value), groupPlatformFallbackLabel(value)) }}
             </span>
           </template>
 
@@ -2766,7 +2766,7 @@
                           : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
                   ]"
                 >
-                  {{ t("admin.groups.platforms." + group.platform) }}
+                  {{ t(groupPlatformI18nKey(group.platform), groupPlatformFallbackLabel(group.platform)) }}
                 </span>
               </div>
             </div>
@@ -2865,7 +2865,11 @@ import {
   resetMessagesDispatchFormState,
   type MessagesDispatchMappingRow,
 } from "./groupsMessagesDispatch";
-import { accountStatusI18nKey, groupPlatformI18nKey } from "@/utils/i18n";
+import {
+  accountStatusI18nKey,
+  groupPlatformFallbackLabel,
+  groupPlatformI18nKey,
+} from "@/utils/i18n";
 
 const { t } = useI18n();
 const appStore = useAppStore();
@@ -2922,18 +2926,18 @@ const exclusiveOptions = computed(() => [
 ]);
 
 const platformOptions = computed(() => [
-  { value: "anthropic", label: "Anthropic" },
-  { value: "openai", label: "OpenAI" },
-  { value: "gemini", label: "Gemini" },
-  { value: "antigravity", label: "Antigravity" },
+  { value: "anthropic", label: t(groupPlatformI18nKey("anthropic"), groupPlatformFallbackLabel("anthropic")) },
+  { value: "openai", label: t(groupPlatformI18nKey("openai"), groupPlatformFallbackLabel("openai")) },
+  { value: "gemini", label: t(groupPlatformI18nKey("gemini"), groupPlatformFallbackLabel("gemini")) },
+  { value: "antigravity", label: t(groupPlatformI18nKey("antigravity"), groupPlatformFallbackLabel("antigravity")) },
 ]);
 
 const platformFilterOptions = computed(() => [
   { value: "", label: t("admin.groups.allPlatforms") },
-  { value: "anthropic", label: "Anthropic" },
-  { value: "openai", label: "OpenAI" },
-  { value: "gemini", label: "Gemini" },
-  { value: "antigravity", label: "Antigravity" },
+  { value: "anthropic", label: t(groupPlatformI18nKey("anthropic"), groupPlatformFallbackLabel("anthropic")) },
+  { value: "openai", label: t(groupPlatformI18nKey("openai"), groupPlatformFallbackLabel("openai")) },
+  { value: "gemini", label: t(groupPlatformI18nKey("gemini"), groupPlatformFallbackLabel("gemini")) },
+  { value: "antigravity", label: t(groupPlatformI18nKey("antigravity"), groupPlatformFallbackLabel("antigravity")) },
 ]);
 
 const editStatusOptions = computed(() => [

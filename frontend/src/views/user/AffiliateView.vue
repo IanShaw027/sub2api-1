@@ -86,6 +86,9 @@
 
           <div class="mt-5 rounded-xl border border-primary-200 bg-primary-50 p-4 dark:border-primary-900/40 dark:bg-primary-900/20">
             <p class="text-sm font-medium text-primary-800 dark:text-primary-200">{{ t('affiliate.policy.title') }}</p>
+            <p v-if="policyText" class="mt-2 text-sm leading-6 text-primary-700 dark:text-primary-300">
+              {{ policyText }}
+            </p>
             <ul class="mt-2 space-y-1 text-sm text-primary-700 dark:text-primary-300">
               <li>{{ t('affiliate.policy.rate', { rate: formatPercent(detail.policy.rebate_rate) }) }}</li>
               <li>{{ detail.policy.rebate_cap > 0 ? t('affiliate.policy.capLimited', { amount: formatCurrency(detail.policy.rebate_cap) }) : t('affiliate.policy.capUnlimited') }}</li>
@@ -96,6 +99,14 @@
               <li>3. {{ t('affiliate.tips.line3') }}</li>
               <li v-if="detail.aff_frozen_quota > 0">4. {{ t('affiliate.tips.line4') }}</li>
             </ul>
+            <div class="mt-4 rounded-lg border border-primary-200/70 bg-white/70 p-3 text-xs leading-5 text-primary-700 dark:border-primary-900/30 dark:bg-dark-950/30 dark:text-primary-200">
+              <p class="font-medium">{{ t('affiliate.tips.title') }}</p>
+              <ul class="mt-1 space-y-1">
+                <li>1. {{ t('affiliate.tips.line1') }}</li>
+                <li>2. {{ t('affiliate.tips.line2', { rate: formatPercent(detail.policy.rebate_rate) }) }}</li>
+                <li>3. {{ t('affiliate.tips.line3') }}</li>
+              </ul>
+            </div>
           </div>
         </div>
 
@@ -236,6 +247,8 @@ const formattedRebateRate = computed(() => {
   const rounded = Math.round(v * 100) / 100
   return Number.isInteger(rounded) ? String(rounded) : rounded.toString()
 })
+
+const policyText = computed(() => detail.value?.policy.policy_text?.trim() || '')
 
 function formatCount(value: number): string {
   return value.toLocaleString()

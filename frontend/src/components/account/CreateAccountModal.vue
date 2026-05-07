@@ -280,8 +280,8 @@
               <Icon name="cloud" size="sm" />
             </div>
             <div>
-              <span class="block text-sm font-medium text-gray-900 dark:text-white">Vertex</span>
-              <span class="text-xs text-gray-500 dark:text-gray-400">Service Account</span>
+              <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.vertexLabel') }}</span>
+              <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.vertexDesc') }}</span>
             </div>
           </button>
 
@@ -320,7 +320,7 @@
               <Icon name="key" size="sm" />
             </div>
             <div>
-              <span class="block text-sm font-medium text-gray-900 dark:text-white">OAuth</span>
+              <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.types.oauth') }}</span>
               <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.types.chatgptOauth') }}</span>
             </div>
           </button>
@@ -346,7 +346,7 @@
               <Icon name="key" size="sm" />
             </div>
             <div>
-              <span class="block text-sm font-medium text-gray-900 dark:text-white">API Key</span>
+              <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.apiKey') }}</span>
               <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.types.responsesApi') }}</span>
             </div>
           </button>
@@ -464,10 +464,10 @@
             </div>
             <div>
               <span class="block text-sm font-medium text-gray-900 dark:text-white">
-                Vertex
+                {{ t('admin.accounts.vertexLabel') }}
               </span>
               <span class="text-xs text-gray-500 dark:text-gray-400">
-                Service Account
+                {{ t('admin.accounts.vertexDesc') }}
               </span>
             </div>
           </button>
@@ -606,7 +606,7 @@
       <!-- Account Type Selection (Antigravity - OAuth or Upstream) -->
       <div v-if="form.platform === 'antigravity'">
         <label class="input-label">{{ t('admin.accounts.accountType') }}</label>
-        <div class="mt-2 grid grid-cols-2 gap-3">
+        <div class="mt-2 grid grid-cols-2 gap-3" data-tour="account-form-type">
           <button
             type="button"
             @click="antigravityAccountType = 'oauth'"
@@ -628,7 +628,7 @@
               <Icon name="key" size="sm" />
             </div>
             <div>
-              <span class="block text-sm font-medium text-gray-900 dark:text-white">OAuth</span>
+              <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.types.oauth') }}</span>
               <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.types.antigravityOauth') }}</span>
             </div>
           </button>
@@ -654,7 +654,7 @@
               <Icon name="cloud" size="sm" />
             </div>
             <div>
-              <span class="block text-sm font-medium text-gray-900 dark:text-white">API Key</span>
+              <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.apiKey') }}</span>
               <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.types.antigravityApikey') }}</span>
             </div>
           </button>
@@ -664,7 +664,7 @@
       <!-- Account Type Selection (Kiro - OAuth or API Key) -->
       <div v-if="form.platform === 'kiro'">
         <label class="input-label">{{ t('admin.accounts.accountType') }}</label>
-        <div class="mt-2 grid grid-cols-2 gap-3">
+        <div class="mt-2 grid grid-cols-2 gap-3" data-tour="account-form-type">
           <button
             type="button"
             @click="kiroAccountType = 'oauth'"
@@ -686,7 +686,7 @@
               <Icon name="sparkles" size="sm" />
             </div>
             <div>
-              <span class="block text-sm font-medium text-gray-900 dark:text-white">OAuth</span>
+              <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.types.oauth') }}</span>
               <span class="text-xs text-gray-500 dark:text-gray-400">
                 {{ t('admin.accounts.kiro.authorizationDesc') }}
               </span>
@@ -714,7 +714,7 @@
               <Icon name="key" size="sm" />
             </div>
             <div>
-              <span class="block text-sm font-medium text-gray-900 dark:text-white">API Key</span>
+              <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.apiKey') }}</span>
               <span class="text-xs text-gray-500 dark:text-gray-400">
                 {{ t('admin.accounts.kiro.manualApiKeyDesc') }}
               </span>

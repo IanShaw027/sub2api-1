@@ -71,7 +71,7 @@
           <slot name="composer-actions" />
         </div>
         <button class="btn btn-primary" :disabled="sending || !composerValue.trim()" @click="submitReply">
-          {{ sending ? sendingText : submitText }}
+          {{ sending ? resolvedSendingText : resolvedSubmitText }}
         </button>
       </div>
     </div>
@@ -80,6 +80,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { formatDateTime } from '@/utils/format'
 import type { SupportTicketMessage, TicketSenderRole } from '@/types'
 
@@ -100,8 +101,6 @@ const props = withDefaults(defineProps<{
   showComposer: true,
   sending: false,
   composerPlaceholder: '',
-  submitText: 'Submit',
-  sendingText: 'Submitting...',
   clearComposerKey: 0,
   replyContent: undefined,
 })
@@ -110,9 +109,12 @@ const emit = defineEmits<{
   reply: [content: string]
   'update:replyContent': [content: string]
 }>()
+const { t } = useI18n()
 const localReplyContent = ref('')
 const messageContainerRef = ref<HTMLDivElement | null>(null)
 const isComposing = ref(false)
+const resolvedSubmitText = computed(() => props.submitText ?? t('common.submit'))
+const resolvedSendingText = computed(() => props.sendingText ?? t('common.submitting'))
 const composerValue = computed({
   get() {
     return props.replyContent ?? localReplyContent.value

@@ -20,9 +20,9 @@
         @click="method.available && emit('select', method.type)"
       >
         <span class="flex items-center gap-2">
-          <img :src="methodIcon(method.type)" :alt="t(`payment.methods.${method.type}`)" class="h-7 w-7" />
+          <img :src="methodIcon(method.type)" :alt="t(paymentMethodDisplayKey(method.type), method.type)" class="h-7 w-7" />
           <span class="flex flex-col items-start leading-none">
-            <span class="text-base font-semibold">{{ t(`payment.methods.${method.type}`) }}</span>
+            <span class="text-base font-semibold">{{ t(paymentMethodDisplayKey(method.type), method.type) }}</span>
             <span
               v-if="method.fee_rate > 0"
               class="text-[10px] tracking-wide text-gray-500 dark:text-dark-400"
@@ -43,6 +43,7 @@ import { METHOD_ORDER } from './providerConfig'
 import alipayIcon from '@/assets/icons/alipay.svg'
 import wxpayIcon from '@/assets/icons/wxpay.svg'
 import stripeIcon from '@/assets/icons/stripe.svg'
+import { paymentMethodDisplayKey } from '@/utils/i18n'
 
 export interface PaymentMethodOption {
   type: string
