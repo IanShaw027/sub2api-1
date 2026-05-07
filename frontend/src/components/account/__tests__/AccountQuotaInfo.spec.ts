@@ -99,6 +99,7 @@ describe('AccountQuotaInfo', () => {
 
     expect(wrapper.text()).toContain('Google One Pro')
     expect(wrapper.text()).toContain('admin.accounts.gemini.quotaPolicy.rows.googleOne.limitsPro')
+    expect(wrapper.text()).toContain('admin.accounts.gemini.rateLimit.ok')
     expect(wrapper.text()).not.toContain('admin.accounts.gemini.quotaPolicy.rows.googleOne.limitsFree')
     expect(wrapper.text()).not.toContain('user@example.com')
     expect(wrapper.text()).not.toContain('refreshing-center-hnmwg')

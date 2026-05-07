@@ -41,7 +41,7 @@
 
     <div class="text-xs text-gray-400 dark:text-gray-500">
       <span v-if="!isRateLimited">
-        {{ t('admin.accounts.gemini.rateLimit.unlimited') }}
+        {{ t('admin.accounts.gemini.rateLimit.ok') }}
       </span>
       <span
         v-else

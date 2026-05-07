@@ -3947,7 +3947,7 @@ export default {
         },
         quotaPolicy: {
           title: 'Gemini 配额与限流政策（参考）',
-          note: '注意：Gemini 官方未提供用量查询接口。此处显示的“每日配额”是由系统根据账号等级模拟计算的估算值，仅供调度参考，请以 Google 官方实际报错为准。',
+          note: '注意：Gemini OAuth 账号当前会优先展示 Google 返回的 quota snapshot（如 remainingFraction / resetTime）；套餐说明与本地调度配额仍属于参考信息，请以 Google 官方实际报错与返回结果为准。',
           columns: {
             channel: '授权通道',
             account: '账号状态',
@@ -4002,7 +4002,6 @@ export default {
         },
         rateLimit: {
           ok: '未限流',
-          unlimited: '无限流',
           limited: '限流 {time}',
           now: '现在'
         },
