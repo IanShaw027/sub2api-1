@@ -1509,6 +1509,7 @@ export interface UsageLog {
   total_cost: number
   actual_cost: number
   rate_multiplier: number
+  billed_by_higher_priced_upstream: boolean
   billing_type: number
 
   request_type?: UsageRequestType
@@ -1529,6 +1530,8 @@ export interface UsageLog {
 
   // 计费模式
   billing_mode?: string | null
+  upstream_model?: string | null
+  model_mapping_chain?: string | null
 
   created_at: string
 
@@ -1544,9 +1547,6 @@ export interface UsageLogAccountSummary {
 }
 
 export interface AdminUsageLog extends UsageLog {
-  upstream_model?: string | null
-  model_mapping_chain?: string | null
-
   // 账号计费倍率（仅管理员可见）
   account_rate_multiplier?: number | null
   // 自定义定价规则计算的账号统计费用（nil 时使用 total_cost * multiplier）

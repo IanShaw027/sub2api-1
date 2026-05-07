@@ -41,6 +41,7 @@ const messages: Record<string, string> = {
   'usage.duration': 'Duration',
   'usage.time': 'Time',
   'usage.userAgent': 'User Agent',
+  'usage.endpoint': 'Endpoint',
 }
 
 vi.mock('@/api', () => ({
@@ -273,5 +274,71 @@ describe('user UsageView tooltip', () => {
     window.URL.createObjectURL = originalCreateObjectURL
     window.URL.revokeObjectURL = originalRevokeObjectURL
     clickSpy.mockRestore()
+  })
+
+  it('shows upstream model and highlights higher upstream billing in red', async () => {
+    query.mockResolvedValue({
+      items: [
+        {
+          request_id: 'req-user-route-1',
+          model: 'gpt-5.4-mini',
+          upstream_model: 'gpt-5.4',
+          model_mapping_chain: 'gpt-5.4-mini→gpt-5.4',
+          actual_cost: 0.120001,
+          total_cost: 0.120001,
+          billed_by_higher_priced_upstream: true,
+          rate_multiplier: 1,
+          service_tier: 'standard',
+          input_cost: 0.1,
+          output_cost: 0.02,
+          cache_creation_cost: 0,
+          cache_read_cost: 0,
+          input_tokens: 1000,
+          output_tokens: 200,
+          cache_creation_tokens: 0,
+          cache_read_tokens: 0,
+          cache_creation_5m_tokens: 0,
+          cache_creation_1h_tokens: 0,
+          image_count: 0,
+          image_size: null,
+          first_token_ms: null,
+          duration_ms: 1,
+          created_at: '2026-03-08T00:00:00Z',
+        },
+      ],
+      total: 1,
+      pages: 1,
+    })
+    getStatsByDateRange.mockResolvedValue({
+      total_requests: 1,
+      total_tokens: 1200,
+      total_cost: 0.120001,
+      avg_duration_ms: 1,
+    })
+    list.mockResolvedValue({ items: [] })
+
+    const wrapper = mount(UsageView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          TablePageLayout: TablePageLayoutStub,
+          Pagination: true,
+          EmptyState: true,
+          Select: true,
+          DateRangePicker: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    await nextTick()
+
+    const text = wrapper.text()
+    expect(text).toContain('gpt-5.4-mini')
+    expect(text).toContain('gpt-5.4')
+    expect(text).toContain('route')
+    expect(wrapper.html()).toContain('text-red-600')
   })
 })

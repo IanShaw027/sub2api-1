@@ -144,7 +144,7 @@ func TestUsageLogFromService_UsesRequestedModelAndKeepsUpstreamAdminOnly(t *test
 
 	userJSON, err := json.Marshal(userDTO)
 	require.NoError(t, err)
-	require.NotContains(t, string(userJSON), "upstream_model")
+	require.Contains(t, string(userJSON), `"upstream_model":"claude-sonnet-4-20250514"`)
 
 	adminJSON, err := json.Marshal(adminDTO)
 	require.NoError(t, err)

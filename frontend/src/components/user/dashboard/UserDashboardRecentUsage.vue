@@ -18,13 +18,21 @@
               <Icon name="beaker" size="md" class="text-primary-600 dark:text-primary-400" />
             </div>
             <div>
-              <p class="text-sm font-medium text-gray-900 dark:text-white">{{ log.model }}</p>
+              <p class="text-sm font-medium text-gray-900 dark:text-white">
+                {{ log.model }}
+                <span v-if="log.upstream_model && log.upstream_model !== log.model" class="ml-1 text-xs font-normal text-gray-500 dark:text-dark-400">
+                  ↳ {{ log.upstream_model }}
+                </span>
+              </p>
               <p class="text-xs text-gray-500 dark:text-dark-400">{{ formatDateTime(log.created_at) }}</p>
             </div>
           </div>
           <div class="text-right">
             <p class="text-sm font-semibold">
-              <span class="text-green-600 dark:text-green-400" :title="t('dashboard.actual')">${{ formatCost(log.actual_cost) }}</span>
+              <span
+                :class="log.billed_by_higher_priced_upstream ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'"
+                :title="t('dashboard.actual')"
+              >${{ formatCost(log.actual_cost) }}</span>
               <span class="font-normal text-gray-400 dark:text-gray-500" :title="t('dashboard.standard')"> / ${{ formatCost(log.total_cost) }}</span>
             </p>
             <p class="text-xs text-gray-500 dark:text-dark-400">{{ (log.input_tokens + log.output_tokens).toLocaleString() }} tokens</p>

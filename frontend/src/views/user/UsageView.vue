@@ -164,8 +164,27 @@
             }}</span>
           </template>
 
-          <template #cell-model="{ value }">
-            <span class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
+          <template #cell-model="{ row, value }">
+            <div v-if="row.model_mapping_chain && row.model_mapping_chain.includes('→')" class="space-y-0.5 text-xs">
+              <div
+                v-for="(step, i) in row.model_mapping_chain.split('→')"
+                :key="i"
+                class="break-all"
+                :class="i === 0 ? 'font-medium text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'"
+                :style="i > 0 ? `padding-left: ${i * 0.75}rem` : ''"
+              >
+                <span v-if="i > 0" class="mr-0.5">↳</span>{{ step }}
+              </div>
+            </div>
+            <div v-else-if="row.upstream_model && row.upstream_model !== row.model" class="space-y-0.5 text-xs">
+              <div class="break-all font-medium text-gray-900 dark:text-white">
+                {{ value }}
+              </div>
+              <div class="break-all text-gray-500 dark:text-gray-400">
+                <span class="mr-0.5">↳</span>{{ row.upstream_model }}
+              </div>
+            </div>
+            <span v-else class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
           </template>
 
           <template #cell-reasoning_effort="{ row }">
@@ -279,8 +298,18 @@
 
           <template #cell-cost="{ row }">
             <div class="flex items-center gap-1.5 text-sm">
-              <span class="font-medium text-green-600 dark:text-green-400">
+              <span
+                class="font-medium"
+                :class="row.billed_by_higher_priced_upstream ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'"
+                :title="row.billed_by_higher_priced_upstream ? 'Billed using higher upstream model price' : undefined"
+              >
                 ${{ row.actual_cost.toFixed(6) }}
+              </span>
+              <span
+                v-if="row.billed_by_higher_priced_upstream"
+                class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-red-100 text-red-700 ring-1 ring-inset ring-red-200 dark:bg-red-500/15 dark:text-red-300 dark:ring-red-500/30"
+              >
+                route
               </span>
               <!-- Cost Detail Tooltip -->
               <div

@@ -8476,6 +8476,15 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 
 	// 计算费用
 	cost := s.calculateRecordUsageCost(ctx, result, apiKey, billingModel, multiplier, imageMultiplier, opts)
+	selectedCost := usageBillingSelection{Cost: cost}
+	upstreamModel := strings.TrimSpace(result.UpstreamModel)
+	if requestedModel != "" && upstreamModel != "" && upstreamModel != requestedModel {
+		upstreamCost := s.calculateRecordUsageCost(ctx, result, apiKey, upstreamModel, multiplier, imageMultiplier, opts)
+		selectedCost = chooseHigherPricedUsageCost(requestedModel, cost, upstreamModel, upstreamCost)
+		if selectedCost.Cost != nil {
+			cost = selectedCost.Cost
+		}
+	}
 
 	// 判断计费方式：订阅模式 vs 余额模式
 	isSubscriptionBilling := subscription != nil && apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
@@ -8488,6 +8497,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	accountRateMultiplier := account.BillingRateMultiplier()
 	usageLog := s.buildRecordUsageLog(ctx, input, result, apiKey, user, account, subscription,
 		requestedModel, multiplier, imageMultiplier, accountRateMultiplier, billingType, cacheTTLOverridden, cost, opts)
+	usageLog.BilledByHigherPricedUpstream = selectedCost.BilledByHigherPricedUpstream
 
 	// 计算账号统计定价费用（使用最终上游模型匹配自定义规则）
 	if apiKey.GroupID != nil {

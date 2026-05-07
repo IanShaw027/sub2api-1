@@ -6070,12 +6070,14 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		ChannelMappedModel:   input.ChannelMappedModel,
 		BillingModelSource:   input.BillingModelSource,
 	})
+	var requestedCost *CostBreakdown
+	var upstreamCost *CostBreakdown
 	serviceTier := ""
 	if result.ServiceTier != nil {
 		serviceTier = strings.TrimSpace(*result.ServiceTier)
 	}
 	for _, billingModelCandidate := range modelView.BillingModelCandidates {
-		cost, err = s.calculateOpenAIRecordUsageCost(
+		candidateCost, candidateErr := s.calculateOpenAIRecordUsageCost(
 			ctx,
 			result,
 			apiKey,
@@ -6086,12 +6088,25 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			serviceTier,
 			requestType,
 		)
-		if err == nil {
+		if candidateErr == nil {
+			cost = candidateCost
+			err = nil
+			if billingModelCandidate == modelView.RequestedModel {
+				requestedCost = candidateCost
+			}
+			if billingModelCandidate == modelView.UpstreamModel {
+				upstreamCost = candidateCost
+			}
 			break
 		}
+		err = candidateErr
 	}
 	if err != nil {
 		return fmt.Errorf("calculate OpenAI usage cost failed: %w", err)
+	}
+	selectedCost := chooseHigherPricedUsageCost(modelView.RequestedModel, requestedCost, modelView.UpstreamModel, upstreamCost)
+	if selectedCost.Cost != nil {
+		cost = selectedCost.Cost
 	}
 
 	// Determine billing type
@@ -6125,6 +6140,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		ImageOutputTokens:   result.Usage.ImageOutputTokens,
 		ImageCount:          result.ImageCount,
 		ImageSize:           optionalTrimmedStringPtr(result.ImageSize),
+		BilledByHigherPricedUpstream: selectedCost.BilledByHigherPricedUpstream,
 	}
 	if cost != nil {
 		usageLog.InputCost = cost.InputCost

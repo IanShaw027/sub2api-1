@@ -1157,6 +1157,45 @@ func TestOpenAIGatewayServiceRecordUsage_FallsBackToUpstreamModelWhenPrimaryUnpr
 	require.InDelta(t, expectedCost.ActualCost, userRepo.lastAmount, 1e-12)
 }
 
+func TestOpenAIGatewayServiceRecordUsage_UsesHigherPricedUpstreamCostWhenMoreExpensive(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, userRepo, subRepo, nil)
+	usage := OpenAIUsage{InputTokens: 1000, OutputTokens: 400}
+
+	requestedCost, err := svc.billingService.CalculateCost("gpt-5.4-mini", UsageTokens{
+		InputTokens:  1000,
+		OutputTokens: 400,
+	}, 1.1)
+	require.NoError(t, err)
+	upstreamCost, err := svc.billingService.CalculateCost("gpt-5.4", UsageTokens{
+		InputTokens:  1000,
+		OutputTokens: 400,
+	}, 1.1)
+	require.NoError(t, err)
+	require.True(t, upstreamCost.ActualCost > requestedCost.ActualCost)
+
+	err = svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:     "resp_higher_priced_upstream",
+			Model:         "gpt-5.4-mini",
+			UpstreamModel: "gpt-5.4",
+			Usage:         usage,
+			Duration:      time.Second,
+		},
+		APIKey:  &APIKey{ID: 10},
+		User:    &User{ID: 20},
+		Account: &Account{ID: 30},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.True(t, usageRepo.lastLog.BilledByHigherPricedUpstream)
+	require.InDelta(t, upstreamCost.ActualCost, usageRepo.lastLog.ActualCost, 1e-12)
+	require.InDelta(t, upstreamCost.ActualCost, userRepo.lastAmount, 1e-12)
+}
+
 func TestOpenAIGatewayServiceRecordUsage_ReturnsErrorWhenTokenModelCannotBePriced(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
 	userRepo := &openAIRecordUsageUserRepoStub{}
