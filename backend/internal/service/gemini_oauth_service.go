@@ -1063,9 +1063,13 @@ func (s *GeminiOAuthService) BuildAccountCredentials(tokenInfo *GeminiTokenInfo)
 	}
 	if tokenInfo.Status != "" {
 		creds["gemini_status"] = tokenInfo.Status
+	} else {
+		creds["gemini_status"] = ""
 	}
 	if tokenInfo.StatusReason != "" {
 		creds["gemini_status_reason"] = tokenInfo.StatusReason
+	} else {
+		creds["gemini_status_reason"] = ""
 	}
 	if len(tokenInfo.UsageRaw) > 0 {
 		creds["gemini_usage_raw"] = tokenInfo.UsageRaw

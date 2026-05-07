@@ -1138,6 +1138,8 @@ func (s *AccountUsageService) getGeminiUsage(ctx context.Context, account *Accou
 		UpdatedAt: &now,
 	}
 
+	enrichGeminiUsageWithStoredStatus(usage, account)
+
 	if s.geminiQuotaService == nil || s.usageLogRepo == nil {
 		return usage, nil
 	}
@@ -1981,6 +1983,30 @@ func cloneUsageProgress(progress *UsageProgress) *UsageProgress {
 	}
 	cloned := *progress
 	return &cloned
+}
+
+func enrichGeminiUsageWithStoredStatus(usage *UsageInfo, account *Account) {
+	if usage == nil || account == nil {
+		return
+	}
+
+	status := strings.ToLower(strings.TrimSpace(account.GetCredential("gemini_status")))
+	statusReason := strings.TrimSpace(account.GetCredential("gemini_status_reason"))
+	if statusReason == "" {
+		statusReason = strings.TrimSpace(account.ErrorMessage)
+	}
+
+	if strings.TrimSpace(account.GetCredential("quota_query_last_error")) != "" && usage.Error == "" {
+		usage.Error = account.GetCredential("quota_query_last_error")
+	}
+
+	switch status {
+	case "forbidden":
+		usage.IsForbidden = true
+		usage.ForbiddenType = forbiddenTypeForbidden
+		usage.ForbiddenReason = statusReason
+		usage.ErrorCode = errorCodeForbidden
+	}
 }
 
 // GetAccountWindowStats 获取账号在指定时间窗口内的使用统计

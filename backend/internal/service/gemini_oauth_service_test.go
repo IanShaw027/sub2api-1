@@ -668,6 +668,19 @@ func TestGeminiOAuthService_BuildAccountCredentials(t *testing.T) {
 			t.Fatalf("creds 字段数量不匹配: got=%d want=3, keys=%v", len(creds), credKeys(creds))
 		}
 	})
+
+	t.Run("空状态字段会显式清空避免残留", func(t *testing.T) {
+		t.Parallel()
+		tokenInfo := &GeminiTokenInfo{
+			AccessToken: "token",
+			ExpiresAt:   1700000000,
+		}
+
+		creds := svc.BuildAccountCredentials(tokenInfo)
+
+		assertCredStr(t, creds, "gemini_status", "")
+		assertCredStr(t, creds, "gemini_status_reason", "")
+	})
 }
 
 func TestBuildGeminiCodeAssistExtra(t *testing.T) {
