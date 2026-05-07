@@ -656,11 +656,12 @@ func (h *AuthHandler) createWeChatChoicePendingSession(
 	}
 	if compatEmailUser != nil {
 		completionResponse["email"] = strings.TrimSpace(compatEmailUser.Email)
+		completionResponse["resolved_email"] = strings.TrimSpace(compatEmailUser.Email)
 		completionResponse["existing_account_email"] = strings.TrimSpace(compatEmailUser.Email)
 		completionResponse["existing_account_bindable"] = true
 		completionResponse["choice_reason"] = "compat_email_match"
 	}
-	if forceEmailOnSignup {
+	if forceEmailOnSignup && compatEmailUser == nil {
 		completionResponse["choice_reason"] = "force_email_on_signup"
 	}
 

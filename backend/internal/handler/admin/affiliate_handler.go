@@ -275,23 +275,6 @@ func parseAffiliateRecordStartTime(raw string, userTZ string) *time.Time {
 	return nil
 }
 
-func parseAffiliateDateQuery(c *gin.Context, key string, userTZ string) (*time.Time, bool) {
-	if c == nil {
-		return nil, false
-	}
-	raw := c.Query(key)
-	if strings.Contains(strings.ToLower(key), "end") {
-		if parsed := parseAffiliateRecordEndTime(raw, userTZ); parsed != nil {
-			return parsed, true
-		}
-		return nil, false
-	}
-	if parsed := parseAffiliateRecordStartTime(raw, userTZ); parsed != nil {
-		return parsed, true
-	}
-	return nil, false
-}
-
 func parseAffiliateRecordEndTime(raw string, userTZ string) *time.Time {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {

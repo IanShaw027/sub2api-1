@@ -1282,6 +1282,62 @@ func TestCompleteWeChatOAuthRegistrationReturnsPendingSessionWhenChoiceStillRequ
 	require.Nil(t, storedSession.ConsumedAt)
 }
 
+func TestCreateWeChatChoicePendingSessionPrefersCompatEmailInCompletionPayload(t *testing.T) {
+	handler, client := newWeChatOAuthTestHandler(t, false)
+	defer client.Close()
+
+	ctx := context.Background()
+	existingUser, err := client.User.Create().
+		SetEmail("compat@example.com").
+		SetUsername("compat-user").
+		SetPasswordHash("hash").
+		SetRole(service.RoleUser).
+		SetStatus(service.StatusActive).
+		Save(ctx)
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/oauth/wechat/callback", nil)
+
+	err = handler.createWeChatChoicePendingSession(
+		c,
+		service.PendingAuthIdentityKey{
+			ProviderType:    "wechat",
+			ProviderKey:     wechatOAuthProviderKey,
+			ProviderSubject: "union-compat-1",
+		},
+		wechatSyntheticEmail("union-compat-1"),
+		wechatSyntheticEmail("union-compat-1"),
+		"/dashboard",
+		"wechat-choice-browser",
+		map[string]any{
+			"username": "wechat_user",
+		},
+		existingUser.Email,
+		existingUser,
+		true,
+	)
+	require.NoError(t, err)
+
+	sessionCookie := findCookie(recorder.Result().Cookies(), oauthPendingSessionCookieName)
+	require.NotNil(t, sessionCookie)
+
+	session, err := client.PendingAuthSession.Query().
+		Where(pendingauthsession.SessionTokenEQ(decodeCookieValueForTest(t, sessionCookie.Value))).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, existingUser.Email, session.ResolvedEmail)
+
+	completion, ok := session.LocalFlowState[oauthCompletionResponseKey].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, existingUser.Email, completion["email"])
+	require.Equal(t, existingUser.Email, completion["resolved_email"])
+	require.Equal(t, existingUser.Email, completion["existing_account_email"])
+	require.Equal(t, "compat@example.com", completion["compat_email"])
+	require.Equal(t, "compat_email_match", completion["choice_reason"])
+}
+
 func TestWeChatOAuthCallbackRepairsLegacyProviderKeyCanonicalIdentity(t *testing.T) {
 	originalAccessTokenURL := wechatOAuthAccessTokenURL
 	originalUserInfoURL := wechatOAuthUserInfoURL
