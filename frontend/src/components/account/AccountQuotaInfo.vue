@@ -56,35 +56,19 @@
       </span>
     </div>
 
-    <div v-if="detailRows.length" class="space-y-0.5 text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">
-      <div
-        v-for="row in detailRows"
-        :key="row.label"
-        class="truncate"
-        :title="row.value"
-      >
-        <span class="text-gray-400 dark:text-gray-500">{{ row.label }}:</span>
-        {{ row.value }}
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { Account, GeminiAvailableCredit } from '@/types'
+import type { Account } from '@/types'
 
 const props = defineProps<{
   account: Account
 }>()
 
 const { t } = useI18n()
-
-type DetailRow = {
-  label: string
-  value: string
-}
 
 const geminiCredentials = computed(() => ({
   ...(props.account.credentials || {}),
@@ -102,18 +86,17 @@ const normalizeGeminiOAuthType = (oauthType?: string | null): 'code_assist' | 'g
   return null
 }
 
+const resolveGeminiPlanBucket = (rawTier: string): 'free' | 'pro' | 'ultra' | 'unknown' => {
+  const normalized = rawTier.trim().toLowerCase()
+  if (!normalized) return 'unknown'
+  if (normalized.includes('ultra')) return 'ultra'
+  if (normalized.includes('pro') || normalized.includes('premium')) return 'pro'
+  if (normalized.includes('free') || normalized === 'standard-tier') return 'free'
+  return 'unknown'
+}
+
 const now = ref(new Date())
 let timer: ReturnType<typeof setInterval> | null = null
-
-const isCodeAssist = computed(() => {
-  const oauthType = normalizeGeminiOAuthType(geminiValue('oauth_type'))
-  return oauthType === 'code_assist'
-})
-
-const isGoogleOne = computed(() => {
-  const oauthType = normalizeGeminiOAuthType(geminiValue('oauth_type'))
-  return oauthType === 'google_one'
-})
 
 const shouldShowQuota = computed(() => props.account.platform === 'gemini')
 
@@ -168,18 +151,59 @@ const legacyTier = computed(() => {
   return tier.toUpperCase()
 })
 
+const planTierSource = computed(() => {
+  const sources = [
+    geminiValue('plan_name'),
+    geminiValue('gemini_paid_tier_name'),
+    geminiValue('gemini_current_tier_name'),
+    geminiValue('tier_id'),
+    geminiValue('gemini_paid_tier_id'),
+    geminiValue('gemini_current_tier_id')
+  ]
+  return sources.find((value) => value.length > 0) || ''
+})
+
+const googleOnePlanBucket = computed(() => resolveGeminiPlanBucket(planTierSource.value))
+const codeAssistPlanBucket = computed(() => {
+  const source = (planTierSource.value || canonicalTier.value || legacyTier.value).trim().toLowerCase()
+  if (source.includes('standard')) return 'standard'
+  if (source.includes('enterprise')) return 'enterprise'
+  return 'enterprise'
+})
+const isCodeAssist = computed(() => {
+  const oauthType = normalizeGeminiOAuthType(geminiValue('oauth_type'))
+  if (oauthType === 'code_assist') return true
+
+  const source = planTierSource.value.toLowerCase()
+  return source.includes('gcp_') || source === 'standard' || source === 'enterprise'
+})
+
+const isGoogleOne = computed(() => {
+  const oauthType = normalizeGeminiOAuthType(geminiValue('oauth_type'))
+  if (oauthType === 'google_one') return true
+
+  const source = planTierSource.value.toLowerCase()
+  return (
+    source.includes('google one') ||
+    source.includes('google_one') ||
+    source.includes('google ai') ||
+    source.includes('google_ai') ||
+    source.startsWith('g1-') ||
+    source === 'free-tier'
+  )
+})
+
 const tierLabel = computed(() => {
   if (isCodeAssist.value) {
-    return 'GCP Enterprise'
+    return codeAssistPlanBucket.value === 'standard' ? 'GCP Standard' : 'GCP Enterprise'
   }
 
   if (isGoogleOne.value) {
-    if (canonicalTier.value === 'google_ai_ultra') return 'Google AI Ultra'
-    if (canonicalTier.value === 'google_ai_pro') return 'Google AI Pro'
-    if (canonicalTier.value === 'google_one_free') return 'Google One Free'
-    if (legacyTier.value === 'AI_PREMIUM') return 'Google AI Pro'
-    if (legacyTier.value === 'GOOGLE_ONE_UNLIMITED') return 'Google AI Ultra'
-    if (legacyTier.value) return `Google One ${legacyTier.value}`
+    if (googleOnePlanBucket.value === 'ultra') return 'Google One Ultra'
+    if (googleOnePlanBucket.value === 'pro') return 'Google One Pro'
+    if (googleOnePlanBucket.value === 'free') return 'Google One Free'
+    if (legacyTier.value === 'AI_PREMIUM') return 'Google One Pro'
+    if (legacyTier.value === 'GOOGLE_ONE_UNLIMITED') return 'Google One Ultra'
     return 'Google One'
   }
 
@@ -190,14 +214,16 @@ const tierLabel = computed(() => {
 
 const tierBadgeClass = computed(() => {
   if (isCodeAssist.value) {
-    return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
+    return codeAssistPlanBucket.value === 'standard'
+      ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
+      : 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
   }
 
   if (isGoogleOne.value) {
-    if (canonicalTier.value === 'google_ai_ultra' || legacyTier.value === 'GOOGLE_ONE_UNLIMITED') {
+    if (googleOnePlanBucket.value === 'ultra' || legacyTier.value === 'GOOGLE_ONE_UNLIMITED') {
       return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
     }
-    if (canonicalTier.value === 'google_ai_pro' || legacyTier.value === 'AI_PREMIUM') {
+    if (googleOnePlanBucket.value === 'pro' || legacyTier.value === 'AI_PREMIUM') {
       return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
     }
     return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
@@ -220,12 +246,14 @@ const quotaPolicyChannel = computed(() => {
 
 const quotaPolicyLimits = computed(() => {
   if (isCodeAssist.value) {
-    return t('admin.accounts.gemini.quotaPolicy.rows.gcp.limitsEnterprise')
+    return codeAssistPlanBucket.value === 'standard'
+      ? t('admin.accounts.gemini.quotaPolicy.rows.gcp.limitsStandard')
+      : t('admin.accounts.gemini.quotaPolicy.rows.gcp.limitsEnterprise')
   }
 
   if (isGoogleOne.value) {
-    if (canonicalTier.value === 'google_ai_ultra') return t('admin.accounts.gemini.quotaPolicy.rows.googleOne.limitsUltra')
-    if (canonicalTier.value === 'google_ai_pro') return t('admin.accounts.gemini.quotaPolicy.rows.googleOne.limitsPro')
+    if (googleOnePlanBucket.value === 'ultra') return t('admin.accounts.gemini.quotaPolicy.rows.googleOne.limitsUltra')
+    if (googleOnePlanBucket.value === 'pro') return t('admin.accounts.gemini.quotaPolicy.rows.googleOne.limitsPro')
     return t('admin.accounts.gemini.quotaPolicy.rows.googleOne.limitsFree')
   }
 
@@ -239,76 +267,6 @@ const quotaPolicyDocsUrl = computed(() => {
     return 'https://developers.google.com/gemini-code-assist/resources/code_assist_quota'
   }
   return 'https://ai.google.dev/gemini-api/docs/rate-limits'
-})
-
-const scopeLabelMap: Record<string, string> = {
-  openid: 'OpenID',
-  email: 'Email',
-  profile: 'Profile',
-  'https://www.googleapis.com/auth/userinfo.email': 'UserInfo Email',
-  'https://www.googleapis.com/auth/userinfo.profile': 'UserInfo Profile',
-  'https://www.googleapis.com/auth/cloud-platform': 'Cloud Platform'
-}
-
-const scopeSummary = computed(() => {
-  const scope = geminiValue('scope')
-  if (!scope) return ''
-  const labels = scope
-    .split(/\s+/)
-    .map(value => value.trim())
-    .filter(Boolean)
-    .map(value => scopeLabelMap[value] || value)
-  return labels.join(', ')
-})
-
-const planSummary = computed(() => {
-  const planName = geminiValue('plan_name')
-  if (planName) return planName
-  const paidTierName = geminiValue('gemini_paid_tier_name')
-  if (paidTierName) return paidTierName
-  const currentTierName = geminiValue('gemini_current_tier_name')
-  if (currentTierName) return currentTierName
-  return ''
-})
-
-const creditsSummary = computed(() => {
-  const credits = geminiCredentials.value.gemini_available_credits as GeminiAvailableCredit[] | undefined
-  if (!Array.isArray(credits) || credits.length === 0) return ''
-  return credits
-    .map((credit: GeminiAvailableCredit) => {
-      const type = (credit.creditType || '').trim()
-      const amount = (credit.creditAmount || '').trim()
-      if (!type && !amount) return ''
-      const typeLabel = type === 'GOOGLE_ONE_AI' ? 'Google One AI' : type || t('admin.accounts.gemini.details.credits')
-      return amount ? `${typeLabel} ${amount}` : typeLabel
-    })
-    .filter(Boolean)
-    .join(' / ')
-})
-
-const projectId = computed(() => geminiValue('project_id'))
-const email = computed(() => geminiValue('email'))
-
-const detailRows = computed<DetailRow[]>(() => {
-  const rows: DetailRow[] = []
-
-  if (planSummary.value) {
-    rows.push({ label: t('admin.accounts.gemini.details.subscription'), value: planSummary.value })
-  }
-  if (email.value) {
-    rows.push({ label: t('common.email'), value: email.value })
-  }
-  if (projectId.value) {
-    rows.push({ label: t('admin.accounts.oauth.gemini.projectIdLabel'), value: projectId.value })
-  }
-  if (scopeSummary.value) {
-    rows.push({ label: t('admin.accounts.gemini.details.scope'), value: scopeSummary.value })
-  }
-  if (creditsSummary.value) {
-    rows.push({ label: t('admin.accounts.gemini.details.credits'), value: creditsSummary.value })
-  }
-
-  return rows
 })
 
 watch(

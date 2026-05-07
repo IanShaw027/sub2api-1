@@ -291,16 +291,12 @@ interface NavItem {
 
 function dedupeSelfNavItems(items: NavItem[]): NavItem[] {
   const seenPaths = new Set<string>()
-  const seenLabels = new Set<string>()
   const out: NavItem[] = []
 
   for (const item of items) {
     const normalizedPath = item.path.trim()
-    const normalizedLabel = item.label.trim()
     if (normalizedPath && seenPaths.has(normalizedPath)) continue
-    if (normalizedLabel && seenLabels.has(normalizedLabel)) continue
     if (normalizedPath) seenPaths.add(normalizedPath)
-    if (normalizedLabel) seenLabels.add(normalizedLabel)
     out.push(item)
   }
 
@@ -873,8 +869,8 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
         { path: '/ai/prompts', label: t('nav.aiPrompts', '提示词库'), icon: AiPromptIcon },
       ],
     },
-    { path: '/skills', label: t('nav.skillsCenter', '技能中心'), icon: SkillCenterIcon },
-    { path: '/skills/installed', label: t('nav.installedSkills', '已安装技能'), icon: SkillCenterIcon },
+    { path: '/skills', label: t('nav.skillsCenter', '技能中心'), icon: SkillCenterIcon, featureFlag: flagAiStudio },
+    { path: '/skills/installed', label: t('nav.installedSkills', '已安装技能'), icon: SkillCenterIcon, featureFlag: flagAiStudio },
     { path: '/monitor', label: t('nav.channelStatus'), icon: SignalIcon, featureFlag: flagChannelMonitor },
     { path: '/subscriptions', label: t('nav.mySubscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
     { path: '/purchase', label: t('nav.buySubscription'), icon: RechargeSubscriptionIcon, hideInSimpleMode: true, featureFlag: flagPayment },
@@ -960,6 +956,7 @@ const adminNavItems = computed((): NavItem[] => {
       icon: SkillCenterIcon,
       hideInSimpleMode: true,
       expandOnly: true,
+      featureFlag: flagAiStudio,
       children: [
         { path: '/admin/skills/review', label: t('skills.admin.review.title', '技能审核'), icon: TicketListIcon },
         { path: '/admin/skills/governance', label: t('skills.admin.governance.title', '技能治理'), icon: AiShieldIcon },

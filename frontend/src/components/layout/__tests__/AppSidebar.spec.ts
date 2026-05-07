@@ -32,14 +32,19 @@ describe('AppSidebar header styles', () => {
 })
 
 describe('AppSidebar skill navigation', () => {
-  it('includes a direct installed-skills entry for the user menu', () => {
-    expect(componentSource).toContain("path: '/skills/installed'")
-    expect(componentSource).toContain("t('nav.installedSkills', '已安装技能')")
+  it('guards user skill entries behind the ai studio feature flag', () => {
+    expect(componentSource).toContain(
+      "{ path: '/skills', label: t('nav.skillsCenter', '技能中心'), icon: SkillCenterIcon, featureFlag: flagAiStudio }"
+    )
+    expect(componentSource).toContain(
+      "{ path: '/skills/installed', label: t('nav.installedSkills', '已安装技能'), icon: SkillCenterIcon, featureFlag: flagAiStudio }"
+    )
   })
 
-  it('includes an admin skill governance group with review, runtime and settlement entries', () => {
+  it('guards the admin skill governance group behind the ai studio feature flag', () => {
     expect(componentSource).toContain("path: '/admin/skills'")
     expect(componentSource).toContain("t('nav.skillGovernance', '技能治理')")
+    expect(componentSource).toContain('featureFlag: flagAiStudio')
     expect(componentSource).toContain("path: '/admin/skills/review'")
     expect(componentSource).toContain("path: '/admin/skills/governance'")
     expect(componentSource).toContain("path: '/admin/skills/runtime'")
@@ -56,5 +61,14 @@ describe('AppSidebar affiliate admin navigation', () => {
     expect(componentSource).toContain("path: '/admin/affiliates/invites'")
     expect(componentSource).toContain("path: '/admin/affiliates/rebates'")
     expect(componentSource).toContain("path: '/admin/affiliates/transfers'")
+  })
+})
+
+describe('AppSidebar custom menu dedupe', () => {
+  it('does not dedupe custom items by label text', () => {
+    expect(componentSource).toContain('const seenPaths = new Set<string>()')
+    expect(componentSource).not.toContain('const seenLabels = new Set<string>()')
+    expect(componentSource).not.toContain('seenLabels.has')
+    expect(componentSource).not.toContain('seenLabels.add')
   })
 })

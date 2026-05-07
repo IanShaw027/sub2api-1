@@ -44,19 +44,48 @@ function makeAccount(overrides: Partial<Account>): Account {
 }
 
 describe('AccountQuotaInfo', () => {
-  it('renders gemini oauth metadata summary', () => {
+  it('distinguishes code assist standard and enterprise tiers', () => {
+    const standardWrapper = mount(AccountQuotaInfo, {
+      props: {
+        account: makeAccount({
+          credentials: {
+            oauth_type: 'code_assist',
+            tier_id: 'gcp_standard'
+          }
+        })
+      }
+    })
+
+    const enterpriseWrapper = mount(AccountQuotaInfo, {
+      props: {
+        account: makeAccount({
+          credentials: {
+            oauth_type: 'code_assist',
+            tier_id: 'gcp_enterprise'
+          }
+        })
+      }
+    })
+
+    expect(standardWrapper.text()).toContain('GCP Standard')
+    expect(standardWrapper.text()).not.toContain('GCP Enterprise')
+    expect(enterpriseWrapper.text()).toContain('GCP Enterprise')
+  })
+
+  it('normalizes google one pro metadata without leaking verbose detail rows', () => {
     const wrapper = mount(AccountQuotaInfo, {
       props: {
         account: makeAccount({
           credentials: {
             oauth_type: 'google_one',
-            tier_id: 'google_ai_pro',
+            tier_id: 'g1-pro-tier',
             email: 'user@example.com',
             project_id: 'refreshing-center-hnmwg',
             scope: 'openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/cloud-platform'
           },
           extra: {
             plan_name: 'Gemini Code Assist in Google One AI Pro',
+            gemini_paid_tier_name: 'Gemini Code Assist in Google One AI Pro',
             gemini_available_credits: [
               {
                 creditType: 'GOOGLE_ONE_AI',
@@ -68,13 +97,12 @@ describe('AccountQuotaInfo', () => {
       }
     })
 
-    expect(wrapper.text()).toContain('Google AI Pro')
-    expect(wrapper.text()).toContain('Gemini Code Assist in Google One AI Pro')
-    expect(wrapper.text()).toContain('user@example.com')
-    expect(wrapper.text()).toContain('refreshing-center-hnmwg')
-    expect(wrapper.text()).toContain('OpenID')
-    expect(wrapper.text()).toContain('Cloud Platform')
-    expect(wrapper.text()).toContain('Google One AI 100')
+    expect(wrapper.text()).toContain('Google One Pro')
+    expect(wrapper.text()).toContain('admin.accounts.gemini.quotaPolicy.rows.googleOne.limitsPro')
+    expect(wrapper.text()).not.toContain('admin.accounts.gemini.quotaPolicy.rows.googleOne.limitsFree')
+    expect(wrapper.text()).not.toContain('user@example.com')
+    expect(wrapper.text()).not.toContain('refreshing-center-hnmwg')
+    expect(wrapper.text()).not.toContain('Gemini Code Assist in Google One AI Pro')
   })
 
   it('shows Gemini rate limit countdown when account is limited', () => {
@@ -84,7 +112,7 @@ describe('AccountQuotaInfo', () => {
         account: makeAccount({
           credentials: {
             oauth_type: 'code_assist',
-            tier_id: 'gcp_standard'
+            tier_id: 'gcp_enterprise'
           },
           rate_limit_reset_at: future
         })
