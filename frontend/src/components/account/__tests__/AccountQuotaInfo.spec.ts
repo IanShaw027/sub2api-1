@@ -140,4 +140,25 @@ describe('AccountQuotaInfo', () => {
     expect(wrapper.text()).toContain('AI Studio Free Tier')
     expect(wrapper.text()).not.toContain('user@example.com')
   })
+
+  it('shows Vertex AI badge for Gemini service accounts', () => {
+    const wrapper = mount(AccountQuotaInfo, {
+      props: {
+        account: makeAccount({
+          type: 'service_account',
+          credentials: {
+            tier_id: 'vertex',
+            project_id: 'vertex-proj',
+            client_email: 'svc@vertex-proj.iam.gserviceaccount.com',
+            location: 'global'
+          }
+        })
+      }
+    })
+
+    expect(wrapper.text()).toContain('Vertex AI')
+    expect(wrapper.text()).toContain('admin.accounts.gemini.quotaPolicy.rows.vertex.channel')
+    expect(wrapper.text()).toContain('admin.accounts.gemini.quotaPolicy.rows.vertex.limits')
+    expect(wrapper.text()).not.toContain('AI Studio')
+  })
 })

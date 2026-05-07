@@ -99,6 +99,7 @@ const now = ref(new Date())
 let timer: ReturnType<typeof setInterval> | null = null
 
 const shouldShowQuota = computed(() => props.account.platform === 'gemini')
+const isVertexServiceAccount = computed(() => props.account.platform === 'gemini' && props.account.type === 'service_account')
 
 const isRateLimited = computed(() => {
   if (!props.account.rate_limit_reset_at) return false
@@ -194,6 +195,10 @@ const isGoogleOne = computed(() => {
 })
 
 const tierLabel = computed(() => {
+  if (isVertexServiceAccount.value) {
+    return 'Vertex AI'
+  }
+
   if (isCodeAssist.value) {
     return codeAssistPlanBucket.value === 'standard' ? 'GCP Standard' : 'GCP Enterprise'
   }
@@ -213,6 +218,10 @@ const tierLabel = computed(() => {
 })
 
 const tierBadgeClass = computed(() => {
+  if (isVertexServiceAccount.value) {
+    return 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300'
+  }
+
   if (isCodeAssist.value) {
     return codeAssistPlanBucket.value === 'standard'
       ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
@@ -235,6 +244,9 @@ const tierBadgeClass = computed(() => {
 })
 
 const quotaPolicyChannel = computed(() => {
+  if (isVertexServiceAccount.value) {
+    return t('admin.accounts.gemini.quotaPolicy.rows.vertex.channel')
+  }
   if (isCodeAssist.value) {
     return t('admin.accounts.gemini.quotaPolicy.rows.gcp.channel')
   }
@@ -245,6 +257,10 @@ const quotaPolicyChannel = computed(() => {
 })
 
 const quotaPolicyLimits = computed(() => {
+  if (isVertexServiceAccount.value) {
+    return t('admin.accounts.gemini.quotaPolicy.rows.vertex.limits')
+  }
+
   if (isCodeAssist.value) {
     return codeAssistPlanBucket.value === 'standard'
       ? t('admin.accounts.gemini.quotaPolicy.rows.gcp.limitsStandard')
@@ -263,6 +279,9 @@ const quotaPolicyLimits = computed(() => {
 })
 
 const quotaPolicyDocsUrl = computed(() => {
+  if (isVertexServiceAccount.value) {
+    return 'https://cloud.google.com/vertex-ai/generative-ai/docs/quotas'
+  }
   if (isCodeAssist.value || isGoogleOne.value) {
     return 'https://developers.google.com/gemini-code-assist/resources/code_assist_quota'
   }

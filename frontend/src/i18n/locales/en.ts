@@ -3862,6 +3862,10 @@ export default {
               limitsFree: 'RPD 50; RPM 2 (Pro) / 15 (Flash)',
               limitsPaid: 'RPD unlimited; RPM 1000 (Pro) / 2000 (Flash) (per model)'
             },
+            vertex: {
+              channel: 'Vertex AI Service Account',
+              limits: 'Subject to GCP project and model quotas; rely on Vertex AI console and actual Google responses'
+            },
             customOAuth: {
               channel: 'Custom OAuth Client (GCP)',
               free: 'Project not billed',

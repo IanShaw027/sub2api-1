@@ -3991,6 +3991,10 @@ export default {
               limitsFree: 'RPD 50；RPM 2（Pro）/ 15（Flash）',
               limitsPaid: 'RPD 不限；RPM 1000（Pro）/ 2000（Flash）（按模型配额）'
             },
+            vertex: {
+              channel: 'Vertex AI Service Account',
+              limits: '按 GCP 项目与模型配额生效；以 Vertex AI 控制台与 Google 实际返回为准'
+            },
             customOAuth: {
               channel: 'Custom OAuth Client（GCP）',
               free: '项目未绑卡',
