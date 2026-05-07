@@ -30,7 +30,9 @@ type GeminiGenerateAuthURLRequest struct {
 	ProjectID string `json:"project_id"`
 	// OAuth 类型: "code_assist" 或 "google_one"
 	OAuthType string `json:"oauth_type"`
-	// TierID is a user-selected tier to be used when auto detection is unavailable or fails.
+	// TierID is an optional legacy fallback tier.
+	// Current frontend flow no longer sends tier_id before auth, but the backend still accepts it
+	// and stores it in the OAuth session for compatibility with older clients.
 	TierID string `json:"tier_id"`
 }
 
@@ -81,8 +83,9 @@ type GeminiExchangeCodeRequest struct {
 	ProxyID   *int64 `json:"proxy_id"`
 	// OAuth 类型: "code_assist" 或 "google_one"，需要与 GenerateAuthURL 时的类型一致
 	OAuthType string `json:"oauth_type"`
-	// TierID is a user-selected tier to be used when auto detection is unavailable or fails.
-	// This field is optional; when omitted, the server uses the tier stored in the OAuth session.
+	// TierID is an optional legacy fallback tier.
+	// Current frontend flow omits tier_id here; when absent, the backend reuses the tier stored in
+	// the OAuth session by GenerateAuthURL, while still accepting explicit tier_id from older clients.
 	TierID string `json:"tier_id"`
 }
 

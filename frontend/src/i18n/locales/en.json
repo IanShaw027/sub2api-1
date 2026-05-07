@@ -275,6 +275,7 @@
     "copiedToClipboard": "Copied to clipboard",
     "copied": "Copied",
     "copyFailed": "Failed to copy",
+    "tryAgain": "Try again",
     "verifying": "Verifying...",
     "processing": "Processing...",
     "submitting": "Submitting...",
@@ -303,12 +304,17 @@
     "settings": "Settings",
     "chooseFile": "Choose File",
     "copy": "Copy",
+    "clear": "Clear",
     "notAvailable": "N/A",
     "now": "Now",
     "today": "Today",
     "tomorrow": "Tomorrow",
     "unknown": "Unknown",
     "minutes": "min",
+    "date": "Date",
+    "required": "Required",
+    "sending": "Sending...",
+    "creating": "Creating...",
     "time": {
       "never": "Never",
       "justNow": "Just now",
@@ -331,6 +337,10 @@
     "usage": "Usage",
     "redeem": "Redeem",
     "affiliate": "Affiliate Rebates",
+    "affiliateManagement": "Affiliate Rebates",
+    "affiliateInviteRecords": "Invite Records",
+    "affiliateRebateRecords": "Rebate Records",
+    "affiliateTransferRecords": "Transfer Records",
     "profile": "Profile",
     "users": "Users",
     "groups": "Groups",
@@ -360,6 +370,7 @@
     "availableChannels": "Available Channels",
     "channelManagement": "Channels",
     "channelPricing": "Channel Pricing",
+    "skillGovernance": "Skill Governance",
     "channelMonitor": "Channel Monitor",
     "channelStatus": "Channel Status",
     "aiChat": "AI Chat",
@@ -374,9 +385,11 @@
     "center": { "label": "AI Studio" },
     "line": {
       "selector": "Line",
+      "key": "Key",
       "availableKeys": "Available keys",
       "platform": "Platform",
-      "unassigned": "Unassigned"
+      "unassigned": "Unassigned",
+      "noKey": "No available key"
     },
     "chat": {
       "title": "AI Chat",
@@ -388,6 +401,8 @@
       "runtimeLabel": "runtime",
       "responsesLabel": "responses",
       "send": "Send",
+      "noSessions": "No recent sessions",
+      "noSessionsDesc": "A session will be created automatically after you send the first message.",
       "quickPrompts": "Quick Prompts",
       "noPrompts": "No prompts yet",
       "noPromptsDesc": "Create templates in the prompt library.",
@@ -460,9 +475,12 @@
     },
     "prompt": {
       "title": "Title",
+      "create": "Create Prompt",
+      "edit": "Edit Prompt",
       "visibility": "Visibility",
       "status": "Status",
       "line": "Line",
+      "searchPlaceholder": "Search title, content, or tags",
       "tags": "Tags",
       "tagsPlaceholder": "Comma separated",
       "description": "Description",
@@ -493,6 +511,9 @@
       "create": "New Prompt",
       "scope": "Scope",
       "mine": "Mine only",
+      "publicTemplates": "Public Templates",
+      "mineTemplates": "My Prompts",
+      "privateTemplates": "My Private Prompts",
       "emptyTitle": "No prompts yet",
       "emptyDesc": "Create a new template or clone a public one."
     },
@@ -1149,11 +1170,14 @@
     "loadFailed": "Failed to load affiliate data",
     "transferFailed": "Failed to transfer affiliate quota",
     "stats": {
+      "rebateRate": "My Rebate Rate",
+      "rebateRateHint": "What you earn each time an invitee recharges",
       "invitedUsers": "Invited Users",
       "rebatedInvitees": "Rebated Invitees",
       "remainingSlots": "Remaining Rebate Slots",
       "unlimited": "Unlimited",
       "availableQuota": "Available Rebate Quota",
+      "frozenQuota": "Frozen",
       "totalQuota": "Historical Rebate Quota"
     },
     "policy": {
@@ -1200,8 +1224,9 @@
     "tips": {
       "title": "How It Works",
       "line1": "Share your affiliate code or invite link with new users.",
-      "line2": "When invitees recharge, you receive rebate quota based on the configured rate.",
-      "line3": "Transfer rebate quota to balance at any time."
+      "line2": "When invitees recharge, you receive {rate} of the recharge as rebate quota.",
+      "line3": "Transfer rebate quota to balance at any time.",
+      "line4": "Newly earned rebates may have a waiting period before they can be transferred."
     }
   },
   "redeem": {
@@ -3292,7 +3317,7 @@
           "generateAuthUrl": "Generate Auth URL",
           "projectIdLabel": "Project ID (optional)",
           "projectIdPlaceholder": "e.g. my-gcp-project or cloud-ai-companion-xxxxx",
-          "projectIdHint": "Leave empty to auto-detect after code exchange. If auto-detection fails, fill it in and re-generate the auth URL to try again.",
+          "projectIdHint": "Used for Code Assist flows. Leave empty to auto-detect after code exchange. If auto-detection fails, fill it in and re-generate the auth URL to try again.",
           "projectTipBadge": "GCP Tip",
           "projectTipTitle": "Google One / Gemini CLI project setup",
           "projectTipIntro": "If auto-detection is unstable, prepare a personal GCP project without an org first, then run Gemini OAuth.",
@@ -3320,7 +3345,8 @@
           "failedToGenerateUrl": "Failed to generate Gemini auth URL",
           "missingExchangeParams": "Missing auth code, session ID, or state",
           "failedToExchangeCode": "Failed to exchange Gemini auth code",
-          "missingProjectId": "Project ID auto-detection failed. Enter an existing Google Cloud Project ID in step 4, then regenerate the authorization URL. If you do not have a project yet, create one first, grant the IAM roles, and enable the Cloud AI Companion API.",
+          "missingProjectId": "Code Assist Project ID auto-detection failed. Enter an existing Google Cloud Project ID in step 4, then regenerate the authorization URL. If you do not have a project yet, create one first, grant the IAM roles, and enable the Cloud AI Companion API.",
+          "googleOneProjectDetectionFailed": "Google One authorization succeeded, but the upstream companion project could not be detected. Retry the authorization once. If it still fails, inspect the upstream Gemini account state instead of manually filling a Project ID in this flow.",
           "modelPassthrough": "Gemini Model Passthrough",
           "modelPassthroughDesc": "All model requests are forwarded directly to the Gemini API without model restrictions or mappings.",
           "stateWarningTitle": "Note",
@@ -4091,6 +4117,39 @@
           "consumed": "Total Recharge",
           "rebate": "Total Rebate"
         }
+      },
+      "records": {
+        "searchPlaceholder": "Email, username, user ID, or order number",
+        "startAt": "Start date",
+        "endAt": "End date",
+        "inviter": "Inviter",
+        "invitee": "Invitee",
+        "user": "User",
+        "affCode": "Invite Code",
+        "totalRebate": "Total Rebate",
+        "invitedAt": "Invited At",
+        "order": "Order",
+        "orderAmount": "Top-up Amount",
+        "payAmount": "Paid Amount",
+        "rebateAmount": "Rebate Amount",
+        "paymentType": "Payment Method",
+        "orderStatus": "Order Status",
+        "rebatedAt": "Rebated At",
+        "transferAmount": "Transfer Amount",
+        "balanceAfter": "Balance After",
+        "availableQuotaAfter": "Available After",
+        "frozenQuotaAfter": "Frozen After",
+        "historyQuotaAfter": "Historical Rebate After",
+        "transferredAt": "Transferred At"
+      },
+      "overview": {
+        "title": "Affiliate User Overview",
+        "affCode": "Invite Code",
+        "rebateRate": "Rebate Rate",
+        "invitedCount": "Invited Users",
+        "rebatedInviteeCount": "Rebated Invitees",
+        "availableQuota": "Available Quota",
+        "historyQuota": "Historical Rebate"
       }
     },
     "usage": {
@@ -4966,18 +5025,65 @@
           "enabledHint": "When off, both the front-end AI features and the admin governance entry are hidden."
         },
         "affiliate": {
-          "title": "Affiliate Rebates",
-          "description": "Control affiliate rebates, rebate cap, eligible invitee slots, and invited-user signup bonus.",
-          "enabled": "Enable Affiliate Rebates",
-          "enabledHint": "When off, the user menu is hidden and affiliate links do not bind, reward, or rebate.",
-          "rebateRate": "Rebate Rate",
-          "rebateRateHint": "Percentage credited to the inviter after an invited user recharges balance (0-100).",
-          "rebateCap": "Per-Inviter Rebate Cap",
-          "rebateCapHint": "Maximum cumulative rebate quota each inviter can earn. 0 means unlimited.",
-          "inviteeLimit": "Max Rebated Invitees",
-          "inviteeLimitHint": "Maximum invited users who can count for rebates. First effective rebate spend consumes one slot. 0 means unlimited.",
-          "signupBonus": "Invited Signup Bonus",
-          "signupBonusHint": "Balance granted to a new user after registering through an affiliate link. 0 means disabled."
+          "title": "Affiliate (Invite Rebate)",
+          "description": "Existing users invite new ones; the inviter earns a percentage rebate on the invitee’s recharges. Disabled by default.",
+          "enabled": "Enable Affiliate",
+          "enabledHint": "When off, the affiliate menu is hidden, the aff parameter is ignored at signup, and new recharges generate no rebate. Existing rebate balances can still be transferred.",
+          "rebateRate": "Global Rebate Rate",
+          "rebateRateHint": "Default percentage given back to the inviter on recharges (0-100, e.g. 10 = 10%).",
+          "rebateCap": "Affiliate Rebate Cap",
+          "rebateCapHint": "Maximum rebate amount generated per recharge. 0 means no cap.",
+          "inviteeLimit": "Per-Inviter Invitee Limit",
+          "inviteeLimitHint": "Maximum invitees counted for rebate. 0 means unlimited.",
+          "signupBonus": "Invitee Signup Bonus",
+          "signupBonusHint": "Bonus credited to the invitee after successful signup. 0 means disabled.",
+          "freezeHours": "Rebate Freeze Period (hours)",
+          "freezeHoursDesc": "New rebates will be frozen for this period before becoming available for withdrawal. 0 = no freeze.",
+          "durationDays": "Rebate Duration (days)",
+          "durationDaysDesc": "Rebate relationship expires after this many days since invitee registration. 0 = permanent.",
+          "perInviteeCap": "Per-Invitee Rebate Cap",
+          "perInviteeCapDesc": "Maximum total rebate from a single invitee. 0 = no limit.",
+          "customUsers": {
+            "title": "Per-User Overrides",
+            "description": "Set a custom invite code or exclusive rebate rate for specific users. Lists only users that have an override applied.",
+            "addButton": "Add Custom User",
+            "searchPlaceholder": "Search by email or username",
+            "batchButton": "Batch Set Rate ({count} selected)",
+            "empty": "No users with custom affiliate settings yet",
+            "customBadge": "custom",
+            "useGlobal": "use global",
+            "resetTitle": "Reset Custom Settings",
+            "resetMessage": "Reset all custom settings for {email}?\n• The exclusive rebate rate will be cleared (fall back to the global rate)\n• The invite code will be regenerated as a new system code (previously shared links will stop working)",
+            "totalLabel": "{total} total",
+            "col": {
+              "email": "Email",
+              "username": "Username",
+              "code": "Invite Code",
+              "rate": "Custom Rate",
+              "actions": "Actions"
+            }
+          },
+          "modal": {
+            "addTitle": "Add Custom User",
+            "editTitle": "Edit Custom Settings",
+            "userLabel": "User",
+            "userPlaceholder": "Search by email or username",
+            "changeUser": "Change user",
+            "codeLabel": "Custom Invite Code (optional)",
+            "codePlaceholder": "e.g. VIP2026",
+            "codeHint": "4-32 characters; A-Z, 0-9, underscore, dash. Leave empty to keep current. Input is upper-cased.",
+            "rateLabel": "Exclusive Rebate Rate (optional)",
+            "ratePlaceholder": "e.g. 30",
+            "rateHint": "0-100. Leave empty (in edit mode) to clear and fall back to the global rate.",
+            "errorBadRate": "Please enter a number between 0 and 100",
+            "errorEmpty": "Fill at least one: custom invite code or exclusive rebate rate"
+          },
+          "batchModal": {
+            "title": "Batch Set Rate ({count} users selected)",
+            "hint": "Apply the same exclusive rebate rate to all selected users.",
+            "placeholder": "e.g. 30",
+            "clearHint": "Submitting empty will clear the exclusive rate for selected users."
+          }
         },
         "ticket": {
           "title": "Ticket Module",

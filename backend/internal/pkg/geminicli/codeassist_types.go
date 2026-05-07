@@ -15,6 +15,7 @@ type LoadCodeAssistMetadata struct {
 	IDEType    string `json:"ideType"`
 	Platform   string `json:"platform"`
 	PluginType string `json:"pluginType"`
+	DuetProject string `json:"duetProject,omitempty"`
 }
 
 type TierInfo struct {
@@ -76,8 +77,9 @@ type AllowedTier struct {
 }
 
 type OnboardUserRequest struct {
-	TierID   string                 `json:"tierId"`
-	Metadata LoadCodeAssistMetadata `json:"metadata"`
+	TierID                  string                 `json:"tierId"`
+	CloudAICompanionProject string                 `json:"cloudaicompanionProject,omitempty"`
+	Metadata                LoadCodeAssistMetadata `json:"metadata"`
 }
 
 type OnboardUserResponse struct {
@@ -88,4 +90,19 @@ type OnboardUserResponse struct {
 
 type OnboardUserResultData struct {
 	CloudAICompanionProject any `json:"cloudaicompanionProject,omitempty"`
+}
+
+type RetrieveUserQuotaRequest struct {
+	CloudAICompanionProject string `json:"cloudaicompanionProject,omitempty"`
+}
+
+type RetrieveUserQuotaResponse struct {
+	Buckets []RetrieveUserQuotaBucket `json:"buckets,omitempty"`
+}
+
+type RetrieveUserQuotaBucket struct {
+	ModelID           string `json:"modelId,omitempty"`
+	RemainingFraction any    `json:"remainingFraction,omitempty"`
+	RemainingAmount   any    `json:"remainingAmount,omitempty"`
+	ResetTime         any    `json:"resetTime,omitempty"`
 }

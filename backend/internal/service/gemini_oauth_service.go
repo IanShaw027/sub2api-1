@@ -199,6 +199,12 @@ type GeminiTokenInfo struct {
 	OAuthType    string         `json:"oauth_type,omitempty"` // "code_assist" or "google_one"
 	TierID       string         `json:"tier_id,omitempty"`    // Canonical tier id (e.g. google_one_free, gcp_standard)
 	Extra        map[string]any `json:"extra,omitempty"`      // Drive metadata
+	Status       string         `json:"status,omitempty"`
+	StatusReason string         `json:"status_reason,omitempty"`
+	UsageRaw     map[string]any `json:"usage_raw,omitempty"`
+	// ProjectIDMissing marks a temporary post-auth metadata gap. Tokens are valid, and project_id
+	// backfill can be retried later without forcing the whole OAuth flow to fail.
+	ProjectIDMissing bool `json:"-"`
 }
 
 type geminiCodeAssistSnapshot struct {
@@ -552,20 +558,20 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 	switch oauthType {
 	case "code_assist":
 		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Processing code_assist OAuth type")
+		projectIDMissing := false
 		if projectID == "" {
 			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] No project_id provided, attempting to fetch from LoadCodeAssist API...")
-			var err error
 			snapshot, detectErr := s.fetchProjectID(ctx, tokenResp.AccessToken, proxyURL)
 			if snapshot != nil {
 				projectID = snapshot.ProjectID
 				tierID = snapshot.TierID
 				tokenExtra = mergeGeminiCredentialExtra(tokenExtra, snapshot.Extra)
 			}
-			err = detectErr
-			if err != nil {
+			if detectErr != nil {
 				// 记录警告但不阻断流程，允许后续补充 project_id
-				fmt.Printf("[GeminiOAuth] Warning: Failed to fetch project_id during token exchange: %v\n", err)
-				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] WARNING: Failed to fetch project_id: %v", err)
+				fmt.Printf("[GeminiOAuth] Warning: Failed to fetch project_id during token exchange: %v\n", detectErr)
+				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] WARNING: Failed to fetch project_id: %v", detectErr)
+				projectIDMissing = strings.TrimSpace(projectID) == ""
 			} else {
 				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Successfully fetched project_id: %s, tier_id: %s", projectID, tierID)
 			}
@@ -598,6 +604,11 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 			}
 		}
 		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Final code_assist result - project_id: %s, tier_id: %s", projectID, tierID)
+		if projectIDMissing {
+			tokenExtra = mergeGeminiCredentialExtra(tokenExtra, map[string]any{
+				"auto_detect_project_id": "true",
+			})
+		}
 
 	case "google_one":
 		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Processing google_one OAuth type")
@@ -686,6 +697,9 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 		TierID:       tierID,
 		OAuthType:    oauthType,
 		Extra:        tokenExtra,
+	}
+	if oauthType == "code_assist" && strings.TrimSpace(projectID) == "" {
+		result.ProjectIDMissing = true
 	}
 	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Final result - OAuth Type: %s, Project ID: %s, Tier ID: %s", result.OAuthType, result.ProjectID, result.TierID)
 	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] ========== ExchangeCode END ==========")
@@ -852,7 +866,10 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 		}
 
 		if strings.TrimSpace(tokenInfo.ProjectID) == "" {
-			return nil, fmt.Errorf("failed to auto-detect project_id: empty result")
+			tokenInfo.ProjectIDMissing = true
+			tokenInfo.Extra = mergeGeminiCredentialExtra(tokenInfo.Extra, map[string]any{
+				"auto_detect_project_id": "true",
+			})
 		}
 	case "google_one":
 		if existingProjectID != "" {
@@ -865,16 +882,10 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 		canonicalExistingTier := canonicalGeminiTierIDForOAuthType(oauthType, existingTierID)
 		// Check if tier cache is stale (> 24 hours)
 		needsRefresh := true
-		if account.Extra != nil {
-			if updatedAtStr, ok := account.Extra["drive_tier_updated_at"].(string); ok {
-				if updatedAt, err := time.Parse(time.RFC3339, updatedAtStr); err == nil {
-					if time.Since(updatedAt) <= 24*time.Hour {
-						needsRefresh = false
-						// Use cached tier
-						tokenInfo.TierID = canonicalExistingTier
-					}
-				}
-			}
+		if updatedAt, ok := geminiDriveTierUpdatedAt(account); ok && time.Since(updatedAt) <= 24*time.Hour {
+			needsRefresh = false
+			// Use cached tier persisted via BuildAccountCredentials; fall back to legacy account.Extra.
+			tokenInfo.TierID = canonicalExistingTier
 		}
 
 		if tokenInfo.TierID == "" {
@@ -956,6 +967,16 @@ func (s *GeminiOAuthService) BuildAccountCredentials(tokenInfo *GeminiTokenInfo)
 	if tokenInfo.OAuthType != "" {
 		creds["oauth_type"] = tokenInfo.OAuthType
 	}
+	if tokenInfo.Status != "" {
+		creds["gemini_status"] = tokenInfo.Status
+	}
+	if tokenInfo.StatusReason != "" {
+		creds["gemini_status_reason"] = tokenInfo.StatusReason
+	}
+	if len(tokenInfo.UsageRaw) > 0 {
+		creds["gemini_usage_raw"] = tokenInfo.UsageRaw
+		creds["usage_updated_at"] = time.Now().Format(time.RFC3339)
+	}
 	// Store extra metadata (Drive info) if present
 	if len(tokenInfo.Extra) > 0 {
 		for k, v := range tokenInfo.Extra {
@@ -993,6 +1014,12 @@ func extractGeminiPersistedExtra(credentials map[string]any) map[string]any {
 		"gemini_has_onboarded_previously",
 		"gemini_available_credits",
 		"gemini_code_assist_updated_at",
+		"gemini_usage_raw",
+		"gemini_status",
+		"gemini_status_reason",
+		"quota_query_last_error",
+		"quota_query_last_error_at",
+		"usage_updated_at",
 	}
 	extra := make(map[string]any)
 	for _, key := range keys {
@@ -1004,6 +1031,36 @@ func extractGeminiPersistedExtra(credentials map[string]any) map[string]any {
 		return nil
 	}
 	return extra
+}
+
+func geminiDriveTierUpdatedAt(account *Account) (time.Time, bool) {
+	if account == nil {
+		return time.Time{}, false
+	}
+
+	if updatedAt, ok := parseGeminiUpdatedAt(account.Credentials["drive_tier_updated_at"]); ok {
+		return updatedAt, true
+	}
+
+	if updatedAt, ok := parseGeminiUpdatedAt(account.Extra["drive_tier_updated_at"]); ok {
+		return updatedAt, true
+	}
+
+	return time.Time{}, false
+}
+
+func parseGeminiUpdatedAt(raw any) (time.Time, bool) {
+	updatedAtStr, ok := raw.(string)
+	if !ok || strings.TrimSpace(updatedAtStr) == "" {
+		return time.Time{}, false
+	}
+
+	updatedAt, err := time.Parse(time.RFC3339, updatedAtStr)
+	if err != nil {
+		return time.Time{}, false
+	}
+
+	return updatedAt, true
 }
 
 func buildGeminiCodeAssistExtra(loadResp *geminicli.LoadCodeAssistResponse) map[string]any {
@@ -1041,13 +1098,42 @@ func buildGeminiCodeAssistExtra(loadResp *geminicli.LoadCodeAssistResponse) map[
 	return extra
 }
 
+func buildGeminiQuotaExtra(raw map[string]any) map[string]any {
+	if len(raw) == 0 {
+		return nil
+	}
+	return map[string]any{
+		"gemini_usage_raw": raw,
+		"usage_updated_at": time.Now().Format(time.RFC3339),
+	}
+}
+
+func buildGeminiQuotaErrorExtra(err error) map[string]any {
+	if err == nil {
+		return nil
+	}
+	return map[string]any{
+		"quota_query_last_error":    err.Error(),
+		"quota_query_last_error_at": time.Now().Format(time.RFC3339),
+	}
+}
+
+func clearGeminiQuotaErrorExtra() map[string]any {
+	return map[string]any{
+		"quota_query_last_error":    "",
+		"quota_query_last_error_at": "",
+	}
+}
+
 func buildGeminiLoadCodeAssistRequest(projectID string) *geminicli.LoadCodeAssistRequest {
+	trimmedProjectID := strings.TrimSpace(projectID)
 	return &geminicli.LoadCodeAssistRequest{
-		CloudAICompanionProject: strings.TrimSpace(projectID),
+		CloudAICompanionProject: trimmedProjectID,
 		Metadata: geminicli.LoadCodeAssistMetadata{
-			IDEType:    "ANTIGRAVITY",
-			Platform:   "PLATFORM_UNSPECIFIED",
-			PluginType: "GEMINI",
+			IDEType:     "ANTIGRAVITY",
+			Platform:    "PLATFORM_UNSPECIFIED",
+			PluginType:  "GEMINI",
+			DuetProject: trimmedProjectID,
 		},
 	}
 }
@@ -1247,36 +1333,59 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] No currentTier/paidTier found, proceeding with onboardUser (tierID: %s)", snapshot.TierID)
 
 	req := &geminicli.OnboardUserRequest{
-		TierID:   snapshot.TierID,
-		Metadata: buildGeminiLoadCodeAssistRequest("").Metadata,
+		TierID:                  snapshot.TierID,
+		CloudAICompanionProject: "",
+		Metadata:                buildGeminiLoadCodeAssistRequest("").Metadata,
 	}
 
+	resp, err := s.codeAssist.OnboardUser(ctx, accessToken, proxyURL, req)
+	if err != nil {
+		return snapshot, err
+	}
+	if projectID := extractGeminiCompanionProjectID(resp); projectID != "" {
+		snapshot.ProjectID = projectID
+		return snapshot, nil
+	}
+
+	operationName := strings.TrimSpace(resp.Name)
 	maxAttempts := 5
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		resp, err := s.codeAssist.OnboardUser(ctx, accessToken, proxyURL, req)
+	for attempt := 1; attempt <= maxAttempts && operationName != ""; attempt++ {
+		if resp.Done {
+			break
+		}
+		time.Sleep(2 * time.Second)
+		resp, err = s.codeAssist.GetOperation(ctx, accessToken, proxyURL, operationName)
 		if err != nil {
 			return snapshot, err
 		}
-		if resp.Done {
-			if resp.Response != nil && resp.Response.CloudAICompanionProject != nil {
-				switch v := resp.Response.CloudAICompanionProject.(type) {
-				case string:
-					snapshot.ProjectID = strings.TrimSpace(v)
-					return snapshot, nil
-				case map[string]any:
-					if id, ok := v["id"].(string); ok {
-						snapshot.ProjectID = strings.TrimSpace(id)
-						return snapshot, nil
-					}
-				}
-			}
-			return snapshot, errors.New("onboardUser completed but no project_id returned")
+		if projectID := extractGeminiCompanionProjectID(resp); projectID != "" {
+			snapshot.ProjectID = projectID
+			return snapshot, nil
 		}
-		time.Sleep(2 * time.Second)
 	}
-
+	if resp != nil && resp.Done {
+		return snapshot, errors.New("onboardUser completed but no project_id returned")
+	}
 	if loadErr != nil {
 		return snapshot, fmt.Errorf("loadCodeAssist failed (%v) and onboardUser timeout after %d attempts", loadErr, maxAttempts)
 	}
 	return snapshot, fmt.Errorf("onboardUser timeout after %d attempts", maxAttempts)
+}
+
+func extractGeminiCompanionProjectID(resp *geminicli.OnboardUserResponse) string {
+	if resp == nil || resp.Response == nil || resp.Response.CloudAICompanionProject == nil {
+		return ""
+	}
+	switch v := resp.Response.CloudAICompanionProject.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case map[string]any:
+		if id, ok := v["id"].(string); ok {
+			return strings.TrimSpace(id)
+		}
+		if id, ok := v["projectId"].(string); ok {
+			return strings.TrimSpace(id)
+		}
+	}
+	return ""
 }

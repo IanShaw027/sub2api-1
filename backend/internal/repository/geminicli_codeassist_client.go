@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
@@ -103,6 +104,68 @@ func (c *geminiCliCodeAssistClient) OnboardUser(ctx context.Context, accessToken
 		return nil, fmt.Errorf("onboardUser failed: status %d, body: %s", resp.StatusCode, sanitizedBody)
 	}
 	fmt.Printf("[CodeAssist] OnboardUser success: status %d, response: %+v\n", resp.StatusCode, out)
+	return &out, nil
+}
+
+func (c *geminiCliCodeAssistClient) GetOperation(ctx context.Context, accessToken, proxyURL, name string) (*geminicli.OnboardUserResponse, error) {
+	var out geminicli.OnboardUserResponse
+	operationName := strings.TrimLeft(strings.TrimSpace(name), "/")
+	if operationName == "" {
+		return nil, fmt.Errorf("operation name is empty")
+	}
+	client, err := createGeminiCliReqClient(proxyURL)
+	if err != nil {
+		return nil, fmt.Errorf("create HTTP client: %w", err)
+	}
+	resp, err := client.R().
+		SetContext(ctx).
+		SetHeader("Authorization", "Bearer "+accessToken).
+		SetHeader("User-Agent", geminicli.GeminiCLIUserAgent).
+		SetSuccessResult(&out).
+		Get(c.baseURL + "/v1internal/" + operationName)
+	if err != nil {
+		fmt.Printf("[CodeAssist] GetOperation request error: %v\n", err)
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	if !resp.IsSuccessState() {
+		body := resp.String()
+		sanitizedBody := geminicli.SanitizeBodyForLogs(body)
+		fmt.Printf("[CodeAssist] GetOperation failed: status %d, body: %s\n", resp.StatusCode, sanitizedBody)
+		return nil, fmt.Errorf("getOperation failed: status %d, body: %s", resp.StatusCode, sanitizedBody)
+	}
+	fmt.Printf("[CodeAssist] GetOperation success: status %d, response: %+v\n", resp.StatusCode, out)
+	return &out, nil
+}
+
+func (c *geminiCliCodeAssistClient) RetrieveUserQuota(ctx context.Context, accessToken, proxyURL string, reqBody *geminicli.RetrieveUserQuotaRequest) (*geminicli.RetrieveUserQuotaResponse, error) {
+	if reqBody == nil {
+		reqBody = &geminicli.RetrieveUserQuotaRequest{}
+	}
+
+	var out geminicli.RetrieveUserQuotaResponse
+	client, err := createGeminiCliReqClient(proxyURL)
+	if err != nil {
+		return nil, fmt.Errorf("create HTTP client: %w", err)
+	}
+	resp, err := client.R().
+		SetContext(ctx).
+		SetHeader("Authorization", "Bearer "+accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetHeader("User-Agent", geminicli.GeminiCLIUserAgent).
+		SetBody(reqBody).
+		SetSuccessResult(&out).
+		Post(c.baseURL + "/v1internal:retrieveUserQuota")
+	if err != nil {
+		fmt.Printf("[CodeAssist] RetrieveUserQuota request error: %v\n", err)
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	if !resp.IsSuccessState() {
+		body := resp.String()
+		sanitizedBody := geminicli.SanitizeBodyForLogs(body)
+		fmt.Printf("[CodeAssist] RetrieveUserQuota failed: status %d, body: %s\n", resp.StatusCode, sanitizedBody)
+		return nil, fmt.Errorf("retrieveUserQuota failed: status %d, body: %s", resp.StatusCode, sanitizedBody)
+	}
+	fmt.Printf("[CodeAssist] RetrieveUserQuota success: status %d, response: %+v\n", resp.StatusCode, out)
 	return &out, nil
 }
 

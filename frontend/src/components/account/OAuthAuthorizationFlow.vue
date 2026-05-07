@@ -744,7 +744,11 @@ const isGeminiProjectIdError = computed(
   () => props.platform === 'gemini' && props.error === t('admin.accounts.oauth.gemini.missingProjectId')
 )
 const showGeminiProjectRecoveryStep = computed(
-  () => props.platform === 'gemini' && props.showProjectIdRecovery && isGeminiProjectIdError.value
+  () =>
+    props.platform === 'gemini' &&
+    props.showProjectId &&
+    props.showProjectIdRecovery &&
+    isGeminiProjectIdError.value
 )
 
 // Local state

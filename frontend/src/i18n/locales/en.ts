@@ -294,6 +294,7 @@ export default {
     copiedToClipboard: 'Copied to clipboard',
     copied: 'Copied',
     copyFailed: 'Failed to copy',
+    tryAgain: 'Try again',
     verifying: 'Verifying...',
     processing: 'Processing...',
     contactSupport: 'Contact Support',
@@ -318,12 +319,17 @@ export default {
     settings: 'Settings',
     chooseFile: 'Choose File',
     copy: 'Copy',
+    clear: 'Clear',
     notAvailable: 'N/A',
     now: 'Now',
     today: 'Today',
     tomorrow: 'Tomorrow',
     unknown: 'Unknown',
     minutes: 'min',
+    date: 'Date',
+    required: 'Required',
+    sending: 'Sending...',
+    creating: 'Creating...',
     time: {
       never: 'Never',
       justNow: 'Just now',
@@ -382,6 +388,7 @@ export default {
     channelPricing: 'Channel Pricing',
     channelMonitor: 'Channel Monitor',
     channelStatus: 'Channel Status',
+    skillGovernance: 'Skill Governance',
   },
 
   // Auth
@@ -1084,6 +1091,12 @@ export default {
     basicsDescription: 'Keep your public profile details and avatar aligned.',
     linkedProfileSources: 'Profile Sources',
     linkedProfileSourcesDescription: 'Some profile details may stay synced from third-party sign-in methods.',
+    identity: {
+      source: {
+        avatar: 'Avatar is currently synced from {providerName}',
+        username: 'Username is currently synced from {providerName}',
+      },
+    },
     securityTitle: 'Security Settings',
     securityDescription: 'Password, two-factor authentication, and alerts live in the right rail.',
     administrator: 'Administrator',
@@ -1714,6 +1727,7 @@ export default {
       leaveEmptyToKeep: 'Leave empty to keep current password',
       generatePassword: 'Generate random password',
       copyPassword: 'Copy password',
+      passwordCopied: 'Password copied',
       creating: 'Creating...',
       updating: 'Updating...',
       form: {
@@ -2210,6 +2224,8 @@ export default {
       createError: 'Failed to create channel',
       updateError: 'Failed to update channel',
       deleteError: 'Failed to delete channel',
+      noGroupsSelected: 'No groups selected for {platform}. Select at least one group or disable this platform.',
+      emptyModelsInPricing: '{platform} has pricing entries without models. Add models or remove those entries.',
       nameRequired: 'Please enter a channel name',
       duplicateModels: 'Model "{0}" appears in multiple pricing entries',
       modelConflict: "Model patterns '{model1}' and '{model2}' conflict: overlapping match range",
@@ -2617,6 +2633,9 @@ export default {
       allStatus: 'All Status',
       allGroups: 'All Groups',
       ungroupedGroup: 'Ungrouped',
+      fromModel: 'From model',
+      toModel: 'To model',
+      noMappingsConfigured: 'No mappings configured',
       oauthType: 'OAuth',
       setupToken: 'Setup Token',
       apiKey: 'API Key',
@@ -3159,6 +3178,7 @@ export default {
       // OAuth flow
       oauth: {
         title: 'Claude Account Authorization',
+        failedToGenerateUrl: 'Failed to generate authorization URL',
         authMethod: 'Authorization Method',
         manualAuth: 'Manual Authorization',
         cookieAutoAuth: 'Cookie Auto-Auth',
@@ -3234,8 +3254,10 @@ export default {
           },
           // Refresh Token auth
           refreshTokenAuth: 'Manual RT Input',
+          mobileRefreshTokenAuth: 'Manual Mobile RT Input',
           refreshTokenDesc: 'Enter your existing OpenAI Refresh Token(s). Supports batch input (one per line). The system will automatically validate and create accounts.',
           refreshTokenPlaceholder: 'Paste your OpenAI Refresh Token...\nSupports multiple, one per line',
+          accessTokenAuth: 'Manual AT Input',
           sessionTokenAuth: 'Manual ST Input',
           sessionTokenDesc: 'Enter your existing Session Token(s). Supports batch input (one per line). The system will automatically validate and create accounts.',
           sessionTokenPlaceholder: 'Paste your Session Token...\nSupports multiple, one per line',
@@ -3262,7 +3284,7 @@ export default {
 	          projectIdLabel: 'Project ID (optional)',
 	          projectIdPlaceholder: 'e.g. my-gcp-project or cloud-ai-companion-xxxxx',
 	          projectIdHint:
-	            'Leave empty to auto-detect after code exchange. If auto-detection fails, fill it in and re-generate the auth URL to try again.',
+	            'Used for Code Assist flows. Leave empty to auto-detect after code exchange. If auto-detection fails, fill it in and re-generate the auth URL to try again.',
 	          howToGetProjectId: 'How to get',
 	          step2OpenUrl: 'Open the URL in your browser and complete authorization',
 	          openUrlDesc:
@@ -3285,7 +3307,8 @@ export default {
 	          failedToGenerateUrl: 'Failed to generate Gemini auth URL',
 	          missingExchangeParams: 'Missing auth code, session ID, or state',
 	          failedToExchangeCode: 'Failed to exchange Gemini auth code',
-	          missingProjectId: 'GCP Project ID retrieval failed: Your Google account is not linked to an active GCP project. Please activate GCP and bind a credit card in Google Cloud Console, or manually enter the Project ID during authorization.',
+	          missingProjectId: 'Code Assist Project ID auto-detection failed. Enter an existing Google Cloud Project ID in step 4, then regenerate the authorization URL. If you do not have a project yet, create one first, grant the IAM roles, and enable the Cloud AI Companion API.',
+	          googleOneProjectDetectionFailed: 'Google One authorization succeeded, but the upstream companion project could not be detected. Retry the authorization once. If it still fails, inspect the upstream Gemini account state instead of manually filling a Project ID in this flow.',
 	          modelPassthrough: 'Gemini Model Passthrough',
 	          modelPassthroughDesc:
 	            'All model requests are forwarded directly to the Gemini API without model restrictions or mappings.',
@@ -4635,6 +4658,16 @@ export default {
         showAdvancedDeveloperSettings: 'Show advanced developer settings (Distributed Lock)',
         advancedSettingsSummary: 'Advanced settings (Distributed Lock)',
         evalIntervalHint: 'How often the evaluator runs. Keeping the default is recommended.',
+        metricThresholds: 'Metric thresholds',
+        metricThresholdsHint: 'Set threshold values for key metrics. Values beyond the threshold are highlighted in red.',
+        slaMinPercent: 'Minimum SLA (%)',
+        slaMinPercentHint: 'Show SLA in red when it drops below this value. Default: 99.5%.',
+        ttftP99MaxMs: 'Maximum TTFT P99 (ms)',
+        ttftP99MaxMsHint: 'Show TTFT P99 in red when it exceeds this value. Default: 500 ms.',
+        requestErrorRateMaxPercent: 'Maximum request error rate (%)',
+        requestErrorRateMaxPercentHint: 'Show request error rate in red when it exceeds this value. Default: 5%.',
+        upstreamErrorRateMaxPercent: 'Maximum upstream error rate (%)',
+        upstreamErrorRateMaxPercentHint: 'Show upstream error rate in red when it exceeds this value. Default: 5%.',
         validation: {
           title: 'Please fix the following issues',
           invalid: 'Invalid settings',

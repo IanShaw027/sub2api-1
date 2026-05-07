@@ -1064,7 +1064,7 @@ func (h *AccountHandler) PreviewFromCRS(c *gin.Context) {
 }
 
 // refreshSingleAccount refreshes credentials for a single OAuth account.
-// Returns (updatedAccount, warning, error) where warning is used for Antigravity ProjectIDMissing scenario.
+// Returns (updatedAccount, warning, error) where warning is used for temporary ProjectIDMissing scenarios.
 func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *service.Account) (*service.Account, string, error) {
 	if !account.IsOAuth() {
 		return nil, "", infraerrors.BadRequest("NOT_OAUTH", "cannot refresh non-OAuth account")
@@ -1101,6 +1101,20 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 			if _, exists := newCredentials[k]; !exists {
 				newCredentials[k] = v
 			}
+		}
+		if newProjectID, _ := newCredentials["project_id"].(string); newProjectID == "" {
+			if oldProjectID := strings.TrimSpace(account.GetCredential("project_id")); oldProjectID != "" {
+				newCredentials["project_id"] = oldProjectID
+			}
+		}
+		if tokenInfo.ProjectIDMissing {
+			updatedAccount, updateErr := h.adminService.UpdateAccount(ctx, account.ID, &service.UpdateAccountInput{
+				Credentials: newCredentials,
+			})
+			if updateErr != nil {
+				return nil, "", fmt.Errorf("failed to update credentials: %w", updateErr)
+			}
+			return updatedAccount, "missing_project_id_temporary", nil
 		}
 	} else if account.Platform == service.PlatformAntigravity {
 		tokenInfo, err := h.antigravityOAuthService.RefreshAccountToken(ctx, account)

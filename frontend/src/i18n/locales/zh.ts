@@ -3397,7 +3397,7 @@ export default {
           projectIdLabel: 'Project ID（可选）',
           projectIdPlaceholder: '例如：my-gcp-project 或 cloud-ai-companion-xxxxx',
           projectIdHint:
-            '留空则在兑换授权码后自动探测；若自动探测失败，可填写后重新生成授权链接再授权。',
+            '仅用于 Code Assist 流程。留空则在兑换授权码后自动探测；若自动探测失败，可填写后重新生成授权链接再授权。',
           howToGetProjectId: '如何获取',
           step2OpenUrl: '在浏览器中打开链接并完成授权',
           openUrlDesc: '请在新标签页中打开授权链接，登录您的 Google 账户并授权。',
@@ -3417,7 +3417,9 @@ export default {
           missingExchangeParams: '缺少 code / session_id / state',
           failedToExchangeCode: 'Gemini 授权码兑换失败',
           missingProjectId:
-            'GCP Project ID 获取失败：您的 Google 账号未关联有效的 GCP 项目。请前往 Google Cloud Console 激活 GCP 并绑定信用卡，或在授权时手动填写 Project ID。',
+            'Code Assist 的 Project ID 自动获取失败。请在第 4 步填写已有的 Google Cloud Project ID 后重新生成授权链接；如果还没有项目，请先创建项目、添加 IAM 权限并启用 Cloud AI Companion API。',
+          googleOneProjectDetectionFailed:
+            'Google One 授权已完成，但未能从上游自动探测到 companion project。请先重试一次授权；如果仍失败，应排查上游 Gemini 账号状态，而不是在此流程中手动填写 Project ID。',
           modelPassthrough: 'Gemini 直接转发模型',
           modelPassthroughDesc: '所有模型请求将直接转发至 Gemini API，不进行模型限制或映射。',
           stateWarningTitle: '提示',

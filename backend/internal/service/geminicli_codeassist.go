@@ -10,4 +10,6 @@ import (
 type GeminiCliCodeAssistClient interface {
 	LoadCodeAssist(ctx context.Context, accessToken, proxyURL string, req *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error)
 	OnboardUser(ctx context.Context, accessToken, proxyURL string, req *geminicli.OnboardUserRequest) (*geminicli.OnboardUserResponse, error)
+	GetOperation(ctx context.Context, accessToken, proxyURL, name string) (*geminicli.OnboardUserResponse, error)
+	RetrieveUserQuota(ctx context.Context, accessToken, proxyURL string, req *geminicli.RetrieveUserQuotaRequest) (*geminicli.RetrieveUserQuotaResponse, error)
 }

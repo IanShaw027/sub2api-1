@@ -115,4 +115,21 @@ describe('useGeminiOAuth.exchangeAuthCode', () => {
     expect(result).toBeNull()
     expect(oauth.error.value).toBe('admin.accounts.oauth.gemini.missingProjectId')
   })
+
+  it('maps google one companion-project detection failures to a dedicated error key', async () => {
+    vi.mocked(adminAPI.gemini.exchangeCode).mockRejectedValueOnce(
+      new Error('google One accounts require a project_id, failed to auto-detect: empty result')
+    )
+    const oauth = useGeminiOAuth()
+
+    const result = await oauth.exchangeAuthCode({
+      code: 'code',
+      sessionId: 'session',
+      state: 'state',
+      oauthType: 'google_one'
+    })
+
+    expect(result).toBeNull()
+    expect(oauth.error.value).toBe('admin.accounts.oauth.gemini.googleOneProjectDetectionFailed')
+  })
 })

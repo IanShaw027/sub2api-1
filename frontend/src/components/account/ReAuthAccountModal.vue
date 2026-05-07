@@ -123,7 +123,7 @@
         :method-label="t('admin.accounts.inputMethod')"
         :platform="isOpenAI ? 'openai' : isGemini ? 'gemini' : isAntigravity ? 'antigravity' : 'anthropic'"
         :show-project-id="isGemini && geminiOAuthType === 'code_assist'"
-        :show-project-id-recovery="isGemini"
+        :show-project-id-recovery="isGemini && geminiOAuthType === 'code_assist'"
         @generate-url="handleGenerateUrl"
         @cookie-auth="handleCookieAuth"
       />
@@ -325,21 +325,14 @@ const mergeRecord = (
   }
 }
 
-const geminiReauthTierID = (tierID: unknown): string | undefined => {
-  if (geminiOAuthType.value === 'code_assist') return 'gcp_enterprise'
-  return typeof tierID === 'string' ? tierID : undefined
-}
-
 const handleGenerateUrl = async () => {
   if (!props.account) return
 
   if (isOpenAILike.value) {
     await openaiOAuth.generateAuthUrl(props.account.proxy_id)
   } else if (isGemini.value) {
-    const creds = (props.account.credentials || {}) as Record<string, unknown>
-    const tierId = geminiReauthTierID(creds.tier_id)
     const projectId = geminiOAuthType.value === 'code_assist' ? oauthFlowRef.value?.projectId : undefined
-    await geminiOAuth.generateAuthUrl(props.account.proxy_id, projectId, geminiOAuthType.value, tierId)
+    await geminiOAuth.generateAuthUrl(props.account.proxy_id, projectId, geminiOAuthType.value)
   } else if (isAntigravity.value) {
     await antigravityOAuth.generateAuthUrl(props.account.proxy_id)
   } else {
@@ -416,8 +409,7 @@ const handleExchangeCode = async () => {
       sessionId,
       state: stateToUse,
       proxyId: props.account.proxy_id,
-      oauthType: geminiOAuthType.value,
-      tierId: geminiReauthTierID((props.account.credentials as any)?.tier_id)
+      oauthType: geminiOAuthType.value
     })
     if (!tokenInfo) return
 

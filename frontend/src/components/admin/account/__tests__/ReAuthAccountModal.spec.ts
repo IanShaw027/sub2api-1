@@ -197,8 +197,22 @@ const KiroAuthorizationFlowStub = defineComponent({
 
 const OAuthAuthorizationFlowStub = defineComponent({
   name: 'OAuthAuthorizationFlow',
+  props: {
+    platform: {
+      type: String,
+      default: ''
+    },
+    showProjectId: {
+      type: Boolean,
+      default: false
+    },
+    showProjectIdRecovery: {
+      type: Boolean,
+      default: false
+    }
+  },
   emits: ['generate-url'],
-  setup(_, { expose, emit }) {
+  setup(props, { expose, emit }) {
     expose({
       authCode: '',
       oauthState: '',
@@ -207,14 +221,19 @@ const OAuthAuthorizationFlowStub = defineComponent({
       inputMethod: 'manual',
       reset: vi.fn()
     })
-    return () => [
-      h('div', { 'data-testid': 'oauth-flow' }),
+    return () => h('div', {}, [
+      h('div', {
+        'data-testid': 'oauth-flow',
+        'data-platform': props.platform,
+        'data-show-project-id': String(props.showProjectId),
+        'data-show-project-id-recovery': String(props.showProjectIdRecovery)
+      }),
       h('button', {
         'data-testid': 'oauth-flow-generate-url',
         type: 'button',
         onClick: () => emit('generate-url')
       }, 'generate oauth url')
-    ]
+    ])
   }
 })
 
@@ -346,10 +365,13 @@ describe('admin ReAuthAccountModal', () => {
     const wrapper = mountModal(buildGeminiOAuthAccount())
 
     expect(wrapper.find('[data-testid="oauth-flow"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-platform')).toBe('gemini')
+    expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-project-id')).toBe('false')
+    expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-project-id-recovery')).toBe('false')
     expect(wrapper.findAll('button').some((button) => button.text().includes('admin.accounts.oauth.completeAuth'))).toBe(true)
   })
 
-  it('normalizes Gemini Code Assist tier to enterprise before generating reauth URL', async () => {
+  it('generates Gemini Code Assist reauth URL without sending a preselected tier', async () => {
     const wrapper = mountModal({
       ...buildGeminiOAuthAccount(),
       credentials: {
@@ -361,11 +383,12 @@ describe('admin ReAuthAccountModal', () => {
     await wrapper.get('[data-testid="oauth-flow-generate-url"]').trigger('click')
     await flushPromises()
 
+    expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-project-id')).toBe('true')
+    expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-project-id-recovery')).toBe('true')
     expect(geminiGenerateAuthUrlMock).toHaveBeenCalledWith(
       null,
       '',
-      'code_assist',
-      'gcp_enterprise'
+      'code_assist'
     )
   })
 

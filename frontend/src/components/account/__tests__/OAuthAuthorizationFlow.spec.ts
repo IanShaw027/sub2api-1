@@ -48,7 +48,7 @@ describe('OAuthAuthorizationFlow', () => {
 
   it('reveals project id recovery step only after Gemini error in recovery mode', async () => {
     const wrapper = mountComponent({
-      showProjectId: false,
+      showProjectId: true,
       showProjectIdRecovery: true,
       error: 'admin.accounts.oauth.gemini.missingProjectId'
     })
@@ -68,9 +68,19 @@ describe('OAuthAuthorizationFlow', () => {
 
   it('does not reveal project id recovery for unrelated Gemini errors', () => {
     const wrapper = mountComponent({
-      showProjectId: false,
+      showProjectId: true,
       showProjectIdRecovery: true,
       error: 'admin.accounts.oauth.gemini.failedToExchangeCode'
+    })
+
+    expect(wrapper.text()).not.toContain('admin.accounts.oauth.gemini.projectIdRecoveryTitle')
+  })
+
+  it('does not reveal project id recovery for google one mode even when recovery is enabled', () => {
+    const wrapper = mountComponent({
+      showProjectId: false,
+      showProjectIdRecovery: true,
+      error: 'admin.accounts.oauth.gemini.missingProjectId'
     })
 
     expect(wrapper.text()).not.toContain('admin.accounts.oauth.gemini.projectIdRecoveryTitle')

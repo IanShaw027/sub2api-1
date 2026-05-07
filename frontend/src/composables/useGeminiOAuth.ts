@@ -44,11 +44,27 @@ export function useGeminiOAuth() {
     error.value = ''
   }
 
+  const isCodeAssistProjectIdError = (message: string): boolean => {
+    return (
+      message.includes('missing project_id') ||
+      message.includes('missing project_id for Code Assist OAuth') ||
+      message.includes('Please provide Project ID manually') ||
+      message.includes('failed to auto-detect project_id') ||
+      message.includes('empty result')
+    )
+  }
+
+  const isGoogleOneProjectDetectionError = (message: string): boolean => {
+    return (
+      message.includes('google One accounts require a project_id, failed to auto-detect:') ||
+      message.includes('onboardUser completed but no project_id returned')
+    )
+  }
+
   const generateAuthUrl = async (
     proxyId: number | null | undefined,
     projectId?: string | null,
-    oauthType?: string,
-    tierId?: string
+    oauthType?: string
   ): Promise<boolean> => {
     loading.value = true
     authUrl.value = ''
@@ -64,8 +80,6 @@ export function useGeminiOAuth() {
       if (oauthType === 'code_assist' || oauthType === 'google_one') {
         payload.oauth_type = oauthType
       }
-      const trimmedTierID = tierId?.trim()
-      if (trimmedTierID) payload.tier_id = trimmedTierID
 
       const response = await adminAPI.gemini.generateAuthUrl(payload)
       authUrl.value = response.auth_url
@@ -87,7 +101,6 @@ export function useGeminiOAuth() {
     state: string
     proxyId?: number | null
     oauthType?: string
-    tierId?: string
   }): Promise<GeminiTokenInfo | null> => {
     const code = params.code?.trim()
     if (!code || !params.sessionId || !params.state) {
@@ -111,22 +124,15 @@ export function useGeminiOAuth() {
       ) {
         payload.oauth_type = params.oauthType
       }
-      const trimmedTierID = params.tierId?.trim()
-      if (trimmedTierID) payload.tier_id = trimmedTierID
 
       const tokenInfo = await adminAPI.gemini.exchangeCode(payload)
       return tokenInfo as GeminiTokenInfo
     } catch (err: any) {
-      // Check for specific missing project_id error
       const errorMessage = err.message || err.response?.data?.message || ''
-      if (
-        errorMessage.includes('missing project_id') ||
-        errorMessage.includes('require a project_id') ||
-        errorMessage.includes('no project_id available') ||
-        errorMessage.includes('failed to auto-detect project_id') ||
-        errorMessage.includes('empty result')
-      ) {
+      if (params.oauthType === 'code_assist' && isCodeAssistProjectIdError(errorMessage)) {
         error.value = t('admin.accounts.oauth.gemini.missingProjectId')
+      } else if (params.oauthType === 'google_one' && isGoogleOneProjectDetectionError(errorMessage)) {
+        error.value = t('admin.accounts.oauth.gemini.googleOneProjectDetectionFailed')
       } else {
         error.value = errorMessage || t('admin.accounts.oauth.gemini.failedToExchangeCode')
       }

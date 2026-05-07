@@ -185,7 +185,21 @@ const BaseDialogStub = defineComponent({
 
 const OAuthAuthorizationFlowStub = defineComponent({
   name: 'OAuthAuthorizationFlow',
-  setup(_, { expose }) {
+  props: {
+    platform: {
+      type: String,
+      default: ''
+    },
+    showProjectId: {
+      type: Boolean,
+      default: false
+    },
+    showProjectIdRecovery: {
+      type: Boolean,
+      default: false
+    }
+  },
+  setup(props, { expose }) {
     expose({
       authCode: '',
       oauthState: '',
@@ -196,7 +210,12 @@ const OAuthAuthorizationFlowStub = defineComponent({
       inputMethod: 'oauth',
       reset: vi.fn()
     })
-    return () => h('div', { 'data-testid': 'oauth-flow' })
+    return () => h('div', {
+      'data-testid': 'oauth-flow',
+      'data-platform': props.platform,
+      'data-show-project-id': String(props.showProjectId),
+      'data-show-project-id-recovery': String(props.showProjectIdRecovery)
+    })
   }
 })
 
@@ -361,7 +380,7 @@ describe('CreateAccountModal', () => {
     expect((wrapper.vm as any).form.type).toBe('oauth')
   })
 
-  it('uses enterprise tier only for Gemini Code Assist OAuth', async () => {
+  it('does not keep a preselected Gemini tier for Code Assist OAuth', async () => {
     const wrapper = mountModal()
     await flushPromises()
 
@@ -370,10 +389,70 @@ describe('CreateAccountModal', () => {
     await findButtonByText(wrapper, 'GCP Code Assist').trigger('click')
     await nextTick()
 
-    expect((wrapper.vm as any).geminiTierGcp).toBe('gcp_enterprise')
-    expect((wrapper.vm as any).geminiSelectedTier).toBe('gcp_enterprise')
-    expect(wrapper.html()).toContain('admin.accounts.gemini.tier.gcp.enterprise')
+    expect((wrapper.vm as any).geminiOAuthType).toBe('code_assist')
+    expect(wrapper.html()).not.toContain('admin.accounts.gemini.tier.gcp.enterprise')
     expect(wrapper.html()).not.toContain('admin.accounts.gemini.tier.gcp.standard')
+  })
+
+  it('does not enable project-id recovery for Gemini Google One OAuth', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'Gemini').trigger('click')
+    await nextTick()
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    const oauthFlow = wrapper.get('[data-testid="oauth-flow"]')
+    expect(oauthFlow.attributes('data-platform')).toBe('gemini')
+    expect(oauthFlow.attributes('data-show-project-id')).toBe('false')
+    expect(oauthFlow.attributes('data-show-project-id-recovery')).toBe('false')
+  })
+
+  it('enables project-id recovery only for Gemini Code Assist OAuth', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'Gemini').trigger('click')
+    await nextTick()
+    await findButtonByText(wrapper, 'GCP Code Assist').trigger('click')
+    await nextTick()
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    const oauthFlow = wrapper.get('[data-testid="oauth-flow"]')
+    expect(oauthFlow.attributes('data-platform')).toBe('gemini')
+    expect(oauthFlow.attributes('data-show-project-id')).toBe('true')
+    expect(oauthFlow.attributes('data-show-project-id-recovery')).toBe('true')
+  })
+
+  it('keeps Gemini API key tier selection for AI Studio accounts', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'Gemini').trigger('click')
+    await nextTick()
+    await wrapper.get('[data-tour="account-form-type"] button:nth-child(2)').trigger('click')
+    await nextTick()
+
+    expect(wrapper.html()).toContain('admin.accounts.gemini.tier.aiStudio.free')
+
+    await wrapper.get('[data-tour="account-form-name"]').setValue('gemini-api')
+    await wrapper.get('input[placeholder="AIza..."]').setValue('AIza-test')
+    await wrapper.get('select.input').setValue('aistudio_paid')
+    await nextTick()
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'gemini-api',
+      platform: 'gemini',
+      type: 'apikey',
+      credentials: expect.objectContaining({
+        api_key: 'AIza-test',
+        tier_id: 'aistudio_paid'
+      })
+    }))
   })
 
   it('clears stale OpenAI compact settings after switching to another platform', async () => {

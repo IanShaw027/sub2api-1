@@ -331,6 +331,10 @@
     "usage": "使用记录",
     "redeem": "兑换",
     "affiliate": "邀请返利",
+    "affiliateManagement": "邀请返利",
+    "affiliateInviteRecords": "邀请记录",
+    "affiliateRebateRecords": "返利记录",
+    "affiliateTransferRecords": "提取记录",
     "profile": "个人资料",
     "users": "用户管理",
     "groups": "分组管理",
@@ -374,9 +378,11 @@
     "center": { "label": "AI 创作中心" },
     "line": {
       "selector": "线路",
+      "key": "密钥",
       "availableKeys": "可用 key",
       "platform": "平台",
-      "unassigned": "未分配线路"
+      "unassigned": "未分配线路",
+      "noKey": "暂无可用密钥"
     },
     "chat": {
       "title": "AI 对话",
@@ -388,6 +394,8 @@
       "runtimeLabel": "runtime",
       "responsesLabel": "responses",
       "send": "发送",
+      "noSessions": "暂无历史会话",
+      "noSessionsDesc": "发送第一条消息后会自动创建会话。",
       "quickPrompts": "快捷提示词",
       "noPrompts": "暂无提示词",
       "noPromptsDesc": "去提示词库创建模板吧。",
@@ -460,9 +468,12 @@
     },
     "prompt": {
       "title": "标题",
+      "create": "新建提示词",
+      "edit": "编辑提示词",
       "visibility": "可见性",
       "status": "状态",
       "line": "线路",
+      "searchPlaceholder": "搜标题、内容、标签",
       "tags": "标签",
       "tagsPlaceholder": "用逗号分隔",
       "description": "简介",
@@ -493,6 +504,9 @@
       "create": "新建提示词",
       "scope": "范围",
       "mine": "仅我的",
+      "publicTemplates": "公共模板",
+      "mineTemplates": "我的模板",
+      "privateTemplates": "我的私有",
       "emptyTitle": "暂无提示词",
       "emptyDesc": "创建一个新模板，或克隆公开模板作为你的私有版本。"
     },
@@ -1149,11 +1163,14 @@
     "loadFailed": "加载邀请返利数据失败",
     "transferFailed": "转入余额失败",
     "stats": {
+      "rebateRate": "我的返利比例",
+      "rebateRateHint": "被邀请用户每次充值后你可获得的返利比例",
       "invitedUsers": "邀请人数",
       "rebatedInvitees": "已返利人数",
       "remainingSlots": "剩余可返利人数",
       "unlimited": "不限",
       "availableQuota": "可转返利额度",
+      "frozenQuota": "冻结中",
       "totalQuota": "历史返利额度"
     },
     "policy": {
@@ -1200,8 +1217,9 @@
     "tips": {
       "title": "使用说明",
       "line1": "将邀请码或邀请链接分享给新用户。",
-      "line2": "被邀请用户充值后，你可获得对应比例的返利额度。",
-      "line3": "返利额度可随时转入账户余额。"
+      "line2": "被邀请用户充值后，你可获得 {rate} 的返利额度。",
+      "line3": "返利额度可随时转入账户余额。",
+      "line4": "新产生的返利需要经过冻结期后才能提现。"
     }
   },
   "redeem": {
@@ -3438,7 +3456,7 @@
           "generateAuthUrl": "生成授权链接",
           "projectIdLabel": "Project ID（可选）",
           "projectIdPlaceholder": "例如：my-gcp-project 或 cloud-ai-companion-xxxxx",
-          "projectIdHint": "留空则在兑换授权码后自动探测；若自动探测失败，可填写后重新生成授权链接再授权。",
+          "projectIdHint": "仅用于 Code Assist 流程。留空则在兑换授权码后自动探测；若自动探测失败，可填写后重新生成授权链接再授权。",
           "projectTipBadge": "GCP Tip",
           "projectTipTitle": "Google One / Gemini CLI 项目准备",
           "projectTipIntro": "如果自动探测不稳定，建议先准备一个个人账号下、无组织绑定的 GCP 项目，再进行 Gemini OAuth。",
@@ -3466,7 +3484,8 @@
           "failedToGenerateUrl": "生成 Gemini 授权链接失败",
           "missingExchangeParams": "缺少 code / session_id / state",
           "failedToExchangeCode": "Gemini 授权码兑换失败",
-          "missingProjectId": "Project ID 自动获取失败。请在第 4 步填写已有的 Google Cloud Project ID 后重新生成授权链接；如果还没有项目，请先创建项目、添加 IAM 权限并启用 Cloud AI Companion API。",
+          "missingProjectId": "Code Assist 的 Project ID 自动获取失败。请在第 4 步填写已有的 Google Cloud Project ID 后重新生成授权链接；如果还没有项目，请先创建项目、添加 IAM 权限并启用 Cloud AI Companion API。",
+          "googleOneProjectDetectionFailed": "Google One 授权已完成，但未能从上游自动探测到 companion project。请先重试一次授权；如果仍失败，应排查上游 Gemini 账号状态，而不是在此流程中手动填写 Project ID。",
           "modelPassthrough": "Gemini 直接转发模型",
           "modelPassthroughDesc": "所有模型请求将直接转发至 Gemini API，不进行模型限制或映射。",
           "stateWarningTitle": "提示",
@@ -4267,6 +4286,39 @@
           "consumed": "充值总额",
           "rebate": "返利总额"
         }
+      },
+      "records": {
+        "searchPlaceholder": "邮箱、用户名、用户 ID、订单号",
+        "startAt": "开始日期",
+        "endAt": "结束日期",
+        "inviter": "邀请人",
+        "invitee": "被邀请人",
+        "user": "用户",
+        "affCode": "邀请码",
+        "totalRebate": "累计返利",
+        "invitedAt": "邀请时间",
+        "order": "订单",
+        "orderAmount": "充值金额",
+        "payAmount": "支付金额",
+        "rebateAmount": "返利金额",
+        "paymentType": "支付方式",
+        "orderStatus": "订单状态",
+        "rebatedAt": "返利时间",
+        "transferAmount": "提取金额",
+        "balanceAfter": "提取后余额",
+        "availableQuotaAfter": "提取后可提",
+        "frozenQuotaAfter": "提取后冻结",
+        "historyQuotaAfter": "提取后历史返利",
+        "transferredAt": "提取时间"
+      },
+      "overview": {
+        "title": "用户返利概览",
+        "affCode": "邀请码",
+        "rebateRate": "返利比例",
+        "invitedCount": "邀请人数",
+        "rebatedInviteeCount": "已产生返利人数",
+        "availableQuota": "可提余额",
+        "historyQuota": "历史返利"
       }
     },
     "usage": {
@@ -5143,17 +5195,64 @@
         },
         "affiliate": {
           "title": "邀请返利",
-          "description": "控制用户邀请返利功能、返利上限、可返利人数和新用户邀请奖励。",
+          "description": "老用户邀请新用户注册，新用户充值后老用户按比例获得返利额度。默认关闭。",
           "enabled": "启用邀请返利",
-          "enabledHint": "关闭后用户侧邀请返利菜单隐藏，邀请链接不产生绑定、奖励和返利。",
-          "rebateRate": "邀请返利比例",
-          "rebateRateHint": "被邀请用户充值余额后返给邀请人的比例（0-100）。",
-          "rebateCap": "每人返利上限",
-          "rebateCapHint": "每位邀请人累计最多可获得多少返利额度，0 表示不限制。",
-          "inviteeLimit": "最多可返利人数",
-          "inviteeLimitHint": "每位邀请人最多可纳入多少位已返利消费用户，首次有效返利消费即占 1 个名额，0 表示不限制。",
-          "signupBonus": "邀请注册奖励",
-          "signupBonusHint": "新用户通过邀请链接注册成功后获得的余额奖励，0 表示不奖励。"
+          "enabledHint": "关闭后用户菜单中的邀请页面入口隐藏、注册时忽略邀请码、新充值不再产生返利。已有返利额度仍可转入余额。",
+          "rebateRate": "全局返利比例",
+          "rebateRateHint": "充值后返给邀请人的默认比例（0-100%，例如填写 10 表示返利 10%）。",
+          "rebateCap": "单笔返利上限",
+          "rebateCapHint": "单次充值可产生的最大返利额度，0 表示不限制。",
+          "inviteeLimit": "单个邀请人可计返利人数上限",
+          "inviteeLimitHint": "最多可计入返利的被邀请人数，0 表示不限制。",
+          "signupBonus": "被邀请人注册奖励",
+          "signupBonusHint": "被邀请用户完成注册后发放的奖励额度，0 表示不发放。",
+          "freezeHours": "返利冻结期（小时）",
+          "freezeHoursDesc": "新产生的返利将在冻结期内无法提现。0 = 不冻结。",
+          "durationDays": "返利有效期（天）",
+          "durationDaysDesc": "被邀请用户注册后多少天内的充值产生返利。0 = 永久有效。",
+          "perInviteeCap": "单人返利上限",
+          "perInviteeCapDesc": "每个被邀请用户最多产生的返利总额。0 = 无上限。",
+          "customUsers": {
+            "title": "专属用户配置",
+            "description": "为指定用户设置专属邀请码或专属返利比例。仅展示已设置过专属配置的用户。",
+            "addButton": "添加专属用户",
+            "searchPlaceholder": "搜索邮箱或用户名",
+            "batchButton": "批量设置比例（已选 {count}）",
+            "empty": "暂无专属配置用户",
+            "customBadge": "自定义",
+            "useGlobal": "沿用全局",
+            "resetTitle": "重置该用户的专属配置",
+            "resetMessage": "确认将 {email} 的专属配置全部重置为默认？\n• 专属返利比例将清除（沿用全局）\n• 邀请码将重新生成为系统随机码（已分发的旧邀请链接将失效）",
+            "totalLabel": "共 {total} 条",
+            "col": {
+              "email": "邮箱",
+              "username": "用户名",
+              "code": "邀请码",
+              "rate": "专属比例",
+              "actions": "操作"
+            }
+          },
+          "modal": {
+            "addTitle": "添加专属用户",
+            "editTitle": "编辑专属配置",
+            "userLabel": "用户",
+            "userPlaceholder": "搜索邮箱或用户名",
+            "changeUser": "更换用户",
+            "codeLabel": "专属邀请码（可选）",
+            "codePlaceholder": "例如 VIP2026",
+            "codeHint": "4-32 位，仅支持大写字母、数字、下划线、连字符；留空表示不修改；输入将自动转大写。",
+            "rateLabel": "专属返利比例（可选）",
+            "ratePlaceholder": "例如 30",
+            "rateHint": "0-100%；留空（编辑模式下）表示清除专属比例并沿用全局。",
+            "errorBadRate": "请输入 0-100 之间的比例",
+            "errorEmpty": "至少填写一项：专属邀请码或专属返利比例"
+          },
+          "batchModal": {
+            "title": "批量设置专属比例（已选 {count} 个用户）",
+            "hint": "为所选用户统一设置专属返利比例。",
+            "placeholder": "例如 30",
+            "clearHint": "留空提交将清除所选用户的专属比例。"
+          }
         },
         "ticket": {
           "title": "工单模块",
