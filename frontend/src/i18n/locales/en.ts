@@ -246,6 +246,7 @@ export default {
   common: {
     loading: 'Loading...',
     submitting: 'Submitting...',
+    send: 'Send',
     justNow: 'just now',
     save: 'Save',
     saved: 'Saved successfully',
@@ -2297,6 +2298,8 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
+        kiro: 'Kiro',
+        sora: 'Sora',
       },
       deleteConfirm:
         "Are you sure you want to delete '{name}'? All associated API keys will no longer belong to any group.",
@@ -2910,6 +2913,8 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
+        kiro: 'Kiro',
+        sora: 'Sora',
       },
       types: {
         oauth: 'OAuth',
@@ -3169,6 +3174,8 @@ export default {
       vertexSaJsonMissingClientEmail: 'Service Account JSON is missing client_email',
       vertexSaJsonInvalid: 'Service Account JSON format is invalid',
       vertexSaJsonRequired: 'Please upload a Service Account JSON',
+      openAIWebProfileImported: 'OpenAI WebProfile imported',
+      openAIWebProfileImportFailed: 'Failed to import OpenAI WebProfile',
       oauthSetupToken: 'OAuth / Setup Token',
       addMethod: 'Add Method',
       setupTokenLongLived: 'Setup Token (Long-lived)',
@@ -3872,6 +3879,8 @@ export default {
       createSuccess: 'Plan created successfully',
       updateSuccess: 'Plan updated successfully',
       deleteSuccess: 'Plan deleted successfully',
+      deleteFailed: 'Failed to delete plan',
+      loadResultsFailed: 'Failed to load results',
       results: 'Test Results',
       noResults: 'No test results yet',
       responseText: 'Response',
@@ -4115,6 +4124,7 @@ export default {
       groupRequired: 'Please select a subscription group',
       days: ' days',
       status: {
+        active: 'Unused',
         unused: 'Unused',
         used: 'Used',
         expired: 'Expired',
