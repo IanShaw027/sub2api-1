@@ -990,6 +990,28 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 	}
 	tokenInfo.PlanName = geminiPlanNameForToken(tokenInfo.TierID, tokenInfo.Extra)
 
+	if oauthType == "code_assist" && strings.TrimSpace(tokenInfo.ProjectID) != "" {
+		quotaResp, quotaErr := s.retrieveGeminiUserQuota(ctx, tokenInfo.AccessToken, proxyURL, tokenInfo.ProjectID)
+		switch {
+		case quotaErr == nil:
+			tokenInfo.UsageRaw = quotaResp
+			tokenInfo.Extra = mergeGeminiCredentialExtra(tokenInfo.Extra, buildGeminiQuotaExtra(quotaResp), clearGeminiQuotaErrorExtra())
+			tokenInfo.Status = ""
+			tokenInfo.StatusReason = ""
+		default:
+			tokenInfo.Extra = mergeGeminiCredentialExtra(tokenInfo.Extra, buildGeminiQuotaErrorExtra(quotaErr))
+			if isGeminiForbiddenQuotaError(quotaErr) {
+				tokenInfo.UsageRaw = nil
+				tokenInfo.Extra = mergeGeminiCredentialExtra(tokenInfo.Extra, map[string]any{
+					"gemini_usage_raw": nil,
+					"usage_updated_at": "",
+				})
+				tokenInfo.Status = "forbidden"
+				tokenInfo.StatusReason = quotaErr.Error()
+			}
+		}
+	}
+
 	return tokenInfo, nil
 }
 
@@ -1190,11 +1212,50 @@ func buildGeminiQuotaErrorExtra(err error) map[string]any {
 	}
 }
 
+func isGeminiForbiddenQuotaError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "status 403")
+}
+
 func clearGeminiQuotaErrorExtra() map[string]any {
 	return map[string]any{
 		"quota_query_last_error":    "",
 		"quota_query_last_error_at": "",
 	}
+}
+
+func (s *GeminiOAuthService) retrieveGeminiUserQuota(ctx context.Context, accessToken, proxyURL, projectID string) (map[string]any, error) {
+	if s == nil || s.codeAssist == nil {
+		return nil, errors.New("code assist client not configured")
+	}
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return nil, errors.New("project_id is empty")
+	}
+
+	resp, err := s.codeAssist.RetrieveUserQuota(ctx, accessToken, proxyURL, &geminicli.RetrieveUserQuotaRequest{
+		Project:   projectID,
+		UserAgent: geminicli.GeminiCLIUserAgent,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	raw, err := json.Marshal(resp)
+	if err != nil {
+		return nil, fmt.Errorf("marshal retrieveUserQuota response failed: %w", err)
+	}
+
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, fmt.Errorf("normalize retrieveUserQuota response failed: %w", err)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
 }
 
 func buildGeminiLoadCodeAssistRequest(projectID string) *geminicli.LoadCodeAssistRequest {

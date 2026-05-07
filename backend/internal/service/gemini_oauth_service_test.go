@@ -1377,6 +1377,74 @@ func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_NoProjectID_AutoDetec
 	}
 }
 
+func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_RefreshesQuotaSnapshot(t *testing.T) {
+	t.Parallel()
+
+	client := &mockGeminiOAuthClient{
+		refreshTokenFunc: func(ctx context.Context, oauthType, refreshToken, proxyURL string) (*geminicli.TokenResponse, error) {
+			return &geminicli.TokenResponse{
+				AccessToken: "at",
+				ExpiresIn:   3600,
+			}, nil
+		},
+	}
+
+	var gotQuotaReq *geminicli.RetrieveUserQuotaRequest
+	codeAssist := &mockGeminiCodeAssistClient{
+		retrieveQuotaFunc: func(ctx context.Context, accessToken, proxyURL string, req *geminicli.RetrieveUserQuotaRequest) (*geminicli.RetrieveUserQuotaResponse, error) {
+			gotQuotaReq = req
+			return &geminicli.RetrieveUserQuotaResponse{
+				Buckets: []geminicli.RetrieveUserQuotaBucket{
+					{
+						ModelID:           "gemini-2.5-pro",
+						RemainingAmount:   "42",
+						RemainingFraction: 0.42,
+						ResetTime:         "2026-05-08T00:00:00Z",
+						TokenType:         "REQUEST",
+					},
+				},
+			}, nil
+		},
+	}
+
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, nil, &config.Config{})
+	defer svc.Stop()
+
+	account := &Account{
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "rt",
+			"oauth_type":    "code_assist",
+			"project_id":    "proj-123",
+			"tier_id":       "STANDARD",
+		},
+	}
+
+	info, err := svc.RefreshAccountToken(context.Background(), account)
+	if err != nil {
+		t.Fatalf("RefreshAccountToken 返回错误: %v", err)
+	}
+	if gotQuotaReq == nil {
+		t.Fatal("应调用 RetrieveUserQuota")
+	}
+	if gotQuotaReq.Project != "proj-123" {
+		t.Fatalf("quota request project 不匹配: got=%q", gotQuotaReq.Project)
+	}
+	if gotQuotaReq.UserAgent != geminicli.GeminiCLIUserAgent {
+		t.Fatalf("quota request userAgent 不匹配: got=%q", gotQuotaReq.UserAgent)
+	}
+	if info.UsageRaw == nil {
+		t.Fatal("应写入 UsageRaw")
+	}
+	if _, ok := info.Extra["gemini_usage_raw"]; !ok {
+		t.Fatal("应写入 gemini_usage_raw extra")
+	}
+	if got := info.Extra["quota_query_last_error"]; got != "" {
+		t.Fatalf("成功后应清空 quota_query_last_error: got=%v", got)
+	}
+}
+
 func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_NoProjectID_SoftMissing(t *testing.T) {
 	t.Parallel()
 
@@ -1425,6 +1493,56 @@ func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_NoProjectID_SoftMissi
 	}
 	if info.TierID != GeminiTierGCPStandard {
 		t.Fatalf("TierID 应回退到默认值: got=%q", info.TierID)
+	}
+}
+
+func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_Quota403SetsForbiddenStatus(t *testing.T) {
+	t.Parallel()
+
+	client := &mockGeminiOAuthClient{
+		refreshTokenFunc: func(ctx context.Context, oauthType, refreshToken, proxyURL string) (*geminicli.TokenResponse, error) {
+			return &geminicli.TokenResponse{
+				AccessToken: "at",
+				ExpiresIn:   3600,
+			}, nil
+		},
+	}
+
+	codeAssist := &mockGeminiCodeAssistClient{
+		retrieveQuotaFunc: func(ctx context.Context, accessToken, proxyURL string, req *geminicli.RetrieveUserQuotaRequest) (*geminicli.RetrieveUserQuotaResponse, error) {
+			return nil, fmt.Errorf("retrieveUserQuota failed: status 403, body: forbidden")
+		},
+	}
+
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, nil, &config.Config{})
+	defer svc.Stop()
+
+	account := &Account{
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "rt",
+			"oauth_type":    "code_assist",
+			"project_id":    "proj-123",
+			"tier_id":       "STANDARD",
+		},
+	}
+
+	info, err := svc.RefreshAccountToken(context.Background(), account)
+	if err != nil {
+		t.Fatalf("RefreshAccountToken 返回错误: %v", err)
+	}
+	if info.Status != "forbidden" {
+		t.Fatalf("Status 应标记 forbidden: got=%q", info.Status)
+	}
+	if !strings.Contains(info.StatusReason, "status 403") {
+		t.Fatalf("StatusReason 应保留 403 错误: got=%q", info.StatusReason)
+	}
+	if got := info.Extra["quota_query_last_error"]; got == nil || got == "" {
+		t.Fatalf("应写入 quota_query_last_error: got=%v", got)
+	}
+	if got := info.Extra["usage_updated_at"]; got != "" {
+		t.Fatalf("403 时应清空 usage_updated_at: got=%v", got)
 	}
 }
 
