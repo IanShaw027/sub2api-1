@@ -601,6 +601,7 @@ func TestOpenAIGatewayService_Forward_StripsUnsupportedFieldsConsistently(t *tes
 		"model":"gpt-5.1-codex",
 		"input":"hello",
 		"stream":false,
+		"temperature":0.2,
 		"prompt_cache_retention":"24h",
 		"safety_identifier":"safe-id",
 		"metadata":{"k":"v"},
@@ -634,10 +635,15 @@ func TestOpenAIGatewayService_Forward_StripsUnsupportedFieldsConsistently(t *tes
 	result, err := svc.Forward(context.Background(), c, account, body)
 	require.NoError(t, err)
 	require.NotNil(t, result)
+	require.NotEmpty(t, strings.TrimSpace(gjson.GetBytes(upstream.lastBody, "instructions").String()))
+	require.True(t, gjson.GetBytes(upstream.lastBody, "stream").Bool())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "temperature").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_retention").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "safety_identifier").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "metadata").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "stream_options").Exists())
+	require.Equal(t, "hello", gjson.GetBytes(upstream.lastBody, "input.0.content").String())
+	require.False(t, result.Stream)
 }
 
 func TestOpenAIGatewayService_GenerateSessionHash_EmptyBodyStillEmpty(t *testing.T) {

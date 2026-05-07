@@ -2628,6 +2628,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			promptCacheKey = strings.TrimSpace(v)
 		}
 	}
+	clientStream := reqStream
+	upstreamStream := reqStream
 
 	// Track if body needs re-serialization
 	bodyModified := false
@@ -2716,10 +2718,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			disablePatch()
 		}
 	}
-	if account.Type == AccountTypeOAuth && !isCompactRequest && !isMessagesBridgeRequest && promptCacheKey != "" {
+	if account.Type == AccountTypeOAuth && !isCompactRequest && !isMessagesBridgeRequest {
 		if stream, ok := reqBody["stream"].(bool); !ok || !stream {
 			reqBody["stream"] = true
-			reqStream = true
 			bodyModified = true
 			disablePatch()
 		}
@@ -2945,12 +2946,16 @@ oauthTransformDone:
 			"safety_identifier",
 			"metadata",
 			"stream_options",
+			"temperature",
 		}
 		for _, unsupportedField := range unsupportedFields {
 			if _, has := reqBody[unsupportedField]; has {
 				delete(reqBody, unsupportedField)
 				bodyModified = true
 				markPatchDelete(unsupportedField)
+				if unsupportedField == "temperature" {
+					recordOpenAICompatStrippedField("temperature")
+				}
 			}
 		}
 	}
@@ -3028,7 +3033,10 @@ oauthTransformDone:
 			body = normalizedBody
 		}
 		reqStream = gjson.GetBytes(body, "stream").Bool()
+	} else if account.Type == AccountTypeOAuth {
+		reqStream = clientStream
 	}
+	upstreamStream = gjson.GetBytes(body, "stream").Bool()
 	// Get access token
 	token, _, err := s.GetAccessToken(ctx, account)
 	if err != nil {
@@ -3253,8 +3261,8 @@ oauthTransformDone:
 	httpCodexCompatRetryTried := false
 	for {
 		// Build upstream request
-		upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, reqStream)
-		upstreamReq, err := s.buildUpstreamRequest(upstreamCtx, c, account, body, token, reqStream, promptCacheKey, isCodexCLI)
+		upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, upstreamStream)
+		upstreamReq, err := s.buildUpstreamRequest(upstreamCtx, c, account, body, token, upstreamStream, promptCacheKey, isCodexCLI)
 		releaseUpstreamCtx()
 		if err != nil {
 			return nil, err
@@ -3540,13 +3548,22 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		}
 	}
 
-	if account != nil && account.Type == AccountTypeOAuth {
-		isCompact := isOpenAIResponsesCompactPath(c)
+	isMessagesBridge := isOpenAICompatMessagesBridgeBody(body)
+	if !isMessagesBridge {
 		bodyWithInstructions, _, err := ensureOpenAIPassthroughInstructions(c, reqModel, body)
 		if err != nil {
 			return nil, err
 		}
 		body = bodyWithInstructions
+	}
+	normalizedBaseBody, _, err := normalizeOpenAIPassthroughBaseBody(body, isOpenAIResponsesCompactPath(c))
+	if err != nil {
+		return nil, err
+	}
+	body = normalizedBaseBody
+
+	if account != nil && account.Type == AccountTypeOAuth {
+		isCompact := isOpenAIResponsesCompactPath(c)
 		if rejectReason := detectOpenAIPassthroughInstructionsRejectReason(c, reqModel, body); rejectReason != "" {
 			rejectMsg := "OpenAI codex passthrough requires a non-empty instructions field"
 			setOpsUpstreamError(c, http.StatusForbidden, rejectMsg, "")
@@ -6643,6 +6660,62 @@ func normalizeOpenAIPassthroughOAuthBody(body []byte, compact bool) ([]byte, boo
 	normalized, err := marshalOpenAIResponsesRequestBodyOrdered(reqBody)
 	if err != nil {
 		return body, false, fmt.Errorf("normalize passthrough body serialize: %w", err)
+	}
+	return normalized, true, nil
+}
+
+func normalizeOpenAIPassthroughBaseBody(body []byte, compact bool) ([]byte, bool, error) {
+	if len(body) == 0 {
+		return body, false, nil
+	}
+
+	var reqBody map[string]any
+	if err := json.Unmarshal(body, &reqBody); err != nil {
+		return body, false, fmt.Errorf("normalize passthrough base body parse: %w", err)
+	}
+
+	changed := false
+	unsupportedFields := []string{
+		"prompt_cache_retention",
+		"safety_identifier",
+		"metadata",
+		"stream_options",
+		"temperature",
+	}
+	for _, unsupportedField := range unsupportedFields {
+		if _, ok := reqBody[unsupportedField]; ok {
+			delete(reqBody, unsupportedField)
+			changed = true
+			if unsupportedField == "temperature" {
+				recordOpenAICompatStrippedField("temperature")
+			}
+		}
+	}
+
+	if !compact {
+		if inputStr, ok := reqBody["input"].(string); ok {
+			if strings.TrimSpace(inputStr) != "" {
+				reqBody["input"] = []any{
+					map[string]any{
+						"type":    "message",
+						"role":    "user",
+						"content": inputStr,
+					},
+				}
+			} else {
+				reqBody["input"] = []any{}
+			}
+			changed = true
+		}
+	}
+
+	if !changed {
+		return body, false, nil
+	}
+
+	normalized, err := marshalOpenAIResponsesRequestBodyOrdered(reqBody)
+	if err != nil {
+		return body, false, fmt.Errorf("normalize passthrough base body serialize: %w", err)
 	}
 	return normalized, true, nil
 }

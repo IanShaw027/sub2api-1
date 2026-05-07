@@ -164,6 +164,7 @@ func TestCursorMixedShape_StripsUnsupportedFields(t *testing.T) {
 	cursorBody := []byte(`{
 		"model": "gpt-5.4",
 		"stream": true,
+		"temperature": 0.2,
 		"prompt_cache_retention": "24h",
 		"safety_identifier": "cursor-user-xyz",
 		"metadata": {"trace_id":"abc","caller":"cursor"},

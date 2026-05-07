@@ -534,6 +534,57 @@ func TestOpenAIGatewayService_OAuthPassthrough_CodexMissingInstructionsInjectsBe
 	require.NotEmpty(t, strings.TrimSpace(gjson.GetBytes(upstream.lastBody, "instructions").String()))
 }
 
+func TestOpenAIGatewayService_APIKeyPassthrough_StripsTemperatureAndInjectsInstructions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	originalBody := []byte(`{"model":"gpt-5.3-codex","stream":true,"temperature":0.2,"input":"hi"}`)
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid"}},
+			Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+				`data: {"type":"response.output_text.delta","delta":"h"}`,
+				"",
+				`data: {"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}}}}`,
+				"",
+				"data: [DONE]",
+				"",
+			}, "\n"))),
+		},
+	}
+
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: false}},
+		httpUpstream: upstream,
+	}
+
+	account := &Account{
+		ID:          125,
+		Name:        "acc-apikey-pass",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test"},
+		Extra:       map[string]any{"openai_passthrough": true},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, originalBody)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq)
+	require.NotEmpty(t, strings.TrimSpace(gjson.GetBytes(upstream.lastBody, "instructions").String()))
+	require.False(t, gjson.GetBytes(upstream.lastBody, "temperature").Exists())
+	require.Equal(t, "hi", gjson.GetBytes(upstream.lastBody, "input.0.content").String())
+}
+
 func TestOpenAIGatewayService_OAuthPassthrough_NonCodexResponsesWithoutInstructionsReachUpstream(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -731,9 +782,10 @@ func TestOpenAIGatewayService_OAuthLegacy_GenericResponsesForcesStoreFalseAndStr
 	require.NotNil(t, result)
 	require.True(t, gjson.GetBytes(upstream.lastBody, "store").Exists())
 	require.Equal(t, false, gjson.GetBytes(upstream.lastBody, "store").Bool())
-	require.Equal(t, false, gjson.GetBytes(upstream.lastBody, "stream").Bool())
+	require.Equal(t, true, gjson.GetBytes(upstream.lastBody, "stream").Bool())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "max_output_tokens").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "max_completion_tokens").Exists())
+	require.False(t, result.Stream)
 }
 
 func TestOpenAIGatewayService_OAuthLegacy_UpstreamRequestIgnoresClientCancel(t *testing.T) {
@@ -1354,7 +1406,12 @@ func TestOpenAIGatewayService_APIKeyPassthrough_PreservesBodyAndUsesResponsesEnd
 	require.NotNil(t, result.ServiceTier)
 	require.Equal(t, "flex", *result.ServiceTier)
 	require.NotNil(t, upstream.lastReq)
-	require.Equal(t, originalBody, upstream.lastBody)
+	require.Equal(t, "gpt-5.2", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "stream").Bool())
+	require.Equal(t, "flex", gjson.GetBytes(upstream.lastBody, "service_tier").String())
+	require.Equal(t, int64(128), gjson.GetBytes(upstream.lastBody, "max_output_tokens").Int())
+	require.Equal(t, "hi", gjson.GetBytes(upstream.lastBody, "input.0.text").String())
+	require.NotEmpty(t, strings.TrimSpace(gjson.GetBytes(upstream.lastBody, "instructions").String()))
 	require.Equal(t, "https://api.openai.com/v1/responses", upstream.lastReq.URL.String())
 	require.Equal(t, "Bearer sk-api-key", upstream.lastReq.Header.Get("Authorization"))
 	require.Equal(t, "curl/8.0", upstream.lastReq.Header.Get("User-Agent"))

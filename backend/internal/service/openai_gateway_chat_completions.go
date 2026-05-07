@@ -36,6 +36,7 @@ var cursorResponsesUnsupportedFields = []string{
 	"safety_identifier",
 	"metadata",
 	"stream_options",
+	"temperature",
 }
 
 // ForwardAsChatCompletions accepts a Chat Completions request body, converts it

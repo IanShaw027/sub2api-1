@@ -131,6 +131,7 @@ var openAIChatGPTInternalUnsupportedFields = []string{
 	"stream_options",
 	"max_output_tokens",
 	"max_completion_tokens",
+	"temperature",
 }
 
 const (
