@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -151,19 +152,30 @@ func runMainServer() {
 	}
 	defer app.Cleanup()
 
-	// 启动服务器
+	listener, err := net.Listen("tcp", app.Server.Addr)
+	if err != nil {
+		log.Fatalf("Failed to bind server on %s: %v", app.Server.Addr, err)
+	}
+
+	serverErrCh := make(chan error, 1)
 	go func() {
-		if err := app.Server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("Failed to start server: %v", err)
+		if err := app.Server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErrCh <- err
 		}
 	}()
 
-	log.Printf("Server started on %s", app.Server.Addr)
+	log.Printf("Server started on %s", listener.Addr().String())
 
 	// 等待中断信号
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	defer signal.Stop(quit)
+
+	select {
+	case err := <-serverErrCh:
+		log.Fatalf("Server stopped unexpectedly: %v", err)
+	case <-quit:
+	}
 
 	log.Println("Shutting down server...")
 
