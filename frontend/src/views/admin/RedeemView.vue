@@ -121,7 +121,7 @@
                     : 'badge-danger'
               ]"
             >
-              {{ t('admin.redeem.status.' + value) }}
+              {{ t(redeemStatusI18nKey(value), value) }}
             </span>
           </template>
 
@@ -417,6 +417,7 @@ import Select from '@/components/common/Select.vue'
 import GroupBadge from '@/components/common/GroupBadge.vue'
 import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { redeemStatusI18nKey } from '@/utils/i18n'
 
 const { t } = useI18n()
 const appStore = useAppStore()

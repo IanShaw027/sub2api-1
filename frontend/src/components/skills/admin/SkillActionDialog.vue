@@ -26,7 +26,7 @@
           :disabled="loading"
           @click="handleSubmit"
         >
-          {{ loading ? '提交中...' : confirmLabel }}
+          {{ loading ? 'Submitting...' : confirmLabel }}
         </button>
       </div>
     </template>

@@ -65,13 +65,13 @@
 
       <template #cell-payment_type="{ value }">
         <span class="text-sm text-gray-700 dark:text-gray-300">
-          {{ t('payment.methods.' + value, value) }}
+          {{ t(paymentMethodDisplayKey(value), value) }}
         </span>
       </template>
 
       <template #cell-status="{ value }">
         <span :class="['badge', statusBadgeClass(value)]">
-          {{ t('payment.status.' + value.toLowerCase(), value) }}
+          {{ t(paymentStatusI18nKey(value), value) }}
         </span>
       </template>
 
@@ -143,6 +143,7 @@ import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { statusBadgeClass, canRefund, formatOrderDateTime } from '@/components/payment/orderUtils'
+import { paymentMethodDisplayKey, paymentStatusI18nKey } from '@/utils/i18n'
 
 const { t } = useI18n()
 

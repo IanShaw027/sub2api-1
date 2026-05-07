@@ -3651,7 +3651,7 @@ const summarizeOpenAIWebProfileImport = (result: Record<string, unknown>) => {
     result.proxy_id != null ? `proxy_id=${result.proxy_id}` : '',
     result.proxy_hash ? `proxy_hash=${result.proxy_hash}` : ''
   ].filter(Boolean)
-  return parts.length > 0 ? parts.join(', ') : 'OpenAI WebProfile imported'
+  return parts.length > 0 ? parts.join(', ') : t('admin.accounts.openAIWebProfileImported')
 }
 
 const handleOpenAIWebProfileImport = async () => {
@@ -3673,9 +3673,9 @@ const handleOpenAIWebProfileImport = async () => {
     }
     openAIWebProfileImportSummary.value = summarizeOpenAIWebProfileImport(result as Record<string, unknown>)
     openAIWebProfileImportContent.value = ''
-    appStore.showSuccess('OpenAI WebProfile imported')
+    appStore.showSuccess(t('admin.accounts.openAIWebProfileImported'))
   } catch (error: any) {
-    appStore.showError(error.message || 'Failed to import OpenAI WebProfile')
+    appStore.showError(error.message || t('admin.accounts.openAIWebProfileImportFailed'))
   } finally {
     openAIWebProfileImporting.value = false
   }

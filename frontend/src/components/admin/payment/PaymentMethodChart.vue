@@ -15,7 +15,7 @@
           <div class="flex items-center gap-2">
             <span :class="['inline-block h-3 w-3 rounded-full', colorMap[method.type] || 'bg-gray-400']"></span>
             <span class="text-sm text-gray-700 dark:text-gray-300">
-              {{ t('payment.methods.' + method.type, method.type) }}
+              {{ t(paymentMethodDisplayKey(method.type), method.type) }}
             </span>
           </div>
           <div class="text-right">
@@ -41,6 +41,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { paymentMethodDisplayKey } from '@/utils/i18n'
 
 const { t } = useI18n()
 

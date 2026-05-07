@@ -250,7 +250,10 @@ const pageTitle = computed(() => {
   }
   const titleKey = route.meta.titleKey as string
   if (titleKey) {
-    return t(titleKey)
+    const translated = t(titleKey)
+    if (translated && translated !== titleKey) {
+      return translated
+    }
   }
   return (route.meta.title as string) || ''
 })

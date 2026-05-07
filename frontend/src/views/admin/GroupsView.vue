@@ -110,7 +110,7 @@
               ]"
             >
               <PlatformIcon :platform="value" size="xs" />
-              {{ t("admin.groups.platforms." + value) }}
+              {{ t(groupPlatformI18nKey(value), value) }}
             </span>
           </template>
 
@@ -286,7 +286,7 @@
                 value === 'active' ? 'badge-success' : 'badge-danger',
               ]"
             >
-              {{ t("admin.accounts.status." + value) }}
+              {{ t(accountStatusI18nKey(value), value) }}
             </span>
           </template>
 
@@ -2865,6 +2865,7 @@ import {
   resetMessagesDispatchFormState,
   type MessagesDispatchMappingRow,
 } from "./groupsMessagesDispatch";
+import { accountStatusI18nKey, groupPlatformI18nKey } from "@/utils/i18n";
 
 const { t } = useI18n();
 const appStore = useAppStore();

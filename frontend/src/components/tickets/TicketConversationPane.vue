@@ -100,8 +100,8 @@ const props = withDefaults(defineProps<{
   showComposer: true,
   sending: false,
   composerPlaceholder: '',
-  submitText: '发送',
-  sendingText: '发送中...',
+  submitText: 'Submit',
+  sendingText: 'Submitting...',
   clearComposerKey: 0,
   replyContent: undefined,
 })

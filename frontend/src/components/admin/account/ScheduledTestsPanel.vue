@@ -646,7 +646,7 @@ const handleDelete = async () => {
       results.value = []
     }
   } catch (error: any) {
-    appStore.showError(error?.message || 'Failed to delete plan')
+    appStore.showError(error?.message || t('admin.scheduledTests.deleteFailed'))
   } finally {
     showDeleteConfirm.value = false
     deletingPlan.value = null
@@ -667,7 +667,7 @@ const toggleExpand = async (planId: number) => {
   try {
     results.value = await adminAPI.scheduledTests.listResults(planId, 20)
   } catch (error: any) {
-    appStore.showError(error?.message || 'Failed to load results')
+    appStore.showError(error?.message || t('admin.scheduledTests.loadResultsFailed'))
     results.value = []
   } finally {
     loadingResults.value = false

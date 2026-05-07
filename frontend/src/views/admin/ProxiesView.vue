@@ -246,7 +246,7 @@
 
           <template #cell-status="{ value }">
             <span :class="['badge', value === 'active' ? 'badge-success' : 'badge-danger']">
-              {{ t('admin.accounts.status.' + value) }}
+              {{ t(accountStatusI18nKey(value), value) }}
             </span>
           </template>
 
@@ -893,6 +893,7 @@ import { useClipboard } from '@/composables/useClipboard'
 import { useSwipeSelect } from '@/composables/useSwipeSelect'
 import { useTableSelection } from '@/composables/useTableSelection'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
+import { accountStatusI18nKey } from '@/utils/i18n'
 
 const { t } = useI18n()
 const appStore = useAppStore()
