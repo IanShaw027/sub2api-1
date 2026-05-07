@@ -39,12 +39,14 @@ describe('useOpenAIOAuth.buildCredentials', () => {
       access_token: 'at',
       refresh_token: 'rt',
       client_id: 'app_test_client',
+      organization_role: 'owner',
       expires_at: 1700000000
     })
 
     expect(creds.client_id).toBe('app_test_client')
     expect(creds.access_token).toBe('at')
     expect(creds.refresh_token).toBe('rt')
+    expect(creds.organization_role).toBe('owner')
   })
 
   it('should keep legacy behavior when client_id is missing', () => {
@@ -85,8 +87,25 @@ describe('useOpenAIOAuth.buildAccountName', () => {
 
     expect(oauth.buildAccountName({ email: 'user@example.com', workspace_name: 'Team A' }, ' Manual ')).toBe('Manual')
     expect(oauth.buildAccountName({ email: 'user@example.com', workspace_name: 'Team A' })).toBe('user@example.com (Team A)')
-    expect(oauth.buildAccountName({ name: 'OpenAI User', workspace_id: 'ws-123' })).toBe('OpenAI User (ws-123)')
+    expect(oauth.buildAccountName({ email: 'user@example.com' })).toBe('user@example.com (personal)')
     expect(oauth.buildAccountName({ plan_type: 'Pro' })).toBe('OpenAI Pro')
     expect(oauth.buildAccountName({})).toBe('OpenAI OAuth Account')
+  })
+})
+
+describe('useOpenAIOAuth.buildExtraInfo', () => {
+  it('includes organization role when available', () => {
+    const oauth = useOpenAIOAuth()
+    expect(
+      oauth.buildExtraInfo({
+        email: 'user@example.com',
+        workspace_name: 'Team A',
+        organization_role: 'owner'
+      })
+    ).toEqual({
+      email: 'user@example.com',
+      workspace_name: 'Team A',
+      organization_role: 'owner'
+    })
   })
 })

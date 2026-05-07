@@ -29,6 +29,12 @@
         <Icon v-else name="key" size="xs" />
         <span>{{ typeLabel }}</span>
       </span>
+      <span
+        v-if="organizationRoleLabel"
+        class="inline-flex items-center gap-1 bg-indigo-100 px-1.5 py-1 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300"
+      >
+        <span>{{ organizationRoleLabel }}</span>
+      </span>
     </div>
     <!-- Row 2: Plan type + Privacy mode (only if either exists) -->
     <div v-if="planLabel || privacyBadge" class="inline-flex items-center overflow-hidden rounded-md">
@@ -68,9 +74,31 @@ interface Props {
   planType?: string
   privacyMode?: string
   subscriptionExpiresAt?: string
+  organizationRole?: string
 }
 
 const props = defineProps<Props>()
+
+const normalizeGeminiTier = (value?: string): 'free' | 'pro' | 'ultra' | '' => {
+  const normalized = (value || '').trim().toLowerCase()
+  if (!normalized) return ''
+  if (normalized.includes('ultra')) return 'ultra'
+  if (
+    normalized.includes('pro') ||
+    normalized.includes('premium') ||
+    normalized.includes('enterprise') ||
+    normalized.includes('paid')
+  ) return 'pro'
+  if (
+    normalized.includes('free') ||
+    normalized.includes('standard')
+  ) return 'free'
+  return ''
+}
+
+const geminiTier = computed(() => (
+  props.platform === 'gemini' ? normalizeGeminiTier(props.planType) : ''
+))
 
 const platformLabel = computed(() => {
   if (props.platform === 'anthropic') return 'Anthropic'
@@ -81,23 +109,36 @@ const platformLabel = computed(() => {
 })
 
 const typeLabel = computed(() => {
+  if (props.platform === 'gemini' && geminiTier.value) {
+    switch (geminiTier.value) {
+      case 'free':
+        return 'Free'
+      case 'pro':
+        return 'Pro'
+      case 'ultra':
+        return 'Ultra'
+      default:
+        break
+    }
+  }
   switch (props.type) {
     case 'oauth':
-      return 'OAuth'
+      return t('admin.accounts.types.oauth')
     case 'setup-token':
-      return 'Token'
+      return t('admin.accounts.setupToken')
     case 'apikey':
-      return 'Key'
+      return t('admin.accounts.apiKey')
     case 'bedrock':
-      return 'AWS'
+      return t('admin.accounts.bedrockLabel')
     case 'service_account':
-      return 'Vertex'
+      return t('admin.accounts.vertexLabel')
     default:
       return props.type
   }
 })
 
 const planLabel = computed(() => {
+  if (props.platform === 'gemini' && geminiTier.value) return ''
   if (!props.planType) return ''
   const lower = props.planType.toLowerCase()
   switch (lower) {
@@ -134,6 +175,18 @@ const platformClass = computed(() => {
 })
 
 const typeClass = computed(() => {
+  if (props.platform === 'gemini' && geminiTier.value) {
+    switch (geminiTier.value) {
+      case 'free':
+        return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+      case 'pro':
+        return 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300'
+      case 'ultra':
+        return 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300'
+      default:
+        break
+    }
+  }
   if (props.platform === 'anthropic') {
     return 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'
   }
@@ -154,6 +207,15 @@ const planBadgeClass = computed(() => {
     return 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
   }
   return typeClass.value
+})
+
+const organizationRoleLabel = computed(() => {
+  if (props.platform !== 'openai' || props.type !== 'oauth') return ''
+  const normalized = (props.organizationRole || '').trim().toLowerCase()
+  if (normalized === 'owner' || normalized === 'admin' || normalized === 'leader') {
+    return '队长'
+  }
+  return ''
 })
 
 // Subscription expiration label (non-free only)
@@ -183,16 +245,16 @@ const privacyBadge = computed(() => {
   switch (props.privacyMode) {
     // OpenAI states
     case 'training_off':
-      return { label: 'Private', icon: shieldCheck, title: t('admin.accounts.privacyTrainingOff'), class: 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' }
+      return { label: t('admin.accounts.badges.private'), icon: shieldCheck, title: t('admin.accounts.privacyTrainingOff'), class: 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' }
     case 'training_set_cf_blocked':
-      return { label: 'CF', icon: shieldX, title: t('admin.accounts.privacyCfBlocked'), class: 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400' }
+      return { label: t('admin.accounts.badges.cf'), icon: shieldX, title: t('admin.accounts.privacyCfBlocked'), class: 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400' }
     case 'training_set_failed':
-      return { label: 'Fail', icon: shieldX, title: t('admin.accounts.privacyFailed'), class: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' }
+      return { label: t('admin.accounts.badges.fail'), icon: shieldX, title: t('admin.accounts.privacyFailed'), class: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' }
     // Antigravity states
     case 'privacy_set':
-      return { label: 'Private', icon: shieldCheck, title: t('admin.accounts.privacyAntigravitySet'), class: 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' }
+      return { label: t('admin.accounts.badges.private'), icon: shieldCheck, title: t('admin.accounts.privacyAntigravitySet'), class: 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' }
     case 'privacy_set_failed':
-      return { label: 'Fail', icon: shieldX, title: t('admin.accounts.privacyAntigravityFailed'), class: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' }
+      return { label: t('admin.accounts.badges.fail'), icon: shieldX, title: t('admin.accounts.privacyAntigravityFailed'), class: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' }
     default:
       return null
   }

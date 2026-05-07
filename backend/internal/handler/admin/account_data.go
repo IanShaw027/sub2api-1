@@ -874,6 +874,7 @@ func enrichCredentialsFromIDToken(item *DataAccount) {
 	setIfMissing("chatgpt_account_id", userInfo.ChatGPTAccountID)
 	setIfMissing("chatgpt_user_id", userInfo.ChatGPTUserID)
 	setIfMissing("organization_id", userInfo.OrganizationID)
+	setIfMissing("organization_role", userInfo.OrganizationRole)
 }
 
 func normalizeProxyStatus(status string) string {

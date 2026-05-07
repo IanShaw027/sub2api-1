@@ -383,6 +383,7 @@ type UserInfo struct {
 	UserID            string
 	OrganizationID    string
 	OrganizationTitle string
+	OrganizationRole  string
 	Organizations     []OrganizationClaim
 }
 
@@ -405,6 +406,7 @@ func (c *IDTokenClaims) GetUserInfo() *UserInfo {
 			if org.IsDefault {
 				info.OrganizationID = org.ID
 				info.OrganizationTitle = org.Title
+				info.OrganizationRole = org.Role
 				break
 			}
 		}
@@ -412,6 +414,7 @@ func (c *IDTokenClaims) GetUserInfo() *UserInfo {
 		if info.OrganizationID == "" && len(c.OpenAIAuth.Organizations) > 0 {
 			info.OrganizationID = c.OpenAIAuth.Organizations[0].ID
 			info.OrganizationTitle = c.OpenAIAuth.Organizations[0].Title
+			info.OrganizationRole = c.OpenAIAuth.Organizations[0].Role
 		}
 	}
 

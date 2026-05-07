@@ -181,7 +181,7 @@
           </template>
           <template #cell-name="{ row, value }">
             <div class="flex flex-col">
-              <span class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
+              <span class="font-medium text-gray-900 dark:text-white">{{ getDisplayAccountName(row, value) }}</span>
               <span
                 v-if="row.extra?.email_address"
                 class="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[200px]"
@@ -197,7 +197,14 @@
           </template>
           <template #cell-platform_type="{ row }">
             <div class="flex flex-wrap items-center gap-1">
-              <PlatformTypeBadge :platform="row.platform" :type="row.type" :plan-type="row.credentials?.plan_type" :privacy-mode="row.extra?.privacy_mode" :subscription-expires-at="row.credentials?.subscription_expires_at" />
+              <PlatformTypeBadge
+                :platform="row.platform"
+                :type="row.type"
+                :plan-type="getPlatformBadgePlanType(row)"
+                :privacy-mode="row.extra?.privacy_mode"
+                :subscription-expires-at="row.credentials?.subscription_expires_at"
+                :organization-role="getOpenAIOrganizationRole(row)"
+              />
               <span
                 v-if="getOpenAICompactLabel(row)"
                 :class="['inline-block rounded px-1.5 py-0.5 text-[10px] font-medium', getOpenAICompactClass(row)]"
@@ -414,6 +421,7 @@ import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { formatDateTime, formatRelativeTime } from '@/utils/format'
+import { formatOAuthAccountName } from '@/utils/oauthAccountName'
 import type { Account, AccountPlatform, AccountType, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel } from '@/types'
 
 const CreateAccountModal = defineAsyncComponent(() => import('@/components/account/CreateAccountModal.vue'))
@@ -1075,6 +1083,85 @@ function getAntigravityTierLabel(row: any): string | null {
     case 'g1-ultra-tier': return t('admin.accounts.tier.ultra')
     default: return null
   }
+}
+
+function normalizeGeminiPlatformTier(value: unknown): string {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  if (!normalized) return ''
+  if (normalized.includes('ultra')) return 'ultra'
+  if (
+    normalized.includes('pro') ||
+    normalized.includes('premium') ||
+    normalized.includes('enterprise') ||
+    normalized.includes('paid')
+  ) return 'pro'
+  if (
+    normalized.includes('free') ||
+    normalized.includes('standard')
+  ) return 'free'
+  return ''
+}
+
+function getPlatformBadgePlanType(row: any): string | undefined {
+  if (row?.platform === 'gemini') {
+    const sources = [
+      row?.credentials?.plan_type,
+      row?.credentials?.tier_id,
+      row?.credentials?.gemini_current_tier_id,
+      row?.credentials?.gemini_paid_tier_id,
+      row?.credentials?.plan_name,
+      row?.credentials?.gemini_current_tier_name,
+      row?.credentials?.gemini_paid_tier_name,
+      row?.extra?.plan_type,
+      row?.extra?.subscription_type,
+      row?.extra?.plan_name,
+      row?.extra?.tier_id,
+      row?.extra?.gemini_current_tier_id,
+      row?.extra?.gemini_paid_tier_id,
+      row?.extra?.gemini_current_tier_name,
+      row?.extra?.gemini_paid_tier_name
+    ]
+    const normalizedTier = sources
+      .map((value) => normalizeGeminiPlatformTier(value))
+      .find((value) => value.length > 0)
+    return normalizedTier || undefined
+  }
+  return row?.credentials?.plan_type
+}
+
+function getOpenAIOrganizationRole(row: any): string | undefined {
+  if (row?.platform !== 'openai' || row?.type !== 'oauth') return undefined
+  const credentialRole = typeof row?.credentials?.organization_role === 'string'
+    ? row.credentials.organization_role.trim()
+    : ''
+  if (credentialRole) return credentialRole
+  const extraRole = typeof row?.extra?.organization_role === 'string'
+    ? row.extra.organization_role.trim()
+    : ''
+  return extraRole || undefined
+}
+
+function getDisplayAccountName(row: any, fallbackName: string): string {
+  if (row?.platform === 'openai' && row?.type === 'oauth') {
+    const email = typeof row?.credentials?.email === 'string' ? row.credentials.email.trim() : ''
+    if (!email) return fallbackName
+    const workspaceNameCandidates = [
+      row?.credentials?.workspace_name,
+      row?.extra?.workspace_name,
+      row?.extra?.team_name
+    ]
+    const workspaceName = workspaceNameCandidates.find(
+      (value): value is string => typeof value === 'string' && value.trim().length > 0
+    )?.trim() || ''
+    return formatOAuthAccountName({
+      primary: email,
+      details: [workspaceName || 'personal'],
+      platformLabel: 'OpenAI',
+      fallbackDetail: typeof row?.credentials?.plan_type === 'string' ? row.credentials.plan_type : '',
+      defaultName: fallbackName || 'OpenAI OAuth Account'
+    })
+  }
+  return fallbackName
 }
 
 function getOpenAICompactState(row: any): 'supported' | 'unsupported' | 'unknown' | null {

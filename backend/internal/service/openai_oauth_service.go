@@ -123,6 +123,7 @@ type OpenAITokenInfo struct {
 	ChatGPTAccountID      string `json:"chatgpt_account_id,omitempty"`
 	ChatGPTUserID         string `json:"chatgpt_user_id,omitempty"`
 	OrganizationID        string `json:"organization_id,omitempty"`
+	OrganizationRole      string `json:"organization_role,omitempty"`
 	WorkspaceID           string `json:"workspace_id,omitempty"`
 	WorkspaceName         string `json:"workspace_name,omitempty"`
 	PlanType              string `json:"plan_type,omitempty"`
@@ -201,6 +202,7 @@ func (s *OpenAIOAuthService) ExchangeCode(ctx context.Context, input *OpenAIExch
 		tokenInfo.ChatGPTAccountID = userInfo.ChatGPTAccountID
 		tokenInfo.ChatGPTUserID = userInfo.ChatGPTUserID
 		tokenInfo.OrganizationID = userInfo.OrganizationID
+		tokenInfo.OrganizationRole = userInfo.OrganizationRole
 		tokenInfo.WorkspaceID = userInfo.OrganizationID
 		tokenInfo.WorkspaceName = userInfo.OrganizationTitle
 		tokenInfo.PlanType = userInfo.PlanType
@@ -251,6 +253,7 @@ func (s *OpenAIOAuthService) RefreshTokenWithClientID(ctx context.Context, refre
 		tokenInfo.ChatGPTAccountID = userInfo.ChatGPTAccountID
 		tokenInfo.ChatGPTUserID = userInfo.ChatGPTUserID
 		tokenInfo.OrganizationID = userInfo.OrganizationID
+		tokenInfo.OrganizationRole = userInfo.OrganizationRole
 		tokenInfo.WorkspaceID = userInfo.OrganizationID
 		tokenInfo.WorkspaceName = userInfo.OrganizationTitle
 		tokenInfo.PlanType = userInfo.PlanType
@@ -315,6 +318,7 @@ func (s *OpenAIOAuthService) RefreshAccountToken(ctx context.Context, account *A
 				ChatGPTAccountID:      account.GetCredential("chatgpt_account_id"),
 				ChatGPTUserID:         account.GetCredential("chatgpt_user_id"),
 				OrganizationID:        account.GetCredential("organization_id"),
+				OrganizationRole:      account.GetCredential("organization_role"),
 				WorkspaceID:           account.GetCredential("workspace_id"),
 				WorkspaceName:         account.GetCredential("workspace_name"),
 				PlanType:              account.GetCredential("plan_type"),
@@ -371,6 +375,9 @@ func (s *OpenAIOAuthService) BuildAccountCredentials(tokenInfo *OpenAITokenInfo)
 	}
 	if tokenInfo.OrganizationID != "" {
 		creds["organization_id"] = tokenInfo.OrganizationID
+	}
+	if tokenInfo.OrganizationRole != "" {
+		creds["organization_role"] = tokenInfo.OrganizationRole
 	}
 	if tokenInfo.WorkspaceID != "" {
 		creds["workspace_id"] = tokenInfo.WorkspaceID

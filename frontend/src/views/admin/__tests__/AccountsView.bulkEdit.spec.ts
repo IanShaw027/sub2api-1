@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { defineComponent } from 'vue'
 
 import AccountsView from '../AccountsView.vue'
 
@@ -70,7 +71,18 @@ vi.mock('vue-i18n', async () => {
 
 const DataTableStub = {
   props: ['columns', 'data'],
-  template: '<div data-test="data-table"></div>'
+  template: `
+    <div data-test="data-table">
+      <div v-for="row in data" :key="row.id" :data-test="['row', row.id].join('-')">
+        <div data-test="name-cell">
+          <slot name="cell-name" :row="row" :value="row.name" />
+        </div>
+        <div data-test="platform-type-cell">
+          <slot name="cell-platform_type" :row="row" :value="row.type" />
+        </div>
+      </div>
+    </div>
+  `
 }
 
 const AccountBulkActionsBarStub = {
@@ -82,6 +94,64 @@ const AccountBulkActionsBarStub = {
 const BulkEditAccountModalStub = {
   props: ['show', 'target'],
   template: '<div data-test="bulk-edit-modal" :data-show="String(show)" :data-target-mode="target?.mode ?? \'\'" :data-preview-count="String(target?.previewCount ?? 0)" :data-selected-platforms="(target?.selectedPlatforms ?? []).join(\',\')" :data-selected-types="(target?.selectedTypes ?? []).join(\',\')"></div>'
+}
+
+const PlatformTypeBadgeStub = defineComponent({
+  name: 'PlatformTypeBadgeStub',
+  props: {
+    platform: { type: String, default: '' },
+    type: { type: String, default: '' },
+    planType: { type: String, default: '' },
+    organizationRole: { type: String, default: '' }
+  },
+  template: `
+    <div
+      data-test="platform-type-badge"
+      :data-platform="platform"
+      :data-type="type"
+      :data-plan-type="planType"
+      :data-organization-role="organizationRole"
+    />
+  `
+})
+
+function mountAccountsView() {
+  return mount(AccountsView, {
+    global: {
+      stubs: {
+        AppLayout: { template: '<div><slot /></div>' },
+        TablePageLayout: {
+          template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+        },
+        DataTable: DataTableStub,
+        Pagination: true,
+        ConfirmDialog: true,
+        AccountTableActions: { template: '<div><slot name="beforeCreate" /><slot name="after" /></div>' },
+        AccountTableFilters: { template: '<div></div>' },
+        AccountBulkActionsBar: AccountBulkActionsBarStub,
+        AccountActionMenu: true,
+        ImportDataModal: true,
+        ReAuthAccountModal: true,
+        AccountTestModal: true,
+        AccountStatsModal: true,
+        ScheduledTestsPanel: true,
+        SyncFromCrsModal: true,
+        TempUnschedStatusModal: true,
+        ErrorPassthroughRulesModal: true,
+        TLSFingerprintProfilesModal: true,
+        CreateAccountModal: true,
+        EditAccountModal: true,
+        BulkEditAccountModal: BulkEditAccountModalStub,
+        PlatformTypeBadge: PlatformTypeBadgeStub,
+        AccountCapacityCell: true,
+        AccountStatusIndicator: true,
+        AccountTodayStatsCell: true,
+        AccountGroupsCell: true,
+        AccountUsageCell: true,
+        Icon: true
+      }
+    }
+  })
 }
 
 describe('admin AccountsView bulk edit scope', () => {
@@ -112,42 +182,7 @@ describe('admin AccountsView bulk edit scope', () => {
   })
 
   it('opens bulk edit in filtered-results mode from the bulk actions dropdown', async () => {
-    const wrapper = mount(AccountsView, {
-      global: {
-        stubs: {
-          AppLayout: { template: '<div><slot /></div>' },
-          TablePageLayout: {
-            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
-          },
-          DataTable: DataTableStub,
-          Pagination: true,
-          ConfirmDialog: true,
-          AccountTableActions: { template: '<div><slot name="beforeCreate" /><slot name="after" /></div>' },
-          AccountTableFilters: { template: '<div></div>' },
-          AccountBulkActionsBar: AccountBulkActionsBarStub,
-          AccountActionMenu: true,
-          ImportDataModal: true,
-          ReAuthAccountModal: true,
-          AccountTestModal: true,
-          AccountStatsModal: true,
-          ScheduledTestsPanel: true,
-          SyncFromCrsModal: true,
-          TempUnschedStatusModal: true,
-          ErrorPassthroughRulesModal: true,
-          TLSFingerprintProfilesModal: true,
-          CreateAccountModal: true,
-          EditAccountModal: true,
-          BulkEditAccountModal: BulkEditAccountModalStub,
-          PlatformTypeBadge: true,
-          AccountCapacityCell: true,
-          AccountStatusIndicator: true,
-          AccountTodayStatsCell: true,
-          AccountGroupsCell: true,
-          AccountUsageCell: true,
-          Icon: true
-        }
-      }
-    })
+    const wrapper = mountAccountsView()
 
     await flushPromises()
     await wrapper.get('[data-test="edit-filtered"]').trigger('click')
@@ -169,6 +204,7 @@ describe('admin AccountsView bulk edit scope', () => {
       .mockResolvedValueOnce({
         items: Array.from({ length: 100 }, (_, index) => ({
           id: index + 1,
+          name: `OpenAI ${index + 1}`,
           platform: 'openai',
           type: 'oauth'
         })),
@@ -180,6 +216,7 @@ describe('admin AccountsView bulk edit scope', () => {
       .mockResolvedValueOnce({
         items: Array.from({ length: 5 }, (_, index) => ({
           id: 101 + index,
+          name: `Anthropic ${101 + index}`,
           platform: 'anthropic',
           type: 'apikey'
         })),
@@ -189,42 +226,7 @@ describe('admin AccountsView bulk edit scope', () => {
         pages: 2
       })
 
-    const wrapper = mount(AccountsView, {
-      global: {
-        stubs: {
-          AppLayout: { template: '<div><slot /></div>' },
-          TablePageLayout: {
-            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
-          },
-          DataTable: DataTableStub,
-          Pagination: true,
-          ConfirmDialog: true,
-          AccountTableActions: { template: '<div><slot name="beforeCreate" /><slot name="after" /></div>' },
-          AccountTableFilters: { template: '<div></div>' },
-          AccountBulkActionsBar: AccountBulkActionsBarStub,
-          AccountActionMenu: true,
-          ImportDataModal: true,
-          ReAuthAccountModal: true,
-          AccountTestModal: true,
-          AccountStatsModal: true,
-          ScheduledTestsPanel: true,
-          SyncFromCrsModal: true,
-          TempUnschedStatusModal: true,
-          ErrorPassthroughRulesModal: true,
-          TLSFingerprintProfilesModal: true,
-          CreateAccountModal: true,
-          EditAccountModal: true,
-          BulkEditAccountModal: BulkEditAccountModalStub,
-          PlatformTypeBadge: true,
-          AccountCapacityCell: true,
-          AccountStatusIndicator: true,
-          AccountTodayStatsCell: true,
-          AccountGroupsCell: true,
-          AccountUsageCell: true,
-          Icon: true
-        }
-      }
-    })
+    const wrapper = mountAccountsView()
 
     await flushPromises()
     await wrapper.get('[data-test="edit-filtered"]').trigger('click')
@@ -235,5 +237,112 @@ describe('admin AccountsView bulk edit scope', () => {
     expect(modal.attributes('data-selected-platforms')).toBe('openai,anthropic')
     expect(modal.attributes('data-selected-types')).toBe('oauth,apikey')
     expect(listAccounts).toHaveBeenCalledTimes(3)
+  })
+
+  it('shows openai oauth rows as email plus workspace or personal fallback', async () => {
+    listAccounts.mockResolvedValueOnce({
+      items: [
+        {
+          id: 1,
+          name: 'Fallback Name',
+          platform: 'openai',
+          type: 'oauth',
+          credentials: {
+            email: 'owner@example.com',
+            workspace_name: 'Team Alpha'
+          },
+          extra: {
+            email_address: 'owner@example.com'
+          }
+        },
+        {
+          id: 2,
+          name: 'Second Fallback',
+          platform: 'openai',
+          type: 'oauth',
+          credentials: {
+            email: 'solo@example.com'
+          },
+          extra: {
+            email_address: 'solo@example.com',
+            team_name: 'Crew Beta'
+          }
+        },
+        {
+          id: 3,
+          name: 'Third Fallback',
+          platform: 'openai',
+          type: 'oauth',
+          credentials: {
+            email: 'personal@example.com'
+          },
+          extra: {
+            email_address: 'personal@example.com'
+          }
+        }
+      ],
+      total: 3,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mountAccountsView()
+    await flushPromises()
+
+    const nameCells = wrapper.findAll('[data-test="name-cell"]')
+    expect(nameCells).toHaveLength(3)
+    expect(nameCells[0].text()).toContain('owner@example.com (Team Alpha)')
+    expect(nameCells[1].text()).toContain('solo@example.com (Crew Beta)')
+    expect(nameCells[2].text()).toContain('personal@example.com (personal)')
+  })
+
+  it('passes the openai organization role through to the platform badge', async () => {
+    listAccounts.mockResolvedValueOnce({
+      items: [
+        {
+          id: 1,
+          name: 'Owner Row',
+          platform: 'openai',
+          type: 'oauth',
+          credentials: {
+            email: 'owner@example.com',
+            organization_role: 'owner',
+            plan_type: 'plus'
+          },
+          extra: {
+            email_address: 'owner@example.com'
+          }
+        },
+        {
+          id: 2,
+          name: 'Fallback Owner Row',
+          platform: 'openai',
+          type: 'oauth',
+          credentials: {
+            email: 'fallback@example.com',
+            plan_type: 'team'
+          },
+          extra: {
+            organization_role: 'owner',
+            email_address: 'fallback@example.com'
+          }
+        }
+      ],
+      total: 2,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mountAccountsView()
+    await flushPromises()
+
+    const badges = wrapper.findAll('[data-test="platform-type-badge"]')
+    expect(badges).toHaveLength(2)
+    expect(badges[0].attributes('data-organization-role')).toBe('owner')
+    expect(badges[1].attributes('data-organization-role')).toBe('owner')
+    expect(badges[0].attributes('data-plan-type')).toBe('plus')
+    expect(badges[1].attributes('data-plan-type')).toBe('team')
   })
 })

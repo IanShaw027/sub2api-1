@@ -25,6 +25,7 @@ export interface OpenAITokenInfo {
   chatgpt_account_id?: string
   chatgpt_user_id?: string
   organization_id?: string
+  organization_role?: string
   [key: string]: unknown
 }
 
@@ -201,6 +202,9 @@ export function useOpenAIOAuth() {
     if (tokenInfo.organization_id) {
       creds.organization_id = tokenInfo.organization_id
     }
+    if (tokenInfo.organization_role) {
+      creds.organization_role = tokenInfo.organization_role
+    }
     if (tokenInfo.workspace_id) {
       creds.workspace_id = tokenInfo.workspace_id
     }
@@ -241,6 +245,9 @@ export function useOpenAIOAuth() {
     if (tokenInfo.subscription_expires_at) {
       extra.subscription_expires_at = tokenInfo.subscription_expires_at
     }
+    if (tokenInfo.organization_role) {
+      extra.organization_role = tokenInfo.organization_role
+    }
     if (tokenInfo.privacy_mode) {
       extra.privacy_mode = tokenInfo.privacy_mode
     }
@@ -248,10 +255,11 @@ export function useOpenAIOAuth() {
   }
 
   const buildAccountName = (tokenInfo: OpenAITokenInfo, fallbackName?: string): string => {
+    const workspaceLabel = tokenInfo.workspace_name?.trim() || 'personal'
     return formatOAuthAccountName({
       manualName: fallbackName,
       primary: tokenInfo.email || tokenInfo.name,
-      details: [tokenInfo.workspace_name, tokenInfo.workspace_id],
+      details: [workspaceLabel],
       platformLabel: 'OpenAI',
       fallbackDetail: tokenInfo.plan_type,
       defaultName: 'OpenAI OAuth Account'
