@@ -522,11 +522,11 @@ func (s *PaymentService) tryClaimSubscriptionFulfillmentAudit(ctx context.Contex
 	})
 	rows, err := s.entClient.QueryContext(ctx, `
 	INSERT INTO payment_audit_logs (order_id, action, detail, operator, created_at)
-	SELECT $1, 'SUBSCRIPTION_FULFILLMENT_CLAIMED', $2, 'system', CURRENT_TIMESTAMP
+	SELECT CAST($1 AS VARCHAR(64)), 'SUBSCRIPTION_FULFILLMENT_CLAIMED', CAST($2 AS TEXT), 'system', CURRENT_TIMESTAMP
 	WHERE NOT EXISTS (
 		SELECT 1
 		FROM payment_audit_logs
-		WHERE order_id = $1
+		WHERE order_id = CAST($1 AS VARCHAR(64))
 		  AND action IN ('SUBSCRIPTION_FULFILLMENT_CLAIMED', 'SUBSCRIPTION_SUCCESS')
 	)
 	RETURNING id`, oid, string(detail))

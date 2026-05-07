@@ -436,6 +436,27 @@ func TestTryClaimSubscriptionFulfillmentAuditSkipsExistingSuccessSentinel(t *tes
 	require.Zero(t, claimCount)
 }
 
+func TestTryClaimSubscriptionFulfillmentAuditCreatesClaimLog(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusPaid, payment.OrderTypeSubscription)
+	svc := &PaymentService{entClient: client}
+
+	claimed, err := svc.tryClaimSubscriptionFulfillmentAudit(ctx, order, *order.SubscriptionGroupID, *order.SubscriptionDays)
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	entry, err := client.PaymentAuditLog.Query().
+		Where(
+			paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)),
+			paymentauditlog.ActionEQ("SUBSCRIPTION_FULFILLMENT_CLAIMED"),
+		).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Contains(t, entry.Detail, `"groupID":`)
+	require.Contains(t, entry.Detail, `"status":"reserved"`)
+}
+
 func TestTryClaimAffiliateRebateAuditIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentFulfillmentTestClient(t)
