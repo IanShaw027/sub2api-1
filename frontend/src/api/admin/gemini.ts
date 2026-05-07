@@ -13,7 +13,7 @@ export interface GeminiAuthUrlResponse {
 
 export interface GeminiAuthUrlRequest {
   proxy_id?: number
-  project_id?: string
+  project_id_hint?: string
   oauth_type?: 'code_assist' | 'google_one'
 }
 

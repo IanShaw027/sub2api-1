@@ -3648,14 +3648,14 @@ export default {
 	          followSteps: 'Follow these steps to authorize your Gemini account:',
 	          step1GenerateUrl: 'Generate the authorization URL',
 	          generateAuthUrl: 'Generate Auth URL',
-	          projectIdLabel: 'Project ID (optional)',
-	          projectIdPlaceholder: 'e.g. my-gcp-project or cloud-ai-companion-xxxxx',
+	          projectIdLabel: 'Code Assist Project ID (optional)',
+	          projectIdPlaceholder: 'e.g. my-gcp-project',
 	          projectIdHint:
-	            'Used for Code Assist flows. Leave empty to auto-detect after code exchange. If auto-detection fails, fill it in and re-generate the auth URL to try again.',
+	            'Used only for Code Assist flows. This is your own GCP Project ID, not the upstream auto-assigned companion project. Leave it empty to auto-detect after code exchange. If auto-detection fails, fill it in and re-generate the auth URL to try again.',
 	          projectTipBadge: 'GCP Tip',
-	          projectTipTitle: 'Google One / Gemini CLI project setup',
+	          projectTipTitle: 'Gemini Code Assist project setup',
 	          projectTipIntro:
-	            'If auto-detection is unstable, prepare a personal GCP project without an org first, then run Gemini OAuth.',
+	            'Only Code Assist needs a manual GCP project bootstrap. If auto-detection is unstable, prepare a personal GCP project without an org first, then run Gemini OAuth again.',
 	          projectTipStepProject:
 	            'Create a no-org project in Google Cloud Console with your personal Google account, then switch to that project.',
 	          projectTipStepIam:
@@ -3696,6 +3696,9 @@ export default {
 	          stateWarningTitle: 'Note',
 	          stateWarningDesc: 'Recommended: paste the full callback URL (includes code & state).',
           oauthTypeLabel: 'OAuth Type',
+          googleOneTitle: 'Google One',
+          googleOneDesc: 'Personal Gemini OAuth. No manual Project ID input in this flow.',
+          codeAssistDesc: 'Gemini Code Assist OAuth. Uses your GCP Project ID only as the bootstrap hint.',
           needsProjectId: 'Built-in OAuth (Code Assist)',
           needsProjectIdDesc: 'Requires GCP project and Project ID',
           noProjectIdNeeded: 'Custom OAuth (AI Studio)',

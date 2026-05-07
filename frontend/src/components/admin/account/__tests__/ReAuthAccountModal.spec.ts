@@ -392,6 +392,19 @@ describe('admin ReAuthAccountModal', () => {
     )
   })
 
+  it('does not expose Code Assist project recovery inputs for Gemini Google One reauth', () => {
+    const wrapper = mountModal({
+      ...buildGeminiOAuthAccount(),
+      credentials: {
+        oauth_type: 'google_one',
+        tier_id: 'google_ai_pro'
+      }
+    })
+
+    expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-project-id')).toBe('false')
+    expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-project-id-recovery')).toBe('false')
+  })
+
   it('reauthorizes Kiro OAuth accounts from callback submission without preserving runtime-only extra fields', async () => {
     const wrapper = mountModal(buildKiroAccount('oauth'))
 

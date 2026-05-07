@@ -27,7 +27,7 @@ type OAuthSession struct {
 	CodeVerifier string `json:"code_verifier"`
 	ProxyURL     string `json:"proxy_url,omitempty"`
 	RedirectURI  string `json:"redirect_uri"`
-	ProjectID    string `json:"project_id,omitempty"`
+	ProjectIDHint string `json:"project_id_hint,omitempty"`
 	// TierID is a user-selected fallback tier.
 	// For oauth types that support auto detection (google_one/code_assist), the server will prefer
 	// the detected tier and fall back to TierID when detection fails.

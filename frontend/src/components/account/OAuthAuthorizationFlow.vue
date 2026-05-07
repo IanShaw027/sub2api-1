@@ -10,7 +10,7 @@
         <div class="mb-3 flex items-center gap-2">
           <h4 class="font-semibold text-blue-900 dark:text-blue-200">{{ oauthTitle }}</h4>
           <button
-            v-if="platform === 'gemini' && (showProjectId || showGeminiProjectRecoveryStep)"
+          v-if="platform === 'gemini' && shouldShowGeminiProjectGuidance"
             type="button"
             class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60"
             @click="showGeminiProjectTip = !showGeminiProjectTip"
@@ -21,7 +21,7 @@
         </div>
 
         <div
-          v-if="platform === 'gemini' && (showProjectId || showGeminiProjectRecoveryStep) && showGeminiProjectTip"
+          v-if="platform === 'gemini' && shouldShowGeminiProjectGuidance && showGeminiProjectTip"
           class="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/30"
         >
           <p class="text-sm font-medium text-amber-900 dark:text-amber-200">
@@ -751,6 +751,9 @@ const showGeminiProjectRecoveryStep = computed(
     props.showProjectIdRecovery &&
     isGeminiProjectRecoveryError.value
 )
+const shouldShowGeminiProjectGuidance = computed(
+  () => props.platform === 'gemini' && (props.showProjectId || showGeminiProjectRecoveryStep.value)
+)
 
 // Local state
 const inputMethod = ref<AuthInputMethod>(props.showCookieOption ? 'manual' : 'manual')
@@ -800,9 +803,9 @@ watch(
 )
 
 watch(
-  [() => props.platform, () => props.showProjectId],
-  ([platform, showProjectId]) => {
-    showGeminiProjectTip.value = platform === 'gemini' && showProjectId
+  [() => props.platform, () => props.showProjectId, () => showGeminiProjectRecoveryStep.value],
+  ([platform, showProjectId, showRecovery]) => {
+    showGeminiProjectTip.value = platform === 'gemini' && (showProjectId || showRecovery)
   },
   { immediate: true }
 )

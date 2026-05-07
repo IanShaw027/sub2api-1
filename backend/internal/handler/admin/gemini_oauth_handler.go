@@ -26,8 +26,9 @@ func (h *GeminiOAuthHandler) GetCapabilities(c *gin.Context) {
 }
 
 type GeminiGenerateAuthURLRequest struct {
-	ProxyID   *int64 `json:"proxy_id"`
-	ProjectID string `json:"project_id"`
+	ProxyID       *int64 `json:"proxy_id"`
+	ProjectID     string `json:"project_id"`
+	ProjectIDHint string `json:"project_id_hint"`
 	// OAuth 类型: "code_assist" 或 "google_one"
 	OAuthType string `json:"oauth_type"`
 	// TierID is an optional legacy fallback tier.
@@ -57,7 +58,12 @@ func (h *GeminiOAuthHandler) GenerateAuthURL(c *gin.Context) {
 	// Always pass the "hosted" callback URI; the OAuth service may override it depending on
 	// oauth_type and whether the built-in Gemini CLI OAuth client is used.
 	redirectURI := deriveGeminiRedirectURI(c)
-	result, err := h.geminiOAuthService.GenerateAuthURL(c.Request.Context(), req.ProxyID, redirectURI, req.ProjectID, oauthType, req.TierID)
+	projectIDHint := strings.TrimSpace(req.ProjectIDHint)
+	if projectIDHint == "" {
+		projectIDHint = strings.TrimSpace(req.ProjectID)
+	}
+
+	result, err := h.geminiOAuthService.GenerateAuthURL(c.Request.Context(), req.ProxyID, redirectURI, projectIDHint, oauthType, req.TierID)
 	if err != nil {
 		msg := err.Error()
 		// Treat missing/invalid OAuth client configuration as a user/config error.

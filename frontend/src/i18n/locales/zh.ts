@@ -3782,10 +3782,10 @@ export default {
           followSteps: '请按照以下步骤完成 Gemini 账户的授权：',
           step1GenerateUrl: '生成授权链接',
           generateAuthUrl: '生成授权链接',
-          projectIdLabel: 'Project ID（可选）',
-          projectIdPlaceholder: '例如：my-gcp-project 或 cloud-ai-companion-xxxxx',
+          projectIdLabel: 'Code Assist Project ID（可选）',
+          projectIdPlaceholder: '例如：my-gcp-project',
           projectIdHint:
-            '仅用于 Code Assist 流程。留空则在兑换授权码后自动探测；若自动探测失败，可填写后重新生成授权链接再授权。',
+            '仅用于 Code Assist 流程。这里填写的是你自己的 GCP Project ID，不是上游自动分配的 companion project。留空则在兑换授权码后自动探测；若自动探测失败，可填写后重新生成授权链接再授权。',
           howToGetProjectId: '如何获取',
           step2OpenUrl: '在浏览器中打开链接并完成授权',
           openUrlDesc: '请在新标签页中打开授权链接，登录您的 Google 账户并授权。',
@@ -3813,6 +3813,9 @@ export default {
           stateWarningTitle: '提示',
           stateWarningDesc: '建议粘贴完整回调链接（包含 code 和 state）。',
           oauthTypeLabel: 'OAuth 类型',
+          googleOneTitle: 'Google One',
+          googleOneDesc: '个人 Gemini OAuth，此流程不需要手动填写 Project ID。',
+          codeAssistDesc: 'Gemini Code Assist OAuth，仅把你的 GCP Project ID 当作引导提示使用。',
           needsProjectId: '内置授权（Code Assist）',
           needsProjectIdDesc: '需要 GCP 项目与 Project ID',
           noProjectIdNeeded: '自定义授权（AI Studio）',
@@ -3823,9 +3826,9 @@ export default {
           aiStudioNotConfigured:
             'AI Studio OAuth 未配置：请先设置 GEMINI_OAUTH_CLIENT_ID / GEMINI_OAUTH_CLIENT_SECRET，并在 Google OAuth Client 添加 Redirect URI：http://localhost:1455/auth/callback',
           projectTipBadge: 'GCP Tip',
-          projectTipTitle: 'Google One / Gemini CLI 项目准备',
+          projectTipTitle: 'Gemini Code Assist 项目准备',
           projectTipIntro:
-            '如果自动探测不稳定，建议先准备一个个人账号下、无组织绑定的 GCP 项目，再进行 Gemini OAuth。',
+            '只有 Code Assist 需要手动准备 GCP 项目引导。如果自动探测不稳定，建议先准备一个个人账号下、无组织绑定的 GCP 项目后再重新执行 Gemini OAuth。',
           projectTipStepProject: '使用个人 Google 账号在 Google Cloud Console 创建无组织项目，并切换到该项目。',
           projectTipStepIam:
             '为当前账号添加 IAM 权限：Gemini Cloud Assist User (Beta)、Gemini Code Assist Tools User (Beta)、Owner。',

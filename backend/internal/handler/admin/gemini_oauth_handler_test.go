@@ -105,3 +105,36 @@ func TestGeminiOAuthHandler_ExchangeCode_UsesLegacyTierFromSessionWhenFrontendOm
 	require.Equal(t, "gcp_enterprise", exchangeData["tier_id"])
 	require.Equal(t, "project-1", exchangeData["project_id"])
 }
+
+func TestGeminiOAuthHandler_GenerateAuthURL_AcceptsProjectIDHint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
+
+	svc := service.NewGeminiOAuthService(
+		nil,
+		geminiOAuthHandlerMockClient{},
+		geminiOAuthHandlerMockCodeAssist{},
+		nil,
+		&config.Config{},
+	)
+	defer svc.Stop()
+
+	handler := NewGeminiOAuthHandler(svc)
+	router := gin.New()
+	router.POST("/api/v1/admin/gemini/oauth/auth-url", handler.GenerateAuthURL)
+
+	authReqBody := []byte(`{"project_id_hint":"project-hint-1","oauth_type":"code_assist"}`)
+	authReq := httptest.NewRequest(http.MethodPost, "/api/v1/admin/gemini/oauth/auth-url", bytes.NewReader(authReqBody))
+	authReq.Header.Set("Content-Type", "application/json")
+	authRec := httptest.NewRecorder()
+	router.ServeHTTP(authRec, authReq)
+	require.Equal(t, http.StatusOK, authRec.Code, authRec.Body.String())
+
+	var authResp response.Response
+	require.NoError(t, json.Unmarshal(authRec.Body.Bytes(), &authResp))
+	authData, ok := authResp.Data.(map[string]any)
+	require.True(t, ok)
+	authURL, ok := authData["auth_url"].(string)
+	require.True(t, ok)
+	require.Contains(t, authURL, "project_id=project-hint-1")
+}

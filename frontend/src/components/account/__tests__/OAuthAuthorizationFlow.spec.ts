@@ -76,6 +76,17 @@ describe('OAuthAuthorizationFlow', () => {
     expect(wrapper.emitted('generate-url')).toEqual([[]])
   })
 
+  it('keeps the project preparation tip visible during code-assist recovery even when the original input is hidden', () => {
+    const wrapper = mountComponent({
+      showProjectId: false,
+      showProjectIdRecovery: true,
+      error: 'admin.accounts.oauth.gemini.missingProjectId'
+    })
+
+    expect(wrapper.text()).toContain('admin.accounts.oauth.gemini.projectTipTitle')
+    expect(wrapper.text()).toContain('admin.accounts.oauth.gemini.projectIdRecoveryTitle')
+  })
+
   it('does not reveal project id recovery for unrelated Gemini errors', () => {
     const wrapper = mountComponent({
       showProjectId: true,
@@ -94,6 +105,7 @@ describe('OAuthAuthorizationFlow', () => {
     })
 
     expect(wrapper.text()).not.toContain('admin.accounts.oauth.gemini.projectIdRecoveryTitle')
+    expect(wrapper.text()).not.toContain('admin.accounts.oauth.gemini.projectTipTitle')
   })
 
   it('clears parsed oauth state when regenerating a Gemini auth URL', async () => {

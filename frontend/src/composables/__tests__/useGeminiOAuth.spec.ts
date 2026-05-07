@@ -80,20 +80,21 @@ describe('useGeminiOAuth.buildExtraInfo', () => {
 })
 
 describe('useGeminiOAuth.buildAccountName', () => {
-  it('uses manual name first and otherwise formats project with tier or OAuth type context', () => {
+  it('uses manual name first and otherwise formats Gemini names around email(project_id)', () => {
     const oauth = useGeminiOAuth()
 
     expect(oauth.buildAccountName({ project_id: 'project-1', tier_id: 'Pro' }, ' Manual ')).toBe('Manual')
     expect(oauth.buildAccountName({ email: 'user@example.com', project_id: 'project-1' })).toBe(
-      'user@example.com (project-1)'
+      'user@example.com(project-1)'
     )
-    expect(oauth.buildAccountName({ email: 'user@example.com', tier_id: 'Pro' })).toBe(
-      'user@example.com (Pro)'
-    )
+    expect(oauth.buildAccountName({ email: 'user@example.com', tier_id: 'Pro' })).toBe('user@example.com')
     expect(oauth.buildAccountName({ project_id: 'project-1', tier_id: 'Pro' })).toBe('project-1 (Pro)')
     expect(oauth.buildAccountName({ project_id: 'project-1', oauth_type: 'code_assist' })).toBe('project-1 (code_assist)')
     expect(oauth.buildAccountName({ name: 'Example User', plan_name: 'Google One Pro' })).toBe(
       'Example User (Google One Pro)'
+    )
+    expect(oauth.buildAccountName({ name: 'Example User', project_id: 'project-1' })).toBe(
+      'Example User(project-1)'
     )
     expect(oauth.buildAccountName({ tier_id: 'Google One Ultra' })).toBe('Gemini Google One Ultra')
     expect(oauth.buildAccountName({})).toBe('Gemini OAuth Account')
@@ -103,6 +104,28 @@ describe('useGeminiOAuth.buildAccountName', () => {
 describe('useGeminiOAuth.exchangeAuthCode', () => {
   it('maps real project auto-detect failures to the recovery error key', async () => {
     vi.mocked(adminAPI.gemini.exchangeCode).mockRejectedValueOnce(new Error('failed to auto-detect project_id: empty result'))
+    const oauth = useGeminiOAuth()
+
+    const result = await oauth.exchangeAuthCode({
+      code: 'code',
+      sessionId: 'session',
+      state: 'state',
+      oauthType: 'code_assist'
+    })
+
+    expect(result).toBeNull()
+    expect(oauth.error.value).toBe('admin.accounts.oauth.gemini.missingProjectId')
+  })
+
+  it('prefers backend response message over generic axios error text', async () => {
+    vi.mocked(adminAPI.gemini.exchangeCode).mockRejectedValueOnce({
+      message: 'Request failed with status code 400',
+      response: {
+        data: {
+          message: 'missing project_id for Code Assist OAuth'
+        }
+      }
+    })
     const oauth = useGeminiOAuth()
 
     const result = await oauth.exchangeAuthCode({
@@ -131,5 +154,25 @@ describe('useGeminiOAuth.exchangeAuthCode', () => {
 
     expect(result).toBeNull()
     expect(oauth.error.value).toBe('admin.accounts.oauth.gemini.googleOneProjectDetectionFailed')
+  })
+})
+
+describe('useGeminiOAuth.generateAuthUrl', () => {
+  it('sends project_id_hint for code assist bootstrap', async () => {
+    vi.mocked(adminAPI.gemini.generateAuthUrl).mockResolvedValueOnce({
+      auth_url: 'https://example.com/oauth',
+      session_id: 'session-1',
+      state: 'state-1'
+    })
+    const oauth = useGeminiOAuth()
+
+    const ok = await oauth.generateAuthUrl(123, ' my-gcp-project ', 'code_assist')
+
+    expect(ok).toBe(true)
+    expect(adminAPI.gemini.generateAuthUrl).toHaveBeenCalledWith({
+      proxy_id: 123,
+      project_id_hint: 'my-gcp-project',
+      oauth_type: 'code_assist'
+    })
   })
 })

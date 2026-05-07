@@ -76,7 +76,9 @@ export function useGeminiOAuth() {
       const payload: GeminiAuthUrlRequest = {}
       if (proxyId) payload.proxy_id = proxyId
       const trimmedProjectID = projectId?.trim()
-      if (trimmedProjectID) payload.project_id = trimmedProjectID
+      if (trimmedProjectID) {
+        payload.project_id_hint = trimmedProjectID
+      }
       if (oauthType === 'code_assist' || oauthType === 'google_one') {
         payload.oauth_type = oauthType
       }
@@ -128,7 +130,11 @@ export function useGeminiOAuth() {
       const tokenInfo = await adminAPI.gemini.exchangeCode(payload)
       return tokenInfo as GeminiTokenInfo
     } catch (err: any) {
-      const errorMessage = err.message || err.response?.data?.message || ''
+      const errorMessage =
+        err?.response?.data?.message ||
+        err?.response?.data?.detail ||
+        err?.message ||
+        ''
       if (params.oauthType === 'code_assist' && isCodeAssistProjectIdError(errorMessage)) {
         error.value = t('admin.accounts.oauth.gemini.missingProjectId')
       } else if (params.oauthType === 'google_one' && isGoogleOneProjectDetectionError(errorMessage)) {
@@ -179,6 +185,8 @@ export function useGeminiOAuth() {
     )
   }
 
+  const cleanNamePart = (value?: string | null): string => value?.trim() || ''
+
   const buildExtraInfo = (tokenInfo: GeminiTokenInfo): Record<string, unknown> | undefined => {
     const extra: Record<string, unknown> = {
       ...(tokenInfo.extra && typeof tokenInfo.extra === 'object' ? tokenInfo.extra : {})
@@ -206,13 +214,22 @@ export function useGeminiOAuth() {
   }
 
   const buildAccountName = (tokenInfo: GeminiTokenInfo, fallbackName?: string): string => {
-    const primary = tokenInfo.email || tokenInfo.name || tokenInfo.project_id
+    const manualName = cleanNamePart(fallbackName)
+    if (manualName) return manualName
+
+    const email = cleanNamePart(tokenInfo.email)
+    const name = cleanNamePart(tokenInfo.name)
+    const projectID = cleanNamePart(tokenInfo.project_id)
+
+    if (email && projectID) return `${email}(${projectID})`
+    if (email) return email
+    if (name && projectID) return `${name}(${projectID})`
+
+    const primary = name || projectID
     return formatOAuthAccountName({
-      manualName: fallbackName,
+      manualName: '',
       primary,
-      details: tokenInfo.email || tokenInfo.name
-        ? [tokenInfo.project_id, tokenInfo.plan_name, tokenInfo.tier_id, tokenInfo.oauth_type]
-        : [tokenInfo.plan_name, tokenInfo.tier_id, tokenInfo.oauth_type],
+      details: [tokenInfo.plan_name, tokenInfo.tier_id, tokenInfo.oauth_type],
       platformLabel: 'Gemini',
       fallbackDetail: tokenInfo.plan_name || tokenInfo.tier_id || tokenInfo.oauth_type,
       defaultName: 'Gemini OAuth Account'
