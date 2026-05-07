@@ -158,7 +158,7 @@ func (h *AccountHandler) ExportData(c *gin.Context) {
 			Notes:              acc.Notes,
 			Platform:           acc.Platform,
 			Type:               acc.Type,
-			Credentials:        acc.Credentials,
+			Credentials:        normalizeDataAccountCredentials(acc.Platform, acc.Type, acc.Credentials),
 			Extra:              acc.Extra,
 			ProxyKey:           proxyKey,
 			Concurrency:        acc.Concurrency,
@@ -317,6 +317,7 @@ func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) 
 			}
 		}
 
+		item.Credentials = normalizeDataAccountCredentials(item.Platform, item.Type, item.Credentials)
 		enrichCredentialsFromIDToken(&item)
 		dedupKeys := buildDataAccountDedupKeys(item.Platform, item.Type, item.Credentials)
 		if dedupMode != dataImportDedupModeNone && len(dedupKeys) > 0 {
@@ -553,6 +554,19 @@ func buildOAuthDataAccountDedupKeys(platform, accountType string, credentials ma
 		keys = append(keys, strings.Join([]string{platform, accountType, "email_address", email}, "|"))
 	}
 	return keys
+}
+
+func normalizeDataAccountCredentials(platform, accountType string, credentials map[string]any) map[string]any {
+	if len(credentials) == 0 {
+		return credentials
+	}
+
+	normalized := make(map[string]any, len(credentials))
+	for key, value := range credentials {
+		normalized[key] = value
+	}
+
+	return normalized
 }
 
 func buildAPIKeyDataAccountDedupKey(platform, accountType string, credentials map[string]any) (string, bool) {
