@@ -14,5 +14,6 @@ describe('affiliate admin routes', () => {
     expect(affiliateRootRoutes).toHaveLength(1)
     expect(routerSource).toContain("redirect: '/admin/affiliates/invites'")
     expect(routerSource).not.toContain("name: 'AdminAffiliates'")
+    expect(routerSource).not.toContain("component: () => import('@/views/admin/AffiliatesView.vue')")
   })
 })

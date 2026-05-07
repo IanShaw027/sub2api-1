@@ -16,10 +16,11 @@ vi.mock('vue-i18n', async () => {
 })
 
 describe('SupportQRCodesButton', () => {
-  it('does not render when there are no valid qr codes', () => {
+  it('does not render when there are no valid qr codes or legacy contact info', () => {
     const wrapper = mount(SupportQRCodesButton, {
       props: {
         entries: [{ image_url: '   ', note: 'ignored' }],
+        legacyContactInfo: '   ',
       },
       global: {
         stubs: {
@@ -31,6 +32,30 @@ describe('SupportQRCodesButton', () => {
     })
 
     expect(wrapper.find('button').exists()).toBe(false)
+  })
+
+  it('renders legacy contact info when qr codes are unavailable', async () => {
+    const wrapper = mount(SupportQRCodesButton, {
+      props: {
+        entries: [],
+        legacyContactInfo: '  QQ: 123456789  ',
+      },
+      attachTo: document.body,
+      global: {
+        stubs: {
+          Transition: false,
+          Icon: true,
+        },
+      },
+    })
+
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('QQ: 123456789')
+    expect(document.body.querySelectorAll('img')).toHaveLength(0)
+
+    wrapper.unmount()
   })
 
   it('opens a dialog and renders qr codes with optional notes', async () => {
@@ -59,6 +84,32 @@ describe('SupportQRCodesButton', () => {
     expect(images[1]?.getAttribute('src')).toBe('https://cdn.example.com/support-2.png')
     expect(document.body.textContent).toContain('Main Support')
     expect(document.body.textContent).toContain('Contact Support')
+
+    wrapper.unmount()
+  })
+
+  it('prefers qr codes over legacy contact info when both are configured', async () => {
+    const wrapper = mount(SupportQRCodesButton, {
+      props: {
+        entries: [
+          { image_url: 'https://cdn.example.com/support-1.png', note: 'Main Support' },
+        ],
+        legacyContactInfo: 'QQ: 123456789',
+      },
+      attachTo: document.body,
+      global: {
+        stubs: {
+          Transition: false,
+          Icon: true,
+        },
+      },
+    })
+
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+
+    expect(document.body.querySelectorAll('img')).toHaveLength(1)
+    expect(document.body.textContent).not.toContain('QQ: 123456789')
 
     wrapper.unmount()
   })

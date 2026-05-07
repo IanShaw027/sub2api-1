@@ -365,10 +365,14 @@ function buildSessionTitle(prompt: string): string {
 async function refreshRuntime() {
   loading.value = true
   try {
+    void loadQuickPrompts().catch((error) => {
+      quickPrompts.value = []
+      appStore.showError(extractApiErrorMessage(error, t('common.error')))
+    })
+
     await Promise.all([
       aiStore.loadRuntimeLines(true),
-      aiStore.loadChatSessions(),
-      loadQuickPrompts()
+      aiStore.loadChatSessions()
     ])
     await hydrateRouteState()
     syncEntryMode()

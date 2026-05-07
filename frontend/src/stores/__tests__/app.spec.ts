@@ -271,6 +271,10 @@ describe('useAppStore', () => {
       expect(store.siteName).toBe('TestSite')
       expect(store.siteLogo).toBe('/logo.png')
       expect(store.siteVersion).toBe('1.0.0')
+      expect(store.contactInfo).toBe('test@test.com')
+      expect(store.supportQRCodes).toEqual([
+        { image_url: 'https://cdn.example.com/support.png', note: '客服' },
+      ])
       expect(store.publicSettingsLoaded).toBe(true)
     })
 

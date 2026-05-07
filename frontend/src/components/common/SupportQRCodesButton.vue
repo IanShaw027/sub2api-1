@@ -1,5 +1,5 @@
 <template>
-  <div v-if="hasEntries">
+  <div v-if="hasEntries || hasLegacyContactInfo">
     <button
       type="button"
       class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
@@ -17,7 +17,7 @@
       :close-on-click-outside="true"
       @close="showDialog = false"
     >
-      <div class="grid gap-4 sm:grid-cols-2">
+      <div v-if="hasEntries" class="grid gap-4 sm:grid-cols-2">
         <div
           v-for="(entry, index) in normalizedEntries"
           :key="`${entry.image_url}-${index}`"
@@ -38,6 +38,12 @@
           </p>
         </div>
       </div>
+      <p
+        v-else
+        class="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 text-sm leading-6 text-gray-700 whitespace-pre-line break-words dark:border-dark-700 dark:bg-dark-900/60 dark:text-gray-200"
+      >
+        {{ normalizedLegacyContactInfo }}
+      </p>
     </BaseDialog>
   </div>
 </template>
@@ -51,6 +57,7 @@ import Icon from '@/components/icons/Icon.vue'
 
 const props = defineProps<{
   entries: SupportQRCodeEntry[]
+  legacyContactInfo?: string
 }>()
 
 const { t } = useI18n()
@@ -66,4 +73,6 @@ const normalizedEntries = computed(() =>
 )
 
 const hasEntries = computed(() => normalizedEntries.value.length > 0)
+const normalizedLegacyContactInfo = computed(() => props.legacyContactInfo?.trim() || '')
+const hasLegacyContactInfo = computed(() => !hasEntries.value && normalizedLegacyContactInfo.value.length > 0)
 </script>

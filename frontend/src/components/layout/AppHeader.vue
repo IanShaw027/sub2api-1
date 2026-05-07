@@ -23,7 +23,7 @@
 
       <!-- Right: Announcements + Docs + Language + Subscriptions + Balance + User Dropdown -->
       <div class="flex items-center gap-3">
-        <SupportQRCodesButton :entries="supportQRCodes" />
+        <SupportQRCodesButton :entries="supportQRCodes" :legacy-contact-info="contactInfo" />
 
         <!-- Announcement Bell -->
         <AnnouncementBell v-if="user" />
@@ -211,6 +211,7 @@ const onboardingStore = useOnboardingStore()
 const user = computed(() => authStore.user)
 const dropdownOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
+const contactInfo = computed(() => appStore.contactInfo)
 const supportQRCodes = computed(() => appStore.supportQRCodes)
 const docUrl = computed(() => appStore.docUrl)
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
