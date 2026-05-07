@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1787,9 +1788,9 @@ func applyGeminiQuotaSnapshotFallback(usage *UsageInfo, account *Account, now ti
 	mergeGeminiUsageProgressWithSnapshot(&usage.GeminiFlashDaily, snapshot.flash, now)
 
 	if usage.GeminiSharedDaily == nil && (snapshot.pro != nil || snapshot.flash != nil) {
-		shared := lowerUtilizationProgress(snapshot.pro, snapshot.flash)
+		shared := lowerUtilizationSnapshot(snapshot.pro, snapshot.flash)
 		if shared != nil {
-			usage.GeminiSharedDaily = cloneUsageProgress(shared)
+			usage.GeminiSharedDaily = snapshotWindowToUsageProgress(shared, now)
 		}
 	}
 }
@@ -1954,22 +1955,22 @@ func mergeGeminiUsageProgressWithSnapshot(target **UsageProgress, snapshot *gemi
 	}
 }
 
-func lowerUtilizationProgress(items ...*UsageProgress) *UsageProgress {
-	var picked *UsageProgress
+func lowerUtilizationSnapshot(items ...*geminiQuotaSnapshotWindow) *geminiQuotaSnapshotWindow {
+	var picked *geminiQuotaSnapshotWindow
 	for _, item := range items {
 		if item == nil {
 			continue
 		}
-		if picked == nil || item.Utilization > picked.Utilization {
+		if picked == nil || item.utilization > picked.utilization {
 			picked = item
 			continue
 		}
-		if item.Utilization == picked.Utilization {
-			if picked.ResetsAt == nil {
+		if item.utilization == picked.utilization {
+			if picked.resetAt == nil {
 				picked = item
 				continue
 			}
-			if item.ResetsAt != nil && item.ResetsAt.Before(*picked.ResetsAt) {
+			if item.resetAt != nil && item.resetAt.Before(*picked.resetAt) {
 				picked = item
 			}
 		}
@@ -1977,12 +1978,22 @@ func lowerUtilizationProgress(items ...*UsageProgress) *UsageProgress {
 	return picked
 }
 
-func cloneUsageProgress(progress *UsageProgress) *UsageProgress {
-	if progress == nil {
+func snapshotWindowToUsageProgress(snapshot *geminiQuotaSnapshotWindow, now time.Time) *UsageProgress {
+	if snapshot == nil {
 		return nil
 	}
-	cloned := *progress
-	return &cloned
+	progress := &UsageProgress{
+		Utilization: snapshot.utilization,
+		ResetsAt:    snapshot.resetAt,
+	}
+	if snapshot.resetAt != nil {
+		remainingSeconds := int(snapshot.resetAt.Sub(now).Seconds())
+		if remainingSeconds < 0 {
+			remainingSeconds = 0
+		}
+		progress.RemainingSeconds = remainingSeconds
+	}
+	return progress
 }
 
 func enrichGeminiUsageWithStoredStatus(usage *UsageInfo, account *Account) {
