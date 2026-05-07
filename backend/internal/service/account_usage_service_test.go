@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 )
 
 type accountUsageCodexProbeRepo struct {
@@ -206,4 +208,78 @@ func TestBuildCodexUsageProgressFromExtra_ZerosExpiredWindow(t *testing.T) {
 			t.Fatalf("expected Utilization=0 for expired 7d window, got %v", progress.Utilization)
 		}
 	})
+}
+
+type geminiUsageLogRepoStub struct {
+	stubOpenAIAccountRepo
+	modelStats []usagestats.ModelStat
+}
+
+func (r *geminiUsageLogRepoStub) GetModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8, billingMode string) ([]usagestats.ModelStat, error) {
+	return r.modelStats, nil
+}
+
+func TestAccountUsageService_GetGeminiUsage_PrefersQuotaSnapshotUtilization(t *testing.T) {
+	t.Parallel()
+
+	repo := &geminiUsageLogRepoStub{
+		modelStats: []usagestats.ModelStat{
+			{Model: "gemini-2.5-pro", Requests: 12, TotalTokens: 1200, ActualCost: 0.12},
+			{Model: "gemini-2.5-flash", Requests: 30, TotalTokens: 3000, ActualCost: 0.03},
+		},
+	}
+
+	svc := &AccountUsageService{
+		usageLogRepo:       repo,
+		geminiQuotaService: NewGeminiQuotaService(nil, nil),
+	}
+
+	account := &Account{
+		ID:       9001,
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"oauth_type": "code_assist",
+			"tier_id":    "STANDARD",
+			"gemini_usage_raw": map[string]any{
+				"buckets": []any{
+					map[string]any{
+						"modelId":           "gemini-2.5-pro",
+						"remainingFraction": 0.25,
+						"remainingAmount":   "25",
+						"resetTime":         time.Now().Add(2 * time.Hour).UTC().Format(time.RFC3339),
+					},
+					map[string]any{
+						"modelId":           "gemini-2.5-flash",
+						"remainingFraction": 0.60,
+						"remainingAmount":   "60",
+						"resetTime":         time.Now().Add(90 * time.Minute).UTC().Format(time.RFC3339),
+					},
+				},
+			},
+		},
+	}
+
+	usage, err := svc.getGeminiUsage(context.Background(), account)
+	if err != nil {
+		t.Fatalf("getGeminiUsage() error = %v", err)
+	}
+	if usage.GeminiProDaily == nil || usage.GeminiFlashDaily == nil {
+		t.Fatalf("expected gemini daily windows, got %#v", usage)
+	}
+	if usage.GeminiProDaily.Utilization != 75 {
+		t.Fatalf("GeminiProDaily utilization = %v, want 75", usage.GeminiProDaily.Utilization)
+	}
+	if usage.GeminiFlashDaily.Utilization != 40 {
+		t.Fatalf("GeminiFlashDaily utilization = %v, want 40", usage.GeminiFlashDaily.Utilization)
+	}
+	if usage.GeminiProDaily.WindowStats == nil || usage.GeminiProDaily.WindowStats.Requests != 12 {
+		t.Fatalf("GeminiProDaily window stats should retain local usage logs: %#v", usage.GeminiProDaily.WindowStats)
+	}
+	if usage.GeminiFlashDaily.WindowStats == nil || usage.GeminiFlashDaily.WindowStats.Requests != 30 {
+		t.Fatalf("GeminiFlashDaily window stats should retain local usage logs: %#v", usage.GeminiFlashDaily.WindowStats)
+	}
+	if usage.GeminiSharedDaily == nil || usage.GeminiSharedDaily.Utilization != 75 {
+		t.Fatalf("GeminiSharedDaily utilization = %#v, want 75", usage.GeminiSharedDaily)
+	}
 }

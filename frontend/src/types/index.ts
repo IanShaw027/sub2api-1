@@ -1023,6 +1023,12 @@ export interface GeminiCredentials {
   gemini_has_onboarded_previously?: boolean
   gemini_available_credits?: GeminiAvailableCredit[]
   gemini_code_assist_updated_at?: string
+  gemini_usage_raw?: Record<string, unknown>
+  gemini_status?: string
+  gemini_status_reason?: string
+  quota_query_last_error?: string
+  quota_query_last_error_at?: string
+  usage_updated_at?: string
   model_mapping?: Record<string, string>
 }
 

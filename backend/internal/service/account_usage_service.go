@@ -1190,6 +1190,8 @@ func (s *AccountUsageService) getGeminiUsage(ctx context.Context, account *Accou
 		usage.GeminiFlashMinute = buildGeminiUsageProgress(minuteTotals.FlashRequests, quota.FlashRPM, minuteResetAt, minuteTotals.FlashTokens, minuteTotals.FlashCost, now)
 	}
 
+	applyGeminiQuotaSnapshotFallback(usage, account, now)
+
 	return usage, nil
 }
 
@@ -1767,6 +1769,218 @@ func buildGeminiUsageProgress(used, limit int64, resetAt time.Time, tokens int64
 			Cost:     cost,
 		},
 	}
+}
+
+func applyGeminiQuotaSnapshotFallback(usage *UsageInfo, account *Account, now time.Time) {
+	if usage == nil || account == nil {
+		return
+	}
+
+	snapshot := parseGeminiQuotaSnapshot(account)
+	if snapshot == nil {
+		return
+	}
+
+	mergeGeminiUsageProgressWithSnapshot(&usage.GeminiProDaily, snapshot.pro, now)
+	mergeGeminiUsageProgressWithSnapshot(&usage.GeminiFlashDaily, snapshot.flash, now)
+
+	if usage.GeminiSharedDaily == nil && (snapshot.pro != nil || snapshot.flash != nil) {
+		shared := lowerUtilizationProgress(snapshot.pro, snapshot.flash)
+		if shared != nil {
+			usage.GeminiSharedDaily = cloneUsageProgress(shared)
+		}
+	}
+}
+
+type geminiQuotaSnapshotWindow struct {
+	utilization float64
+	resetAt     *time.Time
+}
+
+type geminiQuotaSnapshotUsage struct {
+	pro   *geminiQuotaSnapshotWindow
+	flash *geminiQuotaSnapshotWindow
+}
+
+func parseGeminiQuotaSnapshot(account *Account) *geminiQuotaSnapshotUsage {
+	if account == nil {
+		return nil
+	}
+	raw, ok := account.Credentials["gemini_usage_raw"]
+	if !ok {
+		raw = account.Extra["gemini_usage_raw"]
+	}
+
+	root, ok := raw.(map[string]any)
+	if !ok || len(root) == 0 {
+		return nil
+	}
+	buckets, ok := root["buckets"].([]any)
+	if !ok || len(buckets) == 0 {
+		return nil
+	}
+
+	snapshot := &geminiQuotaSnapshotUsage{}
+	for _, item := range buckets {
+		bucket, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		modelID, _ := bucket["modelId"].(string)
+		modelID = strings.ToLower(strings.TrimSpace(modelID))
+		if modelID == "" {
+			continue
+		}
+
+		remainingFraction, ok := parseGeminiSnapshotFloat(bucket["remainingFraction"])
+		if !ok {
+			continue
+		}
+
+		utilization := 100 - (remainingFraction * 100)
+		if utilization < 0 {
+			utilization = 0
+		}
+		if utilization > 100 {
+			utilization = 100
+		}
+
+		window := &geminiQuotaSnapshotWindow{
+			utilization: utilization,
+			resetAt:     parseGeminiSnapshotTime(bucket["resetTime"]),
+		}
+
+		switch {
+		case strings.Contains(modelID, "flash"):
+			snapshot.flash = pickLowerUtilizationSnapshot(snapshot.flash, window)
+		case strings.Contains(modelID, "pro"):
+			snapshot.pro = pickLowerUtilizationSnapshot(snapshot.pro, window)
+		}
+	}
+
+	if snapshot.pro == nil && snapshot.flash == nil {
+		return nil
+	}
+	return snapshot
+}
+
+func parseGeminiSnapshotFloat(raw any) (float64, bool) {
+	switch v := raw.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return 0, false
+		}
+		parsed, err := strconv.ParseFloat(trimmed, 64)
+		if err != nil {
+			return 0, false
+		}
+		return parsed, true
+	default:
+		return 0, false
+	}
+}
+
+func parseGeminiSnapshotTime(raw any) *time.Time {
+	switch v := raw.(type) {
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return nil
+		}
+		if ts, err := time.Parse(time.RFC3339, trimmed); err == nil {
+			return &ts
+		}
+	case float64:
+		ts := time.Unix(int64(v), 0)
+		return &ts
+	case int64:
+		ts := time.Unix(v, 0)
+		return &ts
+	}
+	return nil
+}
+
+func pickLowerUtilizationSnapshot(current, next *geminiQuotaSnapshotWindow) *geminiQuotaSnapshotWindow {
+	if next == nil {
+		return current
+	}
+	if current == nil || next.utilization > current.utilization {
+		return next
+	}
+	if next.utilization < current.utilization {
+		return current
+	}
+	if current.resetAt == nil {
+		return next
+	}
+	if next.resetAt == nil {
+		return current
+	}
+	if next.resetAt.Before(*current.resetAt) {
+		return next
+	}
+	return current
+}
+
+func mergeGeminiUsageProgressWithSnapshot(target **UsageProgress, snapshot *geminiQuotaSnapshotWindow, now time.Time) {
+	if snapshot == nil {
+		return
+	}
+	if *target == nil {
+		*target = &UsageProgress{}
+	}
+	(*target).Utilization = snapshot.utilization
+	(*target).ResetsAt = snapshot.resetAt
+	if snapshot.resetAt != nil {
+		remainingSeconds := int(snapshot.resetAt.Sub(now).Seconds())
+		if remainingSeconds < 0 {
+			remainingSeconds = 0
+		}
+		(*target).RemainingSeconds = remainingSeconds
+	} else {
+		(*target).RemainingSeconds = 0
+	}
+}
+
+func lowerUtilizationProgress(items ...*UsageProgress) *UsageProgress {
+	var picked *UsageProgress
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		if picked == nil || item.Utilization > picked.Utilization {
+			picked = item
+			continue
+		}
+		if item.Utilization == picked.Utilization {
+			if picked.ResetsAt == nil {
+				picked = item
+				continue
+			}
+			if item.ResetsAt != nil && item.ResetsAt.Before(*picked.ResetsAt) {
+				picked = item
+			}
+		}
+	}
+	return picked
+}
+
+func cloneUsageProgress(progress *UsageProgress) *UsageProgress {
+	if progress == nil {
+		return nil
+	}
+	cloned := *progress
+	return &cloned
 }
 
 // GetAccountWindowStats 获取账号在指定时间窗口内的使用统计
