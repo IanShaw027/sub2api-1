@@ -141,8 +141,8 @@
         :allow-multiple="false"
         :method-label="t('admin.accounts.inputMethod')"
         :platform="isOpenAI ? 'openai' : isGemini ? 'gemini' : isAntigravity ? 'antigravity' : 'anthropic'"
-        :show-project-id="isGemini"
-        :show-project-id-recovery="isGemini"
+        :show-project-id="isGemini && geminiOAuthType === 'code_assist'"
+        :show-project-id-recovery="isGemini && geminiOAuthType === 'code_assist'"
         @generate-url="handleGenerateUrl"
         @cookie-auth="handleCookieAuth"
       />

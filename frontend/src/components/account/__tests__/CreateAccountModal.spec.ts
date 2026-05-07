@@ -416,8 +416,8 @@ describe('CreateAccountModal', () => {
 
     const oauthFlow = wrapper.get('[data-testid="oauth-flow"]')
     expect(oauthFlow.attributes('data-platform')).toBe('gemini')
-    expect(oauthFlow.attributes('data-show-project-id')).toBe('true')
-    expect(oauthFlow.attributes('data-show-project-id-recovery')).toBe('true')
+    expect(oauthFlow.attributes('data-show-project-id')).toBe('false')
+    expect(oauthFlow.attributes('data-show-project-id-recovery')).toBe('false')
   })
 
   it('enables project-id recovery only for Gemini Code Assist OAuth', async () => {

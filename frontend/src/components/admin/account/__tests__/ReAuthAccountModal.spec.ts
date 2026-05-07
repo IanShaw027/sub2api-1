@@ -366,8 +366,8 @@ describe('admin ReAuthAccountModal', () => {
 
     expect(wrapper.find('[data-testid="oauth-flow"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-platform')).toBe('gemini')
-    expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-project-id')).toBe('true')
-    expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-project-id-recovery')).toBe('true')
+    expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-project-id')).toBe('false')
+    expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-project-id-recovery')).toBe('false')
     expect(wrapper.findAll('button').some((button) => button.text().includes('admin.accounts.oauth.completeAuth'))).toBe(true)
   })
 
