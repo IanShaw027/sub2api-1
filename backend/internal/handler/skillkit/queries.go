@@ -156,6 +156,7 @@ type SettlementRecord struct {
 	AuthorName        string
 	PeriodLabel       string
 	SettlementStatus  string
+	ServiceStatus     string
 	GrossAmount       float64
 	PlatformFeeAmount float64
 	PayoutAmount      float64
@@ -784,8 +785,11 @@ func (q *Queries) ListSettlements(ctx context.Context, params pagination.Paginat
 		switch trimmed {
 		case "settled":
 			where = append(where, "st.status = 'transferred'")
+		case "skipped":
+			where = append(where, "COALESCE(st.metadata->>'service_status', '') = 'skipped'")
 		case "pending", "ready":
 			where = append(where, "st.status = 'pending'")
+			where = append(where, "COALESCE(st.metadata->>'service_status', '') <> 'skipped'")
 		case "rejected":
 			where = append(where, "st.status = 'canceled'")
 		}
@@ -814,12 +818,13 @@ SELECT
   st.amount::double precision AS gross_amount,
   COALESCE((st.metadata->>'platform_amount')::double precision, 0)::double precision AS platform_fee_amount,
   COALESCE((st.metadata->>'creator_amount')::double precision, st.quota_amount)::double precision AS payout_amount,
-  CASE WHEN st.status = 'pending' THEN COALESCE((st.metadata->>'creator_amount')::double precision, st.quota_amount) ELSE 0 END AS frozen_amount,
-  COALESCE(st.metadata->>'currency', 'CNY') AS currency,
-  COALESCE(st.metadata->>'failure_reason', '') AS note,
-  st.created_at,
-  st.updated_at
-FROM ai_skill_settlements st
+	  CASE WHEN st.status = 'pending' THEN COALESCE((st.metadata->>'creator_amount')::double precision, st.quota_amount) ELSE 0 END AS frozen_amount,
+	  COALESCE(st.metadata->>'currency', 'CNY') AS currency,
+	  COALESCE(st.metadata->>'failure_reason', '') AS note,
+	  COALESCE(st.metadata->>'service_status', '') AS service_status,
+	  st.created_at,
+	  st.updated_at
+	FROM ai_skill_settlements st
 JOIN ai_skills s ON s.id = st.skill_id
 LEFT JOIN users owner ON owner.id = s.user_id
 WHERE `+whereSQL+`
@@ -842,19 +847,20 @@ LIMIT $`+fmt.Sprint(len(listArgs)-1)+` OFFSET $`+fmt.Sprint(len(listArgs)), list
 			&item.SettlementStatus,
 			&item.GrossAmount,
 			&item.PlatformFeeAmount,
-			&item.PayoutAmount,
-			&item.FrozenAmount,
-			&item.Currency,
-			&item.Note,
-			&item.CreatedAt,
-			&item.UpdatedAt,
-		); err != nil {
-			return nil, nil, err
+				&item.PayoutAmount,
+				&item.FrozenAmount,
+				&item.Currency,
+				&item.Note,
+				&item.ServiceStatus,
+				&item.CreatedAt,
+				&item.UpdatedAt,
+			); err != nil {
+				return nil, nil, err
+			}
+			item.SettlementStatus = mapSettlementStatus(item.SettlementStatus, item.ServiceStatus)
+			items = append(items, item)
 		}
-		item.SettlementStatus = mapSettlementStatus(item.SettlementStatus)
-		items = append(items, item)
-	}
-	return items, paginationResult(total, params), rows.Err()
+		return items, paginationResult(total, params), rows.Err()
 }
 
 func countRows(ctx context.Context, db *sql.DB, query string, args ...any) (int64, error) {
@@ -919,7 +925,10 @@ func classifyRuntimeHealth(item RuntimeRecord) string {
 	return "healthy"
 }
 
-func mapSettlementStatus(raw string) string {
+func mapSettlementStatus(raw string, serviceStatus string) string {
+	if strings.TrimSpace(serviceStatus) == "skipped" {
+		return "skipped"
+	}
 	switch raw {
 	case "transferred":
 		return "settled"

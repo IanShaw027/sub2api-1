@@ -22,6 +22,9 @@ type dashboardUsageRepoCapture struct {
 	rankingLimit     int
 	ranking          []usagestats.UserSpendingRankingItem
 	rankingTotal     float64
+	stats            *usagestats.DashboardStats
+	userBreakdownDim usagestats.UserBreakdownDimension
+	userBreakdownLim int
 }
 
 func (s *dashboardUsageRepoCapture) GetUsageTrendWithFilters(
@@ -66,6 +69,24 @@ func (s *dashboardUsageRepoCapture) GetUserSpendingRanking(
 		TotalRequests:   44,
 		TotalTokens:     1234,
 	}, nil
+}
+
+func (s *dashboardUsageRepoCapture) GetDashboardStats(ctx context.Context) (*usagestats.DashboardStats, error) {
+	if s.stats != nil {
+		return s.stats, nil
+	}
+	return &usagestats.DashboardStats{}, nil
+}
+
+func (s *dashboardUsageRepoCapture) GetUserBreakdownStats(
+	ctx context.Context,
+	startTime, endTime time.Time,
+	dim usagestats.UserBreakdownDimension,
+	limit int,
+) ([]usagestats.UserBreakdownItem, error) {
+	s.userBreakdownDim = dim
+	s.userBreakdownLim = limit
+	return []usagestats.UserBreakdownItem{}, nil
 }
 
 func newDashboardRequestTypeTestRouter(repo *dashboardUsageRepoCapture) *gin.Engine {
@@ -113,6 +134,24 @@ func TestDashboardTrendInvalidStream(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestDashboardUserBreakdownAcceptsLegacyNumericRequestType(t *testing.T) {
+	repo := &dashboardUsageRepoCapture{}
+	gin.SetMode(gin.TestMode)
+	dashboardSvc := service.NewDashboardService(repo, nil, nil, nil)
+	handler := NewDashboardHandler(dashboardSvc, nil)
+	router := gin.New()
+	router.GET("/admin/dashboard/user-breakdown", handler.GetUserBreakdown)
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/admin/dashboard/user-breakdown?start_date=2026-03-01&end_date=2026-03-16&group_id=42&request_type=3", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.NotNil(t, repo.userBreakdownDim.RequestType)
+	require.Equal(t, int16(service.RequestTypeWSV2), *repo.userBreakdownDim.RequestType)
 }
 
 func TestDashboardModelStatsRequestTypePriority(t *testing.T) {
@@ -200,4 +239,34 @@ func TestDashboardUsersRankingLimitAndCache(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec2.Code)
 	require.Equal(t, "hit", rec2.Header().Get("X-Snapshot-Cache"))
+}
+
+func TestDashboardStatsIncludesAccountCostFields(t *testing.T) {
+	repo := &dashboardUsageRepoCapture{
+		stats: &usagestats.DashboardStats{
+			TotalUsers:       1,
+			TotalAPIKeys:     2,
+			TotalAccounts:    3,
+			TotalRequests:    4,
+			TotalCost:        5.5,
+			TotalActualCost:  6.5,
+			TotalAccountCost: 7.5,
+			TodayCost:        8.5,
+			TodayActualCost:  9.5,
+			TodayAccountCost: 10.5,
+		},
+	}
+	gin.SetMode(gin.TestMode)
+	dashboardSvc := service.NewDashboardService(repo, nil, nil, nil)
+	handler := NewDashboardHandler(dashboardSvc, nil)
+	router := gin.New()
+	router.GET("/admin/dashboard/stats", handler.GetStats)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/dashboard/stats", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), `"total_account_cost":7.5`)
+	require.Contains(t, w.Body.String(), `"today_account_cost":10.5`)
 }

@@ -184,11 +184,14 @@ func (a *serviceRepoAdapter) UpdateVersion(ctx context.Context, version *service
 }
 
 func (a *serviceRepoAdapter) CreateReview(ctx context.Context, review *service.AISkillReview) error {
-	if a == nil || a.domainRepo == nil || review == nil {
+	if a == nil || review == nil {
 		return nil
 	}
 	switch review.Action {
 	case service.AISkillReviewActionSubmitted:
+		if a.domainRepo == nil {
+			return nil
+		}
 		_, err := a.domainRepo.SubmitSkillReview(ctx, domain.AISkillReviewSubmitInput{
 			SkillID:         review.SkillID,
 			VersionID:       review.VersionID,
@@ -199,6 +202,9 @@ func (a *serviceRepoAdapter) CreateReview(ctx context.Context, review *service.A
 		})
 		return translateSkillError(err)
 	case service.AISkillReviewActionApproved, service.AISkillReviewActionRejected:
+		if a.domainRepo == nil {
+			return nil
+		}
 		reviewID, err := a.lookupPendingReviewID(ctx, review.VersionID)
 		if err != nil {
 			return err
@@ -214,10 +220,67 @@ func (a *serviceRepoAdapter) CreateReview(ctx context.Context, review *service.A
 		})
 		return translateSkillError(err)
 	case service.AISkillReviewActionDisabled:
-		return nil
+		return a.insertDisabledReviewAudit(ctx, review)
 	default:
 		return nil
 	}
+}
+
+func (a *serviceRepoAdapter) insertDisabledReviewAudit(ctx context.Context, review *service.AISkillReview) error {
+	if a == nil || a.db == nil || review == nil {
+		return service.ErrAISkillServiceUnavailable
+	}
+
+	snapshotJSON, err := json.Marshal(map[string]any{
+		"skill_id":    review.SkillID,
+		"version_id":  review.VersionID,
+		"action":      review.Action,
+		"status_from": review.StatusFrom,
+		"status_to":   review.StatusTo,
+	})
+	if err != nil {
+		return err
+	}
+
+	metadata := cloneMap(review.Metadata)
+	metadata["action"] = review.Action
+	if strings.TrimSpace(review.StatusFrom) != "" {
+		metadata["status_from"] = review.StatusFrom
+	}
+	if strings.TrimSpace(review.StatusTo) != "" {
+		metadata["status_to"] = review.StatusTo
+	}
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+
+	_, err = a.db.ExecContext(ctx, `
+INSERT INTO ai_skill_reviews (
+    skill_id, version_id, submitter_user_id, reviewer_user_id, status,
+    submit_note, review_note, snapshot, metadata, reviewed_at,
+    request_id, usage_log_id, api_key_id, group_id
+) VALUES (
+    $1, $2, $3, $4, $5,
+    $6, $7, $8, $9, $10,
+    $11, $12, $13, $14
+)`,
+		review.SkillID,
+		review.VersionID,
+		review.OperatorUserID,
+		review.OperatorUserID,
+		domain.AISkillReviewStatusCanceled,
+		nil,
+		nullableString(review.Comment),
+		snapshotJSON,
+		metadataJSON,
+		time.Now().UTC(),
+		nullableString(review.Trace.RequestID),
+		nullableInt64(review.Trace.UsageLogID),
+		nullableInt64(review.Trace.APIKeyID),
+		nullableInt64(review.Trace.GroupID),
+	)
+	return err
 }
 
 func (a *serviceRepoAdapter) CreateRun(ctx context.Context, run *service.AISkillRun) error {

@@ -3,6 +3,7 @@ package admin
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -64,6 +65,25 @@ func parseTimeRange(c *gin.Context) (time.Time, time.Time) {
 	return startTime, endTime
 }
 
+func parseUsageRequestTypeQuery(raw string) (service.RequestType, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return service.RequestTypeUnknown, nil
+	}
+	if parsed, err := service.ParseUsageRequestType(raw); err == nil {
+		return parsed, nil
+	}
+	legacyValue, err := strconv.ParseInt(raw, 10, 16)
+	if err != nil {
+		return service.RequestTypeUnknown, fmt.Errorf("invalid request_type, allowed values: unknown, sync, stream, ws_v2, image, image_web_bridge")
+	}
+	legacyType := service.RequestType(legacyValue)
+	if !legacyType.IsValid() {
+		return service.RequestTypeUnknown, fmt.Errorf("invalid request_type, allowed values: unknown, sync, stream, ws_v2, image, image_web_bridge")
+	}
+	return legacyType.Normalize(), nil
+}
+
 // GetStats handles getting dashboard statistics
 // GET /api/v1/admin/dashboard/stats
 func (h *DashboardHandler) GetStats(c *gin.Context) {
@@ -102,6 +122,7 @@ func (h *DashboardHandler) GetStats(c *gin.Context) {
 		"total_tokens":                stats.TotalTokens,
 		"total_cost":                  stats.TotalCost,       // 标准计费
 		"total_actual_cost":           stats.TotalActualCost, // 实际扣除
+		"total_account_cost":          stats.TotalAccountCost,
 
 		// 今日 Token 使用统计
 		"today_requests":              stats.TodayRequests,
@@ -112,6 +133,7 @@ func (h *DashboardHandler) GetStats(c *gin.Context) {
 		"today_tokens":                stats.TodayTokens,
 		"today_cost":                  stats.TodayCost,       // 今日标准计费
 		"today_actual_cost":           stats.TodayActualCost, // 今日实际扣除
+		"today_account_cost":          stats.TodayAccountCost,
 
 		// 系统运行统计
 		"average_duration_ms": stats.AverageDurationMs,
@@ -656,7 +678,7 @@ func (h *DashboardHandler) GetUserBreakdown(c *gin.Context) {
 		}
 	}
 	if requestTypeStr := strings.TrimSpace(c.Query("request_type")); requestTypeStr != "" {
-		parsed, err := service.ParseUsageRequestType(requestTypeStr)
+		parsed, err := parseUsageRequestTypeQuery(requestTypeStr)
 		if err != nil {
 			response.BadRequest(c, err.Error())
 			return
