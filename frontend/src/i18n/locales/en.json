@@ -1283,6 +1283,12 @@
     "basicsDescription": "Keep your public profile details and avatar aligned.",
     "linkedProfileSources": "Profile Sources",
     "linkedProfileSourcesDescription": "Some profile details may stay synced from third-party sign-in methods.",
+    "identity": {
+      "source": {
+        "avatar": "Avatar is currently synced from {providerName}",
+        "username": "Username is currently synced from {providerName}"
+      }
+    },
     "securityTitle": "Security Settings",
     "securityDescription": "Password, two-factor authentication, and alerts live in the right rail.",
     "administrator": "Administrator",
@@ -1851,6 +1857,7 @@
       "leaveEmptyToKeep": "Leave empty to keep current password",
       "generatePassword": "Generate random password",
       "copyPassword": "Copy password",
+      "passwordCopied": "Password copied",
       "creating": "Creating...",
       "updating": "Updating...",
       "form": {
@@ -2329,6 +2336,8 @@
       "createError": "Failed to create channel",
       "updateError": "Failed to update channel",
       "deleteError": "Failed to delete channel",
+      "noGroupsSelected": "No groups selected for {platform}. Select at least one group or disable this platform.",
+      "emptyModelsInPricing": "{platform} has pricing entries without models. Add models or remove those entries.",
       "nameRequired": "Please enter a channel name",
       "duplicateModels": "Model \"{0}\" appears in multiple pricing entries",
       "modelConflict": "Model patterns '{model1}' and '{model2}' conflict: overlapping match range",
@@ -2731,6 +2740,9 @@
       "allStatus": "All Status",
       "allGroups": "All Groups",
       "ungroupedGroup": "Ungrouped",
+      "fromModel": "From model",
+      "toModel": "To model",
+      "noMappingsConfigured": "No mappings configured",
       "oauthType": "OAuth",
       "setupToken": "Setup Token",
       "apiKey": "API Key",
@@ -3229,6 +3241,7 @@
       },
       "oauth": {
         "title": "Claude Account Authorization",
+        "failedToGenerateUrl": "Failed to generate authorization URL",
         "authMethod": "Authorization Method",
         "manualAuth": "Manual Authorization",
         "cookieAutoAuth": "Cookie Auto-Auth",
@@ -3291,8 +3304,10 @@
             "OPENAI_OAUTH_PROXY_REQUIRED": "No proxy is configured and this server could not reach OpenAI directly, so the OpenAI OAuth request failed. Select a proxy that can access OpenAI and retry; if the authorization code has expired, regenerate the authorization URL."
           },
           "refreshTokenAuth": "Manual RT Input",
+          "mobileRefreshTokenAuth": "Manual Mobile RT Input",
           "refreshTokenDesc": "Enter your existing OpenAI Refresh Token(s). Supports batch input (one per line). The system will automatically validate and create accounts.",
           "refreshTokenPlaceholder": "Paste your OpenAI Refresh Token...\nSupports multiple, one per line",
+          "accessTokenAuth": "Manual AT Input",
           "sessionTokenAuth": "Manual ST Input",
           "sessionTokenDesc": "Enter your existing Session Token(s). Supports batch input (one per line). The system will automatically validate and create accounts.",
           "sessionTokenPlaceholder": "Paste your Session Token...\nSupports multiple, one per line",

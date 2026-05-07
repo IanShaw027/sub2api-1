@@ -314,7 +314,9 @@ function applyFeatureFlags(items: NavItem[]): NavItem[] {
   for (const item of items) {
     if (item.featureFlag && item.featureFlag() === false) continue
     if (item.children) {
-      out.push({ ...item, children: applyFeatureFlags(item.children) })
+      const visibleChildren = applyFeatureFlags(item.children)
+      if (item.expandOnly && visibleChildren.length === 0) continue
+      out.push({ ...item, children: visibleChildren })
     } else {
       out.push(item)
     }

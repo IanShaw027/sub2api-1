@@ -7,10 +7,45 @@ type LocaleMessages = Record<string, any>
 const LOCALE_KEY = 'sub2api_locale'
 const DEFAULT_LOCALE: LocaleCode = 'en'
 
-const localeLoaders: Record<LocaleCode, () => Promise<{ default: LocaleMessages }>> = {
-  // Keep locale resources out of the TS typecheck path and lazy-load them per language.
-  en: () => import('./locales/en.json'),
-  zh: () => import('./locales/zh.json')
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+export function mergeLocaleMessages(
+  base: LocaleMessages,
+  override: LocaleMessages
+): LocaleMessages {
+  const merged: LocaleMessages = { ...base }
+
+  for (const [key, value] of Object.entries(override)) {
+    const current = merged[key]
+    if (isPlainObject(current) && isPlainObject(value)) {
+      merged[key] = mergeLocaleMessages(current, value)
+      continue
+    }
+    merged[key] = value
+  }
+
+  return merged
+}
+
+const localeLoaders: Record<LocaleCode, () => Promise<LocaleMessages>> = {
+  // Runtime messages are currently split across JSON and TS locale sources.
+  // Merge them so newer TS-only keys do not disappear from the shipped UI.
+  en: async () => {
+    const [jsonModule, tsModule] = await Promise.all([
+      import('./locales/en.json'),
+      import('./locales/en.ts')
+    ])
+    return mergeLocaleMessages(jsonModule.default, tsModule.default)
+  },
+  zh: async () => {
+    const [jsonModule, tsModule] = await Promise.all([
+      import('./locales/zh.json'),
+      import('./locales/zh.ts')
+    ])
+    return mergeLocaleMessages(jsonModule.default, tsModule.default)
+  }
 }
 
 function isLocaleCode(value: string): value is LocaleCode {
@@ -49,14 +84,17 @@ export async function loadLocaleMessages(locale: LocaleCode): Promise<void> {
   }
 
   const loader = localeLoaders[locale]
-  const module = await loader()
-  i18n.global.setLocaleMessage(locale, module.default)
+  const messages = await loader()
+  i18n.global.setLocaleMessage(locale, messages)
   loadedLocales.add(locale)
 }
 
 export async function initI18n(): Promise<void> {
   const current = getLocale()
-  await loadLocaleMessages(current)
+  await loadLocaleMessages(DEFAULT_LOCALE)
+  if (current !== DEFAULT_LOCALE) {
+    await loadLocaleMessages(current)
+  }
   document.documentElement.setAttribute('lang', current)
 }
 

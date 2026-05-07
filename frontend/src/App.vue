@@ -103,8 +103,9 @@ onMounted(async () => {
     // If setup endpoint fails, assume normal mode and continue
   }
 
-  // Load public settings into appStore (will be cached for other components)
-  await appStore.fetchPublicSettings()
+  // Force one post-mount refresh so stale SSR-injected flags do not keep
+  // feature-gated sidebar entries visible after settings were changed.
+  await appStore.fetchPublicSettings(true)
 
   // Re-resolve document title now that siteName is available
   document.title = resolveDocumentTitle(route.meta.title, appStore.siteName, route.meta.titleKey as string)
