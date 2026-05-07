@@ -9,17 +9,19 @@
       <div class="flex-1">
         <div class="mb-3 flex items-center gap-2">
           <h4 class="font-semibold text-blue-900 dark:text-blue-200">{{ oauthTitle }}</h4>
-          <span
-            v-if="platform === 'gemini'"
-            class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+          <button
+            v-if="platform === 'gemini' && (showProjectId || showGeminiProjectRecoveryStep)"
+            type="button"
+            class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60"
+            @click="showGeminiProjectTip = !showGeminiProjectTip"
           >
             <Icon name="infoCircle" size="xs" class="mr-1" />
             {{ t('admin.accounts.oauth.gemini.projectTipBadge') }}
-          </span>
+          </button>
         </div>
 
         <div
-          v-if="platform === 'gemini' && (showProjectId || showGeminiProjectRecoveryStep)"
+          v-if="platform === 'gemini' && (showProjectId || showGeminiProjectRecoveryStep) && showGeminiProjectTip"
           class="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/30"
         >
           <p class="text-sm font-medium text-amber-900 dark:text-amber-200">
@@ -740,15 +742,14 @@ const oauthImportantNotice = computed(() => {
   if (props.platform === 'antigravity') return t('admin.accounts.oauth.antigravity.importantNotice')
   return ''
 })
-const isGeminiProjectIdError = computed(
+const isGeminiProjectRecoveryError = computed(
   () => props.platform === 'gemini' && props.error === t('admin.accounts.oauth.gemini.missingProjectId')
 )
 const showGeminiProjectRecoveryStep = computed(
   () =>
     props.platform === 'gemini' &&
-    props.showProjectId &&
     props.showProjectIdRecovery &&
-    isGeminiProjectIdError.value
+    isGeminiProjectRecoveryError.value
 )
 
 // Local state
@@ -758,6 +759,7 @@ const sessionKeyInput = ref('')
 const refreshTokenInput = ref('')
 const sessionTokenInput = ref('')
 const showHelpDialog = ref(false)
+const showGeminiProjectTip = ref(props.platform === 'gemini')
 const oauthState = ref('')
 const projectId = ref('')
 
@@ -795,6 +797,14 @@ watch(
       oauthState.value = ''
     }
   }
+)
+
+watch(
+  [() => props.platform, () => props.showProjectId],
+  ([platform, showProjectId]) => {
+    showGeminiProjectTip.value = platform === 'gemini' && showProjectId
+  },
+  { immediate: true }
 )
 
 // Auto-extract code from callback URL (OpenAI/Gemini/Antigravity)

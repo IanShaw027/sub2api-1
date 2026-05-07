@@ -46,6 +46,16 @@ describe('OAuthAuthorizationFlow', () => {
     expect(wrapper.text()).toContain('admin.accounts.oauth.gemini.projectApiLink')
   })
 
+  it('reveals project id recovery for google one companion-project detection failures', () => {
+    const wrapper = mountComponent({
+      showProjectId: true,
+      showProjectIdRecovery: true,
+      error: 'admin.accounts.oauth.gemini.googleOneProjectDetectionFailed'
+    })
+
+    expect(wrapper.text()).toContain('admin.accounts.oauth.gemini.projectIdRecoveryTitle')
+  })
+
   it('reveals project id recovery step only after Gemini error in recovery mode', async () => {
     const wrapper = mountComponent({
       showProjectId: true,
@@ -76,11 +86,11 @@ describe('OAuthAuthorizationFlow', () => {
     expect(wrapper.text()).not.toContain('admin.accounts.oauth.gemini.projectIdRecoveryTitle')
   })
 
-  it('does not reveal project id recovery for google one mode even when recovery is enabled', () => {
+  it('does not reveal project id recovery when recovery mode is disabled', () => {
     const wrapper = mountComponent({
       showProjectId: false,
-      showProjectIdRecovery: true,
-      error: 'admin.accounts.oauth.gemini.missingProjectId'
+      showProjectIdRecovery: false,
+      error: 'admin.accounts.oauth.gemini.googleOneProjectDetectionFailed'
     })
 
     expect(wrapper.text()).not.toContain('admin.accounts.oauth.gemini.projectIdRecoveryTitle')

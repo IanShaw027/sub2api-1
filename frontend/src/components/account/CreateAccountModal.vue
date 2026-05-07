@@ -2949,7 +2949,7 @@
         :show-session-token-option="false"
         :show-access-token-option="false"
         :platform="form.platform"
-        :show-project-id="geminiOAuthType === 'code_assist'"
+        :show-project-id="form.platform === 'gemini' && geminiOAuthType === 'code_assist'"
         :show-project-id-recovery="form.platform === 'gemini' && geminiOAuthType === 'code_assist'"
         @generate-url="handleGenerateUrl"
         @cookie-auth="handleCookieAuth"
