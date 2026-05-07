@@ -428,7 +428,7 @@
           />
         </div>
         <div v-else class="text-xs text-gray-400">
-          {{ t('admin.accounts.gemini.rateLimit.unlimited') }}
+          {{ t('admin.accounts.gemini.rateLimit.ok') }}
         </div>
       </div>
     </template>

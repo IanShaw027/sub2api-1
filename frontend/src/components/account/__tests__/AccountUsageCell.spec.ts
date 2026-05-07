@@ -831,7 +831,7 @@ describe('AccountUsageCell', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('1d|73|17000')
-    expect(wrapper.text()).not.toContain('admin.accounts.gemini.rateLimit.unlimited')
+    expect(wrapper.text()).not.toContain('admin.accounts.gemini.rateLimit.ok')
   })
 
   it('Gemini service account 不再额外展示 today stats 徽章', async () => {
@@ -870,7 +870,7 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).not.toContain('0 req')
     expect(wrapper.text()).not.toContain('A $0.00')
     expect(wrapper.text()).not.toContain('U $0.00')
-    expect(wrapper.text()).toContain('admin.accounts.gemini.rateLimit.unlimited')
+    expect(wrapper.text()).toContain('admin.accounts.gemini.rateLimit.ok')
   })
 
   it('Gemini forbidden 状态优先展示封禁徽章而不是 unlimited', async () => {
@@ -904,7 +904,7 @@ describe('AccountUsageCell', () => {
 
     expect(wrapper.text()).toContain('admin.accounts.forbiddenValidation')
     expect(wrapper.text()).toContain('admin.accounts.openVerification')
-    expect(wrapper.text()).not.toContain('admin.accounts.gemini.rateLimit.unlimited')
+    expect(wrapper.text()).not.toContain('admin.accounts.gemini.rateLimit.ok')
   })
 
   it('Gemini needs reauth 状态优先展示重新授权徽章', async () => {
@@ -935,7 +935,7 @@ describe('AccountUsageCell', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('admin.accounts.needsReauth')
-    expect(wrapper.text()).not.toContain('admin.accounts.gemini.rateLimit.unlimited')
+    expect(wrapper.text()).not.toContain('admin.accounts.gemini.rateLimit.ok')
   })
 
   it('Gemini 配额查询降级时展示错误徽章', async () => {
@@ -967,7 +967,7 @@ describe('AccountUsageCell', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('admin.accounts.rateLimited')
-    expect(wrapper.text()).not.toContain('admin.accounts.gemini.rateLimit.unlimited')
+    expect(wrapper.text()).not.toContain('admin.accounts.gemini.rateLimit.ok')
   })
 
   it('Gemini 行数据中的 usage 快照变化时会重新拉取 usage', async () => {
