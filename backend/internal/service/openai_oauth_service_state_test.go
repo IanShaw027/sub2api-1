@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"sync/atomic"
 	"testing"
@@ -14,11 +16,15 @@ import (
 type openaiOAuthClientStateStub struct {
 	exchangeCalled int32
 	lastClientID   string
+	tokenResp      *openai.TokenResponse
 }
 
 func (s *openaiOAuthClientStateStub) ExchangeCode(ctx context.Context, code, codeVerifier, redirectURI, proxyURL, clientID string) (*openai.TokenResponse, error) {
 	atomic.AddInt32(&s.exchangeCalled, 1)
 	s.lastClientID = clientID
+	if s.tokenResp != nil {
+		return s.tokenResp, nil
+	}
 	return &openai.TokenResponse{
 		AccessToken:  "at",
 		RefreshToken: "rt",
@@ -103,4 +109,61 @@ func TestOpenAIOAuthService_ExchangeCode_StateMatch(t *testing.T) {
 
 	_, ok := svc.sessionStore.Get("sid")
 	require.False(t, ok)
+}
+
+func TestOpenAIOAuthService_ExchangeCode_PropagatesOrganizationRoleFromIDToken(t *testing.T) {
+	client := &openaiOAuthClientStateStub{
+		tokenResp: &openai.TokenResponse{
+			AccessToken:  "at",
+			RefreshToken: "rt",
+			IDToken: buildOpenAIIDTokenForTest(t, openai.IDTokenClaims{
+				Email: "user@example.com",
+				Name:  "User",
+				Exp:   time.Now().Add(time.Hour).Unix(),
+				OpenAIAuth: &openai.OpenAIAuthClaims{
+					Organizations: []openai.OrganizationClaim{
+						{
+							ID:        "org-default",
+							Role:      "owner",
+							Title:     "Default Org",
+							IsDefault: true,
+						},
+					},
+				},
+			}),
+			ExpiresIn: 3600,
+		},
+	}
+	svc := NewOpenAIOAuthService(nil, client)
+	defer svc.Stop()
+
+	svc.sessionStore.Set("sid", &openai.OAuthSession{
+		State:        "expected-state",
+		CodeVerifier: "verifier",
+		RedirectURI:  openai.DefaultRedirectURI,
+		CreatedAt:    time.Now(),
+	})
+
+	info, err := svc.ExchangeCode(context.Background(), &OpenAIExchangeCodeInput{
+		SessionID: "sid",
+		Code:      "auth-code",
+		State:     "expected-state",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, info)
+	require.Equal(t, "org-default", info.OrganizationID)
+	require.Equal(t, "owner", info.OrganizationRole)
+	require.Equal(t, "org-default", info.WorkspaceID)
+	require.Equal(t, "Default Org", info.WorkspaceName)
+}
+
+func buildOpenAIIDTokenForTest(t *testing.T, claims openai.IDTokenClaims) string {
+	t.Helper()
+
+	payload, err := json.Marshal(claims)
+	require.NoError(t, err)
+
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","typ":"JWT"}`))
+	body := base64.RawURLEncoding.EncodeToString(payload)
+	return header + "." + body + ".signature"
 }

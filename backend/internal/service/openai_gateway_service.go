@@ -6022,11 +6022,18 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	})
 	var requestedCost *CostBreakdown
 	var upstreamCost *CostBreakdown
+	var firstSuccessfulCost *CostBreakdown
 	serviceTier := ""
 	if result.ServiceTier != nil {
 		serviceTier = strings.TrimSpace(*result.ServiceTier)
 	}
+	seenBillingCandidates := make(map[string]struct{}, len(modelView.BillingModelCandidates))
 	for _, billingModelCandidate := range modelView.BillingModelCandidates {
+		if _, seen := seenBillingCandidates[billingModelCandidate]; seen {
+			continue
+		}
+		seenBillingCandidates[billingModelCandidate] = struct{}{}
+
 		candidateCost, candidateErr := s.calculateOpenAIRecordUsageCost(
 			ctx,
 			result,
@@ -6039,19 +6046,24 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			requestType,
 		)
 		if candidateErr == nil {
-			cost = candidateCost
-			err = nil
+			if firstSuccessfulCost == nil {
+				firstSuccessfulCost = candidateCost
+				cost = candidateCost
+				err = nil
+			}
 			if billingModelCandidate == modelView.RequestedModel {
 				requestedCost = candidateCost
 			}
 			if billingModelCandidate == modelView.UpstreamModel {
 				upstreamCost = candidateCost
 			}
-			break
+			continue
 		}
-		err = candidateErr
+		if firstSuccessfulCost == nil {
+			err = candidateErr
+		}
 	}
-	if err != nil {
+	if firstSuccessfulCost == nil {
 		return fmt.Errorf("calculate OpenAI usage cost failed: %w", err)
 	}
 	selectedCost := chooseHigherPricedUsageCost(modelView.RequestedModel, requestedCost, modelView.UpstreamModel, upstreamCost)
@@ -6655,10 +6667,6 @@ func isOpenAIResponsesInboundPath(c *gin.Context) bool {
 
 func ensureOpenAIPassthroughInstructions(c *gin.Context, reqModel string, body []byte) ([]byte, bool, error) {
 	_ = reqModel
-	if isOpenAIResponsesInboundPath(c) {
-		return body, false, nil
-	}
-
 	instructions := gjson.GetBytes(body, "instructions")
 	if instructions.Exists() && instructions.Type == gjson.String && strings.TrimSpace(instructions.String()) != "" {
 		return body, false, nil

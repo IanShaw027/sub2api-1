@@ -2441,12 +2441,24 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		clientDisconnected,
 	)
 
+	imageCount := imageCounter.Count()
+	imageBillingModel := ""
+	imageSizeTier := ""
+	if imageCount > 0 {
+		if resolvedBillingModel, resolvedSizeTier, resolveErr := resolveOpenAIResponsesImageBillingConfig(reqBody, originalModel); resolveErr == nil {
+			imageBillingModel = resolvedBillingModel
+			imageSizeTier = resolvedSizeTier
+		}
+	}
+
 	return &OpenAIForwardResult{
 		RequestID:       responseID,
 		Usage:           *usage,
 		Model:           originalModel,
 		UpstreamModel:   mappedModel,
-		ImageCount:      imageCounter.Count(),
+		ImageCount:      imageCount,
+		ImageSize:       imageSizeTier,
+		BillingModel:    imageBillingModel,
 		ServiceTier:     extractOpenAIServiceTier(reqBody),
 		ReasoningEffort: extractOpenAIReasoningEffort(reqBody, originalModel),
 		Stream:          reqStream,
@@ -3121,6 +3133,19 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					)
 				}
 				imageCount := imageCounter.Count()
+				resolvedImageBillingModel := imageBillingModel
+				resolvedImageSizeTier := imageSizeTier
+				if imageCount > 0 && (strings.TrimSpace(resolvedImageBillingModel) == "" || strings.TrimSpace(resolvedImageSizeTier) == "") {
+					fallbackBillingModel, fallbackSizeTier, fallbackErr := resolveOpenAIResponsesImageBillingConfigFromBody(payload, originalModel)
+					if fallbackErr == nil {
+						if strings.TrimSpace(resolvedImageBillingModel) == "" {
+							resolvedImageBillingModel = fallbackBillingModel
+						}
+						if strings.TrimSpace(resolvedImageSizeTier) == "" {
+							resolvedImageSizeTier = fallbackSizeTier
+						}
+					}
+				}
 				result := &OpenAIForwardResult{
 					RequestID:       responseID,
 					Usage:           usage,
@@ -3136,8 +3161,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				}
 				if imageCount > 0 {
 					result.ImageCount = imageCount
-					result.ImageSize = imageSizeTier
-					result.BillingModel = imageBillingModel
+					result.ImageSize = resolvedImageSizeTier
+					result.BillingModel = resolvedImageBillingModel
 				}
 				return result, nil
 			}

@@ -39,9 +39,10 @@ func TestOpenAIOAuthService_RefreshAccountToken_NoRefreshTokenUsesExistingAccess
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
-			"access_token": "existing-access-token",
-			"expires_at":   expiresAt,
-			"client_id":    "client-id-1",
+			"access_token":      "existing-access-token",
+			"expires_at":        expiresAt,
+			"client_id":         "client-id-1",
+			"organization_role": "owner",
 		},
 	}
 
@@ -50,5 +51,21 @@ func TestOpenAIOAuthService_RefreshAccountToken_NoRefreshTokenUsesExistingAccess
 	require.NotNil(t, info)
 	require.Equal(t, "existing-access-token", info.AccessToken)
 	require.Equal(t, "client-id-1", info.ClientID)
+	require.Equal(t, "owner", info.OrganizationRole)
 	require.Zero(t, atomic.LoadInt32(&client.refreshCalls), "existing access token should be reused without calling refresh")
+}
+
+func TestOpenAIOAuthService_BuildAccountCredentials_IncludesOrganizationRole(t *testing.T) {
+	svc := NewOpenAIOAuthService(nil, &openaiOAuthClientRefreshStub{})
+
+	creds := svc.BuildAccountCredentials(&OpenAITokenInfo{
+		AccessToken:      "existing-access-token",
+		RefreshToken:     "refresh-token",
+		ExpiresAt:        time.Now().Add(30 * time.Minute).Unix(),
+		OrganizationID:   "org-1",
+		OrganizationRole: "owner",
+	})
+
+	require.Equal(t, "org-1", creds["organization_id"])
+	require.Equal(t, "owner", creds["organization_role"])
 }

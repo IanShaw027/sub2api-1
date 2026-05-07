@@ -274,6 +274,12 @@ func canonicalGeminiTierID(raw string) string {
 
 	// Some Code Assist responses use kebab-case tier identifiers.
 	switch lower {
+	case "free-tier":
+		return GeminiTierGoogleOneFree
+	case "g1-pro-tier":
+		return GeminiTierGoogleAIPro
+	case "g1-ultra-tier":
+		return GeminiTierGoogleAIUltra
 	case "standard-tier", "pro-tier":
 		return GeminiTierGCPStandard
 	case "ultra-tier":

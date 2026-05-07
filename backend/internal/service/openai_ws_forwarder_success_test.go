@@ -1006,9 +1006,9 @@ func TestOpenAIGatewayService_Forward_WSv2_TurnStateAndMetadataReplayOnReconnect
 
 	firstHandshakeHeaders := <-headersCh
 	secondHandshakeHeaders := <-headersCh
-	require.Empty(t, firstHandshakeHeaders.Get("X-Codex-Turn-Metadata"))
-	require.Empty(t, secondHandshakeHeaders.Get("X-Codex-Turn-Metadata"))
-	require.Empty(t, secondHandshakeHeaders.Get("X-Codex-Turn-State"))
+	require.Equal(t, "turn_meta_1", firstHandshakeHeaders.Get("X-Codex-Turn-Metadata"))
+	require.Equal(t, "turn_meta_2", secondHandshakeHeaders.Get("X-Codex-Turn-Metadata"))
+	require.Equal(t, "turn_state_first", secondHandshakeHeaders.Get("X-Codex-Turn-State"))
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_GeneratePrewarm(t *testing.T) {
@@ -1197,7 +1197,7 @@ func TestOpenAIGatewayService_Forward_WSv2_TurnMetadataInPayloadOnConnReuse(t *t
 
 	require.Len(t, captureConn.writes, 1)
 	firstWrite := requestToJSONString(captureConn.writes[0])
-	require.False(t, gjson.Get(firstWrite, "client_metadata.x-codex-turn-metadata").Exists())
+	require.Equal(t, "turn_meta_payload_1", gjson.Get(firstWrite, "client_metadata.x-codex-turn-metadata").String())
 	require.False(t, gjson.Get(firstWrite, "client_metadata.x-codex-installation-id").Exists())
 	require.False(t, gjson.Get(firstWrite, "client_metadata.x-codex-window-id").Exists())
 	require.False(t, gjson.Get(firstWrite, "client_metadata.x-codex-beta-features").Exists())
@@ -1222,8 +1222,8 @@ func TestOpenAIGatewayService_Forward_WSv2_TurnMetadataInPayloadOnConnReuse(t *t
 
 	firstWrite = requestToJSONString(captureConn.writes[0])
 	secondWrite := requestToJSONString(captureConn.writes[1])
-	require.False(t, gjson.Get(firstWrite, "client_metadata.x-codex-turn-metadata").Exists())
-	require.False(t, gjson.Get(secondWrite, "client_metadata.x-codex-turn-metadata").Exists())
+	require.Equal(t, "turn_meta_payload_1", gjson.Get(firstWrite, "client_metadata.x-codex-turn-metadata").String())
+	require.Equal(t, "turn_meta_payload_2", gjson.Get(secondWrite, "client_metadata.x-codex-turn-metadata").String())
 	require.False(t, gjson.Get(secondWrite, "client_metadata.x-codex-installation-id").Exists())
 	require.False(t, gjson.Get(secondWrite, "client_metadata.x-codex-window-id").Exists())
 	require.False(t, gjson.Get(secondWrite, "client_metadata.x-codex-beta-features").Exists())

@@ -276,6 +276,9 @@ func TestCanonicalGeminiTierID(t *testing.T) {
 		{name: "GOOGLE_ONE_STANDARD -> google_one_free", raw: "GOOGLE_ONE_STANDARD", want: GeminiTierGoogleOneFree},
 		{name: "GOOGLE_ONE_UNLIMITED -> google_ai_ultra", raw: "GOOGLE_ONE_UNLIMITED", want: GeminiTierGoogleAIUltra},
 		{name: "GOOGLE_ONE_UNKNOWN -> google_one_unknown", raw: "GOOGLE_ONE_UNKNOWN", want: GeminiTierGoogleOneUnknown},
+		{name: "free-tier -> google_one_free", raw: "free-tier", want: GeminiTierGoogleOneFree},
+		{name: "g1-pro-tier -> google_ai_pro", raw: "g1-pro-tier", want: GeminiTierGoogleAIPro},
+		{name: "g1-ultra-tier -> google_ai_ultra", raw: "g1-ultra-tier", want: GeminiTierGoogleAIUltra},
 
 		// legacy 映射: Code Assist
 		{name: "STANDARD -> gcp_standard", raw: "STANDARD", want: GeminiTierGCPStandard},
@@ -326,6 +329,9 @@ func TestCanonicalGeminiTierIDForOAuthType(t *testing.T) {
 		{name: "google_one + google_one_free", oauthType: "google_one", tierID: "google_one_free", want: GeminiTierGoogleOneFree},
 		{name: "google_one + google_ai_pro", oauthType: "google_one", tierID: "google_ai_pro", want: GeminiTierGoogleAIPro},
 		{name: "google_one + google_ai_ultra", oauthType: "google_one", tierID: "google_ai_ultra", want: GeminiTierGoogleAIUltra},
+		{name: "google_one + free-tier", oauthType: "google_one", tierID: "free-tier", want: GeminiTierGoogleOneFree},
+		{name: "google_one + g1-pro-tier", oauthType: "google_one", tierID: "g1-pro-tier", want: GeminiTierGoogleAIPro},
+		{name: "google_one + g1-ultra-tier", oauthType: "google_one", tierID: "g1-ultra-tier", want: GeminiTierGoogleAIUltra},
 		{name: "google_one + gcp_standard 被过滤", oauthType: "google_one", tierID: "gcp_standard", want: ""},
 		{name: "google_one + aistudio_free 被过滤", oauthType: "google_one", tierID: "aistudio_free", want: ""},
 		{name: "google_one + AI_PREMIUM 遗留映射", oauthType: "google_one", tierID: "AI_PREMIUM", want: GeminiTierGoogleAIPro},
