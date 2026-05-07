@@ -73,10 +73,22 @@ describe('PlatformTypeBadge', () => {
     const wrapper = mountBadge({
       platform: 'openai',
       type: 'oauth',
+      planType: 'team',
       organizationRole: 'owner'
     })
 
     expect(wrapper.text()).toContain('队长')
+  })
+
+  it('does not mark OpenAI personal free owners as team leaders', () => {
+    const wrapper = mountBadge({
+      platform: 'openai',
+      type: 'oauth',
+      planType: 'free',
+      organizationRole: 'owner'
+    })
+
+    expect(wrapper.text()).not.toContain('队长')
   })
 
   it('renders localized privacy labels instead of hardcoded english labels', () => {

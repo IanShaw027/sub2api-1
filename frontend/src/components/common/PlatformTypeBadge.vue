@@ -229,6 +229,8 @@ const planBadgeClass = computed(() => {
 
 const organizationRoleLabel = computed(() => {
   if (props.platform !== 'openai' || props.type !== 'oauth') return ''
+  const planType = (props.planType || '').trim().toLowerCase()
+  if (planType !== 'team') return ''
   const normalized = (props.organizationRole || '').trim().toLowerCase()
   if (normalized === 'owner' || normalized === 'admin' || normalized === 'leader') {
     return '队长'
