@@ -376,8 +376,7 @@ func extractTierIDFromAllowedTiers(allowedTiers []geminicli.AllowedTier) string 
 func firstGeminiValidationRequiredTier(ineligibleTiers []geminicli.IneligibleTier) *geminicli.IneligibleTier {
 	for i := range ineligibleTiers {
 		tier := &ineligibleTiers[i]
-		if tier.ReasonCode == geminicli.IneligibleTierReasonCodeValidationRequired &&
-			strings.TrimSpace(tier.ValidationURL) != "" {
+		if tier.ReasonCode == geminicli.IneligibleTierReasonCodeValidationRequired {
 			return tier
 		}
 	}

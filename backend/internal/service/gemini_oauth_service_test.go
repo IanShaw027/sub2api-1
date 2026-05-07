@@ -1475,6 +1475,52 @@ func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_ValidationRequiredRet
 	}
 }
 
+func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_ValidationRequiredWithoutURLStillReturnsValidationError(t *testing.T) {
+	t.Parallel()
+
+	client := &mockGeminiOAuthClient{
+		refreshTokenFunc: func(ctx context.Context, oauthType, refreshToken, proxyURL string) (*geminicli.TokenResponse, error) {
+			return &geminicli.TokenResponse{
+				AccessToken: "at",
+				ExpiresIn:   3600,
+			}, nil
+		},
+	}
+
+	codeAssist := &mockGeminiCodeAssistClient{
+		loadCodeAssistFunc: func(ctx context.Context, accessToken, proxyURL string, req *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
+			return &geminicli.LoadCodeAssistResponse{
+				IneligibleTiers: []geminicli.IneligibleTier{
+					{
+						ReasonCode:             geminicli.IneligibleTierReasonCodeValidationRequired,
+						ValidationErrorMessage: "Account verification required",
+					},
+				},
+			}, nil
+		},
+	}
+
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, nil, &config.Config{})
+	defer svc.Stop()
+
+	account := &Account{
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "rt",
+			"oauth_type":    "code_assist",
+		},
+	}
+
+	_, err := svc.RefreshAccountToken(context.Background(), account)
+	if err == nil {
+		t.Fatal("RefreshAccountToken 应返回 validation_required 错误")
+	}
+	if !strings.Contains(err.Error(), "validation_required:") {
+		t.Fatalf("错误信息应包含 validation_required: got=%q", err.Error())
+	}
+}
+
 func TestGeminiOAuthService_ExchangeCode_CodeAssist_NoProjectID_Fails(t *testing.T) {
 	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
 
@@ -1769,6 +1815,55 @@ func TestGeminiOAuthService_ExchangeCode_CodeAssist_ValidationRequiredErrorBubbl
 	}
 	if !strings.Contains(err.Error(), "validation_url=https://accounts.google.com/verify") {
 		t.Fatalf("错误信息应包含 validation_url: got=%q", err.Error())
+	}
+}
+
+func TestGeminiOAuthService_ExchangeCode_CodeAssist_ValidationRequiredWithoutURLStillBubblesUp(t *testing.T) {
+	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
+
+	client := &mockGeminiOAuthClient{
+		exchangeCodeFunc: func(ctx context.Context, oauthType, code, codeVerifier, redirectURI, proxyURL string) (*geminicli.TokenResponse, error) {
+			return &geminicli.TokenResponse{
+				AccessToken:  "at",
+				RefreshToken: "rt",
+				TokenType:    "Bearer",
+				ExpiresIn:    3600,
+			}, nil
+		},
+	}
+
+	codeAssist := &mockGeminiCodeAssistClient{
+		loadCodeAssistFunc: func(ctx context.Context, accessToken, proxyURL string, req *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
+			return &geminicli.LoadCodeAssistResponse{
+				IneligibleTiers: []geminicli.IneligibleTier{
+					{
+						ReasonCode:             geminicli.IneligibleTierReasonCodeValidationRequired,
+						ValidationErrorMessage: "Account verification required",
+					},
+				},
+			}, nil
+		},
+	}
+
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, nil, &config.Config{})
+	defer svc.Stop()
+
+	result, err := svc.GenerateAuthURL(context.Background(), nil, "https://example.com/auth/callback", "", "code_assist", "")
+	if err != nil {
+		t.Fatalf("GenerateAuthURL 返回错误: %v", err)
+	}
+
+	_, err = svc.ExchangeCode(context.Background(), &GeminiExchangeCodeInput{
+		SessionID: result.SessionID,
+		State:     result.State,
+		Code:      "code-1",
+		OAuthType: "code_assist",
+	})
+	if err == nil {
+		t.Fatal("ExchangeCode 应返回 validation_required 错误")
+	}
+	if !strings.Contains(err.Error(), "validation_required:") {
+		t.Fatalf("错误信息应包含 validation_required: got=%q", err.Error())
 	}
 }
 
