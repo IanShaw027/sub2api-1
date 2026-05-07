@@ -137,9 +137,11 @@ func TestOpenAIGatewayServiceHandleResponsesImageOutputs_NonStreaming(t *testing
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, 7, result.InputTokens)
-	require.Equal(t, 3, result.OutputTokens)
-	require.Equal(t, 2, result.ImageOutputTokens)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 7, result.usage.InputTokens)
+	require.Equal(t, 3, result.usage.OutputTokens)
+	require.Equal(t, 2, result.usage.ImageOutputTokens)
+	require.Equal(t, 1, result.imageCount)
 }
 
 func TestOpenAIGatewayServiceHandleResponsesImageOutputs_Streaming(t *testing.T) {

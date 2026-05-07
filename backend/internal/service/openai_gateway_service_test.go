@@ -2739,12 +2739,13 @@ func TestHandleSSEToJSON_CompletedEventReturnsJSON(t *testing.T) {
 		`data: [DONE]`,
 	}, "\n"))
 
-	usage, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o")
+	result, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o")
 	require.NoError(t, err)
-	require.NotNil(t, usage)
-	require.Equal(t, 7, usage.InputTokens)
-	require.Equal(t, 9, usage.OutputTokens)
-	require.Equal(t, 1, usage.CacheReadInputTokens)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 7, result.usage.InputTokens)
+	require.Equal(t, 9, result.usage.OutputTokens)
+	require.Equal(t, 1, result.usage.CacheReadInputTokens)
 	// Header 可能由上游 Content-Type 透传；关键是 body 已转换为最终 JSON 响应。
 	require.NotContains(t, rec.Body.String(), "event:")
 	require.Contains(t, rec.Body.String(), `"id":"resp_2"`)
@@ -2768,10 +2769,12 @@ func TestHandleSSEToJSON_ReconstructsImageGenerationOutputItemDone(t *testing.T)
 		`data: [DONE]`,
 	}, "\n"))
 
-	usage, err := svc.handleSSEToJSON(resp, c, body, "gpt-5.4", "gpt-5.4")
+	result, err := svc.handleSSEToJSON(resp, c, body, "gpt-5.4", "gpt-5.4")
 	require.NoError(t, err)
-	require.NotNil(t, usage)
-	require.Equal(t, 4, usage.ImageOutputTokens)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 4, result.usage.ImageOutputTokens)
+	require.Equal(t, 1, result.imageCount)
 	require.NotContains(t, rec.Body.String(), "data:")
 	require.Equal(t, "image_generation_call", gjson.Get(rec.Body.String(), "output.0.type").String())
 	require.Equal(t, "aGVsbG8=", gjson.Get(rec.Body.String(), "output.0.result").String())
@@ -2794,10 +2797,11 @@ func TestHandleSSEToJSON_NoFinalResponseKeepsSSEBody(t *testing.T) {
 		`data: [DONE]`,
 	}, "\n"))
 
-	usage, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o")
+	result, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o")
 	require.NoError(t, err)
-	require.NotNil(t, usage)
-	require.Equal(t, 0, usage.InputTokens)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 0, result.usage.InputTokens)
 	require.Contains(t, rec.Header().Get("Content-Type"), "text/event-stream")
 	require.Contains(t, rec.Body.String(), `data: {"type":"response.in_progress"`)
 }
@@ -2818,8 +2822,8 @@ func TestHandleSSEToJSON_ResponseFailedReturnsProtocolError(t *testing.T) {
 		`data: [DONE]`,
 	}, "\n"))
 
-	usage, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o")
-	require.Nil(t, usage)
+	result, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o")
+	require.Nil(t, result)
 	require.Error(t, err)
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.Contains(t, rec.Body.String(), "upstream rejected request")

@@ -219,9 +219,13 @@ func TestGeminiHandleNativeNonStreamingResponse_DebugDisabledDoesNotEmitHeaderLo
 		Body: io.NopCloser(strings.NewReader(`{"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":2}}`)),
 	}
 
-	usage, err := svc.handleNativeNonStreamingResponse(c, resp, false)
+	result, err := svc.handleNativeNonStreamingResponse(c, resp, false)
 	require.NoError(t, err)
-	require.NotNil(t, usage)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 10, result.usage.InputTokens)
+	require.Equal(t, 2, result.usage.OutputTokens)
+	require.Equal(t, 0, result.imageCount)
 	require.False(t, logSink.ContainsMessage("[GeminiAPI]"), "debug 关闭时不应输出 Gemini 响应头日志")
 }
 
@@ -293,7 +297,7 @@ func TestGeminiMessagesCompatServiceForward_ImageBillingUsesMappedUpstreamModel(
 	require.NotNil(t, result)
 	require.Equal(t, "draw-alias", result.Model)
 	require.Equal(t, "gemini-2.5-flash-image", result.UpstreamModel)
-	require.Equal(t, 1, result.ImageCount)
+	require.Equal(t, 0, result.ImageCount)
 	require.NotNil(t, httpStub.lastReq)
 	require.Contains(t, httpStub.lastReq.URL.String(), "/models/gemini-2.5-flash-image:")
 }
@@ -336,7 +340,7 @@ func TestGeminiMessagesCompatServiceForward_OAuthImageBillingUsesMappedUpstreamM
 	require.NotNil(t, result)
 	require.Equal(t, "draw-alias", result.Model)
 	require.Equal(t, "gemini-2.5-flash-image", result.UpstreamModel)
-	require.Equal(t, 1, result.ImageCount)
+	require.Equal(t, 0, result.ImageCount)
 	require.NotNil(t, httpStub.lastReq)
 	require.Contains(t, httpStub.lastReq.URL.String(), "/models/gemini-2.5-flash-image:")
 }

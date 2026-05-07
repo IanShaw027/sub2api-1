@@ -2544,6 +2544,7 @@ handleSuccess:
 	var usage *ClaudeUsage
 	var firstTokenMs *int
 	var clientDisconnect bool
+	imageCount := 0
 
 	if stream {
 		// 客户端要求流式，直接透传
@@ -2555,6 +2556,7 @@ handleSuccess:
 		usage = streamRes.usage
 		firstTokenMs = streamRes.firstTokenMs
 		clientDisconnect = streamRes.clientDisconnect
+		imageCount = streamRes.imageCount
 	} else {
 		// 客户端要求非流式，收集流式响应后返回
 		streamRes, err := s.handleGeminiStreamToNonStreaming(c, resp, startTime)
@@ -2564,16 +2566,15 @@ handleSuccess:
 		}
 		usage = streamRes.usage
 		firstTokenMs = streamRes.firstTokenMs
+		imageCount = streamRes.imageCount
 	}
 
 	if usage == nil {
 		usage = &ClaudeUsage{}
 	}
 
-	// 判断是否为图片生成模型
-	imageCount := 0
-	if isImageGenerationModel(billingModel) {
-		// Gemini 图片生成 API 每次请求只生成一张图片（API 限制）
+	// 仅在响应中检测到真实图片输出时计入图片生成。
+	if imageCount == 0 && usage.ImageOutputTokens > 0 {
 		imageCount = 1
 	}
 
@@ -3092,6 +3093,7 @@ type antigravityStreamResult struct {
 	usage            *ClaudeUsage
 	firstTokenMs     *int
 	clientDisconnect bool // 客户端是否在流式传输过程中断开
+	imageCount       int
 }
 
 // antigravityClientWriter 封装流式响应的客户端写入，自动检测断开并标记。
@@ -3181,6 +3183,7 @@ func (s *AntigravityGatewayService) handleGeminiStreamingResponse(c *gin.Context
 	scanner.Buffer(scanBuf[:0], maxLineSize)
 	usage := &ClaudeUsage{}
 	var firstTokenMs *int
+	imageCount := 0
 
 	type scanEvent struct {
 		line string
@@ -3297,9 +3300,15 @@ func (s *AntigravityGatewayService) handleGeminiStreamingResponse(c *gin.Context
 				// 解析 usage
 				if u := extractGeminiUsage(inner); u != nil {
 					usage = u
+					if imageCount == 0 && usage.ImageOutputTokens > 0 {
+						imageCount = 1
+					}
 				}
 				var parsed map[string]any
 				if json.Unmarshal(inner, &parsed) == nil {
+					if count := countGeminiImageOutputParts(extractGeminiParts(parsed)); count > imageCount {
+						imageCount = count
+					}
 					// Check for MALFORMED_FUNCTION_CALL
 					if candidates, ok := parsed["candidates"].([]any); ok && len(candidates) > 0 {
 						if cand, ok := candidates[0].(map[string]any); ok {
@@ -3541,7 +3550,11 @@ returnResponse:
 	}
 	c.Data(http.StatusOK, "application/json", respBody)
 
-	return &antigravityStreamResult{usage: usage, firstTokenMs: firstTokenMs}, nil
+	return &antigravityStreamResult{
+		usage:        usage,
+		firstTokenMs: firstTokenMs,
+		imageCount:   countGeminiImageOutputs(finalResponse, usage),
+	}, nil
 }
 
 // getOrCreateGeminiParts 获取 Gemini 响应的 parts 结构，返回深拷贝和更新回调
