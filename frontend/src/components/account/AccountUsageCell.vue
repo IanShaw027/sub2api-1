@@ -366,9 +366,47 @@
     <template v-else-if="account.platform === 'gemini'">
       <AccountQuotaInfo :account="account" />
 
-      <!-- Usage data or unlimited flow -->
       <div class="space-y-1">
-        <div v-if="loading" class="space-y-1">
+        <div v-if="isForbidden" class="space-y-1">
+          <span
+            :class="[
+              'inline-block rounded px-1.5 py-0.5 text-[10px] font-medium',
+              forbiddenBadgeClass
+            ]"
+          >
+            {{ forbiddenLabel }}
+          </span>
+          <div v-if="validationURL" class="flex items-center gap-1">
+            <a
+              :href="validationURL"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-[10px] text-blue-600 hover:text-blue-800 hover:underline dark:text-blue-400 dark:hover:text-blue-300"
+              :title="t('admin.accounts.openVerification')"
+            >
+              {{ t('admin.accounts.openVerification') }}
+            </a>
+            <button
+              type="button"
+              class="text-[10px] text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              :title="t('admin.accounts.copyLink')"
+              @click="copyValidationURL"
+            >
+              {{ linkCopied ? t('admin.accounts.linkCopied') : t('admin.accounts.copyLink') }}
+            </button>
+          </div>
+        </div>
+        <div v-else-if="needsReauth" class="space-y-1">
+          <span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
+            {{ t('admin.accounts.needsReauth') }}
+          </span>
+        </div>
+        <div v-else-if="usageInfo?.error" class="space-y-1">
+          <span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+            {{ usageErrorLabel }}
+          </span>
+        </div>
+        <div v-else-if="loading" class="space-y-1">
           <div class="flex items-center gap-1">
             <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
             <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>

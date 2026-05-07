@@ -872,4 +872,101 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).not.toContain('U $0.00')
     expect(wrapper.text()).toContain('admin.accounts.gemini.rateLimit.unlimited')
   })
+
+  it('Gemini forbidden 状态优先展示封禁徽章而不是 unlimited', async () => {
+    getUsage.mockResolvedValue({
+      is_forbidden: true,
+      forbidden_type: 'validation',
+      validation_url: 'https://example.com/verify'
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 4005,
+          platform: 'gemini',
+          type: 'oauth',
+          credentials: {
+            oauth_type: 'google_one'
+          },
+          extra: {}
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: true,
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.accounts.forbiddenValidation')
+    expect(wrapper.text()).toContain('admin.accounts.openVerification')
+    expect(wrapper.text()).not.toContain('admin.accounts.gemini.rateLimit.unlimited')
+  })
+
+  it('Gemini needs reauth 状态优先展示重新授权徽章', async () => {
+    getUsage.mockResolvedValue({
+      needs_reauth: true
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 4006,
+          platform: 'gemini',
+          type: 'oauth',
+          credentials: {
+            oauth_type: 'code_assist'
+          },
+          extra: {}
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: true,
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.accounts.needsReauth')
+    expect(wrapper.text()).not.toContain('admin.accounts.gemini.rateLimit.unlimited')
+  })
+
+  it('Gemini 配额查询降级时展示错误徽章', async () => {
+    getUsage.mockResolvedValue({
+      error: 'quota snapshot fetch failed',
+      error_code: 'rate_limited'
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 4007,
+          platform: 'gemini',
+          type: 'oauth',
+          credentials: {
+            oauth_type: 'google_one'
+          },
+          extra: {}
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: true,
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.accounts.rateLimited')
+    expect(wrapper.text()).not.toContain('admin.accounts.gemini.rateLimit.unlimited')
+  })
 })
