@@ -7,8 +7,10 @@ import { createRouter, createWebHistory, type RouteLocationNormalized, type Rout
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
+import { useSkillsCenterStore } from '@/stores/skillsCenter'
 import { useNavigationLoadingState } from '@/composables/useNavigationLoading'
 import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
+import { skillPaths } from '@/components/skills/paths'
 import { FeatureFlags, isChannelMonitorRouteEnabled, isFeatureFlagEnabled } from '@/utils/featureFlags'
 import { resolveDocumentTitle } from './title'
 
@@ -220,7 +222,10 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/skills',
-    redirect: '/skills/market'
+    redirect: '/skills/market',
+    meta: {
+      requiresAiStudio: true
+    }
   },
   {
     path: '/skills/market',
@@ -229,6 +234,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
+      requiresAiStudio: true,
       title: 'Skill Market',
       titleKey: 'skills.market.title',
       descriptionKey: 'skills.market.subtitle'
@@ -242,6 +248,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
+      requiresAiStudio: true,
       title: 'Installed Skills',
       titleKey: 'skills.installed.title',
       descriptionKey: 'skills.installed.subtitle'
@@ -254,6 +261,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
+      requiresAiStudio: true,
       title: 'My Skills',
       titleKey: 'skills.my.title',
       descriptionKey: 'skills.my.subtitle'
@@ -266,6 +274,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
+      requiresAiStudio: true,
       title: 'Create Skill',
       titleKey: 'skills.editor.create',
       descriptionKey: 'skills.editor.subtitle'
@@ -278,6 +287,8 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
+      requiresAiStudio: true,
+      requiresSkillEditable: true,
       title: 'Edit Skill',
       titleKey: 'skills.editor.edit',
       descriptionKey: 'skills.editor.subtitle'
@@ -290,6 +301,8 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
+      requiresAiStudio: true,
+      requiresSkillEditable: true,
       title: 'Skill Versions',
       titleKey: 'skills.versions.title',
       descriptionKey: 'skills.versions.subtitle'
@@ -302,6 +315,8 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
+      requiresAiStudio: true,
+      requiresSkillOwned: true,
       title: 'Skill Runs',
       titleKey: 'skills.runs.title',
       descriptionKey: 'skills.runs.subtitle'
@@ -314,6 +329,8 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
+      requiresAiStudio: true,
+      requiresSkillOwned: true,
       title: 'Skill Revenue',
       titleKey: 'skills.revenue.title',
       descriptionKey: 'skills.revenue.subtitle'
@@ -326,6 +343,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
+      requiresAiStudio: true,
       title: 'Skill Detail',
       titleKey: 'skills.detail.title',
       descriptionKey: 'skills.detail.subtitle'
@@ -549,7 +567,10 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/admin/skills',
-    redirect: '/admin/skills/governance'
+    redirect: '/admin/skills/governance',
+    meta: {
+      requiresAiStudio: true
+    }
   },
   {
     path: '/admin/dashboard',
@@ -794,6 +815,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: true,
+      requiresAiStudio: true,
       title: 'Skill Review',
       titleKey: 'skills.admin.review.title',
       descriptionKey: 'skills.admin.review.emptyDesc'
@@ -806,6 +828,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: true,
+      requiresAiStudio: true,
       title: 'Skill Governance',
       titleKey: 'skills.admin.governance.title',
       descriptionKey: 'skills.market.subtitle'
@@ -818,6 +841,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: true,
+      requiresAiStudio: true,
       title: 'Skill Runtime Monitor',
       titleKey: 'skills.admin.runtime.title',
       descriptionKey: 'skills.runs.subtitle'
@@ -830,6 +854,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: true,
+      requiresAiStudio: true,
       title: 'Skill Settlements',
       titleKey: 'skills.admin.settlement.title',
       descriptionKey: 'skills.revenue.subtitle'
@@ -948,6 +973,36 @@ async function ensurePublicSettingsForOptInRoute(to: RouteLocationNormalized): P
     return
   }
   await appStore.fetchPublicSettings()
+}
+
+async function ensureSkillRouteAccess(to: RouteLocationNormalized): Promise<string | null> {
+  const requiresSkillEditable = to.meta.requiresSkillEditable === true
+  const requiresSkillOwned = to.meta.requiresSkillOwned === true
+
+  if (!requiresSkillEditable && !requiresSkillOwned) {
+    return null
+  }
+
+  const rawSkillId = Array.isArray(to.params.id) ? to.params.id[0] : to.params.id
+  const skillId = Number(rawSkillId)
+  if (!Number.isFinite(skillId) || skillId <= 0) {
+    return skillPaths.market
+  }
+
+  const skillsStore = useSkillsCenterStore()
+  try {
+    const skill = await skillsStore.loadSkillDetail(skillId, true)
+    if (requiresSkillEditable && !skill.editable) {
+      return skillPaths.detail(skillId)
+    }
+    if (requiresSkillOwned && !skill.owned) {
+      return skillPaths.detail(skillId)
+    }
+  } catch {
+    return '/dashboard'
+  }
+
+  return null
 }
 
 /**
@@ -1102,6 +1157,12 @@ router.beforeEach(async (to, _from, next) => {
 
   if (to.meta.requiresAiStudio === true && !isFeatureFlagEnabled(FeatureFlags.aiStudio)) {
     next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+    return
+  }
+
+  const skillRouteRedirect = await ensureSkillRouteAccess(to)
+  if (skillRouteRedirect) {
+    next(skillRouteRedirect)
     return
   }
 

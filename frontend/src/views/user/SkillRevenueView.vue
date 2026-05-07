@@ -1,10 +1,12 @@
 <template>
   <AppLayout>
-    <div class="mx-auto flex w-full max-w-7xl flex-col gap-6">
+    <div v-if="showRevenuePage" class="mx-auto flex w-full max-w-7xl flex-col gap-6">
       <SkillCenterNav
         active="revenue"
         :skill-id="skillId"
-        :show-revenue="true"
+        :can-edit-skill="Boolean(skill?.editable)"
+        :can-view-runs="Boolean(skill?.owned)"
+        :can-view-revenue="Boolean(skill?.owned)"
       />
 
       <div v-if="revenue" class="space-y-6">
@@ -118,14 +120,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onMounted, watch, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import type { Column } from '@/components/common/types'
 import SkillCenterNav from '@/components/skills/SkillCenterNav.vue'
+import { skillPaths } from '@/components/skills/paths'
 import { formatCurrency } from '@/components/skills/presentation'
 import { useSkillsCenterStore } from '@/stores/skillsCenter'
 import { useAppStore } from '@/stores'
@@ -142,6 +145,9 @@ const skillId = computed(() => {
 })
 const skill = computed(() => skillsStore.detail)
 const revenue = computed(() => skillsStore.revenue)
+const router = useRouter()
+const loadedSkillId = ref<number | null>(null)
+const showRevenuePage = computed(() => loadedSkillId.value === skillId.value)
 
 const columns = computed<Column[]>(() => [
   { key: 'buyer_name', label: t('skills.revenue.buyer', '买家'), class: 'w-40' },
@@ -153,9 +159,15 @@ const columns = computed<Column[]>(() => [
 
 async function loadPage(force = false): Promise<void> {
   if (!skillId.value) return
+  loadedSkillId.value = null
   try {
     await skillsStore.loadSkillDetail(skillId.value, force)
+    if (!skill.value?.owned) {
+      await router.replace(skillPaths.detail(skillId.value))
+      return
+    }
     await skillsStore.loadRevenue(skillId.value, force)
+    loadedSkillId.value = skillId.value
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('common.error')))
   }

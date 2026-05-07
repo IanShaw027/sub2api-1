@@ -49,12 +49,18 @@ type SkillNavKey = 'market' | 'installed' | 'my' | 'editor' | 'detail' | 'versio
 interface Props {
   active: SkillNavKey
   skillId?: number | null
+  canEditSkill?: boolean
+  canViewRuns?: boolean
+  canViewRevenue?: boolean
   showRevenue?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   skillId: null,
-  showRevenue: true
+  canEditSkill: false,
+  canViewRuns: false,
+  canViewRevenue: false,
+  showRevenue: false
 })
 
 const { t } = useI18n()
@@ -104,21 +110,33 @@ const headerSubtitle = computed(() => {
 })
 
 const navItems = computed(() => {
+  const canViewRevenue = props.canViewRevenue || props.showRevenue
   const items: Array<{ key: SkillNavKey; to: string; label: string; icon: 'grid' | 'user' | 'edit' | 'book' | 'sync' | 'clock' | 'dollar' }> = [
     { key: 'market', to: skillPaths.market, label: t('skills.market.title', '技能市场'), icon: 'grid' },
     { key: 'installed', to: skillPaths.installed, label: t('skills.installed.title', '已安装技能'), icon: 'grid' },
     { key: 'my', to: skillPaths.my, label: t('skills.my.title', '我的技能'), icon: 'user' },
-    { key: 'editor', to: props.skillId ? skillPaths.edit(props.skillId) : skillPaths.create, label: t('skills.editor.title', '技能编辑器'), icon: 'edit' }
   ]
+
+  if (!props.skillId || props.canEditSkill) {
+    items.push({ key: 'editor', to: props.skillId ? skillPaths.edit(props.skillId) : skillPaths.create, label: t('skills.editor.title', '技能编辑器'), icon: 'edit' })
+  }
 
   if (props.skillId) {
     items.push(
-      { key: 'detail', to: skillPaths.detail(props.skillId), label: t('skills.detail.title', '技能详情'), icon: 'book' },
-      { key: 'versions', to: skillPaths.versions(props.skillId), label: t('skills.versions.title', '版本管理'), icon: 'sync' },
-      { key: 'runs', to: skillPaths.runs(props.skillId), label: t('skills.runs.title', '运行记录'), icon: 'clock' }
+      { key: 'detail', to: skillPaths.detail(props.skillId), label: t('skills.detail.title', '技能详情'), icon: 'book' }
     )
 
-    if (props.showRevenue) {
+    if (props.canEditSkill) {
+      items.push(
+        { key: 'versions', to: skillPaths.versions(props.skillId), label: t('skills.versions.title', '版本管理'), icon: 'sync' }
+      )
+    }
+
+    if (props.canViewRuns) {
+      items.push({ key: 'runs', to: skillPaths.runs(props.skillId), label: t('skills.runs.title', '运行记录'), icon: 'clock' })
+    }
+
+    if (canViewRevenue) {
       items.push({ key: 'revenue', to: skillPaths.revenue(props.skillId), label: t('skills.revenue.title', '收益页'), icon: 'dollar' })
     }
   }

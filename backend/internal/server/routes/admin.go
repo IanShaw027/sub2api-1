@@ -135,6 +135,7 @@ func registerAdminAIRoutes(admin *gin.RouterGroup, h *handler.Handlers, settingS
 	}
 
 	skills := admin.Group("/skills")
+	skills.Use(aiStudioFeatureGuard(settingService))
 	{
 		reviews := skills.Group("/reviews")
 		{

@@ -1,10 +1,12 @@
 <template>
   <AppLayout>
-    <div class="mx-auto flex w-full max-w-7xl flex-col gap-6">
+    <div v-if="showEditor" class="mx-auto flex w-full max-w-7xl flex-col gap-6">
       <SkillCenterNav
         active="editor"
         :skill-id="skillsStore.editorSkillId"
-        :show-revenue="Boolean(skillsStore.detail?.owned)"
+        :can-edit-skill="Boolean(skillsStore.detail?.editable)"
+        :can-view-runs="Boolean(skillsStore.detail?.owned)"
+        :can-view-revenue="Boolean(skillsStore.detail?.owned)"
       />
 
       <section class="card overflow-hidden">
@@ -176,8 +178,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onMounted, watch, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -187,12 +189,14 @@ import TextArea from '@/components/common/TextArea.vue'
 import SkillCenterNav from '@/components/skills/SkillCenterNav.vue'
 import SkillTypeEditor from '@/components/skills/SkillTypeEditor.vue'
 import SkillVariableSchemaEditor from '@/components/skills/SkillVariableSchemaEditor.vue'
+import { skillPaths } from '@/components/skills/paths'
 import { useSkillsCenterStore } from '@/stores/skillsCenter'
 import { useAppStore } from '@/stores'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import type { SkillPriceMode, SkillStatus, SkillType } from '@/types/skills'
 
 const route = useRoute()
+const router = useRouter()
 const { t } = useI18n()
 const appStore = useAppStore()
 const skillsStore = useSkillsCenterStore()
@@ -202,6 +206,8 @@ const skillId = computed(() => {
   return Number.isFinite(value) && value > 0 ? value : null
 })
 const isEditing = computed(() => skillId.value !== null)
+const loadedSkillId = ref<number | null>(null)
+const showEditor = computed(() => !isEditing.value || loadedSkillId.value === skillId.value)
 const tagsInput = computed(() => skillsStore.editorDraft.tags.join(', '))
 
 const typeOptions = [
@@ -253,20 +259,31 @@ function updatePriceMode(value: string | number | boolean | null): void {
   }
 }
 
-async function loadDraft(): Promise<void> {
+async function loadDraft(force = false): Promise<void> {
+  loadedSkillId.value = null
+  if (!isEditing.value) {
+    await skillsStore.loadEditor(null, force)
+    return
+  }
+
   try {
-    await skillsStore.loadEditor(skillId.value)
+    const currentSkillId = skillId.value
+    if (currentSkillId === null) {
+      return
+    }
+    await skillsStore.loadEditor(currentSkillId, force)
+    if (!skillsStore.detail?.editable) {
+      await router.replace(skillPaths.detail(currentSkillId))
+      return
+    }
+    loadedSkillId.value = currentSkillId
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('common.error')))
   }
 }
 
 async function reloadEditor(): Promise<void> {
-  try {
-    await skillsStore.loadEditor(skillId.value, true)
-  } catch (error) {
-    appStore.showError(extractApiErrorMessage(error, t('common.error')))
-  }
+  await loadDraft(true)
 }
 
 async function saveSkillItem(): Promise<void> {

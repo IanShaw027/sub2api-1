@@ -175,6 +175,41 @@ describe('skill installed entry', () => {
     expect(wrapper.text()).toContain('已安装技能')
   })
 
+  it('hides protected skill links unless the caller explicitly allows them', () => {
+    const lockedWrapper = mount(SkillCenterNav, {
+      props: {
+        active: 'detail',
+        skillId: 42,
+        canEditSkill: false,
+        canViewRuns: false,
+        canViewRevenue: false,
+      },
+    })
+
+    const lockedLinks = lockedWrapper.findAll('a').map((item) => item.attributes('href'))
+    expect(lockedLinks).toContain('/skills/42')
+    expect(lockedLinks).not.toContain('/skills/42/edit')
+    expect(lockedLinks).not.toContain('/skills/42/versions')
+    expect(lockedLinks).not.toContain('/skills/42/runs')
+    expect(lockedLinks).not.toContain('/skills/42/revenue')
+
+    const unlockedWrapper = mount(SkillCenterNav, {
+      props: {
+        active: 'detail',
+        skillId: 42,
+        canEditSkill: true,
+        canViewRuns: true,
+        canViewRevenue: true,
+      },
+    })
+
+    const unlockedLinks = unlockedWrapper.findAll('a').map((item) => item.attributes('href'))
+    expect(unlockedLinks).toContain('/skills/42/edit')
+    expect(unlockedLinks).toContain('/skills/42/versions')
+    expect(unlockedLinks).toContain('/skills/42/runs')
+    expect(unlockedLinks).toContain('/skills/42/revenue')
+  })
+
   it('forces the installed filter and refreshes market data on the installed route view', async () => {
     const wrapper = mount(SkillMarketView, {
       props: {

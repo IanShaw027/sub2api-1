@@ -1,10 +1,12 @@
 <template>
   <AppLayout>
-    <div class="mx-auto flex w-full max-w-7xl flex-col gap-6">
+    <div v-if="showRunPage" class="mx-auto flex w-full max-w-7xl flex-col gap-6">
       <SkillCenterNav
         active="runs"
         :skill-id="skillId"
-        :show-revenue="Boolean(skill?.owned)"
+        :can-edit-skill="Boolean(skill?.editable)"
+        :can-view-runs="Boolean(skill?.owned)"
+        :can-view-revenue="Boolean(skill?.owned)"
       />
 
       <TablePageLayout>
@@ -102,7 +104,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted, watch, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -114,6 +116,7 @@ import Select from '@/components/common/Select.vue'
 import type { Column } from '@/components/common/types'
 import Icon from '@/components/icons/Icon.vue'
 import SkillCenterNav from '@/components/skills/SkillCenterNav.vue'
+import { skillPaths } from '@/components/skills/paths'
 import { formatCurrency, skillRunBadgeClass, skillRunStatusLabel, skillRunTriggerLabel } from '@/components/skills/presentation'
 import { useSkillsCenterStore } from '@/stores/skillsCenter'
 import { useAppStore } from '@/stores'
@@ -133,6 +136,8 @@ const skillId = computed(() => {
   return Number.isFinite(value) && value > 0 ? value : 0
 })
 const skill = computed(() => skillsStore.detail)
+const loadedSkillId = ref<number | null>(null)
+const showRunPage = computed(() => loadedSkillId.value === skillId.value)
 
 const statusOptions = [
   { value: 'all', label: t('common.all', '全部') },
@@ -240,11 +245,17 @@ async function replaceRunsQuery(page = currentRoutePage(), pageSize = currentRou
 
 async function loadPage(force = false): Promise<void> {
   if (!skillId.value) return
+  loadedSkillId.value = null
   try {
     syncRouteFilters()
     await skillsStore.loadSkillDetail(skillId.value, force)
+    if (!skill.value?.owned) {
+      await router.replace(skillPaths.detail(skillId.value))
+      return
+    }
     await skillsStore.loadVersions(skillId.value, 1, 100)
     await skillsStore.loadRuns(skillId.value, currentRoutePage(), currentRoutePageSize())
+    loadedSkillId.value = skillId.value
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('common.error')))
   }

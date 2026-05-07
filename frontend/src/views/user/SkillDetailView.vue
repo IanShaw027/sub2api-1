@@ -4,7 +4,9 @@
       <SkillCenterNav
         active="detail"
         :skill-id="skillId"
-        :show-revenue="Boolean(skill?.owned)"
+        :can-edit-skill="Boolean(skill?.editable)"
+        :can-view-runs="Boolean(skill?.owned)"
+        :can-view-revenue="Boolean(skill?.owned)"
       />
 
       <div v-if="skill" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">

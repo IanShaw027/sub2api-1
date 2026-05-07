@@ -87,6 +87,26 @@ func TestRegisterUserRoutesRejectsAIWhenFeatureDisabled(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "AI_STUDIO_DISABLED")
 }
 
+func TestRegisterUserSkillRoutesRejectsWhenFeatureDisabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	v1 := router.Group("/api/v1")
+	RegisterUserRoutes(
+		v1,
+		&handler.Handlers{AI: &handler.AIHandler{}},
+		middleware.JWTAuthMiddleware(func(c *gin.Context) { c.Next() }),
+		newAIStudioRouteSettings(false),
+	)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/user/skills", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Contains(t, rec.Body.String(), "AI_STUDIO_DISABLED")
+}
+
 func TestRegisterAdminRoutesRejectsAIWhenFeatureDisabled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -105,6 +125,30 @@ func TestRegisterAdminRoutesRejectsAIWhenFeatureDisabled(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/ai/prompts", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Contains(t, rec.Body.String(), "AI_STUDIO_DISABLED")
+}
+
+func TestRegisterAdminSkillRoutesRejectsWhenFeatureDisabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	v1 := router.Group("/api/v1")
+	RegisterAdminRoutes(
+		v1,
+		&handler.Handlers{
+			Admin: &handler.AdminHandlers{
+				AI: &admin.AIHandler{},
+			},
+		},
+		middleware.AdminAuthMiddleware(func(c *gin.Context) { c.Next() }),
+		newAIStudioRouteSettings(false),
+	)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/skills/governance", nil)
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusForbidden, rec.Code)

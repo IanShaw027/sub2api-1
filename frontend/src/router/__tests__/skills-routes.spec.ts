@@ -16,7 +16,12 @@ const appStore = vi.hoisted(() => ({
   cachedPublicSettings: {
     channel_monitor_enabled: false,
     available_channels_enabled: false,
+    ai_studio_enabled: true,
   },
+}))
+
+const skillsStore = vi.hoisted(() => ({
+  loadSkillDetail: vi.fn(),
 }))
 
 vi.mock('@/stores/auth', () => ({
@@ -25,6 +30,10 @@ vi.mock('@/stores/auth', () => ({
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => appStore,
+}))
+
+vi.mock('@/stores/skillsCenter', () => ({
+  useSkillsCenterStore: () => skillsStore,
 }))
 
 vi.mock('@/stores/adminSettings', () => ({
@@ -60,6 +69,12 @@ describe('skill installed route', () => {
     vi.resetModules()
     authStore.checkAuth.mockReset()
     appStore.fetchPublicSettings.mockReset()
+    skillsStore.loadSkillDetail.mockReset()
+    skillsStore.loadSkillDetail.mockResolvedValue({
+      id: 42,
+      editable: false,
+      owned: false,
+    })
     window.scrollTo = vi.fn()
   })
 
@@ -98,5 +113,56 @@ describe('skill installed route', () => {
 
     expect(routes.find((item) => item.path === '/admin/skills/review')?.meta.requiresAdmin).toBe(true)
     expect(routes.find((item) => item.path === '/admin/skills/governance')?.name).toBe('AdminSkillGovernance')
+  })
+
+  it('marks all skill routes as AI Studio gated and protects skill management subroutes', async () => {
+    const { default: router } = await import('@/router')
+
+    const guardedPaths = [
+      '/skills',
+      '/skills/market',
+      '/skills/installed',
+      '/skills/mine',
+      '/skills/new',
+      '/skills/:id/edit',
+      '/skills/:id/versions',
+      '/skills/:id/runs',
+      '/skills/:id/revenue',
+      '/skills/:id',
+      '/admin/skills',
+      '/admin/skills/review',
+      '/admin/skills/governance',
+      '/admin/skills/runtime',
+      '/admin/skills/settlements',
+    ]
+
+    for (const path of guardedPaths) {
+      expect(router.getRoutes().find((item) => item.path === path)?.meta.requiresAiStudio).toBe(true)
+    }
+
+    expect(router.getRoutes().find((item) => item.path === '/skills/:id/edit')?.meta.requiresSkillEditable).toBe(true)
+    expect(router.getRoutes().find((item) => item.path === '/skills/:id/versions')?.meta.requiresSkillEditable).toBe(true)
+    expect(router.getRoutes().find((item) => item.path === '/skills/:id/runs')?.meta.requiresSkillOwned).toBe(true)
+    expect(router.getRoutes().find((item) => item.path === '/skills/:id/revenue')?.meta.requiresSkillOwned).toBe(true)
+  })
+
+  it('redirects away from skill management routes when the loaded skill does not grant access', async () => {
+    const { default: router } = await import('@/router')
+
+    await router.push('/skills/42/edit')
+    await router.isReady()
+
+    expect(skillsStore.loadSkillDetail).toHaveBeenCalledWith(42, true)
+    expect(router.currentRoute.value.path).toBe('/skills/42')
+  })
+
+  it('redirects revenue routes to the detail page when the loaded skill is not owned', async () => {
+    const { default: router } = await import('@/router')
+
+    await router.push('/skills/42/revenue')
+    await router.isReady()
+
+    expect(skillsStore.loadSkillDetail).toHaveBeenCalledWith(42, true)
+    expect(router.currentRoute.value.path).toBe('/skills/42')
   })
 })

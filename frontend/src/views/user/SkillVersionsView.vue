@@ -1,10 +1,12 @@
 <template>
   <AppLayout>
-    <div class="mx-auto flex w-full max-w-7xl flex-col gap-6">
+    <div v-if="showVersionPage" class="mx-auto flex w-full max-w-7xl flex-col gap-6">
       <SkillCenterNav
         active="versions"
         :skill-id="skillId"
-        :show-revenue="Boolean(skill?.owned)"
+        :can-edit-skill="Boolean(skill?.editable)"
+        :can-view-runs="Boolean(skill?.owned)"
+        :can-view-revenue="Boolean(skill?.owned)"
       />
 
       <div class="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
@@ -188,8 +190,8 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, computed, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { onMounted, reactive, computed, watch, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -199,6 +201,7 @@ import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import TextArea from '@/components/common/TextArea.vue'
 import SkillCenterNav from '@/components/skills/SkillCenterNav.vue'
+import { skillPaths } from '@/components/skills/paths'
 import {
   skillVersionBadgeClass,
   skillVersionReviewBadgeClass,
@@ -211,6 +214,7 @@ import { extractApiErrorMessage } from '@/utils/apiError'
 import type { SkillRunMode, SkillVersionRecord, SkillVersionStatus } from '@/types/skills'
 
 const route = useRoute()
+const router = useRouter()
 const { t } = useI18n()
 const appStore = useAppStore()
 const skillsStore = useSkillsCenterStore()
@@ -221,6 +225,8 @@ const skillId = computed(() => {
 })
 
 const skill = computed(() => skillsStore.detail)
+const loadedSkillId = ref<number | null>(null)
+const showVersionPage = computed(() => loadedSkillId.value === skillId.value)
 const draft = reactive<{
   version: string
   status: SkillVersionStatus
@@ -288,10 +294,16 @@ function resetDraft(): void {
 
 async function loadPage(force = false): Promise<void> {
   if (!skillId.value) return
+  loadedSkillId.value = null
   try {
     await skillsStore.loadSkillDetail(skillId.value, force)
+    if (!skill.value?.editable) {
+      await router.replace(skillPaths.detail(skillId.value))
+      return
+    }
     await skillsStore.loadVersions(skillId.value, 1, skillsStore.versionsPagination.page_size)
     resetDraft()
+    loadedSkillId.value = skillId.value
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('common.error')))
   }

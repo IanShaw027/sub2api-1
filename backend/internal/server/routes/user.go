@@ -140,6 +140,7 @@ func RegisterUserRoutes(
 		}
 
 		skills := authenticated.Group("/user/skills")
+		skills.Use(aiStudioFeatureGuard(settingService))
 		{
 			skills.GET("", h.AI.ListSkills)
 			skills.POST("", h.AI.CreateSkill)
