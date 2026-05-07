@@ -297,6 +297,36 @@ describe('admin AccountsView bulk edit scope', () => {
     expect(nameCells[2].text()).toContain('personal@example.com (personal)')
   })
 
+  it('limits account name cell width and exposes full text via title', async () => {
+    const longName = 'Gemini account name '.repeat(30).trim()
+    listAccounts.mockResolvedValueOnce({
+      items: [
+        {
+          id: 1,
+          name: longName,
+          platform: 'gemini',
+          type: 'oauth',
+          credentials: {},
+          extra: {
+            email_address: 'very.long.email@example.com'
+          }
+        }
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mountAccountsView()
+    await flushPromises()
+
+    const nameText = wrapper.get('[data-test="name-cell"] .font-medium')
+    expect(nameText.attributes('title')).toBe(longName)
+    expect(nameText.classes()).toContain('truncate')
+    expect(nameText.classes()).toContain('max-w-[400px]')
+  })
+
   it('passes the openai organization role through to the platform badge', async () => {
     listAccounts.mockResolvedValueOnce({
       items: [
@@ -344,5 +374,80 @@ describe('admin AccountsView bulk edit scope', () => {
     expect(badges[1].attributes('data-organization-role')).toBe('owner')
     expect(badges[0].attributes('data-plan-type')).toBe('plus')
     expect(badges[1].attributes('data-plan-type')).toBe('team')
+  })
+
+  it('maps canonical gemini tier ids to pro and leaves unknown tiers unclassified', async () => {
+    listAccounts.mockResolvedValueOnce({
+      items: [
+        {
+          id: 1,
+          name: 'Gemini Pro',
+          platform: 'gemini',
+          type: 'oauth',
+          credentials: {
+            tier_id: 'google_ai_pro'
+          },
+          extra: {
+            subscription_type: 'Gemini Code Assist in Google One AI Pro'
+          }
+        },
+        {
+          id: 2,
+          name: 'Gemini Unknown',
+          platform: 'gemini',
+          type: 'oauth',
+          credentials: {
+            tier_id: 'gcp_enterprise'
+          },
+          extra: {}
+        }
+      ],
+      total: 2,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mountAccountsView()
+    await flushPromises()
+
+    const badges = wrapper.findAll('[data-test="platform-type-badge"]')
+    expect(badges).toHaveLength(2)
+    expect(badges[0].attributes('data-plan-type')).toBe('pro')
+    expect(badges[1].attributes('data-plan-type')).toBe('')
+  })
+
+  it('prefers gemini paid tier metadata over free google one tier when both exist', async () => {
+    listAccounts.mockResolvedValueOnce({
+      items: [
+        {
+          id: 1,
+          name: 'Gemini Paid Override',
+          platform: 'gemini',
+          type: 'oauth',
+          credentials: {
+            oauth_type: 'google_one',
+            tier_id: 'google_one_free',
+            plan_name: 'Gemini Code Assist in Google One Free'
+          },
+          extra: {
+            gemini_current_tier_id: 'standard-tier',
+            gemini_paid_tier_id: 'g1-pro-tier',
+            gemini_paid_tier_name: 'Gemini Code Assist in Google One AI Pro'
+          }
+        }
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mountAccountsView()
+    await flushPromises()
+
+    const badges = wrapper.findAll('[data-test="platform-type-badge"]')
+    expect(badges).toHaveLength(1)
+    expect(badges[0].attributes('data-plan-type')).toBe('pro')
   })
 })

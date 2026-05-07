@@ -100,3 +100,27 @@ func TestAccountFromServiceRedactsOpenAIWebProfileCookieValues(t *testing.T) {
 	require.Equal(t, ".chatgpt.com", cookies[0]["domain"])
 	require.NotContains(t, cookies[0], "value")
 }
+
+func TestAccountFromServiceKeepsGeminiCanonicalTierMetadata(t *testing.T) {
+	account := &service.Account{
+		Platform: service.PlatformGemini,
+		Type:     service.AccountTypeOAuth,
+		Credentials: map[string]any{
+			"tier_id":   "google_ai_pro",
+			"plan_name": "Gemini Code Assist in Google One AI Pro",
+		},
+		Extra: map[string]any{
+			"subscription_type":      "Gemini Code Assist in Google One AI Pro",
+			"gemini_current_tier_id": "g1-pro-tier",
+			"gemini_paid_tier_id":    "g1-pro-tier",
+		},
+	}
+
+	out := AccountFromService(account)
+	require.NotNil(t, out)
+	require.Equal(t, "google_ai_pro", out.Credentials["tier_id"])
+	require.Equal(t, "Gemini Code Assist in Google One AI Pro", out.Credentials["plan_name"])
+	require.Equal(t, "Gemini Code Assist in Google One AI Pro", out.Extra["subscription_type"])
+	require.Equal(t, "g1-pro-tier", out.Extra["gemini_current_tier_id"])
+	require.Equal(t, "g1-pro-tier", out.Extra["gemini_paid_tier_id"])
+}

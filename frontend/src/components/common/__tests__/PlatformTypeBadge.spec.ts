@@ -50,11 +50,23 @@ describe('PlatformTypeBadge', () => {
     const wrapper = mountBadge({
       platform: 'gemini',
       type: 'oauth',
-      planType: 'free'
+      planType: 'google_one_free'
     })
 
     expect(wrapper.text()).toContain('Free')
     expect(wrapper.text()).not.toContain('__OAUTH__')
+  })
+
+  it('keeps unknown Gemini tier ids from being misclassified as paid or free labels', () => {
+    const wrapper = mountBadge({
+      platform: 'gemini',
+      type: 'oauth',
+      planType: 'gcp_enterprise'
+    })
+
+    expect(wrapper.text()).toContain('__OAUTH__')
+    expect(wrapper.text()).not.toContain('Pro')
+    expect(wrapper.text()).not.toContain('Free')
   })
 
   it('marks OpenAI team leaders in platform type badges', () => {

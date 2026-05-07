@@ -180,11 +180,16 @@
             <input type="checkbox" :checked="isSelected(row.id)" @change="toggleSel(row.id)" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
           </template>
           <template #cell-name="{ row, value }">
-            <div class="flex flex-col">
-              <span class="font-medium text-gray-900 dark:text-white">{{ getDisplayAccountName(row, value) }}</span>
+            <div class="flex max-w-[400px] flex-col">
+              <span
+                class="block max-w-[400px] truncate font-medium text-gray-900 dark:text-white"
+                :title="getDisplayAccountName(row, value)"
+              >
+                {{ getDisplayAccountName(row, value) }}
+              </span>
               <span
                 v-if="row.extra?.email_address"
-                class="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[200px]"
+                class="max-w-[400px] truncate text-xs text-gray-500 dark:text-gray-400"
                 :title="row.extra.email_address"
               >
                 {{ row.extra.email_address }}
@@ -1088,16 +1093,34 @@ function getAntigravityTierLabel(row: any): string | null {
 function normalizeGeminiPlatformTier(value: unknown): string {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : ''
   if (!normalized) return ''
+  if (
+    normalized === 'google_ai_ultra' ||
+    normalized === 'g1-ultra-tier' ||
+    normalized === 'google_one_ultra' ||
+    normalized === 'google_one_unlimited'
+  ) return 'ultra'
+  if (
+    normalized === 'google_ai_pro' ||
+    normalized === 'aistudio_paid' ||
+    normalized === 'g1-pro-tier' ||
+    normalized === 'ai_premium'
+  ) return 'pro'
+  if (
+    normalized === 'google_one_free' ||
+    normalized === 'aistudio_free' ||
+    normalized === 'google_one_unknown' ||
+    normalized === 'free' ||
+    normalized === 'free-tier' ||
+    normalized === 'standard-tier'
+  ) return 'free'
   if (normalized.includes('ultra')) return 'ultra'
   if (
     normalized.includes('pro') ||
     normalized.includes('premium') ||
-    normalized.includes('enterprise') ||
     normalized.includes('paid')
   ) return 'pro'
   if (
-    normalized.includes('free') ||
-    normalized.includes('standard')
+    normalized.includes('free')
   ) return 'free'
   return ''
 }
@@ -1105,21 +1128,21 @@ function normalizeGeminiPlatformTier(value: unknown): string {
 function getPlatformBadgePlanType(row: any): string | undefined {
   if (row?.platform === 'gemini') {
     const sources = [
-      row?.credentials?.plan_type,
+      row?.extra?.gemini_paid_tier_id,
+      row?.credentials?.gemini_paid_tier_id,
       row?.credentials?.tier_id,
       row?.credentials?.gemini_current_tier_id,
-      row?.credentials?.gemini_paid_tier_id,
-      row?.credentials?.plan_name,
-      row?.credentials?.gemini_current_tier_name,
-      row?.credentials?.gemini_paid_tier_name,
-      row?.extra?.plan_type,
-      row?.extra?.subscription_type,
-      row?.extra?.plan_name,
-      row?.extra?.tier_id,
       row?.extra?.gemini_current_tier_id,
-      row?.extra?.gemini_paid_tier_id,
+      row?.extra?.tier_id,
+      row?.credentials?.plan_type,
+      row?.credentials?.plan_name,
+      row?.credentials?.gemini_paid_tier_name,
+      row?.credentials?.gemini_current_tier_name,
+      row?.extra?.plan_type,
+      row?.extra?.plan_name,
+      row?.extra?.gemini_paid_tier_name,
       row?.extra?.gemini_current_tier_name,
-      row?.extra?.gemini_paid_tier_name
+      row?.extra?.subscription_type,
     ]
     const normalizedTier = sources
       .map((value) => normalizeGeminiPlatformTier(value))

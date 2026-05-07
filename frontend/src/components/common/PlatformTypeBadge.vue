@@ -82,16 +82,34 @@ const props = defineProps<Props>()
 const normalizeGeminiTier = (value?: string): 'free' | 'pro' | 'ultra' | '' => {
   const normalized = (value || '').trim().toLowerCase()
   if (!normalized) return ''
+  if (
+    normalized === 'google_ai_ultra' ||
+    normalized === 'g1-ultra-tier' ||
+    normalized === 'google_one_ultra' ||
+    normalized === 'google_one_unlimited'
+  ) return 'ultra'
+  if (
+    normalized === 'google_ai_pro' ||
+    normalized === 'aistudio_paid' ||
+    normalized === 'g1-pro-tier' ||
+    normalized === 'ai_premium'
+  ) return 'pro'
+  if (
+    normalized === 'google_one_free' ||
+    normalized === 'aistudio_free' ||
+    normalized === 'google_one_unknown' ||
+    normalized === 'free' ||
+    normalized === 'free-tier' ||
+    normalized === 'standard-tier'
+  ) return 'free'
   if (normalized.includes('ultra')) return 'ultra'
   if (
     normalized.includes('pro') ||
     normalized.includes('premium') ||
-    normalized.includes('enterprise') ||
     normalized.includes('paid')
   ) return 'pro'
   if (
-    normalized.includes('free') ||
-    normalized.includes('standard')
+    normalized.includes('free')
   ) return 'free'
   return ''
 }
