@@ -246,6 +246,7 @@ export default {
   common: {
     loading: '加载中...',
     submitting: '提交中...',
+    sending: '发送中...',
     justNow: '刚刚',
     save: '保存',
     saved: '保存成功',
@@ -257,7 +258,9 @@ export default {
     update: '更新',
     confirm: '确认',
     reset: '重置',
+    apply: '应用',
     search: '搜索',
+    clear: '清除',
     filter: '筛选',
     export: '导出',
     import: '导入',
@@ -266,6 +269,8 @@ export default {
     name: '名称',
     email: '邮箱',
     password: '密码',
+    required: '必填',
+    date: '日期',
     submit: '提交',
     back: '返回',
     next: '下一步',
@@ -306,6 +311,7 @@ export default {
     noGroupsAvailable: '无可用分组',
     unknownError: '发生未知错误',
     saving: '保存中...',
+    creating: '创建中...',
     selectedCount: '（已选 {count} 个）',
     refresh: '刷新',
     autoRefresh: {
@@ -323,6 +329,7 @@ export default {
     today: '今天',
     tomorrow: '明天',
     unknown: '未知',
+    tryAgain: '请重试',
     minutes: '分钟',
     time: {
       never: '从未',
@@ -362,6 +369,7 @@ export default {
     redeemCodes: '兑换码',
     ops: '运维监控',
     promoCodes: '优惠码',
+    skillGovernance: '技能治理',
     settings: '系统设置',
     myAccount: '我的账户',
     lightMode: '浅色模式',
@@ -382,6 +390,258 @@ export default {
     channelPricing: '渠道定价',
     channelMonitor: '渠道监控',
     channelStatus: '渠道状态',
+  },
+
+  // Skills
+  skills: {
+    center: {
+      label: '技能中心'
+    },
+    value: '值',
+    common: {
+      anonymous: '匿名作者'
+    },
+    actions: {
+      test: '测试',
+      use: '使用',
+      submitReview: '提交审核',
+      publish: '发布',
+      testSuccess: '已发起测试',
+      useSuccess: '已发起使用',
+      submitReviewSuccess: '已提交审核',
+      publishSuccess: '版本已发布',
+      alreadyCurrent: '当前版本已是生效版本',
+      currentPublishedHint: '当前版本已生效，可继续测试或使用。',
+      currentUnavailable: '当前版本暂不可使用。',
+      pendingReviewHint: '当前版本审核中，暂不可测试、使用或发布。',
+      publishReadyHint: '当前版本已审核通过，可以直接发布。',
+      submitRequiredHint: '请先提交审核，审核通过后才能测试、使用或发布。',
+      requiresApprovedVersion: '当前版本未审核通过，暂不可测试、使用或发布。'
+    },
+    admin: {
+      governance: {
+        title: '技能治理',
+        searchPlaceholder: '搜技能名、作者、slug'
+      },
+      review: {
+        title: '技能审核',
+        searchPlaceholder: '搜技能名、版本、作者',
+        status: '审核状态',
+        riskLevel: '风险等级',
+        visibility: '可见性',
+        emptyTitle: '暂无待审技能版本',
+        emptyDesc: '技能版本提交后，会在这里进入审核队列。'
+      },
+      runtime: {
+        title: '运行监控',
+        searchPlaceholder: '搜技能名、slug、版本'
+      },
+      settlement: {
+        title: '技能结算',
+        searchPlaceholder: '搜技能名、作者、结算周期'
+      }
+    },
+    card: {
+      installs: '安装',
+      runs: '运行',
+      versions: '版本'
+    },
+    market: {
+      title: '技能市场',
+      subtitle: '浏览技能市场、安装技能、查看详情，并为后续运行准备变量输入。',
+      searchPlaceholder: '搜索技能名、描述、标签',
+      category: '分类',
+      priceMode: '收费方式',
+      installStatus: '安装状态',
+      sort: '排序',
+      free: '免费',
+      paid: '付费',
+      install: '安装',
+      uninstall: '卸载',
+      installSuccess: '已安装技能',
+      uninstallSuccess: '已卸载技能',
+      installedOnly: '已安装',
+      notInstalledOnly: '未安装',
+      sortLatest: '最新',
+      sortPopular: '热门',
+      sortRuns: '运行量',
+      sortRevenue: '收益',
+      sortPriceLow: '价格升序',
+      sortPriceHigh: '价格降序',
+      emptyTitle: '还没有技能',
+      emptyDescription: '当前筛选条件下没有可展示的技能。'
+    },
+    installed: {
+      title: '已安装技能',
+      subtitle: '集中查看你已经安装的技能，便于继续进入详情、版本和运行操作。',
+      emptyTitle: '还没有已安装技能',
+      emptyDescription: '先去技能市场安装一些技能。',
+      installedOnly: '已安装',
+      notInstalledOnly: '未安装'
+    },
+    my: {
+      title: '我的技能',
+      subtitle: '管理自己创建或上架的技能，并继续查看版本、运行记录和收益。',
+      total: '总技能',
+      publishedCount: '已发布',
+      paidCount: '付费技能',
+      searchPlaceholder: '搜索名称、标签、描述',
+      visibility: '可见性',
+      emptyTitle: '还没有我的技能',
+      emptyDescription: '先创建一个技能，再来管理它的版本、运行记录和收益。',
+      statusDraft: '草稿',
+      statusPublished: '已发布',
+      statusArchived: '已归档',
+      statusHidden: '已隐藏'
+    },
+    editor: {
+      title: '技能编辑器',
+      create: '创建技能',
+      edit: '编辑技能',
+      subtitle: '支持 prompt_chat、prompt_image 和 script，并可配置变量 schema。',
+      namePlaceholder: '例如 电商商品描述增强器',
+      nameRequired: '请先填写技能名称',
+      slug: 'Slug',
+      slugPlaceholder: '例如 ecommerce-copywriter',
+      slugRequired: '请先填写技能 slug',
+      tagline: '一句话简介',
+      taglinePlaceholder: '快速说明技能解决什么问题。',
+      description: '说明',
+      descriptionPlaceholder: '描述适用场景、输入输出、注意事项。',
+      type: '类型',
+      categoryPlaceholder: '例如 营销 / 绘图 / 自动化',
+      tags: '标签',
+      tagsPlaceholder: '逗号分隔，例如 marketing,seo,copy',
+      pricing: '定价与可见性',
+      priceAmount: '价格',
+      currency: '币种',
+      sourceLocked: '隐藏源内容',
+      sourceLockedHint: '付费技能切换到 paid 时会默认开启；详情页仅展示变量表单和元信息。',
+      coverImage: '封面图 URL',
+      coverImagePlaceholder: '可选，用于市场卡片与详情头图',
+      extra: '附加说明',
+      readmePlaceholder: '告诉用户如何使用、适合什么输入。',
+      installNotePlaceholder: '安装后给用户的额外提示。',
+      sourceConfig: '源内容配置',
+      systemPrompt: 'System Prompt',
+      systemPromptPlaceholder: '定义这个技能的角色、约束、输出要求。',
+      userPromptTemplate: 'User Prompt Template',
+      userPromptTemplatePlaceholder: '支持用 {{variable_name}} 引用变量。',
+      assistantPrefill: 'Assistant Prefill',
+      assistantPrefillPlaceholder: '可选，预填助手回复的开头。',
+      model: '模型',
+      modelPlaceholder: '例如 gpt-4.1-mini',
+      temperature: 'Temperature',
+      maxTokens: 'Max Tokens',
+      imagePromptTemplate: 'Image Prompt Template',
+      imagePromptTemplatePlaceholder: '描述主体、风格、镜头、材质与光线。',
+      negativePromptTemplate: 'Negative Prompt Template',
+      negativePromptTemplatePlaceholder: '可选，不希望出现的元素。',
+      style: '风格',
+      stylePlaceholder: '例如 cinematic',
+      size: '尺寸',
+      sizePlaceholder: '例如 1024x1024',
+      quality: '质量',
+      qualityPlaceholder: '例如 high',
+      imageCount: '输出数量',
+      language: '语言',
+      languagePlaceholder: '例如 javascript',
+      runtime: '运行时',
+      runtimePlaceholder: '例如 node20',
+      entrypoint: '入口函数',
+      entrypointPlaceholder: '例如 main.mjs',
+      timeoutSeconds: '超时秒数',
+      dependencies: '依赖',
+      dependenciesPlaceholder: '用逗号分隔，例如 axios,lodash',
+      sourceCode: '源码',
+      sourceCodePlaceholder: '在这里输入脚本源码。',
+      promptImageHint: '定义生图主提示词、反向提示词和默认图片参数。',
+      scriptHint: '脚本技能可配置运行时、入口函数、依赖和源码。',
+      promptChatHint: '对话技能通常由 system prompt 和用户模板组成。',
+      required: '必填',
+      variableSchema: '变量 Schema',
+      variableSchemaHint: '收费技能默认只暴露这里定义的变量，不直接暴露源内容。',
+      addVariable: '新增变量',
+      untitledVariable: '未命名变量',
+      variableKey: '变量 Key',
+      variableKeyPlaceholder: '例如 product_name',
+      variableLabelPlaceholder: '例如 产品名称',
+      variableType: '变量类型',
+      requiredFlag: '是否必填',
+      requiredFlagHint: '运行时必须提供这个变量',
+      placeholder: '占位提示',
+      placeholderValue: '给用户看的输入提示',
+      defaultValue: '默认值',
+      selectOptions: '下拉选项',
+      selectOptionsHint: '定义显示给用户的选项标签和值。',
+      addOption: '新增选项',
+      optionValue: '值',
+      noVariables: '还没有变量，适合直接包装成固定技能的场景。'
+    },
+    detail: {
+      title: '技能详情',
+      subtitle: '查看技能说明、变量配置、版本概览与安装信息。',
+      about: '技能说明',
+      actionVersion: '操作版本',
+      readme: '使用说明',
+      sourcePreview: '源内容预览',
+      sourceLocked: '源内容隐藏',
+      sourceLockedNotice: '当前技能为收费或受保护技能，源内容默认隐藏。这里只展示变量表单与元信息。',
+      exposedVariables: '可配置变量',
+      exposedVariablesHint: '这些变量会在运行或调用前展示给用户填写。',
+      installNote: '安装说明',
+      meta: '元信息',
+      latestVersion: '当前版本'
+    },
+    form: {
+      booleanToggle: '启用该变量',
+      noVariables: '这个技能没有暴露变量，安装后可直接运行。'
+    },
+    versions: {
+      title: '版本管理',
+      subtitle: '管理发布节奏、版本说明、当前版本和可见性。',
+      recent: '最近版本',
+      createVersion: '创建版本',
+      createVersionHint: '默认基于当前技能内容与变量 schema 生成版本快照。',
+      version: '版本号',
+      versionRequired: '请先填写版本号',
+      changelog: '变更说明',
+      changelogPlaceholder: '记录本次版本更新了什么。',
+      publishVersion: '创建版本',
+      currentVersion: '当前版本',
+      noChangelog: '暂无变更说明',
+      emptyTitle: '还没有版本',
+      emptyDescription: '基于当前技能快照创建第一个版本。',
+      sourceLockedHint: '版本级别也可以单独决定是否暴露源内容。'
+    },
+    runs: {
+      title: '运行记录',
+      subtitle: '按技能查看最近执行历史、运行状态、耗时和产出摘要。',
+      searchPlaceholder: '搜索输入摘要、输出摘要或错误信息',
+      trigger: '触发方式',
+      duration: '耗时',
+      cost: '费用',
+      inputPreview: '输入摘要',
+      outputPreview: '输出摘要'
+    },
+    revenue: {
+      title: '收益页',
+      subtitle: '查看技能销售、执行带来的收益，以及订单明细。',
+      totalRevenue: '累计收益',
+      totalSales: '销售次数',
+      totalRuns: '执行次数',
+      pendingAmount: '待结算',
+      settledAmount: '已结算',
+      refundedAmount: '退款',
+      trend: '收益趋势',
+      trendHint: '按接口返回的时间粒度展示收益、销售和执行次数。',
+      emptyTrendTitle: '还没有趋势数据',
+      emptyTrendDescription: '有订单或执行后，这里会展示时间趋势。',
+      orders: '收益订单',
+      ordersHint: '这里展示买家、版本、金额与结算状态。',
+      buyer: '买家',
+      amount: '金额'
+    }
   },
 
   // Auth
@@ -1238,7 +1498,13 @@ export default {
         avatar: '头像当前来自 {providerName}',
         username: '昵称当前来自 {providerName}',
       },
-    }
+    },
+    identity: {
+      source: {
+        avatar: '头像当前来自 {providerName}',
+        username: '昵称当前来自 {providerName}',
+      },
+    },
   },
 
   // Empty States
@@ -1740,6 +2006,7 @@ export default {
       leaveEmptyToKeep: '留空则保持原密码不变',
       generatePassword: '生成随机密码',
       copyPassword: '复制密码',
+      passwordCopied: '密码已复制到剪贴板',
       creating: '创建中...',
       updating: '更新中...',
       columns: {
@@ -2287,6 +2554,8 @@ export default {
       createError: '创建渠道失败',
       updateError: '更新渠道失败',
       deleteError: '删除渠道失败',
+      noGroupsSelected: '未选择任何分组',
+      emptyModelsInPricing: '定价条目中存在空模型配置',
       nameRequired: '请输入渠道名称',
       duplicateModels: '模型「{0}」在多个定价条目中重复',
       modelConflict: "模型模式 '{model1}' 和 '{model2}' 冲突：匹配范围重叠",
@@ -2639,6 +2908,11 @@ export default {
       dataImportTitle: '导入数据',
       dataImportHint: '上传导出的 JSON 文件以批量导入账号与代理。',
       dataImportWarning: '导入将创建新账号与代理，分组需手工绑定；请确认已有数据不会冲突。',
+      dataImportDedupMode: '去重方式',
+      dataImportDedupNone: '不去重',
+      dataImportDedupOverwrite: '去重并覆盖',
+      dataImportDedupIgnore: '去重并忽略',
+      dataImportDedupHint: '覆盖会按唯一凭证匹配并更新已有账号；忽略会跳过重复账号。',
       dataImportFile: '数据文件',
       dataImportButton: '开始导入',
       dataImporting: '导入中...',
@@ -2646,9 +2920,9 @@ export default {
       dataImportParseFailed: '数据解析失败',
       dataImportFailed: '数据导入失败',
       dataImportResult: '导入结果',
-      dataImportResultSummary: '代理创建 {proxy_created}，复用 {proxy_reused}，失败 {proxy_failed}；账号创建 {account_created}，失败 {account_failed}',
+      dataImportResultSummary: '代理创建 {proxy_created}，复用 {proxy_reused}，失败 {proxy_failed}；账号创建 {account_created}，更新 {account_updated}，跳过 {account_skipped}，失败 {account_failed}',
       dataImportErrors: '失败详情',
-      dataImportSuccess: '导入完成：账号 {account_created}，失败 {account_failed}',
+      dataImportSuccess: '导入完成：账号创建 {account_created}，更新 {account_updated}，跳过 {account_skipped}，失败 {account_failed}',
       dataImportCompletedWithErrors: '导入完成但有错误：账号失败 {account_failed}，代理失败 {proxy_failed}',
       syncFromCrsTitle: '从 CRS 同步账号',
       syncFromCrsDesc:
@@ -3287,6 +3561,9 @@ export default {
       bedrockApiKeyRequired: '请输入 Bedrock API Key',
       bedrockApiKeyLeaveEmpty: '留空以保持当前密钥',
       apiKeyIsRequired: 'API Key 是必需的',
+      fromModel: '源模型',
+      toModel: '目标模型',
+      noMappingsConfigured: '暂无映射配置',
       leaveEmptyToKeep: '留空以保持当前密钥',
       // Upstream type
       upstream: {
@@ -3300,6 +3577,7 @@ export default {
       // OAuth flow
       oauth: {
         title: 'Claude 账号授权',
+        failedToGenerateUrl: '生成授权链接失败',
         authMethod: '授权方式',
         manualAuth: '手动授权',
         cookieAutoAuth: 'Cookie 自动授权',
@@ -3346,6 +3624,8 @@ export default {
         // OpenAI specific
         openai: {
           title: 'OpenAI 账户授权',
+          accessTokenAuth: '手动输入 AT',
+          mobileRefreshTokenAuth: '手动输入移动端 RT',
           followSteps: '请按照以下步骤完成 OpenAI 账户的授权：',
           step1GenerateUrl: '点击下方按钮生成授权链接',
           generateAuthUrl: '生成授权链接',
@@ -4799,6 +5079,16 @@ export default {
         showAdvancedDeveloperSettings: '显示高级开发者设置 (Distributed Lock)',
         advancedSettingsSummary: '高级设置 (分布式锁)',
         evalIntervalHint: '检测任务的执行频率，建议保持默认。',
+        metricThresholds: '指标阈值配置',
+        metricThresholdsHint: '配置各项指标的告警阈值，超出阈值时将以红色显示',
+        slaMinPercent: 'SLA 最低百分比',
+        slaMinPercentHint: 'SLA 低于此值时显示为红色（默认：99.5%）',
+        ttftP99MaxMs: 'TTFT P99 最大值（毫秒）',
+        ttftP99MaxMsHint: 'TTFT P99 高于此值时显示为红色（默认：500ms）',
+        requestErrorRateMaxPercent: '请求错误率最大值（%）',
+        requestErrorRateMaxPercentHint: '请求错误率高于此值时显示为红色（默认：5%）',
+        upstreamErrorRateMaxPercent: '上游错误率最大值（%）',
+        upstreamErrorRateMaxPercentHint: '上游错误率高于此值时显示为红色（默认：5%）',
         validation: {
           title: '请先修正以下问题',
           invalid: '设置不合法',
@@ -5862,34 +6152,39 @@ export default {
         frontendRedirectUrlHint: '通常用于前端路由回调地址，需与后端配置保持一致。'
       },
       authSourceDefaults: {
-        title: '认证来源默认值',
-        description: '按注册来源配置新用户默认余额、并发、订阅与授权策略。',
+        title: '来源附加授权',
+        description: '按第三方认证来源配置附加余额、并发和订阅。启用后，新用户通过该来源注册会在用户默认值基础上叠加发放；开启“首次绑定也生效”后，老用户首次绑定该来源时也会发放，同一来源只发一次。',
         requireEmailLabel: '第三方注册强制补充邮箱',
         requireEmailHint: '启用后，Linux DO、OIDC、微信注册缺少邮箱时必须先补充邮箱地址。',
-        enabledHint: '以下默认值会在该来源注册新用户时发放；首次绑定时授权仅作用于已有账号绑定该来源。',
         sources: {
           email: {
             title: '邮箱注册',
-            description: '适用于邮箱密码注册的新用户默认配额。'
+            description: '邮箱注册或首次绑定邮箱时可追加的附加权益。'
           },
           linuxdo: {
             title: 'Linux DO 登录',
-            description: '适用于 Linux DO 第三方注册的新用户默认配额。'
+            description: 'Linux DO 注册或首次绑定时可追加的附加权益。'
           },
           oidc: {
             title: 'OIDC 登录',
-            description: '适用于 OIDC 第三方注册的新用户默认配额。'
+            description: 'OIDC 注册或首次绑定时可追加的附加权益。'
           },
           wechat: {
             title: '微信登录',
-            description: '适用于微信第三方注册的新用户默认配额。'
+            description: '微信注册或首次绑定时可追加的附加权益。'
           }
         },
-        grantOnFirstBindLabel: '首次绑定时授权',
-        grantOnFirstBindHint: '已有账号首次绑定该来源时发放默认权益。',
-        defaultSubscriptionsLabel: '默认订阅',
-        defaultSubscriptionsHint: '仅对当前认证来源生效，未配置时不追加来源专属订阅。',
-        noSourceSubscriptions: '当前来源未配置专属默认订阅。'
+        enabledLabel: '启用来源附加授权',
+        enabledHint: '开启后，使用该来源注册的新用户会获得下面配置的附加权益。',
+        grantOnFirstBindLabel: '首次绑定也生效',
+        grantOnFirstBindHint: '开启后，老用户首次绑定该来源时也会获得同样的附加权益；关闭时仅对通过该来源注册的新用户生效。',
+        bonusBalanceLabel: '附加余额',
+        bonusConcurrencyLabel: '附加并发数',
+        defaultSubscriptionsLabel: '附加订阅',
+        defaultSubscriptionsHint: '仅对当前认证来源生效，会和用户默认订阅一起叠加发放。',
+        addBonusSubscription: '添加附加订阅',
+        subscriptionGroupLabel: '订阅分组',
+        noSourceSubscriptions: '当前来源未配置附加订阅。'
       },
       paymentVisibleMethods: {
         methodLabel: '{title} 可见方式',
@@ -6526,6 +6821,10 @@ export default {
       colUser: '用户',
       topUsers: '消费排行',
       noData: '暂无数据',
+      day: '天',
+      week: '周',
+      month: '月',
+      year: '年',
       days: '天',
       weeks: '周',
       months: '月',
