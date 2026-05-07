@@ -66,4 +66,18 @@ describe('UsageProgressBar', () => {
     expect(wrapper.text()).toContain('2h 30m')
     expect(wrapper.text()).not.toContain('现在')
   })
+
+  it('utilization=100 时显示 100%，表示限额已打满', () => {
+    const wrapper = mount(UsageProgressBar, {
+      props: {
+        label: '5h',
+        utilization: 100,
+        resetsAt: null,
+        color: 'indigo'
+      }
+    })
+
+    expect(wrapper.text()).toContain('100%')
+    expect(wrapper.text()).not.toContain('remaining')
+  })
 })

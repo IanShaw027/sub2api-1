@@ -834,7 +834,7 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).not.toContain('admin.accounts.gemini.rateLimit.unlimited')
   })
 
-  it('Vertex 账号会在 Gemini 用量窗口里展示 today stats 徽章', async () => {
+  it('Gemini service account 不再额外展示 today stats 徽章', async () => {
     const wrapper = mount(AccountUsageCell, {
       props: {
         account: makeAccount({
@@ -867,9 +867,9 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('0 req')
-    expect(wrapper.text()).toContain('0')
-    expect(wrapper.text()).toContain('A $0.00')
-    expect(wrapper.text()).toContain('U $0.00')
+    expect(wrapper.text()).not.toContain('0 req')
+    expect(wrapper.text()).not.toContain('A $0.00')
+    expect(wrapper.text()).not.toContain('U $0.00')
+    expect(wrapper.text()).toContain('admin.accounts.gemini.rateLimit.unlimited')
   })
 })

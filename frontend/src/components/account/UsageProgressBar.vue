@@ -63,7 +63,7 @@ import { formatCompactNumber } from '@/utils/format'
 
 const props = defineProps<{
   label: string
-  utilization: number // Percentage (0-100+)
+  utilization: number // Used percentage (0-100+, 100 = limit reached)
   resetsAt?: string | null
   color: 'indigo' | 'emerald' | 'purple' | 'amber' | 'cyan'
   windowStats?: WindowStats | null
@@ -121,7 +121,7 @@ const labelClass = computed(() => {
   return colors[props.color]
 })
 
-// Progress bar color based on utilization
+// Progress bar color based on used percentage
 const barClass = computed(() => {
   if (props.utilization >= 100) {
     return 'bg-red-500'
@@ -132,7 +132,7 @@ const barClass = computed(() => {
   }
 })
 
-// Text color based on utilization
+// Text color based on used percentage
 const textClass = computed(() => {
   if (props.utilization >= 100) {
     return 'text-red-600 dark:text-red-400'
