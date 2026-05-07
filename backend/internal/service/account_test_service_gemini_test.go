@@ -3,10 +3,13 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -57,3 +60,141 @@ func TestProcessGeminiStream_EmitsImageEvent(t *testing.T) {
 	require.Contains(t, body, "\"image_url\":\"data:image/png;base64,QUJD\"")
 	require.Contains(t, body, "\"mime_type\":\"image/png\"")
 }
+
+func TestAccount_GeminiOAuthType_DoesNotInferFromProjectID(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"project_id": "project-1",
+		},
+	}
+
+	require.Equal(t, "", account.GeminiOAuthType())
+	require.False(t, account.IsGeminiCodeAssist())
+	require.False(t, account.HasExplicitGeminiOAuthType())
+}
+
+type testGeminiTokenProvider struct {
+	token string
+	err   error
+}
+
+func (p *testGeminiTokenProvider) GetAccessToken(_ context.Context, _ *Account) (string, error) {
+	if p.err != nil {
+		return "", p.err
+	}
+	return p.token, nil
+}
+
+func TestAccountTestService_BuildGeminiOAuthRequest_UnknownProjectIDStaysAIStudio(t *testing.T) {
+	t.Parallel()
+
+	svc := &AccountTestService{
+		geminiTokenProvider: &testGeminiTokenProvider{token: "gemini-token"},
+		cfg:                 &config.Config{},
+	}
+	account := &Account{
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"project_id": "legacy-project",
+			"base_url":   "https://generativelanguage.googleapis.com",
+		},
+	}
+
+	req, err := svc.buildGeminiOAuthRequest(context.Background(), account, "gemini-2.5-pro", []byte(`{"contents":[]}`))
+	require.NoError(t, err)
+	require.NotNil(t, req)
+	require.Contains(t, req.URL.String(), "/v1beta/models/gemini-2.5-pro:streamGenerateContent")
+	require.Equal(t, "Bearer gemini-token", req.Header.Get("Authorization"))
+}
+
+func TestAccountTestService_BuildGeminiOAuthRequest_ExplicitCodeAssistRequiresProjectID(t *testing.T) {
+	t.Parallel()
+
+	svc := &AccountTestService{
+		geminiTokenProvider: &testGeminiTokenProvider{token: "gemini-token"},
+		cfg:                 &config.Config{},
+	}
+	account := &Account{
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"oauth_type": "code_assist",
+		},
+	}
+
+	req, err := svc.buildGeminiOAuthRequest(context.Background(), account, "gemini-2.5-pro", []byte(`{"contents":[]}`))
+	require.Error(t, err)
+	require.Nil(t, req)
+	require.Contains(t, err.Error(), "project_id not configured")
+}
+
+func TestAccountTestService_BuildGeminiOAuthRequest_ExplicitCodeAssistUsesCodeAssistEndpoint(t *testing.T) {
+	t.Parallel()
+
+	svc := &AccountTestService{
+		geminiTokenProvider: &testGeminiTokenProvider{token: "gemini-token"},
+		cfg:                 &config.Config{},
+	}
+	account := &Account{
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"oauth_type": "code_assist",
+			"project_id": "proj-1",
+		},
+	}
+
+	req, err := svc.buildGeminiOAuthRequest(context.Background(), account, "gemini-2.5-pro", []byte(`{"contents":[]}`))
+	require.NoError(t, err)
+	require.NotNil(t, req)
+	require.Contains(t, req.URL.String(), "cloudaicompanion.googleapis.com")
+}
+
+func TestAccountTestService_BuildGeminiOAuthRequest_ExplicitGoogleOneWithProjectIDIsRejected(t *testing.T) {
+	t.Parallel()
+
+	svc := &AccountTestService{
+		geminiTokenProvider: &testGeminiTokenProvider{token: "gemini-token"},
+		cfg:                 &config.Config{},
+	}
+	account := &Account{
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"oauth_type": "google_one",
+			"project_id": "proj-1",
+		},
+	}
+
+	req, err := svc.buildGeminiOAuthRequest(context.Background(), account, "gemini-2.5-pro", []byte(`{"contents":[]}`))
+	require.Error(t, err)
+	require.Nil(t, req)
+	require.Contains(t, err.Error(), "unsupported gemini oauth_type")
+}
+
+func TestAccountTestService_BuildGeminiOAuthRequest_TokenErrorBubbles(t *testing.T) {
+	t.Parallel()
+
+	svc := &AccountTestService{
+		geminiTokenProvider: &testGeminiTokenProvider{err: fmt.Errorf("token failed")},
+		cfg:                 &config.Config{},
+	}
+	account := &Account{
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+	}
+
+	req, err := svc.buildGeminiOAuthRequest(context.Background(), account, "gemini-2.5-pro", []byte(`{"contents":[]}`))
+	require.Error(t, err)
+	require.Nil(t, req)
+	require.Contains(t, err.Error(), "failed to get access token")
+}
+
+var _ interface {
+	GetAccessToken(context.Context, *Account) (string, error)
+} = (*testGeminiTokenProvider)(nil)

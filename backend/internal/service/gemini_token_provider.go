@@ -123,7 +123,7 @@ func (p *GeminiTokenProvider) GetAccessToken(ctx context.Context, account *Accou
 			}
 		}
 
-		snapshot, err := p.geminiOAuthService.fetchProjectID(ctx, accessToken, proxyURL)
+		snapshot, err := p.geminiOAuthService.fetchProjectID(ctx, accessToken, proxyURL, "")
 		if err != nil {
 			log.Printf("[GeminiTokenProvider] Auto-detect project_id failed: %v, keeping token without project_id", err)
 			return accessToken, nil
@@ -180,10 +180,6 @@ func GeminiTokenCacheKey(account *Account) string {
 		if key, err := parseVertexServiceAccountKey(account); err == nil {
 			return vertexServiceAccountCacheKey(account, key)
 		}
-	}
-	projectID := strings.TrimSpace(account.GetCredential("project_id"))
-	if projectID != "" {
-		return "gemini:" + projectID
 	}
 	return "gemini:account:" + strconv.FormatInt(account.ID, 10)
 }

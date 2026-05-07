@@ -289,3 +289,49 @@ func TestGeminiMessagesCompatService_ForwardAIStudioGET_HTTPErrorRecordsOpsConte
 	require.Equal(t, "rid-aistudio-503", events[0].UpstreamRequestID)
 	require.Contains(t, events[0].UpstreamURL, "/v1beta/models")
 }
+
+func TestGeminiMessagesCompatService_ForwardAIStudioGET_429UpdatesSchedulingState(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1beta/models", nil)
+
+	upstream := &geminiCompatHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Header: http.Header{
+				"Content-Type":      []string{"application/json"},
+				"X-Request-Id":      []string{"rid-aistudio-429"},
+				"Retry-After":       []string{"60"},
+				"X-RateLimit-Reset": []string{"60"},
+			},
+			Body: io.NopCloser(strings.NewReader(`{"error":{"message":"rate limited","status":"RESOURCE_EXHAUSTED"}}`)),
+		},
+	}
+	repo := &rateLimitAccountRepoStub{}
+	svc := &GeminiMessagesCompatService{
+		httpUpstream:     upstream,
+		cfg:              &config.Config{},
+		rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, nil),
+		responseHeaderFilter: nil,
+	}
+
+	result, err := svc.ForwardAIStudioGET(context.Background(), c, &Account{
+		ID:          1,
+		Name:        "gemini-aistudio",
+		Platform:    PlatformGemini,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "gemini-key",
+			"base_url": "https://generativelanguage.googleapis.com",
+		},
+	}, "/v1beta/models")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 1, repo.rateLimitedCalls)
+	require.False(t, repo.lastRateLimitedAt.IsZero())
+}

@@ -374,8 +374,7 @@ func geminiQuotaTierKeyForAccount(account *Account) string {
 		return ""
 	}
 
-	// Note: GeminiOAuthType() already defaults legacy (project_id present) to code_assist.
-	oauthType := strings.ToLower(strings.TrimSpace(account.GeminiOAuthType()))
+	oauthType := strings.ToLower(strings.TrimSpace(account.GeminiOAuthTypeSafe()))
 	rawTier := strings.TrimSpace(account.GeminiTierID())
 
 	// Prefer the canonical tier stored in credentials.

@@ -822,6 +822,31 @@ func (s *RateLimitService) handle403(ctx context.Context, account *Account, upst
 	if account.Platform == PlatformOpenAI {
 		return s.handleOpenAI403(ctx, account, upstreamMsg, responseBody)
 	}
+	if account.Platform == PlatformGemini && account.Type == AccountTypeOAuth && account.GeminiOAuthTypeSafe() == "code_assist" {
+		msg := buildForbiddenErrorMessage(
+			"Gemini Code Assist forbidden (403):",
+			upstreamMsg,
+			responseBody,
+			"upstream activation, validation, or permission state may still be propagating",
+		)
+		cooldown := 10 * time.Minute
+		if s != nil && s.geminiQuotaService != nil {
+			cooldown = s.GeminiCooldown(ctx, account)
+		}
+		if cooldown <= 0 {
+			cooldown = 10 * time.Minute
+		}
+		until := time.Now().Add(cooldown)
+		if err := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, msg); err != nil {
+			slog.Warn("gemini_code_assist_403_set_temp_unschedulable_failed", "account_id", account.ID, "error", err)
+			// Keep Code Assist 403 recoverable even if the temp-unschedulable write fails.
+			// Falling back to SetError would permanently disable accounts for transient activation
+			// or validation propagation failures.
+			return false
+		}
+		slog.Warn("gemini_code_assist_403_temp_unschedulable", "account_id", account.ID, "until", until)
+		return true
+	}
 	// 非 Antigravity 平台：保持原有行为
 	msg := buildForbiddenErrorMessage(
 		"Access forbidden (403):",

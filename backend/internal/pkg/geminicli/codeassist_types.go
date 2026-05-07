@@ -9,25 +9,48 @@ import (
 type LoadCodeAssistRequest struct {
 	CloudAICompanionProject string                 `json:"cloudaicompanionProject,omitempty"`
 	Metadata                LoadCodeAssistMetadata `json:"metadata"`
+	Mode                    LoadCodeAssistMode     `json:"mode,omitempty"`
 }
 
+type LoadCodeAssistMode string
+
+const (
+	LoadCodeAssistModeUnspecified          LoadCodeAssistMode = "MODE_UNSPECIFIED"
+	LoadCodeAssistModeFullEligibilityCheck LoadCodeAssistMode = "FULL_ELIGIBILITY_CHECK"
+	LoadCodeAssistModeHealthCheck          LoadCodeAssistMode = "HEALTH_CHECK"
+)
+
 type LoadCodeAssistMetadata struct {
-	IDEType    string `json:"ideType"`
-	Platform   string `json:"platform"`
-	PluginType string `json:"pluginType"`
-	DuetProject string `json:"duetProject,omitempty"`
+	IDEType       string `json:"ideType"`
+	IDEVersion    string `json:"ideVersion,omitempty"`
+	IDEName       string `json:"ideName,omitempty"`
+	Platform      string `json:"platform"`
+	PluginType    string `json:"pluginType"`
+	PluginVersion string `json:"pluginVersion,omitempty"`
+	UpdateChannel string `json:"updateChannel,omitempty"`
+	DuetProject   string `json:"duetProject,omitempty"`
 }
 
 type TierInfo struct {
-	ID                     string            `json:"id"`
-	Name                   string            `json:"name,omitempty"`
-	HasOnboardedPreviously *bool             `json:"hasOnboardedPreviously,omitempty"`
-	AvailableCredits       []AvailableCredit `json:"availableCredits,omitempty"`
+	ID                                 string            `json:"id"`
+	Name                               string            `json:"name,omitempty"`
+	Description                        string            `json:"description,omitempty"`
+	UserDefinedCloudAICompanionProject *bool             `json:"userDefinedCloudaicompanionProject,omitempty"`
+	IsDefault                          bool              `json:"isDefault,omitempty"`
+	PrivacyNotice                      *PrivacyNotice    `json:"privacyNotice,omitempty"`
+	HasAcceptedTOS                     *bool             `json:"hasAcceptedTos,omitempty"`
+	HasOnboardedPreviously             *bool             `json:"hasOnboardedPreviously,omitempty"`
+	AvailableCredits                   []AvailableCredit `json:"availableCredits,omitempty"`
 }
 
 type AvailableCredit struct {
 	CreditType   string `json:"creditType,omitempty"`
 	CreditAmount string `json:"creditAmount,omitempty"`
+}
+
+type PrivacyNotice struct {
+	ShowNotice bool   `json:"showNotice,omitempty"`
+	NoticeText string `json:"noticeText,omitempty"`
 }
 
 // UnmarshalJSON supports both legacy string tiers and object tiers.
@@ -54,10 +77,11 @@ func (t *TierInfo) UnmarshalJSON(data []byte) error {
 }
 
 type LoadCodeAssistResponse struct {
-	CurrentTier             *TierInfo     `json:"currentTier,omitempty"`
-	PaidTier                *TierInfo     `json:"paidTier,omitempty"`
-	CloudAICompanionProject string        `json:"cloudaicompanionProject,omitempty"`
-	AllowedTiers            []AllowedTier `json:"allowedTiers,omitempty"`
+	CurrentTier             *TierInfo        `json:"currentTier,omitempty"`
+	PaidTier                *TierInfo        `json:"paidTier,omitempty"`
+	CloudAICompanionProject string           `json:"cloudaicompanionProject,omitempty"`
+	AllowedTiers            []AllowedTier    `json:"allowedTiers,omitempty"`
+	IneligibleTiers         []IneligibleTier `json:"ineligibleTiers,omitempty"`
 }
 
 // GetTier extracts tier ID, prioritizing paidTier over currentTier
@@ -72,8 +96,41 @@ func (r *LoadCodeAssistResponse) GetTier() string {
 }
 
 type AllowedTier struct {
-	ID        string `json:"id"`
-	IsDefault bool   `json:"isDefault,omitempty"`
+	ID                                 string            `json:"id"`
+	Name                               string            `json:"name,omitempty"`
+	Description                        string            `json:"description,omitempty"`
+	UserDefinedCloudAICompanionProject *bool             `json:"userDefinedCloudaicompanionProject,omitempty"`
+	IsDefault                          bool              `json:"isDefault,omitempty"`
+	PrivacyNotice                      *PrivacyNotice    `json:"privacyNotice,omitempty"`
+	HasAcceptedTOS                     *bool             `json:"hasAcceptedTos,omitempty"`
+	HasOnboardedPreviously             *bool             `json:"hasOnboardedPreviously,omitempty"`
+	AvailableCredits                   []AvailableCredit `json:"availableCredits,omitempty"`
+}
+
+type IneligibleTierReasonCode string
+
+const (
+	IneligibleTierReasonCodeDasherUser          IneligibleTierReasonCode = "DASHER_USER"
+	IneligibleTierReasonCodeIneligibleAccount   IneligibleTierReasonCode = "INELIGIBLE_ACCOUNT"
+	IneligibleTierReasonCodeNonUserAccount      IneligibleTierReasonCode = "NON_USER_ACCOUNT"
+	IneligibleTierReasonCodeRestrictedAge       IneligibleTierReasonCode = "RESTRICTED_AGE"
+	IneligibleTierReasonCodeRestrictedNetwork   IneligibleTierReasonCode = "RESTRICTED_NETWORK"
+	IneligibleTierReasonCodeUnknown             IneligibleTierReasonCode = "UNKNOWN"
+	IneligibleTierReasonCodeUnknownLocation     IneligibleTierReasonCode = "UNKNOWN_LOCATION"
+	IneligibleTierReasonCodeUnsupportedLocation IneligibleTierReasonCode = "UNSUPPORTED_LOCATION"
+	IneligibleTierReasonCodeValidationRequired  IneligibleTierReasonCode = "VALIDATION_REQUIRED"
+)
+
+type IneligibleTier struct {
+	ReasonCode                  IneligibleTierReasonCode `json:"reasonCode,omitempty"`
+	ReasonMessage               string                   `json:"reasonMessage,omitempty"`
+	TierID                      string                   `json:"tierId,omitempty"`
+	TierName                    string                   `json:"tierName,omitempty"`
+	ValidationErrorMessage      string                   `json:"validationErrorMessage,omitempty"`
+	ValidationURL               string                   `json:"validationUrl,omitempty"`
+	ValidationURLLinkText       string                   `json:"validationUrlLinkText,omitempty"`
+	ValidationLearnMoreURL      string                   `json:"validationLearnMoreUrl,omitempty"`
+	ValidationLearnMoreLinkText string                   `json:"validationLearnMoreLinkText,omitempty"`
 }
 
 type OnboardUserRequest struct {
@@ -93,7 +150,8 @@ type OnboardUserResultData struct {
 }
 
 type RetrieveUserQuotaRequest struct {
-	CloudAICompanionProject string `json:"cloudaicompanionProject,omitempty"`
+	Project   string `json:"project,omitempty"`
+	UserAgent string `json:"userAgent,omitempty"`
 }
 
 type RetrieveUserQuotaResponse struct {
@@ -105,4 +163,5 @@ type RetrieveUserQuotaBucket struct {
 	RemainingFraction any    `json:"remainingFraction,omitempty"`
 	RemainingAmount   any    `json:"remainingAmount,omitempty"`
 	ResetTime         any    `json:"resetTime,omitempty"`
+	TokenType         string `json:"tokenType,omitempty"`
 }

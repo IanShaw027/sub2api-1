@@ -563,7 +563,7 @@ func TestGeminiOAuthService_BuildAccountCredentials(t *testing.T) {
 			AuthID:       "subject-123",
 			Name:         "Example User",
 			PlanName:     "Gemini Code Assist in Google One AI Pro",
-			TierID:       "gcp_standard",
+			TierID:       "STANDARD",
 			OAuthType:    "code_assist",
 			Extra: map[string]any{
 				"drive_storage_limit":             int64(2199023255552),
@@ -588,7 +588,7 @@ func TestGeminiOAuthService_BuildAccountCredentials(t *testing.T) {
 		assertCredStr(t, creds, "subject", "subject-123")
 		assertCredStr(t, creds, "name", "Example User")
 		assertCredStr(t, creds, "plan_name", "Gemini Code Assist in Google One AI Pro")
-		assertCredStr(t, creds, "tier_id", "gcp_standard")
+		assertCredStr(t, creds, "tier_id", "STANDARD")
 		assertCredStr(t, creds, "oauth_type", "code_assist")
 		assertCredStr(t, creds, "expires_at", "1700000000")
 
@@ -1428,6 +1428,53 @@ func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_NoProjectID_SoftMissi
 	}
 }
 
+func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_ValidationRequiredReturnsError(t *testing.T) {
+	t.Parallel()
+
+	client := &mockGeminiOAuthClient{
+		refreshTokenFunc: func(ctx context.Context, oauthType, refreshToken, proxyURL string) (*geminicli.TokenResponse, error) {
+			return &geminicli.TokenResponse{
+				AccessToken: "at",
+				ExpiresIn:   3600,
+			}, nil
+		},
+	}
+
+	codeAssist := &mockGeminiCodeAssistClient{
+		loadCodeAssistFunc: func(ctx context.Context, accessToken, proxyURL string, req *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
+			return &geminicli.LoadCodeAssistResponse{
+				IneligibleTiers: []geminicli.IneligibleTier{
+					{
+						ReasonCode:             geminicli.IneligibleTierReasonCodeValidationRequired,
+						ValidationErrorMessage: "Account verification required",
+						ValidationURL:          "https://accounts.google.com/verify",
+					},
+				},
+			}, nil
+		},
+	}
+
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, nil, &config.Config{})
+	defer svc.Stop()
+
+	account := &Account{
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "rt",
+			"oauth_type":    "code_assist",
+		},
+	}
+
+	_, err := svc.RefreshAccountToken(context.Background(), account)
+	if err == nil {
+		t.Fatal("RefreshAccountToken 应返回 validation_required 错误")
+	}
+	if !strings.Contains(err.Error(), "validation_required:") {
+		t.Fatalf("错误信息应包含 validation_required: got=%q", err.Error())
+	}
+}
+
 func TestGeminiOAuthService_ExchangeCode_CodeAssist_NoProjectID_Fails(t *testing.T) {
 	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
 
@@ -1556,6 +1603,256 @@ func TestGeminiOAuthService_ExchangeCode_GoogleOne_OnboardOperationPollingReturn
 	}
 }
 
+func TestGeminiOAuthService_ExchangeCode_CodeAssist_ProjectHintDoesNotOverrideDetectedCompanionProject(t *testing.T) {
+	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
+
+	client := &mockGeminiOAuthClient{
+		exchangeCodeFunc: func(ctx context.Context, oauthType, code, codeVerifier, redirectURI, proxyURL string) (*geminicli.TokenResponse, error) {
+			return &geminicli.TokenResponse{
+				AccessToken:  "at",
+				RefreshToken: "rt",
+				TokenType:    "Bearer",
+				ExpiresIn:    3600,
+			}, nil
+		},
+	}
+
+	var gotLoadReq *geminicli.LoadCodeAssistRequest
+	codeAssist := &mockGeminiCodeAssistClient{
+		loadCodeAssistFunc: func(ctx context.Context, accessToken, proxyURL string, req *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
+			gotLoadReq = req
+			return &geminicli.LoadCodeAssistResponse{
+				CloudAICompanionProject: "server-companion-project",
+				CurrentTier:             &geminicli.TierInfo{ID: "STANDARD"},
+			}, nil
+		},
+	}
+
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, nil, &config.Config{})
+	defer svc.Stop()
+
+	result, err := svc.GenerateAuthURL(context.Background(), nil, "https://example.com/auth/callback", "my-gcp-project", "code_assist", "")
+	if err != nil {
+		t.Fatalf("GenerateAuthURL 返回错误: %v", err)
+	}
+
+	info, err := svc.ExchangeCode(context.Background(), &GeminiExchangeCodeInput{
+		SessionID: result.SessionID,
+		State:     result.State,
+		Code:      "code-1",
+		OAuthType: "code_assist",
+	})
+	if err != nil {
+		t.Fatalf("ExchangeCode 不应返回错误: %v", err)
+	}
+	if gotLoadReq == nil {
+		t.Fatal("LoadCodeAssist request should be captured")
+	}
+	if gotLoadReq.CloudAICompanionProject != "my-gcp-project" {
+		t.Fatalf("request should carry project hint: got=%q", gotLoadReq.CloudAICompanionProject)
+	}
+	if info.ProjectID != "server-companion-project" {
+		t.Fatalf("ProjectID 应以上游 companion project 为准: got=%q", info.ProjectID)
+	}
+}
+
+func TestGeminiOAuthService_ExchangeCode_CodeAssist_UsesProjectHintWhenTierExistsButProjectMissing(t *testing.T) {
+	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
+
+	client := &mockGeminiOAuthClient{
+		exchangeCodeFunc: func(ctx context.Context, oauthType, code, codeVerifier, redirectURI, proxyURL string) (*geminicli.TokenResponse, error) {
+			return &geminicli.TokenResponse{
+				AccessToken:  "at",
+				RefreshToken: "rt",
+				TokenType:    "Bearer",
+				ExpiresIn:    3600,
+			}, nil
+		},
+	}
+
+	var gotLoadReq *geminicli.LoadCodeAssistRequest
+	onboardCalled := false
+	codeAssist := &mockGeminiCodeAssistClient{
+		loadCodeAssistFunc: func(ctx context.Context, accessToken, proxyURL string, req *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
+			gotLoadReq = req
+			return &geminicli.LoadCodeAssistResponse{
+				CurrentTier: &geminicli.TierInfo{ID: "STANDARD"},
+			}, nil
+		},
+		onboardUserFunc: func(ctx context.Context, accessToken, proxyURL string, req *geminicli.OnboardUserRequest) (*geminicli.OnboardUserResponse, error) {
+			onboardCalled = true
+			return nil, fmt.Errorf("onboard should not be called for registered tier fallback")
+		},
+	}
+
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, nil, &config.Config{})
+	defer svc.Stop()
+
+	result, err := svc.GenerateAuthURL(context.Background(), nil, "https://example.com/auth/callback", "my-hint-project", "code_assist", "")
+	if err != nil {
+		t.Fatalf("GenerateAuthURL 返回错误: %v", err)
+	}
+
+	info, err := svc.ExchangeCode(context.Background(), &GeminiExchangeCodeInput{
+		SessionID: result.SessionID,
+		State:     result.State,
+		Code:      "code-1",
+		OAuthType: "code_assist",
+	})
+	if err != nil {
+		t.Fatalf("ExchangeCode 不应返回错误: %v", err)
+	}
+	if gotLoadReq == nil {
+		t.Fatal("LoadCodeAssist request should be captured")
+	}
+	if gotLoadReq.CloudAICompanionProject != "my-hint-project" {
+		t.Fatalf("request should carry project hint: got=%q", gotLoadReq.CloudAICompanionProject)
+	}
+	if info.ProjectID != "my-hint-project" {
+		t.Fatalf("应回退使用 project hint: got=%q", info.ProjectID)
+	}
+	if info.TierID != "STANDARD" {
+		t.Fatalf("TierID 不匹配: got=%q", info.TierID)
+	}
+	if onboardCalled {
+		t.Fatal("registered tier fallback should not call onboardUser")
+	}
+}
+
+func TestGeminiOAuthService_ExchangeCode_CodeAssist_ValidationRequiredErrorBubblesUp(t *testing.T) {
+	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
+
+	client := &mockGeminiOAuthClient{
+		exchangeCodeFunc: func(ctx context.Context, oauthType, code, codeVerifier, redirectURI, proxyURL string) (*geminicli.TokenResponse, error) {
+			return &geminicli.TokenResponse{
+				AccessToken:  "at",
+				RefreshToken: "rt",
+				TokenType:    "Bearer",
+				ExpiresIn:    3600,
+			}, nil
+		},
+	}
+
+	codeAssist := &mockGeminiCodeAssistClient{
+		loadCodeAssistFunc: func(ctx context.Context, accessToken, proxyURL string, req *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
+			return &geminicli.LoadCodeAssistResponse{
+				IneligibleTiers: []geminicli.IneligibleTier{
+					{
+						ReasonCode:             geminicli.IneligibleTierReasonCodeValidationRequired,
+						ValidationErrorMessage: "Account verification required",
+						ValidationURL:          "https://accounts.google.com/verify",
+					},
+				},
+			}, nil
+		},
+	}
+
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, nil, &config.Config{})
+	defer svc.Stop()
+
+	result, err := svc.GenerateAuthURL(context.Background(), nil, "https://example.com/auth/callback", "", "code_assist", "")
+	if err != nil {
+		t.Fatalf("GenerateAuthURL 返回错误: %v", err)
+	}
+
+	_, err = svc.ExchangeCode(context.Background(), &GeminiExchangeCodeInput{
+		SessionID: result.SessionID,
+		State:     result.State,
+		Code:      "code-1",
+		OAuthType: "code_assist",
+	})
+	if err == nil {
+		t.Fatal("ExchangeCode 应返回 validation_required 错误")
+	}
+	if !strings.Contains(err.Error(), "validation_required:") {
+		t.Fatalf("错误信息应包含 validation_required: got=%q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "validation_url=https://accounts.google.com/verify") {
+		t.Fatalf("错误信息应包含 validation_url: got=%q", err.Error())
+	}
+}
+
+func TestGeminiOAuthService_ExchangeCode_CodeAssist_OnboardMissingProjectFallsBackToHint(t *testing.T) {
+	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
+
+	client := &mockGeminiOAuthClient{
+		exchangeCodeFunc: func(ctx context.Context, oauthType, code, codeVerifier, redirectURI, proxyURL string) (*geminicli.TokenResponse, error) {
+			return &geminicli.TokenResponse{
+				AccessToken:  "at",
+				RefreshToken: "rt",
+				TokenType:    "Bearer",
+				ExpiresIn:    3600,
+			}, nil
+		},
+	}
+
+	var onboardReq *geminicli.OnboardUserRequest
+	codeAssist := &mockGeminiCodeAssistClient{
+		loadCodeAssistFunc: func(ctx context.Context, accessToken, proxyURL string, req *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
+			return &geminicli.LoadCodeAssistResponse{
+				AllowedTiers: []geminicli.AllowedTier{{ID: "standard-tier", IsDefault: true}},
+			}, nil
+		},
+		onboardUserFunc: func(ctx context.Context, accessToken, proxyURL string, req *geminicli.OnboardUserRequest) (*geminicli.OnboardUserResponse, error) {
+			onboardReq = req
+			return &geminicli.OnboardUserResponse{Done: true}, nil
+		},
+	}
+
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, nil, &config.Config{})
+	defer svc.Stop()
+
+	result, err := svc.GenerateAuthURL(context.Background(), nil, "https://example.com/auth/callback", "hint-project", "code_assist", "")
+	if err != nil {
+		t.Fatalf("GenerateAuthURL 返回错误: %v", err)
+	}
+
+	info, err := svc.ExchangeCode(context.Background(), &GeminiExchangeCodeInput{
+		SessionID: result.SessionID,
+		State:     result.State,
+		Code:      "code-1",
+		OAuthType: "code_assist",
+	})
+	if err != nil {
+		t.Fatalf("ExchangeCode 不应返回错误: %v", err)
+	}
+	if onboardReq == nil {
+		t.Fatal("onboardUser request should be captured")
+	}
+	if onboardReq.CloudAICompanionProject != "hint-project" {
+		t.Fatalf("onboard request should carry project hint: got=%q", onboardReq.CloudAICompanionProject)
+	}
+	if info.ProjectID != "hint-project" {
+		t.Fatalf("应在 onboard 未返回项目时回退使用 hint: got=%q", info.ProjectID)
+	}
+	if info.TierID != "standard-tier" {
+		t.Fatalf("TierID 不匹配: got=%q", info.TierID)
+	}
+}
+
+func TestGeminiPlanNameForToken_PrefersUpstreamRawName(t *testing.T) {
+	t.Parallel()
+
+	planName := geminiPlanNameForToken("STANDARD", map[string]any{
+		"gemini_paid_tier_name": "Gemini Code Assist Standard",
+	})
+	if planName != "Gemini Code Assist Standard" {
+		t.Fatalf("PlanName 应优先使用上游 paid tier name: got=%q", planName)
+	}
+
+	planName = geminiPlanNameForToken("STANDARD", map[string]any{
+		"gemini_current_tier_name": "Current Tier Name",
+	})
+	if planName != "Current Tier Name" {
+		t.Fatalf("PlanName 应在无 paid tier name 时回退到 current tier name: got=%q", planName)
+	}
+
+	planName = geminiPlanNameForToken("STANDARD", nil)
+	if planName != "STANDARD" {
+		t.Fatalf("PlanName 应在无上游名称时回退到原始 tier_id: got=%q", planName)
+	}
+}
+
 func TestGeminiOAuthService_RefreshAccountToken_GoogleOne_FreshCache(t *testing.T) {
 	t.Parallel()
 
@@ -1587,10 +1884,10 @@ func TestGeminiOAuthService_RefreshAccountToken_GoogleOne_FreshCache(t *testing.
 		Platform: PlatformGemini,
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
-			"refresh_token":          "rt",
-			"oauth_type":             "google_one",
-			"project_id":             "proj",
-			"tier_id":                "google_ai_pro",
+			"refresh_token":         "rt",
+			"oauth_type":            "google_one",
+			"project_id":            "proj",
+			"tier_id":               "google_ai_pro",
 			"drive_tier_updated_at": time.Now().Add(-1 * time.Hour).Format(time.RFC3339),
 		},
 	}
@@ -1639,10 +1936,10 @@ func TestGeminiOAuthService_RefreshAccountToken_GoogleOne_StaleCredentialCacheRe
 		Platform: PlatformGemini,
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
-			"refresh_token":          "rt",
-			"oauth_type":             "google_one",
-			"project_id":             "proj",
-			"tier_id":                "google_ai_pro",
+			"refresh_token":         "rt",
+			"oauth_type":            "google_one",
+			"project_id":            "proj",
+			"tier_id":               "google_ai_pro",
 			"drive_tier_updated_at": time.Now().Add(-25 * time.Hour).Format(time.RFC3339),
 		},
 	}

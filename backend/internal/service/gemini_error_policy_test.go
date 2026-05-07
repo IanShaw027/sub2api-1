@@ -378,6 +378,31 @@ func TestGeminiErrorPolicy_NilRateLimitService(t *testing.T) {
 	})
 }
 
+func TestShouldRetryGeminiUpstreamError_RequiresExplicitCodeAssistOAuthType(t *testing.T) {
+	t.Parallel()
+
+	svc := &GeminiMessagesCompatService{}
+
+	explicitCodeAssist := &Account{
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"oauth_type": "code_assist",
+			"project_id": "project-1",
+		},
+	}
+	projectOnly := &Account{
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"project_id": "project-1",
+		},
+	}
+
+	require.True(t, svc.shouldRetryGeminiUpstreamError(explicitCodeAssist, http.StatusForbidden))
+	require.False(t, svc.shouldRetryGeminiUpstreamError(projectOnly, http.StatusForbidden))
+}
+
 // ---------------------------------------------------------------------------
 // geminiErrorPolicyRepo — minimal AccountRepository stub for Gemini error
 // policy tests. Embeds mockAccountRepoForGemini and adds tracking.

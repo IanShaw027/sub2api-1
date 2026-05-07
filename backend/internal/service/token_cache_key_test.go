@@ -17,27 +17,30 @@ func TestGeminiTokenCacheKey(t *testing.T) {
 		{
 			name: "with_project_id",
 			account: &Account{
-				ID: 100,
+				Platform: PlatformGemini,
+				ID:       100,
 				Credentials: map[string]any{
 					"project_id": "my-project-123",
 				},
 			},
-			expected: "gemini:my-project-123",
+			expected: "gemini:account:100",
 		},
 		{
 			name: "project_id_with_whitespace",
 			account: &Account{
-				ID: 101,
+				Platform: PlatformGemini,
+				ID:       101,
 				Credentials: map[string]any{
 					"project_id": "  project-with-spaces  ",
 				},
 			},
-			expected: "gemini:project-with-spaces",
+			expected: "gemini:account:101",
 		},
 		{
 			name: "empty_project_id_fallback_to_account_id",
 			account: &Account{
-				ID: 102,
+				Platform: PlatformGemini,
+				ID:       102,
 				Credentials: map[string]any{
 					"project_id": "",
 				},
@@ -47,7 +50,8 @@ func TestGeminiTokenCacheKey(t *testing.T) {
 		{
 			name: "whitespace_only_project_id_fallback_to_account_id",
 			account: &Account{
-				ID: 103,
+				Platform: PlatformGemini,
+				ID:       103,
 				Credentials: map[string]any{
 					"project_id": "   ",
 				},
@@ -57,6 +61,7 @@ func TestGeminiTokenCacheKey(t *testing.T) {
 		{
 			name: "no_project_id_key_fallback_to_account_id",
 			account: &Account{
+				Platform:    PlatformGemini,
 				ID:          104,
 				Credentials: map[string]any{},
 			},
@@ -65,6 +70,7 @@ func TestGeminiTokenCacheKey(t *testing.T) {
 		{
 			name: "nil_credentials_fallback_to_account_id",
 			account: &Account{
+				Platform:    PlatformGemini,
 				ID:          105,
 				Credentials: nil,
 			},
@@ -256,4 +262,25 @@ func TestCacheKeyUniqueness(t *testing.T) {
 	require.NotEqual(t, openaiKey, claudeKey, "OpenAI and Claude cache keys should be different")
 	require.Contains(t, openaiKey, "openai:")
 	require.Contains(t, claudeKey, "claude:")
+}
+
+func TestGeminiTokenCacheKey_DoesNotReuseProjectIDAcrossAccounts(t *testing.T) {
+	accountA := &Account{
+		Platform: PlatformGemini,
+		ID:       501,
+		Credentials: map[string]any{
+			"project_id": "shared-project",
+		},
+	}
+	accountB := &Account{
+		Platform: PlatformGemini,
+		ID:       502,
+		Credentials: map[string]any{
+			"project_id": "shared-project",
+		},
+	}
+
+	require.Equal(t, "gemini:account:501", GeminiTokenCacheKey(accountA))
+	require.Equal(t, "gemini:account:502", GeminiTokenCacheKey(accountB))
+	require.NotEqual(t, GeminiTokenCacheKey(accountA), GeminiTokenCacheKey(accountB))
 }

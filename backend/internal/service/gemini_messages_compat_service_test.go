@@ -233,6 +233,39 @@ func TestConvertClaudeToolsToGeminiTools_PreservesWebSearchAlongsideFunctions(t 
 	require.Empty(t, googleSearch)
 }
 
+func TestRankAIStudioEndpointAccount_WithProjectID(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"project_id": "project-1",
+		},
+	}
+
+	rank, ok := rankAIStudioEndpointAccount(account)
+	require.True(t, ok)
+	require.Equal(t, 1, rank)
+}
+
+func TestRankAIStudioEndpointAccount_CodeAssistOAuthIsRejected(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"oauth_type": "code_assist",
+			"project_id": "project-1",
+			"tier_id":    "STANDARD",
+		},
+	}
+
+	_, ok := rankAIStudioEndpointAccount(account)
+	require.False(t, ok)
+}
+
 func TestGeminiHandleNativeNonStreamingResponse_DebugDisabledDoesNotEmitHeaderLogs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	logSink, restore := captureStructuredLog(t)
@@ -459,6 +492,38 @@ func TestGeminiMessagesCompatServiceForwardNative_ServiceAccountUsesVertexEndpoi
 	require.NotNil(t, httpStub.lastReq)
 	require.Contains(t, httpStub.lastReq.URL.String(), "projects/vertex-proj/locations/us-central1/publishers/google/models/gemini-2.5-pro:generateContent")
 	require.Equal(t, "Bearer vertex-access-token", httpStub.lastReq.Header.Get("Authorization"))
+}
+
+func TestGeminiMessagesCompatServiceHandleGeminiUpstreamError_CodeAssist403UsesTempUnschedulable(t *testing.T) {
+	repo := &rateLimitAccountRepoStub{}
+	rlSvc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc := &GeminiMessagesCompatService{
+		rateLimitService: rlSvc,
+	}
+
+	account := &Account{
+		ID:       601,
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"oauth_type": "code_assist",
+			"project_id": "shared-project",
+			"tier_id":    "STANDARD",
+		},
+	}
+
+	svc.handleGeminiUpstreamError(
+		context.Background(),
+		account,
+		http.StatusForbidden,
+		http.Header{},
+		[]byte(`{"error":{"message":"permission propagation pending"}}`),
+	)
+
+	require.Equal(t, 0, repo.setErrorCalls)
+	require.Equal(t, 1, repo.tempCalls)
+	require.Contains(t, repo.lastTempReason, "Gemini Code Assist forbidden (403):")
+	require.Contains(t, repo.lastTempReason, "permission propagation pending")
 }
 
 func TestGeminiMessagesCompatServiceForward_NormalizesWebSearchToolForAIStudio(t *testing.T) {

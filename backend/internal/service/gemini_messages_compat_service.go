@@ -560,11 +560,9 @@ func rankAIStudioEndpointAccount(account *Account) (int, bool) {
 	case AccountTypeAPIKey:
 		return 0, strings.TrimSpace(account.GetCredential("api_key")) != ""
 	case AccountTypeOAuth:
-		if strings.TrimSpace(account.GetCredential("project_id")) == "" {
+		oauthType := strings.TrimSpace(account.GeminiOAuthTypeSafe())
+		if oauthType == "" || strings.EqualFold(oauthType, "ai_studio") {
 			return 1, true
-		}
-		if strings.TrimSpace(account.GetCredential("oauth_type")) == "ai_studio" {
-			return 2, true
 		}
 		// Code Assist / Google One style Gemini OAuth accounts often lack AI Studio
 		// scopes for /v1beta/models and should fall through to the caller's fallback.
@@ -1652,12 +1650,7 @@ func (s *GeminiMessagesCompatService) shouldRetryGeminiUpstreamError(account *Ac
 		if account == nil || account.Type != AccountTypeOAuth {
 			return false
 		}
-		oauthType := strings.ToLower(strings.TrimSpace(account.GetCredential("oauth_type")))
-		if oauthType == "" && strings.TrimSpace(account.GetCredential("project_id")) != "" {
-			// Legacy/implicit Code Assist OAuth accounts.
-			oauthType = "code_assist"
-		}
-		return oauthType == "code_assist"
+		return strings.EqualFold(account.GeminiOAuthTypeSafe(), "code_assist")
 	default:
 		return false
 	}
@@ -2764,6 +2757,16 @@ func (s *GeminiMessagesCompatService) ForwardAIStudioGET(ctx context.Context, c 
 			Message:            upstreamMsg,
 			Detail:             upstreamDetail,
 		})
+		if s.rateLimitService != nil {
+			switch s.rateLimitService.CheckErrorPolicy(ctx, account, resp.StatusCode, body) {
+			case ErrorPolicyMatched, ErrorPolicyTempUnscheduled:
+				s.handleGeminiUpstreamError(ctx, account, resp.StatusCode, resp.Header, body)
+			case ErrorPolicyNone:
+				if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == 529 {
+					s.handleGeminiUpstreamError(ctx, account, resp.StatusCode, resp.Header, body)
+				}
+			}
+		}
 	}
 	wwwAuthenticate := resp.Header.Get("Www-Authenticate")
 	filteredHeaders := responseheaders.FilterHeaders(resp.Header, s.responseHeaderFilter)
@@ -2917,7 +2920,7 @@ func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Cont
 		return
 	}
 
-	oauthType := account.GeminiOAuthType()
+	oauthType := account.GeminiOAuthTypeSafe()
 	tierID := account.GeminiTierID()
 	projectID := strings.TrimSpace(account.GetCredential("project_id"))
 	isCodeAssist := account.IsGeminiCodeAssist()
