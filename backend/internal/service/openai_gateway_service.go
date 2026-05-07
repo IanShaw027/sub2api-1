@@ -2709,12 +2709,14 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Added Codex image_generation bridge instructions")
 	}
 
-	if account.Type == AccountTypeOAuth && !isCompactRequest && !isMessagesBridgeRequest && promptCacheKey != "" {
+	if account.Type == AccountTypeOAuth && account.Platform == PlatformOpenAI && !isCompactRequest && !isMessagesBridgeRequest {
 		if store, ok := reqBody["store"].(bool); !ok || store {
 			reqBody["store"] = false
 			bodyModified = true
 			disablePatch()
 		}
+	}
+	if account.Type == AccountTypeOAuth && !isCompactRequest && !isMessagesBridgeRequest && promptCacheKey != "" {
 		if stream, ok := reqBody["stream"].(bool); !ok || !stream {
 			reqBody["stream"] = true
 			reqStream = true
@@ -2896,9 +2898,9 @@ oauthTransformDone:
 		if maxOutputTokens, hasMaxOutputTokens := reqBody["max_output_tokens"]; hasMaxOutputTokens {
 			switch account.Platform {
 			case PlatformOpenAI:
-				// For OpenAI API Key, remove max_output_tokens (not supported)
-				// For OpenAI OAuth (Responses API), keep it (supported)
-				if account.Type == AccountTypeAPIKey {
+				// ChatGPT internal OAuth /responses rejects max_output_tokens even on
+				// generic GPT models, so strip it for OAuth and API Key consistently.
+				if account.Type == AccountTypeAPIKey || account.Type == AccountTypeOAuth {
 					delete(reqBody, "max_output_tokens")
 					bodyModified = true
 					markPatchDelete("max_output_tokens")
@@ -2927,7 +2929,7 @@ oauthTransformDone:
 
 		// Also handle max_completion_tokens (similar logic)
 		if _, hasMaxCompletionTokens := reqBody["max_completion_tokens"]; hasMaxCompletionTokens {
-			if account.Type == AccountTypeAPIKey || account.Platform != PlatformOpenAI {
+			if account.Type == AccountTypeAPIKey || account.Type == AccountTypeOAuth || account.Platform != PlatformOpenAI {
 				delete(reqBody, "max_completion_tokens")
 				bodyModified = true
 				markPatchDelete("max_completion_tokens")
