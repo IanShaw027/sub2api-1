@@ -764,6 +764,74 @@ func TestOpenAIGatewayService_Forward_WSv2_HeaderSessionFallbackFromPromptCacheK
 	require.True(t, gjson.Get(requestToJSONString(captureConn.lastWrite), "stream").Exists())
 }
 
+func TestOpenAIGatewayService_Forward_WSv2_PreservesTurnStateAndMetadata(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.98.0")
+	c.Request.Header.Set("x-codex-turn-state", "turn-state-1")
+	c.Request.Header.Set("x-codex-turn-metadata", "turn-metadata-1")
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
+
+	captureConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.completed","response":{"id":"resp_turn_state","model":"gpt-5.1","usage":{"input_tokens":2,"output_tokens":1}}}`),
+		},
+	}
+	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(captureDialer)
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     &httpUpstreamRecorder{},
+		cache:            &stubGatewayCache{},
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+	}
+	account := &Account{
+		ID:          32,
+		Name:        "openai-oauth",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "oauth-token-1",
+		},
+		Extra: map[string]any{
+			"responses_websockets_v2_enabled": true,
+		},
+	}
+
+	body := []byte(`{"model":"gpt-5.1","stream":true,"prompt_cache_key":"pcache_turn_state","input":[{"type":"input_text","text":"hi"}]}`)
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "resp_turn_state", result.RequestID)
+
+	require.Equal(t, "turn-state-1", captureDialer.lastHeaders.Get("x-codex-turn-state"))
+	require.Equal(t, "turn-metadata-1", captureDialer.lastHeaders.Get("x-codex-turn-metadata"))
+
+	clientMetadata, ok := captureConn.lastWrite["client_metadata"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "turn-metadata-1", clientMetadata["x-codex-turn-metadata"])
+}
+
 func TestOpenAIGatewayService_Forward_WSv1_Unsupported(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

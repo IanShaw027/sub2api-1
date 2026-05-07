@@ -1159,8 +1159,6 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 ) (http.Header, openAIWSSessionHeaderResolution) {
 	headers := make(http.Header)
 	headers.Set("authorization", "Bearer "+token)
-	_ = turnState
-	_ = turnMetadata
 
 	sessionResolution := resolveOpenAIWSSessionHeaders(c, promptCacheKey)
 	if c != nil && c.Request != nil {
@@ -1206,6 +1204,12 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 				headers.Set("x-codex-installation-id", installationID)
 			}
 		}
+	}
+	if state := strings.TrimSpace(turnState); state != "" {
+		headers.Set(openAIWSTurnStateHeader, state)
+	}
+	if metadata := strings.TrimSpace(turnMetadata); metadata != "" {
+		headers.Set(openAIWSTurnMetadataHeader, metadata)
 	}
 
 	betaValue := openAIWSBetaV2Value
@@ -1827,6 +1831,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		turnState = strings.TrimSpace(c.GetHeader(openAIWSTurnStateHeader))
 		turnMetadata = strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader))
 	}
+	setOpenAIWSTurnMetadata(payload, turnMetadata)
 	payloadEventType := openAIWSPayloadString(payload, "type")
 	if payloadEventType == "" {
 		payloadEventType = "response.create"

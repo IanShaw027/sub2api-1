@@ -24,6 +24,46 @@ type geminiCompatHTTPUpstreamStub struct {
 	lastReq  *http.Request
 }
 
+type geminiCompatTokenCacheStub struct {
+	token string
+}
+
+func (s *geminiCompatTokenCacheStub) GetAccessToken(ctx context.Context, cacheKey string) (string, error) {
+	_ = ctx
+	_ = cacheKey
+	if strings.TrimSpace(s.token) == "" {
+		return "", fmt.Errorf("missing cached token")
+	}
+	return s.token, nil
+}
+
+func (s *geminiCompatTokenCacheStub) SetAccessToken(ctx context.Context, cacheKey string, token string, ttl time.Duration) error {
+	_ = ctx
+	_ = cacheKey
+	_ = token
+	_ = ttl
+	return nil
+}
+
+func (s *geminiCompatTokenCacheStub) DeleteAccessToken(ctx context.Context, cacheKey string) error {
+	_ = ctx
+	_ = cacheKey
+	return nil
+}
+
+func (s *geminiCompatTokenCacheStub) AcquireRefreshLock(ctx context.Context, cacheKey string, ttl time.Duration) (bool, error) {
+	_ = ctx
+	_ = cacheKey
+	_ = ttl
+	return true, nil
+}
+
+func (s *geminiCompatTokenCacheStub) ReleaseRefreshLock(ctx context.Context, cacheKey string) error {
+	_ = ctx
+	_ = cacheKey
+	return nil
+}
+
 func (s *geminiCompatHTTPUpstreamStub) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
 	s.calls++
 	s.lastReq = req
@@ -343,6 +383,82 @@ func TestGeminiMessagesCompatServiceForward_OAuthImageBillingUsesMappedUpstreamM
 	require.Equal(t, 0, result.ImageCount)
 	require.NotNil(t, httpStub.lastReq)
 	require.Contains(t, httpStub.lastReq.URL.String(), "/models/gemini-2.5-flash-image:")
+}
+
+func TestGeminiMessagesCompatServiceForward_ServiceAccountUsesVertexEndpoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	httpStub := &geminiCompatHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"x-request-id": []string{"gemini-service-account-req-1"}},
+			Body:       io.NopCloser(strings.NewReader(`{"candidates":[{"content":{"parts":[{"text":"hello from vertex"}]}}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}`)),
+		},
+	}
+	svc := &GeminiMessagesCompatService{
+		httpUpstream:  httpStub,
+		cfg:           &config.Config{},
+		tokenProvider: NewGeminiTokenProvider(nil, &geminiCompatTokenCacheStub{token: "vertex-access-token"}, nil),
+	}
+	account := &Account{
+		ID:       11,
+		Platform: PlatformGemini,
+		Type:     AccountTypeServiceAccount,
+		Credentials: map[string]any{
+			"service_account_json": `{"type":"service_account","project_id":"vertex-proj","private_key_id":"kid","private_key":"-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n","client_email":"svc@vertex-proj.iam.gserviceaccount.com"}`,
+		},
+	}
+	body := []byte(`{"model":"gemini-2.5-pro","max_tokens":16,"messages":[{"role":"user","content":"hello"}]}`)
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "gemini-2.5-pro", result.UpstreamModel)
+	require.NotNil(t, httpStub.lastReq)
+	require.Contains(t, httpStub.lastReq.URL.String(), "projects/vertex-proj/locations/us-central1/publishers/google/models/gemini-2.5-pro:generateContent")
+	require.Equal(t, "Bearer vertex-access-token", httpStub.lastReq.Header.Get("Authorization"))
+}
+
+func TestGeminiMessagesCompatServiceForwardNative_ServiceAccountUsesVertexEndpoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini-2.5-pro:generateContent", nil)
+
+	httpStub := &geminiCompatHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"x-request-id": []string{"gemini-native-service-account-req-1"}},
+			Body:       io.NopCloser(strings.NewReader(`{"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5},"candidates":[{"content":{"parts":[{"text":"hello from vertex native"}]}}]}`)),
+		},
+	}
+	svc := &GeminiMessagesCompatService{
+		httpUpstream:  httpStub,
+		cfg:           &config.Config{},
+		tokenProvider: NewGeminiTokenProvider(nil, &geminiCompatTokenCacheStub{token: "vertex-access-token"}, nil),
+	}
+	account := &Account{
+		ID:       12,
+		Platform: PlatformGemini,
+		Type:     AccountTypeServiceAccount,
+		Credentials: map[string]any{
+			"service_account_json": `{"type":"service_account","project_id":"vertex-proj","private_key_id":"kid","private_key":"-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n","client_email":"svc@vertex-proj.iam.gserviceaccount.com"}`,
+		},
+	}
+	body := []byte(`{"contents":[{"role":"user","parts":[{"text":"hello"}]}]}`)
+
+	result, err := svc.ForwardNative(context.Background(), c, account, "gemini-2.5-pro", "generateContent", false, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "gemini-2.5-pro", result.UpstreamModel)
+	require.NotNil(t, httpStub.lastReq)
+	require.Contains(t, httpStub.lastReq.URL.String(), "projects/vertex-proj/locations/us-central1/publishers/google/models/gemini-2.5-pro:generateContent")
+	require.Equal(t, "Bearer vertex-access-token", httpStub.lastReq.Header.Get("Authorization"))
 }
 
 func TestGeminiMessagesCompatServiceForward_NormalizesWebSearchToolForAIStudio(t *testing.T) {

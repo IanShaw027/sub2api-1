@@ -482,6 +482,16 @@ func TestForwardAsAnthropic_AttachesPreviousResponseIDForCompatContinuation(t *t
 	require.Equal(t, "second", gjson.GetBytes(upstream.lastBody, "input.1.content").String())
 }
 
+func TestShouldApplyAnthropicCompatFullReplayGuard(t *testing.T) {
+	t.Parallel()
+
+	require.True(t, shouldApplyAnthropicCompatFullReplayGuard(&Account{Type: AccountTypeAPIKey}, "", true, false, true))
+	require.False(t, shouldApplyAnthropicCompatFullReplayGuard(&Account{Type: AccountTypeAPIKey}, "resp_prev", true, false, true))
+	require.False(t, shouldApplyAnthropicCompatFullReplayGuard(&Account{Type: AccountTypeOAuth}, "", false, false, true))
+	require.False(t, shouldApplyAnthropicCompatFullReplayGuard(&Account{Type: AccountTypeAPIKey}, "", true, true, true))
+	require.False(t, shouldApplyAnthropicCompatFullReplayGuard(&Account{Type: AccountTypeAPIKey}, "", true, false, false))
+}
+
 func TestForwardAsAnthropic_ReplaysWithoutContinuationWhenPreviousResponseMissing(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)

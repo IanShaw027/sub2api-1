@@ -29,6 +29,22 @@ func isAnthropicResponsesTerminalEvent(eventType string) bool {
 	}
 }
 
+func shouldApplyAnthropicCompatFullReplayGuard(account *Account, previousResponseID string, continuationEnabled bool, continuationDisabled bool, compatReplayGuardEnabled bool) bool {
+	if !compatReplayGuardEnabled || continuationDisabled {
+		return false
+	}
+	if account == nil || account.Type == AccountTypeOAuth {
+		return false
+	}
+	if strings.TrimSpace(previousResponseID) != "" {
+		return false
+	}
+	if continuationEnabled {
+		return true
+	}
+	return true
+}
+
 // ForwardAsAnthropic accepts an Anthropic Messages request body, converts it
 // to OpenAI Responses API format, forwards to the OpenAI upstream, and converts
 // the response back to Anthropic Messages format. This enables Claude Code
@@ -74,9 +90,14 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		}
 		derivedPromptCacheKey = promptCacheKey != ""
 	}
+	compatReplayGuardEnabled := shouldAutoInjectPromptCacheKeyForCompat(upstreamModel)
 	compatContinuationEnabled := openAICompatContinuationEnabled(account, upstreamModel)
 	compatContinuationDisabled := compatContinuationEnabled &&
 		s.isOpenAICompatSessionContinuationDisabled(ctx, c, account, promptCacheKey)
+	previousResponseID := ""
+	if compatContinuationEnabled {
+		previousResponseID = s.getOpenAICompatSessionResponseID(ctx, c, account, promptCacheKey)
+	}
 	oauthTurnStateBridge := account.Type == AccountTypeOAuth && explicitPromptCacheKey != ""
 	oauthDerivedSessionBridge := account.Type == AccountTypeOAuth &&
 		derivedPromptCacheKey &&
@@ -84,7 +105,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if oauthTurnStateBridge {
 		setOpenAICompatMessagesBridgeContext(c, true)
 	}
-	if compatContinuationEnabled && !compatContinuationDisabled {
+	if shouldApplyAnthropicCompatFullReplayGuard(account, previousResponseID, compatContinuationEnabled, compatContinuationDisabled, compatReplayGuardEnabled) {
 		applyAnthropicCompatFullReplayGuard(&anthropicReq)
 	}
 
@@ -131,7 +152,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 
 	// 4. Marshal Responses request body, then apply OAuth codex transform
 	if compatContinuationEnabled {
-		if previousResponseID := s.getOpenAICompatSessionResponseID(ctx, c, account, promptCacheKey); previousResponseID != "" {
+		if previousResponseID != "" {
 			responsesReq.PreviousResponseID = previousResponseID
 			trimAnthropicCompatResponsesInputToLatestTurn(responsesReq)
 		}
