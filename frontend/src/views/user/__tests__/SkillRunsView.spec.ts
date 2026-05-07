@@ -90,7 +90,20 @@ vi.mock('@/components/common/DataTable.vue', () => ({
   default: {
     name: 'DataTableStub',
     props: ['data', 'loading'],
-    template: '<div class="datatable-stub" />',
+    template: `
+      <div class="datatable-stub">
+        <slot
+          v-if="Array.isArray(data) && data.length > 0"
+          name="cell-status"
+          :row="data[0]"
+        />
+        <slot
+          v-if="Array.isArray(data) && data.length > 0"
+          name="cell-trigger"
+          :row="data[0]"
+        />
+      </div>
+    `,
   },
 }))
 
@@ -113,9 +126,19 @@ vi.mock('@/components/common/Pagination.vue', () => ({
 vi.mock('@/components/common/Select.vue', () => ({
   default: {
     name: 'SelectStub',
-    props: ['modelValue'],
+    props: ['modelValue', 'options'],
     emits: ['update:modelValue'],
-    template: '<div class="select-stub" :data-model-value="String(modelValue)" />',
+    template: `
+      <div class="select-stub" :data-model-value="String(modelValue)">
+        <span
+          v-for="option in options"
+          :key="String(option.value)"
+          class="select-option-label"
+        >
+          {{ option.label }}
+        </span>
+      </div>
+    `,
   },
 }))
 
@@ -206,5 +229,40 @@ describe('SkillRunsView', () => {
       },
     })
     expect(skillsStore.loadRuns).toHaveBeenLastCalledWith(42, 3, 40)
+  })
+
+  it('renders localized status filter labels and helper-based run labels instead of raw keys', async () => {
+    skillsStore.runsPagination.items = [
+      {
+        id: 1,
+        status: 'queued',
+        trigger: 'use',
+        version: 'v1',
+        duration_ms: 320,
+        cost: null,
+        currency: 'CNY',
+        input_preview: 'input',
+        output_preview: 'output',
+        error_message: '',
+      },
+    ]
+
+    const wrapper = mount(SkillRunsView)
+    await flushPromises()
+
+    const optionLabels = wrapper.findAll('.select-option-label').map((node) => node.text())
+    expect(optionLabels).toContain('全部')
+    expect(optionLabels).toContain('已排队')
+    expect(optionLabels).toContain('运行中')
+    expect(optionLabels).not.toContain('queued')
+    expect(optionLabels).not.toContain('running')
+    expect(optionLabels).not.toContain('succeeded')
+    expect(optionLabels).not.toContain('failed')
+    expect(optionLabels).not.toContain('cancelled')
+
+    expect(wrapper.text()).toContain('已排队')
+    expect(wrapper.text()).toContain('使用')
+    expect(wrapper.text()).not.toContain('queued')
+    expect(wrapper.text()).not.toContain('use')
   })
 })

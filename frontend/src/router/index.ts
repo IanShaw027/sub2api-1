@@ -844,7 +844,7 @@ const routes: RouteRecordRaw[] = [
       requiresAiStudio: true,
       title: 'Skill Runtime Monitor',
       titleKey: 'skills.admin.runtime.title',
-      descriptionKey: 'skills.runs.subtitle'
+      descriptionKey: 'skills.admin.runtime.subtitle'
     }
   },
   {

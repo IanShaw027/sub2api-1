@@ -581,7 +581,67 @@
       },
       "runtime": {
         "title": "Skill Runtime",
-        "searchPlaceholder": "Search by skill name, slug, or version"
+        "subtitle": "Monitor live skill execution, queue pressure, and alert activity.",
+        "searchPlaceholder": "Search by skill name, slug, or version",
+        "healthStatus": "Health Status",
+        "summaryNote": "Metrics are aggregated from real runtime data.",
+        "view": "View",
+        "emptyTitle": "No runtime metrics yet",
+        "emptyDescription": "Runtime metrics, alerts, and queue details will appear here.",
+        "columns": {
+          "skillName": "Skill / Version",
+          "skillVersion": "Skill / Version",
+          "healthStatus": "Health",
+          "requests24h": "Requests",
+          "successRate": "Success Rate",
+          "p95Latency": "P95 Latency",
+          "errorRate": "Error Rate",
+          "queueDepth": "Queue Depth",
+          "lastRun": "Last Run",
+          "lastError": "Last Error",
+          "actions": "Actions"
+        },
+        "metrics": {
+          "activeSkills": "Active Skills",
+          "requests24h": "24h Requests",
+          "totalSkills": "Total skills {count}",
+          "averageSuccessRate": "Average Success Rate",
+          "p95Latency": "P95 Latency",
+          "criticalAlerts": "Critical Alerts",
+          "requestsHint": "Aggregated from the current filter window",
+          "warningCount": "Warnings {count}",
+          "latencyHint": "Prioritize queue and dependency checks when latency spikes",
+          "criticalHint": "Handle user-facing outages first"
+        },
+        "detail": {
+          "successRate": "Success Rate",
+          "p95Latency": "P95 Latency",
+          "errorRate": "Error Rate",
+          "queueDepth": "Queue Depth",
+          "lastRunAt": "Last Run",
+          "lastAlertAt": "Last Alert",
+          "lastError": "Last Error",
+          "noRecentError": "This skill has no recent errors.",
+          "selectionPlaceholder": "Select a runtime row to see latency, error, and queue metrics.",
+          "noSelection": "Select a runtime row to see latency, error, and queue metrics."
+        },
+        "events": {
+          "title": "Recent Alerts / Events",
+          "description": "Global events are shown by default; selecting a skill prioritizes related events.",
+          "empty": "No alert events yet.",
+          "global": "Global Event"
+        },
+        "health": {
+          "healthy": "Healthy",
+          "warning": "Warning",
+          "critical": "Critical"
+        },
+        "selectionPlaceholder": "Select a runtime row to see latency, error, and queue metrics.",
+        "event": {
+          "info": "Info",
+          "warning": "Warning",
+          "critical": "Critical"
+        }
       },
       "settlement": {
         "title": "Skill Settlement",
@@ -640,6 +700,33 @@
       "statusPublished": "Published",
       "statusArchived": "Archived",
       "statusHidden": "Hidden"
+    },
+    "labels": {
+      "typePromptChat": "Prompt Chat",
+      "typePromptImage": "Prompt Image",
+      "typeScript": "Script",
+      "statusDraft": "Draft",
+      "statusPublished": "Published",
+      "statusArchived": "Archived",
+      "statusHidden": "Hidden",
+      "visibilityPublic": "Public",
+      "visibilityPrivate": "Private",
+      "runStatusQueued": "Queued",
+      "runStatusRunning": "Running",
+      "runStatusSucceeded": "Succeeded",
+      "runStatusFailed": "Failed",
+      "runStatusCancelled": "Cancelled",
+      "versionStatusDraft": "Draft",
+      "versionStatusPublished": "Published",
+      "versionStatusArchived": "Archived",
+      "versionStatusDeprecated": "Deprecated",
+      "reviewStatusApproved": "Approved",
+      "reviewStatusPending": "Pending Review",
+      "reviewStatusRejected": "Rejected",
+      "triggerTest": "Test",
+      "triggerUse": "Use",
+      "priceModeFree": "Free",
+      "priceModePaid": "Paid"
     },
     "editor": {
       "title": "Skill Editor",
@@ -759,7 +846,8 @@
       "noChangelog": "No changelog provided",
       "emptyTitle": "No versions yet",
       "emptyDescription": "Create the first version from the current skill snapshot.",
-      "sourceLockedHint": "At the version level, you can also choose whether to expose the source content."
+      "sourceLockedHint": "At the version level, you can also choose whether to expose the source content.",
+      "statusDeprecated": "Deprecated"
     },
     "runs": {
       "title": "Run History",
@@ -2184,6 +2272,7 @@
       "noBalanceHistory": "No records found for this user",
       "allTypes": "All Types",
       "typeBalance": "Balance (Redeem)",
+      "typeAffiliateBalance": "Balance (Affiliate Transfer)",
       "typeAdminBalance": "Balance (Admin)",
       "typeConcurrency": "Concurrency (Redeem)",
       "typeAdminConcurrency": "Concurrency (Admin)",
@@ -2373,7 +2462,8 @@
         "openai": "OpenAI",
         "gemini": "Gemini",
         "antigravity": "Antigravity",
-        "kiro": "Kiro"
+        "kiro": "Kiro",
+        "sora": "Sora"
       },
       "deleteConfirm": "Are you sure you want to delete '{name}'? All associated API keys will no longer belong to any group.",
       "deleteConfirmSubscription": "Are you sure you want to delete subscription group '{name}'? This will invalidate all API keys bound to this subscription and delete all related subscription records. This action cannot be undone.",
@@ -2393,10 +2483,16 @@
       },
       "imagePricing": {
         "title": "Image Generation Pricing",
-        "description": "Configure fixed per-group image prices. Leave empty to use default prices.",
+        "description": "Configure image generation access and base image prices. Leave empty to use default prices.",
         "images": "Images API",
         "images2api": "Images2API",
-        "fixedHint": "Fixed per group; not affected by rate multipliers."
+        "fixedHint": "Fixed per group; not affected by rate multipliers.",
+        "allowImageGeneration": "Allow image generation for this group",
+        "independentMultiplier": "Use independent image multiplier",
+        "imageMultiplier": "Image multiplier",
+        "modeHint": "By default, image billing uses image price × current effective group multiplier. Independent mode uses image price × image multiplier.",
+        "finalPricePreview": "Final per-image price preview",
+        "notConfigured": "Not configured"
       },
       "claudeCode": {
         "title": "Claude Code Client Restriction",
@@ -2965,7 +3061,8 @@
         "openai": "OpenAI",
         "gemini": "Gemini",
         "antigravity": "Antigravity",
-        "kiro": "Kiro"
+        "kiro": "Kiro",
+        "sora": "Sora"
       },
       "types": {
         "oauth": "OAuth",
@@ -3026,6 +3123,11 @@
       "privacyFailed": "Failed to disable training",
       "privacyAntigravitySet": "Telemetry and marketing emails disabled",
       "privacyAntigravityFailed": "Privacy setting failed",
+      "badges": {
+        "private": "Private",
+        "cf": "CF",
+        "fail": "Fail"
+      },
       "setPrivacy": "Set Privacy",
       "subscriptionAbnormal": "Abnormal",
       "subscriptionExpires": "Expires",
@@ -3204,6 +3306,28 @@
       "claudeConsole": "Claude Console",
       "bedrockLabel": "AWS Bedrock",
       "bedrockDesc": "SigV4 / API Key",
+      "vertexLabel": "Vertex",
+      "vertexDesc": "Service Account",
+      "vertexAnthropicHint": "Use a Google Cloud Service Account JSON to call Anthropic Claude via Vertex AI. It is recommended to configure model mapping to map client Claude model names to Vertex model IDs.",
+      "vertexGeminiHint": "Use a Google Cloud Service Account JSON to access Vertex AI Gemini. It is recommended to place Vertex accounts in a separate group to avoid mixing with AI Studio/Gemini OAuth on the same models.",
+      "vertexSaJsonLabel": "Service Account JSON",
+      "vertexSaJsonLoaded": "Service Account JSON loaded",
+      "vertexSaJsonDrop": "Drop Service Account JSON here",
+      "vertexSaJsonKeyHidden": "Key content is not displayed in the form.",
+      "vertexSaJsonDropHint": "Drag a .json file here, or click the button to select one.",
+      "vertexSaJsonSelectBtn": "Select JSON",
+      "vertexSaJsonUploadHint": "After uploading or dropping a JSON file, the project_id will be auto-extracted. Key content is only used for account creation.",
+      "vertexSaJsonEditHint": "Service Account JSON is not shown on the edit page; to change the JSON, delete the account and recreate it.",
+      "vertexProjectIdPlaceholder": "Auto-extracted from JSON",
+      "vertexLocationHint": "Available locations vary by Vertex model. Select the default endpoint location for this account.",
+      "vertexLocationRequired": "Please enter a Vertex location",
+      "vertexSaJsonMissingFields": "Service Account JSON is missing project_id, client_email, or private_key",
+      "vertexSaJsonMissingProjectId": "Service Account JSON is missing project_id",
+      "vertexSaJsonMissingClientEmail": "Service Account JSON is missing client_email",
+      "vertexSaJsonInvalid": "Service Account JSON format is invalid",
+      "vertexSaJsonRequired": "Please upload a Service Account JSON",
+      "openAIWebProfileImported": "OpenAI WebProfile imported",
+      "openAIWebProfileImportFailed": "Failed to import OpenAI WebProfile",
       "oauthSetupToken": "OAuth / Setup Token",
       "addMethod": "Add Method",
       "setupTokenLongLived": "Setup Token (Long-lived)",
@@ -3576,6 +3700,11 @@
           "oauthTypeLabel": "OAuth Type",
           "needsProjectId": "Built-in OAuth (Code Assist)",
           "needsProjectIdDesc": "Requires GCP project and Project ID",
+          "noProjectIdNeeded": "Custom OAuth (AI Studio)",
+          "noProjectIdNeededDesc": "Requires admin-configured OAuth client",
+          "aiStudioNotConfiguredShort": "Not configured",
+          "aiStudioNotConfiguredTip": "AI Studio OAuth is not configured: set GEMINI_OAUTH_CLIENT_ID / GEMINI_OAUTH_CLIENT_SECRET and add Redirect URI: http://localhost:1455/auth/callback (Consent screen scopes must include https://www.googleapis.com/auth/generative-language.retriever)",
+          "aiStudioNotConfigured": "AI Studio OAuth is not configured: set GEMINI_OAUTH_CLIENT_ID / GEMINI_OAUTH_CLIENT_SECRET and add Redirect URI: http://localhost:1455/auth/callback",
           "legacyCustomOAuthRemoved": "Legacy AI Studio OAuth has been removed",
           "legacyCustomOAuthRemovedDesc": "The custom OAuth Client entry has been removed. Legacy AI Studio OAuth accounts can no longer be re-authorized. Use a Gemini API Key account instead, or create a new Google One / GCP Code Assist OAuth account."
         },
@@ -3646,10 +3775,15 @@
           "builtInDesc": "Uses Google built-in client ID. No admin configuration required.",
           "builtInRequirement": "Requires a GCP project and Project ID.",
           "gcpProjectLink": "Create project",
+          "customTitle": "Custom OAuth (AI Studio OAuth)",
+          "customDesc": "Uses admin-configured OAuth client for org management.",
+          "customRequirement": "Admin must configure Client ID and add you as a test user.",
           "badges": {
             "recommended": "Recommended",
             "highConcurrency": "High concurrency",
-            "noAdmin": "No admin setup"
+            "noAdmin": "No admin setup",
+            "orgManaged": "Org managed",
+            "adminRequired": "Admin required"
           }
         },
         "setupGuide": {
@@ -3715,6 +3849,13 @@
               "paid": "Billing enabled (pay-as-you-go)",
               "limitsFree": "RPD 50; RPM 2 (Pro) / 15 (Flash)",
               "limitsPaid": "RPD unlimited; RPM 1000 (Pro) / 2000 (Flash) (per model)"
+            },
+            "customOAuth": {
+              "channel": "Custom OAuth Client (GCP)",
+              "free": "Project not billed",
+              "paid": "Project billed",
+              "limitsFree": "RPD 50; RPM 2 (project quota)",
+              "limitsPaid": "RPD unlimited; RPM 1000+ (project quota)"
             }
           }
         },
@@ -4174,6 +4315,7 @@
       "groupRequired": "Please select a subscription group",
       "days": " days",
       "status": {
+        "active": "Unused",
         "unused": "Unused",
         "used": "Used",
         "expired": "Expired",
@@ -5131,7 +5273,7 @@
         "errorLogRetentionDays": "Error Log Retention Days",
         "minuteMetricsRetentionDays": "Minute Metrics Retention Days",
         "hourlyMetricsRetentionDays": "Hourly Metrics Retention Days",
-        "retentionDaysHint": "Recommended 7-90 days, longer periods will consume more storage",
+        "retentionDaysHint": "Recommended 7-90 days; longer periods consume more storage. Set to 0 to wipe all history on every scheduled cleanup",
         "aggregation": "Pre-aggregation Tasks",
         "enableAggregation": "Enable Pre-aggregation",
         "aggregationHint": "Pre-aggregation improves query performance for long time windows",
@@ -5161,7 +5303,7 @@
         "autoRefreshCountdown": "Auto refresh: {seconds}s",
         "validation": {
           "title": "Please fix the following issues",
-          "retentionDaysRange": "Retention days must be between 1-365 days",
+          "retentionDaysRange": "Retention days must be between 0 and 365 (0 = wipe all on every cleanup)",
           "slaMinPercentRange": "SLA minimum percentage must be between 0 and 100",
           "ttftP99MaxRange": "TTFT P99 maximum must be a number ≥ 0",
           "requestErrorRateMaxRange": "Request error rate maximum must be between 0 and 100",
@@ -5544,7 +5686,9 @@
         "debugTimelineDirectory": "Log Directory",
         "debugTimelineDirectoryHint": "Relative paths are resolved from the service working directory; files are named gateway-timeline-YYYY-MM-DD.log.",
         "debugTimelineRetentionDays": "Retention Days",
-        "debugTimelineMaxSizeMB": "Max Size MB"
+        "debugTimelineMaxSizeMB": "Max Size MB",
+        "anthropicCacheTTL1hInjection": "Anthropic Cache TTL Injection",
+        "anthropicCacheTTL1hInjectionHint": "When enabled, existing ephemeral cache_control blocks in Anthropic OAuth/Setup Token request bodies are forced to 1h; response usage is billed back as 5m by default, with account-level TTL billing override taking priority."
       },
       "webSearchEmulation": {
         "title": "Web Search Emulation",

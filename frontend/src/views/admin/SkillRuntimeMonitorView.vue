@@ -13,13 +13,13 @@
             />
 
             <div>
-              <label class="input-label mb-1.5 block">健康状态</label>
+              <label class="input-label mb-1.5 block">{{ runtimeText.healthStatus }}</label>
               <Select :model-value="filters.health_status" :options="healthStatusOptions" @update:model-value="updateHealthStatusFilter" />
             </div>
 
           </div>
           <p class="text-xs text-gray-500 dark:text-gray-400">
-            当前运行指标由后端按真实运行数据汇总；页面不再伪造前端统计窗口切换。
+            {{ runtimeText.summaryNote }}
           </p>
         </template>
 
@@ -85,13 +85,13 @@
             </template>
 
             <template #cell-actions="{ row }">
-              <button class="btn btn-secondary btn-sm" @click="selectRuntime(row)">查看</button>
+              <button class="btn btn-secondary btn-sm" @click="selectRuntime(row)">{{ runtimeText.view }}</button>
             </template>
 
             <template #empty>
               <EmptyState
-                title="暂无运行监控数据"
-                description="技能中心运行指标、告警和排队情况会展示在这里。"
+                :title="runtimeText.empty.title"
+                :description="runtimeText.empty.description"
               />
             </template>
           </DataTable>
@@ -131,19 +131,19 @@
 
             <div class="mt-5 grid gap-4 md:grid-cols-2">
               <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900/60">
-                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">成功率</p>
+                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ runtimeText.detail.successRate }}</p>
                 <p class="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{{ formatPercent(selectedRuntime.success_rate) }}</p>
               </div>
               <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900/60">
-                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">P95 延迟</p>
+                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ runtimeText.detail.p95Latency }}</p>
                 <p class="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{{ formatMilliseconds(selectedRuntime.p95_latency_ms) }}</p>
               </div>
               <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900/60">
-                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">错误率</p>
+                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ runtimeText.detail.errorRate }}</p>
                 <p class="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{{ formatPercent(selectedRuntime.error_rate) }}</p>
               </div>
               <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900/60">
-                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">队列深度</p>
+                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ runtimeText.detail.queueDepth }}</p>
                 <p class="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{{ selectedRuntime.queue_depth.toLocaleString() }}</p>
               </div>
             </div>
@@ -151,26 +151,29 @@
             <div class="mt-5 rounded-2xl border border-gray-200 p-4 dark:border-dark-700">
               <div class="grid gap-4 md:grid-cols-2">
                 <div>
-                  <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">最近运行</p>
+                  <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ runtimeText.detail.lastRunAt }}</p>
                   <p class="mt-2 text-sm font-medium text-gray-900 dark:text-white">{{ formatTime(selectedRuntime.last_run_at) }}</p>
                 </div>
                 <div>
-                  <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">最近告警</p>
+                  <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ runtimeText.detail.lastAlertAt }}</p>
                   <p class="mt-2 text-sm font-medium text-gray-900 dark:text-white">{{ formatTime(selectedRuntime.last_alert_at) }}</p>
                 </div>
               </div>
               <div class="mt-4">
-                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">最近错误</p>
+                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ runtimeText.detail.lastError }}</p>
                 <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400">
-                  {{ selectedRuntime.last_error || '当前技能没有最近错误记录。' }}
+                  {{ selectedRuntime.last_error || runtimeText.detail.noRecentError }}
                 </p>
               </div>
             </div>
           </template>
 
           <template v-else>
-            <div class="rounded-2xl border border-dashed border-gray-200 px-4 py-10 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400">
-              选择一条技能运行记录后，这里会展示延迟、错误和队列指标。
+            <div
+              data-test="runtime-detail-empty"
+              class="rounded-2xl border border-dashed border-gray-200 px-4 py-10 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400"
+            >
+              {{ runtimeText.selectionPlaceholder }}
             </div>
           </template>
         </div>
@@ -178,13 +181,13 @@
         <div class="card border border-gray-200 p-5 dark:border-dark-700">
           <div class="mb-5 flex items-center justify-between gap-3">
             <div>
-              <h3 class="text-base font-semibold text-gray-900 dark:text-white">最近告警 / 事件</h3>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">默认展示全局事件；选中技能后优先过滤关联事件。</p>
+              <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ runtimeText.events.title }}</h3>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ runtimeText.events.description }}</p>
             </div>
             <Icon name="bell" size="md" class="text-gray-400 dark:text-gray-500" />
           </div>
 
-          <div v-if="filteredEvents.length" class="space-y-3">
+          <div v-if="filteredEvents.length" data-test="runtime-events-list" class="space-y-3">
             <div
               v-for="event in filteredEvents"
               :key="event.id"
@@ -193,7 +196,7 @@
               <div class="flex flex-wrap items-center justify-between gap-3">
                 <div class="flex items-center gap-2">
                   <SkillAdminStatusBadge :status="event.level" :label="eventLevelLabel(event.level)" mode="runtime" />
-                  <p class="text-sm font-medium text-gray-900 dark:text-white">{{ event.skill_name || '全局事件' }}</p>
+                  <p class="text-sm font-medium text-gray-900 dark:text-white">{{ event.skill_name || runtimeText.events.global }}</p>
                 </div>
                 <span class="text-xs text-gray-500 dark:text-gray-400">{{ formatTime(event.created_at) }}</span>
               </div>
@@ -204,8 +207,12 @@
             </div>
           </div>
 
-          <div v-else class="rounded-2xl border border-dashed border-gray-200 px-4 py-10 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400">
-            当前没有告警事件。
+          <div
+            v-else
+            data-test="runtime-events-empty"
+            class="rounded-2xl border border-dashed border-gray-200 px-4 py-10 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400"
+          >
+            {{ runtimeText.events.empty }}
           </div>
         </div>
       </div>
@@ -268,64 +275,129 @@ const filters = reactive({
   health_status: 'all' as SkillRuntimeHealth | 'all'
 })
 
-const healthStatusOptions = [
+const runtimeText = computed(() => ({
+  subtitle: t('skills.admin.runtime.subtitle', '技能运行监控与告警'),
+  healthStatus: t('skills.admin.runtime.healthStatus', '健康状态'),
+  summaryNote: t(
+    'skills.admin.runtime.summaryNote',
+    '当前运行指标由后端按真实运行数据汇总；页面不再伪造前端统计窗口切换。'
+  ),
+  view: t('skills.admin.runtime.view', '查看'),
+  empty: {
+    title: t('skills.admin.runtime.emptyTitle', '暂无运行监控数据'),
+    description: t('skills.admin.runtime.emptyDescription', '技能中心运行指标、告警和排队情况会展示在这里。'),
+  },
+  selectionPlaceholder: t('skills.admin.runtime.selectionPlaceholder', '选择一条技能运行记录后，这里会展示延迟、错误和队列指标。'),
+  detail: {
+    successRate: t('skills.admin.runtime.detail.successRate', '成功率'),
+    p95Latency: t('skills.admin.runtime.detail.p95Latency', 'P95 延迟'),
+    errorRate: t('skills.admin.runtime.detail.errorRate', '错误率'),
+    queueDepth: t('skills.admin.runtime.detail.queueDepth', '队列深度'),
+    lastRunAt: t('skills.admin.runtime.detail.lastRunAt', '最近运行'),
+    lastAlertAt: t('skills.admin.runtime.detail.lastAlertAt', '最近告警'),
+    lastError: t('skills.admin.runtime.detail.lastError', '最近错误'),
+    noRecentError: t('skills.admin.runtime.detail.noRecentError', '当前技能没有最近错误记录。'),
+  },
+  events: {
+    title: t('skills.admin.runtime.events.title', '最近告警 / 事件'),
+    description: t('skills.admin.runtime.events.description', '默认展示全局事件；选中技能后优先过滤关联事件。'),
+    global: t('skills.admin.runtime.events.global', '全局事件'),
+    empty: t('skills.admin.runtime.events.empty', '当前没有告警事件。'),
+  },
+  health: {
+    healthy: t('skills.admin.runtime.health.healthy', '健康'),
+    warning: t('skills.admin.runtime.health.warning', '预警'),
+    critical: t('skills.admin.runtime.health.critical', '严重'),
+  },
+  event: {
+    info: t('skills.admin.runtime.event.info', '信息'),
+    warning: t('skills.admin.runtime.event.warning', '预警'),
+    critical: t('skills.admin.runtime.event.critical', '严重'),
+  },
+  columns: {
+    skillName: t('skills.admin.runtime.columns.skillName', '技能 / 版本'),
+    healthStatus: t('skills.admin.runtime.columns.healthStatus', '健康状态'),
+    requests24h: t('skills.admin.runtime.columns.requests24h', '调用量'),
+    successRate: t('skills.admin.runtime.columns.successRate', '成功率'),
+    p95Latency: t('skills.admin.runtime.columns.p95Latency', 'P95 延迟'),
+    errorRate: t('skills.admin.runtime.columns.errorRate', '错误率'),
+    queueDepth: t('skills.admin.runtime.columns.queueDepth', '队列深度'),
+    lastRunAt: t('skills.admin.runtime.columns.lastRunAt', '最近运行'),
+    lastError: t('skills.admin.runtime.columns.lastError', '最近错误'),
+    actions: t('common.actions', '操作'),
+  },
+  metrics: {
+    activeSkills: t('skills.admin.runtime.metrics.activeSkills', '活跃技能'),
+    totalSkills: t('skills.admin.runtime.metrics.totalSkills', { count: summary.total_skills }),
+    requests24h: t('skills.admin.runtime.metrics.requests24h', '24h 请求'),
+    requestsHint: t('skills.admin.runtime.metrics.requestsHint', '按当前筛选窗口统计'),
+    averageSuccessRate: t('skills.admin.runtime.metrics.averageSuccessRate', '平均成功率'),
+    warningCount: t('skills.admin.runtime.metrics.warningCount', { count: summary.warning_count }),
+    p95Latency: t('skills.admin.runtime.metrics.p95Latency', 'P95 延迟'),
+    latencyHint: t('skills.admin.runtime.metrics.latencyHint', '延迟高时优先排查队列和依赖'),
+    criticalAlerts: t('skills.admin.runtime.metrics.criticalAlerts', '严重告警'),
+    criticalHint: t('skills.admin.runtime.metrics.criticalHint', '建议优先处理影响线上可用性的技能'),
+  },
+}))
+
+const healthStatusOptions = computed(() => [
   { value: 'all', label: t('common.all', '全部') },
-  { value: 'healthy', label: '健康' },
-  { value: 'warning', label: '预警' },
-  { value: 'critical', label: '严重' }
-]
+  { value: 'healthy', label: runtimeText.value.health.healthy },
+  { value: 'warning', label: runtimeText.value.health.warning },
+  { value: 'critical', label: runtimeText.value.health.critical }
+])
 
 const columns = computed<Column[]>(() => [
-  { key: 'skill_name', label: '技能 / 版本' },
-  { key: 'health_status', label: '健康状态' },
-  { key: 'requests_24h', label: '调用量' },
-  { key: 'success_rate', label: '成功率' },
-  { key: 'p95_latency_ms', label: 'P95 延迟' },
-  { key: 'error_rate', label: '错误率' },
-  { key: 'queue_depth', label: '队列深度' },
-  { key: 'last_run_at', label: '最近运行' },
-  { key: 'last_error', label: '最近错误' },
-  { key: 'actions', label: t('common.actions', '操作') }
+  { key: 'skill_name', label: runtimeText.value.columns.skillName },
+  { key: 'health_status', label: runtimeText.value.columns.healthStatus },
+  { key: 'requests_24h', label: runtimeText.value.columns.requests24h },
+  { key: 'success_rate', label: runtimeText.value.columns.successRate },
+  { key: 'p95_latency_ms', label: runtimeText.value.columns.p95Latency },
+  { key: 'error_rate', label: runtimeText.value.columns.errorRate },
+  { key: 'queue_depth', label: runtimeText.value.columns.queueDepth },
+  { key: 'last_run_at', label: runtimeText.value.columns.lastRunAt },
+  { key: 'last_error', label: runtimeText.value.columns.lastError },
+  { key: 'actions', label: runtimeText.value.columns.actions }
 ])
 
 const metricCards = computed(() => [
   {
     key: 'active',
-    label: '活跃技能',
+    label: runtimeText.value.metrics.activeSkills,
     value: summary.active_skills,
-    hint: `总技能 ${summary.total_skills}`,
+    hint: runtimeText.value.metrics.totalSkills,
     icon: 'sparkles',
     tone: 'success' as const
   },
   {
     key: 'requests',
-    label: '24h 请求',
+    label: runtimeText.value.metrics.requests24h,
     value: summary.requests_24h.toLocaleString(),
-    hint: '按当前筛选窗口统计',
+    hint: runtimeText.value.metrics.requestsHint,
     icon: 'chartBar',
     tone: 'primary' as const
   },
   {
     key: 'successRate',
-    label: '平均成功率',
+    label: runtimeText.value.metrics.averageSuccessRate,
     value: formatPercent(summary.success_rate),
-    hint: `预警 ${summary.warning_count}`,
+    hint: runtimeText.value.metrics.warningCount,
     icon: 'checkCircle',
     tone: 'success' as const
   },
   {
     key: 'latency',
-    label: 'P95 延迟',
+    label: runtimeText.value.metrics.p95Latency,
     value: formatMilliseconds(summary.p95_latency_ms),
-    hint: '延迟高时优先排查队列和依赖',
+    hint: runtimeText.value.metrics.latencyHint,
     icon: 'clock',
     tone: 'warning' as const
   },
   {
     key: 'critical',
-    label: '严重告警',
+    label: runtimeText.value.metrics.criticalAlerts,
     value: summary.critical_count,
-    hint: '建议优先处理影响线上可用性的技能',
+    hint: runtimeText.value.metrics.criticalHint,
     icon: 'exclamationTriangle',
     tone: 'danger' as const
   }
@@ -339,17 +411,17 @@ const filteredEvents = computed(() => {
 
 function healthStatusLabel(status: SkillRuntimeHealth): string {
   return {
-    healthy: '健康',
-    warning: '预警',
-    critical: '严重'
+    healthy: runtimeText.value.health.healthy,
+    warning: runtimeText.value.health.warning,
+    critical: runtimeText.value.health.critical
   }[status]
 }
 
 function eventLevelLabel(level: SkillRuntimeEvent['level']): string {
   return {
-    info: '信息',
-    warning: '预警',
-    critical: '严重'
+    info: runtimeText.value.event.info,
+    warning: runtimeText.value.event.warning,
+    critical: runtimeText.value.event.critical
   }[level]
 }
 

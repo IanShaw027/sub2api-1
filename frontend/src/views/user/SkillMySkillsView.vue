@@ -148,25 +148,52 @@ const router = useRouter()
 
 let suppressRouteStatusReload = false
 
+function skillTypeLabel(type: SkillType): string {
+  const labels: Record<SkillType, string> = {
+    prompt_chat: t('skills.labels.typePromptChat', '对话提示词'),
+    prompt_image: t('skills.labels.typePromptImage', '图像提示词'),
+    script: t('skills.labels.typeScript', '脚本')
+  }
+  return labels[type]
+}
+
+function skillStatusLabel(status: SkillStatus): string {
+  const labels: Record<SkillStatus, string> = {
+    draft: t('skills.labels.statusDraft', '草稿'),
+    published: t('skills.labels.statusPublished', '已发布'),
+    archived: t('skills.labels.statusArchived', '已归档'),
+    hidden: t('skills.labels.statusHidden', '已隐藏')
+  }
+  return labels[status]
+}
+
+function skillVisibilityLabel(visibility: SkillVisibility): string {
+  const labels: Record<SkillVisibility, string> = {
+    public: t('skills.labels.visibilityPublic', '公开'),
+    private: t('skills.labels.visibilityPrivate', '私有')
+  }
+  return labels[visibility]
+}
+
 const typeOptions = computed(() => [
   { value: 'all', label: t('common.all', '全部') },
-  { value: 'prompt_chat', label: 'prompt_chat' },
-  { value: 'prompt_image', label: 'prompt_image' },
-  { value: 'script', label: 'script' }
+  { value: 'prompt_chat', label: skillTypeLabel('prompt_chat') },
+  { value: 'prompt_image', label: skillTypeLabel('prompt_image') },
+  { value: 'script', label: skillTypeLabel('script') }
 ])
 
 const statusOptions = computed(() => [
   { value: 'all', label: t('common.all', '全部') },
-  { value: 'draft', label: 'draft' },
-  { value: 'published', label: 'published' },
-  { value: 'archived', label: 'archived' },
-  { value: 'hidden', label: 'hidden' }
+  { value: 'draft', label: skillStatusLabel('draft') },
+  { value: 'published', label: skillStatusLabel('published') },
+  { value: 'archived', label: skillStatusLabel('archived') },
+  { value: 'hidden', label: skillStatusLabel('hidden') }
 ])
 
 const visibilityOptions = computed(() => [
   { value: 'all', label: t('common.all', '全部') },
-  { value: 'public', label: 'public' },
-  { value: 'private', label: 'private' }
+  { value: 'public', label: skillVisibilityLabel('public') },
+  { value: 'private', label: skillVisibilityLabel('private') }
 ])
 
 const sortOptions = computed(() => [

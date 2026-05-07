@@ -52,12 +52,12 @@
           <DataTable :columns="columns" :data="skillsStore.runsPagination.items" :loading="skillsStore.loadingRuns">
             <template #cell-status="{ row }">
               <span class="rounded-full px-2.5 py-1 text-[11px] font-medium" :class="skillRunBadgeClass(row.status)">
-                {{ skillRunStatusLabel(row.status) }}
+                {{ skillRunStatusLabel(row.status, t) }}
               </span>
             </template>
 
             <template #cell-trigger="{ row }">
-              <span class="text-sm font-medium text-gray-900 dark:text-white">{{ skillRunTriggerLabel(row.trigger) }}</span>
+              <span class="text-sm font-medium text-gray-900 dark:text-white">{{ skillRunTriggerLabel(row.trigger, t) }}</span>
             </template>
 
             <template #cell-version="{ row }">
@@ -139,14 +139,14 @@ const skill = computed(() => skillsStore.detail)
 const loadedSkillId = ref<number | null>(null)
 const showRunPage = computed(() => loadedSkillId.value === skillId.value)
 
-const statusOptions = [
+const statusOptions = computed(() => [
   { value: 'all', label: t('common.all', '全部') },
-  { value: 'queued', label: 'queued' },
-  { value: 'running', label: 'running' },
-  { value: 'succeeded', label: 'succeeded' },
-  { value: 'failed', label: 'failed' },
-  { value: 'cancelled', label: 'cancelled' }
-]
+  { value: 'queued', label: skillRunStatusLabel('queued', t) },
+  { value: 'running', label: skillRunStatusLabel('running', t) },
+  { value: 'succeeded', label: skillRunStatusLabel('succeeded', t) },
+  { value: 'failed', label: skillRunStatusLabel('failed', t) },
+  { value: 'cancelled', label: skillRunStatusLabel('cancelled', t) }
+])
 
 const columns = computed<Column[]>(() => [
   { key: 'status', label: t('common.status', '状态'), class: 'w-36' },

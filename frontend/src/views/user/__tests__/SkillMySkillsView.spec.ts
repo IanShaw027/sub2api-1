@@ -80,6 +80,10 @@ const SelectStub = defineComponent({
       type: [String, Number, Boolean],
       default: null,
     },
+    options: {
+      type: Array,
+      default: () => [],
+    },
   },
   template: '<div class="select-stub" :data-model-value="String(modelValue)" />',
 })
@@ -195,6 +199,18 @@ describe('SkillMySkillsView route-driven status filter', () => {
     expect(skillsStore.loadMySkills).toHaveBeenCalled()
 
     const selectStubs = wrapper.findAllComponents({ name: 'SelectStub' })
+    expect(selectStubs[0]?.props('options')).toEqual([
+      { value: 'all', label: '全部' },
+      { value: 'prompt_chat', label: '对话提示词' },
+      { value: 'prompt_image', label: '图像提示词' },
+      { value: 'script', label: '脚本' },
+    ])
+    expect(selectStubs[2]?.props('options')).toEqual([
+      { value: 'all', label: '全部' },
+      { value: 'public', label: '公开' },
+      { value: 'private', label: '私有' },
+    ])
+
     await selectStubs[0]?.vm.$emit('update:modelValue', 'prompt_image')
     await flushPromises()
 

@@ -8,90 +8,98 @@ import type {
   SkillVersionStatus
 } from '@/types/skills'
 
-export function skillTypeLabel(type: SkillType): string {
+type Translator = (key: string, fallback: string) => string
+
+function translateLabel(translator: Translator | undefined, key: string, fallback: string): string {
+  return translator ? translator(key, fallback) : fallback
+}
+
+export function skillTypeLabel(type: SkillType, translator?: Translator): string {
   switch (type) {
     case 'prompt_image':
-      return 'Prompt Image'
+      return translateLabel(translator, 'skills.labels.typePromptImage', '图片提示词')
     case 'script':
-      return 'Script'
+      return translateLabel(translator, 'skills.labels.typeScript', '脚本')
     case 'prompt_chat':
     default:
-      return 'Prompt Chat'
+      return translateLabel(translator, 'skills.labels.typePromptChat', '聊天提示词')
   }
 }
 
-export function skillStatusLabel(status: SkillStatus): string {
+export function skillStatusLabel(status: SkillStatus, translator?: Translator): string {
   switch (status) {
     case 'published':
-      return 'Published'
+      return translateLabel(translator, 'skills.labels.statusPublished', '已发布')
     case 'archived':
-      return 'Archived'
+      return translateLabel(translator, 'skills.labels.statusArchived', '已归档')
     case 'hidden':
-      return 'Hidden'
+      return translateLabel(translator, 'skills.labels.statusHidden', '已隐藏')
     case 'draft':
     default:
-      return 'Draft'
+      return translateLabel(translator, 'skills.labels.statusDraft', '草稿')
   }
 }
 
-export function skillVersionStatusLabel(status: SkillVersionStatus): string {
+export function skillVersionStatusLabel(status: SkillVersionStatus, translator?: Translator): string {
   switch (status) {
     case 'deprecated':
-      return 'Deprecated'
+      return translateLabel(translator, 'skills.versions.statusDeprecated', '已废弃')
     case 'archived':
-      return 'Archived'
+      return translateLabel(translator, 'skills.labels.statusArchived', '已归档')
     case 'published':
-      return 'Published'
+      return translateLabel(translator, 'skills.labels.statusPublished', '已发布')
     case 'draft':
     default:
-      return 'Draft'
+      return translateLabel(translator, 'skills.labels.statusDraft', '草稿')
   }
 }
 
-export function skillRunStatusLabel(status: SkillRunStatus): string {
+export function skillRunStatusLabel(status: SkillRunStatus, translator?: Translator): string {
   switch (status) {
     case 'queued':
-      return 'Queued'
+      return translateLabel(translator, 'skills.labels.runStatusQueued', '已排队')
     case 'running':
-      return 'Running'
+      return translateLabel(translator, 'skills.labels.runStatusRunning', '运行中')
     case 'failed':
-      return 'Failed'
+      return translateLabel(translator, 'skills.labels.runStatusFailed', '失败')
     case 'cancelled':
-      return 'Cancelled'
+      return translateLabel(translator, 'skills.labels.runStatusCancelled', '已取消')
     case 'succeeded':
     default:
-      return 'Succeeded'
+      return translateLabel(translator, 'skills.labels.runStatusSucceeded', '成功')
   }
 }
 
-export function skillVersionReviewStatusLabel(status: SkillVersionReviewStatus): string {
+export function skillVersionReviewStatusLabel(status: SkillVersionReviewStatus, translator?: Translator): string {
   switch (status) {
     case 'approved':
-      return 'Approved'
+      return translateLabel(translator, 'skills.labels.reviewStatusApproved', '已通过')
     case 'pending':
-      return 'Pending Review'
+      return translateLabel(translator, 'skills.labels.reviewStatusPending', '待审核')
     case 'rejected':
-      return 'Rejected'
+      return translateLabel(translator, 'skills.labels.reviewStatusRejected', '已拒绝')
     case 'draft':
     default:
-      return 'Draft'
+      return translateLabel(translator, 'skills.labels.statusDraft', '草稿')
   }
 }
 
-export function skillRunTriggerLabel(trigger: string | null): string {
+export function skillRunTriggerLabel(trigger: string | null, translator?: Translator): string {
   const normalized = (trigger || '').trim().toLowerCase()
   switch (normalized as SkillRunMode) {
     case 'test':
-      return 'Test'
+      return translateLabel(translator, 'skills.labels.triggerTest', '测试')
     case 'use':
-      return 'Use'
+      return translateLabel(translator, 'skills.labels.triggerUse', '使用')
     default:
       return trigger || '-'
   }
 }
 
-export function skillPriceModeLabel(mode: SkillPriceMode): string {
-  return mode === 'paid' ? 'Paid' : 'Free'
+export function skillPriceModeLabel(mode: SkillPriceMode, translator?: Translator): string {
+  return mode === 'paid'
+    ? translateLabel(translator, 'skills.labels.priceModePaid', '付费')
+    : translateLabel(translator, 'skills.labels.priceModeFree', '免费')
 }
 
 export function formatCurrency(amount: number, currency = 'CNY'): string {
