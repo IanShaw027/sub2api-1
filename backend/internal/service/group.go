@@ -9,6 +9,11 @@ import (
 
 type OpenAIMessagesDispatchModelConfig = domain.OpenAIMessagesDispatchModelConfig
 
+const (
+	GroupImageGenerationRouteCodex   = "codex"
+	GroupImageGenerationRouteWeb2API = "web2api"
+)
+
 type Group struct {
 	ID             int64
 	Name           string
@@ -29,6 +34,7 @@ type Group struct {
 
 	// 图片生成计费配置（antigravity 和 gemini 平台使用）
 	AllowImageGeneration bool
+	ImageGenerationRoute string
 	ImageRateIndependent bool
 	ImageRateMultiplier  float64
 	ImagePrice1K         *float64
@@ -86,6 +92,24 @@ func (g *Group) IsActive() bool {
 
 func (g *Group) IsSubscriptionType() bool {
 	return g.SubscriptionType == SubscriptionTypeSubscription
+}
+
+func NormalizeGroupImageGenerationRoute(route string) string {
+	switch strings.ToLower(strings.TrimSpace(route)) {
+	case "", GroupImageGenerationRouteCodex:
+		return GroupImageGenerationRouteCodex
+	case GroupImageGenerationRouteWeb2API:
+		return GroupImageGenerationRouteWeb2API
+	default:
+		return GroupImageGenerationRouteCodex
+	}
+}
+
+func (g *Group) EffectiveImageGenerationRoute() string {
+	if g == nil {
+		return GroupImageGenerationRouteCodex
+	}
+	return NormalizeGroupImageGenerationRoute(g.ImageGenerationRoute)
 }
 
 func (g *Group) HasDailyLimit() bool {

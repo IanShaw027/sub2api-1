@@ -247,6 +247,17 @@ type UsageInfo struct {
 	// 错误码（机器可读）：forbidden / unauthenticated / rate_limited / network_error
 	ErrorCode string `json:"error_code,omitempty"`
 
+	// OpenAI 图片生成路由状态
+	OpenAIImageCodexSupported   *bool  `json:"openai_image_codex_supported,omitempty"`
+	OpenAIImageWeb2APISupported *bool  `json:"openai_image_web2api_supported,omitempty"`
+	OpenAIImageCodexReason      string `json:"openai_image_codex_reason,omitempty"`
+	OpenAIImageWeb2APIReason    string `json:"openai_image_web2api_reason,omitempty"`
+	OpenAIImagePlanType         string `json:"openai_image_plan_type,omitempty"`
+	OpenAIImageWorkspaceName    string `json:"openai_image_workspace_name,omitempty"`
+	OpenAIImageCodexFiveHour    *UsageProgress `json:"openai_image_codex_five_hour,omitempty"`
+	OpenAIImageCodexSevenDay    *UsageProgress `json:"openai_image_codex_seven_day,omitempty"`
+	OpenAIImageWeb2APIFiveHour  *UsageProgress `json:"openai_image_web2api_five_hour,omitempty"`
+
 	// 获取 usage 时的错误信息（降级返回，而非 500）
 	Error string `json:"error,omitempty"`
 }
@@ -790,6 +801,7 @@ func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Accou
 	if account == nil {
 		return usage, nil
 	}
+	populateOpenAIImageRouteUsageInfo(usage, account)
 
 	if progress := buildCodexUsageProgressFromExtra(account.Extra, "5h", now); progress != nil {
 		usage.FiveHour = progress
@@ -831,7 +843,139 @@ func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Accou
 		usage.SevenDay.WindowStats = windowStatsFromAccountStats(stats)
 	}
 
+	usage.OpenAIImageCodexFiveHour = buildOpenAIImageCodexRouteUsageProgressFromExtra(account.Extra, "5h", now)
+	usage.OpenAIImageCodexSevenDay = buildOpenAIImageCodexRouteUsageProgressFromExtra(account.Extra, "7d", now)
+	if usage.OpenAIImageCodexFiveHour != nil {
+		if imageStats, err := s.getOpenAIImageWindowStatsByRequestType(ctx, account.ID, now.Add(-5*time.Hour), RequestTypeImage); err == nil && imageStats != nil {
+			usage.OpenAIImageCodexFiveHour.WindowStats = imageStats
+			usage.OpenAIImageCodexFiveHour.UsedRequests = imageStats.Requests
+		}
+	} else if imageStats, err := s.getOpenAIImageWindowStatsByRequestType(ctx, account.ID, now.Add(-5*time.Hour), RequestTypeImage); err == nil && imageStats != nil && imageStats.Requests > 0 {
+		usage.OpenAIImageCodexFiveHour = &UsageProgress{
+			Utilization:  0,
+			WindowStats:  imageStats,
+			UsedRequests: imageStats.Requests,
+		}
+	}
+	if usage.OpenAIImageCodexSevenDay != nil {
+		if imageStats, err := s.getOpenAIImageWindowStatsByRequestType(ctx, account.ID, now.Add(-7*24*time.Hour), RequestTypeImage); err == nil && imageStats != nil {
+			usage.OpenAIImageCodexSevenDay.WindowStats = imageStats
+			usage.OpenAIImageCodexSevenDay.UsedRequests = imageStats.Requests
+		}
+	} else if imageStats, err := s.getOpenAIImageWindowStatsByRequestType(ctx, account.ID, now.Add(-7*24*time.Hour), RequestTypeImage); err == nil && imageStats != nil && imageStats.Requests > 0 {
+		usage.OpenAIImageCodexSevenDay = &UsageProgress{
+			Utilization:  0,
+			WindowStats:  imageStats,
+			UsedRequests: imageStats.Requests,
+		}
+	}
+	usage.OpenAIImageWeb2APIFiveHour = buildOpenAIImageRouteUsageProgressFromExtra(account.Extra, GroupImageGenerationRouteWeb2API, now)
+	if usage.OpenAIImageWeb2APIFiveHour != nil {
+		if imageStats, err := s.getOpenAIImageWindowStatsByRequestType(ctx, account.ID, now.Add(-5*time.Hour), RequestTypeImageWebBridge); err == nil && imageStats != nil {
+			usage.OpenAIImageWeb2APIFiveHour.WindowStats = imageStats
+			usage.OpenAIImageWeb2APIFiveHour.UsedRequests = imageStats.Requests
+		}
+	} else if imageStats, err := s.getOpenAIImageWindowStatsByRequestType(ctx, account.ID, now.Add(-5*time.Hour), RequestTypeImageWebBridge); err == nil && imageStats != nil && imageStats.Requests > 0 {
+		usage.OpenAIImageWeb2APIFiveHour = &UsageProgress{
+			Utilization:  0,
+			WindowStats:  imageStats,
+			UsedRequests: imageStats.Requests,
+		}
+	}
+
 	return usage, nil
+}
+
+func populateOpenAIImageRouteUsageInfo(usage *UsageInfo, account *Account) {
+	if usage == nil || account == nil || !account.IsOpenAIOAuth() {
+		return
+	}
+	codexSupported := account.SupportsOpenAIImageRoute(GroupImageGenerationRouteCodex)
+	web2apiSupported := account.SupportsOpenAIImageRoute(GroupImageGenerationRouteWeb2API)
+	usage.OpenAIImageCodexSupported = &codexSupported
+	usage.OpenAIImageWeb2APISupported = &web2apiSupported
+	usage.OpenAIImagePlanType = account.GetOpenAIPlanType()
+	usage.OpenAIImageWorkspaceName = account.GetOpenAIWorkspaceName()
+	if !codexSupported {
+		if account.IsOpenAIFreePlan() {
+			usage.OpenAIImageCodexReason = "free_plan_not_supported"
+		} else {
+			usage.OpenAIImageCodexReason = "unsupported_account_type"
+		}
+	}
+	if !web2apiSupported {
+		usage.OpenAIImageWeb2APIReason = "unsupported_account_type"
+	}
+}
+
+func cloneUsageProgress(progress *UsageProgress) *UsageProgress {
+	if progress == nil {
+		return nil
+	}
+	cloned := *progress
+	if progress.WindowStats != nil {
+		statsCopy := *progress.WindowStats
+		cloned.WindowStats = &statsCopy
+	}
+	return &cloned
+}
+
+func buildOpenAIImageRouteUsageProgressFromExtra(extra map[string]any, route string, now time.Time) *UsageProgress {
+	prefix := openAIImageRouteExtraPrefix(route)
+	if prefix == "" || len(extra) == 0 {
+		return nil
+	}
+	progress := &UsageProgress{}
+	hasData := false
+	if resetAtRaw, ok := extra[prefix+"_rate_limit_reset_at"]; ok {
+		if resetAt, err := parseTime(fmt.Sprint(resetAtRaw)); err == nil {
+			progress.ResetsAt = &resetAt
+			progress.RemainingSeconds = int(time.Until(resetAt).Seconds())
+			if progress.RemainingSeconds < 0 {
+				progress.RemainingSeconds = 0
+			}
+			if now.Before(resetAt) {
+				progress.Utilization = 100
+			}
+			hasData = true
+		}
+	}
+	if usedRequests := int64(parseExtraInt(extra[prefix+"_used_requests"])); usedRequests > 0 {
+		progress.UsedRequests = usedRequests
+		hasData = true
+	}
+	if !hasData {
+		return nil
+	}
+	return progress
+}
+
+func buildOpenAIImageCodexRouteUsageProgressFromExtra(extra map[string]any, window string, now time.Time) *UsageProgress {
+	routeLimited := buildOpenAIImageRouteUsageProgressFromExtra(extra, GroupImageGenerationRouteCodex, now)
+	if routeLimited == nil {
+		return nil
+	}
+	return cloneUsageProgress(routeLimited)
+}
+
+func (s *AccountUsageService) getOpenAIImageWindowStatsByRequestType(ctx context.Context, accountID int64, startTime time.Time, requestType RequestType) (*WindowStats, error) {
+	if s == nil || s.usageLogRepo == nil || accountID <= 0 {
+		return nil, nil
+	}
+	requestTypeValue := int16(requestType)
+	stats, err := s.usageLogRepo.GetModelStatsWithFilters(ctx, startTime, time.Now(), 0, 0, accountID, 0, &requestTypeValue, nil, nil, "")
+	if err != nil {
+		return nil, err
+	}
+	windowStats := &WindowStats{}
+	for _, item := range stats {
+		windowStats.Requests += item.Requests
+		windowStats.Tokens += item.TotalTokens
+		windowStats.Cost += item.AccountCost
+		windowStats.StandardCost += item.Cost
+		windowStats.UserCost += item.ActualCost
+	}
+	return windowStats, nil
 }
 
 func shouldRefreshOpenAICodexSnapshot(account *Account, usage *UsageInfo, now time.Time) bool {

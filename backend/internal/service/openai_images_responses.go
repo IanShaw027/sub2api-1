@@ -29,6 +29,50 @@ type openAIResponsesImageResult struct {
 	Model         string
 }
 
+func normalizeOpenAIImagesResponseFormat(responseFormat string) string {
+	format := strings.ToLower(strings.TrimSpace(responseFormat))
+	switch format {
+	case "", "b64_json":
+		return "b64_json"
+	case "url":
+		return "url"
+	default:
+		return "b64_json"
+	}
+}
+
+func buildOpenAIImagesUsageJSON(usage OpenAIUsage, imageCount int) []byte {
+	if usage.InputTokens <= 0 && usage.OutputTokens <= 0 && usage.CacheReadInputTokens <= 0 && usage.CacheCreationInputTokens <= 0 && usage.ImageOutputTokens <= 0 && imageCount <= 0 {
+		return nil
+	}
+	out := []byte(`{"input_tokens":0,"output_tokens":0}`)
+	out, _ = sjson.SetBytes(out, "input_tokens", usage.InputTokens)
+	out, _ = sjson.SetBytes(out, "output_tokens", usage.OutputTokens)
+	if usage.CacheCreationInputTokens > 0 {
+		out, _ = sjson.SetBytes(out, "input_tokens_details.cached_tokens_internal", usage.CacheCreationInputTokens)
+	}
+	if usage.CacheReadInputTokens > 0 {
+		out, _ = sjson.SetBytes(out, "input_tokens_details.cached_tokens", usage.CacheReadInputTokens)
+	}
+	if usage.ImageOutputTokens > 0 {
+		out, _ = sjson.SetBytes(out, "output_tokens_details.image_tokens", usage.ImageOutputTokens)
+	}
+	if imageCount > 0 {
+		out, _ = sjson.SetBytes(out, "images", imageCount)
+	}
+	return out
+}
+
+func mergeOpenAIImagesUsageJSON(primary []byte, fallback []byte) []byte {
+	if len(primary) > 0 && gjson.ValidBytes(primary) {
+		return primary
+	}
+	if len(fallback) > 0 && gjson.ValidBytes(fallback) {
+		return fallback
+	}
+	return nil
+}
+
 func openAIResponsesImageResultKey(itemID string, result openAIResponsesImageResult) string {
 	if strings.TrimSpace(result.Result) != "" {
 		return strings.TrimSpace(result.OutputFormat) + "|" + strings.TrimSpace(result.Result)
@@ -240,8 +284,9 @@ func buildOpenAIImagesResponsesRequest(parsed *OpenAIImagesRequest, toolModel st
 		return nil, fmt.Errorf("image input is required")
 	}
 
-	req := []byte(`{"instructions":"","stream":true,"reasoning":{"effort":"medium","summary":"auto"},"parallel_tool_calls":true,"include":["reasoning.encrypted_content"],"model":"","store":false,"tool_choice":{"type":"image_generation"}}`)
+	req := []byte(`{"instructions":"","stream":true,"reasoning":{"effort":"medium","summary":"auto"},"parallel_tool_calls":true,"include":["reasoning.encrypted_content"],"model":"","store":false}`)
 	req, _ = sjson.SetBytes(req, "model", openAIImagesResponsesMainModel)
+	req, _ = sjson.SetBytes(req, "stream", parsed.Stream)
 
 	input := []byte(`[{"type":"message","role":"user","content":[{"type":"input_text","text":""}]}]`)
 	input, _ = sjson.SetBytes(input, "0.content.0.text", prompt)
@@ -269,6 +314,7 @@ func buildOpenAIImagesResponsesRequest(parsed *OpenAIImagesRequest, toolModel st
 		{path: "background", value: parsed.Background},
 		{path: "output_format", value: parsed.OutputFormat},
 		{path: "moderation", value: parsed.Moderation},
+		{path: "input_fidelity", value: parsed.InputFidelity},
 		{path: "style", value: parsed.Style},
 	} {
 		if trimmed := strings.TrimSpace(field.value); trimmed != "" {
@@ -296,6 +342,7 @@ func buildOpenAIImagesResponsesRequest(parsed *OpenAIImagesRequest, toolModel st
 
 	req, _ = sjson.SetRawBytes(req, "tools", []byte(`[]`))
 	req, _ = sjson.SetRawBytes(req, "tools.-1", tool)
+	req, _ = sjson.SetBytes(req, "tool_choice.type", "image_generation")
 	return req, nil
 }
 
@@ -504,10 +551,7 @@ func buildOpenAIImagesAPIResponse(
 	out := []byte(`{"created":0,"data":[]}`)
 	out, _ = sjson.SetBytes(out, "created", createdAt)
 
-	format := strings.ToLower(strings.TrimSpace(responseFormat))
-	if format == "" {
-		format = "b64_json"
-	}
+	format := normalizeOpenAIImagesResponseFormat(responseFormat)
 	for _, img := range results {
 		item := []byte(`{}`)
 		if format == "url" {
@@ -640,10 +684,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 		return OpenAIUsage{}, 0, nil, fmt.Errorf("streaming is not supported by response writer")
 	}
 
-	format := strings.ToLower(strings.TrimSpace(responseFormat))
-	if format == "" {
-		format = "b64_json"
-	}
+	format := normalizeOpenAIImagesResponseFormat(responseFormat)
 
 	maxLineSize := defaultMaxLineSize
 	if s.cfg != nil && s.cfg.Gateway.MaxLineSize > 0 {
@@ -749,6 +790,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 				processErr = extractErr
 				return
 			}
+			usageRaw = mergeOpenAIImagesUsageJSON(usageRaw, buildOpenAIImagesUsageJSON(usage, len(results)))
 			mergeOpenAIResponsesImageMeta(&streamMeta, firstMeta)
 			finalResults := make([]openAIResponsesImageResult, 0, len(results)+len(pendingResults))
 			finalSeen := make(map[string]struct{})
@@ -872,6 +914,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 	account *Account,
 	parsed *OpenAIImagesRequest,
 	channelMappedModel string,
+	imageRoute string,
 ) (*OpenAIForwardResult, error) {
 	startTime := time.Now()
 	requestModel := strings.TrimSpace(parsed.Model)
@@ -958,7 +1001,13 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 				Kind:               "failover",
 				Message:            upstreamMsg,
 			})
-			s.handleFailoverSideEffects(ctx, resp, account)
+			if s.rateLimitService != nil {
+				if !s.rateLimitService.handleOpenAIImageRoute429(ctx, account, imageRoute, resp.Header, respBody) {
+					s.handleFailoverSideEffects(ctx, resp, account)
+				}
+			} else {
+				s.handleFailoverSideEffects(ctx, resp, account)
+			}
 			return nil, &UpstreamFailoverError{
 				StatusCode:             resp.StatusCode,
 				ResponseBody:           respBody,

@@ -66,6 +66,120 @@ const (
 	openAI403CounterWindowMinutes   = 180
 )
 
+func buildOpenAIImageRouteRateLimitExtraUpdates(route string, resetAt time.Time, updatedAt time.Time) map[string]any {
+	prefix := openAIImageRouteExtraPrefix(route)
+	if prefix == "" {
+		return nil
+	}
+	if updatedAt.IsZero() {
+		updatedAt = time.Now()
+	}
+	if resetAt.IsZero() {
+		resetAt = updatedAt
+	}
+	remainingSeconds := int(resetAt.Sub(updatedAt).Seconds())
+	if remainingSeconds < 0 {
+		remainingSeconds = 0
+	}
+	return map[string]any{
+		prefix + "_rate_limited_at":       updatedAt.UTC().Format(time.RFC3339),
+		prefix + "_rate_limit_reset_at":   resetAt.UTC().Format(time.RFC3339),
+		prefix + "_rate_limit_updated_at": updatedAt.UTC().Format(time.RFC3339),
+		prefix + "_reset_after_seconds":   remainingSeconds,
+	}
+}
+
+func clearOpenAIImageRouteRateLimitExtraUpdates(route string) map[string]any {
+	prefix := openAIImageRouteExtraPrefix(route)
+	if prefix == "" {
+		return nil
+	}
+	return map[string]any{
+		prefix + "_rate_limited_at":       nil,
+		prefix + "_rate_limit_reset_at":   nil,
+		prefix + "_rate_limit_updated_at": nil,
+		prefix + "_reset_after_seconds":   nil,
+	}
+}
+
+func (s *RateLimitService) setOpenAIImageRouteRateLimited(ctx context.Context, account *Account, route string, resetAt time.Time) {
+	if s == nil || s.accountRepo == nil || account == nil || account.ID <= 0 {
+		return
+	}
+	updates := buildOpenAIImageRouteRateLimitExtraUpdates(route, resetAt, time.Now())
+	if len(updates) == 0 {
+		return
+	}
+	if err := s.accountRepo.UpdateExtra(ctx, account.ID, updates); err != nil {
+		slog.Warn("openai_image_route_rate_limit_set_failed", "account_id", account.ID, "route", route, "error", err)
+		return
+	}
+	if account.Extra == nil {
+		account.Extra = map[string]any{}
+	}
+	for key, value := range updates {
+		account.Extra[key] = value
+	}
+}
+
+func (s *RateLimitService) clearOpenAIImageRouteRateLimited(ctx context.Context, accountID int64, route string) {
+	if s == nil || s.accountRepo == nil || accountID <= 0 {
+		return
+	}
+	updates := clearOpenAIImageRouteRateLimitExtraUpdates(route)
+	if len(updates) == 0 {
+		return
+	}
+	if err := s.accountRepo.UpdateExtra(ctx, accountID, updates); err != nil {
+		slog.Warn("openai_image_route_rate_limit_clear_failed", "account_id", accountID, "route", route, "error", err)
+	}
+}
+
+func (s *RateLimitService) handleOpenAIImageRoute429(ctx context.Context, account *Account, route string, headers http.Header, responseBody []byte) bool {
+	if account == nil || account.Platform != PlatformOpenAI {
+		return false
+	}
+
+	var resetAt *time.Time
+	switch NormalizeGroupImageGenerationRoute(route) {
+	case GroupImageGenerationRouteCodex:
+		s.persistOpenAICodexSnapshot(ctx, account, headers)
+		resetAt = s.calculateOpenAI429ResetTime(headers)
+	case GroupImageGenerationRouteWeb2API:
+		if parsedResetAt := parseOpenAIRateLimitResetTime(responseBody); parsedResetAt != nil {
+			parsed := time.Unix(*parsedResetAt, 0)
+			resetAt = &parsed
+		}
+		if resetAt == nil {
+			if retryAfter := parseRetryAfterHeader(headers.Get("Retry-After")); retryAfter != nil {
+				resetAt = retryAfter
+			}
+		}
+	}
+
+	if resetAt == nil {
+		return false
+	}
+	s.setOpenAIImageRouteRateLimited(ctx, account, route, *resetAt)
+	slog.Info("openai_image_route_rate_limited", "account_id", account.ID, "route", route, "reset_at", *resetAt)
+	return true
+}
+
+func parseRetryAfterHeader(raw string) *time.Time {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	if seconds, err := strconv.Atoi(raw); err == nil {
+		resetAt := time.Now().Add(time.Duration(seconds) * time.Second)
+		return &resetAt
+	}
+	if when, err := http.ParseTime(raw); err == nil {
+		return &when
+	}
+	return nil
+}
+
 // NewRateLimitService 创建RateLimitService实例
 func NewRateLimitService(accountRepo AccountRepository, usageRepo UsageLogRepository, cfg *config.Config, geminiQuotaService *GeminiQuotaService, tempUnschedCache TempUnschedCache) *RateLimitService {
 	return &RateLimitService{

@@ -173,7 +173,7 @@ func TestWrapOpenAIImageBackendErrorAppendsTelemetrySummaryToOpsMessage(t *testi
 	svc := &OpenAIGatewayService{}
 	account := &Account{ID: 42, Name: "openai-oauth", Platform: PlatformOpenAI}
 
-	err := svc.wrapOpenAIImageBackendError(context.Background(), c, account, newOpenAIImageSyntheticStatusError(400, "backend-api request failed", "https://chatgpt.com/backend-api/conversation"))
+	err := svc.wrapOpenAIImageBackendError(context.Background(), c, account, GroupImageGenerationRouteWeb2API, newOpenAIImageSyntheticStatusError(400, "backend-api request failed", "https://chatgpt.com/backend-api/conversation"))
 
 	require.Error(t, err)
 	rawEvents, ok := c.Get(OpsUpstreamErrorsKey)
@@ -197,7 +197,7 @@ func TestOpenAIImagesLegacyBridgeDoesNotDegradeHealthyProfile403(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	account := &Account{ID: 44, Name: "openai-oauth", Platform: PlatformOpenAI}
 
-	err := svc.wrapOpenAIImageBackendError(context.Background(), c, account, newOpenAIImageSyntheticStatusError(http.StatusForbidden, "backend-api request failed", "https://chatgpt.com/backend-api/conversation"))
+	err := svc.wrapOpenAIImageBackendError(context.Background(), c, account, GroupImageGenerationRouteWeb2API, newOpenAIImageSyntheticStatusError(http.StatusForbidden, "backend-api request failed", "https://chatgpt.com/backend-api/conversation"))
 
 	require.Error(t, err)
 }

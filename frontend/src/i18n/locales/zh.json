@@ -2565,8 +2565,12 @@
       "imagePricing": {
         "title": "图片生成计费",
         "description": "配置图片生成能力和图片基础单价，留空则使用默认价格",
-        "images": "Images API",
-        "images2api": "Images2API",
+        "routeLabel": "生图类型",
+        "routeHint": "images 端点会按这里的配置自动走 codex 或 web2api；images2api 端点始终固定走 web2api。",
+        "routeCodex": "codex",
+        "routeWeb2api": "web2api",
+        "images": "Images API (/v1/images/*)",
+        "images2api": "Images2API (/v1/images2api/*)",
         "fixedHint": "按分组固定价格计费，不受倍率影响。",
         "allowImageGeneration": "允许当前分组生图",
         "independentMultiplier": "生图倍率独立",
@@ -4015,6 +4019,23 @@
           "subscription": "订阅",
           "scope": "权限",
           "credits": "积分"
+        },
+        "openaiImageRoutes": {
+          "codex": "codex",
+          "codex5h": "codex 5h",
+          "codex7d": "codex 7d",
+          "responses5h": "responses 5h",
+          "responses7d": "responses 7d",
+          "web2api": "web2api",
+          "web2api5h": "web2api 5h",
+          "web2api7d": "web2api 7d",
+          "available": "可用",
+          "unavailable": "不可用",
+          "freePlanBlocked": "free 账号不支持 codex 生图",
+          "unsupported": "当前账号类型不支持",
+          "workspace": "空间",
+          "routeStatus": "生图 route 状态",
+          "imageWindows": "生图窗口"
         }
       },
       "reAuthorizeAccount": "重新授权账号",

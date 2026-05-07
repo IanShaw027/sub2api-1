@@ -73,6 +73,7 @@ type OpenAIImagesUpload struct {
 
 type OpenAIImagesRequest struct {
 	Endpoint           string
+	OriginalEndpoint   string
 	ContentType        string
 	Multipart          bool
 	Model              string
@@ -111,6 +112,10 @@ func (r *OpenAIImagesRequest) IsLegacyBridge() bool {
 	return r != nil && isOpenAIImages2APIEndpoint(r.Endpoint)
 }
 
+func (r *OpenAIImagesRequest) IsExplicitLegacyBridge() bool {
+	return r != nil && isOpenAIImages2APIEndpoint(r.OriginalEndpoint)
+}
+
 func (r *OpenAIImagesRequest) StickySessionSeed() string {
 	if r == nil {
 		return ""
@@ -141,10 +146,11 @@ func (s *OpenAIGatewayService) ParseOpenAIImagesRequest(c *gin.Context, body []b
 
 	contentType := strings.TrimSpace(c.GetHeader("Content-Type"))
 	req := &OpenAIImagesRequest{
-		Endpoint:    endpoint,
-		ContentType: contentType,
-		N:           1,
-		Body:        body,
+		Endpoint:         endpoint,
+		OriginalEndpoint: endpoint,
+		ContentType:      contentType,
+		N:                1,
+		Body:             body,
 	}
 	if len(body) > 0 {
 		sum := sha256.Sum256(body)
@@ -479,6 +485,41 @@ func shouldUseLegacyOpenAIImagesBridge(account *Account, parsed *OpenAIImagesReq
 	return account != nil && account.Type == AccountTypeOAuth && parsed != nil && parsed.IsLegacyBridge()
 }
 
+func requiresOpenAIImagesLegacyBridge(parsed *OpenAIImagesRequest) bool {
+	return parsed != nil && parsed.IsExplicitLegacyBridge()
+}
+
+func resolveOpenAIImageGenerationRouteFromAPIKey(apiKey *APIKey) string {
+	if apiKey == nil || apiKey.Group == nil {
+		return GroupImageGenerationRouteCodex
+	}
+	return apiKey.Group.EffectiveImageGenerationRoute()
+}
+
+func resolveOpenAIImageGenerationRouteFromContext(c *gin.Context) string {
+	return resolveOpenAIImageGenerationRouteFromAPIKey(getAPIKeyFromContext(c))
+}
+
+func applyOpenAIImagesRouteSelection(parsed *OpenAIImagesRequest, route string) RequestType {
+	if parsed == nil {
+		return RequestTypeUnknown
+	}
+	if parsed.IsExplicitLegacyBridge() {
+		parsed.Endpoint = parsed.OriginalEndpoint
+		return RequestTypeImageWebBridge
+	}
+	if NormalizeGroupImageGenerationRoute(route) == GroupImageGenerationRouteWeb2API {
+		if isOpenAIImagesEditsEndpoint(parsed.OriginalEndpoint) {
+			parsed.Endpoint = openAIImages2APIEditsEndpoint
+		} else {
+			parsed.Endpoint = openAIImages2APIGenerationsEndpoint
+		}
+		return RequestTypeImageWebBridge
+	}
+	parsed.Endpoint = parsed.OriginalEndpoint
+	return RequestTypeImage
+}
+
 func classifyOpenAIImagesCapability(req *OpenAIImagesRequest) OpenAIImagesCapability {
 	if req == nil {
 		return OpenAIImagesCapabilityNative
@@ -591,14 +632,31 @@ func (s *OpenAIGatewayService) ForwardImages(
 	if parsed == nil {
 		return nil, fmt.Errorf("parsed images request is required")
 	}
+	imageRoute := resolveOpenAIImageGenerationRouteFromContext(c)
+	effectiveRequestType := applyOpenAIImagesRouteSelection(parsed, imageRoute)
+	if requiresOpenAIImagesLegacyBridge(parsed) && (account == nil || account.Type != AccountTypeOAuth) {
+		return nil, fmt.Errorf("explicit /v1/images2api/* endpoints require an OpenAI OAuth account")
+	}
 	if shouldUseLegacyOpenAIImagesBridge(account, parsed) {
-		return s.forwardOpenAIImagesLegacyBridge(ctx, c, account, parsed, channelMappedModel)
+		result, err := s.forwardOpenAIImagesLegacyBridge(ctx, c, account, parsed, channelMappedModel)
+		if result != nil {
+			result.EffectiveRequestType = effectiveRequestType
+		}
+		return result, err
 	}
 	switch account.Type {
 	case AccountTypeAPIKey:
-		return s.forwardOpenAIImagesAPIKey(ctx, c, account, body, parsed, channelMappedModel)
+		result, err := s.forwardOpenAIImagesAPIKey(ctx, c, account, body, parsed, channelMappedModel, imageRoute)
+		if result != nil {
+			result.EffectiveRequestType = effectiveRequestType
+		}
+		return result, err
 	case AccountTypeOAuth:
-		return s.forwardOpenAIImagesOAuth(ctx, c, account, parsed, channelMappedModel)
+		result, err := s.forwardOpenAIImagesOAuth(ctx, c, account, parsed, channelMappedModel, imageRoute)
+		if result != nil {
+			result.EffectiveRequestType = effectiveRequestType
+		}
+		return result, err
 	default:
 		return nil, fmt.Errorf("unsupported account type: %s", account.Type)
 	}
@@ -611,6 +669,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	body []byte,
 	parsed *OpenAIImagesRequest,
 	channelMappedModel string,
+	imageRoute string,
 ) (*OpenAIForwardResult, error) {
 	startTime := time.Now()
 	requestModel := strings.TrimSpace(parsed.Model)
@@ -690,7 +749,13 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 				Kind:               "failover",
 				Message:            upstreamMsg,
 			})
-			s.handleFailoverSideEffects(upstreamCtx, resp, account)
+			if s.rateLimitService != nil {
+				if !s.rateLimitService.handleOpenAIImageRoute429(upstreamCtx, account, imageRoute, resp.Header, respBody) {
+					s.handleFailoverSideEffects(upstreamCtx, resp, account)
+				}
+			} else {
+				s.handleFailoverSideEffects(upstreamCtx, resp, account)
+			}
 			return nil, &UpstreamFailoverError{
 				StatusCode:             resp.StatusCode,
 				ResponseBody:           respBody,
@@ -2450,31 +2515,69 @@ func buildOpenAIImageResponse(
 	headers http.Header,
 	conversationID string,
 	pointers []openAIImagePointerInfo,
+	responseFormat string,
+	meta openAIResponsesImageResult,
+	usage OpenAIUsage,
 ) ([]byte, int, error) {
-	type responseItem struct {
-		B64JSON       string `json:"b64_json"`
-		RevisedPrompt string `json:"revised_prompt,omitempty"`
-	}
-	items := make([]responseItem, 0, len(pointers))
+	results := make([]openAIResponsesImageResult, 0, len(pointers))
 	for _, pointer := range pointers {
 		data, err := resolveOpenAIImageBytes(ctx, client, headers, conversationID, pointer)
 		if err != nil {
 			return nil, 0, err
 		}
-		items = append(items, responseItem{
-			B64JSON:       base64.StdEncoding.EncodeToString(data),
+		results = append(results, openAIResponsesImageResult{
+			Result:        base64.StdEncoding.EncodeToString(data),
 			RevisedPrompt: pointer.Prompt,
+			OutputFormat:  meta.OutputFormat,
+			Size:          meta.Size,
+			Background:    meta.Background,
+			Quality:       meta.Quality,
+			Model:         meta.Model,
 		})
 	}
-	payload := map[string]any{
-		"created": time.Now().Unix(),
-		"data":    items,
+	if len(results) == 0 {
+		return nil, 0, fmt.Errorf("no image output resolved from conversation")
 	}
-	body, err := json.Marshal(payload)
+	usageRaw := buildOpenAIImagesUsageJSON(usage, len(results))
+	format := normalizeOpenAIImagesResponseFormat(responseFormat)
+	body, err := buildOpenAIImagesAPIResponse(results, time.Now().Unix(), usageRaw, results[0], format)
 	if err != nil {
 		return nil, 0, err
 	}
-	return body, len(items), nil
+	if format == "url" {
+		for i, img := range results {
+			body, _ = sjson.SetBytes(body, fmt.Sprintf("data.%d.b64_json", i), img.Result)
+		}
+	}
+	return body, len(results), nil
+}
+
+func (s *OpenAIGatewayService) writeOpenAIImagesLegacyBridgeStreamingResponse(
+	c *gin.Context,
+	results []openAIResponsesImageResult,
+	responseFormat string,
+	usage OpenAIUsage,
+	createdAt int64,
+) error {
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		return fmt.Errorf("streaming is not supported by response writer")
+	}
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Status(http.StatusOK)
+
+	streamPrefix := "image_generation"
+	usageRaw := buildOpenAIImagesUsageJSON(usage, len(results))
+	format := normalizeOpenAIImagesResponseFormat(responseFormat)
+	for _, img := range results {
+		payload := buildOpenAIImagesStreamCompletedPayload(streamPrefix+".completed", img, format, createdAt, usageRaw)
+		if err := s.writeOpenAIImagesStreamEvent(c, flusher, streamPrefix+".completed", payload); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func handleOpenAIImageBackendError(resp *req.Response) error {
@@ -2502,6 +2605,7 @@ func (s *OpenAIGatewayService) wrapOpenAIImageBackendError(
 	ctx context.Context,
 	c *gin.Context,
 	account *Account,
+	imageRoute string,
 	err error,
 ) error {
 	var statusErr *openAIImageStatusError
@@ -2524,7 +2628,9 @@ func (s *OpenAIGatewayService) wrapOpenAIImageBackendError(
 
 	if s.shouldFailoverOpenAIUpstreamResponse(statusErr.StatusCode, upstreamMsg, statusErr.ResponseBody) {
 		if s.rateLimitService != nil {
-			s.rateLimitService.HandleUpstreamError(ctx, account, statusErr.StatusCode, statusErr.ResponseHeaders, statusErr.ResponseBody)
+			if !s.rateLimitService.handleOpenAIImageRoute429(ctx, account, imageRoute, statusErr.ResponseHeaders, statusErr.ResponseBody) {
+				s.rateLimitService.HandleUpstreamError(ctx, account, statusErr.StatusCode, statusErr.ResponseHeaders, statusErr.ResponseBody)
+			}
 		}
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 			Platform:           account.Platform,
@@ -2681,6 +2787,16 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesLegacyBridge(
 	if mapped := strings.TrimSpace(channelMappedModel); mapped != "" {
 		requestModel = mapped
 	}
+	if requestModel == "" {
+		requestModel = strings.TrimSpace(parsed.Model)
+	}
+	responseMeta := openAIResponsesImageResult{
+		Model:        requestModel,
+		OutputFormat: strings.TrimSpace(parsed.OutputFormat),
+		Background:   strings.TrimSpace(parsed.Background),
+		Quality:      strings.TrimSpace(parsed.Quality),
+		Size:         strings.TrimSpace(parsed.Size),
+	}
 
 	token, _, err := s.GetAccessToken(ctx, account)
 	if err != nil {
@@ -2703,12 +2819,12 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesLegacyBridge(
 	requirementsStart := time.Now()
 	chatReqs, err := fetchOpenAIChatRequirements(ctx, client, headers)
 	if err != nil {
-		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, err)
+		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, GroupImageGenerationRouteWeb2API, err)
 	}
 	AppendOpenAIImagesTelemetryStage(c, OpenAIImagesTelemetryStageChatRequirements, OpenAIImagesTelemetryStageOption{At: requirementsStart, LatencyMs: time.Since(requirementsStart).Milliseconds()})
 	if chatReqs.Arkose.Required {
 		SetOpenAIImagesTelemetryChallenge(c, openAIImagesChallengeTelemetryState(chatReqs, "arkose"))
-		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, newOpenAIImageSyntheticStatusError(
+		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, GroupImageGenerationRouteWeb2API, newOpenAIImageSyntheticStatusError(
 			http.StatusForbidden,
 			"chat-requirements requires unsupported challenge (arkose)",
 			openAIChatGPTChatRequirementsURL,
@@ -2716,7 +2832,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesLegacyBridge(
 	}
 	if chatReqs.Turnstile.Required {
 		SetOpenAIImagesTelemetryChallenge(c, openAIImagesChallengeTelemetryState(chatReqs, "turnstile"))
-		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, newOpenAIImageSyntheticStatusError(
+		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, GroupImageGenerationRouteWeb2API, newOpenAIImageSyntheticStatusError(
 			http.StatusForbidden,
 			"chat-requirements requires unsupported challenge (turnstile)",
 			openAIChatGPTChatRequirementsURL,
@@ -2732,14 +2848,14 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesLegacyBridge(
 	prepareStart := time.Now()
 	conduitToken, err := prepareOpenAIImageConversation(ctx, client, headers, parsed.Prompt, parentMessageID, chatReqs.Token, proofToken)
 	if err != nil {
-		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, err)
+		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, GroupImageGenerationRouteWeb2API, err)
 	}
 	AppendOpenAIImagesTelemetryStage(c, OpenAIImagesTelemetryStagePrepare, OpenAIImagesTelemetryStageOption{At: prepareStart, LatencyMs: time.Since(prepareStart).Milliseconds()})
 
 	uploadStart := time.Now()
 	uploads, err := uploadOpenAIImageFiles(ctx, client, headers, parsed.Uploads)
 	if err != nil {
-		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, err)
+		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, GroupImageGenerationRouteWeb2API, err)
 	}
 	if len(parsed.Uploads) > 0 {
 		AppendOpenAIImagesTelemetryStage(c, OpenAIImagesTelemetryStageUploadCreate, OpenAIImagesTelemetryStageOption{At: uploadStart, LatencyMs: time.Since(uploadStart).Milliseconds()})
@@ -2770,7 +2886,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesLegacyBridge(
 		SetBodyJsonMarshal(convReq).
 		Post(openAIChatGPTConversationURL)
 	if err != nil {
-		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, fmt.Errorf("openai image conversation request failed: %w", err))
+		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, GroupImageGenerationRouteWeb2API, fmt.Errorf("openai image conversation request failed: %w", err))
 	}
 	AppendOpenAIImagesTelemetryStage(c, OpenAIImagesTelemetryStageConversation, OpenAIImagesTelemetryStageOption{At: conversationStart, LatencyMs: time.Since(conversationStart).Milliseconds()})
 	s.persistOpenAIWebProfileResponseCookies(ctx, account, profile, resp.Response)
@@ -2780,7 +2896,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesLegacyBridge(
 		}
 	}()
 	if resp.StatusCode >= 400 {
-		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, handleOpenAIImageBackendError(resp))
+		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, GroupImageGenerationRouteWeb2API, handleOpenAIImageBackendError(resp))
 	}
 
 	conversationID, pointerInfos, usage, firstTokenMs, err := readOpenAIImageConversationStream(resp, startTime)
@@ -2792,7 +2908,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesLegacyBridge(
 		polledPointers, pollErr := pollOpenAIImageConversation(ctx, client, headers, conversationID)
 		AppendOpenAIImagesTelemetryStage(c, OpenAIImagesTelemetryStagePoll, OpenAIImagesTelemetryStageOption{At: pollStart, LatencyMs: time.Since(pollStart).Milliseconds()})
 		if pollErr != nil {
-			return nil, s.wrapOpenAIImageBackendError(ctx, c, account, pollErr)
+			return nil, s.wrapOpenAIImageBackendError(ctx, c, account, GroupImageGenerationRouteWeb2API, pollErr)
 		}
 		pointerInfos = mergeOpenAIImagePointerInfos(pointerInfos, polledPointers)
 	}
@@ -2802,18 +2918,66 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesLegacyBridge(
 	}
 
 	downloadStart := time.Now()
-	responseBody, imageCount, err := buildOpenAIImageResponse(ctx, client, headers, conversationID, pointerInfos)
+	responseBody, imageCount, err := buildOpenAIImageResponse(ctx, client, headers, conversationID, pointerInfos, parsed.ResponseFormat, responseMeta, usage)
 	AppendOpenAIImagesTelemetryStage(c, OpenAIImagesTelemetryStageDownloadBytes, OpenAIImagesTelemetryStageOption{At: downloadStart, LatencyMs: time.Since(downloadStart).Milliseconds()})
 	if err != nil {
-		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, err)
+		return nil, s.wrapOpenAIImageBackendError(ctx, c, account, GroupImageGenerationRouteWeb2API, err)
 	}
-	c.Data(http.StatusOK, "application/json; charset=utf-8", responseBody)
+	if parsed.Stream {
+		results, createdAt, usageRaw, firstMeta, _, collectErr := collectOpenAIImagesFromResponsesBody(responseBody)
+		if collectErr != nil {
+			return nil, s.wrapOpenAIImageBackendError(ctx, c, account, GroupImageGenerationRouteWeb2API, collectErr)
+		}
+		if len(results) == 0 {
+			if gjson.ValidBytes(responseBody) {
+				for _, item := range gjson.GetBytes(responseBody, "data").Array() {
+					result := strings.TrimSpace(item.Get("b64_json").String())
+					if result == "" {
+						result = normalizeOpenAIImageBase64(item.Get("url").String())
+					}
+					if result == "" {
+						continue
+					}
+					results = append(results, openAIResponsesImageResult{
+						Result:        result,
+						RevisedPrompt: strings.TrimSpace(item.Get("revised_prompt").String()),
+						OutputFormat:  strings.TrimSpace(gjson.GetBytes(responseBody, "output_format").String()),
+						Background:    strings.TrimSpace(gjson.GetBytes(responseBody, "background").String()),
+						Quality:       strings.TrimSpace(gjson.GetBytes(responseBody, "quality").String()),
+						Size:          strings.TrimSpace(gjson.GetBytes(responseBody, "size").String()),
+						Model:         strings.TrimSpace(gjson.GetBytes(responseBody, "model").String()),
+					})
+				}
+			}
+			firstMeta = responseMeta
+		}
+		if len(results) == 0 {
+			return nil, fmt.Errorf("openai image conversation returned no streamable images")
+		}
+		if createdAt <= 0 {
+			createdAt = time.Now().Unix()
+		}
+		if len(usageRaw) > 0 && gjson.ValidBytes(usageRaw) {
+			if parsedUsage, ok := extractOpenAIUsageFromJSONBytes(usageRaw); ok {
+				usage = parsedUsage
+			}
+		}
+		for i := range results {
+			mergeOpenAIResponsesImageMeta(&results[i], firstMeta)
+			mergeOpenAIResponsesImageMeta(&results[i], responseMeta)
+		}
+		if err := s.writeOpenAIImagesLegacyBridgeStreamingResponse(c, results, parsed.ResponseFormat, usage, createdAt); err != nil {
+			return nil, err
+		}
+	} else {
+		c.Data(http.StatusOK, "application/json; charset=utf-8", responseBody)
+	}
 	return &OpenAIForwardResult{
 		RequestID:     resp.Header.Get("x-request-id"),
 		Usage:         usage,
 		Model:         requestModel,
 		UpstreamModel: requestModel,
-		Stream:        false,
+		Stream:        parsed.Stream,
 		Duration:      time.Since(startTime),
 		FirstTokenMs:  firstTokenMs,
 		ImageCount:    imageCount,

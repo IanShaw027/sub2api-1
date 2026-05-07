@@ -113,6 +113,11 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 				responsesBody = stripped
 			}
 		}
+		if shouldStripTopPForResponsesUpstream(account) {
+			if stripped, derr := sjson.DeleteBytes(responsesBody, "top_p"); derr == nil {
+				responsesBody = stripped
+			}
+		}
 		responsesBody, normalizedServiceTier, err := normalizeResponsesBodyServiceTier(responsesBody)
 		if err != nil {
 			return nil, fmt.Errorf("normalize service_tier in responses-shape body: %w", err)

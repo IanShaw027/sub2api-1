@@ -4,6 +4,7 @@ package service
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"hash/fnv"
 	"log/slog"
 	"reflect"
@@ -1139,6 +1140,102 @@ func (a *Account) SupportsOpenAIImageCapability(capability OpenAIImagesCapabilit
 		return a.Type == AccountTypeOAuth || a.Type == AccountTypeAPIKey
 	default:
 		return true
+	}
+}
+
+func (a *Account) GetOpenAIPlanType() string {
+	if !a.IsOpenAIOAuth() {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(a.GetCredential("plan_type")))
+}
+
+func (a *Account) GetOpenAIWorkspaceName() string {
+	if !a.IsOpenAIOAuth() {
+		return ""
+	}
+	return strings.TrimSpace(a.GetCredential("workspace_name"))
+}
+
+func (a *Account) IsOpenAIFreePlan() bool {
+	return a.GetOpenAIPlanType() == "free"
+}
+
+func openAIImageRouteExtraPrefix(route string) string {
+	switch NormalizeGroupImageGenerationRoute(route) {
+	case GroupImageGenerationRouteWeb2API:
+		return "openai_image_web2api"
+	case GroupImageGenerationRouteCodex:
+		return "openai_image_codex"
+	default:
+		return ""
+	}
+}
+
+func (a *Account) openAIImageRouteResetAt(route string) *time.Time {
+	prefix := openAIImageRouteExtraPrefix(route)
+	if a == nil || prefix == "" || a.Extra == nil {
+		return nil
+	}
+	raw, ok := a.Extra[prefix+"_rate_limit_reset_at"]
+	if !ok || raw == nil {
+		return nil
+	}
+	resetAt, err := parseTime(fmt.Sprint(raw))
+	if err != nil {
+		return nil
+	}
+	return &resetAt
+}
+
+func (a *Account) IsOpenAIImageRouteRateLimited(route string) bool {
+	resetAt := a.openAIImageRouteResetAt(route)
+	return resetAt != nil && time.Now().Before(*resetAt)
+}
+
+func (a *Account) IsSchedulableForOpenAIImageRoute(route string) bool {
+	if a == nil || !a.IsActive() || !a.Schedulable {
+		return false
+	}
+	now := time.Now()
+	if a.AutoPauseOnExpired && a.ExpiresAt != nil && !now.Before(*a.ExpiresAt) {
+		return false
+	}
+	if a.OverloadUntil != nil && now.Before(*a.OverloadUntil) {
+		return false
+	}
+	if a.TempUnschedulableUntil != nil && now.Before(*a.TempUnschedulableUntil) {
+		return false
+	}
+	if a.IsAPIKeyOrBedrock() && a.IsQuotaExceeded() {
+		return false
+	}
+	if !a.SupportsOpenAIImageRoute(route) {
+		return false
+	}
+	if a.IsOpenAIImageRouteRateLimited(route) {
+		return false
+	}
+	return true
+}
+
+func (a *Account) SupportsOpenAIImageRoute(route string) bool {
+	if !a.IsOpenAI() {
+		return false
+	}
+	switch NormalizeGroupImageGenerationRoute(route) {
+	case GroupImageGenerationRouteWeb2API:
+		return a.Type == AccountTypeOAuth || a.Type == AccountTypeAPIKey
+	case GroupImageGenerationRouteCodex:
+		if a.Type == AccountTypeAPIKey {
+			return true
+		}
+		if a.Type != AccountTypeOAuth {
+			return false
+		}
+		return !a.IsOpenAIFreePlan()
+	default:
+		return false
 	}
 }
 

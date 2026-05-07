@@ -2484,8 +2484,12 @@
       "imagePricing": {
         "title": "Image Generation Pricing",
         "description": "Configure image generation access and base image prices. Leave empty to use default prices.",
-        "images": "Images API",
-        "images2api": "Images2API",
+        "routeLabel": "Image route",
+        "routeHint": "The images endpoint follows this route automatically. The images2api endpoint always stays on web2api.",
+        "routeCodex": "codex",
+        "routeWeb2api": "web2api",
+        "images": "Images API (/v1/images/*)",
+        "images2api": "Images2API (/v1/images2api/*)",
         "fixedHint": "Fixed per group; not affected by rate multipliers.",
         "allowImageGeneration": "Allow image generation for this group",
         "independentMultiplier": "Use independent image multiplier",
@@ -3869,6 +3873,23 @@
           "subscription": "Subscription",
           "scope": "Scope",
           "credits": "Credits"
+        },
+        "openaiImageRoutes": {
+          "codex": "codex",
+          "codex5h": "codex 5h",
+          "codex7d": "codex 7d",
+          "responses5h": "responses 5h",
+          "responses7d": "responses 7d",
+          "web2api": "web2api",
+          "web2api5h": "web2api 5h",
+          "web2api7d": "web2api 7d",
+          "available": "available",
+          "unavailable": "unavailable",
+          "freePlanBlocked": "free accounts cannot use codex image generation",
+          "unsupported": "unsupported for this account type",
+          "workspace": "Workspace",
+          "routeStatus": "Image route status",
+          "imageWindows": "Image windows"
         }
       },
       "reAuthorizeAccount": "Re-Authorize Account",

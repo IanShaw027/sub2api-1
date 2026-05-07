@@ -724,6 +724,7 @@ export interface Group {
   monthly_limit_usd: number | null
   // 图片生成计费配置
   allow_image_generation: boolean
+  image_generation_route: 'codex' | 'web2api'
   image_rate_independent: boolean
   image_rate_multiplier: number
   image_price_1k: number | null
@@ -840,6 +841,7 @@ export interface CreateGroupRequest {
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null
   allow_image_generation?: boolean
+  image_generation_route?: 'codex' | 'web2api'
   image_rate_independent?: boolean
   image_rate_multiplier?: number
   image_price_1k?: number | null
@@ -877,6 +879,7 @@ export interface UpdateGroupRequest {
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null
   allow_image_generation?: boolean
+  image_generation_route?: 'codex' | 'web2api'
   image_rate_independent?: boolean
   image_rate_multiplier?: number
   image_price_1k?: number | null
@@ -1252,6 +1255,16 @@ export interface AccountUsageInfo {
 
   // 机器可读错误码：forbidden / unauthenticated / rate_limited / network_error
   error_code?: string
+  openai_image_codex_supported?: boolean
+  openai_image_web2api_supported?: boolean
+  openai_image_codex_reason?: string
+  openai_image_web2api_reason?: string
+  openai_image_plan_type?: string
+  openai_image_workspace_name?: string
+  openai_image_codex_five_hour?: UsageProgress | null
+  openai_image_codex_seven_day?: UsageProgress | null
+  openai_image_web2api_five_hour?: UsageProgress | null
+  openai_image_web2api_seven_day?: UsageProgress | null
 
   error?: string            // usage 获取失败时的错误信息
 }

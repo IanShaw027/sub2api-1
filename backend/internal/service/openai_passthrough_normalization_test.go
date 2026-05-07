@@ -43,3 +43,21 @@ func TestNormalizeOpenAIPassthroughOAuthBody_PreservesPromptCacheFriendlyOrderin
 	require.False(t, gjson.GetBytes(normalized, "store").Bool())
 	require.Equal(t, "hello ordered world", gjson.GetBytes(normalized, "input.0.content").String())
 }
+
+func TestNormalizeOpenAIPassthroughBaseBody_StripsTopPWhenRequested(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.4","input":"hello","top_p":0.8}`)
+
+	normalized, changed, err := normalizeOpenAIPassthroughBaseBody(body, false, true)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.False(t, gjson.GetBytes(normalized, "top_p").Exists())
+}
+
+func TestNormalizeOpenAIPassthroughBaseBody_PreservesTopPWhenNotRequested(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.4","input":"hello","top_p":0.8}`)
+
+	normalized, changed, err := normalizeOpenAIPassthroughBaseBody(body, false, false)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, 0.8, gjson.GetBytes(normalized, "top_p").Float())
+}

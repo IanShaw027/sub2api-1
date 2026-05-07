@@ -139,6 +139,13 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 
 	for {
 		reqLog.Debug("openai.images.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
+		requiredRoute := service.GroupImageGenerationRouteCodex
+		if apiKey.Group != nil {
+			requiredRoute = apiKey.Group.EffectiveImageGenerationRoute()
+		}
+		if parsed.IsExplicitLegacyBridge() {
+			requiredRoute = service.GroupImageGenerationRouteWeb2API
+		}
 		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForImages(
 			c.Request.Context(),
 			apiKey.GroupID,
@@ -146,6 +153,8 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			parsed.Model,
 			failedAccountIDs,
 			parsed.RequiredCapability,
+			requiredRoute,
+			parsed.IsExplicitLegacyBridge(),
 		)
 		if err != nil {
 			reqLog.Warn("openai.images.account_select_failed",

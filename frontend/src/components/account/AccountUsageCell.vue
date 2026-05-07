@@ -107,25 +107,52 @@
 
     <!-- OpenAI OAuth accounts: single source from /usage API -->
     <template v-else-if="account.platform === 'openai' && account.type === 'oauth'">
-      <div v-if="hasOpenAIUsageFallback" class="space-y-1">
-        <UsageProgressBar
-          v-if="usageInfo?.five_hour"
-          label="5h"
-          :utilization="usageInfo.five_hour.utilization"
-          :resets-at="usageInfo.five_hour.resets_at"
-          :window-stats="usageInfo.five_hour.window_stats"
-          :show-now-when-idle="true"
-          color="indigo"
-        />
-        <UsageProgressBar
-          v-if="usageInfo?.seven_day"
-          label="7d"
-          :utilization="usageInfo.seven_day.utilization"
-          :resets-at="usageInfo.seven_day.resets_at"
-          :window-stats="usageInfo.seven_day.window_stats"
-          :show-now-when-idle="true"
-          color="emerald"
-        />
+      <div v-if="hasOpenAIUsageContent" class="space-y-1">
+        <div v-if="openAIResponseUsageBars.length" class="space-y-1">
+          <UsageProgressBar
+            v-for="item in openAIResponseUsageBars"
+            :key="item.key"
+            :label="item.label"
+            :utilization="item.progress.utilization"
+            :resets-at="item.progress.resets_at"
+            :window-stats="item.progress.window_stats"
+            :show-now-when-idle="true"
+            :color="item.color"
+          />
+        </div>
+        <div v-if="openAIImageUsageBars.length" class="space-y-1 pt-0.5">
+          <div class="text-[10px] font-medium text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.openaiImageRoutes.imageWindows') }}
+          </div>
+          <UsageProgressBar
+            v-for="item in openAIImageUsageBars"
+            :key="item.key"
+            :label="item.label"
+            :utilization="item.progress.utilization"
+            :resets-at="item.progress.resets_at"
+            :window-stats="item.progress.window_stats"
+            :show-now-when-idle="true"
+            color="amber"
+          />
+        </div>
+        <div v-if="openAIImageRouteRows.length" class="space-y-0.5 pt-0.5">
+          <div class="text-[10px] font-medium text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.openaiImageRoutes.routeStatus') }}
+          </div>
+          <div
+            v-for="item in openAIImageRouteRows"
+            :key="item.key"
+            class="flex items-center justify-between gap-2 text-[10px]"
+          >
+            <span class="text-gray-500 dark:text-gray-400">{{ item.label }}</span>
+            <span :class="item.supported ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'">
+              {{ item.value }}
+            </span>
+          </div>
+          <div v-if="openAIImageWorkspaceSummary" class="text-[10px] text-gray-500 dark:text-gray-400">
+            {{ openAIImageWorkspaceSummary }}
+          </div>
+        </div>
       </div>
       <div v-else-if="loading" class="space-y-1.5">
         <div class="flex items-center gap-1">
@@ -446,7 +473,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
-import type { Account, AccountUsageInfo, KiroQuotaBreakdown, WindowStats } from '@/types'
+import type { Account, AccountUsageInfo, KiroQuotaBreakdown, UsageProgress, WindowStats } from '@/types'
 import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
 import { formatCompactNumber } from '@/utils/format'
@@ -522,9 +549,112 @@ const shouldFetchUsage = computed(() => {
   return false
 })
 
-const hasOpenAIUsageFallback = computed(() => {
+const openAIResponseUsageBars = computed(() => {
+  if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return []
+  const info = usageInfo.value
+  if (!info) return []
+  const items: Array<{ key: string; label: string; progress: UsageProgress; color: 'indigo' | 'emerald' }> = []
+  if (info.five_hour) {
+    items.push({
+      key: 'responses-5h',
+      label: t('admin.accounts.openaiImageRoutes.responses5h'),
+      progress: info.five_hour,
+      color: 'indigo'
+    })
+  }
+  if (info.seven_day) {
+    items.push({
+      key: 'responses-7d',
+      label: t('admin.accounts.openaiImageRoutes.responses7d'),
+      progress: info.seven_day,
+      color: 'emerald'
+    })
+  }
+  return items
+})
+
+const openAIImageWorkspaceSummary = computed(() => {
+  if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return ''
+  const workspace = usageInfo.value?.openai_image_workspace_name?.trim()
+  const plan = usageInfo.value?.openai_image_plan_type?.trim()
+  if (!workspace && !plan) return ''
+  const parts = []
+  if (plan) parts.push(plan)
+  if (workspace) parts.push(`${t('admin.accounts.openaiImageRoutes.workspace')}: ${workspace}`)
+  return parts.join(' · ')
+})
+
+const openAIImageRouteRows = computed(() => {
+  if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return []
+  const info = usageInfo.value
+  if (!info) return []
+  const hasCodexState = info.openai_image_codex_supported !== undefined || !!info.openai_image_codex_reason || !!info.openai_image_codex_five_hour || !!info.openai_image_codex_seven_day
+  const hasWeb2apiState = info.openai_image_web2api_supported !== undefined || !!info.openai_image_web2api_reason || !!info.openai_image_web2api_five_hour || !!info.openai_image_web2api_seven_day
+  const formatValue = (supported?: boolean, reason?: string) => {
+    if (supported) return t('admin.accounts.openaiImageRoutes.available')
+    if (reason === 'free_plan_not_supported') return t('admin.accounts.openaiImageRoutes.freePlanBlocked')
+    if (reason === 'unsupported_account_type') return t('admin.accounts.openaiImageRoutes.unsupported')
+    return t('admin.accounts.openaiImageRoutes.unavailable')
+  }
+  return [
+    hasCodexState ? {
+      key: 'codex',
+      label: t('admin.accounts.openaiImageRoutes.codex'),
+      supported: !!info.openai_image_codex_supported,
+      value: formatValue(info.openai_image_codex_supported, info.openai_image_codex_reason)
+    } : null,
+    hasWeb2apiState ? {
+      key: 'web2api',
+      label: t('admin.accounts.openaiImageRoutes.web2api'),
+      supported: !!info.openai_image_web2api_supported,
+      value: formatValue(info.openai_image_web2api_supported, info.openai_image_web2api_reason)
+    } : null
+  ].filter((item): item is { key: string; label: string; supported: boolean; value: string } => item !== null)
+})
+
+const openAIImageUsageBars = computed(() => {
+  if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return []
+  const info = usageInfo.value
+  if (!info) return []
+  const items: Array<{ key: string; label: string; progress: UsageProgress }> = []
+  if (info.openai_image_codex_five_hour) {
+    items.push({
+      key: 'codex-5h',
+      label: t('admin.accounts.openaiImageRoutes.codex5h'),
+      progress: info.openai_image_codex_five_hour
+    })
+  }
+  if (info.openai_image_codex_seven_day) {
+    items.push({
+      key: 'codex-7d',
+      label: t('admin.accounts.openaiImageRoutes.codex7d'),
+      progress: info.openai_image_codex_seven_day
+    })
+  }
+  if (info.openai_image_web2api_five_hour) {
+    items.push({
+      key: 'web2api-5h',
+      label: t('admin.accounts.openaiImageRoutes.web2api5h'),
+      progress: info.openai_image_web2api_five_hour
+    })
+  }
+  if (info.openai_image_web2api_seven_day) {
+    items.push({
+      key: 'web2api-7d',
+      label: t('admin.accounts.openaiImageRoutes.web2api7d'),
+      progress: info.openai_image_web2api_seven_day
+    })
+  }
+  return items
+})
+
+const hasOpenAIUsageContent = computed(() => {
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return false
-  return !!usageInfo.value?.five_hour || !!usageInfo.value?.seven_day
+  return openAIResponseUsageBars.value.length > 0 ||
+    openAIImageUsageBars.value.length > 0 ||
+    openAIImageRouteRows.value.length > 0 ||
+    !!openAIImageWorkspaceSummary.value ||
+    !!usageInfo.value?.error
 })
 
 const kiroQuotaStats = computed<WindowStats | null>(() => {
