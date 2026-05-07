@@ -258,7 +258,10 @@ const pageTitle = computed(() => {
 const pageDescription = computed(() => {
   const descKey = route.meta.descriptionKey as string
   if (descKey) {
-    return t(descKey)
+    const translated = t(descKey)
+    if (translated && translated !== descKey) {
+      return translated
+    }
   }
   return (route.meta.description as string) || ''
 })

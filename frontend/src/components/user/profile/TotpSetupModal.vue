@@ -41,7 +41,7 @@
                     :disabled="sendingCode || codeCooldown > 0"
                     @click="handleSendCode"
                   >
-                    {{ codeCooldown > 0 ? `${codeCooldown}s` : (sendingCode ? t('common.sending') : t('profile.totp.sendCode')) }}
+                    {{ codeCooldown > 0 ? `${codeCooldown}s` : (sendingCode ? t('common.loading') : t('profile.totp.sendCode')) }}
                   </button>
                 </div>
               </div>

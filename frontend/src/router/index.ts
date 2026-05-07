@@ -795,7 +795,8 @@ const routes: RouteRecordRaw[] = [
       requiresAuth: true,
       requiresAdmin: true,
       title: 'Skill Review',
-      descriptionKey: 'skills.admin.review.searchPlaceholder'
+      titleKey: 'skills.admin.review.title',
+      descriptionKey: 'skills.admin.review.emptyDesc'
     }
   },
   {
@@ -806,7 +807,8 @@ const routes: RouteRecordRaw[] = [
       requiresAuth: true,
       requiresAdmin: true,
       title: 'Skill Governance',
-      descriptionKey: 'skills.admin.governance.searchPlaceholder'
+      titleKey: 'skills.admin.governance.title',
+      descriptionKey: 'skills.market.subtitle'
     }
   },
   {
@@ -817,7 +819,8 @@ const routes: RouteRecordRaw[] = [
       requiresAuth: true,
       requiresAdmin: true,
       title: 'Skill Runtime Monitor',
-      descriptionKey: 'skills.admin.runtime.searchPlaceholder'
+      titleKey: 'skills.admin.runtime.title',
+      descriptionKey: 'skills.runs.subtitle'
     }
   },
   {
@@ -828,7 +831,8 @@ const routes: RouteRecordRaw[] = [
       requiresAuth: true,
       requiresAdmin: true,
       title: 'Skill Settlements',
-      descriptionKey: 'skills.admin.settlement.searchPlaceholder'
+      titleKey: 'skills.admin.settlement.title',
+      descriptionKey: 'skills.revenue.subtitle'
     }
   },
   {
