@@ -321,6 +321,98 @@ func TestGeminiMessagesCompatService_SelectAccountForModelWithExclusions_GeminiP
 	require.Equal(t, PlatformGemini, acc.Platform, "无分组时应只返回 gemini 平台账户")
 }
 
+func TestGeminiMessagesCompatService_SelectAccountForAIStudioEndpoints_PrefersSupportedAccounts(t *testing.T) {
+	ctx := context.Background()
+
+	repo := &mockAccountRepoForGemini{
+		accounts: []Account{
+			{
+				ID:          1,
+				Platform:    PlatformGemini,
+				Type:        AccountTypeOAuth,
+				Priority:    1,
+				Status:      StatusActive,
+				Schedulable: true,
+				Credentials: map[string]any{
+					"project_id": "code-assist-project",
+					"oauth_type": "code_assist",
+				},
+			},
+			{
+				ID:          2,
+				Platform:    PlatformGemini,
+				Type:        AccountTypeOAuth,
+				Priority:    2,
+				Status:      StatusActive,
+				Schedulable: true,
+				Credentials: map[string]any{
+					"oauth_type": "ai_studio",
+				},
+			},
+			{
+				ID:          3,
+				Platform:    PlatformGemini,
+				Type:        AccountTypeAPIKey,
+				Priority:    3,
+				Status:      StatusActive,
+				Schedulable: true,
+				Credentials: map[string]any{
+					"api_key": "studio-key",
+				},
+			},
+		},
+		accountsByID: map[int64]*Account{},
+	}
+	for i := range repo.accounts {
+		repo.accountsByID[repo.accounts[i].ID] = &repo.accounts[i]
+	}
+
+	svc := &GeminiMessagesCompatService{
+		accountRepo: repo,
+		groupRepo:   &mockGroupRepoForGemini{groups: map[int64]*Group{}},
+	}
+
+	acc, err := svc.SelectAccountForAIStudioEndpoints(ctx, nil)
+	require.NoError(t, err)
+	require.NotNil(t, acc)
+	require.Equal(t, int64(3), acc.ID, "AI Studio API key 账号应优先于 OAuth 候选")
+}
+
+func TestGeminiMessagesCompatService_SelectAccountForAIStudioEndpoints_SkipsUnsupportedAccounts(t *testing.T) {
+	ctx := context.Background()
+
+	repo := &mockAccountRepoForGemini{
+		accounts: []Account{
+			{
+				ID:          1,
+				Platform:    PlatformGemini,
+				Type:        AccountTypeOAuth,
+				Priority:    1,
+				Status:      StatusActive,
+				Schedulable: true,
+				Credentials: map[string]any{
+					"project_id": "code-assist-project",
+					"oauth_type": "code_assist",
+				},
+			},
+		},
+		accountsByID: map[int64]*Account{},
+	}
+	for i := range repo.accounts {
+		repo.accountsByID[repo.accounts[i].ID] = &repo.accounts[i]
+	}
+
+	svc := &GeminiMessagesCompatService{
+		accountRepo: repo,
+		groupRepo:   &mockGroupRepoForGemini{groups: map[int64]*Group{}},
+	}
+
+	acc, err := svc.SelectAccountForAIStudioEndpoints(ctx, nil)
+	require.Error(t, err)
+	require.Nil(t, acc)
+	require.Contains(t, err.Error(), "no available Gemini accounts")
+}
+
 func TestGeminiMessagesCompatService_GroupResolution_ReusesContextGroup(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(7)

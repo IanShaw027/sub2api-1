@@ -487,11 +487,14 @@ func (s *GeminiMessagesCompatService) HasAntigravityAccounts(ctx context.Context
 // SelectAccountForAIStudioEndpoints selects an account that is likely to succeed against
 // generativelanguage.googleapis.com (e.g. GET /v1beta/models).
 //
-// Preference order:
+// Preference order among supported AI Studio candidates:
 // 1) API key accounts (AI Studio)
 // 2) OAuth accounts without project_id (AI Studio OAuth)
 // 3) OAuth accounts explicitly marked as ai_studio
-// 4) Any remaining Gemini accounts (fallback)
+//
+// Unsupported Gemini account types are skipped here so callers can preserve
+// their existing static fallback behavior instead of forwarding guaranteed-bad
+// requests to the AI Studio models endpoint.
 func (s *GeminiMessagesCompatService) SelectAccountForAIStudioEndpoints(ctx context.Context, groupID *int64) (*Account, error) {
 	accounts, err := s.listSchedulableAccountsOnce(ctx, groupID, PlatformGemini, true)
 	if err != nil {
@@ -501,44 +504,24 @@ func (s *GeminiMessagesCompatService) SelectAccountForAIStudioEndpoints(ctx cont
 		return nil, errors.New("no available Gemini accounts")
 	}
 
-	rank := func(a *Account) int {
-		if a == nil {
-			return 999
-		}
-		switch a.Type {
-		case AccountTypeAPIKey:
-			if strings.TrimSpace(a.GetCredential("api_key")) != "" {
-				return 0
-			}
-			return 9
-		case AccountTypeOAuth:
-			if strings.TrimSpace(a.GetCredential("project_id")) == "" {
-				return 1
-			}
-			if strings.TrimSpace(a.GetCredential("oauth_type")) == "ai_studio" {
-				return 2
-			}
-			// Code Assist OAuth tokens often lack AI Studio scopes for models listing.
-			return 3
-		default:
-			return 10
-		}
-	}
-
 	var selected *Account
 	for i := range accounts {
 		acc := &accounts[i]
+		accRank, ok := rankAIStudioEndpointAccount(acc)
+		if !ok {
+			continue
+		}
 		if selected == nil {
 			selected = acc
 			continue
 		}
 
-		r1, r2 := rank(acc), rank(selected)
-		if r1 < r2 {
+		selectedRank, _ := rankAIStudioEndpointAccount(selected)
+		if accRank < selectedRank {
 			selected = acc
 			continue
 		}
-		if r1 > r2 {
+		if accRank > selectedRank {
 			continue
 		}
 
@@ -566,6 +549,29 @@ func (s *GeminiMessagesCompatService) SelectAccountForAIStudioEndpoints(ctx cont
 		return nil, errors.New("no available Gemini accounts")
 	}
 	return s.hydrateSelectedAccount(ctx, selected)
+}
+
+func rankAIStudioEndpointAccount(account *Account) (int, bool) {
+	if account == nil {
+		return 0, false
+	}
+
+	switch account.Type {
+	case AccountTypeAPIKey:
+		return 0, strings.TrimSpace(account.GetCredential("api_key")) != ""
+	case AccountTypeOAuth:
+		if strings.TrimSpace(account.GetCredential("project_id")) == "" {
+			return 1, true
+		}
+		if strings.TrimSpace(account.GetCredential("oauth_type")) == "ai_studio" {
+			return 2, true
+		}
+		// Code Assist / Google One style Gemini OAuth accounts often lack AI Studio
+		// scopes for /v1beta/models and should fall through to the caller's fallback.
+		return 0, false
+	default:
+		return 0, false
+	}
 }
 
 func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (*ForwardResult, error) {
