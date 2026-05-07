@@ -180,8 +180,8 @@
             :page="skillsStore.versionsPagination.page"
             :total="skillsStore.versionsPagination.total"
             :page-size="skillsStore.versionsPagination.page_size"
-            @update:page="(page) => skillsStore.loadVersions(skillId, page, skillsStore.versionsPagination.page_size)"
-            @update:pageSize="(pageSize) => skillsStore.loadVersions(skillId, 1, pageSize)"
+            @update:page="(page) => void handlePageChange(page)"
+            @update:pageSize="(pageSize) => void handlePageSizeChange(pageSize)"
           />
         </section>
       </div>
@@ -227,6 +227,7 @@ const skillId = computed(() => {
 const skill = computed(() => skillsStore.detail)
 const loadedSkillId = ref<number | null>(null)
 const showVersionPage = computed(() => loadedSkillId.value === skillId.value)
+let suppressRouteVersionsReload = false
 const draft = reactive<{
   version: string
   status: SkillVersionStatus
@@ -249,6 +250,49 @@ const statusOptions = [
 
 function normalizeStatus(value: string | number | boolean | null): SkillVersionStatus {
   return value === 'published' || value === 'deprecated' || value === 'archived' ? value : 'draft'
+}
+
+function extractQueryString(value: unknown): string | null {
+  if (typeof value === 'string') return value
+  if (Array.isArray(value) && typeof value[0] === 'string') return value[0]
+  return null
+}
+
+function extractPositiveQueryNumber(value: unknown, fallback: number): number {
+  const raw = extractQueryString(value)
+  if (!raw) return fallback
+  const parsed = Number.parseInt(raw, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function currentRoutePage(): number {
+  return extractPositiveQueryNumber(route.query.page, 1)
+}
+
+function currentRoutePageSize(): number {
+  return extractPositiveQueryNumber(route.query.page_size, skillsStore.versionsPagination.page_size)
+}
+
+async function replaceVersionsQuery(page = currentRoutePage(), pageSize = currentRoutePageSize()): Promise<boolean> {
+  const nextQuery = { ...route.query }
+  const nextPage = page > 1 ? String(page) : null
+  const nextPageSize = pageSize !== 12 ? String(pageSize) : null
+  const currentPage = extractQueryString(route.query.page)
+  const currentPageSize = extractQueryString(route.query.page_size)
+
+  if (nextPage) nextQuery.page = nextPage
+  else delete nextQuery.page
+
+  if (nextPageSize) nextQuery.page_size = nextPageSize
+  else delete nextQuery.page_size
+
+  if (currentPage === nextPage && currentPageSize === nextPageSize) {
+    return false
+  }
+
+  suppressRouteVersionsReload = true
+  await router.replace({ query: nextQuery })
+  return true
 }
 
 function actionErrorMessage(error: unknown): string {
@@ -301,7 +345,7 @@ async function loadPage(force = false): Promise<void> {
       await router.replace(skillPaths.detail(skillId.value))
       return
     }
-    await skillsStore.loadVersions(skillId.value, 1, skillsStore.versionsPagination.page_size)
+    await skillsStore.loadVersions(skillId.value, currentRoutePage(), currentRoutePageSize())
     resetDraft()
     loadedSkillId.value = skillId.value
   } catch (error) {
@@ -404,9 +448,39 @@ async function triggerVersionRun(version: SkillVersionRecord, mode: SkillRunMode
   }
 }
 
+async function reloadVersions(page = currentRoutePage(), pageSize = currentRoutePageSize()): Promise<void> {
+  try {
+    await skillsStore.loadVersions(skillId.value, page, pageSize)
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('common.error')))
+  }
+}
+
+async function handlePageChange(page: number): Promise<void> {
+  await replaceVersionsQuery(page, skillsStore.versionsPagination.page_size)
+  await reloadVersions(page, skillsStore.versionsPagination.page_size)
+}
+
+async function handlePageSizeChange(pageSize: number): Promise<void> {
+  await replaceVersionsQuery(1, pageSize)
+  await reloadVersions(1, pageSize)
+}
+
 watch(skillId, () => {
   void loadPage(true)
 })
+
+watch(
+  () => [route.query.page, route.query.page_size],
+  async () => {
+    if (suppressRouteVersionsReload) {
+      suppressRouteVersionsReload = false
+      return
+    }
+    if (!skillId.value || !skill.value?.editable) return
+    await reloadVersions()
+  }
+)
 
 onMounted(() => {
   void loadPage()

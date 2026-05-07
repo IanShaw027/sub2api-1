@@ -64,7 +64,7 @@
           {{ t('skills.detail.title', '技能详情') }}
         </RouterLink>
         <button
-          v-if="!showOwnerActions"
+          v-if="!showOwnerActions && showInstallAction"
           type="button"
           class="btn btn-primary btn-sm"
           :disabled="busy"
@@ -115,6 +115,11 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const { t } = useI18n()
+
+const showInstallAction = computed(() => {
+  const installableSkill = props.skill as SkillSummary & { can_install?: boolean }
+  return props.skill.installed || Boolean(installableSkill.can_install ?? !props.skill.owned)
+})
 
 const priceText = computed(() =>
   props.skill.pricing.mode === 'paid'

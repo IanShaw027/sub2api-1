@@ -50,7 +50,7 @@
 
                   <div class="flex flex-wrap gap-3 lg:justify-end">
                     <button
-                      v-if="!skill.owned"
+                      v-if="showInstallAction"
                       class="btn btn-primary"
                       :disabled="skillsStore.togglingInstall"
                       @click="toggleInstall"
@@ -237,7 +237,7 @@
 
           <div class="card p-5">
             <div class="grid gap-3">
-              <RouterLink :to="skillPaths.runs(skill.id)" class="btn btn-secondary">
+              <RouterLink v-if="skill.owned" :to="skillPaths.runs(skill.id)" class="btn btn-secondary">
                 <Icon name="clock" size="sm" class="mr-2" />
                 {{ t('skills.runs.title', '运行记录') }}
               </RouterLink>
@@ -305,6 +305,11 @@ const priceText = computed(() => {
   return skill.value.pricing.mode === 'paid'
     ? formatCurrency(skill.value.pricing.amount, skill.value.pricing.currency)
     : t('skills.market.free', '免费')
+})
+const showInstallAction = computed(() => {
+  const currentSkill = skill.value
+  if (!currentSkill || currentSkill.owned) return false
+  return currentSkill.installed || currentSkill.can_install
 })
 const actionVersion = computed<SkillVersionSummary | null>(() => {
   const currentSkill = skill.value
