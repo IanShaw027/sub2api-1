@@ -172,10 +172,7 @@ export function useAccountOAuth() {
     return formatOAuthAccountName({
       manualName: fallbackName,
       primary: typeof tokenInfo.email_address === 'string' ? tokenInfo.email_address : '',
-      details: [
-        typeof tokenInfo.account_uuid === 'string' ? tokenInfo.account_uuid : '',
-        typeof tokenInfo.org_uuid === 'string' ? tokenInfo.org_uuid : ''
-      ],
+      details: [],
       platformLabel: 'Claude',
       defaultName: 'Claude OAuth Account'
     })

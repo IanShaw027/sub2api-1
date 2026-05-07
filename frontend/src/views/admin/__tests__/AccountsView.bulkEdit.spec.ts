@@ -249,7 +249,8 @@ describe('admin AccountsView bulk edit scope', () => {
           type: 'oauth',
           credentials: {
             email: 'owner@example.com',
-            workspace_name: 'Team Alpha'
+            workspace_name: 'Team Alpha',
+            plan_type: 'team'
           },
           extra: {
             email_address: 'owner@example.com'
@@ -261,7 +262,8 @@ describe('admin AccountsView bulk edit scope', () => {
           platform: 'openai',
           type: 'oauth',
           credentials: {
-            email: 'solo@example.com'
+            email: 'solo@example.com',
+            plan_type: 'team'
           },
           extra: {
             email_address: 'solo@example.com',
@@ -274,7 +276,8 @@ describe('admin AccountsView bulk edit scope', () => {
           platform: 'openai',
           type: 'oauth',
           credentials: {
-            email: 'personal@example.com'
+            email: 'personal@example.com',
+            plan_type: 'free'
           },
           extra: {
             email_address: 'personal@example.com'
@@ -294,7 +297,8 @@ describe('admin AccountsView bulk edit scope', () => {
     expect(nameCells).toHaveLength(3)
     expect(nameCells[0].text()).toContain('owner@example.com (Team Alpha)')
     expect(nameCells[1].text()).toContain('solo@example.com (Crew Beta)')
-    expect(nameCells[2].text()).toContain('personal@example.com (personal)')
+    expect(nameCells[2].text()).toContain('personal@example.com')
+    expect(nameCells[2].text()).not.toContain('(personal)')
   })
 
   it('limits account name cell width and exposes full text via title', async () => {

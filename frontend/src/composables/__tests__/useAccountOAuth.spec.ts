@@ -19,13 +19,12 @@ vi.mock('@/api/admin', () => ({
 import { useAccountOAuth } from '../useAccountOAuth'
 
 describe('useAccountOAuth.buildAccountName', () => {
-  it('uses manual name first and otherwise formats email with account or org context', () => {
+  it('uses manual name first and otherwise keeps Claude oauth names as plain email', () => {
     const oauth = useAccountOAuth()
 
     expect(oauth.buildAccountName({ email_address: 'user@example.com', account_uuid: 'acc-1' }, ' Manual ')).toBe('Manual')
-    expect(oauth.buildAccountName({ email_address: 'user@example.com', account_uuid: 'acc-1' })).toBe('user@example.com (acc-1)')
-    expect(oauth.buildAccountName({ email_address: 'user@example.com', org_uuid: 'org-1' })).toBe('user@example.com (org-1)')
+    expect(oauth.buildAccountName({ email_address: 'user@example.com', account_uuid: 'acc-1' })).toBe('user@example.com')
+    expect(oauth.buildAccountName({ email_address: 'user@example.com', org_uuid: 'org-1' })).toBe('user@example.com')
     expect(oauth.buildAccountName({})).toBe('Claude OAuth Account')
   })
 })
-

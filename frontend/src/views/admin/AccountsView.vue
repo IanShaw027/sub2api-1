@@ -1168,6 +1168,9 @@ function getDisplayAccountName(row: any, fallbackName: string): string {
   if (row?.platform === 'openai' && row?.type === 'oauth') {
     const email = typeof row?.credentials?.email === 'string' ? row.credentials.email.trim() : ''
     if (!email) return fallbackName
+    const planType = typeof row?.credentials?.plan_type === 'string'
+      ? row.credentials.plan_type.trim().toLowerCase()
+      : ''
     const workspaceNameCandidates = [
       row?.credentials?.workspace_name,
       row?.extra?.workspace_name,
@@ -1178,7 +1181,7 @@ function getDisplayAccountName(row: any, fallbackName: string): string {
     )?.trim() || ''
     return formatOAuthAccountName({
       primary: email,
-      details: [workspaceName || 'personal'],
+      details: planType === 'team' && workspaceName ? [workspaceName] : [],
       platformLabel: 'OpenAI',
       fallbackDetail: typeof row?.credentials?.plan_type === 'string' ? row.credentials.plan_type : '',
       defaultName: fallbackName || 'OpenAI OAuth Account'

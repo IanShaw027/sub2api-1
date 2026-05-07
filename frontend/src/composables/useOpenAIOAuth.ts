@@ -255,11 +255,12 @@ export function useOpenAIOAuth() {
   }
 
   const buildAccountName = (tokenInfo: OpenAITokenInfo, fallbackName?: string): string => {
-    const workspaceLabel = tokenInfo.workspace_name?.trim() || 'personal'
+    const planType = tokenInfo.plan_type?.trim().toLowerCase() || ''
+    const workspaceLabel = tokenInfo.workspace_name?.trim() || ''
     return formatOAuthAccountName({
       manualName: fallbackName,
       primary: tokenInfo.email || tokenInfo.name,
-      details: [workspaceLabel],
+      details: planType === 'team' && workspaceLabel ? [workspaceLabel] : [],
       platformLabel: 'OpenAI',
       fallbackDetail: tokenInfo.plan_type,
       defaultName: 'OpenAI OAuth Account'
