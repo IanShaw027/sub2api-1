@@ -47,7 +47,7 @@
                   v-if="showRuntimeLineNotice"
                   class="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-100"
                 >
-                  当前 runtime 已接入，但还没有返回可用线路；前端不会再从本地或其他接口拼装线路。
+                  {{ t('ai.chat.runtimeLineNotice', '当前 runtime 已接入，但还没有返回可用线路；前端不会再从本地或其他接口拼装线路。') }}
                 </p>
               </div>
 
@@ -64,10 +64,10 @@
               <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-900">
                 <div class="flex items-center justify-between gap-3">
                   <div>
-                    <h2 class="text-sm font-semibold text-gray-900 dark:text-white">最近会话</h2>
-                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">刷新或分享链接后，可按 session 恢复历史消息。</p>
+                    <h2 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('ai.chat.recentSessions', '最近会话') }}</h2>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('ai.chat.recentSessionsHint', '刷新或分享链接后，可按 session 恢复历史消息。') }}</p>
                   </div>
-                  <button class="btn btn-secondary btn-sm" type="button" @click="startNewSession">新会话</button>
+                  <button class="btn btn-secondary btn-sm" type="button" @click="startNewSession">{{ t('ai.chat.newSession', '新会话') }}</button>
                 </div>
                 <div class="mt-3 space-y-2">
                   <button
@@ -120,7 +120,7 @@
             <div class="flex min-h-[560px] flex-col rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-dark-700 dark:bg-dark-900">
               <div class="flex-1 space-y-4 overflow-y-auto p-4">
                 <div v-if="aiStore.activeSession" class="rounded-2xl border border-dashed border-gray-200 px-4 py-3 text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400">
-                  当前会话：{{ aiStore.activeSession.title }}
+                  {{ t('ai.chat.currentSession', '当前会话：') }}{{ aiStore.activeSession.title }}
                 </div>
                 <template v-if="messages.length > 0">
                   <div
@@ -243,10 +243,10 @@ const entryOptions = computed(() => [
 const runtimeSourceDomain = computed(() => aiStore.runtimeInfo?.source_domain || '-')
 const entryHint = computed(() => {
   if (!chatCompletionsAvailable.value) {
-    return '当前 runtime 只暴露 responses 入口，chat_completions 已按后端能力隐藏。'
+    return t('ai.chat.responsesOnlyHint', '当前 runtime 只暴露 responses 入口，chat_completions 已按后端能力隐藏。')
   }
   if (entryMode.value === 'chat_completions') {
-    return '仅在后端真实支持时才会下发 chat_completions。'
+    return t('ai.chat.chatCompletionsHint', '仅在后端真实支持时才会下发 chat_completions。')
   }
   return t('ai.chat.entryHint', '切换后会直接传给后端。')
 })

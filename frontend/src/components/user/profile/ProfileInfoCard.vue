@@ -297,7 +297,7 @@ function formatProviderLabel(provider: string): string {
   if (normalized === 'oidc') return props.oidcProviderName || 'OIDC'
   if (normalized === 'linuxdo') return 'LinuxDo'
   if (normalized === 'wechat') return 'WeChat'
-  if (normalized === 'email') return 'Email'
+  if (normalized === 'email') return t('profile.email')
   return provider.trim()
 }
 </script>

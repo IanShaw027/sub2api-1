@@ -2785,8 +2785,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 	isCompactRequest := isOpenAIResponsesCompactPath(c)
 
-	// 非透传模式下，instructions 为空时注入默认指令。
-	if !isMessagesBridgeRequest && isInstructionsEmpty(reqBody) {
+	// 非透传模式下，仅对 OpenAI OAuth /responses 请求补默认 instructions，
+	// 避免影响 API Key、自定义兼容上游或其他平台对“空 instructions”的原始语义。
+	if shouldInjectDefaultInstructionsForOpenAIResponses(c, account, isMessagesBridgeRequest, isCompactRequest) && isInstructionsEmpty(reqBody) {
 		reqBody["instructions"] = "You are a helpful coding assistant."
 		bodyModified = true
 		markPatchSet("instructions", "You are a helpful coding assistant.")
@@ -6851,6 +6852,26 @@ func shouldDetachLegacyOAuthPassthroughContext(account *Account, reqStream bool,
 	return gjson.GetBytes(body, "stream").Bool()
 }
 
+func isOpenAIResponsesInboundPath(c *gin.Context) bool {
+	if c == nil || c.Request == nil || c.Request.URL == nil {
+		return false
+	}
+	path := strings.TrimSpace(c.Request.URL.Path)
+	return strings.Contains(path, "/responses")
+}
+
+func shouldInjectDefaultInstructionsForOpenAIResponses(c *gin.Context, account *Account, isMessagesBridgeRequest bool, isCompactRequest bool) bool {
+	if account == nil {
+		return false
+	}
+	if isMessagesBridgeRequest || isCompactRequest {
+		return false
+	}
+	if account.Platform != PlatformOpenAI || account.Type != AccountTypeOAuth {
+		return false
+	}
+	return isOpenAIResponsesInboundPath(c)
+}
 func ensureOpenAIPassthroughInstructions(c *gin.Context, reqModel string, body []byte) ([]byte, bool, error) {
 	_ = reqModel
 	instructions := gjson.GetBytes(body, "instructions")

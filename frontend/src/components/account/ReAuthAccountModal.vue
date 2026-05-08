@@ -94,15 +94,15 @@
             <span class="block text-sm font-medium text-gray-900 dark:text-white">
               {{
                 geminiOAuthType === 'google_one'
-                  ? 'Google One'
+                  ? t('admin.accounts.oauth.gemini.googleOneTitle')
                   : t('admin.accounts.gemini.oauthType.builtInTitle')
               }}
             </span>
             <span class="text-xs text-gray-500 dark:text-gray-400">
               {{
                 geminiOAuthType === 'google_one'
-                  ? '个人账号'
-                  : t('admin.accounts.gemini.oauthType.builtInDesc')
+                  ? t('admin.accounts.oauth.gemini.googleOneDesc')
+                  : t('admin.accounts.oauth.gemini.codeAssistDesc')
               }}
             </span>
           </div>

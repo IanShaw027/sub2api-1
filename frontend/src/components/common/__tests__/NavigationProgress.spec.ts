@@ -6,6 +6,17 @@ import { mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import NavigationProgress from '../../common/NavigationProgress.vue'
 
+vi.mock('vue-i18n', () => ({
+  useI18n: () => ({
+    t: (key: string) => {
+      if (key === 'common.loading') {
+        return 'Loading'
+      }
+      return key
+    }
+  })
+}))
+
 // Mock useNavigationLoadingState
 const mockIsLoading = ref(false)
 

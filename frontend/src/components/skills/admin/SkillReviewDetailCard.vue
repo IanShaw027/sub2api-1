@@ -11,7 +11,7 @@
           </div>
           <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
             {{ item.skill_slug }}
-            <span v-if="item.author_name"> · 提交者 {{ item.author_name }}</span>
+            <span v-if="item.author_name"> · {{ t('skills.admin.review.authorLabel') }} {{ item.author_name }}</span>
             <span v-if="item.category"> · {{ item.category }}</span>
           </p>
         </div>
@@ -26,32 +26,32 @@
 
       <div class="mt-5 grid gap-4 md:grid-cols-3">
         <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900/60">
-          <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">24h 调用</p>
+          <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.review.metrics.requests24h') }}</p>
           <p class="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{{ item.requests_24h.toLocaleString() }}</p>
         </div>
         <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900/60">
-          <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">30d 收入</p>
+          <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.review.metrics.revenue30d') }}</p>
           <p class="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{{ formatCurrency(item.revenue_30d) }}</p>
         </div>
         <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900/60">
-          <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">公开版本</p>
+          <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.review.metrics.publishedVersion') }}</p>
           <p class="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{{ item.latest_published_version || '-' }}</p>
         </div>
       </div>
 
       <div class="mt-5 space-y-4">
         <div>
-          <p class="text-sm font-medium text-gray-900 dark:text-white">版本摘要</p>
-          <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400">{{ item.summary || '提交方未填写版本摘要。' }}</p>
+          <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('skills.admin.review.summaryTitle') }}</p>
+          <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400">{{ item.summary || t('skills.admin.review.summaryEmpty') }}</p>
         </div>
 
         <div>
-          <p class="text-sm font-medium text-gray-900 dark:text-white">变更说明</p>
-          <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400">{{ item.changelog || '当前版本未附带变更说明。' }}</p>
+          <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('skills.admin.review.changelogTitle') }}</p>
+          <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400">{{ item.changelog || t('skills.admin.review.changelogEmpty') }}</p>
         </div>
 
         <div v-if="item.tags.length">
-          <p class="text-sm font-medium text-gray-900 dark:text-white">标签</p>
+          <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('skills.admin.review.tagsTitle') }}</p>
           <div class="mt-2 flex flex-wrap gap-2">
             <span
               v-for="tag in item.tags"
@@ -64,28 +64,31 @@
         </div>
 
         <div v-if="item.review_note || item.rejection_reason" class="rounded-2xl border border-gray-200 p-4 dark:border-dark-700">
-          <p class="text-sm font-medium text-gray-900 dark:text-white">最近处理意见</p>
+          <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('skills.admin.review.latestNoteTitle') }}</p>
           <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400">{{ item.review_note || item.rejection_reason }}</p>
         </div>
       </div>
 
       <div class="mt-6 flex flex-wrap justify-end gap-3">
-        <button type="button" class="btn btn-secondary btn-sm" @click="$emit('reject')">拒绝版本</button>
-        <button type="button" class="btn btn-primary btn-sm" @click="$emit('approve')">通过版本</button>
+        <button type="button" class="btn btn-secondary btn-sm" @click="$emit('reject')">{{ t('skills.admin.review.rejectVersion') }}</button>
+        <button type="button" class="btn btn-primary btn-sm" @click="$emit('approve')">{{ t('skills.admin.review.approveVersion') }}</button>
       </div>
     </template>
 
     <template v-else>
       <div class="rounded-2xl border border-dashed border-gray-200 px-4 py-10 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400">
-        选择一条待审记录后，这里会展示版本摘要、风险等级与操作入口。
+        {{ t('skills.admin.review.detailEmpty') }}
       </div>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import type { SkillReviewItem, SkillRiskLevel, SkillVisibility, SkillReviewStatus } from '@/api/admin/skills'
 import SkillAdminStatusBadge from './SkillAdminStatusBadge.vue'
+
+const { t, locale } = useI18n()
 
 defineProps<{
   item: SkillReviewItem | null
@@ -97,7 +100,7 @@ defineEmits<{
 }>()
 
 function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('zh-CN', {
+  return new Intl.NumberFormat(locale.value.startsWith('zh') ? 'zh-CN' : 'en-US', {
     style: 'currency',
     currency: 'CNY',
     minimumFractionDigits: 2
@@ -106,26 +109,26 @@ function formatCurrency(value: number): string {
 
 function reviewStatusLabel(status: SkillReviewStatus): string {
   return {
-    pending: '待审核',
-    approved: '已通过',
-    rejected: '已拒绝',
-    changes_requested: '待修改'
+    pending: t('skills.admin.review.labels.pending'),
+    approved: t('skills.admin.review.labels.approved'),
+    rejected: t('skills.admin.review.labels.rejected'),
+    changes_requested: t('skills.admin.review.labels.changesRequested')
   }[status]
 }
 
 function visibilityLabel(status: SkillVisibility): string {
   return {
-    public: '公开',
-    private: '私有',
-    force_private: '强制私有'
+    public: t('skills.admin.review.labels.public'),
+    private: t('skills.admin.review.labels.private'),
+    force_private: t('skills.admin.review.labels.forcePrivate')
   }[status]
 }
 
 function riskLabel(level: SkillRiskLevel): string {
   return {
-    low: '低风险',
-    medium: '中风险',
-    high: '高风险'
+    low: t('skills.admin.review.labels.low'),
+    medium: t('skills.admin.review.labels.medium'),
+    high: t('skills.admin.review.labels.high')
   }[level]
 }
 

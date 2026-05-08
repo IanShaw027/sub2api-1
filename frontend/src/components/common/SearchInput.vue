@@ -7,22 +7,24 @@
       :value="modelValue"
       type="text"
       class="input pl-10"
-      :placeholder="placeholder"
+      :placeholder="placeholderText"
       @input="handleInput"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { onUnmounted } from 'vue'
+import { computed, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
+
+const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
   modelValue: string
   placeholder?: string
   debounceMs?: number
 }>(), {
-  placeholder: 'Search...',
   debounceMs: 300
 })
 
@@ -32,6 +34,8 @@ const emit = defineEmits<{
 }>()
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+const placeholderText = computed(() => props.placeholder ?? t('common.searchPlaceholder'))
 
 const clearSearchTimer = () => {
   if (searchTimer !== null) {
