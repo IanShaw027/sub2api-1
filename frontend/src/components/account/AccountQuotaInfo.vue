@@ -63,6 +63,8 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { Account } from '@/types'
+import { collectGeminiTierMetadataSources } from '@/utils/geminiExtra'
+import { inferGeminiOAuthType } from '@/utils/geminiOAuthType'
 
 const props = defineProps<{
   account: Account
@@ -89,11 +91,61 @@ const geminiValue = (key: string): string => {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-const normalizeGeminiOAuthType = (oauthType?: string | null): 'code_assist' | 'google_one' | null => {
-  const normalized = (oauthType || '').trim().toLowerCase()
-  if (normalized === 'code_assist' || normalized === 'google_one') return normalized
-  return null
+const normalizeGeminiCanonicalTier = (
+  rawTier: string
+): 'google_one_free' | 'google_ai_pro' | 'google_ai_ultra' | 'aistudio_free' | 'aistudio_paid' | 'gcp_standard' | 'gcp_enterprise' | '' => {
+  const normalized = rawTier.trim().toLowerCase()
+  if (!normalized) return ''
+  if (
+    normalized === 'google_ai_ultra' ||
+    normalized === 'g1-ultra-tier' ||
+    normalized === 'google_one_ultra' ||
+    normalized === 'google_one_unlimited'
+  ) return 'google_ai_ultra'
+  if (
+    normalized === 'google_ai_pro' ||
+    normalized === 'g1-pro-tier' ||
+    normalized === 'ai_premium'
+  ) return 'google_ai_pro'
+  if (
+    normalized === 'google_one_free' ||
+    normalized === 'google_one_unknown' ||
+    normalized === 'free' ||
+    normalized === 'free-tier'
+  ) return 'google_one_free'
+  if (
+    normalized === 'aistudio_paid' ||
+    normalized.includes('pay-as-you-go') ||
+    normalized.includes('ai studio pay') ||
+    normalized.includes('aistudio paid')
+  ) return 'aistudio_paid'
+  if (
+    normalized === 'aistudio_free' ||
+    normalized.includes('ai studio free') ||
+    normalized.includes('aistudio free')
+  ) return 'aistudio_free'
+  if (
+    normalized === 'gcp_standard' ||
+    normalized === 'standard' ||
+    normalized === 'standard-tier' ||
+    normalized === 'pro-tier'
+  ) return 'gcp_standard'
+  if (
+    normalized === 'gcp_enterprise' ||
+    normalized === 'enterprise' ||
+    normalized === 'ultra-tier'
+  ) return 'gcp_enterprise'
+  if (normalized.includes('ultra')) return 'google_ai_ultra'
+  if (normalized.includes('pro') || normalized.includes('premium')) return 'google_ai_pro'
+  if (normalized.includes('paid')) return 'aistudio_paid'
+  if (normalized.includes('free')) return 'google_one_free'
+  return ''
 }
+
+const geminiTierMetadataSources = computed(() => collectGeminiTierMetadataSources(
+  (props.account.credentials || {}) as Record<string, unknown>,
+  (props.account.extra || {}) as Record<string, unknown>
+))
 
 const resolveGeminiPlanBucket = (rawTier: string): 'free' | 'pro' | 'ultra' | 'unknown' => {
   const normalized = rawTier.trim().toLowerCase()
@@ -157,11 +209,9 @@ const isUrgent = computed(() => {
 })
 
 const canonicalTier = computed(() => {
-  const tier =
-    geminiValue('tier_id') ||
-    geminiValue('gemini_current_tier_id') ||
-    geminiValue('gemini_paid_tier_id')
-  return tier.toLowerCase()
+  return geminiTierMetadataSources.value
+    .map((value) => normalizeGeminiCanonicalTier(value))
+    .find((value) => value.length > 0) || ''
 })
 const legacyTier = computed(() => {
   const tier =
@@ -172,15 +222,7 @@ const legacyTier = computed(() => {
 })
 
 const planTierSource = computed(() => {
-  const sources = [
-    geminiValue('plan_name'),
-    geminiValue('gemini_paid_tier_name'),
-    geminiValue('gemini_current_tier_name'),
-    geminiValue('tier_id'),
-    geminiValue('gemini_paid_tier_id'),
-    geminiValue('gemini_current_tier_id')
-  ]
-  return sources.find((value) => value.length > 0) || ''
+  return geminiTierMetadataSources.value[0] || ''
 })
 
 const googleOnePlanBucket = computed(() => resolveGeminiPlanBucket(planTierSource.value))
@@ -188,29 +230,23 @@ const codeAssistPlanBucket = computed(() => {
   const source = (planTierSource.value || canonicalTier.value || legacyTier.value).trim().toLowerCase()
   if (source.includes('standard')) return 'standard'
   if (source.includes('enterprise')) return 'enterprise'
+  if (source === 'standard-tier' || source === 'pro-tier') return 'standard'
+  if (source === 'ultra-tier') return 'enterprise'
   return 'enterprise'
 })
+const inferredGeminiOAuthType = computed(() =>
+  inferGeminiOAuthType(
+    (props.account.credentials || {}) as Record<string, unknown>,
+    (props.account.extra || {}) as Record<string, unknown>,
+    ''
+  )
+)
 const isCodeAssist = computed(() => {
-  const oauthType = normalizeGeminiOAuthType(geminiValue('oauth_type'))
-  if (oauthType === 'code_assist') return true
-
-  const source = planTierSource.value.toLowerCase()
-  return source.includes('gcp_') || source === 'standard' || source === 'enterprise'
+  return inferredGeminiOAuthType.value === 'code_assist'
 })
 
 const isGoogleOne = computed(() => {
-  const oauthType = normalizeGeminiOAuthType(geminiValue('oauth_type'))
-  if (oauthType === 'google_one') return true
-
-  const source = planTierSource.value.toLowerCase()
-  return (
-    source.includes('google one') ||
-    source.includes('google_one') ||
-    source.includes('google ai') ||
-    source.includes('google_ai') ||
-    source.startsWith('g1-') ||
-    source === 'free-tier'
-  )
+  return inferredGeminiOAuthType.value === 'google_one'
 })
 
 const tierLabel = computed(() => {

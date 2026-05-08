@@ -433,7 +433,9 @@ import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { formatDateTime, formatRelativeTime } from '@/utils/format'
+import { collectGeminiTierMetadataSources } from '@/utils/geminiExtra'
 import { formatOAuthAccountName } from '@/utils/oauthAccountName'
+import { inferGeminiOAuthType } from '@/utils/geminiOAuthType'
 import type { Account, AccountPlatform, AccountType, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel } from '@/types'
 
 const CreateAccountModal = defineAsyncComponent(() => import('@/components/account/CreateAccountModal.vue'))
@@ -1105,53 +1107,51 @@ function normalizeGeminiPlatformTier(value: unknown): string {
     normalized === 'g1-ultra-tier' ||
     normalized === 'google_one_ultra' ||
     normalized === 'google_one_unlimited'
-  ) return 'ultra'
+  ) return 'google_ai_ultra'
   if (
     normalized === 'google_ai_pro' ||
-    normalized === 'aistudio_paid' ||
     normalized === 'g1-pro-tier' ||
     normalized === 'ai_premium'
-  ) return 'pro'
+  ) return 'google_ai_pro'
   if (
     normalized === 'google_one_free' ||
-    normalized === 'aistudio_free' ||
     normalized === 'google_one_unknown' ||
     normalized === 'free' ||
-    normalized === 'free-tier' ||
-    normalized === 'standard-tier'
-  ) return 'free'
-  if (normalized.includes('ultra')) return 'ultra'
+    normalized === 'free-tier'
+  ) return 'google_one_free'
+  if (
+    normalized === 'aistudio_paid'
+  ) return 'aistudio_paid'
+  if (
+    normalized === 'aistudio_free'
+  ) return 'aistudio_free'
+  if (
+    normalized === 'gcp_standard' ||
+    normalized === 'standard' ||
+    normalized === 'standard-tier' ||
+    normalized === 'pro-tier'
+  ) return 'gcp_standard'
+  if (
+    normalized === 'gcp_enterprise' ||
+    normalized === 'enterprise' ||
+    normalized === 'ultra-tier'
+  ) return 'gcp_enterprise'
+  if (normalized.includes('ultra')) return 'google_ai_ultra'
   if (
     normalized.includes('pro') ||
-    normalized.includes('premium') ||
-    normalized.includes('paid')
-  ) return 'pro'
-  if (
-    normalized.includes('free')
-  ) return 'free'
+    normalized.includes('premium')
+  ) return 'google_ai_pro'
+  if (normalized.includes('paid')) return 'aistudio_paid'
+  if (normalized.includes('free')) return 'google_one_free'
   return ''
 }
 
 function getPlatformBadgePlanType(row: any): string | undefined {
   if (row?.platform === 'gemini') {
-    const sources = [
-      row?.extra?.gemini_paid_tier_id,
-      row?.credentials?.gemini_paid_tier_id,
-      row?.credentials?.tier_id,
-      row?.credentials?.gemini_current_tier_id,
-      row?.extra?.gemini_current_tier_id,
-      row?.extra?.tier_id,
-      row?.credentials?.plan_type,
-      row?.credentials?.plan_name,
-      row?.credentials?.gemini_paid_tier_name,
-      row?.credentials?.gemini_current_tier_name,
-      row?.extra?.plan_type,
-      row?.extra?.plan_name,
-      row?.extra?.gemini_paid_tier_name,
-      row?.extra?.gemini_current_tier_name,
-      row?.extra?.subscription_type,
-    ]
-    const normalizedTier = sources
+    const normalizedTier = collectGeminiTierMetadataSources(
+      (row?.credentials || {}) as Record<string, unknown>,
+      (row?.extra || {}) as Record<string, unknown>
+    )
       .map((value) => normalizeGeminiPlatformTier(value))
       .find((value) => value.length > 0)
     return normalizedTier || undefined
@@ -1161,50 +1161,11 @@ function getPlatformBadgePlanType(row: any): string | undefined {
 
 function getGeminiOAuthBadgeType(row: any): 'google_one' | 'code_assist' | '' {
   if (row?.platform !== 'gemini' || row?.type !== 'oauth') return ''
-  const explicitType = typeof row?.credentials?.oauth_type === 'string'
-    ? row.credentials.oauth_type.trim().toLowerCase()
-    : ''
-  if (explicitType === 'google_one' || explicitType === 'code_assist') {
-    return explicitType
-  }
-
-  const tierSources = [
-    row?.extra?.gemini_paid_tier_id,
-    row?.credentials?.gemini_paid_tier_id,
-    row?.credentials?.tier_id,
-    row?.credentials?.gemini_current_tier_id,
-    row?.extra?.gemini_current_tier_id,
-    row?.extra?.tier_id,
-    row?.credentials?.plan_type,
-    row?.credentials?.plan_name,
-    row?.credentials?.gemini_paid_tier_name,
-    row?.credentials?.gemini_current_tier_name,
-    row?.extra?.plan_type,
-    row?.extra?.plan_name,
-    row?.extra?.gemini_paid_tier_name,
-    row?.extra?.gemini_current_tier_name,
-    row?.extra?.subscription_type,
-  ]
-    .map((value) => (typeof value === 'string' ? value.trim().toLowerCase() : ''))
-    .filter((value) => value.length > 0)
-
-  for (const source of tierSources) {
-    if (
-      source.includes('google one') ||
-      source.includes('google_one') ||
-      source.includes('google ai') ||
-      source.includes('google_ai') ||
-      source.startsWith('g1-') ||
-      source === 'free-tier'
-    ) {
-      return 'google_one'
-    }
-    if (source.includes('gcp_') || source === 'standard' || source === 'enterprise') {
-      return 'code_assist'
-    }
-  }
-
-  return ''
+  return inferGeminiOAuthType(
+    (row?.credentials || {}) as Record<string, unknown>,
+    (row?.extra || {}) as Record<string, unknown>,
+    ''
+  )
 }
 
 function getPlatformBadgeTypeLabel(row: any): string | undefined {

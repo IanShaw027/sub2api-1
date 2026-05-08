@@ -102,6 +102,7 @@ const PlatformTypeBadgeStub = defineComponent({
     platform: { type: String, default: '' },
     type: { type: String, default: '' },
     planType: { type: String, default: '' },
+    typeLabelOverride: { type: String, default: '' },
     organizationRole: { type: String, default: '' }
   },
   template: `
@@ -110,6 +111,7 @@ const PlatformTypeBadgeStub = defineComponent({
       :data-platform="platform"
       :data-type="type"
       :data-plan-type="planType"
+      :data-type-label-override="typeLabelOverride"
       :data-organization-role="organizationRole"
     />
   `
@@ -380,7 +382,7 @@ describe('admin AccountsView bulk edit scope', () => {
     expect(badges[1].attributes('data-plan-type')).toBe('team')
   })
 
-  it('maps canonical gemini tier ids to pro and leaves unknown tiers unclassified', async () => {
+  it('maps canonical gemini tier ids without relying on subscription_type fallbacks', async () => {
     listAccounts.mockResolvedValueOnce({
       items: [
         {
@@ -418,7 +420,7 @@ describe('admin AccountsView bulk edit scope', () => {
     const badges = wrapper.findAll('[data-test="platform-type-badge"]')
     expect(badges).toHaveLength(2)
     expect(badges[0].attributes('data-plan-type')).toBe('pro')
-    expect(badges[1].attributes('data-plan-type')).toBe('')
+    expect(badges[1].attributes('data-plan-type')).toBe('gcp_enterprise')
   })
 
   it('prefers gemini paid tier metadata over free google one tier when both exist', async () => {

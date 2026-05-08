@@ -80,7 +80,9 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const normalizeGeminiTier = (value?: string): 'free' | 'pro' | 'ultra' | '' => {
+const normalizeGeminiTier = (
+  value?: string
+): 'google_one_free' | 'google_ai_pro' | 'google_ai_ultra' | 'aistudio_free' | 'aistudio_paid' | 'gcp_standard' | 'gcp_enterprise' | '' => {
   const normalized = (value || '').trim().toLowerCase()
   if (!normalized) return ''
   if (
@@ -88,30 +90,38 @@ const normalizeGeminiTier = (value?: string): 'free' | 'pro' | 'ultra' | '' => {
     normalized === 'g1-ultra-tier' ||
     normalized === 'google_one_ultra' ||
     normalized === 'google_one_unlimited'
-  ) return 'ultra'
+  ) return 'google_ai_ultra'
   if (
     normalized === 'google_ai_pro' ||
-    normalized === 'aistudio_paid' ||
     normalized === 'g1-pro-tier' ||
     normalized === 'ai_premium'
-  ) return 'pro'
+  ) return 'google_ai_pro'
   if (
     normalized === 'google_one_free' ||
-    normalized === 'aistudio_free' ||
     normalized === 'google_one_unknown' ||
     normalized === 'free' ||
-    normalized === 'free-tier' ||
-    normalized === 'standard-tier'
-  ) return 'free'
-  if (normalized.includes('ultra')) return 'ultra'
+    normalized === 'free-tier'
+  ) return 'google_one_free'
+  if (normalized === 'aistudio_paid') return 'aistudio_paid'
+  if (normalized === 'aistudio_free') return 'aistudio_free'
+  if (
+    normalized === 'gcp_standard' ||
+    normalized === 'standard' ||
+    normalized === 'standard-tier' ||
+    normalized === 'pro-tier'
+  ) return 'gcp_standard'
+  if (
+    normalized === 'gcp_enterprise' ||
+    normalized === 'enterprise' ||
+    normalized === 'ultra-tier'
+  ) return 'gcp_enterprise'
+  if (normalized.includes('ultra')) return 'google_ai_ultra'
   if (
     normalized.includes('pro') ||
-    normalized.includes('premium') ||
-    normalized.includes('paid')
-  ) return 'pro'
-  if (
-    normalized.includes('free')
-  ) return 'free'
+    normalized.includes('premium')
+  ) return 'google_ai_pro'
+  if (normalized.includes('paid')) return 'aistudio_paid'
+  if (normalized.includes('free')) return 'google_one_free'
   return ''
 }
 
@@ -152,12 +162,20 @@ const planLabel = computed(() => {
   if (!props.planType) return ''
   if (props.platform === 'gemini' && geminiTier.value) {
     switch (geminiTier.value) {
-      case 'free':
+      case 'google_one_free':
         return 'Free'
-      case 'pro':
+      case 'google_ai_pro':
         return 'Pro'
-      case 'ultra':
+      case 'google_ai_ultra':
         return 'Ultra'
+      case 'aistudio_free':
+        return 'AI Studio Free Tier'
+      case 'aistudio_paid':
+        return 'AI Studio Pay-as-you-go'
+      case 'gcp_standard':
+        return 'GCP Standard'
+      case 'gcp_enterprise':
+        return 'GCP Enterprise'
       default:
         break
     }
@@ -224,11 +242,15 @@ const planBadgeClass = computed(() => {
   }
   if (props.platform === 'gemini' && geminiTier.value) {
     switch (geminiTier.value) {
-      case 'free':
+      case 'google_one_free':
+      case 'aistudio_free':
         return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-      case 'pro':
+      case 'google_ai_pro':
+      case 'aistudio_paid':
+      case 'gcp_standard':
         return 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300'
-      case 'ultra':
+      case 'google_ai_ultra':
+      case 'gcp_enterprise':
         return 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300'
       default:
         break
@@ -251,7 +273,11 @@ const organizationRoleLabel = computed(() => {
 // Subscription expiration label (non-free only)
 const expiresLabel = computed(() => {
   if (!props.subscriptionExpiresAt || !props.planType) return ''
-  if (props.planType.toLowerCase() === 'free') return ''
+  if (props.platform === 'gemini') {
+    if (geminiTier.value === 'google_one_free' || geminiTier.value === 'aistudio_free') return ''
+  } else if (props.planType.toLowerCase() === 'free') {
+    return ''
+  }
   try {
     const d = new Date(props.subscriptionExpiresAt)
     if (isNaN(d.getTime())) return ''

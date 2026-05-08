@@ -72,6 +72,21 @@ describe('AccountQuotaInfo', () => {
     expect(enterpriseWrapper.text()).toContain('GCP Enterprise')
   })
 
+  it('infers legacy tier-only code assist accounts without explicit oauth_type', () => {
+    const wrapper = mount(AccountQuotaInfo, {
+      props: {
+        account: makeAccount({
+          credentials: {
+            tier_id: 'standard-tier'
+          }
+        })
+      }
+    })
+
+    expect(wrapper.text()).toContain('GCP Standard')
+    expect(wrapper.text()).not.toContain('Google One Free')
+  })
+
   it('normalizes google one pro metadata without leaking verbose detail rows', () => {
     const wrapper = mount(AccountQuotaInfo, {
       props: {
@@ -104,6 +119,26 @@ describe('AccountQuotaInfo', () => {
     expect(wrapper.text()).not.toContain('user@example.com')
     expect(wrapper.text()).not.toContain('refreshing-center-hnmwg')
     expect(wrapper.text()).not.toContain('Gemini Code Assist in Google One AI Pro')
+  })
+
+  it('prefers paid tier metadata over current tier metadata for google one quota display', () => {
+    const wrapper = mount(AccountQuotaInfo, {
+      props: {
+        account: makeAccount({
+          credentials: {
+            oauth_type: 'google_one',
+            gemini_current_tier_id: 'free-tier'
+          },
+          extra: {
+            gemini_paid_tier_id: 'g1-pro-tier'
+          }
+        })
+      }
+    })
+
+    expect(wrapper.text()).toContain('Google One Pro')
+    expect(wrapper.text()).not.toContain('Google One Free')
+    expect(wrapper.text()).toContain('admin.accounts.gemini.quotaPolicy.rows.googleOne.limitsPro')
   })
 
   it('shows Gemini rate limit countdown when account is limited', () => {

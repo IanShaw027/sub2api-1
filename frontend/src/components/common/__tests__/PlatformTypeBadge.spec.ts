@@ -59,16 +59,30 @@ describe('PlatformTypeBadge', () => {
     expect(wrapper.text()).toContain('__GOOGLE_ONE__')
   })
 
-  it('keeps unknown Gemini tier ids from being misclassified as paid or free labels', () => {
-    const wrapper = mountBadge({
+  it('shows explicit Gemini Code Assist tier labels', () => {
+    const standardWrapper = mountBadge({
+      platform: 'gemini',
+      type: 'oauth',
+      planType: 'gcp_standard'
+    })
+    const enterpriseWrapper = mountBadge({
       platform: 'gemini',
       type: 'oauth',
       planType: 'gcp_enterprise'
     })
 
-    expect(wrapper.text()).toContain('__OAUTH__')
-    expect(wrapper.text()).not.toContain('Pro')
-    expect(wrapper.text()).not.toContain('Free')
+    expect(standardWrapper.text()).toContain('GCP Standard')
+    expect(enterpriseWrapper.text()).toContain('GCP Enterprise')
+  })
+
+  it('shows explicit Gemini AI Studio tier labels', () => {
+    const wrapper = mountBadge({
+      platform: 'gemini',
+      type: 'apikey',
+      planType: 'aistudio_paid'
+    })
+
+    expect(wrapper.text()).toContain('AI Studio Pay-as-you-go')
   })
 
   it('marks OpenAI team leaders in platform type badges', () => {
