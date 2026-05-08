@@ -97,6 +97,33 @@ describe('OAuthAuthorizationFlow', () => {
     expect(wrapper.text()).not.toContain('admin.accounts.oauth.gemini.projectIdRecoveryTitle')
   })
 
+  it('shows explicit Gemini age-eligibility guidance without revealing project recovery', () => {
+    const wrapper = mountComponent({
+      showProjectId: true,
+      showProjectIdRecovery: true,
+      error: 'admin.accounts.oauth.gemini.codeAssistAgeVerificationRequired'
+    })
+
+    expect(wrapper.text()).toContain('admin.accounts.oauth.gemini.eligibilityGuidanceTitle')
+    expect(wrapper.text()).toContain('admin.accounts.oauth.gemini.eligibilityAgeReason')
+    expect(wrapper.text()).toContain('admin.accounts.oauth.gemini.eligibilityAgeNotGcpRelated')
+    expect(wrapper.text()).not.toContain('admin.accounts.oauth.gemini.projectIdRecoveryTitle')
+  })
+
+  it('shows generic Gemini eligibility guidance for non-age failures', () => {
+    const wrapper = mountComponent({
+      showProjectId: true,
+      showProjectIdRecovery: true,
+      error: 'admin.accounts.oauth.gemini.ineligibleTier'
+    })
+
+    expect(wrapper.text()).toContain('admin.accounts.oauth.gemini.ineligibleTierGuidanceTitle')
+    expect(wrapper.text()).toContain('admin.accounts.oauth.gemini.ineligibleTierReason')
+    expect(wrapper.text()).toContain('admin.accounts.oauth.gemini.eligibilityGenericStepRetryAuth')
+    expect(wrapper.text()).toContain('admin.accounts.oauth.gemini.eligibilityGenericStepTryOtherFlow')
+    expect(wrapper.text()).not.toContain('admin.accounts.oauth.gemini.eligibilityAgeNotGcpRelated')
+  })
+
   it('does not reveal project id recovery when recovery mode is disabled', () => {
     const wrapper = mountComponent({
       showProjectId: false,

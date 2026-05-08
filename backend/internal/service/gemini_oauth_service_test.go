@@ -1933,6 +1933,55 @@ func TestGeminiOAuthService_ExchangeCode_CodeAssist_ValidationRequiredWithoutURL
 	}
 }
 
+func TestGeminiOAuthService_ExchangeCode_GoogleOne_IneligibleTierIncludesReasonCode(t *testing.T) {
+	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
+
+	client := &mockGeminiOAuthClient{
+		exchangeCodeFunc: func(ctx context.Context, oauthType, code, codeVerifier, redirectURI, proxyURL string) (*geminicli.TokenResponse, error) {
+			return &geminicli.TokenResponse{
+				AccessToken:  "at",
+				RefreshToken: "rt",
+				TokenType:    "Bearer",
+				ExpiresIn:    3600,
+			}, nil
+		},
+	}
+
+	codeAssist := &mockGeminiCodeAssistClient{
+		loadCodeAssistFunc: func(ctx context.Context, accessToken, proxyURL string, req *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
+			return &geminicli.LoadCodeAssistResponse{
+				IneligibleTiers: []geminicli.IneligibleTier{
+					{
+						ReasonCode:    geminicli.IneligibleTierReasonCodeRestrictedAge,
+						ReasonMessage: "Your current account is not eligible for Gemini Code Assist for individuals.",
+					},
+				},
+			}, nil
+		},
+	}
+
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, &config.Config{})
+	defer svc.Stop()
+
+	result, err := svc.GenerateAuthURL(context.Background(), nil, "https://example.com/auth/callback", "", "google_one", "")
+	if err != nil {
+		t.Fatalf("GenerateAuthURL 返回错误: %v", err)
+	}
+
+	_, err = svc.ExchangeCode(context.Background(), &GeminiExchangeCodeInput{
+		SessionID: result.SessionID,
+		State:     result.State,
+		Code:      "code-1",
+		OAuthType: "google_one",
+	})
+	if err == nil {
+		t.Fatal("ExchangeCode 应返回 ineligible_tier 错误")
+	}
+	if !strings.Contains(err.Error(), "ineligible_tier[RESTRICTED_AGE]:") {
+		t.Fatalf("错误信息应包含 reason code: got=%q", err.Error())
+	}
+}
+
 func TestGeminiOAuthService_ExchangeCode_CodeAssist_OnboardMissingProjectFallsBackToHint(t *testing.T) {
 	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
 

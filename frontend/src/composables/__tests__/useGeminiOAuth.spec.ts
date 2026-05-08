@@ -155,6 +155,91 @@ describe('useGeminiOAuth.exchangeAuthCode', () => {
     expect(result).toBeNull()
     expect(oauth.error.value).toBe('admin.accounts.oauth.gemini.googleOneProjectDetectionFailed')
   })
+
+  it('maps code assist age verification ineligible errors to a dedicated error key', async () => {
+    vi.mocked(adminAPI.gemini.exchangeCode).mockRejectedValueOnce({
+      response: {
+        data: {
+          detail:
+            'Failed to exchange code: ineligible_tier[RESTRICTED_AGE]: Your current account is not eligible for Gemini Code Assist for individuals. To use Gemini Code Assist for individuals you must be 18 years old or older. If you think you are receiving this message in error, please ensure you have verified your age and try to log in again.'
+        }
+      }
+    })
+    const oauth = useGeminiOAuth()
+
+    const result = await oauth.exchangeAuthCode({
+      code: 'code',
+      sessionId: 'session',
+      state: 'state',
+      oauthType: 'code_assist'
+    })
+
+    expect(result).toBeNull()
+    expect(oauth.error.value).toBe('admin.accounts.oauth.gemini.codeAssistAgeVerificationRequired')
+  })
+
+  it('maps reason-code-only restricted age errors to the age eligibility key', async () => {
+    vi.mocked(adminAPI.gemini.exchangeCode).mockRejectedValueOnce({
+      response: {
+        data: {
+          detail: 'Failed to exchange code: ineligible_tier[RESTRICTED_AGE]: upstream eligibility rejected this account'
+        }
+      }
+    })
+    const oauth = useGeminiOAuth()
+
+    const result = await oauth.exchangeAuthCode({
+      code: 'code',
+      sessionId: 'session',
+      state: 'state',
+      oauthType: 'google_one'
+    })
+
+    expect(result).toBeNull()
+    expect(oauth.error.value).toBe('admin.accounts.oauth.gemini.codeAssistAgeVerificationRequired')
+  })
+
+  it('maps generic ineligible tier errors to a dedicated error key', async () => {
+    vi.mocked(adminAPI.gemini.exchangeCode).mockRejectedValueOnce({
+      response: {
+        data: {
+          detail: 'Failed to exchange code: ineligible_tier: account is not eligible for this tier'
+        }
+      }
+    })
+    const oauth = useGeminiOAuth()
+
+    const result = await oauth.exchangeAuthCode({
+      code: 'code',
+      sessionId: 'session',
+      state: 'state',
+      oauthType: 'code_assist'
+    })
+
+    expect(result).toBeNull()
+    expect(oauth.error.value).toBe('admin.accounts.oauth.gemini.ineligibleTier')
+  })
+
+  it('maps reason-coded non-age ineligible tier errors to the generic ineligible key', async () => {
+    vi.mocked(adminAPI.gemini.exchangeCode).mockRejectedValueOnce({
+      response: {
+        data: {
+          detail: 'Failed to exchange code: ineligible_tier[INELIGIBLE_ACCOUNT]: upstream eligibility rejected this account'
+        }
+      }
+    })
+    const oauth = useGeminiOAuth()
+
+    const result = await oauth.exchangeAuthCode({
+      code: 'code',
+      sessionId: 'session',
+      state: 'state',
+      oauthType: 'google_one'
+    })
+
+    expect(result).toBeNull()
+    expect(oauth.error.value).toBe('admin.accounts.oauth.gemini.ineligibleTier')
+  })
 })
 
 describe('useGeminiOAuth.generateAuthUrl', () => {

@@ -383,6 +383,48 @@ func buildGeminiCodeAssistValidationError(ineligibleTiers []geminicli.Ineligible
 	return fmt.Errorf("validation_required: %s", message)
 }
 
+func joinGeminiIneligibleTierReasonCodes(ineligibleTiers []geminicli.IneligibleTier) string {
+	codes := make([]string, 0, len(ineligibleTiers))
+	seen := make(map[string]struct{}, len(ineligibleTiers))
+	for _, tier := range ineligibleTiers {
+		code := strings.TrimSpace(string(tier.ReasonCode))
+		if code == "" {
+			continue
+		}
+		if _, exists := seen[code]; exists {
+			continue
+		}
+		seen[code] = struct{}{}
+		codes = append(codes, code)
+	}
+	return strings.Join(codes, ",")
+}
+
+func summarizeGeminiIneligibleTiers(ineligibleTiers []geminicli.IneligibleTier) string {
+	if len(ineligibleTiers) == 0 {
+		return ""
+	}
+
+	parts := make([]string, 0, len(ineligibleTiers))
+	for _, tier := range ineligibleTiers {
+		values := make([]string, 0, 4)
+		if code := strings.TrimSpace(string(tier.ReasonCode)); code != "" {
+			values = append(values, fmt.Sprintf("reason_code=%s", code))
+		}
+		if tierID := strings.TrimSpace(tier.TierID); tierID != "" {
+			values = append(values, fmt.Sprintf("tier_id=%s", tierID))
+		}
+		if message := strings.TrimSpace(tier.ReasonMessage); message != "" {
+			values = append(values, fmt.Sprintf("reason_message=%q", message))
+		}
+		if message := strings.TrimSpace(tier.ValidationErrorMessage); message != "" {
+			values = append(values, fmt.Sprintf("validation_error=%q", message))
+		}
+		parts = append(parts, "{"+strings.Join(values, ", ")+"}")
+	}
+	return strings.Join(parts, "; ")
+}
+
 func buildGeminiCodeAssistIneligibleError(ineligibleTiers []geminicli.IneligibleTier) error {
 	if len(ineligibleTiers) == 0 {
 		return nil
@@ -406,6 +448,9 @@ func buildGeminiCodeAssistIneligibleError(ineligibleTiers []geminicli.Ineligible
 		reasons = append(reasons, reason)
 	}
 
+	if reasonCodes := joinGeminiIneligibleTierReasonCodes(ineligibleTiers); reasonCodes != "" {
+		return fmt.Errorf("ineligible_tier[%s]: %s", reasonCodes, strings.Join(reasons, "; "))
+	}
 	return fmt.Errorf("ineligible_tier: %s", strings.Join(reasons, "; "))
 }
 
@@ -414,6 +459,14 @@ func buildGeminiCodeAssistProjectIDRequiredError(registeredTierID string) error 
 		return fmt.Errorf("user is registered (tier: %s) but no project_id available. Please provide Project ID manually in the authorization form, or create a project at https://console.cloud.google.com", tierID)
 	}
 	return fmt.Errorf("project_id required for Gemini Code Assist authorization. Please provide Project ID manually in the authorization form, or create a project at https://console.cloud.google.com")
+}
+
+func isGeminiEligibilityError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	return strings.Contains(message, "validation_required:") || strings.Contains(message, "ineligible_tier")
 }
 
 func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExchangeCodeInput) (*GeminiTokenInfo, error) {
@@ -509,7 +562,7 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 			tokenExtra = mergeGeminiCredentialExtra(tokenExtra, snapshot.Extra)
 		}
 		if detectErr != nil {
-			if strings.Contains(detectErr.Error(), "validation_required:") || strings.Contains(detectErr.Error(), "ineligible_tier:") {
+			if isGeminiEligibilityError(detectErr) {
 				return nil, detectErr
 			}
 			// 记录警告但不阻断流程，允许后续补充 project_id
@@ -556,7 +609,7 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 				tokenExtra = mergeGeminiCredentialExtra(tokenExtra, snapshot.Extra)
 			}
 			if err != nil {
-				if strings.Contains(err.Error(), "validation_required:") || strings.Contains(err.Error(), "ineligible_tier:") {
+				if isGeminiEligibilityError(err) {
 					return nil, err
 				}
 				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] ERROR: Failed to fetch project_id: %v", err)
@@ -766,7 +819,7 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 			}
 			err := detectErr
 			if err != nil {
-				if strings.Contains(err.Error(), "validation_required:") || strings.Contains(err.Error(), "ineligible_tier:") {
+				if isGeminiEligibilityError(err) {
 					return nil, err
 				}
 				fmt.Printf("[GeminiOAuth] Warning: failed to auto-detect project/tier: %v\n", err)
@@ -1235,6 +1288,9 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 	snapshot, loadErr := s.fetchCodeAssistSnapshot(ctx, accessToken, proxyURL, trimmedProjectIDHint)
 	if snapshot == nil {
 		snapshot = &geminiCodeAssistSnapshot{}
+	}
+	if len(snapshot.IneligibleTiers) > 0 {
+		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Ineligible tiers returned by LoadCodeAssist: %s", summarizeGeminiIneligibleTiers(snapshot.IneligibleTiers))
 	}
 	if loadErr == nil {
 		if validationErr := buildGeminiCodeAssistValidationError(snapshot.IneligibleTiers); validationErr != nil {

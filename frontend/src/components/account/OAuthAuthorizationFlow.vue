@@ -575,6 +575,49 @@
                     {{ error }}
                   </p>
                 </div>
+
+                <div
+                  v-if="showGeminiEligibilityGuidance"
+                  class="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/30"
+                >
+                  <p class="text-sm font-medium text-amber-900 dark:text-amber-200">
+                    {{
+                      isGeminiAgeEligibilityError
+                        ? t('admin.accounts.oauth.gemini.eligibilityGuidanceTitle')
+                        : t('admin.accounts.oauth.gemini.ineligibleTierGuidanceTitle')
+                    }}
+                  </p>
+                  <p class="mt-1 whitespace-pre-line text-xs text-amber-800 dark:text-amber-300">
+                    {{
+                      isGeminiAgeEligibilityError
+                        ? t('admin.accounts.oauth.gemini.eligibilityAgeReason')
+                        : t('admin.accounts.oauth.gemini.ineligibleTierReason')
+                    }}
+                  </p>
+                  <ol class="mt-2 list-inside list-decimal space-y-1 text-xs text-amber-800 dark:text-amber-300">
+                    <li>{{ t('admin.accounts.oauth.gemini.eligibilityStepCheckAccount') }}</li>
+                    <li>
+                      {{
+                        isGeminiAgeEligibilityError
+                          ? t('admin.accounts.oauth.gemini.eligibilityAgeStepRetryAuth')
+                          : t('admin.accounts.oauth.gemini.eligibilityGenericStepRetryAuth')
+                      }}
+                    </li>
+                    <li>
+                      {{
+                        isGeminiAgeEligibilityError
+                          ? t('admin.accounts.oauth.gemini.eligibilityAgeStepTryOtherFlow')
+                          : t('admin.accounts.oauth.gemini.eligibilityGenericStepTryOtherFlow')
+                      }}
+                    </li>
+                  </ol>
+                  <p
+                    v-if="isGeminiAgeEligibilityError"
+                    class="mt-2 text-xs text-amber-900 dark:text-amber-200"
+                  >
+                    {{ t('admin.accounts.oauth.gemini.eligibilityAgeNotGcpRelated') }}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -744,6 +787,15 @@ const oauthImportantNotice = computed(() => {
 })
 const isGeminiProjectRecoveryError = computed(
   () => props.platform === 'gemini' && props.error === t('admin.accounts.oauth.gemini.missingProjectId')
+)
+const isGeminiAgeEligibilityError = computed(
+  () => props.platform === 'gemini' && props.error === t('admin.accounts.oauth.gemini.codeAssistAgeVerificationRequired')
+)
+const isGeminiIneligibleTierError = computed(
+  () => props.platform === 'gemini' && props.error === t('admin.accounts.oauth.gemini.ineligibleTier')
+)
+const showGeminiEligibilityGuidance = computed(
+  () => isGeminiAgeEligibilityError.value || isGeminiIneligibleTierError.value
 )
 const showGeminiProjectRecoveryStep = computed(
   () =>

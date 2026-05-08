@@ -61,6 +61,37 @@ export function useGeminiOAuth() {
     )
   }
 
+  const isIneligibleTierError = (message: string): boolean => {
+    return message.toLowerCase().includes('ineligible_tier')
+  }
+
+  const extractIneligibleTierReasonCodes = (message: string): string[] => {
+    const match = message.match(/ineligible_tier\[([A-Z_,]+)\]:/)
+    if (!match || !match[1]) return []
+    return match[1]
+      .split(',')
+      .map((code) => code.trim())
+      .filter((code) => code)
+  }
+
+  const hasIneligibleTierReasonCode = (message: string, reasonCode: string): boolean => {
+    return extractIneligibleTierReasonCodes(message).includes(reasonCode)
+  }
+
+  const isAgeVerificationError = (message: string): boolean => {
+    const normalized = message.toLowerCase()
+    return (
+      hasIneligibleTierReasonCode(message, 'RESTRICTED_AGE') ||
+      (
+        isIneligibleTierError(normalized) &&
+        (
+          normalized.includes('18 years old or older') ||
+          normalized.includes('verified your age')
+        )
+      )
+    )
+  }
+
   const generateAuthUrl = async (
     proxyId: number | null | undefined,
     projectId?: string | null,
@@ -139,6 +170,10 @@ export function useGeminiOAuth() {
         error.value = t('admin.accounts.oauth.gemini.missingProjectId')
       } else if (params.oauthType === 'google_one' && isGoogleOneProjectDetectionError(errorMessage)) {
         error.value = t('admin.accounts.oauth.gemini.googleOneProjectDetectionFailed')
+      } else if (isAgeVerificationError(errorMessage)) {
+        error.value = t('admin.accounts.oauth.gemini.codeAssistAgeVerificationRequired')
+      } else if (isIneligibleTierError(errorMessage)) {
+        error.value = t('admin.accounts.oauth.gemini.ineligibleTier')
       } else {
         error.value = errorMessage || t('admin.accounts.oauth.gemini.failedToExchangeCode')
       }
