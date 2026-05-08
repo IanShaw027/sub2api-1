@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 )
 
@@ -215,8 +216,158 @@ type geminiUsageLogRepoStub struct {
 	modelStats []usagestats.ModelStat
 }
 
+var _ UsageLogRepository = (*geminiUsageLogRepoStub)(nil)
+
+func (r *geminiUsageLogRepoStub) Create(_ context.Context, _ *UsageLog) (bool, error) {
+	return true, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetByID(_ context.Context, _ int64) (*UsageLog, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) Delete(_ context.Context, _ int64) error {
+	return nil
+}
+
+func (r *geminiUsageLogRepoStub) ListByUser(_ context.Context, _ int64, _ pagination.PaginationParams) ([]UsageLog, *pagination.PaginationResult, error) {
+	return nil, nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) ListByAPIKey(_ context.Context, _ int64, _ pagination.PaginationParams) ([]UsageLog, *pagination.PaginationResult, error) {
+	return nil, nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) ListByAccount(_ context.Context, _ int64, _ pagination.PaginationParams) ([]UsageLog, *pagination.PaginationResult, error) {
+	return nil, nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) ListByUserAndTimeRange(_ context.Context, _ int64, _, _ time.Time) ([]UsageLog, *pagination.PaginationResult, error) {
+	return nil, nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) ListByAPIKeyAndTimeRange(_ context.Context, _ int64, _, _ time.Time) ([]UsageLog, *pagination.PaginationResult, error) {
+	return nil, nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) ListByAccountAndTimeRange(_ context.Context, _ int64, _, _ time.Time) ([]UsageLog, *pagination.PaginationResult, error) {
+	return nil, nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) ListByModelAndTimeRange(_ context.Context, _ string, _, _ time.Time) ([]UsageLog, *pagination.PaginationResult, error) {
+	return nil, nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetAccountWindowStats(_ context.Context, _ int64, _ time.Time) (*usagestats.AccountStats, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetAccountTodayStats(_ context.Context, _ int64) (*usagestats.AccountStats, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetDashboardStats(_ context.Context) (*usagestats.DashboardStats, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetUsageTrendWithFilters(_ context.Context, _, _ time.Time, _ string, _, _, _, _ int64, _ string, _ *int16, _ *bool, _ *int8, _ string) ([]usagestats.TrendDataPoint, error) {
+	return nil, nil
+}
+
 func (r *geminiUsageLogRepoStub) GetModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8, billingMode string) ([]usagestats.ModelStat, error) {
 	return r.modelStats, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetEndpointStatsWithFilters(_ context.Context, _, _ time.Time, _, _, _, _ int64, _ string, _ *int16, _ *bool, _ *int8) ([]usagestats.EndpointStat, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetUpstreamEndpointStatsWithFilters(_ context.Context, _, _ time.Time, _, _, _, _ int64, _ string, _ *int16, _ *bool, _ *int8) ([]usagestats.EndpointStat, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetGroupStatsWithFilters(_ context.Context, _, _ time.Time, _, _, _, _ int64, _ *int16, _ *bool, _ *int8, _ string) ([]usagestats.GroupStat, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetUserBreakdownStats(_ context.Context, _, _ time.Time, _ usagestats.UserBreakdownDimension, _ int) ([]usagestats.UserBreakdownItem, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetAllGroupUsageSummary(_ context.Context, _ time.Time) ([]usagestats.GroupUsageSummary, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetAPIKeyUsageTrend(_ context.Context, _, _ time.Time, _ string, _ int) ([]usagestats.APIKeyUsageTrendPoint, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetUserUsageTrend(_ context.Context, _, _ time.Time, _ string, _ int) ([]usagestats.UserUsageTrendPoint, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetUserSpendingRanking(_ context.Context, _, _ time.Time, _ int) (*usagestats.UserSpendingRankingResponse, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetBatchUserUsageStats(_ context.Context, _ []int64, _, _ time.Time) (map[int64]*usagestats.BatchUserUsageStats, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetBatchAPIKeyUsageStats(_ context.Context, _ []int64, _, _ time.Time) (map[int64]*usagestats.BatchAPIKeyUsageStats, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetUserDashboardStats(_ context.Context, _ int64) (*usagestats.UserDashboardStats, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetAPIKeyDashboardStats(_ context.Context, _ int64) (*usagestats.UserDashboardStats, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetUserUsageTrendByUserID(_ context.Context, _ int64, _, _ time.Time, _ string) ([]usagestats.TrendDataPoint, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetUserModelStats(_ context.Context, _ int64, _, _ time.Time) ([]usagestats.ModelStat, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) ListWithFilters(_ context.Context, _ pagination.PaginationParams, _ usagestats.UsageLogFilters) ([]UsageLog, *pagination.PaginationResult, error) {
+	return nil, nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetGlobalStats(_ context.Context, _, _ time.Time) (*usagestats.UsageStats, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetStatsWithFilters(_ context.Context, _ usagestats.UsageLogFilters) (*usagestats.UsageStats, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetAccountUsageStats(_ context.Context, _ int64, _, _ time.Time) (*usagestats.AccountUsageStatsResponse, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetUserStatsAggregated(_ context.Context, _ int64, _, _ time.Time) (*usagestats.UsageStats, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetAPIKeyStatsAggregated(_ context.Context, _ int64, _, _ time.Time) (*usagestats.UsageStats, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetAccountStatsAggregated(_ context.Context, _ int64, _, _ time.Time) (*usagestats.UsageStats, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetModelStatsAggregated(_ context.Context, _ string, _, _ time.Time) (*usagestats.UsageStats, error) {
+	return nil, nil
+}
+
+func (r *geminiUsageLogRepoStub) GetDailyStatsAggregated(_ context.Context, _ int64, _, _ time.Time) ([]map[string]any, error) {
+	return nil, nil
 }
 
 func TestAccountUsageService_GetGeminiUsage_PrefersQuotaSnapshotUtilization(t *testing.T) {
