@@ -2810,7 +2810,7 @@
         "title": "图片生成计费",
         "description": "配置图片生成能力和图片基础单价，留空则使用默认价格",
         "routeLabel": "生图类型",
-        "routeHint": "images 端点会按这里的配置自动走 codex 或 web2api；images2api 端点始终固定走 web2api。",
+        "routeHint": "images 端点只走 codex；images2api 端点只走 web2api，且仅在当前分组开启 web2api 时才允许调用。",
         "routeCodex": "codex",
         "routeWeb2api": "web2api",
         "images": "Images API (/v1/images/*)",
@@ -2821,6 +2821,7 @@
         "imageMultiplier": "生图独立倍率",
         "modeHint": "默认关闭独立倍率时，图片费用 = 图片价格 × 当前分组有效倍率；开启独立倍率后，图片费用 = 图片价格 × 生图独立倍率。",
         "finalPricePreview": "最终单张价格预览",
+        "openaiTypeRequired": "请至少选择一种生图类型",
         "tier1k": "1K",
         "tier2k": "2K",
         "tier4k": "4K",
@@ -3419,7 +3420,8 @@
       "badges": {
         "private": "私密",
         "cf": "CF",
-        "fail": "失败"
+        "fail": "失败",
+        "teamLeader": "队长"
       },
       "setPrivacy": "设置隐私",
       "subscriptionAbnormal": "异常",

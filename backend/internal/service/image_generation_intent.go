@@ -11,6 +11,8 @@ const (
 	openAIResponsesEndpoint          = "/v1/responses"
 	openAIResponsesCompactEndpoint   = "/v1/responses/compact"
 	imageGenerationPermissionMessage = "Image generation is not enabled for this group"
+	openAIImagesCodexDisabledMessage = "Codex image generation is not enabled for this group"
+	openAIImages2APIDisabledMessage  = "Images2API is not enabled for this group"
 )
 
 // ImageGenerationPermissionMessage returns the stable end-user error text for disabled groups.
@@ -18,9 +20,25 @@ func ImageGenerationPermissionMessage() string {
 	return imageGenerationPermissionMessage
 }
 
+func OpenAIImagesCodexDisabledMessage() string {
+	return openAIImagesCodexDisabledMessage
+}
+
+func OpenAIImages2APIDisabledMessage() string {
+	return openAIImages2APIDisabledMessage
+}
+
 // GroupAllowsImageGeneration preserves ungrouped-key behavior and enforces the flag when a group is present.
 func GroupAllowsImageGeneration(group *Group) bool {
 	return group == nil || group.AllowImageGeneration
+}
+
+func GroupAllowsOpenAIImagesCodex(group *Group) bool {
+	return group == nil || group.OpenAIImageCodexEnabled()
+}
+
+func GroupAllowsOpenAIImages2API(group *Group) bool {
+	return group == nil || group.OpenAIImageWeb2APIEnabled()
 }
 
 // IsImageGenerationIntent classifies requests that can produce generated images.

@@ -112,6 +112,26 @@ func (g *Group) EffectiveImageGenerationRoute() string {
 	return NormalizeGroupImageGenerationRoute(g.ImageGenerationRoute)
 }
 
+func (g *Group) OpenAIImageCodexEnabled() bool {
+	if g == nil {
+		return true
+	}
+	if !g.AllowImageGeneration {
+		return false
+	}
+	return NormalizeGroupImageGenerationRoute(g.ImageGenerationRoute) == GroupImageGenerationRouteCodex
+}
+
+func (g *Group) OpenAIImageWeb2APIEnabled() bool {
+	if g == nil {
+		return true
+	}
+	if !g.AllowImageGeneration {
+		return false
+	}
+	return g.ImageRateIndependent || NormalizeGroupImageGenerationRoute(g.ImageGenerationRoute) == GroupImageGenerationRouteWeb2API
+}
+
 func (g *Group) HasDailyLimit() bool {
 	return g.DailyLimitUSD != nil && *g.DailyLimitUSD > 0
 }

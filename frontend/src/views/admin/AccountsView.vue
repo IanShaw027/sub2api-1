@@ -207,6 +207,7 @@
                   :platform="row.platform"
                   :type="row.type"
                   :plan-type="getPlatformBadgePlanType(row)"
+                  :type-label-override="getPlatformBadgeTypeLabel(row)"
                   :privacy-mode="row.extra?.privacy_mode"
                   :subscription-expires-at="row.credentials?.subscription_expires_at"
                   :organization-role="getOpenAIOrganizationRole(row)"
@@ -1156,6 +1157,62 @@ function getPlatformBadgePlanType(row: any): string | undefined {
     return normalizedTier || undefined
   }
   return row?.credentials?.plan_type
+}
+
+function getGeminiOAuthBadgeType(row: any): 'google_one' | 'code_assist' | '' {
+  if (row?.platform !== 'gemini' || row?.type !== 'oauth') return ''
+  const explicitType = typeof row?.credentials?.oauth_type === 'string'
+    ? row.credentials.oauth_type.trim().toLowerCase()
+    : ''
+  if (explicitType === 'google_one' || explicitType === 'code_assist') {
+    return explicitType
+  }
+
+  const tierSources = [
+    row?.extra?.gemini_paid_tier_id,
+    row?.credentials?.gemini_paid_tier_id,
+    row?.credentials?.tier_id,
+    row?.credentials?.gemini_current_tier_id,
+    row?.extra?.gemini_current_tier_id,
+    row?.extra?.tier_id,
+    row?.credentials?.plan_type,
+    row?.credentials?.plan_name,
+    row?.credentials?.gemini_paid_tier_name,
+    row?.credentials?.gemini_current_tier_name,
+    row?.extra?.plan_type,
+    row?.extra?.plan_name,
+    row?.extra?.gemini_paid_tier_name,
+    row?.extra?.gemini_current_tier_name,
+    row?.extra?.subscription_type,
+  ]
+    .map((value) => (typeof value === 'string' ? value.trim().toLowerCase() : ''))
+    .filter((value) => value.length > 0)
+
+  for (const source of tierSources) {
+    if (
+      source.includes('google one') ||
+      source.includes('google_one') ||
+      source.includes('google ai') ||
+      source.includes('google_ai') ||
+      source.startsWith('g1-') ||
+      source === 'free-tier'
+    ) {
+      return 'google_one'
+    }
+    if (source.includes('gcp_') || source === 'standard' || source === 'enterprise') {
+      return 'code_assist'
+    }
+  }
+
+  return ''
+}
+
+function getPlatformBadgeTypeLabel(row: any): string | undefined {
+  if (row?.platform !== 'gemini' || row?.type !== 'oauth') return undefined
+  const oauthType = getGeminiOAuthBadgeType(row)
+  if (oauthType === 'google_one') return t('admin.accounts.oauth.gemini.googleOneTitle')
+  if (oauthType === 'code_assist') return t('admin.accounts.oauth.gemini.codeAssistTitle')
+  return undefined
 }
 
 function getOpenAIOrganizationRole(row: any): string | undefined {

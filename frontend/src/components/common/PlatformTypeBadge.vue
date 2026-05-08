@@ -72,6 +72,7 @@ interface Props {
   platform: AccountPlatform
   type: AccountType
   planType?: string
+  typeLabelOverride?: string
   privacyMode?: string
   subscriptionExpiresAt?: string
   organizationRole?: string
@@ -122,22 +123,14 @@ const platformLabel = computed(() => {
   if (props.platform === 'anthropic') return 'Anthropic'
   if (props.platform === 'kiro') return 'Kiro'
   if (props.platform === 'openai') return 'OpenAI'
+  if (props.platform === 'sora') return 'Sora'
   if (props.platform === 'antigravity') return 'Antigravity'
   return 'Gemini'
 })
 
 const typeLabel = computed(() => {
-  if (props.platform === 'gemini' && geminiTier.value) {
-    switch (geminiTier.value) {
-      case 'free':
-        return 'Free'
-      case 'pro':
-        return 'Pro'
-      case 'ultra':
-        return 'Ultra'
-      default:
-        break
-    }
+  if (props.typeLabelOverride) {
+    return props.typeLabelOverride
   }
   switch (props.type) {
     case 'oauth':
@@ -156,8 +149,19 @@ const typeLabel = computed(() => {
 })
 
 const planLabel = computed(() => {
-  if (props.platform === 'gemini' && geminiTier.value) return ''
   if (!props.planType) return ''
+  if (props.platform === 'gemini' && geminiTier.value) {
+    switch (geminiTier.value) {
+      case 'free':
+        return 'Free'
+      case 'pro':
+        return 'Pro'
+      case 'ultra':
+        return 'Ultra'
+      default:
+        break
+    }
+  }
   const lower = props.planType.toLowerCase()
   switch (lower) {
     case 'plus':
@@ -183,6 +187,9 @@ const platformClass = computed(() => {
   if (props.platform === 'openai') {
     return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
   }
+  if (props.platform === 'sora') {
+    return 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300'
+  }
   if (props.platform === 'kiro') {
     return 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400'
   }
@@ -193,23 +200,14 @@ const platformClass = computed(() => {
 })
 
 const typeClass = computed(() => {
-  if (props.platform === 'gemini' && geminiTier.value) {
-    switch (geminiTier.value) {
-      case 'free':
-        return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-      case 'pro':
-        return 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300'
-      case 'ultra':
-        return 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300'
-      default:
-        break
-    }
-  }
   if (props.platform === 'anthropic') {
     return 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'
   }
   if (props.platform === 'openai') {
     return 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
+  }
+  if (props.platform === 'sora') {
+    return 'bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-300'
   }
   if (props.platform === 'kiro') {
     return 'bg-cyan-100 text-cyan-600 dark:bg-cyan-900/30 dark:text-cyan-400'
@@ -224,6 +222,18 @@ const planBadgeClass = computed(() => {
   if (props.planType && props.planType.toLowerCase() === 'abnormal') {
     return 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
   }
+  if (props.platform === 'gemini' && geminiTier.value) {
+    switch (geminiTier.value) {
+      case 'free':
+        return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+      case 'pro':
+        return 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300'
+      case 'ultra':
+        return 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300'
+      default:
+        break
+    }
+  }
   return typeClass.value
 })
 
@@ -233,7 +243,7 @@ const organizationRoleLabel = computed(() => {
   if (planType !== 'team') return ''
   const normalized = (props.organizationRole || '').trim().toLowerCase()
   if (normalized === 'owner' || normalized === 'admin' || normalized === 'leader') {
-    return '队长'
+    return t('admin.accounts.badges.teamLeader')
   }
   return ''
 })

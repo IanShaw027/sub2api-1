@@ -6,7 +6,8 @@ const translations: Record<string, string> = {
   'admin.accounts.vertexLabel': '__VERTEX__',
   'admin.accounts.badges.private': '__PRIVATE__',
   'admin.accounts.badges.cf': '__CF__',
-  'admin.accounts.badges.fail': '__FAIL__'
+  'admin.accounts.badges.fail': '__FAIL__',
+  'admin.accounts.badges.teamLeader': '__TEAM_LEADER__'
 }
 
 vi.mock('vue-i18n', async () => {
@@ -50,11 +51,12 @@ describe('PlatformTypeBadge', () => {
     const wrapper = mountBadge({
       platform: 'gemini',
       type: 'oauth',
-      planType: 'google_one_free'
+      planType: 'google_one_free',
+      typeLabelOverride: '__GOOGLE_ONE__'
     })
 
     expect(wrapper.text()).toContain('Free')
-    expect(wrapper.text()).not.toContain('__OAUTH__')
+    expect(wrapper.text()).toContain('__GOOGLE_ONE__')
   })
 
   it('keeps unknown Gemini tier ids from being misclassified as paid or free labels', () => {
@@ -77,7 +79,7 @@ describe('PlatformTypeBadge', () => {
       organizationRole: 'owner'
     })
 
-    expect(wrapper.text()).toContain('队长')
+    expect(wrapper.text()).toContain('__TEAM_LEADER__')
   })
 
   it('does not mark OpenAI personal free owners as team leaders', () => {
@@ -88,7 +90,7 @@ describe('PlatformTypeBadge', () => {
       organizationRole: 'owner'
     })
 
-    expect(wrapper.text()).not.toContain('队长')
+    expect(wrapper.text()).not.toContain('__TEAM_LEADER__')
   })
 
   it('renders localized privacy labels instead of hardcoded english labels', () => {

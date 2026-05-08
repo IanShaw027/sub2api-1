@@ -666,8 +666,8 @@
           <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
             {{ t("admin.groups.imagePricing.description") }}
           </p>
-          <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <template v-if="createForm.platform === 'openai'">
+            <label class="mb-4 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
               <input
                 v-model="createForm.allow_image_generation"
                 type="checkbox"
@@ -675,171 +675,307 @@
               />
               {{ t("admin.groups.imagePricing.allowImageGeneration") }}
             </label>
-            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-              <input
-                v-model="createForm.image_rate_independent"
-                type="checkbox"
-                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              {{ t("admin.groups.imagePricing.independentMultiplier") }}
-            </label>
-          </div>
-          <div class="mb-4">
-            <label class="input-label">{{ t("admin.groups.imagePricing.routeLabel") }}</label>
-            <Select
-              v-model="createForm.image_generation_route"
-              :options="imageGenerationRouteOptions"
-            />
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t("admin.groups.imagePricing.routeHint") }}
-            </p>
-          </div>
-          <div
-            v-if="createForm.image_rate_independent"
-            class="mb-4"
-          >
-            <label class="input-label">{{
-              t("admin.groups.imagePricing.imageMultiplier")
-            }}</label>
-            <input
-              v-model.number="createForm.image_rate_multiplier"
-              type="number"
-              step="0.0001"
-              min="0"
-              class="input"
-              placeholder="1"
-            />
-          </div>
-          <div class="space-y-4">
-            <div>
-              <div class="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
-                {{ t("admin.groups.imagePricing.images") }}
-              </div>
-              <div class="grid grid-cols-3 gap-3">
-                <div>
-                  <label class="input-label">{{
-                    t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
-                  }}</label>
-                  <input
-                    v-model.number="createForm.image_price_1k"
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    class="input"
-                    placeholder="0.134"
-                  />
-                </div>
-                <div>
-                  <label class="input-label">{{
-                    t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
-                  }}</label>
-                  <input
-                    v-model.number="createForm.image_price_2k"
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    class="input"
-                    placeholder="0.201"
-                  />
-                </div>
-                <div>
-                  <label class="input-label">{{
-                    t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
-                  }}</label>
-                  <input
-                    v-model.number="createForm.image_price_4k"
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    class="input"
-                    placeholder="0.268"
-                  />
-                </div>
-              </div>
-            </div>
-            <div>
-              <div class="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
-                {{ t("admin.groups.imagePricing.images2api") }}
-              </div>
-              <div class="grid grid-cols-3 gap-3">
-                <div>
-                  <label class="input-label">{{
-                    t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
-                  }}</label>
-                  <input
-                    v-model.number="createForm.images2api_price_1k"
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    class="input"
-                    placeholder="0.134"
-                  />
-                </div>
-                <div>
-                  <label class="input-label">{{
-                    t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
-                  }}</label>
-                  <input
-                    v-model.number="createForm.images2api_price_2k"
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    class="input"
-                    placeholder="0.201"
-                  />
-                </div>
-                <div>
-                  <label class="input-label">{{
-                    t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
-                  }}</label>
-                  <input
-                    v-model.number="createForm.images2api_price_4k"
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    class="input"
-                    placeholder="0.268"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-          <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
-            {{ t("admin.groups.imagePricing.modeHint") }}
-          </p>
-          <div class="mt-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-            <div class="mb-1 font-medium">
-              {{ t("admin.groups.imagePricing.finalPricePreview") }}
-            </div>
-            <div class="space-y-2">
+            <div v-if="createForm.allow_image_generation" class="space-y-4">
               <div>
-                <div class="mb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                <label class="input-label">{{ t("admin.groups.imagePricing.routeLabel") }}</label>
+                <div class="mt-2 flex flex-wrap gap-4">
+                  <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input
+                      v-model="createForm.openai_image_codex_enabled"
+                      type="checkbox"
+                      class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    {{ t("admin.groups.imagePricing.routeCodex") }}
+                  </label>
+                  <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input
+                      v-model="createForm.openai_image_web2api_enabled"
+                      type="checkbox"
+                      class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    {{ t("admin.groups.imagePricing.routeWeb2api") }}
+                  </label>
+                </div>
+                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.groups.imagePricing.routeHint") }}
+                </p>
+              </div>
+              <div
+                v-if="createForm.openai_image_codex_enabled"
+                class="rounded-lg border border-gray-200 p-4 dark:border-gray-700"
+              >
+                <div class="mb-3 text-xs font-medium text-gray-500 dark:text-gray-400">
+                  {{ t("admin.groups.imagePricing.routeCodex") }}
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="createForm.image_price_1k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.134"
+                    />
+                  </div>
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="createForm.image_price_2k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.201"
+                    />
+                  </div>
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="createForm.image_price_4k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.268"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div
+                v-if="createForm.openai_image_web2api_enabled"
+                class="rounded-lg border border-gray-200 p-4 dark:border-gray-700"
+              >
+                <div class="mb-3 text-xs font-medium text-gray-500 dark:text-gray-400">
+                  {{ t("admin.groups.imagePricing.routeWeb2api") }}
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="createForm.images2api_price_1k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.134"
+                    />
+                  </div>
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="createForm.images2api_price_2k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.201"
+                    />
+                  </div>
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="createForm.images2api_price_4k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.268"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+          <template v-else>
+            <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <input
+                  v-model="createForm.allow_image_generation"
+                  type="checkbox"
+                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                {{ t("admin.groups.imagePricing.allowImageGeneration") }}
+              </label>
+              <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <input
+                  v-model="createForm.image_rate_independent"
+                  type="checkbox"
+                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                {{ t("admin.groups.imagePricing.independentMultiplier") }}
+              </label>
+            </div>
+            <div class="mb-4">
+              <label class="input-label">{{ t("admin.groups.imagePricing.routeLabel") }}</label>
+              <Select
+                v-model="createForm.image_generation_route"
+                :options="imageGenerationRouteOptions"
+              />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t("admin.groups.imagePricing.routeHint") }}
+              </p>
+            </div>
+            <div
+              v-if="createForm.image_rate_independent"
+              class="mb-4"
+            >
+              <label class="input-label">{{
+                t("admin.groups.imagePricing.imageMultiplier")
+              }}</label>
+              <input
+                v-model.number="createForm.image_rate_multiplier"
+                type="number"
+                step="0.0001"
+                min="0"
+                class="input"
+                placeholder="1"
+              />
+            </div>
+            <div class="space-y-4">
+              <div>
+                <div class="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
                   {{ t("admin.groups.imagePricing.images") }}
                 </div>
-                <div class="grid grid-cols-3 gap-2">
-                  <div
-                    v-for="item in createImageFinalPricePreview"
-                    :key="`create-images-${item.label}`"
-                  >
-                    {{ item.label }}: {{ item.value }}
+                <div class="grid grid-cols-3 gap-3">
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="createForm.image_price_1k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.134"
+                    />
+                  </div>
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="createForm.image_price_2k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.201"
+                    />
+                  </div>
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="createForm.image_price_4k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.268"
+                    />
                   </div>
                 </div>
               </div>
               <div>
-                <div class="mb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                <div class="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
                   {{ t("admin.groups.imagePricing.images2api") }}
                 </div>
-                <div class="grid grid-cols-3 gap-2">
-                  <div
-                    v-for="item in createImages2apiFinalPricePreview"
-                    :key="`create-images2api-${item.label}`"
-                  >
-                    {{ item.label }}: {{ item.value }}
+                <div class="grid grid-cols-3 gap-3">
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="createForm.images2api_price_1k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.134"
+                    />
+                  </div>
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="createForm.images2api_price_2k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.201"
+                    />
+                  </div>
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="createForm.images2api_price_4k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.268"
+                    />
                   </div>
                 </div>
               </div>
             </div>
-          </div>
+            <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+              {{ t("admin.groups.imagePricing.modeHint") }}
+            </p>
+            <div class="mt-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+              <div class="mb-1 font-medium">
+                {{ t("admin.groups.imagePricing.finalPricePreview") }}
+              </div>
+              <div class="space-y-2">
+                <div>
+                  <div class="mb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                    {{ t("admin.groups.imagePricing.images") }}
+                  </div>
+                  <div class="grid grid-cols-3 gap-2">
+                    <div
+                      v-for="item in createImageFinalPricePreview"
+                      :key="`create-images-${item.label}`"
+                    >
+                      {{ item.label }}: {{ item.value }}
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <div class="mb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                    {{ t("admin.groups.imagePricing.images2api") }}
+                  </div>
+                  <div class="grid grid-cols-3 gap-2">
+                    <div
+                      v-for="item in createImages2apiFinalPricePreview"
+                      :key="`create-images2api-${item.label}`"
+                    >
+                      {{ item.label }}: {{ item.value }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
         </div>
 
         <!-- 支持的模型系列（仅 antigravity 平台） -->
@@ -1940,8 +2076,8 @@
           <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
             {{ t("admin.groups.imagePricing.description") }}
           </p>
-          <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <template v-if="editForm.platform === 'openai'">
+            <label class="mb-4 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
               <input
                 v-model="editForm.allow_image_generation"
                 type="checkbox"
@@ -1949,171 +2085,307 @@
               />
               {{ t("admin.groups.imagePricing.allowImageGeneration") }}
             </label>
-            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-              <input
-                v-model="editForm.image_rate_independent"
-                type="checkbox"
-                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              {{ t("admin.groups.imagePricing.independentMultiplier") }}
-            </label>
-          </div>
-          <div class="mb-4">
-            <label class="input-label">{{ t("admin.groups.imagePricing.routeLabel") }}</label>
-            <Select
-              v-model="editForm.image_generation_route"
-              :options="imageGenerationRouteOptions"
-            />
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t("admin.groups.imagePricing.routeHint") }}
-            </p>
-          </div>
-          <div
-            v-if="editForm.image_rate_independent"
-            class="mb-4"
-          >
-            <label class="input-label">{{
-              t("admin.groups.imagePricing.imageMultiplier")
-            }}</label>
-            <input
-              v-model.number="editForm.image_rate_multiplier"
-              type="number"
-              step="0.0001"
-              min="0"
-              class="input"
-              placeholder="1"
-            />
-          </div>
-          <div class="space-y-4">
-            <div>
-              <div class="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
-                {{ t("admin.groups.imagePricing.images") }}
-              </div>
-              <div class="grid grid-cols-3 gap-3">
-                <div>
-                  <label class="input-label">{{
-                    t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
-                  }}</label>
-                  <input
-                    v-model.number="editForm.image_price_1k"
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    class="input"
-                    placeholder="0.134"
-                  />
-                </div>
-                <div>
-                  <label class="input-label">{{
-                    t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
-                  }}</label>
-                  <input
-                    v-model.number="editForm.image_price_2k"
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    class="input"
-                    placeholder="0.201"
-                  />
-                </div>
-                <div>
-                  <label class="input-label">{{
-                    t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
-                  }}</label>
-                  <input
-                    v-model.number="editForm.image_price_4k"
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    class="input"
-                    placeholder="0.268"
-                  />
-                </div>
-              </div>
-            </div>
-            <div>
-              <div class="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
-                {{ t("admin.groups.imagePricing.images2api") }}
-              </div>
-              <div class="grid grid-cols-3 gap-3">
-                <div>
-                  <label class="input-label">{{
-                    t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
-                  }}</label>
-                  <input
-                    v-model.number="editForm.images2api_price_1k"
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    class="input"
-                    placeholder="0.134"
-                  />
-                </div>
-                <div>
-                  <label class="input-label">{{
-                    t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
-                  }}</label>
-                  <input
-                    v-model.number="editForm.images2api_price_2k"
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    class="input"
-                    placeholder="0.201"
-                  />
-                </div>
-                <div>
-                  <label class="input-label">{{
-                    t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
-                  }}</label>
-                  <input
-                    v-model.number="editForm.images2api_price_4k"
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    class="input"
-                    placeholder="0.268"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-          <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
-            {{ t("admin.groups.imagePricing.modeHint") }}
-          </p>
-          <div class="mt-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-            <div class="mb-1 font-medium">
-              {{ t("admin.groups.imagePricing.finalPricePreview") }}
-            </div>
-            <div class="space-y-2">
+            <div v-if="editForm.allow_image_generation" class="space-y-4">
               <div>
-                <div class="mb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                <label class="input-label">{{ t("admin.groups.imagePricing.routeLabel") }}</label>
+                <div class="mt-2 flex flex-wrap gap-4">
+                  <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input
+                      v-model="editForm.openai_image_codex_enabled"
+                      type="checkbox"
+                      class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    {{ t("admin.groups.imagePricing.routeCodex") }}
+                  </label>
+                  <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input
+                      v-model="editForm.openai_image_web2api_enabled"
+                      type="checkbox"
+                      class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    {{ t("admin.groups.imagePricing.routeWeb2api") }}
+                  </label>
+                </div>
+                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.groups.imagePricing.routeHint") }}
+                </p>
+              </div>
+              <div
+                v-if="editForm.openai_image_codex_enabled"
+                class="rounded-lg border border-gray-200 p-4 dark:border-gray-700"
+              >
+                <div class="mb-3 text-xs font-medium text-gray-500 dark:text-gray-400">
+                  {{ t("admin.groups.imagePricing.routeCodex") }}
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="editForm.image_price_1k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.134"
+                    />
+                  </div>
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="editForm.image_price_2k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.201"
+                    />
+                  </div>
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="editForm.image_price_4k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.268"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div
+                v-if="editForm.openai_image_web2api_enabled"
+                class="rounded-lg border border-gray-200 p-4 dark:border-gray-700"
+              >
+                <div class="mb-3 text-xs font-medium text-gray-500 dark:text-gray-400">
+                  {{ t("admin.groups.imagePricing.routeWeb2api") }}
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="editForm.images2api_price_1k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.134"
+                    />
+                  </div>
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="editForm.images2api_price_2k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.201"
+                    />
+                  </div>
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="editForm.images2api_price_4k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.268"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+          <template v-else>
+            <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <input
+                  v-model="editForm.allow_image_generation"
+                  type="checkbox"
+                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                {{ t("admin.groups.imagePricing.allowImageGeneration") }}
+              </label>
+              <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <input
+                  v-model="editForm.image_rate_independent"
+                  type="checkbox"
+                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                {{ t("admin.groups.imagePricing.independentMultiplier") }}
+              </label>
+            </div>
+            <div class="mb-4">
+              <label class="input-label">{{ t("admin.groups.imagePricing.routeLabel") }}</label>
+              <Select
+                v-model="editForm.image_generation_route"
+                :options="imageGenerationRouteOptions"
+              />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t("admin.groups.imagePricing.routeHint") }}
+              </p>
+            </div>
+            <div
+              v-if="editForm.image_rate_independent"
+              class="mb-4"
+            >
+              <label class="input-label">{{
+                t("admin.groups.imagePricing.imageMultiplier")
+              }}</label>
+              <input
+                v-model.number="editForm.image_rate_multiplier"
+                type="number"
+                step="0.0001"
+                min="0"
+                class="input"
+                placeholder="1"
+              />
+            </div>
+            <div class="space-y-4">
+              <div>
+                <div class="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
                   {{ t("admin.groups.imagePricing.images") }}
                 </div>
-                <div class="grid grid-cols-3 gap-2">
-                  <div
-                    v-for="item in editImageFinalPricePreview"
-                    :key="`edit-images-${item.label}`"
-                  >
-                    {{ item.label }}: {{ item.value }}
+                <div class="grid grid-cols-3 gap-3">
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="editForm.image_price_1k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.134"
+                    />
+                  </div>
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="editForm.image_price_2k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.201"
+                    />
+                  </div>
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="editForm.image_price_4k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.268"
+                    />
                   </div>
                 </div>
               </div>
               <div>
-                <div class="mb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                <div class="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
                   {{ t("admin.groups.imagePricing.images2api") }}
                 </div>
-                <div class="grid grid-cols-3 gap-2">
-                  <div
-                    v-for="item in editImages2apiFinalPricePreview"
-                    :key="`edit-images2api-${item.label}`"
-                  >
-                    {{ item.label }}: {{ item.value }}
+                <div class="grid grid-cols-3 gap-3">
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="editForm.images2api_price_1k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.134"
+                    />
+                  </div>
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="editForm.images2api_price_2k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.201"
+                    />
+                  </div>
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
+                    }}</label>
+                    <input
+                      v-model.number="editForm.images2api_price_4k"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      placeholder="0.268"
+                    />
                   </div>
                 </div>
               </div>
             </div>
-          </div>
+            <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+              {{ t("admin.groups.imagePricing.modeHint") }}
+            </p>
+            <div class="mt-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+              <div class="mb-1 font-medium">
+                {{ t("admin.groups.imagePricing.finalPricePreview") }}
+              </div>
+              <div class="space-y-2">
+                <div>
+                  <div class="mb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                    {{ t("admin.groups.imagePricing.images") }}
+                  </div>
+                  <div class="grid grid-cols-3 gap-2">
+                    <div
+                      v-for="item in editImageFinalPricePreview"
+                      :key="`edit-images-${item.label}`"
+                    >
+                      {{ item.label }}: {{ item.value }}
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <div class="mb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                    {{ t("admin.groups.imagePricing.images2api") }}
+                  </div>
+                  <div class="grid grid-cols-3 gap-2">
+                    <div
+                      v-for="item in editImages2apiFinalPricePreview"
+                      :key="`edit-images2api-${item.label}`"
+                    >
+                      {{ item.label }}: {{ item.value }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
         </div>
 
         <!-- 支持的模型系列（仅 antigravity 平台） -->
@@ -3295,6 +3567,8 @@ const createForm = reactive({
   // 图片生成计费配置
   allow_image_generation: false,
   image_generation_route: "codex" as "codex" | "web2api",
+  openai_image_codex_enabled: false,
+  openai_image_web2api_enabled: false,
   image_rate_independent: false,
   image_rate_multiplier: 1,
   image_price_1k: null as number | null,
@@ -3584,6 +3858,8 @@ const editForm = reactive({
   // 图片生成计费配置
   allow_image_generation: false,
   image_generation_route: "codex" as "codex" | "web2api",
+  openai_image_codex_enabled: false,
+  openai_image_web2api_enabled: false,
   image_rate_independent: false,
   image_rate_multiplier: 1,
   image_price_1k: null as number | null,
@@ -3893,6 +4169,8 @@ const closeCreateModal = () => {
   createForm.monthly_limit_usd = null;
   createForm.allow_image_generation = false;
   createForm.image_generation_route = "codex";
+  createForm.openai_image_codex_enabled = false;
+  createForm.openai_image_web2api_enabled = false;
   createForm.image_rate_independent = false;
   createForm.image_rate_multiplier = 1;
   createForm.image_price_1k = null;
@@ -3952,15 +4230,108 @@ const normalizeNullablePrice = (
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 };
 
+const openAIImageTypeSelectionMessage = () =>
+  t("admin.groups.imagePricing.openaiTypeRequired");
+
+const normalizeOpenAIImageTypeSelection = (
+  form: typeof createForm | typeof editForm,
+) => {
+  if (form.platform !== "openai" || !form.allow_image_generation) {
+    return;
+  }
+  if (!form.openai_image_codex_enabled && !form.openai_image_web2api_enabled) {
+    form.openai_image_codex_enabled = true;
+  }
+};
+
+const applyOpenAIImageTypeSelection = (payload: Record<string, any>) => {
+  if (payload.platform !== "openai") {
+    delete payload.openai_image_codex_enabled;
+    delete payload.openai_image_web2api_enabled;
+    return;
+  }
+
+  if (payload.allow_image_generation !== true) {
+    payload.image_generation_route = "codex";
+    payload.image_rate_independent = false;
+    payload.image_rate_multiplier = 1;
+    payload.image_price_1k = null;
+    payload.image_price_2k = null;
+    payload.image_price_4k = null;
+    payload.images2api_price_1k = null;
+    payload.images2api_price_2k = null;
+    payload.images2api_price_4k = null;
+    delete payload.openai_image_codex_enabled;
+    delete payload.openai_image_web2api_enabled;
+    return;
+  }
+
+  const codexEnabled =
+    payload.openai_image_codex_enabled === true;
+  const web2apiEnabled =
+    payload.openai_image_web2api_enabled === true;
+
+  payload.image_generation_route = codexEnabled ? "codex" : "web2api";
+  payload.image_rate_independent = web2apiEnabled;
+  payload.image_rate_multiplier = 1;
+
+  if (!codexEnabled) {
+    payload.image_price_1k = null;
+    payload.image_price_2k = null;
+    payload.image_price_4k = null;
+  }
+  if (!web2apiEnabled) {
+    payload.images2api_price_1k = null;
+    payload.images2api_price_2k = null;
+    payload.images2api_price_4k = null;
+  }
+
+  delete payload.openai_image_codex_enabled;
+  delete payload.openai_image_web2api_enabled;
+};
+
+watch(
+  () => [
+    createForm.platform,
+    createForm.allow_image_generation,
+    createForm.openai_image_codex_enabled,
+    createForm.openai_image_web2api_enabled,
+  ],
+  () => {
+    normalizeOpenAIImageTypeSelection(createForm);
+  },
+);
+
+watch(
+  () => [
+    editForm.platform,
+    editForm.allow_image_generation,
+    editForm.openai_image_codex_enabled,
+    editForm.openai_image_web2api_enabled,
+  ],
+  () => {
+    normalizeOpenAIImageTypeSelection(editForm);
+  },
+);
+
 const handleCreateGroup = async () => {
   if (!createForm.name.trim()) {
     appStore.showError(t("admin.groups.nameRequired"));
     return;
   }
+  if (
+    createForm.platform === "openai" &&
+    createForm.allow_image_generation &&
+    !createForm.openai_image_codex_enabled &&
+    !createForm.openai_image_web2api_enabled
+  ) {
+    appStore.showError(openAIImageTypeSelectionMessage());
+    return;
+  }
   submitting.value = true;
   try {
     // 构建请求数据，包含模型路由配置
-    const requestData = {
+    const requestData: Record<string, any> = {
       ...createForm,
       daily_limit_usd: normalizeOptionalLimit(
         createForm.daily_limit_usd as number | string | null,
@@ -3999,6 +4370,7 @@ const handleCreateGroup = async () => {
     requestData.images2api_price_1k = normalizeNullablePrice(requestData.images2api_price_1k);
     requestData.images2api_price_2k = normalizeNullablePrice(requestData.images2api_price_2k);
     requestData.images2api_price_4k = normalizeNullablePrice(requestData.images2api_price_4k);
+    applyOpenAIImageTypeSelection(requestData);
     await adminAPI.groups.create(requestData);
     appStore.showSuccess(t("admin.groups.groupCreated"));
     closeCreateModal();
@@ -4032,8 +4404,18 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.monthly_limit_usd = group.monthly_limit_usd;
   editForm.allow_image_generation = group.allow_image_generation ?? false;
   editForm.image_generation_route = group.image_generation_route || "codex";
+  editForm.openai_image_codex_enabled =
+    group.platform === "openai" && group.allow_image_generation
+      ? (group.image_generation_route || "codex") === "codex"
+      : false;
+  editForm.openai_image_web2api_enabled =
+    group.platform === "openai" && group.allow_image_generation
+      ? group.image_rate_independent === true ||
+        (group.image_generation_route || "codex") === "web2api"
+      : false;
   editForm.image_rate_independent = group.image_rate_independent ?? false;
-  editForm.image_rate_multiplier = group.image_rate_multiplier ?? 1;
+  editForm.image_rate_multiplier =
+    group.platform === "openai" ? 1 : group.image_rate_multiplier ?? 1;
   editForm.image_price_1k = group.image_price_1k;
   editForm.image_price_2k = group.image_price_2k;
   editForm.image_price_4k = group.image_price_4k;
@@ -4091,11 +4473,20 @@ const handleUpdateGroup = async () => {
     appStore.showError(t("admin.groups.nameRequired"));
     return;
   }
+  if (
+    editForm.platform === "openai" &&
+    editForm.allow_image_generation &&
+    !editForm.openai_image_codex_enabled &&
+    !editForm.openai_image_web2api_enabled
+  ) {
+    appStore.showError(openAIImageTypeSelectionMessage());
+    return;
+  }
 
   submitting.value = true;
   try {
     // 转换 fallback_group_id: null -> 0 (后端使用 0 表示清除)
-    const payload = {
+    const payload: Record<string, any> = {
       ...editForm,
       daily_limit_usd: normalizeOptionalLimit(
         editForm.daily_limit_usd as number | string | null,
@@ -4140,6 +4531,7 @@ const handleUpdateGroup = async () => {
     payload.images2api_price_1k = normalizeNullablePrice(payload.images2api_price_1k);
     payload.images2api_price_2k = normalizeNullablePrice(payload.images2api_price_2k);
     payload.images2api_price_4k = normalizeNullablePrice(payload.images2api_price_4k);
+    applyOpenAIImageTypeSelection(payload);
     await adminAPI.groups.update(editingGroup.value.id, payload);
     appStore.showSuccess(t("admin.groups.groupUpdated"));
     closeEditModal();

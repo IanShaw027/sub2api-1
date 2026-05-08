@@ -1285,7 +1285,6 @@ export interface AccountUsageInfo {
   openai_image_codex_five_hour?: UsageProgress | null
   openai_image_codex_seven_day?: UsageProgress | null
   openai_image_web2api_five_hour?: UsageProgress | null
-  openai_image_web2api_seven_day?: UsageProgress | null
 
   error?: string            // usage 获取失败时的错误信息
 }

@@ -85,6 +85,15 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
 		return
 	}
+	if parsed.IsExplicitLegacyBridge() {
+		if !service.GroupAllowsOpenAIImages2API(apiKey.Group) {
+			h.errorResponse(c, http.StatusForbidden, "permission_error", service.OpenAIImages2APIDisabledMessage())
+			return
+		}
+	} else if !service.GroupAllowsOpenAIImagesCodex(apiKey.Group) {
+		h.errorResponse(c, http.StatusForbidden, "permission_error", service.OpenAIImagesCodexDisabledMessage())
+		return
+	}
 	if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIImages, parsed.Model, parsed.ModerationBody()); decision != nil && decision.Blocked {
 		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
 		return
@@ -144,9 +153,6 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	for {
 		reqLog.Debug("openai.images.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
 		requiredRoute := service.GroupImageGenerationRouteCodex
-		if apiKey.Group != nil {
-			requiredRoute = apiKey.Group.EffectiveImageGenerationRoute()
-		}
 		if parsed.IsExplicitLegacyBridge() {
 			requiredRoute = service.GroupImageGenerationRouteWeb2API
 		}

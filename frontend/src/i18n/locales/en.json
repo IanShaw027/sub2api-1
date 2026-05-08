@@ -2729,7 +2729,7 @@
         "title": "Image Generation Pricing",
         "description": "Configure image generation access and base image prices. Leave empty to use default prices.",
         "routeLabel": "Image route",
-        "routeHint": "The images endpoint follows this route automatically. The images2api endpoint always stays on web2api.",
+        "routeHint": "The images endpoint only uses codex. The images2api endpoint only uses web2api and will be rejected unless web2api is enabled for the group.",
         "routeCodex": "codex",
         "routeWeb2api": "web2api",
         "images": "Images API (/v1/images/*)",
@@ -2740,6 +2740,7 @@
         "imageMultiplier": "Image multiplier",
         "modeHint": "By default, image billing uses image price × current effective group multiplier. Independent mode uses image price × image multiplier.",
         "finalPricePreview": "Final per-image price preview",
+        "openaiTypeRequired": "Select at least one image route",
         "tier1k": "1K",
         "tier2k": "2K",
         "tier4k": "4K",
@@ -3388,7 +3389,8 @@
       "badges": {
         "private": "Private",
         "cf": "CF",
-        "fail": "Fail"
+        "fail": "Fail",
+        "teamLeader": "Leader"
       },
       "setPrivacy": "Set Privacy",
       "subscriptionAbnormal": "Abnormal",

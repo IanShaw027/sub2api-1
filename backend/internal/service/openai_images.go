@@ -553,10 +553,13 @@ func requiresOpenAIImagesLegacyBridge(parsed *OpenAIImagesRequest) bool {
 }
 
 func resolveOpenAIImageGenerationRouteFromAPIKey(apiKey *APIKey) string {
-	if apiKey == nil || apiKey.Group == nil {
+	if apiKey == nil {
 		return GroupImageGenerationRouteCodex
 	}
-	return apiKey.Group.EffectiveImageGenerationRoute()
+	if apiKey.Group != nil && apiKey.Group.OpenAIImageWeb2APIEnabled() && !apiKey.Group.OpenAIImageCodexEnabled() {
+		return GroupImageGenerationRouteWeb2API
+	}
+	return GroupImageGenerationRouteCodex
 }
 
 func resolveOpenAIImageGenerationRouteFromContext(c *gin.Context) string {
@@ -569,14 +572,6 @@ func applyOpenAIImagesRouteSelection(parsed *OpenAIImagesRequest, route string) 
 	}
 	if parsed.IsExplicitLegacyBridge() {
 		parsed.Endpoint = parsed.OriginalEndpoint
-		return RequestTypeImageWebBridge
-	}
-	if NormalizeGroupImageGenerationRoute(route) == GroupImageGenerationRouteWeb2API {
-		if isOpenAIImagesEditsEndpoint(parsed.OriginalEndpoint) {
-			parsed.Endpoint = openAIImages2APIEditsEndpoint
-		} else {
-			parsed.Endpoint = openAIImages2APIGenerationsEndpoint
-		}
 		return RequestTypeImageWebBridge
 	}
 	parsed.Endpoint = parsed.OriginalEndpoint
@@ -695,11 +690,11 @@ func (s *OpenAIGatewayService) ForwardImages(
 	if parsed == nil {
 		return nil, fmt.Errorf("parsed images request is required")
 	}
-	imageRoute := resolveOpenAIImageGenerationRouteFromContext(c)
-	effectiveRequestType := applyOpenAIImagesRouteSelection(parsed, imageRoute)
-	if requiresOpenAIImagesLegacyBridge(parsed) && (account == nil || account.Type != AccountTypeOAuth) {
-		return nil, fmt.Errorf("explicit /v1/images2api/* endpoints require an OpenAI OAuth account")
+	imageRoute := GroupImageGenerationRouteCodex
+	if parsed.IsExplicitLegacyBridge() {
+		imageRoute = GroupImageGenerationRouteWeb2API
 	}
+	effectiveRequestType := applyOpenAIImagesRouteSelection(parsed, imageRoute)
 	if shouldUseLegacyOpenAIImagesBridge(account, parsed) {
 		result, err := s.forwardOpenAIImagesLegacyBridge(ctx, c, account, parsed, channelMappedModel)
 		if result != nil {
