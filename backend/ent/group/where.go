@@ -140,6 +140,11 @@ func AllowImageGeneration(v bool) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldAllowImageGeneration, v))
 }
 
+// ImageGenerationRoute applies equality check predicate on the "image_generation_route" field. It's identical to ImageGenerationRouteEQ.
+func ImageGenerationRoute(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldImageGenerationRoute, v))
+}
+
 // ImageRateIndependent applies equality check predicate on the "image_rate_independent" field. It's identical to ImageRateIndependentEQ.
 func ImageRateIndependent(v bool) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldImageRateIndependent, v))
@@ -1033,6 +1038,71 @@ func AllowImageGenerationEQ(v bool) predicate.Group {
 // AllowImageGenerationNEQ applies the NEQ predicate on the "allow_image_generation" field.
 func AllowImageGenerationNEQ(v bool) predicate.Group {
 	return predicate.Group(sql.FieldNEQ(FieldAllowImageGeneration, v))
+}
+
+// ImageGenerationRouteEQ applies the EQ predicate on the "image_generation_route" field.
+func ImageGenerationRouteEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldImageGenerationRoute, v))
+}
+
+// ImageGenerationRouteNEQ applies the NEQ predicate on the "image_generation_route" field.
+func ImageGenerationRouteNEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldImageGenerationRoute, v))
+}
+
+// ImageGenerationRouteIn applies the In predicate on the "image_generation_route" field.
+func ImageGenerationRouteIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldIn(FieldImageGenerationRoute, vs...))
+}
+
+// ImageGenerationRouteNotIn applies the NotIn predicate on the "image_generation_route" field.
+func ImageGenerationRouteNotIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldNotIn(FieldImageGenerationRoute, vs...))
+}
+
+// ImageGenerationRouteGT applies the GT predicate on the "image_generation_route" field.
+func ImageGenerationRouteGT(v string) predicate.Group {
+	return predicate.Group(sql.FieldGT(FieldImageGenerationRoute, v))
+}
+
+// ImageGenerationRouteGTE applies the GTE predicate on the "image_generation_route" field.
+func ImageGenerationRouteGTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldGTE(FieldImageGenerationRoute, v))
+}
+
+// ImageGenerationRouteLT applies the LT predicate on the "image_generation_route" field.
+func ImageGenerationRouteLT(v string) predicate.Group {
+	return predicate.Group(sql.FieldLT(FieldImageGenerationRoute, v))
+}
+
+// ImageGenerationRouteLTE applies the LTE predicate on the "image_generation_route" field.
+func ImageGenerationRouteLTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldLTE(FieldImageGenerationRoute, v))
+}
+
+// ImageGenerationRouteContains applies the Contains predicate on the "image_generation_route" field.
+func ImageGenerationRouteContains(v string) predicate.Group {
+	return predicate.Group(sql.FieldContains(FieldImageGenerationRoute, v))
+}
+
+// ImageGenerationRouteHasPrefix applies the HasPrefix predicate on the "image_generation_route" field.
+func ImageGenerationRouteHasPrefix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasPrefix(FieldImageGenerationRoute, v))
+}
+
+// ImageGenerationRouteHasSuffix applies the HasSuffix predicate on the "image_generation_route" field.
+func ImageGenerationRouteHasSuffix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasSuffix(FieldImageGenerationRoute, v))
+}
+
+// ImageGenerationRouteEqualFold applies the EqualFold predicate on the "image_generation_route" field.
+func ImageGenerationRouteEqualFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldEqualFold(FieldImageGenerationRoute, v))
+}
+
+// ImageGenerationRouteContainsFold applies the ContainsFold predicate on the "image_generation_route" field.
+func ImageGenerationRouteContainsFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldContainsFold(FieldImageGenerationRoute, v))
 }
 
 // ImageRateIndependentEQ applies the EQ predicate on the "image_rate_independent" field.

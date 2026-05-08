@@ -182,7 +182,7 @@ func TestExecuteBalanceFulfillment_AffiliateAccrualFailureCompletesOrder(t *test
 			},
 		},
 	}
-	redeemService := NewRedeemService(redeemRepo, nil, nil, nil, nil, client, nil)
+	redeemService := NewRedeemService(redeemRepo, nil, nil, nil, nil, client, nil, nil)
 
 	inviterID := int64(12345)
 	affiliateRepo := &paymentFulfillmentAffiliateRepoStub{
@@ -260,7 +260,7 @@ func TestExecuteBalanceFulfillment_AffiliateCommitFailureCompletesOrder(t *testi
 			},
 		},
 	}
-	redeemService := NewRedeemService(redeemRepo, nil, nil, nil, nil, client, nil)
+	redeemService := NewRedeemService(redeemRepo, nil, nil, nil, nil, client, nil, nil)
 
 	inviterID := int64(67890)
 	affiliateService := &AffiliateService{

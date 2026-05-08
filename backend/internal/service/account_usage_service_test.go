@@ -212,7 +212,7 @@ func TestBuildCodexUsageProgressFromExtra_ZerosExpiredWindow(t *testing.T) {
 }
 
 type geminiUsageLogRepoStub struct {
-	stubOpenAIAccountRepo
+	UsageLogRepository
 	modelStats []usagestats.ModelStat
 }
 
@@ -449,11 +449,11 @@ func TestAccountUsageService_GetGeminiUsage_UsesStoredForbiddenStatus(t *testing
 		Platform: PlatformGemini,
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
-			"oauth_type":              "code_assist",
-			"tier_id":                 "STANDARD",
-			"gemini_status":           "forbidden",
-			"gemini_status_reason":    "retrieveUserQuota failed: status 403, body: forbidden",
-			"quota_query_last_error":  "retrieveUserQuota failed: status 403, body: forbidden",
+			"oauth_type":             "code_assist",
+			"tier_id":                "STANDARD",
+			"gemini_status":          "forbidden",
+			"gemini_status_reason":   "retrieveUserQuota failed: status 403, body: forbidden",
+			"quota_query_last_error": "retrieveUserQuota failed: status 403, body: forbidden",
 		},
 	}
 

@@ -89,19 +89,6 @@ func buildOpenAIImageRouteRateLimitExtraUpdates(route string, resetAt time.Time,
 	}
 }
 
-func clearOpenAIImageRouteRateLimitExtraUpdates(route string) map[string]any {
-	prefix := openAIImageRouteExtraPrefix(route)
-	if prefix == "" {
-		return nil
-	}
-	return map[string]any{
-		prefix + "_rate_limited_at":       nil,
-		prefix + "_rate_limit_reset_at":   nil,
-		prefix + "_rate_limit_updated_at": nil,
-		prefix + "_reset_after_seconds":   nil,
-	}
-}
-
 func (s *RateLimitService) setOpenAIImageRouteRateLimited(ctx context.Context, account *Account, route string, resetAt time.Time) {
 	if s == nil || s.accountRepo == nil || account == nil || account.ID <= 0 {
 		return
@@ -119,19 +106,6 @@ func (s *RateLimitService) setOpenAIImageRouteRateLimited(ctx context.Context, a
 	}
 	for key, value := range updates {
 		account.Extra[key] = value
-	}
-}
-
-func (s *RateLimitService) clearOpenAIImageRouteRateLimited(ctx context.Context, accountID int64, route string) {
-	if s == nil || s.accountRepo == nil || accountID <= 0 {
-		return
-	}
-	updates := clearOpenAIImageRouteRateLimitExtraUpdates(route)
-	if len(updates) == 0 {
-		return
-	}
-	if err := s.accountRepo.UpdateExtra(ctx, accountID, updates); err != nil {
-		slog.Warn("openai_image_route_rate_limit_clear_failed", "account_id", accountID, "route", route, "error", err)
 	}
 }
 

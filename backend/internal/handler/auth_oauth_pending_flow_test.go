@@ -2645,6 +2645,8 @@ type oauthPendingFlowTestHandlerOptions struct {
 	mediaService       *service.MediaService
 	settingValues      map[string]string
 	defaultSubAssigner service.DefaultSubscriptionAssigner
+	affiliateService   *service.AffiliateService
+	affiliateFactory   func(*dbent.Client, *service.SettingService) *service.AffiliateService
 	totpCache          service.TotpCache
 	totpEncryptor      service.SecretEncryptor
 	userRepoOptions    oauthPendingFlowUserRepoOptions
@@ -2894,9 +2896,12 @@ CREATE TABLE IF NOT EXISTS user_provider_default_grants (
 CREATE TABLE IF NOT EXISTS user_affiliates (
 	user_id INTEGER PRIMARY KEY,
 	aff_code TEXT NOT NULL UNIQUE,
+	aff_code_custom BOOLEAN NOT NULL DEFAULT false,
+	aff_rebate_rate_percent REAL NULL,
 	inviter_id INTEGER NULL,
 	aff_count INTEGER NOT NULL DEFAULT 0,
 	aff_quota REAL NOT NULL DEFAULT 0,
+	aff_frozen_quota REAL NOT NULL DEFAULT 0,
 	aff_history_quota REAL NOT NULL DEFAULT 0,
 	created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -2934,14 +2939,19 @@ CREATE TABLE IF NOT EXISTS user_affiliate_ledger (
 		},
 	}
 	settingValues := map[string]string{
-		service.SettingKeyRegistrationEnabled:   "true",
-		service.SettingKeyInvitationCodeEnabled: boolSettingValue(options.invitationEnabled),
-		service.SettingKeyEmailVerifyEnabled:    boolSettingValue(options.emailVerifyEnabled),
+		service.SettingKeyRegistrationEnabled:              "true",
+		service.SettingKeyInvitationCodeEnabled:            boolSettingValue(options.invitationEnabled),
+		service.SettingKeyEmailVerifyEnabled:               boolSettingValue(options.emailVerifyEnabled),
+		service.SettingKeyRegistrationEmailSuffixWhitelist: "[]",
 	}
 	for key, value := range options.settingValues {
 		settingValues[key] = value
 	}
 	settingSvc := service.NewSettingService(&oauthPendingFlowSettingRepoStub{values: settingValues}, cfg)
+	affiliateService := options.affiliateService
+	if affiliateService == nil && options.affiliateFactory != nil {
+		affiliateService = options.affiliateFactory(client, settingSvc)
+	}
 	userRepo := &oauthPendingFlowUserRepo{
 		client:  client,
 		options: options.userRepoOptions,
@@ -2958,6 +2968,10 @@ CREATE TABLE IF NOT EXISTS user_affiliate_ledger (
 	affiliateRepo := newOAuthPendingFlowAffiliateRepoStub()
 	lastOAuthPendingFlowAffiliateRepo = affiliateRepo
 	affiliateSvc := service.NewAffiliateService(affiliateRepo, &oauthPendingFlowSettingRepoStub{values: settingValues}, nil, nil)
+	effectiveAffiliateService := affiliateService
+	if effectiveAffiliateService == nil {
+		effectiveAffiliateService = affiliateSvc
+	}
 	authSvc := service.NewAuthService(
 		client,
 		userRepo,
@@ -2970,7 +2984,7 @@ CREATE TABLE IF NOT EXISTS user_affiliate_ledger (
 		nil,
 		nil,
 		options.defaultSubAssigner,
-		affiliateSvc,
+		effectiveAffiliateService,
 	)
 	userSvc := service.NewUserService(userRepo, nil, nil, nil, options.mediaService)
 	var totpSvc *service.TotpService
@@ -3560,6 +3574,14 @@ func (r *oauthPendingFlowUserRepo) DeductBalance(context.Context, int64, float64
 
 func (r *oauthPendingFlowUserRepo) UpdateConcurrency(context.Context, int64, int) error {
 	panic("unexpected UpdateConcurrency call")
+}
+
+func (r *oauthPendingFlowUserRepo) BatchSetConcurrency(context.Context, []int64, int) (int, error) {
+	panic("unexpected BatchSetConcurrency call")
+}
+
+func (r *oauthPendingFlowUserRepo) BatchAddConcurrency(context.Context, []int64, int) (int, error) {
+	panic("unexpected BatchAddConcurrency call")
 }
 
 func (r *oauthPendingFlowUserRepo) GetLatestUsedAtByUserIDs(context.Context, []int64) (map[int64]*time.Time, error) {

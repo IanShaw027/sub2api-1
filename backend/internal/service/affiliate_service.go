@@ -707,6 +707,10 @@ func (s *AffiliateService) loadAffiliateEnabled(ctx context.Context) bool {
 	return err == nil && strings.TrimSpace(raw) == "true"
 }
 
+func (s *AffiliateService) IsEnabled(ctx context.Context) bool {
+	return s.loadAffiliateEnabled(ctx)
+}
+
 func (s *AffiliateService) loadAffiliateRebateRatePercent(ctx context.Context) float64 {
 	if s == nil || s.settingRepo == nil {
 		return AffiliateRebateRateDefault

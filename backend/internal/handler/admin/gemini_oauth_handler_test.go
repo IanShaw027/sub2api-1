@@ -53,7 +53,7 @@ func (geminiOAuthHandlerMockCodeAssist) RetrieveUserQuota(ctx context.Context, a
 	return &geminicli.RetrieveUserQuotaResponse{}, nil
 }
 
-func TestGeminiOAuthHandler_ExchangeCode_UsesLegacyTierFromSessionWhenFrontendOmitsTier(t *testing.T) {
+func TestGeminiOAuthHandler_ExchangeCode_PrefersDetectedTierOverSessionFallback(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
 
@@ -102,7 +102,7 @@ func TestGeminiOAuthHandler_ExchangeCode_UsesLegacyTierFromSessionWhenFrontendOm
 	require.NoError(t, json.Unmarshal(exchangeRec.Body.Bytes(), &exchangeResp))
 	exchangeData, ok := exchangeResp.Data.(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "gcp_enterprise", exchangeData["tier_id"])
+	require.Equal(t, "LEGACY", exchangeData["tier_id"])
 	require.Equal(t, "project-1", exchangeData["project_id"])
 }
 

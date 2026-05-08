@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -533,6 +534,21 @@ func (s *OpenAIGatewayService) ResolveChannelMappingAndRestrict(ctx context.Cont
 	return s.channelService.ResolveChannelMappingAndRestrict(ctx, groupID, model)
 }
 
+func (s *OpenAIGatewayService) isCodexImageGenerationBridgeEnabled(ctx context.Context, account *Account, apiKey *APIKey) bool {
+	if override := account.CodexImageGenerationBridgeOverride(); override != nil {
+		return *override
+	}
+	if s != nil && s.channelService != nil && apiKey != nil && apiKey.GroupID != nil {
+		ch, err := s.channelService.GetChannelForGroup(ctx, *apiKey.GroupID)
+		if err != nil {
+			slog.Warn("failed to resolve codex image generation bridge channel override", "group_id", *apiKey.GroupID, "error", err)
+		} else if override := ch.CodexImageGenerationBridgeOverride(PlatformOpenAI); override != nil {
+			return *override
+		}
+	}
+	return s != nil && s.cfg != nil && s.cfg.Gateway.CodexImageGenerationBridgeEnabled
+}
+
 func (s *OpenAIGatewayService) checkChannelPricingRestriction(ctx context.Context, groupID *int64, requestedModel string) bool {
 	if groupID == nil || s.channelService == nil || requestedModel == "" {
 		return false
@@ -994,6 +1010,10 @@ func isOpenAICodexOfficialClientRequest(c *gin.Context) bool {
 		return false
 	}
 	return openai.IsCodexOfficialClientByHeaders(c.GetHeader("User-Agent"), c.GetHeader("originator"))
+}
+
+func isOpenAICodexOfficialOrForcedClientRequest(c *gin.Context, cfg *config.Config) bool {
+	return isOpenAICodexOfficialClientRequest(c) || (cfg != nil && cfg.Gateway.ForceCodexCLI)
 }
 
 func shouldForwardOpenAIRequestHeader(account *Account, lowerKey string) bool {
@@ -2704,8 +2724,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			promptCacheKey = strings.TrimSpace(v)
 		}
 	}
+	apiKey := getAPIKeyFromContext(c)
 	clientStream := reqStream
-	upstreamStream := reqStream
+	var upstreamStream bool
+	codexImageGenerationBridgeEnabled := isCodexCLI && allowImageGeneration && s.isCodexImageGenerationBridgeEnabled(ctx, account, apiKey)
 
 	// Track if body needs re-serialization
 	bodyModified := false
@@ -2771,7 +2793,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		markPatchSet("instructions", "You are a helpful coding assistant.")
 	}
 
-	if isCodexCLI && allowImageGeneration && !isMessagesBridgeRequest && ensureOpenAIResponsesImageGenerationTool(reqBody) {
+	if codexImageGenerationBridgeEnabled && !isMessagesBridgeRequest && ensureOpenAIResponsesImageGenerationTool(reqBody) {
 		bodyModified = true
 		disablePatch()
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Injected /responses image_generation tool for Codex client")
@@ -2782,7 +2804,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		disablePatch()
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized /responses image_generation tool payload")
 	}
-	if isCodexCLI && allowImageGeneration && !isMessagesBridgeRequest && applyCodexImageGenerationBridgeInstructions(reqBody) {
+	if codexImageGenerationBridgeEnabled && !isMessagesBridgeRequest && applyCodexImageGenerationBridgeInstructions(reqBody) {
 		bodyModified = true
 		disablePatch()
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Added Codex image_generation bridge instructions")
@@ -3635,7 +3657,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		}
 		body = bodyWithInstructions
 		isCompact := isOpenAIResponsesCompactPath(c)
-		if rejectReason := detectOpenAIPassthroughInstructionsRejectReason(c, reqModel, body); rejectReason != "" {
+		if rejectReason := detectOpenAIPassthroughInstructionsRejectReason(c, reqModel, body, s != nil && s.cfg != nil && s.cfg.Gateway.ForceCodexCLI); rejectReason != "" {
 			rejectMsg := "OpenAI codex passthrough requires a non-empty instructions field"
 			setOpsUpstreamError(c, http.StatusForbidden, rejectMsg, "")
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -3903,7 +3925,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 			req.Header.Set("chatgpt-account-id", chatgptAccountID)
 		}
 		compactPath := isOpenAIResponsesCompactPath(c)
-		officialClient := isOpenAICodexOfficialClientRequest(c)
+		officialClient := isOpenAICodexOfficialOrForcedClientRequest(c, s.cfg)
 		isMessagesBridge := shouldUseOpenAIMessagesBridgeHeaders(c, body) ||
 			isOpenAICompatMessagesBridgePromptCacheKey(strings.TrimSpace(promptCacheKey))
 		clientSessionID := strings.TrimSpace(req.Header.Get("session_id"))
@@ -6802,7 +6824,22 @@ func shouldStripTopPForResponsesUpstream(account *Account) bool {
 	if account == nil || account.Platform != PlatformOpenAI {
 		return false
 	}
-	return account.Type == AccountTypeOAuth
+	if account.Type == AccountTypeOAuth {
+		return true
+	}
+	if account.Type != AccountTypeAPIKey {
+		return false
+	}
+	baseURL := account.GetOpenAIBaseURL()
+	if baseURL == "" {
+		return true
+	}
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return strings.Contains(strings.ToLower(baseURL), "api.openai.com")
+	}
+	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	return host == "api.openai.com"
 }
 
 func shouldDetachLegacyOAuthPassthroughContext(account *Account, reqStream bool, body []byte) bool {
@@ -6835,7 +6872,6 @@ func shouldInjectDefaultInstructionsForOpenAIResponses(c *gin.Context, account *
 	}
 	return isOpenAIResponsesInboundPath(c)
 }
-
 func ensureOpenAIPassthroughInstructions(c *gin.Context, reqModel string, body []byte) ([]byte, bool, error) {
 	_ = reqModel
 	instructions := gjson.GetBytes(body, "instructions")
@@ -6854,9 +6890,9 @@ func ensureOpenAIPassthroughInstructions(c *gin.Context, reqModel string, body [
 	return updated, true, nil
 }
 
-func detectOpenAIPassthroughInstructionsRejectReason(c *gin.Context, reqModel string, body []byte) string {
+func detectOpenAIPassthroughInstructionsRejectReason(c *gin.Context, reqModel string, body []byte, forceCodexCLI bool) string {
 	_ = reqModel
-	if !isOpenAICodexOfficialClientRequest(c) {
+	if !isOpenAICodexOfficialClientRequest(c) && !forceCodexCLI {
 		return ""
 	}
 

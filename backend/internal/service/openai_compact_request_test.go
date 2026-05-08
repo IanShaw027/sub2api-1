@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -139,7 +140,10 @@ func TestOpenAIGatewayService_Forward_OAuthCompactUsesCodexShape(t *testing.T) {
 		Body:       io.NopCloser(strings.NewReader(`{"id":"cmp_123","model":"gpt-5.4","usage":{"input_tokens":11,"output_tokens":22}}`)),
 	}}
 
-	svc := &OpenAIGatewayService{httpUpstream: upstream}
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{Gateway: config.GatewayConfig{CodexImageGenerationBridgeEnabled: true}},
+		httpUpstream: upstream,
+	}
 	account := &Account{
 		ID:          123,
 		Name:        "acc",

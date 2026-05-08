@@ -226,6 +226,38 @@ func TestSettingHandler_UpdateSettings_PreservesOmittedAuthSourceDefaults(t *tes
 	require.Equal(t, true, data["force_email_on_third_party_signup"])
 }
 
+func TestSettingHandler_UpdateSettings_RejectsIncompleteGitHubOAuthConfig(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &settingHandlerRepoStub{
+		values: map[string]string{
+			service.SettingKeyRegistrationEnabled: "true",
+			service.SettingKeyPromoCodeEnabled:    "true",
+		},
+	}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+
+	rawBody, err := json.Marshal(map[string]any{
+		"registration_enabled":       true,
+		"promo_code_enabled":         true,
+		"github_oauth_enabled":       true,
+		"github_oauth_client_id":     "github-client",
+		"github_oauth_client_secret": "github-secret",
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateSettings(c)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Nil(t, repo.lastUpdates)
+	require.Contains(t, rec.Body.String(), "GitHub OAuth Redirect URL is required when enabled")
+}
+
 func TestSettingHandler_UpdateSettings_PersistsOpenAIFastPolicySettings(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &settingHandlerRepoStub{

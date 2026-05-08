@@ -220,6 +220,12 @@ func (*ticketHandlerUserRepoStub) UpdateUserLastActiveAt(context.Context, int64,
 func (*ticketHandlerUserRepoStub) UpdateBalance(context.Context, int64, float64) error { return nil }
 func (*ticketHandlerUserRepoStub) DeductBalance(context.Context, int64, float64) error { return nil }
 func (*ticketHandlerUserRepoStub) UpdateConcurrency(context.Context, int64, int) error { return nil }
+func (*ticketHandlerUserRepoStub) BatchSetConcurrency(context.Context, []int64, int) (int, error) {
+	return 0, nil
+}
+func (*ticketHandlerUserRepoStub) BatchAddConcurrency(context.Context, []int64, int) (int, error) {
+	return 0, nil
+}
 func (*ticketHandlerUserRepoStub) ExistsByEmail(context.Context, string) (bool, error) {
 	return false, nil
 }

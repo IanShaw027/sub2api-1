@@ -166,7 +166,8 @@ vi.mock('vue-i18n', async () => {
     'admin.accounts.apiKey': '__API_KEY__',
     'admin.accounts.types.oauth': '__OAUTH__',
     'admin.accounts.vertexLabel': '__VERTEX__',
-    'admin.accounts.vertexDesc': '__SERVICE_ACCOUNT__'
+    'admin.accounts.vertexDesc': '__SERVICE_ACCOUNT__',
+    'admin.accounts.oauth.gemini.codeAssistTitle': 'GCP Code Assist'
   }
   return {
     ...actual,

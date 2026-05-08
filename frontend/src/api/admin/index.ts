@@ -34,6 +34,7 @@ import affiliateAPI from './affiliate'
 import adminAIAPI from './ai'
 import adminSkillsAPI from './skills'
 import affiliatesAPI from './affiliates'
+import riskControlAPI from './riskControl'
 
 /**
  * Unified admin API object for convenient access
@@ -69,7 +70,8 @@ export const adminAPI = {
   affiliate: affiliateAPI,
   affiliates: affiliatesAPI,
   ai: adminAIAPI,
-  skills: adminSkillsAPI
+  skills: adminSkillsAPI,
+  riskControl: riskControlAPI
 }
 
 export {
@@ -103,7 +105,8 @@ export {
   affiliateAPI,
   affiliatesAPI,
   adminAIAPI,
-  adminSkillsAPI
+  adminSkillsAPI,
+  riskControlAPI
 }
 
 export default adminAPI
@@ -114,3 +117,4 @@ export type { ErrorPassthroughRule, CreateRuleRequest, UpdateRuleRequest } from 
 export type { BackupAgentHealth, DataManagementConfig } from './dataManagement'
 export type { TLSFingerprintProfile, CreateProfileRequest, UpdateProfileRequest } from './tlsFingerprintProfile'
 export type { AdminAffiliateSummary, AdminAffiliateListFilters } from './affiliate'
+export type { ContentModerationConfig, ContentModerationLog, ModerationMode } from './riskControl'

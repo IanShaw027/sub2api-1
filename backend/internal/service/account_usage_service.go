@@ -249,12 +249,12 @@ type UsageInfo struct {
 	ErrorCode string `json:"error_code,omitempty"`
 
 	// OpenAI 图片生成路由状态
-	OpenAIImageCodexSupported   *bool  `json:"openai_image_codex_supported,omitempty"`
-	OpenAIImageWeb2APISupported *bool  `json:"openai_image_web2api_supported,omitempty"`
-	OpenAIImageCodexReason      string `json:"openai_image_codex_reason,omitempty"`
-	OpenAIImageWeb2APIReason    string `json:"openai_image_web2api_reason,omitempty"`
-	OpenAIImagePlanType         string `json:"openai_image_plan_type,omitempty"`
-	OpenAIImageWorkspaceName    string `json:"openai_image_workspace_name,omitempty"`
+	OpenAIImageCodexSupported   *bool          `json:"openai_image_codex_supported,omitempty"`
+	OpenAIImageWeb2APISupported *bool          `json:"openai_image_web2api_supported,omitempty"`
+	OpenAIImageCodexReason      string         `json:"openai_image_codex_reason,omitempty"`
+	OpenAIImageWeb2APIReason    string         `json:"openai_image_web2api_reason,omitempty"`
+	OpenAIImagePlanType         string         `json:"openai_image_plan_type,omitempty"`
+	OpenAIImageWorkspaceName    string         `json:"openai_image_workspace_name,omitempty"`
 	OpenAIImageCodexFiveHour    *UsageProgress `json:"openai_image_codex_five_hour,omitempty"`
 	OpenAIImageCodexSevenDay    *UsageProgress `json:"openai_image_codex_seven_day,omitempty"`
 	OpenAIImageWeb2APIFiveHour  *UsageProgress `json:"openai_image_web2api_five_hour,omitempty"`
@@ -1787,10 +1787,10 @@ func applyGeminiQuotaSnapshotFallback(usage *UsageInfo, account *Account, now ti
 	mergeGeminiUsageProgressWithSnapshot(&usage.GeminiProDaily, snapshot.pro, now)
 	mergeGeminiUsageProgressWithSnapshot(&usage.GeminiFlashDaily, snapshot.flash, now)
 
-	if usage.GeminiSharedDaily == nil && (snapshot.pro != nil || snapshot.flash != nil) {
-		shared := lowerUtilizationSnapshot(snapshot.pro, snapshot.flash)
+	if snapshot.pro != nil || snapshot.flash != nil {
+		shared := lowerUtilizationProgress(usage.GeminiProDaily, usage.GeminiFlashDaily)
 		if shared != nil {
-			usage.GeminiSharedDaily = snapshotWindowToUsageProgress(shared, now)
+			usage.GeminiSharedDaily = cloneUsageProgress(shared)
 		}
 	}
 }
@@ -1955,45 +1955,27 @@ func mergeGeminiUsageProgressWithSnapshot(target **UsageProgress, snapshot *gemi
 	}
 }
 
-func lowerUtilizationSnapshot(items ...*geminiQuotaSnapshotWindow) *geminiQuotaSnapshotWindow {
-	var picked *geminiQuotaSnapshotWindow
+func lowerUtilizationProgress(items ...*UsageProgress) *UsageProgress {
+	var picked *UsageProgress
 	for _, item := range items {
 		if item == nil {
 			continue
 		}
-		if picked == nil || item.utilization > picked.utilization {
+		if picked == nil || item.Utilization > picked.Utilization {
 			picked = item
 			continue
 		}
-		if item.utilization == picked.utilization {
-			if picked.resetAt == nil {
+		if item.Utilization == picked.Utilization {
+			if picked.ResetsAt == nil {
 				picked = item
 				continue
 			}
-			if item.resetAt != nil && item.resetAt.Before(*picked.resetAt) {
+			if item.ResetsAt != nil && item.ResetsAt.Before(*picked.ResetsAt) {
 				picked = item
 			}
 		}
 	}
 	return picked
-}
-
-func snapshotWindowToUsageProgress(snapshot *geminiQuotaSnapshotWindow, now time.Time) *UsageProgress {
-	if snapshot == nil {
-		return nil
-	}
-	progress := &UsageProgress{
-		Utilization: snapshot.utilization,
-		ResetsAt:    snapshot.resetAt,
-	}
-	if snapshot.resetAt != nil {
-		remainingSeconds := int(snapshot.resetAt.Sub(now).Seconds())
-		if remainingSeconds < 0 {
-			remainingSeconds = 0
-		}
-		progress.RemainingSeconds = remainingSeconds
-	}
-	return progress
 }
 
 func enrichGeminiUsageWithStoredStatus(usage *UsageInfo, account *Account) {

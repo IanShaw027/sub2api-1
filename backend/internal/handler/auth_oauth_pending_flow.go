@@ -256,11 +256,16 @@ func pendingSessionStringValue(values map[string]any, key string) string {
 	if !ok {
 		return ""
 	}
-	value, ok := raw.(string)
-	if !ok {
-		return ""
+	switch value := raw.(type) {
+	case string:
+		return strings.TrimSpace(value)
+	case []byte:
+		return strings.TrimSpace(string(value))
+	case fmt.Stringer:
+		return strings.TrimSpace(value.String())
+	default:
+		return strings.TrimSpace(fmt.Sprint(raw))
 	}
-	return strings.TrimSpace(value)
 }
 
 func pendingSessionWantsInvitation(payload map[string]any) bool {

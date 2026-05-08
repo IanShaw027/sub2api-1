@@ -28,7 +28,9 @@ func (r *rateLimitAccountRepoStub) GetByID(context.Context, int64) (*Account, er
 func (r *rateLimitAccountRepoStub) GetByIDs(context.Context, []int64) ([]*Account, error) {
 	return nil, nil
 }
-func (r *rateLimitAccountRepoStub) ExistsByID(context.Context, int64) (bool, error) { return false, nil }
+func (r *rateLimitAccountRepoStub) ExistsByID(context.Context, int64) (bool, error) {
+	return false, nil
+}
 func (r *rateLimitAccountRepoStub) GetByCRSAccountID(context.Context, string) (*Account, error) {
 	return nil, nil
 }
@@ -38,16 +40,18 @@ func (r *rateLimitAccountRepoStub) FindByExtraField(context.Context, string, any
 func (r *rateLimitAccountRepoStub) ListCRSAccountIDs(context.Context) (map[string]int64, error) {
 	return nil, nil
 }
-func (r *rateLimitAccountRepoStub) Update(context.Context, *Account) error  { return nil }
-func (r *rateLimitAccountRepoStub) Delete(context.Context, int64) error      { return nil }
+func (r *rateLimitAccountRepoStub) Update(context.Context, *Account) error { return nil }
+func (r *rateLimitAccountRepoStub) Delete(context.Context, int64) error    { return nil }
 func (r *rateLimitAccountRepoStub) List(context.Context, pagination.PaginationParams) ([]Account, *pagination.PaginationResult, error) {
 	return nil, nil, nil
 }
 func (r *rateLimitAccountRepoStub) ListWithFilters(context.Context, pagination.PaginationParams, string, string, string, string, int64, string) ([]Account, *pagination.PaginationResult, error) {
 	return nil, nil, nil
 }
-func (r *rateLimitAccountRepoStub) ListByGroup(context.Context, int64) ([]Account, error) { return nil, nil }
-func (r *rateLimitAccountRepoStub) ListActive(context.Context) ([]Account, error)          { return nil, nil }
+func (r *rateLimitAccountRepoStub) ListByGroup(context.Context, int64) ([]Account, error) {
+	return nil, nil
+}
+func (r *rateLimitAccountRepoStub) ListActive(context.Context) ([]Account, error) { return nil, nil }
 func (r *rateLimitAccountRepoStub) ListByPlatform(context.Context, string) ([]Account, error) {
 	return nil, nil
 }
@@ -60,7 +64,7 @@ func (r *rateLimitAccountRepoStub) SetError(ctx context.Context, id int64, error
 	r.lastErrorMsg = errorMsg
 	return nil
 }
-func (r *rateLimitAccountRepoStub) ClearError(context.Context, int64) error          { return nil }
+func (r *rateLimitAccountRepoStub) ClearError(context.Context, int64) error           { return nil }
 func (r *rateLimitAccountRepoStub) SetSchedulable(context.Context, int64, bool) error { return nil }
 func (r *rateLimitAccountRepoStub) AutoPauseExpiredAccounts(context.Context, time.Time) (int64, error) {
 	return 0, nil
@@ -105,7 +109,7 @@ func (r *rateLimitAccountRepoStub) SetTempUnschedulable(ctx context.Context, id 
 	return r.tempErr
 }
 func (r *rateLimitAccountRepoStub) ClearTempUnschedulable(context.Context, int64) error { return nil }
-func (r *rateLimitAccountRepoStub) ClearRateLimit(context.Context, int64) error          { return nil }
+func (r *rateLimitAccountRepoStub) ClearRateLimit(context.Context, int64) error         { return nil }
 func (r *rateLimitAccountRepoStub) ClearAntigravityQuotaScopes(context.Context, int64) error {
 	return nil
 }
@@ -113,12 +117,16 @@ func (r *rateLimitAccountRepoStub) ClearModelRateLimits(context.Context, int64) 
 func (r *rateLimitAccountRepoStub) UpdateSessionWindow(context.Context, int64, *time.Time, *time.Time, string) error {
 	return nil
 }
-func (r *rateLimitAccountRepoStub) UpdateExtra(context.Context, int64, map[string]any) error { return nil }
+func (r *rateLimitAccountRepoStub) UpdateExtra(context.Context, int64, map[string]any) error {
+	return nil
+}
 func (r *rateLimitAccountRepoStub) BulkUpdate(context.Context, []int64, AccountBulkUpdate) (int64, error) {
 	return 0, nil
 }
-func (r *rateLimitAccountRepoStub) IncrementQuotaUsed(context.Context, int64, float64) error { return nil }
-func (r *rateLimitAccountRepoStub) ResetQuotaUsed(context.Context, int64) error               { return nil }
+func (r *rateLimitAccountRepoStub) IncrementQuotaUsed(context.Context, int64, float64) error {
+	return nil
+}
+func (r *rateLimitAccountRepoStub) ResetQuotaUsed(context.Context, int64) error { return nil }
 func (r *rateLimitAccountRepoStub) UpdateCredentials(ctx context.Context, id int64, credentials map[string]any) error {
 	r.updateCredentialsCalls++
 	r.lastCredentials = cloneCredentials(credentials)

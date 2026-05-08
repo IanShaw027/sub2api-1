@@ -191,7 +191,7 @@ func TestCreateAndRedeem_BalanceIgnoresSubscriptionFields(t *testing.T) {
 func TestRedeemHandlerGetStatsUsesRedeemService(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	redeemService := service.NewRedeemService(redeemStatsHandlerRepo{}, nil, nil, nil, nil, nil, nil)
+	redeemService := service.NewRedeemService(redeemStatsHandlerRepo{}, nil, nil, nil, nil, nil, nil, nil)
 	handler := NewRedeemHandler(newStubAdminService(), redeemService)
 	router.GET("/api/v1/admin/redeem-codes/stats", handler.GetStats)
 

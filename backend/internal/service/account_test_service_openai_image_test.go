@@ -32,6 +32,14 @@ func TestResolveOpenAIImageExecutionMode_DefaultsToCodex(t *testing.T) {
 	require.Equal(t, "web2api", resolveOpenAIImageExecutionMode(c))
 }
 
+func TestAccountSupportsOpenAIImageRoute_Web2APIRequiresOAuth(t *testing.T) {
+	oauthAccount := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	apiKeyAccount := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	require.True(t, oauthAccount.SupportsOpenAIImageRoute("web2api"))
+	require.False(t, apiKeyAccount.SupportsOpenAIImageRoute("web2api"))
+}
+
 func TestAccountTestService_OpenAIImageOAuthDefaultCallsImagesEndpoint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()

@@ -1,7 +1,18 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
+
+vi.mock('vue-i18n', () => ({
+  useI18n: () => ({
+    t: (key: string) => {
+      if (key === 'common.close') {
+        return 'Close'
+      }
+      return key
+    }
+  })
+}))
 
 function getTooltipElement(): HTMLDivElement {
   const tooltip = document.body.querySelector('[role="tooltip"]')

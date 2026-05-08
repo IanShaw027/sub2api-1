@@ -101,7 +101,7 @@ func TestOpenAIGatewayService_ResponsesUnknownModelDoesNotFallbackToGPT54(t *tes
 	require.True(t, rec.Code >= http.StatusBadRequest)
 }
 
-func TestOpenAIGatewayService_OAuthMessagesBridgeInjectsDefaultInstructions(t *testing.T) {
+func TestOpenAIGatewayService_OAuthMessagesBridgeDoesNotInjectDefaultInstructions(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	rec := httptest.NewRecorder()
@@ -137,7 +137,7 @@ func TestOpenAIGatewayService_OAuthMessagesBridgeInjectsDefaultInstructions(t *t
 	require.Error(t, err)
 	require.Nil(t, result)
 	require.NotNil(t, upstream.lastReq)
-	require.NotEmpty(t, strings.TrimSpace(gjson.GetBytes(upstream.lastBody, "instructions").String()))
+	require.False(t, gjson.GetBytes(upstream.lastBody, "instructions").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").Exists())
 	require.NotEmpty(t, upstream.lastReq.Header.Get("Session_Id"))
 	require.Empty(t, upstream.lastReq.Header.Get("Conversation_Id"))
@@ -1558,7 +1558,7 @@ func TestOpenAIGatewayService_APIKeyPassthrough_PreservesBodyAndUsesResponsesEnd
 	require.Equal(t, "flex", gjson.GetBytes(upstream.lastBody, "service_tier").String())
 	require.Equal(t, int64(128), gjson.GetBytes(upstream.lastBody, "max_output_tokens").Int())
 	require.Equal(t, "hi", gjson.GetBytes(upstream.lastBody, "input.0.text").String())
-	require.NotEmpty(t, strings.TrimSpace(gjson.GetBytes(upstream.lastBody, "instructions").String()))
+	require.False(t, gjson.GetBytes(upstream.lastBody, "instructions").Exists())
 	require.Equal(t, "https://api.openai.com/v1/responses", upstream.lastReq.URL.String())
 	require.Equal(t, "Bearer sk-api-key", upstream.lastReq.Header.Get("Authorization"))
 	require.Equal(t, "curl/8.0", upstream.lastReq.Header.Get("User-Agent"))
