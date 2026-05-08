@@ -188,6 +188,7 @@ type GeminiTokenInfo struct {
 type geminiCodeAssistSnapshot struct {
 	ProjectID       string
 	TierID          string
+	TierRegistered  bool // true if tier comes from currentTier/paidTier (registered user), false if from allowedTiers (new user)
 	IneligibleTiers []geminicli.IneligibleTier
 	Extra           map[string]any
 }
@@ -1218,6 +1219,7 @@ func (s *GeminiOAuthService) fetchCodeAssistSnapshot(ctx context.Context, access
 		snapshot.IneligibleTiers = append(snapshot.IneligibleTiers, loadResp.IneligibleTiers...)
 		if tier := loadResp.GetTier(); tier != "" {
 			snapshot.TierID = tier
+			snapshot.TierRegistered = true
 		} else {
 			snapshot.TierID = extractTierIDFromAllowedTiers(loadResp.AllowedTiers)
 		}
@@ -1248,7 +1250,9 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 	// 对齐 Gemini CLI：
 	// 当 LoadCodeAssist 返回了 currentTier / paidTier（表示账号已注册）但没有返回 cloudaicompanionProject 时，
 	// 如果用户已提供 project hint，则继续使用该 project；否则才要求用户手动提供。
-	if loadErr == nil {
+	// 注意：仅 TierRegistered=true（来自 currentTier/paidTier）的才算已注册用户，
+	// AllowedTiers-only 的新用户应继续走 onboardUser 流程。
+	if loadErr == nil && snapshot.TierRegistered {
 		registeredTierID := strings.TrimSpace(snapshot.TierID)
 		if registeredTierID != "" {
 			if trimmedProjectIDHint != "" {
@@ -1262,6 +1266,13 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 			}
 			return snapshot, buildGeminiCodeAssistProjectIDRequiredError(registeredTierID)
 		}
+		if ineligibleErr := buildGeminiCodeAssistIneligibleError(snapshot.IneligibleTiers); ineligibleErr != nil {
+			return snapshot, ineligibleErr
+		}
+	}
+
+	// AllowedTiers-only 新用户也需要检查 ineligible tiers
+	if loadErr == nil {
 		if ineligibleErr := buildGeminiCodeAssistIneligibleError(snapshot.IneligibleTiers); ineligibleErr != nil {
 			return snapshot, ineligibleErr
 		}
