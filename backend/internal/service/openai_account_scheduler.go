@@ -1091,11 +1091,13 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
 	requiredRoute = NormalizeGroupImageGenerationRoute(requiredRoute)
 	if requiredRoute == "" {
-		requiredRoute = GroupImageGenerationRouteCodex
-	}
-	if requiredRoute == GroupImageGenerationRouteCodex && groupID != nil && s != nil && s.groupRepo != nil {
-		if group, err := s.groupRepo.GetByIDLite(ctx, *groupID); err == nil && group != nil {
-			requiredRoute = group.EffectiveImageGenerationRoute()
+		if groupID != nil && s != nil {
+			if group := s.loadGroupForImageRoute(ctx, *groupID); group != nil {
+				requiredRoute = group.EffectiveImageGenerationRoute()
+			}
+		}
+		if requiredRoute == "" {
+			requiredRoute = GroupImageGenerationRouteCodex
 		}
 	}
 	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, requiredCapability, requiredRoute, requireOAuthAccount, false)
@@ -1173,11 +1175,13 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 	decision := OpenAIAccountScheduleDecision{}
 	requiredImageRoute = NormalizeGroupImageGenerationRoute(requiredImageRoute)
 	if requiredImageCapability != "" && requiredImageRoute == "" {
-		requiredImageRoute = GroupImageGenerationRouteCodex
-		if groupID != nil && s != nil && s.groupRepo != nil {
-			if group, err := s.groupRepo.GetByIDLite(ctx, *groupID); err == nil && group != nil {
+		if groupID != nil && s != nil {
+			if group := s.loadGroupForImageRoute(ctx, *groupID); group != nil {
 				requiredImageRoute = group.EffectiveImageGenerationRoute()
 			}
+		}
+		if requiredImageRoute == "" {
+			requiredImageRoute = GroupImageGenerationRouteCodex
 		}
 	}
 	scheduler := s.getOpenAIAccountScheduler(ctx)
@@ -1261,6 +1265,23 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 		RequireCompact:          requireCompact,
 		ExcludedIDs:             excludedIDs,
 	})
+}
+
+func (s *OpenAIGatewayService) loadGroupForImageRoute(ctx context.Context, groupID int64) *Group {
+	if s == nil || groupID <= 0 {
+		return nil
+	}
+	if s.schedulerSnapshot != nil {
+		if group, err := s.schedulerSnapshot.GetGroupByID(ctx, groupID); err == nil && group != nil {
+			return group
+		}
+	}
+	if s.groupRepo != nil {
+		if group, err := s.groupRepo.GetByIDLite(ctx, groupID); err == nil && group != nil {
+			return group
+		}
+	}
+	return nil
 }
 
 func cloneExcludedAccountIDs(excludedIDs map[int64]struct{}) map[int64]struct{} {
