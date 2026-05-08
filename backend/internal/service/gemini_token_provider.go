@@ -25,6 +25,8 @@ type GeminiTokenProvider struct {
 	refreshPolicy      ProviderRefreshPolicy
 }
 
+const errGeminiCodeAssistProjectIDNotConfigured = "gemini code assist project_id not configured"
+
 func NewGeminiTokenProvider(
 	accountRepo AccountRepository,
 	tokenCache GeminiTokenCache,
@@ -105,14 +107,18 @@ func (p *GeminiTokenProvider) GetAccessToken(ctx context.Context, account *Accou
 		return "", errors.New("access_token not found in credentials")
 	}
 
-	// project_id is optional now:
-	// - If present: use Code Assist API (requires project_id)
-	// - If absent: continue with the stored OAuth token.
+	// project_id handling depends on the Gemini OAuth mode:
+	// - Code Assist OAuth requires project_id and must not silently degrade to AI Studio OAuth.
+	// - Google One / AI Studio-compatible OAuth may continue without project_id.
 	projectID := strings.TrimSpace(account.GetCredential("project_id"))
 	autoDetectProjectID := account.GetCredential("auto_detect_project_id") == "true"
+	isCodeAssist := account.GeminiOAuthTypeSafe() == "code_assist"
 
 	if projectID == "" && autoDetectProjectID {
 		if p.geminiOAuthService == nil {
+			if isCodeAssist {
+				return "", errors.New(errGeminiCodeAssistProjectIDNotConfigured)
+			}
 			return accessToken, nil
 		}
 
@@ -125,6 +131,9 @@ func (p *GeminiTokenProvider) GetAccessToken(ctx context.Context, account *Accou
 
 		snapshot, err := p.geminiOAuthService.fetchProjectID(ctx, accessToken, proxyURL, "")
 		if err != nil {
+			if isCodeAssist {
+				return "", err
+			}
 			log.Printf("[GeminiTokenProvider] Auto-detect project_id failed: %v, keeping token without project_id", err)
 			return accessToken, nil
 		}
@@ -139,7 +148,12 @@ func (p *GeminiTokenProvider) GetAccessToken(ctx context.Context, account *Accou
 				account.Credentials["tier_id"] = tierID
 			}
 			_ = persistAccountCredentials(ctx, p.accountRepo, account, account.Credentials)
+			projectID = detected
 		}
+	}
+
+	if isCodeAssist && strings.TrimSpace(projectID) == "" {
+		return "", errors.New(errGeminiCodeAssistProjectIDNotConfigured)
 	}
 
 	// 3) Populate cache with TTL.

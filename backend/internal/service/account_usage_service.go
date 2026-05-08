@@ -1625,6 +1625,11 @@ func (s *AccountUsageService) tryClearRecoverableAccountError(ctx context.Contex
 		return
 	}
 
+	isGeminiProjectConfigError := account.Platform == PlatformGemini && IsGeminiProjectConfigurationErrorMessage(msg)
+	if isGeminiProjectConfigError {
+		return
+	}
+
 	if !strings.Contains(msg, "token refresh failed") &&
 		!strings.Contains(msg, "invalid_client") &&
 		!strings.Contains(msg, "missing_project_id") &&

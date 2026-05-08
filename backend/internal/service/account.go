@@ -179,7 +179,10 @@ func (a *Account) GeminiOAuthType() string {
 
 // HasExplicitGeminiOAuthType reports whether the account carries an explicit Gemini OAuth mode.
 func (a *Account) HasExplicitGeminiOAuthType() bool {
-	return a.GeminiOAuthType() != ""
+	if a.Platform != PlatformGemini || a.Type != AccountTypeOAuth {
+		return false
+	}
+	return strings.TrimSpace(a.GeminiOAuthType()) != "" || strings.TrimSpace(a.GetExtraString("oauth_type")) != ""
 }
 
 // GeminiOAuthTypeSafe returns the explicit Gemini OAuth type when present, or a
@@ -189,7 +192,10 @@ func (a *Account) GeminiOAuthTypeSafe() string {
 	if a.Platform != PlatformGemini || a.Type != AccountTypeOAuth {
 		return ""
 	}
-	if oauthType := a.GeminiOAuthType(); oauthType != "" {
+	if oauthType := strings.TrimSpace(a.GeminiOAuthType()); oauthType != "" {
+		return oauthType
+	}
+	if oauthType := strings.TrimSpace(a.GetExtraString("oauth_type")); oauthType != "" {
 		return oauthType
 	}
 
@@ -205,8 +211,27 @@ func (a *Account) GeminiOAuthTypeSafe() string {
 }
 
 func (a *Account) GeminiTierID() string {
-	tierID := strings.TrimSpace(a.GetCredential("tier_id"))
-	return tierID
+	for _, tierID := range []string{
+		a.GetExtraString("gemini_paid_tier_id"),
+		a.GetCredential("gemini_paid_tier_id"),
+		a.GetCredential("tier_id"),
+		a.GetCredential("gemini_current_tier_id"),
+		a.GetExtraString("gemini_current_tier_id"),
+		a.GetExtraString("tier_id"),
+		a.GetCredential("plan_type"),
+		a.GetCredential("plan_name"),
+		a.GetCredential("gemini_paid_tier_name"),
+		a.GetCredential("gemini_current_tier_name"),
+		a.GetExtraString("plan_type"),
+		a.GetExtraString("plan_name"),
+		a.GetExtraString("gemini_paid_tier_name"),
+		a.GetExtraString("gemini_current_tier_name"),
+	} {
+		if trimmed := strings.TrimSpace(tierID); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func (a *Account) IsGeminiCodeAssist() bool {

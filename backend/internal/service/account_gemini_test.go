@@ -111,6 +111,17 @@ func TestAccount_HasExplicitGeminiOAuthType(t *testing.T) {
 			},
 			want: false,
 		},
+		{
+			name: "extra_oauth_type_counts_as_explicit",
+			account: &Account{
+				Platform: PlatformGemini,
+				Type:     AccountTypeOAuth,
+				Extra: map[string]any{
+					"oauth_type": "google_one",
+				},
+			},
+			want: true,
+		},
 	}
 
 	for _, tt := range tests {

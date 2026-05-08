@@ -1114,6 +1114,7 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 			if updateErr != nil {
 				return nil, "", fmt.Errorf("failed to update credentials: %w", updateErr)
 			}
+			h.invalidateRefreshedOAuthTokenCache(ctx, updatedAccount)
 			return updatedAccount, "missing_project_id_temporary", nil
 		}
 	} else if account.Platform == service.PlatformAntigravity {
@@ -1145,6 +1146,7 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 			if updateErr != nil {
 				return nil, "", fmt.Errorf("failed to update credentials: %w", updateErr)
 			}
+			h.invalidateRefreshedOAuthTokenCache(ctx, updatedAccount)
 			h.adminService.EnsureAntigravityPrivacy(ctx, updatedAccount)
 			return updatedAccount, "missing_project_id_temporary", nil
 		}
@@ -1197,14 +1199,20 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 		if err != nil {
 			return nil, "", err
 		}
+		if account.Platform == service.PlatformGemini &&
+			account.Status == service.StatusError &&
+			service.DidConfirmGeminiProjectMetadata(account.Credentials, newCredentials) &&
+			service.IsGeminiProjectConfigurationErrorMessage(account.ErrorMessage) {
+			clearedAccount, clearErr := h.adminService.ClearAccountError(ctx, updatedAccount.ID)
+			if clearErr != nil {
+				return nil, "", fmt.Errorf("failed to clear Gemini project configuration error: %w", clearErr)
+			}
+			updatedAccount = clearedAccount
+		}
 	}
 
 	// 刷新成功后，清除 token 缓存，确保下次请求使用新 token
-	if h.tokenCacheInvalidator != nil {
-		if invalidateErr := h.tokenCacheInvalidator.InvalidateToken(ctx, updatedAccount); invalidateErr != nil {
-			log.Printf("[WARN] Failed to invalidate token cache for account %d: %v", updatedAccount.ID, invalidateErr)
-		}
-	}
+	h.invalidateRefreshedOAuthTokenCache(ctx, updatedAccount)
 	if account.Platform == service.PlatformKiro {
 		h.invalidateKiroUsageCache(updatedAccount)
 		clearedAccount, clearErr := h.adminService.ClearAccountError(ctx, updatedAccount.ID)
@@ -1220,6 +1228,15 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 	h.adminService.EnsureAntigravityPrivacy(ctx, updatedAccount)
 
 	return updatedAccount, "", nil
+}
+
+func (h *AccountHandler) invalidateRefreshedOAuthTokenCache(ctx context.Context, account *service.Account) {
+	if h.tokenCacheInvalidator == nil || account == nil {
+		return
+	}
+	if invalidateErr := h.tokenCacheInvalidator.InvalidateToken(ctx, account); invalidateErr != nil {
+		log.Printf("[WARN] Failed to invalidate token cache for account %d: %v", account.ID, invalidateErr)
+	}
 }
 
 // Refresh handles refreshing account credentials

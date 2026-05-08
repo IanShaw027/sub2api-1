@@ -183,12 +183,17 @@ type GeminiTokenInfo struct {
 	// ProjectIDMissing marks a temporary post-auth metadata gap. Tokens are valid, and project_id
 	// backfill can be retried later without forcing the whole OAuth flow to fail.
 	ProjectIDMissing bool `json:"-"`
+	// ProjectMetadataConfirmed marks that this refresh/auth cycle explicitly confirmed Gemini
+	// project metadata or companion-project validity via upstream metadata APIs.
+	ProjectMetadataConfirmed bool `json:"-"`
 }
 
 type geminiCodeAssistSnapshot struct {
 	ProjectID       string
 	TierID          string
 	TierRegistered  bool // true if tier comes from currentTier/paidTier (registered user), false if from allowedTiers (new user)
+	TierUserDefined *bool
+	HasOnboarded    *bool
 	IneligibleTiers []geminicli.IneligibleTier
 	Extra           map[string]any
 }
@@ -454,11 +459,38 @@ func buildGeminiCodeAssistIneligibleError(ineligibleTiers []geminicli.Ineligible
 	return fmt.Errorf("ineligible_tier: %s", strings.Join(reasons, "; "))
 }
 
-func buildGeminiCodeAssistProjectIDRequiredError(registeredTierID string) error {
-	if tierID := strings.TrimSpace(registeredTierID); tierID != "" {
-		return fmt.Errorf("user is registered (tier: %s) but no project_id available. Please provide Project ID manually in the authorization form, or create a project at https://console.cloud.google.com", tierID)
+func buildGeminiCodeAssistProjectIDRequiredError(registeredTierID string, userDefinedProject *bool) error {
+	if userDefinedProject != nil && *userDefinedProject {
+		if tierID := strings.TrimSpace(registeredTierID); tierID != "" {
+			return fmt.Errorf("user_defined_project_required: upstream tier %s requires a user-defined cloudaicompanionProject, so Google did not auto-return a companion project for this account. If you do not want to provide your own Project ID, use a different eligible account/tier that supports auto-assigned companion projects", tierID)
+		}
+		return fmt.Errorf("user_defined_project_required: this upstream tier requires a user-defined cloudaicompanionProject, so Google did not auto-return a companion project for this account")
 	}
-	return fmt.Errorf("project_id required for Gemini Code Assist authorization. Please provide Project ID manually in the authorization form, or create a project at https://console.cloud.google.com")
+	if tierID := strings.TrimSpace(registeredTierID); tierID != "" {
+		return fmt.Errorf("registered_tier_missing_companion_project: user is registered (tier: %s) but upstream returned no cloudaicompanionProject. This usually means upstream account state is incomplete or inconsistent for this Gemini tier", tierID)
+	}
+	return fmt.Errorf("project_id required for Gemini Code Assist authorization. The upstream response did not provide a usable cloudaicompanionProject")
+}
+
+func IsGeminiProjectConfigurationError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return IsGeminiProjectConfigurationErrorMessage(err.Error())
+}
+
+func IsGeminiProjectConfigurationErrorMessage(message string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(message))
+	if normalized == "" {
+		return false
+	}
+	return strings.Contains(normalized, "missing_project_id") ||
+		strings.Contains(normalized, "missing project_id for code assist oauth") ||
+		strings.Contains(normalized, "google one accounts require a project_id") ||
+		strings.Contains(normalized, "no project_id available") ||
+		strings.Contains(normalized, "user_defined_project_required:") ||
+		strings.Contains(normalized, "registered_tier_missing_companion_project:") ||
+		strings.Contains(normalized, "project_id required for gemini code assist authorization")
 }
 
 func isGeminiEligibilityError(err error) bool {
@@ -466,7 +498,9 @@ func isGeminiEligibilityError(err error) bool {
 		return false
 	}
 	message := err.Error()
-	return strings.Contains(message, "validation_required:") || strings.Contains(message, "ineligible_tier")
+	return strings.Contains(message, "validation_required:") ||
+		strings.Contains(message, "ineligible_tier") ||
+		IsGeminiProjectConfigurationErrorMessage(message)
 }
 
 func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExchangeCodeInput) (*GeminiTokenInfo, error) {
@@ -601,8 +635,12 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 		// Google One accounts use cloudaicompanion API, which requires a project_id.
 		// For personal accounts, Google auto-assigns a project_id via the LoadCodeAssist API.
 		if projectID == "" {
-			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] No project_id provided, attempting to fetch from LoadCodeAssist API...")
-			snapshot, err := s.fetchProjectID(ctx, tokenResp.AccessToken, proxyURL, "")
+			if projectIDHint == "" {
+				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] No project_id provided, attempting to fetch from LoadCodeAssist API...")
+			} else {
+				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] User provided project_id hint for Google One: %s, fetching companion project and tier...", projectIDHint)
+			}
+			snapshot, err := s.fetchProjectID(ctx, tokenResp.AccessToken, proxyURL, projectIDHint)
 			if snapshot != nil {
 				projectID = snapshot.ProjectID
 				detectedTierID = canonicalGeminiTierIDForOAuthType(oauthType, snapshot.TierID)
@@ -824,6 +862,9 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 				}
 				fmt.Printf("[GeminiOAuth] Warning: failed to auto-detect project/tier: %v\n", err)
 			} else {
+				if strings.TrimSpace(existingProjectID) != "" || strings.TrimSpace(projectID) != "" {
+					tokenInfo.ProjectMetadataConfirmed = true
+				}
 				if strings.TrimSpace(tokenInfo.ProjectID) == "" && projectID != "" {
 					tokenInfo.ProjectID = projectID
 				}
@@ -843,10 +884,39 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 		detectedTierID := ""
 		if existingProjectID != "" {
 			if snapshot, err := s.fetchCodeAssistSnapshot(ctx, tokenInfo.AccessToken, proxyURL, existingProjectID); err == nil {
+				tokenInfo.ProjectMetadataConfirmed = true
+				if strings.TrimSpace(snapshot.ProjectID) != "" {
+					tokenInfo.ProjectID = strings.TrimSpace(snapshot.ProjectID)
+				}
 				detectedTierID = canonicalGeminiTierIDForOAuthType(oauthType, snapshot.TierID)
 				tokenInfo.Extra = mergeGeminiCredentialExtra(tokenInfo.Extra, snapshot.Extra)
 			} else {
+				if isGeminiEligibilityError(err) {
+					return nil, err
+				}
 				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] WARNING: Failed to refresh account metadata: %v", err)
+			}
+		} else {
+			snapshot, err := s.fetchProjectID(ctx, tokenInfo.AccessToken, proxyURL, "")
+			if snapshot != nil {
+				if strings.TrimSpace(snapshot.ProjectID) != "" {
+					tokenInfo.ProjectMetadataConfirmed = true
+					tokenInfo.ProjectID = strings.TrimSpace(snapshot.ProjectID)
+				}
+				detectedTierID = canonicalGeminiTierIDForOAuthType(oauthType, snapshot.TierID)
+				tokenInfo.Extra = mergeGeminiCredentialExtra(tokenInfo.Extra, snapshot.Extra)
+			}
+			if err != nil {
+				if isGeminiEligibilityError(err) {
+					return nil, err
+				}
+				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] WARNING: Failed to auto-detect Google One project/tier during refresh: %v", err)
+			}
+			if strings.TrimSpace(tokenInfo.ProjectID) == "" {
+				tokenInfo.ProjectIDMissing = true
+				tokenInfo.Extra = mergeGeminiCredentialExtra(tokenInfo.Extra, map[string]any{
+					"auto_detect_project_id": "true",
+				})
 			}
 		}
 		canonicalExistingTier := strings.TrimSpace(existingTierID)
@@ -942,6 +1012,9 @@ func (s *GeminiOAuthService) BuildAccountCredentials(tokenInfo *GeminiTokenInfo)
 	} else {
 		creds["gemini_status_reason"] = ""
 	}
+	if tokenInfo.ProjectMetadataConfirmed {
+		creds["gemini_project_metadata_confirmed_at"] = time.Now().Format(time.RFC3339Nano)
+	}
 	if len(tokenInfo.UsageRaw) > 0 {
 		creds["gemini_usage_raw"] = tokenInfo.UsageRaw
 		creds["usage_updated_at"] = time.Now().Format(time.RFC3339)
@@ -975,8 +1048,10 @@ func extractGeminiPersistedExtra(credentials map[string]any) map[string]any {
 	keys := []string{
 		"gemini_current_tier_id",
 		"gemini_current_tier_name",
+		"gemini_current_tier_user_defined_project",
 		"gemini_paid_tier_id",
 		"gemini_paid_tier_name",
+		"gemini_paid_tier_user_defined_project",
 		"gemini_has_onboarded_previously",
 		"gemini_available_credits",
 		"gemini_code_assist_updated_at",
@@ -1013,6 +1088,9 @@ func buildGeminiCodeAssistExtra(loadResp *geminicli.LoadCodeAssistResponse) map[
 		if value := strings.TrimSpace(loadResp.CurrentTier.Name); value != "" {
 			extra["gemini_current_tier_name"] = value
 		}
+		if loadResp.CurrentTier.UserDefinedCloudAICompanionProject != nil {
+			extra["gemini_current_tier_user_defined_project"] = *loadResp.CurrentTier.UserDefinedCloudAICompanionProject
+		}
 		if loadResp.CurrentTier.HasOnboardedPreviously != nil {
 			extra["gemini_has_onboarded_previously"] = *loadResp.CurrentTier.HasOnboardedPreviously
 		}
@@ -1026,6 +1104,9 @@ func buildGeminiCodeAssistExtra(loadResp *geminicli.LoadCodeAssistResponse) map[
 		}
 		if value := strings.TrimSpace(loadResp.PaidTier.Name); value != "" {
 			extra["gemini_paid_tier_name"] = value
+		}
+		if loadResp.PaidTier.UserDefinedCloudAICompanionProject != nil {
+			extra["gemini_paid_tier_user_defined_project"] = *loadResp.PaidTier.UserDefinedCloudAICompanionProject
 		}
 		if len(loadResp.PaidTier.AvailableCredits) > 0 {
 			extra["gemini_available_credits"] = loadResp.PaidTier.AvailableCredits
@@ -1270,9 +1351,16 @@ func (s *GeminiOAuthService) fetchCodeAssistSnapshot(ctx context.Context, access
 	if loadResp != nil {
 		snapshot.ProjectID = strings.TrimSpace(loadResp.CloudAICompanionProject)
 		snapshot.IneligibleTiers = append(snapshot.IneligibleTiers, loadResp.IneligibleTiers...)
-		if tier := loadResp.GetTier(); tier != "" {
-			snapshot.TierID = tier
+		if loadResp.PaidTier != nil && strings.TrimSpace(loadResp.PaidTier.ID) != "" {
+			snapshot.TierID = strings.TrimSpace(loadResp.PaidTier.ID)
 			snapshot.TierRegistered = true
+			snapshot.TierUserDefined = loadResp.PaidTier.UserDefinedCloudAICompanionProject
+			snapshot.HasOnboarded = loadResp.PaidTier.HasOnboardedPreviously
+		} else if loadResp.CurrentTier != nil && strings.TrimSpace(loadResp.CurrentTier.ID) != "" {
+			snapshot.TierID = strings.TrimSpace(loadResp.CurrentTier.ID)
+			snapshot.TierRegistered = true
+			snapshot.TierUserDefined = loadResp.CurrentTier.UserDefinedCloudAICompanionProject
+			snapshot.HasOnboarded = loadResp.CurrentTier.HasOnboardedPreviously
 		} else {
 			snapshot.TierID = extractTierIDFromAllowedTiers(loadResp.AllowedTiers)
 		}
@@ -1316,11 +1404,17 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] User has tier (%s) but no cloudaicompanionProject; falling back to provided project_id hint: %s", registeredTierID, trimmedProjectIDHint)
 				return snapshot, nil
 			}
-			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] User has tier (%s) but no cloudaicompanionProject; manual project_id required", registeredTierID)
+			logger.LegacyPrintf(
+				"service.gemini_oauth",
+				"[GeminiOAuth] User has tier (%s) but no cloudaicompanionProject; user_defined_project=%v has_onboarded_previously=%v",
+				registeredTierID,
+				boolPtrString(snapshot.TierUserDefined),
+				boolPtrString(snapshot.HasOnboarded),
+			)
 			if ineligibleErr := buildGeminiCodeAssistIneligibleError(snapshot.IneligibleTiers); ineligibleErr != nil {
 				return snapshot, ineligibleErr
 			}
-			return snapshot, buildGeminiCodeAssistProjectIDRequiredError(registeredTierID)
+			return snapshot, buildGeminiCodeAssistProjectIDRequiredError(registeredTierID, snapshot.TierUserDefined)
 		}
 		if ineligibleErr := buildGeminiCodeAssistIneligibleError(snapshot.IneligibleTiers); ineligibleErr != nil {
 			return snapshot, ineligibleErr
@@ -1382,7 +1476,7 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 		return snapshot, nil
 	}
 	if resp != nil && resp.Done {
-		return snapshot, buildGeminiCodeAssistProjectIDRequiredError(snapshot.TierID)
+		return snapshot, buildGeminiCodeAssistProjectIDRequiredError(snapshot.TierID, snapshot.TierUserDefined)
 	}
 	if loadErr != nil {
 		return snapshot, fmt.Errorf("loadCodeAssist failed (%v) and onboardUser timeout after %d attempts", loadErr, maxAttempts)
@@ -1406,4 +1500,14 @@ func extractGeminiCompanionProjectID(resp *geminicli.OnboardUserResponse) string
 		}
 	}
 	return ""
+}
+
+func boolPtrString(value *bool) string {
+	if value == nil {
+		return "unknown"
+	}
+	if *value {
+		return "true"
+	}
+	return "false"
 }

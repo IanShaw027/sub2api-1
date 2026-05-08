@@ -43,6 +43,7 @@ const (
 func shouldUseGeminiOAuthProjectStreamingBridge(account *Account, stream bool, action string) bool {
 	return account != nil &&
 		account.Type == AccountTypeOAuth &&
+		account.GeminiOAuthTypeSafe() == "code_assist" &&
 		!stream &&
 		action == "generateContent" &&
 		strings.TrimSpace(account.GetCredential("project_id")) != ""
@@ -501,8 +502,7 @@ func (s *GeminiMessagesCompatService) HasAntigravityAccounts(ctx context.Context
 //
 // Preference order among supported AI Studio candidates:
 // 1) API key accounts (AI Studio)
-// 2) OAuth accounts without project_id (AI Studio OAuth)
-// 3) OAuth accounts explicitly marked as ai_studio
+// 2) Gemini OAuth accounts that use AI Studio-compatible bearer requests
 //
 // Unsupported Gemini account types are skipped here so callers can preserve
 // their existing static fallback behavior instead of forwarding guaranteed-bad
@@ -573,11 +573,11 @@ func rankAIStudioEndpointAccount(account *Account) (int, bool) {
 		return 0, strings.TrimSpace(account.GetCredential("api_key")) != ""
 	case AccountTypeOAuth:
 		oauthType := strings.TrimSpace(account.GeminiOAuthTypeSafe())
-		if oauthType == "" || strings.EqualFold(oauthType, "ai_studio") {
+		if oauthType == "" || strings.EqualFold(oauthType, "ai_studio") || strings.EqualFold(oauthType, "google_one") {
 			return 1, true
 		}
-		// Code Assist / Google One style Gemini OAuth accounts often lack AI Studio
-		// scopes for /v1beta/models and should fall through to the caller's fallback.
+		// Explicit Code Assist Gemini OAuth accounts often lack AI Studio scopes for
+		// /v1beta/models and should fall through to the caller's fallback.
 		return 0, false
 	default:
 		return 0, false
@@ -617,8 +617,8 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 	var buildReq func(ctx context.Context) (*http.Request, string, error)
 	useUpstreamStream := req.Stream
 	if shouldUseGeminiOAuthProjectStreamingBridge(account, req.Stream, "generateContent") {
-		// OAuth generateContent with project-scoped routing may return no content on non-streaming calls.
-		// Keep the upstream stream+aggregate bridge for both explicit Code Assist and legacy AI Studio OAuth.
+		// Code Assist generateContent with project-scoped routing may return no content on
+		// non-streaming calls, so keep the upstream stream+aggregate bridge for that flow.
 		useUpstreamStream = true
 	}
 
@@ -1172,8 +1172,8 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 	useUpstreamStream := stream
 	upstreamAction := action
 	if shouldUseGeminiOAuthProjectStreamingBridge(account, stream, action) {
-		// OAuth generateContent with project-scoped routing may return no content on non-streaming calls.
-		// Keep the upstream stream+aggregate bridge for both explicit Code Assist and legacy AI Studio OAuth.
+		// Code Assist generateContent with project-scoped routing may return no content on
+		// non-streaming calls, so keep the upstream stream+aggregate bridge for that flow.
 		useUpstreamStream = true
 		upstreamAction = "streamGenerateContent"
 	}

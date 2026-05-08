@@ -268,6 +268,8 @@ func (s *TokenRefreshService) refreshWithRetry(ctx context.Context, account *Acc
 	for attempt := 1; attempt <= s.cfg.MaxRetries; attempt++ {
 		var newCredentials map[string]any
 		var err error
+		geminiProjectMetadataConfirmed := false
+		previousCredentials := cloneCredentials(account.Credentials)
 
 		// 优先使用统一 API（带分布式锁 + DB 重读保护）
 		if s.refreshAPI != nil && executor != nil {
@@ -282,12 +284,14 @@ func (s *TokenRefreshService) refreshWithRetry(ctx context.Context, account *Acc
 				return s.refreshPolicy.handleAlreadyRefreshed()
 			} else {
 				account = result.Account
+				geminiProjectMetadataConfirmed = didConfirmGeminiProjectMetadata(previousCredentials, account)
 				_ = result.NewCredentials // 统一 API 已设置 _token_version 并更新 DB，无需重复操作
 			}
 		} else {
 			// 降级：直接调用 refresher（兼容旧路径）
 			newCredentials, err = refresher.Refresh(ctx, account)
 			if newCredentials != nil {
+				geminiProjectMetadataConfirmed = didConfirmGeminiProjectMetadataFromCredentials(previousCredentials, account, newCredentials)
 				newCredentials["_token_version"] = time.Now().UnixMilli()
 				if saveErr := persistAccountCredentials(ctx, s.accountRepo, account, newCredentials); saveErr != nil {
 					return fmt.Errorf("failed to save credentials: %w", saveErr)
@@ -296,7 +300,7 @@ func (s *TokenRefreshService) refreshWithRetry(ctx context.Context, account *Acc
 		}
 
 		if err == nil {
-			s.postRefreshActions(ctx, account)
+			s.postRefreshActions(ctx, account, geminiProjectMetadataConfirmed)
 			return nil
 		}
 
@@ -362,7 +366,7 @@ func (s *TokenRefreshService) refreshWithRetry(ctx context.Context, account *Acc
 }
 
 // postRefreshActions 刷新成功后的后续动作（清除错误状态、缓存失效、调度器同步等）
-func (s *TokenRefreshService) postRefreshActions(ctx context.Context, account *Account) {
+func (s *TokenRefreshService) postRefreshActions(ctx context.Context, account *Account, geminiProjectMetadataConfirmed bool) {
 	// Antigravity 账户：如果之前是因为缺少 project_id 而标记为 error，现在成功获取到了，清除错误状态
 	if account.Platform == PlatformAntigravity &&
 		account.Status == StatusError &&
@@ -374,6 +378,23 @@ func (s *TokenRefreshService) postRefreshActions(ctx context.Context, account *A
 			)
 		} else {
 			slog.Info("token_refresh.cleared_missing_project_id_error", "account_id", account.ID)
+			account.Status = StatusActive
+			account.ErrorMessage = ""
+		}
+	}
+	if account.Platform == PlatformGemini &&
+		account.Status == StatusError &&
+		geminiProjectMetadataConfirmed &&
+		IsGeminiProjectConfigurationErrorMessage(account.ErrorMessage) {
+		if clearErr := s.accountRepo.ClearError(ctx, account.ID); clearErr != nil {
+			slog.Warn("token_refresh.clear_account_error_failed",
+				"account_id", account.ID,
+				"error", clearErr,
+			)
+		} else {
+			slog.Info("token_refresh.cleared_gemini_project_configuration_error", "account_id", account.ID)
+			account.Status = StatusActive
+			account.ErrorMessage = ""
 		}
 	}
 	// 刷新成功后清除临时不可调度状态（处理 OAuth 401 恢复场景）
@@ -385,6 +406,8 @@ func (s *TokenRefreshService) postRefreshActions(ctx context.Context, account *A
 			)
 		} else {
 			slog.Info("token_refresh.cleared_temp_unschedulable", "account_id", account.ID)
+			account.TempUnschedulableUntil = nil
+			account.TempUnschedulableReason = ""
 		}
 		// 同步清除 Redis 缓存，避免调度器读到过期的临时不可调度状态
 		if s.tempUnschedCache != nil {
@@ -424,15 +447,50 @@ func (s *TokenRefreshService) postRefreshActions(ctx context.Context, account *A
 	s.ensureAntigravityPrivacy(ctx, account)
 }
 
+func DidConfirmGeminiProjectMetadata(previousCredentials, refreshedCredentials map[string]any) bool {
+	previousConfirmation := strings.TrimSpace(stringCredentialValue(previousCredentials, "gemini_project_metadata_confirmed_at"))
+	refreshedConfirmation := strings.TrimSpace(stringCredentialValue(refreshedCredentials, "gemini_project_metadata_confirmed_at"))
+	if refreshedConfirmation == "" || refreshedConfirmation == previousConfirmation {
+		return false
+	}
+
+	return true
+}
+
+func didConfirmGeminiProjectMetadata(previousCredentials map[string]any, account *Account) bool {
+	if account == nil {
+		return false
+	}
+	return didConfirmGeminiProjectMetadataFromCredentials(previousCredentials, account, account.Credentials)
+}
+
+func didConfirmGeminiProjectMetadataFromCredentials(previousCredentials map[string]any, account *Account, refreshedCredentials map[string]any) bool {
+	if account == nil || account.Platform != PlatformGemini {
+		return false
+	}
+	return DidConfirmGeminiProjectMetadata(previousCredentials, refreshedCredentials)
+}
+
+func stringCredentialValue(credentials map[string]any, key string) string {
+	if credentials == nil {
+		return ""
+	}
+	value, _ := credentials[key].(string)
+	return value
+}
+
 // errRefreshSkipped 表示刷新被跳过（锁竞争或已被其他路径刷新），不计入 failed 或 refreshed
 var errRefreshSkipped = fmt.Errorf("refresh skipped")
 
 // isNonRetryableRefreshError 判断是否为不可重试的刷新错误
 // 这些错误通常表示凭证已失效或配置确实缺失，需要用户重新授权
-// 注意：missing_project_id 错误只在真正缺失（从未获取过）时返回，临时获取失败不会返回此错误
+// 注意：Gemini/Antigravity 的 project 配置错误属于不可重试，需要用户修正账号或上游状态。
 func isNonRetryableRefreshError(err error) bool {
 	if err == nil {
 		return false
+	}
+	if IsGeminiProjectConfigurationError(err) {
+		return true
 	}
 	msg := strings.ToLower(err.Error())
 	nonRetryable := []string{
