@@ -122,7 +122,7 @@
         </div>
         <div v-if="openAIImageUsageBars.length" class="space-y-1 pt-0.5">
           <div class="text-[10px] font-medium text-gray-500 dark:text-gray-400">
-            {{ t('admin.accounts.openaiImageRoutes.imageWindows') }}
+            {{ translateOrFallback('admin.accounts.openaiImageRoutes.imageWindows', 'Image windows') }}
           </div>
           <UsageProgressBar
             v-for="item in openAIImageUsageBars"
@@ -137,7 +137,7 @@
         </div>
         <div v-if="openAIImageRouteRows.length" class="space-y-0.5 pt-0.5">
           <div class="text-[10px] font-medium text-gray-500 dark:text-gray-400">
-            {{ t('admin.accounts.openaiImageRoutes.routeStatus') }}
+            {{ translateOrFallback('admin.accounts.openaiImageRoutes.routeStatus', 'Image route status') }}
           </div>
           <div
             v-for="item in openAIImageRouteRows"
@@ -364,8 +364,6 @@
 
     <!-- Gemini platform: align with Antigravity-style family windows -->
     <template v-else-if="account.platform === 'gemini'">
-      <AccountQuotaInfo :account="account" />
-
       <div class="space-y-1">
         <div v-if="isForbidden" class="space-y-1">
           <span
@@ -428,7 +426,7 @@
           />
         </div>
         <div v-else class="text-xs text-gray-400">
-          {{ t('admin.accounts.gemini.rateLimit.ok') }}
+          -
         </div>
       </div>
     </template>
@@ -441,13 +439,11 @@
 
   <!-- Non-OAuth/Setup-Token accounts -->
   <div ref="rootRef" v-else>
-    <!-- Gemini API Key accounts: show quota info -->
-    <AccountQuotaInfo v-if="account.platform === 'gemini'" :account="account" />
     <!-- Key/Bedrock accounts: show today stats + optional quota bars -->
-    <div v-else class="space-y-1">
+    <div class="space-y-1">
       <!-- Today stats row (requests, tokens, cost, user_cost) -->
       <div
-        v-if="todayStats"
+        v-if="account.platform !== 'gemini' && todayStats"
         class="mb-0.5 flex items-center"
       >
         <div class="flex items-center gap-1.5 text-[9px] text-gray-500 dark:text-gray-400">
@@ -471,7 +467,7 @@
       </div>
       <!-- Loading skeleton for today stats -->
       <div
-        v-else-if="todayStatsLoading"
+        v-else-if="account.platform !== 'gemini' && todayStatsLoading"
         class="mb-0.5 flex items-center gap-1"
       >
         <div class="h-3 w-10 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
@@ -516,7 +512,6 @@ import { buildGeminiUsageRefreshKey, buildOpenAIUsageRefreshKey } from '@/utils/
 import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
 import { formatCompactNumber } from '@/utils/format'
 import UsageProgressBar from './UsageProgressBar.vue'
-import AccountQuotaInfo from './AccountQuotaInfo.vue'
 
 // Module-level cache shared across all AccountUsageCell instances
 const _usageCache = new Map<number, { data: AccountUsageInfo; ts: number }>()
@@ -538,6 +533,11 @@ const props = withDefaults(
 
 const { t } = useI18n()
 const desktopViewportQuery = '(min-width: 768px)'
+
+const translateOrFallback = (key: string, fallback: string): string => {
+  const translated = t(key)
+  return translated === key ? fallback : translated
+}
 
 const unmounted = ref(false)
 onBeforeUnmount(() => { unmounted.value = true })
@@ -595,7 +595,7 @@ const openAIResponseUsageBars = computed(() => {
   if (info.five_hour) {
     items.push({
       key: 'responses-5h',
-      label: t('admin.accounts.openaiImageRoutes.responses5h'),
+      label: translateOrFallback('admin.accounts.openaiImageRoutes.responses5h', 'responses 5h'),
       progress: info.five_hour,
       color: 'indigo'
     })
@@ -603,7 +603,7 @@ const openAIResponseUsageBars = computed(() => {
   if (info.seven_day) {
     items.push({
       key: 'responses-7d',
-      label: t('admin.accounts.openaiImageRoutes.responses7d'),
+      label: translateOrFallback('admin.accounts.openaiImageRoutes.responses7d', 'responses 7d'),
       progress: info.seven_day,
       color: 'emerald'
     })
@@ -618,7 +618,7 @@ const openAIImageWorkspaceSummary = computed(() => {
   if (!workspace && !plan) return ''
   const parts = []
   if (plan) parts.push(plan)
-  if (workspace) parts.push(`${t('admin.accounts.openaiImageRoutes.workspace')}: ${workspace}`)
+  if (workspace) parts.push(`${translateOrFallback('admin.accounts.openaiImageRoutes.workspace', 'Workspace')}: ${workspace}`)
   return parts.join(' · ')
 })
 
@@ -629,21 +629,21 @@ const openAIImageRouteRows = computed(() => {
   const hasCodexState = info.openai_image_codex_supported !== undefined || !!info.openai_image_codex_reason || !!info.openai_image_codex_five_hour || !!info.openai_image_codex_seven_day
   const hasWeb2apiState = info.openai_image_web2api_supported !== undefined || !!info.openai_image_web2api_reason || !!info.openai_image_web2api_five_hour || !!info.openai_image_web2api_seven_day
   const formatValue = (supported?: boolean, reason?: string) => {
-    if (supported) return t('admin.accounts.openaiImageRoutes.available')
-    if (reason === 'free_plan_not_supported') return t('admin.accounts.openaiImageRoutes.freePlanBlocked')
-    if (reason === 'unsupported_account_type') return t('admin.accounts.openaiImageRoutes.unsupported')
-    return t('admin.accounts.openaiImageRoutes.unavailable')
+    if (supported) return translateOrFallback('admin.accounts.openaiImageRoutes.available', 'available')
+    if (reason === 'free_plan_not_supported') return translateOrFallback('admin.accounts.openaiImageRoutes.freePlanBlocked', 'free accounts cannot use codex image generation')
+    if (reason === 'unsupported_account_type') return translateOrFallback('admin.accounts.openaiImageRoutes.unsupported', 'unsupported for this account type')
+    return translateOrFallback('admin.accounts.openaiImageRoutes.unavailable', 'unavailable')
   }
   return [
     hasCodexState ? {
       key: 'codex',
-      label: t('admin.accounts.openaiImageRoutes.codex'),
+      label: translateOrFallback('admin.accounts.openaiImageRoutes.codex', 'codex'),
       supported: !!info.openai_image_codex_supported,
       value: formatValue(info.openai_image_codex_supported, info.openai_image_codex_reason)
     } : null,
     hasWeb2apiState ? {
       key: 'web2api',
-      label: t('admin.accounts.openaiImageRoutes.web2api'),
+      label: translateOrFallback('admin.accounts.openaiImageRoutes.web2api', 'web2api'),
       supported: !!info.openai_image_web2api_supported,
       value: formatValue(info.openai_image_web2api_supported, info.openai_image_web2api_reason)
     } : null
@@ -658,28 +658,28 @@ const openAIImageUsageBars = computed(() => {
   if (info.openai_image_codex_five_hour) {
     items.push({
       key: 'codex-5h',
-      label: t('admin.accounts.openaiImageRoutes.codex5h'),
+      label: translateOrFallback('admin.accounts.openaiImageRoutes.codex5h', 'codex 5h'),
       progress: info.openai_image_codex_five_hour
     })
   }
   if (info.openai_image_codex_seven_day) {
     items.push({
       key: 'codex-7d',
-      label: t('admin.accounts.openaiImageRoutes.codex7d'),
+      label: translateOrFallback('admin.accounts.openaiImageRoutes.codex7d', 'codex 7d'),
       progress: info.openai_image_codex_seven_day
     })
   }
   if (info.openai_image_web2api_five_hour) {
     items.push({
       key: 'web2api-5h',
-      label: t('admin.accounts.openaiImageRoutes.web2api5h'),
+      label: translateOrFallback('admin.accounts.openaiImageRoutes.web2api5h', 'web2api 5h'),
       progress: info.openai_image_web2api_five_hour
     })
   }
   if (info.openai_image_web2api_seven_day) {
     items.push({
       key: 'web2api-7d',
-      label: t('admin.accounts.openaiImageRoutes.web2api7d'),
+      label: translateOrFallback('admin.accounts.openaiImageRoutes.web2api7d', 'web2api 7d'),
       progress: info.openai_image_web2api_seven_day
     })
   }

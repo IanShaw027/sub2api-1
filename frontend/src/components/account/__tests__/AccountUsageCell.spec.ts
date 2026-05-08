@@ -587,6 +587,43 @@ describe('AccountUsageCell', () => {
   expect(wrapper.text()).toContain('7d|100|106540000')
   })
 
+  it('OpenAI 生图路由文案在翻译缺失时回退为可读文本', async () => {
+    getUsage.mockResolvedValue({
+      openai_image_codex_supported: false,
+      openai_image_codex_reason: 'free_plan_not_supported',
+      openai_image_web2api_supported: true,
+      openai_image_workspace_name: 'Personal',
+      openai_image_plan_type: 'free'
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 2005,
+          platform: 'openai',
+          type: 'oauth',
+          extra: {}
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: true,
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Image route status')
+    expect(wrapper.text()).toContain('codex')
+    expect(wrapper.text()).toContain('free accounts cannot use codex image generation')
+    expect(wrapper.text()).toContain('web2api')
+    expect(wrapper.text()).toContain('available')
+    expect(wrapper.text()).toContain('Workspace: Personal')
+    expect(wrapper.text()).not.toContain('admin.accounts.openaiImageRoutes')
+  })
+
   it('Key 账号会展示 today stats 徽章并带 A/U 提示', async () => {
 		const wrapper = mount(AccountUsageCell, {
 		  props: {
@@ -870,7 +907,7 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).not.toContain('0 req')
     expect(wrapper.text()).not.toContain('A $0.00')
     expect(wrapper.text()).not.toContain('U $0.00')
-    expect(wrapper.text()).toContain('admin.accounts.gemini.rateLimit.ok')
+    expect(wrapper.text().trim()).toBe('-')
   })
 
   it('Gemini forbidden 状态优先展示封禁徽章而不是 unlimited', async () => {
