@@ -58,7 +58,7 @@ describe('useGeminiOAuth.buildCredentials', () => {
 })
 
 describe('useGeminiOAuth.buildExtraInfo', () => {
-  it('stores display metadata and prefers plan_name as subscription label', () => {
+  it('stores display metadata without overloading subscription_type', () => {
     const oauth = useGeminiOAuth()
 
     expect(oauth.buildExtraInfo({
@@ -73,7 +73,6 @@ describe('useGeminiOAuth.buildExtraInfo', () => {
       auth_id: 'subject-123',
       name: 'Example User',
       plan_name: 'Gemini Code Assist in Google One AI Pro',
-      subscription_type: 'Gemini Code Assist in Google One AI Pro',
       oauth_type: 'google_one'
     })
   })
@@ -137,6 +136,52 @@ describe('useGeminiOAuth.exchangeAuthCode', () => {
 
     expect(result).toBeNull()
     expect(oauth.error.value).toBe('admin.accounts.oauth.gemini.missingProjectId')
+  })
+
+  it('maps generic code assist authorization project errors to the recovery key', async () => {
+    vi.mocked(adminAPI.gemini.exchangeCode).mockRejectedValueOnce({
+      response: {
+        data: {
+          detail: 'project_id required for Gemini Code Assist authorization. The upstream response did not provide a usable cloudaicompanionProject'
+        }
+      }
+    })
+    const oauth = useGeminiOAuth()
+
+    const result = await oauth.exchangeAuthCode({
+      code: 'code',
+      sessionId: 'session',
+      state: 'state',
+      oauthType: 'code_assist'
+    })
+
+    expect(result).toBeNull()
+    expect(oauth.error.value).toBe('admin.accounts.oauth.gemini.missingProjectId')
+    expect(oauth.errorCode.value).toBe('missing_project_id')
+  })
+
+  it('preserves dedicated code assist user-defined project failures instead of folding them into missing project id', async () => {
+    vi.mocked(adminAPI.gemini.exchangeCode).mockRejectedValueOnce({
+      response: {
+        data: {
+          detail: 'Failed to exchange code: user_defined_project_required: upstream tier requires a user-defined project'
+        }
+      }
+    })
+    const oauth = useGeminiOAuth()
+
+    const result = await oauth.exchangeAuthCode({
+      code: 'code',
+      sessionId: 'session',
+      state: 'state',
+      oauthType: 'code_assist'
+    })
+
+    expect(result).toBeNull()
+    expect(oauth.error.value).toBe(
+      'Failed to exchange code: user_defined_project_required: upstream tier requires a user-defined project'
+    )
+    expect(oauth.errorCode.value).toBe('code_assist_user_defined_project_required')
   })
 
   it('maps google one companion-project detection failures to a dedicated error key', async () => {

@@ -35,6 +35,7 @@ export function useGeminiOAuth() {
   const state = ref('')
   const loading = ref(false)
   const error = ref('')
+  const errorCode = ref('')
 
   const resetState = () => {
     authUrl.value = ''
@@ -42,12 +43,18 @@ export function useGeminiOAuth() {
     state.value = ''
     loading.value = false
     error.value = ''
+    errorCode.value = ''
+  }
+
+  const isCodeAssistUserDefinedProjectError = (message: string): boolean => {
+    return message.includes('user_defined_project_required:')
   }
 
   const isCodeAssistProjectIdError = (message: string): boolean => {
     return (
       message.includes('missing project_id') ||
       message.includes('missing project_id for Code Assist OAuth') ||
+      message.includes('project_id required for Gemini Code Assist authorization') ||
       message.includes('Please provide Project ID manually') ||
       message.includes('failed to auto-detect project_id') ||
       message.includes('empty result')
@@ -56,9 +63,14 @@ export function useGeminiOAuth() {
 
   const isGoogleOneProjectDetectionError = (message: string): boolean => {
     return (
+      message.includes('registered_tier_missing_companion_project:') ||
       message.includes('google One accounts require a project_id, failed to auto-detect:') ||
       message.includes('onboardUser completed but no project_id returned')
     )
+  }
+
+  const isGoogleOneUserDefinedProjectError = (message: string): boolean => {
+    return message.includes('user_defined_project_required:')
   }
 
   const isIneligibleTierError = (message: string): boolean => {
@@ -102,6 +114,7 @@ export function useGeminiOAuth() {
     sessionId.value = ''
     state.value = ''
     error.value = ''
+    errorCode.value = ''
 
     try {
       const payload: GeminiAuthUrlRequest = {}
@@ -138,11 +151,13 @@ export function useGeminiOAuth() {
     const code = params.code?.trim()
     if (!code || !params.sessionId || !params.state) {
       error.value = t('admin.accounts.oauth.gemini.missingExchangeParams')
+      errorCode.value = 'missing_exchange_params'
       return null
     }
 
     loading.value = true
     error.value = ''
+    errorCode.value = ''
 
     try {
       const payload: GeminiExchangeCodeRequest = {
@@ -166,16 +181,27 @@ export function useGeminiOAuth() {
         err?.response?.data?.detail ||
         err?.message ||
         ''
-      if (params.oauthType === 'code_assist' && isCodeAssistProjectIdError(errorMessage)) {
+      if (params.oauthType === 'code_assist' && isCodeAssistUserDefinedProjectError(errorMessage)) {
+        error.value = errorMessage || t('admin.accounts.oauth.gemini.failedToExchangeCode')
+        errorCode.value = 'code_assist_user_defined_project_required'
+      } else if (params.oauthType === 'code_assist' && isCodeAssistProjectIdError(errorMessage)) {
         error.value = t('admin.accounts.oauth.gemini.missingProjectId')
+        errorCode.value = 'missing_project_id'
+      } else if (params.oauthType === 'google_one' && isGoogleOneUserDefinedProjectError(errorMessage)) {
+        error.value = t('admin.accounts.oauth.gemini.googleOneUserDefinedProjectRequired')
+        errorCode.value = 'google_one_user_defined_project_required'
       } else if (params.oauthType === 'google_one' && isGoogleOneProjectDetectionError(errorMessage)) {
         error.value = t('admin.accounts.oauth.gemini.googleOneProjectDetectionFailed')
+        errorCode.value = 'google_one_project_detection_failed'
       } else if (isAgeVerificationError(errorMessage)) {
         error.value = t('admin.accounts.oauth.gemini.codeAssistAgeVerificationRequired')
+        errorCode.value = 'age_verification_required'
       } else if (isIneligibleTierError(errorMessage)) {
         error.value = t('admin.accounts.oauth.gemini.ineligibleTier')
+        errorCode.value = 'ineligible_tier'
       } else {
         error.value = errorMessage || t('admin.accounts.oauth.gemini.failedToExchangeCode')
+        errorCode.value = 'exchange_failed'
       }
       appStore.showError(error.value)
       return null
@@ -226,12 +252,8 @@ export function useGeminiOAuth() {
     const extra: Record<string, unknown> = {
       ...(tokenInfo.extra && typeof tokenInfo.extra === 'object' ? tokenInfo.extra : {})
     }
-    if (tokenInfo.tier_id) {
-      extra.subscription_type = tokenInfo.tier_id
-    }
     if (tokenInfo.plan_name) {
       extra.plan_name = tokenInfo.plan_name
-      extra.subscription_type = tokenInfo.plan_name
     }
     if (tokenInfo.email) {
       extra.email = tokenInfo.email
@@ -277,6 +299,7 @@ export function useGeminiOAuth() {
     state,
     loading,
     error,
+    errorCode,
     resetState,
     generateAuthUrl,
     exchangeAuthCode,

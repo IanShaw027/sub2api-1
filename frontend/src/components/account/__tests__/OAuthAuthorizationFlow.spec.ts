@@ -38,29 +38,37 @@ function mountComponent(props: Record<string, unknown> = {}) {
 }
 
 describe('OAuthAuthorizationFlow', () => {
-  it('shows Gemini project preparation tip', () => {
-    const wrapper = mountComponent()
+  it('shows Gemini Code Assist project preparation tip only when enabled', () => {
+    const wrapper = mountComponent({
+      showGeminiProjectBootstrapTip: true
+    })
 
     expect(wrapper.text()).toContain('admin.accounts.oauth.gemini.projectTipTitle')
     expect(wrapper.text()).toContain('admin.accounts.oauth.gemini.projectTipStepIam')
     expect(wrapper.text()).toContain('admin.accounts.oauth.gemini.projectApiLink')
   })
 
-  it('does not reveal project id recovery for google one companion-project detection failures', () => {
+  it('does not show the Gemini Code Assist bootstrap tip by default', () => {
+    const wrapper = mountComponent()
+
+    expect(wrapper.text()).not.toContain('admin.accounts.oauth.gemini.projectTipTitle')
+  })
+
+  it('reveals project id recovery for google one companion-project detection failures', () => {
     const wrapper = mountComponent({
       showProjectId: false,
       showProjectIdRecovery: true,
-      error: 'admin.accounts.oauth.gemini.googleOneProjectDetectionFailed'
+      errorCode: 'google_one_project_detection_failed'
     })
 
-    expect(wrapper.text()).not.toContain('admin.accounts.oauth.gemini.projectIdRecoveryTitle')
+    expect(wrapper.text()).toContain('admin.accounts.oauth.gemini.projectIdRecoveryTitle')
   })
 
   it('reveals project id recovery step only after Gemini error in recovery mode', async () => {
     const wrapper = mountComponent({
       showProjectId: true,
       showProjectIdRecovery: true,
-      error: 'admin.accounts.oauth.gemini.missingProjectId'
+      errorCode: 'missing_project_id'
     })
 
     expect(wrapper.text()).toContain('admin.accounts.oauth.gemini.projectIdRecoveryTitle')
@@ -80,7 +88,8 @@ describe('OAuthAuthorizationFlow', () => {
     const wrapper = mountComponent({
       showProjectId: false,
       showProjectIdRecovery: true,
-      error: 'admin.accounts.oauth.gemini.missingProjectId'
+      showGeminiProjectBootstrapTip: true,
+      errorCode: 'code_assist_user_defined_project_required'
     })
 
     expect(wrapper.text()).toContain('admin.accounts.oauth.gemini.projectTipTitle')
@@ -91,7 +100,7 @@ describe('OAuthAuthorizationFlow', () => {
     const wrapper = mountComponent({
       showProjectId: true,
       showProjectIdRecovery: true,
-      error: 'admin.accounts.oauth.gemini.failedToExchangeCode'
+      errorCode: 'exchange_failed'
     })
 
     expect(wrapper.text()).not.toContain('admin.accounts.oauth.gemini.projectIdRecoveryTitle')
@@ -101,7 +110,7 @@ describe('OAuthAuthorizationFlow', () => {
     const wrapper = mountComponent({
       showProjectId: true,
       showProjectIdRecovery: true,
-      error: 'admin.accounts.oauth.gemini.codeAssistAgeVerificationRequired'
+      errorCode: 'age_verification_required'
     })
 
     expect(wrapper.text()).toContain('admin.accounts.oauth.gemini.eligibilityGuidanceTitle')
@@ -114,7 +123,7 @@ describe('OAuthAuthorizationFlow', () => {
     const wrapper = mountComponent({
       showProjectId: true,
       showProjectIdRecovery: true,
-      error: 'admin.accounts.oauth.gemini.ineligibleTier'
+      errorCode: 'ineligible_tier'
     })
 
     expect(wrapper.text()).toContain('admin.accounts.oauth.gemini.ineligibleTierGuidanceTitle')
@@ -128,7 +137,7 @@ describe('OAuthAuthorizationFlow', () => {
     const wrapper = mountComponent({
       showProjectId: false,
       showProjectIdRecovery: false,
-      error: 'admin.accounts.oauth.gemini.googleOneProjectDetectionFailed'
+      errorCode: 'google_one_project_detection_failed'
     })
 
     expect(wrapper.text()).not.toContain('admin.accounts.oauth.gemini.projectIdRecoveryTitle')
@@ -151,5 +160,21 @@ describe('OAuthAuthorizationFlow', () => {
 
     expect((wrapper.vm as any).$?.exposed?.oauthState?.value).toBe('')
     expect(wrapper.emitted('generate-url')).toEqual([[]])
+  })
+
+  it('marks Gemini project recovery as required after project id changes under an existing session', async () => {
+    const wrapper = mountComponent({
+      authUrl: 'https://example.com/oauth',
+      sessionId: 'session-1',
+      showProjectId: true
+    })
+
+    expect((wrapper.vm as any).$?.exposed?.requiresProjectIdRecovery?.value).toBe(false)
+
+    const projectInput = wrapper.get('input[placeholder="admin.accounts.oauth.gemini.projectIdPlaceholder"]')
+    await projectInput.setValue('manual-project-id')
+
+    expect(wrapper.text()).toContain('admin.accounts.oauth.gemini.projectIdChangedRegenerate')
+    expect((wrapper.vm as any).$?.exposed?.requiresProjectIdRecovery?.value).toBe(true)
   })
 })

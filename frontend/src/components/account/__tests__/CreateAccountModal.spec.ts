@@ -112,6 +112,7 @@ function buildOAuthComposable() {
     callbackBaseUrl: ref('http://localhost:3128'),
     loading: ref(false),
     error: ref(''),
+    errorCode: ref(''),
     oauthState: ref('oauth-state'),
     state: ref('oauth-state'),
     resetState: vi.fn(),
@@ -197,11 +198,19 @@ const OAuthAuthorizationFlowStub = defineComponent({
       type: String,
       default: ''
     },
+    errorCode: {
+      type: String,
+      default: ''
+    },
     showProjectId: {
       type: Boolean,
       default: false
     },
     showProjectIdRecovery: {
+      type: Boolean,
+      default: false
+    },
+    showGeminiProjectBootstrapTip: {
       type: Boolean,
       default: false
     }
@@ -211,6 +220,7 @@ const OAuthAuthorizationFlowStub = defineComponent({
       authCode: '',
       oauthState: '',
       projectId: '',
+      requiresProjectIdRecovery: false,
       sessionKey: '',
       refreshToken: '',
       sessionToken: '',
@@ -220,8 +230,10 @@ const OAuthAuthorizationFlowStub = defineComponent({
     return () => h('div', {
       'data-testid': 'oauth-flow',
       'data-platform': props.platform,
+      'data-error-code': props.errorCode,
       'data-show-project-id': String(props.showProjectId),
-      'data-show-project-id-recovery': String(props.showProjectIdRecovery)
+      'data-show-project-id-recovery': String(props.showProjectIdRecovery),
+      'data-show-gemini-project-bootstrap-tip': String(props.showGeminiProjectBootstrapTip)
     })
   }
 })
@@ -406,7 +418,7 @@ describe('CreateAccountModal', () => {
     expect(wrapper.html()).not.toContain('admin.accounts.gemini.tier.gcp.standard')
   })
 
-  it('does not enable project-id recovery for Gemini Google One OAuth', async () => {
+  it('enables project-id recovery for Gemini Google One OAuth', async () => {
     const wrapper = mountModal()
     await flushPromises()
 
@@ -417,11 +429,12 @@ describe('CreateAccountModal', () => {
 
     const oauthFlow = wrapper.get('[data-testid="oauth-flow"]')
     expect(oauthFlow.attributes('data-platform')).toBe('gemini')
-    expect(oauthFlow.attributes('data-show-project-id')).toBe('false')
-    expect(oauthFlow.attributes('data-show-project-id-recovery')).toBe('false')
+    expect(oauthFlow.attributes('data-show-project-id')).toBe('true')
+    expect(oauthFlow.attributes('data-show-project-id-recovery')).toBe('true')
+    expect(oauthFlow.attributes('data-show-gemini-project-bootstrap-tip')).toBe('false')
   })
 
-  it('enables project-id recovery only for Gemini Code Assist OAuth', async () => {
+  it('enables project-id recovery for Gemini Code Assist OAuth', async () => {
     const wrapper = mountModal()
     await flushPromises()
 
@@ -436,6 +449,7 @@ describe('CreateAccountModal', () => {
     expect(oauthFlow.attributes('data-platform')).toBe('gemini')
     expect(oauthFlow.attributes('data-show-project-id')).toBe('true')
     expect(oauthFlow.attributes('data-show-project-id-recovery')).toBe('true')
+    expect(oauthFlow.attributes('data-show-gemini-project-bootstrap-tip')).toBe('true')
   })
 
   it('keeps Gemini API key tier selection for AI Studio accounts', async () => {

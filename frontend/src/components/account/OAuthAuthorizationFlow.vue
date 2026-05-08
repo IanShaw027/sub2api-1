@@ -466,6 +466,12 @@
                     <Icon name="refresh" size="xs" class="mr-1 inline" />
                     {{ t('admin.accounts.oauth.regenerate') }}
                   </button>
+                  <p
+                    v-if="showGeminiProjectRegenerateWarning"
+                    class="text-xs text-amber-700 dark:text-amber-300"
+                  >
+                    {{ t('admin.accounts.oauth.gemini.projectIdChangedRegenerate') }}
+                  </p>
                 </div>
               </div>
             </div>
@@ -724,6 +730,8 @@ interface Props {
   platform?: AccountPlatform // Platform type for different UI/text
   showProjectId?: boolean // New prop to control project ID visibility
   showProjectIdRecovery?: boolean
+  showGeminiProjectBootstrapTip?: boolean
+  errorCode?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -742,7 +750,9 @@ const props = withDefaults(defineProps<Props>(), {
   showAccessTokenOption: false,
   platform: 'anthropic',
   showProjectId: true,
-  showProjectIdRecovery: false
+  showProjectIdRecovery: false,
+  showGeminiProjectBootstrapTip: false,
+  errorCode: ''
 })
 
 const emit = defineEmits<{
@@ -785,17 +795,39 @@ const oauthImportantNotice = computed(() => {
   if (props.platform === 'antigravity') return t('admin.accounts.oauth.antigravity.importantNotice')
   return ''
 })
+
+const geminiProjectRecoveryErrorCodes = new Set([
+  'code_assist_user_defined_project_required',
+  'google_one_user_defined_project_required',
+  'google_one_project_detection_failed',
+  'missing_project_id'
+])
+
+const geminiEligibilityErrorCodes = new Set([
+  'age_verification_required',
+  'ineligible_tier'
+])
+
 const isGeminiProjectRecoveryError = computed(
-  () => props.platform === 'gemini' && props.error === t('admin.accounts.oauth.gemini.missingProjectId')
+  () =>
+    props.platform === 'gemini' &&
+    geminiProjectRecoveryErrorCodes.has(props.errorCode || '')
 )
 const isGeminiAgeEligibilityError = computed(
-  () => props.platform === 'gemini' && props.error === t('admin.accounts.oauth.gemini.codeAssistAgeVerificationRequired')
+  () =>
+    props.platform === 'gemini' &&
+    props.errorCode === 'age_verification_required'
 )
 const isGeminiIneligibleTierError = computed(
-  () => props.platform === 'gemini' && props.error === t('admin.accounts.oauth.gemini.ineligibleTier')
+  () =>
+    props.platform === 'gemini' &&
+    props.errorCode === 'ineligible_tier'
 )
 const showGeminiEligibilityGuidance = computed(
-  () => isGeminiAgeEligibilityError.value || isGeminiIneligibleTierError.value
+  () =>
+    props.platform === 'gemini' &&
+    geminiEligibilityErrorCodes.has(props.errorCode || '') &&
+    (isGeminiAgeEligibilityError.value || isGeminiIneligibleTierError.value)
 )
 const showGeminiProjectRecoveryStep = computed(
   () =>
@@ -804,7 +836,10 @@ const showGeminiProjectRecoveryStep = computed(
     isGeminiProjectRecoveryError.value
 )
 const shouldShowGeminiProjectGuidance = computed(
-  () => props.platform === 'gemini' && (props.showProjectId || showGeminiProjectRecoveryStep.value)
+  () =>
+    props.platform === 'gemini' &&
+    props.showGeminiProjectBootstrapTip &&
+    (props.showProjectId || showGeminiProjectRecoveryStep.value)
 )
 
 // Local state
@@ -817,6 +852,14 @@ const showHelpDialog = ref(false)
 const showGeminiProjectTip = ref(props.platform === 'gemini')
 const oauthState = ref('')
 const projectId = ref('')
+const generatedGeminiProjectId = ref('')
+const normalizedGeminiProjectId = computed(() => projectId.value.trim())
+const showGeminiProjectRegenerateWarning = computed(
+  () =>
+    props.platform === 'gemini' &&
+    !!props.sessionId &&
+    normalizedGeminiProjectId.value !== generatedGeminiProjectId.value
+)
 
 // Computed: show method selection when either cookie or refresh token option is enabled
 const showMethodSelection = computed(() => props.showCookieOption || props.showRefreshTokenOption || props.showMobileRefreshTokenOption || props.showSessionTokenOption || props.showAccessTokenOption)
@@ -850,6 +893,10 @@ watch(
   (newSessionId, oldSessionId) => {
     if (newSessionId && newSessionId !== oldSessionId) {
       oauthState.value = ''
+      generatedGeminiProjectId.value = normalizedGeminiProjectId.value
+    }
+    if (!newSessionId) {
+      generatedGeminiProjectId.value = ''
     }
   }
 )
@@ -934,7 +981,9 @@ defineExpose({
   authCode: authCodeInput,
   oauthState,
   projectId,
-  requiresProjectIdRecovery: showGeminiProjectRecoveryStep,
+  requiresProjectIdRecovery: computed(
+    () => showGeminiProjectRecoveryStep.value || showGeminiProjectRegenerateWarning.value
+  ),
   sessionKey: sessionKeyInput,
   refreshToken: refreshTokenInput,
   sessionToken: sessionTokenInput,
@@ -943,6 +992,7 @@ defineExpose({
     authCodeInput.value = ''
     oauthState.value = ''
     projectId.value = ''
+    generatedGeminiProjectId.value = ''
     sessionKeyInput.value = ''
     refreshTokenInput.value = ''
     sessionTokenInput.value = ''

@@ -88,25 +88,32 @@
               'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
               geminiOAuthType === 'google_one'
                 ? 'bg-purple-500 text-white'
-                : 'bg-blue-500 text-white'
+                : geminiOAuthType === 'code_assist'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-400 text-white'
             ]"
           >
             <Icon v-if="geminiOAuthType === 'google_one'" name="user" size="sm" />
-            <Icon v-else name="cloud" size="sm" />
+            <Icon v-else-if="geminiOAuthType === 'code_assist'" name="cloud" size="sm" />
+            <Icon v-else name="shield" size="sm" />
           </div>
           <div>
             <span class="block text-sm font-medium text-gray-900 dark:text-white">
               {{
                 geminiOAuthType === 'google_one'
                   ? t('admin.accounts.oauth.gemini.googleOneTitle')
-                  : t('admin.accounts.gemini.oauthType.builtInTitle')
+                  : geminiOAuthType === 'code_assist'
+                    ? t('admin.accounts.gemini.oauthType.builtInTitle')
+                    : t('common.unknown')
               }}
             </span>
             <span class="text-xs text-gray-500 dark:text-gray-400">
               {{
                 geminiOAuthType === 'google_one'
                   ? t('admin.accounts.oauth.gemini.googleOneDesc')
-                  : t('admin.accounts.oauth.gemini.codeAssistDesc')
+                  : geminiOAuthType === 'code_assist'
+                    ? t('admin.accounts.oauth.gemini.codeAssistDesc')
+                    : t('admin.accounts.oauth.gemini.cannotInferOAuthType')
               }}
             </span>
           </div>
@@ -135,14 +142,16 @@
         :session-id="currentSessionId"
         :loading="currentLoading"
         :error="currentError"
+        :error-code="currentErrorCode"
         :show-help="isAnthropic"
         :show-proxy-warning="isAnthropic"
         :show-cookie-option="isAnthropic"
         :allow-multiple="false"
         :method-label="t('admin.accounts.inputMethod')"
         :platform="isOpenAI ? 'openai' : isGemini ? 'gemini' : isAntigravity ? 'antigravity' : 'anthropic'"
-        :show-project-id="isGemini && geminiOAuthType === 'code_assist'"
-        :show-project-id-recovery="isGemini && geminiOAuthType === 'code_assist'"
+        :show-project-id="isGemini"
+        :show-project-id-recovery="isGemini"
+        :show-gemini-project-bootstrap-tip="isGemini && geminiOAuthType === 'code_assist'"
         @generate-url="handleGenerateUrl"
         @cookie-auth="handleCookieAuth"
       />
@@ -217,6 +226,8 @@ import { useAntigravityOAuth } from '@/composables/useAntigravityOAuth'
 import { stripKiroRuntimeExtra, useKiroOAuth } from '@/composables/useKiroOAuth'
 import type { KiroTokenInfo } from '@/api/admin/kiro'
 import type { Account, KiroAccountExtra, KiroCredentials } from '@/types'
+import { stripStaleGeminiExtra } from '@/utils/geminiExtra'
+import { inferGeminiOAuthType } from '@/utils/geminiOAuthType'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import OAuthAuthorizationFlow from '@/components/account/OAuthAuthorizationFlow.vue'
@@ -262,7 +273,7 @@ const oauthFlowRef = ref<OAuthFlowExposed | null>(null)
 
 // State
 const addMethod = ref<AddMethod>('oauth')
-const geminiOAuthType = ref<'code_assist' | 'google_one'>('code_assist')
+const geminiOAuthType = ref<'code_assist' | 'google_one' | ''>('')
 const kiroBatchReauthLoading = ref(false)
 
 // Computed - check platform
@@ -317,6 +328,10 @@ const currentError = computed(() => {
   if (isAntigravity.value) return antigravityOAuth.error.value
   return claudeOAuth.error.value
 })
+const currentErrorCode = computed(() => {
+  if (isGemini.value) return geminiOAuth.errorCode.value
+  return ''
+})
 
 // Computed
 const isManualInputMethod = computed(() => {
@@ -344,9 +359,11 @@ watch(
         addMethod.value = props.account.type as AddMethod
       }
       if (isGemini.value) {
-        const creds = (props.account.credentials || {}) as Record<string, unknown>
-        geminiOAuthType.value =
-          creds.oauth_type === 'google_one' ? 'google_one' : 'code_assist'
+        geminiOAuthType.value = inferGeminiOAuthType(
+          (props.account.credentials || {}) as Record<string, unknown>,
+          (props.account.extra || {}) as Record<string, unknown>,
+          ''
+        )
       }
     } else {
       resetState()
@@ -355,10 +372,19 @@ watch(
   { immediate: true }
 )
 
+watch(geminiOAuthType, (newType, oldType) => {
+  if (newType === oldType) return
+  geminiOAuth.resetState()
+  if (oauthFlowRef.value) {
+    oauthFlowRef.value.authCode = ''
+    oauthFlowRef.value.oauthState = ''
+  }
+})
+
 // Methods
 const resetState = () => {
   addMethod.value = 'oauth'
-  geminiOAuthType.value = 'code_assist'
+  geminiOAuthType.value = ''
   claudeOAuth.resetState()
   openaiOAuth.resetState()
   geminiOAuth.resetState()
@@ -607,7 +633,11 @@ const handleGenerateUrl = async () => {
   } else if (isKiro.value) {
     return
   } else if (isGemini.value) {
-    const projectId = geminiOAuthType.value === 'code_assist' ? oauthFlowRef.value?.projectId : undefined
+    if (geminiOAuthType.value !== 'code_assist' && geminiOAuthType.value !== 'google_one') {
+      appStore.showError(t('admin.accounts.oauth.gemini.cannotInferOAuthType'))
+      return
+    }
+    const projectId = oauthFlowRef.value?.projectId?.trim() || undefined
     await geminiOAuth.generateAuthUrl(props.account.proxy_id, projectId, geminiOAuthType.value)
   } else if (isAntigravity.value) {
     await antigravityOAuth.generateAuthUrl(props.account.proxy_id)
@@ -618,6 +648,10 @@ const handleGenerateUrl = async () => {
 
 const handleExchangeCode = async () => {
   if (!props.account) return
+  if (isGemini.value && geminiOAuthType.value !== 'code_assist' && geminiOAuthType.value !== 'google_one') {
+    appStore.showError(t('admin.accounts.oauth.gemini.cannotInferOAuthType'))
+    return
+  }
 
   const authCode = oauthFlowRef.value?.authCode || ''
   if (!authCode.trim()) return
@@ -694,7 +728,7 @@ const handleExchangeCode = async () => {
       geminiOAuth.buildCredentials(tokenInfo)
     )
     const extra = mergeRecord(
-      (props.account.extra || {}) as Record<string, unknown>,
+      stripStaleGeminiExtra((props.account.extra || {}) as Record<string, unknown>),
       geminiOAuth.buildExtraInfo(tokenInfo)
     )
     const name = geminiOAuth.buildAccountName(tokenInfo, props.account.name)

@@ -4302,10 +4302,12 @@ export default {
           followSteps: '请按照以下步骤完成 Gemini 账户的授权：',
           step1GenerateUrl: '生成授权链接',
           generateAuthUrl: '生成授权链接',
-          projectIdLabel: 'Code Assist Project ID（可选）',
+          projectIdLabel: 'Project ID（可选）',
           projectIdPlaceholder: '例如：my-gcp-project',
           projectIdHint:
-            '仅用于 Code Assist 流程。这里填写的是你自己的 GCP Project ID，不是上游自动分配的 companion project。留空则在兑换授权码后自动探测；若自动探测失败，可填写后重新生成授权链接再授权。',
+            '这里填写的是你自己的字符串形式 GCP Project ID，不是上游自动分配的 companion project。Google One 流程通常留空即可，让 Google 自动探测；如果自动探测失败，并且你已经有可用的 Project ID，可以填写后重新生成授权链接再试。',
+          projectIdChangedRegenerate:
+            '当前授权链接生成后你又修改了 Project ID。请先重新生成授权链接，再兑换授权码。',
           howToGetProjectId: '如何获取',
           step2OpenUrl: '在浏览器中打开链接并完成授权',
           openUrlDesc: '请在新标签页中打开授权链接，登录您的 Google 账户并授权。',
@@ -4326,8 +4328,10 @@ export default {
           failedToExchangeCode: 'Gemini 授权码兑换失败',
           missingProjectId:
             'Code Assist 的 Project ID 自动获取失败。请在第 4 步填写已有的 Google Cloud Project ID 后重新生成授权链接；如果还没有项目，请先创建项目、添加 IAM 权限并启用 Cloud AI Companion API。',
+          googleOneUserDefinedProjectRequired:
+            'Google One 授权已完成，但上游当前 tier 明确要求用户自带 Project ID。这个 OAuth 流程下，Google 不会为当前账号自动返回 companion project。',
           googleOneProjectDetectionFailed:
-            'Google One 授权已完成，但未能从上游自动探测到 companion project。请先重试一次授权；如果仍失败，应排查上游 Gemini 账号状态，而不是在此流程中手动填写 Project ID。',
+            'Google One 授权已完成，但未能从上游自动探测到 companion project。请先重试一次授权；如果仍失败，并且你已经有可用的 Google Cloud Project ID，请在第 4 步填写后重新生成授权链接再试。',
           codeAssistAgeVerificationRequired:
             'Gemini 授权失败：Google 上游仍将当前账号判定为年龄受限，或年龄验证状态尚未生效。',
           ineligibleTier:
@@ -4356,7 +4360,10 @@ export default {
           stateWarningDesc: '建议粘贴完整回调链接（包含 code 和 state）。',
           oauthTypeLabel: 'OAuth 类型',
           googleOneTitle: 'Google One',
-          googleOneDesc: '个人 Gemini OAuth，此流程不需要手动填写 Project ID。',
+          googleOneDesc:
+            '个人 Gemini OAuth，默认留空 Project ID；如果 companion project 自动探测失败，可以补填后重新生成授权链接。',
+          cannotInferOAuthType:
+            '无法从当前账号元数据推断 Gemini OAuth 类型。请先修正保存的 oauth_type 或 tier 信息，或直接重建该账号后再重新授权。',
           codeAssistTitle: 'GCP Code Assist',
           codeAssistDesc: 'Gemini Code Assist OAuth，仅把你的 GCP Project ID 当作引导提示使用。',
           codeAssistRequirement: '需要激活 GCP 项目并在项目上绑定可计费信用卡。',

@@ -2940,6 +2940,7 @@
         :session-id="currentSessionId"
         :loading="currentOAuthLoading"
         :error="currentOAuthError"
+        :error-code="currentOAuthErrorCode"
         :show-help="form.platform === 'anthropic'"
         :show-proxy-warning="form.platform !== 'openai' && !!form.proxy_id"
         :allow-multiple="form.platform === 'anthropic'"
@@ -2949,8 +2950,9 @@
         :show-session-token-option="false"
         :show-access-token-option="false"
         :platform="form.platform"
-        :show-project-id="form.platform === 'gemini' && geminiOAuthType === 'code_assist'"
-        :show-project-id-recovery="form.platform === 'gemini' && geminiOAuthType === 'code_assist'"
+        :show-project-id="form.platform === 'gemini'"
+        :show-project-id-recovery="form.platform === 'gemini'"
+        :show-gemini-project-bootstrap-tip="form.platform === 'gemini' && geminiOAuthType === 'code_assist'"
         @generate-url="handleGenerateUrl"
         @cookie-auth="handleCookieAuth"
         @validate-refresh-token="handleValidateRefreshToken"
@@ -3424,6 +3426,11 @@ const currentOAuthError = computed(() => {
   return oauth.error.value
 })
 
+const currentOAuthErrorCode = computed(() => {
+  if (form.platform === 'gemini') return geminiOAuth.errorCode.value
+  return ''
+})
+
 // Refs
 const oauthFlowRef = ref<OAuthFlowExposed | null>(null)
 
@@ -3890,11 +3897,12 @@ watch(
 )
 
 const handleSelectGeminiOAuthType = (oauthType: 'code_assist' | 'google_one') => {
+  if (geminiOAuthType.value === oauthType) return
   geminiOAuthType.value = oauthType
-  if (oauthType !== 'code_assist') {
-    if (oauthFlowRef.value) {
-      oauthFlowRef.value.projectId = ''
-    }
+  geminiOAuth.resetState()
+  if (oauthFlowRef.value) {
+    oauthFlowRef.value.authCode = ''
+    oauthFlowRef.value.oauthState = ''
   }
 }
 
@@ -4701,7 +4709,7 @@ const handleGenerateUrl = async () => {
   } else if (form.platform === 'openai') {
     await openaiOAuth.generateAuthUrl(form.proxy_id)
   } else if (form.platform === 'gemini') {
-    const projectId = geminiOAuthType.value === 'code_assist' ? oauthFlowRef.value?.projectId : undefined
+    const projectId = oauthFlowRef.value?.projectId?.trim() || undefined
     await geminiOAuth.generateAuthUrl(
       form.proxy_id,
       projectId,

@@ -52,6 +52,7 @@ function buildOAuthComposable() {
     callbackBaseUrl: ref('http://localhost:3128'),
     loading: ref(false),
     error: ref(''),
+    errorCode: ref(''),
     oauthState: ref('oauth-state'),
     state: ref('oauth-state'),
     resetState: vi.fn(),
@@ -202,11 +203,19 @@ const OAuthAuthorizationFlowStub = defineComponent({
       type: String,
       default: ''
     },
+    errorCode: {
+      type: String,
+      default: ''
+    },
     showProjectId: {
       type: Boolean,
       default: false
     },
     showProjectIdRecovery: {
+      type: Boolean,
+      default: false
+    },
+    showGeminiProjectBootstrapTip: {
       type: Boolean,
       default: false
     }
@@ -217,6 +226,7 @@ const OAuthAuthorizationFlowStub = defineComponent({
       authCode: '',
       oauthState: '',
       projectId: '',
+      requiresProjectIdRecovery: false,
       sessionKey: '',
       inputMethod: 'manual',
       reset: vi.fn()
@@ -225,8 +235,10 @@ const OAuthAuthorizationFlowStub = defineComponent({
       h('div', {
         'data-testid': 'oauth-flow',
         'data-platform': props.platform,
+        'data-error-code': props.errorCode,
         'data-show-project-id': String(props.showProjectId),
-        'data-show-project-id-recovery': String(props.showProjectIdRecovery)
+        'data-show-project-id-recovery': String(props.showProjectIdRecovery),
+        'data-show-gemini-project-bootstrap-tip': String(props.showGeminiProjectBootstrapTip)
       }),
       h('button', {
         'data-testid': 'oauth-flow-generate-url',
@@ -366,8 +378,9 @@ describe('admin ReAuthAccountModal', () => {
 
     expect(wrapper.find('[data-testid="oauth-flow"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-platform')).toBe('gemini')
-    expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-project-id')).toBe('false')
-    expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-project-id-recovery')).toBe('false')
+    expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-project-id')).toBe('true')
+    expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-project-id-recovery')).toBe('true')
+    expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-gemini-project-bootstrap-tip')).toBe('false')
     expect(wrapper.findAll('button').some((button) => button.text().includes('admin.accounts.oauth.completeAuth'))).toBe(true)
   })
 
@@ -385,14 +398,15 @@ describe('admin ReAuthAccountModal', () => {
 
     expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-project-id')).toBe('true')
     expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-project-id-recovery')).toBe('true')
+    expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-gemini-project-bootstrap-tip')).toBe('true')
     expect(geminiGenerateAuthUrlMock).toHaveBeenCalledWith(
       null,
-      '',
+      undefined,
       'code_assist'
     )
   })
 
-  it('does not expose Code Assist project recovery inputs for Gemini Google One reauth', () => {
+  it('exposes project recovery inputs for Gemini Google One reauth', () => {
     const wrapper = mountModal({
       ...buildGeminiOAuthAccount(),
       credentials: {
@@ -401,8 +415,30 @@ describe('admin ReAuthAccountModal', () => {
       }
     })
 
-    expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-project-id')).toBe('false')
-    expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-project-id-recovery')).toBe('false')
+    expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-project-id')).toBe('true')
+    expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-project-id-recovery')).toBe('true')
+    expect(wrapper.get('[data-testid="oauth-flow"]').attributes('data-show-gemini-project-bootstrap-tip')).toBe('false')
+  })
+
+  it('infers Gemini Google One reauth mode from tier metadata when oauth_type is missing', async () => {
+    const wrapper = mountModal({
+      ...buildGeminiOAuthAccount(),
+      credentials: {
+        tier_id: 'g1-pro-tier'
+      },
+      extra: {
+        gemini_paid_tier_id: 'g1-pro-tier'
+      }
+    })
+
+    await wrapper.get('[data-testid="oauth-flow-generate-url"]').trigger('click')
+    await flushPromises()
+
+    expect(geminiGenerateAuthUrlMock).toHaveBeenCalledWith(
+      null,
+      undefined,
+      'google_one'
+    )
   })
 
   it('reauthorizes Kiro OAuth accounts from callback submission without preserving runtime-only extra fields', async () => {
