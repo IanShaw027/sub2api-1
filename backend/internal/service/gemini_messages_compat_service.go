@@ -44,6 +44,14 @@ const (
 // Ref: https://ai.google.dev/gemini-api/docs/thought-signatures
 const geminiDummyThoughtSignature = "skip_thought_signature_validator"
 
+func shouldUseGeminiOAuthProjectStreamingBridge(account *Account, stream bool, action string) bool {
+	return account != nil &&
+		account.Type == AccountTypeOAuth &&
+		!stream &&
+		action == "generateContent" &&
+		strings.TrimSpace(account.GetCredential("project_id")) != ""
+}
+
 type GeminiMessagesCompatService struct {
 	accountRepo               AccountRepository
 	groupRepo                 GroupRepository
@@ -604,8 +612,9 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 	var requestIDHeader string
 	var buildReq func(ctx context.Context) (*http.Request, string, error)
 	useUpstreamStream := req.Stream
-	if account.Type == AccountTypeOAuth && !req.Stream && account.GeminiOAuthTypeSafe() == "code_assist" && strings.TrimSpace(account.GetCredential("project_id")) != "" {
-		// Code Assist's non-streaming generateContent may return no content; use streaming upstream and aggregate.
+	if shouldUseGeminiOAuthProjectStreamingBridge(account, req.Stream, "generateContent") {
+		// OAuth generateContent with project-scoped routing may return no content on non-streaming calls.
+		// Keep the upstream stream+aggregate bridge for both explicit Code Assist and legacy AI Studio OAuth.
 		useUpstreamStream = true
 	}
 
@@ -1142,8 +1151,9 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 
 	useUpstreamStream := stream
 	upstreamAction := action
-	if account.Type == AccountTypeOAuth && !stream && action == "generateContent" && account.GeminiOAuthTypeSafe() == "code_assist" && strings.TrimSpace(account.GetCredential("project_id")) != "" {
-		// Code Assist's non-streaming generateContent may return no content; use streaming upstream and aggregate.
+	if shouldUseGeminiOAuthProjectStreamingBridge(account, stream, action) {
+		// OAuth generateContent with project-scoped routing may return no content on non-streaming calls.
+		// Keep the upstream stream+aggregate bridge for both explicit Code Assist and legacy AI Studio OAuth.
 		useUpstreamStream = true
 		upstreamAction = "streamGenerateContent"
 	}
@@ -2950,15 +2960,27 @@ func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Cont
 				logger.LegacyPrintf("service.gemini_messages_compat", "[Gemini 429] Account %d rate limited, fallback to 5min", account.ID)
 			}
 		}
-		_ = s.accountRepo.SetRateLimited(ctx, account.ID, ra)
+		s.markAccountRateLimited(ctx, account, ra)
 		return
 	}
 
 	// 使用解析到的重置时间
 	resetTime := time.Unix(*resetAt, 0)
-	_ = s.accountRepo.SetRateLimited(ctx, account.ID, resetTime)
+	s.markAccountRateLimited(ctx, account, resetTime)
 	logger.LegacyPrintf("service.gemini_messages_compat", "[Gemini 429] Account %d rate limited until %v (oauth_type=%s, tier=%s)",
 		account.ID, resetTime, oauthType, tierID)
+}
+
+func (s *GeminiMessagesCompatService) markAccountRateLimited(ctx context.Context, account *Account, resetAt time.Time) {
+	if s == nil || account == nil || account.ID <= 0 {
+		return
+	}
+	switch {
+	case s.rateLimitService != nil && s.rateLimitService.accountRepo != nil:
+		_ = s.rateLimitService.accountRepo.SetRateLimited(ctx, account.ID, resetAt)
+	case s.accountRepo != nil:
+		_ = s.accountRepo.SetRateLimited(ctx, account.ID, resetAt)
+	}
 }
 
 // ParseGeminiRateLimitResetTime 解析 Gemini 格式的 429 响应，返回重置时间的 Unix 时间戳

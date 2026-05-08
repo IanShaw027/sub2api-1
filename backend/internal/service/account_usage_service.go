@@ -1787,10 +1787,10 @@ func applyGeminiQuotaSnapshotFallback(usage *UsageInfo, account *Account, now ti
 	mergeGeminiUsageProgressWithSnapshot(&usage.GeminiProDaily, snapshot.pro, now)
 	mergeGeminiUsageProgressWithSnapshot(&usage.GeminiFlashDaily, snapshot.flash, now)
 
-	if usage.GeminiSharedDaily == nil && (snapshot.pro != nil || snapshot.flash != nil) {
-		shared := lowerUtilizationSnapshot(snapshot.pro, snapshot.flash)
+	if snapshot.pro != nil || snapshot.flash != nil {
+		shared := lowerUtilizationProgress(usage.GeminiProDaily, usage.GeminiFlashDaily)
 		if shared != nil {
-			usage.GeminiSharedDaily = snapshotWindowToUsageProgress(shared, now)
+			usage.GeminiSharedDaily = cloneUsageProgress(shared)
 		}
 	}
 }
@@ -1893,29 +1893,6 @@ func parseGeminiSnapshotFloat(raw any) (float64, bool) {
 	}
 }
 
-func lowerUtilizationQuotaWindow(items ...*geminiQuotaSnapshotWindow) *geminiQuotaSnapshotWindow {
-	var picked *geminiQuotaSnapshotWindow
-	for _, item := range items {
-		if item == nil {
-			continue
-		}
-		if picked == nil || item.utilization > picked.utilization {
-			picked = item
-			continue
-		}
-		if item.utilization == picked.utilization {
-			if picked.resetAt == nil {
-				picked = item
-				continue
-			}
-			if item.resetAt != nil && item.resetAt.Before(*picked.resetAt) {
-				picked = item
-			}
-		}
-	}
-	return picked
-}
-
 func parseGeminiSnapshotTime(raw any) *time.Time {
 	switch v := raw.(type) {
 	case string:
@@ -1978,45 +1955,27 @@ func mergeGeminiUsageProgressWithSnapshot(target **UsageProgress, snapshot *gemi
 	}
 }
 
-func lowerUtilizationSnapshot(items ...*geminiQuotaSnapshotWindow) *geminiQuotaSnapshotWindow {
-	var picked *geminiQuotaSnapshotWindow
+func lowerUtilizationProgress(items ...*UsageProgress) *UsageProgress {
+	var picked *UsageProgress
 	for _, item := range items {
 		if item == nil {
 			continue
 		}
-		if picked == nil || item.utilization > picked.utilization {
+		if picked == nil || item.Utilization > picked.Utilization {
 			picked = item
 			continue
 		}
-		if item.utilization == picked.utilization {
-			if picked.resetAt == nil {
+		if item.Utilization == picked.Utilization {
+			if picked.ResetsAt == nil {
 				picked = item
 				continue
 			}
-			if item.resetAt != nil && item.resetAt.Before(*picked.resetAt) {
+			if item.ResetsAt != nil && item.ResetsAt.Before(*picked.ResetsAt) {
 				picked = item
 			}
 		}
 	}
 	return picked
-}
-
-func snapshotWindowToUsageProgress(snapshot *geminiQuotaSnapshotWindow, now time.Time) *UsageProgress {
-	if snapshot == nil {
-		return nil
-	}
-	progress := &UsageProgress{
-		Utilization: snapshot.utilization,
-		ResetsAt:    snapshot.resetAt,
-	}
-	if snapshot.resetAt != nil {
-		remainingSeconds := int(snapshot.resetAt.Sub(now).Seconds())
-		if remainingSeconds < 0 {
-			remainingSeconds = 0
-		}
-		progress.RemainingSeconds = remainingSeconds
-	}
-	return progress
 }
 
 func enrichGeminiUsageWithStoredStatus(usage *UsageInfo, account *Account) {
@@ -2042,6 +2001,7 @@ func enrichGeminiUsageWithStoredStatus(usage *UsageInfo, account *Account) {
 		usage.ErrorCode = errorCodeForbidden
 	}
 }
+
 // GetAccountWindowStats 获取账号在指定时间窗口内的使用统计
 // 用于账号列表页面显示当前窗口费用
 func (s *AccountUsageService) GetAccountWindowStats(ctx context.Context, accountID int64, startTime time.Time) (*usagestats.AccountStats, error) {

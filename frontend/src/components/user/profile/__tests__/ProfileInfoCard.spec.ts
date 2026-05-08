@@ -33,6 +33,8 @@ vi.mock('vue-i18n', async (importOriginal) => {
         if (key === 'profile.memberSince') return 'Member Since'
         if (key === 'profile.administrator') return 'Administrator'
         if (key === 'profile.user') return 'User'
+        if (key === 'profile.authBindings.providers.linuxdo') return 'LinuxDo'
+        if (key === 'profile.authBindings.providers.oidc') return _params?.providerName ?? 'OIDC'
         if (key === 'profile.identity.source.avatar') return `Avatar from ${_params?.providerName}`
         if (key === 'profile.identity.source.username') return `Nickname from ${_params?.providerName}`
         return key

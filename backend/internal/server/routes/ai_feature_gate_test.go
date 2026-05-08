@@ -61,7 +61,7 @@ func newAIStudioRouteSettings(enabled bool) *service.SettingService {
 	}
 	return service.NewSettingService(&aiStudioRouteSettingRepoStub{
 		values: map[string]string{
-			service.SettingKeyAIStudioEnabled: value,
+			service.SettingKeyAIStudioEnabled:    value,
 			service.SettingKeyBackendModeEnabled: "false",
 		},
 	}, &config.Config{})

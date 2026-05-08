@@ -58,6 +58,8 @@ func firstNonEmpty(values ...string) string {
 }
 
 func validateCustomMenuPageURL(raw string) error {
+	// Custom menu URLs intentionally allow fragments because admin tools may
+	// carry client-side tokens or anchors in the hash segment.
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return fmt.Errorf("empty url")
@@ -1575,7 +1577,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 					response.BadRequest(c, "Custom menu item URL is too long (max 2048 characters)")
 					return
 				}
-				if err := config.ValidateAbsoluteHTTPURL(urlTrimmed); err != nil {
+				if err := validateCustomMenuPageURL(urlTrimmed); err != nil {
 					response.BadRequest(c, "Custom menu item URL must be an absolute http(s) URL or md:<slug>")
 					return
 				}

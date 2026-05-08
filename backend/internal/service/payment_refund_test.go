@@ -70,6 +70,12 @@ func (r *refundTestUserRepo) DeductBalance(_ context.Context, id int64, amount f
 func (r *refundTestUserRepo) UpdateConcurrency(context.Context, int64, int) error {
 	panic("unexpected")
 }
+func (r *refundTestUserRepo) BatchSetConcurrency(context.Context, []int64, int) (int, error) {
+	panic("unexpected")
+}
+func (r *refundTestUserRepo) BatchAddConcurrency(context.Context, []int64, int) (int, error) {
+	panic("unexpected")
+}
 func (r *refundTestUserRepo) ExistsByEmail(context.Context, string) (bool, error) {
 	panic("unexpected")
 }

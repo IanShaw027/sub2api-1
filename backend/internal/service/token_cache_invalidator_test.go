@@ -51,9 +51,7 @@ func TestCompositeTokenCacheInvalidator_Gemini(t *testing.T) {
 
 	err := invalidator.InvalidateToken(context.Background(), account)
 	require.NoError(t, err)
-	// 新行为：同时删除基于 project_id 和 account_id 的缓存键
-	// 这是为了处理：首次获取 token 时可能没有 project_id，之后自动检测到后会使用新 key
-	require.Equal(t, []string{"gemini:project-x", "gemini:account:10"}, cache.deletedKeys)
+	require.Equal(t, []string{"gemini:account:10"}, cache.deletedKeys)
 }
 
 func TestCompositeTokenCacheInvalidator_GeminiWithoutProjectID(t *testing.T) {
@@ -70,7 +68,6 @@ func TestCompositeTokenCacheInvalidator_GeminiWithoutProjectID(t *testing.T) {
 
 	err := invalidator.InvalidateToken(context.Background(), account)
 	require.NoError(t, err)
-	// 没有 project_id 时，两个 key 相同，去重后只删除一个
 	require.Equal(t, []string{"gemini:account:10"}, cache.deletedKeys)
 }
 
@@ -292,9 +289,7 @@ func TestCompositeTokenCacheInvalidator_AllPlatformsIntegration(t *testing.T) {
 		{ID: 4, Platform: PlatformAnthropic, Type: AccountTypeOAuth},
 	}
 
-	// 新行为：Gemini 和 Antigravity 会同时删除基于 project_id 和 account_id 的键
 	expectedKeys := []string{
-		"gemini:gemini-proj",
 		"gemini:account:1",
 		"ag:ag-proj",
 		"ag:account:2",

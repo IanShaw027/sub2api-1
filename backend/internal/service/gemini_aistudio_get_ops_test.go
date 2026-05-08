@@ -312,9 +312,9 @@ func TestGeminiMessagesCompatService_ForwardAIStudioGET_429UpdatesSchedulingStat
 	}
 	repo := &rateLimitAccountRepoStub{}
 	svc := &GeminiMessagesCompatService{
-		httpUpstream:     upstream,
-		cfg:              &config.Config{},
-		rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, nil),
+		httpUpstream:         upstream,
+		cfg:                  &config.Config{},
+		rateLimitService:     NewRateLimitService(repo, nil, &config.Config{}, nil, nil),
 		responseHeaderFilter: nil,
 	}
 

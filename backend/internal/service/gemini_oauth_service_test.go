@@ -663,10 +663,12 @@ func TestGeminiOAuthService_BuildAccountCredentials(t *testing.T) {
 
 		creds := svc.BuildAccountCredentials(tokenInfo)
 
-		// 仅包含基础字段
-		if len(creds) != 3 { // access_token, expires_at, refresh_token
-			t.Fatalf("creds 字段数量不匹配: got=%d want=3, keys=%v", len(creds), credKeys(creds))
+		// 基础字段 + 显式清空状态字段，避免旧状态残留
+		if len(creds) != 5 { // access_token, expires_at, refresh_token, gemini_status, gemini_status_reason
+			t.Fatalf("creds 字段数量不匹配: got=%d want=5, keys=%v", len(creds), credKeys(creds))
 		}
+		assertCredStr(t, creds, "gemini_status", "")
+		assertCredStr(t, creds, "gemini_status_reason", "")
 	})
 
 	t.Run("空状态字段会显式清空避免残留", func(t *testing.T) {
@@ -1363,6 +1365,9 @@ func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_NoProjectID_AutoDetec
 				CurrentTier:             &geminicli.TierInfo{ID: "STANDARD"},
 			}, nil
 		},
+		retrieveQuotaFunc: func(ctx context.Context, accessToken, proxyURL string, req *geminicli.RetrieveUserQuotaRequest) (*geminicli.RetrieveUserQuotaResponse, error) {
+			return &geminicli.RetrieveUserQuotaResponse{}, nil
+		},
 	}
 
 	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, nil, &config.Config{})
@@ -1385,7 +1390,7 @@ func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_NoProjectID_AutoDetec
 	if info.ProjectID != "auto-project-123" {
 		t.Fatalf("ProjectID 应为自动检测值: got=%q", info.ProjectID)
 	}
-	if info.TierID != GeminiTierGCPStandard {
+	if canonicalGeminiTierIDForOAuthType("code_assist", info.TierID) != GeminiTierGCPStandard {
 		t.Fatalf("TierID 不匹配: got=%q", info.TierID)
 	}
 }
@@ -1504,8 +1509,8 @@ func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_NoProjectID_SoftMissi
 	if info.ProjectID != "" {
 		t.Fatalf("ProjectID 应为空: got=%q", info.ProjectID)
 	}
-	if info.TierID != GeminiTierGCPStandard {
-		t.Fatalf("TierID 应回退到默认值: got=%q", info.TierID)
+	if canonicalGeminiTierIDForOAuthType("code_assist", info.TierID) != GeminiTierGCPStandard {
+		t.Fatalf("TierID 应保持为 code_assist 的标准 tier: got=%q", info.TierID)
 	}
 }
 

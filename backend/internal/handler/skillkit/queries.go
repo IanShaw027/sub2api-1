@@ -847,20 +847,20 @@ LIMIT $`+fmt.Sprint(len(listArgs)-1)+` OFFSET $`+fmt.Sprint(len(listArgs)), list
 			&item.SettlementStatus,
 			&item.GrossAmount,
 			&item.PlatformFeeAmount,
-				&item.PayoutAmount,
-				&item.FrozenAmount,
-				&item.Currency,
-				&item.Note,
-				&item.ServiceStatus,
-				&item.CreatedAt,
-				&item.UpdatedAt,
-			); err != nil {
-				return nil, nil, err
-			}
-			item.SettlementStatus = mapSettlementStatus(item.SettlementStatus, item.ServiceStatus)
-			items = append(items, item)
+			&item.PayoutAmount,
+			&item.FrozenAmount,
+			&item.Currency,
+			&item.Note,
+			&item.ServiceStatus,
+			&item.CreatedAt,
+			&item.UpdatedAt,
+		); err != nil {
+			return nil, nil, err
 		}
-		return items, paginationResult(total, params), rows.Err()
+		item.SettlementStatus = mapSettlementStatus(item.SettlementStatus, item.ServiceStatus)
+		items = append(items, item)
+	}
+	return items, paginationResult(total, params), rows.Err()
 }
 
 func countRows(ctx context.Context, db *sql.DB, query string, args ...any) (int64, error) {

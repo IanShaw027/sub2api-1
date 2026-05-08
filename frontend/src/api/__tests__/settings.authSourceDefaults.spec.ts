@@ -74,40 +74,41 @@ describe("admin settings auth source defaults helpers", () => {
       site_name: "Sub2API",
     };
 
-    appendAuthSourceDefaultsToUpdateRequest(payload, {
-      email: {
-        enabled: true,
-        balance: 1.25,
-        concurrency: 2,
-        subscriptions: [{ group_id: 3, validity_days: 7 }],
-        grant_on_signup: true,
-        grant_on_first_bind: false,
-      },
-      linuxdo: {
-        enabled: true,
-        balance: 0,
-        concurrency: 0,
-        subscriptions: [],
-        grant_on_signup: false,
-        grant_on_first_bind: true,
-      },
-      oidc: {
-        enabled: true,
-        balance: 4,
-        concurrency: 9,
-        subscriptions: [{ group_id: 9, validity_days: 90 }],
-        grant_on_signup: true,
-        grant_on_first_bind: true,
-      },
-      wechat: {
-        enabled: false,
-        balance: 2,
-        concurrency: 5,
-        subscriptions: [],
-        grant_on_signup: true,
-        grant_on_first_bind: true,
-      },
-    });
+    const state = buildAuthSourceDefaultsState({});
+    state.email = {
+      enabled: true,
+      balance: 1.25,
+      concurrency: 2,
+      subscriptions: [{ group_id: 3, validity_days: 7 }],
+      grant_on_signup: true,
+      grant_on_first_bind: false,
+    };
+    state.linuxdo = {
+      enabled: true,
+      balance: 0,
+      concurrency: 0,
+      subscriptions: [],
+      grant_on_signup: false,
+      grant_on_first_bind: true,
+    };
+    state.oidc = {
+      enabled: true,
+      balance: 4,
+      concurrency: 9,
+      subscriptions: [{ group_id: 9, validity_days: 90 }],
+      grant_on_signup: true,
+      grant_on_first_bind: true,
+    };
+    state.wechat = {
+      enabled: false,
+      balance: 2,
+      concurrency: 5,
+      subscriptions: [],
+      grant_on_signup: true,
+      grant_on_first_bind: true,
+    };
+
+    appendAuthSourceDefaultsToUpdateRequest(payload, state);
 
     expect(payload).toMatchObject({
       site_name: "Sub2API",

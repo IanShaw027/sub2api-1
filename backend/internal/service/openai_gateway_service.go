@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -2725,7 +2726,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 	apiKey := getAPIKeyFromContext(c)
 	clientStream := reqStream
-	upstreamStream := reqStream
+	var upstreamStream bool
 	codexImageGenerationBridgeEnabled := isCodexCLI && allowImageGeneration && s.isCodexImageGenerationBridgeEnabled(ctx, account, apiKey)
 
 	// Track if body needs re-serialization
@@ -6822,7 +6823,22 @@ func shouldStripTopPForResponsesUpstream(account *Account) bool {
 	if account == nil || account.Platform != PlatformOpenAI {
 		return false
 	}
-	return account.Type == AccountTypeOAuth
+	if account.Type == AccountTypeOAuth {
+		return true
+	}
+	if account.Type != AccountTypeAPIKey {
+		return false
+	}
+	baseURL := account.GetOpenAIBaseURL()
+	if baseURL == "" {
+		return true
+	}
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return strings.Contains(strings.ToLower(baseURL), "api.openai.com")
+	}
+	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	return host == "api.openai.com"
 }
 
 func shouldDetachLegacyOAuthPassthroughContext(account *Account, reqStream bool, body []byte) bool {
@@ -6833,14 +6849,6 @@ func shouldDetachLegacyOAuthPassthroughContext(account *Account, reqStream bool,
 		return true
 	}
 	return gjson.GetBytes(body, "stream").Bool()
-}
-
-func isOpenAIResponsesInboundPath(c *gin.Context) bool {
-	if c == nil || c.Request == nil || c.Request.URL == nil {
-		return false
-	}
-	path := strings.TrimSpace(c.Request.URL.Path)
-	return strings.Contains(path, "/responses")
 }
 
 func ensureOpenAIPassthroughInstructions(c *gin.Context, reqModel string, body []byte) ([]byte, bool, error) {

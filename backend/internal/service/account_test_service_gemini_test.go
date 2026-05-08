@@ -152,7 +152,7 @@ func TestAccountTestService_BuildGeminiOAuthRequest_ExplicitCodeAssistUsesCodeAs
 	req, err := svc.buildGeminiOAuthRequest(context.Background(), account, "gemini-2.5-pro", []byte(`{"contents":[]}`))
 	require.NoError(t, err)
 	require.NotNil(t, req)
-	require.Contains(t, req.URL.String(), "cloudaicompanion.googleapis.com")
+	require.Contains(t, req.URL.String(), "cloudcode-pa.googleapis.com")
 }
 
 func TestAccountTestService_BuildGeminiOAuthRequest_ExplicitGoogleOneWithProjectIDIsRejected(t *testing.T) {

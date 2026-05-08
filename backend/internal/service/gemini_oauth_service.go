@@ -677,6 +677,7 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 
 	case "google_one":
 		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Processing google_one OAuth type")
+		detectedTierID := ""
 
 		// Google One accounts use cloudaicompanion API, which requires a project_id.
 		// For personal accounts, Google auto-assigns a project_id via the LoadCodeAssist API.
@@ -685,9 +686,7 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 			snapshot, err := s.fetchProjectID(ctx, tokenResp.AccessToken, proxyURL, "")
 			if snapshot != nil {
 				projectID = snapshot.ProjectID
-				if strings.TrimSpace(tierID) == "" {
-					tierID = snapshot.TierID
-				}
+				detectedTierID = canonicalGeminiTierIDForOAuthType(oauthType, snapshot.TierID)
 				tokenExtra = mergeGeminiCredentialExtra(tokenExtra, snapshot.Extra)
 			}
 			if err != nil {
@@ -727,7 +726,10 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 		}
 		tierID = strings.TrimSpace(tierID)
 		if tierID == "" || canonicalGeminiTierIDForOAuthType(oauthType, tierID) == GeminiTierGoogleOneUnknown {
-			if fallbackTierID != "" {
+			if detectedTierID != "" {
+				tierID = detectedTierID
+				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Using detected tier_id from Code Assist metadata: %s", tierID)
+			} else if fallbackTierID != "" {
 				tierID = fallbackTierID
 				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Using fallback tier_id from user/session: %s", tierID)
 			} else {
@@ -984,7 +986,7 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 			if canonicalExistingTier != "" {
 				tokenInfo.TierID = canonicalExistingTier
 			} else {
-				tokenInfo.TierID = legacyTierFree
+				tokenInfo.TierID = GeminiTierGoogleOneFree
 			}
 		}
 	}
@@ -992,8 +994,8 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 
 	if oauthType == "code_assist" && strings.TrimSpace(tokenInfo.ProjectID) != "" {
 		quotaResp, quotaErr := s.retrieveGeminiUserQuota(ctx, tokenInfo.AccessToken, proxyURL, tokenInfo.ProjectID)
-		switch {
-		case quotaErr == nil:
+		switch quotaErr {
+		case nil:
 			tokenInfo.UsageRaw = quotaResp
 			tokenInfo.Extra = mergeGeminiCredentialExtra(tokenInfo.Extra, buildGeminiQuotaExtra(quotaResp), clearGeminiQuotaErrorExtra())
 			tokenInfo.Status = ""
@@ -1437,7 +1439,8 @@ func (s *GeminiOAuthService) fetchCodeAssistSnapshot(ctx context.Context, access
 }
 
 func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, proxyURL string, projectIDHint string) (*geminiCodeAssistSnapshot, error) {
-	snapshot, loadErr := s.fetchCodeAssistSnapshot(ctx, accessToken, proxyURL, "")
+	trimmedProjectIDHint := strings.TrimSpace(projectIDHint)
+	snapshot, loadErr := s.fetchCodeAssistSnapshot(ctx, accessToken, proxyURL, trimmedProjectIDHint)
 	if snapshot == nil {
 		snapshot = &geminiCodeAssistSnapshot{}
 	}
@@ -1457,10 +1460,19 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 	// 如果用户已提供 project hint，则继续使用该 project；否则才要求用户手动提供。
 	if loadErr == nil {
 		registeredTierID := strings.TrimSpace(snapshot.TierID)
-		if registeredTierID != "" {
-			if hint := strings.TrimSpace(projectIDHint); hint != "" {
-				snapshot.ProjectID = hint
-				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] User has tier (%s) but no cloudaicompanionProject; falling back to provided project_id hint: %s", registeredTierID, hint)
+		hasRegisteredTierMetadata := false
+		if snapshot.Extra != nil {
+			if value, ok := snapshot.Extra["gemini_current_tier_id"].(string); ok && strings.TrimSpace(value) != "" {
+				hasRegisteredTierMetadata = true
+			}
+			if value, ok := snapshot.Extra["gemini_paid_tier_id"].(string); ok && strings.TrimSpace(value) != "" {
+				hasRegisteredTierMetadata = true
+			}
+		}
+		if registeredTierID != "" && hasRegisteredTierMetadata {
+			if trimmedProjectIDHint != "" {
+				snapshot.ProjectID = trimmedProjectIDHint
+				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] User has tier (%s) but no cloudaicompanionProject; falling back to provided project_id hint: %s", registeredTierID, trimmedProjectIDHint)
 				return snapshot, nil
 			}
 			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] User has tier (%s) but no cloudaicompanionProject; manual project_id required", registeredTierID)
@@ -1482,8 +1494,8 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 
 	req := &geminicli.OnboardUserRequest{
 		TierID:                  snapshot.TierID,
-		CloudAICompanionProject: strings.TrimSpace(projectIDHint),
-		Metadata:                buildGeminiLoadCodeAssistRequest("").Metadata,
+		CloudAICompanionProject: trimmedProjectIDHint,
+		Metadata:                buildGeminiLoadCodeAssistRequest(trimmedProjectIDHint).Metadata,
 	}
 
 	resp, err := s.codeAssist.OnboardUser(ctx, accessToken, proxyURL, req)
@@ -1494,9 +1506,9 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 		snapshot.ProjectID = projectID
 		return snapshot, nil
 	}
-	if hint := strings.TrimSpace(projectIDHint); hint != "" {
-		snapshot.ProjectID = hint
-		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] onboardUser returned no cloudaicompanionProject; falling back to provided project_id hint: %s", hint)
+	if trimmedProjectIDHint != "" {
+		snapshot.ProjectID = trimmedProjectIDHint
+		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] onboardUser returned no cloudaicompanionProject; falling back to provided project_id hint: %s", trimmedProjectIDHint)
 		return snapshot, nil
 	}
 
@@ -1516,9 +1528,9 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 			return snapshot, nil
 		}
 	}
-	if hint := strings.TrimSpace(projectIDHint); hint != "" {
-		snapshot.ProjectID = hint
-		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] onboardUser completed without cloudaicompanionProject; falling back to provided project_id hint: %s", hint)
+	if trimmedProjectIDHint != "" {
+		snapshot.ProjectID = trimmedProjectIDHint
+		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] onboardUser completed without cloudaicompanionProject; falling back to provided project_id hint: %s", trimmedProjectIDHint)
 		return snapshot, nil
 	}
 	if resp != nil && resp.Done {

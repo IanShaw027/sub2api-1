@@ -7,48 +7,10 @@ import (
 	"errors"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
-
-type rateLimitAccountRepoStub struct {
-	mockAccountRepoForGemini
-	setErrorCalls          int
-	tempCalls              int
-	rateLimitedCalls       int
-	updateCredentialsCalls int
-	lastCredentials        map[string]any
-	lastErrorMsg           string
-	lastTempReason         string
-	lastRateLimitedAt      time.Time
-	tempErr                error
-}
-
-func (r *rateLimitAccountRepoStub) SetError(ctx context.Context, id int64, errorMsg string) error {
-	r.setErrorCalls++
-	r.lastErrorMsg = errorMsg
-	return nil
-}
-
-func (r *rateLimitAccountRepoStub) SetTempUnschedulable(ctx context.Context, id int64, until time.Time, reason string) error {
-	r.tempCalls++
-	r.lastTempReason = reason
-	return r.tempErr
-}
-
-func (r *rateLimitAccountRepoStub) SetRateLimited(ctx context.Context, id int64, resetAt time.Time) error {
-	r.rateLimitedCalls++
-	r.lastRateLimitedAt = resetAt
-	return nil
-}
-
-func (r *rateLimitAccountRepoStub) UpdateCredentials(ctx context.Context, id int64, credentials map[string]any) error {
-	r.updateCredentialsCalls++
-	r.lastCredentials = cloneCredentials(credentials)
-	return nil
-}
 
 type tokenCacheInvalidatorRecorder struct {
 	accounts []*Account

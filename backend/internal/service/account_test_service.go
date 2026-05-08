@@ -105,9 +105,13 @@ func resolveOpenAIImageExecutionMode(c *gin.Context) string {
 }
 
 // AccountTestService handles account testing operations
+type geminiAccountAccessTokenProvider interface {
+	GetAccessToken(context.Context, *Account) (string, error)
+}
+
 type AccountTestService struct {
 	accountRepo               AccountRepository
-	geminiTokenProvider       *GeminiTokenProvider
+	geminiTokenProvider       geminiAccountAccessTokenProvider
 	kiroTokenProvider         *KiroTokenProvider
 	claudeTokenProvider       *ClaudeTokenProvider
 	antigravityGatewayService *AntigravityGatewayService
@@ -131,7 +135,7 @@ func (s *AccountTestService) doUpstreamWithTLS(c *gin.Context, req *http.Request
 // NewAccountTestService creates a new AccountTestService
 func NewAccountTestService(
 	accountRepo AccountRepository,
-	geminiTokenProvider *GeminiTokenProvider,
+	geminiTokenProvider geminiAccountAccessTokenProvider,
 	kiroTokenProvider *KiroTokenProvider,
 	claudeTokenProvider *ClaudeTokenProvider,
 	antigravityGatewayService *AntigravityGatewayService,

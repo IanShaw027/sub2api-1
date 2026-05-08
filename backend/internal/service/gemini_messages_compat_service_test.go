@@ -454,7 +454,7 @@ func TestGeminiMessagesCompatServiceForward_ProjectIDOnlyOAuthStaysAIStudio(t *t
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, httpStub.lastReq)
-	require.Contains(t, httpStub.lastReq.URL.String(), "/v1beta/models/gemini-2.5-pro:")
+	require.Contains(t, httpStub.lastReq.URL.String(), "/v1beta/models/gemini-2.5-pro:streamGenerateContent")
 	require.NotContains(t, httpStub.lastReq.URL.String(), "/v1internal:")
 	require.Equal(t, "Bearer oauth-token", httpStub.lastReq.Header.Get("Authorization"))
 }

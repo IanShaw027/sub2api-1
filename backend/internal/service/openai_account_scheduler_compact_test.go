@@ -170,6 +170,71 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_CompactFallsBackToUnkno
 	require.Equal(t, int64(71021), selection.Account.ID, "unknown account should be picked when no supported account available")
 }
 
+type schedulerImageRouteGroupRepoStub struct {
+	groupRepoNoop
+	group *Group
+}
+
+func (s schedulerImageRouteGroupRepoStub) GetByID(context.Context, int64) (*Group, error) {
+	return s.group, nil
+}
+
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_UsesGroupImageRoute(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	ctx := context.Background()
+	groupID := int64(91020)
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+	cfg.Gateway.Scheduling.DbFallbackEnabled = true
+	repo := schedulerTestOpenAIAccountRepo{accounts: []Account{
+		{
+			ID:          71030,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+		},
+		{
+			ID:          71031,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+		},
+	}}
+	svc := &OpenAIGatewayService{
+		accountRepo:        repo,
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+		schedulerSnapshot: NewSchedulerSnapshotService(
+			nil,
+			nil,
+			repo,
+			schedulerImageRouteGroupRepoStub{group: &Group{ID: groupID, ImageGenerationRoute: GroupImageGenerationRouteWeb2API}},
+			cfg,
+		),
+	}
+
+	selection, _, err := svc.SelectAccountWithSchedulerForImages(
+		ctx,
+		&groupID,
+		"",
+		"gpt-image-1",
+		nil,
+		OpenAIImagesCapabilityBasic,
+		"",
+		false,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(71031), selection.Account.ID, "web2api group should choose OAuth account instead of API key account")
+}
+
 // TestOpenAICompactSupportTier 验证 tier 分类逻辑。
 func TestOpenAICompactSupportTier(t *testing.T) {
 	tests := []struct {
