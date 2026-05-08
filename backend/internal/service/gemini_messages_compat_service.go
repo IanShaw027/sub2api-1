@@ -604,7 +604,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 	var requestIDHeader string
 	var buildReq func(ctx context.Context) (*http.Request, string, error)
 	useUpstreamStream := req.Stream
-	if account.Type == AccountTypeOAuth && !req.Stream && strings.TrimSpace(account.GetCredential("project_id")) != "" {
+	if account.Type == AccountTypeOAuth && !req.Stream && account.GeminiOAuthTypeSafe() == "code_assist" && strings.TrimSpace(account.GetCredential("project_id")) != "" {
 		// Code Assist's non-streaming generateContent may return no content; use streaming upstream and aggregate.
 		useUpstreamStream = true
 	}
@@ -654,6 +654,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 			}
 
 			projectID := strings.TrimSpace(account.GetCredential("project_id"))
+			isCodeAssist := account.GeminiOAuthTypeSafe() == "code_assist"
 
 			action := "generateContent"
 			if useUpstreamStream {
@@ -661,9 +662,9 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 			}
 
 			// Two modes for OAuth:
-			// 1. With project_id -> Code Assist API (wrapped request)
-			// 2. Without project_id -> AI Studio API (direct OAuth, like API key but with Bearer token)
-			if projectID != "" {
+			// 1. Explicit Code Assist + project_id -> Code Assist API (wrapped request)
+			// 2. Otherwise -> AI Studio API (direct OAuth, like API key but with Bearer token)
+			if isCodeAssist && projectID != "" {
 				// Mode 1: Code Assist API
 				baseURL, err := s.validateUpstreamBaseURL(geminicli.GeminiCliBaseURL)
 				if err != nil {
@@ -1141,7 +1142,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 
 	useUpstreamStream := stream
 	upstreamAction := action
-	if account.Type == AccountTypeOAuth && !stream && action == "generateContent" && strings.TrimSpace(account.GetCredential("project_id")) != "" {
+	if account.Type == AccountTypeOAuth && !stream && action == "generateContent" && account.GeminiOAuthTypeSafe() == "code_assist" && strings.TrimSpace(account.GetCredential("project_id")) != "" {
 		// Code Assist's non-streaming generateContent may return no content; use streaming upstream and aggregate.
 		useUpstreamStream = true
 		upstreamAction = "streamGenerateContent"
@@ -1191,11 +1192,12 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 			}
 
 			projectID := strings.TrimSpace(account.GetCredential("project_id"))
+			isCodeAssist := account.GeminiOAuthTypeSafe() == "code_assist"
 
 			// Two modes for OAuth:
-			// 1. With project_id -> Code Assist API (wrapped request)
-			// 2. Without project_id -> AI Studio API (direct OAuth, like API key but with Bearer token)
-			if projectID != "" && !forceAIStudio {
+			// 1. Explicit Code Assist + project_id -> Code Assist API (wrapped request)
+			// 2. Otherwise -> AI Studio API (direct OAuth, like API key but with Bearer token)
+			if isCodeAssist && projectID != "" && !forceAIStudio {
 				// Mode 1: Code Assist API
 				baseURL, err := s.validateUpstreamBaseURL(geminicli.GeminiCliBaseURL)
 				if err != nil {

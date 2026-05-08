@@ -418,6 +418,47 @@ func TestGeminiMessagesCompatServiceForward_OAuthImageBillingUsesMappedUpstreamM
 	require.Contains(t, httpStub.lastReq.URL.String(), "/models/gemini-2.5-flash-image:")
 }
 
+func TestGeminiMessagesCompatServiceForward_ProjectIDOnlyOAuthStaysAIStudio(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	httpStub := &geminiCompatHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"x-request-id": []string{"gemini-project-only-req-1"}},
+			Body:       io.NopCloser(strings.NewReader(`{"candidates":[{"content":{"parts":[{"text":"done"}]}}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}`)),
+		},
+	}
+	svc := &GeminiMessagesCompatService{
+		httpUpstream:  httpStub,
+		cfg:           &config.Config{},
+		tokenProvider: NewGeminiTokenProvider(nil, nil, nil),
+	}
+	account := &Account{
+		ID:       13,
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token": "oauth-token",
+			"expires_at":   time.Now().Add(time.Hour).Format(time.RFC3339),
+			"project_id":   "legacy-project",
+			"base_url":     "https://generativelanguage.googleapis.com",
+		},
+	}
+	body := []byte(`{"model":"gemini-2.5-pro","max_tokens":16,"messages":[{"role":"user","content":"hello"}]}`)
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, httpStub.lastReq)
+	require.Contains(t, httpStub.lastReq.URL.String(), "/v1beta/models/gemini-2.5-pro:")
+	require.NotContains(t, httpStub.lastReq.URL.String(), "/v1internal:")
+	require.Equal(t, "Bearer oauth-token", httpStub.lastReq.Header.Get("Authorization"))
+}
+
 func TestGeminiMessagesCompatServiceForward_ServiceAccountUsesVertexEndpoint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -492,6 +533,47 @@ func TestGeminiMessagesCompatServiceForwardNative_ServiceAccountUsesVertexEndpoi
 	require.NotNil(t, httpStub.lastReq)
 	require.Contains(t, httpStub.lastReq.URL.String(), "projects/vertex-proj/locations/us-central1/publishers/google/models/gemini-2.5-pro:generateContent")
 	require.Equal(t, "Bearer vertex-access-token", httpStub.lastReq.Header.Get("Authorization"))
+}
+
+func TestGeminiMessagesCompatServiceForwardNative_ProjectIDOnlyOAuthStaysAIStudio(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini-2.5-pro:generateContent", nil)
+
+	httpStub := &geminiCompatHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"x-request-id": []string{"gemini-native-project-only-req-1"}},
+			Body:       io.NopCloser(strings.NewReader(`{"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5},"candidates":[{"content":{"parts":[{"text":"hello ai studio"}]}}]}`)),
+		},
+	}
+	svc := &GeminiMessagesCompatService{
+		httpUpstream:  httpStub,
+		cfg:           &config.Config{},
+		tokenProvider: NewGeminiTokenProvider(nil, nil, nil),
+	}
+	account := &Account{
+		ID:       14,
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token": "oauth-token",
+			"expires_at":   time.Now().Add(time.Hour).Format(time.RFC3339),
+			"project_id":   "legacy-project",
+			"base_url":     "https://generativelanguage.googleapis.com",
+		},
+	}
+	body := []byte(`{"contents":[{"role":"user","parts":[{"text":"hello"}]}]}`)
+
+	result, err := svc.ForwardNative(context.Background(), c, account, "gemini-2.5-pro", "generateContent", false, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, httpStub.lastReq)
+	require.Contains(t, httpStub.lastReq.URL.String(), "/v1beta/models/gemini-2.5-pro:streamGenerateContent")
+	require.NotContains(t, httpStub.lastReq.URL.String(), "/v1internal:")
+	require.Equal(t, "Bearer oauth-token", httpStub.lastReq.Header.Get("Authorization"))
 }
 
 func TestGeminiMessagesCompatServiceHandleGeminiUpstreamError_CodeAssist403UsesTempUnschedulable(t *testing.T) {

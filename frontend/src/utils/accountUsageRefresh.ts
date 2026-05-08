@@ -27,3 +27,27 @@ export const buildOpenAIUsageRefreshKey = (account: Pick<Account, 'id' | 'platfo
     extra.codex_7d_window_minutes
   ].map(normalizeUsageRefreshValue).join('|')
 }
+
+export const buildGeminiUsageRefreshKey = (account: Pick<Account, 'id' | 'platform' | 'type' | 'updated_at' | 'last_used_at' | 'rate_limit_reset_at' | 'credentials' | 'extra'>): string => {
+  if (account.platform !== 'gemini') {
+    return ''
+  }
+
+  const credentials = account.credentials ?? {}
+  const extra = account.extra ?? {}
+
+  return [
+    account.id,
+    account.updated_at,
+    account.last_used_at,
+    account.rate_limit_reset_at,
+    credentials.usage_updated_at ?? extra.usage_updated_at,
+    credentials.quota_query_last_error ?? extra.quota_query_last_error,
+    credentials.quota_query_last_error_at ?? extra.quota_query_last_error_at,
+    credentials.gemini_status ?? extra.gemini_status,
+    credentials.gemini_status_reason ?? extra.gemini_status_reason,
+    credentials.project_id,
+    credentials.oauth_type,
+    credentials.tier_id
+  ].map(normalizeUsageRefreshValue).join('|')
+}

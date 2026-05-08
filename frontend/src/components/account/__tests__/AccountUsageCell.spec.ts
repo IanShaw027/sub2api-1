@@ -831,7 +831,7 @@ describe('AccountUsageCell', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('1d|73|17000')
-    expect(wrapper.text()).not.toContain('admin.accounts.gemini.rateLimit.unlimited')
+    expect(wrapper.text()).not.toContain('admin.accounts.gemini.rateLimit.ok')
   })
 
   it('Gemini service account 不再额外展示 today stats 徽章', async () => {
@@ -870,6 +870,181 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).not.toContain('0 req')
     expect(wrapper.text()).not.toContain('A $0.00')
     expect(wrapper.text()).not.toContain('U $0.00')
-    expect(wrapper.text()).toContain('admin.accounts.gemini.rateLimit.unlimited')
+    expect(wrapper.text()).toContain('admin.accounts.gemini.rateLimit.ok')
+  })
+
+  it('Gemini forbidden 状态优先展示封禁徽章而不是 unlimited', async () => {
+    getUsage.mockResolvedValue({
+      is_forbidden: true,
+      forbidden_type: 'validation',
+      validation_url: 'https://example.com/verify'
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 4005,
+          platform: 'gemini',
+          type: 'oauth',
+          credentials: {
+            oauth_type: 'google_one'
+          },
+          extra: {}
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: true,
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.accounts.forbiddenValidation')
+    expect(wrapper.text()).toContain('admin.accounts.openVerification')
+    expect(wrapper.text()).not.toContain('admin.accounts.gemini.rateLimit.ok')
+  })
+
+  it('Gemini needs reauth 状态优先展示重新授权徽章', async () => {
+    getUsage.mockResolvedValue({
+      needs_reauth: true
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 4006,
+          platform: 'gemini',
+          type: 'oauth',
+          credentials: {
+            oauth_type: 'code_assist'
+          },
+          extra: {}
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: true,
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.accounts.needsReauth')
+    expect(wrapper.text()).not.toContain('admin.accounts.gemini.rateLimit.ok')
+  })
+
+  it('Gemini 配额查询降级时展示错误徽章', async () => {
+    getUsage.mockResolvedValue({
+      error: 'quota snapshot fetch failed',
+      error_code: 'rate_limited'
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 4007,
+          platform: 'gemini',
+          type: 'oauth',
+          credentials: {
+            oauth_type: 'google_one'
+          },
+          extra: {}
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: true,
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.accounts.rateLimited')
+    expect(wrapper.text()).not.toContain('admin.accounts.gemini.rateLimit.ok')
+  })
+
+  it('Gemini 行数据中的 usage 快照变化时会重新拉取 usage', async () => {
+    getUsage
+      .mockResolvedValueOnce({
+        gemini_shared_daily: {
+          utilization: 15,
+          resets_at: '2026-03-08T08:00:00Z',
+          remaining_seconds: 3600,
+          window_stats: {
+            requests: 2,
+            tokens: 200,
+            cost: 0.01
+          }
+        }
+      })
+      .mockResolvedValueOnce({
+        gemini_shared_daily: {
+          utilization: 55,
+          resets_at: '2026-03-08T10:00:00Z',
+          remaining_seconds: 3600,
+          window_stats: {
+            requests: 5,
+            tokens: 500,
+            cost: 0.03
+          }
+        }
+      })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 4008,
+          platform: 'gemini',
+          type: 'oauth',
+          updated_at: '2026-03-07T10:00:00Z',
+          credentials: {
+            oauth_type: 'google_one',
+            tier_id: 'google_ai_pro',
+            usage_updated_at: '2026-03-07T10:00:00Z'
+          },
+          extra: {}
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'resetsAt', 'windowStats', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.tokens }}</div>'
+          },
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+    expect(getUsage).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('1d|15|200')
+
+    await wrapper.setProps({
+      account: makeAccount({
+        id: 4008,
+        platform: 'gemini',
+        type: 'oauth',
+        updated_at: '2026-03-07T10:01:00Z',
+        credentials: {
+          oauth_type: 'google_one',
+          tier_id: 'google_ai_pro',
+          usage_updated_at: '2026-03-07T10:01:00Z'
+        },
+        extra: {}
+      })
+    })
+
+    await flushPromises()
+
+    expect(getUsage).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('1d|55|500')
   })
 })

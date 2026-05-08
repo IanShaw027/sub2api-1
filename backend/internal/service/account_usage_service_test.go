@@ -283,3 +283,43 @@ func TestAccountUsageService_GetGeminiUsage_PrefersQuotaSnapshotUtilization(t *t
 		t.Fatalf("GeminiSharedDaily utilization = %#v, want 75", usage.GeminiSharedDaily)
 	}
 }
+
+func TestAccountUsageService_GetGeminiUsage_UsesStoredForbiddenStatus(t *testing.T) {
+	t.Parallel()
+
+	repo := &geminiUsageLogRepoStub{}
+	svc := &AccountUsageService{
+		usageLogRepo:       repo,
+		geminiQuotaService: NewGeminiQuotaService(nil, nil),
+	}
+
+	account := &Account{
+		ID:       9002,
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"oauth_type":              "code_assist",
+			"tier_id":                 "STANDARD",
+			"gemini_status":           "forbidden",
+			"gemini_status_reason":    "retrieveUserQuota failed: status 403, body: forbidden",
+			"quota_query_last_error":  "retrieveUserQuota failed: status 403, body: forbidden",
+		},
+	}
+
+	usage, err := svc.getGeminiUsage(context.Background(), account)
+	if err != nil {
+		t.Fatalf("getGeminiUsage() error = %v", err)
+	}
+	if !usage.IsForbidden {
+		t.Fatal("expected Gemini usage to expose stored forbidden status")
+	}
+	if usage.ErrorCode != errorCodeForbidden {
+		t.Fatalf("ErrorCode = %q, want %q", usage.ErrorCode, errorCodeForbidden)
+	}
+	if usage.ForbiddenReason == "" {
+		t.Fatal("expected forbidden reason to be preserved")
+	}
+	if usage.Error == "" {
+		t.Fatal("expected quota_query_last_error to surface as usage error")
+	}
+}

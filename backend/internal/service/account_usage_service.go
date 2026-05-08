@@ -1139,6 +1139,8 @@ func (s *AccountUsageService) getGeminiUsage(ctx context.Context, account *Accou
 		UpdatedAt: &now,
 	}
 
+	enrichGeminiUsageWithStoredStatus(usage, account)
+
 	if s.geminiQuotaService == nil || s.usageLogRepo == nil {
 		return usage, nil
 	}
@@ -1786,12 +1788,9 @@ func applyGeminiQuotaSnapshotFallback(usage *UsageInfo, account *Account, now ti
 	mergeGeminiUsageProgressWithSnapshot(&usage.GeminiFlashDaily, snapshot.flash, now)
 
 	if usage.GeminiSharedDaily == nil && (snapshot.pro != nil || snapshot.flash != nil) {
-		shared := lowerUtilizationQuotaWindow(snapshot.pro, snapshot.flash)
+		shared := lowerUtilizationSnapshot(snapshot.pro, snapshot.flash)
 		if shared != nil {
-			usage.GeminiSharedDaily = &UsageProgress{
-				Utilization: shared.utilization,
-				ResetsAt:    shared.resetAt,
-			}
+			usage.GeminiSharedDaily = snapshotWindowToUsageProgress(shared, now)
 		}
 	}
 }
@@ -1979,22 +1978,22 @@ func mergeGeminiUsageProgressWithSnapshot(target **UsageProgress, snapshot *gemi
 	}
 }
 
-func lowerUtilizationProgress(items ...*UsageProgress) *UsageProgress {
-	var picked *UsageProgress
+func lowerUtilizationSnapshot(items ...*geminiQuotaSnapshotWindow) *geminiQuotaSnapshotWindow {
+	var picked *geminiQuotaSnapshotWindow
 	for _, item := range items {
 		if item == nil {
 			continue
 		}
-		if picked == nil || item.Utilization > picked.Utilization {
+		if picked == nil || item.utilization > picked.utilization {
 			picked = item
 			continue
 		}
-		if item.Utilization == picked.Utilization {
-			if picked.ResetsAt == nil {
+		if item.utilization == picked.utilization {
+			if picked.resetAt == nil {
 				picked = item
 				continue
 			}
-			if item.ResetsAt != nil && item.ResetsAt.Before(*picked.ResetsAt) {
+			if item.resetAt != nil && item.resetAt.Before(*picked.resetAt) {
 				picked = item
 			}
 		}
@@ -2002,6 +2001,47 @@ func lowerUtilizationProgress(items ...*UsageProgress) *UsageProgress {
 	return picked
 }
 
+func snapshotWindowToUsageProgress(snapshot *geminiQuotaSnapshotWindow, now time.Time) *UsageProgress {
+	if snapshot == nil {
+		return nil
+	}
+	progress := &UsageProgress{
+		Utilization: snapshot.utilization,
+		ResetsAt:    snapshot.resetAt,
+	}
+	if snapshot.resetAt != nil {
+		remainingSeconds := int(snapshot.resetAt.Sub(now).Seconds())
+		if remainingSeconds < 0 {
+			remainingSeconds = 0
+		}
+		progress.RemainingSeconds = remainingSeconds
+	}
+	return progress
+}
+
+func enrichGeminiUsageWithStoredStatus(usage *UsageInfo, account *Account) {
+	if usage == nil || account == nil {
+		return
+	}
+
+	status := strings.ToLower(strings.TrimSpace(account.GetCredential("gemini_status")))
+	statusReason := strings.TrimSpace(account.GetCredential("gemini_status_reason"))
+	if statusReason == "" {
+		statusReason = strings.TrimSpace(account.ErrorMessage)
+	}
+
+	if strings.TrimSpace(account.GetCredential("quota_query_last_error")) != "" && usage.Error == "" {
+		usage.Error = account.GetCredential("quota_query_last_error")
+	}
+
+	switch status {
+	case "forbidden":
+		usage.IsForbidden = true
+		usage.ForbiddenType = forbiddenTypeForbidden
+		usage.ForbiddenReason = statusReason
+		usage.ErrorCode = errorCodeForbidden
+	}
+}
 // GetAccountWindowStats 获取账号在指定时间窗口内的使用统计
 // 用于账号列表页面显示当前窗口费用
 func (s *AccountUsageService) GetAccountWindowStats(ctx context.Context, accountID int64, startTime time.Time) (*usagestats.AccountStats, error) {

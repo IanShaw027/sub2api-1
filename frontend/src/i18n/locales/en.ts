@@ -4055,7 +4055,7 @@ export default {
         },
         quotaPolicy: {
           title: 'Gemini Quota & Limit Policy (Reference)',
-          note: 'Note: Gemini does not provide an official quota inquiry API. The "Daily Quota" shown here is an estimate simulated by the system based on account tiers for scheduling reference only. Please refer to official Google errors for actual limits.',
+          note: 'Note: Gemini OAuth accounts now prefer Google quota snapshots such as remainingFraction and resetTime when available. Plan descriptions and local scheduling quotas are still reference-only; rely on actual Google responses and errors as the source of truth.',
           columns: {
             channel: 'Auth Channel',
             account: 'Account Status',
@@ -4099,6 +4099,10 @@ export default {
               limitsFree: 'RPD 50; RPM 2 (Pro) / 15 (Flash)',
               limitsPaid: 'RPD unlimited; RPM 1000 (Pro) / 2000 (Flash) (per model)'
             },
+            vertex: {
+              channel: 'Vertex AI Service Account',
+              limits: 'Subject to GCP project and model quotas; rely on Vertex AI console and actual Google responses'
+            },
             customOAuth: {
               channel: 'Custom OAuth Client (GCP)',
               free: 'Project not billed',
@@ -4110,7 +4114,6 @@ export default {
         },
         rateLimit: {
           ok: 'Not rate limited',
-          unlimited: 'Unlimited',
           limited: 'Rate limited {time}',
           now: 'now'
         },
