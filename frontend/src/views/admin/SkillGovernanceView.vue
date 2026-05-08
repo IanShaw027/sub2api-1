@@ -13,17 +13,17 @@
             />
 
             <div>
-              <label class="input-label mb-1.5 block">治理状态</label>
+              <label class="input-label mb-1.5 block">{{ t('skills.admin.governance.status') }}</label>
               <Select :model-value="filters.governance_status" :options="governanceStatusOptions" @update:model-value="updateGovernanceStatusFilter" />
             </div>
 
             <div>
-              <label class="input-label mb-1.5 block">最近审核</label>
+              <label class="input-label mb-1.5 block">{{ t('skills.admin.governance.latestReview') }}</label>
               <Select :model-value="filters.review_status" :options="reviewStatusOptions" @update:model-value="updateReviewStatusFilter" />
             </div>
 
             <div>
-              <label class="input-label mb-1.5 block">可见性</label>
+              <label class="input-label mb-1.5 block">{{ t('skills.admin.governance.visibility') }}</label>
               <Select :model-value="filters.visibility" :options="visibilityOptions" @update:model-value="updateVisibilityFilter" />
             </div>
           </div>
@@ -95,28 +95,28 @@
 
             <template #cell-actions="{ row }">
               <div class="flex items-center gap-2">
-                <button class="btn btn-secondary btn-sm" @click="selectSkill(row)">查看</button>
+                <button class="btn btn-secondary btn-sm" @click="selectSkill(row)">{{ t('common.view') }}</button>
                 <button
                   class="btn btn-secondary btn-sm"
                   :disabled="row.governance_status === 'force_private' || (actionLoading && actionTarget?.id === row.id)"
                   @click="openAction('force-private', row)"
                 >
-                  强制私有
+                  {{ t('skills.admin.governance.forcePrivateAction') }}
                 </button>
                 <button
                   class="btn btn-danger btn-sm"
                   :disabled="row.governance_status === 'disabled' || (actionLoading && actionTarget?.id === row.id)"
                   @click="openAction('disable', row)"
                 >
-                  下线
+                  {{ t('skills.admin.governance.disableShort') }}
                 </button>
               </div>
             </template>
 
             <template #empty>
               <EmptyState
-                title="暂无技能治理记录"
-                description="技能上线后，会在这里展示治理状态、可见性和处置动作。"
+                :title="t('skills.admin.governance.emptyTitle')"
+                :description="t('skills.admin.governance.emptyDesc')"
               />
             </template>
           </DataTable>
@@ -147,7 +147,7 @@
                 </div>
                 <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
                   {{ selectedSkill.skill_slug }}
-                  <span v-if="selectedSkill.author_name"> · 开发者 {{ selectedSkill.author_name }}</span>
+                  <span v-if="selectedSkill.author_name"> · {{ t('skills.admin.governance.authorLabel') }} {{ selectedSkill.author_name }}</span>
                 </p>
               </div>
               <div class="flex flex-wrap items-center gap-2">
@@ -166,29 +166,29 @@
 
             <div class="mt-5 grid gap-4 md:grid-cols-3">
               <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900/60">
-                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">最近审核</p>
+                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.governance.latestReview') }}</p>
                 <p class="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{{ reviewStatusLabel(selectedSkill.latest_review_status) }}</p>
               </div>
               <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900/60">
-                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">24h 调用</p>
+                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.governance.metrics.requests24h') }}</p>
                 <p class="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{{ selectedSkill.requests_24h.toLocaleString() }}</p>
               </div>
               <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900/60">
-                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">30d 收入</p>
+                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.governance.metrics.revenue30d') }}</p>
                 <p class="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{{ formatCurrency(selectedSkill.revenue_30d) }}</p>
               </div>
             </div>
 
             <div class="mt-5 space-y-4">
               <div>
-                <p class="text-sm font-medium text-gray-900 dark:text-white">治理备注</p>
+                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('skills.admin.governance.noteTitle') }}</p>
                 <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400">
-                  {{ selectedSkill.review_note || '当前技能尚未记录额外治理备注。' }}
+                  {{ selectedSkill.review_note || t('skills.admin.governance.noteEmpty') }}
                 </p>
               </div>
 
               <div>
-                <p class="text-sm font-medium text-gray-900 dark:text-white">标签</p>
+                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('skills.admin.governance.tagsTitle') }}</p>
                 <div v-if="selectedSkill.tags.length" class="mt-2 flex flex-wrap gap-2">
                   <span
                     v-for="tag in selectedSkill.tags"
@@ -198,17 +198,17 @@
                     {{ tag }}
                   </span>
                 </div>
-                <p v-else class="mt-2 text-sm text-gray-500 dark:text-gray-400">当前技能未配置标签。</p>
+                <p v-else class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ t('skills.admin.governance.tagsEmpty') }}</p>
               </div>
 
               <div class="rounded-2xl border border-gray-200 p-4 dark:border-dark-700">
                 <div class="grid gap-4 md:grid-cols-2">
                   <div>
-                    <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">公开版本</p>
+                    <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.governance.publishedVersionTitle') }}</p>
                     <p class="mt-2 text-sm font-medium text-gray-900 dark:text-white">{{ selectedSkill.latest_published_version || '-' }}</p>
                   </div>
                   <div>
-                    <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">成功率</p>
+                    <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.governance.successRateTitle') }}</p>
                     <p class="mt-2 text-sm font-medium text-gray-900 dark:text-white">{{ formatPercent(selectedSkill.success_rate) }}</p>
                   </div>
                 </div>
@@ -222,7 +222,7 @@
                 :disabled="selectedSkill.governance_status === 'force_private'"
                 @click="openAction('force-private', selectedSkill)"
               >
-                强制私有
+                {{ t('skills.admin.governance.forcePrivateAction') }}
               </button>
               <button
                 type="button"
@@ -230,22 +230,22 @@
                 :disabled="selectedSkill.governance_status === 'disabled'"
                 @click="openAction('disable', selectedSkill)"
               >
-                下线技能
+                {{ t('skills.admin.governance.disableAction') }}
               </button>
             </div>
           </template>
 
           <template v-else>
             <div class="rounded-2xl border border-dashed border-gray-200 px-4 py-10 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400">
-              选择一条技能记录后，这里会展示治理概况、备注与处置入口。
+              {{ t('skills.admin.governance.detailEmpty') }}
             </div>
           </template>
         </div>
 
         <SkillAdminTimelineCard
-          title="治理流转"
-          description="从审核通过到强制私有/下线的关键节点会在这里集中展示。"
-          empty-text="还没有选中技能。"
+          :title="t('skills.admin.governance.timelineTitle')"
+          :description="t('skills.admin.governance.timelineDescription')"
+          :empty-text="t('skills.admin.governance.timelineEmpty')"
           :steps="governanceTimelineSteps"
         />
       </div>
@@ -290,7 +290,7 @@ import SkillAdminMetricGrid from '@/components/skills/admin/SkillAdminMetricGrid
 import SkillAdminStatusBadge from '@/components/skills/admin/SkillAdminStatusBadge.vue'
 import SkillAdminTimelineCard from '@/components/skills/admin/SkillAdminTimelineCard.vue'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const appStore = useAppStore()
 
 const loading = ref(false)
@@ -325,70 +325,70 @@ const filters = reactive({
 
 const governanceStatusOptions = [
   { value: 'all', label: t('common.all', '全部') },
-  { value: 'online', label: '在线' },
-  { value: 'force_private', label: '强制私有' },
-  { value: 'disabled', label: '已下线' },
-  { value: 'draft', label: '草稿 / 审核中' }
+  { value: 'online', label: t('skills.admin.governance.labels.online') },
+  { value: 'force_private', label: t('skills.admin.governance.labels.forcePrivate') },
+  { value: 'disabled', label: t('skills.admin.governance.labels.disabled') },
+  { value: 'draft', label: t('skills.admin.governance.labels.draft') }
 ]
 
 const reviewStatusOptions = [
   { value: 'all', label: t('common.all', '全部') },
-  { value: 'pending', label: '待审核' },
-  { value: 'approved', label: '已通过' },
-  { value: 'rejected', label: '已拒绝' },
-  { value: 'changes_requested', label: '待修改' }
+  { value: 'pending', label: t('skills.admin.review.labels.pending') },
+  { value: 'approved', label: t('skills.admin.review.labels.approved') },
+  { value: 'rejected', label: t('skills.admin.review.labels.rejected') },
+  { value: 'changes_requested', label: t('skills.admin.review.labels.changesRequested') }
 ]
 
 const visibilityOptions = [
   { value: 'all', label: t('common.all', '全部') },
-  { value: 'public', label: '公开' },
-  { value: 'private', label: '私有' },
-  { value: 'force_private', label: '强制私有' }
+  { value: 'public', label: t('skills.admin.review.labels.public') },
+  { value: 'private', label: t('skills.admin.review.labels.private') },
+  { value: 'force_private', label: t('skills.admin.review.labels.forcePrivate') }
 ]
 
 const columns = computed<Column[]>(() => [
-  { key: 'skill_name', label: '技能 / 版本' },
-  { key: 'author_name', label: '开发者' },
-  { key: 'latest_review_status', label: '最近审核' },
-  { key: 'governance_status', label: '治理状态' },
-  { key: 'visibility', label: '可见性' },
-  { key: 'requests_24h', label: '24h 调用' },
-  { key: 'success_rate', label: '成功率' },
-  { key: 'revenue_30d', label: '30d 收入' },
-  { key: 'updated_at', label: '最近更新' },
+  { key: 'skill_name', label: t('skills.admin.governance.columns.skillVersion') },
+  { key: 'author_name', label: t('skills.admin.governance.columns.author') },
+  { key: 'latest_review_status', label: t('skills.admin.governance.columns.latestReview') },
+  { key: 'governance_status', label: t('skills.admin.governance.columns.governanceStatus') },
+  { key: 'visibility', label: t('skills.admin.governance.columns.visibility') },
+  { key: 'requests_24h', label: t('skills.admin.governance.columns.requests24h') },
+  { key: 'success_rate', label: t('skills.admin.governance.columns.successRate') },
+  { key: 'revenue_30d', label: t('skills.admin.governance.columns.revenue30d') },
+  { key: 'updated_at', label: t('skills.admin.governance.columns.updatedAt') },
   { key: 'actions', label: t('common.actions', '操作') }
 ])
 
 const metricCards = computed(() => [
   {
     key: 'online',
-    label: '在线技能',
+    label: t('skills.admin.governance.metrics.onlineSkills'),
     value: summary.online_count,
-    hint: '当前仍可正常对外提供能力的技能数',
+    hint: t('skills.admin.governance.metrics.onlineHint'),
     icon: 'sparkles',
     tone: 'success' as const
   },
   {
     key: 'forcePrivate',
-    label: '强制私有',
+    label: t('skills.admin.governance.metrics.forcePrivate'),
     value: summary.force_private_count,
-    hint: '已退出公开市场但仍保留私域使用的技能',
+    hint: t('skills.admin.governance.metrics.forcePrivateHint'),
     icon: 'lock',
     tone: 'warning' as const
   },
   {
     key: 'disabled',
-    label: '已下线技能',
+    label: t('skills.admin.governance.metrics.disabledSkills'),
     value: summary.disabled_count,
-    hint: '被治理动作完全下线的技能',
+    hint: t('skills.admin.governance.metrics.disabledHint'),
     icon: 'ban',
     tone: 'danger' as const
   },
   {
     key: 'pendingVersions',
-    label: '待处理版本',
+    label: t('skills.admin.governance.metrics.pendingVersions'),
     value: summary.pending_versions_count,
-    hint: '这些技能仍有版本处在审核队列中',
+    hint: t('skills.admin.governance.metrics.pendingHint'),
     icon: 'clock',
     tone: 'slate' as const
   }
@@ -409,39 +409,45 @@ const governanceTimelineSteps = computed(() => {
   return [
     {
       key: 'created',
-      title: '技能创建',
-      description: '技能主体已建立并进入版本治理流程。',
+      title: t('skills.admin.governance.timeline.createdTitle'),
+      description: t('skills.admin.governance.timeline.createdDesc'),
       time: formatTime(item.created_at),
       status: 'done' as const
     },
     {
       key: 'review',
-      title: `最近审核：${reviewStatusLabel(item.latest_review_status)}`,
+      title: t('skills.admin.governance.timeline.reviewTitle', {
+        status: reviewStatusLabel(item.latest_review_status)
+      }),
       description: item.latest_review_status === 'pending'
-        ? '存在尚未处理的版本，需要管理员继续审核。'
-        : '最近一个版本审核结论已同步到治理面板。',
+        ? t('skills.admin.governance.timeline.reviewPendingDesc')
+        : t('skills.admin.governance.timeline.reviewDesc'),
       time: formatTime(item.updated_at),
       status: item.latest_review_status === 'pending' ? 'current' as const : 'done' as const
     },
     {
       key: 'visibility',
-      title: `当前可见性：${visibilityLabel(item.visibility)}`,
+      title: t('skills.admin.governance.timeline.visibilityTitle', {
+        status: visibilityLabel(item.visibility)
+      }),
       description: item.visibility === 'force_private'
-        ? '技能已被强制退出公开市场。'
+        ? t('skills.admin.governance.timeline.visibilityForcePrivateDesc')
         : item.visibility === 'public'
-          ? '技能仍可公开对外展示。'
-          : '技能当前仅私有可见。',
+          ? t('skills.admin.governance.timeline.visibilityPublicDesc')
+          : t('skills.admin.governance.timeline.visibilityPrivateDesc'),
       time: formatTime(item.updated_at),
       status: isForcePrivate ? 'danger' as const : 'done' as const
     },
     {
       key: 'governance',
-      title: `治理状态：${governanceStatusLabel(item.governance_status)}`,
+      title: t('skills.admin.governance.timeline.governanceTitle', {
+        status: governanceStatusLabel(item.governance_status)
+      }),
       description: isDisabled
-        ? '技能已被下线，外部调用应同步中止。'
+        ? t('skills.admin.governance.timeline.governanceDisabledDesc')
         : isForcePrivate
-          ? '技能继续保留，但对外展示已收敛到私域。'
-          : '当前无进一步治理动作。',
+          ? t('skills.admin.governance.timeline.governanceForcePrivateDesc')
+          : t('skills.admin.governance.timeline.governanceDesc'),
       time: formatTime(item.updated_at),
       status: isDisabled || isForcePrivate ? 'danger' as const : 'todo' as const
     }
@@ -450,27 +456,27 @@ const governanceTimelineSteps = computed(() => {
 
 function reviewStatusLabel(status: SkillReviewStatus): string {
   return {
-    pending: '待审核',
-    approved: '已通过',
-    rejected: '已拒绝',
-    changes_requested: '待修改'
+    pending: t('skills.admin.review.labels.pending'),
+    approved: t('skills.admin.review.labels.approved'),
+    rejected: t('skills.admin.review.labels.rejected'),
+    changes_requested: t('skills.admin.review.labels.changesRequested')
   }[status]
 }
 
 function governanceStatusLabel(status: SkillGovernanceStatus): string {
   return {
-    online: '在线',
-    disabled: '已下线',
-    force_private: '强制私有',
-    draft: '草稿 / 审核中'
+    online: t('skills.admin.governance.labels.online'),
+    disabled: t('skills.admin.governance.labels.disabled'),
+    force_private: t('skills.admin.governance.labels.forcePrivate'),
+    draft: t('skills.admin.governance.labels.draft')
   }[status]
 }
 
 function visibilityLabel(status: SkillVisibility): string {
   return {
-    public: '公开',
-    private: '私有',
-    force_private: '强制私有'
+    public: t('skills.admin.review.labels.public'),
+    private: t('skills.admin.review.labels.private'),
+    force_private: t('skills.admin.review.labels.forcePrivate')
   }[status]
 }
 
@@ -484,7 +490,7 @@ function formatPercent(value: number): string {
 }
 
 function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('zh-CN', {
+  return new Intl.NumberFormat(locale.value.startsWith('zh') ? 'zh-CN' : 'en-US', {
     style: 'currency',
     currency: 'CNY',
     minimumFractionDigits: 2
@@ -569,13 +575,13 @@ async function handleActionSubmit(payload: { note: string }) {
         note: payload.note,
         reason: payload.note
       })
-      appStore.showSuccess(receipt.message || '技能已下线')
+      appStore.showSuccess(receipt.message || t('skills.admin.governance.toastDisabled'))
     } else if (dialogAction.value === 'force-private') {
       const receipt = await adminSkillsAPI.forceSkillPrivate(actionTarget.value.skill_id, {
         note: payload.note,
         reason: payload.note
       })
-      appStore.showSuccess(receipt.message || '技能已转为强制私有')
+      appStore.showSuccess(receipt.message || t('skills.admin.governance.toastForcePrivate'))
     }
     closeDialog()
     await loadGovernance()

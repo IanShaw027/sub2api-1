@@ -717,7 +717,9 @@
               </div>
               <div class="grid grid-cols-3 gap-3">
                 <div>
-                  <label class="input-label">1K ($)</label>
+                  <label class="input-label">{{
+                    t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
+                  }}</label>
                   <input
                     v-model.number="createForm.image_price_1k"
                     type="number"
@@ -728,7 +730,9 @@
                   />
                 </div>
                 <div>
-                  <label class="input-label">2K ($)</label>
+                  <label class="input-label">{{
+                    t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
+                  }}</label>
                   <input
                     v-model.number="createForm.image_price_2k"
                     type="number"
@@ -739,7 +743,9 @@
                   />
                 </div>
                 <div>
-                  <label class="input-label">4K ($)</label>
+                  <label class="input-label">{{
+                    t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
+                  }}</label>
                   <input
                     v-model.number="createForm.image_price_4k"
                     type="number"
@@ -757,7 +763,9 @@
               </div>
               <div class="grid grid-cols-3 gap-3">
                 <div>
-                  <label class="input-label">1K ($)</label>
+                  <label class="input-label">{{
+                    t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
+                  }}</label>
                   <input
                     v-model.number="createForm.images2api_price_1k"
                     type="number"
@@ -768,7 +776,9 @@
                   />
                 </div>
                 <div>
-                  <label class="input-label">2K ($)</label>
+                  <label class="input-label">{{
+                    t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
+                  }}</label>
                   <input
                     v-model.number="createForm.images2api_price_2k"
                     type="number"
@@ -779,7 +789,9 @@
                   />
                 </div>
                 <div>
-                  <label class="input-label">4K ($)</label>
+                  <label class="input-label">{{
+                    t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
+                  }}</label>
                   <input
                     v-model.number="createForm.images2api_price_4k"
                     type="number"
@@ -1274,20 +1286,20 @@
           class="border-t border-gray-200 dark:border-dark-400 pt-4 mt-4 space-y-4"
         >
           <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-            账号过滤控制
+            {{ t("admin.groups.accountFilters.title") }}
           </h4>
 
           <!-- require_oauth_only toggle -->
           <div class="flex items-center justify-between">
             <div>
               <label class="text-sm text-gray-600 dark:text-gray-400"
-                >仅允许 OAuth 账号</label
+                >{{ t("admin.groups.accountFilters.oauthOnly") }}</label
               >
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 {{
                   createForm.require_oauth_only
-                    ? "已启用 — 排除 API Key 类型账号"
-                    : "未启用"
+                    ? t("admin.groups.accountFilters.oauthOnlyEnabled")
+                    : t("admin.groups.accountFilters.disabled")
                 }}
               </p>
             </div>
@@ -1318,13 +1330,13 @@
           <div class="flex items-center justify-between">
             <div>
               <label class="text-sm text-gray-600 dark:text-gray-400"
-                >仅允许隐私保护已设置的账号</label
+                >{{ t("admin.groups.accountFilters.privacyOnly") }}</label
               >
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 {{
                   createForm.require_privacy_set
-                    ? "已启用 — Privacy 未设置的账号将被排除"
-                    : "未启用"
+                    ? t("admin.groups.accountFilters.privacyOnlyEnabled")
+                    : t("admin.groups.accountFilters.disabled")
                 }}
               </p>
             </div>
@@ -1979,7 +1991,9 @@
               </div>
               <div class="grid grid-cols-3 gap-3">
                 <div>
-                  <label class="input-label">1K ($)</label>
+                  <label class="input-label">{{
+                    t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
+                  }}</label>
                   <input
                     v-model.number="editForm.image_price_1k"
                     type="number"
@@ -1990,7 +2004,9 @@
                   />
                 </div>
                 <div>
-                  <label class="input-label">2K ($)</label>
+                  <label class="input-label">{{
+                    t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
+                  }}</label>
                   <input
                     v-model.number="editForm.image_price_2k"
                     type="number"
@@ -2001,7 +2017,9 @@
                   />
                 </div>
                 <div>
-                  <label class="input-label">4K ($)</label>
+                  <label class="input-label">{{
+                    t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
+                  }}</label>
                   <input
                     v-model.number="editForm.image_price_4k"
                     type="number"
@@ -2019,7 +2037,9 @@
               </div>
               <div class="grid grid-cols-3 gap-3">
                 <div>
-                  <label class="input-label">1K ($)</label>
+                  <label class="input-label">{{
+                    t("admin.groups.imagePricing.tier1kPrice", "1K ($)")
+                  }}</label>
                   <input
                     v-model.number="editForm.images2api_price_1k"
                     type="number"
@@ -2030,7 +2050,9 @@
                   />
                 </div>
                 <div>
-                  <label class="input-label">2K ($)</label>
+                  <label class="input-label">{{
+                    t("admin.groups.imagePricing.tier2kPrice", "2K ($)")
+                  }}</label>
                   <input
                     v-model.number="editForm.images2api_price_2k"
                     type="number"
@@ -2041,7 +2063,9 @@
                   />
                 </div>
                 <div>
-                  <label class="input-label">4K ($)</label>
+                  <label class="input-label">{{
+                    t("admin.groups.imagePricing.tier4kPrice", "4K ($)")
+                  }}</label>
                   <input
                     v-model.number="editForm.images2api_price_4k"
                     type="number"
@@ -2532,20 +2556,20 @@
           class="border-t border-gray-200 dark:border-dark-400 pt-4 mt-4 space-y-4"
         >
           <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-            账号过滤控制
+            {{ t("admin.groups.accountFilters.title") }}
           </h4>
 
           <!-- require_oauth_only toggle -->
           <div class="flex items-center justify-between">
             <div>
               <label class="text-sm text-gray-600 dark:text-gray-400"
-                >仅允许 OAuth 账号</label
+                >{{ t("admin.groups.accountFilters.oauthOnly") }}</label
               >
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 {{
                   editForm.require_oauth_only
-                    ? "已启用 — 排除 API Key 类型账号"
-                    : "未启用"
+                    ? t("admin.groups.accountFilters.oauthOnlyEnabled")
+                    : t("admin.groups.accountFilters.disabled")
                 }}
               </p>
             </div>
@@ -2576,13 +2600,13 @@
           <div class="flex items-center justify-between">
             <div>
               <label class="text-sm text-gray-600 dark:text-gray-400"
-                >仅允许隐私保护已设置的账号</label
+                >{{ t("admin.groups.accountFilters.privacyOnly") }}</label
               >
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 {{
                   editForm.require_privacy_set
-                    ? "已启用 — Privacy 未设置的账号将被排除"
-                    : "未启用"
+                    ? t("admin.groups.accountFilters.privacyOnlyEnabled")
+                    : t("admin.groups.accountFilters.disabled")
                 }}
               </p>
             </div>
@@ -3185,7 +3209,7 @@ const copyAccountsGroupOptions = computed(() => {
   );
   return eligibleGroups.map((g) => ({
     value: g.id,
-    label: `${g.name} (${g.account_count || 0} 个账号)`,
+    label: `${g.name} (${t("admin.groups.accountsCount", { count: g.account_count || 0 })})`,
   }));
 });
 
@@ -3200,7 +3224,7 @@ const copyAccountsGroupOptionsForEdit = computed(() => {
   );
   return eligibleGroups.map((g) => ({
     value: g.id,
-    label: `${g.name} (${g.account_count || 0} 个账号)`,
+    label: `${g.name} (${t("admin.groups.accountsCount", { count: g.account_count || 0 })})`,
   }));
 });
 
@@ -3607,15 +3631,39 @@ type ImagePricingFormState = {
 };
 
 const imagePricingTiers = [
-  { key: "image_price_1k", label: "1K" },
-  { key: "image_price_2k", label: "2K" },
-  { key: "image_price_4k", label: "4K" },
+  {
+    key: "image_price_1k",
+    labelKey: "admin.groups.imagePricing.tier1k",
+    labelFallback: "1K",
+  },
+  {
+    key: "image_price_2k",
+    labelKey: "admin.groups.imagePricing.tier2k",
+    labelFallback: "2K",
+  },
+  {
+    key: "image_price_4k",
+    labelKey: "admin.groups.imagePricing.tier4k",
+    labelFallback: "4K",
+  },
 ] as const;
 
 const images2apiPricingTiers = [
-  { key: "images2api_price_1k", label: "1K" },
-  { key: "images2api_price_2k", label: "2K" },
-  { key: "images2api_price_4k", label: "4K" },
+  {
+    key: "images2api_price_1k",
+    labelKey: "admin.groups.imagePricing.tier1k",
+    labelFallback: "1K",
+  },
+  {
+    key: "images2api_price_2k",
+    labelKey: "admin.groups.imagePricing.tier2k",
+    labelFallback: "2K",
+  },
+  {
+    key: "images2api_price_4k",
+    labelKey: "admin.groups.imagePricing.tier4k",
+    labelFallback: "4K",
+  },
 ] as const;
 
 const imageGenerationRouteOptions = computed(() => [
@@ -3649,7 +3697,7 @@ const buildImageFinalPricePreview = (form: ImagePricingFormState) => {
   return imagePricingTiers.map((tier) => {
     const basePrice = normalizePreviewNumber(form[tier.key]);
     return {
-      label: tier.label,
+      label: t(tier.labelKey, tier.labelFallback),
       value: basePrice > 0
         ? formatImagePricePreview(basePrice * multiplier)
         : t("admin.groups.imagePricing.notConfigured"),
@@ -3664,7 +3712,7 @@ const buildImages2apiFinalPricePreview = (form: ImagePricingFormState) => {
   return images2apiPricingTiers.map((tier) => {
     const basePrice = normalizePreviewNumber(form[tier.key]);
     return {
-      label: tier.label,
+      label: t(tier.labelKey, tier.labelFallback),
       value: basePrice > 0
         ? formatImagePricePreview(basePrice * multiplier)
         : t("admin.groups.imagePricing.notConfigured"),

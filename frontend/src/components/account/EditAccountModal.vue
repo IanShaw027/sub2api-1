@@ -734,7 +734,7 @@
       <div v-if="(account.platform === 'gemini' || account.platform === 'anthropic') && account.type === 'service_account'" class="space-y-4">
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label class="input-label">Project ID</label>
+            <label class="input-label">{{ t('admin.accounts.vertexProjectIdLabel') }}</label>
             <input
               v-model="editVertexProjectId"
               type="text"
@@ -745,7 +745,7 @@
             <p class="input-hint">{{ t('admin.accounts.vertexSaJsonEditHint') }}</p>
           </div>
           <div>
-            <label class="input-label">Location</label>
+            <label class="input-label">{{ t('admin.accounts.vertexLocationLabel') }}</label>
             <select
               v-model="editVertexLocation"
               required
@@ -1546,9 +1546,9 @@
         data-testid="openai-web-profile-section"
       >
         <div class="mb-3">
-          <label class="input-label mb-0">OpenAI WebProfile</label>
+          <label class="input-label mb-0">{{ t('admin.accounts.openAIWebProfileTitle') }}</label>
           <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Safe browser profile metadata only. Cookie values are never rendered here.
+            {{ t('admin.accounts.openAIWebProfileSafeHint') }}
           </p>
         </div>
 
@@ -1560,17 +1560,17 @@
         </div>
 
         <div class="mt-4 space-y-2">
-          <label class="input-label">Import WebProfile</label>
+          <label class="input-label">{{ t('admin.accounts.openAIWebProfileImportLabel') }}</label>
           <textarea
             v-model="openAIWebProfileImportContent"
             rows="5"
             class="input font-mono text-xs"
             data-testid="openai-web-profile-import-content"
-            placeholder="Paste exported WebProfile JSON or text content"
+            :placeholder="t('admin.accounts.openAIWebProfileImportPlaceholder')"
           ></textarea>
           <div class="flex items-center justify-between gap-3">
             <p class="text-xs text-gray-500 dark:text-gray-400">
-              Paste content only; no complex upload is required.
+              {{ t('admin.accounts.openAIWebProfileImportHint') }}
             </p>
             <button
               type="button"
@@ -1579,7 +1579,9 @@
               :disabled="openAIWebProfileImporting || !openAIWebProfileImportContent.trim()"
               @click="handleOpenAIWebProfileImport"
             >
-              {{ openAIWebProfileImporting ? 'Importing...' : 'Import WebProfile' }}
+              {{ openAIWebProfileImporting
+                ? t('admin.accounts.openAIWebProfileImporting')
+                : t('admin.accounts.openAIWebProfileImportSubmit') }}
             </button>
           </div>
           <p
@@ -2678,15 +2680,17 @@ const openAIWebProfileCookieNamesDigest = computed(() => {
 const openAIWebProfileRows = computed(() => {
   const profile = openAIWebProfile.value
   const empty = '-'
+  const yes = t('common.yes')
+  const no = t('common.no')
   return [
-    { label: 'has_web_profile', value: profile ? 'true' : 'false' },
-    { label: 'source', value: profile?.source || empty },
-    { label: 'captured_at', value: profile?.captured_at || empty },
-    { label: 'ua_major', value: openAIWebProfileUAMajor.value == null ? empty : String(openAIWebProfileUAMajor.value) },
-    { label: 'has_cookie_jar', value: openAIWebProfileHasCookieJar.value ? 'true' : 'false' },
-    { label: 'cookie_names_digest', value: openAIWebProfileCookieNamesDigest.value || empty },
-    { label: 'proxy_id', value: profile?.proxy_id == null ? empty : String(profile.proxy_id) },
-    { label: 'proxy_hash', value: profile?.proxy_hash || empty }
+    { label: t('admin.accounts.openAIWebProfileFieldHasWebProfile'), value: profile ? yes : no },
+    { label: t('admin.accounts.openAIWebProfileFieldSource'), value: profile?.source || empty },
+    { label: t('admin.accounts.openAIWebProfileFieldCapturedAt'), value: profile?.captured_at || empty },
+    { label: t('admin.accounts.openAIWebProfileFieldUAMajor'), value: openAIWebProfileUAMajor.value == null ? empty : String(openAIWebProfileUAMajor.value) },
+    { label: t('admin.accounts.openAIWebProfileFieldHasCookieJar'), value: openAIWebProfileHasCookieJar.value ? yes : no },
+    { label: t('admin.accounts.openAIWebProfileFieldCookieNamesDigest'), value: openAIWebProfileCookieNamesDigest.value || empty },
+    { label: t('admin.accounts.openAIWebProfileFieldProxyId'), value: profile?.proxy_id == null ? empty : String(profile.proxy_id) },
+    { label: t('admin.accounts.openAIWebProfileFieldProxyHash'), value: profile?.proxy_hash || empty }
   ]
 })
 

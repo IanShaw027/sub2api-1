@@ -550,7 +550,7 @@ const loadPlans = async () => {
   try {
     plans.value = await adminAPI.scheduledTests.listByAccount(props.accountId)
   } catch (error: any) {
-    appStore.showError(error?.message || 'Failed to load plans')
+    appStore.showError(error?.message || t('admin.scheduledTests.loadPlansFailed'))
   } finally {
     loading.value = false
   }
@@ -574,7 +574,7 @@ const handleCreate = async () => {
     resetNewPlan()
     await loadPlans()
   } catch (error: any) {
-    appStore.showError(error?.message || 'Failed to create plan')
+    appStore.showError(error?.message || t('admin.scheduledTests.createFailed'))
   } finally {
     creating.value = false
   }
@@ -589,7 +589,7 @@ const handleToggleEnabled = async (plan: ScheduledTestPlan, enabled: boolean) =>
     }
     appStore.showSuccess(t('admin.scheduledTests.updateSuccess'))
   } catch (error: any) {
-    appStore.showError(error?.message || 'Failed to update plan')
+    appStore.showError(error?.message || t('admin.scheduledTests.updateFailed'))
   }
 }
 
@@ -624,7 +624,7 @@ const handleEdit = async () => {
     appStore.showSuccess(t('admin.scheduledTests.updateSuccess'))
     editingPlanId.value = null
   } catch (error: any) {
-    appStore.showError(error?.message || 'Failed to update plan')
+    appStore.showError(error?.message || t('admin.scheduledTests.updateFailed'))
   } finally {
     updating.value = false
   }

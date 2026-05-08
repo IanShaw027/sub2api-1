@@ -13,13 +13,13 @@
             />
 
             <div>
-              <label class="input-label mb-1.5 block">结算状态</label>
+              <label class="input-label mb-1.5 block">{{ t('skills.admin.settlement.status') }}</label>
               <Select :model-value="filters.settlement_status" :options="settlementStatusOptions" @update:model-value="updateSettlementStatusFilter" />
             </div>
 
           </div>
           <p class="text-xs text-gray-500 dark:text-gray-400">
-            结算周期以后端返回的真实 `period_label` 为准，当前页面不再提供无后端支持的前端假筛选。
+            {{ t('skills.admin.settlement.filterHint') }}
           </p>
         </template>
 
@@ -70,13 +70,13 @@
             </template>
 
             <template #cell-actions="{ row }">
-              <button class="btn btn-secondary btn-sm" @click="selectSettlement(row)">查看</button>
+              <button class="btn btn-secondary btn-sm" @click="selectSettlement(row)">{{ t('common.view') }}</button>
             </template>
 
             <template #empty>
               <EmptyState
-                title="暂无技能结算记录"
-                description="技能中心的收入拆分、冻结与结算状态会在这里汇总。"
+                :title="t('skills.admin.settlement.emptyTitle')"
+                :description="t('skills.admin.settlement.emptyDesc')"
               />
             </template>
           </DataTable>
@@ -102,7 +102,7 @@
                 <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ selectedSettlement.skill_name }}</h3>
                 <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
                   {{ selectedSettlement.skill_slug }}
-                  <span v-if="selectedSettlement.author_name"> · 开发者 {{ selectedSettlement.author_name }}</span>
+                  <span v-if="selectedSettlement.author_name"> · {{ t('skills.admin.settlement.authorLabel') }} {{ selectedSettlement.author_name }}</span>
                 </p>
               </div>
               <SkillAdminStatusBadge
@@ -114,11 +114,11 @@
 
             <div class="mt-5 grid gap-4 md:grid-cols-2">
               <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900/60">
-                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">结算周期</p>
+                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.settlement.periodTitle') }}</p>
                 <p class="mt-2 text-lg font-semibold text-gray-900 dark:text-white">{{ selectedSettlement.period_label }}</p>
               </div>
               <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900/60">
-                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">应结金额</p>
+                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.settlement.payoutTitle') }}</p>
                 <p class="mt-2 text-lg font-semibold text-gray-900 dark:text-white">
                   {{ formatCurrency(selectedSettlement.payout_amount, selectedSettlement.currency) }}
                 </p>
@@ -128,49 +128,49 @@
             <div class="mt-5 rounded-2xl border border-gray-200 p-4 dark:border-dark-700">
               <div class="grid gap-4 md:grid-cols-2">
                 <div>
-                  <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">总流水</p>
+                  <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.settlement.grossTitle') }}</p>
                   <p class="mt-2 text-sm font-medium text-gray-900 dark:text-white">
                     {{ formatCurrency(selectedSettlement.gross_amount, selectedSettlement.currency) }}
                   </p>
                 </div>
                 <div>
-                  <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">平台抽成</p>
+                  <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.settlement.platformFeeTitle') }}</p>
                   <p class="mt-2 text-sm font-medium text-gray-900 dark:text-white">
                     {{ formatCurrency(selectedSettlement.platform_fee_amount, selectedSettlement.currency) }}
                   </p>
                 </div>
                 <div>
-                  <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">冻结金额</p>
+                  <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.settlement.frozenTitle') }}</p>
                   <p class="mt-2 text-sm font-medium text-gray-900 dark:text-white">
                     {{ formatCurrency(selectedSettlement.frozen_amount, selectedSettlement.currency) }}
                   </p>
                 </div>
                 <div>
-                  <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">最近更新</p>
+                  <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.settlement.updatedTitle') }}</p>
                   <p class="mt-2 text-sm font-medium text-gray-900 dark:text-white">{{ formatTime(selectedSettlement.updated_at) }}</p>
                 </div>
               </div>
             </div>
 
             <div class="mt-5">
-              <p class="text-sm font-medium text-gray-900 dark:text-white">结算备注</p>
+              <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('skills.admin.settlement.noteTitle') }}</p>
               <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400">
-                {{ selectedSettlement.note || '当前结算记录还没有附带备注。' }}
+                {{ selectedSettlement.note || t('skills.admin.settlement.noteEmpty') }}
               </p>
             </div>
           </template>
 
           <template v-else>
             <div class="rounded-2xl border border-dashed border-gray-200 px-4 py-10 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400">
-              选择一条结算记录后，这里会展示收入拆分、冻结金额和备注。
+              {{ t('skills.admin.settlement.detailEmpty') }}
             </div>
           </template>
         </div>
 
         <SkillAdminTimelineCard
-          title="结算流程"
-          description="展示技能收入从汇总、审核到实际结算的状态流转。"
-          empty-text="还没有选中结算记录。"
+          :title="t('skills.admin.settlement.timelineTitle')"
+          :description="t('skills.admin.settlement.timelineDescription')"
+          :empty-text="t('skills.admin.settlement.timelineEmpty')"
           :steps="settlementTimelineSteps"
         />
       </div>
@@ -202,7 +202,7 @@ import SkillAdminMetricGrid from '@/components/skills/admin/SkillAdminMetricGrid
 import SkillAdminStatusBadge from '@/components/skills/admin/SkillAdminStatusBadge.vue'
 import SkillAdminTimelineCard from '@/components/skills/admin/SkillAdminTimelineCard.vue'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const appStore = useAppStore()
 
 const loading = ref(false)
@@ -232,56 +232,56 @@ const filters = reactive({
 
 const settlementStatusOptions = [
   { value: 'all', label: t('common.all', '全部') },
-  { value: 'pending', label: '待结算' },
-  { value: 'ready', label: '待打款' },
-  { value: 'settled', label: '已结算' },
-  { value: 'frozen', label: '冻结中' },
-  { value: 'rejected', label: '已驳回' }
+  { value: 'pending', label: t('skills.admin.settlement.labels.pending') },
+  { value: 'ready', label: t('skills.admin.settlement.labels.ready') },
+  { value: 'settled', label: t('skills.admin.settlement.labels.settled') },
+  { value: 'frozen', label: t('skills.admin.settlement.labels.frozen') },
+  { value: 'rejected', label: t('skills.admin.settlement.labels.rejected') }
 ]
 
 const columns = computed<Column[]>(() => [
-  { key: 'skill_name', label: '技能' },
-  { key: 'author_name', label: '开发者' },
-  { key: 'period_label', label: '结算周期' },
-  { key: 'gross_amount', label: '总流水' },
-  { key: 'platform_fee_amount', label: '平台抽成' },
-  { key: 'payout_amount', label: '应结金额' },
-  { key: 'frozen_amount', label: '冻结金额' },
-  { key: 'settlement_status', label: '结算状态' },
-  { key: 'updated_at', label: '最近更新' },
+  { key: 'skill_name', label: t('skills.admin.settlement.columns.skill') },
+  { key: 'author_name', label: t('skills.admin.settlement.columns.author') },
+  { key: 'period_label', label: t('skills.admin.settlement.columns.period') },
+  { key: 'gross_amount', label: t('skills.admin.settlement.columns.gross') },
+  { key: 'platform_fee_amount', label: t('skills.admin.settlement.columns.platformFee') },
+  { key: 'payout_amount', label: t('skills.admin.settlement.columns.payout') },
+  { key: 'frozen_amount', label: t('skills.admin.settlement.columns.frozen') },
+  { key: 'settlement_status', label: t('skills.admin.settlement.columns.status') },
+  { key: 'updated_at', label: t('skills.admin.settlement.columns.updatedAt') },
   { key: 'actions', label: t('common.actions', '操作') }
 ])
 
 const metricCards = computed(() => [
   {
     key: 'pending',
-    label: '待结算金额',
+    label: t('skills.admin.settlement.metrics.pendingAmount'),
     value: formatCurrency(summary.pending_amount, summary.currency),
-    hint: `待处理技能 ${summary.pending_skill_count}`,
+    hint: t('skills.admin.settlement.metrics.pendingHint', { count: summary.pending_skill_count }),
     icon: 'calculator',
     tone: 'warning' as const
   },
   {
     key: 'settled',
-    label: '已结算金额',
+    label: t('skills.admin.settlement.metrics.settledAmount'),
     value: formatCurrency(summary.settled_amount, summary.currency),
-    hint: '已进入打款完成状态的金额汇总',
+    hint: t('skills.admin.settlement.metrics.settledHint'),
     icon: 'checkCircle',
     tone: 'success' as const
   },
   {
     key: 'frozen',
-    label: '冻结金额',
+    label: t('skills.admin.settlement.metrics.frozenAmount'),
     value: formatCurrency(summary.frozen_amount, summary.currency),
-    hint: '存在争议或待复核的结算金额',
+    hint: t('skills.admin.settlement.metrics.frozenHint'),
     icon: 'lock',
     tone: 'slate' as const
   },
   {
     key: 'currency',
-    label: '结算币种',
+    label: t('skills.admin.settlement.metrics.currency'),
     value: summary.currency,
-    hint: '当前页面金额展示所使用的币种',
+    hint: t('skills.admin.settlement.metrics.currencyHint'),
     icon: 'creditCard',
     tone: 'primary' as const
   }
@@ -296,37 +296,45 @@ const settlementTimelineSteps = computed(() => {
   return [
     {
       key: 'accrual',
-      title: '收入汇总',
-      description: `周期 ${item.period_label} 的技能收入已完成归集。`,
+      title: t('skills.admin.settlement.timeline.accrualTitle'),
+      description: t('skills.admin.settlement.timeline.accrualDesc', { period: item.period_label }),
       time: formatTime(item.created_at),
       status: 'done' as const
     },
     {
       key: 'audit',
-      title: status === 'rejected' ? '结算驳回' : status === 'frozen' ? '风险冻结' : '结算审核',
-      description: status === 'rejected'
-        ? item.note || '管理员已驳回当前结算记录。'
+      title: status === 'rejected'
+        ? t('skills.admin.settlement.timeline.auditRejectedTitle')
         : status === 'frozen'
-          ? item.note || '当前金额因风控或争议进入冻结状态。'
-          : '平台对收入、抽成和冻结额进行复核。',
+          ? t('skills.admin.settlement.timeline.auditFrozenTitle')
+          : t('skills.admin.settlement.timeline.auditTitle'),
+      description: status === 'rejected'
+        ? item.note || t('skills.admin.settlement.timeline.auditRejectedDesc')
+        : status === 'frozen'
+          ? item.note || t('skills.admin.settlement.timeline.auditFrozenDesc')
+          : t('skills.admin.settlement.timeline.auditDesc'),
       time: formatTime(item.updated_at),
       status: status === 'rejected' || status === 'frozen' ? 'danger' as const : status === 'pending' ? 'current' as const : 'done' as const
     },
     {
       key: 'ready',
-      title: status === 'ready' || status === 'settled' ? '待打款' : '等待出账',
+      title: status === 'ready' || status === 'settled'
+        ? t('skills.admin.settlement.timeline.readyTitle')
+        : t('skills.admin.settlement.timeline.readyPendingTitle'),
       description: status === 'ready' || status === 'settled'
-        ? '当前记录已通过审核，等待财务或系统执行结算。'
-        : '审核通过后会进入待打款状态。',
+        ? t('skills.admin.settlement.timeline.readyDesc')
+        : t('skills.admin.settlement.timeline.readyPendingDesc'),
       time: status === 'ready' || status === 'settled' ? formatTime(item.updated_at) : null,
       status: status === 'ready' ? 'current' as const : status === 'settled' ? 'done' as const : 'todo' as const
     },
     {
       key: 'settled',
-      title: status === 'settled' ? '已结算' : '完成打款',
+      title: status === 'settled'
+        ? t('skills.admin.settlement.timeline.settledTitle')
+        : t('skills.admin.settlement.timeline.settledPendingTitle'),
       description: status === 'settled'
-        ? '结算已完成，金额应已同步到收款侧。'
-        : '待记录进入 settled 后视为完成。',
+        ? t('skills.admin.settlement.timeline.settledDesc')
+        : t('skills.admin.settlement.timeline.settledPendingDesc'),
       time: status === 'settled' ? formatTime(item.updated_at) : null,
       status: status === 'settled' ? 'done' as const : 'todo' as const
     }
@@ -335,16 +343,16 @@ const settlementTimelineSteps = computed(() => {
 
 function settlementStatusLabel(status: SkillSettlementStatus): string {
   return {
-    pending: '待结算',
-    ready: '待打款',
-    settled: '已结算',
-    frozen: '冻结中',
-    rejected: '已驳回'
+    pending: t('skills.admin.settlement.labels.pending'),
+    ready: t('skills.admin.settlement.labels.ready'),
+    settled: t('skills.admin.settlement.labels.settled'),
+    frozen: t('skills.admin.settlement.labels.frozen'),
+    rejected: t('skills.admin.settlement.labels.rejected')
   }[status]
 }
 
 function formatCurrency(value: number, currency = 'CNY'): string {
-  return new Intl.NumberFormat('zh-CN', {
+  return new Intl.NumberFormat(locale.value.startsWith('zh') ? 'zh-CN' : 'en-US', {
     style: 'currency',
     currency,
     minimumFractionDigits: 2

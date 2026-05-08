@@ -56,7 +56,7 @@
                 </div>
                 <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   {{ row.skill_slug }}
-                  <span v-if="row.latest_published_version"> · 上个公开版本 {{ row.latest_published_version }}</span>
+                  <span v-if="row.latest_published_version"> · {{ t('skills.admin.review.previousPublishedVersion') }} {{ row.latest_published_version }}</span>
                 </div>
               </div>
             </template>
@@ -89,20 +89,20 @@
 
             <template #cell-actions="{ row }">
               <div class="flex items-center gap-2">
-                <button class="btn btn-secondary btn-sm" @click="selectReview(row)">查看</button>
+                <button class="btn btn-secondary btn-sm" @click="selectReview(row)">{{ t('common.view') }}</button>
                 <button
                   class="btn btn-primary btn-sm"
                   :disabled="actionLoading && actionTarget?.id === row.id"
                   @click="openAction('approve', row)"
                 >
-                  通过
+                  {{ t('skills.admin.review.approveShort') }}
                 </button>
                 <button
                   class="btn btn-danger btn-sm"
                   :disabled="actionLoading && actionTarget?.id === row.id"
                   @click="openAction('reject', row)"
                 >
-                  拒绝
+                  {{ t('skills.admin.review.rejectShort') }}
                 </button>
               </div>
             </template>
@@ -136,9 +136,9 @@
         />
 
         <SkillAdminTimelineCard
-          title="审核流转"
-          description="展示当前技能版本从提交、排队到审核结论的主要节点。"
-          empty-text="还没有选中技能版本。"
+          :title="t('skills.admin.review.timelineTitle')"
+          :description="t('skills.admin.review.timelineDescription')"
+          :empty-text="t('skills.admin.review.timelineEmpty')"
           :steps="reviewTimelineSteps"
         />
       </div>
@@ -219,67 +219,67 @@ const filters = reactive({
 
 const reviewStatusOptions = [
   { value: 'all', label: t('common.all', '全部') },
-  { value: 'pending', label: '待审核' },
-  { value: 'approved', label: '已通过' },
-  { value: 'rejected', label: '已拒绝' },
-  { value: 'changes_requested', label: '待修改' }
+  { value: 'pending', label: t('skills.admin.review.labels.pending') },
+  { value: 'approved', label: t('skills.admin.review.labels.approved') },
+  { value: 'rejected', label: t('skills.admin.review.labels.rejected') },
+  { value: 'changes_requested', label: t('skills.admin.review.labels.changesRequested') }
 ]
 
 const riskOptions = [
   { value: 'all', label: t('common.all', '全部') },
-  { value: 'low', label: '低风险' },
-  { value: 'medium', label: '中风险' },
-  { value: 'high', label: '高风险' }
+  { value: 'low', label: t('skills.admin.review.labels.low') },
+  { value: 'medium', label: t('skills.admin.review.labels.medium') },
+  { value: 'high', label: t('skills.admin.review.labels.high') }
 ]
 
 const visibilityOptions = [
   { value: 'all', label: t('common.all', '全部') },
-  { value: 'public', label: '公开' },
-  { value: 'private', label: '私有' },
-  { value: 'force_private', label: '强制私有' }
+  { value: 'public', label: t('skills.admin.review.labels.public') },
+  { value: 'private', label: t('skills.admin.review.labels.private') },
+  { value: 'force_private', label: t('skills.admin.review.labels.forcePrivate') }
 ]
 
 const columns = computed<Column[]>(() => [
-  { key: 'skill_name', label: '技能 / 版本' },
-  { key: 'author_name', label: '提交者' },
-  { key: 'review_status', label: '审核状态' },
-  { key: 'visibility', label: '可见性' },
-  { key: 'risk_level', label: '风险等级' },
-  { key: 'submitted_at', label: '提交时间' },
-  { key: 'reviewed_at', label: '处理时间' },
+  { key: 'skill_name', label: t('skills.admin.review.columns.skillVersion') },
+  { key: 'author_name', label: t('skills.admin.review.columns.author') },
+  { key: 'review_status', label: t('skills.admin.review.columns.status') },
+  { key: 'visibility', label: t('skills.admin.review.columns.visibility') },
+  { key: 'risk_level', label: t('skills.admin.review.columns.riskLevel') },
+  { key: 'submitted_at', label: t('skills.admin.review.columns.submittedAt') },
+  { key: 'reviewed_at', label: t('skills.admin.review.columns.reviewedAt') },
   { key: 'actions', label: t('common.actions', '操作') }
 ])
 
 const metricCards = computed(() => [
   {
     key: 'pending',
-    label: '待审核版本',
+    label: t('skills.admin.review.metrics.pendingVersions'),
     value: summary.pending_count,
-    hint: '当前审核队列中等待管理员处理的版本数',
+    hint: t('skills.admin.review.metrics.pendingHint'),
     icon: 'clipboard',
     tone: 'warning' as const
   },
   {
     key: 'approved',
-    label: '已通过版本',
+    label: t('skills.admin.review.metrics.approvedVersions'),
     value: summary.approved_count,
-    hint: '已进入后续发布或公开流程的版本',
+    hint: t('skills.admin.review.metrics.approvedHint'),
     icon: 'checkCircle',
     tone: 'success' as const
   },
   {
     key: 'rejected',
-    label: '已拒绝版本',
+    label: t('skills.admin.review.metrics.rejectedVersions'),
     value: summary.rejected_count,
-    hint: '被驳回并需要提交方整改的版本',
+    hint: t('skills.admin.review.metrics.rejectedHint'),
     icon: 'xCircle',
     tone: 'danger' as const
   },
   {
     key: 'highRisk',
-    label: '高风险提交',
+    label: t('skills.admin.review.metrics.highRiskSubmissions'),
     value: summary.high_risk_count,
-    hint: '建议优先人工复核的版本',
+    hint: t('skills.admin.review.metrics.highRiskHint'),
     icon: 'exclamationTriangle',
     tone: 'slate' as const
   }
@@ -300,35 +300,41 @@ const reviewTimelineSteps = computed(() => {
   return [
     {
       key: 'submitted',
-      title: '版本提交',
-      description: '提交方发起新的技能版本审核。',
+      title: t('skills.admin.review.timeline.submittedTitle'),
+      description: t('skills.admin.review.timeline.submittedDesc'),
       time: formatTime(item.submitted_at),
       status: 'done' as const
     },
     {
       key: 'queued',
-      title: '进入审核队列',
-      description: item.risk_level === 'high' ? '高风险版本，建议优先处理。' : '等待审核员查看版本内容与治理规则。',
+      title: t('skills.admin.review.timeline.queuedTitle'),
+      description: item.risk_level === 'high'
+        ? t('skills.admin.review.timeline.queuedHighRiskDesc')
+        : t('skills.admin.review.timeline.queuedDesc'),
       time: formatTime(item.updated_at),
       status: hasDecision ? 'done' as const : 'current' as const
     },
     {
       key: 'decision',
-      title: isRejected ? '审核拒绝' : hasDecision ? '审核通过' : '等待审核结论',
-      description: isRejected
-        ? item.rejection_reason || '管理员已拒绝该版本。'
+      title: isRejected
+        ? t('skills.admin.review.timeline.decisionRejectedTitle')
         : hasDecision
-          ? item.review_note || '管理员已通过该版本审核。'
-          : '管理员尚未提交最终审核动作。',
+          ? t('skills.admin.review.timeline.decisionApprovedTitle')
+          : t('skills.admin.review.timeline.decisionPendingTitle'),
+      description: isRejected
+        ? item.rejection_reason || t('skills.admin.review.timeline.decisionRejectedDesc')
+        : hasDecision
+          ? item.review_note || t('skills.admin.review.timeline.decisionApprovedDesc')
+          : t('skills.admin.review.timeline.decisionPendingDesc'),
       time: item.reviewed_at ? formatTime(item.reviewed_at) : null,
       status: isRejected ? 'danger' as const : hasDecision ? 'done' as const : 'todo' as const
     },
     {
       key: 'publish',
-      title: '后续发布 / 上线',
+      title: t('skills.admin.review.timeline.publishTitle'),
       description: item.review_status === 'approved'
-        ? '版本可进入主线程后续的发布、公开或灰度流程。'
-        : '待审核通过后，才能进入对外发布链路。',
+        ? t('skills.admin.review.timeline.publishApprovedDesc')
+        : t('skills.admin.review.timeline.publishPendingDesc'),
       time: item.review_status === 'approved' ? formatTime(item.reviewed_at || item.updated_at) : null,
       status: item.review_status === 'approved' ? 'done' as const : item.review_status === 'rejected' ? 'todo' as const : 'todo' as const
     }
@@ -337,26 +343,26 @@ const reviewTimelineSteps = computed(() => {
 
 function reviewStatusLabel(status: SkillReviewStatus): string {
   return {
-    pending: '待审核',
-    approved: '已通过',
-    rejected: '已拒绝',
-    changes_requested: '待修改'
+    pending: t('skills.admin.review.labels.pending'),
+    approved: t('skills.admin.review.labels.approved'),
+    rejected: t('skills.admin.review.labels.rejected'),
+    changes_requested: t('skills.admin.review.labels.changesRequested')
   }[status]
 }
 
 function visibilityLabel(status: SkillVisibility): string {
   return {
-    public: '公开',
-    private: '私有',
-    force_private: '强制私有'
+    public: t('skills.admin.review.labels.public'),
+    private: t('skills.admin.review.labels.private'),
+    force_private: t('skills.admin.review.labels.forcePrivate')
   }[status]
 }
 
 function riskLabel(level: SkillRiskLevel): string {
   return {
-    low: '低风险',
-    medium: '中风险',
-    high: '高风险'
+    low: t('skills.admin.review.labels.low'),
+    medium: t('skills.admin.review.labels.medium'),
+    high: t('skills.admin.review.labels.high')
   }[level]
 }
 
@@ -449,13 +455,13 @@ async function handleActionSubmit(payload: { note: string }) {
         note: payload.note,
         reason: payload.note || undefined
       })
-      appStore.showSuccess(receipt.message || '技能版本已通过审核')
+      appStore.showSuccess(receipt.message || t('skills.admin.review.toastApproved'))
     } else if (dialogAction.value === 'reject') {
       const receipt = await adminSkillsAPI.rejectReview(actionTarget.value.id, {
         note: payload.note,
         reason: payload.note
       })
-      appStore.showSuccess(receipt.message || '技能版本已拒绝')
+      appStore.showSuccess(receipt.message || t('skills.admin.review.toastRejected'))
     }
     closeDialog()
     await loadReviews()

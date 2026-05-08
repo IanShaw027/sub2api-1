@@ -25,7 +25,9 @@
             <div class="truncate text-sm text-gray-700 dark:text-dark-200">
               {{ fileName || t('admin.proxies.dataImportSelectFile') }}
             </div>
-            <div class="text-xs text-gray-500 dark:text-dark-400">JSON (.json)</div>
+            <div class="text-xs text-gray-500 dark:text-dark-400">
+              {{ t('common.jsonFileFormat', 'JSON (.json)') }}
+            </div>
           </div>
           <button type="button" class="btn btn-secondary shrink-0" @click="openFilePicker">
             {{ t('common.chooseFile') }}
@@ -59,7 +61,7 @@
             class="mt-2 max-h-48 overflow-auto rounded-lg bg-gray-50 p-3 font-mono text-xs dark:bg-dark-800"
           >
             <div v-for="(item, idx) in errorItems" :key="idx" class="whitespace-pre-wrap">
-              {{ item.kind }} {{ item.name || item.proxy_key || '-' }} — {{ item.message }}
+              {{ item.kind }} {{ item.name || item.proxy_key || t('common.notAvailable') }} — {{ item.message }}
             </div>
           </div>
         </div>
@@ -156,7 +158,7 @@ const readFileAsText = async (sourceFile: File): Promise<string> => {
   return await new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(String(reader.result ?? ''))
-    reader.onerror = () => reject(reader.error || new Error('Failed to read file'))
+    reader.onerror = () => reject(reader.error || new Error(t('common.failedToReadFile')))
     reader.readAsText(sourceFile)
   })
 }

@@ -11,6 +11,9 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 type BadgeMode = 'review' | 'visibility' | 'governance' | 'runtime' | 'settlement'
 
@@ -26,7 +29,7 @@ const props = withDefaults(defineProps<{
 
 const displayLabel = computed(() => {
   if (props.label && props.label.trim()) return props.label
-  if (!props.status) return '未知状态'
+  if (!props.status) return t('common.unknown')
   return props.status.replace(/[_-]/g, ' ')
 })
 

@@ -70,6 +70,15 @@ const props = defineProps<{
 
 const { t } = useI18n()
 
+const translateOrFallback = (
+  key: string,
+  params: Record<string, string | number> | undefined,
+  fallback: string
+): string => {
+  const translated = params ? t(key, params) : t(key)
+  return translated === key ? fallback : translated
+}
+
 const geminiCredentials = computed(() => ({
   ...(props.account.credentials || {}),
   ...(props.account.extra || {})
@@ -120,13 +129,23 @@ const resetCountdown = computed(() => {
   const diffMinutes = Math.floor(diffSeconds / 60)
   const diffHours = Math.floor(diffMinutes / 60)
 
-  if (diffMinutes < 1) return `${diffSeconds}s`
+  if (diffMinutes < 1) {
+    return translateOrFallback(
+      'admin.accounts.gemini.rateLimit.secondsShort',
+      { n: diffSeconds },
+      `${diffSeconds}s`
+    )
+  }
   if (diffHours < 1) {
     const secs = diffSeconds % 60
-    return `${diffMinutes}m ${secs}s`
+    return translateOrFallback(
+      'admin.accounts.gemini.rateLimit.minutesSeconds',
+      { m: diffMinutes, s: secs },
+      `${diffMinutes}m ${secs}s`
+    )
   }
   const mins = diffMinutes % 60
-  return `${diffHours}h ${mins}m`
+  return t('common.time.countdown.hoursMinutes', { h: diffHours, m: mins })
 })
 
 const isUrgent = computed(() => {
@@ -196,25 +215,41 @@ const isGoogleOne = computed(() => {
 
 const tierLabel = computed(() => {
   if (isVertexServiceAccount.value) {
-    return 'Vertex AI'
+    return translateOrFallback('admin.accounts.gemini.tier.vertex', undefined, 'Vertex AI')
   }
 
   if (isCodeAssist.value) {
-    return codeAssistPlanBucket.value === 'standard' ? 'GCP Standard' : 'GCP Enterprise'
+    return codeAssistPlanBucket.value === 'standard'
+      ? translateOrFallback('admin.accounts.gemini.tier.gcp.standard', undefined, 'GCP Standard')
+      : translateOrFallback('admin.accounts.gemini.tier.gcp.enterprise', undefined, 'GCP Enterprise')
   }
 
   if (isGoogleOne.value) {
-    if (googleOnePlanBucket.value === 'ultra') return 'Google One Ultra'
-    if (googleOnePlanBucket.value === 'pro') return 'Google One Pro'
-    if (googleOnePlanBucket.value === 'free') return 'Google One Free'
-    if (legacyTier.value === 'AI_PREMIUM') return 'Google One Pro'
-    if (legacyTier.value === 'GOOGLE_ONE_UNLIMITED') return 'Google One Ultra'
-    return 'Google One'
+    if (googleOnePlanBucket.value === 'ultra') {
+      return translateOrFallback('admin.accounts.gemini.tier.googleOne.ultra', undefined, 'Google One Ultra')
+    }
+    if (googleOnePlanBucket.value === 'pro') {
+      return translateOrFallback('admin.accounts.gemini.tier.googleOne.pro', undefined, 'Google One Pro')
+    }
+    if (googleOnePlanBucket.value === 'free') {
+      return translateOrFallback('admin.accounts.gemini.tier.googleOne.free', undefined, 'Google One Free')
+    }
+    if (legacyTier.value === 'AI_PREMIUM') {
+      return translateOrFallback('admin.accounts.gemini.tier.googleOne.pro', undefined, 'Google One Pro')
+    }
+    if (legacyTier.value === 'GOOGLE_ONE_UNLIMITED') {
+      return translateOrFallback('admin.accounts.gemini.tier.googleOne.ultra', undefined, 'Google One Ultra')
+    }
+    return translateOrFallback('admin.accounts.oauth.gemini.googleOneTitle', undefined, 'Google One')
   }
 
-  if (canonicalTier.value === 'aistudio_paid') return 'AI Studio Pay-as-you-go'
-  if (canonicalTier.value === 'aistudio_free') return 'AI Studio Free Tier'
-  return 'AI Studio'
+  if (canonicalTier.value === 'aistudio_paid') {
+    return translateOrFallback('admin.accounts.gemini.tier.aiStudio.paid', undefined, 'AI Studio Pay-as-you-go')
+  }
+  if (canonicalTier.value === 'aistudio_free') {
+    return translateOrFallback('admin.accounts.gemini.tier.aiStudio.free', undefined, 'AI Studio Free Tier')
+  }
+  return translateOrFallback('admin.features.aiStudio.title', undefined, 'AI Studio')
 })
 
 const tierBadgeClass = computed(() => {

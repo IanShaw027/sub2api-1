@@ -524,21 +524,21 @@
               </div>
               <div class="min-w-0">
                 <span class="block text-sm font-medium text-gray-900 dark:text-white">
-                  Google One
+                  {{ t('admin.accounts.oauth.gemini.googleOneTitle') }}
                 </span>
                 <span class="text-xs text-gray-500 dark:text-gray-400">
-                  个人账号，享受 Google One 订阅配额
+                  {{ t('admin.accounts.oauth.gemini.googleOneDesc') }}
                 </span>
                 <div class="mt-2 flex flex-wrap gap-1">
                   <span
                     class="rounded bg-purple-100 px-2 py-0.5 text-[10px] font-semibold text-purple-700 dark:bg-purple-900/40 dark:text-purple-300"
                   >
-                    推荐个人用户
+                    {{ t('admin.accounts.gemini.oauthType.badges.personal') }}
                   </span>
                   <span
                     class="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
                   >
-                    无需 GCP
+                    {{ t('admin.accounts.gemini.oauthType.badges.noGcp') }}
                   </span>
                 </div>
               </div>
@@ -567,13 +567,13 @@
               </div>
               <div class="min-w-0">
                 <span class="block text-sm font-medium text-gray-900 dark:text-white">
-                  GCP Code Assist
+                  {{ t('admin.accounts.oauth.gemini.codeAssistTitle') }}
                 </span>
                 <span class="text-xs text-gray-500 dark:text-gray-400">
-                  企业级，需要 GCP 项目
+                  {{ t('admin.accounts.oauth.gemini.codeAssistDesc') }}
                 </span>
                 <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  需要激活 GCP 项目并绑定信用卡
+                  {{ t('admin.accounts.oauth.gemini.codeAssistRequirement') }}
                   <a
                     :href="geminiHelpLinks.gcpProject"
                     class="ml-1 text-blue-600 hover:underline dark:text-blue-400"
@@ -587,12 +587,12 @@
                   <span
                     class="rounded bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
                   >
-                    企业用户
+                    {{ t('admin.accounts.gemini.oauthType.badges.enterprise') }}
                   </span>
                   <span
                     class="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
                   >
-                    高并发
+                    {{ t('admin.accounts.gemini.oauthType.badges.highConcurrency') }}
                   </span>
                 </div>
               </div>
@@ -752,7 +752,7 @@
       <!-- Manual Kiro API Key config -->
       <div v-if="form.platform === 'kiro' && kiroAccountType === 'apikey'" class="space-y-4">
         <p class="rounded-lg border border-cyan-200 bg-cyan-50/60 p-3 text-sm text-cyan-800 dark:border-cyan-900/40 dark:bg-cyan-950/20 dark:text-cyan-200">
-          Kiro version、system version、Node.js version 等运行参数由系统配置统一管理。
+          {{ t('admin.accounts.kiro.runtimeManagedHint') }}
         </p>
         <div>
           <label class="input-label">{{ t('admin.accounts.apiKeyRequired') }}</label>
@@ -937,7 +937,7 @@
       <!-- Vertex Service Account -->
       <div v-if="(form.platform === 'gemini' || form.platform === 'anthropic') && accountCategory === 'service_account'" class="space-y-4">
         <div>
-          <label class="input-label">Service Account JSON</label>
+          <label class="input-label">{{ t('admin.accounts.vertexSaJsonLabel') }}</label>
           <input
             ref="vertexServiceAccountFileInput"
             type="file"
@@ -980,8 +980,8 @@
               v-if="vertexClientEmail"
               class="mt-3 rounded-md border border-sky-200 bg-white px-3 py-2 text-xs text-sky-900 dark:border-sky-800/50 dark:bg-dark-800 dark:text-sky-200"
             >
-              <div class="truncate">Project ID: <span class="font-mono">{{ vertexProjectId }}</span></div>
-              <div class="truncate">Client Email: <span class="font-mono">{{ vertexClientEmail }}</span></div>
+              <div class="truncate">{{ t('admin.accounts.vertexProjectIdLabel') }}: <span class="font-mono">{{ vertexProjectId }}</span></div>
+              <div class="truncate">{{ t('admin.accounts.vertexClientEmailLabel') }}: <span class="font-mono">{{ vertexClientEmail }}</span></div>
             </div>
           </div>
           <p class="input-hint">{{ t('admin.accounts.vertexSaJsonUploadHint') }}</p>
@@ -989,7 +989,7 @@
 
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label class="input-label">Project ID</label>
+            <label class="input-label">{{ t('admin.accounts.vertexProjectIdLabel') }}</label>
             <input
               v-model="vertexProjectId"
               type="text"
@@ -999,7 +999,7 @@
             />
           </div>
           <div>
-            <label class="input-label">Location</label>
+            <label class="input-label">{{ t('admin.accounts.vertexLocationLabel') }}</label>
             <select
               v-model="vertexLocation"
               required
@@ -3089,7 +3089,7 @@
                 rel="noreferrer"
                 class="text-sm text-blue-600 hover:underline dark:text-blue-400"
               >
-                修改归属地
+                {{ t('admin.accounts.gemini.setupGuide.links.changeCountry') }}
               </a>
               <span class="text-gray-400">·</span>
               <a
@@ -3142,21 +3142,21 @@
                 <td class="px-3 py-2 text-gray-900 dark:text-white">
                   {{ t('admin.accounts.gemini.quotaPolicy.rows.googleOne.channel') }}
                 </td>
-                <td class="px-3 py-2 text-gray-600 dark:text-gray-400">Free</td>
+                <td class="px-3 py-2 text-gray-600 dark:text-gray-400">{{ t('admin.accounts.gemini.tier.googleOne.free') }}</td>
                 <td class="px-3 py-2 text-gray-600 dark:text-gray-400">
                   {{ t('admin.accounts.gemini.quotaPolicy.rows.googleOne.limitsFree') }}
                 </td>
               </tr>
               <tr>
                 <td class="px-3 py-2 text-gray-900 dark:text-white"></td>
-                <td class="px-3 py-2 text-gray-600 dark:text-gray-400">Pro</td>
+                <td class="px-3 py-2 text-gray-600 dark:text-gray-400">{{ t('admin.accounts.gemini.tier.googleOne.pro') }}</td>
                 <td class="px-3 py-2 text-gray-600 dark:text-gray-400">
                   {{ t('admin.accounts.gemini.quotaPolicy.rows.googleOne.limitsPro') }}
                 </td>
               </tr>
               <tr>
                 <td class="px-3 py-2 text-gray-900 dark:text-white"></td>
-                <td class="px-3 py-2 text-gray-600 dark:text-gray-400">Ultra</td>
+                <td class="px-3 py-2 text-gray-600 dark:text-gray-400">{{ t('admin.accounts.gemini.tier.googleOne.ultra') }}</td>
                 <td class="px-3 py-2 text-gray-600 dark:text-gray-400">
                   {{ t('admin.accounts.gemini.quotaPolicy.rows.googleOne.limitsUltra') }}
                 </td>
@@ -3165,14 +3165,14 @@
                 <td class="px-3 py-2 text-gray-900 dark:text-white">
                   {{ t('admin.accounts.gemini.quotaPolicy.rows.gcp.channel') }}
                 </td>
-                <td class="px-3 py-2 text-gray-600 dark:text-gray-400">Standard</td>
+                <td class="px-3 py-2 text-gray-600 dark:text-gray-400">{{ t('admin.accounts.gemini.tier.gcp.standard') }}</td>
                 <td class="px-3 py-2 text-gray-600 dark:text-gray-400">
                   {{ t('admin.accounts.gemini.quotaPolicy.rows.gcp.limitsStandard') }}
                 </td>
               </tr>
               <tr>
                 <td class="px-3 py-2 text-gray-900 dark:text-white"></td>
-                <td class="px-3 py-2 text-gray-600 dark:text-gray-400">Enterprise</td>
+                <td class="px-3 py-2 text-gray-600 dark:text-gray-400">{{ t('admin.accounts.gemini.tier.gcp.enterprise') }}</td>
                 <td class="px-3 py-2 text-gray-600 dark:text-gray-400">
                   {{ t('admin.accounts.gemini.quotaPolicy.rows.gcp.limitsEnterprise') }}
                 </td>
@@ -3181,14 +3181,14 @@
                 <td class="px-3 py-2 text-gray-900 dark:text-white">
                   {{ t('admin.accounts.gemini.quotaPolicy.rows.aiStudio.channel') }}
                 </td>
-                <td class="px-3 py-2 text-gray-600 dark:text-gray-400">Free</td>
+                <td class="px-3 py-2 text-gray-600 dark:text-gray-400">{{ t('admin.accounts.gemini.tier.aiStudio.free') }}</td>
                 <td class="px-3 py-2 text-gray-600 dark:text-gray-400">
                   {{ t('admin.accounts.gemini.quotaPolicy.rows.aiStudio.limitsFree') }}
                 </td>
               </tr>
               <tr>
                 <td class="px-3 py-2 text-gray-900 dark:text-white"></td>
-                <td class="px-3 py-2 text-gray-600 dark:text-gray-400">Paid</td>
+                <td class="px-3 py-2 text-gray-600 dark:text-gray-400">{{ t('admin.accounts.gemini.tier.aiStudio.paid') }}</td>
                 <td class="px-3 py-2 text-gray-600 dark:text-gray-400">
                   {{ t('admin.accounts.gemini.quotaPolicy.rows.aiStudio.limitsPaid') }}
                 </td>
