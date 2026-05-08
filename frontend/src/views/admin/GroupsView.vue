@@ -3289,7 +3289,13 @@ import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/app";
 import { useOnboardingStore } from "@/stores/onboarding";
 import { adminAPI } from "@/api/admin";
-import type { AdminGroup, GroupPlatform, SubscriptionType } from "@/types";
+import type {
+  AdminGroup,
+  CreateGroupRequest,
+  GroupPlatform,
+  SubscriptionType,
+  UpdateGroupRequest,
+} from "@/types";
 import type { Column } from "@/components/common/types";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import TablePageLayout from "@/components/layout/TablePageLayout.vue";
@@ -4233,6 +4239,14 @@ const normalizeNullablePrice = (
 const openAIImageTypeSelectionMessage = () =>
   t("admin.groups.imagePricing.openaiTypeRequired");
 
+type OpenAIImageTypeSelectionRequest = (
+  | CreateGroupRequest
+  | UpdateGroupRequest
+) & {
+  openai_image_codex_enabled?: boolean;
+  openai_image_web2api_enabled?: boolean;
+};
+
 const normalizeOpenAIImageTypeSelection = (
   form: typeof createForm | typeof editForm,
 ) => {
@@ -4244,7 +4258,9 @@ const normalizeOpenAIImageTypeSelection = (
   }
 };
 
-const applyOpenAIImageTypeSelection = (payload: Record<string, any>) => {
+const applyOpenAIImageTypeSelection = (
+  payload: OpenAIImageTypeSelectionRequest,
+) => {
   if (payload.platform !== "openai") {
     delete payload.openai_image_codex_enabled;
     delete payload.openai_image_web2api_enabled;
@@ -4331,7 +4347,10 @@ const handleCreateGroup = async () => {
   submitting.value = true;
   try {
     // 构建请求数据，包含模型路由配置
-    const requestData: Record<string, any> = {
+    const requestData: CreateGroupRequest & {
+      openai_image_codex_enabled?: boolean;
+      openai_image_web2api_enabled?: boolean;
+    } = {
       ...createForm,
       daily_limit_usd: normalizeOptionalLimit(
         createForm.daily_limit_usd as number | string | null,
@@ -4486,7 +4505,10 @@ const handleUpdateGroup = async () => {
   submitting.value = true;
   try {
     // 转换 fallback_group_id: null -> 0 (后端使用 0 表示清除)
-    const payload: Record<string, any> = {
+    const payload: UpdateGroupRequest & {
+      openai_image_codex_enabled?: boolean;
+      openai_image_web2api_enabled?: boolean;
+    } = {
       ...editForm,
       daily_limit_usd: normalizeOptionalLimit(
         editForm.daily_limit_usd as number | string | null,
