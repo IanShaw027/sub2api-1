@@ -102,7 +102,7 @@ func TestGeminiOAuthService_GenerateAuthURL_RedirectURIStrategy(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			svc := NewGeminiOAuthService(nil, nil, nil, nil, tt.cfg)
+			svc := NewGeminiOAuthService(nil, nil, nil, tt.cfg)
 			got, err := svc.GenerateAuthURL(context.Background(), nil, "https://example.com/auth/callback", tt.projectID, tt.oauthType, "")
 			if tt.wantErrSubstr != "" {
 				if err == nil {
@@ -145,7 +145,7 @@ func TestGeminiOAuthService_GenerateAuthURL_RedirectURIStrategy(t *testing.T) {
 func TestGeminiOAuthServiceGenerateAuthURLFailsWhenProxyMissing(t *testing.T) {
 	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
 	proxyID := int64(404)
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, &mockGeminiOAuthClient{}, nil, nil, &config.Config{})
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, &mockGeminiOAuthClient{}, nil, &config.Config{})
 
 	_, err := svc.GenerateAuthURL(context.Background(), &proxyID, "https://example.com/auth/callback", "", "code_assist", "")
 
@@ -178,7 +178,7 @@ func TestGeminiOAuthServiceExchangeCodeUsesSessionProxyAndRejectsOverride(t *tes
 		loadCodeAssistFunc: func(ctx context.Context, accessToken, proxyURL string, req *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
 			return &geminicli.LoadCodeAssistResponse{CloudAICompanionProject: "project-1"}, nil
 		},
-	}, nil, &config.Config{})
+	}, &config.Config{})
 
 	result, err := svc.GenerateAuthURL(context.Background(), &proxyID, "https://example.com/auth/callback", "project-1", "code_assist", "")
 	if err != nil {
@@ -457,54 +457,6 @@ func TestExtractTierIDFromAllowedTiers(t *testing.T) {
 }
 
 // =====================
-// 新增测试：inferGoogleOneTier
-// =====================
-
-func TestInferGoogleOneTier(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name         string
-		storageBytes int64
-		want         string
-	}{
-		// 边界：<= 0
-		{name: "0 bytes -> unknown", storageBytes: 0, want: GeminiTierGoogleOneUnknown},
-		{name: "负数 -> unknown", storageBytes: -1, want: GeminiTierGoogleOneUnknown},
-
-		// > 100TB -> ultra
-		{name: "> 100TB -> ultra", storageBytes: int64(StorageTierUnlimited) + 1, want: GeminiTierGoogleAIUltra},
-		{name: "200TB -> ultra", storageBytes: 200 * int64(TB), want: GeminiTierGoogleAIUltra},
-
-		// >= 2TB -> pro (但 <= 100TB)
-		{name: "正好 2TB -> pro", storageBytes: int64(StorageTierAIPremium), want: GeminiTierGoogleAIPro},
-		{name: "5TB -> pro", storageBytes: 5 * int64(TB), want: GeminiTierGoogleAIPro},
-		{name: "100TB 正好 -> pro (不是 > 100TB)", storageBytes: int64(StorageTierUnlimited), want: GeminiTierGoogleAIPro},
-
-		// >= 15GB -> free (但 < 2TB)
-		{name: "正好 15GB -> free", storageBytes: int64(StorageTierFree), want: GeminiTierGoogleOneFree},
-		{name: "100GB -> free", storageBytes: 100 * int64(GB), want: GeminiTierGoogleOneFree},
-		{name: "略低于 2TB -> free", storageBytes: int64(StorageTierAIPremium) - 1, want: GeminiTierGoogleOneFree},
-
-		// < 15GB -> unknown
-		{name: "1GB -> unknown", storageBytes: int64(GB), want: GeminiTierGoogleOneUnknown},
-		{name: "略低于 15GB -> unknown", storageBytes: int64(StorageTierFree) - 1, want: GeminiTierGoogleOneUnknown},
-		{name: "1 byte -> unknown", storageBytes: 1, want: GeminiTierGoogleOneUnknown},
-	}
-
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := inferGoogleOneTier(tt.storageBytes)
-			if got != tt.want {
-				t.Fatalf("inferGoogleOneTier(%d) = %q, want %q", tt.storageBytes, got, tt.want)
-			}
-		})
-	}
-}
-
-// =====================
 // 新增测试：isNonRetryableGeminiOAuthError
 // =====================
 
@@ -545,7 +497,7 @@ func TestIsNonRetryableGeminiOAuthError(t *testing.T) {
 func TestGeminiOAuthService_BuildAccountCredentials(t *testing.T) {
 	t.Parallel()
 
-	svc := NewGeminiOAuthService(nil, nil, nil, nil, &config.Config{})
+	svc := NewGeminiOAuthService(nil, nil, nil, &config.Config{})
 	defer svc.Stop()
 
 	t.Run("完整字段", func(t *testing.T) {
@@ -566,7 +518,6 @@ func TestGeminiOAuthService_BuildAccountCredentials(t *testing.T) {
 			TierID:       "STANDARD",
 			OAuthType:    "code_assist",
 			Extra: map[string]any{
-				"drive_storage_limit":             int64(2199023255552),
 				"gemini_paid_tier_id":             "g1-pro-tier",
 				"gemini_has_onboarded_previously": true,
 				"gemini_available_credits": []geminicli.AvailableCredit{
@@ -592,9 +543,6 @@ func TestGeminiOAuthService_BuildAccountCredentials(t *testing.T) {
 		assertCredStr(t, creds, "oauth_type", "code_assist")
 		assertCredStr(t, creds, "expires_at", "1700000000")
 
-		if _, ok := creds["drive_storage_limit"]; !ok {
-			t.Fatal("extra 字段 drive_storage_limit 未包含在 creds 中")
-		}
 		if _, ok := creds["gemini_paid_tier_id"]; !ok {
 			t.Fatal("extra 字段 gemini_paid_tier_id 未包含在 creds 中")
 		}
@@ -836,7 +784,7 @@ func TestGeminiOAuthService_GetOAuthConfig(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			svc := NewGeminiOAuthService(nil, nil, nil, nil, tt.cfg)
+			svc := NewGeminiOAuthService(nil, nil, nil, tt.cfg)
 			defer svc.Stop()
 
 			result := svc.GetOAuthConfig()
@@ -858,7 +806,7 @@ func TestGeminiOAuthService_GetOAuthConfig(t *testing.T) {
 func TestGeminiOAuthService_Stop_NoPanic(t *testing.T) {
 	t.Parallel()
 
-	svc := NewGeminiOAuthService(nil, nil, nil, nil, &config.Config{})
+	svc := NewGeminiOAuthService(nil, nil, nil, &config.Config{})
 
 	// 调用 Stop 不应 panic
 	svc.Stop()
@@ -971,18 +919,6 @@ func (m *mockGeminiProxyRepo) ListAccountSummariesByProxyID(ctx context.Context,
 	panic("not impl")
 }
 
-// mockDriveClient implements geminicli.DriveClient for tests.
-type mockDriveClient struct {
-	getStorageQuotaFunc func(ctx context.Context, accessToken, proxyURL string) (*geminicli.DriveStorageInfo, error)
-}
-
-func (m *mockDriveClient) GetStorageQuota(ctx context.Context, accessToken, proxyURL string) (*geminicli.DriveStorageInfo, error) {
-	if m.getStorageQuotaFunc != nil {
-		return m.getStorageQuotaFunc(ctx, accessToken, proxyURL)
-	}
-	return nil, fmt.Errorf("drive API not available in test")
-}
-
 // =====================
 // 新增测试：GeminiOAuthService.RefreshToken（含重试逻辑）
 // =====================
@@ -1002,7 +938,7 @@ func TestGeminiOAuthService_RefreshToken_Success(t *testing.T) {
 		},
 	}
 
-	svc := NewGeminiOAuthService(nil, client, nil, nil, &config.Config{})
+	svc := NewGeminiOAuthService(nil, client, nil, &config.Config{})
 	defer svc.Stop()
 
 	info, err := svc.RefreshToken(context.Background(), "code_assist", "old-refresh", "")
@@ -1029,7 +965,7 @@ func TestGeminiOAuthService_RefreshToken_NonRetryableError(t *testing.T) {
 		},
 	}
 
-	svc := NewGeminiOAuthService(nil, client, nil, nil, &config.Config{})
+	svc := NewGeminiOAuthService(nil, client, nil, &config.Config{})
 	defer svc.Stop()
 
 	_, err := svc.RefreshToken(context.Background(), "code_assist", "revoked-token", "")
@@ -1058,7 +994,7 @@ func TestGeminiOAuthService_RefreshToken_RetryableError(t *testing.T) {
 		},
 	}
 
-	svc := NewGeminiOAuthService(nil, client, nil, nil, &config.Config{})
+	svc := NewGeminiOAuthService(nil, client, nil, &config.Config{})
 	defer svc.Stop()
 
 	info, err := svc.RefreshToken(context.Background(), "code_assist", "rt", "")
@@ -1080,7 +1016,7 @@ func TestGeminiOAuthService_RefreshToken_RetryableError(t *testing.T) {
 func TestGeminiOAuthService_RefreshAccountToken_NotGeminiOAuth(t *testing.T) {
 	t.Parallel()
 
-	svc := NewGeminiOAuthService(nil, nil, nil, nil, &config.Config{})
+	svc := NewGeminiOAuthService(nil, nil, nil, &config.Config{})
 	defer svc.Stop()
 
 	account := &Account{
@@ -1100,7 +1036,7 @@ func TestGeminiOAuthService_RefreshAccountToken_NotGeminiOAuth(t *testing.T) {
 func TestGeminiOAuthService_RefreshAccountToken_NoRefreshToken(t *testing.T) {
 	t.Parallel()
 
-	svc := NewGeminiOAuthService(nil, nil, nil, nil, &config.Config{})
+	svc := NewGeminiOAuthService(nil, nil, nil, &config.Config{})
 	defer svc.Stop()
 
 	account := &Account{
@@ -1124,7 +1060,7 @@ func TestGeminiOAuthService_RefreshAccountToken_NoRefreshToken(t *testing.T) {
 func TestGeminiOAuthService_RefreshAccountToken_AIStudio(t *testing.T) {
 	t.Parallel()
 
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, nil, nil, nil, &config.Config{})
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, nil, nil, &config.Config{})
 	defer svc.Stop()
 
 	account := &Account{
@@ -1161,7 +1097,7 @@ func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_WithProjectID(t *test
 		},
 	}
 
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, nil, nil, &config.Config{})
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, nil, &config.Config{})
 	defer svc.Stop()
 
 	account := &Account{
@@ -1206,7 +1142,7 @@ func TestGeminiOAuthService_RefreshAccountToken_InferOAuthTypeFromTier(t *testin
 		},
 	}
 
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, nil, nil, &config.Config{})
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, nil, &config.Config{})
 	defer svc.Stop()
 
 	// 无 oauth_type 凭据的旧账号
@@ -1244,7 +1180,7 @@ func TestGeminiOAuthService_RefreshAccountToken_InferGoogleOneOAuthType(t *testi
 		},
 	}
 
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, nil, &mockDriveClient{}, &config.Config{})
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, nil, &config.Config{})
 	defer svc.Stop()
 
 	account := &Account{
@@ -1268,7 +1204,7 @@ func TestGeminiOAuthService_RefreshAccountToken_InferGoogleOneOAuthType(t *testi
 func TestGeminiOAuthService_RefreshAccountToken_RejectsUnknownOAuthTypeHeuristic(t *testing.T) {
 	t.Parallel()
 
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, nil, nil, nil, &config.Config{})
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, nil, nil, &config.Config{})
 	defer svc.Stop()
 
 	account := &Account{
@@ -1325,7 +1261,7 @@ func TestGeminiOAuthService_RefreshAccountToken_WithProxy(t *testing.T) {
 		},
 	}
 
-	svc := NewGeminiOAuthService(proxyRepo, client, nil, nil, &config.Config{})
+	svc := NewGeminiOAuthService(proxyRepo, client, nil, &config.Config{})
 	defer svc.Stop()
 
 	proxyID := int64(5)
@@ -1370,7 +1306,7 @@ func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_NoProjectID_AutoDetec
 		},
 	}
 
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, nil, &config.Config{})
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, &config.Config{})
 	defer svc.Stop()
 
 	account := &Account{
@@ -1416,7 +1352,7 @@ func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_RefreshesQuotaSnapsho
 					{
 						ModelID:           "gemini-2.5-pro",
 						RemainingAmount:   "42",
-						RemainingFraction: 0.42,
+						RemainingFraction: func() *float64 { v := 0.42; return &v }(),
 						ResetTime:         "2026-05-08T00:00:00Z",
 						TokenType:         "REQUEST",
 					},
@@ -1425,7 +1361,7 @@ func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_RefreshesQuotaSnapsho
 		},
 	}
 
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, nil, &config.Config{})
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, &config.Config{})
 	defer svc.Stop()
 
 	account := &Account{
@@ -1487,7 +1423,7 @@ func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_NoProjectID_SoftMissi
 		},
 	}
 
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, nil, &config.Config{})
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, &config.Config{})
 	defer svc.Stop()
 
 	account := &Account{
@@ -1532,7 +1468,7 @@ func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_Quota403SetsForbidden
 		},
 	}
 
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, nil, &config.Config{})
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, &config.Config{})
 	defer svc.Stop()
 
 	account := &Account{
@@ -1590,7 +1526,7 @@ func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_ValidationRequiredRet
 		},
 	}
 
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, nil, &config.Config{})
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, &config.Config{})
 	defer svc.Stop()
 
 	account := &Account{
@@ -1636,7 +1572,7 @@ func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_ValidationRequiredWit
 		},
 	}
 
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, nil, &config.Config{})
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, &config.Config{})
 	defer svc.Stop()
 
 	account := &Account{
@@ -1677,7 +1613,7 @@ func TestGeminiOAuthService_ExchangeCode_CodeAssist_NoProjectID_Fails(t *testing
 			}, nil
 		},
 	}
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, nil, &config.Config{})
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, &config.Config{})
 	defer svc.Stop()
 
 	result, err := svc.GenerateAuthURL(context.Background(), nil, "https://example.com/auth/callback", "", "code_assist", "")
@@ -1742,13 +1678,7 @@ func TestGeminiOAuthService_ExchangeCode_GoogleOne_OnboardOperationPollingReturn
 			}, nil
 		},
 	}
-	driveClient := &mockDriveClient{
-		getStorageQuotaFunc: func(ctx context.Context, accessToken, proxyURL string) (*geminicli.DriveStorageInfo, error) {
-			return nil, fmt.Errorf("drive unavailable")
-		},
-	}
-
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, driveClient, &config.Config{})
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, &config.Config{})
 	defer svc.Stop()
 
 	result, err := svc.GenerateAuthURL(context.Background(), nil, "https://example.com/auth/callback", "", "google_one", "")
@@ -1810,7 +1740,7 @@ func TestGeminiOAuthService_ExchangeCode_CodeAssist_ProjectHintDoesNotOverrideDe
 		},
 	}
 
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, nil, &config.Config{})
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, &config.Config{})
 	defer svc.Stop()
 
 	result, err := svc.GenerateAuthURL(context.Background(), nil, "https://example.com/auth/callback", "my-gcp-project", "code_assist", "")
@@ -1867,7 +1797,7 @@ func TestGeminiOAuthService_ExchangeCode_CodeAssist_UsesProjectHintWhenTierExist
 		},
 	}
 
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, nil, &config.Config{})
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, &config.Config{})
 	defer svc.Stop()
 
 	result, err := svc.GenerateAuthURL(context.Background(), nil, "https://example.com/auth/callback", "my-hint-project", "code_assist", "")
@@ -1929,7 +1859,7 @@ func TestGeminiOAuthService_ExchangeCode_CodeAssist_ValidationRequiredErrorBubbl
 		},
 	}
 
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, nil, &config.Config{})
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, &config.Config{})
 	defer svc.Stop()
 
 	result, err := svc.GenerateAuthURL(context.Background(), nil, "https://example.com/auth/callback", "", "code_assist", "")
@@ -1981,7 +1911,7 @@ func TestGeminiOAuthService_ExchangeCode_CodeAssist_ValidationRequiredWithoutURL
 		},
 	}
 
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, nil, &config.Config{})
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, &config.Config{})
 	defer svc.Stop()
 
 	result, err := svc.GenerateAuthURL(context.Background(), nil, "https://example.com/auth/callback", "", "code_assist", "")
@@ -2030,7 +1960,7 @@ func TestGeminiOAuthService_ExchangeCode_CodeAssist_OnboardMissingProjectFallsBa
 		},
 	}
 
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, nil, &config.Config{})
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, &config.Config{})
 	defer svc.Stop()
 
 	result, err := svc.GenerateAuthURL(context.Background(), nil, "https://example.com/auth/callback", "hint-project", "code_assist", "")
@@ -2084,165 +2014,6 @@ func TestGeminiPlanNameForToken_PrefersUpstreamRawName(t *testing.T) {
 	}
 }
 
-func TestGeminiOAuthService_RefreshAccountToken_GoogleOne_FreshCache(t *testing.T) {
-	t.Parallel()
-
-	driveCalls := 0
-	client := &mockGeminiOAuthClient{
-		refreshTokenFunc: func(ctx context.Context, oauthType, refreshToken, proxyURL string) (*geminicli.TokenResponse, error) {
-			return &geminicli.TokenResponse{
-				AccessToken: "at",
-				ExpiresIn:   3600,
-			}, nil
-		},
-	}
-	codeAssist := &mockGeminiCodeAssistClient{
-		loadCodeAssistFunc: func(ctx context.Context, accessToken, proxyURL string, req *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
-			return &geminicli.LoadCodeAssistResponse{CloudAICompanionProject: "proj"}, nil
-		},
-	}
-	driveClient := &mockDriveClient{
-		getStorageQuotaFunc: func(ctx context.Context, accessToken, proxyURL string) (*geminicli.DriveStorageInfo, error) {
-			driveCalls++
-			return &geminicli.DriveStorageInfo{Limit: StorageTierAIPremium, Usage: 123}, nil
-		},
-	}
-
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, driveClient, &config.Config{})
-	defer svc.Stop()
-
-	account := &Account{
-		Platform: PlatformGemini,
-		Type:     AccountTypeOAuth,
-		Credentials: map[string]any{
-			"refresh_token":         "rt",
-			"oauth_type":            "google_one",
-			"project_id":            "proj",
-			"tier_id":               "google_ai_pro",
-			"drive_tier_updated_at": time.Now().Add(-1 * time.Hour).Format(time.RFC3339),
-		},
-	}
-
-	info, err := svc.RefreshAccountToken(context.Background(), account)
-	if err != nil {
-		t.Fatalf("RefreshAccountToken 返回错误: %v", err)
-	}
-	// 缓存新鲜，应使用已有的 tier_id
-	if info.TierID != GeminiTierGoogleAIPro {
-		t.Fatalf("TierID 应使用缓存值: got=%q want=%q", info.TierID, GeminiTierGoogleAIPro)
-	}
-	if driveCalls != 0 {
-		t.Fatalf("新鲜缓存不应调用 Drive API: got=%d", driveCalls)
-	}
-}
-
-func TestGeminiOAuthService_RefreshAccountToken_GoogleOne_StaleCredentialCacheRefreshes(t *testing.T) {
-	t.Parallel()
-
-	driveCalls := 0
-	client := &mockGeminiOAuthClient{
-		refreshTokenFunc: func(ctx context.Context, oauthType, refreshToken, proxyURL string) (*geminicli.TokenResponse, error) {
-			return &geminicli.TokenResponse{
-				AccessToken: "at",
-				ExpiresIn:   3600,
-			}, nil
-		},
-	}
-	codeAssist := &mockGeminiCodeAssistClient{
-		loadCodeAssistFunc: func(ctx context.Context, accessToken, proxyURL string, req *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
-			return &geminicli.LoadCodeAssistResponse{CloudAICompanionProject: "proj"}, nil
-		},
-	}
-	driveClient := &mockDriveClient{
-		getStorageQuotaFunc: func(ctx context.Context, accessToken, proxyURL string) (*geminicli.DriveStorageInfo, error) {
-			driveCalls++
-			return &geminicli.DriveStorageInfo{Limit: StorageTierUnlimited + GB, Usage: 456}, nil
-		},
-	}
-
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, driveClient, &config.Config{})
-	defer svc.Stop()
-
-	account := &Account{
-		Platform: PlatformGemini,
-		Type:     AccountTypeOAuth,
-		Credentials: map[string]any{
-			"refresh_token":         "rt",
-			"oauth_type":            "google_one",
-			"project_id":            "proj",
-			"tier_id":               "google_ai_pro",
-			"drive_tier_updated_at": time.Now().Add(-25 * time.Hour).Format(time.RFC3339),
-		},
-	}
-
-	info, err := svc.RefreshAccountToken(context.Background(), account)
-	if err != nil {
-		t.Fatalf("RefreshAccountToken 返回错误: %v", err)
-	}
-	if info.TierID != GeminiTierGoogleAIUltra {
-		t.Fatalf("TierID 应使用刷新后的值: got=%q want=%q", info.TierID, GeminiTierGoogleAIUltra)
-	}
-	if driveCalls != 1 {
-		t.Fatalf("陈旧缓存应调用一次 Drive API: got=%d", driveCalls)
-	}
-	if _, ok := info.Extra["drive_tier_updated_at"].(string); !ok {
-		t.Fatal("刷新后应写回 drive_tier_updated_at")
-	}
-}
-
-func TestGeminiOAuthService_RefreshAccountToken_GoogleOne_LegacyExtraCacheFallback(t *testing.T) {
-	t.Parallel()
-
-	driveCalls := 0
-	client := &mockGeminiOAuthClient{
-		refreshTokenFunc: func(ctx context.Context, oauthType, refreshToken, proxyURL string) (*geminicli.TokenResponse, error) {
-			return &geminicli.TokenResponse{
-				AccessToken: "at",
-				ExpiresIn:   3600,
-			}, nil
-		},
-	}
-	codeAssist := &mockGeminiCodeAssistClient{
-		loadCodeAssistFunc: func(ctx context.Context, accessToken, proxyURL string, req *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
-			return &geminicli.LoadCodeAssistResponse{CloudAICompanionProject: "proj"}, nil
-		},
-	}
-	driveClient := &mockDriveClient{
-		getStorageQuotaFunc: func(ctx context.Context, accessToken, proxyURL string) (*geminicli.DriveStorageInfo, error) {
-			driveCalls++
-			return &geminicli.DriveStorageInfo{Limit: StorageTierAIPremium, Usage: 123}, nil
-		},
-	}
-
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, driveClient, &config.Config{})
-	defer svc.Stop()
-
-	account := &Account{
-		Platform: PlatformGemini,
-		Type:     AccountTypeOAuth,
-		Credentials: map[string]any{
-			"refresh_token": "rt",
-			"oauth_type":    "google_one",
-			"project_id":    "proj",
-			"tier_id":       "google_ai_pro",
-		},
-		Extra: map[string]any{
-			"drive_tier_updated_at": time.Now().Add(-1 * time.Hour).Format(time.RFC3339),
-		},
-	}
-
-	info, err := svc.RefreshAccountToken(context.Background(), account)
-	if err != nil {
-		t.Fatalf("RefreshAccountToken 返回错误: %v", err)
-	}
-	if info.TierID != GeminiTierGoogleAIPro {
-		t.Fatalf("TierID 应使用 legacy extra 缓存值: got=%q want=%q", info.TierID, GeminiTierGoogleAIPro)
-	}
-	if driveCalls != 0 {
-		t.Fatalf("legacy extra 新鲜缓存不应调用 Drive API: got=%d", driveCalls)
-	}
-}
-
 func TestGeminiOAuthService_RefreshAccountToken_GoogleOne_NoTierID_DefaultsFree(t *testing.T) {
 	t.Parallel()
 
@@ -2255,7 +2026,7 @@ func TestGeminiOAuthService_RefreshAccountToken_GoogleOne_NoTierID_DefaultsFree(
 		},
 	}
 
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, nil, &mockDriveClient{}, &config.Config{})
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, nil, &config.Config{})
 	defer svc.Stop()
 
 	account := &Account{
@@ -2273,9 +2044,6 @@ func TestGeminiOAuthService_RefreshAccountToken_GoogleOne_NoTierID_DefaultsFree(
 	if err != nil {
 		t.Fatalf("RefreshAccountToken 返回错误: %v", err)
 	}
-	// FetchGoogleOneTier 会被调用但 oauthClient（此处 mock）不实现 Drive API，
-	// svc.FetchGoogleOneTier 使用真实 DriveClient 会失败，最终回退到默认值。
-	// 由于没有 tier_id 且 FetchGoogleOneTier 失败，应默认为 google_one_free
 	if info.TierID != GeminiTierGoogleOneFree {
 		t.Fatalf("TierID 应为默认 free: got=%q", info.TierID)
 	}
@@ -2299,7 +2067,7 @@ func TestGeminiOAuthService_RefreshAccountToken_UnauthorizedClient_NoLegacyFallb
 		},
 	}
 
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, nil, nil, cfg)
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, nil, cfg)
 	defer svc.Stop()
 
 	account := &Account{
@@ -2332,7 +2100,7 @@ func TestGeminiOAuthService_RefreshAccountToken_UnauthorizedClient_NoFallback(t 
 	}
 
 	// 无自定义 OAuth 客户端，无法 fallback
-	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, nil, nil, &config.Config{})
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, nil, &config.Config{})
 	defer svc.Stop()
 
 	account := &Account{
@@ -2361,7 +2129,7 @@ func TestGeminiOAuthService_RefreshAccountToken_UnauthorizedClient_NoFallback(t 
 func TestGeminiOAuthService_ExchangeCode_SessionNotFound(t *testing.T) {
 	t.Parallel()
 
-	svc := NewGeminiOAuthService(nil, nil, nil, nil, &config.Config{})
+	svc := NewGeminiOAuthService(nil, nil, nil, &config.Config{})
 	defer svc.Stop()
 
 	_, err := svc.ExchangeCode(context.Background(), &GeminiExchangeCodeInput{
@@ -2380,7 +2148,7 @@ func TestGeminiOAuthService_ExchangeCode_SessionNotFound(t *testing.T) {
 func TestGeminiOAuthService_ExchangeCode_InvalidState(t *testing.T) {
 	t.Parallel()
 
-	svc := NewGeminiOAuthService(nil, nil, nil, nil, &config.Config{})
+	svc := NewGeminiOAuthService(nil, nil, nil, &config.Config{})
 	defer svc.Stop()
 
 	// 手动创建 session（必须设置 CreatedAt，否则会因 TTL 过期被拒绝）
@@ -2407,7 +2175,7 @@ func TestGeminiOAuthService_ExchangeCode_InvalidState(t *testing.T) {
 func TestGeminiOAuthService_ExchangeCode_EmptyState(t *testing.T) {
 	t.Parallel()
 
-	svc := NewGeminiOAuthService(nil, nil, nil, nil, &config.Config{})
+	svc := NewGeminiOAuthService(nil, nil, nil, &config.Config{})
 	defer svc.Stop()
 
 	svc.sessionStore.Set("test-session", &geminicli.OAuthSession{
@@ -2429,7 +2197,7 @@ func TestGeminiOAuthService_ExchangeCode_EmptyState(t *testing.T) {
 func TestGeminiOAuthService_ExchangeCode_RejectsLegacyAIStudioSession(t *testing.T) {
 	t.Parallel()
 
-	svc := NewGeminiOAuthService(nil, nil, nil, nil, &config.Config{})
+	svc := NewGeminiOAuthService(nil, nil, nil, &config.Config{})
 	defer svc.Stop()
 
 	svc.sessionStore.Set("legacy-session", &geminicli.OAuthSession{
@@ -2468,6 +2236,56 @@ func assertCredStr(t *testing.T, creds map[string]any, key, want string) {
 	}
 	if got != want {
 		t.Fatalf("creds[%q] = %q, want %q", key, got, want)
+	}
+}
+
+// Regression test: google_one ExchangeCode must use Code Assist metadata tier
+// when projectID was auto-detected.
+func TestGeminiOAuthService_ExchangeCode_GoogleOne_UsesDetectedTier(t *testing.T) {
+	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
+
+	client := &mockGeminiOAuthClient{
+		exchangeCodeFunc: func(ctx context.Context, oauthType, code, codeVerifier, redirectURI, proxyURL string) (*geminicli.TokenResponse, error) {
+			return &geminicli.TokenResponse{
+				AccessToken:  "at-google-one",
+				RefreshToken: "rt-google-one",
+				TokenType:    "Bearer",
+				ExpiresIn:    3600,
+			}, nil
+		},
+	}
+
+	codeAssist := &mockGeminiCodeAssistClient{
+		loadCodeAssistFunc: func(ctx context.Context, accessToken, proxyURL string, req *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
+			return &geminicli.LoadCodeAssistResponse{
+				CloudAICompanionProject: "auto-project-123",
+				AllowedTiers:            []geminicli.AllowedTier{{ID: "g1-pro-tier", IsDefault: true}},
+			}, nil
+		},
+	}
+
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, client, codeAssist, &config.Config{})
+	defer svc.Stop()
+
+	result, err := svc.GenerateAuthURL(context.Background(), nil, "https://example.com/auth/callback", "", "google_one", "")
+	if err != nil {
+		t.Fatalf("GenerateAuthURL failed: %v", err)
+	}
+
+	info, err := svc.ExchangeCode(context.Background(), &GeminiExchangeCodeInput{
+		SessionID: result.SessionID,
+		State:     result.State,
+		Code:      "auth-code",
+		OAuthType: "google_one",
+	})
+	if err != nil {
+		t.Fatalf("ExchangeCode should not fail: %v", err)
+	}
+	if info.ProjectID != "auto-project-123" {
+		t.Fatalf("ProjectID should come from LoadCodeAssist: got=%q", info.ProjectID)
+	}
+	if info.TierID != GeminiTierGoogleAIPro {
+		t.Fatalf("TierID should use detected Code Assist tier %q: got=%q", GeminiTierGoogleAIPro, info.TierID)
 	}
 }
 

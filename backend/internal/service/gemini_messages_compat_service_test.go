@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -836,8 +837,8 @@ func TestConvertClaudeMessagesToGeminiGenerateContent_AddsThoughtSignatureForToo
 	if !strings.Contains(s, "\"functionCall\"") {
 		t.Fatalf("expected functionCall in output, got: %s", s)
 	}
-	if !strings.Contains(s, "\"thoughtSignature\":\""+geminiDummyThoughtSignature+"\"") {
-		t.Fatalf("expected injected thoughtSignature %q, got: %s", geminiDummyThoughtSignature, s)
+	if !strings.Contains(s, "\"thoughtSignature\":\""+antigravity.DummyThoughtSignature+"\"") {
+		t.Fatalf("expected injected thoughtSignature %q, got: %s", antigravity.DummyThoughtSignature, s)
 	}
 }
 
@@ -860,8 +861,47 @@ func TestEnsureGeminiFunctionCallThoughtSignatures_InsertsWhenMissing(t *testing
 	b, _ := json.Marshal(geminiReq)
 	out := ensureGeminiFunctionCallThoughtSignatures(b)
 	s := string(out)
-	if !strings.Contains(s, "\"thoughtSignature\":\""+geminiDummyThoughtSignature+"\"") {
-		t.Fatalf("expected injected thoughtSignature %q, got: %s", geminiDummyThoughtSignature, s)
+	if !strings.Contains(s, "\"thoughtSignature\":\""+antigravity.DummyThoughtSignature+"\"") {
+		t.Fatalf("expected injected thoughtSignature %q, got: %s", antigravity.DummyThoughtSignature, s)
+	}
+}
+
+func TestIsGeminiSignatureRelatedError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		body []byte
+		want bool
+	}{
+		{
+			name: "matches thought_signature",
+			body: []byte(`{"error":{"message":"Corrupted thought_signature"}}`),
+			want: true,
+		},
+		{
+			name: "matches thoughtSignature",
+			body: []byte(`{"error":{"message":"invalid thoughtSignature value"}}`),
+			want: true,
+		},
+		{
+			name: "matches thought signature with space",
+			body: []byte(`{"error":{"message":"Corrupted thought signature."}}`),
+			want: true,
+		},
+		{
+			name: "does not match generic signature text",
+			body: []byte(`{"error":{"message":"invalid signature header"}}`),
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, isGeminiSignatureRelatedError(tt.body))
+		})
 	}
 }
 

@@ -3,7 +3,19 @@ package geminicli
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 )
+
+// CodeAssistHTTPError represents an HTTP error from the Code Assist API with a status code.
+type CodeAssistHTTPError struct {
+	StatusCode int
+	Body       string
+	Endpoint   string
+}
+
+func (e *CodeAssistHTTPError) Error() string {
+	return fmt.Sprintf("%s failed: status %d, body: %s", e.Endpoint, e.StatusCode, e.Body)
+}
 
 // LoadCodeAssistRequest matches done-hub's internal Code Assist call.
 type LoadCodeAssistRequest struct {
@@ -159,9 +171,9 @@ type RetrieveUserQuotaResponse struct {
 }
 
 type RetrieveUserQuotaBucket struct {
-	ModelID           string `json:"modelId,omitempty"`
-	RemainingFraction any    `json:"remainingFraction,omitempty"`
-	RemainingAmount   any    `json:"remainingAmount,omitempty"`
-	ResetTime         any    `json:"resetTime,omitempty"`
-	TokenType         string `json:"tokenType,omitempty"`
+	ModelID           string  `json:"modelId,omitempty"`
+	RemainingFraction *float64 `json:"remainingFraction,omitempty"`
+	RemainingAmount   string  `json:"remainingAmount,omitempty"`
+	ResetTime         string  `json:"resetTime,omitempty"`
+	TokenType         string  `json:"tokenType,omitempty"`
 }

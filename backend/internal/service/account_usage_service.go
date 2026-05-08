@@ -1787,8 +1787,8 @@ func applyGeminiQuotaSnapshotFallback(usage *UsageInfo, account *Account, now ti
 	mergeGeminiUsageProgressWithSnapshot(&usage.GeminiProDaily, snapshot.pro, now)
 	mergeGeminiUsageProgressWithSnapshot(&usage.GeminiFlashDaily, snapshot.flash, now)
 
-	if snapshot.pro != nil || snapshot.flash != nil {
-		shared := lowerUtilizationProgress(usage.GeminiProDaily, usage.GeminiFlashDaily)
+	if usage.GeminiSharedDaily == nil && (snapshot.pro != nil || snapshot.flash != nil) {
+		shared := higherUtilizationProgress(usage.GeminiProDaily, usage.GeminiFlashDaily)
 		if shared != nil {
 			usage.GeminiSharedDaily = cloneUsageProgress(shared)
 		}
@@ -1856,9 +1856,9 @@ func parseGeminiQuotaSnapshot(account *Account) *geminiQuotaSnapshotUsage {
 
 		switch {
 		case strings.Contains(modelID, "flash"):
-			snapshot.flash = pickLowerUtilizationSnapshot(snapshot.flash, window)
+			snapshot.flash = pickHigherUtilizationSnapshot(snapshot.flash, window)
 		case strings.Contains(modelID, "pro"):
-			snapshot.pro = pickLowerUtilizationSnapshot(snapshot.pro, window)
+			snapshot.pro = pickHigherUtilizationSnapshot(snapshot.pro, window)
 		}
 	}
 
@@ -1913,7 +1913,7 @@ func parseGeminiSnapshotTime(raw any) *time.Time {
 	return nil
 }
 
-func pickLowerUtilizationSnapshot(current, next *geminiQuotaSnapshotWindow) *geminiQuotaSnapshotWindow {
+func pickHigherUtilizationSnapshot(current, next *geminiQuotaSnapshotWindow) *geminiQuotaSnapshotWindow {
 	if next == nil {
 		return current
 	}
@@ -1955,7 +1955,7 @@ func mergeGeminiUsageProgressWithSnapshot(target **UsageProgress, snapshot *gemi
 	}
 }
 
-func lowerUtilizationProgress(items ...*UsageProgress) *UsageProgress {
+func higherUtilizationProgress(items ...*UsageProgress) *UsageProgress {
 	var picked *UsageProgress
 	for _, item := range items {
 		if item == nil {

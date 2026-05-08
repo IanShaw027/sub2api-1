@@ -28,7 +28,7 @@ func (r *GeminiTokenRefresher) NeedsRefresh(account *Account, refreshWindow time
 	}
 	expiresAt := account.GetCredentialAsTime("expires_at")
 	if expiresAt == nil {
-		return false
+		return true
 	}
 	return time.Until(*expiresAt) < refreshWindow
 }

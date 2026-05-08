@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -40,13 +41,13 @@ func (c *geminiCliCodeAssistClient) LoadCodeAssist(ctx context.Context, accessTo
 		SetSuccessResult(&out).
 		Post(c.baseURL + "/v1internal:loadCodeAssist")
 	if err != nil {
-		fmt.Printf("[CodeAssist] LoadCodeAssist request error: %v\n", err)
+		slog.Warn("codeassist_loadcodeassist_request_error", "error", err)
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	if !resp.IsSuccessState() {
 		body := resp.String()
 		sanitizedBody := geminicli.SanitizeBodyForLogs(body)
-		fmt.Printf("[CodeAssist] LoadCodeAssist failed: status %d, body: %s\n", resp.StatusCode, sanitizedBody)
+		slog.Warn("codeassist_loadcodeassist_failed", "status", resp.StatusCode, "body", sanitizedBody)
 
 		// Check if this is a SERVICE_DISABLED error and extract activation URL
 		if googleapi.IsServiceDisabledError(body) {
@@ -57,9 +58,9 @@ func (c *geminiCliCodeAssistClient) LoadCodeAssist(ctx context.Context, accessTo
 			return nil, fmt.Errorf("gemini API not enabled for this project, please enable it in the Google Cloud Console at: https://console.cloud.google.com/apis/library/cloudaicompanion.googleapis.com")
 		}
 
-		return nil, fmt.Errorf("loadCodeAssist failed: status %d, body: %s", resp.StatusCode, sanitizedBody)
+		return nil, &geminicli.CodeAssistHTTPError{StatusCode: resp.StatusCode, Body: sanitizedBody, Endpoint: "loadCodeAssist"}
 	}
-	fmt.Printf("[CodeAssist] LoadCodeAssist success: status %d, response: %+v\n", resp.StatusCode, out)
+	slog.Debug("codeassist_loadcodeassist_success", "status", resp.StatusCode)
 	return &out, nil
 }
 
@@ -68,7 +69,7 @@ func (c *geminiCliCodeAssistClient) OnboardUser(ctx context.Context, accessToken
 		reqBody = defaultOnboardUserRequest()
 	}
 
-	fmt.Printf("[CodeAssist] OnboardUser request body: %+v\n", reqBody)
+	slog.Debug("codeassist_onboarduser_request", "tier_id", reqBody.TierID)
 
 	var out geminicli.OnboardUserResponse
 	client, err := createGeminiCliReqClient(proxyURL)
@@ -84,13 +85,13 @@ func (c *geminiCliCodeAssistClient) OnboardUser(ctx context.Context, accessToken
 		SetSuccessResult(&out).
 		Post(c.baseURL + "/v1internal:onboardUser")
 	if err != nil {
-		fmt.Printf("[CodeAssist] OnboardUser request error: %v\n", err)
+		slog.Warn("codeassist_onboarduser_request_error", "error", err)
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	if !resp.IsSuccessState() {
 		body := resp.String()
 		sanitizedBody := geminicli.SanitizeBodyForLogs(body)
-		fmt.Printf("[CodeAssist] OnboardUser failed: status %d, body: %s\n", resp.StatusCode, sanitizedBody)
+		slog.Warn("codeassist_onboarduser_failed", "status", resp.StatusCode, "body", sanitizedBody)
 
 		// Check if this is a SERVICE_DISABLED error and extract activation URL
 		if googleapi.IsServiceDisabledError(body) {
@@ -101,9 +102,9 @@ func (c *geminiCliCodeAssistClient) OnboardUser(ctx context.Context, accessToken
 			return nil, fmt.Errorf("gemini API not enabled for this project, please enable it in the Google Cloud Console at: https://console.cloud.google.com/apis/library/cloudaicompanion.googleapis.com")
 		}
 
-		return nil, fmt.Errorf("onboardUser failed: status %d, body: %s", resp.StatusCode, sanitizedBody)
+		return nil, &geminicli.CodeAssistHTTPError{StatusCode: resp.StatusCode, Body: sanitizedBody, Endpoint: "onboardUser"}
 	}
-	fmt.Printf("[CodeAssist] OnboardUser success: status %d, response: %+v\n", resp.StatusCode, out)
+	slog.Debug("codeassist_onboarduser_success", "status", resp.StatusCode)
 	return &out, nil
 }
 
@@ -124,16 +125,16 @@ func (c *geminiCliCodeAssistClient) GetOperation(ctx context.Context, accessToke
 		SetSuccessResult(&out).
 		Get(c.baseURL + "/v1internal/" + operationName)
 	if err != nil {
-		fmt.Printf("[CodeAssist] GetOperation request error: %v\n", err)
+		slog.Warn("codeassist_getoperation_request_error", "error", err)
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	if !resp.IsSuccessState() {
 		body := resp.String()
 		sanitizedBody := geminicli.SanitizeBodyForLogs(body)
-		fmt.Printf("[CodeAssist] GetOperation failed: status %d, body: %s\n", resp.StatusCode, sanitizedBody)
-		return nil, fmt.Errorf("getOperation failed: status %d, body: %s", resp.StatusCode, sanitizedBody)
+		slog.Warn("codeassist_getoperation_failed", "status", resp.StatusCode, "body", sanitizedBody)
+		return nil, &geminicli.CodeAssistHTTPError{StatusCode: resp.StatusCode, Body: sanitizedBody, Endpoint: "getOperation"}
 	}
-	fmt.Printf("[CodeAssist] GetOperation success: status %d, response: %+v\n", resp.StatusCode, out)
+	slog.Debug("codeassist_getoperation_success", "status", resp.StatusCode)
 	return &out, nil
 }
 
@@ -156,16 +157,16 @@ func (c *geminiCliCodeAssistClient) RetrieveUserQuota(ctx context.Context, acces
 		SetSuccessResult(&out).
 		Post(c.baseURL + "/v1internal:retrieveUserQuota")
 	if err != nil {
-		fmt.Printf("[CodeAssist] RetrieveUserQuota request error: %v\n", err)
+		slog.Warn("codeassist_retrieveuserquota_request_error", "error", err)
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	if !resp.IsSuccessState() {
 		body := resp.String()
 		sanitizedBody := geminicli.SanitizeBodyForLogs(body)
-		fmt.Printf("[CodeAssist] RetrieveUserQuota failed: status %d, body: %s\n", resp.StatusCode, sanitizedBody)
-		return nil, fmt.Errorf("retrieveUserQuota failed: status %d, body: %s", resp.StatusCode, sanitizedBody)
+		slog.Warn("codeassist_retrieveuserquota_failed", "status", resp.StatusCode, "body", sanitizedBody)
+		return nil, &geminicli.CodeAssistHTTPError{StatusCode: resp.StatusCode, Body: sanitizedBody, Endpoint: "retrieveUserQuota"}
 	}
-	fmt.Printf("[CodeAssist] RetrieveUserQuota success: status %d, response: %+v\n", resp.StatusCode, out)
+	slog.Debug("codeassist_retrieveuserquota_success", "status", resp.StatusCode)
 	return &out, nil
 }
 
@@ -179,7 +180,7 @@ func createGeminiCliReqClient(proxyURL string) (*req.Client, error) {
 func defaultLoadCodeAssistRequest() *geminicli.LoadCodeAssistRequest {
 	return &geminicli.LoadCodeAssistRequest{
 		Metadata: geminicli.LoadCodeAssistMetadata{
-			IDEType:    "ANTIGRAVITY",
+			IDEType:    "IDE_UNSPECIFIED",
 			Platform:   "PLATFORM_UNSPECIFIED",
 			PluginType: "GEMINI",
 		},
@@ -190,7 +191,7 @@ func defaultOnboardUserRequest() *geminicli.OnboardUserRequest {
 	return &geminicli.OnboardUserRequest{
 		TierID: "LEGACY",
 		Metadata: geminicli.LoadCodeAssistMetadata{
-			IDEType:    "ANTIGRAVITY",
+			IDEType:    "IDE_UNSPECIFIED",
 			Platform:   "PLATFORM_UNSPECIFIED",
 			PluginType: "GEMINI",
 		},

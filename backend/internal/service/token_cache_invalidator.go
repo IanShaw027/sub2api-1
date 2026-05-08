@@ -33,7 +33,8 @@ func (c *CompositeTokenCacheInvalidator) InvalidateToken(ctx context.Context, ac
 
 	switch account.Platform {
 	case PlatformGemini:
-		// Gemini token cache 已统一为 account-scoped key。
+		// Gemini OAuth token cache is account-scoped even when project_id is present.
+		// This avoids multiple accounts sharing the same cached token.
 		keysToDelete = append(keysToDelete, GeminiTokenCacheKey(account))
 	case PlatformAntigravity:
 		// Antigravity 同样可能有两种缓存键

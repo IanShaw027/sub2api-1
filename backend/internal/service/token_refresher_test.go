@@ -260,3 +260,15 @@ func TestOpenAITokenRefresher_CanRefresh(t *testing.T) {
 		})
 	}
 }
+
+func TestGeminiTokenRefresher_NeedsRefresh_MissingExpiry(t *testing.T) {
+	refresher := &GeminiTokenRefresher{}
+
+	account := &Account{
+		Platform:    PlatformGemini,
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{},
+	}
+
+	require.True(t, refresher.NeedsRefresh(account, 30*time.Minute))
+}

@@ -1092,14 +1092,9 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 	if strings.TrimSpace(requiredRoute) != "" {
 		requiredRoute = NormalizeGroupImageGenerationRoute(requiredRoute)
 	}
-	if requiredRoute == "" {
-		if groupID != nil && s != nil {
-			if group := s.loadGroupForImageRoute(ctx, *groupID); group != nil {
-				requiredRoute = group.EffectiveImageGenerationRoute()
-			}
-		}
-		if requiredRoute == "" {
-			requiredRoute = GroupImageGenerationRouteCodex
+	if requiredRoute == GroupImageGenerationRouteCodex && groupID != nil && s != nil && s.schedulerSnapshot != nil {
+		if group, err := s.schedulerSnapshot.GetGroupByID(ctx, *groupID); err == nil && group != nil {
+			requiredRoute = group.EffectiveImageGenerationRoute()
 		}
 	}
 	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, requiredCapability, requiredRoute, requireOAuthAccount, false)
@@ -1179,13 +1174,11 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 		requiredImageRoute = NormalizeGroupImageGenerationRoute(requiredImageRoute)
 	}
 	if requiredImageCapability != "" && requiredImageRoute == "" {
-		if groupID != nil && s != nil {
-			if group := s.loadGroupForImageRoute(ctx, *groupID); group != nil {
+		requiredImageRoute = GroupImageGenerationRouteCodex
+		if groupID != nil && s != nil && s.schedulerSnapshot != nil {
+			if group, err := s.schedulerSnapshot.GetGroupByID(ctx, *groupID); err == nil && group != nil {
 				requiredImageRoute = group.EffectiveImageGenerationRoute()
 			}
-		}
-		if requiredImageRoute == "" {
-			requiredImageRoute = GroupImageGenerationRouteCodex
 		}
 	}
 	scheduler := s.getOpenAIAccountScheduler(ctx)

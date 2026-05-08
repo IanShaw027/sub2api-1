@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/googleapi"
@@ -39,11 +40,6 @@ const (
 	geminiAIStudioGETMaxBodyBytes = 8 << 20
 )
 
-// Gemini tool calling now requires `thoughtSignature` in parts that include `functionCall`.
-// Many clients don't send it; we inject a known dummy signature to satisfy the validator.
-// Ref: https://ai.google.dev/gemini-api/docs/thought-signatures
-const geminiDummyThoughtSignature = "skip_thought_signature_validator"
-
 func shouldUseGeminiOAuthProjectStreamingBridge(account *Account, stream bool, action string) bool {
 	return account != nil &&
 		account.Type == AccountTypeOAuth &&
@@ -51,6 +47,7 @@ func shouldUseGeminiOAuthProjectStreamingBridge(account *Account, stream bool, a
 		action == "generateContent" &&
 		strings.TrimSpace(account.GetCredential("project_id")) != ""
 }
+
 
 type GeminiMessagesCompatService struct {
 	accountRepo               AccountRepository
@@ -1133,7 +1130,7 @@ func isGeminiSignatureRelatedError(respBody []byte) bool {
 	if msg == "" {
 		msg = strings.ToLower(string(respBody))
 	}
-	return strings.Contains(msg, "thought_signature") || strings.Contains(msg, "signature")
+	return strings.Contains(msg, "thought_signature") || strings.Contains(msg, "thoughtsignature") || strings.Contains(msg, "thought signature")
 }
 
 func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.Context, account *Account, originalModel string, action string, stream bool, body []byte) (*ForwardResult, error) {
@@ -3186,7 +3183,7 @@ func ensureGeminiFunctionCallThoughtSignatures(body []byte) []byte {
 			}
 			ts, _ := pm["thoughtSignature"].(string)
 			if strings.TrimSpace(ts) == "" {
-				pm["thoughtSignature"] = geminiDummyThoughtSignature
+				pm["thoughtSignature"] = antigravity.DummyThoughtSignature
 				modified = true
 			}
 		}
@@ -3430,7 +3427,7 @@ func convertClaudeMessagesToGeminiContents(messages any, toolUseIDToName map[str
 					signature, _ := bm["signature"].(string)
 					signature = strings.TrimSpace(signature)
 					if signature == "" {
-						signature = geminiDummyThoughtSignature
+						signature = antigravity.DummyThoughtSignature
 					}
 					parts = append(parts, map[string]any{
 						"thoughtSignature": signature,
@@ -3445,14 +3442,18 @@ func convertClaudeMessagesToGeminiContents(messages any, toolUseIDToName map[str
 					if name == "" {
 						name = "tool"
 					}
+					textContent, imageParts := extractClaudeContentWithImages(bm["content"])
 					parts = append(parts, map[string]any{
 						"functionResponse": map[string]any{
 							"name": name,
 							"response": map[string]any{
-								"content": extractClaudeContentText(bm["content"]),
+								"content": textContent,
 							},
 						},
 					})
+					for _, img := range imageParts {
+						parts = append(parts, img)
+					}
 				case "image":
 					if src, ok := bm["source"].(map[string]any); ok {
 						if srcType, _ := src["type"].(string); srcType == "base64" {
@@ -3508,6 +3509,49 @@ func extractClaudeContentText(v any) string {
 	default:
 		b, _ := json.Marshal(t)
 		return string(b)
+	}
+}
+
+// extractClaudeContentWithImages extracts text and image parts from Claude tool_result content.
+// Returns the combined text and any image parts as Gemini inlineData parts.
+func extractClaudeContentWithImages(v any) (string, []map[string]any) {
+	switch t := v.(type) {
+	case string:
+		return t, nil
+	case []any:
+		var sb strings.Builder
+		var images []map[string]any
+		for _, part := range t {
+			pm, ok := part.(map[string]any)
+			if !ok {
+				continue
+			}
+			switch pm["type"] {
+			case "text":
+				if text, ok := pm["text"].(string); ok {
+					sb.WriteString(text)
+				}
+			case "image":
+				if src, ok := pm["source"].(map[string]any); ok {
+					if srcType, _ := src["type"].(string); srcType == "base64" {
+						mediaType, _ := src["media_type"].(string)
+						data, _ := src["data"].(string)
+						if mediaType != "" && data != "" {
+							images = append(images, map[string]any{
+								"inlineData": map[string]any{
+									"mimeType": mediaType,
+									"data":     data,
+								},
+							})
+						}
+					}
+				}
+			}
+		}
+		return sb.String(), images
+	default:
+		b, _ := json.Marshal(t)
+		return string(b), nil
 	}
 }
 
@@ -3653,10 +3697,11 @@ func cleanToolSchema(schema any) any {
 	case map[string]any:
 		cleaned := make(map[string]any)
 		for key, value := range v {
-			// 跳过不支持的字段
+			// 跳过 Gemini 不支持的 JSON Schema 字段（保留 default，Gemini 支持）
 			if key == "$schema" || key == "$id" || key == "$ref" ||
-				key == "additionalProperties" || key == "patternProperties" || key == "minLength" ||
-				key == "maxLength" || key == "minItems" || key == "maxItems" {
+				key == "additionalProperties" || key == "patternProperties" ||
+				key == "minLength" || key == "maxLength" ||
+				key == "minItems" || key == "maxItems" {
 				continue
 			}
 			// 递归清理嵌套对象

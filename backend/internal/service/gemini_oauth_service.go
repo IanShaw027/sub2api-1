@@ -39,25 +39,15 @@ const (
 	legacyTierGoogleOneUnlimited = "GOOGLE_ONE_UNLIMITED"
 )
 
-const (
-	googleOAuthUserInfoURL = "https://www.googleapis.com/oauth2/v3/userinfo"
+const googleOAuthUserInfoURL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
-	GB = 1024 * 1024 * 1024
-	TB = 1024 * GB
-
-	StorageTierUnlimited = 100 * TB // 100TB
-	StorageTierAIPremium = 2 * TB   // 2TB
-	StorageTierStandard  = 200 * GB // 200GB
-	StorageTierBasic     = 100 * GB // 100GB
-	StorageTierFree      = 15 * GB  // 15GB
-)
+var geminiTierIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_/-]+$`)
 
 type GeminiOAuthService struct {
 	sessionStore *geminicli.SessionStore
 	proxyRepo    ProxyRepository
 	oauthClient  GeminiOAuthClient
 	codeAssist   GeminiCliCodeAssistClient
-	driveClient  geminicli.DriveClient
 	cfg          *config.Config
 }
 
@@ -70,7 +60,6 @@ func NewGeminiOAuthService(
 	proxyRepo ProxyRepository,
 	oauthClient GeminiOAuthClient,
 	codeAssist GeminiCliCodeAssistClient,
-	driveClient geminicli.DriveClient,
 	cfg *config.Config,
 ) *GeminiOAuthService {
 	return &GeminiOAuthService{
@@ -78,7 +67,6 @@ func NewGeminiOAuthService(
 		proxyRepo:    proxyRepo,
 		oauthClient:  oauthClient,
 		codeAssist:   codeAssist,
-		driveClient:  driveClient,
 		cfg:          cfg,
 	}
 }
@@ -131,19 +119,18 @@ func (s *GeminiOAuthService) GenerateAuthURL(ctx context.Context, proxyID *int64
 		proxyURL = proxy.URL()
 	}
 
-	oauthCfg := geminicli.OAuthConfig{
-		ClientID:     s.cfg.Gemini.OAuth.ClientID,
-		ClientSecret: s.cfg.Gemini.OAuth.ClientSecret,
-		Scopes:       s.cfg.Gemini.OAuth.Scopes,
+	effectiveCfg, err := geminicli.EffectiveOAuthConfig(geminicli.OAuthConfig{
+		Scopes: s.cfg.Gemini.OAuth.Scopes,
+	}, oauthType)
+	if err != nil {
+		return nil, err
 	}
-	oauthCfg.ClientID = ""
-	oauthCfg.ClientSecret = ""
 
 	session := &geminicli.OAuthSession{
 		State:         state,
 		CodeVerifier:  codeVerifier,
 		ProxyURL:      proxyURL,
-		RedirectURI:   redirectURI,
+		RedirectURI:   geminicli.GeminiCLIRedirectURI,
 		ProjectIDHint: strings.TrimSpace(projectIDHint),
 		TierID:        canonicalGeminiTierIDForOAuthType(oauthType, tierID),
 		OAuthType:     oauthType,
@@ -151,16 +138,7 @@ func (s *GeminiOAuthService) GenerateAuthURL(ctx context.Context, proxyID *int64
 	}
 	s.sessionStore.Set(sessionID, session)
 
-	effectiveCfg, err := geminicli.EffectiveOAuthConfig(oauthCfg, oauthType)
-	if err != nil {
-		return nil, err
-	}
-
-	redirectURI = geminicli.GeminiCLIRedirectURI
-	session.RedirectURI = redirectURI
-	s.sessionStore.Set(sessionID, session)
-
-	authURL, err := geminicli.BuildAuthorizationURL(effectiveCfg, state, codeChallenge, redirectURI, session.ProjectIDHint, oauthType)
+	authURL, err := geminicli.BuildAuthorizationURL(effectiveCfg, state, codeChallenge, session.RedirectURI, session.ProjectIDHint, oauthType)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +176,7 @@ type GeminiTokenInfo struct {
 	PlanName     string         `json:"plan_name,omitempty"`
 	OAuthType    string         `json:"oauth_type,omitempty"` // "code_assist" or "google_one"
 	TierID       string         `json:"tier_id,omitempty"`    // Canonical tier id (e.g. google_one_free, gcp_standard)
-	Extra        map[string]any `json:"extra,omitempty"`      // Drive metadata
+	Extra        map[string]any `json:"extra,omitempty"`      // Supplemental Gemini metadata
 	Status       string         `json:"status,omitempty"`
 	StatusReason string         `json:"status_reason,omitempty"`
 	UsageRaw     map[string]any `json:"usage_raw,omitempty"`
@@ -229,7 +207,7 @@ func validateTierID(tierID string) error {
 		return fmt.Errorf("tier_id exceeds maximum length of 64 characters")
 	}
 	// Allow alphanumeric, underscore, hyphen, and slash (for tier paths)
-	if !regexp.MustCompile(`^[a-zA-Z0-9_/-]+$`).MatchString(tierID) {
+	if !geminiTierIDPattern.MatchString(tierID) {
 		return fmt.Errorf("tier_id contains invalid characters")
 	}
 	return nil
@@ -437,119 +415,6 @@ func buildGeminiCodeAssistProjectIDRequiredError(registeredTierID string) error 
 	return fmt.Errorf("project_id required for Gemini Code Assist authorization. Please provide Project ID manually in the authorization form, or create a project at https://console.cloud.google.com")
 }
 
-// inferGoogleOneTier infers Google One tier from Drive storage limit
-func inferGoogleOneTier(storageBytes int64) string {
-	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] inferGoogleOneTier - input: %d bytes (%.2f TB)", storageBytes, float64(storageBytes)/float64(TB))
-
-	if storageBytes <= 0 {
-		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] inferGoogleOneTier - storageBytes <= 0, returning UNKNOWN")
-		return GeminiTierGoogleOneUnknown
-	}
-
-	if storageBytes > StorageTierUnlimited {
-		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] inferGoogleOneTier - > %d bytes (100TB), returning UNLIMITED", StorageTierUnlimited)
-		return GeminiTierGoogleAIUltra
-	}
-	if storageBytes >= StorageTierAIPremium {
-		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] inferGoogleOneTier - >= %d bytes (2TB), returning google_ai_pro", StorageTierAIPremium)
-		return GeminiTierGoogleAIPro
-	}
-	if storageBytes >= StorageTierFree {
-		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] inferGoogleOneTier - >= %d bytes (15GB), returning FREE", StorageTierFree)
-		return GeminiTierGoogleOneFree
-	}
-
-	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] inferGoogleOneTier - < %d bytes (15GB), returning UNKNOWN", StorageTierFree)
-	return GeminiTierGoogleOneUnknown
-}
-
-// FetchGoogleOneTier fetches Google One tier from Drive API.
-// Note: LoadCodeAssist API is NOT called for Google One accounts because:
-// 1. It's designed for GCP IAM (enterprise), not personal Google accounts
-// 2. Personal accounts will get 403/404 from cloudaicompanion.googleapis.com
-// 3. Google consumer (Google One) and enterprise (GCP) systems are physically isolated
-func (s *GeminiOAuthService) FetchGoogleOneTier(ctx context.Context, accessToken, proxyURL string) (string, *geminicli.DriveStorageInfo, error) {
-	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Starting FetchGoogleOneTier (Google One personal account)")
-
-	// Use Drive API to infer tier from storage quota (requires drive.readonly scope)
-	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Calling Drive API for storage quota...")
-
-	storageInfo, err := s.driveClient.GetStorageQuota(ctx, accessToken, proxyURL)
-	if err != nil {
-		// Check if it's a 403 (scope not granted)
-		if strings.Contains(err.Error(), "status 403") {
-			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Drive API scope not available (403): %v", err)
-			return GeminiTierGoogleOneUnknown, nil, err
-		}
-		// Other errors
-		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Failed to fetch Drive storage: %v", err)
-		return GeminiTierGoogleOneUnknown, nil, err
-	}
-
-	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Drive API response - Limit: %d bytes (%.2f TB), Usage: %d bytes (%.2f GB)",
-		storageInfo.Limit, float64(storageInfo.Limit)/float64(TB),
-		storageInfo.Usage, float64(storageInfo.Usage)/float64(GB))
-
-	tierID := inferGoogleOneTier(storageInfo.Limit)
-	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Inferred tier from storage: %s", tierID)
-
-	return tierID, storageInfo, nil
-}
-
-// RefreshAccountGoogleOneTier 刷新单个账号的 Google One Tier
-func (s *GeminiOAuthService) RefreshAccountGoogleOneTier(
-	ctx context.Context,
-	account *Account,
-) (tierID string, extra map[string]any, credentials map[string]any, err error) {
-	if account == nil {
-		return "", nil, nil, fmt.Errorf("account is nil")
-	}
-
-	// 验证账号类型
-	oauthType, ok := account.Credentials["oauth_type"].(string)
-	if !ok || oauthType != "google_one" {
-		return "", nil, nil, fmt.Errorf("not a google_one OAuth account")
-	}
-
-	// 获取 access_token
-	accessToken, ok := account.Credentials["access_token"].(string)
-	if !ok || accessToken == "" {
-		return "", nil, nil, fmt.Errorf("missing access_token")
-	}
-
-	// 获取 proxy URL
-	var proxyURL string
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
-	}
-
-	// 调用 Drive API
-	tierID, storageInfo, err := s.FetchGoogleOneTier(ctx, accessToken, proxyURL)
-	if err != nil {
-		return "", nil, nil, err
-	}
-
-	// 构建 extra 数据（保留原有 extra 字段）
-	extra = make(map[string]any)
-	for k, v := range account.Extra {
-		extra[k] = v
-	}
-	if storageInfo != nil {
-		extra["drive_storage_limit"] = storageInfo.Limit
-		extra["drive_storage_usage"] = storageInfo.Usage
-		extra["drive_tier_updated_at"] = time.Now().Format(time.RFC3339)
-	}
-
-	// 构建 credentials 数据
-	credentials = make(map[string]any)
-	for k, v := range account.Credentials {
-		credentials[k] = v
-	}
-	credentials["tier_id"] = tierID
-
-	return tierID, extra, credentials, nil
-}
-
 func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExchangeCodeInput) (*GeminiTokenInfo, error) {
 	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] ========== ExchangeCode START ==========")
 	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] SessionID: %s", input.SessionID)
@@ -702,51 +567,22 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 			if err != nil {
 				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] WARNING: Failed to fetch account metadata: %v", err)
 			} else {
+				detectedTierID = canonicalGeminiTierIDForOAuthType(oauthType, snapshot.TierID)
 				tokenExtra = mergeGeminiCredentialExtra(tokenExtra, snapshot.Extra)
 			}
 		}
-
-		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Attempting to fetch Google One tier from Drive API...")
-		// Attempt to fetch Drive storage tier
-		var storageInfo *geminicli.DriveStorageInfo
-		var err error
-		tierID, storageInfo, err = s.FetchGoogleOneTier(ctx, tokenResp.AccessToken, proxyURL)
-		if err != nil {
-			// Log warning but don't block - use fallback
-			fmt.Printf("[GeminiOAuth] Warning: Failed to fetch Drive tier: %v\n", err)
-			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] WARNING: Failed to fetch Drive tier: %v", err)
-			tierID = ""
-		} else {
-			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Successfully fetched Drive tier: %s", tierID)
-			if storageInfo != nil {
-				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Drive storage - Limit: %d bytes (%.2f TB), Usage: %d bytes (%.2f GB)",
-					storageInfo.Limit, float64(storageInfo.Limit)/float64(TB),
-					storageInfo.Usage, float64(storageInfo.Usage)/float64(GB))
-			}
-		}
-		tierID = strings.TrimSpace(tierID)
-		if tierID == "" || canonicalGeminiTierIDForOAuthType(oauthType, tierID) == GeminiTierGoogleOneUnknown {
-			if detectedTierID != "" {
-				tierID = detectedTierID
-				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Using detected tier_id from Code Assist metadata: %s", tierID)
-			} else if fallbackTierID != "" {
-				tierID = fallbackTierID
-				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Using fallback tier_id from user/session: %s", tierID)
-			} else {
-				tierID = legacyTierFree
-				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Using default tier_id: %s", tierID)
-			}
+		switch {
+		case detectedTierID != "":
+			tierID = detectedTierID
+			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Using detected tier_id from account metadata: %s", tierID)
+		case fallbackTierID != "":
+			tierID = fallbackTierID
+			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Using fallback tier_id from user/session: %s", tierID)
+		default:
+			tierID = legacyTierFree
+			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Using default tier_id: %s", tierID)
 		}
 		fmt.Printf("[GeminiOAuth] Google One tierID after normalization: %s\n", tierID)
-
-		// Store Drive info in extra field for caching
-		if storageInfo != nil {
-			tokenExtra = mergeGeminiCredentialExtra(tokenExtra, map[string]any{
-				"drive_storage_limit":   storageInfo.Limit,
-				"drive_storage_usage":   storageInfo.Usage,
-				"drive_tier_updated_at": time.Now().Format(time.RFC3339),
-			})
-		}
 
 	default:
 		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Processing %s OAuth type (no tier detection)", oauthType)
@@ -788,7 +624,11 @@ func (s *GeminiOAuthService) RefreshToken(ctx context.Context, oauthType, refres
 			if backoff > 30*time.Second {
 				backoff = 30 * time.Second
 			}
-			time.Sleep(backoff)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
 		}
 
 		tokenResp, err := s.oauthClient.RefreshToken(ctx, oauthType, refreshToken, proxyURL)
@@ -946,48 +786,23 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 			})
 		}
 	case "google_one":
+		detectedTierID := ""
 		if existingProjectID != "" {
 			if snapshot, err := s.fetchCodeAssistSnapshot(ctx, tokenInfo.AccessToken, proxyURL, existingProjectID); err == nil {
+				detectedTierID = canonicalGeminiTierIDForOAuthType(oauthType, snapshot.TierID)
 				tokenInfo.Extra = mergeGeminiCredentialExtra(tokenInfo.Extra, snapshot.Extra)
 			} else {
 				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] WARNING: Failed to refresh account metadata: %v", err)
 			}
 		}
 		canonicalExistingTier := strings.TrimSpace(existingTierID)
-		// Check if tier cache is stale (> 24 hours)
-		needsRefresh := true
-		if updatedAt, ok := geminiDriveTierUpdatedAt(account); ok && time.Since(updatedAt) <= 24*time.Hour {
-			needsRefresh = false
-			// Use cached tier persisted via BuildAccountCredentials; fall back to legacy account.Extra.
+		switch {
+		case detectedTierID != "":
+			tokenInfo.TierID = detectedTierID
+		case canonicalExistingTier != "":
 			tokenInfo.TierID = canonicalExistingTier
-		}
-
-		if tokenInfo.TierID == "" {
-			tokenInfo.TierID = canonicalExistingTier
-		}
-
-		if needsRefresh {
-			tierID, storageInfo, err := s.FetchGoogleOneTier(ctx, tokenInfo.AccessToken, proxyURL)
-			if err == nil {
-				if strings.TrimSpace(tierID) != "" && canonicalGeminiTierIDForOAuthType(oauthType, tierID) != GeminiTierGoogleOneUnknown {
-					tokenInfo.TierID = strings.TrimSpace(tierID)
-				}
-				if storageInfo != nil {
-					tokenInfo.Extra = mergeGeminiCredentialExtra(tokenInfo.Extra, map[string]any{
-						"drive_storage_limit":   storageInfo.Limit,
-						"drive_storage_usage":   storageInfo.Usage,
-						"drive_tier_updated_at": time.Now().Format(time.RFC3339),
-					})
-				}
-			}
-		}
-
-		if tokenInfo.TierID == "" || canonicalGeminiTierIDForOAuthType(oauthType, tokenInfo.TierID) == GeminiTierGoogleOneUnknown {
-			if canonicalExistingTier != "" {
-				tokenInfo.TierID = canonicalExistingTier
-			} else {
-				tokenInfo.TierID = GeminiTierGoogleOneFree
-			}
+		default:
+			tokenInfo.TierID = legacyTierFree
 		}
 	}
 	tokenInfo.PlanName = geminiPlanNameForToken(tokenInfo.TierID, tokenInfo.Extra)
@@ -1104,9 +919,6 @@ func mergeGeminiCredentialExtra(base map[string]any, extras ...map[string]any) m
 
 func extractGeminiPersistedExtra(credentials map[string]any) map[string]any {
 	keys := []string{
-		"drive_storage_limit",
-		"drive_storage_usage",
-		"drive_tier_updated_at",
 		"gemini_current_tier_id",
 		"gemini_current_tier_name",
 		"gemini_paid_tier_id",
@@ -1131,36 +943,6 @@ func extractGeminiPersistedExtra(credentials map[string]any) map[string]any {
 		return nil
 	}
 	return extra
-}
-
-func geminiDriveTierUpdatedAt(account *Account) (time.Time, bool) {
-	if account == nil {
-		return time.Time{}, false
-	}
-
-	if updatedAt, ok := parseGeminiUpdatedAt(account.Credentials["drive_tier_updated_at"]); ok {
-		return updatedAt, true
-	}
-
-	if updatedAt, ok := parseGeminiUpdatedAt(account.Extra["drive_tier_updated_at"]); ok {
-		return updatedAt, true
-	}
-
-	return time.Time{}, false
-}
-
-func parseGeminiUpdatedAt(raw any) (time.Time, bool) {
-	updatedAtStr, ok := raw.(string)
-	if !ok || strings.TrimSpace(updatedAtStr) == "" {
-		return time.Time{}, false
-	}
-
-	updatedAt, err := time.Parse(time.RFC3339, updatedAtStr)
-	if err != nil {
-		return time.Time{}, false
-	}
-
-	return updatedAt, true
 }
 
 func buildGeminiCodeAssistExtra(loadResp *geminicli.LoadCodeAssistResponse) map[string]any {
@@ -1222,6 +1004,11 @@ func isGeminiForbiddenQuotaError(err error) bool {
 	if err == nil {
 		return false
 	}
+	var httpErr *geminicli.CodeAssistHTTPError
+	if errors.As(err, &httpErr) {
+		return httpErr.StatusCode == 403
+	}
+	// Fallback for wrapped errors that lost the type.
 	return strings.Contains(strings.ToLower(err.Error()), "status 403")
 }
 
@@ -1249,6 +1036,9 @@ func (s *GeminiOAuthService) retrieveGeminiUserQuota(ctx context.Context, access
 		return nil, err
 	}
 
+	// Marshal→Unmarshal round-trip converts the typed struct into a map[string]any
+	// for storage in the credentials JSONB column. The typed fields in
+	// RetrieveUserQuotaBucket (string, float64) survive this conversion faithfully.
 	raw, err := json.Marshal(resp)
 	if err != nil {
 		return nil, fmt.Errorf("marshal retrieveUserQuota response failed: %w", err)
@@ -1269,7 +1059,7 @@ func buildGeminiLoadCodeAssistRequest(projectID string) *geminicli.LoadCodeAssis
 	return &geminicli.LoadCodeAssistRequest{
 		CloudAICompanionProject: trimmedProjectID,
 		Metadata: geminicli.LoadCodeAssistMetadata{
-			IDEType:     "ANTIGRAVITY",
+			IDEType:     "IDE_UNSPECIFIED",
 			Platform:    "PLATFORM_UNSPECIFIED",
 			PluginType:  "GEMINI",
 			DuetProject: trimmedProjectID,
@@ -1460,16 +1250,7 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 	// 如果用户已提供 project hint，则继续使用该 project；否则才要求用户手动提供。
 	if loadErr == nil {
 		registeredTierID := strings.TrimSpace(snapshot.TierID)
-		hasRegisteredTierMetadata := false
-		if snapshot.Extra != nil {
-			if value, ok := snapshot.Extra["gemini_current_tier_id"].(string); ok && strings.TrimSpace(value) != "" {
-				hasRegisteredTierMetadata = true
-			}
-			if value, ok := snapshot.Extra["gemini_paid_tier_id"].(string); ok && strings.TrimSpace(value) != "" {
-				hasRegisteredTierMetadata = true
-			}
-		}
-		if registeredTierID != "" && hasRegisteredTierMetadata {
+		if registeredTierID != "" {
 			if trimmedProjectIDHint != "" {
 				snapshot.ProjectID = trimmedProjectIDHint
 				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] User has tier (%s) but no cloudaicompanionProject; falling back to provided project_id hint: %s", registeredTierID, trimmedProjectIDHint)

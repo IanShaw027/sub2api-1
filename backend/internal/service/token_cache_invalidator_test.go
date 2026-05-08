@@ -51,6 +51,7 @@ func TestCompositeTokenCacheInvalidator_Gemini(t *testing.T) {
 
 	err := invalidator.InvalidateToken(context.Background(), account)
 	require.NoError(t, err)
+	// Gemini OAuth cache is account-scoped even when project_id is present.
 	require.Equal(t, []string{"gemini:account:10"}, cache.deletedKeys)
 }
 
@@ -289,6 +290,7 @@ func TestCompositeTokenCacheInvalidator_AllPlatformsIntegration(t *testing.T) {
 		{ID: 4, Platform: PlatformAnthropic, Type: AccountTypeOAuth},
 	}
 
+	// Gemini is account-scoped; Antigravity still clears both project and account keys.
 	expectedKeys := []string{
 		"gemini:account:1",
 		"ag:ag-proj",
