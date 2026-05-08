@@ -2916,7 +2916,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	// 以兼容自定义 base_url 的 OpenAI-compatible 上游。
 	if model, ok := reqBody["model"].(string); ok {
 		shouldNormalizeOAuthUpstreamModel := account.Type == AccountTypeOAuth &&
-			(isCodexCLI || isOpenAICompatMessagesBridgeRequestBody(reqBody))
+			account.Platform == PlatformOpenAI &&
+			isOpenAIResponsesInboundPath(c)
 		if !compactMapped && shouldNormalizeOAuthUpstreamModel {
 			upstreamModel = normalizeOpenAIModelForUpstream(account, model)
 			if upstreamModel != "" && upstreamModel != model {
@@ -3355,6 +3356,7 @@ oauthTransformDone:
 
 	httpInvalidEncryptedContentRetryTried := false
 	httpCodexCompatRetryTried := false
+	httpModelFallbackRetryTried := false
 	for {
 		// Build upstream request
 		upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, upstreamStream)
@@ -3418,6 +3420,52 @@ oauthTransformDone:
 			upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 			upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
 			upstreamCode := extractUpstreamErrorCode(respBody)
+			if !httpModelFallbackRetryTried {
+				currentModel := strings.TrimSpace(upstreamModel)
+				if currentModel == "" {
+					currentModel = strings.TrimSpace(gjson.GetBytes(body, "model").String())
+				}
+				if fallbackModel := resolveConfiguredFallbackModel(ctx, s.settingService, PlatformOpenAI, currentModel); fallbackModel != "" &&
+					isUpstreamModelUnavailableForFallback(resp.StatusCode, respBody) {
+					httpModelFallbackRetryTried = true
+					fallbackUpstreamModel := account.GetMappedModel(fallbackModel)
+					if isCompactRequest {
+						if compactFallbackModel := resolveOpenAICompactForwardModel(account, fallbackUpstreamModel); compactFallbackModel != "" {
+							fallbackUpstreamModel = compactFallbackModel
+						}
+					} else if normalized := normalizeOpenAIModelForUpstream(account, fallbackUpstreamModel); normalized != "" {
+						fallbackUpstreamModel = normalized
+					}
+					if fallbackUpstreamModel != "" && !strings.EqualFold(fallbackUpstreamModel, currentModel) {
+						reqBody["model"] = fallbackUpstreamModel
+						body, err = marshalOpenAIResponsesRequestBodyOrdered(reqBody)
+						if err != nil {
+							return nil, fmt.Errorf("serialize openai model fallback body: %w", err)
+						}
+						if account.Type == AccountTypeOAuth && isCompactRequest {
+							normalizedBody, normalized, normErr := normalizeOpenAICompactRequestBody(body)
+							if normErr != nil {
+								return nil, normErr
+							}
+							if normalized {
+								body = normalizedBody
+							}
+							reqStream = gjson.GetBytes(body, "stream").Bool()
+						}
+						upstreamModel = fallbackUpstreamModel
+						setOpsUpstreamRequestBody(c, body)
+						logger.LegacyPrintf(
+							"service.openai_gateway",
+							"[OpenAI] Retrying once with fallback model %s -> %s (account: %s, status: %d)",
+							currentModel,
+							fallbackUpstreamModel,
+							account.Name,
+							resp.StatusCode,
+						)
+						continue
+					}
+				}
+			}
 			if !httpInvalidEncryptedContentRetryTried && resp.StatusCode == http.StatusBadRequest && upstreamCode == "invalid_encrypted_content" {
 				if trimOpenAIEncryptedReasoningItems(reqBody) {
 					body, err = marshalOpenAIResponsesRequestBodyOrdered(reqBody)
@@ -3785,6 +3833,64 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+		_ = resp.Body.Close()
+		resp.Body = io.NopCloser(bytes.NewReader(respBody))
+		currentModel := strings.TrimSpace(upstreamPassthroughModel)
+		if currentModel == "" {
+			currentModel = strings.TrimSpace(gjson.GetBytes(body, "model").String())
+		}
+		if fallbackModel := resolveConfiguredFallbackModel(ctx, s.settingService, PlatformOpenAI, currentModel); fallbackModel != "" &&
+			isUpstreamModelUnavailableForFallback(resp.StatusCode, respBody) {
+			fallbackUpstreamModel := account.GetMappedModel(fallbackModel)
+			if isOpenAIResponsesCompactPath(c) {
+				if compactFallbackModel := resolveOpenAICompactForwardModel(account, fallbackUpstreamModel); compactFallbackModel != "" {
+					fallbackUpstreamModel = compactFallbackModel
+				}
+			} else if normalized := normalizeOpenAIModelForUpstream(account, fallbackUpstreamModel); normalized != "" {
+				fallbackUpstreamModel = normalized
+			}
+			if fallbackUpstreamModel != "" && !strings.EqualFold(fallbackUpstreamModel, currentModel) {
+				originalUpstreamBody := body
+				fallbackBody, setErr := sjson.SetBytes(body, "model", fallbackUpstreamModel)
+				if setErr != nil {
+					return nil, fmt.Errorf("set openai passthrough fallback model: %w", setErr)
+				}
+				body = fallbackBody
+				setOpsUpstreamRequestBody(c, body)
+				upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, shouldDetachLegacyOAuthPassthroughContext(account, reqStream, body))
+				fallbackReq, buildErr := s.buildUpstreamRequestOpenAIPassthrough(upstreamCtx, c, account, body, token, promptCacheKey)
+				releaseUpstreamCtx()
+				if buildErr == nil {
+					fallbackResp, fallbackErr := s.httpUpstream.Do(fallbackReq, proxyURL, account.ID, account.Concurrency)
+					if fallbackErr == nil {
+						resp = fallbackResp
+						upstreamPassthroughModel = fallbackUpstreamModel
+					} else {
+						body = originalUpstreamBody
+						setOpsUpstreamRequestBody(c, originalUpstreamBody)
+						logger.LegacyPrintf(
+							"service.openai_gateway",
+							"[OpenAI 自动透传] fallback model retry request failed account=%d model=%s err=%v",
+							account.ID,
+							fallbackUpstreamModel,
+							fallbackErr,
+						)
+					}
+				} else {
+					body = originalUpstreamBody
+					setOpsUpstreamRequestBody(c, originalUpstreamBody)
+					logger.LegacyPrintf(
+						"service.openai_gateway",
+						"[OpenAI 自动透传] fallback model retry build failed account=%d model=%s err=%v",
+						account.ID,
+						fallbackUpstreamModel,
+						buildErr,
+					)
+				}
+			}
+		}
+
 		// 透传模式默认保持原样代理；但 429/529 属于网关必须兜底的
 		// 上游容量类错误，应先触发多账号 failover 以维持基础 SLA。
 		if shouldFailoverOpenAIPassthroughResponse(resp.StatusCode) {

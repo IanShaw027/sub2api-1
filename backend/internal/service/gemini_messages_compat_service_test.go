@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -336,6 +337,140 @@ func TestGeminiMessagesCompatServiceForward_PreservesRequestedModelAndMappedUpst
 	require.Equal(t, 1, httpStub.calls)
 	require.NotNil(t, httpStub.lastReq)
 	require.Contains(t, httpStub.lastReq.URL.String(), "/models/claude-sonnet-4-20250514:")
+}
+
+func TestGeminiMessagesCompatService_MaybeRetryModelFallback_UpdatesOpsRequestBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	originalBody := []byte(`{"model":"gemini-legacy","contents":[{"role":"user","parts":[{"text":"hello"}]}]}`)
+	setOpsUpstreamRequestBody(c, originalBody)
+
+	httpStub := &geminiCompatHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"x-request-id": []string{"gemini-fallback-ok"}},
+			Body:       io.NopCloser(strings.NewReader(`{"candidates":[{"content":{"parts":[{"text":"done"}]}}]}`)),
+		},
+	}
+	svc := &GeminiMessagesCompatService{
+		httpUpstream: httpStub,
+		cfg:          &config.Config{},
+		settingService: NewSettingService(&antigravityFallbackSettingRepoStub{values: map[string]string{
+			SettingKeyEnableModelFallback: "true",
+			SettingKeyFallbackModelGemini: "gemini-2.5-pro",
+		}}, &config.Config{}),
+	}
+	account := &Account{
+		ID:          1,
+		Platform:    PlatformGemini,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key": "gemini-api-key",
+		},
+	}
+
+	currentModel := "gemini-legacy"
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"unknown model"}}`)),
+	}
+	fallbackResp, fallbackModel, applied := svc.maybeRetryGeminiModelFallback(
+		context.Background(),
+		c,
+		account,
+		resp,
+		currentModel,
+		func(model string) { currentModel = model },
+		func(_ context.Context) (*http.Request, string, error) {
+			body := fmt.Sprintf(`{"model":"%s","contents":[{"role":"user","parts":[{"text":"hello"}]}]}`, currentModel)
+			req := httptest.NewRequest(http.MethodPost, "https://generativelanguage.googleapis.com/v1beta/models/"+currentModel+":generateContent", strings.NewReader(body))
+			return req, currentModel, nil
+		},
+		"",
+		originalBody,
+	)
+
+	require.True(t, applied)
+	require.NotNil(t, fallbackResp)
+	require.Equal(t, http.StatusOK, fallbackResp.StatusCode)
+	require.Equal(t, "gemini-2.5-pro", fallbackModel)
+	require.Equal(t, "gemini-2.5-pro", currentModel)
+	require.NotNil(t, httpStub.lastReq)
+
+	requestBody, err := io.ReadAll(httpStub.lastReq.Body)
+	require.NoError(t, err)
+	require.Contains(t, string(requestBody), `"model":"gemini-2.5-pro"`)
+
+	rawBody, ok := c.Get(OpsUpstreamRequestBodyKey)
+	require.True(t, ok)
+	opsBody, ok := rawBody.([]byte)
+	require.True(t, ok)
+	require.Equal(t, string(requestBody), string(opsBody))
+}
+
+func TestGeminiMessagesCompatService_MaybeRetryModelFallback_RequestErrorRestoresOpsRequestBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	originalBody := []byte(`{"model":"gemini-legacy","contents":[{"role":"user","parts":[{"text":"hello"}]}]}`)
+	setOpsUpstreamRequestBody(c, originalBody)
+
+	httpStub := &geminiCompatHTTPUpstreamStub{err: errors.New("dial failed")}
+	svc := &GeminiMessagesCompatService{
+		httpUpstream: httpStub,
+		cfg:          &config.Config{},
+		settingService: NewSettingService(&antigravityFallbackSettingRepoStub{values: map[string]string{
+			SettingKeyEnableModelFallback: "true",
+			SettingKeyFallbackModelGemini: "gemini-2.5-pro",
+		}}, &config.Config{}),
+	}
+	account := &Account{
+		ID:          1,
+		Platform:    PlatformGemini,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key": "gemini-api-key",
+		},
+	}
+
+	currentModel := "gemini-legacy"
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"unknown model"}}`)),
+	}
+	fallbackResp, fallbackModel, applied := svc.maybeRetryGeminiModelFallback(
+		context.Background(),
+		c,
+		account,
+		resp,
+		currentModel,
+		func(model string) { currentModel = model },
+		func(_ context.Context) (*http.Request, string, error) {
+			body := fmt.Sprintf(`{"model":"%s","contents":[{"role":"user","parts":[{"text":"hello"}]}]}`, currentModel)
+			req := httptest.NewRequest(http.MethodPost, "https://generativelanguage.googleapis.com/v1beta/models/"+currentModel+":generateContent", strings.NewReader(body))
+			return req, currentModel, nil
+		},
+		"",
+		originalBody,
+	)
+
+	require.False(t, applied)
+	require.Same(t, resp, fallbackResp)
+	require.Equal(t, "gemini-legacy", fallbackModel)
+	require.Equal(t, "gemini-legacy", currentModel)
+
+	rawBody, ok := c.Get(OpsUpstreamRequestBodyKey)
+	require.True(t, ok)
+	opsBody, ok := rawBody.([]byte)
+	require.True(t, ok)
+	require.Equal(t, string(originalBody), string(opsBody))
 }
 
 func TestGeminiMessagesCompatServiceForward_ImageBillingUsesMappedUpstreamModel(t *testing.T) {

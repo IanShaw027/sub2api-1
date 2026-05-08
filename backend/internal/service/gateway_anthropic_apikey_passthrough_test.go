@@ -266,6 +266,63 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardCountTokensPreservesBo
 	require.Empty(t, rec.Header().Get("Set-Cookie"))
 }
 
+func TestGatewayService_MaybeRetryAnthropicModelFallback_BuildFailureRestoresOpsBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	originalBody := []byte(`{"model":"claude-legacy","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`)
+	setOpsUpstreamRequestBody(c, originalBody)
+
+	svc := &GatewayService{
+		settingService: NewSettingService(&antigravityFallbackSettingRepoStub{values: map[string]string{
+			SettingKeyEnableModelFallback:    "true",
+			SettingKeyFallbackModelAnthropic: "claude-sonnet-4-6",
+		}}, &config.Config{}),
+	}
+	account := newAnthropicAPIKeyAccountForTest()
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"model not found"}}`)),
+	}
+
+	var attemptedBody []byte
+	var attemptedModel string
+	fallbackResp, fallbackBody, fallbackReqModel, fallbackMappedModel, applied := svc.maybeRetryAnthropicModelFallback(
+		context.Background(),
+		c,
+		account,
+		resp,
+		originalBody,
+		"claude-legacy",
+		"claude-legacy",
+		func(_ context.Context, body []byte, model string) (*http.Request, error) {
+			attemptedBody = append([]byte(nil), body...)
+			attemptedModel = model
+			return nil, errors.New("build failed")
+		},
+		func(*http.Request) (*http.Response, error) {
+			t.Fatal("fallback request should not be sent when build fails")
+			return nil, nil
+		},
+	)
+
+	require.False(t, applied)
+	require.Same(t, resp, fallbackResp)
+	require.Equal(t, originalBody, fallbackBody)
+	require.Equal(t, "claude-legacy", fallbackReqModel)
+	require.Equal(t, "claude-legacy", fallbackMappedModel)
+	require.Equal(t, "claude-sonnet-4-6", attemptedModel)
+	require.Equal(t, "claude-sonnet-4-6", gjson.GetBytes(attemptedBody, "model").String())
+
+	rawBody, ok := c.Get(OpsUpstreamRequestBodyKey)
+	require.True(t, ok)
+	opsBody, ok := rawBody.([]byte)
+	require.True(t, ok)
+	require.Equal(t, string(originalBody), string(opsBody))
+}
+
 // TestGatewayService_AnthropicAPIKeyPassthrough_ModelMappingEdgeCases 覆盖透传模式下模型映射的各种边界情况
 func TestGatewayService_AnthropicAPIKeyPassthrough_ModelMappingEdgeCases(t *testing.T) {
 	gin.SetMode(gin.TestMode)

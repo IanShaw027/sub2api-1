@@ -4824,6 +4824,31 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	if resp == nil || resp.Body == nil {
 		return nil, errors.New("upstream request failed: empty response")
 	}
+	buildFallbackReq := func(reqCtx context.Context, fallbackBody []byte, fallbackModel string) (*http.Request, error) {
+		upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(reqCtx, reqStream)
+		req, buildErr := s.buildUpstreamRequest(upstreamCtx, c, account, fallbackBody, token, tokenType, fallbackModel, reqStream, shouldMimicClaudeCode)
+		releaseUpstreamCtx()
+		return req, buildErr
+	}
+	doFallbackReq := func(req *http.Request) (*http.Response, error) {
+		return s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, tlsProfile)
+	}
+	if fallbackResp, fallbackBody, fallbackReqModel, fallbackMappedModel, applied := s.maybeRetryAnthropicModelFallback(
+		ctx,
+		c,
+		account,
+		resp,
+		body,
+		reqModel,
+		mappedModel,
+		buildFallbackReq,
+		doFallbackReq,
+	); applied {
+		resp = fallbackResp
+		body = fallbackBody
+		reqModel = fallbackReqModel
+		mappedModel = fallbackMappedModel
+	}
 	defer func() { _ = resp.Body.Close() }()
 
 	// 处理重试耗尽的情况
@@ -5136,6 +5161,30 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 	}
 	if resp == nil || resp.Body == nil {
 		return nil, errors.New("upstream request failed: empty response")
+	}
+	buildFallbackReq := func(reqCtx context.Context, fallbackBody []byte, _ string) (*http.Request, error) {
+		upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(reqCtx, input.RequestStream)
+		req, buildErr := s.buildUpstreamRequestAnthropicAPIKeyPassthrough(upstreamCtx, c, account, fallbackBody, token)
+		releaseUpstreamCtx()
+		return req, buildErr
+	}
+	doFallbackReq := func(req *http.Request) (*http.Response, error) {
+		return s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	}
+	if fallbackResp, fallbackBody, fallbackReqModel, _, applied := s.maybeRetryAnthropicModelFallback(
+		ctx,
+		c,
+		account,
+		resp,
+		input.Body,
+		input.RequestModel,
+		input.RequestModel,
+		buildFallbackReq,
+		doFallbackReq,
+	); applied {
+		resp = fallbackResp
+		input.Body = fallbackBody
+		input.RequestModel = fallbackReqModel
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -6915,6 +6964,85 @@ func isCountTokensUnsupported404(statusCode int, body []byte) bool {
 		return true
 	}
 	return strings.Contains(msg, "count_tokens") && strings.Contains(msg, "not found")
+}
+
+func resolveAnthropicFallbackUpstreamModel(account *Account, fallbackModel string) string {
+	fallbackModel = strings.TrimSpace(fallbackModel)
+	if account == nil || fallbackModel == "" {
+		return fallbackModel
+	}
+
+	mappedModel := account.GetMappedModel(fallbackModel)
+	if account.Platform != PlatformAnthropic || account.Type == AccountTypeAPIKey {
+		return mappedModel
+	}
+	if account.Type == AccountTypeServiceAccount {
+		return normalizeVertexAnthropicModelID(claude.NormalizeModelID(mappedModel))
+	}
+	return claude.NormalizeModelID(mappedModel)
+}
+
+func (s *GatewayService) maybeRetryAnthropicModelFallback(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	resp *http.Response,
+	requestBody []byte,
+	requestModel string,
+	mappedModel string,
+	buildReq func(context.Context, []byte, string) (*http.Request, error),
+	doReq func(*http.Request) (*http.Response, error),
+) (*http.Response, []byte, string, string, bool) {
+	if resp == nil || resp.Body == nil || account == nil || account.Platform != PlatformAnthropic {
+		return resp, requestBody, requestModel, mappedModel, false
+	}
+
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	_ = resp.Body.Close()
+	resp.Body = io.NopCloser(bytes.NewReader(respBody))
+
+	currentModel := strings.TrimSpace(mappedModel)
+	if currentModel == "" {
+		currentModel = strings.TrimSpace(requestModel)
+	}
+	fallbackModel := resolveConfiguredFallbackModel(ctx, s.settingService, PlatformAnthropic, currentModel)
+	if fallbackModel == "" || !isUpstreamModelUnavailableForFallback(resp.StatusCode, respBody) {
+		return resp, requestBody, requestModel, mappedModel, false
+	}
+
+	fallbackUpstreamModel := resolveAnthropicFallbackUpstreamModel(account, fallbackModel)
+	if fallbackUpstreamModel == "" || strings.EqualFold(fallbackUpstreamModel, currentModel) {
+		return resp, requestBody, requestModel, mappedModel, false
+	}
+
+	fallbackBody := s.replaceModelInBody(requestBody, fallbackUpstreamModel)
+	setOpsUpstreamRequestBody(c, fallbackBody)
+	fallbackReq, err := buildReq(ctx, fallbackBody, fallbackUpstreamModel)
+	if err != nil {
+		setOpsUpstreamRequestBody(c, requestBody)
+		logger.LegacyPrintf("service.gateway", "Anthropic account %d: build fallback model request failed: %v", account.ID, err)
+		return resp, requestBody, requestModel, mappedModel, false
+	}
+
+	fallbackResp, err := doReq(fallbackReq)
+	if err != nil {
+		setOpsUpstreamRequestBody(c, requestBody)
+		if fallbackResp != nil && fallbackResp.Body != nil {
+			_ = fallbackResp.Body.Close()
+		}
+		logger.LegacyPrintf("service.gateway", "Anthropic account %d: fallback model request failed: %v", account.ID, err)
+		return resp, requestBody, requestModel, mappedModel, false
+	}
+
+	logger.LegacyPrintf(
+		"service.gateway",
+		"Anthropic account %d: retrying once with fallback model %s -> %s after upstream status %d",
+		account.ID,
+		currentModel,
+		fallbackUpstreamModel,
+		resp.StatusCode,
+	)
+	return fallbackResp, fallbackBody, fallbackUpstreamModel, fallbackUpstreamModel, true
 }
 
 func (s *GatewayService) handleErrorResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, _ ...any) (*ForwardResult, error) {

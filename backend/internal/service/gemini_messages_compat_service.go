@@ -61,6 +61,7 @@ type GeminiMessagesCompatService struct {
 	rateLimitService          *RateLimitService
 	httpUpstream              HTTPUpstream
 	antigravityGatewayService *AntigravityGatewayService
+	settingService            *SettingService
 	cfg                       *config.Config
 	responseHeaderFilter      *responseheaders.CompiledHeaderFilter
 }
@@ -75,7 +76,12 @@ func NewGeminiMessagesCompatService(
 	httpUpstream HTTPUpstream,
 	antigravityGatewayService *AntigravityGatewayService,
 	cfg *config.Config,
+	settingServices ...*SettingService,
 ) *GeminiMessagesCompatService {
+	var settingService *SettingService
+	if len(settingServices) > 0 {
+		settingService = settingServices[0]
+	}
 	return &GeminiMessagesCompatService{
 		accountRepo:               accountRepo,
 		groupRepo:                 groupRepo,
@@ -85,6 +91,7 @@ func NewGeminiMessagesCompatService(
 		rateLimitService:          rateLimitService,
 		httpUpstream:              httpUpstream,
 		antigravityGatewayService: antigravityGatewayService,
+		settingService:            settingService,
 		cfg:                       cfg,
 		responseHeaderFilter:      compileResponseHeaderFilter(cfg),
 	}
@@ -936,6 +943,22 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 
 		break
 	}
+	if resp != nil && resp.StatusCode >= 400 {
+		if fallbackResp, fallbackModel, applied := s.maybeRetryGeminiModelFallback(
+			ctx,
+			c,
+			account,
+			resp,
+			mappedModel,
+			func(model string) { mappedModel = model },
+			buildReq,
+			proxyURL,
+			body,
+		); applied {
+			resp = fallbackResp
+			mappedModel = fallbackModel
+		}
+	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
@@ -1423,6 +1446,22 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 
 		break
 	}
+	if resp != nil && resp.StatusCode >= 400 {
+		if fallbackResp, fallbackModel, applied := s.maybeRetryGeminiModelFallback(
+			ctx,
+			c,
+			account,
+			resp,
+			mappedModel,
+			func(model string) { mappedModel = model },
+			buildReq,
+			proxyURL,
+			body,
+		); applied {
+			resp = fallbackResp
+			mappedModel = fallbackModel
+		}
+	}
 	defer func() { _ = resp.Body.Close() }()
 
 	requestID := resp.Header.Get(requestIDHeader)
@@ -1675,6 +1714,78 @@ func (s *GeminiMessagesCompatService) shouldFailoverGeminiUpstreamError(statusCo
 	default:
 		return statusCode >= 500
 	}
+}
+
+func (s *GeminiMessagesCompatService) maybeRetryGeminiModelFallback(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	resp *http.Response,
+	currentModel string,
+	applyModel func(string),
+	buildReq func(context.Context) (*http.Request, string, error),
+	proxyURL string,
+	recordedRequestBody []byte,
+) (*http.Response, string, bool) {
+	if s == nil || account == nil || account.Platform != PlatformGemini || resp == nil || resp.Body == nil {
+		return resp, currentModel, false
+	}
+
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	_ = resp.Body.Close()
+	resp.Body = io.NopCloser(bytes.NewReader(respBody))
+
+	fallbackModel := resolveConfiguredFallbackModel(ctx, s.settingService, PlatformGemini, currentModel)
+	if fallbackModel == "" || !isUpstreamModelUnavailableForFallback(resp.StatusCode, respBody) {
+		return resp, currentModel, false
+	}
+
+	fallbackMappedModel := account.GetMappedModel(fallbackModel)
+	if fallbackMappedModel == "" || strings.EqualFold(fallbackMappedModel, currentModel) {
+		return resp, currentModel, false
+	}
+
+	previousModel := currentModel
+	if applyModel != nil {
+		applyModel(fallbackMappedModel)
+	}
+	upstreamReq, _, err := buildReq(ctx)
+	if err != nil {
+		if applyModel != nil {
+			applyModel(previousModel)
+		}
+		setOpsUpstreamRequestBody(c, recordedRequestBody)
+		logger.LegacyPrintf("service.gemini_messages_compat", "Gemini account %d: build fallback model request failed: %v", account.ID, err)
+		return resp, currentModel, false
+	}
+	if upstreamReq != nil && upstreamReq.Body != nil {
+		if requestBody, readErr := io.ReadAll(upstreamReq.Body); readErr == nil {
+			upstreamReq.Body = io.NopCloser(bytes.NewReader(requestBody))
+			setOpsUpstreamRequestBody(c, requestBody)
+		}
+	}
+	fallbackResp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+	if err != nil {
+		if applyModel != nil {
+			applyModel(previousModel)
+		}
+		setOpsUpstreamRequestBody(c, recordedRequestBody)
+		if fallbackResp != nil && fallbackResp.Body != nil {
+			_ = fallbackResp.Body.Close()
+		}
+		logger.LegacyPrintf("service.gemini_messages_compat", "Gemini account %d: fallback model request failed: %v", account.ID, err)
+		return resp, currentModel, false
+	}
+
+	logger.LegacyPrintf(
+		"service.gemini_messages_compat",
+		"Gemini account %d: retrying once with fallback model %s -> %s after upstream status %d",
+		account.ID,
+		previousModel,
+		fallbackMappedModel,
+		resp.StatusCode,
+	)
+	return fallbackResp, fallbackMappedModel, true
 }
 
 func sleepGeminiBackoff(attempt int) {
