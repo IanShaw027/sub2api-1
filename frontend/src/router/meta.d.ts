@@ -80,6 +80,12 @@ declare module 'vue-router' {
     requiresAvailableChannels?: boolean
 
     /**
+     * Whether this route requires risk control to be enabled
+     * @default false
+     */
+    requiresRiskControl?: boolean
+
+    /**
      * i18n key for the page title
      */
     titleKey?: string

@@ -91,6 +91,24 @@ func TestSettingService_GetPublicSettings_ExposesForceEmailOnThirdPartySignup(t 
 	require.True(t, settings.ForceEmailOnThirdPartySignup)
 }
 
+func TestSettingService_GetPublicSettings_HidesIncompleteEmailOAuthProviders(t *testing.T) {
+	svc := NewSettingService(&settingPublicRepoStub{
+		values: map[string]string{
+			SettingKeyGitHubOAuthEnabled:      "true",
+			SettingKeyGitHubOAuthClientID:     "github-client",
+			SettingKeyGitHubOAuthClientSecret: "github-secret",
+			SettingKeyGoogleOAuthEnabled:      "true",
+			SettingKeyGoogleOAuthClientID:     "google-client",
+			SettingKeyGoogleOAuthClientSecret: "google-secret",
+		},
+	}, &config.Config{})
+
+	settings, err := svc.GetPublicSettings(context.Background())
+	require.NoError(t, err)
+	require.False(t, settings.GitHubOAuthEnabled)
+	require.False(t, settings.GoogleOAuthEnabled)
+}
+
 func TestSettingService_GetPublicSettings_ExposesWeChatOAuthModeCapabilities(t *testing.T) {
 	svc := NewSettingService(&settingPublicRepoStub{
 		values: map[string]string{

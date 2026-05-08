@@ -67,7 +67,7 @@ func TestRedeemService_GetStats(t *testing.T) {
 			RedeemTypeSubscription: 1,
 		},
 	}}
-	svc := NewRedeemService(repo, nil, nil, nil, nil, nil, nil)
+	svc := NewRedeemService(repo, nil, nil, nil, nil, nil, nil, nil)
 
 	stats, err := svc.GetStats(context.Background())
 

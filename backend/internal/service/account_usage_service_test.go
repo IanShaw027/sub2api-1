@@ -211,7 +211,7 @@ func TestBuildCodexUsageProgressFromExtra_ZerosExpiredWindow(t *testing.T) {
 }
 
 type geminiUsageLogRepoStub struct {
-	stubOpenAIAccountRepo
+	UsageLogRepository
 	modelStats []usagestats.ModelStat
 }
 

@@ -299,15 +299,15 @@ type OpenAIForwardResult struct {
 	ServiceTier *string
 	// ReasoningEffort is extracted from request body (reasoning.effort) or derived from model suffix.
 	// Stored for usage records display; nil means not provided / not applicable.
-	ReasoningEffort *string
-	Stream          bool
-	OpenAIWSMode    bool
+	ReasoningEffort      *string
+	Stream               bool
+	OpenAIWSMode         bool
 	EffectiveRequestType RequestType
-	ResponseHeaders http.Header
-	Duration        time.Duration
-	FirstTokenMs    *int
-	ImageCount      int
-	ImageSize       string
+	ResponseHeaders      http.Header
+	Duration             time.Duration
+	FirstTokenMs         *int
+	ImageCount           int
+	ImageSize            string
 }
 
 // ResolveUsageRequestID returns the stable request identifier shared by usage
@@ -531,6 +531,21 @@ func (s *OpenAIGatewayService) ResolveChannelMappingAndRestrict(ctx context.Cont
 		return ChannelMappingResult{MappedModel: model}, false
 	}
 	return s.channelService.ResolveChannelMappingAndRestrict(ctx, groupID, model)
+}
+
+func (s *OpenAIGatewayService) isCodexImageGenerationBridgeEnabled(ctx context.Context, account *Account, apiKey *APIKey) bool {
+	if override := account.CodexImageGenerationBridgeOverride(); override != nil {
+		return *override
+	}
+	if s != nil && s.channelService != nil && apiKey != nil && apiKey.GroupID != nil {
+		ch, err := s.channelService.GetChannelForGroup(ctx, *apiKey.GroupID)
+		if err != nil {
+			slog.Warn("failed to resolve codex image generation bridge channel override", "group_id", *apiKey.GroupID, "error", err)
+		} else if override := ch.CodexImageGenerationBridgeOverride(PlatformOpenAI); override != nil {
+			return *override
+		}
+	}
+	return s != nil && s.cfg != nil && s.cfg.Gateway.CodexImageGenerationBridgeEnabled
 }
 
 func (s *OpenAIGatewayService) checkChannelPricingRestriction(ctx context.Context, groupID *int64, requestedModel string) bool {
@@ -994,6 +1009,10 @@ func isOpenAICodexOfficialClientRequest(c *gin.Context) bool {
 		return false
 	}
 	return openai.IsCodexOfficialClientByHeaders(c.GetHeader("User-Agent"), c.GetHeader("originator"))
+}
+
+func isOpenAICodexOfficialOrForcedClientRequest(c *gin.Context, cfg *config.Config) bool {
+	return isOpenAICodexOfficialClientRequest(c) || (cfg != nil && cfg.Gateway.ForceCodexCLI)
 }
 
 func shouldForwardOpenAIRequestHeader(account *Account, lowerKey string) bool {
@@ -1798,7 +1817,7 @@ func (s *OpenAIGatewayService) SelectAccountForModel(ctx context.Context, groupI
 // SelectAccountForModelWithExclusions selects an account supporting the requested model while excluding specified accounts.
 // SelectAccountForModelWithExclusions 选择支持指定模型的账号，同时排除指定的账号。
 func (s *OpenAIGatewayService) SelectAccountForModelWithExclusions(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) (*Account, error) {
-	return s.selectAccountForModelWithExclusions(ctx, groupID, sessionHash, requestedModel, excludedIDs, false, 0)
+	return s.selectAccountForModelWithExclusions(ctx, groupID, sessionHash, requestedModel, excludedIDs, false, 0, "")
 }
 
 // noAvailableOpenAISelectionError builds the standard "no account available" error
@@ -2345,7 +2364,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 				if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel, requireCompact) {
 					continue
 				}
-					result, err := s.tryAcquireAccountSlot(ctx, fresh.ID, concurrencyForOpenAIAccountSelection(fresh, requiredImageRoute))
+				result, err := s.tryAcquireAccountSlot(ctx, fresh.ID, concurrencyForOpenAIAccountSelection(fresh, requiredImageRoute))
 				if err == nil && result.Acquired {
 					if sessionHash != "" {
 						_ = s.setStickySessionAccountID(ctx, groupID, sessionHash, fresh.ID, openaiStickySessionTTL)
@@ -2704,8 +2723,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			promptCacheKey = strings.TrimSpace(v)
 		}
 	}
+	apiKey := getAPIKeyFromContext(c)
 	clientStream := reqStream
 	upstreamStream := reqStream
+	codexImageGenerationBridgeEnabled := isCodexCLI && allowImageGeneration && s.isCodexImageGenerationBridgeEnabled(ctx, account, apiKey)
 
 	// Track if body needs re-serialization
 	bodyModified := false
@@ -2770,7 +2791,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		markPatchSet("instructions", "You are a helpful coding assistant.")
 	}
 
-	if isCodexCLI && allowImageGeneration && !isMessagesBridgeRequest && ensureOpenAIResponsesImageGenerationTool(reqBody) {
+	if codexImageGenerationBridgeEnabled && !isMessagesBridgeRequest && ensureOpenAIResponsesImageGenerationTool(reqBody) {
 		bodyModified = true
 		disablePatch()
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Injected /responses image_generation tool for Codex client")
@@ -2781,7 +2802,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		disablePatch()
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized /responses image_generation tool payload")
 	}
-	if isCodexCLI && allowImageGeneration && !isMessagesBridgeRequest && applyCodexImageGenerationBridgeInstructions(reqBody) {
+	if codexImageGenerationBridgeEnabled && !isMessagesBridgeRequest && applyCodexImageGenerationBridgeInstructions(reqBody) {
 		bodyModified = true
 		disablePatch()
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Added Codex image_generation bridge instructions")
@@ -3634,7 +3655,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		}
 		body = bodyWithInstructions
 		isCompact := isOpenAIResponsesCompactPath(c)
-		if rejectReason := detectOpenAIPassthroughInstructionsRejectReason(c, reqModel, body); rejectReason != "" {
+		if rejectReason := detectOpenAIPassthroughInstructionsRejectReason(c, reqModel, body, s != nil && s.cfg != nil && s.cfg.Gateway.ForceCodexCLI); rejectReason != "" {
 			rejectMsg := "OpenAI codex passthrough requires a non-empty instructions field"
 			setOpsUpstreamError(c, http.StatusForbidden, rejectMsg, "")
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -3902,7 +3923,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 			req.Header.Set("chatgpt-account-id", chatgptAccountID)
 		}
 		compactPath := isOpenAIResponsesCompactPath(c)
-		officialClient := isOpenAICodexOfficialClientRequest(c)
+		officialClient := isOpenAICodexOfficialOrForcedClientRequest(c, s.cfg)
 		isMessagesBridge := shouldUseOpenAIMessagesBridgeHeaders(c, body) ||
 			isOpenAICompatMessagesBridgePromptCacheKey(strings.TrimSpace(promptCacheKey))
 		clientSessionID := strings.TrimSpace(req.Header.Get("session_id"))
@@ -6840,9 +6861,9 @@ func ensureOpenAIPassthroughInstructions(c *gin.Context, reqModel string, body [
 	return updated, true, nil
 }
 
-func detectOpenAIPassthroughInstructionsRejectReason(c *gin.Context, reqModel string, body []byte) string {
+func detectOpenAIPassthroughInstructionsRejectReason(c *gin.Context, reqModel string, body []byte, forceCodexCLI bool) string {
 	_ = reqModel
-	if !isOpenAICodexOfficialClientRequest(c) {
+	if !isOpenAICodexOfficialClientRequest(c) && !forceCodexCLI {
 		return ""
 	}
 

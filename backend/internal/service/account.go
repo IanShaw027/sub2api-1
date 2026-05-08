@@ -1244,7 +1244,7 @@ func (a *Account) SupportsOpenAIImageRoute(route string) bool {
 	}
 	switch NormalizeGroupImageGenerationRoute(route) {
 	case GroupImageGenerationRouteWeb2API:
-		return a.Type == AccountTypeOAuth || a.Type == AccountTypeAPIKey
+		return a.Type == AccountTypeOAuth
 	case GroupImageGenerationRouteCodex:
 		if a.Type == AccountTypeAPIKey {
 			return true

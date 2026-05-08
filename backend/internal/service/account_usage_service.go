@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -248,12 +249,12 @@ type UsageInfo struct {
 	ErrorCode string `json:"error_code,omitempty"`
 
 	// OpenAI 图片生成路由状态
-	OpenAIImageCodexSupported   *bool  `json:"openai_image_codex_supported,omitempty"`
-	OpenAIImageWeb2APISupported *bool  `json:"openai_image_web2api_supported,omitempty"`
-	OpenAIImageCodexReason      string `json:"openai_image_codex_reason,omitempty"`
-	OpenAIImageWeb2APIReason    string `json:"openai_image_web2api_reason,omitempty"`
-	OpenAIImagePlanType         string `json:"openai_image_plan_type,omitempty"`
-	OpenAIImageWorkspaceName    string `json:"openai_image_workspace_name,omitempty"`
+	OpenAIImageCodexSupported   *bool          `json:"openai_image_codex_supported,omitempty"`
+	OpenAIImageWeb2APISupported *bool          `json:"openai_image_web2api_supported,omitempty"`
+	OpenAIImageCodexReason      string         `json:"openai_image_codex_reason,omitempty"`
+	OpenAIImageWeb2APIReason    string         `json:"openai_image_web2api_reason,omitempty"`
+	OpenAIImagePlanType         string         `json:"openai_image_plan_type,omitempty"`
+	OpenAIImageWorkspaceName    string         `json:"openai_image_workspace_name,omitempty"`
 	OpenAIImageCodexFiveHour    *UsageProgress `json:"openai_image_codex_five_hour,omitempty"`
 	OpenAIImageCodexSevenDay    *UsageProgress `json:"openai_image_codex_seven_day,omitempty"`
 	OpenAIImageWeb2APIFiveHour  *UsageProgress `json:"openai_image_web2api_five_hour,omitempty"`
@@ -1785,9 +1786,12 @@ func applyGeminiQuotaSnapshotFallback(usage *UsageInfo, account *Account, now ti
 	mergeGeminiUsageProgressWithSnapshot(&usage.GeminiFlashDaily, snapshot.flash, now)
 
 	if usage.GeminiSharedDaily == nil && (snapshot.pro != nil || snapshot.flash != nil) {
-		shared := lowerUtilizationProgress(snapshot.pro, snapshot.flash)
+		shared := lowerUtilizationQuotaWindow(snapshot.pro, snapshot.flash)
 		if shared != nil {
-			usage.GeminiSharedDaily = cloneUsageProgress(shared)
+			usage.GeminiSharedDaily = &UsageProgress{
+				Utilization: shared.utilization,
+				ResetsAt:    shared.resetAt,
+			}
 		}
 	}
 }
@@ -1890,6 +1894,29 @@ func parseGeminiSnapshotFloat(raw any) (float64, bool) {
 	}
 }
 
+func lowerUtilizationQuotaWindow(items ...*geminiQuotaSnapshotWindow) *geminiQuotaSnapshotWindow {
+	var picked *geminiQuotaSnapshotWindow
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		if picked == nil || item.utilization > picked.utilization {
+			picked = item
+			continue
+		}
+		if item.utilization == picked.utilization {
+			if picked.resetAt == nil {
+				picked = item
+				continue
+			}
+			if item.resetAt != nil && item.resetAt.Before(*picked.resetAt) {
+				picked = item
+			}
+		}
+	}
+	return picked
+}
+
 func parseGeminiSnapshotTime(raw any) *time.Time {
 	switch v := raw.(type) {
 	case string:
@@ -1973,14 +2000,6 @@ func lowerUtilizationProgress(items ...*UsageProgress) *UsageProgress {
 		}
 	}
 	return picked
-}
-
-func cloneUsageProgress(progress *UsageProgress) *UsageProgress {
-	if progress == nil {
-		return nil
-	}
-	cloned := *progress
-	return &cloned
 }
 
 // GetAccountWindowStats 获取账号在指定时间窗口内的使用统计

@@ -102,6 +102,9 @@ func RegisterAdminRoutes(
 		// 渠道监控
 		registerChannelMonitorRoutes(admin, h, settingService)
 
+		// 风控中心
+		registerContentModerationRoutes(admin, h)
+
 		// AI 创作中心治理
 		registerAdminAIRoutes(admin, h, settingService)
 	}
@@ -149,6 +152,20 @@ func registerAdminAIRoutes(admin *gin.RouterGroup, h *handler.Handlers, settingS
 		skills.POST("/:id/force-private", h.Admin.AI.ForcePrivateSkill)
 		skills.GET("/runtime", h.Admin.AI.ListSkillRuntime)
 		skills.GET("/settlements", h.Admin.AI.ListSkillSettlements)
+	}
+}
+
+func registerContentModerationRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	risk := admin.Group("/risk-control")
+	{
+		risk.GET("/config", h.Admin.ContentModeration.GetConfig)
+		risk.PUT("/config", h.Admin.ContentModeration.UpdateConfig)
+		risk.POST("/api-keys/test", h.Admin.ContentModeration.TestAPIKeys)
+		risk.GET("/status", h.Admin.ContentModeration.GetStatus)
+		risk.GET("/logs", h.Admin.ContentModeration.ListLogs)
+		risk.POST("/users/:user_id/unban", h.Admin.ContentModeration.UnbanUser)
+		risk.DELETE("/hashes", h.Admin.ContentModeration.DeleteFlaggedHash)
+		risk.DELETE("/hashes/all", h.Admin.ContentModeration.ClearFlaggedHashes)
 	}
 }
 
@@ -283,6 +300,7 @@ func registerUserManagementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		users.GET("/:id/balance-history", h.Admin.User.GetBalanceHistory)
 		users.POST("/:id/replace-group", h.Admin.User.ReplaceGroup)
 		users.GET("/:id/rpm-status", h.Admin.User.GetUserRPMStatus)
+		users.POST("/batch-concurrency", h.Admin.User.BatchUpdateConcurrency)
 
 		// User attribute values
 		users.GET("/:id/attributes", h.Admin.UserAttribute.GetUserAttributes)

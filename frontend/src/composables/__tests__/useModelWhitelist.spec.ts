@@ -15,6 +15,7 @@ describe('useModelWhitelist', () => {
     expect(models).toContain('gpt-5.4')
     expect(models).toContain('gpt-5.4-mini')
     expect(models).toContain('gpt-5.4-2026-03-05')
+    expect(models).toContain('codex-auto-review')
   })
 
   it('claude 模型列表保留常用旧别名，避免默认白名单覆盖回退', () => {

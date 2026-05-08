@@ -238,6 +238,7 @@ type OpenAIWSIngressHooks struct {
 	// 的 reasoning effort 后缀推导，禁止用于上游请求或计费模型。
 	InitialRequestModel string
 	BeforeTurn          func(turn int) error
+	BeforeRequest       func(turn int, payload []byte, originalModel string) error
 	AfterTurn           func(turn int, result *OpenAIForwardResult, turnErr error)
 }
 
@@ -3348,6 +3349,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		return true
 	}
 	for {
+		if turn > 1 && !skipBeforeTurn && hooks != nil && hooks.BeforeRequest != nil {
+			if err := hooks.BeforeRequest(turn, currentPayload, currentOriginalModel); err != nil {
+				return err
+			}
+		}
 		if !skipBeforeTurn && hooks != nil && hooks.BeforeTurn != nil {
 			if err := hooks.BeforeTurn(turn); err != nil {
 				return err
@@ -4080,7 +4086,7 @@ func (s *OpenAIGatewayService) SelectAccountByPreviousResponseID(
 	if requestedModel != "" && !account.IsModelSupported(requestedModel) {
 		return nil, nil
 	}
-	account = s.recheckSelectedOpenAIAccountFromDB(ctx, account, requestedModel, requireCompact)
+	account = s.recheckSelectedOpenAIAccountFromDB(ctx, account, requestedModel, requireCompact, "")
 	if account == nil {
 		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
 		return nil, nil

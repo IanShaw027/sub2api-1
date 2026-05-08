@@ -86,6 +86,12 @@ func (r *userServiceMediaAvatarRepo) GetLatestUsedAtByUserID(context.Context, in
 }
 func (r *userServiceMediaAvatarRepo) DeductBalance(context.Context, int64, float64) error { return nil }
 func (r *userServiceMediaAvatarRepo) UpdateConcurrency(context.Context, int64, int) error { return nil }
+func (r *userServiceMediaAvatarRepo) BatchSetConcurrency(context.Context, []int64, int) (int, error) {
+	return 0, nil
+}
+func (r *userServiceMediaAvatarRepo) BatchAddConcurrency(context.Context, []int64, int) (int, error) {
+	return 0, nil
+}
 func (r *userServiceMediaAvatarRepo) ExistsByEmail(context.Context, string) (bool, error) {
 	return false, nil
 }

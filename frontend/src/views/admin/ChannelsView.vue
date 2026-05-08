@@ -339,6 +339,26 @@
               </div>
             </div>
 
+            <!-- Codex Image Generation Bridge (OpenAI only) -->
+            <div v-if="section.platform === 'openai'" class="border-t border-gray-200 pt-3 dark:border-dark-600">
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
+                    {{ t('admin.channels.form.codexImageGenerationBridge') }}
+                  </label>
+                  <p class="mt-0.5 text-[11px] text-amber-600 dark:text-amber-400">
+                    {{ t('admin.channels.form.codexImageGenerationBridgeHint') }}
+                  </p>
+                </div>
+                <div class="w-40">
+                  <Select
+                    v-model="section.codex_image_generation_bridge_mode"
+                    :options="codexImageGenerationBridgeOptions"
+                  />
+                </div>
+              </div>
+            </div>
+
             <!-- Model Mapping -->
             <div>
               <div class="mb-1 flex items-center justify-between">
@@ -593,7 +613,12 @@ import { adminAPI } from '@/api/admin'
 import type { Channel, ChannelModelPricing, CreateChannelRequest, UpdateChannelRequest, AccountStatsPricingRule } from '@/api/admin/channels'
 import type { PricingFormEntry } from '@/components/admin/channel/types'
 import { mTokToPerToken, perTokenToMTok, apiIntervalsToForm, formIntervalsToAPI, findModelConflict, validateIntervals } from '@/components/admin/channel/types'
-import type { AdminGroup, GroupPlatform } from '@/types'
+import {
+  codexImageGenerationBridgeModeFromOverride,
+  codexImageGenerationBridgeOverrideFromMode,
+  type CodexImageGenerationBridgeMode
+} from '@/components/admin/channel/codexImageGenerationBridge'
+import type { AdminGroup, GroupPlatform, SelectOption } from '@/types'
 import type { Column } from '@/components/common/types'
 import { groupPlatformFallbackLabel, groupPlatformI18nKey } from '@/utils/i18n'
 import { platformTextClass, platformBadgeLightClass } from '@/utils/platformColors'
@@ -644,6 +669,7 @@ interface PlatformSection {
   model_mapping: Record<string, string>
   model_pricing: PricingFormEntry[]
   web_search_emulation: boolean
+  codex_image_generation_bridge_mode: CodexImageGenerationBridgeMode
   account_stats_pricing_rules: FormPricingRule[]
 }
 
@@ -673,6 +699,12 @@ const billingModelSourceOptions = computed(() => [
   { value: 'channel_mapped', label: t('admin.channels.form.billingModelSourceChannelMapped', 'Bill by channel-mapped model') },
   { value: 'requested', label: t('admin.channels.form.billingModelSourceRequested', 'Bill by requested model') },
   { value: 'upstream', label: t('admin.channels.form.billingModelSourceUpstream', 'Bill by final upstream model') }
+])
+
+const codexImageGenerationBridgeOptions = computed<SelectOption[]>(() => [
+  { value: 'inherit', label: t('admin.channels.form.codexImageGenerationBridgeInherit') },
+  { value: 'enabled', label: t('admin.channels.form.codexImageGenerationBridgeEnabled') },
+  { value: 'disabled', label: t('admin.channels.form.codexImageGenerationBridgeDisabled') }
 ])
 
 // ── State ──
@@ -739,6 +771,7 @@ function addPlatformSection(platform: GroupPlatform) {
     model_mapping: {},
     model_pricing: [],
     web_search_emulation: false,
+    codex_image_generation_bridge_mode: 'inherit',
     account_stats_pricing_rules: [],
   })
 }
@@ -1048,6 +1081,22 @@ function formToAPI(): { group_ids: number[], model_pricing: ChannelModelPricing[
     delete featuresConfig.web_search_emulation
   }
 
+  const codexImageGenerationBridge: Record<string, boolean> = {}
+  for (const section of form.platforms) {
+    if (!section.enabled) continue
+    if (section.platform === 'openai') {
+      const override = codexImageGenerationBridgeOverrideFromMode(section.codex_image_generation_bridge_mode)
+      if (override !== null) {
+        codexImageGenerationBridge[section.platform] = override
+      }
+    }
+  }
+  if (Object.keys(codexImageGenerationBridge).length > 0) {
+    featuresConfig.codex_image_generation_bridge = codexImageGenerationBridge
+  } else {
+    delete featuresConfig.codex_image_generation_bridge
+  }
+
   return { group_ids, model_pricing, model_mapping, features_config: featuresConfig }
 }
 
@@ -1096,6 +1145,11 @@ function apiToForm(channel: Channel): PlatformSection[] {
     const fc = channel.features_config
     const wsEmulation = fc?.web_search_emulation as Record<string, boolean> | undefined
     const webSearchEnabled = wsEmulation?.[platform] === true
+    const codexImageGenerationBridge = fc?.codex_image_generation_bridge as Record<string, boolean> | undefined
+    const codexImageGenerationBridgeOverride =
+      typeof codexImageGenerationBridge?.[platform] === 'boolean'
+        ? codexImageGenerationBridge[platform]
+        : null
 
     sections.push({
       platform,
@@ -1105,6 +1159,7 @@ function apiToForm(channel: Channel): PlatformSection[] {
       model_mapping: { ...mapping },
       model_pricing: pricing,
       web_search_emulation: webSearchEnabled,
+      codex_image_generation_bridge_mode: codexImageGenerationBridgeModeFromOverride(codexImageGenerationBridgeOverride),
       account_stats_pricing_rules: [],
     })
   }

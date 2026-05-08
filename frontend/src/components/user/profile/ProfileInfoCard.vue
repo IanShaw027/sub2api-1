@@ -155,7 +155,7 @@ import { useI18n } from 'vue-i18n'
 import ProfileAvatarCard from '@/components/user/profile/ProfileAvatarCard.vue'
 import ProfileEditForm from '@/components/user/profile/ProfileEditForm.vue'
 import ProfileIdentityBindingsSection from '@/components/user/profile/ProfileIdentityBindingsSection.vue'
-import type { User, UserAuthBindingStatus, UserProfileSourceContext } from '@/types'
+import type { User, UserAuthBindingStatus, UserAuthProvider, UserProfileSourceContext } from '@/types'
 
 const emit = defineEmits<{
   'balance-history': []
@@ -252,6 +252,14 @@ const memberSinceLabel = computed(() => {
   }).format(date)
 })
 
+const providerLabels = computed<Record<UserAuthProvider, string>>(() => ({
+  email: t('profile.authBindings.providers.email'),
+  linuxdo: t('profile.authBindings.providers.linuxdo'),
+  oidc: t('profile.authBindings.providers.oidc', { providerName: props.oidcProviderName }),
+  wechat: t('profile.authBindings.providers.wechat'),
+  github: 'GitHub',
+  google: 'Google'
+}))
 function formatCurrency(value: number): string {
   return `$${value.toFixed(2)}`
 }
@@ -259,11 +267,28 @@ function formatCurrency(value: number): string {
 function resolveProfileSourceProvider(source: string | UserProfileSourceContext | null | undefined): string {
   if (!source) return ''
   if (typeof source === 'string') {
-    return formatProviderLabel(source)
+    const normalized = normalizeProvider(source)
+    return normalized ? providerLabels.value[normalized] : formatProviderLabel(source)
   }
+  const normalized = normalizeProvider(source.provider || source.source || '')
   return source.provider_label?.trim()
     || source.label?.trim()
-    || formatProviderLabel(source.provider || source.source || '')
+    || (normalized ? providerLabels.value[normalized] : formatProviderLabel(source.provider || source.source || ''))
+}
+
+function normalizeProvider(value: string): UserAuthProvider | null {
+  const normalized = value.trim().toLowerCase()
+  if (
+    normalized === 'email' ||
+    normalized === 'linuxdo' ||
+    normalized === 'oidc' ||
+    normalized === 'wechat' ||
+    normalized === 'github' ||
+    normalized === 'google'
+  ) {
+    return normalized
+  }
+  return null
 }
 
 function formatProviderLabel(provider: string): string {

@@ -151,6 +151,12 @@ func (*announcementUserRepoStub) UpdateUserLastActiveAt(context.Context, int64, 
 func (*announcementUserRepoStub) UpdateBalance(context.Context, int64, float64) error { return nil }
 func (*announcementUserRepoStub) DeductBalance(context.Context, int64, float64) error { return nil }
 func (*announcementUserRepoStub) UpdateConcurrency(context.Context, int64, int) error { return nil }
+func (*announcementUserRepoStub) BatchSetConcurrency(context.Context, []int64, int) (int, error) {
+	return 0, nil
+}
+func (*announcementUserRepoStub) BatchAddConcurrency(context.Context, []int64, int) (int, error) {
+	return 0, nil
+}
 func (*announcementUserRepoStub) ExistsByEmail(context.Context, string) (bool, error) {
 	return false, nil
 }

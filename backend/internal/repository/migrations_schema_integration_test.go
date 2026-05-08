@@ -105,6 +105,47 @@ func TestMigrationsRunner_AuthIdentityAndPaymentSchemaStayAligned(t *testing.T) 
 		"'linuxdo'",
 		"'wechat'",
 		"'oidc'",
+		"'github'",
+		"'google'",
+	)
+	requireConstraintDefinitionContains(
+		t,
+		tx,
+		"auth_identities",
+		"auth_identities_provider_type_check",
+		"provider_type",
+		"'email'",
+		"'linuxdo'",
+		"'wechat'",
+		"'oidc'",
+		"'github'",
+		"'google'",
+	)
+	requireConstraintDefinitionContains(
+		t,
+		tx,
+		"auth_identity_channels",
+		"auth_identity_channels_provider_type_check",
+		"provider_type",
+		"'email'",
+		"'linuxdo'",
+		"'wechat'",
+		"'oidc'",
+		"'github'",
+		"'google'",
+	)
+	requireConstraintDefinitionContains(
+		t,
+		tx,
+		"pending_auth_sessions",
+		"pending_auth_sessions_provider_type_check",
+		"provider_type",
+		"'email'",
+		"'linuxdo'",
+		"'wechat'",
+		"'oidc'",
+		"'github'",
+		"'google'",
 	)
 
 	requireForeignKeyOnDelete(t, tx, "auth_identities", "user_id", "users", "CASCADE")
@@ -116,6 +157,19 @@ func TestMigrationsRunner_AuthIdentityAndPaymentSchemaStayAligned(t *testing.T) 
 	requireIndex(t, tx, "payment_orders", "paymentorder_out_trade_no")
 	requirePartialUniqueIndexDefinition(t, tx, "payment_orders", "paymentorder_out_trade_no", "out_trade_no", "WHERE")
 	requireIndexAbsent(t, tx, "payment_orders", "paymentorder_out_trade_no_unique")
+
+	var contentModerationLogsRegclass sql.NullString
+	require.NoError(t, tx.QueryRowContext(context.Background(), "SELECT to_regclass('public.content_moderation_logs')").Scan(&contentModerationLogsRegclass))
+	require.True(t, contentModerationLogsRegclass.Valid, "expected content_moderation_logs table to exist")
+	requireColumn(t, tx, "content_moderation_logs", "request_id", "character varying", 128, false)
+	requireColumn(t, tx, "content_moderation_logs", "highest_score", "numeric", 0, false)
+	requireColumn(t, tx, "content_moderation_logs", "category_scores", "jsonb", 0, false)
+	requireColumn(t, tx, "content_moderation_logs", "created_at", "timestamp with time zone", 0, false)
+	requireIndex(t, tx, "content_moderation_logs", "idx_content_moderation_logs_created_at")
+
+	var riskControlEnabled string
+	require.NoError(t, tx.QueryRowContext(context.Background(), "SELECT value FROM settings WHERE key = 'risk_control_enabled'").Scan(&riskControlEnabled))
+	require.Equal(t, "false", riskControlEnabled)
 }
 
 func TestMigrationsRunner_ChannelMonitorRequestTemplateSchemaStayAligned(t *testing.T) {
