@@ -211,13 +211,11 @@ func (h *AIHandler) createArtworkViaGateway(ctx context.Context, userID int64, r
 		h.openAIGateway.Images(child)
 	})
 	if err != nil {
-		_ = h.failAIGenerationJob(ctx, userID, job.ID, apiKey.GroupID, &apiKey.ID, err)
-		return nil, err
+		return nil, h.propagateAIGenerationJobFailure(ctx, userID, job.ID, apiKey.GroupID, &apiKey.ID, err)
 	}
 	if result.StatusCode < 200 || result.StatusCode >= 300 {
 		err = openAIErrorFromGatewayResult(result)
-		_ = h.failAIGenerationJob(ctx, userID, job.ID, apiKey.GroupID, &apiKey.ID, err)
-		return nil, err
+		return nil, h.propagateAIGenerationJobFailure(ctx, userID, job.ID, apiKey.GroupID, &apiKey.ID, err)
 	}
 	successStatus := service.AIGenerationJobStatusSucceeded
 	responseID := strings.TrimSpace(gjson.GetBytes(result.Body, "id").String())
@@ -227,13 +225,11 @@ func (h *AIHandler) createArtworkViaGateway(ctx context.Context, userID int64, r
 	usageRequestID := service.ResolveUsageRequestID(ctx, responseID)
 	imageBytes, mimeType, revisedPrompt, err := decodeAIImageResult(ctx, result.Body)
 	if err != nil {
-		_ = h.failAIGenerationJob(ctx, userID, job.ID, apiKey.GroupID, &apiKey.ID, err)
-		return nil, err
+		return nil, h.propagateAIGenerationJobFailure(ctx, userID, job.ID, apiKey.GroupID, &apiKey.ID, err)
 	}
 	asset, err := h.buildAIArtworkAsset(ctx, userID, job, apiKey, req, imageBytes, mimeType, revisedPrompt, usageRequestID)
 	if err != nil {
-		_ = h.failAIGenerationJob(ctx, userID, job.ID, apiKey.GroupID, &apiKey.ID, err)
-		return nil, err
+		return nil, h.propagateAIGenerationJobFailure(ctx, userID, job.ID, apiKey.GroupID, &apiKey.ID, err)
 	}
 	gatewayResponseModel := strings.TrimSpace(gjson.GetBytes(result.Body, "model").String())
 	if gatewayResponseModel == "" {
@@ -250,7 +246,7 @@ func (h *AIHandler) createArtworkViaGateway(ctx context.Context, userID int64, r
 	if len(result.Body) > 0 {
 		updateParams["gateway_response"] = json.RawMessage(result.Body)
 	}
-	_, _ = h.aiService.UpdateGenerationJob(ctx, userID, userID, job.ID, &service.AIUpdateGenerationJobInput{
+	if err := h.completeAIGenerationJob(ctx, userID, job.ID, apiKey.GroupID, &apiKey.ID, &service.AIUpdateGenerationJobInput{
 		Model:      &model,
 		Status:     &successStatus,
 		Parameters: &updateParams,
@@ -259,7 +255,9 @@ func (h *AIHandler) createArtworkViaGateway(ctx context.Context, userID int64, r
 			GroupID:   apiKey.GroupID,
 			APIKeyID:  &apiKey.ID,
 		},
-	})
+	}); err != nil {
+		return nil, err
+	}
 	return dto.AIArtworkFromService(asset, userID), nil
 }
 
@@ -322,13 +320,11 @@ func (h *AIHandler) editArtworkViaGateway(ctx context.Context, userID int64, req
 		h.openAIGateway.Images(child)
 	})
 	if err != nil {
-		_ = h.failAIGenerationJob(ctx, userID, job.ID, apiKey.GroupID, &apiKey.ID, err)
-		return nil, err
+		return nil, h.propagateAIGenerationJobFailure(ctx, userID, job.ID, apiKey.GroupID, &apiKey.ID, err)
 	}
 	if result.StatusCode < 200 || result.StatusCode >= 300 {
 		err = openAIErrorFromGatewayResult(result)
-		_ = h.failAIGenerationJob(ctx, userID, job.ID, apiKey.GroupID, &apiKey.ID, err)
-		return nil, err
+		return nil, h.propagateAIGenerationJobFailure(ctx, userID, job.ID, apiKey.GroupID, &apiKey.ID, err)
 	}
 
 	successStatus := service.AIGenerationJobStatusSucceeded
@@ -339,13 +335,11 @@ func (h *AIHandler) editArtworkViaGateway(ctx context.Context, userID int64, req
 	usageRequestID := service.ResolveUsageRequestID(ctx, responseID)
 	imageBytes, mimeType, revisedPrompt, err := decodeAIImageResult(ctx, result.Body)
 	if err != nil {
-		_ = h.failAIGenerationJob(ctx, userID, job.ID, apiKey.GroupID, &apiKey.ID, err)
-		return nil, err
+		return nil, h.propagateAIGenerationJobFailure(ctx, userID, job.ID, apiKey.GroupID, &apiKey.ID, err)
 	}
 	asset, err := h.buildAIArtworkAsset(ctx, userID, job, apiKey, req, imageBytes, mimeType, revisedPrompt, usageRequestID)
 	if err != nil {
-		_ = h.failAIGenerationJob(ctx, userID, job.ID, apiKey.GroupID, &apiKey.ID, err)
-		return nil, err
+		return nil, h.propagateAIGenerationJobFailure(ctx, userID, job.ID, apiKey.GroupID, &apiKey.ID, err)
 	}
 	gatewayResponseModel := strings.TrimSpace(gjson.GetBytes(result.Body, "model").String())
 	if gatewayResponseModel == "" {
@@ -363,7 +357,7 @@ func (h *AIHandler) editArtworkViaGateway(ctx context.Context, userID int64, req
 	if len(result.Body) > 0 {
 		updateParams["gateway_response"] = json.RawMessage(result.Body)
 	}
-	_, _ = h.aiService.UpdateGenerationJob(ctx, userID, userID, job.ID, &service.AIUpdateGenerationJobInput{
+	if err := h.completeAIGenerationJob(ctx, userID, job.ID, apiKey.GroupID, &apiKey.ID, &service.AIUpdateGenerationJobInput{
 		Model:      &model,
 		Status:     &successStatus,
 		Parameters: &updateParams,
@@ -372,8 +366,31 @@ func (h *AIHandler) editArtworkViaGateway(ctx context.Context, userID int64, req
 			GroupID:   apiKey.GroupID,
 			APIKeyID:  &apiKey.ID,
 		},
-	})
+	}); err != nil {
+		return nil, err
+	}
 	return dto.AIArtworkFromService(asset, userID), nil
+}
+
+func (h *AIHandler) completeAIGenerationJob(ctx context.Context, userID, jobID int64, groupID, apiKeyID *int64, input *service.AIUpdateGenerationJobInput) error {
+	if h.aiService == nil {
+		return infraerrors.ServiceUnavailable("AI_SERVICE_UNAVAILABLE", "ai service is unavailable")
+	}
+	_, err := h.aiService.UpdateGenerationJob(ctx, userID, userID, jobID, input)
+	if err == nil {
+		return nil
+	}
+	return h.propagateAIGenerationJobFailure(ctx, userID, jobID, groupID, apiKeyID, err)
+}
+
+func (h *AIHandler) propagateAIGenerationJobFailure(ctx context.Context, userID, jobID int64, groupID, apiKeyID *int64, cause error) error {
+	if cause == nil {
+		return nil
+	}
+	if err := h.failAIGenerationJob(ctx, userID, jobID, groupID, apiKeyID, cause); err != nil {
+		return errors.Join(cause, fmt.Errorf("mark ai generation job failed: %w", err))
+	}
+	return cause
 }
 
 func (h *AIHandler) failAIGenerationJob(ctx context.Context, userID, jobID int64, groupID, apiKeyID *int64, cause error) error {
@@ -382,7 +399,7 @@ func (h *AIHandler) failAIGenerationJob(ctx context.Context, userID, jobID int64
 	}
 	status := service.AIGenerationJobStatusFailed
 	message := strings.TrimSpace(cause.Error())
-	_, _ = h.aiService.UpdateGenerationJob(ctx, userID, userID, jobID, &service.AIUpdateGenerationJobInput{
+	_, err := h.aiService.UpdateGenerationJob(ctx, userID, userID, jobID, &service.AIUpdateGenerationJobInput{
 		Status:       &status,
 		ErrorMessage: &message,
 		Trace: service.AIWriteTrace{
@@ -391,7 +408,7 @@ func (h *AIHandler) failAIGenerationJob(ctx context.Context, userID, jobID int64
 			APIKeyID:  apiKeyID,
 		},
 	})
-	return nil
+	return err
 }
 
 func (h *AIHandler) resolveAIExecutionKey(ctx context.Context, userID int64, lineID, keyID *int64) (*service.APIKey, error) {

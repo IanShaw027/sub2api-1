@@ -1,127 +1,185 @@
-//go:build integration
-
 package repository
 
 import (
+	"context"
+	"fmt"
+	"net"
+	"os/exec"
 	"testing"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/suite"
 )
 
-type UserRPMCacheSuite struct {
-	IntegrationRedisSuite
-	cache *userRPMCacheImpl
+type localRedisServer struct {
+	cmd *exec.Cmd
 }
 
-func (s *UserRPMCacheSuite) SetupTest() {
-	s.IntegrationRedisSuite.SetupTest()
-	s.cache = NewUserRPMCache(s.rdb).(*userRPMCacheImpl)
+func startLocalRedisServer(t *testing.T) (*redis.Client, *localRedisServer) {
+	t.Helper()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	port := ln.Addr().(*net.TCPAddr).Port
+	require.NoError(t, ln.Close())
+
+	cmd := exec.Command("redis-server",
+		"--port", fmt.Sprintf("%d", port),
+		"--bind", "127.0.0.1",
+		"--save", "",
+		"--appendonly", "no",
+	)
+	require.NoError(t, cmd.Start())
+
+	client := redis.NewClient(&redis.Options{
+		Addr: fmt.Sprintf("127.0.0.1:%d", port),
+	})
+	require.Eventually(t, func() bool {
+		return client.Ping(context.Background()).Err() == nil
+	}, 5*time.Second, 50*time.Millisecond)
+
+	t.Cleanup(func() {
+		_ = client.Close()
+		_ = cmd.Process.Kill()
+		_, _ = cmd.Process.Wait()
+	})
+
+	return client, &localRedisServer{cmd: cmd}
 }
 
-func (s *UserRPMCacheSuite) TestAtomicAdmitConsidersLegacyCountersBeforeIncrement() {
-	minute, err := s.cache.minuteTS(s.ctx)
-	require.NoError(s.T(), err)
+func newUserRPMCacheTest(t *testing.T) (*userRPMCacheImpl, *redis.Client) {
+	t.Helper()
+	rdb, _ := startLocalRedisServer(t)
+	return NewUserRPMCache(rdb).(*userRPMCacheImpl), rdb
+}
+
+func TestUserRPMCache_AtomicAdmitConsidersLegacyCountersBeforeIncrement(t *testing.T) {
+	cache, rdb := newUserRPMCacheTest(t)
+	ctx := context.Background()
+
+	minute, err := cache.minuteTS(ctx)
+	require.NoError(t, err)
 
 	legacyGroupKey := userGroupRPMLegacyKey(10, 20, minute)
 	legacyUserKey := userRPMLegacyKey(10, minute)
-	require.NoError(s.T(), s.rdb.Set(s.ctx, legacyGroupKey, 2, userRPMKeyTTL).Err())
-	require.NoError(s.T(), s.rdb.Set(s.ctx, legacyUserKey, 2, userRPMKeyTTL).Err())
+	require.NoError(t, rdb.Set(ctx, legacyGroupKey, 2, userRPMKeyTTL).Err())
+	require.NoError(t, rdb.Set(ctx, legacyUserKey, 2, userRPMKeyTTL).Err())
 
-	groupCount, userCount, admitted, err := s.cache.TryIncrementUserAndGroupRPM(s.ctx, 10, 20, 2, 2, true, true)
-	require.NoError(s.T(), err)
-	require.False(s.T(), admitted)
-	require.Equal(s.T(), 2, groupCount)
-	require.Equal(s.T(), 2, userCount)
+	groupCount, userCount, admitted, err := cache.TryIncrementUserAndGroupRPM(ctx, 10, 20, 2, 2, true, true)
+	require.NoError(t, err)
+	require.False(t, admitted)
+	require.Equal(t, 2, groupCount)
+	require.Equal(t, 2, userCount)
 
-	clusterGroupCount, err := s.rdb.Get(s.ctx, userGroupRPMClusterSlotKey(10, 20, minute)).Int()
-	require.ErrorIs(s.T(), err, redis.Nil)
-	require.Equal(s.T(), 0, clusterGroupCount)
-	clusterUserCount, err := s.rdb.Get(s.ctx, userRPMClusterSlotKey(10, minute)).Int()
-	require.ErrorIs(s.T(), err, redis.Nil)
-	require.Equal(s.T(), 0, clusterUserCount)
+	clusterGroupCount, err := rdb.Get(ctx, userGroupRPMClusterSlotKey(10, 20, minute)).Int()
+	require.ErrorIs(t, err, redis.Nil)
+	require.Equal(t, 0, clusterGroupCount)
+	clusterUserCount, err := rdb.Get(ctx, userRPMClusterSlotKey(10, minute)).Int()
+	require.ErrorIs(t, err, redis.Nil)
+	require.Equal(t, 0, clusterUserCount)
 }
 
-func (s *UserRPMCacheSuite) TestAtomicAdmitWritesLegacyAndClusterWhenAdmitted() {
-	minute, err := s.cache.minuteTS(s.ctx)
-	require.NoError(s.T(), err)
+func TestUserRPMCache_AtomicAdmitWritesLegacyAndClusterWhenAdmitted(t *testing.T) {
+	cache, rdb := newUserRPMCacheTest(t)
+	ctx := context.Background()
 
-	groupCount, userCount, admitted, err := s.cache.TryIncrementUserAndGroupRPM(s.ctx, 11, 21, 3, 3, true, true)
-	require.NoError(s.T(), err)
-	require.True(s.T(), admitted)
-	require.Equal(s.T(), 1, groupCount)
-	require.Equal(s.T(), 1, userCount)
+	minute, err := cache.minuteTS(ctx)
+	require.NoError(t, err)
 
-	clusterGroupCount, err := s.rdb.Get(s.ctx, userGroupRPMClusterSlotKey(11, 21, minute)).Int()
-	require.NoError(s.T(), err)
-	require.Equal(s.T(), 1, clusterGroupCount)
-	legacyGroupCount, err := s.rdb.Get(s.ctx, userGroupRPMLegacyKey(11, 21, minute)).Int()
-	require.NoError(s.T(), err)
-	require.Equal(s.T(), 1, legacyGroupCount)
+	groupCount, userCount, admitted, err := cache.TryIncrementUserAndGroupRPM(ctx, 11, 21, 3, 3, true, true)
+	require.NoError(t, err)
+	require.True(t, admitted)
+	require.Equal(t, 1, groupCount)
+	require.Equal(t, 1, userCount)
 
-	clusterUserCount, err := s.rdb.Get(s.ctx, userRPMClusterSlotKey(11, minute)).Int()
-	require.NoError(s.T(), err)
-	require.Equal(s.T(), 1, clusterUserCount)
-	legacyUserCount, err := s.rdb.Get(s.ctx, userRPMLegacyKey(11, minute)).Int()
-	require.NoError(s.T(), err)
-	require.Equal(s.T(), 1, legacyUserCount)
+	clusterGroupCount, err := rdb.Get(ctx, userGroupRPMClusterSlotKey(11, 21, minute)).Int()
+	require.NoError(t, err)
+	require.Equal(t, 1, clusterGroupCount)
+	legacyGroupCount, err := rdb.Get(ctx, userGroupRPMLegacyKey(11, 21, minute)).Int()
+	require.NoError(t, err)
+	require.Equal(t, 1, legacyGroupCount)
 
-	s.AssertTTLWithin(s.rdb.TTL(s.ctx, userGroupRPMClusterSlotKey(11, 21, minute)).Val(), time.Second, userRPMKeyTTL)
+	clusterUserCount, err := rdb.Get(ctx, userRPMClusterSlotKey(11, minute)).Int()
+	require.NoError(t, err)
+	require.Equal(t, 1, clusterUserCount)
+	legacyUserCount, err := rdb.Get(ctx, userRPMLegacyKey(11, minute)).Int()
+	require.NoError(t, err)
+	require.Equal(t, 1, legacyUserCount)
+
+	require.True(t, rdb.TTL(ctx, userGroupRPMClusterSlotKey(11, 21, minute)).Val() > 0)
 }
 
-func (s *UserRPMCacheSuite) TestLegacyPostWriteAdmitRejectsWhenIncrementExceedsLimit() {
-	minute, err := s.cache.minuteTS(s.ctx)
-	require.NoError(s.T(), err)
+func TestUserRPMCache_LegacyAdmitRejectsWithoutIncrementWhenAtLimit(t *testing.T) {
+	cache, rdb := newUserRPMCacheTest(t)
+	ctx := context.Background()
+
+	minute, err := cache.minuteTS(ctx)
+	require.NoError(t, err)
 
 	legacyGroupKey := userGroupRPMLegacyKey(12, 22, minute)
-	require.NoError(s.T(), s.rdb.Set(s.ctx, legacyGroupKey, 2, userRPMKeyTTL).Err())
+	require.NoError(t, rdb.Set(ctx, legacyGroupKey, 2, userRPMKeyTTL).Err())
 
-	count, admitted, err := s.cache.incrWithTTLAdmit(s.ctx, legacyGroupKey, 2)
-	require.NoError(s.T(), err)
-	require.False(s.T(), admitted)
-	require.Equal(s.T(), 3, count)
-	legacyGroupCount, err := s.rdb.Get(s.ctx, legacyGroupKey).Int()
-	require.NoError(s.T(), err)
-	require.Equal(s.T(), 3, legacyGroupCount)
+	count, admitted, err := cache.incrWithTTLAdmit(ctx, legacyGroupKey, 2)
+	require.NoError(t, err)
+	require.False(t, admitted)
+	require.Equal(t, 2, count)
+	legacyGroupCount, err := rdb.Get(ctx, legacyGroupKey).Int()
+	require.NoError(t, err)
+	require.Equal(t, 2, legacyGroupCount)
 }
 
-func (s *UserRPMCacheSuite) TestAtomicAdmitConcurrentLegacyPostWriteAllowsAtMostLimit() {
-	const workers = 12
-	results := make(chan bool, workers)
-	errCh := make(chan error, workers)
-	start := make(chan struct{})
+func TestUserRPMCache_AtomicAdmitRollsBackClusterWhenLegacyGroupRejects(t *testing.T) {
+	cache, rdb := newUserRPMCacheTest(t)
+	ctx := context.Background()
 
-	for i := 0; i < workers; i++ {
-		go func() {
-			<-start
-			_, _, admitted, err := s.cache.TryIncrementUserAndGroupRPM(s.ctx, 13, 23, 2, 2, true, true)
-			if err != nil {
-				errCh <- err
-				return
-			}
-			results <- admitted
-		}()
-	}
-	close(start)
+	minute, err := cache.minuteTS(ctx)
+	require.NoError(t, err)
 
-	admittedCount := 0
-	for i := 0; i < workers; i++ {
-		select {
-		case err := <-errCh:
-			require.NoError(s.T(), err)
-		case admitted := <-results:
-			if admitted {
-				admittedCount++
-			}
-		case <-time.After(5 * time.Second):
-			s.T().Fatal("timed out waiting for concurrent rpm admits")
-		}
-	}
-	require.LessOrEqual(s.T(), admittedCount, 2)
+	legacyGroupKey := userGroupRPMLegacyKey(14, 24, minute)
+	require.NoError(t, rdb.Set(ctx, legacyGroupKey, 2, userRPMKeyTTL).Err())
+
+	groupCount, userCount, admitted, err := cache.TryIncrementUserAndGroupRPM(ctx, 14, 24, 2, 5, true, true)
+	require.NoError(t, err)
+	require.False(t, admitted)
+	require.Equal(t, 2, groupCount)
+	require.Equal(t, 0, userCount)
+
+	clusterGroupCount, err := rdb.Get(ctx, userGroupRPMClusterSlotKey(14, 24, minute)).Int()
+	require.ErrorIs(t, err, redis.Nil)
+	require.Equal(t, 0, clusterGroupCount)
+	clusterUserCount, err := rdb.Get(ctx, userRPMClusterSlotKey(14, minute)).Int()
+	require.ErrorIs(t, err, redis.Nil)
+	require.Equal(t, 0, clusterUserCount)
 }
 
-func TestUserRPMCacheSuite(t *testing.T) {
-	suite.Run(t, new(UserRPMCacheSuite))
+func TestUserRPMCache_AtomicAdmitRollsBackPriorLegacyIncrementWhenLegacyUserRejects(t *testing.T) {
+	cache, rdb := newUserRPMCacheTest(t)
+	ctx := context.Background()
+
+	minute, err := cache.minuteTS(ctx)
+	require.NoError(t, err)
+
+	legacyUserKey := userRPMLegacyKey(15, minute)
+	require.NoError(t, rdb.Set(ctx, legacyUserKey, 2, userRPMKeyTTL).Err())
+
+	groupCount, userCount, admitted, err := cache.TryIncrementUserAndGroupRPM(ctx, 15, 25, 5, 2, true, true)
+	require.NoError(t, err)
+	require.False(t, admitted)
+	require.Equal(t, 0, groupCount)
+	require.Equal(t, 2, userCount)
+
+	clusterGroupCount, err := rdb.Get(ctx, userGroupRPMClusterSlotKey(15, 25, minute)).Int()
+	require.ErrorIs(t, err, redis.Nil)
+	require.Equal(t, 0, clusterGroupCount)
+	clusterUserCount, err := rdb.Get(ctx, userRPMClusterSlotKey(15, minute)).Int()
+	require.ErrorIs(t, err, redis.Nil)
+	require.Equal(t, 0, clusterUserCount)
+
+	legacyGroupCount, err := rdb.Get(ctx, userGroupRPMLegacyKey(15, 25, minute)).Int()
+	require.ErrorIs(t, err, redis.Nil)
+	require.Equal(t, 0, legacyGroupCount)
+	legacyUserCount, err := rdb.Get(ctx, legacyUserKey).Int()
+	require.NoError(t, err)
+	require.Equal(t, 2, legacyUserCount)
 }

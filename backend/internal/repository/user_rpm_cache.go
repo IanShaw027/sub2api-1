@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -40,13 +41,23 @@ return count
 `)
 
 var userRPMIncrExpireAdmitScript = redis.NewScript(`
+local limit = tonumber(ARGV[2]) or 0
+local current = tonumber(redis.call("GET", KEYS[1]) or "0")
+if limit > 0 and current + 1 > limit then
+  return {current, 0}
+end
 local count = redis.call("INCR", KEYS[1])
 redis.call("EXPIRE", KEYS[1], ARGV[1])
-local limit = tonumber(ARGV[2]) or 0
-if limit > 0 and count > limit then
-  return {count, 0}
-end
 return {count, 1}
+`)
+
+var userRPMRollbackScript = redis.NewScript(`
+local current = tonumber(redis.call("GET", KEYS[1]) or "0")
+if current <= 1 then
+  redis.call("DEL", KEYS[1])
+  return 0
+end
+return redis.call("DECR", KEYS[1])
 `)
 
 var userRPMAtomicAdmitScript = redis.NewScript(`
@@ -154,6 +165,16 @@ func (c *userRPMCacheImpl) incrWithTTLAdmit(ctx context.Context, key string, lim
 		return 0, false, fmt.Errorf("user rpm increment admit returned %d values", len(vals))
 	}
 	return redisInt(vals[0]), redisInt(vals[1]) == 1, nil
+}
+
+func (c *userRPMCacheImpl) rollbackIncr(ctx context.Context, key string) error {
+	if key == "" {
+		return nil
+	}
+	if _, err := userRPMRollbackScript.Run(ctx, c.rdb, []string{key}).Int64(); err != nil {
+		return fmt.Errorf("user rpm rollback key=%s: %w", key, err)
+	}
+	return nil
 }
 
 // incrWithLegacyCompat 双写新/旧 key，返回两者较大值，保证滚动升级期间计数连续。
@@ -301,29 +322,81 @@ func (c *userRPMCacheImpl) TryIncrementUserAndGroupRPM(ctx context.Context, user
 		return groupCount, userCount, false, nil
 	}
 
+	legacyGroupAdmitted := false
 	if incGroup {
 		var legacyAdmitted bool
 		legacyCount, legacyAdmitted, err := c.incrWithTTLAdmit(ctx, userGroupRPMLegacyKey(userID, groupID, minute), groupLimit)
 		if err != nil {
+			if rollbackErr := c.rollbackIncr(ctx, clusterGroupKey); rollbackErr != nil {
+				return 0, 0, false, errors.Join(err, rollbackErr)
+			}
+			if rollbackErr := c.rollbackIncr(ctx, clusterUserKey); rollbackErr != nil {
+				return 0, 0, false, errors.Join(err, rollbackErr)
+			}
 			return 0, 0, false, err
 		}
 		if legacyCount > groupCount {
 			groupCount = legacyCount
 		}
 		if !legacyAdmitted {
+			if rollbackErr := c.rollbackIncr(ctx, clusterGroupKey); rollbackErr != nil {
+				return 0, 0, false, rollbackErr
+			}
+			if rollbackErr := c.rollbackIncr(ctx, clusterUserKey); rollbackErr != nil {
+				return 0, 0, false, rollbackErr
+			}
+			groupCount, err = c.getWithLegacyCompat(ctx, clusterGroupKey, userGroupRPMLegacyKey(userID, groupID, minute))
+			if err != nil {
+				return 0, 0, false, err
+			}
+			userCount, err = c.getWithLegacyCompat(ctx, clusterUserKey, userRPMLegacyKey(userID, minute))
+			if err != nil {
+				return 0, 0, false, err
+			}
 			return groupCount, userCount, false, nil
 		}
+		legacyGroupAdmitted = true
 	}
 	if incUser {
 		var legacyAdmitted bool
 		legacyCount, legacyAdmitted, err := c.incrWithTTLAdmit(ctx, userRPMLegacyKey(userID, minute), userLimit)
 		if err != nil {
+			if rollbackErr := c.rollbackIncr(ctx, clusterGroupKey); rollbackErr != nil {
+				return 0, 0, false, errors.Join(err, rollbackErr)
+			}
+			if rollbackErr := c.rollbackIncr(ctx, clusterUserKey); rollbackErr != nil {
+				return 0, 0, false, errors.Join(err, rollbackErr)
+			}
+			if legacyGroupAdmitted {
+				if rollbackErr := c.rollbackIncr(ctx, userGroupRPMLegacyKey(userID, groupID, minute)); rollbackErr != nil {
+					return 0, 0, false, errors.Join(err, rollbackErr)
+				}
+			}
 			return 0, 0, false, err
 		}
 		if legacyCount > userCount {
 			userCount = legacyCount
 		}
 		if !legacyAdmitted {
+			if rollbackErr := c.rollbackIncr(ctx, clusterGroupKey); rollbackErr != nil {
+				return 0, 0, false, rollbackErr
+			}
+			if rollbackErr := c.rollbackIncr(ctx, clusterUserKey); rollbackErr != nil {
+				return 0, 0, false, rollbackErr
+			}
+			if legacyGroupAdmitted {
+				if rollbackErr := c.rollbackIncr(ctx, userGroupRPMLegacyKey(userID, groupID, minute)); rollbackErr != nil {
+					return 0, 0, false, rollbackErr
+				}
+			}
+			groupCount, err = c.getWithLegacyCompat(ctx, clusterGroupKey, userGroupRPMLegacyKey(userID, groupID, minute))
+			if err != nil {
+				return 0, 0, false, err
+			}
+			userCount, err = c.getWithLegacyCompat(ctx, clusterUserKey, userRPMLegacyKey(userID, minute))
+			if err != nil {
+				return 0, 0, false, err
+			}
 			return groupCount, userCount, false, nil
 		}
 	}

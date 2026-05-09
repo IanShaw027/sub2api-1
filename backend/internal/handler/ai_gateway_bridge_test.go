@@ -2,8 +2,10 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -127,6 +129,184 @@ func TestExtractAIResponseText(t *testing.T) {
 	require.Equal(t, "ok", extractAIResponseText(body))
 }
 
+func TestCompleteAIGenerationJob_ReturnsUpdateErrorAndMarksFailed(t *testing.T) {
+	repo := &aiGatewayBridgeRepoStub{
+		job: &service.AIGenerationJob{
+			ID:     42,
+			UserID: 7,
+			Status: service.AIGenerationJobStatusRunning,
+			Model:  "gpt-image-2",
+			Prompt: "draw a cat",
+		},
+		updateErrs: []error{errors.New("persist completion failed"), nil},
+	}
+	h := &AIHandler{aiService: service.NewAICenterService(repo, nil)}
+
+	status := service.AIGenerationJobStatusSucceeded
+	model := "gpt-image-2"
+	params := map[string]any{"gateway_status": 200}
+	err := h.completeAIGenerationJob(context.Background(), 7, 42, nil, nil, &service.AIUpdateGenerationJobInput{
+		Model:      &model,
+		Status:     &status,
+		Parameters: &params,
+	})
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "persist completion failed")
+	require.Len(t, repo.updateStatuses, 2)
+	require.Equal(t, service.AIGenerationJobStatusSucceeded, repo.updateStatuses[0])
+	require.Equal(t, service.AIGenerationJobStatusFailed, repo.updateStatuses[1])
+	require.Equal(t, service.AIGenerationJobStatusFailed, repo.job.Status)
+}
+
+func TestPropagateAIGenerationJobFailure_ReturnsJoinedErrorWhenFailUpdateFails(t *testing.T) {
+	repo := &aiGatewayBridgeRepoStub{
+		job: &service.AIGenerationJob{
+			ID:     99,
+			UserID: 8,
+			Status: service.AIGenerationJobStatusRunning,
+			Model:  "gpt-image-2",
+			Prompt: "draw a fox",
+		},
+		updateErrs: []error{errors.New("persist failure status failed")},
+	}
+	h := &AIHandler{aiService: service.NewAICenterService(repo, nil)}
+
+	cause := errors.New("gateway timeout")
+	err := h.propagateAIGenerationJobFailure(context.Background(), 8, 99, nil, nil, cause)
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "gateway timeout")
+	require.ErrorContains(t, err, "persist failure status failed")
+	require.Len(t, repo.updateStatuses, 1)
+	require.Equal(t, service.AIGenerationJobStatusFailed, repo.updateStatuses[0])
+	require.Equal(t, service.AIGenerationJobStatusRunning, repo.job.Status)
+}
+
 func ptrString(v string) *string {
 	return &v
+}
+
+type aiGatewayBridgeRepoStub struct {
+	job            *service.AIGenerationJob
+	updateErrs     []error
+	updateStatuses []string
+}
+
+func (s *aiGatewayBridgeRepoStub) CreateSession(context.Context, *service.AISession) error {
+	return nil
+}
+
+func (s *aiGatewayBridgeRepoStub) GetSessionByID(context.Context, int64) (*service.AISession, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s *aiGatewayBridgeRepoStub) GetSessionByUserAndID(context.Context, int64, int64) (*service.AISession, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s *aiGatewayBridgeRepoStub) ListSessions(context.Context, int64, pagination.PaginationParams, string) ([]service.AISession, *pagination.PaginationResult, error) {
+	return nil, nil, errors.New("not implemented")
+}
+
+func (s *aiGatewayBridgeRepoStub) UpdateSession(context.Context, *service.AISession) error {
+	return nil
+}
+
+func (s *aiGatewayBridgeRepoStub) DeleteSession(context.Context, int64) error {
+	return nil
+}
+
+func (s *aiGatewayBridgeRepoStub) CreateSessionMessages(context.Context, []*service.AISessionMessage) error {
+	return nil
+}
+
+func (s *aiGatewayBridgeRepoStub) ListSessionMessages(context.Context, int64, pagination.PaginationParams) ([]service.AISessionMessage, *pagination.PaginationResult, error) {
+	return nil, nil, errors.New("not implemented")
+}
+
+func (s *aiGatewayBridgeRepoStub) CreatePromptTemplate(context.Context, *service.AIPromptTemplate, *service.AIPromptTemplateVersion) error {
+	return nil
+}
+
+func (s *aiGatewayBridgeRepoStub) UpdatePromptTemplate(context.Context, *service.AIPromptTemplate, *service.AIPromptTemplateVersion) error {
+	return nil
+}
+
+func (s *aiGatewayBridgeRepoStub) GetPromptTemplateByID(context.Context, int64) (*service.AIPromptTemplate, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s *aiGatewayBridgeRepoStub) GetPromptTemplateByUserAndID(context.Context, int64, int64) (*service.AIPromptTemplate, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s *aiGatewayBridgeRepoStub) ListPromptTemplates(context.Context, int64, bool, pagination.PaginationParams, service.AIListPromptTemplatesFilter) ([]service.AIPromptTemplate, *pagination.PaginationResult, error) {
+	return nil, nil, errors.New("not implemented")
+}
+
+func (s *aiGatewayBridgeRepoStub) DeletePromptTemplate(context.Context, int64) error {
+	return nil
+}
+
+func (s *aiGatewayBridgeRepoStub) CreateGenerationJob(context.Context, *service.AIGenerationJob) error {
+	return nil
+}
+
+func (s *aiGatewayBridgeRepoStub) UpdateGenerationJob(_ context.Context, job *service.AIGenerationJob) error {
+	s.updateStatuses = append(s.updateStatuses, job.Status)
+	if len(s.updateErrs) > 0 {
+		err := s.updateErrs[0]
+		s.updateErrs = s.updateErrs[1:]
+		if err != nil {
+			return err
+		}
+	}
+	cloned := *job
+	s.job = &cloned
+	return nil
+}
+
+func (s *aiGatewayBridgeRepoStub) GetGenerationJobByID(context.Context, int64) (*service.AIGenerationJob, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s *aiGatewayBridgeRepoStub) GetGenerationJobByUserAndID(_ context.Context, userID, id int64) (*service.AIGenerationJob, error) {
+	if s.job == nil || s.job.ID != id || s.job.UserID != userID {
+		return nil, errors.New("job not found")
+	}
+	cloned := *s.job
+	return &cloned, nil
+}
+
+func (s *aiGatewayBridgeRepoStub) ListGenerationJobs(context.Context, int64, bool, pagination.PaginationParams, service.AIListGenerationJobsFilter) ([]service.AIGenerationJob, *pagination.PaginationResult, error) {
+	return nil, nil, errors.New("not implemented")
+}
+
+func (s *aiGatewayBridgeRepoStub) CreateAssets(context.Context, []*service.AIAsset) error {
+	return nil
+}
+
+func (s *aiGatewayBridgeRepoStub) UpdateAsset(context.Context, *service.AIAsset) error {
+	return nil
+}
+
+func (s *aiGatewayBridgeRepoStub) GetAssetByID(context.Context, int64) (*service.AIAsset, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s *aiGatewayBridgeRepoStub) GetAssetByUserAndID(context.Context, int64, int64) (*service.AIAsset, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s *aiGatewayBridgeRepoStub) ListAssets(context.Context, int64, bool, pagination.PaginationParams, service.AIListAssetsFilter) ([]service.AIAsset, *pagination.PaginationResult, error) {
+	return nil, nil, errors.New("not implemented")
+}
+
+func (s *aiGatewayBridgeRepoStub) CreateAuditLog(context.Context, *service.AIAuditLog) error {
+	return nil
+}
+
+func (s *aiGatewayBridgeRepoStub) ListAuditLogs(context.Context, pagination.PaginationParams, service.AIListAuditLogsFilter) ([]service.AIAuditLog, *pagination.PaginationResult, error) {
+	return nil, nil, errors.New("not implemented")
 }
