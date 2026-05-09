@@ -692,6 +692,111 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).not.toContain('web2api')
   })
 
+  it('OpenAI 响应用量条不会被生图窗口替换', async () => {
+    getUsage.mockResolvedValue({
+      five_hour: {
+        utilization: 42,
+        resets_at: '2026-03-08T12:00:00Z',
+        remaining_seconds: 3600,
+        window_stats: {
+          requests: 100,
+          tokens: 123456,
+          cost: 1.23
+        }
+      },
+      seven_day: {
+        utilization: 58,
+        resets_at: '2026-03-13T12:00:00Z',
+        remaining_seconds: 3600,
+        window_stats: {
+          requests: 200,
+          tokens: 654321,
+          cost: 2.34
+        }
+      },
+      openai_image_codex_five_hour: {
+        utilization: 99,
+        resets_at: '2026-03-08T12:00:00Z',
+        remaining_seconds: 3600,
+        window_stats: {
+          requests: 10,
+          tokens: 111,
+          cost: 3.45
+        }
+      },
+      openai_image_codex_seven_day: {
+        utilization: 100,
+        resets_at: '2026-03-13T12:00:00Z',
+        remaining_seconds: 3600,
+        window_stats: {
+          requests: 20,
+          tokens: 222,
+          cost: 4.56
+        }
+      }
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 2006,
+          platform: 'openai',
+          type: 'oauth',
+          extra: {},
+          groups: [
+            {
+              id: 201,
+              name: 'OpenAI Codex',
+              description: '',
+              platform: 'openai',
+              rate_limit: 0,
+              priority: 0,
+              rate_multiplier: 1,
+              is_exclusive: false,
+              status: 'active',
+              subscription_type: 'free',
+              daily_limit_usd: null,
+              weekly_limit_usd: null,
+              monthly_limit_usd: null,
+              allow_image_generation: true,
+              image_generation_route: 'codex',
+              image_rate_independent: false,
+              image_rate_multiplier: 1,
+              image_price_1k: null,
+              image_price_2k: null,
+              image_price_4k: null,
+              images2api_price_1k: null,
+              images2api_price_2k: null,
+              images2api_price_4k: null,
+              claude_code_only: false,
+              fallback_group_id: null,
+              fallback_group_id_on_invalid_request: null,
+              require_oauth_only: false,
+              require_privacy_set: false
+            }
+          ]
+        }),
+        activeGroupId: 201
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'windowStats'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.tokens }}</div>'
+          },
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('5h|42|123456')
+    expect(wrapper.text()).toContain('7d|58|654321')
+    expect(wrapper.text()).toContain('codex 5h|99|111')
+    expect(wrapper.text()).toContain('codex 7d|100|222')
+  })
+
   it('Key 账号会展示 today stats 徽章并带 A/U 提示', async () => {
 		const wrapper = mount(AccountUsageCell, {
 		  props: {
