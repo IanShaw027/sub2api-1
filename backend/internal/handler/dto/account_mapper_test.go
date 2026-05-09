@@ -41,7 +41,7 @@ func TestAccountFromServiceRedactsSensitiveCredentials(t *testing.T) {
 	require.Contains(t, out.Credentials, "model_mapping")
 }
 
-func TestAccountFromServiceDetailKeepsSensitiveCredentials(t *testing.T) {
+func TestAccountFromServiceDetailRedactsSensitiveCredentials(t *testing.T) {
 	account := &service.Account{Platform: service.PlatformOpenAI, Credentials: map[string]any{
 		"access_token":  "access-secret",
 		"refresh_token": "refresh-secret",
@@ -52,11 +52,11 @@ func TestAccountFromServiceDetailKeepsSensitiveCredentials(t *testing.T) {
 
 	out := AccountFromServiceDetail(account)
 	require.NotNil(t, out)
-	require.Equal(t, "access-secret", out.Credentials["access_token"])
-	require.Equal(t, "refresh-secret", out.Credentials["refresh_token"])
-	require.Equal(t, "sk-secret", out.Credentials["api_key"])
-	require.Equal(t, "client-secret", out.Credentials["client_secret"])
 	require.Equal(t, "https://api.example.com", out.Credentials["base_url"])
+	require.NotContains(t, out.Credentials, "access_token")
+	require.NotContains(t, out.Credentials, "refresh_token")
+	require.NotContains(t, out.Credentials, "api_key")
+	require.NotContains(t, out.Credentials, "client_secret")
 }
 
 func TestAccountFromServiceExposesOpenAITLSFingerprintConfig(t *testing.T) {
@@ -90,7 +90,7 @@ func TestAccountFromServiceRedactsOpenAIWebProfileCookieValues(t *testing.T) {
 		},
 	}
 
-	out := AccountFromServiceDetail(account)
+	out := AccountFromService(account)
 	require.NotNil(t, out)
 	profile, ok := out.Extra["web_profile"].(map[string]any)
 	require.True(t, ok)
@@ -99,6 +99,46 @@ func TestAccountFromServiceRedactsOpenAIWebProfileCookieValues(t *testing.T) {
 	require.Equal(t, "oai-did", cookies[0]["name"])
 	require.Equal(t, ".chatgpt.com", cookies[0]["domain"])
 	require.NotContains(t, cookies[0], "value")
+}
+
+func TestAccountFromServiceDetailRedactsOpenAIWebProfileCookiesAndPreservesGroups(t *testing.T) {
+	account := &service.Account{
+		Platform: service.PlatformOpenAI,
+		Extra: map[string]any{
+			"web_profile": map[string]any{
+				"source": "capture",
+				"cookies": []any{
+					map[string]any{
+						"name":   "oai-did",
+						"value":  "cookie-secret",
+						"domain": ".chatgpt.com",
+						"path":   "/",
+					},
+				},
+			},
+		},
+		Groups: []*service.Group{
+			{
+				ID:       17,
+				Name:     "openai-group",
+				Platform: service.PlatformOpenAI,
+			},
+		},
+	}
+
+	out := AccountFromServiceDetail(account)
+	require.NotNil(t, out)
+
+	profile, ok := out.Extra["web_profile"].(map[string]any)
+	require.True(t, ok)
+	cookies, ok := profile["cookies"].([]any)
+	require.True(t, ok)
+	cookie, ok := cookies[0].(map[string]any)
+	require.True(t, ok)
+	require.NotContains(t, cookie, "value")
+
+	require.Len(t, out.Groups, 1)
+	require.Equal(t, int64(17), out.Groups[0].ID)
 }
 
 func TestAccountFromServiceKeepsGeminiCanonicalTierMetadata(t *testing.T) {

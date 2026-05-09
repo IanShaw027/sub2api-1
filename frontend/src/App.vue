@@ -5,7 +5,7 @@ import Toast from '@/components/common/Toast.vue'
 import NavigationProgress from '@/components/common/NavigationProgress.vue'
 import { resolveDocumentTitle } from '@/router/title'
 import AnnouncementPopup from '@/components/common/AnnouncementPopup.vue'
-import { useAppStore, useAuthStore, useSubscriptionStore, useAnnouncementStore } from '@/stores'
+import { useAiStudioStore, useAppStore, useAuthStore, useSubscriptionStore, useAnnouncementStore } from '@/stores'
 import { getSetupStatus } from '@/api/setup'
 
 const router = useRouter()
@@ -14,6 +14,7 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 const subscriptionStore = useSubscriptionStore()
 const announcementStore = useAnnouncementStore()
+const aiStudioStore = useAiStudioStore()
 
 /**
  * Update favicon dynamically
@@ -74,6 +75,7 @@ watch(
       // User logged out: clear data and stop polling
       subscriptionStore.clear()
       announcementStore.reset()
+      aiStudioStore.reset()
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
   },

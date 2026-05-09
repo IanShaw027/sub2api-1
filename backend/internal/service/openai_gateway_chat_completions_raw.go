@@ -40,6 +40,14 @@ var openaiCCRawAllowedHeaders = map[string]bool{
 	"user-agent":      true,
 }
 
+var openaiRawChatResponsesOnlyFields = []string{
+	"include",
+	"store",
+	"parallel_tool_calls",
+	"previous_response_id",
+	"reasoning",
+}
+
 // forwardAsRawChatCompletions 直转客户端的 Chat Completions 请求到上游
 // `{base_url}/v1/chat/completions`，**不**做 CC↔Responses 协议转换。
 //
@@ -89,6 +97,11 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	if upstreamModel != originalModel {
 		upstreamBody = ReplaceModelInBody(body, upstreamModel)
 	}
+	compatBody, compatErr := normalizeRawChatCompletionsCompatBody(upstreamBody)
+	if compatErr != nil {
+		return nil, fmt.Errorf("normalize raw chat compat body: %w", compatErr)
+	}
+	upstreamBody = compatBody
 	promptCacheKey = strings.TrimSpace(promptCacheKey)
 	if promptCacheKey != "" {
 		existingPromptCacheKey := gjson.GetBytes(upstreamBody, "prompt_cache_key")
@@ -454,4 +467,205 @@ func buildOpenAIChatCompletionsURL(base string) string {
 		return normalized + "/chat/completions"
 	}
 	return normalized + "/v1/chat/completions"
+}
+
+func normalizeRawChatCompletionsCompatBody(body []byte) ([]byte, error) {
+	updated := body
+
+	if !gjson.GetBytes(updated, "messages").Exists() && gjson.GetBytes(updated, "input").Exists() {
+		messagesRaw, err := convertResponsesInputRawToChatMessages(gjson.GetBytes(updated, "input").Raw)
+		if err != nil {
+			return nil, err
+		}
+		updated, err = sjson.SetRawBytes(updated, "messages", messagesRaw)
+		if err != nil {
+			return nil, fmt.Errorf("set messages from input: %w", err)
+		}
+		updated, err = sjson.DeleteBytes(updated, "input")
+		if err != nil {
+			return nil, fmt.Errorf("delete input after conversion: %w", err)
+		}
+	}
+
+	if !gjson.GetBytes(updated, "max_completion_tokens").Exists() && !gjson.GetBytes(updated, "max_tokens").Exists() {
+		if maxOutputTokens := gjson.GetBytes(updated, "max_output_tokens"); maxOutputTokens.Exists() {
+			next, err := sjson.SetRawBytes(updated, "max_completion_tokens", []byte(maxOutputTokens.Raw))
+			if err != nil {
+				return nil, fmt.Errorf("map max_output_tokens to max_completion_tokens: %w", err)
+			}
+			updated = next
+		}
+	}
+	if maxOutputTokens := gjson.GetBytes(updated, "max_output_tokens"); maxOutputTokens.Exists() {
+		next, err := sjson.DeleteBytes(updated, "max_output_tokens")
+		if err != nil {
+			return nil, fmt.Errorf("delete max_output_tokens after conversion: %w", err)
+		}
+		updated = next
+	}
+
+	if !gjson.GetBytes(updated, "reasoning_effort").Exists() {
+		if effort := strings.TrimSpace(gjson.GetBytes(updated, "reasoning.effort").String()); effort != "" {
+			next, err := sjson.SetBytes(updated, "reasoning_effort", effort)
+			if err != nil {
+				return nil, fmt.Errorf("map reasoning.effort to reasoning_effort: %w", err)
+			}
+			updated = next
+		}
+	}
+
+	for _, field := range openaiRawChatResponsesOnlyFields {
+		next, err := sjson.DeleteBytes(updated, field)
+		if err != nil {
+			return nil, fmt.Errorf("delete responses-only field %s: %w", field, err)
+		}
+		updated = next
+	}
+
+	return updated, nil
+}
+
+func convertResponsesInputRawToChatMessages(raw string) ([]byte, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return json.Marshal([]apicompat.ChatMessage{})
+	}
+
+	var asText string
+	if err := json.Unmarshal([]byte(raw), &asText); err == nil {
+		return json.Marshal([]apicompat.ChatMessage{{
+			Role:    "user",
+			Content: mustMarshalRawJSON(asText),
+		}})
+	}
+
+	var items []apicompat.ResponsesInputItem
+	if err := json.Unmarshal([]byte(raw), &items); err != nil {
+		return nil, fmt.Errorf("parse responses input array: %w", err)
+	}
+
+	messages := make([]apicompat.ChatMessage, 0, len(items))
+	for _, item := range items {
+		converted, err := convertResponsesInputItemToChatMessages(item)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, converted...)
+	}
+
+	return json.Marshal(messages)
+}
+
+func convertResponsesInputItemToChatMessages(item apicompat.ResponsesInputItem) ([]apicompat.ChatMessage, error) {
+	switch item.Type {
+	case "", "message":
+		role := strings.TrimSpace(item.Role)
+		if role == "" {
+			role = "user"
+		}
+		content, err := convertResponsesMessageContentToChatContent(item.Content)
+		if err != nil {
+			return nil, fmt.Errorf("convert %s message content: %w", role, err)
+		}
+		return []apicompat.ChatMessage{{
+			Role:    role,
+			Content: content,
+		}}, nil
+	case "function_call":
+		toolCall := apicompat.ChatToolCall{
+			ID:   firstNonEmptyRawChat(strings.TrimSpace(item.CallID), strings.TrimSpace(item.ID)),
+			Type: "function",
+			Function: apicompat.ChatFunctionCall{
+				Name:      item.Name,
+				Arguments: item.Arguments,
+			},
+		}
+		return []apicompat.ChatMessage{{
+			Role:      "assistant",
+			ToolCalls: []apicompat.ChatToolCall{toolCall},
+		}}, nil
+	case "function_call_output":
+		output := item.Output
+		if output == "" {
+			output = "(empty)"
+		}
+		return []apicompat.ChatMessage{{
+			Role:       "tool",
+			ToolCallID: strings.TrimSpace(item.CallID),
+			Content:    mustMarshalRawJSON(output),
+		}}, nil
+	default:
+		return nil, nil
+	}
+}
+
+func convertResponsesMessageContentToChatContent(raw json.RawMessage) (json.RawMessage, error) {
+	if len(raw) == 0 {
+		return mustMarshalRawJSON(""), nil
+	}
+
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return mustMarshalRawJSON(text), nil
+	}
+
+	var parts []apicompat.ResponsesContentPart
+	if err := json.Unmarshal(raw, &parts); err != nil {
+		return nil, fmt.Errorf("parse content as string or parts array: %w", err)
+	}
+
+	chatParts := make([]apicompat.ChatContentPart, 0, len(parts))
+	textParts := make([]string, 0, len(parts))
+	hasNonText := false
+	for _, part := range parts {
+		switch part.Type {
+		case "", "text", "input_text", "output_text":
+			if part.Text != "" {
+				textParts = append(textParts, part.Text)
+				chatParts = append(chatParts, apicompat.ChatContentPart{
+					Type: "text",
+					Text: part.Text,
+				})
+			}
+		case "input_image":
+			imageURL := firstNonEmptyRawChat(strings.TrimSpace(part.ImageURL), strings.TrimSpace(part.FileURL))
+			if imageURL == "" {
+				continue
+			}
+			hasNonText = true
+			chatParts = append(chatParts, apicompat.ChatContentPart{
+				Type: "image_url",
+				ImageURL: &apicompat.ChatImageURL{
+					URL: imageURL,
+				},
+			})
+		}
+	}
+
+	if len(chatParts) == 0 {
+		return mustMarshalRawJSON(strings.Join(textParts, "")), nil
+	}
+	if !hasNonText {
+		return mustMarshalRawJSON(strings.Join(textParts, "")), nil
+	}
+
+	out, err := json.Marshal(chatParts)
+	if err != nil {
+		return nil, fmt.Errorf("marshal chat content parts: %w", err)
+	}
+	return out, nil
+}
+
+func mustMarshalRawJSON(value string) json.RawMessage {
+	encoded, _ := json.Marshal(value)
+	return encoded
+}
+
+func firstNonEmptyRawChat(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }

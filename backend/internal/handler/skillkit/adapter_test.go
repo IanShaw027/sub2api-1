@@ -107,3 +107,81 @@ func TestServiceRepoAdapterCreateReviewPersistsDisabledAuditRow(t *testing.T) {
 	require.NoError(t, adapter.CreateReview(t.Context(), review))
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestServiceVersionToDomainMapsSubmittedToPendingReview(t *testing.T) {
+	t.Parallel()
+
+	version := &service.AISkillVersion{
+		Status: service.AISkillVersionStatusSubmitted,
+	}
+
+	entity := serviceVersionToDomain(version)
+	require.NotNil(t, entity)
+	require.Equal(t, domain.AISkillVersionReviewStatusPending, entity.ReviewStatus)
+}
+
+func TestServiceVersionToDomainNormalizesBillingPolicyModeToPerRequest(t *testing.T) {
+	t.Parallel()
+
+	version := &service.AISkillVersion{
+		BillingPolicy: service.AISkillBillingPolicy{
+			Mode:                   service.AISkillBillingModePerRun,
+			PricePerRun:            12.5,
+			PlatformCommissionRate: 0.15,
+			Currency:               "credit",
+		},
+	}
+
+	entity := serviceVersionToDomain(version)
+	require.NotNil(t, entity)
+
+	policy := mustMap(entity.Metadata[metaKeySkillBillingPolicy])
+	require.Equal(t, domain.AISkillBillingModePerRequest, policy["mode"])
+}
+
+func TestDomainVersionToServiceNormalizesBillingPolicyModeToPerRun(t *testing.T) {
+	t.Parallel()
+
+	version := &domain.AISkillVersion{
+		Metadata: map[string]any{
+			metaKeySkillBillingPolicy: map[string]any{
+				"mode":                    domain.AISkillBillingModePerRequest,
+				"price_per_run":           9.9,
+				"platform_commission_rate": 0.2,
+				"currency":                "credit",
+			},
+		},
+	}
+
+	entity := domainVersionToService(version)
+	require.NotNil(t, entity)
+	require.Equal(t, service.AISkillBillingModePerRun, entity.BillingPolicy.Mode)
+}
+
+func TestRunAndSettlementBillingModesTranslateAcrossAdapterBoundary(t *testing.T) {
+	t.Parallel()
+
+	runEntity := serviceRunToDomain(&service.AISkillRun{
+		BillingMode: service.AISkillBillingModePerRun,
+	})
+	require.NotNil(t, runEntity)
+	require.Equal(t, domain.AISkillBillingModePerRequest, runEntity.BillingMode)
+
+	runDTO := domainRunToService(&domain.AISkillRun{
+		BillingMode: domain.AISkillBillingModePerRequest,
+	})
+	require.NotNil(t, runDTO)
+	require.Equal(t, service.AISkillBillingModePerRun, runDTO.BillingMode)
+
+	settlementEntity := serviceSettlementToDomain(&service.AISkillSettlement{
+		BillingMode: service.AISkillBillingModePerRun,
+	})
+	require.NotNil(t, settlementEntity)
+	require.Equal(t, domain.AISkillBillingModePerRequest, settlementEntity.BillingMode)
+
+	settlementDTO := domainSettlementToService(&domain.AISkillSettlement{
+		BillingMode: domain.AISkillBillingModePerRequest,
+	})
+	require.NotNil(t, settlementDTO)
+	require.Equal(t, service.AISkillBillingModePerRun, settlementDTO.BillingMode)
+}

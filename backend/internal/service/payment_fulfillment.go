@@ -143,8 +143,13 @@ func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, trad
 		paymentorder.IDEQ(o.ID),
 		paymentorder.Or(
 			paymentorder.StatusEQ(OrderStatusPending),
+			paymentorder.StatusEQ(OrderStatusFailed),
 			paymentorder.And(
 				paymentorder.StatusEQ(OrderStatusExpired),
+				paymentorder.UpdatedAtGTE(grace),
+			),
+			paymentorder.And(
+				paymentorder.StatusEQ(OrderStatusCancelled),
 				paymentorder.UpdatedAtGTE(grace),
 			),
 		),
@@ -155,7 +160,7 @@ func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, trad
 	if c == 0 {
 		return s.alreadyProcessed(ctx, o, tradeNo, paid, pk)
 	}
-	if previousStatus == OrderStatusExpired {
+	if previousStatus != OrderStatusPending {
 		slog.Info("order recovered from webhook payment success",
 			"orderID", o.ID,
 			"previousStatus", previousStatus,
@@ -182,7 +187,11 @@ func (s *PaymentService) alreadyProcessed(ctx context.Context, o *dbent.PaymentO
 	case OrderStatusCompleted, OrderStatusRefunded:
 		return nil
 	case OrderStatusFailed:
-		return s.executeFulfillment(ctx, o.ID)
+		recovered, recoverErr := s.markFailedOrderPaidAndReload(ctx, o.ID, tradeNo, paid)
+		if recoverErr != nil {
+			return recoverErr
+		}
+		return s.executeFulfillment(ctx, recovered.ID)
 	case OrderStatusPaid, OrderStatusRecharging:
 		return nil
 	case OrderStatusCancelled:

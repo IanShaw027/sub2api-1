@@ -361,7 +361,7 @@ func TestForwardAsChatCompletions_APIKeyUnsupportedResponsesFallsBackToRawChatCo
 	require.False(t, gjson.GetBytes(upstream.lastBody, "input").Exists())
 }
 
-func TestForwardAsChatCompletions_APIKeyUnsupportedResponsesShapeStillUsesResponsesPath(t *testing.T) {
+func TestForwardAsChatCompletions_APIKeyUnsupportedResponsesShapeFallsBackToRawChatCompletions(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
 
@@ -406,9 +406,11 @@ func TestForwardAsChatCompletions_APIKeyUnsupportedResponsesShapeStillUsesRespon
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, upstream.lastReq)
-	require.Equal(t, "/v1/responses", upstream.lastReq.URL.Path)
-	require.True(t, gjson.GetBytes(upstream.lastBody, "input").Exists())
-	require.False(t, gjson.GetBytes(upstream.lastBody, "messages").Exists())
+	require.Equal(t, "/v1/chat/completions", upstream.lastReq.URL.Path)
+	require.False(t, gjson.GetBytes(upstream.lastBody, "input").Exists())
+	require.True(t, gjson.GetBytes(upstream.lastBody, "messages").Exists())
+	require.Equal(t, "user", gjson.GetBytes(upstream.lastBody, "messages.0.role").String())
+	require.Equal(t, "hello", gjson.GetBytes(upstream.lastBody, "messages.0.content").String())
 }
 
 func TestForwardAsChatCompletions_OAuthResponsesShape_IncludesDefaultInstructionsInUpstreamBody(t *testing.T) {

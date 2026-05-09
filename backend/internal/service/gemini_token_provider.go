@@ -63,11 +63,16 @@ func (p *GeminiTokenProvider) GetAccessToken(ctx context.Context, account *Accou
 	}
 
 	cacheKey := GeminiTokenCacheKey(account)
+	projectID := strings.TrimSpace(account.GetCredential("project_id"))
+	autoDetectProjectID := account.GetCredential("auto_detect_project_id") == "true"
+	isCodeAssist := account.GeminiOAuthTypeSafe() == "code_assist"
+	cachedToken := ""
+	refreshed := false
 
 	// 1) Try cache first.
 	if p.tokenCache != nil {
 		if token, err := p.tokenCache.GetAccessToken(ctx, cacheKey); err == nil && strings.TrimSpace(token) != "" {
-			return token, nil
+			cachedToken = strings.TrimSpace(token)
 		}
 	}
 
@@ -91,6 +96,10 @@ func (p *GeminiTokenProvider) GetAccessToken(ctx context.Context, account *Accou
 		} else {
 			account = result.Account
 			expiresAt = account.GetCredentialAsTime("expires_at")
+			projectID = strings.TrimSpace(account.GetCredential("project_id"))
+			autoDetectProjectID = account.GetCredential("auto_detect_project_id") == "true"
+			isCodeAssist = account.GeminiOAuthTypeSafe() == "code_assist"
+			refreshed = true
 		}
 	} else if needsRefresh && p.tokenCache != nil {
 		// Backward-compatible test path when refreshAPI is not injected.
@@ -102,7 +111,10 @@ func (p *GeminiTokenProvider) GetAccessToken(ctx context.Context, account *Accou
 		}
 	}
 
-	accessToken := account.GetCredential("access_token")
+	accessToken := strings.TrimSpace(account.GetCredential("access_token"))
+	if accessToken == "" {
+		accessToken = cachedToken
+	}
 	if strings.TrimSpace(accessToken) == "" {
 		return "", errors.New("access_token not found in credentials")
 	}
@@ -110,10 +122,6 @@ func (p *GeminiTokenProvider) GetAccessToken(ctx context.Context, account *Accou
 	// project_id handling depends on the Gemini OAuth mode:
 	// - Code Assist OAuth requires project_id and must not silently degrade to AI Studio OAuth.
 	// - Google One / AI Studio-compatible OAuth may continue without project_id.
-	projectID := strings.TrimSpace(account.GetCredential("project_id"))
-	autoDetectProjectID := account.GetCredential("auto_detect_project_id") == "true"
-	isCodeAssist := account.GeminiOAuthTypeSafe() == "code_assist"
-
 	if projectID == "" && autoDetectProjectID {
 		if p.geminiOAuthService == nil {
 			if isCodeAssist {
@@ -154,6 +162,10 @@ func (p *GeminiTokenProvider) GetAccessToken(ctx context.Context, account *Accou
 
 	if isCodeAssist && strings.TrimSpace(projectID) == "" {
 		return "", errors.New(errGeminiCodeAssistProjectIDNotConfigured)
+	}
+
+	if cachedToken != "" && !refreshed {
+		return cachedToken, nil
 	}
 
 	// 3) Populate cache with TTL.

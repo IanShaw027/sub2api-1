@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,12 +14,16 @@ import (
 )
 
 type geminiTokenProviderCacheRecorder struct {
-	getKeys []string
-	setKeys []string
+	getKeys     []string
+	setKeys     []string
+	cachedToken string
 }
 
 func (s *geminiTokenProviderCacheRecorder) GetAccessToken(_ context.Context, cacheKey string) (string, error) {
 	s.getKeys = append(s.getKeys, cacheKey)
+	if strings.TrimSpace(s.cachedToken) != "" {
+		return s.cachedToken, nil
+	}
 	return "", fmt.Errorf("cache miss")
 }
 
@@ -118,4 +123,98 @@ func TestGeminiTokenProvider_GetAccessToken_UsesAccountScopedCacheKeyEvenWhenPro
 
 	require.Equal(t, []string{"gemini:account:201", "gemini:account:202"}, cache.getKeys)
 	require.Equal(t, []string{"gemini:account:201", "gemini:account:202"}, cache.setKeys)
+}
+
+func TestGeminiTokenProvider_GetAccessToken_RejectsCachedCodeAssistTokenWithoutProjectID(t *testing.T) {
+	t.Parallel()
+
+	cache := &geminiTokenProviderCacheRecorder{cachedToken: "cached-access-token"}
+	provider := NewGeminiTokenProvider(nil, cache, nil)
+	account := &Account{
+		ID:       203,
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token": "stored-access-token",
+			"oauth_type":   "code_assist",
+			"expires_at":   time.Now().Add(time.Hour).Format(time.RFC3339),
+		},
+	}
+
+	token, err := provider.GetAccessToken(context.Background(), account)
+	require.ErrorContains(t, err, errGeminiCodeAssistProjectIDNotConfigured)
+	require.Empty(t, token)
+	require.Equal(t, []string{"gemini:account:203"}, cache.getKeys)
+	require.Empty(t, cache.setKeys)
+}
+
+func TestGeminiTokenProvider_GetAccessToken_RefreshRecomputesProjectRoutingState(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		ID:       204,
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":           "stale-access",
+			"refresh_token":          "stale-refresh",
+			"oauth_type":             "code_assist",
+			"auto_detect_project_id": "false",
+			"expires_at":             time.Now().Add(-time.Minute).Format(time.RFC3339),
+		},
+	}
+	repo := &refreshAPIAccountRepo{account: account}
+	cache := &geminiTokenProviderCacheRecorder{}
+	executor := &refreshAPIExecutorStub{
+		needsRefresh: true,
+		credentials: map[string]any{
+			"access_token": "fresh-access",
+			"refresh_token": "fresh-refresh",
+			"project_id":   "refreshed-project",
+			"oauth_type":   "code_assist",
+			"expires_at":   time.Now().Add(time.Hour).Format(time.RFC3339),
+		},
+	}
+
+	provider := NewGeminiTokenProvider(repo, cache, nil)
+	provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), executor)
+
+	token, err := provider.GetAccessToken(context.Background(), account)
+	require.NoError(t, err)
+	require.Equal(t, "fresh-access", token)
+	require.Equal(t, "refreshed-project", account.GetCredential("project_id"))
+}
+
+func TestGeminiTokenProvider_GetAccessToken_RefreshDoesNotReturnStaleCachedToken(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		ID:       205,
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":  "stale-access",
+			"refresh_token": "stale-refresh",
+			"project_id":    "shared-project",
+			"expires_at":    time.Now().Add(-time.Minute).Format(time.RFC3339),
+		},
+	}
+	repo := &refreshAPIAccountRepo{account: account}
+	cache := &geminiTokenProviderCacheRecorder{cachedToken: "cached-stale-token"}
+	executor := &refreshAPIExecutorStub{
+		needsRefresh: true,
+		credentials: map[string]any{
+			"access_token":  "fresh-access",
+			"refresh_token": "fresh-refresh",
+			"project_id":    "shared-project",
+			"expires_at":    time.Now().Add(time.Hour).Format(time.RFC3339),
+		},
+	}
+
+	provider := NewGeminiTokenProvider(repo, cache, nil)
+	provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), executor)
+
+	token, err := provider.GetAccessToken(context.Background(), account)
+	require.NoError(t, err)
+	require.Equal(t, "fresh-access", token)
 }

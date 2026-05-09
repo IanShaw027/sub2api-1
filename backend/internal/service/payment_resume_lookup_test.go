@@ -14,6 +14,7 @@ import (
 
 type paymentResumeLookupProvider struct {
 	queryCount int
+	resp       *payment.QueryOrderResponse
 }
 
 func (p *paymentResumeLookupProvider) Name() string { return "resume-lookup-provider" }
@@ -30,6 +31,9 @@ func (p *paymentResumeLookupProvider) CreatePayment(context.Context, payment.Cre
 
 func (p *paymentResumeLookupProvider) QueryOrder(context.Context, string) (*payment.QueryOrderResponse, error) {
 	p.queryCount++
+	if p.resp != nil {
+		return p.resp, nil
+	}
 	return &payment.QueryOrderResponse{Status: payment.ProviderStatusPending}, nil
 }
 
@@ -302,6 +306,68 @@ func TestVerifyOrderPublicDoesNotCheckUpstreamForPendingOrder(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, order.ID, got.ID)
 	require.Equal(t, 0, provider.queryCount)
+}
+
+func TestGetPublicOrderByResumeTokenReconcilesFailedOrder(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	user, err := client.User.Create().
+		SetEmail("resume-failed@example.com").
+		SetPasswordHash("hash").
+		SetUsername("resume-failed-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("RESUME-FAILED").
+		SetOutTradeNo("sub2_resume_lookup_failed").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusFailed).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetFailedAt(time.Now().Add(-3 * time.Minute)).
+		SetFailedReason("lost callback after local failure").
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	resumeSvc := NewPaymentResumeService([]byte("0123456789abcdef0123456789abcdef"))
+	token, err := resumeSvc.CreateToken(ResumeTokenClaims{
+		OrderID:            order.ID,
+		UserID:             user.ID,
+		PaymentType:        payment.TypeAlipay,
+		CanonicalReturnURL: "https://app.example.com/payment/result",
+	})
+	require.NoError(t, err)
+
+	registry := payment.NewRegistry()
+	providerResp := &payment.QueryOrderResponse{
+		TradeNo: "resume-failed-paid",
+		Status:  payment.ProviderStatusPaid,
+		Amount:  88,
+	}
+	provider := &paymentResumeLookupProvider{resp: providerResp}
+	registry.Register(provider)
+
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		resumeService:   resumeSvc,
+		providersLoaded: true,
+	}
+
+	got, err := svc.GetPublicOrderByResumeToken(ctx, token)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, got.Status)
+	require.Equal(t, "resume-failed-paid", got.PaymentTradeNo)
 }
 
 func TestVerifyOrderPublicRejectsBlankOutTradeNo(t *testing.T) {

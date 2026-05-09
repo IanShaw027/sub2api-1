@@ -75,3 +75,80 @@ func TestCanListPromptTemplateInLibrary_RequiresPublicNormalUnlessOwner(t *testi
 		t.Fatalf("blocked prompt should not be listed for non-owner")
 	}
 }
+
+func TestIsValidAIVisibility_RejectsInvalidValues(t *testing.T) {
+	t.Parallel()
+
+	validCases := []string{
+		AIVisibilityPrivate,
+		AIVisibilityUnlisted,
+		AIVisibilityPublic,
+		" PRIVATE ",
+		"UnLiStEd",
+	}
+	for _, raw := range validCases {
+		if !IsValidAIVisibility(raw) {
+			t.Fatalf("expected visibility %q to be valid", raw)
+		}
+	}
+
+	invalidCases := []string{"", "friends_only", "public/private", "123"}
+	for _, raw := range invalidCases {
+		if IsValidAIVisibility(raw) {
+			t.Fatalf("expected visibility %q to be invalid", raw)
+		}
+	}
+}
+
+func TestIsValidAIModerationState_RejectsInvalidValues(t *testing.T) {
+	t.Parallel()
+
+	validCases := []string{
+		AIModerationStateNormal,
+		AIModerationStateForcedPrivate,
+		AIModerationStateBlocked,
+		" NORMAL ",
+		"FoRcEd_PrIvAtE",
+	}
+	for _, raw := range validCases {
+		if !IsValidAIModerationState(raw) {
+			t.Fatalf("expected moderation state %q to be valid", raw)
+		}
+	}
+
+	invalidCases := []string{"", "shadow_banned", "forced-private", "1"}
+	for _, raw := range invalidCases {
+		if IsValidAIModerationState(raw) {
+			t.Fatalf("expected moderation state %q to be invalid", raw)
+		}
+	}
+}
+
+func TestNormalizeAISkillSourceVisibility_RejectsInvalidExplicitValue(t *testing.T) {
+	t.Parallel()
+
+	if got := NormalizeAISkillSourceVisibility("", AIVisibilityPublic, 0); got != AISkillSourceVisibilityPublic {
+		t.Fatalf("expected empty source visibility to default to public for free public skill, got %q", got)
+	}
+	if got := NormalizeAISkillSourceVisibility("", AIVisibilityPublic, 9.9); got != AISkillSourceVisibilityHidden {
+		t.Fatalf("expected empty source visibility to default to hidden for paid public skill, got %q", got)
+	}
+	if got := NormalizeAISkillSourceVisibility("friends_only", AIVisibilityPublic, 0); got != "" {
+		t.Fatalf("expected invalid explicit source visibility to stay invalid, got %q", got)
+	}
+}
+
+func TestEffectiveAISkillSourceVisibility_InvalidValueFailsClosed(t *testing.T) {
+	t.Parallel()
+
+	if got := EffectiveAISkillSourceVisibility(AIVisibilityPublic, "friends_only", 0); got != AISkillSourceVisibilityHidden {
+		t.Fatalf("expected invalid stored source visibility to fail closed, got %q", got)
+	}
+	if CanReadAISkillSource(10, 99, false, AIVisibilityPublic, "friends_only", 0, ptrInt64(1)) {
+		t.Fatalf("invalid stored source visibility should not expose skill source to non-owner")
+	}
+}
+
+func ptrInt64(v int64) *int64 {
+	return &v
+}

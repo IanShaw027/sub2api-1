@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -114,8 +115,8 @@ func parseOrderIDs(raw string) ([]int64, error) {
 		if part == "" {
 			continue
 		}
-		var id int64
-		if _, err := fmt.Sscanf(part, "%d", &id); err != nil || id <= 0 {
+		id, err := strconv.ParseInt(part, 10, 64)
+		if err != nil || id <= 0 {
 			return nil, fmt.Errorf("invalid order id %q", part)
 		}
 		out = append(out, id)
@@ -124,35 +125,8 @@ func parseOrderIDs(raw string) ([]int64, error) {
 }
 
 func loadAffectedOrders(ctx context.Context, client *dbent.Client, orderIDs []int64) ([]failedAffiliateOrder, error) {
-	args := []any{"%inconsistent types deduced for parameter $1%"}
-	filterSQL := ""
-	if len(orderIDs) > 0 {
-		placeholders := make([]string, 0, len(orderIDs))
-		for _, id := range orderIDs {
-			args = append(args, id)
-			placeholders = append(placeholders, fmt.Sprintf("$%d", len(args)))
-		}
-		filterSQL = " AND po.id IN (" + strings.Join(placeholders, ", ") + ")"
-	}
-
-	rows, err := client.QueryContext(ctx, `
-SELECT po.id, COALESCE(u.email, '')
-FROM payment_orders po
-JOIN payment_audit_logs pal
-  ON pal.order_id = po.id::text
- AND pal.action = 'AFFILIATE_REBATE_FAILED'
-JOIN users u
-  ON u.id = po.user_id
-WHERE po.order_type = 'balance'
-  AND po.status = 'COMPLETED'
-  AND pal.detail LIKE $1
-  AND NOT EXISTS (
-    SELECT 1
-    FROM payment_audit_logs ok
-    WHERE ok.order_id = po.id::text
-      AND ok.action IN ('AFFILIATE_REBATE_APPLIED', 'AFFILIATE_REBATE_SKIPPED')
-  )`+filterSQL+`
-ORDER BY po.id`, args...)
+	query, args := buildAffectedOrdersQuery(orderIDs)
+	rows, err := client.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -170,4 +144,35 @@ ORDER BY po.id`, args...)
 		return nil, err
 	}
 	return out, nil
+}
+
+func buildAffectedOrdersQuery(orderIDs []int64) (string, []any) {
+	args := make([]any, 0, len(orderIDs))
+	filterSQL := ""
+	if len(orderIDs) > 0 {
+		placeholders := make([]string, 0, len(orderIDs))
+		for _, id := range orderIDs {
+			args = append(args, id)
+			placeholders = append(placeholders, fmt.Sprintf("$%d", len(args)))
+		}
+		filterSQL = " AND po.id IN (" + strings.Join(placeholders, ", ") + ")"
+	}
+
+	return `
+SELECT po.id, COALESCE(u.email, '')
+FROM payment_orders po
+JOIN payment_audit_logs pal
+  ON pal.order_id = po.id::text
+ AND pal.action = 'AFFILIATE_REBATE_FAILED'
+JOIN users u
+  ON u.id = po.user_id
+WHERE po.order_type = 'balance'
+  AND po.status = 'COMPLETED'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM payment_audit_logs ok
+    WHERE ok.order_id = po.id::text
+      AND ok.action IN ('AFFILIATE_REBATE_APPLIED', 'AFFILIATE_REBATE_SKIPPED')
+  )`+filterSQL+`
+ORDER BY po.id`, args
 }

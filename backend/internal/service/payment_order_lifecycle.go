@@ -304,7 +304,7 @@ func (s *PaymentService) markFailedOrderPaidAndReload(ctx context.Context, oid i
 
 func paymentOrderStatusAllowsPaidReconciliation(status string) bool {
 	switch status {
-	case OrderStatusPending, OrderStatusExpired, OrderStatusFailed:
+	case OrderStatusPending, OrderStatusExpired, OrderStatusFailed, OrderStatusCancelled:
 		return true
 	default:
 		return false
@@ -313,7 +313,7 @@ func paymentOrderStatusAllowsPaidReconciliation(status string) bool {
 
 func paymentOrderStatusAllowsPublicPaidReconciliation(status string) bool {
 	switch status {
-	case OrderStatusExpired, OrderStatusFailed:
+	case OrderStatusExpired, OrderStatusFailed, OrderStatusCancelled:
 		return true
 	default:
 		return false

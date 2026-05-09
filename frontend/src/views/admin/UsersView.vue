@@ -1316,6 +1316,7 @@ const updateAttributeFilter = (attrId: number, value: string) => {
 // Apply filter and save to localStorage
 const applyFilter = () => {
   saveFiltersToStorage()
+  pagination.page = 1
   loadUsers()
 }
 

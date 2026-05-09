@@ -165,9 +165,21 @@ function createEmptyPagination<T>(pageSize: number): BasePaginationResponse<T> {
   }
 }
 
-function readStoredLineId(): number | null {
+function storageScopeSuffix(userId: number | null): string {
+  return userId && userId > 0 ? `user_${userId}` : 'anonymous'
+}
+
+function scopedSelectedLineKey(userId: number | null): string {
+  return `${SELECTED_LINE_KEY}:${storageScopeSuffix(userId)}`
+}
+
+function scopedSelectedKeyMapKey(userId: number | null): string {
+  return `${SELECTED_KEY_BY_LINE_KEY}:${storageScopeSuffix(userId)}`
+}
+
+function readStoredLineId(userId: number | null): number | null {
   try {
-    const raw = localStorage.getItem(SELECTED_LINE_KEY)
+    const raw = localStorage.getItem(scopedSelectedLineKey(userId))
     if (!raw) return null
     const value = Number(raw)
     return Number.isFinite(value) && value > 0 ? value : null
@@ -176,21 +188,22 @@ function readStoredLineId(): number | null {
   }
 }
 
-function persistStoredLineId(lineId: number | null): void {
+function persistStoredLineId(lineId: number | null, userId: number | null): void {
   try {
+    const storageKey = scopedSelectedLineKey(userId)
     if (lineId === null) {
-      localStorage.removeItem(SELECTED_LINE_KEY)
+      localStorage.removeItem(storageKey)
     } else {
-      localStorage.setItem(SELECTED_LINE_KEY, String(lineId))
+      localStorage.setItem(storageKey, String(lineId))
     }
   } catch {
     // ignore persistence failures
   }
 }
 
-function readStoredKeyMap(): Record<string, number> {
+function readStoredKeyMap(userId: number | null): Record<string, number> {
   try {
-    const raw = localStorage.getItem(SELECTED_KEY_BY_LINE_KEY)
+    const raw = localStorage.getItem(scopedSelectedKeyMapKey(userId))
     if (!raw) return {}
     const parsed = JSON.parse(raw)
     if (!parsed || typeof parsed !== 'object') return {}
@@ -205,9 +218,9 @@ function readStoredKeyMap(): Record<string, number> {
   }
 }
 
-function persistStoredKeyMap(map: Record<string, number>): void {
+function persistStoredKeyMap(map: Record<string, number>, userId: number | null): void {
   try {
-    localStorage.setItem(SELECTED_KEY_BY_LINE_KEY, JSON.stringify(map))
+    localStorage.setItem(scopedSelectedKeyMapKey(userId), JSON.stringify(map))
   } catch {
     // ignore persistence failures
   }
@@ -226,10 +239,11 @@ function getCurrentUserId(): number | null {
 }
 
 export const useAiStudioStore = defineStore('aiStudio', () => {
+  const scopedUserId = ref<number | null>(getCurrentUserId())
   const lines = ref<AiLineOption[]>([])
-  const selectedLineId = ref<number | null>(readStoredLineId())
+  const selectedLineId = ref<number | null>(readStoredLineId(scopedUserId.value))
   const selectedKeyId = ref<number | null>(null)
-  const selectedKeyMap = ref<Record<string, number>>(readStoredKeyMap())
+  const selectedKeyMap = ref<Record<string, number>>(readStoredKeyMap(scopedUserId.value))
   const loadingLines = ref(false)
   const loadingRuntime = ref(false)
   const loaded = ref(false)
@@ -245,6 +259,24 @@ export const useAiStudioStore = defineStore('aiStudio', () => {
   const loadingSessionMessages = ref(false)
   const creatingSession = ref(false)
 
+  function clearScopedRuntimeState(): void {
+    lines.value = []
+    loadingLines.value = false
+    loadingRuntime.value = false
+    loaded.value = false
+    loadedForUserId.value = null
+    lastLoadedAt.value = null
+    runtimeInfo.value = null
+    runtimeLoadedAt.value = null
+    runtimeLoadedForUserId.value = null
+    assignPagination(chatSessions, createEmptyPagination<AiChatSessionSummary>(chatSessions.page_size))
+    activeSessionId.value = null
+    sessionMessages.value = []
+    loadingChatSessions.value = false
+    loadingSessionMessages.value = false
+    creatingSession.value = false
+  }
+
   const availableLines = computed(() => lines.value.filter((line) => line.key_count > 0))
   const selectedLine = computed(() => availableLines.value.find((line) => line.group_id === selectedLineId.value) ?? null)
   const selectedLineLabel = computed(() => selectedLine.value?.label ?? '')
@@ -252,17 +284,33 @@ export const useAiStudioStore = defineStore('aiStudio', () => {
     () => chatSessions.items.find((session) => session.id === activeSessionId.value) ?? null
   )
 
+  function syncStorageScope(): number | null {
+    const currentUserId = getCurrentUserId()
+    if (currentUserId === scopedUserId.value) {
+      return currentUserId
+    }
+
+    scopedUserId.value = currentUserId
+    selectedLineId.value = readStoredLineId(currentUserId)
+    selectedKeyMap.value = readStoredKeyMap(currentUserId)
+    selectedKeyId.value = null
+    clearScopedRuntimeState()
+    return currentUserId
+  }
+
   function setSelectedLine(lineId: number | null): void {
+    const currentUserId = syncStorageScope()
     selectedLineId.value = lineId
-    persistStoredLineId(lineId)
+    persistStoredLineId(lineId, currentUserId)
     syncSelectedKey()
   }
 
   function persistSelectedKeyForLine(lineId: number | null, keyId: number | null): void {
+    const currentUserId = syncStorageScope()
     if (!lineId || !keyId) return
     const next = { ...selectedKeyMap.value, [String(lineId)]: keyId }
     selectedKeyMap.value = next
-    persistStoredKeyMap(next)
+    persistStoredKeyMap(next, currentUserId)
   }
 
   function isKeyInLine(line: AiLineOption | null, keyId: number | null): boolean {
@@ -276,6 +324,7 @@ export const useAiStudioStore = defineStore('aiStudio', () => {
   }
 
   function syncSelectedKey(): void {
+    syncStorageScope()
     const current = selectedLine.value
     if (!current) {
       selectedKeyId.value = null
@@ -292,7 +341,7 @@ export const useAiStudioStore = defineStore('aiStudio', () => {
   }
 
   async function loadRuntimeInfo(force = false): Promise<AiRuntimeInfo | null> {
-    const currentUserId = getCurrentUserId()
+    const currentUserId = syncStorageScope()
     if (!force && runtimeInfo.value && runtimeLoadedForUserId.value === currentUserId) {
       return runtimeInfo.value
     }
@@ -313,10 +362,15 @@ export const useAiStudioStore = defineStore('aiStudio', () => {
   }
 
   function ensureSelection(): void {
+    const currentUserId = syncStorageScope()
+    if (!loaded.value && lines.value.length === 0 && runtimeInfo.value === null) {
+      selectedKeyId.value = null
+      return
+    }
     if (availableLines.value.length === 0) {
       selectedLineId.value = null
       selectedKeyId.value = null
-      persistStoredLineId(null)
+      persistStoredLineId(null, currentUserId)
       return
     }
 
@@ -328,7 +382,7 @@ export const useAiStudioStore = defineStore('aiStudio', () => {
       : null
     const nextLine = persistedLine ?? runtimeDefaultLine ?? availableLines.value[0]
     selectedLineId.value = nextLine.group_id
-    persistStoredLineId(nextLine.group_id)
+    persistStoredLineId(nextLine.group_id, currentUserId)
     const storedKey = selectedKeyMap.value[String(nextLine.group_id)] ?? null
     const nextKey = isKeyInLine(nextLine, storedKey) ? storedKey : defaultKeyForLine(nextLine)
     selectedKeyId.value = nextKey
@@ -336,7 +390,7 @@ export const useAiStudioStore = defineStore('aiStudio', () => {
   }
 
   async function loadRuntimeLines(force = false): Promise<AiLineOption[]> {
-    const currentUserId = getCurrentUserId()
+    const currentUserId = syncStorageScope()
     if (loaded.value && !force && loadedForUserId.value === currentUserId) {
       ensureSelection()
       return availableLines.value
@@ -444,29 +498,17 @@ export const useAiStudioStore = defineStore('aiStudio', () => {
   }
 
   function reset(): void {
-    lines.value = []
+    const currentUserId = syncStorageScope()
     selectedLineId.value = null
     selectedKeyId.value = null
     selectedKeyMap.value = {}
-    loadingLines.value = false
-    loadingRuntime.value = false
-    loaded.value = false
-    loadedForUserId.value = null
-    lastLoadedAt.value = null
-    runtimeInfo.value = null
-    runtimeLoadedAt.value = null
-    runtimeLoadedForUserId.value = null
-    assignPagination(chatSessions, createEmptyPagination<AiChatSessionSummary>(chatSessions.page_size))
-    activeSessionId.value = null
-    sessionMessages.value = []
-    loadingChatSessions.value = false
-    loadingSessionMessages.value = false
-    creatingSession.value = false
-    persistStoredLineId(null)
-    persistStoredKeyMap({})
+    clearScopedRuntimeState()
+    persistStoredLineId(null, currentUserId)
+    persistStoredKeyMap({}, currentUserId)
   }
 
   function setSelectedKey(keyId: number | null): void {
+    syncStorageScope()
     selectedKeyId.value = keyId
     persistSelectedKeyForLine(selectedLineId.value, keyId)
   }

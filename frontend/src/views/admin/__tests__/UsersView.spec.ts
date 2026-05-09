@@ -268,4 +268,65 @@ describe('admin UsersView', () => {
       '_self'
     )
   })
+
+  it('resets pagination to first page before applying filters', async () => {
+    listUsers.mockResolvedValue({
+      items: [createAdminUser()],
+      total: 60,
+      page: 3,
+      page_size: 20,
+      pages: 3
+    })
+
+    const wrapper = mount(UsersView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          EmptyState: true,
+          GroupBadge: true,
+          Select: true,
+          UserAttributesConfigModal: true,
+          UserConcurrencyCell: true,
+          UserCreateModal: true,
+          UserEditModal: true,
+          UserApiKeysModal: true,
+          UserAllowedGroupsModal: true,
+          UserBalanceModal: true,
+          UserBalanceHistoryModal: true,
+          GroupReplaceModal: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    ;(wrapper.vm as unknown as { handlePageChange: (page: number) => void }).handlePageChange(3)
+    await flushPromises()
+
+    ;(wrapper.vm as unknown as {
+      filters: { role: string }
+      applyFilter: () => void
+    }).filters.role = 'admin'
+    ;(wrapper.vm as unknown as {
+      applyFilter: () => void
+    }).applyFilter()
+    await flushPromises()
+
+    expect(listUsers).toHaveBeenLastCalledWith(
+      1,
+      20,
+      expect.objectContaining({
+        role: 'admin'
+      }),
+      expect.any(Object)
+    )
+  })
 })

@@ -164,16 +164,19 @@ func IsValidAISkillPriceMode(raw string) bool {
 }
 
 func NormalizeAISkillSourceVisibility(raw, visibility string, price float64) string {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	switch normalized {
 	case AISkillSourceVisibilityPublic:
 		return AISkillSourceVisibilityPublic
 	case AISkillSourceVisibilityHidden:
 		return AISkillSourceVisibilityHidden
+	case "":
+		if NormalizeAIVisibility(visibility) == AIVisibilityPublic && price > 0 {
+			return AISkillSourceVisibilityHidden
+		}
+		return AISkillSourceVisibilityPublic
 	}
-	if NormalizeAIVisibility(visibility) == AIVisibilityPublic && price > 0 {
-		return AISkillSourceVisibilityHidden
-	}
-	return AISkillSourceVisibilityPublic
+	return ""
 }
 
 func IsValidAISkillSourceVisibility(raw string) bool {
@@ -186,7 +189,11 @@ func IsValidAISkillSourceVisibility(raw string) bool {
 }
 
 func EffectiveAISkillSourceVisibility(visibility, sourceVisibility string, price float64) string {
-	return NormalizeAISkillSourceVisibility(sourceVisibility, visibility, price)
+	normalized := NormalizeAISkillSourceVisibility(sourceVisibility, visibility, price)
+	if normalized != "" {
+		return normalized
+	}
+	return AISkillSourceVisibilityHidden
 }
 
 func NormalizeAISkillVersionReviewStatus(raw string) string {

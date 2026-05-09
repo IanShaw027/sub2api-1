@@ -557,7 +557,11 @@ func serviceVersionToDomain(version *service.AISkillVersion) *domain.AISkillVers
 		return nil
 	}
 	meta := cloneMap(version.Metadata)
-	meta[metaKeySkillBillingPolicy] = cloneMap(mustMap(version.BillingPolicy))
+	billingPolicyMeta := cloneMap(mustMap(version.BillingPolicy))
+	if mode := serviceBillingModeToDomainBillingPolicy(readString(billingPolicyMeta, "mode")); mode != "" {
+		billingPolicyMeta["mode"] = mode
+	}
+	meta[metaKeySkillBillingPolicy] = billingPolicyMeta
 	applyStatusOverride(meta, "")
 	contentFormat := version.Type
 	runtime := ""
@@ -630,6 +634,7 @@ func domainVersionToService(version *domain.AISkillVersion) *service.AISkillVers
 	}
 	spec := decodeExecutionSpec(version.ContentFormat, version.Config)
 	billing := decodeBillingPolicy(meta)
+	billing.Mode = domainBillingModeToServiceBillingPolicy(billing.Mode)
 	status := serviceVersionStatus(version.ReviewStatus, meta)
 	return &service.AISkillVersion{
 		ID:             version.ID,
@@ -770,7 +775,7 @@ func domainSettlementToService(settlement *domain.AISkillSettlement) *service.AI
 func domainReviewStatus(status string) string {
 	switch status {
 	case service.AISkillVersionStatusSubmitted:
-		return domain.AISkillVersionReviewStatusDraft
+		return domain.AISkillVersionReviewStatusPending
 	case service.AISkillVersionStatusApproved:
 		return domain.AISkillVersionReviewStatusApproved
 	case service.AISkillVersionStatusRejected:
@@ -851,6 +856,28 @@ func serviceSettlementStatus(status string, meta map[string]any) string {
 		return service.AISkillSettlementStatusFailed
 	default:
 		return service.AISkillSettlementStatusPending
+	}
+}
+
+func serviceBillingModeToDomainBillingPolicy(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case service.AISkillBillingModePerRun:
+		return domain.AISkillBillingModePerRequest
+	case service.AISkillBillingModeFree:
+		return service.AISkillBillingModeFree
+	default:
+		return strings.TrimSpace(mode)
+	}
+}
+
+func domainBillingModeToServiceBillingPolicy(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case domain.AISkillBillingModePerRequest:
+		return service.AISkillBillingModePerRun
+	case service.AISkillBillingModeFree:
+		return service.AISkillBillingModeFree
+	default:
+		return strings.TrimSpace(mode)
 	}
 }
 

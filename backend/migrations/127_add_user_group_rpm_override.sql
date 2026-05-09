@@ -12,18 +12,5 @@ ALTER TABLE user_group_rate_multipliers
 ALTER TABLE user_group_rate_multipliers
     ALTER COLUMN rate_multiplier DROP NOT NULL;
 
-DO $$
-BEGIN
-	IF NOT EXISTS (
-		SELECT 1
-		FROM pg_constraint
-		WHERE conname = 'user_group_rate_multipliers_rpm_override_non_negative'
-	) THEN
-		ALTER TABLE user_group_rate_multipliers
-			ADD CONSTRAINT user_group_rate_multipliers_rpm_override_non_negative
-			CHECK (rpm_override IS NULL OR rpm_override >= 0);
-	END IF;
-END $$;
-
 COMMENT ON COLUMN user_group_rate_multipliers.rate_multiplier IS '专属计费倍率；NULL 表示沿用分组默认倍率。';
 COMMENT ON COLUMN user_group_rate_multipliers.rpm_override IS '专属 RPM 上限；NULL 表示沿用分组默认；0 表示该用户在此分组不受 RPM 限制。';

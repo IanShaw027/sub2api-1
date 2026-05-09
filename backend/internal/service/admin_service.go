@@ -2227,7 +2227,7 @@ func (s *adminServiceImpl) ClearGroupRPMOverrides(ctx context.Context, groupID i
 	if err := s.userGroupRateRepo.ClearGroupRPMOverrides(ctx, groupID); err != nil {
 		return err
 	}
-	// RPM override 已嵌入 auth cache snapshot (v8)，变更后必须失效相关缓存。
+	// RPM override 已嵌入 auth cache snapshot (v9)，变更后必须失效相关缓存。
 	if s.authCacheInvalidator != nil {
 		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, groupID)
 	}
@@ -2255,7 +2255,7 @@ func (s *adminServiceImpl) BatchSetGroupRPMOverrides(ctx context.Context, groupI
 	if err := s.userGroupRateRepo.SyncGroupRPMOverrides(ctx, groupID, deduped); err != nil {
 		return err
 	}
-	// RPM override 已嵌入 auth cache snapshot (v8)，变更后必须失效相关缓存。
+	// RPM override 已嵌入 auth cache snapshot (v9)，变更后必须失效相关缓存。
 	if s.authCacheInvalidator != nil {
 		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, groupID)
 	}

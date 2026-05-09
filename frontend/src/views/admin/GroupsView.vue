@@ -26,21 +26,21 @@
               :options="platformFilterOptions"
               :placeholder="t('admin.groups.allPlatforms')"
               class="w-44"
-              @change="loadGroups"
+              @change="applyFilters"
             />
             <Select
               v-model="filters.status"
               :options="statusOptions"
               :placeholder="t('admin.groups.allStatus')"
               class="w-40"
-              @change="loadGroups"
+              @change="applyFilters"
             />
             <Select
               v-model="filters.is_exclusive"
               :options="exclusiveOptions"
               :placeholder="t('admin.groups.allGroups')"
               class="w-44"
-              @change="loadGroups"
+              @change="applyFilters"
             />
           </div>
 
@@ -3322,6 +3322,13 @@ import {
   type MessagesDispatchMappingRow,
 } from "./groupsMessagesDispatch";
 import {
+  applyOpenAIImageTypeSelection,
+  deriveOpenAIImageFormState,
+  normalizeOpenAIImageTypeSelection,
+  type OpenAIImageSelectionFormState,
+  type OpenAIImageSelectionPayload,
+} from "./groupsOpenAIImagePricing";
+import {
   accountStatusI18nKey,
   groupPlatformFallbackLabel,
   groupPlatformI18nKey,
@@ -3559,6 +3566,7 @@ const rpmOverridesGroup = ref<AdminGroup | null>(null);
 const sortableGroups = ref<AdminGroup[]>([]);
 const createMessagesDispatchDefaults = createDefaultMessagesDispatchFormState();
 const editMessagesDispatchDefaults = createDefaultMessagesDispatchFormState();
+let editHydrationRequestSeq = 0;
 
 const createForm = reactive({
   name: "",
@@ -4140,6 +4148,11 @@ const handleSearch = () => {
   }, 300);
 };
 
+const applyFilters = () => {
+  pagination.page = 1;
+  loadGroups();
+};
+
 const handlePageChange = (page: number) => {
   pagination.page = page;
   loadGroups();
@@ -4247,65 +4260,6 @@ type OpenAIImageTypeSelectionRequest = (
   openai_image_web2api_enabled?: boolean;
 };
 
-const normalizeOpenAIImageTypeSelection = (
-  form: typeof createForm | typeof editForm,
-) => {
-  if (form.platform !== "openai" || !form.allow_image_generation) {
-    return;
-  }
-  if (!form.openai_image_codex_enabled && !form.openai_image_web2api_enabled) {
-    form.openai_image_codex_enabled = true;
-  }
-};
-
-const applyOpenAIImageTypeSelection = (
-  payload: OpenAIImageTypeSelectionRequest,
-) => {
-  if (payload.platform !== "openai") {
-    delete payload.openai_image_codex_enabled;
-    delete payload.openai_image_web2api_enabled;
-    return;
-  }
-
-  if (payload.allow_image_generation !== true) {
-    payload.image_generation_route = "codex";
-    payload.image_rate_independent = false;
-    payload.image_rate_multiplier = 1;
-    payload.image_price_1k = null;
-    payload.image_price_2k = null;
-    payload.image_price_4k = null;
-    payload.images2api_price_1k = null;
-    payload.images2api_price_2k = null;
-    payload.images2api_price_4k = null;
-    delete payload.openai_image_codex_enabled;
-    delete payload.openai_image_web2api_enabled;
-    return;
-  }
-
-  const codexEnabled =
-    payload.openai_image_codex_enabled === true;
-  const web2apiEnabled =
-    payload.openai_image_web2api_enabled === true;
-
-  payload.image_generation_route = codexEnabled ? "codex" : "web2api";
-  payload.image_rate_independent = web2apiEnabled;
-  payload.image_rate_multiplier = 1;
-
-  if (!codexEnabled) {
-    payload.image_price_1k = null;
-    payload.image_price_2k = null;
-    payload.image_price_4k = null;
-  }
-  if (!web2apiEnabled) {
-    payload.images2api_price_1k = null;
-    payload.images2api_price_2k = null;
-    payload.images2api_price_4k = null;
-  }
-
-  delete payload.openai_image_codex_enabled;
-  delete payload.openai_image_web2api_enabled;
-};
-
 watch(
   () => [
     createForm.platform,
@@ -4314,7 +4268,9 @@ watch(
     createForm.openai_image_web2api_enabled,
   ],
   () => {
-    normalizeOpenAIImageTypeSelection(createForm);
+    normalizeOpenAIImageTypeSelection(
+      createForm as typeof createForm & OpenAIImageSelectionFormState,
+    );
   },
 );
 
@@ -4326,7 +4282,9 @@ watch(
     editForm.openai_image_web2api_enabled,
   ],
   () => {
-    normalizeOpenAIImageTypeSelection(editForm);
+    normalizeOpenAIImageTypeSelection(
+      editForm as typeof editForm & OpenAIImageSelectionFormState,
+    );
   },
 );
 
@@ -4389,7 +4347,9 @@ const handleCreateGroup = async () => {
     requestData.images2api_price_1k = normalizeNullablePrice(requestData.images2api_price_1k);
     requestData.images2api_price_2k = normalizeNullablePrice(requestData.images2api_price_2k);
     requestData.images2api_price_4k = normalizeNullablePrice(requestData.images2api_price_4k);
-    applyOpenAIImageTypeSelection(requestData);
+    applyOpenAIImageTypeSelection(
+      requestData as OpenAIImageTypeSelectionRequest & OpenAIImageSelectionPayload,
+    );
     await adminAPI.groups.create(requestData);
     appStore.showSuccess(t("admin.groups.groupCreated"));
     closeCreateModal();
@@ -4410,6 +4370,12 @@ const handleCreateGroup = async () => {
 };
 
 const handleEdit = async (group: AdminGroup) => {
+  const requestSeq = ++editHydrationRequestSeq;
+  editModelRoutingRules.value.forEach((rule) => {
+    accountSearchRunner.clearKey(getEditRuleSearchKey(rule));
+  });
+  clearAllAccountSearchState();
+  editModelRoutingRules.value = [];
   editingGroup.value = group;
   editForm.name = group.name;
   editForm.description = group.description || "";
@@ -4421,26 +4387,7 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.daily_limit_usd = group.daily_limit_usd;
   editForm.weekly_limit_usd = group.weekly_limit_usd;
   editForm.monthly_limit_usd = group.monthly_limit_usd;
-  editForm.allow_image_generation = group.allow_image_generation ?? false;
-  editForm.image_generation_route = group.image_generation_route || "codex";
-  editForm.openai_image_codex_enabled =
-    group.platform === "openai" && group.allow_image_generation
-      ? (group.image_generation_route || "codex") === "codex"
-      : false;
-  editForm.openai_image_web2api_enabled =
-    group.platform === "openai" && group.allow_image_generation
-      ? group.image_rate_independent === true ||
-        (group.image_generation_route || "codex") === "web2api"
-      : false;
-  editForm.image_rate_independent = group.image_rate_independent ?? false;
-  editForm.image_rate_multiplier =
-    group.platform === "openai" ? 1 : group.image_rate_multiplier ?? 1;
-  editForm.image_price_1k = group.image_price_1k;
-  editForm.image_price_2k = group.image_price_2k;
-  editForm.image_price_4k = group.image_price_4k;
-  editForm.images2api_price_1k = group.images2api_price_1k;
-  editForm.images2api_price_2k = group.images2api_price_2k;
-  editForm.images2api_price_4k = group.images2api_price_4k;
+  Object.assign(editForm, deriveOpenAIImageFormState(group));
   editForm.claude_code_only = group.claude_code_only || false;
   editForm.fallback_group_id = group.fallback_group_id;
   editForm.fallback_group_id_on_invalid_request =
@@ -4468,13 +4415,18 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.copy_accounts_from_group_ids = []; // 复制账号字段每次编辑时重置为空
   editForm.rpm_limit = group.rpm_limit ?? 0;
   // 加载模型路由规则（异步加载账号名称）
-  editModelRoutingRules.value = await convertApiFormatToRoutingRules(
+  const routingRules = await convertApiFormatToRoutingRules(
     group.model_routing,
   );
+  if (requestSeq !== editHydrationRequestSeq) {
+    return;
+  }
+  editModelRoutingRules.value = routingRules;
   showEditModal.value = true;
 };
 
 const closeEditModal = () => {
+  editHydrationRequestSeq += 1;
   editModelRoutingRules.value.forEach((rule) => {
     accountSearchRunner.clearKey(getEditRuleSearchKey(rule));
   });
@@ -4553,7 +4505,9 @@ const handleUpdateGroup = async () => {
     payload.images2api_price_1k = normalizeNullablePrice(payload.images2api_price_1k);
     payload.images2api_price_2k = normalizeNullablePrice(payload.images2api_price_2k);
     payload.images2api_price_4k = normalizeNullablePrice(payload.images2api_price_4k);
-    applyOpenAIImageTypeSelection(payload);
+    applyOpenAIImageTypeSelection(
+      payload as OpenAIImageTypeSelectionRequest & OpenAIImageSelectionPayload,
+    );
     await adminAPI.groups.update(editingGroup.value.id, payload);
     appStore.showSuccess(t("admin.groups.groupUpdated"));
     closeEditModal();

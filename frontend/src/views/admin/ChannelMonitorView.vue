@@ -8,6 +8,7 @@
           v-model:enabled="enabledFilter"
           :loading="loading"
           @reload="reload"
+          @filter-change="applyFilters"
           @create="openCreateDialog"
           @manage-templates="showTemplateManager = true"
           @search-input="handleSearch"
@@ -432,6 +433,11 @@ function handleSearch() {
   }, 300)
 }
 
+function applyFilters() {
+  pagination.page = 1
+  reload()
+}
+
 function onPageChange(page: number) {
   pagination.page = page
   reload()
@@ -562,8 +568,8 @@ function buildOpenAIImageUsageRows(usage: AccountUsageInfo | null | undefined): 
   ].filter((item): item is OpenAIImageUsageRow => item !== null)
 }
 
-async function ensureOpenAIOAuthAccountsLoaded() {
-  if (openAIOAuthAccountsLoaded.value) return
+async function ensureOpenAIOAuthAccountsLoaded(forceReload = false) {
+  if (!forceReload && openAIOAuthAccountsLoaded.value) return
   const accounts: Account[] = []
   let page = 1
   let pages = 1
@@ -595,7 +601,7 @@ async function preloadOpenAIImageUsage(rows: ChannelMonitor[]) {
   imageUsageLoadingMap.value = Object.fromEntries(openAIRows.map((row) => [row.id, true]))
 
   try {
-    await ensureOpenAIOAuthAccountsLoaded()
+    await ensureOpenAIOAuthAccountsLoaded(true)
   } catch {
     if (token === imageUsageRequestToken) {
       openAIImageUsageByMonitorId.value = {}

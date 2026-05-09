@@ -221,7 +221,7 @@ func TestConfirmPaymentRejectsStripeCurrencyMismatch(t *testing.T) {
 	require.Equal(t, OrderStatusPending, reloaded.Status)
 }
 
-func TestHandlePaymentNotificationCancelledOrderDoesNotFulfill(t *testing.T) {
+func TestHandlePaymentNotificationCancelledOrderWithinGraceRecoversAndFulfills(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentFulfillmentTestClient(t)
 	order := createPaymentFulfillmentOrder(t, client, OrderStatusCancelled, payment.OrderTypeBalance)
@@ -237,22 +237,88 @@ func TestHandlePaymentNotificationCancelledOrderDoesNotFulfill(t *testing.T) {
 
 	got, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
-	require.Equal(t, OrderStatusCancelled, got.Status)
-	require.Empty(t, got.PaymentTradeNo)
-	require.Nil(t, got.PaidAt)
+	require.Equal(t, OrderStatusCompleted, got.Status)
+	require.Equal(t, "provider-trade-cancelled", got.PaymentTradeNo)
+	require.NotNil(t, got.PaidAt)
+	require.NotNil(t, got.CompletedAt)
 	orderID := strconv.FormatInt(order.ID, 10)
 
 	paidCount, err := client.PaymentAuditLog.Query().
 		Where(paymentauditlog.OrderIDEQ(orderID), paymentauditlog.ActionEQ("ORDER_PAID")).
+	Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, paidCount)
+
+	lateCount, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(orderID), paymentauditlog.ActionEQ("PAYMENT_AFTER_CANCELLED")).
+	Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, lateCount)
+
+	recoveredCount, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(orderID), paymentauditlog.ActionEQ("ORDER_RECOVERED")).
 		Count(ctx)
 	require.NoError(t, err)
-	require.Zero(t, paidCount)
+	require.Equal(t, 1, recoveredCount)
+}
 
+func TestHandlePaymentNotificationCancelledOrderBeyondGraceDoesNotFulfill(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusCancelled, payment.OrderTypeBalance)
+	_, err := client.PaymentOrder.UpdateOneID(order.ID).SetUpdatedAt(time.Now().Add(-2 * paymentGraceMinutes * time.Minute)).Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{entClient: client}
+	err = svc.HandlePaymentNotification(ctx, &payment.PaymentNotification{
+		OrderID: order.OutTradeNo,
+		TradeNo: "provider-trade-cancelled-late",
+		Amount:  100,
+		Status:  payment.NotificationStatusSuccess,
+	}, payment.TypeAlipay)
+	require.NoError(t, err)
+
+	got, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCancelled, got.Status)
+	require.Empty(t, got.PaymentTradeNo)
+	require.Nil(t, got.PaidAt)
+
+	orderID := strconv.FormatInt(order.ID, 10)
 	lateCount, err := client.PaymentAuditLog.Query().
 		Where(paymentauditlog.OrderIDEQ(orderID), paymentauditlog.ActionEQ("PAYMENT_AFTER_CANCELLED")).
 		Count(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, lateCount)
+}
+
+func TestHandlePaymentNotificationFailedOrderReconcilesPaidMetadataBeforeFulfillment(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusFailed, payment.OrderTypeBalance)
+	_, err := client.PaymentOrder.UpdateOneID(order.ID).
+		SetFailedAt(time.Now().Add(-2 * time.Minute)).
+		SetFailedReason("lost callback after local failure").
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{entClient: client}
+	err = svc.HandlePaymentNotification(ctx, &payment.PaymentNotification{
+		OrderID: order.OutTradeNo,
+		TradeNo: "provider-trade-failed-recovered",
+		Amount:  100,
+		Status:  payment.NotificationStatusSuccess,
+	}, payment.TypeAlipay)
+	require.NoError(t, err)
+
+	got, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, got.Status)
+	require.Equal(t, "provider-trade-failed-recovered", got.PaymentTradeNo)
+	require.NotNil(t, got.PaidAt)
+	require.NotNil(t, got.CompletedAt)
+	require.Nil(t, got.FailedAt)
+	require.Nil(t, got.FailedReason)
 }
 
 func TestHandlePaymentNotificationExpiredBeyondGraceAuditsProviderTradeNo(t *testing.T) {

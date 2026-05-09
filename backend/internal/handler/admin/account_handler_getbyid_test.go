@@ -33,7 +33,7 @@ func setupAccountGetByIDRouter(adminSvc service.AdminService) *gin.Engine {
 	return router
 }
 
-func TestAccountHandlerGetByID_PreservesSensitiveCredentialsForDetail(t *testing.T) {
+func TestAccountHandlerGetByID_RedactsSensitiveCredentialsForDetail(t *testing.T) {
 	svc := &getByIDAccountAdminService{
 		stubAdminService: newStubAdminService(),
 		account: service.Account{
@@ -63,7 +63,67 @@ func TestAccountHandlerGetByID_PreservesSensitiveCredentialsForDetail(t *testing
 		} `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	require.Equal(t, "sk-secret", resp.Data.Credentials["api_key"])
-	require.Equal(t, "refresh-secret", resp.Data.Credentials["refresh_token"])
 	require.Equal(t, "https://api.example.com", resp.Data.Credentials["base_url"])
+	require.NotContains(t, resp.Data.Credentials, "api_key")
+	require.NotContains(t, resp.Data.Credentials, "refresh_token")
+}
+
+func TestAccountHandlerGetByID_RedactsOpenAIWebProfileCookiesAndPreservesGroups(t *testing.T) {
+	svc := &getByIDAccountAdminService{
+		stubAdminService: newStubAdminService(),
+		account: service.Account{
+			ID:       42,
+			Name:     "openai-oauth",
+			Platform: service.PlatformOpenAI,
+			Type:     service.AccountTypeOAuth,
+			Status:   service.StatusActive,
+			Extra: map[string]any{
+				"web_profile": map[string]any{
+					"source": "capture",
+					"cookies": []any{
+						map[string]any{
+							"name":   "oai-did",
+							"value":  "cookie-secret",
+							"domain": ".chatgpt.com",
+							"path":   "/",
+						},
+					},
+				},
+			},
+			Groups: []*service.Group{
+				{
+					ID:       17,
+					Name:     "openai-group",
+					Platform: service.PlatformOpenAI,
+				},
+			},
+		},
+	}
+	router := setupAccountGetByIDRouter(svc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/42", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Data struct {
+			Extra  map[string]any `json:"extra"`
+			Groups []struct {
+				ID int64 `json:"id"`
+			} `json:"groups"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+
+	profile, ok := resp.Data.Extra["web_profile"].(map[string]any)
+	require.True(t, ok)
+	cookies, ok := profile["cookies"].([]any)
+	require.True(t, ok)
+	cookie, ok := cookies[0].(map[string]any)
+	require.True(t, ok)
+	require.NotContains(t, cookie, "value")
+	require.Len(t, resp.Data.Groups, 1)
+	require.Equal(t, int64(17), resp.Data.Groups[0].ID)
 }

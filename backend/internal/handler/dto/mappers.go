@@ -481,12 +481,19 @@ func AccountFromServiceDetail(a *service.Account) *Account {
 		return nil
 	}
 	out := AccountFromServiceShallow(a)
+	out.Credentials = sanitizeAccountCredentialsForList(a.Platform, out.Credentials)
 	out.Proxy = ProxyFromService(a.Proxy)
 	if len(a.AccountGroups) > 0 {
 		out.AccountGroups = make([]AccountGroup, 0, len(a.AccountGroups))
 		for i := range a.AccountGroups {
 			ag := a.AccountGroups[i]
 			out.AccountGroups = append(out.AccountGroups, *AccountGroupFromService(&ag))
+		}
+	}
+	if len(a.Groups) > 0 {
+		out.Groups = make([]*Group, 0, len(a.Groups))
+		for _, g := range a.Groups {
+			out.Groups = append(out.Groups, GroupFromServiceShallow(g))
 		}
 	}
 	return out

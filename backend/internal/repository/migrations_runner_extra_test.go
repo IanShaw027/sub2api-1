@@ -13,6 +13,7 @@ import (
 	"time"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/Wei-Shaw/sub2api/migrations"
 	"github.com/stretchr/testify/require"
 )
 
@@ -125,6 +126,24 @@ func TestMigrationChecksumCompatibilityRules_CoverEditedUpgradeCompatibilityMigr
 		require.Truef(t, ok, "missing compatibility rule for %s", name)
 		require.NotEmpty(t, rule.fileChecksum)
 		require.NotEmpty(t, rule.acceptedDBChecksum)
+	}
+}
+
+func TestPublishedHistoricalMigrationsRemainImmutable(t *testing.T) {
+	expected := map[string]string{
+		"125_add_group_rpm_limit.sql":          "f77d3eed98860f8ebd4772a909441736e88e572352c0e6b137fa9c1860bd9d52",
+		"126_add_user_rpm_limit.sql":           "9b70af1aace9a0834a90b3423df0cac2fe6a561d25394d59a03679bd2259ec61",
+		"127_add_user_group_rpm_override.sql":  "591e97c2e960d8f4e197c710d6033654659536504f0e214abd8559c2677673e4",
+		"129_seed_claude_code_template.sql":    "10324a1f1c176a5ab6bc24ac01eee8563f66ffabf4c013b8e4e023caf9f26328",
+	}
+
+	for name, want := range expected {
+		t.Run(name, func(t *testing.T) {
+			content, err := fs.ReadFile(migrations.FS, name)
+			require.NoError(t, err)
+			sum := sha256.Sum256([]byte(strings.TrimSpace(string(content))))
+			require.Equal(t, want, hex.EncodeToString(sum[:]))
+		})
 	}
 }
 

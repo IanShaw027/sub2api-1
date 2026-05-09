@@ -6,6 +6,10 @@ const { get, post } = vi.hoisted(() => ({
   post: vi.fn(),
 }))
 
+const { getRuntimeInfo } = vi.hoisted(() => ({
+  getRuntimeInfo: vi.fn(),
+}))
+
 vi.mock('@/api/client', () => ({
   apiClient: {
     get,
@@ -14,7 +18,7 @@ vi.mock('@/api/client', () => ({
 }))
 
 vi.mock('@/api/ai', () => ({
-  getRuntimeInfo: vi.fn().mockResolvedValue({ lines: [] }),
+  getRuntimeInfo,
 }))
 
 import { useAiStudioStore } from '@/stores/aiStudio'
@@ -24,6 +28,8 @@ describe('useAiStudioStore', () => {
     setActivePinia(createPinia())
     get.mockReset()
     post.mockReset()
+    getRuntimeInfo.mockReset()
+    getRuntimeInfo.mockResolvedValue({ lines: [] })
     localStorage.clear()
   })
 
@@ -109,5 +115,169 @@ describe('useAiStudioStore', () => {
     expect(store.activeSessionId).toBeNull()
     expect(store.sessionMessages).toEqual([])
     expect(store.chatSessions.items).toEqual([])
+  })
+
+  it('scopes persisted line and key selections per authenticated user', async () => {
+    localStorage.setItem('auth_user', JSON.stringify({ id: 1 }))
+
+    let store = useAiStudioStore()
+    store.lines = [
+      {
+        group_id: 11,
+        label: 'User 1 Line',
+        platform: 'openai',
+        description: null,
+        keys: [{ id: 111, name: 'User 1 Key' }],
+        key_ids: [111],
+        key_count: 1,
+        default_key_id: 111,
+      },
+    ]
+    store.setSelectedLine(11)
+    store.setSelectedKey(111)
+
+    setActivePinia(createPinia())
+    localStorage.setItem('auth_user', JSON.stringify({ id: 2 }))
+    store = useAiStudioStore()
+    store.runtimeInfo = {
+      default_line: {
+        group_id: 22,
+        label: 'User 2 Default',
+        platform: 'openai',
+        description: null,
+        keys: [{ id: 222, name: 'User 2 Key' }],
+        key_ids: [222],
+        key_count: 1,
+        default_key_id: 222,
+      },
+      lines: [],
+    }
+    store.lines = [
+      {
+        group_id: 11,
+        label: 'Shared Line',
+        platform: 'openai',
+        description: null,
+        keys: [{ id: 111, name: 'User 1 Key' }],
+        key_ids: [111],
+        key_count: 1,
+        default_key_id: 111,
+      },
+      {
+        group_id: 22,
+        label: 'User 2 Line',
+        platform: 'openai',
+        description: null,
+        keys: [{ id: 222, name: 'User 2 Key' }],
+        key_ids: [222],
+        key_count: 1,
+        default_key_id: 222,
+      },
+    ]
+    store.ensureSelection()
+
+    expect(store.selectedLineId).toBe(22)
+    expect(store.selectedKeyId).toBe(222)
+
+    store.setSelectedLine(22)
+    store.setSelectedKey(222)
+
+    setActivePinia(createPinia())
+    localStorage.setItem('auth_user', JSON.stringify({ id: 1 }))
+    store = useAiStudioStore()
+    store.lines = [
+      {
+        group_id: 11,
+        label: 'User 1 Line',
+        platform: 'openai',
+        description: null,
+        keys: [{ id: 111, name: 'User 1 Key' }],
+        key_ids: [111],
+        key_count: 1,
+        default_key_id: 111,
+      },
+    ]
+    store.ensureSelection()
+
+    expect(store.selectedLineId).toBe(11)
+    expect(store.selectedKeyId).toBe(111)
+  })
+
+  it('clears in-memory session state when auth scope changes before loading the next user runtime', async () => {
+    localStorage.setItem('auth_user', JSON.stringify({ id: 1 }))
+    let store = useAiStudioStore()
+
+    store.lines = [
+      {
+        group_id: 11,
+        label: 'User 1 Line',
+        platform: 'openai',
+        description: null,
+        keys: [{ id: 111, name: 'User 1 Key' }],
+        key_ids: [111],
+        key_count: 1,
+        default_key_id: 111,
+      },
+    ]
+    store.chatSessions.items = [
+      {
+        id: 99,
+        title: 'User 1 Session',
+        status: 'active',
+        line_id: 11,
+        last_message_at: null,
+        created_at: '2026-05-01T00:00:00Z',
+        updated_at: '2026-05-01T00:00:00Z',
+      },
+    ]
+    store.activeSessionId = 99
+    store.sessionMessages = [
+      {
+        id: 'msg-1',
+        role: 'user',
+        content: 'hello',
+        created_at: '2026-05-01T00:00:00Z',
+        line_id: 11,
+        line_name: 'User 1 Line',
+        model: null,
+      },
+    ]
+
+    localStorage.setItem('auth_user', JSON.stringify({ id: 2 }))
+    localStorage.setItem('sub2api_ai_selected_line_v1:user_2', '22')
+    localStorage.setItem('sub2api_ai_selected_key_by_line_v1:user_2', JSON.stringify({ 22: 222 }))
+
+    getRuntimeInfo.mockResolvedValueOnce({
+      lines: [
+        {
+          group_id: 22,
+          label: 'User 2 Line',
+          platform: 'openai',
+          description: null,
+          keys: [{ id: 222, name: 'User 2 Key' }],
+          key_ids: [222],
+          key_count: 1,
+          default_key_id: 222,
+        },
+      ],
+      default_line: {
+        group_id: 22,
+        label: 'User 2 Line',
+        platform: 'openai',
+        description: null,
+        keys: [{ id: 222, name: 'User 2 Key' }],
+        key_ids: [222],
+        key_count: 1,
+        default_key_id: 222,
+      },
+    })
+
+    await store.loadRuntimeLines()
+
+    expect(store.activeSessionId).toBeNull()
+    expect(store.sessionMessages).toEqual([])
+    expect(store.chatSessions.items).toEqual([])
+    expect(store.selectedLineId).toBe(22)
+    expect(store.selectedKeyId).toBe(222)
   })
 })

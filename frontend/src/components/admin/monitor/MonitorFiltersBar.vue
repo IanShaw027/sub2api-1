@@ -22,7 +22,7 @@
         :options="providerFilterOptions"
         :placeholder="t('admin.channelMonitor.allProviders')"
         class="w-44"
-        @change="$emit('reload')"
+        @change="$emit('filter-change')"
       />
 
       <Select
@@ -30,7 +30,7 @@
         :options="enabledFilterOptions"
         :placeholder="t('admin.channelMonitor.enabledFilter')"
         class="w-40"
-        @change="$emit('reload')"
+        @change="$emit('filter-change')"
       />
     </div>
 
@@ -78,6 +78,7 @@ defineProps<{
 
 defineEmits<{
   (e: 'reload'): void
+  (e: 'filter-change'): void
   (e: 'create'): void
   (e: 'manage-templates'): void
   (e: 'search-input'): void
