@@ -1,8 +1,12 @@
 package service
 
 import (
+	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -60,4 +64,50 @@ func TestNormalizeOpenAIPassthroughBaseBody_PreservesTopPWhenNotRequested(t *tes
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.Equal(t, 0.8, gjson.GetBytes(normalized, "top_p").Float())
+}
+
+func TestFinalizeOpenAIResponsesOAuthUpstreamBody_EnforcesFinalOAuthResponsesConstraints(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+	}
+	body := []byte(`{"model":"gpt-5.5","stream":true,"max_output_tokens":8192}`)
+
+	finalBody, changed, err := finalizeOpenAIResponsesOAuthUpstreamBody(c, account, "gpt-5.5", body)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.False(t, gjson.GetBytes(finalBody, "max_output_tokens").Exists())
+	require.True(t, gjson.GetBytes(finalBody, "instructions").Exists())
+	require.NotEmpty(t, gjson.GetBytes(finalBody, "instructions").String())
+	require.True(t, gjson.GetBytes(finalBody, "store").Exists())
+	require.False(t, gjson.GetBytes(finalBody, "store").Bool())
+	require.True(t, gjson.GetBytes(finalBody, "stream").Bool())
+}
+
+func TestFinalizeOpenAIResponsesOAuthUpstreamBody_CompactSkipsDefaultInstructions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses/compact", bytes.NewReader(nil))
+
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+	}
+	body := []byte(`{"model":"gpt-5.5","stream":true,"store":true,"max_output_tokens":64}`)
+
+	finalBody, changed, err := finalizeOpenAIResponsesOAuthUpstreamBody(c, account, "gpt-5.5", body)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.False(t, gjson.GetBytes(finalBody, "max_output_tokens").Exists())
+	require.False(t, gjson.GetBytes(finalBody, "store").Exists())
+	require.False(t, gjson.GetBytes(finalBody, "stream").Exists())
+	require.False(t, gjson.GetBytes(finalBody, "instructions").Exists())
 }

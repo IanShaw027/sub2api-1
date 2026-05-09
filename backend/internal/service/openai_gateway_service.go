@@ -2994,18 +2994,26 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 oauthTransformDone:
 
-	// Handle max_output_tokens based on platform and account type
+	// OpenAI /responses upstream rejects max_output_tokens and max_completion_tokens
+	// regardless of whether the request looks like Codex CLI traffic, so strip them
+	// unconditionally for OpenAI OAuth/API Key accounts.
+	if account.Platform == PlatformOpenAI {
+		if _, hasMaxOutputTokens := reqBody["max_output_tokens"]; hasMaxOutputTokens && (account.Type == AccountTypeAPIKey || account.Type == AccountTypeOAuth) {
+			delete(reqBody, "max_output_tokens")
+			bodyModified = true
+			markPatchDelete("max_output_tokens")
+		}
+		if _, hasMaxCompletionTokens := reqBody["max_completion_tokens"]; hasMaxCompletionTokens && (account.Type == AccountTypeAPIKey || account.Type == AccountTypeOAuth) {
+			delete(reqBody, "max_completion_tokens")
+			bodyModified = true
+			markPatchDelete("max_completion_tokens")
+		}
+	}
+
+	// Handle provider-specific token limits and unsupported fields for non-Codex CLI compatibility paths.
 	if !isCodexCLI {
-		if maxOutputTokens, hasMaxOutputTokens := reqBody["max_output_tokens"]; hasMaxOutputTokens {
+		if maxOutputTokens, hasMaxOutputTokens := reqBody["max_output_tokens"]; hasMaxOutputTokens && account.Platform != PlatformOpenAI {
 			switch account.Platform {
-			case PlatformOpenAI:
-				// ChatGPT internal OAuth /responses rejects max_output_tokens even on
-				// generic GPT models, so strip it for OAuth and API Key consistently.
-				if account.Type == AccountTypeAPIKey || account.Type == AccountTypeOAuth {
-					delete(reqBody, "max_output_tokens")
-					bodyModified = true
-					markPatchDelete("max_output_tokens")
-				}
 			case PlatformAnthropic:
 				// For Anthropic (Claude), convert to max_tokens
 				delete(reqBody, "max_output_tokens")
@@ -3025,15 +3033,6 @@ oauthTransformDone:
 				delete(reqBody, "max_output_tokens")
 				bodyModified = true
 				markPatchDelete("max_output_tokens")
-			}
-		}
-
-		// Also handle max_completion_tokens (similar logic)
-		if _, hasMaxCompletionTokens := reqBody["max_completion_tokens"]; hasMaxCompletionTokens {
-			if account.Type == AccountTypeAPIKey || account.Type == AccountTypeOAuth || account.Platform != PlatformOpenAI {
-				delete(reqBody, "max_completion_tokens")
-				bodyModified = true
-				markPatchDelete("max_completion_tokens")
 			}
 		}
 
@@ -3132,6 +3131,13 @@ oauthTransformDone:
 		reqStream = gjson.GetBytes(body, "stream").Bool()
 	} else if account.Type == AccountTypeOAuth {
 		reqStream = clientStream
+	}
+	body, _, err = finalizeOpenAIResponsesOAuthUpstreamBody(c, account, reqModel, body)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(body, &reqBody); err != nil {
+		return nil, fmt.Errorf("parse finalized request body: %w", err)
 	}
 	upstreamStream = gjson.GetBytes(body, "stream").Bool()
 	// Get access token
@@ -3759,6 +3765,11 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	if sanitized {
 		body = sanitizedBody
 	}
+	body, _, err = finalizeOpenAIResponsesOAuthUpstreamBody(c, account, reqModel, body)
+	if err != nil {
+		return nil, err
+	}
+	reqStream = gjson.GetBytes(body, "stream").Bool()
 
 	logger.LegacyPrintf("service.openai_gateway",
 		"[OpenAI 自动透传] 命中自动透传分支: account=%d name=%s type=%s model=%s stream=%v",
@@ -6978,6 +6989,42 @@ func shouldInjectDefaultInstructionsForOpenAIResponses(c *gin.Context, account *
 	}
 	return isOpenAIResponsesInboundPath(c)
 }
+
+func finalizeOpenAIResponsesOAuthUpstreamBody(c *gin.Context, account *Account, reqModel string, body []byte) ([]byte, bool, error) {
+	if account == nil || account.Platform != PlatformOpenAI || account.Type != AccountTypeOAuth {
+		return body, false, nil
+	}
+	if !isOpenAIResponsesInboundPath(c) || len(body) == 0 {
+		return body, false, nil
+	}
+
+	var reqBody map[string]any
+	if err := json.Unmarshal(body, &reqBody); err != nil {
+		return body, false, fmt.Errorf("parse final openai oauth responses body: %w", err)
+	}
+
+	isCompact := isOpenAIResponsesCompactPath(c)
+	isMessagesBridge := isOpenAICompatMessagesBridgeRequestBody(reqBody)
+
+	normalizedBody, normalized, err := normalizeOpenAIPassthroughOAuthBody(body, isCompact)
+	if err != nil {
+		return body, false, err
+	}
+	body = normalizedBody
+	changed := normalized
+
+	if shouldInjectDefaultInstructionsForOpenAIResponses(c, account, isMessagesBridge, isCompact) {
+		bodyWithInstructions, injected, err := ensureOpenAIPassthroughInstructions(c, reqModel, body)
+		if err != nil {
+			return body, false, err
+		}
+		body = bodyWithInstructions
+		changed = changed || injected
+	}
+
+	return body, changed, nil
+}
+
 func ensureOpenAIPassthroughInstructions(c *gin.Context, reqModel string, body []byte) ([]byte, bool, error) {
 	_ = reqModel
 	instructions := gjson.GetBytes(body, "instructions")
