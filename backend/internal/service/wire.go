@@ -66,6 +66,7 @@ func ProvideTokenRefreshService(
 	svc := NewTokenRefreshService(accountRepo, oauthService, openaiOAuthService, geminiOAuthService, antigravityOAuthService, cacheInvalidator, schedulerCache, cfg, tempUnschedCache)
 	svc.SetKiroTransport(httpUpstream, tlsFPProfileService)
 	svc.SetKiroSettingService(settingService)
+	svc.kiroRefresher.WithProxyRepo(proxyRepo)
 	// 注入 OpenAI privacy opt-out 依赖
 	svc.SetPrivacyDeps(privacyClientFactory, proxyRepo)
 	// 注入统一 OAuth 刷新 API（消除 TokenRefreshService 与 TokenProvider 之间的竞争条件）
@@ -621,7 +622,7 @@ func ProvideGatewayService(
 var ProviderSet = wire.NewSet(
 	// Core services
 	NewAuthService,
-	NewUserService,
+	ProvideUserService,
 	ProvideAPIKeyService,
 	ProvideAPIKeyAuthCacheInvalidator,
 	NewGroupService,
@@ -639,7 +640,7 @@ var ProviderSet = wire.NewSet(
 	NewAdminService,
 	ConfigureAdminAccountCredentialRefreshers,
 	ProvideGatewayService,
-	NewOpenAIGatewayService,
+	ProvideOpenAIGatewayService,
 	NewOAuthService,
 	NewOpenAIOAuthService,
 	NewGeminiOAuthService,
@@ -650,7 +651,8 @@ var ProviderSet = wire.NewSet(
 	NewKiroOAuthService,
 	ProvideOAuthRefreshAPI,
 	ProvideGeminiTokenProvider,
-	NewGeminiMessagesCompatService,
+	ProvideGeminiAccountAccessTokenProvider,
+	ProvideGeminiMessagesCompatService,
 	ProvideAntigravityTokenProvider,
 	ProvideOpenAITokenProvider,
 	ProvideClaudeTokenProvider,
@@ -678,6 +680,7 @@ var ProviderSet = wire.NewSet(
 	NewSubscriptionService,
 	NewTicketService,
 	NewMediaService,
+	ProvideInvoiceService,
 	ProvideAISkillBalanceCharger,
 	ProvideAISkillCreatorEarningsCreditor,
 	ProvideAISkillRuntimeGateway,
@@ -733,9 +736,111 @@ func ProvidePaymentConfigService(entClient *dbent.Client, settingRepo SettingRep
 	return NewPaymentConfigService(entClient, settingRepo, []byte(key))
 }
 
+// ProvideUserService wires the optional media service parameter explicitly so
+// Wire does not try to synthesize a variadic []*MediaService dependency.
+func ProvideUserService(
+	userRepo UserRepository,
+	settingRepo SettingRepository,
+	authCacheInvalidator APIKeyAuthCacheInvalidator,
+	billingCache BillingCache,
+	mediaSvc *MediaService,
+) *UserService {
+	return NewUserService(userRepo, settingRepo, authCacheInvalidator, billingCache, mediaSvc)
+}
+
+// ProvideOpenAIGatewayService wires the optional setting service parameter
+// explicitly so Wire does not try to synthesize a variadic []*SettingService dependency.
+func ProvideOpenAIGatewayService(
+	accountRepo AccountRepository,
+	usageLogRepo UsageLogRepository,
+	usageBillingRepo UsageBillingRepository,
+	userRepo UserRepository,
+	userSubRepo UserSubscriptionRepository,
+	userGroupRateRepo UserGroupRateRepository,
+	cache GatewayCache,
+	cfg *config.Config,
+	schedulerSnapshot *SchedulerSnapshotService,
+	concurrencyService *ConcurrencyService,
+	billingService *BillingService,
+	rateLimitService *RateLimitService,
+	billingCacheService *BillingCacheService,
+	httpUpstream HTTPUpstream,
+	deferredService *DeferredService,
+	openAITokenProvider *OpenAITokenProvider,
+	resolver *ModelPricingResolver,
+	channelService *ChannelService,
+	balanceNotifyService *BalanceNotifyService,
+	tlsFPProfileService *TLSFingerprintProfileService,
+	settingService *SettingService,
+) *OpenAIGatewayService {
+	return NewOpenAIGatewayService(
+		accountRepo,
+		usageLogRepo,
+		usageBillingRepo,
+		userRepo,
+		userSubRepo,
+		userGroupRateRepo,
+		cache,
+		cfg,
+		schedulerSnapshot,
+		concurrencyService,
+		billingService,
+		rateLimitService,
+		billingCacheService,
+		httpUpstream,
+		deferredService,
+		openAITokenProvider,
+		resolver,
+		channelService,
+		balanceNotifyService,
+		tlsFPProfileService,
+		settingService,
+	)
+}
+
+// ProvideGeminiAccountAccessTokenProvider adapts GeminiTokenProvider to the
+// narrower internal interface used by AccountTestService.
+func ProvideGeminiAccountAccessTokenProvider(p *GeminiTokenProvider) geminiAccountAccessTokenProvider {
+	return p
+}
+
+// ProvideGeminiMessagesCompatService wires the optional setting service
+// parameter explicitly so Wire does not try to synthesize a variadic []*SettingService dependency.
+func ProvideGeminiMessagesCompatService(
+	accountRepo AccountRepository,
+	groupRepo GroupRepository,
+	cache GatewayCache,
+	schedulerSnapshot *SchedulerSnapshotService,
+	tokenProvider *GeminiTokenProvider,
+	rateLimitService *RateLimitService,
+	httpUpstream HTTPUpstream,
+	antigravityGatewayService *AntigravityGatewayService,
+	cfg *config.Config,
+	settingService *SettingService,
+) *GeminiMessagesCompatService {
+	return NewGeminiMessagesCompatService(
+		accountRepo,
+		groupRepo,
+		cache,
+		schedulerSnapshot,
+		tokenProvider,
+		rateLimitService,
+		httpUpstream,
+		antigravityGatewayService,
+		cfg,
+		settingService,
+	)
+}
+
 // ProvideBalanceNotifyService creates BalanceNotifyService
 func ProvideBalanceNotifyService(emailService *EmailService, settingRepo SettingRepository, accountRepo AccountRepository) *BalanceNotifyService {
 	return NewBalanceNotifyService(emailService, settingRepo, accountRepo)
+}
+
+// ProvideInvoiceService wires InvoiceService through the concrete MediaService
+// so Wire can satisfy the narrower invoice media interface.
+func ProvideInvoiceService(entClient *dbent.Client, paymentSvc *PaymentService, mediaSvc *MediaService) *InvoiceService {
+	return NewInvoiceService(entClient, paymentSvc, mediaSvc)
 }
 
 // ProvidePaymentOrderExpiryService creates and starts PaymentOrderExpiryService.

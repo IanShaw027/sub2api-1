@@ -97,6 +97,28 @@ func ProvideChannelMonitorHandler(monitorService *service.ChannelMonitorService,
 	return admin.NewChannelMonitorHandler(monitorService, settingService)
 }
 
+// ProvideAdminSettingHandler wires the optional media service parameter
+// explicitly so Wire does not try to synthesize a variadic []*MediaService dependency.
+func ProvideAdminSettingHandler(
+	settingService *service.SettingService,
+	emailService *service.EmailService,
+	turnstileService *service.TurnstileService,
+	opsService *service.OpsService,
+	paymentConfigService *service.PaymentConfigService,
+	paymentService *service.PaymentService,
+	mediaService *service.MediaService,
+) *admin.SettingHandler {
+	return admin.NewSettingHandler(
+		settingService,
+		emailService,
+		turnstileService,
+		opsService,
+		paymentConfigService,
+		paymentService,
+		mediaService,
+	)
+}
+
 // ProvideSettingHandler creates SettingHandler with version from BuildInfo
 func ProvideSettingHandler(settingService *service.SettingService, buildInfo BuildInfo) *SettingHandler {
 	return NewSettingHandler(settingService, buildInfo.Version)
@@ -220,7 +242,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewProxyHandler,
 	admin.NewRedeemHandler,
 	admin.NewPromoHandler,
-	admin.NewSettingHandler,
+	ProvideAdminSettingHandler,
 	admin.NewOpsHandler,
 	ProvideSystemHandler,
 	admin.NewSubscriptionHandler,
@@ -238,7 +260,6 @@ var ProviderSet = wire.NewSet(
 	admin.NewChannelMonitorRequestTemplateHandler,
 	admin.NewContentModerationHandler,
 	admin.NewPaymentHandler,
-	admin.NewAffiliateHandler,
 
 	// AdminHandlers and Handlers constructors
 	ProvideAISkillModule,
