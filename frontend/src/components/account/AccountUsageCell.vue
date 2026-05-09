@@ -644,37 +644,9 @@ const openAIEnabledImageRoutes = computed(() => {
   return { codex, web2api, constrained: masterEnabled, masterEnabled, hasGroups: true }
 })
 
-const openAIHasRouteSpecificUsageWindows = computed(() => {
-  if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return false
-  const info = usageInfo.value
-  if (!info) return false
-  const { codex: showCodex, web2api: showWeb2api } = openAIEnabledImageRoutes.value
-
-  if (
-    showCodex &&
-    (
-      !!info.openai_image_codex_five_hour ||
-      !!info.openai_image_codex_seven_day
-    )
-  ) {
-    return true
-  }
-
-  if (
-    showWeb2api &&
-    (
-      !!info.openai_image_web2api_five_hour
-    )
-  ) {
-    return true
-  }
-
-  return false
-})
-
 const showOpenAIResponseUsageBars = computed(() => {
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return false
-  return !openAIEnabledImageRoutes.value.constrained || !openAIHasRouteSpecificUsageWindows.value
+  return openAIResponseUsageBars.value.length > 0
 })
 
 const openAIImageRouteLabels = computed(() => {
