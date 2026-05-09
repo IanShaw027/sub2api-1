@@ -198,4 +198,15 @@ describe('i18n runtime locale merge', () => {
     expect(setLocaleMessage.mock.calls[1][0]).toBe('zh')
     expect(document.documentElement.getAttribute('lang')).toBe('zh')
   })
+
+  it('reports conflicting locale keys explicitly', async () => {
+    const { collectLocaleConflicts } = await import('../index')
+
+    expect(
+      collectLocaleConflicts(
+        { a: { b: 'base', c: 'same' }, d: 'keep' },
+        { a: { b: 'override', c: 'same' }, d: 'keep', e: 'new' }
+      )
+    ).toEqual(['a.b'])
+  })
 })

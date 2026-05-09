@@ -891,7 +891,8 @@ const isAnyModalOpen = computed(() => {
     showTest.value ||
     showStats.value ||
     showSchedulePanel.value ||
-    showErrorPassthrough.value
+    showErrorPassthrough.value ||
+    showTLSFingerprintProfiles.value
   )
 })
 
@@ -1422,11 +1423,6 @@ const handleBulkRefreshToken = async () => {
     appStore.showError(String(error))
   }
 }
-const updateSchedulableInList = (accountIds: number[], schedulable: boolean) => {
-  if (accountIds.length === 0) return
-  const idSet = new Set(accountIds)
-  accounts.value = accounts.value.map((account) => (idSet.has(account.id) ? { ...account, schedulable } : account))
-}
 const normalizeBulkSchedulableResult = (
   result: {
     success?: number
@@ -1548,17 +1544,23 @@ const collectSelectionMetadata = (rows: Account[]) => {
 const BULK_EDIT_FILTERED_PREVIEW_PAGE_SIZE = 100
 
 const collectFilteredSelectionMetadata = async (filters: Record<string, unknown>) => {
-  const firstPage = await adminAPI.accounts.list(1, BULK_EDIT_FILTERED_PREVIEW_PAGE_SIZE, filters)
-  const rows = [...firstPage.items]
-  for (let page = 2; page <= firstPage.pages; page++) {
-    const result = await adminAPI.accounts.list(page, BULK_EDIT_FILTERED_PREVIEW_PAGE_SIZE, filters)
-    rows.push(...result.items)
-  }
-  const { selectedPlatforms, selectedTypes } = collectSelectionMetadata(rows)
-  return {
-    previewCount: firstPage.total,
-    selectedPlatforms,
-    selectedTypes
+  try {
+    const firstPage = await adminAPI.accounts.list(1, BULK_EDIT_FILTERED_PREVIEW_PAGE_SIZE, filters)
+    const rows = [...firstPage.items]
+    for (let page = 2; page <= firstPage.pages; page++) {
+      const result = await adminAPI.accounts.list(page, BULK_EDIT_FILTERED_PREVIEW_PAGE_SIZE, filters)
+      rows.push(...result.items)
+    }
+    const { selectedPlatforms, selectedTypes } = collectSelectionMetadata(rows)
+    return {
+      previewCount: firstPage.total,
+      selectedPlatforms,
+      selectedTypes
+    }
+  } catch (error) {
+    console.error('Failed to load filtered bulk edit preview:', error)
+    appStore.showError(t('admin.accounts.bulkEdit.failedToLoadPreview'))
+    return null
   }
 }
 
@@ -1574,7 +1576,9 @@ const openBulkEditSelected = () => {
 
 const openBulkEditFiltered = async () => {
   const filters = buildBulkEditFilterSnapshot()
-  const { previewCount, selectedPlatforms, selectedTypes } = await collectFilteredSelectionMetadata(filters)
+  const result = await collectFilteredSelectionMetadata(filters)
+  if (!result) return
+  const { previewCount, selectedPlatforms, selectedTypes } = result
   bulkEditTarget.value = {
     mode: 'filtered',
     filters,
@@ -1654,8 +1658,8 @@ const mergeRuntimeFields = (oldAccount: Account, updatedAccount: Account): Accou
   active_sessions: updatedAccount.active_sessions ?? oldAccount.active_sessions
 })
 
-const syncPaginationAfterLocalRemoval = () => {
-  const nextTotal = Math.max(0, pagination.total - 1)
+const syncPaginationAfterLocalRemoval = (removedCount: number = 1) => {
+  const nextTotal = Math.max(0, pagination.total - removedCount)
   pagination.total = nextTotal
   pagination.pages = nextTotal > 0 ? Math.ceil(nextTotal / pagination.page_size) : 0
 
@@ -1666,6 +1670,10 @@ const syncPaginationAfterLocalRemoval = () => {
   }
   // 行被本地移除后不立刻全量补页，改为提示用户手动同步。
   hasPendingListSync.value = nextTotal > 0
+}
+
+const currentStatusFilterDependsOnSchedulable = () => {
+  return params.status === 'active' || params.status === 'unschedulable'
 }
 
 const patchAccountInList = (updatedAccount: Account) => {
@@ -1686,6 +1694,58 @@ const patchAccountInList = (updatedAccount: Account) => {
   nextAccounts[index] = mergedAccount
   accounts.value = nextAccounts
   syncAccountRefs(mergedAccount)
+}
+
+const updateSchedulableInList = (accountIds: number[], schedulable: boolean) => {
+  if (accountIds.length === 0) return
+
+  const idSet = new Set(accountIds)
+  const filterDependsOnSchedulable = currentStatusFilterDependsOnSchedulable()
+  const updatedVisibleCount = accounts.value.reduce(
+    (count, account) => count + (idSet.has(account.id) ? 1 : 0),
+    0
+  )
+
+  if (updatedVisibleCount === 0) {
+    if (filterDependsOnSchedulable) {
+      hasPendingListSync.value = true
+    }
+    return
+  }
+
+  let removedCount = 0
+  const nextAccounts: Account[] = []
+
+  for (const account of accounts.value) {
+    if (!idSet.has(account.id)) {
+      nextAccounts.push(account)
+      continue
+    }
+
+    const updatedAccount = { ...account, schedulable }
+    if (filterDependsOnSchedulable && !accountMatchesCurrentFilters(updatedAccount)) {
+      removedCount += 1
+      removeSelectedAccounts([updatedAccount.id])
+      if (menu.acc?.id === updatedAccount.id) {
+        menu.show = false
+        menu.acc = null
+      }
+      continue
+    }
+
+    nextAccounts.push(updatedAccount)
+    syncAccountRefs(updatedAccount)
+  }
+
+  accounts.value = nextAccounts
+
+  if (removedCount > 0) {
+    syncPaginationAfterLocalRemoval(removedCount)
+  }
+
+  if (filterDependsOnSchedulable && updatedVisibleCount !== accountIds.length) {
+    hasPendingListSync.value = true
+  }
 }
 const handleAccountUpdated = (updatedAccount: Account) => {
   patchAccountInList(updatedAccount)

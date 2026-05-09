@@ -120,7 +120,7 @@ export const useAnnouncementStore = defineStore('announcements', () => {
           a.read_at = new Date().toISOString()
         }
       })
-      unreadTotal.value = 0
+      unreadTotal.value = Math.max(0, unreadTotal.value - unread.length)
       if (readStatus.value === 'unread') {
         announcements.value = []
       }

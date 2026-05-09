@@ -121,4 +121,45 @@ describe('channel monitor routes', () => {
     expect(appStore.fetchPublicSettings).toHaveBeenCalledTimes(1)
     expect(router.currentRoute.value.path).toBe('/available-channels')
   })
+
+  it('does not admit a disabled monitor route before public settings resolve on cold load', async () => {
+    authStore.isAdmin = false
+    appStore.publicSettingsLoaded = false
+    appStore.cachedPublicSettings = null
+    appStore.fetchPublicSettings.mockImplementation(async () => {
+      appStore.publicSettingsLoaded = true
+      appStore.cachedPublicSettings = {
+        channel_monitor_enabled: false,
+        available_channels_enabled: false,
+      }
+      return appStore.cachedPublicSettings
+    })
+    const { default: router } = await import('@/router')
+
+    await router.push('/monitor')
+
+    expect(appStore.fetchPublicSettings).toHaveBeenCalledTimes(1)
+    expect(router.currentRoute.value.path).toBe('/dashboard')
+  })
+
+  it('does not admit a disabled payment route before public settings resolve on cold load', async () => {
+    authStore.isAdmin = false
+    appStore.publicSettingsLoaded = false
+    appStore.cachedPublicSettings = null
+    appStore.fetchPublicSettings.mockImplementation(async () => {
+      appStore.publicSettingsLoaded = true
+      appStore.cachedPublicSettings = {
+        channel_monitor_enabled: true,
+        available_channels_enabled: false,
+        payment_enabled: false,
+      }
+      return appStore.cachedPublicSettings
+    })
+    const { default: router } = await import('@/router')
+
+    await router.push('/purchase')
+
+    expect(appStore.fetchPublicSettings).toHaveBeenCalledTimes(1)
+    expect(router.currentRoute.value.path).toBe('/dashboard')
+  })
 })

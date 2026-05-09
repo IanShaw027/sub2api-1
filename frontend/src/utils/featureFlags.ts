@@ -154,6 +154,19 @@ export function isFeatureFlagEnabled(flag: FeatureFlagDefinition): boolean {
 }
 
 /**
+ * Returns whether the current app settings already contain an explicit boolean
+ * value for this flag. Route guards can use this to decide whether they must
+ * await `fetchPublicSettings()` before making an allow/deny decision.
+ */
+export function isFeatureFlagResolved(flag: FeatureFlagDefinition): boolean {
+  const appStore = useAppStore()
+  const raw = appStore.cachedPublicSettings?.[flag.key] as
+    | boolean
+    | undefined
+  return typeof raw === 'boolean'
+}
+
+/**
  * Sidebar NavItem.featureFlag accepts a getter that returns
  * `false` to hide. Keeping the same contract lets callers swap in
  * registry-backed flags without changing AppSidebar's filter logic.

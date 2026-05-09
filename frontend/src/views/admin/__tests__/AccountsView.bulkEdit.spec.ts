@@ -16,13 +16,19 @@ const {
   listWithEtag,
   getBatchTodayStats,
   getAllProxies,
-  getAllGroups
+  getAllGroups,
+  setSchedulable,
+  bulkUpdate,
+  showError
 } = vi.hoisted(() => ({
   listAccounts: vi.fn(),
   listWithEtag: vi.fn(),
   getBatchTodayStats: vi.fn(),
   getAllProxies: vi.fn(),
-  getAllGroups: vi.fn()
+  getAllGroups: vi.fn(),
+  setSchedulable: vi.fn(),
+  bulkUpdate: vi.fn(),
+  showError: vi.fn()
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -34,7 +40,9 @@ vi.mock('@/api/admin', () => ({
       delete: vi.fn(),
       batchClearError: vi.fn(),
       batchRefresh: vi.fn(),
-      toggleSchedulable: vi.fn()
+      toggleSchedulable: vi.fn(),
+      setSchedulable,
+      bulkUpdate
     },
     proxies: {
       getAll: getAllProxies
@@ -47,7 +55,7 @@ vi.mock('@/api/admin', () => ({
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
-    showError: vi.fn(),
+    showError,
     showSuccess: vi.fn(),
     showInfo: vi.fn()
   })
@@ -79,6 +87,9 @@ const DataTableStub = {
         </div>
         <div data-test="platform-type-cell">
           <slot name="cell-platform_type" :row="row" :value="row.type" />
+        </div>
+        <div data-test="schedulable-cell">
+          <slot name="cell-schedulable" :row="row" />
         </div>
       </div>
     </div>
@@ -165,6 +176,9 @@ describe('admin AccountsView bulk edit scope', () => {
     getBatchTodayStats.mockReset()
     getAllProxies.mockReset()
     getAllGroups.mockReset()
+    setSchedulable.mockReset()
+    bulkUpdate.mockReset()
+    showError.mockReset()
 
     listAccounts.mockResolvedValue({
       items: [],
@@ -419,7 +433,7 @@ describe('admin AccountsView bulk edit scope', () => {
 
     const badges = wrapper.findAll('[data-test="platform-type-badge"]')
     expect(badges).toHaveLength(2)
-    expect(badges[0].attributes('data-plan-type')).toBe('pro')
+    expect(badges[0].attributes('data-plan-type')).toBe('google_ai_pro')
     expect(badges[1].attributes('data-plan-type')).toBe('gcp_enterprise')
   })
 
@@ -454,6 +468,103 @@ describe('admin AccountsView bulk edit scope', () => {
 
     const badges = wrapper.findAll('[data-test="platform-type-badge"]')
     expect(badges).toHaveLength(1)
-    expect(badges[0].attributes('data-plan-type')).toBe('pro')
+    expect(badges[0].attributes('data-plan-type')).toBe('google_ai_pro')
+  })
+
+  it('shows an error and aborts when filtered preview pagination fails', async () => {
+    listAccounts
+      .mockResolvedValueOnce({
+        items: [],
+        total: 105,
+        page: 1,
+        page_size: 100,
+        pages: 2
+      })
+      .mockRejectedValueOnce(new Error('boom'))
+
+    const wrapper = mountAccountsView()
+
+    await flushPromises()
+    await wrapper.get('[data-test="edit-filtered"]').trigger('click')
+    await flushPromises()
+
+    expect(showError).toHaveBeenCalledWith('admin.accounts.bulkEdit.failedToLoadPreview')
+    expect(wrapper.find('[data-test="bulk-edit-modal"]').exists()).toBe(false)
+  })
+
+  it('removes a toggled row from the active filter and marks the list pending sync', async () => {
+    listAccounts.mockResolvedValueOnce({
+      items: [
+        {
+          id: 1,
+          name: 'Active Schedulable',
+          platform: 'openai',
+          type: 'oauth',
+          status: 'active',
+          schedulable: true
+        }
+      ],
+      total: 3,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+    setSchedulable.mockResolvedValueOnce({
+      id: 1,
+      name: 'Active Schedulable',
+      platform: 'openai',
+      type: 'oauth',
+      status: 'active',
+      schedulable: false
+    })
+
+    const wrapper = mountAccountsView()
+
+    await flushPromises()
+    ;(wrapper.vm as any).params.status = 'active'
+    await wrapper.vm.$nextTick()
+    await wrapper.get('[data-test="row-1"] button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="row-1"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('admin.accounts.listPendingSyncHint')
+  })
+
+  it('removes a toggled row from the unschedulable filter and marks the list pending sync', async () => {
+    listAccounts.mockResolvedValueOnce({
+      items: [
+        {
+          id: 2,
+          name: 'Active Unschedulable',
+          platform: 'openai',
+          type: 'oauth',
+          status: 'active',
+          schedulable: false
+        }
+      ],
+      total: 2,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+    setSchedulable.mockResolvedValueOnce({
+      id: 2,
+      name: 'Active Unschedulable',
+      platform: 'openai',
+      type: 'oauth',
+      status: 'active',
+      schedulable: true
+    })
+
+    const wrapper = mountAccountsView()
+
+    await flushPromises()
+    ;(wrapper.vm as any).params.status = 'unschedulable'
+    await wrapper.vm.$nextTick()
+    await wrapper.get('[data-test="row-2"] button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="row-2"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('admin.accounts.listPendingSyncHint')
   })
 })

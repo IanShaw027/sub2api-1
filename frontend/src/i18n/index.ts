@@ -29,6 +29,28 @@ export function mergeLocaleMessages(
   return merged
 }
 
+export function collectLocaleConflicts(
+  base: LocaleMessages,
+  override: LocaleMessages,
+  path: string[] = []
+): string[] {
+  const conflicts: string[] = []
+
+  for (const [key, value] of Object.entries(override)) {
+    const nextPath = [...path, key]
+    const current = base[key]
+    if (isPlainObject(current) && isPlainObject(value)) {
+      conflicts.push(...collectLocaleConflicts(current, value, nextPath))
+      continue
+    }
+    if (key in base && JSON.stringify(current) !== JSON.stringify(value)) {
+      conflicts.push(nextPath.join('.'))
+    }
+  }
+
+  return conflicts
+}
+
 const localeLoaders: Record<LocaleCode, () => Promise<LocaleMessages>> = {
   // Runtime messages are currently split across JSON and TS locale sources.
   // Merge them so newer TS-only keys do not disappear from the shipped UI.
@@ -37,6 +59,10 @@ const localeLoaders: Record<LocaleCode, () => Promise<LocaleMessages>> = {
       import('./locales/en.json'),
       import('./locales/en.ts')
     ])
+    const conflicts = collectLocaleConflicts(jsonModule.default, tsModule.default)
+    if (conflicts.length > 0) {
+      console.warn(`[i18n] locale conflicts detected for en: ${conflicts.join(', ')}`)
+    }
     return mergeLocaleMessages(jsonModule.default, tsModule.default)
   },
   zh: async () => {
@@ -44,6 +70,10 @@ const localeLoaders: Record<LocaleCode, () => Promise<LocaleMessages>> = {
       import('./locales/zh.json'),
       import('./locales/zh.ts')
     ])
+    const conflicts = collectLocaleConflicts(jsonModule.default, tsModule.default)
+    if (conflicts.length > 0) {
+      console.warn(`[i18n] locale conflicts detected for zh: ${conflicts.join(', ')}`)
+    }
     return mergeLocaleMessages(jsonModule.default, tsModule.default)
   }
 }
