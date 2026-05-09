@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/aiskill"
 	"github.com/Wei-Shaw/sub2api/ent/aiskilllike"
+	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
 // AISkillLikeCreate is the builder for creating a AISkillLike entity.
@@ -124,6 +125,11 @@ func (_c *AISkillLikeCreate) SetSkill(v *AISkill) *AISkillLikeCreate {
 	return _c.SetSkillID(v.ID)
 }
 
+// SetUser sets the "user" edge to the User entity.
+func (_c *AISkillLikeCreate) SetUser(v *User) *AISkillLikeCreate {
+	return _c.SetUserID(v.ID)
+}
+
 // Mutation returns the AISkillLikeMutation object of the builder.
 func (_c *AISkillLikeCreate) Mutation() *AISkillLikeMutation {
 	return _c.mutation
@@ -191,6 +197,9 @@ func (_c *AISkillLikeCreate) check() error {
 	if len(_c.mutation.SkillIDs()) == 0 {
 		return &ValidationError{Name: "skill", err: errors.New(`ent: missing required edge "AISkillLike.skill"`)}
 	}
+	if len(_c.mutation.UserIDs()) == 0 {
+		return &ValidationError{Name: "user", err: errors.New(`ent: missing required edge "AISkillLike.user"`)}
+	}
 	return nil
 }
 
@@ -226,10 +235,6 @@ func (_c *AISkillLikeCreate) createSpec() (*AISkillLike, *sqlgraph.CreateSpec) {
 		_spec.SetField(aiskilllike.FieldUpdatedAt, field.TypeTime, value)
 		_node.UpdatedAt = value
 	}
-	if value, ok := _c.mutation.UserID(); ok {
-		_spec.SetField(aiskilllike.FieldUserID, field.TypeInt64, value)
-		_node.UserID = value
-	}
 	if value, ok := _c.mutation.RequestID(); ok {
 		_spec.SetField(aiskilllike.FieldRequestID, field.TypeString, value)
 		_node.RequestID = &value
@@ -261,6 +266,23 @@ func (_c *AISkillLikeCreate) createSpec() (*AISkillLike, *sqlgraph.CreateSpec) {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.SkillID = nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.UserIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskilllike.UserTable,
+			Columns: []string{aiskilllike.UserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.UserID = nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
@@ -348,12 +370,6 @@ func (u *AISkillLikeUpsert) SetUserID(v int64) *AISkillLikeUpsert {
 // UpdateUserID sets the "user_id" field to the value that was provided on create.
 func (u *AISkillLikeUpsert) UpdateUserID() *AISkillLikeUpsert {
 	u.SetExcluded(aiskilllike.FieldUserID)
-	return u
-}
-
-// AddUserID adds v to the "user_id" field.
-func (u *AISkillLikeUpsert) AddUserID(v int64) *AISkillLikeUpsert {
-	u.Add(aiskilllike.FieldUserID, v)
 	return u
 }
 
@@ -524,13 +540,6 @@ func (u *AISkillLikeUpsertOne) UpdateSkillID() *AISkillLikeUpsertOne {
 func (u *AISkillLikeUpsertOne) SetUserID(v int64) *AISkillLikeUpsertOne {
 	return u.Update(func(s *AISkillLikeUpsert) {
 		s.SetUserID(v)
-	})
-}
-
-// AddUserID adds v to the "user_id" field.
-func (u *AISkillLikeUpsertOne) AddUserID(v int64) *AISkillLikeUpsertOne {
-	return u.Update(func(s *AISkillLikeUpsert) {
-		s.AddUserID(v)
 	})
 }
 
@@ -889,13 +898,6 @@ func (u *AISkillLikeUpsertBulk) UpdateSkillID() *AISkillLikeUpsertBulk {
 func (u *AISkillLikeUpsertBulk) SetUserID(v int64) *AISkillLikeUpsertBulk {
 	return u.Update(func(s *AISkillLikeUpsert) {
 		s.SetUserID(v)
-	})
-}
-
-// AddUserID adds v to the "user_id" field.
-func (u *AISkillLikeUpsertBulk) AddUserID(v int64) *AISkillLikeUpsertBulk {
-	return u.Update(func(s *AISkillLikeUpsert) {
-		s.AddUserID(v)
 	})
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aiskillrun"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillsettlement"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillversion"
+	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
 // AISkillSettlement is the model entity for the AISkillSettlement schema.
@@ -71,9 +72,13 @@ type AISkillSettlementEdges struct {
 	Version *AISkillVersion `json:"version,omitempty"`
 	// Run holds the value of the run edge.
 	Run *AISkillRun `json:"run,omitempty"`
+	// OwnerUser holds the value of the owner_user edge.
+	OwnerUser *User `json:"owner_user,omitempty"`
+	// BuyerUser holds the value of the buyer_user edge.
+	BuyerUser *User `json:"buyer_user,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [3]bool
+	loadedTypes [5]bool
 }
 
 // SkillOrErr returns the Skill value or an error if the edge
@@ -107,6 +112,28 @@ func (e AISkillSettlementEdges) RunOrErr() (*AISkillRun, error) {
 		return nil, &NotFoundError{label: aiskillrun.Label}
 	}
 	return nil, &NotLoadedError{edge: "run"}
+}
+
+// OwnerUserOrErr returns the OwnerUser value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e AISkillSettlementEdges) OwnerUserOrErr() (*User, error) {
+	if e.OwnerUser != nil {
+		return e.OwnerUser, nil
+	} else if e.loadedTypes[3] {
+		return nil, &NotFoundError{label: user.Label}
+	}
+	return nil, &NotLoadedError{edge: "owner_user"}
+}
+
+// BuyerUserOrErr returns the BuyerUser value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e AISkillSettlementEdges) BuyerUserOrErr() (*User, error) {
+	if e.BuyerUser != nil {
+		return e.BuyerUser, nil
+	} else if e.loadedTypes[4] {
+		return nil, &NotFoundError{label: user.Label}
+	}
+	return nil, &NotLoadedError{edge: "buyer_user"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -287,6 +314,16 @@ func (_m *AISkillSettlement) QueryVersion() *AISkillVersionQuery {
 // QueryRun queries the "run" edge of the AISkillSettlement entity.
 func (_m *AISkillSettlement) QueryRun() *AISkillRunQuery {
 	return NewAISkillSettlementClient(_m.config).QueryRun(_m)
+}
+
+// QueryOwnerUser queries the "owner_user" edge of the AISkillSettlement entity.
+func (_m *AISkillSettlement) QueryOwnerUser() *UserQuery {
+	return NewAISkillSettlementClient(_m.config).QueryOwnerUser(_m)
+}
+
+// QueryBuyerUser queries the "buyer_user" edge of the AISkillSettlement entity.
+func (_m *AISkillSettlement) QueryBuyerUser() *UserQuery {
+	return NewAISkillSettlementClient(_m.config).QueryBuyerUser(_m)
 }
 
 // Update returns a builder for updating this AISkillSettlement.

@@ -73,6 +73,22 @@ type User struct {
 
 // UserEdges holds the relations/edges for other nodes in the graph.
 type UserEdges struct {
+	// AiSkills holds the value of the ai_skills edge.
+	AiSkills []*AISkill `json:"ai_skills,omitempty"`
+	// AiSkillVersions holds the value of the ai_skill_versions edge.
+	AiSkillVersions []*AISkillVersion `json:"ai_skill_versions,omitempty"`
+	// AiSkillRuns holds the value of the ai_skill_runs edge.
+	AiSkillRuns []*AISkillRun `json:"ai_skill_runs,omitempty"`
+	// AiSkillLikes holds the value of the ai_skill_likes edge.
+	AiSkillLikes []*AISkillLike `json:"ai_skill_likes,omitempty"`
+	// AiSkillReviewsSubmitted holds the value of the ai_skill_reviews_submitted edge.
+	AiSkillReviewsSubmitted []*AISkillReview `json:"ai_skill_reviews_submitted,omitempty"`
+	// AiSkillReviewsReviewed holds the value of the ai_skill_reviews_reviewed edge.
+	AiSkillReviewsReviewed []*AISkillReview `json:"ai_skill_reviews_reviewed,omitempty"`
+	// AiSkillSettlementsOwned holds the value of the ai_skill_settlements_owned edge.
+	AiSkillSettlementsOwned []*AISkillSettlement `json:"ai_skill_settlements_owned,omitempty"`
+	// AiSkillSettlementsBought holds the value of the ai_skill_settlements_bought edge.
+	AiSkillSettlementsBought []*AISkillSettlement `json:"ai_skill_settlements_bought,omitempty"`
 	// APIKeys holds the value of the api_keys edge.
 	APIKeys []*APIKey `json:"api_keys,omitempty"`
 	// RedeemCodes holds the value of the redeem_codes edge.
@@ -101,13 +117,85 @@ type UserEdges struct {
 	UserAllowedGroups []*UserAllowedGroup `json:"user_allowed_groups,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [13]bool
+	loadedTypes [21]bool
+}
+
+// AiSkillsOrErr returns the AiSkills value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) AiSkillsOrErr() ([]*AISkill, error) {
+	if e.loadedTypes[0] {
+		return e.AiSkills, nil
+	}
+	return nil, &NotLoadedError{edge: "ai_skills"}
+}
+
+// AiSkillVersionsOrErr returns the AiSkillVersions value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) AiSkillVersionsOrErr() ([]*AISkillVersion, error) {
+	if e.loadedTypes[1] {
+		return e.AiSkillVersions, nil
+	}
+	return nil, &NotLoadedError{edge: "ai_skill_versions"}
+}
+
+// AiSkillRunsOrErr returns the AiSkillRuns value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) AiSkillRunsOrErr() ([]*AISkillRun, error) {
+	if e.loadedTypes[2] {
+		return e.AiSkillRuns, nil
+	}
+	return nil, &NotLoadedError{edge: "ai_skill_runs"}
+}
+
+// AiSkillLikesOrErr returns the AiSkillLikes value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) AiSkillLikesOrErr() ([]*AISkillLike, error) {
+	if e.loadedTypes[3] {
+		return e.AiSkillLikes, nil
+	}
+	return nil, &NotLoadedError{edge: "ai_skill_likes"}
+}
+
+// AiSkillReviewsSubmittedOrErr returns the AiSkillReviewsSubmitted value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) AiSkillReviewsSubmittedOrErr() ([]*AISkillReview, error) {
+	if e.loadedTypes[4] {
+		return e.AiSkillReviewsSubmitted, nil
+	}
+	return nil, &NotLoadedError{edge: "ai_skill_reviews_submitted"}
+}
+
+// AiSkillReviewsReviewedOrErr returns the AiSkillReviewsReviewed value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) AiSkillReviewsReviewedOrErr() ([]*AISkillReview, error) {
+	if e.loadedTypes[5] {
+		return e.AiSkillReviewsReviewed, nil
+	}
+	return nil, &NotLoadedError{edge: "ai_skill_reviews_reviewed"}
+}
+
+// AiSkillSettlementsOwnedOrErr returns the AiSkillSettlementsOwned value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) AiSkillSettlementsOwnedOrErr() ([]*AISkillSettlement, error) {
+	if e.loadedTypes[6] {
+		return e.AiSkillSettlementsOwned, nil
+	}
+	return nil, &NotLoadedError{edge: "ai_skill_settlements_owned"}
+}
+
+// AiSkillSettlementsBoughtOrErr returns the AiSkillSettlementsBought value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) AiSkillSettlementsBoughtOrErr() ([]*AISkillSettlement, error) {
+	if e.loadedTypes[7] {
+		return e.AiSkillSettlementsBought, nil
+	}
+	return nil, &NotLoadedError{edge: "ai_skill_settlements_bought"}
 }
 
 // APIKeysOrErr returns the APIKeys value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) APIKeysOrErr() ([]*APIKey, error) {
-	if e.loadedTypes[0] {
+	if e.loadedTypes[8] {
 		return e.APIKeys, nil
 	}
 	return nil, &NotLoadedError{edge: "api_keys"}
@@ -116,7 +204,7 @@ func (e UserEdges) APIKeysOrErr() ([]*APIKey, error) {
 // RedeemCodesOrErr returns the RedeemCodes value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) RedeemCodesOrErr() ([]*RedeemCode, error) {
-	if e.loadedTypes[1] {
+	if e.loadedTypes[9] {
 		return e.RedeemCodes, nil
 	}
 	return nil, &NotLoadedError{edge: "redeem_codes"}
@@ -125,7 +213,7 @@ func (e UserEdges) RedeemCodesOrErr() ([]*RedeemCode, error) {
 // SubscriptionsOrErr returns the Subscriptions value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) SubscriptionsOrErr() ([]*UserSubscription, error) {
-	if e.loadedTypes[2] {
+	if e.loadedTypes[10] {
 		return e.Subscriptions, nil
 	}
 	return nil, &NotLoadedError{edge: "subscriptions"}
@@ -134,7 +222,7 @@ func (e UserEdges) SubscriptionsOrErr() ([]*UserSubscription, error) {
 // AssignedSubscriptionsOrErr returns the AssignedSubscriptions value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) AssignedSubscriptionsOrErr() ([]*UserSubscription, error) {
-	if e.loadedTypes[3] {
+	if e.loadedTypes[11] {
 		return e.AssignedSubscriptions, nil
 	}
 	return nil, &NotLoadedError{edge: "assigned_subscriptions"}
@@ -143,7 +231,7 @@ func (e UserEdges) AssignedSubscriptionsOrErr() ([]*UserSubscription, error) {
 // AnnouncementReadsOrErr returns the AnnouncementReads value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) AnnouncementReadsOrErr() ([]*AnnouncementRead, error) {
-	if e.loadedTypes[4] {
+	if e.loadedTypes[12] {
 		return e.AnnouncementReads, nil
 	}
 	return nil, &NotLoadedError{edge: "announcement_reads"}
@@ -152,7 +240,7 @@ func (e UserEdges) AnnouncementReadsOrErr() ([]*AnnouncementRead, error) {
 // AllowedGroupsOrErr returns the AllowedGroups value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) AllowedGroupsOrErr() ([]*Group, error) {
-	if e.loadedTypes[5] {
+	if e.loadedTypes[13] {
 		return e.AllowedGroups, nil
 	}
 	return nil, &NotLoadedError{edge: "allowed_groups"}
@@ -161,7 +249,7 @@ func (e UserEdges) AllowedGroupsOrErr() ([]*Group, error) {
 // UsageLogsOrErr returns the UsageLogs value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) UsageLogsOrErr() ([]*UsageLog, error) {
-	if e.loadedTypes[6] {
+	if e.loadedTypes[14] {
 		return e.UsageLogs, nil
 	}
 	return nil, &NotLoadedError{edge: "usage_logs"}
@@ -170,7 +258,7 @@ func (e UserEdges) UsageLogsOrErr() ([]*UsageLog, error) {
 // AttributeValuesOrErr returns the AttributeValues value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) AttributeValuesOrErr() ([]*UserAttributeValue, error) {
-	if e.loadedTypes[7] {
+	if e.loadedTypes[15] {
 		return e.AttributeValues, nil
 	}
 	return nil, &NotLoadedError{edge: "attribute_values"}
@@ -179,7 +267,7 @@ func (e UserEdges) AttributeValuesOrErr() ([]*UserAttributeValue, error) {
 // PromoCodeUsagesOrErr returns the PromoCodeUsages value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) PromoCodeUsagesOrErr() ([]*PromoCodeUsage, error) {
-	if e.loadedTypes[8] {
+	if e.loadedTypes[16] {
 		return e.PromoCodeUsages, nil
 	}
 	return nil, &NotLoadedError{edge: "promo_code_usages"}
@@ -188,7 +276,7 @@ func (e UserEdges) PromoCodeUsagesOrErr() ([]*PromoCodeUsage, error) {
 // PaymentOrdersOrErr returns the PaymentOrders value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) PaymentOrdersOrErr() ([]*PaymentOrder, error) {
-	if e.loadedTypes[9] {
+	if e.loadedTypes[17] {
 		return e.PaymentOrders, nil
 	}
 	return nil, &NotLoadedError{edge: "payment_orders"}
@@ -197,7 +285,7 @@ func (e UserEdges) PaymentOrdersOrErr() ([]*PaymentOrder, error) {
 // AuthIdentitiesOrErr returns the AuthIdentities value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) AuthIdentitiesOrErr() ([]*AuthIdentity, error) {
-	if e.loadedTypes[10] {
+	if e.loadedTypes[18] {
 		return e.AuthIdentities, nil
 	}
 	return nil, &NotLoadedError{edge: "auth_identities"}
@@ -206,7 +294,7 @@ func (e UserEdges) AuthIdentitiesOrErr() ([]*AuthIdentity, error) {
 // PendingAuthSessionsOrErr returns the PendingAuthSessions value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) PendingAuthSessionsOrErr() ([]*PendingAuthSession, error) {
-	if e.loadedTypes[11] {
+	if e.loadedTypes[19] {
 		return e.PendingAuthSessions, nil
 	}
 	return nil, &NotLoadedError{edge: "pending_auth_sessions"}
@@ -215,7 +303,7 @@ func (e UserEdges) PendingAuthSessionsOrErr() ([]*PendingAuthSession, error) {
 // UserAllowedGroupsOrErr returns the UserAllowedGroups value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) UserAllowedGroupsOrErr() ([]*UserAllowedGroup, error) {
-	if e.loadedTypes[12] {
+	if e.loadedTypes[20] {
 		return e.UserAllowedGroups, nil
 	}
 	return nil, &NotLoadedError{edge: "user_allowed_groups"}
@@ -418,6 +506,46 @@ func (_m *User) assignValues(columns []string, values []any) error {
 // This includes values selected through modifiers, order, etc.
 func (_m *User) Value(name string) (ent.Value, error) {
 	return _m.selectValues.Get(name)
+}
+
+// QueryAiSkills queries the "ai_skills" edge of the User entity.
+func (_m *User) QueryAiSkills() *AISkillQuery {
+	return NewUserClient(_m.config).QueryAiSkills(_m)
+}
+
+// QueryAiSkillVersions queries the "ai_skill_versions" edge of the User entity.
+func (_m *User) QueryAiSkillVersions() *AISkillVersionQuery {
+	return NewUserClient(_m.config).QueryAiSkillVersions(_m)
+}
+
+// QueryAiSkillRuns queries the "ai_skill_runs" edge of the User entity.
+func (_m *User) QueryAiSkillRuns() *AISkillRunQuery {
+	return NewUserClient(_m.config).QueryAiSkillRuns(_m)
+}
+
+// QueryAiSkillLikes queries the "ai_skill_likes" edge of the User entity.
+func (_m *User) QueryAiSkillLikes() *AISkillLikeQuery {
+	return NewUserClient(_m.config).QueryAiSkillLikes(_m)
+}
+
+// QueryAiSkillReviewsSubmitted queries the "ai_skill_reviews_submitted" edge of the User entity.
+func (_m *User) QueryAiSkillReviewsSubmitted() *AISkillReviewQuery {
+	return NewUserClient(_m.config).QueryAiSkillReviewsSubmitted(_m)
+}
+
+// QueryAiSkillReviewsReviewed queries the "ai_skill_reviews_reviewed" edge of the User entity.
+func (_m *User) QueryAiSkillReviewsReviewed() *AISkillReviewQuery {
+	return NewUserClient(_m.config).QueryAiSkillReviewsReviewed(_m)
+}
+
+// QueryAiSkillSettlementsOwned queries the "ai_skill_settlements_owned" edge of the User entity.
+func (_m *User) QueryAiSkillSettlementsOwned() *AISkillSettlementQuery {
+	return NewUserClient(_m.config).QueryAiSkillSettlementsOwned(_m)
+}
+
+// QueryAiSkillSettlementsBought queries the "ai_skill_settlements_bought" edge of the User entity.
+func (_m *User) QueryAiSkillSettlementsBought() *AISkillSettlementQuery {
+	return NewUserClient(_m.config).QueryAiSkillSettlementsBought(_m)
 }
 
 // QueryAPIKeys queries the "api_keys" edge of the User entity.

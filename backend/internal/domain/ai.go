@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"slices"
 	"strings"
 	"time"
 
@@ -85,12 +86,12 @@ func NormalizeAIVisibility(raw string) string {
 }
 
 func IsValidAIVisibility(raw string) bool {
-	switch NormalizeAIVisibility(raw) {
-	case AIVisibilityPrivate, AIVisibilityUnlisted, AIVisibilityPublic:
-		return true
-	default:
-		return false
-	}
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	return slices.Contains([]string{
+		AIVisibilityPrivate,
+		AIVisibilityUnlisted,
+		AIVisibilityPublic,
+	}, normalized)
 }
 
 func NormalizeAIModerationState(raw string) string {
@@ -105,12 +106,12 @@ func NormalizeAIModerationState(raw string) string {
 }
 
 func IsValidAIModerationState(raw string) bool {
-	switch NormalizeAIModerationState(raw) {
-	case AIModerationStateNormal, AIModerationStateForcedPrivate, AIModerationStateBlocked:
-		return true
-	default:
-		return false
-	}
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	return slices.Contains([]string{
+		AIModerationStateNormal,
+		AIModerationStateForcedPrivate,
+		AIModerationStateBlocked,
+	}, normalized)
 }
 
 func EffectivePromptTemplateVisibility(visibility, moderationState string) string {

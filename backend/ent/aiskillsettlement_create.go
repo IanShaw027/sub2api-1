@@ -15,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aiskillrun"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillsettlement"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillversion"
+	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
 // AISkillSettlementCreate is the builder for creating a AISkillSettlement entity.
@@ -244,6 +245,16 @@ func (_c *AISkillSettlementCreate) SetRun(v *AISkillRun) *AISkillSettlementCreat
 	return _c.SetRunID(v.ID)
 }
 
+// SetOwnerUser sets the "owner_user" edge to the User entity.
+func (_c *AISkillSettlementCreate) SetOwnerUser(v *User) *AISkillSettlementCreate {
+	return _c.SetOwnerUserID(v.ID)
+}
+
+// SetBuyerUser sets the "buyer_user" edge to the User entity.
+func (_c *AISkillSettlementCreate) SetBuyerUser(v *User) *AISkillSettlementCreate {
+	return _c.SetBuyerUserID(v.ID)
+}
+
 // Mutation returns the AISkillSettlementMutation object of the builder.
 func (_c *AISkillSettlementCreate) Mutation() *AISkillSettlementMutation {
 	return _c.mutation
@@ -371,6 +382,12 @@ func (_c *AISkillSettlementCreate) check() error {
 	if len(_c.mutation.RunIDs()) == 0 {
 		return &ValidationError{Name: "run", err: errors.New(`ent: missing required edge "AISkillSettlement.run"`)}
 	}
+	if len(_c.mutation.OwnerUserIDs()) == 0 {
+		return &ValidationError{Name: "owner_user", err: errors.New(`ent: missing required edge "AISkillSettlement.owner_user"`)}
+	}
+	if len(_c.mutation.BuyerUserIDs()) == 0 {
+		return &ValidationError{Name: "buyer_user", err: errors.New(`ent: missing required edge "AISkillSettlement.buyer_user"`)}
+	}
 	return nil
 }
 
@@ -405,14 +422,6 @@ func (_c *AISkillSettlementCreate) createSpec() (*AISkillSettlement, *sqlgraph.C
 	if value, ok := _c.mutation.UpdatedAt(); ok {
 		_spec.SetField(aiskillsettlement.FieldUpdatedAt, field.TypeTime, value)
 		_node.UpdatedAt = value
-	}
-	if value, ok := _c.mutation.OwnerUserID(); ok {
-		_spec.SetField(aiskillsettlement.FieldOwnerUserID, field.TypeInt64, value)
-		_node.OwnerUserID = value
-	}
-	if value, ok := _c.mutation.BuyerUserID(); ok {
-		_spec.SetField(aiskillsettlement.FieldBuyerUserID, field.TypeInt64, value)
-		_node.BuyerUserID = value
 	}
 	if value, ok := _c.mutation.Status(); ok {
 		_spec.SetField(aiskillsettlement.FieldStatus, field.TypeString, value)
@@ -507,6 +516,40 @@ func (_c *AISkillSettlementCreate) createSpec() (*AISkillSettlement, *sqlgraph.C
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.RunID = nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.OwnerUserIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillsettlement.OwnerUserTable,
+			Columns: []string{aiskillsettlement.OwnerUserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.OwnerUserID = nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.BuyerUserIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillsettlement.BuyerUserTable,
+			Columns: []string{aiskillsettlement.BuyerUserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.BuyerUserID = nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
@@ -621,12 +664,6 @@ func (u *AISkillSettlementUpsert) UpdateOwnerUserID() *AISkillSettlementUpsert {
 	return u
 }
 
-// AddOwnerUserID adds v to the "owner_user_id" field.
-func (u *AISkillSettlementUpsert) AddOwnerUserID(v int64) *AISkillSettlementUpsert {
-	u.Add(aiskillsettlement.FieldOwnerUserID, v)
-	return u
-}
-
 // SetBuyerUserID sets the "buyer_user_id" field.
 func (u *AISkillSettlementUpsert) SetBuyerUserID(v int64) *AISkillSettlementUpsert {
 	u.Set(aiskillsettlement.FieldBuyerUserID, v)
@@ -636,12 +673,6 @@ func (u *AISkillSettlementUpsert) SetBuyerUserID(v int64) *AISkillSettlementUpse
 // UpdateBuyerUserID sets the "buyer_user_id" field to the value that was provided on create.
 func (u *AISkillSettlementUpsert) UpdateBuyerUserID() *AISkillSettlementUpsert {
 	u.SetExcluded(aiskillsettlement.FieldBuyerUserID)
-	return u
-}
-
-// AddBuyerUserID adds v to the "buyer_user_id" field.
-func (u *AISkillSettlementUpsert) AddBuyerUserID(v int64) *AISkillSettlementUpsert {
-	u.Add(aiskillsettlement.FieldBuyerUserID, v)
 	return u
 }
 
@@ -951,13 +982,6 @@ func (u *AISkillSettlementUpsertOne) SetOwnerUserID(v int64) *AISkillSettlementU
 	})
 }
 
-// AddOwnerUserID adds v to the "owner_user_id" field.
-func (u *AISkillSettlementUpsertOne) AddOwnerUserID(v int64) *AISkillSettlementUpsertOne {
-	return u.Update(func(s *AISkillSettlementUpsert) {
-		s.AddOwnerUserID(v)
-	})
-}
-
 // UpdateOwnerUserID sets the "owner_user_id" field to the value that was provided on create.
 func (u *AISkillSettlementUpsertOne) UpdateOwnerUserID() *AISkillSettlementUpsertOne {
 	return u.Update(func(s *AISkillSettlementUpsert) {
@@ -969,13 +993,6 @@ func (u *AISkillSettlementUpsertOne) UpdateOwnerUserID() *AISkillSettlementUpser
 func (u *AISkillSettlementUpsertOne) SetBuyerUserID(v int64) *AISkillSettlementUpsertOne {
 	return u.Update(func(s *AISkillSettlementUpsert) {
 		s.SetBuyerUserID(v)
-	})
-}
-
-// AddBuyerUserID adds v to the "buyer_user_id" field.
-func (u *AISkillSettlementUpsertOne) AddBuyerUserID(v int64) *AISkillSettlementUpsertOne {
-	return u.Update(func(s *AISkillSettlementUpsert) {
-		s.AddBuyerUserID(v)
 	})
 }
 
@@ -1491,13 +1508,6 @@ func (u *AISkillSettlementUpsertBulk) SetOwnerUserID(v int64) *AISkillSettlement
 	})
 }
 
-// AddOwnerUserID adds v to the "owner_user_id" field.
-func (u *AISkillSettlementUpsertBulk) AddOwnerUserID(v int64) *AISkillSettlementUpsertBulk {
-	return u.Update(func(s *AISkillSettlementUpsert) {
-		s.AddOwnerUserID(v)
-	})
-}
-
 // UpdateOwnerUserID sets the "owner_user_id" field to the value that was provided on create.
 func (u *AISkillSettlementUpsertBulk) UpdateOwnerUserID() *AISkillSettlementUpsertBulk {
 	return u.Update(func(s *AISkillSettlementUpsert) {
@@ -1509,13 +1519,6 @@ func (u *AISkillSettlementUpsertBulk) UpdateOwnerUserID() *AISkillSettlementUpse
 func (u *AISkillSettlementUpsertBulk) SetBuyerUserID(v int64) *AISkillSettlementUpsertBulk {
 	return u.Update(func(s *AISkillSettlementUpsert) {
 		s.SetBuyerUserID(v)
-	})
-}
-
-// AddBuyerUserID adds v to the "buyer_user_id" field.
-func (u *AISkillSettlementUpsertBulk) AddBuyerUserID(v int64) *AISkillSettlementUpsertBulk {
-	return u.Update(func(s *AISkillSettlementUpsert) {
-		s.AddBuyerUserID(v)
 	})
 }
 

@@ -73,13 +73,21 @@ func (AISkillReview) Edges() []ent.Edge {
 			Field("version_id").
 			Required().
 			Unique(),
+		edge.From("submitter_user", User.Type).
+			Ref("ai_skill_reviews_submitted").
+			Field("submitter_user_id").
+			Required().
+			Unique(),
+		edge.From("reviewer_user", User.Type).
+			Ref("ai_skill_reviews_reviewed").
+			Field("reviewer_user_id").
+			Unique(),
 	}
 }
 
 func (AISkillReview) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("skill_id"),
-		index.Fields("version_id"),
 		index.Fields("submitter_user_id"),
 		index.Fields("reviewer_user_id"),
 		index.Fields("status"),
@@ -88,6 +96,8 @@ func (AISkillReview) Indexes() []ent.Index {
 		index.Fields("usage_log_id"),
 		index.Fields("api_key_id"),
 		index.Fields("group_id"),
-		index.Fields("version_id", "status"),
+		index.Fields("version_id").
+			Unique().
+			Annotations(entsql.IndexWhere("status = 'pending'")),
 	}
 }

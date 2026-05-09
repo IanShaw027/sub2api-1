@@ -45,6 +45,11 @@ func (AISkillLike) Edges() []ent.Edge {
 			Field("skill_id").
 			Required().
 			Unique(),
+		edge.From("user", User.Type).
+			Ref("ai_skill_likes").
+			Field("user_id").
+			Required().
+			Unique(),
 	}
 }
 

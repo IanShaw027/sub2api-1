@@ -13,6 +13,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aiskill"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillrun"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillversion"
+	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
 // AISkillRun is the model entity for the AISkillRun schema.
@@ -66,11 +67,13 @@ type AISkillRunEdges struct {
 	Skill *AISkill `json:"skill,omitempty"`
 	// Version holds the value of the version edge.
 	Version *AISkillVersion `json:"version,omitempty"`
+	// User holds the value of the user edge.
+	User *User `json:"user,omitempty"`
 	// Settlements holds the value of the settlements edge.
 	Settlements []*AISkillSettlement `json:"settlements,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [3]bool
+	loadedTypes [4]bool
 }
 
 // SkillOrErr returns the Skill value or an error if the edge
@@ -95,10 +98,21 @@ func (e AISkillRunEdges) VersionOrErr() (*AISkillVersion, error) {
 	return nil, &NotLoadedError{edge: "version"}
 }
 
+// UserOrErr returns the User value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e AISkillRunEdges) UserOrErr() (*User, error) {
+	if e.User != nil {
+		return e.User, nil
+	} else if e.loadedTypes[2] {
+		return nil, &NotFoundError{label: user.Label}
+	}
+	return nil, &NotLoadedError{edge: "user"}
+}
+
 // SettlementsOrErr returns the Settlements value or an error if the edge
 // was not loaded in eager-loading.
 func (e AISkillRunEdges) SettlementsOrErr() ([]*AISkillSettlement, error) {
-	if e.loadedTypes[2] {
+	if e.loadedTypes[3] {
 		return e.Settlements, nil
 	}
 	return nil, &NotLoadedError{edge: "settlements"}
@@ -274,6 +288,11 @@ func (_m *AISkillRun) QuerySkill() *AISkillQuery {
 // QueryVersion queries the "version" edge of the AISkillRun entity.
 func (_m *AISkillRun) QueryVersion() *AISkillVersionQuery {
 	return NewAISkillRunClient(_m.config).QueryVersion(_m)
+}
+
+// QueryUser queries the "user" edge of the AISkillRun entity.
+func (_m *AISkillRun) QueryUser() *UserQuery {
+	return NewAISkillRunClient(_m.config).QueryUser(_m)
 }
 
 // QuerySettlements queries the "settlements" edge of the AISkillRun entity.

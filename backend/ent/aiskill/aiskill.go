@@ -69,6 +69,8 @@ const (
 	FieldAPIKeyID = "api_key_id"
 	// FieldGroupID holds the string denoting the group_id field in the database.
 	FieldGroupID = "group_id"
+	// EdgeUser holds the string denoting the user edge name in mutations.
+	EdgeUser = "user"
 	// EdgeVersions holds the string denoting the versions edge name in mutations.
 	EdgeVersions = "versions"
 	// EdgeRuns holds the string denoting the runs edge name in mutations.
@@ -81,6 +83,13 @@ const (
 	EdgeSettlements = "settlements"
 	// Table holds the table name of the aiskill in the database.
 	Table = "ai_skills"
+	// UserTable is the table that holds the user relation/edge.
+	UserTable = "ai_skills"
+	// UserInverseTable is the table name for the User entity.
+	// It exists in this package in order to avoid circular dependency with the "user" package.
+	UserInverseTable = "users"
+	// UserColumn is the table column denoting the user relation/edge.
+	UserColumn = "user_id"
 	// VersionsTable is the table that holds the versions relation/edge.
 	VersionsTable = "ai_skill_versions"
 	// VersionsInverseTable is the table name for the AISkillVersion entity.
@@ -343,6 +352,13 @@ func ByGroupID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldGroupID, opts...).ToFunc()
 }
 
+// ByUserField orders the results by user field.
+func ByUserField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newUserStep(), sql.OrderByField(field, opts...))
+	}
+}
+
 // ByVersionsCount orders the results by versions count.
 func ByVersionsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -411,6 +427,13 @@ func BySettlements(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	return func(s *sql.Selector) {
 		sqlgraph.OrderByNeighborTerms(s, newSettlementsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
+}
+func newUserStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(UserInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, UserTable, UserColumn),
+	)
 }
 func newVersionsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(

@@ -15,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aiskill"
 	"github.com/Wei-Shaw/sub2api/ent/aiskilllike"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
 // AISkillLikeQuery is the builder for querying AISkillLike entities.
@@ -25,6 +26,7 @@ type AISkillLikeQuery struct {
 	inters     []Interceptor
 	predicates []predicate.AISkillLike
 	withSkill  *AISkillQuery
+	withUser   *UserQuery
 	modifiers  []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
@@ -77,6 +79,28 @@ func (_q *AISkillLikeQuery) QuerySkill() *AISkillQuery {
 			sqlgraph.From(aiskilllike.Table, aiskilllike.FieldID, selector),
 			sqlgraph.To(aiskill.Table, aiskill.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, aiskilllike.SkillTable, aiskilllike.SkillColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryUser chains the current query on the "user" edge.
+func (_q *AISkillLikeQuery) QueryUser() *UserQuery {
+	query := (&UserClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskilllike.Table, aiskilllike.FieldID, selector),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aiskilllike.UserTable, aiskilllike.UserColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -277,6 +301,7 @@ func (_q *AISkillLikeQuery) Clone() *AISkillLikeQuery {
 		inters:     append([]Interceptor{}, _q.inters...),
 		predicates: append([]predicate.AISkillLike{}, _q.predicates...),
 		withSkill:  _q.withSkill.Clone(),
+		withUser:   _q.withUser.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -291,6 +316,17 @@ func (_q *AISkillLikeQuery) WithSkill(opts ...func(*AISkillQuery)) *AISkillLikeQ
 		opt(query)
 	}
 	_q.withSkill = query
+	return _q
+}
+
+// WithUser tells the query-builder to eager-load the nodes that are connected to
+// the "user" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *AISkillLikeQuery) WithUser(opts ...func(*UserQuery)) *AISkillLikeQuery {
+	query := (&UserClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withUser = query
 	return _q
 }
 
@@ -372,8 +408,9 @@ func (_q *AISkillLikeQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*
 	var (
 		nodes       = []*AISkillLike{}
 		_spec       = _q.querySpec()
-		loadedTypes = [1]bool{
+		loadedTypes = [2]bool{
 			_q.withSkill != nil,
+			_q.withUser != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -403,6 +440,12 @@ func (_q *AISkillLikeQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*
 			return nil, err
 		}
 	}
+	if query := _q.withUser; query != nil {
+		if err := _q.loadUser(ctx, query, nodes, nil,
+			func(n *AISkillLike, e *User) { n.Edges.User = e }); err != nil {
+			return nil, err
+		}
+	}
 	return nodes, nil
 }
 
@@ -428,6 +471,35 @@ func (_q *AISkillLikeQuery) loadSkill(ctx context.Context, query *AISkillQuery, 
 		nodes, ok := nodeids[n.ID]
 		if !ok {
 			return fmt.Errorf(`unexpected foreign-key "skill_id" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
+}
+func (_q *AISkillLikeQuery) loadUser(ctx context.Context, query *UserQuery, nodes []*AISkillLike, init func(*AISkillLike), assign func(*AISkillLike, *User)) error {
+	ids := make([]int64, 0, len(nodes))
+	nodeids := make(map[int64][]*AISkillLike)
+	for i := range nodes {
+		fk := nodes[i].UserID
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(user.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "user_id" returned %v`, n.ID)
 		}
 		for i := range nodes {
 			assign(nodes[i], n)
@@ -466,6 +538,9 @@ func (_q *AISkillLikeQuery) querySpec() *sqlgraph.QuerySpec {
 		}
 		if _q.withSkill != nil {
 			_spec.Node.AddColumnOnce(aiskilllike.FieldSkillID)
+		}
+		if _q.withUser != nil {
+			_spec.Node.AddColumnOnce(aiskilllike.FieldUserID)
 		}
 	}
 	if ps := _q.predicates; len(ps) > 0 {

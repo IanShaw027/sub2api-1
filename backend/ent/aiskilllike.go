@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/Wei-Shaw/sub2api/ent/aiskill"
 	"github.com/Wei-Shaw/sub2api/ent/aiskilllike"
+	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
 // AISkillLike is the model entity for the AISkillLike schema.
@@ -44,9 +45,11 @@ type AISkillLike struct {
 type AISkillLikeEdges struct {
 	// Skill holds the value of the skill edge.
 	Skill *AISkill `json:"skill,omitempty"`
+	// User holds the value of the user edge.
+	User *User `json:"user,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [2]bool
 }
 
 // SkillOrErr returns the Skill value or an error if the edge
@@ -58,6 +61,17 @@ func (e AISkillLikeEdges) SkillOrErr() (*AISkill, error) {
 		return nil, &NotFoundError{label: aiskill.Label}
 	}
 	return nil, &NotLoadedError{edge: "skill"}
+}
+
+// UserOrErr returns the User value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e AISkillLikeEdges) UserOrErr() (*User, error) {
+	if e.User != nil {
+		return e.User, nil
+	} else if e.loadedTypes[1] {
+		return nil, &NotFoundError{label: user.Label}
+	}
+	return nil, &NotLoadedError{edge: "user"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -160,6 +174,11 @@ func (_m *AISkillLike) Value(name string) (ent.Value, error) {
 // QuerySkill queries the "skill" edge of the AISkillLike entity.
 func (_m *AISkillLike) QuerySkill() *AISkillQuery {
 	return NewAISkillLikeClient(_m.config).QuerySkill(_m)
+}
+
+// QueryUser queries the "user" edge of the AISkillLike entity.
+func (_m *AISkillLike) QueryUser() *UserQuery {
+	return NewAISkillLikeClient(_m.config).QueryUser(_m)
 }
 
 // Update returns a builder for updating this AISkillLike.

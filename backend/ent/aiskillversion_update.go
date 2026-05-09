@@ -17,6 +17,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aiskillsettlement"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillversion"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
 // AISkillVersionUpdate is the builder for updating AISkillVersion entities.
@@ -74,7 +75,6 @@ func (_u *AISkillVersionUpdate) SetNillableSkillID(v *int64) *AISkillVersionUpda
 
 // SetUserID sets the "user_id" field.
 func (_u *AISkillVersionUpdate) SetUserID(v int64) *AISkillVersionUpdate {
-	_u.mutation.ResetUserID()
 	_u.mutation.SetUserID(v)
 	return _u
 }
@@ -84,12 +84,6 @@ func (_u *AISkillVersionUpdate) SetNillableUserID(v *int64) *AISkillVersionUpdat
 	if v != nil {
 		_u.SetUserID(*v)
 	}
-	return _u
-}
-
-// AddUserID adds value to the "user_id" field.
-func (_u *AISkillVersionUpdate) AddUserID(v int64) *AISkillVersionUpdate {
-	_u.mutation.AddUserID(v)
 	return _u
 }
 
@@ -419,6 +413,11 @@ func (_u *AISkillVersionUpdate) SetSkill(v *AISkill) *AISkillVersionUpdate {
 	return _u.SetSkillID(v.ID)
 }
 
+// SetUser sets the "user" edge to the User entity.
+func (_u *AISkillVersionUpdate) SetUser(v *User) *AISkillVersionUpdate {
+	return _u.SetUserID(v.ID)
+}
+
 // AddRunIDs adds the "runs" edge to the AISkillRun entity by IDs.
 func (_u *AISkillVersionUpdate) AddRunIDs(ids ...int64) *AISkillVersionUpdate {
 	_u.mutation.AddRunIDs(ids...)
@@ -472,6 +471,12 @@ func (_u *AISkillVersionUpdate) Mutation() *AISkillVersionMutation {
 // ClearSkill clears the "skill" edge to the AISkill entity.
 func (_u *AISkillVersionUpdate) ClearSkill() *AISkillVersionUpdate {
 	_u.mutation.ClearSkill()
+	return _u
+}
+
+// ClearUser clears the "user" edge to the User entity.
+func (_u *AISkillVersionUpdate) ClearUser() *AISkillVersionUpdate {
+	_u.mutation.ClearUser()
 	return _u
 }
 
@@ -605,6 +610,9 @@ func (_u *AISkillVersionUpdate) check() error {
 	if _u.mutation.SkillCleared() && len(_u.mutation.SkillIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "AISkillVersion.skill"`)
 	}
+	if _u.mutation.UserCleared() && len(_u.mutation.UserIDs()) > 0 {
+		return errors.New(`ent: clearing a required unique edge "AISkillVersion.user"`)
+	}
 	return nil
 }
 
@@ -628,12 +636,6 @@ func (_u *AISkillVersionUpdate) sqlSave(ctx context.Context) (_node int, err err
 	}
 	if _u.mutation.DeletedAtCleared() {
 		_spec.ClearField(aiskillversion.FieldDeletedAt, field.TypeTime)
-	}
-	if value, ok := _u.mutation.UserID(); ok {
-		_spec.SetField(aiskillversion.FieldUserID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.AddedUserID(); ok {
-		_spec.AddField(aiskillversion.FieldUserID, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.Version(); ok {
 		_spec.SetField(aiskillversion.FieldVersion, field.TypeInt, value)
@@ -759,6 +761,35 @@ func (_u *AISkillVersionUpdate) sqlSave(ctx context.Context) (_node int, err err
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(aiskill.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.UserCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillversion.UserTable,
+			Columns: []string{aiskillversion.UserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.UserIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillversion.UserTable,
+			Columns: []string{aiskillversion.UserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -963,7 +994,6 @@ func (_u *AISkillVersionUpdateOne) SetNillableSkillID(v *int64) *AISkillVersionU
 
 // SetUserID sets the "user_id" field.
 func (_u *AISkillVersionUpdateOne) SetUserID(v int64) *AISkillVersionUpdateOne {
-	_u.mutation.ResetUserID()
 	_u.mutation.SetUserID(v)
 	return _u
 }
@@ -973,12 +1003,6 @@ func (_u *AISkillVersionUpdateOne) SetNillableUserID(v *int64) *AISkillVersionUp
 	if v != nil {
 		_u.SetUserID(*v)
 	}
-	return _u
-}
-
-// AddUserID adds value to the "user_id" field.
-func (_u *AISkillVersionUpdateOne) AddUserID(v int64) *AISkillVersionUpdateOne {
-	_u.mutation.AddUserID(v)
 	return _u
 }
 
@@ -1308,6 +1332,11 @@ func (_u *AISkillVersionUpdateOne) SetSkill(v *AISkill) *AISkillVersionUpdateOne
 	return _u.SetSkillID(v.ID)
 }
 
+// SetUser sets the "user" edge to the User entity.
+func (_u *AISkillVersionUpdateOne) SetUser(v *User) *AISkillVersionUpdateOne {
+	return _u.SetUserID(v.ID)
+}
+
 // AddRunIDs adds the "runs" edge to the AISkillRun entity by IDs.
 func (_u *AISkillVersionUpdateOne) AddRunIDs(ids ...int64) *AISkillVersionUpdateOne {
 	_u.mutation.AddRunIDs(ids...)
@@ -1361,6 +1390,12 @@ func (_u *AISkillVersionUpdateOne) Mutation() *AISkillVersionMutation {
 // ClearSkill clears the "skill" edge to the AISkill entity.
 func (_u *AISkillVersionUpdateOne) ClearSkill() *AISkillVersionUpdateOne {
 	_u.mutation.ClearSkill()
+	return _u
+}
+
+// ClearUser clears the "user" edge to the User entity.
+func (_u *AISkillVersionUpdateOne) ClearUser() *AISkillVersionUpdateOne {
+	_u.mutation.ClearUser()
 	return _u
 }
 
@@ -1507,6 +1542,9 @@ func (_u *AISkillVersionUpdateOne) check() error {
 	if _u.mutation.SkillCleared() && len(_u.mutation.SkillIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "AISkillVersion.skill"`)
 	}
+	if _u.mutation.UserCleared() && len(_u.mutation.UserIDs()) > 0 {
+		return errors.New(`ent: clearing a required unique edge "AISkillVersion.user"`)
+	}
 	return nil
 }
 
@@ -1547,12 +1585,6 @@ func (_u *AISkillVersionUpdateOne) sqlSave(ctx context.Context) (_node *AISkillV
 	}
 	if _u.mutation.DeletedAtCleared() {
 		_spec.ClearField(aiskillversion.FieldDeletedAt, field.TypeTime)
-	}
-	if value, ok := _u.mutation.UserID(); ok {
-		_spec.SetField(aiskillversion.FieldUserID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.AddedUserID(); ok {
-		_spec.AddField(aiskillversion.FieldUserID, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.Version(); ok {
 		_spec.SetField(aiskillversion.FieldVersion, field.TypeInt, value)
@@ -1678,6 +1710,35 @@ func (_u *AISkillVersionUpdateOne) sqlSave(ctx context.Context) (_node *AISkillV
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(aiskill.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.UserCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillversion.UserTable,
+			Columns: []string{aiskillversion.UserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.UserIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillversion.UserTable,
+			Columns: []string{aiskillversion.UserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

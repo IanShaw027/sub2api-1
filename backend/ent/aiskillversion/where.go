@@ -320,26 +320,6 @@ func UserIDNotIn(vs ...int64) predicate.AISkillVersion {
 	return predicate.AISkillVersion(sql.FieldNotIn(FieldUserID, vs...))
 }
 
-// UserIDGT applies the GT predicate on the "user_id" field.
-func UserIDGT(v int64) predicate.AISkillVersion {
-	return predicate.AISkillVersion(sql.FieldGT(FieldUserID, v))
-}
-
-// UserIDGTE applies the GTE predicate on the "user_id" field.
-func UserIDGTE(v int64) predicate.AISkillVersion {
-	return predicate.AISkillVersion(sql.FieldGTE(FieldUserID, v))
-}
-
-// UserIDLT applies the LT predicate on the "user_id" field.
-func UserIDLT(v int64) predicate.AISkillVersion {
-	return predicate.AISkillVersion(sql.FieldLT(FieldUserID, v))
-}
-
-// UserIDLTE applies the LTE predicate on the "user_id" field.
-func UserIDLTE(v int64) predicate.AISkillVersion {
-	return predicate.AISkillVersion(sql.FieldLTE(FieldUserID, v))
-}
-
 // VersionEQ applies the EQ predicate on the "version" field.
 func VersionEQ(v int) predicate.AISkillVersion {
 	return predicate.AISkillVersion(sql.FieldEQ(FieldVersion, v))
@@ -1200,6 +1180,29 @@ func HasSkill() predicate.AISkillVersion {
 func HasSkillWith(preds ...predicate.AISkill) predicate.AISkillVersion {
 	return predicate.AISkillVersion(func(s *sql.Selector) {
 		step := newSkillStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasUser applies the HasEdge predicate on the "user" edge.
+func HasUser() predicate.AISkillVersion {
+	return predicate.AISkillVersion(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, UserTable, UserColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasUserWith applies the HasEdge predicate on the "user" edge with a given conditions (other predicates).
+func HasUserWith(preds ...predicate.User) predicate.AISkillVersion {
+	return predicate.AISkillVersion(func(s *sql.Selector) {
+		step := newUserStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

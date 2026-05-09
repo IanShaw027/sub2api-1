@@ -75,6 +75,11 @@ func (AISkill) Fields() []ent.Field {
 
 func (AISkill) Edges() []ent.Edge {
 	return []ent.Edge{
+		edge.From("user", User.Type).
+			Ref("ai_skills").
+			Field("user_id").
+			Required().
+			Unique(),
 		edge.To("versions", AISkillVersion.Type),
 		edge.To("runs", AISkillRun.Type),
 		edge.To("reviews", AISkillReview.Type),

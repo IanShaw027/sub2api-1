@@ -215,26 +215,6 @@ func UserIDNotIn(vs ...int64) predicate.AISkillLike {
 	return predicate.AISkillLike(sql.FieldNotIn(FieldUserID, vs...))
 }
 
-// UserIDGT applies the GT predicate on the "user_id" field.
-func UserIDGT(v int64) predicate.AISkillLike {
-	return predicate.AISkillLike(sql.FieldGT(FieldUserID, v))
-}
-
-// UserIDGTE applies the GTE predicate on the "user_id" field.
-func UserIDGTE(v int64) predicate.AISkillLike {
-	return predicate.AISkillLike(sql.FieldGTE(FieldUserID, v))
-}
-
-// UserIDLT applies the LT predicate on the "user_id" field.
-func UserIDLT(v int64) predicate.AISkillLike {
-	return predicate.AISkillLike(sql.FieldLT(FieldUserID, v))
-}
-
-// UserIDLTE applies the LTE predicate on the "user_id" field.
-func UserIDLTE(v int64) predicate.AISkillLike {
-	return predicate.AISkillLike(sql.FieldLTE(FieldUserID, v))
-}
-
 // RequestIDEQ applies the EQ predicate on the "request_id" field.
 func RequestIDEQ(v string) predicate.AISkillLike {
 	return predicate.AISkillLike(sql.FieldEQ(FieldRequestID, v))
@@ -475,6 +455,29 @@ func HasSkill() predicate.AISkillLike {
 func HasSkillWith(preds ...predicate.AISkill) predicate.AISkillLike {
 	return predicate.AISkillLike(func(s *sql.Selector) {
 		step := newSkillStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasUser applies the HasEdge predicate on the "user" edge.
+func HasUser() predicate.AISkillLike {
+	return predicate.AISkillLike(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, UserTable, UserColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasUserWith applies the HasEdge predicate on the "user" edge with a given conditions (other predicates).
+func HasUserWith(preds ...predicate.User) predicate.AISkillLike {
+	return predicate.AISkillLike(func(s *sql.Selector) {
+		step := newUserStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

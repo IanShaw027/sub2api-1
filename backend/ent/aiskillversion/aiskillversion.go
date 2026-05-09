@@ -63,6 +63,8 @@ const (
 	FieldGroupID = "group_id"
 	// EdgeSkill holds the string denoting the skill edge name in mutations.
 	EdgeSkill = "skill"
+	// EdgeUser holds the string denoting the user edge name in mutations.
+	EdgeUser = "user"
 	// EdgeRuns holds the string denoting the runs edge name in mutations.
 	EdgeRuns = "runs"
 	// EdgeReviews holds the string denoting the reviews edge name in mutations.
@@ -78,6 +80,13 @@ const (
 	SkillInverseTable = "ai_skills"
 	// SkillColumn is the table column denoting the skill relation/edge.
 	SkillColumn = "skill_id"
+	// UserTable is the table that holds the user relation/edge.
+	UserTable = "ai_skill_versions"
+	// UserInverseTable is the table name for the User entity.
+	// It exists in this package in order to avoid circular dependency with the "user" package.
+	UserInverseTable = "users"
+	// UserColumn is the table column denoting the user relation/edge.
+	UserColumn = "user_id"
 	// RunsTable is the table that holds the runs relation/edge.
 	RunsTable = "ai_skill_runs"
 	// RunsInverseTable is the table name for the AISkillRun entity.
@@ -285,6 +294,13 @@ func BySkillField(field string, opts ...sql.OrderTermOption) OrderOption {
 	}
 }
 
+// ByUserField orders the results by user field.
+func ByUserField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newUserStep(), sql.OrderByField(field, opts...))
+	}
+}
+
 // ByRunsCount orders the results by runs count.
 func ByRunsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -331,6 +347,13 @@ func newSkillStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(SkillInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, SkillTable, SkillColumn),
+	)
+}
+func newUserStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(UserInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, UserTable, UserColumn),
 	)
 }
 func newRunsStep() *sqlgraph.Step {

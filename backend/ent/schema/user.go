@@ -119,6 +119,22 @@ func (User) Fields() []ent.Field {
 
 func (User) Edges() []ent.Edge {
 	return []ent.Edge{
+		edge.To("ai_skills", AISkill.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.To("ai_skill_versions", AISkillVersion.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.To("ai_skill_runs", AISkillRun.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.To("ai_skill_likes", AISkillLike.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.To("ai_skill_reviews_submitted", AISkillReview.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.To("ai_skill_reviews_reviewed", AISkillReview.Type).
+			Annotations(entsql.OnDelete(entsql.SetNull)),
+		edge.To("ai_skill_settlements_owned", AISkillSettlement.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.To("ai_skill_settlements_bought", AISkillSettlement.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)),
 		edge.To("api_keys", APIKey.Type),
 		edge.To("redeem_codes", RedeemCode.Type),
 		edge.To("subscriptions", UserSubscription.Type),

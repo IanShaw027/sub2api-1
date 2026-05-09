@@ -50,6 +50,10 @@ const (
 	EdgeSkill = "skill"
 	// EdgeVersion holds the string denoting the version edge name in mutations.
 	EdgeVersion = "version"
+	// EdgeSubmitterUser holds the string denoting the submitter_user edge name in mutations.
+	EdgeSubmitterUser = "submitter_user"
+	// EdgeReviewerUser holds the string denoting the reviewer_user edge name in mutations.
+	EdgeReviewerUser = "reviewer_user"
 	// Table holds the table name of the aiskillreview in the database.
 	Table = "ai_skill_reviews"
 	// SkillTable is the table that holds the skill relation/edge.
@@ -66,6 +70,20 @@ const (
 	VersionInverseTable = "ai_skill_versions"
 	// VersionColumn is the table column denoting the version relation/edge.
 	VersionColumn = "version_id"
+	// SubmitterUserTable is the table that holds the submitter_user relation/edge.
+	SubmitterUserTable = "ai_skill_reviews"
+	// SubmitterUserInverseTable is the table name for the User entity.
+	// It exists in this package in order to avoid circular dependency with the "user" package.
+	SubmitterUserInverseTable = "users"
+	// SubmitterUserColumn is the table column denoting the submitter_user relation/edge.
+	SubmitterUserColumn = "submitter_user_id"
+	// ReviewerUserTable is the table that holds the reviewer_user relation/edge.
+	ReviewerUserTable = "ai_skill_reviews"
+	// ReviewerUserInverseTable is the table name for the User entity.
+	// It exists in this package in order to avoid circular dependency with the "user" package.
+	ReviewerUserInverseTable = "users"
+	// ReviewerUserColumn is the table column denoting the reviewer_user relation/edge.
+	ReviewerUserColumn = "reviewer_user_id"
 )
 
 // Columns holds all SQL columns for aiskillreview fields.
@@ -209,6 +227,20 @@ func ByVersionField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newVersionStep(), sql.OrderByField(field, opts...))
 	}
 }
+
+// BySubmitterUserField orders the results by submitter_user field.
+func BySubmitterUserField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newSubmitterUserStep(), sql.OrderByField(field, opts...))
+	}
+}
+
+// ByReviewerUserField orders the results by reviewer_user field.
+func ByReviewerUserField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newReviewerUserStep(), sql.OrderByField(field, opts...))
+	}
+}
 func newSkillStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -221,5 +253,19 @@ func newVersionStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(VersionInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, VersionTable, VersionColumn),
+	)
+}
+func newSubmitterUserStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(SubmitterUserInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, SubmitterUserTable, SubmitterUserColumn),
+	)
+}
+func newReviewerUserStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ReviewerUserInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, ReviewerUserTable, ReviewerUserColumn),
 	)
 }

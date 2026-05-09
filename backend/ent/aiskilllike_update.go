@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aiskill"
 	"github.com/Wei-Shaw/sub2api/ent/aiskilllike"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
 // AISkillLikeUpdate is the builder for updating AISkillLike entities.
@@ -51,7 +52,6 @@ func (_u *AISkillLikeUpdate) SetNillableSkillID(v *int64) *AISkillLikeUpdate {
 
 // SetUserID sets the "user_id" field.
 func (_u *AISkillLikeUpdate) SetUserID(v int64) *AISkillLikeUpdate {
-	_u.mutation.ResetUserID()
 	_u.mutation.SetUserID(v)
 	return _u
 }
@@ -61,12 +61,6 @@ func (_u *AISkillLikeUpdate) SetNillableUserID(v *int64) *AISkillLikeUpdate {
 	if v != nil {
 		_u.SetUserID(*v)
 	}
-	return _u
-}
-
-// AddUserID adds value to the "user_id" field.
-func (_u *AISkillLikeUpdate) AddUserID(v int64) *AISkillLikeUpdate {
-	_u.mutation.AddUserID(v)
 	return _u
 }
 
@@ -176,6 +170,11 @@ func (_u *AISkillLikeUpdate) SetSkill(v *AISkill) *AISkillLikeUpdate {
 	return _u.SetSkillID(v.ID)
 }
 
+// SetUser sets the "user" edge to the User entity.
+func (_u *AISkillLikeUpdate) SetUser(v *User) *AISkillLikeUpdate {
+	return _u.SetUserID(v.ID)
+}
+
 // Mutation returns the AISkillLikeMutation object of the builder.
 func (_u *AISkillLikeUpdate) Mutation() *AISkillLikeMutation {
 	return _u.mutation
@@ -184,6 +183,12 @@ func (_u *AISkillLikeUpdate) Mutation() *AISkillLikeMutation {
 // ClearSkill clears the "skill" edge to the AISkill entity.
 func (_u *AISkillLikeUpdate) ClearSkill() *AISkillLikeUpdate {
 	_u.mutation.ClearSkill()
+	return _u
+}
+
+// ClearUser clears the "user" edge to the User entity.
+func (_u *AISkillLikeUpdate) ClearUser() *AISkillLikeUpdate {
+	_u.mutation.ClearUser()
 	return _u
 }
 
@@ -233,6 +238,9 @@ func (_u *AISkillLikeUpdate) check() error {
 	if _u.mutation.SkillCleared() && len(_u.mutation.SkillIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "AISkillLike.skill"`)
 	}
+	if _u.mutation.UserCleared() && len(_u.mutation.UserIDs()) > 0 {
+		return errors.New(`ent: clearing a required unique edge "AISkillLike.user"`)
+	}
 	return nil
 }
 
@@ -250,12 +258,6 @@ func (_u *AISkillLikeUpdate) sqlSave(ctx context.Context) (_node int, err error)
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(aiskilllike.FieldUpdatedAt, field.TypeTime, value)
-	}
-	if value, ok := _u.mutation.UserID(); ok {
-		_spec.SetField(aiskilllike.FieldUserID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.AddedUserID(); ok {
-		_spec.AddField(aiskilllike.FieldUserID, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.RequestID(); ok {
 		_spec.SetField(aiskilllike.FieldRequestID, field.TypeString, value)
@@ -319,6 +321,35 @@ func (_u *AISkillLikeUpdate) sqlSave(ctx context.Context) (_node int, err error)
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.UserCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskilllike.UserTable,
+			Columns: []string{aiskilllike.UserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.UserIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskilllike.UserTable,
+			Columns: []string{aiskilllike.UserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{aiskilllike.Label}
@@ -361,7 +392,6 @@ func (_u *AISkillLikeUpdateOne) SetNillableSkillID(v *int64) *AISkillLikeUpdateO
 
 // SetUserID sets the "user_id" field.
 func (_u *AISkillLikeUpdateOne) SetUserID(v int64) *AISkillLikeUpdateOne {
-	_u.mutation.ResetUserID()
 	_u.mutation.SetUserID(v)
 	return _u
 }
@@ -371,12 +401,6 @@ func (_u *AISkillLikeUpdateOne) SetNillableUserID(v *int64) *AISkillLikeUpdateOn
 	if v != nil {
 		_u.SetUserID(*v)
 	}
-	return _u
-}
-
-// AddUserID adds value to the "user_id" field.
-func (_u *AISkillLikeUpdateOne) AddUserID(v int64) *AISkillLikeUpdateOne {
-	_u.mutation.AddUserID(v)
 	return _u
 }
 
@@ -486,6 +510,11 @@ func (_u *AISkillLikeUpdateOne) SetSkill(v *AISkill) *AISkillLikeUpdateOne {
 	return _u.SetSkillID(v.ID)
 }
 
+// SetUser sets the "user" edge to the User entity.
+func (_u *AISkillLikeUpdateOne) SetUser(v *User) *AISkillLikeUpdateOne {
+	return _u.SetUserID(v.ID)
+}
+
 // Mutation returns the AISkillLikeMutation object of the builder.
 func (_u *AISkillLikeUpdateOne) Mutation() *AISkillLikeMutation {
 	return _u.mutation
@@ -494,6 +523,12 @@ func (_u *AISkillLikeUpdateOne) Mutation() *AISkillLikeMutation {
 // ClearSkill clears the "skill" edge to the AISkill entity.
 func (_u *AISkillLikeUpdateOne) ClearSkill() *AISkillLikeUpdateOne {
 	_u.mutation.ClearSkill()
+	return _u
+}
+
+// ClearUser clears the "user" edge to the User entity.
+func (_u *AISkillLikeUpdateOne) ClearUser() *AISkillLikeUpdateOne {
+	_u.mutation.ClearUser()
 	return _u
 }
 
@@ -556,6 +591,9 @@ func (_u *AISkillLikeUpdateOne) check() error {
 	if _u.mutation.SkillCleared() && len(_u.mutation.SkillIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "AISkillLike.skill"`)
 	}
+	if _u.mutation.UserCleared() && len(_u.mutation.UserIDs()) > 0 {
+		return errors.New(`ent: clearing a required unique edge "AISkillLike.user"`)
+	}
 	return nil
 }
 
@@ -590,12 +628,6 @@ func (_u *AISkillLikeUpdateOne) sqlSave(ctx context.Context) (_node *AISkillLike
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(aiskilllike.FieldUpdatedAt, field.TypeTime, value)
-	}
-	if value, ok := _u.mutation.UserID(); ok {
-		_spec.SetField(aiskilllike.FieldUserID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.AddedUserID(); ok {
-		_spec.AddField(aiskilllike.FieldUserID, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.RequestID(); ok {
 		_spec.SetField(aiskilllike.FieldRequestID, field.TypeString, value)
@@ -652,6 +684,35 @@ func (_u *AISkillLikeUpdateOne) sqlSave(ctx context.Context) (_node *AISkillLike
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(aiskill.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.UserCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskilllike.UserTable,
+			Columns: []string{aiskilllike.UserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.UserIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskilllike.UserTable,
+			Columns: []string{aiskilllike.UserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

@@ -330,26 +330,6 @@ func UserIDNotIn(vs ...int64) predicate.AISkill {
 	return predicate.AISkill(sql.FieldNotIn(FieldUserID, vs...))
 }
 
-// UserIDGT applies the GT predicate on the "user_id" field.
-func UserIDGT(v int64) predicate.AISkill {
-	return predicate.AISkill(sql.FieldGT(FieldUserID, v))
-}
-
-// UserIDGTE applies the GTE predicate on the "user_id" field.
-func UserIDGTE(v int64) predicate.AISkill {
-	return predicate.AISkill(sql.FieldGTE(FieldUserID, v))
-}
-
-// UserIDLT applies the LT predicate on the "user_id" field.
-func UserIDLT(v int64) predicate.AISkill {
-	return predicate.AISkill(sql.FieldLT(FieldUserID, v))
-}
-
-// UserIDLTE applies the LTE predicate on the "user_id" field.
-func UserIDLTE(v int64) predicate.AISkill {
-	return predicate.AISkill(sql.FieldLTE(FieldUserID, v))
-}
-
 // SkillTypeEQ applies the EQ predicate on the "skill_type" field.
 func SkillTypeEQ(v string) predicate.AISkill {
 	return predicate.AISkill(sql.FieldEQ(FieldSkillType, v))
@@ -1523,6 +1503,29 @@ func GroupIDIsNil() predicate.AISkill {
 // GroupIDNotNil applies the NotNil predicate on the "group_id" field.
 func GroupIDNotNil() predicate.AISkill {
 	return predicate.AISkill(sql.FieldNotNull(FieldGroupID))
+}
+
+// HasUser applies the HasEdge predicate on the "user" edge.
+func HasUser() predicate.AISkill {
+	return predicate.AISkill(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, UserTable, UserColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasUserWith applies the HasEdge predicate on the "user" edge with a given conditions (other predicates).
+func HasUserWith(preds ...predicate.User) predicate.AISkill {
+	return predicate.AISkill(func(s *sql.Selector) {
+		step := newUserStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
 }
 
 // HasVersions applies the HasEdge predicate on the "versions" edge.

@@ -13,6 +13,12 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/Wei-Shaw/sub2api/ent/aiskill"
+	"github.com/Wei-Shaw/sub2api/ent/aiskilllike"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillreview"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillrun"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillsettlement"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillversion"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
@@ -32,24 +38,32 @@ import (
 // UserQuery is the builder for querying User entities.
 type UserQuery struct {
 	config
-	ctx                       *QueryContext
-	order                     []user.OrderOption
-	inters                    []Interceptor
-	predicates                []predicate.User
-	withAPIKeys               *APIKeyQuery
-	withRedeemCodes           *RedeemCodeQuery
-	withSubscriptions         *UserSubscriptionQuery
-	withAssignedSubscriptions *UserSubscriptionQuery
-	withAnnouncementReads     *AnnouncementReadQuery
-	withAllowedGroups         *GroupQuery
-	withUsageLogs             *UsageLogQuery
-	withAttributeValues       *UserAttributeValueQuery
-	withPromoCodeUsages       *PromoCodeUsageQuery
-	withPaymentOrders         *PaymentOrderQuery
-	withAuthIdentities        *AuthIdentityQuery
-	withPendingAuthSessions   *PendingAuthSessionQuery
-	withUserAllowedGroups     *UserAllowedGroupQuery
-	modifiers                 []func(*sql.Selector)
+	ctx                          *QueryContext
+	order                        []user.OrderOption
+	inters                       []Interceptor
+	predicates                   []predicate.User
+	withAiSkills                 *AISkillQuery
+	withAiSkillVersions          *AISkillVersionQuery
+	withAiSkillRuns              *AISkillRunQuery
+	withAiSkillLikes             *AISkillLikeQuery
+	withAiSkillReviewsSubmitted  *AISkillReviewQuery
+	withAiSkillReviewsReviewed   *AISkillReviewQuery
+	withAiSkillSettlementsOwned  *AISkillSettlementQuery
+	withAiSkillSettlementsBought *AISkillSettlementQuery
+	withAPIKeys                  *APIKeyQuery
+	withRedeemCodes              *RedeemCodeQuery
+	withSubscriptions            *UserSubscriptionQuery
+	withAssignedSubscriptions    *UserSubscriptionQuery
+	withAnnouncementReads        *AnnouncementReadQuery
+	withAllowedGroups            *GroupQuery
+	withUsageLogs                *UsageLogQuery
+	withAttributeValues          *UserAttributeValueQuery
+	withPromoCodeUsages          *PromoCodeUsageQuery
+	withPaymentOrders            *PaymentOrderQuery
+	withAuthIdentities           *AuthIdentityQuery
+	withPendingAuthSessions      *PendingAuthSessionQuery
+	withUserAllowedGroups        *UserAllowedGroupQuery
+	modifiers                    []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -84,6 +98,182 @@ func (_q *UserQuery) Unique(unique bool) *UserQuery {
 func (_q *UserQuery) Order(o ...user.OrderOption) *UserQuery {
 	_q.order = append(_q.order, o...)
 	return _q
+}
+
+// QueryAiSkills chains the current query on the "ai_skills" edge.
+func (_q *UserQuery) QueryAiSkills() *AISkillQuery {
+	query := (&AISkillClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(aiskill.Table, aiskill.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.AiSkillsTable, user.AiSkillsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryAiSkillVersions chains the current query on the "ai_skill_versions" edge.
+func (_q *UserQuery) QueryAiSkillVersions() *AISkillVersionQuery {
+	query := (&AISkillVersionClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(aiskillversion.Table, aiskillversion.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.AiSkillVersionsTable, user.AiSkillVersionsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryAiSkillRuns chains the current query on the "ai_skill_runs" edge.
+func (_q *UserQuery) QueryAiSkillRuns() *AISkillRunQuery {
+	query := (&AISkillRunClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(aiskillrun.Table, aiskillrun.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.AiSkillRunsTable, user.AiSkillRunsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryAiSkillLikes chains the current query on the "ai_skill_likes" edge.
+func (_q *UserQuery) QueryAiSkillLikes() *AISkillLikeQuery {
+	query := (&AISkillLikeClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(aiskilllike.Table, aiskilllike.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.AiSkillLikesTable, user.AiSkillLikesColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryAiSkillReviewsSubmitted chains the current query on the "ai_skill_reviews_submitted" edge.
+func (_q *UserQuery) QueryAiSkillReviewsSubmitted() *AISkillReviewQuery {
+	query := (&AISkillReviewClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(aiskillreview.Table, aiskillreview.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.AiSkillReviewsSubmittedTable, user.AiSkillReviewsSubmittedColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryAiSkillReviewsReviewed chains the current query on the "ai_skill_reviews_reviewed" edge.
+func (_q *UserQuery) QueryAiSkillReviewsReviewed() *AISkillReviewQuery {
+	query := (&AISkillReviewClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(aiskillreview.Table, aiskillreview.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.AiSkillReviewsReviewedTable, user.AiSkillReviewsReviewedColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryAiSkillSettlementsOwned chains the current query on the "ai_skill_settlements_owned" edge.
+func (_q *UserQuery) QueryAiSkillSettlementsOwned() *AISkillSettlementQuery {
+	query := (&AISkillSettlementClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(aiskillsettlement.Table, aiskillsettlement.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.AiSkillSettlementsOwnedTable, user.AiSkillSettlementsOwnedColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryAiSkillSettlementsBought chains the current query on the "ai_skill_settlements_bought" edge.
+func (_q *UserQuery) QueryAiSkillSettlementsBought() *AISkillSettlementQuery {
+	query := (&AISkillSettlementClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(aiskillsettlement.Table, aiskillsettlement.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.AiSkillSettlementsBoughtTable, user.AiSkillSettlementsBoughtColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
 }
 
 // QueryAPIKeys chains the current query on the "api_keys" edge.
@@ -559,28 +749,124 @@ func (_q *UserQuery) Clone() *UserQuery {
 		return nil
 	}
 	return &UserQuery{
-		config:                    _q.config,
-		ctx:                       _q.ctx.Clone(),
-		order:                     append([]user.OrderOption{}, _q.order...),
-		inters:                    append([]Interceptor{}, _q.inters...),
-		predicates:                append([]predicate.User{}, _q.predicates...),
-		withAPIKeys:               _q.withAPIKeys.Clone(),
-		withRedeemCodes:           _q.withRedeemCodes.Clone(),
-		withSubscriptions:         _q.withSubscriptions.Clone(),
-		withAssignedSubscriptions: _q.withAssignedSubscriptions.Clone(),
-		withAnnouncementReads:     _q.withAnnouncementReads.Clone(),
-		withAllowedGroups:         _q.withAllowedGroups.Clone(),
-		withUsageLogs:             _q.withUsageLogs.Clone(),
-		withAttributeValues:       _q.withAttributeValues.Clone(),
-		withPromoCodeUsages:       _q.withPromoCodeUsages.Clone(),
-		withPaymentOrders:         _q.withPaymentOrders.Clone(),
-		withAuthIdentities:        _q.withAuthIdentities.Clone(),
-		withPendingAuthSessions:   _q.withPendingAuthSessions.Clone(),
-		withUserAllowedGroups:     _q.withUserAllowedGroups.Clone(),
+		config:                       _q.config,
+		ctx:                          _q.ctx.Clone(),
+		order:                        append([]user.OrderOption{}, _q.order...),
+		inters:                       append([]Interceptor{}, _q.inters...),
+		predicates:                   append([]predicate.User{}, _q.predicates...),
+		withAiSkills:                 _q.withAiSkills.Clone(),
+		withAiSkillVersions:          _q.withAiSkillVersions.Clone(),
+		withAiSkillRuns:              _q.withAiSkillRuns.Clone(),
+		withAiSkillLikes:             _q.withAiSkillLikes.Clone(),
+		withAiSkillReviewsSubmitted:  _q.withAiSkillReviewsSubmitted.Clone(),
+		withAiSkillReviewsReviewed:   _q.withAiSkillReviewsReviewed.Clone(),
+		withAiSkillSettlementsOwned:  _q.withAiSkillSettlementsOwned.Clone(),
+		withAiSkillSettlementsBought: _q.withAiSkillSettlementsBought.Clone(),
+		withAPIKeys:                  _q.withAPIKeys.Clone(),
+		withRedeemCodes:              _q.withRedeemCodes.Clone(),
+		withSubscriptions:            _q.withSubscriptions.Clone(),
+		withAssignedSubscriptions:    _q.withAssignedSubscriptions.Clone(),
+		withAnnouncementReads:        _q.withAnnouncementReads.Clone(),
+		withAllowedGroups:            _q.withAllowedGroups.Clone(),
+		withUsageLogs:                _q.withUsageLogs.Clone(),
+		withAttributeValues:          _q.withAttributeValues.Clone(),
+		withPromoCodeUsages:          _q.withPromoCodeUsages.Clone(),
+		withPaymentOrders:            _q.withPaymentOrders.Clone(),
+		withAuthIdentities:           _q.withAuthIdentities.Clone(),
+		withPendingAuthSessions:      _q.withPendingAuthSessions.Clone(),
+		withUserAllowedGroups:        _q.withUserAllowedGroups.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
 	}
+}
+
+// WithAiSkills tells the query-builder to eager-load the nodes that are connected to
+// the "ai_skills" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithAiSkills(opts ...func(*AISkillQuery)) *UserQuery {
+	query := (&AISkillClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withAiSkills = query
+	return _q
+}
+
+// WithAiSkillVersions tells the query-builder to eager-load the nodes that are connected to
+// the "ai_skill_versions" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithAiSkillVersions(opts ...func(*AISkillVersionQuery)) *UserQuery {
+	query := (&AISkillVersionClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withAiSkillVersions = query
+	return _q
+}
+
+// WithAiSkillRuns tells the query-builder to eager-load the nodes that are connected to
+// the "ai_skill_runs" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithAiSkillRuns(opts ...func(*AISkillRunQuery)) *UserQuery {
+	query := (&AISkillRunClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withAiSkillRuns = query
+	return _q
+}
+
+// WithAiSkillLikes tells the query-builder to eager-load the nodes that are connected to
+// the "ai_skill_likes" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithAiSkillLikes(opts ...func(*AISkillLikeQuery)) *UserQuery {
+	query := (&AISkillLikeClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withAiSkillLikes = query
+	return _q
+}
+
+// WithAiSkillReviewsSubmitted tells the query-builder to eager-load the nodes that are connected to
+// the "ai_skill_reviews_submitted" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithAiSkillReviewsSubmitted(opts ...func(*AISkillReviewQuery)) *UserQuery {
+	query := (&AISkillReviewClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withAiSkillReviewsSubmitted = query
+	return _q
+}
+
+// WithAiSkillReviewsReviewed tells the query-builder to eager-load the nodes that are connected to
+// the "ai_skill_reviews_reviewed" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithAiSkillReviewsReviewed(opts ...func(*AISkillReviewQuery)) *UserQuery {
+	query := (&AISkillReviewClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withAiSkillReviewsReviewed = query
+	return _q
+}
+
+// WithAiSkillSettlementsOwned tells the query-builder to eager-load the nodes that are connected to
+// the "ai_skill_settlements_owned" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithAiSkillSettlementsOwned(opts ...func(*AISkillSettlementQuery)) *UserQuery {
+	query := (&AISkillSettlementClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withAiSkillSettlementsOwned = query
+	return _q
+}
+
+// WithAiSkillSettlementsBought tells the query-builder to eager-load the nodes that are connected to
+// the "ai_skill_settlements_bought" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithAiSkillSettlementsBought(opts ...func(*AISkillSettlementQuery)) *UserQuery {
+	query := (&AISkillSettlementClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withAiSkillSettlementsBought = query
+	return _q
 }
 
 // WithAPIKeys tells the query-builder to eager-load the nodes that are connected to
@@ -804,7 +1090,15 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	var (
 		nodes       = []*User{}
 		_spec       = _q.querySpec()
-		loadedTypes = [13]bool{
+		loadedTypes = [21]bool{
+			_q.withAiSkills != nil,
+			_q.withAiSkillVersions != nil,
+			_q.withAiSkillRuns != nil,
+			_q.withAiSkillLikes != nil,
+			_q.withAiSkillReviewsSubmitted != nil,
+			_q.withAiSkillReviewsReviewed != nil,
+			_q.withAiSkillSettlementsOwned != nil,
+			_q.withAiSkillSettlementsBought != nil,
 			_q.withAPIKeys != nil,
 			_q.withRedeemCodes != nil,
 			_q.withSubscriptions != nil,
@@ -840,6 +1134,70 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	}
 	if len(nodes) == 0 {
 		return nodes, nil
+	}
+	if query := _q.withAiSkills; query != nil {
+		if err := _q.loadAiSkills(ctx, query, nodes,
+			func(n *User) { n.Edges.AiSkills = []*AISkill{} },
+			func(n *User, e *AISkill) { n.Edges.AiSkills = append(n.Edges.AiSkills, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withAiSkillVersions; query != nil {
+		if err := _q.loadAiSkillVersions(ctx, query, nodes,
+			func(n *User) { n.Edges.AiSkillVersions = []*AISkillVersion{} },
+			func(n *User, e *AISkillVersion) { n.Edges.AiSkillVersions = append(n.Edges.AiSkillVersions, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withAiSkillRuns; query != nil {
+		if err := _q.loadAiSkillRuns(ctx, query, nodes,
+			func(n *User) { n.Edges.AiSkillRuns = []*AISkillRun{} },
+			func(n *User, e *AISkillRun) { n.Edges.AiSkillRuns = append(n.Edges.AiSkillRuns, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withAiSkillLikes; query != nil {
+		if err := _q.loadAiSkillLikes(ctx, query, nodes,
+			func(n *User) { n.Edges.AiSkillLikes = []*AISkillLike{} },
+			func(n *User, e *AISkillLike) { n.Edges.AiSkillLikes = append(n.Edges.AiSkillLikes, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withAiSkillReviewsSubmitted; query != nil {
+		if err := _q.loadAiSkillReviewsSubmitted(ctx, query, nodes,
+			func(n *User) { n.Edges.AiSkillReviewsSubmitted = []*AISkillReview{} },
+			func(n *User, e *AISkillReview) {
+				n.Edges.AiSkillReviewsSubmitted = append(n.Edges.AiSkillReviewsSubmitted, e)
+			}); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withAiSkillReviewsReviewed; query != nil {
+		if err := _q.loadAiSkillReviewsReviewed(ctx, query, nodes,
+			func(n *User) { n.Edges.AiSkillReviewsReviewed = []*AISkillReview{} },
+			func(n *User, e *AISkillReview) {
+				n.Edges.AiSkillReviewsReviewed = append(n.Edges.AiSkillReviewsReviewed, e)
+			}); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withAiSkillSettlementsOwned; query != nil {
+		if err := _q.loadAiSkillSettlementsOwned(ctx, query, nodes,
+			func(n *User) { n.Edges.AiSkillSettlementsOwned = []*AISkillSettlement{} },
+			func(n *User, e *AISkillSettlement) {
+				n.Edges.AiSkillSettlementsOwned = append(n.Edges.AiSkillSettlementsOwned, e)
+			}); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withAiSkillSettlementsBought; query != nil {
+		if err := _q.loadAiSkillSettlementsBought(ctx, query, nodes,
+			func(n *User) { n.Edges.AiSkillSettlementsBought = []*AISkillSettlement{} },
+			func(n *User, e *AISkillSettlement) {
+				n.Edges.AiSkillSettlementsBought = append(n.Edges.AiSkillSettlementsBought, e)
+			}); err != nil {
+			return nil, err
+		}
 	}
 	if query := _q.withAPIKeys; query != nil {
 		if err := _q.loadAPIKeys(ctx, query, nodes,
@@ -939,6 +1297,249 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	return nodes, nil
 }
 
+func (_q *UserQuery) loadAiSkills(ctx context.Context, query *AISkillQuery, nodes []*User, init func(*User), assign func(*User, *AISkill)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(aiskill.FieldUserID)
+	}
+	query.Where(predicate.AISkill(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.AiSkillsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadAiSkillVersions(ctx context.Context, query *AISkillVersionQuery, nodes []*User, init func(*User), assign func(*User, *AISkillVersion)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(aiskillversion.FieldUserID)
+	}
+	query.Where(predicate.AISkillVersion(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.AiSkillVersionsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadAiSkillRuns(ctx context.Context, query *AISkillRunQuery, nodes []*User, init func(*User), assign func(*User, *AISkillRun)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(aiskillrun.FieldUserID)
+	}
+	query.Where(predicate.AISkillRun(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.AiSkillRunsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadAiSkillLikes(ctx context.Context, query *AISkillLikeQuery, nodes []*User, init func(*User), assign func(*User, *AISkillLike)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(aiskilllike.FieldUserID)
+	}
+	query.Where(predicate.AISkillLike(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.AiSkillLikesColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadAiSkillReviewsSubmitted(ctx context.Context, query *AISkillReviewQuery, nodes []*User, init func(*User), assign func(*User, *AISkillReview)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(aiskillreview.FieldSubmitterUserID)
+	}
+	query.Where(predicate.AISkillReview(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.AiSkillReviewsSubmittedColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.SubmitterUserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "submitter_user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadAiSkillReviewsReviewed(ctx context.Context, query *AISkillReviewQuery, nodes []*User, init func(*User), assign func(*User, *AISkillReview)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(aiskillreview.FieldReviewerUserID)
+	}
+	query.Where(predicate.AISkillReview(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.AiSkillReviewsReviewedColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.ReviewerUserID
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "reviewer_user_id" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "reviewer_user_id" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadAiSkillSettlementsOwned(ctx context.Context, query *AISkillSettlementQuery, nodes []*User, init func(*User), assign func(*User, *AISkillSettlement)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(aiskillsettlement.FieldOwnerUserID)
+	}
+	query.Where(predicate.AISkillSettlement(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.AiSkillSettlementsOwnedColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.OwnerUserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "owner_user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadAiSkillSettlementsBought(ctx context.Context, query *AISkillSettlementQuery, nodes []*User, init func(*User), assign func(*User, *AISkillSettlement)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(aiskillsettlement.FieldBuyerUserID)
+	}
+	query.Where(predicate.AISkillSettlement(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.AiSkillSettlementsBoughtColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.BuyerUserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "buyer_user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
 func (_q *UserQuery) loadAPIKeys(ctx context.Context, query *APIKeyQuery, nodes []*User, init func(*User), assign func(*User, *APIKey)) error {
 	fks := make([]driver.Value, 0, len(nodes))
 	nodeids := make(map[int64]*User)

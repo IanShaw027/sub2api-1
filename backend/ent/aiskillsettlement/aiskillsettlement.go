@@ -56,6 +56,10 @@ const (
 	EdgeVersion = "version"
 	// EdgeRun holds the string denoting the run edge name in mutations.
 	EdgeRun = "run"
+	// EdgeOwnerUser holds the string denoting the owner_user edge name in mutations.
+	EdgeOwnerUser = "owner_user"
+	// EdgeBuyerUser holds the string denoting the buyer_user edge name in mutations.
+	EdgeBuyerUser = "buyer_user"
 	// Table holds the table name of the aiskillsettlement in the database.
 	Table = "ai_skill_settlements"
 	// SkillTable is the table that holds the skill relation/edge.
@@ -79,6 +83,20 @@ const (
 	RunInverseTable = "ai_skill_runs"
 	// RunColumn is the table column denoting the run relation/edge.
 	RunColumn = "run_id"
+	// OwnerUserTable is the table that holds the owner_user relation/edge.
+	OwnerUserTable = "ai_skill_settlements"
+	// OwnerUserInverseTable is the table name for the User entity.
+	// It exists in this package in order to avoid circular dependency with the "user" package.
+	OwnerUserInverseTable = "users"
+	// OwnerUserColumn is the table column denoting the owner_user relation/edge.
+	OwnerUserColumn = "owner_user_id"
+	// BuyerUserTable is the table that holds the buyer_user relation/edge.
+	BuyerUserTable = "ai_skill_settlements"
+	// BuyerUserInverseTable is the table name for the User entity.
+	// It exists in this package in order to avoid circular dependency with the "user" package.
+	BuyerUserInverseTable = "users"
+	// BuyerUserColumn is the table column denoting the buyer_user relation/edge.
+	BuyerUserColumn = "buyer_user_id"
 )
 
 // Columns holds all SQL columns for aiskillsettlement fields.
@@ -252,6 +270,20 @@ func ByRunField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newRunStep(), sql.OrderByField(field, opts...))
 	}
 }
+
+// ByOwnerUserField orders the results by owner_user field.
+func ByOwnerUserField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newOwnerUserStep(), sql.OrderByField(field, opts...))
+	}
+}
+
+// ByBuyerUserField orders the results by buyer_user field.
+func ByBuyerUserField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newBuyerUserStep(), sql.OrderByField(field, opts...))
+	}
+}
 func newSkillStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -271,5 +303,19 @@ func newRunStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(RunInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, RunTable, RunColumn),
+	)
+}
+func newOwnerUserStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(OwnerUserInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, OwnerUserTable, OwnerUserColumn),
+	)
+}
+func newBuyerUserStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(BuyerUserInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, BuyerUserTable, BuyerUserColumn),
 	)
 }

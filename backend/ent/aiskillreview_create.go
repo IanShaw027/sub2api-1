@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aiskill"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillreview"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillversion"
+	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
 // AISkillReviewCreate is the builder for creating a AISkillReview entity.
@@ -218,6 +219,16 @@ func (_c *AISkillReviewCreate) SetVersion(v *AISkillVersion) *AISkillReviewCreat
 	return _c.SetVersionID(v.ID)
 }
 
+// SetSubmitterUser sets the "submitter_user" edge to the User entity.
+func (_c *AISkillReviewCreate) SetSubmitterUser(v *User) *AISkillReviewCreate {
+	return _c.SetSubmitterUserID(v.ID)
+}
+
+// SetReviewerUser sets the "reviewer_user" edge to the User entity.
+func (_c *AISkillReviewCreate) SetReviewerUser(v *User) *AISkillReviewCreate {
+	return _c.SetReviewerUserID(v.ID)
+}
+
 // Mutation returns the AISkillReviewMutation object of the builder.
 func (_c *AISkillReviewCreate) Mutation() *AISkillReviewMutation {
 	return _c.mutation
@@ -317,6 +328,9 @@ func (_c *AISkillReviewCreate) check() error {
 	if len(_c.mutation.VersionIDs()) == 0 {
 		return &ValidationError{Name: "version", err: errors.New(`ent: missing required edge "AISkillReview.version"`)}
 	}
+	if len(_c.mutation.SubmitterUserIDs()) == 0 {
+		return &ValidationError{Name: "submitter_user", err: errors.New(`ent: missing required edge "AISkillReview.submitter_user"`)}
+	}
 	return nil
 }
 
@@ -351,14 +365,6 @@ func (_c *AISkillReviewCreate) createSpec() (*AISkillReview, *sqlgraph.CreateSpe
 	if value, ok := _c.mutation.UpdatedAt(); ok {
 		_spec.SetField(aiskillreview.FieldUpdatedAt, field.TypeTime, value)
 		_node.UpdatedAt = value
-	}
-	if value, ok := _c.mutation.SubmitterUserID(); ok {
-		_spec.SetField(aiskillreview.FieldSubmitterUserID, field.TypeInt64, value)
-		_node.SubmitterUserID = value
-	}
-	if value, ok := _c.mutation.ReviewerUserID(); ok {
-		_spec.SetField(aiskillreview.FieldReviewerUserID, field.TypeInt64, value)
-		_node.ReviewerUserID = &value
 	}
 	if value, ok := _c.mutation.Status(); ok {
 		_spec.SetField(aiskillreview.FieldStatus, field.TypeString, value)
@@ -432,6 +438,40 @@ func (_c *AISkillReviewCreate) createSpec() (*AISkillReview, *sqlgraph.CreateSpe
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.VersionID = nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.SubmitterUserIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillreview.SubmitterUserTable,
+			Columns: []string{aiskillreview.SubmitterUserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.SubmitterUserID = nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.ReviewerUserIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillreview.ReviewerUserTable,
+			Columns: []string{aiskillreview.ReviewerUserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.ReviewerUserID = &nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
@@ -534,12 +574,6 @@ func (u *AISkillReviewUpsert) UpdateSubmitterUserID() *AISkillReviewUpsert {
 	return u
 }
 
-// AddSubmitterUserID adds v to the "submitter_user_id" field.
-func (u *AISkillReviewUpsert) AddSubmitterUserID(v int64) *AISkillReviewUpsert {
-	u.Add(aiskillreview.FieldSubmitterUserID, v)
-	return u
-}
-
 // SetReviewerUserID sets the "reviewer_user_id" field.
 func (u *AISkillReviewUpsert) SetReviewerUserID(v int64) *AISkillReviewUpsert {
 	u.Set(aiskillreview.FieldReviewerUserID, v)
@@ -549,12 +583,6 @@ func (u *AISkillReviewUpsert) SetReviewerUserID(v int64) *AISkillReviewUpsert {
 // UpdateReviewerUserID sets the "reviewer_user_id" field to the value that was provided on create.
 func (u *AISkillReviewUpsert) UpdateReviewerUserID() *AISkillReviewUpsert {
 	u.SetExcluded(aiskillreview.FieldReviewerUserID)
-	return u
-}
-
-// AddReviewerUserID adds v to the "reviewer_user_id" field.
-func (u *AISkillReviewUpsert) AddReviewerUserID(v int64) *AISkillReviewUpsert {
-	u.Add(aiskillreview.FieldReviewerUserID, v)
 	return u
 }
 
@@ -838,13 +866,6 @@ func (u *AISkillReviewUpsertOne) SetSubmitterUserID(v int64) *AISkillReviewUpser
 	})
 }
 
-// AddSubmitterUserID adds v to the "submitter_user_id" field.
-func (u *AISkillReviewUpsertOne) AddSubmitterUserID(v int64) *AISkillReviewUpsertOne {
-	return u.Update(func(s *AISkillReviewUpsert) {
-		s.AddSubmitterUserID(v)
-	})
-}
-
 // UpdateSubmitterUserID sets the "submitter_user_id" field to the value that was provided on create.
 func (u *AISkillReviewUpsertOne) UpdateSubmitterUserID() *AISkillReviewUpsertOne {
 	return u.Update(func(s *AISkillReviewUpsert) {
@@ -856,13 +877,6 @@ func (u *AISkillReviewUpsertOne) UpdateSubmitterUserID() *AISkillReviewUpsertOne
 func (u *AISkillReviewUpsertOne) SetReviewerUserID(v int64) *AISkillReviewUpsertOne {
 	return u.Update(func(s *AISkillReviewUpsert) {
 		s.SetReviewerUserID(v)
-	})
-}
-
-// AddReviewerUserID adds v to the "reviewer_user_id" field.
-func (u *AISkillReviewUpsertOne) AddReviewerUserID(v int64) *AISkillReviewUpsertOne {
-	return u.Update(func(s *AISkillReviewUpsert) {
-		s.AddReviewerUserID(v)
 	})
 }
 
@@ -1350,13 +1364,6 @@ func (u *AISkillReviewUpsertBulk) SetSubmitterUserID(v int64) *AISkillReviewUpse
 	})
 }
 
-// AddSubmitterUserID adds v to the "submitter_user_id" field.
-func (u *AISkillReviewUpsertBulk) AddSubmitterUserID(v int64) *AISkillReviewUpsertBulk {
-	return u.Update(func(s *AISkillReviewUpsert) {
-		s.AddSubmitterUserID(v)
-	})
-}
-
 // UpdateSubmitterUserID sets the "submitter_user_id" field to the value that was provided on create.
 func (u *AISkillReviewUpsertBulk) UpdateSubmitterUserID() *AISkillReviewUpsertBulk {
 	return u.Update(func(s *AISkillReviewUpsert) {
@@ -1368,13 +1375,6 @@ func (u *AISkillReviewUpsertBulk) UpdateSubmitterUserID() *AISkillReviewUpsertBu
 func (u *AISkillReviewUpsertBulk) SetReviewerUserID(v int64) *AISkillReviewUpsertBulk {
 	return u.Update(func(s *AISkillReviewUpsert) {
 		s.SetReviewerUserID(v)
-	})
-}
-
-// AddReviewerUserID adds v to the "reviewer_user_id" field.
-func (u *AISkillReviewUpsertBulk) AddReviewerUserID(v int64) *AISkillReviewUpsertBulk {
-	return u.Update(func(s *AISkillReviewUpsert) {
-		s.AddReviewerUserID(v)
 	})
 }
 

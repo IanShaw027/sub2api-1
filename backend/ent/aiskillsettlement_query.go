@@ -17,19 +17,22 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aiskillsettlement"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillversion"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
 // AISkillSettlementQuery is the builder for querying AISkillSettlement entities.
 type AISkillSettlementQuery struct {
 	config
-	ctx         *QueryContext
-	order       []aiskillsettlement.OrderOption
-	inters      []Interceptor
-	predicates  []predicate.AISkillSettlement
-	withSkill   *AISkillQuery
-	withVersion *AISkillVersionQuery
-	withRun     *AISkillRunQuery
-	modifiers   []func(*sql.Selector)
+	ctx           *QueryContext
+	order         []aiskillsettlement.OrderOption
+	inters        []Interceptor
+	predicates    []predicate.AISkillSettlement
+	withSkill     *AISkillQuery
+	withVersion   *AISkillVersionQuery
+	withRun       *AISkillRunQuery
+	withOwnerUser *UserQuery
+	withBuyerUser *UserQuery
+	modifiers     []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -125,6 +128,50 @@ func (_q *AISkillSettlementQuery) QueryRun() *AISkillRunQuery {
 			sqlgraph.From(aiskillsettlement.Table, aiskillsettlement.FieldID, selector),
 			sqlgraph.To(aiskillrun.Table, aiskillrun.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, aiskillsettlement.RunTable, aiskillsettlement.RunColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryOwnerUser chains the current query on the "owner_user" edge.
+func (_q *AISkillSettlementQuery) QueryOwnerUser() *UserQuery {
+	query := (&UserClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskillsettlement.Table, aiskillsettlement.FieldID, selector),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aiskillsettlement.OwnerUserTable, aiskillsettlement.OwnerUserColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryBuyerUser chains the current query on the "buyer_user" edge.
+func (_q *AISkillSettlementQuery) QueryBuyerUser() *UserQuery {
+	query := (&UserClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskillsettlement.Table, aiskillsettlement.FieldID, selector),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aiskillsettlement.BuyerUserTable, aiskillsettlement.BuyerUserColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -319,14 +366,16 @@ func (_q *AISkillSettlementQuery) Clone() *AISkillSettlementQuery {
 		return nil
 	}
 	return &AISkillSettlementQuery{
-		config:      _q.config,
-		ctx:         _q.ctx.Clone(),
-		order:       append([]aiskillsettlement.OrderOption{}, _q.order...),
-		inters:      append([]Interceptor{}, _q.inters...),
-		predicates:  append([]predicate.AISkillSettlement{}, _q.predicates...),
-		withSkill:   _q.withSkill.Clone(),
-		withVersion: _q.withVersion.Clone(),
-		withRun:     _q.withRun.Clone(),
+		config:        _q.config,
+		ctx:           _q.ctx.Clone(),
+		order:         append([]aiskillsettlement.OrderOption{}, _q.order...),
+		inters:        append([]Interceptor{}, _q.inters...),
+		predicates:    append([]predicate.AISkillSettlement{}, _q.predicates...),
+		withSkill:     _q.withSkill.Clone(),
+		withVersion:   _q.withVersion.Clone(),
+		withRun:       _q.withRun.Clone(),
+		withOwnerUser: _q.withOwnerUser.Clone(),
+		withBuyerUser: _q.withBuyerUser.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -363,6 +412,28 @@ func (_q *AISkillSettlementQuery) WithRun(opts ...func(*AISkillRunQuery)) *AISki
 		opt(query)
 	}
 	_q.withRun = query
+	return _q
+}
+
+// WithOwnerUser tells the query-builder to eager-load the nodes that are connected to
+// the "owner_user" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *AISkillSettlementQuery) WithOwnerUser(opts ...func(*UserQuery)) *AISkillSettlementQuery {
+	query := (&UserClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withOwnerUser = query
+	return _q
+}
+
+// WithBuyerUser tells the query-builder to eager-load the nodes that are connected to
+// the "buyer_user" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *AISkillSettlementQuery) WithBuyerUser(opts ...func(*UserQuery)) *AISkillSettlementQuery {
+	query := (&UserClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withBuyerUser = query
 	return _q
 }
 
@@ -444,10 +515,12 @@ func (_q *AISkillSettlementQuery) sqlAll(ctx context.Context, hooks ...queryHook
 	var (
 		nodes       = []*AISkillSettlement{}
 		_spec       = _q.querySpec()
-		loadedTypes = [3]bool{
+		loadedTypes = [5]bool{
 			_q.withSkill != nil,
 			_q.withVersion != nil,
 			_q.withRun != nil,
+			_q.withOwnerUser != nil,
+			_q.withBuyerUser != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -486,6 +559,18 @@ func (_q *AISkillSettlementQuery) sqlAll(ctx context.Context, hooks ...queryHook
 	if query := _q.withRun; query != nil {
 		if err := _q.loadRun(ctx, query, nodes, nil,
 			func(n *AISkillSettlement, e *AISkillRun) { n.Edges.Run = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withOwnerUser; query != nil {
+		if err := _q.loadOwnerUser(ctx, query, nodes, nil,
+			func(n *AISkillSettlement, e *User) { n.Edges.OwnerUser = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withBuyerUser; query != nil {
+		if err := _q.loadBuyerUser(ctx, query, nodes, nil,
+			func(n *AISkillSettlement, e *User) { n.Edges.BuyerUser = e }); err != nil {
 			return nil, err
 		}
 	}
@@ -579,6 +664,64 @@ func (_q *AISkillSettlementQuery) loadRun(ctx context.Context, query *AISkillRun
 	}
 	return nil
 }
+func (_q *AISkillSettlementQuery) loadOwnerUser(ctx context.Context, query *UserQuery, nodes []*AISkillSettlement, init func(*AISkillSettlement), assign func(*AISkillSettlement, *User)) error {
+	ids := make([]int64, 0, len(nodes))
+	nodeids := make(map[int64][]*AISkillSettlement)
+	for i := range nodes {
+		fk := nodes[i].OwnerUserID
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(user.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "owner_user_id" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
+}
+func (_q *AISkillSettlementQuery) loadBuyerUser(ctx context.Context, query *UserQuery, nodes []*AISkillSettlement, init func(*AISkillSettlement), assign func(*AISkillSettlement, *User)) error {
+	ids := make([]int64, 0, len(nodes))
+	nodeids := make(map[int64][]*AISkillSettlement)
+	for i := range nodes {
+		fk := nodes[i].BuyerUserID
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(user.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "buyer_user_id" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
+}
 
 func (_q *AISkillSettlementQuery) sqlCount(ctx context.Context) (int, error) {
 	_spec := _q.querySpec()
@@ -616,6 +759,12 @@ func (_q *AISkillSettlementQuery) querySpec() *sqlgraph.QuerySpec {
 		}
 		if _q.withRun != nil {
 			_spec.Node.AddColumnOnce(aiskillsettlement.FieldRunID)
+		}
+		if _q.withOwnerUser != nil {
+			_spec.Node.AddColumnOnce(aiskillsettlement.FieldOwnerUserID)
+		}
+		if _q.withBuyerUser != nil {
+			_spec.Node.AddColumnOnce(aiskillsettlement.FieldBuyerUserID)
 		}
 	}
 	if ps := _q.predicates; len(ps) > 0 {

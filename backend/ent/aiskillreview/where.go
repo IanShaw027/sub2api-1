@@ -265,26 +265,6 @@ func SubmitterUserIDNotIn(vs ...int64) predicate.AISkillReview {
 	return predicate.AISkillReview(sql.FieldNotIn(FieldSubmitterUserID, vs...))
 }
 
-// SubmitterUserIDGT applies the GT predicate on the "submitter_user_id" field.
-func SubmitterUserIDGT(v int64) predicate.AISkillReview {
-	return predicate.AISkillReview(sql.FieldGT(FieldSubmitterUserID, v))
-}
-
-// SubmitterUserIDGTE applies the GTE predicate on the "submitter_user_id" field.
-func SubmitterUserIDGTE(v int64) predicate.AISkillReview {
-	return predicate.AISkillReview(sql.FieldGTE(FieldSubmitterUserID, v))
-}
-
-// SubmitterUserIDLT applies the LT predicate on the "submitter_user_id" field.
-func SubmitterUserIDLT(v int64) predicate.AISkillReview {
-	return predicate.AISkillReview(sql.FieldLT(FieldSubmitterUserID, v))
-}
-
-// SubmitterUserIDLTE applies the LTE predicate on the "submitter_user_id" field.
-func SubmitterUserIDLTE(v int64) predicate.AISkillReview {
-	return predicate.AISkillReview(sql.FieldLTE(FieldSubmitterUserID, v))
-}
-
 // ReviewerUserIDEQ applies the EQ predicate on the "reviewer_user_id" field.
 func ReviewerUserIDEQ(v int64) predicate.AISkillReview {
 	return predicate.AISkillReview(sql.FieldEQ(FieldReviewerUserID, v))
@@ -303,26 +283,6 @@ func ReviewerUserIDIn(vs ...int64) predicate.AISkillReview {
 // ReviewerUserIDNotIn applies the NotIn predicate on the "reviewer_user_id" field.
 func ReviewerUserIDNotIn(vs ...int64) predicate.AISkillReview {
 	return predicate.AISkillReview(sql.FieldNotIn(FieldReviewerUserID, vs...))
-}
-
-// ReviewerUserIDGT applies the GT predicate on the "reviewer_user_id" field.
-func ReviewerUserIDGT(v int64) predicate.AISkillReview {
-	return predicate.AISkillReview(sql.FieldGT(FieldReviewerUserID, v))
-}
-
-// ReviewerUserIDGTE applies the GTE predicate on the "reviewer_user_id" field.
-func ReviewerUserIDGTE(v int64) predicate.AISkillReview {
-	return predicate.AISkillReview(sql.FieldGTE(FieldReviewerUserID, v))
-}
-
-// ReviewerUserIDLT applies the LT predicate on the "reviewer_user_id" field.
-func ReviewerUserIDLT(v int64) predicate.AISkillReview {
-	return predicate.AISkillReview(sql.FieldLT(FieldReviewerUserID, v))
-}
-
-// ReviewerUserIDLTE applies the LTE predicate on the "reviewer_user_id" field.
-func ReviewerUserIDLTE(v int64) predicate.AISkillReview {
-	return predicate.AISkillReview(sql.FieldLTE(FieldReviewerUserID, v))
 }
 
 // ReviewerUserIDIsNil applies the IsNil predicate on the "reviewer_user_id" field.
@@ -863,6 +823,52 @@ func HasVersion() predicate.AISkillReview {
 func HasVersionWith(preds ...predicate.AISkillVersion) predicate.AISkillReview {
 	return predicate.AISkillReview(func(s *sql.Selector) {
 		step := newVersionStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasSubmitterUser applies the HasEdge predicate on the "submitter_user" edge.
+func HasSubmitterUser() predicate.AISkillReview {
+	return predicate.AISkillReview(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, SubmitterUserTable, SubmitterUserColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasSubmitterUserWith applies the HasEdge predicate on the "submitter_user" edge with a given conditions (other predicates).
+func HasSubmitterUserWith(preds ...predicate.User) predicate.AISkillReview {
+	return predicate.AISkillReview(func(s *sql.Selector) {
+		step := newSubmitterUserStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasReviewerUser applies the HasEdge predicate on the "reviewer_user" edge.
+func HasReviewerUser() predicate.AISkillReview {
+	return predicate.AISkillReview(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, ReviewerUserTable, ReviewerUserColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasReviewerUserWith applies the HasEdge predicate on the "reviewer_user" edge with a given conditions (other predicates).
+func HasReviewerUserWith(preds ...predicate.User) predicate.AISkillReview {
+	return predicate.AISkillReview(func(s *sql.Selector) {
+		step := newReviewerUserStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

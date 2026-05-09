@@ -11,6 +11,12 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/Wei-Shaw/sub2api/ent/aiskill"
+	"github.com/Wei-Shaw/sub2api/ent/aiskilllike"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillreview"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillrun"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillsettlement"
+	"github.com/Wei-Shaw/sub2api/ent/aiskillversion"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
@@ -351,6 +357,126 @@ func (_c *UserCreate) SetNillableTokenVersion(v *int64) *UserCreate {
 		_c.SetTokenVersion(*v)
 	}
 	return _c
+}
+
+// AddAiSkillIDs adds the "ai_skills" edge to the AISkill entity by IDs.
+func (_c *UserCreate) AddAiSkillIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddAiSkillIDs(ids...)
+	return _c
+}
+
+// AddAiSkills adds the "ai_skills" edges to the AISkill entity.
+func (_c *UserCreate) AddAiSkills(v ...*AISkill) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddAiSkillIDs(ids...)
+}
+
+// AddAiSkillVersionIDs adds the "ai_skill_versions" edge to the AISkillVersion entity by IDs.
+func (_c *UserCreate) AddAiSkillVersionIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddAiSkillVersionIDs(ids...)
+	return _c
+}
+
+// AddAiSkillVersions adds the "ai_skill_versions" edges to the AISkillVersion entity.
+func (_c *UserCreate) AddAiSkillVersions(v ...*AISkillVersion) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddAiSkillVersionIDs(ids...)
+}
+
+// AddAiSkillRunIDs adds the "ai_skill_runs" edge to the AISkillRun entity by IDs.
+func (_c *UserCreate) AddAiSkillRunIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddAiSkillRunIDs(ids...)
+	return _c
+}
+
+// AddAiSkillRuns adds the "ai_skill_runs" edges to the AISkillRun entity.
+func (_c *UserCreate) AddAiSkillRuns(v ...*AISkillRun) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddAiSkillRunIDs(ids...)
+}
+
+// AddAiSkillLikeIDs adds the "ai_skill_likes" edge to the AISkillLike entity by IDs.
+func (_c *UserCreate) AddAiSkillLikeIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddAiSkillLikeIDs(ids...)
+	return _c
+}
+
+// AddAiSkillLikes adds the "ai_skill_likes" edges to the AISkillLike entity.
+func (_c *UserCreate) AddAiSkillLikes(v ...*AISkillLike) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddAiSkillLikeIDs(ids...)
+}
+
+// AddAiSkillReviewsSubmittedIDs adds the "ai_skill_reviews_submitted" edge to the AISkillReview entity by IDs.
+func (_c *UserCreate) AddAiSkillReviewsSubmittedIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddAiSkillReviewsSubmittedIDs(ids...)
+	return _c
+}
+
+// AddAiSkillReviewsSubmitted adds the "ai_skill_reviews_submitted" edges to the AISkillReview entity.
+func (_c *UserCreate) AddAiSkillReviewsSubmitted(v ...*AISkillReview) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddAiSkillReviewsSubmittedIDs(ids...)
+}
+
+// AddAiSkillReviewsReviewedIDs adds the "ai_skill_reviews_reviewed" edge to the AISkillReview entity by IDs.
+func (_c *UserCreate) AddAiSkillReviewsReviewedIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddAiSkillReviewsReviewedIDs(ids...)
+	return _c
+}
+
+// AddAiSkillReviewsReviewed adds the "ai_skill_reviews_reviewed" edges to the AISkillReview entity.
+func (_c *UserCreate) AddAiSkillReviewsReviewed(v ...*AISkillReview) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddAiSkillReviewsReviewedIDs(ids...)
+}
+
+// AddAiSkillSettlementsOwnedIDs adds the "ai_skill_settlements_owned" edge to the AISkillSettlement entity by IDs.
+func (_c *UserCreate) AddAiSkillSettlementsOwnedIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddAiSkillSettlementsOwnedIDs(ids...)
+	return _c
+}
+
+// AddAiSkillSettlementsOwned adds the "ai_skill_settlements_owned" edges to the AISkillSettlement entity.
+func (_c *UserCreate) AddAiSkillSettlementsOwned(v ...*AISkillSettlement) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddAiSkillSettlementsOwnedIDs(ids...)
+}
+
+// AddAiSkillSettlementsBoughtIDs adds the "ai_skill_settlements_bought" edge to the AISkillSettlement entity by IDs.
+func (_c *UserCreate) AddAiSkillSettlementsBoughtIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddAiSkillSettlementsBoughtIDs(ids...)
+	return _c
+}
+
+// AddAiSkillSettlementsBought adds the "ai_skill_settlements_bought" edges to the AISkillSettlement entity.
+func (_c *UserCreate) AddAiSkillSettlementsBought(v ...*AISkillSettlement) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddAiSkillSettlementsBoughtIDs(ids...)
 }
 
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by IDs.
@@ -851,6 +977,134 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.TokenVersion(); ok {
 		_spec.SetField(user.FieldTokenVersion, field.TypeInt64, value)
 		_node.TokenVersion = value
+	}
+	if nodes := _c.mutation.AiSkillsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AiSkillsTable,
+			Columns: []string{user.AiSkillsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(aiskill.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.AiSkillVersionsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AiSkillVersionsTable,
+			Columns: []string{user.AiSkillVersionsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(aiskillversion.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.AiSkillRunsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AiSkillRunsTable,
+			Columns: []string{user.AiSkillRunsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(aiskillrun.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.AiSkillLikesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AiSkillLikesTable,
+			Columns: []string{user.AiSkillLikesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(aiskilllike.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.AiSkillReviewsSubmittedIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AiSkillReviewsSubmittedTable,
+			Columns: []string{user.AiSkillReviewsSubmittedColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(aiskillreview.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.AiSkillReviewsReviewedIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AiSkillReviewsReviewedTable,
+			Columns: []string{user.AiSkillReviewsReviewedColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(aiskillreview.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.AiSkillSettlementsOwnedIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AiSkillSettlementsOwnedTable,
+			Columns: []string{user.AiSkillSettlementsOwnedColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(aiskillsettlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.AiSkillSettlementsBoughtIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AiSkillSettlementsBoughtTable,
+			Columns: []string{user.AiSkillSettlementsBoughtColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(aiskillsettlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
 	}
 	if nodes := _c.mutation.APIKeysIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{

@@ -300,26 +300,6 @@ func OwnerUserIDNotIn(vs ...int64) predicate.AISkillSettlement {
 	return predicate.AISkillSettlement(sql.FieldNotIn(FieldOwnerUserID, vs...))
 }
 
-// OwnerUserIDGT applies the GT predicate on the "owner_user_id" field.
-func OwnerUserIDGT(v int64) predicate.AISkillSettlement {
-	return predicate.AISkillSettlement(sql.FieldGT(FieldOwnerUserID, v))
-}
-
-// OwnerUserIDGTE applies the GTE predicate on the "owner_user_id" field.
-func OwnerUserIDGTE(v int64) predicate.AISkillSettlement {
-	return predicate.AISkillSettlement(sql.FieldGTE(FieldOwnerUserID, v))
-}
-
-// OwnerUserIDLT applies the LT predicate on the "owner_user_id" field.
-func OwnerUserIDLT(v int64) predicate.AISkillSettlement {
-	return predicate.AISkillSettlement(sql.FieldLT(FieldOwnerUserID, v))
-}
-
-// OwnerUserIDLTE applies the LTE predicate on the "owner_user_id" field.
-func OwnerUserIDLTE(v int64) predicate.AISkillSettlement {
-	return predicate.AISkillSettlement(sql.FieldLTE(FieldOwnerUserID, v))
-}
-
 // BuyerUserIDEQ applies the EQ predicate on the "buyer_user_id" field.
 func BuyerUserIDEQ(v int64) predicate.AISkillSettlement {
 	return predicate.AISkillSettlement(sql.FieldEQ(FieldBuyerUserID, v))
@@ -338,26 +318,6 @@ func BuyerUserIDIn(vs ...int64) predicate.AISkillSettlement {
 // BuyerUserIDNotIn applies the NotIn predicate on the "buyer_user_id" field.
 func BuyerUserIDNotIn(vs ...int64) predicate.AISkillSettlement {
 	return predicate.AISkillSettlement(sql.FieldNotIn(FieldBuyerUserID, vs...))
-}
-
-// BuyerUserIDGT applies the GT predicate on the "buyer_user_id" field.
-func BuyerUserIDGT(v int64) predicate.AISkillSettlement {
-	return predicate.AISkillSettlement(sql.FieldGT(FieldBuyerUserID, v))
-}
-
-// BuyerUserIDGTE applies the GTE predicate on the "buyer_user_id" field.
-func BuyerUserIDGTE(v int64) predicate.AISkillSettlement {
-	return predicate.AISkillSettlement(sql.FieldGTE(FieldBuyerUserID, v))
-}
-
-// BuyerUserIDLT applies the LT predicate on the "buyer_user_id" field.
-func BuyerUserIDLT(v int64) predicate.AISkillSettlement {
-	return predicate.AISkillSettlement(sql.FieldLT(FieldBuyerUserID, v))
-}
-
-// BuyerUserIDLTE applies the LTE predicate on the "buyer_user_id" field.
-func BuyerUserIDLTE(v int64) predicate.AISkillSettlement {
-	return predicate.AISkillSettlement(sql.FieldLTE(FieldBuyerUserID, v))
 }
 
 // StatusEQ applies the EQ predicate on the "status" field.
@@ -956,6 +916,52 @@ func HasRun() predicate.AISkillSettlement {
 func HasRunWith(preds ...predicate.AISkillRun) predicate.AISkillSettlement {
 	return predicate.AISkillSettlement(func(s *sql.Selector) {
 		step := newRunStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasOwnerUser applies the HasEdge predicate on the "owner_user" edge.
+func HasOwnerUser() predicate.AISkillSettlement {
+	return predicate.AISkillSettlement(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, OwnerUserTable, OwnerUserColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasOwnerUserWith applies the HasEdge predicate on the "owner_user" edge with a given conditions (other predicates).
+func HasOwnerUserWith(preds ...predicate.User) predicate.AISkillSettlement {
+	return predicate.AISkillSettlement(func(s *sql.Selector) {
+		step := newOwnerUserStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasBuyerUser applies the HasEdge predicate on the "buyer_user" edge.
+func HasBuyerUser() predicate.AISkillSettlement {
+	return predicate.AISkillSettlement(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, BuyerUserTable, BuyerUserColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasBuyerUserWith applies the HasEdge predicate on the "buyer_user" edge with a given conditions (other predicates).
+func HasBuyerUserWith(preds ...predicate.User) predicate.AISkillSettlement {
+	return predicate.AISkillSettlement(func(s *sql.Selector) {
+		step := newBuyerUserStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

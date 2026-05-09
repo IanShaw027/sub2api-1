@@ -79,6 +79,16 @@ func (AISkillSettlement) Edges() []ent.Edge {
 			Field("run_id").
 			Required().
 			Unique(),
+		edge.From("owner_user", User.Type).
+			Ref("ai_skill_settlements_owned").
+			Field("owner_user_id").
+			Required().
+			Unique(),
+		edge.From("buyer_user", User.Type).
+			Ref("ai_skill_settlements_bought").
+			Field("buyer_user_id").
+			Required().
+			Unique(),
 	}
 }
 

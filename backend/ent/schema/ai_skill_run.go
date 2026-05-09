@@ -72,6 +72,11 @@ func (AISkillRun) Edges() []ent.Edge {
 			Field("version_id").
 			Required().
 			Unique(),
+		edge.From("user", User.Type).
+			Ref("ai_skill_runs").
+			Field("user_id").
+			Required().
+			Unique(),
 		edge.To("settlements", AISkillSettlement.Type),
 	}
 }

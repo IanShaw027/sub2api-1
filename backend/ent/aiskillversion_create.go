@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aiskillrun"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillsettlement"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillversion"
+	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
 // AISkillVersionCreate is the builder for creating a AISkillVersion entity.
@@ -297,6 +298,11 @@ func (_c *AISkillVersionCreate) SetSkill(v *AISkill) *AISkillVersionCreate {
 	return _c.SetSkillID(v.ID)
 }
 
+// SetUser sets the "user" edge to the User entity.
+func (_c *AISkillVersionCreate) SetUser(v *User) *AISkillVersionCreate {
+	return _c.SetUserID(v.ID)
+}
+
 // AddRunIDs adds the "runs" edge to the AISkillRun entity by IDs.
 func (_c *AISkillVersionCreate) AddRunIDs(ids ...int64) *AISkillVersionCreate {
 	_c.mutation.AddRunIDs(ids...)
@@ -490,6 +496,9 @@ func (_c *AISkillVersionCreate) check() error {
 	if len(_c.mutation.SkillIDs()) == 0 {
 		return &ValidationError{Name: "skill", err: errors.New(`ent: missing required edge "AISkillVersion.skill"`)}
 	}
+	if len(_c.mutation.UserIDs()) == 0 {
+		return &ValidationError{Name: "user", err: errors.New(`ent: missing required edge "AISkillVersion.user"`)}
+	}
 	return nil
 }
 
@@ -528,10 +537,6 @@ func (_c *AISkillVersionCreate) createSpec() (*AISkillVersion, *sqlgraph.CreateS
 	if value, ok := _c.mutation.DeletedAt(); ok {
 		_spec.SetField(aiskillversion.FieldDeletedAt, field.TypeTime, value)
 		_node.DeletedAt = &value
-	}
-	if value, ok := _c.mutation.UserID(); ok {
-		_spec.SetField(aiskillversion.FieldUserID, field.TypeInt64, value)
-		_node.UserID = value
 	}
 	if value, ok := _c.mutation.Version(); ok {
 		_spec.SetField(aiskillversion.FieldVersion, field.TypeInt, value)
@@ -620,6 +625,23 @@ func (_c *AISkillVersionCreate) createSpec() (*AISkillVersion, *sqlgraph.CreateS
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.SkillID = nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.UserIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillversion.UserTable,
+			Columns: []string{aiskillversion.UserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.UserID = nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	if nodes := _c.mutation.RunsIDs(); len(nodes) > 0 {
@@ -773,12 +795,6 @@ func (u *AISkillVersionUpsert) SetUserID(v int64) *AISkillVersionUpsert {
 // UpdateUserID sets the "user_id" field to the value that was provided on create.
 func (u *AISkillVersionUpsert) UpdateUserID() *AISkillVersionUpsert {
 	u.SetExcluded(aiskillversion.FieldUserID)
-	return u
-}
-
-// AddUserID adds v to the "user_id" field.
-func (u *AISkillVersionUpsert) AddUserID(v int64) *AISkillVersionUpsert {
-	u.Add(aiskillversion.FieldUserID, v)
 	return u
 }
 
@@ -1192,13 +1208,6 @@ func (u *AISkillVersionUpsertOne) UpdateSkillID() *AISkillVersionUpsertOne {
 func (u *AISkillVersionUpsertOne) SetUserID(v int64) *AISkillVersionUpsertOne {
 	return u.Update(func(s *AISkillVersionUpsert) {
 		s.SetUserID(v)
-	})
-}
-
-// AddUserID adds v to the "user_id" field.
-func (u *AISkillVersionUpsertOne) AddUserID(v int64) *AISkillVersionUpsertOne {
-	return u.Update(func(s *AISkillVersionUpsert) {
-		s.AddUserID(v)
 	})
 }
 
@@ -1837,13 +1846,6 @@ func (u *AISkillVersionUpsertBulk) UpdateSkillID() *AISkillVersionUpsertBulk {
 func (u *AISkillVersionUpsertBulk) SetUserID(v int64) *AISkillVersionUpsertBulk {
 	return u.Update(func(s *AISkillVersionUpsert) {
 		s.SetUserID(v)
-	})
-}
-
-// AddUserID adds v to the "user_id" field.
-func (u *AISkillVersionUpsertBulk) AddUserID(v int64) *AISkillVersionUpsertBulk {
-	return u.Update(func(s *AISkillVersionUpsert) {
-		s.AddUserID(v)
 	})
 }
 

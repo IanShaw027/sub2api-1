@@ -16,18 +16,21 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aiskillreview"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillversion"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
 // AISkillReviewQuery is the builder for querying AISkillReview entities.
 type AISkillReviewQuery struct {
 	config
-	ctx         *QueryContext
-	order       []aiskillreview.OrderOption
-	inters      []Interceptor
-	predicates  []predicate.AISkillReview
-	withSkill   *AISkillQuery
-	withVersion *AISkillVersionQuery
-	modifiers   []func(*sql.Selector)
+	ctx               *QueryContext
+	order             []aiskillreview.OrderOption
+	inters            []Interceptor
+	predicates        []predicate.AISkillReview
+	withSkill         *AISkillQuery
+	withVersion       *AISkillVersionQuery
+	withSubmitterUser *UserQuery
+	withReviewerUser  *UserQuery
+	modifiers         []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -101,6 +104,50 @@ func (_q *AISkillReviewQuery) QueryVersion() *AISkillVersionQuery {
 			sqlgraph.From(aiskillreview.Table, aiskillreview.FieldID, selector),
 			sqlgraph.To(aiskillversion.Table, aiskillversion.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, aiskillreview.VersionTable, aiskillreview.VersionColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QuerySubmitterUser chains the current query on the "submitter_user" edge.
+func (_q *AISkillReviewQuery) QuerySubmitterUser() *UserQuery {
+	query := (&UserClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskillreview.Table, aiskillreview.FieldID, selector),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aiskillreview.SubmitterUserTable, aiskillreview.SubmitterUserColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryReviewerUser chains the current query on the "reviewer_user" edge.
+func (_q *AISkillReviewQuery) QueryReviewerUser() *UserQuery {
+	query := (&UserClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(aiskillreview.Table, aiskillreview.FieldID, selector),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, aiskillreview.ReviewerUserTable, aiskillreview.ReviewerUserColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -295,13 +342,15 @@ func (_q *AISkillReviewQuery) Clone() *AISkillReviewQuery {
 		return nil
 	}
 	return &AISkillReviewQuery{
-		config:      _q.config,
-		ctx:         _q.ctx.Clone(),
-		order:       append([]aiskillreview.OrderOption{}, _q.order...),
-		inters:      append([]Interceptor{}, _q.inters...),
-		predicates:  append([]predicate.AISkillReview{}, _q.predicates...),
-		withSkill:   _q.withSkill.Clone(),
-		withVersion: _q.withVersion.Clone(),
+		config:            _q.config,
+		ctx:               _q.ctx.Clone(),
+		order:             append([]aiskillreview.OrderOption{}, _q.order...),
+		inters:            append([]Interceptor{}, _q.inters...),
+		predicates:        append([]predicate.AISkillReview{}, _q.predicates...),
+		withSkill:         _q.withSkill.Clone(),
+		withVersion:       _q.withVersion.Clone(),
+		withSubmitterUser: _q.withSubmitterUser.Clone(),
+		withReviewerUser:  _q.withReviewerUser.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -327,6 +376,28 @@ func (_q *AISkillReviewQuery) WithVersion(opts ...func(*AISkillVersionQuery)) *A
 		opt(query)
 	}
 	_q.withVersion = query
+	return _q
+}
+
+// WithSubmitterUser tells the query-builder to eager-load the nodes that are connected to
+// the "submitter_user" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *AISkillReviewQuery) WithSubmitterUser(opts ...func(*UserQuery)) *AISkillReviewQuery {
+	query := (&UserClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withSubmitterUser = query
+	return _q
+}
+
+// WithReviewerUser tells the query-builder to eager-load the nodes that are connected to
+// the "reviewer_user" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *AISkillReviewQuery) WithReviewerUser(opts ...func(*UserQuery)) *AISkillReviewQuery {
+	query := (&UserClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withReviewerUser = query
 	return _q
 }
 
@@ -408,9 +479,11 @@ func (_q *AISkillReviewQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([
 	var (
 		nodes       = []*AISkillReview{}
 		_spec       = _q.querySpec()
-		loadedTypes = [2]bool{
+		loadedTypes = [4]bool{
 			_q.withSkill != nil,
 			_q.withVersion != nil,
+			_q.withSubmitterUser != nil,
+			_q.withReviewerUser != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -443,6 +516,18 @@ func (_q *AISkillReviewQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([
 	if query := _q.withVersion; query != nil {
 		if err := _q.loadVersion(ctx, query, nodes, nil,
 			func(n *AISkillReview, e *AISkillVersion) { n.Edges.Version = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withSubmitterUser; query != nil {
+		if err := _q.loadSubmitterUser(ctx, query, nodes, nil,
+			func(n *AISkillReview, e *User) { n.Edges.SubmitterUser = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withReviewerUser; query != nil {
+		if err := _q.loadReviewerUser(ctx, query, nodes, nil,
+			func(n *AISkillReview, e *User) { n.Edges.ReviewerUser = e }); err != nil {
 			return nil, err
 		}
 	}
@@ -507,6 +592,67 @@ func (_q *AISkillReviewQuery) loadVersion(ctx context.Context, query *AISkillVer
 	}
 	return nil
 }
+func (_q *AISkillReviewQuery) loadSubmitterUser(ctx context.Context, query *UserQuery, nodes []*AISkillReview, init func(*AISkillReview), assign func(*AISkillReview, *User)) error {
+	ids := make([]int64, 0, len(nodes))
+	nodeids := make(map[int64][]*AISkillReview)
+	for i := range nodes {
+		fk := nodes[i].SubmitterUserID
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(user.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "submitter_user_id" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
+}
+func (_q *AISkillReviewQuery) loadReviewerUser(ctx context.Context, query *UserQuery, nodes []*AISkillReview, init func(*AISkillReview), assign func(*AISkillReview, *User)) error {
+	ids := make([]int64, 0, len(nodes))
+	nodeids := make(map[int64][]*AISkillReview)
+	for i := range nodes {
+		if nodes[i].ReviewerUserID == nil {
+			continue
+		}
+		fk := *nodes[i].ReviewerUserID
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(user.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "reviewer_user_id" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
+}
 
 func (_q *AISkillReviewQuery) sqlCount(ctx context.Context) (int, error) {
 	_spec := _q.querySpec()
@@ -541,6 +687,12 @@ func (_q *AISkillReviewQuery) querySpec() *sqlgraph.QuerySpec {
 		}
 		if _q.withVersion != nil {
 			_spec.Node.AddColumnOnce(aiskillreview.FieldVersionID)
+		}
+		if _q.withSubmitterUser != nil {
+			_spec.Node.AddColumnOnce(aiskillreview.FieldSubmitterUserID)
+		}
+		if _q.withReviewerUser != nil {
+			_spec.Node.AddColumnOnce(aiskillreview.FieldReviewerUserID)
 		}
 	}
 	if ps := _q.predicates; len(ps) > 0 {

@@ -13,6 +13,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aiskill"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillreview"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillversion"
+	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
 // AISkillReview is the model entity for the AISkillReview schema.
@@ -64,9 +65,13 @@ type AISkillReviewEdges struct {
 	Skill *AISkill `json:"skill,omitempty"`
 	// Version holds the value of the version edge.
 	Version *AISkillVersion `json:"version,omitempty"`
+	// SubmitterUser holds the value of the submitter_user edge.
+	SubmitterUser *User `json:"submitter_user,omitempty"`
+	// ReviewerUser holds the value of the reviewer_user edge.
+	ReviewerUser *User `json:"reviewer_user,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [2]bool
+	loadedTypes [4]bool
 }
 
 // SkillOrErr returns the Skill value or an error if the edge
@@ -89,6 +94,28 @@ func (e AISkillReviewEdges) VersionOrErr() (*AISkillVersion, error) {
 		return nil, &NotFoundError{label: aiskillversion.Label}
 	}
 	return nil, &NotLoadedError{edge: "version"}
+}
+
+// SubmitterUserOrErr returns the SubmitterUser value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e AISkillReviewEdges) SubmitterUserOrErr() (*User, error) {
+	if e.SubmitterUser != nil {
+		return e.SubmitterUser, nil
+	} else if e.loadedTypes[2] {
+		return nil, &NotFoundError{label: user.Label}
+	}
+	return nil, &NotLoadedError{edge: "submitter_user"}
+}
+
+// ReviewerUserOrErr returns the ReviewerUser value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e AISkillReviewEdges) ReviewerUserOrErr() (*User, error) {
+	if e.ReviewerUser != nil {
+		return e.ReviewerUser, nil
+	} else if e.loadedTypes[3] {
+		return nil, &NotFoundError{label: user.Label}
+	}
+	return nil, &NotLoadedError{edge: "reviewer_user"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -254,6 +281,16 @@ func (_m *AISkillReview) QuerySkill() *AISkillQuery {
 // QueryVersion queries the "version" edge of the AISkillReview entity.
 func (_m *AISkillReview) QueryVersion() *AISkillVersionQuery {
 	return NewAISkillReviewClient(_m.config).QueryVersion(_m)
+}
+
+// QuerySubmitterUser queries the "submitter_user" edge of the AISkillReview entity.
+func (_m *AISkillReview) QuerySubmitterUser() *UserQuery {
+	return NewAISkillReviewClient(_m.config).QuerySubmitterUser(_m)
+}
+
+// QueryReviewerUser queries the "reviewer_user" edge of the AISkillReview entity.
+func (_m *AISkillReview) QueryReviewerUser() *UserQuery {
+	return NewAISkillReviewClient(_m.config).QueryReviewerUser(_m)
 }
 
 // Update returns a builder for updating this AISkillReview.

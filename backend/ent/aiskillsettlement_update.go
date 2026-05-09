@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aiskillsettlement"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillversion"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
 // AISkillSettlementUpdate is the builder for updating AISkillSettlement entities.
@@ -81,7 +82,6 @@ func (_u *AISkillSettlementUpdate) SetNillableRunID(v *int64) *AISkillSettlement
 
 // SetOwnerUserID sets the "owner_user_id" field.
 func (_u *AISkillSettlementUpdate) SetOwnerUserID(v int64) *AISkillSettlementUpdate {
-	_u.mutation.ResetOwnerUserID()
 	_u.mutation.SetOwnerUserID(v)
 	return _u
 }
@@ -94,15 +94,8 @@ func (_u *AISkillSettlementUpdate) SetNillableOwnerUserID(v *int64) *AISkillSett
 	return _u
 }
 
-// AddOwnerUserID adds value to the "owner_user_id" field.
-func (_u *AISkillSettlementUpdate) AddOwnerUserID(v int64) *AISkillSettlementUpdate {
-	_u.mutation.AddOwnerUserID(v)
-	return _u
-}
-
 // SetBuyerUserID sets the "buyer_user_id" field.
 func (_u *AISkillSettlementUpdate) SetBuyerUserID(v int64) *AISkillSettlementUpdate {
-	_u.mutation.ResetBuyerUserID()
 	_u.mutation.SetBuyerUserID(v)
 	return _u
 }
@@ -112,12 +105,6 @@ func (_u *AISkillSettlementUpdate) SetNillableBuyerUserID(v *int64) *AISkillSett
 	if v != nil {
 		_u.SetBuyerUserID(*v)
 	}
-	return _u
-}
-
-// AddBuyerUserID adds value to the "buyer_user_id" field.
-func (_u *AISkillSettlementUpdate) AddBuyerUserID(v int64) *AISkillSettlementUpdate {
-	_u.mutation.AddBuyerUserID(v)
 	return _u
 }
 
@@ -353,6 +340,16 @@ func (_u *AISkillSettlementUpdate) SetRun(v *AISkillRun) *AISkillSettlementUpdat
 	return _u.SetRunID(v.ID)
 }
 
+// SetOwnerUser sets the "owner_user" edge to the User entity.
+func (_u *AISkillSettlementUpdate) SetOwnerUser(v *User) *AISkillSettlementUpdate {
+	return _u.SetOwnerUserID(v.ID)
+}
+
+// SetBuyerUser sets the "buyer_user" edge to the User entity.
+func (_u *AISkillSettlementUpdate) SetBuyerUser(v *User) *AISkillSettlementUpdate {
+	return _u.SetBuyerUserID(v.ID)
+}
+
 // Mutation returns the AISkillSettlementMutation object of the builder.
 func (_u *AISkillSettlementUpdate) Mutation() *AISkillSettlementMutation {
 	return _u.mutation
@@ -373,6 +370,18 @@ func (_u *AISkillSettlementUpdate) ClearVersion() *AISkillSettlementUpdate {
 // ClearRun clears the "run" edge to the AISkillRun entity.
 func (_u *AISkillSettlementUpdate) ClearRun() *AISkillSettlementUpdate {
 	_u.mutation.ClearRun()
+	return _u
+}
+
+// ClearOwnerUser clears the "owner_user" edge to the User entity.
+func (_u *AISkillSettlementUpdate) ClearOwnerUser() *AISkillSettlementUpdate {
+	_u.mutation.ClearOwnerUser()
+	return _u
+}
+
+// ClearBuyerUser clears the "buyer_user" edge to the User entity.
+func (_u *AISkillSettlementUpdate) ClearBuyerUser() *AISkillSettlementUpdate {
+	_u.mutation.ClearBuyerUser()
 	return _u
 }
 
@@ -438,6 +447,12 @@ func (_u *AISkillSettlementUpdate) check() error {
 	if _u.mutation.RunCleared() && len(_u.mutation.RunIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "AISkillSettlement.run"`)
 	}
+	if _u.mutation.OwnerUserCleared() && len(_u.mutation.OwnerUserIDs()) > 0 {
+		return errors.New(`ent: clearing a required unique edge "AISkillSettlement.owner_user"`)
+	}
+	if _u.mutation.BuyerUserCleared() && len(_u.mutation.BuyerUserIDs()) > 0 {
+		return errors.New(`ent: clearing a required unique edge "AISkillSettlement.buyer_user"`)
+	}
 	return nil
 }
 
@@ -455,18 +470,6 @@ func (_u *AISkillSettlementUpdate) sqlSave(ctx context.Context) (_node int, err 
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(aiskillsettlement.FieldUpdatedAt, field.TypeTime, value)
-	}
-	if value, ok := _u.mutation.OwnerUserID(); ok {
-		_spec.SetField(aiskillsettlement.FieldOwnerUserID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.AddedOwnerUserID(); ok {
-		_spec.AddField(aiskillsettlement.FieldOwnerUserID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.BuyerUserID(); ok {
-		_spec.SetField(aiskillsettlement.FieldBuyerUserID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.AddedBuyerUserID(); ok {
-		_spec.AddField(aiskillsettlement.FieldBuyerUserID, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(aiskillsettlement.FieldStatus, field.TypeString, value)
@@ -621,6 +624,64 @@ func (_u *AISkillSettlementUpdate) sqlSave(ctx context.Context) (_node int, err 
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.OwnerUserCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillsettlement.OwnerUserTable,
+			Columns: []string{aiskillsettlement.OwnerUserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.OwnerUserIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillsettlement.OwnerUserTable,
+			Columns: []string{aiskillsettlement.OwnerUserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.BuyerUserCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillsettlement.BuyerUserTable,
+			Columns: []string{aiskillsettlement.BuyerUserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.BuyerUserIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillsettlement.BuyerUserTable,
+			Columns: []string{aiskillsettlement.BuyerUserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{aiskillsettlement.Label}
@@ -691,7 +752,6 @@ func (_u *AISkillSettlementUpdateOne) SetNillableRunID(v *int64) *AISkillSettlem
 
 // SetOwnerUserID sets the "owner_user_id" field.
 func (_u *AISkillSettlementUpdateOne) SetOwnerUserID(v int64) *AISkillSettlementUpdateOne {
-	_u.mutation.ResetOwnerUserID()
 	_u.mutation.SetOwnerUserID(v)
 	return _u
 }
@@ -704,15 +764,8 @@ func (_u *AISkillSettlementUpdateOne) SetNillableOwnerUserID(v *int64) *AISkillS
 	return _u
 }
 
-// AddOwnerUserID adds value to the "owner_user_id" field.
-func (_u *AISkillSettlementUpdateOne) AddOwnerUserID(v int64) *AISkillSettlementUpdateOne {
-	_u.mutation.AddOwnerUserID(v)
-	return _u
-}
-
 // SetBuyerUserID sets the "buyer_user_id" field.
 func (_u *AISkillSettlementUpdateOne) SetBuyerUserID(v int64) *AISkillSettlementUpdateOne {
-	_u.mutation.ResetBuyerUserID()
 	_u.mutation.SetBuyerUserID(v)
 	return _u
 }
@@ -722,12 +775,6 @@ func (_u *AISkillSettlementUpdateOne) SetNillableBuyerUserID(v *int64) *AISkillS
 	if v != nil {
 		_u.SetBuyerUserID(*v)
 	}
-	return _u
-}
-
-// AddBuyerUserID adds value to the "buyer_user_id" field.
-func (_u *AISkillSettlementUpdateOne) AddBuyerUserID(v int64) *AISkillSettlementUpdateOne {
-	_u.mutation.AddBuyerUserID(v)
 	return _u
 }
 
@@ -963,6 +1010,16 @@ func (_u *AISkillSettlementUpdateOne) SetRun(v *AISkillRun) *AISkillSettlementUp
 	return _u.SetRunID(v.ID)
 }
 
+// SetOwnerUser sets the "owner_user" edge to the User entity.
+func (_u *AISkillSettlementUpdateOne) SetOwnerUser(v *User) *AISkillSettlementUpdateOne {
+	return _u.SetOwnerUserID(v.ID)
+}
+
+// SetBuyerUser sets the "buyer_user" edge to the User entity.
+func (_u *AISkillSettlementUpdateOne) SetBuyerUser(v *User) *AISkillSettlementUpdateOne {
+	return _u.SetBuyerUserID(v.ID)
+}
+
 // Mutation returns the AISkillSettlementMutation object of the builder.
 func (_u *AISkillSettlementUpdateOne) Mutation() *AISkillSettlementMutation {
 	return _u.mutation
@@ -983,6 +1040,18 @@ func (_u *AISkillSettlementUpdateOne) ClearVersion() *AISkillSettlementUpdateOne
 // ClearRun clears the "run" edge to the AISkillRun entity.
 func (_u *AISkillSettlementUpdateOne) ClearRun() *AISkillSettlementUpdateOne {
 	_u.mutation.ClearRun()
+	return _u
+}
+
+// ClearOwnerUser clears the "owner_user" edge to the User entity.
+func (_u *AISkillSettlementUpdateOne) ClearOwnerUser() *AISkillSettlementUpdateOne {
+	_u.mutation.ClearOwnerUser()
+	return _u
+}
+
+// ClearBuyerUser clears the "buyer_user" edge to the User entity.
+func (_u *AISkillSettlementUpdateOne) ClearBuyerUser() *AISkillSettlementUpdateOne {
+	_u.mutation.ClearBuyerUser()
 	return _u
 }
 
@@ -1061,6 +1130,12 @@ func (_u *AISkillSettlementUpdateOne) check() error {
 	if _u.mutation.RunCleared() && len(_u.mutation.RunIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "AISkillSettlement.run"`)
 	}
+	if _u.mutation.OwnerUserCleared() && len(_u.mutation.OwnerUserIDs()) > 0 {
+		return errors.New(`ent: clearing a required unique edge "AISkillSettlement.owner_user"`)
+	}
+	if _u.mutation.BuyerUserCleared() && len(_u.mutation.BuyerUserIDs()) > 0 {
+		return errors.New(`ent: clearing a required unique edge "AISkillSettlement.buyer_user"`)
+	}
 	return nil
 }
 
@@ -1095,18 +1170,6 @@ func (_u *AISkillSettlementUpdateOne) sqlSave(ctx context.Context) (_node *AISki
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(aiskillsettlement.FieldUpdatedAt, field.TypeTime, value)
-	}
-	if value, ok := _u.mutation.OwnerUserID(); ok {
-		_spec.SetField(aiskillsettlement.FieldOwnerUserID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.AddedOwnerUserID(); ok {
-		_spec.AddField(aiskillsettlement.FieldOwnerUserID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.BuyerUserID(); ok {
-		_spec.SetField(aiskillsettlement.FieldBuyerUserID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.AddedBuyerUserID(); ok {
-		_spec.AddField(aiskillsettlement.FieldBuyerUserID, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(aiskillsettlement.FieldStatus, field.TypeString, value)
@@ -1254,6 +1317,64 @@ func (_u *AISkillSettlementUpdateOne) sqlSave(ctx context.Context) (_node *AISki
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(aiskillrun.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.OwnerUserCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillsettlement.OwnerUserTable,
+			Columns: []string{aiskillsettlement.OwnerUserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.OwnerUserIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillsettlement.OwnerUserTable,
+			Columns: []string{aiskillsettlement.OwnerUserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.BuyerUserCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillsettlement.BuyerUserTable,
+			Columns: []string{aiskillsettlement.BuyerUserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.BuyerUserIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillsettlement.BuyerUserTable,
+			Columns: []string{aiskillsettlement.BuyerUserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

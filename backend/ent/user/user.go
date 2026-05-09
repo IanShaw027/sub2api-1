@@ -63,6 +63,22 @@ const (
 	FieldRpmLimit = "rpm_limit"
 	// FieldTokenVersion holds the string denoting the token_version field in the database.
 	FieldTokenVersion = "token_version"
+	// EdgeAiSkills holds the string denoting the ai_skills edge name in mutations.
+	EdgeAiSkills = "ai_skills"
+	// EdgeAiSkillVersions holds the string denoting the ai_skill_versions edge name in mutations.
+	EdgeAiSkillVersions = "ai_skill_versions"
+	// EdgeAiSkillRuns holds the string denoting the ai_skill_runs edge name in mutations.
+	EdgeAiSkillRuns = "ai_skill_runs"
+	// EdgeAiSkillLikes holds the string denoting the ai_skill_likes edge name in mutations.
+	EdgeAiSkillLikes = "ai_skill_likes"
+	// EdgeAiSkillReviewsSubmitted holds the string denoting the ai_skill_reviews_submitted edge name in mutations.
+	EdgeAiSkillReviewsSubmitted = "ai_skill_reviews_submitted"
+	// EdgeAiSkillReviewsReviewed holds the string denoting the ai_skill_reviews_reviewed edge name in mutations.
+	EdgeAiSkillReviewsReviewed = "ai_skill_reviews_reviewed"
+	// EdgeAiSkillSettlementsOwned holds the string denoting the ai_skill_settlements_owned edge name in mutations.
+	EdgeAiSkillSettlementsOwned = "ai_skill_settlements_owned"
+	// EdgeAiSkillSettlementsBought holds the string denoting the ai_skill_settlements_bought edge name in mutations.
+	EdgeAiSkillSettlementsBought = "ai_skill_settlements_bought"
 	// EdgeAPIKeys holds the string denoting the api_keys edge name in mutations.
 	EdgeAPIKeys = "api_keys"
 	// EdgeRedeemCodes holds the string denoting the redeem_codes edge name in mutations.
@@ -91,6 +107,62 @@ const (
 	EdgeUserAllowedGroups = "user_allowed_groups"
 	// Table holds the table name of the user in the database.
 	Table = "users"
+	// AiSkillsTable is the table that holds the ai_skills relation/edge.
+	AiSkillsTable = "ai_skills"
+	// AiSkillsInverseTable is the table name for the AISkill entity.
+	// It exists in this package in order to avoid circular dependency with the "aiskill" package.
+	AiSkillsInverseTable = "ai_skills"
+	// AiSkillsColumn is the table column denoting the ai_skills relation/edge.
+	AiSkillsColumn = "user_id"
+	// AiSkillVersionsTable is the table that holds the ai_skill_versions relation/edge.
+	AiSkillVersionsTable = "ai_skill_versions"
+	// AiSkillVersionsInverseTable is the table name for the AISkillVersion entity.
+	// It exists in this package in order to avoid circular dependency with the "aiskillversion" package.
+	AiSkillVersionsInverseTable = "ai_skill_versions"
+	// AiSkillVersionsColumn is the table column denoting the ai_skill_versions relation/edge.
+	AiSkillVersionsColumn = "user_id"
+	// AiSkillRunsTable is the table that holds the ai_skill_runs relation/edge.
+	AiSkillRunsTable = "ai_skill_runs"
+	// AiSkillRunsInverseTable is the table name for the AISkillRun entity.
+	// It exists in this package in order to avoid circular dependency with the "aiskillrun" package.
+	AiSkillRunsInverseTable = "ai_skill_runs"
+	// AiSkillRunsColumn is the table column denoting the ai_skill_runs relation/edge.
+	AiSkillRunsColumn = "user_id"
+	// AiSkillLikesTable is the table that holds the ai_skill_likes relation/edge.
+	AiSkillLikesTable = "ai_skill_likes"
+	// AiSkillLikesInverseTable is the table name for the AISkillLike entity.
+	// It exists in this package in order to avoid circular dependency with the "aiskilllike" package.
+	AiSkillLikesInverseTable = "ai_skill_likes"
+	// AiSkillLikesColumn is the table column denoting the ai_skill_likes relation/edge.
+	AiSkillLikesColumn = "user_id"
+	// AiSkillReviewsSubmittedTable is the table that holds the ai_skill_reviews_submitted relation/edge.
+	AiSkillReviewsSubmittedTable = "ai_skill_reviews"
+	// AiSkillReviewsSubmittedInverseTable is the table name for the AISkillReview entity.
+	// It exists in this package in order to avoid circular dependency with the "aiskillreview" package.
+	AiSkillReviewsSubmittedInverseTable = "ai_skill_reviews"
+	// AiSkillReviewsSubmittedColumn is the table column denoting the ai_skill_reviews_submitted relation/edge.
+	AiSkillReviewsSubmittedColumn = "submitter_user_id"
+	// AiSkillReviewsReviewedTable is the table that holds the ai_skill_reviews_reviewed relation/edge.
+	AiSkillReviewsReviewedTable = "ai_skill_reviews"
+	// AiSkillReviewsReviewedInverseTable is the table name for the AISkillReview entity.
+	// It exists in this package in order to avoid circular dependency with the "aiskillreview" package.
+	AiSkillReviewsReviewedInverseTable = "ai_skill_reviews"
+	// AiSkillReviewsReviewedColumn is the table column denoting the ai_skill_reviews_reviewed relation/edge.
+	AiSkillReviewsReviewedColumn = "reviewer_user_id"
+	// AiSkillSettlementsOwnedTable is the table that holds the ai_skill_settlements_owned relation/edge.
+	AiSkillSettlementsOwnedTable = "ai_skill_settlements"
+	// AiSkillSettlementsOwnedInverseTable is the table name for the AISkillSettlement entity.
+	// It exists in this package in order to avoid circular dependency with the "aiskillsettlement" package.
+	AiSkillSettlementsOwnedInverseTable = "ai_skill_settlements"
+	// AiSkillSettlementsOwnedColumn is the table column denoting the ai_skill_settlements_owned relation/edge.
+	AiSkillSettlementsOwnedColumn = "owner_user_id"
+	// AiSkillSettlementsBoughtTable is the table that holds the ai_skill_settlements_bought relation/edge.
+	AiSkillSettlementsBoughtTable = "ai_skill_settlements"
+	// AiSkillSettlementsBoughtInverseTable is the table name for the AISkillSettlement entity.
+	// It exists in this package in order to avoid circular dependency with the "aiskillsettlement" package.
+	AiSkillSettlementsBoughtInverseTable = "ai_skill_settlements"
+	// AiSkillSettlementsBoughtColumn is the table column denoting the ai_skill_settlements_bought relation/edge.
+	AiSkillSettlementsBoughtColumn = "buyer_user_id"
 	// APIKeysTable is the table that holds the api_keys relation/edge.
 	APIKeysTable = "api_keys"
 	// APIKeysInverseTable is the table name for the APIKey entity.
@@ -411,6 +483,118 @@ func ByTokenVersion(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTokenVersion, opts...).ToFunc()
 }
 
+// ByAiSkillsCount orders the results by ai_skills count.
+func ByAiSkillsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newAiSkillsStep(), opts...)
+	}
+}
+
+// ByAiSkills orders the results by ai_skills terms.
+func ByAiSkills(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newAiSkillsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByAiSkillVersionsCount orders the results by ai_skill_versions count.
+func ByAiSkillVersionsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newAiSkillVersionsStep(), opts...)
+	}
+}
+
+// ByAiSkillVersions orders the results by ai_skill_versions terms.
+func ByAiSkillVersions(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newAiSkillVersionsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByAiSkillRunsCount orders the results by ai_skill_runs count.
+func ByAiSkillRunsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newAiSkillRunsStep(), opts...)
+	}
+}
+
+// ByAiSkillRuns orders the results by ai_skill_runs terms.
+func ByAiSkillRuns(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newAiSkillRunsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByAiSkillLikesCount orders the results by ai_skill_likes count.
+func ByAiSkillLikesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newAiSkillLikesStep(), opts...)
+	}
+}
+
+// ByAiSkillLikes orders the results by ai_skill_likes terms.
+func ByAiSkillLikes(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newAiSkillLikesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByAiSkillReviewsSubmittedCount orders the results by ai_skill_reviews_submitted count.
+func ByAiSkillReviewsSubmittedCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newAiSkillReviewsSubmittedStep(), opts...)
+	}
+}
+
+// ByAiSkillReviewsSubmitted orders the results by ai_skill_reviews_submitted terms.
+func ByAiSkillReviewsSubmitted(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newAiSkillReviewsSubmittedStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByAiSkillReviewsReviewedCount orders the results by ai_skill_reviews_reviewed count.
+func ByAiSkillReviewsReviewedCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newAiSkillReviewsReviewedStep(), opts...)
+	}
+}
+
+// ByAiSkillReviewsReviewed orders the results by ai_skill_reviews_reviewed terms.
+func ByAiSkillReviewsReviewed(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newAiSkillReviewsReviewedStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByAiSkillSettlementsOwnedCount orders the results by ai_skill_settlements_owned count.
+func ByAiSkillSettlementsOwnedCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newAiSkillSettlementsOwnedStep(), opts...)
+	}
+}
+
+// ByAiSkillSettlementsOwned orders the results by ai_skill_settlements_owned terms.
+func ByAiSkillSettlementsOwned(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newAiSkillSettlementsOwnedStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByAiSkillSettlementsBoughtCount orders the results by ai_skill_settlements_bought count.
+func ByAiSkillSettlementsBoughtCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newAiSkillSettlementsBoughtStep(), opts...)
+	}
+}
+
+// ByAiSkillSettlementsBought orders the results by ai_skill_settlements_bought terms.
+func ByAiSkillSettlementsBought(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newAiSkillSettlementsBoughtStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // ByAPIKeysCount orders the results by api_keys count.
 func ByAPIKeysCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -591,6 +775,62 @@ func ByUserAllowedGroups(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption
 	return func(s *sql.Selector) {
 		sqlgraph.OrderByNeighborTerms(s, newUserAllowedGroupsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
+}
+func newAiSkillsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(AiSkillsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, AiSkillsTable, AiSkillsColumn),
+	)
+}
+func newAiSkillVersionsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(AiSkillVersionsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, AiSkillVersionsTable, AiSkillVersionsColumn),
+	)
+}
+func newAiSkillRunsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(AiSkillRunsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, AiSkillRunsTable, AiSkillRunsColumn),
+	)
+}
+func newAiSkillLikesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(AiSkillLikesInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, AiSkillLikesTable, AiSkillLikesColumn),
+	)
+}
+func newAiSkillReviewsSubmittedStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(AiSkillReviewsSubmittedInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, AiSkillReviewsSubmittedTable, AiSkillReviewsSubmittedColumn),
+	)
+}
+func newAiSkillReviewsReviewedStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(AiSkillReviewsReviewedInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, AiSkillReviewsReviewedTable, AiSkillReviewsReviewedColumn),
+	)
+}
+func newAiSkillSettlementsOwnedStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(AiSkillSettlementsOwnedInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, AiSkillSettlementsOwnedTable, AiSkillSettlementsOwnedColumn),
+	)
+}
+func newAiSkillSettlementsBoughtStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(AiSkillSettlementsBoughtInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, AiSkillSettlementsBoughtTable, AiSkillSettlementsBoughtColumn),
+	)
 }
 func newAPIKeysStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(

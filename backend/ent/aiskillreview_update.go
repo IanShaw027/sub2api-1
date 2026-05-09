@@ -15,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aiskillreview"
 	"github.com/Wei-Shaw/sub2api/ent/aiskillversion"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
 // AISkillReviewUpdate is the builder for updating AISkillReview entities.
@@ -66,7 +67,6 @@ func (_u *AISkillReviewUpdate) SetNillableVersionID(v *int64) *AISkillReviewUpda
 
 // SetSubmitterUserID sets the "submitter_user_id" field.
 func (_u *AISkillReviewUpdate) SetSubmitterUserID(v int64) *AISkillReviewUpdate {
-	_u.mutation.ResetSubmitterUserID()
 	_u.mutation.SetSubmitterUserID(v)
 	return _u
 }
@@ -79,15 +79,8 @@ func (_u *AISkillReviewUpdate) SetNillableSubmitterUserID(v *int64) *AISkillRevi
 	return _u
 }
 
-// AddSubmitterUserID adds value to the "submitter_user_id" field.
-func (_u *AISkillReviewUpdate) AddSubmitterUserID(v int64) *AISkillReviewUpdate {
-	_u.mutation.AddSubmitterUserID(v)
-	return _u
-}
-
 // SetReviewerUserID sets the "reviewer_user_id" field.
 func (_u *AISkillReviewUpdate) SetReviewerUserID(v int64) *AISkillReviewUpdate {
-	_u.mutation.ResetReviewerUserID()
 	_u.mutation.SetReviewerUserID(v)
 	return _u
 }
@@ -97,12 +90,6 @@ func (_u *AISkillReviewUpdate) SetNillableReviewerUserID(v *int64) *AISkillRevie
 	if v != nil {
 		_u.SetReviewerUserID(*v)
 	}
-	return _u
-}
-
-// AddReviewerUserID adds value to the "reviewer_user_id" field.
-func (_u *AISkillReviewUpdate) AddReviewerUserID(v int64) *AISkillReviewUpdate {
-	_u.mutation.AddReviewerUserID(v)
 	return _u
 }
 
@@ -309,6 +296,16 @@ func (_u *AISkillReviewUpdate) SetVersion(v *AISkillVersion) *AISkillReviewUpdat
 	return _u.SetVersionID(v.ID)
 }
 
+// SetSubmitterUser sets the "submitter_user" edge to the User entity.
+func (_u *AISkillReviewUpdate) SetSubmitterUser(v *User) *AISkillReviewUpdate {
+	return _u.SetSubmitterUserID(v.ID)
+}
+
+// SetReviewerUser sets the "reviewer_user" edge to the User entity.
+func (_u *AISkillReviewUpdate) SetReviewerUser(v *User) *AISkillReviewUpdate {
+	return _u.SetReviewerUserID(v.ID)
+}
+
 // Mutation returns the AISkillReviewMutation object of the builder.
 func (_u *AISkillReviewUpdate) Mutation() *AISkillReviewMutation {
 	return _u.mutation
@@ -323,6 +320,18 @@ func (_u *AISkillReviewUpdate) ClearSkill() *AISkillReviewUpdate {
 // ClearVersion clears the "version" edge to the AISkillVersion entity.
 func (_u *AISkillReviewUpdate) ClearVersion() *AISkillReviewUpdate {
 	_u.mutation.ClearVersion()
+	return _u
+}
+
+// ClearSubmitterUser clears the "submitter_user" edge to the User entity.
+func (_u *AISkillReviewUpdate) ClearSubmitterUser() *AISkillReviewUpdate {
+	_u.mutation.ClearSubmitterUser()
+	return _u
+}
+
+// ClearReviewerUser clears the "reviewer_user" edge to the User entity.
+func (_u *AISkillReviewUpdate) ClearReviewerUser() *AISkillReviewUpdate {
+	_u.mutation.ClearReviewerUser()
 	return _u
 }
 
@@ -380,6 +389,9 @@ func (_u *AISkillReviewUpdate) check() error {
 	if _u.mutation.VersionCleared() && len(_u.mutation.VersionIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "AISkillReview.version"`)
 	}
+	if _u.mutation.SubmitterUserCleared() && len(_u.mutation.SubmitterUserIDs()) > 0 {
+		return errors.New(`ent: clearing a required unique edge "AISkillReview.submitter_user"`)
+	}
 	return nil
 }
 
@@ -397,21 +409,6 @@ func (_u *AISkillReviewUpdate) sqlSave(ctx context.Context) (_node int, err erro
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(aiskillreview.FieldUpdatedAt, field.TypeTime, value)
-	}
-	if value, ok := _u.mutation.SubmitterUserID(); ok {
-		_spec.SetField(aiskillreview.FieldSubmitterUserID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.AddedSubmitterUserID(); ok {
-		_spec.AddField(aiskillreview.FieldSubmitterUserID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.ReviewerUserID(); ok {
-		_spec.SetField(aiskillreview.FieldReviewerUserID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.AddedReviewerUserID(); ok {
-		_spec.AddField(aiskillreview.FieldReviewerUserID, field.TypeInt64, value)
-	}
-	if _u.mutation.ReviewerUserIDCleared() {
-		_spec.ClearField(aiskillreview.FieldReviewerUserID, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(aiskillreview.FieldStatus, field.TypeString, value)
@@ -531,6 +528,64 @@ func (_u *AISkillReviewUpdate) sqlSave(ctx context.Context) (_node int, err erro
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.SubmitterUserCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillreview.SubmitterUserTable,
+			Columns: []string{aiskillreview.SubmitterUserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.SubmitterUserIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillreview.SubmitterUserTable,
+			Columns: []string{aiskillreview.SubmitterUserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ReviewerUserCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillreview.ReviewerUserTable,
+			Columns: []string{aiskillreview.ReviewerUserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ReviewerUserIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillreview.ReviewerUserTable,
+			Columns: []string{aiskillreview.ReviewerUserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{aiskillreview.Label}
@@ -587,7 +642,6 @@ func (_u *AISkillReviewUpdateOne) SetNillableVersionID(v *int64) *AISkillReviewU
 
 // SetSubmitterUserID sets the "submitter_user_id" field.
 func (_u *AISkillReviewUpdateOne) SetSubmitterUserID(v int64) *AISkillReviewUpdateOne {
-	_u.mutation.ResetSubmitterUserID()
 	_u.mutation.SetSubmitterUserID(v)
 	return _u
 }
@@ -600,15 +654,8 @@ func (_u *AISkillReviewUpdateOne) SetNillableSubmitterUserID(v *int64) *AISkillR
 	return _u
 }
 
-// AddSubmitterUserID adds value to the "submitter_user_id" field.
-func (_u *AISkillReviewUpdateOne) AddSubmitterUserID(v int64) *AISkillReviewUpdateOne {
-	_u.mutation.AddSubmitterUserID(v)
-	return _u
-}
-
 // SetReviewerUserID sets the "reviewer_user_id" field.
 func (_u *AISkillReviewUpdateOne) SetReviewerUserID(v int64) *AISkillReviewUpdateOne {
-	_u.mutation.ResetReviewerUserID()
 	_u.mutation.SetReviewerUserID(v)
 	return _u
 }
@@ -618,12 +665,6 @@ func (_u *AISkillReviewUpdateOne) SetNillableReviewerUserID(v *int64) *AISkillRe
 	if v != nil {
 		_u.SetReviewerUserID(*v)
 	}
-	return _u
-}
-
-// AddReviewerUserID adds value to the "reviewer_user_id" field.
-func (_u *AISkillReviewUpdateOne) AddReviewerUserID(v int64) *AISkillReviewUpdateOne {
-	_u.mutation.AddReviewerUserID(v)
 	return _u
 }
 
@@ -830,6 +871,16 @@ func (_u *AISkillReviewUpdateOne) SetVersion(v *AISkillVersion) *AISkillReviewUp
 	return _u.SetVersionID(v.ID)
 }
 
+// SetSubmitterUser sets the "submitter_user" edge to the User entity.
+func (_u *AISkillReviewUpdateOne) SetSubmitterUser(v *User) *AISkillReviewUpdateOne {
+	return _u.SetSubmitterUserID(v.ID)
+}
+
+// SetReviewerUser sets the "reviewer_user" edge to the User entity.
+func (_u *AISkillReviewUpdateOne) SetReviewerUser(v *User) *AISkillReviewUpdateOne {
+	return _u.SetReviewerUserID(v.ID)
+}
+
 // Mutation returns the AISkillReviewMutation object of the builder.
 func (_u *AISkillReviewUpdateOne) Mutation() *AISkillReviewMutation {
 	return _u.mutation
@@ -844,6 +895,18 @@ func (_u *AISkillReviewUpdateOne) ClearSkill() *AISkillReviewUpdateOne {
 // ClearVersion clears the "version" edge to the AISkillVersion entity.
 func (_u *AISkillReviewUpdateOne) ClearVersion() *AISkillReviewUpdateOne {
 	_u.mutation.ClearVersion()
+	return _u
+}
+
+// ClearSubmitterUser clears the "submitter_user" edge to the User entity.
+func (_u *AISkillReviewUpdateOne) ClearSubmitterUser() *AISkillReviewUpdateOne {
+	_u.mutation.ClearSubmitterUser()
+	return _u
+}
+
+// ClearReviewerUser clears the "reviewer_user" edge to the User entity.
+func (_u *AISkillReviewUpdateOne) ClearReviewerUser() *AISkillReviewUpdateOne {
+	_u.mutation.ClearReviewerUser()
 	return _u
 }
 
@@ -914,6 +977,9 @@ func (_u *AISkillReviewUpdateOne) check() error {
 	if _u.mutation.VersionCleared() && len(_u.mutation.VersionIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "AISkillReview.version"`)
 	}
+	if _u.mutation.SubmitterUserCleared() && len(_u.mutation.SubmitterUserIDs()) > 0 {
+		return errors.New(`ent: clearing a required unique edge "AISkillReview.submitter_user"`)
+	}
 	return nil
 }
 
@@ -948,21 +1014,6 @@ func (_u *AISkillReviewUpdateOne) sqlSave(ctx context.Context) (_node *AISkillRe
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(aiskillreview.FieldUpdatedAt, field.TypeTime, value)
-	}
-	if value, ok := _u.mutation.SubmitterUserID(); ok {
-		_spec.SetField(aiskillreview.FieldSubmitterUserID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.AddedSubmitterUserID(); ok {
-		_spec.AddField(aiskillreview.FieldSubmitterUserID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.ReviewerUserID(); ok {
-		_spec.SetField(aiskillreview.FieldReviewerUserID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.AddedReviewerUserID(); ok {
-		_spec.AddField(aiskillreview.FieldReviewerUserID, field.TypeInt64, value)
-	}
-	if _u.mutation.ReviewerUserIDCleared() {
-		_spec.ClearField(aiskillreview.FieldReviewerUserID, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(aiskillreview.FieldStatus, field.TypeString, value)
@@ -1075,6 +1126,64 @@ func (_u *AISkillReviewUpdateOne) sqlSave(ctx context.Context) (_node *AISkillRe
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(aiskillversion.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.SubmitterUserCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillreview.SubmitterUserTable,
+			Columns: []string{aiskillreview.SubmitterUserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.SubmitterUserIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillreview.SubmitterUserTable,
+			Columns: []string{aiskillreview.SubmitterUserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ReviewerUserCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillreview.ReviewerUserTable,
+			Columns: []string{aiskillreview.ReviewerUserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ReviewerUserIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   aiskillreview.ReviewerUserTable,
+			Columns: []string{aiskillreview.ReviewerUserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

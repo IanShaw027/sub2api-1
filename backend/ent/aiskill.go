@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/Wei-Shaw/sub2api/ent/aiskill"
+	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
 // AISkill is the model entity for the AISkill schema.
@@ -80,6 +81,8 @@ type AISkill struct {
 
 // AISkillEdges holds the relations/edges for other nodes in the graph.
 type AISkillEdges struct {
+	// User holds the value of the user edge.
+	User *User `json:"user,omitempty"`
 	// Versions holds the value of the versions edge.
 	Versions []*AISkillVersion `json:"versions,omitempty"`
 	// Runs holds the value of the runs edge.
@@ -92,13 +95,24 @@ type AISkillEdges struct {
 	Settlements []*AISkillSettlement `json:"settlements,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [5]bool
+	loadedTypes [6]bool
+}
+
+// UserOrErr returns the User value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e AISkillEdges) UserOrErr() (*User, error) {
+	if e.User != nil {
+		return e.User, nil
+	} else if e.loadedTypes[0] {
+		return nil, &NotFoundError{label: user.Label}
+	}
+	return nil, &NotLoadedError{edge: "user"}
 }
 
 // VersionsOrErr returns the Versions value or an error if the edge
 // was not loaded in eager-loading.
 func (e AISkillEdges) VersionsOrErr() ([]*AISkillVersion, error) {
-	if e.loadedTypes[0] {
+	if e.loadedTypes[1] {
 		return e.Versions, nil
 	}
 	return nil, &NotLoadedError{edge: "versions"}
@@ -107,7 +121,7 @@ func (e AISkillEdges) VersionsOrErr() ([]*AISkillVersion, error) {
 // RunsOrErr returns the Runs value or an error if the edge
 // was not loaded in eager-loading.
 func (e AISkillEdges) RunsOrErr() ([]*AISkillRun, error) {
-	if e.loadedTypes[1] {
+	if e.loadedTypes[2] {
 		return e.Runs, nil
 	}
 	return nil, &NotLoadedError{edge: "runs"}
@@ -116,7 +130,7 @@ func (e AISkillEdges) RunsOrErr() ([]*AISkillRun, error) {
 // ReviewsOrErr returns the Reviews value or an error if the edge
 // was not loaded in eager-loading.
 func (e AISkillEdges) ReviewsOrErr() ([]*AISkillReview, error) {
-	if e.loadedTypes[2] {
+	if e.loadedTypes[3] {
 		return e.Reviews, nil
 	}
 	return nil, &NotLoadedError{edge: "reviews"}
@@ -125,7 +139,7 @@ func (e AISkillEdges) ReviewsOrErr() ([]*AISkillReview, error) {
 // LikesOrErr returns the Likes value or an error if the edge
 // was not loaded in eager-loading.
 func (e AISkillEdges) LikesOrErr() ([]*AISkillLike, error) {
-	if e.loadedTypes[3] {
+	if e.loadedTypes[4] {
 		return e.Likes, nil
 	}
 	return nil, &NotLoadedError{edge: "likes"}
@@ -134,7 +148,7 @@ func (e AISkillEdges) LikesOrErr() ([]*AISkillLike, error) {
 // SettlementsOrErr returns the Settlements value or an error if the edge
 // was not loaded in eager-loading.
 func (e AISkillEdges) SettlementsOrErr() ([]*AISkillSettlement, error) {
-	if e.loadedTypes[4] {
+	if e.loadedTypes[5] {
 		return e.Settlements, nil
 	}
 	return nil, &NotLoadedError{edge: "settlements"}
@@ -365,6 +379,11 @@ func (_m *AISkill) assignValues(columns []string, values []any) error {
 // This includes values selected through modifiers, order, etc.
 func (_m *AISkill) Value(name string) (ent.Value, error) {
 	return _m.selectValues.Get(name)
+}
+
+// QueryUser queries the "user" edge of the AISkill entity.
+func (_m *AISkill) QueryUser() *UserQuery {
+	return NewAISkillClient(_m.config).QueryUser(_m)
 }
 
 // QueryVersions queries the "versions" edge of the AISkill entity.
