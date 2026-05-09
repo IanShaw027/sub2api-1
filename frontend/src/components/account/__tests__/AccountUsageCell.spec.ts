@@ -587,7 +587,7 @@ describe('AccountUsageCell', () => {
   expect(wrapper.text()).toContain('7d|100|106540000')
   })
 
-  it('OpenAI 生图路由文案在翻译缺失时回退为可读文本', async () => {
+  it('OpenAI 生图路由只按当前分组显示启用的 codex/web2api', async () => {
     getUsage.mockResolvedValue({
       openai_image_codex_supported: false,
       openai_image_codex_reason: 'free_plan_not_supported',
@@ -602,8 +602,71 @@ describe('AccountUsageCell', () => {
           id: 2005,
           platform: 'openai',
           type: 'oauth',
-          extra: {}
-        })
+          extra: {},
+          groups: [
+            {
+              id: 101,
+              name: 'OpenAI Image Enabled',
+              description: '',
+              platform: 'openai',
+              rate_limit: 0,
+              priority: 0,
+              rate_multiplier: 1,
+              is_exclusive: false,
+              status: 'active',
+              subscription_type: 'free',
+              daily_limit_usd: null,
+              weekly_limit_usd: null,
+              monthly_limit_usd: null,
+              allow_image_generation: true,
+              image_generation_route: 'codex',
+              image_rate_independent: true,
+              image_rate_multiplier: 1,
+              image_price_1k: null,
+              image_price_2k: null,
+              image_price_4k: null,
+              images2api_price_1k: null,
+              images2api_price_2k: null,
+              images2api_price_4k: null,
+              claude_code_only: false,
+              fallback_group_id: null,
+              fallback_group_id_on_invalid_request: null,
+              require_oauth_only: false,
+              require_privacy_set: false
+            },
+            {
+              id: 102,
+              name: 'OpenAI Image Disabled',
+              description: '',
+              platform: 'openai',
+              rate_limit: 0,
+              priority: 0,
+              rate_multiplier: 1,
+              is_exclusive: false,
+              status: 'active',
+              subscription_type: 'free',
+              daily_limit_usd: null,
+              weekly_limit_usd: null,
+              monthly_limit_usd: null,
+              allow_image_generation: false,
+              image_generation_route: 'codex',
+              image_rate_independent: false,
+              image_rate_multiplier: 1,
+              image_price_1k: null,
+              image_price_2k: null,
+              image_price_4k: null,
+              images2api_price_1k: null,
+              images2api_price_2k: null,
+              images2api_price_4k: null,
+              claude_code_only: false,
+              fallback_group_id: null,
+              fallback_group_id_on_invalid_request: null,
+              require_oauth_only: false,
+              require_privacy_set: false
+            }
+          ]
+        }),
+        activeGroupId: 101
       },
       global: {
         stubs: {
@@ -615,13 +678,18 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Image route status')
     expect(wrapper.text()).toContain('codex')
-    expect(wrapper.text()).toContain('free accounts cannot use codex image generation')
     expect(wrapper.text()).toContain('web2api')
-    expect(wrapper.text()).toContain('available')
-    expect(wrapper.text()).toContain('Workspace: Personal')
     expect(wrapper.text()).not.toContain('admin.accounts.openaiImageRoutes')
+    expect(wrapper.text()).not.toContain('free accounts cannot use codex image generation')
+    expect(wrapper.text()).not.toContain('Personal')
+    expect(wrapper.text()).not.toContain('available')
+
+    await wrapper.setProps({ activeGroupId: 102 })
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('codex')
+    expect(wrapper.text()).not.toContain('web2api')
   })
 
   it('Key 账号会展示 today stats 徽章并带 A/U 提示', async () => {

@@ -261,6 +261,7 @@
               :today-stats="todayStatsByAccountId[String(row.id)] ?? null"
               :today-stats-loading="todayStatsLoading"
               :manual-refresh-token="usageManualRefreshToken"
+              :active-group-id="params.group && params.group !== ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE ? Number(params.group) : null"
             />
           </template>
           <template #cell-proxy="{ row }">

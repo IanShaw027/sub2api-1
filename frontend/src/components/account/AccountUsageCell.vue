@@ -132,20 +132,14 @@
             color="amber"
           />
         </div>
-        <div v-if="openAIImageRouteRows.length" class="space-y-0.5 pt-0.5">
-          <div
-            v-for="item in openAIImageRouteRows"
-            :key="item.key"
-            class="flex items-center justify-between gap-2 text-[10px]"
+        <div v-if="openAIImageRouteLabels.length" class="flex flex-wrap items-center gap-1 pt-0.5">
+          <span
+            v-for="label in openAIImageRouteLabels"
+            :key="label"
+            class="inline-flex rounded px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-gray-800 dark:text-gray-400"
           >
-            <span class="text-gray-500 dark:text-gray-400">{{ item.label }}</span>
-            <span :class="item.supported ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'">
-              {{ item.value }}
-            </span>
-          </div>
-          <div v-if="openAIImageWorkspaceSummary" class="text-[10px] text-gray-500 dark:text-gray-400">
-            {{ openAIImageWorkspaceSummary }}
-          </div>
+            {{ label }}
+          </span>
         </div>
       </div>
       <div v-else-if="loading" class="space-y-1.5">
@@ -517,11 +511,13 @@ const props = withDefaults(
     todayStats?: WindowStats | null
     todayStatsLoading?: boolean
     manualRefreshToken?: number
+    activeGroupId?: number | null
   }>(),
   {
     todayStats: null,
     todayStatsLoading: false,
-    manualRefreshToken: 0
+    manualRefreshToken: 0,
+    activeGroupId: null
   }
 )
 
@@ -589,7 +585,7 @@ const openAIResponseUsageBars = computed(() => {
   if (info.five_hour) {
     items.push({
       key: 'responses-5h',
-      label: translateOrFallback('admin.accounts.openaiImageRoutes.responses5h', 'responses 5h'),
+      label: '5h',
       progress: info.five_hour,
       color: 'indigo'
     })
@@ -597,7 +593,7 @@ const openAIResponseUsageBars = computed(() => {
   if (info.seven_day) {
     items.push({
       key: 'responses-7d',
-      label: translateOrFallback('admin.accounts.openaiImageRoutes.responses7d', 'responses 7d'),
+      label: '7d',
       progress: info.seven_day,
       color: 'emerald'
     })
@@ -605,14 +601,26 @@ const openAIResponseUsageBars = computed(() => {
   return items
 })
 
-const openAIEnabledImageRoutes = computed(() => {
+const openAICurrentImageGroups = computed(() => {
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') {
-    return { codex: false, web2api: false, constrained: false, masterEnabled: false, hasGroups: false }
+    return []
   }
 
   const groups = Array.isArray(props.account.groups)
     ? props.account.groups.filter((group): group is Group => group.platform === 'openai')
     : []
+
+  if (!groups.length) return []
+
+  if (typeof props.activeGroupId === 'number' && Number.isFinite(props.activeGroupId) && props.activeGroupId > 0) {
+    return groups.filter((group) => group.id === props.activeGroupId)
+  }
+
+  return groups
+})
+
+const openAIEnabledImageRoutes = computed(() => {
+  const groups = openAICurrentImageGroups.value
 
   if (!groups.length) {
     return { codex: true, web2api: true, constrained: false, masterEnabled: false, hasGroups: false }
@@ -669,45 +677,13 @@ const showOpenAIResponseUsageBars = computed(() => {
   return !openAIEnabledImageRoutes.value.constrained || !openAIHasRouteSpecificUsageWindows.value
 })
 
-const openAIImageWorkspaceSummary = computed(() => {
-  if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return ''
-  if (openAIEnabledImageRoutes.value.hasGroups && !openAIEnabledImageRoutes.value.masterEnabled) return ''
-  const workspace = usageInfo.value?.openai_image_workspace_name?.trim()
-  const plan = usageInfo.value?.openai_image_plan_type?.trim()
-  if (!workspace && !plan) return ''
-  const parts = []
-  if (plan) parts.push(plan)
-  if (workspace) parts.push(`${translateOrFallback('admin.accounts.openaiImageRoutes.workspace', 'Workspace')}: ${workspace}`)
-  return parts.join(' · ')
-})
-
-const openAIImageRouteRows = computed(() => {
+const openAIImageRouteLabels = computed(() => {
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return []
-  const info = usageInfo.value
-  if (!info) return []
   const { codex: showCodex, web2api: showWeb2api } = openAIEnabledImageRoutes.value
-  const hasCodexState = info.openai_image_codex_supported !== undefined || !!info.openai_image_codex_reason || !!info.openai_image_codex_five_hour || !!info.openai_image_codex_seven_day
-  const hasWeb2apiState = info.openai_image_web2api_supported !== undefined || !!info.openai_image_web2api_reason || !!info.openai_image_web2api_five_hour
-  const formatValue = (supported?: boolean, reason?: string) => {
-    if (supported) return translateOrFallback('admin.accounts.openaiImageRoutes.available', 'available')
-    if (reason === 'free_plan_not_supported') return translateOrFallback('admin.accounts.openaiImageRoutes.freePlanBlocked', 'free accounts cannot use codex image generation')
-    if (reason === 'unsupported_account_type') return translateOrFallback('admin.accounts.openaiImageRoutes.unsupported', 'unsupported for this account type')
-    return translateOrFallback('admin.accounts.openaiImageRoutes.unavailable', 'unavailable')
-  }
   return [
-    showCodex && hasCodexState ? {
-      key: 'codex',
-      label: translateOrFallback('admin.accounts.openaiImageRoutes.codex', 'codex'),
-      supported: !!info.openai_image_codex_supported,
-      value: formatValue(info.openai_image_codex_supported, info.openai_image_codex_reason)
-    } : null,
-    showWeb2api && hasWeb2apiState ? {
-      key: 'web2api',
-      label: translateOrFallback('admin.accounts.openaiImageRoutes.web2api', 'web2api'),
-      supported: !!info.openai_image_web2api_supported,
-      value: formatValue(info.openai_image_web2api_supported, info.openai_image_web2api_reason)
-    } : null
-  ].filter((item): item is { key: string; label: string; supported: boolean; value: string } => item !== null)
+    showCodex ? translateOrFallback('admin.accounts.openaiImageRoutes.codex', 'codex') : null,
+    showWeb2api ? translateOrFallback('admin.accounts.openaiImageRoutes.web2api', 'web2api') : null
+  ].filter((item): item is string => item !== null)
 })
 
 const openAIImageUsageBars = computed(() => {
@@ -744,8 +720,7 @@ const hasOpenAIUsageContent = computed(() => {
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return false
   return (showOpenAIResponseUsageBars.value && openAIResponseUsageBars.value.length > 0) ||
     openAIImageUsageBars.value.length > 0 ||
-    openAIImageRouteRows.value.length > 0 ||
-    !!openAIImageWorkspaceSummary.value ||
+    openAIImageRouteLabels.value.length > 0 ||
     !!usageInfo.value?.error
 })
 
