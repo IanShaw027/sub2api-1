@@ -201,7 +201,9 @@ type SystemSettings struct {
 	PaymentVisibleMethodWxpayEnabled  bool   `json:"payment_visible_method_wxpay_enabled"`
 
 	// OpenAI account scheduling
-	OpenAIAdvancedSchedulerEnabled bool `json:"openai_advanced_scheduler_enabled"`
+	OpenAIAdvancedSchedulerEnabled bool   `json:"openai_advanced_scheduler_enabled"`
+	OpenAIImageWebFreeModel        string `json:"openai_image_web_free_model"`
+	OpenAIImageWebPaidModel        string `json:"openai_image_web_paid_model"`
 
 	// Payment configuration
 	PaymentEnabled                   bool     `json:"payment_enabled"`

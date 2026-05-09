@@ -1538,6 +1538,16 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	}
 	settings.PaymentVisibleMethodAlipaySource = alipaySource
 	settings.PaymentVisibleMethodWxpaySource = wxpaySource
+	if trimmed := strings.TrimSpace(settings.OpenAIImageWebFreeModel); trimmed != "" {
+		settings.OpenAIImageWebFreeModel = trimmed
+	} else {
+		settings.OpenAIImageWebFreeModel = DefaultOpenAIImageWebConversationSettings().FreeModel
+	}
+	if trimmed := strings.TrimSpace(settings.OpenAIImageWebPaidModel); trimmed != "" {
+		settings.OpenAIImageWebPaidModel = trimmed
+	} else {
+		settings.OpenAIImageWebPaidModel = DefaultOpenAIImageWebConversationSettings().PaidModel
+	}
 	settings.WeChatConnectAppID = strings.TrimSpace(settings.WeChatConnectAppID)
 	settings.WeChatConnectAppSecret = strings.TrimSpace(settings.WeChatConnectAppSecret)
 	settings.WeChatConnectOpenAppID = strings.TrimSpace(firstNonEmpty(settings.WeChatConnectOpenAppID, settings.WeChatConnectAppID))
@@ -1847,6 +1857,8 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingPaymentVisibleMethodAlipayEnabled] = strconv.FormatBool(settings.PaymentVisibleMethodAlipayEnabled)
 	updates[SettingPaymentVisibleMethodWxpayEnabled] = strconv.FormatBool(settings.PaymentVisibleMethodWxpayEnabled)
 	updates[openAIAdvancedSchedulerSettingKey] = strconv.FormatBool(settings.OpenAIAdvancedSchedulerEnabled)
+	updates[SettingKeyOpenAIImageWebFreeModel] = settings.OpenAIImageWebFreeModel
+	updates[SettingKeyOpenAIImageWebPaidModel] = settings.OpenAIImageWebPaidModel
 
 	// Balance low notification
 	updates[SettingKeyBalanceLowNotifyEnabled] = strconv.FormatBool(settings.BalanceLowNotifyEnabled)
@@ -2741,6 +2753,8 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingPaymentVisibleMethodAlipayEnabled:     "false",
 		SettingPaymentVisibleMethodWxpayEnabled:      "false",
 		openAIAdvancedSchedulerSettingKey:            "false",
+		SettingKeyOpenAIImageWebFreeModel:            DefaultOpenAIImageWebConversationSettings().FreeModel,
+		SettingKeyOpenAIImageWebPaidModel:            DefaultOpenAIImageWebConversationSettings().PaidModel,
 		SettingKeyKiroDefaultVersion:                 defaultKiroVersion,
 		SettingKeyKiroDefaultCommit:                  "",
 		SettingKeyKiroDefaultSystemVersion:           defaultKiroSystemVersion,
@@ -3165,6 +3179,15 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.PaymentVisibleMethodAlipayEnabled = settings[SettingPaymentVisibleMethodAlipayEnabled] == "true"
 	result.PaymentVisibleMethodWxpayEnabled = settings[SettingPaymentVisibleMethodWxpayEnabled] == "true"
 	result.OpenAIAdvancedSchedulerEnabled = settings[openAIAdvancedSchedulerSettingKey] == "true"
+	result.OpenAIImageWebFreeModel = strings.TrimSpace(settings[SettingKeyOpenAIImageWebFreeModel])
+	result.OpenAIImageWebPaidModel = strings.TrimSpace(settings[SettingKeyOpenAIImageWebPaidModel])
+	defaultImageWebSettings := DefaultOpenAIImageWebConversationSettings()
+	if result.OpenAIImageWebFreeModel == "" {
+		result.OpenAIImageWebFreeModel = defaultImageWebSettings.FreeModel
+	}
+	if result.OpenAIImageWebPaidModel == "" {
+		result.OpenAIImageWebPaidModel = defaultImageWebSettings.PaidModel
+	}
 
 	// Balance low notification
 	result.BalanceLowNotifyEnabled = settings[SettingKeyBalanceLowNotifyEnabled] == "true"
@@ -3183,6 +3206,21 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	}
 
 	return result
+}
+
+func (s *SettingService) GetOpenAIImageWebConversationSettings(ctx context.Context) (*OpenAIImageWebConversationSettings, error) {
+	settings, err := s.settingRepo.GetMultiple(ctx, []string{
+		SettingKeyOpenAIImageWebFreeModel,
+		SettingKeyOpenAIImageWebPaidModel,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get openai image web conversation settings: %w", err)
+	}
+	defaults := DefaultOpenAIImageWebConversationSettings()
+	return &OpenAIImageWebConversationSettings{
+		FreeModel: firstNonEmpty(strings.TrimSpace(settings[SettingKeyOpenAIImageWebFreeModel]), defaults.FreeModel),
+		PaidModel: firstNonEmpty(strings.TrimSpace(settings[SettingKeyOpenAIImageWebPaidModel]), defaults.PaidModel),
+	}, nil
 }
 
 func clampAffiliateRebateRate(value float64) float64 {
@@ -3325,9 +3363,9 @@ func normalizeKiroThinkingMode(value string) string {
 	case KiroThinkingModeSimulate:
 		return KiroThinkingModeSimulate
 	case KiroThinkingModeModelAndSimulate:
-		return KiroThinkingModeSimulate
+		return KiroThinkingModeModelAndSimulate
 	case KiroThinkingModeModel:
-		return KiroThinkingModeSimulate
+		return KiroThinkingModeModel
 	default:
 		return defaultKiroThinkingMode
 	}

@@ -1089,6 +1089,11 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 	requiredRoute string,
 	requireOAuthAccount bool,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	if strings.TrimSpace(requiredRoute) == "" && groupID != nil && *groupID > 0 {
+		if group := s.loadGroupForImageRoute(ctx, *groupID); group != nil {
+			requiredRoute = group.EffectiveImageGenerationRoute()
+		}
+	}
 	if strings.TrimSpace(requiredRoute) != "" {
 		requiredRoute = NormalizeGroupImageGenerationRoute(requiredRoute)
 	}

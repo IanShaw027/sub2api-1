@@ -1194,7 +1194,7 @@ func (s *AccountTestService) testOpenAIImageWeb2API(c *gin.Context, ctx context.
 	}
 
 	s.sendEvent(c, TestEvent{Type: "content", Text: "Fetching chat requirements...\n"})
-	chatReqs, err := fetchOpenAIChatRequirements(ctx, client, headers)
+	chatReqs, err := fetchOpenAIChatRequirements(ctx, client, headers, account, nil, nil)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Chat requirements failed: %s", err.Error()))
 	}
@@ -1205,8 +1205,8 @@ func (s *AccountTestService) testOpenAIImageWeb2API(c *gin.Context, ctx context.
 	s.sendEvent(c, TestEvent{Type: "content", Text: "Preparing image conversation...\n"})
 	parentMessageID := uuid.NewString()
 	proofToken := generateOpenAIProofToken(chatReqs.ProofOfWork.Required, chatReqs.ProofOfWork.Seed, chatReqs.ProofOfWork.Difficulty, headers.Get("User-Agent"))
-	_ = initializeOpenAIImageConversation(ctx, client, headers)
-	conduitToken, err := prepareOpenAIImageConversation(ctx, client, headers, prompt, parentMessageID, chatReqs.Token, proofToken)
+	_ = initializeOpenAIImageConversation(ctx, client, headers, account, nil, nil)
+	conduitToken, err := prepareOpenAIImageConversation(ctx, client, headers, account, nil, nil, prompt, parentMessageID, chatReqs.Token, proofToken)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Conversation prepare failed: %s", err.Error()))
 	}
@@ -1249,7 +1249,7 @@ func (s *AccountTestService) testOpenAIImageWeb2API(c *gin.Context, ctx context.
 	pointerInfos = mergeOpenAIImagePointerInfos(pointerInfos, nil)
 	if conversationID != "" && !hasOpenAIFileServicePointerInfos(pointerInfos) {
 		s.sendEvent(c, TestEvent{Type: "content", Text: "Waiting for image generation to complete...\n"})
-		polledPointers, pollErr := pollOpenAIImageConversation(ctx, client, headers, conversationID)
+		polledPointers, pollErr := pollOpenAIImageConversation(ctx, client, headers, account, nil, nil, conversationID)
 		if pollErr != nil {
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Poll failed: %s", pollErr.Error()))
 		}
@@ -1262,7 +1262,7 @@ func (s *AccountTestService) testOpenAIImageWeb2API(c *gin.Context, ctx context.
 
 	s.sendEvent(c, TestEvent{Type: "content", Text: "Downloading generated image...\n"})
 	for _, pointer := range pointerInfos {
-		data, err := resolveOpenAIImageBytes(ctx, client, headers, conversationID, pointer)
+		data, err := resolveOpenAIImageBytes(ctx, client, headers, nil, conversationID, pointer)
 		if err != nil {
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Image download failed: %s", err.Error()))
 		}

@@ -464,6 +464,8 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		PaymentVisibleMethodAlipayEnabled:      settings.PaymentVisibleMethodAlipayEnabled,
 		PaymentVisibleMethodWxpayEnabled:       settings.PaymentVisibleMethodWxpayEnabled,
 		OpenAIAdvancedSchedulerEnabled:         settings.OpenAIAdvancedSchedulerEnabled,
+		OpenAIImageWebFreeModel:                settings.OpenAIImageWebFreeModel,
+		OpenAIImageWebPaidModel:                settings.OpenAIImageWebPaidModel,
 		BalanceLowNotifyEnabled:                settings.BalanceLowNotifyEnabled,
 		BalanceLowNotifyThreshold:              settings.BalanceLowNotifyThreshold,
 		BalanceLowNotifyRechargeURL:            settings.BalanceLowNotifyRechargeURL,
@@ -778,7 +780,9 @@ type UpdateSettingsRequest struct {
 	PaymentVisibleMethodWxpayEnabled  *bool   `json:"payment_visible_method_wxpay_enabled"`
 
 	// OpenAI account scheduling
-	OpenAIAdvancedSchedulerEnabled *bool `json:"openai_advanced_scheduler_enabled"`
+	OpenAIAdvancedSchedulerEnabled *bool   `json:"openai_advanced_scheduler_enabled"`
+	OpenAIImageWebFreeModel        *string `json:"openai_image_web_free_model"`
+	OpenAIImageWebPaidModel        *string `json:"openai_image_web_paid_model"`
 
 	// Balance low notification
 	BalanceLowNotifyEnabled     *bool                   `json:"balance_low_notify_enabled"`
@@ -2018,6 +2022,18 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.OpenAIAdvancedSchedulerEnabled
 		}(),
+		OpenAIImageWebFreeModel: func() string {
+			if req.OpenAIImageWebFreeModel != nil {
+				return strings.TrimSpace(*req.OpenAIImageWebFreeModel)
+			}
+			return previousSettings.OpenAIImageWebFreeModel
+		}(),
+		OpenAIImageWebPaidModel: func() string {
+			if req.OpenAIImageWebPaidModel != nil {
+				return strings.TrimSpace(*req.OpenAIImageWebPaidModel)
+			}
+			return previousSettings.OpenAIImageWebPaidModel
+		}(),
 		BalanceLowNotifyEnabled: func() bool {
 			if req.BalanceLowNotifyEnabled != nil {
 				return *req.BalanceLowNotifyEnabled
@@ -2345,6 +2361,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		PaymentVisibleMethodAlipayEnabled:      updatedSettings.PaymentVisibleMethodAlipayEnabled,
 		PaymentVisibleMethodWxpayEnabled:       updatedSettings.PaymentVisibleMethodWxpayEnabled,
 		OpenAIAdvancedSchedulerEnabled:         updatedSettings.OpenAIAdvancedSchedulerEnabled,
+		OpenAIImageWebFreeModel:                updatedSettings.OpenAIImageWebFreeModel,
+		OpenAIImageWebPaidModel:                updatedSettings.OpenAIImageWebPaidModel,
 		BalanceLowNotifyEnabled:                updatedSettings.BalanceLowNotifyEnabled,
 		BalanceLowNotifyThreshold:              updatedSettings.BalanceLowNotifyThreshold,
 		BalanceLowNotifyRechargeURL:            updatedSettings.BalanceLowNotifyRechargeURL,
@@ -2846,6 +2864,12 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.OpenAIAdvancedSchedulerEnabled != after.OpenAIAdvancedSchedulerEnabled {
 		changed = append(changed, "openai_advanced_scheduler_enabled")
+	}
+	if before.OpenAIImageWebFreeModel != after.OpenAIImageWebFreeModel {
+		changed = append(changed, "openai_image_web_free_model")
+	}
+	if before.OpenAIImageWebPaidModel != after.OpenAIImageWebPaidModel {
+		changed = append(changed, "openai_image_web_paid_model")
 	}
 	// Balance & quota notification
 	if before.BalanceLowNotifyEnabled != after.BalanceLowNotifyEnabled {

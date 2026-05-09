@@ -12,6 +12,12 @@ import (
 
 const openAIWebProfileExtraKey = "web_profile"
 
+const (
+	defaultOpenAIWebProfileClientVersion     = "prod-c9d58bd082f5fe5163759750852e4d690d489633"
+	defaultOpenAIWebProfileClientBuildNumber = "6445842"
+	defaultOpenAIWebProfileXOAIIS            = "ois1.initial"
+)
+
 type OpenAIWebProfile struct {
 	Version                string
 	Source                 string
@@ -21,6 +27,7 @@ type OpenAIWebProfile struct {
 	UserAgent              string
 	Impersonate            string
 	AcceptLanguage         string
+	OAILanguage            string
 	SecCHUA                string
 	SecCHUAMobile          string
 	SecCHUAPlatform        string
@@ -29,6 +36,9 @@ type OpenAIWebProfile struct {
 	SecCHUAFullVersion     string
 	SecCHUAPlatformVersion string
 	Timezone               string
+	OAIClientVersion       string
+	OAIClientBuildNumber   string
+	XOAIIS                 string
 	Viewport               OpenAIWebProfileViewport
 	OAIDeviceID            string
 	OAISessionID           string
@@ -74,6 +84,7 @@ func ResolveOpenAIWebProfile(account *Account) *OpenAIWebProfile {
 		UserAgent:              stringValue(profileMap["user_agent"]),
 		Impersonate:            stringValue(profileMap["impersonate"]),
 		AcceptLanguage:         stringValue(profileMap["accept_language"]),
+		OAILanguage:            firstStringValue(profileMap, "oai_language", "oai_lang", "language"),
 		SecCHUA:                stringValue(profileMap["sec_ch_ua"]),
 		SecCHUAMobile:          stringValue(profileMap["sec_ch_ua_mobile"]),
 		SecCHUAPlatform:        stringValue(profileMap["sec_ch_ua_platform"]),
@@ -82,6 +93,9 @@ func ResolveOpenAIWebProfile(account *Account) *OpenAIWebProfile {
 		SecCHUAFullVersion:     stringValue(profileMap["sec_ch_ua_full_version"]),
 		SecCHUAPlatformVersion: stringValue(profileMap["sec_ch_ua_platform_version"]),
 		Timezone:               stringValue(profileMap["timezone"]),
+		OAIClientVersion:       firstStringValue(profileMap, "oai_client_version", "client_version"),
+		OAIClientBuildNumber:   firstStringValue(profileMap, "oai_client_build_number", "client_build_number"),
+		XOAIIS:                 firstStringValue(profileMap, "x_oai_is", "x-oai-is"),
 		OAIDeviceID:            firstStringValue(profileMap, "oai_device_id", "openai_device_id", "oai_did"),
 		OAISessionID:           firstStringValue(profileMap, "oai_session_id", "openai_session_id"),
 	}
@@ -186,12 +200,24 @@ func BuildOpenAIWebProfileFromAccountData(credentials map[string]any, extra map[
 	}
 	fillOpenAIWebProfileHeaderFields(profile, credentials)
 	fillOpenAIWebProfileHeaderFields(profile, extra)
+	if profile.OAILanguage == "" {
+		profile.OAILanguage = deriveOpenAIWebProfileLanguage(profile.AcceptLanguage)
+	}
 
 	if profile.OAIDeviceID == "" {
 		profile.OAIDeviceID = firstStringValue(extra, "oai_device_id", "openai_device_id", "oai_did")
 	}
 	if profile.OAISessionID == "" {
 		profile.OAISessionID = firstStringValue(extra, "oai_session_id", "openai_session_id")
+	}
+	if profile.OAIClientVersion == "" {
+		profile.OAIClientVersion = firstStringValue(extra, "oai_client_version", "client_version")
+	}
+	if profile.OAIClientBuildNumber == "" {
+		profile.OAIClientBuildNumber = firstStringValue(extra, "oai_client_build_number", "client_build_number")
+	}
+	if profile.XOAIIS == "" {
+		profile.XOAIIS = firstStringValue(extra, "x_oai_is", "x-oai-is")
 	}
 	if len(profile.Cookies) == 0 {
 		profile.Cookies = firstOpenAIWebProfileCookies(extra, "cookies", "browser_cookies")
@@ -242,6 +268,18 @@ func fillOpenAIWebProfileHeaderFields(profile *OpenAIWebProfile, values map[stri
 	if profile.Timezone == "" {
 		profile.Timezone = firstStringValue(values, "timezone", "timezone_id")
 	}
+	if profile.OAILanguage == "" {
+		profile.OAILanguage = firstStringValue(values, "oai_language", "oai_lang", "language")
+	}
+	if profile.OAIClientVersion == "" {
+		profile.OAIClientVersion = firstStringValue(values, "oai_client_version", "client_version")
+	}
+	if profile.OAIClientBuildNumber == "" {
+		profile.OAIClientBuildNumber = firstStringValue(values, "oai_client_build_number", "client_build_number")
+	}
+	if profile.XOAIIS == "" {
+		profile.XOAIIS = firstStringValue(values, "x_oai_is", "x-oai-is")
+	}
 }
 
 func firstOpenAIWebProfileCookies(values map[string]any, keys ...string) []OpenAIWebProfileCookie {
@@ -273,6 +311,18 @@ func (p *OpenAIWebProfile) ToExtraMap() map[string]any {
 	if p == nil {
 		return nil
 	}
+	clientVersion := strings.TrimSpace(p.OAIClientVersion)
+	if clientVersion == "" {
+		clientVersion = defaultOpenAIWebProfileClientVersion
+	}
+	clientBuildNumber := strings.TrimSpace(p.OAIClientBuildNumber)
+	if clientBuildNumber == "" {
+		clientBuildNumber = defaultOpenAIWebProfileClientBuildNumber
+	}
+	xoaiis := strings.TrimSpace(p.XOAIIS)
+	if xoaiis == "" {
+		xoaiis = defaultOpenAIWebProfileXOAIIS
+	}
 	result := map[string]any{
 		"version":                    p.Version,
 		"source":                     p.Source,
@@ -282,6 +332,7 @@ func (p *OpenAIWebProfile) ToExtraMap() map[string]any {
 		"user_agent":                 p.UserAgent,
 		"impersonate":                p.Impersonate,
 		"accept_language":            p.AcceptLanguage,
+		"oai_language":               p.OAILanguage,
 		"sec_ch_ua":                  p.SecCHUA,
 		"sec_ch_ua_mobile":           p.SecCHUAMobile,
 		"sec_ch_ua_platform":         p.SecCHUAPlatform,
@@ -290,6 +341,9 @@ func (p *OpenAIWebProfile) ToExtraMap() map[string]any {
 		"sec_ch_ua_full_version":     p.SecCHUAFullVersion,
 		"sec_ch_ua_platform_version": p.SecCHUAPlatformVersion,
 		"timezone":                   p.Timezone,
+		"oai_client_version":         clientVersion,
+		"oai_client_build_number":    clientBuildNumber,
+		"x_oai_is":                   xoaiis,
 		"oai_device_id":              p.OAIDeviceID,
 		"oai_session_id":             p.OAISessionID,
 	}
@@ -379,12 +433,57 @@ func MergeOpenAIWebProfileResponseCookies(profile *OpenAIWebProfile, resp *http.
 	return merged, true
 }
 
+func MergeOpenAIWebProfileResponseState(profile *OpenAIWebProfile, resp *http.Response) (*OpenAIWebProfile, bool) {
+	merged, changed := MergeOpenAIWebProfileResponseCookies(profile, resp)
+	if resp == nil || resp.Header == nil {
+		return merged, changed
+	}
+	if update := strings.TrimSpace(resp.Header.Get("x-oai-is-update")); update != "" {
+		if merged == nil {
+			merged = cloneOpenAIWebProfile(profile)
+		}
+		if merged == nil {
+			merged = &OpenAIWebProfile{Version: "1"}
+		}
+		if merged.XOAIIS != update {
+			merged.XOAIIS = update
+			changed = true
+		}
+	}
+	if clientVersion := strings.TrimSpace(resp.Header.Get("oai-client-version")); clientVersion != "" {
+		if merged == nil {
+			merged = cloneOpenAIWebProfile(profile)
+		}
+		if merged == nil {
+			merged = &OpenAIWebProfile{Version: "1"}
+		}
+		if merged.OAIClientVersion != clientVersion {
+			merged.OAIClientVersion = clientVersion
+			changed = true
+		}
+	}
+	if clientBuildNumber := strings.TrimSpace(resp.Header.Get("oai-client-build-number")); clientBuildNumber != "" {
+		if merged == nil {
+			merged = cloneOpenAIWebProfile(profile)
+		}
+		if merged == nil {
+			merged = &OpenAIWebProfile{Version: "1"}
+		}
+		if merged.OAIClientBuildNumber != clientBuildNumber {
+			merged.OAIClientBuildNumber = clientBuildNumber
+			changed = true
+		}
+	}
+	return merged, changed
+}
+
 func ApplyOpenAIWebProfileHeaders(headers http.Header, profile *OpenAIWebProfile) {
 	if headers == nil || profile == nil {
 		return
 	}
 	setHeaderIfNotEmpty(headers, "User-Agent", profile.UserAgent)
 	setHeaderIfNotEmpty(headers, "Accept-Language", profile.AcceptLanguage)
+	setHeaderIfNotEmpty(headers, "OAI-Language", profileLanguageForHeader(profile))
 	setHeaderIfNotEmpty(headers, "Sec-Ch-Ua", profile.SecCHUA)
 	setHeaderIfNotEmpty(headers, "Sec-Ch-Ua-Mobile", profile.SecCHUAMobile)
 	setHeaderIfNotEmpty(headers, "Sec-Ch-Ua-Platform", profile.SecCHUAPlatform)
@@ -392,6 +491,33 @@ func ApplyOpenAIWebProfileHeaders(headers http.Header, profile *OpenAIWebProfile
 	setHeaderIfNotEmpty(headers, "Sec-Ch-Ua-Bitness", profile.SecCHUABitness)
 	setHeaderIfNotEmpty(headers, "Sec-Ch-Ua-Full-Version", profile.SecCHUAFullVersion)
 	setHeaderIfNotEmpty(headers, "Sec-Ch-Ua-Platform-Version", profile.SecCHUAPlatformVersion)
+	setHeaderIfNotEmpty(headers, "OAI-Client-Version", profile.OAIClientVersion)
+	setHeaderIfNotEmpty(headers, "OAI-Client-Build-Number", profile.OAIClientBuildNumber)
+	setHeaderIfNotEmpty(headers, "X-OAI-IS", profile.XOAIIS)
+}
+
+func profileLanguageForHeader(profile *OpenAIWebProfile) string {
+	if profile == nil {
+		return ""
+	}
+	if trimmed := strings.TrimSpace(profile.OAILanguage); trimmed != "" {
+		return trimmed
+	}
+	return deriveOpenAIWebProfileLanguage(profile.AcceptLanguage)
+}
+
+func deriveOpenAIWebProfileLanguage(acceptLanguage string) string {
+	trimmed := strings.TrimSpace(acceptLanguage)
+	if trimmed == "" {
+		return ""
+	}
+	if idx := strings.Index(trimmed, ","); idx >= 0 {
+		trimmed = trimmed[:idx]
+	}
+	if idx := strings.Index(trimmed, ";"); idx >= 0 {
+		trimmed = trimmed[:idx]
+	}
+	return strings.TrimSpace(trimmed)
 }
 
 func (p *OpenAIWebProfile) CookieHeaderForHost(host string) string {

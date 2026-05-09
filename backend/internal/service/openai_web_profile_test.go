@@ -32,6 +32,10 @@ func TestOpenAIWebProfileResolveJSONBMapAndHeaders(t *testing.T) {
 			"sec_ch_ua_bitness":          `"64"`,
 			"sec_ch_ua_full_version":     `"136.0.0.0"`,
 			"sec_ch_ua_platform_version": `"15.4.0"`,
+			"oai_language":               "zh-CN",
+			"oai_client_version":         "prod-c9d58bd082f5fe5163759750852e4d690d489633",
+			"oai_client_build_number":    "6445842",
+			"x_oai_is":                   "ois1.initial",
 			"timezone":                   "Asia/Shanghai",
 			"viewport": map[string]any{
 				"width":               float64(1440),
@@ -63,6 +67,10 @@ func TestOpenAIWebProfileResolveJSONBMapAndHeaders(t *testing.T) {
 	require.Equal(t, int64(42), profile.ProxyID)
 	require.Equal(t, "proxy-hash", profile.ProxyHash)
 	require.Equal(t, "chrome136", profile.Impersonate)
+	require.Equal(t, "zh-CN", profile.OAILanguage)
+	require.Equal(t, "prod-c9d58bd082f5fe5163759750852e4d690d489633", profile.OAIClientVersion)
+	require.Equal(t, "6445842", profile.OAIClientBuildNumber)
+	require.Equal(t, "ois1.initial", profile.XOAIIS)
 	require.Equal(t, "Asia/Shanghai", profile.Timezone)
 	require.Equal(t, 1440, profile.Viewport.Width)
 	require.Equal(t, 900, profile.Viewport.Height)
@@ -84,6 +92,10 @@ func TestOpenAIWebProfileResolveJSONBMapAndHeaders(t *testing.T) {
 	require.Equal(t, `"64"`, headers.Get("Sec-Ch-Ua-Bitness"))
 	require.Equal(t, `"136.0.0.0"`, headers.Get("Sec-Ch-Ua-Full-Version"))
 	require.Equal(t, `"15.4.0"`, headers.Get("Sec-Ch-Ua-Platform-Version"))
+	require.Equal(t, "zh-CN", headers.Get("OAI-Language"))
+	require.Equal(t, "prod-c9d58bd082f5fe5163759750852e4d690d489633", headers.Get("OAI-Client-Version"))
+	require.Equal(t, "6445842", headers.Get("OAI-Client-Build-Number"))
+	require.Equal(t, "ois1.initial", headers.Get("X-OAI-IS"))
 }
 
 func TestOpenAIWebProfileCookieHeaderForHostMatchesDomains(t *testing.T) {
@@ -185,6 +197,65 @@ func TestOpenAIWebProfileMergeResponseCookies(t *testing.T) {
 	require.Equal(t, "old=a; session=new", merged.CookieHeaderForHost("chatgpt.com/"))
 }
 
+func TestOpenAIWebProfileMergeResponseCookiesDefaultsDomainAndPath(t *testing.T) {
+	profile := ResolveOpenAIWebProfile(&Account{Extra: map[string]any{
+		"web_profile": map[string]any{
+			"cookies": []any{
+				map[string]any{"name": "old", "value": "a", "domain": ".chatgpt.com", "path": "/"},
+			},
+		},
+	}})
+	req, err := http.NewRequest(http.MethodPost, "https://chatgpt.com/backend-api/files/process_upload_stream", nil)
+	require.NoError(t, err)
+	resp := &http.Response{Request: req, Header: http.Header{}}
+	resp.Header.Add("Set-Cookie", "scoped=value; Secure; HttpOnly")
+
+	merged, changed := MergeOpenAIWebProfileResponseCookies(profile, resp)
+	require.True(t, changed)
+	require.Equal(t, "old=a; scoped=value", merged.CookieHeaderForHost("chatgpt.com/backend-api/files/process_upload_stream"))
+	require.Equal(t, "old=a", merged.CookieHeaderForHost("chatgpt.com/"))
+}
+
+func TestOpenAIWebProfileMergeResponseStateAppliesXOAIISUpdate(t *testing.T) {
+	profile := ResolveOpenAIWebProfile(&Account{Extra: map[string]any{
+		"web_profile": map[string]any{
+			"x_oai_is": "ois1.initial",
+			"cookies": []any{
+				map[string]any{"name": "old", "value": "a", "domain": ".chatgpt.com", "path": "/"},
+			},
+		},
+	}})
+	req, err := http.NewRequest(http.MethodPost, "https://chatgpt.com/backend-api/f/conversation", nil)
+	require.NoError(t, err)
+	resp := &http.Response{Request: req, Header: http.Header{}}
+	resp.Header.Set("x-oai-is-update", "ois1.updated")
+	resp.Header.Add("Set-Cookie", "session=new; Path=/; Domain=.chatgpt.com; Secure; HttpOnly; SameSite=Lax")
+
+	merged, changed := MergeOpenAIWebProfileResponseState(profile, resp)
+	require.True(t, changed)
+	require.Equal(t, "ois1.updated", merged.XOAIIS)
+	require.Equal(t, "old=a; session=new", merged.CookieHeaderForHost("chatgpt.com"))
+}
+
+func TestOpenAIWebProfileMergeResponseStateAppliesClientVersionAndBuildNumber(t *testing.T) {
+	profile := ResolveOpenAIWebProfile(&Account{Extra: map[string]any{
+		"web_profile": map[string]any{
+			"oai_client_version":      "prod-c9d58bd082f5fe5163759750852e4d690d489633",
+			"oai_client_build_number": "6445842",
+		},
+	}})
+	req, err := http.NewRequest(http.MethodPost, "https://chatgpt.com/backend-api/sentinel/chat-requirements/finalize", nil)
+	require.NoError(t, err)
+	resp := &http.Response{Request: req, Header: http.Header{}}
+	resp.Header.Set("oai-client-version", "prod-next-version")
+	resp.Header.Set("oai-client-build-number", "7000000")
+
+	merged, changed := MergeOpenAIWebProfileResponseState(profile, resp)
+	require.True(t, changed)
+	require.Equal(t, "prod-next-version", merged.OAIClientVersion)
+	require.Equal(t, "7000000", merged.OAIClientBuildNumber)
+}
+
 func TestOpenAIWebProfileMergeResponseCookiesRejectsNonChatGPTRequestHost(t *testing.T) {
 	profile := ResolveOpenAIWebProfile(&Account{Extra: map[string]any{
 		"web_profile": map[string]any{
@@ -261,6 +332,10 @@ func TestOpenAIWebProfileToExtraMapRedactsNothingButPreservesShape(t *testing.T)
 	require.Equal(t, "1", extra["version"])
 	require.Equal(t, "Mozilla/5.0", extra["user_agent"])
 	require.Equal(t, "device", extra["oai_device_id"])
+	require.Equal(t, "session", extra["oai_session_id"])
+	require.Equal(t, "prod-c9d58bd082f5fe5163759750852e4d690d489633", extra["oai_client_version"])
+	require.Equal(t, "6445842", extra["oai_client_build_number"])
+	require.Equal(t, "ois1.initial", extra["x_oai_is"])
 	cookies, ok := extra["cookies"].([]map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "cookie", cookies[0]["name"])

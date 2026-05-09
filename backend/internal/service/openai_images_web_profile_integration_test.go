@@ -32,10 +32,17 @@ func TestOpenAIImagesWebProfileBackendHeadersPreserveBrowserProfileContract(t *t
 				"sec_ch_ua_platform_version": `"15.4.0"`,
 				"oai_device_id":              "device-from-profile",
 				"oai_session_id":             "session-from-profile",
+				"oai_language":               "zh-CN",
+				"oai_client_version":         "prod-c9d58bd082f5fe5163759750852e4d690d489633",
+				"oai_client_build_number":    "6445842",
+				"x_oai_is":                   "ois1.initial",
 				"chatgpt_account_id":         "profile-account-id",
 				"cookies": []any{
 					map[string]any{"name": "__Secure-next-auth.session-token", "value": "profile-session-secret", "domain": ".chatgpt.com", "path": "/"},
 					map[string]any{"name": "cf_clearance", "value": "clearance-secret", "domain": ".chatgpt.com", "path": "/backend-api"},
+					map[string]any{"name": "files_only", "value": "files-secret", "domain": ".chatgpt.com", "path": "/backend-api/files"},
+					map[string]any{"name": "sentinel_only", "value": "sentinel-secret", "domain": ".chatgpt.com", "path": "/backend-api/sentinel"},
+					map[string]any{"name": "async_only", "value": "async-secret", "domain": ".chatgpt.com", "path": "/backend-api/conversation/conv-123/async-status"},
 					map[string]any{"name": "api_cookie", "value": "api-secret", "domain": ".openai.com", "path": "/"},
 				},
 			},
@@ -47,36 +54,49 @@ func TestOpenAIImagesWebProfileBackendHeadersPreserveBrowserProfileContract(t *t
 
 	profile := ResolveOpenAIWebProfile(account)
 	require.NotNil(t, profile)
+	require.Equal(t, "Bearer access-token", baseHeaders.Get("Authorization"))
+	require.Equal(t, "https://chatgpt.com", baseHeaders.Get("Origin"))
+	require.Equal(t, "https://chatgpt.com/", baseHeaders.Get("Referer"))
+	require.Equal(t, "Mozilla/5.0 WebProfileUA Chrome/136.0.0.0 Safari/537.36", baseHeaders.Get("User-Agent"))
+	require.Equal(t, "en-US,en;q=0.9", baseHeaders.Get("Accept-Language"))
+	require.Equal(t, `"Chromium";v="136", "Google Chrome";v="136"`, baseHeaders.Get("Sec-Ch-Ua"))
+	require.Equal(t, "?0", baseHeaders.Get("Sec-Ch-Ua-Mobile"))
+	require.Equal(t, `"macOS"`, baseHeaders.Get("Sec-Ch-Ua-Platform"))
+	require.Equal(t, `"arm"`, baseHeaders.Get("Sec-Ch-Ua-Arch"))
+	require.Equal(t, `"64"`, baseHeaders.Get("Sec-Ch-Ua-Bitness"))
+	require.Equal(t, `"136.0.0.0"`, baseHeaders.Get("Sec-Ch-Ua-Full-Version"))
+	require.Equal(t, `"15.4.0"`, baseHeaders.Get("Sec-Ch-Ua-Platform-Version"))
+	require.Equal(t, "device-from-profile", baseHeaders.Get("oai-device-id"))
+	require.Equal(t, "session-from-profile", baseHeaders.Get("oai-session-id"))
+	require.Equal(t, "credential-account-id", baseHeaders.Get("chatgpt-account-id"))
+	require.Equal(t, "zh-CN", baseHeaders.Get("OAI-Language"))
+	require.Equal(t, "prod-c9d58bd082f5fe5163759750852e4d690d489633", baseHeaders.Get("OAI-Client-Version"))
+	require.Equal(t, "6445842", baseHeaders.Get("OAI-Client-Build-Number"))
+	require.Equal(t, "ois1.initial", baseHeaders.Get("X-OAI-IS"))
+	require.Equal(t, "__Secure-next-auth.session-token=profile-session-secret; cf_clearance=clearance-secret; oai-did=device-from-profile", baseHeaders.Get("Cookie"))
+	require.NotContains(t, baseHeaders.Get("Cookie"), "api-secret")
 
-	mergedHeaders := cloneHeaderForOpenAIImagesWebProfileTest(baseHeaders)
-	ApplyOpenAIWebProfileHeaders(mergedHeaders, profile)
-	if profile.OAIDeviceID != "" {
-		mergedHeaders.Set("oai-device-id", profile.OAIDeviceID)
-	}
-	if profile.OAISessionID != "" {
-		mergedHeaders.Set("oai-session-id", profile.OAISessionID)
-	}
-	if cookieHeader := profile.CookieHeaderForHost("chatgpt.com/backend-api/conversation"); cookieHeader != "" {
-		mergedHeaders.Set("Cookie", cookieHeader)
-	}
+	filesHeaders := cloneHeaderForOpenAIImagesWebProfileTest(baseHeaders)
+	setOpenAIBackendAPIRequestTarget(filesHeaders, openAIChatGPTFilesProcessUploadURL, "/backend-api/files/process_upload_stream")
+	setOpenAIBackendAPIRequestCookieHeader(filesHeaders, profile, openAIChatGPTFilesProcessUploadURL)
+	require.Equal(t, "/backend-api/files/process_upload_stream", filesHeaders.Get("X-OpenAI-Target-Path"))
+	require.Contains(t, filesHeaders.Get("Cookie"), "files_only=files-secret")
+	require.Contains(t, filesHeaders.Get("Cookie"), "cf_clearance=clearance-secret")
+	require.NotContains(t, filesHeaders.Get("Cookie"), "api-secret")
 
-	require.Equal(t, "Bearer access-token", mergedHeaders.Get("Authorization"))
-	require.Equal(t, "https://chatgpt.com", mergedHeaders.Get("Origin"))
-	require.Equal(t, "https://chatgpt.com/", mergedHeaders.Get("Referer"))
-	require.Equal(t, "Mozilla/5.0 WebProfileUA Chrome/136.0.0.0 Safari/537.36", mergedHeaders.Get("User-Agent"))
-	require.Equal(t, "en-US,en;q=0.9", mergedHeaders.Get("Accept-Language"))
-	require.Equal(t, `"Chromium";v="136", "Google Chrome";v="136"`, mergedHeaders.Get("Sec-Ch-Ua"))
-	require.Equal(t, "?0", mergedHeaders.Get("Sec-Ch-Ua-Mobile"))
-	require.Equal(t, `"macOS"`, mergedHeaders.Get("Sec-Ch-Ua-Platform"))
-	require.Equal(t, `"arm"`, mergedHeaders.Get("Sec-Ch-Ua-Arch"))
-	require.Equal(t, `"64"`, mergedHeaders.Get("Sec-Ch-Ua-Bitness"))
-	require.Equal(t, `"136.0.0.0"`, mergedHeaders.Get("Sec-Ch-Ua-Full-Version"))
-	require.Equal(t, `"15.4.0"`, mergedHeaders.Get("Sec-Ch-Ua-Platform-Version"))
-	require.Equal(t, "device-from-profile", mergedHeaders.Get("oai-device-id"))
-	require.Equal(t, "session-from-profile", mergedHeaders.Get("oai-session-id"))
-	require.Equal(t, "credential-account-id", mergedHeaders.Get("chatgpt-account-id"))
-	require.Equal(t, "__Secure-next-auth.session-token=profile-session-secret; cf_clearance=clearance-secret", mergedHeaders.Get("Cookie"))
-	require.NotContains(t, mergedHeaders.Get("Cookie"), "api-secret")
+	sentinelHeaders := cloneHeaderForOpenAIImagesWebProfileTest(baseHeaders)
+	setOpenAIBackendAPIRequestTarget(sentinelHeaders, openAIChatGPTChatRequirementsPrepareURL, "/backend-api/sentinel/chat-requirements/prepare")
+	setOpenAIBackendAPIRequestCookieHeader(sentinelHeaders, profile, openAIChatGPTChatRequirementsPrepareURL)
+	require.Equal(t, "/backend-api/sentinel/chat-requirements/prepare", sentinelHeaders.Get("X-OpenAI-Target-Path"))
+	require.Contains(t, sentinelHeaders.Get("Cookie"), "sentinel_only=sentinel-secret")
+	require.Contains(t, sentinelHeaders.Get("Cookie"), "cf_clearance=clearance-secret")
+
+	asyncURL, asyncPath, asyncRoute, _ := buildOpenAIConversationAsyncStatusRequestTarget("conv-123")
+	asyncHeaders := cloneHeaderForOpenAIImagesWebProfileTest(baseHeaders)
+	setOpenAIBackendAPIRequestTarget(asyncHeaders, asyncPath, asyncRoute)
+	setOpenAIBackendAPIRequestCookieHeader(asyncHeaders, profile, asyncURL)
+	require.Contains(t, asyncHeaders.Get("Cookie"), "async_only=async-secret")
+	require.Contains(t, asyncHeaders.Get("Cookie"), "cf_clearance=clearance-secret")
 }
 
 func TestOpenAIImagesWebProfileTelemetryRecordsChallengeAndRedactsCookieValues(t *testing.T) {

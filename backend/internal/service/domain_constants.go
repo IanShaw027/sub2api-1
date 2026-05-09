@@ -365,6 +365,15 @@ const (
 	// anthropic-beta header.
 	SettingKeyOpenAIFastPolicySettings = "openai_fast_policy_settings"
 
+	// SettingKeyOpenAIImageWebFreeModel stores the final
+	// /backend-api/f/conversation model used for free-plan OpenAI web image
+	// generation requests.
+	SettingKeyOpenAIImageWebFreeModel = "openai_image_web_free_model"
+	// SettingKeyOpenAIImageWebPaidModel stores the final
+	// /backend-api/f/conversation model used for paid-plan (plus/pro/team)
+	// OpenAI web image generation requests.
+	SettingKeyOpenAIImageWebPaidModel = "openai_image_web_paid_model"
+
 	// =========================
 	// Sora S3 存储配置
 	// =========================

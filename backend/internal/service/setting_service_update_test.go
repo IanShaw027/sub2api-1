@@ -243,6 +243,19 @@ func TestSettingService_UpdateSettings_PaymentVisibleMethodsAndAdvancedScheduler
 	require.Equal(t, "true", repo.updates[openAIAdvancedSchedulerSettingKey])
 }
 
+func TestSettingService_UpdateSettings_OpenAIImageWebModels(t *testing.T) {
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		OpenAIImageWebFreeModel: "auto",
+		OpenAIImageWebPaidModel: "gpt-5-5-thinking",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "auto", repo.updates[SettingKeyOpenAIImageWebFreeModel])
+	require.Equal(t, "gpt-5-5-thinking", repo.updates[SettingKeyOpenAIImageWebPaidModel])
+}
+
 func TestSettingService_UpdateSettings_RejectsInvalidPaymentVisibleMethodSource(t *testing.T) {
 	repo := &settingUpdateRepoStub{}
 	svc := NewSettingService(repo, &config.Config{})

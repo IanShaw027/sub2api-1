@@ -252,9 +252,6 @@ func openAIImagesResponsesEffectiveN(parsed *OpenAIImagesRequest) int {
 	if parsed.N <= 0 {
 		return 1
 	}
-	if parsed.N > 1 {
-		return 1
-	}
 	return parsed.N
 }
 
@@ -262,15 +259,27 @@ func buildOpenAIImagesResponsesRequest(parsed *OpenAIImagesRequest, toolModel st
 	if parsed == nil {
 		return nil, fmt.Errorf("parsed images request is required")
 	}
+	if parsed.N > 1 {
+		return nil, fmt.Errorf("openai oauth image generation does not support n > 1")
+	}
 	prompt := strings.TrimSpace(parsed.Prompt)
 	if prompt == "" {
 		return nil, fmt.Errorf("prompt is required")
 	}
 
-	inputImages := make([]string, 0, len(parsed.InputImageURLs)+len(parsed.Uploads))
-	for _, imageURL := range parsed.InputImageURLs {
-		if trimmed := strings.TrimSpace(imageURL); trimmed != "" {
-			inputImages = append(inputImages, trimmed)
+	type openAIResponsesInputImage struct {
+		ImageURL string
+		FileID   string
+	}
+	orderedInputImages := parsed.orderedInputImages()
+	inputImages := make([]openAIResponsesInputImage, 0, len(orderedInputImages)+len(parsed.Uploads))
+	for _, image := range orderedInputImages {
+		if trimmed := strings.TrimSpace(image.ImageURL); trimmed != "" {
+			inputImages = append(inputImages, openAIResponsesInputImage{ImageURL: trimmed})
+			continue
+		}
+		if trimmed := strings.TrimSpace(image.FileID); trimmed != "" {
+			inputImages = append(inputImages, openAIResponsesInputImage{FileID: trimmed})
 		}
 	}
 	for _, upload := range parsed.Uploads {
@@ -278,7 +287,7 @@ func buildOpenAIImagesResponsesRequest(parsed *OpenAIImagesRequest, toolModel st
 		if err != nil {
 			return nil, err
 		}
-		inputImages = append(inputImages, dataURL)
+		inputImages = append(inputImages, openAIResponsesInputImage{ImageURL: dataURL})
 	}
 	if parsed.IsEdits() && len(inputImages) == 0 {
 		return nil, fmt.Errorf("image input is required")
@@ -290,9 +299,13 @@ func buildOpenAIImagesResponsesRequest(parsed *OpenAIImagesRequest, toolModel st
 
 	input := []byte(`[{"type":"message","role":"user","content":[{"type":"input_text","text":""}]}]`)
 	input, _ = sjson.SetBytes(input, "0.content.0.text", prompt)
-	for index, imageURL := range inputImages {
-		part := []byte(`{"type":"input_image","image_url":""}`)
-		part, _ = sjson.SetBytes(part, "image_url", imageURL)
+	for index, imageRef := range inputImages {
+		part := []byte(`{"type":"input_image"}`)
+		if strings.TrimSpace(imageRef.FileID) != "" {
+			part, _ = sjson.SetBytes(part, "file_id", strings.TrimSpace(imageRef.FileID))
+		} else {
+			part, _ = sjson.SetBytes(part, "image_url", strings.TrimSpace(imageRef.ImageURL))
+		}
 		input, _ = sjson.SetRawBytes(input, fmt.Sprintf("0.content.%d", index+1), part)
 	}
 	req, _ = sjson.SetRawBytes(req, "input", input)
@@ -329,14 +342,18 @@ func buildOpenAIImagesResponsesRequest(parsed *OpenAIImagesRequest, toolModel st
 	}
 
 	maskImageURL := strings.TrimSpace(parsed.MaskImageURL)
+	maskFileID := strings.TrimSpace(parsed.MaskFileID)
 	if parsed.MaskUpload != nil {
 		dataURL, err := openAIImageUploadToDataURL(*parsed.MaskUpload)
 		if err != nil {
 			return nil, err
 		}
 		maskImageURL = dataURL
+		maskFileID = ""
 	}
-	if maskImageURL != "" {
+	if maskFileID != "" {
+		tool, _ = sjson.SetBytes(tool, "input_image_mask.file_id", maskFileID)
+	} else if maskImageURL != "" {
 		tool, _ = sjson.SetBytes(tool, "input_image_mask.image_url", maskImageURL)
 	}
 
@@ -935,15 +952,6 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 		account.Type,
 		len(parsed.Uploads),
 	)
-	if parsed.N > 1 {
-		logger.LegacyPrintf(
-			"service.openai_gateway",
-			"[Warning] Codex /responses image tool requested n=%d; falling back to n=1 request_model=%s endpoint=%s",
-			parsed.N,
-			requestModel,
-			parsed.Endpoint,
-		)
-	}
 
 	token, _, err := s.GetAccessToken(ctx, account)
 	if err != nil {

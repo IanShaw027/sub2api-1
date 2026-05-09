@@ -211,6 +211,8 @@ type SystemSettings struct {
 
 	// OpenAI account scheduling
 	OpenAIAdvancedSchedulerEnabled bool
+	OpenAIImageWebFreeModel        string
+	OpenAIImageWebPaidModel        string
 
 	// Balance low notification
 	BalanceLowNotifyEnabled     bool
@@ -220,6 +222,18 @@ type SystemSettings struct {
 	// Account quota notification
 	AccountQuotaNotifyEnabled bool
 	AccountQuotaNotifyEmails  []NotifyEmailEntry
+}
+
+type OpenAIImageWebConversationSettings struct {
+	FreeModel string `json:"free_model"`
+	PaidModel string `json:"paid_model"`
+}
+
+func DefaultOpenAIImageWebConversationSettings() *OpenAIImageWebConversationSettings {
+	return &OpenAIImageWebConversationSettings{
+		FreeModel: "auto",
+		PaidModel: "gpt-5-5-thinking",
+	}
 }
 
 type KiroRuntimeSettings struct {

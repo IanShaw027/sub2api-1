@@ -3539,6 +3539,7 @@
         "success": "Updated {count} account(s)",
         "partialSuccess": "Partially updated: {success} succeeded, {failed} failed",
         "failed": "Bulk update failed",
+        "failedToLoadPreview": "Failed to load bulk edit preview",
         "noSelection": "Please select accounts to edit",
         "noFieldsSelected": "Select at least one field to update",
         "mixedPlatformWarning": "Selected accounts span multiple platforms ({platforms}). Model mapping presets shown are combined — ensure mappings are appropriate for each platform."
@@ -6057,6 +6058,18 @@
         "description": "Control API Key scheduling behavior",
         "allowUngroupedKey": "Allow Ungrouped Key Scheduling",
         "allowUngroupedKeyHint": "When disabled, API Keys not assigned to any group cannot make requests (403 Forbidden). Keep disabled to ensure all Keys belong to a specific group."
+      },
+      "openaiImageWebModels": {
+        "title": "OpenAI Image Web2API Conversation Models",
+        "description": "Configure the default models used by OpenAI image Web2API sessions at the final conversation request stage.",
+        "prepareHint": "The prepare stage still stays fixed to auto so it matches the captured web traffic.",
+        "conversationHint": "These two settings only control the model sent in the final /backend-api/f/conversation request.",
+        "freeModel": "Free Default Model",
+        "freeModelPlaceholder": "e.g. gpt-image-1",
+        "freeModelHint": "Default model for free sessions.",
+        "paidModel": "Paid Default Model (Plus / Pro / Team)",
+        "paidModelPlaceholder": "e.g. gpt-image-1",
+        "paidModelHint": "Default model for plus, pro, and team sessions."
       },
       "gatewayForwarding": {
         "title": "Request Forwarding",

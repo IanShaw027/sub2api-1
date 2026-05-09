@@ -8,6 +8,8 @@
 - OpenAI OAuth 图片账号用于前台 AI 创作中心和 `codex-image`/Codex 路线。
 - OpenAI API Key 图片账号用于标准 OpenAI 兼容客户端和原生 `images` API。
 - `images2api` 与标准 `images` 线路分开计价。
+- 当前仓库里，`prepare` 阶段固定 `model=auto`，最终发图对话才按 web 会话 `plan_type` 选择模型。
+- 当前仓库里，`free` 的最终 web 会话模型仍是 `auto`，`plus` / `pro` / `team` 会切到 `gpt-5-5-thinking`。
 - Prompt 与媒体都按私有优先设计；`forced_private` 会把有效可见性压成私有。
 - MinIO 统一承载头像、公告、工单、AI、论坛图片。
 - `source.qazwc.com` 是唯一资源访问域名，不向前台暴露 MinIO 内网地址或桶域名。
@@ -33,7 +35,7 @@
 | OpenAI 原生图片生成/编辑 | `/v1/images/generations` / `/v1/images/edits` | OAuth | 转成 Codex/Responses `image_generation` 工具链 |
 | OpenAI 旧版 web2api 图片桥 | `/v1/images2api/generations` / `/v1/images2api/edits` | OAuth | 走 legacy web2api bridge |
 | OpenAI 原生图片生成/编辑 | `/v1/images/generations` / `/v1/images/edits` | API Key | 走标准 OpenAI Images 转发 |
-| OpenAI 旧版 web2api 图片桥 | `/v1/images2api/*` | API Key | 仍按标准网关兼容转发，不走 OAuth legacy bridge |
+| OpenAI 旧版 web2api 图片桥 | `/v1/images2api/*` | API Key | 不支持；显式端点要求 OAuth，不会回落到标准 Images 转发 |
 
 ### 2.4 账号治理规则
 
@@ -137,6 +139,7 @@ curl https://gateway.example.com/v1/images/generations \
 
 - OAuth 路线会转入 `responses`/Codex 图片工具链。
 - API Key 路线保持标准 OpenAI `images` 转发。
+- `gpt-image-2` 尺寸按当前官方约束处理：最大边长 `<= 3840`，宽高都必须是 `16` 的倍数，长宽比 `<= 3:1`，总像素范围 `655,360 - 8,294,400`。
 - 尺寸计费按 `1K`/`2K`/`4K` 统一口径结算。
 
 ### 3.4 `/v1/images/edits`
@@ -168,6 +171,7 @@ curl https://gateway.example.com/v1/images/edits \
 
 - 旧版 web2api 图片兼容链路。
 - 已有客户端不便迁移到标准 `images` 或 `responses` 时的过渡方案。
+- 仅限 OAuth 账号；显式端点不会对 API Key 回落成标准 `images`。
 
 示例：
 
@@ -474,7 +478,7 @@ curl https://gateway.example.com/api/v1/media/upload \
 - 图片线路选择：
   - OAuth + `/v1/images/*` 走 Codex/Responses
   - OAuth + `/v1/images2api/*` 走 legacy bridge
-  - API Key + `/v1/images2api/*` 保持标准兼容转发
+  - API Key + `/v1/images2api/*` 应被视为不支持的显式端点
 - `codex-image`：
   - 图片工具请求会追加适配指令
   - Spark 模型不宣称支持图片生成
