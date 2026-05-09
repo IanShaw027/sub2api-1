@@ -28,38 +28,3 @@ exceptions:
     mitigation: "No user-controlled template strings; plan to migrate to native JS alternatives"
     expires_on: "2026-07-02"
     owner: "security@your-domain"
-  - package: axios
-    advisory: "GHSA-3p68-rc4w-qgx5"
-    severity: critical
-    reason: "NO_PROXY bypass not exploitable; all API calls go to known endpoints via server-side proxy"
-    mitigation: "Proxy configuration not user-controlled; upgrade when axios releases fix"
-    expires_on: "2026-07-10"
-    owner: "security@your-domain"
-  - package: axios
-    advisory: "GHSA-pmwg-cvhr-8vh7"
-    severity: high
-    reason: "Frontend calls only known first-party endpoints; loopback NO_PROXY bypass is not reachable from user-controlled target hosts"
-    mitigation: "Axios usage is limited to fixed API origins; upgrade when patched release is adopted"
-    expires_on: "2026-07-10"
-    owner: "security@your-domain"
-  - package: axios
-    advisory: "GHSA-q8qp-cvcw-x6jj"
-    severity: high
-    reason: "Axios config is constructed from application-owned request objects, not attacker-controlled prototype chains"
-    mitigation: "No untrusted prototype-polluted objects are passed into axios; upgrade when patched release is adopted"
-    expires_on: "2026-07-10"
-    owner: "security@your-domain"
-  - package: axios
-    advisory: "GHSA-pf86-5x62-jrwf"
-    severity: high
-    reason: "Response handling does not merge attacker-controlled prototype-bearing objects into axios request config"
-    mitigation: "Frontend request config is application-owned; upgrade when patched release is adopted"
-    expires_on: "2026-07-10"
-    owner: "security@your-domain"
-  - package: axios
-    advisory: "GHSA-6chq-wfr3-2hj9"
-    severity: high
-    reason: "Request headers are built from explicit application fields rather than inherited prototype properties"
-    mitigation: "No untrusted object prototypes feed request headers; upgrade when patched release is adopted"
-    expires_on: "2026-07-10"
-    owner: "security@your-domain"

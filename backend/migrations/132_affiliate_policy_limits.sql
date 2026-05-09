@@ -12,6 +12,80 @@ ALTER TABLE user_affiliate_ledger
     ADD COLUMN IF NOT EXISTS rebate_rate DECIMAL(10,4) NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS invitee_slot_claimed BOOLEAN NOT NULL DEFAULT FALSE;
 
+WITH rebate_audits AS (
+    SELECT po.id AS order_id,
+           po.user_id AS invitee_user_id,
+           invitee_aff.inviter_id,
+           po.amount AS base_amount,
+           rebate_detail.rebate_amount,
+           pal.created_at AS audit_created_at,
+           CASE
+               WHEN po.amount > 0 THEN ROUND((rebate_detail.rebate_amount / po.amount) * 100, 4)
+               ELSE NULL
+           END AS derived_rebate_rate
+    FROM payment_audit_logs pal
+    CROSS JOIN LATERAL (
+        SELECT substring(
+            pal.detail
+            FROM '"rebateAmount"[[:space:]]*:[[:space:]]*(-?[0-9]+(\.[0-9]+)?)'
+        )::numeric AS rebate_amount
+    ) rebate_detail
+    JOIN payment_orders po ON po.id::text = pal.order_id
+    JOIN user_affiliates invitee_aff ON invitee_aff.user_id = po.user_id
+    WHERE pal.action = 'AFFILIATE_REBATE_APPLIED'
+      AND rebate_detail.rebate_amount IS NOT NULL
+),
+ranked_matches AS (
+    SELECT ual.id AS ledger_id,
+           ra.order_id,
+           ra.base_amount,
+           ra.derived_rebate_rate,
+           COUNT(*) OVER (PARTITION BY ra.order_id) AS order_match_count,
+           COUNT(*) OVER (PARTITION BY ual.id) AS ledger_match_count,
+           ROW_NUMBER() OVER (
+               PARTITION BY ual.id
+               ORDER BY ABS(EXTRACT(EPOCH FROM (ual.created_at - ra.audit_created_at))), ra.order_id
+           ) AS ledger_rank
+    FROM rebate_audits ra
+    JOIN user_affiliate_ledger ual
+      ON ual.action = 'accrue'
+     AND ual.source_order_id IS NULL
+     AND ual.user_id = ra.inviter_id
+     AND ual.source_user_id = ra.invitee_user_id
+     AND ABS(ual.amount - ra.rebate_amount) < 0.00000001
+     AND ual.created_at BETWEEN ra.audit_created_at - INTERVAL '10 minutes'
+                            AND ra.audit_created_at + INTERVAL '10 minutes'
+)
+UPDATE user_affiliate_ledger ual
+SET source_order_id = ranked_matches.order_id,
+    base_amount = CASE
+        WHEN COALESCE(ual.base_amount, 0) = 0 AND ranked_matches.base_amount IS NOT NULL
+            THEN ranked_matches.base_amount
+        ELSE ual.base_amount
+    END,
+    rebate_rate = CASE
+        WHEN COALESCE(ual.rebate_rate, 0) = 0 AND ranked_matches.derived_rebate_rate IS NOT NULL
+            THEN ranked_matches.derived_rebate_rate
+        ELSE ual.rebate_rate
+    END,
+    invitee_slot_claimed = CASE
+        WHEN ual.source_user_id IS NOT NULL THEN TRUE
+        ELSE ual.invitee_slot_claimed
+    END,
+    updated_at = NOW()
+FROM ranked_matches
+WHERE ual.id = ranked_matches.ledger_id
+  AND ranked_matches.order_match_count = 1
+  AND ranked_matches.ledger_match_count = 1
+  AND ranked_matches.ledger_rank = 1
+  AND NOT EXISTS (
+      SELECT 1
+      FROM user_affiliate_ledger existing
+      WHERE existing.source_order_id = ranked_matches.order_id
+        AND existing.action = 'accrue'
+        AND existing.id <> ual.id
+  );
+
 -- Legacy accrue rows predate invitee_slot_claimed. Mark them as claimed so
 -- historical rebated invitees keep counting toward the new stats/limit logic.
 UPDATE user_affiliate_ledger

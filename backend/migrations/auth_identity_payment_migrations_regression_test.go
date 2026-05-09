@@ -201,3 +201,41 @@ func TestMigration135AllowsGitHubAndGoogleAuthProviders(t *testing.T) {
 	require.Contains(t, sql, "'github'")
 	require.Contains(t, sql, "'google'")
 }
+
+func TestMigration132BackfillsHistoricalAffiliateLedgerRowsSafely(t *testing.T) {
+	content, err := FS.ReadFile("132_affiliate_policy_limits.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "AFFILIATE_REBATE_APPLIED")
+	require.Contains(t, sql, "source_order_id IS NULL")
+	require.Contains(t, sql, "order_match_count = 1")
+	require.Contains(t, sql, "ledger_match_count = 1")
+	require.Contains(t, sql, "base_amount = CASE")
+	require.Contains(t, sql, "rebate_rate = CASE")
+}
+
+func TestMigration145PreservesTemplateAssociationsWhileConvergingTemplateSet(t *testing.T) {
+	content, err := FS.ReadFile("145_seed_client_spoof_channel_monitor_templates.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "UPDATE channel_monitors")
+	require.Contains(t, sql, "template_id")
+	require.Contains(t, sql, "Anthropic 请求模板示例")
+	require.Contains(t, sql, "DELETE FROM channel_monitor_request_templates")
+	require.Contains(t, sql, "WHERE id = v_example_id")
+}
+
+func TestMigration149BackfillsLegacyWeb2APIGroupsBeforeEnforcingRouteDefault(t *testing.T) {
+	content, err := FS.ReadFile("149_add_group_image_generation_route.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS image_generation_route character varying(20)")
+	require.Contains(t, sql, "SET image_generation_route = 'web2api'")
+	require.Contains(t, sql, "image_rate_independent = TRUE")
+	require.Contains(t, sql, "images2api_price_1k IS NOT NULL")
+	require.Contains(t, sql, "SET DEFAULT 'codex'")
+	require.Contains(t, sql, "AND NOT (")
+}

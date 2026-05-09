@@ -4,7 +4,7 @@
 
 ## 1. 核心结论
 
-- 前台只选线路，不选具体账号 Key。
+- 前台会选线路，也会在当前线路下选一个可用 Key；仍然不会暴露真实账号凭据。
 - `/user/ai/runtime` 用来拉取可选线路。
 - `/user/ai/chat`、`/user/ai/artworks`、`/user/ai/gallery` 是创作中心主链路。
 - Prompt 库由用户侧 `prompt-templates` / `prompts` 和管理员治理接口组成。
@@ -15,7 +15,7 @@
 ## 2. AI 创作中心用户流程
 
 1. 前端先调用 `/api/v1/user/ai/runtime` 获取可用线路。
-2. 用户选择线路或分组，而不是选择 Key。
+2. 用户选择线路；聊天/图片入口还会在该线路下选择可用 Key。
 3. 用户进入聊天、Prompt 库、图片生成或画廊入口。
 4. 结果图片和附件写入 MinIO，再通过 `source.qazwc.com` 暴露。
 5. 若需要公开展示，再进入管理员治理或发布流程。
@@ -102,13 +102,18 @@
 
 - 这个接口是前台入口，不是账号明细接口。
 - 用户不应看到真实 OpenAI 账号 Key。
+- 当前前端默认选择逻辑：
+  - 优先沿用当前登录用户上次保存的 `line_id`，前提是这条线路现在仍可用。
+  - 否则回退到 runtime 返回的 `default_line.group_id`。
+  - 再否则回退到第一条有可用 Key 的线路。
+  - `key_id` 也按当前登录用户、按线路分别记忆；若历史 `key_id` 仍属于该线路则继续使用，否则回退到 `default_key_id`，最后回退到该线路的第一把可用 Key。
 
 ## 5. 用户侧主接口
 
 ### 5.1 `/user/ai/chat`
 
 - 用于 AI 对话入口。
-- 发送 `prompt`，可附带 `line_id`、`prompt_template_id`、`history`、`use_responses`。
+- 发送 `prompt`，可附带 `line_id`、`prompt_template_id`、`history`、`use_responses`；前端会根据入口模式决定是否启用 `responses`。
 - 后端会把请求映射到 OpenAI 兼容链路，再选择可用账号。
 
 ### 5.2 `/user/ai/artworks`

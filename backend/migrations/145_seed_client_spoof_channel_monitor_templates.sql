@@ -6,12 +6,8 @@
 --
 -- 要点：
 --   - 新库初始化：在 128/129 之后继续落到最终模板集合
---   - 老库升级：把历史上的示例模板收敛为当前实际使用模板
+--   - 老库升级：把历史上的示例模板收敛为当前实际使用模板，同时保留 monitor->template 关联
 --   - 全部使用 ON CONFLICT ... DO UPDATE，保持幂等
-
-DELETE FROM channel_monitor_request_templates
-WHERE provider = 'anthropic'
-  AND name = 'Anthropic 请求模板示例';
 
 INSERT INTO channel_monitor_request_templates (
     name,
@@ -55,6 +51,39 @@ ON CONFLICT (provider, name) DO UPDATE SET
     body_override_mode = EXCLUDED.body_override_mode,
     body_override = EXCLUDED.body_override,
     updated_at = NOW();
+
+DO $$
+DECLARE
+    v_target_id BIGINT;
+    v_example_id BIGINT;
+BEGIN
+    SELECT id
+    INTO v_target_id
+    FROM channel_monitor_request_templates
+    WHERE provider = 'anthropic'
+      AND name = 'Claude Code 伪装'
+    ORDER BY id
+    LIMIT 1;
+
+    SELECT id
+    INTO v_example_id
+    FROM channel_monitor_request_templates
+    WHERE provider = 'anthropic'
+      AND name = 'Anthropic 请求模板示例'
+    ORDER BY id
+    LIMIT 1;
+
+    IF v_target_id IS NOT NULL
+       AND v_example_id IS NOT NULL
+       AND v_target_id <> v_example_id THEN
+        UPDATE channel_monitors
+        SET template_id = v_target_id
+        WHERE template_id = v_example_id;
+
+        DELETE FROM channel_monitor_request_templates
+        WHERE id = v_example_id;
+    END IF;
+END $$;
 
 INSERT INTO channel_monitor_request_templates (
     name,

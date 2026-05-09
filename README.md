@@ -576,7 +576,6 @@ Antigravity accounts support optional **hybrid scheduling**. When enabled, the g
 - OAuth/Codex request shaping is capability-aware and strips unsupported controls such as `verbosity`, `temperature`, and `top_p` only when the upstream model does not support them.
 - Prompt cache stability relies on `prompt_cache_key` plus stable request-body encoding so semantically identical requests hash consistently.
 - Embedded default instructions are fallback-only for Codex-style clients; provider-native prompts remain the primary source of behavior.
-- Rollout and merge guidance for this compatibility line is documented in [docs/OPENAI_CLAUDE_COMPAT_ROLLOUT.md](docs/OPENAI_CLAUDE_COMPAT_ROLLOUT.md).
 
 ### Known Issues
 
