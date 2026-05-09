@@ -18,9 +18,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type geminiOAuthHandlerMockClient struct{}
+type geminiOAuthHandlerMockClient struct {
+	lastRedirectURI string
+}
 
-func (geminiOAuthHandlerMockClient) ExchangeCode(ctx context.Context, oauthType, code, codeVerifier, redirectURI, proxyURL string) (*geminicli.TokenResponse, error) {
+func (m *geminiOAuthHandlerMockClient) ExchangeCode(ctx context.Context, oauthType, code, codeVerifier, redirectURI, proxyURL string) (*geminicli.TokenResponse, error) {
+	m.lastRedirectURI = redirectURI
 	return &geminicli.TokenResponse{
 		AccessToken:  "access-token",
 		RefreshToken: "refresh-token",
@@ -29,7 +32,7 @@ func (geminiOAuthHandlerMockClient) ExchangeCode(ctx context.Context, oauthType,
 	}, nil
 }
 
-func (geminiOAuthHandlerMockClient) RefreshToken(ctx context.Context, oauthType, refreshToken, proxyURL string) (*geminicli.TokenResponse, error) {
+func (m *geminiOAuthHandlerMockClient) RefreshToken(ctx context.Context, oauthType, refreshToken, proxyURL string) (*geminicli.TokenResponse, error) {
 	return nil, nil
 }
 
@@ -57,11 +60,11 @@ func TestGeminiOAuthHandler_ExchangeCode_PrefersDetectedTierOverSessionFallback(
 	gin.SetMode(gin.TestMode)
 	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
 
+	client := &geminiOAuthHandlerMockClient{}
 	svc := service.NewGeminiOAuthService(
 		nil,
-		geminiOAuthHandlerMockClient{},
+		client,
 		geminiOAuthHandlerMockCodeAssist{},
-		nil,
 		&config.Config{},
 	)
 	defer svc.Stop()
@@ -112,9 +115,8 @@ func TestGeminiOAuthHandler_GenerateAuthURL_AcceptsProjectIDHint(t *testing.T) {
 
 	svc := service.NewGeminiOAuthService(
 		nil,
-		geminiOAuthHandlerMockClient{},
+		&geminiOAuthHandlerMockClient{},
 		geminiOAuthHandlerMockCodeAssist{},
-		nil,
 		&config.Config{},
 	)
 	defer svc.Stop()
@@ -137,4 +139,86 @@ func TestGeminiOAuthHandler_GenerateAuthURL_AcceptsProjectIDHint(t *testing.T) {
 	authURL, ok := authData["auth_url"].(string)
 	require.True(t, ok)
 	require.Contains(t, authURL, "project_id=project-hint-1")
+}
+
+func TestGeminiOAuthHandler_AcceptsAiStudioAlias(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
+
+	svc := service.NewGeminiOAuthService(
+		nil,
+		&geminiOAuthHandlerMockClient{},
+		geminiOAuthHandlerMockCodeAssist{},
+		&config.Config{},
+	)
+	defer svc.Stop()
+
+	handler := NewGeminiOAuthHandler(svc)
+	router := gin.New()
+	router.POST("/api/v1/admin/gemini/oauth/auth-url", handler.GenerateAuthURL)
+
+	authReqBody := []byte(`{"project_id_hint":"project-hint-1","oauth_type":"ai_studio"}`)
+	authReq := httptest.NewRequest(http.MethodPost, "/api/v1/admin/gemini/oauth/auth-url", bytes.NewReader(authReqBody))
+	authReq.Header.Set("Content-Type", "application/json")
+	authRec := httptest.NewRecorder()
+	router.ServeHTTP(authRec, authReq)
+
+	require.Equal(t, http.StatusOK, authRec.Code, authRec.Body.String())
+}
+
+func TestGeminiOAuthHandler_UsesRequestedRedirectURIForCustomOAuthClient(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	client := &geminiOAuthHandlerMockClient{}
+	svc := service.NewGeminiOAuthService(
+		nil,
+		client,
+		geminiOAuthHandlerMockCodeAssist{},
+		&config.Config{
+			Gemini: config.GeminiConfig{
+				OAuth: config.GeminiOAuthConfig{
+					ClientID:     "custom-client-id",
+					ClientSecret: "custom-client-secret",
+				},
+			},
+		},
+	)
+	defer svc.Stop()
+
+	handler := NewGeminiOAuthHandler(svc)
+	router := gin.New()
+	router.POST("/api/v1/admin/gemini/oauth/auth-url", handler.GenerateAuthURL)
+	router.POST("/api/v1/admin/gemini/oauth/exchange-code", handler.ExchangeCode)
+
+	authReqBody := []byte(`{"project_id_hint":"project-hint-1","oauth_type":"code_assist"}`)
+	authReq := httptest.NewRequest(http.MethodPost, "/api/v1/admin/gemini/oauth/auth-url", bytes.NewReader(authReqBody))
+	authReq.Header.Set("Content-Type", "application/json")
+	authReq.Header.Set("Origin", "https://console.example.com")
+	authRec := httptest.NewRecorder()
+	router.ServeHTTP(authRec, authReq)
+	require.Equal(t, http.StatusOK, authRec.Code, authRec.Body.String())
+
+	var authResp response.Response
+	require.NoError(t, json.Unmarshal(authRec.Body.Bytes(), &authResp))
+	authData, ok := authResp.Data.(map[string]any)
+	require.True(t, ok)
+	authURL, ok := authData["auth_url"].(string)
+	require.True(t, ok)
+	require.Contains(t, authURL, "redirect_uri=https%3A%2F%2Fconsole.example.com%2Fauth%2Fcallback")
+
+	exchangePayload := map[string]any{
+		"session_id": authData["session_id"],
+		"state":      authData["state"],
+		"code":       "code-1",
+		"oauth_type": "code_assist",
+	}
+	exchangeBody, err := json.Marshal(exchangePayload)
+	require.NoError(t, err)
+
+	exchangeReq := httptest.NewRequest(http.MethodPost, "/api/v1/admin/gemini/oauth/exchange-code", bytes.NewReader(exchangeBody))
+	exchangeReq.Header.Set("Content-Type", "application/json")
+	exchangeRec := httptest.NewRecorder()
+	router.ServeHTTP(exchangeRec, exchangeReq)
+	require.Equal(t, http.StatusOK, exchangeRec.Code, exchangeRec.Body.String())
+	require.Equal(t, "https://console.example.com/auth/callback", client.lastRedirectURI)
 }

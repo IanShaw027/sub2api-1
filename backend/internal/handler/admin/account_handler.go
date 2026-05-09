@@ -2392,7 +2392,7 @@ func (h *AccountHandler) SetPrivacy(c *gin.Context) {
 // RefreshTier handles refreshing Google One tier for a single account
 // POST /api/v1/admin/accounts/:id/refresh-tier
 func (h *AccountHandler) RefreshTier(c *gin.Context) {
-	response.BadRequest(c, "Google Drive tier refresh is not supported")
+	h.Refresh(c)
 }
 
 // BatchRefreshTierRequest represents batch tier refresh request
@@ -2403,7 +2403,7 @@ type BatchRefreshTierRequest struct {
 // BatchRefreshTier handles batch refreshing Google One tier
 // POST /api/v1/admin/accounts/batch-refresh-tier
 func (h *AccountHandler) BatchRefreshTier(c *gin.Context) {
-	response.BadRequest(c, "Google Drive tier refresh is not supported")
+	h.BatchRefresh(c)
 }
 
 // GetAntigravityDefaultModelMapping 获取 Antigravity 平台的默认模型映射

@@ -3001,7 +3001,12 @@ func extractGeminiUsage(data []byte) *ClaudeUsage {
 	// 注意：Gemini 的 promptTokenCount 包含 cachedContentTokenCount，
 	// 但 Claude 的 input_tokens 不包含 cache_read_input_tokens，需要减去
 	return &ClaudeUsage{
-		InputTokens:          prompt - cached,
+		InputTokens: func() int {
+			if prompt > cached {
+				return prompt - cached
+			}
+			return 0
+		}(),
 		OutputTokens:         cand + thoughts,
 		CacheReadInputTokens: cached,
 		ImageOutputTokens:    imageTokens,
@@ -3442,18 +3447,15 @@ func convertClaudeMessagesToGeminiContents(messages any, toolUseIDToName map[str
 					if name == "" {
 						name = "tool"
 					}
-					textContent, imageParts := extractClaudeContentWithImages(bm["content"])
+					contentValue := extractClaudeToolResultContent(bm["content"])
 					parts = append(parts, map[string]any{
 						"functionResponse": map[string]any{
 							"name": name,
 							"response": map[string]any{
-								"content": textContent,
+								"content": contentValue,
 							},
 						},
 					})
-					for _, img := range imageParts {
-						parts = append(parts, img)
-					}
 				case "image":
 					if src, ok := bm["source"].(map[string]any); ok {
 						if srcType, _ := src["type"].(string); srcType == "base64" {
@@ -3512,15 +3514,15 @@ func extractClaudeContentText(v any) string {
 	}
 }
 
-// extractClaudeContentWithImages extracts text and image parts from Claude tool_result content.
-// Returns the combined text and any image parts as Gemini inlineData parts.
-func extractClaudeContentWithImages(v any) (string, []map[string]any) {
+// extractClaudeToolResultContent preserves mixed tool_result content order.
+func extractClaudeToolResultContent(v any) any {
 	switch t := v.(type) {
 	case string:
-		return t, nil
+		return t
 	case []any:
 		var sb strings.Builder
-		var images []map[string]any
+		ordered := make([]any, 0, len(t))
+		hasNonText := false
 		for _, part := range t {
 			pm, ok := part.(map[string]any)
 			if !ok {
@@ -3530,6 +3532,7 @@ func extractClaudeContentWithImages(v any) (string, []map[string]any) {
 			case "text":
 				if text, ok := pm["text"].(string); ok {
 					sb.WriteString(text)
+					ordered = append(ordered, map[string]any{"type": "text", "text": text})
 				}
 			case "image":
 				if src, ok := pm["source"].(map[string]any); ok {
@@ -3537,21 +3540,33 @@ func extractClaudeContentWithImages(v any) (string, []map[string]any) {
 						mediaType, _ := src["media_type"].(string)
 						data, _ := src["data"].(string)
 						if mediaType != "" && data != "" {
-							images = append(images, map[string]any{
-								"inlineData": map[string]any{
-									"mimeType": mediaType,
-									"data":     data,
+							hasNonText = true
+							ordered = append(ordered, map[string]any{
+								"type": "image",
+								"source": map[string]any{
+									"type":       "base64",
+									"media_type": mediaType,
+									"data":       data,
 								},
 							})
 						}
 					}
 				}
+			default:
+				hasNonText = true
+				ordered = append(ordered, pm)
 			}
 		}
-		return sb.String(), images
+		if !hasNonText {
+			return sb.String()
+		}
+		if len(ordered) == 0 {
+			return ""
+		}
+		return ordered
 	default:
 		b, _ := json.Marshal(t)
-		return string(b), nil
+		return string(b)
 	}
 }
 

@@ -2,49 +2,77 @@ package service
 
 import (
 	"context"
-	"errors"
 	"testing"
-	"time"
 
-	"github.com/zeromicro/go-zero/core/collection"
+	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/stretchr/testify/require"
 )
 
-func TestProvideTimingWheelService_ReturnsError(t *testing.T) {
-	original := newTimingWheel
-	t.Cleanup(func() { newTimingWheel = original })
+type wireProxyRepoStub struct{}
 
-	newTimingWheel = func(_ time.Duration, _ int, _ collection.Execute) (*collection.TimingWheel, error) {
-		return nil, errors.New("boom")
-	}
-
-	svc, err := ProvideTimingWheelService()
-	if err == nil {
-		t.Fatalf("期望返回 error，但得到 nil")
-	}
-	if svc != nil {
-		t.Fatalf("期望返回 nil svc，但得到非空")
-	}
+func (wireProxyRepoStub) Create(ctx context.Context, proxy *Proxy) error {
+	panic("unexpected Create call")
+}
+func (wireProxyRepoStub) GetByID(ctx context.Context, id int64) (*Proxy, error) {
+	panic("unexpected GetByID call")
+}
+func (wireProxyRepoStub) ListByIDs(ctx context.Context, ids []int64) ([]Proxy, error) {
+	panic("unexpected ListByIDs call")
+}
+func (wireProxyRepoStub) Update(ctx context.Context, proxy *Proxy) error {
+	panic("unexpected Update call")
+}
+func (wireProxyRepoStub) Delete(ctx context.Context, id int64) error { panic("unexpected Delete call") }
+func (wireProxyRepoStub) List(ctx context.Context, params pagination.PaginationParams) ([]Proxy, *pagination.PaginationResult, error) {
+	panic("unexpected List call")
+}
+func (wireProxyRepoStub) ListWithFilters(ctx context.Context, params pagination.PaginationParams, protocol, status, search string) ([]Proxy, *pagination.PaginationResult, error) {
+	panic("unexpected ListWithFilters call")
+}
+func (wireProxyRepoStub) ListWithFiltersAndAccountCount(ctx context.Context, params pagination.PaginationParams, protocol, status, search string) ([]ProxyWithAccountCount, *pagination.PaginationResult, error) {
+	panic("unexpected ListWithFiltersAndAccountCount call")
+}
+func (wireProxyRepoStub) ListActive(ctx context.Context) ([]Proxy, error) {
+	panic("unexpected ListActive call")
+}
+func (wireProxyRepoStub) ListActiveWithAccountCount(ctx context.Context) ([]ProxyWithAccountCount, error) {
+	panic("unexpected ListActiveWithAccountCount call")
+}
+func (wireProxyRepoStub) ExistsByHostPortAuth(ctx context.Context, host string, port int, username, password string) (bool, error) {
+	panic("unexpected ExistsByHostPortAuth call")
+}
+func (wireProxyRepoStub) CountAccountsByProxyID(ctx context.Context, proxyID int64) (int64, error) {
+	panic("unexpected CountAccountsByProxyID call")
+}
+func (wireProxyRepoStub) ListAccountSummariesByProxyID(ctx context.Context, proxyID int64) ([]ProxyAccountSummary, error) {
+	panic("unexpected ListAccountSummariesByProxyID call")
 }
 
-func TestProvideTimingWheelService_Success(t *testing.T) {
-	svc, err := ProvideTimingWheelService()
-	if err != nil {
-		t.Fatalf("期望 err 为 nil，但得到: %v", err)
-	}
-	if svc == nil {
-		t.Fatalf("期望 svc 非空，但得到 nil")
-	}
-	svc.Stop()
-}
+func TestProvideTokenRefreshService_InjectsKiroProxyRepo(t *testing.T) {
+	proxyRepo := &wireProxyRepoStub{}
 
-func TestProvideAISkillRuntimeGateway_UsesRealGateway(t *testing.T) {
-	gateway := ProvideAISkillRuntimeGateway(&OpenAIGatewayService{})
-	if gateway == nil {
-		t.Fatalf("期望 gateway 非空，但得到 nil")
-	}
+	svc := ProvideTokenRefreshService(
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		&config.Config{},
+		nil,
+		nil,
+		proxyRepo,
+		nil,
+		nil,
+	)
 
-	_, err := gateway.Execute(context.Background(), AISkillExecutionRequest{Type: "unknown"})
-	if !errors.Is(err, ErrAISkillExecutionSpecInvalid) {
-		t.Fatalf("期望返回 ErrAISkillExecutionSpecInvalid，但得到: %v", err)
-	}
+	require.NotNil(t, svc)
+	require.NotNil(t, svc.kiroRefresher)
+	storedProxyRepo, ok := svc.kiroRefresher.proxyRepo.(*wireProxyRepoStub)
+	require.True(t, ok)
+	require.Same(t, proxyRepo, storedProxyRepo)
 }

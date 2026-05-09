@@ -590,7 +590,7 @@ func TestGeminiMessagesCompatServiceForward_ProjectIDOnlyOAuthStaysAIStudio(t *t
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, httpStub.lastReq)
-	require.Contains(t, httpStub.lastReq.URL.String(), "/v1beta/models/gemini-2.5-pro:streamGenerateContent")
+	require.Contains(t, httpStub.lastReq.URL.String(), "/v1beta/models/gemini-2.5-pro:generateContent")
 	require.NotContains(t, httpStub.lastReq.URL.String(), "/v1internal:")
 	require.Equal(t, "Bearer oauth-token", httpStub.lastReq.Header.Get("Authorization"))
 }
@@ -707,7 +707,7 @@ func TestGeminiMessagesCompatServiceForwardNative_ProjectIDOnlyOAuthStaysAIStudi
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, httpStub.lastReq)
-	require.Contains(t, httpStub.lastReq.URL.String(), "/v1beta/models/gemini-2.5-pro:streamGenerateContent")
+	require.Contains(t, httpStub.lastReq.URL.String(), "/v1beta/models/gemini-2.5-pro:generateContent")
 	require.NotContains(t, httpStub.lastReq.URL.String(), "/v1internal:")
 	require.Equal(t, "Bearer oauth-token", httpStub.lastReq.Header.Get("Authorization"))
 }
@@ -1052,6 +1052,16 @@ func TestExtractGeminiUsage(t *testing.T) {
 				CacheReadInputTokens: 0,
 			},
 		},
+		{
+			name:    "cachedContentTokenCount 大于 prompt 时钳制为 0",
+			input:   `{"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":4,"cachedContentTokenCount":30}}`,
+			wantNil: false,
+			wantUsage: &ClaudeUsage{
+				InputTokens:          0,
+				OutputTokens:         4,
+				CacheReadInputTokens: 30,
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -1077,6 +1087,79 @@ func TestExtractGeminiUsage(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConvertClaudeMessagesToGeminiContents_PreservesToolResultMixedContentOrder(t *testing.T) {
+	contents, err := convertClaudeMessagesToGeminiContents([]any{
+		map[string]any{
+			"role": "assistant",
+			"content": []any{
+				map[string]any{
+					"type": "tool_use",
+					"id":   "toolu_1",
+					"name": "lookup",
+					"input": map[string]any{
+						"q": "hello",
+					},
+				},
+			},
+		},
+		map[string]any{
+			"role": "user",
+			"content": []any{
+				map[string]any{
+					"type":        "tool_result",
+					"tool_use_id": "toolu_1",
+					"content": []any{
+						map[string]any{"type": "text", "text": "before"},
+						map[string]any{
+							"type": "image",
+							"source": map[string]any{
+								"type":       "base64",
+								"media_type": "image/png",
+								"data":       "QUJD",
+							},
+						},
+						map[string]any{"type": "text", "text": "after"},
+					},
+				},
+			},
+		},
+	}, map[string]string{})
+	require.NoError(t, err)
+	require.Len(t, contents, 2)
+
+	userMessage, ok := contents[1].(map[string]any)
+	require.True(t, ok)
+	parts, ok := userMessage["parts"].([]any)
+	require.True(t, ok)
+	require.Len(t, parts, 1)
+
+	part, ok := parts[0].(map[string]any)
+	require.True(t, ok)
+	functionResponse, ok := part["functionResponse"].(map[string]any)
+	require.True(t, ok)
+	responsePayload, ok := functionResponse["response"].(map[string]any)
+	require.True(t, ok)
+	content, ok := responsePayload["content"].([]any)
+	require.True(t, ok)
+	require.Len(t, content, 3)
+
+	first, ok := content[0].(map[string]any)
+	require.True(t, ok)
+	second, ok := content[1].(map[string]any)
+	require.True(t, ok)
+	third, ok := content[2].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "text", first["type"])
+	require.Equal(t, "before", first["text"])
+	require.Equal(t, "image", second["type"])
+	source, ok := second["source"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "image/png", source["media_type"])
+	require.Equal(t, "QUJD", source["data"])
+	require.Equal(t, "text", third["type"])
+	require.Equal(t, "after", third["text"])
 }
 
 // ---------------------------------------------------------------------------

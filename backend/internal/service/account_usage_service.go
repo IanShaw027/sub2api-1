@@ -1792,9 +1792,8 @@ func applyGeminiQuotaSnapshotFallback(usage *UsageInfo, account *Account, now ti
 	mergeGeminiUsageProgressWithSnapshot(&usage.GeminiProDaily, snapshot.pro, now)
 	mergeGeminiUsageProgressWithSnapshot(&usage.GeminiFlashDaily, snapshot.flash, now)
 
-	if usage.GeminiSharedDaily == nil && (snapshot.pro != nil || snapshot.flash != nil) {
-		shared := higherUtilizationProgress(usage.GeminiProDaily, usage.GeminiFlashDaily)
-		if shared != nil {
+	if shared := higherUtilizationProgress(usage.GeminiProDaily, usage.GeminiFlashDaily); shared != nil {
+		if usage.GeminiSharedDaily == nil || shared.Utilization > usage.GeminiSharedDaily.Utilization {
 			usage.GeminiSharedDaily = cloneUsageProgress(shared)
 		}
 	}

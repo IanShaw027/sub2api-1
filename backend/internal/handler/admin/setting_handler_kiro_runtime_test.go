@@ -139,3 +139,40 @@ func TestSettingHandler_UpdateSettings_KiroRuntimeRequestResponseAndRuntimeMatch
 	require.Equal(t, resp.Data.KiroCacheIndependentTTLSeconds, runtime.CacheIndependentTTLSecs)
 	require.Equal(t, resp.Data.KiroCachePrefixTTLSeconds, runtime.CachePrefixTTLSecs)
 }
+
+func TestSettingHandler_UpdateSettings_PreservesExtendedKiroThinkingModes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, mode := range []string{service.KiroThinkingModeModel, service.KiroThinkingModeModelAndSimulate} {
+		t.Run(mode, func(t *testing.T) {
+			repo := &settingHandlerRepoStub{}
+			svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+			handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+			body := map[string]any{
+				"kiro_thinking_mode": mode,
+			}
+			rawBody, err := json.Marshal(body)
+			require.NoError(t, err)
+
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			handler.UpdateSettings(c)
+
+			require.Equal(t, http.StatusOK, rec.Code)
+
+			var resp struct {
+				Code int `json:"code"`
+				Data struct {
+					KiroThinkingMode string `json:"kiro_thinking_mode"`
+				} `json:"data"`
+			}
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+			require.Equal(t, 0, resp.Code)
+			require.Equal(t, mode, resp.Data.KiroThinkingMode)
+			require.Equal(t, mode, svc.GetKiroRuntimeSettings(context.Background()).ThinkingMode)
+		})
+	}
+}

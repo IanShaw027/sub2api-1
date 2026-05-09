@@ -120,17 +120,20 @@ func (s *GeminiOAuthService) GenerateAuthURL(ctx context.Context, proxyID *int64
 	}
 
 	effectiveCfg, err := geminicli.EffectiveOAuthConfig(geminicli.OAuthConfig{
-		Scopes: s.cfg.Gemini.OAuth.Scopes,
+		ClientID:     s.cfg.Gemini.OAuth.ClientID,
+		ClientSecret: s.cfg.Gemini.OAuth.ClientSecret,
+		Scopes:       s.cfg.Gemini.OAuth.Scopes,
 	}, oauthType)
 	if err != nil {
 		return nil, err
 	}
+	redirectURI = resolveGeminiOAuthRedirectURI(effectiveCfg, redirectURI)
 
 	session := &geminicli.OAuthSession{
 		State:         state,
 		CodeVerifier:  codeVerifier,
 		ProxyURL:      proxyURL,
-		RedirectURI:   geminicli.GeminiCLIRedirectURI,
+		RedirectURI:   redirectURI,
 		ProjectIDHint: strings.TrimSpace(projectIDHint),
 		TierID:        canonicalGeminiTierIDForOAuthType(oauthType, tierID),
 		OAuthType:     oauthType,
@@ -540,7 +543,10 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 	if err != nil {
 		return nil, err
 	}
-	redirectURI := geminicli.GeminiCLIRedirectURI
+	redirectURI := strings.TrimSpace(session.RedirectURI)
+	if redirectURI == "" {
+		redirectURI = geminicli.AIStudioOAuthRedirectURI
+	}
 
 	tokenResp, err := s.oauthClient.ExchangeCode(ctx, oauthType, input.Code, session.CodeVerifier, redirectURI, proxyURL)
 	if err != nil {
@@ -705,6 +711,16 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Final result - OAuth Type: %s, Project ID: %s, Tier ID: %s", result.OAuthType, result.ProjectID, result.TierID)
 	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] ========== ExchangeCode END ==========")
 	return result, nil
+}
+
+func resolveGeminiOAuthRedirectURI(cfg geminicli.OAuthConfig, requestedRedirectURI string) string {
+	if strings.TrimSpace(cfg.ClientID) == geminicli.GeminiCLIOAuthClientID {
+		return geminicli.GeminiCLIRedirectURI
+	}
+	if trimmed := strings.TrimSpace(requestedRedirectURI); trimmed != "" {
+		return trimmed
+	}
+	return geminicli.AIStudioOAuthRedirectURI
 }
 
 func (s *GeminiOAuthService) RefreshToken(ctx context.Context, oauthType, refreshToken, proxyURL string) (*GeminiTokenInfo, error) {

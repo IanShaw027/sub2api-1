@@ -53,7 +53,7 @@ func TestGeminiOAuthService_GenerateAuthURL_RedirectURIStrategy(t *testing.T) {
 			wantProjectID: "",
 		},
 		{
-			name: "google_one always forces built-in client even when custom client configured",
+			name: "google_one uses custom client when fully configured",
 			cfg: &config.Config{
 				Gemini: config.GeminiConfig{
 					OAuth: config.GeminiOAuthConfig{
@@ -63,13 +63,13 @@ func TestGeminiOAuthService_GenerateAuthURL_RedirectURIStrategy(t *testing.T) {
 				},
 			},
 			oauthType:     "google_one",
-			wantClientID:  geminicli.GeminiCLIOAuthClientID,
-			wantRedirect:  geminicli.GeminiCLIRedirectURI,
+			wantClientID:  "custom-client-id",
+			wantRedirect:  "https://example.com/auth/callback",
 			wantScope:     geminicli.DefaultCodeAssistScopes,
 			wantProjectID: "",
 		},
 		{
-			name: "code_assist always forces built-in client even when custom client configured",
+			name: "code_assist uses custom client when fully configured",
 			cfg: &config.Config{
 				Gemini: config.GeminiConfig{
 					OAuth: config.GeminiOAuthConfig{
@@ -80,8 +80,8 @@ func TestGeminiOAuthService_GenerateAuthURL_RedirectURIStrategy(t *testing.T) {
 			},
 			oauthType:     "code_assist",
 			projectID:     "my-gcp-project",
-			wantClientID:  geminicli.GeminiCLIOAuthClientID,
-			wantRedirect:  geminicli.GeminiCLIRedirectURI,
+			wantClientID:  "custom-client-id",
+			wantRedirect:  "https://example.com/auth/callback",
 			wantScope:     geminicli.DefaultCodeAssistScopes,
 			wantProjectID: "my-gcp-project",
 		},

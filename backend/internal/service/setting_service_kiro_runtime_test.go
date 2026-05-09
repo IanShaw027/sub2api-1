@@ -111,6 +111,27 @@ func TestSettingService_UpdateSettings_WritesKiroRuntimeDefaults(t *testing.T) {
 	require.Equal(t, 600, got.CachePrefixTTLSecs)
 }
 
+func TestSettingService_UpdateSettings_PreservesExtendedKiroThinkingModes(t *testing.T) {
+	kiroRuntimeSettingsCache.Store((*cachedKiroRuntimeSettings)(nil))
+	kiroRuntimeSettingsSF.Forget("kiro_runtime")
+
+	for _, mode := range []string{KiroThinkingModeModel, KiroThinkingModeModelAndSimulate} {
+		t.Run(mode, func(t *testing.T) {
+			repo := &kiroRuntimeSettingRepoStub{}
+			svc := NewSettingService(repo, &config.Config{})
+
+			err := svc.UpdateSettings(context.Background(), &SystemSettings{
+				KiroThinkingMode: mode,
+			})
+			require.NoError(t, err)
+			require.Equal(t, mode, repo.updates[SettingKeyKiroThinkingMode])
+
+			got := svc.GetKiroRuntimeSettings(context.Background())
+			require.Equal(t, mode, got.ThinkingMode)
+		})
+	}
+}
+
 func TestSettingService_UpdateSettings_RejectsKiroCacheMinBlockTokensAboveMax(t *testing.T) {
 	repo := &kiroRuntimeSettingRepoStub{}
 	svc := NewSettingService(repo, &config.Config{})

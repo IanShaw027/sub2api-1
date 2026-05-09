@@ -46,7 +46,7 @@ func (h *GeminiOAuthHandler) GenerateAuthURL(c *gin.Context) {
 		return
 	}
 
-	oauthType := strings.TrimSpace(req.OAuthType)
+	oauthType := normalizeGeminiOAuthTypeAlias(req.OAuthType)
 	if oauthType == "" {
 		oauthType = "code_assist"
 	}
@@ -104,7 +104,7 @@ func (h *GeminiOAuthHandler) ExchangeCode(c *gin.Context) {
 		return
 	}
 
-	oauthType := strings.TrimSpace(req.OAuthType)
+	oauthType := normalizeGeminiOAuthTypeAlias(req.OAuthType)
 	if oauthType == "" {
 		oauthType = "code_assist"
 	}
@@ -127,6 +127,19 @@ func (h *GeminiOAuthHandler) ExchangeCode(c *gin.Context) {
 	}
 
 	response.Success(c, tokenInfo)
+}
+
+func normalizeGeminiOAuthTypeAlias(oauthType string) string {
+	switch strings.ToLower(strings.TrimSpace(oauthType)) {
+	case "":
+		return ""
+	case "ai_studio":
+		return "google_one"
+	case "code_assist", "google_one":
+		return strings.ToLower(strings.TrimSpace(oauthType))
+	default:
+		return ""
+	}
 }
 
 func deriveGeminiRedirectURI(c *gin.Context) string {
