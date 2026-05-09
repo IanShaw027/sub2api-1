@@ -22,6 +22,8 @@ export type PaymentType = 'alipay' | 'wxpay' | 'alipay_direct' | 'wxpay_direct' 
 
 export type OrderType = 'balance' | 'subscription'
 
+export type InvoiceStatus = '' | 'APPLIED' | 'ISSUED' | 'CANCELLED'
+
 // ==================== Configuration ====================
 
 export interface PaymentConfig {
@@ -93,6 +95,8 @@ export interface PaymentOrder {
   refund_request_reason?: string
   plan_id?: number
   provider_instance_id?: string
+  invoice_status?: InvoiceStatus
+  invoice_file_media_id?: number
 }
 
 // ==================== Plans & Channels ====================
@@ -143,8 +147,37 @@ export interface ProviderInstance {
   payment_mode: string
   refund_enabled: boolean
   allow_user_refund: boolean
+  invoice_enabled: boolean
   limits: string
   sort_order: number
+}
+
+export interface InvoiceApplication {
+  id: number
+  order_id: number
+  user_id: number
+  user_email: string
+  order_out_trade_no: string
+  payment_type: string
+  provider_instance_id: string
+  provider_key: string
+  status: InvoiceStatus
+  invoice_amount: number
+  title: string
+  tax_number: string
+  email: string
+  contact_name: string
+  contact_phone: string
+  request_note?: string
+  file_media_id?: number
+  file_name?: string
+  file_mime_type?: string
+  file_size_bytes?: number
+  applied_at?: string
+  cancelled_at?: string
+  issued_at?: string
+  created_at: string
+  updated_at: string
 }
 
 // ==================== Request / Response ====================

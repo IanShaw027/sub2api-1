@@ -12,9 +12,11 @@ import type {
   CheckoutInfoResponse,
   CreateOrderRequest,
   CreateOrderResult,
-  PaymentOrder
+  PaymentOrder,
+  InvoiceApplication
 } from '@/types/payment'
 import type { BasePaginationResponse } from '@/types'
+import type { MediaDownloadURL } from '@/types'
 
 export const paymentAPI = {
   /** Get payment configuration (enabled types, limits, etc.) */
@@ -85,5 +87,37 @@ export const paymentAPI = {
   /** Get provider instance IDs that allow user refund */
   getRefundEligibleProviders() {
     return apiClient.get<{ provider_instance_ids: string[] }>('/payment/orders/refund-eligible-providers')
+  },
+
+  /** Get provider instance IDs that allow invoice applications */
+  getInvoiceEligibleProviders() {
+    return apiClient.get<{ provider_instance_ids: string[] }>('/payment/orders/invoice-eligible-providers')
+  },
+
+  /** Get invoice application by order ID */
+  getOrderInvoice(id: number) {
+    return apiClient.get<InvoiceApplication>(`/payment/orders/${id}/invoice`)
+  },
+
+  /** Apply invoice for a completed order */
+  applyOrderInvoice(id: number, data: {
+    title: string
+    tax_number: string
+    email: string
+    contact_name?: string
+    contact_phone?: string
+    request_note?: string
+  }) {
+    return apiClient.post<InvoiceApplication>(`/payment/orders/${id}/invoice`, data)
+  },
+
+  /** Cancel invoice application for an order */
+  cancelOrderInvoice(id: number) {
+    return apiClient.post<InvoiceApplication>(`/payment/orders/${id}/invoice/cancel`)
+  },
+
+  /** Get invoice download URL */
+  getOrderInvoiceDownloadURL(id: number) {
+    return apiClient.get<MediaDownloadURL>(`/payment/orders/${id}/invoice/download`)
   }
 }

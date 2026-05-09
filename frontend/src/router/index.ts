@@ -11,7 +11,13 @@ import { useSkillsCenterStore } from '@/stores/skillsCenter'
 import { useNavigationLoadingState } from '@/composables/useNavigationLoading'
 import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { skillPaths } from '@/components/skills/paths'
-import { FeatureFlags, isChannelMonitorRouteEnabled, isFeatureFlagEnabled } from '@/utils/featureFlags'
+import {
+  FeatureFlags,
+  isChannelMonitorRouteEnabled,
+  isFeatureFlagEnabled,
+  isFeatureFlagResolved,
+  type FeatureFlagDefinition,
+} from '@/utils/featureFlags'
 import { resolveDocumentTitle } from './title'
 
 /**
@@ -970,6 +976,18 @@ const routes: RouteRecordRaw[] = [
       requiresPayment: true
     }
   },
+  {
+    path: '/admin/orders/invoices',
+    name: 'AdminInvoiceApplications',
+    component: () => import('@/views/admin/orders/AdminInvoiceApplicationsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Invoice Applications',
+      titleKey: 'nav.invoiceApplications',
+      requiresPayment: true
+    }
+  },
 
   // ==================== 404 Not Found ====================
   {
@@ -982,20 +1000,24 @@ const routes: RouteRecordRaw[] = [
   }
 ]
 
-async function ensurePublicSettingsForOptInRoute(to: RouteLocationNormalized): Promise<void> {
-  if (
-    to.meta?.requiresTicket !== true
-    && to.meta?.requiresAffiliate !== true
-    && to.meta?.requiresAiStudio !== true
-    && to.meta?.requiresAvailableChannels !== true
-    && to.meta?.requiresRiskControl !== true
-  ) {
+function featureFlagsRequiredByRoute(to: RouteLocationNormalized): FeatureFlagDefinition[] {
+  const flags: FeatureFlagDefinition[] = []
+  if (to.meta?.requiresPayment === true) flags.push(FeatureFlags.payment)
+  if (to.meta?.requiresTicket === true) flags.push(FeatureFlags.ticket)
+  if (to.meta?.requiresAffiliate === true) flags.push(FeatureFlags.affiliate)
+  if (to.meta?.requiresAiStudio === true) flags.push(FeatureFlags.aiStudio)
+  if (to.meta?.requiresChannelMonitor === true) flags.push(FeatureFlags.channelMonitor)
+  if (to.meta?.requiresAvailableChannels === true) flags.push(FeatureFlags.availableChannels)
+  if (to.meta?.requiresRiskControl === true) flags.push(FeatureFlags.riskControl)
+  return flags
+}
+
+async function ensurePublicSettingsForFeatureRoute(to: RouteLocationNormalized): Promise<void> {
+  const requiredFlags = featureFlagsRequiredByRoute(to)
+  if (requiredFlags.length === 0 || requiredFlags.every((flag) => isFeatureFlagResolved(flag))) {
     return
   }
   const appStore = useAppStore()
-  if (appStore.publicSettingsLoaded) {
-    return
-  }
   await appStore.fetchPublicSettings()
 }
 
@@ -1159,14 +1181,13 @@ router.beforeEach(async (to, _from, next) => {
     return
   }
 
+  await ensurePublicSettingsForFeatureRoute(to)
 
   // Check payment requirement (internal payment system only)
   if (to.meta.requiresPayment === true && !isFeatureFlagEnabled(FeatureFlags.payment)) {
     next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
     return
   }
-
-  await ensurePublicSettingsForOptInRoute(to)
 
   // Check ticket module requirement
   if (to.meta.requiresTicket === true && !isFeatureFlagEnabled(FeatureFlags.ticket)) {
@@ -1201,12 +1222,9 @@ router.beforeEach(async (to, _from, next) => {
     return
   }
 
-  if (to.meta.requiresRiskControl) {
-    const riskControlEnabled = appStore.cachedPublicSettings?.risk_control_enabled === true
-    if (!riskControlEnabled) {
-      next(authStore.isAdmin ? '/admin/settings' : '/dashboard')
-      return
-    }
+  if (to.meta.requiresRiskControl === true && !isFeatureFlagEnabled(FeatureFlags.riskControl)) {
+    next(authStore.isAdmin ? '/admin/settings' : '/dashboard')
+    return
   }
 
   // 简易模式下限制访问某些页面

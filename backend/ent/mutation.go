@@ -40,6 +40,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
+	"github.com/Wei-Shaw/sub2api/ent/invoiceapplication"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
@@ -100,6 +101,7 @@ const (
 	TypeGroup                         = "Group"
 	TypeIdempotencyRecord             = "IdempotencyRecord"
 	TypeIdentityAdoptionDecision      = "IdentityAdoptionDecision"
+	TypeInvoiceApplication            = "InvoiceApplication"
 	TypePaymentAuditLog               = "PaymentAuditLog"
 	TypePaymentOrder                  = "PaymentOrder"
 	TypePaymentProviderInstance       = "PaymentProviderInstance"
@@ -12040,8 +12042,6 @@ type AISkillMutation struct {
 	created_at                    *time.Time
 	updated_at                    *time.Time
 	deleted_at                    *time.Time
-	user_id                       *int64
-	adduser_id                    *int64
 	skill_type                    *string
 	title                         *string
 	summary                       *string
@@ -12079,6 +12079,8 @@ type AISkillMutation struct {
 	group_id                      *int64
 	addgroup_id                   *int64
 	clearedFields                 map[string]struct{}
+	user                          *int64
+	cleareduser                   bool
 	versions                      map[int64]struct{}
 	removedversions               map[int64]struct{}
 	clearedversions               bool
@@ -12320,13 +12322,12 @@ func (m *AISkillMutation) ResetDeletedAt() {
 
 // SetUserID sets the "user_id" field.
 func (m *AISkillMutation) SetUserID(i int64) {
-	m.user_id = &i
-	m.adduser_id = nil
+	m.user = &i
 }
 
 // UserID returns the value of the "user_id" field in the mutation.
 func (m *AISkillMutation) UserID() (r int64, exists bool) {
-	v := m.user_id
+	v := m.user
 	if v == nil {
 		return
 	}
@@ -12350,28 +12351,9 @@ func (m *AISkillMutation) OldUserID(ctx context.Context) (v int64, err error) {
 	return oldValue.UserID, nil
 }
 
-// AddUserID adds i to the "user_id" field.
-func (m *AISkillMutation) AddUserID(i int64) {
-	if m.adduser_id != nil {
-		*m.adduser_id += i
-	} else {
-		m.adduser_id = &i
-	}
-}
-
-// AddedUserID returns the value that was added to the "user_id" field in this mutation.
-func (m *AISkillMutation) AddedUserID() (r int64, exists bool) {
-	v := m.adduser_id
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
 // ResetUserID resets all changes to the "user_id" field.
 func (m *AISkillMutation) ResetUserID() {
-	m.user_id = nil
-	m.adduser_id = nil
+	m.user = nil
 }
 
 // SetSkillType sets the "skill_type" field.
@@ -13607,6 +13589,33 @@ func (m *AISkillMutation) ResetGroupID() {
 	delete(m.clearedFields, aiskill.FieldGroupID)
 }
 
+// ClearUser clears the "user" edge to the User entity.
+func (m *AISkillMutation) ClearUser() {
+	m.cleareduser = true
+	m.clearedFields[aiskill.FieldUserID] = struct{}{}
+}
+
+// UserCleared reports if the "user" edge to the User entity was cleared.
+func (m *AISkillMutation) UserCleared() bool {
+	return m.cleareduser
+}
+
+// UserIDs returns the "user" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// UserID instead. It exists only for internal usage by the builders.
+func (m *AISkillMutation) UserIDs() (ids []int64) {
+	if id := m.user; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetUser resets all changes to the "user" edge.
+func (m *AISkillMutation) ResetUser() {
+	m.user = nil
+	m.cleareduser = false
+}
+
 // AddVersionIDs adds the "versions" edge to the AISkillVersion entity by ids.
 func (m *AISkillMutation) AddVersionIDs(ids ...int64) {
 	if m.versions == nil {
@@ -13921,7 +13930,7 @@ func (m *AISkillMutation) Fields() []string {
 	if m.deleted_at != nil {
 		fields = append(fields, aiskill.FieldDeletedAt)
 	}
-	if m.user_id != nil {
+	if m.user != nil {
 		fields = append(fields, aiskill.FieldUserID)
 	}
 	if m.skill_type != nil {
@@ -14324,9 +14333,6 @@ func (m *AISkillMutation) SetField(name string, value ent.Value) error {
 // this mutation.
 func (m *AISkillMutation) AddedFields() []string {
 	var fields []string
-	if m.adduser_id != nil {
-		fields = append(fields, aiskill.FieldUserID)
-	}
 	if m.addprice != nil {
 		fields = append(fields, aiskill.FieldPrice)
 	}
@@ -14371,8 +14377,6 @@ func (m *AISkillMutation) AddedFields() []string {
 // was not set, or was not defined in the schema.
 func (m *AISkillMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
-	case aiskill.FieldUserID:
-		return m.AddedUserID()
 	case aiskill.FieldPrice:
 		return m.AddedPrice()
 	case aiskill.FieldCurrentVersionID:
@@ -14406,13 +14410,6 @@ func (m *AISkillMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *AISkillMutation) AddField(name string, value ent.Value) error {
 	switch name {
-	case aiskill.FieldUserID:
-		v, ok := value.(int64)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddUserID(v)
-		return nil
 	case aiskill.FieldPrice:
 		v, ok := value.(float64)
 		if !ok {
@@ -14686,7 +14683,10 @@ func (m *AISkillMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *AISkillMutation) AddedEdges() []string {
-	edges := make([]string, 0, 5)
+	edges := make([]string, 0, 6)
+	if m.user != nil {
+		edges = append(edges, aiskill.EdgeUser)
+	}
 	if m.versions != nil {
 		edges = append(edges, aiskill.EdgeVersions)
 	}
@@ -14709,6 +14709,10 @@ func (m *AISkillMutation) AddedEdges() []string {
 // name in this mutation.
 func (m *AISkillMutation) AddedIDs(name string) []ent.Value {
 	switch name {
+	case aiskill.EdgeUser:
+		if id := m.user; id != nil {
+			return []ent.Value{*id}
+		}
 	case aiskill.EdgeVersions:
 		ids := make([]ent.Value, 0, len(m.versions))
 		for id := range m.versions {
@@ -14745,7 +14749,7 @@ func (m *AISkillMutation) AddedIDs(name string) []ent.Value {
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *AISkillMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 5)
+	edges := make([]string, 0, 6)
 	if m.removedversions != nil {
 		edges = append(edges, aiskill.EdgeVersions)
 	}
@@ -14804,7 +14808,10 @@ func (m *AISkillMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *AISkillMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 5)
+	edges := make([]string, 0, 6)
+	if m.cleareduser {
+		edges = append(edges, aiskill.EdgeUser)
+	}
 	if m.clearedversions {
 		edges = append(edges, aiskill.EdgeVersions)
 	}
@@ -14827,6 +14834,8 @@ func (m *AISkillMutation) ClearedEdges() []string {
 // was cleared in this mutation.
 func (m *AISkillMutation) EdgeCleared(name string) bool {
 	switch name {
+	case aiskill.EdgeUser:
+		return m.cleareduser
 	case aiskill.EdgeVersions:
 		return m.clearedversions
 	case aiskill.EdgeRuns:
@@ -14845,6 +14854,9 @@ func (m *AISkillMutation) EdgeCleared(name string) bool {
 // if that edge is not defined in the schema.
 func (m *AISkillMutation) ClearEdge(name string) error {
 	switch name {
+	case aiskill.EdgeUser:
+		m.ClearUser()
+		return nil
 	}
 	return fmt.Errorf("unknown AISkill unique edge %s", name)
 }
@@ -14853,6 +14865,9 @@ func (m *AISkillMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *AISkillMutation) ResetEdge(name string) error {
 	switch name {
+	case aiskill.EdgeUser:
+		m.ResetUser()
+		return nil
 	case aiskill.EdgeVersions:
 		m.ResetVersions()
 		return nil
@@ -14880,8 +14895,6 @@ type AISkillLikeMutation struct {
 	id              *int64
 	created_at      *time.Time
 	updated_at      *time.Time
-	user_id         *int64
-	adduser_id      *int64
 	request_id      *string
 	usage_log_id    *int64
 	addusage_log_id *int64
@@ -14892,6 +14905,8 @@ type AISkillLikeMutation struct {
 	clearedFields   map[string]struct{}
 	skill           *int64
 	clearedskill    bool
+	user            *int64
+	cleareduser     bool
 	done            bool
 	oldValue        func(context.Context) (*AISkillLike, error)
 	predicates      []predicate.AISkillLike
@@ -15105,13 +15120,12 @@ func (m *AISkillLikeMutation) ResetSkillID() {
 
 // SetUserID sets the "user_id" field.
 func (m *AISkillLikeMutation) SetUserID(i int64) {
-	m.user_id = &i
-	m.adduser_id = nil
+	m.user = &i
 }
 
 // UserID returns the value of the "user_id" field in the mutation.
 func (m *AISkillLikeMutation) UserID() (r int64, exists bool) {
-	v := m.user_id
+	v := m.user
 	if v == nil {
 		return
 	}
@@ -15135,28 +15149,9 @@ func (m *AISkillLikeMutation) OldUserID(ctx context.Context) (v int64, err error
 	return oldValue.UserID, nil
 }
 
-// AddUserID adds i to the "user_id" field.
-func (m *AISkillLikeMutation) AddUserID(i int64) {
-	if m.adduser_id != nil {
-		*m.adduser_id += i
-	} else {
-		m.adduser_id = &i
-	}
-}
-
-// AddedUserID returns the value that was added to the "user_id" field in this mutation.
-func (m *AISkillLikeMutation) AddedUserID() (r int64, exists bool) {
-	v := m.adduser_id
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
 // ResetUserID resets all changes to the "user_id" field.
 func (m *AISkillLikeMutation) ResetUserID() {
-	m.user_id = nil
-	m.adduser_id = nil
+	m.user = nil
 }
 
 // SetRequestID sets the "request_id" field.
@@ -15445,6 +15440,33 @@ func (m *AISkillLikeMutation) ResetSkill() {
 	m.clearedskill = false
 }
 
+// ClearUser clears the "user" edge to the User entity.
+func (m *AISkillLikeMutation) ClearUser() {
+	m.cleareduser = true
+	m.clearedFields[aiskilllike.FieldUserID] = struct{}{}
+}
+
+// UserCleared reports if the "user" edge to the User entity was cleared.
+func (m *AISkillLikeMutation) UserCleared() bool {
+	return m.cleareduser
+}
+
+// UserIDs returns the "user" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// UserID instead. It exists only for internal usage by the builders.
+func (m *AISkillLikeMutation) UserIDs() (ids []int64) {
+	if id := m.user; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetUser resets all changes to the "user" edge.
+func (m *AISkillLikeMutation) ResetUser() {
+	m.user = nil
+	m.cleareduser = false
+}
+
 // Where appends a list predicates to the AISkillLikeMutation builder.
 func (m *AISkillLikeMutation) Where(ps ...predicate.AISkillLike) {
 	m.predicates = append(m.predicates, ps...)
@@ -15489,7 +15511,7 @@ func (m *AISkillLikeMutation) Fields() []string {
 	if m.skill != nil {
 		fields = append(fields, aiskilllike.FieldSkillID)
 	}
-	if m.user_id != nil {
+	if m.user != nil {
 		fields = append(fields, aiskilllike.FieldUserID)
 	}
 	if m.request_id != nil {
@@ -15626,9 +15648,6 @@ func (m *AISkillLikeMutation) SetField(name string, value ent.Value) error {
 // this mutation.
 func (m *AISkillLikeMutation) AddedFields() []string {
 	var fields []string
-	if m.adduser_id != nil {
-		fields = append(fields, aiskilllike.FieldUserID)
-	}
 	if m.addusage_log_id != nil {
 		fields = append(fields, aiskilllike.FieldUsageLogID)
 	}
@@ -15646,8 +15665,6 @@ func (m *AISkillLikeMutation) AddedFields() []string {
 // was not set, or was not defined in the schema.
 func (m *AISkillLikeMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
-	case aiskilllike.FieldUserID:
-		return m.AddedUserID()
 	case aiskilllike.FieldUsageLogID:
 		return m.AddedUsageLogID()
 	case aiskilllike.FieldAPIKeyID:
@@ -15663,13 +15680,6 @@ func (m *AISkillLikeMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *AISkillLikeMutation) AddField(name string, value ent.Value) error {
 	switch name {
-	case aiskilllike.FieldUserID:
-		v, ok := value.(int64)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddUserID(v)
-		return nil
 	case aiskilllike.FieldUsageLogID:
 		v, ok := value.(int64)
 		if !ok {
@@ -15775,9 +15785,12 @@ func (m *AISkillLikeMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *AISkillLikeMutation) AddedEdges() []string {
-	edges := make([]string, 0, 1)
+	edges := make([]string, 0, 2)
 	if m.skill != nil {
 		edges = append(edges, aiskilllike.EdgeSkill)
+	}
+	if m.user != nil {
+		edges = append(edges, aiskilllike.EdgeUser)
 	}
 	return edges
 }
@@ -15790,13 +15803,17 @@ func (m *AISkillLikeMutation) AddedIDs(name string) []ent.Value {
 		if id := m.skill; id != nil {
 			return []ent.Value{*id}
 		}
+	case aiskilllike.EdgeUser:
+		if id := m.user; id != nil {
+			return []ent.Value{*id}
+		}
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *AISkillLikeMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 1)
+	edges := make([]string, 0, 2)
 	return edges
 }
 
@@ -15808,9 +15825,12 @@ func (m *AISkillLikeMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *AISkillLikeMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 1)
+	edges := make([]string, 0, 2)
 	if m.clearedskill {
 		edges = append(edges, aiskilllike.EdgeSkill)
+	}
+	if m.cleareduser {
+		edges = append(edges, aiskilllike.EdgeUser)
 	}
 	return edges
 }
@@ -15821,6 +15841,8 @@ func (m *AISkillLikeMutation) EdgeCleared(name string) bool {
 	switch name {
 	case aiskilllike.EdgeSkill:
 		return m.clearedskill
+	case aiskilllike.EdgeUser:
+		return m.cleareduser
 	}
 	return false
 }
@@ -15831,6 +15853,9 @@ func (m *AISkillLikeMutation) ClearEdge(name string) error {
 	switch name {
 	case aiskilllike.EdgeSkill:
 		m.ClearSkill()
+		return nil
+	case aiskilllike.EdgeUser:
+		m.ClearUser()
 		return nil
 	}
 	return fmt.Errorf("unknown AISkillLike unique edge %s", name)
@@ -15843,6 +15868,9 @@ func (m *AISkillLikeMutation) ResetEdge(name string) error {
 	case aiskilllike.EdgeSkill:
 		m.ResetSkill()
 		return nil
+	case aiskilllike.EdgeUser:
+		m.ResetUser()
+		return nil
 	}
 	return fmt.Errorf("unknown AISkillLike edge %s", name)
 }
@@ -15850,36 +15878,36 @@ func (m *AISkillLikeMutation) ResetEdge(name string) error {
 // AISkillReviewMutation represents an operation that mutates the AISkillReview nodes in the graph.
 type AISkillReviewMutation struct {
 	config
-	op                   Op
-	typ                  string
-	id                   *int64
-	created_at           *time.Time
-	updated_at           *time.Time
-	submitter_user_id    *int64
-	addsubmitter_user_id *int64
-	reviewer_user_id     *int64
-	addreviewer_user_id  *int64
-	status               *string
-	submit_note          *string
-	review_note          *string
-	snapshot             *map[string]interface{}
-	metadata             *map[string]interface{}
-	reviewed_at          *time.Time
-	request_id           *string
-	usage_log_id         *int64
-	addusage_log_id      *int64
-	api_key_id           *int64
-	addapi_key_id        *int64
-	group_id             *int64
-	addgroup_id          *int64
-	clearedFields        map[string]struct{}
-	skill                *int64
-	clearedskill         bool
-	version              *int64
-	clearedversion       bool
-	done                 bool
-	oldValue             func(context.Context) (*AISkillReview, error)
-	predicates           []predicate.AISkillReview
+	op                    Op
+	typ                   string
+	id                    *int64
+	created_at            *time.Time
+	updated_at            *time.Time
+	status                *string
+	submit_note           *string
+	review_note           *string
+	snapshot              *map[string]interface{}
+	metadata              *map[string]interface{}
+	reviewed_at           *time.Time
+	request_id            *string
+	usage_log_id          *int64
+	addusage_log_id       *int64
+	api_key_id            *int64
+	addapi_key_id         *int64
+	group_id              *int64
+	addgroup_id           *int64
+	clearedFields         map[string]struct{}
+	skill                 *int64
+	clearedskill          bool
+	version               *int64
+	clearedversion        bool
+	submitter_user        *int64
+	clearedsubmitter_user bool
+	reviewer_user         *int64
+	clearedreviewer_user  bool
+	done                  bool
+	oldValue              func(context.Context) (*AISkillReview, error)
+	predicates            []predicate.AISkillReview
 }
 
 var _ ent.Mutation = (*AISkillReviewMutation)(nil)
@@ -16126,13 +16154,12 @@ func (m *AISkillReviewMutation) ResetVersionID() {
 
 // SetSubmitterUserID sets the "submitter_user_id" field.
 func (m *AISkillReviewMutation) SetSubmitterUserID(i int64) {
-	m.submitter_user_id = &i
-	m.addsubmitter_user_id = nil
+	m.submitter_user = &i
 }
 
 // SubmitterUserID returns the value of the "submitter_user_id" field in the mutation.
 func (m *AISkillReviewMutation) SubmitterUserID() (r int64, exists bool) {
-	v := m.submitter_user_id
+	v := m.submitter_user
 	if v == nil {
 		return
 	}
@@ -16156,39 +16183,19 @@ func (m *AISkillReviewMutation) OldSubmitterUserID(ctx context.Context) (v int64
 	return oldValue.SubmitterUserID, nil
 }
 
-// AddSubmitterUserID adds i to the "submitter_user_id" field.
-func (m *AISkillReviewMutation) AddSubmitterUserID(i int64) {
-	if m.addsubmitter_user_id != nil {
-		*m.addsubmitter_user_id += i
-	} else {
-		m.addsubmitter_user_id = &i
-	}
-}
-
-// AddedSubmitterUserID returns the value that was added to the "submitter_user_id" field in this mutation.
-func (m *AISkillReviewMutation) AddedSubmitterUserID() (r int64, exists bool) {
-	v := m.addsubmitter_user_id
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
 // ResetSubmitterUserID resets all changes to the "submitter_user_id" field.
 func (m *AISkillReviewMutation) ResetSubmitterUserID() {
-	m.submitter_user_id = nil
-	m.addsubmitter_user_id = nil
+	m.submitter_user = nil
 }
 
 // SetReviewerUserID sets the "reviewer_user_id" field.
 func (m *AISkillReviewMutation) SetReviewerUserID(i int64) {
-	m.reviewer_user_id = &i
-	m.addreviewer_user_id = nil
+	m.reviewer_user = &i
 }
 
 // ReviewerUserID returns the value of the "reviewer_user_id" field in the mutation.
 func (m *AISkillReviewMutation) ReviewerUserID() (r int64, exists bool) {
-	v := m.reviewer_user_id
+	v := m.reviewer_user
 	if v == nil {
 		return
 	}
@@ -16212,28 +16219,9 @@ func (m *AISkillReviewMutation) OldReviewerUserID(ctx context.Context) (v *int64
 	return oldValue.ReviewerUserID, nil
 }
 
-// AddReviewerUserID adds i to the "reviewer_user_id" field.
-func (m *AISkillReviewMutation) AddReviewerUserID(i int64) {
-	if m.addreviewer_user_id != nil {
-		*m.addreviewer_user_id += i
-	} else {
-		m.addreviewer_user_id = &i
-	}
-}
-
-// AddedReviewerUserID returns the value that was added to the "reviewer_user_id" field in this mutation.
-func (m *AISkillReviewMutation) AddedReviewerUserID() (r int64, exists bool) {
-	v := m.addreviewer_user_id
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
 // ClearReviewerUserID clears the value of the "reviewer_user_id" field.
 func (m *AISkillReviewMutation) ClearReviewerUserID() {
-	m.reviewer_user_id = nil
-	m.addreviewer_user_id = nil
+	m.reviewer_user = nil
 	m.clearedFields[aiskillreview.FieldReviewerUserID] = struct{}{}
 }
 
@@ -16245,8 +16233,7 @@ func (m *AISkillReviewMutation) ReviewerUserIDCleared() bool {
 
 // ResetReviewerUserID resets all changes to the "reviewer_user_id" field.
 func (m *AISkillReviewMutation) ResetReviewerUserID() {
-	m.reviewer_user_id = nil
-	m.addreviewer_user_id = nil
+	m.reviewer_user = nil
 	delete(m.clearedFields, aiskillreview.FieldReviewerUserID)
 }
 
@@ -16818,6 +16805,60 @@ func (m *AISkillReviewMutation) ResetVersion() {
 	m.clearedversion = false
 }
 
+// ClearSubmitterUser clears the "submitter_user" edge to the User entity.
+func (m *AISkillReviewMutation) ClearSubmitterUser() {
+	m.clearedsubmitter_user = true
+	m.clearedFields[aiskillreview.FieldSubmitterUserID] = struct{}{}
+}
+
+// SubmitterUserCleared reports if the "submitter_user" edge to the User entity was cleared.
+func (m *AISkillReviewMutation) SubmitterUserCleared() bool {
+	return m.clearedsubmitter_user
+}
+
+// SubmitterUserIDs returns the "submitter_user" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// SubmitterUserID instead. It exists only for internal usage by the builders.
+func (m *AISkillReviewMutation) SubmitterUserIDs() (ids []int64) {
+	if id := m.submitter_user; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetSubmitterUser resets all changes to the "submitter_user" edge.
+func (m *AISkillReviewMutation) ResetSubmitterUser() {
+	m.submitter_user = nil
+	m.clearedsubmitter_user = false
+}
+
+// ClearReviewerUser clears the "reviewer_user" edge to the User entity.
+func (m *AISkillReviewMutation) ClearReviewerUser() {
+	m.clearedreviewer_user = true
+	m.clearedFields[aiskillreview.FieldReviewerUserID] = struct{}{}
+}
+
+// ReviewerUserCleared reports if the "reviewer_user" edge to the User entity was cleared.
+func (m *AISkillReviewMutation) ReviewerUserCleared() bool {
+	return m.ReviewerUserIDCleared() || m.clearedreviewer_user
+}
+
+// ReviewerUserIDs returns the "reviewer_user" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// ReviewerUserID instead. It exists only for internal usage by the builders.
+func (m *AISkillReviewMutation) ReviewerUserIDs() (ids []int64) {
+	if id := m.reviewer_user; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetReviewerUser resets all changes to the "reviewer_user" edge.
+func (m *AISkillReviewMutation) ResetReviewerUser() {
+	m.reviewer_user = nil
+	m.clearedreviewer_user = false
+}
+
 // Where appends a list predicates to the AISkillReviewMutation builder.
 func (m *AISkillReviewMutation) Where(ps ...predicate.AISkillReview) {
 	m.predicates = append(m.predicates, ps...)
@@ -16865,10 +16906,10 @@ func (m *AISkillReviewMutation) Fields() []string {
 	if m.version != nil {
 		fields = append(fields, aiskillreview.FieldVersionID)
 	}
-	if m.submitter_user_id != nil {
+	if m.submitter_user != nil {
 		fields = append(fields, aiskillreview.FieldSubmitterUserID)
 	}
-	if m.reviewer_user_id != nil {
+	if m.reviewer_user != nil {
 		fields = append(fields, aiskillreview.FieldReviewerUserID)
 	}
 	if m.status != nil {
@@ -17111,12 +17152,6 @@ func (m *AISkillReviewMutation) SetField(name string, value ent.Value) error {
 // this mutation.
 func (m *AISkillReviewMutation) AddedFields() []string {
 	var fields []string
-	if m.addsubmitter_user_id != nil {
-		fields = append(fields, aiskillreview.FieldSubmitterUserID)
-	}
-	if m.addreviewer_user_id != nil {
-		fields = append(fields, aiskillreview.FieldReviewerUserID)
-	}
 	if m.addusage_log_id != nil {
 		fields = append(fields, aiskillreview.FieldUsageLogID)
 	}
@@ -17134,10 +17169,6 @@ func (m *AISkillReviewMutation) AddedFields() []string {
 // was not set, or was not defined in the schema.
 func (m *AISkillReviewMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
-	case aiskillreview.FieldSubmitterUserID:
-		return m.AddedSubmitterUserID()
-	case aiskillreview.FieldReviewerUserID:
-		return m.AddedReviewerUserID()
 	case aiskillreview.FieldUsageLogID:
 		return m.AddedUsageLogID()
 	case aiskillreview.FieldAPIKeyID:
@@ -17153,20 +17184,6 @@ func (m *AISkillReviewMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *AISkillReviewMutation) AddField(name string, value ent.Value) error {
 	switch name {
-	case aiskillreview.FieldSubmitterUserID:
-		v, ok := value.(int64)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddSubmitterUserID(v)
-		return nil
-	case aiskillreview.FieldReviewerUserID:
-		v, ok := value.(int64)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddReviewerUserID(v)
-		return nil
 	case aiskillreview.FieldUsageLogID:
 		v, ok := value.(int64)
 		if !ok {
@@ -17320,12 +17337,18 @@ func (m *AISkillReviewMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *AISkillReviewMutation) AddedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 4)
 	if m.skill != nil {
 		edges = append(edges, aiskillreview.EdgeSkill)
 	}
 	if m.version != nil {
 		edges = append(edges, aiskillreview.EdgeVersion)
+	}
+	if m.submitter_user != nil {
+		edges = append(edges, aiskillreview.EdgeSubmitterUser)
+	}
+	if m.reviewer_user != nil {
+		edges = append(edges, aiskillreview.EdgeReviewerUser)
 	}
 	return edges
 }
@@ -17342,13 +17365,21 @@ func (m *AISkillReviewMutation) AddedIDs(name string) []ent.Value {
 		if id := m.version; id != nil {
 			return []ent.Value{*id}
 		}
+	case aiskillreview.EdgeSubmitterUser:
+		if id := m.submitter_user; id != nil {
+			return []ent.Value{*id}
+		}
+	case aiskillreview.EdgeReviewerUser:
+		if id := m.reviewer_user; id != nil {
+			return []ent.Value{*id}
+		}
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *AISkillReviewMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 4)
 	return edges
 }
 
@@ -17360,12 +17391,18 @@ func (m *AISkillReviewMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *AISkillReviewMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 4)
 	if m.clearedskill {
 		edges = append(edges, aiskillreview.EdgeSkill)
 	}
 	if m.clearedversion {
 		edges = append(edges, aiskillreview.EdgeVersion)
+	}
+	if m.clearedsubmitter_user {
+		edges = append(edges, aiskillreview.EdgeSubmitterUser)
+	}
+	if m.clearedreviewer_user {
+		edges = append(edges, aiskillreview.EdgeReviewerUser)
 	}
 	return edges
 }
@@ -17378,6 +17415,10 @@ func (m *AISkillReviewMutation) EdgeCleared(name string) bool {
 		return m.clearedskill
 	case aiskillreview.EdgeVersion:
 		return m.clearedversion
+	case aiskillreview.EdgeSubmitterUser:
+		return m.clearedsubmitter_user
+	case aiskillreview.EdgeReviewerUser:
+		return m.clearedreviewer_user
 	}
 	return false
 }
@@ -17391,6 +17432,12 @@ func (m *AISkillReviewMutation) ClearEdge(name string) error {
 		return nil
 	case aiskillreview.EdgeVersion:
 		m.ClearVersion()
+		return nil
+	case aiskillreview.EdgeSubmitterUser:
+		m.ClearSubmitterUser()
+		return nil
+	case aiskillreview.EdgeReviewerUser:
+		m.ClearReviewerUser()
 		return nil
 	}
 	return fmt.Errorf("unknown AISkillReview unique edge %s", name)
@@ -17406,6 +17453,12 @@ func (m *AISkillReviewMutation) ResetEdge(name string) error {
 	case aiskillreview.EdgeVersion:
 		m.ResetVersion()
 		return nil
+	case aiskillreview.EdgeSubmitterUser:
+		m.ResetSubmitterUser()
+		return nil
+	case aiskillreview.EdgeReviewerUser:
+		m.ResetReviewerUser()
+		return nil
 	}
 	return fmt.Errorf("unknown AISkillReview edge %s", name)
 }
@@ -17418,8 +17471,6 @@ type AISkillRunMutation struct {
 	id                 *int64
 	created_at         *time.Time
 	updated_at         *time.Time
-	user_id            *int64
-	adduser_id         *int64
 	run_mode           *string
 	status             *string
 	billing_mode       *string
@@ -17441,6 +17492,8 @@ type AISkillRunMutation struct {
 	clearedskill       bool
 	version            *int64
 	clearedversion     bool
+	user               *int64
+	cleareduser        bool
 	settlements        map[int64]struct{}
 	removedsettlements map[int64]struct{}
 	clearedsettlements bool
@@ -17693,13 +17746,12 @@ func (m *AISkillRunMutation) ResetVersionID() {
 
 // SetUserID sets the "user_id" field.
 func (m *AISkillRunMutation) SetUserID(i int64) {
-	m.user_id = &i
-	m.adduser_id = nil
+	m.user = &i
 }
 
 // UserID returns the value of the "user_id" field in the mutation.
 func (m *AISkillRunMutation) UserID() (r int64, exists bool) {
-	v := m.user_id
+	v := m.user
 	if v == nil {
 		return
 	}
@@ -17723,28 +17775,9 @@ func (m *AISkillRunMutation) OldUserID(ctx context.Context) (v int64, err error)
 	return oldValue.UserID, nil
 }
 
-// AddUserID adds i to the "user_id" field.
-func (m *AISkillRunMutation) AddUserID(i int64) {
-	if m.adduser_id != nil {
-		*m.adduser_id += i
-	} else {
-		m.adduser_id = &i
-	}
-}
-
-// AddedUserID returns the value that was added to the "user_id" field in this mutation.
-func (m *AISkillRunMutation) AddedUserID() (r int64, exists bool) {
-	v := m.adduser_id
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
 // ResetUserID resets all changes to the "user_id" field.
 func (m *AISkillRunMutation) ResetUserID() {
-	m.user_id = nil
-	m.adduser_id = nil
+	m.user = nil
 }
 
 // SetRunMode sets the "run_mode" field.
@@ -18381,6 +18414,33 @@ func (m *AISkillRunMutation) ResetVersion() {
 	m.clearedversion = false
 }
 
+// ClearUser clears the "user" edge to the User entity.
+func (m *AISkillRunMutation) ClearUser() {
+	m.cleareduser = true
+	m.clearedFields[aiskillrun.FieldUserID] = struct{}{}
+}
+
+// UserCleared reports if the "user" edge to the User entity was cleared.
+func (m *AISkillRunMutation) UserCleared() bool {
+	return m.cleareduser
+}
+
+// UserIDs returns the "user" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// UserID instead. It exists only for internal usage by the builders.
+func (m *AISkillRunMutation) UserIDs() (ids []int64) {
+	if id := m.user; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetUser resets all changes to the "user" edge.
+func (m *AISkillRunMutation) ResetUser() {
+	m.user = nil
+	m.cleareduser = false
+}
+
 // AddSettlementIDs adds the "settlements" edge to the AISkillSettlement entity by ids.
 func (m *AISkillRunMutation) AddSettlementIDs(ids ...int64) {
 	if m.settlements == nil {
@@ -18482,7 +18542,7 @@ func (m *AISkillRunMutation) Fields() []string {
 	if m.version != nil {
 		fields = append(fields, aiskillrun.FieldVersionID)
 	}
-	if m.user_id != nil {
+	if m.user != nil {
 		fields = append(fields, aiskillrun.FieldUserID)
 	}
 	if m.run_mode != nil {
@@ -18742,9 +18802,6 @@ func (m *AISkillRunMutation) SetField(name string, value ent.Value) error {
 // this mutation.
 func (m *AISkillRunMutation) AddedFields() []string {
 	var fields []string
-	if m.adduser_id != nil {
-		fields = append(fields, aiskillrun.FieldUserID)
-	}
 	if m.addprice != nil {
 		fields = append(fields, aiskillrun.FieldPrice)
 	}
@@ -18765,8 +18822,6 @@ func (m *AISkillRunMutation) AddedFields() []string {
 // was not set, or was not defined in the schema.
 func (m *AISkillRunMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
-	case aiskillrun.FieldUserID:
-		return m.AddedUserID()
 	case aiskillrun.FieldPrice:
 		return m.AddedPrice()
 	case aiskillrun.FieldUsageLogID:
@@ -18784,13 +18839,6 @@ func (m *AISkillRunMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *AISkillRunMutation) AddField(name string, value ent.Value) error {
 	switch name {
-	case aiskillrun.FieldUserID:
-		v, ok := value.(int64)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddUserID(v)
-		return nil
 	case aiskillrun.FieldPrice:
 		v, ok := value.(float64)
 		if !ok {
@@ -18936,12 +18984,15 @@ func (m *AISkillRunMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *AISkillRunMutation) AddedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.skill != nil {
 		edges = append(edges, aiskillrun.EdgeSkill)
 	}
 	if m.version != nil {
 		edges = append(edges, aiskillrun.EdgeVersion)
+	}
+	if m.user != nil {
+		edges = append(edges, aiskillrun.EdgeUser)
 	}
 	if m.settlements != nil {
 		edges = append(edges, aiskillrun.EdgeSettlements)
@@ -18961,6 +19012,10 @@ func (m *AISkillRunMutation) AddedIDs(name string) []ent.Value {
 		if id := m.version; id != nil {
 			return []ent.Value{*id}
 		}
+	case aiskillrun.EdgeUser:
+		if id := m.user; id != nil {
+			return []ent.Value{*id}
+		}
 	case aiskillrun.EdgeSettlements:
 		ids := make([]ent.Value, 0, len(m.settlements))
 		for id := range m.settlements {
@@ -18973,7 +19028,7 @@ func (m *AISkillRunMutation) AddedIDs(name string) []ent.Value {
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *AISkillRunMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.removedsettlements != nil {
 		edges = append(edges, aiskillrun.EdgeSettlements)
 	}
@@ -18996,12 +19051,15 @@ func (m *AISkillRunMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *AISkillRunMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.clearedskill {
 		edges = append(edges, aiskillrun.EdgeSkill)
 	}
 	if m.clearedversion {
 		edges = append(edges, aiskillrun.EdgeVersion)
+	}
+	if m.cleareduser {
+		edges = append(edges, aiskillrun.EdgeUser)
 	}
 	if m.clearedsettlements {
 		edges = append(edges, aiskillrun.EdgeSettlements)
@@ -19017,6 +19075,8 @@ func (m *AISkillRunMutation) EdgeCleared(name string) bool {
 		return m.clearedskill
 	case aiskillrun.EdgeVersion:
 		return m.clearedversion
+	case aiskillrun.EdgeUser:
+		return m.cleareduser
 	case aiskillrun.EdgeSettlements:
 		return m.clearedsettlements
 	}
@@ -19033,6 +19093,9 @@ func (m *AISkillRunMutation) ClearEdge(name string) error {
 	case aiskillrun.EdgeVersion:
 		m.ClearVersion()
 		return nil
+	case aiskillrun.EdgeUser:
+		m.ClearUser()
+		return nil
 	}
 	return fmt.Errorf("unknown AISkillRun unique edge %s", name)
 }
@@ -19046,6 +19109,9 @@ func (m *AISkillRunMutation) ResetEdge(name string) error {
 		return nil
 	case aiskillrun.EdgeVersion:
 		m.ResetVersion()
+		return nil
+	case aiskillrun.EdgeUser:
+		m.ResetUser()
 		return nil
 	case aiskillrun.EdgeSettlements:
 		m.ResetSettlements()
@@ -19062,10 +19128,6 @@ type AISkillSettlementMutation struct {
 	id                     *int64
 	created_at             *time.Time
 	updated_at             *time.Time
-	owner_user_id          *int64
-	addowner_user_id       *int64
-	buyer_user_id          *int64
-	addbuyer_user_id       *int64
 	status                 *string
 	billing_mode           *string
 	amount                 *float64
@@ -19089,6 +19151,10 @@ type AISkillSettlementMutation struct {
 	clearedversion         bool
 	run                    *int64
 	clearedrun             bool
+	owner_user             *int64
+	clearedowner_user      bool
+	buyer_user             *int64
+	clearedbuyer_user      bool
 	done                   bool
 	oldValue               func(context.Context) (*AISkillSettlement, error)
 	predicates             []predicate.AISkillSettlement
@@ -19374,13 +19440,12 @@ func (m *AISkillSettlementMutation) ResetRunID() {
 
 // SetOwnerUserID sets the "owner_user_id" field.
 func (m *AISkillSettlementMutation) SetOwnerUserID(i int64) {
-	m.owner_user_id = &i
-	m.addowner_user_id = nil
+	m.owner_user = &i
 }
 
 // OwnerUserID returns the value of the "owner_user_id" field in the mutation.
 func (m *AISkillSettlementMutation) OwnerUserID() (r int64, exists bool) {
-	v := m.owner_user_id
+	v := m.owner_user
 	if v == nil {
 		return
 	}
@@ -19404,39 +19469,19 @@ func (m *AISkillSettlementMutation) OldOwnerUserID(ctx context.Context) (v int64
 	return oldValue.OwnerUserID, nil
 }
 
-// AddOwnerUserID adds i to the "owner_user_id" field.
-func (m *AISkillSettlementMutation) AddOwnerUserID(i int64) {
-	if m.addowner_user_id != nil {
-		*m.addowner_user_id += i
-	} else {
-		m.addowner_user_id = &i
-	}
-}
-
-// AddedOwnerUserID returns the value that was added to the "owner_user_id" field in this mutation.
-func (m *AISkillSettlementMutation) AddedOwnerUserID() (r int64, exists bool) {
-	v := m.addowner_user_id
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
 // ResetOwnerUserID resets all changes to the "owner_user_id" field.
 func (m *AISkillSettlementMutation) ResetOwnerUserID() {
-	m.owner_user_id = nil
-	m.addowner_user_id = nil
+	m.owner_user = nil
 }
 
 // SetBuyerUserID sets the "buyer_user_id" field.
 func (m *AISkillSettlementMutation) SetBuyerUserID(i int64) {
-	m.buyer_user_id = &i
-	m.addbuyer_user_id = nil
+	m.buyer_user = &i
 }
 
 // BuyerUserID returns the value of the "buyer_user_id" field in the mutation.
 func (m *AISkillSettlementMutation) BuyerUserID() (r int64, exists bool) {
-	v := m.buyer_user_id
+	v := m.buyer_user
 	if v == nil {
 		return
 	}
@@ -19460,28 +19505,9 @@ func (m *AISkillSettlementMutation) OldBuyerUserID(ctx context.Context) (v int64
 	return oldValue.BuyerUserID, nil
 }
 
-// AddBuyerUserID adds i to the "buyer_user_id" field.
-func (m *AISkillSettlementMutation) AddBuyerUserID(i int64) {
-	if m.addbuyer_user_id != nil {
-		*m.addbuyer_user_id += i
-	} else {
-		m.addbuyer_user_id = &i
-	}
-}
-
-// AddedBuyerUserID returns the value that was added to the "buyer_user_id" field in this mutation.
-func (m *AISkillSettlementMutation) AddedBuyerUserID() (r int64, exists bool) {
-	v := m.addbuyer_user_id
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
 // ResetBuyerUserID resets all changes to the "buyer_user_id" field.
 func (m *AISkillSettlementMutation) ResetBuyerUserID() {
-	m.buyer_user_id = nil
-	m.addbuyer_user_id = nil
+	m.buyer_user = nil
 }
 
 // SetStatus sets the "status" field.
@@ -20142,6 +20168,60 @@ func (m *AISkillSettlementMutation) ResetRun() {
 	m.clearedrun = false
 }
 
+// ClearOwnerUser clears the "owner_user" edge to the User entity.
+func (m *AISkillSettlementMutation) ClearOwnerUser() {
+	m.clearedowner_user = true
+	m.clearedFields[aiskillsettlement.FieldOwnerUserID] = struct{}{}
+}
+
+// OwnerUserCleared reports if the "owner_user" edge to the User entity was cleared.
+func (m *AISkillSettlementMutation) OwnerUserCleared() bool {
+	return m.clearedowner_user
+}
+
+// OwnerUserIDs returns the "owner_user" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// OwnerUserID instead. It exists only for internal usage by the builders.
+func (m *AISkillSettlementMutation) OwnerUserIDs() (ids []int64) {
+	if id := m.owner_user; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetOwnerUser resets all changes to the "owner_user" edge.
+func (m *AISkillSettlementMutation) ResetOwnerUser() {
+	m.owner_user = nil
+	m.clearedowner_user = false
+}
+
+// ClearBuyerUser clears the "buyer_user" edge to the User entity.
+func (m *AISkillSettlementMutation) ClearBuyerUser() {
+	m.clearedbuyer_user = true
+	m.clearedFields[aiskillsettlement.FieldBuyerUserID] = struct{}{}
+}
+
+// BuyerUserCleared reports if the "buyer_user" edge to the User entity was cleared.
+func (m *AISkillSettlementMutation) BuyerUserCleared() bool {
+	return m.clearedbuyer_user
+}
+
+// BuyerUserIDs returns the "buyer_user" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// BuyerUserID instead. It exists only for internal usage by the builders.
+func (m *AISkillSettlementMutation) BuyerUserIDs() (ids []int64) {
+	if id := m.buyer_user; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetBuyerUser resets all changes to the "buyer_user" edge.
+func (m *AISkillSettlementMutation) ResetBuyerUser() {
+	m.buyer_user = nil
+	m.clearedbuyer_user = false
+}
+
 // Where appends a list predicates to the AISkillSettlementMutation builder.
 func (m *AISkillSettlementMutation) Where(ps ...predicate.AISkillSettlement) {
 	m.predicates = append(m.predicates, ps...)
@@ -20192,10 +20272,10 @@ func (m *AISkillSettlementMutation) Fields() []string {
 	if m.run != nil {
 		fields = append(fields, aiskillsettlement.FieldRunID)
 	}
-	if m.owner_user_id != nil {
+	if m.owner_user != nil {
 		fields = append(fields, aiskillsettlement.FieldOwnerUserID)
 	}
-	if m.buyer_user_id != nil {
+	if m.buyer_user != nil {
 		fields = append(fields, aiskillsettlement.FieldBuyerUserID)
 	}
 	if m.status != nil {
@@ -20463,12 +20543,6 @@ func (m *AISkillSettlementMutation) SetField(name string, value ent.Value) error
 // this mutation.
 func (m *AISkillSettlementMutation) AddedFields() []string {
 	var fields []string
-	if m.addowner_user_id != nil {
-		fields = append(fields, aiskillsettlement.FieldOwnerUserID)
-	}
-	if m.addbuyer_user_id != nil {
-		fields = append(fields, aiskillsettlement.FieldBuyerUserID)
-	}
 	if m.addamount != nil {
 		fields = append(fields, aiskillsettlement.FieldAmount)
 	}
@@ -20492,10 +20566,6 @@ func (m *AISkillSettlementMutation) AddedFields() []string {
 // was not set, or was not defined in the schema.
 func (m *AISkillSettlementMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
-	case aiskillsettlement.FieldOwnerUserID:
-		return m.AddedOwnerUserID()
-	case aiskillsettlement.FieldBuyerUserID:
-		return m.AddedBuyerUserID()
 	case aiskillsettlement.FieldAmount:
 		return m.AddedAmount()
 	case aiskillsettlement.FieldQuotaAmount:
@@ -20515,20 +20585,6 @@ func (m *AISkillSettlementMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *AISkillSettlementMutation) AddField(name string, value ent.Value) error {
 	switch name {
-	case aiskillsettlement.FieldOwnerUserID:
-		v, ok := value.(int64)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddOwnerUserID(v)
-		return nil
-	case aiskillsettlement.FieldBuyerUserID:
-		v, ok := value.(int64)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddBuyerUserID(v)
-		return nil
 	case aiskillsettlement.FieldAmount:
 		v, ok := value.(float64)
 		if !ok {
@@ -20690,7 +20746,7 @@ func (m *AISkillSettlementMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *AISkillSettlementMutation) AddedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 5)
 	if m.skill != nil {
 		edges = append(edges, aiskillsettlement.EdgeSkill)
 	}
@@ -20699,6 +20755,12 @@ func (m *AISkillSettlementMutation) AddedEdges() []string {
 	}
 	if m.run != nil {
 		edges = append(edges, aiskillsettlement.EdgeRun)
+	}
+	if m.owner_user != nil {
+		edges = append(edges, aiskillsettlement.EdgeOwnerUser)
+	}
+	if m.buyer_user != nil {
+		edges = append(edges, aiskillsettlement.EdgeBuyerUser)
 	}
 	return edges
 }
@@ -20719,13 +20781,21 @@ func (m *AISkillSettlementMutation) AddedIDs(name string) []ent.Value {
 		if id := m.run; id != nil {
 			return []ent.Value{*id}
 		}
+	case aiskillsettlement.EdgeOwnerUser:
+		if id := m.owner_user; id != nil {
+			return []ent.Value{*id}
+		}
+	case aiskillsettlement.EdgeBuyerUser:
+		if id := m.buyer_user; id != nil {
+			return []ent.Value{*id}
+		}
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *AISkillSettlementMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 5)
 	return edges
 }
 
@@ -20737,7 +20807,7 @@ func (m *AISkillSettlementMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *AISkillSettlementMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 5)
 	if m.clearedskill {
 		edges = append(edges, aiskillsettlement.EdgeSkill)
 	}
@@ -20746,6 +20816,12 @@ func (m *AISkillSettlementMutation) ClearedEdges() []string {
 	}
 	if m.clearedrun {
 		edges = append(edges, aiskillsettlement.EdgeRun)
+	}
+	if m.clearedowner_user {
+		edges = append(edges, aiskillsettlement.EdgeOwnerUser)
+	}
+	if m.clearedbuyer_user {
+		edges = append(edges, aiskillsettlement.EdgeBuyerUser)
 	}
 	return edges
 }
@@ -20760,6 +20836,10 @@ func (m *AISkillSettlementMutation) EdgeCleared(name string) bool {
 		return m.clearedversion
 	case aiskillsettlement.EdgeRun:
 		return m.clearedrun
+	case aiskillsettlement.EdgeOwnerUser:
+		return m.clearedowner_user
+	case aiskillsettlement.EdgeBuyerUser:
+		return m.clearedbuyer_user
 	}
 	return false
 }
@@ -20776,6 +20856,12 @@ func (m *AISkillSettlementMutation) ClearEdge(name string) error {
 		return nil
 	case aiskillsettlement.EdgeRun:
 		m.ClearRun()
+		return nil
+	case aiskillsettlement.EdgeOwnerUser:
+		m.ClearOwnerUser()
+		return nil
+	case aiskillsettlement.EdgeBuyerUser:
+		m.ClearBuyerUser()
 		return nil
 	}
 	return fmt.Errorf("unknown AISkillSettlement unique edge %s", name)
@@ -20794,6 +20880,12 @@ func (m *AISkillSettlementMutation) ResetEdge(name string) error {
 	case aiskillsettlement.EdgeRun:
 		m.ResetRun()
 		return nil
+	case aiskillsettlement.EdgeOwnerUser:
+		m.ResetOwnerUser()
+		return nil
+	case aiskillsettlement.EdgeBuyerUser:
+		m.ResetBuyerUser()
+		return nil
 	}
 	return fmt.Errorf("unknown AISkillSettlement edge %s", name)
 }
@@ -20807,8 +20899,6 @@ type AISkillVersionMutation struct {
 	created_at          *time.Time
 	updated_at          *time.Time
 	deleted_at          *time.Time
-	user_id             *int64
-	adduser_id          *int64
 	version             *int
 	addversion          *int
 	review_status       *string
@@ -20835,6 +20925,8 @@ type AISkillVersionMutation struct {
 	clearedFields       map[string]struct{}
 	skill               *int64
 	clearedskill        bool
+	user                *int64
+	cleareduser         bool
 	runs                map[int64]struct{}
 	removedruns         map[int64]struct{}
 	clearedruns         bool
@@ -21106,13 +21198,12 @@ func (m *AISkillVersionMutation) ResetSkillID() {
 
 // SetUserID sets the "user_id" field.
 func (m *AISkillVersionMutation) SetUserID(i int64) {
-	m.user_id = &i
-	m.adduser_id = nil
+	m.user = &i
 }
 
 // UserID returns the value of the "user_id" field in the mutation.
 func (m *AISkillVersionMutation) UserID() (r int64, exists bool) {
-	v := m.user_id
+	v := m.user
 	if v == nil {
 		return
 	}
@@ -21136,28 +21227,9 @@ func (m *AISkillVersionMutation) OldUserID(ctx context.Context) (v int64, err er
 	return oldValue.UserID, nil
 }
 
-// AddUserID adds i to the "user_id" field.
-func (m *AISkillVersionMutation) AddUserID(i int64) {
-	if m.adduser_id != nil {
-		*m.adduser_id += i
-	} else {
-		m.adduser_id = &i
-	}
-}
-
-// AddedUserID returns the value that was added to the "user_id" field in this mutation.
-func (m *AISkillVersionMutation) AddedUserID() (r int64, exists bool) {
-	v := m.adduser_id
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
 // ResetUserID resets all changes to the "user_id" field.
 func (m *AISkillVersionMutation) ResetUserID() {
-	m.user_id = nil
-	m.adduser_id = nil
+	m.user = nil
 }
 
 // SetVersion sets the "version" field.
@@ -22082,6 +22154,33 @@ func (m *AISkillVersionMutation) ResetSkill() {
 	m.clearedskill = false
 }
 
+// ClearUser clears the "user" edge to the User entity.
+func (m *AISkillVersionMutation) ClearUser() {
+	m.cleareduser = true
+	m.clearedFields[aiskillversion.FieldUserID] = struct{}{}
+}
+
+// UserCleared reports if the "user" edge to the User entity was cleared.
+func (m *AISkillVersionMutation) UserCleared() bool {
+	return m.cleareduser
+}
+
+// UserIDs returns the "user" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// UserID instead. It exists only for internal usage by the builders.
+func (m *AISkillVersionMutation) UserIDs() (ids []int64) {
+	if id := m.user; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetUser resets all changes to the "user" edge.
+func (m *AISkillVersionMutation) ResetUser() {
+	m.user = nil
+	m.cleareduser = false
+}
+
 // AddRunIDs adds the "runs" edge to the AISkillRun entity by ids.
 func (m *AISkillVersionMutation) AddRunIDs(ids ...int64) {
 	if m.runs == nil {
@@ -22291,7 +22390,7 @@ func (m *AISkillVersionMutation) Fields() []string {
 	if m.skill != nil {
 		fields = append(fields, aiskillversion.FieldSkillID)
 	}
-	if m.user_id != nil {
+	if m.user != nil {
 		fields = append(fields, aiskillversion.FieldUserID)
 	}
 	if m.version != nil {
@@ -22635,9 +22734,6 @@ func (m *AISkillVersionMutation) SetField(name string, value ent.Value) error {
 // this mutation.
 func (m *AISkillVersionMutation) AddedFields() []string {
 	var fields []string
-	if m.adduser_id != nil {
-		fields = append(fields, aiskillversion.FieldUserID)
-	}
 	if m.addversion != nil {
 		fields = append(fields, aiskillversion.FieldVersion)
 	}
@@ -22661,8 +22757,6 @@ func (m *AISkillVersionMutation) AddedFields() []string {
 // was not set, or was not defined in the schema.
 func (m *AISkillVersionMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
-	case aiskillversion.FieldUserID:
-		return m.AddedUserID()
 	case aiskillversion.FieldVersion:
 		return m.AddedVersion()
 	case aiskillversion.FieldReviewerUserID:
@@ -22682,13 +22776,6 @@ func (m *AISkillVersionMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *AISkillVersionMutation) AddField(name string, value ent.Value) error {
 	switch name {
-	case aiskillversion.FieldUserID:
-		v, ok := value.(int64)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddUserID(v)
-		return nil
 	case aiskillversion.FieldVersion:
 		v, ok := value.(int)
 		if !ok {
@@ -22901,9 +22988,12 @@ func (m *AISkillVersionMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *AISkillVersionMutation) AddedEdges() []string {
-	edges := make([]string, 0, 4)
+	edges := make([]string, 0, 5)
 	if m.skill != nil {
 		edges = append(edges, aiskillversion.EdgeSkill)
+	}
+	if m.user != nil {
+		edges = append(edges, aiskillversion.EdgeUser)
 	}
 	if m.runs != nil {
 		edges = append(edges, aiskillversion.EdgeRuns)
@@ -22923,6 +23013,10 @@ func (m *AISkillVersionMutation) AddedIDs(name string) []ent.Value {
 	switch name {
 	case aiskillversion.EdgeSkill:
 		if id := m.skill; id != nil {
+			return []ent.Value{*id}
+		}
+	case aiskillversion.EdgeUser:
+		if id := m.user; id != nil {
 			return []ent.Value{*id}
 		}
 	case aiskillversion.EdgeRuns:
@@ -22949,7 +23043,7 @@ func (m *AISkillVersionMutation) AddedIDs(name string) []ent.Value {
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *AISkillVersionMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 4)
+	edges := make([]string, 0, 5)
 	if m.removedruns != nil {
 		edges = append(edges, aiskillversion.EdgeRuns)
 	}
@@ -22990,9 +23084,12 @@ func (m *AISkillVersionMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *AISkillVersionMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 4)
+	edges := make([]string, 0, 5)
 	if m.clearedskill {
 		edges = append(edges, aiskillversion.EdgeSkill)
+	}
+	if m.cleareduser {
+		edges = append(edges, aiskillversion.EdgeUser)
 	}
 	if m.clearedruns {
 		edges = append(edges, aiskillversion.EdgeRuns)
@@ -23012,6 +23109,8 @@ func (m *AISkillVersionMutation) EdgeCleared(name string) bool {
 	switch name {
 	case aiskillversion.EdgeSkill:
 		return m.clearedskill
+	case aiskillversion.EdgeUser:
+		return m.cleareduser
 	case aiskillversion.EdgeRuns:
 		return m.clearedruns
 	case aiskillversion.EdgeReviews:
@@ -23029,6 +23128,9 @@ func (m *AISkillVersionMutation) ClearEdge(name string) error {
 	case aiskillversion.EdgeSkill:
 		m.ClearSkill()
 		return nil
+	case aiskillversion.EdgeUser:
+		m.ClearUser()
+		return nil
 	}
 	return fmt.Errorf("unknown AISkillVersion unique edge %s", name)
 }
@@ -23039,6 +23141,9 @@ func (m *AISkillVersionMutation) ResetEdge(name string) error {
 	switch name {
 	case aiskillversion.EdgeSkill:
 		m.ResetSkill()
+		return nil
+	case aiskillversion.EdgeUser:
+		m.ResetUser()
 		return nil
 	case aiskillversion.EdgeRuns:
 		m.ResetRuns()
@@ -43240,6 +43345,1841 @@ func (m *IdentityAdoptionDecisionMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown IdentityAdoptionDecision edge %s", name)
 }
 
+// InvoiceApplicationMutation represents an operation that mutates the InvoiceApplication nodes in the graph.
+type InvoiceApplicationMutation struct {
+	config
+	op                   Op
+	typ                  string
+	id                   *int64
+	order_id             *int64
+	addorder_id          *int64
+	user_id              *int64
+	adduser_id           *int64
+	user_email           *string
+	order_out_trade_no   *string
+	payment_type         *string
+	provider_instance_id *string
+	provider_key         *string
+	invoice_status       *string
+	invoice_amount       *float64
+	addinvoice_amount    *float64
+	invoice_title        *string
+	tax_number           *string
+	email                *string
+	contact_name         *string
+	contact_phone        *string
+	request_note         *string
+	file_media_id        *int64
+	addfile_media_id     *int64
+	file_name            *string
+	file_mime_type       *string
+	file_size_bytes      *int64
+	addfile_size_bytes   *int64
+	applied_at           *time.Time
+	cancelled_at         *time.Time
+	issued_at            *time.Time
+	created_at           *time.Time
+	updated_at           *time.Time
+	clearedFields        map[string]struct{}
+	done                 bool
+	oldValue             func(context.Context) (*InvoiceApplication, error)
+	predicates           []predicate.InvoiceApplication
+}
+
+var _ ent.Mutation = (*InvoiceApplicationMutation)(nil)
+
+// invoiceapplicationOption allows management of the mutation configuration using functional options.
+type invoiceapplicationOption func(*InvoiceApplicationMutation)
+
+// newInvoiceApplicationMutation creates new mutation for the InvoiceApplication entity.
+func newInvoiceApplicationMutation(c config, op Op, opts ...invoiceapplicationOption) *InvoiceApplicationMutation {
+	m := &InvoiceApplicationMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeInvoiceApplication,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withInvoiceApplicationID sets the ID field of the mutation.
+func withInvoiceApplicationID(id int64) invoiceapplicationOption {
+	return func(m *InvoiceApplicationMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *InvoiceApplication
+		)
+		m.oldValue = func(ctx context.Context) (*InvoiceApplication, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().InvoiceApplication.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withInvoiceApplication sets the old InvoiceApplication of the mutation.
+func withInvoiceApplication(node *InvoiceApplication) invoiceapplicationOption {
+	return func(m *InvoiceApplicationMutation) {
+		m.oldValue = func(context.Context) (*InvoiceApplication, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m InvoiceApplicationMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m InvoiceApplicationMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *InvoiceApplicationMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *InvoiceApplicationMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().InvoiceApplication.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetOrderID sets the "order_id" field.
+func (m *InvoiceApplicationMutation) SetOrderID(i int64) {
+	m.order_id = &i
+	m.addorder_id = nil
+}
+
+// OrderID returns the value of the "order_id" field in the mutation.
+func (m *InvoiceApplicationMutation) OrderID() (r int64, exists bool) {
+	v := m.order_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOrderID returns the old "order_id" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldOrderID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOrderID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOrderID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOrderID: %w", err)
+	}
+	return oldValue.OrderID, nil
+}
+
+// AddOrderID adds i to the "order_id" field.
+func (m *InvoiceApplicationMutation) AddOrderID(i int64) {
+	if m.addorder_id != nil {
+		*m.addorder_id += i
+	} else {
+		m.addorder_id = &i
+	}
+}
+
+// AddedOrderID returns the value that was added to the "order_id" field in this mutation.
+func (m *InvoiceApplicationMutation) AddedOrderID() (r int64, exists bool) {
+	v := m.addorder_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetOrderID resets all changes to the "order_id" field.
+func (m *InvoiceApplicationMutation) ResetOrderID() {
+	m.order_id = nil
+	m.addorder_id = nil
+}
+
+// SetUserID sets the "user_id" field.
+func (m *InvoiceApplicationMutation) SetUserID(i int64) {
+	m.user_id = &i
+	m.adduser_id = nil
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *InvoiceApplicationMutation) UserID() (r int64, exists bool) {
+	v := m.user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// AddUserID adds i to the "user_id" field.
+func (m *InvoiceApplicationMutation) AddUserID(i int64) {
+	if m.adduser_id != nil {
+		*m.adduser_id += i
+	} else {
+		m.adduser_id = &i
+	}
+}
+
+// AddedUserID returns the value that was added to the "user_id" field in this mutation.
+func (m *InvoiceApplicationMutation) AddedUserID() (r int64, exists bool) {
+	v := m.adduser_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *InvoiceApplicationMutation) ResetUserID() {
+	m.user_id = nil
+	m.adduser_id = nil
+}
+
+// SetUserEmail sets the "user_email" field.
+func (m *InvoiceApplicationMutation) SetUserEmail(s string) {
+	m.user_email = &s
+}
+
+// UserEmail returns the value of the "user_email" field in the mutation.
+func (m *InvoiceApplicationMutation) UserEmail() (r string, exists bool) {
+	v := m.user_email
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserEmail returns the old "user_email" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldUserEmail(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserEmail is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserEmail requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserEmail: %w", err)
+	}
+	return oldValue.UserEmail, nil
+}
+
+// ResetUserEmail resets all changes to the "user_email" field.
+func (m *InvoiceApplicationMutation) ResetUserEmail() {
+	m.user_email = nil
+}
+
+// SetOrderOutTradeNo sets the "order_out_trade_no" field.
+func (m *InvoiceApplicationMutation) SetOrderOutTradeNo(s string) {
+	m.order_out_trade_no = &s
+}
+
+// OrderOutTradeNo returns the value of the "order_out_trade_no" field in the mutation.
+func (m *InvoiceApplicationMutation) OrderOutTradeNo() (r string, exists bool) {
+	v := m.order_out_trade_no
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOrderOutTradeNo returns the old "order_out_trade_no" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldOrderOutTradeNo(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOrderOutTradeNo is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOrderOutTradeNo requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOrderOutTradeNo: %w", err)
+	}
+	return oldValue.OrderOutTradeNo, nil
+}
+
+// ResetOrderOutTradeNo resets all changes to the "order_out_trade_no" field.
+func (m *InvoiceApplicationMutation) ResetOrderOutTradeNo() {
+	m.order_out_trade_no = nil
+}
+
+// SetPaymentType sets the "payment_type" field.
+func (m *InvoiceApplicationMutation) SetPaymentType(s string) {
+	m.payment_type = &s
+}
+
+// PaymentType returns the value of the "payment_type" field in the mutation.
+func (m *InvoiceApplicationMutation) PaymentType() (r string, exists bool) {
+	v := m.payment_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPaymentType returns the old "payment_type" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldPaymentType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPaymentType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPaymentType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPaymentType: %w", err)
+	}
+	return oldValue.PaymentType, nil
+}
+
+// ResetPaymentType resets all changes to the "payment_type" field.
+func (m *InvoiceApplicationMutation) ResetPaymentType() {
+	m.payment_type = nil
+}
+
+// SetProviderInstanceID sets the "provider_instance_id" field.
+func (m *InvoiceApplicationMutation) SetProviderInstanceID(s string) {
+	m.provider_instance_id = &s
+}
+
+// ProviderInstanceID returns the value of the "provider_instance_id" field in the mutation.
+func (m *InvoiceApplicationMutation) ProviderInstanceID() (r string, exists bool) {
+	v := m.provider_instance_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderInstanceID returns the old "provider_instance_id" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldProviderInstanceID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderInstanceID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderInstanceID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderInstanceID: %w", err)
+	}
+	return oldValue.ProviderInstanceID, nil
+}
+
+// ResetProviderInstanceID resets all changes to the "provider_instance_id" field.
+func (m *InvoiceApplicationMutation) ResetProviderInstanceID() {
+	m.provider_instance_id = nil
+}
+
+// SetProviderKey sets the "provider_key" field.
+func (m *InvoiceApplicationMutation) SetProviderKey(s string) {
+	m.provider_key = &s
+}
+
+// ProviderKey returns the value of the "provider_key" field in the mutation.
+func (m *InvoiceApplicationMutation) ProviderKey() (r string, exists bool) {
+	v := m.provider_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderKey returns the old "provider_key" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldProviderKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderKey: %w", err)
+	}
+	return oldValue.ProviderKey, nil
+}
+
+// ResetProviderKey resets all changes to the "provider_key" field.
+func (m *InvoiceApplicationMutation) ResetProviderKey() {
+	m.provider_key = nil
+}
+
+// SetInvoiceStatus sets the "invoice_status" field.
+func (m *InvoiceApplicationMutation) SetInvoiceStatus(s string) {
+	m.invoice_status = &s
+}
+
+// InvoiceStatus returns the value of the "invoice_status" field in the mutation.
+func (m *InvoiceApplicationMutation) InvoiceStatus() (r string, exists bool) {
+	v := m.invoice_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInvoiceStatus returns the old "invoice_status" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldInvoiceStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInvoiceStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInvoiceStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInvoiceStatus: %w", err)
+	}
+	return oldValue.InvoiceStatus, nil
+}
+
+// ResetInvoiceStatus resets all changes to the "invoice_status" field.
+func (m *InvoiceApplicationMutation) ResetInvoiceStatus() {
+	m.invoice_status = nil
+}
+
+// SetInvoiceAmount sets the "invoice_amount" field.
+func (m *InvoiceApplicationMutation) SetInvoiceAmount(f float64) {
+	m.invoice_amount = &f
+	m.addinvoice_amount = nil
+}
+
+// InvoiceAmount returns the value of the "invoice_amount" field in the mutation.
+func (m *InvoiceApplicationMutation) InvoiceAmount() (r float64, exists bool) {
+	v := m.invoice_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInvoiceAmount returns the old "invoice_amount" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldInvoiceAmount(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInvoiceAmount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInvoiceAmount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInvoiceAmount: %w", err)
+	}
+	return oldValue.InvoiceAmount, nil
+}
+
+// AddInvoiceAmount adds f to the "invoice_amount" field.
+func (m *InvoiceApplicationMutation) AddInvoiceAmount(f float64) {
+	if m.addinvoice_amount != nil {
+		*m.addinvoice_amount += f
+	} else {
+		m.addinvoice_amount = &f
+	}
+}
+
+// AddedInvoiceAmount returns the value that was added to the "invoice_amount" field in this mutation.
+func (m *InvoiceApplicationMutation) AddedInvoiceAmount() (r float64, exists bool) {
+	v := m.addinvoice_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetInvoiceAmount resets all changes to the "invoice_amount" field.
+func (m *InvoiceApplicationMutation) ResetInvoiceAmount() {
+	m.invoice_amount = nil
+	m.addinvoice_amount = nil
+}
+
+// SetInvoiceTitle sets the "invoice_title" field.
+func (m *InvoiceApplicationMutation) SetInvoiceTitle(s string) {
+	m.invoice_title = &s
+}
+
+// InvoiceTitle returns the value of the "invoice_title" field in the mutation.
+func (m *InvoiceApplicationMutation) InvoiceTitle() (r string, exists bool) {
+	v := m.invoice_title
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInvoiceTitle returns the old "invoice_title" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldInvoiceTitle(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInvoiceTitle is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInvoiceTitle requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInvoiceTitle: %w", err)
+	}
+	return oldValue.InvoiceTitle, nil
+}
+
+// ResetInvoiceTitle resets all changes to the "invoice_title" field.
+func (m *InvoiceApplicationMutation) ResetInvoiceTitle() {
+	m.invoice_title = nil
+}
+
+// SetTaxNumber sets the "tax_number" field.
+func (m *InvoiceApplicationMutation) SetTaxNumber(s string) {
+	m.tax_number = &s
+}
+
+// TaxNumber returns the value of the "tax_number" field in the mutation.
+func (m *InvoiceApplicationMutation) TaxNumber() (r string, exists bool) {
+	v := m.tax_number
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTaxNumber returns the old "tax_number" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldTaxNumber(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTaxNumber is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTaxNumber requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTaxNumber: %w", err)
+	}
+	return oldValue.TaxNumber, nil
+}
+
+// ResetTaxNumber resets all changes to the "tax_number" field.
+func (m *InvoiceApplicationMutation) ResetTaxNumber() {
+	m.tax_number = nil
+}
+
+// SetEmail sets the "email" field.
+func (m *InvoiceApplicationMutation) SetEmail(s string) {
+	m.email = &s
+}
+
+// Email returns the value of the "email" field in the mutation.
+func (m *InvoiceApplicationMutation) Email() (r string, exists bool) {
+	v := m.email
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEmail returns the old "email" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldEmail(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEmail is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEmail requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEmail: %w", err)
+	}
+	return oldValue.Email, nil
+}
+
+// ResetEmail resets all changes to the "email" field.
+func (m *InvoiceApplicationMutation) ResetEmail() {
+	m.email = nil
+}
+
+// SetContactName sets the "contact_name" field.
+func (m *InvoiceApplicationMutation) SetContactName(s string) {
+	m.contact_name = &s
+}
+
+// ContactName returns the value of the "contact_name" field in the mutation.
+func (m *InvoiceApplicationMutation) ContactName() (r string, exists bool) {
+	v := m.contact_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldContactName returns the old "contact_name" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldContactName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldContactName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldContactName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldContactName: %w", err)
+	}
+	return oldValue.ContactName, nil
+}
+
+// ResetContactName resets all changes to the "contact_name" field.
+func (m *InvoiceApplicationMutation) ResetContactName() {
+	m.contact_name = nil
+}
+
+// SetContactPhone sets the "contact_phone" field.
+func (m *InvoiceApplicationMutation) SetContactPhone(s string) {
+	m.contact_phone = &s
+}
+
+// ContactPhone returns the value of the "contact_phone" field in the mutation.
+func (m *InvoiceApplicationMutation) ContactPhone() (r string, exists bool) {
+	v := m.contact_phone
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldContactPhone returns the old "contact_phone" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldContactPhone(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldContactPhone is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldContactPhone requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldContactPhone: %w", err)
+	}
+	return oldValue.ContactPhone, nil
+}
+
+// ResetContactPhone resets all changes to the "contact_phone" field.
+func (m *InvoiceApplicationMutation) ResetContactPhone() {
+	m.contact_phone = nil
+}
+
+// SetRequestNote sets the "request_note" field.
+func (m *InvoiceApplicationMutation) SetRequestNote(s string) {
+	m.request_note = &s
+}
+
+// RequestNote returns the value of the "request_note" field in the mutation.
+func (m *InvoiceApplicationMutation) RequestNote() (r string, exists bool) {
+	v := m.request_note
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestNote returns the old "request_note" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldRequestNote(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestNote is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestNote requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestNote: %w", err)
+	}
+	return oldValue.RequestNote, nil
+}
+
+// ClearRequestNote clears the value of the "request_note" field.
+func (m *InvoiceApplicationMutation) ClearRequestNote() {
+	m.request_note = nil
+	m.clearedFields[invoiceapplication.FieldRequestNote] = struct{}{}
+}
+
+// RequestNoteCleared returns if the "request_note" field was cleared in this mutation.
+func (m *InvoiceApplicationMutation) RequestNoteCleared() bool {
+	_, ok := m.clearedFields[invoiceapplication.FieldRequestNote]
+	return ok
+}
+
+// ResetRequestNote resets all changes to the "request_note" field.
+func (m *InvoiceApplicationMutation) ResetRequestNote() {
+	m.request_note = nil
+	delete(m.clearedFields, invoiceapplication.FieldRequestNote)
+}
+
+// SetFileMediaID sets the "file_media_id" field.
+func (m *InvoiceApplicationMutation) SetFileMediaID(i int64) {
+	m.file_media_id = &i
+	m.addfile_media_id = nil
+}
+
+// FileMediaID returns the value of the "file_media_id" field in the mutation.
+func (m *InvoiceApplicationMutation) FileMediaID() (r int64, exists bool) {
+	v := m.file_media_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFileMediaID returns the old "file_media_id" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldFileMediaID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFileMediaID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFileMediaID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFileMediaID: %w", err)
+	}
+	return oldValue.FileMediaID, nil
+}
+
+// AddFileMediaID adds i to the "file_media_id" field.
+func (m *InvoiceApplicationMutation) AddFileMediaID(i int64) {
+	if m.addfile_media_id != nil {
+		*m.addfile_media_id += i
+	} else {
+		m.addfile_media_id = &i
+	}
+}
+
+// AddedFileMediaID returns the value that was added to the "file_media_id" field in this mutation.
+func (m *InvoiceApplicationMutation) AddedFileMediaID() (r int64, exists bool) {
+	v := m.addfile_media_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearFileMediaID clears the value of the "file_media_id" field.
+func (m *InvoiceApplicationMutation) ClearFileMediaID() {
+	m.file_media_id = nil
+	m.addfile_media_id = nil
+	m.clearedFields[invoiceapplication.FieldFileMediaID] = struct{}{}
+}
+
+// FileMediaIDCleared returns if the "file_media_id" field was cleared in this mutation.
+func (m *InvoiceApplicationMutation) FileMediaIDCleared() bool {
+	_, ok := m.clearedFields[invoiceapplication.FieldFileMediaID]
+	return ok
+}
+
+// ResetFileMediaID resets all changes to the "file_media_id" field.
+func (m *InvoiceApplicationMutation) ResetFileMediaID() {
+	m.file_media_id = nil
+	m.addfile_media_id = nil
+	delete(m.clearedFields, invoiceapplication.FieldFileMediaID)
+}
+
+// SetFileName sets the "file_name" field.
+func (m *InvoiceApplicationMutation) SetFileName(s string) {
+	m.file_name = &s
+}
+
+// FileName returns the value of the "file_name" field in the mutation.
+func (m *InvoiceApplicationMutation) FileName() (r string, exists bool) {
+	v := m.file_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFileName returns the old "file_name" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldFileName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFileName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFileName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFileName: %w", err)
+	}
+	return oldValue.FileName, nil
+}
+
+// ResetFileName resets all changes to the "file_name" field.
+func (m *InvoiceApplicationMutation) ResetFileName() {
+	m.file_name = nil
+}
+
+// SetFileMimeType sets the "file_mime_type" field.
+func (m *InvoiceApplicationMutation) SetFileMimeType(s string) {
+	m.file_mime_type = &s
+}
+
+// FileMimeType returns the value of the "file_mime_type" field in the mutation.
+func (m *InvoiceApplicationMutation) FileMimeType() (r string, exists bool) {
+	v := m.file_mime_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFileMimeType returns the old "file_mime_type" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldFileMimeType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFileMimeType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFileMimeType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFileMimeType: %w", err)
+	}
+	return oldValue.FileMimeType, nil
+}
+
+// ResetFileMimeType resets all changes to the "file_mime_type" field.
+func (m *InvoiceApplicationMutation) ResetFileMimeType() {
+	m.file_mime_type = nil
+}
+
+// SetFileSizeBytes sets the "file_size_bytes" field.
+func (m *InvoiceApplicationMutation) SetFileSizeBytes(i int64) {
+	m.file_size_bytes = &i
+	m.addfile_size_bytes = nil
+}
+
+// FileSizeBytes returns the value of the "file_size_bytes" field in the mutation.
+func (m *InvoiceApplicationMutation) FileSizeBytes() (r int64, exists bool) {
+	v := m.file_size_bytes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFileSizeBytes returns the old "file_size_bytes" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldFileSizeBytes(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFileSizeBytes is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFileSizeBytes requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFileSizeBytes: %w", err)
+	}
+	return oldValue.FileSizeBytes, nil
+}
+
+// AddFileSizeBytes adds i to the "file_size_bytes" field.
+func (m *InvoiceApplicationMutation) AddFileSizeBytes(i int64) {
+	if m.addfile_size_bytes != nil {
+		*m.addfile_size_bytes += i
+	} else {
+		m.addfile_size_bytes = &i
+	}
+}
+
+// AddedFileSizeBytes returns the value that was added to the "file_size_bytes" field in this mutation.
+func (m *InvoiceApplicationMutation) AddedFileSizeBytes() (r int64, exists bool) {
+	v := m.addfile_size_bytes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetFileSizeBytes resets all changes to the "file_size_bytes" field.
+func (m *InvoiceApplicationMutation) ResetFileSizeBytes() {
+	m.file_size_bytes = nil
+	m.addfile_size_bytes = nil
+}
+
+// SetAppliedAt sets the "applied_at" field.
+func (m *InvoiceApplicationMutation) SetAppliedAt(t time.Time) {
+	m.applied_at = &t
+}
+
+// AppliedAt returns the value of the "applied_at" field in the mutation.
+func (m *InvoiceApplicationMutation) AppliedAt() (r time.Time, exists bool) {
+	v := m.applied_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAppliedAt returns the old "applied_at" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldAppliedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAppliedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAppliedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAppliedAt: %w", err)
+	}
+	return oldValue.AppliedAt, nil
+}
+
+// ClearAppliedAt clears the value of the "applied_at" field.
+func (m *InvoiceApplicationMutation) ClearAppliedAt() {
+	m.applied_at = nil
+	m.clearedFields[invoiceapplication.FieldAppliedAt] = struct{}{}
+}
+
+// AppliedAtCleared returns if the "applied_at" field was cleared in this mutation.
+func (m *InvoiceApplicationMutation) AppliedAtCleared() bool {
+	_, ok := m.clearedFields[invoiceapplication.FieldAppliedAt]
+	return ok
+}
+
+// ResetAppliedAt resets all changes to the "applied_at" field.
+func (m *InvoiceApplicationMutation) ResetAppliedAt() {
+	m.applied_at = nil
+	delete(m.clearedFields, invoiceapplication.FieldAppliedAt)
+}
+
+// SetCancelledAt sets the "cancelled_at" field.
+func (m *InvoiceApplicationMutation) SetCancelledAt(t time.Time) {
+	m.cancelled_at = &t
+}
+
+// CancelledAt returns the value of the "cancelled_at" field in the mutation.
+func (m *InvoiceApplicationMutation) CancelledAt() (r time.Time, exists bool) {
+	v := m.cancelled_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCancelledAt returns the old "cancelled_at" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldCancelledAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCancelledAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCancelledAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCancelledAt: %w", err)
+	}
+	return oldValue.CancelledAt, nil
+}
+
+// ClearCancelledAt clears the value of the "cancelled_at" field.
+func (m *InvoiceApplicationMutation) ClearCancelledAt() {
+	m.cancelled_at = nil
+	m.clearedFields[invoiceapplication.FieldCancelledAt] = struct{}{}
+}
+
+// CancelledAtCleared returns if the "cancelled_at" field was cleared in this mutation.
+func (m *InvoiceApplicationMutation) CancelledAtCleared() bool {
+	_, ok := m.clearedFields[invoiceapplication.FieldCancelledAt]
+	return ok
+}
+
+// ResetCancelledAt resets all changes to the "cancelled_at" field.
+func (m *InvoiceApplicationMutation) ResetCancelledAt() {
+	m.cancelled_at = nil
+	delete(m.clearedFields, invoiceapplication.FieldCancelledAt)
+}
+
+// SetIssuedAt sets the "issued_at" field.
+func (m *InvoiceApplicationMutation) SetIssuedAt(t time.Time) {
+	m.issued_at = &t
+}
+
+// IssuedAt returns the value of the "issued_at" field in the mutation.
+func (m *InvoiceApplicationMutation) IssuedAt() (r time.Time, exists bool) {
+	v := m.issued_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIssuedAt returns the old "issued_at" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldIssuedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIssuedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIssuedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIssuedAt: %w", err)
+	}
+	return oldValue.IssuedAt, nil
+}
+
+// ClearIssuedAt clears the value of the "issued_at" field.
+func (m *InvoiceApplicationMutation) ClearIssuedAt() {
+	m.issued_at = nil
+	m.clearedFields[invoiceapplication.FieldIssuedAt] = struct{}{}
+}
+
+// IssuedAtCleared returns if the "issued_at" field was cleared in this mutation.
+func (m *InvoiceApplicationMutation) IssuedAtCleared() bool {
+	_, ok := m.clearedFields[invoiceapplication.FieldIssuedAt]
+	return ok
+}
+
+// ResetIssuedAt resets all changes to the "issued_at" field.
+func (m *InvoiceApplicationMutation) ResetIssuedAt() {
+	m.issued_at = nil
+	delete(m.clearedFields, invoiceapplication.FieldIssuedAt)
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *InvoiceApplicationMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *InvoiceApplicationMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *InvoiceApplicationMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *InvoiceApplicationMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *InvoiceApplicationMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the InvoiceApplication entity.
+// If the InvoiceApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceApplicationMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *InvoiceApplicationMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// Where appends a list predicates to the InvoiceApplicationMutation builder.
+func (m *InvoiceApplicationMutation) Where(ps ...predicate.InvoiceApplication) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the InvoiceApplicationMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *InvoiceApplicationMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.InvoiceApplication, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *InvoiceApplicationMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *InvoiceApplicationMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (InvoiceApplication).
+func (m *InvoiceApplicationMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *InvoiceApplicationMutation) Fields() []string {
+	fields := make([]string, 0, 24)
+	if m.order_id != nil {
+		fields = append(fields, invoiceapplication.FieldOrderID)
+	}
+	if m.user_id != nil {
+		fields = append(fields, invoiceapplication.FieldUserID)
+	}
+	if m.user_email != nil {
+		fields = append(fields, invoiceapplication.FieldUserEmail)
+	}
+	if m.order_out_trade_no != nil {
+		fields = append(fields, invoiceapplication.FieldOrderOutTradeNo)
+	}
+	if m.payment_type != nil {
+		fields = append(fields, invoiceapplication.FieldPaymentType)
+	}
+	if m.provider_instance_id != nil {
+		fields = append(fields, invoiceapplication.FieldProviderInstanceID)
+	}
+	if m.provider_key != nil {
+		fields = append(fields, invoiceapplication.FieldProviderKey)
+	}
+	if m.invoice_status != nil {
+		fields = append(fields, invoiceapplication.FieldInvoiceStatus)
+	}
+	if m.invoice_amount != nil {
+		fields = append(fields, invoiceapplication.FieldInvoiceAmount)
+	}
+	if m.invoice_title != nil {
+		fields = append(fields, invoiceapplication.FieldInvoiceTitle)
+	}
+	if m.tax_number != nil {
+		fields = append(fields, invoiceapplication.FieldTaxNumber)
+	}
+	if m.email != nil {
+		fields = append(fields, invoiceapplication.FieldEmail)
+	}
+	if m.contact_name != nil {
+		fields = append(fields, invoiceapplication.FieldContactName)
+	}
+	if m.contact_phone != nil {
+		fields = append(fields, invoiceapplication.FieldContactPhone)
+	}
+	if m.request_note != nil {
+		fields = append(fields, invoiceapplication.FieldRequestNote)
+	}
+	if m.file_media_id != nil {
+		fields = append(fields, invoiceapplication.FieldFileMediaID)
+	}
+	if m.file_name != nil {
+		fields = append(fields, invoiceapplication.FieldFileName)
+	}
+	if m.file_mime_type != nil {
+		fields = append(fields, invoiceapplication.FieldFileMimeType)
+	}
+	if m.file_size_bytes != nil {
+		fields = append(fields, invoiceapplication.FieldFileSizeBytes)
+	}
+	if m.applied_at != nil {
+		fields = append(fields, invoiceapplication.FieldAppliedAt)
+	}
+	if m.cancelled_at != nil {
+		fields = append(fields, invoiceapplication.FieldCancelledAt)
+	}
+	if m.issued_at != nil {
+		fields = append(fields, invoiceapplication.FieldIssuedAt)
+	}
+	if m.created_at != nil {
+		fields = append(fields, invoiceapplication.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, invoiceapplication.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *InvoiceApplicationMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case invoiceapplication.FieldOrderID:
+		return m.OrderID()
+	case invoiceapplication.FieldUserID:
+		return m.UserID()
+	case invoiceapplication.FieldUserEmail:
+		return m.UserEmail()
+	case invoiceapplication.FieldOrderOutTradeNo:
+		return m.OrderOutTradeNo()
+	case invoiceapplication.FieldPaymentType:
+		return m.PaymentType()
+	case invoiceapplication.FieldProviderInstanceID:
+		return m.ProviderInstanceID()
+	case invoiceapplication.FieldProviderKey:
+		return m.ProviderKey()
+	case invoiceapplication.FieldInvoiceStatus:
+		return m.InvoiceStatus()
+	case invoiceapplication.FieldInvoiceAmount:
+		return m.InvoiceAmount()
+	case invoiceapplication.FieldInvoiceTitle:
+		return m.InvoiceTitle()
+	case invoiceapplication.FieldTaxNumber:
+		return m.TaxNumber()
+	case invoiceapplication.FieldEmail:
+		return m.Email()
+	case invoiceapplication.FieldContactName:
+		return m.ContactName()
+	case invoiceapplication.FieldContactPhone:
+		return m.ContactPhone()
+	case invoiceapplication.FieldRequestNote:
+		return m.RequestNote()
+	case invoiceapplication.FieldFileMediaID:
+		return m.FileMediaID()
+	case invoiceapplication.FieldFileName:
+		return m.FileName()
+	case invoiceapplication.FieldFileMimeType:
+		return m.FileMimeType()
+	case invoiceapplication.FieldFileSizeBytes:
+		return m.FileSizeBytes()
+	case invoiceapplication.FieldAppliedAt:
+		return m.AppliedAt()
+	case invoiceapplication.FieldCancelledAt:
+		return m.CancelledAt()
+	case invoiceapplication.FieldIssuedAt:
+		return m.IssuedAt()
+	case invoiceapplication.FieldCreatedAt:
+		return m.CreatedAt()
+	case invoiceapplication.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *InvoiceApplicationMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case invoiceapplication.FieldOrderID:
+		return m.OldOrderID(ctx)
+	case invoiceapplication.FieldUserID:
+		return m.OldUserID(ctx)
+	case invoiceapplication.FieldUserEmail:
+		return m.OldUserEmail(ctx)
+	case invoiceapplication.FieldOrderOutTradeNo:
+		return m.OldOrderOutTradeNo(ctx)
+	case invoiceapplication.FieldPaymentType:
+		return m.OldPaymentType(ctx)
+	case invoiceapplication.FieldProviderInstanceID:
+		return m.OldProviderInstanceID(ctx)
+	case invoiceapplication.FieldProviderKey:
+		return m.OldProviderKey(ctx)
+	case invoiceapplication.FieldInvoiceStatus:
+		return m.OldInvoiceStatus(ctx)
+	case invoiceapplication.FieldInvoiceAmount:
+		return m.OldInvoiceAmount(ctx)
+	case invoiceapplication.FieldInvoiceTitle:
+		return m.OldInvoiceTitle(ctx)
+	case invoiceapplication.FieldTaxNumber:
+		return m.OldTaxNumber(ctx)
+	case invoiceapplication.FieldEmail:
+		return m.OldEmail(ctx)
+	case invoiceapplication.FieldContactName:
+		return m.OldContactName(ctx)
+	case invoiceapplication.FieldContactPhone:
+		return m.OldContactPhone(ctx)
+	case invoiceapplication.FieldRequestNote:
+		return m.OldRequestNote(ctx)
+	case invoiceapplication.FieldFileMediaID:
+		return m.OldFileMediaID(ctx)
+	case invoiceapplication.FieldFileName:
+		return m.OldFileName(ctx)
+	case invoiceapplication.FieldFileMimeType:
+		return m.OldFileMimeType(ctx)
+	case invoiceapplication.FieldFileSizeBytes:
+		return m.OldFileSizeBytes(ctx)
+	case invoiceapplication.FieldAppliedAt:
+		return m.OldAppliedAt(ctx)
+	case invoiceapplication.FieldCancelledAt:
+		return m.OldCancelledAt(ctx)
+	case invoiceapplication.FieldIssuedAt:
+		return m.OldIssuedAt(ctx)
+	case invoiceapplication.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case invoiceapplication.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown InvoiceApplication field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *InvoiceApplicationMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case invoiceapplication.FieldOrderID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOrderID(v)
+		return nil
+	case invoiceapplication.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case invoiceapplication.FieldUserEmail:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserEmail(v)
+		return nil
+	case invoiceapplication.FieldOrderOutTradeNo:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOrderOutTradeNo(v)
+		return nil
+	case invoiceapplication.FieldPaymentType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPaymentType(v)
+		return nil
+	case invoiceapplication.FieldProviderInstanceID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderInstanceID(v)
+		return nil
+	case invoiceapplication.FieldProviderKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderKey(v)
+		return nil
+	case invoiceapplication.FieldInvoiceStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInvoiceStatus(v)
+		return nil
+	case invoiceapplication.FieldInvoiceAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInvoiceAmount(v)
+		return nil
+	case invoiceapplication.FieldInvoiceTitle:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInvoiceTitle(v)
+		return nil
+	case invoiceapplication.FieldTaxNumber:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTaxNumber(v)
+		return nil
+	case invoiceapplication.FieldEmail:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEmail(v)
+		return nil
+	case invoiceapplication.FieldContactName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetContactName(v)
+		return nil
+	case invoiceapplication.FieldContactPhone:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetContactPhone(v)
+		return nil
+	case invoiceapplication.FieldRequestNote:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestNote(v)
+		return nil
+	case invoiceapplication.FieldFileMediaID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFileMediaID(v)
+		return nil
+	case invoiceapplication.FieldFileName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFileName(v)
+		return nil
+	case invoiceapplication.FieldFileMimeType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFileMimeType(v)
+		return nil
+	case invoiceapplication.FieldFileSizeBytes:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFileSizeBytes(v)
+		return nil
+	case invoiceapplication.FieldAppliedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAppliedAt(v)
+		return nil
+	case invoiceapplication.FieldCancelledAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCancelledAt(v)
+		return nil
+	case invoiceapplication.FieldIssuedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIssuedAt(v)
+		return nil
+	case invoiceapplication.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case invoiceapplication.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown InvoiceApplication field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *InvoiceApplicationMutation) AddedFields() []string {
+	var fields []string
+	if m.addorder_id != nil {
+		fields = append(fields, invoiceapplication.FieldOrderID)
+	}
+	if m.adduser_id != nil {
+		fields = append(fields, invoiceapplication.FieldUserID)
+	}
+	if m.addinvoice_amount != nil {
+		fields = append(fields, invoiceapplication.FieldInvoiceAmount)
+	}
+	if m.addfile_media_id != nil {
+		fields = append(fields, invoiceapplication.FieldFileMediaID)
+	}
+	if m.addfile_size_bytes != nil {
+		fields = append(fields, invoiceapplication.FieldFileSizeBytes)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *InvoiceApplicationMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case invoiceapplication.FieldOrderID:
+		return m.AddedOrderID()
+	case invoiceapplication.FieldUserID:
+		return m.AddedUserID()
+	case invoiceapplication.FieldInvoiceAmount:
+		return m.AddedInvoiceAmount()
+	case invoiceapplication.FieldFileMediaID:
+		return m.AddedFileMediaID()
+	case invoiceapplication.FieldFileSizeBytes:
+		return m.AddedFileSizeBytes()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *InvoiceApplicationMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case invoiceapplication.FieldOrderID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddOrderID(v)
+		return nil
+	case invoiceapplication.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUserID(v)
+		return nil
+	case invoiceapplication.FieldInvoiceAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddInvoiceAmount(v)
+		return nil
+	case invoiceapplication.FieldFileMediaID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddFileMediaID(v)
+		return nil
+	case invoiceapplication.FieldFileSizeBytes:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddFileSizeBytes(v)
+		return nil
+	}
+	return fmt.Errorf("unknown InvoiceApplication numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *InvoiceApplicationMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(invoiceapplication.FieldRequestNote) {
+		fields = append(fields, invoiceapplication.FieldRequestNote)
+	}
+	if m.FieldCleared(invoiceapplication.FieldFileMediaID) {
+		fields = append(fields, invoiceapplication.FieldFileMediaID)
+	}
+	if m.FieldCleared(invoiceapplication.FieldAppliedAt) {
+		fields = append(fields, invoiceapplication.FieldAppliedAt)
+	}
+	if m.FieldCleared(invoiceapplication.FieldCancelledAt) {
+		fields = append(fields, invoiceapplication.FieldCancelledAt)
+	}
+	if m.FieldCleared(invoiceapplication.FieldIssuedAt) {
+		fields = append(fields, invoiceapplication.FieldIssuedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *InvoiceApplicationMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *InvoiceApplicationMutation) ClearField(name string) error {
+	switch name {
+	case invoiceapplication.FieldRequestNote:
+		m.ClearRequestNote()
+		return nil
+	case invoiceapplication.FieldFileMediaID:
+		m.ClearFileMediaID()
+		return nil
+	case invoiceapplication.FieldAppliedAt:
+		m.ClearAppliedAt()
+		return nil
+	case invoiceapplication.FieldCancelledAt:
+		m.ClearCancelledAt()
+		return nil
+	case invoiceapplication.FieldIssuedAt:
+		m.ClearIssuedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown InvoiceApplication nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *InvoiceApplicationMutation) ResetField(name string) error {
+	switch name {
+	case invoiceapplication.FieldOrderID:
+		m.ResetOrderID()
+		return nil
+	case invoiceapplication.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case invoiceapplication.FieldUserEmail:
+		m.ResetUserEmail()
+		return nil
+	case invoiceapplication.FieldOrderOutTradeNo:
+		m.ResetOrderOutTradeNo()
+		return nil
+	case invoiceapplication.FieldPaymentType:
+		m.ResetPaymentType()
+		return nil
+	case invoiceapplication.FieldProviderInstanceID:
+		m.ResetProviderInstanceID()
+		return nil
+	case invoiceapplication.FieldProviderKey:
+		m.ResetProviderKey()
+		return nil
+	case invoiceapplication.FieldInvoiceStatus:
+		m.ResetInvoiceStatus()
+		return nil
+	case invoiceapplication.FieldInvoiceAmount:
+		m.ResetInvoiceAmount()
+		return nil
+	case invoiceapplication.FieldInvoiceTitle:
+		m.ResetInvoiceTitle()
+		return nil
+	case invoiceapplication.FieldTaxNumber:
+		m.ResetTaxNumber()
+		return nil
+	case invoiceapplication.FieldEmail:
+		m.ResetEmail()
+		return nil
+	case invoiceapplication.FieldContactName:
+		m.ResetContactName()
+		return nil
+	case invoiceapplication.FieldContactPhone:
+		m.ResetContactPhone()
+		return nil
+	case invoiceapplication.FieldRequestNote:
+		m.ResetRequestNote()
+		return nil
+	case invoiceapplication.FieldFileMediaID:
+		m.ResetFileMediaID()
+		return nil
+	case invoiceapplication.FieldFileName:
+		m.ResetFileName()
+		return nil
+	case invoiceapplication.FieldFileMimeType:
+		m.ResetFileMimeType()
+		return nil
+	case invoiceapplication.FieldFileSizeBytes:
+		m.ResetFileSizeBytes()
+		return nil
+	case invoiceapplication.FieldAppliedAt:
+		m.ResetAppliedAt()
+		return nil
+	case invoiceapplication.FieldCancelledAt:
+		m.ResetCancelledAt()
+		return nil
+	case invoiceapplication.FieldIssuedAt:
+		m.ResetIssuedAt()
+		return nil
+	case invoiceapplication.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case invoiceapplication.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown InvoiceApplication field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *InvoiceApplicationMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *InvoiceApplicationMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *InvoiceApplicationMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *InvoiceApplicationMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *InvoiceApplicationMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *InvoiceApplicationMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *InvoiceApplicationMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown InvoiceApplication unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *InvoiceApplicationMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown InvoiceApplication edge %s", name)
+}
+
 // PaymentAuditLogMutation represents an operation that mutates the PaymentAuditLog nodes in the graph.
 type PaymentAuditLogMutation struct {
 	config
@@ -43815,6 +45755,9 @@ type PaymentOrderMutation struct {
 	provider_key             *string
 	provider_snapshot        *map[string]interface{}
 	status                   *string
+	invoice_status           *string
+	invoice_file_media_id    *int64
+	addinvoice_file_media_id *int64
 	refund_amount            *float64
 	addrefund_amount         *float64
 	refund_reason            *string
@@ -44984,6 +46927,112 @@ func (m *PaymentOrderMutation) ResetStatus() {
 	m.status = nil
 }
 
+// SetInvoiceStatus sets the "invoice_status" field.
+func (m *PaymentOrderMutation) SetInvoiceStatus(s string) {
+	m.invoice_status = &s
+}
+
+// InvoiceStatus returns the value of the "invoice_status" field in the mutation.
+func (m *PaymentOrderMutation) InvoiceStatus() (r string, exists bool) {
+	v := m.invoice_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInvoiceStatus returns the old "invoice_status" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldInvoiceStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInvoiceStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInvoiceStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInvoiceStatus: %w", err)
+	}
+	return oldValue.InvoiceStatus, nil
+}
+
+// ResetInvoiceStatus resets all changes to the "invoice_status" field.
+func (m *PaymentOrderMutation) ResetInvoiceStatus() {
+	m.invoice_status = nil
+}
+
+// SetInvoiceFileMediaID sets the "invoice_file_media_id" field.
+func (m *PaymentOrderMutation) SetInvoiceFileMediaID(i int64) {
+	m.invoice_file_media_id = &i
+	m.addinvoice_file_media_id = nil
+}
+
+// InvoiceFileMediaID returns the value of the "invoice_file_media_id" field in the mutation.
+func (m *PaymentOrderMutation) InvoiceFileMediaID() (r int64, exists bool) {
+	v := m.invoice_file_media_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInvoiceFileMediaID returns the old "invoice_file_media_id" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldInvoiceFileMediaID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInvoiceFileMediaID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInvoiceFileMediaID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInvoiceFileMediaID: %w", err)
+	}
+	return oldValue.InvoiceFileMediaID, nil
+}
+
+// AddInvoiceFileMediaID adds i to the "invoice_file_media_id" field.
+func (m *PaymentOrderMutation) AddInvoiceFileMediaID(i int64) {
+	if m.addinvoice_file_media_id != nil {
+		*m.addinvoice_file_media_id += i
+	} else {
+		m.addinvoice_file_media_id = &i
+	}
+}
+
+// AddedInvoiceFileMediaID returns the value that was added to the "invoice_file_media_id" field in this mutation.
+func (m *PaymentOrderMutation) AddedInvoiceFileMediaID() (r int64, exists bool) {
+	v := m.addinvoice_file_media_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearInvoiceFileMediaID clears the value of the "invoice_file_media_id" field.
+func (m *PaymentOrderMutation) ClearInvoiceFileMediaID() {
+	m.invoice_file_media_id = nil
+	m.addinvoice_file_media_id = nil
+	m.clearedFields[paymentorder.FieldInvoiceFileMediaID] = struct{}{}
+}
+
+// InvoiceFileMediaIDCleared returns if the "invoice_file_media_id" field was cleared in this mutation.
+func (m *PaymentOrderMutation) InvoiceFileMediaIDCleared() bool {
+	_, ok := m.clearedFields[paymentorder.FieldInvoiceFileMediaID]
+	return ok
+}
+
+// ResetInvoiceFileMediaID resets all changes to the "invoice_file_media_id" field.
+func (m *PaymentOrderMutation) ResetInvoiceFileMediaID() {
+	m.invoice_file_media_id = nil
+	m.addinvoice_file_media_id = nil
+	delete(m.clearedFields, paymentorder.FieldInvoiceFileMediaID)
+}
+
 // SetRefundAmount sets the "refund_amount" field.
 func (m *PaymentOrderMutation) SetRefundAmount(f float64) {
 	m.refund_amount = &f
@@ -45807,7 +47856,7 @@ func (m *PaymentOrderMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PaymentOrderMutation) Fields() []string {
-	fields := make([]string, 0, 39)
+	fields := make([]string, 0, 41)
 	if m.user != nil {
 		fields = append(fields, paymentorder.FieldUserID)
 	}
@@ -45873,6 +47922,12 @@ func (m *PaymentOrderMutation) Fields() []string {
 	}
 	if m.status != nil {
 		fields = append(fields, paymentorder.FieldStatus)
+	}
+	if m.invoice_status != nil {
+		fields = append(fields, paymentorder.FieldInvoiceStatus)
+	}
+	if m.invoice_file_media_id != nil {
+		fields = append(fields, paymentorder.FieldInvoiceFileMediaID)
 	}
 	if m.refund_amount != nil {
 		fields = append(fields, paymentorder.FieldRefundAmount)
@@ -45977,6 +48032,10 @@ func (m *PaymentOrderMutation) Field(name string) (ent.Value, bool) {
 		return m.ProviderSnapshot()
 	case paymentorder.FieldStatus:
 		return m.Status()
+	case paymentorder.FieldInvoiceStatus:
+		return m.InvoiceStatus()
+	case paymentorder.FieldInvoiceFileMediaID:
+		return m.InvoiceFileMediaID()
 	case paymentorder.FieldRefundAmount:
 		return m.RefundAmount()
 	case paymentorder.FieldRefundReason:
@@ -46064,6 +48123,10 @@ func (m *PaymentOrderMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldProviderSnapshot(ctx)
 	case paymentorder.FieldStatus:
 		return m.OldStatus(ctx)
+	case paymentorder.FieldInvoiceStatus:
+		return m.OldInvoiceStatus(ctx)
+	case paymentorder.FieldInvoiceFileMediaID:
+		return m.OldInvoiceFileMediaID(ctx)
 	case paymentorder.FieldRefundAmount:
 		return m.OldRefundAmount(ctx)
 	case paymentorder.FieldRefundReason:
@@ -46261,6 +48324,20 @@ func (m *PaymentOrderMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetStatus(v)
 		return nil
+	case paymentorder.FieldInvoiceStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInvoiceStatus(v)
+		return nil
+	case paymentorder.FieldInvoiceFileMediaID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInvoiceFileMediaID(v)
+		return nil
 	case paymentorder.FieldRefundAmount:
 		v, ok := value.(float64)
 		if !ok {
@@ -46406,6 +48483,9 @@ func (m *PaymentOrderMutation) AddedFields() []string {
 	if m.addsubscription_days != nil {
 		fields = append(fields, paymentorder.FieldSubscriptionDays)
 	}
+	if m.addinvoice_file_media_id != nil {
+		fields = append(fields, paymentorder.FieldInvoiceFileMediaID)
+	}
 	if m.addrefund_amount != nil {
 		fields = append(fields, paymentorder.FieldRefundAmount)
 	}
@@ -46429,6 +48509,8 @@ func (m *PaymentOrderMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedSubscriptionGroupID()
 	case paymentorder.FieldSubscriptionDays:
 		return m.AddedSubscriptionDays()
+	case paymentorder.FieldInvoiceFileMediaID:
+		return m.AddedInvoiceFileMediaID()
 	case paymentorder.FieldRefundAmount:
 		return m.AddedRefundAmount()
 	}
@@ -46482,6 +48564,13 @@ func (m *PaymentOrderMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddSubscriptionDays(v)
 		return nil
+	case paymentorder.FieldInvoiceFileMediaID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddInvoiceFileMediaID(v)
+		return nil
 	case paymentorder.FieldRefundAmount:
 		v, ok := value.(float64)
 		if !ok {
@@ -46526,6 +48615,9 @@ func (m *PaymentOrderMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(paymentorder.FieldProviderSnapshot) {
 		fields = append(fields, paymentorder.FieldProviderSnapshot)
+	}
+	if m.FieldCleared(paymentorder.FieldInvoiceFileMediaID) {
+		fields = append(fields, paymentorder.FieldInvoiceFileMediaID)
 	}
 	if m.FieldCleared(paymentorder.FieldRefundReason) {
 		fields = append(fields, paymentorder.FieldRefundReason)
@@ -46600,6 +48692,9 @@ func (m *PaymentOrderMutation) ClearField(name string) error {
 		return nil
 	case paymentorder.FieldProviderSnapshot:
 		m.ClearProviderSnapshot()
+		return nil
+	case paymentorder.FieldInvoiceFileMediaID:
+		m.ClearInvoiceFileMediaID()
 		return nil
 	case paymentorder.FieldRefundReason:
 		m.ClearRefundReason()
@@ -46704,6 +48799,12 @@ func (m *PaymentOrderMutation) ResetField(name string) error {
 		return nil
 	case paymentorder.FieldStatus:
 		m.ResetStatus()
+		return nil
+	case paymentorder.FieldInvoiceStatus:
+		m.ResetInvoiceStatus()
+		return nil
+	case paymentorder.FieldInvoiceFileMediaID:
+		m.ResetInvoiceFileMediaID()
 		return nil
 	case paymentorder.FieldRefundAmount:
 		m.ResetRefundAmount()
@@ -46851,6 +48952,7 @@ type PaymentProviderInstanceMutation struct {
 	limits            *string
 	refund_enabled    *bool
 	allow_user_refund *bool
+	invoice_enabled   *bool
 	created_at        *time.Time
 	updated_at        *time.Time
 	clearedFields     map[string]struct{}
@@ -47337,6 +49439,42 @@ func (m *PaymentProviderInstanceMutation) ResetAllowUserRefund() {
 	m.allow_user_refund = nil
 }
 
+// SetInvoiceEnabled sets the "invoice_enabled" field.
+func (m *PaymentProviderInstanceMutation) SetInvoiceEnabled(b bool) {
+	m.invoice_enabled = &b
+}
+
+// InvoiceEnabled returns the value of the "invoice_enabled" field in the mutation.
+func (m *PaymentProviderInstanceMutation) InvoiceEnabled() (r bool, exists bool) {
+	v := m.invoice_enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInvoiceEnabled returns the old "invoice_enabled" field's value of the PaymentProviderInstance entity.
+// If the PaymentProviderInstance object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentProviderInstanceMutation) OldInvoiceEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInvoiceEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInvoiceEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInvoiceEnabled: %w", err)
+	}
+	return oldValue.InvoiceEnabled, nil
+}
+
+// ResetInvoiceEnabled resets all changes to the "invoice_enabled" field.
+func (m *PaymentProviderInstanceMutation) ResetInvoiceEnabled() {
+	m.invoice_enabled = nil
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (m *PaymentProviderInstanceMutation) SetCreatedAt(t time.Time) {
 	m.created_at = &t
@@ -47443,7 +49581,7 @@ func (m *PaymentProviderInstanceMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PaymentProviderInstanceMutation) Fields() []string {
-	fields := make([]string, 0, 12)
+	fields := make([]string, 0, 13)
 	if m.provider_key != nil {
 		fields = append(fields, paymentproviderinstance.FieldProviderKey)
 	}
@@ -47473,6 +49611,9 @@ func (m *PaymentProviderInstanceMutation) Fields() []string {
 	}
 	if m.allow_user_refund != nil {
 		fields = append(fields, paymentproviderinstance.FieldAllowUserRefund)
+	}
+	if m.invoice_enabled != nil {
+		fields = append(fields, paymentproviderinstance.FieldInvoiceEnabled)
 	}
 	if m.created_at != nil {
 		fields = append(fields, paymentproviderinstance.FieldCreatedAt)
@@ -47508,6 +49649,8 @@ func (m *PaymentProviderInstanceMutation) Field(name string) (ent.Value, bool) {
 		return m.RefundEnabled()
 	case paymentproviderinstance.FieldAllowUserRefund:
 		return m.AllowUserRefund()
+	case paymentproviderinstance.FieldInvoiceEnabled:
+		return m.InvoiceEnabled()
 	case paymentproviderinstance.FieldCreatedAt:
 		return m.CreatedAt()
 	case paymentproviderinstance.FieldUpdatedAt:
@@ -47541,6 +49684,8 @@ func (m *PaymentProviderInstanceMutation) OldField(ctx context.Context, name str
 		return m.OldRefundEnabled(ctx)
 	case paymentproviderinstance.FieldAllowUserRefund:
 		return m.OldAllowUserRefund(ctx)
+	case paymentproviderinstance.FieldInvoiceEnabled:
+		return m.OldInvoiceEnabled(ctx)
 	case paymentproviderinstance.FieldCreatedAt:
 		return m.OldCreatedAt(ctx)
 	case paymentproviderinstance.FieldUpdatedAt:
@@ -47623,6 +49768,13 @@ func (m *PaymentProviderInstanceMutation) SetField(name string, value ent.Value)
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetAllowUserRefund(v)
+		return nil
+	case paymentproviderinstance.FieldInvoiceEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInvoiceEnabled(v)
 		return nil
 	case paymentproviderinstance.FieldCreatedAt:
 		v, ok := value.(time.Time)
@@ -47731,6 +49883,9 @@ func (m *PaymentProviderInstanceMutation) ResetField(name string) error {
 		return nil
 	case paymentproviderinstance.FieldAllowUserRefund:
 		m.ResetAllowUserRefund()
+		return nil
+	case paymentproviderinstance.FieldInvoiceEnabled:
+		m.ResetInvoiceEnabled()
 		return nil
 	case paymentproviderinstance.FieldCreatedAt:
 		m.ResetCreatedAt()
@@ -61079,79 +63234,103 @@ func (m *UsageLogMutation) ResetEdge(name string) error {
 // UserMutation represents an operation that mutates the User nodes in the graph.
 type UserMutation struct {
 	config
-	op                            Op
-	typ                           string
-	id                            *int64
-	created_at                    *time.Time
-	updated_at                    *time.Time
-	deleted_at                    *time.Time
-	email                         *string
-	password_hash                 *string
-	role                          *string
-	balance                       *float64
-	addbalance                    *float64
-	concurrency                   *int
-	addconcurrency                *int
-	status                        *string
-	username                      *string
-	notes                         *string
-	totp_secret_encrypted         *string
-	totp_enabled                  *bool
-	totp_enabled_at               *time.Time
-	signup_source                 *string
-	last_login_at                 *time.Time
-	last_active_at                *time.Time
-	balance_notify_enabled        *bool
-	balance_notify_threshold_type *string
-	balance_notify_threshold      *float64
-	addbalance_notify_threshold   *float64
-	balance_notify_extra_emails   *string
-	total_recharged               *float64
-	addtotal_recharged            *float64
-	rpm_limit                     *int
-	addrpm_limit                  *int
-	token_version                 *int64
-	addtoken_version              *int64
-	clearedFields                 map[string]struct{}
-	api_keys                      map[int64]struct{}
-	removedapi_keys               map[int64]struct{}
-	clearedapi_keys               bool
-	redeem_codes                  map[int64]struct{}
-	removedredeem_codes           map[int64]struct{}
-	clearedredeem_codes           bool
-	subscriptions                 map[int64]struct{}
-	removedsubscriptions          map[int64]struct{}
-	clearedsubscriptions          bool
-	assigned_subscriptions        map[int64]struct{}
-	removedassigned_subscriptions map[int64]struct{}
-	clearedassigned_subscriptions bool
-	announcement_reads            map[int64]struct{}
-	removedannouncement_reads     map[int64]struct{}
-	clearedannouncement_reads     bool
-	allowed_groups                map[int64]struct{}
-	removedallowed_groups         map[int64]struct{}
-	clearedallowed_groups         bool
-	usage_logs                    map[int64]struct{}
-	removedusage_logs             map[int64]struct{}
-	clearedusage_logs             bool
-	attribute_values              map[int64]struct{}
-	removedattribute_values       map[int64]struct{}
-	clearedattribute_values       bool
-	promo_code_usages             map[int64]struct{}
-	removedpromo_code_usages      map[int64]struct{}
-	clearedpromo_code_usages      bool
-	payment_orders                map[int64]struct{}
-	removedpayment_orders         map[int64]struct{}
-	clearedpayment_orders         bool
-	auth_identities               map[int64]struct{}
-	removedauth_identities        map[int64]struct{}
-	clearedauth_identities        bool
-	pending_auth_sessions         map[int64]struct{}
-	removedpending_auth_sessions  map[int64]struct{}
-	clearedpending_auth_sessions  bool
-	done                          bool
-	oldValue                      func(context.Context) (*User, error)
-	predicates                    []predicate.User
+	op                                 Op
+	typ                                string
+	id                                 *int64
+	created_at                         *time.Time
+	updated_at                         *time.Time
+	deleted_at                         *time.Time
+	email                              *string
+	password_hash                      *string
+	role                               *string
+	balance                            *float64
+	addbalance                         *float64
+	concurrency                        *int
+	addconcurrency                     *int
+	status                             *string
+	username                           *string
+	notes                              *string
+	totp_secret_encrypted              *string
+	totp_enabled                       *bool
+	totp_enabled_at                    *time.Time
+	signup_source                      *string
+	last_login_at                      *time.Time
+	last_active_at                     *time.Time
+	balance_notify_enabled             *bool
+	balance_notify_threshold_type      *string
+	balance_notify_threshold           *float64
+	addbalance_notify_threshold        *float64
+	balance_notify_extra_emails        *string
+	total_recharged                    *float64
+	addtotal_recharged                 *float64
+	rpm_limit                          *int
+	addrpm_limit                       *int
+	token_version                      *int64
+	addtoken_version                   *int64
+	clearedFields                      map[string]struct{}
+	ai_skills                          map[int64]struct{}
+	removedai_skills                   map[int64]struct{}
+	clearedai_skills                   bool
+	ai_skill_versions                  map[int64]struct{}
+	removedai_skill_versions           map[int64]struct{}
+	clearedai_skill_versions           bool
+	ai_skill_runs                      map[int64]struct{}
+	removedai_skill_runs               map[int64]struct{}
+	clearedai_skill_runs               bool
+	ai_skill_likes                     map[int64]struct{}
+	removedai_skill_likes              map[int64]struct{}
+	clearedai_skill_likes              bool
+	ai_skill_reviews_submitted         map[int64]struct{}
+	removedai_skill_reviews_submitted  map[int64]struct{}
+	clearedai_skill_reviews_submitted  bool
+	ai_skill_reviews_reviewed          map[int64]struct{}
+	removedai_skill_reviews_reviewed   map[int64]struct{}
+	clearedai_skill_reviews_reviewed   bool
+	ai_skill_settlements_owned         map[int64]struct{}
+	removedai_skill_settlements_owned  map[int64]struct{}
+	clearedai_skill_settlements_owned  bool
+	ai_skill_settlements_bought        map[int64]struct{}
+	removedai_skill_settlements_bought map[int64]struct{}
+	clearedai_skill_settlements_bought bool
+	api_keys                           map[int64]struct{}
+	removedapi_keys                    map[int64]struct{}
+	clearedapi_keys                    bool
+	redeem_codes                       map[int64]struct{}
+	removedredeem_codes                map[int64]struct{}
+	clearedredeem_codes                bool
+	subscriptions                      map[int64]struct{}
+	removedsubscriptions               map[int64]struct{}
+	clearedsubscriptions               bool
+	assigned_subscriptions             map[int64]struct{}
+	removedassigned_subscriptions      map[int64]struct{}
+	clearedassigned_subscriptions      bool
+	announcement_reads                 map[int64]struct{}
+	removedannouncement_reads          map[int64]struct{}
+	clearedannouncement_reads          bool
+	allowed_groups                     map[int64]struct{}
+	removedallowed_groups              map[int64]struct{}
+	clearedallowed_groups              bool
+	usage_logs                         map[int64]struct{}
+	removedusage_logs                  map[int64]struct{}
+	clearedusage_logs                  bool
+	attribute_values                   map[int64]struct{}
+	removedattribute_values            map[int64]struct{}
+	clearedattribute_values            bool
+	promo_code_usages                  map[int64]struct{}
+	removedpromo_code_usages           map[int64]struct{}
+	clearedpromo_code_usages           bool
+	payment_orders                     map[int64]struct{}
+	removedpayment_orders              map[int64]struct{}
+	clearedpayment_orders              bool
+	auth_identities                    map[int64]struct{}
+	removedauth_identities             map[int64]struct{}
+	clearedauth_identities             bool
+	pending_auth_sessions              map[int64]struct{}
+	removedpending_auth_sessions       map[int64]struct{}
+	clearedpending_auth_sessions       bool
+	done                               bool
+	oldValue                           func(context.Context) (*User, error)
+	predicates                         []predicate.User
 }
 
 var _ ent.Mutation = (*UserMutation)(nil)
@@ -62313,6 +64492,438 @@ func (m *UserMutation) AddedTokenVersion() (r int64, exists bool) {
 func (m *UserMutation) ResetTokenVersion() {
 	m.token_version = nil
 	m.addtoken_version = nil
+}
+
+// AddAiSkillIDs adds the "ai_skills" edge to the AISkill entity by ids.
+func (m *UserMutation) AddAiSkillIDs(ids ...int64) {
+	if m.ai_skills == nil {
+		m.ai_skills = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.ai_skills[ids[i]] = struct{}{}
+	}
+}
+
+// ClearAiSkills clears the "ai_skills" edge to the AISkill entity.
+func (m *UserMutation) ClearAiSkills() {
+	m.clearedai_skills = true
+}
+
+// AiSkillsCleared reports if the "ai_skills" edge to the AISkill entity was cleared.
+func (m *UserMutation) AiSkillsCleared() bool {
+	return m.clearedai_skills
+}
+
+// RemoveAiSkillIDs removes the "ai_skills" edge to the AISkill entity by IDs.
+func (m *UserMutation) RemoveAiSkillIDs(ids ...int64) {
+	if m.removedai_skills == nil {
+		m.removedai_skills = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.ai_skills, ids[i])
+		m.removedai_skills[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedAiSkills returns the removed IDs of the "ai_skills" edge to the AISkill entity.
+func (m *UserMutation) RemovedAiSkillsIDs() (ids []int64) {
+	for id := range m.removedai_skills {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// AiSkillsIDs returns the "ai_skills" edge IDs in the mutation.
+func (m *UserMutation) AiSkillsIDs() (ids []int64) {
+	for id := range m.ai_skills {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetAiSkills resets all changes to the "ai_skills" edge.
+func (m *UserMutation) ResetAiSkills() {
+	m.ai_skills = nil
+	m.clearedai_skills = false
+	m.removedai_skills = nil
+}
+
+// AddAiSkillVersionIDs adds the "ai_skill_versions" edge to the AISkillVersion entity by ids.
+func (m *UserMutation) AddAiSkillVersionIDs(ids ...int64) {
+	if m.ai_skill_versions == nil {
+		m.ai_skill_versions = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.ai_skill_versions[ids[i]] = struct{}{}
+	}
+}
+
+// ClearAiSkillVersions clears the "ai_skill_versions" edge to the AISkillVersion entity.
+func (m *UserMutation) ClearAiSkillVersions() {
+	m.clearedai_skill_versions = true
+}
+
+// AiSkillVersionsCleared reports if the "ai_skill_versions" edge to the AISkillVersion entity was cleared.
+func (m *UserMutation) AiSkillVersionsCleared() bool {
+	return m.clearedai_skill_versions
+}
+
+// RemoveAiSkillVersionIDs removes the "ai_skill_versions" edge to the AISkillVersion entity by IDs.
+func (m *UserMutation) RemoveAiSkillVersionIDs(ids ...int64) {
+	if m.removedai_skill_versions == nil {
+		m.removedai_skill_versions = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.ai_skill_versions, ids[i])
+		m.removedai_skill_versions[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedAiSkillVersions returns the removed IDs of the "ai_skill_versions" edge to the AISkillVersion entity.
+func (m *UserMutation) RemovedAiSkillVersionsIDs() (ids []int64) {
+	for id := range m.removedai_skill_versions {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// AiSkillVersionsIDs returns the "ai_skill_versions" edge IDs in the mutation.
+func (m *UserMutation) AiSkillVersionsIDs() (ids []int64) {
+	for id := range m.ai_skill_versions {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetAiSkillVersions resets all changes to the "ai_skill_versions" edge.
+func (m *UserMutation) ResetAiSkillVersions() {
+	m.ai_skill_versions = nil
+	m.clearedai_skill_versions = false
+	m.removedai_skill_versions = nil
+}
+
+// AddAiSkillRunIDs adds the "ai_skill_runs" edge to the AISkillRun entity by ids.
+func (m *UserMutation) AddAiSkillRunIDs(ids ...int64) {
+	if m.ai_skill_runs == nil {
+		m.ai_skill_runs = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.ai_skill_runs[ids[i]] = struct{}{}
+	}
+}
+
+// ClearAiSkillRuns clears the "ai_skill_runs" edge to the AISkillRun entity.
+func (m *UserMutation) ClearAiSkillRuns() {
+	m.clearedai_skill_runs = true
+}
+
+// AiSkillRunsCleared reports if the "ai_skill_runs" edge to the AISkillRun entity was cleared.
+func (m *UserMutation) AiSkillRunsCleared() bool {
+	return m.clearedai_skill_runs
+}
+
+// RemoveAiSkillRunIDs removes the "ai_skill_runs" edge to the AISkillRun entity by IDs.
+func (m *UserMutation) RemoveAiSkillRunIDs(ids ...int64) {
+	if m.removedai_skill_runs == nil {
+		m.removedai_skill_runs = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.ai_skill_runs, ids[i])
+		m.removedai_skill_runs[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedAiSkillRuns returns the removed IDs of the "ai_skill_runs" edge to the AISkillRun entity.
+func (m *UserMutation) RemovedAiSkillRunsIDs() (ids []int64) {
+	for id := range m.removedai_skill_runs {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// AiSkillRunsIDs returns the "ai_skill_runs" edge IDs in the mutation.
+func (m *UserMutation) AiSkillRunsIDs() (ids []int64) {
+	for id := range m.ai_skill_runs {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetAiSkillRuns resets all changes to the "ai_skill_runs" edge.
+func (m *UserMutation) ResetAiSkillRuns() {
+	m.ai_skill_runs = nil
+	m.clearedai_skill_runs = false
+	m.removedai_skill_runs = nil
+}
+
+// AddAiSkillLikeIDs adds the "ai_skill_likes" edge to the AISkillLike entity by ids.
+func (m *UserMutation) AddAiSkillLikeIDs(ids ...int64) {
+	if m.ai_skill_likes == nil {
+		m.ai_skill_likes = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.ai_skill_likes[ids[i]] = struct{}{}
+	}
+}
+
+// ClearAiSkillLikes clears the "ai_skill_likes" edge to the AISkillLike entity.
+func (m *UserMutation) ClearAiSkillLikes() {
+	m.clearedai_skill_likes = true
+}
+
+// AiSkillLikesCleared reports if the "ai_skill_likes" edge to the AISkillLike entity was cleared.
+func (m *UserMutation) AiSkillLikesCleared() bool {
+	return m.clearedai_skill_likes
+}
+
+// RemoveAiSkillLikeIDs removes the "ai_skill_likes" edge to the AISkillLike entity by IDs.
+func (m *UserMutation) RemoveAiSkillLikeIDs(ids ...int64) {
+	if m.removedai_skill_likes == nil {
+		m.removedai_skill_likes = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.ai_skill_likes, ids[i])
+		m.removedai_skill_likes[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedAiSkillLikes returns the removed IDs of the "ai_skill_likes" edge to the AISkillLike entity.
+func (m *UserMutation) RemovedAiSkillLikesIDs() (ids []int64) {
+	for id := range m.removedai_skill_likes {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// AiSkillLikesIDs returns the "ai_skill_likes" edge IDs in the mutation.
+func (m *UserMutation) AiSkillLikesIDs() (ids []int64) {
+	for id := range m.ai_skill_likes {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetAiSkillLikes resets all changes to the "ai_skill_likes" edge.
+func (m *UserMutation) ResetAiSkillLikes() {
+	m.ai_skill_likes = nil
+	m.clearedai_skill_likes = false
+	m.removedai_skill_likes = nil
+}
+
+// AddAiSkillReviewsSubmittedIDs adds the "ai_skill_reviews_submitted" edge to the AISkillReview entity by ids.
+func (m *UserMutation) AddAiSkillReviewsSubmittedIDs(ids ...int64) {
+	if m.ai_skill_reviews_submitted == nil {
+		m.ai_skill_reviews_submitted = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.ai_skill_reviews_submitted[ids[i]] = struct{}{}
+	}
+}
+
+// ClearAiSkillReviewsSubmitted clears the "ai_skill_reviews_submitted" edge to the AISkillReview entity.
+func (m *UserMutation) ClearAiSkillReviewsSubmitted() {
+	m.clearedai_skill_reviews_submitted = true
+}
+
+// AiSkillReviewsSubmittedCleared reports if the "ai_skill_reviews_submitted" edge to the AISkillReview entity was cleared.
+func (m *UserMutation) AiSkillReviewsSubmittedCleared() bool {
+	return m.clearedai_skill_reviews_submitted
+}
+
+// RemoveAiSkillReviewsSubmittedIDs removes the "ai_skill_reviews_submitted" edge to the AISkillReview entity by IDs.
+func (m *UserMutation) RemoveAiSkillReviewsSubmittedIDs(ids ...int64) {
+	if m.removedai_skill_reviews_submitted == nil {
+		m.removedai_skill_reviews_submitted = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.ai_skill_reviews_submitted, ids[i])
+		m.removedai_skill_reviews_submitted[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedAiSkillReviewsSubmitted returns the removed IDs of the "ai_skill_reviews_submitted" edge to the AISkillReview entity.
+func (m *UserMutation) RemovedAiSkillReviewsSubmittedIDs() (ids []int64) {
+	for id := range m.removedai_skill_reviews_submitted {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// AiSkillReviewsSubmittedIDs returns the "ai_skill_reviews_submitted" edge IDs in the mutation.
+func (m *UserMutation) AiSkillReviewsSubmittedIDs() (ids []int64) {
+	for id := range m.ai_skill_reviews_submitted {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetAiSkillReviewsSubmitted resets all changes to the "ai_skill_reviews_submitted" edge.
+func (m *UserMutation) ResetAiSkillReviewsSubmitted() {
+	m.ai_skill_reviews_submitted = nil
+	m.clearedai_skill_reviews_submitted = false
+	m.removedai_skill_reviews_submitted = nil
+}
+
+// AddAiSkillReviewsReviewedIDs adds the "ai_skill_reviews_reviewed" edge to the AISkillReview entity by ids.
+func (m *UserMutation) AddAiSkillReviewsReviewedIDs(ids ...int64) {
+	if m.ai_skill_reviews_reviewed == nil {
+		m.ai_skill_reviews_reviewed = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.ai_skill_reviews_reviewed[ids[i]] = struct{}{}
+	}
+}
+
+// ClearAiSkillReviewsReviewed clears the "ai_skill_reviews_reviewed" edge to the AISkillReview entity.
+func (m *UserMutation) ClearAiSkillReviewsReviewed() {
+	m.clearedai_skill_reviews_reviewed = true
+}
+
+// AiSkillReviewsReviewedCleared reports if the "ai_skill_reviews_reviewed" edge to the AISkillReview entity was cleared.
+func (m *UserMutation) AiSkillReviewsReviewedCleared() bool {
+	return m.clearedai_skill_reviews_reviewed
+}
+
+// RemoveAiSkillReviewsReviewedIDs removes the "ai_skill_reviews_reviewed" edge to the AISkillReview entity by IDs.
+func (m *UserMutation) RemoveAiSkillReviewsReviewedIDs(ids ...int64) {
+	if m.removedai_skill_reviews_reviewed == nil {
+		m.removedai_skill_reviews_reviewed = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.ai_skill_reviews_reviewed, ids[i])
+		m.removedai_skill_reviews_reviewed[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedAiSkillReviewsReviewed returns the removed IDs of the "ai_skill_reviews_reviewed" edge to the AISkillReview entity.
+func (m *UserMutation) RemovedAiSkillReviewsReviewedIDs() (ids []int64) {
+	for id := range m.removedai_skill_reviews_reviewed {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// AiSkillReviewsReviewedIDs returns the "ai_skill_reviews_reviewed" edge IDs in the mutation.
+func (m *UserMutation) AiSkillReviewsReviewedIDs() (ids []int64) {
+	for id := range m.ai_skill_reviews_reviewed {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetAiSkillReviewsReviewed resets all changes to the "ai_skill_reviews_reviewed" edge.
+func (m *UserMutation) ResetAiSkillReviewsReviewed() {
+	m.ai_skill_reviews_reviewed = nil
+	m.clearedai_skill_reviews_reviewed = false
+	m.removedai_skill_reviews_reviewed = nil
+}
+
+// AddAiSkillSettlementsOwnedIDs adds the "ai_skill_settlements_owned" edge to the AISkillSettlement entity by ids.
+func (m *UserMutation) AddAiSkillSettlementsOwnedIDs(ids ...int64) {
+	if m.ai_skill_settlements_owned == nil {
+		m.ai_skill_settlements_owned = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.ai_skill_settlements_owned[ids[i]] = struct{}{}
+	}
+}
+
+// ClearAiSkillSettlementsOwned clears the "ai_skill_settlements_owned" edge to the AISkillSettlement entity.
+func (m *UserMutation) ClearAiSkillSettlementsOwned() {
+	m.clearedai_skill_settlements_owned = true
+}
+
+// AiSkillSettlementsOwnedCleared reports if the "ai_skill_settlements_owned" edge to the AISkillSettlement entity was cleared.
+func (m *UserMutation) AiSkillSettlementsOwnedCleared() bool {
+	return m.clearedai_skill_settlements_owned
+}
+
+// RemoveAiSkillSettlementsOwnedIDs removes the "ai_skill_settlements_owned" edge to the AISkillSettlement entity by IDs.
+func (m *UserMutation) RemoveAiSkillSettlementsOwnedIDs(ids ...int64) {
+	if m.removedai_skill_settlements_owned == nil {
+		m.removedai_skill_settlements_owned = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.ai_skill_settlements_owned, ids[i])
+		m.removedai_skill_settlements_owned[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedAiSkillSettlementsOwned returns the removed IDs of the "ai_skill_settlements_owned" edge to the AISkillSettlement entity.
+func (m *UserMutation) RemovedAiSkillSettlementsOwnedIDs() (ids []int64) {
+	for id := range m.removedai_skill_settlements_owned {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// AiSkillSettlementsOwnedIDs returns the "ai_skill_settlements_owned" edge IDs in the mutation.
+func (m *UserMutation) AiSkillSettlementsOwnedIDs() (ids []int64) {
+	for id := range m.ai_skill_settlements_owned {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetAiSkillSettlementsOwned resets all changes to the "ai_skill_settlements_owned" edge.
+func (m *UserMutation) ResetAiSkillSettlementsOwned() {
+	m.ai_skill_settlements_owned = nil
+	m.clearedai_skill_settlements_owned = false
+	m.removedai_skill_settlements_owned = nil
+}
+
+// AddAiSkillSettlementsBoughtIDs adds the "ai_skill_settlements_bought" edge to the AISkillSettlement entity by ids.
+func (m *UserMutation) AddAiSkillSettlementsBoughtIDs(ids ...int64) {
+	if m.ai_skill_settlements_bought == nil {
+		m.ai_skill_settlements_bought = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.ai_skill_settlements_bought[ids[i]] = struct{}{}
+	}
+}
+
+// ClearAiSkillSettlementsBought clears the "ai_skill_settlements_bought" edge to the AISkillSettlement entity.
+func (m *UserMutation) ClearAiSkillSettlementsBought() {
+	m.clearedai_skill_settlements_bought = true
+}
+
+// AiSkillSettlementsBoughtCleared reports if the "ai_skill_settlements_bought" edge to the AISkillSettlement entity was cleared.
+func (m *UserMutation) AiSkillSettlementsBoughtCleared() bool {
+	return m.clearedai_skill_settlements_bought
+}
+
+// RemoveAiSkillSettlementsBoughtIDs removes the "ai_skill_settlements_bought" edge to the AISkillSettlement entity by IDs.
+func (m *UserMutation) RemoveAiSkillSettlementsBoughtIDs(ids ...int64) {
+	if m.removedai_skill_settlements_bought == nil {
+		m.removedai_skill_settlements_bought = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.ai_skill_settlements_bought, ids[i])
+		m.removedai_skill_settlements_bought[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedAiSkillSettlementsBought returns the removed IDs of the "ai_skill_settlements_bought" edge to the AISkillSettlement entity.
+func (m *UserMutation) RemovedAiSkillSettlementsBoughtIDs() (ids []int64) {
+	for id := range m.removedai_skill_settlements_bought {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// AiSkillSettlementsBoughtIDs returns the "ai_skill_settlements_bought" edge IDs in the mutation.
+func (m *UserMutation) AiSkillSettlementsBoughtIDs() (ids []int64) {
+	for id := range m.ai_skill_settlements_bought {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetAiSkillSettlementsBought resets all changes to the "ai_skill_settlements_bought" edge.
+func (m *UserMutation) ResetAiSkillSettlementsBought() {
+	m.ai_skill_settlements_bought = nil
+	m.clearedai_skill_settlements_bought = false
+	m.removedai_skill_settlements_bought = nil
 }
 
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by ids.
@@ -63601,7 +66212,31 @@ func (m *UserMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *UserMutation) AddedEdges() []string {
-	edges := make([]string, 0, 12)
+	edges := make([]string, 0, 20)
+	if m.ai_skills != nil {
+		edges = append(edges, user.EdgeAiSkills)
+	}
+	if m.ai_skill_versions != nil {
+		edges = append(edges, user.EdgeAiSkillVersions)
+	}
+	if m.ai_skill_runs != nil {
+		edges = append(edges, user.EdgeAiSkillRuns)
+	}
+	if m.ai_skill_likes != nil {
+		edges = append(edges, user.EdgeAiSkillLikes)
+	}
+	if m.ai_skill_reviews_submitted != nil {
+		edges = append(edges, user.EdgeAiSkillReviewsSubmitted)
+	}
+	if m.ai_skill_reviews_reviewed != nil {
+		edges = append(edges, user.EdgeAiSkillReviewsReviewed)
+	}
+	if m.ai_skill_settlements_owned != nil {
+		edges = append(edges, user.EdgeAiSkillSettlementsOwned)
+	}
+	if m.ai_skill_settlements_bought != nil {
+		edges = append(edges, user.EdgeAiSkillSettlementsBought)
+	}
 	if m.api_keys != nil {
 		edges = append(edges, user.EdgeAPIKeys)
 	}
@@ -63645,6 +66280,54 @@ func (m *UserMutation) AddedEdges() []string {
 // name in this mutation.
 func (m *UserMutation) AddedIDs(name string) []ent.Value {
 	switch name {
+	case user.EdgeAiSkills:
+		ids := make([]ent.Value, 0, len(m.ai_skills))
+		for id := range m.ai_skills {
+			ids = append(ids, id)
+		}
+		return ids
+	case user.EdgeAiSkillVersions:
+		ids := make([]ent.Value, 0, len(m.ai_skill_versions))
+		for id := range m.ai_skill_versions {
+			ids = append(ids, id)
+		}
+		return ids
+	case user.EdgeAiSkillRuns:
+		ids := make([]ent.Value, 0, len(m.ai_skill_runs))
+		for id := range m.ai_skill_runs {
+			ids = append(ids, id)
+		}
+		return ids
+	case user.EdgeAiSkillLikes:
+		ids := make([]ent.Value, 0, len(m.ai_skill_likes))
+		for id := range m.ai_skill_likes {
+			ids = append(ids, id)
+		}
+		return ids
+	case user.EdgeAiSkillReviewsSubmitted:
+		ids := make([]ent.Value, 0, len(m.ai_skill_reviews_submitted))
+		for id := range m.ai_skill_reviews_submitted {
+			ids = append(ids, id)
+		}
+		return ids
+	case user.EdgeAiSkillReviewsReviewed:
+		ids := make([]ent.Value, 0, len(m.ai_skill_reviews_reviewed))
+		for id := range m.ai_skill_reviews_reviewed {
+			ids = append(ids, id)
+		}
+		return ids
+	case user.EdgeAiSkillSettlementsOwned:
+		ids := make([]ent.Value, 0, len(m.ai_skill_settlements_owned))
+		for id := range m.ai_skill_settlements_owned {
+			ids = append(ids, id)
+		}
+		return ids
+	case user.EdgeAiSkillSettlementsBought:
+		ids := make([]ent.Value, 0, len(m.ai_skill_settlements_bought))
+		for id := range m.ai_skill_settlements_bought {
+			ids = append(ids, id)
+		}
+		return ids
 	case user.EdgeAPIKeys:
 		ids := make([]ent.Value, 0, len(m.api_keys))
 		for id := range m.api_keys {
@@ -63723,7 +66406,31 @@ func (m *UserMutation) AddedIDs(name string) []ent.Value {
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *UserMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 12)
+	edges := make([]string, 0, 20)
+	if m.removedai_skills != nil {
+		edges = append(edges, user.EdgeAiSkills)
+	}
+	if m.removedai_skill_versions != nil {
+		edges = append(edges, user.EdgeAiSkillVersions)
+	}
+	if m.removedai_skill_runs != nil {
+		edges = append(edges, user.EdgeAiSkillRuns)
+	}
+	if m.removedai_skill_likes != nil {
+		edges = append(edges, user.EdgeAiSkillLikes)
+	}
+	if m.removedai_skill_reviews_submitted != nil {
+		edges = append(edges, user.EdgeAiSkillReviewsSubmitted)
+	}
+	if m.removedai_skill_reviews_reviewed != nil {
+		edges = append(edges, user.EdgeAiSkillReviewsReviewed)
+	}
+	if m.removedai_skill_settlements_owned != nil {
+		edges = append(edges, user.EdgeAiSkillSettlementsOwned)
+	}
+	if m.removedai_skill_settlements_bought != nil {
+		edges = append(edges, user.EdgeAiSkillSettlementsBought)
+	}
 	if m.removedapi_keys != nil {
 		edges = append(edges, user.EdgeAPIKeys)
 	}
@@ -63767,6 +66474,54 @@ func (m *UserMutation) RemovedEdges() []string {
 // the given name in this mutation.
 func (m *UserMutation) RemovedIDs(name string) []ent.Value {
 	switch name {
+	case user.EdgeAiSkills:
+		ids := make([]ent.Value, 0, len(m.removedai_skills))
+		for id := range m.removedai_skills {
+			ids = append(ids, id)
+		}
+		return ids
+	case user.EdgeAiSkillVersions:
+		ids := make([]ent.Value, 0, len(m.removedai_skill_versions))
+		for id := range m.removedai_skill_versions {
+			ids = append(ids, id)
+		}
+		return ids
+	case user.EdgeAiSkillRuns:
+		ids := make([]ent.Value, 0, len(m.removedai_skill_runs))
+		for id := range m.removedai_skill_runs {
+			ids = append(ids, id)
+		}
+		return ids
+	case user.EdgeAiSkillLikes:
+		ids := make([]ent.Value, 0, len(m.removedai_skill_likes))
+		for id := range m.removedai_skill_likes {
+			ids = append(ids, id)
+		}
+		return ids
+	case user.EdgeAiSkillReviewsSubmitted:
+		ids := make([]ent.Value, 0, len(m.removedai_skill_reviews_submitted))
+		for id := range m.removedai_skill_reviews_submitted {
+			ids = append(ids, id)
+		}
+		return ids
+	case user.EdgeAiSkillReviewsReviewed:
+		ids := make([]ent.Value, 0, len(m.removedai_skill_reviews_reviewed))
+		for id := range m.removedai_skill_reviews_reviewed {
+			ids = append(ids, id)
+		}
+		return ids
+	case user.EdgeAiSkillSettlementsOwned:
+		ids := make([]ent.Value, 0, len(m.removedai_skill_settlements_owned))
+		for id := range m.removedai_skill_settlements_owned {
+			ids = append(ids, id)
+		}
+		return ids
+	case user.EdgeAiSkillSettlementsBought:
+		ids := make([]ent.Value, 0, len(m.removedai_skill_settlements_bought))
+		for id := range m.removedai_skill_settlements_bought {
+			ids = append(ids, id)
+		}
+		return ids
 	case user.EdgeAPIKeys:
 		ids := make([]ent.Value, 0, len(m.removedapi_keys))
 		for id := range m.removedapi_keys {
@@ -63845,7 +66600,31 @@ func (m *UserMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *UserMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 12)
+	edges := make([]string, 0, 20)
+	if m.clearedai_skills {
+		edges = append(edges, user.EdgeAiSkills)
+	}
+	if m.clearedai_skill_versions {
+		edges = append(edges, user.EdgeAiSkillVersions)
+	}
+	if m.clearedai_skill_runs {
+		edges = append(edges, user.EdgeAiSkillRuns)
+	}
+	if m.clearedai_skill_likes {
+		edges = append(edges, user.EdgeAiSkillLikes)
+	}
+	if m.clearedai_skill_reviews_submitted {
+		edges = append(edges, user.EdgeAiSkillReviewsSubmitted)
+	}
+	if m.clearedai_skill_reviews_reviewed {
+		edges = append(edges, user.EdgeAiSkillReviewsReviewed)
+	}
+	if m.clearedai_skill_settlements_owned {
+		edges = append(edges, user.EdgeAiSkillSettlementsOwned)
+	}
+	if m.clearedai_skill_settlements_bought {
+		edges = append(edges, user.EdgeAiSkillSettlementsBought)
+	}
 	if m.clearedapi_keys {
 		edges = append(edges, user.EdgeAPIKeys)
 	}
@@ -63889,6 +66668,22 @@ func (m *UserMutation) ClearedEdges() []string {
 // was cleared in this mutation.
 func (m *UserMutation) EdgeCleared(name string) bool {
 	switch name {
+	case user.EdgeAiSkills:
+		return m.clearedai_skills
+	case user.EdgeAiSkillVersions:
+		return m.clearedai_skill_versions
+	case user.EdgeAiSkillRuns:
+		return m.clearedai_skill_runs
+	case user.EdgeAiSkillLikes:
+		return m.clearedai_skill_likes
+	case user.EdgeAiSkillReviewsSubmitted:
+		return m.clearedai_skill_reviews_submitted
+	case user.EdgeAiSkillReviewsReviewed:
+		return m.clearedai_skill_reviews_reviewed
+	case user.EdgeAiSkillSettlementsOwned:
+		return m.clearedai_skill_settlements_owned
+	case user.EdgeAiSkillSettlementsBought:
+		return m.clearedai_skill_settlements_bought
 	case user.EdgeAPIKeys:
 		return m.clearedapi_keys
 	case user.EdgeRedeemCodes:
@@ -63929,6 +66724,30 @@ func (m *UserMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *UserMutation) ResetEdge(name string) error {
 	switch name {
+	case user.EdgeAiSkills:
+		m.ResetAiSkills()
+		return nil
+	case user.EdgeAiSkillVersions:
+		m.ResetAiSkillVersions()
+		return nil
+	case user.EdgeAiSkillRuns:
+		m.ResetAiSkillRuns()
+		return nil
+	case user.EdgeAiSkillLikes:
+		m.ResetAiSkillLikes()
+		return nil
+	case user.EdgeAiSkillReviewsSubmitted:
+		m.ResetAiSkillReviewsSubmitted()
+		return nil
+	case user.EdgeAiSkillReviewsReviewed:
+		m.ResetAiSkillReviewsReviewed()
+		return nil
+	case user.EdgeAiSkillSettlementsOwned:
+		m.ResetAiSkillSettlementsOwned()
+		return nil
+	case user.EdgeAiSkillSettlementsBought:
+		m.ResetAiSkillSettlementsBought()
+		return nil
 	case user.EdgeAPIKeys:
 		m.ResetAPIKeys()
 		return nil

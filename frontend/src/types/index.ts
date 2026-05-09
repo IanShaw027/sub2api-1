@@ -18,6 +18,11 @@ export interface BasePaginationResponse<T> {
   pages: number
 }
 
+export interface MediaDownloadURL {
+  url: string
+  expires_at: string
+}
+
 export interface FetchOptions {
   signal?: AbortSignal
 }
@@ -216,6 +221,11 @@ export interface LoginAgreementDocument {
   id: string
   title: string
   content_md: string
+}
+
+export interface OpenAIImageWebConversationModelSettings {
+  openai_image_web_free_model?: string
+  openai_image_web_paid_model?: string
 }
 
 export interface PublicSettings {

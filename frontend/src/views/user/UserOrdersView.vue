@@ -22,6 +22,18 @@
               <Icon name="x" size="sm" />
               <span>{{ t('payment.orders.cancel') }}</span>
             </button>
+            <button v-if="canApplyInvoice(row)" @click="openInvoiceApplyDialog(row)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/20">
+              <Icon name="document" size="sm" />
+              <span>{{ t('payment.invoice.apply') }}</span>
+            </button>
+            <button v-else-if="row.invoice_status === 'APPLIED'" @click="openInvoiceDetail(row)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-sky-600 hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-900/20">
+              <Icon name="eye" size="sm" />
+              <span>{{ t('payment.invoice.applied') }}</span>
+            </button>
+            <button v-else-if="row.invoice_status === 'ISSUED'" @click="downloadInvoice(row.id)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50 dark:text-green-400 dark:hover:bg-green-900/20">
+              <Icon name="download" size="sm" />
+              <span>{{ t('payment.invoice.issued') }}</span>
+            </button>
             <button v-if="canRequestRefund(row)" @click="openRefundDialog(row)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-purple-600 hover:bg-purple-50 dark:text-purple-400 dark:hover:bg-purple-900/20">
               <Icon name="dollar" size="sm" />
               <span>{{ t('payment.orders.requestRefund') }}</span>
@@ -77,6 +89,77 @@
         </div>
       </template>
     </BaseDialog>
+
+    <BaseDialog :show="!!invoiceApplyTarget" :title="t('payment.invoice.apply')" @close="invoiceApplyTarget = null">
+      <div v-if="invoiceApplyTarget" class="space-y-4">
+        <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-800">
+          <div class="flex justify-between text-sm">
+            <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.orderNo') }}</span>
+            <span class="font-mono text-gray-900 dark:text-white">{{ invoiceApplyTarget.out_trade_no }}</span>
+          </div>
+          <div class="mt-2 flex justify-between text-sm">
+            <span class="text-gray-500 dark:text-gray-400">{{ t('payment.invoice.amount') }}</span>
+            <span class="text-gray-900 dark:text-white">¥{{ invoiceApplyTarget.pay_amount.toFixed(2) }}</span>
+          </div>
+        </div>
+        <div>
+          <label class="input-label">{{ t('payment.invoice.title') }}</label>
+          <input v-model="invoiceForm.title" class="input mt-1 w-full" />
+        </div>
+        <div>
+          <label class="input-label">{{ t('payment.invoice.taxNumber') }}</label>
+          <input v-model="invoiceForm.tax_number" class="input mt-1 w-full" />
+        </div>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label class="input-label">{{ t('payment.invoice.email') }}</label>
+            <input v-model="invoiceForm.email" class="input mt-1 w-full" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('payment.invoice.contactName') }}</label>
+            <input v-model="invoiceForm.contact_name" class="input mt-1 w-full" />
+          </div>
+        </div>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label class="input-label">{{ t('payment.invoice.contactPhone') }}</label>
+            <input v-model="invoiceForm.contact_phone" class="input mt-1 w-full" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('payment.invoice.note') }}</label>
+            <input v-model="invoiceForm.request_note" class="input mt-1 w-full" />
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <button class="btn btn-secondary" @click="invoiceApplyTarget = null">{{ t('common.cancel') }}</button>
+          <button class="btn btn-primary" :disabled="actionLoading || !invoiceForm.title.trim() || !invoiceForm.tax_number.trim() || !invoiceForm.email.trim()" @click="confirmApplyInvoice">{{ actionLoading ? t('common.processing') : t('payment.invoice.apply') }}</button>
+        </div>
+      </template>
+    </BaseDialog>
+
+    <BaseDialog :show="!!invoiceDetail" :title="t('payment.invoice.detail')" @close="invoiceDetail = null">
+      <div v-if="invoiceDetail" class="space-y-4">
+        <div class="grid grid-cols-2 gap-4">
+          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.invoice.status') }}</p><p class="text-sm text-gray-900 dark:text-white">{{ invoiceStatusLabel(invoiceDetail.status) }}</p></div>
+          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.invoice.amount') }}</p><p class="text-sm text-gray-900 dark:text-white">¥{{ invoiceDetail.invoice_amount.toFixed(2) }}</p></div>
+          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.invoice.title') }}</p><p class="text-sm text-gray-900 dark:text-white">{{ invoiceDetail.title }}</p></div>
+          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.invoice.taxNumber') }}</p><p class="text-sm text-gray-900 dark:text-white">{{ invoiceDetail.tax_number }}</p></div>
+          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.invoice.email') }}</p><p class="text-sm text-gray-900 dark:text-white">{{ invoiceDetail.email }}</p></div>
+          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.invoice.contactName') }}</p><p class="text-sm text-gray-900 dark:text-white">{{ invoiceDetail.contact_name || '-' }}</p></div>
+          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.invoice.contactPhone') }}</p><p class="text-sm text-gray-900 dark:text-white">{{ invoiceDetail.contact_phone || '-' }}</p></div>
+          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.invoice.fileName') }}</p><p class="text-sm text-gray-900 dark:text-white">{{ invoiceDetail.file_name || '-' }}</p></div>
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <button v-if="invoiceDetail?.status === 'APPLIED'" class="btn btn-danger" :disabled="actionLoading" @click="confirmCancelInvoice">{{ actionLoading ? t('common.processing') : t('payment.invoice.cancel') }}</button>
+          <button v-if="invoiceDetail?.status === 'ISSUED'" class="btn btn-primary" :disabled="actionLoading" @click="downloadInvoice(invoiceDetail.order_id)">{{ t('payment.invoice.download') }}</button>
+          <button class="btn btn-secondary" @click="invoiceDetail = null">{{ t('common.close') }}</button>
+        </div>
+      </template>
+    </BaseDialog>
   </AppLayout>
 </template>
 
@@ -87,7 +170,7 @@ import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores'
 import { paymentAPI } from '@/api/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
-import type { PaymentOrder } from '@/types/payment'
+import type { InvoiceApplication, PaymentOrder } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -103,10 +186,21 @@ const loading = ref(false)
 const actionLoading = ref(false)
 const orders = ref<PaymentOrder[]>([])
 const refundEligibleProviders = ref<Set<string>>(new Set())
+const invoiceEligibleProviders = ref<Set<string>>(new Set())
 const currentFilter = ref('')
 const cancelTargetId = ref<number | null>(null)
 const refundTarget = ref<PaymentOrder | null>(null)
 const refundReason = ref('')
+const invoiceApplyTarget = ref<PaymentOrder | null>(null)
+const invoiceDetail = ref<InvoiceApplication | null>(null)
+const invoiceForm = reactive({
+  title: '',
+  tax_number: '',
+  email: '',
+  contact_name: '',
+  contact_phone: '',
+  request_note: '',
+})
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 
 const statusFilters = computed(() => [
@@ -155,6 +249,15 @@ async function confirmCancel() {
 }
 
 function openRefundDialog(order: PaymentOrder) { refundTarget.value = order; refundReason.value = '' }
+function openInvoiceApplyDialog(order: PaymentOrder) {
+  invoiceApplyTarget.value = order
+  invoiceForm.title = ''
+  invoiceForm.tax_number = ''
+  invoiceForm.email = ''
+  invoiceForm.contact_name = ''
+  invoiceForm.contact_phone = ''
+  invoiceForm.request_note = ''
+}
 
 async function confirmRefund() {
   if (!refundTarget.value || !refundReason.value.trim()) return
@@ -172,10 +275,79 @@ async function confirmRefund() {
   }
 }
 
+async function confirmApplyInvoice() {
+  if (!invoiceApplyTarget.value) return
+  actionLoading.value = true
+  try {
+    await paymentAPI.applyOrderInvoice(invoiceApplyTarget.value.id, {
+      title: invoiceForm.title.trim(),
+      tax_number: invoiceForm.tax_number.trim(),
+      email: invoiceForm.email.trim(),
+      contact_name: invoiceForm.contact_name.trim() || undefined,
+      contact_phone: invoiceForm.contact_phone.trim() || undefined,
+      request_note: invoiceForm.request_note.trim() || undefined,
+    })
+    appStore.showSuccess(t('common.success'))
+    invoiceApplyTarget.value = null
+    await fetchOrders()
+  } catch (err: unknown) {
+    appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+async function openInvoiceDetail(order: PaymentOrder) {
+  actionLoading.value = true
+  try {
+    const res = await paymentAPI.getOrderInvoice(order.id)
+    invoiceDetail.value = res.data
+  } catch (err: unknown) {
+    appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+async function confirmCancelInvoice() {
+  if (!invoiceDetail.value) return
+  actionLoading.value = true
+  try {
+    await paymentAPI.cancelOrderInvoice(invoiceDetail.value.order_id)
+    appStore.showSuccess(t('common.success'))
+    invoiceDetail.value = null
+    await fetchOrders()
+  } catch (err: unknown) {
+    appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+async function downloadInvoice(orderID: number) {
+  actionLoading.value = true
+  try {
+    const res = await paymentAPI.getOrderInvoiceDownloadURL(orderID)
+    const url = res.data.url
+    if (url) window.open(url, '_blank', 'noopener')
+  } catch (err: unknown) {
+    appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
+  } finally {
+    actionLoading.value = false
+  }
+}
+
 function canRequestRefund(order: PaymentOrder): boolean {
   if (order.status !== 'COMPLETED') return false
   if (!order.provider_instance_id) return false
   return refundEligibleProviders.value.has(order.provider_instance_id)
+}
+
+function canApplyInvoice(order: PaymentOrder): boolean {
+  if (order.status !== 'COMPLETED') return false
+  if (!order.provider_instance_id) return false
+  if (!invoiceEligibleProviders.value.has(order.provider_instance_id)) return false
+  return !order.invoice_status || order.invoice_status === 'CANCELLED'
 }
 
 async function loadRefundEligibility() {
@@ -185,5 +357,19 @@ async function loadRefundEligibility() {
   } catch { /* ignore — default to hiding refund button */ }
 }
 
-onMounted(() => { fetchOrders(); loadRefundEligibility() })
+async function loadInvoiceEligibility() {
+  try {
+    const res = await paymentAPI.getInvoiceEligibleProviders()
+    invoiceEligibleProviders.value = new Set(res.data.provider_instance_ids || [])
+  } catch { /* ignore — default to hiding invoice button */ }
+}
+
+function invoiceStatusLabel(status: string) {
+  if (status === 'APPLIED') return t('payment.invoice.applied')
+  if (status === 'ISSUED') return t('payment.invoice.issued')
+  if (status === 'CANCELLED') return t('payment.invoice.cancelled')
+  return status
+}
+
+onMounted(() => { fetchOrders(); loadRefundEligibility(); loadInvoiceEligibility() })
 </script>

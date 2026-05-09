@@ -146,6 +146,20 @@ func (_c *PaymentProviderInstanceCreate) SetNillableAllowUserRefund(v *bool) *Pa
 	return _c
 }
 
+// SetInvoiceEnabled sets the "invoice_enabled" field.
+func (_c *PaymentProviderInstanceCreate) SetInvoiceEnabled(v bool) *PaymentProviderInstanceCreate {
+	_c.mutation.SetInvoiceEnabled(v)
+	return _c
+}
+
+// SetNillableInvoiceEnabled sets the "invoice_enabled" field if the given value is not nil.
+func (_c *PaymentProviderInstanceCreate) SetNillableInvoiceEnabled(v *bool) *PaymentProviderInstanceCreate {
+	if v != nil {
+		_c.SetInvoiceEnabled(*v)
+	}
+	return _c
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_c *PaymentProviderInstanceCreate) SetCreatedAt(v time.Time) *PaymentProviderInstanceCreate {
 	_c.mutation.SetCreatedAt(v)
@@ -241,6 +255,10 @@ func (_c *PaymentProviderInstanceCreate) defaults() {
 		v := paymentproviderinstance.DefaultAllowUserRefund
 		_c.mutation.SetAllowUserRefund(v)
 	}
+	if _, ok := _c.mutation.InvoiceEnabled(); !ok {
+		v := paymentproviderinstance.DefaultInvoiceEnabled
+		_c.mutation.SetInvoiceEnabled(v)
+	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		v := paymentproviderinstance.DefaultCreatedAt()
 		_c.mutation.SetCreatedAt(v)
@@ -302,6 +320,9 @@ func (_c *PaymentProviderInstanceCreate) check() error {
 	}
 	if _, ok := _c.mutation.AllowUserRefund(); !ok {
 		return &ValidationError{Name: "allow_user_refund", err: errors.New(`ent: missing required field "PaymentProviderInstance.allow_user_refund"`)}
+	}
+	if _, ok := _c.mutation.InvoiceEnabled(); !ok {
+		return &ValidationError{Name: "invoice_enabled", err: errors.New(`ent: missing required field "PaymentProviderInstance.invoice_enabled"`)}
 	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "PaymentProviderInstance.created_at"`)}
@@ -375,6 +396,10 @@ func (_c *PaymentProviderInstanceCreate) createSpec() (*PaymentProviderInstance,
 	if value, ok := _c.mutation.AllowUserRefund(); ok {
 		_spec.SetField(paymentproviderinstance.FieldAllowUserRefund, field.TypeBool, value)
 		_node.AllowUserRefund = value
+	}
+	if value, ok := _c.mutation.InvoiceEnabled(); ok {
+		_spec.SetField(paymentproviderinstance.FieldInvoiceEnabled, field.TypeBool, value)
+		_node.InvoiceEnabled = value
 	}
 	if value, ok := _c.mutation.CreatedAt(); ok {
 		_spec.SetField(paymentproviderinstance.FieldCreatedAt, field.TypeTime, value)
@@ -559,6 +584,18 @@ func (u *PaymentProviderInstanceUpsert) SetAllowUserRefund(v bool) *PaymentProvi
 // UpdateAllowUserRefund sets the "allow_user_refund" field to the value that was provided on create.
 func (u *PaymentProviderInstanceUpsert) UpdateAllowUserRefund() *PaymentProviderInstanceUpsert {
 	u.SetExcluded(paymentproviderinstance.FieldAllowUserRefund)
+	return u
+}
+
+// SetInvoiceEnabled sets the "invoice_enabled" field.
+func (u *PaymentProviderInstanceUpsert) SetInvoiceEnabled(v bool) *PaymentProviderInstanceUpsert {
+	u.Set(paymentproviderinstance.FieldInvoiceEnabled, v)
+	return u
+}
+
+// UpdateInvoiceEnabled sets the "invoice_enabled" field to the value that was provided on create.
+func (u *PaymentProviderInstanceUpsert) UpdateInvoiceEnabled() *PaymentProviderInstanceUpsert {
+	u.SetExcluded(paymentproviderinstance.FieldInvoiceEnabled)
 	return u
 }
 
@@ -763,6 +800,20 @@ func (u *PaymentProviderInstanceUpsertOne) SetAllowUserRefund(v bool) *PaymentPr
 func (u *PaymentProviderInstanceUpsertOne) UpdateAllowUserRefund() *PaymentProviderInstanceUpsertOne {
 	return u.Update(func(s *PaymentProviderInstanceUpsert) {
 		s.UpdateAllowUserRefund()
+	})
+}
+
+// SetInvoiceEnabled sets the "invoice_enabled" field.
+func (u *PaymentProviderInstanceUpsertOne) SetInvoiceEnabled(v bool) *PaymentProviderInstanceUpsertOne {
+	return u.Update(func(s *PaymentProviderInstanceUpsert) {
+		s.SetInvoiceEnabled(v)
+	})
+}
+
+// UpdateInvoiceEnabled sets the "invoice_enabled" field to the value that was provided on create.
+func (u *PaymentProviderInstanceUpsertOne) UpdateInvoiceEnabled() *PaymentProviderInstanceUpsertOne {
+	return u.Update(func(s *PaymentProviderInstanceUpsert) {
+		s.UpdateInvoiceEnabled()
 	})
 }
 
@@ -1135,6 +1186,20 @@ func (u *PaymentProviderInstanceUpsertBulk) SetAllowUserRefund(v bool) *PaymentP
 func (u *PaymentProviderInstanceUpsertBulk) UpdateAllowUserRefund() *PaymentProviderInstanceUpsertBulk {
 	return u.Update(func(s *PaymentProviderInstanceUpsert) {
 		s.UpdateAllowUserRefund()
+	})
+}
+
+// SetInvoiceEnabled sets the "invoice_enabled" field.
+func (u *PaymentProviderInstanceUpsertBulk) SetInvoiceEnabled(v bool) *PaymentProviderInstanceUpsertBulk {
+	return u.Update(func(s *PaymentProviderInstanceUpsert) {
+		s.SetInvoiceEnabled(v)
+	})
+}
+
+// UpdateInvoiceEnabled sets the "invoice_enabled" field to the value that was provided on create.
+func (u *PaymentProviderInstanceUpsertBulk) UpdateInvoiceEnabled() *PaymentProviderInstanceUpsertBulk {
+	return u.Update(func(s *PaymentProviderInstanceUpsert) {
+		s.UpdateInvoiceEnabled()
 	})
 }
 

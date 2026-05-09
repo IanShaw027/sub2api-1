@@ -7,6 +7,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -22,14 +23,16 @@ type PaymentHandler struct {
 	channelService *service.ChannelService
 	paymentService *service.PaymentService
 	configService  *service.PaymentConfigService
+	invoiceService *service.InvoiceService
 }
 
 // NewPaymentHandler creates a new PaymentHandler.
-func NewPaymentHandler(paymentService *service.PaymentService, configService *service.PaymentConfigService, channelService *service.ChannelService) *PaymentHandler {
+func NewPaymentHandler(paymentService *service.PaymentService, configService *service.PaymentConfigService, channelService *service.ChannelService, invoiceService *service.InvoiceService) *PaymentHandler {
 	return &PaymentHandler{
 		channelService: channelService,
 		paymentService: paymentService,
 		configService:  configService,
+		invoiceService: invoiceService,
 	}
 }
 
@@ -419,6 +422,129 @@ func (h *PaymentHandler) GetRefundEligibleProviders(c *gin.Context) {
 	response.Success(c, gin.H{"provider_instance_ids": ids})
 }
 
+// GetInvoiceEligibleProviders returns provider instance IDs that allow invoice applications.
+func (h *PaymentHandler) GetInvoiceEligibleProviders(c *gin.Context) {
+	ids, err := h.configService.GetUserInvoiceEligibleInstanceIDs(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"provider_instance_ids": ids})
+}
+
+type ApplyInvoiceRequestBody struct {
+	Title        string  `json:"title" binding:"required"`
+	TaxNumber    string  `json:"tax_number" binding:"required"`
+	Email        string  `json:"email" binding:"required"`
+	ContactName  string  `json:"contact_name"`
+	ContactPhone string  `json:"contact_phone"`
+	RequestNote  *string `json:"request_note,omitempty"`
+}
+
+// ApplyInvoice submits an invoice application for a completed order.
+func (h *PaymentHandler) ApplyInvoice(c *gin.Context) {
+	orderID, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	if h.invoiceService == nil {
+		response.ErrorFrom(c, infraerrors.ServiceUnavailable("INVOICE_SERVICE_UNAVAILABLE", "invoice service unavailable"))
+		return
+	}
+	var req ApplyInvoiceRequestBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	app, err := h.invoiceService.Apply(c.Request.Context(), orderID, subject.UserID, service.ApplyInvoiceRequest{
+		Title:        req.Title,
+		TaxNumber:    req.TaxNumber,
+		Email:        req.Email,
+		ContactName:  req.ContactName,
+		ContactPhone: req.ContactPhone,
+		RequestNote:  req.RequestNote,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, app)
+}
+
+// GetInvoice returns invoice application details for a specific order.
+func (h *PaymentHandler) GetInvoice(c *gin.Context) {
+	orderID, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	if h.invoiceService == nil {
+		response.ErrorFrom(c, infraerrors.ServiceUnavailable("INVOICE_SERVICE_UNAVAILABLE", "invoice service unavailable"))
+		return
+	}
+	app, err := h.invoiceService.GetByOrderForUser(c.Request.Context(), orderID, subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, app)
+}
+
+// CancelInvoice cancels an invoice application for a specific order.
+func (h *PaymentHandler) CancelInvoice(c *gin.Context) {
+	orderID, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	if h.invoiceService == nil {
+		response.ErrorFrom(c, infraerrors.ServiceUnavailable("INVOICE_SERVICE_UNAVAILABLE", "invoice service unavailable"))
+		return
+	}
+	app, err := h.invoiceService.CancelByOrderForUser(c.Request.Context(), orderID, subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, app)
+}
+
+// GetInvoiceDownloadURL returns a signed URL for the issued invoice file.
+func (h *PaymentHandler) GetInvoiceDownloadURL(c *gin.Context) {
+	orderID, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	if h.invoiceService == nil {
+		response.ErrorFrom(c, infraerrors.ServiceUnavailable("INVOICE_SERVICE_UNAVAILABLE", "invoice service unavailable"))
+		return
+	}
+	url, err := h.invoiceService.CreateDownloadURLForUser(c.Request.Context(), orderID, subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, dto.MediaDownloadURLFromService(url))
+}
+
 // VerifyOrderRequest is the request body for verifying a payment order.
 type VerifyOrderRequest struct {
 	OutTradeNo string `json:"out_trade_no" binding:"required"`
@@ -573,6 +699,16 @@ func sanitizePaymentOrderForResponse(order *dbent.PaymentOrder) *dbent.PaymentOr
 	cloned := *order
 	cloned.ProviderSnapshot = nil
 	return &cloned
+}
+
+func parseIDParam(c *gin.Context, paramName string) (int64, bool) {
+	value := c.Param(paramName)
+	id, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, fmt.Sprintf("Invalid %s", paramName))
+		return 0, false
+	}
+	return id, true
 }
 
 func isWeChatBrowser(c *gin.Context) bool {

@@ -55,6 +55,8 @@ func (PaymentProviderInstance) Fields() []ent.Field {
 			Default(false),
 		field.Bool("allow_user_refund").
 			Default(false),
+		field.Bool("invoice_enabled").
+			Default(false),
 		field.Time("created_at").
 			Immutable().
 			Default(time.Now).

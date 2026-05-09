@@ -175,6 +175,20 @@ func (_u *PaymentProviderInstanceUpdate) SetNillableAllowUserRefund(v *bool) *Pa
 	return _u
 }
 
+// SetInvoiceEnabled sets the "invoice_enabled" field.
+func (_u *PaymentProviderInstanceUpdate) SetInvoiceEnabled(v bool) *PaymentProviderInstanceUpdate {
+	_u.mutation.SetInvoiceEnabled(v)
+	return _u
+}
+
+// SetNillableInvoiceEnabled sets the "invoice_enabled" field if the given value is not nil.
+func (_u *PaymentProviderInstanceUpdate) SetNillableInvoiceEnabled(v *bool) *PaymentProviderInstanceUpdate {
+	if v != nil {
+		_u.SetInvoiceEnabled(*v)
+	}
+	return _u
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (_u *PaymentProviderInstanceUpdate) SetUpdatedAt(v time.Time) *PaymentProviderInstanceUpdate {
 	_u.mutation.SetUpdatedAt(v)
@@ -291,6 +305,9 @@ func (_u *PaymentProviderInstanceUpdate) sqlSave(ctx context.Context) (_node int
 	}
 	if value, ok := _u.mutation.AllowUserRefund(); ok {
 		_spec.SetField(paymentproviderinstance.FieldAllowUserRefund, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.InvoiceEnabled(); ok {
+		_spec.SetField(paymentproviderinstance.FieldInvoiceEnabled, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(paymentproviderinstance.FieldUpdatedAt, field.TypeTime, value)
@@ -462,6 +479,20 @@ func (_u *PaymentProviderInstanceUpdateOne) SetNillableAllowUserRefund(v *bool) 
 	return _u
 }
 
+// SetInvoiceEnabled sets the "invoice_enabled" field.
+func (_u *PaymentProviderInstanceUpdateOne) SetInvoiceEnabled(v bool) *PaymentProviderInstanceUpdateOne {
+	_u.mutation.SetInvoiceEnabled(v)
+	return _u
+}
+
+// SetNillableInvoiceEnabled sets the "invoice_enabled" field if the given value is not nil.
+func (_u *PaymentProviderInstanceUpdateOne) SetNillableInvoiceEnabled(v *bool) *PaymentProviderInstanceUpdateOne {
+	if v != nil {
+		_u.SetInvoiceEnabled(*v)
+	}
+	return _u
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (_u *PaymentProviderInstanceUpdateOne) SetUpdatedAt(v time.Time) *PaymentProviderInstanceUpdateOne {
 	_u.mutation.SetUpdatedAt(v)
@@ -608,6 +639,9 @@ func (_u *PaymentProviderInstanceUpdateOne) sqlSave(ctx context.Context) (_node 
 	}
 	if value, ok := _u.mutation.AllowUserRefund(); ok {
 		_spec.SetField(paymentproviderinstance.FieldAllowUserRefund, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.InvoiceEnabled(); ok {
+		_spec.SetField(paymentproviderinstance.FieldInvoiceEnabled, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(paymentproviderinstance.FieldUpdatedAt, field.TypeTime, value)

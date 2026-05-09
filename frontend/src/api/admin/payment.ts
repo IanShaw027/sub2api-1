@@ -8,7 +8,8 @@ import type {
   DashboardStats,
   PaymentOrder,
   SubscriptionPlan,
-  ProviderInstance
+  ProviderInstance,
+  InvoiceApplication
 } from '@/types/payment'
 import type { BasePaginationResponse } from '@/types'
 
@@ -165,6 +166,32 @@ export const adminPaymentAPI = {
   /** Delete a provider instance */
   deleteProvider(id: number) {
     return apiClient.delete(`/admin/payment/providers/${id}`)
+  },
+
+  // ==================== Invoice Applications ====================
+
+  /** Get invoice applications */
+  getInvoices(params?: {
+    page?: number
+    page_size?: number
+    status?: string
+    keyword?: string
+  }) {
+    return apiClient.get<BasePaginationResponse<InvoiceApplication>>('/admin/payment/invoices', { params })
+  },
+
+  /** Get invoice application detail */
+  getInvoice(id: number) {
+    return apiClient.get<InvoiceApplication>(`/admin/payment/invoices/${id}`)
+  },
+
+  /** Upload invoice file */
+  uploadInvoiceFile(id: number, file: File) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return apiClient.post<InvoiceApplication>(`/admin/payment/invoices/${id}/upload`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
   }
 }
 

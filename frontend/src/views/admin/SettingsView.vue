@@ -3659,6 +3659,66 @@
             </div>
           </div>
 
+          <!-- OpenAI Image Web2API Conversation Model Settings -->
+          <div class="card">
+            <div
+              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
+            >
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {{ t("admin.settings.openaiImageWebModels.title") }}
+              </h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {{ t("admin.settings.openaiImageWebModels.description") }}
+              </p>
+            </div>
+            <div class="space-y-5 p-6">
+              <div
+                class="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-300"
+              >
+                <p>
+                  {{ t("admin.settings.openaiImageWebModels.prepareHint") }}
+                </p>
+                <p class="mt-2">
+                  {{ t("admin.settings.openaiImageWebModels.conversationHint") }}
+                </p>
+              </div>
+              <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div>
+                  <label class="label">
+                    {{ t("admin.settings.openaiImageWebModels.freeModel") }}
+                  </label>
+                  <input
+                    v-model="form.openai_image_web_free_model"
+                    type="text"
+                    class="input font-mono text-sm"
+                    :placeholder="
+                      t('admin.settings.openaiImageWebModels.freeModelPlaceholder')
+                    "
+                  />
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.openaiImageWebModels.freeModelHint") }}
+                  </p>
+                </div>
+                <div>
+                  <label class="label">
+                    {{ t("admin.settings.openaiImageWebModels.paidModel") }}
+                  </label>
+                  <input
+                    v-model="form.openai_image_web_paid_model"
+                    type="text"
+                    class="input font-mono text-sm"
+                    :placeholder="
+                      t('admin.settings.openaiImageWebModels.paidModelPlaceholder')
+                    "
+                  />
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.openaiImageWebModels.paidModelHint") }}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Platform Default Account Model Config -->
           <div class="card">
             <div
@@ -6668,6 +6728,7 @@ import type {
   AdminGroup,
   LoginAgreementDocument,
   NotifyEmailEntry,
+  OpenAIImageWebConversationModelSettings,
   Proxy,
   SupportQRCodeEntry,
 } from "@/types";
@@ -6983,7 +7044,10 @@ type SettingsForm = Omit<
   google_oauth_client_secret: string;
   force_email_on_third_party_signup: boolean;
   openai_advanced_scheduler_enabled: boolean;
-};
+} & Required<OpenAIImageWebConversationModelSettings>;
+
+type SettingsUpdatePayload =
+  UpdateSettingsRequest & OpenAIImageWebConversationModelSettings;
 
 const form = reactive<SettingsForm>({
   registration_enabled: true,
@@ -7141,6 +7205,8 @@ const form = reactive<SettingsForm>({
   fallback_model_openai: "gpt-4o",
   fallback_model_gemini: "gemini-2.5-pro",
   fallback_model_antigravity: "gemini-2.5-pro",
+  openai_image_web_free_model: "",
+  openai_image_web_paid_model: "",
   platform_default_account_model_config: {},
   // Identity patch (Claude -> Gemini)
   enable_identity_patch: true,
@@ -7802,6 +7868,8 @@ async function loadSettings() {
   loadFailed.value = false;
   try {
     const settings = await adminAPI.settings.getSettings();
+    const imageWebModelSettings =
+      settings as SystemSettings & OpenAIImageWebConversationModelSettings;
     settings.payment_load_balance_strategy =
       settings.payment_load_balance_strategy || "round-robin";
     // Only assign non-null values from backend (null means unconfigured, keep defaults)
@@ -7905,6 +7973,10 @@ async function loadSettings() {
       form.wechat_connect_mode,
     );
     form.oidc_connect_client_secret = "";
+    form.openai_image_web_free_model =
+      imageWebModelSettings.openai_image_web_free_model || "";
+    form.openai_image_web_paid_model =
+      imageWebModelSettings.openai_image_web_paid_model || "";
 
     // Load OpenAI fast/flex policy rules from bulk settings.
     // 仅当 payload 真的包含该字段时填充并标记为已加载；否则保持表单空值，
@@ -8215,7 +8287,7 @@ async function saveSettings() {
       form.wechat_connect_mode,
     );
 
-    const payload: UpdateSettingsRequest = {
+    const payload: SettingsUpdatePayload = {
       registration_enabled: form.registration_enabled,
       email_verify_enabled: form.email_verify_enabled,
       registration_email_suffix_whitelist:
@@ -8351,6 +8423,8 @@ async function saveSettings() {
       fallback_model_openai: form.fallback_model_openai,
       fallback_model_gemini: form.fallback_model_gemini,
       fallback_model_antigravity: form.fallback_model_antigravity,
+      openai_image_web_free_model: form.openai_image_web_free_model.trim(),
+      openai_image_web_paid_model: form.openai_image_web_paid_model.trim(),
       platform_default_account_model_config: platformDefaultAccountModelConfig,
       enable_identity_patch: form.enable_identity_patch,
       identity_patch_prompt: form.identity_patch_prompt,
@@ -9284,12 +9358,13 @@ async function handleSaveProvider(payload: Partial<ProviderInstance>) {
 
 async function handleToggleField(
   provider: ProviderInstance,
-  field: "enabled" | "refund_enabled" | "allow_user_refund",
+  field: "enabled" | "refund_enabled" | "allow_user_refund" | "invoice_enabled",
 ) {
   let newValue: boolean;
   if (field === "enabled") newValue = !provider.enabled;
   else if (field === "refund_enabled") newValue = !provider.refund_enabled;
-  else newValue = !provider.allow_user_refund;
+  else if (field === "allow_user_refund") newValue = !provider.allow_user_refund;
+  else newValue = !provider.invoice_enabled;
 
   if (field === "enabled" && newValue) {
     const conflict = findProviderEnablementConflict({

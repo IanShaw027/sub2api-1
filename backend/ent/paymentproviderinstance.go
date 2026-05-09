@@ -37,6 +37,8 @@ type PaymentProviderInstance struct {
 	RefundEnabled bool `json:"refund_enabled,omitempty"`
 	// AllowUserRefund holds the value of the "allow_user_refund" field.
 	AllowUserRefund bool `json:"allow_user_refund,omitempty"`
+	// InvoiceEnabled holds the value of the "invoice_enabled" field.
+	InvoiceEnabled bool `json:"invoice_enabled,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
@@ -49,7 +51,7 @@ func (*PaymentProviderInstance) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case paymentproviderinstance.FieldEnabled, paymentproviderinstance.FieldRefundEnabled, paymentproviderinstance.FieldAllowUserRefund:
+		case paymentproviderinstance.FieldEnabled, paymentproviderinstance.FieldRefundEnabled, paymentproviderinstance.FieldAllowUserRefund, paymentproviderinstance.FieldInvoiceEnabled:
 			values[i] = new(sql.NullBool)
 		case paymentproviderinstance.FieldID, paymentproviderinstance.FieldSortOrder:
 			values[i] = new(sql.NullInt64)
@@ -138,6 +140,12 @@ func (_m *PaymentProviderInstance) assignValues(columns []string, values []any) 
 			} else if value.Valid {
 				_m.AllowUserRefund = value.Bool
 			}
+		case paymentproviderinstance.FieldInvoiceEnabled:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field invoice_enabled", values[i])
+			} else if value.Valid {
+				_m.InvoiceEnabled = value.Bool
+			}
 		case paymentproviderinstance.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field created_at", values[i])
@@ -215,6 +223,9 @@ func (_m *PaymentProviderInstance) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("allow_user_refund=")
 	builder.WriteString(fmt.Sprintf("%v", _m.AllowUserRefund))
+	builder.WriteString(", ")
+	builder.WriteString("invoice_enabled=")
+	builder.WriteString(fmt.Sprintf("%v", _m.InvoiceEnabled))
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(_m.CreatedAt.Format(time.ANSIC))

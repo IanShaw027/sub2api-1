@@ -33,6 +33,8 @@ const (
 	FieldRefundEnabled = "refund_enabled"
 	// FieldAllowUserRefund holds the string denoting the allow_user_refund field in the database.
 	FieldAllowUserRefund = "allow_user_refund"
+	// FieldInvoiceEnabled holds the string denoting the invoice_enabled field in the database.
+	FieldInvoiceEnabled = "invoice_enabled"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
@@ -54,6 +56,7 @@ var Columns = []string{
 	FieldLimits,
 	FieldRefundEnabled,
 	FieldAllowUserRefund,
+	FieldInvoiceEnabled,
 	FieldCreatedAt,
 	FieldUpdatedAt,
 }
@@ -93,6 +96,8 @@ var (
 	DefaultRefundEnabled bool
 	// DefaultAllowUserRefund holds the default value on creation for the "allow_user_refund" field.
 	DefaultAllowUserRefund bool
+	// DefaultInvoiceEnabled holds the default value on creation for the "invoice_enabled" field.
+	DefaultInvoiceEnabled bool
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
@@ -157,6 +162,11 @@ func ByRefundEnabled(opts ...sql.OrderTermOption) OrderOption {
 // ByAllowUserRefund orders the results by the allow_user_refund field.
 func ByAllowUserRefund(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAllowUserRefund, opts...).ToFunc()
+}
+
+// ByInvoiceEnabled orders the results by the invoice_enabled field.
+func ByInvoiceEnabled(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldInvoiceEnabled, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.

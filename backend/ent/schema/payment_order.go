@@ -103,6 +103,12 @@ func (PaymentOrder) Fields() []ent.Field {
 		field.String("status").
 			MaxLen(30).
 			Default("PENDING"),
+		field.String("invoice_status").
+			MaxLen(20).
+			Default(""),
+		field.Int64("invoice_file_media_id").
+			Optional().
+			Nillable(),
 
 		// 退款信息
 		field.Float("refund_amount").
@@ -190,6 +196,7 @@ func (PaymentOrder) Indexes() []ent.Index {
 			Annotations(entsql.IndexWhere("out_trade_no <> ''")),
 		index.Fields("user_id"),
 		index.Fields("status"),
+		index.Fields("invoice_status"),
 		index.Fields("expires_at"),
 		index.Fields("created_at"),
 		index.Fields("paid_at"),

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -18,13 +19,15 @@ import (
 type PaymentHandler struct {
 	paymentService *service.PaymentService
 	configService  *service.PaymentConfigService
+	invoiceService *service.InvoiceService
 }
 
 // NewPaymentHandler creates a new admin PaymentHandler.
-func NewPaymentHandler(paymentService *service.PaymentService, configService *service.PaymentConfigService) *PaymentHandler {
+func NewPaymentHandler(paymentService *service.PaymentService, configService *service.PaymentConfigService, invoiceService *service.InvoiceService) *PaymentHandler {
 	return &PaymentHandler{
 		paymentService: paymentService,
 		configService:  configService,
+		invoiceService: invoiceService,
 	}
 }
 
@@ -208,6 +211,76 @@ func (h *PaymentHandler) ProcessRefund(c *gin.Context) {
 		return
 	}
 	response.Success(c, result)
+}
+
+// ListInvoices returns a paginated list of invoice applications.
+func (h *PaymentHandler) ListInvoices(c *gin.Context) {
+	page, pageSize := response.ParsePagination(c)
+	if h.invoiceService == nil {
+		response.ErrorFrom(c, infraerrors.ServiceUnavailable("INVOICE_SERVICE_UNAVAILABLE", "invoice service unavailable"))
+		return
+	}
+	items, total, err := h.invoiceService.List(c.Request.Context(), service.InvoiceListParams{
+		Page:     page,
+		PageSize: pageSize,
+		Status:   c.Query("status"),
+		Keyword:  c.Query("keyword"),
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Paginated(c, items, int64(total), page, pageSize)
+}
+
+// GetInvoiceDetail returns details for a single invoice application.
+func (h *PaymentHandler) GetInvoiceDetail(c *gin.Context) {
+	invoiceID, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	if h.invoiceService == nil {
+		response.ErrorFrom(c, infraerrors.ServiceUnavailable("INVOICE_SERVICE_UNAVAILABLE", "invoice service unavailable"))
+		return
+	}
+	item, err := h.invoiceService.GetByIDForAdmin(c.Request.Context(), invoiceID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, item)
+}
+
+// UploadInvoiceFile uploads the issued invoice file and marks the application as issued.
+func (h *PaymentHandler) UploadInvoiceFile(c *gin.Context) {
+	invoiceID, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	if h.invoiceService == nil {
+		response.ErrorFrom(c, infraerrors.ServiceUnavailable("INVOICE_SERVICE_UNAVAILABLE", "invoice service unavailable"))
+		return
+	}
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		response.BadRequest(c, "invoice file is required")
+		return
+	}
+	fileBytes, contentType, _, _, _, err := readAdminUploadedMedia(fileHeader, 64<<20)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	item, err := h.invoiceService.UploadFile(c.Request.Context(), invoiceID, service.InvoiceFileUploadInput{
+		FileName:    fileHeader.Filename,
+		ContentType: contentType,
+		File:        fileBytes,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, item)
 }
 
 // --- Subscription Plans ---
