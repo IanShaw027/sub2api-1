@@ -15,7 +15,11 @@
       </template>
 
       <template #table>
-        <div class="space-y-6">
+        <div
+          class="h-full"
+          :class="groupedMonitors.length > 0 ? 'overflow-y-auto pr-1' : ''"
+        >
+          <div class="space-y-6" :class="groupedMonitors.length === 0 ? 'h-full' : 'pb-1'">
           <template v-if="groupedMonitors.length === 0">
             <DataTable :columns="columns" :data="monitors" :loading="loading">
               <template #cell-name="{ row, value }">
@@ -43,6 +47,38 @@
 
               <template #cell-latency="{ row }">
                 <span class="text-sm text-gray-900 dark:text-gray-100">{{ formatLatency(row.primary_latency_ms) }}</span>
+              </template>
+
+              <template #cell-image_usage="{ row }">
+                <div v-if="row.provider === 'openai'" class="min-w-[220px] whitespace-normal">
+                  <div v-if="imageUsageLoadingMap[row.id]" class="text-xs text-gray-400 dark:text-gray-500">
+                    {{ t('common.loading') }}
+                  </div>
+                  <div v-else-if="openAIImageUsageByMonitorId[row.id]?.length" class="space-y-1">
+                    <div
+                      v-for="item in openAIImageUsageByMonitorId[row.id]"
+                      :key="item.key"
+                      class="rounded-lg border border-gray-200/80 px-2 py-1 dark:border-dark-700"
+                    >
+                      <div class="mb-1 flex flex-wrap items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400">
+                        <span class="rounded bg-gray-100 px-1.5 py-0.5 font-medium text-gray-700 dark:bg-dark-700 dark:text-gray-200">
+                          {{ item.label }}
+                        </span>
+                        <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-dark-700">
+                          {{ item.requestsLabel }}
+                        </span>
+                        <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-dark-700">
+                          {{ item.costLabel }}
+                        </span>
+                      </div>
+                      <div class="text-[10px] text-gray-400 dark:text-gray-500">
+                        {{ item.resetLabel }}
+                      </div>
+                    </div>
+                  </div>
+                  <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+                </div>
+                <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
               </template>
 
               <template #cell-enabled="{ row }">
@@ -76,16 +112,30 @@
               :key="group.provider"
               class="space-y-3"
             >
-              <div class="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                class="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2 text-left transition-colors hover:border-gray-300 hover:bg-gray-50 dark:border-dark-700 dark:bg-dark-900 dark:hover:border-dark-600 dark:hover:bg-dark-800"
+                @click="toggleProviderCollapse(group.provider)"
+              >
                 <div class="flex items-center gap-2">
+                  <Icon
+                    :name="isProviderCollapsed(group.provider) ? 'chevronRight' : 'chevronDown'"
+                    size="sm"
+                    class="text-gray-400 dark:text-gray-500"
+                  />
                   <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" :class="providerBadgeClass(group.provider)">
                     {{ providerLabel(group.provider) }}
                   </span>
                   <span class="text-sm text-gray-500 dark:text-gray-400">{{ group.items.length }}</span>
                 </div>
-              </div>
+              </button>
 
-              <DataTable :columns="columns" :data="group.items" :loading="loading">
+              <DataTable
+                v-if="!isProviderCollapsed(group.provider)"
+                :columns="columns"
+                :data="group.items"
+                :loading="loading"
+              >
                 <template #cell-name="{ row, value }">
                   <div class="flex items-center gap-1.5">
                     <span class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
@@ -113,6 +163,38 @@
                   <span class="text-sm text-gray-900 dark:text-gray-100">{{ formatLatency(row.primary_latency_ms) }}</span>
                 </template>
 
+                <template #cell-image_usage="{ row }">
+                  <div v-if="row.provider === 'openai'" class="min-w-[220px] whitespace-normal">
+                    <div v-if="imageUsageLoadingMap[row.id]" class="text-xs text-gray-400 dark:text-gray-500">
+                      {{ t('common.loading') }}
+                    </div>
+                    <div v-else-if="openAIImageUsageByMonitorId[row.id]?.length" class="space-y-1">
+                      <div
+                        v-for="item in openAIImageUsageByMonitorId[row.id]"
+                        :key="item.key"
+                        class="rounded-lg border border-gray-200/80 px-2 py-1 dark:border-dark-700"
+                      >
+                        <div class="mb-1 flex flex-wrap items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400">
+                          <span class="rounded bg-gray-100 px-1.5 py-0.5 font-medium text-gray-700 dark:bg-dark-700 dark:text-gray-200">
+                            {{ item.label }}
+                          </span>
+                          <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-dark-700">
+                            {{ item.requestsLabel }}
+                          </span>
+                          <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-dark-700">
+                            {{ item.costLabel }}
+                          </span>
+                        </div>
+                        <div class="text-[10px] text-gray-400 dark:text-gray-500">
+                          {{ item.resetLabel }}
+                        </div>
+                      </div>
+                    </div>
+                    <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+                  </div>
+                  <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+                </template>
+
                 <template #cell-enabled="{ row }">
                   <Toggle :modelValue="row.enabled" @update:modelValue="toggleEnabled(row)" />
                 </template>
@@ -129,6 +211,7 @@
               </DataTable>
             </section>
           </template>
+          </div>
         </div>
       </template>
 
@@ -177,7 +260,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
@@ -188,6 +271,11 @@ import type {
   ListParams,
   Provider,
 } from '@/api/admin/channelMonitor'
+import type {
+  Account,
+  AccountUsageInfo,
+  UsageProgress,
+} from '@/types'
 import type { Column } from '@/components/common/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
@@ -207,6 +295,7 @@ import MonitorActionsCell from '@/components/admin/monitor/MonitorActionsCell.vu
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
 import { PROVIDERS } from '@/constants/channelMonitor'
+import { formatCurrency, formatDateTime } from '@/utils/format'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -232,9 +321,23 @@ const showDeleteDialog = ref(false)
 const deleting = ref<ChannelMonitor | null>(null)
 const showRunResult = ref(false)
 const runResults = ref<CheckResult[]>([])
+const collapsedProviders = ref<Record<string, boolean>>({})
+const openAIOAuthAccounts = ref<Account[]>([])
+const openAIOAuthAccountsLoaded = ref(false)
+const openAIImageUsageByMonitorId = ref<Record<number, OpenAIImageUsageRow[]>>({})
+const imageUsageLoadingMap = ref<Record<number, boolean>>({})
 
 let abortController: AbortController | null = null
 let searchTimeout: ReturnType<typeof setTimeout> | null = null
+let imageUsageRequestToken = 0
+
+interface OpenAIImageUsageRow {
+  key: string
+  label: string
+  requestsLabel: string
+  costLabel: string
+  resetLabel: string
+}
 
 const columns = computed<Column[]>(() => [
   { key: 'name', label: t('admin.channelMonitor.columns.name'), sortable: false },
@@ -242,12 +345,18 @@ const columns = computed<Column[]>(() => [
   { key: 'primary_model', label: t('admin.channelMonitor.columns.primaryModel'), sortable: false },
   { key: 'availability_7d', label: t('admin.channelMonitor.columns.availability7d'), sortable: false },
   { key: 'latency', label: t('admin.channelMonitor.columns.latency'), sortable: false },
+  {
+    key: 'image_usage',
+    label: t('admin.channelMonitor.columns.imageUsage'),
+    sortable: false,
+    class: '!whitespace-normal align-top min-w-[240px]',
+  },
   { key: 'enabled', label: t('admin.channelMonitor.columns.enabled'), sortable: false },
   { key: 'actions', label: t('admin.channelMonitor.columns.actions'), sortable: false },
 ])
 
 const groupedMonitors = computed(() => {
-  if (loading.value || monitors.value.length === 0) return []
+  if (monitors.value.length === 0) return []
   const order = new Map<string, number>(PROVIDERS.map((provider, index) => [provider, index]))
   const groups = new Map<string, ChannelMonitor[]>()
   for (const monitor of monitors.value) {
@@ -259,6 +368,23 @@ const groupedMonitors = computed(() => {
   return Array.from(groups.entries())
     .sort(([a], [b]) => (order.get(a) ?? Number.MAX_SAFE_INTEGER) - (order.get(b) ?? Number.MAX_SAFE_INTEGER) || a.localeCompare(b))
     .map(([provider, items]) => ({ provider, items }))
+})
+
+const openAIOAuthAccountMap = computed(() => {
+  const sorted = [...openAIOAuthAccounts.value].sort((a, b) => {
+    if (a.status === b.status) return a.id - b.id
+    if (a.status === 'active') return -1
+    if (b.status === 'active') return 1
+    return a.id - b.id
+  })
+  const mapped = new Map<string, Account>()
+  for (const account of sorted) {
+    const normalizedName = normalizeMonitorName(account.name)
+    if (normalizedName && !mapped.has(normalizedName)) {
+      mapped.set(normalizedName, account)
+    }
+  }
+  return mapped
 })
 
 const deleteConfirmMessage = computed(() => {
@@ -285,6 +411,7 @@ async function reload() {
     if (ctrl.signal.aborted || abortController !== ctrl) return
     monitors.value = res.items || []
     pagination.total = res.total
+    void preloadOpenAIImageUsage(monitors.value)
   } catch (err: unknown) {
     const e = err as { name?: string; code?: string }
     if (e?.name === 'AbortError' || e?.code === 'ERR_CANCELED') return
@@ -375,6 +502,145 @@ async function confirmDelete() {
     appStore.showError(extractApiErrorMessage(err, t('common.error')))
   }
 }
+
+function normalizeMonitorName(value: string | null | undefined): string {
+  return (value || '').trim().toLowerCase()
+}
+
+function toggleProviderCollapse(provider: string) {
+  collapsedProviders.value = {
+    ...collapsedProviders.value,
+    [provider]: !collapsedProviders.value[provider],
+  }
+}
+
+function isProviderCollapsed(provider: string): boolean {
+  return collapsedProviders.value[provider] === true
+}
+
+function formatImageRequests(value: number): string {
+  return `${value.toLocaleString()} img`
+}
+
+function formatResetCountdown(progress: UsageProgress | null | undefined): string {
+  if (!progress) return '-'
+  const remainingSeconds = Number(progress.remaining_seconds || 0)
+  if (remainingSeconds > 0) {
+    const days = Math.floor(remainingSeconds / 86400)
+    const hours = Math.floor((remainingSeconds % 86400) / 3600)
+    const minutes = Math.floor((remainingSeconds % 3600) / 60)
+    if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`
+    if (hours > 0) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`
+    if (minutes > 0) return `${minutes}m`
+    return `${remainingSeconds}s`
+  }
+  if (progress.resets_at) {
+    return formatDateTime(progress.resets_at)
+  }
+  return '-'
+}
+
+function buildUsageRow(key: string, label: string, progress: UsageProgress | null | undefined): OpenAIImageUsageRow | null {
+  if (!progress) return null
+  const requests = Number(progress.window_stats?.requests ?? progress.used_requests ?? 0)
+  const cost = Number(progress.window_stats?.cost ?? 0)
+  return {
+    key,
+    label,
+    requestsLabel: formatImageRequests(requests),
+    costLabel: formatCurrency(cost),
+    resetLabel: formatResetCountdown(progress),
+  }
+}
+
+function buildOpenAIImageUsageRows(usage: AccountUsageInfo | null | undefined): OpenAIImageUsageRow[] {
+  if (!usage) return []
+  return [
+    buildUsageRow('codex-5h', 'codex 5h', usage.openai_image_codex_five_hour),
+    buildUsageRow('codex-7d', 'codex 7d', usage.openai_image_codex_seven_day),
+    buildUsageRow('web2api-5h', 'web2api 5h', usage.openai_image_web2api_five_hour),
+  ].filter((item): item is OpenAIImageUsageRow => item !== null)
+}
+
+async function ensureOpenAIOAuthAccountsLoaded() {
+  if (openAIOAuthAccountsLoaded.value) return
+  const accounts: Account[] = []
+  let page = 1
+  let pages = 1
+
+  do {
+    const res = await adminAPI.accounts.list(page, 200, {
+      platform: 'openai',
+      type: 'oauth',
+    })
+    accounts.push(...(res.items || []))
+    pages = Number(res.pages || 1)
+    page += 1
+  } while (page <= pages)
+
+  openAIOAuthAccounts.value = accounts
+  openAIOAuthAccountsLoaded.value = true
+}
+
+async function preloadOpenAIImageUsage(rows: ChannelMonitor[]) {
+  const token = ++imageUsageRequestToken
+  const openAIRows = rows.filter((row) => row.provider === 'openai')
+  if (openAIRows.length === 0) {
+    openAIImageUsageByMonitorId.value = {}
+    imageUsageLoadingMap.value = {}
+    return
+  }
+
+  openAIImageUsageByMonitorId.value = {}
+  imageUsageLoadingMap.value = Object.fromEntries(openAIRows.map((row) => [row.id, true]))
+
+  try {
+    await ensureOpenAIOAuthAccountsLoaded()
+  } catch {
+    if (token === imageUsageRequestToken) {
+      openAIImageUsageByMonitorId.value = {}
+      imageUsageLoadingMap.value = {}
+    }
+    return
+  }
+
+  if (token !== imageUsageRequestToken) return
+
+  const matchedRows = openAIRows
+    .map((row) => ({
+      row,
+      account: openAIOAuthAccountMap.value.get(normalizeMonitorName(row.name)) || null,
+    }))
+    .filter((item): item is { row: ChannelMonitor; account: Account } => item.account !== null)
+
+  const usageEntries = await Promise.all(
+    matchedRows.map(async ({ row, account }) => {
+      try {
+        const usage = await adminAPI.accounts.getUsage(account.id)
+        return [row.id, buildOpenAIImageUsageRows(usage)] as const
+      } catch {
+        return [row.id, []] as const
+      }
+    })
+  )
+
+  if (token !== imageUsageRequestToken) return
+
+  openAIImageUsageByMonitorId.value = Object.fromEntries(usageEntries)
+  imageUsageLoadingMap.value = {}
+}
+
+watch(
+  groupedMonitors,
+  (groups) => {
+    const nextState: Record<string, boolean> = {}
+    for (const group of groups) {
+      nextState[group.provider] = collapsedProviders.value[group.provider] ?? false
+    }
+    collapsedProviders.value = nextState
+  },
+  { immediate: true }
+)
 
 onMounted(reload)
 onUnmounted(() => {

@@ -3194,6 +3194,7 @@ export default {
         primaryModel: 'Primary Model',
         availability7d: '7d Availability',
         latency: 'Latency (ms)',
+        imageUsage: 'Image Usage',
         enabled: 'Enabled',
         actions: 'Actions'
       },
