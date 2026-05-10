@@ -37,6 +37,7 @@ type MediaAsset struct {
 	ID                 int64      `json:"id"`
 	BizType            string     `json:"biz_type"`
 	BizID              string     `json:"biz_id"`
+	StorageProfileID   string     `json:"storage_profile_id,omitempty"`
 	Bucket             string     `json:"bucket"`
 	ObjectKey          string     `json:"object_key"`
 	ThumbnailObjectKey string     `json:"thumbnail_object_key"`
@@ -122,8 +123,8 @@ type MediaRepository interface {
 }
 
 type MediaObjectStore interface {
-	Upload(ctx context.Context, bucket, objectKey string, body []byte, contentType string) error
-	Download(ctx context.Context, bucket, objectKey string) (io.ReadCloser, error)
-	Delete(ctx context.Context, bucket, objectKey string) error
-	Stat(ctx context.Context, bucket, objectKey string) (int64, error)
+	Upload(ctx context.Context, cfg MediaStorageRuntimeConfig, bucket, objectKey string, body []byte, contentType string) error
+	Download(ctx context.Context, cfg MediaStorageRuntimeConfig, bucket, objectKey string) (io.ReadCloser, error)
+	Delete(ctx context.Context, cfg MediaStorageRuntimeConfig, bucket, objectKey string) error
+	Stat(ctx context.Context, cfg MediaStorageRuntimeConfig, bucket, objectKey string) (int64, error)
 }

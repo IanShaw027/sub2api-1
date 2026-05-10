@@ -39,7 +39,11 @@ type IngestImageReferenceInput struct {
 }
 
 func (s *MediaService) IngestImageReference(ctx context.Context, input IngestImageReferenceInput) (*MediaAsset, error) {
-	if s == nil || !s.isEnabled() {
+	if s == nil {
+		return nil, ErrMediaStorageDisabled
+	}
+	storageCfg := s.currentStorageConfig(ctx)
+	if !storageCfg.Enabled {
 		return nil, ErrMediaStorageDisabled
 	}
 	body, contentType, fileName, err := resolveImageReference(ctx, s.cfg, input.Source, input.FileName, input.MaxBytes)
@@ -66,11 +70,11 @@ func (s *MediaService) IngestImageReference(ctx context.Context, input IngestIma
 		return nil, err
 	}
 
-	objectKey, err := s.buildObjectKey(bizType, bizID, fileName, contentType)
+	objectKey, err := s.buildObjectKey(storageCfg, bizType, bizID, fileName, contentType)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.store.Upload(ctx, s.bucket(), objectKey, body, contentType); err != nil {
+	if err := s.store.Upload(ctx, storageCfg, storageCfg.Bucket, objectKey, body, contentType); err != nil {
 		return nil, fmt.Errorf("upload media object: %w", err)
 	}
 
@@ -79,7 +83,8 @@ func (s *MediaService) IngestImageReference(ctx context.Context, input IngestIma
 	asset := &MediaAsset{
 		BizType:          bizType,
 		BizID:            bizID,
-		Bucket:           s.bucket(),
+		StorageProfileID: storageCfg.ProfileID,
+		Bucket:           storageCfg.Bucket,
 		ObjectKey:        objectKey,
 		Visibility:       visibility,
 		MIMEType:         contentType,
@@ -92,7 +97,7 @@ func (s *MediaService) IngestImageReference(ctx context.Context, input IngestIma
 		OriginalFileName: fileName,
 	}
 	if err := s.repo.Create(ctx, asset); err != nil {
-		_ = s.store.Delete(ctx, s.bucket(), objectKey)
+		_ = s.store.Delete(ctx, storageCfg, storageCfg.Bucket, objectKey)
 		return nil, fmt.Errorf("create media asset: %w", err)
 	}
 	return asset, nil

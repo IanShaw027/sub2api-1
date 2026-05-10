@@ -288,6 +288,163 @@ func TestBackupService_S3ConfigKeepExistingSecret(t *testing.T) {
 	require.Equal(t, "AKID-NEW", internal.AccessKeyID)
 }
 
+func TestBackupService_ObjectStorageSettings_MultiProfileAssignments(t *testing.T) {
+	repo := newMockSettingRepo()
+	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())
+	provider := NewMediaStorageConfigProvider(repo, &plainEncryptor{}, svc.cfg)
+	svc.SetMediaStorageConfigProvider(provider)
+
+	settings, err := svc.UpdateObjectStorageSettings(context.Background(), ObjectStorageSettings{
+		Profiles: []ObjectStorageProfile{
+			{
+				ID:              "backup",
+				Name:            "Backup R2",
+				Provider:        "r2",
+				Endpoint:        "https://account.r2.cloudflarestorage.com",
+				Region:          "auto",
+				Bucket:          "backup-bucket",
+				AccessKeyID:     "backup-ak",
+				SecretAccessKey: "backup-secret",
+			},
+			{
+				ID:              "media",
+				Name:            "Media OSS",
+				Provider:        "oss",
+				Endpoint:        "https://oss-cn-hangzhou.aliyuncs.com",
+				Region:          "oss-cn-hangzhou",
+				Bucket:          "media-bucket",
+				AccessKeyID:     "media-ak",
+				SecretAccessKey: "media-secret",
+			},
+		},
+		BackupProfileID:    "backup",
+		BackupPrefix:       "db-backups/",
+		MediaEnabled:       true,
+		MediaProfileID:     "media",
+		MediaPublicBaseURL: "https://source.example.com",
+		MediaPrefix:        "uploads",
+	})
+	require.NoError(t, err)
+	require.Len(t, settings.Profiles, 2)
+	require.Equal(t, "backup", settings.BackupProfileID)
+	require.Equal(t, "media", settings.MediaProfileID)
+	for _, profile := range settings.Profiles {
+		require.Empty(t, profile.SecretAccessKey)
+		require.True(t, profile.SecretConfigured)
+	}
+
+	raw, err := repo.GetValue(context.Background(), settingKeyObjectStorageConfig)
+	require.NoError(t, err)
+	var stored ObjectStorageSettings
+	require.NoError(t, json.Unmarshal([]byte(raw), &stored))
+	require.Len(t, stored.Profiles, 2)
+	require.Equal(t, "ENC:backup-secret", stored.Profiles[0].SecretAccessKey)
+	require.Equal(t, "ENC:media-secret", stored.Profiles[1].SecretAccessKey)
+
+	backupCfg, err := svc.loadS3Config(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, backupCfg)
+	require.Equal(t, "https://account.r2.cloudflarestorage.com", backupCfg.Endpoint)
+	require.Equal(t, "backup-bucket", backupCfg.Bucket)
+	require.Equal(t, "backup-ak", backupCfg.AccessKeyID)
+	require.Equal(t, "backup-secret", backupCfg.SecretAccessKey)
+	require.Equal(t, "db-backups/", backupCfg.Prefix)
+
+	mediaCfg, err := provider.Current(context.Background())
+	require.NoError(t, err)
+	require.True(t, mediaCfg.Enabled)
+	require.Equal(t, "https://oss-cn-hangzhou.aliyuncs.com", mediaCfg.Endpoint)
+	require.Equal(t, "media-bucket", mediaCfg.Bucket)
+	require.Equal(t, "media-ak", mediaCfg.AccessKeyID)
+	require.Equal(t, "media-secret", mediaCfg.SecretAccessKey)
+	require.Equal(t, "https://source.example.com", mediaCfg.PublicBaseURL)
+	require.Equal(t, "uploads", mediaCfg.ObjectPrefix)
+}
+
+func TestBackupService_TestObjectStorageProfile_UsesStoredSecretWhenOmitted(t *testing.T) {
+	repo := newMockSettingRepo()
+	store := newMockObjectStore()
+	var captured *BackupS3Config
+	svc := NewBackupService(
+		repo,
+		&config.Config{},
+		&plainEncryptor{},
+		func(_ context.Context, cfg *BackupS3Config) (BackupObjectStore, error) {
+			cloned := *cfg
+			captured = &cloned
+			return store, nil
+		},
+		&mockDumper{},
+	)
+
+	_, err := svc.UpdateObjectStorageSettings(context.Background(), ObjectStorageSettings{
+		Profiles: []ObjectStorageProfile{{
+			ID:              "media",
+			Name:            "Media OSS",
+			Provider:        "oss",
+			Endpoint:        "https://oss-cn-beijing.aliyuncs.com",
+			Region:          "oss-cn-beijing",
+			Bucket:          "media-bucket",
+			AccessKeyID:     "media-ak",
+			SecretAccessKey: "stored-secret",
+		}},
+		MediaEnabled:       true,
+		MediaProfileID:     "media",
+		MediaPublicBaseURL: "https://source.example.com",
+	})
+	require.NoError(t, err)
+
+	err = svc.TestObjectStorageProfile(context.Background(), ObjectStorageProfile{
+		ID:             "media",
+		Name:           "Media OSS",
+		Provider:       "oss",
+		Endpoint:       "https://oss-cn-beijing.aliyuncs.com",
+		Region:         "oss-cn-beijing",
+		Bucket:         "media-bucket",
+		AccessKeyID:    "media-ak",
+		ForcePathStyle: false,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, captured)
+	require.Equal(t, "stored-secret", captured.SecretAccessKey)
+}
+
+func TestEffectiveObjectStorageSettings_LegacyMigration(t *testing.T) {
+	repo := newMockSettingRepo()
+	enabled := true
+	legacy := BackupS3Config{
+		Endpoint:           "https://account.r2.cloudflarestorage.com",
+		Region:             "auto",
+		Bucket:             "legacy-bucket",
+		AccessKeyID:        "legacy-ak",
+		SecretAccessKey:    "ENC:legacy-secret",
+		Prefix:             "legacy-backups/",
+		ForcePathStyle:     false,
+		MediaEnabled:       &enabled,
+		MediaPublicBaseURL: "https://source.example.com",
+		MediaPrefix:        "media",
+	}
+	data, err := json.Marshal(legacy)
+	require.NoError(t, err)
+	require.NoError(t, repo.Set(context.Background(), settingKeyBackupS3Config, string(data)))
+
+	settings, err := effectiveObjectStorageSettings(context.Background(), repo, &plainEncryptor{}, &config.Config{})
+	require.NoError(t, err)
+	require.Len(t, settings.Profiles, 1)
+	require.Equal(t, "default", settings.Profiles[0].ID)
+	require.Equal(t, "r2", settings.Profiles[0].Provider)
+	require.Equal(t, "https://account.r2.cloudflarestorage.com", settings.Profiles[0].Endpoint)
+	require.Equal(t, "legacy-bucket", settings.Profiles[0].Bucket)
+	require.Equal(t, "legacy-ak", settings.Profiles[0].AccessKeyID)
+	require.Equal(t, "legacy-secret", settings.Profiles[0].SecretAccessKey)
+	require.Equal(t, "legacy-backups/", settings.BackupPrefix)
+	require.Equal(t, "default", settings.BackupProfileID)
+	require.True(t, settings.MediaEnabled)
+	require.Equal(t, "default", settings.MediaProfileID)
+	require.Equal(t, "https://source.example.com", settings.MediaPublicBaseURL)
+	require.Equal(t, "media", settings.MediaPrefix)
+}
+
 func TestBackupService_SaveRecordConcurrency(t *testing.T) {
 	repo := newMockSettingRepo()
 	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())
@@ -549,6 +706,32 @@ func TestBackupService_LoadS3Config_Corrupted(t *testing.T) {
 	cfg, err := svc.loadS3Config(context.Background())
 	require.Error(t, err)
 	require.Nil(t, cfg)
+}
+
+func TestBackupService_LoadS3Config_DoesNotFallbackToMediaEnv(t *testing.T) {
+	repo := newMockSettingRepo()
+	cfg := &config.Config{}
+	cfg.Media.Enabled = true
+	cfg.Media.Endpoint = "https://account.r2.cloudflarestorage.com"
+	cfg.Media.Region = "auto"
+	cfg.Media.Bucket = "media-bucket"
+	cfg.Media.AccessKeyID = "media-ak"
+	cfg.Media.SecretAccessKey = "media-secret"
+	cfg.Media.PublicBaseURL = "https://source.example.com"
+
+	svc := NewBackupService(
+		repo,
+		cfg,
+		&plainEncryptor{},
+		func(_ context.Context, _ *BackupS3Config) (BackupObjectStore, error) {
+			return newMockObjectStore(), nil
+		},
+		&mockDumper{},
+	)
+
+	storageCfg, err := svc.loadS3Config(context.Background())
+	require.NoError(t, err)
+	require.Nil(t, storageCfg)
 }
 
 // ─── Async Backup Tests ───

@@ -68,17 +68,17 @@ type settingHandlerMediaStoreStub struct {
 	deleteCount int
 }
 
-func (*settingHandlerMediaStoreStub) Upload(context.Context, string, string, []byte, string) error {
+func (*settingHandlerMediaStoreStub) Upload(context.Context, service.MediaStorageRuntimeConfig, string, string, []byte, string) error {
 	return nil
 }
-func (*settingHandlerMediaStoreStub) Download(context.Context, string, string) (io.ReadCloser, error) {
+func (*settingHandlerMediaStoreStub) Download(context.Context, service.MediaStorageRuntimeConfig, string, string) (io.ReadCloser, error) {
 	return nil, nil
 }
-func (s *settingHandlerMediaStoreStub) Delete(context.Context, string, string) error {
+func (s *settingHandlerMediaStoreStub) Delete(context.Context, service.MediaStorageRuntimeConfig, string, string) error {
 	s.deleteCount++
 	return nil
 }
-func (*settingHandlerMediaStoreStub) Stat(context.Context, string, string) (int64, error) {
+func (*settingHandlerMediaStoreStub) Stat(context.Context, service.MediaStorageRuntimeConfig, string, string) (int64, error) {
 	return 0, nil
 }
 
@@ -158,7 +158,11 @@ func TestSettingHandler_UpdateSettings_MigratesMediaReferences(t *testing.T) {
 	mediaSvc := service.NewMediaService(&settingHandlerMediaRepoStub{}, &settingHandlerMediaStoreStub{}, &config.Config{
 		Media: config.MediaConfig{
 			Enabled:            true,
+			Endpoint:           "https://storage.example.com",
+			Region:             "auto",
 			Bucket:             "media",
+			AccessKeyID:        "test-ak",
+			SecretAccessKey:    "test-sk",
 			PublicBaseURL:      "https://media.example",
 			MaxUploadSizeBytes: 1024 * 1024,
 		},
@@ -223,7 +227,11 @@ func TestSettingHandler_UpdateSettings_DoesNotUploadMediaWhenValidationFails(t *
 	mediaSvc := service.NewMediaService(mediaRepo, &settingHandlerMediaStoreStub{}, &config.Config{
 		Media: config.MediaConfig{
 			Enabled:            true,
+			Endpoint:           "https://storage.example.com",
+			Region:             "auto",
 			Bucket:             "media",
+			AccessKeyID:        "test-ak",
+			SecretAccessKey:    "test-sk",
 			PublicBaseURL:      "https://media.example",
 			MaxUploadSizeBytes: 1024 * 1024,
 		},
@@ -297,7 +305,11 @@ func TestSettingHandler_UpdateSettings_ReusesManagedMediaURLs(t *testing.T) {
 	mediaSvc := service.NewMediaService(mediaRepo, &settingHandlerMediaStoreStub{}, &config.Config{
 		Media: config.MediaConfig{
 			Enabled:            true,
+			Endpoint:           "https://storage.example.com",
+			Region:             "auto",
 			Bucket:             "media",
+			AccessKeyID:        "test-ak",
+			SecretAccessKey:    "test-sk",
 			PublicBaseURL:      "https://media.example",
 			MaxUploadSizeBytes: 1024 * 1024,
 		},
@@ -348,7 +360,11 @@ func TestSettingHandler_UpdateSettings_CleansUpMigratedMediaWhenPersistenceFails
 	mediaSvc := service.NewMediaService(mediaRepo, mediaStore, &config.Config{
 		Media: config.MediaConfig{
 			Enabled:            true,
+			Endpoint:           "https://storage.example.com",
+			Region:             "auto",
 			Bucket:             "media",
+			AccessKeyID:        "test-ak",
+			SecretAccessKey:    "test-sk",
 			PublicBaseURL:      "https://media.example",
 			MaxUploadSizeBytes: 1024 * 1024,
 		},
@@ -399,7 +415,11 @@ func TestSettingHandler_UpdateSettings_KeepsMigratedMediaWhenPaymentConfigReadba
 	mediaSvc := service.NewMediaService(mediaRepo, mediaStore, &config.Config{
 		Media: config.MediaConfig{
 			Enabled:            true,
+			Endpoint:           "https://storage.example.com",
+			Region:             "auto",
 			Bucket:             "media",
+			AccessKeyID:        "test-ak",
+			SecretAccessKey:    "test-sk",
 			PublicBaseURL:      "https://media.example",
 			MaxUploadSizeBytes: 1024 * 1024,
 		},
@@ -450,7 +470,11 @@ func TestSettingHandler_UpdateSettings_CleansUpMigratedMediaWhenFastPolicySaveFa
 	mediaSvc := service.NewMediaService(mediaRepo, mediaStore, &config.Config{
 		Media: config.MediaConfig{
 			Enabled:            true,
+			Endpoint:           "https://storage.example.com",
+			Region:             "auto",
 			Bucket:             "media",
+			AccessKeyID:        "test-ak",
+			SecretAccessKey:    "test-sk",
 			PublicBaseURL:      "https://media.example",
 			MaxUploadSizeBytes: 1024 * 1024,
 		},
@@ -507,7 +531,11 @@ func TestSettingHandler_UpdateSettings_PreservesPartialFieldsWhenSavingPaymentHe
 	mediaSvc := service.NewMediaService(mediaRepo, &settingHandlerMediaStoreStub{}, &config.Config{
 		Media: config.MediaConfig{
 			Enabled:            true,
+			Endpoint:           "https://storage.example.com",
+			Region:             "auto",
 			Bucket:             "media",
+			AccessKeyID:        "test-ak",
+			SecretAccessKey:    "test-sk",
 			PublicBaseURL:      "https://media.example",
 			MaxUploadSizeBytes: 1024 * 1024,
 		},

@@ -511,12 +511,22 @@ func ProvideBackupService(
 	settingRepo SettingRepository,
 	cfg *config.Config,
 	encryptor SecretEncryptor,
+	mediaConfigProvider *MediaStorageConfigProvider,
 	storeFactory BackupObjectStoreFactory,
 	dumper DBDumper,
 ) *BackupService {
 	svc := NewBackupService(settingRepo, cfg, encryptor, storeFactory, dumper)
+	svc.SetMediaStorageConfigProvider(mediaConfigProvider)
 	svc.Start()
 	return svc
+}
+
+func ProvideMediaStorageConfigProvider(
+	settingRepo SettingRepository,
+	cfg *config.Config,
+	encryptor SecretEncryptor,
+) *MediaStorageConfigProvider {
+	return NewMediaStorageConfigProvider(settingRepo, encryptor, cfg)
 }
 
 // ProvideSettingService wires SettingService with group reader and proxy repo.

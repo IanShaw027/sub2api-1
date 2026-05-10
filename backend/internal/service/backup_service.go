@@ -62,13 +62,16 @@ type BackupObjectStoreFactory func(ctx context.Context, cfg *BackupS3Config) (Ba
 
 // BackupS3Config S3 兼容存储配置（支持 Cloudflare R2）
 type BackupS3Config struct {
-	Endpoint        string `json:"endpoint"` // e.g. https://<account_id>.r2.cloudflarestorage.com
-	Region          string `json:"region"`   // R2 用 "auto"
-	Bucket          string `json:"bucket"`
-	AccessKeyID     string `json:"access_key_id"`
-	SecretAccessKey string `json:"secret_access_key,omitempty"` //nolint:revive // field name follows AWS convention
-	Prefix          string `json:"prefix"`                      // S3 key 前缀，如 "backups/"
-	ForcePathStyle  bool   `json:"force_path_style"`
+	Endpoint           string `json:"endpoint"` // e.g. https://<account_id>.r2.cloudflarestorage.com
+	Region             string `json:"region"`   // R2 用 "auto"
+	Bucket             string `json:"bucket"`
+	AccessKeyID        string `json:"access_key_id"`
+	SecretAccessKey    string `json:"secret_access_key,omitempty"` //nolint:revive // field name follows AWS convention
+	Prefix             string `json:"prefix"`                      // S3 key 前缀，如 "backups/"
+	ForcePathStyle     bool   `json:"force_path_style"`
+	MediaEnabled       *bool  `json:"media_enabled,omitempty"`
+	MediaPublicBaseURL string `json:"media_public_base_url,omitempty"`
+	MediaPrefix        string `json:"media_prefix,omitempty"`
 }
 
 // IsConfigured 检查必要字段是否已配置
@@ -106,10 +109,11 @@ type BackupRecord struct {
 // BackupService 数据库备份恢复服务
 type BackupService struct {
 	settingRepo  SettingRepository
-	dbCfg        *config.DatabaseConfig
+	cfg          *config.Config
 	encryptor    SecretEncryptor
 	storeFactory BackupObjectStoreFactory
 	dumper       DBDumper
+	mediaConfig  *MediaStorageConfigProvider
 
 	opMu      sync.Mutex // 保护 backingUp/restoring 标志
 	backingUp bool
@@ -141,13 +145,20 @@ func NewBackupService(
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 	return &BackupService{
 		settingRepo:  settingRepo,
-		dbCfg:        &cfg.Database,
+		cfg:          cfg,
 		encryptor:    encryptor,
 		storeFactory: storeFactory,
 		dumper:       dumper,
 		bgCtx:        bgCtx,
 		bgCancel:     bgCancel,
 	}
+}
+
+func (s *BackupService) SetMediaStorageConfigProvider(provider *MediaStorageConfigProvider) {
+	if s == nil {
+		return
+	}
+	s.mediaConfig = provider
 }
 
 // Start 启动定时备份调度器并清理孤立记录
@@ -237,66 +248,152 @@ func (s *BackupService) Stop() {
 // ─── S3 配置管理 ───
 
 func (s *BackupService) GetS3Config(ctx context.Context) (*BackupS3Config, error) {
-	cfg, err := s.loadS3Config(ctx)
+	settings, err := effectiveObjectStorageSettings(ctx, s.settingRepo, s.encryptor, s.config())
 	if err != nil {
 		return nil, err
 	}
+	cfg := resolveBackupS3Config(settings)
 	if cfg == nil {
 		return &BackupS3Config{}, nil
 	}
-	// 脱敏返回
+	cfg.MediaEnabled = boolPtr(settings.MediaEnabled)
+	cfg.MediaPublicBaseURL = settings.MediaPublicBaseURL
+	cfg.MediaPrefix = settings.MediaPrefix
 	cfg.SecretAccessKey = ""
 	return cfg, nil
 }
 
 func (s *BackupService) UpdateS3Config(ctx context.Context, cfg BackupS3Config) (*BackupS3Config, error) {
-	// 如果没提供 secret，保留原有值
-	if cfg.SecretAccessKey == "" {
+	legacyToStore := cfg
+	if strings.TrimSpace(legacyToStore.SecretAccessKey) == "" {
 		old, _ := s.loadS3Config(ctx)
 		if old != nil {
-			cfg.SecretAccessKey = old.SecretAccessKey
+			legacyToStore.SecretAccessKey = old.SecretAccessKey
 		}
-	} else {
-		// 加密 SecretAccessKey
-		encrypted, err := s.encryptor.Encrypt(cfg.SecretAccessKey)
+	}
+	if strings.TrimSpace(legacyToStore.SecretAccessKey) != "" && s.encryptor != nil {
+		encrypted, err := s.encryptor.Encrypt(legacyToStore.SecretAccessKey)
 		if err != nil {
-			return nil, fmt.Errorf("encrypt secret: %w", err)
+			return nil, fmt.Errorf("encrypt legacy secret: %w", err)
 		}
-		cfg.SecretAccessKey = encrypted
+		legacyToStore.SecretAccessKey = encrypted
 	}
 
-	data, err := json.Marshal(cfg)
+	settings := ObjectStorageSettings{
+		Profiles: []ObjectStorageProfile{{
+			ID:              "default",
+			Name:            "Default Storage",
+			Provider:        detectStorageProvider(cfg.Endpoint),
+			Endpoint:        cfg.Endpoint,
+			Region:          cfg.Region,
+			Bucket:          cfg.Bucket,
+			AccessKeyID:     cfg.AccessKeyID,
+			SecretAccessKey: cfg.SecretAccessKey,
+			ForcePathStyle:  cfg.ForcePathStyle,
+		}},
+		BackupProfileID:    "default",
+		BackupPrefix:       cfg.Prefix,
+		MediaEnabled:       cfg.MediaEnabled != nil && *cfg.MediaEnabled,
+		MediaProfileID:     "default",
+		MediaPublicBaseURL: cfg.MediaPublicBaseURL,
+		MediaPrefix:        cfg.MediaPrefix,
+	}
+	if !settings.MediaEnabled {
+		settings.MediaProfileID = ""
+	}
+	if _, err := s.UpdateObjectStorageSettings(ctx, settings); err != nil {
+		return nil, err
+	}
+	legacyData, err := json.Marshal(legacyToStore)
 	if err != nil {
-		return nil, fmt.Errorf("marshal s3 config: %w", err)
+		return nil, fmt.Errorf("marshal legacy s3 config: %w", err)
 	}
-	if err := s.settingRepo.Set(ctx, settingKeyBackupS3Config, string(data)); err != nil {
-		return nil, fmt.Errorf("save s3 config: %w", err)
+	if err := s.settingRepo.Set(ctx, settingKeyBackupS3Config, string(legacyData)); err != nil {
+		return nil, fmt.Errorf("save legacy s3 config: %w", err)
 	}
-
-	// 清除缓存的 S3 客户端
-	s.storeMu.Lock()
-	s.store = nil
-	s.s3Cfg = nil
-	s.storeMu.Unlock()
-
-	cfg.SecretAccessKey = ""
-	return &cfg, nil
+	return s.GetS3Config(ctx)
 }
 
 func (s *BackupService) TestS3Connection(ctx context.Context, cfg BackupS3Config) error {
-	// 如果没提供 secret，用已保存的
-	if cfg.SecretAccessKey == "" {
-		old, _ := s.loadS3Config(ctx)
-		if old != nil {
-			cfg.SecretAccessKey = old.SecretAccessKey
+	return s.TestObjectStorageProfile(ctx, ObjectStorageProfile{
+		ID:              "test",
+		Name:            "Test Storage",
+		Provider:        detectStorageProvider(cfg.Endpoint),
+		Endpoint:        cfg.Endpoint,
+		Region:          cfg.Region,
+		Bucket:          cfg.Bucket,
+		AccessKeyID:     cfg.AccessKeyID,
+		SecretAccessKey: cfg.SecretAccessKey,
+		ForcePathStyle:  cfg.ForcePathStyle,
+	})
+}
+
+func (s *BackupService) GetObjectStorageSettings(ctx context.Context) (*ObjectStorageSettings, error) {
+	settings, err := effectiveObjectStorageSettings(ctx, s.settingRepo, s.encryptor, s.config())
+	if err != nil {
+		return nil, err
+	}
+	sanitized := sanitizeObjectStorageSettingsForResponse(settings)
+	return &sanitized, nil
+}
+
+func (s *BackupService) UpdateObjectStorageSettings(ctx context.Context, settings ObjectStorageSettings) (*ObjectStorageSettings, error) {
+	settings = normalizeObjectStorageSettings(settings)
+	existing, err := effectiveObjectStorageSettings(ctx, s.settingRepo, s.encryptor, s.config())
+	if err != nil {
+		return nil, err
+	}
+	settings = preserveObjectStorageSecrets(settings, existing)
+
+	stored := cloneObjectStorageSettings(settings)
+	for i := range stored.Profiles {
+		if strings.TrimSpace(stored.Profiles[i].SecretAccessKey) == "" || s.encryptor == nil {
+			continue
+		}
+		encrypted, err := s.encryptor.Encrypt(stored.Profiles[i].SecretAccessKey)
+		if err != nil {
+			return nil, fmt.Errorf("encrypt secret for profile %q: %w", stored.Profiles[i].ID, err)
+		}
+		stored.Profiles[i].SecretAccessKey = encrypted
+	}
+
+	data, err := json.Marshal(stored)
+	if err != nil {
+		return nil, fmt.Errorf("marshal object storage settings: %w", err)
+	}
+	if err := s.settingRepo.Set(ctx, settingKeyObjectStorageConfig, string(data)); err != nil {
+		return nil, fmt.Errorf("save object storage settings: %w", err)
+	}
+	s.resetObjectStorageRuntime()
+
+	sanitized := sanitizeObjectStorageSettingsForResponse(settings)
+	return &sanitized, nil
+}
+
+func (s *BackupService) TestObjectStorageProfile(ctx context.Context, profile ObjectStorageProfile) error {
+	profile = normalizeObjectStorageSettings(ObjectStorageSettings{Profiles: []ObjectStorageProfile{profile}}).Profiles[0]
+	if strings.TrimSpace(profile.SecretAccessKey) == "" {
+		existing, err := effectiveObjectStorageSettings(ctx, s.settingRepo, s.encryptor, s.config())
+		if err == nil {
+			for _, item := range existing.Profiles {
+				if item.ID == profile.ID && strings.TrimSpace(item.SecretAccessKey) != "" {
+					profile.SecretAccessKey = item.SecretAccessKey
+					break
+				}
+			}
 		}
 	}
-
-	if cfg.Bucket == "" || cfg.AccessKeyID == "" || cfg.SecretAccessKey == "" {
-		return fmt.Errorf("incomplete S3 config: bucket, access_key_id, secret_access_key are required")
+	if !isObjectStorageProfileConfigured(profile) {
+		return fmt.Errorf("incomplete object storage config: bucket, access_key_id, secret_access_key are required")
 	}
-
-	store, err := s.storeFactory(ctx, &cfg)
+	store, err := s.storeFactory(ctx, &BackupS3Config{
+		Endpoint:        profile.Endpoint,
+		Region:          profile.Region,
+		Bucket:          profile.Bucket,
+		AccessKeyID:     profile.AccessKeyID,
+		SecretAccessKey: profile.SecretAccessKey,
+		ForcePathStyle:  profile.ForcePathStyle,
+	})
 	if err != nil {
 		return err
 	}
@@ -456,7 +553,7 @@ func (s *BackupService) CreateBackup(ctx context.Context, triggeredBy string, ex
 
 	now := time.Now()
 	backupID := uuid.New().String()[:8]
-	fileName := fmt.Sprintf("%s_%s.sql.gz", s.dbCfg.DBName, now.Format("20060102_150405"))
+	fileName := fmt.Sprintf("%s_%s.sql.gz", s.databaseName(), now.Format("20060102_150405"))
 	s3Key := s.buildS3Key(s3Cfg, fileName)
 
 	var expiresAt string
@@ -579,7 +676,7 @@ func (s *BackupService) StartBackup(ctx context.Context, triggeredBy string, exp
 
 	now := time.Now()
 	backupID := uuid.New().String()[:8]
-	fileName := fmt.Sprintf("%s_%s.sql.gz", s.dbCfg.DBName, now.Format("20060102_150405"))
+	fileName := fmt.Sprintf("%s_%s.sql.gz", s.databaseName(), now.Format("20060102_150405"))
 	s3Key := s.buildS3Key(s3Cfg, fileName)
 
 	var expiresAt string
@@ -959,25 +1056,38 @@ func (s *BackupService) GetBackupDownloadURL(ctx context.Context, backupID strin
 // ─── 内部方法 ───
 
 func (s *BackupService) loadS3Config(ctx context.Context) (*BackupS3Config, error) {
-	raw, err := s.settingRepo.GetValue(ctx, settingKeyBackupS3Config)
-	if err != nil || raw == "" {
-		return nil, nil //nolint:nilnil // no config is a valid state
+	if s.mediaConfig != nil {
+		return s.mediaConfig.BackupConfig(ctx)
 	}
-	var cfg BackupS3Config
-	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
-		return nil, ErrBackupS3ConfigCorrupt
+	settings, err := effectiveObjectStorageSettings(ctx, s.settingRepo, s.encryptor, s.config())
+	if err != nil {
+		return nil, err
 	}
-	// 解密 SecretAccessKey
-	if cfg.SecretAccessKey != "" {
-		decrypted, err := s.encryptor.Decrypt(cfg.SecretAccessKey)
-		if err != nil {
-			// 兼容未加密的旧数据：如果解密失败，保持原值
-			logger.LegacyPrintf("service.backup", "[Backup] S3 SecretAccessKey 解密失败（可能是旧的未加密数据）: %v", err)
-		} else {
-			cfg.SecretAccessKey = decrypted
-		}
+	return resolveBackupS3Config(settings), nil
+}
+
+func (s *BackupService) config() *config.Config {
+	if s == nil {
+		return nil
 	}
-	return &cfg, nil
+	return s.cfg
+}
+
+func (s *BackupService) databaseName() string {
+	if s == nil || s.cfg == nil || strings.TrimSpace(s.cfg.Database.DBName) == "" {
+		return "sub2api"
+	}
+	return strings.TrimSpace(s.cfg.Database.DBName)
+}
+
+func (s *BackupService) resetObjectStorageRuntime() {
+	s.storeMu.Lock()
+	s.store = nil
+	s.s3Cfg = nil
+	s.storeMu.Unlock()
+	if s.mediaConfig != nil {
+		s.mediaConfig.Invalidate()
+	}
 }
 
 func (s *BackupService) getOrCreateStore(ctx context.Context, cfg *BackupS3Config) (BackupObjectStore, error) {
@@ -1007,6 +1117,28 @@ func (s *BackupService) buildS3Key(cfg *BackupS3Config, fileName string) string 
 		prefix = "backups"
 	}
 	return fmt.Sprintf("%s/%s/%s", prefix, time.Now().Format("2006/01/02"), fileName)
+}
+
+func sanitizeObjectStorageSettingsForResponse(settings ObjectStorageSettings) ObjectStorageSettings {
+	settings = cloneObjectStorageSettings(settings)
+	for i := range settings.Profiles {
+		settings.Profiles[i].SecretConfigured = strings.TrimSpace(settings.Profiles[i].SecretAccessKey) != ""
+		settings.Profiles[i].SecretAccessKey = ""
+	}
+	return settings
+}
+
+func preserveObjectStorageSecrets(next, existing ObjectStorageSettings) ObjectStorageSettings {
+	next = cloneObjectStorageSettings(next)
+	for i := range next.Profiles {
+		if strings.TrimSpace(next.Profiles[i].SecretAccessKey) != "" {
+			continue
+		}
+		if old, ok := findObjectStorageProfile(existing.Profiles, next.Profiles[i].ID); ok {
+			next.Profiles[i].SecretAccessKey = old.SecretAccessKey
+		}
+	}
+	return next
 }
 
 // loadRecords 加载备份记录，区分"无数据"和"数据损坏"

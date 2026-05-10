@@ -36,7 +36,7 @@ type mediaIngestTestStore struct {
 	uploadedContentType string
 }
 
-func (s *mediaIngestTestStore) Upload(_ context.Context, bucket, objectKey string, body []byte, contentType string) error {
+func (s *mediaIngestTestStore) Upload(_ context.Context, _ MediaStorageRuntimeConfig, bucket, objectKey string, body []byte, contentType string) error {
 	s.uploadedBucket = bucket
 	s.uploadedObjectKey = objectKey
 	s.uploadedBody = append([]byte(nil), body...)
@@ -44,12 +44,14 @@ func (s *mediaIngestTestStore) Upload(_ context.Context, bucket, objectKey strin
 	return nil
 }
 
-func (*mediaIngestTestStore) Download(context.Context, string, string) (io.ReadCloser, error) {
+func (*mediaIngestTestStore) Download(context.Context, MediaStorageRuntimeConfig, string, string) (io.ReadCloser, error) {
 	return nil, nil
 }
 
-func (*mediaIngestTestStore) Delete(context.Context, string, string) error { return nil }
-func (*mediaIngestTestStore) Stat(context.Context, string, string) (int64, error) {
+func (*mediaIngestTestStore) Delete(context.Context, MediaStorageRuntimeConfig, string, string) error {
+	return nil
+}
+func (*mediaIngestTestStore) Stat(context.Context, MediaStorageRuntimeConfig, string, string) (int64, error) {
 	return 0, nil
 }
 
@@ -281,7 +283,12 @@ func TestIngestImageReferenceVisibilityHandling(t *testing.T) {
 func newMediaIngestTestConfig() *config.Config {
 	cfg := &config.Config{}
 	cfg.Media.Enabled = true
+	cfg.Media.Endpoint = "https://storage.example.com"
+	cfg.Media.Region = "auto"
 	cfg.Media.Bucket = "media"
+	cfg.Media.AccessKeyID = "test-ak"
+	cfg.Media.SecretAccessKey = "test-sk"
+	cfg.Media.PublicBaseURL = "https://media.example"
 	cfg.Media.MaxUploadSizeBytes = 1024 * 1024
 	cfg.Security.URLAllowlist.Enabled = true
 	cfg.Security.URLAllowlist.AllowInsecureHTTP = true

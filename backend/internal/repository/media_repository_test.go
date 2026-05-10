@@ -36,6 +36,7 @@ func TestMediaRepositoryCreateUsesVisibilityBeforeThumbnailMIMEType(t *testing.T
 		WithArgs(
 			asset.BizType,
 			asset.BizID,
+			asset.StorageProfileID,
 			asset.Bucket,
 			asset.ObjectKey,
 			asset.ThumbnailObjectKey,

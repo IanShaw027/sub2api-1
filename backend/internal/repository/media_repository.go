@@ -26,14 +26,15 @@ func (r *mediaRepository) Create(ctx context.Context, asset *service.MediaAsset)
 	}
 	row := r.db.QueryRowContext(ctx, `
 		INSERT INTO media_assets (
-			biz_type, biz_id, bucket, object_key, thumbnail_object_key, visibility,
+			biz_type, biz_id, storage_profile_id, bucket, object_key, thumbnail_object_key, visibility,
 			thumbnail_mime_type, mime_type, size_bytes, width, height, sha256, owner_user_id, status,
 			original_file_name
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
 		RETURNING id, created_at, updated_at
 	`,
 		asset.BizType,
 		asset.BizID,
+		asset.StorageProfileID,
 		asset.Bucket,
 		asset.ObjectKey,
 		asset.ThumbnailObjectKey,
@@ -56,7 +57,7 @@ func (r *mediaRepository) Create(ctx context.Context, asset *service.MediaAsset)
 
 func (r *mediaRepository) GetByID(ctx context.Context, id int64) (*service.MediaAsset, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, biz_type, biz_id, bucket, object_key, thumbnail_object_key, thumbnail_mime_type, visibility,
+		SELECT id, biz_type, biz_id, storage_profile_id, bucket, object_key, thumbnail_object_key, thumbnail_mime_type, visibility,
 		       mime_type, size_bytes, width, height, sha256, owner_user_id, status,
 		       original_file_name, created_at, updated_at, deleted_at
 		FROM media_assets
@@ -117,7 +118,7 @@ func (r *mediaRepository) List(ctx context.Context, params pagination.Pagination
 	listArgs := append([]any(nil), args...)
 	listArgs = append(listArgs, params.Limit(), params.Offset())
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, biz_type, biz_id, bucket, object_key, thumbnail_object_key, thumbnail_mime_type, visibility,
+		SELECT id, biz_type, biz_id, storage_profile_id, bucket, object_key, thumbnail_object_key, thumbnail_mime_type, visibility,
 		       mime_type, size_bytes, width, height, sha256, owner_user_id, status,
 		       original_file_name, created_at, updated_at, deleted_at
 		FROM media_assets
@@ -207,6 +208,7 @@ func scanMediaAsset(scanner mediaScanner) (*service.MediaAsset, error) {
 		&item.ID,
 		&item.BizType,
 		&item.BizID,
+		&item.StorageProfileID,
 		&item.Bucket,
 		&item.ObjectKey,
 		&item.ThumbnailObjectKey,

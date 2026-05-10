@@ -75,20 +75,22 @@ type aiSkillHandlerMediaStore struct {
 	deleted []string
 }
 
-func (s *aiSkillHandlerMediaStore) Upload(_ context.Context, _, _ string, body []byte, contentType string) error {
+func (s *aiSkillHandlerMediaStore) Upload(_ context.Context, _ service.MediaStorageRuntimeConfig, _, _ string, body []byte, contentType string) error {
 	s.uploads = append(s.uploads, append([]byte(nil), body...))
 	s.types = append(s.types, contentType)
 	return nil
 }
 
-func (*aiSkillHandlerMediaStore) Download(context.Context, string, string) (io.ReadCloser, error) {
+func (*aiSkillHandlerMediaStore) Download(context.Context, service.MediaStorageRuntimeConfig, string, string) (io.ReadCloser, error) {
 	return nil, nil
 }
-func (s *aiSkillHandlerMediaStore) Delete(_ context.Context, bucket, objectKey string) error {
+func (s *aiSkillHandlerMediaStore) Delete(_ context.Context, _ service.MediaStorageRuntimeConfig, bucket, objectKey string) error {
 	s.deleted = append(s.deleted, bucket+":"+objectKey)
 	return nil
 }
-func (*aiSkillHandlerMediaStore) Stat(context.Context, string, string) (int64, error) { return 0, nil }
+func (*aiSkillHandlerMediaStore) Stat(context.Context, service.MediaStorageRuntimeConfig, string, string) (int64, error) {
+	return 0, nil
+}
 
 func TestAIHandlerBuildSkillMetadataStoresCoverImageURL(t *testing.T) {
 	t.Parallel()
@@ -334,7 +336,11 @@ func newAIHandlerMediaTestHarness(t *testing.T) (*AIHandler, *aiSkillHandlerMedi
 	store := &aiSkillHandlerMediaStore{}
 	cfg := &config.Config{}
 	cfg.Media.Enabled = true
+	cfg.Media.Endpoint = "https://storage.example.com"
+	cfg.Media.Region = "auto"
 	cfg.Media.Bucket = "media"
+	cfg.Media.AccessKeyID = "test-ak"
+	cfg.Media.SecretAccessKey = "test-sk"
 	cfg.Media.PublicBaseURL = "https://media.example.com"
 	cfg.Media.MaxUploadSizeBytes = 1024 * 1024
 	cfg.Security.URLAllowlist.Enabled = true

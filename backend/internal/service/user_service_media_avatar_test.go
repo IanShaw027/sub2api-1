@@ -163,20 +163,20 @@ type userServiceMediaAvatarTestStore struct {
 	deletedObjectKeys  []string
 }
 
-func (s *userServiceMediaAvatarTestStore) Upload(_ context.Context, _ string, objectKey string, _ []byte, _ string) error {
+func (s *userServiceMediaAvatarTestStore) Upload(_ context.Context, _ MediaStorageRuntimeConfig, _ string, objectKey string, _ []byte, _ string) error {
 	s.uploadedObjectKeys = append(s.uploadedObjectKeys, objectKey)
 	return nil
 }
 
-func (*userServiceMediaAvatarTestStore) Download(context.Context, string, string) (io.ReadCloser, error) {
+func (*userServiceMediaAvatarTestStore) Download(context.Context, MediaStorageRuntimeConfig, string, string) (io.ReadCloser, error) {
 	return nil, nil
 }
 
-func (s *userServiceMediaAvatarTestStore) Delete(_ context.Context, _ string, objectKey string) error {
+func (s *userServiceMediaAvatarTestStore) Delete(_ context.Context, _ MediaStorageRuntimeConfig, _ string, objectKey string) error {
 	s.deletedObjectKeys = append(s.deletedObjectKeys, objectKey)
 	return nil
 }
-func (*userServiceMediaAvatarTestStore) Stat(context.Context, string, string) (int64, error) {
+func (*userServiceMediaAvatarTestStore) Stat(context.Context, MediaStorageRuntimeConfig, string, string) (int64, error) {
 	return 0, nil
 }
 
@@ -185,7 +185,11 @@ func newUserServiceMediaAvatarTestMediaService() (*MediaService, *userServiceMed
 	store := &userServiceMediaAvatarTestStore{}
 	cfg := &config.Config{}
 	cfg.Media.Enabled = true
+	cfg.Media.Endpoint = "https://storage.example.com"
+	cfg.Media.Region = "auto"
 	cfg.Media.Bucket = "media"
+	cfg.Media.AccessKeyID = "test-ak"
+	cfg.Media.SecretAccessKey = "test-sk"
 	cfg.Media.PublicBaseURL = "https://source.qazwc.com"
 	cfg.Media.MaxUploadSizeBytes = 64 << 20
 	cfg.Security.URLAllowlist.AllowInsecureHTTP = true

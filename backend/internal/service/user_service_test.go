@@ -77,7 +77,11 @@ func (*userServiceMediaRepo) MarkDeleted(context.Context, int64, time.Time) erro
 func newUserServiceMediaService() *MediaService {
 	cfg := &config.Config{}
 	cfg.Media.Enabled = true
+	cfg.Media.Endpoint = "https://storage.example.com"
+	cfg.Media.Region = "auto"
 	cfg.Media.Bucket = "media"
+	cfg.Media.AccessKeyID = "test-ak"
+	cfg.Media.SecretAccessKey = "test-sk"
 	cfg.Media.PublicBaseURL = "https://source.qazwc.com"
 	cfg.Media.MaxUploadSizeBytes = 64 << 20
 	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
@@ -232,7 +236,7 @@ func (m *mockUserRepo) RemoveGroupFromAllowedGroups(context.Context, int64) (int
 
 func (m *mockUserRepo) BatchSetConcurrency(context.Context, []int64, int) (int, error) { return 0, nil }
 func (m *mockUserRepo) BatchAddConcurrency(context.Context, []int64, int) (int, error) { return 0, nil }
-func (m *mockUserRepo) AddGroupToAllowedGroups(context.Context, int64, int64) error { return nil }
+func (m *mockUserRepo) AddGroupToAllowedGroups(context.Context, int64, int64) error    { return nil }
 func (m *mockUserRepo) ListUserAuthIdentities(context.Context, int64) ([]UserAuthIdentityRecord, error) {
 	out := make([]UserAuthIdentityRecord, len(m.identities))
 	copy(out, m.identities)

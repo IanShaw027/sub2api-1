@@ -40,21 +40,27 @@ func (*aiSkillMediaRepoStub) MarkDeleted(context.Context, int64, time.Time) erro
 
 type aiSkillMediaStoreStub struct{}
 
-func (*aiSkillMediaStoreStub) Upload(context.Context, string, string, []byte, string) error {
+func (*aiSkillMediaStoreStub) Upload(context.Context, service.MediaStorageRuntimeConfig, string, string, []byte, string) error {
 	return nil
 }
-func (*aiSkillMediaStoreStub) Download(context.Context, string, string) (io.ReadCloser, error) {
+func (*aiSkillMediaStoreStub) Download(context.Context, service.MediaStorageRuntimeConfig, string, string) (io.ReadCloser, error) {
 	return nil, nil
 }
-func (*aiSkillMediaStoreStub) Delete(context.Context, string, string) error { return nil }
-func (*aiSkillMediaStoreStub) Stat(context.Context, string, string) (int64, error) {
+func (*aiSkillMediaStoreStub) Delete(context.Context, service.MediaStorageRuntimeConfig, string, string) error {
+	return nil
+}
+func (*aiSkillMediaStoreStub) Stat(context.Context, service.MediaStorageRuntimeConfig, string, string) (int64, error) {
 	return 0, nil
 }
 
 func newAISkillMediaService() *service.MediaService {
 	cfg := &config.Config{}
 	cfg.Media.Enabled = true
+	cfg.Media.Endpoint = "https://storage.example.com"
+	cfg.Media.Region = "auto"
 	cfg.Media.Bucket = "media"
+	cfg.Media.AccessKeyID = "test-ak"
+	cfg.Media.SecretAccessKey = "test-sk"
 	cfg.Media.PublicBaseURL = "https://media.example"
 	cfg.Media.MaxUploadSizeBytes = 1024 * 1024
 	cfg.Security.URLAllowlist.AllowInsecureHTTP = true

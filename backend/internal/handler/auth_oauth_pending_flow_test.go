@@ -348,7 +348,11 @@ func TestExchangePendingOAuthCompletionStoresAdoptedAvatarInSharedMedia(t *testi
 func TestExchangePendingOAuthCompletionKeepsCompletionWhenAvatarAdoptionIsBlockedByAllowlist(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Media.Enabled = true
+	cfg.Media.Endpoint = "https://storage.example.com"
+	cfg.Media.Region = "auto"
 	cfg.Media.Bucket = "media"
+	cfg.Media.AccessKeyID = "test-ak"
+	cfg.Media.SecretAccessKey = "test-sk"
 	cfg.Media.PublicBaseURL = "https://source.qazwc.com"
 	cfg.Media.MaxUploadSizeBytes = 64 << 20
 	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
@@ -2702,7 +2706,7 @@ type oauthPendingFlowMediaStoreStub struct {
 	deletedObjectKeys   []string
 }
 
-func (s *oauthPendingFlowMediaStoreStub) Upload(_ context.Context, bucket, objectKey string, body []byte, contentType string) error {
+func (s *oauthPendingFlowMediaStoreStub) Upload(_ context.Context, _ service.MediaStorageRuntimeConfig, bucket, objectKey string, body []byte, contentType string) error {
 	s.uploadedBucket = bucket
 	s.uploadedObjectKey = objectKey
 	s.uploadedBody = append([]byte(nil), body...)
@@ -2711,15 +2715,15 @@ func (s *oauthPendingFlowMediaStoreStub) Upload(_ context.Context, bucket, objec
 	return nil
 }
 
-func (*oauthPendingFlowMediaStoreStub) Download(context.Context, string, string) (io.ReadCloser, error) {
+func (*oauthPendingFlowMediaStoreStub) Download(context.Context, service.MediaStorageRuntimeConfig, string, string) (io.ReadCloser, error) {
 	return nil, nil
 }
 
-func (s *oauthPendingFlowMediaStoreStub) Delete(_ context.Context, _ string, objectKey string) error {
+func (s *oauthPendingFlowMediaStoreStub) Delete(_ context.Context, _ service.MediaStorageRuntimeConfig, _ string, objectKey string) error {
 	s.deletedObjectKeys = append(s.deletedObjectKeys, objectKey)
 	return nil
 }
-func (*oauthPendingFlowMediaStoreStub) Stat(context.Context, string, string) (int64, error) {
+func (*oauthPendingFlowMediaStoreStub) Stat(context.Context, service.MediaStorageRuntimeConfig, string, string) (int64, error) {
 	return 0, nil
 }
 
@@ -2731,7 +2735,11 @@ func newOAuthPendingFlowMediaService() *service.MediaService {
 func newOAuthPendingFlowMediaServiceWithStubs() (*service.MediaService, *oauthPendingFlowMediaRepoStub, *oauthPendingFlowMediaStoreStub) {
 	cfg := &config.Config{}
 	cfg.Media.Enabled = true
+	cfg.Media.Endpoint = "https://storage.example.com"
+	cfg.Media.Region = "auto"
 	cfg.Media.Bucket = "media"
+	cfg.Media.AccessKeyID = "test-ak"
+	cfg.Media.SecretAccessKey = "test-sk"
 	cfg.Media.PublicBaseURL = "https://source.qazwc.com"
 	cfg.Media.MaxUploadSizeBytes = 64 << 20
 	cfg.Security.URLAllowlist.AllowInsecureHTTP = true

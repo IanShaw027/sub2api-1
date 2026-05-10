@@ -38,9 +38,10 @@ const (
 var errMediaBizIDInvalid = infraerrors.BadRequest("MEDIA_BIZ_ID_INVALID", "media biz_id is invalid")
 
 type MediaService struct {
-	repo  MediaRepository
-	store MediaObjectStore
-	cfg   *config.Config
+	repo           MediaRepository
+	store          MediaObjectStore
+	cfg            *config.Config
+	configProvider *MediaStorageConfigProvider
 }
 
 func NewMediaService(repo MediaRepository, store MediaObjectStore, cfg *config.Config) *MediaService {
@@ -51,8 +52,16 @@ func NewMediaService(repo MediaRepository, store MediaObjectStore, cfg *config.C
 	}
 }
 
+func (s *MediaService) SetStorageConfigProvider(provider *MediaStorageConfigProvider) {
+	if s == nil {
+		return
+	}
+	s.configProvider = provider
+}
+
 func (s *MediaService) Upload(ctx context.Context, input UploadMediaInput) (*MediaAsset, error) {
-	if !s.isEnabled() {
+	storageCfg := s.currentStorageConfig(ctx)
+	if !storageCfg.Enabled {
 		return nil, ErrMediaStorageDisabled
 	}
 
@@ -71,7 +80,7 @@ func (s *MediaService) Upload(ctx context.Context, input UploadMediaInput) (*Med
 	if len(input.File) == 0 {
 		return nil, ErrMediaFileRequired
 	}
-	maxUploadSize := s.maxUploadSizeBytes()
+	maxUploadSize := storageCfg.MaxUploadSizeBytes
 	if int64(len(input.File)) > maxUploadSize {
 		return nil, ErrMediaTooLarge
 	}
@@ -102,11 +111,11 @@ func (s *MediaService) Upload(ctx context.Context, input UploadMediaInput) (*Med
 		width, height = detectImageDimensions(input.File)
 	}
 
-	objectKey, err := s.buildObjectKey(bizType, bizID, fileName, contentType)
+	objectKey, err := s.buildObjectKey(storageCfg, bizType, bizID, fileName, contentType)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.store.Upload(ctx, s.bucket(), objectKey, input.File, contentType); err != nil {
+	if err := s.store.Upload(ctx, storageCfg, storageCfg.Bucket, objectKey, input.File, contentType); err != nil {
 		return nil, fmt.Errorf("upload media object: %w", err)
 	}
 
@@ -119,25 +128,25 @@ func (s *MediaService) Upload(ctx context.Context, input UploadMediaInput) (*Med
 			thumbnailName = "thumbnail"
 		}
 		var thumbErr error
-		thumbnailObjectKey, thumbErr = s.buildObjectKey(bizType+"_thumbnail", bizID, thumbnailName, thumbnailContentType)
+		thumbnailObjectKey, thumbErr = s.buildObjectKey(storageCfg, bizType+"_thumbnail", bizID, thumbnailName, thumbnailContentType)
 		if thumbErr != nil {
-			_ = s.store.Delete(ctx, s.bucket(), objectKey)
+			_ = s.store.Delete(ctx, storageCfg, storageCfg.Bucket, objectKey)
 			return nil, thumbErr
 		}
-		if err := s.store.Upload(ctx, s.bucket(), thumbnailObjectKey, input.ThumbnailFile, thumbnailContentType); err != nil {
-			_ = s.store.Delete(ctx, s.bucket(), objectKey)
+		if err := s.store.Upload(ctx, storageCfg, storageCfg.Bucket, thumbnailObjectKey, input.ThumbnailFile, thumbnailContentType); err != nil {
+			_ = s.store.Delete(ctx, storageCfg, storageCfg.Bucket, objectKey)
 			return nil, fmt.Errorf("upload media thumbnail object: %w", err)
 		}
 		thumbnailMIMEType = thumbnailContentType
 	} else if thumbnailBytes, thumbnailName, thumbnailContentType, thumbErr := generateMediaThumbnail(input.File, fileName); thumbErr == nil && len(thumbnailBytes) > 0 {
 		var buildErr error
-		thumbnailObjectKey, buildErr = s.buildObjectKey(bizType+"_thumbnail", bizID, thumbnailName, thumbnailContentType)
+		thumbnailObjectKey, buildErr = s.buildObjectKey(storageCfg, bizType+"_thumbnail", bizID, thumbnailName, thumbnailContentType)
 		if buildErr != nil {
-			_ = s.store.Delete(ctx, s.bucket(), objectKey)
+			_ = s.store.Delete(ctx, storageCfg, storageCfg.Bucket, objectKey)
 			return nil, buildErr
 		}
-		if err := s.store.Upload(ctx, s.bucket(), thumbnailObjectKey, thumbnailBytes, thumbnailContentType); err != nil {
-			_ = s.store.Delete(ctx, s.bucket(), objectKey)
+		if err := s.store.Upload(ctx, storageCfg, storageCfg.Bucket, thumbnailObjectKey, thumbnailBytes, thumbnailContentType); err != nil {
+			_ = s.store.Delete(ctx, storageCfg, storageCfg.Bucket, objectKey)
 			return nil, fmt.Errorf("upload generated media thumbnail object: %w", err)
 		}
 		thumbnailMIMEType = thumbnailContentType
@@ -146,7 +155,8 @@ func (s *MediaService) Upload(ctx context.Context, input UploadMediaInput) (*Med
 	asset := &MediaAsset{
 		BizType:            bizType,
 		BizID:              bizID,
-		Bucket:             s.bucket(),
+		StorageProfileID:   storageCfg.ProfileID,
+		Bucket:             storageCfg.Bucket,
 		ObjectKey:          objectKey,
 		ThumbnailObjectKey: thumbnailObjectKey,
 		ThumbnailMIMEType:  thumbnailMIMEType,
@@ -161,9 +171,9 @@ func (s *MediaService) Upload(ctx context.Context, input UploadMediaInput) (*Med
 		OriginalFileName:   fileName,
 	}
 	if err := s.repo.Create(ctx, asset); err != nil {
-		_ = s.store.Delete(ctx, s.bucket(), objectKey)
+		_ = s.store.Delete(ctx, storageCfg, storageCfg.Bucket, objectKey)
 		if thumbnailObjectKey != "" {
-			_ = s.store.Delete(ctx, s.bucket(), thumbnailObjectKey)
+			_ = s.store.Delete(ctx, storageCfg, storageCfg.Bucket, thumbnailObjectKey)
 		}
 		return nil, fmt.Errorf("create media asset: %w", err)
 	}
@@ -332,7 +342,7 @@ func (s *MediaService) PublicURL(id int64, visibility string) string {
 	if strings.TrimSpace(visibility) != MediaVisibilityPublic {
 		return ""
 	}
-	base := strings.TrimRight(strings.TrimSpace(s.publicBaseURL()), "/")
+	base := strings.TrimRight(strings.TrimSpace(s.currentStorageConfig(context.Background()).PublicBaseURL), "/")
 	if base == "" {
 		return ""
 	}
@@ -343,7 +353,7 @@ func (s *MediaService) ThumbnailPublicURL(id int64, visibility string, thumbnail
 	if strings.TrimSpace(visibility) != MediaVisibilityPublic || strings.TrimSpace(thumbnailObjectKey) == "" {
 		return ""
 	}
-	base := strings.TrimRight(strings.TrimSpace(s.publicBaseURL()), "/")
+	base := strings.TrimRight(strings.TrimSpace(s.currentStorageConfig(context.Background()).PublicBaseURL), "/")
 	if base == "" {
 		return ""
 	}
@@ -351,14 +361,15 @@ func (s *MediaService) ThumbnailPublicURL(id int64, visibility string, thumbnail
 }
 
 func (s *MediaService) RuntimeInfo() MediaRuntimeInfo {
-	base := strings.TrimSpace(s.publicBaseURL())
+	storageCfg := s.currentStorageConfig(context.Background())
+	base := strings.TrimSpace(storageCfg.PublicBaseURL)
 	return MediaRuntimeInfo{
-		Enabled:                   s.isEnabled(),
-		Bucket:                    s.bucket(),
+		Enabled:                   storageCfg.Enabled,
+		Bucket:                    storageCfg.Bucket,
 		PublicBaseURL:             base,
 		SourceDomain:              base,
-		PresignExpiryMinutes:      int(s.presignTTL() / time.Minute),
-		MaxUploadSizeBytes:        s.maxUploadSizeBytes(),
+		PresignExpiryMinutes:      storageCfg.PresignExpiryMinutes,
+		MaxUploadSizeBytes:        storageCfg.MaxUploadSizeBytes,
 		DefaultVisibility:         MediaVisibilityPrivate,
 		UploadEndpoint:            "/api/v1/media/upload",
 		PublicEndpointTemplate:    "/api/v1/media/public/{id}",
@@ -366,15 +377,16 @@ func (s *MediaService) RuntimeInfo() MediaRuntimeInfo {
 		DownloadEndpointTemplate:  "/api/v1/media/download/{id}",
 		ThumbnailDownloadTemplate: "/api/v1/media/download/{id}/thumbnail",
 		SupportedBizTypes:         []string{"avatar", "announcement", "ticket", "ai_image", "forum"},
-		ThumbnailEnabled:          s.isEnabled(),
+		ThumbnailEnabled:          storageCfg.Enabled,
 	}
 }
 
 func (s *MediaService) buildSignedDownloadURL(id int64, thumbnail bool) *MediaDownloadURL {
-	ttl := s.presignTTL()
+	storageCfg := s.currentStorageConfig(context.Background())
+	ttl := time.Duration(storageCfg.PresignExpiryMinutes) * time.Minute
 	expiresAt := time.Now().Add(ttl)
 	expiresAtUnix := expiresAt.Unix()
-	base := strings.TrimRight(strings.TrimSpace(s.publicBaseURL()), "/")
+	base := strings.TrimRight(strings.TrimSpace(storageCfg.PublicBaseURL), "/")
 	pathSuffix := ""
 	if thumbnail {
 		pathSuffix = "/thumbnail"
@@ -392,11 +404,15 @@ func (s *MediaService) deleteAsset(ctx context.Context, asset *MediaAsset) error
 	if asset.Status == MediaStatusDeleted {
 		return nil
 	}
-	if err := s.store.Delete(ctx, asset.Bucket, asset.ObjectKey); err != nil {
+	storageCfg, err := s.assetStorageConfig(ctx, asset)
+	if err != nil {
+		return err
+	}
+	if err := s.store.Delete(ctx, storageCfg, asset.Bucket, asset.ObjectKey); err != nil {
 		return fmt.Errorf("delete media object: %w", err)
 	}
 	if strings.TrimSpace(asset.ThumbnailObjectKey) != "" {
-		if err := s.store.Delete(ctx, asset.Bucket, asset.ThumbnailObjectKey); err != nil {
+		if err := s.store.Delete(ctx, storageCfg, asset.Bucket, asset.ThumbnailObjectKey); err != nil {
 			return fmt.Errorf("delete media thumbnail object: %w", err)
 		}
 	}
@@ -436,8 +452,9 @@ func (s *MediaService) authorize(asset *MediaAsset, requesterUserID int64, isAdm
 }
 
 func (s *MediaService) openObject(ctx context.Context, asset *MediaAsset, thumbnail bool) (*MediaObjectStream, error) {
-	if !s.isEnabled() {
-		return nil, ErrMediaStorageDisabled
+	storageCfg, err := s.assetStorageConfig(ctx, asset)
+	if err != nil {
+		return nil, err
 	}
 	objectKey := asset.ObjectKey
 	fileName := asset.OriginalFileName
@@ -448,13 +465,13 @@ func (s *MediaService) openObject(ctx context.Context, asset *MediaAsset, thumbn
 		objectKey = asset.ThumbnailObjectKey
 		fileName = "thumbnail-" + fileName
 	}
-	body, err := s.store.Download(ctx, asset.Bucket, objectKey)
+	body, err := s.store.Download(ctx, storageCfg, asset.Bucket, objectKey)
 	if err != nil {
 		return nil, fmt.Errorf("download media object: %w", err)
 	}
 	sizeBytes := asset.SizeBytes
 	if thumbnail {
-		if statSize, statErr := s.store.Stat(ctx, asset.Bucket, objectKey); statErr == nil && statSize > 0 {
+		if statSize, statErr := s.store.Stat(ctx, storageCfg, asset.Bucket, objectKey); statErr == nil && statSize > 0 {
 			sizeBytes = statSize
 		}
 	}
@@ -477,7 +494,7 @@ func (s *MediaService) downloadSignature(id int64, expiresAtUnix int64, thumbnai
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func (s *MediaService) buildObjectKey(bizType, bizID, fileName, contentType string) (string, error) {
+func (s *MediaService) buildObjectKey(storageCfg MediaStorageRuntimeConfig, bizType, bizID, fileName, contentType string) (string, error) {
 	now := time.Now().UTC()
 	safeName := sanitizeMediaFileName(fileName)
 	ext := strings.ToLower(filepath.Ext(safeName))
@@ -501,16 +518,20 @@ func (s *MediaService) buildObjectKey(bizType, bizID, fileName, contentType stri
 	if err != nil {
 		return "", err
 	}
-	return path.Join(
+	key := path.Join(
 		normalizedBizType,
 		normalizedBizID,
 		now.Format("2006/01/02"),
 		uuid.NewString()+"-"+baseName+ext,
-	), nil
+	)
+	if strings.TrimSpace(storageCfg.ObjectPrefix) != "" {
+		key = path.Join(strings.Trim(storageCfg.ObjectPrefix, "/"), key)
+	}
+	return key, nil
 }
 
 func (s *MediaService) isEnabled() bool {
-	return s != nil && s.cfg != nil && s.cfg.Media.Enabled
+	return s.currentStorageConfig(context.Background()).Enabled
 }
 
 func ParseManagedMediaID(mediaService *MediaService, raw string) (int64, bool) {
@@ -543,33 +564,72 @@ func ParseManagedMediaID(mediaService *MediaService, raw string) (int64, bool) {
 }
 
 func (s *MediaService) bucket() string {
-	return strings.TrimSpace(s.cfg.Media.Bucket)
+	return strings.TrimSpace(s.currentStorageConfig(context.Background()).Bucket)
 }
 
 func (s *MediaService) publicBaseURL() string {
-	return strings.TrimSpace(s.cfg.Media.PublicBaseURL)
+	return strings.TrimSpace(s.currentStorageConfig(context.Background()).PublicBaseURL)
 }
 
 func (s *MediaService) downloadSigningSecret() string {
-	secret := strings.TrimSpace(s.cfg.Media.DownloadSigningSecret)
+	storageCfg := s.currentStorageConfig(context.Background())
+	secret := strings.TrimSpace(storageCfg.DownloadSigningSecret)
 	if secret != "" {
 		return secret
 	}
-	return strings.TrimSpace(s.cfg.JWT.Secret)
+	if s != nil && s.cfg != nil {
+		return strings.TrimSpace(s.cfg.JWT.Secret)
+	}
+	return ""
 }
 
 func (s *MediaService) maxUploadSizeBytes() int64 {
-	if s != nil && s.cfg != nil && s.cfg.Media.MaxUploadSizeBytes > 0 {
-		return s.cfg.Media.MaxUploadSizeBytes
-	}
-	return defaultMediaMaxUploadSizeBytes
+	return s.currentStorageConfig(context.Background()).MaxUploadSizeBytes
 }
 
 func (s *MediaService) presignTTL() time.Duration {
-	if s != nil && s.cfg != nil && s.cfg.Media.PresignExpiryMinutes > 0 {
-		return time.Duration(s.cfg.Media.PresignExpiryMinutes) * time.Minute
+	return time.Duration(s.currentStorageConfig(context.Background()).PresignExpiryMinutes) * time.Minute
+}
+
+func (s *MediaService) currentStorageConfig(ctx context.Context) MediaStorageRuntimeConfig {
+	if s == nil {
+		return defaultMediaStorageRuntimeConfig(nil)
 	}
-	return defaultMediaPresignTTL
+	if s.configProvider != nil {
+		cfg, err := s.configProvider.Current(ctx)
+		if err == nil {
+			return cfg
+		}
+	}
+	return defaultMediaStorageRuntimeConfig(s.cfg)
+}
+
+func (s *MediaService) assetStorageConfig(ctx context.Context, asset *MediaAsset) (MediaStorageRuntimeConfig, error) {
+	if asset == nil {
+		return MediaStorageRuntimeConfig{}, ErrMediaNotFound
+	}
+	if s == nil {
+		return MediaStorageRuntimeConfig{}, ErrMediaStorageDisabled
+	}
+	if s.configProvider != nil {
+		cfg, err := s.configProvider.CurrentForAsset(ctx, asset.StorageProfileID, asset.Bucket)
+		if err != nil {
+			return MediaStorageRuntimeConfig{}, fmt.Errorf("resolve media storage config: %w", err)
+		}
+		if !cfg.Enabled {
+			return MediaStorageRuntimeConfig{}, ErrMediaStorageDisabled
+		}
+		return cfg, nil
+	}
+
+	cfg := defaultMediaStorageRuntimeConfig(s.cfg)
+	if !cfg.Enabled {
+		return MediaStorageRuntimeConfig{}, ErrMediaStorageDisabled
+	}
+	if strings.TrimSpace(asset.Bucket) != "" && strings.TrimSpace(cfg.Bucket) != "" && strings.TrimSpace(asset.Bucket) != strings.TrimSpace(cfg.Bucket) {
+		return MediaStorageRuntimeConfig{}, ErrMediaStorageDisabled
+	}
+	return cfg, nil
 }
 
 func normalizeMediaBizType(raw string) (string, error) {

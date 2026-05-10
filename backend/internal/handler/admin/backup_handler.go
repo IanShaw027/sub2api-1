@@ -22,7 +22,7 @@ func NewBackupHandler(backupService *service.BackupService, userService *service
 // ─── S3 配置 ───
 
 func (h *BackupHandler) GetS3Config(c *gin.Context) {
-	cfg, err := h.backupService.GetS3Config(c.Request.Context())
+	cfg, err := h.backupService.GetObjectStorageSettings(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -31,12 +31,12 @@ func (h *BackupHandler) GetS3Config(c *gin.Context) {
 }
 
 func (h *BackupHandler) UpdateS3Config(c *gin.Context) {
-	var req service.BackupS3Config
+	var req service.ObjectStorageSettings
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	cfg, err := h.backupService.UpdateS3Config(c.Request.Context(), req)
+	cfg, err := h.backupService.UpdateObjectStorageSettings(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -45,12 +45,12 @@ func (h *BackupHandler) UpdateS3Config(c *gin.Context) {
 }
 
 func (h *BackupHandler) TestS3Connection(c *gin.Context) {
-	var req service.BackupS3Config
+	var req service.ObjectStorageProfile
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	err := h.backupService.TestS3Connection(c.Request.Context(), req)
+	err := h.backupService.TestObjectStorageProfile(c.Request.Context(), req)
 	if err != nil {
 		response.Success(c, gin.H{"ok": false, "message": err.Error()})
 		return
