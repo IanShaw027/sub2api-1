@@ -319,8 +319,11 @@ func resolveGeminiOAuthType(rawOAuthType, tierID, _ string, planName string) str
 		return normalized
 	}
 
+	// 注意：Google One 用户现在统一使用 ai_studio 类型，避免 GCP Code Assist 端点的速率限制
+	// 原来的 google_one 类型会使用 cloudcode-pa.googleapis.com，经常遇到 429 和 502 错误
+	// 改用 ai_studio 类型后，会使用 generativelanguage.googleapis.com 公开端点
 	if canonicalGeminiTierIDForOAuthType("google_one", tierID) != "" {
-		return "google_one"
+		return "ai_studio"
 	}
 	if canonicalGeminiTierIDForOAuthType("code_assist", tierID) != "" {
 		return "code_assist"
@@ -329,7 +332,7 @@ func resolveGeminiOAuthType(rawOAuthType, tierID, _ string, planName string) str
 	normalizedPlan := strings.ToLower(strings.TrimSpace(planName))
 	switch {
 	case strings.Contains(normalizedPlan, "google one"):
-		return "google_one"
+		return "ai_studio"
 	case strings.Contains(normalizedPlan, "code assist"):
 		return "code_assist"
 	}
