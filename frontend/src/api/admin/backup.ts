@@ -1,13 +1,26 @@
 import { apiClient } from '../client'
 
-export interface BackupS3Config {
+export interface ObjectStorageProfile {
+  id: string
+  name: string
+  provider: string
   endpoint: string
   region: string
   bucket: string
   access_key_id: string
   secret_access_key?: string
-  prefix: string
   force_path_style: boolean
+  secret_configured?: boolean
+}
+
+export interface ObjectStorageSettings {
+  profiles: ObjectStorageProfile[]
+  backup_profile_id: string
+  backup_prefix: string
+  media_enabled: boolean
+  media_profile_id: string
+  media_public_base_url: string
+  media_prefix: string
 }
 
 export interface BackupScheduleConfig {
@@ -45,18 +58,18 @@ export interface TestS3Response {
 }
 
 // S3 Config
-export async function getS3Config(): Promise<BackupS3Config> {
-  const { data } = await apiClient.get<BackupS3Config>('/admin/backups/s3-config')
+export async function getS3Config(): Promise<ObjectStorageSettings> {
+  const { data } = await apiClient.get<ObjectStorageSettings>('/admin/backups/s3-config')
   return data
 }
 
-export async function updateS3Config(config: BackupS3Config): Promise<BackupS3Config> {
-  const { data } = await apiClient.put<BackupS3Config>('/admin/backups/s3-config', config)
+export async function updateS3Config(config: ObjectStorageSettings): Promise<ObjectStorageSettings> {
+  const { data } = await apiClient.put<ObjectStorageSettings>('/admin/backups/s3-config', config)
   return data
 }
 
-export async function testS3Connection(config: BackupS3Config): Promise<TestS3Response> {
-  const { data } = await apiClient.post<TestS3Response>('/admin/backups/s3-config/test', config)
+export async function testS3Connection(profile: ObjectStorageProfile): Promise<TestS3Response> {
+  const { data } = await apiClient.post<TestS3Response>('/admin/backups/s3-config/test', profile)
   return data
 }
 

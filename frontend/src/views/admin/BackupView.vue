@@ -13,41 +13,124 @@
               {{ t('admin.backup.s3.descriptionSuffix') }}
             </p>
           </div>
+          <button type="button" class="btn btn-secondary btn-sm" @click="addStorageProfile">
+            {{ t('admin.backup.s3.addProfile') }}
+          </button>
         </div>
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div>
-            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.endpoint') }}</label>
-            <input v-model="s3Form.endpoint" class="input w-full" placeholder="https://<account_id>.r2.cloudflarestorage.com" />
+        <div class="space-y-4">
+          <div
+            v-for="profile in s3Form.profiles"
+            :key="profile.id"
+            class="rounded-lg border border-gray-200 p-4 dark:border-dark-600"
+          >
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h4 class="text-sm font-semibold text-gray-900 dark:text-white">{{ profile.name || t('admin.backup.s3.profile') }}</h4>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ profile.provider || 's3' }}</p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-xs"
+                  :disabled="testingProfileId === profile.id"
+                  @click="testProfile(profile)"
+                >
+                  {{ testingProfileId === profile.id ? t('common.loading') : t('admin.backup.s3.testConnection') }}
+                </button>
+                <button type="button" class="btn btn-danger btn-xs" @click="removeStorageProfile(profile.id)">
+                  {{ t('common.delete') }}
+                </button>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.profileName') }}</label>
+                <input v-model="profile.name" class="input w-full" />
+              </div>
+              <div>
+                <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.provider') }}</label>
+                <select v-model="profile.provider" class="input w-full" @change="applyProviderDefaults(profile)">
+                  <option v-for="item in providerOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
+                </select>
+              </div>
+              <div>
+                <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.endpoint') }}</label>
+                <input v-model="profile.endpoint" class="input w-full" :placeholder="endpointPlaceholder(profile.provider)" />
+              </div>
+              <div>
+                <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.region') }}</label>
+                <input v-model="profile.region" class="input w-full" placeholder="auto" />
+              </div>
+              <div>
+                <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.bucket') }}</label>
+                <input v-model="profile.bucket" class="input w-full" />
+              </div>
+              <div>
+                <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.accessKeyId') }}</label>
+                <input v-model="profile.access_key_id" class="input w-full" />
+              </div>
+              <div>
+                <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.secretAccessKey') }}</label>
+                <input
+                  v-model="profile.secret_access_key"
+                  type="password"
+                  class="input w-full"
+                  :placeholder="profile.secret_configured ? t('admin.backup.s3.secretConfigured') : ''"
+                />
+              </div>
+              <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
+                <input v-model="profile.force_path_style" type="checkbox" />
+                <span>{{ t('admin.backup.s3.forcePathStyle') }}</span>
+              </label>
+            </div>
           </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.region') }}</label>
-            <input v-model="s3Form.region" class="input w-full" placeholder="auto" />
+        </div>
+        <div class="mt-5 rounded-lg border border-dashed border-gray-200 p-4 dark:border-dark-600">
+          <div class="mb-3">
+            <h4 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.backup.s3.backupTitle') }}</h4>
           </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.bucket') }}</label>
-            <input v-model="s3Form.bucket" class="input w-full" />
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div>
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.backupProfile') }}</label>
+              <select v-model="s3Form.backup_profile_id" class="input w-full">
+                <option value="">{{ t('admin.backup.s3.selectProfile') }}</option>
+                <option v-for="profile in s3Form.profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.prefix') }}</label>
+              <input v-model="s3Form.backup_prefix" class="input w-full" placeholder="backups/" />
+            </div>
           </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.prefix') }}</label>
-            <input v-model="s3Form.prefix" class="input w-full" placeholder="backups/" />
+        </div>
+        <div class="mt-5 rounded-lg border border-dashed border-gray-200 p-4 dark:border-dark-600">
+          <div class="mb-3">
+            <h4 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.backup.s3.mediaTitle') }}</h4>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.backup.s3.mediaDescription') }}</p>
           </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.accessKeyId') }}</label>
-            <input v-model="s3Form.access_key_id" class="input w-full" />
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
+              <input v-model="s3Form.media_enabled" type="checkbox" />
+              <span>{{ t('admin.backup.s3.mediaEnabled') }}</span>
+            </label>
+            <div>
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.mediaProfile') }}</label>
+              <select v-model="s3Form.media_profile_id" class="input w-full" :disabled="!s3Form.media_enabled">
+                <option value="">{{ t('admin.backup.s3.selectProfile') }}</option>
+                <option v-for="profile in s3Form.profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.mediaPublicBaseURL') }}</label>
+              <input v-model="s3Form.media_public_base_url" class="input w-full" placeholder="https://source.example.com" :disabled="!s3Form.media_enabled" />
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.mediaPrefix') }}</label>
+              <input v-model="s3Form.media_prefix" class="input w-full" placeholder="media/" :disabled="!s3Form.media_enabled" />
+            </div>
           </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.secretAccessKey') }}</label>
-            <input v-model="s3Form.secret_access_key" type="password" class="input w-full" :placeholder="s3SecretConfigured ? t('admin.backup.s3.secretConfigured') : ''" />
-          </div>
-          <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
-            <input v-model="s3Form.force_path_style" type="checkbox" />
-            <span>{{ t('admin.backup.s3.forcePathStyle') }}</span>
-          </label>
         </div>
         <div class="mt-4 flex flex-wrap gap-2">
-          <button type="button" class="btn btn-secondary btn-sm" :disabled="testingS3" @click="testS3">
-            {{ testingS3 ? t('common.loading') : t('admin.backup.s3.testConnection') }}
-          </button>
           <button type="button" class="btn btn-primary btn-sm" :disabled="savingS3" @click="saveS3Config">
             {{ savingS3 ? t('common.loading') : t('common.save') }}
           </button>
@@ -279,28 +362,34 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api'
 import { useAppStore } from '@/stores'
-import type { BackupS3Config, BackupScheduleConfig, BackupRecord } from '@/api/admin/backup'
+import type { BackupScheduleConfig, BackupRecord, ObjectStorageProfile, ObjectStorageSettings } from '@/api/admin/backup'
 
 const { t } = useI18n()
 const appStore = useAppStore()
 
 // S3 config
-const s3Form = ref<BackupS3Config>({
-  endpoint: '',
-  region: 'auto',
-  bucket: '',
-  access_key_id: '',
-  secret_access_key: '',
-  prefix: 'backups/',
-  force_path_style: false,
+const s3Form = ref<ObjectStorageSettings>({
+  profiles: [],
+  backup_profile_id: '',
+  backup_prefix: 'backups/',
+  media_enabled: false,
+  media_profile_id: '',
+  media_public_base_url: '',
+  media_prefix: '',
 })
-const s3SecretConfigured = ref(false)
 const savingS3 = ref(false)
-const testingS3 = ref(false)
+const testingProfileId = ref('')
+
+const providerOptions = [
+  { value: 'r2', label: 'Cloudflare R2' },
+  { value: 'oss', label: 'Alibaba Cloud OSS' },
+  { value: 'minio', label: 'MinIO' },
+  { value: 's3', label: 'Amazon S3 / Other' }
+]
 
 // Schedule config
 const scheduleForm = ref<BackupScheduleConfig>({
@@ -426,28 +515,120 @@ function handleVisibilityChange() {
 // R2 guide
 const showR2Guide = ref(false)
 const r2ConfigRows = computed(() => [
+  { field: t('admin.backup.s3.provider'), value: 'r2' },
   { field: t('admin.backup.s3.endpoint'), value: 'https://<account_id>.r2.cloudflarestorage.com' },
   { field: t('admin.backup.s3.region'), value: 'auto' },
   { field: t('admin.backup.s3.bucket'), value: t('admin.backup.r2Guide.step4.bucketValue') },
+  { field: t('admin.backup.s3.backupProfile'), value: t('admin.backup.s3.profile') },
   { field: t('admin.backup.s3.prefix'), value: 'backups/' },
+  { field: t('admin.backup.s3.mediaEnabled'), value: t('common.enabled') },
+  { field: t('admin.backup.s3.mediaProfile'), value: t('admin.backup.s3.profile') },
+  { field: t('admin.backup.s3.mediaPublicBaseURL'), value: 'https://source.example.com' },
+  { field: t('admin.backup.s3.mediaPrefix'), value: 'media/' },
   { field: 'Access Key ID', value: t('admin.backup.r2Guide.step4.fromStep2') },
   { field: 'Secret Access Key', value: t('admin.backup.r2Guide.step4.fromStep2') },
   { field: t('admin.backup.s3.forcePathStyle'), value: t('admin.backup.r2Guide.step4.unchecked') },
 ])
 
+function createEmptyProfile(): ObjectStorageProfile {
+  const profile: ObjectStorageProfile = {
+    id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `profile-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    name: '',
+    provider: 'r2',
+    endpoint: '',
+    region: 'auto',
+    bucket: '',
+    access_key_id: '',
+    secret_access_key: '',
+    force_path_style: false,
+    secret_configured: false
+  }
+  applyProviderDefaults(profile)
+  return profile
+}
+
+function applyProviderDefaults(profile: ObjectStorageProfile) {
+  switch (profile.provider) {
+    case 'r2':
+      if (!profile.region) {
+        profile.region = 'auto'
+      }
+      break
+    case 'oss':
+      if (!profile.region) {
+        profile.region = 'oss-cn-hangzhou'
+      }
+      break
+    case 'minio':
+      if (!profile.region) {
+        profile.region = 'auto'
+      }
+      if (!profile.endpoint && !profile.bucket && !profile.access_key_id && !profile.secret_access_key && !profile.secret_configured) {
+        profile.force_path_style = true
+      }
+      break
+    default:
+      if (!profile.region) {
+        profile.region = 'us-east-1'
+      }
+      break
+  }
+}
+
+function endpointPlaceholder(provider: string): string {
+  switch (provider) {
+    case 'oss':
+      return 'https://oss-cn-hangzhou.aliyuncs.com'
+    case 'minio':
+      return 'http://minio:9000'
+    case 's3':
+      return 'https://s3.amazonaws.com'
+    default:
+      return 'https://<account_id>.r2.cloudflarestorage.com'
+  }
+}
+
+function addStorageProfile() {
+  const profile = createEmptyProfile()
+  profile.name = `${t('admin.backup.s3.profile')} ${s3Form.value.profiles.length + 1}`
+  s3Form.value.profiles.push(profile)
+  if (!s3Form.value.backup_profile_id) {
+    s3Form.value.backup_profile_id = profile.id
+  }
+  if (!s3Form.value.media_profile_id) {
+    s3Form.value.media_profile_id = profile.id
+  }
+}
+
+function removeStorageProfile(profileId: string) {
+  s3Form.value.profiles = s3Form.value.profiles.filter(profile => profile.id !== profileId)
+  if (s3Form.value.backup_profile_id === profileId) {
+    s3Form.value.backup_profile_id = s3Form.value.profiles[0]?.id || ''
+  }
+  if (s3Form.value.media_profile_id === profileId) {
+    s3Form.value.media_profile_id = s3Form.value.profiles[0]?.id || ''
+  }
+}
+
 async function loadS3Config() {
   try {
     const cfg = await adminAPI.backup.getS3Config()
     s3Form.value = {
-      endpoint: cfg.endpoint || '',
-      region: cfg.region || 'auto',
-      bucket: cfg.bucket || '',
-      access_key_id: cfg.access_key_id || '',
-      secret_access_key: '',
-      prefix: cfg.prefix || 'backups/',
-      force_path_style: cfg.force_path_style,
+      profiles: Array.isArray(cfg.profiles) ? cfg.profiles.map(profile => ({
+        ...profile,
+        secret_access_key: '',
+        secret_configured: Boolean(profile.secret_configured)
+      })) : [],
+      backup_profile_id: cfg.backup_profile_id || '',
+      backup_prefix: cfg.backup_prefix || 'backups/',
+      media_enabled: Boolean(cfg.media_enabled),
+      media_profile_id: cfg.media_profile_id || '',
+      media_public_base_url: cfg.media_public_base_url || '',
+      media_prefix: cfg.media_prefix || '',
     }
-    s3SecretConfigured.value = Boolean(cfg.access_key_id)
+    if (s3Form.value.profiles.length === 0) {
+      addStorageProfile()
+    }
   } catch (error) {
     appStore.showError((error as { message?: string })?.message || t('errors.networkError'))
   }
@@ -456,6 +637,22 @@ async function loadS3Config() {
 async function saveS3Config() {
   savingS3.value = true
   try {
+    if (s3Form.value.profiles.length === 0) {
+      appStore.showError(t('admin.backup.s3.profileRequired'))
+      return
+    }
+    if (!s3Form.value.backup_profile_id) {
+      appStore.showError(t('admin.backup.s3.backupProfileRequired'))
+      return
+    }
+    if (s3Form.value.media_enabled && !s3Form.value.media_profile_id) {
+      appStore.showError(t('admin.backup.s3.mediaProfileRequired'))
+      return
+    }
+    if (s3Form.value.media_enabled && !String(s3Form.value.media_public_base_url || '').trim()) {
+      appStore.showError(t('admin.backup.s3.mediaPublicBaseURLRequired'))
+      return
+    }
     await adminAPI.backup.updateS3Config(s3Form.value)
     appStore.showSuccess(t('admin.backup.s3.saved'))
     await loadS3Config()
@@ -466,10 +663,10 @@ async function saveS3Config() {
   }
 }
 
-async function testS3() {
-  testingS3.value = true
+async function testProfile(profile: ObjectStorageProfile) {
+  testingProfileId.value = profile.id
   try {
-    const result = await adminAPI.backup.testS3Connection(s3Form.value)
+    const result = await adminAPI.backup.testS3Connection(profile)
     if (result.ok) {
       appStore.showSuccess(result.message || t('admin.backup.s3.testSuccess'))
     } else {
@@ -478,9 +675,18 @@ async function testS3() {
   } catch (error) {
     appStore.showError((error as { message?: string })?.message || t('errors.networkError'))
   } finally {
-    testingS3.value = false
+    testingProfileId.value = ''
   }
 }
+
+watch(
+  () => s3Form.value.media_enabled,
+  enabled => {
+    if (enabled && !s3Form.value.media_profile_id && s3Form.value.profiles.length > 0) {
+      s3Form.value.media_profile_id = s3Form.value.profiles[0].id
+    }
+  }
+)
 
 async function loadSchedule() {
   try {
