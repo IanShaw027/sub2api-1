@@ -53,7 +53,7 @@ func TestGeminiOAuthService_GenerateAuthURL_RedirectURIStrategy(t *testing.T) {
 			wantProjectID: "",
 		},
 		{
-			name: "google_one uses custom client when fully configured",
+			name: "google_one still uses built-in client when custom client is configured",
 			cfg: &config.Config{
 				Gemini: config.GeminiConfig{
 					OAuth: config.GeminiOAuthConfig{
@@ -63,8 +63,8 @@ func TestGeminiOAuthService_GenerateAuthURL_RedirectURIStrategy(t *testing.T) {
 				},
 			},
 			oauthType:     "google_one",
-			wantClientID:  "custom-client-id",
-			wantRedirect:  "https://example.com/auth/callback",
+			wantClientID:  geminicli.GeminiCLIOAuthClientID,
+			wantRedirect:  geminicli.GeminiCLIRedirectURI,
 			wantScope:     geminicli.DefaultCodeAssistScopes,
 			wantProjectID: "",
 		},
@@ -1399,7 +1399,7 @@ func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_RefreshesQuotaSnapsho
 	}
 }
 
-func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_NoProjectID_SoftMissing(t *testing.T) {
+func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_NoProjectID_ReturnsRegisteredTierError(t *testing.T) {
 	t.Parallel()
 
 	client := &mockGeminiOAuthClient{
@@ -1436,17 +1436,11 @@ func TestGeminiOAuthService_RefreshAccountToken_CodeAssist_NoProjectID_SoftMissi
 	}
 
 	info, err := svc.RefreshAccountToken(context.Background(), account)
-	if err != nil {
-		t.Fatalf("不应返回错误: %v", err)
+	if err == nil {
+		t.Fatalf("应返回 companion project 缺失错误: %#v", info)
 	}
-	if !info.ProjectIDMissing {
-		t.Fatal("应标记 ProjectIDMissing")
-	}
-	if info.ProjectID != "" {
-		t.Fatalf("ProjectID 应为空: got=%q", info.ProjectID)
-	}
-	if canonicalGeminiTierIDForOAuthType("code_assist", info.TierID) != GeminiTierGCPStandard {
-		t.Fatalf("TierID 应保持为 code_assist 的标准 tier: got=%q", info.TierID)
+	if !strings.Contains(err.Error(), "registered_tier_missing_companion_project") {
+		t.Fatalf("错误信息不匹配: %v", err)
 	}
 }
 
@@ -1630,14 +1624,12 @@ func TestGeminiOAuthService_ExchangeCode_CodeAssist_NoProjectID_Fails(t *testing
 	if err == nil {
 		t.Fatal("ExchangeCode 应返回 project_id 缺失错误")
 	}
-	if !strings.Contains(err.Error(), "project_id") {
-		t.Fatalf("错误信息应包含 project_id: got=%q", err.Error())
+	if !strings.Contains(err.Error(), "registered_tier_missing_companion_project") {
+		t.Fatalf("错误信息应包含 registered_tier_missing_companion_project: got=%q", err.Error())
 	}
 }
 
 func TestGeminiOAuthService_ExchangeCode_GoogleOne_OnboardOperationPollingReturnsProjectID(t *testing.T) {
-	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
-
 	client := &mockGeminiOAuthClient{
 		exchangeCodeFunc: func(ctx context.Context, oauthType, code, codeVerifier, redirectURI, proxyURL string) (*geminicli.TokenResponse, error) {
 			return &geminicli.TokenResponse{
@@ -1934,8 +1926,6 @@ func TestGeminiOAuthService_ExchangeCode_CodeAssist_ValidationRequiredWithoutURL
 }
 
 func TestGeminiOAuthService_ExchangeCode_GoogleOne_IneligibleTierIncludesReasonCode(t *testing.T) {
-	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
-
 	client := &mockGeminiOAuthClient{
 		exchangeCodeFunc: func(ctx context.Context, oauthType, code, codeVerifier, redirectURI, proxyURL string) (*geminicli.TokenResponse, error) {
 			return &geminicli.TokenResponse{
@@ -2288,11 +2278,7 @@ func assertCredStr(t *testing.T, creds map[string]any, key, want string) {
 	}
 }
 
-// Regression test: google_one ExchangeCode must use Code Assist metadata tier
-// when projectID was auto-detected.
 func TestGeminiOAuthService_ExchangeCode_GoogleOne_UsesDetectedTier(t *testing.T) {
-	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
-
 	client := &mockGeminiOAuthClient{
 		exchangeCodeFunc: func(ctx context.Context, oauthType, code, codeVerifier, redirectURI, proxyURL string) (*geminicli.TokenResponse, error) {
 			return &geminicli.TokenResponse{

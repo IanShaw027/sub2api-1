@@ -25,7 +25,7 @@ type GeminiTokenProvider struct {
 	refreshPolicy      ProviderRefreshPolicy
 }
 
-const errGeminiCodeAssistProjectIDNotConfigured = "gemini code assist project_id not configured"
+const errGeminiCodeAssistProjectIDNotConfigured = "gemini project_id not configured for project-scoped oauth account"
 
 func NewGeminiTokenProvider(
 	accountRepo AccountRepository,
@@ -65,7 +65,7 @@ func (p *GeminiTokenProvider) GetAccessToken(ctx context.Context, account *Accou
 	cacheKey := GeminiTokenCacheKey(account)
 	projectID := strings.TrimSpace(account.GetCredential("project_id"))
 	autoDetectProjectID := account.GetCredential("auto_detect_project_id") == "true"
-	isCodeAssist := account.GeminiOAuthTypeSafe() == "code_assist"
+	requiresProjectRouting := account.UsesGeminiCLIProjectRouting()
 	cachedToken := ""
 	refreshed := false
 
@@ -98,7 +98,7 @@ func (p *GeminiTokenProvider) GetAccessToken(ctx context.Context, account *Accou
 			expiresAt = account.GetCredentialAsTime("expires_at")
 			projectID = strings.TrimSpace(account.GetCredential("project_id"))
 			autoDetectProjectID = account.GetCredential("auto_detect_project_id") == "true"
-			isCodeAssist = account.GeminiOAuthTypeSafe() == "code_assist"
+			requiresProjectRouting = account.UsesGeminiCLIProjectRouting()
 			refreshed = true
 		}
 	} else if needsRefresh && p.tokenCache != nil {
@@ -119,15 +119,11 @@ func (p *GeminiTokenProvider) GetAccessToken(ctx context.Context, account *Accou
 		return "", errors.New("access_token not found in credentials")
 	}
 
-	// project_id handling depends on the Gemini OAuth mode:
-	// - Code Assist OAuth requires project_id and must not silently degrade to AI Studio OAuth.
-	// - Google One / AI Studio-compatible OAuth may continue without project_id.
-	if projectID == "" && autoDetectProjectID {
+	// Gemini CLI / Google One and Code Assist both rely on Code Assist metadata
+	// to discover or validate the effective project.
+	if requiresProjectRouting && projectID == "" && autoDetectProjectID {
 		if p.geminiOAuthService == nil {
-			if isCodeAssist {
-				return "", errors.New(errGeminiCodeAssistProjectIDNotConfigured)
-			}
-			return accessToken, nil
+			return "", errors.New(errGeminiCodeAssistProjectIDNotConfigured)
 		}
 
 		var proxyURL string
@@ -139,11 +135,8 @@ func (p *GeminiTokenProvider) GetAccessToken(ctx context.Context, account *Accou
 
 		snapshot, err := p.geminiOAuthService.fetchProjectID(ctx, accessToken, proxyURL, "")
 		if err != nil {
-			if isCodeAssist {
-				return "", err
-			}
-			log.Printf("[GeminiTokenProvider] Auto-detect project_id failed: %v, keeping token without project_id", err)
-			return accessToken, nil
+			log.Printf("[GeminiTokenProvider] Auto-detect project_id failed: %v", err)
+			return "", err
 		}
 		detected := strings.TrimSpace(snapshot.ProjectID)
 		tierID := strings.TrimSpace(snapshot.TierID)
@@ -160,7 +153,7 @@ func (p *GeminiTokenProvider) GetAccessToken(ctx context.Context, account *Accou
 		}
 	}
 
-	if isCodeAssist && strings.TrimSpace(projectID) == "" {
+	if requiresProjectRouting && strings.TrimSpace(projectID) == "" {
 		return "", errors.New(errGeminiCodeAssistProjectIDNotConfigured)
 	}
 

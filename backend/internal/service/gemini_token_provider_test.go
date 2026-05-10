@@ -86,6 +86,65 @@ func TestGeminiTokenProvider_GetAccessToken_BackfillsProjectIDWhenAutoDetectFlag
 	require.Equal(t, 1, repo.updateCredentialsCalls)
 }
 
+func TestGeminiTokenProvider_GetAccessToken_GoogleOneBackfillsProjectIDWhenAutoDetectFlagSet(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		ID:       102,
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":           "access-token",
+			"oauth_type":             "google_one",
+			"auto_detect_project_id": "true",
+		},
+	}
+
+	repo := &refreshAPIAccountRepo{account: account}
+	oauthService := &GeminiOAuthService{
+		codeAssist: &mockGeminiCodeAssistClient{
+			loadCodeAssistFunc: func(ctx context.Context, accessToken, proxyURL string, req *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
+				return &geminicli.LoadCodeAssistResponse{
+					CloudAICompanionProject: "managed-google-one-project",
+					CurrentTier:             &geminicli.TierInfo{ID: "g1-pro-tier"},
+				}, nil
+			},
+		},
+	}
+
+	provider := NewGeminiTokenProvider(repo, nil, oauthService)
+
+	token, err := provider.GetAccessToken(context.Background(), account)
+	require.NoError(t, err)
+	require.Equal(t, "access-token", token)
+	require.Equal(t, "managed-google-one-project", account.GetCredential("project_id"))
+	require.Equal(t, "g1-pro-tier", account.GetCredential("tier_id"))
+	require.Equal(t, 1, repo.updateCredentialsCalls)
+}
+
+func TestGeminiTokenProvider_GetAccessToken_RejectsGoogleOneTokenWithoutProjectID(t *testing.T) {
+	t.Parallel()
+
+	cache := &geminiTokenProviderCacheRecorder{cachedToken: "cached-access-token"}
+	provider := NewGeminiTokenProvider(nil, cache, nil)
+	account := &Account{
+		ID:       103,
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token": "stored-access-token",
+			"oauth_type":   "google_one",
+			"expires_at":   time.Now().Add(time.Hour).Format(time.RFC3339),
+		},
+	}
+
+	token, err := provider.GetAccessToken(context.Background(), account)
+	require.ErrorContains(t, err, errGeminiCodeAssistProjectIDNotConfigured)
+	require.Empty(t, token)
+	require.Equal(t, []string{"gemini:account:103"}, cache.getKeys)
+	require.Empty(t, cache.setKeys)
+}
+
 func TestGeminiTokenProvider_GetAccessToken_UsesAccountScopedCacheKeyEvenWhenProjectMatches(t *testing.T) {
 	t.Parallel()
 
@@ -168,11 +227,11 @@ func TestGeminiTokenProvider_GetAccessToken_RefreshRecomputesProjectRoutingState
 	executor := &refreshAPIExecutorStub{
 		needsRefresh: true,
 		credentials: map[string]any{
-			"access_token": "fresh-access",
+			"access_token":  "fresh-access",
 			"refresh_token": "fresh-refresh",
-			"project_id":   "refreshed-project",
-			"oauth_type":   "code_assist",
-			"expires_at":   time.Now().Add(time.Hour).Format(time.RFC3339),
+			"project_id":    "refreshed-project",
+			"oauth_type":    "code_assist",
+			"expires_at":    time.Now().Add(time.Hour).Format(time.RFC3339),
 		},
 	}
 

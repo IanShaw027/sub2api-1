@@ -241,6 +241,20 @@ func (a *Account) IsGeminiCodeAssist() bool {
 	return a.GeminiOAuthTypeSafe() == "code_assist"
 }
 
+// UsesGeminiCLIProjectRouting reports whether Gemini OAuth requests should use
+// the project-scoped Gemini CLI upstream.
+func (a *Account) UsesGeminiCLIProjectRouting() bool {
+	if a.Platform != PlatformGemini || a.Type != AccountTypeOAuth {
+		return false
+	}
+	switch a.GeminiOAuthTypeSafe() {
+	case "code_assist", "google_one":
+		return true
+	default:
+		return false
+	}
+}
+
 func (a *Account) CanGetUsage() bool {
 	if a.Platform == PlatformKiro {
 		return false

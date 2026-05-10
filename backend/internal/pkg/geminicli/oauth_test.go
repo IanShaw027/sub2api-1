@@ -445,7 +445,7 @@ func TestEffectiveOAuthConfig_GoogleOne(t *testing.T) {
 		wantErr      bool
 	}{
 		{
-			name:         "Google One 使用内置客户端（空配置）",
+			name:         "Google One 使用官方内置客户端（空配置）",
 			input:        OAuthConfig{},
 			oauthType:    "google_one",
 			wantClientID: GeminiCLIOAuthClientID,
@@ -453,28 +453,28 @@ func TestEffectiveOAuthConfig_GoogleOne(t *testing.T) {
 			wantErr:      false,
 		},
 		{
-			name: "Google One 使用自定义客户端（传入自定义凭据时使用自定义）",
+			name: "Google One 即使传入自定义客户端也强制使用官方内置客户端",
 			input: OAuthConfig{
 				ClientID:     "custom-client-id",
 				ClientSecret: "custom-client-secret",
 			},
 			oauthType:    "google_one",
-			wantClientID: "custom-client-id",
+			wantClientID: GeminiCLIOAuthClientID,
 			wantScopes:   DefaultCodeAssistScopes,
 			wantErr:      false,
 		},
 		{
-			name: "Google One 内置客户端 + 自定义 scopes（应过滤受限 scopes）",
+			name: "Google One 自定义 scopes 会回退为官方 Code Assist scopes",
 			input: OAuthConfig{
 				Scopes: "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/generative-language.retriever https://www.googleapis.com/auth/drive.readonly",
 			},
 			oauthType:    "google_one",
 			wantClientID: GeminiCLIOAuthClientID,
-			wantScopes:   "https://www.googleapis.com/auth/cloud-platform",
+			wantScopes:   DefaultCodeAssistScopes,
 			wantErr:      false,
 		},
 		{
-			name: "Google One 内置客户端 + 仅受限 scopes（应回退到默认）",
+			name: "Google One 仅受限 scopes 也回退为官方 Code Assist scopes",
 			input: OAuthConfig{
 				Scopes: "https://www.googleapis.com/auth/generative-language.retriever https://www.googleapis.com/auth/drive.readonly",
 			},
@@ -516,10 +516,10 @@ func TestEffectiveOAuthConfig_GoogleOne(t *testing.T) {
 func TestEffectiveOAuthConfig_ScopeFiltering(t *testing.T) {
 	t.Setenv(GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
 
-	// 测试 Google One + 内置客户端过滤受限 scopes
+	// 测试 AI Studio + 内置客户端过滤受限 scopes
 	cfg, err := EffectiveOAuthConfig(OAuthConfig{
 		Scopes: "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/generative-language.retriever https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.profile",
-	}, "google_one")
+	}, "ai_studio")
 
 	if err != nil {
 		t.Fatalf("EffectiveOAuthConfig() error = %v", err)
@@ -746,8 +746,30 @@ func TestEffectiveOAuthConfig_EmptyOAuthType_DefaultScopes(t *testing.T) {
 	}
 }
 
+func TestBuildAuthorizationURL_GoogleOne_DoesNotIncludeProjectID(t *testing.T) {
+	t.Setenv(GeminiCLIOAuthClientSecretEnv, "test-secret")
+
+	authURL, err := BuildAuthorizationURL(
+		OAuthConfig{
+			ClientID:     "custom-client-id",
+			ClientSecret: "custom-client-secret",
+		},
+		"test-state",
+		"test-challenge",
+		"https://example.com/callback",
+		"my-project-123",
+		"google_one",
+	)
+	if err != nil {
+		t.Fatalf("BuildAuthorizationURL() 出错: %v", err)
+	}
+	if strings.Contains(authURL, "project_id=my-project-123") {
+		t.Fatalf("google_one 授权 URL 不应包含 project_id 参数: %s", authURL)
+	}
+}
+
 func TestEffectiveOAuthConfig_CustomClient_NoScopeFiltering(t *testing.T) {
-	// 自定义客户端 + google_one + 包含受限 scopes -> 不应被过滤（因为不是内置客户端）
+	// google_one 会强制使用官方内置客户端和 Code Assist scopes，不保留传入的 AI Studio scopes
 	cfg, err := EffectiveOAuthConfig(OAuthConfig{
 		ClientID:     "custom-id",
 		ClientSecret: "custom-secret",
@@ -756,11 +778,10 @@ func TestEffectiveOAuthConfig_CustomClient_NoScopeFiltering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EffectiveOAuthConfig() error = %v", err)
 	}
-	// 自定义客户端不应过滤任何 scope
-	if !strings.Contains(cfg.Scopes, "generative-language.retriever") {
-		t.Errorf("自定义客户端不应过滤 generative-language.retriever，实际: %q", cfg.Scopes)
+	if cfg.ClientID != GeminiCLIOAuthClientID {
+		t.Errorf("google_one 应强制使用官方内置客户端，实际: %q", cfg.ClientID)
 	}
-	if !strings.Contains(cfg.Scopes, "drive.readonly") {
-		t.Errorf("自定义客户端不应过滤 drive.readonly，实际: %q", cfg.Scopes)
+	if cfg.Scopes != DefaultCodeAssistScopes {
+		t.Errorf("google_one 应使用官方 Code Assist scopes，实际: %q", cfg.Scopes)
 	}
 }

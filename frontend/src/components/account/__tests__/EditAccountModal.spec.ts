@@ -394,6 +394,34 @@ describe('EditAccountModal', () => {
     expect(anthropicWrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('')
   })
 
+  it('allows API key accounts to save when the stored api_key is redacted in the detail payload', async () => {
+    const account = buildAccount()
+    account.credentials = {
+      base_url: 'https://api.openai.com'
+    }
+
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    getSettingsMock.mockReset()
+    getWebSearchEmulationConfigMock.mockReset()
+    listTlsFingerprintProfilesMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    getSettingsMock.mockResolvedValue({})
+    getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
+    listTlsFingerprintProfilesMock.mockResolvedValue([])
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toEqual({
+      base_url: 'https://api.openai.com'
+    })
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('api_key')
+  })
+
   it('updates OpenAI TLS fingerprint settings in extra', async () => {
     const account = {
       ...buildAccount(),

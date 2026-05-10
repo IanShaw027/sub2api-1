@@ -268,6 +268,22 @@ func TestRankAIStudioEndpointAccount_CodeAssistOAuthIsRejected(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestRankAIStudioEndpointAccount_GoogleOneOAuthIsRejected(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"oauth_type": "google_one",
+			"project_id": "project-1",
+		},
+	}
+
+	_, ok := rankAIStudioEndpointAccount(account)
+	require.False(t, ok)
+}
+
 func TestGeminiHandleNativeNonStreamingResponse_DebugDisabledDoesNotEmitHeaderLogs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	logSink, restore := captureStructuredLog(t)
@@ -709,6 +725,88 @@ func TestGeminiMessagesCompatServiceForwardNative_ProjectIDOnlyOAuthStaysAIStudi
 	require.NotNil(t, httpStub.lastReq)
 	require.Contains(t, httpStub.lastReq.URL.String(), "/v1beta/models/gemini-2.5-pro:generateContent")
 	require.NotContains(t, httpStub.lastReq.URL.String(), "/v1internal:")
+	require.Equal(t, "Bearer oauth-token", httpStub.lastReq.Header.Get("Authorization"))
+}
+
+func TestGeminiMessagesCompatServiceForwardNative_GoogleOneUsesCodeAssistEndpoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini-2.5-pro:generateContent", nil)
+
+	httpStub := &geminiCompatHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"x-request-id": []string{"gemini-native-google-one-req-1"}},
+			Body:       io.NopCloser(strings.NewReader(`{"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5},"candidates":[{"content":{"parts":[{"text":"hello code assist"}]}}]}`)),
+		},
+	}
+	svc := &GeminiMessagesCompatService{
+		httpUpstream:  httpStub,
+		cfg:           &config.Config{},
+		tokenProvider: NewGeminiTokenProvider(nil, &geminiCompatTokenCacheStub{token: "oauth-token"}, nil),
+	}
+	account := &Account{
+		ID:       15,
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"oauth_type":   "google_one",
+			"project_id":   "managed-project",
+			"access_token": "oauth-token",
+			"expires_at":   time.Now().Add(time.Hour).Format(time.RFC3339),
+		},
+	}
+	body := []byte(`{"contents":[{"role":"user","parts":[{"text":"hello"}]}]}`)
+
+	result, err := svc.ForwardNative(context.Background(), c, account, "gemini-2.5-pro", "generateContent", false, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, httpStub.lastReq)
+	require.Contains(t, httpStub.lastReq.URL.String(), "cloudcode-pa.googleapis.com/v1internal:streamGenerateContent")
+	require.Contains(t, httpStub.lastReq.URL.String(), "?alt=sse")
+	require.Equal(t, "Bearer oauth-token", httpStub.lastReq.Header.Get("Authorization"))
+}
+
+func TestGeminiMessagesCompatServiceForwardNative_GoogleOneCountTokensUsesCodeAssistEndpoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini-2.5-pro:countTokens", nil)
+
+	httpStub := &geminiCompatHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"x-request-id": []string{"gemini-native-google-one-count-1"}},
+			Body:       io.NopCloser(strings.NewReader(`{"totalTokens":12}`)),
+		},
+	}
+	svc := &GeminiMessagesCompatService{
+		httpUpstream:  httpStub,
+		cfg:           &config.Config{},
+		tokenProvider: NewGeminiTokenProvider(nil, &geminiCompatTokenCacheStub{token: "oauth-token"}, nil),
+	}
+	account := &Account{
+		ID:       16,
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"oauth_type":   "google_one",
+			"project_id":   "managed-project",
+			"access_token": "oauth-token",
+			"expires_at":   time.Now().Add(time.Hour).Format(time.RFC3339),
+		},
+	}
+	body := []byte(`{"contents":[{"role":"user","parts":[{"text":"hello"}]}]}`)
+
+	result, err := svc.ForwardNative(context.Background(), c, account, "gemini-2.5-pro", "countTokens", false, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, httpStub.lastReq)
+	require.Contains(t, httpStub.lastReq.URL.String(), "cloudcode-pa.googleapis.com/v1internal:countTokens")
+	require.NotContains(t, httpStub.lastReq.URL.String(), "generativelanguage.googleapis.com")
 	require.Equal(t, "Bearer oauth-token", httpStub.lastReq.Header.Get("Authorization"))
 }
 

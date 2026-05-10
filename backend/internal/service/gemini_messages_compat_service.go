@@ -43,12 +43,11 @@ const (
 func shouldUseGeminiOAuthProjectStreamingBridge(account *Account, stream bool, action string) bool {
 	return account != nil &&
 		account.Type == AccountTypeOAuth &&
-		account.GeminiOAuthTypeSafe() == "code_assist" &&
+		account.UsesGeminiCLIProjectRouting() &&
 		!stream &&
 		action == "generateContent" &&
 		strings.TrimSpace(account.GetCredential("project_id")) != ""
 }
-
 
 type GeminiMessagesCompatService struct {
 	accountRepo               AccountRepository
@@ -573,11 +572,10 @@ func rankAIStudioEndpointAccount(account *Account) (int, bool) {
 		return 0, strings.TrimSpace(account.GetCredential("api_key")) != ""
 	case AccountTypeOAuth:
 		oauthType := strings.TrimSpace(account.GeminiOAuthTypeSafe())
-		if oauthType == "" || strings.EqualFold(oauthType, "ai_studio") || strings.EqualFold(oauthType, "google_one") {
+		if oauthType == "" || strings.EqualFold(oauthType, "ai_studio") {
 			return 1, true
 		}
-		// Explicit Code Assist Gemini OAuth accounts often lack AI Studio scopes for
-		// /v1beta/models and should fall through to the caller's fallback.
+		// Project-scoped Gemini CLI OAuth accounts should fall through to the caller's fallback.
 		return 0, false
 	default:
 		return 0, false
@@ -667,7 +665,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 			}
 
 			projectID := strings.TrimSpace(account.GetCredential("project_id"))
-			isCodeAssist := account.GeminiOAuthTypeSafe() == "code_assist"
+			isCodeAssist := account.UsesGeminiCLIProjectRouting()
 
 			action := "generateContent"
 			if useUpstreamStream {
@@ -1177,7 +1175,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 		useUpstreamStream = true
 		upstreamAction = "streamGenerateContent"
 	}
-	forceAIStudio := action == "countTokens"
+	forceAIStudio := action == "countTokens" && strings.EqualFold(account.GeminiOAuthTypeSafe(), "ai_studio")
 
 	var requestIDHeader string
 	var buildReq func(ctx context.Context) (*http.Request, string, error)
@@ -1222,10 +1220,10 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 			}
 
 			projectID := strings.TrimSpace(account.GetCredential("project_id"))
-			isCodeAssist := account.GeminiOAuthTypeSafe() == "code_assist"
+			isCodeAssist := account.UsesGeminiCLIProjectRouting()
 
 			// Two modes for OAuth:
-			// 1. Explicit Code Assist + project_id -> Code Assist API (wrapped request)
+			// 1. Project-scoped Gemini CLI OAuth + project_id -> Code Assist API (wrapped request)
 			// 2. Otherwise -> AI Studio API (direct OAuth, like API key but with Bearer token)
 			if isCodeAssist && projectID != "" && !forceAIStudio {
 				// Mode 1: Code Assist API
@@ -1473,7 +1471,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
-		// Best-effort fallback for OAuth tokens missing AI Studio scopes when calling countTokens.
+		// Best-effort fallback for AI Studio OAuth tokens missing scopes when calling countTokens.
 		// This avoids Gemini SDKs failing hard during preflight token counting.
 		// Checked before error policy so it always works regardless of custom error codes.
 		if action == "countTokens" && isOAuth && isGeminiInsufficientScope(resp.Header, respBody) {
@@ -1698,7 +1696,7 @@ func (s *GeminiMessagesCompatService) shouldRetryGeminiUpstreamError(account *Ac
 		if account == nil || account.Type != AccountTypeOAuth {
 			return false
 		}
-		return strings.EqualFold(account.GeminiOAuthTypeSafe(), "code_assist")
+		return account.UsesGeminiCLIProjectRouting()
 	default:
 		return false
 	}
@@ -3048,7 +3046,7 @@ func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Cont
 	oauthType := account.GeminiOAuthTypeSafe()
 	tierID := account.GeminiTierID()
 	projectID := strings.TrimSpace(account.GetCredential("project_id"))
-	isCodeAssist := account.IsGeminiCodeAssist()
+	isCodeAssist := account.UsesGeminiCLIProjectRouting()
 
 	resetAt := ParseGeminiRateLimitResetTime(body)
 	if resetAt == nil {

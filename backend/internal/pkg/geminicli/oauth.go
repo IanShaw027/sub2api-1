@@ -160,6 +160,14 @@ func EffectiveOAuthConfig(cfg OAuthConfig, oauthType string) (OAuthConfig, error
 		Scopes:       strings.TrimSpace(cfg.Scopes),
 	}
 
+	// Match official Gemini CLI behavior for personal Google login:
+	// always use the built-in Gemini CLI OAuth client and Code Assist scopes.
+	if oauthType == "google_one" {
+		effective.ClientID = ""
+		effective.ClientSecret = ""
+		effective.Scopes = ""
+	}
+
 	// Normalize scopes: allow comma-separated input but send space-delimited scopes to Google.
 	if effective.Scopes != "" {
 		effective.Scopes = strings.Join(strings.Fields(strings.ReplaceAll(effective.Scopes, ",", " ")), " ")
@@ -196,8 +204,8 @@ func EffectiveOAuthConfig(cfg OAuthConfig, oauthType string) (OAuthConfig, error
 				effective.Scopes = DefaultAIStudioScopes
 			}
 		case "google_one":
-			// Google One always uses built-in Gemini CLI client (same as code_assist)
-			// Built-in client can't request restricted scopes like generative-language.retriever or drive.readonly
+			// Google One matches official Gemini CLI personal Google login:
+			// built-in OAuth client + Code Assist scopes.
 			effective.Scopes = DefaultCodeAssistScopes
 		default:
 			// Default to Code Assist scopes
@@ -260,7 +268,7 @@ func BuildAuthorizationURL(cfg OAuthConfig, state, codeChallenge, redirectURI, p
 	params.Set("access_type", "offline")
 	params.Set("prompt", "consent")
 	params.Set("include_granted_scopes", "true")
-	if strings.TrimSpace(projectID) != "" {
+	if oauthType == "code_assist" && strings.TrimSpace(projectID) != "" {
 		params.Set("project_id", strings.TrimSpace(projectID))
 	}
 

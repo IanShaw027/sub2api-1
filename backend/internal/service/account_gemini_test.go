@@ -270,3 +270,58 @@ func TestAccount_IsGeminiCodeAssist(t *testing.T) {
 		})
 	}
 }
+
+func TestAccount_UsesGeminiCLIProjectRouting(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		account *Account
+		want    bool
+	}{
+		{
+			name: "explicit_code_assist",
+			account: &Account{
+				Platform: PlatformGemini,
+				Type:     AccountTypeOAuth,
+				Credentials: map[string]any{
+					"oauth_type": "code_assist",
+				},
+			},
+			want: true,
+		},
+		{
+			name: "google_one_uses_code_assist_routing",
+			account: &Account{
+				Platform: PlatformGemini,
+				Type:     AccountTypeOAuth,
+				Credentials: map[string]any{
+					"oauth_type": "google_one",
+				},
+			},
+			want: true,
+		},
+		{
+			name: "non_oauth_not_routed",
+			account: &Account{
+				Platform: PlatformGemini,
+				Type:     AccountTypeAPIKey,
+				Credentials: map[string]any{
+					"oauth_type": "code_assist",
+				},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := tt.account.UsesGeminiCLIProjectRouting(); got != tt.want {
+				t.Fatalf("UsesGeminiCLIProjectRouting() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

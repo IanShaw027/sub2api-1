@@ -1584,7 +1584,7 @@ func (s *AccountTestService) buildGeminiOAuthRequest(ctx context.Context, accoun
 		return nil, fmt.Errorf("failed to get access token: %w", err)
 	}
 
-	if account.GeminiOAuthTypeSafe() == "code_assist" {
+	if oauthType := account.GeminiOAuthTypeSafe(); oauthType == "code_assist" || oauthType == "google_one" {
 		projectID := strings.TrimSpace(account.GetCredential("project_id"))
 		if projectID == "" {
 			return nil, errors.New(errGeminiCodeAssistProjectIDNotConfigured)
@@ -1593,9 +1593,7 @@ func (s *AccountTestService) buildGeminiOAuthRequest(ctx context.Context, accoun
 	}
 
 	// AI Studio OAuth mode: call generativelanguage API directly with Bearer token.
-	// Google One and unknown/legacy oauth_type stay on this path. Even if a Google One account
-	// stores project_id for quota or metadata, the test request itself should still use the
-	// generativelanguage Bearer-token endpoint instead of the Code Assist wrapped endpoint.
+	// Unknown/legacy oauth_type stays on this path.
 	baseURL := account.GetCredential("base_url")
 	if strings.TrimSpace(baseURL) == "" {
 		baseURL = geminicli.AIStudioBaseURL

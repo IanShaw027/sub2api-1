@@ -7,6 +7,7 @@ import (
 	_ "embed"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -34,11 +35,27 @@ var embeddedVersion string
 
 // Build-time variables (can be set by ldflags)
 var (
-	Version   = ""
-	Commit    = "unknown"
-	Date      = "unknown"
-	BuildType = "source" // "source" for manual builds, "release" for CI builds (set by ldflags)
+	Version          = ""
+	Commit           = "unknown"
+	Date             = "unknown"
+	BuildType        = "source" // "source" for manual builds, "release" for CI builds (set by ldflags)
+	Dirty            = "unknown"
+	SourceHash       = "unknown"
+	FrontendDistHash = "unknown"
 )
+
+func buildVersionLine() string {
+	return fmt.Sprintf(
+		"Sub2API version=%s commit=%s built=%s build_type=%s dirty=%s source_hash=%s frontend_dist_hash=%s",
+		Version,
+		Commit,
+		Date,
+		BuildType,
+		Dirty,
+		SourceHash,
+		FrontendDistHash,
+	)
+}
 
 func init() {
 	// 如果 Version 已通过 ldflags 注入（例如 -X main.Version=...），则不要覆盖。
@@ -65,7 +82,7 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		log.Printf("Sub2API %s (commit: %s, built: %s)\n", Version, Commit, Date)
+		fmt.Println(buildVersionLine())
 		return
 	}
 

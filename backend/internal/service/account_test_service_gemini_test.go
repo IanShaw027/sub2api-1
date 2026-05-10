@@ -155,7 +155,28 @@ func TestAccountTestService_BuildGeminiOAuthRequest_ExplicitCodeAssistUsesCodeAs
 	require.Contains(t, req.URL.String(), "cloudcode-pa.googleapis.com")
 }
 
-func TestAccountTestService_BuildGeminiOAuthRequest_ExplicitGoogleOneWithProjectIDUsesAIStudioEndpoint(t *testing.T) {
+func TestAccountTestService_BuildGeminiOAuthRequest_ExplicitGoogleOneRequiresProjectID(t *testing.T) {
+	t.Parallel()
+
+	svc := &AccountTestService{
+		geminiTokenProvider: &testGeminiTokenProvider{token: "gemini-token"},
+		cfg:                 &config.Config{},
+	}
+	account := &Account{
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"oauth_type": "google_one",
+		},
+	}
+
+	req, err := svc.buildGeminiOAuthRequest(context.Background(), account, "gemini-2.5-pro", []byte(`{"contents":[]}`))
+	require.Error(t, err)
+	require.Nil(t, req)
+	require.Contains(t, err.Error(), "project_id not configured")
+}
+
+func TestAccountTestService_BuildGeminiOAuthRequest_ExplicitGoogleOneWithProjectIDUsesCodeAssistEndpoint(t *testing.T) {
 	t.Parallel()
 
 	svc := &AccountTestService{
@@ -174,7 +195,7 @@ func TestAccountTestService_BuildGeminiOAuthRequest_ExplicitGoogleOneWithProject
 	req, err := svc.buildGeminiOAuthRequest(context.Background(), account, "gemini-2.5-pro", []byte(`{"contents":[]}`))
 	require.NoError(t, err)
 	require.NotNil(t, req)
-	require.Contains(t, req.URL.String(), "/v1beta/models/gemini-2.5-pro:streamGenerateContent")
+	require.Contains(t, req.URL.String(), "cloudcode-pa.googleapis.com")
 	require.Equal(t, "Bearer gemini-token", req.Header.Get("Authorization"))
 }
 

@@ -796,7 +796,7 @@ func (s *RateLimitService) handle403(ctx context.Context, account *Account, upst
 	if account.Platform == PlatformOpenAI {
 		return s.handleOpenAI403(ctx, account, upstreamMsg, responseBody)
 	}
-	if account.Platform == PlatformGemini && account.Type == AccountTypeOAuth && account.GeminiOAuthTypeSafe() == "code_assist" {
+	if account.Platform == PlatformGemini && account.Type == AccountTypeOAuth && account.UsesGeminiCLIProjectRouting() {
 		msg := buildForbiddenErrorMessage(
 			"Gemini Code Assist forbidden (403):",
 			upstreamMsg,

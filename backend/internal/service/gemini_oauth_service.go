@@ -585,7 +585,6 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] ========== Account Type Detection START ==========")
 	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] OAuth Type: %s", oauthType)
 
-	// code_assist/google_one both rely on Code Assist metadata and companion-project assignment.
 	switch oauthType {
 	case "code_assist":
 		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Processing code_assist OAuth type")
@@ -637,37 +636,18 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 	case "google_one":
 		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Processing google_one OAuth type")
 		detectedTierID := ""
-
-		// Google One accounts use cloudaicompanion API, which requires a project_id.
-		// For personal accounts, Google auto-assigns a project_id via the LoadCodeAssist API.
-		if projectID == "" {
-			if projectIDHint == "" {
-				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] No project_id provided, attempting to fetch from LoadCodeAssist API...")
-			} else {
-				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] User provided project_id hint for Google One: %s, fetching companion project and tier...", projectIDHint)
+		snapshot, detectErr := s.fetchProjectID(ctx, tokenResp.AccessToken, proxyURL, projectIDHint)
+		if snapshot != nil {
+			projectID = snapshot.ProjectID
+			detectedTierID = canonicalGeminiTierIDForOAuthType(oauthType, snapshot.TierID)
+			tokenExtra = mergeGeminiCredentialExtra(tokenExtra, snapshot.Extra)
+		}
+		if detectErr != nil {
+			if isGeminiEligibilityError(detectErr) {
+				return nil, detectErr
 			}
-			snapshot, err := s.fetchProjectID(ctx, tokenResp.AccessToken, proxyURL, projectIDHint)
-			if snapshot != nil {
-				projectID = snapshot.ProjectID
-				detectedTierID = canonicalGeminiTierIDForOAuthType(oauthType, snapshot.TierID)
-				tokenExtra = mergeGeminiCredentialExtra(tokenExtra, snapshot.Extra)
-			}
-			if err != nil {
-				if isGeminiEligibilityError(err) {
-					return nil, err
-				}
-				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] ERROR: Failed to fetch project_id: %v", err)
-				return nil, fmt.Errorf("google One accounts require a project_id, failed to auto-detect: %w", err)
-			}
-			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Successfully fetched project_id: %s", projectID)
-		} else {
-			snapshot, err := s.fetchCodeAssistSnapshot(ctx, tokenResp.AccessToken, proxyURL, projectID)
-			if err != nil {
-				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] WARNING: Failed to fetch account metadata: %v", err)
-			} else {
-				detectedTierID = canonicalGeminiTierIDForOAuthType(oauthType, snapshot.TierID)
-				tokenExtra = mergeGeminiCredentialExtra(tokenExtra, snapshot.Extra)
-			}
+			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] ERROR: Failed to fetch Google login project/tier: %v", detectErr)
+			return nil, detectErr
 		}
 		switch {
 		case detectedTierID != "":
@@ -677,10 +657,9 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 			tierID = fallbackTierID
 			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Using fallback tier_id from user/session: %s", tierID)
 		default:
-			tierID = legacyTierFree
+			tierID = GeminiTierGoogleOneFree
 			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Using default tier_id: %s", tierID)
 		}
-		fmt.Printf("[GeminiOAuth] Google One tierID after normalization: %s\n", tierID)
 
 	default:
 		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Processing %s OAuth type (no tier detection)", oauthType)
@@ -849,7 +828,7 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 	// 尝试从账号凭证获取 tierID（向后兼容）
 	existingTierID := strings.TrimSpace(account.GetCredential("tier_id"))
 
-	// For Code Assist, project_id is required. Auto-detect if missing.
+	// For Google login / Code Assist, project metadata comes from Code Assist APIs.
 	switch oauthType {
 	case "code_assist":
 		// 先设置默认值或保留旧值，确保 tier_id 始终有值
@@ -897,6 +876,16 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 			})
 		}
 	case "google_one":
+		if s.codeAssist == nil {
+			canonicalExistingTier := strings.TrimSpace(existingTierID)
+			switch {
+			case canonicalExistingTier != "":
+				tokenInfo.TierID = canonicalExistingTier
+			default:
+				tokenInfo.TierID = GeminiTierGoogleOneFree
+			}
+			break
+		}
 		detectedTierID := ""
 		if existingProjectID != "" {
 			if snapshot, err := s.fetchCodeAssistSnapshot(ctx, tokenInfo.AccessToken, proxyURL, existingProjectID); err == nil {
@@ -910,7 +899,7 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 				if isGeminiEligibilityError(err) {
 					return nil, err
 				}
-				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] WARNING: Failed to refresh account metadata: %v", err)
+				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] WARNING: Failed to refresh Google login metadata: %v", err)
 			}
 		} else {
 			snapshot, err := s.fetchProjectID(ctx, tokenInfo.AccessToken, proxyURL, "")
@@ -926,7 +915,7 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 				if isGeminiEligibilityError(err) {
 					return nil, err
 				}
-				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] WARNING: Failed to auto-detect Google One project/tier during refresh: %v", err)
+				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] WARNING: Failed to auto-detect Google login project/tier during refresh: %v", err)
 			}
 			if strings.TrimSpace(tokenInfo.ProjectID) == "" {
 				tokenInfo.ProjectIDMissing = true
@@ -942,7 +931,7 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 		case canonicalExistingTier != "":
 			tokenInfo.TierID = canonicalExistingTier
 		default:
-			tokenInfo.TierID = legacyTierFree
+			tokenInfo.TierID = GeminiTierGoogleOneFree
 		}
 	}
 	tokenInfo.PlanName = geminiPlanNameForToken(tokenInfo.TierID, tokenInfo.Extra)
@@ -1400,6 +1389,12 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 		if validationErr := buildGeminiCodeAssistValidationError(snapshot.IneligibleTiers); validationErr != nil {
 			return snapshot, validationErr
 		}
+	}
+	if s.codeAssist == nil {
+		if loadErr != nil {
+			return snapshot, loadErr
+		}
+		return snapshot, errors.New("code assist client not configured")
 	}
 
 	// If LoadCodeAssist returned a project, use it
