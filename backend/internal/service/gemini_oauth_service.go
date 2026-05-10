@@ -1202,10 +1202,11 @@ func buildGeminiLoadCodeAssistRequest(projectID string) *geminicli.LoadCodeAssis
 	return &geminicli.LoadCodeAssistRequest{
 		CloudAICompanionProject: trimmedProjectID,
 		Metadata: geminicli.LoadCodeAssistMetadata{
-			IDEType:     "IDE_UNSPECIFIED",
-			Platform:    "PLATFORM_UNSPECIFIED",
-			PluginType:  "GEMINI",
-			DuetProject: trimmedProjectID,
+			IDEType:       "IDE_UNSPECIFIED",
+			Platform:      "PLATFORM_UNSPECIFIED",
+			PluginType:    "GEMINI",
+			DuetProject:   trimmedProjectID,
+			UpdateChannel: "PREVIEW", // 启用 Preview Release Channel 以访问预览版模型
 		},
 	}
 }

@@ -180,9 +180,10 @@ func createGeminiCliReqClient(proxyURL string) (*req.Client, error) {
 func defaultLoadCodeAssistRequest() *geminicli.LoadCodeAssistRequest {
 	return &geminicli.LoadCodeAssistRequest{
 		Metadata: geminicli.LoadCodeAssistMetadata{
-			IDEType:    "IDE_UNSPECIFIED",
-			Platform:   "PLATFORM_UNSPECIFIED",
-			PluginType: "GEMINI",
+			IDEType:       "IDE_UNSPECIFIED",
+			Platform:      "PLATFORM_UNSPECIFIED",
+			PluginType:    "GEMINI",
+			UpdateChannel: "PREVIEW", // 启用 Preview Release Channel 以访问预览版模型
 		},
 	}
 }
@@ -191,9 +192,10 @@ func defaultOnboardUserRequest() *geminicli.OnboardUserRequest {
 	return &geminicli.OnboardUserRequest{
 		TierID: "LEGACY",
 		Metadata: geminicli.LoadCodeAssistMetadata{
-			IDEType:    "IDE_UNSPECIFIED",
-			Platform:   "PLATFORM_UNSPECIFIED",
-			PluginType: "GEMINI",
+			IDEType:       "IDE_UNSPECIFIED",
+			Platform:      "PLATFORM_UNSPECIFIED",
+			PluginType:    "GEMINI",
+			UpdateChannel: "PREVIEW", // 启用 Preview Release Channel 以访问预览版模型
 		},
 	}
 }
