@@ -1071,9 +1071,10 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 	}
 
 	var (
-		newCredentials map[string]any
-		updatedAccount *service.Account
-		err            error
+		newCredentials    map[string]any
+		updatedAccount    *service.Account
+		err               error
+		openAIPrivacyMode string
 	)
 
 	if account.IsOpenAI() {
@@ -1084,6 +1085,7 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 			return nil, "", err
 		}
 
+		openAIPrivacyMode = strings.TrimSpace(tokenInfo.PrivacyMode)
 		newCredentials = h.openaiOAuthService.BuildAccountCredentials(tokenInfo)
 		for k, v := range account.Credentials {
 			if _, exists := newCredentials[k]; !exists {
@@ -1198,6 +1200,16 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 		})
 		if err != nil {
 			return nil, "", err
+		}
+		if account.IsOpenAI() && openAIPrivacyMode != "" {
+			if updateErr := h.adminService.UpdateAccountExtra(ctx, account.ID, map[string]any{"privacy_mode": openAIPrivacyMode}); updateErr != nil {
+				log.Printf("[WARN] Failed to persist OpenAI privacy mode for account %d: %v", account.ID, updateErr)
+			} else {
+				if updatedAccount.Extra == nil {
+					updatedAccount.Extra = map[string]any{}
+				}
+				updatedAccount.Extra["privacy_mode"] = openAIPrivacyMode
+			}
 		}
 		if account.Platform == service.PlatformGemini &&
 			account.Status == service.StatusError &&
