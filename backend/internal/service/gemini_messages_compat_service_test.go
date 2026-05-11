@@ -842,6 +842,39 @@ func TestGeminiMessagesCompatServiceHandleGeminiUpstreamError_CodeAssist403UsesT
 	require.Contains(t, repo.lastTempReason, "permission propagation pending")
 }
 
+func TestGeminiMessagesCompatServiceHandleGeminiUpstreamError_CodeAssist403ValidationRequiredSetsError(t *testing.T) {
+	repo := &rateLimitAccountRepoStub{}
+	rlSvc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc := &GeminiMessagesCompatService{
+		rateLimitService: rlSvc,
+	}
+
+	account := &Account{
+		ID:       602,
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"oauth_type": "code_assist",
+			"project_id": "shared-project",
+			"tier_id":    "STANDARD",
+		},
+	}
+
+	svc.handleGeminiUpstreamError(
+		context.Background(),
+		account,
+		http.StatusForbidden,
+		http.Header{},
+		[]byte(`{"error":{"code":403,"message":"Verify your account to continue.","status":"PERMISSION_DENIED","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"VALIDATION_REQUIRED","domain":"cloudcode-pa.googleapis.com","metadata":{"validation_url":"https://accounts.google.com/verify?token=abc"}}]}}`),
+	)
+
+	require.Equal(t, 1, repo.setErrorCalls)
+	require.Equal(t, 0, repo.tempCalls)
+	require.Contains(t, repo.lastErrorMsg, "Validation required (403):")
+	require.Contains(t, repo.lastErrorMsg, "Verify your account to continue.")
+	require.Contains(t, repo.lastErrorMsg, "validation_url: https://accounts.google.com/verify?token=abc")
+}
+
 func TestGeminiMessagesCompatServiceForward_NormalizesWebSearchToolForAIStudio(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

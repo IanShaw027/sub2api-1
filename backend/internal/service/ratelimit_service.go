@@ -796,7 +796,21 @@ func (s *RateLimitService) handle403(ctx context.Context, account *Account, upst
 	if account.Platform == PlatformOpenAI {
 		return s.handleOpenAI403(ctx, account, upstreamMsg, responseBody)
 	}
-	if account.Platform == PlatformGemini && account.Type == AccountTypeOAuth && account.UsesGeminiCLIProjectRouting() {
+	if isGeminiProjectRoutedOAuthAccount(account) {
+		if classifyForbiddenType(string(responseBody)) == forbiddenTypeValidation {
+			msg := buildForbiddenErrorMessage(
+				"Validation required (403):",
+				upstreamMsg,
+				responseBody,
+				"account needs Google verification",
+			)
+			if validationURL := extractValidationURL(string(responseBody)); validationURL != "" {
+				msg += " | validation_url: " + validationURL
+			}
+			s.handleAuthError(ctx, account, msg)
+			slog.Warn("gemini_code_assist_403_validation_required_disabled", "account_id", account.ID)
+			return true
+		}
 		msg := buildForbiddenErrorMessage(
 			"Gemini Code Assist forbidden (403):",
 			upstreamMsg,

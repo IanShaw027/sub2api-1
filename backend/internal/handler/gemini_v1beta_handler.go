@@ -59,8 +59,17 @@ func (h *GatewayHandler) GeminiV1BetaListModels(c *gin.Context) {
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 	routingStart := time.Now()
 
-	account, err := h.geminiCompatService.SelectAccountForAIStudioEndpoints(c.Request.Context(), apiKey.GroupID)
+	res, account, err := h.forwardGeminiAIStudioGETWithFailover(c, apiKey.GroupID, func(_ *service.Account) string {
+		return "/v1beta/models"
+	})
 	if err != nil {
+		if strings.Contains(err.Error(), "no available Gemini accounts") {
+			hasGemini, _ := h.geminiCompatService.HasGeminiAccounts(c.Request.Context(), apiKey.GroupID)
+			if hasGemini {
+				c.JSON(http.StatusOK, gemini.FallbackModelsList())
+				return
+			}
+		}
 		// 没有 gemini 账户，检查是否有 antigravity 账户可用
 		hasAntigravity, _ := h.geminiCompatService.HasAntigravityAccounts(c.Request.Context(), apiKey.GroupID)
 		if hasAntigravity {
@@ -72,15 +81,10 @@ func (h *GatewayHandler) GeminiV1BetaListModels(c *gin.Context) {
 		return
 	}
 
-	setOpsSelectedAccount(c, account.ID, account.Platform)
-	service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
-	forwardStart := time.Now()
-	res, err := h.geminiCompatService.ForwardAIStudioGET(c.Request.Context(), c, account, "/v1beta/models")
-	recordOpsForwardLatencies(c, time.Since(forwardStart).Milliseconds(), nil, err)
-	if err != nil {
-		googleError(c, http.StatusBadGateway, err.Error())
-		return
+	if account != nil {
+		setOpsSelectedAccount(c, account.ID, account.Platform)
 	}
+	service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 	if shouldFallbackGeminiModels(res) {
 		c.JSON(http.StatusOK, gemini.FallbackModelsList())
 		return
@@ -121,8 +125,23 @@ func (h *GatewayHandler) GeminiV1BetaGetModel(c *gin.Context) {
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 	routingStart := time.Now()
 
-	account, err := h.geminiCompatService.SelectAccountForAIStudioEndpoints(c.Request.Context(), apiKey.GroupID)
+	res, account, err := h.forwardGeminiAIStudioGETWithFailover(c, apiKey.GroupID, func(account *service.Account) string {
+		mappedModel := modelName
+		if account != nil {
+			if candidate := strings.TrimSpace(account.GetMappedModel(modelName)); candidate != "" {
+				mappedModel = candidate
+			}
+		}
+		return "/v1beta/models/" + mappedModel
+	})
 	if err != nil {
+		if strings.Contains(err.Error(), "no available Gemini accounts") {
+			hasGemini, _ := h.geminiCompatService.HasGeminiAccounts(c.Request.Context(), apiKey.GroupID)
+			if hasGemini {
+				c.JSON(http.StatusOK, gemini.FallbackModel(modelName))
+				return
+			}
+		}
 		// 没有 gemini 账户，检查是否有 antigravity 账户可用
 		hasAntigravity, _ := h.geminiCompatService.HasAntigravityAccounts(c.Request.Context(), apiKey.GroupID)
 		if hasAntigravity {
@@ -134,15 +153,10 @@ func (h *GatewayHandler) GeminiV1BetaGetModel(c *gin.Context) {
 		return
 	}
 
-	setOpsSelectedAccount(c, account.ID, account.Platform)
-	service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
-	forwardStart := time.Now()
-	res, err := h.geminiCompatService.ForwardAIStudioGET(c.Request.Context(), c, account, "/v1beta/models/"+modelName)
-	recordOpsForwardLatencies(c, time.Since(forwardStart).Milliseconds(), nil, err)
-	if err != nil {
-		googleError(c, http.StatusBadGateway, err.Error())
-		return
+	if account != nil {
+		setOpsSelectedAccount(c, account.ID, account.Platform)
 	}
+	service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 	if shouldFallbackGeminiModel(modelName, res) {
 		c.JSON(http.StatusOK, gemini.FallbackModel(modelName))
 		return
@@ -622,6 +636,64 @@ func parseGeminiModelAction(rest string) (model string, action string, err error
 	return "", "", &pathParseError{"invalid model action path"}
 }
 
+func (h *GatewayHandler) forwardGeminiAIStudioGETWithFailover(
+	c *gin.Context,
+	groupID *int64,
+	pathForAccount func(*service.Account) string,
+) (*service.UpstreamHTTPResult, *service.Account, error) {
+	if pathForAccount == nil {
+		return nil, nil, errors.New("path builder is nil")
+	}
+
+	excludedIDs := make(map[int64]struct{})
+	var lastRes *service.UpstreamHTTPResult
+	var lastErr error
+	var lastAccount *service.Account
+	forwardStart := time.Now()
+
+	for {
+		account, err := h.geminiCompatService.SelectAccountForAIStudioEndpointsWithExclusions(c.Request.Context(), groupID, excludedIDs)
+		if err != nil {
+			if lastRes != nil {
+				recordOpsForwardLatencies(c, time.Since(forwardStart).Milliseconds(), nil, nil)
+				return lastRes, lastAccount, nil
+			}
+			if lastErr != nil {
+				recordOpsForwardLatencies(c, time.Since(forwardStart).Milliseconds(), nil, lastErr)
+				return nil, lastAccount, lastErr
+			}
+			recordOpsForwardLatencies(c, time.Since(forwardStart).Milliseconds(), nil, err)
+			return nil, nil, err
+		}
+
+		lastAccount = account
+		setOpsSelectedAccount(c, account.ID, account.Platform)
+		res, err := h.geminiCompatService.ForwardAIStudioGET(c.Request.Context(), c, account, pathForAccount(account))
+		if err != nil {
+			lastErr = err
+			excludedIDs[account.ID] = struct{}{}
+			continue
+		}
+		if shouldFailoverGeminiAIStudioGETStatus(res.StatusCode) {
+			lastRes = res
+			excludedIDs[account.ID] = struct{}{}
+			continue
+		}
+
+		recordOpsForwardLatencies(c, time.Since(forwardStart).Milliseconds(), nil, nil)
+		return res, account, nil
+	}
+}
+
+func shouldFailoverGeminiAIStudioGETStatus(statusCode int) bool {
+	switch statusCode {
+	case 401, 403, 429, 500, 502, 503, 504, 529:
+		return true
+	default:
+		return false
+	}
+}
+
 func (h *GatewayHandler) handleGeminiFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError) {
 	if failoverErr == nil {
 		googleError(c, http.StatusBadGateway, "Upstream request failed")
@@ -650,6 +722,7 @@ func (h *GatewayHandler) handleGeminiFailoverExhausted(c *gin.Context, failoverE
 				c.Set(service.OpsSkipPassthroughKey, true)
 			}
 
+			copyGeminiFailoverResponseHeaders(c, failoverErr)
 			googleError(c, respCode, msg)
 			return
 		}
@@ -659,9 +732,40 @@ func (h *GatewayHandler) handleGeminiFailoverExhausted(c *gin.Context, failoverE
 	upstreamMsg := service.ExtractUpstreamErrorMessage(responseBody)
 	service.SetOpsUpstreamError(c, statusCode, upstreamMsg, "")
 
+	copyGeminiFailoverResponseHeaders(c, failoverErr)
+	if statusCode > 0 && len(responseBody) > 0 {
+		contentType := "application/json"
+		if failoverErr.ResponseHeaders != nil {
+			if raw := strings.TrimSpace(failoverErr.ResponseHeaders.Get("Content-Type")); raw != "" {
+				contentType = raw
+			}
+		}
+		if !json.Valid(responseBody) && strings.HasPrefix(strings.ToLower(contentType), "application/json") {
+			contentType = "text/plain; charset=utf-8"
+		}
+		c.Data(statusCode, contentType, responseBody)
+		return
+	}
+
 	// 使用默认的错误映射
 	status, message := mapGeminiUpstreamError(statusCode)
 	googleError(c, status, message)
+}
+
+func copyGeminiFailoverResponseHeaders(c *gin.Context, failoverErr *service.UpstreamFailoverError) {
+	if c == nil || failoverErr == nil || failoverErr.ResponseHeaders == nil {
+		return
+	}
+	for _, key := range []string{"Retry-After", "Www-Authenticate", "x-request-id", "x-goog-request-id", "cf-ray", "cf-mitigated"} {
+		if value := strings.TrimSpace(failoverErr.ResponseHeaders.Get(key)); value != "" {
+			c.Header(key, value)
+		}
+	}
+	if strings.TrimSpace(c.Writer.Header().Get("x-request-id")) == "" {
+		if reqID := strings.TrimSpace(failoverErr.ResponseHeaders.Get("x-goog-request-id")); reqID != "" {
+			c.Header("x-request-id", reqID)
+		}
+	}
 }
 
 func mapGeminiUpstreamError(statusCode int) (int, string) {

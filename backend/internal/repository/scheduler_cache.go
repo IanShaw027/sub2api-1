@@ -606,7 +606,23 @@ func filterSchedulerCredentials(credentials map[string]any) map[string]any {
 	if len(credentials) == 0 {
 		return nil
 	}
-	keys := []string{"model_mapping", "api_key", "project_id", "oauth_type"}
+	keys := []string{
+		"model_mapping",
+		"api_key",
+		"project_id",
+		"oauth_type",
+		"tier_id",
+		"plan_type",
+		"plan_name",
+		"gemini_paid_tier_id",
+		"gemini_paid_tier_name",
+		"gemini_current_tier_id",
+		"gemini_current_tier_name",
+		"gemini_status",
+		"gemini_status_reason",
+		"quota_query_last_error",
+		"quota_query_last_error_at",
+	}
 	filtered := make(map[string]any)
 	for _, key := range keys {
 		if value, ok := credentials[key]; ok && value != nil {
@@ -624,11 +640,24 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 		return nil
 	}
 	keys := []string{
+		"model_rate_limits",
 		"mixed_scheduling",
 		"window_cost_limit",
 		"window_cost_sticky_reserve",
 		"max_sessions",
 		"session_idle_timeout_minutes",
+		"oauth_type",
+		"tier_id",
+		"plan_type",
+		"plan_name",
+		"gemini_paid_tier_id",
+		"gemini_paid_tier_name",
+		"gemini_current_tier_id",
+		"gemini_current_tier_name",
+		"gemini_status",
+		"gemini_status_reason",
+		"quota_query_last_error",
+		"quota_query_last_error_at",
 		"openai_oauth_responses_websockets_v2_enabled",
 		"openai_oauth_responses_websockets_v2_mode",
 		"openai_apikey_responses_websockets_v2_enabled",

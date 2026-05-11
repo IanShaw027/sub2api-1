@@ -1987,23 +1987,76 @@ func enrichGeminiUsageWithStoredStatus(usage *UsageInfo, account *Account) {
 		return
 	}
 
-	status := strings.ToLower(strings.TrimSpace(account.GetCredential("gemini_status")))
-	statusReason := strings.TrimSpace(account.GetCredential("gemini_status_reason"))
+	status := strings.ToLower(strings.TrimSpace(geminiStoredUsageString(account, "gemini_status")))
+	statusReason := strings.TrimSpace(geminiStoredUsageString(account, "gemini_status_reason"))
 	if statusReason == "" {
 		statusReason = strings.TrimSpace(account.ErrorMessage)
 	}
 
-	if strings.TrimSpace(account.GetCredential("quota_query_last_error")) != "" && usage.Error == "" {
-		usage.Error = account.GetCredential("quota_query_last_error")
+	quotaErr := strings.TrimSpace(geminiStoredUsageString(account, "quota_query_last_error"))
+	if quotaErr != "" && usage.Error == "" {
+		usage.Error = quotaErr
 	}
 
+	reason := statusReason
+	if reason == "" {
+		reason = usage.Error
+	}
+
+	forbiddenType := ""
 	switch status {
 	case "forbidden":
-		usage.IsForbidden = true
-		usage.ForbiddenType = forbiddenTypeForbidden
-		usage.ForbiddenReason = statusReason
-		usage.ErrorCode = errorCodeForbidden
+		forbiddenType = classifyForbiddenType(reason)
+	case "validation", "validation_required", "needs_verify":
+		forbiddenType = forbiddenTypeValidation
 	}
+	if forbiddenType == "" && isGeminiStoredForbiddenReason(reason) {
+		forbiddenType = classifyForbiddenType(reason)
+	}
+	if forbiddenType == "" {
+		return
+	}
+	if forbiddenType == forbiddenTypeForbidden && status == "validation_required" {
+		forbiddenType = forbiddenTypeValidation
+	}
+	if reason == "" {
+		reason = "Gemini access forbidden"
+	}
+
+	usage.IsForbidden = true
+	usage.ForbiddenType = forbiddenType
+	usage.ForbiddenReason = reason
+	usage.ErrorCode = errorCodeForbidden
+	usage.NeedsVerify = forbiddenType == forbiddenTypeValidation
+	usage.IsBanned = forbiddenType == forbiddenTypeViolation
+	if validationURL := extractValidationURL(reason); validationURL != "" {
+		usage.ValidationURL = validationURL
+	} else if usage.Error != "" {
+		usage.ValidationURL = extractValidationURL(usage.Error)
+	}
+}
+
+func geminiStoredUsageString(account *Account, key string) string {
+	if account == nil {
+		return ""
+	}
+	if value := strings.TrimSpace(account.GetCredential(key)); value != "" {
+		return value
+	}
+	return strings.TrimSpace(account.GetExtraString(key))
+}
+
+func isGeminiStoredForbiddenReason(reason string) bool {
+	lower := strings.ToLower(strings.TrimSpace(reason))
+	if lower == "" {
+		return false
+	}
+	return strings.Contains(lower, "status 403") ||
+		strings.Contains(lower, "permission_denied") ||
+		strings.Contains(lower, "forbidden") ||
+		strings.Contains(lower, "validation_required") ||
+		strings.Contains(lower, "verify your account") ||
+		strings.Contains(lower, "validation_url")
 }
 
 // GetAccountWindowStats 获取账号在指定时间窗口内的使用统计

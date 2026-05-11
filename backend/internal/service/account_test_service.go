@@ -1584,7 +1584,7 @@ func (s *AccountTestService) buildGeminiOAuthRequest(ctx context.Context, accoun
 		return nil, fmt.Errorf("failed to get access token: %w", err)
 	}
 
-	if oauthType := account.GeminiOAuthTypeSafe(); oauthType == "code_assist" || oauthType == "google_one" {
+	if oauthType := account.GeminiOAuthTypeSafe(); oauthType == "code_assist" {
 		projectID := strings.TrimSpace(account.GetCredential("project_id"))
 		if projectID == "" {
 			return nil, errors.New(errGeminiCodeAssistProjectIDNotConfigured)
@@ -1592,8 +1592,8 @@ func (s *AccountTestService) buildGeminiOAuthRequest(ctx context.Context, accoun
 		return s.buildCodeAssistRequest(ctx, accessToken, projectID, modelID, payload)
 	}
 
-	// AI Studio OAuth mode: call generativelanguage API directly with Bearer token.
-	// Unknown/legacy oauth_type stays on this path.
+	// Google One and AI Studio-style OAuth accounts call the public Gemini API
+	// directly with a bearer token. Unknown/legacy oauth_type stays on this path.
 	baseURL := account.GetCredential("base_url")
 	if strings.TrimSpace(baseURL) == "" {
 		baseURL = geminicli.AIStudioBaseURL

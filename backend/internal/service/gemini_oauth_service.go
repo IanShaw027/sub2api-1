@@ -319,11 +319,8 @@ func resolveGeminiOAuthType(rawOAuthType, tierID, _ string, planName string) str
 		return normalized
 	}
 
-	// 注意：Google One 用户现在统一使用 ai_studio 类型，避免 GCP Code Assist 端点的速率限制
-	// 原来的 google_one 类型会使用 cloudcode-pa.googleapis.com，经常遇到 429 和 502 错误
-	// 改用 ai_studio 类型后，会使用 generativelanguage.googleapis.com 公开端点
 	if canonicalGeminiTierIDForOAuthType("google_one", tierID) != "" {
-		return "ai_studio"
+		return "google_one"
 	}
 	if canonicalGeminiTierIDForOAuthType("code_assist", tierID) != "" {
 		return "code_assist"
@@ -332,7 +329,7 @@ func resolveGeminiOAuthType(rawOAuthType, tierID, _ string, planName string) str
 	normalizedPlan := strings.ToLower(strings.TrimSpace(planName))
 	switch {
 	case strings.Contains(normalizedPlan, "google one"):
-		return "ai_studio"
+		return "google_one"
 	case strings.Contains(normalizedPlan, "code assist"):
 		return "code_assist"
 	}
@@ -509,6 +506,15 @@ func isGeminiEligibilityError(err error) bool {
 		IsGeminiProjectConfigurationErrorMessage(message)
 }
 
+func isGeminiValidationOrIneligibleError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	return strings.Contains(message, "validation_required:") ||
+		strings.Contains(message, "ineligible_tier")
+}
+
 func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExchangeCodeInput) (*GeminiTokenInfo, error) {
 	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] ========== ExchangeCode START ==========")
 	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] SessionID: %s", input.SessionID)
@@ -646,11 +652,13 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 			tokenExtra = mergeGeminiCredentialExtra(tokenExtra, snapshot.Extra)
 		}
 		if detectErr != nil {
-			if isGeminiEligibilityError(detectErr) {
+			if isGeminiValidationOrIneligibleError(detectErr) {
 				return nil, detectErr
 			}
-			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] ERROR: Failed to fetch Google login project/tier: %v", detectErr)
-			return nil, detectErr
+			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] WARNING: Failed to fetch Google One metadata: %v", detectErr)
+			tokenExtra = mergeGeminiCredentialExtra(tokenExtra, map[string]any{
+				"auto_detect_project_id": "true",
+			})
 		}
 		switch {
 		case detectedTierID != "":
@@ -688,6 +696,9 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 		Extra:        tokenExtra,
 	}
 	if oauthType == "code_assist" && strings.TrimSpace(projectID) == "" {
+		result.ProjectIDMissing = true
+	}
+	if oauthType == "google_one" && strings.TrimSpace(projectID) == "" {
 		result.ProjectIDMissing = true
 	}
 	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Final result - OAuth Type: %s, Project ID: %s, Tier ID: %s", result.OAuthType, result.ProjectID, result.TierID)
@@ -915,10 +926,10 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 				tokenInfo.Extra = mergeGeminiCredentialExtra(tokenInfo.Extra, snapshot.Extra)
 			}
 			if err != nil {
-				if isGeminiEligibilityError(err) {
+				if isGeminiValidationOrIneligibleError(err) {
 					return nil, err
 				}
-				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] WARNING: Failed to auto-detect Google login project/tier during refresh: %v", err)
+				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] WARNING: Failed to auto-detect Google One metadata during refresh: %v", err)
 			}
 			if strings.TrimSpace(tokenInfo.ProjectID) == "" {
 				tokenInfo.ProjectIDMissing = true

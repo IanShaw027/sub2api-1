@@ -14,6 +14,7 @@ import (
 	"math"
 	mathrand "math/rand"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -43,10 +44,29 @@ const (
 func shouldUseGeminiOAuthProjectStreamingBridge(account *Account, stream bool, action string) bool {
 	return account != nil &&
 		account.Type == AccountTypeOAuth &&
-		account.UsesGeminiCLIProjectRouting() &&
+		isGeminiProjectRoutedOAuthAccount(account) &&
 		!stream &&
 		action == "generateContent" &&
 		strings.TrimSpace(account.GetCredential("project_id")) != ""
+}
+
+func isGeminiProjectRoutedOAuthAccount(account *Account) bool {
+	return account != nil &&
+		account.Platform == PlatformGemini &&
+		account.Type == AccountTypeOAuth &&
+		strings.EqualFold(strings.TrimSpace(account.GeminiOAuthTypeSafe()), "code_assist")
+}
+
+func isGeminiAIStudioCompatibleOAuthAccount(account *Account) bool {
+	if account == nil || account.Platform != PlatformGemini || account.Type != AccountTypeOAuth {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(account.GeminiOAuthTypeSafe())) {
+	case "", "ai_studio", "google_one":
+		return true
+	default:
+		return false
+	}
 }
 
 type GeminiMessagesCompatService struct {
@@ -496,6 +516,14 @@ func (s *GeminiMessagesCompatService) HasAntigravityAccounts(ctx context.Context
 	return len(accounts) > 0, nil
 }
 
+func (s *GeminiMessagesCompatService) HasGeminiAccounts(ctx context.Context, groupID *int64) (bool, error) {
+	accounts, err := s.listSchedulableAccountsOnce(ctx, groupID, PlatformGemini, true)
+	if err != nil {
+		return false, err
+	}
+	return len(accounts) > 0, nil
+}
+
 // SelectAccountForAIStudioEndpoints selects an account that is likely to succeed against
 // generativelanguage.googleapis.com (e.g. GET /v1beta/models).
 //
@@ -507,6 +535,10 @@ func (s *GeminiMessagesCompatService) HasAntigravityAccounts(ctx context.Context
 // their existing static fallback behavior instead of forwarding guaranteed-bad
 // requests to the AI Studio models endpoint.
 func (s *GeminiMessagesCompatService) SelectAccountForAIStudioEndpoints(ctx context.Context, groupID *int64) (*Account, error) {
+	return s.SelectAccountForAIStudioEndpointsWithExclusions(ctx, groupID, nil)
+}
+
+func (s *GeminiMessagesCompatService) SelectAccountForAIStudioEndpointsWithExclusions(ctx context.Context, groupID *int64, excludedIDs map[int64]struct{}) (*Account, error) {
 	accounts, err := s.listSchedulableAccountsOnce(ctx, groupID, PlatformGemini, true)
 	if err != nil {
 		return nil, fmt.Errorf("query accounts failed: %w", err)
@@ -518,6 +550,11 @@ func (s *GeminiMessagesCompatService) SelectAccountForAIStudioEndpoints(ctx cont
 	var selected *Account
 	for i := range accounts {
 		acc := &accounts[i]
+		if excludedIDs != nil {
+			if _, excluded := excludedIDs[acc.ID]; excluded {
+				continue
+			}
+		}
 		accRank, ok := rankAIStudioEndpointAccount(acc)
 		if !ok {
 			continue
@@ -571,8 +608,7 @@ func rankAIStudioEndpointAccount(account *Account) (int, bool) {
 	case AccountTypeAPIKey:
 		return 0, strings.TrimSpace(account.GetCredential("api_key")) != ""
 	case AccountTypeOAuth:
-		oauthType := strings.TrimSpace(account.GeminiOAuthTypeSafe())
-		if oauthType == "" || strings.EqualFold(oauthType, "ai_studio") {
+		if isGeminiAIStudioCompatibleOAuthAccount(account) {
 			return 1, true
 		}
 		// Project-scoped Gemini CLI OAuth accounts should fall through to the caller's fallback.
@@ -665,7 +701,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 			}
 
 			projectID := strings.TrimSpace(account.GetCredential("project_id"))
-			isCodeAssist := account.UsesGeminiCLIProjectRouting()
+			useProjectRouting := isGeminiProjectRoutedOAuthAccount(account)
 
 			action := "generateContent"
 			if useUpstreamStream {
@@ -675,7 +711,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 			// Two modes for OAuth:
 			// 1. Explicit Code Assist + project_id -> Code Assist API (wrapped request)
 			// 2. Otherwise -> AI Studio API (direct OAuth, like API key but with Bearer token)
-			if isCodeAssist && projectID != "" {
+			if useProjectRouting && projectID != "" {
 				// Mode 1: Code Assist API
 				baseURL, err := s.validateUpstreamBaseURL(geminicli.GeminiCliBaseURL)
 				if err != nil {
@@ -884,8 +920,8 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 		if resp.StatusCode >= 400 && s.shouldRetryGeminiUpstreamError(account, resp.StatusCode) {
 			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 			_ = resp.Body.Close()
-			// Don't treat insufficient-scope as transient.
-			if resp.StatusCode == 403 && isGeminiInsufficientScope(resp.Header, respBody) {
+			// Don't treat insufficient-scope / validation-style 403s as transient.
+			if resp.StatusCode == 403 && isGeminiPermanentForbidden(resp.Header, respBody) {
 				resp = &http.Response{
 					StatusCode: resp.StatusCode,
 					Header:     resp.Header.Clone(),
@@ -923,6 +959,16 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 					Detail:             upstreamDetail,
 				})
 
+				if resp.StatusCode == 429 && s.shouldStopGeminiSameAccountRetryOn429(ctx, account) {
+					logger.LegacyPrintf("service.gemini_messages_compat", "Gemini account %d: already rate_limited, stop retrying", account.ID)
+					resp = &http.Response{
+						StatusCode: resp.StatusCode,
+						Header:     resp.Header.Clone(),
+						Body:       io.NopCloser(bytes.NewReader(respBody)),
+					}
+					break
+				}
+
 				logger.LegacyPrintf("service.gemini_messages_compat", "Gemini account %d: upstream status %d, retry %d/%d", account.ID, resp.StatusCode, attempt, geminiMaxRetries)
 				sleepGeminiBackoff(attempt)
 				continue
@@ -958,6 +1004,8 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+		isOAuth := account.Type == AccountTypeOAuth
+		evBody := unwrapIfNeeded(isOAuth, respBody)
 		// 统一错误策略：自定义错误码 + 临时不可调度
 		if s.rateLimitService != nil {
 			switch s.rateLimitService.CheckErrorPolicy(ctx, account, resp.StatusCode, respBody) {
@@ -966,14 +1014,14 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 				if upstreamReqID == "" {
 					upstreamReqID = resp.Header.Get("x-goog-request-id")
 				}
-				return nil, s.writeGeminiMappedError(c, account, http.StatusInternalServerError, upstreamReqID, respBody)
+				return nil, s.writeGeminiMappedError(c, account, http.StatusInternalServerError, upstreamReqID, evBody)
 			case ErrorPolicyMatched, ErrorPolicyTempUnscheduled:
 				s.handleGeminiUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
 				upstreamReqID := resp.Header.Get(requestIDHeader)
 				if upstreamReqID == "" {
 					upstreamReqID = resp.Header.Get("x-goog-request-id")
 				}
-				upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
+				upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(evBody))
 				upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
 				upstreamDetail := ""
 				if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
@@ -981,7 +1029,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 					if maxBytes <= 0 {
 						maxBytes = 2048
 					}
-					upstreamDetail = truncateString(string(respBody), maxBytes)
+					upstreamDetail = truncateString(string(evBody), maxBytes)
 				}
 				appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 					Platform:           account.Platform,
@@ -993,7 +1041,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 					Message:            upstreamMsg,
 					Detail:             upstreamDetail,
 				})
-				return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: respBody}
+				return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: evBody, ResponseHeaders: resp.Header.Clone()}
 			}
 		}
 
@@ -1007,14 +1055,14 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 				if upstreamReqID == "" {
 					upstreamReqID = resp.Header.Get("x-goog-request-id")
 				}
-				upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(respBody)))
+				upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(evBody)))
 				upstreamDetail := ""
 				if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
 					maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
 					if maxBytes <= 0 {
 						maxBytes = 2048
 					}
-					upstreamDetail = truncateString(string(respBody), maxBytes)
+					upstreamDetail = truncateString(string(evBody), maxBytes)
 				}
 				log.Printf("[Gemini] status=400 google_config_error failover=true upstream_message=%q account=%d", upstreamMsg, account.ID)
 				appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -1027,7 +1075,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 					Message:            upstreamMsg,
 					Detail:             upstreamDetail,
 				})
-				return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: respBody, RetryableOnSameAccount: true}
+				return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: evBody, ResponseHeaders: resp.Header.Clone(), RetryableOnSameAccount: true}
 			}
 		}
 		if s.shouldFailoverGeminiUpstreamError(resp.StatusCode) {
@@ -1035,7 +1083,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 			if upstreamReqID == "" {
 				upstreamReqID = resp.Header.Get("x-goog-request-id")
 			}
-			upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
+			upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(evBody))
 			upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
 			upstreamDetail := ""
 			if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
@@ -1043,7 +1091,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 				if maxBytes <= 0 {
 					maxBytes = 2048
 				}
-				upstreamDetail = truncateString(string(respBody), maxBytes)
+				upstreamDetail = truncateString(string(evBody), maxBytes)
 			}
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 				Platform:           account.Platform,
@@ -1055,13 +1103,13 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 				Message:            upstreamMsg,
 				Detail:             upstreamDetail,
 			})
-			return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: respBody}
+			return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: evBody, ResponseHeaders: resp.Header.Clone()}
 		}
 		upstreamReqID := resp.Header.Get(requestIDHeader)
 		if upstreamReqID == "" {
 			upstreamReqID = resp.Header.Get("x-goog-request-id")
 		}
-		return nil, s.writeGeminiMappedError(c, account, resp.StatusCode, upstreamReqID, respBody)
+		return nil, s.writeGeminiMappedError(c, account, resp.StatusCode, upstreamReqID, evBody)
 	}
 
 	requestID := resp.Header.Get(requestIDHeader)
@@ -1220,12 +1268,12 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 			}
 
 			projectID := strings.TrimSpace(account.GetCredential("project_id"))
-			isCodeAssist := account.UsesGeminiCLIProjectRouting()
+			useProjectRouting := isGeminiProjectRoutedOAuthAccount(account)
 
 			// Two modes for OAuth:
 			// 1. Project-scoped Gemini CLI OAuth + project_id -> Code Assist API (wrapped request)
 			// 2. Otherwise -> AI Studio API (direct OAuth, like API key but with Bearer token)
-			if isCodeAssist && projectID != "" && !forceAIStudio {
+			if useProjectRouting && projectID != "" && !forceAIStudio {
 				// Mode 1: Code Assist API
 				baseURL, err := s.validateUpstreamBaseURL(geminicli.GeminiCliBaseURL)
 				if err != nil {
@@ -1375,8 +1423,8 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 		if resp.StatusCode >= 400 && s.shouldRetryGeminiUpstreamError(account, resp.StatusCode) {
 			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 			_ = resp.Body.Close()
-			// Don't treat insufficient-scope as transient.
-			if resp.StatusCode == 403 && isGeminiInsufficientScope(resp.Header, respBody) {
+			// Don't treat insufficient-scope / validation-style 403s as transient.
+			if resp.StatusCode == 403 && isGeminiPermanentForbidden(resp.Header, respBody) {
 				resp = &http.Response{
 					StatusCode: resp.StatusCode,
 					Header:     resp.Header.Clone(),
@@ -1412,6 +1460,18 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 					Message:            upstreamMsg,
 					Detail:             upstreamDetail,
 				})
+
+				// If the account is already marked rate-limited, stop same-account retries
+				// and hand the preserved upstream response back to the normal failover path.
+				if resp.StatusCode == 429 && s.shouldStopGeminiSameAccountRetryOn429(ctx, account) {
+					logger.LegacyPrintf("service.gemini_messages_compat", "Gemini account %d: already rate_limited, stop retrying", account.ID)
+					resp = &http.Response{
+						StatusCode: resp.StatusCode,
+						Header:     resp.Header.Clone(),
+						Body:       io.NopCloser(bytes.NewReader(respBody)),
+					}
+					break
+				}
 
 				logger.LegacyPrintf("service.gemini_messages_compat", "Gemini account %d: upstream status %d, retry %d/%d", account.ID, resp.StatusCode, attempt, geminiMaxRetries)
 				sleepGeminiBackoff(attempt)
@@ -1522,7 +1582,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 					Message:            upstreamMsg,
 					Detail:             upstreamDetail,
 				})
-				return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: respBody}
+				return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: respBody, ResponseHeaders: resp.Header.Clone()}
 			}
 		}
 
@@ -1553,7 +1613,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 					Message:            upstreamMsg,
 					Detail:             upstreamDetail,
 				})
-				return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: evBody, RetryableOnSameAccount: true}
+				return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: evBody, ResponseHeaders: resp.Header.Clone(), RetryableOnSameAccount: true}
 			}
 		}
 		if s.shouldFailoverGeminiUpstreamError(resp.StatusCode) {
@@ -1578,7 +1638,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 				Message:            upstreamMsg,
 				Detail:             upstreamDetail,
 			})
-			return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: evBody}
+			return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: evBody, ResponseHeaders: resp.Header.Clone()}
 		}
 
 		respBody = unwrapIfNeeded(isOAuth, respBody)
@@ -1687,19 +1747,34 @@ func (s *GeminiMessagesCompatService) checkErrorPolicyInLoop(
 	return policy != ErrorPolicyNone, rebuilt
 }
 
+func isGeminiPermanentForbidden(headers http.Header, body []byte) bool {
+	if isGeminiInsufficientScope(headers, body) {
+		return true
+	}
+	return classifyForbiddenType(string(body)) == forbiddenTypeValidation
+}
+
 func (s *GeminiMessagesCompatService) shouldRetryGeminiUpstreamError(account *Account, statusCode int) bool {
 	switch statusCode {
 	case 429, 500, 502, 503, 504, 529:
 		return true
 	case 403:
 		// GeminiCli OAuth occasionally returns 403 transiently (activation/quota propagation); allow retry.
-		if account == nil || account.Type != AccountTypeOAuth {
-			return false
-		}
-		return account.UsesGeminiCLIProjectRouting()
+		return isGeminiProjectRoutedOAuthAccount(account)
 	default:
 		return false
 	}
+}
+
+func (s *GeminiMessagesCompatService) shouldStopGeminiSameAccountRetryOn429(ctx context.Context, account *Account) bool {
+	if s == nil || account == nil || s.accountRepo == nil {
+		return false
+	}
+	refreshed, err := s.accountRepo.GetByID(ctx, account.ID)
+	if err != nil || refreshed == nil || refreshed.RateLimitResetAt == nil {
+		return false
+	}
+	return time.Now().Before(*refreshed.RateLimitResetAt)
 }
 
 func (s *GeminiMessagesCompatService) shouldFailoverGeminiUpstreamError(statusCode int) bool {
@@ -2777,6 +2852,7 @@ func (s *GeminiMessagesCompatService) ForwardAIStudioGET(ctx context.Context, c 
 		return nil, err
 	}
 	fullURL := strings.TrimRight(normalizedBaseURL, "/") + path
+	fullURL = appendGeminiAIStudioGETQuery(fullURL, c)
 
 	var proxyURL string
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -2896,6 +2972,39 @@ func (s *GeminiMessagesCompatService) ForwardAIStudioGET(ctx context.Context, c 
 		Headers:    filteredHeaders,
 		Body:       body,
 	}, nil
+}
+
+func appendGeminiAIStudioGETQuery(fullURL string, c *gin.Context) string {
+	if c == nil || c.Request == nil || c.Request.URL == nil {
+		return fullURL
+	}
+
+	query := c.Request.URL.Query()
+	for _, key := range []string{"key", "api_key", "access_token", "oauth_token", "token"} {
+		query.Del(key)
+	}
+	encoded := strings.TrimSpace(query.Encode())
+	if encoded == "" {
+		return fullURL
+	}
+
+	parsed, err := url.Parse(fullURL)
+	if err != nil {
+		separator := "?"
+		if strings.Contains(fullURL, "?") {
+			separator = "&"
+		}
+		return fullURL + separator + encoded
+	}
+
+	existing := parsed.Query()
+	for key, values := range query {
+		for _, value := range values {
+			existing.Add(key, value)
+		}
+	}
+	parsed.RawQuery = existing.Encode()
+	return parsed.String()
 }
 
 // unwrapGeminiResponse 解包 Gemini OAuth 响应中的 response 字段
@@ -3046,7 +3155,7 @@ func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Cont
 	oauthType := account.GeminiOAuthTypeSafe()
 	tierID := account.GeminiTierID()
 	projectID := strings.TrimSpace(account.GetCredential("project_id"))
-	isCodeAssist := account.UsesGeminiCLIProjectRouting()
+	isCodeAssist := isGeminiProjectRoutedOAuthAccount(account)
 
 	resetAt := ParseGeminiRateLimitResetTime(body)
 	if resetAt == nil {
