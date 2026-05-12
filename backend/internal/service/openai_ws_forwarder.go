@@ -2254,6 +2254,23 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			parseOpenAIWSResponseUsageFromCompletedEvent(message, usage)
 		}
 		imageCounter.AddSSEData(message)
+		if advisoryMsg, ok := classifyOpenAIWSSoftRateLimitAdvisory(message); ok {
+			s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), nil, "rate_limit_exceeded", "rate_limit_error", advisoryMsg)
+			logOpenAIWSModeInfo(
+				"soft_rate_limit_advisory account_id=%d conn_id=%s idx=%d event_type=%s message=%s",
+				account.ID,
+				connID,
+				eventCount,
+				truncateOpenAIWSLogValue(eventType, openAIWSLogValueMaxLen),
+				truncateOpenAIWSLogValue(advisoryMsg, openAIWSLogValueMaxLen),
+			)
+			lease.MarkBroken()
+			if !wroteDownstream {
+				return nil, wrapOpenAIWSFallback("upstream_rate_limited", errors.New(advisoryMsg))
+			}
+			setOpsUpstreamError(c, http.StatusTooManyRequests, advisoryMsg, "")
+			return nil, fmt.Errorf("openai ws soft rate limit advisory: %s", advisoryMsg)
+		}
 
 		if eventType == "error" {
 			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(message)
@@ -4162,16 +4179,46 @@ func isOpenAIWSRateLimitError(codeRaw, errTypeRaw, msgRaw string) bool {
 	if strings.Contains(errType, "rate_limit") || strings.Contains(errType, "usage_limit") {
 		return true
 	}
-	if strings.Contains(code, "rate_limit") || strings.Contains(code, "usage_limit") || strings.Contains(code, "insufficient_quota") {
+	if strings.Contains(code, "rate_limit") ||
+		strings.Contains(code, "usage_limit") ||
+		strings.Contains(code, "insufficient_quota") ||
+		strings.Contains(code, "billing_hard_limit") {
 		return true
 	}
 	if strings.Contains(msg, "usage limit") && strings.Contains(msg, "reached") {
+		return true
+	}
+	if strings.Contains(msg, "upgrade to plus") && strings.Contains(msg, "usage limit") {
 		return true
 	}
 	if strings.Contains(msg, "rate limit") && (strings.Contains(msg, "reached") || strings.Contains(msg, "exceeded")) {
 		return true
 	}
 	return false
+}
+
+func classifyOpenAIWSSoftRateLimitAdvisory(message []byte) (string, bool) {
+	if len(message) == 0 {
+		return "", false
+	}
+	raw := strings.ToLower(strings.TrimSpace(string(message)))
+	if raw == "" {
+		return "", false
+	}
+
+	hasApproachingSignal := strings.Contains(raw, "approaching rate limits") ||
+		strings.Contains(raw, "approaching your rate limits")
+	hasSwitchSignal := strings.Contains(raw, "switch to ") &&
+		(strings.Contains(raw, "lower credit usage") ||
+			strings.Contains(raw, "smaller frontier agentic coding model"))
+	hasChoiceSignal := strings.Contains(raw, "keep current model") &&
+		(strings.Contains(raw, "never show again") || strings.Contains(raw, "hide future rate limi"))
+
+	if !hasApproachingSignal || !hasSwitchSignal || !hasChoiceSignal {
+		return "", false
+	}
+
+	return "Approaching upstream rate limits; switch account and retry", true
 }
 
 func (s *OpenAIGatewayService) persistOpenAIWSRateLimitSignal(ctx context.Context, account *Account, headers http.Header, responseBody []byte, codeRaw, errTypeRaw, msgRaw string) {
@@ -4202,7 +4249,7 @@ func classifyOpenAIWSErrorEventFromRaw(codeRaw, errTypeRaw, msgRaw string) (stri
 		return "previous_response_not_found", true
 	}
 	if isOpenAIWSRateLimitError(codeRaw, errTypeRaw, msgRaw) {
-		return "upstream_rate_limited", false
+		return "upstream_rate_limited", true
 	}
 	if strings.Contains(msg, "upgrade required") || strings.Contains(msg, "status 426") {
 		return "upgrade_required", true

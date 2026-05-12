@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	coderws "github.com/coder/websocket"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -109,9 +111,27 @@ func TestClassifyOpenAIWSErrorEvent(t *testing.T) {
 	require.Equal(t, "previous_response_not_found", reason)
 	require.True(t, recoverable)
 
+	reason, recoverable = classifyOpenAIWSErrorEvent([]byte(`{"type":"error","error":{"type":"usage_limit_reached","code":"billing_hard_limit","message":"You've hit your usage limit. Upgrade to Plus to continue using Codex, or try again after 1:00 PM."}}`))
+	require.Equal(t, "upstream_rate_limited", reason)
+	require.True(t, recoverable)
+
 	reason, recoverable = classifyOpenAIWSErrorEvent([]byte(`{"type":"error","error":{"type":"invalid_request_error","code":"invalid_request","message":"No tool call found for function call output with call_id call_1."}}`))
 	require.Equal(t, "call_id", reason)
 	require.True(t, recoverable)
+}
+
+func TestClassifyOpenAIWSSoftRateLimitAdvisory(t *testing.T) {
+	msg, matched := classifyOpenAIWSSoftRateLimitAdvisory([]byte(`{"type":"response.output_text.delta","delta":"Approaching rate limits\nSwitch to gpt-5.4-mini for lower credit usage?\n1. Switch to gpt-5.4-mini\n2. Keep current model\n3. Keep current model (never show again)"}`))
+	require.True(t, matched)
+	require.Contains(t, msg, "Approaching upstream rate limits")
+
+	msg, matched = classifyOpenAIWSSoftRateLimitAdvisory([]byte(`{"type":"response.output_text.delta","delta":"Approaching your rate limits\nSwitch to o4-mini for lower credit usage?\n1. Switch to o4-mini\n2. Keep current model\n3. Keep current model (never show again)"}`))
+	require.True(t, matched)
+	require.Contains(t, msg, "Approaching upstream rate limits")
+
+	msg, matched = classifyOpenAIWSSoftRateLimitAdvisory([]byte(`{"type":"response.output_text.delta","delta":"user asked about approaching rate limits in general"}`))
+	require.False(t, matched)
+	require.Empty(t, msg)
 }
 
 func TestClassifyOpenAIWSReconnectReason(t *testing.T) {
@@ -172,6 +192,44 @@ func TestResolveOpenAIWSFallbackErrorResponse(t *testing.T) {
 	t.Run("non_fallback_error_not_resolved", func(t *testing.T) {
 		_, _, _, _, ok := resolveOpenAIWSFallbackErrorResponse(errors.New("plain error"))
 		require.False(t, ok)
+	})
+}
+
+func TestNewOpenAIWSFailoverError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("rate_limited_promotes_to_failover", func(t *testing.T) {
+		svc := &OpenAIGatewayService{cfg: &config.Config{}}
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+		failoverErr := svc.newOpenAIWSFailoverError(
+			c,
+			&Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"},
+			wrapOpenAIWSFallback("upstream_rate_limited", errors.New("You've hit your usage limit. Upgrade to Plus to continue using Codex, or try again after 1:00 PM.")),
+		)
+
+		require.NotNil(t, failoverErr)
+		require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+		require.Contains(t, string(failoverErr.ResponseBody), `"type":"rate_limit_error"`)
+		require.Contains(t, string(failoverErr.ResponseBody), "usage limit")
+		require.False(t, c.Writer.Written())
+	})
+
+	t.Run("non_rate_limited_keeps_client_response_path", func(t *testing.T) {
+		svc := &OpenAIGatewayService{cfg: &config.Config{}}
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+		failoverErr := svc.newOpenAIWSFailoverError(
+			c,
+			&Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"},
+			wrapOpenAIWSFallback("upgrade_required", errors.New("upgrade required")),
+		)
+
+		require.Nil(t, failoverErr)
 	})
 }
 

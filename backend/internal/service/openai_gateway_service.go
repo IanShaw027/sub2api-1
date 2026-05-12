@@ -822,6 +822,52 @@ func resolveOpenAIWSFallbackErrorResponse(err error) (statusCode int, errType st
 	return statusCode, errType, clientMessage, upstreamMessage, true
 }
 
+func (s *OpenAIGatewayService) newOpenAIWSFailoverError(c *gin.Context, account *Account, wsErr error) *UpstreamFailoverError {
+	if c != nil && c.Writer != nil && c.Writer.Written() {
+		return nil
+	}
+	statusCode, errType, clientMessage, upstreamMessage, ok := resolveOpenAIWSFallbackErrorResponse(wsErr)
+	if !ok {
+		return nil
+	}
+	var fallbackErr *openAIWSFallbackError
+	if !errors.As(wsErr, &fallbackErr) || fallbackErr == nil {
+		return nil
+	}
+	reason := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(fallbackErr.Reason), "prewarm_"))
+	if reason != "upstream_rate_limited" {
+		return nil
+	}
+	if strings.TrimSpace(clientMessage) == "" {
+		clientMessage = "Upstream request failed"
+	}
+	if strings.TrimSpace(upstreamMessage) == "" {
+		upstreamMessage = clientMessage
+	}
+
+	setOpsUpstreamError(c, statusCode, upstreamMessage, "")
+	if account != nil {
+		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+			Platform:           account.Platform,
+			AccountID:          account.ID,
+			AccountName:        account.Name,
+			UpstreamStatusCode: statusCode,
+			Kind:               "failover",
+			Message:            upstreamMessage,
+		})
+	}
+	body, _ := json.Marshal(gin.H{
+		"error": gin.H{
+			"type":    errType,
+			"message": clientMessage,
+		},
+	})
+	return &UpstreamFailoverError{
+		StatusCode:   statusCode,
+		ResponseBody: body,
+	}
+}
+
 func (s *OpenAIGatewayService) writeOpenAIWSFallbackErrorResponse(c *gin.Context, account *Account, wsErr error) bool {
 	if c == nil || c.Writer == nil || c.Writer.Written() {
 		return false
@@ -3575,6 +3621,9 @@ oauthTransformDone:
 			)
 			wsResult.UpstreamModel = upstreamModel
 			return wsResult, nil
+		}
+		if failoverErr := s.newOpenAIWSFailoverError(c, account, wsErr); failoverErr != nil {
+			return nil, failoverErr
 		}
 		s.writeOpenAIWSFallbackErrorResponse(c, account, wsErr)
 		return nil, wsErr
