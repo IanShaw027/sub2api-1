@@ -1514,6 +1514,10 @@ func classifyOpenAICodexCompatFallback(statusCode int, upstreamCode, upstreamMsg
 		if hasSchemaSignal || strings.Contains(msg, "missing") || strings.Contains(msg, "invalid") {
 			return "call_id"
 		}
+		if strings.Contains(msg, "no tool call found") &&
+			(strings.Contains(msg, "function call output") || strings.Contains(msg, "function_call_output")) {
+			return "call_id"
+		}
 	case strings.Contains(msg, "tool context"):
 		return "tool_context"
 	case strings.Contains(msg, "role") && strings.Contains(msg, "system"):
@@ -2417,11 +2421,11 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel, requireCompact) {
 			continue
 		}
+		waitLimit := s.freshSessionAdmissionLimit(ctx, fresh, requiredImageRoute)
 		return s.newSelectionResult(ctx, fresh, false, nil, &AccountWaitPlan{
 			AccountID:      fresh.ID,
 			MaxConcurrency: waitLimit,
 			Timeout:        cfg.FallbackWaitTimeout,
-		waitLimit := s.freshSessionAdmissionLimit(ctx, fresh, requiredImageRoute)
 			MaxWaiting:     cfg.FallbackMaxWaiting,
 		})
 	}
@@ -2488,13 +2492,13 @@ func (s *OpenAIGatewayService) listOpenAIImageCandidateAccounts(ctx context.Cont
 		}
 		filtered = append(filtered, acc)
 	}
+	if s.schedulerSnapshot != nil {
+		s.schedulerSnapshot.overlayLastUsedFromCache(ctx, filtered)
+	}
 	return filtered, nil
 }
 
 func (s *OpenAIGatewayService) tryAcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int) (*AcquireResult, error) {
-	if s.schedulerSnapshot != nil {
-		s.schedulerSnapshot.overlayLastUsedFromCache(ctx, filtered)
-	}
 	if s.concurrencyService == nil {
 		return &AcquireResult{Acquired: true, ReleaseFunc: func() {}}, nil
 	}
@@ -2511,10 +2515,6 @@ func concurrencyForOpenAIAccountSelection(account *Account, requiredImageRoute s
 	return account.Concurrency
 }
 
-func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccount(ctx context.Context, account *Account, requestedModel string, requireCompact bool, requiredImageRoute string) *Account {
-	if account == nil {
-		return nil
-	}
 func compareOptionalTimeAsc(a, b *time.Time) int {
 	switch {
 	case a == nil && b == nil:
@@ -2619,6 +2619,10 @@ func lessOpenAINewSessionCandidate(a, b openAIAccountCandidateScore, limitA, lim
 	return a.account.ID < b.account.ID
 }
 
+func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccount(ctx context.Context, account *Account, requestedModel string, requireCompact bool, requiredImageRoute string) *Account {
+	if account == nil {
+		return nil
+	}
 
 	fresh := account
 	if s.schedulerSnapshot != nil {
@@ -2686,10 +2690,6 @@ func (s *OpenAIGatewayService) hydrateSelectedAccount(ctx context.Context, accou
 	return hydrated, nil
 }
 
-func (s *OpenAIGatewayService) newSelectionResult(ctx context.Context, account *Account, acquired bool, release func(), waitPlan *AccountWaitPlan) (*AccountSelectionResult, error) {
-	hydrated, err := s.hydrateSelectedAccount(ctx, account)
-	if err != nil {
-		return nil, err
 func (s *OpenAIGatewayService) hotUpdateSelectedAccountLastUsed(account *Account) {
 	if account == nil || account.ID <= 0 {
 		return
@@ -2704,14 +2704,18 @@ func (s *OpenAIGatewayService) hotUpdateSelectedAccountLastUsed(account *Account
 	_ = s.schedulerSnapshot.UpdateLastUsedInCache(cacheCtx, account.ID, now)
 }
 
+func (s *OpenAIGatewayService) newSelectionResult(ctx context.Context, account *Account, acquired bool, release func(), waitPlan *AccountWaitPlan) (*AccountSelectionResult, error) {
+	hydrated, err := s.hydrateSelectedAccount(ctx, account)
+	if err != nil {
+		return nil, err
+	}
+	if acquired {
+		s.hotUpdateSelectedAccountLastUsed(hydrated)
 	}
 	return &AccountSelectionResult{
 		Account:     hydrated,
 		Acquired:    acquired,
 		ReleaseFunc: release,
-	if acquired {
-		s.hotUpdateSelectedAccountLastUsed(hydrated)
-	}
 		WaitPlan:    waitPlan,
 	}, nil
 }

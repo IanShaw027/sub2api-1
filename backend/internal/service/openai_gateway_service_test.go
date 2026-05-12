@@ -395,6 +395,16 @@ func TestClassifyOpenAICodexCompatFallback(t *testing.T) {
 		require.Equal(t, "call_id", reason)
 	})
 
+	t.Run("function call output missing matching tool call", func(t *testing.T) {
+		reason := classifyOpenAICodexCompatFallback(
+			http.StatusBadRequest,
+			"",
+			"No tool call found for function call output with call_id call_m5e8pq2TZm6njNl9TYxWq7lZ.",
+			nil,
+		)
+		require.Equal(t, "call_id", reason)
+	})
+
 	t.Run("item_reference schema mismatch", func(t *testing.T) {
 		reason := classifyOpenAICodexCompatFallback(
 			http.StatusBadRequest,
@@ -462,6 +472,69 @@ func TestOpenAIGatewayService_Forward_RetriesCodexCompatFallbackOnce(t *testing.
 	account := &Account{
 		ID:          1,
 		Name:        "oauth-codex",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	body := []byte(`{"model":"gpt-5.4","stream":true,"input":[{"type":"item_reference","id":"call_1"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`)
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 2, upstream.callCount)
+	require.Equal(t, "call_1", gjson.GetBytes(upstream.bodies[0], "input.0.id").String())
+	require.Equal(t, "call_1", gjson.GetBytes(upstream.bodies[0], "input.1.call_id").String())
+	require.Equal(t, "fc1", gjson.GetBytes(upstream.bodies[1], "input.0.id").String())
+	require.Equal(t, "fc1", gjson.GetBytes(upstream.bodies[1], "input.1.call_id").String())
+	require.True(t, c.GetBool(openAICodexCompatFallbackKey))
+	require.Equal(t, "call_id", c.GetString(openAICodexCompatFallbackReasonKey))
+}
+
+func TestOpenAIGatewayService_Forward_RetriesCodexCompatFallbackOnceOnMissingToolCall(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "codex-tui/0.125.0")
+	c.Request.Header.Set("Accept", "text/event-stream")
+
+	upstream := &httpUpstreamSequenceRecorder{
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(
+					`{"error":{"message":"No tool call found for function call output with call_id call_1.","type":"invalid_request_error","param":"input"}}`,
+				)),
+			},
+			{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid-codex-fallback-tool-call"}},
+				Body: io.NopCloser(strings.NewReader(
+					"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_codex_fallback_tool_call\",\"model\":\"gpt-5.4\",\"usage\":{\"input_tokens\":3,\"output_tokens\":2,\"input_tokens_details\":{\"cached_tokens\":1}}}}\n\n",
+				)),
+			},
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Gateway.OpenAIWS.Enabled = false
+	svc := &OpenAIGatewayService{
+		cfg:          cfg,
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          11,
+		Name:        "oauth-codex-tool-call",
 		Platform:    PlatformOpenAI,
 		Type:        AccountTypeOAuth,
 		Concurrency: 1,
@@ -1103,6 +1176,7 @@ func TestOpenAISelectAccountWithLoadAwareness_StickyWaitPlan(t *testing.T) {
 
 func TestOpenAISelectAccountWithLoadAwareness_PrefersLowerLoad(t *testing.T) {
 	groupID := int64(1)
+	lastUsed := time.Now().Add(-1 * time.Hour)
 	repo := stubOpenAIAccountRepo{
 		accounts: []Account{
 			{ID: 1, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Concurrency: 10, Priority: 1, LastUsedAt: &lastUsed},
@@ -1176,7 +1250,6 @@ func TestOpenAISelectAccountForModelWithExclusions_StickyNonOpenAI(t *testing.T)
 
 	svc := &OpenAIGatewayService{
 		accountRepo: repo,
-	lastUsed := time.Now().Add(-1 * time.Hour)
 		cache:       cache,
 	}
 
@@ -1295,6 +1368,7 @@ func TestOpenAISelectAccountWithLoadAwareness_LoadBatchErrorNoAcquire(t *testing
 
 func TestOpenAISelectAccountWithLoadAwareness_MissingLoadInfo(t *testing.T) {
 	groupID := int64(1)
+	lastUsed := time.Now().Add(-1 * time.Hour)
 	repo := stubOpenAIAccountRepo{
 		accounts: []Account{
 			{ID: 1, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 1, LastUsedAt: &lastUsed},
@@ -1368,7 +1442,6 @@ func TestOpenAISelectAccountWithLoadAwareness_PreferNeverUsed(t *testing.T) {
 
 	svc := &OpenAIGatewayService{
 		accountRepo:        repo,
-	lastUsed := time.Now().Add(-1 * time.Hour)
 		cache:              cache,
 		concurrencyService: NewConcurrencyService(concurrencyCache),
 	}
@@ -1382,79 +1455,6 @@ func TestOpenAISelectAccountWithLoadAwareness_PreferNeverUsed(t *testing.T) {
 	}
 }
 
-func TestOpenAIStreamingTimeout(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	cfg := &config.Config{
-		Gateway: config.GatewayConfig{
-			StreamDataIntervalTimeout: 1,
-			StreamKeepaliveInterval:   0,
-			MaxLineSize:               defaultMaxLineSize,
-		},
-	}
-	svc := &OpenAIGatewayService{cfg: cfg}
-
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
-
-	pr, pw := io.Pipe()
-	resp := &http.Response{
-		StatusCode: http.StatusOK,
-		Body:       pr,
-		Header:     http.Header{},
-	}
-
-	start := time.Now()
-	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1}, start, "model", "model")
-	_ = pw.Close()
-	_ = pr.Close()
-
-	if err == nil || !strings.Contains(err.Error(), "stream data interval timeout") {
-		t.Fatalf("expected stream timeout error, got %v", err)
-	}
-	if !strings.Contains(rec.Body.String(), "\"type\":\"error\"") || !strings.Contains(rec.Body.String(), "stream_timeout") {
-		t.Fatalf("expected OpenAI-compatible error SSE event, got %q", rec.Body.String())
-	}
-}
-
-func TestOpenAIStreamingContextCanceledReturnsIncompleteErrorWithoutInjectingErrorEvent(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	cfg := &config.Config{
-		Gateway: config.GatewayConfig{
-			StreamDataIntervalTimeout: 0,
-			StreamKeepaliveInterval:   0,
-			MaxLineSize:               defaultMaxLineSize,
-		},
-	}
-	svc := &OpenAIGatewayService{cfg: cfg}
-
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	c.Request = httptest.NewRequest(http.MethodPost, "/", nil).WithContext(ctx)
-
-	resp := &http.Response{
-		StatusCode: http.StatusOK,
-		Body:       cancelReadCloser{},
-		Header:     http.Header{},
-	}
-
-	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "model", "model")
-	if err == nil || !strings.Contains(err.Error(), "stream usage incomplete") {
-		t.Fatalf("expected incomplete stream error, got %v", err)
-	}
-	if strings.Contains(rec.Body.String(), "event: error") || strings.Contains(rec.Body.String(), "stream_read_error") {
-		t.Fatalf("expected no injected SSE error event, got %q", rec.Body.String())
-	}
-}
-
-func TestOpenAIStreamingReadErrorBeforeOutputReturnsFailover(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	cfg := &config.Config{
-		Gateway: config.GatewayConfig{
-			StreamDataIntervalTimeout: 0,
-			StreamKeepaliveInterval:   0,
 func TestOpenAISelectAccountWithLoadAwareness_PrefersLeastRecentlyUsedBeforeConcurrencyRatio(t *testing.T) {
 	groupID := int64(1)
 	older := time.Now().Add(-2 * time.Hour)
@@ -1624,6 +1624,79 @@ func TestOpenAIGatewayService_ListOpenAIImageCandidateAccounts_OverlaysCachedLas
 	require.True(t, accounts[0].LastUsedAt.Equal(newLastUsed))
 }
 
+func TestOpenAIStreamingTimeout(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Gateway: config.GatewayConfig{
+			StreamDataIntervalTimeout: 1,
+			StreamKeepaliveInterval:   0,
+			MaxLineSize:               defaultMaxLineSize,
+		},
+	}
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+	pr, pw := io.Pipe()
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       pr,
+		Header:     http.Header{},
+	}
+
+	start := time.Now()
+	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1}, start, "model", "model")
+	_ = pw.Close()
+	_ = pr.Close()
+
+	if err == nil || !strings.Contains(err.Error(), "stream data interval timeout") {
+		t.Fatalf("expected stream timeout error, got %v", err)
+	}
+	if !strings.Contains(rec.Body.String(), "\"type\":\"error\"") || !strings.Contains(rec.Body.String(), "stream_timeout") {
+		t.Fatalf("expected OpenAI-compatible error SSE event, got %q", rec.Body.String())
+	}
+}
+
+func TestOpenAIStreamingContextCanceledReturnsIncompleteErrorWithoutInjectingErrorEvent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Gateway: config.GatewayConfig{
+			StreamDataIntervalTimeout: 0,
+			StreamKeepaliveInterval:   0,
+			MaxLineSize:               defaultMaxLineSize,
+		},
+	}
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil).WithContext(ctx)
+
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       cancelReadCloser{},
+		Header:     http.Header{},
+	}
+
+	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "model", "model")
+	if err == nil || !strings.Contains(err.Error(), "stream usage incomplete") {
+		t.Fatalf("expected incomplete stream error, got %v", err)
+	}
+	if strings.Contains(rec.Body.String(), "event: error") || strings.Contains(rec.Body.String(), "stream_read_error") {
+		t.Fatalf("expected no injected SSE error event, got %q", rec.Body.String())
+	}
+}
+
+func TestOpenAIStreamingReadErrorBeforeOutputReturnsFailover(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Gateway: config.GatewayConfig{
+			StreamDataIntervalTimeout: 0,
+			StreamKeepaliveInterval:   0,
 			MaxLineSize:               defaultMaxLineSize,
 		},
 	}
