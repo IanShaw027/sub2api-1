@@ -121,15 +121,31 @@ func TestClassifyOpenAIWSErrorEvent(t *testing.T) {
 }
 
 func TestClassifyOpenAIWSSoftRateLimitAdvisory(t *testing.T) {
-	msg, matched := classifyOpenAIWSSoftRateLimitAdvisory([]byte(`{"type":"response.output_text.delta","delta":"Approaching rate limits\nSwitch to gpt-5.4-mini for lower credit usage?\n1. Switch to gpt-5.4-mini\n2. Keep current model\n3. Keep current model (never show again)"}`))
+	msg, matched := classifyOpenAIWSSoftRateLimitAdvisory([]byte(`{"type":"codex.rate_limits","metered_limit_name":"codex","rate_limits":{"allowed":true,"limit_reached":false,"primary":{"used_percent":91,"window_minutes":300,"reset_at":1700000000},"secondary":null},"credits":{"has_credits":false,"unlimited":false,"balance":null}}`))
 	require.True(t, matched)
 	require.Contains(t, msg, "Approaching upstream rate limits")
 
-	msg, matched = classifyOpenAIWSSoftRateLimitAdvisory([]byte(`{"type":"response.output_text.delta","delta":"Approaching your rate limits\nSwitch to o4-mini for lower credit usage?\n1. Switch to o4-mini\n2. Keep current model\n3. Keep current model (never show again)"}`))
+	msg, matched = classifyOpenAIWSSoftRateLimitAdvisory([]byte(`{"type":"codex.rate_limits","rate_limits":{"allowed":true,"limit_reached":false,"primary":null,"secondary":{"used_percent":95,"window_minutes":10080,"reset_at":1700000000}}}`))
 	require.True(t, matched)
 	require.Contains(t, msg, "Approaching upstream rate limits")
 
-	msg, matched = classifyOpenAIWSSoftRateLimitAdvisory([]byte(`{"type":"response.output_text.delta","delta":"user asked about approaching rate limits in general"}`))
+	msg, matched = classifyOpenAIWSSoftRateLimitAdvisory([]byte(`{"type":"response.output_text.delta","delta":"Approaching rate limits\nSwitch to gpt-5.4-mini for lower credit usage?\n1. Switch to gpt-5.4-mini\n2. Keep current model\n3. Keep current model (never show again)"}`))
+	require.False(t, matched)
+	require.Empty(t, msg)
+
+	msg, matched = classifyOpenAIWSSoftRateLimitAdvisory([]byte(`{"type":"response.completed","response":{"output":[{"type":"message","content":[{"type":"output_text","text":"Approaching rate limits\nSwitch to gpt-5.4-mini for lower credit usage?\n1. Switch to gpt-5.4-mini\n2. Keep current model\n3. Keep current model (never show again)"}]}]}}`))
+	require.False(t, matched)
+	require.Empty(t, msg)
+
+	msg, matched = classifyOpenAIWSSoftRateLimitAdvisory([]byte(`{"type":"codex.rate_limits","metered_limit_name":"codex_other","rate_limits":{"allowed":true,"limit_reached":false,"primary":{"used_percent":95}}}`))
+	require.False(t, matched)
+	require.Empty(t, msg)
+
+	msg, matched = classifyOpenAIWSSoftRateLimitAdvisory([]byte(`{"type":"codex.rate_limits","rate_limits":{"allowed":true,"limit_reached":false,"primary":{"used_percent":95}},"credits":{"has_credits":true,"unlimited":false}}`))
+	require.False(t, matched)
+	require.Empty(t, msg)
+
+	msg, matched = classifyOpenAIWSSoftRateLimitAdvisory([]byte(`{"type":"codex.rate_limits","rate_limits":{"allowed":true,"limit_reached":false,"primary":{"used_percent":89.9}}}`))
 	require.False(t, matched)
 	require.Empty(t, msg)
 }

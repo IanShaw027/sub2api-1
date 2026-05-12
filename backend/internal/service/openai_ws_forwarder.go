@@ -58,6 +58,10 @@ const (
 
 	openAIWSIngressStagePreviousResponseNotFound = "previous_response_not_found"
 	openAIWSMaxPrevResponseIDDeletePasses        = 8
+
+	openAIWSSoftRateLimitAdvisoryMessage      = "Approaching upstream rate limits; switch account and retry"
+	openAIWSSoftRateLimitAdvisoryThreshold    = 90.0
+	openAIWSSoftRateLimitAdvisoryDefaultLimit = "codex"
 )
 
 var openAIWSLogValueReplacer = strings.NewReplacer(
@@ -4201,24 +4205,43 @@ func classifyOpenAIWSSoftRateLimitAdvisory(message []byte) (string, bool) {
 	if len(message) == 0 {
 		return "", false
 	}
-	raw := strings.ToLower(strings.TrimSpace(string(message)))
-	if raw == "" {
+	eventType := strings.TrimSpace(gjson.GetBytes(message, "type").String())
+	if eventType != "codex.rate_limits" {
 		return "", false
 	}
-
-	hasApproachingSignal := strings.Contains(raw, "approaching rate limits") ||
-		strings.Contains(raw, "approaching your rate limits")
-	hasSwitchSignal := strings.Contains(raw, "switch to ") &&
-		(strings.Contains(raw, "lower credit usage") ||
-			strings.Contains(raw, "smaller frontier agentic coding model"))
-	hasChoiceSignal := strings.Contains(raw, "keep current model") &&
-		(strings.Contains(raw, "never show again") || strings.Contains(raw, "hide future rate limi"))
-
-	if !hasApproachingSignal || !hasSwitchSignal || !hasChoiceSignal {
+	if !gjson.GetBytes(message, "rate_limits").IsObject() {
 		return "", false
 	}
+	allowed := gjson.GetBytes(message, "rate_limits.allowed")
+	limitReached := gjson.GetBytes(message, "rate_limits.limit_reached")
+	if !allowed.Exists() || !allowed.Bool() || !limitReached.Exists() || limitReached.Bool() {
+		return "", false
+	}
+	limitID := strings.TrimSpace(gjson.GetBytes(message, "metered_limit_name").String())
+	if limitID == "" {
+		limitID = strings.TrimSpace(gjson.GetBytes(message, "limit_name").String())
+	}
+	if limitID == "" {
+		limitID = openAIWSSoftRateLimitAdvisoryDefaultLimit
+	}
+	normalizedLimitID := strings.ReplaceAll(strings.ToLower(limitID), "-", "_")
+	if normalizedLimitID != openAIWSSoftRateLimitAdvisoryDefaultLimit {
+		return "", false
+	}
+	if gjson.GetBytes(message, "credits.has_credits").Bool() ||
+		gjson.GetBytes(message, "credits.unlimited").Bool() {
+		return "", false
+	}
+	if !openAIWSRateLimitWindowApproaching(message, "rate_limits.primary.used_percent") &&
+		!openAIWSRateLimitWindowApproaching(message, "rate_limits.secondary.used_percent") {
+		return "", false
+	}
+	return openAIWSSoftRateLimitAdvisoryMessage, true
+}
 
-	return "Approaching upstream rate limits; switch account and retry", true
+func openAIWSRateLimitWindowApproaching(message []byte, path string) bool {
+	value := gjson.GetBytes(message, path)
+	return value.Exists() && value.Float() >= openAIWSSoftRateLimitAdvisoryThreshold
 }
 
 func (s *OpenAIGatewayService) persistOpenAIWSRateLimitSignal(ctx context.Context, account *Account, headers http.Header, responseBody []byte, codeRaw, errTypeRaw, msgRaw string) {

@@ -775,7 +775,7 @@ func resolveOpenAIWSFallbackErrorResponse(err error) (statusCode int, errType st
 		if statusCode == 0 {
 			statusCode = http.StatusUnauthorized
 		}
-	case "upstream_rate_limited":
+	case "upstream_rate_limited", "ws_connection_limit_reached":
 		if statusCode == 0 {
 			statusCode = http.StatusTooManyRequests
 		}
@@ -835,7 +835,7 @@ func (s *OpenAIGatewayService) newOpenAIWSFailoverError(c *gin.Context, account 
 		return nil
 	}
 	reason := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(fallbackErr.Reason), "prewarm_"))
-	if reason != "upstream_rate_limited" {
+	if reason != "upstream_rate_limited" && reason != "ws_connection_limit_reached" {
 		return nil
 	}
 	if strings.TrimSpace(clientMessage) == "" {
@@ -1584,6 +1584,15 @@ func classifyOpenAICodexCompatFallbackMessage(msg string) string {
 	}
 
 	return ""
+}
+
+func isOpenAICodexCompatFallbackReason(reason string) bool {
+	switch strings.TrimSpace(reason) {
+	case "call_id", "item_reference", "tool_context", "system_role", "input_schema":
+		return true
+	default:
+		return false
+	}
 }
 
 func remarshalOpenAIOAuthCompatFallbackBody(
@@ -3481,6 +3490,9 @@ oauthTransformDone:
 			if reason == "" {
 				return false
 			}
+			if !isOpenAICodexCompatFallbackReason(reason) {
+				return false
+			}
 			codexResult := applyOpenAIWSCodexCompatFallback(wsReqBody, c, isCodexCLI, isCompactRequest, reason)
 			if !codexResult.Modified {
 				logOpenAIWSModeInfo(
@@ -4643,7 +4655,7 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 }
 
 func (s *OpenAIGatewayService) newOpenAISoftRateLimitFailoverError(
-	ctx context.Context,
+	_ context.Context,
 	c *gin.Context,
 	account *Account,
 	passthrough bool,
@@ -4662,9 +4674,6 @@ func (s *OpenAIGatewayService) newOpenAISoftRateLimitFailoverError(
 			maxBytes = 2048
 		}
 		detail = truncateString(string(payload), maxBytes)
-	}
-	if s != nil && s.rateLimitService != nil && account != nil {
-		_ = s.rateLimitService.HandleUpstreamError(ctx, account, http.StatusTooManyRequests, nil, payload)
 	}
 	if c != nil {
 		setOpsUpstreamError(c, http.StatusTooManyRequests, message, detail)
@@ -4883,9 +4892,6 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
 		return nil, err
-	}
-	if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(body); matched {
-		return nil, s.newOpenAISoftRateLimitFailoverError(ctx, c, account, true, strings.TrimSpace(resp.Header.Get("x-request-id")), body, advisoryMsg)
 	}
 
 	// Detect SSE responses from upstream and convert to JSON.
@@ -5972,9 +5978,6 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
 		return nil, err
-	}
-	if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(body); matched {
-		return nil, s.newOpenAISoftRateLimitFailoverError(ctx, c, account, false, strings.TrimSpace(resp.Header.Get("x-request-id")), body, advisoryMsg)
 	}
 
 	// Detect SSE responses for ALL account types via Content-Type header.
