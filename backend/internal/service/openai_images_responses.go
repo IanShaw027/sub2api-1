@@ -295,7 +295,9 @@ func buildOpenAIImagesResponsesRequest(parsed *OpenAIImagesRequest, toolModel st
 
 	req := []byte(`{"instructions":"","stream":true,"reasoning":{"effort":"medium","summary":"auto"},"parallel_tool_calls":true,"include":["reasoning.encrypted_content"],"model":"","store":false}`)
 	req, _ = sjson.SetBytes(req, "model", openAIImagesResponsesMainModel)
-	req, _ = sjson.SetBytes(req, "stream", parsed.Stream)
+	// Responses-tool image generation currently requires upstream SSE even when the
+	// downstream client requested a synchronous image response.
+	req, _ = sjson.SetBytes(req, "stream", true)
 
 	input := []byte(`[{"type":"message","role":"user","content":[{"type":"input_text","text":""}]}]`)
 	input, _ = sjson.SetBytes(input, "0.content.0.text", prompt)

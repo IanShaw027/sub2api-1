@@ -1892,6 +1892,20 @@ func TestBuildOpenAIImagesResponsesRequest_StripsInputFidelity(t *testing.T) {
 	require.Equal(t, "edit", gjson.GetBytes(body, "tools.0.action").String())
 }
 
+func TestBuildOpenAIImagesResponsesRequest_ForcesUpstreamStreaming(t *testing.T) {
+	parsed := &OpenAIImagesRequest{
+		Endpoint: openAIImagesGenerationsEndpoint,
+		Model:    "gpt-image-1",
+		Prompt:   "draw a cat",
+		Stream:   false,
+	}
+
+	body, err := buildOpenAIImagesResponsesRequest(parsed, "gpt-image-1")
+	require.NoError(t, err)
+	require.NotNil(t, body)
+	require.True(t, gjson.GetBytes(body, "stream").Bool())
+}
+
 func TestBuildOpenAIImagesResponsesRequest_PreservesMixedImageReferenceOrder(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{
