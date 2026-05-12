@@ -4191,7 +4191,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		firstTokenMs = result.firstTokenMs
 		imageCount = result.imageCount
 	} else {
-		result, err := s.handleNonStreamingResponsePassthrough(ctx, resp, c, reqModel, upstreamPassthroughModel)
+		result, err := s.handleNonStreamingResponsePassthrough(ctx, resp, c, account, reqModel, upstreamPassthroughModel)
 		if err != nil {
 			return nil, err
 		}
@@ -4642,6 +4642,60 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 	}
 }
 
+func (s *OpenAIGatewayService) newOpenAISoftRateLimitFailoverError(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	passthrough bool,
+	upstreamRequestID string,
+	payload []byte,
+	message string,
+) *UpstreamFailoverError {
+	message = sanitizeUpstreamErrorMessage(strings.TrimSpace(message))
+	if message == "" {
+		message = "Approaching upstream rate limits; switch account and retry"
+	}
+	detail := ""
+	if len(payload) > 0 && s != nil && s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
+		maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
+		if maxBytes <= 0 {
+			maxBytes = 2048
+		}
+		detail = truncateString(string(payload), maxBytes)
+	}
+	if s != nil && s.rateLimitService != nil && account != nil {
+		_ = s.rateLimitService.HandleUpstreamError(ctx, account, http.StatusTooManyRequests, nil, payload)
+	}
+	if c != nil {
+		setOpsUpstreamError(c, http.StatusTooManyRequests, message, detail)
+		event := OpsUpstreamErrorEvent{
+			Platform:           PlatformOpenAI,
+			UpstreamStatusCode: http.StatusTooManyRequests,
+			UpstreamRequestID:  strings.TrimSpace(upstreamRequestID),
+			Passthrough:        passthrough,
+			Kind:               "failover",
+			Message:            message,
+			Detail:             detail,
+		}
+		if account != nil {
+			event.Platform = account.Platform
+			event.AccountID = account.ID
+			event.AccountName = account.Name
+		}
+		appendOpsUpstreamError(c, event)
+	}
+	body, _ := json.Marshal(gin.H{
+		"error": gin.H{
+			"type":    "rate_limit_error",
+			"message": message,
+		},
+	})
+	return &UpstreamFailoverError{
+		StatusCode:   http.StatusTooManyRequests,
+		ResponseBody: body,
+	}
+}
+
 func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	ctx context.Context,
 	resp *http.Response,
@@ -4714,6 +4768,14 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 					dataBytes = []byte(replacedData)
 					trimmedData = strings.TrimSpace(replacedData)
 				}
+			}
+			if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(dataBytes); matched {
+				if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+					return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs},
+						s.newOpenAISoftRateLimitFailoverError(ctx, c, account, true, upstreamRequestID, dataBytes, advisoryMsg)
+				}
+				return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs},
+					fmt.Errorf("openai passthrough soft rate limit advisory: %s", advisoryMsg)
 			}
 			eventType := strings.TrimSpace(gjson.Get(trimmedData, "type").String())
 			if eventType == "response.failed" {
@@ -4814,12 +4876,16 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	ctx context.Context,
 	resp *http.Response,
 	c *gin.Context,
+	account *Account,
 	originalModel string,
 	mappedModel string,
 ) (*openaiNonStreamingResultPassthrough, error) {
 	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
 		return nil, err
+	}
+	if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(body); matched {
+		return nil, s.newOpenAISoftRateLimitFailoverError(ctx, c, account, true, strings.TrimSpace(resp.Header.Get("x-request-id")), body, advisoryMsg)
 	}
 
 	// Detect SSE responses from upstream and convert to JSON.
@@ -5614,6 +5680,14 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			if openAIStreamEventIsTerminal(data) {
 				sawTerminalEvent = true
 			}
+			if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(dataBytes); matched {
+				if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+					streamFailoverErr = s.newOpenAISoftRateLimitFailoverError(ctx, c, account, false, upstreamRequestID, dataBytes, advisoryMsg)
+				} else {
+					streamFailoverErr = fmt.Errorf("openai soft rate limit advisory: %s", advisoryMsg)
+				}
+				return
+			}
 			eventType := strings.TrimSpace(gjson.GetBytes(dataBytes, "type").String())
 			forceFlushFailedEvent := false
 			if eventType == "response.failed" {
@@ -5898,6 +5972,9 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
 		return nil, err
+	}
+	if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(body); matched {
+		return nil, s.newOpenAISoftRateLimitFailoverError(ctx, c, account, false, strings.TrimSpace(resp.Header.Get("x-request-id")), body, advisoryMsg)
 	}
 
 	// Detect SSE responses for ALL account types via Content-Type header.
