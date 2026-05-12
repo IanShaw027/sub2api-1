@@ -61,6 +61,10 @@ type batchSeenKey struct {
 	platform string
 }
 
+type schedulerLastUsedReader interface {
+	GetLastUsed(ctx context.Context, accountIDs []int64) (map[int64]time.Time, error)
+}
+
 type SchedulerSnapshotService struct {
 	cache         SchedulerCache
 	outboxRepo    SchedulerOutboxRepository
@@ -224,6 +228,24 @@ func (s *SchedulerSnapshotService) overlayLastUsedFromCache(ctx context.Context,
 	if s == nil || s.cache == nil || len(accounts) == 0 {
 		return
 	}
+
+	ids := make([]int64, 0, len(accounts))
+	for i := range accounts {
+		if accounts[i].ID > 0 {
+			ids = append(ids, accounts[i].ID)
+		}
+	}
+	if reader, ok := s.cache.(schedulerLastUsedReader); ok && len(ids) > 0 {
+		lastUsed, err := reader.GetLastUsed(ctx, ids)
+		if err == nil {
+			for i := range accounts {
+				if usedAt, exists := lastUsed[accounts[i].ID]; exists {
+					applyAccountLastUsedIfNewer(&accounts[i], usedAt)
+				}
+			}
+		}
+	}
+
 	for i := range accounts {
 		if accounts[i].ID <= 0 {
 			continue
@@ -232,12 +254,19 @@ func (s *SchedulerSnapshotService) overlayLastUsedFromCache(ctx context.Context,
 		if err != nil || cached == nil || cached.LastUsedAt == nil {
 			continue
 		}
-		if accounts[i].LastUsedAt != nil && cached.LastUsedAt.Before(*accounts[i].LastUsedAt) {
-			continue
-		}
-		ts := *cached.LastUsedAt
-		accounts[i].LastUsedAt = &ts
+		applyAccountLastUsedIfNewer(&accounts[i], *cached.LastUsedAt)
 	}
+}
+
+func applyAccountLastUsedIfNewer(account *Account, usedAt time.Time) {
+	if account == nil || usedAt.IsZero() {
+		return
+	}
+	if account.LastUsedAt != nil && !usedAt.After(*account.LastUsedAt) {
+		return
+	}
+	ts := usedAt
+	account.LastUsedAt = &ts
 }
 
 func (s *SchedulerSnapshotService) runInitialRebuild() {

@@ -17,6 +17,7 @@ const (
 	schedulerOutboxWatermarkKey = "sched:outbox:watermark"
 	schedulerAccountPrefix      = "sched:acc:"
 	schedulerAccountMetaPrefix  = "sched:meta:"
+	schedulerLastUsedOverlayKey = "sched:last_used"
 	schedulerActivePrefix       = "sched:active:"
 	schedulerReadyPrefix        = "sched:ready:"
 	schedulerVersionPrefix      = "sched:ver:"
@@ -88,6 +89,23 @@ for keyIndex = 2, #KEYS do
 end
 
 return 1
+`)
+
+	updateLastUsedOverlayScript = redis.NewScript(`
+local updated = 0
+for i = 1, #ARGV, 2 do
+	local field = ARGV[i]
+	local nextValue = tonumber(ARGV[i + 1])
+	if nextValue then
+		local current = redis.call('HGET', KEYS[1], field)
+		local currentValue = tonumber(current)
+		if current == false or currentValue == nil or nextValue > currentValue then
+			redis.call('HSET', KEYS[1], field, ARGV[i + 1])
+			updated = updated + 1
+		end
+	end
+end
+return updated
 `)
 
 	schedulerLockTokenCounter uint64
@@ -174,6 +192,9 @@ func (c *schedulerCache) GetSnapshot(ctx context.Context, bucket service.Schedul
 		}
 		accounts = append(accounts, account)
 	}
+	if err := c.overlayLastUsed(ctx, accounts); err != nil {
+		return nil, false, err
+	}
 
 	return accounts, true, nil
 }
@@ -244,7 +265,14 @@ func (c *schedulerCache) GetAccount(ctx context.Context, accountID int64) (*serv
 	if err != nil {
 		return nil, err
 	}
-	return decodeCachedAccount(val)
+	account, err := decodeCachedAccount(val)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.overlayLastUsed(ctx, []*service.Account{account}); err != nil {
+		return nil, err
+	}
+	return account, nil
 }
 
 func (c *schedulerCache) SetAccount(ctx context.Context, account *service.Account) error {
@@ -259,7 +287,11 @@ func (c *schedulerCache) DeleteAccount(ctx context.Context, accountID int64) err
 		return nil
 	}
 	id := strconv.FormatInt(accountID, 10)
-	return c.rdb.Del(ctx, schedulerAccountKey(id), schedulerAccountMetaKey(id)).Err()
+	pipe := c.rdb.Pipeline()
+	pipe.Del(ctx, schedulerAccountKey(id), schedulerAccountMetaKey(id))
+	pipe.HDel(ctx, schedulerLastUsedOverlayKey, id)
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 func (c *schedulerCache) UpdateLastUsed(ctx context.Context, updates map[int64]time.Time) error {
@@ -267,41 +299,76 @@ func (c *schedulerCache) UpdateLastUsed(ctx context.Context, updates map[int64]t
 		return nil
 	}
 
-	keys := make([]string, 0, len(updates))
-	ids := make([]int64, 0, len(updates))
-	for id := range updates {
-		keys = append(keys, schedulerAccountKey(strconv.FormatInt(id, 10)))
-		ids = append(ids, id)
-	}
-
-	values, err := c.mgetChunked(ctx, keys)
-	if err != nil {
-		return err
-	}
-
-	pipe := c.rdb.Pipeline()
-	for i, val := range values {
-		if val == nil {
+	args := make([]any, 0, len(updates)*2)
+	for id, usedAt := range updates {
+		if id <= 0 || usedAt.IsZero() {
 			continue
 		}
-		account, err := decodeCachedAccount(val)
-		if err != nil {
-			return err
-		}
-		account.LastUsedAt = ptrTime(updates[ids[i]])
-		updated, err := json.Marshal(account)
-		if err != nil {
-			return err
-		}
-		metaPayload, err := json.Marshal(buildSchedulerMetadataAccount(*account))
-		if err != nil {
-			return err
-		}
-		pipe.Set(ctx, keys[i], updated, 0)
-		pipe.Set(ctx, schedulerAccountMetaKey(strconv.FormatInt(ids[i], 10)), metaPayload, 0)
+		args = append(args, strconv.FormatInt(id, 10), strconv.FormatInt(usedAt.UnixNano(), 10))
 	}
-	_, err = pipe.Exec(ctx)
+	if len(args) == 0 {
+		return nil
+	}
+	_, err := updateLastUsedOverlayScript.Run(ctx, c.rdb, []string{schedulerLastUsedOverlayKey}, args...).Result()
 	return err
+}
+
+func (c *schedulerCache) GetLastUsed(ctx context.Context, accountIDs []int64) (map[int64]time.Time, error) {
+	if len(accountIDs) == 0 {
+		return map[int64]time.Time{}, nil
+	}
+
+	fields := make([]string, 0, len(accountIDs))
+	ids := make([]int64, 0, len(accountIDs))
+	seen := make(map[int64]struct{}, len(accountIDs))
+	for _, id := range accountIDs {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+		fields = append(fields, strconv.FormatInt(id, 10))
+	}
+	if len(fields) == 0 {
+		return map[int64]time.Time{}, nil
+	}
+
+	out := make(map[int64]time.Time, len(fields))
+	chunkSize := c.mgetChunkSize
+	if chunkSize <= 0 {
+		chunkSize = defaultSchedulerSnapshotMGetChunkSize
+	}
+	for start := 0; start < len(fields); start += chunkSize {
+		end := start + chunkSize
+		if end > len(fields) {
+			end = len(fields)
+		}
+		pipe := c.rdb.Pipeline()
+		cmds := make([]*redis.StringCmd, 0, end-start)
+		for _, field := range fields[start:end] {
+			cmds = append(cmds, pipe.HGet(ctx, schedulerLastUsedOverlayKey, field))
+		}
+		if _, err := pipe.Exec(ctx); err != nil && err != redis.Nil {
+			return nil, err
+		}
+		for idx, cmd := range cmds {
+			if cmd.Err() == redis.Nil {
+				continue
+			}
+			if cmd.Err() != nil {
+				return nil, cmd.Err()
+			}
+			nsec, err := parseLastUsedOverlayValue(cmd.Val())
+			if err != nil {
+				return nil, err
+			}
+			out[ids[start+idx]] = time.Unix(0, nsec).UTC()
+		}
+	}
+	return out, nil
 }
 
 func (c *schedulerCache) TryLockBucket(ctx context.Context, bucket service.SchedulerBucket, ttl time.Duration) (bool, error) {
@@ -378,6 +445,63 @@ func schedulerAccountMetaKey(id string) string {
 
 func ptrTime(t time.Time) *time.Time {
 	return &t
+}
+
+func parseLastUsedOverlayValue(val any) (int64, error) {
+	switch raw := val.(type) {
+	case string:
+		return strconv.ParseInt(raw, 10, 64)
+	case []byte:
+		return strconv.ParseInt(string(raw), 10, 64)
+	case int64:
+		return raw, nil
+	default:
+		return 0, fmt.Errorf("unexpected last_used cache type: %T", val)
+	}
+}
+
+func (c *schedulerCache) overlayLastUsed(ctx context.Context, accounts []*service.Account) error {
+	if len(accounts) == 0 {
+		return nil
+	}
+
+	ids := make([]int64, 0, len(accounts))
+	for _, account := range accounts {
+		if account == nil || account.ID <= 0 {
+			continue
+		}
+		ids = append(ids, account.ID)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+
+	lastUsed, err := c.GetLastUsed(ctx, ids)
+	if err != nil {
+		return err
+	}
+	for _, account := range accounts {
+		if account == nil {
+			continue
+		}
+		usedAt, ok := lastUsed[account.ID]
+		if !ok {
+			continue
+		}
+		applyLastUsedIfNewer(account, usedAt)
+	}
+	return nil
+}
+
+func applyLastUsedIfNewer(account *service.Account, usedAt time.Time) {
+	if account == nil || usedAt.IsZero() {
+		return
+	}
+	if account.LastUsedAt != nil && !usedAt.After(*account.LastUsedAt) {
+		return
+	}
+	ts := usedAt
+	account.LastUsedAt = &ts
 }
 
 func decodeCachedAccount(val any) (*service.Account, error) {

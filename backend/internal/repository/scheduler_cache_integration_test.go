@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -234,6 +235,120 @@ func TestSchedulerCacheGetSnapshotReflectsUpdateLastUsedHotPath(t *testing.T) {
 	require.Equal(t, "snapshot-account", snapshot[0].Name)
 	require.NotNil(t, snapshot[0].LastUsedAt)
 	require.WithinDuration(t, usedAt, *snapshot[0].LastUsedAt, time.Second)
+}
+
+func TestSchedulerCacheUpdateLastUsedUsesOverlayWithoutRewritingAccountState(t *testing.T) {
+	ctx := context.Background()
+	rdb := testRedis(t)
+	cache := NewSchedulerCache(rdb)
+
+	oldUsedAt := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	account := &service.Account{
+		ID:          809,
+		Name:        "overlay-account",
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		LastUsedAt:  &oldUsedAt,
+		Credentials: map[string]any{
+			"api_key": "state-key",
+		},
+	}
+	require.NoError(t, cache.SetAccount(ctx, account))
+
+	id := strconv.FormatInt(account.ID, 10)
+	fullBefore, err := rdb.Get(ctx, schedulerAccountKey(id)).Result()
+	require.NoError(t, err)
+	metaBefore, err := rdb.Get(ctx, schedulerAccountMetaKey(id)).Result()
+	require.NoError(t, err)
+
+	usedAt := oldUsedAt.Add(30 * time.Minute)
+	require.NoError(t, cache.UpdateLastUsed(ctx, map[int64]time.Time{account.ID: usedAt}))
+
+	fullAfter, err := rdb.Get(ctx, schedulerAccountKey(id)).Result()
+	require.NoError(t, err)
+	metaAfter, err := rdb.Get(ctx, schedulerAccountMetaKey(id)).Result()
+	require.NoError(t, err)
+	require.Equal(t, fullBefore, fullAfter)
+	require.Equal(t, metaBefore, metaAfter)
+
+	overlayValue, err := rdb.HGet(ctx, schedulerLastUsedOverlayKey, id).Result()
+	require.NoError(t, err)
+	require.Equal(t, strconv.FormatInt(usedAt.UnixNano(), 10), overlayValue)
+	lastUsedReader := cache.(interface {
+		GetLastUsed(context.Context, []int64) (map[int64]time.Time, error)
+	})
+	lastUsed, err := lastUsedReader.GetLastUsed(ctx, []int64{account.ID})
+	require.NoError(t, err)
+	require.Equal(t, usedAt.UnixNano(), lastUsed[account.ID].UnixNano())
+
+	changed := *account
+	changed.Status = service.StatusDisabled
+	changed.Schedulable = false
+	changed.Credentials = map[string]any{"api_key": "changed-key"}
+	require.NoError(t, cache.SetAccount(ctx, &changed))
+
+	got, err := cache.GetAccount(ctx, account.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, service.StatusDisabled, got.Status)
+	require.False(t, got.Schedulable)
+	require.Equal(t, "changed-key", got.GetCredential("api_key"))
+	require.NotNil(t, got.LastUsedAt)
+	require.Equal(t, usedAt.UnixNano(), got.LastUsedAt.UnixNano())
+}
+
+func TestSchedulerCacheUpdateLastUsedOverlayKeepsNewestAcrossConcurrentUpdates(t *testing.T) {
+	ctx := context.Background()
+	rdb := testRedis(t)
+	cache := NewSchedulerCache(rdb)
+
+	bucket := service.SchedulerBucket{GroupID: 12, Platform: service.PlatformOpenAI, Mode: service.SchedulerModeSingle}
+	account := service.Account{
+		ID:          810,
+		Name:        "concurrent-overlay-account",
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Status:      service.StatusActive,
+		Schedulable: true,
+	}
+	require.NoError(t, cache.SetSnapshot(ctx, bucket, []service.Account{account}))
+
+	base := time.Now().UTC().Truncate(time.Second)
+	newest := base.Add(63 * time.Second)
+	var wg sync.WaitGroup
+	errCh := make(chan error, 64)
+	for i := range 64 {
+		i := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errCh <- cache.UpdateLastUsed(ctx, map[int64]time.Time{
+				account.ID: base.Add(time.Duration(i) * time.Second),
+			})
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, cache.UpdateLastUsed(ctx, map[int64]time.Time{account.ID: base.Add(2 * time.Second)}))
+
+	got, err := cache.GetAccount(ctx, account.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.NotNil(t, got.LastUsedAt)
+	require.Equal(t, newest.UnixNano(), got.LastUsedAt.UnixNano())
+
+	snapshot, hit, err := cache.GetSnapshot(ctx, bucket)
+	require.NoError(t, err)
+	require.True(t, hit)
+	require.Len(t, snapshot, 1)
+	require.NotNil(t, snapshot[0].LastUsedAt)
+	require.Equal(t, newest.UnixNano(), snapshot[0].LastUsedAt.UnixNano())
 }
 
 func TestSchedulerCacheSnapshotUsesSlimMetadataButKeepsFullAccount(t *testing.T) {
