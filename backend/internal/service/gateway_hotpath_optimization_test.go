@@ -265,6 +265,37 @@ func TestGetUserGroupRateMultiplier_FallbackOnRepoError(t *testing.T) {
 	require.Equal(t, int64(1), fallback)
 }
 
+func TestGatewaySelectionResult_HotUpdatesSchedulerSnapshotLastUsed(t *testing.T) {
+	now := time.Now().Add(-2 * time.Hour)
+	account := &Account{
+		ID:         41001,
+		LastUsedAt: &now,
+	}
+	snapshotCache := &openAISnapshotCacheStub{
+		accountsByID: map[int64]*Account{
+			account.ID: {
+				ID:         account.ID,
+				LastUsedAt: &now,
+			},
+		},
+	}
+	svc := &GatewayService{
+		schedulerSnapshot: &SchedulerSnapshotService{cache: snapshotCache},
+	}
+
+	result, err := svc.newSelectionResult(context.Background(), account, true, nil, nil)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Account)
+	require.NotNil(t, result.Account.LastUsedAt)
+	require.True(t, result.Account.LastUsedAt.After(now))
+
+	cached := snapshotCache.accountsByID[account.ID]
+	require.NotNil(t, cached)
+	require.NotNil(t, cached.LastUsedAt)
+	require.True(t, cached.LastUsedAt.After(now))
+}
+
 func TestGetUserGroupRateMultiplier_CacheHitAndNilRepo(t *testing.T) {
 	resetGatewayHotpathStatsForTest()
 

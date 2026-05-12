@@ -12,6 +12,7 @@ import (
 func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_Hit(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(23)
+	now := time.Now().Add(-90 * time.Minute)
 	account := Account{
 		ID:          2,
 		Platform:    PlatformOpenAI,
@@ -19,6 +20,7 @@ func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_Hit(t *testing.T
 		Status:      StatusActive,
 		Schedulable: true,
 		Concurrency: 2,
+		LastUsedAt:  &now,
 		Extra: map[string]any{
 			"openai_apikey_responses_websockets_v2_enabled": true,
 		},
@@ -26,6 +28,20 @@ func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_Hit(t *testing.T
 	cache := &stubGatewayCache{}
 	store := NewOpenAIWSStateStore(cache)
 	cfg := newOpenAIWSV2TestConfig()
+	snapshotCache := &openAISnapshotCacheStub{
+		accountsByID: map[int64]*Account{
+			account.ID: {
+				ID:          account.ID,
+				Platform:    account.Platform,
+				Type:        account.Type,
+				Status:      account.Status,
+				Schedulable: account.Schedulable,
+				Concurrency: account.Concurrency,
+				LastUsedAt:  &now,
+				Extra:       account.Extra,
+			},
+		},
+	}
 
 	svc := &OpenAIGatewayService{
 		accountRepo:        stubOpenAIAccountRepo{accounts: []Account{account}},
@@ -33,6 +49,7 @@ func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_Hit(t *testing.T
 		cfg:                cfg,
 		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
 		openaiWSStateStore: store,
+		schedulerSnapshot:  &SchedulerSnapshotService{cache: snapshotCache},
 	}
 
 	require.NoError(t, store.BindResponseAccount(ctx, groupID, "resp_prev_1", account.ID, time.Hour))
@@ -43,6 +60,10 @@ func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_Hit(t *testing.T
 	require.NotNil(t, selection.Account)
 	require.Equal(t, account.ID, selection.Account.ID)
 	require.True(t, selection.Acquired)
+	require.NotNil(t, selection.Account.LastUsedAt)
+	require.True(t, selection.Account.LastUsedAt.After(now))
+	require.NotNil(t, snapshotCache.accountsByID[account.ID].LastUsedAt)
+	require.True(t, snapshotCache.accountsByID[account.ID].LastUsedAt.After(now))
 	if selection.ReleaseFunc != nil {
 		selection.ReleaseFunc()
 	}

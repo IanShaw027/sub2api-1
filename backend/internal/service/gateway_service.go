@@ -2720,10 +2720,27 @@ func (s *GatewayService) hydrateSelectedAccount(ctx context.Context, account *Ac
 	return hydrated, nil
 }
 
+func (s *GatewayService) hotUpdateSelectedAccountLastUsed(account *Account) {
+	if account == nil || account.ID <= 0 {
+		return
+	}
+	now := time.Now()
+	account.LastUsedAt = &now
+	if s == nil || s.schedulerSnapshot == nil {
+		return
+	}
+	cacheCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_ = s.schedulerSnapshot.UpdateLastUsedInCache(cacheCtx, account.ID, now)
+}
+
 func (s *GatewayService) newSelectionResult(ctx context.Context, account *Account, acquired bool, release func(), waitPlan *AccountWaitPlan) (*AccountSelectionResult, error) {
 	hydrated, err := s.hydrateSelectedAccount(ctx, account)
 	if err != nil {
 		return nil, err
+	}
+	if acquired {
+		s.hotUpdateSelectedAccountLastUsed(hydrated)
 	}
 	return &AccountSelectionResult{
 		Account:     hydrated,
