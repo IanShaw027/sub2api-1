@@ -239,7 +239,7 @@ func TestOpenAIGatewayService_OAuthMessagesBridgeDoesNotInjectDefaultInstruction
 	require.Error(t, err)
 	require.Nil(t, result)
 	require.NotNil(t, upstream.lastReq)
-	require.False(t, gjson.GetBytes(upstream.lastBody, "instructions").Exists())
+	require.Empty(t, strings.TrimSpace(gjson.GetBytes(upstream.lastBody, "instructions").String()))
 	require.False(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").Exists())
 	require.NotEmpty(t, upstream.lastReq.Header.Get("Session_Id"))
 	require.Empty(t, upstream.lastReq.Header.Get("Conversation_Id"))

@@ -111,3 +111,23 @@ func TestFinalizeOpenAIResponsesOAuthUpstreamBody_CompactSkipsDefaultInstruction
 	require.False(t, gjson.GetBytes(finalBody, "stream").Exists())
 	require.False(t, gjson.GetBytes(finalBody, "instructions").Exists())
 }
+
+func TestFinalizeOpenAIResponsesOAuthUpstreamBody_ContextMarkedMessagesBridgeSkipsDefaultInstructions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+	setOpenAICompatMessagesBridgeContext(c, true)
+
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+	}
+	body := []byte(`{"model":"gpt-5.5","stream":true,"store":false,"input":[{"type":"message","role":"user","content":"hello"}]}`)
+
+	finalBody, changed, err := finalizeOpenAIResponsesOAuthUpstreamBody(c, account, "gpt-5.5", body)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.False(t, gjson.GetBytes(finalBody, "instructions").Exists())
+}

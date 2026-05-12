@@ -7412,7 +7412,7 @@ func finalizeOpenAIResponsesOAuthUpstreamBody(c *gin.Context, account *Account, 
 	}
 
 	isCompact := isOpenAIResponsesCompactPath(c)
-	isMessagesBridge := isOpenAICompatMessagesBridgeRequestBody(reqBody)
+	isMessagesBridge := isOpenAICompatMessagesBridgeContext(c) || isOpenAICompatMessagesBridgeRequestBody(reqBody)
 
 	normalizedBody, normalized, err := normalizeOpenAIPassthroughOAuthBody(body, isCompact)
 	if err != nil {
