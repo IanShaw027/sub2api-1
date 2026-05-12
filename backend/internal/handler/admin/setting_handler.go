@@ -464,6 +464,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		PaymentVisibleMethodAlipayEnabled:      settings.PaymentVisibleMethodAlipayEnabled,
 		PaymentVisibleMethodWxpayEnabled:       settings.PaymentVisibleMethodWxpayEnabled,
 		OpenAIAdvancedSchedulerEnabled:         settings.OpenAIAdvancedSchedulerEnabled,
+		OpenAIStickyReservePercent:             settings.OpenAIStickyReservePercent,
 		OpenAIImageWebFreeModel:                settings.OpenAIImageWebFreeModel,
 		OpenAIImageWebPaidModel:                settings.OpenAIImageWebPaidModel,
 		BalanceLowNotifyEnabled:                settings.BalanceLowNotifyEnabled,
@@ -781,6 +782,7 @@ type UpdateSettingsRequest struct {
 
 	// OpenAI account scheduling
 	OpenAIAdvancedSchedulerEnabled *bool   `json:"openai_advanced_scheduler_enabled"`
+	OpenAIStickyReservePercent     *int    `json:"openai_sticky_reserve_percent"`
 	OpenAIImageWebFreeModel        *string `json:"openai_image_web_free_model"`
 	OpenAIImageWebPaidModel        *string `json:"openai_image_web_paid_model"`
 
@@ -2022,6 +2024,19 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.OpenAIAdvancedSchedulerEnabled
 		}(),
+		OpenAIStickyReservePercent: func() int {
+			if req.OpenAIStickyReservePercent != nil {
+				value := *req.OpenAIStickyReservePercent
+				if value < 0 {
+					return 0
+				}
+				if value > 100 {
+					return 100
+				}
+				return value
+			}
+			return previousSettings.OpenAIStickyReservePercent
+		}(),
 		OpenAIImageWebFreeModel: func() string {
 			if req.OpenAIImageWebFreeModel != nil {
 				return strings.TrimSpace(*req.OpenAIImageWebFreeModel)
@@ -2361,6 +2376,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		PaymentVisibleMethodAlipayEnabled:      updatedSettings.PaymentVisibleMethodAlipayEnabled,
 		PaymentVisibleMethodWxpayEnabled:       updatedSettings.PaymentVisibleMethodWxpayEnabled,
 		OpenAIAdvancedSchedulerEnabled:         updatedSettings.OpenAIAdvancedSchedulerEnabled,
+		OpenAIStickyReservePercent:             updatedSettings.OpenAIStickyReservePercent,
 		OpenAIImageWebFreeModel:                updatedSettings.OpenAIImageWebFreeModel,
 		OpenAIImageWebPaidModel:                updatedSettings.OpenAIImageWebPaidModel,
 		BalanceLowNotifyEnabled:                updatedSettings.BalanceLowNotifyEnabled,
@@ -2864,6 +2880,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.OpenAIAdvancedSchedulerEnabled != after.OpenAIAdvancedSchedulerEnabled {
 		changed = append(changed, "openai_advanced_scheduler_enabled")
+	}
+	if before.OpenAIStickyReservePercent != after.OpenAIStickyReservePercent {
+		changed = append(changed, "openai_sticky_reserve_percent")
 	}
 	if before.OpenAIImageWebFreeModel != after.OpenAIImageWebFreeModel {
 		changed = append(changed, "openai_image_web_free_model")

@@ -236,6 +236,15 @@ func (s *openAISnapshotCacheStub) GetSnapshot(ctx context.Context, bucket Schedu
 	return out, true, nil
 }
 
+func (s *openAISnapshotCacheStub) SetSnapshot(ctx context.Context, bucket SchedulerBucket, accounts []Account) error {
+	s.snapshotAccounts = make([]*Account, 0, len(accounts))
+	for i := range accounts {
+		cloned := accounts[i]
+		s.snapshotAccounts = append(s.snapshotAccounts, &cloned)
+	}
+	return nil
+}
+
 func (s *openAISnapshotCacheStub) GetAccount(ctx context.Context, accountID int64) (*Account, error) {
 	if s.accountsByID == nil {
 		return nil, nil
@@ -246,6 +255,21 @@ func (s *openAISnapshotCacheStub) GetAccount(ctx context.Context, accountID int6
 	}
 	cloned := *account
 	return &cloned, nil
+}
+
+func (s *openAISnapshotCacheStub) UpdateLastUsed(ctx context.Context, updates map[int64]time.Time) error {
+	if s.accountsByID == nil {
+		return nil
+	}
+	for id, usedAt := range updates {
+		account := s.accountsByID[id]
+		if account == nil {
+			continue
+		}
+		ts := usedAt
+		account.LastUsedAt = &ts
+	}
+	return nil
 }
 
 func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabledUsesLegacyLoadAwareness(t *testing.T) {

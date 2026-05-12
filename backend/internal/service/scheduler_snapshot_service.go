@@ -162,6 +162,7 @@ func (s *SchedulerSnapshotService) ListSchedulableAccounts(ctx context.Context, 
 	if err != nil {
 		return nil, useMixed, err
 	}
+	s.overlayLastUsedFromCache(fallbackCtx, accounts)
 
 	if s.cache != nil {
 		if err := s.cache.SetSnapshot(fallbackCtx, bucket, accounts); err != nil {
@@ -207,6 +208,36 @@ func (s *SchedulerSnapshotService) UpdateAccountInCache(ctx context.Context, acc
 		return nil
 	}
 	return s.cache.SetAccount(ctx, account)
+}
+
+// UpdateLastUsedInCache hot-updates cached last_used_at so scheduling can
+// observe the latest selection immediately instead of waiting for deferred DB
+// persistence + outbox polling.
+func (s *SchedulerSnapshotService) UpdateLastUsedInCache(ctx context.Context, accountID int64, usedAt time.Time) error {
+	if s == nil || s.cache == nil || accountID <= 0 || usedAt.IsZero() {
+		return nil
+	}
+	return s.cache.UpdateLastUsed(ctx, map[int64]time.Time{accountID: usedAt})
+}
+
+func (s *SchedulerSnapshotService) overlayLastUsedFromCache(ctx context.Context, accounts []Account) {
+	if s == nil || s.cache == nil || len(accounts) == 0 {
+		return
+	}
+	for i := range accounts {
+		if accounts[i].ID <= 0 {
+			continue
+		}
+		cached, err := s.cache.GetAccount(ctx, accounts[i].ID)
+		if err != nil || cached == nil || cached.LastUsedAt == nil {
+			continue
+		}
+		if accounts[i].LastUsedAt != nil && cached.LastUsedAt.Before(*accounts[i].LastUsedAt) {
+			continue
+		}
+		ts := *cached.LastUsedAt
+		accounts[i].LastUsedAt = &ts
+	}
 }
 
 func (s *SchedulerSnapshotService) runInitialRebuild() {

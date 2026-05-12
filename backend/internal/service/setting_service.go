@@ -1857,6 +1857,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingPaymentVisibleMethodAlipayEnabled] = strconv.FormatBool(settings.PaymentVisibleMethodAlipayEnabled)
 	updates[SettingPaymentVisibleMethodWxpayEnabled] = strconv.FormatBool(settings.PaymentVisibleMethodWxpayEnabled)
 	updates[openAIAdvancedSchedulerSettingKey] = strconv.FormatBool(settings.OpenAIAdvancedSchedulerEnabled)
+	updates[SettingKeyOpenAIStickyReservePercent] = strconv.Itoa(boundedIntOrDefault(settings.OpenAIStickyReservePercent, 0, 100, 0))
 	updates[SettingKeyOpenAIImageWebFreeModel] = settings.OpenAIImageWebFreeModel
 	updates[SettingKeyOpenAIImageWebPaidModel] = settings.OpenAIImageWebPaidModel
 
@@ -1955,6 +1956,11 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	openAIAdvancedSchedulerSettingSF.Forget(openAIAdvancedSchedulerSettingKey)
 	openAIAdvancedSchedulerSettingCache.Store(&cachedOpenAIAdvancedSchedulerSetting{
 		enabled:   settings.OpenAIAdvancedSchedulerEnabled,
+		expiresAt: time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano(),
+	})
+	openAIStickyReservePercentSettingSF.Forget(SettingKeyOpenAIStickyReservePercent)
+	openAIStickyReservePercentSettingCache.Store(&cachedOpenAIStickyReservePercentSetting{
+		percent:   boundedIntOrDefault(settings.OpenAIStickyReservePercent, 0, 100, 0),
 		expiresAt: time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano(),
 	})
 	if s.onUpdate != nil {
@@ -3179,6 +3185,9 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.PaymentVisibleMethodAlipayEnabled = settings[SettingPaymentVisibleMethodAlipayEnabled] == "true"
 	result.PaymentVisibleMethodWxpayEnabled = settings[SettingPaymentVisibleMethodWxpayEnabled] == "true"
 	result.OpenAIAdvancedSchedulerEnabled = settings[openAIAdvancedSchedulerSettingKey] == "true"
+	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyOpenAIStickyReservePercent])); err == nil {
+		result.OpenAIStickyReservePercent = boundedIntOrDefault(v, 0, 100, 0)
+	}
 	result.OpenAIImageWebFreeModel = strings.TrimSpace(settings[SettingKeyOpenAIImageWebFreeModel])
 	result.OpenAIImageWebPaidModel = strings.TrimSpace(settings[SettingKeyOpenAIImageWebPaidModel])
 	defaultImageWebSettings := DefaultOpenAIImageWebConversationSettings()

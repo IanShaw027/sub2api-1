@@ -34,8 +34,15 @@ type cachedOpenAIAdvancedSchedulerSetting struct {
 	expiresAt int64
 }
 
+type cachedOpenAIStickyReservePercentSetting struct {
+	percent   int
+	expiresAt int64
+}
+
 var openAIAdvancedSchedulerSettingCache atomic.Value // *cachedOpenAIAdvancedSchedulerSetting
 var openAIAdvancedSchedulerSettingSF singleflight.Group
+var openAIStickyReservePercentSettingCache atomic.Value // *cachedOpenAIStickyReservePercentSetting
+var openAIStickyReservePercentSettingSF singleflight.Group
 
 type OpenAIAccountScheduleRequest struct {
 	GroupID                 *int64
@@ -375,25 +382,18 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	result, acquireErr := s.service.tryAcquireAccountSlot(ctx, accountID, maxConcurrency)
 	if acquireErr == nil && result.Acquired {
 		_ = s.service.refreshStickySessionTTL(ctx, req.GroupID, sessionHash, s.service.openAIWSSessionStickyTTL())
-		return &AccountSelectionResult{
-			Account:     account,
-			Acquired:    true,
-			ReleaseFunc: result.ReleaseFunc,
-		}, nil
+		return s.service.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil)
 	}
 
 	cfg := s.service.schedulingConfig()
 	// WaitPlan.MaxConcurrency 使用实际调度并发槽位；图片请求固定为 1。
 	if s.service.concurrencyService != nil {
-		return &AccountSelectionResult{
-			Account: account,
-			WaitPlan: &AccountWaitPlan{
-				AccountID:      accountID,
-				MaxConcurrency: maxConcurrency,
-				Timeout:        cfg.StickySessionWaitTimeout,
-				MaxWaiting:     cfg.StickySessionMaxWaiting,
-			},
-		}, nil
+		return s.service.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
+			AccountID:      accountID,
+			MaxConcurrency: maxConcurrency,
+			Timeout:        cfg.StickySessionWaitTimeout,
+			MaxWaiting:     cfg.StickySessionMaxWaiting,
+		})
 	}
 	return nil, nil
 }
@@ -659,35 +659,50 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	}
 
 	allCandidates := make([]openAIAccountCandidateScore, 0, len(filtered))
+	eligibleNewSessionCandidates := make([]openAIAccountCandidateScore, 0, len(filtered))
 	for _, account := range filtered {
 		loadInfo := loadMap[account.ID]
 		if loadInfo == nil {
 			loadInfo = &AccountLoadInfo{AccountID: account.ID}
 		}
 		errorRate, ttft, hasTTFT := s.stats.snapshot(account.ID)
-		allCandidates = append(allCandidates, openAIAccountCandidateScore{
+		candidate := openAIAccountCandidateScore{
 			account:   account,
 			loadInfo:  loadInfo,
 			errorRate: errorRate,
 			ttft:      ttft,
 			hasTTFT:   hasTTFT,
-		})
+		}
+		allCandidates = append(allCandidates, candidate)
+		if loadInfo.CurrentConcurrency < s.service.freshSessionAdmissionLimit(ctx, account, req.RequiredImageRoute) {
+			eligibleNewSessionCandidates = append(eligibleNewSessionCandidates, candidate)
+		}
 	}
 
 	// Compact 模式下把明确不支持 compact 的账号拆出，仅在 schedulerSnapshot 启用
 	// 时作为最后兜底（snapshot 可能已陈旧）。
-	candidates := allCandidates
-	staleSnapshotCompactRetry := make([]openAIAccountCandidateScore, 0, len(allCandidates))
+	candidates := eligibleNewSessionCandidates
+	waitCandidates := allCandidates
+	staleSnapshotCompactRetry := make([]openAIAccountCandidateScore, 0, len(eligibleNewSessionCandidates))
+	waitStaleSnapshotCompactRetry := make([]openAIAccountCandidateScore, 0, len(allCandidates))
 	if req.RequireCompact {
-		candidates = make([]openAIAccountCandidateScore, 0, len(allCandidates))
-		for _, candidate := range allCandidates {
+		candidates = make([]openAIAccountCandidateScore, 0, len(eligibleNewSessionCandidates))
+		for _, candidate := range eligibleNewSessionCandidates {
 			if openAICompactSupportTier(candidate.account) == 0 {
 				staleSnapshotCompactRetry = append(staleSnapshotCompactRetry, candidate)
 				continue
 			}
 			candidates = append(candidates, candidate)
 		}
-		if len(candidates) == 0 && len(staleSnapshotCompactRetry) == 0 {
+		waitCandidates = make([]openAIAccountCandidateScore, 0, len(allCandidates))
+		for _, candidate := range allCandidates {
+			if openAICompactSupportTier(candidate.account) == 0 {
+				waitStaleSnapshotCompactRetry = append(waitStaleSnapshotCompactRetry, candidate)
+				continue
+			}
+			waitCandidates = append(waitCandidates, candidate)
+		}
+		if len(waitCandidates) == 0 && len(waitStaleSnapshotCompactRetry) == 0 {
 			return nil, 0, 0, 0, ErrNoAvailableCompactAccounts
 		}
 	}
@@ -765,15 +780,19 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	}
 
 	buildSelectionOrder := func(pool []openAIAccountCandidateScore) []openAIAccountCandidateScore {
-		if len(pool) == 0 || topK <= 0 {
+		if len(pool) == 0 {
 			return nil
 		}
-		groupTopK := topK
-		if groupTopK > len(pool) {
-			groupTopK = len(pool)
-		}
-		ranked := selectTopKOpenAICandidates(pool, groupTopK)
-		return buildOpenAIWeightedSelectionOrder(ranked, req)
+		ordered := append([]openAIAccountCandidateScore(nil), pool...)
+		sort.SliceStable(ordered, func(i, j int) bool {
+			return lessOpenAINewSessionCandidate(
+				ordered[i],
+				ordered[j],
+				s.service.freshSessionAdmissionLimit(ctx, ordered[i].account, req.RequiredImageRoute),
+				s.service.freshSessionAdmissionLimit(ctx, ordered[j].account, req.RequiredImageRoute),
+			)
+		})
+		return ordered
 	}
 	sortCompactRetryCandidates := func(pool []openAIAccountCandidateScore) []openAIAccountCandidateScore {
 		if len(pool) == 0 {
@@ -781,31 +800,18 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		}
 		ordered := append([]openAIAccountCandidateScore(nil), pool...)
 		sort.SliceStable(ordered, func(i, j int) bool {
-			a, b := ordered[i], ordered[j]
-			if a.account.Priority != b.account.Priority {
-				return a.account.Priority < b.account.Priority
-			}
-			if a.loadInfo.LoadRate != b.loadInfo.LoadRate {
-				return a.loadInfo.LoadRate < b.loadInfo.LoadRate
-			}
-			if a.loadInfo.WaitingCount != b.loadInfo.WaitingCount {
-				return a.loadInfo.WaitingCount < b.loadInfo.WaitingCount
-			}
-			switch {
-			case a.account.LastUsedAt == nil && b.account.LastUsedAt != nil:
-				return true
-			case a.account.LastUsedAt != nil && b.account.LastUsedAt == nil:
-				return false
-			case a.account.LastUsedAt == nil && b.account.LastUsedAt == nil:
-				return false
-			default:
-				return a.account.LastUsedAt.Before(*b.account.LastUsedAt)
-			}
+			return lessOpenAINewSessionCandidate(
+				ordered[i],
+				ordered[j],
+				s.service.freshSessionAdmissionLimit(ctx, ordered[i].account, req.RequiredImageRoute),
+				s.service.freshSessionAdmissionLimit(ctx, ordered[j].account, req.RequiredImageRoute),
+			)
 		})
 		return ordered
 	}
 
 	selectionOrder := make([]openAIAccountCandidateScore, 0, len(allCandidates))
+	waitSelectionOrder := make([]openAIAccountCandidateScore, 0, len(allCandidates))
 	if req.RequireCompact {
 		supported := make([]openAIAccountCandidateScore, 0, len(candidates))
 		unknown := make([]openAIAccountCandidateScore, 0, len(candidates))
@@ -825,10 +831,27 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		if len(staleSnapshotCompactRetry) > 0 && s.service.schedulerSnapshot != nil {
 			selectionOrder = append(selectionOrder, sortCompactRetryCandidates(staleSnapshotCompactRetry)...)
 		}
+
+		waitSupported := make([]openAIAccountCandidateScore, 0, len(waitCandidates))
+		waitUnknown := make([]openAIAccountCandidateScore, 0, len(waitCandidates))
+		for _, candidate := range waitCandidates {
+			switch openAICompactSupportTier(candidate.account) {
+			case 2:
+				waitSupported = append(waitSupported, candidate)
+			case 1:
+				waitUnknown = append(waitUnknown, candidate)
+			}
+		}
+		waitSelectionOrder = append(waitSelectionOrder, buildSelectionOrder(waitSupported)...)
+		waitSelectionOrder = append(waitSelectionOrder, buildSelectionOrder(waitUnknown)...)
+		if len(waitStaleSnapshotCompactRetry) > 0 && s.service.schedulerSnapshot != nil {
+			waitSelectionOrder = append(waitSelectionOrder, sortCompactRetryCandidates(waitStaleSnapshotCompactRetry)...)
+		}
 	} else {
 		selectionOrder = buildSelectionOrder(candidates)
+		waitSelectionOrder = buildSelectionOrder(waitCandidates)
 	}
-	if len(selectionOrder) == 0 {
+	if len(selectionOrder) == 0 && len(waitSelectionOrder) == 0 {
 		return nil, candidateCount, topK, loadSkew, noAvailableOpenAISelectionError(req.RequestedModel, req.RequireCompact && len(allCandidates) > 0)
 	}
 
@@ -847,7 +870,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			compactBlocked = true
 			continue
 		}
-		maxConcurrency := req.MaxConcurrencyFor(fresh)
+		maxConcurrency := s.service.freshSessionAdmissionLimit(ctx, fresh, req.RequiredImageRoute)
 		result, acquireErr := s.service.tryAcquireAccountSlot(ctx, fresh.ID, maxConcurrency)
 		if acquireErr != nil {
 			return nil, candidateCount, topK, loadSkew, acquireErr
@@ -856,17 +879,14 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			if req.SessionHash != "" {
 				_ = s.service.BindStickySession(ctx, req.GroupID, req.SessionHash, fresh.ID)
 			}
-			return &AccountSelectionResult{
-				Account:     fresh,
-				Acquired:    true,
-				ReleaseFunc: result.ReleaseFunc,
-			}, candidateCount, topK, loadSkew, nil
+			selection, err := s.service.newSelectionResult(ctx, fresh, true, result.ReleaseFunc, nil)
+			return selection, candidateCount, topK, loadSkew, err
 		}
 	}
 
 	cfg := s.service.schedulingConfig()
 	// WaitPlan.MaxConcurrency 使用实际调度并发槽位；图片请求固定为 1。
-	for _, candidate := range selectionOrder {
+	for _, candidate := range waitSelectionOrder {
 		fresh := s.service.resolveFreshSchedulableOpenAIAccount(ctx, candidate.account, req.RequestedModel, false, req.RequiredImageRoute)
 		if fresh == nil || !s.isAccountTransportCompatible(fresh, req.RequiredTransport) || !s.isAccountRequestCompatible(ctx, fresh, req) {
 			continue
@@ -879,15 +899,13 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			compactBlocked = true
 			continue
 		}
-		return &AccountSelectionResult{
-			Account: fresh,
-			WaitPlan: &AccountWaitPlan{
-				AccountID:      fresh.ID,
-				MaxConcurrency: req.MaxConcurrencyFor(fresh),
-				Timeout:        cfg.FallbackWaitTimeout,
-				MaxWaiting:     cfg.FallbackMaxWaiting,
-			},
-		}, candidateCount, topK, loadSkew, nil
+		selection, err := s.service.newSelectionResult(ctx, fresh, false, nil, &AccountWaitPlan{
+			AccountID:      fresh.ID,
+			MaxConcurrency: s.service.freshSessionAdmissionLimit(ctx, fresh, req.RequiredImageRoute),
+			Timeout:        cfg.FallbackWaitTimeout,
+			MaxWaiting:     cfg.FallbackMaxWaiting,
+		})
+		return selection, candidateCount, topK, loadSkew, err
 	}
 
 	return nil, candidateCount, topK, loadSkew, noAvailableOpenAISelectionError(req.RequestedModel, compactBlocked)
@@ -1000,11 +1018,17 @@ func (s *defaultOpenAIAccountScheduler) SnapshotMetrics() OpenAIAccountScheduler
 	return snapshot
 }
 
-func (s *OpenAIGatewayService) openAIAdvancedSchedulerSettingRepo() SettingRepository {
-	if s == nil || s.rateLimitService == nil || s.rateLimitService.settingService == nil {
+func (s *OpenAIGatewayService) openAISettingsRepo() SettingRepository {
+	if s == nil {
 		return nil
 	}
-	return s.rateLimitService.settingService.settingRepo
+	if s.settingService != nil && s.settingService.settingRepo != nil {
+		return s.settingService.settingRepo
+	}
+	if s.rateLimitService != nil && s.rateLimitService.settingService != nil {
+		return s.rateLimitService.settingService.settingRepo
+	}
+	return nil
 }
 
 func (s *OpenAIGatewayService) isOpenAIAdvancedSchedulerEnabled(ctx context.Context) bool {
@@ -1022,7 +1046,7 @@ func (s *OpenAIGatewayService) isOpenAIAdvancedSchedulerEnabled(ctx context.Cont
 		}
 
 		enabled := false
-		if repo := s.openAIAdvancedSchedulerSettingRepo(); repo != nil {
+		if repo := s.openAISettingsRepo(); repo != nil {
 			dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), openAIAdvancedSchedulerSettingDBTimeout)
 			defer cancel()
 
@@ -1041,6 +1065,50 @@ func (s *OpenAIGatewayService) isOpenAIAdvancedSchedulerEnabled(ctx context.Cont
 
 	enabled, _ := result.(bool)
 	return enabled
+}
+
+func (s *OpenAIGatewayService) openAIStickyReservePercent(ctx context.Context) int {
+	if cached, ok := openAIStickyReservePercentSettingCache.Load().(*cachedOpenAIStickyReservePercentSetting); ok && cached != nil {
+		if time.Now().UnixNano() < cached.expiresAt {
+			return cached.percent
+		}
+	}
+
+	result, _, _ := openAIStickyReservePercentSettingSF.Do(SettingKeyOpenAIStickyReservePercent, func() (any, error) {
+		if cached, ok := openAIStickyReservePercentSettingCache.Load().(*cachedOpenAIStickyReservePercentSetting); ok && cached != nil {
+			if time.Now().UnixNano() < cached.expiresAt {
+				return cached.percent, nil
+			}
+		}
+
+		percent := 0
+		if repo := s.openAISettingsRepo(); repo != nil {
+			dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), openAIAdvancedSchedulerSettingDBTimeout)
+			defer cancel()
+
+			value, err := repo.GetValue(dbCtx, SettingKeyOpenAIStickyReservePercent)
+			if err == nil {
+				if parsed, parseErr := strconv.Atoi(strings.TrimSpace(value)); parseErr == nil {
+					if parsed < 0 {
+						parsed = 0
+					}
+					if parsed > 100 {
+						parsed = 100
+					}
+					percent = parsed
+				}
+			}
+		}
+
+		openAIStickyReservePercentSettingCache.Store(&cachedOpenAIStickyReservePercentSetting{
+			percent:   percent,
+			expiresAt: time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano(),
+		})
+		return percent, nil
+	})
+
+	percent, _ := result.(int)
+	return percent
 }
 
 func (s *OpenAIGatewayService) getOpenAIAccountScheduler(ctx context.Context) OpenAIAccountScheduler {
@@ -1064,6 +1132,11 @@ func (s *OpenAIGatewayService) getOpenAIAccountScheduler(ctx context.Context) Op
 func resetOpenAIAdvancedSchedulerSettingCacheForTest() {
 	openAIAdvancedSchedulerSettingCache = atomic.Value{}
 	openAIAdvancedSchedulerSettingSF = singleflight.Group{}
+}
+
+func resetOpenAIStickyReservePercentSettingCacheForTest() {
+	openAIStickyReservePercentSettingCache = atomic.Value{}
+	openAIStickyReservePercentSettingSF = singleflight.Group{}
 }
 
 func (s *OpenAIGatewayService) SelectAccountWithScheduler(

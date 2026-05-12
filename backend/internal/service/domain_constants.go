@@ -373,6 +373,10 @@ const (
 	// /backend-api/f/conversation model used for paid-plan (plus/pro/team)
 	// OpenAI web image generation requests.
 	SettingKeyOpenAIImageWebPaidModel = "openai_image_web_paid_model"
+	// SettingKeyOpenAIStickyReservePercent stores the percentage of an
+	// account's concurrency that should be reserved for returning sticky
+	// sessions. New sessions can only use the remaining capacity.
+	SettingKeyOpenAIStickyReservePercent = "openai_sticky_reserve_percent"
 
 	// =========================
 	// Sora S3 存储配置

@@ -996,11 +996,22 @@ type stubSchedulerCache struct {
 	SchedulerCache
 	setAccountCalls []*Account
 	setAccountErr   error
+	lastUsedCalls   map[int64]time.Time
 }
 
 func (s *stubSchedulerCache) SetAccount(ctx context.Context, account *Account) error {
 	s.setAccountCalls = append(s.setAccountCalls, account)
 	return s.setAccountErr
+}
+
+func (s *stubSchedulerCache) UpdateLastUsed(ctx context.Context, updates map[int64]time.Time) error {
+	if s.lastUsedCalls == nil {
+		s.lastUsedCalls = make(map[int64]time.Time)
+	}
+	for id, usedAt := range updates {
+		s.lastUsedCalls[id] = usedAt
+	}
+	return nil
 }
 
 // TestUpdateAccountModelRateLimitInCache_UpdatesExtraAndCallsCache 测试模型限流后更新缓存

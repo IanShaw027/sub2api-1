@@ -226,6 +226,7 @@ export interface LoginAgreementDocument {
 export interface OpenAIImageWebConversationModelSettings {
   openai_image_web_free_model?: string
   openai_image_web_paid_model?: string
+  openai_sticky_reserve_percent?: number
 }
 
 export interface PublicSettings {

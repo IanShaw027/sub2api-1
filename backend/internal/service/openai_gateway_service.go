@@ -2153,7 +2153,11 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		if err != nil {
 			return nil, err
 		}
-		result, err := s.tryAcquireAccountSlot(ctx, account.ID, concurrencyForOpenAIAccountSelection(account, requiredImageRoute))
+		acquireLimit := concurrencyForOpenAIAccountSelection(account, requiredImageRoute)
+		if stickyAccountID <= 0 || stickyAccountID != account.ID {
+			acquireLimit = s.freshSessionAdmissionLimit(ctx, account, requiredImageRoute)
+		}
+		result, err := s.tryAcquireAccountSlot(ctx, account.ID, acquireLimit)
 		if err == nil && result.Acquired {
 			return s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil)
 		}
@@ -2170,7 +2174,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		}
 		return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
 			AccountID:      account.ID,
-			MaxConcurrency: concurrencyForOpenAIAccountSelection(account, requiredImageRoute),
+			MaxConcurrency: acquireLimit,
 			Timeout:        cfg.FallbackWaitTimeout,
 			MaxWaiting:     cfg.FallbackMaxWaiting,
 		})
@@ -2289,7 +2293,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel, requireCompact) {
 				continue
 			}
-			result, err := s.tryAcquireAccountSlot(ctx, fresh.ID, concurrencyForOpenAIAccountSelection(fresh, requiredImageRoute))
+			result, err := s.tryAcquireAccountSlot(ctx, fresh.ID, s.freshSessionAdmissionLimit(ctx, fresh, requiredImageRoute))
 			if err == nil && result.Acquired {
 				if sessionHash != "" {
 					_ = s.setStickySessionAccountID(ctx, groupID, sessionHash, fresh.ID, openaiStickySessionTTL)
@@ -2304,7 +2308,11 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			if loadInfo == nil {
 				loadInfo = &AccountLoadInfo{AccountID: acc.ID}
 			}
-			if loadInfo.LoadRate < 100 {
+			freshLimit := s.freshSessionAdmissionLimit(ctx, acc, requiredImageRoute)
+			if freshLimit <= 0 {
+				continue
+			}
+			if loadInfo.CurrentConcurrency < freshLimit {
 				available = append(available, accountWithLoad{
 					account:  acc,
 					loadInfo: loadInfo,
@@ -2315,24 +2323,13 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		if len(available) > 0 {
 			sort.SliceStable(available, func(i, j int) bool {
 				a, b := available[i], available[j]
-				if a.account.Priority != b.account.Priority {
-					return a.account.Priority < b.account.Priority
-				}
-				if a.loadInfo.LoadRate != b.loadInfo.LoadRate {
-					return a.loadInfo.LoadRate < b.loadInfo.LoadRate
-				}
-				switch {
-				case a.account.LastUsedAt == nil && b.account.LastUsedAt != nil:
-					return true
-				case a.account.LastUsedAt != nil && b.account.LastUsedAt == nil:
-					return false
-				case a.account.LastUsedAt == nil && b.account.LastUsedAt == nil:
-					return false
-				default:
-					return a.account.LastUsedAt.Before(*b.account.LastUsedAt)
-				}
+				return lessOpenAINewSessionAccountWithLoad(
+					a,
+					b,
+					s.freshSessionAdmissionLimit(ctx, a.account, requiredImageRoute),
+					s.freshSessionAdmissionLimit(ctx, b.account, requiredImageRoute),
+				)
 			})
-			shuffleWithinSortGroups(available)
 
 			selectionOrder := make([]accountWithLoad, 0, len(available))
 			if requireCompact {
@@ -2365,7 +2362,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 				if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel, requireCompact) {
 					continue
 				}
-				result, err := s.tryAcquireAccountSlot(ctx, fresh.ID, concurrencyForOpenAIAccountSelection(fresh, requiredImageRoute))
+				result, err := s.tryAcquireAccountSlot(ctx, fresh.ID, s.freshSessionAdmissionLimit(ctx, fresh, requiredImageRoute))
 				if err == nil && result.Acquired {
 					if sessionHash != "" {
 						_ = s.setStickySessionAccountID(ctx, groupID, sessionHash, fresh.ID, openaiStickySessionTTL)
@@ -2377,12 +2374,39 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	}
 
 	// ============ Layer 3: Fallback wait ============
-	sortAccountsByPriorityAndLastUsed(candidates, false)
-	if requireCompact {
-		candidates = prioritizeOpenAICompactAccounts(candidates)
-	}
+	waitCandidates := make([]accountWithLoad, 0, len(candidates))
 	for _, acc := range candidates {
-		fresh := s.resolveFreshSchedulableOpenAIAccount(ctx, acc, requestedModel, false, requiredImageRoute)
+		loadInfo := loadMap[acc.ID]
+		if loadInfo == nil {
+			loadInfo = &AccountLoadInfo{AccountID: acc.ID}
+		}
+		waitCandidates = append(waitCandidates, accountWithLoad{account: acc, loadInfo: loadInfo})
+	}
+	sort.SliceStable(waitCandidates, func(i, j int) bool {
+		a, b := waitCandidates[i], waitCandidates[j]
+		return lessOpenAINewSessionAccountWithLoad(
+			a,
+			b,
+			s.freshSessionAdmissionLimit(ctx, a.account, requiredImageRoute),
+			s.freshSessionAdmissionLimit(ctx, b.account, requiredImageRoute),
+		)
+	})
+	if requireCompact {
+		sorted := make([]accountWithLoad, 0, len(waitCandidates))
+		appendTier := func(tier int) {
+			for _, item := range waitCandidates {
+				if openAICompactSupportTier(item.account) == tier {
+					sorted = append(sorted, item)
+				}
+			}
+		}
+		appendTier(2)
+		appendTier(1)
+		appendTier(0)
+		waitCandidates = sorted
+	}
+	for _, item := range waitCandidates {
+		fresh := s.resolveFreshSchedulableOpenAIAccount(ctx, item.account, requestedModel, false, requiredImageRoute)
 		if fresh == nil {
 			continue
 		}
@@ -2395,8 +2419,9 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		}
 		return s.newSelectionResult(ctx, fresh, false, nil, &AccountWaitPlan{
 			AccountID:      fresh.ID,
-			MaxConcurrency: concurrencyForOpenAIAccountSelection(fresh, requiredImageRoute),
+			MaxConcurrency: waitLimit,
 			Timeout:        cfg.FallbackWaitTimeout,
+		waitLimit := s.freshSessionAdmissionLimit(ctx, fresh, requiredImageRoute)
 			MaxWaiting:     cfg.FallbackMaxWaiting,
 		})
 	}
@@ -2467,6 +2492,9 @@ func (s *OpenAIGatewayService) listOpenAIImageCandidateAccounts(ctx context.Cont
 }
 
 func (s *OpenAIGatewayService) tryAcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int) (*AcquireResult, error) {
+	if s.schedulerSnapshot != nil {
+		s.schedulerSnapshot.overlayLastUsedFromCache(ctx, filtered)
+	}
 	if s.concurrencyService == nil {
 		return &AcquireResult{Acquired: true, ReleaseFunc: func() {}}, nil
 	}
@@ -2487,6 +2515,110 @@ func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccount(ctx context.
 	if account == nil {
 		return nil
 	}
+func compareOptionalTimeAsc(a, b *time.Time) int {
+	switch {
+	case a == nil && b == nil:
+		return 0
+	case a == nil:
+		return -1
+	case b == nil:
+		return 1
+	case a.Before(*b):
+		return -1
+	case b.Before(*a):
+		return 1
+	default:
+		return 0
+	}
+}
+
+func compareConcurrencyRatioAsc(currentA, limitA, currentB, limitB int) int {
+	if limitA <= 0 {
+		limitA = 1
+	}
+	if limitB <= 0 {
+		limitB = 1
+	}
+	left := int64(currentA) * int64(limitB)
+	right := int64(currentB) * int64(limitA)
+	switch {
+	case left < right:
+		return -1
+	case left > right:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func stickyReserveSlots(maxConcurrency int, reservePercent int) int {
+	if maxConcurrency <= 1 || reservePercent <= 0 {
+		return 0
+	}
+	if reservePercent > 100 {
+		reservePercent = 100
+	}
+	reserved := (maxConcurrency*reservePercent + 99) / 100
+	if reserved >= maxConcurrency {
+		return maxConcurrency - 1
+	}
+	if reserved < 0 {
+		return 0
+	}
+	return reserved
+}
+
+func (s *OpenAIGatewayService) freshSessionAdmissionLimit(ctx context.Context, account *Account, requiredImageRoute string) int {
+	maxConcurrency := concurrencyForOpenAIAccountSelection(account, requiredImageRoute)
+	if maxConcurrency <= 1 {
+		return maxConcurrency
+	}
+	reserved := stickyReserveSlots(maxConcurrency, s.openAIStickyReservePercent(ctx))
+	limit := maxConcurrency - reserved
+	if limit < 1 {
+		return 1
+	}
+	return limit
+}
+
+func lessOpenAINewSessionAccountWithLoad(a, b accountWithLoad, limitA, limitB int) bool {
+	if a.account.Priority != b.account.Priority {
+		return a.account.Priority < b.account.Priority
+	}
+	if cmp := compareOptionalTimeAsc(a.account.LastUsedAt, b.account.LastUsedAt); cmp != 0 {
+		return cmp < 0
+	}
+	if cmp := compareConcurrencyRatioAsc(a.loadInfo.CurrentConcurrency, limitA, b.loadInfo.CurrentConcurrency, limitB); cmp != 0 {
+		return cmp < 0
+	}
+	if a.loadInfo.CurrentConcurrency != b.loadInfo.CurrentConcurrency {
+		return a.loadInfo.CurrentConcurrency < b.loadInfo.CurrentConcurrency
+	}
+	if a.loadInfo.WaitingCount != b.loadInfo.WaitingCount {
+		return a.loadInfo.WaitingCount < b.loadInfo.WaitingCount
+	}
+	return a.account.ID < b.account.ID
+}
+
+func lessOpenAINewSessionCandidate(a, b openAIAccountCandidateScore, limitA, limitB int) bool {
+	if a.account.Priority != b.account.Priority {
+		return a.account.Priority < b.account.Priority
+	}
+	if cmp := compareOptionalTimeAsc(a.account.LastUsedAt, b.account.LastUsedAt); cmp != 0 {
+		return cmp < 0
+	}
+	if cmp := compareConcurrencyRatioAsc(a.loadInfo.CurrentConcurrency, limitA, b.loadInfo.CurrentConcurrency, limitB); cmp != 0 {
+		return cmp < 0
+	}
+	if a.loadInfo.CurrentConcurrency != b.loadInfo.CurrentConcurrency {
+		return a.loadInfo.CurrentConcurrency < b.loadInfo.CurrentConcurrency
+	}
+	if a.loadInfo.WaitingCount != b.loadInfo.WaitingCount {
+		return a.loadInfo.WaitingCount < b.loadInfo.WaitingCount
+	}
+	return a.account.ID < b.account.ID
+}
+
 
 	fresh := account
 	if s.schedulerSnapshot != nil {
@@ -2558,11 +2690,28 @@ func (s *OpenAIGatewayService) newSelectionResult(ctx context.Context, account *
 	hydrated, err := s.hydrateSelectedAccount(ctx, account)
 	if err != nil {
 		return nil, err
+func (s *OpenAIGatewayService) hotUpdateSelectedAccountLastUsed(account *Account) {
+	if account == nil || account.ID <= 0 {
+		return
+	}
+	now := time.Now()
+	account.LastUsedAt = &now
+	if s == nil || s.schedulerSnapshot == nil {
+		return
+	}
+	cacheCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_ = s.schedulerSnapshot.UpdateLastUsedInCache(cacheCtx, account.ID, now)
+}
+
 	}
 	return &AccountSelectionResult{
 		Account:     hydrated,
 		Acquired:    acquired,
 		ReleaseFunc: release,
+	if acquired {
+		s.hotUpdateSelectedAccountLastUsed(hydrated)
+	}
 		WaitPlan:    waitPlan,
 	}, nil
 }

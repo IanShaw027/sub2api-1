@@ -211,6 +211,7 @@ type SystemSettings struct {
 
 	// OpenAI account scheduling
 	OpenAIAdvancedSchedulerEnabled bool
+	OpenAIStickyReservePercent     int
 	OpenAIImageWebFreeModel        string
 	OpenAIImageWebPaidModel        string
 

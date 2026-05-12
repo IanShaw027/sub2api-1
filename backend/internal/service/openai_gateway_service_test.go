@@ -35,6 +35,69 @@ type snapshotUpdateAccountRepo struct {
 	updateExtraCalls chan map[string]any
 }
 
+type openAISettingRepoStub struct {
+	values map[string]string
+}
+
+func (s *openAISettingRepoStub) Get(ctx context.Context, key string) (*Setting, error) {
+	if s == nil || s.values == nil {
+		return nil, ErrSettingNotFound
+	}
+	value, ok := s.values[key]
+	if !ok {
+		return nil, ErrSettingNotFound
+	}
+	return &Setting{Key: key, Value: value}, nil
+}
+
+func (s *openAISettingRepoStub) GetValue(ctx context.Context, key string) (string, error) {
+	if s == nil || s.values == nil {
+		return "", nil
+	}
+	return s.values[key], nil
+}
+
+func (s *openAISettingRepoStub) Set(ctx context.Context, key, value string) error {
+	if s.values == nil {
+		s.values = make(map[string]string)
+	}
+	s.values[key] = value
+	return nil
+}
+
+func (s *openAISettingRepoStub) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
+	out := make(map[string]string, len(keys))
+	for _, key := range keys {
+		if value, ok := s.values[key]; ok {
+			out[key] = value
+		}
+	}
+	return out, nil
+}
+
+func (s *openAISettingRepoStub) SetMultiple(ctx context.Context, settings map[string]string) error {
+	if s.values == nil {
+		s.values = make(map[string]string)
+	}
+	for key, value := range settings {
+		s.values[key] = value
+	}
+	return nil
+}
+
+func (s *openAISettingRepoStub) GetAll(ctx context.Context) (map[string]string, error) {
+	out := make(map[string]string, len(s.values))
+	for key, value := range s.values {
+		out[key] = value
+	}
+	return out, nil
+}
+
+func (s *openAISettingRepoStub) Delete(ctx context.Context, key string) error {
+	delete(s.values, key)
+	return nil
+}
+
 func (r *snapshotUpdateAccountRepo) UpdateExtra(ctx context.Context, id int64, updates map[string]any) error {
 	if r.updateExtraCalls != nil {
 		copied := make(map[string]any, len(updates))
@@ -77,6 +140,22 @@ func (r stubOpenAIAccountRepo) ListSchedulableByPlatform(ctx context.Context, pl
 
 func (r stubOpenAIAccountRepo) ListSchedulableUngroupedByPlatform(ctx context.Context, platform string) ([]Account, error) {
 	return r.ListSchedulableByPlatform(ctx, platform)
+}
+
+func (r stubOpenAIAccountRepo) ListByGroup(ctx context.Context, groupID int64) ([]Account, error) {
+	result := make([]Account, 0, len(r.accounts))
+	result = append(result, r.accounts...)
+	return result, nil
+}
+
+func (r stubOpenAIAccountRepo) ListByPlatform(ctx context.Context, platform string) ([]Account, error) {
+	var result []Account
+	for _, acc := range r.accounts {
+		if acc.Platform == platform {
+			result = append(result, acc)
+		}
+	}
+	return result, nil
 }
 
 type stubConcurrencyCache struct {
@@ -1026,15 +1105,15 @@ func TestOpenAISelectAccountWithLoadAwareness_PrefersLowerLoad(t *testing.T) {
 	groupID := int64(1)
 	repo := stubOpenAIAccountRepo{
 		accounts: []Account{
-			{ID: 1, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 1},
-			{ID: 2, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 1},
+			{ID: 1, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Concurrency: 10, Priority: 1, LastUsedAt: &lastUsed},
+			{ID: 2, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Concurrency: 10, Priority: 1, LastUsedAt: &lastUsed},
 		},
 	}
 	cache := &stubGatewayCache{}
 	concurrencyCache := stubConcurrencyCache{
 		loadMap: map[int64]*AccountLoadInfo{
-			1: {AccountID: 1, LoadRate: 80},
-			2: {AccountID: 2, LoadRate: 10},
+			1: {AccountID: 1, CurrentConcurrency: 8, LoadRate: 80},
+			2: {AccountID: 2, CurrentConcurrency: 1, LoadRate: 10},
 		},
 	}
 
@@ -1097,6 +1176,7 @@ func TestOpenAISelectAccountForModelWithExclusions_StickyNonOpenAI(t *testing.T)
 
 	svc := &OpenAIGatewayService{
 		accountRepo: repo,
+	lastUsed := time.Now().Add(-1 * time.Hour)
 		cache:       cache,
 	}
 
@@ -1166,7 +1246,7 @@ func TestOpenAISelectAccountWithLoadAwareness_AllFullWaitPlan(t *testing.T) {
 	cache := &stubGatewayCache{}
 	concurrencyCache := stubConcurrencyCache{
 		loadMap: map[int64]*AccountLoadInfo{
-			1: {AccountID: 1, LoadRate: 100},
+			1: {AccountID: 1, CurrentConcurrency: 1, LoadRate: 100},
 		},
 	}
 
@@ -1217,14 +1297,14 @@ func TestOpenAISelectAccountWithLoadAwareness_MissingLoadInfo(t *testing.T) {
 	groupID := int64(1)
 	repo := stubOpenAIAccountRepo{
 		accounts: []Account{
-			{ID: 1, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 1},
-			{ID: 2, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 1},
+			{ID: 1, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 1, LastUsedAt: &lastUsed},
+			{ID: 2, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 1, LastUsedAt: &lastUsed},
 		},
 	}
 	cache := &stubGatewayCache{}
 	concurrencyCache := stubConcurrencyCache{
 		loadMap: map[int64]*AccountLoadInfo{
-			1: {AccountID: 1, LoadRate: 50},
+			1: {AccountID: 1, CurrentConcurrency: 1, LoadRate: 100},
 		},
 		skipDefaultLoad: true,
 	}
@@ -1288,6 +1368,7 @@ func TestOpenAISelectAccountWithLoadAwareness_PreferNeverUsed(t *testing.T) {
 
 	svc := &OpenAIGatewayService{
 		accountRepo:        repo,
+	lastUsed := time.Now().Add(-1 * time.Hour)
 		cache:              cache,
 		concurrencyService: NewConcurrencyService(concurrencyCache),
 	}
@@ -1374,6 +1455,175 @@ func TestOpenAIStreamingReadErrorBeforeOutputReturnsFailover(t *testing.T) {
 		Gateway: config.GatewayConfig{
 			StreamDataIntervalTimeout: 0,
 			StreamKeepaliveInterval:   0,
+func TestOpenAISelectAccountWithLoadAwareness_PrefersLeastRecentlyUsedBeforeConcurrencyRatio(t *testing.T) {
+	groupID := int64(1)
+	older := time.Now().Add(-2 * time.Hour)
+	newer := time.Now().Add(-1 * time.Hour)
+	repo := stubOpenAIAccountRepo{
+		accounts: []Account{
+			{ID: 1, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Concurrency: 10, Priority: 1, LastUsedAt: &older},
+			{ID: 2, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Concurrency: 10, Priority: 1, LastUsedAt: &newer},
+		},
+	}
+	cache := &stubGatewayCache{}
+	concurrencyCache := stubConcurrencyCache{
+		loadMap: map[int64]*AccountLoadInfo{
+			1: {AccountID: 1, CurrentConcurrency: 4, LoadRate: 40},
+			2: {AccountID: 2, CurrentConcurrency: 0, LoadRate: 0},
+		},
+	}
+
+	svc := &OpenAIGatewayService{
+		accountRepo:        repo,
+		cache:              cache,
+		concurrencyService: NewConcurrencyService(concurrencyCache),
+	}
+
+	selection, err := svc.SelectAccountWithLoadAwareness(context.Background(), &groupID, "", "gpt-4", nil)
+	if err != nil {
+		t.Fatalf("SelectAccountWithLoadAwareness error: %v", err)
+	}
+	if selection == nil || selection.Account == nil || selection.Account.ID != 1 {
+		t.Fatalf("expected account 1")
+	}
+}
+
+func TestOpenAISelectAccountWithLoadAwareness_StickyReservePercentLimitsNewSessions(t *testing.T) {
+	resetOpenAIStickyReservePercentSettingCacheForTest()
+	defer resetOpenAIStickyReservePercentSettingCacheForTest()
+
+	groupID := int64(1)
+	repo := stubOpenAIAccountRepo{
+		accounts: []Account{
+			{ID: 1, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Concurrency: 10, Priority: 1},
+		},
+	}
+	cache := &stubGatewayCache{}
+	concurrencyCache := stubConcurrencyCache{
+		loadMap: map[int64]*AccountLoadInfo{
+			1: {AccountID: 1, CurrentConcurrency: 8, LoadRate: 80},
+		},
+	}
+	settingRepo := &openAISettingRepoStub{
+		values: map[string]string{SettingKeyOpenAIStickyReservePercent: "20"},
+	}
+
+	svc := &OpenAIGatewayService{
+		accountRepo:        repo,
+		cache:              cache,
+		concurrencyService: NewConcurrencyService(concurrencyCache),
+		settingService:     NewSettingService(settingRepo, &config.Config{}),
+	}
+
+	selection, err := svc.SelectAccountWithLoadAwareness(context.Background(), &groupID, "", "gpt-4", nil)
+	if err != nil {
+		t.Fatalf("SelectAccountWithLoadAwareness error: %v", err)
+	}
+	if selection == nil || selection.WaitPlan == nil {
+		t.Fatalf("expected wait plan")
+	}
+	if selection.WaitPlan.MaxConcurrency != 8 {
+		t.Fatalf("expected fresh-session wait concurrency 8, got %d", selection.WaitPlan.MaxConcurrency)
+	}
+}
+
+func TestOpenAISelectionResult_HotUpdatesSchedulerSnapshotLastUsed(t *testing.T) {
+	groupID := int64(1)
+	account := &Account{ID: 1, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 1}
+	snapshotCache := &openAISnapshotCacheStub{
+		snapshotAccounts: []*Account{account},
+		accountsByID:     map[int64]*Account{1: account},
+	}
+	svc := &OpenAIGatewayService{
+		schedulerSnapshot: &SchedulerSnapshotService{cache: snapshotCache},
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{
+			loadMap: map[int64]*AccountLoadInfo{
+				1: {AccountID: 1, CurrentConcurrency: 0, LoadRate: 0},
+			},
+		}),
+	}
+
+	selection, err := svc.SelectAccountWithLoadAwareness(context.Background(), &groupID, "", "gpt-4", nil)
+	if err != nil {
+		t.Fatalf("SelectAccountWithLoadAwareness error: %v", err)
+	}
+	if selection == nil || selection.Account == nil {
+		t.Fatalf("expected account selection")
+	}
+	if selection.Account.LastUsedAt == nil {
+		t.Fatalf("expected selection last_used_at hot-updated")
+	}
+	if snapshotCache.accountsByID[1] == nil || snapshotCache.accountsByID[1].LastUsedAt == nil {
+		t.Fatalf("expected snapshot cache last_used_at hot-updated")
+	}
+}
+
+func TestSchedulerSnapshotService_ListSchedulableAccounts_DBFallbackOverlaysCachedLastUsed(t *testing.T) {
+	oldLastUsed := time.Now().Add(-4 * time.Hour)
+	newLastUsed := time.Now().Add(-30 * time.Minute)
+	repo := stubOpenAIAccountRepo{
+		accounts: []Account{
+			{
+				ID:          47001,
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeAPIKey,
+				Status:      StatusActive,
+				Schedulable: true,
+				Concurrency: 1,
+				LastUsedAt:  &oldLastUsed,
+			},
+		},
+	}
+	cache := &openAISnapshotCacheStub{
+		accountsByID: map[int64]*Account{
+			47001: {
+				ID:         47001,
+				LastUsedAt: &newLastUsed,
+			},
+		},
+	}
+	svc := NewSchedulerSnapshotService(cache, nil, repo, nil, nil)
+
+	accounts, _, err := svc.ListSchedulableAccounts(context.Background(), nil, PlatformOpenAI, false)
+	require.NoError(t, err)
+	require.Len(t, accounts, 1)
+	require.NotNil(t, accounts[0].LastUsedAt)
+	require.True(t, accounts[0].LastUsedAt.Equal(newLastUsed))
+}
+
+func TestOpenAIGatewayService_ListOpenAIImageCandidateAccounts_OverlaysCachedLastUsed(t *testing.T) {
+	oldLastUsed := time.Now().Add(-5 * time.Hour)
+	newLastUsed := time.Now().Add(-10 * time.Minute)
+	account := Account{
+		ID:          47011,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		LastUsedAt:  &oldLastUsed,
+	}
+	cache := &openAISnapshotCacheStub{
+		accountsByID: map[int64]*Account{
+			account.ID: {
+				ID:         account.ID,
+				LastUsedAt: &newLastUsed,
+			},
+		},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo:       stubOpenAIAccountRepo{accounts: []Account{account}},
+		schedulerSnapshot: &SchedulerSnapshotService{cache: cache},
+		cfg:               &config.Config{},
+	}
+
+	accounts, err := svc.listOpenAIImageCandidateAccounts(context.Background(), nil)
+	require.NoError(t, err)
+	require.Len(t, accounts, 1)
+	require.NotNil(t, accounts[0].LastUsedAt)
+	require.True(t, accounts[0].LastUsedAt.Equal(newLastUsed))
+}
+
 			MaxLineSize:               defaultMaxLineSize,
 		},
 	}

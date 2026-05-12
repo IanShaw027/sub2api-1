@@ -3581,6 +3581,34 @@
                 </div>
                 <Toggle v-model="form.openai_advanced_scheduler_enabled" />
               </div>
+
+              <div>
+                <label class="label">
+                  {{
+                    localText(
+                      "粘性预留百分比",
+                      "Sticky Reserve Percent",
+                    )
+                  }}
+                </label>
+                <input
+                  v-model.number="form.openai_sticky_reserve_percent"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  class="input"
+                  placeholder="0"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{
+                    localText(
+                      "为已有粘性会话预留账号并发。0 表示不预留；例如设置 20%，并发 10 时，新会话最多只占 8 个并发，剩余 2 个留给回来的粘性会话。",
+                      "Reserve part of each account's concurrency for returning sticky sessions. 0 disables reserve; for example, 20% on concurrency 10 allows new sessions to use at most 8 slots and keeps 2 slots for sticky returns.",
+                    )
+                  }}
+                </p>
+              </div>
             </div>
           </div>
 
@@ -7205,6 +7233,7 @@ const form = reactive<SettingsForm>({
   fallback_model_openai: "gpt-4o",
   fallback_model_gemini: "gemini-2.5-pro",
   fallback_model_antigravity: "gemini-2.5-pro",
+  openai_sticky_reserve_percent: 0,
   openai_image_web_free_model: "",
   openai_image_web_paid_model: "",
   platform_default_account_model_config: {},
@@ -7973,6 +8002,8 @@ async function loadSettings() {
       form.wechat_connect_mode,
     );
     form.oidc_connect_client_secret = "";
+    form.openai_sticky_reserve_percent =
+      Number(settings.openai_sticky_reserve_percent) || 0;
     form.openai_image_web_free_model =
       imageWebModelSettings.openai_image_web_free_model || "";
     form.openai_image_web_paid_model =
@@ -8475,6 +8506,13 @@ async function saveSettings() {
       payment_cancel_rate_limit_window_mode:
         form.payment_cancel_rate_limit_window_mode,
       openai_advanced_scheduler_enabled: form.openai_advanced_scheduler_enabled,
+      openai_sticky_reserve_percent: Math.max(
+        0,
+        Math.min(
+          100,
+          Math.floor(Number(form.openai_sticky_reserve_percent) || 0),
+        ),
+      ),
       // Balance & quota notification
       balance_low_notify_enabled: form.balance_low_notify_enabled,
       balance_low_notify_threshold:
