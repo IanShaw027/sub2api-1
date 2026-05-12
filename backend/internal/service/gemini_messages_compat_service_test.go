@@ -268,7 +268,7 @@ func TestRankAIStudioEndpointAccount_CodeAssistOAuthIsRejected(t *testing.T) {
 	require.False(t, ok)
 }
 
-func TestRankAIStudioEndpointAccount_GoogleOneOAuthIsRejected(t *testing.T) {
+func TestRankAIStudioEndpointAccount_GoogleOneOAuthIsAccepted(t *testing.T) {
 	t.Parallel()
 
 	account := &Account{
@@ -280,8 +280,9 @@ func TestRankAIStudioEndpointAccount_GoogleOneOAuthIsRejected(t *testing.T) {
 		},
 	}
 
-	_, ok := rankAIStudioEndpointAccount(account)
-	require.False(t, ok)
+	rank, ok := rankAIStudioEndpointAccount(account)
+	require.True(t, ok)
+	require.Equal(t, 1, rank)
 }
 
 func TestGeminiHandleNativeNonStreamingResponse_DebugDisabledDoesNotEmitHeaderLogs(t *testing.T) {
@@ -728,7 +729,7 @@ func TestGeminiMessagesCompatServiceForwardNative_ProjectIDOnlyOAuthStaysAIStudi
 	require.Equal(t, "Bearer oauth-token", httpStub.lastReq.Header.Get("Authorization"))
 }
 
-func TestGeminiMessagesCompatServiceForwardNative_GoogleOneUsesCodeAssistEndpoint(t *testing.T) {
+func TestGeminiMessagesCompatServiceForwardNative_GoogleOneUsesAIStudioEndpoint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -764,12 +765,12 @@ func TestGeminiMessagesCompatServiceForwardNative_GoogleOneUsesCodeAssistEndpoin
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, httpStub.lastReq)
-	require.Contains(t, httpStub.lastReq.URL.String(), "cloudcode-pa.googleapis.com/v1internal:streamGenerateContent")
-	require.Contains(t, httpStub.lastReq.URL.String(), "?alt=sse")
+	require.Contains(t, httpStub.lastReq.URL.String(), "generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent")
+	require.NotContains(t, httpStub.lastReq.URL.String(), "cloudcode-pa.googleapis.com")
 	require.Equal(t, "Bearer oauth-token", httpStub.lastReq.Header.Get("Authorization"))
 }
 
-func TestGeminiMessagesCompatServiceForwardNative_GoogleOneCountTokensUsesCodeAssistEndpoint(t *testing.T) {
+func TestGeminiMessagesCompatServiceForwardNative_GoogleOneCountTokensUsesAIStudioEndpoint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -805,8 +806,8 @@ func TestGeminiMessagesCompatServiceForwardNative_GoogleOneCountTokensUsesCodeAs
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, httpStub.lastReq)
-	require.Contains(t, httpStub.lastReq.URL.String(), "cloudcode-pa.googleapis.com/v1internal:countTokens")
-	require.NotContains(t, httpStub.lastReq.URL.String(), "generativelanguage.googleapis.com")
+	require.Contains(t, httpStub.lastReq.URL.String(), "generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:countTokens")
+	require.NotContains(t, httpStub.lastReq.URL.String(), "cloudcode-pa.googleapis.com")
 	require.Equal(t, "Bearer oauth-token", httpStub.lastReq.Header.Get("Authorization"))
 }
 

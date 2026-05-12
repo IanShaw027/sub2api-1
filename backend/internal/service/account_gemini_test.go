@@ -291,7 +291,7 @@ func TestAccount_UsesGeminiCLIProjectRouting(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "google_one_uses_code_assist_routing",
+			name: "google_one_does_not_use_code_assist_routing",
 			account: &Account{
 				Platform: PlatformGemini,
 				Type:     AccountTypeOAuth,
@@ -299,7 +299,7 @@ func TestAccount_UsesGeminiCLIProjectRouting(t *testing.T) {
 					"oauth_type": "google_one",
 				},
 			},
-			want: true,
+			want: false,
 		},
 		{
 			name: "non_oauth_not_routed",

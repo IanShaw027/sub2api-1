@@ -804,11 +804,14 @@ func TestAPIContracts(t *testing.T) {
 					"cache_prefix_ttl_seconds": 300,
 					"payment_visible_method_alipay_source": "easypay_alipay",
 					"payment_visible_method_wxpay_source": "official_wxpay",
-					"payment_visible_method_alipay_enabled": true,
-					"payment_visible_method_wxpay_enabled": false,
-					"openai_advanced_scheduler_enabled": true,
-					"platform_default_account_model_config": {},
-					"openai_fast_policy_settings": {
+						"payment_visible_method_alipay_enabled": true,
+						"payment_visible_method_wxpay_enabled": false,
+						"openai_advanced_scheduler_enabled": true,
+						"openai_image_web_free_model": "auto",
+						"openai_image_web_paid_model": "gpt-5-5-thinking",
+						"openai_sticky_reserve_percent": 0,
+						"platform_default_account_model_config": {},
+						"openai_fast_policy_settings": {
 						"rules": [
 							{
 								"service_tier": "priority",
@@ -1022,10 +1025,13 @@ func TestAPIContracts(t *testing.T) {
 					"web_search_emulation_enabled": false,
 					"payment_visible_method_alipay_source": "",
 					"payment_visible_method_wxpay_source": "",
-					"payment_visible_method_alipay_enabled": false,
-					"payment_visible_method_wxpay_enabled": false,
-					"openai_advanced_scheduler_enabled": false,
-					"openai_fast_policy_settings": {
+						"payment_visible_method_alipay_enabled": false,
+						"payment_visible_method_wxpay_enabled": false,
+						"openai_advanced_scheduler_enabled": false,
+						"openai_image_web_free_model": "auto",
+						"openai_image_web_paid_model": "gpt-5-5-thinking",
+						"openai_sticky_reserve_percent": 0,
+						"openai_fast_policy_settings": {
 						"rules": [
 							{
 								"service_tier": "priority",

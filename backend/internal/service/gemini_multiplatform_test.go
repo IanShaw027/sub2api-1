@@ -413,7 +413,7 @@ func TestGeminiMessagesCompatService_SelectAccountForAIStudioEndpoints_SkipsUnsu
 	require.Contains(t, err.Error(), "no available Gemini accounts")
 }
 
-func TestGeminiMessagesCompatService_SelectAccountForAIStudioEndpoints_SkipsGoogleOneOAuth(t *testing.T) {
+func TestGeminiMessagesCompatService_SelectAccountForAIStudioEndpoints_AcceptsGoogleOneOAuth(t *testing.T) {
 	ctx := context.Background()
 
 	repo := &mockAccountRepoForGemini{
@@ -443,9 +443,10 @@ func TestGeminiMessagesCompatService_SelectAccountForAIStudioEndpoints_SkipsGoog
 	}
 
 	acc, err := svc.SelectAccountForAIStudioEndpoints(ctx, nil)
-	require.Error(t, err)
-	require.Nil(t, acc)
-	require.Contains(t, err.Error(), "no available Gemini accounts")
+	require.NoError(t, err)
+	require.NotNil(t, acc)
+	require.Equal(t, int64(1), acc.ID)
+	require.Equal(t, "google_one", acc.GeminiOAuthTypeSafe())
 }
 
 func TestGeminiMessagesCompatService_GroupResolution_ReusesContextGroup(t *testing.T) {

@@ -86,9 +86,10 @@ func TestGeminiTokenProvider_GetAccessToken_BackfillsProjectIDWhenAutoDetectFlag
 	require.Equal(t, 1, repo.updateCredentialsCalls)
 }
 
-func TestGeminiTokenProvider_GetAccessToken_GoogleOneBackfillsProjectIDWhenAutoDetectFlagSet(t *testing.T) {
+func TestGeminiTokenProvider_GetAccessToken_GoogleOneDoesNotBackfillProjectIDWhenAutoDetectFlagSet(t *testing.T) {
 	t.Parallel()
 
+	loadCodeAssistCalled := false
 	account := &Account{
 		ID:       102,
 		Platform: PlatformGemini,
@@ -104,6 +105,7 @@ func TestGeminiTokenProvider_GetAccessToken_GoogleOneBackfillsProjectIDWhenAutoD
 	oauthService := &GeminiOAuthService{
 		codeAssist: &mockGeminiCodeAssistClient{
 			loadCodeAssistFunc: func(ctx context.Context, accessToken, proxyURL string, req *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
+				loadCodeAssistCalled = true
 				return &geminicli.LoadCodeAssistResponse{
 					CloudAICompanionProject: "managed-google-one-project",
 					CurrentTier:             &geminicli.TierInfo{ID: "g1-pro-tier"},
@@ -117,12 +119,13 @@ func TestGeminiTokenProvider_GetAccessToken_GoogleOneBackfillsProjectIDWhenAutoD
 	token, err := provider.GetAccessToken(context.Background(), account)
 	require.NoError(t, err)
 	require.Equal(t, "access-token", token)
-	require.Equal(t, "managed-google-one-project", account.GetCredential("project_id"))
-	require.Equal(t, "g1-pro-tier", account.GetCredential("tier_id"))
-	require.Equal(t, 1, repo.updateCredentialsCalls)
+	require.Empty(t, account.GetCredential("project_id"))
+	require.Empty(t, account.GetCredential("tier_id"))
+	require.False(t, loadCodeAssistCalled)
+	require.Equal(t, 0, repo.updateCredentialsCalls)
 }
 
-func TestGeminiTokenProvider_GetAccessToken_RejectsGoogleOneTokenWithoutProjectID(t *testing.T) {
+func TestGeminiTokenProvider_GetAccessToken_GoogleOneTokenWithoutProjectIDDoesNotError(t *testing.T) {
 	t.Parallel()
 
 	cache := &geminiTokenProviderCacheRecorder{cachedToken: "cached-access-token"}
@@ -139,8 +142,8 @@ func TestGeminiTokenProvider_GetAccessToken_RejectsGoogleOneTokenWithoutProjectI
 	}
 
 	token, err := provider.GetAccessToken(context.Background(), account)
-	require.ErrorContains(t, err, errGeminiCodeAssistProjectIDNotConfigured)
-	require.Empty(t, token)
+	require.NoError(t, err)
+	require.Equal(t, "cached-access-token", token)
 	require.Equal(t, []string{"gemini:account:103"}, cache.getKeys)
 	require.Empty(t, cache.setKeys)
 }
