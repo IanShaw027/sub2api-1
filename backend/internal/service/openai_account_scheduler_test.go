@@ -68,11 +68,19 @@ type schedulerTestConcurrencyCache struct {
 	loadBatchErr    error
 	loadMap         map[int64]*AccountLoadInfo
 	acquireResults  map[int64]bool
+	acquireMax      map[int64]int
+	acquireCalls    map[int64]int
 	waitCounts      map[int64]int
 	skipDefaultLoad bool
 }
 
 func (c schedulerTestConcurrencyCache) AcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
+	if c.acquireMax != nil {
+		c.acquireMax[accountID] = maxConcurrency
+	}
+	if c.acquireCalls != nil {
+		c.acquireCalls[accountID]++
+	}
 	if c.acquireResults != nil {
 		if result, ok := c.acquireResults[accountID]; ok {
 			return result, nil
@@ -209,12 +217,21 @@ func (s *openAIAdvancedSchedulerSettingRepoStub) Delete(context.Context, string)
 }
 
 func newOpenAIAdvancedSchedulerRateLimitService(enabled string) *RateLimitService {
+	values := map[string]string{}
+	if enabled != "" {
+		values[openAIAdvancedSchedulerSettingKey] = enabled
+	}
+	return newOpenAIAdvancedSchedulerRateLimitServiceWithSettings(values)
+}
+
+func newOpenAIAdvancedSchedulerRateLimitServiceWithSettings(values map[string]string) *RateLimitService {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+	resetOpenAIStickyReservePercentSettingCacheForTest()
 	repo := &openAIAdvancedSchedulerSettingRepoStub{
 		values: map[string]string{},
 	}
-	if enabled != "" {
-		repo.values[openAIAdvancedSchedulerSettingKey] = enabled
+	for key, value := range values {
+		repo.values[key] = value
 	}
 	return &RateLimitService{
 		settingService: NewSettingService(repo, &config.Config{}),
@@ -1273,6 +1290,138 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_LoadBalanceDistributesA
 
 	// 多 session 应该能打散到多个账号，避免“恒定单账号命中”。
 	require.GreaterOrEqual(t, len(selected), 2)
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_StickyReserveLimitsFreshSessionsOnly(t *testing.T) {
+	ctx := context.Background()
+	defer resetOpenAIAdvancedSchedulerSettingCacheForTest()
+	defer resetOpenAIStickyReservePercentSettingCacheForTest()
+
+	groupID := int64(16)
+	accounts := []Account{
+		{
+			ID:          6101,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 4,
+			Priority:    0,
+			Extra: map[string]any{
+				"openai_apikey_responses_websockets_v2_enabled": true,
+			},
+		},
+		{
+			ID:          6102,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 4,
+			Priority:    9,
+			Extra: map[string]any{
+				"openai_apikey_responses_websockets_v2_enabled": true,
+			},
+		},
+	}
+
+	cfg := newSchedulerTestOpenAIWSV2Config()
+	cfg.Gateway.OpenAIWS.LBTopK = 2
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Priority = 1
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Load = 1
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Queue = 1
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.ErrorRate = 1
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.TTFT = 1
+
+	acquireMax := map[int64]int{}
+	acquireCalls := map[int64]int{}
+	concurrencyCache := schedulerTestConcurrencyCache{
+		loadMap: map[int64]*AccountLoadInfo{
+			6101: {AccountID: 6101, CurrentConcurrency: 2, LoadRate: 0, WaitingCount: 0},
+			6102: {AccountID: 6102, CurrentConcurrency: 0, LoadRate: 50, WaitingCount: 1},
+		},
+		acquireMax:   acquireMax,
+		acquireCalls: acquireCalls,
+	}
+	cache := &schedulerTestGatewayCache{
+		sessionBindings: map[string]int64{
+			"openai:session_hash_reserved_sticky": 6101,
+		},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo: schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:       cache,
+		cfg:         cfg,
+		rateLimitService: newOpenAIAdvancedSchedulerRateLimitServiceWithSettings(map[string]string{
+			openAIAdvancedSchedulerSettingKey:    "true",
+			SettingKeyOpenAIStickyReservePercent: "50",
+		}),
+		concurrencyService: NewConcurrencyService(concurrencyCache),
+	}
+
+	freshSelection, freshDecision, err := svc.SelectAccountWithScheduler(
+		ctx,
+		&groupID,
+		"",
+		"session_hash_reserved_fresh",
+		"gpt-5.1",
+		nil,
+		OpenAIUpstreamTransportAny,
+		false,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, freshSelection)
+	require.NotNil(t, freshSelection.Account)
+	require.Equal(t, int64(6102), freshSelection.Account.ID)
+	require.Equal(t, openAIAccountScheduleLayerLoadBalance, freshDecision.Layer)
+	require.Equal(t, 1, freshDecision.CandidateCount)
+	require.Equal(t, 2, acquireMax[6102], "fresh session should acquire only up to the non-reserved admission limit")
+	require.Zero(t, acquireCalls[6101], "fresh session should not attempt an account already at its admission limit")
+	if freshSelection.ReleaseFunc != nil {
+		freshSelection.ReleaseFunc()
+	}
+
+	stickySelection, stickyDecision, err := svc.SelectAccountWithScheduler(
+		ctx,
+		&groupID,
+		"",
+		"session_hash_reserved_sticky",
+		"gpt-5.1",
+		nil,
+		OpenAIUpstreamTransportAny,
+		false,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, stickySelection)
+	require.NotNil(t, stickySelection.Account)
+	require.Equal(t, int64(6101), stickySelection.Account.ID)
+	require.Equal(t, openAIAccountScheduleLayerSessionSticky, stickyDecision.Layer)
+	require.Equal(t, 4, acquireMax[6101], "sticky session should bypass the fresh-session admission limit")
+	if stickySelection.ReleaseFunc != nil {
+		stickySelection.ReleaseFunc()
+	}
+
+	store := svc.getOpenAIWSStateStore()
+	require.NoError(t, store.BindResponseAccount(ctx, groupID, "resp_reserved_previous", 6101, time.Hour))
+	previousSelection, previousDecision, err := svc.SelectAccountWithScheduler(
+		ctx,
+		&groupID,
+		"resp_reserved_previous",
+		"",
+		"gpt-5.1",
+		nil,
+		OpenAIUpstreamTransportAny,
+		false,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, previousSelection)
+	require.NotNil(t, previousSelection.Account)
+	require.Equal(t, int64(6101), previousSelection.Account.ID)
+	require.Equal(t, openAIAccountScheduleLayerPreviousResponse, previousDecision.Layer)
+	require.Equal(t, 4, acquireMax[6101], "previous_response sticky hit should bypass the fresh-session admission limit")
+	if previousSelection.ReleaseFunc != nil {
+		previousSelection.ReleaseFunc()
+	}
 }
 
 func TestDeriveOpenAISelectionSeed_NoAffinityAddsEntropy(t *testing.T) {

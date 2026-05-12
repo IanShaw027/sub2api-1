@@ -783,16 +783,14 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		if len(pool) == 0 {
 			return nil
 		}
-		ordered := append([]openAIAccountCandidateScore(nil), pool...)
-		sort.SliceStable(ordered, func(i, j int) bool {
-			return lessOpenAINewSessionCandidate(
-				ordered[i],
-				ordered[j],
-				s.service.freshSessionAdmissionLimit(ctx, ordered[i].account, req.RequiredImageRoute),
-				s.service.freshSessionAdmissionLimit(ctx, ordered[j].account, req.RequiredImageRoute),
-			)
-		})
-		return ordered
+		poolTopK := s.service.openAIWSLBTopK()
+		if poolTopK > len(pool) {
+			poolTopK = len(pool)
+		}
+		if poolTopK <= 0 {
+			poolTopK = 1
+		}
+		return buildOpenAIWeightedSelectionOrder(selectTopKOpenAICandidates(pool, poolTopK), req)
 	}
 	sortCompactRetryCandidates := func(pool []openAIAccountCandidateScore) []openAIAccountCandidateScore {
 		if len(pool) == 0 {
