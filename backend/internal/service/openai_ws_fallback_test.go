@@ -108,6 +108,10 @@ func TestClassifyOpenAIWSErrorEvent(t *testing.T) {
 	reason, recoverable = classifyOpenAIWSErrorEvent([]byte(`{"type":"error","error":{"code":"previous_response_not_found","message":"not found"}}`))
 	require.Equal(t, "previous_response_not_found", reason)
 	require.True(t, recoverable)
+
+	reason, recoverable = classifyOpenAIWSErrorEvent([]byte(`{"type":"error","error":{"type":"invalid_request_error","code":"invalid_request","message":"No tool call found for function call output with call_id call_1."}}`))
+	require.Equal(t, "call_id", reason)
+	require.True(t, recoverable)
 }
 
 func TestClassifyOpenAIWSReconnectReason(t *testing.T) {
@@ -152,6 +156,17 @@ func TestResolveOpenAIWSFallbackErrorResponse(t *testing.T) {
 		require.Equal(t, "upstream_error", errType)
 		require.Equal(t, "forbidden", clientMessage)
 		require.Equal(t, "forbidden", upstreamMessage)
+	})
+
+	t.Run("call_id_uses_invalid_request_error", func(t *testing.T) {
+		statusCode, errType, clientMessage, upstreamMessage, ok := resolveOpenAIWSFallbackErrorResponse(
+			wrapOpenAIWSFallback("call_id", errors.New("No tool call found for function call output with call_id call_1.")),
+		)
+		require.True(t, ok)
+		require.Equal(t, http.StatusBadRequest, statusCode)
+		require.Equal(t, "invalid_request_error", errType)
+		require.Equal(t, "No tool call found for function call output with call_id call_1.", clientMessage)
+		require.Equal(t, "No tool call found for function call output with call_id call_1.", upstreamMessage)
 	})
 
 	t.Run("non_fallback_error_not_resolved", func(t *testing.T) {

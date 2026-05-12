@@ -560,6 +560,39 @@ func TestOpenAIGatewayService_Forward_RetriesCodexCompatFallbackOnceOnMissingToo
 	require.Equal(t, "call_id", c.GetString(openAICodexCompatFallbackReasonKey))
 }
 
+func TestApplyOpenAIWSCodexCompatFallback_RewritesToolContinuationIDs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	reqBody := map[string]any{
+		"model": "gpt-5.4",
+		"input": []any{
+			map[string]any{"type": "item_reference", "id": "call_1"},
+			map[string]any{"type": "function_call_output", "call_id": "call_1", "output": "ok"},
+		},
+		"stream": true,
+		"store":  false,
+	}
+
+	result := applyOpenAIWSCodexCompatFallback(reqBody, c, false, false, "call_id")
+	require.True(t, result.Modified)
+	require.True(t, c.GetBool(openAICodexCompatFallbackKey))
+	require.Equal(t, "call_id", c.GetString(openAICodexCompatFallbackReasonKey))
+
+	input, ok := reqBody["input"].([]any)
+	require.True(t, ok)
+	require.Len(t, input, 2)
+
+	first, ok := input[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "fc1", first["id"])
+
+	second, ok := input[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "fc1", second["call_id"])
+}
+
 func TestOpenAIGatewayService_Forward_CodexCompatFallbackStopsAfterOneRetry(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

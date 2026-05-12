@@ -434,6 +434,7 @@ type OpenAIGatewayService struct {
 	openaiWSStateStore            OpenAIWSStateStore
 	openaiScheduler               OpenAIAccountScheduler
 	openaiWSPassthroughDialer     openAIWSClientDialer
+	openaiWSURLBuilder            func(*Account) (string, error)
 	openaiAccountStats            *openAIAccountRuntimeStats
 
 	openaiWSFallbackUntil        sync.Map // key: int64(accountID), value: time.Time
@@ -757,6 +758,11 @@ func resolveOpenAIWSFallbackErrorResponse(err error) (statusCode int, errType st
 		if upstreamMessage == "" {
 			upstreamMessage = "previous response not found"
 		}
+	case "call_id", "item_reference", "tool_context", "system_role", "input_schema":
+		if statusCode == 0 {
+			statusCode = http.StatusBadRequest
+		}
+		errType = "invalid_request_error"
 	case "upgrade_required":
 		if statusCode == 0 {
 			statusCode = http.StatusUpgradeRequired
@@ -1496,7 +1502,10 @@ func classifyOpenAICodexCompatFallback(statusCode int, upstreamCode, upstreamMsg
 	if msg == "" {
 		return ""
 	}
+	return classifyOpenAICodexCompatFallbackMessage(msg)
+}
 
+func classifyOpenAICodexCompatFallbackMessage(msg string) string {
 	hasSchemaSignal := strings.Contains(msg, "invalid schema") ||
 		strings.Contains(msg, "invalid field") ||
 		strings.Contains(msg, "unknown field") ||
@@ -1552,6 +1561,30 @@ func remarshalOpenAIOAuthCompatFallbackBody(
 		return nil, codexResult, trimmedPromptCacheKey, err
 	}
 	return body, codexResult, trimmedPromptCacheKey, nil
+}
+
+func applyOpenAIWSCodexCompatFallback(
+	reqBody map[string]any,
+	c *gin.Context,
+	isCodexCLI bool,
+	isCompact bool,
+	fallbackReason string,
+) codexTransformResult {
+	codexResult := applyCodexOAuthTransformWithInputModeAndFallbackReason(
+		reqBody,
+		isCodexCLI,
+		isCompact,
+		codexTransformInputModeStrict,
+		fallbackReason,
+	)
+	if c != nil {
+		c.Set(openAICodexTransformObsKey, codexResult.Observability)
+		if codexResult.Modified {
+			c.Set(openAICodexCompatFallbackKey, true)
+			c.Set(openAICodexCompatFallbackReasonKey, fallbackReason)
+		}
+	}
+	return codexResult
 }
 
 func logOpenAIInstructionsRequiredDebug(
@@ -3110,7 +3143,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			goto oauthTransformDone
 		}
 		codexInputMode := codexTransformInputModeStrict
-		if wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
+		if wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 || NeedsToolContinuation(reqBody) {
 			codexInputMode = codexTransformInputModePreservePrefix
 		}
 		codexResult := applyCodexOAuthTransformWithInputMode(reqBody, isCodexCLI, isCompactRequest, codexInputMode)
@@ -3327,6 +3360,7 @@ oauthTransformDone:
 		wsLastFailureReason := ""
 		wsPrevResponseRecoveryTried := false
 		wsInvalidEncryptedContentRecoveryTried := false
+		wsCodexCompatRecoveryTried := false
 		recoverPrevResponseNotFound := func(attempt int) bool {
 			if wsPrevResponseRecoveryTried {
 				return false
@@ -3390,6 +3424,36 @@ oauthTransformDone:
 			)
 			return true
 		}
+		recoverCodexCompat := func(attempt int, reason string) bool {
+			if wsCodexCompatRecoveryTried {
+				return false
+			}
+			if account.Type != AccountTypeOAuth {
+				return false
+			}
+			reason = strings.TrimSpace(reason)
+			if reason == "" {
+				return false
+			}
+			codexResult := applyOpenAIWSCodexCompatFallback(wsReqBody, c, isCodexCLI, isCompactRequest, reason)
+			if !codexResult.Modified {
+				logOpenAIWSModeInfo(
+					"reconnect_codex_compat_recovery_skip account_id=%d attempt=%d reason=%s modified=false",
+					account.ID,
+					attempt,
+					normalizeOpenAIWSLogValue(reason),
+				)
+				return false
+			}
+			wsCodexCompatRecoveryTried = true
+			logOpenAIWSModeInfo(
+				"reconnect_codex_compat_recovery account_id=%d attempt=%d reason=%s retry=1",
+				account.ID,
+				attempt,
+				normalizeOpenAIWSLogValue(reason),
+			)
+			return true
+		}
 		retryBudget := s.openAIWSRetryTotalBudget()
 		retryStartedAt := time.Now()
 	wsRetryLoop:
@@ -3427,6 +3491,9 @@ oauthTransformDone:
 				continue
 			}
 			if reason == "invalid_encrypted_content" && recoverInvalidEncryptedContent(attempt) {
+				continue
+			}
+			if recoverCodexCompat(attempt, reason) {
 				continue
 			}
 			if retryable && attempt < maxAttempts {

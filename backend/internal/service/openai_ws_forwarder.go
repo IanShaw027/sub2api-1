@@ -1112,6 +1112,9 @@ func (s *OpenAIGatewayService) buildOpenAIResponsesWSURL(account *Account) (stri
 	if account == nil {
 		return "", errors.New("account is nil")
 	}
+	if s != nil && s.openaiWSURLBuilder != nil {
+		return s.openaiWSURLBuilder(account)
+	}
 	var targetURL string
 	switch account.Type {
 	case AccountTypeOAuth:
@@ -4220,6 +4223,11 @@ func classifyOpenAIWSErrorEventFromRaw(codeRaw, errTypeRaw, msgRaw string) (stri
 	if strings.Contains(msg, "previous_response_not_found") ||
 		(strings.Contains(msg, "previous response") && strings.Contains(msg, "not found")) {
 		return "previous_response_not_found", true
+	}
+	if strings.Contains(errType, "invalid_request") || strings.Contains(code, "invalid_request") {
+		if fallbackReason := classifyOpenAICodexCompatFallbackMessage(msg); fallbackReason != "" {
+			return fallbackReason, true
+		}
 	}
 	if strings.Contains(errType, "server_error") || strings.Contains(code, "server_error") {
 		return "upstream_error_event", true
