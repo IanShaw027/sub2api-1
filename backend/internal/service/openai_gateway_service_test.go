@@ -648,6 +648,53 @@ func TestOpenAIGatewayService_Forward_CodexCompatFallbackStopsAfterOneRetry(t *t
 	require.Equal(t, "fc1", gjson.GetBytes(upstream.bodies[1], "input.1.call_id").String())
 }
 
+func TestOpenAIGatewayService_Forward_DowngradesOrphanToolRoleWithoutContinuationContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "codex-tui/0.125.0")
+	c.Request.Header.Set("Accept", "text/event-stream")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"stop after capture"}}`)),
+	}}
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Gateway.OpenAIWS.Enabled = false
+	svc := &OpenAIGatewayService{
+		cfg:          cfg,
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          21,
+		Name:        "oauth-codex-orphan-tool-role",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	body := []byte(`{"model":"gpt-5.4","stream":true,"input":[{"type":"message","role":"tool","tool_call_id":"call_1","content":"ok"}]}`)
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, "message", gjson.GetBytes(upstream.lastBody, "input.0.type").String())
+	require.Equal(t, "user", gjson.GetBytes(upstream.lastBody, "input.0.role").String())
+	require.Equal(t, "ok", gjson.GetBytes(upstream.lastBody, "input.0.content").String())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "input.0.call_id").Exists())
+}
+
 func TestOpenAIGatewayService_Forward_CodexCompatFallbackDropsOrdinaryIDsForInputSchema(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

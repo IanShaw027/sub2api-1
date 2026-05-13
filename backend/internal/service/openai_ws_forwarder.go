@@ -2982,7 +2982,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		turnPreviousResponseIDKind := ClassifyOpenAIPreviousResponseIDKind(turnPreviousResponseID)
 		turnPromptCacheKey := openAIWSPayloadStringFromRaw(payload, "prompt_cache_key")
 		turnStoreDisabled := s.isOpenAIWSStoreDisabledInRequestRaw(payload, account)
-		turnHasFunctionCallOutput := gjson.GetBytes(payload, `input.#(type=="function_call_output")`).Exists()
+		turnHasFunctionCallOutput := HasToolContinuationOutputInRawPayload(payload)
 		eventCount := 0
 		tokenEventCount := 0
 		terminalEventCount := 0
@@ -3289,7 +3289,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		// 携带 function_call_output 的请求不能丢弃 previous_response_id：
 		// 上游 API 需要 response chain 来匹配 tool_result 与之前的 tool_use，
 		// 丢弃后会导致 "No tool call found for function call output" 400 错误。
-		if gjson.GetBytes(currentPayload, `input.#(type=="function_call_output")`).Exists() {
+		if HasToolContinuationOutputInRawPayload(currentPayload) {
 			return false
 		}
 		if isStrictAffinityTurn(currentPayload) {
@@ -3387,7 +3387,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		currentPreviousResponseID := openAIWSPayloadStringFromRaw(currentPayload, "previous_response_id")
 		expectedPrev := strings.TrimSpace(lastTurnResponseID)
 		toolSignals := ToolContinuationSignals{
-			HasFunctionCallOutput: gjson.GetBytes(currentPayload, `input.#(type=="function_call_output")`).Exists(),
+			HasFunctionCallOutput: HasToolContinuationOutputInRawPayload(currentPayload),
 		}
 		if toolSignals.HasFunctionCallOutput {
 			var currentReqBody map[string]any
@@ -3566,7 +3566,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					// 携带 function_call_output 的请求不能丢弃 previous_response_id：
 					// 上游 API 需要 response chain 来匹配 tool_result 与之前的 tool_use，
 					// 丢弃后会导致 "No tool call found for function call output" 400 错误。
-					hasFCOutput := gjson.GetBytes(currentPayload, `input.#(type=="function_call_output")`).Exists()
+					hasFCOutput := HasToolContinuationOutputInRawPayload(currentPayload)
 					if !turnPrevRecoveryTried && currentPreviousResponseID != "" && !hasFCOutput {
 						updatedPayload, removed, dropErr := dropPreviousResponseIDFromRawPayload(currentPayload)
 						if dropErr != nil || !removed {

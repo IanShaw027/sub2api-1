@@ -60,6 +60,7 @@ const (
 	openAICodexCompatFallbackKey         = "openai_codex_compat_fallback"
 	openAICodexCompatFallbackReasonKey   = "openai_codex_compat_fallback_reason"
 	openAIMessagesDispatchForcedModelKey = "openai_messages_dispatch_forced_model"
+	openAIFailoverRequestBodyKey         = "openai_failover_request_body"
 	codexCLIVersion                      = "0.125.0"
 	// Codex 限额快照仅用于后台展示/诊断，不需要每个成功请求都立即落库。
 	openAICodexSnapshotPersistMinInterval = 30 * time.Second
@@ -99,6 +100,35 @@ func getOpenAIMessagesDispatchForcedModel(c *gin.Context) string {
 		return ""
 	}
 	return strings.TrimSpace(firstNonEmptyString(value))
+}
+
+func setOpenAIFailoverRequestBody(c *gin.Context, body []byte) {
+	if c == nil || len(body) == 0 {
+		return
+	}
+	c.Set(openAIFailoverRequestBodyKey, append([]byte(nil), body...))
+}
+
+func getOpenAIFailoverRequestBody(c *gin.Context, fallback []byte) ([]byte, bool) {
+	if c == nil {
+		return fallback, false
+	}
+	value, ok := c.Get(openAIFailoverRequestBodyKey)
+	if !ok {
+		return fallback, false
+	}
+	body, ok := value.([]byte)
+	if !ok || len(body) == 0 {
+		return fallback, false
+	}
+	return append([]byte(nil), body...), true
+}
+
+func clearOpenAIRequestBodyCache(c *gin.Context) {
+	if c == nil || c.Keys == nil {
+		return
+	}
+	delete(c.Keys, OpenAIParsedRequestBodyKey)
 }
 
 // OpenAI allowed headers whitelist (for non-passthrough).
@@ -2877,6 +2907,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	startTime := time.Now()
 	clearOpenAICodexCompatContext(c)
 	codexCompatFallbackState := openAICodexCompatFallbackState{}
+	if failoverBody, ok := getOpenAIFailoverRequestBody(c, body); ok {
+		body = failoverBody
+		clearOpenAIRequestBodyCache(c)
+	}
 
 	restrictionResult := s.detectCodexClientRestriction(c, account)
 	apiKeyID := getAPIKeyIDFromContext(c)
@@ -3228,6 +3262,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				bodyModified = true
 				markPatchDelete("prompt_cache_key")
 			}
+		}
+		if input, ok := reqBody["input"].([]any); ok && sanitizeOpenAIResponsesOrphanToolOutputs(reqBody, input) {
+			bodyModified = true
+			disablePatch()
 		}
 		if streamValue, ok := reqBody["stream"].(bool); ok {
 			reqStream = streamValue
@@ -3831,6 +3869,9 @@ oauthTransformDone:
 				}
 			}
 			if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
+				if httpModelFallbackRetryTried && !bytes.Equal(body, originalBody) {
+					setOpenAIFailoverRequestBody(c, body)
+				}
 				emitOpenAICodexCompatFallbackEvent(
 					ctx,
 					c,
@@ -4125,6 +4166,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
+		fallbackModelRetried := false
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
@@ -4158,6 +4200,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 					if fallbackErr == nil {
 						resp = fallbackResp
 						upstreamPassthroughModel = fallbackUpstreamModel
+						fallbackModelRetried = true
 					} else {
 						body = originalUpstreamBody
 						setOpsUpstreamRequestBody(c, originalUpstreamBody)
@@ -4186,6 +4229,9 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		// 透传模式默认保持原样代理；但 429/529 属于网关必须兜底的
 		// 上游容量类错误，应先触发多账号 failover 以维持基础 SLA。
 		if shouldFailoverOpenAIPassthroughResponse(resp.StatusCode) {
+			if fallbackModelRetried {
+				setOpenAIFailoverRequestBody(c, body)
+			}
 			return nil, s.handleFailoverErrorResponsePassthrough(ctx, resp, c, account, body)
 		}
 		return nil, s.handleErrorResponsePassthrough(ctx, resp, c, account, body)
@@ -7280,6 +7326,9 @@ func normalizeOpenAIPassthroughOAuthBody(body []byte, compact bool) ([]byte, boo
 			changed = true
 		}
 	}
+	if normalizeOpenAIResponsesInputToolRoles(reqBody) {
+		changed = true
+	}
 
 	if !changed {
 		return body, false, nil
@@ -7333,6 +7382,9 @@ func normalizeOpenAIPassthroughBaseBody(body []byte, compact bool, stripTopP boo
 			changed = true
 		}
 	}
+	if normalizeOpenAIResponsesInputToolRoles(reqBody) {
+		changed = true
+	}
 
 	if !changed {
 		return body, false, nil
@@ -7365,6 +7417,100 @@ func shouldStripTopPForResponsesUpstream(account *Account) bool {
 	}
 	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
 	return host == "api.openai.com"
+}
+
+func normalizeOpenAIResponsesInputToolRoles(reqBody map[string]any) bool {
+	if reqBody == nil {
+		return false
+	}
+	input, ok := reqBody["input"].([]any)
+	if !ok {
+		return false
+	}
+	normalized, changed := normalizeCodexToolRoleMessages(input)
+	if changed {
+		reqBody["input"] = normalized
+		input = normalized
+	}
+	if sanitizeOpenAIResponsesOrphanToolOutputs(reqBody, input) {
+		return true
+	}
+	return changed
+}
+
+func sanitizeOpenAIResponsesOrphanToolOutputs(reqBody map[string]any, input []any) bool {
+	if len(input) == 0 || strings.TrimSpace(firstNonEmptyString(reqBody["previous_response_id"])) != "" {
+		return false
+	}
+
+	toolCallIDs := make(map[string]struct{})
+	referenceIDs := make(map[string]struct{})
+	for _, item := range input {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(firstNonEmptyString(m["type"])) == "item_reference" {
+			if refID, ok := m["id"].(string); ok && strings.TrimSpace(refID) != "" {
+				referenceIDs[strings.TrimSpace(refID)] = struct{}{}
+			}
+			continue
+		}
+		callID, _ := m["call_id"].(string)
+		callID = strings.TrimSpace(callID)
+		if callID == "" {
+			continue
+		}
+		switch strings.TrimSpace(firstNonEmptyString(m["type"])) {
+		case "function_call", "tool_call", "local_shell_call", "tool_search_call", "custom_tool_call", "mcp_tool_call":
+			toolCallIDs[callID] = struct{}{}
+		}
+	}
+
+	modified := false
+	normalized := make([]any, 0, len(input))
+	for _, item := range input {
+		m, ok := item.(map[string]any)
+		if !ok {
+			normalized = append(normalized, item)
+			continue
+		}
+		itemType := strings.TrimSpace(firstNonEmptyString(m["type"]))
+		if !isToolContinuationOutputItemType(itemType) {
+			normalized = append(normalized, item)
+			continue
+		}
+		callID, _ := m["call_id"].(string)
+		callID = strings.TrimSpace(callID)
+		if callID != "" {
+			if _, ok := toolCallIDs[callID]; ok {
+				normalized = append(normalized, item)
+				continue
+			}
+			if _, ok := referenceIDs[callID]; ok {
+				normalized = append(normalized, item)
+				continue
+			}
+		}
+
+		output := strings.TrimSpace(firstNonEmptyString(m["output"]))
+		if output == "" && m["output"] != nil {
+			if raw, err := json.Marshal(m["output"]); err == nil {
+				output = string(raw)
+			}
+		}
+		normalized = append(normalized, map[string]any{
+			"type":    "message",
+			"role":    "user",
+			"content": output,
+		})
+		modified = true
+	}
+	if !modified {
+		return false
+	}
+	reqBody["input"] = normalized
+	return true
 }
 
 func shouldDetachLegacyOAuthPassthroughContext(account *Account, reqStream bool, body []byte) bool {

@@ -161,6 +161,90 @@ func TestOpenAIGatewayService_ResponsesUnknownModelRetriesConfiguredFallbackOnce
 	require.Equal(t, "gpt-5.4", gjson.GetBytes(opsBody, "model").String())
 }
 
+func TestOpenAIGatewayService_ResponsesUnknownModelFailoverReplaysFallbackBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	originalBody := []byte(`{"model":"deepseek-v4-flash","stream":true,"instructions":"local-test-instructions","input":[{"type":"text","text":"hi"}]}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(originalBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_unknown_model_first"}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","message":"The 'deepseek-v4-flash' model is not supported when using Codex with a ChatGPT account."}}`)),
+			},
+			{
+				StatusCode: http.StatusTooManyRequests,
+				Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_fallback_rate_limit"}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"usage_limit_reached","message":"rate limited"}}`)),
+			},
+			{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_after_failover"}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","message":"stop after failover capture"}}`)),
+			},
+		},
+	}
+
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{},
+		httpUpstream: upstream,
+		settingService: NewSettingService(&antigravityFallbackSettingRepoStub{values: map[string]string{
+			SettingKeyEnableModelFallback: "true",
+			SettingKeyFallbackModelOpenAI: "gpt-5.4",
+		}}, &config.Config{}),
+	}
+	account1 := &Account{
+		ID:          123,
+		Name:        "acc-1",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token-1",
+			"chatgpt_account_id": "chatgpt-acc-1",
+		},
+		Extra:       map[string]any{"openai_passthrough": true},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+	account2 := &Account{
+		ID:          124,
+		Name:        "acc-2",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token-2",
+			"chatgpt_account_id": "chatgpt-acc-2",
+		},
+		Extra:       map[string]any{"openai_passthrough": true},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account1, originalBody)
+	require.Error(t, err)
+	require.Nil(t, result)
+
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+
+	result, err = svc.Forward(context.Background(), c, account2, originalBody)
+	require.Error(t, err)
+	require.Nil(t, result)
+
+	require.Len(t, upstream.bodies, 3)
+	require.Equal(t, "deepseek-v4-flash", gjson.GetBytes(upstream.bodies[0], "model").String())
+	require.Equal(t, "gpt-5.4", gjson.GetBytes(upstream.bodies[1], "model").String())
+	require.Equal(t, "gpt-5.4", gjson.GetBytes(upstream.bodies[2], "model").String())
+}
+
 func TestOpenAIGatewayService_OAuthResponsesNormalizesCodexMiniLatestForGenericClient(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

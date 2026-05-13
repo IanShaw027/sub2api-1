@@ -38,10 +38,19 @@ func TestNeedsToolContinuationSignals(t *testing.T) {
 }
 
 func TestHasFunctionCallOutput(t *testing.T) {
-	// 仅当 input 中存在 function_call_output 才视为续链输出。
+	// 兼容所有 tool continuation output 类型。
 	require.False(t, HasFunctionCallOutput(nil))
 	require.True(t, HasFunctionCallOutput(map[string]any{
 		"input": []any{map[string]any{"type": "function_call_output"}},
+	}))
+	require.True(t, HasFunctionCallOutput(map[string]any{
+		"input": []any{map[string]any{"type": "tool_search_output"}},
+	}))
+	require.True(t, HasFunctionCallOutput(map[string]any{
+		"input": []any{map[string]any{"type": "custom_tool_call_output"}},
+	}))
+	require.True(t, HasFunctionCallOutput(map[string]any{
+		"input": []any{map[string]any{"type": "mcp_tool_call_output"}},
 	}))
 	require.False(t, HasFunctionCallOutput(map[string]any{
 		"input": "text",
@@ -68,20 +77,21 @@ func TestFunctionCallOutputCallIDs(t *testing.T) {
 	callIDs := FunctionCallOutputCallIDs(map[string]any{
 		"input": []any{
 			map[string]any{"type": "function_call_output", "call_id": "call_1"},
-			map[string]any{"type": "function_call_output", "call_id": ""},
-			map[string]any{"type": "function_call_output", "call_id": "call_1"},
+			map[string]any{"type": "tool_search_output", "call_id": ""},
+			map[string]any{"type": "custom_tool_call_output", "call_id": "call_1"},
+			map[string]any{"type": "mcp_tool_call_output", "call_id": "call_2"},
 		},
 	})
-	require.ElementsMatch(t, []string{"call_1"}, callIDs)
+	require.ElementsMatch(t, []string{"call_1", "call_2"}, callIDs)
 }
 
 func TestHasFunctionCallOutputMissingCallID(t *testing.T) {
 	require.False(t, HasFunctionCallOutputMissingCallID(nil))
 	require.True(t, HasFunctionCallOutputMissingCallID(map[string]any{
-		"input": []any{map[string]any{"type": "function_call_output"}},
+		"input": []any{map[string]any{"type": "tool_search_output"}},
 	}))
 	require.False(t, HasFunctionCallOutputMissingCallID(map[string]any{
-		"input": []any{map[string]any{"type": "function_call_output", "call_id": "call_1"}},
+		"input": []any{map[string]any{"type": "custom_tool_call_output", "call_id": "call_1"}},
 	}))
 }
 

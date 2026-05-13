@@ -66,6 +66,55 @@ func TestNormalizeOpenAIPassthroughBaseBody_PreservesTopPWhenNotRequested(t *tes
 	require.Equal(t, 0.8, gjson.GetBytes(normalized, "top_p").Float())
 }
 
+func TestNormalizeOpenAIPassthroughOAuthBody_NormalizesToolRoleInput(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.4","stream":true,"store":false,"previous_response_id":"resp_123","input":[{"type":"message","role":"user","content":"hi"},{"role":"tool","tool_call_id":"call_123","content":"done"}]}`)
+
+	normalized, changed, err := normalizeOpenAIPassthroughOAuthBody(body, false)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, "function_call_output", gjson.GetBytes(normalized, "input.1.type").String())
+	require.Equal(t, "call_123", gjson.GetBytes(normalized, "input.1.call_id").String())
+	require.Equal(t, "done", gjson.GetBytes(normalized, "input.1.output").String())
+	require.False(t, gjson.GetBytes(normalized, "input.1.role").Exists())
+}
+
+func TestNormalizeOpenAIPassthroughOAuthBody_DowngradesOrphanToolOutputWithoutContext(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.4","stream":true,"store":false,"input":[{"role":"tool","tool_call_id":"call_123","content":"done"}]}`)
+
+	normalized, changed, err := normalizeOpenAIPassthroughOAuthBody(body, false)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, "message", gjson.GetBytes(normalized, "input.0.type").String())
+	require.Equal(t, "user", gjson.GetBytes(normalized, "input.0.role").String())
+	require.Equal(t, "done", gjson.GetBytes(normalized, "input.0.content").String())
+	require.False(t, gjson.GetBytes(normalized, "input.0.call_id").Exists())
+}
+
+func TestNormalizeOpenAIPassthroughOAuthBody_DowngradesOrphanFunctionCallOutputWithoutContext(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.4","stream":true,"store":false,"input":[{"type":"function_call_output","call_id":"call_123","output":"done"}]}`)
+
+	normalized, changed, err := normalizeOpenAIPassthroughOAuthBody(body, false)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, "message", gjson.GetBytes(normalized, "input.0.type").String())
+	require.Equal(t, "user", gjson.GetBytes(normalized, "input.0.role").String())
+	require.Equal(t, "done", gjson.GetBytes(normalized, "input.0.content").String())
+	require.False(t, gjson.GetBytes(normalized, "input.0.call_id").Exists())
+}
+
+func TestNormalizeOpenAIPassthroughOAuthBody_PreservesFunctionCallOutputWithItemReference(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.4","stream":true,"store":false,"input":[{"type":"item_reference","id":"call_123"},{"type":"function_call_output","call_id":"call_123","output":"done"}]}`)
+
+	normalized, changed, err := normalizeOpenAIPassthroughOAuthBody(body, false)
+	require.NoError(t, err)
+	_ = changed
+	require.JSONEq(t, string(body), string(normalized))
+	require.Equal(t, "item_reference", gjson.GetBytes(normalized, "input.0.type").String())
+	require.Equal(t, "call_123", gjson.GetBytes(normalized, "input.0.id").String())
+	require.Equal(t, "function_call_output", gjson.GetBytes(normalized, "input.1.type").String())
+	require.Equal(t, "call_123", gjson.GetBytes(normalized, "input.1.call_id").String())
+}
+
 func TestFinalizeOpenAIResponsesOAuthUpstreamBody_EnforcesFinalOAuthResponsesConstraints(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
