@@ -1887,7 +1887,7 @@ func TestBuildOpenAIImagesResponsesRequest_RejectsMultipleImages(t *testing.T) {
 		N:        2,
 	}
 
-	body, err := buildOpenAIImagesResponsesRequest(parsed, "gpt-image-2")
+	body, err := buildOpenAIImagesResponsesRequest(parsed, "gpt-image-2", "")
 	require.Nil(t, body)
 	require.ErrorContains(t, err, "does not support n > 1")
 }
@@ -1903,7 +1903,7 @@ func TestBuildOpenAIImagesResponsesRequest_StripsInputFidelity(t *testing.T) {
 		},
 	}
 
-	body, err := buildOpenAIImagesResponsesRequest(parsed, "gpt-image-2")
+	body, err := buildOpenAIImagesResponsesRequest(parsed, "gpt-image-2", "")
 	require.NoError(t, err)
 	require.NotNil(t, body)
 	require.Equal(t, "high", gjson.GetBytes(body, "tools.0.input_fidelity").String())
@@ -1918,7 +1918,7 @@ func TestBuildOpenAIImagesResponsesRequest_ForcesUpstreamStreaming(t *testing.T)
 		Stream:   false,
 	}
 
-	body, err := buildOpenAIImagesResponsesRequest(parsed, "gpt-image-1")
+	body, err := buildOpenAIImagesResponsesRequest(parsed, "gpt-image-1", "")
 	require.NoError(t, err)
 	require.NotNil(t, body)
 	require.True(t, gjson.GetBytes(body, "stream").Bool())
@@ -1932,7 +1932,7 @@ func TestBuildOpenAIImagesResponsesRequest_StripsStyle(t *testing.T) {
 		Style:    "vivid",
 	}
 
-	body, err := buildOpenAIImagesResponsesRequest(parsed, "gpt-image-2")
+	body, err := buildOpenAIImagesResponsesRequest(parsed, "gpt-image-2", "")
 	require.NoError(t, err)
 	require.NotNil(t, body)
 	require.False(t, gjson.GetBytes(body, "tools.0.style").Exists())
@@ -1954,11 +1954,23 @@ func TestBuildOpenAIImagesResponsesRequest_PreservesMixedImageReferenceOrder(t *
 	parsed, err := (&OpenAIGatewayService{}).ParseOpenAIImagesRequest(c, body)
 	require.NoError(t, err)
 
-	reqBody, err := buildOpenAIImagesResponsesRequest(parsed, "gpt-image-2")
+	reqBody, err := buildOpenAIImagesResponsesRequest(parsed, "gpt-image-2", "")
 	require.NoError(t, err)
 	require.Equal(t, "file_source_1", gjson.GetBytes(reqBody, "input.0.content.1.file_id").String())
 	require.Equal(t, "https://example.com/source-2.png", gjson.GetBytes(reqBody, "input.0.content.2.image_url").String())
 	require.Equal(t, "file_source_3", gjson.GetBytes(reqBody, "input.0.content.3.file_id").String())
+}
+
+func TestBuildOpenAIImagesResponsesRequest_UsesCustomMainModel(t *testing.T) {
+	parsed := &OpenAIImagesRequest{
+		Endpoint: openAIImagesGenerationsEndpoint,
+		Model:    "gpt-image-2",
+		Prompt:   "draw a cat",
+	}
+
+	body, err := buildOpenAIImagesResponsesRequest(parsed, "gpt-image-2", "gpt-5.4")
+	require.NoError(t, err)
+	require.Equal(t, "gpt-5.4", gjson.GetBytes(body, "model").String())
 }
 
 func TestCollectOpenAIImagesFromResponsesBody_FallsBackToOutputItemDone(t *testing.T) {

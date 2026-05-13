@@ -760,7 +760,7 @@ func TestNormalizeOpenAIResponsesImageOnlyModel_BuildsImageToolRequest(t *testin
 		"style":         "vivid",
 	}
 
-	modified := normalizeOpenAIResponsesImageOnlyModel(reqBody)
+	modified := normalizeOpenAIResponsesImageOnlyModel(reqBody, "")
 	require.True(t, modified)
 	require.Equal(t, openAIImagesResponsesMainModel, reqBody["model"])
 	require.Equal(t, "draw a cat", reqBody["input"])
@@ -801,9 +801,9 @@ func TestNormalizeOpenAIResponsesImageOnlyModel_PreservesExistingImageTool(t *te
 		"tool_choice": "auto",
 	}
 
-	modified := normalizeOpenAIResponsesImageOnlyModel(reqBody)
+	modified := normalizeOpenAIResponsesImageOnlyModel(reqBody, "gpt-5.4")
 	require.True(t, modified)
-	require.Equal(t, openAIImagesResponsesMainModel, reqBody["model"])
+	require.Equal(t, "gpt-5.4", reqBody["model"])
 	require.Equal(t, "auto", reqBody["tool_choice"])
 
 	tools, ok := reqBody["tools"].([]any)
@@ -812,6 +812,11 @@ func TestNormalizeOpenAIResponsesImageOnlyModel_PreservesExistingImageTool(t *te
 	tool, ok := tools[0].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "gpt-image-1.5", tool["model"])
+}
+
+func TestValidateOpenAIImageMainModel_RejectsSpark(t *testing.T) {
+	err := ValidateOpenAIImageMainModel("gpt-5.3-codex-spark")
+	require.ErrorContains(t, err, "does not support image_generation")
 }
 
 func TestValidateOpenAIResponsesImageModel_RejectsImageOnlyModel(t *testing.T) {

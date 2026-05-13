@@ -255,7 +255,7 @@ func openAIImagesResponsesEffectiveN(parsed *OpenAIImagesRequest) int {
 	return parsed.N
 }
 
-func buildOpenAIImagesResponsesRequest(parsed *OpenAIImagesRequest, toolModel string) ([]byte, error) {
+func buildOpenAIImagesResponsesRequest(parsed *OpenAIImagesRequest, toolModel, mainModel string) ([]byte, error) {
 	if parsed == nil {
 		return nil, fmt.Errorf("parsed images request is required")
 	}
@@ -294,7 +294,7 @@ func buildOpenAIImagesResponsesRequest(parsed *OpenAIImagesRequest, toolModel st
 	}
 
 	req := []byte(`{"instructions":"","stream":true,"reasoning":{"effort":"medium","summary":"auto"},"parallel_tool_calls":true,"include":["reasoning.encrypted_content"],"model":"","store":false}`)
-	req, _ = sjson.SetBytes(req, "model", openAIImagesResponsesMainModel)
+	req, _ = sjson.SetBytes(req, "model", NormalizeOpenAIImageMainModel(mainModel))
 	// Responses-tool image generation currently requires upstream SSE even when the
 	// downstream client requested a synchronous image response.
 	req, _ = sjson.SetBytes(req, "stream", true)
@@ -945,13 +945,15 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 	if err := validateOpenAIImagesModel(requestModel); err != nil {
 		return nil, err
 	}
+	mainModel := resolveOpenAIResponsesImageMainModel(c.Request.Context())
 	logger.LegacyPrintf(
 		"service.openai_gateway",
-		"[OpenAI] Images request routing request_model=%s endpoint=%s account_type=%s uploads=%d",
+		"[OpenAI] Images request routing request_model=%s endpoint=%s account_type=%s uploads=%d main_model=%s",
 		requestModel,
 		parsed.Endpoint,
 		account.Type,
 		len(parsed.Uploads),
+		mainModel,
 	)
 
 	token, _, err := s.GetAccessToken(ctx, account)
@@ -959,7 +961,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 		return nil, err
 	}
 
-	responsesBody, err := buildOpenAIImagesResponsesRequest(parsed, requestModel)
+	responsesBody, err := buildOpenAIImagesResponsesRequest(parsed, requestModel, mainModel)
 	if err != nil {
 		return nil, err
 	}
@@ -1059,7 +1061,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 		RequestID:              resp.Header.Get("x-request-id"),
 		Usage:                  usage,
 		Model:                  requestModel,
-		TokenBillingModel:      openAIImagesResponsesMainModel,
+		TokenBillingModel:      NormalizeOpenAIImageMainModel(mainModel),
 		UpstreamModel:          requestModel,
 		Stream:                 parsed.Stream,
 		ResponseHeaders:        resp.Header.Clone(),

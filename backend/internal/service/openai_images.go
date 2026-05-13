@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
@@ -64,6 +65,17 @@ const (
 )
 
 type OpenAIImagesCapability string
+
+func resolveOpenAIResponsesImageMainModel(ctx context.Context) string {
+	if ctx == nil {
+		return NormalizeOpenAIImageMainModel("")
+	}
+	group, _ := ctx.Value(ctxkey.Group).(*Group)
+	if !IsGroupContextValid(group) {
+		return NormalizeOpenAIImageMainModel("")
+	}
+	return group.EffectiveOpenAIImageMainModel()
+}
 
 const (
 	OpenAIImagesCapabilityBasic  OpenAIImagesCapability = "images-basic"
