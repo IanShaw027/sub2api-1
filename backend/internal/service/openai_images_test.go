@@ -942,7 +942,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsInputFidelityForGPT
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsTransparentBackgroundWithJPEG(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","background":"transparent","output_format":"jpeg"}`)
+	body := []byte(`{"model":"gpt-image-1","prompt":"draw a cat","background":"transparent","output_format":"jpeg"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -954,6 +954,24 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsTransparentBackgrou
 	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
 	require.Nil(t, parsed)
 	require.ErrorContains(t, err, "background=transparent requires output_format png or webp")
+}
+
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_StripsTransparentBackgroundForGPTImage2(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","background":"transparent","output_format":"webp"}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	svc := &OpenAIGatewayService{}
+	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+	require.NotNil(t, parsed)
+	require.Empty(t, parsed.Background)
+	require.Equal(t, "webp", parsed.OutputFormat)
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsOutputCompressionWithPNG(t *testing.T) {
@@ -1904,6 +1922,20 @@ func TestBuildOpenAIImagesResponsesRequest_ForcesUpstreamStreaming(t *testing.T)
 	require.NoError(t, err)
 	require.NotNil(t, body)
 	require.True(t, gjson.GetBytes(body, "stream").Bool())
+}
+
+func TestBuildOpenAIImagesResponsesRequest_StripsStyle(t *testing.T) {
+	parsed := &OpenAIImagesRequest{
+		Endpoint: openAIImagesGenerationsEndpoint,
+		Model:    "gpt-image-2",
+		Prompt:   "draw a cat",
+		Style:    "vivid",
+	}
+
+	body, err := buildOpenAIImagesResponsesRequest(parsed, "gpt-image-2")
+	require.NoError(t, err)
+	require.NotNil(t, body)
+	require.False(t, gjson.GetBytes(body, "tools.0.style").Exists())
 }
 
 func TestBuildOpenAIImagesResponsesRequest_PreservesMixedImageReferenceOrder(t *testing.T) {

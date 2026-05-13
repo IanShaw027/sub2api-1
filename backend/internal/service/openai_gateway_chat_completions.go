@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"time"
 
@@ -68,6 +69,9 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	// derive a stable seed from the final upstream model family.
 	billingModel := resolveOpenAIForwardModelWithSelectedFallback(account, originalModel, defaultMappedModel, selectedFallbackModel)
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
+	if isOpenAIImageGenerationModel(upstreamModel) {
+		return s.forwardImageOnlyChatCompletions(ctx, c, account, body, originalModel, billingModel, upstreamModel, clientStream, includeUsage, startTime)
+	}
 
 	promptCacheKey = strings.TrimSpace(promptCacheKey)
 	compatPromptCacheInjected := false
@@ -185,6 +189,9 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		codexResult := applyCodexOAuthTransformWithInputMode(reqBody, false, false, codexTransformInputModePreservePrefix)
 		if codexResult.NormalizedModel != "" {
 			upstreamModel = codexResult.NormalizedModel
+		}
+		if input, ok := reqBody["input"].([]any); ok {
+			sanitizeOpenAIResponsesOrphanToolOutputs(reqBody, input)
 		}
 		if codexResult.PromptCacheKey != "" {
 			promptCacheKey = codexResult.PromptCacheKey
@@ -356,6 +363,442 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	}
 
 	return result, handleErr
+}
+
+func (s *OpenAIGatewayService) forwardImageOnlyChatCompletions(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	body []byte,
+	originalModel string,
+	billingModel string,
+	upstreamModel string,
+	clientStream bool,
+	includeUsage bool,
+	startTime time.Time,
+) (*OpenAIForwardResult, error) {
+	imagePath, imageBody, err := buildOpenAIImagesRequestFromChatCompletions(body, upstreamModel)
+	if err != nil {
+		message := sanitizeUpstreamErrorMessage(err.Error())
+		writeChatCompletionsError(c, http.StatusBadRequest, "invalid_request_error", message)
+		return nil, err
+	}
+
+	imageCtx, recorder, err := newOpenAIImageBridgeGinContext(c, imagePath, imageBody)
+	if err != nil {
+		writeChatCompletionsError(c, http.StatusInternalServerError, "api_error", "failed to initialize image bridge request")
+		return nil, fmt.Errorf("build image bridge context: %w", err)
+	}
+
+	parsed, err := s.ParseOpenAIImagesRequest(imageCtx, imageBody)
+	if err != nil {
+		message := sanitizeUpstreamErrorMessage(err.Error())
+		writeChatCompletionsError(c, http.StatusBadRequest, "invalid_request_error", message)
+		return nil, err
+	}
+
+	imageResult, err := s.ForwardImages(ctx, imageCtx, account, imageBody, parsed, billingModel)
+	if err != nil {
+		statusCode := recorder.Code
+		if statusCode < 400 {
+			statusCode = http.StatusBadGateway
+		}
+		errType := "upstream_error"
+		if statusCode >= 400 && statusCode < 500 {
+			errType = "invalid_request_error"
+		}
+		message := strings.TrimSpace(extractUpstreamErrorMessage(recorder.Body.Bytes()))
+		if message == "" {
+			message = sanitizeUpstreamErrorMessage(err.Error())
+		}
+		writeChatCompletionsError(c, statusCode, errType, message)
+		return nil, err
+	}
+
+	chatResp, err := buildChatCompletionsImageBridgeResponse(recorder.Body.Bytes(), originalModel, imageResult.RequestID)
+	if err != nil {
+		writeChatCompletionsError(c, http.StatusBadGateway, "api_error", err.Error())
+		return nil, err
+	}
+
+	if s.responseHeaderFilter != nil {
+		responseheaders.WriteFilteredHeaders(c.Writer.Header(), imageResult.ResponseHeaders, s.responseHeaderFilter)
+	}
+	if clientStream {
+		firstTokenMs, streamErr := writeChatCompletionsImageBridgeStream(c, chatResp, includeUsage)
+		if streamErr != nil {
+			return nil, streamErr
+		}
+		imageResult.FirstTokenMs = firstTokenMs
+	} else {
+		c.JSON(http.StatusOK, chatResp)
+	}
+
+	return &OpenAIForwardResult{
+		RequestID:              imageResult.RequestID,
+		ResponseID:             imageResult.ResponseID,
+		Usage:                  imageResult.Usage,
+		Model:                  originalModel,
+		BillingModel:           billingModel,
+		TokenBillingModel:      imageResult.TokenBillingModel,
+		ImageUsageTokenBilling: imageResult.ImageUsageTokenBilling,
+		UpstreamModel:          imageResult.UpstreamModel,
+		ServiceTier:            imageResult.ServiceTier,
+		ReasoningEffort:        imageResult.ReasoningEffort,
+		Stream:                 clientStream,
+		EffectiveRequestType:   imageResult.EffectiveRequestType,
+		ResponseHeaders:        imageResult.ResponseHeaders,
+		Duration:               time.Since(startTime),
+		FirstTokenMs:           imageResult.FirstTokenMs,
+		ImageCount:             imageResult.ImageCount,
+		ImageSize:              imageResult.ImageSize,
+	}, nil
+}
+
+func newOpenAIImageBridgeGinContext(parent *gin.Context, path string, body []byte) (*gin.Context, *httptest.ResponseRecorder, error) {
+	recorder := httptest.NewRecorder()
+	ginCtx, _ := gin.CreateTestContext(recorder)
+
+	ctx := context.Background()
+	method := http.MethodPost
+	headers := http.Header{}
+	if parent != nil && parent.Request != nil {
+		ctx = parent.Request.Context()
+		method = parent.Request.Method
+		headers = parent.Request.Header.Clone()
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, "http://openai-image-bridge.local"+path, bytes.NewReader(body))
+	if err != nil {
+		return nil, nil, err
+	}
+	req.Header = headers
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	ginCtx.Request = req
+	return ginCtx, recorder, nil
+}
+
+func buildOpenAIImagesRequestFromChatCompletions(body []byte, model string) (string, []byte, error) {
+	prompt, imageURLs := extractOpenAIImageChatPromptAndImages(gjson.GetBytes(body, "messages"))
+	if prompt == "" {
+		return "", nil, fmt.Errorf("image-only chat completions requires a text prompt in the last user message")
+	}
+
+	reqBody := map[string]any{
+		"model":           strings.TrimSpace(model),
+		"prompt":          prompt,
+		"response_format": "b64_json",
+		"stream":          false,
+	}
+	endpoint := openAIImagesGenerationsEndpoint
+	if len(imageURLs) > 0 {
+		endpoint = openAIImagesEditsEndpoint
+		images := make([]map[string]string, 0, len(imageURLs))
+		for _, imageURL := range imageURLs {
+			images = append(images, map[string]string{"image_url": imageURL})
+		}
+		reqBody["images"] = images
+	}
+
+	for _, field := range []string{"size", "quality", "background", "output_format", "moderation", "input_fidelity", "style"} {
+		value := gjson.GetBytes(body, field)
+		if !value.Exists() {
+			continue
+		}
+		if trimmed := strings.TrimSpace(value.String()); trimmed != "" {
+			reqBody[field] = trimmed
+		}
+	}
+	for _, field := range []string{"n", "output_compression", "partial_images"} {
+		value := gjson.GetBytes(body, field)
+		if value.Exists() && value.Type == gjson.Number {
+			reqBody[field] = int(value.Int())
+		}
+	}
+
+	reqJSON, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", nil, fmt.Errorf("marshal image bridge request: %w", err)
+	}
+	return endpoint, reqJSON, nil
+}
+
+func extractOpenAIImageChatPromptAndImages(messages gjson.Result) (string, []string) {
+	if !messages.IsArray() {
+		return "", nil
+	}
+	var (
+		prompt string
+		images []string
+	)
+	messages.ForEach(func(_, msg gjson.Result) bool {
+		if strings.ToLower(strings.TrimSpace(msg.Get("role").String())) != "user" {
+			return true
+		}
+		candidatePrompt, candidateImages := extractOpenAIImageChatContent(msg.Get("content"))
+		if candidatePrompt != "" || len(candidateImages) > 0 {
+			prompt = candidatePrompt
+			images = candidateImages
+		}
+		return true
+	})
+	return prompt, dedupeStrings(images)
+}
+
+func extractOpenAIImageChatContent(content gjson.Result) (string, []string) {
+	switch {
+	case !content.Exists():
+		return "", nil
+	case content.Type == gjson.String:
+		return strings.TrimSpace(content.String()), nil
+	case content.IsArray():
+		var promptParts []string
+		var images []string
+		content.ForEach(func(_, item gjson.Result) bool {
+			itemPrompt, itemImages := extractOpenAIImageChatContent(item)
+			if itemPrompt != "" {
+				promptParts = append(promptParts, itemPrompt)
+			}
+			images = append(images, itemImages...)
+			return true
+		})
+		return strings.TrimSpace(strings.Join(promptParts, "\n")), images
+	case content.IsObject():
+		typ := strings.ToLower(strings.TrimSpace(content.Get("type").String()))
+		switch typ {
+		case "", "text", "input_text":
+			if text := strings.TrimSpace(content.Get("text").String()); text != "" {
+				return text, nil
+			}
+			return extractOpenAIImageChatContent(content.Get("content"))
+		case "image_url":
+			imageURL := strings.TrimSpace(content.Get("image_url.url").String())
+			if imageURL == "" {
+				imageURL = strings.TrimSpace(content.Get("image_url").String())
+			}
+			if imageURL != "" {
+				return "", []string{imageURL}
+			}
+		}
+	}
+	return "", nil
+}
+
+func buildChatCompletionsImageBridgeResponse(raw []byte, model string, requestID string) (*apicompat.ChatCompletionsResponse, error) {
+	if len(raw) == 0 || !gjson.ValidBytes(raw) {
+		return nil, fmt.Errorf("image bridge returned invalid json response")
+	}
+
+	items := gjson.GetBytes(raw, "data")
+	if !items.Exists() || !items.IsArray() {
+		return nil, fmt.Errorf("image bridge returned no images")
+	}
+
+	topLevelFormat := strings.TrimSpace(gjson.GetBytes(raw, "output_format").String())
+	parts := make([]apicompat.ChatContentPart, 0, len(items.Array()))
+	for _, item := range items.Array() {
+		imageURL := strings.TrimSpace(item.Get("url").String())
+		if imageURL == "" {
+			b64 := strings.TrimSpace(item.Get("b64_json").String())
+			if b64 == "" {
+				continue
+			}
+			outputFormat := strings.TrimSpace(item.Get("output_format").String())
+			if outputFormat == "" {
+				outputFormat = topLevelFormat
+			}
+			imageURL = "data:" + openAIImageOutputMIMEType(outputFormat) + ";base64," + b64
+		}
+		parts = append(parts, apicompat.ChatContentPart{
+			Type:     "image_url",
+			ImageURL: &apicompat.ChatImageURL{URL: imageURL},
+		})
+	}
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("image bridge returned no image payloads")
+	}
+
+	content, err := json.Marshal(parts)
+	if err != nil {
+		return nil, fmt.Errorf("marshal chat image content: %w", err)
+	}
+
+	createdAt := gjson.GetBytes(raw, "created").Int()
+	if createdAt <= 0 {
+		createdAt = time.Now().Unix()
+	}
+	chatID := strings.TrimSpace(requestID)
+	if chatID == "" {
+		chatID = fmt.Sprintf("chatcmpl_img_%d", createdAt)
+	}
+
+	var usage *apicompat.ChatUsage
+	if parsedUsage, ok := extractOpenAIUsageFromJSONBytes(raw); ok {
+		if parsedUsage.InputTokens > 0 || parsedUsage.OutputTokens > 0 || parsedUsage.CacheReadInputTokens > 0 {
+			usage = &apicompat.ChatUsage{
+				PromptTokens:     parsedUsage.InputTokens,
+				CompletionTokens: parsedUsage.OutputTokens,
+				TotalTokens:      parsedUsage.InputTokens + parsedUsage.OutputTokens,
+			}
+			if parsedUsage.CacheReadInputTokens > 0 {
+				usage.PromptTokensDetails = &apicompat.ChatTokenDetails{
+					CachedTokens: parsedUsage.CacheReadInputTokens,
+				}
+			}
+		}
+	}
+
+	return &apicompat.ChatCompletionsResponse{
+		ID:      chatID,
+		Object:  "chat.completion",
+		Created: createdAt,
+		Model:   strings.TrimSpace(model),
+		Choices: []apicompat.ChatChoice{{
+			Index: 0,
+			Message: apicompat.ChatMessage{
+				Role:    "assistant",
+				Content: content,
+			},
+			FinishReason: "stop",
+		}},
+		Usage: usage,
+	}, nil
+}
+
+func writeChatCompletionsImageBridgeStream(
+	c *gin.Context,
+	chatResp *apicompat.ChatCompletionsResponse,
+	includeUsage bool,
+) (*int, error) {
+	if c == nil || c.Writer == nil {
+		return nil, fmt.Errorf("missing response writer")
+	}
+	if chatResp == nil || len(chatResp.Choices) == 0 {
+		return nil, fmt.Errorf("image bridge returned no chat completion choices")
+	}
+
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		return nil, fmt.Errorf("streaming is not supported by response writer")
+	}
+
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+	c.Writer.WriteHeader(http.StatusOK)
+
+	contentParts := extractChatCompletionsImageBridgeStreamContents(chatResp)
+	chunks := []apicompat.ChatCompletionsChunk{
+		{
+			ID:      chatResp.ID,
+			Object:  "chat.completion.chunk",
+			Created: chatResp.Created,
+			Model:   chatResp.Model,
+			Choices: []apicompat.ChatChunkChoice{{
+				Index:        0,
+				Delta:        apicompat.ChatDelta{Role: "assistant"},
+				FinishReason: nil,
+			}},
+		},
+	}
+	for idx, contentPart := range contentParts {
+		if strings.TrimSpace(contentPart) == "" {
+			continue
+		}
+		contentCopy := contentPart
+		if idx > 0 {
+			contentCopy = "\n" + contentCopy
+		}
+		chunks = append(chunks, apicompat.ChatCompletionsChunk{
+			ID:      chatResp.ID,
+			Object:  "chat.completion.chunk",
+			Created: chatResp.Created,
+			Model:   chatResp.Model,
+			Choices: []apicompat.ChatChunkChoice{{
+				Index:        0,
+				Delta:        apicompat.ChatDelta{Content: &contentCopy},
+				FinishReason: nil,
+			}},
+		})
+	}
+	empty := ""
+	finish := "stop"
+	chunks = append(chunks, apicompat.ChatCompletionsChunk{
+		ID:      chatResp.ID,
+		Object:  "chat.completion.chunk",
+		Created: chatResp.Created,
+		Model:   chatResp.Model,
+		Choices: []apicompat.ChatChunkChoice{{
+			Index:        0,
+			Delta:        apicompat.ChatDelta{Content: &empty},
+			FinishReason: &finish,
+		}},
+	})
+	if includeUsage && chatResp.Usage != nil {
+		chunks = append(chunks, apicompat.ChatCompletionsChunk{
+			ID:      chatResp.ID,
+			Object:  "chat.completion.chunk",
+			Created: chatResp.Created,
+			Model:   chatResp.Model,
+			Choices: []apicompat.ChatChunkChoice{},
+			Usage:   chatResp.Usage,
+		})
+	}
+
+	var firstTokenMs *int
+	streamStart := time.Now()
+	for idx, chunk := range chunks {
+		sse, err := apicompat.ChatChunkToSSE(chunk)
+		if err != nil {
+			return firstTokenMs, err
+		}
+		if _, err := fmt.Fprint(c.Writer, sse); err != nil {
+			return firstTokenMs, err
+		}
+		if idx == 0 {
+			ms := int(time.Since(streamStart).Milliseconds())
+			firstTokenMs = &ms
+		}
+	}
+	fmt.Fprint(c.Writer, "data: [DONE]\n\n") //nolint:errcheck
+	flusher.Flush()
+	return firstTokenMs, nil
+}
+
+func extractChatCompletionsImageBridgeStreamContents(chatResp *apicompat.ChatCompletionsResponse) []string {
+	if chatResp == nil || len(chatResp.Choices) == 0 {
+		return nil
+	}
+	raw := chatResp.Choices[0].Message.Content
+	if len(raw) == 0 || !gjson.ValidBytes(raw) {
+		return nil
+	}
+	content := gjson.ParseBytes(raw)
+	if content.Type == gjson.String {
+		if trimmed := strings.TrimSpace(content.String()); trimmed != "" {
+			return []string{trimmed}
+		}
+		return nil
+	}
+	if !content.IsArray() {
+		return nil
+	}
+	var parts []string
+	for _, item := range content.Array() {
+		if strings.TrimSpace(item.Get("type").String()) != "image_url" {
+			continue
+		}
+		imageURL := strings.TrimSpace(item.Get("image_url.url").String())
+		if imageURL == "" {
+			imageURL = strings.TrimSpace(item.Get("image_url").String())
+		}
+		if imageURL != "" {
+			parts = append(parts, imageURL)
+		}
+	}
+	return parts
 }
 
 func normalizeResponsesRequestServiceTier(req *apicompat.ResponsesRequest) {

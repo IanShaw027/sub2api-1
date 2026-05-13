@@ -757,6 +757,7 @@ func TestNormalizeOpenAIResponsesImageOnlyModel_BuildsImageToolRequest(t *testin
 		"prompt":        "draw a cat",
 		"size":          "1024x1024",
 		"output_format": "png",
+		"style":         "vivid",
 	}
 
 	modified := normalizeOpenAIResponsesImageOnlyModel(reqBody)
@@ -777,6 +778,10 @@ func TestNormalizeOpenAIResponsesImageOnlyModel_BuildsImageToolRequest(t *testin
 	require.Equal(t, "gpt-image-2", tool["model"])
 	require.Equal(t, "1024x1024", tool["size"])
 	require.Equal(t, "png", tool["output_format"])
+	_, hasStyle := tool["style"]
+	require.False(t, hasStyle)
+	_, hasTopLevelStyle := reqBody["style"]
+	require.False(t, hasTopLevelStyle)
 
 	choice, ok := reqBody["tool_choice"].(map[string]any)
 	require.True(t, ok)

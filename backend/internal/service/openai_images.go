@@ -612,9 +612,22 @@ func applyOpenAIImagesDefaults(req *OpenAIImagesRequest) {
 	}
 	if strings.TrimSpace(req.Model) != "" {
 		req.Model = strings.TrimSpace(req.Model)
+		normalizeOpenAIImagesRequestForModel(req)
 		return
 	}
 	req.Model = "gpt-image-2"
+	normalizeOpenAIImagesRequestForModel(req)
+}
+
+func normalizeOpenAIImagesRequestForModel(req *OpenAIImagesRequest) {
+	if req == nil {
+		return
+	}
+	model := strings.ToLower(strings.TrimSpace(req.Model))
+	background := strings.ToLower(strings.TrimSpace(req.Background))
+	if model == "gpt-image-2" && background == "transparent" {
+		req.Background = ""
+	}
 }
 
 func isOpenAIImageGenerationModel(model string) bool {
@@ -947,7 +960,11 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 		parsed.Endpoint,
 		account.Type,
 	)
-	forwardBody, forwardContentType, err := rewriteOpenAIImagesModel(body, parsed.ContentType, upstreamModel)
+	forwardBody, forwardContentType, err := normalizeOpenAIImagesForwardBody(body, parsed.ContentType, parsed)
+	if err != nil {
+		return nil, err
+	}
+	forwardBody, forwardContentType, err = rewriteOpenAIImagesModel(forwardBody, forwardContentType, upstreamModel)
 	if err != nil {
 		return nil, err
 	}
@@ -1146,6 +1163,25 @@ func rewriteOpenAIImagesModel(body []byte, contentType string, model string) ([]
 	return rewritten, contentType, nil
 }
 
+func normalizeOpenAIImagesForwardBody(body []byte, contentType string, parsed *OpenAIImagesRequest) ([]byte, string, error) {
+	if parsed == nil {
+		return body, contentType, nil
+	}
+	if strings.ToLower(strings.TrimSpace(parsed.Model)) != "gpt-image-2" || strings.TrimSpace(parsed.Background) != "" {
+		return body, contentType, nil
+	}
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err == nil && strings.EqualFold(mediaType, "multipart/form-data") {
+		rewrittenBody, rewrittenType, rewriteErr := rewriteOpenAIImagesMultipartWithoutField(body, contentType, "background")
+		return rewrittenBody, rewrittenType, rewriteErr
+	}
+	rewritten, err := sjson.DeleteBytes(body, "background")
+	if err != nil {
+		return nil, "", fmt.Errorf("rewrite image request background: %w", err)
+	}
+	return rewritten, contentType, nil
+}
+
 func rewriteOpenAIImagesMultipartModel(body []byte, contentType string, model string) ([]byte, string, error) {
 	_, params, err := mime.ParseMediaType(contentType)
 	if err != nil {
@@ -1199,6 +1235,55 @@ func rewriteOpenAIImagesMultipartModel(body []byte, contentType string, model st
 			return nil, "", fmt.Errorf("append multipart model field: %w", err)
 		}
 	}
+	if err := writer.Close(); err != nil {
+		return nil, "", fmt.Errorf("finalize multipart body: %w", err)
+	}
+	return buffer.Bytes(), writer.FormDataContentType(), nil
+}
+
+func rewriteOpenAIImagesMultipartWithoutField(body []byte, contentType string, fieldName string) ([]byte, string, error) {
+	_, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return nil, "", fmt.Errorf("parse multipart content-type: %w", err)
+	}
+	boundary := strings.TrimSpace(params["boundary"])
+	if boundary == "" {
+		return nil, "", fmt.Errorf("multipart boundary is required")
+	}
+
+	reader := multipart.NewReader(bytes.NewReader(body), boundary)
+	var buffer bytes.Buffer
+	writer := multipart.NewWriter(&buffer)
+	skipField := strings.TrimSpace(fieldName)
+
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, "", fmt.Errorf("read multipart body: %w", err)
+		}
+
+		formName := strings.TrimSpace(part.FormName())
+		if part.FileName() == "" && formName == skipField {
+			_ = part.Close()
+			continue
+		}
+
+		partHeader := cloneMultipartHeader(part.Header)
+		target, err := writer.CreatePart(partHeader)
+		if err != nil {
+			_ = part.Close()
+			return nil, "", fmt.Errorf("create multipart part: %w", err)
+		}
+		if _, err := io.Copy(target, part); err != nil {
+			_ = part.Close()
+			return nil, "", fmt.Errorf("copy multipart part: %w", err)
+		}
+		_ = part.Close()
+	}
+
 	if err := writer.Close(); err != nil {
 		return nil, "", fmt.Errorf("finalize multipart body: %w", err)
 	}

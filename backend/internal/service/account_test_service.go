@@ -31,6 +31,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/tidwall/gjson"
 )
 
 // sseDataPrefix matches SSE data lines with optional whitespace after colon.
@@ -1151,6 +1152,10 @@ func collectOpenAIImageTestResults(body []byte) ([]openAIImageTestResult, error)
 	for _, line := range strings.Split(string(body), "\n") {
 		data, ok := extractOpenAISSEDataLine(strings.TrimRight(line, "\r"))
 		if !ok || data == "" || data == "[DONE]" {
+			continue
+		}
+		eventType := strings.TrimSpace(gjson.Get(data, "type").String())
+		if strings.HasSuffix(eventType, ".partial_image") {
 			continue
 		}
 		var item openAIImageTestResult

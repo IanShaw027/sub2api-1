@@ -175,6 +175,198 @@ func TestForwardAsChatCompletions_APIKey_IncludesPromptCacheKeyInUpstreamBody(t 
 	require.Equal(t, "session-apikey", gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
 }
 
+func TestForwardAsChatCompletions_BridgesImageOnlyModelToImagesAPI(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"gpt-image-2","messages":[{"role":"user","content":"draw a cat"}],"stream":false}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid-image-chat"}},
+		Body:       io.NopCloser(strings.NewReader(`{"created":1710000010,"usage":{"input_tokens":7,"output_tokens":11,"input_tokens_details":{"cached_tokens":2}},"data":[{"b64_json":"aGVsbG8="}]}`)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{
+			Security: config.SecurityConfig{
+				URLAllowlist: config.URLAllowlistConfig{
+					Enabled:           false,
+					AllowInsecureHTTP: true,
+				},
+			},
+		},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:       1,
+		Name:     "openai-apikey",
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "sk-test",
+		},
+	}
+
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "gpt-image-2", "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "/v1/images/generations", upstream.lastReq.URL.Path)
+	require.Equal(t, "draw a cat", gjson.GetBytes(upstream.lastBody, "prompt").String())
+	require.Equal(t, "gpt-image-2", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, "image_url", gjson.Get(rec.Body.String(), "choices.0.message.content.0.type").String())
+	require.Equal(t, "data:image/png;base64,aGVsbG8=", gjson.Get(rec.Body.String(), "choices.0.message.content.0.image_url.url").String())
+	require.Equal(t, int64(7), gjson.Get(rec.Body.String(), "usage.prompt_tokens").Int())
+	require.Equal(t, int64(11), gjson.Get(rec.Body.String(), "usage.completion_tokens").Int())
+	require.Equal(t, int64(2), gjson.Get(rec.Body.String(), "usage.prompt_tokens_details.cached_tokens").Int())
+}
+
+func TestForwardAsChatCompletions_BridgesImageOnlyModelEditsToImagesAPI(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"gpt-image-2","messages":[{"role":"user","content":[{"type":"text","text":"replace background"},{"type":"image_url","image_url":{"url":"https://example.com/source.png"}}]}],"stream":false,"background":"transparent"}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid-image-edit-chat"}},
+		Body:       io.NopCloser(strings.NewReader(`{"created":1710000011,"data":[{"b64_json":"ZWRpdGVk"}]}`)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{
+			Security: config.SecurityConfig{
+				URLAllowlist: config.URLAllowlistConfig{
+					Enabled:           false,
+					AllowInsecureHTTP: true,
+				},
+			},
+		},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:       1,
+		Name:     "openai-apikey",
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "sk-test",
+		},
+	}
+
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "gpt-image-2", "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "/v1/images/edits", upstream.lastReq.URL.Path)
+	require.Equal(t, "replace background", gjson.GetBytes(upstream.lastBody, "prompt").String())
+	require.Equal(t, "https://example.com/source.png", gjson.GetBytes(upstream.lastBody, "images.0.image_url").String())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "background").Exists())
+	require.Equal(t, "data:image/png;base64,ZWRpdGVk", gjson.Get(rec.Body.String(), "choices.0.message.content.0.image_url.url").String())
+}
+
+func TestForwardAsChatCompletions_StreamsImageOnlyModelAsSyntheticChatSSE(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"gpt-image-2","messages":[{"role":"user","content":"draw a cat"}],"stream":true,"stream_options":{"include_usage":true}}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid-image-stream-chat"}},
+		Body:       io.NopCloser(strings.NewReader(`{"created":1710000012,"usage":{"input_tokens":9,"output_tokens":13,"input_tokens_details":{"cached_tokens":4}},"data":[{"b64_json":"c3RyZWFtZWQ="}]}`)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{
+			Security: config.SecurityConfig{
+				URLAllowlist: config.URLAllowlistConfig{
+					Enabled:           false,
+					AllowInsecureHTTP: true,
+				},
+			},
+		},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:       1,
+		Name:     "openai-apikey",
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "sk-test",
+		},
+	}
+
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "gpt-image-2", "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "text/event-stream", rec.Header().Get("Content-Type"))
+	require.Equal(t, "/v1/images/generations", upstream.lastReq.URL.Path)
+	bodyText := rec.Body.String()
+	require.Contains(t, bodyText, `"role":"assistant"`)
+	require.Contains(t, bodyText, `"content":"data:image/png;base64,c3RyZWFtZWQ="`)
+	require.Contains(t, bodyText, `"prompt_tokens":9`)
+	require.Contains(t, bodyText, `"completion_tokens":13`)
+	require.Contains(t, bodyText, `"cached_tokens":4`)
+	require.Contains(t, bodyText, "data: [DONE]")
+}
+
+func TestForwardAsChatCompletions_StreamsMultipleImagesAsSeparateContentChunks(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"gpt-image-2","messages":[{"role":"user","content":"draw two cats"}],"stream":true}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid-image-multi-stream-chat"}},
+		Body:       io.NopCloser(strings.NewReader(`{"created":1710000013,"data":[{"b64_json":"Zmlyc3Q="},{"b64_json":"c2Vjb25k"}]}`)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{
+			Security: config.SecurityConfig{
+				URLAllowlist: config.URLAllowlistConfig{
+					Enabled:           false,
+					AllowInsecureHTTP: true,
+				},
+			},
+		},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:       1,
+		Name:     "openai-apikey",
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "sk-test",
+		},
+	}
+
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "gpt-image-2", "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	bodyText := rec.Body.String()
+	require.Contains(t, bodyText, `"content":"data:image/png;base64,Zmlyc3Q="`)
+	require.Contains(t, bodyText, `"content":"\ndata:image/png;base64,c2Vjb25k"`)
+}
+
 func TestForwardAsChatCompletions_APIKey_ReplacesNonStringPromptCacheKeyInUpstreamBody(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)

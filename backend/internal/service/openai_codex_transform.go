@@ -997,7 +997,6 @@ func normalizeOpenAIResponsesImageOnlyModel(reqBody map[string]any) bool {
 			"output_format",
 			"output_compression",
 			"moderation",
-			"style",
 			"partial_images",
 		} {
 			if value, exists := reqBody[key]; exists && value != nil {
@@ -1008,6 +1007,10 @@ func normalizeOpenAIResponsesImageOnlyModel(reqBody map[string]any) bool {
 				modified = true
 			}
 		}
+	}
+	if _, exists := reqBody["style"]; exists {
+		delete(reqBody, "style")
+		modified = true
 	}
 
 	if prompt := strings.TrimSpace(firstNonEmptyString(reqBody["prompt"])); prompt != "" {

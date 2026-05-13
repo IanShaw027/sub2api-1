@@ -215,6 +215,22 @@ func TestAccountTestService_OpenAIImageOAuthPromotesOfficialCodexUserAgentOrigin
 	require.Equal(t, "codex_cli_rs/0.200.0", upstream.lastReq.Header.Get("User-Agent"))
 }
 
+func TestCollectOpenAIImageTestResults_IgnoresPartialImages(t *testing.T) {
+	body := []byte(
+		"event: image_generation.partial_image\n" +
+			"data: {\"type\":\"image_generation.partial_image\",\"b64_json\":\"cGFydGlhbA==\",\"output_format\":\"png\"}\n\n" +
+			"event: image_generation.completed\n" +
+			"data: {\"type\":\"image_generation.completed\",\"b64_json\":\"ZmluYWw=\",\"output_format\":\"png\"}\n\n" +
+			"data: [DONE]\n\n",
+	)
+
+	results, err := collectOpenAIImageTestResults(body)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, "ZmluYWw=", results[0].B64JSON)
+	require.Equal(t, "png", results[0].OutputFormat)
+}
+
 func TestAccountTestService_OpenAIImageAPIKeyUsesConfiguredV1BaseURL(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
