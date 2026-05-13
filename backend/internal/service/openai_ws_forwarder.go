@@ -2689,6 +2689,16 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 			normalized = next
 		}
+		var normalizedReqBody map[string]any
+		if err := json.Unmarshal(normalized, &normalizedReqBody); err == nil {
+			if normalizeOpenAIResponsesInputToolRoles(normalizedReqBody) {
+				rebuilt, marshalErr := marshalOpenAIResponsesRequestBodyOrdered(normalizedReqBody)
+				if marshalErr != nil {
+					return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", marshalErr)
+				}
+				normalized = rebuilt
+			}
+		}
 		imageIntent := IsImageGenerationIntent(openAIResponsesEndpoint, originalModel, normalized)
 		if imageIntent && !GroupAllowsImageGeneration(apiKeyGroup(getAPIKeyFromContext(c))) {
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, ImageGenerationPermissionMessage(), nil)

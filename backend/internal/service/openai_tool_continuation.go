@@ -44,6 +44,10 @@ func HasToolContinuationOutputInRawPayload(payload []byte) bool {
 		if isToolContinuationOutputItemType(item.Get("type").String()) {
 			return true
 		}
+		if strings.TrimSpace(item.Get("role").String()) == "tool" &&
+			strings.TrimSpace(firstNonEmptyString(item.Get("call_id").String(), item.Get("tool_call_id").String(), item.Get("id").String())) != "" {
+			return true
+		}
 	}
 	return false
 }
