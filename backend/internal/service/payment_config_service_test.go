@@ -570,6 +570,35 @@ func TestUpdatePaymentConfig_PersistsVisibleMethodRouting(t *testing.T) {
 	}
 }
 
+func TestUpdatePaymentConfig_PreservesEnabledTypesWhenOmitted(t *testing.T) {
+	repo := &paymentConfigSettingRepoStub{values: map[string]string{
+		SettingEnabledPaymentTypes: "alipay,wxpay",
+	}}
+	svc := &PaymentConfigService{settingRepo: repo}
+
+	enabled := true
+	err := svc.UpdatePaymentConfig(context.Background(), UpdatePaymentConfigRequest{
+		Enabled: &enabled,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "alipay,wxpay", repo.values[SettingEnabledPaymentTypes])
+	require.NotContains(t, repo.updates, SettingEnabledPaymentTypes)
+}
+
+func TestUpdatePaymentConfig_ClearsEnabledTypesWhenExplicitlyEmpty(t *testing.T) {
+	repo := &paymentConfigSettingRepoStub{values: map[string]string{
+		SettingEnabledPaymentTypes: "alipay,wxpay",
+	}}
+	svc := &PaymentConfigService{settingRepo: repo}
+
+	err := svc.UpdatePaymentConfig(context.Background(), UpdatePaymentConfigRequest{
+		EnabledTypes: []string{},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "", repo.values[SettingEnabledPaymentTypes])
+	require.Contains(t, repo.updates, SettingEnabledPaymentTypes)
+}
+
 func paymentConfigStrPtr(value string) *string {
 	return &value
 }
