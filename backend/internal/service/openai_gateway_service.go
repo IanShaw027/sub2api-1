@@ -1972,7 +1972,12 @@ func openAICompactSupportTier(account *Account) int {
 }
 
 func allowRateLimitedOpenAIImageRouteScheduling(route string) bool {
-	return NormalizeGroupImageGenerationRoute(route) == GroupImageGenerationRouteWeb2API
+	switch NormalizeGroupImageGenerationRoute(route) {
+	case GroupImageGenerationRouteCodex, GroupImageGenerationRouteWeb2API:
+		return true
+	default:
+		return false
+	}
 }
 
 func openAIImageRouteSchedulingResetAt(account *Account, route string) *time.Time {

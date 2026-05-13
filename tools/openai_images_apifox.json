@@ -1,0 +1,890 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Sub2API - OpenAI Images 接口",
+    "description": "Sub2API 项目的 OpenAI 兼容图片生成/编辑接口，包含标准 /v1/images 和扩展 /v1/images2api 两组。\n\n## 认证方式\nBearer Token，通过 `Authorization: Bearer <api_key>` 传递。\n\n## 尺寸约束\n- 官方文档显式列出：`auto`, `1024x1024`, `1536x1024`, `1024x1536`\n- 网关额外兼容：`1792x1024`, `1024x1792`, `2048x2048`, `2048x1152`, `1152x2048`, `3840x2160`, `2160x3840`\n- 通用约束：最大边长 ≤ 3840，宽高均为 16 的倍数，长宽比 ≤ 3:1，总像素 655,360 ~ 8,294,400\n\n## 文件上传\n单文件上限 50MB\n\n## output_compression 注意\noutput_compression 仅在 output_format 为 jpeg 或 webp 时有效，与 png 搭配会报错",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "{{base_url}}",
+      "description": "Sub2API 服务地址（从环境变量 SUB2API_BASE_URL 获取）"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Images - 标准接口",
+      "description": "OpenAI 兼容的标准图片生成/编辑接口"
+    },
+    {
+      "name": "Images2API - 扩展接口",
+      "description": "扩展接口，支持连续对话、inpainting 引用等高级功能"
+    }
+  ],
+  "paths": {
+    "/v1/images/generations": {
+      "post": {
+        "operationId": "imagesGenerations",
+        "summary": "图片生成",
+        "description": "根据文本提示词生成图片。对应 OpenAI 标准 Images Generations 接口。\n\n请求体为 JSON，返回 base64 编码的图片数据。",
+        "tags": ["Images - 标准接口"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImagesGenerationsRequest"
+              },
+              "examples": {
+                "示例1": {
+                  "summary": "示例 1: 基础生图（全参数）",
+                  "description": "对应 Python 脚本示例 1: call_images_generations，展示所有可选参数",
+                  "value": {
+                    "model": "gpt-image-2",
+                    "prompt": "生成一张雨夜霓虹街景海报，电影感，中文招牌，反射丰富",
+                    "n": 1,
+                    "size": "1024x1024",
+                    "response_format": "b64_json",
+                    "stream": true,
+                    "quality": "high",
+                    "background": "opaque",
+                    "output_format": "webp",
+                    "moderation": "auto",
+                    "style": "vivid",
+                    "output_compression": 90,
+                    "partial_images": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "生成成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImagesResponse"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "SSE 流式响应，每个 data 事件包含一个图片 JSON 对象"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败"
+          }
+        }
+      }
+    },
+    "/v1/images/edits": {
+      "post": {
+        "operationId": "imagesEdits",
+        "summary": "图片编辑",
+        "description": "对已有图片进行编辑/修改。对应 OpenAI 标准 Images Edits 接口。\n\n支持两种输入方式：\n1. **multipart/form-data** — 上传本地文件（image + 可选 mask），见示例 2\n2. **application/json** — 通过 URL 引用远程图片（images[].image_url + 可选 mask.image_url），见示例 3",
+        "tags": ["Images - 标准接口"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/ImagesEditsMultipartRequest"
+              },
+              "examples": {
+                "示例2": {
+                  "summary": "示例 2: 本地文件 multipart（透明背景）",
+                  "description": "对应 Python 脚本示例 2: call_images_edits + image_paths + mask_path，gpt-image-1.5 + transparent 背景",
+                  "value": {
+                    "model": "gpt-image-1.5",
+                    "prompt": "把人物后面的背景替换成蓝色极光，保留人物主体和光影方向",
+                    "n": "1",
+                    "size": "1024x1024",
+                    "response_format": "b64_json",
+                    "stream": "true",
+                    "quality": "high",
+                    "background": "transparent",
+                    "output_format": "webp",
+                    "moderation": "auto",
+                    "style": "natural",
+                    "output_compression": "90",
+                    "partial_images": "0"
+                  }
+                }
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImagesEditsJsonRequest"
+              },
+              "examples": {
+                "示例3": {
+                  "summary": "示例 3: JSON image_url（远程引用 + 遮罩）",
+                  "description": "对应 Python 脚本示例 3: call_images_edits + image_urls + mask_image_url，gpt-image-2",
+                  "value": {
+                    "model": "gpt-image-2",
+                    "prompt": "把背景改成赛博朋克城市，主体不变",
+                    "images": [
+                      {"image_url": "https://example.com/source.png"}
+                    ],
+                    "mask": {
+                      "image_url": "https://example.com/mask.png"
+                    },
+                    "n": 1,
+                    "size": "1024x1024",
+                    "response_format": "b64_json",
+                    "stream": true,
+                    "quality": "high",
+                    "background": "opaque",
+                    "output_format": "webp",
+                    "moderation": "auto",
+                    "style": "vivid",
+                    "output_compression": 90,
+                    "partial_images": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "编辑成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImagesResponse"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "SSE 流式响应"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败"
+          }
+        }
+      }
+    },
+    "/v1/images2api/generations": {
+      "post": {
+        "operationId": "images2apiGenerations",
+        "summary": "图片生成（扩展 - 支持连续对话）",
+        "description": "扩展版图片生成接口，在标准接口基础上增加了 `conversation_id` 和 `parent_message_id` 字段，支持连续对话场景。\n\n请求体为 JSON。",
+        "tags": ["Images2API - 扩展接口"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Images2apiGenerationsRequest"
+              },
+              "examples": {
+                "示例4": {
+                  "summary": "示例 4: 新建对话生图（全参数）",
+                  "description": "对应 Python 脚本示例 4: call_images2api_generations，无 conversation_id，全参数",
+                  "value": {
+                    "model": "gpt-image-2",
+                    "prompt": "生成一张极简科技产品 KV，白底，柔光，商业摄影风格",
+                    "n": 1,
+                    "size": "1024x1024",
+                    "response_format": "b64_json",
+                    "stream": true,
+                    "quality": "high",
+                    "background": "opaque",
+                    "output_format": "webp",
+                    "moderation": "auto",
+                    "style": "natural",
+                    "output_compression": 90,
+                    "partial_images": 0
+                  }
+                },
+                "示例4_1": {
+                  "summary": "示例 4.1: 连续对话生图（精简参数）",
+                  "description": "对应 Python 脚本示例 4.1: call_images2api_generations，带 conversation_id + parent_message_id，只传必要参数",
+                  "value": {
+                    "model": "gpt-image-1.5",
+                    "prompt": "继续上一轮风格，换成更克制的配色",
+                    "conversation_id": "69fdf36f-3d48-83ea-8c7a-265960703d04",
+                    "parent_message_id": "c512d6a3-85b0-4c75-ae18-b76f52a88067",
+                    "n": 1,
+                    "size": "1024x1024",
+                    "response_format": "b64_json"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "生成成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImagesResponse"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "SSE 流式响应"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败"
+          }
+        }
+      }
+    },
+    "/v1/images2api/edits": {
+      "post": {
+        "operationId": "images2apiEdits",
+        "summary": "图片编辑（扩展 - 支持连续对话 + Inpainting 引用）",
+        "description": "扩展版图片编辑接口，在标准 edits 基础上增加了：\n- `conversation_id` / `parent_message_id` — 连续对话\n- `original_file_id` / `original_gen_id` / `mask_file_id` — Inpainting 引用\n\n支持两种输入方式：\n1. **multipart/form-data** — 上传本地文件，见示例 5\n2. **application/json** — 通过 URL 引用远程图片，见示例 6",
+        "tags": ["Images2API - 扩展接口"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Images2apiEditsMultipartRequest"
+              },
+              "examples": {
+                "示例5": {
+                  "summary": "示例 5: 本地文件 multipart + 连续对话 + Inpainting",
+                  "description": "对应 Python 脚本示例 5: call_images2api_edits + image_paths + mask_path，带 conversation_id/parent_message_id 和 original_file_id/original_gen_id/mask_file_id",
+                  "value": {
+                    "model": "gpt-image-2",
+                    "prompt": "把背景换成黄昏海边，保留主体构图",
+                    "conversation_id": "69fdf36f-3d48-83ea-8c7a-265960703d04",
+                    "parent_message_id": "c512d6a3-85b0-4c75-ae18-b76f52a88067",
+                    "original_file_id": "file_123",
+                    "original_gen_id": "gen_456",
+                    "mask_file_id": "mask_789",
+                    "n": "1",
+                    "size": "1024x1024",
+                    "response_format": "b64_json",
+                    "stream": "true",
+                    "quality": "high",
+                    "background": "transparent",
+                    "output_format": "webp",
+                    "moderation": "auto",
+                    "style": "natural",
+                    "output_compression": "90",
+                    "partial_images": "0"
+                  }
+                }
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Images2apiEditsJsonRequest"
+              },
+              "examples": {
+                "示例6": {
+                  "summary": "示例 6: JSON image_url + 连续对话 + Inpainting",
+                  "description": "对应 Python 脚本示例 6: call_images2api_edits + image_urls + mask_image_url，带 conversation_id/parent_message_id 和 original_file_id/original_gen_id/mask_file_id",
+                  "value": {
+                    "model": "gpt-image-2",
+                    "prompt": "把图片改成复古杂志封面风格",
+                    "conversation_id": "69fdf36f-3d48-83ea-8c7a-265960703d04",
+                    "parent_message_id": "c512d6a3-85b0-4c75-ae18-b76f52a88067",
+                    "original_file_id": "file_123",
+                    "original_gen_id": "gen_456",
+                    "mask_file_id": "mask_789",
+                    "images": [
+                      {"image_url": "https://example.com/source.png"}
+                    ],
+                    "mask": {
+                      "image_url": "https://example.com/mask.png"
+                    },
+                    "n": 1,
+                    "size": "1024x1024",
+                    "response_format": "b64_json",
+                    "stream": true,
+                    "quality": "high",
+                    "background": "opaque",
+                    "output_format": "webp",
+                    "moderation": "auto",
+                    "style": "vivid",
+                    "output_compression": 90,
+                    "partial_images": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "编辑成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImagesResponse"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "SSE 流式响应"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API Key，通过环境变量 SUB2API_API_KEY 配置"
+      }
+    },
+    "schemas": {
+      "CommonImageFields": {
+        "type": "object",
+        "description": "所有图片接口共享的通用字段",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "图片模型名称，当前应传 gpt-image-* 系列",
+            "example": "gpt-image-2",
+            "enum": ["gpt-image-1", "gpt-image-1-mini", "gpt-image-1.5", "gpt-image-2"]
+          },
+          "prompt": {
+            "type": "string",
+            "description": "生图/改图提示词",
+            "example": "生成一张雨夜霓虹街景海报，电影感，中文招牌，反射丰富"
+          },
+          "n": {
+            "type": "integer",
+            "description": "生成张数",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 1,
+            "example": 1
+          },
+          "size": {
+            "type": "string",
+            "description": "输出尺寸。官方显式值: auto, 1024x1024, 1536x1024, 1024x1536。网关额外兼容: 1792x1024, 1024x1792, 2048x2048 等（需满足约束: 边长≤3840, 16倍数, 比例≤3:1, 像素655360~8294400）",
+            "example": "1024x1024",
+            "enum": ["auto", "1024x1024", "1536x1024", "1024x1536", "1792x1024", "1024x1792", "2048x2048", "2048x1152", "1152x2048", "3840x2160", "2160x3840"]
+          },
+          "response_format": {
+            "type": "string",
+            "description": "响应格式。当前官方/仓库行为都以 b64_json 为主，url 不再作为当前 gpt-image 模型的合法请求参数",
+            "enum": ["b64_json"],
+            "default": "b64_json",
+            "example": "b64_json"
+          },
+          "stream": {
+            "type": "boolean",
+            "description": "是否启用流式输出。当前上游强制要求 stream=true",
+            "default": true,
+            "example": true
+          },
+          "quality": {
+            "type": "string",
+            "description": "图片质量",
+            "enum": ["low", "medium", "high", "auto"],
+            "example": "high"
+          },
+          "background": {
+            "type": "string",
+            "description": "背景类型。transparent 仅支持 gpt-image-1/1-mini/1.5 模型，且要求 output_format 为 png 或 webp",
+            "enum": ["opaque", "transparent", "auto"],
+            "example": "opaque"
+          },
+          "output_format": {
+            "type": "string",
+            "description": "输出图片格式。注意: 若需搭配 output_compression 使用，必须选 jpeg 或 webp",
+            "enum": ["png", "jpeg", "webp"],
+            "example": "png"
+          },
+          "moderation": {
+            "type": "string",
+            "description": "内容审核级别",
+            "enum": ["auto", "low"],
+            "example": "auto"
+          },
+          "input_fidelity": {
+            "type": "string",
+            "description": "输入保真度。注意：gpt-image-2 不支持此字段",
+            "enum": ["low", "high"],
+            "example": "high"
+          },
+          "style": {
+            "type": "string",
+            "description": "生成风格",
+            "enum": ["vivid", "natural"],
+            "example": "vivid"
+          },
+          "output_compression": {
+            "type": "integer",
+            "description": "输出压缩率（0-100），仅当 output_format 为 jpeg 或 webp 时有效。与 png 搭配会报错",
+            "minimum": 0,
+            "maximum": 100,
+            "example": 90
+          },
+          "partial_images": {
+            "type": "integer",
+            "description": "部分图片数量（0-3）",
+            "minimum": 0,
+            "maximum": 3,
+            "example": 0
+          }
+        },
+        "required": ["model", "prompt"]
+      },
+      "ImagesGenerationsRequest": {
+        "allOf": [
+          {"$ref": "#/components/schemas/CommonImageFields"}
+        ],
+        "description": "/v1/images/generations 请求体"
+      },
+      "ImagesEditsMultipartRequest": {
+        "type": "object",
+        "description": "/v1/images/edits multipart 请求体（本地文件上传）。对应示例 2",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "图片模型名称",
+            "example": "gpt-image-1.5"
+          },
+          "prompt": {
+            "type": "string",
+            "description": "编辑提示词",
+            "example": "把人物后面的背景替换成蓝色极光，保留人物主体和光影方向"
+          },
+          "image": {
+            "type": "string",
+            "format": "binary",
+            "description": "源图片文件（支持多个，单文件上限 50MB）"
+          },
+          "mask": {
+            "type": "string",
+            "format": "binary",
+            "description": "遮罩文件（可选，单文件上限 50MB）"
+          },
+          "n": {
+            "type": "string",
+            "description": "生成张数（multipart 中为字符串）",
+            "example": "1"
+          },
+          "size": {
+            "type": "string",
+            "description": "输出尺寸",
+            "example": "1024x1024"
+          },
+          "response_format": {
+            "type": "string",
+            "description": "响应格式",
+            "example": "b64_json"
+          },
+          "stream": {
+            "type": "string",
+            "description": "是否流式（multipart 中为字符串 true/false）",
+            "example": "true"
+          },
+          "quality": {
+            "type": "string",
+            "description": "图片质量",
+            "enum": ["low", "medium", "high", "auto"],
+            "example": "high"
+          },
+          "background": {
+            "type": "string",
+            "description": "背景类型",
+            "enum": ["opaque", "transparent", "auto"],
+            "example": "transparent"
+          },
+          "output_format": {
+            "type": "string",
+            "description": "输出图片格式",
+            "enum": ["png", "jpeg", "webp"],
+            "example": "webp"
+          },
+          "moderation": {
+            "type": "string",
+            "description": "内容审核级别",
+            "enum": ["auto", "low"],
+            "example": "auto"
+          },
+          "input_fidelity": {
+            "type": "string",
+            "description": "输入保真度（gpt-image-2 不支持）",
+            "enum": ["low", "high"],
+            "example": "high"
+          },
+          "style": {
+            "type": "string",
+            "description": "生成风格",
+            "enum": ["vivid", "natural"],
+            "example": "natural"
+          },
+          "output_compression": {
+            "type": "string",
+            "description": "输出压缩率（仅 jpeg/webp 有效）",
+            "example": "90"
+          },
+          "partial_images": {
+            "type": "string",
+            "description": "部分图片数量",
+            "example": "0"
+          }
+        },
+        "required": ["model", "prompt", "image"]
+      },
+      "ImagesEditsJsonRequest": {
+        "allOf": [
+          {"$ref": "#/components/schemas/CommonImageFields"},
+          {
+            "type": "object",
+            "properties": {
+              "images": {
+                "type": "array",
+                "description": "远程图片引用列表",
+                "items": {
+                  "$ref": "#/components/schemas/ImageReference"
+                },
+                "example": [{"image_url": "https://example.com/source.png"}]
+              },
+              "mask": {
+                "$ref": "#/components/schemas/ImageReference",
+                "description": "遮罩图片引用（可选）"
+              }
+            }
+          }
+        ],
+        "description": "/v1/images/edits JSON 请求体（远程 URL 引用）。对应示例 3"
+      },
+      "Images2apiGenerationsRequest": {
+        "allOf": [
+          {"$ref": "#/components/schemas/CommonImageFields"},
+          {
+            "type": "object",
+            "properties": {
+              "conversation_id": {
+                "type": "string",
+                "description": "会话 ID，用于连续对话场景。传入后表示继续已有 ChatGPT Web 会话",
+                "example": "69fdf36f-3d48-83ea-8c7a-265960703d04"
+              },
+              "parent_message_id": {
+                "type": "string",
+                "description": "父消息 ID，用于显式指定连续对话挂载到哪条父消息。也可只给 conversation_id 由后端自动补 parent",
+                "example": "c512d6a3-85b0-4c75-ae18-b76f52a88067"
+              }
+            }
+          }
+        ],
+        "description": "/v1/images2api/generations 请求体。对应示例 4 / 4.1"
+      },
+      "Images2apiEditsMultipartRequest": {
+        "type": "object",
+        "description": "/v1/images2api/edits multipart 请求体（本地文件上传 + 连续对话 + Inpainting）。对应示例 5",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "图片模型名称",
+            "example": "gpt-image-2"
+          },
+          "prompt": {
+            "type": "string",
+            "description": "编辑提示词",
+            "example": "把背景换成黄昏海边，保留主体构图"
+          },
+          "image": {
+            "type": "string",
+            "format": "binary",
+            "description": "源图片文件（支持多个，单文件上限 50MB）"
+          },
+          "mask": {
+            "type": "string",
+            "format": "binary",
+            "description": "遮罩文件（可选）"
+          },
+          "conversation_id": {
+            "type": "string",
+            "description": "会话 ID（连续对话）",
+            "example": "69fdf36f-3d48-83ea-8c7a-265960703d04"
+          },
+          "parent_message_id": {
+            "type": "string",
+            "description": "父消息 ID（连续对话）",
+            "example": "c512d6a3-85b0-4c75-ae18-b76f52a88067"
+          },
+          "original_file_id": {
+            "type": "string",
+            "description": "原始文件 ID（Inpainting 引用）",
+            "example": "file_123"
+          },
+          "original_gen_id": {
+            "type": "string",
+            "description": "原始生成 ID（Inpainting 引用）",
+            "example": "gen_456"
+          },
+          "mask_file_id": {
+            "type": "string",
+            "description": "遮罩文件 ID（Inpainting 引用）",
+            "example": "mask_789"
+          },
+          "n": {
+            "type": "string",
+            "description": "生成张数",
+            "example": "1"
+          },
+          "size": {
+            "type": "string",
+            "description": "输出尺寸",
+            "example": "1024x1024"
+          },
+          "response_format": {
+            "type": "string",
+            "description": "响应格式",
+            "example": "b64_json"
+          },
+          "stream": {
+            "type": "string",
+            "description": "是否流式",
+            "example": "true"
+          },
+          "quality": {
+            "type": "string",
+            "description": "图片质量",
+            "enum": ["low", "medium", "high", "auto"],
+            "example": "high"
+          },
+          "background": {
+            "type": "string",
+            "description": "背景类型",
+            "enum": ["opaque", "transparent", "auto"],
+            "example": "transparent"
+          },
+          "output_format": {
+            "type": "string",
+            "description": "输出图片格式",
+            "enum": ["png", "jpeg", "webp"],
+            "example": "webp"
+          },
+          "moderation": {
+            "type": "string",
+            "description": "内容审核级别",
+            "enum": ["auto", "low"],
+            "example": "auto"
+          },
+          "style": {
+            "type": "string",
+            "description": "生成风格",
+            "enum": ["vivid", "natural"],
+            "example": "natural"
+          },
+          "output_compression": {
+            "type": "string",
+            "description": "输出压缩率（仅 jpeg/webp 有效）",
+            "example": "90"
+          },
+          "partial_images": {
+            "type": "string",
+            "description": "部分图片数量",
+            "example": "0"
+          }
+        },
+        "required": ["model", "prompt", "image"]
+      },
+      "Images2apiEditsJsonRequest": {
+        "allOf": [
+          {"$ref": "#/components/schemas/CommonImageFields"},
+          {
+            "type": "object",
+            "properties": {
+              "conversation_id": {
+                "type": "string",
+                "description": "会话 ID（连续对话）",
+                "example": "69fdf36f-3d48-83ea-8c7a-265960703d04"
+              },
+              "parent_message_id": {
+                "type": "string",
+                "description": "父消息 ID（连续对话）",
+                "example": "c512d6a3-85b0-4c75-ae18-b76f52a88067"
+              },
+              "original_file_id": {
+                "type": "string",
+                "description": "原始文件 ID（Inpainting 引用）",
+                "example": "file_123"
+              },
+              "original_gen_id": {
+                "type": "string",
+                "description": "原始生成 ID（Inpainting 引用）",
+                "example": "gen_456"
+              },
+              "mask_file_id": {
+                "type": "string",
+                "description": "遮罩文件 ID（Inpainting 引用）",
+                "example": "mask_789"
+              },
+              "images": {
+                "type": "array",
+                "description": "远程图片引用列表",
+                "items": {
+                  "$ref": "#/components/schemas/ImageReference"
+                }
+              },
+              "mask": {
+                "$ref": "#/components/schemas/ImageReference",
+                "description": "遮罩图片引用（可选）"
+              }
+            }
+          }
+        ],
+        "description": "/v1/images2api/edits JSON 请求体（远程 URL 引用 + 连续对话 + Inpainting）。对应示例 6"
+      },
+      "ImageReference": {
+        "type": "object",
+        "description": "图片远程引用",
+        "properties": {
+          "image_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "图片 URL 地址",
+            "example": "https://example.com/source.png"
+          },
+          "file_id": {
+            "type": "string",
+            "description": "已上传的文件 ID（与 image_url 二选一）",
+            "example": "file_abc123"
+          }
+        }
+      },
+      "ImagesResponse": {
+        "type": "object",
+        "description": "图片生成/编辑的标准响应",
+        "properties": {
+          "created": {
+            "type": "integer",
+            "description": "创建时间戳",
+            "example": 1715400000
+          },
+          "data": {
+            "type": "array",
+            "description": "生成的图片列表",
+            "items": {
+              "$ref": "#/components/schemas/ImageData"
+            }
+          }
+        }
+      },
+      "ImageData": {
+        "type": "object",
+        "description": "单张图片数据",
+        "properties": {
+          "b64_json": {
+            "type": "string",
+            "description": "Base64 编码的图片数据"
+          },
+          "url": {
+            "type": "string",
+            "description": "图片 URL（当前 gpt-image 模型不返回此字段，保留为未来兼容）"
+          },
+          "revised_prompt": {
+            "type": "string",
+            "description": "模型实际使用的修正后提示词",
+            "example": "A rainy night neon street scene poster with cinematic feel..."
+          },
+          "output_format": {
+            "type": "string",
+            "description": "实际输出的图片格式",
+            "example": "png"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "description": "错误响应",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string",
+                "description": "错误信息",
+                "example": "output_compression is only supported when output_format is jpeg or webp"
+              },
+              "type": {
+                "type": "string",
+                "description": "错误类型",
+                "example": "invalid_request_error"
+              },
+              "code": {
+                "type": "string",
+                "description": "错误代码"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

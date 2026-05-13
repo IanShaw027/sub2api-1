@@ -1280,6 +1280,9 @@ func (a *Account) IsSelectableForOpenAIImageRoute(route string, allowRateLimited
 	if !a.isSchedulableForOpenAIImageRouteBase(route) {
 		return false
 	}
+	if NormalizeGroupImageGenerationRoute(route) == GroupImageGenerationRouteCodex && a.IsRateLimited() {
+		return false
+	}
 	if !allowRateLimited && a.IsOpenAIImageRouteRateLimited(route) {
 		return false
 	}

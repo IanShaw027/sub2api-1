@@ -667,21 +667,21 @@ const openAIImageUsageBars = computed(() => {
   if (showCodex && info.openai_image_codex_five_hour) {
     items.push({
       key: 'codex-5h',
-      label: translateOrFallback('admin.accounts.openaiImageRoutes.codex5h', 'codex 5h'),
+      label: 'img 5h',
       progress: info.openai_image_codex_five_hour
     })
   }
   if (showCodex && info.openai_image_codex_seven_day) {
     items.push({
       key: 'codex-7d',
-      label: translateOrFallback('admin.accounts.openaiImageRoutes.codex7d', 'codex 7d'),
+      label: 'img 7d',
       progress: info.openai_image_codex_seven_day
     })
   }
   if (showWeb2api && info.openai_image_web2api_five_hour) {
     items.push({
       key: 'web2api-5h',
-      label: translateOrFallback('admin.accounts.openaiImageRoutes.web2api5h', 'web2api 5h'),
+      label: 'web 5h',
       progress: info.openai_image_web2api_five_hour
     })
   }

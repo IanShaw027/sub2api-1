@@ -793,8 +793,101 @@ describe('AccountUsageCell', () => {
 
     expect(wrapper.text()).toContain('5h|42|123456')
     expect(wrapper.text()).toContain('7d|58|654321')
-    expect(wrapper.text()).toContain('codex 5h|99|111')
-    expect(wrapper.text()).toContain('codex 7d|100|222')
+    expect(wrapper.text()).toContain('img 5h|99|111')
+    expect(wrapper.text()).toContain('img 7d|100|222')
+  })
+
+  it('OpenAI OAuth 用短标签同时展示普通和生图窗口', async () => {
+    getUsage.mockResolvedValue({
+      five_hour: {
+        utilization: 19,
+        resets_at: '2026-03-08T12:00:00Z',
+        window_stats: { requests: 76, tokens: 6200000, cost: 3.26, user_cost: 0.98 }
+      },
+      seven_day: {
+        utilization: 31,
+        resets_at: '2026-03-13T12:00:00Z',
+        window_stats: { requests: 642, tokens: 57400000, cost: 34.55, user_cost: 10.37 }
+      },
+      openai_image_codex_five_hour: {
+        utilization: 0,
+        resets_at: '2026-03-08T12:00:00Z',
+        window_stats: { requests: 1, tokens: 10, cost: 0.1 }
+      },
+      openai_image_codex_seven_day: {
+        utilization: 0,
+        resets_at: '2026-03-13T12:00:00Z',
+        window_stats: { requests: 2, tokens: 20, cost: 0.2 }
+      },
+      openai_image_web2api_five_hour: {
+        utilization: 88,
+        resets_at: '2026-03-08T13:00:00Z',
+        window_stats: { requests: 3, tokens: 30, cost: 0.3 }
+      }
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 2007,
+          platform: 'openai',
+          type: 'oauth',
+          groups: [
+            {
+              id: 301,
+              name: 'OpenAI Images',
+              description: '',
+              platform: 'openai',
+              rate_limit: 0,
+              priority: 0,
+              rate_multiplier: 1,
+              is_exclusive: false,
+              status: 'active',
+              subscription_type: 'free',
+              daily_limit_usd: null,
+              weekly_limit_usd: null,
+              monthly_limit_usd: null,
+              allow_image_generation: true,
+              image_generation_route: 'codex',
+              image_rate_independent: true,
+              image_rate_multiplier: 1,
+              image_price_1k: null,
+              image_price_2k: null,
+              image_price_4k: null,
+              images2api_price_1k: null,
+              images2api_price_2k: null,
+              images2api_price_4k: null,
+              claude_code_only: false,
+              fallback_group_id: null,
+              fallback_group_id_on_invalid_request: null,
+              require_oauth_only: false,
+              require_privacy_set: false
+            }
+          ]
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'windowStats'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ windowStats?.requests }}</div>'
+          },
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.findAll('.usage-bar').map((node) => node.text())).toEqual([
+      '5h|19|76',
+      '7d|31|642',
+      'img 5h|0|1',
+      'img 7d|0|2',
+      'web 5h|88|3'
+    ])
+    expect(wrapper.text()).not.toContain('codex 5h')
+    expect(wrapper.text()).not.toContain('web2api 5h')
   })
 
   it('Key 账号会展示 today stats 徽章并带 A/U 提示', async () => {

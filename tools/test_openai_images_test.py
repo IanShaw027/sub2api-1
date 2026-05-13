@@ -112,6 +112,50 @@ class OpenAIImagesTestScriptContractTest(unittest.TestCase):
             partial_images=None,
         )
 
+    def test_validate_common_inputs_rejects_transparent_background_for_unsupported_model(self):
+        module = load_module()
+
+        with self.assertRaisesRegex(ValueError, "transparent background is not supported for model"):
+            module.validate_common_inputs(
+                model="dall-e-3",
+                n=1,
+                size="1024x1024",
+                response_format="b64_json",
+                background="transparent",
+                output_format="png",
+                input_fidelity=None,
+                output_compression=None,
+                partial_images=None,
+            )
+
+    def test_validate_common_inputs_allows_transparent_background_for_supported_gpt_image_models(self):
+        module = load_module()
+
+        for model in ("gpt-image-1", "gpt-image-1.5-2025-12-16"):
+            module.validate_common_inputs(
+                model=model,
+                n=1,
+                size="1024x1024",
+                response_format="b64_json",
+                background="transparent",
+                output_format="png",
+                input_fidelity=None,
+                output_compression=None,
+                partial_images=None,
+            )
+
+    def test_build_common_payload_strips_transparent_background_for_gpt_image_2(self):
+        module = load_module()
+
+        payload = module.build_common_payload(
+            model="gpt-image-2",
+            prompt="draw a cat",
+            background="transparent",
+            output_format="webp",
+        )
+
+        self.assertNotIn("background", payload)
+
     def test_validate_size_accepts_official_and_gateway_compatible_sizes(self):
         module = load_module()
 

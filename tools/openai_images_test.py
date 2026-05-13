@@ -124,6 +124,18 @@ def normalize_optional_text(value: str | None) -> str:
     return (value or "").strip().lower()
 
 
+def supports_transparent_background(model: str) -> bool:
+    normalized_model = normalize_optional_text(model)
+    return normalized_model.startswith("gpt-image-") and normalized_model != "gpt-image-2"
+
+
+def normalize_background_for_model(model: str, background: str | None) -> str | None:
+    normalized_background = normalize_optional_text(background)
+    if normalize_optional_text(model) == "gpt-image-2" and normalized_background == "transparent":
+        return None
+    return background
+
+
 def validate_size(size: str | None) -> None:
     normalized = normalize_optional_text(size)
     if not normalized or normalized == "auto":
@@ -164,6 +176,8 @@ def validate_common_inputs(
         raise ValueError("input_fidelity is not supported for gpt-image-2")
     normalized_output = normalize_optional_text(output_format)
     normalized_background = normalize_optional_text(background)
+    if normalized_background == "transparent" and not normalize_optional_text(model).startswith("gpt-image-"):
+        raise ValueError(f"transparent background is not supported for model {model!r}; use a gpt-image-* model")
     if normalized_background == "transparent" and normalized_output and normalized_output not in {"png", "webp"}:
         raise ValueError("background=transparent requires output_format png or webp")
     if output_compression is not None and not (0 <= output_compression <= MAX_OUTPUT_COMPRESSION):
@@ -579,6 +593,9 @@ def build_common_payload(
     - background:
       - 可选
       - 常见枚举: `opaque`, `transparent`, `auto`
+      - `transparent` 只建议用于当前支持透明底的模型:
+        `gpt-image-1`, `gpt-image-1-mini`, `gpt-image-1.5`
+      - 对 `gpt-image-2` 传 `transparent` 时，脚本会按当前后端行为自动剥离该字段
       - 若传 `transparent`，当前要求 `output_format` 必须是 `png` 或 `webp`
 
     - output_format:
@@ -629,7 +646,7 @@ def build_common_payload(
     maybe_set(payload, "size", size)
     maybe_set(payload, "response_format", response_format)
     maybe_set(payload, "quality", quality)
-    maybe_set(payload, "background", background)
+    maybe_set(payload, "background", normalize_background_for_model(model, background))
     maybe_set(payload, "output_format", output_format)
     maybe_set(payload, "moderation", moderation)
     maybe_set(payload, "input_fidelity", input_fidelity)
@@ -963,6 +980,8 @@ def main() -> None:
     # - stream: 枚举 True / False
     # - quality: 常见 `low` / `medium` / `high` / `auto`
     # - background: 常见 `opaque` / `transparent` / `auto`
+    #   - `transparent` 仅建议用于 `gpt-image-1` / `gpt-image-1-mini` / `gpt-image-1.5`
+    #   - 对 `gpt-image-2` 传 `transparent` 时，脚本会按当前后端行为自动去掉该字段
     # - output_format: 常见 `png` / `jpeg` / `webp`
     # - moderation: 常见 `auto` / `low`
     # - input_fidelity: 常见 `low` / `high`
@@ -1004,7 +1023,7 @@ def main() -> None:
     # call_images_edits(
     #     base_url=DEFAULT_BASE_URL,
     #     api_key=DEFAULT_API_KEY,
-    #     model="gpt-image-2",
+    #     model="gpt-image-1.5",
     #     prompt="把人物后面的背景替换成蓝色极光，保留人物主体和光影方向",
     #     image_paths=["/absolute/path/source.png"],
     #     mask_path="/absolute/path/mask.png",
@@ -1025,7 +1044,7 @@ def main() -> None:
     # call_images2api_generations(
     #     base_url=DEFAULT_BASE_URL,
     #     api_key=DEFAULT_API_KEY,
-    #     model="gpt-image-2",
+    #     model="gpt-image-1.5",
     #     prompt="继续上一轮风格，换成更克制的配色",
     #     conversation_id="69fdf36f-3d48-83ea-8c7a-265960703d04",
     #     parent_message_id="c512d6a3-85b0-4c75-ae18-b76f52a88067",

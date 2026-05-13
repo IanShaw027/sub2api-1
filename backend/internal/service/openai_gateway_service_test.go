@@ -1753,6 +1753,110 @@ func TestOpenAIGatewayService_ListOpenAIImageCandidateAccounts_OverlaysCachedLas
 	require.True(t, accounts[0].LastUsedAt.Equal(newLastUsed))
 }
 
+func TestOpenAIGatewayService_SelectOpenAIImageCodexRouteLimitedAccountWaits(t *testing.T) {
+	resetAt := time.Now().Add(2 * time.Minute).UTC().Truncate(time.Second)
+	oldLastUsed := time.Now().Add(-5 * time.Hour)
+	newLastUsed := time.Now().Add(-1 * time.Hour)
+	accounts := []Account{
+		{
+			ID:          47021,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    1,
+			LastUsedAt:  &oldLastUsed,
+			Credentials: map[string]any{"plan_type": "plus"},
+			Extra: map[string]any{
+				"openai_image_codex_rate_limit_reset_at": resetAt.Format(time.RFC3339),
+			},
+		},
+		{
+			ID:          47022,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    1,
+			LastUsedAt:  &newLastUsed,
+			Credentials: map[string]any{"plan_type": "plus"},
+		},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo:        stubOpenAIAccountRepo{accounts: accounts},
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{acquireResults: map[int64]bool{47021: true, 47022: true}}),
+		cfg:                &config.Config{Gateway: config.GatewayConfig{Scheduling: config.GatewaySchedulingConfig{LoadBatchEnabled: true, FallbackWaitTimeout: 30 * time.Second, FallbackMaxWaiting: 10}}},
+	}
+
+	selection, err := svc.selectAccountWithLoadAwarenessForImageRoute(context.Background(), nil, "", "gpt-image-1", nil, false, GroupImageGenerationRouteCodex, false)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.Equal(t, int64(47021), selection.Account.ID)
+	require.False(t, selection.Acquired)
+	require.NotNil(t, selection.WaitPlan)
+	require.Equal(t, int64(47021), selection.WaitPlan.AccountID)
+	require.Equal(t, 1, selection.WaitPlan.MaxConcurrency)
+	require.NotNil(t, selection.WaitPlan.NotBefore)
+	require.True(t, selection.WaitPlan.NotBefore.Equal(resetAt))
+}
+
+func TestOpenAIGatewayService_SelectOpenAIImageCodexSkipsAccountRateLimitedButWeb2APIWaits(t *testing.T) {
+	accountResetAt := time.Now().Add(10 * time.Minute).UTC().Truncate(time.Second)
+	imageResetAt := time.Now().Add(2 * time.Minute).UTC().Truncate(time.Second)
+	oldLastUsed := time.Now().Add(-5 * time.Hour)
+	newLastUsed := time.Now().Add(-1 * time.Hour)
+	accounts := []Account{
+		{
+			ID:               47031,
+			Platform:         PlatformOpenAI,
+			Type:             AccountTypeOAuth,
+			Status:           StatusActive,
+			Schedulable:      true,
+			Concurrency:      1,
+			Priority:         1,
+			LastUsedAt:       &oldLastUsed,
+			RateLimitResetAt: &accountResetAt,
+			Credentials:      map[string]any{"plan_type": "plus"},
+			Extra: map[string]any{
+				"openai_image_web2api_rate_limit_reset_at": imageResetAt.Format(time.RFC3339),
+			},
+		},
+		{
+			ID:          47032,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    1,
+			LastUsedAt:  &newLastUsed,
+			Credentials: map[string]any{"plan_type": "plus"},
+		},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo:        stubOpenAIAccountRepo{accounts: accounts},
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{acquireResults: map[int64]bool{47031: true, 47032: true}}),
+		cfg:                &config.Config{Gateway: config.GatewayConfig{Scheduling: config.GatewaySchedulingConfig{LoadBatchEnabled: true, FallbackWaitTimeout: 30 * time.Second, FallbackMaxWaiting: 10}}},
+	}
+
+	codexSelection, err := svc.selectAccountWithLoadAwarenessForImageRoute(context.Background(), nil, "", "gpt-image-1", nil, false, GroupImageGenerationRouteCodex, false)
+	require.NoError(t, err)
+	require.NotNil(t, codexSelection)
+	require.Equal(t, int64(47032), codexSelection.Account.ID)
+	require.True(t, codexSelection.Acquired)
+
+	web2apiSelection, err := svc.selectAccountWithLoadAwarenessForImageRoute(context.Background(), nil, "", "gpt-image-1", nil, false, GroupImageGenerationRouteWeb2API, true)
+	require.NoError(t, err)
+	require.NotNil(t, web2apiSelection)
+	require.Equal(t, int64(47031), web2apiSelection.Account.ID)
+	require.False(t, web2apiSelection.Acquired)
+	require.NotNil(t, web2apiSelection.WaitPlan)
+	require.NotNil(t, web2apiSelection.WaitPlan.NotBefore)
+	require.True(t, web2apiSelection.WaitPlan.NotBefore.Equal(imageResetAt))
+}
+
 func TestOpenAIStreamingTimeout(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{
