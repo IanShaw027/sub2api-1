@@ -1209,6 +1209,34 @@ func TestIsInstructionsEmpty(t *testing.T) {
 	}
 }
 
+func TestNormalizeOpenAIStrictFunctionToolSchemas(t *testing.T) {
+	reqBody := map[string]any{
+		"tools": []any{
+			map[string]any{
+				"name":   "read_file",
+				"type":   "function",
+				"strict": true,
+				"parameters": map[string]any{
+					"type":     "object",
+					"required": []any{"filePath"},
+					"properties": map[string]any{
+						"limit":    map[string]any{"type": "number"},
+						"offset":   map[string]any{"type": "number"},
+						"filePath": map[string]any{"type": "string"},
+					},
+				},
+			},
+		},
+	}
+
+	modified := normalizeOpenAIStrictFunctionToolSchemas(reqBody)
+
+	require.True(t, modified)
+	require.Equal(t, "filePath", firstNonEmptyString(reqBody["tools"].([]any)[0].(map[string]any)["parameters"].(map[string]any)["required"].([]any)[0]))
+	require.Equal(t, "limit", firstNonEmptyString(reqBody["tools"].([]any)[0].(map[string]any)["parameters"].(map[string]any)["required"].([]any)[1]))
+	require.Equal(t, "offset", firstNonEmptyString(reqBody["tools"].([]any)[0].(map[string]any)["parameters"].(map[string]any)["required"].([]any)[2]))
+}
+
 func TestFilterCodexInput_DropsReasoningItemsRegardlessOfPreserveReferences(t *testing.T) {
 	// Reasoning items in input[] reference rs_* IDs that were emitted by
 	// chatgpt.com under store=false (forced by applyCodexOAuthTransform).

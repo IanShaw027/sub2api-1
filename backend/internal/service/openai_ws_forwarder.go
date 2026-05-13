@@ -4216,42 +4216,101 @@ func classifyOpenAIWSSoftRateLimitAdvisory(message []byte) (string, bool) {
 		return "", false
 	}
 	eventType := strings.TrimSpace(gjson.GetBytes(message, "type").String())
-	if eventType != "codex.rate_limits" {
-		return "", false
+	if eventType == "codex.rate_limits" {
+		if !gjson.GetBytes(message, "rate_limits").IsObject() {
+			return "", false
+		}
+		allowed := gjson.GetBytes(message, "rate_limits.allowed")
+		limitReached := gjson.GetBytes(message, "rate_limits.limit_reached")
+		if !allowed.Exists() || !allowed.Bool() || !limitReached.Exists() || limitReached.Bool() {
+			return "", false
+		}
+		limitID := strings.TrimSpace(gjson.GetBytes(message, "metered_limit_name").String())
+		if limitID == "" {
+			limitID = strings.TrimSpace(gjson.GetBytes(message, "limit_name").String())
+		}
+		if limitID == "" {
+			limitID = openAIWSSoftRateLimitAdvisoryDefaultLimit
+		}
+		normalizedLimitID := strings.ReplaceAll(strings.ToLower(limitID), "-", "_")
+		if normalizedLimitID != openAIWSSoftRateLimitAdvisoryDefaultLimit {
+			return "", false
+		}
+		if gjson.GetBytes(message, "credits.has_credits").Bool() ||
+			gjson.GetBytes(message, "credits.unlimited").Bool() {
+			return "", false
+		}
+		if !openAIWSRateLimitWindowApproaching(message, "rate_limits.primary.used_percent") &&
+			!openAIWSRateLimitWindowApproaching(message, "rate_limits.secondary.used_percent") {
+			return "", false
+		}
+		return openAIWSSoftRateLimitAdvisoryMessage, true
 	}
-	if !gjson.GetBytes(message, "rate_limits").IsObject() {
-		return "", false
+
+	if openAIOutputContainsSoftRateLimitAdvisory(message) {
+		return openAIWSSoftRateLimitAdvisoryMessage, true
 	}
-	allowed := gjson.GetBytes(message, "rate_limits.allowed")
-	limitReached := gjson.GetBytes(message, "rate_limits.limit_reached")
-	if !allowed.Exists() || !allowed.Bool() || !limitReached.Exists() || limitReached.Bool() {
-		return "", false
-	}
-	limitID := strings.TrimSpace(gjson.GetBytes(message, "metered_limit_name").String())
-	if limitID == "" {
-		limitID = strings.TrimSpace(gjson.GetBytes(message, "limit_name").String())
-	}
-	if limitID == "" {
-		limitID = openAIWSSoftRateLimitAdvisoryDefaultLimit
-	}
-	normalizedLimitID := strings.ReplaceAll(strings.ToLower(limitID), "-", "_")
-	if normalizedLimitID != openAIWSSoftRateLimitAdvisoryDefaultLimit {
-		return "", false
-	}
-	if gjson.GetBytes(message, "credits.has_credits").Bool() ||
-		gjson.GetBytes(message, "credits.unlimited").Bool() {
-		return "", false
-	}
-	if !openAIWSRateLimitWindowApproaching(message, "rate_limits.primary.used_percent") &&
-		!openAIWSRateLimitWindowApproaching(message, "rate_limits.secondary.used_percent") {
-		return "", false
-	}
-	return openAIWSSoftRateLimitAdvisoryMessage, true
+	return "", false
 }
 
 func openAIWSRateLimitWindowApproaching(message []byte, path string) bool {
 	value := gjson.GetBytes(message, path)
 	return value.Exists() && value.Float() >= openAIWSSoftRateLimitAdvisoryThreshold
+}
+
+func openAIOutputContainsSoftRateLimitAdvisory(message []byte) bool {
+	for _, text := range extractOpenAIOutputTextCandidates(message) {
+		if isOpenAISoftRateLimitAdvisoryText(text) {
+			return true
+		}
+	}
+	return false
+}
+
+func extractOpenAIOutputTextCandidates(message []byte) []string {
+	if len(message) == 0 {
+		return nil
+	}
+
+	candidates := make([]string, 0, 8)
+	appendCandidate := func(text string) {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return
+		}
+		candidates = append(candidates, text)
+	}
+
+	appendCandidate(gjson.GetBytes(message, "delta").String())
+	appendCandidate(gjson.GetBytes(message, "text").String())
+
+	for _, outputPath := range []string{"output", "response.output"} {
+		for _, output := range gjson.GetBytes(message, outputPath).Array() {
+			for _, content := range output.Get("content").Array() {
+				appendCandidate(content.Get("text").String())
+				appendCandidate(content.Get("delta").String())
+			}
+		}
+	}
+
+	return candidates
+}
+
+func isOpenAISoftRateLimitAdvisoryText(text string) bool {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if lower == "" {
+		return false
+	}
+	if !strings.Contains(lower, "approaching rate limits") {
+		return false
+	}
+	if !strings.Contains(lower, "keep current model") {
+		return false
+	}
+	if strings.Contains(lower, "never show again") {
+		return true
+	}
+	return strings.Contains(lower, "switch to") && strings.Contains(lower, "lower credit usage")
 }
 
 func (s *OpenAIGatewayService) persistOpenAIWSRateLimitSignal(ctx context.Context, account *Account, headers http.Header, responseBody []byte, codeRaw, errTypeRaw, msgRaw string) {

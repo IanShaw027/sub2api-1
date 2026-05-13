@@ -878,6 +878,56 @@ func TestOpenAIGatewayService_Forward_StripsUnsupportedFieldsConsistently(t *tes
 	require.False(t, result.Stream)
 }
 
+func TestOpenAIGatewayService_OAuthLegacy_ClaudeCLIResponsesInjectsInstructionsAndNormalizesStrictToolSchema(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{
+		"model":"gpt-5.4",
+		"stream":true,
+		"text":{"verbosity":"medium"},
+		"input":[{"role":"developer","type":"message","content":[{"type":"input_text","text":"You are Claude Code."}]},{"role":"user","type":"message","content":[{"type":"input_text","text":"hi"}]}],
+		"tools":[{"name":"read_file","type":"function","strict":true,"parameters":{"type":"object","$schema":"http://json-schema.org/draft-07/schema#","required":["filePath"],"properties":{"limit":{"type":"number"},"offset":{"type":"number"},"filePath":{"type":"string"}},"additionalProperties":false}}]
+	}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Request.Header.Set("User-Agent", "claude-cli/2.1.92 (external, cli)")
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid-claude-cli"}},
+			Body:       io.NopCloser(strings.NewReader("data: [DONE]\n\n")),
+		},
+	}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+	account := &Account{
+		ID:          38056,
+		Name:        "oauth-claude-cli",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+		Extra: map[string]any{
+			"openai_passthrough": false,
+		},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotEmpty(t, strings.TrimSpace(gjson.GetBytes(upstream.lastBody, "instructions").String()))
+	require.Equal(t, "filePath", gjson.GetBytes(upstream.lastBody, "tools.0.parameters.required.0").String())
+	require.Equal(t, "limit", gjson.GetBytes(upstream.lastBody, "tools.0.parameters.required.1").String())
+	require.Equal(t, "offset", gjson.GetBytes(upstream.lastBody, "tools.0.parameters.required.2").String())
+}
+
 func TestOpenAIGatewayService_GenerateSessionHash_EmptyBodyStillEmpty(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
@@ -2169,7 +2219,7 @@ func TestOpenAIStreamingPassthroughSoftRateLimitAdvisoryBeforeOutputReturnsFailo
 	require.Empty(t, rec.Body.String())
 }
 
-func TestOpenAINonStreamingSoftRateLimitAdvisoryDoesNotFailover(t *testing.T) {
+func TestOpenAINonStreamingSoftRateLimitAdvisoryTriggersFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
 
@@ -2184,15 +2234,14 @@ func TestOpenAINonStreamingSoftRateLimitAdvisoryDoesNotFailover(t *testing.T) {
 	}
 
 	result, err := svc.handleNonStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}, "model", "model")
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.NotNil(t, result.usage)
-	require.Equal(t, 1, result.usage.InputTokens)
-	require.Equal(t, 1, result.usage.OutputTokens)
-	require.Contains(t, rec.Body.String(), "Approaching rate limits")
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+	require.NotContains(t, rec.Body.String(), "Approaching rate limits")
 }
 
-func TestOpenAINonStreamingPassthroughSoftRateLimitAdvisoryDoesNotFailover(t *testing.T) {
+func TestOpenAINonStreamingPassthroughSoftRateLimitAdvisoryTriggersFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
 
@@ -2207,12 +2256,11 @@ func TestOpenAINonStreamingPassthroughSoftRateLimitAdvisoryDoesNotFailover(t *te
 	}
 
 	result, err := svc.handleNonStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}, "model", "model")
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.NotNil(t, result.usage)
-	require.Equal(t, 1, result.usage.InputTokens)
-	require.Equal(t, 1, result.usage.OutputTokens)
-	require.Contains(t, rec.Body.String(), "Approaching rate limits")
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+	require.NotContains(t, rec.Body.String(), "Approaching rate limits")
 }
 
 func TestOpenAIStreamingPassthroughResponseDoneWithoutDoneMarkerStillSucceeds(t *testing.T) {

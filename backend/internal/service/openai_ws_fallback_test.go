@@ -130,12 +130,12 @@ func TestClassifyOpenAIWSSoftRateLimitAdvisory(t *testing.T) {
 	require.Contains(t, msg, "Approaching upstream rate limits")
 
 	msg, matched = classifyOpenAIWSSoftRateLimitAdvisory([]byte(`{"type":"response.output_text.delta","delta":"Approaching rate limits\nSwitch to gpt-5.4-mini for lower credit usage?\n1. Switch to gpt-5.4-mini\n2. Keep current model\n3. Keep current model (never show again)"}`))
-	require.False(t, matched)
-	require.Empty(t, msg)
+	require.True(t, matched)
+	require.Contains(t, msg, "Approaching upstream rate limits")
 
 	msg, matched = classifyOpenAIWSSoftRateLimitAdvisory([]byte(`{"type":"response.completed","response":{"output":[{"type":"message","content":[{"type":"output_text","text":"Approaching rate limits\nSwitch to gpt-5.4-mini for lower credit usage?\n1. Switch to gpt-5.4-mini\n2. Keep current model\n3. Keep current model (never show again)"}]}]}}`))
-	require.False(t, matched)
-	require.Empty(t, msg)
+	require.True(t, matched)
+	require.Contains(t, msg, "Approaching upstream rate limits")
 
 	msg, matched = classifyOpenAIWSSoftRateLimitAdvisory([]byte(`{"type":"codex.rate_limits","metered_limit_name":"codex_other","rate_limits":{"allowed":true,"limit_reached":false,"primary":{"used_percent":95}}}`))
 	require.False(t, matched)

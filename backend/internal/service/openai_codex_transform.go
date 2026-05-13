@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
@@ -1181,6 +1182,95 @@ func isInstructionsEmpty(reqBody map[string]any) bool {
 		return true
 	}
 	return strings.TrimSpace(str) == ""
+}
+
+func normalizeOpenAIStrictFunctionToolSchemas(reqBody map[string]any) bool {
+	if reqBody == nil {
+		return false
+	}
+
+	tools, ok := reqBody["tools"].([]any)
+	if !ok || len(tools) == 0 {
+		return false
+	}
+
+	modified := false
+	for _, rawTool := range tools {
+		toolMap, ok := rawTool.(map[string]any)
+		if !ok || !openAIStrictFunctionToolEnabled(toolMap) {
+			continue
+		}
+		if normalizeOpenAIStrictFunctionParameters(toolMap) {
+			modified = true
+		}
+	}
+
+	return modified
+}
+
+func openAIStrictFunctionToolEnabled(toolMap map[string]any) bool {
+	if toolMap == nil {
+		return false
+	}
+	if strict, ok := toolMap["strict"].(bool); ok && strict {
+		return true
+	}
+	function, ok := toolMap["function"].(map[string]any)
+	if !ok {
+		return false
+	}
+	strict, _ := function["strict"].(bool)
+	return strict
+}
+
+func normalizeOpenAIStrictFunctionParameters(toolMap map[string]any) bool {
+	if toolMap == nil {
+		return false
+	}
+
+	parameters, ok := toolMap["parameters"].(map[string]any)
+	if !ok {
+		function, ok := toolMap["function"].(map[string]any)
+		if !ok {
+			return false
+		}
+		parameters, ok = function["parameters"].(map[string]any)
+		if !ok {
+			return false
+		}
+	}
+
+	properties, ok := parameters["properties"].(map[string]any)
+	if !ok {
+		return false
+	}
+
+	required := make([]string, 0, len(properties))
+	for key := range properties {
+		required = append(required, key)
+	}
+	sort.Strings(required)
+
+	existingRequired, _ := parameters["required"].([]any)
+	if len(existingRequired) == len(required) {
+		matches := true
+		for i, key := range required {
+			if strings.TrimSpace(firstNonEmptyString(existingRequired[i])) != key {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			return false
+		}
+	}
+
+	normalizedRequired := make([]any, 0, len(required))
+	for _, key := range required {
+		normalizedRequired = append(normalizedRequired, key)
+	}
+	parameters["required"] = normalizedRequired
+	return true
 }
 
 func hasCodexToolContinuationInput(input []any) bool {

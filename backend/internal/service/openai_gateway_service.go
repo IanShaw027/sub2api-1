@@ -3230,6 +3230,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		disablePatch()
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized /responses image_generation tool payload")
 	}
+	if normalizeOpenAIStrictFunctionToolSchemas(reqBody) {
+		bodyModified = true
+		disablePatch()
+		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized strict function tool schemas for /responses request")
+	}
 	if codexImageGenerationBridgeEnabled && !isMessagesBridgeRequest && applyCodexImageGenerationBridgeInstructions(reqBody) {
 		bodyModified = true
 		disablePatch()
@@ -3568,6 +3573,14 @@ oauthTransformDone:
 	}
 	if err := json.Unmarshal(body, &reqBody); err != nil {
 		return nil, fmt.Errorf("parse finalized request body: %w", err)
+	}
+	if shouldInjectDefaultInstructionsForOpenAIResponses(c, account, isMessagesBridgeRequest, isCompactRequest) && isInstructionsEmpty(reqBody) {
+		if applyEmbeddedDefaultInstructions(reqBody) {
+			body, err = marshalOpenAIResponsesRequestBodyOrdered(reqBody)
+			if err != nil {
+				return nil, fmt.Errorf("serialize finalized request body with instructions: %w", err)
+			}
+		}
 	}
 	upstreamStream = gjson.GetBytes(body, "stream").Bool()
 	// Get access token
@@ -5089,7 +5102,10 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	// stream=false was requested. Without this conversion the client would
 	// receive raw SSE text or a terminal event with empty output.
 	if isEventStreamResponse(resp.Header) {
-		return s.handlePassthroughSSEToJSON(resp, c, body, originalModel, mappedModel)
+		return s.handlePassthroughSSEToJSON(resp, c, account, body, originalModel, mappedModel)
+	}
+	if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(body); matched {
+		return nil, s.newOpenAISoftRateLimitFailoverError(ctx, c, account, true, resp.Header.Get("x-request-id"), body, advisoryMsg)
 	}
 
 	usage := &OpenAIUsage{}
@@ -5123,13 +5139,19 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 // response for the passthrough path. It mirrors handleSSEToJSON while
 // preserving passthrough payloads, except compact-only model remapping may
 // rewrite model fields back to the original requested model.
-func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c *gin.Context, body []byte, originalModel string, mappedModel string) (*openaiNonStreamingResultPassthrough, error) {
+func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c *gin.Context, account *Account, body []byte, originalModel string, mappedModel string) (*openaiNonStreamingResultPassthrough, error) {
 	bodyText := string(body)
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
+	if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(body); matched {
+		return nil, s.newOpenAISoftRateLimitFailoverError(c.Request.Context(), c, account, true, resp.Header.Get("x-request-id"), body, advisoryMsg)
+	}
 
 	usage := &OpenAIUsage{}
 	imageCount := 0
 	if ok {
+		if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(finalResponse); matched {
+			return nil, s.newOpenAISoftRateLimitFailoverError(c.Request.Context(), c, account, true, resp.Header.Get("x-request-id"), finalResponse, advisoryMsg)
+		}
 		if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(finalResponse); parsed {
 			*usage = parsedUsage
 		}
@@ -6188,7 +6210,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	// Some OpenAI-compatible upstreams (including other sub2api instances)
 	// may return SSE even when stream=false was requested.
 	if isEventStreamResponse(resp.Header) {
-		return s.handleSSEToJSON(resp, c, body, originalModel, mappedModel)
+		return s.handleSSEToJSON(resp, c, account, body, originalModel, mappedModel)
 	}
 	// For OAuth accounts, also fall back to a body-content heuristic because
 	// the upstream may omit the Content-Type header while still sending SSE.
@@ -6198,8 +6220,11 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	if account.Type == AccountTypeOAuth {
 		bodyLooksLikeSSE := bytes.Contains(body, []byte("data:")) || bytes.Contains(body, []byte("event:"))
 		if bodyLooksLikeSSE {
-			return s.handleSSEToJSON(resp, c, body, originalModel, mappedModel)
+			return s.handleSSEToJSON(resp, c, account, body, originalModel, mappedModel)
 		}
+	}
+	if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(body); matched {
+		return nil, s.newOpenAISoftRateLimitFailoverError(ctx, c, account, false, resp.Header.Get("x-request-id"), body, advisoryMsg)
 	}
 
 	usageValue, usageOK := extractOpenAIUsageFromJSONBytes(body)
@@ -6233,13 +6258,19 @@ func isEventStreamResponse(header http.Header) bool {
 	return strings.Contains(contentType, "text/event-stream")
 }
 
-func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Context, body []byte, originalModel, mappedModel string) (*openaiNonStreamingResult, error) {
+func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Context, account *Account, body []byte, originalModel, mappedModel string) (*openaiNonStreamingResult, error) {
 	bodyText := string(body)
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
+	if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(body); matched {
+		return nil, s.newOpenAISoftRateLimitFailoverError(c.Request.Context(), c, account, false, resp.Header.Get("x-request-id"), body, advisoryMsg)
+	}
 
 	usage := &OpenAIUsage{}
 	imageCount := 0
 	if ok {
+		if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(finalResponse); matched {
+			return nil, s.newOpenAISoftRateLimitFailoverError(c.Request.Context(), c, account, false, resp.Header.Get("x-request-id"), finalResponse, advisoryMsg)
+		}
 		if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(finalResponse); parsed {
 			*usage = parsedUsage
 		}
@@ -7473,6 +7504,9 @@ func normalizeOpenAIPassthroughOAuthBody(body []byte, compact bool) ([]byte, boo
 		}
 	}
 	if normalizeOpenAIResponsesInputToolRoles(reqBody) {
+		changed = true
+	}
+	if normalizeOpenAIStrictFunctionToolSchemas(reqBody) {
 		changed = true
 	}
 
