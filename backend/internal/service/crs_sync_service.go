@@ -607,7 +607,7 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 				Concurrency: concurrency,
 				Priority:    priority,
 				Status:      status,
-				Schedulable: src.Schedulable,
+				Schedulable: openAIOAuthSchedulableForSync(src.Schedulable, credentials),
 			}
 			if err := s.accountRepo.Create(ctx, account); err != nil {
 				item.Action = "failed"
@@ -620,6 +620,7 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 			if refreshedCreds := s.refreshOAuthToken(ctx, account); refreshedCreds != nil {
 				_ = persistAccountCredentials(ctx, s.accountRepo, account, refreshedCreds)
 			}
+			s.finalizeOpenAIOAuthSyncState(ctx, account, status, src.Schedulable)
 			item.Action = "created"
 			result.Created++
 			result.Items = append(result.Items, item)
@@ -637,7 +638,7 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 		existing.Concurrency = concurrency
 		existing.Priority = priority
 		existing.Status = status
-		existing.Schedulable = src.Schedulable
+		existing.Schedulable = openAIOAuthSchedulableForSync(src.Schedulable, existing.Credentials)
 
 		if err := s.accountRepo.Update(ctx, existing); err != nil {
 			item.Action = "failed"
@@ -651,6 +652,7 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 		if refreshedCreds := s.refreshOAuthToken(ctx, existing); refreshedCreds != nil {
 			_ = persistAccountCredentials(ctx, s.accountRepo, existing, refreshedCreds)
 		}
+		s.finalizeOpenAIOAuthSyncState(ctx, existing, status, src.Schedulable)
 
 		item.Action = "updated"
 		result.Updated++
@@ -1297,6 +1299,33 @@ func (s *CRSSyncService) refreshOAuthToken(ctx context.Context, account *Account
 	}
 
 	return newCredentials
+}
+
+func openAIOAuthSchedulableForSync(sourceSchedulable bool, credentials map[string]any) bool {
+	return sourceSchedulable && strings.TrimSpace(stringCredential(credentials, "access_token")) != ""
+}
+
+func (s *CRSSyncService) finalizeOpenAIOAuthSyncState(ctx context.Context, account *Account, sourceStatus string, sourceSchedulable bool) {
+	if s == nil || s.accountRepo == nil || account == nil {
+		return
+	}
+	desiredStatus := sourceStatus
+	desiredErrorMessage := ""
+	desiredSchedulable := sourceSchedulable
+	if strings.TrimSpace(account.GetCredential("access_token")) == "" {
+		desiredStatus = StatusError
+		desiredErrorMessage = "missing access_token after openai oauth sync"
+		desiredSchedulable = false
+	}
+	if account.Status == desiredStatus &&
+		account.ErrorMessage == desiredErrorMessage &&
+		account.Schedulable == desiredSchedulable {
+		return
+	}
+	account.Status = desiredStatus
+	account.ErrorMessage = desiredErrorMessage
+	account.Schedulable = desiredSchedulable
+	_ = s.accountRepo.Update(ctx, account)
 }
 
 // buildSelectedSet converts a slice of selected CRS account IDs to a set for O(1) lookup.

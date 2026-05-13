@@ -3297,6 +3297,7 @@ func TestHandleSSEToJSON_CompletedEventReturnsJSON(t *testing.T) {
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+	account := &Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
 	resp := &http.Response{
@@ -3309,7 +3310,7 @@ func TestHandleSSEToJSON_CompletedEventReturnsJSON(t *testing.T) {
 		`data: [DONE]`,
 	}, "\n"))
 
-	result, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o")
+	result, err := svc.handleSSEToJSON(resp, c, account, body, "gpt-4o", "gpt-4o")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.usage)
@@ -3327,6 +3328,7 @@ func TestHandleSSEToJSON_ReconstructsImageGenerationOutputItemDone(t *testing.T)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+	account := &Account{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
 	resp := &http.Response{
@@ -3339,7 +3341,7 @@ func TestHandleSSEToJSON_ReconstructsImageGenerationOutputItemDone(t *testing.T)
 		`data: [DONE]`,
 	}, "\n"))
 
-	result, err := svc.handleSSEToJSON(resp, c, body, "gpt-5.4", "gpt-5.4")
+	result, err := svc.handleSSEToJSON(resp, c, account, body, "gpt-5.4", "gpt-5.4")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.usage)
@@ -3356,6 +3358,7 @@ func TestHandleSSEToJSON_NoFinalResponseKeepsSSEBody(t *testing.T) {
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+	account := &Account{ID: 3, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
 	resp := &http.Response{
@@ -3367,7 +3370,7 @@ func TestHandleSSEToJSON_NoFinalResponseKeepsSSEBody(t *testing.T) {
 		`data: [DONE]`,
 	}, "\n"))
 
-	result, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o")
+	result, err := svc.handleSSEToJSON(resp, c, account, body, "gpt-4o", "gpt-4o")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.usage)
@@ -3381,6 +3384,7 @@ func TestHandleSSEToJSON_ResponseFailedReturnsProtocolError(t *testing.T) {
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+	account := &Account{ID: 4, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
 	resp := &http.Response{
@@ -3392,7 +3396,7 @@ func TestHandleSSEToJSON_ResponseFailedReturnsProtocolError(t *testing.T) {
 		`data: [DONE]`,
 	}, "\n"))
 
-	result, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o")
+	result, err := svc.handleSSEToJSON(resp, c, account, body, "gpt-4o", "gpt-4o")
 	require.Nil(t, result)
 	require.Error(t, err)
 	require.Equal(t, http.StatusBadGateway, rec.Code)

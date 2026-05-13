@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"net/http"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -148,8 +150,9 @@ func (p *OpenAITokenProvider) GetAccessToken(ctx context.Context, account *Accou
 	slog.Debug("openai_token_cache_miss", "account_id", account.ID)
 
 	// 2) Refresh if needed (pre-expiry skew).
+	missingAccessToken := strings.TrimSpace(account.GetCredential("access_token")) == ""
 	expiresAt := account.GetCredentialAsTime("expires_at")
-	needsRefresh := expiresAt == nil || time.Until(*expiresAt) <= openAITokenRefreshSkew
+	needsRefresh := missingAccessToken || expiresAt == nil || time.Until(*expiresAt) <= openAITokenRefreshSkew
 	refreshFailed := false
 
 	if needsRefresh && p.refreshAPI != nil && p.executor != nil {
@@ -212,7 +215,7 @@ func (p *OpenAITokenProvider) GetAccessToken(ctx context.Context, account *Accou
 
 	accessToken := account.GetCredential("access_token")
 	if strings.TrimSpace(accessToken) == "" {
-		return "", errors.New("access_token not found in credentials")
+		return "", p.markCredentialErrorAndBuildFailover(account, "missing access_token on request path")
 	}
 
 	// 3) Populate cache with TTL.
@@ -251,6 +254,24 @@ func (p *OpenAITokenProvider) GetAccessToken(ctx context.Context, account *Accou
 	}
 
 	return accessToken, nil
+}
+
+func (p *OpenAITokenProvider) markCredentialErrorAndBuildFailover(account *Account, reason string) error {
+	if p != nil && p.accountRepo != nil && account != nil {
+		bgCtx := context.Background()
+		if err := p.accountRepo.SetError(bgCtx, account.ID, reason); err != nil {
+			slog.Warn("openai_token_provider.set_error_failed",
+				"account_id", account.ID,
+				"error", err,
+			)
+		} else {
+			slog.Warn("openai_token_provider.account_error_set",
+				"account_id", account.ID,
+				"reason", reason,
+			)
+		}
+	}
+	return fmt.Errorf("%s: %w", reason, &UpstreamFailoverError{StatusCode: http.StatusBadGateway})
 }
 
 func (p *OpenAITokenProvider) waitForTokenAfterLockRace(ctx context.Context, cacheKey string) (string, error) {

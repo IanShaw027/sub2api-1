@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"errors"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -111,6 +112,20 @@ func (r *openAIAccountRepoStub) Update(ctx context.Context, account *Account) er
 	return nil
 }
 
+type openAITempUnschedRepoStub struct {
+	kiroDefaultAccountRepoStub
+	setErrorCalls  int
+	setErrorID     int64
+	setErrorReason string
+}
+
+func (r *openAITempUnschedRepoStub) SetError(_ context.Context, id int64, errorMsg string) error {
+	r.setErrorCalls++
+	r.setErrorID = id
+	r.setErrorReason = errorMsg
+	return nil
+}
+
 // openAIOAuthServiceStub implements OpenAIOAuthService methods for testing
 type openAIOAuthServiceStub struct {
 	tokenInfo     *OpenAITokenInfo
@@ -133,6 +148,32 @@ func (s *openAIOAuthServiceStub) BuildAccountCredentials(info *OpenAITokenInfo) 
 		"refresh_token": info.RefreshToken,
 		"expires_at":    now.Add(time.Duration(info.ExpiresIn) * time.Second).Format(time.RFC3339),
 	}
+}
+
+type openAIRefreshExecutorStub struct {
+	refreshCalls int32
+	credentials  map[string]any
+	err          error
+}
+
+func (s *openAIRefreshExecutorStub) CanRefresh(account *Account) bool {
+	return account != nil && account.Platform == PlatformOpenAI && account.Type == AccountTypeOAuth
+}
+
+func (s *openAIRefreshExecutorStub) NeedsRefresh(account *Account, refreshWindow time.Duration) bool {
+	return true
+}
+
+func (s *openAIRefreshExecutorStub) Refresh(ctx context.Context, account *Account) (map[string]any, error) {
+	atomic.AddInt32(&s.refreshCalls, 1)
+	if s.err != nil {
+		return nil, s.err
+	}
+	return cloneCredentials(s.credentials), nil
+}
+
+func (s *openAIRefreshExecutorStub) CacheKey(account *Account) string {
+	return OpenAITokenCacheKey(account)
 }
 
 func TestOpenAITokenProvider_CacheHit(t *testing.T) {
@@ -484,6 +525,7 @@ func TestOpenAITokenProvider_CacheSetError(t *testing.T) {
 
 func TestOpenAITokenProvider_MissingAccessToken(t *testing.T) {
 	cache := newOpenAITokenCacheStub()
+	repo := &openAITempUnschedRepoStub{}
 	expiresAt := time.Now().Add(1 * time.Hour).Format(time.RFC3339)
 	account := &Account{
 		ID:       109,
@@ -495,12 +537,53 @@ func TestOpenAITokenProvider_MissingAccessToken(t *testing.T) {
 		},
 	}
 
-	provider := NewOpenAITokenProvider(nil, cache, nil)
+	provider := NewOpenAITokenProvider(repo, cache, nil)
 
 	token, err := provider.GetAccessToken(context.Background(), account)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "access_token not found")
 	require.Empty(t, token)
+	require.Contains(t, err.Error(), "missing access_token on request path")
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.Equal(t, 1, repo.setErrorCalls)
+	require.Equal(t, int64(109), repo.setErrorID)
+	require.Contains(t, repo.setErrorReason, "missing access_token")
+}
+
+func TestOpenAITokenProvider_MissingAccessTokenRefreshesViaRefreshAPI(t *testing.T) {
+	repo := &openAITempUnschedRepoStub{
+		kiroDefaultAccountRepoStub: kiroDefaultAccountRepoStub{
+			accountsByID: map[int64]*Account{},
+		},
+	}
+	account := &Account{
+		ID:       211,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "rt-only",
+			"expires_at":    time.Now().Add(1 * time.Hour).Format(time.RFC3339),
+		},
+	}
+	repo.accountsByID[account.ID] = account
+
+	executor := &openAIRefreshExecutorStub{
+		credentials: map[string]any{
+			"access_token":  "refreshed-token",
+			"refresh_token": "rt-new",
+			"expires_at":    time.Now().Add(2 * time.Hour).Format(time.RFC3339),
+		},
+	}
+	provider := NewOpenAITokenProvider(repo, nil, nil)
+	provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, nil), executor)
+
+	token, err := provider.GetAccessToken(context.Background(), account)
+	require.NoError(t, err)
+	require.Equal(t, "refreshed-token", token)
+	require.Equal(t, int32(1), atomic.LoadInt32(&executor.refreshCalls))
+	require.Equal(t, 0, repo.setErrorCalls)
+	require.Equal(t, "refreshed-token", repo.accountsByID[account.ID].GetCredential("access_token"))
 }
 
 func TestOpenAITokenProvider_RefreshError(t *testing.T) {
@@ -806,7 +889,7 @@ func TestOpenAITokenProvider_Real_WhitespaceCredentialToken(t *testing.T) {
 	provider := NewOpenAITokenProvider(nil, cache, nil)
 	token, err := provider.GetAccessToken(context.Background(), account)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "access_token not found")
+	require.Contains(t, err.Error(), "missing access_token on request path")
 	require.Empty(t, token)
 }
 
@@ -827,7 +910,7 @@ func TestOpenAITokenProvider_Real_NilCredentials(t *testing.T) {
 	provider := NewOpenAITokenProvider(nil, cache, nil)
 	token, err := provider.GetAccessToken(context.Background(), account)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "access_token not found")
+	require.Contains(t, err.Error(), "missing access_token on request path")
 	require.Empty(t, token)
 }
 

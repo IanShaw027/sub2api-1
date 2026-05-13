@@ -140,9 +140,11 @@ func TestPrepareResponsesAnthropicIngress_FallsBackToLegacyMessagesWhenInputMiss
 	require.Empty(t, plan.FullReplaySource)
 	require.False(t, gjson.GetBytes(plan.PrimaryBody, "messages").Exists())
 	require.False(t, gjson.GetBytes(plan.PrimaryBody, "previous_response_id").Exists())
-	require.Equal(t, "repo policy", gjson.GetBytes(plan.PrimaryBody, "instructions").String())
-	require.Equal(t, "function_call", gjson.GetBytes(plan.PrimaryBody, "input.0.type").String())
-	require.Equal(t, "function_call_output", gjson.GetBytes(plan.PrimaryBody, "input.1.type").String())
+	require.False(t, gjson.GetBytes(plan.PrimaryBody, "instructions").Exists())
+	require.Equal(t, "system", gjson.GetBytes(plan.PrimaryBody, "input.0.role").String())
+	require.Equal(t, "repo policy", gjson.GetBytes(plan.PrimaryBody, "input.0.content").String())
+	require.Equal(t, "function_call", gjson.GetBytes(plan.PrimaryBody, "input.1.type").String())
+	require.Equal(t, "function_call_output", gjson.GetBytes(plan.PrimaryBody, "input.2.type").String())
 }
 
 func TestClassifyResponsesAnthropicFailure(t *testing.T) {
