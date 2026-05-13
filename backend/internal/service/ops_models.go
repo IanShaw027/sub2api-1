@@ -121,7 +121,7 @@ type OpsErrorLogFilter struct {
 	ClientRequestID string
 
 	// View controls error categorization for list endpoints.
-	// - errors: show actionable errors (exclude business-limited / 429 / 529)
+	// - errors: show actionable errors (exclude business-limited only; upstream 429/529 stay visible)
 	// - excluded: only show excluded errors
 	// - all: show everything
 	View string

@@ -30,7 +30,7 @@
                 {{ t('admin.ops.errorLog.group') }}
               </th>
               <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
-                {{ t('admin.ops.errorLog.user') }}
+                {{ `${t('admin.ops.errorLog.user')}/${t('admin.ops.errorLog.account')}` }}
               </th>
               <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
                 {{ t('admin.ops.errorLog.status') }}
@@ -129,22 +129,12 @@
 
               <!-- User / Account -->
               <td class="px-4 py-2">
-                <template v-if="isUpstreamRow(log)">
-                  <el-tooltip v-if="log.account_id" :content="t('admin.ops.errorLog.accountId') + ' ' + log.account_id" placement="top" :show-after="500">
-                    <span class="max-w-[100px] truncate text-xs font-medium text-gray-900 dark:text-gray-200">
-                      {{ log.account_name || '-' }}
-                    </span>
-                  </el-tooltip>
-                  <span v-else class="text-xs text-gray-400">-</span>
-                </template>
-                <template v-else>
-                  <el-tooltip v-if="log.user_id" :content="t('admin.ops.errorLog.userId') + ' ' + log.user_id" placement="top" :show-after="500">
-                    <span class="max-w-[100px] truncate text-xs font-medium text-gray-900 dark:text-gray-200">
-                      {{ log.user_email || '-' }}
-                    </span>
-                  </el-tooltip>
-                  <span v-else class="text-xs text-gray-400">-</span>
-                </template>
+                <el-tooltip v-if="identityTooltip(log)" :content="identityTooltip(log)" placement="top" :show-after="500">
+                  <span class="max-w-[100px] truncate text-xs font-medium text-gray-900 dark:text-gray-200">
+                    {{ identityLabel(log) }}
+                  </span>
+                </el-tooltip>
+                <span v-else class="text-xs text-gray-400">-</span>
               </td>
 
               <!-- Status -->
@@ -222,6 +212,28 @@ function isUpstreamRow(log: OpsErrorLog): boolean {
   const phase = String(log.phase || '').toLowerCase()
   const owner = String(log.error_owner || '').toLowerCase()
   return phase === 'upstream' && owner === 'provider'
+}
+
+function shouldShowAccount(log: OpsErrorLog): boolean {
+  if (isUpstreamRow(log)) return true
+  return !log.user_id && !!log.account_id
+}
+
+function identityTooltip(log: OpsErrorLog): string {
+  if (shouldShowAccount(log) && log.account_id) {
+    return `${t('admin.ops.errorLog.accountId')} ${log.account_id}`
+  }
+  if (log.user_id) {
+    return `${t('admin.ops.errorLog.userId')} ${log.user_id}`
+  }
+  return ''
+}
+
+function identityLabel(log: OpsErrorLog): string {
+  if (shouldShowAccount(log)) {
+    return log.account_name || (log.account_id ? String(log.account_id) : '-')
+  }
+  return log.user_email || (log.user_id ? String(log.user_id) : '-')
 }
 
 function formatEndpointTooltip(log: OpsErrorLog): string {

@@ -20,6 +20,15 @@ func TestGetOpsAdvancedSettings_DefaultHidesOpenAITokenStats(t *testing.T) {
 	if !cfg.DisplayAlertEvents {
 		t.Fatalf("DisplayAlertEvents = false, want true by default")
 	}
+	if cfg.IgnoreCredential401Errors {
+		t.Fatalf("IgnoreCredential401Errors = true, want false by default")
+	}
+	if cfg.IgnoreRateLimit429Errors {
+		t.Fatalf("IgnoreRateLimit429Errors = true, want false by default")
+	}
+	if cfg.IgnoreAccountNotFoundErrors {
+		t.Fatalf("IgnoreAccountNotFoundErrors = true, want false by default")
+	}
 	if repo.setCalls != 1 {
 		t.Fatalf("expected defaults to be persisted once, got %d", repo.setCalls)
 	}
@@ -32,6 +41,9 @@ func TestUpdateOpsAdvancedSettings_PersistsOpenAITokenStatsVisibility(t *testing
 	cfg := defaultOpsAdvancedSettings()
 	cfg.DisplayOpenAITokenStats = true
 	cfg.DisplayAlertEvents = false
+	cfg.IgnoreCredential401Errors = true
+	cfg.IgnoreRateLimit429Errors = true
+	cfg.IgnoreAccountNotFoundErrors = true
 
 	updated, err := svc.UpdateOpsAdvancedSettings(context.Background(), cfg)
 	if err != nil {
@@ -43,6 +55,9 @@ func TestUpdateOpsAdvancedSettings_PersistsOpenAITokenStatsVisibility(t *testing
 	if updated.DisplayAlertEvents {
 		t.Fatalf("DisplayAlertEvents = true, want false")
 	}
+	if !updated.IgnoreCredential401Errors || !updated.IgnoreRateLimit429Errors || !updated.IgnoreAccountNotFoundErrors {
+		t.Fatalf("new ignore flags were not persisted: %+v", updated)
+	}
 
 	reloaded, err := svc.GetOpsAdvancedSettings(context.Background())
 	if err != nil {
@@ -53,6 +68,9 @@ func TestUpdateOpsAdvancedSettings_PersistsOpenAITokenStatsVisibility(t *testing
 	}
 	if reloaded.DisplayAlertEvents {
 		t.Fatalf("reloaded DisplayAlertEvents = true, want false")
+	}
+	if !reloaded.IgnoreCredential401Errors || !reloaded.IgnoreRateLimit429Errors || !reloaded.IgnoreAccountNotFoundErrors {
+		t.Fatalf("reloaded new ignore flags were not persisted: %+v", reloaded)
 	}
 }
 
@@ -71,12 +89,13 @@ func TestGetOpsAdvancedSettings_BackfillsNewDisplayFlagsFromDefaults(t *testing.
 		"aggregation": map[string]any{
 			"aggregation_enabled": false,
 		},
-		"ignore_count_tokens_errors":    true,
-		"ignore_context_canceled":       true,
-		"ignore_no_available_accounts":  false,
-		"ignore_invalid_api_key_errors": false,
-		"auto_refresh_enabled":          false,
-		"auto_refresh_interval_seconds": 30,
+		"ignore_count_tokens_errors":         true,
+		"ignore_context_canceled":            true,
+		"ignore_no_available_accounts":       false,
+		"ignore_invalid_api_key_errors":      false,
+		"ignore_insufficient_balance_errors": false,
+		"auto_refresh_enabled":               false,
+		"auto_refresh_interval_seconds":      30,
 	}
 	raw, err := json.Marshal(legacyCfg)
 	if err != nil {
@@ -93,5 +112,14 @@ func TestGetOpsAdvancedSettings_BackfillsNewDisplayFlagsFromDefaults(t *testing.
 	}
 	if !cfg.DisplayAlertEvents {
 		t.Fatalf("DisplayAlertEvents = false, want true default backfill")
+	}
+	if cfg.IgnoreCredential401Errors {
+		t.Fatalf("IgnoreCredential401Errors = true, want false default backfill")
+	}
+	if cfg.IgnoreRateLimit429Errors {
+		t.Fatalf("IgnoreRateLimit429Errors = true, want false default backfill")
+	}
+	if cfg.IgnoreAccountNotFoundErrors {
+		t.Fatalf("IgnoreAccountNotFoundErrors = true, want false default backfill")
 	}
 }

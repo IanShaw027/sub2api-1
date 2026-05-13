@@ -526,6 +526,36 @@ async function saveAllSettings() {
               </div>
               <Toggle v-model="advancedSettings.ignore_insufficient_balance_errors" />
             </div>
+
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.ops.settings.ignoreCredential401Errors') }}</label>
+                <p class="mt-1 text-xs text-gray-500">
+                  {{ t('admin.ops.settings.ignoreCredential401ErrorsHint') }}
+                </p>
+              </div>
+              <Toggle v-model="advancedSettings.ignore_credential_401_errors" />
+            </div>
+
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.ops.settings.ignoreRateLimit429Errors') }}</label>
+                <p class="mt-1 text-xs text-gray-500">
+                  {{ t('admin.ops.settings.ignoreRateLimit429ErrorsHint') }}
+                </p>
+              </div>
+              <Toggle v-model="advancedSettings.ignore_rate_limit_429_errors" />
+            </div>
+
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.ops.settings.ignoreAccountNotFoundErrors') }}</label>
+                <p class="mt-1 text-xs text-gray-500">
+                  {{ t('admin.ops.settings.ignoreAccountNotFoundErrorsHint') }}
+                </p>
+              </div>
+              <Toggle v-model="advancedSettings.ignore_account_not_found_errors" />
+            </div>
           </div>
 
           <!-- Auto Refresh -->

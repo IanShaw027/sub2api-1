@@ -842,6 +842,9 @@ export interface OpsAdvancedSettings {
   ignore_no_available_accounts: boolean
   ignore_invalid_api_key_errors: boolean
   ignore_insufficient_balance_errors: boolean
+  ignore_credential_401_errors: boolean
+  ignore_rate_limit_429_errors: boolean
+  ignore_account_not_found_errors: boolean
   display_openai_token_stats: boolean
   display_alert_events: boolean
   auto_refresh_enabled: boolean

@@ -56,7 +56,7 @@ const totalUpstreamErrors = computed(() =>
 )
 
 const totalDisplayed = computed(() =>
-  sumNumbers(props.points.map((p) => (p.error_count_sla ?? 0) + (p.upstream_error_count_excl_429_529 ?? 0) + (p.business_limited_count ?? 0)))
+  sumNumbers(props.points.map((p) => (p.error_count_sla ?? 0) + (p.business_limited_count ?? 0)))
 )
 
 const hasRequestErrors = computed(() => totalRequestErrors.value > 0)

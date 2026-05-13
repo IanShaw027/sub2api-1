@@ -1993,6 +1993,19 @@ func (s *AccountTestService) recordOpsError(c *gin.Context, errorMsg string) {
 	if c.Request != nil && c.Request.Context() != nil {
 		ctx = c.Request.Context()
 	}
+	if ShouldSkipOpsErrorLog(ctx, s.opsService, OpsErrorLogSkipInput{
+		Message:     entry.ErrorMessage,
+		Body:        entry.ErrorBody,
+		RequestPath: entry.RequestPath,
+		StatusCode: func() int {
+			if entry.UpstreamStatusCode != nil && *entry.UpstreamStatusCode > 0 {
+				return *entry.UpstreamStatusCode
+			}
+			return entry.StatusCode
+		}(),
+	}) {
+		return
+	}
 	writeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 

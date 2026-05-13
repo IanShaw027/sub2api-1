@@ -184,6 +184,34 @@ func TestAccountTestService_RunTestBackground_KiroDefaultModelRecordedInOpsError
 	require.Equal(t, "claude-sonnet-4-5-20250929", captured.RequestedModel)
 }
 
+func TestAccountTestServiceSendErrorAndEnd_SkipsIgnoredScheduledAccountNotFoundOpsError(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	inserted := 0
+	repo := &opsRepoMock{
+		InsertErrorLogFn: func(ctx context.Context, input *OpsInsertErrorLogInput) (int64, error) {
+			inserted++
+			return 1, nil
+		},
+	}
+	settingRepo := newRuntimeSettingRepoStub()
+	settingRepo.values[SettingKeyOpsAdvancedSettings] = `{"ignore_account_not_found_errors":true}`
+	opsSvc := NewOpsService(repo, settingRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/internal/scheduled-tests/accounts/203/test", nil)
+	c.Set(accountTestOpsAccountIDKey, int64(203))
+	c.Set(accountTestOpsPlatformKey, PlatformOpenAI)
+
+	svc := &AccountTestService{opsService: opsSvc}
+	err := svc.sendErrorAndEnd(c, "Account not found")
+
+	require.Error(t, err)
+	require.Equal(t, 0, inserted)
+}
+
 func TestAccountTestService_TestAccountConnection_OpenAIDefaultModelRecordedInOpsError(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)

@@ -120,6 +120,8 @@
           v-if="showErrorDetails"
           :show="showErrorDetails"
           :time-range="timeRange"
+          :custom-start-time="customStartTime"
+          :custom-end-time="customEndTime"
           :platform="platform"
           :group-id="groupId"
           :error-type="errorDetailsType"
@@ -218,6 +220,8 @@ const QUERY_KEYS = {
   groupId: 'group_id',
   queryMode: 'mode',
   fullscreen: 'fullscreen',
+  startTime: 'start_time',
+  endTime: 'end_time',
 
   // Deep links
   openErrorDetails: 'open_error_details',
@@ -305,6 +309,11 @@ const applyRouteQueryToState = () => {
     queryMode.value = allowedQueryModes.has(fallback as QueryMode) ? (fallback as QueryMode) : 'auto'
   }
 
+  const nextStartTime = readQueryString(QUERY_KEYS.startTime)
+  const nextEndTime = readQueryString(QUERY_KEYS.endTime)
+  customStartTime.value = nextStartTime || null
+  customEndTime.value = nextEndTime || null
+
   // Deep links
   const openRules = readQueryString(QUERY_KEYS.openAlertRules)
   if (openRules === '1' || openRules === 'true') {
@@ -337,6 +346,10 @@ const buildQueryFromState = () => {
   if (platform.value) next[QUERY_KEYS.platform] = platform.value
   if (typeof groupId.value === 'number' && groupId.value > 0) next[QUERY_KEYS.groupId] = String(groupId.value)
   if (queryMode.value !== 'auto') next[QUERY_KEYS.queryMode] = queryMode.value
+  if (timeRange.value === 'custom' && customStartTime.value && customEndTime.value) {
+    next[QUERY_KEYS.startTime] = customStartTime.value
+    next[QUERY_KEYS.endTime] = customEndTime.value
+  }
 
   return next
 }

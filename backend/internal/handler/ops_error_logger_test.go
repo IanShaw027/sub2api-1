@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -11,6 +13,29 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+type opsLoggerSettingRepoStub struct {
+	values map[string]string
+}
+
+func (s *opsLoggerSettingRepoStub) Get(context.Context, string) (*service.Setting, error) {
+	return nil, service.ErrSettingNotFound
+}
+func (s *opsLoggerSettingRepoStub) GetValue(_ context.Context, key string) (string, error) {
+	if v, ok := s.values[key]; ok {
+		return v, nil
+	}
+	return "", service.ErrSettingNotFound
+}
+func (s *opsLoggerSettingRepoStub) Set(context.Context, string, string) error { return nil }
+func (s *opsLoggerSettingRepoStub) GetMultiple(context.Context, []string) (map[string]string, error) {
+	return map[string]string{}, nil
+}
+func (s *opsLoggerSettingRepoStub) SetMultiple(context.Context, map[string]string) error { return nil }
+func (s *opsLoggerSettingRepoStub) GetAll(context.Context) (map[string]string, error) {
+	return map[string]string{}, nil
+}
+func (s *opsLoggerSettingRepoStub) Delete(context.Context, string) error { return nil }
 
 func resetOpsErrorLoggerStateForTest(t *testing.T) {
 	t.Helper()
@@ -243,6 +268,24 @@ func TestOpsErrorLoggerMiddleware_RecordsNoAvailableAccounts(t *testing.T) {
 	default:
 		t.Fatal("expected no-available-accounts error to be enqueued")
 	}
+}
+
+func TestShouldSkipOpsErrorLog_NewAdvancedFilters(t *testing.T) {
+	repo := &opsLoggerSettingRepoStub{values: map[string]string{}}
+	raw, err := json.Marshal(map[string]any{
+		"ignore_credential_401_errors":    true,
+		"ignore_rate_limit_429_errors":    true,
+		"ignore_account_not_found_errors": true,
+	})
+	require.NoError(t, err)
+	repo.values[service.SettingKeyOpsAdvancedSettings] = string(raw)
+
+	ops := service.NewOpsService(nil, repo, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	require.True(t, shouldSkipOpsErrorLog(context.Background(), ops, "Authentication failed (401): invalid or expired credentials", "", "/v1/chat/completions", 401))
+	require.True(t, shouldSkipOpsErrorLog(context.Background(), ops, "too many requests", "", "/v1/chat/completions", 429))
+	require.True(t, shouldSkipOpsErrorLog(context.Background(), ops, "Account not found", "", "/internal/scheduled-tests/accounts/203/test", 500))
+	require.False(t, shouldSkipOpsErrorLog(context.Background(), ops, "internal server error", "", "/v1/chat/completions", 500))
 }
 
 func TestOpsErrorLoggerMiddleware_DoesNotBreakOuterMiddlewares(t *testing.T) {
