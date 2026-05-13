@@ -1184,7 +1184,16 @@ func (s *AccountTestService) testOpenAIImageWeb2API(c *gin.Context, ctx context.
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: modelID})
 	s.sendEvent(c, TestEvent{Type: "content", Text: "Initializing ChatGPT backend...\n"})
 
-	headers := buildOpenAIBackendAPIHeadersForTest(ctx, account, authToken, s.accountRepo)
+	gateway := &OpenAIGatewayService{
+		accountRepo:         s.accountRepo,
+		settingService:      s.settingService,
+		tlsFPProfileService: s.tlsFPProfileService,
+	}
+	headers, err := gateway.buildOpenAIBackendAPIHeaders(account, authToken)
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to build backend headers: %s", err.Error()))
+	}
+	profile := ResolveOpenAIWebProfile(account)
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
@@ -1199,7 +1208,7 @@ func (s *AccountTestService) testOpenAIImageWeb2API(c *gin.Context, ctx context.
 	}
 
 	s.sendEvent(c, TestEvent{Type: "content", Text: "Fetching chat requirements...\n"})
-	chatReqs, err := fetchOpenAIChatRequirements(ctx, client, headers, account, nil, nil)
+	chatReqs, err := fetchOpenAIChatRequirements(ctx, client, headers, account, profile, gateway)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Chat requirements failed: %s", err.Error()))
 	}
@@ -1210,8 +1219,8 @@ func (s *AccountTestService) testOpenAIImageWeb2API(c *gin.Context, ctx context.
 	s.sendEvent(c, TestEvent{Type: "content", Text: "Preparing image conversation...\n"})
 	parentMessageID := uuid.NewString()
 	proofToken := generateOpenAIProofToken(chatReqs.ProofOfWork.Required, chatReqs.ProofOfWork.Seed, chatReqs.ProofOfWork.Difficulty, headers.Get("User-Agent"))
-	_ = initializeOpenAIImageConversation(ctx, client, headers, account, nil, nil)
-	conduitToken, err := prepareOpenAIImageConversation(ctx, client, headers, account, nil, nil, prompt, parentMessageID, chatReqs.Token, proofToken)
+	_ = initializeOpenAIImageConversation(ctx, client, headers, account, profile, gateway)
+	conduitToken, err := prepareOpenAIImageConversation(ctx, client, headers, account, profile, gateway, prompt, parentMessageID, chatReqs.Token, proofToken)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Conversation prepare failed: %s", err.Error()))
 	}
@@ -1220,6 +1229,8 @@ func (s *AccountTestService) testOpenAIImageWeb2API(c *gin.Context, ctx context.
 	convHeaders := cloneHTTPHeader(headers)
 	convHeaders.Set("Accept", "text/event-stream")
 	convHeaders.Set("Content-Type", "application/json")
+	setOpenAIBackendAPIRequestTarget(convHeaders, openAIChatGPTConversationURL, "/backend-api/f/conversation")
+	setOpenAIBackendAPIRequestCookieHeader(convHeaders, profile, openAIChatGPTConversationURL)
 	convHeaders.Set("openai-sentinel-chat-requirements-token", chatReqs.Token)
 	if conduitToken != "" {
 		convHeaders.Set("x-conduit-token", conduitToken)
@@ -1243,6 +1254,7 @@ func (s *AccountTestService) testOpenAIImageWeb2API(c *gin.Context, ctx context.
 			_ = resp.Body.Close()
 		}
 	}()
+	gateway.applyOpenAIBackendAPIResponseState(ctx, account, profile, headers, resp.Response)
 	if resp.StatusCode >= 400 {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Conversation API returned %d", resp.StatusCode))
 	}
@@ -1254,7 +1266,7 @@ func (s *AccountTestService) testOpenAIImageWeb2API(c *gin.Context, ctx context.
 	pointerInfos = mergeOpenAIImagePointerInfos(pointerInfos, nil)
 	if conversationID != "" && !hasOpenAIFileServicePointerInfos(pointerInfos) {
 		s.sendEvent(c, TestEvent{Type: "content", Text: "Waiting for image generation to complete...\n"})
-		polledPointers, pollErr := pollOpenAIImageConversation(ctx, client, headers, account, nil, nil, conversationID)
+		polledPointers, pollErr := pollOpenAIImageConversation(ctx, client, headers, account, profile, gateway, conversationID)
 		if pollErr != nil {
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Poll failed: %s", pollErr.Error()))
 		}
@@ -1267,7 +1279,7 @@ func (s *AccountTestService) testOpenAIImageWeb2API(c *gin.Context, ctx context.
 
 	s.sendEvent(c, TestEvent{Type: "content", Text: "Downloading generated image...\n"})
 	for _, pointer := range pointerInfos {
-		data, err := resolveOpenAIImageBytes(ctx, client, headers, nil, conversationID, pointer)
+		data, err := resolveOpenAIImageBytes(ctx, client, headers, profile, conversationID, pointer)
 		if err != nil {
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Image download failed: %s", err.Error()))
 		}
@@ -1288,57 +1300,6 @@ func (s *AccountTestService) testOpenAIImageWeb2API(c *gin.Context, ctx context.
 
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
 	return nil
-}
-
-func buildOpenAIBackendAPIHeadersForTest(ctx context.Context, account *Account, token string, repo AccountRepository) http.Header {
-	deviceID := account.GetOpenAIDeviceID()
-	sessionID := account.GetOpenAISessionID()
-	if deviceID == "" || sessionID == "" {
-		updates := map[string]any{}
-		if deviceID == "" {
-			deviceID = uuid.NewString()
-			updates["openai_device_id"] = deviceID
-		}
-		if sessionID == "" {
-			sessionID = uuid.NewString()
-			updates["openai_session_id"] = sessionID
-		}
-		if account.Extra == nil {
-			account.Extra = map[string]any{}
-		}
-		for key, value := range updates {
-			account.Extra[key] = value
-		}
-		if repo != nil && len(updates) > 0 {
-			updateCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			defer cancel()
-			_ = repo.UpdateExtra(updateCtx, account.ID, updates)
-		}
-	}
-
-	headers := make(http.Header)
-	headers.Set("Authorization", "Bearer "+token)
-	headers.Set("Accept", "application/json")
-	headers.Set("Origin", "https://chatgpt.com")
-	headers.Set("Referer", "https://chatgpt.com/")
-	headers.Set("Sec-Fetch-Dest", "empty")
-	headers.Set("Sec-Fetch-Mode", "cors")
-	headers.Set("Sec-Fetch-Site", "same-origin")
-	headers.Set("User-Agent", openAIImageBackendUserAgent)
-	if customUA := strings.TrimSpace(account.GetOpenAIUserAgent()); customUA != "" {
-		headers.Set("User-Agent", customUA)
-	}
-	if chatgptAccountID := strings.TrimSpace(account.GetChatGPTAccountID()); chatgptAccountID != "" {
-		headers.Set("chatgpt-account-id", chatgptAccountID)
-	}
-	if deviceID != "" {
-		headers.Set("oai-device-id", deviceID)
-		headers.Set("Cookie", "oai-did="+deviceID)
-	}
-	if sessionID != "" {
-		headers.Set("oai-session-id", sessionID)
-	}
-	return headers
 }
 
 func buildOpenAIImageTestConversationRequest(prompt, parentMessageID string) map[string]any {
