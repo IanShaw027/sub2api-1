@@ -95,14 +95,11 @@ return 1
 local updated = 0
 for i = 1, #ARGV, 2 do
 	local field = ARGV[i]
-	local nextValue = tonumber(ARGV[i + 1])
-	if nextValue then
-		local current = redis.call('HGET', KEYS[1], field)
-		local currentValue = tonumber(current)
-		if current == false or currentValue == nil or nextValue > currentValue then
-			redis.call('HSET', KEYS[1], field, ARGV[i + 1])
-			updated = updated + 1
-		end
+	local nextValue = ARGV[i + 1]
+	local current = redis.call('HGET', KEYS[1], field)
+	if current == false or string.len(nextValue) > string.len(current) or (string.len(nextValue) == string.len(current) and nextValue > current) then
+		redis.call('HSET', KEYS[1], field, nextValue)
+		updated = updated + 1
 	end
 end
 return updated

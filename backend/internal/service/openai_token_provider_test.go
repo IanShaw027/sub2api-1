@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 )
 
@@ -179,6 +180,27 @@ func TestOpenAITokenProvider_CacheMiss_FromCredentials(t *testing.T) {
 	// Should have stored in cache
 	cacheKey := OpenAITokenCacheKey(account)
 	require.Equal(t, "credential-token", cache.tokens[cacheKey])
+}
+
+func TestOpenAITokenProvider_RedisNilCacheMissFallsBackToCredentials(t *testing.T) {
+	cache := newOpenAITokenCacheStub()
+	cache.getErr = redis.Nil
+	expiresAt := time.Now().Add(1 * time.Hour).Format(time.RFC3339)
+	account := &Account{
+		ID:       1011,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token": "credential-token",
+			"expires_at":   expiresAt,
+		},
+	}
+
+	provider := NewOpenAITokenProvider(nil, cache, nil)
+
+	token, err := provider.GetAccessToken(context.Background(), account)
+	require.NoError(t, err)
+	require.Equal(t, "credential-token", token)
 }
 
 func TestOpenAITokenProvider_TokenRefresh(t *testing.T) {
