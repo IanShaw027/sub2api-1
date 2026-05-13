@@ -924,8 +924,7 @@ func TestOpenAIGatewayService_OAuthLegacy_ClaudeCLIResponsesInjectsInstructionsA
 	require.NotNil(t, result)
 	require.NotEmpty(t, strings.TrimSpace(gjson.GetBytes(upstream.lastBody, "instructions").String()))
 	require.Equal(t, "filePath", gjson.GetBytes(upstream.lastBody, "tools.0.parameters.required.0").String())
-	require.Equal(t, "limit", gjson.GetBytes(upstream.lastBody, "tools.0.parameters.required.1").String())
-	require.Equal(t, "offset", gjson.GetBytes(upstream.lastBody, "tools.0.parameters.required.2").String())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "tools.0.parameters.required.1").Exists())
 }
 
 func TestOpenAIGatewayService_GenerateSessionHash_EmptyBodyStillEmpty(t *testing.T) {
@@ -2219,7 +2218,7 @@ func TestOpenAIStreamingPassthroughSoftRateLimitAdvisoryBeforeOutputReturnsFailo
 	require.Empty(t, rec.Body.String())
 }
 
-func TestOpenAINonStreamingSoftRateLimitAdvisoryTriggersFailover(t *testing.T) {
+func TestOpenAINonStreamingSoftRateLimitAdvisoryDoesNotFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
 
@@ -2234,14 +2233,15 @@ func TestOpenAINonStreamingSoftRateLimitAdvisoryTriggersFailover(t *testing.T) {
 	}
 
 	result, err := svc.handleNonStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}, "model", "model")
-	require.Nil(t, result)
-	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
-	require.NotContains(t, rec.Body.String(), "Approaching rate limits")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 1, result.usage.InputTokens)
+	require.Equal(t, 1, result.usage.OutputTokens)
+	require.Contains(t, rec.Body.String(), "Approaching rate limits")
 }
 
-func TestOpenAINonStreamingPassthroughSoftRateLimitAdvisoryTriggersFailover(t *testing.T) {
+func TestOpenAINonStreamingPassthroughSoftRateLimitAdvisoryDoesNotFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
 
@@ -2256,11 +2256,37 @@ func TestOpenAINonStreamingPassthroughSoftRateLimitAdvisoryTriggersFailover(t *t
 	}
 
 	result, err := svc.handleNonStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}, "model", "model")
-	require.Nil(t, result)
-	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
-	require.NotContains(t, rec.Body.String(), "Approaching rate limits")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 1, result.usage.InputTokens)
+	require.Equal(t, 1, result.usage.OutputTokens)
+	require.Contains(t, rec.Body.String(), "Approaching rate limits")
+}
+
+func TestExtractOpenAIWSSoftRateLimitAdvisoryFromSSEBody(t *testing.T) {
+	body := strings.Join([]string{
+		"event: response.created",
+		`data: {"type":"response.created","response":{"id":"resp_1"}}`,
+		"",
+		"event: codex.rate_limits",
+		`data: {"type":"codex.rate_limits","metered_limit_name":"codex","rate_limits":{"allowed":true,"limit_reached":false,"primary":{"used_percent":95}},"credits":{"has_credits":false,"unlimited":false}}`,
+		"",
+	}, "\n")
+
+	msg, matched := extractOpenAIWSSoftRateLimitAdvisoryFromSSEBody(body)
+	require.True(t, matched)
+	require.Contains(t, msg, "Approaching upstream rate limits")
+
+	body = strings.Join([]string{
+		"event: response.completed",
+		`data: {"type":"response.completed","response":{"id":"resp_2","output":[{"type":"message","content":[{"type":"output_text","text":"Approaching rate limits\nSwitch to o4-mini for lower credit usage?\n1. Switch to o4-mini\n2. Keep current model\n3. Keep current model (never show again)"}]}]}}`,
+		"",
+	}, "\n")
+
+	msg, matched = extractOpenAIWSSoftRateLimitAdvisoryFromSSEBody(body)
+	require.False(t, matched)
+	require.Empty(t, msg)
 }
 
 func TestOpenAIStreamingPassthroughResponseDoneWithoutDoneMarkerStillSucceeds(t *testing.T) {

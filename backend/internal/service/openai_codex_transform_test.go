@@ -1231,10 +1231,36 @@ func TestNormalizeOpenAIStrictFunctionToolSchemas(t *testing.T) {
 
 	modified := normalizeOpenAIStrictFunctionToolSchemas(reqBody)
 
-	require.True(t, modified)
+	require.False(t, modified)
 	require.Equal(t, "filePath", firstNonEmptyString(reqBody["tools"].([]any)[0].(map[string]any)["parameters"].(map[string]any)["required"].([]any)[0]))
-	require.Equal(t, "limit", firstNonEmptyString(reqBody["tools"].([]any)[0].(map[string]any)["parameters"].(map[string]any)["required"].([]any)[1]))
-	require.Equal(t, "offset", firstNonEmptyString(reqBody["tools"].([]any)[0].(map[string]any)["parameters"].(map[string]any)["required"].([]any)[2]))
+	require.Len(t, reqBody["tools"].([]any)[0].(map[string]any)["parameters"].(map[string]any)["required"].([]any), 1)
+}
+
+func TestNormalizeOpenAIStrictFunctionToolSchemas_CleansInvalidRequiredEntries(t *testing.T) {
+	reqBody := map[string]any{
+		"tools": []any{
+			map[string]any{
+				"name":   "read_file",
+				"type":   "function",
+				"strict": true,
+				"parameters": map[string]any{
+					"type":     "object",
+					"required": []any{"offset", "filePath", "offset", "missing", "  "},
+					"properties": map[string]any{
+						"limit":    map[string]any{"type": "number"},
+						"offset":   map[string]any{"type": "number"},
+						"filePath": map[string]any{"type": "string"},
+					},
+				},
+			},
+		},
+	}
+
+	modified := normalizeOpenAIStrictFunctionToolSchemas(reqBody)
+
+	require.True(t, modified)
+	required := reqBody["tools"].([]any)[0].(map[string]any)["parameters"].(map[string]any)["required"].([]any)
+	require.Equal(t, []any{"filePath", "offset"}, required)
 }
 
 func TestFilterCodexInput_DropsReasoningItemsRegardlessOfPreserveReferences(t *testing.T) {

@@ -5142,16 +5142,13 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c *gin.Context, account *Account, body []byte, originalModel string, mappedModel string) (*openaiNonStreamingResultPassthrough, error) {
 	bodyText := string(body)
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
-	if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(body); matched {
+	if advisoryMsg, matched := extractOpenAIWSSoftRateLimitAdvisoryFromSSEBody(bodyText); matched {
 		return nil, s.newOpenAISoftRateLimitFailoverError(c.Request.Context(), c, account, true, resp.Header.Get("x-request-id"), body, advisoryMsg)
 	}
 
 	usage := &OpenAIUsage{}
 	imageCount := 0
 	if ok {
-		if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(finalResponse); matched {
-			return nil, s.newOpenAISoftRateLimitFailoverError(c.Request.Context(), c, account, true, resp.Header.Get("x-request-id"), finalResponse, advisoryMsg)
-		}
 		if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(finalResponse); parsed {
 			*usage = parsedUsage
 		}
@@ -6261,16 +6258,13 @@ func isEventStreamResponse(header http.Header) bool {
 func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Context, account *Account, body []byte, originalModel, mappedModel string) (*openaiNonStreamingResult, error) {
 	bodyText := string(body)
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
-	if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(body); matched {
+	if advisoryMsg, matched := extractOpenAIWSSoftRateLimitAdvisoryFromSSEBody(bodyText); matched {
 		return nil, s.newOpenAISoftRateLimitFailoverError(c.Request.Context(), c, account, false, resp.Header.Get("x-request-id"), body, advisoryMsg)
 	}
 
 	usage := &OpenAIUsage{}
 	imageCount := 0
 	if ok {
-		if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(finalResponse); matched {
-			return nil, s.newOpenAISoftRateLimitFailoverError(c.Request.Context(), c, account, false, resp.Header.Get("x-request-id"), finalResponse, advisoryMsg)
-		}
 		if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(finalResponse); parsed {
 			*usage = parsedUsage
 		}
@@ -6335,6 +6329,20 @@ func extractOpenAISSETerminalEvent(body string) (string, []byte, bool) {
 		}
 	}
 	return "", nil, false
+}
+
+func extractOpenAIWSSoftRateLimitAdvisoryFromSSEBody(body string) (string, bool) {
+	lines := strings.Split(body, "\n")
+	for _, line := range lines {
+		data, ok := extractOpenAISSEDataLine(line)
+		if !ok || data == "" || data == "[DONE]" {
+			continue
+		}
+		if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory([]byte(data)); matched {
+			return advisoryMsg, true
+		}
+	}
+	return "", false
 }
 
 func extractOpenAISSEErrorMessage(payload []byte) string {
@@ -7600,6 +7608,10 @@ func shouldStripTopPForResponsesUpstream(account *Account) bool {
 }
 
 func normalizeOpenAIResponsesInputToolRoles(reqBody map[string]any) bool {
+	return normalizeOpenAIResponsesInputToolRolesWithOptions(reqBody, true)
+}
+
+func normalizeOpenAIResponsesInputToolRolesWithOptions(reqBody map[string]any, sanitizeOrphans bool) bool {
 	if reqBody == nil {
 		return false
 	}
@@ -7612,7 +7624,7 @@ func normalizeOpenAIResponsesInputToolRoles(reqBody map[string]any) bool {
 		reqBody["input"] = normalized
 		input = normalized
 	}
-	if sanitizeOpenAIResponsesOrphanToolOutputs(reqBody, input) {
+	if sanitizeOrphans && sanitizeOpenAIResponsesOrphanToolOutputs(reqBody, input) {
 		return true
 	}
 	return changed

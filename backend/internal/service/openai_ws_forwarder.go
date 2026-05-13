@@ -2691,7 +2691,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		var normalizedReqBody map[string]any
 		if err := json.Unmarshal(normalized, &normalizedReqBody); err == nil {
-			if normalizeOpenAIResponsesInputToolRoles(normalizedReqBody) {
+			if normalizeOpenAIResponsesInputToolRolesWithOptions(normalizedReqBody, false) {
 				rebuilt, marshalErr := marshalOpenAIResponsesRequestBodyOrdered(normalizedReqBody)
 				if marshalErr != nil {
 					return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", marshalErr)
@@ -4247,70 +4247,12 @@ func classifyOpenAIWSSoftRateLimitAdvisory(message []byte) (string, bool) {
 		return openAIWSSoftRateLimitAdvisoryMessage, true
 	}
 
-	if openAIOutputContainsSoftRateLimitAdvisory(message) {
-		return openAIWSSoftRateLimitAdvisoryMessage, true
-	}
 	return "", false
 }
 
 func openAIWSRateLimitWindowApproaching(message []byte, path string) bool {
 	value := gjson.GetBytes(message, path)
 	return value.Exists() && value.Float() >= openAIWSSoftRateLimitAdvisoryThreshold
-}
-
-func openAIOutputContainsSoftRateLimitAdvisory(message []byte) bool {
-	for _, text := range extractOpenAIOutputTextCandidates(message) {
-		if isOpenAISoftRateLimitAdvisoryText(text) {
-			return true
-		}
-	}
-	return false
-}
-
-func extractOpenAIOutputTextCandidates(message []byte) []string {
-	if len(message) == 0 {
-		return nil
-	}
-
-	candidates := make([]string, 0, 8)
-	appendCandidate := func(text string) {
-		text = strings.TrimSpace(text)
-		if text == "" {
-			return
-		}
-		candidates = append(candidates, text)
-	}
-
-	appendCandidate(gjson.GetBytes(message, "delta").String())
-	appendCandidate(gjson.GetBytes(message, "text").String())
-
-	for _, outputPath := range []string{"output", "response.output"} {
-		for _, output := range gjson.GetBytes(message, outputPath).Array() {
-			for _, content := range output.Get("content").Array() {
-				appendCandidate(content.Get("text").String())
-				appendCandidate(content.Get("delta").String())
-			}
-		}
-	}
-
-	return candidates
-}
-
-func isOpenAISoftRateLimitAdvisoryText(text string) bool {
-	lower := strings.ToLower(strings.TrimSpace(text))
-	if lower == "" {
-		return false
-	}
-	if !strings.Contains(lower, "approaching rate limits") {
-		return false
-	}
-	if !strings.Contains(lower, "keep current model") {
-		return false
-	}
-	if strings.Contains(lower, "never show again") {
-		return true
-	}
-	return strings.Contains(lower, "switch to") && strings.Contains(lower, "lower credit usage")
 }
 
 func (s *OpenAIGatewayService) persistOpenAIWSRateLimitSignal(ctx context.Context, account *Account, headers http.Header, responseBody []byte, codeRaw, errTypeRaw, msgRaw string) {

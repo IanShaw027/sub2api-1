@@ -1091,7 +1091,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPre
 	require.Equal(t, "resp_stale_external", gjson.Get(requestToJSONString(captureConn.writes[1]), "previous_response_id").String(), "function_call_output 场景不应预改写 previous_response_id")
 }
 
-func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledOrphanFunctionCallOutputDowngradesToUserMessage(t *testing.T) {
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledFunctionCallOutputAutoAttachesPreviousResponseID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -1220,13 +1220,13 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledOrp
 
 	require.Equal(t, 1, captureDialer.DialCount())
 	require.Len(t, captureConn.writes, 2)
-	require.False(t, gjson.Get(requestToJSONString(captureConn.writes[1]), "previous_response_id").Exists(), "孤立 function_call_output 不应自动补 previous_response_id")
-	require.Equal(t, "message", gjson.Get(requestToJSONString(captureConn.writes[1]), "input.0.type").String())
-	require.Equal(t, "user", gjson.Get(requestToJSONString(captureConn.writes[1]), "input.0.role").String())
-	require.Equal(t, "ok", gjson.Get(requestToJSONString(captureConn.writes[1]), "input.0.content").String())
+	require.Equal(t, "resp_auto_prev_1", gjson.Get(requestToJSONString(captureConn.writes[1]), "previous_response_id").String(), "function_call_output 缺失 previous_response_id 时应回填上一轮响应 ID")
+	require.Equal(t, "function_call_output", gjson.Get(requestToJSONString(captureConn.writes[1]), "input.0.type").String())
+	require.Equal(t, "call_auto_1", gjson.Get(requestToJSONString(captureConn.writes[1]), "input.0.call_id").String())
+	require.Equal(t, "ok", gjson.Get(requestToJSONString(captureConn.writes[1]), "input.0.output").String())
 }
 
-func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledOrphanToolRoleDowngradesToUserMessage(t *testing.T) {
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledToolRoleAutoAttachesPreviousResponseID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -1353,10 +1353,10 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledOrp
 
 	require.Equal(t, 1, captureDialer.DialCount())
 	require.Len(t, captureConn.writes, 2)
-	require.False(t, gjson.Get(requestToJSONString(captureConn.writes[1]), "previous_response_id").Exists(), "孤立 tool role 不应自动补 previous_response_id")
-	require.Equal(t, "message", gjson.Get(requestToJSONString(captureConn.writes[1]), "input.0.type").String())
-	require.Equal(t, "user", gjson.Get(requestToJSONString(captureConn.writes[1]), "input.0.role").String())
-	require.Equal(t, "ok", gjson.Get(requestToJSONString(captureConn.writes[1]), "input.0.content").String())
+	require.Equal(t, "resp_tool_role_prev_1", gjson.Get(requestToJSONString(captureConn.writes[1]), "previous_response_id").String(), "tool role 续链缺失 previous_response_id 时应回填上一轮响应 ID")
+	require.Equal(t, "function_call_output", gjson.Get(requestToJSONString(captureConn.writes[1]), "input.0.type").String(), "tool role 应先归一化为 function_call_output")
+	require.Equal(t, "call_tool_1", gjson.Get(requestToJSONString(captureConn.writes[1]), "input.0.call_id").String())
+	require.Equal(t, "ok", gjson.Get(requestToJSONString(captureConn.writes[1]), "input.0.output").String())
 }
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledFunctionCallOutputSkipsAutoAttachWhenLastResponseIDMissing(t *testing.T) {

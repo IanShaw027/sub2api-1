@@ -1245,16 +1245,37 @@ func normalizeOpenAIStrictFunctionParameters(toolMap map[string]any) bool {
 		return false
 	}
 
-	required := make([]string, 0, len(properties))
-	for key := range properties {
-		required = append(required, key)
-	}
-	sort.Strings(required)
-
 	existingRequired, _ := parameters["required"].([]any)
-	if len(existingRequired) == len(required) {
+	if len(existingRequired) == 0 {
+		return false
+	}
+
+	normalizedRequired := make([]string, 0, len(existingRequired))
+	seen := make(map[string]struct{}, len(existingRequired))
+	modified := false
+	for _, raw := range existingRequired {
+		key := strings.TrimSpace(firstNonEmptyString(raw))
+		if key == "" {
+			modified = true
+			continue
+		}
+		if _, exists := properties[key]; !exists {
+			modified = true
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			modified = true
+			continue
+		}
+		seen[key] = struct{}{}
+		normalizedRequired = append(normalizedRequired, key)
+	}
+
+	sortedRequired := append([]string(nil), normalizedRequired...)
+	sort.Strings(sortedRequired)
+	if !modified && len(existingRequired) == len(sortedRequired) {
 		matches := true
-		for i, key := range required {
+		for i, key := range sortedRequired {
 			if strings.TrimSpace(firstNonEmptyString(existingRequired[i])) != key {
 				matches = false
 				break
@@ -1263,14 +1284,15 @@ func normalizeOpenAIStrictFunctionParameters(toolMap map[string]any) bool {
 		if matches {
 			return false
 		}
+		modified = true
 	}
 
-	normalizedRequired := make([]any, 0, len(required))
-	for _, key := range required {
-		normalizedRequired = append(normalizedRequired, key)
+	normalizedRequiredAny := make([]any, 0, len(sortedRequired))
+	for _, key := range sortedRequired {
+		normalizedRequiredAny = append(normalizedRequiredAny, key)
 	}
-	parameters["required"] = normalizedRequired
-	return true
+	parameters["required"] = normalizedRequiredAny
+	return modified
 }
 
 func hasCodexToolContinuationInput(input []any) bool {
