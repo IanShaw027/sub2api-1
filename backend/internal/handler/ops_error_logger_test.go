@@ -351,6 +351,7 @@ func TestNormalizeOpsErrorType(t *testing.T) {
 		// Unknown type but known code still maps correctly.
 		{"nil with INSUFFICIENT_BALANCE code", "<nil>", "INSUFFICIENT_BALANCE", "billing_error"},
 		{"nil with USAGE_LIMIT_EXCEEDED code", "<nil>", "USAGE_LIMIT_EXCEEDED", "subscription_error"},
+		{"nil with USER_INACTIVE code", "<nil>", "USER_INACTIVE", "subscription_error"},
 
 		// Empty type falls through to code-based mapping.
 		{"empty type with balance code", "", "INSUFFICIENT_BALANCE", "billing_error"},
@@ -366,6 +367,13 @@ func TestNormalizeOpsErrorType(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestClassifyOpsErrorOwner_AccountScoped(t *testing.T) {
+	require.Equal(t, "account", classifyOpsErrorOwner("request", "billing_error", "Insufficient account balance", "INSUFFICIENT_BALANCE"))
+	require.Equal(t, "account", classifyOpsErrorOwner("request", "subscription_error", "User account is not active", "USER_INACTIVE"))
+	require.Equal(t, "account", classifyOpsErrorOwner("auth", "authentication_error", "Failed to get upstream access token", ""))
+	require.Equal(t, "client", classifyOpsErrorOwner("auth", "authentication_error", "Invalid API key", ""))
 }
 
 func TestSetOpsEndpointContext_SetsContextKeys(t *testing.T) {

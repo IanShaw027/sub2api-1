@@ -772,8 +772,8 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 		phase := classifyOpsPhase(normalizedType, parsed.Message, parsed.Code)
 		isBusinessLimited := classifyOpsIsBusinessLimited(normalizedType, phase, parsed.Code, status, parsed.Message)
 
-		errorOwner := classifyOpsErrorOwner(phase, parsed.Message)
-		errorSource := classifyOpsErrorSource(phase, parsed.Message)
+		errorOwner := classifyOpsErrorOwner(phase, normalizedType, parsed.Message, parsed.Code)
+		errorSource := classifyOpsErrorSource(phase, normalizedType, parsed.Message, parsed.Code)
 
 		entry := &service.OpsInsertErrorLogInput{
 			RequestID:       requestID,
@@ -1097,7 +1097,7 @@ func normalizeOpsErrorType(errType string, code string) string {
 	switch strings.TrimSpace(code) {
 	case opsCodeInsufficientBalance:
 		return "billing_error"
-	case opsCodeUsageLimitExceeded, opsCodeSubscriptionNotFound, opsCodeSubscriptionInvalid:
+	case opsCodeUsageLimitExceeded, opsCodeSubscriptionNotFound, opsCodeSubscriptionInvalid, opsCodeUserInactive:
 		return "subscription_error"
 	default:
 		return "api_error"
@@ -1109,7 +1109,7 @@ func classifyOpsPhase(errType, message, code string) string {
 	// Standardized phases: request|auth|routing|upstream|network|internal
 	// Map billing/concurrency/response => request; scheduling => routing.
 	switch strings.TrimSpace(code) {
-	case opsCodeInsufficientBalance, opsCodeUsageLimitExceeded, opsCodeSubscriptionNotFound, opsCodeSubscriptionInvalid:
+	case opsCodeInsufficientBalance, opsCodeUsageLimitExceeded, opsCodeSubscriptionNotFound, opsCodeSubscriptionInvalid, opsCodeUserInactive:
 		return "request"
 	}
 
@@ -1134,6 +1134,43 @@ func classifyOpsPhase(errType, message, code string) string {
 		return "internal"
 	default:
 		return "internal"
+	}
+}
+
+func isAccountScopedOpsAuthMessage(message string) bool {
+	msg := strings.ToLower(strings.TrimSpace(message))
+	switch {
+	case strings.Contains(msg, "upstream") && strings.Contains(msg, "token"):
+		return true
+	case strings.Contains(msg, "access token"):
+		return true
+	case strings.Contains(msg, "refresh token"):
+		return true
+	case strings.Contains(msg, "credential"):
+		return true
+	case strings.Contains(msg, "token revoked"):
+		return true
+	case strings.Contains(msg, "token expired"):
+		return true
+	case strings.Contains(msg, "token invalid"):
+		return true
+	default:
+		return false
+	}
+}
+
+func isAccountScopedOpsError(errType, message, code string) bool {
+	switch strings.TrimSpace(code) {
+	case opsCodeInsufficientBalance, opsCodeUsageLimitExceeded, opsCodeSubscriptionNotFound, opsCodeSubscriptionInvalid, opsCodeUserInactive:
+		return true
+	}
+	switch errType {
+	case "billing_error", "subscription_error":
+		return true
+	case "authentication_error":
+		return isAccountScopedOpsAuthMessage(message)
+	default:
+		return false
 	}
 }
 
@@ -1189,8 +1226,11 @@ func classifyOpsIsBusinessLimited(errType, phase, code string, status int, messa
 	return false
 }
 
-func classifyOpsErrorOwner(phase string, message string) string {
-	// Standardized owners: client|provider|platform
+func classifyOpsErrorOwner(phase, errType, message, code string) string {
+	// Standardized owners: client|account|provider|platform
+	if isAccountScopedOpsError(errType, message, code) {
+		return "account"
+	}
 	switch phase {
 	case "upstream", "network":
 		return "provider"
@@ -1206,8 +1246,14 @@ func classifyOpsErrorOwner(phase string, message string) string {
 	}
 }
 
-func classifyOpsErrorSource(phase string, message string) string {
-	// Standardized sources: client_request|upstream_http|gateway
+func classifyOpsErrorSource(phase, errType, message, code string) string {
+	// Standardized sources: client_request|account_state|account_credentials|upstream_http|gateway
+	if isAccountScopedOpsError(errType, message, code) {
+		if errType == "authentication_error" {
+			return "account_credentials"
+		}
+		return "account_state"
+	}
 	switch phase {
 	case "upstream":
 		return "upstream_http"

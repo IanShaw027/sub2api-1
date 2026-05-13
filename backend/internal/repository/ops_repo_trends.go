@@ -452,8 +452,8 @@ func (r *opsRepository) GetErrorTrend(ctx context.Context, filter *service.OpsDa
 SELECT
   ` + bucketExpr + ` AS bucket,
   COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400) AS error_total,
-  COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400 AND is_business_limited) AS business_limited,
-  COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400 AND NOT is_business_limited) AS error_sla,
+  COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400 AND (is_business_limited OR COALESCE(upstream_status_code, status_code, 0) IN (429, 529))) AS business_limited,
+  COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400 AND NOT (is_business_limited OR COALESCE(upstream_status_code, status_code, 0) IN (429, 529))) AS error_sla,
   COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400 AND error_owner = 'provider' AND NOT is_business_limited AND COALESCE(upstream_status_code, status_code, 0) NOT IN (429, 529)) AS upstream_excl,
   COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400 AND error_owner = 'provider' AND NOT is_business_limited AND COALESCE(upstream_status_code, status_code, 0) = 429) AS upstream_429,
   COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400 AND error_owner = 'provider' AND NOT is_business_limited AND COALESCE(upstream_status_code, status_code, 0) = 529) AS upstream_529
@@ -559,13 +559,14 @@ func (r *opsRepository) GetErrorDistribution(ctx context.Context, filter *servic
 	start := filter.StartTime.UTC()
 	end := filter.EndTime.UTC()
 	where, args, _ := buildErrorWhere(filter, start, end, 1)
+	excludedExpr := "(is_business_limited OR COALESCE(upstream_status_code, status_code, 0) IN (429, 529))"
 
 	q := `
 SELECT
   COALESCE(upstream_status_code, status_code, 0) AS status_code,
   COUNT(*) AS total,
-  COUNT(*) FILTER (WHERE NOT is_business_limited) AS sla,
-  COUNT(*) FILTER (WHERE is_business_limited) AS business_limited
+  COUNT(*) FILTER (WHERE NOT ` + excludedExpr + `) AS sla,
+  COUNT(*) FILTER (WHERE ` + excludedExpr + `) AS business_limited
 FROM ops_error_logs
 ` + where + `
   AND COALESCE(status_code, 0) >= 400
@@ -599,8 +600,45 @@ LIMIT 20`
 		return nil, err
 	}
 
+	ownerQuery := `
+SELECT
+  COALESCE(NULLIF(TRIM(error_owner), ''), 'platform') AS owner,
+  COUNT(*) AS total,
+  COUNT(*) FILTER (WHERE NOT ` + excludedExpr + `) AS sla,
+  COUNT(*) FILTER (WHERE ` + excludedExpr + `) AS business_limited
+FROM ops_error_logs
+` + where + `
+  AND COALESCE(status_code, 0) >= 400
+GROUP BY 1
+ORDER BY total DESC`
+
+	ownerRows, err := r.db.QueryContext(ctx, ownerQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = ownerRows.Close() }()
+
+	owners := make([]*service.OpsErrorOwnerDistributionItem, 0, 8)
+	for ownerRows.Next() {
+		var owner string
+		var cntTotal, cntSLA, cntBiz int64
+		if err := ownerRows.Scan(&owner, &cntTotal, &cntSLA, &cntBiz); err != nil {
+			return nil, err
+		}
+		owners = append(owners, &service.OpsErrorOwnerDistributionItem{
+			Owner:           owner,
+			Total:           cntTotal,
+			SLA:             cntSLA,
+			BusinessLimited: cntBiz,
+		})
+	}
+	if err := ownerRows.Err(); err != nil {
+		return nil, err
+	}
+
 	return &service.OpsErrorDistributionResponse{
-		Total: total,
-		Items: items,
+		Total:  total,
+		Items:  items,
+		Owners: owners,
 	}, nil
 }

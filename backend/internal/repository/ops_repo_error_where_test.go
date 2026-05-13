@@ -46,3 +46,15 @@ func TestBuildOpsErrorLogsWhere_UserQueryUsesExistsSubquery(t *testing.T) {
 		t.Fatalf("where should include EXISTS user email condition: %s", where)
 	}
 }
+
+func TestBuildOpsErrorLogsWhere_ViewTreats429AsExcluded(t *testing.T) {
+	errorsWhere, _ := buildOpsErrorLogsWhere(&service.OpsErrorLogFilter{View: "errors"})
+	if !strings.Contains(errorsWhere, "NOT (COALESCE(e.is_business_limited,false) = true OR COALESCE(e.upstream_status_code, e.status_code, 0) IN (429, 529))") {
+		t.Fatalf("errors view should exclude 429/529: %s", errorsWhere)
+	}
+
+	excludedWhere, _ := buildOpsErrorLogsWhere(&service.OpsErrorLogFilter{View: "excluded"})
+	if !strings.Contains(excludedWhere, "(COALESCE(e.is_business_limited,false) = true OR COALESCE(e.upstream_status_code, e.status_code, 0) IN (429, 529))") {
+		t.Fatalf("excluded view should include 429/529: %s", excludedWhere)
+	}
+}

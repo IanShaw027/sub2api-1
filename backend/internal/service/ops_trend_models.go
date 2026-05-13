@@ -60,7 +60,15 @@ type OpsErrorDistributionItem struct {
 	BusinessLimited int64 `json:"business_limited"`
 }
 
+type OpsErrorOwnerDistributionItem struct {
+	Owner           string `json:"owner"`
+	Total           int64  `json:"total"`
+	SLA             int64  `json:"sla"`
+	BusinessLimited int64  `json:"business_limited"`
+}
+
 type OpsErrorDistributionResponse struct {
-	Total int64                       `json:"total"`
-	Items []*OpsErrorDistributionItem `json:"items"`
+	Total  int64                            `json:"total"`
+	Items  []*OpsErrorDistributionItem      `json:"items"`
+	Owners []*OpsErrorOwnerDistributionItem `json:"owners"`
 }
