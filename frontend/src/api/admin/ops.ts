@@ -254,9 +254,17 @@ export interface OpsErrorDistributionItem {
   business_limited: number
 }
 
+export interface OpsErrorOwnerDistributionItem {
+  owner: string
+  total: number
+  sla: number
+  business_limited: number
+}
+
 export interface OpsErrorDistributionResponse {
   total: number
   items: OpsErrorDistributionItem[]
+  owners: OpsErrorOwnerDistributionItem[]
 }
 
 export interface OpsDashboardSnapshotV2Response {
@@ -941,8 +949,8 @@ export interface OpsErrorLog {
   // Standardized classification
   phase: OpsPhase
   type: string
-  error_owner: 'client' | 'provider' | 'platform' | string
-  error_source: 'client_request' | 'upstream_http' | 'gateway' | string
+  error_owner: 'client' | 'account' | 'provider' | 'platform' | string
+  error_source: 'client_request' | 'account_state' | 'account_credentials' | 'upstream_http' | 'gateway' | string
 
   severity: OpsSeverity
   status_code: number

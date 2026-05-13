@@ -44,7 +44,26 @@ interface ErrorCategory {
   color: string
 }
 
-const categories = computed<ErrorCategory[]>(() => {
+function buildOwnerCategories(): ErrorCategory[] {
+  const ownerItems = props.data?.owners || []
+  if (ownerItems.length === 0) return []
+
+  const out: ErrorCategory[] = []
+  for (const item of ownerItems) {
+    const owner = String(item.owner || '').toLowerCase()
+    const count = Number(item.total || 0)
+    if (!owner || !Number.isFinite(count) || count <= 0) continue
+
+    if (owner === 'provider') out.push({ label: t('admin.ops.errorDetails.owner.provider'), count, color: colors.value.orange })
+    else if (owner === 'account') out.push({ label: t('admin.ops.errorDetails.owner.account'), count, color: '#06b6d4' })
+    else if (owner === 'client') out.push({ label: t('admin.ops.errorDetails.owner.client'), count, color: colors.value.blue })
+    else if (owner === 'platform') out.push({ label: t('admin.ops.errorDetails.owner.platform'), count, color: colors.value.red })
+    else out.push({ label: t('admin.ops.other'), count, color: colors.value.gray })
+  }
+  return out
+}
+
+function buildStatusCategories(): ErrorCategory[] {
   if (!props.data) return []
 
   let upstream = 0 // 502, 503, 504
@@ -69,6 +88,11 @@ const categories = computed<ErrorCategory[]>(() => {
   if (system > 0) out.push({ label: t('admin.ops.system'), count: system, color: colors.value.red })
   if (other > 0) out.push({ label: t('admin.ops.other'), count: other, color: colors.value.gray })
   return out
+}
+
+const categories = computed<ErrorCategory[]>(() => {
+  const ownerCategories = buildOwnerCategories()
+  return ownerCategories.length > 0 ? ownerCategories : buildStatusCategories()
 })
 
 const topReason = computed(() => {
@@ -142,7 +166,7 @@ const options = computed(() => ({
           <div class="flex flex-wrap justify-center gap-3">
             <div v-for="item in categories" :key="item.label" class="flex items-center gap-1.5 text-xs">
               <span class="h-2 w-2 rounded-full" :style="{ backgroundColor: item.color }"></span>
-              <span class="text-gray-500 dark:text-gray-400">{{ item.count }}</span>
+              <span class="text-gray-500 dark:text-gray-400">{{ item.label }} {{ item.count }}</span>
             </div>
           </div>
         </div>

@@ -216,6 +216,7 @@ function isUpstreamRow(log: OpsErrorLog): boolean {
 
 function shouldShowAccount(log: OpsErrorLog): boolean {
   if (isUpstreamRow(log)) return true
+  if (String(log.error_owner || '').toLowerCase() === 'account') return true
   return !log.user_id && !!log.account_id
 }
 
@@ -280,6 +281,9 @@ function getTypeBadge(log: OpsErrorLog): { label: string; className: string } {
 
   if (isUpstreamRow(log)) {
     return { label: t('admin.ops.errorLog.typeUpstream'), className: 'bg-red-50 text-red-700 ring-red-600/20 dark:bg-red-900/30 dark:text-red-400 dark:ring-red-500/30' }
+  }
+  if (owner === 'account') {
+    return { label: t('admin.ops.errorLog.typeAccount'), className: 'bg-cyan-50 text-cyan-700 ring-cyan-600/20 dark:bg-cyan-900/30 dark:text-cyan-300 dark:ring-cyan-500/30' }
   }
   if (phase === 'request' && owner === 'client') {
     return { label: t('admin.ops.errorLog.typeRequest'), className: 'bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-900/30 dark:text-amber-400 dark:ring-amber-500/30' }

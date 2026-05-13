@@ -5578,6 +5578,7 @@ export default {
         phase: '阶段',
         id: 'ID：',
         typeUpstream: '上游',
+        typeAccount: '账号',
         typeRequest: '请求',
         typeAuth: '认证',
         typeRouting: '路由',
@@ -5598,6 +5599,7 @@ export default {
         viewExcluded: '排除项',
         statusCodeOther: '其他',
         owner: {
+          account: '账号',
           provider: '服务商',
           client: '客户端',
           platform: '平台'
@@ -6140,7 +6142,7 @@ export default {
         switchRateTrend: '近5小时内账号切换次数 / 请求总数的趋势（平均切换次数）。',
         latencyHistogram: '成功请求的请求时长分布（毫秒）。',
         errorTrend: '错误趋势（SLA 口径排除业务限制；上游错误率排除 429/529）。',
-        errorDistribution: '按状态码统计的错误分布。',
+        errorDistribution: '按归属方统计的错误分布，附带状态码聚合明细。',
         upstreamErrors: '上游服务返回的错误，包括API提供商的错误响应（排除429/529限流错误）。',
         goroutines:
           'Go 运行时的协程数量（轻量级线程）。没有绝对"安全值"，建议以历史基线为准。经验参考：<2000 常见；2000-8000 需关注；>8000 且伴随队列上升时，优先排查阻塞/泄漏。',
