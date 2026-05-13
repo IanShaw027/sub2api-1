@@ -87,7 +87,11 @@ func (r *groupRepository) Create(ctx context.Context, groupIn *service.Group) er
 
 	created, err := builder.Save(ctx)
 	if err == nil {
+		if saveErr := saveGroupOpenAIImageMainModel(ctx, r.sql, created.ID, groupIn.OpenAIImageMainModel); saveErr != nil {
+			return saveErr
+		}
 		groupIn.ID = created.ID
+		groupIn.OpenAIImageMainModel = service.NormalizeOpenAIImageMainModel(groupIn.OpenAIImageMainModel)
 		groupIn.CreatedAt = created.CreatedAt
 		groupIn.UpdatedAt = created.UpdatedAt
 		if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventGroupChanged, nil, &groupIn.ID, nil); err != nil {
@@ -116,7 +120,14 @@ func (r *groupRepository) GetByIDLite(ctx context.Context, id int64) (*service.G
 	if err != nil {
 		return nil, translatePersistenceError(err, service.ErrGroupNotFound, nil)
 	}
-	return groupEntityToService(m), nil
+	out := groupEntityToService(m)
+	models, loadErr := loadGroupOpenAIImageMainModels(ctx, r.sql, []int64{id})
+	if loadErr == nil {
+		out.OpenAIImageMainModel = models[id]
+	} else {
+		out.OpenAIImageMainModel = service.NormalizeOpenAIImageMainModel(out.OpenAIImageMainModel)
+	}
+	return out, nil
 }
 
 func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) error {
@@ -233,6 +244,10 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 	if err != nil {
 		return translatePersistenceError(err, service.ErrGroupNotFound, service.ErrGroupExists)
 	}
+	if err := saveGroupOpenAIImageMainModel(ctx, r.sql, groupIn.ID, groupIn.OpenAIImageMainModel); err != nil {
+		return err
+	}
+	groupIn.OpenAIImageMainModel = service.NormalizeOpenAIImageMainModel(groupIn.OpenAIImageMainModel)
 	groupIn.UpdatedAt = updated.UpdatedAt
 	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventGroupChanged, nil, &groupIn.ID, nil); err != nil {
 		logger.LegacyPrintf("repository.group", "[SchedulerOutbox] enqueue group update failed: group=%d err=%v", groupIn.ID, err)
@@ -312,6 +327,9 @@ func (r *groupRepository) ListWithFilters(ctx context.Context, params pagination
 			outGroups[i].RateLimitedAccountCount = c.RateLimited
 		}
 	}
+	if models, loadErr := loadGroupOpenAIImageMainModels(ctx, r.sql, groupIDs); loadErr == nil {
+		applyOpenAIImageMainModelsToGroups(outGroups, models)
+	}
 
 	return outGroups, paginationResultFromTotal(int64(total), params), nil
 }
@@ -341,6 +359,9 @@ func (r *groupRepository) listWithAccountCountSort(ctx context.Context, q *dbent
 		outGroups[i].AccountCount = c.Total
 		outGroups[i].ActiveAccountCount = c.Active
 		outGroups[i].RateLimitedAccountCount = c.RateLimited
+	}
+	if models, loadErr := loadGroupOpenAIImageMainModels(ctx, r.sql, groupIDs); loadErr == nil {
+		applyOpenAIImageMainModelsToGroups(outGroups, models)
 	}
 
 	sortOrder := params.NormalizedSortOrder(pagination.SortOrderDesc)
@@ -440,6 +461,9 @@ func (r *groupRepository) ListActive(ctx context.Context) ([]service.Group, erro
 			outGroups[i].RateLimitedAccountCount = c.RateLimited
 		}
 	}
+	if models, loadErr := loadGroupOpenAIImageMainModels(ctx, r.sql, groupIDs); loadErr == nil {
+		applyOpenAIImageMainModelsToGroups(outGroups, models)
+	}
 
 	return outGroups, nil
 }
@@ -469,6 +493,9 @@ func (r *groupRepository) ListActiveByPlatform(ctx context.Context, platform str
 			outGroups[i].ActiveAccountCount = c.Active
 			outGroups[i].RateLimitedAccountCount = c.RateLimited
 		}
+	}
+	if models, loadErr := loadGroupOpenAIImageMainModels(ctx, r.sql, groupIDs); loadErr == nil {
+		applyOpenAIImageMainModelsToGroups(outGroups, models)
 	}
 
 	return outGroups, nil

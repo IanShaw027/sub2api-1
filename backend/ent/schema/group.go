@@ -89,6 +89,10 @@ func (Group) Fields() []ent.Field {
 			MaxLen(20).
 			Default("codex").
 			Comment("图片生成路由类型：codex 或 web2api"),
+		field.String("openai_image_main_model").
+			MaxLen(100).
+			Default("gpt-5.4-mini").
+			Comment("OpenAI OAuth/codex 图片请求的 Responses 主模型"),
 		field.Bool("image_rate_independent").
 			Default(false).
 			Comment("图片生成是否使用独立倍率；false 表示共享分组有效倍率"),

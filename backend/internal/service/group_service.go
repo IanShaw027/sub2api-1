@@ -51,6 +51,7 @@ type CreateGroupRequest struct {
 	IsExclusive          bool     `json:"is_exclusive"`
 	AllowImageGeneration bool     `json:"allow_image_generation"`
 	ImageGenerationRoute string   `json:"image_generation_route"`
+	OpenAIImageMainModel string   `json:"openai_image_main_model"`
 	ImageRateIndependent bool     `json:"image_rate_independent"`
 	ImageRateMultiplier  *float64 `json:"image_rate_multiplier"`
 }
@@ -64,6 +65,7 @@ type UpdateGroupRequest struct {
 	Status               *string  `json:"status"`
 	AllowImageGeneration *bool    `json:"allow_image_generation"`
 	ImageGenerationRoute *string  `json:"image_generation_route"`
+	OpenAIImageMainModel *string  `json:"openai_image_main_model"`
 	ImageRateIndependent *bool    `json:"image_rate_independent"`
 	ImageRateMultiplier  *float64 `json:"image_rate_multiplier"`
 }
@@ -91,6 +93,10 @@ func (s *GroupService) Create(ctx context.Context, req CreateGroupRequest) (*Gro
 		}
 		imageRateMultiplier = *req.ImageRateMultiplier
 	}
+	openAIImageMainModel := NormalizeOpenAIImageMainModel(req.OpenAIImageMainModel)
+	if err := ValidateOpenAIImageMainModel(openAIImageMainModel); err != nil {
+		return nil, err
+	}
 	// 检查名称是否已存在
 	exists, err := s.groupRepo.ExistsByName(ctx, req.Name)
 	if err != nil {
@@ -111,6 +117,7 @@ func (s *GroupService) Create(ctx context.Context, req CreateGroupRequest) (*Gro
 		SubscriptionType:     SubscriptionTypeStandard,
 		AllowImageGeneration: req.AllowImageGeneration,
 		ImageGenerationRoute: NormalizeGroupImageGenerationRoute(req.ImageGenerationRoute),
+		OpenAIImageMainModel: openAIImageMainModel,
 		ImageRateIndependent: req.ImageRateIndependent,
 		ImageRateMultiplier:  imageRateMultiplier,
 	}
@@ -189,6 +196,13 @@ func (s *GroupService) Update(ctx context.Context, id int64, req UpdateGroupRequ
 	}
 	if req.ImageGenerationRoute != nil {
 		group.ImageGenerationRoute = NormalizeGroupImageGenerationRoute(*req.ImageGenerationRoute)
+	}
+	if req.OpenAIImageMainModel != nil {
+		model := NormalizeOpenAIImageMainModel(*req.OpenAIImageMainModel)
+		if err := ValidateOpenAIImageMainModel(model); err != nil {
+			return nil, err
+		}
+		group.OpenAIImageMainModel = model
 	}
 	if req.ImageRateIndependent != nil {
 		group.ImageRateIndependent = *req.ImageRateIndependent

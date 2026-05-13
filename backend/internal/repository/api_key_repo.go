@@ -161,19 +161,25 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 			q.Select(
 				group.FieldID,
 				group.FieldName,
+				group.FieldDisplayName,
 				group.FieldPlatform,
 				group.FieldStatus,
 				group.FieldSubscriptionType,
 				group.FieldRateMultiplier,
+				group.FieldUserSelectable,
 				group.FieldDailyLimitUsd,
 				group.FieldWeeklyLimitUsd,
 				group.FieldMonthlyLimitUsd,
 				group.FieldAllowImageGeneration,
+				group.FieldImageGenerationRoute,
 				group.FieldImageRateIndependent,
 				group.FieldImageRateMultiplier,
 				group.FieldImagePrice1k,
 				group.FieldImagePrice2k,
 				group.FieldImagePrice4k,
+				group.FieldImages2apiPrice1k,
+				group.FieldImages2apiPrice2k,
+				group.FieldImages2apiPrice4k,
 				group.FieldClaudeCodeOnly,
 				group.FieldFallbackGroupID,
 				group.FieldFallbackGroupIDOnInvalidRequest,
@@ -182,6 +188,8 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 				group.FieldMcpXMLInject,
 				group.FieldSupportedModelScopes,
 				group.FieldAllowMessagesDispatch,
+				group.FieldRequireOauthOnly,
+				group.FieldRequirePrivacySet,
 				group.FieldDefaultMappedModel,
 				group.FieldMessagesDispatchModelConfig,
 				group.FieldRpmLimit,
@@ -194,7 +202,15 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 		}
 		return nil, err
 	}
-	return apiKeyEntityToService(m), nil
+	out := apiKeyEntityToService(m)
+	if out != nil && out.Group != nil {
+		if models, loadErr := loadGroupOpenAIImageMainModels(ctx, r.sql, []int64{out.Group.ID}); loadErr == nil {
+			out.Group.OpenAIImageMainModel = models[out.Group.ID]
+		} else {
+			out.Group.OpenAIImageMainModel = service.NormalizeOpenAIImageMainModel(out.Group.OpenAIImageMainModel)
+		}
+	}
+	return out, nil
 }
 
 func (r *apiKeyRepository) Update(ctx context.Context, key *service.APIKey) error {
@@ -715,6 +731,7 @@ func groupEntityToService(g *dbent.Group) *service.Group {
 		MonthlyLimitUSD:                 g.MonthlyLimitUsd,
 		AllowImageGeneration:            g.AllowImageGeneration,
 		ImageGenerationRoute:            service.NormalizeGroupImageGenerationRoute(g.ImageGenerationRoute),
+		OpenAIImageMainModel:            service.NormalizeOpenAIImageMainModel(""),
 		ImageRateIndependent:            g.ImageRateIndependent,
 		ImageRateMultiplier:             g.ImageRateMultiplier,
 		ImagePrice1K:                    g.ImagePrice1k,

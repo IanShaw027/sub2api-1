@@ -203,6 +203,7 @@ type CreateGroupInput struct {
 	// 图片生成计费配置（仅 antigravity 平台使用）
 	AllowImageGeneration bool
 	ImageGenerationRoute string
+	OpenAIImageMainModel string
 	ImageRateIndependent bool
 	ImageRateMultiplier  *float64
 	ImagePrice1K         *float64
@@ -249,6 +250,7 @@ type UpdateGroupInput struct {
 	// 图片生成计费配置（仅 antigravity 平台使用）
 	AllowImageGeneration *bool
 	ImageGenerationRoute *string
+	OpenAIImageMainModel *string
 	ImageRateIndependent *bool
 	ImageRateMultiplier  *float64
 	ImagePrice1K         *float64
@@ -1699,6 +1701,10 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		}
 		imageRateMultiplier = *input.ImageRateMultiplier
 	}
+	openAIImageMainModel := NormalizeOpenAIImageMainModel(input.OpenAIImageMainModel)
+	if err := ValidateOpenAIImageMainModel(openAIImageMainModel); err != nil {
+		return nil, err
+	}
 	displayName := ""
 	if input.DisplayName != nil {
 		displayName = strings.TrimSpace(*input.DisplayName)
@@ -1774,6 +1780,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		MonthlyLimitUSD:                 monthlyLimit,
 		AllowImageGeneration:            input.AllowImageGeneration,
 		ImageGenerationRoute:            NormalizeGroupImageGenerationRoute(input.ImageGenerationRoute),
+		OpenAIImageMainModel:            openAIImageMainModel,
 		ImageRateIndependent:            input.ImageRateIndependent,
 		ImageRateMultiplier:             imageRateMultiplier,
 		ImagePrice1K:                    imagePrice1K,
@@ -1969,6 +1976,13 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	if input.ImageGenerationRoute != nil {
 		group.ImageGenerationRoute = NormalizeGroupImageGenerationRoute(*input.ImageGenerationRoute)
+	}
+	if input.OpenAIImageMainModel != nil {
+		model := NormalizeOpenAIImageMainModel(*input.OpenAIImageMainModel)
+		if err := ValidateOpenAIImageMainModel(model); err != nil {
+			return nil, err
+		}
+		group.OpenAIImageMainModel = model
 	}
 	if input.ImageRateIndependent != nil {
 		group.ImageRateIndependent = *input.ImageRateIndependent

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -35,6 +36,7 @@ type Group struct {
 	// 图片生成计费配置（antigravity 和 gemini 平台使用）
 	AllowImageGeneration bool
 	ImageGenerationRoute string
+	OpenAIImageMainModel string
 	ImageRateIndependent bool
 	ImageRateMultiplier  float64
 	ImagePrice1K         *float64
@@ -110,6 +112,35 @@ func (g *Group) EffectiveImageGenerationRoute() string {
 		return GroupImageGenerationRouteCodex
 	}
 	return NormalizeGroupImageGenerationRoute(g.ImageGenerationRoute)
+}
+
+func NormalizeOpenAIImageMainModel(model string) string {
+	trimmed := strings.TrimSpace(model)
+	if trimmed == "" {
+		return openAIImagesResponsesMainModel
+	}
+	return trimmed
+}
+
+func ValidateOpenAIImageMainModel(model string) error {
+	normalized := NormalizeOpenAIImageMainModel(model)
+	if isOpenAIImageGenerationModel(normalized) {
+		return fmt.Errorf("openai_image_main_model must be a Responses-capable text model, got %q", normalized)
+	}
+	if isCodexSparkModel(normalized) {
+		return fmt.Errorf("openai_image_main_model %q does not support image_generation", normalized)
+	}
+	return nil
+}
+
+func (g *Group) EffectiveOpenAIImageMainModel() string {
+	if g == nil {
+		return NormalizeOpenAIImageMainModel("")
+	}
+	if g.EffectiveImageGenerationRoute() != GroupImageGenerationRouteCodex {
+		return NormalizeOpenAIImageMainModel("")
+	}
+	return NormalizeOpenAIImageMainModel(g.OpenAIImageMainModel)
 }
 
 func (g *Group) OpenAIImageCodexEnabled() bool {

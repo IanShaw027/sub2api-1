@@ -182,6 +182,7 @@ func groupFromServiceBase(g *service.Group) Group {
 		MonthlyLimitUSD:                 g.MonthlyLimitUSD,
 		AllowImageGeneration:            g.AllowImageGeneration,
 		ImageGenerationRoute:            g.EffectiveImageGenerationRoute(),
+		OpenAIImageMainModel:            g.EffectiveOpenAIImageMainModel(),
 		ImageRateIndependent:            g.ImageRateIndependent,
 		ImageRateMultiplier:             g.ImageRateMultiplier,
 		ImagePrice1K:                    g.ImagePrice1K,
