@@ -5658,7 +5658,21 @@ func shouldExposeOpenAIUpstreamClientError(statusCode int, upstreamMsg string) b
 	case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden, http.StatusTooManyRequests:
 		return false
 	}
+	if isOpenAITransientCapacityError(upstreamMsg) {
+		return false
+	}
 	return strings.TrimSpace(upstreamMsg) != ""
+}
+
+func isOpenAITransientCapacityError(upstreamMsg string) bool {
+	lower := strings.ToLower(strings.TrimSpace(upstreamMsg))
+	if lower == "" {
+		return false
+	}
+
+	return strings.Contains(lower, "at capacity") ||
+		strings.Contains(lower, "no capacity available") ||
+		strings.Contains(lower, "try a different model")
 }
 
 func openAIClientVisibleErrorType(statusCode int) string {
@@ -7081,20 +7095,8 @@ func (s *OpenAIGatewayService) calculateOpenAIImageRequestCost(
 ) (*CostBreakdown, error) {
 	hasTokens := usageTokensHaveBillableTokens(tokens)
 	tokenBillingModel := strings.TrimSpace(result.TokenBillingModel)
-	if tokenBillingModel == "" {
-		tokenBillingModel = billingModel
-	}
-
-	if result.ImageUsageTokenBilling && hasTokens {
-		cost, err := s.calculateOpenAITokenUsageCost(ctx, apiKey, tokenBillingModel, multiplier, tokens, serviceTier)
-		if cost != nil {
-			cost.BillingMode = string(BillingModeImage)
-		}
-		return cost, err
-	}
-
 	imageCost := s.calculateOpenAIImageCost(ctx, billingModel, apiKey, result, requestType, imageRateMultiplier)
-	if !hasTokens {
+	if !hasTokens || tokenBillingModel == "" {
 		return imageCost, nil
 	}
 

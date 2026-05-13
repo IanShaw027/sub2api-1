@@ -195,6 +195,58 @@ func TestOpenAIHandleCompatErrorResponse_NoRuleExposesClientVisible4xx(t *testin
 	assert.Equal(t, "tool output is invalid", errField["message"])
 }
 
+func TestOpenAIHandleErrorResponse_NoRuleSuppressesCapacityLike400(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	svc := &OpenAIGatewayService{}
+	respBody := []byte(`{"error":{"message":"Selected model is at capacity. Please try a different model.","type":"invalid_request_error"}}`)
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Body:       io.NopCloser(bytes.NewReader(respBody)),
+		Header:     http.Header{},
+	}
+	account := &Account{ID: 23, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	_, err := svc.handleErrorResponse(context.Background(), resp, c, account, nil)
+	require.Error(t, err)
+	assert.Equal(t, http.StatusBadGateway, rec.Code)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+	errField, ok := payload["error"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "upstream_error", errField["type"])
+	assert.Equal(t, "Upstream request failed", errField["message"])
+}
+
+func TestOpenAIHandleCompatErrorResponse_NoRuleSuppressesCapacityLike400(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	svc := &OpenAIGatewayService{}
+	respBody := []byte(`{"error":{"message":"Selected model is at capacity. Please try a different model.","type":"invalid_request_error"}}`)
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Body:       io.NopCloser(bytes.NewReader(respBody)),
+		Header:     http.Header{},
+	}
+	account := &Account{ID: 24, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	_, err := svc.handleCompatErrorResponse(resp, c, account, writeChatCompletionsError)
+	require.Error(t, err)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+	errField, ok := payload["error"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "invalid_request_error", errField["type"])
+	assert.Equal(t, "Upstream request failed", errField["message"])
+}
+
 func TestGeminiWriteGeminiMappedError_AppliesRuleFor422(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()

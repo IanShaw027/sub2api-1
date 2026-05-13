@@ -18,6 +18,11 @@ type responsesAnthropicIngressPlan struct {
 	FullReplaySource string
 }
 
+type normalizedLegacyResponsesMessages struct {
+	InputRaw      []byte
+	Instructions string
+}
+
 func (p responsesAnthropicIngressPlan) CanRetryWithFullReplay() bool {
 	return len(p.FullReplayBody) > 0 && !bytes.Equal(p.PrimaryBody, p.FullReplayBody)
 }
@@ -43,13 +48,21 @@ func prepareResponsesAnthropicIngress(body []byte) (responsesAnthropicIngressPla
 	}
 
 	if messagesValue.Exists() {
-		normalizedInput, err := normalizeLegacyResponsesMessagesInput(messagesValue.Raw)
+		normalized, err := normalizeLegacyResponsesMessages(messagesValue.Raw)
 		if err != nil {
 			return plan, err
 		}
-		fullReplayBody, err := replaceResponsesIngressInput(body, normalizedInput, true)
+		fullReplayBody, err := replaceResponsesIngressInput(body, normalized.InputRaw, true)
 		if err != nil {
 			return plan, err
+		}
+		existingInstructions := gjson.GetBytes(fullReplayBody, "instructions")
+		if normalized.Instructions != "" &&
+			(!existingInstructions.Exists() || existingInstructions.Type != gjson.String || strings.TrimSpace(existingInstructions.String()) == "") {
+			fullReplayBody, err = sjson.SetBytes(fullReplayBody, "instructions", normalized.Instructions)
+			if err != nil {
+				return plan, fmt.Errorf("set normalized responses instructions: %w", err)
+			}
 		}
 		plan.PrimaryBody = dropResponsesIngressPreviousResponseID(fullReplayBody)
 		return plan, nil
@@ -58,21 +71,24 @@ func prepareResponsesAnthropicIngress(body []byte) (responsesAnthropicIngressPla
 	return plan, nil
 }
 
-func normalizeLegacyResponsesMessagesInput(messagesRaw string) ([]byte, error) {
+func normalizeLegacyResponsesMessages(messagesRaw string) (normalizedLegacyResponsesMessages, error) {
+	var normalized normalizedLegacyResponsesMessages
 	var messages []apicompat.ChatMessage
 	if err := json.Unmarshal([]byte(messagesRaw), &messages); err != nil {
-		return nil, fmt.Errorf("normalize legacy responses messages: %w", err)
+		return normalized, fmt.Errorf("normalize legacy responses messages: %w", err)
 	}
 	responsesReq, err := apicompat.ChatCompletionsToResponses(&apicompat.ChatCompletionsRequest{
 		Messages: messages,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("normalize legacy responses messages: %w", err)
+		return normalized, fmt.Errorf("normalize legacy responses messages: %w", err)
 	}
 	if len(responsesReq.Input) == 0 {
-		return nil, fmt.Errorf("normalize legacy responses messages: empty input")
+		return normalized, fmt.Errorf("normalize legacy responses messages: empty input")
 	}
-	return responsesReq.Input, nil
+	normalized.InputRaw = responsesReq.Input
+	normalized.Instructions = strings.TrimSpace(responsesReq.Instructions)
+	return normalized, nil
 }
 
 func replaceResponsesIngressInput(body, inputRaw []byte, deleteMessages bool) ([]byte, error) {

@@ -1079,7 +1079,6 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 		FirstTokenMs:           firstTokenMs,
 		ImageCount:             imageCount,
 		ImageSize:              parsed.SizeTier,
-		ImageUsageTokenBilling: true,
 	}, nil
 }
 

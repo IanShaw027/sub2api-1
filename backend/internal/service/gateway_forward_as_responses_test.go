@@ -131,7 +131,7 @@ func TestPrepareResponsesAnthropicIngress_PreservesInputWhenMessagesAreEmptyOrUn
 func TestPrepareResponsesAnthropicIngress_FallsBackToLegacyMessagesWhenInputMissing(t *testing.T) {
 	t.Parallel()
 
-	body := []byte(`{"model":"claude-sonnet-4.5","messages":[{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"q\":\"hello\"}"}}]},{"role":"tool","tool_call_id":"call_1","content":"ok"}],"previous_response_id":"resp_stale"}`)
+	body := []byte(`{"model":"claude-sonnet-4.5","messages":[{"role":"system","content":"repo policy"},{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"q\":\"hello\"}"}}]},{"role":"tool","tool_call_id":"call_1","content":"ok"}],"previous_response_id":"resp_stale"}`)
 
 	plan, err := prepareResponsesAnthropicIngress(body)
 	require.NoError(t, err)
@@ -140,6 +140,7 @@ func TestPrepareResponsesAnthropicIngress_FallsBackToLegacyMessagesWhenInputMiss
 	require.Empty(t, plan.FullReplaySource)
 	require.False(t, gjson.GetBytes(plan.PrimaryBody, "messages").Exists())
 	require.False(t, gjson.GetBytes(plan.PrimaryBody, "previous_response_id").Exists())
+	require.Equal(t, "repo policy", gjson.GetBytes(plan.PrimaryBody, "instructions").String())
 	require.Equal(t, "function_call", gjson.GetBytes(plan.PrimaryBody, "input.0.type").String())
 	require.Equal(t, "function_call_output", gjson.GetBytes(plan.PrimaryBody, "input.1.type").String())
 }
