@@ -65,7 +65,7 @@
     </BaseDialog>
 
     <!-- Refund Dialog -->
-    <BaseDialog :show="!!refundTarget" :title="t('payment.orders.requestRefund')" @close="refundTarget = null">
+    <BaseDialog :show="!!refundTarget" :title="t('payment.orders.requestRefund')" @close="closeRefundDialog">
       <div v-if="refundTarget" class="space-y-4">
         <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-800">
           <div class="flex justify-between text-sm">
@@ -77,6 +77,63 @@
             <span class="text-gray-900 dark:text-white">${{ refundTarget.amount.toFixed(2) }}</span>
           </div>
         </div>
+        <div class="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm dark:border-blue-900/60 dark:bg-blue-900/20">
+          <div v-if="refundPreviewLoading" class="text-blue-700 dark:text-blue-300">正在计算可退款金额...</div>
+          <div v-else-if="refundPreview" class="space-y-2 text-blue-800 dark:text-blue-200">
+            <div class="flex justify-between">
+              <span>订单剩余可退</span>
+              <span class="font-medium">{{ formatRefundMoney(refundPreview.order_amount - refundPreview.already_refunded) }}</span>
+            </div>
+            <template v-if="refundPreview.order_type === 'balance'">
+              <div class="flex justify-between">
+                <span>当前可用余额</span>
+                <span class="font-medium">{{ formatRefundMoney(refundPreview.balance_available || 0) }}</span>
+              </div>
+              <p class="text-xs text-blue-600 dark:text-blue-300">余额退款按订单剩余可退金额和当前可用余额取较小值。</p>
+            </template>
+            <template v-else>
+              <div class="flex justify-between">
+                <span>订阅已消耗额度</span>
+                <span class="font-medium">${{ formatNumber(refundPreview.usage_amount || 0) }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span>订阅倍率 / 退款倍率</span>
+                <span class="font-medium">{{ formatNumber(refundPreview.subscription_rate_multiplier || 1) }} / {{ formatNumber(refundPreview.refund_rate_multiplier || 1) }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span>折算已使用金额</span>
+                <span class="font-medium">{{ formatRefundMoney(refundPreview.used_refund_value || 0) }}</span>
+              </div>
+              <p class="text-xs text-blue-600 dark:text-blue-300">
+                订阅退款按 消耗总额度 / 订阅倍率 * 退款倍率 折算已使用金额，再从订单剩余可退金额中扣除。
+              </p>
+            </template>
+            <div class="border-t border-blue-200 pt-2 dark:border-blue-800">
+              <div class="flex justify-between font-semibold">
+                <span>实际可退款额</span>
+                <span>{{ formatRefundMoney(refundPreview.max_refund_amount) }}</span>
+              </div>
+              <p class="mt-1 text-xs text-blue-600 dark:text-blue-300">
+                {{ refundPreview.auto_refund ? '该订单提交后会自动退款到账。' : '该订单提交后需等待管理员审批。' }}
+              </p>
+            </div>
+          </div>
+          <div v-else class="text-red-600 dark:text-red-300">暂时无法获取可退款金额，请稍后重试。</div>
+        </div>
+        <div>
+          <label class="input-label">退款金额</label>
+          <input
+            v-model.number="refundAmount"
+            type="number"
+            step="0.01"
+            min="0.01"
+            :max="refundPreview?.max_refund_amount || refundTarget.amount"
+            class="input mt-1 w-full"
+          />
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            最大可退 {{ formatRefundMoney(refundPreview?.max_refund_amount || 0) }}
+          </p>
+        </div>
         <div>
           <label class="input-label">{{ t('payment.refundReason') }}</label>
           <textarea v-model="refundReason" rows="3" class="input mt-1 w-full" :placeholder="t('payment.refundReasonPlaceholder')" />
@@ -84,8 +141,8 @@
       </div>
       <template #footer>
         <div class="flex justify-end gap-3">
-          <button class="btn btn-secondary" @click="refundTarget = null">{{ t('common.cancel') }}</button>
-          <button class="btn btn-primary" :disabled="actionLoading || !refundReason.trim()" @click="confirmRefund">{{ actionLoading ? t('common.processing') : t('payment.orders.requestRefund') }}</button>
+          <button class="btn btn-secondary" @click="closeRefundDialog">{{ t('common.cancel') }}</button>
+          <button class="btn btn-primary" :disabled="actionLoading || refundPreviewLoading || !refundPreview || refundAmount <= 0 || refundAmount > refundPreview.max_refund_amount || !refundReason.trim()" @click="confirmRefund">{{ actionLoading ? t('common.processing') : t('payment.orders.requestRefund') }}</button>
         </div>
       </template>
     </BaseDialog>
@@ -170,7 +227,7 @@ import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores'
 import { paymentAPI } from '@/api/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
-import type { InvoiceApplication, PaymentOrder } from '@/types/payment'
+import type { InvoiceApplication, PaymentOrder, RefundPreview } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -191,6 +248,9 @@ const currentFilter = ref('')
 const cancelTargetId = ref<number | null>(null)
 const refundTarget = ref<PaymentOrder | null>(null)
 const refundReason = ref('')
+const refundAmount = ref(0)
+const refundPreview = ref<RefundPreview | null>(null)
+const refundPreviewLoading = ref(false)
 const invoiceApplyTarget = ref<PaymentOrder | null>(null)
 const invoiceDetail = ref<InvoiceApplication | null>(null)
 const invoiceForm = reactive({
@@ -248,7 +308,29 @@ async function confirmCancel() {
   }
 }
 
-function openRefundDialog(order: PaymentOrder) { refundTarget.value = order; refundReason.value = '' }
+async function openRefundDialog(order: PaymentOrder) {
+  refundTarget.value = order
+  refundReason.value = ''
+  refundAmount.value = 0
+  refundPreview.value = null
+  refundPreviewLoading.value = true
+  try {
+    const res = await paymentAPI.getRefundPreview(order.id)
+    refundPreview.value = res.data
+    refundAmount.value = Math.max(0, Math.min(res.data.max_refund_amount, order.amount))
+  } catch (err: unknown) {
+    appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
+  } finally {
+    refundPreviewLoading.value = false
+  }
+}
+
+function closeRefundDialog() {
+  refundTarget.value = null
+  refundReason.value = ''
+  refundAmount.value = 0
+  refundPreview.value = null
+}
 function openInvoiceApplyDialog(order: PaymentOrder) {
   invoiceApplyTarget.value = order
   invoiceForm.title = ''
@@ -260,19 +342,33 @@ function openInvoiceApplyDialog(order: PaymentOrder) {
 }
 
 async function confirmRefund() {
-  if (!refundTarget.value || !refundReason.value.trim()) return
+  if (!refundTarget.value || !refundPreview.value || !refundReason.value.trim()) return
+  if (refundAmount.value <= 0 || refundAmount.value > refundPreview.value.max_refund_amount) return
   actionLoading.value = true
   try {
-    await paymentAPI.requestRefund(refundTarget.value.id, { reason: refundReason.value.trim() })
+    await paymentAPI.requestRefund(refundTarget.value.id, {
+      amount: refundAmount.value,
+      reason: refundReason.value.trim(),
+    })
     appStore.showSuccess(t('common.success'))
-    refundTarget.value = null
-    refundReason.value = ''
+    closeRefundDialog()
     await fetchOrders()
   } catch (err: unknown) {
     appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
   } finally {
     actionLoading.value = false
   }
+}
+
+function formatNumber(value: number): string {
+  return Number(value || 0).toFixed(4).replace(/0+$/, '').replace(/\.$/, '')
+}
+
+function formatRefundMoney(value: number): string {
+  if (refundTarget.value?.order_type === 'subscription') {
+    return `¥${Number(value || 0).toFixed(2)}`
+  }
+  return `$${Number(value || 0).toFixed(2)}`
 }
 
 async function confirmApplyInvoice() {

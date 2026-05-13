@@ -50,6 +50,10 @@ func (Group) Fields() []ent.Field {
 		field.Float("rate_multiplier").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}).
 			Default(1.0),
+		field.Float("refund_rate_multiplier").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}).
+			Default(1.0).
+			Comment("订阅退款倍率，用于将已消耗额度折算为不可退金额"),
 		field.Bool("is_exclusive").
 			Default(false),
 		field.Bool("user_selectable").

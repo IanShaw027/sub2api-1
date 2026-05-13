@@ -57,7 +57,7 @@
             class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
           <label for="deduct-balance" class="text-sm text-gray-700 dark:text-gray-300">
-            {{ t('payment.admin.deductBalance') }}
+            {{ order?.order_type === 'subscription' ? '扣除订阅权益' : t('payment.admin.deductBalance') }}
           </label>
           <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.deductBalanceHint') }}</span>
         </div>
@@ -108,6 +108,7 @@
         </div>
         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
           {{ t('payment.admin.maxRefundable') }}: {{ order?.order_type === 'balance' ? '$' : '¥' }}{{ maxRefundable.toFixed(2) }}
+          <span v-if="requestedAmount > 0">，用户申请：{{ order?.order_type === 'balance' ? '$' : '¥' }}{{ requestedAmount.toFixed(2) }}</span>
         </p>
       </div>
 
@@ -202,6 +203,11 @@ const actuallyRefunded = computed(() => {
   return 0
 })
 
+const requestedAmount = computed(() => {
+  if (!props.order || props.order.status !== 'REFUND_REQUESTED') return 0
+  return props.order.refund_requested_amount || 0
+})
+
 const maxRefundable = computed(() => {
   if (!props.order) return 0
   return props.order.amount - actuallyRefunded.value
@@ -214,9 +220,9 @@ const balanceInsufficient = computed(() => {
 
 watch(() => props.show, (val) => {
   if (val && props.order) {
-    // For REFUND_REQUESTED, pre-fill with the requested amount
-    if (props.order.status === 'REFUND_REQUESTED' && props.order.refund_amount) {
-      form.amount = props.order.refund_amount
+    // For REFUND_REQUESTED, pre-fill with the requested amount.
+    if (props.order.status === 'REFUND_REQUESTED' && requestedAmount.value > 0) {
+      form.amount = requestedAmount.value
     } else {
       form.amount = maxRefundable.value
     }

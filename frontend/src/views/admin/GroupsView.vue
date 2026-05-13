@@ -608,6 +608,18 @@
             class="space-y-4 border-l-2 border-primary-200 pl-4 dark:border-primary-800"
           >
             <div>
+              <label class="input-label">订阅退款倍率</label>
+              <input
+                v-model.number="createForm.refund_rate_multiplier"
+                type="number"
+                step="0.001"
+                min="0"
+                class="input"
+                placeholder="1"
+              />
+              <p class="input-hint">订阅退款时按消耗额度 / 订阅倍率 * 退款倍率折算已使用金额。</p>
+            </div>
+            <div>
               <label class="input-label">{{
                 t("admin.groups.subscription.dailyLimit")
               }}</label>
@@ -2017,6 +2029,18 @@
             v-if="editForm.subscription_type === 'subscription'"
             class="space-y-4 border-l-2 border-primary-200 pl-4 dark:border-primary-800"
           >
+            <div>
+              <label class="input-label">订阅退款倍率</label>
+              <input
+                v-model.number="editForm.refund_rate_multiplier"
+                type="number"
+                step="0.001"
+                min="0"
+                class="input"
+                placeholder="1"
+              />
+              <p class="input-hint">订阅退款时按消耗额度 / 订阅倍率 * 退款倍率折算已使用金额。</p>
+            </div>
             <div>
               <label class="input-label">{{
                 t("admin.groups.subscription.dailyLimit")
@@ -3573,6 +3597,7 @@ const createForm = reactive({
   description: "",
   platform: "anthropic" as GroupPlatform,
   rate_multiplier: 1.0,
+  refund_rate_multiplier: 1.0,
   is_exclusive: false,
   subscription_type: "standard" as SubscriptionType,
   daily_limit_usd: null as number | null,
@@ -3863,6 +3888,7 @@ const editForm = reactive({
   description: "",
   platform: "anthropic" as GroupPlatform,
   rate_multiplier: 1.0,
+  refund_rate_multiplier: 1.0,
   is_exclusive: false,
   status: "active" as "active" | "inactive",
   subscription_type: "standard" as SubscriptionType,
@@ -4181,6 +4207,7 @@ const closeCreateModal = () => {
   createForm.description = "";
   createForm.platform = "anthropic";
   createForm.rate_multiplier = 1.0;
+  createForm.refund_rate_multiplier = 1.0;
   createForm.is_exclusive = false;
   createForm.subscription_type = "standard";
   createForm.daily_limit_usd = null;
@@ -4381,6 +4408,7 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.description = group.description || "";
   editForm.platform = group.platform;
   editForm.rate_multiplier = group.rate_multiplier;
+  editForm.refund_rate_multiplier = group.refund_rate_multiplier ?? 1.0;
   editForm.is_exclusive = group.is_exclusive;
   editForm.status = group.status;
   editForm.subscription_type = group.subscription_type || "standard";

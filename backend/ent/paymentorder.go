@@ -77,6 +77,8 @@ type PaymentOrder struct {
 	ForceRefund bool `json:"force_refund,omitempty"`
 	// RefundRequestedAt holds the value of the "refund_requested_at" field.
 	RefundRequestedAt *time.Time `json:"refund_requested_at,omitempty"`
+	// RefundRequestedAmount holds the value of the "refund_requested_amount" field.
+	RefundRequestedAmount float64 `json:"refund_requested_amount,omitempty"`
 	// RefundRequestReason holds the value of the "refund_request_reason" field.
 	RefundRequestReason *string `json:"refund_request_reason,omitempty"`
 	// RefundRequestedBy holds the value of the "refund_requested_by" field.
@@ -136,7 +138,7 @@ func (*PaymentOrder) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case paymentorder.FieldForceRefund:
 			values[i] = new(sql.NullBool)
-		case paymentorder.FieldAmount, paymentorder.FieldPayAmount, paymentorder.FieldFeeRate, paymentorder.FieldRefundAmount:
+		case paymentorder.FieldAmount, paymentorder.FieldPayAmount, paymentorder.FieldFeeRate, paymentorder.FieldRefundAmount, paymentorder.FieldRefundRequestedAmount:
 			values[i] = new(sql.NullFloat64)
 		case paymentorder.FieldID, paymentorder.FieldUserID, paymentorder.FieldPlanID, paymentorder.FieldSubscriptionGroupID, paymentorder.FieldSubscriptionDays, paymentorder.FieldInvoiceFileMediaID:
 			values[i] = new(sql.NullInt64)
@@ -353,6 +355,12 @@ func (_m *PaymentOrder) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.RefundRequestedAt = new(time.Time)
 				*_m.RefundRequestedAt = value.Time
+			}
+		case paymentorder.FieldRefundRequestedAmount:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field refund_requested_amount", values[i])
+			} else if value.Valid {
+				_m.RefundRequestedAmount = value.Float64
 			}
 		case paymentorder.FieldRefundRequestReason:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -586,6 +594,9 @@ func (_m *PaymentOrder) String() string {
 		builder.WriteString("refund_requested_at=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
+	builder.WriteString(", ")
+	builder.WriteString("refund_requested_amount=")
+	builder.WriteString(fmt.Sprintf("%v", _m.RefundRequestedAmount))
 	builder.WriteString(", ")
 	if v := _m.RefundRequestReason; v != nil {
 		builder.WriteString("refund_request_reason=")

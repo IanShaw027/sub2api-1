@@ -43,6 +43,7 @@ func (r *groupRepository) Create(ctx context.Context, groupIn *service.Group) er
 		SetDescription(groupIn.Description).
 		SetPlatform(groupIn.Platform).
 		SetRateMultiplier(groupIn.RateMultiplier).
+		SetRefundRateMultiplier(groupIn.RefundRateMultiplier).
 		SetSortOrder(groupIn.SortOrder).
 		SetIsExclusive(groupIn.IsExclusive).
 		SetUserSelectable(groupIn.UserSelectable).
@@ -136,6 +137,7 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 		SetDescription(groupIn.Description).
 		SetPlatform(groupIn.Platform).
 		SetRateMultiplier(groupIn.RateMultiplier).
+		SetRefundRateMultiplier(groupIn.RefundRateMultiplier).
 		SetIsExclusive(groupIn.IsExclusive).
 		SetUserSelectable(groupIn.UserSelectable).
 		SetStatus(groupIn.Status).

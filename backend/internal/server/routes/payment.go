@@ -38,6 +38,7 @@ func RegisterPaymentRoutes(
 			orders.GET("/my", paymentHandler.GetMyOrders)
 			orders.GET("/:id", paymentHandler.GetOrder)
 			orders.POST("/:id/cancel", paymentHandler.CancelOrder)
+			orders.GET("/:id/refund-preview", paymentHandler.GetRefundPreview)
 			orders.POST("/:id/refund-request", paymentHandler.RequestRefund)
 			orders.GET("/refund-eligible-providers", paymentHandler.GetRefundEligibleProviders)
 			orders.GET("/invoice-eligible-providers", paymentHandler.GetInvoiceEligibleProviders)

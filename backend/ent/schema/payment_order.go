@@ -128,6 +128,9 @@ func (PaymentOrder) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
+		field.Float("refund_requested_amount").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,2)"}).
+			Default(0),
 		field.String("refund_request_reason").
 			Optional().
 			Nillable().

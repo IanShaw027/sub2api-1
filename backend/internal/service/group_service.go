@@ -48,6 +48,7 @@ type CreateGroupRequest struct {
 	Name                 string   `json:"name"`
 	Description          string   `json:"description"`
 	RateMultiplier       float64  `json:"rate_multiplier"`
+	RefundRateMultiplier float64  `json:"refund_rate_multiplier"`
 	IsExclusive          bool     `json:"is_exclusive"`
 	AllowImageGeneration bool     `json:"allow_image_generation"`
 	ImageGenerationRoute string   `json:"image_generation_route"`
@@ -61,6 +62,7 @@ type UpdateGroupRequest struct {
 	Name                 *string  `json:"name"`
 	Description          *string  `json:"description"`
 	RateMultiplier       *float64 `json:"rate_multiplier"`
+	RefundRateMultiplier *float64 `json:"refund_rate_multiplier"`
 	IsExclusive          *bool    `json:"is_exclusive"`
 	Status               *string  `json:"status"`
 	AllowImageGeneration *bool    `json:"allow_image_generation"`
@@ -112,6 +114,7 @@ func (s *GroupService) Create(ctx context.Context, req CreateGroupRequest) (*Gro
 		Description:          req.Description,
 		Platform:             PlatformAnthropic,
 		RateMultiplier:       req.RateMultiplier,
+		RefundRateMultiplier: normalizeRefundRateMultiplier(req.RefundRateMultiplier),
 		IsExclusive:          req.IsExclusive,
 		Status:               StatusActive,
 		SubscriptionType:     SubscriptionTypeStandard,
@@ -182,6 +185,9 @@ func (s *GroupService) Update(ctx context.Context, id int64, req UpdateGroupRequ
 
 	if req.RateMultiplier != nil {
 		group.RateMultiplier = *req.RateMultiplier
+	}
+	if req.RefundRateMultiplier != nil {
+		group.RefundRateMultiplier = normalizeRefundRateMultiplier(*req.RefundRateMultiplier)
 	}
 
 	if req.IsExclusive != nil {

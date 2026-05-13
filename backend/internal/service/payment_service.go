@@ -130,6 +130,21 @@ type RefundPlan struct {
 	SubscriptionID  int64
 }
 
+type RefundPreview struct {
+	OrderID                    int64   `json:"order_id"`
+	OrderType                  string  `json:"order_type"`
+	OrderAmount                float64 `json:"order_amount"`
+	AlreadyRefunded            float64 `json:"already_refunded"`
+	MaxRefundAmount            float64 `json:"max_refund_amount"`
+	BalanceAvailable           float64 `json:"balance_available,omitempty"`
+	UsageAmount                float64 `json:"usage_amount,omitempty"`
+	SubscriptionRateMultiplier float64 `json:"subscription_rate_multiplier,omitempty"`
+	RefundRateMultiplier       float64 `json:"refund_rate_multiplier,omitempty"`
+	UsedRefundValue            float64 `json:"used_refund_value,omitempty"`
+	RefundEnabled              bool    `json:"refund_enabled"`
+	AutoRefund                 bool    `json:"auto_refund"`
+}
+
 type RefundResult struct {
 	Success         bool    `json:"success"`
 	Warning         string  `json:"warning,omitempty"`

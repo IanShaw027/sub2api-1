@@ -382,7 +382,8 @@ func (h *PaymentHandler) CancelOrder(c *gin.Context) {
 
 // RefundRequestBody is the request body for requesting a refund.
 type RefundRequestBody struct {
-	Reason string `json:"reason"`
+	Reason string  `json:"reason"`
+	Amount float64 `json:"amount"`
 }
 
 // RequestRefund submits a refund request for a completed order.
@@ -405,11 +406,12 @@ func (h *PaymentHandler) RequestRefund(c *gin.Context) {
 		return
 	}
 
-	if err := h.paymentService.RequestRefund(c.Request.Context(), orderID, subject.UserID, req.Reason); err != nil {
+	result, err := h.paymentService.RequestRefund(c.Request.Context(), orderID, subject.UserID, req.Amount, req.Reason)
+	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, gin.H{"message": "refund requested"})
+	response.Success(c, gin.H{"message": "refund requested", "result": result})
 }
 
 // GetRefundEligibleProviders returns provider instance IDs that allow user refund.
@@ -420,6 +422,25 @@ func (h *PaymentHandler) GetRefundEligibleProviders(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"provider_instance_ids": ids})
+}
+
+// GetRefundPreview returns refundable amount details for a completed order.
+func (h *PaymentHandler) GetRefundPreview(c *gin.Context) {
+	subject, ok := requireAuth(c)
+	if !ok {
+		return
+	}
+	orderID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid order ID")
+		return
+	}
+	preview, err := h.paymentService.GetRefundPreview(c.Request.Context(), orderID, subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, preview)
 }
 
 // GetInvoiceEligibleProviders returns provider instance IDs that allow invoice applications.
@@ -580,46 +601,48 @@ func (h *PaymentHandler) VerifyOrder(c *gin.Context) {
 // PublicOrderResult is the limited order info returned by the public verify endpoint.
 // No user details are exposed — only payment status information.
 type PublicOrderResult struct {
-	ID                  int64      `json:"id"`
-	OutTradeNo          string     `json:"out_trade_no"`
-	Amount              float64    `json:"amount"`
-	PayAmount           float64    `json:"pay_amount"`
-	FeeRate             float64    `json:"fee_rate"`
-	PaymentType         string     `json:"payment_type"`
-	OrderType           string     `json:"order_type"`
-	Status              string     `json:"status"`
-	CreatedAt           time.Time  `json:"created_at"`
-	ExpiresAt           time.Time  `json:"expires_at"`
-	PaidAt              *time.Time `json:"paid_at,omitempty"`
-	CompletedAt         *time.Time `json:"completed_at,omitempty"`
-	RefundAmount        float64    `json:"refund_amount"`
-	RefundReason        *string    `json:"refund_reason,omitempty"`
-	RefundRequestedAt   *time.Time `json:"refund_requested_at,omitempty"`
-	RefundRequestedBy   *string    `json:"refund_requested_by,omitempty"`
-	RefundRequestReason *string    `json:"refund_request_reason,omitempty"`
-	PlanID              *int64     `json:"plan_id,omitempty"`
+	ID                    int64      `json:"id"`
+	OutTradeNo            string     `json:"out_trade_no"`
+	Amount                float64    `json:"amount"`
+	PayAmount             float64    `json:"pay_amount"`
+	FeeRate               float64    `json:"fee_rate"`
+	PaymentType           string     `json:"payment_type"`
+	OrderType             string     `json:"order_type"`
+	Status                string     `json:"status"`
+	CreatedAt             time.Time  `json:"created_at"`
+	ExpiresAt             time.Time  `json:"expires_at"`
+	PaidAt                *time.Time `json:"paid_at,omitempty"`
+	CompletedAt           *time.Time `json:"completed_at,omitempty"`
+	RefundAmount          float64    `json:"refund_amount"`
+	RefundRequestedAmount float64    `json:"refund_requested_amount"`
+	RefundReason          *string    `json:"refund_reason,omitempty"`
+	RefundRequestedAt     *time.Time `json:"refund_requested_at,omitempty"`
+	RefundRequestedBy     *string    `json:"refund_requested_by,omitempty"`
+	RefundRequestReason   *string    `json:"refund_request_reason,omitempty"`
+	PlanID                *int64     `json:"plan_id,omitempty"`
 }
 
 func buildPublicOrderResult(order *dbent.PaymentOrder) PublicOrderResult {
 	return PublicOrderResult{
-		ID:                  order.ID,
-		OutTradeNo:          order.OutTradeNo,
-		Amount:              order.Amount,
-		PayAmount:           order.PayAmount,
-		FeeRate:             order.FeeRate,
-		PaymentType:         order.PaymentType,
-		OrderType:           order.OrderType,
-		Status:              order.Status,
-		CreatedAt:           order.CreatedAt,
-		ExpiresAt:           order.ExpiresAt,
-		PaidAt:              order.PaidAt,
-		CompletedAt:         order.CompletedAt,
-		RefundAmount:        order.RefundAmount,
-		RefundReason:        order.RefundReason,
-		RefundRequestedAt:   order.RefundRequestedAt,
-		RefundRequestedBy:   order.RefundRequestedBy,
-		RefundRequestReason: order.RefundRequestReason,
-		PlanID:              order.PlanID,
+		ID:                    order.ID,
+		OutTradeNo:            order.OutTradeNo,
+		Amount:                order.Amount,
+		PayAmount:             order.PayAmount,
+		FeeRate:               order.FeeRate,
+		PaymentType:           order.PaymentType,
+		OrderType:             order.OrderType,
+		Status:                order.Status,
+		CreatedAt:             order.CreatedAt,
+		ExpiresAt:             order.ExpiresAt,
+		PaidAt:                order.PaidAt,
+		CompletedAt:           order.CompletedAt,
+		RefundAmount:          order.RefundAmount,
+		RefundRequestedAmount: order.RefundRequestedAmount,
+		RefundReason:          order.RefundReason,
+		RefundRequestedAt:     order.RefundRequestedAt,
+		RefundRequestedBy:     order.RefundRequestedBy,
+		RefundRequestReason:   order.RefundRequestReason,
+		PlanID:                order.PlanID,
 	}
 }
 

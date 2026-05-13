@@ -119,6 +119,20 @@ func (_c *GroupCreate) SetNillableRateMultiplier(v *float64) *GroupCreate {
 	return _c
 }
 
+// SetRefundRateMultiplier sets the "refund_rate_multiplier" field.
+func (_c *GroupCreate) SetRefundRateMultiplier(v float64) *GroupCreate {
+	_c.mutation.SetRefundRateMultiplier(v)
+	return _c
+}
+
+// SetNillableRefundRateMultiplier sets the "refund_rate_multiplier" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableRefundRateMultiplier(v *float64) *GroupCreate {
+	if v != nil {
+		_c.SetRefundRateMultiplier(*v)
+	}
+	return _c
+}
+
 // SetIsExclusive sets the "is_exclusive" field.
 func (_c *GroupCreate) SetIsExclusive(v bool) *GroupCreate {
 	_c.mutation.SetIsExclusive(v)
@@ -724,6 +738,10 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultRateMultiplier
 		_c.mutation.SetRateMultiplier(v)
 	}
+	if _, ok := _c.mutation.RefundRateMultiplier(); !ok {
+		v := group.DefaultRefundRateMultiplier
+		_c.mutation.SetRefundRateMultiplier(v)
+	}
 	if _, ok := _c.mutation.IsExclusive(); !ok {
 		v := group.DefaultIsExclusive
 		_c.mutation.SetIsExclusive(v)
@@ -838,6 +856,9 @@ func (_c *GroupCreate) check() error {
 	}
 	if _, ok := _c.mutation.RateMultiplier(); !ok {
 		return &ValidationError{Name: "rate_multiplier", err: errors.New(`ent: missing required field "Group.rate_multiplier"`)}
+	}
+	if _, ok := _c.mutation.RefundRateMultiplier(); !ok {
+		return &ValidationError{Name: "refund_rate_multiplier", err: errors.New(`ent: missing required field "Group.refund_rate_multiplier"`)}
 	}
 	if _, ok := _c.mutation.IsExclusive(); !ok {
 		return &ValidationError{Name: "is_exclusive", err: errors.New(`ent: missing required field "Group.is_exclusive"`)}
@@ -989,6 +1010,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.RateMultiplier(); ok {
 		_spec.SetField(group.FieldRateMultiplier, field.TypeFloat64, value)
 		_node.RateMultiplier = value
+	}
+	if value, ok := _c.mutation.RefundRateMultiplier(); ok {
+		_spec.SetField(group.FieldRefundRateMultiplier, field.TypeFloat64, value)
+		_node.RefundRateMultiplier = value
 	}
 	if value, ok := _c.mutation.IsExclusive(); ok {
 		_spec.SetField(group.FieldIsExclusive, field.TypeBool, value)
@@ -1375,6 +1400,24 @@ func (u *GroupUpsert) UpdateRateMultiplier() *GroupUpsert {
 // AddRateMultiplier adds v to the "rate_multiplier" field.
 func (u *GroupUpsert) AddRateMultiplier(v float64) *GroupUpsert {
 	u.Add(group.FieldRateMultiplier, v)
+	return u
+}
+
+// SetRefundRateMultiplier sets the "refund_rate_multiplier" field.
+func (u *GroupUpsert) SetRefundRateMultiplier(v float64) *GroupUpsert {
+	u.Set(group.FieldRefundRateMultiplier, v)
+	return u
+}
+
+// UpdateRefundRateMultiplier sets the "refund_rate_multiplier" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateRefundRateMultiplier() *GroupUpsert {
+	u.SetExcluded(group.FieldRefundRateMultiplier)
+	return u
+}
+
+// AddRefundRateMultiplier adds v to the "refund_rate_multiplier" field.
+func (u *GroupUpsert) AddRefundRateMultiplier(v float64) *GroupUpsert {
+	u.Add(group.FieldRefundRateMultiplier, v)
 	return u
 }
 
@@ -2102,6 +2145,27 @@ func (u *GroupUpsertOne) AddRateMultiplier(v float64) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdateRateMultiplier() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateRateMultiplier()
+	})
+}
+
+// SetRefundRateMultiplier sets the "refund_rate_multiplier" field.
+func (u *GroupUpsertOne) SetRefundRateMultiplier(v float64) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetRefundRateMultiplier(v)
+	})
+}
+
+// AddRefundRateMultiplier adds v to the "refund_rate_multiplier" field.
+func (u *GroupUpsertOne) AddRefundRateMultiplier(v float64) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.AddRefundRateMultiplier(v)
+	})
+}
+
+// UpdateRefundRateMultiplier sets the "refund_rate_multiplier" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateRefundRateMultiplier() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateRefundRateMultiplier()
 	})
 }
 
@@ -3090,6 +3154,27 @@ func (u *GroupUpsertBulk) AddRateMultiplier(v float64) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdateRateMultiplier() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateRateMultiplier()
+	})
+}
+
+// SetRefundRateMultiplier sets the "refund_rate_multiplier" field.
+func (u *GroupUpsertBulk) SetRefundRateMultiplier(v float64) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetRefundRateMultiplier(v)
+	})
+}
+
+// AddRefundRateMultiplier adds v to the "refund_rate_multiplier" field.
+func (u *GroupUpsertBulk) AddRefundRateMultiplier(v float64) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.AddRefundRateMultiplier(v)
+	})
+}
+
+// UpdateRefundRateMultiplier sets the "refund_rate_multiplier" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateRefundRateMultiplier() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateRefundRateMultiplier()
 	})
 }
 

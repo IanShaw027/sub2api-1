@@ -13,6 +13,7 @@ import type {
   CreateOrderRequest,
   CreateOrderResult,
   PaymentOrder,
+  RefundPreview,
   InvoiceApplication
 } from '@/types/payment'
 import type { BasePaginationResponse } from '@/types'
@@ -80,8 +81,13 @@ export const paymentAPI = {
   },
 
   /** Request a refund for a completed order */
-  requestRefund(id: number, data: { reason: string }) {
+  requestRefund(id: number, data: { amount: number; reason: string }) {
     return apiClient.post(`/payment/orders/${id}/refund-request`, data)
+  },
+
+  /** Get refundable amount details for a completed order */
+  getRefundPreview(id: number) {
+    return apiClient.get<RefundPreview>(`/payment/orders/${id}/refund-preview`)
   },
 
   /** Get provider instance IDs that allow user refund */

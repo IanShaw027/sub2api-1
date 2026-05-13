@@ -37816,6 +37816,8 @@ type GroupMutation struct {
 	description                             *string
 	rate_multiplier                         *float64
 	addrate_multiplier                      *float64
+	refund_rate_multiplier                  *float64
+	addrefund_rate_multiplier               *float64
 	is_exclusive                            *bool
 	user_selectable                         *bool
 	status                                  *string
@@ -38297,6 +38299,62 @@ func (m *GroupMutation) AddedRateMultiplier() (r float64, exists bool) {
 func (m *GroupMutation) ResetRateMultiplier() {
 	m.rate_multiplier = nil
 	m.addrate_multiplier = nil
+}
+
+// SetRefundRateMultiplier sets the "refund_rate_multiplier" field.
+func (m *GroupMutation) SetRefundRateMultiplier(f float64) {
+	m.refund_rate_multiplier = &f
+	m.addrefund_rate_multiplier = nil
+}
+
+// RefundRateMultiplier returns the value of the "refund_rate_multiplier" field in the mutation.
+func (m *GroupMutation) RefundRateMultiplier() (r float64, exists bool) {
+	v := m.refund_rate_multiplier
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRefundRateMultiplier returns the old "refund_rate_multiplier" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldRefundRateMultiplier(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRefundRateMultiplier is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRefundRateMultiplier requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRefundRateMultiplier: %w", err)
+	}
+	return oldValue.RefundRateMultiplier, nil
+}
+
+// AddRefundRateMultiplier adds f to the "refund_rate_multiplier" field.
+func (m *GroupMutation) AddRefundRateMultiplier(f float64) {
+	if m.addrefund_rate_multiplier != nil {
+		*m.addrefund_rate_multiplier += f
+	} else {
+		m.addrefund_rate_multiplier = &f
+	}
+}
+
+// AddedRefundRateMultiplier returns the value that was added to the "refund_rate_multiplier" field in this mutation.
+func (m *GroupMutation) AddedRefundRateMultiplier() (r float64, exists bool) {
+	v := m.addrefund_rate_multiplier
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRefundRateMultiplier resets all changes to the "refund_rate_multiplier" field.
+func (m *GroupMutation) ResetRefundRateMultiplier() {
+	m.refund_rate_multiplier = nil
+	m.addrefund_rate_multiplier = nil
 }
 
 // SetIsExclusive sets the "is_exclusive" field.
@@ -40363,7 +40421,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 41)
+	fields := make([]string, 0, 42)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -40384,6 +40442,9 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.rate_multiplier != nil {
 		fields = append(fields, group.FieldRateMultiplier)
+	}
+	if m.refund_rate_multiplier != nil {
+		fields = append(fields, group.FieldRefundRateMultiplier)
 	}
 	if m.is_exclusive != nil {
 		fields = append(fields, group.FieldIsExclusive)
@@ -40509,6 +40570,8 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.Description()
 	case group.FieldRateMultiplier:
 		return m.RateMultiplier()
+	case group.FieldRefundRateMultiplier:
+		return m.RefundRateMultiplier()
 	case group.FieldIsExclusive:
 		return m.IsExclusive()
 	case group.FieldUserSelectable:
@@ -40600,6 +40663,8 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldDescription(ctx)
 	case group.FieldRateMultiplier:
 		return m.OldRateMultiplier(ctx)
+	case group.FieldRefundRateMultiplier:
+		return m.OldRefundRateMultiplier(ctx)
 	case group.FieldIsExclusive:
 		return m.OldIsExclusive(ctx)
 	case group.FieldUserSelectable:
@@ -40725,6 +40790,13 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetRateMultiplier(v)
+		return nil
+	case group.FieldRefundRateMultiplier:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRefundRateMultiplier(v)
 		return nil
 	case group.FieldIsExclusive:
 		v, ok := value.(bool)
@@ -40975,6 +41047,9 @@ func (m *GroupMutation) AddedFields() []string {
 	if m.addrate_multiplier != nil {
 		fields = append(fields, group.FieldRateMultiplier)
 	}
+	if m.addrefund_rate_multiplier != nil {
+		fields = append(fields, group.FieldRefundRateMultiplier)
+	}
 	if m.adddaily_limit_usd != nil {
 		fields = append(fields, group.FieldDailyLimitUsd)
 	}
@@ -41030,6 +41105,8 @@ func (m *GroupMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
 	case group.FieldRateMultiplier:
 		return m.AddedRateMultiplier()
+	case group.FieldRefundRateMultiplier:
+		return m.AddedRefundRateMultiplier()
 	case group.FieldDailyLimitUsd:
 		return m.AddedDailyLimitUsd()
 	case group.FieldWeeklyLimitUsd:
@@ -41075,6 +41152,13 @@ func (m *GroupMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddRateMultiplier(v)
+		return nil
+	case group.FieldRefundRateMultiplier:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRefundRateMultiplier(v)
 		return nil
 	case group.FieldDailyLimitUsd:
 		v, ok := value.(float64)
@@ -41321,6 +41405,9 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldRateMultiplier:
 		m.ResetRateMultiplier()
+		return nil
+	case group.FieldRefundRateMultiplier:
+		m.ResetRefundRateMultiplier()
 		return nil
 	case group.FieldIsExclusive:
 		m.ResetIsExclusive()
@@ -45779,63 +45866,65 @@ func (m *PaymentAuditLogMutation) ResetEdge(name string) error {
 // PaymentOrderMutation represents an operation that mutates the PaymentOrder nodes in the graph.
 type PaymentOrderMutation struct {
 	config
-	op                       Op
-	typ                      string
-	id                       *int64
-	user_email               *string
-	user_name                *string
-	user_notes               *string
-	amount                   *float64
-	addamount                *float64
-	pay_amount               *float64
-	addpay_amount            *float64
-	fee_rate                 *float64
-	addfee_rate              *float64
-	recharge_code            *string
-	out_trade_no             *string
-	payment_type             *string
-	payment_trade_no         *string
-	pay_url                  *string
-	qr_code                  *string
-	qr_code_img              *string
-	order_type               *string
-	plan_id                  *int64
-	addplan_id               *int64
-	subscription_group_id    *int64
-	addsubscription_group_id *int64
-	subscription_days        *int
-	addsubscription_days     *int
-	provider_instance_id     *string
-	provider_key             *string
-	provider_snapshot        *map[string]interface{}
-	status                   *string
-	invoice_status           *string
-	invoice_file_media_id    *int64
-	addinvoice_file_media_id *int64
-	refund_amount            *float64
-	addrefund_amount         *float64
-	refund_reason            *string
-	refund_at                *time.Time
-	force_refund             *bool
-	refund_requested_at      *time.Time
-	refund_request_reason    *string
-	refund_requested_by      *string
-	expires_at               *time.Time
-	paid_at                  *time.Time
-	completed_at             *time.Time
-	failed_at                *time.Time
-	failed_reason            *string
-	client_ip                *string
-	src_host                 *string
-	src_url                  *string
-	created_at               *time.Time
-	updated_at               *time.Time
-	clearedFields            map[string]struct{}
-	user                     *int64
-	cleareduser              bool
-	done                     bool
-	oldValue                 func(context.Context) (*PaymentOrder, error)
-	predicates               []predicate.PaymentOrder
+	op                         Op
+	typ                        string
+	id                         *int64
+	user_email                 *string
+	user_name                  *string
+	user_notes                 *string
+	amount                     *float64
+	addamount                  *float64
+	pay_amount                 *float64
+	addpay_amount              *float64
+	fee_rate                   *float64
+	addfee_rate                *float64
+	recharge_code              *string
+	out_trade_no               *string
+	payment_type               *string
+	payment_trade_no           *string
+	pay_url                    *string
+	qr_code                    *string
+	qr_code_img                *string
+	order_type                 *string
+	plan_id                    *int64
+	addplan_id                 *int64
+	subscription_group_id      *int64
+	addsubscription_group_id   *int64
+	subscription_days          *int
+	addsubscription_days       *int
+	provider_instance_id       *string
+	provider_key               *string
+	provider_snapshot          *map[string]interface{}
+	status                     *string
+	invoice_status             *string
+	invoice_file_media_id      *int64
+	addinvoice_file_media_id   *int64
+	refund_amount              *float64
+	addrefund_amount           *float64
+	refund_reason              *string
+	refund_at                  *time.Time
+	force_refund               *bool
+	refund_requested_at        *time.Time
+	refund_requested_amount    *float64
+	addrefund_requested_amount *float64
+	refund_request_reason      *string
+	refund_requested_by        *string
+	expires_at                 *time.Time
+	paid_at                    *time.Time
+	completed_at               *time.Time
+	failed_at                  *time.Time
+	failed_reason              *string
+	client_ip                  *string
+	src_host                   *string
+	src_url                    *string
+	created_at                 *time.Time
+	updated_at                 *time.Time
+	clearedFields              map[string]struct{}
+	user                       *int64
+	cleareduser                bool
+	done                       bool
+	oldValue                   func(context.Context) (*PaymentOrder, error)
+	predicates                 []predicate.PaymentOrder
 }
 
 var _ ent.Mutation = (*PaymentOrderMutation)(nil)
@@ -47326,6 +47415,62 @@ func (m *PaymentOrderMutation) ResetRefundRequestedAt() {
 	delete(m.clearedFields, paymentorder.FieldRefundRequestedAt)
 }
 
+// SetRefundRequestedAmount sets the "refund_requested_amount" field.
+func (m *PaymentOrderMutation) SetRefundRequestedAmount(f float64) {
+	m.refund_requested_amount = &f
+	m.addrefund_requested_amount = nil
+}
+
+// RefundRequestedAmount returns the value of the "refund_requested_amount" field in the mutation.
+func (m *PaymentOrderMutation) RefundRequestedAmount() (r float64, exists bool) {
+	v := m.refund_requested_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRefundRequestedAmount returns the old "refund_requested_amount" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldRefundRequestedAmount(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRefundRequestedAmount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRefundRequestedAmount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRefundRequestedAmount: %w", err)
+	}
+	return oldValue.RefundRequestedAmount, nil
+}
+
+// AddRefundRequestedAmount adds f to the "refund_requested_amount" field.
+func (m *PaymentOrderMutation) AddRefundRequestedAmount(f float64) {
+	if m.addrefund_requested_amount != nil {
+		*m.addrefund_requested_amount += f
+	} else {
+		m.addrefund_requested_amount = &f
+	}
+}
+
+// AddedRefundRequestedAmount returns the value that was added to the "refund_requested_amount" field in this mutation.
+func (m *PaymentOrderMutation) AddedRefundRequestedAmount() (r float64, exists bool) {
+	v := m.addrefund_requested_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRefundRequestedAmount resets all changes to the "refund_requested_amount" field.
+func (m *PaymentOrderMutation) ResetRefundRequestedAmount() {
+	m.refund_requested_amount = nil
+	m.addrefund_requested_amount = nil
+}
+
 // SetRefundRequestReason sets the "refund_request_reason" field.
 func (m *PaymentOrderMutation) SetRefundRequestReason(s string) {
 	m.refund_request_reason = &s
@@ -47910,7 +48055,7 @@ func (m *PaymentOrderMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PaymentOrderMutation) Fields() []string {
-	fields := make([]string, 0, 41)
+	fields := make([]string, 0, 42)
 	if m.user != nil {
 		fields = append(fields, paymentorder.FieldUserID)
 	}
@@ -47997,6 +48142,9 @@ func (m *PaymentOrderMutation) Fields() []string {
 	}
 	if m.refund_requested_at != nil {
 		fields = append(fields, paymentorder.FieldRefundRequestedAt)
+	}
+	if m.refund_requested_amount != nil {
+		fields = append(fields, paymentorder.FieldRefundRequestedAmount)
 	}
 	if m.refund_request_reason != nil {
 		fields = append(fields, paymentorder.FieldRefundRequestReason)
@@ -48100,6 +48248,8 @@ func (m *PaymentOrderMutation) Field(name string) (ent.Value, bool) {
 		return m.ForceRefund()
 	case paymentorder.FieldRefundRequestedAt:
 		return m.RefundRequestedAt()
+	case paymentorder.FieldRefundRequestedAmount:
+		return m.RefundRequestedAmount()
 	case paymentorder.FieldRefundRequestReason:
 		return m.RefundRequestReason()
 	case paymentorder.FieldRefundRequestedBy:
@@ -48191,6 +48341,8 @@ func (m *PaymentOrderMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldForceRefund(ctx)
 	case paymentorder.FieldRefundRequestedAt:
 		return m.OldRefundRequestedAt(ctx)
+	case paymentorder.FieldRefundRequestedAmount:
+		return m.OldRefundRequestedAmount(ctx)
 	case paymentorder.FieldRefundRequestReason:
 		return m.OldRefundRequestReason(ctx)
 	case paymentorder.FieldRefundRequestedBy:
@@ -48427,6 +48579,13 @@ func (m *PaymentOrderMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetRefundRequestedAt(v)
 		return nil
+	case paymentorder.FieldRefundRequestedAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRefundRequestedAmount(v)
+		return nil
 	case paymentorder.FieldRefundRequestReason:
 		v, ok := value.(string)
 		if !ok {
@@ -48543,6 +48702,9 @@ func (m *PaymentOrderMutation) AddedFields() []string {
 	if m.addrefund_amount != nil {
 		fields = append(fields, paymentorder.FieldRefundAmount)
 	}
+	if m.addrefund_requested_amount != nil {
+		fields = append(fields, paymentorder.FieldRefundRequestedAmount)
+	}
 	return fields
 }
 
@@ -48567,6 +48729,8 @@ func (m *PaymentOrderMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedInvoiceFileMediaID()
 	case paymentorder.FieldRefundAmount:
 		return m.AddedRefundAmount()
+	case paymentorder.FieldRefundRequestedAmount:
+		return m.AddedRefundRequestedAmount()
 	}
 	return nil, false
 }
@@ -48631,6 +48795,13 @@ func (m *PaymentOrderMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddRefundAmount(v)
+		return nil
+	case paymentorder.FieldRefundRequestedAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRefundRequestedAmount(v)
 		return nil
 	}
 	return fmt.Errorf("unknown PaymentOrder numeric field %s", name)
@@ -48874,6 +49045,9 @@ func (m *PaymentOrderMutation) ResetField(name string) error {
 		return nil
 	case paymentorder.FieldRefundRequestedAt:
 		m.ResetRefundRequestedAt()
+		return nil
+	case paymentorder.FieldRefundRequestedAmount:
+		m.ResetRefundRequestedAmount()
 		return nil
 	case paymentorder.FieldRefundRequestReason:
 		m.ResetRefundRequestReason()

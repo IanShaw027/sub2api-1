@@ -16,16 +16,17 @@ const (
 )
 
 type Group struct {
-	ID             int64
-	Name           string
-	DisplayName    string
-	Description    string
-	Platform       string
-	RateMultiplier float64
-	IsExclusive    bool
-	UserSelectable bool
-	Status         string
-	Hydrated       bool // indicates the group was loaded from a trusted repository source
+	ID                   int64
+	Name                 string
+	DisplayName          string
+	Description          string
+	Platform             string
+	RateMultiplier       float64
+	RefundRateMultiplier float64
+	IsExclusive          bool
+	UserSelectable       bool
+	Status               string
+	Hydrated             bool // indicates the group was loaded from a trusted repository source
 
 	SubscriptionType    string
 	DailyLimitUSD       *float64
@@ -94,6 +95,13 @@ func (g *Group) IsActive() bool {
 
 func (g *Group) IsSubscriptionType() bool {
 	return g.SubscriptionType == SubscriptionTypeSubscription
+}
+
+func normalizeRefundRateMultiplier(multiplier float64) float64 {
+	if multiplier <= 0 {
+		return 1
+	}
+	return multiplier
 }
 
 func NormalizeGroupImageGenerationRoute(route string) string {

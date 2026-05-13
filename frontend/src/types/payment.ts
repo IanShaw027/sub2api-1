@@ -89,6 +89,7 @@ export interface PaymentOrder {
   paid_at?: string
   completed_at?: string
   refund_amount: number
+  refund_requested_amount: number
   refund_reason?: string
   refund_requested_at?: string
   refund_requested_by?: number
@@ -97,6 +98,21 @@ export interface PaymentOrder {
   provider_instance_id?: string
   invoice_status?: InvoiceStatus
   invoice_file_media_id?: number
+}
+
+export interface RefundPreview {
+  order_id: number
+  order_type: OrderType
+  order_amount: number
+  already_refunded: number
+  max_refund_amount: number
+  balance_available?: number
+  usage_amount?: number
+  subscription_rate_multiplier?: number
+  refund_rate_multiplier?: number
+  used_refund_value?: number
+  refund_enabled: boolean
+  auto_refund: boolean
 }
 
 // ==================== Plans & Channels ====================

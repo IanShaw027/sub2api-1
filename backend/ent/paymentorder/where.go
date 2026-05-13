@@ -195,6 +195,11 @@ func RefundRequestedAt(v time.Time) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldEQ(FieldRefundRequestedAt, v))
 }
 
+// RefundRequestedAmount applies equality check predicate on the "refund_requested_amount" field. It's identical to RefundRequestedAmountEQ.
+func RefundRequestedAmount(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldRefundRequestedAmount, v))
+}
+
 // RefundRequestReason applies equality check predicate on the "refund_request_reason" field. It's identical to RefundRequestReasonEQ.
 func RefundRequestReason(v string) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldEQ(FieldRefundRequestReason, v))
@@ -1863,6 +1868,46 @@ func RefundRequestedAtIsNil() predicate.PaymentOrder {
 // RefundRequestedAtNotNil applies the NotNil predicate on the "refund_requested_at" field.
 func RefundRequestedAtNotNil() predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldNotNull(FieldRefundRequestedAt))
+}
+
+// RefundRequestedAmountEQ applies the EQ predicate on the "refund_requested_amount" field.
+func RefundRequestedAmountEQ(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldRefundRequestedAmount, v))
+}
+
+// RefundRequestedAmountNEQ applies the NEQ predicate on the "refund_requested_amount" field.
+func RefundRequestedAmountNEQ(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldRefundRequestedAmount, v))
+}
+
+// RefundRequestedAmountIn applies the In predicate on the "refund_requested_amount" field.
+func RefundRequestedAmountIn(vs ...float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldRefundRequestedAmount, vs...))
+}
+
+// RefundRequestedAmountNotIn applies the NotIn predicate on the "refund_requested_amount" field.
+func RefundRequestedAmountNotIn(vs ...float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldRefundRequestedAmount, vs...))
+}
+
+// RefundRequestedAmountGT applies the GT predicate on the "refund_requested_amount" field.
+func RefundRequestedAmountGT(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldRefundRequestedAmount, v))
+}
+
+// RefundRequestedAmountGTE applies the GTE predicate on the "refund_requested_amount" field.
+func RefundRequestedAmountGTE(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldRefundRequestedAmount, v))
+}
+
+// RefundRequestedAmountLT applies the LT predicate on the "refund_requested_amount" field.
+func RefundRequestedAmountLT(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldRefundRequestedAmount, v))
+}
+
+// RefundRequestedAmountLTE applies the LTE predicate on the "refund_requested_amount" field.
+func RefundRequestedAmountLTE(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldRefundRequestedAmount, v))
 }
 
 // RefundRequestReasonEQ applies the EQ predicate on the "refund_request_reason" field.

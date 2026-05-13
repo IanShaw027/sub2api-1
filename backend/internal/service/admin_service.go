@@ -189,17 +189,18 @@ type AdminBoundAuthIdentityChannel struct {
 }
 
 type CreateGroupInput struct {
-	Name             string
-	DisplayName      *string
-	Description      string
-	Platform         string
-	RateMultiplier   float64
-	IsExclusive      bool
-	UserSelectable   *bool
-	SubscriptionType string   // standard/subscription
-	DailyLimitUSD    *float64 // 日限额 (USD)
-	WeeklyLimitUSD   *float64 // 周限额 (USD)
-	MonthlyLimitUSD  *float64 // 月限额 (USD)
+	Name                 string
+	DisplayName          *string
+	Description          string
+	Platform             string
+	RateMultiplier       float64
+	RefundRateMultiplier float64
+	IsExclusive          bool
+	UserSelectable       *bool
+	SubscriptionType     string   // standard/subscription
+	DailyLimitUSD        *float64 // 日限额 (USD)
+	WeeklyLimitUSD       *float64 // 周限额 (USD)
+	MonthlyLimitUSD      *float64 // 月限额 (USD)
 	// 图片生成计费配置（仅 antigravity 平台使用）
 	AllowImageGeneration bool
 	ImageGenerationRoute string
@@ -235,18 +236,19 @@ type CreateGroupInput struct {
 }
 
 type UpdateGroupInput struct {
-	Name             string
-	DisplayName      *string
-	Description      *string
-	Platform         string
-	RateMultiplier   *float64 // 使用指针以支持设置为0
-	IsExclusive      *bool
-	UserSelectable   *bool
-	Status           string
-	SubscriptionType string   // standard/subscription
-	DailyLimitUSD    *float64 // 日限额 (USD)
-	WeeklyLimitUSD   *float64 // 周限额 (USD)
-	MonthlyLimitUSD  *float64 // 月限额 (USD)
+	Name                 string
+	DisplayName          *string
+	Description          *string
+	Platform             string
+	RateMultiplier       *float64 // 使用指针以支持设置为0
+	RefundRateMultiplier *float64
+	IsExclusive          *bool
+	UserSelectable       *bool
+	Status               string
+	SubscriptionType     string   // standard/subscription
+	DailyLimitUSD        *float64 // 日限额 (USD)
+	WeeklyLimitUSD       *float64 // 周限额 (USD)
+	MonthlyLimitUSD      *float64 // 月限额 (USD)
 	// 图片生成计费配置（仅 antigravity 平台使用）
 	AllowImageGeneration *bool
 	ImageGenerationRoute *string
@@ -1668,6 +1670,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	if input.RateMultiplier <= 0 {
 		return nil, errors.New("rate_multiplier must be > 0")
 	}
+	refundRateMultiplier := normalizeRefundRateMultiplier(input.RefundRateMultiplier)
 	if input.RPMLimit < 0 {
 		return nil, infraerrors.BadRequest("INVALID_RPM_LIMIT", "group rpm_limit must be >= 0")
 	}
@@ -1771,6 +1774,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		Description:                     input.Description,
 		Platform:                        platform,
 		RateMultiplier:                  input.RateMultiplier,
+		RefundRateMultiplier:            refundRateMultiplier,
 		IsExclusive:                     input.IsExclusive,
 		UserSelectable:                  true,
 		Status:                          StatusActive,
@@ -1950,6 +1954,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 			return nil, errors.New("rate_multiplier must be > 0")
 		}
 		group.RateMultiplier = *input.RateMultiplier
+	}
+	if input.RefundRateMultiplier != nil {
+		group.RefundRateMultiplier = normalizeRefundRateMultiplier(*input.RefundRateMultiplier)
 	}
 	if input.IsExclusive != nil {
 		group.IsExclusive = *input.IsExclusive

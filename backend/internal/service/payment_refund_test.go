@@ -150,7 +150,6 @@ func TestValidateRefundRequestAllowsUniquelyResolvedLegacyProviderInstance(t *te
 		SetConfig("{}").
 		SetSupportedTypes("alipay").
 		SetEnabled(true).
-		SetAllowUserRefund(true).
 		SetRefundEnabled(true).
 		Save(ctx)
 	require.NoError(t, err)
@@ -180,7 +179,7 @@ func TestValidateRefundRequestAllowsUniquelyResolvedLegacyProviderInstance(t *te
 		entClient: client,
 	}
 
-	validatedOrder, err := svc.validateRefundRequest(ctx, order.ID, user.ID)
+	validatedOrder, _, _, err := svc.validateRefundRequest(ctx, order.ID, user.ID)
 	require.NoError(t, err)
 	require.Equal(t, order.ID, validatedOrder.ID)
 }
@@ -202,7 +201,6 @@ func TestPrepareRefundAllowsUniquelyResolvedLegacyProviderInstance(t *testing.T)
 		SetConfig("{}").
 		SetSupportedTypes("alipay").
 		SetEnabled(true).
-		SetAllowUserRefund(true).
 		SetRefundEnabled(true).
 		Save(ctx)
 	require.NoError(t, err)
@@ -289,9 +287,9 @@ func TestValidateRefundRequestRejectsAmbiguousLegacyProviderInstance(t *testing.
 		entClient: client,
 	}
 
-	_, err = svc.validateRefundRequest(ctx, order.ID, user.ID)
+	_, _, _, err = svc.validateRefundRequest(ctx, order.ID, user.ID)
 	require.Error(t, err)
-	require.Equal(t, "USER_REFUND_DISABLED", infraerrors.Reason(err))
+	require.Equal(t, "REFUND_DISABLED", infraerrors.Reason(err))
 }
 
 func TestPrepareRefundRejectsMismatchedLegacyProviderBinding(t *testing.T) {
@@ -365,7 +363,6 @@ func TestRequestRefundDoesNotConsumeRefundableAmount(t *testing.T) {
 		SetConfig("{}").
 		SetSupportedTypes("alipay").
 		SetEnabled(true).
-		SetAllowUserRefund(true).
 		SetRefundEnabled(true).
 		Save(ctx)
 	require.NoError(t, err)
@@ -398,7 +395,8 @@ func TestRequestRefundDoesNotConsumeRefundableAmount(t *testing.T) {
 		userRepo:  &refundTestUserRepo{users: map[int64]*User{user.ID: {ID: user.ID, Balance: 100}}},
 	}
 
-	require.NoError(t, svc.RequestRefund(ctx, order.ID, user.ID, "please refund"))
+	_, err = svc.RequestRefund(ctx, order.ID, user.ID, 100, "please refund")
+	require.NoError(t, err)
 
 	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
@@ -409,6 +407,236 @@ func TestRequestRefundDoesNotConsumeRefundableAmount(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, result)
 	require.Equal(t, 100.0, plan.RefundAmount)
+}
+
+func TestGetRefundPreviewBalanceCapsByCurrentBalance(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("refund-preview-balance@example.com").
+		SetPasswordHash("hash").
+		SetUsername("refund-preview-balance-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	inst, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeAlipay).
+		SetName("alipay-refund-preview-balance-instance").
+		SetConfig("{}").
+		SetSupportedTypes("alipay").
+		SetEnabled(true).
+		SetRefundEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(100).
+		SetPayAmount(100).
+		SetFeeRate(0).
+		SetRechargeCode("REFUND-PREVIEW-BALANCE-ORDER").
+		SetOutTradeNo("sub2_refund_preview_balance_order").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("trade-refund-preview-balance").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusCompleted).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(time.Now()).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(strconv.FormatInt(inst.ID, 10)).
+		SetProviderKey(payment.TypeAlipay).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{
+		entClient: client,
+		userRepo:  &refundTestUserRepo{users: map[int64]*User{user.ID: {ID: user.ID, Balance: 40}}},
+	}
+
+	preview, err := svc.GetRefundPreview(ctx, order.ID, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, payment.OrderTypeBalance, preview.OrderType)
+	require.Equal(t, 100.0, preview.OrderAmount)
+	require.Equal(t, 40.0, preview.BalanceAvailable)
+	require.Equal(t, 40.0, preview.MaxRefundAmount)
+	require.True(t, preview.RefundEnabled)
+	require.False(t, preview.AutoRefund)
+}
+
+func TestGetRefundPreviewSubscriptionUsesUsageAndRefundMultiplier(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	now := time.Now()
+
+	user, err := client.User.Create().
+		SetEmail("refund-preview-sub@example.com").
+		SetPasswordHash("hash").
+		SetUsername("refund-preview-sub-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	group, err := client.Group.Create().
+		SetName("refund-preview-sub-group").
+		SetDescription("subscription refund preview").
+		SetPlatform(PlatformAnthropic).
+		SetRateMultiplier(2).
+		SetRefundRateMultiplier(1.5).
+		SetSubscriptionType(SubscriptionTypeSubscription).
+		SetStatus(StatusActive).
+		Save(ctx)
+	require.NoError(t, err)
+
+	inst, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeAlipay).
+		SetName("alipay-refund-preview-sub-instance").
+		SetConfig("{}").
+		SetSupportedTypes("alipay").
+		SetEnabled(true).
+		SetRefundEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(100).
+		SetPayAmount(100).
+		SetFeeRate(0).
+		SetRechargeCode("REFUND-PREVIEW-SUB-ORDER").
+		SetOutTradeNo("sub2_refund_preview_sub_order").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("trade-refund-preview-sub").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetPlanID(7).
+		SetSubscriptionGroupID(group.ID).
+		SetSubscriptionDays(30).
+		SetStatus(OrderStatusCompleted).
+		SetExpiresAt(now.Add(time.Hour)).
+		SetPaidAt(now.Add(-time.Hour)).
+		SetCompletedAt(now.Add(-30 * time.Minute)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(strconv.FormatInt(inst.ID, 10)).
+		SetProviderKey(payment.TypeAlipay).
+		Save(ctx)
+	require.NoError(t, err)
+
+	sub, err := client.UserSubscription.Create().
+		SetUserID(user.ID).
+		SetGroupID(group.ID).
+		SetStartsAt(now.Add(-time.Hour)).
+		SetExpiresAt(now.Add(30 * 24 * time.Hour)).
+		SetStatus(SubscriptionStatusActive).
+		Save(ctx)
+	require.NoError(t, err)
+
+	account, err := client.Account.Create().
+		SetName("refund-preview-sub-account").
+		SetPlatform(PlatformAnthropic).
+		SetType("api_key").
+		Save(ctx)
+	require.NoError(t, err)
+	apiKey, err := client.APIKey.Create().
+		SetUserID(user.ID).
+		SetKey("refund-preview-sub-key").
+		SetName("refund preview sub key").
+		SetGroupID(group.ID).
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = client.UsageLog.Create().
+		SetUserID(user.ID).
+		SetAPIKeyID(apiKey.ID).
+		SetAccountID(account.ID).
+		SetRequestID("refund-preview-sub-usage").
+		SetModel("claude-test").
+		SetGroupID(group.ID).
+		SetSubscriptionID(sub.ID).
+		SetTotalCost(20).
+		SetActualCost(40).
+		SetRateMultiplier(2).
+		SetCreatedAt(now).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{
+		entClient: client,
+		userRepo:  &refundTestUserRepo{users: map[int64]*User{user.ID: {ID: user.ID, Balance: 0}}},
+	}
+
+	preview, err := svc.GetRefundPreview(ctx, order.ID, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, payment.OrderTypeSubscription, preview.OrderType)
+	require.Equal(t, 40.0, preview.UsageAmount)
+	require.Equal(t, 2.0, preview.SubscriptionRateMultiplier)
+	require.Equal(t, 1.5, preview.RefundRateMultiplier)
+	require.Equal(t, 30.0, preview.UsedRefundValue)
+	require.Equal(t, 70.0, preview.MaxRefundAmount)
+}
+
+func TestRequestRefundAutoRefundWhenProviderAllowsUserRefund(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("refund-auto@example.com").
+		SetPasswordHash("hash").
+		SetUsername("refund-auto-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	inst, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeAlipay).
+		SetName("alipay-refund-auto-instance").
+		SetConfig("{}").
+		SetSupportedTypes("alipay").
+		SetEnabled(true).
+		SetRefundEnabled(true).
+		SetAllowUserRefund(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(100).
+		SetPayAmount(100).
+		SetFeeRate(0).
+		SetRechargeCode("REFUND-AUTO-ORDER").
+		SetOutTradeNo("sub2_refund_auto_order").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusCompleted).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(time.Now()).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(strconv.FormatInt(inst.ID, 10)).
+		SetProviderKey(payment.TypeAlipay).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{
+		entClient: client,
+		userRepo:  &refundTestUserRepo{users: map[int64]*User{user.ID: {ID: user.ID, Balance: 100}}},
+	}
+
+	result, err := svc.RequestRefund(ctx, order.ID, user.ID, 40, "auto refund")
+	require.NoError(t, err)
+	require.True(t, result.Success)
+	require.Equal(t, 40.0, result.BalanceDeducted)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPartiallyRefunded, reloaded.Status)
+	require.Equal(t, 40.0, reloaded.RefundAmount)
 }
 
 func TestExecuteRefundPendingProviderResponseDoesNotMarkSuccess(t *testing.T) {

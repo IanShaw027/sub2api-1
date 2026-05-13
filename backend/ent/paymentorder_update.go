@@ -567,6 +567,27 @@ func (_u *PaymentOrderUpdate) ClearRefundRequestedAt() *PaymentOrderUpdate {
 	return _u
 }
 
+// SetRefundRequestedAmount sets the "refund_requested_amount" field.
+func (_u *PaymentOrderUpdate) SetRefundRequestedAmount(v float64) *PaymentOrderUpdate {
+	_u.mutation.ResetRefundRequestedAmount()
+	_u.mutation.SetRefundRequestedAmount(v)
+	return _u
+}
+
+// SetNillableRefundRequestedAmount sets the "refund_requested_amount" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableRefundRequestedAmount(v *float64) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetRefundRequestedAmount(*v)
+	}
+	return _u
+}
+
+// AddRefundRequestedAmount adds value to the "refund_requested_amount" field.
+func (_u *PaymentOrderUpdate) AddRefundRequestedAmount(v float64) *PaymentOrderUpdate {
+	_u.mutation.AddRefundRequestedAmount(v)
+	return _u
+}
+
 // SetRefundRequestReason sets the "refund_request_reason" field.
 func (_u *PaymentOrderUpdate) SetRefundRequestReason(v string) *PaymentOrderUpdate {
 	_u.mutation.SetRefundRequestReason(v)
@@ -1046,6 +1067,12 @@ func (_u *PaymentOrderUpdate) sqlSave(ctx context.Context) (_node int, err error
 	}
 	if _u.mutation.RefundRequestedAtCleared() {
 		_spec.ClearField(paymentorder.FieldRefundRequestedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.RefundRequestedAmount(); ok {
+		_spec.SetField(paymentorder.FieldRefundRequestedAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedRefundRequestedAmount(); ok {
+		_spec.AddField(paymentorder.FieldRefundRequestedAmount, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.RefundRequestReason(); ok {
 		_spec.SetField(paymentorder.FieldRefundRequestReason, field.TypeString, value)
@@ -1688,6 +1715,27 @@ func (_u *PaymentOrderUpdateOne) ClearRefundRequestedAt() *PaymentOrderUpdateOne
 	return _u
 }
 
+// SetRefundRequestedAmount sets the "refund_requested_amount" field.
+func (_u *PaymentOrderUpdateOne) SetRefundRequestedAmount(v float64) *PaymentOrderUpdateOne {
+	_u.mutation.ResetRefundRequestedAmount()
+	_u.mutation.SetRefundRequestedAmount(v)
+	return _u
+}
+
+// SetNillableRefundRequestedAmount sets the "refund_requested_amount" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableRefundRequestedAmount(v *float64) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetRefundRequestedAmount(*v)
+	}
+	return _u
+}
+
+// AddRefundRequestedAmount adds value to the "refund_requested_amount" field.
+func (_u *PaymentOrderUpdateOne) AddRefundRequestedAmount(v float64) *PaymentOrderUpdateOne {
+	_u.mutation.AddRefundRequestedAmount(v)
+	return _u
+}
+
 // SetRefundRequestReason sets the "refund_request_reason" field.
 func (_u *PaymentOrderUpdateOne) SetRefundRequestReason(v string) *PaymentOrderUpdateOne {
 	_u.mutation.SetRefundRequestReason(v)
@@ -2197,6 +2245,12 @@ func (_u *PaymentOrderUpdateOne) sqlSave(ctx context.Context) (_node *PaymentOrd
 	}
 	if _u.mutation.RefundRequestedAtCleared() {
 		_spec.ClearField(paymentorder.FieldRefundRequestedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.RefundRequestedAmount(); ok {
+		_spec.SetField(paymentorder.FieldRefundRequestedAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedRefundRequestedAmount(); ok {
+		_spec.AddField(paymentorder.FieldRefundRequestedAmount, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.RefundRequestReason(); ok {
 		_spec.SetField(paymentorder.FieldRefundRequestReason, field.TypeString, value)
