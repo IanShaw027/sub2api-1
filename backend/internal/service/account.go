@@ -1253,7 +1253,7 @@ func (a *Account) IsOpenAIImageRouteRateLimited(route string) bool {
 	return resetAt != nil && time.Now().Before(*resetAt)
 }
 
-func (a *Account) IsSchedulableForOpenAIImageRoute(route string) bool {
+func (a *Account) isSchedulableForOpenAIImageRouteBase(route string) bool {
 	if a == nil || !a.IsActive() || !a.Schedulable {
 		return false
 	}
@@ -1271,6 +1271,23 @@ func (a *Account) IsSchedulableForOpenAIImageRoute(route string) bool {
 		return false
 	}
 	if !a.SupportsOpenAIImageRoute(route) {
+		return false
+	}
+	return true
+}
+
+func (a *Account) IsSelectableForOpenAIImageRoute(route string, allowRateLimited bool) bool {
+	if !a.isSchedulableForOpenAIImageRouteBase(route) {
+		return false
+	}
+	if !allowRateLimited && a.IsOpenAIImageRouteRateLimited(route) {
+		return false
+	}
+	return true
+}
+
+func (a *Account) IsSchedulableForOpenAIImageRoute(route string) bool {
+	if !a.isSchedulableForOpenAIImageRouteBase(route) {
 		return false
 	}
 	if a.IsOpenAIImageRouteRateLimited(route) {

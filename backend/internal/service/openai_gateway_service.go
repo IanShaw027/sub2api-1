@@ -1971,6 +1971,96 @@ func openAICompactSupportTier(account *Account) int {
 	return 0
 }
 
+func allowRateLimitedOpenAIImageRouteScheduling(route string) bool {
+	return NormalizeGroupImageGenerationRoute(route) == GroupImageGenerationRouteWeb2API
+}
+
+func openAIImageRouteSchedulingResetAt(account *Account, route string) *time.Time {
+	if account == nil || !allowRateLimitedOpenAIImageRouteScheduling(route) {
+		return nil
+	}
+	resetAt := account.openAIImageRouteResetAt(route)
+	if resetAt == nil || !time.Now().Before(*resetAt) {
+		return nil
+	}
+	return resetAt
+}
+
+func reorderOpenAIImageRouteRateLimitedAccounts(accounts []*Account, route string) []*Account {
+	if len(accounts) == 0 || !allowRateLimitedOpenAIImageRouteScheduling(route) {
+		return accounts
+	}
+	limited := make([]*Account, 0, len(accounts))
+	normal := make([]*Account, 0, len(accounts))
+	for _, account := range accounts {
+		if openAIImageRouteSchedulingResetAt(account, route) != nil {
+			limited = append(limited, account)
+			continue
+		}
+		normal = append(normal, account)
+	}
+	out := make([]*Account, 0, len(accounts))
+	out = append(out, limited...)
+	out = append(out, normal...)
+	return out
+}
+
+func reorderOpenAIImageRouteRateLimitedAccountLoads(items []accountWithLoad, route string) []accountWithLoad {
+	if len(items) == 0 || !allowRateLimitedOpenAIImageRouteScheduling(route) {
+		return items
+	}
+	limited := make([]accountWithLoad, 0, len(items))
+	normal := make([]accountWithLoad, 0, len(items))
+	for _, item := range items {
+		if openAIImageRouteSchedulingResetAt(item.account, route) != nil {
+			limited = append(limited, item)
+			continue
+		}
+		normal = append(normal, item)
+	}
+	out := make([]accountWithLoad, 0, len(items))
+	out = append(out, limited...)
+	out = append(out, normal...)
+	return out
+}
+
+func reorderOpenAIImageRouteRateLimitedCandidates(items []openAIAccountCandidateScore, route string) []openAIAccountCandidateScore {
+	if len(items) == 0 || !allowRateLimitedOpenAIImageRouteScheduling(route) {
+		return items
+	}
+	limited := make([]openAIAccountCandidateScore, 0, len(items))
+	normal := make([]openAIAccountCandidateScore, 0, len(items))
+	for _, item := range items {
+		if openAIImageRouteSchedulingResetAt(item.account, route) != nil {
+			limited = append(limited, item)
+			continue
+		}
+		normal = append(normal, item)
+	}
+	out := make([]openAIAccountCandidateScore, 0, len(items))
+	out = append(out, limited...)
+	out = append(out, normal...)
+	return out
+}
+
+func buildOpenAIImageRouteRateLimitedWaitPlan(account *Account, route string, maxConcurrency int, timeout time.Duration, maxWaiting int) *AccountWaitPlan {
+	resetAt := openAIImageRouteSchedulingResetAt(account, route)
+	if resetAt == nil {
+		return nil
+	}
+	remaining := time.Until(*resetAt)
+	if remaining < 0 {
+		remaining = 0
+	}
+	return &AccountWaitPlan{
+		AccountID:      account.ID,
+		MaxConcurrency: maxConcurrency,
+		Timeout:        timeout + remaining,
+		MaxWaiting:     maxWaiting,
+		NotBefore:      resetAt,
+	}
+}
+
 // isOpenAIAccountEligibleForRequest centralises the schedulable / OpenAI / model /
 // compact-support checks used during account selection.
 func isOpenAIAccountEligibleForRequest(account *Account, requestedModel string, requireCompact bool, requiredImageRoute string, requireOAuthAccount bool) bool {
@@ -1981,7 +2071,7 @@ func isOpenAIAccountEligibleForRequest(account *Account, requestedModel string, 
 		return false
 	}
 	if requiredImageRoute != "" {
-		if !account.IsSchedulableForOpenAIImageRoute(requiredImageRoute) {
+		if !account.IsSelectableForOpenAIImageRoute(requiredImageRoute, allowRateLimitedOpenAIImageRouteScheduling(requiredImageRoute)) {
 			return false
 		}
 	} else if !account.IsSchedulable() {
@@ -2182,6 +2272,16 @@ func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *i
 			continue
 		}
 
+		candidateRateLimited := openAIImageRouteSchedulingResetAt(fresh, requiredImageRoute) != nil
+		selectedRateLimited := openAIImageRouteSchedulingResetAt(selected, requiredImageRoute) != nil
+		if candidateRateLimited != selectedRateLimited {
+			if candidateRateLimited {
+				selected = fresh
+				selectedCompactTier = compactTier
+			}
+			continue
+		}
+
 		// compact 模式下高 tier 优先；同 tier 内才比较 priority/LRU。
 		if requireCompact && compactTier != selectedCompactTier {
 			if compactTier > selectedCompactTier {
@@ -2279,6 +2379,15 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		if stickyAccountID <= 0 || stickyAccountID != account.ID {
 			acquireLimit = s.freshSessionAdmissionLimit(ctx, account, requiredImageRoute)
 		}
+		waitTimeout := cfg.FallbackWaitTimeout
+		maxWaiting := cfg.FallbackMaxWaiting
+		if stickyAccountID > 0 && stickyAccountID == account.ID {
+			waitTimeout = cfg.StickySessionWaitTimeout
+			maxWaiting = cfg.StickySessionMaxWaiting
+		}
+		if waitPlan := buildOpenAIImageRouteRateLimitedWaitPlan(account, requiredImageRoute, acquireLimit, waitTimeout, maxWaiting); waitPlan != nil {
+			return s.newSelectionResult(ctx, account, false, nil, waitPlan)
+		}
 		result, err := s.tryAcquireAccountSlot(ctx, account.ID, acquireLimit)
 		if err == nil && result.Acquired {
 			return s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil)
@@ -2335,6 +2444,15 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 					} else if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, account, requestedModel, requireCompact) {
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 					} else {
+						if waitPlan := buildOpenAIImageRouteRateLimitedWaitPlan(
+							account,
+							requiredImageRoute,
+							concurrencyForOpenAIAccountSelection(account, requiredImageRoute),
+							cfg.StickySessionWaitTimeout,
+							cfg.StickySessionMaxWaiting,
+						); waitPlan != nil {
+							return s.newSelectionResult(ctx, account, false, nil, waitPlan)
+						}
 						result, err := s.tryAcquireAccountSlot(ctx, accountID, concurrencyForOpenAIAccountSelection(account, requiredImageRoute))
 						if err == nil && result.Acquired {
 							_ = s.refreshStickySessionTTL(ctx, groupID, sessionHash, openaiStickySessionTTL)
@@ -2368,7 +2486,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		// re-check schedulability here so recently rate-limited/overloaded accounts
 		// are not selected again before the bucket is rebuilt.
 		if requiredImageRoute != "" {
-			if !acc.IsSchedulableForOpenAIImageRoute(requiredImageRoute) {
+			if !acc.IsSelectableForOpenAIImageRoute(requiredImageRoute, allowRateLimitedOpenAIImageRouteScheduling(requiredImageRoute)) {
 				continue
 			}
 		} else if !acc.IsSchedulable() {
@@ -2400,6 +2518,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	if err != nil {
 		ordered := append([]*Account(nil), candidates...)
 		sortAccountsByPriorityAndLastUsed(ordered, false)
+		ordered = reorderOpenAIImageRouteRateLimitedAccounts(ordered, requiredImageRoute)
 		if requireCompact {
 			ordered = prioritizeOpenAICompactAccounts(ordered)
 		}
@@ -2414,6 +2533,15 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			}
 			if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel, requireCompact) {
 				continue
+			}
+			if waitPlan := buildOpenAIImageRouteRateLimitedWaitPlan(
+				fresh,
+				requiredImageRoute,
+				s.freshSessionAdmissionLimit(ctx, fresh, requiredImageRoute),
+				s.schedulingConfig().FallbackWaitTimeout,
+				s.schedulingConfig().FallbackMaxWaiting,
+			); waitPlan != nil {
+				return s.newSelectionResult(ctx, fresh, false, nil, waitPlan)
 			}
 			result, err := s.tryAcquireAccountSlot(ctx, fresh.ID, s.freshSessionAdmissionLimit(ctx, fresh, requiredImageRoute))
 			if err == nil && result.Acquired {
@@ -2452,6 +2580,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 					s.freshSessionAdmissionLimit(ctx, b.account, requiredImageRoute),
 				)
 			})
+			available = reorderOpenAIImageRouteRateLimitedAccountLoads(available, requiredImageRoute)
 
 			selectionOrder := make([]accountWithLoad, 0, len(available))
 			if requireCompact {
@@ -2484,6 +2613,18 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 				if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel, requireCompact) {
 					continue
 				}
+				if waitPlan := buildOpenAIImageRouteRateLimitedWaitPlan(
+					fresh,
+					requiredImageRoute,
+					s.freshSessionAdmissionLimit(ctx, fresh, requiredImageRoute),
+					s.schedulingConfig().FallbackWaitTimeout,
+					s.schedulingConfig().FallbackMaxWaiting,
+				); waitPlan != nil {
+					if sessionHash != "" {
+						_ = s.setStickySessionAccountID(ctx, groupID, sessionHash, fresh.ID, openaiStickySessionTTL)
+					}
+					return s.newSelectionResult(ctx, fresh, false, nil, waitPlan)
+				}
 				result, err := s.tryAcquireAccountSlot(ctx, fresh.ID, s.freshSessionAdmissionLimit(ctx, fresh, requiredImageRoute))
 				if err == nil && result.Acquired {
 					if sessionHash != "" {
@@ -2513,6 +2654,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			s.freshSessionAdmissionLimit(ctx, b.account, requiredImageRoute),
 		)
 	})
+	waitCandidates = reorderOpenAIImageRouteRateLimitedAccountLoads(waitCandidates, requiredImageRoute)
 	if requireCompact {
 		sorted := make([]accountWithLoad, 0, len(waitCandidates))
 		appendTier := func(tier int) {
@@ -2540,6 +2682,15 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			continue
 		}
 		waitLimit := s.freshSessionAdmissionLimit(ctx, fresh, requiredImageRoute)
+		if waitPlan := buildOpenAIImageRouteRateLimitedWaitPlan(
+			fresh,
+			requiredImageRoute,
+			waitLimit,
+			cfg.FallbackWaitTimeout,
+			cfg.FallbackMaxWaiting,
+		); waitPlan != nil {
+			return s.newSelectionResult(ctx, fresh, false, nil, waitPlan)
+		}
 		return s.newSelectionResult(ctx, fresh, false, nil, &AccountWaitPlan{
 			AccountID:      fresh.ID,
 			MaxConcurrency: waitLimit,

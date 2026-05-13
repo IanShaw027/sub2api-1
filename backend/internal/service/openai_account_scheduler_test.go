@@ -568,6 +568,66 @@ func TestOpenAIGatewayService_SelectAccountForModelWithExclusions_SkipsFreshlyRa
 	require.Equal(t, int64(32002), account.ID)
 }
 
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_Web2APIRateLimitedAccountFirst(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	ctx := context.Background()
+	groupID := int64(101021)
+	resetAt := time.Now().Add(2 * time.Minute).UTC().Truncate(time.Second)
+	accounts := []Account{
+		{
+			ID:          32011,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    9,
+			Extra: map[string]any{
+				"openai_image_web2api_rate_limit_reset_at": resetAt.Format(time.RFC3339),
+			},
+		},
+		{
+			ID:          32012,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    0,
+		},
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                cfg,
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+
+	selection, _, err := svc.SelectAccountWithSchedulerForImages(
+		ctx,
+		&groupID,
+		"",
+		"gpt-image-1",
+		nil,
+		OpenAIImagesCapabilityBasic,
+		GroupImageGenerationRouteWeb2API,
+		true,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(32011), selection.Account.ID)
+	require.False(t, selection.Acquired)
+	require.NotNil(t, selection.WaitPlan)
+	require.NotNil(t, selection.WaitPlan.NotBefore)
+	require.True(t, selection.WaitPlan.NotBefore.Equal(resetAt))
+	require.Greater(t, selection.WaitPlan.Timeout, cfg.Gateway.Scheduling.FallbackWaitTimeout)
+}
+
 func TestOpenAIGatewayService_SelectAccountWithScheduler_SessionStickyDBRuntimeRecheckSkipsStaleCachedAccount(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(10103)

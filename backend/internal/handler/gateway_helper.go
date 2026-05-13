@@ -281,6 +281,60 @@ func (h *ConcurrencyHelper) AcquireAccountSlotWithWait(c *gin.Context, accountID
 	return h.waitForSlotWithPing(c, "account", accountID, maxConcurrency, isStream, streamStarted)
 }
 
+// WaitUntil keeps a streaming request alive until the target time is reached.
+func (h *ConcurrencyHelper) WaitUntil(c *gin.Context, target time.Time, isStream bool, streamStarted *bool) error {
+	delay := time.Until(target)
+	if delay <= 0 {
+		return nil
+	}
+
+	ctx, cancel := context.WithDeadline(c.Request.Context(), target)
+	defer cancel()
+
+	needPing := isStream && h.pingFormat != ""
+	var (
+		flusher http.Flusher
+		pingCh  <-chan time.Time
+	)
+	if needPing {
+		var ok bool
+		flusher, ok = c.Writer.(http.Flusher)
+		if !ok {
+			return fmt.Errorf("streaming not supported")
+		}
+		pingTicker := time.NewTicker(h.pingInterval)
+		defer pingTicker.Stop()
+		pingCh = pingTicker.C
+	}
+
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return &ConcurrencyError{
+				SlotType:  "account",
+				IsTimeout: true,
+			}
+		case <-timer.C:
+			return nil
+		case <-pingCh:
+			if !*streamStarted {
+				c.Header("Content-Type", "text/event-stream")
+				c.Header("Cache-Control", "no-cache")
+				c.Header("Connection", "keep-alive")
+				c.Header("X-Accel-Buffering", "no")
+				*streamStarted = true
+			}
+			if _, err := fmt.Fprint(c.Writer, string(h.pingFormat)); err != nil {
+				return err
+			}
+			flusher.Flush()
+		}
+	}
+}
+
 // waitForSlotWithPing waits for a concurrency slot, sending ping events for streaming requests.
 // streamStarted pointer is updated when streaming begins (for proper error handling by caller).
 func (h *ConcurrencyHelper) waitForSlotWithPing(c *gin.Context, slotType string, id int64, maxConcurrency int, isStream bool, streamStarted *bool) (func(), error) {

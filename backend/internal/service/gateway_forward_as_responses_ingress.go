@@ -131,6 +131,9 @@ func classifyResponsesAnthropicFailure(statusCode int, upstreamBody []byte) resp
 		return responsesAnthropicFailureClassification{Reason: "invalid_continuation", RetryWithFullReplay: true}
 	case strings.Contains(msg, "tool context"):
 		return responsesAnthropicFailureClassification{Reason: "tool_context", RetryWithFullReplay: true}
+	case strings.Contains(msg, "no tool call found") &&
+		(strings.Contains(msg, "function call output") || strings.Contains(msg, "function_call_output")):
+		return responsesAnthropicFailureClassification{Reason: "tool_continuation", RetryWithFullReplay: true}
 	case strings.Contains(msg, "tool_result") && strings.Contains(msg, "tool_use") &&
 		containsAnyResponsesAnthropicFailureToken(msg, "missing", "without", "follow", "preced"):
 		return responsesAnthropicFailureClassification{Reason: "tool_continuation", RetryWithFullReplay: true}

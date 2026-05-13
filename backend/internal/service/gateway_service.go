@@ -468,6 +468,7 @@ type AccountWaitPlan struct {
 	MaxConcurrency int
 	Timeout        time.Duration
 	MaxWaiting     int
+	NotBefore      *time.Time
 }
 
 type AccountSelectionResult struct {

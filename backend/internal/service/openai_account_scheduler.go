@@ -379,6 +379,15 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	}
 
 	maxConcurrency := req.MaxConcurrencyFor(account)
+	if waitPlan := buildOpenAIImageRouteRateLimitedWaitPlan(
+		account,
+		req.RequiredImageRoute,
+		maxConcurrency,
+		s.service.schedulingConfig().StickySessionWaitTimeout,
+		s.service.schedulingConfig().StickySessionMaxWaiting,
+	); waitPlan != nil {
+		return s.service.newSelectionResult(ctx, account, false, nil, waitPlan)
+	}
 	result, acquireErr := s.service.tryAcquireAccountSlot(ctx, accountID, maxConcurrency)
 	if acquireErr == nil && result.Acquired {
 		_ = s.service.refreshStickySessionTTL(ctx, req.GroupID, sessionHash, s.service.openAIWSSessionStickyTTL())
@@ -790,7 +799,10 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		if poolTopK <= 0 {
 			poolTopK = 1
 		}
-		return buildOpenAIWeightedSelectionOrder(selectTopKOpenAICandidates(pool, poolTopK), req)
+		return reorderOpenAIImageRouteRateLimitedCandidates(
+			buildOpenAIWeightedSelectionOrder(selectTopKOpenAICandidates(pool, poolTopK), req),
+			req.RequiredImageRoute,
+		)
 	}
 	sortCompactRetryCandidates := func(pool []openAIAccountCandidateScore) []openAIAccountCandidateScore {
 		if len(pool) == 0 {
@@ -805,7 +817,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 				s.service.freshSessionAdmissionLimit(ctx, ordered[j].account, req.RequiredImageRoute),
 			)
 		})
-		return ordered
+		return reorderOpenAIImageRouteRateLimitedCandidates(ordered, req.RequiredImageRoute)
 	}
 
 	selectionOrder := make([]openAIAccountCandidateScore, 0, len(allCandidates))
@@ -869,6 +881,19 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			continue
 		}
 		maxConcurrency := s.service.freshSessionAdmissionLimit(ctx, fresh, req.RequiredImageRoute)
+		if waitPlan := buildOpenAIImageRouteRateLimitedWaitPlan(
+			fresh,
+			req.RequiredImageRoute,
+			maxConcurrency,
+			s.service.schedulingConfig().FallbackWaitTimeout,
+			s.service.schedulingConfig().FallbackMaxWaiting,
+		); waitPlan != nil {
+			if req.SessionHash != "" {
+				_ = s.service.BindStickySession(ctx, req.GroupID, req.SessionHash, fresh.ID)
+			}
+			selection, err := s.service.newSelectionResult(ctx, fresh, false, nil, waitPlan)
+			return selection, candidateCount, topK, loadSkew, err
+		}
 		result, acquireErr := s.service.tryAcquireAccountSlot(ctx, fresh.ID, maxConcurrency)
 		if acquireErr != nil {
 			return nil, candidateCount, topK, loadSkew, acquireErr
@@ -896,6 +921,16 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		if req.RequireCompact && openAICompactSupportTier(fresh) == 0 {
 			compactBlocked = true
 			continue
+		}
+		if waitPlan := buildOpenAIImageRouteRateLimitedWaitPlan(
+			fresh,
+			req.RequiredImageRoute,
+			s.service.freshSessionAdmissionLimit(ctx, fresh, req.RequiredImageRoute),
+			cfg.FallbackWaitTimeout,
+			cfg.FallbackMaxWaiting,
+		); waitPlan != nil {
+			selection, err := s.service.newSelectionResult(ctx, fresh, false, nil, waitPlan)
+			return selection, candidateCount, topK, loadSkew, err
 		}
 		selection, err := s.service.newSelectionResult(ctx, fresh, false, nil, &AccountWaitPlan{
 			AccountID:      fresh.ID,
@@ -926,7 +961,7 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatible(ctx context.C
 	if req.RequireOAuthAccount && !account.IsOpenAIOAuth() {
 		return false
 	}
-	if req.RequiredImageRoute != "" && !account.IsSchedulableForOpenAIImageRoute(req.RequiredImageRoute) {
+	if req.RequiredImageRoute != "" && !account.IsSelectableForOpenAIImageRoute(req.RequiredImageRoute, allowRateLimitedOpenAIImageRouteScheduling(req.RequiredImageRoute)) {
 		return false
 	}
 	if req.RequestedModel != "" && !account.IsModelSupported(req.RequestedModel) {
@@ -948,7 +983,7 @@ func (s *defaultOpenAIAccountScheduler) isStickyAccountSchedulableForRequest(acc
 		return false
 	}
 	if req.RequiredImageRoute != "" {
-		if !account.IsOpenAI() || !account.IsSchedulableForOpenAIImageRoute(req.RequiredImageRoute) {
+		if !account.IsOpenAI() || !account.IsSelectableForOpenAIImageRoute(req.RequiredImageRoute, allowRateLimitedOpenAIImageRouteScheduling(req.RequiredImageRoute)) {
 			return false
 		}
 		if remaining := account.GetRateLimitRemainingTimeWithContext(context.Background(), req.RequestedModel); remaining > 0 {
@@ -967,7 +1002,7 @@ func (s *defaultOpenAIAccountScheduler) isLoadBalanceAccountSchedulableForReques
 		return false
 	}
 	if req.RequiredImageRoute != "" {
-		return account.IsSchedulableForOpenAIImageRoute(req.RequiredImageRoute)
+		return account.IsSelectableForOpenAIImageRoute(req.RequiredImageRoute, allowRateLimitedOpenAIImageRouteScheduling(req.RequiredImageRoute))
 	}
 	return account.IsSchedulable()
 }

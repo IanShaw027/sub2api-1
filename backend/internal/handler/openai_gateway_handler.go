@@ -1023,6 +1023,20 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 		return nil, false
 	}
 
+	remainingTimeout := selection.WaitPlan.Timeout
+	if selection.WaitPlan.NotBefore != nil {
+		waitStart := time.Now()
+		if err := h.concurrencyHelper.WaitUntil(c, *selection.WaitPlan.NotBefore, reqStream, streamStarted); err != nil {
+			reqLog.Warn("openai.account_wait_until_ready_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+			h.handleConcurrencyError(c, err, "account", *streamStarted)
+			return nil, false
+		}
+		remainingTimeout -= time.Since(waitStart)
+		if remainingTimeout < 0 {
+			remainingTimeout = 0
+		}
+	}
+
 	fastReleaseFunc, fastAcquired, err := h.concurrencyHelper.TryAcquireAccountSlot(
 		ctx,
 		account.ID,
@@ -1065,7 +1079,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 		c,
 		account.ID,
 		selection.WaitPlan.MaxConcurrency,
-		selection.WaitPlan.Timeout,
+		remainingTimeout,
 		reqStream,
 		streamStarted,
 	)
