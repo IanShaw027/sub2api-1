@@ -52,6 +52,8 @@ const (
 	FieldAllowImageGeneration = "allow_image_generation"
 	// FieldImageGenerationRoute holds the string denoting the image_generation_route field in the database.
 	FieldImageGenerationRoute = "image_generation_route"
+	// FieldOpenaiImageMainModel holds the string denoting the openai_image_main_model field in the database.
+	FieldOpenaiImageMainModel = "openai_image_main_model"
 	// FieldImageRateIndependent holds the string denoting the image_rate_independent field in the database.
 	FieldImageRateIndependent = "image_rate_independent"
 	// FieldImageRateMultiplier holds the string denoting the image_rate_multiplier field in the database.
@@ -189,6 +191,7 @@ var Columns = []string{
 	FieldDefaultValidityDays,
 	FieldAllowImageGeneration,
 	FieldImageGenerationRoute,
+	FieldOpenaiImageMainModel,
 	FieldImageRateIndependent,
 	FieldImageRateMultiplier,
 	FieldImagePrice1k,
@@ -276,6 +279,10 @@ var (
 	DefaultImageGenerationRoute string
 	// ImageGenerationRouteValidator is a validator for the "image_generation_route" field. It is called by the builders before save.
 	ImageGenerationRouteValidator func(string) error
+	// DefaultOpenaiImageMainModel holds the default value on creation for the "openai_image_main_model" field.
+	DefaultOpenaiImageMainModel string
+	// OpenaiImageMainModelValidator is a validator for the "openai_image_main_model" field. It is called by the builders before save.
+	OpenaiImageMainModelValidator func(string) error
 	// DefaultImageRateIndependent holds the default value on creation for the "image_rate_independent" field.
 	DefaultImageRateIndependent bool
 	// DefaultImageRateMultiplier holds the default value on creation for the "image_rate_multiplier" field.
@@ -402,6 +409,11 @@ func ByAllowImageGeneration(opts ...sql.OrderTermOption) OrderOption {
 // ByImageGenerationRoute orders the results by the image_generation_route field.
 func ByImageGenerationRoute(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldImageGenerationRoute, opts...).ToFunc()
+}
+
+// ByOpenaiImageMainModel orders the results by the openai_image_main_model field.
+func ByOpenaiImageMainModel(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOpenaiImageMainModel, opts...).ToFunc()
 }
 
 // ByImageRateIndependent orders the results by the image_rate_independent field.

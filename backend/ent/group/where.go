@@ -145,6 +145,11 @@ func ImageGenerationRoute(v string) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldImageGenerationRoute, v))
 }
 
+// OpenaiImageMainModel applies equality check predicate on the "openai_image_main_model" field. It's identical to OpenaiImageMainModelEQ.
+func OpenaiImageMainModel(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldOpenaiImageMainModel, v))
+}
+
 // ImageRateIndependent applies equality check predicate on the "image_rate_independent" field. It's identical to ImageRateIndependentEQ.
 func ImageRateIndependent(v bool) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldImageRateIndependent, v))
@@ -1103,6 +1108,71 @@ func ImageGenerationRouteEqualFold(v string) predicate.Group {
 // ImageGenerationRouteContainsFold applies the ContainsFold predicate on the "image_generation_route" field.
 func ImageGenerationRouteContainsFold(v string) predicate.Group {
 	return predicate.Group(sql.FieldContainsFold(FieldImageGenerationRoute, v))
+}
+
+// OpenaiImageMainModelEQ applies the EQ predicate on the "openai_image_main_model" field.
+func OpenaiImageMainModelEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldOpenaiImageMainModel, v))
+}
+
+// OpenaiImageMainModelNEQ applies the NEQ predicate on the "openai_image_main_model" field.
+func OpenaiImageMainModelNEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldOpenaiImageMainModel, v))
+}
+
+// OpenaiImageMainModelIn applies the In predicate on the "openai_image_main_model" field.
+func OpenaiImageMainModelIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldIn(FieldOpenaiImageMainModel, vs...))
+}
+
+// OpenaiImageMainModelNotIn applies the NotIn predicate on the "openai_image_main_model" field.
+func OpenaiImageMainModelNotIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldNotIn(FieldOpenaiImageMainModel, vs...))
+}
+
+// OpenaiImageMainModelGT applies the GT predicate on the "openai_image_main_model" field.
+func OpenaiImageMainModelGT(v string) predicate.Group {
+	return predicate.Group(sql.FieldGT(FieldOpenaiImageMainModel, v))
+}
+
+// OpenaiImageMainModelGTE applies the GTE predicate on the "openai_image_main_model" field.
+func OpenaiImageMainModelGTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldGTE(FieldOpenaiImageMainModel, v))
+}
+
+// OpenaiImageMainModelLT applies the LT predicate on the "openai_image_main_model" field.
+func OpenaiImageMainModelLT(v string) predicate.Group {
+	return predicate.Group(sql.FieldLT(FieldOpenaiImageMainModel, v))
+}
+
+// OpenaiImageMainModelLTE applies the LTE predicate on the "openai_image_main_model" field.
+func OpenaiImageMainModelLTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldLTE(FieldOpenaiImageMainModel, v))
+}
+
+// OpenaiImageMainModelContains applies the Contains predicate on the "openai_image_main_model" field.
+func OpenaiImageMainModelContains(v string) predicate.Group {
+	return predicate.Group(sql.FieldContains(FieldOpenaiImageMainModel, v))
+}
+
+// OpenaiImageMainModelHasPrefix applies the HasPrefix predicate on the "openai_image_main_model" field.
+func OpenaiImageMainModelHasPrefix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasPrefix(FieldOpenaiImageMainModel, v))
+}
+
+// OpenaiImageMainModelHasSuffix applies the HasSuffix predicate on the "openai_image_main_model" field.
+func OpenaiImageMainModelHasSuffix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasSuffix(FieldOpenaiImageMainModel, v))
+}
+
+// OpenaiImageMainModelEqualFold applies the EqualFold predicate on the "openai_image_main_model" field.
+func OpenaiImageMainModelEqualFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldEqualFold(FieldOpenaiImageMainModel, v))
+}
+
+// OpenaiImageMainModelContainsFold applies the ContainsFold predicate on the "openai_image_main_model" field.
+func OpenaiImageMainModelContainsFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldContainsFold(FieldOpenaiImageMainModel, v))
 }
 
 // ImageRateIndependentEQ applies the EQ predicate on the "image_rate_independent" field.

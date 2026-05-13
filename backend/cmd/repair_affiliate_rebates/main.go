@@ -173,6 +173,6 @@ WHERE po.order_type = 'balance'
     FROM payment_audit_logs ok
     WHERE ok.order_id = po.id::text
       AND ok.action IN ('AFFILIATE_REBATE_APPLIED', 'AFFILIATE_REBATE_SKIPPED')
-  )`+filterSQL+`
+  )` + filterSQL + `
 ORDER BY po.id`, args
 }

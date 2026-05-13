@@ -3597,30 +3597,6 @@ func convertClaudeMessagesToGeminiContents(messages any, toolUseIDToName map[str
 	return out, nil
 }
 
-func extractClaudeContentText(v any) string {
-	switch t := v.(type) {
-	case string:
-		return t
-	case []any:
-		var sb strings.Builder
-		for _, part := range t {
-			pm, ok := part.(map[string]any)
-			if !ok {
-				continue
-			}
-			if pm["type"] == "text" {
-				if text, ok := pm["text"].(string); ok {
-					_, _ = sb.WriteString(text)
-				}
-			}
-		}
-		return sb.String()
-	default:
-		b, _ := json.Marshal(t)
-		return string(b)
-	}
-}
-
 // extractClaudeToolResultContent preserves mixed tool_result content order.
 func extractClaudeToolResultContent(v any) any {
 	switch t := v.(type) {
@@ -3638,7 +3614,7 @@ func extractClaudeToolResultContent(v any) any {
 			switch pm["type"] {
 			case "text":
 				if text, ok := pm["text"].(string); ok {
-					sb.WriteString(text)
+					_, _ = sb.WriteString(text)
 					ordered = append(ordered, map[string]any{"type": "text", "text": text})
 				}
 			case "image":

@@ -55,6 +55,8 @@ type Group struct {
 	AllowImageGeneration bool `json:"allow_image_generation,omitempty"`
 	// 图片生成路由类型：codex 或 web2api
 	ImageGenerationRoute string `json:"image_generation_route,omitempty"`
+	// OpenAI OAuth/codex 图片请求的 Responses 主模型
+	OpenaiImageMainModel string `json:"openai_image_main_model,omitempty"`
 	// 图片生成是否使用独立倍率；false 表示共享分组有效倍率
 	ImageRateIndependent bool `json:"image_rate_independent,omitempty"`
 	// 图片生成独立倍率，仅 image_rate_independent=true 时生效
@@ -213,7 +215,7 @@ func (*Group) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullFloat64)
 		case group.FieldID, group.FieldDefaultValidityDays, group.FieldFallbackGroupID, group.FieldFallbackGroupIDOnInvalidRequest, group.FieldSortOrder, group.FieldRpmLimit:
 			values[i] = new(sql.NullInt64)
-		case group.FieldName, group.FieldDisplayName, group.FieldDescription, group.FieldStatus, group.FieldPlatform, group.FieldSubscriptionType, group.FieldImageGenerationRoute, group.FieldDefaultMappedModel:
+		case group.FieldName, group.FieldDisplayName, group.FieldDescription, group.FieldStatus, group.FieldPlatform, group.FieldSubscriptionType, group.FieldImageGenerationRoute, group.FieldOpenaiImageMainModel, group.FieldDefaultMappedModel:
 			values[i] = new(sql.NullString)
 		case group.FieldCreatedAt, group.FieldUpdatedAt, group.FieldDeletedAt:
 			values[i] = new(sql.NullTime)
@@ -351,6 +353,12 @@ func (_m *Group) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field image_generation_route", values[i])
 			} else if value.Valid {
 				_m.ImageGenerationRoute = value.String
+			}
+		case group.FieldOpenaiImageMainModel:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field openai_image_main_model", values[i])
+			} else if value.Valid {
+				_m.OpenaiImageMainModel = value.String
 			}
 		case group.FieldImageRateIndependent:
 			if value, ok := values[i].(*sql.NullBool); !ok {
@@ -639,6 +647,9 @@ func (_m *Group) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("image_generation_route=")
 	builder.WriteString(_m.ImageGenerationRoute)
+	builder.WriteString(", ")
+	builder.WriteString("openai_image_main_model=")
+	builder.WriteString(_m.OpenaiImageMainModel)
 	builder.WriteString(", ")
 	builder.WriteString("image_rate_independent=")
 	builder.WriteString(fmt.Sprintf("%v", _m.ImageRateIndependent))

@@ -273,6 +273,20 @@ func (_c *GroupCreate) SetNillableImageGenerationRoute(v *string) *GroupCreate {
 	return _c
 }
 
+// SetOpenaiImageMainModel sets the "openai_image_main_model" field.
+func (_c *GroupCreate) SetOpenaiImageMainModel(v string) *GroupCreate {
+	_c.mutation.SetOpenaiImageMainModel(v)
+	return _c
+}
+
+// SetNillableOpenaiImageMainModel sets the "openai_image_main_model" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableOpenaiImageMainModel(v *string) *GroupCreate {
+	if v != nil {
+		_c.SetOpenaiImageMainModel(*v)
+	}
+	return _c
+}
+
 // SetImageRateIndependent sets the "image_rate_independent" field.
 func (_c *GroupCreate) SetImageRateIndependent(v bool) *GroupCreate {
 	_c.mutation.SetImageRateIndependent(v)
@@ -742,6 +756,10 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultImageGenerationRoute
 		_c.mutation.SetImageGenerationRoute(v)
 	}
+	if _, ok := _c.mutation.OpenaiImageMainModel(); !ok {
+		v := group.DefaultOpenaiImageMainModel
+		_c.mutation.SetOpenaiImageMainModel(v)
+	}
 	if _, ok := _c.mutation.ImageRateIndependent(); !ok {
 		v := group.DefaultImageRateIndependent
 		_c.mutation.SetImageRateIndependent(v)
@@ -863,6 +881,14 @@ func (_c *GroupCreate) check() error {
 	if v, ok := _c.mutation.ImageGenerationRoute(); ok {
 		if err := group.ImageGenerationRouteValidator(v); err != nil {
 			return &ValidationError{Name: "image_generation_route", err: fmt.Errorf(`ent: validator failed for field "Group.image_generation_route": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.OpenaiImageMainModel(); !ok {
+		return &ValidationError{Name: "openai_image_main_model", err: errors.New(`ent: missing required field "Group.openai_image_main_model"`)}
+	}
+	if v, ok := _c.mutation.OpenaiImageMainModel(); ok {
+		if err := group.OpenaiImageMainModelValidator(v); err != nil {
+			return &ValidationError{Name: "openai_image_main_model", err: fmt.Errorf(`ent: validator failed for field "Group.openai_image_main_model": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.ImageRateIndependent(); !ok {
@@ -1007,6 +1033,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.ImageGenerationRoute(); ok {
 		_spec.SetField(group.FieldImageGenerationRoute, field.TypeString, value)
 		_node.ImageGenerationRoute = value
+	}
+	if value, ok := _c.mutation.OpenaiImageMainModel(); ok {
+		_spec.SetField(group.FieldOpenaiImageMainModel, field.TypeString, value)
+		_node.OpenaiImageMainModel = value
 	}
 	if value, ok := _c.mutation.ImageRateIndependent(); ok {
 		_spec.SetField(group.FieldImageRateIndependent, field.TypeBool, value)
@@ -1519,6 +1549,18 @@ func (u *GroupUpsert) SetImageGenerationRoute(v string) *GroupUpsert {
 // UpdateImageGenerationRoute sets the "image_generation_route" field to the value that was provided on create.
 func (u *GroupUpsert) UpdateImageGenerationRoute() *GroupUpsert {
 	u.SetExcluded(group.FieldImageGenerationRoute)
+	return u
+}
+
+// SetOpenaiImageMainModel sets the "openai_image_main_model" field.
+func (u *GroupUpsert) SetOpenaiImageMainModel(v string) *GroupUpsert {
+	u.Set(group.FieldOpenaiImageMainModel, v)
+	return u
+}
+
+// UpdateOpenaiImageMainModel sets the "openai_image_main_model" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateOpenaiImageMainModel() *GroupUpsert {
+	u.SetExcluded(group.FieldOpenaiImageMainModel)
 	return u
 }
 
@@ -2263,6 +2305,20 @@ func (u *GroupUpsertOne) SetImageGenerationRoute(v string) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdateImageGenerationRoute() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateImageGenerationRoute()
+	})
+}
+
+// SetOpenaiImageMainModel sets the "openai_image_main_model" field.
+func (u *GroupUpsertOne) SetOpenaiImageMainModel(v string) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetOpenaiImageMainModel(v)
+	})
+}
+
+// UpdateOpenaiImageMainModel sets the "openai_image_main_model" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateOpenaiImageMainModel() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateOpenaiImageMainModel()
 	})
 }
 
@@ -3237,6 +3293,20 @@ func (u *GroupUpsertBulk) SetImageGenerationRoute(v string) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdateImageGenerationRoute() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateImageGenerationRoute()
+	})
+}
+
+// SetOpenaiImageMainModel sets the "openai_image_main_model" field.
+func (u *GroupUpsertBulk) SetOpenaiImageMainModel(v string) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetOpenaiImageMainModel(v)
+	})
+}
+
+// UpdateOpenaiImageMainModel sets the "openai_image_main_model" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateOpenaiImageMainModel() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateOpenaiImageMainModel()
 	})
 }
 

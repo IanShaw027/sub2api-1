@@ -171,9 +171,9 @@ type RetrieveUserQuotaResponse struct {
 }
 
 type RetrieveUserQuotaBucket struct {
-	ModelID           string  `json:"modelId,omitempty"`
+	ModelID           string   `json:"modelId,omitempty"`
 	RemainingFraction *float64 `json:"remainingFraction,omitempty"`
-	RemainingAmount   string  `json:"remainingAmount,omitempty"`
-	ResetTime         string  `json:"resetTime,omitempty"`
-	TokenType         string  `json:"tokenType,omitempty"`
+	RemainingAmount   string   `json:"remainingAmount,omitempty"`
+	ResetTime         string   `json:"resetTime,omitempty"`
+	TokenType         string   `json:"tokenType,omitempty"`
 }

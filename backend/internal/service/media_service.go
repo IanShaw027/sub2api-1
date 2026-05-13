@@ -563,10 +563,6 @@ func ParseManagedMediaID(mediaService *MediaService, raw string) (int64, bool) {
 	return 0, false
 }
 
-func (s *MediaService) bucket() string {
-	return strings.TrimSpace(s.currentStorageConfig(context.Background()).Bucket)
-}
-
 func (s *MediaService) publicBaseURL() string {
 	return strings.TrimSpace(s.currentStorageConfig(context.Background()).PublicBaseURL)
 }
@@ -585,10 +581,6 @@ func (s *MediaService) downloadSigningSecret() string {
 
 func (s *MediaService) maxUploadSizeBytes() int64 {
 	return s.currentStorageConfig(context.Background()).MaxUploadSizeBytes
-}
-
-func (s *MediaService) presignTTL() time.Duration {
-	return time.Duration(s.currentStorageConfig(context.Background()).PresignExpiryMinutes) * time.Minute
 }
 
 func (s *MediaService) currentStorageConfig(ctx context.Context) MediaStorageRuntimeConfig {

@@ -3130,7 +3130,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if passthroughEnabled {
 		// 透传分支只需要轻量提取字段，避免热路径全量 Unmarshal。
 		reasoningEffort := extractOpenAIReasoningEffortFromBody(body, reqModel)
-		return s.forwardOpenAIPassthrough(ctx, c, account, originalBody, reqModel, reasoningEffort, reqStream, startTime)
+		return s.forwardOpenAIPassthrough(ctx, c, account, originalBody, reqModel, reasoningEffort, startTime)
 	}
 
 	reqBody, err := getOpenAIRequestBodyMap(c, body)
@@ -4153,12 +4153,10 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	body []byte,
 	reqModel string,
 	reasoningEffort *string,
-	reqStream bool,
 	startTime time.Time,
 ) (*OpenAIForwardResult, error) {
 	originalBody := body
 	promptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
-	upstreamPassthroughModel := ""
 	if isOpenAIResponsesCompactPath(c) {
 		compactMappedModel := resolveOpenAICompactForwardModel(account, reqModel)
 		if compactMappedModel != "" && compactMappedModel != reqModel {
@@ -4167,7 +4165,6 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 				return nil, fmt.Errorf("set compact passthrough model: %w", setErr)
 			}
 			body = nextBody
-			upstreamPassthroughModel = compactMappedModel
 		}
 	}
 
@@ -4228,7 +4225,6 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			return nil, err
 		}
 		body = bodyWithInstructions
-		reqStream = gjson.GetBytes(body, "stream").Bool()
 	}
 
 	sanitizedBody, sanitized, err := sanitizeEmptyBase64InputImagesInOpenAIBody(body)
@@ -4242,7 +4238,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	if err != nil {
 		return nil, err
 	}
-	reqStream = gjson.GetBytes(body, "stream").Bool()
+	reqStream := gjson.GetBytes(body, "stream").Bool()
 
 	logger.LegacyPrintf("service.openai_gateway",
 		"[OpenAI 自动透传] 命中自动透传分支: account=%d name=%s type=%s model=%s stream=%v",
@@ -4321,10 +4317,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
-		currentModel := strings.TrimSpace(upstreamPassthroughModel)
-		if currentModel == "" {
-			currentModel = strings.TrimSpace(gjson.GetBytes(body, "model").String())
-		}
+		currentModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
 		if fallbackModel := resolveConfiguredFallbackModel(ctx, s.settingService, PlatformOpenAI, currentModel); fallbackModel != "" &&
 			isUpstreamModelUnavailableForFallback(resp.StatusCode, respBody) {
 			fallbackUpstreamModel := account.GetMappedModel(fallbackModel)
@@ -4350,7 +4343,6 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 					fallbackResp, fallbackErr := s.httpUpstream.Do(fallbackReq, proxyURL, account.ID, account.Concurrency)
 					if fallbackErr == nil {
 						resp = fallbackResp
-						upstreamPassthroughModel = fallbackUpstreamModel
 						fallbackModelRetried = true
 					} else {
 						body = originalUpstreamBody
@@ -4391,6 +4383,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	var usage *OpenAIUsage
 	var firstTokenMs *int
 	imageCount := 0
+	upstreamPassthroughModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
 	if reqStream {
 		result, err := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime, reqModel, upstreamPassthroughModel)
 		if err != nil {

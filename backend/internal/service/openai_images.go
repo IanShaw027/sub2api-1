@@ -695,24 +695,6 @@ func shouldUseLegacyOpenAIImagesBridge(account *Account, parsed *OpenAIImagesReq
 	return account != nil && account.Type == AccountTypeOAuth && parsed != nil && parsed.IsLegacyBridge()
 }
 
-func requiresOpenAIImagesLegacyBridge(parsed *OpenAIImagesRequest) bool {
-	return parsed != nil && parsed.IsExplicitLegacyBridge()
-}
-
-func resolveOpenAIImageGenerationRouteFromAPIKey(apiKey *APIKey) string {
-	if apiKey == nil {
-		return GroupImageGenerationRouteCodex
-	}
-	if apiKey.Group != nil && apiKey.Group.OpenAIImageWeb2APIEnabled() && !apiKey.Group.OpenAIImageCodexEnabled() {
-		return GroupImageGenerationRouteWeb2API
-	}
-	return GroupImageGenerationRouteCodex
-}
-
-func resolveOpenAIImageGenerationRouteFromContext(c *gin.Context) string {
-	return resolveOpenAIImageGenerationRouteFromAPIKey(getAPIKeyFromContext(c))
-}
-
 func applyOpenAIImagesRouteSelection(parsed *OpenAIImagesRequest, route string) RequestType {
 	if parsed == nil {
 		return RequestTypeUnknown
@@ -2219,10 +2201,6 @@ func (s *OpenAIGatewayService) buildOpenAIBackendAPIHeaders(account *Account, to
 	return headers, nil
 }
 
-func cloneOpenAIBackendAPIHeaders(headers http.Header) http.Header {
-	return cloneHTTPHeader(headers)
-}
-
 func setOpenAIBackendAPIRequestTarget(headers http.Header, targetPath string, targetRoute string) {
 	if headers == nil {
 		return
@@ -2251,13 +2229,6 @@ func normalizeOpenAIBackendAPITargetPath(raw string) string {
 		return path
 	}
 	return "/"
-}
-
-func setOpenAIBackendAPIRequestTargetWithCookies(headers http.Header, profile *OpenAIWebProfile, targetPath string, targetRoute string) {
-	setOpenAIBackendAPIRequestTarget(headers, targetPath, targetRoute)
-	if profile != nil {
-		setOpenAIBackendAPIRequestCookieHeader(headers, profile, targetPath)
-	}
 }
 
 func setOpenAIBackendAPIRequestCookieHeader(headers http.Header, profile *OpenAIWebProfile, requestURL string) {
@@ -2470,32 +2441,6 @@ func openAITLSProfileIDForTelemetry(account *Account) string {
 		return ""
 	}
 	return strconv.FormatInt(id, 10)
-}
-
-func (s *OpenAIGatewayService) persistOpenAIWebProfileResponseCookies(ctx context.Context, account *Account, profile *OpenAIWebProfile, resp *http.Response) {
-	if s == nil || s.accountRepo == nil || account == nil || account.ID == 0 || resp == nil {
-		return
-	}
-	merged, changed := MergeOpenAIWebProfileResponseCookies(profile, resp)
-	if !changed || merged == nil {
-		return
-	}
-	if merged.Version == "" {
-		merged.Version = "1"
-	}
-	if merged.Source == "" {
-		merged.Source = "sub2api-images2api"
-	}
-	merged.CapturedAt = time.Now().UTC().Format(time.RFC3339)
-	if account.Extra == nil {
-		account.Extra = map[string]any{}
-	}
-	account.Extra[openAIWebProfileExtraKey] = merged.ToExtraMap()
-	updateCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	if err := s.accountRepo.UpdateExtra(updateCtx, account.ID, map[string]any{openAIWebProfileExtraKey: merged.ToExtraMap()}); err != nil {
-		logger.LegacyPrintf("service.openai_gateway", "persist openai web profile cookies failed: account=%d err=%v", account.ID, err)
-	}
 }
 
 func (s *OpenAIGatewayService) ensureOpenAIImageSessionCredentials(ctx context.Context, account *Account) (string, string) {

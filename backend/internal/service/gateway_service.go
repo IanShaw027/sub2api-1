@@ -4851,7 +4851,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	doFallbackReq := func(req *http.Request) (*http.Response, error) {
 		return s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, tlsProfile)
 	}
-	if fallbackResp, fallbackBody, fallbackReqModel, fallbackMappedModel, applied := s.maybeRetryAnthropicModelFallback(
+	if fallbackResp, _, fallbackReqModel, fallbackMappedModel, applied := s.maybeRetryAnthropicModelFallback(
 		ctx,
 		c,
 		account,
@@ -4863,7 +4863,6 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		doFallbackReq,
 	); applied {
 		resp = fallbackResp
-		body = fallbackBody
 		reqModel = fallbackReqModel
 		mappedModel = fallbackMappedModel
 	}

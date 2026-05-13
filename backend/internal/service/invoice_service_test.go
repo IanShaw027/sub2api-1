@@ -58,11 +58,11 @@ func TestInvoiceServiceApplyCancelAndReapply(t *testing.T) {
 	invoiceSvc := NewInvoiceService(client, &PaymentService{entClient: client}, mediaSvc)
 
 	created, err := invoiceSvc.Apply(ctx, order.ID, user.ID, ApplyInvoiceRequest{
-		Title:       "测试科技有限公司",
-		TaxNumber:   "91420100MA00000001",
-		Email:       "finance@example.com",
-		ContactName: "张三",
-		ContactPhone:"13800000000",
+		Title:        "测试科技有限公司",
+		TaxNumber:    "91420100MA00000001",
+		Email:        "finance@example.com",
+		ContactName:  "张三",
+		ContactPhone: "13800000000",
 	})
 	require.NoError(t, err)
 	require.Equal(t, InvoiceStatusApplied, created.Status)
@@ -81,11 +81,11 @@ func TestInvoiceServiceApplyCancelAndReapply(t *testing.T) {
 	require.Equal(t, InvoiceStatusCancelled, reloadedOrder.InvoiceStatus)
 
 	reapplied, err := invoiceSvc.Apply(ctx, order.ID, user.ID, ApplyInvoiceRequest{
-		Title:       "测试科技有限公司",
-		TaxNumber:   "91420100MA00000001",
-		Email:       "finance@example.com",
-		ContactName: "李四",
-		ContactPhone:"13900000000",
+		Title:        "测试科技有限公司",
+		TaxNumber:    "91420100MA00000001",
+		Email:        "finance@example.com",
+		ContactName:  "李四",
+		ContactPhone: "13900000000",
 	})
 	require.NoError(t, err)
 	require.Equal(t, InvoiceStatusApplied, reapplied.Status)

@@ -205,7 +205,7 @@ describe('useAiStudioStore', () => {
 
   it('clears in-memory session state when auth scope changes before loading the next user runtime', async () => {
     localStorage.setItem('auth_user', JSON.stringify({ id: 1 }))
-    let store = useAiStudioStore()
+    const store = useAiStudioStore()
 
     store.lines = [
       {

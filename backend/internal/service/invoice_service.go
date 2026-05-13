@@ -41,31 +41,31 @@ type InvoiceFileUploadInput struct {
 }
 
 type InvoiceApplicationDetail struct {
-	ID                int64      `json:"id"`
-	OrderID           int64      `json:"order_id"`
-	UserID            int64      `json:"user_id"`
-	UserEmail         string     `json:"user_email"`
-	OrderOutTradeNo   string     `json:"order_out_trade_no"`
-	PaymentType       string     `json:"payment_type"`
-	ProviderInstanceID string    `json:"provider_instance_id"`
-	ProviderKey       string     `json:"provider_key"`
-	Status            string     `json:"status"`
-	InvoiceAmount     float64    `json:"invoice_amount"`
-	Title             string     `json:"title"`
-	TaxNumber         string     `json:"tax_number"`
-	Email             string     `json:"email"`
-	ContactName       string     `json:"contact_name"`
-	ContactPhone      string     `json:"contact_phone"`
-	RequestNote       *string    `json:"request_note,omitempty"`
-	FileMediaID       *int64     `json:"file_media_id,omitempty"`
-	FileName          string     `json:"file_name,omitempty"`
-	FileMIMEType      string     `json:"file_mime_type,omitempty"`
-	FileSizeBytes     int64      `json:"file_size_bytes,omitempty"`
-	AppliedAt         *time.Time `json:"applied_at,omitempty"`
-	CancelledAt       *time.Time `json:"cancelled_at,omitempty"`
-	IssuedAt          *time.Time `json:"issued_at,omitempty"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
+	ID                 int64      `json:"id"`
+	OrderID            int64      `json:"order_id"`
+	UserID             int64      `json:"user_id"`
+	UserEmail          string     `json:"user_email"`
+	OrderOutTradeNo    string     `json:"order_out_trade_no"`
+	PaymentType        string     `json:"payment_type"`
+	ProviderInstanceID string     `json:"provider_instance_id"`
+	ProviderKey        string     `json:"provider_key"`
+	Status             string     `json:"status"`
+	InvoiceAmount      float64    `json:"invoice_amount"`
+	Title              string     `json:"title"`
+	TaxNumber          string     `json:"tax_number"`
+	Email              string     `json:"email"`
+	ContactName        string     `json:"contact_name"`
+	ContactPhone       string     `json:"contact_phone"`
+	RequestNote        *string    `json:"request_note,omitempty"`
+	FileMediaID        *int64     `json:"file_media_id,omitempty"`
+	FileName           string     `json:"file_name,omitempty"`
+	FileMIMEType       string     `json:"file_mime_type,omitempty"`
+	FileSizeBytes      int64      `json:"file_size_bytes,omitempty"`
+	AppliedAt          *time.Time `json:"applied_at,omitempty"`
+	CancelledAt        *time.Time `json:"cancelled_at,omitempty"`
+	IssuedAt           *time.Time `json:"issued_at,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
 type InvoiceListParams struct {

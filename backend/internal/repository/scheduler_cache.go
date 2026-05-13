@@ -440,10 +440,6 @@ func schedulerAccountMetaKey(id string) string {
 	return schedulerAccountMetaPrefix + id
 }
 
-func ptrTime(t time.Time) *time.Time {
-	return &t
-}
-
 func parseLastUsedOverlayValue(val any) (int64, error) {
 	switch raw := val.(type) {
 	case string:

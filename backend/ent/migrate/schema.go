@@ -1843,6 +1843,7 @@ var (
 		{Name: "default_validity_days", Type: field.TypeInt, Default: 30},
 		{Name: "allow_image_generation", Type: field.TypeBool, Default: false},
 		{Name: "image_generation_route", Type: field.TypeString, Size: 20, Default: "codex"},
+		{Name: "openai_image_main_model", Type: field.TypeString, Size: 100, Default: "gpt-5.4-mini"},
 		{Name: "image_rate_independent", Type: field.TypeBool, Default: false},
 		{Name: "image_rate_multiplier", Type: field.TypeFloat64, Default: 1, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
 		{Name: "image_price_1k", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
@@ -1900,7 +1901,7 @@ var (
 			{
 				Name:    "group_sort_order",
 				Unique:  false,
-				Columns: []*schema.Column{GroupsColumns[34]},
+				Columns: []*schema.Column{GroupsColumns[35]},
 			},
 		},
 	}

@@ -1,8 +1,8 @@
 package main
 
 import (
-	"strings"
 	"reflect"
+	"strings"
 	"testing"
 )
 
