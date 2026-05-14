@@ -50,28 +50,36 @@ type DashboardStats struct {
 	OverloadAccounts  int64 `json:"overload_accounts"`  // 过载账户数
 
 	// 累计 Token 使用统计
-	TotalRequests            int64   `json:"total_requests"`
-	TotalInputTokens         int64   `json:"total_input_tokens"`
-	TotalOutputTokens        int64   `json:"total_output_tokens"`
-	TotalCacheCreationTokens int64   `json:"total_cache_creation_tokens"`
-	TotalCacheReadTokens     int64   `json:"total_cache_read_tokens"`
-	TotalTokens              int64   `json:"total_tokens"`
-	TotalCost                float64 `json:"total_cost"`         // 累计标准计费
-	TotalActualCost          float64 `json:"total_actual_cost"`  // 累计实际扣除
-	TotalAccountCost         float64 `json:"total_account_cost"` // 累计账号成本
-	TotalAverageRequestPrice float64 `json:"total_average_request_price"`
+	TotalRequests               int64   `json:"total_requests"`
+	TotalInputTokens            int64   `json:"total_input_tokens"`
+	TotalOutputTokens           int64   `json:"total_output_tokens"`
+	TotalCacheCreationTokens    int64   `json:"total_cache_creation_tokens"`
+	TotalCacheReadTokens        int64   `json:"total_cache_read_tokens"`
+	TotalTokens                 int64   `json:"total_tokens"`
+	TotalCost                   float64 `json:"total_cost"`         // 累计标准计费
+	TotalActualCost             float64 `json:"total_actual_cost"`  // 累计实际扣除
+	TotalAccountCost            float64 `json:"total_account_cost"` // 累计账号成本
+	TotalBalanceActualCost      float64 `json:"total_balance_actual_cost"`
+	TotalSubscriptionActualCost float64 `json:"total_subscription_actual_cost"`
+	TotalRechargeAmount         float64 `json:"total_recharge_amount"`
+	TotalRefundAmount           float64 `json:"total_refund_amount"`
+	TotalAverageRequestPrice    float64 `json:"total_average_request_price"`
 
 	// 今日 Token 使用统计
-	TodayRequests            int64   `json:"today_requests"`
-	TodayInputTokens         int64   `json:"today_input_tokens"`
-	TodayOutputTokens        int64   `json:"today_output_tokens"`
-	TodayCacheCreationTokens int64   `json:"today_cache_creation_tokens"`
-	TodayCacheReadTokens     int64   `json:"today_cache_read_tokens"`
-	TodayTokens              int64   `json:"today_tokens"`
-	TodayCost                float64 `json:"today_cost"`         // 今日标准计费
-	TodayActualCost          float64 `json:"today_actual_cost"`  // 今日实际扣除
-	TodayAccountCost         float64 `json:"today_account_cost"` // 今日账号成本
-	TodayAverageRequestPrice float64 `json:"today_average_request_price"`
+	TodayRequests               int64   `json:"today_requests"`
+	TodayInputTokens            int64   `json:"today_input_tokens"`
+	TodayOutputTokens           int64   `json:"today_output_tokens"`
+	TodayCacheCreationTokens    int64   `json:"today_cache_creation_tokens"`
+	TodayCacheReadTokens        int64   `json:"today_cache_read_tokens"`
+	TodayTokens                 int64   `json:"today_tokens"`
+	TodayCost                   float64 `json:"today_cost"`         // 今日标准计费
+	TodayActualCost             float64 `json:"today_actual_cost"`  // 今日实际扣除
+	TodayAccountCost            float64 `json:"today_account_cost"` // 今日账号成本
+	TodayBalanceActualCost      float64 `json:"today_balance_actual_cost"`
+	TodaySubscriptionActualCost float64 `json:"today_subscription_actual_cost"`
+	TodayRechargeAmount         float64 `json:"today_recharge_amount"`
+	TodayRefundAmount           float64 `json:"today_refund_amount"`
+	TodayAverageRequestPrice    float64 `json:"today_average_request_price"`
 
 	// 系统运行统计
 	AverageDurationMs float64 `json:"average_duration_ms"` // 平均响应时间

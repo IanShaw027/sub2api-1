@@ -685,6 +685,7 @@ func (s *UsageLogRepoSuite) TestDashboardStats_TodayTotalsAndPerformance() {
 		AccountID:           accNormal.ID,
 		Model:               "claude-3",
 		GroupID:             &group.ID,
+		BillingType:         service.BillingTypeBalance,
 		InputTokens:         10,
 		OutputTokens:        20,
 		CacheCreationTokens: 3,
@@ -702,6 +703,7 @@ func (s *UsageLogRepoSuite) TestDashboardStats_TodayTotalsAndPerformance() {
 		APIKeyID:     apiKey1.ID,
 		AccountID:    accNormal.ID,
 		Model:        "claude-3",
+		BillingType:  service.BillingTypeSubscription,
 		InputTokens:  5,
 		OutputTokens: 6,
 		TotalCost:    0.7,
@@ -717,6 +719,7 @@ func (s *UsageLogRepoSuite) TestDashboardStats_TodayTotalsAndPerformance() {
 		APIKeyID:     apiKey1.ID,
 		AccountID:    accNormal.ID,
 		Model:        "claude-3",
+		BillingType:  service.BillingTypeSubscription,
 		InputTokens:  1,
 		OutputTokens: 2,
 		TotalCost:    0.1,
@@ -727,10 +730,79 @@ func (s *UsageLogRepoSuite) TestDashboardStats_TodayTotalsAndPerformance() {
 	_, err = s.repo.Create(s.ctx, logPerf)
 	s.Require().NoError(err, "Create logPerf")
 
+	refundOrder, err := s.client.PaymentOrder.Create().
+		SetUserID(userToday.ID).
+		SetUserEmail(userToday.Email).
+		SetUserName(userToday.Email).
+		SetAmount(7.7).
+		SetPayAmount(7.7).
+		SetFeeRate(0).
+		SetRechargeCode("DASHBOARD-RECHARGE-1").
+		SetOutTradeNo("dashboard-recharge-1").
+		SetPaymentType("wxpay").
+		SetPaymentTradeNo("trade-dashboard-recharge-1").
+		SetOrderType("balance").
+		SetStatus(service.OrderStatusCompleted).
+		SetExpiresAt(now.Add(1 * time.Hour)).
+		SetPaidAt(now.Add(-90 * time.Second)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("localhost").
+		SetSrcURL("https://example.com").
+		SetCreatedAt(now.Add(-2 * time.Minute)).
+		SetUpdatedAt(now.Add(-90 * time.Second)).
+		Save(s.ctx)
+	s.Require().NoError(err, "Create payment order recharge")
+
+	_, err = s.client.PaymentOrder.Create().
+		SetUserID(userToday.ID).
+		SetUserEmail(userToday.Email).
+		SetUserName(userToday.Email).
+		SetAmount(3.0).
+		SetPayAmount(3.0).
+		SetFeeRate(0).
+		SetRechargeCode("DASHBOARD-REFUND-1").
+		SetOutTradeNo("dashboard-refund-1").
+		SetPaymentType("wxpay").
+		SetPaymentTradeNo("trade-dashboard-refund-1").
+		SetOrderType("balance").
+		SetStatus(service.OrderStatusRefunded).
+		SetRefundAmount(1.25).
+		SetRefundAt(now.Add(-45 * time.Second)).
+		SetExpiresAt(now.Add(1 * time.Hour)).
+		SetPaidAt(now.Add(-2 * time.Minute)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("localhost").
+		SetSrcURL("https://example.com").
+		SetCreatedAt(now.Add(-2 * time.Minute)).
+		SetUpdatedAt(now.Add(-45 * time.Second)).
+		Save(s.ctx)
+	s.Require().NoError(err, "Create payment order refund")
+
+	_, err = s.client.PaymentAuditLog.Create().
+		SetOrderID(fmt.Sprintf("%d", refundOrder.ID)).
+		SetAction("REFUND_SUCCESS").
+		SetDetail(`{"refundAmount":0.5,"reason":"partial-1"}`).
+		SetOperator("admin").
+		SetCreatedAt(todayStart.Add(-time.Minute)).
+		Save(s.ctx)
+	s.Require().NoError(err, "Create refund audit log 1")
+
+	_, err = s.client.PaymentAuditLog.Create().
+		SetOrderID(fmt.Sprintf("%d", refundOrder.ID)).
+		SetAction("REFUND_SUCCESS").
+		SetDetail(`{"refundAmount":0.75,"reason":"partial-2"}`).
+		SetOperator("admin").
+		SetCreatedAt(now.Add(-45 * time.Second)).
+		Save(s.ctx)
+	s.Require().NoError(err, "Create refund audit log 2")
+
 	aggRepo := newDashboardAggregationRepositoryWithSQL(s.tx)
 	aggStart := todayStart.Add(-2 * time.Hour)
 	aggEnd := now.Add(2 * time.Minute)
 	s.Require().NoError(aggRepo.AggregateRange(s.ctx, aggStart, aggEnd), "AggregateRange")
+
+	_, err = s.tx.ExecContext(s.ctx, `DELETE FROM usage_logs`)
+	s.Require().NoError(err, "Delete usage_logs after aggregation")
 
 	stats, err := s.repo.GetDashboardStats(s.ctx)
 	s.Require().NoError(err, "GetDashboardStats")
@@ -755,6 +827,14 @@ func (s *UsageLogRepoSuite) TestDashboardStats_TodayTotalsAndPerformance() {
 	s.Require().Equal(baseStats.TotalActualCost+2.0, stats.TotalActualCost, "TotalActualCost mismatch")
 	// account_cost falls back to total_cost when account_stats_cost is NULL
 	s.Require().Equal(baseStats.TotalAccountCost+2.3, stats.TotalAccountCost, "TotalAccountCost mismatch")
+	s.Require().Equal(1.2, stats.TotalBalanceActualCost, "TotalBalanceActualCost mismatch")
+	s.Require().Equal(0.8, stats.TotalSubscriptionActualCost, "TotalSubscriptionActualCost mismatch")
+	s.Require().Equal(10.7, stats.TotalRechargeAmount, "TotalRechargeAmount mismatch")
+	s.Require().Equal(1.25, stats.TotalRefundAmount, "TotalRefundAmount mismatch")
+	s.Require().Equal(1.2, stats.TodayBalanceActualCost, "TodayBalanceActualCost mismatch")
+	s.Require().Equal(0.1, stats.TodaySubscriptionActualCost, "TodaySubscriptionActualCost mismatch")
+	s.Require().Equal(10.7, stats.TodayRechargeAmount, "TodayRechargeAmount mismatch")
+	s.Require().Equal(0.75, stats.TodayRefundAmount, "TodayRefundAmount mismatch")
 	s.Require().GreaterOrEqual(stats.TodayRequests, int64(1), "expected TodayRequests >= 1")
 	s.Require().GreaterOrEqual(stats.TodayCost, 0.0, "expected TodayCost >= 0")
 	s.Require().GreaterOrEqual(stats.TodayAccountCost, 0.0, "expected TodayAccountCost >= 0")
@@ -934,6 +1014,7 @@ func (s *UsageLogRepoSuite) TestDashboardAggregationConsistency() {
 		APIKeyID:            apiKey1.ID,
 		AccountID:           account.ID,
 		Model:               "claude-3",
+		BillingType:         service.BillingTypeBalance,
 		InputTokens:         10,
 		OutputTokens:        20,
 		CacheCreationTokens: 2,
@@ -951,6 +1032,7 @@ func (s *UsageLogRepoSuite) TestDashboardAggregationConsistency() {
 		APIKeyID:     apiKey1.ID,
 		AccountID:    account.ID,
 		Model:        "claude-3",
+		BillingType:  service.BillingTypeSubscription,
 		InputTokens:  5,
 		OutputTokens: 5,
 		TotalCost:    0.5,
@@ -966,6 +1048,7 @@ func (s *UsageLogRepoSuite) TestDashboardAggregationConsistency() {
 		APIKeyID:     apiKey2.ID,
 		AccountID:    account.ID,
 		Model:        "claude-3",
+		BillingType:  service.BillingTypeSubscription,
 		InputTokens:  7,
 		OutputTokens: 8,
 		TotalCost:    0.7,
@@ -982,25 +1065,28 @@ func (s *UsageLogRepoSuite) TestDashboardAggregationConsistency() {
 	s.Require().NoError(aggRepo.AggregateRange(s.ctx, aggStart, aggEnd))
 
 	type hourlyRow struct {
-		totalRequests       int64
-		inputTokens         int64
-		outputTokens        int64
-		cacheCreationTokens int64
-		cacheReadTokens     int64
-		totalCost           float64
-		actualCost          float64
-		totalDurationMs     int64
-		activeUsers         int64
+		totalRequests          int64
+		inputTokens            int64
+		outputTokens           int64
+		cacheCreationTokens    int64
+		cacheReadTokens        int64
+		totalCost              float64
+		actualCost             float64
+		balanceActualCost      float64
+		subscriptionActualCost float64
+		totalDurationMs        int64
+		activeUsers            int64
 	}
 	fetchHourly := func(bucketStart time.Time) hourlyRow {
 		var row hourlyRow
 		err := scanSingleRow(s.ctx, s.tx, `
 			SELECT total_requests, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
-			       total_cost, actual_cost, total_duration_ms, active_users
+			       total_cost, actual_cost, balance_actual_cost, subscription_actual_cost, total_duration_ms, active_users
 			FROM usage_dashboard_hourly
 			WHERE bucket_start = $1
 		`, []any{bucketStart}, &row.totalRequests, &row.inputTokens, &row.outputTokens,
 			&row.cacheCreationTokens, &row.cacheReadTokens, &row.totalCost, &row.actualCost,
+			&row.balanceActualCost, &row.subscriptionActualCost,
 			&row.totalDurationMs, &row.activeUsers,
 		)
 		s.Require().NoError(err)
@@ -1015,6 +1101,8 @@ func (s *UsageLogRepoSuite) TestDashboardAggregationConsistency() {
 	s.Require().Equal(int64(1), hour1Row.cacheReadTokens)
 	s.Require().Equal(1.5, hour1Row.totalCost)
 	s.Require().Equal(1.4, hour1Row.actualCost)
+	s.Require().Equal(0.9, hour1Row.balanceActualCost)
+	s.Require().Equal(0.5, hour1Row.subscriptionActualCost)
 	s.Require().Equal(int64(300), hour1Row.totalDurationMs)
 	s.Require().Equal(int64(1), hour1Row.activeUsers)
 
@@ -1026,27 +1114,32 @@ func (s *UsageLogRepoSuite) TestDashboardAggregationConsistency() {
 	s.Require().Equal(int64(0), hour2Row.cacheReadTokens)
 	s.Require().Equal(0.7, hour2Row.totalCost)
 	s.Require().Equal(0.7, hour2Row.actualCost)
+	s.Require().Equal(0.0, hour2Row.balanceActualCost)
+	s.Require().Equal(0.7, hour2Row.subscriptionActualCost)
 	s.Require().Equal(int64(150), hour2Row.totalDurationMs)
 	s.Require().Equal(int64(1), hour2Row.activeUsers)
 
 	var daily struct {
-		totalRequests       int64
-		inputTokens         int64
-		outputTokens        int64
-		cacheCreationTokens int64
-		cacheReadTokens     int64
-		totalCost           float64
-		actualCost          float64
-		totalDurationMs     int64
-		activeUsers         int64
+		totalRequests          int64
+		inputTokens            int64
+		outputTokens           int64
+		cacheCreationTokens    int64
+		cacheReadTokens        int64
+		totalCost              float64
+		actualCost             float64
+		balanceActualCost      float64
+		subscriptionActualCost float64
+		totalDurationMs        int64
+		activeUsers            int64
 	}
 	err = scanSingleRow(s.ctx, s.tx, `
 		SELECT total_requests, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
-		       total_cost, actual_cost, total_duration_ms, active_users
+		       total_cost, actual_cost, balance_actual_cost, subscription_actual_cost, total_duration_ms, active_users
 		FROM usage_dashboard_daily
 		WHERE bucket_date = $1::date
 	`, []any{dayStart}, &daily.totalRequests, &daily.inputTokens, &daily.outputTokens,
 		&daily.cacheCreationTokens, &daily.cacheReadTokens, &daily.totalCost, &daily.actualCost,
+		&daily.balanceActualCost, &daily.subscriptionActualCost,
 		&daily.totalDurationMs, &daily.activeUsers,
 	)
 	s.Require().NoError(err)
@@ -1057,6 +1150,8 @@ func (s *UsageLogRepoSuite) TestDashboardAggregationConsistency() {
 	s.Require().Equal(int64(1), daily.cacheReadTokens)
 	s.Require().Equal(2.2, daily.totalCost)
 	s.Require().Equal(2.1, daily.actualCost)
+	s.Require().Equal(0.9, daily.balanceActualCost)
+	s.Require().Equal(1.2, daily.subscriptionActualCost)
 	s.Require().Equal(int64(450), daily.totalDurationMs)
 	s.Require().Equal(int64(2), daily.activeUsers)
 }

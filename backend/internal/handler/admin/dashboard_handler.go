@@ -114,26 +114,34 @@ func (h *DashboardHandler) GetStats(c *gin.Context) {
 		"overload_accounts":  stats.OverloadAccounts,
 
 		// 累计 Token 使用统计
-		"total_requests":              stats.TotalRequests,
-		"total_input_tokens":          stats.TotalInputTokens,
-		"total_output_tokens":         stats.TotalOutputTokens,
-		"total_cache_creation_tokens": stats.TotalCacheCreationTokens,
-		"total_cache_read_tokens":     stats.TotalCacheReadTokens,
-		"total_tokens":                stats.TotalTokens,
-		"total_cost":                  stats.TotalCost,       // 标准计费
-		"total_actual_cost":           stats.TotalActualCost, // 实际扣除
-		"total_account_cost":          stats.TotalAccountCost,
+		"total_requests":                 stats.TotalRequests,
+		"total_input_tokens":             stats.TotalInputTokens,
+		"total_output_tokens":            stats.TotalOutputTokens,
+		"total_cache_creation_tokens":    stats.TotalCacheCreationTokens,
+		"total_cache_read_tokens":        stats.TotalCacheReadTokens,
+		"total_tokens":                   stats.TotalTokens,
+		"total_cost":                     stats.TotalCost,       // 标准计费
+		"total_actual_cost":              stats.TotalActualCost, // 实际扣除
+		"total_account_cost":             stats.TotalAccountCost,
+		"total_balance_actual_cost":      stats.TotalBalanceActualCost,
+		"total_subscription_actual_cost": stats.TotalSubscriptionActualCost,
+		"total_recharge_amount":          stats.TotalRechargeAmount,
+		"total_refund_amount":            stats.TotalRefundAmount,
 
 		// 今日 Token 使用统计
-		"today_requests":              stats.TodayRequests,
-		"today_input_tokens":          stats.TodayInputTokens,
-		"today_output_tokens":         stats.TodayOutputTokens,
-		"today_cache_creation_tokens": stats.TodayCacheCreationTokens,
-		"today_cache_read_tokens":     stats.TodayCacheReadTokens,
-		"today_tokens":                stats.TodayTokens,
-		"today_cost":                  stats.TodayCost,       // 今日标准计费
-		"today_actual_cost":           stats.TodayActualCost, // 今日实际扣除
-		"today_account_cost":          stats.TodayAccountCost,
+		"today_requests":                 stats.TodayRequests,
+		"today_input_tokens":             stats.TodayInputTokens,
+		"today_output_tokens":            stats.TodayOutputTokens,
+		"today_cache_creation_tokens":    stats.TodayCacheCreationTokens,
+		"today_cache_read_tokens":        stats.TodayCacheReadTokens,
+		"today_tokens":                   stats.TodayTokens,
+		"today_cost":                     stats.TodayCost,       // 今日标准计费
+		"today_actual_cost":              stats.TodayActualCost, // 今日实际扣除
+		"today_account_cost":             stats.TodayAccountCost,
+		"today_balance_actual_cost":      stats.TodayBalanceActualCost,
+		"today_subscription_actual_cost": stats.TodaySubscriptionActualCost,
+		"today_recharge_amount":          stats.TodayRechargeAmount,
+		"today_refund_amount":            stats.TodayRefundAmount,
 
 		// 系统运行统计
 		"average_duration_ms": stats.AverageDurationMs,

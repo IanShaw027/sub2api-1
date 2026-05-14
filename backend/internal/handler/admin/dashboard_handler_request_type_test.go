@@ -244,16 +244,24 @@ func TestDashboardUsersRankingLimitAndCache(t *testing.T) {
 func TestDashboardStatsIncludesAccountCostFields(t *testing.T) {
 	repo := &dashboardUsageRepoCapture{
 		stats: &usagestats.DashboardStats{
-			TotalUsers:       1,
-			TotalAPIKeys:     2,
-			TotalAccounts:    3,
-			TotalRequests:    4,
-			TotalCost:        5.5,
-			TotalActualCost:  6.5,
-			TotalAccountCost: 7.5,
-			TodayCost:        8.5,
-			TodayActualCost:  9.5,
-			TodayAccountCost: 10.5,
+			TotalUsers:                  1,
+			TotalAPIKeys:                2,
+			TotalAccounts:               3,
+			TotalRequests:               4,
+			TotalCost:                   5.5,
+			TotalActualCost:             6.5,
+			TotalAccountCost:            7.5,
+			TotalBalanceActualCost:      2.1,
+			TotalSubscriptionActualCost: 4.4,
+			TotalRechargeAmount:         11.2,
+			TotalRefundAmount:           1.3,
+			TodayCost:                   8.5,
+			TodayActualCost:             9.5,
+			TodayAccountCost:            10.5,
+			TodayBalanceActualCost:      3.3,
+			TodaySubscriptionActualCost: 6.2,
+			TodayRechargeAmount:         7.7,
+			TodayRefundAmount:           0.8,
 		},
 	}
 	gin.SetMode(gin.TestMode)
@@ -269,4 +277,6 @@ func TestDashboardStatsIncludesAccountCostFields(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Contains(t, w.Body.String(), `"total_account_cost":7.5`)
 	require.Contains(t, w.Body.String(), `"today_account_cost":10.5`)
+	require.Contains(t, w.Body.String(), `"total_balance_actual_cost":2.1`)
+	require.Contains(t, w.Body.String(), `"today_recharge_amount":7.7`)
 }
