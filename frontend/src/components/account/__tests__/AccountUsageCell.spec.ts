@@ -587,11 +587,17 @@ describe('AccountUsageCell', () => {
   expect(wrapper.text()).toContain('7d|100|106540000')
   })
 
-  it('OpenAI 生图路由只按当前分组显示启用的 codex/web2api', async () => {
+  it('OpenAI 生图路由只显示当前分组启用且账号支持的路线', async () => {
     getUsage.mockResolvedValue({
       openai_image_codex_supported: false,
       openai_image_codex_reason: 'free_plan_not_supported',
       openai_image_web2api_supported: true,
+      openai_image_codex_five_hour: {
+        utilization: 100,
+        resets_at: '2026-03-08T12:00:00Z',
+        remaining_seconds: 3600,
+        window_stats: { requests: 9, tokens: 99, cost: 0.99 }
+      },
       openai_image_workspace_name: 'Personal',
       openai_image_plan_type: 'free'
     })
@@ -606,7 +612,7 @@ describe('AccountUsageCell', () => {
           groups: [
             {
               id: 101,
-              name: 'OpenAI Image Enabled',
+              name: 'OpenAI Codex Unsupported',
               description: '',
               platform: 'openai',
               rate_limit: 0,
@@ -620,7 +626,7 @@ describe('AccountUsageCell', () => {
               monthly_limit_usd: null,
               allow_image_generation: true,
               image_generation_route: 'codex',
-              image_rate_independent: true,
+              image_rate_independent: false,
               image_rate_multiplier: 1,
               image_price_1k: null,
               image_price_2k: null,
@@ -636,7 +642,7 @@ describe('AccountUsageCell', () => {
             },
             {
               id: 102,
-              name: 'OpenAI Image Disabled',
+              name: 'OpenAI Web2API Enabled',
               description: '',
               platform: 'openai',
               rate_limit: 0,
@@ -648,8 +654,8 @@ describe('AccountUsageCell', () => {
               daily_limit_usd: null,
               weekly_limit_usd: null,
               monthly_limit_usd: null,
-              allow_image_generation: false,
-              image_generation_route: 'codex',
+              allow_image_generation: true,
+              image_generation_route: 'web2api',
               image_rate_independent: false,
               image_rate_multiplier: 1,
               image_price_1k: null,
@@ -681,11 +687,7 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(wrapper.findAll('.usage-bar').map((node) => node.text())).toEqual([
-      'img 5h|0',
-      'img 7d|0',
-      'img|0'
-    ])
+    expect(wrapper.findAll('.usage-bar')).toHaveLength(0)
     expect(wrapper.text()).not.toContain('admin.accounts.openaiImageRoutes')
     expect(wrapper.text()).not.toContain('free accounts cannot use codex image generation')
     expect(wrapper.text()).not.toContain('Personal')
@@ -694,11 +696,12 @@ describe('AccountUsageCell', () => {
     await wrapper.setProps({ activeGroupId: 102 })
     await flushPromises()
 
-    expect(wrapper.findAll('.usage-bar')).toHaveLength(0)
+    expect(wrapper.findAll('.usage-bar').map((node) => node.text())).toEqual(['img|0'])
   })
 
   it('OpenAI codex 生图路线开启时补齐 img 5h/img 7d 占位条', async () => {
     getUsage.mockResolvedValue({
+      openai_image_codex_supported: true,
       five_hour: {
         utilization: 12,
         resets_at: '2026-03-08T12:00:00Z',
@@ -959,8 +962,7 @@ describe('AccountUsageCell', () => {
       '5h|19|76',
       '7d|31|642',
       'img 5h|0|1',
-      'img 7d|0|2',
-      'img|88|3'
+      'img 7d|0|2'
     ])
     expect(wrapper.text()).not.toContain('codex 5h')
     expect(wrapper.text()).not.toContain('web2api 5h')

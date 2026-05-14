@@ -1,0 +1,18 @@
+{
+  "id": "resp_refusal_fixture",
+  "model": "gpt-5.4",
+  "status": "failed",
+  "error": {
+    "code": "content_filter",
+    "message": "Blocked by policy review"
+  },
+  "output": [],
+  "usage": {
+    "input_tokens": 12,
+    "input_tokens_details": {
+      "cached_tokens": 4
+    },
+    "output_tokens": 0,
+    "total_tokens": 12
+  }
+}

@@ -269,7 +269,9 @@ describe('admin UsersView', () => {
 
     await flushPromises()
 
-    await wrapper.get('[data-test="concurrency-sort"]').setValue('current_concurrency_desc')
+    await wrapper.get('[data-test="concurrency-sort-trigger"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="concurrency-sort-option-current_concurrency_desc"]').trigger('click')
     await flushPromises()
     expect(listUsers).toHaveBeenLastCalledWith(
       1,
@@ -282,7 +284,9 @@ describe('admin UsersView', () => {
     )
     expect(wrapper.get('[data-test="row-order"]').text()).toBe('high-current@example.com,high-available@example.com,low-current@example.com')
 
-    await wrapper.get('[data-test="concurrency-sort"]').setValue('available_concurrency_desc')
+    await wrapper.get('[data-test="concurrency-sort-trigger"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="concurrency-sort-option-available_concurrency_desc"]').trigger('click')
     await flushPromises()
     expect(listUsers).toHaveBeenLastCalledWith(
       1,

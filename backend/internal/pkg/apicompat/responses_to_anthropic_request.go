@@ -149,11 +149,12 @@ func convertResponsesInputToAnthropic(inputRaw json.RawMessage) (json.RawMessage
 			if outputContent == "" {
 				outputContent = "(empty)"
 			}
-			contentJSON := marshalAnthropicToolResultContent(outputContent)
+			contentJSON, isError := marshalAnthropicToolResultContent(outputContent)
 			block := AnthropicContentBlock{
 				Type:      "tool_result",
 				ToolUseID: fromResponsesCallIDToAnthropic(item.CallID),
 				Content:   contentJSON,
+				IsError:   isError,
 			}
 			blockJSON, _ := json.Marshal([]AnthropicContentBlock{block})
 			messages = append(messages, AnthropicMessage{
@@ -209,8 +210,16 @@ func tryDecodeAnthropicToolResultEnvelope(raw string) (*anthropicToolResultEnvel
 	return &env, true
 }
 
-func marshalAnthropicToolResultContent(raw string) json.RawMessage {
-	if env, ok := tryDecodeAnthropicToolResultEnvelope(raw); ok {
+func splitAnthropicToolErrorPrefix(raw string) (string, bool) {
+	if strings.HasPrefix(raw, anthropicToolErrorPrefix) {
+		return strings.TrimPrefix(raw, anthropicToolErrorPrefix), true
+	}
+	return raw, false
+}
+
+func marshalAnthropicToolResultContent(raw string) (json.RawMessage, bool) {
+	stripped, isError := splitAnthropicToolErrorPrefix(raw)
+	if env, ok := tryDecodeAnthropicToolResultEnvelope(stripped); ok {
 		var blocks []AnthropicContentBlock
 		for _, text := range env.Text {
 			if text == "" {
@@ -226,12 +235,12 @@ func marshalAnthropicToolResultContent(raw string) json.RawMessage {
 		}
 		if len(blocks) > 0 {
 			contentJSON, _ := json.Marshal(blocks)
-			return contentJSON
+			return contentJSON, isError || env.IsError
 		}
 	}
 
-	contentJSON, _ := json.Marshal(raw)
-	return contentJSON
+	contentJSON, _ := json.Marshal(stripped)
+	return contentJSON, isError
 }
 
 // extractTextFromContent extracts text from a content field that may be a

@@ -2,6 +2,7 @@ package apicompat
 
 import (
 	"encoding/json"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -156,6 +157,69 @@ func TestResponsesToAnthropicRequest_ConvertsFunctionCallOutput(t *testing.T) {
 	assert.Equal(t, "tool_result", blocks[0].Type)
 	assert.Equal(t, "call_123", blocks[0].ToolUseID)
 	assert.JSONEq(t, `"done"`, string(blocks[0].Content))
+}
+
+func TestResponsesToAnthropicRequest_RestoresToolResultErrorState(t *testing.T) {
+	t.Run("prefix marker", func(t *testing.T) {
+		req := &ResponsesRequest{
+			Model:           "gpt-5.4",
+			Input:           json.RawMessage(`[{"type":"function_call_output","call_id":"fc_toolu_123","output":"[tool_error] tool failed"}]`),
+			MaxOutputTokens: intPtr(256),
+		}
+
+		out, err := ResponsesToAnthropicRequest(req)
+		require.NoError(t, err)
+
+		require.Len(t, out.Messages, 1)
+		assert.Equal(t, "user", out.Messages[0].Role)
+
+		var blocks []AnthropicContentBlock
+		require.NoError(t, json.Unmarshal(out.Messages[0].Content, &blocks))
+		require.Len(t, blocks, 1)
+		assert.Equal(t, "tool_result", blocks[0].Type)
+		assert.Equal(t, "toolu_123", blocks[0].ToolUseID)
+		assert.True(t, blocks[0].IsError)
+		assert.JSONEq(t, `"tool failed"`, string(blocks[0].Content))
+	})
+
+	t.Run("structured envelope", func(t *testing.T) {
+		output, err := json.Marshal(anthropicToolResultEnvelope{
+			Format: anthropicToolResultEnvelopeFormat,
+			Text:   []string{"tool failed"},
+			ToolReferences: []anthropicToolReferenceEnvelope{
+				{ToolName: "WebFetch"},
+			},
+			IsError: true,
+		})
+		require.NoError(t, err)
+
+		req := &ResponsesRequest{
+			Model:           "gpt-5.4",
+			Input:           json.RawMessage(`[{"type":"function_call_output","call_id":"fc_toolu_456","output":` + strconv.Quote(string(output)) + `}]`),
+			MaxOutputTokens: intPtr(256),
+		}
+
+		out, err := ResponsesToAnthropicRequest(req)
+		require.NoError(t, err)
+
+		require.Len(t, out.Messages, 1)
+		assert.Equal(t, "user", out.Messages[0].Role)
+
+		var blocks []AnthropicContentBlock
+		require.NoError(t, json.Unmarshal(out.Messages[0].Content, &blocks))
+		require.Len(t, blocks, 1)
+		assert.Equal(t, "tool_result", blocks[0].Type)
+		assert.Equal(t, "toolu_456", blocks[0].ToolUseID)
+		assert.True(t, blocks[0].IsError)
+
+		var contentBlocks []AnthropicContentBlock
+		require.NoError(t, json.Unmarshal(blocks[0].Content, &contentBlocks))
+		require.Len(t, contentBlocks, 2)
+		assert.Equal(t, "text", contentBlocks[0].Type)
+		assert.Equal(t, "tool failed", contentBlocks[0].Text)
+		assert.Equal(t, "tool_reference", contentBlocks[1].Type)
+		assert.Equal(t, "WebFetch", contentBlocks[1].ToolName)
+	})
 }
 
 func intPtr(v int) *int {

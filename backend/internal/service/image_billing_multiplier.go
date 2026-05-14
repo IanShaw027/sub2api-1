@@ -2,7 +2,7 @@ package service
 
 func resolveImageRateMultiplier(apiKey *APIKey, effectiveGroupMultiplier float64) float64 {
 	if apiKey != nil && apiKey.Group != nil && apiKey.Group.Platform == PlatformOpenAI {
-		return effectiveGroupMultiplier
+		return 1
 	}
 	if apiKey != nil && apiKey.Group != nil && apiKey.Group.ImageRateIndependent {
 		if apiKey.Group.ImageRateMultiplier < 0 {

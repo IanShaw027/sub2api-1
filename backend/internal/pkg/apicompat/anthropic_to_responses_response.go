@@ -74,6 +74,12 @@ func AnthropicToResponsesResponse(resp *AnthropicResponse) *ResponsesResponse {
 	}
 
 	// Assemble message output item from text parts
+	if resp.StopReason == "refusal" && len(msgParts) == 0 && resp.StopDetails != nil && resp.StopDetails.Explanation != nil && *resp.StopDetails.Explanation != "" {
+		msgParts = append(msgParts, ResponsesContentPart{
+			Type:    "refusal",
+			Refusal: *resp.StopDetails.Explanation,
+		})
+	}
 	if len(msgParts) > 0 {
 		outputs = append(outputs, ResponsesOutput{
 			Type:    "message",
@@ -167,6 +173,7 @@ type AnthropicEventToResponsesState struct {
 	// For function_call: track per-output info
 	CurrentCallID string
 	CurrentName   string
+	CurrentArgs   string
 
 	// Usage from message_delta
 	InputTokens          int
@@ -301,6 +308,10 @@ func anthToResHandleContentBlockStart(evt *AnthropicStreamEvent, state *Anthropi
 		state.CurrentItemType = "function_call"
 		state.CurrentCallID = toResponsesCallID(evt.ContentBlock.ID)
 		state.CurrentName = evt.ContentBlock.Name
+		state.CurrentArgs = ""
+		if len(evt.ContentBlock.Input) > 0 {
+			state.CurrentArgs = string(evt.ContentBlock.Input)
+		}
 
 		events = append(events, makeResponsesEvent(state, "response.output_item.added", &ResponsesStreamEvent{
 			OutputIndex: state.OutputIndex,
@@ -349,6 +360,7 @@ func anthToResHandleContentBlockDelta(evt *AnthropicStreamEvent, state *Anthropi
 		if evt.Delta.PartialJSON == "" {
 			return nil
 		}
+		state.CurrentArgs += evt.Delta.PartialJSON
 		return []ResponsesStreamEvent{makeResponsesEvent(state, "response.function_call_arguments.delta", &ResponsesStreamEvent{
 			OutputIndex: state.OutputIndex,
 			Delta:       evt.Delta.PartialJSON,
@@ -387,6 +399,7 @@ func anthToResHandleContentBlockStop(evt *AnthropicStreamEvent, state *Anthropic
 				ItemID:      state.CurrentItemID,
 				CallID:      state.CurrentCallID,
 				Name:        state.CurrentName,
+				Arguments:   state.CurrentArgs,
 			}),
 		}
 		events = append(events, closeCurrentResponsesItem(state)...)
@@ -453,6 +466,7 @@ func closeCurrentResponsesItem(state *AnthropicEventToResponsesState) []Response
 	state.CurrentItemID = ""
 	state.CurrentCallID = ""
 	state.CurrentName = ""
+	state.CurrentArgs = ""
 	state.OutputIndex++
 	state.ContentIndex = 0
 

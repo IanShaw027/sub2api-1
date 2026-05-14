@@ -163,6 +163,7 @@ type stubConcurrencyCache struct {
 	loadBatchErr    error
 	loadMap         map[int64]*AccountLoadInfo
 	acquireResults  map[int64]bool
+	acquireMax      map[int64]int
 	waitCounts      map[int64]int
 	skipDefaultLoad bool
 }
@@ -194,6 +195,9 @@ func (w *failingGinWriter) Write(p []byte) (int, error) {
 }
 
 func (c stubConcurrencyCache) AcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
+	if c.acquireMax != nil {
+		c.acquireMax[accountID] = maxConcurrency
+	}
 	if c.acquireResults != nil {
 		if result, ok := c.acquireResults[accountID]; ok {
 			return result, nil
@@ -1764,7 +1768,7 @@ func TestOpenAIGatewayService_SelectOpenAIImageCodexRouteLimitedAccountWaits(t *
 			Type:        AccountTypeOAuth,
 			Status:      StatusActive,
 			Schedulable: true,
-			Concurrency: 1,
+			Concurrency: 4,
 			Priority:    1,
 			LastUsedAt:  &oldLastUsed,
 			Credentials: map[string]any{"plan_type": "plus"},
@@ -1797,9 +1801,41 @@ func TestOpenAIGatewayService_SelectOpenAIImageCodexRouteLimitedAccountWaits(t *
 	require.False(t, selection.Acquired)
 	require.NotNil(t, selection.WaitPlan)
 	require.Equal(t, int64(47021), selection.WaitPlan.AccountID)
-	require.Equal(t, 1, selection.WaitPlan.MaxConcurrency)
+	require.Equal(t, 4, selection.WaitPlan.MaxConcurrency)
 	require.NotNil(t, selection.WaitPlan.NotBefore)
 	require.True(t, selection.WaitPlan.NotBefore.Equal(resetAt))
+}
+
+func TestOpenAIGatewayService_SelectAccountWithLoadAwarenessForImageRoute_CodexSharesAccountConcurrency(t *testing.T) {
+	accounts := []Account{
+		{
+			ID:          47041,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 6,
+			Priority:    1,
+			Credentials: map[string]any{"plan_type": "plus"},
+		},
+	}
+	acquireMax := map[int64]int{}
+	svc := &OpenAIGatewayService{
+		accountRepo: stubOpenAIAccountRepo{accounts: accounts},
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{
+			acquireResults: map[int64]bool{47041: true},
+			acquireMax:     acquireMax,
+		}),
+		cfg: &config.Config{},
+	}
+
+	selection, err := svc.selectAccountWithLoadAwarenessForImageRoute(context.Background(), nil, "", "gpt-image-1", nil, false, GroupImageGenerationRouteCodex, false)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(47041), selection.Account.ID)
+	require.True(t, selection.Acquired)
+	require.Equal(t, 6, acquireMax[47041])
 }
 
 func TestOpenAIGatewayService_SelectOpenAIImageCodexSkipsAccountRateLimitedButWeb2APIWaits(t *testing.T) {

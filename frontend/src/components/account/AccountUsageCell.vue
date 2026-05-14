@@ -605,11 +605,38 @@ const openAICurrentImageGroups = computed(() => {
   return groups
 })
 
+const hasUsageProgressData = (progress?: UsageProgress | null) => {
+  if (!progress) return false
+  const stats = progress.window_stats
+  return progress.utilization > 0 ||
+    !!progress.resets_at ||
+    progress.remaining_seconds > 0 ||
+    (stats?.requests ?? 0) > 0 ||
+    (stats?.tokens ?? 0) > 0 ||
+    (stats?.cost ?? 0) > 0
+}
+
+const isRouteVisible = (supported: boolean | undefined, hasData: boolean) => {
+  if (supported === false) return false
+  return supported === true || hasData
+}
+
 const openAIEnabledImageRoutes = computed(() => {
   const groups = openAICurrentImageGroups.value
+  const info = usageInfo.value
+  const codexSupported = info?.openai_image_codex_supported
+  const web2apiSupported = info?.openai_image_web2api_supported
+  const hasCodexData = hasUsageProgressData(info?.openai_image_codex_five_hour) || hasUsageProgressData(info?.openai_image_codex_seven_day)
+  const hasWeb2apiData = hasUsageProgressData(info?.openai_image_web2api_five_hour)
 
   if (!groups.length) {
-    return { codex: true, web2api: true, constrained: false, masterEnabled: false, hasGroups: false }
+    return {
+      codex: isRouteVisible(codexSupported, hasCodexData),
+      web2api: isRouteVisible(web2apiSupported, hasWeb2apiData),
+      constrained: false,
+      masterEnabled: false,
+      hasGroups: false
+    }
   }
 
   let codex = false
@@ -619,10 +646,10 @@ const openAIEnabledImageRoutes = computed(() => {
   for (const group of groups) {
     if (!group.allow_image_generation) continue
     masterEnabled = true
-    if ((group.image_generation_route || 'codex') === 'codex') {
+    if ((group.image_generation_route || 'codex') === 'codex' && isRouteVisible(codexSupported, hasCodexData)) {
       codex = true
     }
-    if (group.image_rate_independent === true || (group.image_generation_route || 'codex') === 'web2api') {
+    if ((group.image_generation_route || 'codex') === 'web2api' && isRouteVisible(web2apiSupported, hasWeb2apiData)) {
       web2api = true
     }
   }

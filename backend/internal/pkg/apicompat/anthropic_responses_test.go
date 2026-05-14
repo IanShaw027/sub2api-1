@@ -193,6 +193,35 @@ func TestAnthropicToResponses_ToolResultWithoutToolReferenceStaysPlain(t *testin
 	require.Equal(t, "plain output", items[0].Output)
 }
 
+func TestAnthropicToResponses_PreservesToolResultErrorEnvelope(t *testing.T) {
+	req := &AnthropicRequest{
+		Model:     "gpt-5.4",
+		MaxTokens: 256,
+		Messages: []AnthropicMessage{
+			{
+				Role:    "user",
+				Content: json.RawMessage(`[{"type":"tool_result","tool_use_id":"toolu_123","is_error":true,"content":[{"type":"text","text":"tool failed"},{"type":"tool_reference","tool_name":"WebFetch"}]}]`),
+			},
+		},
+	}
+
+	resp, err := AnthropicToResponses(req)
+	require.NoError(t, err)
+
+	var items []ResponsesInputItem
+	require.NoError(t, json.Unmarshal(resp.Input, &items))
+	require.Len(t, items, 1)
+	require.Equal(t, "function_call_output", items[0].Type)
+
+	var env anthropicToolResultEnvelope
+	require.NoError(t, json.Unmarshal([]byte(items[0].Output), &env))
+	require.Equal(t, anthropicToolResultEnvelopeFormat, env.Format)
+	require.True(t, env.IsError)
+	require.Equal(t, []string{"tool failed"}, env.Text)
+	require.Len(t, env.ToolReferences, 1)
+	require.Equal(t, "WebFetch", env.ToolReferences[0].ToolName)
+}
+
 func TestAnthropicToResponses_ToolResultWithToolReferenceStillEmitsImages(t *testing.T) {
 	req := &AnthropicRequest{
 		Model:     "gpt-5.4",
@@ -284,6 +313,14 @@ func TestResponsesToAnthropic_TextOnly(t *testing.T) {
 	assert.Equal(t, "Hello there!", anth.Content[0].Text)
 	assert.Equal(t, 10, anth.Usage.InputTokens)
 	assert.Equal(t, 5, anth.Usage.OutputTokens)
+	assert.JSONEq(t, `null`, string(anth.Container))
+	assert.JSONEq(t, `null`, string(anth.ContextManagement))
+	assert.Equal(t, "standard", anth.Usage.ServiceTier)
+	assert.Equal(t, "standard", anth.Usage.Speed)
+	require.NotNil(t, anth.Usage.CacheCreation)
+	assert.Equal(t, 0, anth.Usage.CacheCreation.Ephemeral5mInputTokens)
+	assert.Equal(t, 0, anth.Usage.CacheCreation.Ephemeral1hInputTokens)
+	assert.Empty(t, anth.Usage.Iterations)
 }
 
 func TestResponsesToAnthropic_ToolUse(t *testing.T) {
@@ -560,6 +597,10 @@ func TestResponsesToAnthropic_RefusalContentMapsStopReason(t *testing.T) {
 
 	anth := ResponsesToAnthropic(resp, "claude-opus-4-6")
 	assert.Equal(t, "refusal", anth.StopReason)
+	require.NotNil(t, anth.StopDetails)
+	assert.Equal(t, "refusal", anth.StopDetails.Type)
+	require.NotNil(t, anth.StopDetails.Explanation)
+	assert.Equal(t, "I’m sorry, I can’t help with that.", *anth.StopDetails.Explanation)
 	require.Len(t, anth.Content, 1)
 	assert.Equal(t, "text", anth.Content[0].Type)
 	assert.Equal(t, "I’m sorry, I can’t help with that.", anth.Content[0].Text)
@@ -578,6 +619,26 @@ func TestResponsesToAnthropic_ContentFilterIncompleteMapsToRefusal(t *testing.T)
 
 	anth := ResponsesToAnthropic(resp, "claude-opus-4-6")
 	assert.Equal(t, "refusal", anth.StopReason)
+	require.NotNil(t, anth.StopDetails)
+	assert.Equal(t, "content blocked by upstream policy", *anth.StopDetails.Explanation)
+}
+
+func TestResponsesToAnthropic_FailedContentFilterMapsToRefusal(t *testing.T) {
+	resp := &ResponsesResponse{
+		ID:     "resp_failed_filter",
+		Model:  "gpt-5.4",
+		Status: "failed",
+		Error: &ResponsesError{
+			Code:    "content_filter",
+			Message: "Request blocked by content policy",
+		},
+	}
+
+	anth := ResponsesToAnthropic(resp, "claude-opus-4-6")
+	assert.Equal(t, "refusal", anth.StopReason)
+	require.NotNil(t, anth.StopDetails)
+	require.NotNil(t, anth.StopDetails.Explanation)
+	assert.Equal(t, "Request blocked by content policy", *anth.StopDetails.Explanation)
 }
 
 func TestResponsesToAnthropic_ModelContextWindowExceededMapsStopReason(t *testing.T) {
@@ -1849,6 +1910,28 @@ func TestAnthropicToResponses_ToolWithoutProperties(t *testing.T) {
 	var params map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(resp.Tools[0].Parameters, &params))
 	assert.Contains(t, params, "properties")
+}
+
+func TestAnthropicToResponses_DropsDeferredToolSearchMetaTools(t *testing.T) {
+	req := &AnthropicRequest{
+		Model:     "gpt-5.2",
+		MaxTokens: 1024,
+		Messages: []AnthropicMessage{
+			{Role: "user", Content: json.RawMessage(`"Hello"`)},
+		},
+		Tools: []AnthropicTool{
+			{Type: "tool_search", Name: "tool_search", Description: "Claude local tool search"},
+			{Type: "tool_search_tool_regex_20251119", Name: "tool_search_tool_regex_20251119", Description: "Claude local regex search"},
+			{Name: "simple_tool", Description: "A tool", InputSchema: json.RawMessage(`{"type":"object"}`)},
+		},
+	}
+
+	resp, err := AnthropicToResponses(req)
+	require.NoError(t, err)
+
+	require.Len(t, resp.Tools, 1)
+	assert.Equal(t, "function", resp.Tools[0].Type)
+	assert.Equal(t, "simple_tool", resp.Tools[0].Name)
 }
 
 func TestAnthropicToResponses_ToolWithNilSchema(t *testing.T) {

@@ -225,23 +225,41 @@
             </div>
 
             <!-- Create User Button (full width on mobile, auto width on desktop) -->
-            <div class="flex min-w-[240px] items-center gap-2">
-              <label class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                {{ t('admin.users.sortConcurrency', '排序设置') }}
-              </label>
-              <select v-model="concurrencySort" data-test="concurrency-sort" class="input min-w-[180px]" @change="applySpecialSort">
-                <option value="none">{{ t('admin.users.sortConcurrencyNone', '默认排序') }}</option>
-                <option value="today_balance_usage_desc">{{ t('admin.users.sortTodayBalanceDesc', '今日余额 ↓') }}</option>
-                <option value="today_balance_usage_asc">{{ t('admin.users.sortTodayBalanceAsc', '今日余额 ↑') }}</option>
-                <option value="today_subscription_usage_desc">{{ t('admin.users.sortTodaySubscriptionDesc', '今日订阅 ↓') }}</option>
-                <option value="today_subscription_usage_asc">{{ t('admin.users.sortTodaySubscriptionAsc', '今日订阅 ↑') }}</option>
-                <option value="last_30d_usage_desc">{{ t('admin.users.sortLast30dDesc', '近30日 ↓') }}</option>
-                <option value="last_30d_usage_asc">{{ t('admin.users.sortLast30dAsc', '近30日 ↑') }}</option>
-                <option value="current_concurrency_desc">{{ t('admin.users.sortCurrentDesc', '当前并发 ↓') }}</option>
-                <option value="current_concurrency_asc">{{ t('admin.users.sortCurrentAsc', '当前并发 ↑') }}</option>
-                <option value="available_concurrency_desc">{{ t('admin.users.sortAvailableDesc', '可用并发 ↓') }}</option>
-                <option value="available_concurrency_asc">{{ t('admin.users.sortAvailableAsc', '可用并发 ↑') }}</option>
-              </select>
+            <div class="relative" ref="sortDropdownRef">
+              <button
+                @click="showSortDropdown = !showSortDropdown"
+                class="btn btn-secondary px-2 md:px-3"
+                :title="t('admin.users.sortConcurrency', '排序设置')"
+                data-test="concurrency-sort-trigger"
+              >
+                <Icon name="sort" size="sm" class="md:mr-1.5" />
+                <span class="hidden md:inline">{{ t('admin.users.sortConcurrency', '排序设置') }}</span>
+              </button>
+              <div
+                v-if="showSortDropdown"
+                class="absolute right-0 top-full z-50 mt-1 w-56 rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-dark-600 dark:bg-dark-800"
+              >
+                <button
+                  v-for="option in specialSortOptions"
+                  :key="option.value"
+                  :data-test="`concurrency-sort-option-${option.value}`"
+                  @click="
+                    concurrencySort = option.value;
+                    applySpecialSort();
+                    showSortDropdown = false;
+                  "
+                  class="flex w-full items-center justify-between px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700"
+                >
+                  <span>{{ option.label }}</span>
+                  <Icon
+                    v-if="concurrencySort === option.value"
+                    name="check"
+                    size="sm"
+                    class="text-primary-500"
+                    :stroke-width="2"
+                  />
+                </button>
+              </div>
             </div>
             <button @click="showCreateModal = true" class="btn btn-primary flex-1 md:flex-initial">
               <Icon name="plus" size="md" class="mr-2" />
@@ -951,10 +969,12 @@ const visibleFilters = reactive<Set<string>>(new Set())
 // Dropdown states
 const showFilterDropdown = ref(false)
 const showColumnDropdown = ref(false)
+const showSortDropdown = ref(false)
 
 // Dropdown refs for click outside detection
 const filterDropdownRef = ref<HTMLElement | null>(null)
 const columnDropdownRef = ref<HTMLElement | null>(null)
+const sortDropdownRef = ref<HTMLElement | null>(null)
 
 // localStorage keys
 const FILTER_VALUES_KEY = 'user-filter-values'
@@ -1022,6 +1042,19 @@ const getAttributeDefinition = (attrId: number): UserAttributeDefinition | undef
 const usageStats = ref<Record<string, BatchUserUsageStats>>({})
 const concurrencySort = ref<UserSortPreset>('none')
 syncSpecialSortSelection()
+const specialSortOptions = computed(() => [
+  { value: 'none' as UserSortPreset, label: t('admin.users.sortConcurrencyNone', '默认排序') },
+  { value: 'today_balance_usage_desc' as UserSortPreset, label: t('admin.users.sortTodayBalanceDesc', '今日余额 ↓') },
+  { value: 'today_balance_usage_asc' as UserSortPreset, label: t('admin.users.sortTodayBalanceAsc', '今日余额 ↑') },
+  { value: 'today_subscription_usage_desc' as UserSortPreset, label: t('admin.users.sortTodaySubscriptionDesc', '今日订阅 ↓') },
+  { value: 'today_subscription_usage_asc' as UserSortPreset, label: t('admin.users.sortTodaySubscriptionAsc', '今日订阅 ↑') },
+  { value: 'last_30d_usage_desc' as UserSortPreset, label: t('admin.users.sortLast30dDesc', '近30日 ↓') },
+  { value: 'last_30d_usage_asc' as UserSortPreset, label: t('admin.users.sortLast30dAsc', '近30日 ↑') },
+  { value: 'current_concurrency_desc' as UserSortPreset, label: t('admin.users.sortCurrentDesc', '当前并发 ↓') },
+  { value: 'current_concurrency_asc' as UserSortPreset, label: t('admin.users.sortCurrentAsc', '当前并发 ↑') },
+  { value: 'available_concurrency_desc' as UserSortPreset, label: t('admin.users.sortAvailableDesc', '可用并发 ↓') },
+  { value: 'available_concurrency_asc' as UserSortPreset, label: t('admin.users.sortAvailableAsc', '可用并发 ↑') }
+])
 const displayUsers = computed(() => users.value)
 // User attribute definitions and values
 const attributeDefinitions = ref<UserAttributeDefinition[]>([])
@@ -1172,6 +1205,9 @@ const handleClickOutside = (event: MouseEvent) => {
   // Close column dropdown when clicking outside
   if (columnDropdownRef.value && !columnDropdownRef.value.contains(target)) {
     showColumnDropdown.value = false
+  }
+  if (sortDropdownRef.value && !sortDropdownRef.value.contains(target)) {
+    showSortDropdown.value = false
   }
   // Close expanded group dropdown when clicking outside
   if (expandedGroupUserId.value !== null) {

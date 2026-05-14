@@ -2780,7 +2780,7 @@ func (s *OpenAIGatewayService) tryAcquireAccountSlot(ctx context.Context, accoun
 }
 
 func concurrencyForOpenAIAccountSelection(account *Account, requiredImageRoute string) int {
-	if requiredImageRoute != "" {
+	if NormalizeGroupImageGenerationRoute(requiredImageRoute) == GroupImageGenerationRouteWeb2API {
 		return 1
 	}
 	if account == nil || account.Concurrency <= 0 {
@@ -7147,7 +7147,7 @@ func (s *OpenAIGatewayService) calculateOpenAIImageRequestCost(
 		return imageCost, nil
 	}
 
-	tokenCost, err := s.calculateOpenAITokenUsageCost(ctx, apiKey, tokenBillingModel, multiplier, tokens, serviceTier)
+	tokenCost, err := s.calculateOpenAITokenUsageCost(ctx, apiKey, tokenBillingModel, imageRateMultiplier, tokens, serviceTier)
 	if err != nil {
 		logger.LegacyPrintf("service.openai_gateway", "Calculate image response token cost failed: %v", err)
 		return imageCost, nil

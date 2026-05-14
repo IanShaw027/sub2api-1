@@ -33,6 +33,9 @@ func TestResponsesEventToAnthropicEvents_MessageStartSSEEmitsPingAndCleanEnvelop
 
 	message, ok := decoded["message"].(map[string]any)
 	require.True(t, ok)
+	require.NotNil(t, events[0].Message)
+	assert.JSONEq(t, "null", string(events[0].Message.Container))
+	assert.JSONEq(t, "null", string(events[0].Message.ContextManagement))
 	stopReason, ok := message["stop_reason"]
 	require.True(t, ok)
 	assert.Nil(t, stopReason)
@@ -127,4 +130,93 @@ func TestResponsesEventToAnthropicEvents_MessageItemAddedClosesOpenToolBlock(t *
 	}, state)
 	require.Len(t, events, 1)
 	assert.Equal(t, "content_block_stop", events[0].Type)
+}
+
+func TestResponsesEventToAnthropicEvents_CompletedDeltaEmitsAnthropicEnvelopeDefaults(t *testing.T) {
+	state := NewResponsesEventToAnthropicState()
+
+	ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type: "response.created",
+		Response: &ResponsesResponse{
+			ID:    "resp_completed_1",
+			Model: "gpt-5.4",
+		},
+	}, state)
+
+	events := ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type: "response.completed",
+		Response: &ResponsesResponse{
+			Status: "completed",
+		},
+	}, state)
+
+	require.Len(t, events, 2)
+	assert.Equal(t, "message_delta", events[0].Type)
+	require.NotNil(t, events[0].Delta)
+	assert.Equal(t, "end_turn", events[0].Delta.StopReason)
+	assert.JSONEq(t, "null", string(events[0].Delta.Container))
+	assert.JSONEq(t, "null", string(events[0].ContextManagement))
+	require.NotNil(t, events[0].Usage)
+	assert.Equal(t, 0, events[0].Usage.InputTokens)
+	assert.Equal(t, 0, events[0].Usage.OutputTokens)
+	assert.Equal(t, 0, events[0].Usage.CacheCreationInputTokens)
+	assert.Equal(t, 0, events[0].Usage.CacheReadInputTokens)
+	require.NotNil(t, events[0].Usage.CacheCreation)
+	assert.Equal(t, 0, events[0].Usage.CacheCreation.Ephemeral5mInputTokens)
+	assert.Equal(t, 0, events[0].Usage.CacheCreation.Ephemeral1hInputTokens)
+	assert.Equal(t, "standard", events[0].Usage.ServiceTier)
+	assert.Equal(t, "", events[0].Usage.InferenceGeo)
+	assert.Empty(t, events[0].Usage.Iterations)
+	assert.Equal(t, "standard", events[0].Usage.Speed)
+	assert.Equal(t, "message_stop", events[1].Type)
+
+	payload, err := json.Marshal(events[0])
+	require.NoError(t, err)
+	assert.Contains(t, string(payload), `"context_management":null`)
+	assert.Contains(t, string(payload), `"container":null`)
+	assert.Contains(t, string(payload), `"input_tokens":0`)
+	assert.Contains(t, string(payload), `"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}`)
+}
+
+func TestResponsesEventToAnthropicEvents_FunctionCallArgumentsDoneSynthesizesInputJSONDelta(t *testing.T) {
+	state := NewResponsesEventToAnthropicState()
+
+	ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type: "response.created",
+		Response: &ResponsesResponse{
+			ID:    "resp_tool_1",
+			Model: "gpt-5.4",
+		},
+	}, state)
+
+	startEvents := ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:        "response.output_item.added",
+		OutputIndex: 0,
+		Item: &ResponsesOutput{
+			Type:   "function_call",
+			CallID: "call_1",
+			Name:   "lookup_weather",
+		},
+	}, state)
+	require.Len(t, startEvents, 1)
+
+	events := ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:        "response.function_call_arguments.done",
+		OutputIndex: 0,
+		Arguments:   `{"city":"NYC"}`,
+	}, state)
+
+	require.Len(t, events, 2)
+	assert.Equal(t, "content_block_delta", events[0].Type)
+	require.NotNil(t, events[0].Index)
+	assert.Equal(t, 0, *events[0].Index)
+	require.NotNil(t, events[0].Delta)
+	assert.Equal(t, "input_json_delta", events[0].Delta.Type)
+	assert.Equal(t, `{"city":"NYC"}`, events[0].Delta.PartialJSON)
+	assert.Equal(t, "content_block_stop", events[1].Type)
+	require.NotNil(t, events[1].Index)
+	assert.Equal(t, 0, *events[1].Index)
+	assert.True(t, state.HasReceivedArgumentsDelta)
+	assert.False(t, state.ContentBlockOpen)
+	assert.Equal(t, 1, state.ContentBlockIndex)
 }

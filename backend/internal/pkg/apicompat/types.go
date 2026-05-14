@@ -6,7 +6,10 @@ package apicompat
 
 import "encoding/json"
 
-const anthropicToolResultEnvelopeFormat = "anthropic_tool_result_v1"
+const (
+	anthropicToolResultEnvelopeFormat = "anthropic_tool_result_v1"
+	anthropicToolErrorPrefix          = "[tool_error] "
+)
 
 type anthropicToolReferenceEnvelope struct {
 	ToolName string `json:"tool_name"`
@@ -16,6 +19,7 @@ type anthropicToolResultEnvelope struct {
 	Format         string                           `json:"sub2api_format"`
 	Text           []string                         `json:"text,omitempty"`
 	ToolReferences []anthropicToolReferenceEnvelope `json:"tool_references,omitempty"`
+	IsError        bool                             `json:"is_error,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -121,23 +125,36 @@ type AnthropicCacheControl struct {
 
 // AnthropicResponse is the non-streaming response from POST /v1/messages.
 type AnthropicResponse struct {
-	ID           string                  `json:"id"`
-	Type         string                  `json:"type"` // "message"
-	Role         string                  `json:"role"` // "assistant"
-	Content      []AnthropicContentBlock `json:"content"`
-	Model        string                  `json:"model"`
-	StopReason   string                  `json:"stop_reason,omitempty"`
-	StopDetails  *AnthropicStopDetails   `json:"stop_details,omitempty"`
-	StopSequence *string                 `json:"stop_sequence,omitempty"`
-	Usage        AnthropicUsage          `json:"usage"`
+	ID                string                  `json:"id"`
+	Type              string                  `json:"type"` // "message"
+	Role              string                  `json:"role"` // "assistant"
+	Container         json.RawMessage         `json:"container"`
+	ContextManagement json.RawMessage         `json:"context_management"`
+	Content           []AnthropicContentBlock `json:"content"`
+	Model             string                  `json:"model"`
+	StopReason        string                  `json:"stop_reason,omitempty"`
+	StopDetails       *AnthropicStopDetails   `json:"stop_details,omitempty"`
+	StopSequence      *string                 `json:"stop_sequence,omitempty"`
+	Usage             AnthropicUsage          `json:"usage"`
 }
 
 // AnthropicUsage holds token counts in Anthropic format.
 type AnthropicUsage struct {
-	InputTokens              int `json:"input_tokens"`
-	OutputTokens             int `json:"output_tokens"`
-	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
-	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+	InputTokens              int                     `json:"input_tokens"`
+	OutputTokens             int                     `json:"output_tokens"`
+	CacheCreationInputTokens int                     `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int                     `json:"cache_read_input_tokens"`
+	CacheCreation            *AnthropicCacheCreation `json:"cache_creation,omitempty"`
+	ServiceTier              string                  `json:"service_tier,omitempty"`
+	InferenceGeo             string                  `json:"inference_geo,omitempty"`
+	Iterations               []string                `json:"iterations"`
+	Speed                    string                  `json:"speed,omitempty"`
+}
+
+// AnthropicCacheCreation holds the nested cache_creation usage counters.
+type AnthropicCacheCreation struct {
+	Ephemeral5mInputTokens int `json:"ephemeral_5m_input_tokens"`
+	Ephemeral1hInputTokens int `json:"ephemeral_1h_input_tokens"`
 }
 
 // AnthropicStopDetails carries structured refusal details.
@@ -157,6 +174,9 @@ type AnthropicStreamEvent struct {
 
 	// message_start
 	Message *AnthropicResponse `json:"message,omitempty"`
+
+	// message_delta
+	ContextManagement json.RawMessage `json:"context_management"`
 
 	// content_block_start
 	Index        *int                   `json:"index,omitempty"`
@@ -217,6 +237,9 @@ type AnthropicDelta struct {
 
 	// input_json_delta
 	PartialJSON string `json:"partial_json,omitempty"`
+
+	// message_delta fields
+	Container json.RawMessage `json:"container"`
 
 	// thinking_delta
 	Thinking string `json:"thinking,omitempty"`

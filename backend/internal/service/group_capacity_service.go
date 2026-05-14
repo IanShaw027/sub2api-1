@@ -60,7 +60,22 @@ func (s *GroupCapacityService) getGroupCapacity(ctx context.Context, groupID int
 	if s.concurrencyService != nil {
 		concurrencyUsed, _ = s.concurrencyService.GetGroupConcurrency(ctx, groupID)
 	}
+
+	concurrencyMax := 0
+	if s.accountRepo != nil {
+		accounts, err := s.accountRepo.ListSchedulableByGroupID(ctx, groupID)
+		if err != nil {
+			return GroupCapacitySummary{}, err
+		}
+		for i := range accounts {
+			if accounts[i].Concurrency > 0 {
+				concurrencyMax += accounts[i].Concurrency
+			}
+		}
+	}
+
 	return GroupCapacitySummary{
 		ConcurrencyUsed: concurrencyUsed,
+		ConcurrencyMax:  concurrencyMax,
 	}, nil
 }

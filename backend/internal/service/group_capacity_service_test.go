@@ -36,11 +36,12 @@ func (c groupCapacityConcurrencyCacheStub) GetGroupConcurrency(_ context.Context
 	return c.groupConcurrency[groupID], nil
 }
 
-func TestGroupCapacityUsesGroupScopedConcurrencyOnly(t *testing.T) {
+func TestGroupCapacityReturnsGroupScopedUsedAndMax(t *testing.T) {
 	account := Account{ID: 101, Concurrency: 10}
+	account2 := Account{ID: 202, Concurrency: 4}
 	accountRepo := groupCapacityAccountRepoStub{
 		accountsByGroup: map[int64][]Account{
-			10: {account},
+			10: {account, account2},
 			20: {account},
 		},
 	}
@@ -73,7 +74,7 @@ func TestGroupCapacityUsesGroupScopedConcurrencyOnly(t *testing.T) {
 		byGroup[summary.GroupID] = summary
 	}
 	require.Equal(t, 2, byGroup[10].ConcurrencyUsed)
-	require.Zero(t, byGroup[10].ConcurrencyMax, "shared account max concurrency must not be shown as group capacity")
+	require.Equal(t, 14, byGroup[10].ConcurrencyMax)
 	require.Zero(t, byGroup[20].ConcurrencyUsed)
-	require.Zero(t, byGroup[20].ConcurrencyMax)
+	require.Equal(t, 10, byGroup[20].ConcurrencyMax)
 }

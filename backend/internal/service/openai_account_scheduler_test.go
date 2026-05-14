@@ -628,6 +628,69 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_Web2APIRateLim
 	require.Greater(t, selection.WaitPlan.Timeout, cfg.Gateway.Scheduling.FallbackWaitTimeout)
 }
 
+func TestOpenAIAccountScheduleRequest_MaxConcurrencyForImageRoutes(t *testing.T) {
+	account := &Account{Concurrency: 7}
+
+	codex := OpenAIAccountScheduleRequest{
+		RequiredImageCapability: OpenAIImagesCapabilityBasic,
+		RequiredImageRoute:      GroupImageGenerationRouteCodex,
+	}
+	require.Equal(t, 7, codex.MaxConcurrencyFor(account))
+
+	web2api := OpenAIAccountScheduleRequest{
+		RequiredImageCapability: OpenAIImagesCapabilityBasic,
+		RequiredImageRoute:      GroupImageGenerationRouteWeb2API,
+	}
+	require.Equal(t, 1, web2api.MaxConcurrencyFor(account))
+}
+
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_CodexSharesAccountConcurrency(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(10102)
+	accounts := []Account{
+		{
+			ID:          32021,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 5,
+			Priority:    1,
+			Credentials: map[string]any{"plan_type": "plus"},
+		},
+	}
+	acquireMax := map[int64]int{}
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+	svc := &OpenAIGatewayService{
+		accountRepo:      schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:            &schedulerTestGatewayCache{},
+		cfg:              cfg,
+		rateLimitService: newOpenAIAdvancedSchedulerRateLimitService("true"),
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{
+			acquireResults: map[int64]bool{32021: true},
+			acquireMax:     acquireMax,
+		}),
+	}
+
+	selection, _, err := svc.SelectAccountWithSchedulerForImages(
+		ctx,
+		&groupID,
+		"",
+		"gpt-image-1",
+		nil,
+		OpenAIImagesCapabilityBasic,
+		GroupImageGenerationRouteCodex,
+		true,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(32021), selection.Account.ID)
+	require.True(t, selection.Acquired)
+	require.Equal(t, 5, acquireMax[32021])
+}
+
 func TestOpenAIGatewayService_SelectAccountWithScheduler_SessionStickyDBRuntimeRecheckSkipsStaleCachedAccount(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(10103)

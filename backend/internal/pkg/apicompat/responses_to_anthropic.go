@@ -3,6 +3,7 @@ package apicompat
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -26,10 +27,12 @@ type pendingAnthropicWebSearchResult struct {
 // blocks; function_call items become tool_use blocks.
 func ResponsesToAnthropic(resp *ResponsesResponse, model string, nameMaps ...map[string]string) *AnthropicResponse {
 	out := &AnthropicResponse{
-		ID:    resp.ID,
-		Type:  "message",
-		Role:  "assistant",
-		Model: model,
+		ID:                resp.ID,
+		Type:              "message",
+		Role:              "assistant",
+		Container:         json.RawMessage("null"),
+		ContextManagement: json.RawMessage("null"),
+		Model:             model,
 	}
 	var toolNameMap map[string]string
 	if len(nameMaps) > 0 {
@@ -108,16 +111,15 @@ func ResponsesToAnthropic(resp *ResponsesResponse, model string, nameMaps ...map
 	}
 	out.Content = blocks
 
-	out.StopReason = responsesStatusToAnthropicStopReason(resp.Status, resp.IncompleteDetails, resp.Output, blocks)
+	out.StopReason = responsesStatusToAnthropicStopReason(resp.Status, resp.IncompleteDetails, resp.Error, resp.Output, blocks)
 	if out.StopReason == "refusal" {
-		out.StopDetails = refusalStopDetails()
+		out.StopDetails = refusalStopDetails(responsesRefusalExplanation(resp.Output, resp.Error))
 	}
 
+	out.Usage = newAnthropicUsageEnvelope(0, 0, 0)
 	if resp.Usage != nil {
-		out.Usage = AnthropicUsage{
-			InputTokens:  resp.Usage.InputTokens,
-			OutputTokens: resp.Usage.OutputTokens,
-		}
+		out.Usage.InputTokens = resp.Usage.InputTokens
+		out.Usage.OutputTokens = resp.Usage.OutputTokens
 		if resp.Usage.InputTokensDetails != nil {
 			out.Usage.CacheReadInputTokens = resp.Usage.InputTokensDetails.CachedTokens
 		}
@@ -126,13 +128,56 @@ func ResponsesToAnthropic(resp *ResponsesResponse, model string, nameMaps ...map
 	return out
 }
 
-func refusalStopDetails() *AnthropicStopDetails {
-	return &AnthropicStopDetails{Type: "refusal"}
+func newAnthropicUsageEnvelope(inputTokens, outputTokens, cacheReadTokens int) AnthropicUsage {
+	return AnthropicUsage{
+		InputTokens:              inputTokens,
+		OutputTokens:             outputTokens,
+		CacheCreationInputTokens: 0,
+		CacheReadInputTokens:     cacheReadTokens,
+		CacheCreation: &AnthropicCacheCreation{
+			Ephemeral5mInputTokens: 0,
+			Ephemeral1hInputTokens: 0,
+		},
+		ServiceTier:  "standard",
+		InferenceGeo: "",
+		Iterations:   []string{},
+		Speed:        "standard",
+	}
+}
+
+func refusalStopDetails(explanation string) *AnthropicStopDetails {
+	if strings.TrimSpace(explanation) == "" {
+		explanation = "content blocked by upstream policy"
+	}
+	return &AnthropicStopDetails{
+		Type:        "refusal",
+		Explanation: &explanation,
+	}
+}
+
+func responsesRefusalExplanation(output []ResponsesOutput, failedErr *ResponsesError) string {
+	if failedErr != nil {
+		if msg := strings.TrimSpace(failedErr.Message); msg != "" {
+			return msg
+		}
+	}
+	for _, item := range output {
+		if item.Type != "message" {
+			continue
+		}
+		for _, part := range item.Content {
+			if part.Type == "refusal" && strings.TrimSpace(part.Refusal) != "" {
+				return strings.TrimSpace(part.Refusal)
+			}
+		}
+	}
+	return ""
 }
 
 func responsesStatusToAnthropicStopReason(
 	status string,
 	details *ResponsesIncompleteDetails,
+	failedErr *ResponsesError,
 	output []ResponsesOutput,
 	blocks []AnthropicContentBlock,
 ) string {
@@ -157,6 +202,11 @@ func responsesStatusToAnthropicStopReason(
 			return "tool_use"
 		}
 		return "end_turn"
+	case "failed":
+		if responsesOutputHasRefusal(output) || responsesErrorLooksLikeContentFilter(failedErr) {
+			return "refusal"
+		}
+		return "end_turn"
 	default:
 		return "end_turn"
 	}
@@ -172,9 +222,10 @@ type ResponsesEventToAnthropicState struct {
 	MessageStartSent bool
 	MessageStopSent  bool
 
-	ContentBlockIndex int
-	ContentBlockOpen  bool
-	CurrentBlockType  string // "text" | "thinking" | "tool_use"
+	ContentBlockIndex         int
+	ContentBlockOpen          bool
+	CurrentBlockType          string // "text" | "thinking" | "tool_use"
+	HasReceivedArgumentsDelta bool
 
 	// OutputIndexToBlockIdx maps Responses output_index → Anthropic content block index.
 	OutputIndexToBlockIdx map[int]int
@@ -218,7 +269,7 @@ func ResponsesEventToAnthropicEvents(
 	case "response.function_call_arguments.delta":
 		return resToAnthHandleFuncArgsDelta(evt, state)
 	case "response.function_call_arguments.done":
-		return resToAnthHandleBlockDone(state)
+		return resToAnthHandleFuncArgsDone(evt, state)
 	case "response.output_item.done":
 		return resToAnthHandleOutputItemDone(evt, state)
 	case "response.reasoning_summary_text.delta":
@@ -247,12 +298,13 @@ func FinalizeResponsesAnthropicStream(state *ResponsesEventToAnthropicState) []A
 			Type: "message_delta",
 			Delta: &AnthropicDelta{
 				StopReason: "end_turn",
+				Container:  json.RawMessage("null"),
 			},
-			Usage: &AnthropicUsage{
-				InputTokens:          state.InputTokens,
-				OutputTokens:         state.OutputTokens,
-				CacheReadInputTokens: state.CacheReadInputTokens,
-			},
+			ContextManagement: json.RawMessage("null"),
+			Usage: func() *AnthropicUsage {
+				usage := newAnthropicUsageEnvelope(state.InputTokens, state.OutputTokens, state.CacheReadInputTokens)
+				return &usage
+			}(),
 		},
 		AnthropicStreamEvent{Type: "message_stop"},
 	)
@@ -294,17 +346,14 @@ func resToAnthHandleCreated(evt *ResponsesStreamEvent, state *ResponsesEventToAn
 	return []AnthropicStreamEvent{{
 		Type: "message_start",
 		Message: &AnthropicResponse{
-			ID:      state.ResponseID,
-			Type:    "message",
-			Role:    "assistant",
-			Content: []AnthropicContentBlock{},
-			Model:   state.Model,
-			Usage: AnthropicUsage{
-				InputTokens:              0,
-				OutputTokens:             0,
-				CacheCreationInputTokens: 0,
-				CacheReadInputTokens:     0,
-			},
+			ID:                state.ResponseID,
+			Type:              "message",
+			Role:              "assistant",
+			Container:         json.RawMessage("null"),
+			ContextManagement: json.RawMessage("null"),
+			Content:           []AnthropicContentBlock{},
+			Model:             state.Model,
+			Usage:             newAnthropicUsageEnvelope(0, 0, 0),
 		},
 	}}
 }
@@ -323,6 +372,7 @@ func resToAnthHandleOutputItemAdded(evt *ResponsesStreamEvent, state *ResponsesE
 		state.OutputIndexToBlockIdx[evt.OutputIndex] = idx
 		state.ContentBlockOpen = true
 		state.CurrentBlockType = "tool_use"
+		state.HasReceivedArgumentsDelta = false
 
 		events = append(events, AnthropicStreamEvent{
 			Type:  "content_block_start",
@@ -407,6 +457,7 @@ func resToAnthHandleFuncArgsDelta(evt *ResponsesStreamEvent, state *ResponsesEve
 	if !ok {
 		return nil
 	}
+	state.HasReceivedArgumentsDelta = true
 
 	return []AnthropicStreamEvent{{
 		Type:  "content_block_delta",
@@ -416,6 +467,32 @@ func resToAnthHandleFuncArgsDelta(evt *ResponsesStreamEvent, state *ResponsesEve
 			PartialJSON: evt.Delta,
 		},
 	}}
+}
+
+func resToAnthHandleFuncArgsDone(evt *ResponsesStreamEvent, state *ResponsesEventToAnthropicState) []AnthropicStreamEvent {
+	var events []AnthropicStreamEvent
+	if !state.HasReceivedArgumentsDelta && strings.TrimSpace(evt.Arguments) != "" {
+		blockIdx, ok := state.OutputIndexToBlockIdx[evt.OutputIndex]
+		if !ok && state.ContentBlockOpen && state.CurrentBlockType == "tool_use" {
+			blockIdx = state.ContentBlockIndex
+			ok = true
+		}
+		if ok {
+			events = append(events, AnthropicStreamEvent{
+				Type:  "content_block_delta",
+				Index: &blockIdx,
+				Delta: &AnthropicDelta{
+					Type:        "input_json_delta",
+					PartialJSON: evt.Arguments,
+				},
+			})
+			state.HasReceivedArgumentsDelta = true
+		}
+	}
+	if state.ContentBlockOpen && state.CurrentBlockType == "tool_use" {
+		events = append(events, closeCurrentBlock(state)...)
+	}
+	return events
 }
 
 func resToAnthHandleReasoningDelta(evt *ResponsesStreamEvent, state *ResponsesEventToAnthropicState) []AnthropicStreamEvent {
@@ -517,6 +594,7 @@ func resToAnthHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 
 	stopReason := "end_turn"
 	var stopDetails *AnthropicStopDetails
+	var refusalExplanation string
 	if evt.Response != nil {
 		if evt.Response.Usage != nil {
 			state.InputTokens = evt.Response.Usage.InputTokens
@@ -533,7 +611,8 @@ func resToAnthHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 					stopReason = "max_tokens"
 				case "content_filter":
 					stopReason = "refusal"
-					stopDetails = refusalStopDetails()
+					refusalExplanation = responsesRefusalExplanation(evt.Response.Output, evt.Response.Error)
+					stopDetails = refusalStopDetails(refusalExplanation)
 				case "model_context_window_exceeded":
 					stopReason = "model_context_window_exceeded"
 				}
@@ -541,11 +620,18 @@ func resToAnthHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 		case "completed":
 			if responsesOutputHasRefusal(evt.Response.Output) {
 				stopReason = "refusal"
-				stopDetails = refusalStopDetails()
+				refusalExplanation = responsesRefusalExplanation(evt.Response.Output, evt.Response.Error)
+				stopDetails = refusalStopDetails(refusalExplanation)
 				break
 			}
 			if state.ContentBlockIndex > 0 && state.CurrentBlockType == "tool_use" {
 				stopReason = "tool_use"
+			}
+		case "failed":
+			if responsesOutputHasRefusal(evt.Response.Output) || responsesErrorLooksLikeContentFilter(evt.Response.Error) {
+				stopReason = "refusal"
+				refusalExplanation = responsesRefusalExplanation(evt.Response.Output, evt.Response.Error)
+				stopDetails = refusalStopDetails(refusalExplanation)
 			}
 		}
 	}
@@ -575,12 +661,13 @@ func resToAnthHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 			Delta: &AnthropicDelta{
 				StopReason:  stopReason,
 				StopDetails: stopDetails,
+				Container:   json.RawMessage("null"),
 			},
-			Usage: &AnthropicUsage{
-				InputTokens:          state.InputTokens,
-				OutputTokens:         state.OutputTokens,
-				CacheReadInputTokens: state.CacheReadInputTokens,
-			},
+			ContextManagement: json.RawMessage("null"),
+			Usage: func() *AnthropicUsage {
+				usage := newAnthropicUsageEnvelope(state.InputTokens, state.OutputTokens, state.CacheReadInputTokens)
+				return &usage
+			}(),
 		},
 		AnthropicStreamEvent{Type: "message_stop"},
 	)

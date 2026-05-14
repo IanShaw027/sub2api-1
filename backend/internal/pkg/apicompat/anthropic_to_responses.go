@@ -80,7 +80,7 @@ func AnthropicToResponses(req *AnthropicRequest) (*ResponsesRequest, error) {
 func responsesIncludeForAnthropicTools(tools []AnthropicTool) []string {
 	include := []string{"reasoning.encrypted_content"}
 	for _, tool := range tools {
-		if strings.HasPrefix(tool.Type, "web_search") {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(tool.Type)), "web_search") {
 			include = append(include, "web_search_call.action.sources")
 			break
 		}
@@ -412,6 +412,9 @@ func anthropicDocumentToResponsesPart(b AnthropicContentBlock) *ResponsesContent
 // (the Responses API output field only accepts strings).
 func convertToolResultOutput(b AnthropicContentBlock) (string, []ResponsesContentPart) {
 	if len(b.Content) == 0 {
+		if b.IsError {
+			return anthropicToolErrorPrefix + "(empty)", nil
+		}
 		return "(empty)", nil
 	}
 
@@ -421,12 +424,18 @@ func convertToolResultOutput(b AnthropicContentBlock) (string, []ResponsesConten
 		if s == "" {
 			s = "(empty)"
 		}
+		if b.IsError {
+			s = anthropicToolErrorPrefix + s
+		}
 		return s, nil
 	}
 
 	// Array of content blocks — may contain text and/or images.
 	var inner []AnthropicContentBlock
 	if err := json.Unmarshal(b.Content, &inner); err != nil {
+		if b.IsError {
+			return anthropicToolErrorPrefix + "(empty)", nil
+		}
 		return "(empty)", nil
 	}
 
@@ -456,6 +465,7 @@ func convertToolResultOutput(b AnthropicContentBlock) (string, []ResponsesConten
 			Format:         anthropicToolResultEnvelopeFormat,
 			Text:           textParts,
 			ToolReferences: toolReferences,
+			IsError:        b.IsError,
 		})
 		if err == nil {
 			return string(payload), imageParts
@@ -465,6 +475,9 @@ func convertToolResultOutput(b AnthropicContentBlock) (string, []ResponsesConten
 	text := strings.Join(textParts, "\n\n")
 	if text == "" {
 		text = "(empty)"
+	}
+	if b.IsError {
+		text = anthropicToolErrorPrefix + text
 	}
 	return text, imageParts
 }
@@ -505,8 +518,11 @@ func mapAnthropicEffortToResponses(effort string) string {
 func convertAnthropicToolsToResponses(tools []AnthropicTool) []ResponsesTool {
 	var out []ResponsesTool
 	for _, t := range tools {
+		if isAnthropicDeferredToolSearch(t) {
+			continue
+		}
 		// Anthropic server tools like "web_search_20250305" → OpenAI {"type":"web_search"}
-		if strings.HasPrefix(t.Type, "web_search") {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(t.Type)), "web_search") {
 			out = append(out, ResponsesTool{Type: "web_search"})
 			continue
 		}
@@ -519,6 +535,10 @@ func convertAnthropicToolsToResponses(tools []AnthropicTool) []ResponsesTool {
 		})
 	}
 	return out
+}
+
+func isAnthropicDeferredToolSearch(tool AnthropicTool) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(tool.Type)), "tool_search")
 }
 
 func AugmentClaudeToolDescriptions(tools []ResponsesTool) {

@@ -69,7 +69,7 @@ type OpenAIAccountScheduleRequest struct {
 
 func (r OpenAIAccountScheduleRequest) MaxConcurrencyFor(account *Account) int {
 	if r.RequiredImageCapability != "" {
-		return 1
+		return concurrencyForOpenAIAccountSelection(account, r.RequiredImageRoute)
 	}
 	if account == nil || account.Concurrency <= 0 {
 		return 1
@@ -449,7 +449,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	}
 
 	cfg := s.service.schedulingConfig()
-	// WaitPlan.MaxConcurrency 使用实际调度并发槽位；图片请求固定为 1。
+	// WaitPlan.MaxConcurrency 使用实际调度并发槽位；web2api 图片请求固定为 1，codex 路由共享账号并发。
 	if s.service.concurrencyService != nil {
 		return s.service.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
 			AccountID:      accountID,
@@ -962,7 +962,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	}
 
 	cfg := s.service.schedulingConfig()
-	// WaitPlan.MaxConcurrency 使用实际调度并发槽位；图片请求固定为 1。
+	// WaitPlan.MaxConcurrency 使用实际调度并发槽位；web2api 图片请求固定为 1，codex 路由共享账号并发。
 	for _, candidate := range waitSelectionOrder {
 		fresh := s.service.resolveFreshSchedulableOpenAIAccount(ctx, candidate.account, req.RequestedModel, false, req.RequiredImageRoute)
 		if fresh == nil || !s.isAccountTransportCompatible(fresh, req.RequiredTransport) || !s.isAccountRequestCompatible(ctx, fresh, req) {
@@ -1334,7 +1334,7 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 			nextExcluded[selection.Account.ID] = struct{}{}
 			return s.SelectAccountWithSchedulerForImages(ctx, groupID, sessionHash, requestedModel, nextExcluded, requiredCapability, requiredRoute, requireOAuthAccount)
 		}
-		return s.normalizeOpenAIImageSelectionConcurrency(ctx, groupID, selection, requiredCapability), decision, nil
+		return s.normalizeOpenAIImageSelectionConcurrency(ctx, groupID, selection, requiredCapability, requiredRoute), decision, nil
 	}
 	// 如果要求 native 能力（如指定了模型）但没有可用的 APIKey 账号，回退到 basic（OAuth 账号）
 	if requiredCapability == OpenAIImagesCapabilityNative {
@@ -1350,25 +1350,26 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 			nextExcluded[selection.Account.ID] = struct{}{}
 			return s.SelectAccountWithSchedulerForImages(ctx, groupID, sessionHash, requestedModel, nextExcluded, OpenAIImagesCapabilityBasic, requiredRoute, requireOAuthAccount)
 		}
-		return s.normalizeOpenAIImageSelectionConcurrency(ctx, groupID, selection, OpenAIImagesCapabilityBasic), decision, err
+		return s.normalizeOpenAIImageSelectionConcurrency(ctx, groupID, selection, OpenAIImagesCapabilityBasic, requiredRoute), decision, err
 	}
 	return selection, decision, err
 }
 
-func (s *OpenAIGatewayService) normalizeOpenAIImageSelectionConcurrency(ctx context.Context, groupID *int64, selection *AccountSelectionResult, requiredCapability OpenAIImagesCapability) *AccountSelectionResult {
+func (s *OpenAIGatewayService) normalizeOpenAIImageSelectionConcurrency(ctx context.Context, groupID *int64, selection *AccountSelectionResult, requiredCapability OpenAIImagesCapability, requiredRoute string) *AccountSelectionResult {
 	if selection == nil || selection.Account == nil || requiredCapability == "" {
 		return selection
 	}
+	maxConcurrency := concurrencyForOpenAIAccountSelection(selection.Account, requiredRoute)
 	if selection.WaitPlan != nil {
-		selection.WaitPlan.MaxConcurrency = 1
+		selection.WaitPlan.MaxConcurrency = maxConcurrency
 	}
-	if !selection.Acquired || selection.Account.Concurrency <= 1 || s == nil || s.concurrencyService == nil {
+	if !selection.Acquired || maxConcurrency <= 1 || s == nil || s.concurrencyService == nil {
 		return selection
 	}
 	if selection.ReleaseFunc != nil {
 		selection.ReleaseFunc()
 	}
-	result, err := s.tryAcquireAccountSlot(ctx, selection.Account.ID, groupID, 1)
+	result, err := s.tryAcquireAccountSlot(ctx, selection.Account.ID, groupID, maxConcurrency)
 	if err == nil && result != nil && result.Acquired {
 		selection.ReleaseFunc = result.ReleaseFunc
 		selection.Acquired = true
@@ -1376,7 +1377,7 @@ func (s *OpenAIGatewayService) normalizeOpenAIImageSelectionConcurrency(ctx cont
 	}
 	selection.Acquired = false
 	selection.ReleaseFunc = nil
-	selection.WaitPlan = &AccountWaitPlan{AccountID: selection.Account.ID, MaxConcurrency: 1, Timeout: s.schedulingConfig().FallbackWaitTimeout, MaxWaiting: s.schedulingConfig().FallbackMaxWaiting}
+	selection.WaitPlan = &AccountWaitPlan{AccountID: selection.Account.ID, MaxConcurrency: maxConcurrency, Timeout: s.schedulingConfig().FallbackWaitTimeout, MaxWaiting: s.schedulingConfig().FallbackMaxWaiting}
 	return selection
 }
 
