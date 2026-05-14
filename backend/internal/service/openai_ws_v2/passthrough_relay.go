@@ -85,6 +85,7 @@ type relayState struct {
 	turnTimingByID      map[string]*relayTurnTiming
 	terminalByID        map[string]struct{}
 	pendingTerminalByID map[string]observedUpstreamEvent
+	pendingTerminalSeq  int64
 }
 
 type relayExitSignal struct {
@@ -95,12 +96,13 @@ type relayExitSignal struct {
 }
 
 type observedUpstreamEvent struct {
-	terminal   bool
-	eventType  string
-	responseID string
-	usage      Usage
-	duration   time.Duration
-	firstToken *int
+	terminal     bool
+	eventType    string
+	responseID   string
+	usage        Usage
+	duration     time.Duration
+	firstToken   *int
+	pendingOrder int64
 }
 
 type relayTurnTiming struct {
@@ -229,6 +231,11 @@ func Relay(
 	if firstExit.stage == "read_client" && firstExit.graceful {
 		dropDownstreamWrites.Store(true)
 		secondExit, hasSecondExit = waitRelayExit(exitCh, drainTimeout)
+		if !hasSecondExit {
+			relayCancel()
+			_ = upstreamConn.Close()
+			secondExit, hasSecondExit = waitRelayExit(exitCh, 200*time.Millisecond)
+		}
 	} else {
 		relayCancel()
 		_ = upstreamConn.Close()
@@ -381,7 +388,7 @@ func runUpstreamToClient(
 	for {
 		msgType, payload, err := upstreamConn.ReadFrame(ctx)
 		if err != nil {
-			flushPendingTurnCompletions(onTurnComplete, state, openAIWSRelayFlushPendingTerminals(state, ""))
+			flushPendingTurnCompletions(onTurnComplete, state, openAIWSRelayFlushPendingTerminalsAt(state, "", nowFn()))
 			emitRelayTrace(onTrace, RelayTraceEvent{
 				Stage:           "read_upstream_failed",
 				Direction:       "upstream_to_client",
@@ -401,7 +408,6 @@ func runUpstreamToClient(
 		observedEvent := observedUpstreamEvent{}
 		switch msgType {
 		case coderws.MessageText:
-			flushPendingTurnCompletions(onTurnComplete, state, openAIWSRelayFlushPendingTerminalsForIncomingMessage(state, payload))
 			observedEvent = observeUpstreamMessage(state, payload, startAt, nowFn, onUsageParseFailure)
 		case coderws.MessageBinary:
 			// binary frame 直接透传，不进入 JSON 观测路径（避免无效解析开销）。
@@ -564,12 +570,20 @@ func observeUpstreamMessage(
 			responseID: responseID,
 		}
 	}
+	var pendingObserved observedUpstreamEvent
+	hasPendingObserved := false
 	if terminalEvent && responseID != "" {
 		if pending, ok := openAIWSRelayDeletePendingTerminal(state, responseID); ok {
-			openAIWSRelayApplyUsageDelta(state, pending.usage, Usage{})
+			pendingObserved = pending
+			hasPendingObserved = true
+			openAIWSRelayApplyUsageDelta(state, pendingObserved.usage, Usage{})
 		}
 	}
 	parsedUsage := parseUsageAndAccumulate(state, message, eventType, onUsageParseFailure)
+	if hasPendingObserved && isZeroUsage(parsedUsage) {
+		openAIWSRelayApplyUsageDelta(state, Usage{}, pendingObserved.usage)
+		parsedUsage = pendingObserved.usage
+	}
 	observed := observedUpstreamEvent{
 		eventType:  eventType,
 		responseID: responseID,
@@ -588,9 +602,9 @@ func observeUpstreamMessage(
 		return observed
 	}
 	if responseID != "" && isWeakTerminalEvent(eventType) {
-		if pending, ok := openAIWSRelayGetPendingTerminal(state, responseID); ok {
-			observed.duration = maxDuration(observed.duration, pending.duration)
-			observed.firstToken = openAIWSRelayPickIntPtr(observed.firstToken, pending.firstToken)
+		if hasPendingObserved {
+			observed.duration = maxDuration(observed.duration, pendingObserved.duration)
+			observed.firstToken = openAIWSRelayPickIntPtr(observed.firstToken, pendingObserved.firstToken)
 		}
 		openAIWSRelaySetPendingTerminal(state, responseID, observed)
 		return observedUpstreamEvent{
@@ -601,9 +615,9 @@ func observeUpstreamMessage(
 	}
 	observed.terminal = true
 	if responseID != "" {
-		if pending, ok := openAIWSRelayDeletePendingTerminal(state, responseID); ok {
-			observed.duration = maxDuration(observed.duration, pending.duration)
-			observed.firstToken = openAIWSRelayPickIntPtr(observed.firstToken, pending.firstToken)
+		if hasPendingObserved {
+			observed.duration = maxDuration(observed.duration, pendingObserved.duration)
+			observed.firstToken = openAIWSRelayPickIntPtr(observed.firstToken, pendingObserved.firstToken)
 		}
 		if turnTiming, ok := openAIWSRelayDeleteTurnTiming(state, responseID); ok {
 			duration := now.Sub(turnTiming.startAt)
@@ -700,6 +714,8 @@ func openAIWSRelaySetPendingTerminal(state *relayState, responseID string, obser
 	if state.pendingTerminalByID == nil {
 		state.pendingTerminalByID = make(map[string]observedUpstreamEvent, 4)
 	}
+	observed.pendingOrder = state.pendingTerminalSeq
+	state.pendingTerminalSeq++
 	state.pendingTerminalByID[responseID] = observed
 }
 
@@ -715,28 +731,43 @@ func openAIWSRelayDeletePendingTerminal(state *relayState, responseID string) (o
 }
 
 func openAIWSRelayFlushPendingTerminals(state *relayState, keepResponseID string) []observedUpstreamEvent {
+	return openAIWSRelayFlushPendingTerminalsAt(state, keepResponseID, time.Now())
+}
+
+func openAIWSRelayFlushPendingTerminalsAt(state *relayState, keepResponseID string, now time.Time) []observedUpstreamEvent {
 	if state == nil || len(state.pendingTerminalByID) == 0 {
 		return nil
 	}
-	responseIDs := make([]string, 0, len(state.pendingTerminalByID))
+	type pendingTerminalEntry struct {
+		responseID string
+		order      int64
+	}
+	entries := make([]pendingTerminalEntry, 0, len(state.pendingTerminalByID))
 	for responseID := range state.pendingTerminalByID {
 		if keepResponseID != "" && responseID == keepResponseID {
 			continue
 		}
-		responseIDs = append(responseIDs, responseID)
+		observed := state.pendingTerminalByID[responseID]
+		entries = append(entries, pendingTerminalEntry{responseID: responseID, order: observed.pendingOrder})
 	}
-	if len(responseIDs) == 0 {
+	if len(entries) == 0 {
 		return nil
 	}
-	sort.Strings(responseIDs)
-	flushed := make([]observedUpstreamEvent, 0, len(responseIDs))
-	for _, responseID := range responseIDs {
+	sort.SliceStable(entries, func(i, j int) bool {
+		if entries[i].order == entries[j].order {
+			return entries[i].responseID < entries[j].responseID
+		}
+		return entries[i].order < entries[j].order
+	})
+	flushed := make([]observedUpstreamEvent, 0, len(entries))
+	for _, entry := range entries {
+		responseID := entry.responseID
 		observed, ok := openAIWSRelayDeletePendingTerminal(state, responseID)
 		if !ok {
 			continue
 		}
 		observed.terminal = true
-		openAIWSRelayFinalizeObservedTerminal(state, &observed)
+		openAIWSRelayFinalizeFlushedTerminal(state, &observed, now)
 		flushed = append(flushed, observed)
 	}
 	return flushed
@@ -768,6 +799,26 @@ func openAIWSRelayFinalizeObservedTerminal(state *relayState, observed *observed
 	}
 	openAIWSRelayMarkTerminalSeen(state, responseID)
 	state.lastResponseID = responseID
+}
+
+func openAIWSRelayFinalizeFlushedTerminal(state *relayState, observed *observedUpstreamEvent, now time.Time) {
+	if state == nil || observed == nil {
+		return
+	}
+	responseID := strings.TrimSpace(observed.responseID)
+	if responseID != "" {
+		if turnTiming, ok := openAIWSRelayDeleteTurnTiming(state, responseID); ok {
+			duration := now.Sub(turnTiming.startAt)
+			if duration < 0 {
+				duration = 0
+			}
+			observed.duration = maxDuration(observed.duration, duration)
+			if turnTiming.firstTokenMs != nil {
+				observed.firstToken = openAIWSRelayCloneIntPtr(turnTiming.firstTokenMs)
+			}
+		}
+	}
+	openAIWSRelayFinalizeObservedTerminal(state, observed)
 }
 
 func openAIWSRelayApplyUsageDelta(state *relayState, previous Usage, next Usage) {
@@ -961,6 +1012,10 @@ func openAIWSRelayPickIntPtr(primary *int, fallback *int) *int {
 		return openAIWSRelayCloneIntPtr(primary)
 	}
 	return openAIWSRelayCloneIntPtr(fallback)
+}
+
+func isZeroUsage(usage Usage) bool {
+	return usage == (Usage{})
 }
 
 func minDuration(a, b time.Duration) time.Duration {
