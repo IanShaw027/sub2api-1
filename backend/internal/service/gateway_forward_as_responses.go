@@ -181,7 +181,7 @@ func (s *GatewayService) ForwardAsResponses(
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
 
 		failure := classifyResponsesAnthropicFailure(resp.StatusCode, respBody)
-		if !fullReplayRetried && failure.RetryWithFullReplay && ingressPlan.CanRetryWithFullReplay() {
+		if !fullReplayRetried && failure.RetryWithFullReplay && ingressPlan.CanRetryWithFullReplayForReason(failure.Reason) {
 			fullReplayRetried = true
 			currentBody = ingressPlan.FullReplayBody
 			logger.L().Info("gateway forward_as_responses: retrying once with full replay input",

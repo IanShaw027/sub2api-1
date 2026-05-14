@@ -235,7 +235,7 @@ func TestForwardAsResponses_RetriesFullReplayOnceOnContinuationFailure(t *testin
 	require.Contains(t, rec.Body.String(), `"replayed ok"`)
 }
 
-func TestForwardAsResponses_RetriesFullReplayOnceOnMissingToolCall(t *testing.T) {
+func TestForwardAsResponses_DoesNotRetryToolContinuationWhenFullReplayLacksFunctionCallContext(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
 
@@ -288,13 +288,10 @@ func TestForwardAsResponses_RetriesFullReplayOnceOnMissingToolCall(t *testing.T)
 	account.Extra = nil
 
 	result, err := svc.ForwardAsResponses(context.Background(), c, account, body, nil)
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Equal(t, 2, upstream.callCount)
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, 1, upstream.callCount)
 	require.Equal(t, "user", gjson.GetBytes(upstream.bodies[0], "messages.0.role").String())
 	require.Equal(t, "tool_result", gjson.GetBytes(upstream.bodies[0], "messages.0.content.0.type").String())
-	require.Equal(t, "user", gjson.GetBytes(upstream.bodies[1], "messages.0.role").String())
-	require.False(t, gjson.GetBytes(upstream.bodies[1], "messages.1").Exists())
-	require.Equal(t, "tool_result", gjson.GetBytes(upstream.bodies[1], "messages.0.content.0.type").String())
-	require.Contains(t, rec.Body.String(), `"tool replay ok"`)
+	require.NotContains(t, rec.Body.String(), `"tool replay ok"`)
 }

@@ -79,3 +79,25 @@ func TestClassifyResponsesAnthropicFailure_UsesRecoverablePolicyHelper(t *testin
 		})
 	}
 }
+
+func TestResponsesIngressPlan_DoesNotRetryInvalidContinuationWithoutToolContext(t *testing.T) {
+	t.Parallel()
+
+	plan := responsesAnthropicIngressPlan{
+		PrimaryBody:    []byte(`{"input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`),
+		FullReplayBody: []byte(`{"input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`),
+	}
+
+	require.False(t, plan.CanRetryWithFullReplayForReason(string(recoverableFailureInvalidContinuation)))
+}
+
+func TestResponsesIngressPlan_RetriesInvalidContinuationWithCompleteToolContext(t *testing.T) {
+	t.Parallel()
+
+	plan := responsesAnthropicIngressPlan{
+		PrimaryBody:    []byte(`{"input":[{"role":"user","content":"continue"}]}`),
+		FullReplayBody: []byte(`{"input":[{"type":"function_call","call_id":"call_1","name":"lookup","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`),
+	}
+
+	require.True(t, plan.CanRetryWithFullReplayForReason(string(recoverableFailureInvalidContinuation)))
+}

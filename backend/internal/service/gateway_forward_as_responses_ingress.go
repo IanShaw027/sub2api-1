@@ -18,6 +18,61 @@ func (p responsesAnthropicIngressPlan) CanRetryWithFullReplay() bool {
 	return len(p.FullReplayBody) > 0 && !bytes.Equal(p.PrimaryBody, p.FullReplayBody)
 }
 
+func (p responsesAnthropicIngressPlan) CanRetryWithFullReplayForReason(reason string) bool {
+	if !p.CanRetryWithFullReplay() {
+		return false
+	}
+	switch recoverableFailureReason(reason) {
+	case recoverableFailureInvalidContinuation, recoverableFailureToolContext, recoverableFailureToolContinuation:
+		return responsesFullReplayHasCompleteToolContinuationContext(p.FullReplayBody)
+	default:
+		return true
+	}
+}
+
+func responsesFullReplayHasCompleteToolContinuationContext(body []byte) bool {
+	input := gjson.GetBytes(body, "input")
+	if !input.Exists() {
+		return false
+	}
+
+	functionCalls := make(map[string]struct{})
+	functionOutputs := make(map[string]struct{})
+	visitInputItem := func(item gjson.Result) {
+		itemType := strings.TrimSpace(item.Get("type").String())
+		callID := strings.TrimSpace(item.Get("call_id").String())
+		switch itemType {
+		case "function_call":
+			if callID != "" {
+				functionCalls[callID] = struct{}{}
+			}
+		case "function_call_output":
+			if callID != "" {
+				functionOutputs[callID] = struct{}{}
+			}
+		}
+	}
+
+	if input.IsArray() {
+		input.ForEach(func(_, item gjson.Result) bool {
+			visitInputItem(item)
+			return true
+		})
+	} else if input.IsObject() {
+		visitInputItem(input)
+	}
+
+	if len(functionOutputs) == 0 {
+		return true
+	}
+	for callID := range functionOutputs {
+		if _, ok := functionCalls[callID]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 func prepareResponsesAnthropicIngress(body []byte) (responsesAnthropicIngressPlan, error) {
 	normalized, err := normalizeOpenAIResponsesIngress(body)
 	if err != nil {
