@@ -14,29 +14,33 @@ import (
 
 // stubConcurrencyCacheForTest 用于并发服务单元测试的缓存桩
 type stubConcurrencyCacheForTest struct {
-	acquireResult    bool
-	acquireErr       error
-	releaseErr       error
-	concurrency      int
-	concurrencyErr   error
-	groupConcurrency map[int64]int
-	groupAcquireErr  error
-	groupReleaseErr  error
-	waitAllowed      bool
-	waitErr          error
-	waitCount        int
-	waitCountErr     error
-	loadBatch        map[int64]*AccountLoadInfo
-	loadBatchErr     error
-	usersLoadBatch   map[int64]*UserLoadInfo
-	usersLoadErr     error
-	cleanupErr       error
+	acquireResult              bool
+	acquireErr                 error
+	releaseErr                 error
+	concurrency                int
+	concurrencyErr             error
+	groupConcurrency           map[int64]int
+	groupConcurrencyErr        error
+	groupAcquireErr            error
+	groupReleaseErr            error
+	waitAllowed                bool
+	waitErr                    error
+	waitCount                  int
+	waitCountErr               error
+	loadBatch                  map[int64]*AccountLoadInfo
+	loadBatchErr               error
+	usersLoadBatch             map[int64]*UserLoadInfo
+	usersLoadErr               error
+	cleanupErr                 error
+	accountConcurrencyBatch    map[int64]int
+	accountConcurrencyBatchErr error
 
 	// 记录调用
-	releasedAccountIDs []int64
-	releasedRequestIDs []string
-	groupAcquireCalls  []groupSlotCall
-	groupReleaseCalls  []groupSlotCall
+	releasedAccountIDs  []int64
+	releasedRequestIDs  []string
+	groupAcquireCalls   []groupSlotCall
+	groupReleaseCalls   []groupSlotCall
+	accountAcquireCalls int
 }
 
 var _ ConcurrencyCache = (*stubConcurrencyCacheForTest)(nil)
@@ -48,6 +52,7 @@ type groupSlotCall struct {
 }
 
 func (c *stubConcurrencyCacheForTest) AcquireAccountSlot(_ context.Context, _ int64, _ int, _ string) (bool, error) {
+	c.accountAcquireCalls++
 	return c.acquireResult, c.acquireErr
 }
 func (c *stubConcurrencyCacheForTest) AcquireAccountSlotForGroup(_ context.Context, accountID int64, groupID int64, _ int, requestID string) (bool, error) {
@@ -84,6 +89,16 @@ func (c *stubConcurrencyCacheForTest) GetAccountConcurrency(_ context.Context, _
 	return c.concurrency, c.concurrencyErr
 }
 func (c *stubConcurrencyCacheForTest) GetAccountConcurrencyBatch(_ context.Context, accountIDs []int64) (map[int64]int, error) {
+	if c.accountConcurrencyBatchErr != nil {
+		return nil, c.accountConcurrencyBatchErr
+	}
+	if c.accountConcurrencyBatch != nil {
+		result := make(map[int64]int, len(accountIDs))
+		for _, accountID := range accountIDs {
+			result[accountID] = c.accountConcurrencyBatch[accountID]
+		}
+		return result, nil
+	}
 	result := make(map[int64]int, len(accountIDs))
 	for _, accountID := range accountIDs {
 		if c.concurrencyErr != nil {
@@ -94,8 +109,8 @@ func (c *stubConcurrencyCacheForTest) GetAccountConcurrencyBatch(_ context.Conte
 	return result, nil
 }
 func (c *stubConcurrencyCacheForTest) GetGroupConcurrency(_ context.Context, groupID int64) (int, error) {
-	if c.concurrencyErr != nil {
-		return 0, c.concurrencyErr
+	if c.groupConcurrencyErr != nil {
+		return 0, c.groupConcurrencyErr
 	}
 	return c.groupConcurrency[groupID], nil
 }
@@ -231,11 +246,12 @@ func TestAcquireAccountSlotForGroup_ReleaseDecrementsAccountAndGroup(t *testing.
 	require.Equal(t, groupID, cache.groupAcquireCalls[0].groupID)
 	require.NotEmpty(t, cache.groupAcquireCalls[0].requestID)
 	require.Len(t, cache.groupReleaseCalls, 1)
+	require.Empty(t, cache.releasedAccountIDs, "combined release path should avoid a separate account-only release")
 	require.Equal(t, groupID, cache.groupReleaseCalls[0].groupID)
 	require.Equal(t, cache.groupAcquireCalls[0].requestID, cache.groupReleaseCalls[0].requestID)
 }
 
-func TestAcquireAccountSlotForGroup_GroupTrackingFailureDoesNotBlockAccountSlot(t *testing.T) {
+func TestAcquireAccountSlotForGroup_GroupTrackingFailureReleasesAccountSlotAndReturnsError(t *testing.T) {
 	cache := &stubConcurrencyCacheForTest{
 		acquireResult:   true,
 		groupAcquireErr: errors.New("redis group write failed"),
@@ -244,19 +260,15 @@ func TestAcquireAccountSlotForGroup_GroupTrackingFailureDoesNotBlockAccountSlot(
 	groupID := int64(7)
 
 	result, err := svc.AcquireAccountSlotForGroup(context.Background(), 42, &groupID, 5)
-	require.NoError(t, err)
-	require.True(t, result.Acquired)
-	require.NotNil(t, result.ReleaseFunc)
+	require.Error(t, err)
+	require.Nil(t, result)
 	require.Len(t, cache.groupAcquireCalls, 1)
-
-	result.ReleaseFunc()
-
 	require.Len(t, cache.releasedAccountIDs, 1)
 	require.Equal(t, int64(42), cache.releasedAccountIDs[0])
 	require.Empty(t, cache.groupReleaseCalls, "group slot was not tracked and should not be released")
 }
 
-func TestAcquireAccountSlotForGroup_UnlimitedConcurrencySkipsGroupTracking(t *testing.T) {
+func TestAcquireAccountSlotForGroup_UnlimitedConcurrencyTracksGroupUsage(t *testing.T) {
 	cache := &stubConcurrencyCacheForTest{acquireResult: true}
 	svc := NewConcurrencyService(cache)
 	groupID := int64(7)
@@ -265,10 +277,17 @@ func TestAcquireAccountSlotForGroup_UnlimitedConcurrencySkipsGroupTracking(t *te
 	require.NoError(t, err)
 	require.True(t, result.Acquired)
 	require.NotNil(t, result.ReleaseFunc)
+
+	require.Zero(t, cache.accountAcquireCalls)
+	require.Len(t, cache.groupAcquireCalls, 1)
+	require.Equal(t, groupID, cache.groupAcquireCalls[0].groupID)
+	require.NotEmpty(t, cache.groupAcquireCalls[0].requestID)
+
 	result.ReleaseFunc()
 
-	require.Empty(t, cache.groupAcquireCalls)
-	require.Empty(t, cache.groupReleaseCalls)
+	require.Len(t, cache.groupReleaseCalls, 1)
+	require.Equal(t, groupID, cache.groupReleaseCalls[0].groupID)
+	require.Equal(t, cache.groupAcquireCalls[0].requestID, cache.groupReleaseCalls[0].requestID)
 	require.Empty(t, cache.releasedAccountIDs)
 }
 
@@ -424,6 +443,23 @@ func TestGetGroupConcurrency_DelegatesToGroupScopedCache(t *testing.T) {
 	count, err := svc.GetGroupConcurrency(context.Background(), 7)
 	require.NoError(t, err)
 	require.Equal(t, 3, count)
+}
+
+func TestGetGroupConcurrency_ReturnsCacheError(t *testing.T) {
+	cache := &stubConcurrencyCacheForTest{groupConcurrencyErr: errors.New("redis down")}
+	svc := NewConcurrencyService(cache)
+
+	count, err := svc.GetGroupConcurrency(context.Background(), 7)
+	require.Error(t, err)
+	require.Zero(t, count)
+}
+
+func TestGetGroupConcurrency_NilCacheReturnsError(t *testing.T) {
+	svc := &ConcurrencyService{cache: nil}
+
+	count, err := svc.GetGroupConcurrency(context.Background(), 7)
+	require.Error(t, err)
+	require.Zero(t, count)
 }
 
 func TestIncrementAccountWaitCount_FailOpen(t *testing.T) {

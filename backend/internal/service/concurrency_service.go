@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"sync/atomic"
@@ -56,6 +58,10 @@ type groupConcurrencyCache interface {
 
 type groupConcurrencyReader interface {
 	GetGroupConcurrency(ctx context.Context, groupID int64) (int, error)
+}
+
+type accountGroupSlotReleaser interface {
+	ReleaseAccountSlotForGroup(ctx context.Context, accountID int64, groupID int64, requestID string) error
 }
 
 var (
@@ -143,43 +149,61 @@ func (s *ConcurrencyService) AcquireAccountSlot(ctx context.Context, accountID i
 // AcquireAccountSlotForGroup acquires an account slot and records the request
 // under the selected group for real-time group-capacity display.
 func (s *ConcurrencyService) AcquireAccountSlotForGroup(ctx context.Context, accountID int64, groupID *int64, maxConcurrency int) (*AcquireResult, error) {
-	var groupTracker groupConcurrencyCache
-	var groupTracked bool
-	var requestID string
-	trackGroupUsage := maxConcurrency > 0
-	if groupID != nil && *groupID > 0 {
-		groupTracker, _ = s.cache.(groupConcurrencyCache)
+	requestID := generateRequestID()
+	releaseAccountAndGroupSlot := func(ctx context.Context) {
+		if s.cache == nil {
+			return
+		}
+		if groupID != nil && *groupID > 0 {
+			if releaser, ok := s.cache.(accountGroupSlotReleaser); ok && releaser != nil {
+				if err := releaser.ReleaseAccountSlotForGroup(ctx, accountID, *groupID, requestID); err != nil {
+					logger.LegacyPrintf("service.concurrency", "Warning: failed to release account/group slot for %d/%d (req=%s): %v", accountID, *groupID, requestID, err)
+				}
+				return
+			}
+			if err := s.cache.ReleaseAccountSlot(ctx, accountID, requestID); err != nil {
+				logger.LegacyPrintf("service.concurrency", "Warning: failed to release account slot for %d (req=%s): %v", accountID, requestID, err)
+			}
+			if groupTracker, ok := s.cache.(groupConcurrencyCache); ok && groupTracker != nil {
+				if err := groupTracker.ReleaseGroupSlot(ctx, *groupID, requestID); err != nil {
+					logger.LegacyPrintf("service.concurrency", "Warning: failed to release group slot for %d (req=%s): %v", *groupID, requestID, err)
+				}
+			}
+			return
+		}
+		if err := s.cache.ReleaseAccountSlot(ctx, accountID, requestID); err != nil {
+			logger.LegacyPrintf("service.concurrency", "Warning: failed to release account slot for %d (req=%s): %v", accountID, requestID, err)
+		}
 	}
 
-	trackGroupSlot := func(ctx context.Context) {
-		if !trackGroupUsage || groupTracker == nil || groupID == nil || *groupID <= 0 {
-			return
+	trackGroupSlot := func(ctx context.Context) error {
+		if groupID == nil || *groupID <= 0 {
+			return nil
+		}
+		groupTracker, ok := s.cache.(groupConcurrencyCache)
+		if !ok || groupTracker == nil {
+			return nil
 		}
 		if err := groupTracker.AcquireGroupSlot(ctx, *groupID, requestID); err != nil {
-			logger.LegacyPrintf("service.concurrency", "Warning: failed to track group slot for account=%d group=%d (req=%s): %v", accountID, *groupID, requestID, err)
-			return
+			return fmt.Errorf("track group slot for account %d group %d: %w", accountID, *groupID, err)
 		}
-		groupTracked = true
-	}
-
-	releaseGroupSlot := func(ctx context.Context) {
-		if groupTracked && groupTracker != nil {
-			if err := groupTracker.ReleaseGroupSlot(ctx, *groupID, requestID); err != nil {
-				logger.LegacyPrintf("service.concurrency", "Warning: failed to release group slot for group=%d (req=%s): %v", *groupID, requestID, err)
-			}
-		}
+		return nil
 	}
 
 	// If maxConcurrency is 0 or negative, no limit
 	if maxConcurrency <= 0 {
+		if err := trackGroupSlot(ctx); err != nil {
+			return nil, err
+		}
 		return &AcquireResult{
-			Acquired:    true,
-			ReleaseFunc: func() {},
+			Acquired: true,
+			ReleaseFunc: func() {
+				bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				releaseAccountAndGroupSlot(bgCtx)
+			},
 		}, nil
 	}
-
-	// Generate unique request ID for this slot
-	requestID = generateRequestID()
 
 	acquired, err := s.cache.AcquireAccountSlot(ctx, accountID, maxConcurrency, requestID)
 	if err != nil {
@@ -187,17 +211,21 @@ func (s *ConcurrencyService) AcquireAccountSlotForGroup(ctx context.Context, acc
 	}
 
 	if acquired {
-		trackGroupSlot(ctx)
+		if err := trackGroupSlot(ctx); err != nil {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if releaseErr := s.cache.ReleaseAccountSlot(bgCtx, accountID, requestID); releaseErr != nil {
+				logger.LegacyPrintf("service.concurrency", "Warning: failed to release account slot for %d (req=%s) after group tracking failure: %v", accountID, requestID, releaseErr)
+			}
+			return nil, err
+		}
 
 		return &AcquireResult{
 			Acquired: true,
 			ReleaseFunc: func() {
 				bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
-				if err := s.cache.ReleaseAccountSlot(bgCtx, accountID, requestID); err != nil {
-					logger.LegacyPrintf("service.concurrency", "Warning: failed to release account slot for %d (req=%s): %v", accountID, requestID, err)
-				}
-				releaseGroupSlot(bgCtx)
+				releaseAccountAndGroupSlot(bgCtx)
 			},
 		}, nil
 	}
@@ -415,16 +443,23 @@ func (s *ConcurrencyService) GetAccountConcurrencyBatch(ctx context.Context, acc
 // GetGroupConcurrency gets current in-flight account slots that were acquired
 // through the specified group.
 func (s *ConcurrencyService) GetGroupConcurrency(ctx context.Context, groupID int64) (int, error) {
-	if groupID <= 0 || s.cache == nil {
+	if groupID <= 0 {
 		return 0, nil
+	}
+	if s.cache == nil {
+		return 0, errors.New("group concurrency cache unavailable")
 	}
 	groupScopedCache, ok := s.cache.(groupConcurrencyReader)
 	if !ok {
-		return 0, nil
+		return 0, errors.New("group concurrency cache does not support reads")
 	}
 
 	redisCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	return groupScopedCache.GetGroupConcurrency(redisCtx, groupID)
+	count, err := groupScopedCache.GetGroupConcurrency(redisCtx, groupID)
+	if err != nil {
+		return 0, fmt.Errorf("get group concurrency for %d: %w", groupID, err)
+	}
+	return count, nil
 }
