@@ -156,27 +156,22 @@
                 <p class="text-xl font-bold text-gray-900 dark:text-white">
                   {{ formatTokens(stats.today_tokens) }}
                 </p>
-                <div class="mt-2 flex flex-wrap gap-2 text-xs">
-                  <HelpTooltip
-                    v-for="item in todayTokenBreakdownItems"
-                    :key="`today-token-${item.key}`"
-                    width-class="w-52"
-                  >
-                    <template #trigger>
-                      <span
-                        :data-test="`today-token-${item.key}`"
-                        class="inline-flex cursor-help rounded-md bg-gray-100 px-2 py-1 font-semibold transition-colors hover:bg-gray-200 dark:bg-dark-700 dark:hover:bg-dark-600"
-                        :class="item.textClass"
-                      >
-                        ${{ formatCost(item.value) }}
-                      </span>
-                    </template>
-                    <div class="flex items-center justify-between gap-4">
+                <HelpTooltip width-class="w-56">
+                  <template #trigger>
+                    <div class="mt-2 flex flex-wrap items-center gap-1 text-xs font-semibold">
+                      <template v-for="(item, index) in todayTokenBreakdownItems" :key="item.key">
+                        <span :class="item.textClass">${{ formatCost(item.value) }}</span>
+                        <span v-if="index < todayTokenBreakdownItems.length - 1" class="text-gray-400 dark:text-gray-500">/</span>
+                      </template>
+                    </div>
+                  </template>
+                  <div class="space-y-1.5">
+                    <div v-for="item in todayTokenBreakdownItems" :key="item.key" class="flex items-center justify-between gap-4">
                       <span>{{ item.label }}</span>
                       <span class="font-semibold">${{ formatCost(item.value) }}</span>
                     </div>
-                  </HelpTooltip>
-                </div>
+                  </div>
+                </HelpTooltip>
               </div>
             </div>
           </div>
@@ -194,27 +189,22 @@
                 <p class="text-xl font-bold text-gray-900 dark:text-white">
                   {{ formatTokens(stats.total_tokens) }}
                 </p>
-                <div class="mt-2 flex flex-wrap gap-2 text-xs">
-                  <HelpTooltip
-                    v-for="item in totalTokenBreakdownItems"
-                    :key="`total-token-${item.key}`"
-                    width-class="w-52"
-                  >
-                    <template #trigger>
-                      <span
-                        :data-test="`total-token-${item.key}`"
-                        class="inline-flex cursor-help rounded-md bg-gray-100 px-2 py-1 font-semibold transition-colors hover:bg-gray-200 dark:bg-dark-700 dark:hover:bg-dark-600"
-                        :class="item.textClass"
-                      >
-                        ${{ formatCost(item.value) }}
-                      </span>
-                    </template>
-                    <div class="flex items-center justify-between gap-4">
+                <HelpTooltip width-class="w-56">
+                  <template #trigger>
+                    <div class="mt-2 flex flex-wrap items-center gap-1 text-xs font-semibold">
+                      <template v-for="(item, index) in totalTokenBreakdownItems" :key="item.key">
+                        <span :class="item.textClass">${{ formatCost(item.value) }}</span>
+                        <span v-if="index < totalTokenBreakdownItems.length - 1" class="text-gray-400 dark:text-gray-500">/</span>
+                      </template>
+                    </div>
+                  </template>
+                  <div class="space-y-1.5">
+                    <div v-for="item in totalTokenBreakdownItems" :key="item.key" class="flex items-center justify-between gap-4">
                       <span>{{ item.label }}</span>
                       <span class="font-semibold">${{ formatCost(item.value) }}</span>
                     </div>
-                  </HelpTooltip>
-                </div>
+                  </div>
+                </HelpTooltip>
               </div>
             </div>
           </div>
@@ -232,27 +222,22 @@
                 <p class="text-xl font-bold text-gray-900 dark:text-white">
                   ${{ formatCost(stats.today_actual_cost) }}
                 </p>
-                <div class="mt-2 flex flex-wrap gap-2 text-xs">
-                  <HelpTooltip
-                    v-for="item in todayFinancialBreakdownItems"
-                    :key="`today-${item.key}`"
-                    width-class="w-56"
-                  >
-                    <template #trigger>
-                      <span
-                        :data-test="`today-financial-${item.key}`"
-                        class="inline-flex cursor-help rounded-md bg-gray-100 px-2 py-1 font-semibold transition-colors hover:bg-gray-200 dark:bg-dark-700 dark:hover:bg-dark-600"
-                        :class="item.textClass"
-                      >
-                        ${{ formatCost(item.value) }}
-                      </span>
-                    </template>
-                    <div class="flex items-center justify-between gap-4">
+                <HelpTooltip width-class="w-56">
+                  <template #trigger>
+                    <div class="mt-2 flex flex-wrap items-center gap-1 text-xs font-semibold">
+                      <template v-for="(item, index) in todayFinancialBreakdownItems" :key="item.key">
+                        <span :class="item.textClass">${{ formatCost(item.value) }}</span>
+                        <span v-if="index < todayFinancialBreakdownItems.length - 1" class="text-gray-400 dark:text-gray-500">/</span>
+                      </template>
+                    </div>
+                  </template>
+                  <div class="space-y-1.5">
+                    <div v-for="item in todayFinancialBreakdownItems" :key="item.key" class="flex items-center justify-between gap-4">
                       <span>{{ item.label }}</span>
                       <span class="font-semibold">${{ formatCost(item.value) }}</span>
                     </div>
-                  </HelpTooltip>
-                </div>
+                  </div>
+                </HelpTooltip>
               </div>
             </div>
           </div>
@@ -270,27 +255,22 @@
                 <p class="text-xl font-bold text-gray-900 dark:text-white">
                   ${{ formatCost(stats.total_actual_cost) }}
                 </p>
-                <div class="mt-2 flex flex-wrap gap-2 text-xs">
-                  <HelpTooltip
-                    v-for="item in totalFinancialBreakdownItems"
-                    :key="`total-${item.key}`"
-                    width-class="w-56"
-                  >
-                    <template #trigger>
-                      <span
-                        :data-test="`total-financial-${item.key}`"
-                        class="inline-flex cursor-help rounded-md bg-gray-100 px-2 py-1 font-semibold transition-colors hover:bg-gray-200 dark:bg-dark-700 dark:hover:bg-dark-600"
-                        :class="item.textClass"
-                      >
-                        ${{ formatCost(item.value) }}
-                      </span>
-                    </template>
-                    <div class="flex items-center justify-between gap-4">
+                <HelpTooltip width-class="w-56">
+                  <template #trigger>
+                    <div class="mt-2 flex flex-wrap items-center gap-1 text-xs font-semibold">
+                      <template v-for="(item, index) in totalFinancialBreakdownItems" :key="item.key">
+                        <span :class="item.textClass">${{ formatCost(item.value) }}</span>
+                        <span v-if="index < totalFinancialBreakdownItems.length - 1" class="text-gray-400 dark:text-gray-500">/</span>
+                      </template>
+                    </div>
+                  </template>
+                  <div class="space-y-1.5">
+                    <div v-for="item in totalFinancialBreakdownItems" :key="item.key" class="flex items-center justify-between gap-4">
                       <span>{{ item.label }}</span>
                       <span class="font-semibold">${{ formatCost(item.value) }}</span>
                     </div>
-                  </HelpTooltip>
-                </div>
+                  </div>
+                </HelpTooltip>
               </div>
             </div>
           </div>

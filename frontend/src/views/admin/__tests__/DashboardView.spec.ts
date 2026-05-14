@@ -131,7 +131,7 @@ describe('admin DashboardView', () => {
           Icon: true,
           DateRangePicker: true,
           Select: true,
-          HelpTooltip: { template: '<div class="help-tooltip-stub"><slot name="trigger" /></div>' },
+          HelpTooltip: { template: '<div class="help-tooltip-stub"><slot name="trigger" /><slot /></div>' },
           ModelDistributionChart: true,
           TokenUsageTrend: true,
           Line: true
@@ -161,7 +161,7 @@ describe('admin DashboardView', () => {
           Icon: true,
           DateRangePicker: true,
           Select: true,
-          HelpTooltip: { template: '<div class="help-tooltip-stub"><slot name="trigger" /></div>' },
+          HelpTooltip: { template: '<div class="help-tooltip-stub"><slot name="trigger" /><slot /></div>' },
           ModelDistributionChart: true,
           TokenUsageTrend: true,
           Line: true
@@ -171,15 +171,16 @@ describe('admin DashboardView', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).not.toContain('admin.dashboard.balanceConsumption')
-    expect(wrapper.text()).not.toContain('admin.dashboard.subscriptionConsumption')
-    expect(wrapper.text()).not.toContain('admin.dashboard.rechargeAmount')
-    expect(wrapper.text()).not.toContain('admin.dashboard.refundAmount')
-    expect(wrapper.get('[data-test="today-token-actual"]').text()).toBe('$11.11')
-    expect(wrapper.get('[data-test="today-token-account"]').text()).toBe('$10.01')
-    expect(wrapper.get('[data-test="today-token-standard"]').text()).toBe('$12.34')
-    expect(wrapper.get('[data-test="today-financial-balance"]').text()).toBe('$6.60')
-    expect(wrapper.get('[data-test="today-financial-refund"]').text()).toBe('$1.20')
-    expect(wrapper.get('[data-test="total-financial-recharge"]').text()).toBe('$500.50')
+    const normalized = wrapper.text().replace(/\s+/g, ' ')
+
+    expect(normalized).toContain('$11.11/$10.01/$12.34')
+    expect(normalized).toContain('$6.60/$4.40/$30.30/$1.20')
+    expect(normalized).toContain('admin.dashboard.actual')
+    expect(normalized).toContain('admin.dashboard.accountCost')
+    expect(normalized).toContain('admin.dashboard.standard')
+    expect(normalized).toContain('admin.dashboard.balanceConsumption')
+    expect(normalized).toContain('admin.dashboard.subscriptionConsumption')
+    expect(normalized).toContain('admin.dashboard.rechargeAmount')
+    expect(normalized).toContain('admin.dashboard.refundAmount')
   })
 })
