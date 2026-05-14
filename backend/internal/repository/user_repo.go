@@ -21,6 +21,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
 
@@ -532,6 +533,9 @@ func userListOrder(params pagination.PaginationParams) []func(*entsql.Selector) 
 	if sortBy == "last_used_at" {
 		return userLastUsedAtOrder(sortOrder)
 	}
+	if sortBy == "today_balance_usage" || sortBy == "today_subscription_usage" || sortBy == "last_30d_usage" {
+		return userUsageCostOrder(sortBy, sortOrder)
+	}
 
 	var field string
 	defaultField := true
@@ -657,6 +661,42 @@ func userLastUsedAtOrder(sortOrder string) []func(*entsql.Selector) {
 	}
 	return []func(*entsql.Selector){
 		orderExpr("DESC", "LAST", entsql.Desc),
+	}
+}
+
+func userUsageCostOrder(sortBy string, sortOrder string) []func(*entsql.Selector) {
+	startTime := time.Now().AddDate(0, 0, -30)
+	extraCondition := ""
+	switch sortBy {
+	case "today_balance_usage":
+		startTime = timezone.Today()
+		extraCondition = " AND subscription_id IS NULL"
+	case "today_subscription_usage":
+		startTime = timezone.Today()
+		extraCondition = " AND subscription_id IS NOT NULL"
+	case "last_30d_usage":
+		startTime = time.Now().AddDate(0, 0, -30)
+	}
+
+	direction := "DESC"
+	tieOrder := entsql.Desc
+	if sortOrder == pagination.SortOrderAsc {
+		direction = "ASC"
+		tieOrder = entsql.Asc
+	}
+	startLiteral := startTime.Format(time.RFC3339)
+
+	return []func(*entsql.Selector){
+		func(s *entsql.Selector) {
+			subquery := fmt.Sprintf(
+				"(SELECT COALESCE(SUM(actual_cost), 0) FROM usage_logs WHERE user_id = %s AND created_at >= TIMESTAMPTZ '%s'%s)",
+				s.C(dbuser.FieldID),
+				startLiteral,
+				extraCondition,
+			)
+			s.OrderExpr(entsql.Expr(subquery + " " + direction))
+			s.OrderBy(tieOrder(s.C(dbuser.FieldID)))
+		},
 	}
 }
 

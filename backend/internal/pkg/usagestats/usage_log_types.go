@@ -274,9 +274,11 @@ type UsageStats struct {
 
 // BatchUserUsageStats represents usage stats for a single user
 type BatchUserUsageStats struct {
-	UserID          int64   `json:"user_id"`
-	TodayActualCost float64 `json:"today_actual_cost"`
-	TotalActualCost float64 `json:"total_actual_cost"`
+	UserID                      int64   `json:"user_id"`
+	TodayActualCost             float64 `json:"today_actual_cost"`
+	TodayBalanceActualCost      float64 `json:"today_balance_actual_cost"`
+	TodaySubscriptionActualCost float64 `json:"today_subscription_actual_cost"`
+	TotalActualCost             float64 `json:"total_actual_cost"`
 }
 
 // BatchAPIKeyUsageStats represents usage stats for a single API key

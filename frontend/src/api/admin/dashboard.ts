@@ -274,6 +274,8 @@ export async function getUserSpendingRanking(
 export interface BatchUserUsageStats {
   user_id: number
   today_actual_cost: number
+  today_balance_actual_cost?: number
+  today_subscription_actual_cost?: number
   total_actual_cost: number
 }
 

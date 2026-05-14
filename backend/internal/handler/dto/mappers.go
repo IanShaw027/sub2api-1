@@ -13,10 +13,17 @@ func UserFromServiceShallow(u *service.User) *User {
 	if u == nil {
 		return nil
 	}
+	var avatarURL *string
+	if strings.TrimSpace(u.AvatarURL) != "" {
+		value := strings.TrimSpace(u.AvatarURL)
+		avatarURL = &value
+	}
 	return &User{
 		ID:                         u.ID,
 		Email:                      u.Email,
 		Username:                   u.Username,
+		AvatarURL:                  avatarURL,
+		AvatarSource:               u.AvatarSource,
 		Role:                       u.Role,
 		Balance:                    u.Balance,
 		Concurrency:                u.Concurrency,

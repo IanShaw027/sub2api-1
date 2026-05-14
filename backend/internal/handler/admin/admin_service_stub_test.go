@@ -19,6 +19,7 @@ type stubAdminService struct {
 	redeems              []service.RedeemCode
 	boundAuthIdentity    *service.AdminBindAuthIdentityInput
 	boundAuthIdentityFor int64
+	identitySummaries    map[int64]service.UserIdentitySummarySet
 	createdAccounts      []*service.CreateAccountInput
 	updatedAccounts      []*service.UpdateAccountInput
 	updatedAccountIDs    []int64
@@ -156,6 +157,15 @@ func (s *stubAdminService) GetUser(ctx context.Context, id int64) (*service.User
 	}
 	user := service.User{ID: id, Email: "user@example.com", Status: service.StatusActive}
 	return &user, nil
+}
+
+func (s *stubAdminService) GetUserIdentitySummaries(ctx context.Context, userID int64, user *service.User) (service.UserIdentitySummarySet, error) {
+	if s.identitySummaries != nil {
+		if summaries, ok := s.identitySummaries[userID]; ok {
+			return summaries, nil
+		}
+	}
+	return service.UserIdentitySummarySet{}, nil
 }
 
 func (s *stubAdminService) CreateUser(ctx context.Context, input *service.CreateUserInput) (*service.User, error) {

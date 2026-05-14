@@ -2801,7 +2801,9 @@ func (r *usageLogRepository) GetBatchUserUsageStats(ctx context.Context, userIDs
 		SELECT
 			user_id,
 			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $2 AND created_at < $3), 0) as total_cost,
-			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $4), 0) as today_cost
+			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $4), 0) as today_cost,
+			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $4 AND subscription_id IS NULL), 0) as today_balance_cost,
+			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $4 AND subscription_id IS NOT NULL), 0) as today_subscription_cost
 		FROM usage_logs
 		WHERE user_id = ANY($1)
 		  AND created_at >= LEAST($2, $4)
@@ -2816,13 +2818,17 @@ func (r *usageLogRepository) GetBatchUserUsageStats(ctx context.Context, userIDs
 		var userID int64
 		var total float64
 		var todayTotal float64
-		if err := rows.Scan(&userID, &total, &todayTotal); err != nil {
+		var todayBalance float64
+		var todaySubscription float64
+		if err := rows.Scan(&userID, &total, &todayTotal, &todayBalance, &todaySubscription); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
 		if stats, ok := result[userID]; ok {
 			stats.TotalActualCost = total
 			stats.TodayActualCost = todayTotal
+			stats.TodayBalanceActualCost = todayBalance
+			stats.TodaySubscriptionActualCost = todaySubscription
 		}
 	}
 	if err := rows.Close(); err != nil {

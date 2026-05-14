@@ -29,6 +29,7 @@ type AdminService interface {
 	// User management
 	ListUsers(ctx context.Context, page, pageSize int, filters UserListFilters, sortBy, sortOrder string) ([]User, int64, error)
 	GetUser(ctx context.Context, id int64) (*User, error)
+	GetUserIdentitySummaries(ctx context.Context, userID int64, user *User) (UserIdentitySummarySet, error)
 	CreateUser(ctx context.Context, input *CreateUserInput) (*User, error)
 	UpdateUser(ctx context.Context, id int64, input *UpdateUserInput) (*User, error)
 	DeleteUser(ctx context.Context, id int64) error
@@ -699,6 +700,11 @@ func (s *adminServiceImpl) GetUser(ctx context.Context, id int64) (*User, error)
 	if err != nil {
 		return nil, err
 	}
+	if avatar, avatarErr := s.userRepo.GetUserAvatar(ctx, id); avatarErr == nil {
+		applyUserAvatar(user, avatar)
+	} else {
+		logger.LegacyPrintf("service.admin", "failed to load user avatar: user_id=%d err=%v", id, avatarErr)
+	}
 	lastUsedAt, latestErr := s.userRepo.GetLatestUsedAtByUserID(ctx, id)
 	if latestErr != nil {
 		logger.LegacyPrintf("service.admin", "failed to load user last_used_at: user_id=%d err=%v", id, latestErr)
@@ -715,6 +721,30 @@ func (s *adminServiceImpl) GetUser(ctx context.Context, id int64) (*User, error)
 		}
 	}
 	return user, nil
+}
+
+func (s *adminServiceImpl) GetUserIdentitySummaries(ctx context.Context, userID int64, user *User) (UserIdentitySummarySet, error) {
+	if s == nil || s.userRepo == nil {
+		return UserIdentitySummarySet{}, nil
+	}
+	if user == nil {
+		var err error
+		user, err = s.userRepo.GetByID(ctx, userID)
+		if err != nil {
+			return UserIdentitySummarySet{}, err
+		}
+	}
+	records, err := s.userRepo.ListUserAuthIdentities(ctx, userID)
+	if err != nil {
+		return UserIdentitySummarySet{}, err
+	}
+	userSvc := &UserService{userRepo: s.userRepo}
+	return UserIdentitySummarySet{
+		Email:   userSvc.buildEmailIdentitySummary(user, records),
+		LinuxDo: userSvc.buildProviderIdentitySummary("linuxdo", user, records),
+		OIDC:    userSvc.buildProviderIdentitySummary("oidc", user, records),
+		WeChat:  userSvc.buildProviderIdentitySummary("wechat", user, records),
+	}, nil
 }
 
 func (s *adminServiceImpl) CreateUser(ctx context.Context, input *CreateUserInput) (*User, error) {

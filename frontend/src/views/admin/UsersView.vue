@@ -225,6 +225,18 @@
             </div>
 
             <!-- Create User Button (full width on mobile, auto width on desktop) -->
+            <div class="flex min-w-[240px] items-center gap-2">
+              <label class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                {{ t('admin.users.sortConcurrency', '并发排序') }}
+              </label>
+              <select v-model="concurrencySort" data-test="concurrency-sort" class="input min-w-[140px]">
+                <option value="none">{{ t('admin.users.sortConcurrencyNone', '不排序') }}</option>
+                <option value="current_desc">{{ t('admin.users.sortCurrentDesc', '当前并发 ↓') }}</option>
+                <option value="current_asc">{{ t('admin.users.sortCurrentAsc', '当前并发 ↑') }}</option>
+                <option value="available_desc">{{ t('admin.users.sortAvailableDesc', '可用并发 ↓') }}</option>
+                <option value="available_asc">{{ t('admin.users.sortAvailableAsc', '可用并发 ↑') }}</option>
+              </select>
+            </div>
             <button @click="showCreateModal = true" class="btn btn-primary flex-1 md:flex-initial">
               <Icon name="plus" size="md" class="mr-2" />
               {{ t('admin.users.createUser') }}
@@ -237,7 +249,7 @@
       <template #table>
         <DataTable
           :columns="columns"
-          :data="users"
+          :data="displayUsers"
           :loading="loading"
           :actions-count="7"
           :server-side-sort="true"
@@ -249,9 +261,10 @@
           <template #cell-email="{ value, row }">
             <div class="flex items-center gap-2">
               <div
-                class="flex h-8 w-8 items-center justify-center rounded-full bg-primary-100 dark:bg-primary-900/30"
+                class="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-primary-100 dark:bg-primary-900/30"
               >
-                <span class="text-sm font-medium text-primary-700 dark:text-primary-300">
+                <img v-if="row.avatar_url" :src="row.avatar_url" :alt="value" class="h-full w-full object-cover" />
+                <span v-else class="text-sm font-medium text-primary-700 dark:text-primary-300">
                   {{ value.charAt(0).toUpperCase() }}
                 </span>
               </div>
@@ -422,13 +435,19 @@
           <template #cell-usage="{ row }">
             <div class="text-sm">
               <div class="flex items-center gap-1.5">
-                <span class="text-gray-500 dark:text-gray-400">{{ t('admin.users.today') }}:</span>
+                <span class="text-gray-500 dark:text-gray-400">{{ t('admin.users.todayBalance', '今日余额') }}:</span>
                 <span class="font-medium text-gray-900 dark:text-white">
-                  ${{ (usageStats[row.id]?.today_actual_cost ?? 0).toFixed(4) }}
+                  ${{ (usageStats[row.id]?.today_balance_actual_cost ?? 0).toFixed(4) }}
                 </span>
               </div>
               <div class="mt-0.5 flex items-center gap-1.5">
-                <span class="text-gray-500 dark:text-gray-400">{{ t('admin.users.total') }}:</span>
+                <span class="text-gray-500 dark:text-gray-400">{{ t('admin.users.todaySubscription', '今日订阅') }}:</span>
+                <span class="font-medium text-gray-900 dark:text-white">
+                  ${{ (usageStats[row.id]?.today_subscription_actual_cost ?? 0).toFixed(4) }}
+                </span>
+              </div>
+              <div class="mt-0.5 flex items-center gap-1.5">
+                <span class="text-gray-500 dark:text-gray-400">{{ t('admin.users.last30Days', '近30日') }}:</span>
                 <span class="font-medium text-gray-900 dark:text-white">
                   ${{ (usageStats[row.id]?.total_actual_cost ?? 0).toFixed(4) }}
                 </span>
@@ -760,9 +779,9 @@ const toggleableColumns = computed(() =>
 const hiddenColumns = reactive<Set<string>>(new Set())
 
 // Default hidden columns (columns hidden by default on first load)
-const DEFAULT_HIDDEN_COLUMNS = ['notes', 'groups', 'subscriptions', 'usage', 'concurrency']
+const DEFAULT_HIDDEN_COLUMNS = ['notes', 'groups', 'subscriptions']
 const REMOVED_COLUMNS = new Set<string>(['last_login_at'])
-const FORCED_VISIBLE_COLUMNS = new Set(['last_active_at'])
+const FORCED_VISIBLE_COLUMNS = new Set(['last_active_at', 'usage', 'concurrency'])
 
 // localStorage key for column settings
 const HIDDEN_COLUMNS_KEY = 'user-hidden-columns'
@@ -837,7 +856,7 @@ const searchQuery = ref('')
 const USER_SORT_STORAGE_KEY = 'admin-users-table-sort'
 const loadInitialSortState = (): { sort_by: string; sort_order: 'asc' | 'desc' } => {
   const fallback = { sort_by: 'created_at', sort_order: 'desc' as 'asc' | 'desc' }
-  const sortable = new Set(['email', 'id', 'username', 'role', 'balance', 'concurrency', 'status', 'last_used_at', 'last_active_at', 'created_at'])
+  const sortable = new Set(['email', 'id', 'username', 'role', 'balance', 'concurrency', 'status', 'last_used_at', 'last_active_at', 'created_at', 'today_balance_usage', 'today_subscription_usage', 'last_30d_usage'])
   try {
     const raw = localStorage.getItem(USER_SORT_STORAGE_KEY)
     if (!raw) return fallback
@@ -977,6 +996,28 @@ const getAttributeDefinition = (attrId: number): UserAttributeDefinition | undef
   return attributeDefinitions.value.find(d => d.id === attrId)
 }
 const usageStats = ref<Record<string, BatchUserUsageStats>>({})
+const concurrencySort = ref<'none' | 'current_desc' | 'current_asc' | 'available_desc' | 'available_asc'>('none')
+const displayUsers = computed(() => {
+  const next = [...users.value]
+  const byCurrent = (a: AdminUser, b: AdminUser) => (a.current_concurrency ?? 0) - (b.current_concurrency ?? 0)
+  const byAvailable = (a: AdminUser, b: AdminUser) => {
+    const left = Math.max((a.concurrency ?? 0) - (a.current_concurrency ?? 0), 0)
+    const right = Math.max((b.concurrency ?? 0) - (b.current_concurrency ?? 0), 0)
+    return left - right
+  }
+  switch (concurrencySort.value) {
+    case 'current_asc':
+      return next.sort(byCurrent)
+    case 'current_desc':
+      return next.sort((a, b) => byCurrent(b, a))
+    case 'available_asc':
+      return next.sort(byAvailable)
+    case 'available_desc':
+      return next.sort((a, b) => byAvailable(b, a))
+    default:
+      return next
+  }
+})
 // User attribute definitions and values
 const attributeDefinitions = ref<UserAttributeDefinition[]>([])
 const userAttributeValues = ref<Record<number, Record<number, string>>>({})
@@ -1321,8 +1362,16 @@ const applyFilter = () => {
 }
 
 const handleEdit = (user: AdminUser) => {
-  editingUser.value = user
-  showEditModal.value = true
+  void (async () => {
+    try {
+      editingUser.value = await adminAPI.users.getById(user.id)
+    } catch (e) {
+      console.error('Failed to load user detail for edit modal:', e)
+      editingUser.value = user
+    } finally {
+      showEditModal.value = true
+    }
+  })()
 }
 
 const closeEditModal = () => {

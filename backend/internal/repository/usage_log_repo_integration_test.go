@@ -1080,6 +1080,58 @@ func (s *UsageLogRepoSuite) TestGetBatchUserUsageStats() {
 	s.Require().NotNil(stats[user2.ID])
 }
 
+func (s *UsageLogRepoSuite) TestGetBatchUserUsageStatsSplitsTodayBalanceAndSubscriptionUsage() {
+	user := mustCreateUser(s.T(), s.client, &service.User{Email: "batch-split@test.com"})
+	apiKey := mustCreateApiKey(s.T(), s.client, &service.APIKey{UserID: user.ID, Key: "sk-batch-split", Name: "k"})
+	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "acc-batch-split"})
+	group := mustCreateGroup(s.T(), s.client, &service.Group{Name: "batch-split-group"})
+	now := time.Now()
+	subscription := s.client.UserSubscription.Create().
+		SetUserID(user.ID).
+		SetGroupID(group.ID).
+		SetStartsAt(now.Add(-1 * time.Hour)).
+		SetExpiresAt(now.Add(24 * time.Hour)).
+		SetStatus(service.SubscriptionStatusActive).
+		SetAssignedAt(now).
+		SetNotes("").
+		SaveX(s.ctx)
+
+	today := timezone.Today().Add(2 * time.Hour)
+	subscriptionID := subscription.ID
+	for _, input := range []struct {
+		cost           float64
+		createdAt      time.Time
+		subscriptionID *int64
+	}{
+		{cost: 0.25, createdAt: today},
+		{cost: 0.75, createdAt: today, subscriptionID: &subscriptionID},
+		{cost: 0.50, createdAt: today.Add(-24 * time.Hour)},
+	} {
+		log := &service.UsageLog{
+			UserID:         user.ID,
+			APIKeyID:       apiKey.ID,
+			AccountID:      account.ID,
+			SubscriptionID: input.subscriptionID,
+			RequestID:      uuid.New().String(),
+			Model:          "claude-3",
+			InputTokens:    1,
+			OutputTokens:   1,
+			TotalCost:      input.cost,
+			ActualCost:     input.cost,
+			CreatedAt:      input.createdAt,
+		}
+		_, err := s.repo.Create(s.ctx, log)
+		s.Require().NoError(err)
+	}
+
+	stats, err := s.repo.GetBatchUserUsageStats(s.ctx, []int64{user.ID}, time.Time{}, time.Time{})
+	s.Require().NoError(err)
+	s.Require().InDelta(1.50, stats[user.ID].TotalActualCost, 0.000001)
+	s.Require().InDelta(1.00, stats[user.ID].TodayActualCost, 0.000001)
+	s.Require().InDelta(0.25, stats[user.ID].TodayBalanceActualCost, 0.000001)
+	s.Require().InDelta(0.75, stats[user.ID].TodaySubscriptionActualCost, 0.000001)
+}
+
 func (s *UsageLogRepoSuite) TestGetBatchUserUsageStats_Empty() {
 	stats, err := s.repo.GetBatchUserUsageStats(s.ctx, []int64{}, time.Time{}, time.Time{})
 	s.Require().NoError(err)

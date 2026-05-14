@@ -118,3 +118,64 @@ func TestUserHandlerGetByIDIncludesActivityFields(t *testing.T) {
 	require.WithinDuration(t, lastActiveAt, *resp.Data.LastActiveAt, time.Second)
 	require.WithinDuration(t, lastUsedAt, *resp.Data.LastUsedAt, time.Second)
 }
+
+func TestUserHandlerGetByIDIncludesAvatarAndIdentityBindings(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	now := time.Date(2026, 4, 20, 8, 0, 0, 0, time.UTC)
+	adminSvc := newStubAdminService()
+	adminSvc.users = []service.User{
+		{
+			ID:        9,
+			Email:     "profile@example.com",
+			Username:  "profile-user",
+			AvatarURL: "https://cdn.example.com/user-avatar.png",
+			Role:      service.RoleUser,
+			Status:    service.StatusActive,
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+	}
+	adminSvc.identitySummaries = map[int64]service.UserIdentitySummarySet{
+		9: {
+			LinuxDo: service.UserIdentitySummary{
+				Provider:    "linuxdo",
+				Bound:       true,
+				DisplayName: "LinuxDo Nick",
+				AvatarURL:   "https://cdn.example.com/linuxdo-avatar.png",
+				SubjectHint: "linuxdo-user",
+			},
+		},
+	}
+	handler := NewUserHandler(adminSvc, nil)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Params = gin.Params{{Key: "id", Value: "9"}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/users/9", nil)
+
+	handler.GetByID(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			AvatarURL    string `json:"avatar_url"`
+			AuthBindings map[string]struct {
+				Provider    string `json:"provider"`
+				Bound       bool   `json:"bound"`
+				DisplayName string `json:"display_name"`
+				AvatarURL   string `json:"avatar_url"`
+				SubjectHint string `json:"subject_hint"`
+			} `json:"auth_bindings"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+	require.Equal(t, 0, resp.Code)
+	require.Equal(t, "https://cdn.example.com/user-avatar.png", resp.Data.AvatarURL)
+	require.True(t, resp.Data.AuthBindings["linuxdo"].Bound)
+	require.Equal(t, "LinuxDo Nick", resp.Data.AuthBindings["linuxdo"].DisplayName)
+	require.Equal(t, "https://cdn.example.com/linuxdo-avatar.png", resp.Data.AuthBindings["linuxdo"].AvatarURL)
+	require.Equal(t, "linuxdo-user", resp.Data.AuthBindings["linuxdo"].SubjectHint)
+}

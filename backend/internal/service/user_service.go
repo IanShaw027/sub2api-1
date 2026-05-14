@@ -135,7 +135,7 @@ type UserIdentitySummary struct {
 	Bound         bool       `json:"bound"`
 	BoundCount    int        `json:"bound_count"`
 	DisplayName   string     `json:"display_name,omitempty"`
-	AvatarURL     string     `json:"-"`
+	AvatarURL     string     `json:"avatar_url,omitempty"`
 	SubjectHint   string     `json:"subject_hint,omitempty"`
 	ProviderKey   string     `json:"provider_key,omitempty"`
 	VerifiedAt    *time.Time `json:"verified_at,omitempty"`

@@ -18,6 +18,12 @@ type UserWithConcurrency struct {
 	CurrentConcurrency int `json:"current_concurrency"`
 }
 
+type UserWithIdentityBindings struct {
+	dto.AdminUser
+	AuthBindings     map[string]service.UserIdentitySummary `json:"auth_bindings"`
+	IdentityBindings map[string]service.UserIdentitySummary `json:"identity_bindings"`
+}
+
 // UserHandler handles admin user management
 type UserHandler struct {
 	adminService       service.AdminService
@@ -187,7 +193,26 @@ func (h *UserHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	response.Success(c, dto.UserFromServiceAdmin(user))
+	identities, err := h.adminService.GetUserIdentitySummaries(c.Request.Context(), userID, user)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, UserWithIdentityBindings{
+		AdminUser:        *dto.UserFromServiceAdmin(user),
+		AuthBindings:     userIdentityBindingMap(identities),
+		IdentityBindings: userIdentityBindingMap(identities),
+	})
+}
+
+func userIdentityBindingMap(identities service.UserIdentitySummarySet) map[string]service.UserIdentitySummary {
+	return map[string]service.UserIdentitySummary{
+		"email":   identities.Email,
+		"linuxdo": identities.LinuxDo,
+		"oidc":    identities.OIDC,
+		"wechat":  identities.WeChat,
+	}
 }
 
 // BindAuthIdentity manually binds a canonical auth identity to a user.

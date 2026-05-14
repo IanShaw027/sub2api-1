@@ -7,12 +7,14 @@ import UsersView from '../UsersView.vue'
 
 const {
   listUsers,
+  getById,
   getAllGroups,
   getBatchUsersUsage,
   listEnabledDefinitions,
   getBatchUserAttributes
 } = vi.hoisted(() => ({
   listUsers: vi.fn(),
+  getById: vi.fn(),
   getAllGroups: vi.fn(),
   getBatchUsersUsage: vi.fn(),
   listEnabledDefinitions: vi.fn(),
@@ -23,6 +25,7 @@ vi.mock('@/api/admin', () => ({
   adminAPI: {
     users: {
       list: listUsers,
+      getById,
       toggleStatus: vi.fn(),
       delete: vi.fn()
     },
@@ -56,7 +59,7 @@ vi.mock('vue-i18n', async () => {
   }
 })
 
-const createAdminUser = (): AdminUser => ({
+const createAdminUser = (overrides: Partial<AdminUser> = {}): AdminUser => ({
   id: 42,
   username: 'scoped-user',
   email: 'scoped@example.com',
@@ -74,7 +77,8 @@ const createAdminUser = (): AdminUser => ({
   last_login_at: '2026-04-15T02:00:00Z',
   last_active_at: '2026-04-16T02:00:00Z',
   last_used_at: '2026-04-17T02:00:00Z',
-  current_concurrency: 0
+  current_concurrency: 0,
+  ...overrides
 })
 
 const DataTableStub = {
@@ -84,8 +88,18 @@ const DataTableStub = {
     <div>
       <div data-test="columns">{{ columns.map(col => col.key).join(',') }}</div>
       <button data-test="sort-last-used" @click="$emit('sort', 'last_used_at', 'desc')">sort</button>
+      <button data-test="sort-today-balance" @click="$emit('sort', 'today_balance_usage', 'desc')">today balance</button>
+      <button data-test="sort-today-subscription" @click="$emit('sort', 'today_subscription_usage', 'desc')">today subscription</button>
+      <button data-test="sort-last-30d" @click="$emit('sort', 'last_30d_usage', 'desc')">last 30d</button>
+      <div data-test="row-order">{{ data.map(row => row.email).join(',') }}</div>
       <div v-for="row in data" :key="row.id">
         <slot name="cell-email" :value="row.email" :row="row" />
+        <div data-test="usage-cell">
+          <slot name="cell-usage" :row="row" />
+        </div>
+        <div data-test="concurrency-cell">
+          <slot name="cell-concurrency" :row="row" />
+        </div>
         <div data-test="last-active-cell">
           <slot name="cell-last_active_at" :value="row.last_active_at" :row="row" />
         </div>
@@ -108,6 +122,7 @@ describe('admin UsersView', () => {
 
     listUsers.mockReset()
     getAllGroups.mockReset()
+    getById.mockReset()
     getBatchUsersUsage.mockReset()
     listEnabledDefinitions.mockReset()
     getBatchUserAttributes.mockReset()
@@ -120,9 +135,134 @@ describe('admin UsersView', () => {
       pages: 1
     })
     getAllGroups.mockResolvedValue([])
+    getById.mockResolvedValue(createAdminUser())
     getBatchUsersUsage.mockResolvedValue({ stats: {} })
     listEnabledDefinitions.mockResolvedValue([])
     getBatchUserAttributes.mockResolvedValue({ values: {} })
+  })
+
+  it('shows split usage totals and requests backend usage sorts', async () => {
+    getBatchUsersUsage.mockResolvedValue({
+      stats: {
+        42: {
+          user_id: 42,
+          today_actual_cost: 0.17,
+          today_balance_actual_cost: 0.12,
+          today_subscription_actual_cost: 0.05,
+          total_actual_cost: 1.23
+        }
+      }
+    })
+
+    const wrapper = mount(UsersView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          EmptyState: true,
+          GroupBadge: true,
+          Select: true,
+          UserAttributesConfigModal: true,
+          UserConcurrencyCell: true,
+          UserCreateModal: true,
+          UserEditModal: true,
+          UserApiKeysModal: true,
+          UserAllowedGroupsModal: true,
+          UserBalanceModal: true,
+          UserBalanceHistoryModal: true,
+          GroupReplaceModal: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
+    await flushPromises()
+    vi.advanceTimersByTime(60)
+    await flushPromises()
+
+    const visibleColumns = wrapper.get('[data-test="columns"]').text().split(',')
+    expect(visibleColumns).toContain('usage')
+    expect(wrapper.get('[data-test="usage-cell"]').text()).toContain('$0.1200')
+    expect(wrapper.get('[data-test="usage-cell"]').text()).toContain('$0.0500')
+    expect(wrapper.get('[data-test="usage-cell"]').text()).toContain('$1.2300')
+
+    for (const [button, sortBy] of [
+      ['[data-test="sort-today-balance"]', 'today_balance_usage'],
+      ['[data-test="sort-today-subscription"]', 'today_subscription_usage'],
+      ['[data-test="sort-last-30d"]', 'last_30d_usage']
+    ] as const) {
+      await wrapper.get(button).trigger('click')
+      await flushPromises()
+      expect(listUsers).toHaveBeenLastCalledWith(
+        1,
+        20,
+        expect.objectContaining({
+          sort_by: sortBy,
+          sort_order: 'desc'
+        }),
+        expect.any(Object)
+      )
+    }
+  })
+
+  it('sorts the current page by runtime current and available concurrency', async () => {
+    listUsers.mockResolvedValue({
+      items: [
+        createAdminUser({ id: 1, email: 'low-current@example.com', concurrency: 5, current_concurrency: 1 }),
+        createAdminUser({ id: 2, email: 'high-current@example.com', concurrency: 5, current_concurrency: 4 }),
+        createAdminUser({ id: 3, email: 'high-available@example.com', concurrency: 10, current_concurrency: 2 })
+      ],
+      total: 3,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mount(UsersView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          EmptyState: true,
+          GroupBadge: true,
+          Select: true,
+          UserAttributesConfigModal: true,
+          UserConcurrencyCell: true,
+          UserCreateModal: true,
+          UserEditModal: true,
+          UserApiKeysModal: true,
+          UserAllowedGroupsModal: true,
+          UserBalanceModal: true,
+          UserBalanceHistoryModal: true,
+          GroupReplaceModal: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    await wrapper.get('[data-test="concurrency-sort"]').setValue('current_desc')
+    await flushPromises()
+    expect(wrapper.get('[data-test="row-order"]').text()).toBe('high-current@example.com,high-available@example.com,low-current@example.com')
+
+    await wrapper.get('[data-test="concurrency-sort"]').setValue('available_desc')
+    await flushPromises()
+    expect(wrapper.get('[data-test="row-order"]').text()).toBe('high-available@example.com,low-current@example.com,high-current@example.com')
+
+    expect(listUsers).toHaveBeenCalledTimes(1)
   })
 
   afterEach(() => {

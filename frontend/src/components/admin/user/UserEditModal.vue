@@ -6,6 +6,47 @@
     @close="$emit('close')"
   >
     <form v-if="user" id="edit-user-form" @submit.prevent="handleUpdateUser" class="space-y-5">
+      <div class="flex items-center gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-800/60">
+        <div class="h-14 w-14 overflow-hidden rounded-full bg-primary-100 dark:bg-primary-900/30">
+          <img
+            v-if="user.avatar_url"
+            data-test="user-avatar"
+            :src="user.avatar_url"
+            :alt="user.email"
+            class="h-full w-full object-cover"
+          />
+          <div v-else class="flex h-full w-full items-center justify-center text-lg font-semibold text-primary-700 dark:text-primary-300">
+            {{ user.email.charAt(0).toUpperCase() }}
+          </div>
+        </div>
+        <div class="min-w-0">
+          <div class="text-sm font-medium text-gray-900 dark:text-white">{{ user.email }}</div>
+          <div class="text-xs text-gray-500 dark:text-gray-400">{{ user.username || '-' }}</div>
+          <div v-if="identityCards.length > 0" class="mt-2 flex flex-wrap gap-2">
+            <div
+              v-for="card in identityCards"
+              :key="card.provider"
+              class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-2 py-1 dark:border-dark-700 dark:bg-dark-900"
+            >
+              <img
+                v-if="card.avatar_url"
+                :data-test="`identity-avatar-${card.provider}`"
+                :src="card.avatar_url"
+                :alt="card.display_name || card.provider"
+                class="h-6 w-6 rounded-full object-cover"
+              />
+              <div class="min-w-0">
+                <div class="truncate text-xs font-medium text-gray-700 dark:text-gray-200">
+                  {{ card.display_name || card.provider }}
+                </div>
+                <div class="truncate text-[11px] text-gray-500 dark:text-gray-400">
+                  {{ card.subject_hint || card.provider_key || '-' }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
       <div>
         <label class="input-label">{{ t('admin.users.email') }}</label>
         <input v-model="form.email" type="email" class="input" />
@@ -63,7 +104,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { computed, ref, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useClipboard } from '@/composables/useClipboard'
@@ -78,6 +119,30 @@ const emit = defineEmits(['close', 'success'])
 const { t } = useI18n(); const appStore = useAppStore(); const { copyToClipboard } = useClipboard()
 
 const submitting = ref(false); const passwordCopied = ref(false)
+const identityCards = computed(() => {
+  const bindings = props.user?.auth_bindings || props.user?.identity_bindings || {}
+  return Object.entries(bindings)
+    .map(([provider, binding]) => {
+      if (provider === 'email') {
+        return null
+      }
+      if (!binding || typeof binding !== 'object') {
+        return null
+      }
+      const raw = binding as Record<string, string | boolean | null | undefined>
+      if (raw.bound !== true) {
+        return null
+      }
+      return {
+        provider,
+        display_name: typeof raw.display_name === 'string' ? raw.display_name : provider,
+        avatar_url: typeof raw.avatar_url === 'string' ? raw.avatar_url : '',
+        subject_hint: typeof raw.subject_hint === 'string' ? raw.subject_hint : '',
+        provider_key: typeof raw.provider_key === 'string' ? raw.provider_key : ''
+      }
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item))
+})
 const form = reactive({ email: '', password: '', username: '', notes: '', concurrency: 1, rpm_limit: 0, customAttributes: {} as UserAttributeValuesMap })
 
 watch(() => props.user, (u) => {

@@ -7,10 +7,17 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
 func (s *UserRepoSuite) mustInsertUsageLog(userID int64, createdAt time.Time) {
+	s.T().Helper()
+
+	s.mustInsertUsageLogWithCost(userID, 0.01, nil, createdAt)
+}
+
+func (s *UserRepoSuite) mustInsertUsageLogWithCost(userID int64, cost float64, subscriptionID *int64, createdAt time.Time) {
 	s.T().Helper()
 
 	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "usage-log-account"})
@@ -18,11 +25,13 @@ func (s *UserRepoSuite) mustInsertUsageLog(userID int64, createdAt time.Time) {
 
 	_, err := integrationDB.ExecContext(
 		s.ctx,
-		`INSERT INTO usage_logs (user_id, api_key_id, account_id, model, input_tokens, output_tokens, total_cost, actual_cost, created_at)
-		 VALUES ($1, $2, $3, 'gpt-test', 1, 1, 0.01, 0.01, $4)`,
+		`INSERT INTO usage_logs (user_id, api_key_id, account_id, subscription_id, model, input_tokens, output_tokens, total_cost, actual_cost, created_at)
+		 VALUES ($1, $2, $3, $4, 'gpt-test', 1, 1, $5, $5, $6)`,
 		userID,
 		apiKey.ID,
 		account.ID,
+		subscriptionID,
+		cost,
 		createdAt.UTC(),
 	)
 	s.Require().NoError(err)
@@ -180,6 +189,55 @@ func (s *UserRepoSuite) TestListWithFilters_SortByLastUsedAtDesc_UsesUsageLogsNo
 	s.Require().Equal(rightSource.ID, users[0].ID)
 	s.Require().Equal(wrongSource.ID, users[1].ID)
 	s.Require().Equal(nilUsage.ID, users[2].ID)
+}
+
+func (s *UserRepoSuite) TestListWithFilters_SortByUsageCostFields() {
+	today := timezone.Today().Add(2 * time.Hour).UTC()
+	yesterday := today.Add(-24 * time.Hour)
+
+	group := s.mustCreateGroup("usage-sort-subscription")
+	userA := s.mustCreateUser(&service.User{Email: "usage-a@example.com"})
+	userB := s.mustCreateUser(&service.User{Email: "usage-b@example.com"})
+	userC := s.mustCreateUser(&service.User{Email: "usage-c@example.com"})
+	subA := s.mustCreateSubscription(userA.ID, group.ID, nil)
+	subB := s.mustCreateSubscription(userB.ID, group.ID, nil)
+
+	s.mustInsertUsageLogWithCost(userA.ID, 0.50, nil, today)
+	s.mustInsertUsageLogWithCost(userA.ID, 0.10, &subA.ID, today)
+	s.mustInsertUsageLogWithCost(userA.ID, 0.10, nil, yesterday)
+
+	s.mustInsertUsageLogWithCost(userB.ID, 0.90, &subB.ID, today)
+	s.mustInsertUsageLogWithCost(userB.ID, 0.10, nil, yesterday)
+
+	s.mustInsertUsageLogWithCost(userC.ID, 0.20, nil, today)
+	s.mustInsertUsageLogWithCost(userC.ID, 1.00, nil, yesterday)
+
+	balanceSorted, _, err := s.repo.ListWithFilters(s.ctx, pagination.PaginationParams{
+		Page:      1,
+		PageSize:  10,
+		SortBy:    "today_balance_usage",
+		SortOrder: "desc",
+	}, service.UserListFilters{})
+	s.Require().NoError(err)
+	s.Require().Equal([]int64{userA.ID, userC.ID, userB.ID}, []int64{balanceSorted[0].ID, balanceSorted[1].ID, balanceSorted[2].ID})
+
+	subscriptionSorted, _, err := s.repo.ListWithFilters(s.ctx, pagination.PaginationParams{
+		Page:      1,
+		PageSize:  10,
+		SortBy:    "today_subscription_usage",
+		SortOrder: "desc",
+	}, service.UserListFilters{})
+	s.Require().NoError(err)
+	s.Require().Equal([]int64{userB.ID, userA.ID, userC.ID}, []int64{subscriptionSorted[0].ID, subscriptionSorted[1].ID, subscriptionSorted[2].ID})
+
+	last30Sorted, _, err := s.repo.ListWithFilters(s.ctx, pagination.PaginationParams{
+		Page:      1,
+		PageSize:  10,
+		SortBy:    "last_30d_usage",
+		SortOrder: "desc",
+	}, service.UserListFilters{})
+	s.Require().NoError(err)
+	s.Require().Equal([]int64{userC.ID, userB.ID, userA.ID}, []int64{last30Sorted[0].ID, last30Sorted[1].ID, last30Sorted[2].ID})
 }
 
 func TestUserRepoSortSuiteSmoke(_ *testing.T) {}
