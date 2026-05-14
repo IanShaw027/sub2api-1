@@ -148,7 +148,7 @@ func (s *userGroupRateRepoStubForListUsers) DeleteByUserID(_ context.Context, us
 	panic("unexpected DeleteByUserID call")
 }
 
-func TestAdminService_ListUsers_DoesNotLoadGroupRates(t *testing.T) {
+func TestAdminService_ListUsers_LoadsGroupRates(t *testing.T) {
 	userRepo := &userRepoStubForListUsers{
 		users: []User{
 			{ID: 101, Username: "u1"},
@@ -156,7 +156,7 @@ func TestAdminService_ListUsers_DoesNotLoadGroupRates(t *testing.T) {
 		},
 	}
 	rateRepo := &userGroupRateRepoStubForListUsers{
-		singleData: map[int64]map[int64]float64{
+		batchData: map[int64]map[int64]float64{
 			101: {11: 1.1},
 			202: {22: 2.2},
 		},
@@ -170,10 +170,10 @@ func TestAdminService_ListUsers_DoesNotLoadGroupRates(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(2), total)
 	require.Len(t, users, 2)
-	require.Equal(t, 0, rateRepo.batchCalls)
+	require.Equal(t, 1, rateRepo.batchCalls)
 	require.Empty(t, rateRepo.singleCall)
-	require.Nil(t, users[0].GroupRates)
-	require.Nil(t, users[1].GroupRates)
+	require.Equal(t, map[int64]float64{11: 1.1}, users[0].GroupRates)
+	require.Equal(t, map[int64]float64{22: 2.2}, users[1].GroupRates)
 }
 
 func TestAdminService_ListUsers_PassesSortParams(t *testing.T) {

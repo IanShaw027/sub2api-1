@@ -212,6 +212,8 @@ func userIdentityBindingMap(identities service.UserIdentitySummarySet) map[strin
 		"linuxdo": identities.LinuxDo,
 		"oidc":    identities.OIDC,
 		"wechat":  identities.WeChat,
+		"github":  identities.GitHub,
+		"google":  identities.Google,
 	}
 }
 

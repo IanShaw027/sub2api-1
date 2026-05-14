@@ -154,6 +154,8 @@ type UserIdentitySummarySet struct {
 	LinuxDo UserIdentitySummary `json:"linuxdo"`
 	OIDC    UserIdentitySummary `json:"oidc"`
 	WeChat  UserIdentitySummary `json:"wechat"`
+	GitHub  UserIdentitySummary `json:"github"`
+	Google  UserIdentitySummary `json:"google"`
 }
 
 type StartUserIdentityBindingRequest struct {
@@ -289,6 +291,8 @@ func (s *UserService) GetProfileIdentitySummaries(ctx context.Context, userID in
 		LinuxDo: s.buildProviderIdentitySummary("linuxdo", user, records),
 		OIDC:    s.buildProviderIdentitySummary("oidc", user, records),
 		WeChat:  s.buildProviderIdentitySummary("wechat", user, records),
+		GitHub:  s.buildProviderIdentitySummary("github", user, records),
+		Google:  s.buildProviderIdentitySummary("google", user, records),
 	}
 
 	s.applyExplicitProviderAvailability(ctx, &summaries)
@@ -303,6 +307,8 @@ func (s *UserService) applyExplicitProviderAvailability(ctx context.Context, sum
 	settings, err := s.settingRepo.GetMultiple(ctx, []string{
 		SettingKeyLinuxDoConnectEnabled,
 		SettingKeyOIDCConnectEnabled,
+		SettingKeyGitHubOAuthEnabled,
+		SettingKeyGoogleOAuthEnabled,
 		SettingKeyWeChatConnectEnabled,
 		SettingKeyWeChatConnectOpenEnabled,
 		SettingKeyWeChatConnectMPEnabled,
@@ -318,6 +324,12 @@ func (s *UserService) applyExplicitProviderAvailability(ctx context.Context, sum
 	}
 	if raw, ok := settings[SettingKeyOIDCConnectEnabled]; ok && strings.TrimSpace(raw) != "" && raw != "true" {
 		disableIdentityBindAction(&summaries.OIDC)
+	}
+	if raw, ok := settings[SettingKeyGitHubOAuthEnabled]; ok && strings.TrimSpace(raw) != "" && raw != "true" {
+		disableIdentityBindAction(&summaries.GitHub)
+	}
+	if raw, ok := settings[SettingKeyGoogleOAuthEnabled]; ok && strings.TrimSpace(raw) != "" && raw != "true" {
+		disableIdentityBindAction(&summaries.Google)
 	}
 	if raw, ok := settings[SettingKeyWeChatConnectEnabled]; ok && strings.TrimSpace(raw) != "" {
 		if raw != "true" {
@@ -868,9 +880,9 @@ func (s *UserService) buildProviderIdentitySummary(provider string, user *User, 
 	}
 	filtered := filterUserAuthIdentities(records, provider)
 	if len(filtered) == 0 {
-		summary.CanBind = true
 		bindStartPath, err := buildUserIdentityBindAuthorizeURL(provider, "")
 		if err == nil {
+			summary.CanBind = true
 			summary.BindStartPath = bindStartPath
 		}
 		return summary
@@ -904,7 +916,7 @@ func (s *UserService) canUnbindProvider(provider string, user *User, records []U
 		return true
 	}
 
-	for _, candidate := range []string{"linuxdo", "oidc", "wechat"} {
+	for _, candidate := range []string{"linuxdo", "oidc", "wechat", "github", "google"} {
 		if candidate == provider {
 			continue
 		}

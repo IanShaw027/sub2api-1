@@ -432,6 +432,47 @@ func TestGetProfileIdentitySummaries_AllowsUnbindWhenAnotherLoginMethodRemains(t
 	require.NotEmpty(t, summaries.LinuxDo.SubjectHint)
 }
 
+func TestGetProfileIdentitySummaries_IncludesGitHubAndGoogleBindings(t *testing.T) {
+	repo := &mockUserRepo{
+		getByIDUser: &User{
+			ID:    8,
+			Email: "alice@example.com",
+		},
+		identities: []UserAuthIdentityRecord{
+			{
+				ProviderType:    "email",
+				ProviderKey:     "email",
+				ProviderSubject: "alice@example.com",
+			},
+			{
+				ProviderType:    "github",
+				ProviderKey:     "github",
+				ProviderSubject: "github-subject-123",
+				Metadata: map[string]any{
+					"display_name": "GitHub Alice",
+				},
+			},
+			{
+				ProviderType:    "google",
+				ProviderKey:     "google",
+				ProviderSubject: "google-subject-456",
+				Metadata: map[string]any{
+					"display_name": "Google Alice",
+				},
+			},
+		},
+	}
+	svc := NewUserService(repo, nil, nil, nil)
+
+	summaries, err := svc.GetProfileIdentitySummaries(context.Background(), 8, repo.getByIDUser)
+
+	require.NoError(t, err)
+	require.True(t, summaries.GitHub.Bound)
+	require.Equal(t, "GitHub Alice", summaries.GitHub.DisplayName)
+	require.True(t, summaries.Google.Bound)
+	require.Equal(t, "Google Alice", summaries.Google.DisplayName)
+}
+
 func TestUnbindUserAuthProviderRejectsLastRemainingLoginMethod(t *testing.T) {
 	repo := &mockUserRepo{
 		getByIDUser: &User{

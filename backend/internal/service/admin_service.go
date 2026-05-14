@@ -649,6 +649,7 @@ func (s *adminServiceImpl) ListUsers(ctx context.Context, page, pageSize int, fi
 		return nil, 0, err
 	}
 	s.decorateUsersForList(ctx, users)
+	s.populateGroupRatesForUsers(ctx, users)
 	return users, result.Total, nil
 }
 
@@ -703,6 +704,7 @@ func (s *adminServiceImpl) listUsersByLiveConcurrency(ctx context.Context, page,
 	pagedUsers := users[start:end]
 	s.populateUsageStatsForUsers(ctx, pagedUsers)
 	s.decorateUsersForList(ctx, pagedUsers)
+	s.populateGroupRatesForUsers(ctx, pagedUsers)
 	return pagedUsers, total, nil
 }
 
@@ -824,6 +826,40 @@ func (s *adminServiceImpl) decorateUsersForList(ctx context.Context, users []Use
 	}
 }
 
+func (s *adminServiceImpl) populateGroupRatesForUsers(ctx context.Context, users []User) {
+	if len(users) == 0 || s.userGroupRateRepo == nil {
+		return
+	}
+
+	userIDs := make([]int64, 0, len(users))
+	for i := range users {
+		userIDs = append(userIDs, users[i].ID)
+	}
+
+	if batchRepo, ok := s.userGroupRateRepo.(userGroupRateBatchReader); ok {
+		ratesByUser, err := batchRepo.GetByUserIDs(ctx, userIDs)
+		if err != nil {
+			logger.LegacyPrintf("service.admin", "failed to load user group rates in batch: err=%v", err)
+		} else {
+			for i := range users {
+				if rates, ok := ratesByUser[users[i].ID]; ok {
+					users[i].GroupRates = rates
+				}
+			}
+			return
+		}
+	}
+
+	for i := range users {
+		rates, err := s.userGroupRateRepo.GetByUserID(ctx, users[i].ID)
+		if err != nil {
+			logger.LegacyPrintf("service.admin", "failed to load user group rates: user_id=%d err=%v", users[i].ID, err)
+			continue
+		}
+		users[i].GroupRates = rates
+	}
+}
+
 func (s *adminServiceImpl) GetUser(ctx context.Context, id int64) (*User, error) {
 	user, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {
@@ -873,6 +909,8 @@ func (s *adminServiceImpl) GetUserIdentitySummaries(ctx context.Context, userID 
 		LinuxDo: userSvc.buildProviderIdentitySummary("linuxdo", user, records),
 		OIDC:    userSvc.buildProviderIdentitySummary("oidc", user, records),
 		WeChat:  userSvc.buildProviderIdentitySummary("wechat", user, records),
+		GitHub:  userSvc.buildProviderIdentitySummary("github", user, records),
+		Google:  userSvc.buildProviderIdentitySummary("google", user, records),
 	}
 	userSvc.applyExplicitProviderAvailability(ctx, &summaries)
 	return summaries, nil
