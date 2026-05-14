@@ -220,6 +220,9 @@ func (s *UserRepoSuite) TestListWithFilters_SortByUsageCostFields() {
 	}, service.UserListFilters{})
 	s.Require().NoError(err)
 	s.Require().Equal([]int64{userA.ID, userC.ID, userB.ID}, []int64{balanceSorted[0].ID, balanceSorted[1].ID, balanceSorted[2].ID})
+	s.Require().InDelta(0.50, balanceSorted[0].TodayBalanceActualCost, 0.0001)
+	s.Require().InDelta(0.20, balanceSorted[1].TodayBalanceActualCost, 0.0001)
+	s.Require().InDelta(0.00, balanceSorted[2].TodayBalanceActualCost, 0.0001)
 
 	subscriptionSorted, _, err := s.repo.ListWithFilters(s.ctx, pagination.PaginationParams{
 		Page:      1,
@@ -229,6 +232,9 @@ func (s *UserRepoSuite) TestListWithFilters_SortByUsageCostFields() {
 	}, service.UserListFilters{})
 	s.Require().NoError(err)
 	s.Require().Equal([]int64{userB.ID, userA.ID, userC.ID}, []int64{subscriptionSorted[0].ID, subscriptionSorted[1].ID, subscriptionSorted[2].ID})
+	s.Require().InDelta(0.90, subscriptionSorted[0].TodaySubscriptionActualCost, 0.0001)
+	s.Require().InDelta(0.10, subscriptionSorted[1].TodaySubscriptionActualCost, 0.0001)
+	s.Require().InDelta(0.00, subscriptionSorted[2].TodaySubscriptionActualCost, 0.0001)
 
 	last30Sorted, _, err := s.repo.ListWithFilters(s.ctx, pagination.PaginationParams{
 		Page:      1,
@@ -238,6 +244,9 @@ func (s *UserRepoSuite) TestListWithFilters_SortByUsageCostFields() {
 	}, service.UserListFilters{})
 	s.Require().NoError(err)
 	s.Require().Equal([]int64{userC.ID, userB.ID, userA.ID}, []int64{last30Sorted[0].ID, last30Sorted[1].ID, last30Sorted[2].ID})
+	s.Require().InDelta(1.20, last30Sorted[0].TotalActualCost, 0.0001)
+	s.Require().InDelta(1.00, last30Sorted[1].TotalActualCost, 0.0001)
+	s.Require().InDelta(0.70, last30Sorted[2].TotalActualCost, 0.0001)
 }
 
 func TestUserRepoSortSuiteSmoke(_ *testing.T) {}

@@ -31,3 +31,25 @@ func TestUserFromServiceAdmin_MapsActivityTimestamps(t *testing.T) {
 	require.WithinDuration(t, lastActiveAt, *out.LastActiveAt, time.Second)
 	require.WithinDuration(t, lastUsedAt, *out.LastUsedAt, time.Second)
 }
+
+func TestUserFromServiceAdmin_MapsUsageStats(t *testing.T) {
+	t.Parallel()
+
+	out := UserFromServiceAdmin(&service.User{
+		ID:                          42,
+		Email:                       "admin@example.com",
+		Username:                    "admin",
+		Role:                        service.RoleAdmin,
+		Status:                      service.StatusActive,
+		TodayActualCost:             0.17,
+		TodayBalanceActualCost:      0.12,
+		TodaySubscriptionActualCost: 0.05,
+		TotalActualCost:             1.23,
+	})
+
+	require.NotNil(t, out)
+	require.Equal(t, 0.17, out.TodayActualCost)
+	require.Equal(t, 0.12, out.TodayBalanceActualCost)
+	require.Equal(t, 0.05, out.TodaySubscriptionActualCost)
+	require.Equal(t, 1.23, out.TotalActualCost)
+}

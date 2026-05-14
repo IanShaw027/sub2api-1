@@ -80,6 +80,9 @@ type UserListFilters struct {
 	// For large datasets this can be expensive; admin list pages should enable it on demand.
 	// nil means not specified (default: load subscriptions for backward compatibility).
 	IncludeSubscriptions *bool
+	// IncludeUsageStats controls whether ListWithFilters should load aggregated usage stats.
+	// nil means not specified (default: load usage stats for backward compatibility).
+	IncludeUsageStats *bool
 }
 
 type UserRepository interface {

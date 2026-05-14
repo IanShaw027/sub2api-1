@@ -661,9 +661,17 @@ func isLiveUserConcurrencySort(sortBy string) bool {
 	}
 }
 
+type userUsageStatsPopulator interface {
+	PopulateUsageStats(ctx context.Context, users []User) error
+}
+
 func (s *adminServiceImpl) listUsersByLiveConcurrency(ctx context.Context, page, pageSize int, filters UserListFilters, sortBy, sortOrder string) ([]User, int64, error) {
+	baseFilters := filters
+	includeUsageStats := false
+	baseFilters.IncludeUsageStats = &includeUsageStats
+
 	baseParams := pagination.PaginationParams{Page: 1, PageSize: 1, SortBy: "id", SortOrder: pagination.SortOrderAsc}
-	_, result, err := s.userRepo.ListWithFilters(ctx, baseParams, filters)
+	_, result, err := s.userRepo.ListWithFilters(ctx, baseParams, baseFilters)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -671,7 +679,7 @@ func (s *adminServiceImpl) listUsersByLiveConcurrency(ctx context.Context, page,
 	if total <= 0 {
 		return []User{}, 0, nil
 	}
-	users, err := s.loadAllUsersForLiveConcurrencySort(ctx, filters, total)
+	users, err := s.loadAllUsersForLiveConcurrencySort(ctx, baseFilters, total)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -693,6 +701,7 @@ func (s *adminServiceImpl) listUsersByLiveConcurrency(ctx context.Context, page,
 		return []User{}, total, nil
 	}
 	pagedUsers := users[start:end]
+	s.populateUsageStatsForUsers(ctx, pagedUsers)
 	s.decorateUsersForList(ctx, pagedUsers)
 	return pagedUsers, total, nil
 }
@@ -724,6 +733,19 @@ func (s *adminServiceImpl) loadAllUsersForLiveConcurrencySort(ctx context.Contex
 		}
 	}
 	return users, nil
+}
+
+func (s *adminServiceImpl) populateUsageStatsForUsers(ctx context.Context, users []User) {
+	if len(users) == 0 {
+		return
+	}
+	populator, ok := s.userRepo.(userUsageStatsPopulator)
+	if !ok {
+		return
+	}
+	if err := populator.PopulateUsageStats(ctx, users); err != nil {
+		logger.LegacyPrintf("service.admin", "failed to populate paged user usage stats: err=%v", err)
+	}
 }
 
 func sortUsersByLiveConcurrency(users []User, loadMap map[int64]*UserLoadInfo, sortBy, sortOrder string) {

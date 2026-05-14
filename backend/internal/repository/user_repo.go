@@ -20,6 +20,7 @@ import (
 	dbuser "github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -523,7 +524,121 @@ func (r *userRepository) ListWithFilters(ctx context.Context, params pagination.
 		}
 	}
 
+	shouldLoadUsageStats := filters.IncludeUsageStats == nil || *filters.IncludeUsageStats
+	if shouldLoadUsageStats {
+		if err := r.populateUsageStats(ctx, userMap); err != nil {
+			logger.LegacyPrintf("repository.user", "failed to load user usage stats in list: err=%v", err)
+		}
+	}
+
 	return outUsers, paginationResultFromTotal(int64(total), params), nil
+}
+
+type userUsageStats struct {
+	TodayActualCost             float64
+	TodayBalanceActualCost      float64
+	TodaySubscriptionActualCost float64
+	TotalActualCost             float64
+}
+
+func (r *userRepository) loadUsageStatsByUserIDs(ctx context.Context, userIDs []int64) (map[int64]userUsageStats, error) {
+	result := make(map[int64]userUsageStats, len(userIDs))
+	if len(userIDs) == 0 {
+		return result, nil
+	}
+	if r.sql == nil {
+		return nil, fmt.Errorf("sql executor is not configured")
+	}
+
+	startTime := time.Now().AddDate(0, 0, -30)
+	todayStart := timezone.Today()
+	query := `
+		SELECT
+			user_id,
+			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $2::timestamptz AND created_at < $3::timestamptz), 0) AS total_actual_cost,
+			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $4::timestamptz), 0) AS today_actual_cost,
+			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $4::timestamptz AND subscription_id IS NULL), 0) AS today_balance_actual_cost,
+			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $4::timestamptz AND subscription_id IS NOT NULL), 0) AS today_subscription_actual_cost
+		FROM usage_logs
+		WHERE user_id = ANY($1)
+		  AND created_at >= LEAST($2::timestamptz, $4::timestamptz)
+		GROUP BY user_id
+	`
+
+	rows, err := r.sql.QueryContext(ctx, query, pq.Array(userIDs), startTime, time.Now(), todayStart)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var (
+			userID                      int64
+			totalActualCost             float64
+			todayActualCost             float64
+			todayBalanceActualCost      float64
+			todaySubscriptionActualCost float64
+		)
+		if scanErr := rows.Scan(
+			&userID,
+			&totalActualCost,
+			&todayActualCost,
+			&todayBalanceActualCost,
+			&todaySubscriptionActualCost,
+		); scanErr != nil {
+			return nil, scanErr
+		}
+		result[userID] = userUsageStats{
+			TodayActualCost:             todayActualCost,
+			TodayBalanceActualCost:      todayBalanceActualCost,
+			TodaySubscriptionActualCost: todaySubscriptionActualCost,
+			TotalActualCost:             totalActualCost,
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (r *userRepository) populateUsageStats(ctx context.Context, userMap map[int64]*service.User) error {
+	if len(userMap) == 0 {
+		return nil
+	}
+
+	userIDs := make([]int64, 0, len(userMap))
+	for id := range userMap {
+		userIDs = append(userIDs, id)
+	}
+
+	usageStatsByUser, err := r.loadUsageStatsByUserIDs(ctx, userIDs)
+	if err != nil {
+		return err
+	}
+
+	for id, u := range userMap {
+		if stats, ok := usageStatsByUser[id]; ok {
+			u.TodayActualCost = stats.TodayActualCost
+			u.TodayBalanceActualCost = stats.TodayBalanceActualCost
+			u.TodaySubscriptionActualCost = stats.TodaySubscriptionActualCost
+			u.TotalActualCost = stats.TotalActualCost
+		}
+	}
+
+	return nil
+}
+
+func (r *userRepository) PopulateUsageStats(ctx context.Context, users []service.User) error {
+	if len(users) == 0 {
+		return nil
+	}
+
+	userMap := make(map[int64]*service.User, len(users))
+	for i := range users {
+		userMap[users[i].ID] = &users[i]
+	}
+
+	return r.populateUsageStats(ctx, userMap)
 }
 
 func userListOrder(params pagination.PaginationParams) []func(*entsql.Selector) {

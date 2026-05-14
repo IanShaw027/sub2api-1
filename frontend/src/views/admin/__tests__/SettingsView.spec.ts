@@ -180,6 +180,15 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.kiroRuntime.cachePrefixTtlSeconds": "前缀缓存 TTL（秒）",
     "admin.settings.kiroRuntime.cachePrefixTtlSecondsPlaceholder": "60 - 3600",
     "admin.settings.kiroRuntime.cachePrefixTtlSecondsHint": "范围 60-3600 秒，且不能大于独立缓存 TTL。",
+    "admin.settings.kiroRuntime.thinkingTitle": "Thinking 兼容",
+    "admin.settings.kiroRuntime.thinkingDescription": "配置 Thinking 兼容模式和阈值。",
+    "admin.settings.kiroRuntime.thinkingMode": "Thinking 模式",
+    "admin.settings.kiroRuntime.thinkingModeHint": "控制请求的 Thinking 兼容行为。",
+    "admin.settings.kiroRuntime.thinkingEffortThreshold": "Thinking 阈值",
+    "admin.settings.kiroRuntime.thinkingEffortThresholdHint": "达到阈值后启用兼容逻辑。",
+    "admin.settings.kiroRuntime.thinkingSimulationTemplate": "Thinking 模板",
+    "admin.settings.kiroRuntime.thinkingSimulationTemplatePlaceholder": "模拟模板",
+    "admin.settings.kiroRuntime.thinkingSimulationTemplateHint": "用于模拟 Thinking 内容。",
     "admin.settings.kiroRuntime.cache_hit_rate_scale_range": "缓存命中率缩放必须在 0-100 之间。",
     "admin.settings.kiroRuntime.cache_min_block_tokens_range": "缓存最小块 Token 数必须大于等于 0。",
     "admin.settings.kiroRuntime.cache_independent_ttl_seconds_range": "独立缓存 TTL 必须在 60-86400 秒之间。",
@@ -196,6 +205,9 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.openaiExperimentalScheduler.description": "默认关闭。开启后仅影响本网关在 OpenAI 账号间的实验性调度选择逻辑，不代表上游 OpenAI 官方能力。",
     "admin.settings.site.uploadImage": "上传图片",
     "admin.settings.site.remove": "移除",
+    "admin.settings.site.contactInfo": "客服联系方式",
+    "admin.settings.site.contactInfoPlaceholder": "例如：QQ: 123456789",
+    "admin.settings.site.contactInfoHint": "填写客服联系方式，将展示在兑换页面、个人资料等位置",
   };
   return {
     ...actual,
@@ -247,7 +259,8 @@ const SelectStub = defineComponent({
     },
   },
   emits: ["update:modelValue", "change"],
-  setup(props, { emit }) {
+  inheritAttrs: false,
+  setup(props, { attrs, emit }) {
     const onChange = (event: Event) => {
       const target = event.target as HTMLSelectElement;
       emit("update:modelValue", target.value);
@@ -262,6 +275,7 @@ const SelectStub = defineComponent({
       h(
         "select",
         {
+          ...attrs,
           class: "select-stub",
           value: props.modelValue ?? "",
           "data-placeholder": props.placeholder,
@@ -746,6 +760,80 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(paymentHelpImageUpload).toBeDefined();
     expect(paymentHelpImageUpload?.attributes("data-upload-label")).toBe("上传图片");
     expect(paymentHelpImageUpload?.attributes("data-remove-label")).toBe("移除");
+  });
+
+  it("keeps thinking compatibility controls only in the gateway tab", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openSecurityTab(wrapper);
+
+    expect(wrapper.get('[data-testid="security-settings-panel"]').text()).not.toContain(
+      "Thinking 兼容",
+    );
+
+    await openGatewayTab(wrapper);
+
+    expect(wrapper.text()).toContain("Thinking 兼容");
+    expect(wrapper.findAll('[data-testid="kiro-runtime-thinking-mode"]')).toHaveLength(1);
+    expect(wrapper.findAll('[data-testid="kiro-runtime-thinking-template"]')).toHaveLength(1);
+  });
+
+  it("keeps security and gateway content inside a single tab panel each", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openSecurityTab(wrapper);
+
+    const securityPanel = wrapper.get('[data-testid="security-settings-panel"]');
+    expect(securityPanel.text()).toContain("admin.settings.registration.title");
+
+    await openGatewayTab(wrapper);
+
+    const gatewayPanel = wrapper.get('[data-testid="gateway-settings-panel"]');
+    expect(gatewayPanel.text()).toContain("admin.settings.claudeCode.title");
+    expect(gatewayPanel.text()).toContain("admin.settings.scheduling.title");
+    expect(gatewayPanel.text()).toContain("Thinking 兼容");
+  });
+
+  it("loads support contact info in the general tab", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      contact_info: "QQ: 123456789",
+      support_qr_codes: [{ image_url: "https://example.com/qr.png", note: "工作日" }],
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+
+    expect(
+      (wrapper.get('[data-testid="site-contact-info"]').element as HTMLInputElement).value,
+    ).toBe("QQ: 123456789");
+    expect(wrapper.get('[data-testid="support-qr-grid"]').classes()).not.toContain("xl:grid-cols-2");
+  });
+
+  it("auto-centers the active settings tab when switching tabs", async () => {
+    const scrollTo = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+      value: scrollTo,
+      configurable: true,
+      writable: true,
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    scrollTo.mockClear();
+
+    await openGatewayTab(wrapper);
+
+    expect(scrollTo).toHaveBeenCalled();
+    expect(scrollTo).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        behavior: "smooth",
+      }),
+    );
   });
 });
 

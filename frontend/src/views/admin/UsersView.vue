@@ -241,23 +241,21 @@
               >
                 <button
                   v-for="option in specialSortOptions"
-                  :key="option.value"
-                  :data-test="`concurrency-sort-option-${option.value}`"
+                  :key="option.key"
+                  :data-test="`concurrency-sort-option-${option.key}`"
                   @click="
-                    concurrencySort = option.value;
-                    applySpecialSort();
+                    toggleSpecialSort(option.key);
                     showSortDropdown = false;
                   "
                   class="flex w-full items-center justify-between px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700"
                 >
                   <span>{{ option.label }}</span>
-                  <Icon
-                    v-if="concurrencySort === option.value"
-                    name="check"
-                    size="sm"
-                    class="text-primary-500"
-                    :stroke-width="2"
-                  />
+                  <span
+                    v-if="sortState.sort_by === option.key"
+                    class="text-xs font-medium text-primary-500"
+                  >
+                    {{ sortState.sort_order === 'desc' ? '↓' : '↑' }}
+                  </span>
                 </button>
               </div>
             </div>
@@ -272,16 +270,48 @@
       <!-- Users Table -->
       <template #table>
         <DataTable
+          :key="dataTableSortUiKey"
           :columns="columns"
           :data="displayUsers"
           :loading="loading"
           :actions-count="7"
           :server-side-sort="true"
-          default-sort-key="created_at"
-          default-sort-order="desc"
-          :sort-storage-key="USER_SORT_STORAGE_KEY"
+          :default-sort-key="dataTableDefaultSortKey"
+          :default-sort-order="dataTableDefaultSortOrder"
           @sort="handleSort"
         >
+          <template #header-usage>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1"
+              @click="handleUsageSort"
+            >
+              <span>{{ t('admin.users.columns.usage') }}</span>
+              <span class="text-[10px] font-normal uppercase tracking-wide text-gray-400 dark:text-dark-500">
+                {{ usageSortLabel }}
+              </span>
+              <span class="text-gray-400 dark:text-dark-500">
+                {{ sortState.sort_order === 'desc' && usageSortActive ? '↓' : usageSortActive ? '↑' : '↕' }}
+              </span>
+            </button>
+          </template>
+
+          <template #header-concurrency>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1"
+              @click="handleConcurrencySort"
+            >
+              <span>{{ t('admin.users.columns.concurrency') }}</span>
+              <span class="text-[10px] font-normal uppercase tracking-wide text-gray-400 dark:text-dark-500">
+                {{ concurrencySortLabel }}
+              </span>
+              <span class="text-gray-400 dark:text-dark-500">
+                {{ sortState.sort_order === 'desc' && concurrencySortActive ? '↓' : concurrencySortActive ? '↑' : '↕' }}
+              </span>
+            </button>
+          </template>
+
           <template #cell-email="{ value, row }">
             <div class="flex items-center gap-2">
               <div
@@ -461,19 +491,19 @@
               <div class="flex items-center gap-1.5">
                 <span class="text-gray-500 dark:text-gray-400">{{ t('admin.users.todayBalance', '今日余额') }}:</span>
                 <span class="font-medium text-gray-900 dark:text-white">
-                  ${{ (usageStats[row.id]?.today_balance_actual_cost ?? 0).toFixed(4) }}
+                  {{ formatOptionalCost(row.today_balance_actual_cost) }}
                 </span>
               </div>
               <div class="mt-0.5 flex items-center gap-1.5">
                 <span class="text-gray-500 dark:text-gray-400">{{ t('admin.users.todaySubscription', '今日订阅') }}:</span>
                 <span class="font-medium text-gray-900 dark:text-white">
-                  ${{ (usageStats[row.id]?.today_subscription_actual_cost ?? 0).toFixed(4) }}
+                  {{ formatOptionalCost(row.today_subscription_actual_cost) }}
                 </span>
               </div>
               <div class="mt-0.5 flex items-center gap-1.5">
                 <span class="text-gray-500 dark:text-gray-400">{{ t('admin.users.last30Days', '近30日') }}:</span>
                 <span class="font-medium text-gray-900 dark:text-white">
-                  ${{ (usageStats[row.id]?.total_actual_cost ?? 0).toFixed(4) }}
+                  {{ formatOptionalCost(row.total_actual_cost) }}
                 </span>
               </div>
             </div>
@@ -678,7 +708,6 @@ import Icon from '@/components/icons/Icon.vue'
 const { t } = useI18n()
 import { adminAPI } from '@/api/admin'
 import type { AdminUser, AdminGroup, UserAttributeDefinition } from '@/types'
-import type { BatchUserUsageStats } from '@/api/admin/dashboard'
 import type { Column } from '@/components/common/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
@@ -785,7 +814,7 @@ const allColumns = computed<Column[]>(() => [
   { key: 'subscriptions', label: t('admin.users.columns.subscriptions'), sortable: false },
   { key: 'balance', label: t('admin.users.columns.balance'), sortable: true },
   { key: 'usage', label: t('admin.users.columns.usage'), sortable: false },
-  { key: 'concurrency', label: t('admin.users.columns.concurrency'), sortable: true },
+  { key: 'concurrency', label: t('admin.users.columns.concurrency'), sortable: false },
   { key: 'status', label: t('admin.users.columns.status'), sortable: true },
   { key: 'last_active_at', label: t('admin.users.columns.lastActive'), sortable: true },
   { key: 'last_used_at', label: t('admin.users.columns.lastUsed'), sortable: true },
@@ -850,8 +879,8 @@ const toggleColumn = (key: string) => {
     hiddenColumns.add(key)
   }
   saveColumnsToStorage()
-  if (wasHidden && (key === 'usage' || key.startsWith('attr_'))) {
-    refreshCurrentPageSecondaryData()
+  if (wasHidden && key.startsWith('attr_')) {
+    refreshCurrentPageAttributeData()
   }
   if (key === 'subscriptions') {
     loadUsers()
@@ -863,7 +892,6 @@ const toggleColumn = (key: string) => {
 
 // Check if column is visible (not in hidden set)
 const isColumnVisible = (key: string) => FORCED_VISIBLE_COLUMNS.has(key) || !hiddenColumns.has(key)
-const hasVisibleUsageColumn = computed(() => isColumnVisible('usage'))
 const hasVisibleSubscriptionsColumn = computed(() => isColumnVisible('subscriptions'))
 const hasVisibleGroupsColumn = computed(() => isColumnVisible('groups'))
 const hasVisibleAttributeColumns = computed(() =>
@@ -877,13 +905,16 @@ const columns = computed<Column[]>(() =>
   )
 )
 
+const formatOptionalCost = (value?: number) =>
+  typeof value === 'number' && Number.isFinite(value) ? `$${value.toFixed(4)}` : '-'
+
 const users = ref<AdminUser[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
 const USER_SORT_STORAGE_KEY = 'admin-users-table-sort'
 const loadInitialSortState = (): { sort_by: string; sort_order: 'asc' | 'desc' } => {
-  const fallback = { sort_by: 'created_at', sort_order: 'desc' as 'asc' | 'desc' }
-  const sortable = new Set(['email', 'id', 'username', 'role', 'balance', 'concurrency', 'status', 'last_used_at', 'last_active_at', 'created_at', 'today_balance_usage', 'today_subscription_usage', 'last_30d_usage', 'current_concurrency', 'available_concurrency'])
+  const fallback = { sort_by: 'today_balance_usage', sort_order: 'desc' as 'asc' | 'desc' }
+  const sortable = new Set(['email', 'id', 'username', 'role', 'balance', 'status', 'last_used_at', 'last_active_at', 'created_at', 'today_balance_usage', 'today_subscription_usage', 'last_30d_usage', 'current_concurrency', 'available_concurrency'])
   try {
     const raw = localStorage.getItem(USER_SORT_STORAGE_KEY)
     if (!raw) return fallback
@@ -899,21 +930,29 @@ const loadInitialSortState = (): { sort_by: string; sort_order: 'asc' | 'desc' }
   }
 }
 const sortState = reactive(loadInitialSortState())
-type UserSortPreset = 'none' | 'today_balance_usage_desc' | 'today_balance_usage_asc' | 'today_subscription_usage_desc' | 'today_subscription_usage_asc' | 'last_30d_usage_desc' | 'last_30d_usage_asc' | 'current_concurrency_desc' | 'current_concurrency_asc' | 'available_concurrency_desc' | 'available_concurrency_asc'
-const specialSortKeys = new Set([
+type UsageSortKey = 'today_balance_usage' | 'today_subscription_usage' | 'last_30d_usage'
+type ConcurrencySortKey = 'current_concurrency' | 'available_concurrency'
+type SpecialSortKey = UsageSortKey | ConcurrencySortKey
+const usageSortKeys = new Set<UsageSortKey>([
   'today_balance_usage',
   'today_subscription_usage',
-  'last_30d_usage',
+  'last_30d_usage'
+])
+const concurrencySortKeys = new Set<ConcurrencySortKey>([
   'current_concurrency',
   'available_concurrency'
 ])
-const syncSpecialSortSelection = () => {
-  if (!specialSortKeys.has(sortState.sort_by)) {
-    concurrencySort.value = 'none'
-    return
-  }
-  concurrencySort.value = `${sortState.sort_by}_${sortState.sort_order}` as UserSortPreset
-}
+const dataTableSortableKeys = new Set([
+  'email',
+  'id',
+  'username',
+  'role',
+  'balance',
+  'status',
+  'last_used_at',
+  'last_active_at',
+  'created_at'
+])
 
 // Groups data for the groups column
 const allGroups = ref<AdminGroup[]>([])
@@ -1039,21 +1078,52 @@ const saveFiltersToStorage = () => {
 const getAttributeDefinition = (attrId: number): UserAttributeDefinition | undefined => {
   return attributeDefinitions.value.find(d => d.id === attrId)
 }
-const usageStats = ref<Record<string, BatchUserUsageStats>>({})
-const concurrencySort = ref<UserSortPreset>('none')
-syncSpecialSortSelection()
+const saveSortStateToStorage = () => {
+  try {
+    localStorage.setItem(
+      USER_SORT_STORAGE_KEY,
+      JSON.stringify({ key: sortState.sort_by, order: sortState.sort_order })
+    )
+  } catch (e) {
+    console.error('Failed to save sort state:', e)
+  }
+}
+
+const usageSortActive = computed(() => usageSortKeys.has(sortState.sort_by as UsageSortKey))
+const concurrencySortActive = computed(() => concurrencySortKeys.has(sortState.sort_by as ConcurrencySortKey))
+const usageSortKey = computed<UsageSortKey>(() =>
+  usageSortActive.value ? sortState.sort_by as UsageSortKey : 'today_balance_usage'
+)
+const concurrencySortKey = computed<ConcurrencySortKey>(() =>
+  concurrencySortActive.value ? sortState.sort_by as ConcurrencySortKey : 'current_concurrency'
+)
+const usageSortLabel = computed(() => {
+  switch (usageSortKey.value) {
+    case 'today_subscription_usage':
+      return t('admin.users.todaySubscription', '今日订阅')
+    case 'last_30d_usage':
+      return t('admin.users.last30Days', '近30日')
+    default:
+      return t('admin.users.todayBalance', '今日余额')
+  }
+})
+const concurrencySortLabel = computed(() => {
+  if (concurrencySortKey.value === 'available_concurrency') {
+    return t('admin.users.sortAvailableDesc', '可用并发').replace(/\s*[↓↑]$/, '')
+  }
+  return t('admin.users.sortCurrentDesc', '当前并发').replace(/\s*[↓↑]$/, '')
+})
+const dataTableDefaultSortKey = computed(() =>
+  dataTableSortableKeys.has(sortState.sort_by) ? sortState.sort_by : ''
+)
+const dataTableDefaultSortOrder = computed<'asc' | 'desc'>(() => sortState.sort_order)
+const dataTableSortUiKey = computed(() => `${sortState.sort_by}:${sortState.sort_order}`)
 const specialSortOptions = computed(() => [
-  { value: 'none' as UserSortPreset, label: t('admin.users.sortConcurrencyNone', '默认排序') },
-  { value: 'today_balance_usage_desc' as UserSortPreset, label: t('admin.users.sortTodayBalanceDesc', '今日余额 ↓') },
-  { value: 'today_balance_usage_asc' as UserSortPreset, label: t('admin.users.sortTodayBalanceAsc', '今日余额 ↑') },
-  { value: 'today_subscription_usage_desc' as UserSortPreset, label: t('admin.users.sortTodaySubscriptionDesc', '今日订阅 ↓') },
-  { value: 'today_subscription_usage_asc' as UserSortPreset, label: t('admin.users.sortTodaySubscriptionAsc', '今日订阅 ↑') },
-  { value: 'last_30d_usage_desc' as UserSortPreset, label: t('admin.users.sortLast30dDesc', '近30日 ↓') },
-  { value: 'last_30d_usage_asc' as UserSortPreset, label: t('admin.users.sortLast30dAsc', '近30日 ↑') },
-  { value: 'current_concurrency_desc' as UserSortPreset, label: t('admin.users.sortCurrentDesc', '当前并发 ↓') },
-  { value: 'current_concurrency_asc' as UserSortPreset, label: t('admin.users.sortCurrentAsc', '当前并发 ↑') },
-  { value: 'available_concurrency_desc' as UserSortPreset, label: t('admin.users.sortAvailableDesc', '可用并发 ↓') },
-  { value: 'available_concurrency_asc' as UserSortPreset, label: t('admin.users.sortAvailableAsc', '可用并发 ↑') }
+  { key: 'today_balance_usage' as SpecialSortKey, label: t('admin.users.todayBalance', '今日余额') },
+  { key: 'today_subscription_usage' as SpecialSortKey, label: t('admin.users.todaySubscription', '今日订阅') },
+  { key: 'last_30d_usage' as SpecialSortKey, label: t('admin.users.last30Days', '近30日') },
+  { key: 'current_concurrency' as SpecialSortKey, label: t('admin.users.sortCurrentDesc', '当前并发').replace(/\s*[↓↑]$/, '') },
+  { key: 'available_concurrency' as SpecialSortKey, label: t('admin.users.sortAvailableDesc', '可用并发').replace(/\s*[↓↑]$/, '') }
 ])
 const displayUsers = computed(() => users.value)
 // User attribute definitions and values
@@ -1086,22 +1156,6 @@ const loadUsersSecondaryData = async (
 
   const tasks: Promise<void>[] = []
 
-  if (hasVisibleUsageColumn.value) {
-    tasks.push(
-      (async () => {
-        try {
-          const usageResponse = await adminAPI.dashboard.getBatchUsersUsage(userIds)
-          if (signal?.aborted) return
-          if (typeof expectedSeq === 'number' && expectedSeq !== secondaryDataSeq) return
-          usageStats.value = usageResponse.stats
-        } catch (e) {
-          if (signal?.aborted) return
-          console.error('Failed to load usage stats:', e)
-        }
-      })()
-    )
-  }
-
   if (attributeDefinitions.value.length > 0 && hasVisibleAttributeColumns.value) {
     tasks.push(
       (async () => {
@@ -1123,7 +1177,7 @@ const loadUsersSecondaryData = async (
   }
 }
 
-const refreshCurrentPageSecondaryData = () => {
+const refreshCurrentPageAttributeData = () => {
   const userIds = users.value.map((u) => u.id)
   if (userIds.length === 0) return
   const seq = ++secondaryDataSeq
@@ -1298,11 +1352,10 @@ const loadUsers = async () => {
     users.value = response.items
     pagination.total = response.total
     pagination.pages = response.pages
-    usageStats.value = {}
     userAttributeValues.value = {}
 
-    // Defer heavy secondary data so table can render first.
-    if (response.items.length > 0) {
+    // Defer attribute loading so table can render first.
+    if (response.items.length > 0 && attributeDefinitions.value.length > 0 && hasVisibleAttributeColumns.value) {
       const userIds = response.items.map((u) => u.id)
       const seq = ++secondaryDataSeq
       window.setTimeout(() => {
@@ -1325,55 +1378,26 @@ const loadUsers = async () => {
   }
 }
 
-const applySpecialSort = () => {
-  switch (concurrencySort.value) {
-    case 'today_balance_usage_desc':
-      sortState.sort_by = 'today_balance_usage'
-      sortState.sort_order = 'desc'
-      break
-    case 'today_balance_usage_asc':
-      sortState.sort_by = 'today_balance_usage'
-      sortState.sort_order = 'asc'
-      break
-    case 'today_subscription_usage_desc':
-      sortState.sort_by = 'today_subscription_usage'
-      sortState.sort_order = 'desc'
-      break
-    case 'today_subscription_usage_asc':
-      sortState.sort_by = 'today_subscription_usage'
-      sortState.sort_order = 'asc'
-      break
-    case 'last_30d_usage_desc':
-      sortState.sort_by = 'last_30d_usage'
-      sortState.sort_order = 'desc'
-      break
-    case 'last_30d_usage_asc':
-      sortState.sort_by = 'last_30d_usage'
-      sortState.sort_order = 'asc'
-      break
-    case 'current_concurrency_desc':
-      sortState.sort_by = 'current_concurrency'
-      sortState.sort_order = 'desc'
-      break
-    case 'current_concurrency_asc':
-      sortState.sort_by = 'current_concurrency'
-      sortState.sort_order = 'asc'
-      break
-    case 'available_concurrency_desc':
-      sortState.sort_by = 'available_concurrency'
-      sortState.sort_order = 'desc'
-      break
-    case 'available_concurrency_asc':
-      sortState.sort_by = 'available_concurrency'
-      sortState.sort_order = 'asc'
-      break
-    default:
-      sortState.sort_by = 'created_at'
-      sortState.sort_order = 'desc'
-      break
-  }
+const applySortAndReload = (key: string, order: 'asc' | 'desc') => {
+  sortState.sort_by = key
+  sortState.sort_order = order
+  saveSortStateToStorage()
   pagination.page = 1
   loadUsers()
+}
+
+const toggleSpecialSort = (key: SpecialSortKey) => {
+  const nextOrder: 'asc' | 'desc' =
+    sortState.sort_by === key && sortState.sort_order === 'desc' ? 'asc' : 'desc'
+  applySortAndReload(key, nextOrder)
+}
+
+const handleUsageSort = () => {
+  toggleSpecialSort(usageSortKey.value)
+}
+
+const handleConcurrencySort = () => {
+  toggleSpecialSort(concurrencySortKey.value)
 }
 
 let searchTimeout: ReturnType<typeof setTimeout>
@@ -1399,11 +1423,7 @@ const handlePageSizeChange = (pageSize: number) => {
 }
 
 const handleSort = (key: string, order: 'asc' | 'desc') => {
-  sortState.sort_by = key
-  sortState.sort_order = order
-  syncSpecialSortSelection()
-  pagination.page = 1
-  loadUsers()
+  applySortAndReload(key, order)
 }
 
 // Filter helpers

@@ -25,13 +25,17 @@ type User struct {
 	TokenVersion   int64 // Incremented on password change to invalidate existing tokens
 	// TokenVersionResolved indicates TokenVersion already contains the fingerprint-derived
 	// value expected in JWT claims and refresh-token state.
-	TokenVersionResolved bool
-	SignupSource         string
-	LastLoginAt          *time.Time
-	LastActiveAt         *time.Time
-	LastUsedAt           *time.Time
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	TokenVersionResolved        bool
+	SignupSource                string
+	LastLoginAt                 *time.Time
+	LastActiveAt                *time.Time
+	LastUsedAt                  *time.Time
+	TodayActualCost             float64
+	TodayBalanceActualCost      float64
+	TodaySubscriptionActualCost float64
+	TotalActualCost             float64
+	CreatedAt                   time.Time
+	UpdatedAt                   time.Time
 
 	// GroupRates 用户专属分组倍率配置
 	// map[groupID]rateMultiplier

@@ -41,8 +41,12 @@ type User struct {
 type AdminUser struct {
 	User
 
-	Notes      string     `json:"notes"`
-	LastUsedAt *time.Time `json:"last_used_at"`
+	Notes                       string     `json:"notes"`
+	LastUsedAt                  *time.Time `json:"last_used_at"`
+	TodayActualCost             float64    `json:"today_actual_cost,omitempty"`
+	TodayBalanceActualCost      float64    `json:"today_balance_actual_cost,omitempty"`
+	TodaySubscriptionActualCost float64    `json:"today_subscription_actual_cost,omitempty"`
+	TotalActualCost             float64    `json:"total_actual_cost,omitempty"`
 	// GroupRates 用户专属分组倍率配置
 	// map[groupID]rateMultiplier
 	GroupRates map[int64]float64 `json:"group_rates,omitempty"`

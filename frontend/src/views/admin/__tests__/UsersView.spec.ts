@@ -9,14 +9,12 @@ const {
   listUsers,
   getById,
   getAllGroups,
-  getBatchUsersUsage,
   listEnabledDefinitions,
   getBatchUserAttributes
 } = vi.hoisted(() => ({
   listUsers: vi.fn(),
   getById: vi.fn(),
   getAllGroups: vi.fn(),
-  getBatchUsersUsage: vi.fn(),
   listEnabledDefinitions: vi.fn(),
   getBatchUserAttributes: vi.fn()
 }))
@@ -31,9 +29,6 @@ vi.mock('@/api/admin', () => ({
     },
     groups: {
       getAll: getAllGroups
-    },
-    dashboard: {
-      getBatchUsersUsage
     },
     userAttributes: {
       listEnabledDefinitions,
@@ -77,6 +72,10 @@ const createAdminUser = (overrides: Partial<AdminUser> = {}): AdminUser => ({
   last_login_at: '2026-04-15T02:00:00Z',
   last_active_at: '2026-04-16T02:00:00Z',
   last_used_at: '2026-04-17T02:00:00Z',
+  today_actual_cost: 0,
+  today_balance_actual_cost: 0,
+  today_subscription_actual_cost: 0,
+  total_actual_cost: 0,
   current_concurrency: 0,
   ...overrides
 })
@@ -87,10 +86,9 @@ const DataTableStub = {
   template: `
     <div>
       <div data-test="columns">{{ columns.map(col => col.key).join(',') }}</div>
+      <div data-test="header-usage"><slot name="header-usage" /></div>
+      <div data-test="header-concurrency"><slot name="header-concurrency" /></div>
       <button data-test="sort-last-used" @click="$emit('sort', 'last_used_at', 'desc')">sort</button>
-      <button data-test="sort-today-balance" @click="$emit('sort', 'today_balance_usage', 'desc')">today balance</button>
-      <button data-test="sort-today-subscription" @click="$emit('sort', 'today_subscription_usage', 'desc')">today subscription</button>
-      <button data-test="sort-last-30d" @click="$emit('sort', 'last_30d_usage', 'desc')">last 30d</button>
       <div data-test="row-order">{{ data.map(row => row.email).join(',') }}</div>
       <div v-for="row in data" :key="row.id">
         <slot name="cell-email" :value="row.email" :row="row" />
@@ -123,7 +121,6 @@ describe('admin UsersView', () => {
     listUsers.mockReset()
     getAllGroups.mockReset()
     getById.mockReset()
-    getBatchUsersUsage.mockReset()
     listEnabledDefinitions.mockReset()
     getBatchUserAttributes.mockReset()
 
@@ -136,22 +133,164 @@ describe('admin UsersView', () => {
     })
     getAllGroups.mockResolvedValue([])
     getById.mockResolvedValue(createAdminUser())
-    getBatchUsersUsage.mockResolvedValue({ stats: {} })
     listEnabledDefinitions.mockResolvedValue([])
     getBatchUserAttributes.mockResolvedValue({ values: {} })
   })
 
-  it('shows split usage totals and requests backend usage sorts', async () => {
-    getBatchUsersUsage.mockResolvedValue({
-      stats: {
-        42: {
-          user_id: 42,
+  it('defaults to sorting by today balance usage in descending order', async () => {
+    mount(UsersView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          EmptyState: true,
+          GroupBadge: true,
+          Select: true,
+          UserAttributesConfigModal: true,
+          UserConcurrencyCell: true,
+          UserCreateModal: true,
+          UserEditModal: true,
+          UserApiKeysModal: true,
+          UserAllowedGroupsModal: true,
+          UserBalanceModal: true,
+          UserBalanceHistoryModal: true,
+          GroupReplaceModal: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(listUsers).toHaveBeenCalledWith(
+      1,
+      20,
+      expect.objectContaining({
+        sort_by: 'today_balance_usage',
+        sort_order: 'desc'
+      }),
+      expect.any(Object)
+    )
+  })
+
+  it('restores persisted special sort without DataTable overriding it', async () => {
+    localStorage.setItem('admin-users-table-sort', JSON.stringify({
+      key: 'available_concurrency',
+      order: 'asc'
+    }))
+
+    mount(UsersView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          EmptyState: true,
+          GroupBadge: true,
+          Select: true,
+          UserAttributesConfigModal: true,
+          UserConcurrencyCell: true,
+          UserCreateModal: true,
+          UserEditModal: true,
+          UserApiKeysModal: true,
+          UserAllowedGroupsModal: true,
+          UserBalanceModal: true,
+          UserBalanceHistoryModal: true,
+          GroupReplaceModal: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(listUsers).toHaveBeenCalledWith(
+      1,
+      20,
+      expect.objectContaining({
+        sort_by: 'available_concurrency',
+        sort_order: 'asc'
+      }),
+      expect.any(Object)
+    )
+    expect(JSON.parse(localStorage.getItem('admin-users-table-sort') || '{}')).toEqual({
+      key: 'available_concurrency',
+      order: 'asc'
+    })
+  })
+
+  it('restores persisted standard column sort on reload', async () => {
+    localStorage.setItem('admin-users-table-sort', JSON.stringify({
+      key: 'email',
+      order: 'asc'
+    }))
+
+    mount(UsersView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          EmptyState: true,
+          GroupBadge: true,
+          Select: true,
+          UserAttributesConfigModal: true,
+          UserConcurrencyCell: true,
+          UserCreateModal: true,
+          UserEditModal: true,
+          UserApiKeysModal: true,
+          UserAllowedGroupsModal: true,
+          UserBalanceModal: true,
+          UserBalanceHistoryModal: true,
+          GroupReplaceModal: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(listUsers).toHaveBeenCalledWith(
+      1,
+      20,
+      expect.objectContaining({
+        sort_by: 'email',
+        sort_order: 'asc'
+      }),
+      expect.any(Object)
+    )
+  })
+
+  it('shows split usage totals from the list response and toggles usage sorting in place', async () => {
+    listUsers.mockResolvedValue({
+      items: [
+        createAdminUser({
           today_actual_cost: 0.17,
           today_balance_actual_cost: 0.12,
           today_subscription_actual_cost: 0.05,
           total_actual_cost: 1.23
-        }
-      }
+        })
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
     })
 
     const wrapper = mount(UsersView, {
@@ -183,8 +322,6 @@ describe('admin UsersView', () => {
     })
 
     await flushPromises()
-    vi.advanceTimersByTime(60)
-    await flushPromises()
 
     const visibleColumns = wrapper.get('[data-test="columns"]').text().split(',')
     expect(visibleColumns).toContain('usage')
@@ -192,23 +329,29 @@ describe('admin UsersView', () => {
     expect(wrapper.get('[data-test="usage-cell"]').text()).toContain('$0.0500')
     expect(wrapper.get('[data-test="usage-cell"]').text()).toContain('$1.2300')
 
-    for (const [button, sortBy] of [
-      ['[data-test="sort-today-balance"]', 'today_balance_usage'],
-      ['[data-test="sort-today-subscription"]', 'today_subscription_usage'],
-      ['[data-test="sort-last-30d"]', 'last_30d_usage']
-    ] as const) {
-      await wrapper.get(button).trigger('click')
-      await flushPromises()
-      expect(listUsers).toHaveBeenLastCalledWith(
-        1,
-        20,
-        expect.objectContaining({
-          sort_by: sortBy,
-          sort_order: 'desc'
-        }),
-        expect.any(Object)
-      )
-    }
+    await wrapper.get('[data-test="header-usage"] button').trigger('click')
+    await flushPromises()
+    expect(listUsers).toHaveBeenLastCalledWith(
+      1,
+      20,
+      expect.objectContaining({
+        sort_by: 'today_balance_usage',
+        sort_order: 'asc'
+      }),
+      expect.any(Object)
+    )
+
+    await wrapper.get('[data-test="header-usage"] button').trigger('click')
+    await flushPromises()
+    expect(listUsers).toHaveBeenLastCalledWith(
+      1,
+      20,
+      expect.objectContaining({
+        sort_by: 'today_balance_usage',
+        sort_order: 'desc'
+      }),
+      expect.any(Object)
+    )
   })
 
   it('sorts the current page by runtime current and available concurrency', async () => {
@@ -271,7 +414,7 @@ describe('admin UsersView', () => {
 
     await wrapper.get('[data-test="concurrency-sort-trigger"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-test="concurrency-sort-option-current_concurrency_desc"]').trigger('click')
+    await wrapper.get('[data-test="concurrency-sort-option-current_concurrency"]').trigger('click')
     await flushPromises()
     expect(listUsers).toHaveBeenLastCalledWith(
       1,
@@ -286,7 +429,21 @@ describe('admin UsersView', () => {
 
     await wrapper.get('[data-test="concurrency-sort-trigger"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-test="concurrency-sort-option-available_concurrency_desc"]').trigger('click')
+    await wrapper.get('[data-test="concurrency-sort-option-current_concurrency"]').trigger('click')
+    await flushPromises()
+    expect(listUsers).toHaveBeenLastCalledWith(
+      1,
+      20,
+      expect.objectContaining({
+        sort_by: 'current_concurrency',
+        sort_order: 'asc'
+      }),
+      expect.any(Object)
+    )
+
+    await wrapper.get('[data-test="concurrency-sort-trigger"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="concurrency-sort-option-available_concurrency"]').trigger('click')
     await flushPromises()
     expect(listUsers).toHaveBeenLastCalledWith(
       1,
@@ -398,7 +555,7 @@ describe('admin UsersView', () => {
       1,
       20,
       expect.objectContaining({
-        sort_by: 'created_at',
+        sort_by: 'today_balance_usage',
         sort_order: 'desc'
       }),
       expect.any(Object)

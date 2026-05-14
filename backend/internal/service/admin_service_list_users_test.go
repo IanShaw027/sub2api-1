@@ -15,17 +15,20 @@ import (
 
 type userRepoStubForListUsers struct {
 	userRepoStub
-	users                 []User
-	err                   error
-	listWithFiltersParams pagination.PaginationParams
-	listWithFiltersCalls  []pagination.PaginationParams
-	lastUsedByUserID      map[int64]*time.Time
-	lastUsedErr           error
+	users                   []User
+	err                     error
+	listWithFiltersParams   pagination.PaginationParams
+	listWithFiltersCalls    []pagination.PaginationParams
+	listWithFiltersFilters  []UserListFilters
+	lastUsedByUserID        map[int64]*time.Time
+	lastUsedErr             error
+	populateUsageStatsCalls int
 }
 
-func (s *userRepoStubForListUsers) ListWithFilters(_ context.Context, params pagination.PaginationParams, _ UserListFilters) ([]User, *pagination.PaginationResult, error) {
+func (s *userRepoStubForListUsers) ListWithFilters(_ context.Context, params pagination.PaginationParams, filters UserListFilters) ([]User, *pagination.PaginationResult, error) {
 	s.listWithFiltersParams = params
 	s.listWithFiltersCalls = append(s.listWithFiltersCalls, params)
+	s.listWithFiltersFilters = append(s.listWithFiltersFilters, filters)
 	if s.err != nil {
 		return nil, nil, s.err
 	}
@@ -49,6 +52,14 @@ func (s *userRepoStubForListUsers) ListWithFilters(_ context.Context, params pag
 		Page:     params.Page,
 		PageSize: params.PageSize,
 	}, nil
+}
+
+func (s *userRepoStubForListUsers) PopulateUsageStats(_ context.Context, users []User) error {
+	s.populateUsageStatsCalls++
+	for i := range users {
+		users[i].TodayBalanceActualCost = float64(users[i].ID) / 100
+	}
+	return nil
 }
 
 func (s *userRepoStubForListUsers) GetLatestUsedAtByUserIDs(_ context.Context, userIDs []int64) (map[int64]*time.Time, error) {
@@ -240,6 +251,14 @@ func TestAdminService_ListUsers_LiveConcurrencySortLoadsBeyondPaginationCap(t *t
 	require.Equal(t, 1000, userRepo.listWithFiltersCalls[1].PageSize)
 	require.Equal(t, 2, userRepo.listWithFiltersCalls[2].Page)
 	require.Equal(t, 1000, userRepo.listWithFiltersCalls[2].PageSize)
+	require.Len(t, userRepo.listWithFiltersFilters, 3)
+	for _, filters := range userRepo.listWithFiltersFilters {
+		require.NotNil(t, filters.IncludeUsageStats)
+		require.False(t, *filters.IncludeUsageStats)
+	}
+	require.Equal(t, 1, userRepo.populateUsageStatsCalls)
+	require.InDelta(t, 10.01, got[0].TodayBalanceActualCost, 0.0001)
+	require.InDelta(t, 10.00, got[1].TodayBalanceActualCost, 0.0001)
 }
 
 func TestAdminService_ListUsers_LiveConcurrencySortFallsBackDeterministicallyWhenLoadFails(t *testing.T) {
