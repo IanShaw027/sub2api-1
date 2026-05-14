@@ -413,7 +413,12 @@ func anthropicDocumentToResponsesPart(b AnthropicContentBlock) *ResponsesContent
 func convertToolResultOutput(b AnthropicContentBlock) (string, []ResponsesContentPart) {
 	if len(b.Content) == 0 {
 		if b.IsError {
-			return anthropicToolErrorPrefix + "(empty)", nil
+			payload, _ := json.Marshal(anthropicToolResultEnvelope{
+				Format:  anthropicToolResultEnvelopeFormat,
+				Text:    []string{"(empty)"},
+				IsError: true,
+			})
+			return string(payload), nil
 		}
 		return "(empty)", nil
 	}
@@ -425,7 +430,12 @@ func convertToolResultOutput(b AnthropicContentBlock) (string, []ResponsesConten
 			s = "(empty)"
 		}
 		if b.IsError {
-			s = anthropicToolErrorPrefix + s
+			payload, _ := json.Marshal(anthropicToolResultEnvelope{
+				Format:  anthropicToolResultEnvelopeFormat,
+				Text:    []string{s},
+				IsError: true,
+			})
+			return string(payload), nil
 		}
 		return s, nil
 	}
@@ -434,7 +444,12 @@ func convertToolResultOutput(b AnthropicContentBlock) (string, []ResponsesConten
 	var inner []AnthropicContentBlock
 	if err := json.Unmarshal(b.Content, &inner); err != nil {
 		if b.IsError {
-			return anthropicToolErrorPrefix + "(empty)", nil
+			payload, _ := json.Marshal(anthropicToolResultEnvelope{
+				Format:  anthropicToolResultEnvelopeFormat,
+				Text:    []string{"(empty)"},
+				IsError: true,
+			})
+			return string(payload), nil
 		}
 		return "(empty)", nil
 	}
@@ -460,7 +475,7 @@ func convertToolResultOutput(b AnthropicContentBlock) (string, []ResponsesConten
 		}
 	}
 
-	if len(toolReferences) > 0 {
+	if b.IsError || len(toolReferences) > 0 {
 		payload, err := json.Marshal(anthropicToolResultEnvelope{
 			Format:         anthropicToolResultEnvelopeFormat,
 			Text:           textParts,
@@ -475,9 +490,6 @@ func convertToolResultOutput(b AnthropicContentBlock) (string, []ResponsesConten
 	text := strings.Join(textParts, "\n\n")
 	if text == "" {
 		text = "(empty)"
-	}
-	if b.IsError {
-		text = anthropicToolErrorPrefix + text
 	}
 	return text, imageParts
 }

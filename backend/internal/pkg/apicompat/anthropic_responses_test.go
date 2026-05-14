@@ -193,6 +193,33 @@ func TestAnthropicToResponses_ToolResultWithoutToolReferenceStaysPlain(t *testin
 	require.Equal(t, "plain output", items[0].Output)
 }
 
+func TestAnthropicToResponses_ToolResultErrorUsesEnvelope(t *testing.T) {
+	req := &AnthropicRequest{
+		Model:     "gpt-5.4",
+		MaxTokens: 256,
+		Messages: []AnthropicMessage{
+			{
+				Role:    "user",
+				Content: json.RawMessage(`[{"type":"tool_result","tool_use_id":"toolu_123","is_error":true,"content":"[tool_error] tool failed"}]`),
+			},
+		},
+	}
+
+	resp, err := AnthropicToResponses(req)
+	require.NoError(t, err)
+
+	var items []ResponsesInputItem
+	require.NoError(t, json.Unmarshal(resp.Input, &items))
+	require.Len(t, items, 1)
+	require.Equal(t, "function_call_output", items[0].Type)
+
+	var env anthropicToolResultEnvelope
+	require.NoError(t, json.Unmarshal([]byte(items[0].Output), &env))
+	require.Equal(t, anthropicToolResultEnvelopeFormat, env.Format)
+	require.True(t, env.IsError)
+	require.Equal(t, []string{"[tool_error] tool failed"}, env.Text)
+}
+
 func TestAnthropicToResponses_PreservesToolResultErrorEnvelope(t *testing.T) {
 	req := &AnthropicRequest{
 		Model:     "gpt-5.4",

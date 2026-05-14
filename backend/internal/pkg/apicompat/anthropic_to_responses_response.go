@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -309,8 +310,8 @@ func anthToResHandleContentBlockStart(evt *AnthropicStreamEvent, state *Anthropi
 		state.CurrentCallID = toResponsesCallID(evt.ContentBlock.ID)
 		state.CurrentName = evt.ContentBlock.Name
 		state.CurrentArgs = ""
-		if len(evt.ContentBlock.Input) > 0 {
-			state.CurrentArgs = string(evt.ContentBlock.Input)
+		if input := strings.TrimSpace(string(evt.ContentBlock.Input)); input != "" && input != "{}" {
+			state.CurrentArgs = input
 		}
 
 		events = append(events, makeResponsesEvent(state, "response.output_item.added", &ResponsesStreamEvent{

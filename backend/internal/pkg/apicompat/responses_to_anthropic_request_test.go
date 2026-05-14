@@ -160,7 +160,7 @@ func TestResponsesToAnthropicRequest_ConvertsFunctionCallOutput(t *testing.T) {
 }
 
 func TestResponsesToAnthropicRequest_RestoresToolResultErrorState(t *testing.T) {
-	t.Run("prefix marker", func(t *testing.T) {
+	t.Run("literal prefix stays plain text", func(t *testing.T) {
 		req := &ResponsesRequest{
 			Model:           "gpt-5.4",
 			Input:           json.RawMessage(`[{"type":"function_call_output","call_id":"fc_toolu_123","output":"[tool_error] tool failed"}]`),
@@ -178,8 +178,8 @@ func TestResponsesToAnthropicRequest_RestoresToolResultErrorState(t *testing.T) 
 		require.Len(t, blocks, 1)
 		assert.Equal(t, "tool_result", blocks[0].Type)
 		assert.Equal(t, "toolu_123", blocks[0].ToolUseID)
-		assert.True(t, blocks[0].IsError)
-		assert.JSONEq(t, `"tool failed"`, string(blocks[0].Content))
+		assert.False(t, blocks[0].IsError)
+		assert.JSONEq(t, `"[tool_error] tool failed"`, string(blocks[0].Content))
 	})
 
 	t.Run("structured envelope", func(t *testing.T) {

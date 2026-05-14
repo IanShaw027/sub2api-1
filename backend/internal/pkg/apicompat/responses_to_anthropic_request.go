@@ -210,16 +210,8 @@ func tryDecodeAnthropicToolResultEnvelope(raw string) (*anthropicToolResultEnvel
 	return &env, true
 }
 
-func splitAnthropicToolErrorPrefix(raw string) (string, bool) {
-	if strings.HasPrefix(raw, anthropicToolErrorPrefix) {
-		return strings.TrimPrefix(raw, anthropicToolErrorPrefix), true
-	}
-	return raw, false
-}
-
 func marshalAnthropicToolResultContent(raw string) (json.RawMessage, bool) {
-	stripped, isError := splitAnthropicToolErrorPrefix(raw)
-	if env, ok := tryDecodeAnthropicToolResultEnvelope(stripped); ok {
+	if env, ok := tryDecodeAnthropicToolResultEnvelope(raw); ok {
 		var blocks []AnthropicContentBlock
 		for _, text := range env.Text {
 			if text == "" {
@@ -235,12 +227,12 @@ func marshalAnthropicToolResultContent(raw string) (json.RawMessage, bool) {
 		}
 		if len(blocks) > 0 {
 			contentJSON, _ := json.Marshal(blocks)
-			return contentJSON, isError || env.IsError
+			return contentJSON, env.IsError
 		}
 	}
 
-	contentJSON, _ := json.Marshal(stripped)
-	return contentJSON, isError
+	contentJSON, _ := json.Marshal(raw)
+	return contentJSON, false
 }
 
 // extractTextFromContent extracts text from a content field that may be a
