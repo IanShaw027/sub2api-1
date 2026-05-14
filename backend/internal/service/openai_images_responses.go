@@ -973,6 +973,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 	}
 	upstreamReq.Header.Set("Content-Type", "application/json")
 	upstreamReq.Header.Set("Accept", "text/event-stream")
+	upstreamReq = s.applyOpenAIOAuthImageBridgeUpstreamOptions(upstreamReq)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -983,7 +984,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
 		safeErr := sanitizeUpstreamErrorMessage(err.Error())
-		setOpsUpstreamError(c, 0, safeErr, "")
+		setOpsUpstreamError(c, 0, safeErr, safeErr)
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 			Platform:           account.Platform,
 			AccountID:          account.ID,
@@ -992,6 +993,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 			UpstreamURL:        safeUpstreamURL(upstreamReq.URL.String()),
 			Kind:               "request_error",
 			Message:            safeErr,
+			Detail:             safeErr,
 		})
 		return nil, fmt.Errorf("upstream request failed: %s", safeErr)
 	}
@@ -1058,16 +1060,16 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 		imageCount = openAIImagesResponsesEffectiveN(parsed)
 	}
 	return &OpenAIForwardResult{
-		RequestID:              resp.Header.Get("x-request-id"),
-		Usage:                  usage,
-		Model:                  requestModel,
-		TokenBillingModel:      NormalizeOpenAIImageMainModel(mainModel),
-		UpstreamModel:          requestModel,
-		Stream:                 parsed.Stream,
-		ResponseHeaders:        resp.Header.Clone(),
-		Duration:               time.Since(startTime),
-		FirstTokenMs:           firstTokenMs,
-		ImageCount:             imageCount,
-		ImageSize:              parsed.SizeTier,
+		RequestID:         resp.Header.Get("x-request-id"),
+		Usage:             usage,
+		Model:             requestModel,
+		TokenBillingModel: NormalizeOpenAIImageMainModel(mainModel),
+		UpstreamModel:     requestModel,
+		Stream:            parsed.Stream,
+		ResponseHeaders:   resp.Header.Clone(),
+		Duration:          time.Since(startTime),
+		FirstTokenMs:      firstTokenMs,
+		ImageCount:        imageCount,
+		ImageSize:         parsed.SizeTier,
 	}, nil
 }

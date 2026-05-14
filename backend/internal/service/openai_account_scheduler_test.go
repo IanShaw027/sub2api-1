@@ -1158,12 +1158,28 @@ func TestOpenAIAccountRuntimeStats_ReportAndSnapshot(t *testing.T) {
 	stats.report(1001, false, &firstTTFT)
 	secondTTFT := 200
 	stats.report(1001, false, &secondTTFT)
+	stats.recordRecoveryReason(1001, "previous_response_not_found")
+	stats.recordRecoveryReason(1002, "oauth_refresh")
 
+	runtimeSnapshot, ok := stats.runtimeSnapshot(1001)
+	require.True(t, ok)
 	errorRate, ttft, hasTTFT := stats.snapshot(1001)
 	require.True(t, hasTTFT)
 	require.InDelta(t, 0.36, errorRate, 1e-9)
 	require.InDelta(t, 120.0, ttft, 1e-9)
-	require.Equal(t, 1, stats.size())
+	require.InDelta(t, 0.36, runtimeSnapshot.ErrorRateEWMA, 1e-9)
+	require.True(t, runtimeSnapshot.HasTTFTEWMA)
+	require.InDelta(t, 120.0, runtimeSnapshot.TTFTEWMA, 1e-9)
+	require.Equal(t, "previous_response_not_found", runtimeSnapshot.LastRecoveryReason)
+
+	recoveryOnlySnapshot, ok := stats.runtimeSnapshot(1002)
+	require.True(t, ok)
+	require.InDelta(t, 0.0, recoveryOnlySnapshot.ErrorRateEWMA, 1e-9)
+	require.False(t, recoveryOnlySnapshot.HasTTFTEWMA)
+	require.Equal(t, "oauth_refresh", recoveryOnlySnapshot.LastRecoveryReason)
+
+	require.Equal(t, 2, stats.size())
+	require.Len(t, stats.snapshotAll(), 2)
 }
 
 func TestOpenAIAccountRuntimeStats_ReportConcurrent(t *testing.T) {
@@ -1198,6 +1214,57 @@ func TestOpenAIAccountRuntimeStats_ReportConcurrent(t *testing.T) {
 		require.True(t, hasTTFT)
 		require.Greater(t, ttft, 0.0)
 	}
+}
+
+func TestDefaultOpenAIAccountScheduler_RecoveryReasonDoesNotAffectSelection(t *testing.T) {
+	ctx := context.Background()
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.LBTopK = 1
+
+	accounts := []Account{
+		{
+			ID:          2001,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Priority:    0,
+			Concurrency: 1,
+		},
+		{
+			ID:          2002,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Priority:    10,
+			Concurrency: 1,
+		},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                cfg,
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+	schedulerAny := newDefaultOpenAIAccountScheduler(svc, newOpenAIAccountRuntimeStats())
+	scheduler, ok := schedulerAny.(*defaultOpenAIAccountScheduler)
+	require.True(t, ok)
+
+	req := OpenAIAccountScheduleRequest{RequestedModel: "gpt-5.1"}
+	selection, decision, err := scheduler.Select(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.Equal(t, int64(2001), selection.Account.ID)
+	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
+
+	scheduler.RecordRecoveryReason(2002, "previous_response_not_found")
+	selectionAfter, decisionAfter, err := scheduler.Select(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, selectionAfter)
+	require.Equal(t, int64(2001), selectionAfter.Account.ID)
+	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decisionAfter.Layer)
 }
 
 func TestSelectTopKOpenAICandidates(t *testing.T) {
@@ -1574,6 +1641,7 @@ func TestDefaultOpenAIAccountScheduler_ReportSwitchAndSnapshot(t *testing.T) {
 
 	ttft := 100
 	scheduler.ReportResult(1001, true, &ttft)
+	scheduler.RecordRecoveryReason(1001, "previous_response_not_found")
 	scheduler.ReportSwitch()
 	scheduler.metrics.recordSelect(OpenAIAccountScheduleDecision{
 		Layer:             openAIAccountScheduleLayerLoadBalance,
@@ -1597,6 +1665,11 @@ func TestDefaultOpenAIAccountScheduler_ReportSwitchAndSnapshot(t *testing.T) {
 	require.Greater(t, snapshot.SchedulerLatencyMsAvg, 0.0)
 	require.Greater(t, snapshot.StickyHitRatio, 0.0)
 	require.Greater(t, snapshot.LoadSkewAvg, 0.0)
+	require.Contains(t, snapshot.RuntimeStats, int64(1001))
+	require.InDelta(t, 0.0, snapshot.RuntimeStats[1001].ErrorRateEWMA, 1e-9)
+	require.True(t, snapshot.RuntimeStats[1001].HasTTFTEWMA)
+	require.InDelta(t, 100.0, snapshot.RuntimeStats[1001].TTFTEWMA, 1e-9)
+	require.Equal(t, "previous_response_not_found", snapshot.RuntimeStats[1001].LastRecoveryReason)
 }
 
 func TestOpenAIGatewayService_SchedulerWrappersAndDefaults(t *testing.T) {

@@ -654,6 +654,12 @@ type GatewayConfig struct {
 	// OpenAIPassthroughAllowTimeoutHeaders: OpenAI 透传模式是否放行客户端超时头
 	// 关闭（默认）可避免 x-stainless-timeout 等头导致上游提前断流。
 	OpenAIPassthroughAllowTimeoutHeaders bool `mapstructure:"openai_passthrough_allow_timeout_headers"`
+	// OpenAIOAuthImageBridgeDisableKeepAlives: 仅对 OpenAI OAuth 图片桥接请求生效。
+	// 开启后，每次桥接请求使用独立 transport，并禁用 keep-alive 复用，便于排查 HTTP/2 stream reset。
+	OpenAIOAuthImageBridgeDisableKeepAlives bool `mapstructure:"openai_oauth_image_bridge_disable_keepalives"`
+	// OpenAIOAuthImageBridgeFreshUpstreamClient: 仅对 OpenAI OAuth 图片桥接请求生效。
+	// 开启后，每次桥接请求绕过共享 upstream client/transport 缓存，强制新建一次性客户端。
+	OpenAIOAuthImageBridgeFreshUpstreamClient bool `mapstructure:"openai_oauth_image_bridge_fresh_upstream_client"`
 	// OpenAIWS: OpenAI Responses WebSocket 配置（默认开启，可按需回滚到 HTTP）
 	OpenAIWS GatewayOpenAIWSConfig `mapstructure:"openai_ws"`
 	// ImageConcurrency: 图片生成独立并发限制配置（默认关闭）
@@ -1713,6 +1719,8 @@ func setDefaults() {
 	viper.SetDefault("gateway.force_codex_cli", false)
 	viper.SetDefault("gateway.codex_image_generation_bridge_enabled", false)
 	viper.SetDefault("gateway.openai_passthrough_allow_timeout_headers", false)
+	viper.SetDefault("gateway.openai_oauth_image_bridge_disable_keepalives", false)
+	viper.SetDefault("gateway.openai_oauth_image_bridge_fresh_upstream_client", false)
 	// OpenAI Responses WebSocket（默认开启；可通过 force_http 紧急回滚）
 	viper.SetDefault("gateway.openai_ws.enabled", true)
 	viper.SetDefault("gateway.openai_ws.mode_router_v2_enabled", false)

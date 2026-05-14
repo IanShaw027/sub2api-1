@@ -210,10 +210,12 @@ type SystemSettings struct {
 	PaymentVisibleMethodWxpayEnabled  bool
 
 	// OpenAI account scheduling
-	OpenAIAdvancedSchedulerEnabled bool
-	OpenAIStickyReservePercent     int
-	OpenAIImageWebFreeModel        string
-	OpenAIImageWebPaidModel        string
+	OpenAIAdvancedSchedulerEnabled            bool
+	OpenAIStickyReservePercent                int
+	OpenAIImageWebFreeModel                   string
+	OpenAIImageWebPaidModel                   string
+	OpenAIOAuthImageBridgeDisableKeepAlives   bool
+	OpenAIOAuthImageBridgeFreshUpstreamClient bool
 
 	// Balance low notification
 	BalanceLowNotifyEnabled     bool

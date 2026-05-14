@@ -131,6 +131,9 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 	if err := s.validateRequestHost(req); err != nil {
 		return nil, err
 	}
+	if resp, err, handled := s.doWithRequestOverrides(req, proxyURL, accountID, accountConcurrency, nil); handled {
+		return resp, err
+	}
 
 	// 获取或创建对应的客户端，并标记请求占用
 	entry, err := s.acquireClient(proxyURL, accountID, accountConcurrency)
@@ -182,6 +185,9 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 	if err := s.validateRequestHost(req); err != nil {
 		return nil, err
 	}
+	if resp, err, handled := s.doWithRequestOverrides(req, proxyURL, accountID, accountConcurrency, profile); handled {
+		return resp, err
+	}
 
 	entry, err := s.acquireClientWithTLS(proxyURL, accountID, accountConcurrency, profile)
 	if err != nil {
@@ -205,6 +211,59 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 	})
 
 	return resp, nil
+}
+
+func (s *httpUpstreamService) doWithRequestOverrides(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error, bool) {
+	if req == nil {
+		return nil, nil, false
+	}
+	opts := service.HTTPUpstreamRequestOptionsFromContext(req.Context())
+	if !opts.RequiresDedicatedClient() {
+		return nil, nil, false
+	}
+
+	_, parsedProxy, err := normalizeProxyURL(proxyURL)
+	if err != nil {
+		return nil, err, true
+	}
+	settings := s.resolvePoolSettings(s.getIsolationMode(), accountConcurrency)
+	var transport *http.Transport
+	if profile != nil {
+		transport, err = buildUpstreamTransportWithTLSFingerprint(settings, parsedProxy, profile)
+	} else {
+		transport, err = buildUpstreamTransport(settings, parsedProxy)
+	}
+	if err != nil {
+		return nil, err, true
+	}
+	if opts.DisableKeepAlives {
+		transport.DisableKeepAlives = true
+		req = req.Clone(req.Context())
+		req.Close = true
+	}
+
+	slog.Debug("http_upstream_request_overrides_enabled",
+		"account_id", accountID,
+		"fresh_client", opts.FreshClient,
+		"disable_keep_alives", opts.DisableKeepAlives,
+		"tls_profile_enabled", profile != nil)
+
+	client := &http.Client{Transport: transport}
+	if s.shouldValidateResolvedIP() {
+		client.CheckRedirect = s.redirectChecker
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		client.CloseIdleConnections()
+		return nil, err, true
+	}
+
+	decompressResponseBody(resp)
+	resp.Body = wrapTrackedBody(resp.Body, func() {
+		client.CloseIdleConnections()
+	})
+	return resp, nil, true
 }
 
 // acquireClientWithTLS 获取或创建带 TLS 指纹的客户端

@@ -3582,9 +3582,9 @@
                 <Toggle v-model="form.openai_advanced_scheduler_enabled" />
               </div>
 
-              <div>
-                <label class="label">
-                  {{
+	              <div>
+	                <label class="label">
+	                  {{
                     localText(
                       "粘性预留百分比",
                       "Sticky Reserve Percent",
@@ -3606,11 +3606,57 @@
                       "为已有粘性会话预留账号并发。0 表示不预留；例如设置 20%，并发 10 时，新会话最多只占 8 个并发，剩余 2 个留给回来的粘性会话。",
                       "Reserve part of each account's concurrency for returning sticky sessions. 0 disables reserve; for example, 20% on concurrency 10 allows new sessions to use at most 8 slots and keeps 2 slots for sticky returns.",
                     )
-                  }}
-                </p>
-              </div>
-            </div>
-          </div>
+	                  }}
+	                </p>
+	              </div>
+
+	              <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
+	                <div class="flex items-center justify-between gap-4">
+	                  <div>
+	                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+	                      {{
+	                        localText(
+	                          "OAuth 图片桥接禁用 Keep-Alive",
+	                          "Disable Keep-Alive for OAuth Image Bridge",
+	                        )
+	                      }}
+	                    </label>
+	                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+	                      {{
+	                        localText(
+	                          "仅对 OpenAI OAuth 图片桥接到 codex/responses 的请求生效。开启后每次请求不复用长连接，用于排查 HTTP/2 stream reset。",
+	                          "Only affects OpenAI OAuth image bridge requests to codex/responses. Disables long-lived connection reuse to help diagnose HTTP/2 stream resets.",
+	                        )
+	                      }}
+	                    </p>
+	                  </div>
+	                  <Toggle v-model="form.openai_oauth_image_bridge_disable_keepalives" />
+	                </div>
+
+	                <div class="mt-4 flex items-center justify-between gap-4">
+	                  <div>
+	                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+	                      {{
+	                        localText(
+	                          "OAuth 图片桥接单次新建 Upstream Client",
+	                          "Fresh Upstream Client for OAuth Image Bridge",
+	                        )
+	                      }}
+	                    </label>
+	                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+	                      {{
+	                        localText(
+	                          "仅对 OpenAI OAuth 图片桥接请求生效。开启后绕过共享连接池，每次单独新建 upstream client/transport。",
+	                          "Only affects OpenAI OAuth image bridge requests. Bypasses the shared connection pool and creates a dedicated upstream client/transport per request.",
+	                        )
+	                      }}
+	                    </p>
+	                  </div>
+	                  <Toggle v-model="form.openai_oauth_image_bridge_fresh_upstream_client" />
+	                </div>
+	              </div>
+	            </div>
+	          </div>
 
           <!-- Model Fallback Settings -->
           <div class="card">
@@ -7072,6 +7118,8 @@ type SettingsForm = Omit<
   google_oauth_client_secret: string;
   force_email_on_third_party_signup: boolean;
   openai_advanced_scheduler_enabled: boolean;
+  openai_oauth_image_bridge_disable_keepalives: boolean;
+  openai_oauth_image_bridge_fresh_upstream_client: boolean;
 } & Required<OpenAIImageWebConversationModelSettings>;
 
 type SettingsUpdatePayload =
@@ -7263,6 +7311,8 @@ const form = reactive<SettingsForm>({
   // 分组隔离
   allow_ungrouped_key_scheduling: false,
   openai_advanced_scheduler_enabled: false,
+  openai_oauth_image_bridge_disable_keepalives: false,
+  openai_oauth_image_bridge_fresh_upstream_client: false,
   // Gateway forwarding behavior
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
@@ -8454,8 +8504,8 @@ async function saveSettings() {
       fallback_model_openai: form.fallback_model_openai,
       fallback_model_gemini: form.fallback_model_gemini,
       fallback_model_antigravity: form.fallback_model_antigravity,
-      openai_image_web_free_model: form.openai_image_web_free_model.trim(),
-      openai_image_web_paid_model: form.openai_image_web_paid_model.trim(),
+	      openai_image_web_free_model: form.openai_image_web_free_model.trim(),
+	      openai_image_web_paid_model: form.openai_image_web_paid_model.trim(),
       platform_default_account_model_config: platformDefaultAccountModelConfig,
       enable_identity_patch: form.enable_identity_patch,
       identity_patch_prompt: form.identity_patch_prompt,
@@ -8505,15 +8555,19 @@ async function saveSettings() {
       payment_cancel_rate_limit_unit: form.payment_cancel_rate_limit_unit,
       payment_cancel_rate_limit_window_mode:
         form.payment_cancel_rate_limit_window_mode,
-      openai_advanced_scheduler_enabled: form.openai_advanced_scheduler_enabled,
-      openai_sticky_reserve_percent: Math.max(
-        0,
-        Math.min(
-          100,
-          Math.floor(Number(form.openai_sticky_reserve_percent) || 0),
-        ),
-      ),
-      // Balance & quota notification
+	      openai_advanced_scheduler_enabled: form.openai_advanced_scheduler_enabled,
+	      openai_sticky_reserve_percent: Math.max(
+	        0,
+	        Math.min(
+	          100,
+	          Math.floor(Number(form.openai_sticky_reserve_percent) || 0),
+	        ),
+	      ),
+	      openai_oauth_image_bridge_disable_keepalives:
+	        form.openai_oauth_image_bridge_disable_keepalives,
+	      openai_oauth_image_bridge_fresh_upstream_client:
+	        form.openai_oauth_image_bridge_fresh_upstream_client,
+	      // Balance & quota notification
       balance_low_notify_enabled: form.balance_low_notify_enabled,
       balance_low_notify_threshold:
         Number(form.balance_low_notify_threshold) || 0,

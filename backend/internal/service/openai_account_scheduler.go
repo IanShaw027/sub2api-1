@@ -22,6 +22,7 @@ const (
 	openAIAccountScheduleLayerSessionSticky    = "session_hash"
 	openAIAccountScheduleLayerLoadBalance      = "load_balance"
 	openAIAdvancedSchedulerSettingKey          = "openai_advanced_scheduler_enabled"
+	openAIOAuthImageBridgeTransportSettingsKey = "openai_oauth_image_bridge_transport"
 )
 
 const (
@@ -39,10 +40,18 @@ type cachedOpenAIStickyReservePercentSetting struct {
 	expiresAt int64
 }
 
+type cachedOpenAIOAuthImageBridgeTransportSettings struct {
+	disableKeepAlives bool
+	freshClient       bool
+	expiresAt         int64
+}
+
 var openAIAdvancedSchedulerSettingCache atomic.Value // *cachedOpenAIAdvancedSchedulerSetting
 var openAIAdvancedSchedulerSettingSF singleflight.Group
 var openAIStickyReservePercentSettingCache atomic.Value // *cachedOpenAIStickyReservePercentSetting
 var openAIStickyReservePercentSettingSF singleflight.Group
+var openAIOAuthImageBridgeTransportSettingsCache atomic.Value // *cachedOpenAIOAuthImageBridgeTransportSettings
+var openAIOAuthImageBridgeTransportSettingsSF singleflight.Group
 
 type OpenAIAccountScheduleRequest struct {
 	GroupID                 *int64
@@ -92,11 +101,13 @@ type OpenAIAccountSchedulerMetricsSnapshot struct {
 	AccountSwitchRate        float64
 	LoadSkewAvg              float64
 	RuntimeStatsAccountCount int
+	RuntimeStats             map[int64]OpenAIAccountRuntimeSnapshot
 }
 
 type OpenAIAccountScheduler interface {
 	Select(ctx context.Context, req OpenAIAccountScheduleRequest) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error)
 	ReportResult(accountID int64, success bool, firstTokenMs *int)
+	RecordRecoveryReason(accountID int64, reason string)
 	ReportSwitch()
 	SnapshotMetrics() OpenAIAccountSchedulerMetricsSnapshot
 }
@@ -142,8 +153,9 @@ type openAIAccountRuntimeStats struct {
 }
 
 type openAIAccountRuntimeStat struct {
-	errorRateEWMABits atomic.Uint64
-	ttftEWMABits      atomic.Uint64
+	errorRateEWMABits  atomic.Uint64
+	ttftEWMABits       atomic.Uint64
+	lastRecoveryReason atomic.Value
 }
 
 func newOpenAIAccountRuntimeStats() *openAIAccountRuntimeStats {
@@ -159,6 +171,7 @@ func (s *openAIAccountRuntimeStats) loadOrCreate(accountID int64) *openAIAccount
 	}
 
 	stat := &openAIAccountRuntimeStat{}
+	stat.lastRecoveryReason.Store("")
 	stat.ttftEWMABits.Store(math.Float64bits(math.NaN()))
 	actual, loaded := s.accounts.LoadOrStore(accountID, stat)
 	if !loaded {
@@ -216,24 +229,65 @@ func (s *openAIAccountRuntimeStats) report(accountID int64, success bool, firstT
 	}
 }
 
-func (s *openAIAccountRuntimeStats) snapshot(accountID int64) (errorRate float64, ttft float64, hasTTFT bool) {
+func (s *openAIAccountRuntimeStats) recordRecoveryReason(accountID int64, reason string) {
 	if s == nil || accountID <= 0 {
-		return 0, 0, false
+		return
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return
+	}
+	stat := s.loadOrCreate(accountID)
+	stat.lastRecoveryReason.Store(reason)
+}
+
+func (s *openAIAccountRuntimeStats) runtimeSnapshot(accountID int64) (OpenAIAccountRuntimeSnapshot, bool) {
+	if s == nil || accountID <= 0 {
+		return OpenAIAccountRuntimeSnapshot{}, false
 	}
 	value, ok := s.accounts.Load(accountID)
 	if !ok {
-		return 0, 0, false
+		return OpenAIAccountRuntimeSnapshot{}, false
 	}
 	stat, _ := value.(*openAIAccountRuntimeStat)
 	if stat == nil {
+		return OpenAIAccountRuntimeSnapshot{}, false
+	}
+	return newOpenAIAccountRuntimeSnapshot(accountID, stat), true
+}
+
+func (s *openAIAccountRuntimeStats) snapshotAll() map[int64]OpenAIAccountRuntimeSnapshot {
+	if s == nil {
+		return nil
+	}
+	snapshots := make(map[int64]OpenAIAccountRuntimeSnapshot, s.size())
+	s.accounts.Range(func(key, value any) bool {
+		accountID, ok := key.(int64)
+		if !ok {
+			return true
+		}
+		stat, _ := value.(*openAIAccountRuntimeStat)
+		if stat == nil {
+			return true
+		}
+		snapshots[accountID] = newOpenAIAccountRuntimeSnapshot(accountID, stat)
+		return true
+	})
+	if len(snapshots) == 0 {
+		return nil
+	}
+	return snapshots
+}
+
+func (s *openAIAccountRuntimeStats) snapshot(accountID int64) (errorRate float64, ttft float64, hasTTFT bool) {
+	snapshot, ok := s.runtimeSnapshot(accountID)
+	if !ok {
 		return 0, 0, false
 	}
-	errorRate = clamp01(math.Float64frombits(stat.errorRateEWMABits.Load()))
-	ttftValue := math.Float64frombits(stat.ttftEWMABits.Load())
-	if math.IsNaN(ttftValue) {
-		return errorRate, 0, false
+	if !snapshot.HasTTFTEWMA {
+		return snapshot.ErrorRateEWMA, 0, false
 	}
-	return errorRate, ttftValue, true
+	return snapshot.ErrorRateEWMA, snapshot.TTFTEWMA, true
 }
 
 func (s *openAIAccountRuntimeStats) size() int {
@@ -1014,6 +1068,13 @@ func (s *defaultOpenAIAccountScheduler) ReportResult(accountID int64, success bo
 	s.stats.report(accountID, success, firstTokenMs)
 }
 
+func (s *defaultOpenAIAccountScheduler) RecordRecoveryReason(accountID int64, reason string) {
+	if s == nil || s.stats == nil {
+		return
+	}
+	s.stats.recordRecoveryReason(accountID, reason)
+}
+
 func (s *defaultOpenAIAccountScheduler) ReportSwitch() {
 	if s == nil {
 		return
@@ -1025,6 +1086,7 @@ func (s *defaultOpenAIAccountScheduler) SnapshotMetrics() OpenAIAccountScheduler
 	if s == nil {
 		return OpenAIAccountSchedulerMetricsSnapshot{}
 	}
+	stats := s.stats
 
 	selectTotal := s.metrics.selectTotal.Load()
 	prevHit := s.metrics.stickyPreviousHitTotal.Load()
@@ -1033,6 +1095,13 @@ func (s *defaultOpenAIAccountScheduler) SnapshotMetrics() OpenAIAccountScheduler
 	latencyTotal := s.metrics.latencyMsTotal.Load()
 	loadSkewTotal := s.metrics.loadSkewMilliTotal.Load()
 
+	runtimeStatsCount := 0
+	var runtimeStats map[int64]OpenAIAccountRuntimeSnapshot
+	if stats != nil {
+		runtimeStatsCount = stats.size()
+		runtimeStats = stats.snapshotAll()
+	}
+
 	snapshot := OpenAIAccountSchedulerMetricsSnapshot{
 		SelectTotal:              selectTotal,
 		StickyPreviousHitTotal:   prevHit,
@@ -1040,7 +1109,8 @@ func (s *defaultOpenAIAccountScheduler) SnapshotMetrics() OpenAIAccountScheduler
 		LoadBalanceSelectTotal:   s.metrics.loadBalanceSelectTotal.Load(),
 		AccountSwitchTotal:       switchTotal,
 		SchedulerLatencyMsTotal:  latencyTotal,
-		RuntimeStatsAccountCount: s.stats.size(),
+		RuntimeStatsAccountCount: runtimeStatsCount,
+		RuntimeStats:             runtimeStats,
 	}
 	if selectTotal > 0 {
 		snapshot.SchedulerLatencyMsAvg = float64(latencyTotal) / float64(selectTotal)
@@ -1142,6 +1212,54 @@ func (s *OpenAIGatewayService) openAIStickyReservePercent(ctx context.Context) i
 
 	percent, _ := result.(int)
 	return percent
+}
+
+func (s *OpenAIGatewayService) openAIOAuthImageBridgeTransportSettings(ctx context.Context) cachedOpenAIOAuthImageBridgeTransportSettings {
+	if cached, ok := openAIOAuthImageBridgeTransportSettingsCache.Load().(*cachedOpenAIOAuthImageBridgeTransportSettings); ok && cached != nil {
+		if time.Now().UnixNano() < cached.expiresAt {
+			return *cached
+		}
+	}
+
+	result, _, _ := openAIOAuthImageBridgeTransportSettingsSF.Do(openAIOAuthImageBridgeTransportSettingsKey, func() (any, error) {
+		if cached, ok := openAIOAuthImageBridgeTransportSettingsCache.Load().(*cachedOpenAIOAuthImageBridgeTransportSettings); ok && cached != nil {
+			if time.Now().UnixNano() < cached.expiresAt {
+				return *cached, nil
+			}
+		}
+
+		settings := cachedOpenAIOAuthImageBridgeTransportSettings{}
+		if s != nil && s.cfg != nil {
+			settings.disableKeepAlives = s.cfg.Gateway.OpenAIOAuthImageBridgeDisableKeepAlives
+			settings.freshClient = s.cfg.Gateway.OpenAIOAuthImageBridgeFreshUpstreamClient
+		}
+		if repo := s.openAISettingsRepo(); repo != nil {
+			dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), openAIAdvancedSchedulerSettingDBTimeout)
+			defer cancel()
+
+			values, err := repo.GetMultiple(dbCtx, []string{
+				SettingKeyOpenAIOAuthImageBridgeDisableKeepAlives,
+				SettingKeyOpenAIOAuthImageBridgeFreshUpstreamClient,
+			})
+			if err == nil {
+				if raw, ok := values[SettingKeyOpenAIOAuthImageBridgeDisableKeepAlives]; ok && strings.TrimSpace(raw) != "" {
+					settings.disableKeepAlives = strings.EqualFold(strings.TrimSpace(raw), "true")
+				}
+				if raw, ok := values[SettingKeyOpenAIOAuthImageBridgeFreshUpstreamClient]; ok && strings.TrimSpace(raw) != "" {
+					settings.freshClient = strings.EqualFold(strings.TrimSpace(raw), "true")
+				}
+			}
+		}
+
+		settings.expiresAt = time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano()
+		openAIOAuthImageBridgeTransportSettingsCache.Store(&settings)
+		return settings, nil
+	})
+
+	if settings, ok := result.(cachedOpenAIOAuthImageBridgeTransportSettings); ok {
+		return settings
+	}
+	return cachedOpenAIOAuthImageBridgeTransportSettings{}
 }
 
 func (s *OpenAIGatewayService) getOpenAIAccountScheduler(ctx context.Context) OpenAIAccountScheduler {
@@ -1404,6 +1522,14 @@ func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResult(accountID int64
 		return
 	}
 	scheduler.ReportResult(accountID, success, firstTokenMs)
+}
+
+func (s *OpenAIGatewayService) RecordOpenAIAccountRecoveryReason(accountID int64, reason string) {
+	scheduler := s.getOpenAIAccountScheduler(context.Background())
+	if scheduler == nil {
+		return
+	}
+	scheduler.RecordRecoveryReason(accountID, reason)
 }
 
 func (s *OpenAIGatewayService) RecordOpenAIAccountSwitch() {

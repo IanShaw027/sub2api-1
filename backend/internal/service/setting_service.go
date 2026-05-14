@@ -1860,6 +1860,8 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyOpenAIStickyReservePercent] = strconv.Itoa(boundedIntOrDefault(settings.OpenAIStickyReservePercent, 0, 100, 0))
 	updates[SettingKeyOpenAIImageWebFreeModel] = settings.OpenAIImageWebFreeModel
 	updates[SettingKeyOpenAIImageWebPaidModel] = settings.OpenAIImageWebPaidModel
+	updates[SettingKeyOpenAIOAuthImageBridgeDisableKeepAlives] = strconv.FormatBool(settings.OpenAIOAuthImageBridgeDisableKeepAlives)
+	updates[SettingKeyOpenAIOAuthImageBridgeFreshUpstreamClient] = strconv.FormatBool(settings.OpenAIOAuthImageBridgeFreshUpstreamClient)
 
 	// Balance low notification
 	updates[SettingKeyBalanceLowNotifyEnabled] = strconv.FormatBool(settings.BalanceLowNotifyEnabled)
@@ -1962,6 +1964,12 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	openAIStickyReservePercentSettingCache.Store(&cachedOpenAIStickyReservePercentSetting{
 		percent:   boundedIntOrDefault(settings.OpenAIStickyReservePercent, 0, 100, 0),
 		expiresAt: time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano(),
+	})
+	openAIOAuthImageBridgeTransportSettingsSF.Forget(openAIOAuthImageBridgeTransportSettingsKey)
+	openAIOAuthImageBridgeTransportSettingsCache.Store(&cachedOpenAIOAuthImageBridgeTransportSettings{
+		disableKeepAlives: settings.OpenAIOAuthImageBridgeDisableKeepAlives,
+		freshClient:       settings.OpenAIOAuthImageBridgeFreshUpstreamClient,
+		expiresAt:         time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano(),
 	})
 	if s.onUpdate != nil {
 		s.onUpdate() // Invalidate cache after settings update
@@ -2604,6 +2612,12 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	openAIOAuthImageBridgeDisableKeepAlivesDefault := false
+	openAIOAuthImageBridgeFreshUpstreamClientDefault := false
+	if s.cfg != nil {
+		openAIOAuthImageBridgeDisableKeepAlivesDefault = s.cfg.Gateway.OpenAIOAuthImageBridgeDisableKeepAlives
+		openAIOAuthImageBridgeFreshUpstreamClientDefault = s.cfg.Gateway.OpenAIOAuthImageBridgeFreshUpstreamClient
+	}
 
 	// 初始化默认设置
 	defaults := map[string]string{
@@ -2761,17 +2775,23 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		openAIAdvancedSchedulerSettingKey:            "false",
 		SettingKeyOpenAIImageWebFreeModel:            DefaultOpenAIImageWebConversationSettings().FreeModel,
 		SettingKeyOpenAIImageWebPaidModel:            DefaultOpenAIImageWebConversationSettings().PaidModel,
-		SettingKeyKiroDefaultVersion:                 defaultKiroVersion,
-		SettingKeyKiroDefaultCommit:                  "",
-		SettingKeyKiroDefaultSystemVersion:           defaultKiroSystemVersion,
-		SettingKeyKiroDefaultNodeVersion:             defaultKiroNodeVersion,
-		SettingKeyKiroCacheHitRateScale:              strconv.Itoa(defaultKiroCacheHitRateScale),
-		SettingKeyKiroCacheMinBlockTokens:            strconv.Itoa(defaultKiroCacheMinBlockTokens),
-		SettingKeyKiroCacheIndependentTTLSeconds:     strconv.Itoa(defaultKiroCacheIndependentTTL),
-		SettingKeyKiroCachePrefixTTLSeconds:          strconv.Itoa(defaultKiroCachePrefixTTL),
-		SettingKeyKiroThinkingMode:                   defaultKiroThinkingMode,
-		SettingKeyKiroThinkingEffortThreshold:        defaultKiroThinkingEffortThreshold,
-		SettingKeyKiroThinkingSimulationTemplate:     defaultKiroThinkingSimulationTemplate,
+		SettingKeyOpenAIOAuthImageBridgeDisableKeepAlives: strconv.FormatBool(
+			openAIOAuthImageBridgeDisableKeepAlivesDefault,
+		),
+		SettingKeyOpenAIOAuthImageBridgeFreshUpstreamClient: strconv.FormatBool(
+			openAIOAuthImageBridgeFreshUpstreamClientDefault,
+		),
+		SettingKeyKiroDefaultVersion:             defaultKiroVersion,
+		SettingKeyKiroDefaultCommit:              "",
+		SettingKeyKiroDefaultSystemVersion:       defaultKiroSystemVersion,
+		SettingKeyKiroDefaultNodeVersion:         defaultKiroNodeVersion,
+		SettingKeyKiroCacheHitRateScale:          strconv.Itoa(defaultKiroCacheHitRateScale),
+		SettingKeyKiroCacheMinBlockTokens:        strconv.Itoa(defaultKiroCacheMinBlockTokens),
+		SettingKeyKiroCacheIndependentTTLSeconds: strconv.Itoa(defaultKiroCacheIndependentTTL),
+		SettingKeyKiroCachePrefixTTLSeconds:      strconv.Itoa(defaultKiroCachePrefixTTL),
+		SettingKeyKiroThinkingMode:               defaultKiroThinkingMode,
+		SettingKeyKiroThinkingEffortThreshold:    defaultKiroThinkingEffortThreshold,
+		SettingKeyKiroThinkingSimulationTemplate: defaultKiroThinkingSimulationTemplate,
 	}
 
 	return s.settingRepo.SetMultiple(ctx, defaults)
@@ -3190,6 +3210,16 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	}
 	result.OpenAIImageWebFreeModel = strings.TrimSpace(settings[SettingKeyOpenAIImageWebFreeModel])
 	result.OpenAIImageWebPaidModel = strings.TrimSpace(settings[SettingKeyOpenAIImageWebPaidModel])
+	if raw, ok := settings[SettingKeyOpenAIOAuthImageBridgeDisableKeepAlives]; ok && strings.TrimSpace(raw) != "" {
+		result.OpenAIOAuthImageBridgeDisableKeepAlives = strings.EqualFold(strings.TrimSpace(raw), "true")
+	} else if s.cfg != nil {
+		result.OpenAIOAuthImageBridgeDisableKeepAlives = s.cfg.Gateway.OpenAIOAuthImageBridgeDisableKeepAlives
+	}
+	if raw, ok := settings[SettingKeyOpenAIOAuthImageBridgeFreshUpstreamClient]; ok && strings.TrimSpace(raw) != "" {
+		result.OpenAIOAuthImageBridgeFreshUpstreamClient = strings.EqualFold(strings.TrimSpace(raw), "true")
+	} else if s.cfg != nil {
+		result.OpenAIOAuthImageBridgeFreshUpstreamClient = s.cfg.Gateway.OpenAIOAuthImageBridgeFreshUpstreamClient
+	}
 	defaultImageWebSettings := DefaultOpenAIImageWebConversationSettings()
 	if result.OpenAIImageWebFreeModel == "" {
 		result.OpenAIImageWebFreeModel = defaultImageWebSettings.FreeModel

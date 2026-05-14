@@ -3350,6 +3350,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			turn,
 			truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
 		)
+		s.RecordOpenAIAccountRecoveryReason(account.ID, "previous_response_not_found")
 		currentPayload = updatedWithInput
 		currentPayloadBytes = len(updatedWithInput)
 		resetSessionLease(true)

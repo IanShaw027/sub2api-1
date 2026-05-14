@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
@@ -165,6 +166,33 @@ func (s *HTTPUpstreamSuite) TestDo_EmptyProxy_UsesDirect() {
 	defer func() { _ = resp.Body.Close() }()
 	b, _ := io.ReadAll(resp.Body)
 	require.Equal(s.T(), "direct-empty", string(b))
+}
+
+// TestDo_RequestOverridesUseDedicatedClient 测试请求级 transport 实验开关
+// 验证开启 FreshClient/DisableKeepAlives 时不会污染共享连接池，并向上游发送 close 语义。
+func (s *HTTPUpstreamSuite) TestDo_RequestOverridesUseDedicatedClient() {
+	var sawConnectionClose bool
+	upstream := newLocalTestServer(s.T(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawConnectionClose = r.Close || r.Header.Get("Connection") == "close"
+		_, _ = io.WriteString(w, "one-shot")
+	}))
+	s.T().Cleanup(upstream.Close)
+
+	svc := s.newService()
+	req, err := http.NewRequest(http.MethodGet, upstream.URL+"/override", nil)
+	require.NoError(s.T(), err, "NewRequest")
+	req = req.WithContext(service.WithHTTPUpstreamRequestOptions(req.Context(), service.HTTPUpstreamRequestOptions{
+		FreshClient:       true,
+		DisableKeepAlives: true,
+	}))
+
+	resp, err := svc.Do(req, "", 7, 3)
+	require.NoError(s.T(), err, "Do")
+	defer func() { _ = resp.Body.Close() }()
+	b, _ := io.ReadAll(resp.Body)
+	require.Equal(s.T(), "one-shot", string(b))
+	require.Empty(s.T(), svc.clients, "one-shot request should not populate shared client cache")
+	require.True(s.T(), sawConnectionClose, "expected dedicated request to disable keep-alive reuse")
 }
 
 // TestAccountIsolation_DifferentAccounts 测试账户隔离模式

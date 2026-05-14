@@ -987,7 +987,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
 		safeErr := sanitizeUpstreamErrorMessage(err.Error())
-		setOpsUpstreamError(c, 0, safeErr, "")
+		setOpsUpstreamError(c, 0, safeErr, safeErr)
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 			Platform:           account.Platform,
 			AccountID:          account.ID,
@@ -996,6 +996,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			UpstreamURL:        safeUpstreamURL(upstreamReq.URL.String()),
 			Kind:               "request_error",
 			Message:            safeErr,
+			Detail:             safeErr,
 		})
 		return nil, fmt.Errorf("upstream request failed: %s", safeErr)
 	}
@@ -1069,16 +1070,16 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 		}
 	}
 	return &OpenAIForwardResult{
-		RequestID:              resp.Header.Get("x-request-id"),
-		Usage:                  usage,
-		Model:                  requestModel,
-		UpstreamModel:          upstreamModel,
-		Stream:                 parsed.Stream,
-		ResponseHeaders:        resp.Header.Clone(),
-		Duration:               time.Since(startTime),
-		FirstTokenMs:           firstTokenMs,
-		ImageCount:             imageCount,
-		ImageSize:              parsed.SizeTier,
+		RequestID:       resp.Header.Get("x-request-id"),
+		Usage:           usage,
+		Model:           requestModel,
+		UpstreamModel:   upstreamModel,
+		Stream:          parsed.Stream,
+		ResponseHeaders: resp.Header.Clone(),
+		Duration:        time.Since(startTime),
+		FirstTokenMs:    firstTokenMs,
+		ImageCount:      imageCount,
+		ImageSize:       parsed.SizeTier,
 	}, nil
 }
 
@@ -2295,6 +2296,25 @@ func (s *OpenAIGatewayService) resolveOpenAITLSProfile(account *Account) *tlsfin
 		return nil
 	}
 	return s.tlsFPProfileService.ResolveTLSProfile(account)
+}
+
+func (s *OpenAIGatewayService) openAIOAuthImageBridgeUpstreamOptions(ctx context.Context) HTTPUpstreamRequestOptions {
+	settings := s.openAIOAuthImageBridgeTransportSettings(ctx)
+	return HTTPUpstreamRequestOptions{
+		FreshClient:       settings.freshClient,
+		DisableKeepAlives: settings.disableKeepAlives,
+	}
+}
+
+func (s *OpenAIGatewayService) applyOpenAIOAuthImageBridgeUpstreamOptions(req *http.Request) *http.Request {
+	if req == nil {
+		return nil
+	}
+	opts := s.openAIOAuthImageBridgeUpstreamOptions(req.Context())
+	if !opts.HasOverrides() {
+		return req
+	}
+	return req.WithContext(WithHTTPUpstreamRequestOptions(req.Context(), opts))
 }
 
 func mergeOpenAIImageCookieHeader(cookieHeader string, name string, value string) string {

@@ -256,6 +256,19 @@ func TestSettingService_UpdateSettings_OpenAIImageWebModels(t *testing.T) {
 	require.Equal(t, "gpt-5-5-thinking", repo.updates[SettingKeyOpenAIImageWebPaidModel])
 }
 
+func TestSettingService_UpdateSettings_OpenAIOAuthImageBridgeTransportSettings(t *testing.T) {
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		OpenAIOAuthImageBridgeDisableKeepAlives:   true,
+		OpenAIOAuthImageBridgeFreshUpstreamClient: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "true", repo.updates[SettingKeyOpenAIOAuthImageBridgeDisableKeepAlives])
+	require.Equal(t, "true", repo.updates[SettingKeyOpenAIOAuthImageBridgeFreshUpstreamClient])
+}
+
 func TestSettingService_UpdateSettings_RejectsInvalidPaymentVisibleMethodSource(t *testing.T) {
 	repo := &settingUpdateRepoStub{}
 	svc := NewSettingService(repo, &config.Config{})

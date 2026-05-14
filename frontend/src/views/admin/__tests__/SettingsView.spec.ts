@@ -428,6 +428,8 @@ const baseSettingsResponse = {
   payment_visible_method_alipay_enabled: true,
   payment_visible_method_wxpay_enabled: true,
   openai_advanced_scheduler_enabled: false,
+  openai_oauth_image_bridge_disable_keepalives: false,
+  openai_oauth_image_bridge_fresh_upstream_client: false,
   balance_low_notify_enabled: false,
   balance_low_notify_threshold: 0,
   balance_low_notify_recharge_url: "",

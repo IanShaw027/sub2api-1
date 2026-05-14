@@ -201,10 +201,12 @@ type SystemSettings struct {
 	PaymentVisibleMethodWxpayEnabled  bool   `json:"payment_visible_method_wxpay_enabled"`
 
 	// OpenAI account scheduling
-	OpenAIAdvancedSchedulerEnabled bool   `json:"openai_advanced_scheduler_enabled"`
-	OpenAIStickyReservePercent     int    `json:"openai_sticky_reserve_percent"`
-	OpenAIImageWebFreeModel        string `json:"openai_image_web_free_model"`
-	OpenAIImageWebPaidModel        string `json:"openai_image_web_paid_model"`
+	OpenAIAdvancedSchedulerEnabled            bool   `json:"openai_advanced_scheduler_enabled"`
+	OpenAIStickyReservePercent                int    `json:"openai_sticky_reserve_percent"`
+	OpenAIImageWebFreeModel                   string `json:"openai_image_web_free_model"`
+	OpenAIImageWebPaidModel                   string `json:"openai_image_web_paid_model"`
+	OpenAIOAuthImageBridgeDisableKeepAlives   bool   `json:"openai_oauth_image_bridge_disable_keepalives"`
+	OpenAIOAuthImageBridgeFreshUpstreamClient bool   `json:"openai_oauth_image_bridge_fresh_upstream_client"`
 
 	// Payment configuration
 	PaymentEnabled                   bool     `json:"payment_enabled"`

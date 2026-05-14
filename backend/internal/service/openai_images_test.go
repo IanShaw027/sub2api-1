@@ -28,6 +28,16 @@ type openAIImageSettingsRepoStub struct {
 	values map[string]string
 }
 
+func resetOpenAIOAuthImageBridgeTransportSettingsTestCache(t *testing.T) {
+	t.Helper()
+	openAIOAuthImageBridgeTransportSettingsSF.Forget(openAIOAuthImageBridgeTransportSettingsKey)
+	openAIOAuthImageBridgeTransportSettingsCache.Store((*cachedOpenAIOAuthImageBridgeTransportSettings)(nil))
+	t.Cleanup(func() {
+		openAIOAuthImageBridgeTransportSettingsSF.Forget(openAIOAuthImageBridgeTransportSettingsKey)
+		openAIOAuthImageBridgeTransportSettingsCache.Store((*cachedOpenAIOAuthImageBridgeTransportSettings)(nil))
+	})
+}
+
 func (s *openAIImageSettingsRepoStub) Get(context.Context, string) (*Setting, error) {
 	panic("unexpected Get call")
 }
@@ -1194,6 +1204,124 @@ func TestOpenAIGatewayServiceForwardImages_OAuthUsesResponsesAPI(t *testing.T) {
 	require.Equal(t, "gpt-image-2", gjson.Get(rec.Body.String(), "model").String())
 	require.Equal(t, "aGVsbG8=", gjson.Get(rec.Body.String(), "data.0.b64_json").String())
 	require.Equal(t, "draw a cat", gjson.Get(rec.Body.String(), "data.0.revised_prompt").String())
+}
+
+func TestOpenAIGatewayServiceForwardImages_OAuthAppliesUpstreamTransportExperimentFlags(t *testing.T) {
+	resetOpenAIOAuthImageBridgeTransportSettingsTestCache(t)
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","size":"1024x1024"}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+	c.Set("api_key", &APIKey{ID: 42})
+
+	upstream := &openAIImagesHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header: http.Header{
+				"Content-Type": []string{"text/event-stream"},
+				"X-Request-Id": []string{"req_img_transport_flags"},
+			},
+			Body: io.NopCloser(strings.NewReader(
+				"data: {\"type\":\"response.completed\",\"response\":{\"created_at\":1710000000,\"tool_usage\":{\"image_gen\":{\"images\":1}},\"output\":[{\"type\":\"image_generation_call\",\"result\":\"aGVsbG8=\"}]}}\n\n" +
+					"data: [DONE]\n\n",
+			)),
+		},
+	}
+
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{
+			Gateway: config.GatewayConfig{
+				OpenAIOAuthImageBridgeDisableKeepAlives:   true,
+				OpenAIOAuthImageBridgeFreshUpstreamClient: true,
+			},
+		},
+		httpUpstream: upstream,
+	}
+	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+
+	account := &Account{
+		ID:       1,
+		Name:     "openai-oauth",
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":       "token-123",
+			"chatgpt_account_id": "acct-123",
+		},
+	}
+
+	result, err := svc.ForwardImages(context.Background(), c, account, body, parsed, "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq)
+
+	opts := HTTPUpstreamRequestOptionsFromContext(upstream.lastReq.Context())
+	require.True(t, opts.DisableKeepAlives)
+	require.True(t, opts.FreshClient)
+}
+
+func TestOpenAIGatewayServiceForwardImages_OAuthAppliesUpstreamTransportExperimentFlagsFromSystemSettings(t *testing.T) {
+	resetOpenAIOAuthImageBridgeTransportSettingsTestCache(t)
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","size":"1024x1024"}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+	c.Set("api_key", &APIKey{ID: 42})
+
+	upstream := &openAIImagesHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header: http.Header{
+				"Content-Type": []string{"text/event-stream"},
+				"X-Request-Id": []string{"req_img_transport_flags_settings"},
+			},
+			Body: io.NopCloser(strings.NewReader(
+				"data: {\"type\":\"response.completed\",\"response\":{\"created_at\":1710000000,\"tool_usage\":{\"image_gen\":{\"images\":1}},\"output\":[{\"type\":\"image_generation_call\",\"result\":\"aGVsbG8=\"}]}}\n\n" +
+					"data: [DONE]\n\n",
+			)),
+		},
+	}
+
+	settingSvc := NewSettingService(&openAIImageSettingsRepoStub{values: map[string]string{
+		SettingKeyOpenAIOAuthImageBridgeDisableKeepAlives:   "true",
+		SettingKeyOpenAIOAuthImageBridgeFreshUpstreamClient: "true",
+	}}, &config.Config{})
+	svc := &OpenAIGatewayService{
+		cfg:            &config.Config{},
+		httpUpstream:   upstream,
+		settingService: settingSvc,
+	}
+	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+
+	account := &Account{
+		ID:       1,
+		Name:     "openai-oauth",
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":       "token-123",
+			"chatgpt_account_id": "acct-123",
+		},
+	}
+
+	result, err := svc.ForwardImages(context.Background(), c, account, body, parsed, "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq)
+
+	opts := HTTPUpstreamRequestOptionsFromContext(upstream.lastReq.Context())
+	require.True(t, opts.DisableKeepAlives)
+	require.True(t, opts.FreshClient)
 }
 
 func TestOpenAIGatewayServiceForwardImages_OAuthRejectsMultipleImages(t *testing.T) {

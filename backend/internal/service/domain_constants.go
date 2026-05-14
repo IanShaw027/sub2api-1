@@ -373,6 +373,12 @@ const (
 	// /backend-api/f/conversation model used for paid-plan (plus/pro/team)
 	// OpenAI web image generation requests.
 	SettingKeyOpenAIImageWebPaidModel = "openai_image_web_paid_model"
+	// SettingKeyOpenAIOAuthImageBridgeDisableKeepAlives stores whether OpenAI
+	// OAuth image bridge requests should disable keep-alive reuse.
+	SettingKeyOpenAIOAuthImageBridgeDisableKeepAlives = "openai_oauth_image_bridge_disable_keepalives"
+	// SettingKeyOpenAIOAuthImageBridgeFreshUpstreamClient stores whether OpenAI
+	// OAuth image bridge requests should bypass the shared upstream client pool.
+	SettingKeyOpenAIOAuthImageBridgeFreshUpstreamClient = "openai_oauth_image_bridge_fresh_upstream_client"
 	// SettingKeyOpenAIStickyReservePercent stores the percentage of an
 	// account's concurrency that should be reserved for returning sticky
 	// sessions. New sessions can only use the remaining capacity.

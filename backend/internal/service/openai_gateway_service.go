@@ -3646,6 +3646,7 @@ oauthTransformDone:
 			}
 			delete(wsReqBody, "previous_response_id")
 			wsPrevResponseRecoveryTried = true
+			s.RecordOpenAIAccountRecoveryReason(account.ID, "previous_response_not_found")
 			logOpenAIWSModeInfo(
 				"reconnect_prev_response_recovery account_id=%d attempt=%d action=drop_previous_response_id retry=1 previous_response_id=%s previous_response_id_kind=%s",
 				account.ID,
@@ -3674,6 +3675,7 @@ oauthTransformDone:
 				delete(wsReqBody, "previous_response_id")
 			}
 			wsInvalidEncryptedContentRecoveryTried = true
+			s.RecordOpenAIAccountRecoveryReason(account.ID, "invalid_encrypted_content")
 			logOpenAIWSModeInfo(
 				"reconnect_invalid_encrypted_content_recovery account_id=%d attempt=%d action=drop_encrypted_reasoning_items retry=1 previous_response_id_present=%v previous_response_id=%s previous_response_id_kind=%s has_function_call_output=%v dropped_previous_response_id=%v",
 				account.ID,
@@ -3711,6 +3713,7 @@ oauthTransformDone:
 				return false
 			}
 			wsCodexCompatRecoveryTried = true
+			s.RecordOpenAIAccountRecoveryReason(account.ID, reason)
 			logOpenAIWSModeInfo(
 				"reconnect_codex_compat_recovery account_id=%d attempt=%d reason=%s retry=1",
 				account.ID,
