@@ -913,7 +913,7 @@ const loading = ref(false)
 const searchQuery = ref('')
 const USER_SORT_STORAGE_KEY = 'admin-users-table-sort'
 const loadInitialSortState = (): { sort_by: string; sort_order: 'asc' | 'desc' } => {
-  const fallback = { sort_by: 'today_balance_usage', sort_order: 'desc' as 'asc' | 'desc' }
+  const fallback = { sort_by: 'created_at', sort_order: 'desc' as 'asc' | 'desc' }
   const sortable = new Set(['email', 'id', 'username', 'role', 'balance', 'status', 'last_used_at', 'last_active_at', 'created_at', 'today_balance_usage', 'today_subscription_usage', 'last_30d_usage', 'current_concurrency', 'available_concurrency'])
   try {
     const raw = localStorage.getItem(USER_SORT_STORAGE_KEY)

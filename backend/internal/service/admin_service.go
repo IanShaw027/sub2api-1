@@ -822,38 +822,6 @@ func (s *adminServiceImpl) decorateUsersForList(ctx context.Context, users []Use
 			users[i].LastUsedAt = lastUsedByUserID[users[i].ID]
 		}
 	}
-	// 批量加载用户专属分组倍率
-	if s.userGroupRateRepo != nil {
-		if batchRepo, ok := s.userGroupRateRepo.(userGroupRateBatchReader); ok {
-			ratesByUser, err := batchRepo.GetByUserIDs(ctx, userIDs)
-			if err != nil {
-				logger.LegacyPrintf("service.admin", "failed to load user group rates in batch: err=%v", err)
-				s.loadUserGroupRatesOneByOne(ctx, users)
-			} else {
-				for i := range users {
-					if rates, ok := ratesByUser[users[i].ID]; ok {
-						users[i].GroupRates = rates
-					}
-				}
-			}
-		} else {
-			s.loadUserGroupRatesOneByOne(ctx, users)
-		}
-	}
-}
-
-func (s *adminServiceImpl) loadUserGroupRatesOneByOne(ctx context.Context, users []User) {
-	if s.userGroupRateRepo == nil {
-		return
-	}
-	for i := range users {
-		rates, err := s.userGroupRateRepo.GetByUserID(ctx, users[i].ID)
-		if err != nil {
-			logger.LegacyPrintf("service.admin", "failed to load user group rates: user_id=%d err=%v", users[i].ID, err)
-			continue
-		}
-		users[i].GroupRates = rates
-	}
 }
 
 func (s *adminServiceImpl) GetUser(ctx context.Context, id int64) (*User, error) {

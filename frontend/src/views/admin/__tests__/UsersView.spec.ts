@@ -137,7 +137,7 @@ describe('admin UsersView', () => {
     getBatchUserAttributes.mockResolvedValue({ values: {} })
   })
 
-  it('defaults to sorting by today balance usage in descending order', async () => {
+  it('defaults to sorting by created time in descending order', async () => {
     mount(UsersView, {
       global: {
         stubs: {
@@ -172,7 +172,7 @@ describe('admin UsersView', () => {
       1,
       20,
       expect.objectContaining({
-        sort_by: 'today_balance_usage',
+        sort_by: 'created_at',
         sort_order: 'desc'
       }),
       expect.any(Object)
@@ -336,7 +336,7 @@ describe('admin UsersView', () => {
       20,
       expect.objectContaining({
         sort_by: 'today_balance_usage',
-        sort_order: 'asc'
+        sort_order: 'desc'
       }),
       expect.any(Object)
     )
@@ -348,7 +348,7 @@ describe('admin UsersView', () => {
       20,
       expect.objectContaining({
         sort_by: 'today_balance_usage',
-        sort_order: 'desc'
+        sort_order: 'asc'
       }),
       expect.any(Object)
     )
@@ -605,7 +605,7 @@ describe('admin UsersView', () => {
       1,
       20,
       expect.objectContaining({
-        sort_by: 'today_balance_usage',
+        sort_by: 'created_at',
         sort_order: 'desc'
       }),
       expect.any(Object)
