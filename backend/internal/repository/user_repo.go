@@ -462,6 +462,10 @@ func (r *userRepository) ListWithFilters(ctx context.Context, params pagination.
 		q = q.Where(dbuser.IDIn(allowedUserIDs...))
 	}
 
+	if isUsageCostSort(params.SortBy) {
+		return r.listWithUsageSort(ctx, q, params, filters)
+	}
+
 	total, err := q.Clone().Count(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -639,6 +643,293 @@ func (r *userRepository) PopulateUsageStats(ctx context.Context, users []service
 	}
 
 	return r.populateUsageStats(ctx, userMap)
+}
+
+type usageSortRow struct {
+	ID                          int64   `json:"id"`
+	TodayActualCost             float64 `json:"today_actual_cost"`
+	TodayBalanceActualCost      float64 `json:"today_balance_actual_cost"`
+	TodaySubscriptionActualCost float64 `json:"today_subscription_actual_cost"`
+	TotalActualCost             float64 `json:"total_actual_cost"`
+}
+
+func isUsageCostSort(sortBy string) bool {
+	switch strings.ToLower(strings.TrimSpace(sortBy)) {
+	case "today_balance_usage", "today_subscription_usage", "last_30d_usage":
+		return true
+	default:
+		return false
+	}
+}
+
+func usageSortExpression(sortBy string) string {
+	switch strings.ToLower(strings.TrimSpace(sortBy)) {
+	case "today_subscription_usage":
+		return "COALESCE(usage_stats.today_subscription_actual_cost, 0)"
+	case "last_30d_usage":
+		return "COALESCE(usage_stats.total_actual_cost, 0)"
+	default:
+		return "COALESCE(usage_stats.today_balance_actual_cost, 0)"
+	}
+}
+
+func usageSortOrder(sortOrder string) string {
+	if strings.EqualFold(strings.TrimSpace(sortOrder), pagination.SortOrderAsc) {
+		return "ASC"
+	}
+	return "DESC"
+}
+
+func canUseOptimizedUsageSort(filters service.UserListFilters) bool {
+	return filters.GroupName == "" &&
+		len(filters.Attributes) == 0 &&
+		(filters.AnnouncementID == nil || *filters.AnnouncementID == 0)
+}
+
+func (r *userRepository) optimizedUsageSortedRows(ctx context.Context, params pagination.PaginationParams, filters service.UserListFilters) ([]usageSortRow, error) {
+	exec := txAwareSQLExecutor(ctx, r.sql, r.client)
+	if exec == nil {
+		return nil, fmt.Errorf("sql executor is not configured")
+	}
+
+	startTime := time.Now().AddDate(0, 0, -30).UTC()
+	todayStart := timezone.Today().UTC()
+	now := time.Now().UTC()
+	orderDirection := usageSortOrder(params.SortOrder)
+	sortExpr := usageSortExpression(params.SortBy)
+
+	clauses := make([]string, 0, 3)
+	args := make([]any, 0, 10)
+	argPos := 1
+	if filters.Status != "" {
+		clauses = append(clauses, fmt.Sprintf("u.status = $%d", argPos))
+		args = append(args, filters.Status)
+		argPos++
+	}
+	if filters.Role != "" {
+		clauses = append(clauses, fmt.Sprintf("u.role = $%d", argPos))
+		args = append(args, filters.Role)
+		argPos++
+	}
+	if filters.Search != "" {
+		searchArg := "%" + filters.Search + "%"
+		clauses = append(clauses, fmt.Sprintf("(u.email ILIKE $%d OR u.username ILIKE $%d OR u.notes ILIKE $%d OR EXISTS (SELECT 1 FROM api_keys ak WHERE ak.user_id = u.id AND ak.key ILIKE $%d))", argPos, argPos, argPos, argPos))
+		args = append(args, searchArg)
+		argPos++
+	}
+	whereSQL := ""
+	if len(clauses) > 0 {
+		whereSQL = "WHERE " + strings.Join(clauses, " AND ")
+	}
+
+	query := fmt.Sprintf(`
+WITH usage_stats AS (
+  SELECT
+    user_id,
+    COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $%d::timestamptz AND created_at < $%d::timestamptz), 0) AS total_actual_cost,
+    COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $%d::timestamptz), 0) AS today_actual_cost,
+    COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $%d::timestamptz AND subscription_id IS NULL), 0) AS today_balance_actual_cost,
+    COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $%d::timestamptz AND subscription_id IS NOT NULL), 0) AS today_subscription_actual_cost
+  FROM usage_logs
+  WHERE created_at >= $%d::timestamptz
+  GROUP BY user_id
+)
+SELECT
+  u.id,
+  COALESCE(us.today_actual_cost, 0) AS today_actual_cost,
+  COALESCE(us.today_balance_actual_cost, 0) AS today_balance_actual_cost,
+  COALESCE(us.today_subscription_actual_cost, 0) AS today_subscription_actual_cost,
+  COALESCE(us.total_actual_cost, 0) AS total_actual_cost
+FROM users u
+LEFT JOIN usage_stats us ON us.user_id = u.id
+%s
+ORDER BY %s %s, u.id %s
+LIMIT $%d OFFSET $%d
+`, argPos, argPos+1, argPos+2, argPos+2, argPos+2, argPos, whereSQL, sortExpr, orderDirection, orderDirection, argPos+3, argPos+4)
+
+	args = append(args, startTime, now, todayStart, params.Limit(), params.Offset())
+	rows, err := exec.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	result := make([]usageSortRow, 0)
+	for rows.Next() {
+		var row usageSortRow
+		if scanErr := rows.Scan(
+			&row.ID,
+			&row.TodayActualCost,
+			&row.TodayBalanceActualCost,
+			&row.TodaySubscriptionActualCost,
+			&row.TotalActualCost,
+		); scanErr != nil {
+			return nil, scanErr
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (r *userRepository) listWithUsageSort(ctx context.Context, q *dbent.UserQuery, params pagination.PaginationParams, filters service.UserListFilters) ([]service.User, *pagination.PaginationResult, error) {
+	total, err := q.Clone().Count(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if total == 0 {
+		return []service.User{}, paginationResultFromTotal(0, params), nil
+	}
+
+	if canUseOptimizedUsageSort(filters) {
+		rows, err := r.optimizedUsageSortedRows(ctx, params, filters)
+		if err == nil {
+			return r.buildUsageSortedUsers(ctx, rows, params, filters, total)
+		}
+		logger.LegacyPrintf("repository.user", "optimized usage sort fallback to ent path: err=%v", err)
+	}
+	usersQuery := q.
+		Offset(params.Offset()).
+		Limit(params.Limit())
+	for _, order := range userListOrder(params) {
+		usersQuery = usersQuery.Order(order)
+	}
+
+	users, err := usersQuery.All(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	outUsers := make([]service.User, 0, len(users))
+	if len(users) == 0 {
+		return outUsers, paginationResultFromTotal(int64(total), params), nil
+	}
+
+	userIDs := make([]int64, 0, len(users))
+	userMap := make(map[int64]*service.User, len(users))
+	for i := range users {
+		userIDs = append(userIDs, users[i].ID)
+		u := userEntityToService(users[i])
+		outUsers = append(outUsers, *u)
+		userMap[u.ID] = &outUsers[len(outUsers)-1]
+	}
+
+	shouldLoadSubscriptions := filters.IncludeSubscriptions == nil || *filters.IncludeSubscriptions
+	if shouldLoadSubscriptions {
+		subs, err := r.client.UserSubscription.Query().
+			Where(
+				usersubscription.UserIDIn(userIDs...),
+				usersubscription.StatusEQ(service.SubscriptionStatusActive),
+			).
+			WithGroup().
+			All(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		for i := range subs {
+			if u, ok := userMap[subs[i].UserID]; ok {
+				u.Subscriptions = append(u.Subscriptions, *userSubscriptionEntityToService(subs[i]))
+			}
+		}
+	}
+
+	allowedGroupsByUser, err := r.loadAllowedGroups(ctx, userIDs)
+	if err != nil {
+		return nil, nil, err
+	}
+	for id, u := range userMap {
+		if groups, ok := allowedGroupsByUser[id]; ok {
+			u.AllowedGroups = groups
+		}
+	}
+
+	if err := r.populateUsageStats(ctx, userMap); err != nil {
+		logger.LegacyPrintf("repository.user", "failed to load user usage stats in usage-sorted list: err=%v", err)
+	}
+
+	return outUsers, paginationResultFromTotal(int64(total), params), nil
+}
+
+func (r *userRepository) buildUsageSortedUsers(ctx context.Context, rows []usageSortRow, params pagination.PaginationParams, filters service.UserListFilters, total int) ([]service.User, *pagination.PaginationResult, error) {
+	if len(rows) == 0 {
+		return []service.User{}, paginationResultFromTotal(int64(total), params), nil
+	}
+
+	userIDs := make([]int64, 0, len(rows))
+	usageStatsByUser := make(map[int64]userUsageStats, len(rows))
+	for _, row := range rows {
+		userIDs = append(userIDs, row.ID)
+		usageStatsByUser[row.ID] = userUsageStats{
+			TodayActualCost:             row.TodayActualCost,
+			TodayBalanceActualCost:      row.TodayBalanceActualCost,
+			TodaySubscriptionActualCost: row.TodaySubscriptionActualCost,
+			TotalActualCost:             row.TotalActualCost,
+		}
+	}
+
+	users, err := r.client.User.Query().
+		Where(dbuser.IDIn(userIDs...)).
+		All(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	outUsers := make([]service.User, 0, len(rows))
+	userMap := make(map[int64]*service.User, len(users))
+	for i := range users {
+		u := userEntityToService(users[i])
+		userMap[u.ID] = u
+	}
+	for _, id := range userIDs {
+		if u, ok := userMap[id]; ok {
+			if stats, exists := usageStatsByUser[id]; exists {
+				u.TodayActualCost = stats.TodayActualCost
+				u.TodayBalanceActualCost = stats.TodayBalanceActualCost
+				u.TodaySubscriptionActualCost = stats.TodaySubscriptionActualCost
+				u.TotalActualCost = stats.TotalActualCost
+			}
+			outUsers = append(outUsers, *u)
+		}
+	}
+
+	userMapForPopulate := make(map[int64]*service.User, len(outUsers))
+	for i := range outUsers {
+		userMapForPopulate[outUsers[i].ID] = &outUsers[i]
+	}
+
+	shouldLoadSubscriptions := filters.IncludeSubscriptions == nil || *filters.IncludeSubscriptions
+	if shouldLoadSubscriptions {
+		subs, err := r.client.UserSubscription.Query().
+			Where(
+				usersubscription.UserIDIn(userIDs...),
+				usersubscription.StatusEQ(service.SubscriptionStatusActive),
+			).
+			WithGroup().
+			All(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		for i := range subs {
+			if u, ok := userMapForPopulate[subs[i].UserID]; ok {
+				u.Subscriptions = append(u.Subscriptions, *userSubscriptionEntityToService(subs[i]))
+			}
+		}
+	}
+
+	allowedGroupsByUser, err := r.loadAllowedGroups(ctx, userIDs)
+	if err != nil {
+		return nil, nil, err
+	}
+	for id, u := range userMapForPopulate {
+		if groups, ok := allowedGroupsByUser[id]; ok {
+			u.AllowedGroups = groups
+		}
+	}
+
+	return outUsers, paginationResultFromTotal(int64(total), params), nil
 }
 
 func userListOrder(params pagination.PaginationParams) []func(*entsql.Selector) {
