@@ -253,22 +253,22 @@ func (c *concurrencyCache) AcquireAccountSlotForGroup(ctx context.Context, accou
 	if groupID <= 0 {
 		return c.AcquireAccountSlot(ctx, accountID, maxConcurrency, requestID)
 	}
-
-	accountKey := accountSlotKey(accountID)
-	if maxConcurrency > 0 {
-		acquired, err := c.AcquireAccountSlot(ctx, accountID, maxConcurrency, requestID)
-		if err != nil || !acquired {
-			return acquired, err
-		}
-	} else if err := c.addSlotWithoutLimit(ctx, accountKey, requestID); err != nil {
-		return false, err
+	acquired, err := c.AcquireAccountSlot(ctx, accountID, maxConcurrency, requestID)
+	if err != nil || !acquired {
+		return acquired, err
 	}
-
-	if err := c.addSlotWithoutLimit(ctx, groupSlotKey(groupID), requestID); err != nil {
+	if err := c.AcquireGroupSlot(ctx, groupID, requestID); err != nil {
 		_ = c.ReleaseAccountSlot(ctx, accountID, requestID)
 		return false, err
 	}
 	return true, nil
+}
+
+func (c *concurrencyCache) AcquireGroupSlot(ctx context.Context, groupID int64, requestID string) error {
+	if groupID <= 0 {
+		return nil
+	}
+	return c.addSlotWithoutLimit(ctx, groupSlotKey(groupID), requestID)
 }
 
 func (c *concurrencyCache) addSlotWithoutLimit(ctx context.Context, key string, requestID string) error {
@@ -303,6 +303,13 @@ func (c *concurrencyCache) ReleaseAccountSlotForGroup(ctx context.Context, accou
 		return fmt.Errorf("pipeline exec: %w", err)
 	}
 	return nil
+}
+
+func (c *concurrencyCache) ReleaseGroupSlot(ctx context.Context, groupID int64, requestID string) error {
+	if groupID <= 0 {
+		return nil
+	}
+	return c.rdb.ZRem(ctx, groupSlotKey(groupID), requestID).Err()
 }
 
 func (c *concurrencyCache) GetAccountConcurrency(ctx context.Context, accountID int64) (int, error) {

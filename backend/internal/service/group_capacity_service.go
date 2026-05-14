@@ -1,19 +1,12 @@
 package service
 
-import (
-	"context"
-	"time"
-)
+import "context"
 
 // GroupCapacitySummary holds aggregated capacity for a single group.
 type GroupCapacitySummary struct {
 	GroupID         int64 `json:"group_id"`
 	ConcurrencyUsed int   `json:"concurrency_used"`
 	ConcurrencyMax  int   `json:"concurrency_max"`
-	SessionsUsed    int   `json:"sessions_used"`
-	SessionsMax     int   `json:"sessions_max"`
-	RPMUsed         int   `json:"rpm_used"`
-	RPMMax          int   `json:"rpm_max"`
 }
 
 // GroupCapacityService aggregates per-group capacity from runtime data.
@@ -67,65 +60,7 @@ func (s *GroupCapacityService) getGroupCapacity(ctx context.Context, groupID int
 	if s.concurrencyService != nil {
 		concurrencyUsed, _ = s.concurrencyService.GetGroupConcurrency(ctx, groupID)
 	}
-
-	accounts, err := s.accountRepo.ListSchedulableByGroupID(ctx, groupID)
-	if err != nil {
-		return GroupCapacitySummary{}, err
-	}
-	if len(accounts) == 0 {
-		return GroupCapacitySummary{ConcurrencyUsed: concurrencyUsed}, nil
-	}
-
-	// Collect account IDs and config values
-	accountIDs := make([]int64, 0, len(accounts))
-	sessionTimeouts := make(map[int64]time.Duration)
-	var sessionsMax, rpmMax int
-
-	for i := range accounts {
-		acc := &accounts[i]
-		accountIDs = append(accountIDs, acc.ID)
-
-		if ms := acc.GetMaxSessions(); ms > 0 {
-			sessionsMax += ms
-			timeout := time.Duration(acc.GetSessionIdleTimeoutMinutes()) * time.Minute
-			if timeout <= 0 {
-				timeout = 5 * time.Minute
-			}
-			sessionTimeouts[acc.ID] = timeout
-		}
-
-		if rpm := acc.GetBaseRPM(); rpm > 0 {
-			rpmMax += rpm
-		}
-	}
-
-	var sessionsMap map[int64]int
-	if sessionsMax > 0 && s.sessionLimitCache != nil {
-		sessionsMap, _ = s.sessionLimitCache.GetActiveSessionCountBatch(ctx, accountIDs, sessionTimeouts)
-	}
-
-	var rpmMap map[int64]int
-	if rpmMax > 0 && s.rpmCache != nil {
-		rpmMap, _ = s.rpmCache.GetRPMBatch(ctx, accountIDs)
-	}
-
-	// Aggregate
-	var sessionsUsed, rpmUsed int
-	for _, id := range accountIDs {
-		if sessionsMap != nil {
-			sessionsUsed += sessionsMap[id]
-		}
-		if rpmMap != nil {
-			rpmUsed += rpmMap[id]
-		}
-	}
-
 	return GroupCapacitySummary{
 		ConcurrencyUsed: concurrencyUsed,
-		ConcurrencyMax:  0,
-		SessionsUsed:    sessionsUsed,
-		SessionsMax:     sessionsMax,
-		RPMUsed:         rpmUsed,
-		RPMMax:          rpmMax,
 	}, nil
 }

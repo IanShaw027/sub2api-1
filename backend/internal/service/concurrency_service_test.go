@@ -20,6 +20,8 @@ type stubConcurrencyCacheForTest struct {
 	concurrency      int
 	concurrencyErr   error
 	groupConcurrency map[int64]int
+	groupAcquireErr  error
+	groupReleaseErr  error
 	waitAllowed      bool
 	waitErr          error
 	waitCount        int
@@ -50,7 +52,14 @@ func (c *stubConcurrencyCacheForTest) AcquireAccountSlot(_ context.Context, _ in
 }
 func (c *stubConcurrencyCacheForTest) AcquireAccountSlotForGroup(_ context.Context, accountID int64, groupID int64, _ int, requestID string) (bool, error) {
 	c.groupAcquireCalls = append(c.groupAcquireCalls, groupSlotCall{accountID: accountID, groupID: groupID, requestID: requestID})
+	if c.groupAcquireErr != nil {
+		return false, c.groupAcquireErr
+	}
 	return c.acquireResult, c.acquireErr
+}
+func (c *stubConcurrencyCacheForTest) AcquireGroupSlot(_ context.Context, groupID int64, requestID string) error {
+	c.groupAcquireCalls = append(c.groupAcquireCalls, groupSlotCall{groupID: groupID, requestID: requestID})
+	return c.groupAcquireErr
 }
 func (c *stubConcurrencyCacheForTest) ReleaseAccountSlot(_ context.Context, accountID int64, requestID string) error {
 	c.releasedAccountIDs = append(c.releasedAccountIDs, accountID)
@@ -59,6 +68,16 @@ func (c *stubConcurrencyCacheForTest) ReleaseAccountSlot(_ context.Context, acco
 }
 func (c *stubConcurrencyCacheForTest) ReleaseAccountSlotForGroup(_ context.Context, accountID int64, groupID int64, requestID string) error {
 	c.groupReleaseCalls = append(c.groupReleaseCalls, groupSlotCall{accountID: accountID, groupID: groupID, requestID: requestID})
+	if c.groupReleaseErr != nil {
+		return c.groupReleaseErr
+	}
+	return c.releaseErr
+}
+func (c *stubConcurrencyCacheForTest) ReleaseGroupSlot(_ context.Context, groupID int64, requestID string) error {
+	c.groupReleaseCalls = append(c.groupReleaseCalls, groupSlotCall{groupID: groupID, requestID: requestID})
+	if c.groupReleaseErr != nil {
+		return c.groupReleaseErr
+	}
 	return c.releaseErr
 }
 func (c *stubConcurrencyCacheForTest) GetAccountConcurrency(_ context.Context, _ int64) (int, error) {
@@ -209,11 +228,50 @@ func TestAcquireAccountSlotForGroup_ReleaseDecrementsAccountAndGroup(t *testing.
 	result.ReleaseFunc()
 
 	require.Len(t, cache.groupAcquireCalls, 1)
-	require.Equal(t, int64(42), cache.groupAcquireCalls[0].accountID)
 	require.Equal(t, groupID, cache.groupAcquireCalls[0].groupID)
 	require.NotEmpty(t, cache.groupAcquireCalls[0].requestID)
 	require.Len(t, cache.groupReleaseCalls, 1)
-	require.Equal(t, cache.groupAcquireCalls[0], cache.groupReleaseCalls[0])
+	require.Equal(t, groupID, cache.groupReleaseCalls[0].groupID)
+	require.Equal(t, cache.groupAcquireCalls[0].requestID, cache.groupReleaseCalls[0].requestID)
+}
+
+func TestAcquireAccountSlotForGroup_GroupTrackingFailureDoesNotBlockAccountSlot(t *testing.T) {
+	cache := &stubConcurrencyCacheForTest{
+		acquireResult:   true,
+		groupAcquireErr: errors.New("redis group write failed"),
+	}
+	svc := NewConcurrencyService(cache)
+	groupID := int64(7)
+
+	result, err := svc.AcquireAccountSlotForGroup(context.Background(), 42, &groupID, 5)
+	require.NoError(t, err)
+	require.True(t, result.Acquired)
+	require.NotNil(t, result.ReleaseFunc)
+	require.Len(t, cache.groupAcquireCalls, 1)
+
+	result.ReleaseFunc()
+
+	require.Len(t, cache.releasedAccountIDs, 1)
+	require.Equal(t, int64(42), cache.releasedAccountIDs[0])
+	require.Empty(t, cache.groupReleaseCalls, "group slot was not tracked and should not be released")
+}
+
+func TestAcquireAccountSlotForGroup_UnlimitedConcurrencyTracksGroupSlot(t *testing.T) {
+	cache := &stubConcurrencyCacheForTest{acquireResult: true}
+	svc := NewConcurrencyService(cache)
+	groupID := int64(7)
+
+	result, err := svc.AcquireAccountSlotForGroup(context.Background(), 42, &groupID, 0)
+	require.NoError(t, err)
+	require.True(t, result.Acquired)
+	require.NotNil(t, result.ReleaseFunc)
+	result.ReleaseFunc()
+
+	require.Len(t, cache.groupAcquireCalls, 1)
+	require.Len(t, cache.groupReleaseCalls, 1)
+	require.Equal(t, groupID, cache.groupAcquireCalls[0].groupID)
+	require.Equal(t, cache.groupAcquireCalls[0].requestID, cache.groupReleaseCalls[0].requestID)
+	require.Empty(t, cache.releasedAccountIDs)
 }
 
 func TestAcquireUserSlot_IndependentFromAccount(t *testing.T) {

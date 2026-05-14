@@ -49,8 +49,8 @@ type ConcurrencyCache interface {
 }
 
 type groupConcurrencyCache interface {
-	AcquireAccountSlotForGroup(ctx context.Context, accountID int64, groupID int64, maxConcurrency int, requestID string) (bool, error)
-	ReleaseAccountSlotForGroup(ctx context.Context, accountID int64, groupID int64, requestID string) error
+	AcquireGroupSlot(ctx context.Context, groupID int64, requestID string) error
+	ReleaseGroupSlot(ctx context.Context, groupID int64, requestID string) error
 	GetGroupConcurrency(ctx context.Context, groupID int64) (int, error)
 }
 
@@ -143,65 +143,66 @@ func (s *ConcurrencyService) AcquireAccountSlot(ctx context.Context, accountID i
 // AcquireAccountSlotForGroup acquires an account slot and records the request
 // under the selected group for real-time group-capacity display.
 func (s *ConcurrencyService) AcquireAccountSlotForGroup(ctx context.Context, accountID int64, groupID *int64, maxConcurrency int) (*AcquireResult, error) {
-	var groupScopedCache groupConcurrencyCache
-	if s.cache != nil && groupID != nil && *groupID > 0 {
-		groupScopedCache, _ = s.cache.(groupConcurrencyCache)
+	var groupTracker groupConcurrencyCache
+	var groupTracked bool
+	var requestID string
+	if groupID != nil && *groupID > 0 {
+		groupTracker, _ = s.cache.(groupConcurrencyCache)
+	}
+
+	trackGroupSlot := func(ctx context.Context) {
+		if groupTracker == nil || groupID == nil || *groupID <= 0 {
+			return
+		}
+		if err := groupTracker.AcquireGroupSlot(ctx, *groupID, requestID); err != nil {
+			logger.LegacyPrintf("service.concurrency", "Warning: failed to track group slot for account=%d group=%d (req=%s): %v", accountID, *groupID, requestID, err)
+			return
+		}
+		groupTracked = true
+	}
+
+	releaseGroupSlot := func(ctx context.Context) {
+		if groupTracked && groupTracker != nil {
+			if err := groupTracker.ReleaseGroupSlot(ctx, *groupID, requestID); err != nil {
+				logger.LegacyPrintf("service.concurrency", "Warning: failed to release group slot for group=%d (req=%s): %v", *groupID, requestID, err)
+			}
+		}
 	}
 
 	// If maxConcurrency is 0 or negative, no limit
 	if maxConcurrency <= 0 {
-		if groupScopedCache != nil {
-			requestID := generateRequestID()
-			acquired, err := groupScopedCache.AcquireAccountSlotForGroup(ctx, accountID, *groupID, maxConcurrency, requestID)
-			if err != nil {
-				return nil, err
-			}
-			if acquired {
-				return &AcquireResult{
-					Acquired: true,
-					ReleaseFunc: func() {
-						bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-						defer cancel()
-						if err := groupScopedCache.ReleaseAccountSlotForGroup(bgCtx, accountID, *groupID, requestID); err != nil {
-							logger.LegacyPrintf("service.concurrency", "Warning: failed to release group account slot for account=%d group=%d (req=%s): %v", accountID, *groupID, requestID, err)
-						}
-					},
-				}, nil
-			}
-		}
-		return &AcquireResult{
-			Acquired:    true,
-			ReleaseFunc: func() {}, // no-op
-		}, nil
-	}
-
-	// Generate unique request ID for this slot
-	requestID := generateRequestID()
-
-	var acquired bool
-	var err error
-	if groupScopedCache != nil {
-		acquired, err = groupScopedCache.AcquireAccountSlotForGroup(ctx, accountID, *groupID, maxConcurrency, requestID)
-	} else {
-		acquired, err = s.cache.AcquireAccountSlot(ctx, accountID, maxConcurrency, requestID)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	if acquired {
+		requestID = generateRequestID()
+		trackGroupSlot(ctx)
 		return &AcquireResult{
 			Acquired: true,
 			ReleaseFunc: func() {
 				bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
-				if groupScopedCache != nil {
-					if err := groupScopedCache.ReleaseAccountSlotForGroup(bgCtx, accountID, *groupID, requestID); err != nil {
-						logger.LegacyPrintf("service.concurrency", "Warning: failed to release group account slot for account=%d group=%d (req=%s): %v", accountID, *groupID, requestID, err)
-					}
-				} else if err := s.cache.ReleaseAccountSlot(bgCtx, accountID, requestID); err != nil {
+				releaseGroupSlot(bgCtx)
+			},
+		}, nil
+	}
+
+	// Generate unique request ID for this slot
+	requestID = generateRequestID()
+
+	acquired, err := s.cache.AcquireAccountSlot(ctx, accountID, maxConcurrency, requestID)
+	if err != nil {
+		return nil, err
+	}
+
+	if acquired {
+		trackGroupSlot(ctx)
+
+		return &AcquireResult{
+			Acquired: true,
+			ReleaseFunc: func() {
+				bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if err := s.cache.ReleaseAccountSlot(bgCtx, accountID, requestID); err != nil {
 					logger.LegacyPrintf("service.concurrency", "Warning: failed to release account slot for %d (req=%s): %v", accountID, requestID, err)
 				}
+				releaseGroupSlot(bgCtx)
 			},
 		}, nil
 	}

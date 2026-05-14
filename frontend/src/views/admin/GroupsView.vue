@@ -245,10 +245,6 @@
               v-if="capacityMap.get(row.id)"
               :concurrency-used="capacityMap.get(row.id)!.concurrencyUsed"
               :concurrency-max="capacityMap.get(row.id)!.concurrencyMax"
-              :sessions-used="capacityMap.get(row.id)!.sessionsUsed"
-              :sessions-max="capacityMap.get(row.id)!.sessionsMax"
-              :rpm-used="capacityMap.get(row.id)!.rpmUsed"
-              :rpm-max="capacityMap.get(row.id)!.rpmMax"
             />
             <span v-else class="text-xs text-gray-400">—</span>
           </template>
@@ -3546,16 +3542,12 @@ const usageLoading = ref(false);
 const capacityMap = ref<
   Map<
     number,
-    {
-      concurrencyUsed: number;
-      concurrencyMax: number;
-      sessionsUsed: number;
-      sessionsMax: number;
-      rpmUsed: number;
-      rpmMax: number;
-    }
-  >
->(new Map());
+	    {
+	      concurrencyUsed: number;
+	      concurrencyMax: number;
+	    }
+	  >
+	>(new Map());
 const searchQuery = ref("");
 const filters = reactive({
   platform: "",
@@ -4143,20 +4135,12 @@ const loadCapacitySummary = async () => {
       {
         concurrencyUsed: number;
         concurrencyMax: number;
-        sessionsUsed: number;
-        sessionsMax: number;
-        rpmUsed: number;
-        rpmMax: number;
       }
     >();
     for (const item of data) {
       map.set(item.group_id, {
         concurrencyUsed: item.concurrency_used,
         concurrencyMax: item.concurrency_max,
-        sessionsUsed: item.sessions_used,
-        sessionsMax: item.sessions_max,
-        rpmUsed: item.rpm_used,
-        rpmMax: item.rpm_max,
       });
     }
     capacityMap.value = map;
