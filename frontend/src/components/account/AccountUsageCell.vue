@@ -132,15 +132,6 @@
             color="amber"
           />
         </div>
-        <div v-if="openAIImageRouteLabels.length" class="flex flex-wrap items-center gap-1 pt-0.5">
-          <span
-            v-for="label in openAIImageRouteLabels"
-            :key="label"
-            class="inline-flex rounded px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-gray-800 dark:text-gray-400"
-          >
-            {{ label }}
-          </span>
-        </div>
       </div>
       <div v-else-if="loading" class="space-y-1.5">
         <div class="flex items-center gap-1">
@@ -524,11 +515,6 @@ const props = withDefaults(
 const { t } = useI18n()
 const desktopViewportQuery = '(min-width: 768px)'
 
-const translateOrFallback = (key: string, fallback: string): string => {
-  const translated = t(key)
-  return translated === key ? fallback : translated
-}
-
 const unmounted = ref(false)
 onBeforeUnmount(() => { unmounted.value = true })
 
@@ -649,13 +635,10 @@ const showOpenAIResponseUsageBars = computed(() => {
   return openAIResponseUsageBars.value.length > 0
 })
 
-const openAIImageRouteLabels = computed(() => {
-  if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return []
-  const { codex: showCodex, web2api: showWeb2api } = openAIEnabledImageRoutes.value
-  return [
-    showCodex ? translateOrFallback('admin.accounts.openaiImageRoutes.codex', 'codex') : null,
-    showWeb2api ? translateOrFallback('admin.accounts.openaiImageRoutes.web2api', 'web2api') : null
-  ].filter((item): item is string => item !== null)
+const emptyUsageProgress = (): UsageProgress => ({
+  utilization: 0,
+  resets_at: null,
+  remaining_seconds: 0
 })
 
 const openAIImageUsageBars = computed(() => {
@@ -664,25 +647,25 @@ const openAIImageUsageBars = computed(() => {
   if (!info) return []
   const { codex: showCodex, web2api: showWeb2api } = openAIEnabledImageRoutes.value
   const items: Array<{ key: string; label: string; progress: UsageProgress }> = []
-  if (showCodex && info.openai_image_codex_five_hour) {
+  if (showCodex) {
     items.push({
       key: 'codex-5h',
       label: 'img 5h',
-      progress: info.openai_image_codex_five_hour
+      progress: info.openai_image_codex_five_hour ?? emptyUsageProgress()
     })
   }
-  if (showCodex && info.openai_image_codex_seven_day) {
+  if (showCodex) {
     items.push({
       key: 'codex-7d',
       label: 'img 7d',
-      progress: info.openai_image_codex_seven_day
+      progress: info.openai_image_codex_seven_day ?? emptyUsageProgress()
     })
   }
-  if (showWeb2api && info.openai_image_web2api_five_hour) {
+  if (showWeb2api) {
     items.push({
-      key: 'web2api-5h',
-      label: 'web 5h',
-      progress: info.openai_image_web2api_five_hour
+      key: 'web2api',
+      label: 'img',
+      progress: info.openai_image_web2api_five_hour ?? emptyUsageProgress()
     })
   }
   return items
@@ -692,7 +675,6 @@ const hasOpenAIUsageContent = computed(() => {
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return false
   return (showOpenAIResponseUsageBars.value && openAIResponseUsageBars.value.length > 0) ||
     openAIImageUsageBars.value.length > 0 ||
-    openAIImageRouteLabels.value.length > 0 ||
     !!usageInfo.value?.error
 })
 

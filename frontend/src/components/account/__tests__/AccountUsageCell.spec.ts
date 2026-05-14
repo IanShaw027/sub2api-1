@@ -670,7 +670,10 @@ describe('AccountUsageCell', () => {
       },
       global: {
         stubs: {
-          UsageProgressBar: true,
+          UsageProgressBar: {
+            props: ['label', 'utilization'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}</div>'
+          },
           AccountQuotaInfo: true
         }
       }
@@ -678,8 +681,11 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('codex')
-    expect(wrapper.text()).toContain('web2api')
+    expect(wrapper.findAll('.usage-bar').map((node) => node.text())).toEqual([
+      'img 5h|0',
+      'img 7d|0',
+      'img|0'
+    ])
     expect(wrapper.text()).not.toContain('admin.accounts.openaiImageRoutes')
     expect(wrapper.text()).not.toContain('free accounts cannot use codex image generation')
     expect(wrapper.text()).not.toContain('Personal')
@@ -688,8 +694,78 @@ describe('AccountUsageCell', () => {
     await wrapper.setProps({ activeGroupId: 102 })
     await flushPromises()
 
+    expect(wrapper.findAll('.usage-bar')).toHaveLength(0)
+  })
+
+  it('OpenAI codex 生图路线开启时补齐 img 5h/img 7d 占位条', async () => {
+    getUsage.mockResolvedValue({
+      five_hour: {
+        utilization: 12,
+        resets_at: '2026-03-08T12:00:00Z',
+        window_stats: { requests: 10, tokens: 1000, cost: 0.12 }
+      }
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 20051,
+          platform: 'openai',
+          type: 'oauth',
+          groups: [
+            {
+              id: 103,
+              name: 'OpenAI Image Route',
+              description: '',
+              platform: 'openai',
+              rate_limit: 0,
+              priority: 0,
+              rate_multiplier: 1,
+              is_exclusive: false,
+              status: 'active',
+              subscription_type: 'free',
+              daily_limit_usd: null,
+              weekly_limit_usd: null,
+              monthly_limit_usd: null,
+              allow_image_generation: true,
+              image_generation_route: 'codex',
+              image_rate_independent: false,
+              image_rate_multiplier: 1,
+              image_price_1k: null,
+              image_price_2k: null,
+              image_price_4k: null,
+              images2api_price_1k: null,
+              images2api_price_2k: null,
+              images2api_price_4k: null,
+              claude_code_only: false,
+              fallback_group_id: null,
+              fallback_group_id_on_invalid_request: null,
+              require_oauth_only: false,
+              require_privacy_set: false
+            }
+          ]
+        }),
+        activeGroupId: 103
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}</div>'
+          },
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.findAll('.usage-bar').map((node) => node.text())).toEqual([
+      '5h|12',
+      'img 5h|0',
+      'img 7d|0'
+    ])
     expect(wrapper.text()).not.toContain('codex')
-    expect(wrapper.text()).not.toContain('web2api')
   })
 
   it('OpenAI 响应用量条不会被生图窗口替换', async () => {
@@ -884,10 +960,11 @@ describe('AccountUsageCell', () => {
       '7d|31|642',
       'img 5h|0|1',
       'img 7d|0|2',
-      'web 5h|88|3'
+      'img|88|3'
     ])
     expect(wrapper.text()).not.toContain('codex 5h')
     expect(wrapper.text()).not.toContain('web2api 5h')
+    expect(wrapper.text()).not.toContain('web 5h')
   })
 
   it('Key 账号会展示 today stats 徽章并带 A/U 提示', async () => {

@@ -80,4 +80,19 @@ describe('UsageProgressBar', () => {
     expect(wrapper.text()).toContain('100%')
     expect(wrapper.text()).not.toContain('remaining')
   })
+
+  it('长标签使用更宽的最小宽度且禁止换行', () => {
+    const wrapper = mount(UsageProgressBar, {
+      props: {
+        label: 'img 5h',
+        utilization: 1,
+        resetsAt: null,
+        color: 'amber'
+      }
+    })
+
+    const label = wrapper.find('span')
+    expect(label.classes()).toContain('min-w-[48px]')
+    expect(label.classes()).toContain('whitespace-nowrap')
+  })
 })
