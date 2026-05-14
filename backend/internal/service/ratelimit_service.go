@@ -109,8 +109,11 @@ func (s *RateLimitService) setOpenAIImageRouteRateLimited(ctx context.Context, a
 	}
 }
 
-func (s *RateLimitService) handleOpenAIImageRoute429(ctx context.Context, account *Account, route string, headers http.Header, responseBody []byte) bool {
+func (s *RateLimitService) handleOpenAIImageRoute429(ctx context.Context, account *Account, route string, statusCode int, headers http.Header, responseBody []byte, allowFallback bool) bool {
 	if account == nil || account.Platform != PlatformOpenAI {
+		return false
+	}
+	if statusCode != http.StatusTooManyRequests {
 		return false
 	}
 
@@ -129,6 +132,16 @@ func (s *RateLimitService) handleOpenAIImageRoute429(ctx context.Context, accoun
 				resetAt = retryAfter
 			}
 		}
+	}
+
+	if resetAt == nil && allowFallback {
+		cooldown, enabled := s.get429FallbackCooldown(ctx, account)
+		if !enabled || cooldown <= 0 {
+			cooldown = time.Duration(defaultRateLimit429CooldownSeconds) * time.Second
+		}
+		fallbackResetAt := time.Now().Add(cooldown)
+		resetAt = &fallbackResetAt
+		slog.Warn("openai_image_route_rate_limit_fallback_used", "account_id", account.ID, "route", route, "cooldown", cooldown)
 	}
 
 	if resetAt == nil {

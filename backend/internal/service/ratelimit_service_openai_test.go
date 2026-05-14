@@ -192,6 +192,50 @@ func TestHandle429_OpenAIPersistsCodexSnapshotImmediately(t *testing.T) {
 	}
 }
 
+func TestHandleOpenAIImageRoute429_UsesRouteFallbackWhenResetMissing(t *testing.T) {
+	t.Run("codex", func(t *testing.T) {
+		repo := &openAI429SnapshotRepo{}
+		svc := NewRateLimitService(repo, nil, nil, nil, nil)
+		account := &Account{ID: 124, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+
+		handled := svc.handleOpenAIImageRoute429(context.Background(), account, GroupImageGenerationRouteCodex, http.StatusTooManyRequests, http.Header{}, nil, true)
+
+		require.True(t, handled)
+		require.Nil(t, account.RateLimitResetAt)
+		require.NotEmpty(t, repo.updatedExtra)
+		require.Contains(t, repo.updatedExtra, "openai_image_codex_rate_limit_reset_at")
+		require.Contains(t, repo.updatedExtra, "openai_image_codex_rate_limited_at")
+		require.Contains(t, repo.updatedExtra, "openai_image_codex_reset_after_seconds")
+	})
+
+	t.Run("web2api", func(t *testing.T) {
+		repo := &openAI429SnapshotRepo{}
+		svc := NewRateLimitService(repo, nil, nil, nil, nil)
+		account := &Account{ID: 125, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+
+		handled := svc.handleOpenAIImageRoute429(context.Background(), account, GroupImageGenerationRouteWeb2API, http.StatusTooManyRequests, http.Header{}, nil, true)
+
+		require.True(t, handled)
+		require.Nil(t, account.RateLimitResetAt)
+		require.NotEmpty(t, repo.updatedExtra)
+		require.Contains(t, repo.updatedExtra, "openai_image_web2api_rate_limit_reset_at")
+		require.Contains(t, repo.updatedExtra, "openai_image_web2api_rate_limited_at")
+		require.Contains(t, repo.updatedExtra, "openai_image_web2api_reset_after_seconds")
+	})
+}
+
+func TestHandleOpenAIImageRoute429_IgnoresNon429Status(t *testing.T) {
+	repo := &openAI429SnapshotRepo{}
+	svc := NewRateLimitService(repo, nil, nil, nil, nil)
+	account := &Account{ID: 126, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+
+	handled := svc.handleOpenAIImageRoute429(context.Background(), account, GroupImageGenerationRouteCodex, http.StatusForbidden, http.Header{}, nil, true)
+
+	require.False(t, handled)
+	require.Nil(t, account.RateLimitResetAt)
+	require.Empty(t, repo.updatedExtra)
+}
+
 func TestNormalizedCodexLimits(t *testing.T) {
 	// Test the Normalize() method directly
 	pUsed := 100.0

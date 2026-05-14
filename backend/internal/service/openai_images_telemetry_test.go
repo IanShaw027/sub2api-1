@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,16 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+type openAIImageRouteRateLimitRepoStub struct {
+	stubOpenAIAccountRepo
+	updatedExtra map[string]any
+}
+
+func (r *openAIImageRouteRateLimitRepoStub) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {
+	r.updatedExtra = updates
+	return nil
+}
 
 func TestOpenAIImagesTelemetryAppendStageEvent(t *testing.T) {
 	c := newOpenAIImagesTelemetryTestContext()
@@ -200,6 +211,45 @@ func TestOpenAIImagesLegacyBridgeDoesNotDegradeHealthyProfile403(t *testing.T) {
 	err := svc.wrapOpenAIImageBackendError(context.Background(), c, account, GroupImageGenerationRouteWeb2API, newOpenAIImageSyntheticStatusError(http.StatusForbidden, "backend-api request failed", "https://chatgpt.com/backend-api/conversation"))
 
 	require.Error(t, err)
+}
+
+func TestWrapOpenAIImageBackendErrorIgnoresSynthetic429WithoutUpstreamHeaders(t *testing.T) {
+	c := newOpenAIImagesTelemetryTestContext()
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 45, Name: "openai-oauth", Platform: PlatformOpenAI}
+
+	err := svc.wrapOpenAIImageBackendError(context.Background(), c, account, GroupImageGenerationRouteWeb2API, newOpenAIImageSyntheticStatusError(http.StatusTooManyRequests, "group rate limited", ""))
+
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.False(t, errors.As(err, &failoverErr))
+}
+
+func TestWrapOpenAIImageBackendErrorFailsoverReal429WithoutHeadersWhenBodyHasReset(t *testing.T) {
+	c := newOpenAIImagesTelemetryTestContext()
+	repo := &openAIImageRouteRateLimitRepoStub{}
+	svc := &OpenAIGatewayService{
+		rateLimitService: NewRateLimitService(repo, nil, nil, nil, nil),
+	}
+	account := &Account{ID: 46, Name: "openai-oauth", Platform: PlatformOpenAI}
+	err := svc.wrapOpenAIImageBackendError(
+		context.Background(),
+		c,
+		account,
+		GroupImageGenerationRouteWeb2API,
+		&openAIImageStatusError{
+			StatusCode:      http.StatusTooManyRequests,
+			Message:         "usage limit reached",
+			ResponseBody:    []byte(`{"error":{"type":"usage_limit_reached","resets_at":1777283883}}`),
+			ResponseHeaders: http.Header{},
+		},
+	)
+
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+	require.NotEmpty(t, repo.updatedExtra)
+	require.Contains(t, repo.updatedExtra, "openai_image_web2api_rate_limit_reset_at")
 }
 
 func newOpenAIImagesTelemetryTestContext() *gin.Context {

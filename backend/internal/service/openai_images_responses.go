@@ -1015,7 +1015,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 				Message:            upstreamMsg,
 			})
 			if s.rateLimitService != nil {
-				if !s.rateLimitService.handleOpenAIImageRoute429(ctx, account, imageRoute, resp.Header, respBody) {
+				if !s.rateLimitService.handleOpenAIImageRoute429(ctx, account, imageRoute, resp.StatusCode, resp.Header, respBody, true) {
 					s.handleFailoverSideEffects(ctx, resp, account)
 				}
 			} else {

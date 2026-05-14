@@ -1018,7 +1018,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 				Message:            upstreamMsg,
 			})
 			if s.rateLimitService != nil {
-				if !s.rateLimitService.handleOpenAIImageRoute429(upstreamCtx, account, imageRoute, resp.Header, respBody) {
+				if !s.rateLimitService.handleOpenAIImageRoute429(upstreamCtx, account, imageRoute, resp.StatusCode, resp.Header, respBody, true) {
 					s.handleFailoverSideEffects(upstreamCtx, resp, account)
 				}
 			} else {
@@ -2032,6 +2032,7 @@ type openAIImageStatusError struct {
 	ResponseHeaders http.Header
 	RequestID       string
 	URL             string
+	Synthetic       bool
 }
 
 func (e *openAIImageStatusError) Error() string {
@@ -2089,6 +2090,7 @@ func newOpenAIImageStatusError(resp *req.Response, fallback string) error {
 		ResponseHeaders: headers,
 		RequestID:       requestID,
 		URL:             requestURL,
+		Synthetic:       false,
 	}
 }
 
@@ -3565,6 +3567,7 @@ func newOpenAIImageSyntheticStatusError(statusCode int, message string, requestU
 		Message:      message,
 		ResponseBody: body,
 		URL:          strings.TrimSpace(requestURL),
+		Synthetic:    true,
 	}
 }
 
@@ -3594,8 +3597,11 @@ func (s *OpenAIGatewayService) wrapOpenAIImageBackendError(
 	setOpsUpstreamError(c, statusErr.StatusCode, upstreamMsg, "")
 
 	if s.shouldFailoverOpenAIUpstreamResponse(statusErr.StatusCode, upstreamMsg, statusErr.ResponseBody) {
+		if statusErr.Synthetic {
+			return statusErr
+		}
 		if s.rateLimitService != nil {
-			if !s.rateLimitService.handleOpenAIImageRoute429(ctx, account, imageRoute, statusErr.ResponseHeaders, statusErr.ResponseBody) {
+			if !s.rateLimitService.handleOpenAIImageRoute429(ctx, account, imageRoute, statusErr.StatusCode, statusErr.ResponseHeaders, statusErr.ResponseBody, true) {
 				s.rateLimitService.HandleUpstreamError(ctx, account, statusErr.StatusCode, statusErr.ResponseHeaders, statusErr.ResponseBody)
 			}
 		}

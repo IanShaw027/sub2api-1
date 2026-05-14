@@ -7140,29 +7140,24 @@ func (s *OpenAIGatewayService) calculateOpenAIImageRequestCost(
 	serviceTier string,
 	requestType RequestType,
 ) (*CostBreakdown, error) {
-	hasTokens := usageTokensHaveBillableTokens(tokens)
-	tokenBillingModel := strings.TrimSpace(result.TokenBillingModel)
 	imageCost := s.calculateOpenAIImageCost(ctx, billingModel, apiKey, result, requestType, imageRateMultiplier)
-	if !hasTokens || tokenBillingModel == "" {
+	if requestType == RequestTypeImageWebBridge {
 		return imageCost, nil
 	}
 
-	tokenCost, err := s.calculateOpenAITokenUsageCost(ctx, apiKey, tokenBillingModel, imageRateMultiplier, tokens, serviceTier)
+	tokenBillingModel := strings.TrimSpace(result.TokenBillingModel)
+	if tokenBillingModel == "" {
+		return imageCost, nil
+	}
+
+	tokenUsage := tokens
+	tokenUsage.ImageOutputTokens = 0
+	tokenCost, err := s.calculateOpenAITokenUsageCost(ctx, apiKey, tokenBillingModel, multiplier, tokenUsage, serviceTier)
 	if err != nil {
 		logger.LegacyPrintf("service.openai_gateway", "Calculate image response token cost failed: %v", err)
 		return imageCost, nil
 	}
 	return mergeCostBreakdowns(string(BillingModeImage), tokenCost, imageCost), nil
-}
-
-func usageTokensHaveBillableTokens(tokens UsageTokens) bool {
-	return tokens.InputTokens > 0 ||
-		tokens.OutputTokens > 0 ||
-		tokens.CacheCreationTokens > 0 ||
-		tokens.CacheReadTokens > 0 ||
-		tokens.CacheCreation5mTokens > 0 ||
-		tokens.CacheCreation1hTokens > 0 ||
-		tokens.ImageOutputTokens > 0
 }
 
 func mergeCostBreakdowns(billingMode string, parts ...*CostBreakdown) *CostBreakdown {
