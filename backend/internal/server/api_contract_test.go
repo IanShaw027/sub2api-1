@@ -334,6 +334,7 @@ func TestAPIContracts(t *testing.T) {
 						"images2api_price_1k": null,
 						"images2api_price_2k": null,
 						"images2api_price_4k": null,
+						"refund_rate_multiplier": 0,
 							"allow_image_generation": false,
 							"image_generation_route": "codex",
 							"openai_image_main_model": "gpt-5.4-mini",
@@ -810,6 +811,8 @@ func TestAPIContracts(t *testing.T) {
 						"openai_advanced_scheduler_enabled": true,
 						"openai_image_web_free_model": "auto",
 						"openai_image_web_paid_model": "gpt-5-5-thinking",
+						"openai_oauth_image_bridge_disable_keepalives": false,
+						"openai_oauth_image_bridge_fresh_upstream_client": false,
 						"openai_sticky_reserve_percent": 0,
 						"platform_default_account_model_config": {},
 						"openai_fast_policy_settings": {
@@ -1031,6 +1034,8 @@ func TestAPIContracts(t *testing.T) {
 						"openai_advanced_scheduler_enabled": false,
 						"openai_image_web_free_model": "auto",
 						"openai_image_web_paid_model": "gpt-5-5-thinking",
+						"openai_oauth_image_bridge_disable_keepalives": false,
+						"openai_oauth_image_bridge_fresh_upstream_client": false,
 						"openai_sticky_reserve_percent": 0,
 						"openai_fast_policy_settings": {
 						"rules": [
@@ -1278,7 +1283,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	settingRepo := newStubSettingRepo()
 	settingService := service.NewSettingService(settingRepo, cfg)
 
-	adminService := service.NewAdminService(userRepo, groupRepo, &accountRepo, proxyRepo, apiKeyRepo, redeemRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	adminService := service.NewAdminService(userRepo, groupRepo, &accountRepo, proxyRepo, apiKeyRepo, redeemRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	authHandler := handler.NewAuthHandler(cfg, nil, userService, settingService, nil, redeemService, nil)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
 	usageHandler := handler.NewUsageHandler(usageService, apiKeyService)
