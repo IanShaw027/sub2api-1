@@ -19,6 +19,13 @@ func TestResolveCodexRequestProfile_CodexMiniLatestMapsToStableUpstream(t *testi
 	require.Equal(t, "gpt-5.1-codex-mini", profile.UpstreamModel)
 }
 
+func TestResolveCodexRequestProfile_PreservesCodexAutoReview(t *testing.T) {
+	profile := ResolveCodexRequestProfile("codex-auto-review")
+
+	require.Equal(t, "codex-auto-review", profile.UpstreamModel)
+	require.True(t, profile.SupportsVerbosity)
+}
+
 func TestResolveOpenAIModelCapabilities_GPT54SupportsCompatPromptCacheKey(t *testing.T) {
 	caps := ResolveOpenAIModelCapabilities("gpt-5.4")
 
@@ -47,6 +54,7 @@ func TestResolveOpenAIModelCapabilities_CompatPromptCacheKeyCoverage(t *testing.
 		{name: "gpt-5.1-codex-mini", model: "gpt-5.1-codex-mini", upstream: "gpt-5.1-codex-mini", supported: true},
 		{name: "gpt-5.2-codex", model: "gpt-5.2-codex", upstream: "gpt-5.2-codex", supported: true},
 		{name: "gpt-5.3-codex-spark", model: "gpt-5.3-codex-spark", upstream: "gpt-5.3-codex-spark", supported: true},
+		{name: "codex auto review", model: "codex-auto-review", upstream: "codex-auto-review", supported: true},
 		{name: "gpt-4o", model: "gpt-4o", supported: false},
 	}
 

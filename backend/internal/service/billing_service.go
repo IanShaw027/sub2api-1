@@ -291,6 +291,7 @@ func (s *BillingService) initFallbackPricing() {
 		CacheReadPricePerTokenPriority: 0.3e-6,
 		SupportsCacheBreakdown:         false,
 	}
+	s.fallbackPrices["codex-auto-review"] = s.fallbackPrices["gpt-5.3-codex"]
 }
 
 // getFallbackPricing 根据模型系列获取回退价格
@@ -357,6 +358,8 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 			return s.fallbackPrices["gpt-5.3-codex-spark"]
 		case "gpt-5.3-codex":
 			return s.fallbackPrices["gpt-5.3-codex"]
+		case "codex-auto-review":
+			return s.fallbackPrices["codex-auto-review"]
 		}
 	}
 

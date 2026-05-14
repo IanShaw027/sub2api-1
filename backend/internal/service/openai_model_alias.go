@@ -99,7 +99,7 @@ func normalizeKnownOpenAICodexModel(model string) string {
 
 	switch {
 	case strings.Contains(normalized, "codex"):
-		return "gpt-5.3-codex"
+		return normalized
 	case strings.Contains(normalized, "gpt-5"):
 		return "gpt-5.4"
 	default:
