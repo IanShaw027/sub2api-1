@@ -210,9 +210,10 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 				return
 			}
 			accountSlotWaitStart := time.Now()
-			accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
+			accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeoutForGroup(
 				c,
 				account.ID,
+				apiKey.GroupID,
 				selection.WaitPlan.MaxConcurrency,
 				selection.WaitPlan.Timeout,
 				reqStream,

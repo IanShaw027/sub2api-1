@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/redis/go-redis/v9"
@@ -27,6 +28,8 @@ const (
 	accountSlotKeyPrefix = "concurrency:account:"
 	// 格式: concurrency:user:{userID}
 	userSlotKeyPrefix = "concurrency:user:"
+	// 格式: concurrency:group:{groupID}
+	groupSlotKeyPrefix = "concurrency:group:"
 	// 等待队列计数器格式: concurrency:wait:{userID}
 	waitQueueKeyPrefix = "concurrency:wait:"
 	// 账号级等待队列计数器格式: wait:account:{accountID}
@@ -222,6 +225,10 @@ func userSlotKey(userID int64) string {
 	return fmt.Sprintf("%s%d", userSlotKeyPrefix, userID)
 }
 
+func groupSlotKey(groupID int64) string {
+	return fmt.Sprintf("%s%d", groupSlotKeyPrefix, groupID)
+}
+
 func waitQueueKey(userID int64) string {
 	return fmt.Sprintf("%s%d", waitQueueKeyPrefix, userID)
 }
@@ -242,15 +249,77 @@ func (c *concurrencyCache) AcquireAccountSlot(ctx context.Context, accountID int
 	return result == 1, nil
 }
 
+func (c *concurrencyCache) AcquireAccountSlotForGroup(ctx context.Context, accountID int64, groupID int64, maxConcurrency int, requestID string) (bool, error) {
+	if groupID <= 0 {
+		return c.AcquireAccountSlot(ctx, accountID, maxConcurrency, requestID)
+	}
+
+	accountKey := accountSlotKey(accountID)
+	if maxConcurrency > 0 {
+		acquired, err := c.AcquireAccountSlot(ctx, accountID, maxConcurrency, requestID)
+		if err != nil || !acquired {
+			return acquired, err
+		}
+	} else if err := c.addSlotWithoutLimit(ctx, accountKey, requestID); err != nil {
+		return false, err
+	}
+
+	if err := c.addSlotWithoutLimit(ctx, groupSlotKey(groupID), requestID); err != nil {
+		_ = c.ReleaseAccountSlot(ctx, accountID, requestID)
+		return false, err
+	}
+	return true, nil
+}
+
+func (c *concurrencyCache) addSlotWithoutLimit(ctx context.Context, key string, requestID string) error {
+	now, err := c.rdb.Time(ctx).Result()
+	if err != nil {
+		return fmt.Errorf("redis TIME: %w", err)
+	}
+	cutoffTime := now.Unix() - int64(c.slotTTLSeconds)
+	pipe := c.rdb.Pipeline()
+	pipe.ZRemRangeByScore(ctx, key, "-inf", strconv.FormatInt(cutoffTime, 10))
+	pipe.ZAdd(ctx, key, redis.Z{Score: float64(now.Unix()), Member: requestID})
+	pipe.Expire(ctx, key, time.Duration(c.slotTTLSeconds)*time.Second)
+	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
+		return fmt.Errorf("pipeline exec: %w", err)
+	}
+	return nil
+}
+
 func (c *concurrencyCache) ReleaseAccountSlot(ctx context.Context, accountID int64, requestID string) error {
 	key := accountSlotKey(accountID)
 	return c.rdb.ZRem(ctx, key, requestID).Err()
+}
+
+func (c *concurrencyCache) ReleaseAccountSlotForGroup(ctx context.Context, accountID int64, groupID int64, requestID string) error {
+	if groupID <= 0 {
+		return c.ReleaseAccountSlot(ctx, accountID, requestID)
+	}
+	pipe := c.rdb.Pipeline()
+	pipe.ZRem(ctx, accountSlotKey(accountID), requestID)
+	pipe.ZRem(ctx, groupSlotKey(groupID), requestID)
+	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
+		return fmt.Errorf("pipeline exec: %w", err)
+	}
+	return nil
 }
 
 func (c *concurrencyCache) GetAccountConcurrency(ctx context.Context, accountID int64) (int, error) {
 	key := accountSlotKey(accountID)
 	// 时间戳在 Lua 脚本内使用 Redis TIME 命令获取
 	result, err := getCountScript.Run(ctx, c.rdb, []string{key}, c.slotTTLSeconds).Int()
+	if err != nil {
+		return 0, err
+	}
+	return result, nil
+}
+
+func (c *concurrencyCache) GetGroupConcurrency(ctx context.Context, groupID int64) (int, error) {
+	if groupID <= 0 {
+		return 0, nil
+	}
+	result, err := getCountScript.Run(ctx, c.rdb, []string{groupSlotKey(groupID)}, c.slotTTLSeconds).Int()
 	if err != nil {
 		return 0, err
 	}
@@ -500,7 +569,7 @@ func (c *concurrencyCache) CleanupStaleProcessSlots(ctx context.Context, activeR
 	}
 
 	// 1. 清理有序集合中非当前进程前缀的成员
-	slotPatterns := []string{accountSlotKeyPrefix + "*", userSlotKeyPrefix + "*"}
+	slotPatterns := []string{accountSlotKeyPrefix + "*", userSlotKeyPrefix + "*", groupSlotKeyPrefix + "*"}
 	for _, pattern := range slotPatterns {
 		if err := c.cleanupSlotsByPattern(ctx, pattern, activeRequestPrefix); err != nil {
 			return err

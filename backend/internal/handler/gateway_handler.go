@@ -423,9 +423,10 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}
 
 				accountSlotWaitStart := time.Now()
-				accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
+				accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeoutForGroup(
 					c,
 					account.ID,
+					apiKey.GroupID,
 					selection.WaitPlan.MaxConcurrency,
 					selection.WaitPlan.Timeout,
 					reqStream,
@@ -673,9 +674,10 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}
 
 				accountSlotWaitStart := time.Now()
-				accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
+				accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeoutForGroup(
 					c,
 					account.ID,
+					currentAPIKey.GroupID,
 					selection.WaitPlan.MaxConcurrency,
 					selection.WaitPlan.Timeout,
 					reqStream,

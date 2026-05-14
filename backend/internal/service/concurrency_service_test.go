@@ -14,34 +14,51 @@ import (
 
 // stubConcurrencyCacheForTest 用于并发服务单元测试的缓存桩
 type stubConcurrencyCacheForTest struct {
-	acquireResult  bool
-	acquireErr     error
-	releaseErr     error
-	concurrency    int
-	concurrencyErr error
-	waitAllowed    bool
-	waitErr        error
-	waitCount      int
-	waitCountErr   error
-	loadBatch      map[int64]*AccountLoadInfo
-	loadBatchErr   error
-	usersLoadBatch map[int64]*UserLoadInfo
-	usersLoadErr   error
-	cleanupErr     error
+	acquireResult    bool
+	acquireErr       error
+	releaseErr       error
+	concurrency      int
+	concurrencyErr   error
+	groupConcurrency map[int64]int
+	waitAllowed      bool
+	waitErr          error
+	waitCount        int
+	waitCountErr     error
+	loadBatch        map[int64]*AccountLoadInfo
+	loadBatchErr     error
+	usersLoadBatch   map[int64]*UserLoadInfo
+	usersLoadErr     error
+	cleanupErr       error
 
 	// 记录调用
 	releasedAccountIDs []int64
 	releasedRequestIDs []string
+	groupAcquireCalls  []groupSlotCall
+	groupReleaseCalls  []groupSlotCall
 }
 
 var _ ConcurrencyCache = (*stubConcurrencyCacheForTest)(nil)
 
+type groupSlotCall struct {
+	accountID int64
+	groupID   int64
+	requestID string
+}
+
 func (c *stubConcurrencyCacheForTest) AcquireAccountSlot(_ context.Context, _ int64, _ int, _ string) (bool, error) {
+	return c.acquireResult, c.acquireErr
+}
+func (c *stubConcurrencyCacheForTest) AcquireAccountSlotForGroup(_ context.Context, accountID int64, groupID int64, _ int, requestID string) (bool, error) {
+	c.groupAcquireCalls = append(c.groupAcquireCalls, groupSlotCall{accountID: accountID, groupID: groupID, requestID: requestID})
 	return c.acquireResult, c.acquireErr
 }
 func (c *stubConcurrencyCacheForTest) ReleaseAccountSlot(_ context.Context, accountID int64, requestID string) error {
 	c.releasedAccountIDs = append(c.releasedAccountIDs, accountID)
 	c.releasedRequestIDs = append(c.releasedRequestIDs, requestID)
+	return c.releaseErr
+}
+func (c *stubConcurrencyCacheForTest) ReleaseAccountSlotForGroup(_ context.Context, accountID int64, groupID int64, requestID string) error {
+	c.groupReleaseCalls = append(c.groupReleaseCalls, groupSlotCall{accountID: accountID, groupID: groupID, requestID: requestID})
 	return c.releaseErr
 }
 func (c *stubConcurrencyCacheForTest) GetAccountConcurrency(_ context.Context, _ int64) (int, error) {
@@ -56,6 +73,12 @@ func (c *stubConcurrencyCacheForTest) GetAccountConcurrencyBatch(_ context.Conte
 		result[accountID] = c.concurrency
 	}
 	return result, nil
+}
+func (c *stubConcurrencyCacheForTest) GetGroupConcurrency(_ context.Context, groupID int64) (int, error) {
+	if c.concurrencyErr != nil {
+		return 0, c.concurrencyErr
+	}
+	return c.groupConcurrency[groupID], nil
 }
 func (c *stubConcurrencyCacheForTest) IncrementAccountWaitCount(_ context.Context, _ int64, _ int) (bool, error) {
 	return c.waitAllowed, c.waitErr
@@ -172,6 +195,25 @@ func TestAcquireAccountSlot_ReleaseDecrements(t *testing.T) {
 	require.Equal(t, int64(42), cache.releasedAccountIDs[0])
 	require.Len(t, cache.releasedRequestIDs, 1)
 	require.NotEmpty(t, cache.releasedRequestIDs[0], "requestID 不应为空")
+}
+
+func TestAcquireAccountSlotForGroup_ReleaseDecrementsAccountAndGroup(t *testing.T) {
+	cache := &stubConcurrencyCacheForTest{acquireResult: true}
+	svc := NewConcurrencyService(cache)
+	groupID := int64(7)
+
+	result, err := svc.AcquireAccountSlotForGroup(context.Background(), 42, &groupID, 5)
+	require.NoError(t, err)
+	require.True(t, result.Acquired)
+
+	result.ReleaseFunc()
+
+	require.Len(t, cache.groupAcquireCalls, 1)
+	require.Equal(t, int64(42), cache.groupAcquireCalls[0].accountID)
+	require.Equal(t, groupID, cache.groupAcquireCalls[0].groupID)
+	require.NotEmpty(t, cache.groupAcquireCalls[0].requestID)
+	require.Len(t, cache.groupReleaseCalls, 1)
+	require.Equal(t, cache.groupAcquireCalls[0], cache.groupReleaseCalls[0])
 }
 
 func TestAcquireUserSlot_IndependentFromAccount(t *testing.T) {
@@ -317,6 +359,15 @@ func TestGetAccountConcurrencyBatch(t *testing.T) {
 	for _, id := range []int64{1, 2, 3} {
 		require.Equal(t, 3, result[id])
 	}
+}
+
+func TestGetGroupConcurrency_DelegatesToGroupScopedCache(t *testing.T) {
+	cache := &stubConcurrencyCacheForTest{groupConcurrency: map[int64]int{7: 3}}
+	svc := NewConcurrencyService(cache)
+
+	count, err := svc.GetGroupConcurrency(context.Background(), 7)
+	require.NoError(t, err)
+	require.Equal(t, 3, count)
 }
 
 func TestIncrementAccountWaitCount_FailOpen(t *testing.T) {

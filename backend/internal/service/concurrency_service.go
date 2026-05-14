@@ -48,6 +48,16 @@ type ConcurrencyCache interface {
 	CleanupStaleProcessSlots(ctx context.Context, activeRequestPrefix string) error
 }
 
+type groupConcurrencyCache interface {
+	AcquireAccountSlotForGroup(ctx context.Context, accountID int64, groupID int64, maxConcurrency int, requestID string) (bool, error)
+	ReleaseAccountSlotForGroup(ctx context.Context, accountID int64, groupID int64, requestID string) error
+	GetGroupConcurrency(ctx context.Context, groupID int64) (int, error)
+}
+
+type groupConcurrencyReader interface {
+	GetGroupConcurrency(ctx context.Context, groupID int64) (int, error)
+}
+
 var (
 	requestIDPrefix  = initRequestIDPrefix()
 	requestIDCounter atomic.Uint64
@@ -127,8 +137,38 @@ type UserLoadInfo struct {
 // If the account is at max concurrency, it waits until a slot is available or timeout.
 // Returns a release function that MUST be called when the request completes.
 func (s *ConcurrencyService) AcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int) (*AcquireResult, error) {
+	return s.AcquireAccountSlotForGroup(ctx, accountID, nil, maxConcurrency)
+}
+
+// AcquireAccountSlotForGroup acquires an account slot and records the request
+// under the selected group for real-time group-capacity display.
+func (s *ConcurrencyService) AcquireAccountSlotForGroup(ctx context.Context, accountID int64, groupID *int64, maxConcurrency int) (*AcquireResult, error) {
+	var groupScopedCache groupConcurrencyCache
+	if s.cache != nil && groupID != nil && *groupID > 0 {
+		groupScopedCache, _ = s.cache.(groupConcurrencyCache)
+	}
+
 	// If maxConcurrency is 0 or negative, no limit
 	if maxConcurrency <= 0 {
+		if groupScopedCache != nil {
+			requestID := generateRequestID()
+			acquired, err := groupScopedCache.AcquireAccountSlotForGroup(ctx, accountID, *groupID, maxConcurrency, requestID)
+			if err != nil {
+				return nil, err
+			}
+			if acquired {
+				return &AcquireResult{
+					Acquired: true,
+					ReleaseFunc: func() {
+						bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+						defer cancel()
+						if err := groupScopedCache.ReleaseAccountSlotForGroup(bgCtx, accountID, *groupID, requestID); err != nil {
+							logger.LegacyPrintf("service.concurrency", "Warning: failed to release group account slot for account=%d group=%d (req=%s): %v", accountID, *groupID, requestID, err)
+						}
+					},
+				}, nil
+			}
+		}
 		return &AcquireResult{
 			Acquired:    true,
 			ReleaseFunc: func() {}, // no-op
@@ -138,7 +178,13 @@ func (s *ConcurrencyService) AcquireAccountSlot(ctx context.Context, accountID i
 	// Generate unique request ID for this slot
 	requestID := generateRequestID()
 
-	acquired, err := s.cache.AcquireAccountSlot(ctx, accountID, maxConcurrency, requestID)
+	var acquired bool
+	var err error
+	if groupScopedCache != nil {
+		acquired, err = groupScopedCache.AcquireAccountSlotForGroup(ctx, accountID, *groupID, maxConcurrency, requestID)
+	} else {
+		acquired, err = s.cache.AcquireAccountSlot(ctx, accountID, maxConcurrency, requestID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +195,11 @@ func (s *ConcurrencyService) AcquireAccountSlot(ctx context.Context, accountID i
 			ReleaseFunc: func() {
 				bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
-				if err := s.cache.ReleaseAccountSlot(bgCtx, accountID, requestID); err != nil {
+				if groupScopedCache != nil {
+					if err := groupScopedCache.ReleaseAccountSlotForGroup(bgCtx, accountID, *groupID, requestID); err != nil {
+						logger.LegacyPrintf("service.concurrency", "Warning: failed to release group account slot for account=%d group=%d (req=%s): %v", accountID, *groupID, requestID, err)
+					}
+				} else if err := s.cache.ReleaseAccountSlot(bgCtx, accountID, requestID); err != nil {
 					logger.LegacyPrintf("service.concurrency", "Warning: failed to release account slot for %d (req=%s): %v", accountID, requestID, err)
 				}
 			},
@@ -364,4 +414,21 @@ func (s *ConcurrencyService) GetAccountConcurrencyBatch(ctx context.Context, acc
 	defer cancel()
 
 	return s.cache.GetAccountConcurrencyBatch(redisCtx, accountIDs)
+}
+
+// GetGroupConcurrency gets current in-flight account slots that were acquired
+// through the specified group.
+func (s *ConcurrencyService) GetGroupConcurrency(ctx context.Context, groupID int64) (int, error) {
+	if groupID <= 0 || s.cache == nil {
+		return 0, nil
+	}
+	groupScopedCache, ok := s.cache.(groupConcurrencyReader)
+	if !ok {
+		return 0, nil
+	}
+
+	redisCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	return groupScopedCache.GetGroupConcurrency(redisCtx, groupID)
 }

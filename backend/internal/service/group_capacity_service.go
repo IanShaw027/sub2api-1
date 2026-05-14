@@ -63,23 +63,27 @@ func (s *GroupCapacityService) GetAllGroupCapacity(ctx context.Context) ([]Group
 }
 
 func (s *GroupCapacityService) getGroupCapacity(ctx context.Context, groupID int64) (GroupCapacitySummary, error) {
+	var concurrencyUsed int
+	if s.concurrencyService != nil {
+		concurrencyUsed, _ = s.concurrencyService.GetGroupConcurrency(ctx, groupID)
+	}
+
 	accounts, err := s.accountRepo.ListSchedulableByGroupID(ctx, groupID)
 	if err != nil {
 		return GroupCapacitySummary{}, err
 	}
 	if len(accounts) == 0 {
-		return GroupCapacitySummary{}, nil
+		return GroupCapacitySummary{ConcurrencyUsed: concurrencyUsed}, nil
 	}
 
 	// Collect account IDs and config values
 	accountIDs := make([]int64, 0, len(accounts))
 	sessionTimeouts := make(map[int64]time.Duration)
-	var concurrencyMax, sessionsMax, rpmMax int
+	var sessionsMax, rpmMax int
 
 	for i := range accounts {
 		acc := &accounts[i]
 		accountIDs = append(accountIDs, acc.ID)
-		concurrencyMax += acc.Concurrency
 
 		if ms := acc.GetMaxSessions(); ms > 0 {
 			sessionsMax += ms
@@ -95,9 +99,6 @@ func (s *GroupCapacityService) getGroupCapacity(ctx context.Context, groupID int
 		}
 	}
 
-	// Batch query runtime data from Redis
-	concurrencyMap, _ := s.concurrencyService.GetAccountConcurrencyBatch(ctx, accountIDs)
-
 	var sessionsMap map[int64]int
 	if sessionsMax > 0 && s.sessionLimitCache != nil {
 		sessionsMap, _ = s.sessionLimitCache.GetActiveSessionCountBatch(ctx, accountIDs, sessionTimeouts)
@@ -109,9 +110,8 @@ func (s *GroupCapacityService) getGroupCapacity(ctx context.Context, groupID int
 	}
 
 	// Aggregate
-	var concurrencyUsed, sessionsUsed, rpmUsed int
+	var sessionsUsed, rpmUsed int
 	for _, id := range accountIDs {
-		concurrencyUsed += concurrencyMap[id]
 		if sessionsMap != nil {
 			sessionsUsed += sessionsMap[id]
 		}
@@ -122,7 +122,7 @@ func (s *GroupCapacityService) getGroupCapacity(ctx context.Context, groupID int
 
 	return GroupCapacitySummary{
 		ConcurrencyUsed: concurrencyUsed,
-		ConcurrencyMax:  concurrencyMax,
+		ConcurrencyMax:  0,
 		SessionsUsed:    sessionsUsed,
 		SessionsMax:     sessionsMax,
 		RPMUsed:         rpmUsed,

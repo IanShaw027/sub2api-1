@@ -2393,7 +2393,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		if waitPlan := buildOpenAIImageRouteRateLimitedWaitPlan(account, requiredImageRoute, acquireLimit, waitTimeout, maxWaiting); waitPlan != nil {
 			return s.newSelectionResult(ctx, account, false, nil, waitPlan)
 		}
-		result, err := s.tryAcquireAccountSlot(ctx, account.ID, acquireLimit)
+		result, err := s.tryAcquireAccountSlot(ctx, account.ID, groupID, acquireLimit)
 		if err == nil && result.Acquired {
 			return s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil)
 		}
@@ -2458,7 +2458,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 						); waitPlan != nil {
 							return s.newSelectionResult(ctx, account, false, nil, waitPlan)
 						}
-						result, err := s.tryAcquireAccountSlot(ctx, accountID, concurrencyForOpenAIAccountSelection(account, requiredImageRoute))
+						result, err := s.tryAcquireAccountSlot(ctx, accountID, groupID, concurrencyForOpenAIAccountSelection(account, requiredImageRoute))
 						if err == nil && result.Acquired {
 							_ = s.refreshStickySessionTTL(ctx, groupID, sessionHash, openaiStickySessionTTL)
 							return s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil)
@@ -2548,7 +2548,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			); waitPlan != nil {
 				return s.newSelectionResult(ctx, fresh, false, nil, waitPlan)
 			}
-			result, err := s.tryAcquireAccountSlot(ctx, fresh.ID, s.freshSessionAdmissionLimit(ctx, fresh, requiredImageRoute))
+			result, err := s.tryAcquireAccountSlot(ctx, fresh.ID, groupID, s.freshSessionAdmissionLimit(ctx, fresh, requiredImageRoute))
 			if err == nil && result.Acquired {
 				if sessionHash != "" {
 					_ = s.setStickySessionAccountID(ctx, groupID, sessionHash, fresh.ID, openaiStickySessionTTL)
@@ -2630,7 +2630,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 					}
 					return s.newSelectionResult(ctx, fresh, false, nil, waitPlan)
 				}
-				result, err := s.tryAcquireAccountSlot(ctx, fresh.ID, s.freshSessionAdmissionLimit(ctx, fresh, requiredImageRoute))
+				result, err := s.tryAcquireAccountSlot(ctx, fresh.ID, groupID, s.freshSessionAdmissionLimit(ctx, fresh, requiredImageRoute))
 				if err == nil && result.Acquired {
 					if sessionHash != "" {
 						_ = s.setStickySessionAccountID(ctx, groupID, sessionHash, fresh.ID, openaiStickySessionTTL)
@@ -2772,11 +2772,11 @@ func (s *OpenAIGatewayService) listOpenAIImageCandidateAccounts(ctx context.Cont
 	return filtered, nil
 }
 
-func (s *OpenAIGatewayService) tryAcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int) (*AcquireResult, error) {
+func (s *OpenAIGatewayService) tryAcquireAccountSlot(ctx context.Context, accountID int64, groupID *int64, maxConcurrency int) (*AcquireResult, error) {
 	if s.concurrencyService == nil {
 		return &AcquireResult{Acquired: true, ReleaseFunc: func() {}}, nil
 	}
-	return s.concurrencyService.AcquireAccountSlot(ctx, accountID, maxConcurrency)
+	return s.concurrencyService.AcquireAccountSlotForGroup(ctx, accountID, groupID, maxConcurrency)
 }
 
 func concurrencyForOpenAIAccountSelection(account *Account, requiredImageRoute string) int {

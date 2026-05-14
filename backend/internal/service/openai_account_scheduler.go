@@ -442,7 +442,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	); waitPlan != nil {
 		return s.service.newSelectionResult(ctx, account, false, nil, waitPlan)
 	}
-	result, acquireErr := s.service.tryAcquireAccountSlot(ctx, accountID, maxConcurrency)
+	result, acquireErr := s.service.tryAcquireAccountSlot(ctx, accountID, req.GroupID, maxConcurrency)
 	if acquireErr == nil && result.Acquired {
 		_ = s.service.refreshStickySessionTTL(ctx, req.GroupID, sessionHash, s.service.openAIWSSessionStickyTTL())
 		return s.service.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil)
@@ -948,7 +948,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			selection, err := s.service.newSelectionResult(ctx, fresh, false, nil, waitPlan)
 			return selection, candidateCount, topK, loadSkew, err
 		}
-		result, acquireErr := s.service.tryAcquireAccountSlot(ctx, fresh.ID, maxConcurrency)
+		result, acquireErr := s.service.tryAcquireAccountSlot(ctx, fresh.ID, req.GroupID, maxConcurrency)
 		if acquireErr != nil {
 			return nil, candidateCount, topK, loadSkew, acquireErr
 		}
@@ -1334,7 +1334,7 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 			nextExcluded[selection.Account.ID] = struct{}{}
 			return s.SelectAccountWithSchedulerForImages(ctx, groupID, sessionHash, requestedModel, nextExcluded, requiredCapability, requiredRoute, requireOAuthAccount)
 		}
-		return s.normalizeOpenAIImageSelectionConcurrency(ctx, selection, requiredCapability), decision, nil
+		return s.normalizeOpenAIImageSelectionConcurrency(ctx, groupID, selection, requiredCapability), decision, nil
 	}
 	// 如果要求 native 能力（如指定了模型）但没有可用的 APIKey 账号，回退到 basic（OAuth 账号）
 	if requiredCapability == OpenAIImagesCapabilityNative {
@@ -1350,12 +1350,12 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 			nextExcluded[selection.Account.ID] = struct{}{}
 			return s.SelectAccountWithSchedulerForImages(ctx, groupID, sessionHash, requestedModel, nextExcluded, OpenAIImagesCapabilityBasic, requiredRoute, requireOAuthAccount)
 		}
-		return s.normalizeOpenAIImageSelectionConcurrency(ctx, selection, OpenAIImagesCapabilityBasic), decision, err
+		return s.normalizeOpenAIImageSelectionConcurrency(ctx, groupID, selection, OpenAIImagesCapabilityBasic), decision, err
 	}
 	return selection, decision, err
 }
 
-func (s *OpenAIGatewayService) normalizeOpenAIImageSelectionConcurrency(ctx context.Context, selection *AccountSelectionResult, requiredCapability OpenAIImagesCapability) *AccountSelectionResult {
+func (s *OpenAIGatewayService) normalizeOpenAIImageSelectionConcurrency(ctx context.Context, groupID *int64, selection *AccountSelectionResult, requiredCapability OpenAIImagesCapability) *AccountSelectionResult {
 	if selection == nil || selection.Account == nil || requiredCapability == "" {
 		return selection
 	}
@@ -1368,7 +1368,7 @@ func (s *OpenAIGatewayService) normalizeOpenAIImageSelectionConcurrency(ctx cont
 	if selection.ReleaseFunc != nil {
 		selection.ReleaseFunc()
 	}
-	result, err := s.tryAcquireAccountSlot(ctx, selection.Account.ID, 1)
+	result, err := s.tryAcquireAccountSlot(ctx, selection.Account.ID, groupID, 1)
 	if err == nil && result != nil && result.Acquired {
 		selection.ReleaseFunc = result.ReleaseFunc
 		selection.Acquired = true
