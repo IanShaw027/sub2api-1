@@ -236,6 +236,47 @@ func TestResolveOpenAICompactForwardModel(t *testing.T) {
 	}
 }
 
+func TestResolveOpenAICompactUpstreamModel(t *testing.T) {
+	tests := []struct {
+		name          string
+		account       *Account
+		model         string
+		expectedModel string
+	}{
+		{
+			name: "applies base mapping before compact override",
+			account: &Account{
+				Credentials: map[string]any{
+					"model_mapping": map[string]any{
+						"gpt-5.4": "gpt-5.4-base",
+					},
+					"compact_model_mapping": map[string]any{
+						"gpt-5.4-base": "gpt-5.4-openai-compact",
+					},
+				},
+			},
+			model:         "gpt-5.4",
+			expectedModel: "gpt-5.4-openai-compact",
+		},
+		{
+			name: "keeps original when no mapping matches",
+			account: &Account{
+				Credentials: map[string]any{},
+			},
+			model:         "gpt-5.4",
+			expectedModel: "gpt-5.4",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resolveOpenAICompactUpstreamModel(tt.account, tt.model); got != tt.expectedModel {
+				t.Fatalf("resolveOpenAICompactUpstreamModel(...) = %q, want %q", got, tt.expectedModel)
+			}
+		})
+	}
+}
+
 func TestNormalizeCodexModel(t *testing.T) {
 	cases := map[string]string{
 		"gpt-5.3-codex-spark":       "gpt-5.3-codex-spark",

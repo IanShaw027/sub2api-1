@@ -54,6 +54,40 @@ func TestEmitOpenAICacheProbeEvent_LogsCompactNormalizationSignals(t *testing.T)
 	require.True(t, logSink.ContainsField("upstream_input_prefix_4k_sha256"))
 }
 
+func TestEmitOpenAICacheProbeEvent_LogsCompactContentSeedSource(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	logSink, restore := captureStructuredLog(t)
+	defer restore()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses/compact", nil)
+	c.Set("api_key", &APIKey{ID: 43})
+
+	originalBody := []byte(`{"model":"gpt-5.5","instructions":"compact-test","input":[{"type":"text","text":"hello"}]}`)
+	finalBody := []byte(`{"model":"gpt-5.5","instructions":"compact-test","input":[{"type":"text","text":"hello"}]}`)
+	result := &OpenAIForwardResult{
+		RequestID:     "resp_124",
+		Model:         "gpt-5.5",
+		UpstreamModel: "gpt-5.5",
+		Usage: OpenAIUsage{
+			InputTokens:          50,
+			CacheReadInputTokens: 10,
+			OutputTokens:         5,
+		},
+	}
+
+	emitOpenAICacheProbeEvent(context.Background(), c, &Account{
+		ID:       7806,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+	}, originalBody, finalBody, result, "", true)
+
+	require.True(t, logSink.ContainsMessageAtLevel("OpenAI cache probe", "info"))
+	require.True(t, logSink.ContainsFieldValue("upstream_session_source", "compact_content_seed"))
+	require.True(t, logSink.ContainsField("upstream_session_id_sha256"))
+}
+
 func TestEmitOpenAICacheProbeEvent_SkipsNonCacheRequests(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	logSink, restore := captureStructuredLog(t)

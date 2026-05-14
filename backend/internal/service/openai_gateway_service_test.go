@@ -363,6 +363,23 @@ func TestOpenAIGatewayService_GenerateSessionHashWithFallback(t *testing.T) {
 	require.Equal(t, "", empty)
 }
 
+func TestOpenAIGatewayService_ResolveOpenAICompactSessionID_ContentFallbackIsDeterministic(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses/compact", nil)
+
+	body := []byte(`{"model":"gpt-5.5","instructions":"compact-test","input":[{"type":"message","role":"user","content":"hello"}]}`)
+	first := resolveOpenAICompactSessionID(c, body)
+	second := resolveOpenAICompactSessionID(c, body)
+	other := resolveOpenAICompactSessionID(c, []byte(`{"model":"gpt-5.5","instructions":"compact-test","input":[{"type":"message","role":"user","content":"different"}]}`))
+
+	require.NotEmpty(t, first)
+	require.Equal(t, first, second)
+	require.True(t, strings.HasPrefix(first, contentSessionSeedPrefix))
+	require.NotEqual(t, first, other)
+}
+
 func TestOpenAIGatewayService_GenerateSessionHash_ContentFallback(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
@@ -3442,6 +3459,12 @@ func TestParseSSEUsage_SelectiveParsing(t *testing.T) {
 	require.Equal(t, 13, usage.InputTokens)
 	require.Equal(t, 15, usage.OutputTokens)
 	require.Equal(t, 4, usage.CacheReadInputTokens)
+
+	// 后续终止事件若不带 usage，不应覆盖之前已恢复出的 usage
+	svc.parseSSEUsage(`{"type":"response.canceled"}`, usage)
+	require.Equal(t, 13, usage.InputTokens)
+	require.Equal(t, 15, usage.OutputTokens)
+	require.Equal(t, 4, usage.CacheReadInputTokens)
 }
 
 func TestExtractCodexFinalResponse_SampleReplay(t *testing.T) {
@@ -3456,6 +3479,49 @@ func TestExtractCodexFinalResponse_SampleReplay(t *testing.T) {
 	require.True(t, ok)
 	require.Contains(t, string(finalResp), `"id":"resp_1"`)
 	require.Contains(t, string(finalResp), `"input_tokens":11`)
+}
+
+func TestHandleSSEToJSON_TreatsTerminalResponseEnvelopesAsFinalJSON(t *testing.T) {
+	tests := []struct {
+		name      string
+		eventType string
+		respID    string
+	}{
+		{name: "incomplete", eventType: "response.incomplete", respID: "resp_incomplete"},
+		{name: "cancelled", eventType: "response.cancelled", respID: "resp_cancelled"},
+		{name: "canceled", eventType: "response.canceled", respID: "resp_canceled"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+			account := &Account{ID: 11, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+
+			svc := &OpenAIGatewayService{cfg: &config.Config{}}
+			resp := &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			}
+			body := []byte(strings.Join([]string{
+				`data: {"type":"response.in_progress","response":{"id":"` + tt.respID + `"}}`,
+				`data: {"type":"` + tt.eventType + `","response":{"id":"` + tt.respID + `","model":"gpt-4o","output":[{"type":"message","content":[{"type":"output_text","text":"terminal"}]}],"usage":{"input_tokens":7,"output_tokens":9,"input_tokens_details":{"cached_tokens":1}}}}`,
+				`data: [DONE]`,
+			}, "\n"))
+
+			result, err := svc.handleSSEToJSON(resp, c, account, body, "gpt-4o", "gpt-4o")
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.NotNil(t, result.usage)
+			require.Equal(t, 7, result.usage.InputTokens)
+			require.Equal(t, 9, result.usage.OutputTokens)
+			require.Equal(t, 1, result.usage.CacheReadInputTokens)
+			require.Contains(t, rec.Body.String(), `"id":"`+tt.respID+`"`)
+			require.NotContains(t, rec.Body.String(), "data:")
+		})
+	}
 }
 
 func TestHandleSSEToJSON_CompletedEventReturnsJSON(t *testing.T) {
@@ -3487,6 +3553,133 @@ func TestHandleSSEToJSON_CompletedEventReturnsJSON(t *testing.T) {
 	require.NotContains(t, rec.Body.String(), "event:")
 	require.Contains(t, rec.Body.String(), `"id":"resp_2"`)
 	require.NotContains(t, rec.Body.String(), "data:")
+}
+
+func TestExtractOpenAIUsageFromJSONBytes_RequiresUsageObject(t *testing.T) {
+	usage, ok := extractOpenAIUsageFromJSONBytes([]byte(`{"id":"resp_without_usage","output":[]}`))
+	require.False(t, ok)
+	require.Equal(t, OpenAIUsage{}, usage)
+
+	usage, ok = extractOpenAIUsageFromJSONBytes([]byte(`{"usage":{"input_tokens":0,"output_tokens":0}}`))
+	require.True(t, ok)
+	require.Equal(t, 0, usage.InputTokens)
+	require.Equal(t, 0, usage.OutputTokens)
+
+	usage, ok = extractOpenAIUsageFromJSONBytes([]byte(`{"input_tokens":3,"output_tokens":4,"output_tokens_details":{"image_tokens":2}}`))
+	require.True(t, ok)
+	require.Equal(t, 3, usage.InputTokens)
+	require.Equal(t, 4, usage.OutputTokens)
+	require.Equal(t, 2, usage.ImageOutputTokens)
+}
+
+func TestHandleNonStreamingResponse_ValidJSONWithoutUsageStillSucceeds(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(
+			`{"id":"resp_without_usage","output":[{"type":"message","content":[{"type":"output_text","text":"hello"}]}]}`,
+		)),
+		Header: http.Header{"Content-Type": []string{"application/json"}},
+	}
+
+	result, err := svc.handleNonStreamingResponse(c.Request.Context(), resp, c, &Account{}, "gpt-4o", "gpt-4o")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Zero(t, result.usage.InputTokens)
+	require.Contains(t, rec.Body.String(), `"id":"resp_without_usage"`)
+}
+
+func TestHandleSSEToJSON_FallsBackToFullSSEUsageWhenFinalResponseLacksUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+	account := &Account{ID: 5, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+	}
+	body := []byte(strings.Join([]string{
+		`data: {"type":"response.completed","response":{"id":"resp_fallback_usage","model":"gpt-4o","output":[{"type":"message","content":[{"type":"output_text","text":"hello"}]}]}}`,
+		`data: {"type":"response.done","response":{"id":"resp_fallback_usage","usage":{"input_tokens":4,"output_tokens":6,"input_tokens_details":{"cached_tokens":2}}}}`,
+		`data: [DONE]`,
+	}, "\n"))
+
+	result, err := svc.handleSSEToJSON(resp, c, account, body, "gpt-4o", "gpt-4o")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 4, result.usage.InputTokens)
+	require.Equal(t, 6, result.usage.OutputTokens)
+	require.Equal(t, 2, result.usage.CacheReadInputTokens)
+	require.Contains(t, rec.Body.String(), `"id":"resp_fallback_usage"`)
+}
+
+func TestHandleSSEToJSON_PreservesRecoveredUsageWhenLaterTerminalEventsOmitUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+	account := &Account{ID: 7, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+	}
+	body := []byte(strings.Join([]string{
+		`data: {"type":"response.done","response":{"id":"resp_preserve_usage","usage":{"input_tokens":4,"output_tokens":6,"input_tokens_details":{"cached_tokens":2}}}}`,
+		`data: {"type":"response.incomplete","response":{"id":"resp_preserve_usage","model":"gpt-4o","output":[{"type":"message","content":[{"type":"output_text","text":"partial"}]}]}}`,
+		`data: {"type":"response.canceled"}`,
+		`data: [DONE]`,
+	}, "\n"))
+
+	result, err := svc.handleSSEToJSON(resp, c, account, body, "gpt-4o", "gpt-4o")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 4, result.usage.InputTokens)
+	require.Equal(t, 6, result.usage.OutputTokens)
+	require.Equal(t, 2, result.usage.CacheReadInputTokens)
+	require.Contains(t, rec.Body.String(), `"id":"resp_preserve_usage"`)
+	require.Contains(t, rec.Body.String(), `"text":"partial"`)
+	require.NotContains(t, rec.Body.String(), "data:")
+}
+
+func TestHandlePassthroughSSEToJSON_FallsBackToFullSSEUsageWhenFinalResponseLacksUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+	account := &Account{ID: 6, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+	}
+	body := []byte(strings.Join([]string{
+		`data: {"type":"response.completed","response":{"id":"resp_passthrough_usage","model":"gpt-4o","output":[{"type":"message","content":[{"type":"output_text","text":"hello"}]}]}}`,
+		`data: {"type":"response.done","response":{"id":"resp_passthrough_usage","usage":{"input_tokens":5,"output_tokens":7,"input_tokens_details":{"cached_tokens":3}}}}`,
+		`data: [DONE]`,
+	}, "\n"))
+
+	result, err := svc.handlePassthroughSSEToJSON(resp, c, account, body, "gpt-4o", "gpt-4o")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 5, result.usage.InputTokens)
+	require.Equal(t, 7, result.usage.OutputTokens)
+	require.Equal(t, 3, result.usage.CacheReadInputTokens)
+	require.Contains(t, rec.Body.String(), `"id":"resp_passthrough_usage"`)
 }
 
 func TestHandleSSEToJSON_ReconstructsImageGenerationOutputItemDone(t *testing.T) {

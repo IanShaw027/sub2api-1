@@ -1271,7 +1271,7 @@ func countOpenAIInputItems(body []byte) int {
 	return 1
 }
 
-func describeOpenAIUpstreamSessionSource(c *gin.Context, promptCacheKey string, compactPath bool) (source string, sessionID string) {
+func describeOpenAIUpstreamSessionSource(c *gin.Context, promptCacheKey string, compactPath bool, body []byte) (source string, sessionID string) {
 	if c != nil {
 		if sessionID = strings.TrimSpace(c.GetHeader("session_id")); sessionID != "" {
 			return "session_id", sessionID
@@ -1285,6 +1285,11 @@ func describeOpenAIUpstreamSessionSource(c *gin.Context, promptCacheKey string, 
 					return "compact_seed", strings.TrimSpace(seedStr)
 				}
 			}
+		}
+	}
+	if compactPath {
+		if sessionID = strings.TrimSpace(deriveOpenAIContentSessionSeed(body)); sessionID != "" {
+			return "compact_content_seed", sessionID
 		}
 	}
 	if sessionID = strings.TrimSpace(promptCacheKey); sessionID != "" {
@@ -1352,7 +1357,7 @@ func emitOpenAICacheProbeEvent(
 	}
 
 	compactPath := isOpenAIResponsesCompactPath(c)
-	upstreamSessionSource, upstreamSessionID := describeOpenAIUpstreamSessionSource(c, promptCacheKeyForUpstream, compactPath)
+	upstreamSessionSource, upstreamSessionID := describeOpenAIUpstreamSessionSource(c, promptCacheKeyForUpstream, compactPath, finalBody)
 	stickySessionHash := ""
 	if c != nil {
 		stickySessionHash = shortSessionHash(generateOpenAISessionHashForLog(c, originalBody))
@@ -4179,7 +4184,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	originalBody := body
 	promptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
 	if isOpenAIResponsesCompactPath(c) {
-		compactMappedModel := resolveOpenAICompactForwardModel(account, reqModel)
+		compactMappedModel := resolveOpenAICompactUpstreamModel(account, reqModel)
 		if compactMappedModel != "" && compactMappedModel != reqModel {
 			nextBody, setErr := sjson.SetBytes(body, "model", compactMappedModel)
 			if setErr != nil {
@@ -4550,7 +4555,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 				req.Header.Set("accept", "*/*")
 			}
 			if clientSessionID == "" {
-				clientSessionID = resolveOpenAICompactSessionID(c)
+				clientSessionID = resolveOpenAICompactSessionID(c, body)
 			}
 		} else if req.Header.Get("accept") == "" {
 			req.Header.Set("accept", "text/event-stream")
@@ -5150,6 +5155,14 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c *gin.Context, account *Account, body []byte, originalModel string, mappedModel string) (*openaiNonStreamingResultPassthrough, error) {
 	bodyText := string(body)
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
+	if !ok {
+		if terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText); terminalOK && terminalType != "response.failed" {
+			if response := gjson.GetBytes(terminalPayload, "response"); response.Exists() && response.Raw != "" && strings.HasPrefix(strings.TrimSpace(response.Raw), "{") {
+				finalResponse = []byte(response.Raw)
+				ok = true
+			}
+		}
+	}
 	if advisoryMsg, matched := extractOpenAIWSSoftRateLimitAdvisoryFromSSEBody(bodyText); matched {
 		return nil, s.newOpenAISoftRateLimitFailoverError(c.Request.Context(), c, account, true, resp.Header.Get("x-request-id"), body, advisoryMsg)
 	}
@@ -5159,6 +5172,8 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 	if ok {
 		if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(finalResponse); parsed {
 			*usage = parsedUsage
+		} else {
+			usage = s.parseSSEUsageFromBody(bodyText)
 		}
 		// When the terminal event has an empty output array, reconstruct
 		// output from accumulated delta events so the client gets full content.
@@ -5201,6 +5216,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 			contentType = "text/event-stream"
 		}
 	}
+	c.Writer.Header().Set("Content-Type", contentType)
 	c.Data(resp.StatusCode, contentType, body)
 
 	return &openaiNonStreamingResultPassthrough{usage: usage, imageCount: imageCount}, nil
@@ -5322,7 +5338,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 				req.Header.Set("accept", "*/*")
 			}
 			if sessionID == "" {
-				sessionID = resolveOpenAICompactSessionID(c)
+				sessionID = resolveOpenAICompactSessionID(c, body)
 			}
 		} else {
 			if officialClient || isMessagesBridge {
@@ -6164,45 +6180,78 @@ func (s *OpenAIGatewayService) parseSSEUsage(data string, usage *OpenAIUsage) {
 }
 
 func (s *OpenAIGatewayService) parseSSEUsageBytes(data []byte, usage *OpenAIUsage) {
-	if usage == nil || len(data) == 0 || bytes.Equal(data, []byte("[DONE]")) {
+	if usage == nil {
 		return
 	}
-	// 选择性解析：仅在数据中包含终止事件标识时才进入字段提取。
-	if len(data) < 72 {
+	parsedUsage, ok := extractOpenAIUsageFromSSEEventBytes(data)
+	if !ok {
 		return
 	}
-	eventType := gjson.GetBytes(data, "type").String()
-	if eventType != "response.completed" &&
-		eventType != "response.done" &&
-		eventType != "response.incomplete" &&
-		eventType != "response.cancelled" &&
-		eventType != "response.canceled" {
-		return
-	}
-
-	usage.InputTokens = int(gjson.GetBytes(data, "response.usage.input_tokens").Int())
-	usage.OutputTokens = int(gjson.GetBytes(data, "response.usage.output_tokens").Int())
-	usage.CacheReadInputTokens = int(gjson.GetBytes(data, "response.usage.input_tokens_details.cached_tokens").Int())
-	usage.ImageOutputTokens = int(gjson.GetBytes(data, "response.usage.output_tokens_details.image_tokens").Int())
+	*usage = parsedUsage
 }
 
 func extractOpenAIUsageFromJSONBytes(body []byte) (OpenAIUsage, bool) {
 	if len(body) == 0 || !gjson.ValidBytes(body) {
 		return OpenAIUsage{}, false
 	}
-	values := gjson.GetManyBytes(
-		body,
-		"usage.input_tokens",
-		"usage.output_tokens",
-		"usage.input_tokens_details.cached_tokens",
-		"usage.output_tokens_details.image_tokens",
-	)
+	if parsedUsage, ok := extractOpenAIUsageFromResult(gjson.GetBytes(body, "usage")); ok {
+		return parsedUsage, true
+	}
+	return extractOpenAIUsageFromResult(gjson.ParseBytes(body))
+}
+
+func extractOpenAIUsageFromSSEEventBytes(data []byte) (OpenAIUsage, bool) {
+	if len(data) == 0 || !gjson.ValidBytes(data) || bytes.Equal(data, []byte("[DONE]")) {
+		return OpenAIUsage{}, false
+	}
+	if !isOpenAIUsageTerminalEventType(strings.TrimSpace(gjson.GetBytes(data, "type").String())) {
+		return OpenAIUsage{}, false
+	}
+	return extractOpenAIUsageFromResult(gjson.GetBytes(data, "response.usage"))
+}
+
+func extractOpenAIUsageFromResult(usageNode gjson.Result) (OpenAIUsage, bool) {
+	if !usageNode.Exists() || !usageNode.IsObject() {
+		return OpenAIUsage{}, false
+	}
+
+	inputResult := usageNode.Get("input_tokens")
+	outputResult := usageNode.Get("output_tokens")
+	cachedResult := usageNode.Get("input_tokens_details.cached_tokens")
+	imageResult := usageNode.Get("output_tokens_details.image_tokens")
+
+	hasInput := inputResult.Exists()
+	hasOutput := outputResult.Exists()
+	hasCached := cachedResult.Exists()
+	hasImage := imageResult.Exists()
+	if !((hasInput && hasOutput) || hasImage) {
+		return OpenAIUsage{}, false
+	}
+
+	inputTokens, inputOK := parseOpenAIUsageIntField(inputResult, hasInput)
+	outputTokens, outputOK := parseOpenAIUsageIntField(outputResult, hasOutput)
+	cachedTokens, cachedOK := parseOpenAIUsageIntField(cachedResult, hasCached)
+	imageTokens, imageOK := parseOpenAIUsageIntField(imageResult, hasImage)
+	if !inputOK || !outputOK || !cachedOK || !imageOK {
+		return OpenAIUsage{}, false
+	}
+
 	return OpenAIUsage{
-		InputTokens:          int(values[0].Int()),
-		OutputTokens:         int(values[1].Int()),
-		CacheReadInputTokens: int(values[2].Int()),
-		ImageOutputTokens:    int(values[3].Int()),
+		InputTokens:          inputTokens,
+		OutputTokens:         outputTokens,
+		CacheReadInputTokens: cachedTokens,
+		ImageOutputTokens:    imageTokens,
 	}, true
+}
+
+func parseOpenAIUsageIntField(value gjson.Result, required bool) (int, bool) {
+	if !required || !value.Exists() {
+		return 0, !required
+	}
+	if value.Type != gjson.Number {
+		return 0, false
+	}
+	return int(value.Int()), true
 }
 
 func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, originalModel, mappedModel string) (*openaiNonStreamingResult, error) {
@@ -6233,10 +6282,13 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	}
 
 	usageValue, usageOK := extractOpenAIUsageFromJSONBytes(body)
-	if !usageOK {
+	if !gjson.ValidBytes(body) {
 		return nil, fmt.Errorf("parse response: invalid json response")
 	}
-	usage := &usageValue
+	usage := &OpenAIUsage{}
+	if usageOK {
+		*usage = usageValue
+	}
 	imageCount := countOpenAIResponseImageOutputsFromJSONBytes(body)
 
 	// Replace model in response if needed
@@ -6266,6 +6318,14 @@ func isEventStreamResponse(header http.Header) bool {
 func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Context, account *Account, body []byte, originalModel, mappedModel string) (*openaiNonStreamingResult, error) {
 	bodyText := string(body)
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
+	if !ok {
+		if terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText); terminalOK && terminalType != "response.failed" {
+			if response := gjson.GetBytes(terminalPayload, "response"); response.Exists() && response.Raw != "" && strings.HasPrefix(strings.TrimSpace(response.Raw), "{") {
+				finalResponse = []byte(response.Raw)
+				ok = true
+			}
+		}
+	}
 	if advisoryMsg, matched := extractOpenAIWSSoftRateLimitAdvisoryFromSSEBody(bodyText); matched {
 		return nil, s.newOpenAISoftRateLimitFailoverError(c.Request.Context(), c, account, false, resp.Header.Get("x-request-id"), body, advisoryMsg)
 	}
@@ -6275,6 +6335,8 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 	if ok {
 		if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(finalResponse); parsed {
 			*usage = parsedUsage
+		} else {
+			usage = s.parseSSEUsageFromBody(bodyText)
 		}
 		// When the terminal event has an empty output array, reconstruct
 		// output from accumulated delta events so the client gets full content.
@@ -6318,6 +6380,7 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 			contentType = "text/event-stream"
 		}
 	}
+	c.Writer.Header().Set("Content-Type", contentType)
 	c.Data(resp.StatusCode, contentType, body)
 
 	return &openaiNonStreamingResult{usage: usage, imageCount: imageCount}, nil
@@ -6325,18 +6388,23 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 
 func extractOpenAISSETerminalEvent(body string) (string, []byte, bool) {
 	lines := strings.Split(body, "\n")
+	var terminalType string
+	var terminalPayload []byte
 	for _, line := range lines {
 		data, ok := extractOpenAISSEDataLine(line)
 		if !ok || data == "" || data == "[DONE]" {
 			continue
 		}
 		eventType := strings.TrimSpace(gjson.Get(data, "type").String())
-		switch eventType {
-		case "response.completed", "response.done", "response.failed":
-			return eventType, []byte(data), true
+		if isOpenAIUsageTerminalEventType(eventType) || eventType == "response.failed" {
+			terminalType = eventType
+			terminalPayload = []byte(data)
 		}
 	}
-	return "", nil, false
+	if terminalType == "" {
+		return "", nil, false
+	}
+	return terminalType, terminalPayload, true
 }
 
 func extractOpenAIWSSoftRateLimitAdvisoryFromSSEBody(body string) (string, bool) {
@@ -6384,6 +6452,7 @@ func (s *OpenAIGatewayService) writeOpenAINonStreamingProtocolError(resp *http.R
 
 func extractCodexFinalResponse(body string) ([]byte, bool) {
 	lines := strings.Split(body, "\n")
+	var finalResponse []byte
 	for _, line := range lines {
 		data, ok := extractOpenAISSEDataLine(line)
 		if !ok {
@@ -6392,14 +6461,35 @@ func extractCodexFinalResponse(body string) ([]byte, bool) {
 		if data == "" || data == "[DONE]" {
 			continue
 		}
-		eventType := gjson.Get(data, "type").String()
-		if eventType == "response.done" || eventType == "response.completed" {
+		eventType := strings.TrimSpace(gjson.Get(data, "type").String())
+		if isOpenAIFinalResponseEnvelopeEventType(eventType) {
 			if response := gjson.Get(data, "response"); response.Exists() && response.Type == gjson.JSON && response.Raw != "" {
-				return []byte(response.Raw), true
+				finalResponse = []byte(response.Raw)
 			}
 		}
 	}
-	return nil, false
+	if len(finalResponse) == 0 {
+		return nil, false
+	}
+	return finalResponse, true
+}
+
+func isOpenAIUsageTerminalEventType(eventType string) bool {
+	switch strings.TrimSpace(eventType) {
+	case "response.completed", "response.done", "response.incomplete", "response.cancelled", "response.canceled":
+		return true
+	default:
+		return false
+	}
+}
+
+func isOpenAIFinalResponseEnvelopeEventType(eventType string) bool {
+	switch strings.TrimSpace(eventType) {
+	case "response.completed", "response.done", "response.incomplete", "response.cancelled", "response.canceled":
+		return true
+	default:
+		return false
+	}
 }
 
 // reconstructResponseOutputFromSSE scans raw SSE body text for delta events and
@@ -6733,7 +6823,7 @@ func ensureOpenAICompactDeferredToolSearch(rawTools []byte) ([]byte, bool) {
 	}
 }
 
-func resolveOpenAICompactSessionID(c *gin.Context) string {
+func resolveOpenAICompactSessionID(c *gin.Context, body []byte) string {
 	if c != nil {
 		if sessionID := strings.TrimSpace(c.GetHeader("session_id")); sessionID != "" {
 			return sessionID
@@ -6746,6 +6836,9 @@ func resolveOpenAICompactSessionID(c *gin.Context) string {
 				return strings.TrimSpace(seedStr)
 			}
 		}
+	}
+	if sessionID := strings.TrimSpace(deriveOpenAIContentSessionSeed(body)); sessionID != "" {
+		return sessionID
 	}
 	return uuid.NewString()
 }

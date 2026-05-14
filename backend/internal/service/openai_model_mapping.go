@@ -50,3 +50,17 @@ func resolveOpenAICompactForwardModel(account *Account, model string) string {
 	}
 	return trimmedModel
 }
+
+// resolveOpenAICompactUpstreamModel first applies the account's normal model
+// mapping, then applies the compact-only override. This keeps passthrough and
+// non-passthrough compact routing aligned.
+func resolveOpenAICompactUpstreamModel(account *Account, model string) string {
+	trimmedModel := strings.TrimSpace(model)
+	if trimmedModel == "" {
+		return trimmedModel
+	}
+	if account != nil {
+		trimmedModel = account.GetMappedModel(trimmedModel)
+	}
+	return resolveOpenAICompactForwardModel(account, trimmedModel)
+}
