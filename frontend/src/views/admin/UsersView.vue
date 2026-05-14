@@ -906,7 +906,7 @@ const columns = computed<Column[]>(() =>
 )
 
 const formatOptionalCost = (value?: number) =>
-  typeof value === 'number' && Number.isFinite(value) ? `$${value.toFixed(4)}` : '-'
+  typeof value === 'number' && Number.isFinite(value) ? `$${value.toFixed(4)}` : '$0.0000'
 
 const users = ref<AdminUser[]>([])
 const loading = ref(false)

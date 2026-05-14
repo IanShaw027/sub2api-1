@@ -354,6 +354,56 @@ describe('admin UsersView', () => {
     )
   })
 
+  it('falls back missing usage totals to zero instead of a dash', async () => {
+    listUsers.mockResolvedValue({
+      items: [
+        createAdminUser({
+          today_actual_cost: undefined,
+          today_balance_actual_cost: undefined,
+          today_subscription_actual_cost: undefined,
+          total_actual_cost: undefined
+        })
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mount(UsersView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          EmptyState: true,
+          GroupBadge: true,
+          Select: true,
+          UserAttributesConfigModal: true,
+          UserConcurrencyCell: true,
+          UserCreateModal: true,
+          UserEditModal: true,
+          UserApiKeysModal: true,
+          UserAllowedGroupsModal: true,
+          UserBalanceModal: true,
+          UserBalanceHistoryModal: true,
+          GroupReplaceModal: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="usage-cell"]').text()).toContain('$0.0000')
+    expect(wrapper.get('[data-test="usage-cell"]').text()).not.toContain('-')
+  })
+
   it('sorts the current page by runtime current and available concurrency', async () => {
     const rows = [
       createAdminUser({ id: 1, email: 'low-current@example.com', concurrency: 5, current_concurrency: 1 }),
