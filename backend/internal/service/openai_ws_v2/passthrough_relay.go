@@ -405,6 +405,10 @@ func runUpstreamToClient(
 			return
 		}
 		markActivity()
+		if msgType == coderws.MessageText {
+			flushed := openAIWSRelayFlushPendingTerminalsForIncomingMessage(state, payload, nowFn())
+			flushPendingTurnCompletions(onTurnComplete, state, flushed)
+		}
 		observedEvent := observedUpstreamEvent{}
 		switch msgType {
 		case coderws.MessageText:
@@ -412,6 +416,7 @@ func runUpstreamToClient(
 		case coderws.MessageBinary:
 			// binary frame 直接透传，不进入 JSON 观测路径（避免无效解析开销）。
 		}
+		flushPendingTurnCompletions(onTurnComplete, state, openAIWSRelayFlushPendingTerminalsForIncomingMessage(state, payload, nowFn()))
 		emitTurnComplete(onTurnComplete, state, observedEvent)
 		if dropDownstreamWrites != nil && dropDownstreamWrites.Load() {
 			if droppedFrames != nil {
@@ -773,7 +778,7 @@ func openAIWSRelayFlushPendingTerminalsAt(state *relayState, keepResponseID stri
 	return flushed
 }
 
-func openAIWSRelayFlushPendingTerminalsForIncomingMessage(state *relayState, message []byte) []observedUpstreamEvent {
+func openAIWSRelayFlushPendingTerminalsForIncomingMessage(state *relayState, message []byte, now time.Time) []observedUpstreamEvent {
 	if state == nil || len(message) == 0 || len(state.pendingTerminalByID) == 0 {
 		return nil
 	}
@@ -785,7 +790,7 @@ func openAIWSRelayFlushPendingTerminalsForIncomingMessage(state *relayState, mes
 	if responseID == "" {
 		return nil
 	}
-	return openAIWSRelayFlushPendingTerminals(state, responseID)
+	return openAIWSRelayFlushPendingTerminalsAt(state, responseID, now)
 }
 
 func openAIWSRelayFinalizeObservedTerminal(state *relayState, observed *observedUpstreamEvent) {

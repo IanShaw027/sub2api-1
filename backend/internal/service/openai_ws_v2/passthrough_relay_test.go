@@ -199,6 +199,57 @@ func TestRelay_BasicRelayAndUsage(t *testing.T) {
 	require.JSONEq(t, `{"type":"response.completed","response":{"id":"resp_123","usage":{"input_tokens":7,"output_tokens":3,"input_tokens_details":{"cached_tokens":2}}}}`, string(clientWrites[0].payload))
 }
 
+func TestRunUpstreamToClient_FlushesPendingTerminalBeforeDifferentResponse(t *testing.T) {
+	t.Parallel()
+
+	frames := []passthroughTestFrame{
+		{
+			msgType: coderws.MessageText,
+			payload: []byte(`{"type":"response.incomplete","response":{"id":"resp_old","usage":{"input_tokens":4,"output_tokens":3,"input_tokens_details":{"cached_tokens":2}}}}`),
+		},
+		{
+			msgType: coderws.MessageText,
+			payload: []byte(`{"type":"response.completed","response":{"id":"resp_new","usage":{"input_tokens":9,"output_tokens":7,"input_tokens_details":{"cached_tokens":1}}}}`),
+		},
+	}
+
+	exitCh := make(chan relayExitSignal, 1)
+	turns := make([]RelayTurnResult, 0, 2)
+	state := &relayState{requestModel: "gpt-5.3"}
+	now := time.Unix(0, 0)
+	nowFn := func() time.Time {
+		now = now.Add(10 * time.Millisecond)
+		return now
+	}
+
+	runUpstreamToClient(
+		context.Background(),
+		newPassthroughTestFrameConn(frames, true),
+		func(_ coderws.MessageType, _ []byte) error { return nil },
+		time.Unix(0, 0),
+		nowFn,
+		state,
+		nil,
+		func(turn RelayTurnResult) {
+			turns = append(turns, turn)
+		},
+		&atomic.Bool{},
+		nil,
+		nil,
+		func() {},
+		nil,
+		exitCh,
+	)
+
+	sig := <-exitCh
+	require.Equal(t, "read_upstream", sig.stage)
+	require.Len(t, turns, 2)
+	require.Equal(t, "resp_old", turns[0].RequestID)
+	require.Equal(t, "response.incomplete", turns[0].TerminalEventType)
+	require.Equal(t, "resp_new", turns[1].RequestID)
+	require.Equal(t, "response.completed", turns[1].TerminalEventType)
+}
+
 func TestRelay_FunctionCallOutputBytesPreserved(t *testing.T) {
 	t.Parallel()
 
@@ -525,7 +576,7 @@ func TestRelay_DedupesDuplicateTerminalEventsByResponseID(t *testing.T) {
 	require.JSONEq(t, `{"type":"response.cancelled","response":{"id":"resp_dup","usage":{"input_tokens":11,"output_tokens":7,"input_tokens_details":{"cached_tokens":5}}}}`, string(clientWrites[1].payload))
 }
 
-func TestRelay_PreservesPendingUsageWhenLaterTerminalOmitsUsage(t *testing.T) {
+func TestRelay_FlushesPendingWeakTerminalBeforeInterleavedDifferentResponse(t *testing.T) {
 	t.Parallel()
 
 	clientConn := newPassthroughTestFrameConn(nil, false)
@@ -551,7 +602,7 @@ func TestRelay_PreservesPendingUsageWhenLaterTerminalOmitsUsage(t *testing.T) {
 	result, relayExit := Relay(ctx, clientConn, upstreamConn, firstPayload, RelayOptions{})
 	require.Nil(t, relayExit)
 	require.Equal(t, "resp_interleave", result.RequestID)
-	require.Equal(t, "response.done", result.TerminalEventType)
+	require.Equal(t, "response.incomplete", result.TerminalEventType)
 	require.Equal(t, 4, result.Usage.InputTokens)
 	require.Equal(t, 3, result.Usage.OutputTokens)
 	require.Equal(t, 2, result.Usage.CacheReadInputTokens)

@@ -195,3 +195,36 @@ func TestGatewaySSEAudit_PassthroughFailedTerminalReturnsProtocolError(t *testin
 	require.Contains(t, result.body, `"type":"upstream_error"`)
 	require.Contains(t, result.body, `upstream rejected request`)
 }
+
+func TestGatewaySSEAudit_ResponseFailedTerminalEnvelopeReturnsJSON(t *testing.T) {
+	invokers := []struct {
+		name        string
+		passthrough bool
+	}{
+		{name: "standard", passthrough: false},
+		{name: "passthrough", passthrough: true},
+	}
+
+	body := strings.Join([]string{
+		`data: {"type":"response.in_progress","response":{"id":"resp_failed_envelope"}}`,
+		`data: {"type":"response.failed","response":{"id":"resp_failed_envelope","status":"failed","error":{"message":"upstream rejected request"},"usage":{"input_tokens":11,"output_tokens":13,"input_tokens_details":{"cached_tokens":4}}}}`,
+		`data: [DONE]`,
+	}, "\n")
+
+	for _, invoker := range invokers {
+		invoker := invoker
+		t.Run(invoker.name, func(t *testing.T) {
+			result, err := invokeGatewaySSEAuditHandler(t, body, invoker.passthrough)
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.NotNil(t, result.usage)
+			require.Equal(t, 11, result.usage.InputTokens)
+			require.Equal(t, 13, result.usage.OutputTokens)
+			require.Equal(t, 4, result.usage.CacheReadInputTokens)
+			require.Contains(t, result.contentType, "application/json")
+			require.Contains(t, result.body, `"id":"resp_failed_envelope"`)
+			require.Contains(t, result.body, `"status":"failed"`)
+			require.NotContains(t, result.body, `"type":"upstream_error"`)
+		})
+	}
+}

@@ -5156,10 +5156,16 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 	bodyText := string(body)
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
 	if !ok {
-		if terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText); terminalOK && terminalType != "response.failed" {
-			if response := gjson.GetBytes(terminalPayload, "response"); response.Exists() && response.Raw != "" && strings.HasPrefix(strings.TrimSpace(response.Raw), "{") {
-				finalResponse = []byte(response.Raw)
+		if terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText); terminalOK {
+			if response := extractOpenAISSETerminalResponse(terminalPayload); len(response) > 0 {
+				finalResponse = response
 				ok = true
+			} else if terminalType == "response.failed" {
+				msg := extractOpenAISSEErrorMessage(terminalPayload)
+				if msg == "" {
+					msg = "Upstream compact response failed"
+				}
+				return nil, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
 			}
 		}
 	}
@@ -6319,10 +6325,16 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 	bodyText := string(body)
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
 	if !ok {
-		if terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText); terminalOK && terminalType != "response.failed" {
-			if response := gjson.GetBytes(terminalPayload, "response"); response.Exists() && response.Raw != "" && strings.HasPrefix(strings.TrimSpace(response.Raw), "{") {
-				finalResponse = []byte(response.Raw)
+		if terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText); terminalOK {
+			if response := extractOpenAISSETerminalResponse(terminalPayload); len(response) > 0 {
+				finalResponse = response
 				ok = true
+			} else if terminalType == "response.failed" {
+				msg := extractOpenAISSEErrorMessage(terminalPayload)
+				if msg == "" {
+					msg = "Upstream compact response failed"
+				}
+				return nil, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
 			}
 		}
 	}
@@ -6405,6 +6417,21 @@ func extractOpenAISSETerminalEvent(body string) (string, []byte, bool) {
 		return "", nil, false
 	}
 	return terminalType, terminalPayload, true
+}
+
+func extractOpenAISSETerminalResponse(terminalPayload []byte) []byte {
+	if len(terminalPayload) == 0 {
+		return nil
+	}
+	response := gjson.GetBytes(terminalPayload, "response")
+	if !response.Exists() || response.Raw == "" {
+		return nil
+	}
+	trimmed := strings.TrimSpace(response.Raw)
+	if !strings.HasPrefix(trimmed, "{") {
+		return nil
+	}
+	return []byte(trimmed)
 }
 
 func extractOpenAIWSSoftRateLimitAdvisoryFromSSEBody(body string) (string, bool) {

@@ -427,6 +427,42 @@ func TestObserveUpstreamMessage_DedupesTerminalUsageAndCompletionByResponseID(t 
 	require.Equal(t, "response.canceled", turns[1].TerminalEventType)
 }
 
+func TestOpenAIWSRelayFlushPendingTerminalsForIncomingMessage(t *testing.T) {
+	t.Parallel()
+
+	state := &relayState{}
+	openAIWSRelaySetPendingTerminal(state, "resp_old", observedUpstreamEvent{
+		eventType:  "response.incomplete",
+		responseID: "resp_old",
+		usage:      Usage{InputTokens: 4, OutputTokens: 3, CacheReadInputTokens: 2},
+	})
+	openAIWSRelaySetPendingTerminal(state, "resp_keep", observedUpstreamEvent{
+		eventType:  "response.incomplete",
+		responseID: "resp_keep",
+		usage:      Usage{InputTokens: 1, OutputTokens: 1},
+	})
+
+	flushed := openAIWSRelayFlushPendingTerminalsForIncomingMessage(
+		state,
+		[]byte(`{"type":"response.created","response":{"id":"resp_keep"}}`),
+		time.Unix(10, 0),
+	)
+	require.Len(t, flushed, 1)
+	require.Equal(t, "resp_old", flushed[0].responseID)
+	require.Equal(t, "response.incomplete", flushed[0].eventType)
+	require.Equal(t, 1, len(state.pendingTerminalByID))
+	require.Contains(t, state.pendingTerminalByID, "resp_keep")
+	require.Equal(t, "resp_old", state.lastResponseID)
+
+	flushed = openAIWSRelayFlushPendingTerminalsForIncomingMessage(
+		state,
+		[]byte(`{"type":"response.created","response":{"id":"resp_keep"}}`),
+		time.Unix(20, 0),
+	)
+	require.Len(t, flushed, 0)
+	require.Contains(t, state.pendingTerminalByID, "resp_keep")
+}
+
 func TestIsDisconnectErrorCoverage_CloseStatusesAndMessageBranches(t *testing.T) {
 	t.Parallel()
 
