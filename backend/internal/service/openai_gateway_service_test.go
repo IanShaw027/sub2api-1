@@ -3481,6 +3481,20 @@ func TestExtractCodexFinalResponse_SampleReplay(t *testing.T) {
 	require.Contains(t, string(finalResp), `"input_tokens":11`)
 }
 
+func TestExtractCodexFinalResponse_PrefersRicherEnvelopeOverLaterUsageOnlyTerminal(t *testing.T) {
+	body := strings.Join([]string{
+		`data: {"type":"response.completed","response":{"id":"resp_rich","model":"gpt-4o","output":[{"type":"message","content":[{"type":"output_text","text":"hello"}]}]}}`,
+		`data: {"type":"response.done","response":{"id":"resp_rich","usage":{"input_tokens":4,"output_tokens":6,"input_tokens_details":{"cached_tokens":2}}}}`,
+		`data: [DONE]`,
+	}, "\n")
+
+	finalResp, ok := extractCodexFinalResponse(body)
+	require.True(t, ok)
+	require.Contains(t, string(finalResp), `"id":"resp_rich"`)
+	require.Contains(t, string(finalResp), `"model":"gpt-4o"`)
+	require.Contains(t, string(finalResp), `"text":"hello"`)
+}
+
 func TestHandleSSEToJSON_TreatsTerminalResponseEnvelopesAsFinalJSON(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -3621,6 +3635,8 @@ func TestHandleSSEToJSON_FallsBackToFullSSEUsageWhenFinalResponseLacksUsage(t *t
 	require.Equal(t, 6, result.usage.OutputTokens)
 	require.Equal(t, 2, result.usage.CacheReadInputTokens)
 	require.Contains(t, rec.Body.String(), `"id":"resp_fallback_usage"`)
+	require.Contains(t, rec.Body.String(), `"model":"gpt-4o"`)
+	require.Contains(t, rec.Body.String(), `"text":"hello"`)
 }
 
 func TestHandleSSEToJSON_PreservesRecoveredUsageWhenLaterTerminalEventsOmitUsage(t *testing.T) {
@@ -3680,6 +3696,8 @@ func TestHandlePassthroughSSEToJSON_FallsBackToFullSSEUsageWhenFinalResponseLack
 	require.Equal(t, 7, result.usage.OutputTokens)
 	require.Equal(t, 3, result.usage.CacheReadInputTokens)
 	require.Contains(t, rec.Body.String(), `"id":"resp_passthrough_usage"`)
+	require.Contains(t, rec.Body.String(), `"model":"gpt-4o"`)
+	require.Contains(t, rec.Body.String(), `"text":"hello"`)
 }
 
 func TestHandleSSEToJSON_ReconstructsImageGenerationOutputItemDone(t *testing.T) {

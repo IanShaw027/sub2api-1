@@ -114,3 +114,39 @@ func TestOpenAIGatewayServiceRecordUsage_AuditZeroUsageImageEndpointsStillWriteU
 	require.Zero(t, usageRepo.lastLog.TotalCost)
 	require.Zero(t, usageRepo.lastLog.ActualCost)
 }
+
+func TestOpenAIGatewayServiceRecordUsage_AuditZeroUsageImages2APIEndpointsUseWebBridgeType(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	quotaSvc := &openAIRecordUsageAPIKeyQuotaStub{}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, userRepo, subRepo, nil)
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID: "resp_zero_usage_image_web_bridge",
+			Usage:     OpenAIUsage{},
+			Model:     "gpt-5.1",
+			Duration:  time.Second,
+		},
+		APIKey:           &APIKey{ID: 1103, Quota: 100, Group: &Group{RateMultiplier: 1}},
+		User:             &User{ID: 2103},
+		Account:          &Account{ID: 3103, Type: AccountTypeAPIKey},
+		InboundEndpoint:  "/v1/images2api/generations",
+		UpstreamEndpoint: "/v1/images2api/generations",
+		APIKeyService:    quotaSvc,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, billingRepo.calls)
+	require.Equal(t, 1, usageRepo.calls)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, RequestTypeImageWebBridge, usageRepo.lastLog.RequestType)
+	require.NotNil(t, usageRepo.lastLog.InboundEndpoint)
+	require.Equal(t, "/v1/images2api/generations", *usageRepo.lastLog.InboundEndpoint)
+	require.NotNil(t, usageRepo.lastLog.UpstreamEndpoint)
+	require.Equal(t, "/v1/images2api/generations", *usageRepo.lastLog.UpstreamEndpoint)
+	require.Zero(t, usageRepo.lastLog.TotalCost)
+	require.Zero(t, usageRepo.lastLog.ActualCost)
+}

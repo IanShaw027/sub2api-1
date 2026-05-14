@@ -181,3 +181,17 @@ func TestGatewaySSEAudit_ExtractOpenAIUsageFromJSONBytes_RejectsFallbackOnlyUsag
 		})
 	}
 }
+
+func TestGatewaySSEAudit_PassthroughFailedTerminalReturnsProtocolError(t *testing.T) {
+	body := strings.Join([]string{
+		`data: {"type":"response.failed","error":{"message":"upstream rejected request"}}`,
+		`data: [DONE]`,
+	}, "\n")
+
+	result, err := invokeGatewaySSEAuditHandler(t, body, true)
+	require.Error(t, err)
+	require.Nil(t, result.usage)
+	require.Contains(t, result.contentType, "application/json")
+	require.Contains(t, result.body, `"type":"upstream_error"`)
+	require.Contains(t, result.body, `upstream rejected request`)
+}

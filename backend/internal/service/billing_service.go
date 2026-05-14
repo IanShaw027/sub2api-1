@@ -371,6 +371,9 @@ func normalizeOpenAIPricingFallbackModel(model string) string {
 	if canonical == "" {
 		return ""
 	}
+	if strings.Contains(canonical, "codex-auto-review") {
+		return "codex-auto-review"
+	}
 
 	// 定价回退保留账单族群，不复用上游路由归一化里的跨版本折叠。
 	switch {

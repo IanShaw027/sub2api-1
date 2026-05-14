@@ -1279,21 +1279,21 @@ func describeOpenAIUpstreamSessionSource(c *gin.Context, promptCacheKey string, 
 		if sessionID = strings.TrimSpace(c.GetHeader("conversation_id")); sessionID != "" {
 			return "conversation_id", sessionID
 		}
-		if compactPath {
+	}
+	if sessionID = strings.TrimSpace(promptCacheKey); sessionID != "" {
+		return "prompt_cache_key", sessionID
+	}
+	if compactPath {
+		if c != nil {
 			if seed, ok := c.Get(openAICompactSessionSeedKey); ok {
 				if seedStr, ok := seed.(string); ok && strings.TrimSpace(seedStr) != "" {
 					return "compact_seed", strings.TrimSpace(seedStr)
 				}
 			}
 		}
-	}
-	if compactPath {
 		if sessionID = strings.TrimSpace(deriveOpenAIContentSessionSeed(body)); sessionID != "" {
 			return "compact_content_seed", sessionID
 		}
-	}
-	if sessionID = strings.TrimSpace(promptCacheKey); sessionID != "" {
-		return "prompt_cache_key", sessionID
 	}
 	if compactPath {
 		return "compact_generated", ""
@@ -6464,7 +6464,9 @@ func extractCodexFinalResponse(body string) ([]byte, bool) {
 		eventType := strings.TrimSpace(gjson.Get(data, "type").String())
 		if isOpenAIFinalResponseEnvelopeEventType(eventType) {
 			if response := gjson.Get(data, "response"); response.Exists() && response.Type == gjson.JSON && response.Raw != "" {
-				finalResponse = []byte(response.Raw)
+				if len(finalResponse) == 0 || len(gjson.Get(response.Raw, "output").Array()) > 0 {
+					finalResponse = []byte(response.Raw)
+				}
 			}
 		}
 	}

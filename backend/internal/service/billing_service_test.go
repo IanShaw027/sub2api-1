@@ -177,6 +177,21 @@ func TestGetModelPricing_CodexAutoReviewFallsBackToGPT53CodexPricing(t *testing.
 	require.InDelta(t, 0.15e-6, pricing.CacheReadPricePerToken, 1e-12)
 }
 
+func TestGetModelPricing_CodexAutoReviewAliasVariantsFallBackToGPT53CodexPricing(t *testing.T) {
+	svc := newTestBillingService()
+
+	for _, model := range []string{"openai/codex-auto-review", "codex-auto-review-openai-compact"} {
+		t.Run(model, func(t *testing.T) {
+			pricing, err := svc.GetModelPricing(model)
+			require.NoError(t, err)
+			require.NotNil(t, pricing)
+			require.InDelta(t, 1.5e-6, pricing.InputPricePerToken, 1e-12)
+			require.InDelta(t, 12e-6, pricing.OutputPricePerToken, 1e-12)
+			require.InDelta(t, 0.15e-6, pricing.CacheReadPricePerToken, 1e-12)
+		})
+	}
+}
+
 func TestGetModelPricing_OpenAIGPT54MiniFallback(t *testing.T) {
 	svc := newTestBillingService()
 
