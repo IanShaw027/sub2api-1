@@ -570,6 +570,20 @@ func NewSettingService(settingRepo SettingRepository, cfg *config.Config) *Setti
 	return svc
 }
 
+func (s *SettingService) GetValue(ctx context.Context, key string) (string, error) {
+	if s == nil || s.settingRepo == nil {
+		return "", fmt.Errorf("setting repository unavailable")
+	}
+	return s.settingRepo.GetValue(ctx, key)
+}
+
+func (s *SettingService) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
+	if s == nil || s.settingRepo == nil {
+		return map[string]string{}, fmt.Errorf("setting repository unavailable")
+	}
+	return s.settingRepo.GetMultiple(ctx, keys)
+}
+
 func registerKiroRuntimeSettingService(settingService *SettingService) {
 	if settingService != nil {
 		sharedKiroRuntimeSettingService.Store(settingService)

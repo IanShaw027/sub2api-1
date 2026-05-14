@@ -557,6 +557,7 @@ type adminServiceImpl struct {
 	defaultSubAssigner    DefaultSubscriptionAssigner
 	userSubRepo           UserSubscriptionRepository
 	privacyClientFactory  PrivacyClientFactory
+	concurrencyService    *ConcurrencyService
 	oauthRefreshAPI       *OAuthRefreshAPI
 	oauthRefreshExecutors []OAuthRefreshExecutor
 }
@@ -613,6 +614,7 @@ func NewAdminService(
 	defaultSubAssigner DefaultSubscriptionAssigner,
 	userSubRepo UserSubscriptionRepository,
 	privacyClientFactory PrivacyClientFactory,
+	concurrencyService *ConcurrencyService,
 ) *adminServiceImpl {
 	return &adminServiceImpl{
 		userRepo:             userRepo,
@@ -632,37 +634,175 @@ func NewAdminService(
 		defaultSubAssigner:   defaultSubAssigner,
 		userSubRepo:          userSubRepo,
 		privacyClientFactory: privacyClientFactory,
+		concurrencyService:   concurrencyService,
 	}
 }
 
 // User management implementations
 func (s *adminServiceImpl) ListUsers(ctx context.Context, page, pageSize int, filters UserListFilters, sortBy, sortOrder string) ([]User, int64, error) {
+	if isLiveUserConcurrencySort(sortBy) {
+		return s.listUsersByLiveConcurrency(ctx, page, pageSize, filters, sortBy, sortOrder)
+	}
 	params := pagination.PaginationParams{Page: page, PageSize: pageSize, SortBy: sortBy, SortOrder: sortOrder}
 	users, result, err := s.userRepo.ListWithFilters(ctx, params, filters)
 	if err != nil {
 		return nil, 0, err
 	}
-	if len(users) > 0 {
-		userIDs := make([]int64, 0, len(users))
+	s.decorateUsersForList(ctx, users)
+	return users, result.Total, nil
+}
+
+func isLiveUserConcurrencySort(sortBy string) bool {
+	switch strings.ToLower(strings.TrimSpace(sortBy)) {
+	case "current_concurrency", "available_concurrency":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *adminServiceImpl) listUsersByLiveConcurrency(ctx context.Context, page, pageSize int, filters UserListFilters, sortBy, sortOrder string) ([]User, int64, error) {
+	baseParams := pagination.PaginationParams{Page: 1, PageSize: 1, SortBy: "id", SortOrder: pagination.SortOrderAsc}
+	_, result, err := s.userRepo.ListWithFilters(ctx, baseParams, filters)
+	if err != nil {
+		return nil, 0, err
+	}
+	total := result.Total
+	if total <= 0 {
+		return []User{}, 0, nil
+	}
+	users, err := s.loadAllUsersForLiveConcurrencySort(ctx, filters, total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if s.concurrencyService != nil && len(users) > 0 {
+		batch := make([]UserWithConcurrency, 0, len(users))
 		for i := range users {
-			userIDs = append(userIDs, users[i].ID)
+			batch = append(batch, UserWithConcurrency{ID: users[i].ID, MaxConcurrency: users[i].Concurrency})
 		}
-		lastUsedByUserID, latestErr := s.userRepo.GetLatestUsedAtByUserIDs(ctx, userIDs)
-		if latestErr != nil {
-			logger.LegacyPrintf("service.admin", "failed to load user last_used_at in batch: err=%v", latestErr)
-		} else {
-			for i := range users {
-				users[i].LastUsedAt = lastUsedByUserID[users[i].ID]
+		loadMap, loadErr := s.concurrencyService.GetUsersLoadBatch(ctx, batch)
+		if loadErr != nil {
+			logger.LegacyPrintf("service.admin", "failed to load user concurrency in batch: err=%v", loadErr)
+		}
+		sortUsersByLiveConcurrency(users, loadMap, sortBy, sortOrder)
+	}
+
+	start, end := paginateSlice(page, pageSize, len(users))
+	if start >= end {
+		return []User{}, total, nil
+	}
+	pagedUsers := users[start:end]
+	s.decorateUsersForList(ctx, pagedUsers)
+	return pagedUsers, total, nil
+}
+
+func (s *adminServiceImpl) loadAllUsersForLiveConcurrencySort(ctx context.Context, filters UserListFilters, total int64) ([]User, error) {
+	if total <= 0 {
+		return []User{}, nil
+	}
+
+	const batchSize = 1000
+	users := make([]User, 0)
+	for page := 1; int64(len(users)) < total; page++ {
+		params := pagination.PaginationParams{
+			Page:      page,
+			PageSize:  batchSize,
+			SortBy:    "id",
+			SortOrder: pagination.SortOrderAsc,
+		}
+		chunk, _, err := s.userRepo.ListWithFilters(ctx, params, filters)
+		if err != nil {
+			return nil, err
+		}
+		if len(chunk) == 0 {
+			break
+		}
+		users = append(users, chunk...)
+		if len(chunk) < batchSize {
+			break
+		}
+	}
+	return users, nil
+}
+
+func sortUsersByLiveConcurrency(users []User, loadMap map[int64]*UserLoadInfo, sortBy, sortOrder string) {
+	asc := strings.EqualFold(sortOrder, pagination.SortOrderAsc)
+	sort.SliceStable(users, func(i, j int) bool {
+		left := liveUserConcurrencyValue(users[i], loadMap, sortBy)
+		right := liveUserConcurrencyValue(users[j], loadMap, sortBy)
+		if left != right {
+			if asc {
+				return left < right
 			}
+			return left > right
+		}
+		if asc {
+			return users[i].ID < users[j].ID
+		}
+		return users[i].ID > users[j].ID
+	})
+}
+
+func liveUserConcurrencyValue(user User, loadMap map[int64]*UserLoadInfo, sortBy string) int {
+	current := 0
+	if loadMap != nil {
+		if load := loadMap[user.ID]; load != nil {
+			current = load.CurrentConcurrency
+		}
+	}
+	switch strings.ToLower(strings.TrimSpace(sortBy)) {
+	case "available_concurrency":
+		return maxInt(user.Concurrency-current, 0)
+	default:
+		return current
+	}
+}
+
+func paginateSlice(page, pageSize, total int) (int, int) {
+	if pageSize <= 0 || total <= 0 {
+		return 0, 0
+	}
+	if page <= 0 {
+		page = 1
+	}
+	start := (page - 1) * pageSize
+	if start >= total {
+		return total, total
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	return start, end
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func (s *adminServiceImpl) decorateUsersForList(ctx context.Context, users []User) {
+	if len(users) == 0 {
+		return
+	}
+	userIDs := make([]int64, 0, len(users))
+	for i := range users {
+		userIDs = append(userIDs, users[i].ID)
+	}
+	lastUsedByUserID, latestErr := s.userRepo.GetLatestUsedAtByUserIDs(ctx, userIDs)
+	if latestErr != nil {
+		logger.LegacyPrintf("service.admin", "failed to load user last_used_at in batch: err=%v", latestErr)
+	} else {
+		for i := range users {
+			users[i].LastUsedAt = lastUsedByUserID[users[i].ID]
 		}
 	}
 	// 批量加载用户专属分组倍率
-	if s.userGroupRateRepo != nil && len(users) > 0 {
+	if s.userGroupRateRepo != nil {
 		if batchRepo, ok := s.userGroupRateRepo.(userGroupRateBatchReader); ok {
-			userIDs := make([]int64, 0, len(users))
-			for i := range users {
-				userIDs = append(userIDs, users[i].ID)
-			}
 			ratesByUser, err := batchRepo.GetByUserIDs(ctx, userIDs)
 			if err != nil {
 				logger.LegacyPrintf("service.admin", "failed to load user group rates in batch: err=%v", err)
@@ -678,7 +818,6 @@ func (s *adminServiceImpl) ListUsers(ctx context.Context, page, pageSize int, fi
 			s.loadUserGroupRatesOneByOne(ctx, users)
 		}
 	}
-	return users, result.Total, nil
 }
 
 func (s *adminServiceImpl) loadUserGroupRatesOneByOne(ctx context.Context, users []User) {
@@ -738,13 +877,15 @@ func (s *adminServiceImpl) GetUserIdentitySummaries(ctx context.Context, userID 
 	if err != nil {
 		return UserIdentitySummarySet{}, err
 	}
-	userSvc := &UserService{userRepo: s.userRepo}
-	return UserIdentitySummarySet{
+	userSvc := &UserService{userRepo: s.userRepo, settingRepo: s.settingService}
+	summaries := UserIdentitySummarySet{
 		Email:   userSvc.buildEmailIdentitySummary(user, records),
 		LinuxDo: userSvc.buildProviderIdentitySummary("linuxdo", user, records),
 		OIDC:    userSvc.buildProviderIdentitySummary("oidc", user, records),
 		WeChat:  userSvc.buildProviderIdentitySummary("wechat", user, records),
-	}, nil
+	}
+	userSvc.applyExplicitProviderAvailability(ctx, &summaries)
+	return summaries, nil
 }
 
 func (s *adminServiceImpl) CreateUser(ctx context.Context, input *CreateUserInput) (*User, error) {

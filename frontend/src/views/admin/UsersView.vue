@@ -227,14 +227,20 @@
             <!-- Create User Button (full width on mobile, auto width on desktop) -->
             <div class="flex min-w-[240px] items-center gap-2">
               <label class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                {{ t('admin.users.sortConcurrency', '并发排序') }}
+                {{ t('admin.users.sortConcurrency', '排序设置') }}
               </label>
-              <select v-model="concurrencySort" data-test="concurrency-sort" class="input min-w-[140px]">
-                <option value="none">{{ t('admin.users.sortConcurrencyNone', '不排序') }}</option>
-                <option value="current_desc">{{ t('admin.users.sortCurrentDesc', '当前并发 ↓') }}</option>
-                <option value="current_asc">{{ t('admin.users.sortCurrentAsc', '当前并发 ↑') }}</option>
-                <option value="available_desc">{{ t('admin.users.sortAvailableDesc', '可用并发 ↓') }}</option>
-                <option value="available_asc">{{ t('admin.users.sortAvailableAsc', '可用并发 ↑') }}</option>
+              <select v-model="concurrencySort" data-test="concurrency-sort" class="input min-w-[180px]" @change="applySpecialSort">
+                <option value="none">{{ t('admin.users.sortConcurrencyNone', '默认排序') }}</option>
+                <option value="today_balance_usage_desc">{{ t('admin.users.sortTodayBalanceDesc', '今日余额 ↓') }}</option>
+                <option value="today_balance_usage_asc">{{ t('admin.users.sortTodayBalanceAsc', '今日余额 ↑') }}</option>
+                <option value="today_subscription_usage_desc">{{ t('admin.users.sortTodaySubscriptionDesc', '今日订阅 ↓') }}</option>
+                <option value="today_subscription_usage_asc">{{ t('admin.users.sortTodaySubscriptionAsc', '今日订阅 ↑') }}</option>
+                <option value="last_30d_usage_desc">{{ t('admin.users.sortLast30dDesc', '近30日 ↓') }}</option>
+                <option value="last_30d_usage_asc">{{ t('admin.users.sortLast30dAsc', '近30日 ↑') }}</option>
+                <option value="current_concurrency_desc">{{ t('admin.users.sortCurrentDesc', '当前并发 ↓') }}</option>
+                <option value="current_concurrency_asc">{{ t('admin.users.sortCurrentAsc', '当前并发 ↑') }}</option>
+                <option value="available_concurrency_desc">{{ t('admin.users.sortAvailableDesc', '可用并发 ↓') }}</option>
+                <option value="available_concurrency_asc">{{ t('admin.users.sortAvailableAsc', '可用并发 ↑') }}</option>
               </select>
             </div>
             <button @click="showCreateModal = true" class="btn btn-primary flex-1 md:flex-initial">
@@ -771,7 +777,7 @@ const allColumns = computed<Column[]>(() => [
 
 // Columns that can be toggled (exclude email and actions which are always visible)
 const toggleableColumns = computed(() =>
-  allColumns.value.filter(col => col.key !== 'email' && col.key !== 'actions')
+  allColumns.value.filter(col => col.key !== 'email' && col.key !== 'actions' && !FORCED_VISIBLE_COLUMNS.has(col.key))
 )
 
 // Hidden columns (stored in Set - columns NOT in this set are visible)
@@ -816,6 +822,9 @@ const saveColumnsToStorage = () => {
 
 // Toggle column visibility
 const toggleColumn = (key: string) => {
+  if (FORCED_VISIBLE_COLUMNS.has(key)) {
+    return
+  }
   const wasHidden = hiddenColumns.has(key)
   if (hiddenColumns.has(key)) {
     hiddenColumns.delete(key)
@@ -835,10 +844,10 @@ const toggleColumn = (key: string) => {
 }
 
 // Check if column is visible (not in hidden set)
-const isColumnVisible = (key: string) => !hiddenColumns.has(key)
-const hasVisibleUsageColumn = computed(() => !hiddenColumns.has('usage'))
-const hasVisibleSubscriptionsColumn = computed(() => !hiddenColumns.has('subscriptions'))
-const hasVisibleGroupsColumn = computed(() => !hiddenColumns.has('groups'))
+const isColumnVisible = (key: string) => FORCED_VISIBLE_COLUMNS.has(key) || !hiddenColumns.has(key)
+const hasVisibleUsageColumn = computed(() => isColumnVisible('usage'))
+const hasVisibleSubscriptionsColumn = computed(() => isColumnVisible('subscriptions'))
+const hasVisibleGroupsColumn = computed(() => isColumnVisible('groups'))
 const hasVisibleAttributeColumns = computed(() =>
   attributeDefinitions.value.some((def) => def.enabled && !hiddenColumns.has(`attr_${def.id}`))
 )
@@ -846,7 +855,7 @@ const hasVisibleAttributeColumns = computed(() =>
 // Filtered columns based on visibility
 const columns = computed<Column[]>(() =>
   allColumns.value.filter(col =>
-    col.key === 'email' || col.key === 'actions' || !hiddenColumns.has(col.key)
+    col.key === 'email' || col.key === 'actions' || FORCED_VISIBLE_COLUMNS.has(col.key) || !hiddenColumns.has(col.key)
   )
 )
 
@@ -856,7 +865,7 @@ const searchQuery = ref('')
 const USER_SORT_STORAGE_KEY = 'admin-users-table-sort'
 const loadInitialSortState = (): { sort_by: string; sort_order: 'asc' | 'desc' } => {
   const fallback = { sort_by: 'created_at', sort_order: 'desc' as 'asc' | 'desc' }
-  const sortable = new Set(['email', 'id', 'username', 'role', 'balance', 'concurrency', 'status', 'last_used_at', 'last_active_at', 'created_at', 'today_balance_usage', 'today_subscription_usage', 'last_30d_usage'])
+  const sortable = new Set(['email', 'id', 'username', 'role', 'balance', 'concurrency', 'status', 'last_used_at', 'last_active_at', 'created_at', 'today_balance_usage', 'today_subscription_usage', 'last_30d_usage', 'current_concurrency', 'available_concurrency'])
   try {
     const raw = localStorage.getItem(USER_SORT_STORAGE_KEY)
     if (!raw) return fallback
@@ -872,6 +881,21 @@ const loadInitialSortState = (): { sort_by: string; sort_order: 'asc' | 'desc' }
   }
 }
 const sortState = reactive(loadInitialSortState())
+type UserSortPreset = 'none' | 'today_balance_usage_desc' | 'today_balance_usage_asc' | 'today_subscription_usage_desc' | 'today_subscription_usage_asc' | 'last_30d_usage_desc' | 'last_30d_usage_asc' | 'current_concurrency_desc' | 'current_concurrency_asc' | 'available_concurrency_desc' | 'available_concurrency_asc'
+const specialSortKeys = new Set([
+  'today_balance_usage',
+  'today_subscription_usage',
+  'last_30d_usage',
+  'current_concurrency',
+  'available_concurrency'
+])
+const syncSpecialSortSelection = () => {
+  if (!specialSortKeys.has(sortState.sort_by)) {
+    concurrencySort.value = 'none'
+    return
+  }
+  concurrencySort.value = `${sortState.sort_by}_${sortState.sort_order}` as UserSortPreset
+}
 
 // Groups data for the groups column
 const allGroups = ref<AdminGroup[]>([])
@@ -996,28 +1020,9 @@ const getAttributeDefinition = (attrId: number): UserAttributeDefinition | undef
   return attributeDefinitions.value.find(d => d.id === attrId)
 }
 const usageStats = ref<Record<string, BatchUserUsageStats>>({})
-const concurrencySort = ref<'none' | 'current_desc' | 'current_asc' | 'available_desc' | 'available_asc'>('none')
-const displayUsers = computed(() => {
-  const next = [...users.value]
-  const byCurrent = (a: AdminUser, b: AdminUser) => (a.current_concurrency ?? 0) - (b.current_concurrency ?? 0)
-  const byAvailable = (a: AdminUser, b: AdminUser) => {
-    const left = Math.max((a.concurrency ?? 0) - (a.current_concurrency ?? 0), 0)
-    const right = Math.max((b.concurrency ?? 0) - (b.current_concurrency ?? 0), 0)
-    return left - right
-  }
-  switch (concurrencySort.value) {
-    case 'current_asc':
-      return next.sort(byCurrent)
-    case 'current_desc':
-      return next.sort((a, b) => byCurrent(b, a))
-    case 'available_asc':
-      return next.sort(byAvailable)
-    case 'available_desc':
-      return next.sort((a, b) => byAvailable(b, a))
-    default:
-      return next
-  }
-})
+const concurrencySort = ref<UserSortPreset>('none')
+syncSpecialSortSelection()
+const displayUsers = computed(() => users.value)
 // User attribute definitions and values
 const attributeDefinitions = ref<UserAttributeDefinition[]>([])
 const userAttributeValues = ref<Record<number, Record<number, string>>>({})
@@ -1284,6 +1289,57 @@ const loadUsers = async () => {
   }
 }
 
+const applySpecialSort = () => {
+  switch (concurrencySort.value) {
+    case 'today_balance_usage_desc':
+      sortState.sort_by = 'today_balance_usage'
+      sortState.sort_order = 'desc'
+      break
+    case 'today_balance_usage_asc':
+      sortState.sort_by = 'today_balance_usage'
+      sortState.sort_order = 'asc'
+      break
+    case 'today_subscription_usage_desc':
+      sortState.sort_by = 'today_subscription_usage'
+      sortState.sort_order = 'desc'
+      break
+    case 'today_subscription_usage_asc':
+      sortState.sort_by = 'today_subscription_usage'
+      sortState.sort_order = 'asc'
+      break
+    case 'last_30d_usage_desc':
+      sortState.sort_by = 'last_30d_usage'
+      sortState.sort_order = 'desc'
+      break
+    case 'last_30d_usage_asc':
+      sortState.sort_by = 'last_30d_usage'
+      sortState.sort_order = 'asc'
+      break
+    case 'current_concurrency_desc':
+      sortState.sort_by = 'current_concurrency'
+      sortState.sort_order = 'desc'
+      break
+    case 'current_concurrency_asc':
+      sortState.sort_by = 'current_concurrency'
+      sortState.sort_order = 'asc'
+      break
+    case 'available_concurrency_desc':
+      sortState.sort_by = 'available_concurrency'
+      sortState.sort_order = 'desc'
+      break
+    case 'available_concurrency_asc':
+      sortState.sort_by = 'available_concurrency'
+      sortState.sort_order = 'asc'
+      break
+    default:
+      sortState.sort_by = 'created_at'
+      sortState.sort_order = 'desc'
+      break
+  }
+  pagination.page = 1
+  loadUsers()
+}
+
 let searchTimeout: ReturnType<typeof setTimeout>
 const handleSearch = () => {
   clearTimeout(searchTimeout)
@@ -1309,6 +1365,7 @@ const handlePageSizeChange = (pageSize: number) => {
 const handleSort = (key: string, order: 'asc' | 'desc') => {
   sortState.sort_by = key
   sortState.sort_order = order
+  syncSpecialSortSelection()
   pagination.page = 1
   loadUsers()
 }

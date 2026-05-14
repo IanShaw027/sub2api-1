@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
@@ -17,19 +18,34 @@ type userRepoStubForListUsers struct {
 	users                 []User
 	err                   error
 	listWithFiltersParams pagination.PaginationParams
+	listWithFiltersCalls  []pagination.PaginationParams
 	lastUsedByUserID      map[int64]*time.Time
 	lastUsedErr           error
 }
 
 func (s *userRepoStubForListUsers) ListWithFilters(_ context.Context, params pagination.PaginationParams, _ UserListFilters) ([]User, *pagination.PaginationResult, error) {
 	s.listWithFiltersParams = params
+	s.listWithFiltersCalls = append(s.listWithFiltersCalls, params)
 	if s.err != nil {
 		return nil, nil, s.err
 	}
-	out := make([]User, len(s.users))
-	copy(out, s.users)
+	out := append([]User(nil), s.users...)
+	start := params.Offset()
+	if start >= len(out) {
+		return []User{}, &pagination.PaginationResult{
+			Total:    int64(len(out)),
+			Page:     params.Page,
+			PageSize: params.PageSize,
+		}, nil
+	}
+	limit := params.Limit()
+	end := start + limit
+	if end > len(out) {
+		end = len(out)
+	}
+	out = out[start:end]
 	return out, &pagination.PaginationResult{
-		Total:    int64(len(out)),
+		Total:    int64(len(s.users)),
 		Page:     params.Page,
 		PageSize: params.PageSize,
 	}, nil
@@ -164,6 +180,89 @@ func TestAdminService_ListUsers_PassesSortParams(t *testing.T) {
 		SortBy:    "email",
 		SortOrder: "ASC",
 	}, userRepo.listWithFiltersParams)
+}
+
+func TestAdminService_ListUsers_SortsByLiveAvailableConcurrency(t *testing.T) {
+	userRepo := &userRepoStubForListUsers{
+		users: []User{
+			{ID: 1, Email: "one@example.com", Concurrency: 5},
+			{ID: 2, Email: "two@example.com", Concurrency: 10},
+			{ID: 3, Email: "three@example.com", Concurrency: 3},
+		},
+	}
+	cache := &stubConcurrencyCacheForTest{
+		usersLoadBatch: map[int64]*UserLoadInfo{
+			1: {UserID: 1, CurrentConcurrency: 1},
+			2: {UserID: 2, CurrentConcurrency: 5},
+			3: {UserID: 3, CurrentConcurrency: 0},
+		},
+	}
+	svc := &adminServiceImpl{
+		userRepo:           userRepo,
+		concurrencyService: NewConcurrencyService(cache),
+	}
+
+	users, total, err := svc.ListUsers(context.Background(), 1, 2, UserListFilters{}, "available_concurrency", "asc")
+	require.NoError(t, err)
+	require.Equal(t, int64(3), total)
+	require.Len(t, users, 2)
+	require.Equal(t, int64(3), users[0].ID)
+	require.Equal(t, int64(1), users[1].ID)
+}
+
+func TestAdminService_ListUsers_LiveConcurrencySortLoadsBeyondPaginationCap(t *testing.T) {
+	users := make([]User, 0, 1001)
+	loadMap := make(map[int64]*UserLoadInfo, 1001)
+	for i := 1; i <= 1001; i++ {
+		id := int64(i)
+		users = append(users, User{ID: id, Email: strconv.Itoa(i) + "@example.com", Concurrency: 5})
+		loadMap[id] = &UserLoadInfo{UserID: id, CurrentConcurrency: i}
+	}
+	userRepo := &userRepoStubForListUsers{users: users}
+	cache := &stubConcurrencyCacheForTest{
+		usersLoadBatch: loadMap,
+	}
+	svc := &adminServiceImpl{
+		userRepo:           userRepo,
+		concurrencyService: NewConcurrencyService(cache),
+	}
+
+	got, total, err := svc.ListUsers(context.Background(), 1, 2, UserListFilters{}, "current_concurrency", "desc")
+	require.NoError(t, err)
+	require.Equal(t, int64(1001), total)
+	require.Len(t, got, 2)
+	require.Equal(t, int64(1001), got[0].ID)
+	require.Equal(t, int64(1000), got[1].ID)
+	require.Len(t, userRepo.listWithFiltersCalls, 3)
+	require.Equal(t, 1, userRepo.listWithFiltersCalls[0].Page)
+	require.Equal(t, 1, userRepo.listWithFiltersCalls[0].PageSize)
+	require.Equal(t, 1, userRepo.listWithFiltersCalls[1].Page)
+	require.Equal(t, 1000, userRepo.listWithFiltersCalls[1].PageSize)
+	require.Equal(t, 2, userRepo.listWithFiltersCalls[2].Page)
+	require.Equal(t, 1000, userRepo.listWithFiltersCalls[2].PageSize)
+}
+
+func TestAdminService_ListUsers_LiveConcurrencySortFallsBackDeterministicallyWhenLoadFails(t *testing.T) {
+	userRepo := &userRepoStubForListUsers{
+		users: []User{
+			{ID: 1, Email: "one@example.com", Concurrency: 5},
+			{ID: 2, Email: "two@example.com", Concurrency: 10},
+			{ID: 3, Email: "three@example.com", Concurrency: 3},
+		},
+	}
+	cache := &stubConcurrencyCacheForTest{
+		usersLoadErr: errors.New("redis unavailable"),
+	}
+	svc := &adminServiceImpl{
+		userRepo:           userRepo,
+		concurrencyService: NewConcurrencyService(cache),
+	}
+
+	users, total, err := svc.ListUsers(context.Background(), 1, 3, UserListFilters{}, "available_concurrency", "desc")
+	require.NoError(t, err)
+	require.Equal(t, int64(3), total)
+	require.Len(t, users, 3)
+	require.Equal(t, []int64{2, 1, 3}, []int64{users[0].ID, users[1].ID, users[2].ID})
 }
 
 func TestAdminService_ListUsers_PopulatesLastUsedAt(t *testing.T) {

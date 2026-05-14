@@ -212,10 +212,15 @@ type ChangePasswordRequest struct {
 	NewPassword     string `json:"new_password"`
 }
 
+type userSettingReader interface {
+	GetValue(ctx context.Context, key string) (string, error)
+	GetMultiple(ctx context.Context, keys []string) (map[string]string, error)
+}
+
 // UserService 用户服务
 type UserService struct {
 	userRepo             UserRepository
-	settingRepo          SettingRepository
+	settingRepo          userSettingReader
 	authCacheInvalidator APIKeyAuthCacheInvalidator
 	billingCache         BillingCache
 	mediaService         *MediaService

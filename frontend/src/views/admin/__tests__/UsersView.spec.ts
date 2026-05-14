@@ -212,16 +212,31 @@ describe('admin UsersView', () => {
   })
 
   it('sorts the current page by runtime current and available concurrency', async () => {
-    listUsers.mockResolvedValue({
-      items: [
-        createAdminUser({ id: 1, email: 'low-current@example.com', concurrency: 5, current_concurrency: 1 }),
-        createAdminUser({ id: 2, email: 'high-current@example.com', concurrency: 5, current_concurrency: 4 }),
-        createAdminUser({ id: 3, email: 'high-available@example.com', concurrency: 10, current_concurrency: 2 })
-      ],
-      total: 3,
-      page: 1,
-      page_size: 20,
-      pages: 1
+    const rows = [
+      createAdminUser({ id: 1, email: 'low-current@example.com', concurrency: 5, current_concurrency: 1 }),
+      createAdminUser({ id: 2, email: 'high-current@example.com', concurrency: 5, current_concurrency: 4 }),
+      createAdminUser({ id: 3, email: 'high-available@example.com', concurrency: 10, current_concurrency: 2 })
+    ]
+    listUsers.mockImplementation(async (_page, _pageSize, params) => {
+      const items = [...rows]
+      if (params.sort_by === 'current_concurrency') {
+        items.sort((a, b) => params.sort_order === 'asc'
+          ? (a.current_concurrency ?? 0) - (b.current_concurrency ?? 0)
+          : (b.current_concurrency ?? 0) - (a.current_concurrency ?? 0))
+      }
+      if (params.sort_by === 'available_concurrency') {
+        const available = (row: AdminUser) => Math.max((row.concurrency ?? 0) - (row.current_concurrency ?? 0), 0)
+        items.sort((a, b) => params.sort_order === 'asc'
+          ? available(a) - available(b)
+          : available(b) - available(a))
+      }
+      return {
+        items,
+        total: 3,
+        page: 1,
+        page_size: 20,
+        pages: 1
+      }
     })
 
     const wrapper = mount(UsersView, {
@@ -254,15 +269,31 @@ describe('admin UsersView', () => {
 
     await flushPromises()
 
-    await wrapper.get('[data-test="concurrency-sort"]').setValue('current_desc')
+    await wrapper.get('[data-test="concurrency-sort"]').setValue('current_concurrency_desc')
     await flushPromises()
+    expect(listUsers).toHaveBeenLastCalledWith(
+      1,
+      20,
+      expect.objectContaining({
+        sort_by: 'current_concurrency',
+        sort_order: 'desc'
+      }),
+      expect.any(Object)
+    )
     expect(wrapper.get('[data-test="row-order"]').text()).toBe('high-current@example.com,high-available@example.com,low-current@example.com')
 
-    await wrapper.get('[data-test="concurrency-sort"]').setValue('available_desc')
+    await wrapper.get('[data-test="concurrency-sort"]').setValue('available_concurrency_desc')
     await flushPromises()
+    expect(listUsers).toHaveBeenLastCalledWith(
+      1,
+      20,
+      expect.objectContaining({
+        sort_by: 'available_concurrency',
+        sort_order: 'desc'
+      }),
+      expect.any(Object)
+    )
     expect(wrapper.get('[data-test="row-order"]').text()).toBe('high-available@example.com,low-current@example.com,high-current@example.com')
-
-    expect(listUsers).toHaveBeenCalledTimes(1)
   })
 
   afterEach(() => {
