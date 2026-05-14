@@ -665,11 +665,11 @@ func isUsageCostSort(sortBy string) bool {
 func usageSortExpression(sortBy string) string {
 	switch strings.ToLower(strings.TrimSpace(sortBy)) {
 	case "today_subscription_usage":
-		return "COALESCE(usage_stats.today_subscription_actual_cost, 0)"
+		return "COALESCE(us.today_subscription_actual_cost, 0)"
 	case "last_30d_usage":
-		return "COALESCE(usage_stats.total_actual_cost, 0)"
+		return "COALESCE(us.total_actual_cost, 0)"
 	default:
-		return "COALESCE(usage_stats.today_balance_actual_cost, 0)"
+		return "COALESCE(us.today_balance_actual_cost, 0)"
 	}
 }
 
