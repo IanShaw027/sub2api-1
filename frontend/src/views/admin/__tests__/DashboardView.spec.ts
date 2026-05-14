@@ -50,39 +50,49 @@ const formatLocalDate = (date: Date): string => {
 }
 
 const createDashboardStats = (): DashboardStats => ({
-  total_users: 0,
-  today_new_users: 0,
-  active_users: 0,
-  hourly_active_users: 0,
+  total_users: 4567,
+  today_new_users: 12,
+  active_users: 34,
+  hourly_active_users: 5,
   stats_updated_at: '',
   stats_stale: false,
-  total_api_keys: 0,
-  active_api_keys: 0,
-  total_accounts: 0,
-  normal_accounts: 0,
-  error_accounts: 0,
+  total_api_keys: 100,
+  active_api_keys: 80,
+  total_accounts: 20,
+  normal_accounts: 18,
+  error_accounts: 2,
   ratelimit_accounts: 0,
   overload_accounts: 0,
-  total_requests: 0,
+  total_requests: 1000,
   total_input_tokens: 0,
   total_output_tokens: 0,
   total_cache_creation_tokens: 0,
   total_cache_read_tokens: 0,
-  total_tokens: 0,
-  total_cost: 0,
-  total_actual_cost: 0,
-  today_requests: 0,
+  total_tokens: 2500000,
+  total_cost: 123.45,
+  total_actual_cost: 120.12,
+  total_account_cost: 118.88,
+  total_balance_actual_cost: 70.1,
+  total_subscription_actual_cost: 50.02,
+  total_recharge_amount: 500.5,
+  total_refund_amount: 10.2,
+  today_requests: 200,
   today_input_tokens: 0,
   today_output_tokens: 0,
   today_cache_creation_tokens: 0,
   today_cache_read_tokens: 0,
-  today_tokens: 0,
-  today_cost: 0,
-  today_actual_cost: 0,
-  average_duration_ms: 0,
+  today_tokens: 125000,
+  today_cost: 12.34,
+  today_actual_cost: 11.11,
+  today_account_cost: 10.01,
+  today_balance_actual_cost: 6.6,
+  today_subscription_actual_cost: 4.4,
+  today_recharge_amount: 30.3,
+  today_refund_amount: 1.2,
+  average_duration_ms: 245,
   uptime: 0,
-  rpm: 0,
-  tpm: 0
+  rpm: 22,
+  tpm: 3333
 })
 
 describe('admin DashboardView', () => {
@@ -121,6 +131,7 @@ describe('admin DashboardView', () => {
           Icon: true,
           DateRangePicker: true,
           Select: true,
+          HelpTooltip: { template: '<div class="help-tooltip-stub"><slot name="trigger" /></div>' },
           ModelDistributionChart: true,
           TokenUsageTrend: true,
           Line: true
@@ -139,5 +150,36 @@ describe('admin DashboardView', () => {
       end_date: formatLocalDate(now),
       granularity: 'hour'
     }))
+  })
+
+  it('shows dashboard breakdowns as value-only tooltip triggers', async () => {
+    const wrapper = mount(DashboardView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          LoadingSpinner: true,
+          Icon: true,
+          DateRangePicker: true,
+          Select: true,
+          HelpTooltip: { template: '<div class="help-tooltip-stub"><slot name="trigger" /></div>' },
+          ModelDistributionChart: true,
+          TokenUsageTrend: true,
+          Line: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('admin.dashboard.balanceConsumption')
+    expect(wrapper.text()).not.toContain('admin.dashboard.subscriptionConsumption')
+    expect(wrapper.text()).not.toContain('admin.dashboard.rechargeAmount')
+    expect(wrapper.text()).not.toContain('admin.dashboard.refundAmount')
+    expect(wrapper.get('[data-test="today-token-actual"]').text()).toBe('$11.11')
+    expect(wrapper.get('[data-test="today-token-account"]').text()).toBe('$10.01')
+    expect(wrapper.get('[data-test="today-token-standard"]').text()).toBe('$12.34')
+    expect(wrapper.get('[data-test="today-financial-balance"]').text()).toBe('$6.60')
+    expect(wrapper.get('[data-test="today-financial-refund"]').text()).toBe('$1.20')
+    expect(wrapper.get('[data-test="total-financial-recharge"]').text()).toBe('$500.50')
   })
 })

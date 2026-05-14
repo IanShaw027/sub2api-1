@@ -1700,6 +1700,10 @@ export interface DashboardStats {
   total_cost: number // 累计标准计费
   total_actual_cost: number // 累计实际扣除
   total_account_cost: number // 累计账号成本
+  total_balance_actual_cost: number
+  total_subscription_actual_cost: number
+  total_recharge_amount: number
+  total_refund_amount: number
 
   // 今日 Token 使用统计
   today_requests: number
@@ -1711,6 +1715,10 @@ export interface DashboardStats {
   today_cost: number // 今日标准计费
   today_actual_cost: number // 今日实际扣除
   today_account_cost: number // 今日账号成本
+  today_balance_actual_cost: number
+  today_subscription_actual_cost: number
+  today_recharge_amount: number
+  today_refund_amount: number
 
   // 系统运行统计
   average_duration_ms: number // 平均响应时间
