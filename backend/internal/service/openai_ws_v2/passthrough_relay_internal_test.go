@@ -296,12 +296,22 @@ func TestParseUsageAndEnrichCoverage(t *testing.T) {
 	require.Equal(t, 1, state.usage.OutputTokens)
 	require.Equal(t, 1, state.usage.CacheReadInputTokens)
 
+	parseUsageAndAccumulate(
+		state,
+		[]byte(`{"type":"response.incomplete","response":{"usage":{"input_tokens":4,"output_tokens":3,"input_tokens_details":{"cached_tokens":2}}}}`),
+		"response.incomplete",
+		nil,
+	)
+	require.Equal(t, 6, state.usage.InputTokens)
+	require.Equal(t, 4, state.usage.OutputTokens)
+	require.Equal(t, 3, state.usage.CacheReadInputTokens)
+
 	result := &RelayResult{}
 	enrichResult(result, state, 5*time.Millisecond)
 	require.Equal(t, state.usage.InputTokens, result.Usage.InputTokens)
 	require.Equal(t, 5*time.Millisecond, result.Duration)
 	parseUsageAndAccumulate(state, []byte(`{"type":"response.in_progress","response":{"usage":{"input_tokens":9}}}`), "response.in_progress", nil)
-	require.Equal(t, 2, state.usage.InputTokens)
+	require.Equal(t, 6, state.usage.InputTokens)
 	enrichResult(nil, state, 0)
 }
 
@@ -346,6 +356,75 @@ func TestEmitTurnCompleteCoverage(t *testing.T) {
 	require.Equal(t, 2, got.Usage.InputTokens)
 	require.Equal(t, 3, got.Usage.OutputTokens)
 	require.Equal(t, "", got.RequestModel)
+}
+
+func TestObserveUpstreamMessage_DedupesTerminalUsageAndCompletionByResponseID(t *testing.T) {
+	t.Parallel()
+
+	state := &relayState{requestModel: "gpt-5"}
+	startAt := time.Unix(0, 0)
+	now := startAt
+	nowFn := func() time.Time {
+		now = now.Add(5 * time.Millisecond)
+		return now
+	}
+
+	turns := make([]RelayTurnResult, 0, 2)
+	onTurnComplete := func(turn RelayTurnResult) {
+		turns = append(turns, turn)
+	}
+
+	first := observeUpstreamMessage(
+		state,
+		[]byte(`{"type":"response.incomplete","response":{"id":"resp_dup","usage":{"input_tokens":4,"output_tokens":3,"input_tokens_details":{"cached_tokens":2}}}}`),
+		startAt,
+		nowFn,
+		nil,
+	)
+	require.False(t, first.terminal)
+	require.Equal(t, 4, state.usage.InputTokens)
+	require.Equal(t, 3, state.usage.OutputTokens)
+	require.Equal(t, 2, state.usage.CacheReadInputTokens)
+	flushed := openAIWSRelayFlushPendingTerminals(state, "")
+	require.Len(t, flushed, 1)
+	emitTurnComplete(onTurnComplete, state, flushed[0])
+	require.Len(t, turns, 1)
+	require.Equal(t, "resp_dup", turns[0].RequestID)
+	require.Equal(t, "response.incomplete", turns[0].TerminalEventType)
+	require.Equal(t, 4, turns[0].Usage.InputTokens)
+	require.Equal(t, 3, turns[0].Usage.OutputTokens)
+
+	duplicate := observeUpstreamMessage(
+		state,
+		[]byte(`{"type":"response.cancelled","response":{"id":"resp_dup","usage":{"input_tokens":11,"output_tokens":7,"input_tokens_details":{"cached_tokens":5}}}}`),
+		startAt,
+		nowFn,
+		nil,
+	)
+	require.False(t, duplicate.terminal)
+	require.Equal(t, 4, state.usage.InputTokens)
+	require.Equal(t, 3, state.usage.OutputTokens)
+	require.Equal(t, 2, state.usage.CacheReadInputTokens)
+	require.Len(t, turns, 1)
+	require.Len(t, openAIWSRelayFlushPendingTerminals(state, ""), 0)
+
+	distinct := observeUpstreamMessage(
+		state,
+		[]byte(`{"type":"response.canceled","response":{"id":"resp_next","usage":{"input_tokens":2,"output_tokens":1,"input_tokens_details":{"cached_tokens":1}}}}`),
+		startAt,
+		nowFn,
+		nil,
+	)
+	require.False(t, distinct.terminal)
+	require.Equal(t, 6, state.usage.InputTokens)
+	require.Equal(t, 4, state.usage.OutputTokens)
+	require.Equal(t, 3, state.usage.CacheReadInputTokens)
+	flushed = openAIWSRelayFlushPendingTerminals(state, "")
+	require.Len(t, flushed, 1)
+	emitTurnComplete(onTurnComplete, state, flushed[0])
+	require.Len(t, turns, 2)
+	require.Equal(t, "resp_next", turns[1].RequestID)
+	require.Equal(t, "response.canceled", turns[1].TerminalEventType)
 }
 
 func TestIsDisconnectErrorCoverage_CloseStatusesAndMessageBranches(t *testing.T) {
@@ -395,6 +474,14 @@ func TestRelayTurnTimingHelpersCoverage(t *testing.T) {
 	// 删除不存在键
 	_, ok = openAIWSRelayDeleteTurnTiming(state, "resp_a")
 	require.False(t, ok)
+
+	require.False(t, openAIWSRelayHasSeenTerminal(nil, "resp_nil"))
+	require.False(t, openAIWSRelayHasSeenTerminal(state, ""))
+	require.False(t, openAIWSRelayHasSeenTerminal(state, "resp_a"))
+	openAIWSRelayMarkTerminalSeen(nil, "resp_nil")
+	openAIWSRelayMarkTerminalSeen(state, "")
+	openAIWSRelayMarkTerminalSeen(state, "resp_a")
+	require.True(t, openAIWSRelayHasSeenTerminal(state, "resp_a"))
 }
 
 func TestObserveUpstreamMessage_ResponseIDFallbackPolicy(t *testing.T) {

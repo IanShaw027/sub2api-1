@@ -131,6 +131,13 @@ func i64p(v int64) *int64 {
 	return &v
 }
 
+func derefStringPtr(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
 func newOpenAIRecordUsageServiceForTest(usageRepo UsageLogRepository, userRepo UserRepository, subRepo UserSubscriptionRepository, rateRepo UserGroupRateRepository) *OpenAIGatewayService {
 	cfg := &config.Config{}
 	cfg.Default.RateMultiplier = 1.1
@@ -240,6 +247,43 @@ func TestOpenAIGatewayServiceRecordUsage_ZeroUsageStillWritesUsageLog(t *testing
 	require.Zero(t, billingRepo.lastCmd.APIKeyQuotaCost)
 	require.Zero(t, billingRepo.lastCmd.APIKeyRateLimitCost)
 	require.Zero(t, billingRepo.lastCmd.AccountQuotaCost)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_ZeroUsageWithEndpointsStillWritesUsageLog(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	quotaSvc := &openAIRecordUsageAPIKeyQuotaStub{}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, userRepo, subRepo, nil)
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID: "resp_zero_usage_skip",
+			Usage:     OpenAIUsage{},
+			Model:     "gpt-5.1",
+			Duration:  time.Second,
+		},
+		APIKey:           &APIKey{ID: 1001, Quota: 100, Group: &Group{RateMultiplier: 1}},
+		User:             &User{ID: 2001},
+		Account:          &Account{ID: 3001, Type: AccountTypeAPIKey},
+		InboundEndpoint:  "/v1/responses",
+		UpstreamEndpoint: "/v1/responses/compact",
+		APIKeyService:    quotaSvc,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, billingRepo.calls)
+	require.Equal(t, 1, usageRepo.calls)
+	require.Equal(t, 0, userRepo.deductCalls)
+	require.Equal(t, 0, subRepo.incrementCalls)
+	require.Equal(t, 0, quotaSvc.quotaCalls)
+	require.Equal(t, 0, quotaSvc.rateLimitCalls)
+
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, "resp_zero_usage_skip", usageRepo.lastLog.RequestID)
+	require.Equal(t, "/v1/responses", derefStringPtr(usageRepo.lastLog.InboundEndpoint))
+	require.Equal(t, "/v1/responses/compact", derefStringPtr(usageRepo.lastLog.UpstreamEndpoint))
 }
 
 func TestOpenAIGatewayServiceRecordUsage_UsesUserSpecificGroupRate(t *testing.T) {

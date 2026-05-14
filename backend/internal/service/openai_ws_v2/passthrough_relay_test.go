@@ -453,6 +453,51 @@ func TestRelay_OnTurnComplete_PerTerminalEvent(t *testing.T) {
 	require.Equal(t, 5, result.Usage.OutputTokens)
 }
 
+func TestRelay_DedupesDuplicateTerminalEventsByResponseID(t *testing.T) {
+	t.Parallel()
+
+	clientConn := newPassthroughTestFrameConn(nil, false)
+	upstreamConn := newPassthroughTestFrameConn([]passthroughTestFrame{
+		{
+			msgType: coderws.MessageText,
+			payload: []byte(`{"type":"response.incomplete","response":{"id":"resp_dup","usage":{"input_tokens":4,"output_tokens":3,"input_tokens_details":{"cached_tokens":2}}}}`),
+		},
+		{
+			msgType: coderws.MessageText,
+			payload: []byte(`{"type":"response.cancelled","response":{"id":"resp_dup","usage":{"input_tokens":11,"output_tokens":7,"input_tokens_details":{"cached_tokens":5}}}}`),
+		},
+	}, true)
+
+	firstPayload := []byte(`{"type":"response.create","model":"gpt-5.3-codex","input":[]}`)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	turns := make([]RelayTurnResult, 0, 2)
+	result, relayExit := Relay(ctx, clientConn, upstreamConn, firstPayload, RelayOptions{
+		OnTurnComplete: func(turn RelayTurnResult) {
+			turns = append(turns, turn)
+		},
+	})
+	require.Nil(t, relayExit)
+	require.Len(t, turns, 1)
+	require.Equal(t, "resp_dup", turns[0].RequestID)
+	require.Equal(t, "response.cancelled", turns[0].TerminalEventType)
+	require.Equal(t, 11, turns[0].Usage.InputTokens)
+	require.Equal(t, 7, turns[0].Usage.OutputTokens)
+	require.Equal(t, 5, turns[0].Usage.CacheReadInputTokens)
+
+	require.Equal(t, "resp_dup", result.RequestID)
+	require.Equal(t, "response.cancelled", result.TerminalEventType)
+	require.Equal(t, 11, result.Usage.InputTokens)
+	require.Equal(t, 7, result.Usage.OutputTokens)
+	require.Equal(t, 5, result.Usage.CacheReadInputTokens)
+
+	clientWrites := clientConn.Writes()
+	require.Len(t, clientWrites, 2)
+	require.JSONEq(t, `{"type":"response.incomplete","response":{"id":"resp_dup","usage":{"input_tokens":4,"output_tokens":3,"input_tokens_details":{"cached_tokens":2}}}}`, string(clientWrites[0].payload))
+	require.JSONEq(t, `{"type":"response.cancelled","response":{"id":"resp_dup","usage":{"input_tokens":11,"output_tokens":7,"input_tokens_details":{"cached_tokens":5}}}}`, string(clientWrites[1].payload))
+}
+
 func TestRelay_OnTurnComplete_ProvidesTurnMetrics(t *testing.T) {
 	t.Parallel()
 
