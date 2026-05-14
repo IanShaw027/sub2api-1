@@ -256,7 +256,7 @@ func TestAcquireAccountSlotForGroup_GroupTrackingFailureDoesNotBlockAccountSlot(
 	require.Empty(t, cache.groupReleaseCalls, "group slot was not tracked and should not be released")
 }
 
-func TestAcquireAccountSlotForGroup_UnlimitedConcurrencyTracksGroupSlot(t *testing.T) {
+func TestAcquireAccountSlotForGroup_UnlimitedConcurrencySkipsGroupTracking(t *testing.T) {
 	cache := &stubConcurrencyCacheForTest{acquireResult: true}
 	svc := NewConcurrencyService(cache)
 	groupID := int64(7)
@@ -267,10 +267,8 @@ func TestAcquireAccountSlotForGroup_UnlimitedConcurrencyTracksGroupSlot(t *testi
 	require.NotNil(t, result.ReleaseFunc)
 	result.ReleaseFunc()
 
-	require.Len(t, cache.groupAcquireCalls, 1)
-	require.Len(t, cache.groupReleaseCalls, 1)
-	require.Equal(t, groupID, cache.groupAcquireCalls[0].groupID)
-	require.Equal(t, cache.groupAcquireCalls[0].requestID, cache.groupReleaseCalls[0].requestID)
+	require.Empty(t, cache.groupAcquireCalls)
+	require.Empty(t, cache.groupReleaseCalls)
 	require.Empty(t, cache.releasedAccountIDs)
 }
 

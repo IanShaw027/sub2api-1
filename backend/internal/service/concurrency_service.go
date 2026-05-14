@@ -146,12 +146,13 @@ func (s *ConcurrencyService) AcquireAccountSlotForGroup(ctx context.Context, acc
 	var groupTracker groupConcurrencyCache
 	var groupTracked bool
 	var requestID string
+	trackGroupUsage := maxConcurrency > 0
 	if groupID != nil && *groupID > 0 {
 		groupTracker, _ = s.cache.(groupConcurrencyCache)
 	}
 
 	trackGroupSlot := func(ctx context.Context) {
-		if groupTracker == nil || groupID == nil || *groupID <= 0 {
+		if !trackGroupUsage || groupTracker == nil || groupID == nil || *groupID <= 0 {
 			return
 		}
 		if err := groupTracker.AcquireGroupSlot(ctx, *groupID, requestID); err != nil {
@@ -171,15 +172,9 @@ func (s *ConcurrencyService) AcquireAccountSlotForGroup(ctx context.Context, acc
 
 	// If maxConcurrency is 0 or negative, no limit
 	if maxConcurrency <= 0 {
-		requestID = generateRequestID()
-		trackGroupSlot(ctx)
 		return &AcquireResult{
-			Acquired: true,
-			ReleaseFunc: func() {
-				bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				releaseGroupSlot(bgCtx)
-			},
+			Acquired:    true,
+			ReleaseFunc: func() {},
 		}, nil
 	}
 
