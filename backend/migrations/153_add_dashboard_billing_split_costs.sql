@@ -11,7 +11,7 @@ ALTER TABLE usage_dashboard_daily
 
 WITH hourly_split AS (
     SELECT
-        date_trunc('hour', created_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS bucket_start,
+        date_trunc('hour', created_at AT TIME ZONE current_setting('TIMEZONE')) AT TIME ZONE current_setting('TIMEZONE') AS bucket_start,
         COALESCE(SUM(actual_cost) FILTER (WHERE billing_type = 0), 0) AS balance_actual_cost,
         COALESCE(SUM(actual_cost) FILTER (WHERE billing_type = 1), 0) AS subscription_actual_cost
     FROM usage_logs
@@ -26,7 +26,7 @@ WHERE h.bucket_start = s.bucket_start;
 
 WITH daily_split AS (
     SELECT
-        (created_at AT TIME ZONE 'UTC')::date AS bucket_date,
+        (created_at AT TIME ZONE current_setting('TIMEZONE'))::date AS bucket_date,
         COALESCE(SUM(actual_cost) FILTER (WHERE billing_type = 0), 0) AS balance_actual_cost,
         COALESCE(SUM(actual_cost) FILTER (WHERE billing_type = 1), 0) AS subscription_actual_cost
     FROM usage_logs

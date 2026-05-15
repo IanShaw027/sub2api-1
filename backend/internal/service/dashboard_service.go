@@ -124,6 +124,24 @@ func (s *DashboardService) GetDashboardStats(ctx context.Context) (*usagestats.D
 	return stats, nil
 }
 
+func (s *DashboardService) GetDashboardStatsWithRange(ctx context.Context, start, end time.Time) (*usagestats.DashboardStats, error) {
+	if fetcher, ok := s.usageRepo.(dashboardStatsRangeFetcher); ok {
+		stats, err := fetcher.GetDashboardStatsWithRange(ctx, start, end)
+		if err != nil {
+			return nil, fmt.Errorf("get dashboard stats with range: %w", err)
+		}
+		s.applyAggregationStatus(ctx, stats)
+		return stats, nil
+	}
+
+	stats, err := s.usageRepo.GetDashboardStats(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get dashboard stats with range fallback: %w", err)
+	}
+	s.applyAggregationStatus(ctx, stats)
+	return stats, nil
+}
+
 func (s *DashboardService) GetUsageTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8, billingMode string) ([]usagestats.TrendDataPoint, error) {
 	trend, err := s.usageRepo.GetUsageTrendWithFilters(ctx, startTime, endTime, granularity, userID, apiKeyID, accountID, groupID, model, requestType, stream, billingType, billingMode)
 	if err != nil {

@@ -202,6 +202,16 @@ func TestMigration135AllowsGitHubAndGoogleAuthProviders(t *testing.T) {
 	require.Contains(t, sql, "'google'")
 }
 
+func TestMigration153UsesConfiguredTimezoneBucketsForSplitCostBackfill(t *testing.T) {
+	content, err := FS.ReadFile("153_add_dashboard_billing_split_costs.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "date_trunc('hour', created_at AT TIME ZONE current_setting('TIMEZONE')) AT TIME ZONE current_setting('TIMEZONE')")
+	require.Contains(t, sql, "(created_at AT TIME ZONE current_setting('TIMEZONE'))::date AS bucket_date")
+	require.NotContains(t, sql, "AT TIME ZONE 'UTC'")
+}
+
 func TestMigration132BackfillsHistoricalAffiliateLedgerRowsSafely(t *testing.T) {
 	content, err := FS.ReadFile("132_affiliate_policy_limits.sql")
 	require.NoError(t, err)

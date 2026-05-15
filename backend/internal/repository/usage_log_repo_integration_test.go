@@ -921,6 +921,144 @@ func (s *UsageLogRepoSuite) TestDashboardStatsWithRange_Fallback() {
 	s.Require().InEpsilon(150.0, stats.AverageDurationMs, 0.0001)
 }
 
+func (s *UsageLogRepoSuite) TestDashboardStatsWithRange_PreservesTodayFieldsWithoutLeakingIntoRangeTotals() {
+	todayStart := timezone.Today()
+	rangeStart := todayStart.Add(-24 * time.Hour)
+	rangeEnd := todayStart
+	todayUsageAt := todayStart.Add(2 * time.Hour)
+	todayRechargeCreatedAt := todayStart.Add(3 * time.Hour)
+	todayRechargePaidAt := todayStart.Add(3*time.Hour + 5*time.Minute)
+	todayRefundAt := todayStart.Add(3*time.Hour + 10*time.Minute)
+
+	user := mustCreateUser(s.T(), s.client, &service.User{Email: "range-split@test.com"})
+	apiKey := mustCreateApiKey(s.T(), s.client, &service.APIKey{UserID: user.ID, Key: "sk-range-split", Name: "k"})
+	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "acc-range-split"})
+
+	yesterdayBalanceCost := 1.25
+	yesterdaySubscriptionCost := 2.5
+	todayBalanceCost := 3.75
+	todaySubscriptionCost := 4.5
+	for _, input := range []struct {
+		requestID   string
+		billingType int8
+		actualCost  float64
+		totalCost   float64
+		createdAt   time.Time
+	}{
+		{
+			requestID:   uuid.NewString(),
+			billingType: service.BillingTypeBalance,
+			actualCost:  yesterdayBalanceCost,
+			totalCost:   yesterdayBalanceCost,
+			createdAt:   rangeStart.Add(2 * time.Hour),
+		},
+		{
+			requestID:   uuid.NewString(),
+			billingType: service.BillingTypeSubscription,
+			actualCost:  yesterdaySubscriptionCost,
+			totalCost:   yesterdaySubscriptionCost,
+			createdAt:   rangeStart.Add(4 * time.Hour),
+		},
+			{
+				requestID:   uuid.NewString(),
+				billingType: service.BillingTypeBalance,
+				actualCost:  todayBalanceCost,
+				totalCost:   todayBalanceCost,
+				createdAt:   todayUsageAt,
+			},
+			{
+				requestID:   uuid.NewString(),
+				billingType: service.BillingTypeSubscription,
+				actualCost:  todaySubscriptionCost,
+				totalCost:   todaySubscriptionCost,
+				createdAt:   todayUsageAt.Add(10 * time.Minute),
+			},
+		} {
+		_, err := s.repo.Create(s.ctx, &service.UsageLog{
+			UserID:       user.ID,
+			APIKeyID:     apiKey.ID,
+			AccountID:    account.ID,
+			RequestID:    input.requestID,
+			Model:        "claude-3",
+			BillingType:  input.billingType,
+			InputTokens:  1,
+			OutputTokens: 1,
+			TotalCost:    input.totalCost,
+			ActualCost:   input.actualCost,
+			CreatedAt:    input.createdAt,
+		})
+		s.Require().NoError(err)
+	}
+
+	_, err := s.client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Email).
+		SetAmount(8.5).
+		SetPayAmount(8.5).
+		SetFeeRate(0).
+		SetRechargeCode("RANGE-RECHARGE-YESTERDAY").
+		SetOutTradeNo("range-recharge-yesterday").
+		SetPaymentType("wxpay").
+		SetPaymentTradeNo("trade-range-recharge-yesterday").
+		SetOrderType("balance").
+		SetStatus(service.OrderStatusCompleted).
+		SetExpiresAt(rangeStart.Add(8 * time.Hour)).
+		SetPaidAt(rangeStart.Add(6 * time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("localhost").
+		SetSrcURL("https://example.com").
+		SetCreatedAt(rangeStart.Add(5 * time.Hour)).
+		SetUpdatedAt(rangeStart.Add(6 * time.Hour)).
+		Save(s.ctx)
+	s.Require().NoError(err)
+
+	refundOrder, err := s.client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Email).
+		SetAmount(5.0).
+		SetPayAmount(5.0).
+		SetFeeRate(0).
+		SetRechargeCode("RANGE-RECHARGE-TODAY").
+		SetOutTradeNo("range-recharge-today").
+		SetPaymentType("wxpay").
+		SetPaymentTradeNo("trade-range-recharge-today").
+		SetOrderType("balance").
+		SetStatus(service.OrderStatusRefunded).
+		SetRefundAmount(1.75).
+		SetRefundAt(todayRefundAt).
+		SetExpiresAt(todayRechargePaidAt.Add(2 * time.Hour)).
+		SetPaidAt(todayRechargePaidAt).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("localhost").
+		SetSrcURL("https://example.com").
+		SetCreatedAt(todayRechargeCreatedAt).
+		SetUpdatedAt(todayRefundAt).
+		Save(s.ctx)
+	s.Require().NoError(err)
+
+	_, err = s.client.PaymentAuditLog.Create().
+		SetOrderID(fmt.Sprintf("%d", refundOrder.ID)).
+		SetAction("REFUND_SUCCESS").
+		SetDetail(`{"refundAmount":1.75,"reason":"range-regression"}`).
+		SetOperator("admin").
+		SetCreatedAt(todayRefundAt).
+		Save(s.ctx)
+	s.Require().NoError(err)
+
+	stats, err := s.repo.GetDashboardStatsWithRange(s.ctx, rangeStart, rangeEnd)
+	s.Require().NoError(err)
+	s.Require().InDelta(yesterdayBalanceCost, stats.TotalBalanceActualCost, 0.000001)
+	s.Require().InDelta(yesterdaySubscriptionCost, stats.TotalSubscriptionActualCost, 0.000001)
+	s.Require().InDelta(8.5, stats.TotalRechargeAmount, 0.000001)
+	s.Require().InDelta(0.0, stats.TotalRefundAmount, 0.000001)
+	s.Require().InDelta(todayBalanceCost, stats.TodayBalanceActualCost, 0.000001)
+	s.Require().InDelta(todaySubscriptionCost, stats.TodaySubscriptionActualCost, 0.000001)
+	s.Require().InDelta(5.0, stats.TodayRechargeAmount, 0.000001)
+	s.Require().InDelta(1.75, stats.TodayRefundAmount, 0.000001)
+}
+
 // --- GetUserDashboardStats ---
 
 func (s *UsageLogRepoSuite) TestGetUserDashboardStats() {

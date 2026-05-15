@@ -183,4 +183,68 @@ describe('admin DashboardView', () => {
     expect(normalized).toContain('admin.dashboard.rechargeAmount')
     expect(normalized).toContain('admin.dashboard.refundAmount')
   })
+
+  it('refreshes summary cards when the date range changes', async () => {
+    const refreshedStats: DashboardStats = {
+      ...createDashboardStats(),
+      total_users: 9999,
+      today_new_users: 88,
+      total_requests: 4321
+    }
+
+    getSnapshotV2
+      .mockResolvedValueOnce({
+        stats: createDashboardStats(),
+        trend: [],
+        models: []
+      })
+      .mockResolvedValueOnce({
+        stats: refreshedStats,
+        trend: [],
+        models: []
+      })
+
+    const wrapper = mount(DashboardView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          LoadingSpinner: true,
+          Icon: true,
+          DateRangePicker: {
+            name: 'DateRangePicker',
+            emits: ['change'],
+            template: '<div class="date-range-picker-stub" />'
+          },
+          Select: true,
+          HelpTooltip: { template: '<div class="help-tooltip-stub"><slot name="trigger" /><slot /></div>' },
+          ModelDistributionChart: true,
+          TokenUsageTrend: true,
+          Line: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    const picker = wrapper.findComponent({ name: 'DateRangePicker' })
+    picker.vm.$emit('change', {
+      startDate: '2026-03-01',
+      endDate: '2026-03-03',
+      preset: null
+    })
+
+    await flushPromises()
+
+    expect(getSnapshotV2).toHaveBeenCalledTimes(2)
+    expect(getSnapshotV2).toHaveBeenLastCalledWith(expect.objectContaining({
+      start_date: '2026-03-01',
+      end_date: '2026-03-03',
+      granularity: 'day',
+      include_stats: true
+    }))
+
+    const normalized = wrapper.text().replace(/\s+/g, ' ')
+    expect(normalized).toContain('+88')
+    expect(normalized).toContain('9,999')
+  })
 })

@@ -23,6 +23,10 @@ type dashboardUsageRepoCapture struct {
 	ranking          []usagestats.UserSpendingRankingItem
 	rankingTotal     float64
 	stats            *usagestats.DashboardStats
+	rangeStats       *usagestats.DashboardStats
+	rangeStart       time.Time
+	rangeEnd         time.Time
+	rangeCalls       int
 	userBreakdownDim usagestats.UserBreakdownDimension
 	userBreakdownLim int
 }
@@ -72,6 +76,19 @@ func (s *dashboardUsageRepoCapture) GetUserSpendingRanking(
 }
 
 func (s *dashboardUsageRepoCapture) GetDashboardStats(ctx context.Context) (*usagestats.DashboardStats, error) {
+	if s.stats != nil {
+		return s.stats, nil
+	}
+	return &usagestats.DashboardStats{}, nil
+}
+
+func (s *dashboardUsageRepoCapture) GetDashboardStatsWithRange(ctx context.Context, start, end time.Time) (*usagestats.DashboardStats, error) {
+	s.rangeCalls++
+	s.rangeStart = start
+	s.rangeEnd = end
+	if s.rangeStats != nil {
+		return s.rangeStats, nil
+	}
 	if s.stats != nil {
 		return s.stats, nil
 	}
@@ -210,6 +227,55 @@ func TestDashboardModelStatsValidModelSource(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestDashboardSnapshotV2UsesRangeStats(t *testing.T) {
+	repo := &dashboardUsageRepoCapture{
+		stats: &usagestats.DashboardStats{
+			TotalRequests:          1,
+			TotalActualCost:        9.9,
+			TotalRechargeAmount:    99.0,
+			TodayRechargeAmount:    11.0,
+			TotalBalanceActualCost: 6.6,
+		},
+		rangeStats: &usagestats.DashboardStats{
+			TotalRequests:          7,
+			TotalActualCost:        1.2,
+			TotalRechargeAmount:    3.4,
+			TodayRechargeAmount:    5.6,
+			TotalBalanceActualCost: 0.7,
+		},
+	}
+	gin.SetMode(gin.TestMode)
+	dashboardSvc := service.NewDashboardService(repo, nil, nil, nil)
+	handler := NewDashboardHandler(dashboardSvc, nil)
+
+	start := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 3, 8, 0, 0, 0, 0, time.UTC)
+
+	resp, err := handler.buildSnapshotV2Response(
+		context.Background(),
+		start,
+		end,
+		"day",
+		&dashboardSnapshotV2Filters{},
+		true,
+		false,
+		false,
+		false,
+		false,
+		12,
+	)
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.rangeCalls)
+	require.True(t, repo.rangeStart.Equal(start))
+	require.True(t, repo.rangeEnd.Equal(end))
+	require.NotNil(t, resp.Stats)
+	require.Equal(t, int64(7), resp.Stats.TotalRequests)
+	require.InDelta(t, 1.2, resp.Stats.TotalActualCost, 0.0001)
+	require.InDelta(t, 3.4, resp.Stats.TotalRechargeAmount, 0.0001)
+	require.InDelta(t, 5.6, resp.Stats.TodayRechargeAmount, 0.0001)
+	require.InDelta(t, 0.7, resp.Stats.TotalBalanceActualCost, 0.0001)
 }
 
 func TestDashboardUsersRankingLimitAndCache(t *testing.T) {

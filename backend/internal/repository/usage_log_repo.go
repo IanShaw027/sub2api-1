@@ -1776,8 +1776,8 @@ func (r *usageLogRepository) fillDashboardConsumptionStats(ctx context.Context, 
 				AND created_at < GREATEST($2::timestamptz, $4::timestamptz)
 		)
 		SELECT
-			COALESCE(SUM(actual_cost) FILTER (WHERE billing_type = $5), 0) AS total_balance_actual_cost,
-			COALESCE(SUM(actual_cost) FILTER (WHERE billing_type = $6), 0) AS total_subscription_actual_cost,
+			COALESCE(SUM(actual_cost) FILTER (WHERE billing_type = $5 AND created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_balance_actual_cost,
+			COALESCE(SUM(actual_cost) FILTER (WHERE billing_type = $6 AND created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_subscription_actual_cost,
 			COALESCE(SUM(actual_cost) FILTER (WHERE billing_type = $5 AND created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_balance_actual_cost,
 			COALESCE(SUM(actual_cost) FILTER (WHERE billing_type = $6 AND created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_subscription_actual_cost
 		FROM scoped

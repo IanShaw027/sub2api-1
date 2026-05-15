@@ -730,6 +730,9 @@ const onDateRangeChange = (range: {
   endDate: string
   preset: string | null
 }) => {
+  startDate.value = range.startDate
+  endDate.value = range.endDate
+
   // Auto-select granularity based on date range
   const start = new Date(range.startDate)
   const end = new Date(range.endDate)
@@ -844,7 +847,7 @@ const loadDashboardStats = async () => {
 
 const loadChartData = async () => {
   await Promise.all([
-    loadDashboardSnapshot(false),
+    loadDashboardSnapshot(true),
     loadUsersTrend(),
     loadUserSpendingRanking()
   ])
