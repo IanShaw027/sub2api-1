@@ -561,15 +561,24 @@ func (r *userRepository) loadUsageStatsByUserIDs(ctx context.Context, userIDs []
 			user_id,
 			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $2::timestamptz AND created_at < $3::timestamptz), 0) AS total_actual_cost,
 			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $4::timestamptz), 0) AS today_actual_cost,
-			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $4::timestamptz AND subscription_id IS NULL), 0) AS today_balance_actual_cost,
-			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $4::timestamptz AND subscription_id IS NOT NULL), 0) AS today_subscription_actual_cost
+			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $4::timestamptz AND billing_type = $5), 0) AS today_balance_actual_cost,
+			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $4::timestamptz AND billing_type = $6), 0) AS today_subscription_actual_cost
 		FROM usage_logs
 		WHERE user_id = ANY($1)
 		  AND created_at >= LEAST($2::timestamptz, $4::timestamptz)
 		GROUP BY user_id
 	`
 
-	rows, err := r.sql.QueryContext(ctx, query, pq.Array(userIDs), startTime, time.Now(), todayStart)
+	rows, err := r.sql.QueryContext(
+		ctx,
+		query,
+		pq.Array(userIDs),
+		startTime,
+		time.Now(),
+		todayStart,
+		service.BillingTypeBalance,
+		service.BillingTypeSubscription,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -728,8 +737,8 @@ WITH usage_stats AS (
     user_id,
     COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $%d::timestamptz AND created_at < $%d::timestamptz), 0) AS total_actual_cost,
     COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $%d::timestamptz), 0) AS today_actual_cost,
-    COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $%d::timestamptz AND subscription_id IS NULL), 0) AS today_balance_actual_cost,
-    COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $%d::timestamptz AND subscription_id IS NOT NULL), 0) AS today_subscription_actual_cost
+    COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $%d::timestamptz AND billing_type = $%d), 0) AS today_balance_actual_cost,
+    COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $%d::timestamptz AND billing_type = $%d), 0) AS today_subscription_actual_cost
   FROM usage_logs
   WHERE created_at >= $%d::timestamptz
   GROUP BY user_id
@@ -745,9 +754,18 @@ LEFT JOIN usage_stats us ON us.user_id = u.id
 %s
 ORDER BY %s %s, u.id %s
 LIMIT $%d OFFSET $%d
-`, argPos, argPos+1, argPos+2, argPos+2, argPos+2, argPos, whereSQL, sortExpr, orderDirection, orderDirection, argPos+3, argPos+4)
+`, argPos, argPos+1, argPos+2, argPos+2, argPos+3, argPos+2, argPos+4, argPos, whereSQL, sortExpr, orderDirection, orderDirection, argPos+5, argPos+6)
 
-	args = append(args, startTime, now, todayStart, params.Limit(), params.Offset())
+	args = append(
+		args,
+		startTime,
+		now,
+		todayStart,
+		service.BillingTypeBalance,
+		service.BillingTypeSubscription,
+		params.Limit(),
+		params.Offset(),
+	)
 	rows, err := exec.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -1076,10 +1094,10 @@ func userUsageCostOrder(sortBy string, sortOrder string) []func(*entsql.Selector
 	switch sortBy {
 	case "today_balance_usage":
 		startTime = timezone.Today()
-		extraCondition = " AND subscription_id IS NULL"
+		extraCondition = fmt.Sprintf(" AND billing_type = %d", service.BillingTypeBalance)
 	case "today_subscription_usage":
 		startTime = timezone.Today()
-		extraCondition = " AND subscription_id IS NOT NULL"
+		extraCondition = fmt.Sprintf(" AND billing_type = %d", service.BillingTypeSubscription)
 	case "last_30d_usage":
 		startTime = time.Now().AddDate(0, 0, -30)
 	}

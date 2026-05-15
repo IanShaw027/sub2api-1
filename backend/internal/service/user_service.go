@@ -433,6 +433,10 @@ func identitySummaryForProvider(summaries UserIdentitySummarySet, provider strin
 		return summaries.OIDC
 	case "wechat":
 		return summaries.WeChat
+	case "github":
+		return summaries.GitHub
+	case "google":
+		return summaries.Google
 	default:
 		return UserIdentitySummary{}
 	}
@@ -992,6 +996,10 @@ func buildUserIdentityBindAuthorizeURL(provider, redirectTo string) (string, err
 		path = "/api/v1/auth/oauth/oidc/bind/start"
 	case "wechat":
 		path = "/api/v1/auth/oauth/wechat/bind/start"
+	case "github":
+		path = "/api/v1/auth/oauth/github/bind/start"
+	case "google":
+		path = "/api/v1/auth/oauth/google/bind/start"
 	default:
 		return "", ErrIdentityProviderInvalid
 	}
@@ -1010,6 +1018,10 @@ func normalizeUserIdentityProvider(provider string) string {
 		return "oidc"
 	case "wechat":
 		return "wechat"
+	case "github":
+		return "github"
+	case "google":
+		return "google"
 	case "email":
 		return "email"
 	default:

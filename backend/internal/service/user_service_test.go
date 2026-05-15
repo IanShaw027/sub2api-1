@@ -11,6 +11,7 @@ import (
 	"image/png"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -657,6 +658,16 @@ func TestGetProfileIdentitySummaries_UsesBindStartRoute(t *testing.T) {
 		"/api/v1/auth/oauth/wechat/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile",
 		summaries.WeChat.BindStartPath,
 	)
+	require.Equal(
+		t,
+		"/api/v1/auth/oauth/github/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile",
+		summaries.GitHub.BindStartPath,
+	)
+	require.Equal(
+		t,
+		"/api/v1/auth/oauth/google/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile",
+		summaries.Google.BindStartPath,
+	)
 }
 
 func TestPrepareIdentityBindingStart_RejectsDisabledProvider(t *testing.T) {
@@ -729,6 +740,93 @@ func TestPrepareIdentityBindingStart_RejectsAlreadyBoundProvider(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, 409, infraerrors.Code(err))
 	require.Equal(t, "IDENTITY_PROVIDER_ALREADY_BOUND", infraerrors.Reason(err))
+}
+
+func TestPrepareIdentityBindingStart_AllowsGitHubAndGoogleProviders(t *testing.T) {
+	testCases := []struct {
+		name         string
+		provider     string
+		expectedPath string
+	}{
+		{
+			name:         "github",
+			provider:     "GitHub",
+			expectedPath: "/api/v1/auth/oauth/github/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile",
+		},
+		{
+			name:         "google",
+			provider:     "Google",
+			expectedPath: "/api/v1/auth/oauth/google/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &mockUserRepo{
+				getByIDUser: &User{
+					ID:       19,
+					Email:    "bindable@example.com",
+					Username: "bindable-user",
+					Role:     RoleUser,
+					Status:   StatusActive,
+				},
+				identities: []UserAuthIdentityRecord{
+					{
+						ProviderType:    "email",
+						ProviderKey:     "email",
+						ProviderSubject: "bindable@example.com",
+					},
+				},
+			}
+			svc := NewUserService(repo, nil, nil, nil)
+
+			result, err := svc.PrepareIdentityBindingStart(context.Background(), StartUserIdentityBindingRequest{
+				UserID:     19,
+				Provider:   tc.provider,
+				RedirectTo: "/settings/profile",
+			})
+
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.Equal(t, strings.ToLower(tc.provider), result.Provider)
+			require.Equal(t, tc.expectedPath, result.AuthorizeURL)
+		})
+	}
+}
+
+func TestUnbindUserAuthProvider_NormalizesGitHubAndGoogleProviders(t *testing.T) {
+	repo := &mockUserRepo{
+		getByIDUser: &User{
+			ID:    20,
+			Email: "alice@example.com",
+		},
+		identities: []UserAuthIdentityRecord{
+			{
+				ProviderType:    "email",
+				ProviderKey:     "email",
+				ProviderSubject: "alice@example.com",
+			},
+			{
+				ProviderType:    "github",
+				ProviderKey:     "github",
+				ProviderSubject: "github-subject-20",
+			},
+			{
+				ProviderType:    "google",
+				ProviderKey:     "google",
+				ProviderSubject: "google-subject-20",
+			},
+		},
+	}
+	svc := NewUserService(repo, nil, nil, nil)
+
+	_, err := svc.UnbindUserAuthProvider(context.Background(), 20, "GitHub")
+	require.NoError(t, err)
+
+	_, err = svc.UnbindUserAuthProvider(context.Background(), 20, "Google")
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"github", "google"}, repo.unboundProviders)
 }
 
 func TestUpdateBalance_NilBillingCache_NoPanic(t *testing.T) {

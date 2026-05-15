@@ -14,10 +14,10 @@ import (
 func (s *UserRepoSuite) mustInsertUsageLog(userID int64, createdAt time.Time) {
 	s.T().Helper()
 
-	s.mustInsertUsageLogWithCost(userID, 0.01, nil, createdAt)
+	s.mustInsertUsageLogWithCost(userID, 0.01, nil, service.BillingTypeBalance, createdAt)
 }
 
-func (s *UserRepoSuite) mustInsertUsageLogWithCost(userID int64, cost float64, subscriptionID *int64, createdAt time.Time) {
+func (s *UserRepoSuite) mustInsertUsageLogWithCost(userID int64, cost float64, subscriptionID *int64, billingType int8, createdAt time.Time) {
 	s.T().Helper()
 
 	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "usage-log-account"})
@@ -25,13 +25,14 @@ func (s *UserRepoSuite) mustInsertUsageLogWithCost(userID int64, cost float64, s
 
 	_, err := integrationDB.ExecContext(
 		s.ctx,
-		`INSERT INTO usage_logs (user_id, api_key_id, account_id, subscription_id, model, input_tokens, output_tokens, total_cost, actual_cost, created_at)
-		 VALUES ($1, $2, $3, $4, 'gpt-test', 1, 1, $5, $5, $6)`,
+		`INSERT INTO usage_logs (user_id, api_key_id, account_id, subscription_id, model, input_tokens, output_tokens, total_cost, actual_cost, billing_type, created_at)
+		 VALUES ($1, $2, $3, $4, 'gpt-test', 1, 1, $5, $5, $6, $7)`,
 		userID,
 		apiKey.ID,
 		account.ID,
 		subscriptionID,
 		cost,
+		billingType,
 		createdAt.UTC(),
 	)
 	s.Require().NoError(err)
@@ -202,15 +203,15 @@ func (s *UserRepoSuite) TestListWithFilters_SortByUsageCostFields() {
 	subA := s.mustCreateSubscription(userA.ID, group.ID, nil)
 	subB := s.mustCreateSubscription(userB.ID, group.ID, nil)
 
-	s.mustInsertUsageLogWithCost(userA.ID, 0.50, nil, today)
-	s.mustInsertUsageLogWithCost(userA.ID, 0.10, &subA.ID, today)
-	s.mustInsertUsageLogWithCost(userA.ID, 0.10, nil, yesterday)
+	s.mustInsertUsageLogWithCost(userA.ID, 0.50, nil, service.BillingTypeBalance, today)
+	s.mustInsertUsageLogWithCost(userA.ID, 0.10, &subA.ID, service.BillingTypeSubscription, today)
+	s.mustInsertUsageLogWithCost(userA.ID, 0.10, nil, service.BillingTypeBalance, yesterday)
 
-	s.mustInsertUsageLogWithCost(userB.ID, 0.90, &subB.ID, today)
-	s.mustInsertUsageLogWithCost(userB.ID, 0.10, nil, yesterday)
+	s.mustInsertUsageLogWithCost(userB.ID, 0.90, &subB.ID, service.BillingTypeSubscription, today)
+	s.mustInsertUsageLogWithCost(userB.ID, 0.10, nil, service.BillingTypeBalance, yesterday)
 
-	s.mustInsertUsageLogWithCost(userC.ID, 0.20, nil, today)
-	s.mustInsertUsageLogWithCost(userC.ID, 1.00, nil, yesterday)
+	s.mustInsertUsageLogWithCost(userC.ID, 0.20, nil, service.BillingTypeBalance, today)
+	s.mustInsertUsageLogWithCost(userC.ID, 1.00, nil, service.BillingTypeBalance, yesterday)
 
 	balanceSorted, _, err := s.repo.ListWithFilters(s.ctx, pagination.PaginationParams{
 		Page:      1,
@@ -247,6 +248,87 @@ func (s *UserRepoSuite) TestListWithFilters_SortByUsageCostFields() {
 	s.Require().InDelta(1.20, last30Sorted[0].TotalActualCost, 0.0001)
 	s.Require().InDelta(1.00, last30Sorted[1].TotalActualCost, 0.0001)
 	s.Require().InDelta(0.70, last30Sorted[2].TotalActualCost, 0.0001)
+}
+
+func (s *UserRepoSuite) TestListWithFilters_SortByUsageCostUsesBillingTypeNotSubscriptionID() {
+	today := timezone.Today().Add(2 * time.Hour).UTC()
+
+	user := s.mustCreateUser(&service.User{Email: "usage-billing-type@test.com"})
+	group := s.mustCreateGroup("usage-billing-type")
+	subscription := s.mustCreateSubscription(user.ID, group.ID, nil)
+
+	s.mustInsertUsageLogWithCost(user.ID, 0.75, &subscription.ID, service.BillingTypeBalance, today)
+	s.mustInsertUsageLogWithCost(user.ID, 0.25, nil, service.BillingTypeSubscription, today)
+
+	balanceSorted, _, err := s.repo.ListWithFilters(s.ctx, pagination.PaginationParams{
+		Page:      1,
+		PageSize:  10,
+		SortBy:    "today_balance_usage",
+		SortOrder: "desc",
+	}, service.UserListFilters{})
+	s.Require().NoError(err)
+	s.Require().Len(balanceSorted, 1)
+	s.Require().InDelta(0.75, balanceSorted[0].TodayBalanceActualCost, 0.0001)
+	s.Require().InDelta(0.25, balanceSorted[0].TodaySubscriptionActualCost, 0.0001)
+}
+
+func (s *UserRepoSuite) TestListWithFilters_PopulatesUsageCostFieldsUsingBillingTypeNotSubscriptionID() {
+	today := timezone.Today().Add(2 * time.Hour).UTC()
+
+	user := s.mustCreateUser(&service.User{Email: "usage-populate-billing-type@test.com"})
+	group := s.mustCreateGroup("usage-populate-billing-type")
+	subscription := s.mustCreateSubscription(user.ID, group.ID, nil)
+
+	s.mustInsertUsageLogWithCost(user.ID, 0.60, &subscription.ID, service.BillingTypeBalance, today)
+	s.mustInsertUsageLogWithCost(user.ID, 0.40, nil, service.BillingTypeSubscription, today)
+
+	users, _, err := s.repo.ListWithFilters(s.ctx, pagination.PaginationParams{
+		Page:      1,
+		PageSize:  10,
+		SortBy:    "email",
+		SortOrder: "asc",
+	}, service.UserListFilters{})
+	s.Require().NoError(err)
+	s.Require().Len(users, 1)
+	s.Require().InDelta(0.60, users[0].TodayBalanceActualCost, 0.0001)
+	s.Require().InDelta(0.40, users[0].TodaySubscriptionActualCost, 0.0001)
+}
+
+func (s *UserRepoSuite) TestListWithFilters_SortByUsageCostFallbackUsesBillingTypeNotSubscriptionID() {
+	today := timezone.Today().Add(2 * time.Hour).UTC()
+
+	allowedGroup := s.mustCreateGroup("usage-sort-fallback")
+	userA := s.mustCreateUser(&service.User{
+		Email:         "usage-fallback-a@example.com",
+		AllowedGroups: []int64{allowedGroup.ID},
+	})
+	userB := s.mustCreateUser(&service.User{
+		Email:         "usage-fallback-b@example.com",
+		AllowedGroups: []int64{allowedGroup.ID},
+	})
+	subA := s.mustCreateSubscription(userA.ID, allowedGroup.ID, nil)
+	subB := s.mustCreateSubscription(userB.ID, allowedGroup.ID, nil)
+
+	s.mustInsertUsageLogWithCost(userA.ID, 0.80, &subA.ID, service.BillingTypeBalance, today)
+	s.mustInsertUsageLogWithCost(userA.ID, 0.10, nil, service.BillingTypeSubscription, today)
+	s.mustInsertUsageLogWithCost(userB.ID, 0.30, &subB.ID, service.BillingTypeBalance, today)
+	s.mustInsertUsageLogWithCost(userB.ID, 0.90, nil, service.BillingTypeSubscription, today)
+
+	users, _, err := s.repo.ListWithFilters(s.ctx, pagination.PaginationParams{
+		Page:      1,
+		PageSize:  10,
+		SortBy:    "today_balance_usage",
+		SortOrder: "desc",
+	}, service.UserListFilters{
+		GroupName: allowedGroup.Name,
+	})
+	s.Require().NoError(err)
+	s.Require().Len(users, 2)
+	s.Require().Equal([]int64{userA.ID, userB.ID}, []int64{users[0].ID, users[1].ID})
+	s.Require().InDelta(0.80, users[0].TodayBalanceActualCost, 0.0001)
+	s.Require().InDelta(0.10, users[0].TodaySubscriptionActualCost, 0.0001)
+	s.Require().InDelta(0.30, users[1].TodayBalanceActualCost, 0.0001)
+	s.Require().InDelta(0.90, users[1].TodaySubscriptionActualCost, 0.0001)
 }
 
 func TestUserRepoSortSuiteSmoke(_ *testing.T) {}
