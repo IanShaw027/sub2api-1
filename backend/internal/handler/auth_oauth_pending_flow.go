@@ -1998,6 +1998,9 @@ func (h *AuthHandler) ExchangePendingOAuthCompletion(c *gin.Context) {
 		}
 	}
 	applySuggestedProfileToCompletionResponse(payload, session.UpstreamIdentityClaims)
+	if strings.EqualFold(strings.TrimSpace(session.Intent), oauthIntentBindCurrentUser) {
+		delete(payload, "adoption_required")
+	}
 
 	canIssueTokenPair := pendingOAuthCompletionCanIssueTokenPair(session, payload)
 	var loginUser *service.User

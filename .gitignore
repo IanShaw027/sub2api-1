@@ -79,6 +79,8 @@ Desktop.ini
 # ===================
 tmp/
 temp/
+__pycache__/
+*.py[cod]
 *.tmp
 *.temp
 *.log

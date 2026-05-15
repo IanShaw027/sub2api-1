@@ -447,6 +447,8 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		GatewayDebugTimelineRetentionDays:         settings.GatewayDebugTimelineRetentionDays,
 		GatewayDebugTimelineMaxSizeMB:             settings.GatewayDebugTimelineMaxSizeMB,
 		EnableAnthropicCacheTTL1hInjection:        settings.EnableAnthropicCacheTTL1hInjection,
+		RewriteMessageCacheControl:                settings.RewriteMessageCacheControl,
+		AntigravityUserAgentVersion:               settings.AntigravityUserAgentVersion,
 		WebSearchEmulationEnabled:                 settings.WebSearchEmulationEnabled,
 		KiroDefaultVersion:                        settings.KiroDefaultVersion,
 		KiroDefaultCommit:                         settings.KiroDefaultCommit,
@@ -754,27 +756,29 @@ type UpdateSettingsRequest struct {
 	BackendModeEnabled bool `json:"backend_mode_enabled"`
 
 	// Gateway forwarding behavior
-	EnableFingerprintUnification      *bool   `json:"enable_fingerprint_unification"`
-	EnableMetadataPassthrough         *bool   `json:"enable_metadata_passthrough"`
-	EnableCCHSigning                  *bool   `json:"enable_cch_signing"`
-	GatewayDebugTimelineEnabled       *bool   `json:"gateway_debug_timeline_enabled"`
-	GatewayDebugTimelineDirectory     *string `json:"gateway_debug_timeline_directory"`
-	GatewayDebugTimelineRetentionDays *int    `json:"gateway_debug_timeline_retention_days"`
-	GatewayDebugTimelineMaxSizeMB     *int64  `json:"gateway_debug_timeline_max_size_mb"`
+	EnableFingerprintUnification       *bool   `json:"enable_fingerprint_unification"`
+	EnableMetadataPassthrough          *bool   `json:"enable_metadata_passthrough"`
+	EnableCCHSigning                   *bool   `json:"enable_cch_signing"`
+	GatewayDebugTimelineEnabled        *bool   `json:"gateway_debug_timeline_enabled"`
+	GatewayDebugTimelineDirectory      *string `json:"gateway_debug_timeline_directory"`
+	GatewayDebugTimelineRetentionDays  *int    `json:"gateway_debug_timeline_retention_days"`
+	GatewayDebugTimelineMaxSizeMB      *int64  `json:"gateway_debug_timeline_max_size_mb"`
+	EnableAnthropicCacheTTL1hInjection *bool   `json:"enable_anthropic_cache_ttl_1h_injection"`
+	RewriteMessageCacheControl         *bool   `json:"rewrite_message_cache_control"`
+	AntigravityUserAgentVersion        *string `json:"antigravity_user_agent_version"`
 
 	// Kiro runtime defaults
-	KiroDefaultVersion                 *string `json:"kiro_version"`
-	KiroDefaultCommit                  *string `json:"kiro_commit"`
-	KiroDefaultSystemVersion           *string `json:"system_version"`
-	KiroDefaultNodeVersion             *string `json:"node_version"`
-	KiroCacheHitRateScale              *int    `json:"cache_hit_rate_scale"`
-	KiroCacheMinBlockTokens            *int    `json:"cache_min_block_tokens"`
-	KiroCacheIndependentTTLSeconds     *int    `json:"cache_independent_ttl_seconds"`
-	KiroCachePrefixTTLSeconds          *int    `json:"cache_prefix_ttl_seconds"`
-	KiroThinkingMode                   *string `json:"kiro_thinking_mode"`
-	KiroThinkingEffortThreshold        *string `json:"kiro_thinking_effort_threshold"`
-	KiroThinkingSimulationTemplate     *string `json:"kiro_thinking_simulation_template"`
-	EnableAnthropicCacheTTL1hInjection *bool   `json:"enable_anthropic_cache_ttl_1h_injection"`
+	KiroDefaultVersion             *string `json:"kiro_version"`
+	KiroDefaultCommit              *string `json:"kiro_commit"`
+	KiroDefaultSystemVersion       *string `json:"system_version"`
+	KiroDefaultNodeVersion         *string `json:"node_version"`
+	KiroCacheHitRateScale          *int    `json:"cache_hit_rate_scale"`
+	KiroCacheMinBlockTokens        *int    `json:"cache_min_block_tokens"`
+	KiroCacheIndependentTTLSeconds *int    `json:"cache_independent_ttl_seconds"`
+	KiroCachePrefixTTLSeconds      *int    `json:"cache_prefix_ttl_seconds"`
+	KiroThinkingMode               *string `json:"kiro_thinking_mode"`
+	KiroThinkingEffortThreshold    *string `json:"kiro_thinking_effort_threshold"`
+	KiroThinkingSimulationTemplate *string `json:"kiro_thinking_simulation_template"`
 
 	// Payment visible method routing
 	PaymentVisibleMethodAlipaySource  *string `json:"payment_visible_method_alipay_source"`
@@ -1717,6 +1721,14 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			return
 		}
 	}
+	if req.AntigravityUserAgentVersion != nil {
+		normalized := strings.TrimSpace(*req.AntigravityUserAgentVersion)
+		req.AntigravityUserAgentVersion = &normalized
+		if normalized != "" && !semverPattern.MatchString(normalized) {
+			response.Error(c, http.StatusBadRequest, "antigravity_user_agent_version must be empty or a valid semver (e.g. 1.23.2)")
+			return
+		}
+	}
 
 	// 交叉验证：如果同时设置了最低和最高版本号，最高版本号必须 >= 最低版本号
 	if req.MinClaudeCodeVersion != "" && req.MaxClaudeCodeVersion != "" {
@@ -1997,6 +2009,18 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				return *req.EnableAnthropicCacheTTL1hInjection
 			}
 			return previousSettings.EnableAnthropicCacheTTL1hInjection
+		}(),
+		RewriteMessageCacheControl: func() bool {
+			if req.RewriteMessageCacheControl != nil {
+				return *req.RewriteMessageCacheControl
+			}
+			return previousSettings.RewriteMessageCacheControl
+		}(),
+		AntigravityUserAgentVersion: func() string {
+			if req.AntigravityUserAgentVersion != nil {
+				return *req.AntigravityUserAgentVersion
+			}
+			return previousSettings.AntigravityUserAgentVersion
 		}(),
 		PaymentVisibleMethodAlipaySource: func() string {
 			if req.PaymentVisibleMethodAlipaySource != nil {
@@ -2375,6 +2399,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		GatewayDebugTimelineDirectory:             updatedSettings.GatewayDebugTimelineDirectory,
 		GatewayDebugTimelineRetentionDays:         updatedSettings.GatewayDebugTimelineRetentionDays,
 		GatewayDebugTimelineMaxSizeMB:             updatedSettings.GatewayDebugTimelineMaxSizeMB,
+		EnableAnthropicCacheTTL1hInjection:        updatedSettings.EnableAnthropicCacheTTL1hInjection,
+		RewriteMessageCacheControl:                updatedSettings.RewriteMessageCacheControl,
+		AntigravityUserAgentVersion:               updatedSettings.AntigravityUserAgentVersion,
 		KiroDefaultVersion:                        updatedSettings.KiroDefaultVersion,
 		KiroDefaultCommit:                         updatedSettings.KiroDefaultCommit,
 		KiroDefaultSystemVersion:                  updatedSettings.KiroDefaultSystemVersion,
@@ -2386,7 +2413,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		KiroThinkingMode:                          updatedSettings.KiroThinkingMode,
 		KiroThinkingEffortThreshold:               updatedSettings.KiroThinkingEffortThreshold,
 		KiroThinkingSimulationTemplate:            updatedSettings.KiroThinkingSimulationTemplate,
-		EnableAnthropicCacheTTL1hInjection:        updatedSettings.EnableAnthropicCacheTTL1hInjection,
 		PaymentVisibleMethodAlipaySource:          updatedSettings.PaymentVisibleMethodAlipaySource,
 		PaymentVisibleMethodWxpaySource:           updatedSettings.PaymentVisibleMethodWxpaySource,
 		PaymentVisibleMethodAlipayEnabled:         updatedSettings.PaymentVisibleMethodAlipayEnabled,
@@ -2883,6 +2909,12 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.EnableAnthropicCacheTTL1hInjection != after.EnableAnthropicCacheTTL1hInjection {
 		changed = append(changed, "enable_anthropic_cache_ttl_1h_injection")
+	}
+	if before.RewriteMessageCacheControl != after.RewriteMessageCacheControl {
+		changed = append(changed, "rewrite_message_cache_control")
+	}
+	if before.AntigravityUserAgentVersion != after.AntigravityUserAgentVersion {
+		changed = append(changed, "antigravity_user_agent_version")
 	}
 	if before.PaymentVisibleMethodAlipaySource != after.PaymentVisibleMethodAlipaySource {
 		changed = append(changed, "payment_visible_method_alipay_source")

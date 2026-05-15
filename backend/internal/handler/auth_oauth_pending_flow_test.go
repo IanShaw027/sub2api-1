@@ -415,7 +415,7 @@ func TestExchangePendingOAuthCompletionKeepsCompletionWhenAvatarAdoptionIsBlocke
 	require.Nil(t, avatar)
 }
 
-func TestExchangePendingOAuthCompletionBindCurrentUserPreviewThenFinalizeBindsIdentityWithoutAdoption(t *testing.T) {
+func TestExchangePendingOAuthCompletionBindCurrentUserWithSuggestedProfileBindsImmediately(t *testing.T) {
 	handler, client := newOAuthPendingFlowTestHandler(t, false)
 	ctx := context.Background()
 
@@ -452,49 +452,19 @@ func TestExchangePendingOAuthCompletionBindCurrentUserPreviewThenFinalizeBindsId
 		Save(ctx)
 	require.NoError(t, err)
 
-	previewRecorder := httptest.NewRecorder()
-	previewCtx, _ := gin.CreateTestContext(previewRecorder)
-	previewReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/oauth/pending/exchange", nil)
-	previewReq.AddCookie(&http.Cookie{Name: oauthPendingSessionCookieName, Value: encodeCookieValue(session.SessionToken)})
-	previewReq.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue("bind-browser-session-key")})
-	previewCtx.Request = previewReq
+	recorder := httptest.NewRecorder()
+	ginCtx, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/oauth/pending/exchange", nil)
+	req.AddCookie(&http.Cookie{Name: oauthPendingSessionCookieName, Value: encodeCookieValue(session.SessionToken)})
+	req.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue("bind-browser-session-key")})
+	ginCtx.Request = req
 
-	handler.ExchangePendingOAuthCompletion(previewCtx)
+	handler.ExchangePendingOAuthCompletion(ginCtx)
 
-	require.Equal(t, http.StatusOK, previewRecorder.Code)
-	previewData := decodeJSONResponseData(t, previewRecorder)
-	require.Equal(t, "Bound Example", previewData["suggested_display_name"])
-	require.Equal(t, "https://cdn.example/bound.png", previewData["suggested_avatar_url"])
-	require.Equal(t, true, previewData["adoption_required"])
-
-	identityCount, err := client.AuthIdentity.Query().
-		Where(
-			authidentity.ProviderTypeEQ("linuxdo"),
-			authidentity.ProviderKeyEQ("linuxdo"),
-			authidentity.ProviderSubjectEQ("bind-123"),
-		).
-		Count(ctx)
-	require.NoError(t, err)
-	require.Zero(t, identityCount)
-
-	previewSession, err := client.PendingAuthSession.Query().
-		Where(pendingauthsession.IDEQ(session.ID)).
-		Only(ctx)
-	require.NoError(t, err)
-	require.Nil(t, previewSession.ConsumedAt)
-
-	body := bytes.NewBufferString(`{"adopt_display_name":false,"adopt_avatar":false}`)
-	finalizeRecorder := httptest.NewRecorder()
-	finalizeCtx, _ := gin.CreateTestContext(finalizeRecorder)
-	finalizeReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/oauth/pending/exchange", body)
-	finalizeReq.Header.Set("Content-Type", "application/json")
-	finalizeReq.AddCookie(&http.Cookie{Name: oauthPendingSessionCookieName, Value: encodeCookieValue(session.SessionToken)})
-	finalizeReq.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue("bind-browser-session-key")})
-	finalizeCtx.Request = finalizeReq
-
-	handler.ExchangePendingOAuthCompletion(finalizeCtx)
-
-	require.Equal(t, http.StatusOK, finalizeRecorder.Code)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	data := decodeJSONResponseData(t, recorder)
+	require.Equal(t, "/settings/profile", data["redirect"])
+	require.NotContains(t, data, "adoption_required")
 
 	storedUser, err := client.User.Get(ctx, userEntity.ID)
 	require.NoError(t, err)

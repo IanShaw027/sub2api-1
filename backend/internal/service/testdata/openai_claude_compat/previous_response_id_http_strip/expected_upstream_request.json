@@ -2,7 +2,8 @@
   "equals_paths": {
     "model": "gpt-5.4",
     "input.0.role": "user",
-    "input.0.content": "hello"
+    "input.0.content.0.type": "input_text",
+    "input.0.content.0.text": "hello"
   },
   "absent_paths": [
     "previous_response_id"

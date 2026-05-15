@@ -76,7 +76,7 @@ func AnthropicToResponses(req *AnthropicRequest) (*ResponsesRequest, error) {
 //	{"type":"auto"}            → "auto"
 //	{"type":"any"}             → "required"
 //	{"type":"none"}            → "none"
-//	{"type":"tool","name":"X"} → {"type":"function","function":{"name":"X"}}
+//	{"type":"tool","name":"X"} → {"type":"function","name":"X"}
 func responsesIncludeForAnthropicTools(tools []AnthropicTool) []string {
 	include := []string{"reasoning.encrypted_content"}
 	for _, tool := range tools {
@@ -116,8 +116,8 @@ func convertAnthropicToolChoiceToResponses(raw json.RawMessage) (json.RawMessage
 		return out, parallelToolCalls, err
 	case "tool":
 		out, err := json.Marshal(map[string]any{
-			"type":     "function",
-			"function": map[string]string{"name": tc.Name},
+			"type": "function",
+			"name": tc.Name,
 		})
 		return out, parallelToolCalls, err
 	default:
@@ -196,8 +196,12 @@ func anthropicUserToResponses(raw json.RawMessage) ([]ResponsesInputItem, error)
 	// Try plain string.
 	var s string
 	if err := json.Unmarshal(raw, &s); err == nil {
-		content, _ := json.Marshal(s)
-		return []ResponsesInputItem{{Role: "user", Content: content}}, nil
+		parts := []ResponsesContentPart{{Type: "input_text", Text: s}}
+		partsJSON, err := json.Marshal(parts)
+		if err != nil {
+			return nil, err
+		}
+		return []ResponsesInputItem{{Type: "message", Role: "user", Content: partsJSON}}, nil
 	}
 
 	var blocks []AnthropicContentBlock
@@ -227,14 +231,10 @@ func anthropicUserToResponses(raw json.RawMessage) ([]ResponsesInputItem, error)
 	// Remaining text + image blocks → user message with content parts.
 	// Also include images extracted from tool_results so the model can see them.
 	var parts []ResponsesContentPart
-	hasCacheControlledText := false
 	for _, b := range blocks {
 		switch b.Type {
 		case "text":
 			if b.Text != "" {
-				if b.CacheControl != nil && strings.TrimSpace(b.CacheControl.Type) != "" {
-					hasCacheControlledText = true
-				}
 				parts = append(parts, ResponsesContentPart{Type: "input_text", Text: b.Text})
 			}
 		case "document":
@@ -250,37 +250,14 @@ func anthropicUserToResponses(raw json.RawMessage) ([]ResponsesInputItem, error)
 	parts = append(parts, toolResultImageParts...)
 
 	if len(parts) > 0 {
-		if !hasCacheControlledText {
-			if text, ok := collapseResponsesPlainTextParts(parts); ok {
-				content, _ := json.Marshal(text)
-				out = append(out, ResponsesInputItem{Role: "user", Content: content})
-				return out, nil
-			}
-		}
-
 		content, err := json.Marshal(parts)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, ResponsesInputItem{Role: "user", Content: content})
+		out = append(out, ResponsesInputItem{Type: "message", Role: "user", Content: content})
 	}
 
 	return out, nil
-}
-
-func collapseResponsesPlainTextParts(parts []ResponsesContentPart) (string, bool) {
-	if len(parts) == 0 {
-		return "", false
-	}
-
-	texts := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if part.Type != "input_text" {
-			return "", false
-		}
-		texts = append(texts, part.Text)
-	}
-	return strings.Join(texts, ""), true
 }
 
 // anthropicAssistantToResponses handles an Anthropic assistant message.
@@ -296,7 +273,7 @@ func anthropicAssistantToResponses(raw json.RawMessage) ([]ResponsesInputItem, e
 		if err != nil {
 			return nil, err
 		}
-		return []ResponsesInputItem{{Role: "assistant", Content: partsJSON}}, nil
+		return []ResponsesInputItem{{Type: "message", Role: "assistant", Content: partsJSON}}, nil
 	}
 
 	var blocks []AnthropicContentBlock
@@ -314,7 +291,7 @@ func anthropicAssistantToResponses(raw json.RawMessage) ([]ResponsesInputItem, e
 		if err != nil {
 			return nil, err
 		}
-		items = append(items, ResponsesInputItem{Role: "assistant", Content: partsJSON})
+		items = append(items, ResponsesInputItem{Type: "message", Role: "assistant", Content: partsJSON})
 	}
 
 	// tool_use → function_call items.
@@ -338,17 +315,16 @@ func anthropicAssistantToResponses(raw json.RawMessage) ([]ResponsesInputItem, e
 	return items, nil
 }
 
-// toResponsesCallID converts an Anthropic tool ID (toolu_xxx / call_xxx) to a
-// Responses API function_call ID that starts with "fc_".
+// toResponsesCallID preserves Anthropic tool IDs as Responses call_id values,
+// while accepting transcripts produced by the old fc_ prefixing bridge.
+// Claude Code sends tool_result.tool_use_id back verbatim, and the Responses API
+// continuation expects that call_id to match the original tool_use id.
 func toResponsesCallID(id string) string {
-	if strings.HasPrefix(id, "fc_") {
-		return id
-	}
-	return "fc_" + id
+	return fromResponsesCallID(id)
 }
 
-// fromResponsesCallID reverses toResponsesCallID, stripping the "fc_" prefix
-// that was added during request conversion.
+// fromResponsesCallID strips the legacy "fc_" prefix that was added during
+// request conversion before upstream switched to preserving Anthropic tool IDs.
 func fromResponsesCallID(id string) string {
 	if after, ok := strings.CutPrefix(id, "fc_"); ok {
 		// Only strip if the remainder doesn't look like it was already "fc_" prefixed.

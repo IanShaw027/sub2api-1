@@ -487,8 +487,9 @@ func TestOpenAITokenProvider_CacheGetError(t *testing.T) {
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
-			"access_token": "fallback-token",
-			"expires_at":   expiresAt,
+			"access_token":  "fallback-token",
+			"refresh_token": "refresh-token",
+			"expires_at":    expiresAt,
 		},
 	}
 
@@ -755,8 +756,9 @@ func TestOpenAITokenProvider_Real_LockFailedWait(t *testing.T) {
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
-			"access_token": "fallback-token",
-			"expires_at":   expiresAt,
+			"access_token":  "fallback-token",
+			"refresh_token": "refresh-token",
+			"expires_at":    expiresAt,
 		},
 	}
 
@@ -924,8 +926,9 @@ func TestOpenAITokenProvider_Real_LockRace_PollingHitsCache(t *testing.T) {
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
-			"access_token": "fallback-token",
-			"expires_at":   expiresAt,
+			"access_token":  "fallback-token",
+			"refresh_token": "refresh-token",
+			"expires_at":    expiresAt,
 		},
 	}
 
@@ -953,8 +956,9 @@ func TestOpenAITokenProvider_Real_LockRace_ContextCanceled(t *testing.T) {
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
-			"access_token": "fallback-token",
-			"expires_at":   expiresAt,
+			"access_token":  "fallback-token",
+			"refresh_token": "refresh-token",
+			"expires_at":    expiresAt,
 		},
 	}
 
@@ -980,8 +984,9 @@ func TestOpenAITokenProvider_RuntimeMetrics_LockWaitHitAndSnapshot(t *testing.T)
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
-			"access_token": "fallback-token",
-			"expires_at":   expiresAt,
+			"access_token":  "fallback-token",
+			"refresh_token": "refresh-token",
+			"expires_at":    expiresAt,
 		},
 	}
 	cacheKey := OpenAITokenCacheKey(account)
@@ -1016,8 +1021,9 @@ func TestOpenAITokenProvider_RuntimeMetrics_LockAcquireFailure(t *testing.T) {
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
-			"access_token": "fallback-token",
-			"expires_at":   expiresAt,
+			"access_token":  "fallback-token",
+			"refresh_token": "refresh-token",
+			"expires_at":    expiresAt,
 		},
 	}
 

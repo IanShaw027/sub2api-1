@@ -67,3 +67,19 @@ func TestAuthRoutesRateLimitFailCloseWhenRedisUnavailable(t *testing.T) {
 		require.Contains(t, w.Body.String(), "rate limit exceeded", "path=%s", path)
 	}
 }
+
+func TestAuthRoutesRegisterEmailOAuthBindStartRoutes(t *testing.T) {
+	router := newAuthRoutesTestRouter(nil)
+	registered := make(map[string]struct{})
+	for _, route := range router.Routes() {
+		registered[route.Method+" "+route.Path] = struct{}{}
+	}
+
+	for _, path := range []string{
+		"GET /api/v1/auth/oauth/github/bind/start",
+		"GET /api/v1/auth/oauth/google/bind/start",
+	} {
+		_, ok := registered[path]
+		require.True(t, ok, "missing route %s", path)
+	}
+}

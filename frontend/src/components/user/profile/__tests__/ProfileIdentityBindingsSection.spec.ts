@@ -47,6 +47,8 @@ vi.mock('vue-i18n', async (importOriginal) => {
         if (key === 'profile.authBindings.status.notBound') return 'Not bound'
         if (key === 'profile.authBindings.providers.email') return 'Email'
         if (key === 'profile.authBindings.providers.linuxdo') return 'LinuxDo'
+        if (key === 'profile.authBindings.providers.github') return 'GitHub'
+        if (key === 'profile.authBindings.providers.google') return 'Google'
         if (key === 'profile.authBindings.providers.wechat') return 'WeChat'
         if (key === 'profile.authBindings.providers.oidc') return params?.providerName || 'OIDC'
         if (key === 'profile.authBindings.bindAction') return `Bind ${params?.providerName || ''}`.trim()
@@ -151,6 +153,31 @@ describe('ProfileIdentityBindingsSection', () => {
       'Bind ExampleID'
     )
     expect(wrapper.get('[data-testid="profile-binding-wechat-action"]').text()).toBe('Bind WeChat')
+  })
+
+  it('renders GitHub and Google bind actions returned by the profile contract', () => {
+    const wrapper = mount(ProfileIdentityBindingsSection, {
+      global: {
+        plugins: [pinia],
+      },
+      props: {
+        user: createUser({
+          auth_bindings: {
+            email: { bound: true },
+            github: { bound: false, can_bind: true },
+            google: { bound: false, can_bind: true },
+          },
+        }),
+        linuxdoEnabled: false,
+        oidcEnabled: false,
+        wechatEnabled: false,
+      },
+    })
+
+    expect(wrapper.get('[data-testid="profile-binding-github-status"]').text()).toBe('Not bound')
+    expect(wrapper.get('[data-testid="profile-binding-github-action"]').text()).toBe('Bind GitHub')
+    expect(wrapper.get('[data-testid="profile-binding-google-status"]').text()).toBe('Not bound')
+    expect(wrapper.get('[data-testid="profile-binding-google-action"]').text()).toBe('Bind Google')
   })
 
   it('starts the WeChat bind flow for the current profile page', async () => {

@@ -325,10 +325,10 @@ func (s *UserService) applyExplicitProviderAvailability(ctx context.Context, sum
 	if raw, ok := settings[SettingKeyOIDCConnectEnabled]; ok && strings.TrimSpace(raw) != "" && raw != "true" {
 		disableIdentityBindAction(&summaries.OIDC)
 	}
-	if raw, ok := settings[SettingKeyGitHubOAuthEnabled]; ok && strings.TrimSpace(raw) != "" && raw != "true" {
+	if !isExplicitlyEnabledSetting(settings, SettingKeyGitHubOAuthEnabled) {
 		disableIdentityBindAction(&summaries.GitHub)
 	}
-	if raw, ok := settings[SettingKeyGoogleOAuthEnabled]; ok && strings.TrimSpace(raw) != "" && raw != "true" {
+	if !isExplicitlyEnabledSetting(settings, SettingKeyGoogleOAuthEnabled) {
 		disableIdentityBindAction(&summaries.Google)
 	}
 	if raw, ok := settings[SettingKeyWeChatConnectEnabled]; ok && strings.TrimSpace(raw) != "" {
@@ -341,6 +341,11 @@ func (s *UserService) applyExplicitProviderAvailability(ctx context.Context, sum
 			disableIdentityBindAction(&summaries.WeChat)
 		}
 	}
+}
+
+func isExplicitlyEnabledSetting(settings map[string]string, key string) bool {
+	raw, ok := settings[key]
+	return ok && strings.TrimSpace(raw) == "true"
 }
 
 func disableIdentityBindAction(summary *UserIdentitySummary) {

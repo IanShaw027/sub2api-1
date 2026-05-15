@@ -4,55 +4,15 @@ package repository
 
 import (
 	"context"
-	"fmt"
-	"net"
-	"os/exec"
 	"testing"
-	"time"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 )
 
-type localRedisServer struct {
-	cmd *exec.Cmd
-}
-
-func startLocalRedisServer(t *testing.T) (*redis.Client, *localRedisServer) {
-	t.Helper()
-
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	port := ln.Addr().(*net.TCPAddr).Port
-	require.NoError(t, ln.Close())
-
-	cmd := exec.Command("redis-server",
-		"--port", fmt.Sprintf("%d", port),
-		"--bind", "127.0.0.1",
-		"--save", "",
-		"--appendonly", "no",
-	)
-	require.NoError(t, cmd.Start())
-
-	client := redis.NewClient(&redis.Options{
-		Addr: fmt.Sprintf("127.0.0.1:%d", port),
-	})
-	require.Eventually(t, func() bool {
-		return client.Ping(context.Background()).Err() == nil
-	}, 5*time.Second, 50*time.Millisecond)
-
-	t.Cleanup(func() {
-		_ = client.Close()
-		_ = cmd.Process.Kill()
-		_, _ = cmd.Process.Wait()
-	})
-
-	return client, &localRedisServer{cmd: cmd}
-}
-
 func newUserRPMCacheTest(t *testing.T) (*userRPMCacheImpl, *redis.Client) {
 	t.Helper()
-	rdb, _ := startLocalRedisServer(t)
+	rdb := testRedis(t)
 	return NewUserRPMCache(rdb).(*userRPMCacheImpl), rdb
 }
 

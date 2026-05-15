@@ -84,7 +84,7 @@ func applyOpsStatusCodeFilters(c *gin.Context, filter *service.OpsErrorLogFilter
 			}
 			n, err := strconv.Atoi(p)
 			if err != nil || n < 0 {
-				return errors.New("Invalid status_codes")
+				return errors.New("invalid status_codes")
 			}
 			out = append(out, n)
 		}
@@ -97,7 +97,7 @@ func applyOpsStatusCodeFilters(c *gin.Context, filter *service.OpsErrorLogFilter
 		case "0", "false", "no":
 			filter.StatusCodesOther = false
 		default:
-			return errors.New("Invalid status_codes_other")
+			return errors.New("invalid status_codes_other")
 		}
 	}
 	return nil

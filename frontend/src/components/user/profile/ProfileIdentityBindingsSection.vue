@@ -409,6 +409,9 @@ function isProviderEnabledForBinding(provider: BindableProvider): boolean {
   if (provider === 'oidc') {
     return props.oidcEnabled
   }
+  if (provider === 'github' || provider === 'google') {
+    return true
+  }
   return resolvedWeChatBinding.value.mode !== null
 }
 
@@ -444,6 +447,28 @@ const providerItems = computed(() => [
     details: getBindingDetails('oidc'),
   },
   {
+    provider: 'github' as const,
+    label: t('profile.authBindings.providers.github'),
+    bound: getBindingStatus('github'),
+    canBind:
+      !getBindingStatus('github') &&
+      isProviderEnabledForBinding('github') &&
+      (getBindingDetails('github')?.can_bind ?? false),
+    canUnbind: Boolean(getBindingStatus('github') && getBindingDetails('github')?.can_unbind),
+    details: getBindingDetails('github'),
+  },
+  {
+    provider: 'google' as const,
+    label: t('profile.authBindings.providers.google'),
+    bound: getBindingStatus('google'),
+    canBind:
+      !getBindingStatus('google') &&
+      isProviderEnabledForBinding('google') &&
+      (getBindingDetails('google')?.can_bind ?? false),
+    canUnbind: Boolean(getBindingStatus('google') && getBindingDetails('google')?.can_unbind),
+    details: getBindingDetails('google'),
+  },
+  {
     provider: 'wechat' as const,
     label: t('profile.authBindings.providers.wechat'),
     bound: getBindingStatus('wechat'),
@@ -466,6 +491,12 @@ function providerInitial(provider: UserAuthProvider): string {
   if (provider === 'oidc') {
     return 'O'
   }
+  if (provider === 'github') {
+    return 'G'
+  }
+  if (provider === 'google') {
+    return 'G'
+  }
   return 'E'
 }
 
@@ -478,6 +509,12 @@ function providerIconClass(provider: UserAuthProvider): string {
   }
   if (provider === 'oidc') {
     return 'bg-sky-100 text-sky-600 dark:bg-sky-900/20 dark:text-sky-300'
+  }
+  if (provider === 'github') {
+    return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'
+  }
+  if (provider === 'google') {
+    return 'bg-blue-100 text-blue-600 dark:bg-blue-900/20 dark:text-blue-300'
   }
   return 'bg-primary-100 text-primary-600 dark:bg-primary-900/20 dark:text-primary-300'
 }
