@@ -46,8 +46,7 @@ func (s *GroupCapacityService) GetAllGroupCapacity(ctx context.Context) ([]Group
 	for i := range groups {
 		cap, err := s.getGroupCapacity(ctx, groups[i].ID)
 		if err != nil {
-			// Skip groups with errors, return partial results
-			continue
+			return nil, err
 		}
 		cap.GroupID = groups[i].ID
 		results = append(results, cap)
@@ -56,14 +55,11 @@ func (s *GroupCapacityService) GetAllGroupCapacity(ctx context.Context) ([]Group
 }
 
 func (s *GroupCapacityService) getGroupCapacity(ctx context.Context, groupID int64) (GroupCapacitySummary, error) {
-	var concurrencyUsed int
-	if s.concurrencyService != nil {
-		concurrencyUsed, _ = s.concurrencyService.GetGroupConcurrency(ctx, groupID)
-	}
-
 	concurrencyMax := 0
+	accounts := make([]Account, 0)
 	if s.accountRepo != nil {
-		accounts, err := s.accountRepo.ListSchedulableByGroupID(ctx, groupID)
+		var err error
+		accounts, err = s.accountRepo.ListSchedulableByGroupID(ctx, groupID)
 		if err != nil {
 			return GroupCapacitySummary{}, err
 		}
@@ -72,6 +68,15 @@ func (s *GroupCapacityService) getGroupCapacity(ctx context.Context, groupID int
 				concurrencyMax += accounts[i].Concurrency
 			}
 		}
+	}
+
+	var concurrencyUsed int
+	if s.concurrencyService != nil {
+		used, err := s.concurrencyService.GetGroupConcurrency(ctx, groupID)
+		if err != nil {
+			return GroupCapacitySummary{}, err
+		}
+		concurrencyUsed = used
 	}
 
 	return GroupCapacitySummary{

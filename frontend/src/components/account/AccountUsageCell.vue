@@ -654,6 +654,10 @@ const openAIEnabledImageRoutes = computed(() => {
     }
   }
 
+  if (!web2api && masterEnabled && hasWeb2apiData && isRouteVisible(web2apiSupported, hasWeb2apiData)) {
+    web2api = true
+  }
+
   return { codex, web2api, constrained: masterEnabled, masterEnabled, hasGroups: true }
 })
 

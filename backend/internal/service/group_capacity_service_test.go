@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -29,11 +30,28 @@ func (r groupCapacityGroupRepoStub) ListActive(_ context.Context) ([]Group, erro
 
 type groupCapacityConcurrencyCacheStub struct {
 	ConcurrencyCache
-	groupConcurrency map[int64]int
+	groupConcurrency           map[int64]int
+	groupConcurrencyErr        error
+	accountConcurrencyBatch    map[int64]int
+	accountConcurrencyBatchErr error
 }
 
 func (c groupCapacityConcurrencyCacheStub) GetGroupConcurrency(_ context.Context, groupID int64) (int, error) {
+	if c.groupConcurrencyErr != nil {
+		return 0, c.groupConcurrencyErr
+	}
 	return c.groupConcurrency[groupID], nil
+}
+
+func (c groupCapacityConcurrencyCacheStub) GetAccountConcurrencyBatch(_ context.Context, accountIDs []int64) (map[int64]int, error) {
+	if c.accountConcurrencyBatchErr != nil {
+		return nil, c.accountConcurrencyBatchErr
+	}
+	result := make(map[int64]int, len(accountIDs))
+	for _, accountID := range accountIDs {
+		result[accountID] = c.accountConcurrencyBatch[accountID]
+	}
+	return result, nil
 }
 
 func TestGroupCapacityReturnsGroupScopedUsedAndMax(t *testing.T) {
@@ -77,4 +95,36 @@ func TestGroupCapacityReturnsGroupScopedUsedAndMax(t *testing.T) {
 	require.Equal(t, 14, byGroup[10].ConcurrencyMax)
 	require.Zero(t, byGroup[20].ConcurrencyUsed)
 	require.Equal(t, 10, byGroup[20].ConcurrencyMax)
+}
+
+func TestGroupCapacityReturnsErrorWhenGroupConcurrencyReadFails(t *testing.T) {
+	account := Account{ID: 101, Concurrency: 10}
+	account2 := Account{ID: 202, Concurrency: 4}
+	accountRepo := groupCapacityAccountRepoStub{
+		accountsByGroup: map[int64][]Account{
+			10: {account, account2},
+		},
+	}
+	groupRepo := groupCapacityGroupRepoStub{
+		groups: []Group{{ID: 10, Status: StatusActive}},
+	}
+	concurrencyCache := groupCapacityConcurrencyCacheStub{
+		groupConcurrencyErr: errors.New("redis read failed"),
+		accountConcurrencyBatch: map[int64]int{
+			101: 2,
+			202: 3,
+		},
+	}
+	svc := NewGroupCapacityService(
+		accountRepo,
+		groupRepo,
+		NewConcurrencyService(concurrencyCache),
+		nil,
+		nil,
+	)
+
+	summaries, err := svc.GetAllGroupCapacity(context.Background())
+
+	require.Error(t, err)
+	require.Nil(t, summaries)
 }
