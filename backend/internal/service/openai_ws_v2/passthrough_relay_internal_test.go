@@ -444,7 +444,7 @@ func TestOpenAIWSRelayFlushPendingTerminalsForIncomingMessage(t *testing.T) {
 
 	flushed := openAIWSRelayFlushPendingTerminalsForIncomingMessage(
 		state,
-		[]byte(`{"type":"response.created","response":{"id":"resp_keep"}}`),
+		[]byte(`{"type":"response.completed","response":{"id":"resp_keep"}}`),
 		time.Unix(10, 0),
 	)
 	require.Len(t, flushed, 1)
@@ -456,11 +456,64 @@ func TestOpenAIWSRelayFlushPendingTerminalsForIncomingMessage(t *testing.T) {
 
 	flushed = openAIWSRelayFlushPendingTerminalsForIncomingMessage(
 		state,
-		[]byte(`{"type":"response.created","response":{"id":"resp_keep"}}`),
+		[]byte(`{"type":"response.completed","response":{"id":"resp_keep"}}`),
 		time.Unix(20, 0),
 	)
 	require.Len(t, flushed, 0)
 	require.Contains(t, state.pendingTerminalByID, "resp_keep")
+}
+
+func TestOpenAIWSRelayFlushPendingTerminalsForIncomingMessage_IgnoresNonTerminalTopLevelID(t *testing.T) {
+	t.Parallel()
+
+	state := &relayState{}
+	openAIWSRelaySetPendingTerminal(state, "resp_old", observedUpstreamEvent{
+		eventType:  "response.incomplete",
+		responseID: "resp_old",
+		usage:      Usage{InputTokens: 4, OutputTokens: 3, CacheReadInputTokens: 2},
+	})
+	openAIWSRelaySetPendingTerminal(state, "resp_keep", observedUpstreamEvent{
+		eventType:  "response.incomplete",
+		responseID: "resp_keep",
+		usage:      Usage{InputTokens: 1, OutputTokens: 1},
+	})
+
+	flushed := openAIWSRelayFlushPendingTerminalsForIncomingMessage(
+		state,
+		[]byte(`{"type":"response.output_text.delta","id":"evt_123","delta":"hi"}`),
+		time.Unix(30, 0),
+	)
+	require.Len(t, flushed, 0)
+	require.Len(t, state.pendingTerminalByID, 2)
+	require.Contains(t, state.pendingTerminalByID, "resp_old")
+	require.Contains(t, state.pendingTerminalByID, "resp_keep")
+}
+
+func TestOpenAIWSRelayFinalizeObservedTerminal_DoesNotLetWeakPendingOverwriteStrongerResult(t *testing.T) {
+	t.Parallel()
+
+	state := &relayState{}
+
+	strong := observedUpstreamEvent{
+		terminal:      true,
+		eventType:     "response.completed",
+		responseID:    "resp_strong",
+		terminalOrder: 2,
+	}
+	openAIWSRelayFinalizeObservedTerminal(state, &strong)
+	require.Equal(t, "resp_strong", state.lastResponseID)
+	require.Equal(t, "response.completed", state.terminalEventType)
+
+	weak := observedUpstreamEvent{
+		terminal:      true,
+		eventType:     "response.incomplete",
+		responseID:    "resp_weak",
+		terminalOrder: 3,
+	}
+	openAIWSRelayFinalizeObservedTerminal(state, &weak)
+	require.Equal(t, "resp_strong", state.lastResponseID)
+	require.Equal(t, "response.completed", state.terminalEventType)
+	require.True(t, openAIWSRelayHasSeenTerminal(state, "resp_weak"))
 }
 
 func TestIsDisconnectErrorCoverage_CloseStatusesAndMessageBranches(t *testing.T) {

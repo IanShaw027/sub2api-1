@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -215,16 +216,78 @@ func TestGatewaySSEAudit_ResponseFailedTerminalEnvelopeReturnsJSON(t *testing.T)
 		invoker := invoker
 		t.Run(invoker.name, func(t *testing.T) {
 			result, err := invokeGatewaySSEAuditHandler(t, body, invoker.passthrough)
-			require.NoError(t, err)
+			require.Error(t, err)
+			var failoverErr *UpstreamFailoverError
+			require.False(t, errors.As(err, &failoverErr))
 			require.NotNil(t, result)
-			require.NotNil(t, result.usage)
-			require.Equal(t, 11, result.usage.InputTokens)
-			require.Equal(t, 13, result.usage.OutputTokens)
-			require.Equal(t, 4, result.usage.CacheReadInputTokens)
+			require.Nil(t, result.usage)
 			require.Contains(t, result.contentType, "application/json")
-			require.Contains(t, result.body, `"id":"resp_failed_envelope"`)
-			require.Contains(t, result.body, `"status":"failed"`)
-			require.NotContains(t, result.body, `"type":"upstream_error"`)
+			require.Contains(t, result.body, `"type":"upstream_error"`)
+			require.Contains(t, result.body, `upstream rejected request`)
+			require.NotContains(t, result.body, `"id":"resp_failed_envelope"`)
+		})
+	}
+}
+
+func TestGatewaySSEAudit_ResponseFailedTerminalEnvelopeDominatesLaterDone(t *testing.T) {
+	invokers := []struct {
+		name        string
+		passthrough bool
+	}{
+		{name: "standard", passthrough: false},
+		{name: "passthrough", passthrough: true},
+	}
+
+	body := strings.Join([]string{
+		`data: {"type":"response.in_progress","response":{"id":"resp_failed_then_done"}}`,
+		`data: {"type":"response.failed","response":{"id":"resp_failed_then_done","status":"failed","error":{"message":"upstream rejected request"}}}`,
+		`data: {"type":"response.done","response":{"id":"resp_failed_then_done","model":"gpt-4o","output":[{"type":"message","content":[{"type":"output_text","text":"should not win"}]}],"usage":{"input_tokens":11,"output_tokens":13,"input_tokens_details":{"cached_tokens":4}}}}`,
+		`data: [DONE]`,
+	}, "\n")
+
+	for _, invoker := range invokers {
+		invoker := invoker
+		t.Run(invoker.name, func(t *testing.T) {
+			result, err := invokeGatewaySSEAuditHandler(t, body, invoker.passthrough)
+			require.Error(t, err)
+			var failoverErr *UpstreamFailoverError
+			require.False(t, errors.As(err, &failoverErr))
+			require.NotNil(t, result)
+			require.Nil(t, result.usage)
+			require.Contains(t, result.contentType, "application/json")
+			require.Contains(t, result.body, `"type":"upstream_error"`)
+			require.Contains(t, result.body, `upstream rejected request`)
+			require.NotContains(t, result.body, `should not win`)
+		})
+	}
+}
+
+func TestGatewaySSEAudit_ResponseFailedTerminalEnvelopeWithRateLimitAdvisoryReturnsFailover(t *testing.T) {
+	invokers := []struct {
+		name        string
+		passthrough bool
+	}{
+		{name: "standard", passthrough: false},
+		{name: "passthrough", passthrough: true},
+	}
+
+	body := strings.Join([]string{
+		`data: {"type":"codex.rate_limits","metered_limit_name":"codex","rate_limits":{"allowed":true,"limit_reached":false,"primary":{"used_percent":95,"window_minutes":300,"reset_at":1700000000},"secondary":null},"credits":{"has_credits":false,"unlimited":false,"balance":null}}`,
+		`data: {"type":"response.failed","response":{"id":"resp_failed_retryable","status":"failed","error":{"message":"temporary upstream failure"}}}`,
+		`data: [DONE]`,
+	}, "\n")
+
+	for _, invoker := range invokers {
+		invoker := invoker
+		t.Run(invoker.name, func(t *testing.T) {
+			result, err := invokeGatewaySSEAuditHandler(t, body, invoker.passthrough)
+			require.Error(t, err)
+			var failoverErr *UpstreamFailoverError
+			require.ErrorAs(t, err, &failoverErr)
+			require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+			require.NotNil(t, result)
+			require.Nil(t, result.usage)
+			require.Empty(t, result.body)
 		})
 	}
 }

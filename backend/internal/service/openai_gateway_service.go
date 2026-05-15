@@ -5154,23 +5154,24 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 // rewrite model fields back to the original requested model.
 func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c *gin.Context, account *Account, body []byte, originalModel string, mappedModel string) (*openaiNonStreamingResultPassthrough, error) {
 	bodyText := string(body)
+	if advisoryMsg, matched := extractOpenAIWSSoftRateLimitAdvisoryFromSSEBody(bodyText); matched {
+		return nil, s.newOpenAISoftRateLimitFailoverError(c.Request.Context(), c, account, true, resp.Header.Get("x-request-id"), body, advisoryMsg)
+	}
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
-	if !ok {
-		if terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText); terminalOK {
+	if terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText); terminalOK {
+		if terminalType == "response.failed" {
+			msg := extractOpenAISSEErrorMessage(terminalPayload)
+			if msg == "" {
+				msg = "Upstream compact response failed"
+			}
+			return nil, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
+		}
+		if !ok {
 			if response := extractOpenAISSETerminalResponse(terminalPayload); len(response) > 0 {
 				finalResponse = response
 				ok = true
-			} else if terminalType == "response.failed" {
-				msg := extractOpenAISSEErrorMessage(terminalPayload)
-				if msg == "" {
-					msg = "Upstream compact response failed"
-				}
-				return nil, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
 			}
 		}
-	}
-	if advisoryMsg, matched := extractOpenAIWSSoftRateLimitAdvisoryFromSSEBody(bodyText); matched {
-		return nil, s.newOpenAISoftRateLimitFailoverError(c.Request.Context(), c, account, true, resp.Header.Get("x-request-id"), body, advisoryMsg)
 	}
 
 	usage := &OpenAIUsage{}
@@ -6323,23 +6324,24 @@ func isEventStreamResponse(header http.Header) bool {
 
 func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Context, account *Account, body []byte, originalModel, mappedModel string) (*openaiNonStreamingResult, error) {
 	bodyText := string(body)
+	if advisoryMsg, matched := extractOpenAIWSSoftRateLimitAdvisoryFromSSEBody(bodyText); matched {
+		return nil, s.newOpenAISoftRateLimitFailoverError(c.Request.Context(), c, account, false, resp.Header.Get("x-request-id"), body, advisoryMsg)
+	}
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
-	if !ok {
-		if terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText); terminalOK {
+	if terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText); terminalOK {
+		if terminalType == "response.failed" {
+			msg := extractOpenAISSEErrorMessage(terminalPayload)
+			if msg == "" {
+				msg = "Upstream compact response failed"
+			}
+			return nil, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
+		}
+		if !ok {
 			if response := extractOpenAISSETerminalResponse(terminalPayload); len(response) > 0 {
 				finalResponse = response
 				ok = true
-			} else if terminalType == "response.failed" {
-				msg := extractOpenAISSEErrorMessage(terminalPayload)
-				if msg == "" {
-					msg = "Upstream compact response failed"
-				}
-				return nil, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
 			}
 		}
-	}
-	if advisoryMsg, matched := extractOpenAIWSSoftRateLimitAdvisoryFromSSEBody(bodyText); matched {
-		return nil, s.newOpenAISoftRateLimitFailoverError(c.Request.Context(), c, account, false, resp.Header.Get("x-request-id"), body, advisoryMsg)
 	}
 
 	usage := &OpenAIUsage{}
@@ -6402,16 +6404,24 @@ func extractOpenAISSETerminalEvent(body string) (string, []byte, bool) {
 	lines := strings.Split(body, "\n")
 	var terminalType string
 	var terminalPayload []byte
+	var failedPayload []byte
 	for _, line := range lines {
 		data, ok := extractOpenAISSEDataLine(line)
 		if !ok || data == "" || data == "[DONE]" {
 			continue
 		}
 		eventType := strings.TrimSpace(gjson.Get(data, "type").String())
-		if isOpenAIUsageTerminalEventType(eventType) || eventType == "response.failed" {
+		if eventType == "response.failed" {
+			failedPayload = []byte(data)
+			continue
+		}
+		if isOpenAIUsageTerminalEventType(eventType) {
 			terminalType = eventType
 			terminalPayload = []byte(data)
 		}
+	}
+	if len(failedPayload) > 0 {
+		return "response.failed", failedPayload, true
 	}
 	if terminalType == "" {
 		return "", nil, false

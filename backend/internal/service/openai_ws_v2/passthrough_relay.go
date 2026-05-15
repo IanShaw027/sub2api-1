@@ -82,6 +82,8 @@ type relayState struct {
 	lastResponseID      string
 	terminalEventType   string
 	firstTokenMs        *int
+	resultTerminalRank  int
+	resultTerminalOrder int64
 	turnTimingByID      map[string]*relayTurnTiming
 	terminalByID        map[string]struct{}
 	pendingTerminalByID map[string]observedUpstreamEvent
@@ -96,13 +98,14 @@ type relayExitSignal struct {
 }
 
 type observedUpstreamEvent struct {
-	terminal     bool
-	eventType    string
-	responseID   string
-	usage        Usage
-	duration     time.Duration
-	firstToken   *int
-	pendingOrder int64
+	terminal      bool
+	eventType     string
+	responseID    string
+	usage         Usage
+	duration      time.Duration
+	firstToken    *int
+	terminalOrder int64
+	pendingOrder  int64
 }
 
 type relayTurnTiming struct {
@@ -405,10 +408,6 @@ func runUpstreamToClient(
 			return
 		}
 		markActivity()
-		if msgType == coderws.MessageText {
-			flushed := openAIWSRelayFlushPendingTerminalsForIncomingMessage(state, payload, nowFn())
-			flushPendingTurnCompletions(onTurnComplete, state, flushed)
-		}
 		observedEvent := observedUpstreamEvent{}
 		switch msgType {
 		case coderws.MessageText:
@@ -418,6 +417,13 @@ func runUpstreamToClient(
 		}
 		flushPendingTurnCompletions(onTurnComplete, state, openAIWSRelayFlushPendingTerminalsForIncomingMessage(state, payload, nowFn()))
 		emitTurnComplete(onTurnComplete, state, observedEvent)
+		flushedWeakTerminalForDrain := false
+		if dropDownstreamWrites != nil && dropDownstreamWrites.Load() && observedEvent.responseID != "" && isWeakTerminalEvent(observedEvent.eventType) {
+			// 客户端已断开时，weak terminal 可以在 drain 窗口内主动收束。
+			flushed := openAIWSRelayFlushPendingTerminalsAt(state, "", nowFn())
+			flushPendingTurnCompletions(onTurnComplete, state, flushed)
+			flushedWeakTerminalForDrain = len(flushed) > 0
+		}
 		if dropDownstreamWrites != nil && dropDownstreamWrites.Load() {
 			if droppedFrames != nil {
 				droppedFrames.Add(1)
@@ -430,6 +436,14 @@ func runUpstreamToClient(
 				WroteDownstream: wroteDownstream,
 			})
 			if observedEvent.terminal {
+				exitCh <- relayExitSignal{
+					stage:           "drain_terminal",
+					graceful:        true,
+					wroteDownstream: wroteDownstream,
+				}
+				return
+			}
+			if flushedWeakTerminalForDrain {
 				exitCh <- relayExitSignal{
 					stage:           "drain_terminal",
 					graceful:        true,
@@ -606,6 +620,7 @@ func observeUpstreamMessage(
 	if !terminalEvent {
 		return observed
 	}
+	observed.terminalOrder = openAIWSRelayNextTerminalOrder(state)
 	if responseID != "" && isWeakTerminalEvent(eventType) {
 		if hasPendingObserved {
 			observed.duration = maxDuration(observed.duration, pendingObserved.duration)
@@ -719,8 +734,10 @@ func openAIWSRelaySetPendingTerminal(state *relayState, responseID string, obser
 	if state.pendingTerminalByID == nil {
 		state.pendingTerminalByID = make(map[string]observedUpstreamEvent, 4)
 	}
-	observed.pendingOrder = state.pendingTerminalSeq
-	state.pendingTerminalSeq++
+	if observed.terminalOrder <= 0 {
+		observed.terminalOrder = openAIWSRelayNextTerminalOrder(state)
+	}
+	observed.pendingOrder = observed.terminalOrder
 	state.pendingTerminalByID[responseID] = observed
 }
 
@@ -782,10 +799,18 @@ func openAIWSRelayFlushPendingTerminalsForIncomingMessage(state *relayState, mes
 	if state == nil || len(message) == 0 || len(state.pendingTerminalByID) == 0 {
 		return nil
 	}
-	values := gjson.GetManyBytes(message, "response.id", "response_id", "id")
-	responseID := strings.TrimSpace(values[0].String())
+	values := gjson.GetManyBytes(message, "type", "response.id", "response_id", "id")
+	eventType := strings.TrimSpace(values[0].String())
+	if !isTerminalEvent(eventType) || isWeakTerminalEvent(eventType) {
+		// weak terminal 需要保留到更强的终态或 EOF/drain 再结算。
+		return nil
+	}
+	responseID := strings.TrimSpace(values[1].String())
 	if responseID == "" {
-		responseID = strings.TrimSpace(values[1].String())
+		responseID = strings.TrimSpace(values[2].String())
+	}
+	if responseID == "" {
+		responseID = strings.TrimSpace(values[3].String())
 	}
 	if responseID == "" {
 		return nil
@@ -797,13 +822,18 @@ func openAIWSRelayFinalizeObservedTerminal(state *relayState, observed *observed
 	if state == nil || observed == nil {
 		return
 	}
-	state.terminalEventType = observed.eventType
 	responseID := strings.TrimSpace(observed.responseID)
 	if responseID == "" {
 		return
 	}
 	openAIWSRelayMarkTerminalSeen(state, responseID)
+	if !openAIWSRelayShouldPromoteTerminalResult(state, observed) {
+		return
+	}
+	state.terminalEventType = observed.eventType
 	state.lastResponseID = responseID
+	state.resultTerminalRank = openAIWSRelayTerminalStrength(observed.eventType)
+	state.resultTerminalOrder = observed.terminalOrder
 }
 
 func openAIWSRelayFinalizeFlushedTerminal(state *relayState, observed *observedUpstreamEvent, now time.Time) {
@@ -852,6 +882,38 @@ func openAIWSRelayMarkTerminalSeen(state *relayState, responseID string) {
 		state.terminalByID = make(map[string]struct{}, 8)
 	}
 	state.terminalByID[responseID] = struct{}{}
+}
+
+func openAIWSRelayNextTerminalOrder(state *relayState) int64 {
+	if state == nil {
+		return 0
+	}
+	state.pendingTerminalSeq++
+	return state.pendingTerminalSeq
+}
+
+func openAIWSRelayTerminalStrength(eventType string) int {
+	if isWeakTerminalEvent(eventType) {
+		return 1
+	}
+	if isTerminalEvent(eventType) {
+		return 2
+	}
+	return 0
+}
+
+func openAIWSRelayShouldPromoteTerminalResult(state *relayState, observed *observedUpstreamEvent) bool {
+	if state == nil || observed == nil {
+		return false
+	}
+	candidateRank := openAIWSRelayTerminalStrength(observed.eventType)
+	if candidateRank == 0 {
+		return false
+	}
+	if candidateRank != state.resultTerminalRank {
+		return candidateRank > state.resultTerminalRank
+	}
+	return observed.terminalOrder >= state.resultTerminalOrder
 }
 
 func openAIWSRelayCloneIntPtr(v *int) *int {
