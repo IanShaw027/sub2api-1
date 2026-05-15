@@ -4697,6 +4697,20 @@ func (s *OpenAIGatewayService) handleErrorResponsePassthrough(
 		UpstreamResponseBody: upstreamDetail,
 	})
 
+	if isOpenAITransientCapacityError(upstreamMsg) {
+		c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+		c.JSON(resp.StatusCode, gin.H{
+			"error": gin.H{
+				"type":    openAIClientVisibleErrorType(resp.StatusCode),
+				"message": safeCompatUpstreamErrorMessage(resp.StatusCode),
+			},
+		})
+		if upstreamMsg == "" {
+			return fmt.Errorf("upstream error: %d", resp.StatusCode)
+		}
+		return fmt.Errorf("upstream error: %d message=%s", resp.StatusCode, upstreamMsg)
+	}
+
 	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	contentType := resp.Header.Get("Content-Type")
 	if contentType == "" {
@@ -4828,10 +4842,15 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 	payload []byte,
 	message string,
 ) *UpstreamFailoverError {
-	message = sanitizeUpstreamErrorMessage(strings.TrimSpace(message))
-	if message == "" {
-		message = "OpenAI stream disconnected before completion"
+	rawMessage := sanitizeUpstreamErrorMessage(strings.TrimSpace(message))
+	if rawMessage == "" {
+		rawMessage = "OpenAI stream disconnected before completion"
 	}
+	clientMessage := normalizeOpenAIClientVisibleErrorMessage(
+		http.StatusBadGateway,
+		rawMessage,
+		"OpenAI stream disconnected before completion",
+	)
 	detail := ""
 	if len(payload) > 0 && s != nil && s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
 		maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
@@ -4841,14 +4860,14 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 		detail = truncateString(string(payload), maxBytes)
 	}
 	if c != nil {
-		setOpsUpstreamError(c, http.StatusBadGateway, message, detail)
+		setOpsUpstreamError(c, http.StatusBadGateway, rawMessage, detail)
 		event := OpsUpstreamErrorEvent{
 			Platform:           PlatformOpenAI,
 			UpstreamStatusCode: http.StatusBadGateway,
 			UpstreamRequestID:  strings.TrimSpace(upstreamRequestID),
 			Passthrough:        passthrough,
 			Kind:               "failover",
-			Message:            message,
+			Message:            rawMessage,
 			Detail:             detail,
 		}
 		if account != nil {
@@ -4861,7 +4880,7 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 	body, _ := json.Marshal(gin.H{
 		"error": gin.H{
 			"type":    "upstream_error",
-			"message": message,
+			"message": clientMessage,
 		},
 	})
 	return &UpstreamFailoverError{
@@ -5008,6 +5027,12 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				if !openAIStreamClientOutputStarted(c, clientOutputStarted) && openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
 					return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs},
 						s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage)
+				}
+				clientFailedMessage := normalizeOpenAIClientVisibleErrorMessage(http.StatusBadGateway, failedMessage, "Upstream response failed")
+				if clientFailedMessage != "" && clientFailedMessage != failedMessage {
+					dataBytes = rewriteOpenAIErrorMessagePayload(dataBytes, clientFailedMessage)
+					trimmedData = strings.TrimSpace(string(dataBytes))
+					line = "data: " + trimmedData
 				}
 				forceFlushFailedEvent = true
 				sawFailedEvent = true
@@ -5700,6 +5725,45 @@ func safeCompatUpstreamErrorMessage(statusCode int) string {
 	}
 }
 
+func normalizeOpenAIClientVisibleErrorMessage(statusCode int, message string, fallback string) string {
+	message = sanitizeUpstreamErrorMessage(strings.TrimSpace(message))
+	if isOpenAITransientCapacityError(message) {
+		return safeCompatUpstreamErrorMessage(statusCode)
+	}
+	if message == "" {
+		return fallback
+	}
+	return message
+}
+
+func rewriteOpenAIErrorMessagePayload(payload []byte, message string) []byte {
+	if len(payload) == 0 {
+		return payload
+	}
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return payload
+	}
+
+	updated := payload
+	changed := false
+	for _, path := range []string{"response.error.message", "error.message", "message"} {
+		if !gjson.GetBytes(updated, path).Exists() {
+			continue
+		}
+		next, err := sjson.SetBytes(updated, path, message)
+		if err != nil {
+			continue
+		}
+		updated = next
+		changed = true
+	}
+	if !changed {
+		return payload
+	}
+	return updated
+}
+
 func shouldExposeOpenAIUpstreamClientError(statusCode int, upstreamMsg string) bool {
 	if statusCode < http.StatusBadRequest || statusCode >= http.StatusInternalServerError {
 		return false
@@ -5720,9 +5784,27 @@ func isOpenAITransientCapacityError(upstreamMsg string) bool {
 		return false
 	}
 
-	return strings.Contains(lower, "at capacity") ||
-		strings.Contains(lower, "no capacity available") ||
-		strings.Contains(lower, "try a different model")
+	markers := []string{
+		"at capacity",
+		"no capacity available",
+		"try a different model",
+		"capacity on this model",
+		"exhausted your capacity",
+		"resource has been exhausted",
+		"server overloaded",
+		"service overloaded",
+		"server is overloaded",
+		"temporarily unavailable after multiple retries",
+		"service temporarily unavailable after multiple retries",
+		"temporarily unavailable due to high demand",
+		"high demand",
+	}
+	for _, marker := range markers {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func openAIClientVisibleErrorType(statusCode int) string {
@@ -5956,6 +6038,12 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 					sawFailedEvent = true
 					streamFailoverErr = s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, failedMessage)
 					return
+				}
+				clientFailedMessage := normalizeOpenAIClientVisibleErrorMessage(http.StatusBadGateway, failedMessage, "Upstream response failed")
+				if clientFailedMessage != "" && clientFailedMessage != failedMessage {
+					dataBytes = rewriteOpenAIErrorMessagePayload(dataBytes, clientFailedMessage)
+					data = string(dataBytes)
+					line = "data: " + data
 				}
 				forceFlushFailedEvent = true
 				sawFailedEvent = true
@@ -6472,9 +6560,7 @@ func extractOpenAISSEErrorMessage(payload []byte) string {
 
 func (s *OpenAIGatewayService) writeOpenAINonStreamingProtocolError(resp *http.Response, c *gin.Context, message string) error {
 	message = sanitizeUpstreamErrorMessage(strings.TrimSpace(message))
-	if message == "" {
-		message = "Upstream returned an invalid non-streaming response"
-	}
+	message = normalizeOpenAIClientVisibleErrorMessage(http.StatusBadGateway, message, "Upstream returned an invalid non-streaming response")
 	setOpsUpstreamError(c, http.StatusBadGateway, message, "")
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")

@@ -921,10 +921,11 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 		return nil, fmt.Errorf("upstream stream ended without terminal event")
 	}
 	if finalEventType == "response.failed" || strings.EqualFold(strings.TrimSpace(finalResponse.Status), "failed") {
-		errMessage := extractResponsesFailureMessage(finalResponse, nil)
-		if errMessage == "" {
-			errMessage = "Upstream response failed"
-		}
+		errMessage := normalizeOpenAIClientVisibleErrorMessage(
+			http.StatusBadGateway,
+			extractResponsesFailureMessage(finalResponse, nil),
+			"Upstream response failed",
+		)
 		writeChatCompletionsError(c, http.StatusBadGateway, "upstream_error", errMessage)
 		return nil, fmt.Errorf("upstream response failed: %s", errMessage)
 	}
@@ -1207,10 +1208,7 @@ func extractResponsesFailureMessage(resp *apicompat.ResponsesResponse, payload [
 }
 
 func writeChatCompletionsStreamError(w io.Writer, message string) error {
-	message = sanitizeUpstreamErrorMessage(strings.TrimSpace(message))
-	if message == "" {
-		message = "Upstream response failed"
-	}
+	message = normalizeOpenAIClientVisibleErrorMessage(http.StatusBadGateway, message, "Upstream response failed")
 	payload, err := json.Marshal(gin.H{
 		"error": gin.H{
 			"type":    "upstream_error",

@@ -841,14 +841,15 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 			imageCount = len(emitted)
 			streamCompleted = true
 		case "response.failed":
-			failedMessage := extractOpenAISSEErrorMessage(dataBytes)
-			if failedMessage == "" {
-				failedMessage = "upstream image response failed"
+			rawFailedMessage := extractOpenAISSEErrorMessage(dataBytes)
+			if rawFailedMessage == "" {
+				rawFailedMessage = "upstream image response failed"
 			}
 			errCodeRaw, errTypeRaw, _ := parseOpenAIWSResponseFailedErrorFields(dataBytes)
 			upstreamStatus := openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
+			clientFailedMessage := normalizeOpenAIClientVisibleErrorMessage(http.StatusBadGateway, rawFailedMessage, "upstream image response failed")
 			upstreamDetail := s.openAIImagesStreamFailedDetail(dataBytes)
-			setOpsUpstreamError(c, upstreamStatus, failedMessage, upstreamDetail)
+			setOpsUpstreamError(c, upstreamStatus, rawFailedMessage, upstreamDetail)
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 				Platform:           account.Platform,
 				AccountID:          account.ID,
@@ -857,11 +858,11 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 				UpstreamRequestID:  strings.TrimSpace(resp.Header.Get("x-request-id")),
 				UpstreamURL:        safeUpstreamURL(upstreamURL),
 				Kind:               "http_error",
-				Message:            failedMessage,
+				Message:            rawFailedMessage,
 				Detail:             upstreamDetail,
 			})
-			_ = tryWriteEvent("error", buildOpenAIImagesStreamErrorBody(failedMessage))
-			processErr = fmt.Errorf("upstream image response failed: %s", failedMessage)
+			_ = tryWriteEvent("error", buildOpenAIImagesStreamErrorBody(clientFailedMessage))
+			processErr = fmt.Errorf("upstream image response failed: %s", rawFailedMessage)
 		}
 	}
 	var sseData openAISSEDataAccumulator

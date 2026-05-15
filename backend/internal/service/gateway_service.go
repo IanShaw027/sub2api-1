@@ -7163,6 +7163,12 @@ func (s *GatewayService) handleErrorResponse(ctx context.Context, resp *http.Res
 
 	switch resp.StatusCode {
 	case 400:
+		if isOpenAITransientCapacityError(upstreamMsg) {
+			statusCode = http.StatusBadGateway
+			errType = "upstream_error"
+			errMsg = "Upstream request failed"
+			break
+		}
 		c.Data(http.StatusBadRequest, "application/json", body)
 		summary := upstreamMsg
 		if summary == "" {

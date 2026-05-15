@@ -2283,6 +2283,11 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			if errMsg == "" {
 				errMsg = "Upstream websocket error"
 			}
+			clientErrMsg := normalizeOpenAIClientVisibleErrorMessage(
+				openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw),
+				errMsg,
+				"Upstream websocket error",
+			)
 			fallbackReason, canFallback := classifyOpenAIWSErrorEventFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
 			errCode, errType, errMessage := summarizeOpenAIWSErrorEventFieldsFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
 			logOpenAIWSModeInfo(
@@ -2331,13 +2336,13 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			setOpsUpstreamError(c, statusCode, errMsg, "")
 			if reqStream && !clientDisconnected {
 				flushBufferedStreamEvents("error_event")
-				emitStreamMessage(message, true)
+				emitStreamMessage(rewriteOpenAIErrorMessagePayload(message, clientErrMsg), true)
 			}
 			if !reqStream {
 				c.JSON(statusCode, gin.H{
 					"error": gin.H{
 						"type":    "upstream_error",
-						"message": errMsg,
+						"message": clientErrMsg,
 					},
 				})
 			}
@@ -2349,6 +2354,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			if errMsg == "" {
 				errMsg = "Upstream response failed"
 			}
+			clientErrMsg := normalizeOpenAIClientVisibleErrorMessage(http.StatusBadGateway, errMsg, "Upstream response failed")
 			failedErr := &openAIWSResponseFailedError{
 				code:      errCodeRaw,
 				errType:   errTypeRaw,
@@ -2363,7 +2369,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			setOpsUpstreamError(c, statusCode, errMsg, "")
 			if reqStream && !clientDisconnected {
 				flushBufferedStreamEvents("response_failed")
-				emitStreamMessage(message, true)
+				emitStreamMessage(rewriteOpenAIErrorMessagePayload(message, clientErrMsg), true)
 			}
 			return nil, fmt.Errorf("upstream response failed: %s", errMsg)
 		}
