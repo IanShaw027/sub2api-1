@@ -56,10 +56,8 @@ func (s *GroupCapacityService) GetAllGroupCapacity(ctx context.Context) ([]Group
 
 func (s *GroupCapacityService) getGroupCapacity(ctx context.Context, groupID int64) (GroupCapacitySummary, error) {
 	concurrencyMax := 0
-	accounts := make([]Account, 0)
 	if s.accountRepo != nil {
-		var err error
-		accounts, err = s.accountRepo.ListSchedulableByGroupID(ctx, groupID)
+		accounts, err := s.accountRepo.ListSchedulableByGroupID(ctx, groupID)
 		if err != nil {
 			return GroupCapacitySummary{}, err
 		}

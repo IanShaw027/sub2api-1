@@ -26,7 +26,7 @@ import (
 )
 
 func TestCalculateGatewayRefundAmountUsesStrictCentComparison(t *testing.T) {
-	got := calculateGatewayRefundAmount(100, 80, 99.99)
+	got := calculateGatewayRefundAmount(100, 80, 99.99, "CNY")
 	require.True(t, math.Abs(got-79.99) < 0.000001, "got %.8f", got)
 }
 
@@ -245,13 +245,13 @@ func TestHandlePaymentNotificationCancelledOrderWithinGraceRecoversAndFulfills(t
 
 	paidCount, err := client.PaymentAuditLog.Query().
 		Where(paymentauditlog.OrderIDEQ(orderID), paymentauditlog.ActionEQ("ORDER_PAID")).
-	Count(ctx)
+		Count(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, paidCount)
 
 	lateCount, err := client.PaymentAuditLog.Query().
 		Where(paymentauditlog.OrderIDEQ(orderID), paymentauditlog.ActionEQ("PAYMENT_AFTER_CANCELLED")).
-	Count(ctx)
+		Count(ctx)
 	require.NoError(t, err)
 	require.Zero(t, lateCount)
 
@@ -902,4 +902,56 @@ func TestValidateProviderNotificationMetadataRejectsEasyPaySnapshotMismatch(t *t
 		"pid": "pid-other",
 	})
 	assert.ErrorContains(t, err, "easypay pid mismatch")
+}
+
+func TestValidateProviderNotificationMetadataRejectsAirwallexSnapshotMismatch(t *testing.T) {
+	t.Parallel()
+
+	order := &dbent.PaymentOrder{
+		PaymentType: payment.TypeAirwallex,
+		ProviderSnapshot: map[string]any{
+			"schema_version": 2,
+			"merchant_id":    "acct_expected",
+			"currency":       "CNY",
+		},
+	}
+
+	err := validateProviderNotificationMetadata(order, payment.TypeAirwallex, map[string]string{
+		"account_id": "acct_other",
+		"currency":   "CNY",
+		"status":     "SUCCEEDED",
+	})
+	assert.ErrorContains(t, err, "airwallex account_id mismatch")
+
+	err = validateProviderNotificationMetadata(order, payment.TypeAirwallex, map[string]string{
+		"account_id": "acct_expected",
+		"currency":   "USD",
+		"status":     "SUCCEEDED",
+	})
+	assert.ErrorContains(t, err, "airwallex currency mismatch")
+}
+
+func TestValidateProviderNotificationMetadataRejectsStripeCurrencyMismatch(t *testing.T) {
+	t.Parallel()
+
+	order := &dbent.PaymentOrder{
+		PaymentType: payment.TypeStripe,
+		ProviderSnapshot: map[string]any{
+			"schema_version": 2,
+			"currency":       "HKD",
+		},
+	}
+
+	err := validateProviderNotificationMetadata(order, payment.TypeStripe, map[string]string{
+		"currency": "USD",
+	})
+	assert.ErrorContains(t, err, "stripe currency mismatch")
+}
+
+func TestPaymentAmountToleranceForThreeDecimalCurrency(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, amountToleranceCNY, paymentAmountToleranceForCurrency("CNY"))
+	assert.Equal(t, amountToleranceCNY, paymentAmountToleranceForCurrency("JPY"))
+	assert.InDelta(t, 0.0005, paymentAmountToleranceForCurrency("KWD"), 1e-12)
 }

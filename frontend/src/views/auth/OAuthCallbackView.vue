@@ -154,6 +154,7 @@ import { useAppStore, useAuthStore } from '@/stores'
 import { apiClient } from '@/api/client'
 import {
   exchangePendingOAuthCompletion,
+  getOAuthCompletionKind,
   persistOAuthTokenContext,
   type OAuthTokenResponse
 } from '@/api/auth'
@@ -283,6 +284,15 @@ async function finalizeTokenResponse(tokenResponse: OAuthTokenResponse, redirect
   await router.replace(sanitizeRedirectPath(redirect))
 }
 
+async function finalizeBindCompletion(redirect: string) {
+  if (typeof window !== 'undefined') {
+    window.sessionStorage.removeItem(EMAIL_OAUTH_PENDING_PROVIDER_KEY)
+  }
+  clearAllAffiliateReferralCodes()
+  appStore.showSuccess(t('profile.authBindings.bindSuccess'))
+  await router.replace(sanitizeRedirectPath(redirect || '/profile'))
+}
+
 function hasOAuthTokenResponse(value: Partial<OAuthTokenResponse>): value is OAuthTokenResponse {
   return typeof value.access_token === 'string' && value.access_token.trim() !== ''
 }
@@ -308,6 +318,10 @@ async function resumePendingEmailOAuth() {
       registrationEmail.value = String(completion.resolved_email || completion.email || '').trim()
       needsRegistrationCompletion.value = true
       isProcessing.value = false
+      return
+    }
+    if (getOAuthCompletionKind(completion) === 'bind') {
+      await finalizeBindCompletion(completionRedirect || '/profile')
       return
     }
 

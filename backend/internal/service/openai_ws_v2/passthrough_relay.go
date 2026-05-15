@@ -719,14 +719,6 @@ func openAIWSRelayDeleteTurnTiming(state *relayState, responseID string) (relayT
 	return *timing, true
 }
 
-func openAIWSRelayGetPendingTerminal(state *relayState, responseID string) (observedUpstreamEvent, bool) {
-	if state == nil || state.pendingTerminalByID == nil || responseID == "" {
-		return observedUpstreamEvent{}, false
-	}
-	observed, ok := state.pendingTerminalByID[responseID]
-	return observed, ok
-}
-
 func openAIWSRelaySetPendingTerminal(state *relayState, responseID string, observed observedUpstreamEvent) {
 	if state == nil || responseID == "" {
 		return

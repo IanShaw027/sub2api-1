@@ -130,6 +130,59 @@ func TestEmailOAuthCallbackExistingEmailLogsInWhenInvitationEnabled(t *testing.T
 	_ = user
 }
 
+func TestEmailOAuthCallbackWithBindIntentCreatesPendingBindSession(t *testing.T) {
+	handler, client := newOAuthPendingFlowTestHandler(t, true)
+	handler.cfg = &config.Config{JWT: config.JWTConfig{Secret: "test-secret"}}
+	ctx := context.Background()
+
+	user, err := client.User.Create().
+		SetEmail("bind-target@example.com").
+		SetUsername("bind-target").
+		SetPasswordHash("hash").
+		SetRole(service.RoleUser).
+		SetStatus(service.StatusActive).
+		Save(ctx)
+	require.NoError(t, err)
+
+	bindCookieValue, err := buildOAuthBindUserCookieValue(user.ID, handler.oauthBindCookieSecret())
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/oauth/github/callback", nil)
+	req.AddCookie(&http.Cookie{Name: emailOAuthBindUserCookie, Value: encodeCookieValue(bindCookieValue)})
+	c.Request = req
+
+	handler.emailOAuthCallbackWithProfileForIntent(c, "github", config.EmailOAuthProviderConfig{
+		Enabled:             true,
+		ClientID:            "github-client",
+		ClientSecret:        "github-secret",
+		RedirectURL:         "https://app.example/api/v1/auth/oauth/github/callback",
+		FrontendRedirectURL: "/auth/oauth/callback",
+	}, "/auth/oauth/callback", "/settings/profile", &emailOAuthProfile{
+		Subject:       "github-bind-123",
+		Email:         "github-bind@example.com",
+		EmailVerified: true,
+		Username:      "github-bind",
+		DisplayName:   "GitHub Bind",
+		Metadata:      map[string]any{"login": "github-bind"},
+	}, oauthIntentBindCurrentUser, "browser-session-key")
+
+	require.Equal(t, http.StatusFound, recorder.Code)
+	require.Contains(t, recorder.Header().Get("Location"), "/auth/oauth/callback")
+
+	session, err := client.PendingAuthSession.Query().Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, oauthIntentBindCurrentUser, session.Intent)
+	require.NotNil(t, session.TargetUserID)
+	require.Equal(t, user.ID, *session.TargetUserID)
+	require.Equal(t, "github", session.ProviderType)
+	require.Equal(t, "github", session.ProviderKey)
+	require.Equal(t, "github-bind-123", session.ProviderSubject)
+	require.Equal(t, "github-bind@example.com", session.ResolvedEmail)
+	require.Equal(t, "/settings/profile", session.RedirectTo)
+}
+
 func TestEmailOAuthCallbackCreatesPasswordRegistrationSessionForNewEmail(t *testing.T) {
 	affiliateRepo := newOAuthEmailAffiliateRepoStub(map[string]int64{"AFF222222345": 1001})
 	handler, client := newOAuthPendingFlowTestHandlerWithDependencies(t, oauthPendingFlowTestHandlerOptions{

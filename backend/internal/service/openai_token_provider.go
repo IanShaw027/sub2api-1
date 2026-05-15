@@ -153,6 +153,12 @@ func (p *OpenAITokenProvider) GetAccessToken(ctx context.Context, account *Accou
 	missingAccessToken := strings.TrimSpace(account.GetCredential("access_token")) == ""
 	expiresAt := account.GetCredentialAsTime("expires_at")
 	needsRefresh := missingAccessToken || expiresAt == nil || time.Until(*expiresAt) <= openAITokenRefreshSkew
+	if needsRefresh && strings.TrimSpace(account.GetOpenAIRefreshToken()) == "" {
+		if expiresAt != nil && !time.Now().Before(*expiresAt) {
+			return "", errors.New("openai access_token expired and refresh_token is missing")
+		}
+		needsRefresh = false
+	}
 	refreshFailed := false
 
 	if needsRefresh && p.refreshAPI != nil && p.executor != nil {

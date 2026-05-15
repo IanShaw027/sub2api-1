@@ -71,9 +71,9 @@ func TestAPIContracts(t *testing.T) {
 					"oidc_bound": false,
 					"wechat_bound": false,
 					"identities": {
-						"email": {
-							"provider": "email",
-							"provider_key": "email",
+							"email": {
+								"provider": "email",
+								"provider_key": "email",
 							"bound": true,
 							"bound_count": 1,
 							"can_bind": false,
@@ -82,6 +82,22 @@ func TestAPIContracts(t *testing.T) {
 							"subject_hint": "a***e@example.com",
 							"note_key": "profile.authBindings.notes.emailManagedFromProfile",
 							"note": "Primary account email is managed from the profile form."
+						},
+						"github": {
+							"provider": "github",
+							"bound": false,
+							"bound_count": 0,
+							"can_bind": true,
+							"can_unbind": false,
+							"bind_start_path": "/api/v1/auth/oauth/github/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile"
+						},
+						"google": {
+							"provider": "google",
+							"bound": false,
+							"bound_count": 0,
+							"can_bind": true,
+							"can_unbind": false,
+							"bind_start_path": "/api/v1/auth/oauth/google/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile"
 						},
 						"linuxdo": {
 							"provider": "linuxdo",
@@ -118,12 +134,28 @@ func TestAPIContracts(t *testing.T) {
 							"can_unbind": false,
 							"display_name": "alice@example.com",
 							"subject_hint": "a***e@example.com",
-							"note_key": "profile.authBindings.notes.emailManagedFromProfile",
-							"note": "Primary account email is managed from the profile form."
-						},
-						"linuxdo": {
-							"provider": "linuxdo",
-							"bound": false,
+								"note_key": "profile.authBindings.notes.emailManagedFromProfile",
+								"note": "Primary account email is managed from the profile form."
+							},
+							"github": {
+								"provider": "github",
+								"bound": false,
+								"bound_count": 0,
+								"can_bind": true,
+								"can_unbind": false,
+								"bind_start_path": "/api/v1/auth/oauth/github/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile"
+							},
+							"google": {
+								"provider": "google",
+								"bound": false,
+								"bound_count": 0,
+								"can_bind": true,
+								"can_unbind": false,
+								"bind_start_path": "/api/v1/auth/oauth/google/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile"
+							},
+							"linuxdo": {
+								"provider": "linuxdo",
+								"bound": false,
 							"bound_count": 0,
 							"can_bind": true,
 							"can_unbind": false,
@@ -147,21 +179,37 @@ func TestAPIContracts(t *testing.T) {
 						}
 					},
 					"auth_bindings": {
-						"email": {
-							"provider": "email",
-							"provider_key": "email",
+							"email": {
+								"provider": "email",
+								"provider_key": "email",
 							"bound": true,
 							"bound_count": 1,
 							"can_bind": false,
 							"can_unbind": false,
 							"display_name": "alice@example.com",
 							"subject_hint": "a***e@example.com",
-							"note_key": "profile.authBindings.notes.emailManagedFromProfile",
-							"note": "Primary account email is managed from the profile form."
-						},
-						"linuxdo": {
-							"provider": "linuxdo",
-							"bound": false,
+								"note_key": "profile.authBindings.notes.emailManagedFromProfile",
+								"note": "Primary account email is managed from the profile form."
+							},
+							"github": {
+								"provider": "github",
+								"bound": false,
+								"bound_count": 0,
+								"can_bind": true,
+								"can_unbind": false,
+								"bind_start_path": "/api/v1/auth/oauth/github/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile"
+							},
+							"google": {
+								"provider": "google",
+								"bound": false,
+								"bound_count": 0,
+								"can_bind": true,
+								"can_unbind": false,
+								"bind_start_path": "/api/v1/auth/oauth/google/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile"
+							},
+							"linuxdo": {
+								"provider": "linuxdo",
+								"bound": false,
 							"bound_count": 0,
 							"can_bind": true,
 							"can_unbind": false,
@@ -797,6 +845,8 @@ func TestAPIContracts(t *testing.T) {
 					"backend_mode_enabled": false,
 					"enable_cch_signing": false,
 					"enable_anthropic_cache_ttl_1h_injection": false,
+					"rewrite_message_cache_control": false,
+					"antigravity_user_agent_version": "",
 					"enable_fingerprint_unification": true,
 					"enable_metadata_passthrough": false,
 					"web_search_emulation_enabled": false,
@@ -1026,6 +1076,8 @@ func TestAPIContracts(t *testing.T) {
 					"enable_metadata_passthrough": false,
 					"enable_cch_signing": false,
 					"enable_anthropic_cache_ttl_1h_injection": false,
+					"rewrite_message_cache_control": false,
+					"antigravity_user_agent_version": "",
 					"web_search_emulation_enabled": false,
 					"payment_visible_method_alipay_source": "",
 					"payment_visible_method_wxpay_source": "",

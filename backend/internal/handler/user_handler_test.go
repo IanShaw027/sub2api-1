@@ -129,8 +129,12 @@ func (s *userHandlerRepoStub) ListWithFilters(context.Context, pagination.Pagina
 func (s *userHandlerRepoStub) UpdateBalance(context.Context, int64, float64) error { return nil }
 func (s *userHandlerRepoStub) DeductBalance(context.Context, int64, float64) error { return nil }
 func (s *userHandlerRepoStub) UpdateConcurrency(context.Context, int64, int) error { return nil }
-func (s *userHandlerRepoStub) BatchSetConcurrency(context.Context, []int64, int) (int, error) { return 0, nil }
-func (s *userHandlerRepoStub) BatchAddConcurrency(context.Context, []int64, int) (int, error) { return 0, nil }
+func (s *userHandlerRepoStub) BatchSetConcurrency(context.Context, []int64, int) (int, error) {
+	return 0, nil
+}
+func (s *userHandlerRepoStub) BatchAddConcurrency(context.Context, []int64, int) (int, error) {
+	return 0, nil
+}
 func (s *userHandlerRepoStub) ExistsByEmail(context.Context, string) (bool, error) { return false, nil }
 func (s *userHandlerRepoStub) RemoveGroupFromAllowedGroups(context.Context, int64) (int64, error) {
 	return 0, nil
@@ -361,6 +365,14 @@ func TestUserHandlerGetProfileReturnsLegacyCompatibilityFields(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, true, linuxdoBinding["bound"])
 	require.Equal(t, "linuxdo", linuxdoBinding["provider"])
+	githubBinding, ok := authBindings["github"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, false, githubBinding["bound"])
+	require.Equal(t, true, githubBinding["can_bind"])
+	googleBinding, ok := authBindings["google"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, false, googleBinding["bound"])
+	require.Equal(t, true, googleBinding["can_bind"])
 
 	identityBindings, ok := resp.Data["identity_bindings"].(map[string]any)
 	require.True(t, ok)
@@ -372,6 +384,10 @@ func TestUserHandlerGetProfileReturnsLegacyCompatibilityFields(t *testing.T) {
 	linuxdoCompatBinding, ok := identityBindings["linuxdo"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "profile.authBindings.notes.canUnbind", linuxdoCompatBinding["note_key"])
+	_, ok = identityBindings["github"].(map[string]any)
+	require.True(t, ok)
+	_, ok = identityBindings["google"].(map[string]any)
+	require.True(t, ok)
 
 	profileSources, ok := resp.Data["profile_sources"].(map[string]any)
 	require.True(t, ok)

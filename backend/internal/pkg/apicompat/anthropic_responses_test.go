@@ -140,10 +140,10 @@ func TestAnthropicToResponses_ToolUse(t *testing.T) {
 	assert.Equal(t, "user", items[0].Role)
 	assert.Equal(t, "assistant", items[1].Role)
 	assert.Equal(t, "function_call", items[2].Type)
-	assert.Equal(t, "fc_call_1", items[2].CallID)
+	assert.Equal(t, "call_1", items[2].CallID)
 	assert.Empty(t, items[2].ID)
 	assert.Equal(t, "function_call_output", items[3].Type)
-	assert.Equal(t, "fc_call_1", items[3].CallID)
+	assert.Equal(t, "call_1", items[3].CallID)
 	assert.Equal(t, "Sunny, 72°F", items[3].Output)
 }
 
@@ -1554,9 +1554,36 @@ func TestAnthropicToResponses_ToolChoiceSpecific(t *testing.T) {
 	var tc map[string]any
 	require.NoError(t, json.Unmarshal(resp.ToolChoice, &tc))
 	assert.Equal(t, "function", tc["type"])
-	fn, ok := tc["function"].(map[string]any)
-	require.True(t, ok)
-	assert.Equal(t, "get_weather", fn["name"])
+	assert.Equal(t, "get_weather", tc["name"])
+	assert.NotContains(t, tc, "function")
+}
+
+func TestAnthropicToResponses_NormalizesLegacyPrefixedToolUseID(t *testing.T) {
+	req := &AnthropicRequest{
+		Model:     "gpt-5.4",
+		MaxTokens: 256,
+		Messages: []AnthropicMessage{
+			{
+				Role:    "assistant",
+				Content: json.RawMessage(`[{"type":"tool_use","id":"fc_toolu_123","name":"lookup","input":{"q":"x"}}]`),
+			},
+			{
+				Role:    "user",
+				Content: json.RawMessage(`[{"type":"tool_result","tool_use_id":"fc_toolu_123","content":"ok"}]`),
+			},
+		},
+	}
+
+	resp, err := AnthropicToResponses(req)
+	require.NoError(t, err)
+
+	var items []ResponsesInputItem
+	require.NoError(t, json.Unmarshal(resp.Input, &items))
+	require.Len(t, items, 2)
+	require.Equal(t, "function_call", items[0].Type)
+	require.Equal(t, "toolu_123", items[0].CallID)
+	require.Equal(t, "function_call_output", items[1].Type)
+	require.Equal(t, "toolu_123", items[1].CallID)
 }
 
 func TestResponsesToAnthropicRequest_ToolChoiceSpecificLegacyShape(t *testing.T) {
@@ -1776,7 +1803,7 @@ func TestAnthropicToResponses_ToolResultWithImage(t *testing.T) {
 
 	// function_call_output should have text-only output (no image).
 	assert.Equal(t, "function_call_output", items[2].Type)
-	assert.Equal(t, "fc_toolu_1", items[2].CallID)
+	assert.Equal(t, "toolu_1", items[2].CallID)
 	assert.Equal(t, "(empty)", items[2].Output)
 
 	// Image should be in a separate user message.

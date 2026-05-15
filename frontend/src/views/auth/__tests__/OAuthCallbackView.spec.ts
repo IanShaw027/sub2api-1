@@ -184,6 +184,23 @@ describe('OAuthCallbackView', () => {
     expect(exchangePendingOAuthCompletionMock).not.toHaveBeenCalled()
   })
 
+  it('treats email oauth completion without a token as bind success', async () => {
+    routeState.path = '/auth/oauth/callback'
+    exchangePendingOAuthCompletionMock.mockResolvedValue({
+      redirect: '/profile',
+    })
+    window.sessionStorage.setItem('email_oauth_pending_provider', 'github')
+
+    mount(OAuthCallbackView)
+    await vi.dynamicImportSettled()
+
+    expect(exchangePendingOAuthCompletionMock).toHaveBeenCalledTimes(1)
+    expect(showSuccessMock).toHaveBeenCalledWith('profile.authBindings.bindSuccess')
+    expect(routerReplaceMock).toHaveBeenCalledWith('/profile')
+    expect(setTokenMock).not.toHaveBeenCalled()
+    expect(window.sessionStorage.getItem('email_oauth_pending_provider')).toBeNull()
+  })
+
   it('submits stored affiliate code when completing invited email oauth registration', async () => {
     routeState.path = '/auth/oauth/callback'
     exchangePendingOAuthCompletionMock.mockResolvedValue({

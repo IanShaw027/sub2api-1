@@ -377,7 +377,8 @@ func (s *PaymentService) PrepareRefund(ctx context.Context, oid int64, amt float
 	if preview, previewErr := s.refundPreviewForOrder(ctx, o, inst); previewErr == nil && amountCentsGreaterThan(amt, preview.MaxRefundAmount) {
 		return nil, nil, infraerrors.BadRequest("REFUND_AMOUNT_EXCEEDED", "refund amount exceeds refundable amount")
 	}
-	ga := calculateGatewayRefundAmount(o.Amount, o.PayAmount, amt)
+	orderCurrency := PaymentOrderCurrency(o)
+	ga := calculateGatewayRefundAmount(o.Amount, o.PayAmount, amt, orderCurrency)
 	rr := strings.TrimSpace(reason)
 	if rr == "" && o.RefundRequestReason != nil {
 		rr = *o.RefundRequestReason
@@ -508,10 +509,35 @@ func (s *PaymentService) gwRefund(ctx context.Context, p *RefundPlan) (*payment.
 	refundResp, err := prov.Refund(ctx, payment.RefundRequest{
 		TradeNo: p.Order.PaymentTradeNo,
 		OrderID: p.Order.OutTradeNo,
-		Amount:  strconv.FormatFloat(p.GatewayAmount, 'f', 2, 64),
+		Amount:  formatGatewayRefundAmount(p.GatewayAmount, p.Order),
 		Reason:  p.Reason,
 	})
-	return refundResp, err
+	if err != nil {
+		return nil, err
+	}
+	if err := validateRefundProviderResponse(refundResp); err != nil {
+		return nil, err
+	}
+	return refundResp, nil
+}
+
+func formatGatewayRefundAmount(amount float64, order *dbent.PaymentOrder) string {
+	return payment.FormatAmountForCurrency(amount, PaymentOrderCurrency(order))
+}
+
+func validateRefundProviderResponse(resp *payment.RefundResponse) error {
+	if resp == nil {
+		return fmt.Errorf("payment refund response missing")
+	}
+	status := strings.TrimSpace(resp.Status)
+	switch status {
+	case payment.ProviderStatusSuccess, payment.ProviderStatusRefunded, payment.ProviderStatusPending:
+		return nil
+	case payment.ProviderStatusFailed:
+		return fmt.Errorf("payment refund failed: status %s", status)
+	default:
+		return fmt.Errorf("payment refund returned unknown status: %s", status)
+	}
 }
 
 func (s *PaymentService) handleRefundProviderResponse(ctx context.Context, p *RefundPlan, resp *payment.RefundResponse) (*RefundResult, error) {

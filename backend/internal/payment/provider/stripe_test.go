@@ -27,5 +27,5 @@ func TestStripeVerifyNotificationIncludesCurrencyMetadata(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, payment.ProviderStatusSuccess, notification.Status)
-	require.Equal(t, "usd", notification.Metadata["currency"])
+	require.Equal(t, "USD", notification.Metadata["currency"])
 }

@@ -380,12 +380,12 @@ func TestForwardAsAnthropic_TrimsFullReplayOnlyForCodexCompatModels(t *testing.T
 	require.Equal(t, int64(openAICompatAnthropicReplayMaxTailMessages+1), gjson.GetBytes(codexBody, "input.#").Int())
 	require.Equal(t, "developer", gjson.GetBytes(codexBody, "input.0.role").String())
 	require.Contains(t, gjson.GetBytes(codexBody, "input.0.content.0.text").String(), "<sub2api-claude-code-todo-guard>")
-	require.Equal(t, "message-03", gjson.GetBytes(codexBody, "input.1.content").String())
-	require.Equal(t, "message-14", gjson.GetBytes(codexBody, "input.12.content").String())
+	require.Equal(t, "message-03", gjson.GetBytes(codexBody, "input.1.content.0.text").String())
+	require.Equal(t, "message-14", gjson.GetBytes(codexBody, "input.12.content.0.text").String())
 
 	nonCompatBody := run(t, "gpt-4o")
 	require.Equal(t, int64(openAICompatAnthropicReplayMaxTailMessages+3), gjson.GetBytes(nonCompatBody, "input.#").Int())
-	require.Equal(t, "message-00", gjson.GetBytes(nonCompatBody, "input.0.content").String())
+	require.Equal(t, "message-00", gjson.GetBytes(nonCompatBody, "input.0.content.0.text").String())
 }
 
 func TestForwardAsAnthropic_OAuthCompatKeepsFullReplayForCacheGrowth(t *testing.T) {
@@ -425,8 +425,8 @@ func TestForwardAsAnthropic_OAuthCompatKeepsFullReplayForCacheGrowth(t *testing.
 	require.NotNil(t, result)
 	require.Equal(t, int64(openAICompatAnthropicReplayMaxTailMessages+3), gjson.GetBytes(upstream.lastBody, "input.#").Int())
 	require.Equal(t, "user", gjson.GetBytes(upstream.lastBody, "input.0.role").String())
-	require.Equal(t, "message-00", gjson.GetBytes(upstream.lastBody, "input.0.content").String())
-	require.Equal(t, "message-14", gjson.GetBytes(upstream.lastBody, "input.14.content").String())
+	require.Equal(t, "message-00", gjson.GetBytes(upstream.lastBody, "input.0.content.0.text").String())
+	require.Equal(t, "message-14", gjson.GetBytes(upstream.lastBody, "input.14.content.0.text").String())
 	require.True(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").Exists())
 }
 
@@ -479,7 +479,7 @@ func TestForwardAsAnthropic_AttachesPreviousResponseIDForCompatContinuation(t *t
 	require.Equal(t, int64(2), gjson.GetBytes(upstream.lastBody, "input.#").Int())
 	require.Equal(t, "developer", gjson.GetBytes(upstream.lastBody, "input.0.role").String())
 	require.Contains(t, gjson.GetBytes(upstream.lastBody, "input.0.content.0.text").String(), "<sub2api-claude-code-todo-guard>")
-	require.Equal(t, "second", gjson.GetBytes(upstream.lastBody, "input.1.content").String())
+	require.Equal(t, "second", gjson.GetBytes(upstream.lastBody, "input.1.content.0.text").String())
 }
 
 func TestShouldApplyAnthropicCompatFullReplayGuard(t *testing.T) {
@@ -490,6 +490,61 @@ func TestShouldApplyAnthropicCompatFullReplayGuard(t *testing.T) {
 	require.False(t, shouldApplyAnthropicCompatFullReplayGuard(&Account{Type: AccountTypeOAuth}, "", false, false, true))
 	require.False(t, shouldApplyAnthropicCompatFullReplayGuard(&Account{Type: AccountTypeAPIKey}, "", true, true, true))
 	require.False(t, shouldApplyAnthropicCompatFullReplayGuard(&Account{Type: AccountTypeAPIKey}, "", true, false, false))
+}
+
+func TestForwardAsAnthropic_PreviousResponseIDKeepsMultiToolCallContext(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	upstream := &httpUpstreamRecorder{}
+	svc := &OpenAIGatewayService{
+		httpUpstream: upstream,
+		cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+	}
+	account := &Account{
+		ID:          1,
+		Name:        "openai-apikey",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-test",
+			"base_url": "https://api.openai.com/v1",
+		},
+	}
+
+	firstBody := []byte(`{"model":"claude-sonnet-4-5","max_tokens":16,"messages":[{"role":"user","content":"inspect files"}],"stream":false}`)
+	upstream.resp = openAICompatSSECompletedResponse("resp_first_tools", "gpt-5.3-codex")
+	firstRec := httptest.NewRecorder()
+	firstCtx, _ := gin.CreateTestContext(firstRec)
+	firstCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(firstBody))
+	firstCtx.Request.Header.Set("Content-Type", "application/json")
+
+	firstResult, err := svc.ForwardAsAnthropic(context.Background(), firstCtx, account, firstBody, "stable-cache-key", "gpt-5.3-codex")
+	require.NoError(t, err)
+	require.NotNil(t, firstResult)
+
+	secondBody := []byte(`{"model":"claude-sonnet-4-5","max_tokens":16,"messages":[{"role":"user","content":"inspect files"},{"role":"assistant","content":[{"type":"tool_use","id":"call_one","name":"Read","input":{"file_path":"a.go"}},{"type":"tool_use","id":"call_two","name":"Read","input":{"file_path":"b.go"}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_one","content":"package a"},{"type":"tool_result","tool_use_id":"call_two","content":"package b"},{"type":"text","text":"continue"}]}],"tools":[{"name":"Read","description":"read a file","input_schema":{"type":"object","properties":{"file_path":{"type":"string"}}}}],"stream":false}`)
+	upstream.resp = openAICompatSSECompletedResponse("resp_second_tools", "gpt-5.3-codex")
+	secondRec := httptest.NewRecorder()
+	secondCtx, _ := gin.CreateTestContext(secondRec)
+	secondCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(secondBody))
+	secondCtx.Request.Header.Set("Content-Type", "application/json")
+
+	secondResult, err := svc.ForwardAsAnthropic(context.Background(), secondCtx, account, secondBody, "stable-cache-key", "gpt-5.3-codex")
+	require.NoError(t, err)
+	require.NotNil(t, secondResult)
+	require.Equal(t, "resp_first_tools", gjson.GetBytes(upstream.lastBody, "previous_response_id").String())
+
+	require.Equal(t, "function_call", gjson.GetBytes(upstream.lastBody, "input.1.type").String())
+	require.Equal(t, "call_one", gjson.GetBytes(upstream.lastBody, "input.1.call_id").String())
+	require.Equal(t, "function_call", gjson.GetBytes(upstream.lastBody, "input.2.type").String())
+	require.Equal(t, "call_two", gjson.GetBytes(upstream.lastBody, "input.2.call_id").String())
+	require.Equal(t, "function_call_output", gjson.GetBytes(upstream.lastBody, "input.3.type").String())
+	require.Equal(t, "call_one", gjson.GetBytes(upstream.lastBody, "input.3.call_id").String())
+	require.Equal(t, "function_call_output", gjson.GetBytes(upstream.lastBody, "input.4.type").String())
+	require.Equal(t, "call_two", gjson.GetBytes(upstream.lastBody, "input.4.call_id").String())
+	require.Equal(t, "continue", gjson.GetBytes(upstream.lastBody, "input.5.content.0.text").String())
 }
 
 func TestForwardAsAnthropic_ReplaysWithoutContinuationWhenPreviousResponseMissing(t *testing.T) {
@@ -539,8 +594,8 @@ func TestForwardAsAnthropic_ReplaysWithoutContinuationWhenPreviousResponseMissin
 	require.Equal(t, int64(4), gjson.GetBytes(upstream.bodies[1], "input.#").Int())
 	require.Equal(t, "developer", gjson.GetBytes(upstream.bodies[1], "input.0.role").String())
 	require.Contains(t, gjson.GetBytes(upstream.bodies[1], "input.0.content.0.text").String(), "<sub2api-claude-code-todo-guard>")
-	require.Equal(t, "first", gjson.GetBytes(upstream.bodies[1], "input.1.content").String())
-	require.Equal(t, "second", gjson.GetBytes(upstream.bodies[1], "input.3.content").String())
+	require.Equal(t, "first", gjson.GetBytes(upstream.bodies[1], "input.1.content.0.text").String())
+	require.Equal(t, "second", gjson.GetBytes(upstream.bodies[1], "input.3.content.0.text").String())
 }
 
 func TestForwardAsAnthropic_DisablesAPIKeyContinuationWhenUpstreamRequiresWebSocketV2(t *testing.T) {
@@ -664,7 +719,7 @@ func TestForwardAsAnthropic_APIKeyMetadataSessionSurvivesChangingCacheControlAnc
 	require.Equal(t, "developer", gjson.GetBytes(upstream.bodies[1], "input.0.role").String())
 	require.Contains(t, gjson.GetBytes(upstream.bodies[1], "input.0.content.0.text").String(), "<sub2api-claude-code-todo-guard>")
 	require.Equal(t, "rewritten context", gjson.GetBytes(upstream.bodies[1], "input.1.content.0.text").String())
-	require.Equal(t, "message-15", gjson.GetBytes(upstream.bodies[1], "input.16.content").String())
+	require.Equal(t, "message-15", gjson.GetBytes(upstream.bodies[1], "input.16.content.0.text").String())
 }
 
 func TestForwardAsAnthropic_DoesNotAttachPreviousResponseIDForOAuthCompat(t *testing.T) {
@@ -961,7 +1016,7 @@ func TestForwardAsAnthropic_OAuthKeepsSystemAsDeveloperInput(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "user", gjson.GetBytes(upstream.lastBody, "input.0.role").String())
-	require.Equal(t, "first", gjson.GetBytes(upstream.lastBody, "input.0.content").String())
+	require.Equal(t, "first", gjson.GetBytes(upstream.lastBody, "input.0.content.0.text").String())
 	instructions := gjson.GetBytes(upstream.lastBody, "instructions")
 	require.True(t, instructions.Exists())
 	require.Equal(t, "project instructions", instructions.String())
@@ -1000,7 +1055,7 @@ func TestForwardAsAnthropic_OAuthAddsClaudeCodeTodoGuardForCompatModel(t *testin
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "user", gjson.GetBytes(upstream.lastBody, "input.0.role").String())
-	require.Equal(t, "review files", gjson.GetBytes(upstream.lastBody, "input.0.content").String())
+	require.Equal(t, "review files", gjson.GetBytes(upstream.lastBody, "input.0.content.0.text").String())
 	require.Equal(t, "project instructions", gjson.GetBytes(upstream.lastBody, "instructions").String())
 	require.NotContains(t, string(upstream.lastBody), "<sub2api-claude-code-todo-guard>")
 }
@@ -2007,13 +2062,16 @@ func TestForwardAsAnthropic_BufferedResponseDoneReconstructsOutputFromDelta(t *t
 	require.Equal(t, "ok", gjson.GetBytes(rec.Body.Bytes(), "content.0.text").String())
 }
 
-func TestForwardAsAnthropic_OAuth_DoesNotRetryCodexCompatFallbackWhenBodyAlreadyNormalized(t *testing.T) {
+func TestForwardAsAnthropic_OAuth_NormalizesLegacyPrefixedToolResultCallID(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	body := []byte(`{"model":"gpt-5.4","max_tokens":16,"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_123","content":"ok"}]}],"stream":false}`)
+	// Older Anthropic-to-Responses conversion prefixed Anthropic tool IDs with
+	// fc_. The bridge now strips that legacy prefix before sending the replay to
+	// Responses so upstream sees the current Anthropic tool ID.
+	body := []byte(`{"model":"gpt-5.4","max_tokens":16,"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"fc_toolu_123","content":"ok"}]}],"stream":false}`)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Request.Header.Set("User-Agent", "codex-tui/0.125.0")
@@ -2021,9 +2079,14 @@ func TestForwardAsAnthropic_OAuth_DoesNotRetryCodexCompatFallbackWhenBodyAlready
 	upstream := &httpUpstreamSequenceRecorder{
 		responses: []*http.Response{
 			{
-				StatusCode: http.StatusBadRequest,
-				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"Invalid schema for field input[0].call_id"}}`)),
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_legacy_call_id"}},
+				Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+					`data: {"type":"response.completed","response":{"id":"resp_legacy_tool","object":"response","model":"gpt-5.4","status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":5,"output_tokens":2,"total_tokens":7}}}`,
+					"",
+					"data: [DONE]",
+					"",
+				}, "\n"))),
 			},
 		},
 	}
@@ -2045,11 +2108,12 @@ func TestForwardAsAnthropic_OAuth_DoesNotRetryCodexCompatFallbackWhenBodyAlready
 	}
 
 	result, err := svc.ForwardAsAnthropic(context.Background(), c, account, body, "", "gpt-5.4")
-	require.ErrorContains(t, err, "upstream error: 400")
-	require.Nil(t, result)
+	require.NoError(t, err)
+	require.NotNil(t, result)
 	require.Equal(t, 1, upstream.callCount)
-	require.Equal(t, "fc_toolu_123", gjson.GetBytes(upstream.bodies[0], "input.0.call_id").String())
-	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Equal(t, "toolu_123", gjson.GetBytes(upstream.bodies[0], "input.0.call_id").String())
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "ok", gjson.GetBytes(rec.Body.Bytes(), "content.0.text").String())
 }
 
 func TestForwardAsAnthropic_BufferedResponseCanceledReconstructsOutputFromDelta(t *testing.T) {

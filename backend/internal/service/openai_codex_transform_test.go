@@ -1233,8 +1233,9 @@ func TestNormalizeOpenAIStrictFunctionToolSchemas(t *testing.T) {
 	modified := normalizeOpenAIStrictFunctionToolSchemas(reqBody)
 
 	require.False(t, modified)
-	require.Equal(t, "filePath", firstNonEmptyString(reqBody["tools"].([]any)[0].(map[string]any)["parameters"].(map[string]any)["required"].([]any)[0]))
-	require.Len(t, reqBody["tools"].([]any)[0].(map[string]any)["parameters"].(map[string]any)["required"].([]any), 1)
+	required := requireFirstToolRequiredFields(t, reqBody)
+	require.Equal(t, "filePath", firstNonEmptyString(required[0]))
+	require.Len(t, required, 1)
 }
 
 func TestNormalizeOpenAIStrictFunctionToolSchemas_CleansInvalidRequiredEntries(t *testing.T) {
@@ -1260,8 +1261,27 @@ func TestNormalizeOpenAIStrictFunctionToolSchemas_CleansInvalidRequiredEntries(t
 	modified := normalizeOpenAIStrictFunctionToolSchemas(reqBody)
 
 	require.True(t, modified)
-	required := reqBody["tools"].([]any)[0].(map[string]any)["parameters"].(map[string]any)["required"].([]any)
+	required := requireFirstToolRequiredFields(t, reqBody)
 	require.Equal(t, []any{"filePath", "offset"}, required)
+}
+
+func requireFirstToolRequiredFields(t *testing.T, reqBody map[string]any) []any {
+	t.Helper()
+
+	tools, ok := reqBody["tools"].([]any)
+	require.True(t, ok)
+	require.NotEmpty(t, tools)
+
+	tool, ok := tools[0].(map[string]any)
+	require.True(t, ok)
+
+	parameters, ok := tool["parameters"].(map[string]any)
+	require.True(t, ok)
+
+	required, ok := parameters["required"].([]any)
+	require.True(t, ok)
+
+	return required
 }
 
 func TestFilterCodexInput_DropsReasoningItemsRegardlessOfPreserveReferences(t *testing.T) {

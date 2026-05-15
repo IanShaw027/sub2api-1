@@ -624,6 +624,38 @@ func TestGetProfileIdentitySummaries_HidesBindActionWhenProviderExplicitlyDisabl
 	require.Empty(t, summaries.LinuxDo.BindStartPath)
 }
 
+func TestGetProfileIdentitySummaries_HidesEmailOAuthBindActionWhenSettingMissing(t *testing.T) {
+	repo := &mockUserRepo{
+		getByIDUser: &User{
+			ID:    151,
+			Email: "legacy-settings@example.com",
+		},
+		identities: []UserAuthIdentityRecord{
+			{
+				ProviderType:    "email",
+				ProviderKey:     "email",
+				ProviderSubject: "legacy-settings@example.com",
+			},
+		},
+	}
+	settingRepo := &mockUserSettingRepo{
+		values: map[string]string{
+			SettingKeyRegistrationEnabled: "true",
+		},
+	}
+	svc := NewUserService(repo, settingRepo, nil, nil)
+
+	summaries, err := svc.GetProfileIdentitySummaries(context.Background(), 151, repo.getByIDUser)
+
+	require.NoError(t, err)
+	require.False(t, summaries.GitHub.Bound)
+	require.False(t, summaries.GitHub.CanBind)
+	require.Empty(t, summaries.GitHub.BindStartPath)
+	require.False(t, summaries.Google.Bound)
+	require.False(t, summaries.Google.CanBind)
+	require.Empty(t, summaries.Google.BindStartPath)
+}
+
 func TestGetProfileIdentitySummaries_UsesBindStartRoute(t *testing.T) {
 	repo := &mockUserRepo{
 		getByIDUser: &User{

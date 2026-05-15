@@ -3,7 +3,8 @@
     "model": "gpt-5.3-codex",
     "prompt_cache_key": "session-ordered",
     "input.0.role": "user",
-    "input.0.content": "hello"
+    "input.0.content.0.type": "input_text",
+    "input.0.content.0.text": "hello"
   },
   "ordered_substrings": [
     "\"model\":\"gpt-5.3-codex\"",

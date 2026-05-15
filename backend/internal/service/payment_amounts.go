@@ -3,6 +3,7 @@ package service
 import (
 	"math"
 
+	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/shopspring/decimal"
 )
 
@@ -37,16 +38,17 @@ func amountCentsGreaterThan(left, right float64) bool {
 	return amountToCents(left) > amountToCents(right)
 }
 
-func calculateGatewayRefundAmount(orderAmount, payAmount, refundAmount float64) float64 {
+func calculateGatewayRefundAmount(orderAmount, payAmount, refundAmount float64, currency string) float64 {
 	if orderAmount <= 0 || payAmount <= 0 || refundAmount <= 0 {
 		return 0
 	}
-	if amountCentsEqual(refundAmount, orderAmount) {
-		return decimal.NewFromFloat(payAmount).Round(2).InexactFloat64()
+	fractionDigits := int32(payment.CurrencyMaxFractionDigits(currency))
+	if math.Abs(refundAmount-orderAmount) <= paymentAmountToleranceForCurrency(currency) {
+		return decimal.NewFromFloat(payAmount).Round(fractionDigits).InexactFloat64()
 	}
 	return decimal.NewFromFloat(payAmount).
 		Mul(decimal.NewFromFloat(refundAmount)).
 		Div(decimal.NewFromFloat(orderAmount)).
-		Round(2).
+		Round(fractionDigits).
 		InexactFloat64()
 }

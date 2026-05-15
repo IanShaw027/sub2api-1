@@ -26,6 +26,8 @@ const (
 	emailOAuthRedirectCookie  = "email_oauth_redirect"
 	emailOAuthProviderCookie  = "email_oauth_provider"
 	emailOAuthAffiliateCookie = "email_oauth_affiliate"
+	emailOAuthIntentCookie    = "email_oauth_intent"
+	emailOAuthBindUserCookie  = "email_oauth_bind_user"
 	emailOAuthCookieMaxAgeSec = 10 * 60
 	emailOAuthDefaultRedirect = "/dashboard"
 )
@@ -78,6 +80,25 @@ func (h *AuthHandler) emailOAuthStart(c *gin.Context, provider string) {
 	emailOAuthSetCookie(c, emailOAuthStateCookieName, encodeCookieValue(state), secureCookie)
 	emailOAuthSetCookie(c, emailOAuthRedirectCookie, encodeCookieValue(redirectTo), secureCookie)
 	emailOAuthSetCookie(c, emailOAuthProviderCookie, encodeCookieValue(provider), secureCookie)
+	intent := normalizeOAuthIntent(c.Query("intent"))
+	emailOAuthSetCookie(c, emailOAuthIntentCookie, encodeCookieValue(intent), secureCookie)
+	if intent == oauthIntentBindCurrentUser {
+		browserSessionKey, err := generateOAuthPendingBrowserSession()
+		if err != nil {
+			response.ErrorFrom(c, infraerrors.InternalServer("OAUTH_BROWSER_SESSION_GEN_FAILED", "failed to generate oauth browser session").WithCause(err))
+			return
+		}
+		bindCookieValue, err := h.buildOAuthBindUserCookieFromContext(c)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		setOAuthPendingBrowserCookie(c, browserSessionKey, secureCookie)
+		clearOAuthPendingSessionCookie(c, secureCookie)
+		emailOAuthSetCookie(c, emailOAuthBindUserCookie, encodeCookieValue(bindCookieValue), secureCookie)
+	} else {
+		emailOAuthClearCookie(c, emailOAuthBindUserCookie, secureCookie)
+	}
 	if affCode := strings.TrimSpace(firstNonEmpty(c.Query("aff_code"), c.Query("aff"))); affCode != "" {
 		emailOAuthSetCookie(c, emailOAuthAffiliateCookie, encodeCookieValue(affCode), secureCookie)
 	} else {
@@ -119,6 +140,8 @@ func (h *AuthHandler) emailOAuthCallback(c *gin.Context, provider string) {
 		emailOAuthClearCookie(c, emailOAuthRedirectCookie, secureCookie)
 		emailOAuthClearCookie(c, emailOAuthProviderCookie, secureCookie)
 		emailOAuthClearCookie(c, emailOAuthAffiliateCookie, secureCookie)
+		emailOAuthClearCookie(c, emailOAuthIntentCookie, secureCookie)
+		emailOAuthClearCookie(c, emailOAuthBindUserCookie, secureCookie)
 	}()
 	expectedState, err := readCookieDecoded(c, emailOAuthStateCookieName)
 	if err != nil || expectedState == "" || expectedState != state {
@@ -135,6 +158,16 @@ func (h *AuthHandler) emailOAuthCallback(c *gin.Context, provider string) {
 	if redirectTo == "" {
 		redirectTo = emailOAuthDefaultRedirect
 	}
+	intent, _ := readCookieDecoded(c, emailOAuthIntentCookie)
+	intent = normalizeOAuthIntent(intent)
+	browserSessionKey := ""
+	if intent == oauthIntentBindCurrentUser {
+		browserSessionKey, _ = readOAuthPendingBrowserCookie(c)
+		if strings.TrimSpace(browserSessionKey) == "" {
+			redirectOAuthError(c, frontendCallback, "missing_browser_session", "missing oauth browser session", "")
+			return
+		}
+	}
 
 	tokenResp, err := exchangeEmailOAuthCode(c.Request.Context(), cfg, code)
 	if err != nil {
@@ -146,7 +179,7 @@ func (h *AuthHandler) emailOAuthCallback(c *gin.Context, provider string) {
 		redirectOAuthError(c, frontendCallback, "userinfo_failed", "failed to fetch verified email", singleLine(err.Error()))
 		return
 	}
-	h.emailOAuthCallbackWithProfile(c, provider, cfg, frontendCallback, redirectTo, profile)
+	h.emailOAuthCallbackWithProfileForIntent(c, provider, cfg, frontendCallback, redirectTo, profile, intent, browserSessionKey)
 }
 
 func (h *AuthHandler) emailOAuthCallbackWithProfile(
@@ -156,6 +189,19 @@ func (h *AuthHandler) emailOAuthCallbackWithProfile(
 	frontendCallback string,
 	redirectTo string,
 	profile *emailOAuthProfile,
+) {
+	h.emailOAuthCallbackWithProfileForIntent(c, provider, cfg, frontendCallback, redirectTo, profile, oauthIntentLogin, "")
+}
+
+func (h *AuthHandler) emailOAuthCallbackWithProfileForIntent(
+	c *gin.Context,
+	provider string,
+	cfg config.EmailOAuthProviderConfig,
+	frontendCallback string,
+	redirectTo string,
+	profile *emailOAuthProfile,
+	intent string,
+	browserSessionKey string,
 ) {
 	input := service.EmailOAuthIdentityInput{
 		ProviderType:     provider,
@@ -167,6 +213,35 @@ func (h *AuthHandler) emailOAuthCallbackWithProfile(
 		DisplayName:      profile.DisplayName,
 		AvatarURL:        profile.AvatarURL,
 		UpstreamMetadata: profile.Metadata,
+	}
+	if normalizeOAuthIntent(intent) == oauthIntentBindCurrentUser {
+		targetUserID, err := h.readOAuthBindUserIDFromCookie(c, emailOAuthBindUserCookie)
+		if err != nil {
+			redirectOAuthError(c, frontendCallback, "invalid_state", "invalid oauth bind target", "")
+			return
+		}
+		browserSessionKey = strings.TrimSpace(browserSessionKey)
+		if browserSessionKey == "" {
+			redirectOAuthError(c, frontendCallback, "missing_browser_session", "missing oauth browser session", "")
+			return
+		}
+		if err := h.createOAuthPendingSession(c, oauthPendingSessionPayload{
+			Intent:                 oauthIntentBindCurrentUser,
+			Identity:               service.PendingAuthIdentityKey{ProviderType: provider, ProviderKey: provider, ProviderSubject: strings.TrimSpace(profile.Subject)},
+			TargetUserID:           &targetUserID,
+			ResolvedEmail:          strings.TrimSpace(strings.ToLower(profile.Email)),
+			RedirectTo:             redirectTo,
+			BrowserSessionKey:      browserSessionKey,
+			UpstreamIdentityClaims: emailOAuthUpstreamIdentityClaims(provider, profile, ""),
+			CompletionResponse: map[string]any{
+				"redirect": redirectTo,
+			},
+		}); err != nil {
+			redirectOAuthError(c, frontendCallback, "session_error", "failed to continue oauth bind", "")
+			return
+		}
+		redirectToFrontendCallback(c, frontendCallback)
+		return
 	}
 	affiliateCode := h.emailOAuthAffiliateCode(c)
 	if shouldCreate, err := h.emailOAuthShouldCreatePendingRegistration(c.Request.Context(), input); err != nil {
@@ -250,6 +325,36 @@ func (h *AuthHandler) emailOAuthAffiliateCode(c *gin.Context) string {
 	return ""
 }
 
+func emailOAuthUpstreamIdentityClaims(provider string, profile *emailOAuthProfile, affiliateCode string) map[string]any {
+	if profile == nil {
+		return nil
+	}
+	email := strings.TrimSpace(strings.ToLower(profile.Email))
+	upstreamClaims := map[string]any{
+		"email":            email,
+		"email_verified":   profile.EmailVerified,
+		"username":         strings.TrimSpace(profile.Username),
+		"provider":         provider,
+		"provider_key":     provider,
+		"provider_subject": strings.TrimSpace(profile.Subject),
+	}
+	if strings.TrimSpace(profile.DisplayName) != "" {
+		upstreamClaims["suggested_display_name"] = strings.TrimSpace(profile.DisplayName)
+	}
+	if strings.TrimSpace(profile.AvatarURL) != "" {
+		upstreamClaims["suggested_avatar_url"] = strings.TrimSpace(profile.AvatarURL)
+	}
+	if strings.TrimSpace(affiliateCode) != "" {
+		upstreamClaims["aff_code"] = strings.TrimSpace(affiliateCode)
+	}
+	for key, value := range profile.Metadata {
+		if _, exists := upstreamClaims[key]; !exists {
+			upstreamClaims[key] = value
+		}
+	}
+	return upstreamClaims
+}
+
 func (h *AuthHandler) createEmailOAuthRegistrationPendingSession(
 	c *gin.Context,
 	provider string,
@@ -267,30 +372,8 @@ func (h *AuthHandler) createEmailOAuthRegistrationPendingSession(
 	setOAuthPendingBrowserCookie(c, browserSessionKey, isRequestHTTPS(c))
 
 	email := strings.TrimSpace(strings.ToLower(profile.Email))
-	username := strings.TrimSpace(profile.Username)
 	affiliateCode := h.emailOAuthAffiliateCode(c)
-	upstreamClaims := map[string]any{
-		"email":            email,
-		"email_verified":   profile.EmailVerified,
-		"username":         username,
-		"provider":         provider,
-		"provider_key":     provider,
-		"provider_subject": strings.TrimSpace(profile.Subject),
-	}
-	if strings.TrimSpace(profile.DisplayName) != "" {
-		upstreamClaims["suggested_display_name"] = strings.TrimSpace(profile.DisplayName)
-	}
-	if strings.TrimSpace(profile.AvatarURL) != "" {
-		upstreamClaims["suggested_avatar_url"] = strings.TrimSpace(profile.AvatarURL)
-	}
-	if affiliateCode != "" {
-		upstreamClaims["aff_code"] = affiliateCode
-	}
-	for key, value := range profile.Metadata {
-		if _, exists := upstreamClaims[key]; !exists {
-			upstreamClaims[key] = value
-		}
-	}
+	upstreamClaims := emailOAuthUpstreamIdentityClaims(provider, profile, affiliateCode)
 
 	invitationRequired := h != nil && h.settingSvc != nil && h.settingSvc.IsInvitationCodeEnabled(c.Request.Context())
 	pendingError := "registration_completion_required"

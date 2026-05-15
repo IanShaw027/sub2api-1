@@ -78,11 +78,7 @@ func prepareResponsesAnthropicIngress(body []byte) (responsesAnthropicIngressPla
 	if err != nil {
 		return responsesAnthropicIngressPlan{PrimaryBody: body}, err
 	}
-	return responsesAnthropicIngressPlan{
-		PrimaryBody:      normalized.PrimaryBody,
-		FullReplayBody:   normalized.FullReplayBody,
-		FullReplaySource: normalized.FullReplaySource,
-	}, nil
+	return responsesAnthropicIngressPlan(normalized), nil
 }
 
 type responsesAnthropicFailureClassification struct {
