@@ -229,6 +229,10 @@ func marshalAnthropicToolResultContent(raw string) (json.RawMessage, bool) {
 			contentJSON, _ := json.Marshal(blocks)
 			return contentJSON, env.IsError
 		}
+		if env.IsError {
+			contentJSON, _ := json.Marshal([]AnthropicContentBlock{})
+			return contentJSON, true
+		}
 	}
 
 	contentJSON, _ := json.Marshal(raw)

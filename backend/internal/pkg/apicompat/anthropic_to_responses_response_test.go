@@ -106,3 +106,70 @@ func TestAnthropicEventToResponsesEvents_ToolUseEmptyStarterDoesNotPrefixArgumen
 	assert.Equal(t, "response.function_call_arguments.done", events[0].Type)
 	assert.Equal(t, `{"city":"NYC"}`, events[0].Arguments)
 }
+
+func TestAnthropicEventToResponsesEvents_ToolUseEmptyStarterFinishesWithEmptyObject(t *testing.T) {
+	state := NewAnthropicEventToResponsesState()
+
+	events := AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "message_start",
+		Message: &AnthropicResponse{
+			ID:    "msg_123",
+			Type:  "message",
+			Role:  "assistant",
+			Model: "claude-opus-4-6",
+		},
+	}, state)
+	require.Len(t, events, 1)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "content_block_start",
+		ContentBlock: &AnthropicContentBlock{
+			Type:  "tool_use",
+			ID:    "toolu_123",
+			Name:  "lookup_weather",
+			Input: []byte(`{}`),
+		},
+	}, state)
+	require.Len(t, events, 1)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "content_block_stop",
+	}, state)
+	require.Len(t, events, 2)
+	assert.Equal(t, "response.function_call_arguments.done", events[0].Type)
+	assert.Equal(t, `{}`, events[0].Arguments)
+}
+
+func TestAnthropicEventToResponsesEvents_ToolUseExplicitEmptyInputKeepsEmptyObjectArguments(t *testing.T) {
+	state := NewAnthropicEventToResponsesState()
+
+	events := AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "message_start",
+		Message: &AnthropicResponse{
+			ID:    "msg_123",
+			Type:  "message",
+			Role:  "assistant",
+			Model: "claude-opus-4-6",
+		},
+	}, state)
+	require.Len(t, events, 1)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "content_block_start",
+		ContentBlock: &AnthropicContentBlock{
+			Type:  "tool_use",
+			ID:    "toolu_123",
+			Name:  "lookup_weather",
+			Input: []byte(`{}`),
+		},
+	}, state)
+	require.Len(t, events, 1)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "content_block_stop",
+	}, state)
+	require.Len(t, events, 2)
+	assert.Equal(t, "response.function_call_arguments.done", events[0].Type)
+	assert.Equal(t, `{}`, events[0].Arguments)
+	assert.Equal(t, "response.output_item.done", events[1].Type)
+}

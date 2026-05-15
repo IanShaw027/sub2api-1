@@ -172,9 +172,10 @@ type AnthropicEventToResponsesState struct {
 	ContentIndex int
 
 	// For function_call: track per-output info
-	CurrentCallID string
-	CurrentName   string
-	CurrentArgs   string
+	CurrentCallID         string
+	CurrentName           string
+	CurrentArgs           string
+	CurrentArgsEmptyStart bool
 
 	// Usage from message_delta
 	InputTokens          int
@@ -310,8 +311,10 @@ func anthToResHandleContentBlockStart(evt *AnthropicStreamEvent, state *Anthropi
 		state.CurrentCallID = toResponsesCallID(evt.ContentBlock.ID)
 		state.CurrentName = evt.ContentBlock.Name
 		state.CurrentArgs = ""
-		if input := strings.TrimSpace(string(evt.ContentBlock.Input)); input != "" && input != "{}" {
+		state.CurrentArgsEmptyStart = false
+		if input := strings.TrimSpace(string(evt.ContentBlock.Input)); input != "" {
 			state.CurrentArgs = input
+			state.CurrentArgsEmptyStart = input == "{}"
 		}
 
 		events = append(events, makeResponsesEvent(state, "response.output_item.added", &ResponsesStreamEvent{
@@ -361,6 +364,10 @@ func anthToResHandleContentBlockDelta(evt *AnthropicStreamEvent, state *Anthropi
 		if evt.Delta.PartialJSON == "" {
 			return nil
 		}
+		if state.CurrentArgsEmptyStart && state.CurrentArgs == "{}" {
+			state.CurrentArgs = ""
+		}
+		state.CurrentArgsEmptyStart = false
 		state.CurrentArgs += evt.Delta.PartialJSON
 		return []ResponsesStreamEvent{makeResponsesEvent(state, "response.function_call_arguments.delta", &ResponsesStreamEvent{
 			OutputIndex: state.OutputIndex,
@@ -468,6 +475,7 @@ func closeCurrentResponsesItem(state *AnthropicEventToResponsesState) []Response
 	state.CurrentCallID = ""
 	state.CurrentName = ""
 	state.CurrentArgs = ""
+	state.CurrentArgsEmptyStart = false
 	state.OutputIndex++
 	state.ContentIndex = 0
 

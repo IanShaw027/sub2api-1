@@ -249,6 +249,34 @@ func TestAnthropicToResponses_PreservesToolResultErrorEnvelope(t *testing.T) {
 	require.Equal(t, "WebFetch", env.ToolReferences[0].ToolName)
 }
 
+func TestAnthropicToResponses_PreservesToolResultErrorEnvelopeWithOnlyImages(t *testing.T) {
+	req := &AnthropicRequest{
+		Model:     "gpt-5.4",
+		MaxTokens: 256,
+		Messages: []AnthropicMessage{
+			{
+				Role:    "user",
+				Content: json.RawMessage(`[{"type":"tool_result","tool_use_id":"toolu_123","is_error":true,"content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGVsbG8="}}]}]`),
+			},
+		},
+	}
+
+	resp, err := AnthropicToResponses(req)
+	require.NoError(t, err)
+
+	var items []ResponsesInputItem
+	require.NoError(t, json.Unmarshal(resp.Input, &items))
+	require.Len(t, items, 2)
+	require.Equal(t, "function_call_output", items[0].Type)
+
+	var env anthropicToolResultEnvelope
+	require.NoError(t, json.Unmarshal([]byte(items[0].Output), &env))
+	require.Equal(t, anthropicToolResultEnvelopeFormat, env.Format)
+	require.True(t, env.IsError)
+	require.Empty(t, env.Text)
+	require.Empty(t, env.ToolReferences)
+}
+
 func TestAnthropicToResponses_ToolResultWithToolReferenceStillEmitsImages(t *testing.T) {
 	req := &AnthropicRequest{
 		Model:     "gpt-5.4",
@@ -1758,6 +1786,62 @@ func TestAnthropicToResponses_ToolResultWithImage(t *testing.T) {
 	require.Len(t, parts, 1)
 	assert.Equal(t, "input_image", parts[0].Type)
 	assert.Equal(t, "data:image/png;base64,iVBOR", parts[0].ImageURL)
+}
+
+func TestAnthropicToResponses_ToolResultImageOnlyPreservesErrorFlag(t *testing.T) {
+	req := &AnthropicRequest{
+		Model:     "gpt-5.2",
+		MaxTokens: 1024,
+		Messages: []AnthropicMessage{
+			{Role: "user", Content: json.RawMessage(`"Read the screenshot"`)},
+			{Role: "assistant", Content: json.RawMessage(`[{"type":"tool_use","id":"toolu_1","name":"Read","input":{"file_path":"/tmp/screen.png"}}]`)},
+			{Role: "user", Content: json.RawMessage(`[
+				{"type":"tool_result","tool_use_id":"toolu_1","is_error":true,"content":[
+					{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBOR"}}
+				]}
+			]`)},
+		},
+	}
+
+	resp, err := AnthropicToResponses(req)
+	require.NoError(t, err)
+
+	var items []ResponsesInputItem
+	require.NoError(t, json.Unmarshal(resp.Input, &items))
+	// user + function_call + function_call_output + user(image) = 4
+	require.Len(t, items, 4)
+
+	var env anthropicToolResultEnvelope
+	require.NoError(t, json.Unmarshal([]byte(items[2].Output), &env))
+	assert.True(t, env.IsError)
+	assert.Empty(t, env.Text)
+
+	back, err := ResponsesToAnthropicRequest(resp)
+	require.NoError(t, err)
+
+	var found *AnthropicContentBlock
+	for _, msg := range back.Messages {
+		if msg.Role != "user" {
+			continue
+		}
+		var blocks []AnthropicContentBlock
+		if err := json.Unmarshal(msg.Content, &blocks); err != nil {
+			continue
+		}
+		for i := range blocks {
+			if blocks[i].Type == "tool_result" {
+				found = &blocks[i]
+				break
+			}
+		}
+		if found != nil {
+			break
+		}
+	}
+
+	require.NotNil(t, found)
+	assert.True(t, found.IsError)
+	assert.JSONEq(t, `[]`, string(found.Content))
 }
 
 func TestAnthropicToResponses_ToolResultMixed(t *testing.T) {

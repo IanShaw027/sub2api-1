@@ -220,6 +220,34 @@ func TestResponsesToAnthropicRequest_RestoresToolResultErrorState(t *testing.T) 
 		assert.Equal(t, "tool_reference", contentBlocks[1].Type)
 		assert.Equal(t, "WebFetch", contentBlocks[1].ToolName)
 	})
+
+}
+
+func TestResponsesToAnthropicRequest_PreservesErrorToolResultEnvelopeWithoutTextOrReferences(t *testing.T) {
+	output, err := json.Marshal(anthropicToolResultEnvelope{
+		Format:  anthropicToolResultEnvelopeFormat,
+		IsError: true,
+	})
+	require.NoError(t, err)
+
+	req := &ResponsesRequest{
+		Model:           "gpt-5.4",
+		Input:           json.RawMessage(`[{"type":"function_call_output","call_id":"fc_toolu_789","output":` + strconv.Quote(string(output)) + `}]`),
+		MaxOutputTokens: intPtr(256),
+	}
+
+	out, err := ResponsesToAnthropicRequest(req)
+	require.NoError(t, err)
+
+	require.Len(t, out.Messages, 1)
+	assert.Equal(t, "user", out.Messages[0].Role)
+
+	var blocks []AnthropicContentBlock
+	require.NoError(t, json.Unmarshal(out.Messages[0].Content, &blocks))
+	require.Len(t, blocks, 1)
+	assert.Equal(t, "tool_result", blocks[0].Type)
+	assert.True(t, blocks[0].IsError)
+	assert.JSONEq(t, `[]`, string(blocks[0].Content))
 }
 
 func intPtr(v int) *int {
