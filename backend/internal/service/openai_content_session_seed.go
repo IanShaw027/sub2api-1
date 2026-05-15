@@ -1,6 +1,8 @@
 package service
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"strings"
 
@@ -11,7 +13,7 @@ import (
 // and explicit session IDs (e.g. "sess-xxx" or "compat_cc_xxx").
 const contentSessionSeedPrefix = "compat_cs_"
 
-// deriveOpenAIContentSessionSeed builds a stable session seed from an
+// deriveOpenAIContentSessionSeed builds a stable, bounded session seed from an
 // OpenAI-format request body. Only fields constant across conversation turns
 // are included: model, tools/functions definitions, system/developer prompts,
 // instructions (Responses API), and the first user message.
@@ -103,5 +105,7 @@ func deriveOpenAIContentSessionSeed(body []byte) string {
 	if b.Len() == 0 {
 		return ""
 	}
-	return contentSessionSeedPrefix + b.String()
+
+	digest := sha256.Sum256([]byte(b.String()))
+	return contentSessionSeedPrefix + hex.EncodeToString(digest[:16])
 }

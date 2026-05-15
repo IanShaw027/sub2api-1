@@ -7,19 +7,48 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func TestNormalizeOpenAIResponsesIngress_PrefersExistingInputForFullReplay(t *testing.T) {
-	t.Parallel()
-
+func assertNormalizeOpenAIResponsesIngress_MergesLegacyMessagesWhenInputExists(t *testing.T) {
 	body := []byte(`{"model":"claude-sonnet-4.5","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}],"messages":[{"role":"developer","content":"ignore me"}],"previous_response_id":"resp_stale"}`)
 
 	normalized, err := normalizeOpenAIResponsesIngress(body)
 	require.NoError(t, err)
 	require.Equal(t, string(body), string(normalized.PrimaryBody))
-	require.Equal(t, "input", normalized.FullReplaySource)
+	require.Equal(t, "input+messages", normalized.FullReplaySource)
 	require.False(t, gjson.GetBytes(normalized.FullReplayBody, "messages").Exists())
 	require.False(t, gjson.GetBytes(normalized.FullReplayBody, "previous_response_id").Exists())
-	require.Equal(t, "function_call_output", gjson.GetBytes(normalized.FullReplayBody, "input.0.type").String())
+	require.NotEmpty(t, gjson.GetBytes(normalized.FullReplayBody, "input.0.role").String())
+	require.Equal(t, "function_call_output", gjson.GetBytes(normalized.FullReplayBody, "input.1.type").String())
+	require.Equal(t, "call_1", gjson.GetBytes(normalized.FullReplayBody, "input.1.call_id").String())
+}
+
+func TestNormalizeOpenAIResponsesIngress_MergesLegacyMessagesWhenInputExists(t *testing.T) {
+	t.Parallel()
+
+	assertNormalizeOpenAIResponsesIngress_MergesLegacyMessagesWhenInputExists(t)
+}
+
+func TestNormalizeOpenAIResponsesIngress_PrefersExistingInputForUnsupportedMessages(t *testing.T) {
+	t.Parallel()
+
+	assertNormalizeOpenAIResponsesIngress_MergesLegacyMessagesWhenInputExists(t)
+}
+
+func TestNormalizeOpenAIResponsesIngress_MergesSupportedMessagesIntoFullReplay(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"model":"claude-sonnet-4.5","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}],"messages":[{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"q\":\"hello\"}"}}]},{"role":"tool","tool_call_id":"call_1","content":"ok"}],"previous_response_id":"resp_stale"}`)
+
+	normalized, err := normalizeOpenAIResponsesIngress(body)
+	require.NoError(t, err)
+	require.Equal(t, string(body), string(normalized.PrimaryBody))
+	require.Equal(t, "input+messages", normalized.FullReplaySource)
+	require.False(t, gjson.GetBytes(normalized.FullReplayBody, "messages").Exists())
+	require.False(t, gjson.GetBytes(normalized.FullReplayBody, "previous_response_id").Exists())
+	require.Equal(t, "function_call", gjson.GetBytes(normalized.FullReplayBody, "input.0.type").String())
 	require.Equal(t, "call_1", gjson.GetBytes(normalized.FullReplayBody, "input.0.call_id").String())
+	require.Equal(t, "function_call_output", gjson.GetBytes(normalized.FullReplayBody, "input.1.type").String())
+	require.Equal(t, "call_1", gjson.GetBytes(normalized.FullReplayBody, "input.1.call_id").String())
+	require.False(t, gjson.GetBytes(normalized.FullReplayBody, "input.2").Exists())
 }
 
 func TestNormalizeOpenAIResponsesIngress_NormalizesLegacyMessagesWhenInputMissing(t *testing.T) {

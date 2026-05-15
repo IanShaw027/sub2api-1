@@ -90,10 +90,11 @@ func TestOpenAIGatewayServiceRecordUsage_AuditZeroUsageImageEndpointsStillWriteU
 
 	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
 		Result: &OpenAIForwardResult{
-			RequestID: "resp_zero_usage_image_endpoint",
-			Usage:     OpenAIUsage{},
-			Model:     "gpt-5.1",
-			Duration:  time.Second,
+			RequestID:  "resp_zero_usage_image_endpoint",
+			Usage:      OpenAIUsage{},
+			Model:      "gpt-image-2",
+			ImageCount: 1,
+			Duration:   time.Second,
 		},
 		APIKey:           &APIKey{ID: 1102, Quota: 100, Group: &Group{RateMultiplier: 1}},
 		User:             &User{ID: 2102},
@@ -111,8 +112,8 @@ func TestOpenAIGatewayServiceRecordUsage_AuditZeroUsageImageEndpointsStillWriteU
 	require.Equal(t, "/v1/images/generations", *usageRepo.lastLog.InboundEndpoint)
 	require.NotNil(t, usageRepo.lastLog.UpstreamEndpoint)
 	require.Equal(t, "/v1/images/generations", *usageRepo.lastLog.UpstreamEndpoint)
-	require.Zero(t, usageRepo.lastLog.TotalCost)
-	require.Zero(t, usageRepo.lastLog.ActualCost)
+	require.Greater(t, usageRepo.lastLog.TotalCost, 0.0)
+	require.Greater(t, usageRepo.lastLog.ActualCost, 0.0)
 }
 
 func TestOpenAIGatewayServiceRecordUsage_AuditZeroUsageImages2APIEndpointsUseWebBridgeType(t *testing.T) {

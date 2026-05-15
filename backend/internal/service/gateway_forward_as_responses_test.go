@@ -96,7 +96,7 @@ func TestHandleResponsesStreamingResponse_PreservesMessageStartCacheUsage(t *tes
 	require.Contains(t, rec.Body.String(), `response.completed`)
 }
 
-func TestPrepareResponsesAnthropicIngress_PreservesInputWhenMessagesAreEmptyOrUnsupported(t *testing.T) {
+func TestPrepareResponsesAnthropicIngress_MergesMessagesWhenInputAlreadyExists(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -108,7 +108,7 @@ func TestPrepareResponsesAnthropicIngress_PreservesInputWhenMessagesAreEmptyOrUn
 			body: []byte(`{"model":"claude-sonnet-4.5","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}],"messages":[],"previous_response_id":"resp_stale"}`),
 		},
 		{
-			name: "unsupported messages",
+			name: "developer messages",
 			body: []byte(`{"model":"claude-sonnet-4.5","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}],"messages":[{"role":"developer","content":"ignore me"}],"previous_response_id":"resp_stale"}`),
 		},
 	}
@@ -119,13 +119,37 @@ func TestPrepareResponsesAnthropicIngress_PreservesInputWhenMessagesAreEmptyOrUn
 			require.NoError(t, err)
 			require.Equal(t, string(tt.body), string(plan.PrimaryBody))
 			require.True(t, plan.CanRetryWithFullReplay())
-			require.Equal(t, "input", plan.FullReplaySource)
 			require.False(t, gjson.GetBytes(plan.FullReplayBody, "messages").Exists())
 			require.False(t, gjson.GetBytes(plan.FullReplayBody, "previous_response_id").Exists())
-			require.Equal(t, "function_call_output", gjson.GetBytes(plan.FullReplayBody, "input.0.type").String())
-			require.Equal(t, "call_1", gjson.GetBytes(plan.FullReplayBody, "input.0.call_id").String())
+			if tt.name == "empty messages" {
+				require.Equal(t, "input", plan.FullReplaySource)
+				require.Equal(t, "function_call_output", gjson.GetBytes(plan.FullReplayBody, "input.0.type").String())
+				require.Equal(t, "call_1", gjson.GetBytes(plan.FullReplayBody, "input.0.call_id").String())
+				return
+			}
+			require.Equal(t, "input+messages", plan.FullReplaySource)
+			require.NotEmpty(t, gjson.GetBytes(plan.FullReplayBody, "input.0.role").String())
+			require.Equal(t, "function_call_output", gjson.GetBytes(plan.FullReplayBody, "input.1.type").String())
+			require.Equal(t, "call_1", gjson.GetBytes(plan.FullReplayBody, "input.1.call_id").String())
 		})
 	}
+}
+
+func TestPrepareResponsesAnthropicIngress_MergesSupportedMessagesIntoFullReplay(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"model":"claude-sonnet-4.5","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}],"messages":[{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"q\":\"hello\"}"}}]},{"role":"tool","tool_call_id":"call_1","content":"ok"}],"previous_response_id":"resp_stale"}`)
+
+	plan, err := prepareResponsesAnthropicIngress(body)
+	require.NoError(t, err)
+	require.Equal(t, string(body), string(plan.PrimaryBody))
+	require.True(t, plan.CanRetryWithFullReplay())
+	require.Equal(t, "input+messages", plan.FullReplaySource)
+	require.Equal(t, "function_call", gjson.GetBytes(plan.FullReplayBody, "input.0.type").String())
+	require.Equal(t, "call_1", gjson.GetBytes(plan.FullReplayBody, "input.0.call_id").String())
+	require.Equal(t, "function_call_output", gjson.GetBytes(plan.FullReplayBody, "input.1.type").String())
+	require.Equal(t, "call_1", gjson.GetBytes(plan.FullReplayBody, "input.1.call_id").String())
+	require.True(t, plan.CanRetryWithFullReplayForReason(string(recoverableFailureToolContinuation)))
 }
 
 func TestPrepareResponsesAnthropicIngress_FallsBackToLegacyMessagesWhenInputMissing(t *testing.T) {
@@ -229,13 +253,16 @@ func TestForwardAsResponses_RetriesFullReplayOnceOnContinuationFailure(t *testin
 	require.Equal(t, 2, upstream.callCount)
 	require.Equal(t, "user", gjson.GetBytes(upstream.bodies[0], "messages.0.role").String())
 	require.Equal(t, "tool_result", gjson.GetBytes(upstream.bodies[0], "messages.0.content.0.type").String())
-	require.Equal(t, "user", gjson.GetBytes(upstream.bodies[1], "messages.0.role").String())
-	require.False(t, gjson.GetBytes(upstream.bodies[1], "messages.1").Exists())
-	require.Equal(t, "tool_result", gjson.GetBytes(upstream.bodies[1], "messages.0.content.0.type").String())
+	require.False(t, gjson.GetBytes(upstream.bodies[0], "messages.1").Exists())
+	require.Equal(t, "assistant", gjson.GetBytes(upstream.bodies[1], "messages.0.role").String())
+	require.Equal(t, "tool_use", gjson.GetBytes(upstream.bodies[1], "messages.0.content.0.type").String())
+	require.Equal(t, "user", gjson.GetBytes(upstream.bodies[1], "messages.1.role").String())
+	require.Equal(t, "tool_result", gjson.GetBytes(upstream.bodies[1], "messages.1.content.0.type").String())
+	require.False(t, gjson.GetBytes(upstream.bodies[1], "messages.2").Exists())
 	require.Contains(t, rec.Body.String(), `"replayed ok"`)
 }
 
-func TestForwardAsResponses_DoesNotRetryToolContinuationWhenFullReplayLacksFunctionCallContext(t *testing.T) {
+func TestForwardAsResponses_RetriesToolContinuationWhenMessagesProvideFunctionCallContext(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
 
@@ -288,10 +315,16 @@ func TestForwardAsResponses_DoesNotRetryToolContinuationWhenFullReplayLacksFunct
 	account.Extra = nil
 
 	result, err := svc.ForwardAsResponses(context.Background(), c, account, body, nil)
-	require.Error(t, err)
-	require.Nil(t, result)
-	require.Equal(t, 1, upstream.callCount)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 2, upstream.callCount)
 	require.Equal(t, "user", gjson.GetBytes(upstream.bodies[0], "messages.0.role").String())
 	require.Equal(t, "tool_result", gjson.GetBytes(upstream.bodies[0], "messages.0.content.0.type").String())
-	require.NotContains(t, rec.Body.String(), `"tool replay ok"`)
+	require.False(t, gjson.GetBytes(upstream.bodies[0], "messages.1").Exists())
+	require.Equal(t, "assistant", gjson.GetBytes(upstream.bodies[1], "messages.0.role").String())
+	require.Equal(t, "tool_use", gjson.GetBytes(upstream.bodies[1], "messages.0.content.0.type").String())
+	require.Equal(t, "user", gjson.GetBytes(upstream.bodies[1], "messages.1.role").String())
+	require.Equal(t, "tool_result", gjson.GetBytes(upstream.bodies[1], "messages.1.content.0.type").String())
+	require.False(t, gjson.GetBytes(upstream.bodies[1], "messages.2").Exists())
+	require.Contains(t, rec.Body.String(), `"tool replay ok"`)
 }

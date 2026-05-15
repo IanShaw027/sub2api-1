@@ -153,9 +153,10 @@ type openAIAccountRuntimeStats struct {
 }
 
 type openAIAccountRuntimeStat struct {
-	errorRateEWMABits  atomic.Uint64
-	ttftEWMABits       atomic.Uint64
-	lastRecoveryReason atomic.Value
+	errorRateEWMABits        atomic.Uint64
+	errorRateEWMAInitialized atomic.Bool
+	ttftEWMABits             atomic.Uint64
+	lastRecoveryReason       atomic.Value
 }
 
 func newOpenAIAccountRuntimeStats() *openAIAccountRuntimeStats {
@@ -207,7 +208,11 @@ func (s *openAIAccountRuntimeStats) report(accountID int64, success bool, firstT
 	if success {
 		errorSample = 0.0
 	}
-	updateEWMAAtomic(&stat.errorRateEWMABits, errorSample, alpha)
+	if stat.errorRateEWMAInitialized.CompareAndSwap(false, true) {
+		stat.errorRateEWMABits.Store(math.Float64bits(errorSample))
+	} else {
+		updateEWMAAtomic(&stat.errorRateEWMABits, errorSample, alpha)
+	}
 
 	if firstTokenMs != nil && *firstTokenMs > 0 {
 		ttft := float64(*firstTokenMs)

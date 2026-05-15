@@ -378,6 +378,10 @@ func TestOpenAIGatewayService_ResolveOpenAICompactSessionID_ContentFallbackIsDet
 	require.Equal(t, first, second)
 	require.True(t, strings.HasPrefix(first, contentSessionSeedPrefix))
 	require.NotEqual(t, first, other)
+	require.LessOrEqual(t, len(first), 64)
+	require.NotContains(t, first, "compact-test")
+	require.NotContains(t, first, "hello")
+	require.NotContains(t, first, "different")
 }
 
 func TestOpenAIGatewayService_GenerateSessionHash_ContentFallback(t *testing.T) {

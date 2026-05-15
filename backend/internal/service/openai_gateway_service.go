@@ -6877,7 +6877,7 @@ func resolveOpenAICompactSessionID(c *gin.Context, body []byte) string {
 		}
 	}
 	if sessionID := strings.TrimSpace(deriveOpenAIContentSessionSeed(body)); sessionID != "" {
-		return sessionID
+		return contentSessionSeedPrefix + generateSessionUUID(sessionID)
 	}
 	return uuid.NewString()
 }

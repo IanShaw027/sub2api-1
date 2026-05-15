@@ -15,7 +15,7 @@ func TestDeriveOpenAIContentSessionSeed_EmptyInputs(t *testing.T) {
 func TestDeriveOpenAIContentSessionSeed_ModelOnly(t *testing.T) {
 	seed := deriveOpenAIContentSessionSeed([]byte(`{"model":"gpt-5.4"}`))
 	require.Contains(t, seed, contentSessionSeedPrefix)
-	require.Contains(t, seed, "model=gpt-5.4")
+	require.Len(t, seed, len(contentSessionSeedPrefix)+32)
 }
 
 func TestDeriveOpenAIContentSessionSeed_ChatCompletions_StableAcrossTurns(t *testing.T) {
@@ -78,7 +78,6 @@ func TestDeriveOpenAIContentSessionSeed_ChatCompletions_WithTools(t *testing.T) 
 	s1 := deriveOpenAIContentSessionSeed(withTools)
 	s2 := deriveOpenAIContentSessionSeed(withoutTools)
 	require.NotEqual(t, s1, s2, "tools should affect the seed")
-	require.Contains(t, s1, "|tools=")
 }
 
 func TestDeriveOpenAIContentSessionSeed_ChatCompletions_WithFunctions(t *testing.T) {
@@ -88,7 +87,7 @@ func TestDeriveOpenAIContentSessionSeed_ChatCompletions_WithFunctions(t *testing
 		"messages": [{"role": "user", "content": "Hello"}]
 	}`)
 	seed := deriveOpenAIContentSessionSeed(body)
-	require.Contains(t, seed, "|functions=")
+	require.NotEmpty(t, seed)
 }
 
 func TestDeriveOpenAIContentSessionSeed_ChatCompletions_DeveloperRole(t *testing.T) {
@@ -100,8 +99,7 @@ func TestDeriveOpenAIContentSessionSeed_ChatCompletions_DeveloperRole(t *testing
 		]
 	}`)
 	seed := deriveOpenAIContentSessionSeed(body)
-	require.Contains(t, seed, "|system=")
-	require.Contains(t, seed, "|first_user=")
+	require.NotEmpty(t, seed)
 }
 
 func TestDeriveOpenAIContentSessionSeed_ChatCompletions_StructuredContent(t *testing.T) {
@@ -113,13 +111,14 @@ func TestDeriveOpenAIContentSessionSeed_ChatCompletions_StructuredContent(t *tes
 	}`)
 	seed := deriveOpenAIContentSessionSeed(body)
 	require.NotEmpty(t, seed)
-	require.Contains(t, seed, "|first_user=")
 }
 
 func TestDeriveOpenAIContentSessionSeed_ResponsesAPI_InputString(t *testing.T) {
-	body := []byte(`{"model":"gpt-5.4","input":"Hello, how are you?"}`)
-	seed := deriveOpenAIContentSessionSeed(body)
-	require.Contains(t, seed, "|input=Hello, how are you?")
+	body1 := []byte(`{"model":"gpt-5.4","input":"Hello, how are you?"}`)
+	body2 := []byte(`{"model":"gpt-5.4","input":"Goodbye, how are you?"}`)
+	seed1 := deriveOpenAIContentSessionSeed(body1)
+	seed2 := deriveOpenAIContentSessionSeed(body2)
+	require.NotEqual(t, seed1, seed2)
 }
 
 func TestDeriveOpenAIContentSessionSeed_ResponsesAPI_InputArray(t *testing.T) {
@@ -131,19 +130,23 @@ func TestDeriveOpenAIContentSessionSeed_ResponsesAPI_InputArray(t *testing.T) {
 		]
 	}`)
 	seed := deriveOpenAIContentSessionSeed(body)
-	require.Contains(t, seed, "|system=")
-	require.Contains(t, seed, "|first_user=")
+	require.NotEmpty(t, seed)
 }
 
 func TestDeriveOpenAIContentSessionSeed_ResponsesAPI_WithInstructions(t *testing.T) {
-	body := []byte(`{
+	body1 := []byte(`{
 		"model": "gpt-5.4",
 		"instructions": "You are a coding assistant.",
 		"input": "Write a hello world"
 	}`)
-	seed := deriveOpenAIContentSessionSeed(body)
-	require.Contains(t, seed, "|instructions=You are a coding assistant.")
-	require.Contains(t, seed, "|input=Write a hello world")
+	body2 := []byte(`{
+		"model": "gpt-5.4",
+		"instructions": "You are a translation assistant.",
+		"input": "Write a hello world"
+	}`)
+	seed1 := deriveOpenAIContentSessionSeed(body1)
+	seed2 := deriveOpenAIContentSessionSeed(body2)
+	require.NotEqual(t, seed1, seed2)
 }
 
 func TestDeriveOpenAIContentSessionSeed_Deterministic(t *testing.T) {
@@ -162,7 +165,7 @@ func TestDeriveOpenAIContentSessionSeed_Deterministic(t *testing.T) {
 func TestDeriveOpenAIContentSessionSeed_PrefixPresent(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.4","messages":[{"role":"user","content":"Hi"}]}`)
 	seed := deriveOpenAIContentSessionSeed(body)
-	require.True(t, len(seed) > len(contentSessionSeedPrefix))
+	require.Equal(t, len(contentSessionSeedPrefix)+32, len(seed))
 	require.Equal(t, contentSessionSeedPrefix, seed[:len(contentSessionSeedPrefix)])
 }
 
@@ -173,14 +176,17 @@ func TestDeriveOpenAIContentSessionSeed_EmptyToolsIgnored(t *testing.T) {
 }
 
 func TestDeriveOpenAIContentSessionSeed_MessagesPreferredOverInput(t *testing.T) {
-	body := []byte(`{
+	body1 := []byte(`{
 		"model": "gpt-5.4",
 		"messages": [{"role": "user", "content": "from messages"}],
 		"input": "from input"
 	}`)
-	seed := deriveOpenAIContentSessionSeed(body)
-	require.Contains(t, seed, "|first_user=")
-	require.NotContains(t, seed, "|input=")
+	body2 := []byte(`{
+		"model": "gpt-5.4",
+		"messages": [{"role": "user", "content": "from messages"}],
+		"input": "something else"
+	}`)
+	require.Equal(t, deriveOpenAIContentSessionSeed(body1), deriveOpenAIContentSessionSeed(body2))
 }
 
 func TestDeriveOpenAIContentSessionSeed_JSONCanonicalisation(t *testing.T) {
@@ -198,21 +204,41 @@ func TestDeriveOpenAIContentSessionSeed_JSONCanonicalisation(t *testing.T) {
 }
 
 func TestDeriveOpenAIContentSessionSeed_ResponsesAPI_InputTextTypedItem(t *testing.T) {
-	body := []byte(`{
+	body1 := []byte(`{
 		"model": "gpt-5.4",
 		"input": [{"type": "input_text", "text": "Hello world"}]
 	}`)
-	seed := deriveOpenAIContentSessionSeed(body)
-	require.Contains(t, seed, "|first_user=")
-	require.Contains(t, seed, "Hello world")
+	body2 := []byte(`{
+		"model": "gpt-5.4",
+		"input": [{"type": "input_text", "text": "Hello there"}]
+	}`)
+	require.NotEqual(t, deriveOpenAIContentSessionSeed(body1), deriveOpenAIContentSessionSeed(body2))
 }
 
 func TestDeriveOpenAIContentSessionSeed_ResponsesAPI_TypedMessageItem(t *testing.T) {
-	body := []byte(`{
+	body1 := []byte(`{
 		"model": "gpt-5.4",
 		"input": [{"type": "message", "role": "user", "content": "Hello from typed message"}]
 	}`)
+	body2 := []byte(`{
+		"model": "gpt-5.4",
+		"input": [{"type": "message", "role": "user", "content": "Hello from typed message v2"}]
+	}`)
+	require.NotEqual(t, deriveOpenAIContentSessionSeed(body1), deriveOpenAIContentSessionSeed(body2))
+}
+
+func TestDeriveOpenAIContentSessionSeed_DoesNotLeakPromptContent(t *testing.T) {
+	body := []byte(`{
+		"model": "gpt-5.4",
+		"instructions": "never leak this prompt",
+		"messages": [
+			{"role": "system", "content": "secret system prompt"},
+			{"role": "user", "content": "secret user prompt"}
+		]
+	}`)
 	seed := deriveOpenAIContentSessionSeed(body)
-	require.Contains(t, seed, "|first_user=")
-	require.Contains(t, seed, "Hello from typed message")
+	require.NotContains(t, seed, "never leak this prompt")
+	require.NotContains(t, seed, "secret system prompt")
+	require.NotContains(t, seed, "secret user prompt")
+	require.LessOrEqual(t, len(seed), 64)
 }

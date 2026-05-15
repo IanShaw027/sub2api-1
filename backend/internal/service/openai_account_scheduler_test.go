@@ -1245,6 +1245,19 @@ func TestOpenAIAccountRuntimeStats_ReportAndSnapshot(t *testing.T) {
 	require.Len(t, stats.snapshotAll(), 2)
 }
 
+func TestOpenAIAccountRuntimeStats_FirstFailureInitializesErrorRateToOne(t *testing.T) {
+	stats := newOpenAIAccountRuntimeStats()
+
+	stats.report(2001, false, nil)
+
+	runtimeSnapshot, ok := stats.runtimeSnapshot(2001)
+	require.True(t, ok)
+	errorRate, _, hasTTFT := stats.snapshot(2001)
+	require.False(t, hasTTFT)
+	require.InDelta(t, 1.0, errorRate, 1e-9)
+	require.InDelta(t, 1.0, runtimeSnapshot.ErrorRateEWMA, 1e-9)
+}
+
 func TestOpenAIAccountRuntimeStats_ReportConcurrent(t *testing.T) {
 	stats := newOpenAIAccountRuntimeStats()
 

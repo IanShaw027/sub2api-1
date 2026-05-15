@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -39,12 +40,36 @@ func normalizeOpenAIResponsesIngress(body []byte) (openAIResponsesIngressNormali
 	hasInput := inputValue.Exists() && inputValue.Type != gjson.Null
 
 	if hasInput {
-		fullReplayBody, err := replaceOpenAIResponsesIngressInput(body, []byte(inputValue.Raw), true)
+		fullReplayInputRaw := []byte(inputValue.Raw)
+		fullReplaySource := "input"
+		legacyMessages, legacyErr := normalizeLegacyResponsesMessages(body)
+		if legacyErr == nil && len(legacyMessages.InputRaw) > 0 {
+			mergedInputRaw, merged, err := mergeResponsesReplayInputs(legacyMessages.InputRaw, fullReplayInputRaw)
+			if err != nil {
+				return normalized, err
+			}
+			if merged {
+				fullReplayInputRaw = mergedInputRaw
+				fullReplaySource = "input+messages"
+			}
+		}
+
+		fullReplayBody, err := replaceOpenAIResponsesIngressInput(body, fullReplayInputRaw, true)
 		if err != nil {
 			return normalized, err
 		}
+		if legacyMessages, legacyErr := normalizeLegacyResponsesMessages(body); legacyErr == nil && len(legacyMessages.InputRaw) > 0 {
+			fullReplayBody, err = setOpenAIResponsesIngressInstructions(fullReplayBody, legacyMessages.Instructions)
+			if err != nil {
+				return normalized, err
+			}
+			fullReplayBody, err = setNormalizedLegacyResponsesFields(fullReplayBody, legacyMessages)
+			if err != nil {
+				return normalized, err
+			}
+		}
 		normalized.FullReplayBody = dropOpenAIResponsesIngressPreviousResponseID(fullReplayBody)
-		normalized.FullReplaySource = "input"
+		normalized.FullReplaySource = fullReplaySource
 		return normalized, nil
 	}
 
@@ -164,6 +189,104 @@ func setNormalizedLegacyResponsesFields(body []byte, legacy normalizedLegacyResp
 		}
 	}
 	return updated, nil
+}
+
+func mergeResponsesReplayInputs(legacyInputRaw, inputRaw []byte) ([]byte, bool, error) {
+	legacyItems, err := decodeResponsesReplayInputItems(legacyInputRaw)
+	if err != nil {
+		return nil, false, fmt.Errorf("decode legacy replay input: %w", err)
+	}
+	currentItems, err := decodeResponsesReplayInputItems(inputRaw)
+	if err != nil {
+		return nil, false, fmt.Errorf("decode current replay input: %w", err)
+	}
+	if len(legacyItems) == 0 {
+		return inputRaw, false, nil
+	}
+	if len(currentItems) == 0 {
+		mergedRaw, err := json.Marshal(legacyItems)
+		if err != nil {
+			return nil, false, fmt.Errorf("marshal legacy replay input: %w", err)
+		}
+		return mergedRaw, true, nil
+	}
+
+	seen := make(map[string]struct{}, len(legacyItems)+len(currentItems))
+	merged := make([]json.RawMessage, 0, len(legacyItems)+len(currentItems))
+	appendUnique := func(items []json.RawMessage) error {
+		for _, item := range items {
+			key, err := compactJSONRaw(item)
+			if err != nil {
+				return err
+			}
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			merged = append(merged, item)
+		}
+		return nil
+	}
+	if err := appendUnique(legacyItems); err != nil {
+		return nil, false, fmt.Errorf("compact legacy replay input: %w", err)
+	}
+	if err := appendUnique(currentItems); err != nil {
+		return nil, false, fmt.Errorf("compact current replay input: %w", err)
+	}
+
+	if len(merged) == len(currentItems) {
+		same := true
+		for i := range currentItems {
+			currentKey, err := compactJSONRaw(currentItems[i])
+			if err != nil {
+				return nil, false, fmt.Errorf("compact merged replay input: %w", err)
+			}
+			mergedKey, err := compactJSONRaw(merged[i])
+			if err != nil {
+				return nil, false, fmt.Errorf("compact merged replay input: %w", err)
+			}
+			if currentKey != mergedKey {
+				same = false
+				break
+			}
+		}
+		if same {
+			return inputRaw, false, nil
+		}
+	}
+
+	mergedRaw, err := json.Marshal(merged)
+	if err != nil {
+		return nil, false, fmt.Errorf("marshal merged replay input: %w", err)
+	}
+	return mergedRaw, true, nil
+}
+
+func decodeResponsesReplayInputItems(inputRaw []byte) ([]json.RawMessage, error) {
+	input := gjson.ParseBytes(inputRaw)
+	switch {
+	case !input.Exists():
+		return nil, nil
+	case input.IsArray():
+		items := make([]json.RawMessage, 0, len(input.Array()))
+		input.ForEach(func(_, item gjson.Result) bool {
+			items = append(items, json.RawMessage(item.Raw))
+			return true
+		})
+		return items, nil
+	case input.IsObject():
+		return []json.RawMessage{json.RawMessage(input.Raw)}, nil
+	default:
+		return nil, nil
+	}
+}
+
+func compactJSONRaw(raw []byte) (string, error) {
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, raw); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
 }
 
 func replaceOpenAIResponsesIngressInput(body, inputRaw []byte, deleteMessages bool) ([]byte, error) {
