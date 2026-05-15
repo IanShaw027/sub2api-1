@@ -260,7 +260,7 @@ func TestAdminService_ListUsers_LiveConcurrencySortLoadsBeyondPaginationCap(t *t
 	require.InDelta(t, 10.00, got[1].TodayBalanceActualCost, 0.0001)
 }
 
-func TestAdminService_ListUsers_LiveConcurrencySortFallsBackDeterministicallyWhenLoadFails(t *testing.T) {
+func TestAdminService_ListUsers_LiveConcurrencySortReturnsErrorWhenLoadFails(t *testing.T) {
 	userRepo := &userRepoStubForListUsers{
 		users: []User{
 			{ID: 1, Email: "one@example.com", Concurrency: 5},
@@ -277,10 +277,55 @@ func TestAdminService_ListUsers_LiveConcurrencySortFallsBackDeterministicallyWhe
 	}
 
 	users, total, err := svc.ListUsers(context.Background(), 1, 3, UserListFilters{}, "available_concurrency", "desc")
-	require.NoError(t, err)
-	require.Equal(t, int64(3), total)
-	require.Len(t, users, 3)
-	require.Equal(t, []int64{2, 1, 3}, []int64{users[0].ID, users[1].ID, users[2].ID})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "available_concurrency")
+	require.ErrorContains(t, err, "redis unavailable")
+	require.Zero(t, total)
+	require.Nil(t, users)
+}
+
+func TestAdminService_ListUsers_LiveConcurrencySortReturnsErrorWhenServiceUnavailable(t *testing.T) {
+	userRepo := &userRepoStubForListUsers{
+		users: []User{
+			{ID: 1, Email: "one@example.com", Concurrency: 5},
+			{ID: 2, Email: "two@example.com", Concurrency: 10},
+		},
+	}
+	svc := &adminServiceImpl{
+		userRepo: userRepo,
+	}
+
+	users, total, err := svc.ListUsers(context.Background(), 1, 2, UserListFilters{}, "current_concurrency", "asc")
+	require.Error(t, err)
+	require.ErrorContains(t, err, "current_concurrency")
+	require.ErrorContains(t, err, "requires concurrency service")
+	require.Zero(t, total)
+	require.Nil(t, users)
+}
+
+func TestAdminService_ListUsers_LiveConcurrencySortReturnsErrorWhenLoadDataIsIncomplete(t *testing.T) {
+	userRepo := &userRepoStubForListUsers{
+		users: []User{
+			{ID: 1, Email: "one@example.com", Concurrency: 5},
+			{ID: 2, Email: "two@example.com", Concurrency: 10},
+		},
+	}
+	cache := &stubConcurrencyCacheForTest{
+		usersLoadBatch: map[int64]*UserLoadInfo{
+			1: {UserID: 1, CurrentConcurrency: 1},
+		},
+	}
+	svc := &adminServiceImpl{
+		userRepo:           userRepo,
+		concurrencyService: NewConcurrencyService(cache),
+	}
+
+	users, total, err := svc.ListUsers(context.Background(), 1, 2, UserListFilters{}, "current_concurrency", "desc")
+	require.Error(t, err)
+	require.ErrorContains(t, err, "current_concurrency")
+	require.ErrorContains(t, err, "missing user 2")
+	require.Zero(t, total)
+	require.Nil(t, users)
 }
 
 func TestAdminService_ListUsers_PopulatesLastUsedAt(t *testing.T) {

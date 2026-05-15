@@ -684,18 +684,15 @@ func (s *adminServiceImpl) listUsersByLiveConcurrency(ctx context.Context, page,
 	if err != nil {
 		return nil, 0, err
 	}
-
-	if s.concurrencyService != nil && len(users) > 0 {
-		batch := make([]UserWithConcurrency, 0, len(users))
-		for i := range users {
-			batch = append(batch, UserWithConcurrency{ID: users[i].ID, MaxConcurrency: users[i].Concurrency})
-		}
-		loadMap, loadErr := s.concurrencyService.GetUsersLoadBatch(ctx, batch)
-		if loadErr != nil {
-			logger.LegacyPrintf("service.admin", "failed to load user concurrency in batch: err=%v", loadErr)
-		}
-		sortUsersByLiveConcurrency(users, loadMap, sortBy, sortOrder)
+	if len(users) == 0 {
+		return []User{}, total, nil
 	}
+
+	loadMap, err := s.loadUserConcurrencyForSort(ctx, users, sortBy)
+	if err != nil {
+		return nil, 0, err
+	}
+	sortUsersByLiveConcurrency(users, loadMap, sortBy, sortOrder)
 
 	start, end := paginateSlice(page, pageSize, len(users))
 	if start >= end {
@@ -737,6 +734,31 @@ func (s *adminServiceImpl) loadAllUsersForLiveConcurrencySort(ctx context.Contex
 	return users, nil
 }
 
+func (s *adminServiceImpl) loadUserConcurrencyForSort(ctx context.Context, users []User, sortBy string) (map[int64]*UserLoadInfo, error) {
+	if s.concurrencyService == nil {
+		return nil, fmt.Errorf("live user concurrency sort %q requires concurrency service", strings.TrimSpace(sortBy))
+	}
+
+	batch := make([]UserWithConcurrency, 0, len(users))
+	for i := range users {
+		batch = append(batch, UserWithConcurrency{ID: users[i].ID, MaxConcurrency: users[i].Concurrency})
+	}
+
+	loadMap, err := s.concurrencyService.GetUsersLoadBatch(ctx, batch)
+	if err != nil {
+		return nil, fmt.Errorf("load live user concurrency for sort %q: %w", strings.TrimSpace(sortBy), err)
+	}
+	if len(loadMap) == 0 {
+		return nil, fmt.Errorf("load live user concurrency for sort %q returned no data", strings.TrimSpace(sortBy))
+	}
+	for i := range users {
+		if loadMap[users[i].ID] == nil {
+			return nil, fmt.Errorf("load live user concurrency for sort %q missing user %d", strings.TrimSpace(sortBy), users[i].ID)
+		}
+	}
+	return loadMap, nil
+}
+
 func (s *adminServiceImpl) populateUsageStatsForUsers(ctx context.Context, users []User) {
 	if len(users) == 0 {
 		return
@@ -769,12 +791,7 @@ func sortUsersByLiveConcurrency(users []User, loadMap map[int64]*UserLoadInfo, s
 }
 
 func liveUserConcurrencyValue(user User, loadMap map[int64]*UserLoadInfo, sortBy string) int {
-	current := 0
-	if loadMap != nil {
-		if load := loadMap[user.ID]; load != nil {
-			current = load.CurrentConcurrency
-		}
-	}
+	current := loadMap[user.ID].CurrentConcurrency
 	switch strings.ToLower(strings.TrimSpace(sortBy)) {
 	case "available_concurrency":
 		return maxInt(user.Concurrency-current, 0)
