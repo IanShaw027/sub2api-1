@@ -709,7 +709,7 @@ urlFallbackLoop:
 					continue
 				}
 				logger.LegacyPrintf("service.antigravity_gateway", "%s status=request_failed retries_exhausted error=%v", p.prefix, err)
-				setOpsUpstreamError(p.c, 0, safeErr, "")
+				recordDetailedUpstreamTransportError(p.c, err)
 				return nil, fmt.Errorf("upstream request failed after retries: %w", err)
 			}
 
@@ -1489,7 +1489,8 @@ func (s *AntigravityGatewayService) Forward(ctx context.Context, c *gin.Context,
 		if c.Request.Context().Err() != nil {
 			return nil, s.writeClaudeError(c, http.StatusBadGateway, "client_disconnected", "Client disconnected before upstream response")
 		}
-		return nil, s.writeClaudeError(c, http.StatusBadGateway, "upstream_error", "Upstream request failed after retries")
+		detail := classifyUpstreamTransportError(err)
+		return nil, s.writeClaudeError(c, http.StatusBadGateway, detail.ErrorType, formatUpstreamRequestFailedAfterRetries(detail))
 	}
 	resp := result.resp
 	defer func() { _ = resp.Body.Close() }()
@@ -2244,7 +2245,8 @@ func (s *AntigravityGatewayService) ForwardGemini(ctx context.Context, c *gin.Co
 		if c.Request.Context().Err() != nil {
 			return nil, s.writeGoogleError(c, http.StatusBadGateway, "Client disconnected before upstream response")
 		}
-		return nil, s.writeGoogleError(c, http.StatusBadGateway, "Upstream request failed after retries")
+		detail := classifyUpstreamTransportError(err)
+		return nil, s.writeGoogleError(c, http.StatusBadGateway, formatUpstreamRequestFailedAfterRetries(detail))
 	}
 	resp := result.resp
 	defer func() {

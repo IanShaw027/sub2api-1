@@ -406,7 +406,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					continue
 				}
 				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
-				wroteFallback := h.ensureForwardErrorResponse(c, streamStarted)
+				wroteFallback := h.ensureForwardErrorResponse(c, streamStarted, err)
 				fields := []zap.Field{
 					zap.Int64("account_id", account.ID),
 					zap.Bool("fallback_error_response_written", wroteFallback),
@@ -1454,7 +1454,7 @@ func (h *OpenAIGatewayHandler) recoverResponsesPanic(c *gin.Context, streamStart
 	if streamStarted != nil {
 		started = *streamStarted
 	}
-	wroteFallback := h.ensureForwardErrorResponse(c, started)
+	wroteFallback := h.ensureForwardErrorResponse(c, started, nil)
 	requestLogger(c, "handler.openai_gateway.responses").Error(
 		"openai.responses_panic_recovered",
 		zap.Bool("fallback_error_response_written", wroteFallback),
@@ -1711,11 +1711,13 @@ func (h *OpenAIGatewayHandler) handleStreamingAwareError(c *gin.Context, status 
 }
 
 // ensureForwardErrorResponse 在 Forward 返回错误但尚未写响应时补写统一错误响应。
-func (h *OpenAIGatewayHandler) ensureForwardErrorResponse(c *gin.Context, streamStarted bool) bool {
+func (h *OpenAIGatewayHandler) ensureForwardErrorResponse(c *gin.Context, streamStarted bool, forwardErr error) bool {
 	if c == nil || c.Writer == nil || c.Writer.Written() {
 		return false
 	}
-	h.handleStreamingAwareError(c, http.StatusBadGateway, "upstream_error", "Upstream request failed", streamStarted)
+	detail := classifyUpstreamForwardError(forwardErr)
+	service.SetOpsUpstreamErrorWithType(c, detail.ErrorType, 0, detail.Message, detail.Detail)
+	h.handleStreamingAwareError(c, http.StatusBadGateway, detail.ErrorType, detail.Message, streamStarted)
 	return true
 }
 

@@ -316,6 +316,8 @@ func TestIsKnownOpsErrorType(t *testing.T) {
 		"billing_error",
 		"subscription_error",
 		"upstream_error",
+		"upstream_http2_internal_error",
+		"upstream_timeout_error",
 		"overloaded_error",
 		"api_error",
 		"not_found_error",
@@ -342,6 +344,7 @@ func TestNormalizeOpsErrorType(t *testing.T) {
 		{"known invalid_request_error", "invalid_request_error", "", "invalid_request_error"},
 		{"known rate_limit_error", "rate_limit_error", "", "rate_limit_error"},
 		{"known upstream_error", "upstream_error", "", "upstream_error"},
+		{"known detailed upstream error", "upstream_http2_internal_error", "", "upstream_http2_internal_error"},
 
 		// Unknown/garbage types are rejected and fall through to code-based or default.
 		{"nil literal from upstream", "<nil>", "", "api_error"},

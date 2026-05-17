@@ -160,7 +160,7 @@ func TestOpenAIEnsureForwardErrorResponse_WritesFallbackWhenNotWritten(t *testin
 	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
 
 	h := &OpenAIGatewayHandler{}
-	wrote := h.ensureForwardErrorResponse(c, false)
+	wrote := h.ensureForwardErrorResponse(c, false, nil)
 
 	require.True(t, wrote)
 	require.Equal(t, http.StatusBadGateway, w.Code)
@@ -182,11 +182,32 @@ func TestOpenAIEnsureForwardErrorResponse_DoesNotOverrideWrittenResponse(t *test
 	c.String(http.StatusTeapot, "already written")
 
 	h := &OpenAIGatewayHandler{}
-	wrote := h.ensureForwardErrorResponse(c, false)
+	wrote := h.ensureForwardErrorResponse(c, false, nil)
 
 	require.False(t, wrote)
 	require.Equal(t, http.StatusTeapot, w.Code)
 	assert.Equal(t, "already written", w.Body.String())
+}
+
+func TestOpenAIEnsureForwardErrorResponse_UsesDetailedForwardError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+
+	h := &OpenAIGatewayHandler{}
+	wrote := h.ensureForwardErrorResponse(c, false, errors.New("stream error: stream ID 3; INTERNAL_ERROR; received from peer"))
+
+	require.True(t, wrote)
+	require.Equal(t, http.StatusBadGateway, w.Code)
+
+	var parsed map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &parsed)
+	require.NoError(t, err)
+	errorObj, ok := parsed["error"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "upstream_http2_internal_error", errorObj["type"])
+	assert.Equal(t, "Upstream HTTP/2 peer reset the stream with INTERNAL_ERROR", errorObj["message"])
 }
 
 func TestShouldLogOpenAIForwardFailureAsWarn(t *testing.T) {

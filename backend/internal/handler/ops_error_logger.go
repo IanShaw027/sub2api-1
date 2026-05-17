@@ -624,6 +624,13 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 			}
 			recoveredMsg = truncateString(recoveredMsg, 2048)
 
+			errorType := "upstream_error"
+			if v, ok := c.Get(service.OpsUpstreamErrorTypeKey); ok {
+				if s, ok := v.(string); ok && isKnownOpsErrorType(s) {
+					errorType = s
+				}
+			}
+
 			entry := &service.OpsInsertErrorLogInput{
 				RequestID:       requestID,
 				ClientRequestID: clientRequestID,
@@ -664,9 +671,9 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 				UserAgent: c.GetHeader("User-Agent"),
 
 				ErrorPhase: "upstream",
-				ErrorType:  "upstream_error",
+				ErrorType:  errorType,
 				// Severity/retryability should reflect the upstream failure, not the final client status (200).
-				Severity:          classifyOpsSeverity("upstream_error", effectiveUpstreamStatus),
+				Severity:          classifyOpsSeverity(errorType, effectiveUpstreamStatus),
 				StatusCode:        status,
 				IsBusinessLimited: false,
 				IsCountTokens:     isCountTokensRequest(c),
@@ -682,7 +689,7 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 				UpstreamErrorDetail:  upstreamErrorDetail,
 				UpstreamErrors:       events,
 
-				IsRetryable: classifyOpsIsRetryable("upstream_error", effectiveUpstreamStatus),
+				IsRetryable: classifyOpsIsRetryable(errorType, effectiveUpstreamStatus),
 				RetryCount:  0,
 				CreatedAt:   time.Now(),
 			}
@@ -1074,6 +1081,9 @@ func guessPlatformFromPath(path string) string {
 // (e.g. the Go-serialized literal "<nil>") which would pollute phase/severity
 // classification if accepted blindly.
 func isKnownOpsErrorType(t string) bool {
+	if isDetailedUpstreamOpsErrorType(t) {
+		return true
+	}
 	switch t {
 	case "invalid_request_error",
 		"authentication_error",
@@ -1088,6 +1098,11 @@ func isKnownOpsErrorType(t string) bool {
 		return true
 	}
 	return false
+}
+
+func isDetailedUpstreamOpsErrorType(t string) bool {
+	t = strings.TrimSpace(t)
+	return t != "upstream_error" && strings.HasPrefix(t, "upstream_") && strings.HasSuffix(t, "_error")
 }
 
 func normalizeOpsErrorType(errType string, code string) string {
@@ -1133,6 +1148,9 @@ func classifyOpsPhase(errType, message, code string) string {
 		}
 		return "internal"
 	default:
+		if isDetailedUpstreamOpsErrorType(errType) {
+			return "upstream"
+		}
 		return "internal"
 	}
 }
@@ -1175,6 +1193,9 @@ func isAccountScopedOpsError(errType, message, code string) bool {
 }
 
 func classifyOpsSeverity(errType string, status int) string {
+	if isDetailedUpstreamOpsErrorType(errType) {
+		return "P1"
+	}
 	switch errType {
 	case "invalid_request_error", "authentication_error", "billing_error", "subscription_error":
 		return "P3"
@@ -1192,6 +1213,9 @@ func classifyOpsSeverity(errType string, status int) string {
 }
 
 func classifyOpsIsRetryable(errType string, statusCode int) bool {
+	if isDetailedUpstreamOpsErrorType(errType) {
+		return true
+	}
 	switch errType {
 	case "authentication_error", "invalid_request_error":
 		return false

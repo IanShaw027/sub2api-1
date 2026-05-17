@@ -4596,7 +4596,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 			}
 			// Ensure the client receives an error response (handlers assume Forward writes on non-failover errors).
 			safeErr := sanitizeUpstreamErrorMessage(err.Error())
-			setOpsUpstreamError(c, 0, safeErr, "")
+			detail := recordDetailedUpstreamTransportError(c, err)
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 				Platform:           account.Platform,
 				AccountID:          account.ID,
@@ -4609,8 +4609,8 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 			c.JSON(http.StatusBadGateway, gin.H{
 				"type": "error",
 				"error": gin.H{
-					"type":    "upstream_error",
-					"message": "Upstream request failed",
+					"type":    detail.ErrorType,
+					"message": formatUpstreamRequestFailed(detail, "Upstream request failed"),
 				},
 			})
 			return nil, fmt.Errorf("upstream request failed: %s", safeErr)
@@ -5131,7 +5131,7 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 				_ = resp.Body.Close()
 			}
 			safeErr := sanitizeUpstreamErrorMessage(err.Error())
-			setOpsUpstreamError(c, 0, safeErr, "")
+			detail := recordDetailedUpstreamTransportError(c, err)
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 				Platform:           account.Platform,
 				AccountID:          account.ID,
@@ -5144,8 +5144,8 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 			c.JSON(http.StatusBadGateway, gin.H{
 				"type": "error",
 				"error": gin.H{
-					"type":    "upstream_error",
-					"message": "Upstream request failed",
+					"type":    detail.ErrorType,
+					"message": formatUpstreamRequestFailed(detail, "Upstream request failed"),
 				},
 			})
 			return nil, fmt.Errorf("upstream request failed: %s", safeErr)
@@ -5876,7 +5876,7 @@ func (s *GatewayService) executeBedrockUpstream(
 				_ = resp.Body.Close()
 			}
 			safeErr := sanitizeUpstreamErrorMessage(err.Error())
-			setOpsUpstreamError(c, 0, safeErr, "")
+			detail := recordDetailedUpstreamTransportError(c, err)
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 				Platform:           account.Platform,
 				AccountID:          account.ID,
@@ -5889,8 +5889,8 @@ func (s *GatewayService) executeBedrockUpstream(
 			c.JSON(http.StatusBadGateway, gin.H{
 				"type": "error",
 				"error": gin.H{
-					"type":    "upstream_error",
-					"message": "Upstream request failed",
+					"type":    detail.ErrorType,
+					"message": formatUpstreamRequestFailed(detail, "Upstream request failed"),
 				},
 			})
 			return nil, fmt.Errorf("upstream request failed: %s", safeErr)
@@ -9156,7 +9156,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
-		setOpsUpstreamError(c, 0, sanitizeUpstreamErrorMessage(err.Error()), "")
+		detail := recordDetailedUpstreamTransportError(c, err)
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 			Platform:           account.Platform,
 			AccountID:          account.ID,
@@ -9166,7 +9166,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 			Kind:               "request_error",
 			Message:            sanitizeUpstreamErrorMessage(err.Error()),
 		})
-		s.countTokensError(c, http.StatusBadGateway, "upstream_error", "Request failed")
+		s.countTokensError(c, http.StatusBadGateway, detail.ErrorType, formatUpstreamRequestFailed(detail, "Request failed"))
 		return fmt.Errorf("upstream request failed: %w", err)
 	}
 
@@ -9300,7 +9300,7 @@ func (s *GatewayService) forwardCountTokensAnthropicAPIKeyPassthrough(ctx contex
 
 	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
-		setOpsUpstreamError(c, 0, sanitizeUpstreamErrorMessage(err.Error()), "")
+		detail := recordDetailedUpstreamTransportError(c, err)
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 			Platform:           account.Platform,
 			AccountID:          account.ID,
@@ -9311,7 +9311,7 @@ func (s *GatewayService) forwardCountTokensAnthropicAPIKeyPassthrough(ctx contex
 			Kind:               "request_error",
 			Message:            sanitizeUpstreamErrorMessage(err.Error()),
 		})
-		s.countTokensError(c, http.StatusBadGateway, "upstream_error", "Request failed")
+		s.countTokensError(c, http.StatusBadGateway, detail.ErrorType, formatUpstreamRequestFailed(detail, "Request failed"))
 		return fmt.Errorf("upstream request failed: %w", err)
 	}
 

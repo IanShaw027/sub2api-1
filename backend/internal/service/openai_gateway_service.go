@@ -3882,7 +3882,7 @@ oauthTransformDone:
 		if err != nil {
 			// Ensure the client receives an error response (handlers assume Forward writes on non-failover errors).
 			safeErr := sanitizeUpstreamErrorMessage(err.Error())
-			setOpsUpstreamError(c, 0, safeErr, "")
+			detail := recordDetailedUpstreamTransportError(c, err)
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 				Platform:           account.Platform,
 				AccountID:          account.ID,
@@ -3893,8 +3893,8 @@ oauthTransformDone:
 			})
 			c.JSON(http.StatusBadGateway, gin.H{
 				"error": gin.H{
-					"type":    "upstream_error",
-					"message": "Upstream request failed",
+					"type":    detail.ErrorType,
+					"message": formatUpstreamRequestFailed(detail, "Upstream request failed"),
 				},
 			})
 			emitOpenAICodexCompatFallbackEvent(
@@ -4318,7 +4318,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
 		safeErr := sanitizeUpstreamErrorMessage(err.Error())
-		setOpsUpstreamError(c, 0, safeErr, "")
+		detail := recordDetailedUpstreamTransportError(c, err)
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 			Platform:           account.Platform,
 			AccountID:          account.ID,
@@ -4330,8 +4330,8 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		})
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error": gin.H{
-				"type":    "upstream_error",
-				"message": "Upstream request failed",
+				"type":    detail.ErrorType,
+				"message": formatUpstreamRequestFailed(detail, "Upstream request failed"),
 			},
 		})
 		return nil, fmt.Errorf("upstream request failed: %s", safeErr)

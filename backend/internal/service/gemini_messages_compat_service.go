@@ -840,8 +840,8 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 				sleepGeminiBackoff(attempt)
 				continue
 			}
-			setOpsUpstreamError(c, 0, safeErr, "")
-			return nil, s.writeClaudeError(c, http.StatusBadGateway, "upstream_error", "Upstream request failed after retries: "+safeErr)
+			detail := recordDetailedUpstreamTransportError(c, err)
+			return nil, s.writeClaudeError(c, http.StatusBadGateway, detail.ErrorType, formatUpstreamRequestFailedAfterRetries(detail))
 		}
 
 		// Special-case: signature/thought_signature validation errors are not transient, but may be fixed by
@@ -1408,8 +1408,8 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 					FirstTokenMs:  nil,
 				}, nil
 			}
-			setOpsUpstreamError(c, 0, safeErr, "")
-			return nil, s.writeGoogleError(c, http.StatusBadGateway, "Upstream request failed after retries: "+safeErr)
+			detail := recordDetailedUpstreamTransportError(c, err)
+			return nil, s.writeGoogleError(c, http.StatusBadGateway, formatUpstreamRequestFailedAfterRetries(detail))
 		}
 
 		// 错误策略优先：匹配则跳过重试直接处理。
@@ -2889,7 +2889,7 @@ func (s *GeminiMessagesCompatService) ForwardAIStudioGET(ctx context.Context, c 
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
 		safeErr := sanitizeUpstreamErrorMessage(err.Error())
-		setOpsUpstreamError(c, 0, safeErr, "")
+		recordDetailedUpstreamTransportError(c, err)
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 			Platform:           account.Platform,
 			AccountID:          account.ID,

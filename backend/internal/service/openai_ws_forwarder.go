@@ -2209,7 +2209,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			if clientDisconnected {
 				break
 			}
-			setOpsUpstreamError(c, 0, sanitizeUpstreamErrorMessage(readErr.Error()), "")
+			recordDetailedUpstreamTransportError(c, readErr)
 			return nil, fmt.Errorf("openai ws read event: %w", readErr)
 		}
 

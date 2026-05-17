@@ -490,7 +490,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					}
 				}
 				h.emitGatewayDebugTimelineAttemptFinished(c, platform, "messages", "error", requestStart, apiKey, account, reqModel, reqStream, fs.SwitchCount, forwardDurationMs, result, err)
-				wroteFallback := h.ensureForwardErrorResponse(c, streamStarted)
+				wroteFallback := h.ensureForwardErrorResponse(c, streamStarted, err)
 				forwardFailedFields := []zap.Field{
 					zap.Int64("account_id", account.ID),
 					zap.String("account_name", account.Name),
@@ -862,7 +862,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					}
 				}
 				h.emitGatewayDebugTimelineAttemptFinished(c, platform, "messages", "error", requestStart, currentAPIKey, account, reqModel, reqStream, fs.SwitchCount, forwardDurationMs, result, err)
-				wroteFallback := h.ensureForwardErrorResponse(c, streamStarted)
+				wroteFallback := h.ensureForwardErrorResponse(c, streamStarted, err)
 				forwardFailedFields := []zap.Field{
 					zap.Int64("account_id", account.ID),
 					zap.String("account_name", account.Name),
@@ -1411,11 +1411,13 @@ func (h *GatewayHandler) handleStreamingAwareError(c *gin.Context, status int, e
 }
 
 // ensureForwardErrorResponse 在 Forward 返回错误但尚未写响应时补写统一错误响应。
-func (h *GatewayHandler) ensureForwardErrorResponse(c *gin.Context, streamStarted bool) bool {
+func (h *GatewayHandler) ensureForwardErrorResponse(c *gin.Context, streamStarted bool, forwardErr error) bool {
 	if c == nil || c.Writer == nil || c.Writer.Written() {
 		return false
 	}
-	h.handleStreamingAwareError(c, http.StatusBadGateway, "upstream_error", "Upstream request failed", streamStarted)
+	detail := classifyUpstreamForwardError(forwardErr)
+	service.SetOpsUpstreamErrorWithType(c, detail.ErrorType, 0, detail.Message, detail.Detail)
+	h.handleStreamingAwareError(c, http.StatusBadGateway, detail.ErrorType, detail.Message, streamStarted)
 	return true
 }
 

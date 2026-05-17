@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -18,7 +19,7 @@ func TestGatewayEnsureForwardErrorResponse_WritesFallbackWhenNotWritten(t *testi
 	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
 
 	h := &GatewayHandler{}
-	wrote := h.ensureForwardErrorResponse(c, false)
+	wrote := h.ensureForwardErrorResponse(c, false, nil)
 
 	require.True(t, wrote)
 	require.Equal(t, http.StatusBadGateway, w.Code)
@@ -41,9 +42,31 @@ func TestGatewayEnsureForwardErrorResponse_DoesNotOverrideWrittenResponse(t *tes
 	c.String(http.StatusTeapot, "already written")
 
 	h := &GatewayHandler{}
-	wrote := h.ensureForwardErrorResponse(c, false)
+	wrote := h.ensureForwardErrorResponse(c, false, nil)
 
 	require.False(t, wrote)
 	require.Equal(t, http.StatusTeapot, w.Code)
 	assert.Equal(t, "already written", w.Body.String())
+}
+
+func TestGatewayEnsureForwardErrorResponse_UsesDetailedForwardError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+
+	h := &GatewayHandler{}
+	wrote := h.ensureForwardErrorResponse(c, false, errors.New("dial tcp 127.0.0.1:443: connect: connection refused"))
+
+	require.True(t, wrote)
+	require.Equal(t, http.StatusBadGateway, w.Code)
+
+	var parsed map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &parsed)
+	require.NoError(t, err)
+	assert.Equal(t, "error", parsed["type"])
+	errorObj, ok := parsed["error"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "upstream_connect_error", errorObj["type"])
+	assert.Equal(t, "Failed to connect to upstream service", errorObj["message"])
 }
