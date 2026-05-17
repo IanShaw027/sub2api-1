@@ -1715,7 +1715,7 @@ func (h *OpenAIGatewayHandler) ensureForwardErrorResponse(c *gin.Context, stream
 	if c == nil || c.Writer == nil || c.Writer.Written() {
 		return false
 	}
-	detail := classifyUpstreamForwardError(forwardErr)
+	detail := resolveUpstreamForwardErrorDetail(c, forwardErr)
 	service.SetOpsUpstreamErrorWithType(c, detail.ErrorType, 0, detail.Message, detail.Detail)
 	h.handleStreamingAwareError(c, http.StatusBadGateway, detail.ErrorType, detail.Message, streamStarted)
 	return true

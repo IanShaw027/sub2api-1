@@ -6,9 +6,13 @@ import (
 	"net"
 	"regexp"
 	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/gin-gonic/gin"
 )
 
 var upstreamHTTP2StreamErrorPattern = regexp.MustCompile(`stream error: stream ID \d+; ([A-Z_]+)(?:;|$)`)
+var upstreamForwardSensitiveQueryParamPattern = regexp.MustCompile(`(?i)([?&](?:key|client_secret|access_token|refresh_token)=)[^&"\s]+`)
 
 type upstreamForwardErrorDetail struct {
 	ErrorType string
@@ -24,7 +28,7 @@ func classifyUpstreamForwardError(err error) upstreamForwardErrorDetail {
 		}
 	}
 
-	detail := strings.TrimSpace(err.Error())
+	detail := sanitizeUpstreamForwardErrorDetail(strings.TrimSpace(err.Error()))
 	lowerDetail := strings.ToLower(detail)
 
 	if errors.Is(err, context.DeadlineExceeded) {
@@ -104,6 +108,59 @@ func classifyUpstreamForwardError(err error) upstreamForwardErrorDetail {
 			Detail:    detail,
 		}
 	}
+}
+
+func resolveUpstreamForwardErrorDetail(c *gin.Context, forwardErr error) upstreamForwardErrorDetail {
+	if detail, ok := upstreamForwardErrorDetailFromContext(c); ok {
+		return detail
+	}
+	return classifyUpstreamForwardError(forwardErr)
+}
+
+func upstreamForwardErrorDetailFromContext(c *gin.Context) (upstreamForwardErrorDetail, bool) {
+	if c == nil {
+		return upstreamForwardErrorDetail{}, false
+	}
+
+	rawType, ok := c.Get(service.OpsUpstreamErrorTypeKey)
+	if !ok {
+		return upstreamForwardErrorDetail{}, false
+	}
+	errType, ok := rawType.(string)
+	if !ok {
+		return upstreamForwardErrorDetail{}, false
+	}
+	errType = strings.TrimSpace(errType)
+	if !isDetailedUpstreamOpsErrorType(errType) {
+		return upstreamForwardErrorDetail{}, false
+	}
+
+	detail := upstreamForwardErrorDetail{
+		ErrorType: errType,
+		Message:   "Upstream request failed",
+	}
+	if rawMessage, ok := c.Get(service.OpsUpstreamErrorMessageKey); ok {
+		if message, ok := rawMessage.(string); ok {
+			if message = strings.TrimSpace(message); message != "" {
+				detail.Message = message
+			}
+		}
+	}
+	if rawDetail, ok := c.Get(service.OpsUpstreamErrorDetailKey); ok {
+		if s, ok := rawDetail.(string); ok {
+			if s = strings.TrimSpace(s); s != "" {
+				detail.Detail = sanitizeUpstreamForwardErrorDetail(s)
+			}
+		}
+	}
+	return detail, true
+}
+
+func sanitizeUpstreamForwardErrorDetail(msg string) string {
+	if msg == "" {
+		return msg
+	}
+	return upstreamForwardSensitiveQueryParamPattern.ReplaceAllString(msg, `$1***`)
 }
 
 func parseUpstreamHTTP2StreamError(detail string) string {

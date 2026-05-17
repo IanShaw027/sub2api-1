@@ -27,4 +27,15 @@ func TestClassifyUpstreamForwardError(t *testing.T) {
 		require.Equal(t, "upstream_connect_error", detail.ErrorType)
 		require.Equal(t, "Failed to connect to upstream service", detail.Message)
 	})
+
+	t.Run("sanitizes sensitive query params", func(t *testing.T) {
+		detail := classifyUpstreamForwardError(errors.New(`GET "https://api.example.com/v1?access_token=secret&refresh_token=abc&key=xyz"`))
+		require.Equal(t, "upstream_transport_error", detail.ErrorType)
+		require.NotContains(t, detail.Detail, "secret")
+		require.NotContains(t, detail.Detail, "abc")
+		require.NotContains(t, detail.Detail, "xyz")
+		require.Contains(t, detail.Detail, "access_token=***")
+		require.Contains(t, detail.Detail, "refresh_token=***")
+		require.Contains(t, detail.Detail, "key=***")
+	})
 }
