@@ -193,6 +193,10 @@ require_command go
 require_command pnpm
 require_command sha256sum
 
+# 0. 同步前端依赖，避免 package.json / pnpm-lock.yaml 已更新但 node_modules 仍是旧状态
+echo "📚 同步前端依赖..."
+pnpm --dir "$FRONTEND_DIR" install --frozen-lockfile
+
 # 1. 构建前端
 echo "📦 构建前端..."
 pnpm --dir "$FRONTEND_DIR" run build
