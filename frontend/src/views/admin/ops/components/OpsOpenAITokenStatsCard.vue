@@ -25,7 +25,7 @@ const loading = ref(false)
 const errorMessage = ref('')
 const response = ref<OpsOpenAITokenStatsResponse | null>(null)
 
-const timeRange = ref<OpsOpenAITokenStatsTimeRange>('30d')
+const timeRange = ref<OpsOpenAITokenStatsTimeRange>('1h')
 const viewMode = ref<ViewMode>('topn')
 const topN = ref<number>(20)
 const page = ref<number>(1)

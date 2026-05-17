@@ -92,14 +92,14 @@ func TestParseOpsOpenAITokenStatsFilter_Defaults(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, filter)
-	require.Equal(t, "30d", filter.TimeRange)
+	require.Equal(t, "1h", filter.TimeRange)
 	require.Equal(t, 1, filter.Page)
 	require.Equal(t, 20, filter.PageSize)
 	require.Equal(t, 0, filter.TopN)
 	require.Nil(t, filter.GroupID)
 	require.Equal(t, "", filter.Platform)
 	require.True(t, filter.StartTime.Before(filter.EndTime))
-	require.WithinDuration(t, before.Add(-30*24*time.Hour), filter.StartTime, 2*time.Second)
+	require.WithinDuration(t, before.Add(-time.Hour), filter.StartTime, 2*time.Second)
 	require.WithinDuration(t, after, filter.EndTime, 2*time.Second)
 }
 

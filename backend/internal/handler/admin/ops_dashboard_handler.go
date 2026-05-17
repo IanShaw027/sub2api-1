@@ -252,7 +252,7 @@ func parseOpsOpenAITokenStatsFilter(c *gin.Context) (*service.OpsOpenAITokenStat
 
 	timeRange := strings.TrimSpace(c.Query("time_range"))
 	if timeRange == "" {
-		timeRange = "30d"
+		timeRange = "1h"
 	}
 	dur, ok := parseOpsOpenAITokenStatsDuration(timeRange)
 	if !ok {

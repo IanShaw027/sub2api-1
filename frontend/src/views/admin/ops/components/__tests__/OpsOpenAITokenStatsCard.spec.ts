@@ -48,7 +48,7 @@ const EmptyStateStub = defineComponent({
 })
 
 const sampleResponse = {
-  time_range: '30d' as const,
+  time_range: '1h' as const,
   start_time: '2026-01-01T00:00:00Z',
   end_time: '2026-01-31T00:00:00Z',
   platform: 'openai',
@@ -95,7 +95,7 @@ describe('OpsOpenAITokenStatsCard', () => {
     await flushPromises()
     expect(mockGetOpenAITokenStats).toHaveBeenCalledWith(
       expect.objectContaining({
-        time_range: '30d',
+        time_range: '1h',
         platform: 'openai',
         group_id: 7,
         top_n: 20,
@@ -118,7 +118,7 @@ describe('OpsOpenAITokenStatsCard', () => {
   it('支持分页与 TopN 模式切换并按参数请求', async () => {
     mockGetOpenAITokenStats.mockImplementation(async (params: Record<string, any>) => ({
       ...sampleResponse,
-      time_range: params.time_range ?? '30d',
+      time_range: params.time_range ?? '1h',
       page: params.page ?? 1,
       page_size: params.page_size ?? 20,
       top_n: params.top_n ?? null,
