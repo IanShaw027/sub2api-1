@@ -3734,6 +3734,41 @@ func TestHandleSSEToJSON_ReconstructsImageGenerationOutputItemDone(t *testing.T)
 	require.Equal(t, "draw a cat", gjson.Get(rec.Body.String(), "output.0.revised_prompt").String())
 }
 
+func TestHandleSSEToJSON_EventNamedCompletedReturnsJSON(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+	account := &Account{ID: 22, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+	}
+	body := []byte(strings.Join([]string{
+		`event: response.output_text.delta`,
+		`data: {"delta":"ok"}`,
+		``,
+		`event: response.completed`,
+		`data: {"response":{"id":"resp_event_json","model":"gpt-5.4","output":[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":7,"output_tokens":3,"input_tokens_details":{"cached_tokens":2}}}}`,
+		``,
+		`data: [DONE]`,
+		``,
+	}, "\n"))
+
+	result, err := svc.handleSSEToJSON(resp, c, account, body, "gpt-5.4", "gpt-5.4")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 7, result.usage.InputTokens)
+	require.Equal(t, 3, result.usage.OutputTokens)
+	require.Equal(t, 2, result.usage.CacheReadInputTokens)
+	require.NotContains(t, rec.Body.String(), "data:")
+	require.Equal(t, "resp_event_json", gjson.Get(rec.Body.String(), "id").String())
+	require.Equal(t, "ok", gjson.Get(rec.Body.String(), "output.0.content.0.text").String())
+}
+
 func TestHandleSSEToJSON_NoFinalResponseKeepsSSEBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
@@ -3783,4 +3818,30 @@ func TestHandleSSEToJSON_ResponseFailedReturnsProtocolError(t *testing.T) {
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.Contains(t, rec.Body.String(), "upstream rejected request")
 	require.Contains(t, rec.Header().Get("Content-Type"), "application/json")
+}
+
+func TestOpenAICompatSSEFrameParserResetsEventTypeAtFrameBoundary(t *testing.T) {
+	var parser openAICompatSSEFrameParser
+
+	frame, ok := parser.AddLine("event: response.created")
+	require.False(t, ok)
+	require.Empty(t, frame)
+
+	frame, ok = parser.AddLine(`data: {"response":{"id":"resp_1"}}`)
+	require.False(t, ok)
+	require.Empty(t, frame)
+
+	frame, ok = parser.AddLine("")
+	require.True(t, ok)
+	require.Equal(t, "response.created", frame.EventType)
+	require.JSONEq(t, `{"response":{"id":"resp_1"}}`, frame.Data)
+
+	frame, ok = parser.AddLine(`data: {"delta":"ok"}`)
+	require.False(t, ok)
+	require.Empty(t, frame.EventType)
+
+	frame, ok = parser.AddLine("")
+	require.True(t, ok)
+	require.Empty(t, frame.EventType)
+	require.JSONEq(t, `{"delta":"ok"}`, frame.Data)
 }
