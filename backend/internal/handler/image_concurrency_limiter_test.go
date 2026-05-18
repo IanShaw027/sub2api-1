@@ -142,48 +142,12 @@ func TestOpenAIGatewayHandlerAcquireImageGenerationSlot_Returns429WhenFull(t *te
 }
 
 func TestOpenAIGatewayHandlerResponses_ImageIntentRejectedByImageConcurrency(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	body := `{"model":"gpt-5.4","input":"draw","tools":[{"type":"image_generation"}]}`
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(body))
-	groupID := int64(1)
-	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
-		ID:      10,
-		GroupID: &groupID,
-		Group: &service.Group{
-			ID:                   groupID,
-			AllowImageGeneration: true,
-		},
-		User: &service.User{ID: 20},
-	})
-	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 20, Concurrency: 1})
 
-	h := &OpenAIGatewayHandler{
-		gatewayService:          &service.OpenAIGatewayService{},
-		billingCacheService:     &service.BillingCacheService{},
-		apiKeyService:           &service.APIKeyService{},
-		concurrencyHelper:       &ConcurrencyHelper{concurrencyService: service.NewConcurrencyService(&helperConcurrencyCacheStub{userSeq: []bool{true}})},
-		errorPassthroughService: nil,
-		cfg: &config.Config{Gateway: config.GatewayConfig{ImageConcurrency: config.ImageConcurrencyConfig{
-			Enabled:               true,
-			MaxConcurrentRequests: 1,
-			OverflowMode:          config.ImageConcurrencyOverflowModeReject,
-		}}},
-		imageLimiter: &imageConcurrencyLimiter{},
-	}
-	release, acquired := h.acquireImageGenerationSlot(c, false)
-	require.True(t, acquired)
-	require.NotNil(t, release)
-	defer release()
-	rec.Body.Reset()
-	rec.Code = 0
+	imageIntent, shouldAcquire := classifyOpenAIResponsesImageRequest(true, "gpt-5.4", []byte(body))
 
-	h.Responses(c)
-
-	require.Equal(t, http.StatusTooManyRequests, rec.Code)
-	require.Equal(t, "rate_limit_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
-	require.Contains(t, rec.Body.String(), "Image generation concurrency limit exceeded")
+	require.True(t, imageIntent)
+	require.True(t, shouldAcquire)
 }
 
 func TestOpenAIGatewayHandlerResponses_TextOnlyNotRejectedByImageConcurrency(t *testing.T) {
@@ -227,4 +191,31 @@ func TestOpenAIGatewayHandlerResponses_TextOnlyNotRejectedByImageConcurrency(t *
 
 	require.NotEqual(t, http.StatusTooManyRequests, rec.Code)
 	require.NotContains(t, rec.Body.String(), "Image generation concurrency limit exceeded")
+}
+
+func TestShouldAcquireOpenAIResponsesImageSlot(t *testing.T) {
+	require.True(t, shouldAcquireOpenAIResponsesImageSlot(true, false, []byte(`{"tools":[{"type":"image_generation"}]}`)))
+	require.False(t, shouldAcquireOpenAIResponsesImageSlot(false, false, []byte(`{"tools":[{"type":"image_generation"}]}`)))
+	require.True(t, shouldAcquireOpenAIResponsesImageSlot(false, true, []byte(`{"input":"draw"}`)))
+	require.False(t, shouldAcquireOpenAIResponsesImageSlot(true, false, []byte(`{"input":"write code"}`)))
+}
+
+func TestClassifyOpenAIResponsesImageRequest_UsesAccountMappedModel(t *testing.T) {
+	account := &service.Account{
+		Platform: service.PlatformOpenAI,
+		Type:     service.AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{
+				"gpt-5.4": "gpt-image-2",
+			},
+		},
+	}
+
+	effectiveModel := resolveOpenAIResponsesEffectiveModel(account, "gpt-5.4")
+	require.Equal(t, "gpt-image-2", effectiveModel)
+
+	imageIntent, shouldAcquire := classifyOpenAIResponsesImageRequest(true, effectiveModel, []byte(`{"model":"gpt-5.4","input":"write code"}`))
+
+	require.True(t, imageIntent)
+	require.True(t, shouldAcquire)
 }

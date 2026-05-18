@@ -55,9 +55,6 @@ func IsImageGenerationIntent(endpoint string, requestedModel string, body []byte
 	if model := strings.TrimSpace(gjson.GetBytes(body, "model").String()); isOpenAIImageGenerationModel(model) {
 		return true
 	}
-	if openAIJSONToolsContainImageGeneration(gjson.GetBytes(body, "tools")) {
-		return true
-	}
 	return openAIJSONToolChoiceSelectsImageGeneration(gjson.GetBytes(body, "tool_choice"))
 }
 
@@ -75,10 +72,17 @@ func IsImageGenerationIntentMap(endpoint string, requestedModel string, reqBody 
 	if isOpenAIImageGenerationModel(firstNonEmptyString(reqBody["model"])) {
 		return true
 	}
-	if hasOpenAIImageGenerationTool(reqBody) {
-		return true
-	}
 	return openAIAnyToolChoiceSelectsImageGeneration(reqBody["tool_choice"])
+}
+
+// HasOpenAIImageGenerationToolCapability reports whether the request declares
+// the native image_generation tool in tools[]. This is a capability signal,
+// not an explicit intent to generate images.
+func HasOpenAIImageGenerationToolCapability(body []byte) bool {
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return false
+	}
+	return openAIJSONToolsContainImageGeneration(gjson.GetBytes(body, "tools"))
 }
 
 // IsImageGenerationEndpoint identifies dedicated generated-image endpoints.

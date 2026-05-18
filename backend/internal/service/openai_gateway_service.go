@@ -3251,6 +3251,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Added Codex image_generation bridge instructions")
 	}
 
+	if !allowImageGeneration && stripOpenAIImageGenerationTools(reqBody) {
+		bodyModified = true
+		disablePatch()
+		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Stripped image_generation tool capability for disabled group")
+	}
+
 	if account.Type == AccountTypeOAuth && account.Platform == PlatformOpenAI && !isCompactRequest && !isMessagesBridgeRequest {
 		if store, ok := reqBody["store"].(bool); !ok || store {
 			reqBody["store"] = false
@@ -3318,7 +3324,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if hasOpenAIImageGenerationTool(reqBody) {
 		logger.LegacyPrintf(
 			"service.openai_gateway",
-			"[OpenAI] /responses image_generation request inbound_model=%s mapped_model=%s account_type=%s",
+			"[OpenAI] /responses image_generation tool declared inbound_model=%s mapped_model=%s account_type=%s",
 			reqModel,
 			upstreamModel,
 			account.Type,
@@ -3859,6 +3865,7 @@ oauthTransformDone:
 	httpInvalidEncryptedContentRetryTried := false
 	httpCodexCompatRetryTried := false
 	httpModelFallbackRetryTried := false
+	httpInstructionsRetryTried := false
 	for {
 		// Build upstream request
 		upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, upstreamStream)
@@ -3990,6 +3997,25 @@ oauthTransformDone:
 					continue
 				}
 				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Skip non-WSv2 invalid_encrypted_content retry because encrypted reasoning items are missing (account: %s)", account.Name)
+			}
+			if !httpInstructionsRetryTried &&
+				account.Type == AccountTypeOAuth &&
+				shouldInjectDefaultInstructionsForOpenAIResponses(c, account, isMessagesBridgeRequest, isCompactRequest) &&
+				isOpenAIInstructionsRequiredError(resp.StatusCode, upstreamMsg, respBody) {
+				var injected bool
+				body, injected, err = ensureOpenAIPassthroughInstructions(c, reqModel, body)
+				if err != nil {
+					return nil, fmt.Errorf("serialize instructions retry body: %w", err)
+				}
+				if injected {
+					if err := json.Unmarshal(body, &reqBody); err != nil {
+						return nil, fmt.Errorf("unmarshal instructions retry body: %w", err)
+					}
+					setOpsUpstreamRequestBody(c, body)
+					httpInstructionsRetryTried = true
+					logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Retrying non-WSv2 request once after injecting missing instructions (account: %s)", account.Name)
+					continue
+				}
 			}
 			if !httpCodexCompatRetryTried && account.Type == AccountTypeOAuth {
 				if fallbackReason := classifyOpenAICodexCompatFallback(resp.StatusCode, upstreamCode, upstreamMsg, respBody); fallbackReason != "" {
@@ -4183,6 +4209,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 ) (*OpenAIForwardResult, error) {
 	originalBody := body
 	promptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
+	allowImageGeneration := GroupAllowsImageGeneration(apiKeyGroup(getAPIKeyFromContext(c)))
 	if isOpenAIResponsesCompactPath(c) {
 		compactMappedModel := resolveOpenAICompactUpstreamModel(account, reqModel)
 		if compactMappedModel != "" && compactMappedModel != reqModel {
@@ -4199,6 +4226,25 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		return nil, err
 	}
 	body = normalizedBaseBody
+	if !allowImageGeneration {
+		if IsImageGenerationIntent(openAIResponsesEndpoint, reqModel, body) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": gin.H{
+					"type":    "permission_error",
+					"message": ImageGenerationPermissionMessage(),
+				},
+			})
+			return nil, errors.New(ImageGenerationPermissionMessage())
+		}
+		strippedBody, stripped, stripErr := stripOpenAIImageGenerationToolsBytes(body)
+		if stripErr != nil {
+			return nil, fmt.Errorf("strip image_generation tool capability: %w", stripErr)
+		}
+		if stripped {
+			body = strippedBody
+			logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Stripped image_generation tool capability for disabled group")
+		}
+	}
 
 	if account != nil && account.Type == AccountTypeOAuth {
 		bodyWithInstructions, _, err := ensureOpenAIPassthroughInstructions(c, reqModel, body)
@@ -4295,13 +4341,6 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		return nil, err
 	}
 
-	upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, shouldDetachLegacyOAuthPassthroughContext(account, reqStream, body))
-	upstreamReq, err := s.buildUpstreamRequestOpenAIPassthrough(upstreamCtx, c, account, body, token, promptCacheKey)
-	releaseUpstreamCtx()
-	if err != nil {
-		return nil, err
-	}
-
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
@@ -4312,87 +4351,104 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		c.Set("openai_passthrough", true)
 	}
 
-	SetOpsLatencyMs(c, OpsOpenAIForwardPrepareLatencyMsKey, time.Since(startTime).Milliseconds())
-	upstreamStart := time.Now()
-	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
-	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
-	if err != nil {
-		safeErr := sanitizeUpstreamErrorMessage(err.Error())
-		detail := recordDetailedUpstreamTransportError(c, err)
-		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-			Platform:           account.Platform,
-			AccountID:          account.ID,
-			AccountName:        account.Name,
-			UpstreamStatusCode: 0,
-			Passthrough:        true,
-			Kind:               "request_error",
-			Message:            safeErr,
-		})
-		c.JSON(http.StatusBadGateway, gin.H{
-			"error": gin.H{
-				"type":    detail.ErrorType,
-				"message": formatUpstreamRequestFailed(detail, "Upstream request failed"),
-			},
-		})
-		return nil, fmt.Errorf("upstream request failed: %s", safeErr)
-	}
-	defer func() { _ = resp.Body.Close() }()
+	fallbackModelRetried := false
+	instructionsRetryTried := false
+	var upstreamReq *http.Request
+	var resp *http.Response
+	for {
+		upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, shouldDetachLegacyOAuthPassthroughContext(account, reqStream, body))
+		upstreamReq, err = s.buildUpstreamRequestOpenAIPassthrough(upstreamCtx, c, account, body, token, promptCacheKey)
+		releaseUpstreamCtx()
+		if err != nil {
+			return nil, err
+		}
 
-	if resp.StatusCode >= 400 {
-		fallbackModelRetried := false
+		SetOpsLatencyMs(c, OpsOpenAIForwardPrepareLatencyMsKey, time.Since(startTime).Milliseconds())
+		upstreamStart := time.Now()
+		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
+		if err != nil {
+			safeErr := sanitizeUpstreamErrorMessage(err.Error())
+			detail := recordDetailedUpstreamTransportError(c, err)
+			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				Platform:           account.Platform,
+				AccountID:          account.ID,
+				AccountName:        account.Name,
+				UpstreamStatusCode: 0,
+				Passthrough:        true,
+				Kind:               "request_error",
+				Message:            safeErr,
+			})
+			c.JSON(http.StatusBadGateway, gin.H{
+				"error": gin.H{
+					"type":    detail.ErrorType,
+					"message": formatUpstreamRequestFailed(detail, "Upstream request failed"),
+				},
+			})
+			return nil, fmt.Errorf("upstream request failed: %s", safeErr)
+		}
+
+		if resp.StatusCode < 400 {
+			break
+		}
+
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
 		currentModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
-		if fallbackModel := resolveConfiguredFallbackModel(ctx, s.settingService, PlatformOpenAI, currentModel); fallbackModel != "" &&
-			isUpstreamModelUnavailableForFallback(resp.StatusCode, respBody) {
-			fallbackUpstreamModel := account.GetMappedModel(fallbackModel)
-			if isOpenAIResponsesCompactPath(c) {
-				if compactFallbackModel := resolveOpenAICompactForwardModel(account, fallbackUpstreamModel); compactFallbackModel != "" {
-					fallbackUpstreamModel = compactFallbackModel
-				}
-			} else if normalized := normalizeOpenAIModelForUpstream(account, fallbackUpstreamModel); normalized != "" {
-				fallbackUpstreamModel = normalized
-			}
-			if fallbackUpstreamModel != "" && !strings.EqualFold(fallbackUpstreamModel, currentModel) {
-				originalUpstreamBody := body
-				fallbackBody, setErr := sjson.SetBytes(body, "model", fallbackUpstreamModel)
-				if setErr != nil {
-					return nil, fmt.Errorf("set openai passthrough fallback model: %w", setErr)
-				}
-				body = fallbackBody
-				setOpsUpstreamRequestBody(c, body)
-				upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, shouldDetachLegacyOAuthPassthroughContext(account, reqStream, body))
-				fallbackReq, buildErr := s.buildUpstreamRequestOpenAIPassthrough(upstreamCtx, c, account, body, token, promptCacheKey)
-				releaseUpstreamCtx()
-				if buildErr == nil {
-					fallbackResp, fallbackErr := s.httpUpstream.Do(fallbackReq, proxyURL, account.ID, account.Concurrency)
-					if fallbackErr == nil {
-						resp = fallbackResp
-						fallbackModelRetried = true
-					} else {
-						body = originalUpstreamBody
-						setOpsUpstreamRequestBody(c, originalUpstreamBody)
-						logger.LegacyPrintf(
-							"service.openai_gateway",
-							"[OpenAI 自动透传] fallback model retry request failed account=%d model=%s err=%v",
-							account.ID,
-							fallbackUpstreamModel,
-							fallbackErr,
-						)
+		if !fallbackModelRetried {
+			if fallbackModel := resolveConfiguredFallbackModel(ctx, s.settingService, PlatformOpenAI, currentModel); fallbackModel != "" &&
+				isUpstreamModelUnavailableForFallback(resp.StatusCode, respBody) {
+				fallbackUpstreamModel := account.GetMappedModel(fallbackModel)
+				if isOpenAIResponsesCompactPath(c) {
+					if compactFallbackModel := resolveOpenAICompactForwardModel(account, fallbackUpstreamModel); compactFallbackModel != "" {
+						fallbackUpstreamModel = compactFallbackModel
 					}
-				} else {
-					body = originalUpstreamBody
-					setOpsUpstreamRequestBody(c, originalUpstreamBody)
+				} else if normalized := normalizeOpenAIModelForUpstream(account, fallbackUpstreamModel); normalized != "" {
+					fallbackUpstreamModel = normalized
+				}
+				if fallbackUpstreamModel != "" && !strings.EqualFold(fallbackUpstreamModel, currentModel) {
+					fallbackBody, setErr := sjson.SetBytes(body, "model", fallbackUpstreamModel)
+					if setErr != nil {
+						return nil, fmt.Errorf("set openai passthrough fallback model: %w", setErr)
+					}
+					body = fallbackBody
+					setOpsUpstreamRequestBody(c, body)
+					fallbackModelRetried = true
 					logger.LegacyPrintf(
 						"service.openai_gateway",
-						"[OpenAI 自动透传] fallback model retry build failed account=%d model=%s err=%v",
+						"[OpenAI 自动透传] retry once with fallback model account=%d from=%s to=%s",
 						account.ID,
+						currentModel,
 						fallbackUpstreamModel,
-						buildErr,
 					)
+					continue
 				}
 			}
+		}
+		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
+		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+		isCompact := isOpenAIResponsesCompactPath(c)
+		isMessagesBridge := isOpenAICompatMessagesBridgeContext(c) ||
+			shouldUseOpenAIMessagesBridgeHeaders(c, body) ||
+			isOpenAICompatMessagesBridgePromptCacheKey(strings.TrimSpace(promptCacheKey))
+		if !instructionsRetryTried &&
+			account.Type == AccountTypeOAuth &&
+			shouldInjectDefaultInstructionsForOpenAIResponses(c, account, isMessagesBridge, isCompact) &&
+			isOpenAIInstructionsRequiredError(resp.StatusCode, upstreamMsg, respBody) {
+			body, _, err = ensureOpenAIPassthroughInstructions(c, reqModel, body)
+			if err != nil {
+				return nil, err
+			}
+			setOpsUpstreamRequestBody(c, body)
+			instructionsRetryTried = true
+			logger.LegacyPrintf(
+				"service.openai_gateway",
+				"[OpenAI 自动透传] retry once after upstream instructions_required account=%d model=%s",
+				account.ID,
+				currentModel,
+			)
+			continue
 		}
 
 		// 透传模式默认保持原样代理；但 429/529 属于网关必须兜底的
@@ -4405,6 +4461,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		}
 		return nil, s.handleErrorResponsePassthrough(ctx, resp, c, account, body)
 	}
+	defer func() { _ = resp.Body.Close() }()
 
 	var usage *OpenAIUsage
 	var firstTokenMs *int

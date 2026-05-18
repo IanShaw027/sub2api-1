@@ -720,6 +720,127 @@ func TestOpenAIGatewayService_OAuthPassthrough_CodexMissingInstructionsInjectsBe
 	require.NotEmpty(t, strings.TrimSpace(gjson.GetBytes(upstream.lastBody, "instructions").String()))
 }
 
+func TestOpenAIGatewayService_OAuthPassthrough_RetriesInstructionsRequiredOnce(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+	c.Request.Header.Set("User-Agent", "claude-cli/2.1.133 (external, cli)")
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	originalBody := []byte(`{"model":"gpt-5.4-mini","stream":true,"input":[{"type":"text","text":"hi"}]}`)
+
+	upstream := &httpUpstreamRecorder{
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_missing_instructions"}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","message":"Instructions are required"}}`)),
+			},
+			{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_after_retry"}},
+				Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+					`data: {"type":"response.output_text.delta","delta":"h"}`,
+					"",
+					`data: {"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}}}}`,
+					"",
+					"data: [DONE]",
+					"",
+				}, "\n"))),
+			},
+		},
+	}
+
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: false}},
+		httpUpstream: upstream,
+	}
+
+	account := &Account{
+		ID:             123,
+		Name:           "acc",
+		Platform:       PlatformOpenAI,
+		Type:           AccountTypeOAuth,
+		Concurrency:    1,
+		Credentials:    map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"},
+		Extra:          map[string]any{"openai_passthrough": true},
+		Status:         StatusActive,
+		Schedulable:    true,
+		RateMultiplier: f64p(1),
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, originalBody)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 2)
+	require.NotEmpty(t, strings.TrimSpace(gjson.GetBytes(upstream.bodies[0], "instructions").String()))
+	require.NotEmpty(t, strings.TrimSpace(gjson.GetBytes(upstream.bodies[1], "instructions").String()))
+}
+
+func TestOpenAIGatewayService_OAuthPassthrough_StripsImageToolCapabilityForDisabledGroup(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+	c.Request.Header.Set("Content-Type", "application/json")
+	groupID := int64(4242)
+	c.Set("api_key", &APIKey{
+		ID:      2424,
+		GroupID: &groupID,
+		Group: &Group{
+			ID:                   groupID,
+			AllowImageGeneration: false,
+			RateMultiplier:       1,
+			ImageRateMultiplier:  1,
+		},
+	})
+
+	originalBody := []byte(`{"model":"gpt-5.4","stream":false,"input":"write code","tools":[{"type":"image_generation"},{"type":"function","name":"shell"}]}`)
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_strip_image_tool"}},
+			Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+				`data: {"type":"response.output_text.delta","delta":"o"}`,
+				"",
+				`data: {"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}}}}`,
+				"",
+				"data: [DONE]",
+				"",
+			}, "\n"))),
+		},
+	}
+
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: false}},
+		httpUpstream: upstream,
+	}
+
+	account := &Account{
+		ID:             126,
+		Name:           "acc-pass-image-tool-strip",
+		Platform:       PlatformOpenAI,
+		Type:           AccountTypeOAuth,
+		Concurrency:    1,
+		Credentials:    map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"},
+		Extra:          map[string]any{"openai_passthrough": true},
+		Status:         StatusActive,
+		Schedulable:    true,
+		RateMultiplier: f64p(1),
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, originalBody)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq)
+	require.False(t, gjson.GetBytes(upstream.lastBody, `tools.#(type=="image_generation")`).Exists())
+	require.True(t, gjson.GetBytes(upstream.lastBody, `tools.#(type=="function")`).Exists())
+}
+
 func TestOpenAIGatewayService_APIKeyPassthrough_StripsSamplingControls(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

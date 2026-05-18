@@ -791,6 +791,55 @@ func hasOpenAIImageGenerationTool(reqBody map[string]any) bool {
 	return false
 }
 
+func stripOpenAIImageGenerationTools(reqBody map[string]any) bool {
+	rawTools, ok := reqBody["tools"]
+	if !ok || rawTools == nil {
+		return false
+	}
+	tools, ok := rawTools.([]any)
+	if !ok {
+		return false
+	}
+
+	kept := make([]any, 0, len(tools))
+	removed := false
+	for _, rawTool := range tools {
+		toolMap, ok := rawTool.(map[string]any)
+		if ok && strings.TrimSpace(firstNonEmptyString(toolMap["type"])) == "image_generation" {
+			removed = true
+			continue
+		}
+		kept = append(kept, rawTool)
+	}
+	if !removed {
+		return false
+	}
+	if len(kept) == 0 {
+		delete(reqBody, "tools")
+		return true
+	}
+	reqBody["tools"] = kept
+	return true
+}
+
+func stripOpenAIImageGenerationToolsBytes(body []byte) ([]byte, bool, error) {
+	if len(body) == 0 {
+		return body, false, nil
+	}
+	var reqBody map[string]any
+	if err := json.Unmarshal(body, &reqBody); err != nil {
+		return body, false, err
+	}
+	if !stripOpenAIImageGenerationTools(reqBody) {
+		return body, false, nil
+	}
+	normalized, err := marshalOpenAIResponsesRequestBodyOrdered(reqBody)
+	if err != nil {
+		return body, false, err
+	}
+	return normalized, true, nil
+}
+
 func hasOpenAIInputImage(reqBody map[string]any) bool {
 	if reqBody == nil {
 		return false

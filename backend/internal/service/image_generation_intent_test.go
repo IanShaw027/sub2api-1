@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestIsImageGenerationIntent(t *testing.T) {
@@ -28,11 +29,11 @@ func TestIsImageGenerationIntent(t *testing.T) {
 			want:     true,
 		},
 		{
-			name:     "image tool",
+			name:     "image tool capability only",
 			endpoint: "/v1/responses",
 			model:    "gpt-5.4",
 			body:     []byte(`{"model":"gpt-5.4","tools":[{"type":"image_generation"}]}`),
-			want:     true,
+			want:     false,
 		},
 		{
 			name:     "image tool choice",
@@ -72,6 +73,24 @@ func TestResolveOpenAIResponsesImageBillingConfigUsesCurrentBodyModel(t *testing
 	require.NoError(t, err)
 	require.Equal(t, "mapped-image-model", imageModel)
 	require.Equal(t, "1K", imageSize)
+}
+
+func TestStripOpenAIImageGenerationToolsBytes(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.4","tools":[{"type":"image_generation"},{"type":"function","name":"shell"}],"input":"hi"}`)
+
+	updated, stripped, err := stripOpenAIImageGenerationToolsBytes(body)
+
+	require.NoError(t, err)
+	require.True(t, stripped)
+	require.False(t, gjson.GetBytes(updated, `tools.#(type=="image_generation")`).Exists())
+	require.True(t, gjson.GetBytes(updated, `tools.#(type=="function")`).Exists())
+	require.Equal(t, "hi", gjson.GetBytes(updated, "input").String())
+}
+
+func TestHasOpenAIImageGenerationToolCapability(t *testing.T) {
+	require.True(t, HasOpenAIImageGenerationToolCapability([]byte(`{"tools":[{"type":"image_generation"}]}`)))
+	require.False(t, HasOpenAIImageGenerationToolCapability([]byte(`{"tool_choice":{"type":"image_generation"}}`)))
+	require.False(t, HasOpenAIImageGenerationToolCapability([]byte(`{"input":"write code"}`)))
 }
 
 func TestResolveOpenAIResponsesImageBillingConfigToolModelWins(t *testing.T) {

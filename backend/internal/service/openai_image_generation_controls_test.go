@@ -27,10 +27,6 @@ func TestOpenAIGatewayServiceForward_RejectsDisabledImageGenerationIntents(t *te
 			body: []byte(`{"model":"gpt-image-2","input":"draw"}`),
 		},
 		{
-			name: "image tool",
-			body: []byte(`{"model":"gpt-5.4","input":"draw","tools":[{"type":"image_generation"}]}`),
-		},
-		{
 			name: "image tool choice",
 			body: []byte(`{"model":"gpt-5.4","input":"draw","tool_choice":{"type":"image_generation"}}`),
 		},
@@ -52,6 +48,30 @@ func TestOpenAIGatewayServiceForward_RejectsDisabledImageGenerationIntents(t *te
 			require.Nil(t, upstream.lastReq, "disabled image request must not reach upstream")
 		})
 	}
+}
+
+func TestOpenAIGatewayServiceForward_StripsImageToolCapabilityOnlyForDisabledGroup(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_text","model":"gpt-5.4","usage":{"input_tokens":3,"output_tokens":2}}`)),
+		},
+	}
+	svc := newOpenAIImageGenerationControlTestService(upstream)
+	c, recorder := newOpenAIImageGenerationControlTestContext(false, "unit-test-agent/1.0")
+	account := newOpenAIImageGenerationControlTestAccount()
+
+	result, err := svc.Forward(context.Background(), c, account, []byte(`{"model":"gpt-5.4","input":"write code","stream":false,"tools":[{"type":"image_generation"}]}`))
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, 0, result.ImageCount)
+	require.False(t, gjson.GetBytes(upstream.lastBody, "tools").Exists())
 }
 
 func TestOpenAIGatewayServiceForward_DisabledGroupAllowsTextOnlyResponses(t *testing.T) {
