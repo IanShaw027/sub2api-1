@@ -86,6 +86,7 @@ func TestTicketRepositoryCloseByUserUsesLockedTransition(t *testing.T) {
 			systemMessage.SenderAvatarSnapshot,
 			systemMessage.MessageType,
 			systemMessage.Content,
+			[]byte("[]"),
 			systemMessage.CreatedAt,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(1)))
@@ -139,6 +140,7 @@ func TestTicketRepositoryResubmitUsesLockedRevision(t *testing.T) {
 			systemMessage.SenderAvatarSnapshot,
 			systemMessage.MessageType,
 			systemMessage.Content,
+			[]byte("[]"),
 			systemMessage.CreatedAt,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(1)))

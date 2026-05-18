@@ -64,7 +64,7 @@ func TestTicketHandlerReplaceReplyTemplatesRejectsMissingTemplatesField(t *testi
 	repo := &ticketHandlerSettingRepoStub{
 		value: `[{"id":"existing","title":"Existing","content":"Saved"}]`,
 	}
-	handler := NewTicketHandler(nil, service.NewSettingService(repo, nil))
+	handler := NewTicketHandler(nil, service.NewSettingService(repo, nil), nil)
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)

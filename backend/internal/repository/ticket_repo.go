@@ -140,7 +140,7 @@ func (r *ticketRepository) list(ctx context.Context, params pagination.Paginatio
 
 func (r *ticketRepository) ListMessages(ctx context.Context, ticketID int64) ([]service.SupportTicketMessage, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, ticket_id, sender_role, sender_user_id, sender_name_snapshot, sender_avatar_snapshot, message_type, content, created_at
+		SELECT id, ticket_id, sender_role, sender_user_id, sender_name_snapshot, sender_avatar_snapshot, message_type, content, COALESCE(attachments, '[]'::jsonb), created_at
 		FROM support_ticket_messages
 		WHERE ticket_id = $1
 		ORDER BY created_at ASC, id ASC
@@ -342,13 +342,21 @@ func isAdminManualStatusTransitionAllowed(currentStatus, lastReplyRole, nextStat
 }
 
 func insertTicketMessage(ctx context.Context, tx *sql.Tx, ticketID int64, message *service.SupportTicketMessage) error {
+	attachmentsJSON := []byte("[]")
+	if len(message.Attachments) > 0 {
+		var err error
+		attachmentsJSON, err = json.Marshal(message.Attachments)
+		if err != nil {
+			return fmt.Errorf("marshal attachments: %w", err)
+		}
+	}
 	return tx.QueryRowContext(ctx, `
 		INSERT INTO support_ticket_messages (
 			ticket_id, sender_role, sender_user_id, sender_name_snapshot, sender_avatar_snapshot,
-			message_type, content, created_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+			message_type, content, attachments, created_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
 		RETURNING id
-	`, ticketID, message.SenderRole, message.SenderUserID, message.SenderNameSnapshot, message.SenderAvatarSnapshot, message.MessageType, message.Content, message.CreatedAt).Scan(&message.ID)
+	`, ticketID, message.SenderRole, message.SenderUserID, message.SenderNameSnapshot, message.SenderAvatarSnapshot, message.MessageType, message.Content, attachmentsJSON, message.CreatedAt).Scan(&message.ID)
 }
 
 func baseTicketSelect() string {
@@ -464,7 +472,8 @@ func scanSupportTicketMessage(row ticketRowScanner) (*service.SupportTicketMessa
 	item := &service.SupportTicketMessage{}
 	var senderUserID sql.NullInt64
 	var avatar sql.NullString
-	if err := row.Scan(&item.ID, &item.TicketID, &item.SenderRole, &senderUserID, &item.SenderNameSnapshot, &avatar, &item.MessageType, &item.Content, &item.CreatedAt); err != nil {
+	var attachmentsRaw []byte
+	if err := row.Scan(&item.ID, &item.TicketID, &item.SenderRole, &senderUserID, &item.SenderNameSnapshot, &avatar, &item.MessageType, &item.Content, &attachmentsRaw, &item.CreatedAt); err != nil {
 		return nil, err
 	}
 	if senderUserID.Valid {
@@ -473,6 +482,9 @@ func scanSupportTicketMessage(row ticketRowScanner) (*service.SupportTicketMessa
 	}
 	if avatar.Valid {
 		item.SenderAvatarSnapshot = avatar.String
+	}
+	if len(attachmentsRaw) > 0 {
+		_ = json.Unmarshal(attachmentsRaw, &item.Attachments)
 	}
 	return item, nil
 }

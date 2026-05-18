@@ -283,7 +283,7 @@ func (s *TicketService) ReplyForUser(ctx context.Context, ticketID int64, input 
 		return ErrTicketReplyLocked
 	}
 	content := strings.TrimSpace(input.Content)
-	if err := validateSupportTicketReplyContent(content); err != nil {
+	if err := validateSupportTicketReplyContent(content, len(input.Attachments) > 0); err != nil {
 		return err
 	}
 	user, err := s.userRepo.GetByID(ctx, input.UserID)
@@ -300,13 +300,14 @@ func (s *TicketService) ReplyForUser(ctx context.Context, ticketID int64, input 
 		SenderAvatarSnapshot: avatarURL,
 		MessageType:          SupportTicketMessageTypeMessage,
 		Content:              content,
+		Attachments:          input.Attachments,
 		CreatedAt:            now,
 	}, SupportTicketSenderRoleUser, false, true, SupportTicketStatusWaitingAdmin)
 }
 
 func (s *TicketService) ReplyForAdmin(ctx context.Context, ticketID int64, input CreateSupportTicketMessageInput) error {
 	content := strings.TrimSpace(input.Content)
-	if err := validateSupportTicketReplyContent(content); err != nil {
+	if err := validateSupportTicketReplyContent(content, len(input.Attachments) > 0); err != nil {
 		return err
 	}
 	ticket, err := s.ticketRepo.GetByID(ctx, ticketID)
@@ -330,6 +331,7 @@ func (s *TicketService) ReplyForAdmin(ctx context.Context, ticketID int64, input
 		SenderAvatarSnapshot: avatarURL,
 		MessageType:          SupportTicketMessageTypeMessage,
 		Content:              content,
+		Attachments:          input.Attachments,
 		CreatedAt:            now,
 	}, SupportTicketSenderRoleAdmin, true, false, SupportTicketStatusWaitingUser)
 }
@@ -431,8 +433,8 @@ func normalizeSupportTicketTitle(title string) (string, error) {
 	return trimmed, nil
 }
 
-func validateSupportTicketReplyContent(content string) error {
-	if content == "" {
+func validateSupportTicketReplyContent(content string, hasAttachments bool) error {
+	if content == "" && !hasAttachments {
 		return ErrTicketMessageRequired
 	}
 	if len(content) > supportTicketReplyMaxBytes {

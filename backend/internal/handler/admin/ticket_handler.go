@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -19,10 +20,11 @@ import (
 type TicketHandler struct {
 	ticketService  *service.TicketService
 	settingService *service.SettingService
+	mediaService   *service.MediaService
 }
 
-func NewTicketHandler(ticketService *service.TicketService, settingService *service.SettingService) *TicketHandler {
-	return &TicketHandler{ticketService: ticketService, settingService: settingService}
+func NewTicketHandler(ticketService *service.TicketService, settingService *service.SettingService, mediaService *service.MediaService) *TicketHandler {
+	return &TicketHandler{ticketService: ticketService, settingService: settingService, mediaService: mediaService}
 }
 
 type UpdateTicketStatusRequest struct {
@@ -30,7 +32,12 @@ type UpdateTicketStatusRequest struct {
 }
 
 type CreateTicketReplyRequest struct {
-	Content string `json:"content" binding:"required"`
+	Content     string                       `json:"content"`
+	Attachments []TicketAttachmentRefRequest `json:"attachments,omitempty"`
+}
+
+type TicketAttachmentRefRequest struct {
+	MediaID int64 `json:"media_id" binding:"required"`
 }
 
 type ReplaceTicketReplyTemplatesRequest struct {
@@ -117,6 +124,7 @@ func (h *TicketHandler) ListMessages(c *gin.Context) {
 	}
 	out := make([]dto.SupportTicketMessage, 0, len(items))
 	for i := range items {
+		h.hydrateMessageAttachmentsForAdmin(c.Request.Context(), &items[i])
 		out = append(out, *dto.SupportTicketMessageFromService(&items[i]))
 	}
 	response.Success(c, out)
@@ -138,14 +146,67 @@ func (h *TicketHandler) Reply(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	content := strings.TrimSpace(req.Content)
+	if content == "" && len(req.Attachments) == 0 {
+		response.ErrorFrom(c, service.ErrTicketMessageRequired)
+		return
+	}
+	attachments, err := h.resolveAttachmentsForAdmin(c.Request.Context(), req.Attachments)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 	if err := h.ticketService.ReplyForAdmin(c.Request.Context(), ticketID, service.CreateSupportTicketMessageInput{
-		UserID:  subject.UserID,
-		Content: req.Content,
+		UserID:      subject.UserID,
+		Content:     content,
+		Attachments: attachments,
 	}); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "ok"})
+}
+
+func (h *TicketHandler) resolveAttachmentsForAdmin(ctx context.Context, refs []TicketAttachmentRefRequest) ([]service.TicketMessageAttachment, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	if h.mediaService == nil {
+		return nil, service.ErrMediaStorageDisabled
+	}
+	attachments := make([]service.TicketMessageAttachment, 0, len(refs))
+	for _, ref := range refs {
+		asset, err := h.mediaService.GetForAdmin(ctx, ref.MediaID)
+		if err != nil {
+			return nil, err
+		}
+		attachments = append(attachments, service.TicketMessageAttachment{
+			MediaID:      asset.ID,
+			URL:          h.mediaService.PublicURL(asset.ID, asset.Visibility),
+			ThumbnailURL: h.mediaService.ThumbnailPublicURL(asset.ID, asset.Visibility, asset.ThumbnailObjectKey),
+			FileName:     asset.OriginalFileName,
+			ContentType:  asset.MIMEType,
+			SizeBytes:    asset.SizeBytes,
+		})
+	}
+	return attachments, nil
+}
+
+func (h *TicketHandler) hydrateMessageAttachmentsForAdmin(ctx context.Context, message *service.SupportTicketMessage) {
+	if h.mediaService == nil || message == nil || len(message.Attachments) == 0 {
+		return
+	}
+	for i := range message.Attachments {
+		attachment := &message.Attachments[i]
+		download, err := h.mediaService.CreateDownloadURLForAdmin(ctx, attachment.MediaID)
+		if err == nil && download != nil {
+			attachment.URL = download.URL
+		}
+		thumbnail, err := h.mediaService.CreateThumbnailDownloadURLForAdmin(ctx, attachment.MediaID)
+		if err == nil && thumbnail != nil {
+			attachment.ThumbnailURL = thumbnail.URL
+		}
+	}
 }
 
 func parseTicketDateRange(startDate, endDate, userTZ string) (*time.Time, *time.Time, error) {

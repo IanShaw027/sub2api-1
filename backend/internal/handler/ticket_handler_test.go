@@ -3,12 +3,14 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -38,7 +40,7 @@ func TestTicketHandlerGetByIDOmitsUserIdentityFields(t *testing.T) {
 			UpdatedAt:          now,
 		},
 	}
-	h := NewTicketHandler(service.NewTicketService(repo, &ticketHandlerUserRepoStub{}))
+	h := NewTicketHandler(service.NewTicketService(repo, &ticketHandlerUserRepoStub{}), nil)
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -81,7 +83,7 @@ func TestTicketHandlerListOmitsUserIdentityFields(t *testing.T) {
 			UpdatedAt:          now,
 		}},
 	}
-	h := NewTicketHandler(service.NewTicketService(repo, &ticketHandlerUserRepoStub{}))
+	h := NewTicketHandler(service.NewTicketService(repo, &ticketHandlerUserRepoStub{}), nil)
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -102,7 +104,7 @@ func TestTicketHandlerListOmitsUserIdentityFields(t *testing.T) {
 func TestTicketHandlerReplyRejectsOversizedBodyBeforeService(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &ticketHandlerRepoStub{ticket: &service.SupportTicket{ID: 12, UserID: 99, Status: service.SupportTicketStatusSubmitted}}
-	h := NewTicketHandler(service.NewTicketService(repo, &ticketHandlerUserRepoStub{}))
+	h := NewTicketHandler(service.NewTicketService(repo, &ticketHandlerUserRepoStub{}), nil)
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -117,9 +119,69 @@ func TestTicketHandlerReplyRejectsOversizedBodyBeforeService(t *testing.T) {
 	require.Zero(t, repo.addReplyCalls)
 }
 
+func TestTicketHandlerListMessagesSignsPrivateAttachmentURLs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ownerID := int64(99)
+	repo := &ticketHandlerRepoStub{
+		ticket: &service.SupportTicket{ID: 12, UserID: ownerID, Status: service.SupportTicketStatusSubmitted},
+		messages: []service.SupportTicketMessage{{
+			ID:          1,
+			TicketID:    12,
+			SenderRole:  service.SupportTicketSenderRoleUser,
+			MessageType: service.SupportTicketMessageTypeMessage,
+			Content:     "see image",
+			Attachments: []service.TicketMessageAttachment{{
+				MediaID:     321,
+				FileName:    "screen.png",
+				ContentType: "image/png",
+				SizeBytes:   42,
+			}},
+			CreatedAt: time.Now(),
+		}},
+	}
+	mediaSvc := service.NewMediaService(&ticketHandlerMediaRepoStub{
+		asset: &service.MediaAsset{
+			ID:                 321,
+			Visibility:         service.MediaVisibilityPrivate,
+			Status:             service.MediaStatusActive,
+			OwnerUserID:        &ownerID,
+			ThumbnailObjectKey: "thumbs/321.png",
+		},
+	}, &ticketHandlerMediaStoreStub{}, &config.Config{
+		Media: config.MediaConfig{
+			Enabled:               true,
+			PublicBaseURL:         "https://media.example.com",
+			PresignExpiryMinutes:  10,
+			DownloadSigningSecret: "secret",
+		},
+	})
+	h := NewTicketHandler(service.NewTicketService(repo, &ticketHandlerUserRepoStub{}), mediaSvc)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Params = gin.Params{{Key: "id", Value: "12"}}
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: ownerID})
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/tickets/12/messages", nil)
+
+	h.ListMessages(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var envelope response.Response
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &envelope))
+	items, ok := envelope.Data.([]any)
+	require.True(t, ok)
+	require.Len(t, items, 1)
+	item := items[0].(map[string]any)
+	attachments := item["attachments"].([]any)
+	attachment := attachments[0].(map[string]any)
+	require.Contains(t, attachment["url"], "https://media.example.com/api/v1/media/download/321?expires=")
+	require.Contains(t, attachment["thumbnail_url"], "https://media.example.com/api/v1/media/download/321/thumbnail?expires=")
+}
+
 type ticketHandlerRepoStub struct {
 	ticket        *service.SupportTicket
 	listItems     []service.SupportTicket
+	messages      []service.SupportTicketMessage
 	addReplyCalls int
 }
 
@@ -149,8 +211,8 @@ func (*ticketHandlerRepoStub) ListForAdmin(context.Context, pagination.Paginatio
 	return nil, nil, nil
 }
 
-func (*ticketHandlerRepoStub) ListMessages(context.Context, int64) ([]service.SupportTicketMessage, error) {
-	return nil, nil
+func (s *ticketHandlerRepoStub) ListMessages(context.Context, int64) ([]service.SupportTicketMessage, error) {
+	return s.messages, nil
 }
 
 func (*ticketHandlerRepoStub) UpdateAfterUserWithdraw(context.Context, int64, time.Time, *service.SupportTicketMessage) error {
@@ -247,3 +309,35 @@ func (*ticketHandlerUserRepoStub) UnbindUserAuthProvider(context.Context, int64,
 func (*ticketHandlerUserRepoStub) UpdateTotpSecret(context.Context, int64, *string) error { return nil }
 func (*ticketHandlerUserRepoStub) EnableTotp(context.Context, int64) error                { return nil }
 func (*ticketHandlerUserRepoStub) DisableTotp(context.Context, int64) error               { return nil }
+
+type ticketHandlerMediaRepoStub struct {
+	asset *service.MediaAsset
+}
+
+func (*ticketHandlerMediaRepoStub) Create(context.Context, *service.MediaAsset) error { return nil }
+func (s *ticketHandlerMediaRepoStub) GetByID(context.Context, int64) (*service.MediaAsset, error) {
+	if s.asset == nil {
+		return nil, service.ErrMediaNotFound
+	}
+	return s.asset, nil
+}
+func (*ticketHandlerMediaRepoStub) List(context.Context, pagination.PaginationParams, service.MediaListFilters) ([]service.MediaAsset, *pagination.PaginationResult, error) {
+	return nil, nil, nil
+}
+func (*ticketHandlerMediaRepoStub) UpdateVisibility(context.Context, int64, string) error { return nil }
+func (*ticketHandlerMediaRepoStub) MarkDeleted(context.Context, int64, time.Time) error   { return nil }
+
+type ticketHandlerMediaStoreStub struct{}
+
+func (*ticketHandlerMediaStoreStub) Upload(context.Context, service.MediaStorageRuntimeConfig, string, string, []byte, string) error {
+	return nil
+}
+func (*ticketHandlerMediaStoreStub) Download(context.Context, service.MediaStorageRuntimeConfig, string, string) (io.ReadCloser, error) {
+	return nil, service.ErrMediaNotFound
+}
+func (*ticketHandlerMediaStoreStub) Delete(context.Context, service.MediaStorageRuntimeConfig, string, string) error {
+	return nil
+}
+func (*ticketHandlerMediaStoreStub) Stat(context.Context, service.MediaStorageRuntimeConfig, string, string) (int64, error) {
+	return 0, nil
+}

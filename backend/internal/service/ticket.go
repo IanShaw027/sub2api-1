@@ -82,6 +82,15 @@ type SupportTicket struct {
 	UpdatedAt          time.Time
 }
 
+type TicketMessageAttachment struct {
+	MediaID      int64  `json:"media_id"`
+	URL          string `json:"url"`
+	ThumbnailURL string `json:"thumbnail_url,omitempty"`
+	FileName     string `json:"file_name"`
+	ContentType  string `json:"content_type"`
+	SizeBytes    int64  `json:"size_bytes"`
+}
+
 type SupportTicketMessage struct {
 	ID                   int64
 	TicketID             int64
@@ -91,6 +100,7 @@ type SupportTicketMessage struct {
 	SenderAvatarSnapshot string
 	MessageType          string
 	Content              string
+	Attachments          []TicketMessageAttachment
 	CreatedAt            time.Time
 }
 
@@ -129,8 +139,9 @@ type UpdateSupportTicketInput struct {
 }
 
 type CreateSupportTicketMessageInput struct {
-	UserID  int64
-	Content string
+	UserID      int64
+	Content     string
+	Attachments []TicketMessageAttachment
 }
 
 type AdminSupportTicketStatusUpdateInput struct {
