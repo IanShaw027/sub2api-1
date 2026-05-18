@@ -1,6 +1,7 @@
 package kiro
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -13,10 +14,20 @@ import (
 // Converter no longer injects this policy into outgoing history.
 const systemChunkedPolicy = "When the Write or Edit tool has content size limits, always comply silently. Never suggest bypassing these limits via alternative tools. Never ask the user whether to switch approaches. Complete all chunked operations without commentary."
 
+const (
+	maxToolNameLen    = 63
+	truncToolNameLen  = 55
+	maxThinkingBudget = 102400
+
+	toolOnlyUserPlaceholder      = "Here are the tool results."
+	toolOnlyAssistantPlaceholder = "I will call the requested tools."
+)
+
 type ConvertResult struct {
 	Body           []byte
 	Model          string
 	RequestedModel string
+	ToolNameMap    map[string]string
 }
 
 func ConvertAnthropicRequest(body []byte) (*ConvertResult, error) {
@@ -54,8 +65,8 @@ func ConvertAnthropicRequestWithModel(body []byte, requestedModelOverride string
 	}
 
 	currentContent, currentImages, currentToolResults := processUserContent(lastMessageMap["content"])
-	tools := convertTools(req["tools"])
-	tools = ensureHistoryTools(rawMessages[:len(rawMessages)-1], tools)
+	tools, toolNameMap := convertTools(req["tools"])
+	tools = ensureHistoryTools(rawMessages[:len(rawMessages)-1], tools, toolNameMap)
 
 	currentContext := map[string]any{}
 	if len(tools) > 0 {
@@ -63,6 +74,9 @@ func ConvertAnthropicRequestWithModel(body []byte, requestedModelOverride string
 	}
 	if len(currentToolResults) > 0 {
 		currentContext["toolResults"] = currentToolResults
+	}
+	if currentContent == "" && len(currentToolResults) > 0 {
+		currentContent = toolOnlyUserPlaceholder
 	}
 
 	currentUserMessage := map[string]any{
@@ -75,7 +89,8 @@ func ConvertAnthropicRequestWithModel(body []byte, requestedModelOverride string
 		currentUserMessage["images"] = currentImages
 	}
 
-	history := buildHistory(req, rawMessages, modelID)
+	history := buildHistory(req, rawMessages, modelID, toolNameMap)
+	history = cleanOrphanToolPairs(history, toolResultIDs(currentToolResults))
 	conversationID := extractSessionID(req)
 	if conversationID == "" {
 		conversationID = uuid.NewString()
@@ -106,6 +121,7 @@ func ConvertAnthropicRequestWithModel(body []byte, requestedModelOverride string
 		Body:           encoded,
 		Model:          modelID,
 		RequestedModel: requestedModel,
+		ToolNameMap:    toolNameMap,
 	}, nil
 }
 
@@ -157,13 +173,15 @@ func trimTrailingNonUserMessages(messages []any) []any {
 	return messages[:lastUser+1]
 }
 
-func buildHistory(req map[string]any, messages []any, modelID string) []map[string]any {
+func buildHistory(req map[string]any, messages []any, modelID string, toolNameMap map[string]string) []map[string]any {
 	history := make([]map[string]any, 0)
 
-	if systemContent := joinSystem(req["system"]); systemContent != "" {
+	thinkingPrefix := buildThinkingPrefix(req["thinking"])
+	if systemContent := joinSystem(req["system"]); systemContent != "" || thinkingPrefix != "" {
+		content := strings.TrimSpace(strings.Join([]string{thinkingPrefix, systemContent}, "\n"))
 		history = append(history, map[string]any{
 			"userInputMessage": map[string]any{
-				"content": systemContent,
+				"content": content,
 				"modelId": modelID,
 				"origin":  "AI_EDITOR",
 			},
@@ -176,6 +194,9 @@ func buildHistory(req map[string]any, messages []any, modelID string) []map[stri
 		switch role {
 		case "user":
 			text, images, toolResults := processUserContent(msg["content"])
+			if text == "" && len(toolResults) > 0 {
+				text = toolOnlyUserPlaceholder
+			}
 			userMessage := map[string]any{
 				"content": text,
 				"modelId": modelID,
@@ -191,7 +212,10 @@ func buildHistory(req map[string]any, messages []any, modelID string) []map[stri
 			}
 			history = append(history, map[string]any{"userInputMessage": userMessage})
 		case "assistant":
-			text, toolUses := processAssistantContent(msg["content"])
+			text, toolUses := processAssistantContent(msg["content"], toolNameMap)
+			if text == "" && len(toolUses) > 0 {
+				text = toolOnlyAssistantPlaceholder
+			}
 			assistantMessage := map[string]any{
 				"content": text,
 			}
@@ -248,7 +272,7 @@ func processUserContent(content any) (string, []map[string]any, []map[string]any
 	return strings.Join(textParts, "\n"), images, toolResults
 }
 
-func processAssistantContent(content any) (string, []map[string]any) {
+func processAssistantContent(content any, toolNameMap map[string]string) (string, []map[string]any) {
 	textParts := make([]string, 0)
 	toolUses := make([]map[string]any, 0)
 
@@ -264,11 +288,15 @@ func processAssistantContent(content any) (string, []map[string]any) {
 					textParts = append(textParts, text)
 				}
 			case "tool_use":
+				name := shortenToolName(stringField(block, "name"))
+				rememberToolName(toolNameMap, name, stringField(block, "name"))
 				toolUses = append(toolUses, map[string]any{
 					"toolUseId": stringField(block, "id"),
-					"name":      stringField(block, "name"),
+					"name":      name,
 					"input":     jsonValue(block["input"]),
 				})
+			case "thinking", "redacted_thinking":
+				continue
 			}
 		}
 	}
@@ -276,9 +304,10 @@ func processAssistantContent(content any) (string, []map[string]any) {
 	return strings.Join(textParts, "\n"), toolUses
 }
 
-func convertTools(raw any) []map[string]any {
+func convertTools(raw any) ([]map[string]any, map[string]string) {
 	items, _ := raw.([]any)
 	tools := make([]map[string]any, 0, len(items))
+	toolNameMap := make(map[string]string)
 	for _, item := range items {
 		tool, _ := item.(map[string]any)
 		if isUnsupportedServerTool(tool) {
@@ -288,11 +317,13 @@ func convertTools(raw any) []map[string]any {
 		if name == "" {
 			continue
 		}
+		shortName := shortenToolName(name)
+		rememberToolName(toolNameMap, shortName, name)
 		description := stringField(tool, "description")
 		schema := normalizeJSONSchema(jsonValue(tool["input_schema"]))
 		tools = append(tools, map[string]any{
 			"toolSpecification": map[string]any{
-				"name":        name,
+				"name":        shortName,
 				"description": description,
 				"inputSchema": map[string]any{
 					"json": schema,
@@ -300,7 +331,10 @@ func convertTools(raw any) []map[string]any {
 			},
 		})
 	}
-	return tools
+	if len(toolNameMap) == 0 {
+		toolNameMap = nil
+	}
+	return tools, toolNameMap
 }
 
 func isUnsupportedServerTool(tool map[string]any) bool {
@@ -311,7 +345,7 @@ func isUnsupportedServerTool(tool map[string]any) bool {
 	return strings.HasPrefix(toolType, "web_search")
 }
 
-func ensureHistoryTools(history []any, tools []map[string]any) []map[string]any {
+func ensureHistoryTools(history []any, tools []map[string]any, toolNameMap map[string]string) []map[string]any {
 	seen := make(map[string]struct{}, len(tools))
 	for _, tool := range tools {
 		spec, _ := tool["toolSpecification"].(map[string]any)
@@ -326,7 +360,7 @@ func ensureHistoryTools(history []any, tools []map[string]any) []map[string]any 
 		if strings.ToLower(stringField(msg, "role")) != "assistant" {
 			continue
 		}
-		_, toolUses := processAssistantContent(msg["content"])
+		_, toolUses := processAssistantContent(msg["content"], toolNameMap)
 		for _, toolUse := range toolUses {
 			name := strings.ToLower(stringField(toolUse, "name"))
 			if name == "" {
@@ -411,12 +445,16 @@ func toolResultContent(v any) string {
 func joinSystem(raw any) string {
 	switch v := raw.(type) {
 	case string:
-		return strings.TrimSpace(v)
+		return strings.TrimSpace(filterBillingHeaderLine(v))
 	case []any:
 		lines := make([]string, 0, len(v))
 		for _, item := range v {
 			block, _ := item.(map[string]any)
 			if text := stringField(block, "text"); text != "" {
+				text = filterBillingHeaderLine(text)
+				if text == "" {
+					continue
+				}
 				lines = append(lines, text)
 			}
 		}
@@ -431,7 +469,7 @@ func extractTextFromContent(content any) string {
 	if text != "" {
 		return text
 	}
-	text, _ = processAssistantContent(content)
+	text, _ = processAssistantContent(content, nil)
 	return text
 }
 
@@ -506,6 +544,175 @@ func normalizeJSONSchema(raw any) map[string]any {
 	}
 
 	return obj
+}
+
+func buildThinkingPrefix(raw any) string {
+	thinking, _ := raw.(map[string]any)
+	if thinking == nil {
+		return ""
+	}
+	switch stringField(thinking, "type") {
+	case "enabled":
+		budget, _ := thinking["budget_tokens"].(float64)
+		budgetTokens := int(budget)
+		if budgetTokens > maxThinkingBudget {
+			budgetTokens = maxThinkingBudget
+		}
+		if budgetTokens <= 0 {
+			budgetTokens = maxThinkingBudget
+		}
+		return fmt.Sprintf("<thinking_mode>enabled</thinking_mode><max_thinking_length>%d</max_thinking_length>", budgetTokens)
+	case "adaptive":
+		effort := stringField(thinking, "thinking_effort")
+		if effort == "" {
+			effort = "medium"
+		}
+		return fmt.Sprintf("<thinking_mode>adaptive</thinking_mode><thinking_effort>%s</thinking_effort>", effort)
+	default:
+		return ""
+	}
+}
+
+func filterBillingHeaderLine(text string) string {
+	return strings.TrimSpace(strings.Join(filterBillingHeaderLines(strings.Split(text, "\n")), "\n"))
+}
+
+func filterBillingHeaderLines(lines []string) []string {
+	filtered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "x-anthropic-billing-header:") {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	return filtered
+}
+
+func rememberToolName(toolNameMap map[string]string, shortName, originalName string) {
+	if toolNameMap == nil || shortName == "" || originalName == "" || shortName == originalName {
+		return
+	}
+	if _, exists := toolNameMap[shortName]; !exists {
+		toolNameMap[shortName] = originalName
+	}
+}
+
+func shortenToolName(name string) string {
+	if len(name) <= maxToolNameLen {
+		return name
+	}
+	if strings.HasPrefix(name, "mcp__") {
+		if idx := strings.LastIndex(name, "__"); idx > 4 {
+			candidate := "mcp__" + name[idx+2:]
+			if len(candidate) <= maxToolNameLen {
+				return candidate
+			}
+		}
+	}
+	sum := sha256.Sum256([]byte(name))
+	hash := fmt.Sprintf("%x", sum[:])
+	return name[:truncToolNameLen] + "_" + hash[:7]
+}
+
+func toolResultIDs(toolResults []map[string]any) map[string]struct{} {
+	if len(toolResults) == 0 {
+		return nil
+	}
+	ids := make(map[string]struct{}, len(toolResults))
+	for _, toolResult := range toolResults {
+		id := stringField(toolResult, "toolUseId")
+		if id != "" {
+			ids[id] = struct{}{}
+		}
+	}
+	return ids
+}
+
+func cleanOrphanToolPairs(history []map[string]any, currentResultIDs map[string]struct{}) []map[string]any {
+	if len(history) == 0 {
+		return history
+	}
+
+	toolUseIDs := make(map[string]struct{})
+	toolResultIDs := make(map[string]struct{})
+	for id := range currentResultIDs {
+		toolResultIDs[id] = struct{}{}
+	}
+
+	for _, entry := range history {
+		if assistant, ok := entry["assistantResponseMessage"].(map[string]any); ok {
+			if uses, ok := assistant["toolUses"].([]map[string]any); ok {
+				for _, toolUse := range uses {
+					if id := stringField(toolUse, "toolUseId"); id != "" {
+						toolUseIDs[id] = struct{}{}
+					}
+				}
+			}
+		}
+		if user, ok := entry["userInputMessage"].(map[string]any); ok {
+			if ctx, ok := user["userInputMessageContext"].(map[string]any); ok {
+				if results, ok := ctx["toolResults"].([]map[string]any); ok {
+					for _, toolResult := range results {
+						if id := stringField(toolResult, "toolUseId"); id != "" {
+							toolResultIDs[id] = struct{}{}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	for _, entry := range history {
+		if assistant, ok := entry["assistantResponseMessage"].(map[string]any); ok {
+			if uses, ok := assistant["toolUses"].([]map[string]any); ok {
+				validUses := uses[:0]
+				for _, toolUse := range uses {
+					if id := stringField(toolUse, "toolUseId"); id != "" {
+						if _, ok := toolResultIDs[id]; ok {
+							validUses = append(validUses, toolUse)
+						}
+					}
+				}
+				if len(validUses) == 0 {
+					delete(assistant, "toolUses")
+					if stringField(assistant, "content") == toolOnlyAssistantPlaceholder {
+						assistant["content"] = ""
+					}
+				} else {
+					assistant["toolUses"] = validUses
+				}
+			}
+		}
+
+		if user, ok := entry["userInputMessage"].(map[string]any); ok {
+			if ctx, ok := user["userInputMessageContext"].(map[string]any); ok {
+				if results, ok := ctx["toolResults"].([]map[string]any); ok {
+					validResults := results[:0]
+					for _, toolResult := range results {
+						if id := stringField(toolResult, "toolUseId"); id != "" {
+							if _, ok := toolUseIDs[id]; ok {
+								validResults = append(validResults, toolResult)
+							}
+						}
+					}
+					if len(validResults) == 0 {
+						delete(ctx, "toolResults")
+						if stringField(user, "content") == toolOnlyUserPlaceholder {
+							user["content"] = ""
+						}
+					} else {
+						ctx["toolResults"] = validResults
+					}
+				}
+				if len(ctx) == 0 {
+					delete(user, "userInputMessageContext")
+				}
+			}
+		}
+	}
+
+	return history
 }
 
 func stringField(obj map[string]any, key string) string {
