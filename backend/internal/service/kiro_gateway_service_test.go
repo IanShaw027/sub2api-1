@@ -411,13 +411,26 @@ func TestResolveKiroRequestedModelForRequest_SimulateModeDoesNotUseThinkingVaria
 	account := &Account{ID: 108, Platform: PlatformKiro, Type: AccountTypeOAuth}
 
 	model, err := resolveKiroRequestedModelForRequest(account, &ParsedRequest{
-		Model:           "claude-sonnet-4-5",
+		Model:           "claude-sonnet-4-6",
 		ThinkingEnabled: true,
 		OutputEffort:    "high",
 	}, &KiroRuntimeSettings{ThinkingMode: KiroThinkingModeSimulate, ThinkingEffortThreshold: "medium"})
 
 	require.NoError(t, err)
-	require.Equal(t, "claude-sonnet-4-5", model)
+	require.Equal(t, "claude-sonnet-4-6", model)
+}
+
+func TestResolveKiroRequestedModelForRequest_RejectsThinkingSuffixModel(t *testing.T) {
+	account := &Account{ID: 108, Platform: PlatformKiro, Type: AccountTypeOAuth}
+
+	_, err := resolveKiroRequestedModelForRequest(account, &ParsedRequest{
+		Model:           "claude-sonnet-4-6-thinking",
+		ThinkingEnabled: true,
+		OutputEffort:    "high",
+	}, &KiroRuntimeSettings{ThinkingMode: KiroThinkingModeModel, ThinkingEffortThreshold: "medium"})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported kiro model")
 }
 
 func TestShouldUseKiroFreeThinkingPath_ThinkingModes(t *testing.T) {
@@ -429,23 +442,61 @@ func TestShouldUseKiroFreeThinkingPath_ThinkingModes(t *testing.T) {
 			"subscription_type": "free",
 		},
 	}
-	parsed := &ParsedRequest{ThinkingEnabled: true}
 
 	tests := []struct {
 		name     string
+		model    string
 		mode     string
 		expected bool
 	}{
-		{name: "simulate", mode: KiroThinkingModeSimulate, expected: false},
-		{name: "model", mode: KiroThinkingModeModel, expected: false},
-		{name: "model_and_simulate", mode: KiroThinkingModeModelAndSimulate, expected: true},
+		{name: "simulate", model: "claude-sonnet-4-5", mode: KiroThinkingModeSimulate, expected: false},
+		{name: "model", model: "claude-sonnet-4-5", mode: KiroThinkingModeModel, expected: false},
+		{name: "model_and_simulate_sonnet45", model: "claude-sonnet-4-5", mode: KiroThinkingModeModelAndSimulate, expected: true},
+		{name: "model_and_simulate_sonnet46", model: "claude-sonnet-4-6", mode: KiroThinkingModeModelAndSimulate, expected: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			parsed := &ParsedRequest{Model: tt.model, ThinkingEnabled: true}
 			require.Equal(t, tt.expected, shouldUseKiroFreeThinkingPath(account, parsed, &KiroRuntimeSettings{ThinkingMode: tt.mode}))
 		})
 	}
+}
+
+func TestRenderKiroThinkingSimulation_AddsVisibleThinkingForNativeThinkingModels(t *testing.T) {
+	settings := &KiroRuntimeSettings{
+		ThinkingMode:               KiroThinkingModeSimulate,
+		ThinkingEffortThreshold:    "medium",
+		ThinkingSimulationTemplate: "fallback {model} {upstream_model} {effort}",
+	}
+
+	sonnet45 := renderKiroThinkingSimulation(&ParsedRequest{
+		Model:           "claude-sonnet-4-5-20250929",
+		ThinkingEnabled: true,
+		OutputEffort:    "high",
+	}, &kiropkg.ConvertResult{Model: "claude-sonnet-4.5"}, settings)
+	require.Contains(t, sonnet45, "claude-sonnet-4-5-20250929")
+
+	sonnet46 := renderKiroThinkingSimulation(&ParsedRequest{
+		Model:           "claude-sonnet-4-6",
+		ThinkingEnabled: true,
+		OutputEffort:    "high",
+	}, &kiropkg.ConvertResult{Model: "claude-sonnet-4.6"}, settings)
+	require.Contains(t, sonnet46, "claude-sonnet-4-6")
+
+	opus46 := renderKiroThinkingSimulation(&ParsedRequest{
+		Model:           "claude-opus-4-6",
+		ThinkingEnabled: true,
+		OutputEffort:    "high",
+	}, &kiropkg.ConvertResult{Model: "claude-opus-4.6"}, settings)
+	require.Contains(t, opus46, "claude-opus-4-6")
+
+	opus47 := renderKiroThinkingSimulation(&ParsedRequest{
+		Model:           "claude-opus-4-7",
+		ThinkingEnabled: true,
+		OutputEffort:    "high",
+	}, &kiropkg.ConvertResult{Model: "claude-opus-4.7"}, settings)
+	require.Contains(t, opus47, "claude-opus-4-7")
 }
 
 func TestPrepareKiroConvertedRequest_PromotesLargeContextToOneMillionModelWithoutDroppingBillingBaseline(t *testing.T) {

@@ -267,18 +267,10 @@ func resolveKiroRequestedModelForRequest(account *Account, parsed *ParsedRequest
 	if parsed == nil {
 		return "", fmt.Errorf("invalid kiro request args")
 	}
-	model, err := resolveKiroRequestedModel(account, parsed.Model)
-	if err != nil {
-		return "", err
-	}
-	// 非 Free 账号且请求开启了 thinking → 映射到 -thinking 变体
-	if parsed.ThinkingEnabled && !isKiroFreeAccount(account) {
-		model = ensureKiroThinkingModelVariant(model)
-	}
-	return model, nil
+	return resolveKiroRequestedModel(account, parsed.Model)
 }
 
-// isKiroFreeAccount 判断 Kiro 账号是否为 Free 订阅（无原生 thinking 能力）。
+// isKiroFreeAccount 判断 Kiro 账号是否为 Free 订阅。
 // subscription_type 为空或含 "free" 时视为 Free。
 func isKiroFreeAccount(account *Account) bool {
 	if account == nil {
@@ -286,18 +278,6 @@ func isKiroFreeAccount(account *Account) bool {
 	}
 	subscriptionType := strings.ToLower(strings.TrimSpace(account.GetCredential("subscription_type")))
 	return subscriptionType == "" || strings.Contains(subscriptionType, "free")
-}
-
-// ensureKiroThinkingModelVariant 在模型名后追加 -thinking 后缀（如果 thinking 变体存在）。
-func ensureKiroThinkingModelVariant(model string) string {
-	if strings.HasSuffix(model, "-thinking") {
-		return model
-	}
-	candidate := model + "-thinking"
-	if kiropkg.MapModel(candidate) != "" {
-		return candidate
-	}
-	return model
 }
 
 func ensureKiroOneMillionContextModelVariant(model string) string {
@@ -323,6 +303,9 @@ func shouldSimulateKiroThinking(parsed *ParsedRequest, runtimeSettings *KiroRunt
 	if runtimeSettings.ThinkingMode != KiroThinkingModeSimulate {
 		return false
 	}
+	// In simulate mode we add a visible thinking block for any request that
+	// asks for thinking, even when the upstream model already has native
+	// thinking support and the request itself stays on the native path.
 	return shouldApplyKiroThinking(parsed, runtimeSettings)
 }
 
@@ -331,7 +314,10 @@ func shouldUseKiroFreeThinkingPath(account *Account, parsed *ParsedRequest, runt
 		return false
 	}
 	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
-	return runtimeSettings.ThinkingMode == KiroThinkingModeModelAndSimulate
+	if runtimeSettings.ThinkingMode != KiroThinkingModeModelAndSimulate {
+		return false
+	}
+	return kiroModelNeedsFreeThinkingPreparation(parsed)
 }
 
 func shouldApplyKiroThinking(parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) bool {
@@ -341,6 +327,14 @@ func shouldApplyKiroThinking(parsed *ParsedRequest, runtimeSettings *KiroRuntime
 	effort := normalizedKiroRequestThinkingEffort(parsed)
 	threshold := normalizeKiroThinkingEffortThreshold(runtimeSettings.ThinkingEffortThreshold)
 	return kiroThinkingEffortRank(effort) >= kiroThinkingEffortRank(threshold)
+}
+
+func kiroModelNeedsFreeThinkingPreparation(parsed *ParsedRequest) bool {
+	if parsed == nil {
+		return false
+	}
+	mappedModel := strings.TrimSpace(kiropkg.MapModel(parsed.Model))
+	return strings.HasPrefix(mappedModel, "claude-sonnet-4.5")
 }
 
 func normalizedKiroRequestThinkingEffort(parsed *ParsedRequest) string {
