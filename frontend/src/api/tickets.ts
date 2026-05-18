@@ -65,8 +65,23 @@ export async function closeTicket(id: number) {
   return data
 }
 
-export async function replyTicket(id: number, content: string) {
-  const { data } = await apiClient.post<{ message: string }>(`/tickets/${id}/messages`, { content })
+export async function replyTicket(id: number, content: string, attachments?: { media_id: number }[]) {
+  const { data } = await apiClient.post<{ message: string }>(`/tickets/${id}/messages`, {
+    content,
+    ...(attachments?.length ? { attachments } : {})
+  })
+  return data
+}
+
+export async function uploadTicketMedia(file: File, ticketId: number | string) {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('biz_type', 'ticket')
+  formData.append('biz_id', String(ticketId))
+  formData.append('visibility', 'private')
+  const { data } = await apiClient.post('/media/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
   return data
 }
 
@@ -80,6 +95,7 @@ const ticketsAPI = {
   withdrawTicket,
   closeTicket,
   replyTicket,
+  uploadTicketMedia,
 }
 
 export default ticketsAPI

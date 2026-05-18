@@ -33,8 +33,11 @@ export async function listAdminTicketMessages(id: number) {
   return data
 }
 
-export async function replyAdminTicket(id: number, content: string) {
-  const { data } = await apiClient.post<{ message: string }>(`/admin/tickets/${id}/messages`, { content })
+export async function replyAdminTicket(id: number, content: string, attachments?: { media_id: number }[]) {
+  const { data } = await apiClient.post<{ message: string }>(`/admin/tickets/${id}/messages`, {
+    content,
+    ...(attachments?.length ? { attachments } : {})
+  })
   return data
 }
 

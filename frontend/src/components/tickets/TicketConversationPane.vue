@@ -39,7 +39,32 @@
               class="rounded-2xl px-4 py-3 text-sm leading-6"
               :class="bubbleClass(message.sender_role)"
             >
-              <div class="whitespace-pre-wrap break-words">{{ message.content }}</div>
+              <div v-if="message.content" class="whitespace-pre-wrap break-words">{{ message.content }}</div>
+              <div v-if="message.attachments?.length" class="mt-2 flex flex-wrap gap-2" :class="{ 'mt-0': !message.content }">
+                <template v-for="att in message.attachments" :key="att.media_id">
+                  <a
+                    v-if="att.content_type?.startsWith('image/')"
+                    :href="att.url"
+                    target="_blank"
+                    class="block overflow-hidden rounded-lg border border-gray-200/50 dark:border-dark-500/50"
+                  >
+                    <img
+                      :src="att.thumbnail_url || att.url"
+                      :alt="att.file_name"
+                      class="h-24 w-24 object-cover transition-opacity hover:opacity-80"
+                    />
+                  </a>
+                  <a
+                    v-else
+                    :href="att.url"
+                    target="_blank"
+                    class="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs transition-colors hover:bg-gray-50 dark:border-dark-600 dark:hover:bg-dark-700"
+                  >
+                    <span class="truncate max-w-[120px]">{{ att.file_name }}</span>
+                    <span class="text-gray-400">{{ formatFileSize(att.size_bytes) }}</span>
+                  </a>
+                </template>
+              </div>
             </div>
           </div>
 
@@ -66,11 +91,47 @@
         @compositionend="handleCompositionEnd"
         @keydown="handleComposerKeydown"
       />
+      <!-- Pending attachments preview -->
+      <div v-if="pendingAttachments.length > 0" class="mt-2 flex flex-wrap gap-2">
+        <div
+          v-for="(att, idx) in pendingAttachments"
+          :key="att.media_id"
+          class="group relative overflow-hidden rounded-lg border border-gray-200 dark:border-dark-600"
+        >
+          <img
+            v-if="att.content_type?.startsWith('image/')"
+            :src="att.thumbnail_url || att.url"
+            :alt="att.file_name"
+            class="h-16 w-16 object-cover"
+          />
+          <div v-else class="flex h-16 w-16 items-center justify-center bg-gray-50 text-xs text-gray-500 dark:bg-dark-700">
+            {{ att.file_name?.split('.').pop() }}
+          </div>
+          <button
+            type="button"
+            class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100"
+            @click="removePendingAttachment(idx)"
+          >
+            &times;
+          </button>
+        </div>
+      </div>
       <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-2">
           <slot name="composer-actions" />
+          <label class="btn btn-secondary btn-sm cursor-pointer">
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              class="hidden"
+              :disabled="uploadingAttachment"
+              @change="handleAttachmentUpload"
+            />
+            {{ uploadingAttachment ? t('tickets.uploading') : t('tickets.attachImage') }}
+          </label>
         </div>
-        <button class="btn btn-primary" :disabled="sending || !composerValue.trim()" @click="submitReply">
+        <button class="btn btn-primary" :disabled="sending || uploadingAttachment || (!composerValue.trim() && pendingAttachments.length === 0)" @click="submitReply">
           {{ sending ? resolvedSendingText : resolvedSubmitText }}
         </button>
       </div>
@@ -79,10 +140,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { formatDateTime } from '@/utils/format'
-import type { SupportTicketMessage, TicketSenderRole } from '@/types'
+import type { SupportTicketMessage, TicketMessageAttachment, TicketSenderRole } from '@/types'
 
 const props = withDefaults(defineProps<{
   title: string
@@ -96,6 +157,8 @@ const props = withDefaults(defineProps<{
   sendingText?: string
   clearComposerKey?: number
   replyContent?: string
+  ticketId?: number
+  uploadFn?: (file: File, ticketId: number | string) => Promise<any>
 }>(), {
   subtitle: '',
   showComposer: true,
@@ -103,16 +166,23 @@ const props = withDefaults(defineProps<{
   composerPlaceholder: '',
   clearComposerKey: 0,
   replyContent: undefined,
+  ticketId: 0,
+  uploadFn: undefined,
 })
 
 const emit = defineEmits<{
-  reply: [content: string]
+  reply: [content: string, attachments?: { media_id: number }[]]
   'update:replyContent': [content: string]
+  'upload-error': [error: unknown]
 }>()
 const { t } = useI18n()
 const localReplyContent = ref('')
 const messageContainerRef = ref<HTMLDivElement | null>(null)
 const isComposing = ref(false)
+type PendingTicketAttachment = TicketMessageAttachment & { preview_url?: string }
+
+const pendingAttachments = ref<PendingTicketAttachment[]>([])
+const uploadingAttachment = ref(false)
 const resolvedSubmitText = computed(() => props.submitText ?? t('common.submit'))
 const resolvedSendingText = computed(() => props.sendingText ?? t('common.submitting'))
 const composerValue = computed({
@@ -139,12 +209,69 @@ watch(() => props.messages.length, () => {
 
 watch(() => props.clearComposerKey, () => {
   composerValue.value = ''
+  clearPendingAttachments()
 })
 
 function submitReply() {
   const content = composerValue.value.trim()
-  if (!content) return
-  emit('reply', content)
+  const atts = pendingAttachments.value.length > 0
+    ? pendingAttachments.value.map(a => ({ media_id: a.media_id }))
+    : undefined
+  if (!content && !atts) return
+  emit('reply', content, atts)
+}
+
+async function handleAttachmentUpload(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files || [])
+  if (files.length === 0 || !props.uploadFn) return
+
+  uploadingAttachment.value = true
+  try {
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) continue
+      const result = await props.uploadFn(file, props.ticketId)
+      if (result) {
+        const previewURL = URL.createObjectURL(file)
+        pendingAttachments.value.push({
+          media_id: result.id,
+          url: result.public_url || result.url || '',
+          thumbnail_url: result.thumbnail_public_url || result.thumbnail_url || previewURL,
+          preview_url: previewURL,
+          file_name: result.original_file_name || file.name,
+          content_type: result.mime_type || file.type,
+          size_bytes: result.size_bytes || file.size,
+        })
+      }
+    }
+  } catch (error) {
+    emit('upload-error', error)
+  } finally {
+    uploadingAttachment.value = false
+    input.value = ''
+  }
+}
+
+function removePendingAttachment(index: number) {
+  const [removed] = pendingAttachments.value.splice(index, 1)
+  if (removed?.preview_url) URL.revokeObjectURL(removed.preview_url)
+}
+
+function clearPendingAttachments() {
+  for (const attachment of pendingAttachments.value) {
+    if (attachment.preview_url) URL.revokeObjectURL(attachment.preview_url)
+  }
+  pendingAttachments.value = []
+}
+
+onBeforeUnmount(() => {
+  clearPendingAttachments()
+})
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function handleCompositionStart() {

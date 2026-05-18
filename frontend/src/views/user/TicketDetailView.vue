@@ -34,7 +34,10 @@
             :composer-placeholder="t('tickets.replyPlaceholder')"
             :submit-text="t('tickets.reply')"
             :sending-text="t('common.submitting')"
+            :ticket-id="ticketID"
+            :upload-fn="ticketsAPI.uploadTicketMedia"
             @reply="reply"
+            @upload-error="handleUploadError"
           />
         </div>
 
@@ -166,10 +169,10 @@ async function loadTicketContext() {
   }
 }
 
-async function reply(content: string) {
+async function reply(content: string, attachments?: { media_id: number }[]) {
   try {
     sendingReply.value = true
-    await ticketsAPI.replyTicket(ticketID.value, content)
+    await ticketsAPI.replyTicket(ticketID.value, content, attachments)
     clearComposerKey.value += 1
     await loadDetail()
   } catch (err: any) {
@@ -177,6 +180,10 @@ async function reply(content: string) {
   } finally {
     sendingReply.value = false
   }
+}
+
+function handleUploadError() {
+  appStore.showError(t('tickets.uploadFailed'))
 }
 
 async function withdrawAndEdit() {

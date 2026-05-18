@@ -439,6 +439,15 @@ export interface SupportTicket {
   updated_at: string
 }
 
+export interface TicketMessageAttachment {
+  media_id: number
+  url: string
+  thumbnail_url?: string
+  file_name: string
+  content_type: string
+  size_bytes: number
+}
+
 export interface SupportTicketMessage {
   id: number
   ticket_id: number
@@ -448,6 +457,7 @@ export interface SupportTicketMessage {
   sender_avatar_snapshot: string
   message_type: TicketMessageType
   content: string
+  attachments?: TicketMessageAttachment[]
   created_at: string
 }
 

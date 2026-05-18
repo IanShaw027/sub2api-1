@@ -17,8 +17,11 @@
           :composer-placeholder="t('tickets.replyPlaceholderAdmin')"
           :submit-text="t('tickets.reply')"
           :sending-text="t('common.submitting')"
+          :ticket-id="ticketID"
+          :upload-fn="uploadAdminTicketMedia"
           @update:reply-content="replyDraft = $event"
           @reply="reply"
+          @upload-error="handleUploadError"
         >
           <template #composer-actions>
             <div
@@ -197,10 +200,10 @@ async function loadReplyTemplates() {
   }
 }
 
-async function reply(content: string) {
+async function reply(content: string, attachments?: { media_id: number }[]) {
   try {
     sendingReply.value = true
-    await adminTicketsAPI.replyAdminTicket(ticketID.value, content)
+    await adminTicketsAPI.replyAdminTicket(ticketID.value, content, attachments)
     replyDraft.value = ''
     clearComposerKey.value += 1
     await loadDetail()
@@ -209,6 +212,23 @@ async function reply(content: string) {
   } finally {
     sendingReply.value = false
   }
+}
+
+async function uploadAdminTicketMedia(file: File, ticketId: number | string) {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('biz_type', 'ticket')
+  formData.append('biz_id', String(ticketId))
+  formData.append('visibility', 'private')
+  const { apiClient } = await import('@/api/client')
+  const { data } = await apiClient.post('/admin/media/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+  return data
+}
+
+function handleUploadError() {
+  appStore.showError(t('tickets.uploadFailed'))
 }
 
 function applyTemplate(content: string) {
