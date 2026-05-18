@@ -1,0 +1,246 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Sub2API - OpenAI Chat Completions",
+    "description": "Sub2API OpenAI 兼容文本接口。当前项目支持 /v1/chat/completions 和 /v1/responses；未注册旧版 /v1/completions 文本补全入口。\n\n认证方式：Bearer Token，通过 Authorization: Bearer <api_key> 传递。\n\n导入 Apifox 后，在环境变量里配置 base_url 和 api_key 即可直接发送请求。",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "{{base_url}}",
+      "description": "Sub2API 服务地址，例如 https://crs.qazwc.com 或 http://localhost:3000"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "OpenAI - Chat Completions",
+      "description": "OpenAI 兼容的传统聊天补全入口"
+    },
+    {
+      "name": "OpenAI - Responses",
+      "description": "OpenAI 新版 Responses 入口"
+    }
+  ],
+  "paths": {
+    "/v1/chat/completions": {
+      "post": {
+        "operationId": "chatCompletions",
+        "summary": "Chat Completions",
+        "description": "传统 OpenAI Chat Completions 兼容入口，适合第三方 OpenAI SDK 和旧客户端。",
+        "tags": [
+          "OpenAI - Chat Completions"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatCompletionsRequest"
+              },
+              "examples": {
+                "non_stream": {
+                  "summary": "非流式文本对话",
+                  "value": {
+                    "model": "gpt-5.4",
+                    "messages": [
+                      {
+                        "role": "system",
+                        "content": "你是一个简洁、准确的中文助手。"
+                      },
+                      {
+                        "role": "user",
+                        "content": "用三句话解释一下 Sub2API 的用途。"
+                      }
+                    ],
+                    "stream": false,
+                    "temperature": 0.7,
+                    "max_tokens": 512
+                  }
+                },
+                "stream": {
+                  "summary": "流式文本对话",
+                  "value": {
+                    "model": "gpt-5.4",
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": "写一个 5 行以内的 curl 调用示例。"
+                      }
+                    ],
+                    "stream": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "请求成功。非流式返回 JSON；stream=true 时返回 text/event-stream。"
+          },
+          "401": {
+            "description": "API Key 无效或缺失。"
+          },
+          "429": {
+            "description": "并发、额度或上游限流。"
+          }
+        }
+      }
+    },
+    "/v1/responses": {
+      "post": {
+        "operationId": "responses",
+        "summary": "Responses",
+        "description": "OpenAI 新版兼容入口，适合新版客户端、Codex/OAuth 路线和工具链场景。",
+        "tags": [
+          "OpenAI - Responses"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResponsesRequest"
+              },
+              "examples": {
+                "text": {
+                  "summary": "Responses 纯文本",
+                  "value": {
+                    "model": "gpt-5.4",
+                    "input": "用一句话介绍 OpenAI Responses API。",
+                    "stream": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "请求成功。"
+          },
+          "401": {
+            "description": "API Key 无效或缺失。"
+          },
+          "429": {
+            "description": "并发、额度或上游限流。"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "API Key"
+      }
+    },
+    "schemas": {
+      "ChatCompletionsRequest": {
+        "type": "object",
+        "required": [
+          "model",
+          "messages"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "example": "gpt-5.4"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatMessage"
+            }
+          },
+          "stream": {
+            "type": "boolean",
+            "default": false
+          },
+          "temperature": {
+            "type": "number",
+            "example": 0.7
+          },
+          "max_tokens": {
+            "type": "integer",
+            "example": 512
+          }
+        },
+        "additionalProperties": true
+      },
+      "ChatMessage": {
+        "type": "object",
+        "required": [
+          "role",
+          "content"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "system",
+              "developer",
+              "user",
+              "assistant",
+              "tool"
+            ]
+          },
+          "content": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "ResponsesRequest": {
+        "type": "object",
+        "required": [
+          "model",
+          "input"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "example": "gpt-5.4"
+          },
+          "input": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            ]
+          },
+          "stream": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  }
+}
