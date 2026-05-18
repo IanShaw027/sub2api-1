@@ -6196,11 +6196,6 @@ func extractOpenAISSEDataLine(line string) (string, bool) {
 	return line[start:], true
 }
 
-func isOpenAICompatDoneSentinelLine(line string) bool {
-	data, ok := extractOpenAISSEDataLine(line)
-	return ok && strings.TrimSpace(data) == "[DONE]"
-}
-
 func extractOpenAISSEEventLine(line string) (string, bool) {
 	if !strings.HasPrefix(line, "event:") {
 		return "", false
@@ -6226,6 +6221,7 @@ type openAICompatSSEFrameParser struct {
 }
 
 func (p *openAICompatSSEFrameParser) AddLine(line string) (openAICompatSSEFrame, bool) {
+	line = strings.TrimSuffix(line, "\r")
 	if line == "" {
 		return p.dispatch()
 	}
@@ -6233,11 +6229,20 @@ func (p *openAICompatSSEFrameParser) AddLine(line string) (openAICompatSSEFrame,
 		return openAICompatSSEFrame{}, false
 	}
 	if eventType, ok := extractOpenAISSEEventLine(line); ok {
+		if len(p.dataLines) > 0 {
+			frame := openAICompatSSEFrame{
+				EventType: p.eventType,
+				Data:      strings.Join(p.dataLines, "\n"),
+			}
+			p.eventType = eventType
+			p.dataLines = nil
+			return frame, strings.TrimSpace(frame.Data) != ""
+		}
 		p.eventType = eventType
 		return openAICompatSSEFrame{}, false
 	}
 	if data, ok := extractOpenAISSEDataLine(line); ok {
-		if len(p.dataLines) > 0 {
+		if openAICompatShouldDispatchBeforeData(p.dataLines, data) {
 			frame := openAICompatSSEFrame{
 				EventType: p.eventType,
 				Data:      strings.Join(p.dataLines, "\n"),
@@ -6249,6 +6254,18 @@ func (p *openAICompatSSEFrameParser) AddLine(line string) (openAICompatSSEFrame,
 		p.dataLines = append(p.dataLines, data)
 	}
 	return openAICompatSSEFrame{}, false
+}
+
+func openAICompatShouldDispatchBeforeData(current []string, next string) bool {
+	if len(current) == 0 {
+		return false
+	}
+	next = strings.TrimSpace(next)
+	if next == "[DONE]" {
+		return true
+	}
+	currentData := strings.TrimSpace(strings.Join(current, "\n"))
+	return currentData != "" && gjson.Valid(currentData) && gjson.Valid(next)
 }
 
 func (p *openAICompatSSEFrameParser) Finish() (openAICompatSSEFrame, bool) {

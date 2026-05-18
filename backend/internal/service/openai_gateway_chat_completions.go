@@ -907,9 +907,6 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 	var parser openAICompatSSEFrameParser
 	for scanner.Scan() {
 		line := scanner.Text()
-		if isOpenAICompatDoneSentinelLine(line) {
-			continue
-		}
 		frame, ok := parser.AddLine(line)
 		if !ok {
 			continue
@@ -998,6 +995,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	var firstTokenMs *int
 	firstChunk := true
 	sawTerminalEvent := false
+	clientDisconnected := false
 	streamFailed := false
 	streamFailedErr := error(nil)
 
@@ -1084,6 +1082,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 				logger.L().Info("openai chat_completions stream: client disconnected",
 					zap.String("request_id", requestID),
 				)
+				clientDisconnected = true
 				return true
 			}
 		}
@@ -1096,6 +1095,9 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	finalizeStream := func() (*OpenAIForwardResult, error) {
 		if streamFailed {
 			return resultWithUsage(), streamFailedErr
+		}
+		if clientDisconnected {
+			return resultWithUsage(), nil
 		}
 		if !sawTerminalEvent {
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")

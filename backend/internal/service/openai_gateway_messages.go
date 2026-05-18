@@ -553,9 +553,6 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 	var parser openAICompatSSEFrameParser
 	for scanner.Scan() {
 		line := scanner.Text()
-		if isOpenAICompatDoneSentinelLine(line) {
-			continue
-		}
 		frame, ok := parser.AddLine(line)
 		if !ok {
 			continue
@@ -773,9 +770,6 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		var parser openAICompatSSEFrameParser
 		for scanner.Scan() {
 			line := scanner.Text()
-			if isOpenAICompatDoneSentinelLine(line) {
-				continue
-			}
 			frame, ok := parser.AddLine(line)
 			if !ok {
 				continue
@@ -844,9 +838,6 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			}
 			lastDataAt = time.Now()
 			line := ev.line
-			if isOpenAICompatDoneSentinelLine(line) {
-				continue
-			}
 			frame, ok := parser.AddLine(line)
 			if !ok {
 				continue

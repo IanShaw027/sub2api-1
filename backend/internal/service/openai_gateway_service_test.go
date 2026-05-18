@@ -3845,3 +3845,71 @@ func TestOpenAICompatSSEFrameParserResetsEventTypeAtFrameBoundary(t *testing.T) 
 	require.Empty(t, frame.EventType)
 	require.JSONEq(t, `{"delta":"ok"}`, frame.Data)
 }
+
+func TestOpenAICompatSSEFrameParserHandlesCRLFFrameBoundary(t *testing.T) {
+	var parser openAICompatSSEFrameParser
+
+	_, ok := parser.AddLine("event: response.completed\r")
+	require.False(t, ok)
+	_, ok = parser.AddLine(`data: {"response":{"id":"resp_crlf"}}` + "\r")
+	require.False(t, ok)
+
+	frame, ok := parser.AddLine("\r")
+	require.True(t, ok)
+	require.Equal(t, "response.completed", frame.EventType)
+	require.JSONEq(t, `{"response":{"id":"resp_crlf"}}`, frame.Data)
+}
+
+func TestOpenAICompatSSEFrameParserJoinsMultilineDataUntilBoundary(t *testing.T) {
+	var parser openAICompatSSEFrameParser
+
+	_, ok := parser.AddLine("event: response.completed")
+	require.False(t, ok)
+	_, ok = parser.AddLine(`data: {`)
+	require.False(t, ok)
+	_, ok = parser.AddLine(`data: "response":{"id":"resp_multiline"}`)
+	require.False(t, ok)
+	_, ok = parser.AddLine(`data: }`)
+	require.False(t, ok)
+
+	frame, ok := parser.AddLine("")
+	require.True(t, ok)
+	require.Equal(t, "response.completed", frame.EventType)
+	require.JSONEq(t, `{"response":{"id":"resp_multiline"}}`, frame.Data)
+}
+
+func TestOpenAICompatSSEFrameParserDispatchesPendingFrameBeforeDoneSentinel(t *testing.T) {
+	var parser openAICompatSSEFrameParser
+
+	_, ok := parser.AddLine(`data: {"type":"response.completed","response":{"id":"resp_done"}}`)
+	require.False(t, ok)
+
+	frame, ok := parser.AddLine("data: [DONE]")
+	require.True(t, ok)
+	require.JSONEq(t, `{"type":"response.completed","response":{"id":"resp_done"}}`, frame.Data)
+
+	frame, ok = parser.Finish()
+	require.True(t, ok)
+	require.Equal(t, "[DONE]", strings.TrimSpace(frame.Data))
+}
+
+func TestOpenAICompatSSEFrameParserDispatchesPendingFrameBeforeNextEvent(t *testing.T) {
+	var parser openAICompatSSEFrameParser
+
+	_, ok := parser.AddLine("event: response.created")
+	require.False(t, ok)
+	_, ok = parser.AddLine(`data: {"response":{"id":"resp_created"}}`)
+	require.False(t, ok)
+
+	frame, ok := parser.AddLine("event: response.output_text.delta")
+	require.True(t, ok)
+	require.Equal(t, "response.created", frame.EventType)
+	require.JSONEq(t, `{"response":{"id":"resp_created"}}`, frame.Data)
+
+	_, ok = parser.AddLine(`data: {"delta":"ok"}`)
+	require.False(t, ok)
+	frame, ok = parser.AddLine("")
+	require.True(t, ok)
+	require.Equal(t, "response.output_text.delta", frame.EventType)
+	require.JSONEq(t, `{"delta":"ok"}`, frame.Data)
+}
