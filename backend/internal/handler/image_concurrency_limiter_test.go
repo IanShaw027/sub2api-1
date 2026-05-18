@@ -142,7 +142,7 @@ func TestOpenAIGatewayHandlerAcquireImageGenerationSlot_Returns429WhenFull(t *te
 }
 
 func TestOpenAIGatewayHandlerResponses_ImageIntentRejectedByImageConcurrency(t *testing.T) {
-	body := `{"model":"gpt-5.4","input":"draw","tools":[{"type":"image_generation"}]}`
+	body := `{"model":"gpt-5.4","input":"draw","tool_choice":{"type":"image_generation"}}`
 
 	imageIntent, shouldAcquire := classifyOpenAIResponsesImageRequest(true, "gpt-5.4", []byte(body))
 
