@@ -5,11 +5,83 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestKiroOAuthHandlerDeviceCompleteRequiresSessionID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	handler := NewKiroOAuthHandler(nil, nil)
+	router.POST("/device-complete", handler.DeviceComplete)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/device-complete", bytes.NewReader([]byte(`{}`)))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestKiroOAuthHandlerDeviceCompleteRequiresConfiguredService(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	handler := NewKiroOAuthHandler(nil, nil)
+	router.POST("/device-complete", handler.DeviceComplete)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/device-complete", bytes.NewReader([]byte(`{"session_id":"session-1"}`)))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Contains(t, rec.Body.String(), "Kiro OAuth service is not configured")
+}
+
+func TestKiroExchangeCallbackResponseData_UnwrapsTokenInfo(t *testing.T) {
+	t.Parallel()
+
+	result := &service.KiroOAuthProgressResult{
+		TokenInfo: &service.KiroTokenInfo{
+			AccessToken:  "access-token",
+			RefreshToken: "refresh-token",
+		},
+	}
+
+	data := kiroExchangeCallbackResponseData(result)
+
+	tokenInfo, ok := data.(*service.KiroTokenInfo)
+	require.True(t, ok)
+	require.Equal(t, "access-token", tokenInfo.AccessToken)
+	require.Equal(t, "refresh-token", tokenInfo.RefreshToken)
+}
+
+func TestKiroExchangeCallbackResponseData_PreservesContinuationWrapper(t *testing.T) {
+	t.Parallel()
+
+	result := &service.KiroOAuthProgressResult{
+		Continuation: &service.KiroIDCContinuationInfo{
+			SessionID:       "session-1",
+			Status:          "authorization_pending",
+			AuthMethod:      "idc",
+			IntervalSeconds: 5,
+			ExpiresAt:       time.Now().Add(10 * time.Minute).UTC().Format(time.RFC3339),
+		},
+	}
+
+	data := kiroExchangeCallbackResponseData(result)
+
+	progress, ok := data.(*service.KiroOAuthProgressResult)
+	require.True(t, ok)
+	require.NotNil(t, progress.Continuation)
+	require.Equal(t, "session-1", progress.Continuation.SessionID)
+	require.Equal(t, "authorization_pending", progress.Continuation.Status)
+}
 
 func TestKiroOAuthHandlerRefreshTokenRejectsIDCRefreshAliasesWithoutClientCredentials(t *testing.T) {
 	t.Parallel()

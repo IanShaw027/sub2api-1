@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -22,10 +23,16 @@ const (
 	kiroOAuthCallbackBaseURL  = "http://localhost:3128"
 	kiroOAuthSessionTTL       = 30 * time.Minute
 	kiroOAuthDefaultUserAgent = "sub2api Kiro OAuth"
+	kiroIDCDefaultStartURL    = "https://view.awsapps.com/start"
+	kiroIDCDefaultRegion      = "us-east-1"
+	kiroIDCDeviceGrantType    = "urn:ietf:params:oauth:grant-type:device_code"
 )
 
 var kiroCodeExchangeFunc = exchangeKiroCodeForToken
 var kiroFindCallbackBaseURLFunc = findKiroCallbackBaseURL
+var kiroIDCRegisterClientFunc = registerKiroIDCClient
+var kiroIDCStartDeviceAuthorizationFunc = startKiroIDCDeviceAuthorization
+var kiroIDCCompleteDeviceAuthorizationFunc = completeKiroIDCDeviceAuthorization
 
 type KiroOAuthSession struct {
 	State           string
@@ -34,6 +41,7 @@ type KiroOAuthSession struct {
 	CallbackBaseURL string
 	ProxyURL        string
 	CreatedAt       time.Time
+	IDCContinuation *KiroIDCContinuationSession
 }
 
 type KiroOAuthSessionStore struct {
@@ -131,6 +139,22 @@ type KiroExchangeCallbackInput struct {
 	SessionID   string
 	CallbackURL string
 	ProxyID     *int64
+	StartURL    string
+	IssuerURL   string
+	IDCRegion   string
+	Scopes      []string
+	LoginHint   string
+	ClientName  string
+}
+
+type KiroDeviceCompleteInput struct {
+	SessionID string
+	ProxyID   *int64
+}
+
+type KiroOAuthProgressResult struct {
+	TokenInfo    *KiroTokenInfo           `json:"token_info,omitempty"`
+	Continuation *KiroIDCContinuationInfo `json:"continuation,omitempty"`
 }
 
 func (s *KiroOAuthService) resolveProxyURL(ctx context.Context, proxyID *int64, fallbackProxyURL string) (string, error) {
@@ -177,6 +201,105 @@ type KiroTokenInfo struct {
 	Scopes           string `json:"scopes,omitempty"`
 	LoginHint        string `json:"login_hint,omitempty"`
 	SubscriptionType string `json:"subscription_type,omitempty"`
+}
+
+type KiroIDCContinuationSession struct {
+	LoginOption             string
+	ClientID                string
+	ClientSecret            string
+	DeviceCode              string
+	UserCode                string
+	VerificationURI         string
+	VerificationURIComplete string
+	StartURL                string
+	IssuerURL               string
+	Region                  string
+	Scopes                  []string
+	LoginHint               string
+	IntervalSeconds         int64
+	ExpiresAt               time.Time
+	CreatedAt               time.Time
+}
+
+type KiroIDCContinuationInfo struct {
+	SessionID               string   `json:"session_id"`
+	Status                  string   `json:"status"`
+	AuthMethod              string   `json:"auth_method"`
+	LoginOption             string   `json:"login_option,omitempty"`
+	StartURL                string   `json:"start_url,omitempty"`
+	IssuerURL               string   `json:"issuer_url,omitempty"`
+	IDCRegion               string   `json:"idc_region,omitempty"`
+	Scopes                  []string `json:"scopes,omitempty"`
+	LoginHint               string   `json:"login_hint,omitempty"`
+	UserCode                string   `json:"user_code,omitempty"`
+	VerificationURI         string   `json:"verification_uri,omitempty"`
+	VerificationURIComplete string   `json:"verification_uri_complete,omitempty"`
+	IntervalSeconds         int64    `json:"interval_seconds,omitempty"`
+	ExpiresAt               string   `json:"expires_at,omitempty"`
+	Message                 string   `json:"message,omitempty"`
+}
+
+type kiroIDCRegisterClientInput struct {
+	ProxyURL     string
+	ClientName   string
+	RedirectURIs []string
+	Scopes       []string
+	IssuerURL    string
+	GrantTypes   []string
+	Region       string
+}
+
+type kiroIDCRegisterClientResult struct {
+	ClientID     string
+	ClientSecret string
+}
+
+type kiroIDCStartDeviceAuthorizationInput struct {
+	ProxyURL     string
+	ClientID     string
+	ClientSecret string
+	StartURL     string
+	Region       string
+}
+
+type kiroIDCStartDeviceAuthorizationResult struct {
+	DeviceCode              string
+	UserCode                string
+	VerificationURI         string
+	VerificationURIComplete string
+	ExpiresIn               int64
+	Interval                int64
+}
+
+type kiroIDCCompleteDeviceAuthorizationInput struct {
+	ProxyURL     string
+	ClientID     string
+	ClientSecret string
+	DeviceCode   string
+	Region       string
+}
+
+type kiroIDCAPIError struct {
+	Operation        string
+	StatusCode       int
+	ErrorCode        string
+	ErrorDescription string
+}
+
+func (e *kiroIDCAPIError) Error() string {
+	if e == nil {
+		return ""
+	}
+	parts := []string{
+		strings.TrimSpace(e.Operation),
+		strings.TrimSpace(e.ErrorCode),
+		strings.TrimSpace(e.ErrorDescription),
+	}
+	text := strings.TrimSpace(strings.Join(filterEmptyKiroStrings(parts), ": "))
+	if text == "" {
+		return "kiro idc request failed"
+	}
+	return text
 }
 
 func (s *KiroOAuthService) GenerateAuthURL(ctx context.Context, proxyID *int64) (*KiroAuthURLResult, error) {
@@ -241,6 +364,120 @@ func (s *KiroOAuthService) GenerateAuthURL(ctx context.Context, proxyID *int64) 
 }
 
 func (s *KiroOAuthService) ExchangeCallback(ctx context.Context, input *KiroExchangeCallbackInput) (*KiroTokenInfo, error) {
+	result, err := s.exchangeCallbackProgress(ctx, input, false)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil || result.TokenInfo == nil {
+		return nil, fmt.Errorf("kiro callback did not return token info")
+	}
+	return result.TokenInfo, nil
+}
+
+func (s *KiroOAuthService) ExchangeCallbackOrStartContinuation(ctx context.Context, input *KiroExchangeCallbackInput) (*KiroOAuthProgressResult, error) {
+	return s.exchangeCallbackProgress(ctx, input, true)
+}
+
+func (s *KiroOAuthService) CompleteDeviceAuthorization(ctx context.Context, input *KiroDeviceCompleteInput) (*KiroOAuthProgressResult, error) {
+	if s == nil || s.sessionStore == nil {
+		return nil, fmt.Errorf("kiro oauth service is unavailable")
+	}
+	if input == nil {
+		return nil, fmt.Errorf("kiro device completion input is required")
+	}
+	if strings.TrimSpace(input.SessionID) == "" {
+		return nil, fmt.Errorf("kiro device completion session id is required")
+	}
+
+	session, ok := s.sessionStore.Get(input.SessionID)
+	if !ok {
+		return nil, fmt.Errorf("kiro 授权会话不存在或已过期。请重新生成授权链接，并在当前弹窗同一轮流程中于 30 分钟内完成授权后，再粘贴最新地址栏中的完整回调 URL")
+	}
+	if session.IDCContinuation == nil {
+		return nil, fmt.Errorf("kiro device authorization continuation was not started for this session")
+	}
+	if time.Now().After(session.IDCContinuation.ExpiresAt) {
+		s.sessionStore.Delete(input.SessionID)
+		return nil, fmt.Errorf("kiro device authorization session expired; please restart the Kiro OAuth flow")
+	}
+
+	proxyURL, err := s.resolveProxyURL(ctx, input.ProxyID, session.ProxyURL)
+	if err != nil {
+		return nil, err
+	}
+
+	tokenPayload, err := kiroIDCCompleteDeviceAuthorizationFunc(ctx, kiroIDCCompleteDeviceAuthorizationInput{
+		ProxyURL:     proxyURL,
+		ClientID:     session.IDCContinuation.ClientID,
+		ClientSecret: session.IDCContinuation.ClientSecret,
+		DeviceCode:   session.IDCContinuation.DeviceCode,
+		Region:       firstNonEmptyKiroString(session.IDCContinuation.Region, kiroIDCDefaultRegion),
+	})
+	if err != nil {
+		var apiErr *kiroIDCAPIError
+		if errors.As(err, &apiErr) {
+			switch strings.ToLower(strings.TrimSpace(apiErr.ErrorCode)) {
+			case "authorization_pending":
+				return &KiroOAuthProgressResult{
+					Continuation: buildKiroIDCContinuationInfo(input.SessionID, session.IDCContinuation, "authorization_pending", "complete the browser/device authorization, then call device-complete again"),
+				}, nil
+			case "slow_down":
+				if session.IDCContinuation.IntervalSeconds <= 0 {
+					session.IDCContinuation.IntervalSeconds = 5
+				}
+				session.IDCContinuation.IntervalSeconds += 5
+				s.sessionStore.Set(input.SessionID, session)
+				return &KiroOAuthProgressResult{
+					Continuation: buildKiroIDCContinuationInfo(input.SessionID, session.IDCContinuation, "authorization_pending", "authorization is still pending; poll more slowly before calling device-complete again"),
+				}, nil
+			case "expired_token", "access_denied":
+				s.sessionStore.Delete(input.SessionID)
+			}
+		}
+		return nil, err
+	}
+
+	enrichedPayload := map[string]any{
+		"auth_method":   "idc",
+		"client_id":     session.IDCContinuation.ClientID,
+		"client_secret": session.IDCContinuation.ClientSecret,
+		"issuer_url":    session.IDCContinuation.IssuerURL,
+		"idc_region":    session.IDCContinuation.Region,
+		"auth_region":   session.IDCContinuation.Region,
+		"region":        session.IDCContinuation.Region,
+		"login_hint":    session.IDCContinuation.LoginHint,
+		"login_option":  session.IDCContinuation.LoginOption,
+	}
+	if len(session.IDCContinuation.Scopes) > 0 {
+		enrichedPayload["scope"] = strings.Join(session.IDCContinuation.Scopes, " ")
+	}
+	for key, value := range tokenPayload {
+		enrichedPayload[key] = value
+	}
+
+	query := url.Values{}
+	if session.IDCContinuation.LoginHint != "" {
+		query.Set("login_hint", session.IDCContinuation.LoginHint)
+	}
+	if len(session.IDCContinuation.Scopes) > 0 {
+		query.Set("scope", strings.Join(session.IDCContinuation.Scopes, " "))
+	}
+	tokenInfo := buildKiroTokenInfo(enrichedPayload, query, session.IDCContinuation.LoginOption)
+	tokenInfo.AuthMethod = "idc"
+	tokenInfo.ClientID = firstNonEmptyKiroString(tokenInfo.ClientID, session.IDCContinuation.ClientID)
+	tokenInfo.ClientSecret = firstNonEmptyKiroString(tokenInfo.ClientSecret, session.IDCContinuation.ClientSecret)
+	tokenInfo.AuthRegion = firstNonEmptyKiroString(tokenInfo.AuthRegion, session.IDCContinuation.Region)
+	tokenInfo.IDCRegion = firstNonEmptyKiroString(tokenInfo.IDCRegion, session.IDCContinuation.Region)
+	tokenInfo.Region = firstNonEmptyKiroString(tokenInfo.Region, session.IDCContinuation.Region)
+	tokenInfo.IssuerURL = firstNonEmptyKiroString(tokenInfo.IssuerURL, session.IDCContinuation.IssuerURL)
+	tokenInfo.LoginHint = firstNonEmptyKiroString(tokenInfo.LoginHint, session.IDCContinuation.LoginHint)
+	s.enrichTokenInfo(ctx, tokenInfo)
+	s.sessionStore.Delete(input.SessionID)
+
+	return &KiroOAuthProgressResult{TokenInfo: tokenInfo}, nil
+}
+
+func (s *KiroOAuthService) exchangeCallbackProgress(ctx context.Context, input *KiroExchangeCallbackInput, allowIDCContinuation bool) (*KiroOAuthProgressResult, error) {
 	if s == nil || s.sessionStore == nil {
 		return nil, fmt.Errorf("kiro oauth service is unavailable")
 	}
@@ -294,6 +531,9 @@ func (s *KiroOAuthService) ExchangeCallback(ctx context.Context, input *KiroExch
 	if code == "" {
 		switch loginOption {
 		case "builderid", "awsidc", "internal":
+			if allowIDCContinuation {
+				return s.startOrResumeIDCContinuation(ctx, input, session, query, loginOption)
+			}
 			return nil, fmt.Errorf("the current kiro login mode requires additional IDC material and cannot be imported automatically")
 		case "external_idp":
 			return nil, fmt.Errorf("the current kiro external IdP callback does not provide an authorization code")
@@ -316,7 +556,7 @@ func (s *KiroOAuthService) ExchangeCallback(ctx context.Context, input *KiroExch
 
 	tokenInfo := buildKiroTokenInfo(tokenPayload, query, loginOption)
 	s.enrichTokenInfo(ctx, tokenInfo)
-	return tokenInfo, nil
+	return &KiroOAuthProgressResult{TokenInfo: tokenInfo}, nil
 }
 
 func (s *KiroOAuthService) enrichTokenInfo(ctx context.Context, tokenInfo *KiroTokenInfo) {
@@ -532,6 +772,159 @@ func buildKiroTokenExchangeRedirectURI(callbackBaseURL string, parsedCallbackURL
 	return redirectURI
 }
 
+func (s *KiroOAuthService) startOrResumeIDCContinuation(
+	ctx context.Context,
+	input *KiroExchangeCallbackInput,
+	session *KiroOAuthSession,
+	query url.Values,
+	loginOption string,
+) (*KiroOAuthProgressResult, error) {
+	if session == nil {
+		return nil, fmt.Errorf("kiro oauth session is required")
+	}
+	if session.IDCContinuation != nil {
+		if time.Now().Before(session.IDCContinuation.ExpiresAt) && strings.EqualFold(strings.TrimSpace(session.IDCContinuation.LoginOption), strings.TrimSpace(loginOption)) {
+			return &KiroOAuthProgressResult{
+				Continuation: buildKiroIDCContinuationInfo(input.SessionID, session.IDCContinuation, "authorization_pending", "device authorization is already pending for this session"),
+			}, nil
+		}
+		session.IDCContinuation = nil
+	}
+
+	proxyURL, err := s.resolveProxyURL(ctx, input.ProxyID, session.ProxyURL)
+	if err != nil {
+		return nil, err
+	}
+	session.ProxyURL = proxyURL
+
+	cfg := resolveKiroIDCContinuationConfig(input, query, loginOption, session)
+	registerResult, err := kiroIDCRegisterClientFunc(ctx, kiroIDCRegisterClientInput{
+		ProxyURL:     proxyURL,
+		ClientName:   cfg.ClientName,
+		RedirectURIs: cfg.RedirectURIs,
+		Scopes:       cfg.Scopes,
+		IssuerURL:    cfg.IssuerURL,
+		GrantTypes:   []string{"authorization_code", kiroIDCDeviceGrantType, "refresh_token"},
+		Region:       cfg.Region,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	deviceResult, err := kiroIDCStartDeviceAuthorizationFunc(ctx, kiroIDCStartDeviceAuthorizationInput{
+		ProxyURL:     proxyURL,
+		ClientID:     registerResult.ClientID,
+		ClientSecret: registerResult.ClientSecret,
+		StartURL:     cfg.StartURL,
+		Region:       cfg.Region,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	continuation := &KiroIDCContinuationSession{
+		LoginOption:             loginOption,
+		ClientID:                registerResult.ClientID,
+		ClientSecret:            registerResult.ClientSecret,
+		DeviceCode:              deviceResult.DeviceCode,
+		UserCode:                deviceResult.UserCode,
+		VerificationURI:         deviceResult.VerificationURI,
+		VerificationURIComplete: firstNonEmptyKiroString(deviceResult.VerificationURIComplete, deviceResult.VerificationURI),
+		StartURL:                cfg.StartURL,
+		IssuerURL:               cfg.IssuerURL,
+		Region:                  cfg.Region,
+		Scopes:                  cfg.Scopes,
+		LoginHint:               cfg.LoginHint,
+		IntervalSeconds:         firstNonZeroKiroInt(deviceResult.Interval, 5),
+		ExpiresAt:               time.Now().Add(time.Duration(firstNonZeroKiroInt(deviceResult.ExpiresIn, 600)) * time.Second),
+		CreatedAt:               time.Now(),
+	}
+	session.IDCContinuation = continuation
+	s.sessionStore.Set(input.SessionID, session)
+
+	return &KiroOAuthProgressResult{
+		Continuation: buildKiroIDCContinuationInfo(input.SessionID, continuation, "authorization_pending", "complete the device authorization in your browser, then call device-complete to retrieve the final Kiro IDC tokens"),
+	}, nil
+}
+
+type kiroIDCContinuationConfig struct {
+	ClientName   string
+	StartURL     string
+	IssuerURL    string
+	Region       string
+	Scopes       []string
+	LoginHint    string
+	RedirectURIs []string
+}
+
+func resolveKiroIDCContinuationConfig(input *KiroExchangeCallbackInput, query url.Values, loginOption string, session *KiroOAuthSession) kiroIDCContinuationConfig {
+	redirectURI := strings.TrimSpace(kiroOAuthSessionRedirectURI(session))
+	startURL := firstNonEmptyKiroString(
+		strings.TrimSpace(query.Get("start_url")),
+		strings.TrimSpace(query.Get("startUrl")),
+		strings.TrimSpace(input.StartURL),
+		kiroIDCDefaultStartURL,
+	)
+	issuerURL := firstNonEmptyKiroString(
+		strings.TrimSpace(query.Get("issuer_url")),
+		strings.TrimSpace(query.Get("issuerUrl")),
+		strings.TrimSpace(input.IssuerURL),
+	)
+	region := firstNonEmptyKiroString(
+		deriveKiroIDCRegionFromIssuerURL(issuerURL),
+		strings.TrimSpace(query.Get("idc_region")),
+		strings.TrimSpace(query.Get("idcRegion")),
+		strings.TrimSpace(query.Get("auth_region")),
+		strings.TrimSpace(query.Get("authRegion")),
+		strings.TrimSpace(query.Get("region")),
+		strings.TrimSpace(input.IDCRegion),
+		kiroIDCDefaultRegion,
+	)
+	clientName := firstNonEmptyKiroString(
+		strings.TrimSpace(input.ClientName),
+		"sub2api Kiro "+strings.ToUpper(strings.TrimSpace(loginOption)),
+	)
+	return kiroIDCContinuationConfig{
+		ClientName: clientName,
+		StartURL:   startURL,
+		IssuerURL:  issuerURL,
+		Region:     region,
+		Scopes:     normalizeKiroScopes(input.Scopes, query),
+		LoginHint: firstNonEmptyKiroString(
+			strings.TrimSpace(input.LoginHint),
+			strings.TrimSpace(query.Get("login_hint")),
+			strings.TrimSpace(query.Get("loginHint")),
+		),
+		RedirectURIs: filterEmptyKiroStrings([]string{redirectURI}),
+	}
+}
+
+func buildKiroIDCContinuationInfo(sessionID string, continuation *KiroIDCContinuationSession, status, message string) *KiroIDCContinuationInfo {
+	if continuation == nil {
+		return nil
+	}
+	info := &KiroIDCContinuationInfo{
+		SessionID:               strings.TrimSpace(sessionID),
+		Status:                  firstNonEmptyKiroString(status, "authorization_pending"),
+		AuthMethod:              "idc",
+		LoginOption:             continuation.LoginOption,
+		StartURL:                continuation.StartURL,
+		IssuerURL:               continuation.IssuerURL,
+		IDCRegion:               continuation.Region,
+		Scopes:                  continuation.Scopes,
+		LoginHint:               continuation.LoginHint,
+		UserCode:                continuation.UserCode,
+		VerificationURI:         continuation.VerificationURI,
+		VerificationURIComplete: continuation.VerificationURIComplete,
+		IntervalSeconds:         continuation.IntervalSeconds,
+		Message:                 strings.TrimSpace(message),
+	}
+	if !continuation.ExpiresAt.IsZero() {
+		info.ExpiresAt = continuation.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	return info
+}
+
 func exchangeKiroCodeForToken(
 	ctx context.Context,
 	code string,
@@ -588,6 +981,149 @@ func exchangeKiroCodeForToken(
 		return nil, fmt.Errorf("invalid kiro oauth token response shape")
 	}
 	return obj, nil
+}
+
+func registerKiroIDCClient(ctx context.Context, input kiroIDCRegisterClientInput) (*kiroIDCRegisterClientResult, error) {
+	payload := map[string]any{
+		"clientName": input.ClientName,
+		"clientType": "public",
+		"grantTypes": input.GrantTypes,
+	}
+	if len(input.RedirectURIs) > 0 {
+		payload["redirectUris"] = input.RedirectURIs
+	}
+	if len(input.Scopes) > 0 {
+		payload["scopes"] = input.Scopes
+	}
+	if strings.TrimSpace(input.IssuerURL) != "" {
+		payload["issuerUrl"] = strings.TrimSpace(input.IssuerURL)
+	}
+	endpoint := fmt.Sprintf("https://oidc.%s.amazonaws.com/client/register", firstNonEmptyKiroString(input.Region, kiroIDCDefaultRegion))
+	var out struct {
+		ClientID     string `json:"clientId"`
+		ClientSecret string `json:"clientSecret"`
+	}
+	if err := doKiroIDCJSONRequest(ctx, input.ProxyURL, endpoint, payload, &out, "kiro idc register client"); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(out.ClientID) == "" || strings.TrimSpace(out.ClientSecret) == "" {
+		return nil, fmt.Errorf("kiro idc register client returned empty client credentials")
+	}
+	return &kiroIDCRegisterClientResult{
+		ClientID:     strings.TrimSpace(out.ClientID),
+		ClientSecret: strings.TrimSpace(out.ClientSecret),
+	}, nil
+}
+
+func startKiroIDCDeviceAuthorization(ctx context.Context, input kiroIDCStartDeviceAuthorizationInput) (*kiroIDCStartDeviceAuthorizationResult, error) {
+	payload := map[string]any{
+		"clientId":     input.ClientID,
+		"clientSecret": input.ClientSecret,
+		"startUrl":     input.StartURL,
+	}
+	endpoint := fmt.Sprintf("https://oidc.%s.amazonaws.com/device_authorization", firstNonEmptyKiroString(input.Region, kiroIDCDefaultRegion))
+	var out struct {
+		DeviceCode              string `json:"deviceCode"`
+		UserCode                string `json:"userCode"`
+		VerificationURI         string `json:"verificationUri"`
+		VerificationURIComplete string `json:"verificationUriComplete"`
+		ExpiresIn               int64  `json:"expiresIn"`
+		Interval                int64  `json:"interval"`
+	}
+	if err := doKiroIDCJSONRequest(ctx, input.ProxyURL, endpoint, payload, &out, "kiro idc start device authorization"); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(out.DeviceCode) == "" {
+		return nil, fmt.Errorf("kiro idc start device authorization returned empty device code")
+	}
+	return &kiroIDCStartDeviceAuthorizationResult{
+		DeviceCode:              strings.TrimSpace(out.DeviceCode),
+		UserCode:                strings.TrimSpace(out.UserCode),
+		VerificationURI:         strings.TrimSpace(out.VerificationURI),
+		VerificationURIComplete: strings.TrimSpace(out.VerificationURIComplete),
+		ExpiresIn:               out.ExpiresIn,
+		Interval:                out.Interval,
+	}, nil
+}
+
+func completeKiroIDCDeviceAuthorization(ctx context.Context, input kiroIDCCompleteDeviceAuthorizationInput) (map[string]any, error) {
+	payload := map[string]any{
+		"clientId":     input.ClientID,
+		"clientSecret": input.ClientSecret,
+		"grantType":    kiroIDCDeviceGrantType,
+		"deviceCode":   input.DeviceCode,
+	}
+	endpoint := fmt.Sprintf("https://oidc.%s.amazonaws.com/token", firstNonEmptyKiroString(input.Region, kiroIDCDefaultRegion))
+	var out map[string]any
+	if err := doKiroIDCJSONRequest(ctx, input.ProxyURL, endpoint, payload, &out, "kiro idc create token"); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func doKiroIDCJSONRequest(ctx context.Context, proxyURL string, endpoint string, payload any, out any, operation string) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("%s: %w", operation, err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(string(body)))
+	if err != nil {
+		return fmt.Errorf("%s: %w", operation, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", kiroOAuthDefaultUserAgent)
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	if transport, err := buildKiroOAuthTransport(proxyURL); err == nil {
+		client.Transport = transport
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("%s: %w", operation, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("%s: failed to read response: %w", operation, err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return buildKiroIDCAPIError(operation, resp.StatusCode, bodyBytes)
+	}
+	if out == nil {
+		return nil
+	}
+	if err := json.Unmarshal(bodyBytes, out); err != nil {
+		return fmt.Errorf("%s: failed to decode response: %w", operation, err)
+	}
+	return nil
+}
+
+func buildKiroIDCAPIError(operation string, statusCode int, body []byte) error {
+	errCode := ""
+	errDesc := strings.TrimSpace(string(body))
+	var payload map[string]any
+	if json.Unmarshal(body, &payload) == nil {
+		errCode = firstNonEmptyKiroString(
+			pickKiroString(payload, []string{"error"}),
+			pickKiroString(payload, []string{"Error", "Code"}),
+		)
+		errDesc = firstNonEmptyKiroString(
+			pickKiroString(payload, []string{"error_description"}),
+			pickKiroString(payload, []string{"message"}),
+			pickKiroString(payload, []string{"Error", "Message"}),
+			errDesc,
+		)
+	}
+	return &kiroIDCAPIError{
+		Operation:        strings.TrimSpace(operation),
+		StatusCode:       statusCode,
+		ErrorCode:        errCode,
+		ErrorDescription: errDesc,
+	}
 }
 
 func buildKiroOAuthTransport(proxyURL string) (*http.Transport, error) {
@@ -732,6 +1268,55 @@ func normalizeKiroProvider(value string) string {
 	default:
 		return strings.TrimSpace(value)
 	}
+}
+
+func normalizeKiroScopes(explicit []string, query url.Values) []string {
+	if len(explicit) > 0 {
+		return filterEmptyKiroStrings(explicit)
+	}
+	scopeText := firstNonEmptyKiroString(query.Get("scopes"), query.Get("scope"))
+	if scopeText == "" {
+		return nil
+	}
+	parts := strings.FieldsFunc(scopeText, func(r rune) bool {
+		return r == ' ' || r == ','
+	})
+	return filterEmptyKiroStrings(parts)
+}
+
+func deriveKiroIDCRegionFromIssuerURL(issuerURL string) string {
+	trimmed := strings.TrimSpace(issuerURL)
+	if trimmed == "" {
+		return ""
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return ""
+	}
+	host := strings.TrimSpace(parsed.Host)
+	if !strings.HasPrefix(host, "oidc.") || !strings.HasSuffix(host, ".amazonaws.com") {
+		return ""
+	}
+	return strings.TrimSuffix(strings.TrimPrefix(host, "oidc."), ".amazonaws.com")
+}
+
+func firstNonZeroKiroInt(values ...int64) int64 {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func filterEmptyKiroStrings(values []string) []string {
+	filtered := make([]string, 0, len(values))
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			filtered = append(filtered, trimmed)
+		}
+	}
+	return filtered
 }
 
 func profileARNRegion(profileARN string) string {

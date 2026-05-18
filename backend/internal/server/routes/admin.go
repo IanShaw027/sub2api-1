@@ -458,6 +458,7 @@ func registerKiroOAuthRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	{
 		kiro.POST("/oauth/auth-url", h.Admin.KiroOAuth.GenerateAuthURL)
 		kiro.POST("/oauth/exchange-callback", h.Admin.KiroOAuth.ExchangeCallback)
+		kiro.POST("/oauth/device-complete", h.Admin.KiroOAuth.DeviceComplete)
 		kiro.POST("/oauth/refresh-token", h.Admin.KiroOAuth.RefreshToken)
 	}
 }

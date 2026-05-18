@@ -51,3 +51,41 @@ func TestConvertAnthropicRequestWithModel_DoesNotInjectSyntheticAssistantOrPolic
 		t.Fatalf("unexpected injected chunked policy in history content: %q", content)
 	}
 }
+
+func TestConvertAnthropicRequestWithModel_FiltersUnsupportedServerTools(t *testing.T) {
+	input := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[{"role":"user","content":"hello"}],
+		"tools":[
+			{"type":"server_tool","name":"web_search","description":"search"},
+			{"type":"web_search_20250305","name":"web_search_20250305","description":"search v2"},
+			{"name":"local_tool","description":"local","input_schema":{"type":"object"}}
+		]
+	}`)
+
+	result, err := ConvertAnthropicRequestWithModel(input, "")
+	if err != nil {
+		t.Fatalf("ConvertAnthropicRequestWithModel error: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(result.Body, &payload); err != nil {
+		t.Fatalf("unmarshal converted payload: %v", err)
+	}
+
+	state := payload["conversationState"].(map[string]any)
+	current := state["currentMessage"].(map[string]any)
+	userMsg := current["userInputMessage"].(map[string]any)
+	ctx := userMsg["userInputMessageContext"].(map[string]any)
+	tools, ok := ctx["tools"].([]any)
+	if !ok {
+		t.Fatalf("tools has type %T, want []any", ctx["tools"])
+	}
+	if len(tools) != 1 {
+		t.Fatalf("tools length = %d, want 1", len(tools))
+	}
+	spec := tools[0].(map[string]any)["toolSpecification"].(map[string]any)
+	if got := spec["name"]; got != "local_tool" {
+		t.Fatalf("tool name = %v, want local_tool", got)
+	}
+}

@@ -29,6 +29,7 @@ func TestRegisterAdminRoutesIncludesKiroOAuthEndpoints(t *testing.T) {
 	expected := map[string]struct{}{
 		"POST /api/v1/admin/kiro/oauth/auth-url":          {},
 		"POST /api/v1/admin/kiro/oauth/exchange-callback": {},
+		"POST /api/v1/admin/kiro/oauth/device-complete":   {},
 		"POST /api/v1/admin/kiro/oauth/refresh-token":     {},
 	}
 

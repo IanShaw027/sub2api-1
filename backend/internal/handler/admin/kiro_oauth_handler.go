@@ -43,9 +43,15 @@ func (h *KiroOAuthHandler) GenerateAuthURL(c *gin.Context) {
 }
 
 type KiroExchangeCallbackRequest struct {
-	SessionID   string `json:"session_id" binding:"required"`
-	CallbackURL string `json:"callback_url" binding:"required"`
-	ProxyID     *int64 `json:"proxy_id"`
+	SessionID   string   `json:"session_id" binding:"required"`
+	CallbackURL string   `json:"callback_url" binding:"required"`
+	ProxyID     *int64   `json:"proxy_id"`
+	StartURL    string   `json:"start_url"`
+	IssuerURL   string   `json:"issuer_url"`
+	IDCRegion   string   `json:"idc_region"`
+	Scopes      []string `json:"scopes"`
+	LoginHint   string   `json:"login_hint"`
+	ClientName  string   `json:"client_name"`
 }
 
 func (h *KiroOAuthHandler) ExchangeCallback(c *gin.Context) {
@@ -59,17 +65,51 @@ func (h *KiroOAuthHandler) ExchangeCallback(c *gin.Context) {
 		return
 	}
 
-	tokenInfo, err := h.oauthService.ExchangeCallback(c.Request.Context(), &service.KiroExchangeCallbackInput{
+	result, err := h.oauthService.ExchangeCallbackOrStartContinuation(c.Request.Context(), &service.KiroExchangeCallbackInput{
 		SessionID:   strings.TrimSpace(req.SessionID),
 		CallbackURL: strings.TrimSpace(req.CallbackURL),
 		ProxyID:     req.ProxyID,
+		StartURL:    strings.TrimSpace(req.StartURL),
+		IssuerURL:   strings.TrimSpace(req.IssuerURL),
+		IDCRegion:   strings.TrimSpace(req.IDCRegion),
+		Scopes:      req.Scopes,
+		LoginHint:   strings.TrimSpace(req.LoginHint),
+		ClientName:  strings.TrimSpace(req.ClientName),
 	})
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
 
-	response.Success(c, tokenInfo)
+	response.Success(c, kiroExchangeCallbackResponseData(result))
+}
+
+type KiroDeviceCompleteRequest struct {
+	SessionID string `json:"session_id" binding:"required"`
+	ProxyID   *int64 `json:"proxy_id"`
+}
+
+func (h *KiroOAuthHandler) DeviceComplete(c *gin.Context) {
+	var req KiroDeviceCompleteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "请求无效: "+err.Error())
+		return
+	}
+	if h == nil || h.oauthService == nil {
+		response.InternalError(c, "Kiro OAuth service is not configured")
+		return
+	}
+
+	result, err := h.oauthService.CompleteDeviceAuthorization(c.Request.Context(), &service.KiroDeviceCompleteInput{
+		SessionID: strings.TrimSpace(req.SessionID),
+		ProxyID:   req.ProxyID,
+	})
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, result)
 }
 
 type KiroRefreshTokenRequest struct {
@@ -142,4 +182,11 @@ func stringCredentialValue(credentials map[string]any, key string) string {
 		return text
 	}
 	return ""
+}
+
+func kiroExchangeCallbackResponseData(result *service.KiroOAuthProgressResult) any {
+	if result != nil && result.TokenInfo != nil && result.Continuation == nil {
+		return result.TokenInfo
+	}
+	return result
 }

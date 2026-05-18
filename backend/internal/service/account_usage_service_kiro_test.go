@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -92,6 +93,36 @@ func TestAccountUsageService_PersistRefreshedKiroCredentials_InvalidatesTokenCac
 	require.Equal(t, newCreds, repo.updatedAcct.Credentials)
 	require.Equal(t, "fresh-token", account.GetCredential("access_token"))
 	require.Equal(t, 1, invalidator.calls)
+}
+
+func TestAccountUsageService_PersistRefreshedKiroCredentials_TokenCacheInvalidationFailureIsBestEffort(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		ID:       880,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":  "",
+			"refresh_token": "refresh-token",
+		},
+	}
+	repo := &kiroUsageAccountRepo{}
+	invalidator := &tokenCacheInvalidatorStub{err: errors.New("cache unavailable")}
+	svc := &AccountUsageService{
+		accountRepo:           repo,
+		tokenCacheInvalidator: invalidator,
+	}
+
+	err := svc.persistRefreshedKiroCredentials(context.Background(), account, map[string]any{
+		"access_token":  "fresh-token",
+		"refresh_token": "fresh-refresh-token",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.updateCalls)
+	require.Equal(t, 1, invalidator.calls)
+	require.Equal(t, "fresh-token", account.GetCredential("access_token"))
 }
 
 func TestAccountUsageService_PersistRefreshedKiroCredentials_InvalidatesUsageCache(t *testing.T) {
@@ -391,4 +422,172 @@ func TestAccountUsageService_GetUsage_KiroRefreshUsesAssignedProxy(t *testing.T)
 	require.Contains(t, usageRawQuery, "profileArn=")
 	require.Equal(t, "fresh-access-token", account.GetCredential("access_token"))
 	require.Equal(t, "arn:aws:kiro:us-east-1:123456789012:profile/test", account.GetCredential("profile_arn"))
+}
+
+func TestAccountUsageService_GetUsage_KiroRetriesInvalidTokenWithForcedRefresh(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		ID:       71,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":  "cached-stale-token",
+			"refresh_token": "refresh-token",
+		},
+	}
+	repo := &kiroUsageAccountRepo{account: account}
+	invalidator := &tokenCacheInvalidatorStub{}
+	upstream := &kiroHTTPUpstreamRecorder{
+		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+			switch {
+			case strings.Contains(req.URL.String(), "/refreshToken"):
+				require.Equal(t, "refresh-token", account.GetCredential("refresh_token"))
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body: io.NopCloser(strings.NewReader(`{
+						"accessToken":"fresh-access-token",
+						"refreshToken":"fresh-refresh-token",
+						"profileArn":"arn:aws:kiro:us-east-1:123456789012:profile/test",
+						"expiresIn":3600
+					}`)),
+					Header: make(http.Header),
+				}, nil
+			default:
+				auth := req.Header.Get("Authorization")
+				if auth == "Bearer cached-stale-token" {
+					return &http.Response{
+						StatusCode: http.StatusUnauthorized,
+						Body:       io.NopCloser(strings.NewReader(`{"error":"invalid_token","message":"The access token expired"}`)),
+						Header:     make(http.Header),
+					}, nil
+				}
+				require.Equal(t, "Bearer fresh-access-token", auth)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body: io.NopCloser(strings.NewReader(`{
+						"subscriptionInfo":{"subscriptionTitle":"Kiro Pro"},
+						"usageBreakdownList":[{"currentUsageWithPrecision":12.5,"usageLimitWithPrecision":100,"nextDateReset":4102444800}]
+					}`)),
+					Header: make(http.Header),
+				}, nil
+			}
+		},
+	}
+	svc := &AccountUsageService{
+		accountRepo: repo,
+		usageFetcher: &kiroUsageFetcherStub{
+			upstream: upstream,
+		},
+		cache:                 NewUsageCache(),
+		tokenCacheInvalidator: invalidator,
+	}
+
+	usage, err := svc.GetUsage(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.NotNil(t, usage)
+	require.Equal(t, "Kiro Pro", usage.KiroSubscriptionTitle)
+	require.Equal(t, "fresh-access-token", account.GetCredential("access_token"))
+	require.Equal(t, 3, upstream.calls)
+	require.Equal(t, 2, invalidator.calls)
+	require.Equal(t, 1, repo.updateCalls)
+}
+
+func TestAccountUsageService_GetUsage_KiroForcedRefreshFailureReturnsDegradedUsage(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		ID:       72,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":  "cached-stale-token",
+			"refresh_token": "refresh-token",
+		},
+	}
+	repo := &kiroUsageAccountRepo{account: account}
+	invalidator := &tokenCacheInvalidatorStub{}
+	upstream := &kiroHTTPUpstreamRecorder{
+		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+			if strings.Contains(req.URL.String(), "/refreshToken") {
+				return nil, errors.New("refresh failed")
+			}
+			return &http.Response{
+				StatusCode: http.StatusUnauthorized,
+				Body:       io.NopCloser(strings.NewReader(`{"error":"invalid_token","message":"The access token expired"}`)),
+				Header:     make(http.Header),
+			}, nil
+		},
+	}
+	svc := &AccountUsageService{
+		accountRepo: repo,
+		usageFetcher: &kiroUsageFetcherStub{
+			upstream: upstream,
+		},
+		cache:                 NewUsageCache(),
+		tokenCacheInvalidator: invalidator,
+	}
+
+	usage, err := svc.GetUsage(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.NotNil(t, usage)
+	require.False(t, usage.NeedsReauth)
+	require.Equal(t, errorCodeNetworkError, usage.ErrorCode)
+	require.Contains(t, usage.Error, "kiro usage refresh failed after auth retry")
+	require.Contains(t, usage.Error, "refresh failed")
+	require.Equal(t, 2, upstream.calls)
+	require.Equal(t, 1, invalidator.calls)
+	require.Equal(t, 0, repo.updateCalls)
+}
+
+func TestAccountUsageService_GetUsage_KiroForcedRefreshAuthFailureReturnsReauthUsage(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		ID:       73,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":  "cached-stale-token",
+			"refresh_token": "refresh-token",
+		},
+	}
+	repo := &kiroUsageAccountRepo{account: account}
+	invalidator := &tokenCacheInvalidatorStub{}
+	upstream := &kiroHTTPUpstreamRecorder{
+		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+			if strings.Contains(req.URL.String(), "/refreshToken") {
+				return &http.Response{
+					StatusCode: http.StatusBadRequest,
+					Body:       io.NopCloser(strings.NewReader(`{"error":"invalid_grant","message":"refresh token invalid"}`)),
+					Header:     make(http.Header),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusUnauthorized,
+				Body:       io.NopCloser(strings.NewReader(`{"error":"invalid_token","message":"The access token expired"}`)),
+				Header:     make(http.Header),
+			}, nil
+		},
+	}
+	svc := &AccountUsageService{
+		accountRepo: repo,
+		usageFetcher: &kiroUsageFetcherStub{
+			upstream: upstream,
+		},
+		cache:                 NewUsageCache(),
+		tokenCacheInvalidator: invalidator,
+	}
+
+	usage, err := svc.GetUsage(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.NotNil(t, usage)
+	require.True(t, usage.NeedsReauth)
+	require.Equal(t, errorCodeUnauthenticated, usage.ErrorCode)
+	require.Equal(t, 2, upstream.calls)
+	require.Equal(t, 1, invalidator.calls)
+	require.Equal(t, 0, repo.updateCalls)
 }

@@ -1,0 +1,233 @@
+//go:build unit
+
+package service
+
+import (
+	"bytes"
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/websearch"
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
+)
+
+func TestKiroGatewayService_Forward_EmulatesWebSearchBeforeKiroUpstream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	manager := websearch.NewManager([]websearch.ProviderConfig{{Type: websearch.ProviderTypeBrave, APIKey: "key"}}, nil)
+	SetWebSearchManager(manager)
+	defer SetWebSearchManager(nil)
+	setGlobalWebSearchConfig(&WebSearchEmulationConfig{
+		Enabled:   true,
+		Providers: []WebSearchProviderConfig{{Type: "brave", APIKey: "key"}},
+	})
+	defer clearGlobalWebSearchConfig()
+
+	upstream := &kiroHTTPUpstreamRecorder{}
+	channelSvc := newChannelServiceWithCache(77, &Channel{
+		ID:     9,
+		Status: StatusActive,
+		FeaturesConfig: map[string]any{
+			featureKeyWebSearchEmulation: map[string]any{
+				PlatformKiro: true,
+			},
+		},
+	})
+	svc := &KiroGatewayService{
+		httpUpstream:   upstream,
+		settingService: newSettingServiceForWebSearchTest(true),
+		channelService: channelSvc,
+	}
+	groupID := int64(77)
+
+	require.True(t, svc.shouldEmulateWebSearch(context.Background(), &Account{
+		ID:       501,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+		Extra:    map[string]any{featureKeyWebSearchEmulation: WebSearchModeDefault},
+	}, &ParsedRequest{
+		GroupID: &groupID,
+		Model:   "claude-sonnet-4-5-20250929",
+		Body: []byte(`{
+			"model":"claude-sonnet-4-5-20250929",
+			"tools":[{"type":"web_search_20250305"}],
+			"messages":[{"role":"user","content":[{"type":"text","text":"query"}]}]
+		}`),
+	}))
+	require.Zero(t, upstream.calls)
+}
+
+func TestKiroGatewayService_Forward_RetriesOnceAfterInvalidTokenResponse(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	upstream := &kiroHTTPUpstreamRecorder{
+		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+			auth := req.Header.Get("Authorization")
+			if auth == "Bearer stale-access" {
+				return &http.Response{
+					StatusCode: http.StatusUnauthorized,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(`{"message":"invalid token"}`)),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(bytes.NewReader(buildKiroTestFrame(t, map[string]string{
+					":message-type": "event",
+					":event-type":   "assistantResponseEvent",
+				}, map[string]any{"content": "hello after refresh"}))),
+			}, nil
+		},
+	}
+	repo := &refreshAPIAccountRepo{
+		account: &Account{
+			ID:       610,
+			Platform: PlatformKiro,
+			Type:     AccountTypeOAuth,
+			Credentials: map[string]any{
+				"access_token":  "fresh-access",
+				"refresh_token": "fresh-refresh",
+				"expires_at":    time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+			},
+		},
+	}
+	provider := NewKiroTokenProvider(repo, nil)
+	provider.executor = &refreshAPIExecutorStub{
+		needsRefresh: true,
+		credentials: map[string]any{
+			"access_token":  "fresh-access",
+			"refresh_token": "fresh-refresh",
+			"expires_at":    time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+		},
+	}
+	svc := &KiroGatewayService{
+		httpUpstream:  upstream,
+		tokenProvider: provider,
+	}
+
+	result, err := svc.Forward(context.Background(), c, &Account{
+		ID:       610,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":  "stale-access",
+			"refresh_token": "stale-refresh",
+			"expires_at":    time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+		},
+	}, &ParsedRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Body: []byte(`{
+			"model":"claude-sonnet-4-5-20250929",
+			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
+		}`),
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 2, upstream.calls)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "hello after refresh")
+}
+
+func TestKiroGatewayService_Forward_InvalidTokenRetryFailureDoesNotLeakRetryError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusUnauthorized,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"message":"invalid token"}`)),
+		},
+	}
+	svc := &KiroGatewayService{
+		httpUpstream: upstream,
+	}
+
+	result, err := svc.Forward(context.Background(), c, &Account{
+		ID:       611,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":  "stale-access",
+			"refresh_token": "stale-refresh",
+		},
+	}, &ParsedRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Body: []byte(`{
+			"model":"claude-sonnet-4-5-20250929",
+			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
+		}`),
+	})
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	require.NotContains(t, rec.Body.String(), "retry_error")
+	require.NotContains(t, err.Error(), "retry_error")
+}
+
+func TestKiroGatewayService_Forward_WebSearchMalformedRequestDoesNotAcceptEarly(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	manager := websearch.NewManager([]websearch.ProviderConfig{{Type: websearch.ProviderTypeBrave, APIKey: "key"}}, nil)
+	SetWebSearchManager(manager)
+	defer SetWebSearchManager(nil)
+	setGlobalWebSearchConfig(&WebSearchEmulationConfig{
+		Enabled:   true,
+		Providers: []WebSearchProviderConfig{{Type: "brave", APIKey: "key"}},
+	})
+	defer clearGlobalWebSearchConfig()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	channelSvc := newChannelServiceWithCache(77, &Channel{
+		ID:     9,
+		Status: StatusActive,
+		FeaturesConfig: map[string]any{
+			featureKeyWebSearchEmulation: map[string]any{
+				PlatformKiro: true,
+			},
+		},
+	})
+	svc := &KiroGatewayService{
+		settingService: newSettingServiceForWebSearchTest(true),
+		channelService: channelSvc,
+	}
+	groupID := int64(77)
+	accepted := 0
+
+	result, err := svc.Forward(context.Background(), c, &Account{
+		ID:       612,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+		Extra:    map[string]any{featureKeyWebSearchEmulation: WebSearchModeDefault},
+	}, &ParsedRequest{
+		GroupID: &groupID,
+		Model:   "claude-sonnet-4-5-20250929",
+		Body: []byte(`{
+			"model":"claude-sonnet-4-5-20250929",
+			"tools":[{"type":"web_search_20250305"}],
+			"messages":[{"role":"assistant","content":[{"type":"text","text":"query"}]}]
+		}`),
+		OnUpstreamAccepted: func() {
+			accepted++
+		},
+	})
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Contains(t, err.Error(), "no query found")
+	require.Equal(t, 0, accepted)
+}

@@ -254,6 +254,210 @@ func TestKiroOAuthServiceExchangeCallbackUsesSigninPathForManualQueryOnlyIDCInpu
 	}
 }
 
+func TestKiroOAuthServiceExchangeCallbackOrStartContinuationStartsIDCFlowWithoutCode(t *testing.T) {
+	svc := NewKiroOAuthService(&kiroDefaultProxyRepoStub{}, nil, nil, nil)
+	svc.usageService = nil
+	defer svc.Stop()
+
+	originalFindCallbackBaseURL := kiroFindCallbackBaseURLFunc
+	kiroFindCallbackBaseURLFunc = func() (string, error) {
+		return "http://localhost:3128", nil
+	}
+	originalRegister := kiroIDCRegisterClientFunc
+	originalStart := kiroIDCStartDeviceAuthorizationFunc
+	t.Cleanup(func() {
+		kiroFindCallbackBaseURLFunc = originalFindCallbackBaseURL
+		kiroIDCRegisterClientFunc = originalRegister
+		kiroIDCStartDeviceAuthorizationFunc = originalStart
+	})
+
+	kiroIDCRegisterClientFunc = func(ctx context.Context, input kiroIDCRegisterClientInput) (*kiroIDCRegisterClientResult, error) {
+		if input.Region != "us-east-1" {
+			t.Fatalf("unexpected register region: %q", input.Region)
+		}
+		return &kiroIDCRegisterClientResult{
+			ClientID:     "client-1",
+			ClientSecret: "secret-1",
+		}, nil
+	}
+	kiroIDCStartDeviceAuthorizationFunc = func(ctx context.Context, input kiroIDCStartDeviceAuthorizationInput) (*kiroIDCStartDeviceAuthorizationResult, error) {
+		if input.ClientID != "client-1" || input.ClientSecret != "secret-1" {
+			t.Fatalf("unexpected client credentials: %q %q", input.ClientID, input.ClientSecret)
+		}
+		return &kiroIDCStartDeviceAuthorizationResult{
+			DeviceCode:              "device-code-1",
+			UserCode:                "USER-CODE",
+			VerificationURI:         "https://device.example.com",
+			VerificationURIComplete: "https://device.example.com/complete",
+			ExpiresIn:               900,
+			Interval:                5,
+		}, nil
+	}
+
+	result, err := svc.GenerateAuthURL(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("GenerateAuthURL returned error: %v", err)
+	}
+	session, ok := svc.sessionStore.Get(result.SessionID)
+	if !ok {
+		t.Fatal("expected kiro oauth session to be stored")
+	}
+
+	progress, err := svc.ExchangeCallbackOrStartContinuation(context.Background(), &KiroExchangeCallbackInput{
+		SessionID:   result.SessionID,
+		CallbackURL: "http://localhost:3128/signin/callback?state=" + url.QueryEscape(session.State) + "&login_option=awsidc",
+	})
+	if err != nil {
+		t.Fatalf("ExchangeCallbackOrStartContinuation returned error: %v", err)
+	}
+	if progress == nil || progress.Continuation == nil {
+		t.Fatal("expected continuation result")
+	}
+	if progress.TokenInfo != nil {
+		t.Fatal("did not expect token info during continuation start")
+	}
+	if progress.Continuation.AuthMethod != "idc" {
+		t.Fatalf("continuation auth_method = %q, want idc", progress.Continuation.AuthMethod)
+	}
+	if progress.Continuation.Status != "authorization_pending" {
+		t.Fatalf("continuation status = %q, want authorization_pending", progress.Continuation.Status)
+	}
+
+	stored, ok := svc.sessionStore.Get(result.SessionID)
+	if !ok || stored.IDCContinuation == nil {
+		t.Fatal("expected continuation session to be stored")
+	}
+	if stored.IDCContinuation.ClientID != "client-1" || stored.IDCContinuation.ClientSecret != "secret-1" {
+		t.Fatalf("stored continuation client credentials mismatch: %#v", stored.IDCContinuation)
+	}
+}
+
+func TestKiroOAuthServiceCompleteDeviceAuthorizationReturnsFinalIDCTokenInfo(t *testing.T) {
+	svc := NewKiroOAuthService(&kiroDefaultProxyRepoStub{}, nil, nil, nil)
+	svc.usageService = nil
+	defer svc.Stop()
+
+	originalComplete := kiroIDCCompleteDeviceAuthorizationFunc
+	t.Cleanup(func() {
+		kiroIDCCompleteDeviceAuthorizationFunc = originalComplete
+	})
+
+	kiroIDCCompleteDeviceAuthorizationFunc = func(ctx context.Context, input kiroIDCCompleteDeviceAuthorizationInput) (map[string]any, error) {
+		if input.ClientID != "client-1" || input.ClientSecret != "secret-1" || input.DeviceCode != "device-code-1" {
+			t.Fatalf("unexpected completion input: %#v", input)
+		}
+		return map[string]any{
+			"accessToken":  "access-1",
+			"refreshToken": "refresh-1",
+			"expiresIn":    int64(3600),
+		}, nil
+	}
+
+	svc.sessionStore.Set("session-device-complete", &KiroOAuthSession{
+		State:           "state-1",
+		CodeVerifier:    "verifier-1",
+		RedirectURI:     "http://localhost:3128",
+		CallbackBaseURL: "http://localhost:3128",
+		CreatedAt:       time.Now(),
+		IDCContinuation: &KiroIDCContinuationSession{
+			LoginOption:     "awsidc",
+			ClientID:        "client-1",
+			ClientSecret:    "secret-1",
+			DeviceCode:      "device-code-1",
+			Region:          "us-east-1",
+			IssuerURL:       "https://oidc.us-east-1.amazonaws.com",
+			Scopes:          []string{"openid", "profile"},
+			LoginHint:       "dev@example.com",
+			IntervalSeconds: 5,
+			ExpiresAt:       time.Now().Add(10 * time.Minute),
+			CreatedAt:       time.Now(),
+		},
+	})
+
+	progress, err := svc.CompleteDeviceAuthorization(context.Background(), &KiroDeviceCompleteInput{
+		SessionID: "session-device-complete",
+	})
+	if err != nil {
+		t.Fatalf("CompleteDeviceAuthorization returned error: %v", err)
+	}
+	if progress == nil || progress.TokenInfo == nil {
+		t.Fatal("expected token info result")
+	}
+	if progress.Continuation != nil {
+		t.Fatal("did not expect continuation result after successful completion")
+	}
+	if progress.TokenInfo.AuthMethod != "idc" {
+		t.Fatalf("token auth_method = %q, want idc", progress.TokenInfo.AuthMethod)
+	}
+	if progress.TokenInfo.ClientID != "client-1" || progress.TokenInfo.ClientSecret != "secret-1" {
+		t.Fatalf("token client credentials mismatch: %#v", progress.TokenInfo)
+	}
+	if progress.TokenInfo.IssuerURL != "https://oidc.us-east-1.amazonaws.com" {
+		t.Fatalf("issuer_url mismatch: %q", progress.TokenInfo.IssuerURL)
+	}
+	if progress.TokenInfo.LoginHint != "dev@example.com" {
+		t.Fatalf("login_hint mismatch: %q", progress.TokenInfo.LoginHint)
+	}
+	if _, ok := svc.sessionStore.Get("session-device-complete"); ok {
+		t.Fatal("expected session to be deleted after successful device completion")
+	}
+}
+
+func TestKiroOAuthServiceCompleteDeviceAuthorizationReturnsPendingContinuation(t *testing.T) {
+	svc := NewKiroOAuthService(&kiroDefaultProxyRepoStub{}, nil, nil, nil)
+	svc.usageService = nil
+	defer svc.Stop()
+
+	originalComplete := kiroIDCCompleteDeviceAuthorizationFunc
+	t.Cleanup(func() {
+		kiroIDCCompleteDeviceAuthorizationFunc = originalComplete
+	})
+
+	kiroIDCCompleteDeviceAuthorizationFunc = func(ctx context.Context, input kiroIDCCompleteDeviceAuthorizationInput) (map[string]any, error) {
+		return nil, &kiroIDCAPIError{
+			Operation:        "kiro idc create token",
+			StatusCode:       http.StatusBadRequest,
+			ErrorCode:        "authorization_pending",
+			ErrorDescription: "still pending",
+		}
+	}
+
+	svc.sessionStore.Set("session-device-pending", &KiroOAuthSession{
+		State:           "state-1",
+		CodeVerifier:    "verifier-1",
+		RedirectURI:     "http://localhost:3128",
+		CallbackBaseURL: "http://localhost:3128",
+		CreatedAt:       time.Now(),
+		IDCContinuation: &KiroIDCContinuationSession{
+			LoginOption:     "builderid",
+			ClientID:        "client-1",
+			ClientSecret:    "secret-1",
+			DeviceCode:      "device-code-1",
+			Region:          "us-east-1",
+			UserCode:        "USER-CODE",
+			VerificationURI: "https://device.example.com",
+			ExpiresAt:       time.Now().Add(10 * time.Minute),
+			CreatedAt:       time.Now(),
+		},
+	})
+
+	progress, err := svc.CompleteDeviceAuthorization(context.Background(), &KiroDeviceCompleteInput{
+		SessionID: "session-device-pending",
+	})
+	if err != nil {
+		t.Fatalf("CompleteDeviceAuthorization returned error: %v", err)
+	}
+	if progress == nil || progress.Continuation == nil {
+		t.Fatal("expected continuation result")
+	}
+	if progress.Continuation.AuthMethod != "idc" {
+		t.Fatalf("continuation auth_method = %q, want idc", progress.Continuation.AuthMethod)
+	}
+	if progress.Continuation.Status != "authorization_pending" {
+		t.Fatalf("continuation status = %q, want authorization_pending", progress.Continuation.Status)
+	}
+}
+
 func TestKiroOAuthServiceEnrichRefreshedCredentialsUsesAccountProxy(t *testing.T) {
 	proxyID := int64(901)
 	var usageProxyURL string

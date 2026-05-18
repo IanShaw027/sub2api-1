@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 )
@@ -209,6 +210,30 @@ func TestBuildCodexUsageProgressFromExtra_ZerosExpiredWindow(t *testing.T) {
 			t.Fatalf("expected Utilization=0 for expired 7d window, got %v", progress.Utilization)
 		}
 	})
+}
+
+func TestAccountUsageService_GetUsage_APIKeyReturnsBadRequest(t *testing.T) {
+	t.Parallel()
+
+	repo := &stubOpenAIAccountRepo{
+		accounts: []Account{{
+			ID:       38070,
+			Platform: PlatformOpenAI,
+			Type:     AccountTypeAPIKey,
+		}},
+	}
+	svc := &AccountUsageService{
+		accountRepo: repo,
+		cache:       NewUsageCache(),
+	}
+
+	usage, err := svc.GetUsage(context.Background(), 38070)
+	if usage != nil {
+		t.Fatalf("expected nil usage, got %#v", usage)
+	}
+	if !infraerrors.IsBadRequest(err) {
+		t.Fatalf("expected bad request error, got %v", err)
+	}
 }
 
 type geminiUsageLogRepoStub struct {

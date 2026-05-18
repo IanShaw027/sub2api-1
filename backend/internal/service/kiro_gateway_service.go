@@ -17,6 +17,7 @@ import (
 
 	kiropkg "github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/websearch"
 	"github.com/gin-gonic/gin"
 	gocache "github.com/patrickmn/go-cache"
 )
@@ -33,6 +34,7 @@ type KiroGatewayService struct {
 	rateLimitService  *RateLimitService
 	tlsFPProfileSvc   *TLSFingerprintProfileService
 	settingService    *SettingService
+	channelService    *ChannelService
 	fakeCache         *gocache.Cache
 	fakeCacheMu       sync.Mutex
 	fakeCacheStrategy string
@@ -45,6 +47,7 @@ func NewKiroGatewayService(
 	rateLimitService *RateLimitService,
 	tlsFPProfileSvc *TLSFingerprintProfileService,
 	settingService *SettingService,
+	channelService *ChannelService,
 ) *KiroGatewayService {
 	return &KiroGatewayService{
 		httpUpstream:     httpUpstream,
@@ -52,11 +55,16 @@ func NewKiroGatewayService(
 		rateLimitService: rateLimitService,
 		tlsFPProfileSvc:  tlsFPProfileSvc,
 		settingService:   settingService,
+		channelService:   channelService,
 		fakeCache:        gocache.New(kiropkg.DefaultFakeCacheTTL, time.Minute),
 	}
 }
 
 func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest) (*ForwardResult, error) {
+	if s.shouldEmulateWebSearch(ctx, account, parsed) {
+		return s.handleWebSearchEmulation(ctx, c, account, parsed)
+	}
+
 	runtimeSettings := s.resolveKiroRuntimeSettings(ctx)
 	converted, err := s.validateAndConvertRequest(c, account, parsed, runtimeSettings)
 	if err != nil {
@@ -98,7 +106,23 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 		})
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	needsDeferredClose := true
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		if retryResp, retryErr := s.retryInvalidTokenResponse(ctx, account, req, resp.StatusCode, body, runtimeSettings); retryResp != nil {
+			needsDeferredClose = false
+			_ = resp.Body.Close()
+			resp = retryResp
+		} else {
+			_ = retryErr
+			resp.Body = io.NopCloser(bytes.NewReader(body))
+		}
+	}
+	if needsDeferredClose {
+		defer func() { _ = resp.Body.Close() }()
+	} else if resp != nil && resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
@@ -295,6 +319,69 @@ func (s *KiroGatewayService) resolveKiroRuntimeSettings(ctx context.Context) *Ki
 	return DefaultKiroRuntimeSettings()
 }
 
+func (s *KiroGatewayService) shouldEmulateWebSearch(ctx context.Context, account *Account, parsed *ParsedRequest) bool {
+	if s == nil || account == nil || parsed == nil || s.settingService == nil {
+		return false
+	}
+	if getWebSearchManager() == nil || !isOnlyWebSearchToolInBody(parsed.Body) {
+		return false
+	}
+	if !s.settingService.IsWebSearchEmulationEnabled(ctx) {
+		return false
+	}
+	mode := account.GetWebSearchEmulationMode()
+	switch mode {
+	case WebSearchModeEnabled:
+		return true
+	case WebSearchModeDisabled:
+		return false
+	default:
+		if parsed.GroupID == nil || s.channelService == nil {
+			return false
+		}
+		ch, err := s.channelService.GetChannelForGroup(ctx, *parsed.GroupID)
+		if err != nil || ch == nil {
+			return false
+		}
+		return ch.IsWebSearchEmulationEnabled(account.Platform)
+	}
+}
+
+func (s *KiroGatewayService) handleWebSearchEmulation(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	parsed *ParsedRequest,
+) (*ForwardResult, error) {
+	startTime := time.Now()
+	query := extractSearchQueryFromBody(parsed.Body)
+	if query == "" {
+		return nil, fmt.Errorf("web search emulation: no query found in messages")
+	}
+	resp, _, err := doWebSearch(ctx, account, query)
+	if err != nil {
+		if errors.Is(err, websearch.ErrProxyUnavailable) {
+			return nil, &UpstreamFailoverError{
+				StatusCode:   http.StatusBadGateway,
+				ResponseBody: []byte(err.Error()),
+			}
+		}
+		return nil, err
+	}
+	if parsed != nil && parsed.OnUpstreamAccepted != nil {
+		parsed.OnUpstreamAccepted()
+	}
+
+	model := parsed.Model
+	if model == "" {
+		model = defaultWebSearchModel
+	}
+	if parsed.Stream {
+		return writeWebSearchStreamResponse(c, query, resp, model, startTime)
+	}
+	return writeWebSearchNonStreamResponse(c, query, resp, model, startTime)
+}
+
 func writeKiroInvalidRequest(c *gin.Context, err error) {
 	if c == nil || err == nil {
 		return
@@ -315,6 +402,9 @@ func buildKiroGenerateAssistantRequest(ctx context.Context, account *Account, bo
 	if err != nil {
 		return nil, err
 	}
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(body)), nil
+	}
 
 	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
 	machineID := kiropkg.GenerateMachineID(account.GetCredential("machine_id"), "", account.GetCredential("refresh_token"))
@@ -333,6 +423,74 @@ func buildKiroGenerateAssistantRequest(ctx context.Context, account *Account, bo
 	req.Header.Set("amz-sdk-invocation-id", generateRequestID())
 	req.Header.Set("amz-sdk-request", "attempt=1; max=3")
 	return req, nil
+}
+
+func (s *KiroGatewayService) retryInvalidTokenResponse(
+	ctx context.Context,
+	account *Account,
+	req *http.Request,
+	statusCode int,
+	body []byte,
+	runtimeSettings *KiroRuntimeSettings,
+) (*http.Response, error) {
+	if account == nil || account.Platform != PlatformKiro || account.Type != AccountTypeOAuth {
+		return nil, nil
+	}
+	if statusCode != http.StatusUnauthorized && statusCode != http.StatusForbidden {
+		return nil, nil
+	}
+	if !isKiroInvalidTokenResponse(body) {
+		return nil, nil
+	}
+	refreshedAccount, err := s.refreshKiroAccountForRetry(ctx, account)
+	if err != nil {
+		return nil, err
+	}
+	accessToken := refreshedAccount.GetCredential("access_token")
+	if strings.TrimSpace(accessToken) == "" {
+		return nil, errors.New("access_token not found after refresh")
+	}
+	requestBody, err := bodyFromGetBody(req)
+	if err != nil {
+		return nil, err
+	}
+	retryReq, err := s.buildRequest(ctx, refreshedAccount, requestBody, accessToken, runtimeSettings)
+	if err != nil {
+		return nil, err
+	}
+	return s.httpUpstream.DoWithTLS(retryReq, accountProxyURL(refreshedAccount), refreshedAccount.ID, refreshedAccount.Concurrency, s.resolveTLSProfile(refreshedAccount))
+}
+
+func (s *KiroGatewayService) refreshKiroAccountForRetry(ctx context.Context, account *Account) (*Account, error) {
+	if s == nil || s.tokenProvider == nil {
+		return nil, errors.New("kiro token provider is not configured")
+	}
+	return s.tokenProvider.RefreshAccount(ctx, account)
+}
+
+func isKiroInvalidTokenResponse(body []byte) bool {
+	detail := strings.ToLower(strings.TrimSpace(kiroErrorDetailFromBody(body)))
+	if detail == "" {
+		detail = strings.ToLower(strings.TrimSpace(string(body)))
+	}
+	return strings.Contains(detail, "unauthor") ||
+		strings.Contains(detail, "invalid token") ||
+		strings.Contains(detail, "expired token") ||
+		(strings.Contains(detail, "token") && strings.Contains(detail, "expired")) ||
+		strings.Contains(detail, "invalid bearer") ||
+		(strings.Contains(detail, "invalid credential") && strings.Contains(detail, "token"))
+}
+
+func bodyFromGetBody(req *http.Request) ([]byte, error) {
+	if req == nil || req.GetBody == nil {
+		return nil, errors.New("request body is not replayable")
+	}
+	body, err := req.GetBody()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = body.Close() }()
+	return io.ReadAll(body)
 }
 
 func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Context, account *Account, resp *http.Response, parsed *ParsedRequest, converted *kiropkg.ConvertResult, inputTokens int, start time.Time, fakeCachePlan *kiropkg.FakeCachePlan, fakeCacheHit kiropkg.FakeCacheHitState, runtimeSettings *KiroRuntimeSettings) (*ForwardResult, error) {

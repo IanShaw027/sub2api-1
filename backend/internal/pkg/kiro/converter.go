@@ -281,6 +281,9 @@ func convertTools(raw any) []map[string]any {
 	tools := make([]map[string]any, 0, len(items))
 	for _, item := range items {
 		tool, _ := item.(map[string]any)
+		if isUnsupportedServerTool(tool) {
+			continue
+		}
 		name := stringField(tool, "name")
 		if name == "" {
 			continue
@@ -298,6 +301,14 @@ func convertTools(raw any) []map[string]any {
 		})
 	}
 	return tools
+}
+
+func isUnsupportedServerTool(tool map[string]any) bool {
+	toolType := strings.TrimSpace(stringField(tool, "type"))
+	if toolType == "server_tool" {
+		return true
+	}
+	return strings.HasPrefix(toolType, "web_search")
 }
 
 func ensureHistoryTools(history []any, tools []map[string]any) []map[string]any {

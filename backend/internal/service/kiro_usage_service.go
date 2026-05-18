@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
@@ -120,7 +122,7 @@ func (s *KiroUsageService) FetchUsageLimits(ctx context.Context, account *Accoun
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("kiro usage upstream returned %d", resp.StatusCode)
+		return nil, buildKiroUsageUpstreamError(resp)
 	}
 
 	var out KiroUsageLimits
@@ -128,6 +130,33 @@ func (s *KiroUsageService) FetchUsageLimits(ctx context.Context, account *Accoun
 		return nil, err
 	}
 	return &out, nil
+}
+
+func buildKiroUsageUpstreamError(resp *http.Response) error {
+	if resp == nil {
+		return fmt.Errorf("kiro usage upstream returned invalid response")
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("kiro usage upstream returned %d", resp.StatusCode)
+	}
+	detail := strings.TrimSpace(string(body))
+	if detail == "" {
+		return fmt.Errorf("kiro usage upstream returned %d", resp.StatusCode)
+	}
+
+	var payload map[string]any
+	if json.Unmarshal(body, &payload) == nil {
+		parts := []string{
+			firstNonEmptyStringValue(payload, "error"),
+			firstNonEmptyStringValue(payload, "error_description", "errorDescription", "message"),
+		}
+		if joined := strings.TrimSpace(strings.Join(filterEmptyStrings(parts), ": ")); joined != "" {
+			detail = joined
+		}
+	}
+
+	return fmt.Errorf("kiro usage upstream returned %d: %s", resp.StatusCode, detail)
 }
 
 func (s *KiroUsageService) prepareAccount(ctx context.Context, account *Account) *Account {

@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	httppool "github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
 	openaipkg "github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -473,7 +474,10 @@ func (s *AccountUsageService) GetUsage(ctx context.Context, accountID int64) (*U
 	}
 
 	// API Key账号不支持usage查询
-	return nil, fmt.Errorf("account type %s does not support usage query", account.Type)
+	return nil, infraerrors.BadRequest(
+		"ACCOUNT_USAGE_UNSUPPORTED",
+		fmt.Sprintf("account type %s does not support usage query", account.Type),
+	)
 }
 
 func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account) (*UsageInfo, error) {
@@ -492,10 +496,30 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 			}
 		}
 	}
-	loadUsage := func(fetchCtx context.Context) (*UsageInfo, error) {
+	var loadUsage func(fetchCtx context.Context, forceRefresh bool) (*UsageInfo, error)
+	loadUsage = func(fetchCtx context.Context, forceRefresh bool) (*UsageInfo, error) {
 		kiroHTTPUpstream := s.kiroHTTPUpstream()
 		accessToken := ""
-		if s.kiroTokenProvider != nil {
+		if forceRefresh {
+			if err := s.invalidateKiroTokenCache(fetchCtx, account); err != nil {
+				log.Printf("warning: failed to invalidate Kiro token cache before usage refresh for account %d: %v", account.ID, err)
+			}
+			refresher := NewKiroTokenRefresher().
+				WithTransport(kiroHTTPUpstream, s.tlsFPProfileService).
+				WithSettingService(s.settingService).
+				WithProxyRepo(s.proxyRepo)
+			newCreds, err := refresher.Refresh(fetchCtx, account)
+			if err != nil {
+				if shouldRetryKiroUsageWithForcedRefresh(err) {
+					return buildKiroDegradedUsage(fmt.Errorf("kiro usage upstream returned 401: %w", err)), nil
+				}
+				return buildKiroDegradedUsage(fmt.Errorf("kiro usage refresh failed after auth retry: %w", err)), nil
+			}
+			if err := s.persistRefreshedKiroCredentials(fetchCtx, account, newCreds); err != nil {
+				return nil, err
+			}
+			accessToken = account.GetCredential("access_token")
+		} else if s.kiroTokenProvider != nil {
 			var err error
 			accessToken, err = s.kiroTokenProvider.GetAccessToken(fetchCtx, account)
 			if err != nil {
@@ -525,6 +549,9 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 			WithProxyRepo(s.proxyRepo)
 		limits, err := usageService.FetchUsageLimits(fetchCtx, account, accessToken)
 		if err != nil {
+			if !forceRefresh && shouldRetryKiroUsageWithForcedRefresh(err) {
+				return loadUsage(fetchCtx, true)
+			}
 			return buildKiroDegradedUsage(err), nil
 		}
 
@@ -571,7 +598,7 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 	}
 
 	if s.cache == nil {
-		return loadUsage(ctx)
+		return loadUsage(ctx, false)
 	}
 
 	flightKey := fmt.Sprintf("kiro-usage:%d", account.ID)
@@ -590,7 +617,7 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 		fetchCtx, fetchCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer fetchCancel()
 
-		usage, err := loadUsage(fetchCtx)
+		usage, err := loadUsage(fetchCtx, false)
 		if err != nil {
 			return nil, err
 		}
@@ -609,6 +636,22 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 		return &UsageInfo{UpdatedAt: &now}, nil
 	}
 	return usage, nil
+}
+
+func shouldRetryKiroUsageWithForcedRefresh(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := strings.ToLower(err.Error())
+	return strings.Contains(errStr, "kiro usage upstream returned 401") ||
+		strings.Contains(errStr, "kiro refresh token is invalid") ||
+		strings.Contains(errStr, "kiro_refresh_token_invalid") ||
+		strings.Contains(errStr, "invalid_grant") ||
+		strings.Contains(errStr, "invalid token") ||
+		strings.Contains(errStr, "invalid_token") ||
+		strings.Contains(errStr, "expired token") ||
+		strings.Contains(errStr, "token expired") ||
+		strings.Contains(errStr, "unauthorized")
 }
 
 func buildKiroDegradedUsage(err error) *UsageInfo {
@@ -712,9 +755,15 @@ func (s *AccountUsageService) persistRefreshedKiroCredentials(ctx context.Contex
 	}
 	account.Credentials = updated.Credentials
 	s.InvalidateKiroUsageCache(account.ID)
+	_ = s.invalidateKiroTokenCache(ctx, account)
+	return nil
+}
+
+func (s *AccountUsageService) invalidateKiroTokenCache(ctx context.Context, account *Account) error {
 	if s.tokenCacheInvalidator != nil {
 		if err := s.tokenCacheInvalidator.InvalidateToken(ctx, account); err != nil {
 			log.Printf("warning: failed to invalidate Kiro token cache after usage refresh for account %d: %v", account.ID, err)
+			return err
 		}
 	}
 	return nil
