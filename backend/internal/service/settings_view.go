@@ -272,7 +272,7 @@ const (
 	defaultKiroCachePrefixTTL             = 300
 	defaultKiroThinkingMode               = KiroThinkingModeSimulate
 	defaultKiroThinkingEffortThreshold    = "medium"
-	defaultKiroThinkingSimulationTemplate = "Using Kiro simulated thinking with {effort} effort for {model}. {detail}"
+	defaultKiroThinkingSimulationTemplate = "Thinking through the request with {effort} effort for {model}. {detail}"
 	defaultKiroThinkingFreePrompt         = "Before answering, think through the problem carefully. Output your complete reasoning in <thinking>...</thinking> XML tags first, then provide your answer."
 )
 
