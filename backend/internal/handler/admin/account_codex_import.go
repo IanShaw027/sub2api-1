@@ -596,8 +596,12 @@ func enrichCodexImportAccountFromJWT(item *codexImportAccount, token string, val
 	if err != nil {
 		if validateExpiry {
 			item.WarningTexts = append(item.WarningTexts, "accessToken 不是可解析 JWT，无法校验过期时间和账号身份")
+			return nil
 		}
-		return nil
+		return fmt.Errorf("id_token 不是可解析 JWT: %w", err)
+	}
+	if !validateExpiry && claims.Exp > 0 && now.Unix() > claims.Exp+codexImportClockSkewSeconds {
+		return fmt.Errorf("id_token 已过期: %s", time.Unix(claims.Exp, 0).UTC().Format(time.RFC3339))
 	}
 	if validateExpiry && claims.Exp > 0 {
 		if now.Unix() > claims.Exp+codexImportClockSkewSeconds {
