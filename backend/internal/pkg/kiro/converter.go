@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
@@ -21,7 +22,12 @@ const (
 
 	toolOnlyUserPlaceholder      = "Here are the tool results."
 	toolOnlyAssistantPlaceholder = "I will call the requested tools."
+	contextTrimSystemNote        = "Gateway notice: older conversation history was compacted to fit Kiro's available context window. Use the retained recent messages as the source of truth, and ask for clarification if older details are required."
 )
+
+const kiroCompactionRecentWindow = 4
+
+var kiroCompactionFilePattern = regexp.MustCompile("(?i)(?:^|[\\s\\\"'(<])((?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+\\.[A-Za-z0-9_.-]+)")
 
 type ConvertResult struct {
 	Body           []byte
@@ -133,26 +139,142 @@ func EstimateInputTokens(body []byte) int {
 
 	var builder strings.Builder
 	if systemText := joinSystem(req["system"]); systemText != "" {
-		_, _ = builder.WriteString(systemText)
-		_, _ = builder.WriteString("\n")
+		appendKiroTokenEstimateText(&builder, systemText)
 	}
 	if messages, _ := req["messages"].([]any); len(messages) > 0 {
 		for _, item := range messages {
 			msg, _ := item.(map[string]any)
-			_, _ = builder.WriteString(extractTextFromContent(msg["content"]))
-			_, _ = builder.WriteString("\n")
+			appendKiroTokenEstimateContent(&builder, msg["content"])
 		}
 	}
 	if tools, _ := req["tools"].([]any); len(tools) > 0 {
 		for _, item := range tools {
 			tool, _ := item.(map[string]any)
-			_, _ = builder.WriteString(stringField(tool, "name"))
-			_, _ = builder.WriteString("\n")
-			_, _ = builder.WriteString(stringField(tool, "description"))
-			_, _ = builder.WriteString("\n")
+			appendKiroTokenEstimateText(&builder, stringField(tool, "name"))
+			appendKiroTokenEstimateText(&builder, stringField(tool, "description"))
+			appendKiroTokenEstimateJSON(&builder, tool["input_schema"])
 		}
 	}
 	return AccurateTokenCount(builder.String())
+}
+
+// TrimAnthropicRequestToTokenBudget drops the oldest conversation messages
+// until the request fits within budgetTokens. The current user turn is always
+// preserved. When trimming occurs, a compacting note is injected into system.
+func TrimAnthropicRequestToTokenBudget(body []byte, budgetTokens int) ([]byte, int, bool, error) {
+	if budgetTokens <= 0 {
+		return body, 0, false, nil
+	}
+
+	var req map[string]any
+	if err := json.Unmarshal(body, &req); err != nil {
+		return nil, 0, false, err
+	}
+
+	rawMessages, _ := req["messages"].([]any)
+	if len(rawMessages) <= 1 {
+		return body, 0, false, nil
+	}
+
+	originalTokens := EstimateInputTokens(body)
+	if originalTokens <= budgetTokens {
+		return body, 0, false, nil
+	}
+
+	req["system"] = appendSystemNote(req["system"], contextTrimSystemNote)
+	currentMessages := rawMessages
+	dropped := 0
+
+	for {
+		encoded, err := json.Marshal(req)
+		if err != nil {
+			return nil, dropped, dropped > 0, err
+		}
+		if EstimateInputTokens(encoded) <= budgetTokens {
+			return encoded, dropped, dropped > 0, nil
+		}
+
+		if len(currentMessages) <= 1 {
+			break
+		}
+
+		dropCount := kiroTrimDropCount(currentMessages)
+		if dropCount == 0 {
+			break
+		}
+
+		currentMessages = currentMessages[dropCount:]
+		req["messages"] = currentMessages
+		dropped += dropCount
+	}
+
+	encoded, err := json.Marshal(req)
+	if err != nil {
+		return nil, dropped, dropped > 0, err
+	}
+	return encoded, dropped, dropped > 0, nil
+}
+
+// CompactAnthropicRequestToTokenBudget performs summary-based compaction.
+// It first drops the oldest messages until the request is near budget, then
+// injects a concise summary of the dropped context into system and keeps
+// trimming the retained window only if needed.
+func CompactAnthropicRequestToTokenBudget(body []byte, budgetTokens int) ([]byte, int, bool, error) {
+	if budgetTokens <= 0 {
+		return body, 0, false, nil
+	}
+
+	var req map[string]any
+	if err := json.Unmarshal(body, &req); err != nil {
+		return nil, 0, false, err
+	}
+
+	rawMessages, _ := req["messages"].([]any)
+	if len(rawMessages) <= 1 {
+		return body, 0, false, nil
+	}
+
+	originalTokens := EstimateInputTokens(body)
+	if originalTokens <= budgetTokens {
+		return body, 0, false, nil
+	}
+
+	for recentWindow := kiroCompactionRecentWindow; recentWindow >= 1; recentWindow-- {
+		if len(rawMessages) <= recentWindow {
+			continue
+		}
+
+		start := kiroCompactionStartIndex(rawMessages, recentWindow)
+		if start <= 0 || start >= len(rawMessages) {
+			continue
+		}
+
+		droppedMessages := cloneKiroMessages(rawMessages[:start])
+		recentMessages := rawMessages[start:]
+		summary := summarizeDroppedAnthropicMessages(droppedMessages)
+
+		reqCopy := cloneKiroRequest(req)
+		if summary != "" {
+			reqCopy["system"] = appendSystemNote(reqCopy["system"], summary)
+		}
+
+		encoded, err := marshalKiroCompactionRequest(reqCopy, recentMessages)
+		if err != nil {
+			return nil, 0, false, err
+		}
+		if EstimateInputTokens(encoded) <= budgetTokens {
+			return encoded, len(droppedMessages), len(droppedMessages) > 0, nil
+		}
+	}
+
+	trimmedBody, dropped, changed, trimErr := TrimAnthropicRequestToTokenBudget(body, budgetTokens)
+	if trimErr != nil {
+		return nil, 0, false, trimErr
+	}
+	if changed && EstimateInputTokens(trimmedBody) <= budgetTokens {
+		return trimmedBody, dropped, true, nil
+	}
+	return nil, 0, false, fmt.Errorf("kiro request exceeds context budget after compaction (%d > %d tokens)", originalTokens, budgetTokens)
 }
 
 func EstimateOutputTokens(text string) int {
@@ -462,6 +584,301 @@ func joinSystem(raw any) string {
 	default:
 		return ""
 	}
+}
+
+func appendSystemNote(raw any, note string) any {
+	note = strings.TrimSpace(note)
+	if note == "" {
+		return raw
+	}
+
+	if strings.Contains(joinSystem(raw), note) {
+		return raw
+	}
+
+	switch v := raw.(type) {
+	case nil:
+		return []any{map[string]any{"type": "text", "text": note}}
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return note
+		}
+		return strings.TrimSpace(trimmed + "\n\n" + note)
+	case []any:
+		out := append([]any{}, v...)
+		out = append(out, map[string]any{"type": "text", "text": note})
+		return out
+	default:
+		return []any{map[string]any{"type": "text", "text": note}}
+	}
+}
+
+func cloneKiroRequest(req map[string]any) map[string]any {
+	if req == nil {
+		return nil
+	}
+	out := make(map[string]any, len(req))
+	for key, value := range req {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneKiroMessages(messages []any) []any {
+	if len(messages) == 0 {
+		return nil
+	}
+	out := make([]any, len(messages))
+	copy(out, messages)
+	return out
+}
+
+func kiroCompactionStartIndex(messages []any, recentWindow int) int {
+	if len(messages) == 0 || recentWindow <= 0 {
+		return -1
+	}
+
+	start := len(messages) - recentWindow
+	if start <= 0 {
+		return 0
+	}
+	if start >= len(messages) {
+		return -1
+	}
+	if isKiroToolPairBoundary(messages[start-1], messages[start]) {
+		start--
+	}
+	return start
+}
+
+func kiroTrimDropCount(messages []any) int {
+	if len(messages) < 2 {
+		return 0
+	}
+	if isKiroToolPairBoundary(messages[0], messages[1]) {
+		if len(messages) <= 2 {
+			return 0
+		}
+		return 2
+	}
+	return 1
+}
+
+func isKiroToolPairBoundary(prev, next any) bool {
+	prevMsg, _ := prev.(map[string]any)
+	nextMsg, _ := next.(map[string]any)
+	if prevMsg == nil || nextMsg == nil {
+		return false
+	}
+	if strings.ToLower(stringField(prevMsg, "role")) != "assistant" {
+		return false
+	}
+	if strings.ToLower(stringField(nextMsg, "role")) != "user" {
+		return false
+	}
+
+	_, toolUses := processAssistantContent(prevMsg["content"], nil)
+	if len(toolUses) == 0 {
+		return false
+	}
+	_, _, toolResults := processUserContent(nextMsg["content"])
+	return len(toolResults) > 0
+}
+
+func appendKiroTokenEstimateText(builder *strings.Builder, text string) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	_, _ = builder.WriteString(text)
+	_, _ = builder.WriteString("\n")
+}
+
+func appendKiroTokenEstimateJSON(builder *strings.Builder, value any) {
+	if value == nil {
+		return
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil || len(encoded) == 0 {
+		return
+	}
+	_, _ = builder.Write(encoded)
+	_, _ = builder.WriteString("\n")
+}
+
+func appendKiroTokenEstimateContent(builder *strings.Builder, content any) {
+	switch v := content.(type) {
+	case string:
+		appendKiroTokenEstimateText(builder, v)
+	case []any:
+		for _, item := range v {
+			block, _ := item.(map[string]any)
+			switch strings.TrimSpace(stringField(block, "type")) {
+			case "text":
+				appendKiroTokenEstimateText(builder, stringField(block, "text"))
+			case "tool_use":
+				appendKiroTokenEstimateText(builder, stringField(block, "name"))
+				appendKiroTokenEstimateText(builder, stringField(block, "id"))
+				appendKiroTokenEstimateJSON(builder, block["input"])
+			case "tool_result":
+				appendKiroTokenEstimateText(builder, stringField(block, "tool_use_id"))
+				appendKiroTokenEstimateText(builder, toolResultContent(block["content"]))
+			}
+		}
+	default:
+		appendKiroTokenEstimateJSON(builder, v)
+	}
+}
+
+func marshalKiroCompactionRequest(req map[string]any, messages []any) ([]byte, error) {
+	reqCopy := make(map[string]any, len(req))
+	for key, value := range req {
+		reqCopy[key] = value
+	}
+	reqCopy["messages"] = messages
+	return json.Marshal(reqCopy)
+}
+
+func summarizeDroppedAnthropicMessages(messages []any) string {
+	if len(messages) == 0 {
+		return ""
+	}
+
+	roleCounts := map[string]int{}
+	toolNames := make([]string, 0, 8)
+	keyFiles := make([]string, 0, 8)
+	seenTools := map[string]struct{}{}
+	seenFiles := map[string]struct{}{}
+	recentUserRequests := make([]string, 0, 3)
+	currentWork := ""
+
+	addUnique := func(set map[string]struct{}, value string, out *[]string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, ok := set[value]; ok {
+			return
+		}
+		set[value] = struct{}{}
+		*out = append(*out, value)
+	}
+
+	for idx, item := range messages {
+		msg, _ := item.(map[string]any)
+		if msg == nil {
+			continue
+		}
+		role := strings.ToLower(strings.TrimSpace(stringField(msg, "role")))
+		if role == "" {
+			role = "unknown"
+		}
+		roleCounts[role]++
+
+		switch role {
+		case "user":
+			text, _, toolResults := processUserContent(msg["content"])
+			if snippet := compactMessageSnippet(text); snippet != "" {
+				if idx >= len(messages)-3 {
+					recentUserRequests = append(recentUserRequests, snippet)
+				}
+				if currentWork == "" {
+					currentWork = snippet
+				}
+			}
+			if len(toolResults) > 0 && currentWork == "" {
+				currentWork = fmt.Sprintf("tool results: %d", len(toolResults))
+			}
+		case "assistant":
+			text, toolUses := processAssistantContent(msg["content"], nil)
+			if snippet := compactMessageSnippet(text); snippet != "" && currentWork == "" {
+				currentWork = snippet
+			}
+			for _, toolUse := range toolUses {
+				addUnique(seenTools, stringField(toolUse, "name"), &toolNames)
+			}
+		default:
+			if snippet := compactMessageSnippet(joinSystem(msg["content"])); snippet != "" && currentWork == "" {
+				currentWork = snippet
+			}
+		}
+
+		for _, filePath := range extractKiroCompactionFilePaths(msg["content"]) {
+			addUnique(seenFiles, filePath, &keyFiles)
+		}
+	}
+
+	lines := []string{
+		"Compaction summary:",
+		fmt.Sprintf("dropped=%d user=%d assistant=%d system=%d", len(messages), roleCounts["user"], roleCounts["assistant"], roleCounts["system"]),
+	}
+	if len(recentUserRequests) > 0 {
+		lines = append(lines, "Recent user requests:")
+		for _, req := range recentUserRequests {
+			lines = append(lines, "- "+req)
+		}
+	}
+	if len(keyFiles) > 0 {
+		lines = append(lines, "Key files: "+strings.Join(keyFiles, ", "))
+	}
+	if len(toolNames) > 0 {
+		lines = append(lines, "Tools: "+strings.Join(toolNames, ", "))
+	}
+	if currentWork != "" {
+		lines = append(lines, "Current work: "+currentWork)
+	}
+
+	return truncateKiroSummaryText(strings.Join(lines, "\n"), 1200)
+}
+
+func compactMessageSnippet(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	if len([]rune(text)) <= 100 {
+		return text
+	}
+	runes := []rune(text)
+	return strings.TrimSpace(string(runes[:100])) + "..."
+}
+
+func extractKiroCompactionFilePaths(content any) []string {
+	text := joinSystem(content)
+	if text == "" {
+		text = extractTextFromContent(content)
+	}
+	if text == "" {
+		return nil
+	}
+	matches := kiroCompactionFilePattern.FindAllStringSubmatch(text, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		filePath := strings.Trim(match[1], " \t\n\r\"'`<>(),[]{}")
+		if filePath != "" {
+			out = append(out, filePath)
+		}
+	}
+	return out
+}
+
+func truncateKiroSummaryText(text string, maxLen int) string {
+	text = strings.TrimSpace(text)
+	if maxLen <= 0 || text == "" {
+		return ""
+	}
+	if len([]rune(text)) <= maxLen {
+		return text
+	}
+	runes := []rune(text)
+	return strings.TrimSpace(string(runes[:maxLen])) + "..."
 }
 
 func extractTextFromContent(content any) string {

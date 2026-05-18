@@ -2,6 +2,7 @@ package kiro
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -244,5 +245,249 @@ func TestConvertAnthropicRequestWithModel_CleansOrphanToolPairsAndFillsToolOnlyC
 	current := state["currentMessage"].(map[string]any)["userInputMessage"].(map[string]any)
 	if got := current["content"].(string); got != "Here are the tool results." {
 		t.Fatalf("current tool-only content = %q, want placeholder", got)
+	}
+}
+
+func TestTrimAnthropicRequestToTokenBudget_DropsOldestMessagesAndAnnotatesSystem(t *testing.T) {
+	input := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"system":"Follow repository constraints.",
+		"messages":[
+			{"role":"user","content":"first turn text text text text text text"},
+			{"role":"assistant","content":"middle turn text text text text text"},
+			{"role":"user","content":"latest turn text text text"}
+		]
+	}`)
+
+	trimmed, dropped, changed, err := TrimAnthropicRequestToTokenBudget(input, 1)
+	if err != nil {
+		t.Fatalf("TrimAnthropicRequestToTokenBudget error: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected request to be trimmed")
+	}
+	if dropped == 0 {
+		t.Fatal("expected at least one message to be dropped")
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(trimmed, &payload); err != nil {
+		t.Fatalf("unmarshal trimmed payload: %v", err)
+	}
+
+	system := payload["system"].(string)
+	if !strings.Contains(system, "compacted to fit Kiro's available context window") {
+		t.Fatalf("missing trim note in system: %q", system)
+	}
+
+	messages := payload["messages"].([]any)
+	if len(messages) != 1 {
+		t.Fatalf("trimmed messages length = %d, want 1", len(messages))
+	}
+	last := messages[0].(map[string]any)
+	if got := last["role"]; got != "user" {
+		t.Fatalf("trimmed last message role = %v, want user", got)
+	}
+	if got := last["content"]; got != "latest turn text text text" {
+		t.Fatalf("trimmed last message content = %v, want latest turn text text text", got)
+	}
+}
+
+func TestCompactAnthropicRequestToTokenBudget_PreservesRecentWindowAndAddsStructuredSummary(t *testing.T) {
+	input := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"system":"Follow repository constraints.",
+		"messages":[
+			{"role":"user","content":"Please update backend/internal/service/kiro_gateway_service.go and backend/internal/pkg/kiro/converter.go for compaction. Please update backend/internal/service/kiro_gateway_service.go and backend/internal/pkg/kiro/converter.go for compaction. Please update backend/internal/service/kiro_gateway_service.go and backend/internal/pkg/kiro/converter.go for compaction. Please update backend/internal/service/kiro_gateway_service.go and backend/internal/pkg/kiro/converter.go for compaction. Please update backend/internal/service/kiro_gateway_service.go and backend/internal/pkg/kiro/converter.go for compaction. Please update backend/internal/service/kiro_gateway_service.go and backend/internal/pkg/kiro/converter.go for compaction. Please update backend/internal/service/kiro_gateway_service.go and backend/internal/pkg/kiro/converter.go for compaction. Please update backend/internal/service/kiro_gateway_service.go and backend/internal/pkg/kiro/converter.go for compaction. Please update backend/internal/service/kiro_gateway_service.go and backend/internal/pkg/kiro/converter.go for compaction. Please update backend/internal/service/kiro_gateway_service.go and backend/internal/pkg/kiro/converter.go for compaction. Please update backend/internal/service/kiro_gateway_service.go and backend/internal/pkg/kiro/converter.go for compaction. Please update backend/internal/service/kiro_gateway_service.go and backend/internal/pkg/kiro/converter.go for compaction. Please update backend/internal/service/kiro_gateway_service.go and backend/internal/pkg/kiro/converter.go for compaction. Please update backend/internal/service/kiro_gateway_service.go and backend/internal/pkg/kiro/converter.go for compaction. Please update backend/internal/service/kiro_gateway_service.go and backend/internal/pkg/kiro/converter.go for compaction. Please update backend/internal/service/kiro_gateway_service.go and backend/internal/pkg/kiro/converter.go for compaction. Please update backend/internal/service/kiro_gateway_service.go and backend/internal/pkg/kiro/converter.go for compaction. Please update backend/internal/service/kiro_gateway_service.go and backend/internal/pkg/kiro/converter.go for compaction. Please update backend/internal/service/kiro_gateway_service.go and backend/internal/pkg/kiro/converter.go for compaction. Please update backend/internal/service/kiro_gateway_service.go and backend/internal/pkg/kiro/converter.go for compaction."},
+			{"role":"assistant","content":"I am checking backend/internal/service/settings_view.go and backend/internal/service/kiro_gateway_service.go now. I am checking backend/internal/service/settings_view.go and backend/internal/service/kiro_gateway_service.go now. I am checking backend/internal/service/settings_view.go and backend/internal/service/kiro_gateway_service.go now. I am checking backend/internal/service/settings_view.go and backend/internal/service/kiro_gateway_service.go now. I am checking backend/internal/service/settings_view.go and backend/internal/service/kiro_gateway_service.go now. I am checking backend/internal/service/settings_view.go and backend/internal/service/kiro_gateway_service.go now. I am checking backend/internal/service/settings_view.go and backend/internal/service/kiro_gateway_service.go now. I am checking backend/internal/service/settings_view.go and backend/internal/service/kiro_gateway_service.go now. I am checking backend/internal/service/settings_view.go and backend/internal/service/kiro_gateway_service.go now. I am checking backend/internal/service/settings_view.go and backend/internal/service/kiro_gateway_service.go now. I am checking backend/internal/service/settings_view.go and backend/internal/service/kiro_gateway_service.go now. I am checking backend/internal/service/settings_view.go and backend/internal/service/kiro_gateway_service.go now. I am checking backend/internal/service/settings_view.go and backend/internal/service/kiro_gateway_service.go now. I am checking backend/internal/service/settings_view.go and backend/internal/service/kiro_gateway_service.go now. I am checking backend/internal/service/settings_view.go and backend/internal/service/kiro_gateway_service.go now. I am checking backend/internal/service/settings_view.go and backend/internal/service/kiro_gateway_service.go now. I am checking backend/internal/service/settings_view.go and backend/internal/service/kiro_gateway_service.go now. I am checking backend/internal/service/settings_view.go and backend/internal/service/kiro_gateway_service.go now. I am checking backend/internal/service/settings_view.go and backend/internal/service/kiro_gateway_service.go now. I am checking backend/internal/service/settings_view.go and backend/internal/service/kiro_gateway_service.go now."},
+			{"role":"user","content":"Keep the recent window and summary."},
+			{"role":"assistant","content":"Understood."},
+			{"role":"user","content":"Make sure compaction preserves the recent tail."},
+			{"role":"user","content":"Latest request: preserve billing and recent tail."}
+		]
+	}`)
+
+	compacted, dropped, changed, err := CompactAnthropicRequestToTokenBudget(input, 500)
+	if err != nil {
+		t.Fatalf("CompactAnthropicRequestToTokenBudget error: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected request to be compacted")
+	}
+	if dropped == 0 {
+		t.Fatal("expected at least one message to be dropped")
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(compacted, &payload); err != nil {
+		t.Fatalf("unmarshal compacted payload: %v", err)
+	}
+
+	system := payload["system"].(string)
+	if !strings.Contains(system, "Compaction summary:") {
+		t.Fatalf("missing compaction summary header: %q", system)
+	}
+	if !strings.Contains(system, "backend/internal/service/kiro_gateway_service.go") {
+		t.Fatalf("missing key file in summary: %q", system)
+	}
+	if !strings.Contains(system, "Recent user requests:") {
+		t.Fatalf("missing recent user requests section: %q", system)
+	}
+
+	messages := payload["messages"].([]any)
+	if len(messages) != 4 {
+		t.Fatalf("compacted messages length = %d, want 4", len(messages))
+	}
+	last := messages[len(messages)-1].(map[string]any)
+	if got := last["role"]; got != "user" {
+		t.Fatalf("compacted last message role = %v, want user", got)
+	}
+	if got := last["content"]; got != "Latest request: preserve billing and recent tail." {
+		t.Fatalf("compacted last message content = %v, want latest request", got)
+	}
+}
+
+func TestTrimAnthropicRequestToTokenBudget_PreservesLeadingToolPair(t *testing.T) {
+	input := []byte(fmt.Sprintf(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[
+			{"role":"assistant","content":[{"type":"tool_use","id":"pair-1","name":"local_tool","input":{"path":"backend/internal/pkg/kiro/converter.go"}}]},
+			{"role":"user","content":[{"type":"tool_result","tool_use_id":"pair-1","content":"tool output"}]},
+			{"role":"user","content":"latest request %stail"}
+		]
+	}`, strings.Repeat("keep ", 60)))
+
+	trimmed, dropped, changed, err := TrimAnthropicRequestToTokenBudget(input, 80)
+	if err != nil {
+		t.Fatalf("TrimAnthropicRequestToTokenBudget error: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected request to be trimmed")
+	}
+	if dropped != 2 {
+		t.Fatalf("trimmed dropped = %d, want 2 to preserve tool pair", dropped)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(trimmed, &payload); err != nil {
+		t.Fatalf("unmarshal trimmed payload: %v", err)
+	}
+
+	messages := payload["messages"].([]any)
+	if len(messages) != 1 {
+		t.Fatalf("trimmed messages length = %d, want 1", len(messages))
+	}
+	first := messages[0].(map[string]any)
+	if got := first["role"]; got != "user" {
+		t.Fatalf("trimmed first message role = %v, want user", got)
+	}
+	if content, ok := first["content"].(string); !ok || !strings.Contains(content, "latest request") {
+		t.Fatalf("trimmed first message content = %v, want latest user content", first["content"])
+	}
+}
+
+func TestCompactAnthropicRequestToTokenBudget_SmallWindowDoesNotSplitToolPair(t *testing.T) {
+	input := []byte(fmt.Sprintf(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[
+			{"role":"assistant","content":[{"type":"tool_use","id":"pair-1","name":"local_tool","input":{"path":"backend/internal/pkg/kiro/converter.go","mode":"compact"}}]},
+			{"role":"user","content":[{"type":"tool_result","tool_use_id":"pair-1","content":"tool output"}]},
+			{"role":"assistant","content":"intermediate response %stail"},
+			{"role":"user","content":"latest request %stail"}
+		]
+	}`, strings.Repeat("summary ", 40), strings.Repeat("budget ", 60)))
+
+	compacted, dropped, changed, err := CompactAnthropicRequestToTokenBudget(input, 120)
+	if err != nil {
+		t.Fatalf("CompactAnthropicRequestToTokenBudget error: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected request to be compacted")
+	}
+	if dropped == 0 {
+		t.Fatal("expected at least one message to be dropped")
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(compacted, &payload); err != nil {
+		t.Fatalf("unmarshal compacted payload: %v", err)
+	}
+
+	messages := payload["messages"].([]any)
+	if len(messages) == 0 {
+		t.Fatal("compacted messages should not be empty")
+	}
+	first := messages[0].(map[string]any)
+	if role := first["role"]; role == "user" {
+		content, _ := first["content"].([]any)
+		for _, item := range content {
+			block, _ := item.(map[string]any)
+			if block["type"] == "tool_result" {
+				t.Fatalf("compaction kept an orphan leading tool_result: %v", first)
+			}
+		}
+	}
+}
+
+func TestEstimateInputTokens_IncludesToolSchemasAndAssistantToolUseInput(t *testing.T) {
+	rich := []byte(fmt.Sprintf(`{
+		"model":"claude-sonnet-4-6",
+		"system":"Follow repository constraints.",
+		"messages":[
+			{"role":"assistant","content":[{"type":"tool_use","id":"tool-1","name":"local_tool","input":{"path":"backend/internal/pkg/kiro/converter.go","instruction":"%stail"}}]},
+			{"role":"user","content":"latest request"}
+		],
+		"tools":[
+			{"name":"local_tool","description":"Local tool","input_schema":{"type":"object","properties":{"instruction":{"type":"string","description":"%stail"}},"required":["instruction"]}}
+		]
+	}`, strings.Repeat("budget ", 40), strings.Repeat("schema ", 60)))
+	lean := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"system":"Follow repository constraints.",
+		"messages":[
+			{"role":"assistant","content":[{"type":"tool_use","id":"tool-1","name":"local_tool","input":{}}]},
+			{"role":"user","content":"latest request"}
+		],
+		"tools":[
+			{"name":"local_tool","description":"Local tool","input_schema":{"type":"object","properties":{},"required":[]}}
+		]
+	}`)
+
+	richTokens := EstimateInputTokens(rich)
+	leanTokens := EstimateInputTokens(lean)
+	if richTokens <= leanTokens {
+		t.Fatalf("rich token estimate = %d, want greater than lean estimate = %d", richTokens, leanTokens)
+	}
+}
+
+func TestEstimateInputTokens_HandlesSystemPolymorphism(t *testing.T) {
+	stringSystem := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"system":"Follow repository constraints.",
+		"messages":[{"role":"user","content":"latest request"}]
+	}`)
+	arraySystem := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"system":[{"type":"text","text":"Follow repository constraints."}],
+		"messages":[{"role":"user","content":"latest request"}]
+	}`)
+	nullSystem := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"system":null,
+		"messages":[{"role":"user","content":"latest request"}]
+	}`)
+
+	stringTokens := EstimateInputTokens(stringSystem)
+	arrayTokens := EstimateInputTokens(arraySystem)
+	nullTokens := EstimateInputTokens(nullSystem)
+
+	if stringTokens != arrayTokens {
+		t.Fatalf("string system tokens = %d, want array system tokens = %d", stringTokens, arrayTokens)
+	}
+	if nullTokens <= 0 {
+		t.Fatalf("null system tokens = %d, want > 0", nullTokens)
+	}
+	if nullTokens >= stringTokens {
+		t.Fatalf("null system tokens = %d, want less than string system tokens = %d", nullTokens, stringTokens)
 	}
 }
