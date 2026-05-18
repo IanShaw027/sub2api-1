@@ -26,3 +26,19 @@ func TestKiroHTTPStatusErrorMessageIncludesParsedJSONDetail(t *testing.T) {
 	require.Contains(t, msg, "invalid_request")
 	require.Contains(t, msg, "selected model is not available for this account")
 }
+
+func TestKiroHTTPStatusErrorMessageRecognizesQuotaExhausted402(t *testing.T) {
+	msg := kiroHTTPStatusErrorMessage("Kiro API", http.StatusPaymentRequired, []byte(`{
+		"message":"MONTHLY_REQUEST_COUNT exceeded for this subscription"
+	}`))
+	require.Contains(t, msg, "Kiro API returned 402")
+	require.Contains(t, msg, "monthly quota or request count exhausted")
+	require.Contains(t, msg, "MONTHLY_REQUEST_COUNT exceeded for this subscription")
+}
+
+func TestClassifyKiroHTTPErrorSemanticLeavesGeneric402Unchanged(t *testing.T) {
+	semantic := classifyKiroHTTPErrorSemantic(http.StatusPaymentRequired, []byte(`{
+		"message":"billing profile incomplete"
+	}`))
+	require.Equal(t, kiroHTTPErrorSemanticUnknown, semantic)
+}

@@ -12,11 +12,40 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/websearch"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+type kiroGatewayRateLimitRepoStub struct {
+	mockAccountRepoForGemini
+	rateLimitedIDs []int64
+	rateLimitUntil []time.Time
+	tempIDs        []int64
+	errorIDs       []int64
+	errorMsgs      []string
+}
+
+func (r *kiroGatewayRateLimitRepoStub) SetRateLimited(_ context.Context, id int64, resetAt time.Time) error {
+	r.rateLimitedIDs = append(r.rateLimitedIDs, id)
+	r.rateLimitUntil = append(r.rateLimitUntil, resetAt)
+	return nil
+}
+
+func (r *kiroGatewayRateLimitRepoStub) SetTempUnschedulable(_ context.Context, id int64, until time.Time, reason string) error {
+	r.tempIDs = append(r.tempIDs, id)
+	_ = until
+	_ = reason
+	return nil
+}
+
+func (r *kiroGatewayRateLimitRepoStub) SetError(_ context.Context, id int64, errorMsg string) error {
+	r.errorIDs = append(r.errorIDs, id)
+	r.errorMsgs = append(r.errorMsgs, errorMsg)
+	return nil
+}
 
 func TestKiroGatewayService_Forward_EmulatesWebSearchBeforeKiroUpstream(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -176,6 +205,53 @@ func TestKiroGatewayService_Forward_InvalidTokenRetryFailureDoesNotLeakRetryErro
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.NotContains(t, rec.Body.String(), "retry_error")
 	require.NotContains(t, err.Error(), "retry_error")
+}
+
+func TestKiroGatewayService_Forward_Kiro402QuotaExhaustedTriggersFailoverRateLimitPath(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	repo := &kiroGatewayRateLimitRepoStub{}
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusPaymentRequired,
+			Header:     make(http.Header),
+			Body: io.NopCloser(strings.NewReader(`{
+				"message":"MONTHLY_REQUEST_COUNT exceeded for this subscription"
+			}`)),
+		},
+	}
+	svc := &KiroGatewayService{
+		httpUpstream:     upstream,
+		rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, nil),
+	}
+
+	result, err := svc.Forward(context.Background(), c, &Account{
+		ID:       612,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "kiro-key",
+		},
+	}, &ParsedRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Body: []byte(`{
+			"model":"claude-sonnet-4-5-20250929",
+			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
+		}`),
+	})
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+	require.Empty(t, rec.Body.String())
+	require.Equal(t, []int64{612}, repo.rateLimitedIDs)
+	require.Len(t, repo.rateLimitUntil, 1)
+	require.Empty(t, repo.tempIDs)
+	require.Empty(t, repo.errorIDs)
 }
 
 func TestKiroGatewayService_Forward_WebSearchMalformedRequestDoesNotAcceptEarly(t *testing.T) {

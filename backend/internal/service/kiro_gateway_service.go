@@ -126,11 +126,12 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		s.handleUpstreamError(ctx, account, resp.StatusCode, resp.Header, body)
+		effectiveStatusCode := kiroSchedulingStatusCode(resp.StatusCode, body)
+		s.handleUpstreamError(ctx, account, effectiveStatusCode, resp.Header, body)
 		s.recordOpsHTTPError(c, account, req.URL.String(), resp.StatusCode, resp.Header, body)
-		if shouldKiroFailover(resp.StatusCode) {
+		if shouldKiroFailover(effectiveStatusCode) {
 			return nil, &UpstreamFailoverError{
-				StatusCode:   resp.StatusCode,
+				StatusCode:   effectiveStatusCode,
 				ResponseBody: body,
 			}
 		}
@@ -1195,6 +1196,13 @@ func shouldKiroFailover(statusCode int) bool {
 	default:
 		return statusCode >= 500
 	}
+}
+
+func kiroSchedulingStatusCode(statusCode int, body []byte) int {
+	if classifyKiroHTTPErrorSemantic(statusCode, body) == kiroHTTPErrorSemanticQuotaExhausted {
+		return http.StatusTooManyRequests
+	}
+	return statusCode
 }
 
 func accountProxyURL(account *Account) string {

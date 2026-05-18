@@ -8,6 +8,13 @@ import (
 	"strings"
 )
 
+type kiroHTTPErrorSemantic string
+
+const (
+	kiroHTTPErrorSemanticUnknown        kiroHTTPErrorSemantic = ""
+	kiroHTTPErrorSemanticQuotaExhausted kiroHTTPErrorSemantic = "quota_exhausted"
+)
+
 func kiroErrorDetailFromBody(body []byte) string {
 	trimmed := strings.TrimSpace(string(body))
 	if trimmed == "" {
@@ -88,7 +95,44 @@ func kiroErrorStringFromMap(values map[string]any, keys ...string) string {
 	return ""
 }
 
+func classifyKiroHTTPErrorSemantic(statusCode int, body []byte) kiroHTTPErrorSemantic {
+	if statusCode != http.StatusPaymentRequired {
+		return kiroHTTPErrorSemanticUnknown
+	}
+
+	detail := strings.TrimSpace(kiroErrorDetailFromBody(body))
+	if detail == "" {
+		detail = strings.TrimSpace(string(body))
+	}
+	if detail == "" {
+		return kiroHTTPErrorSemanticUnknown
+	}
+
+	normalized := strings.ToLower(detail)
+	switch {
+	case strings.Contains(detail, "MONTHLY_REQUEST_COUNT"),
+		strings.Contains(detail, "MONTHLY_QUOTA"),
+		strings.Contains(normalized, "monthly request count"),
+		strings.Contains(normalized, "request count exceeded"),
+		strings.Contains(normalized, "request limit exceeded"),
+		strings.Contains(normalized, "monthly quota"),
+		strings.Contains(normalized, "quota exceeded"),
+		strings.Contains(normalized, "quota exhausted"):
+		return kiroHTTPErrorSemanticQuotaExhausted
+	default:
+		return kiroHTTPErrorSemanticUnknown
+	}
+}
+
 func kiroHTTPStatusErrorMessage(prefix string, statusCode int, body []byte) string {
+	detail := kiroErrorDetailFromBody(body)
+	if statusCode == http.StatusPaymentRequired && classifyKiroHTTPErrorSemantic(statusCode, body) == kiroHTTPErrorSemanticQuotaExhausted {
+		if detail != "" {
+			return fmt.Sprintf("%s returned %d: Kiro monthly quota or request count exhausted: %s", prefix, statusCode, detail)
+		}
+		return fmt.Sprintf("%s returned %d: Kiro monthly quota or request count exhausted", prefix, statusCode)
+	}
+
 	if detail := kiroErrorDetailFromBody(body); detail != "" {
 		return fmt.Sprintf("%s returned %d: %s", prefix, statusCode, detail)
 	}
@@ -100,6 +144,8 @@ func kiroHTTPStatusErrorMessage(prefix string, statusCode int, body []byte) stri
 		return fmt.Sprintf("%s returned %d: upstream rejected the current token; reauthorize or refresh the account and try again", prefix, statusCode)
 	case http.StatusForbidden:
 		return fmt.Sprintf("%s returned %d: upstream denied access; verify the account still has permission to use Kiro and the selected model", prefix, statusCode)
+	case http.StatusPaymentRequired:
+		return fmt.Sprintf("%s returned %d: upstream requires billing or the account has exhausted its Kiro monthly quota", prefix, statusCode)
 	default:
 		return fmt.Sprintf("%s returned %d", prefix, statusCode)
 	}
