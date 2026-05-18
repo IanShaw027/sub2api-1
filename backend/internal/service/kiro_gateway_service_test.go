@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/model"
 	kiropkg "github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
@@ -419,6 +420,56 @@ func TestResolveKiroRequestedModelForRequest_SimulateModeDoesNotUseThinkingVaria
 	require.Equal(t, "claude-sonnet-4-5", model)
 }
 
+func TestShouldUseKiroFreeThinkingPath_ThinkingModes(t *testing.T) {
+	account := &Account{
+		ID:       109,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"subscription_type": "free",
+		},
+	}
+	parsed := &ParsedRequest{ThinkingEnabled: true}
+
+	tests := []struct {
+		name     string
+		mode     string
+		expected bool
+	}{
+		{name: "simulate", mode: KiroThinkingModeSimulate, expected: false},
+		{name: "model", mode: KiroThinkingModeModel, expected: false},
+		{name: "model_and_simulate", mode: KiroThinkingModeModelAndSimulate, expected: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.expected, shouldUseKiroFreeThinkingPath(account, parsed, &KiroRuntimeSettings{ThinkingMode: tt.mode}))
+		})
+	}
+}
+
+func TestPrepareKiroConvertedRequest_PromotesLargeContextToOneMillionModelWithoutDroppingBillingBaseline(t *testing.T) {
+	account := &Account{ID: 110, Platform: PlatformKiro, Type: AccountTypeOAuth}
+	body := []byte(fmt.Sprintf(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[{"role":"user","content":"%s"}]
+	}`, strings.Repeat("x ", 181500)))
+
+	converted, billedInputTokens, err := prepareKiroConvertedRequest(account, &ParsedRequest{
+		Model: "claude-sonnet-4-6",
+		Body:  body,
+	}, nil)
+	require.NoError(t, err)
+	require.Greater(t, billedInputTokens, kiroStandardContextBudgetTokens)
+	require.Equal(t, "claude-sonnet-4.6-1m", converted.Model)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(converted.Body, &payload))
+	state := payload["conversationState"].(map[string]any)
+	current := state["currentMessage"].(map[string]any)["userInputMessage"].(map[string]any)
+	require.Equal(t, "claude-sonnet-4.6-1m", current["modelId"])
+}
+
 func TestRenderKiroThinkingSimulation_UsesConfiguredTemplateAndEffortThreshold(t *testing.T) {
 	settings := &KiroRuntimeSettings{
 		ThinkingMode:               KiroThinkingModeSimulate,
@@ -440,6 +491,182 @@ func TestRenderKiroThinkingSimulation_UsesConfiguredTemplateAndEffortThreshold(t
 	require.Empty(t, low)
 	require.Contains(t, high, "think high claude-sonnet-4-5 claude-sonnet-4.5")
 	require.Contains(t, high, "failure modes")
+}
+
+func TestKiroGatewayService_Forward_FreeSimulateModeKeepsSingleRequestAndSimulatedThinking(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body: io.NopCloser(bytes.NewReader(buildKiroTestFrame(t, map[string]string{
+				":message-type": "event",
+				":event-type":   "assistantResponseEvent",
+			}, map[string]any{"content": "final answer"}))),
+		},
+	}
+	svc := &KiroGatewayService{httpUpstream: upstream}
+	account := &Account{
+		ID:       111,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":           "kiro-api-key",
+			"subscription_type": "free",
+		},
+	}
+	parsed := &ParsedRequest{
+		Model:           "claude-sonnet-4-5-20250929",
+		ThinkingEnabled: true,
+		OutputEffort:    "high",
+		Body: []byte(`{
+			"model":"claude-sonnet-4-5-20250929",
+			"thinking":{"type":"enabled","budget_tokens":5000},
+			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
+		}`),
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, parsed)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 1, upstream.calls, "simulate mode should not take the free two-request path")
+	require.Contains(t, rec.Body.String(), `"type":"thinking"`)
+	require.Contains(t, rec.Body.String(), `Using Kiro simulated thinking with high effort for claude-sonnet-4-5-20250929`)
+	require.Contains(t, rec.Body.String(), `"text":"final answer"`)
+}
+
+func TestKiroGatewayService_Forward_ModelAndSimulateFreeThinkingFallsBackToSimulatedThinking(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	kiroRuntimeSettingsCache.Store((*cachedKiroRuntimeSettings)(nil))
+	kiroRuntimeSettingsSF.Forget("kiro_runtime")
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	upstream := &kiroHTTPUpstreamRecorder{}
+	upstream.doFunc = func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+		if accountID == 0 {
+			t.Fatalf("unexpected zero account id")
+		}
+		if req == nil {
+			t.Fatalf("expected upstream request")
+		}
+		switch upstream.calls {
+		case 1:
+			return &http.Response{
+				StatusCode: http.StatusInternalServerError,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{"message":"thinking step failed"}`)),
+			}, nil
+		case 2:
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(bytes.NewReader(buildKiroTestFrame(t, map[string]string{
+					":message-type": "event",
+					":event-type":   "assistantResponseEvent",
+				}, map[string]any{"content": "final answer"}))),
+			}, nil
+		default:
+			t.Fatalf("unexpected upstream call %d", upstream.calls)
+			return nil, nil
+		}
+	}
+	settingSvc := NewSettingService(&kiroRuntimeSettingRepoStub{
+		values: map[string]string{
+			SettingKeyKiroThinkingMode:               KiroThinkingModeModelAndSimulate,
+			SettingKeyKiroThinkingEffortThreshold:    "medium",
+			SettingKeyKiroThinkingSimulationTemplate: "fallback {effort} {model} {upstream_model}",
+		},
+	}, &config.Config{})
+	svc := &KiroGatewayService{
+		httpUpstream:   upstream,
+		settingService: settingSvc,
+	}
+	account := &Account{
+		ID:       112,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":           "kiro-api-key",
+			"subscription_type": "free",
+		},
+	}
+	parsed := &ParsedRequest{
+		Model:           "claude-sonnet-4-5-20250929",
+		ThinkingEnabled: true,
+		OutputEffort:    "high",
+		Body: []byte(`{
+			"model":"claude-sonnet-4-5-20250929",
+			"thinking":{"type":"enabled","budget_tokens":5000},
+			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
+		}`),
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, parsed)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 2, upstream.calls, "model_and_simulate mode should still try the free thinking preflight")
+	require.Contains(t, rec.Body.String(), `"type":"thinking"`)
+	require.Contains(t, rec.Body.String(), `fallback high claude-sonnet-4-5-20250929 claude-sonnet-4.5`)
+	require.Contains(t, rec.Body.String(), `"text":"final answer"`)
+}
+
+func TestKiroThinkingBodyBuilders_RemoveThinkingDependentContextStrategies(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-sonnet-4-5-20250929",
+		"thinking":{"type":"enabled","budget_tokens":5000},
+		"context_management":{
+			"edits":[
+				{"type":"clear_thinking_20251015","keep":"all"},
+				{"type":"keep_recent_messages_20251015","count":3}
+			]
+		},
+		"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
+	}`)
+
+	tests := []struct {
+		name  string
+		build func([]byte) []byte
+	}{
+		{
+			name: "free_thinking_body",
+			build: func(in []byte) []byte {
+				return buildKiroFreeThinkingBody(in, "free prompt")
+			},
+		},
+		{
+			name:  "strip_thinking_field",
+			build: stripKiroThinkingField,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := tt.build(body)
+			require.NotNil(t, out)
+
+			var payload map[string]any
+			require.NoError(t, json.Unmarshal(out, &payload))
+			_, hasThinking := payload["thinking"]
+			require.False(t, hasThinking)
+
+			contextManagement, ok := payload["context_management"].(map[string]any)
+			require.True(t, ok)
+			edits, ok := contextManagement["edits"].([]any)
+			require.True(t, ok)
+			require.Len(t, edits, 1)
+
+			edit, ok := edits[0].(map[string]any)
+			require.True(t, ok)
+			require.Equal(t, "keep_recent_messages_20251015", edit["type"])
+		})
+	}
 }
 
 func TestKiroGatewayService_ForwardCountTokens_RejectsInvalidConversationShape(t *testing.T) {
@@ -528,6 +755,7 @@ func TestKiroGatewayService_ForwardNonStream_ExceptionDoesNotCommitFakeCache(t *
 		fakeCachePlan,
 		kiropkg.FakeCacheHitState{},
 		nil,
+		"",
 	)
 
 	require.Error(t, err)
@@ -585,6 +813,7 @@ func TestKiroGatewayService_ForwardStream_ExceptionDoesNotCommitFakeCacheOrEmitF
 		fakeCachePlan,
 		kiropkg.FakeCacheHitState{},
 		nil,
+		"",
 	)
 
 	require.Error(t, err)
@@ -704,6 +933,7 @@ func TestKiroGatewayService_ForwardStream_PreStartExceptionReturnsFailover(t *te
 		nil,
 		kiropkg.FakeCacheHitState{},
 		nil,
+		"",
 	)
 
 	require.Error(t, err)
@@ -747,6 +977,7 @@ func TestKiroGatewayService_ForwardNonStream_IncompleteFrameDoesNotCommitFakeCac
 		fakeCachePlan,
 		kiropkg.FakeCacheHitState{},
 		nil,
+		"",
 	)
 
 	require.Error(t, err)
@@ -787,6 +1018,7 @@ func TestKiroGatewayService_ForwardStream_IncompleteFrameDoesNotCommitFakeCacheO
 		fakeCachePlan,
 		kiropkg.FakeCacheHitState{},
 		nil,
+		"",
 	)
 
 	require.Error(t, err)
@@ -819,6 +1051,7 @@ func TestKiroGatewayService_ForwardNonStream_EmptyBodyFails(t *testing.T) {
 		nil,
 		kiropkg.FakeCacheHitState{},
 		nil,
+		"",
 	)
 
 	require.Error(t, err)
@@ -848,11 +1081,13 @@ func TestKiroGatewayService_ForwardStream_EmptyBodyFailsWithoutFinalEvents(t *te
 		nil,
 		kiropkg.FakeCacheHitState{},
 		nil,
+		"",
 	)
 
 	require.Error(t, err)
 	require.Nil(t, result)
 	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "event: error")
 	require.NotContains(t, rec.Body.String(), "event: message_start")
 	require.NotContains(t, rec.Body.String(), "event: message_delta")
 	require.NotContains(t, rec.Body.String(), "event: message_stop")
@@ -870,7 +1105,7 @@ func TestKiroGatewayService_ForwardStream_ContextOnlyBodyFailsWithoutStartingStr
 	body := buildKiroTestFrame(t, map[string]string{
 		":message-type": "event",
 		":event-type":   "contextUsageEvent",
-	}, map[string]any{"contextUsagePercentage": 30})
+	}, map[string]any{"contextUsagePercentage": 98})
 
 	result, err := svc.forwardStream(
 		context.Background(),
@@ -884,10 +1119,13 @@ func TestKiroGatewayService_ForwardStream_ContextOnlyBodyFailsWithoutStartingStr
 		nil,
 		kiropkg.FakeCacheHitState{},
 		nil,
+		"",
 	)
 
 	require.Error(t, err)
 	require.Nil(t, result)
+	require.Contains(t, rec.Body.String(), "event: error")
+	require.Contains(t, rec.Body.String(), "context usage reached 98%")
 	require.NotContains(t, rec.Body.String(), "event: message_start")
 }
 
@@ -923,6 +1161,7 @@ func TestKiroGatewayService_ForwardStream_DoesNotBillContextUsagePercentageAsInp
 		nil,
 		kiropkg.FakeCacheHitState{},
 		nil,
+		"",
 	)
 
 	require.NoError(t, err)
@@ -993,6 +1232,7 @@ func TestKiroGatewayService_ForwardStream_ToolFirstUsesMonotonicBlockIndexes(t *
 		nil,
 		kiropkg.FakeCacheHitState{},
 		nil,
+		"",
 	)
 
 	require.NoError(t, err)
@@ -1029,6 +1269,7 @@ func TestKiroGatewayService_ForwardStream_ToolOnlyCountsOutputTokens(t *testing.
 		nil,
 		kiropkg.FakeCacheHitState{},
 		nil,
+		"",
 	)
 
 	require.NoError(t, err)
@@ -1073,6 +1314,7 @@ func TestKiroGatewayService_ForwardStream_TextToolTextClosesBlocksInOrder(t *tes
 		nil,
 		kiropkg.FakeCacheHitState{},
 		nil,
+		"",
 	)
 
 	require.NoError(t, err)
@@ -1136,6 +1378,7 @@ func TestKiroGatewayService_ForwardStream_PreservesWhitespaceInContentAndInputDe
 		nil,
 		kiropkg.FakeCacheHitState{},
 		nil,
+		"",
 	)
 
 	require.NoError(t, err)

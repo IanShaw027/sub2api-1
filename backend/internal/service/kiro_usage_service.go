@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
+	"go.uber.org/zap"
 )
 
 type KiroUsageLimits struct {
@@ -117,18 +118,32 @@ func (s *KiroUsageService) FetchUsageLimits(ctx context.Context, account *Accoun
 
 	resp, err := doKiroSidecarRequest(req, account, s.httpUpstream, s.tlsFPProfileService, 60*time.Second)
 	if err != nil {
+		kiroLogger(ctx, account).Warn("kiro.usage_limits_failed", zap.Error(err))
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, buildKiroUsageUpstreamError(resp)
+		err := buildKiroUsageUpstreamError(resp)
+		kiroLogger(ctx, account).Warn("kiro.usage_limits_failed", zap.Int("status_code", resp.StatusCode), zap.Error(err))
+		return nil, err
 	}
 
 	var out KiroUsageLimits
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		kiroLogger(ctx, account).Warn("kiro.usage_limits_failed", zap.Error(err))
 		return nil, err
 	}
+	fields := []zap.Field{
+		zap.Float64("current_usage", out.CurrentUsage()),
+		zap.Float64("usage_limit", out.UsageLimit()),
+		zap.Float64("remaining_usage", out.Remaining()),
+		zap.String("subscription_title", out.SubscriptionTitle()),
+	}
+	if resetAt := out.ResetAt(); resetAt != nil {
+		fields = append(fields, zap.Time("reset_at", *resetAt))
+	}
+	kiroLogger(ctx, account).Info("kiro.usage_limits_fetched", fields...)
 	return &out, nil
 }
 

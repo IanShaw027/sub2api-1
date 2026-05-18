@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -54,16 +56,20 @@ func (p *KiroTokenProvider) RefreshAccount(ctx context.Context, account *Account
 	if p.refreshAPI != nil && p.executor != nil {
 		result, err := p.refreshAPI.RefreshIfNeeded(ctx, account, p.executor, kiroAdminRefreshSkew)
 		if err != nil {
+			kiroLogger(ctx, account).Warn("kiro.account_refresh_failed", zap.String("trigger", "admin"), zap.Error(err))
 			return nil, err
 		}
 		if result != nil {
 			if result.Account != nil {
 				if result.LockHeld {
+					kiroLogger(ctx, account).Info("kiro.account_refresh_wait", zap.String("trigger", "admin"))
 					return p.awaitRefreshResult(ctx, account, result.Account)
 				}
+				kiroLogger(ctx, result.Account).Info("kiro.account_refresh_complete", zap.String("trigger", "admin"))
 				return result.Account, nil
 			}
 			if result.LockHeld {
+				kiroLogger(ctx, account).Info("kiro.account_refresh_wait", zap.String("trigger", "admin"))
 				return p.awaitRefreshResult(ctx, account, nil)
 			}
 		}
@@ -78,14 +84,17 @@ func (p *KiroTokenProvider) RefreshAccount(ctx context.Context, account *Account
 
 	newCredentials, err := p.executor.Refresh(ctx, account)
 	if err != nil {
+		kiroLogger(ctx, account).Warn("kiro.account_refresh_failed", zap.String("trigger", "admin"), zap.Error(err))
 		return nil, err
 	}
 
 	cloned := *account
 	cloned.Credentials = cloneCredentials(newCredentials)
 	if err := persistAccountCredentials(ctx, p.accountRepo, &cloned, newCredentials); err != nil {
+		kiroLogger(ctx, &cloned).Warn("kiro.account_refresh_failed", zap.String("trigger", "admin"), zap.Error(err))
 		return nil, err
 	}
+	kiroLogger(ctx, &cloned).Info("kiro.account_refresh_complete", zap.String("trigger", "admin"))
 	return &cloned, nil
 }
 
@@ -144,8 +153,10 @@ func (p *KiroTokenProvider) GetAccessToken(ctx context.Context, account *Account
 	cacheKey := KiroTokenCacheKey(account)
 	if p.tokenCache != nil {
 		if token, err := p.tokenCache.GetAccessToken(ctx, cacheKey); err == nil && token != "" {
+			kiroLogger(ctx, account).Info("kiro.access_token_cache_hit")
 			return token, nil
 		}
+		kiroLogger(ctx, account).Info("kiro.access_token_cache_miss")
 	}
 
 	expiresAt := account.GetCredentialAsTime("expires_at")
@@ -156,10 +167,13 @@ func (p *KiroTokenProvider) GetAccessToken(ctx context.Context, account *Account
 		result, err := p.refreshAPI.RefreshIfNeeded(ctx, account, p.executor, kiroTokenRefreshSkew)
 		if err != nil {
 			if p.refreshPolicy.OnRefreshError == ProviderRefreshErrorReturn {
+				kiroLogger(ctx, account).Warn("kiro.access_token_refresh_failed", zap.Int("policy", int(p.refreshPolicy.OnRefreshError)), zap.Error(err))
 				return "", err
 			}
 			refreshFailed = true
+			kiroLogger(ctx, account).Warn("kiro.access_token_refresh_failed", zap.Int("policy", int(p.refreshPolicy.OnRefreshError)), zap.Error(err))
 		} else if result.LockHeld {
+			kiroLogger(ctx, account).Info("kiro.access_token_refresh_wait", zap.Bool("cache_wait", p.refreshPolicy.OnLockHeld == ProviderLockHeldWaitForCache))
 			if p.refreshPolicy.OnLockHeld == ProviderLockHeldWaitForCache && p.tokenCache != nil {
 				time.Sleep(200 * time.Millisecond)
 				if token, cacheErr := p.tokenCache.GetAccessToken(ctx, cacheKey); cacheErr == nil && token != "" {
@@ -174,11 +188,13 @@ func (p *KiroTokenProvider) GetAccessToken(ctx context.Context, account *Account
 				copyKiroAccountRuntimeState(callerAccount, refreshedAccount)
 				account = callerAccount
 				expiresAt = account.GetCredentialAsTime("expires_at")
+				kiroLogger(ctx, account).Info("kiro.access_token_refresh_complete", zap.Bool("waited_for_refresh", true), zap.Duration("expires_in", kiroExpiresIn(expiresAt)))
 			}
 		} else if result.Account != nil {
 			copyKiroAccountRuntimeState(callerAccount, result.Account)
 			account = callerAccount
 			expiresAt = account.GetCredentialAsTime("expires_at")
+			kiroLogger(ctx, account).Info("kiro.access_token_refresh_complete", zap.Bool("waited_for_refresh", false), zap.Duration("expires_in", kiroExpiresIn(expiresAt)))
 		}
 	}
 
@@ -196,6 +212,7 @@ func (p *KiroTokenProvider) GetAccessToken(ctx context.Context, account *Account
 			if accessToken == "" {
 				return "", errors.New("access_token not found after version check")
 			}
+			kiroLogger(ctx, account).Info("kiro.access_token_version_reloaded")
 		} else {
 			ttl := 30 * time.Minute
 			if refreshFailed {
@@ -220,6 +237,13 @@ func (p *KiroTokenProvider) GetAccessToken(ctx context.Context, account *Account
 	}
 
 	return accessToken, nil
+}
+
+func kiroExpiresIn(expiresAt *time.Time) time.Duration {
+	if expiresAt == nil {
+		return 0
+	}
+	return time.Until(*expiresAt).Round(time.Second)
 }
 
 func copyKiroAccountRuntimeState(dst, src *Account) {

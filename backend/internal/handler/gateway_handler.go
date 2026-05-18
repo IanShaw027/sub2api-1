@@ -284,6 +284,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	parsedReq.GroupID = apiKey.GroupID
 
 	if platform == service.PlatformKiro {
+		hadMetadataUserID := strings.TrimSpace(parsedReq.MetadataUserID) != ""
 		sessionSeed := service.KiroExplicitSessionSeed(
 			body,
 			c.GetHeader("X-Claude-Code-Session-Id"),
@@ -295,6 +296,12 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			parsedReq.Body = updatedBody
 			parsedReq.MetadataUserID = metadataUserID
 		}
+		reqLog.Info("gateway.kiro_request_entry",
+			zap.Bool("session_seed_present", strings.TrimSpace(sessionSeed) != ""),
+			zap.Bool("metadata_user_id_present_before", hadMetadataUserID),
+			zap.Bool("metadata_user_id_present", strings.TrimSpace(parsedReq.MetadataUserID) != ""),
+			zap.Bool("thinking_enabled", parsedReq.ThinkingEnabled),
+		)
 	}
 
 	// 计算粘性会话hash
