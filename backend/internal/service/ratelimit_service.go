@@ -1649,13 +1649,17 @@ func hasNonEmptyMapValue(extra map[string]any, key string) bool {
 
 func (s *RateLimitService) GetTempUnschedStatus(ctx context.Context, accountID int64) (*TempUnschedState, error) {
 	now := time.Now().Unix()
+	var cachedState *TempUnschedState
 	if s.tempUnschedCache != nil {
 		state, err := s.tempUnschedCache.GetTempUnsched(ctx, accountID)
 		if err != nil {
 			return nil, err
 		}
 		if state != nil && state.UntilUnix > now {
-			return state, nil
+			if tempUnschedStateHasReason(state) {
+				return state, nil
+			}
+			cachedState = state
 		}
 	}
 
@@ -1667,24 +1671,11 @@ func (s *RateLimitService) GetTempUnschedStatus(ctx context.Context, accountID i
 		return nil, nil
 	}
 	if account.TempUnschedulableUntil.Unix() <= now {
-		return nil, nil
+		return cachedState, nil
 	}
 
-	state := &TempUnschedState{
-		UntilUnix: account.TempUnschedulableUntil.Unix(),
-	}
-
-	if account.TempUnschedulableReason != "" {
-		var parsed TempUnschedState
-		if err := json.Unmarshal([]byte(account.TempUnschedulableReason), &parsed); err == nil {
-			if parsed.UntilUnix == 0 {
-				parsed.UntilUnix = state.UntilUnix
-			}
-			state = &parsed
-		} else {
-			state.ErrorMessage = account.TempUnschedulableReason
-		}
-	}
+	state := tempUnschedStateFromStoredReason(account.TempUnschedulableReason, account.TempUnschedulableUntil.Unix())
+	state = mergeTempUnschedState(state, cachedState)
 
 	if s.tempUnschedCache != nil {
 		if err := s.tempUnschedCache.SetTempUnsched(ctx, accountID, state); err != nil {
@@ -1693,6 +1684,66 @@ func (s *RateLimitService) GetTempUnschedStatus(ctx context.Context, accountID i
 	}
 
 	return state, nil
+}
+
+func tempUnschedStateHasReason(state *TempUnschedState) bool {
+	if state == nil {
+		return false
+	}
+	return strings.TrimSpace(state.ErrorMessage) != ""
+}
+
+func tempUnschedStateFromStoredReason(rawReason string, fallbackUntilUnix int64) *TempUnschedState {
+	state := &TempUnschedState{
+		UntilUnix: fallbackUntilUnix,
+	}
+
+	rawReason = strings.TrimSpace(rawReason)
+	if rawReason == "" {
+		return state
+	}
+
+	var parsed TempUnschedState
+	if err := json.Unmarshal([]byte(rawReason), &parsed); err == nil {
+		if fallbackUntilUnix > parsed.UntilUnix {
+			parsed.UntilUnix = fallbackUntilUnix
+		}
+		if strings.TrimSpace(parsed.ErrorMessage) == "" {
+			parsed.ErrorMessage = rawReason
+		}
+		return &parsed
+	}
+
+	state.ErrorMessage = rawReason
+	return state
+}
+
+func mergeTempUnschedState(primary *TempUnschedState, fallback *TempUnschedState) *TempUnschedState {
+	if primary == nil {
+		return fallback
+	}
+	if fallback == nil {
+		return primary
+	}
+
+	merged := *primary
+	if fallback.UntilUnix > merged.UntilUnix {
+		merged.UntilUnix = fallback.UntilUnix
+	}
+	if merged.TriggeredAtUnix == 0 {
+		merged.TriggeredAtUnix = fallback.TriggeredAtUnix
+	}
+	if merged.StatusCode == 0 {
+		merged.StatusCode = fallback.StatusCode
+	}
+	if strings.TrimSpace(merged.MatchedKeyword) == "" {
+		merged.MatchedKeyword = fallback.MatchedKeyword
+	}
+	if strings.TrimSpace(merged.ErrorMessage) == "" {
+		merged.ErrorMessage = fallback.ErrorMessage
+	}
+
+	return &merged
 }
 
 func (s *RateLimitService) HandleTempUnschedulable(ctx context.Context, account *Account, statusCode int, responseBody []byte) bool {

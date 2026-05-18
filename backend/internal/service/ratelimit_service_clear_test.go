@@ -63,7 +63,10 @@ func (r *rateLimitClearRepoStub) ClearTempUnschedulable(ctx context.Context, id 
 }
 
 type tempUnschedCacheRecorder struct {
+	state      *TempUnschedState
+	setStates  []*TempUnschedState
 	deletedIDs []int64
+	getErr     error
 	deleteErr  error
 }
 
@@ -73,11 +76,26 @@ type recoverTokenInvalidatorStub struct {
 }
 
 func (c *tempUnschedCacheRecorder) SetTempUnsched(ctx context.Context, accountID int64, state *TempUnschedState) error {
+	if state != nil {
+		cloned := *state
+		c.state = &cloned
+		c.setStates = append(c.setStates, &cloned)
+	} else {
+		c.state = nil
+		c.setStates = append(c.setStates, nil)
+	}
 	return nil
 }
 
 func (c *tempUnschedCacheRecorder) GetTempUnsched(ctx context.Context, accountID int64) (*TempUnschedState, error) {
-	return nil, nil
+	if c.getErr != nil {
+		return nil, c.getErr
+	}
+	if c.state == nil {
+		return nil, nil
+	}
+	cloned := *c.state
+	return &cloned, nil
 }
 
 func (c *tempUnschedCacheRecorder) DeleteTempUnsched(ctx context.Context, accountID int64) error {
@@ -303,4 +321,53 @@ func TestRateLimitService_RecoverAccountState_InvalidatesOAuthTokenOnErrorRecove
 	require.Equal(t, 1, repo.clearErrorCalls)
 	require.Len(t, invalidator.accounts, 1)
 	require.Equal(t, int64(21), invalidator.accounts[0].ID)
+}
+
+func TestRateLimitService_GetTempUnschedStatus_PreservesLegacyJSONReason(t *testing.T) {
+	until := time.Now().Add(10 * time.Minute).UTC().Truncate(time.Second)
+	rawReason := `{"status_code":401,"until_unix":1735689600}`
+	repo := &rateLimitClearRepoStub{
+		getByIDAccount: &Account{
+			ID:                      51,
+			TempUnschedulableUntil:  &until,
+			TempUnschedulableReason: rawReason,
+		},
+	}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+
+	state, err := svc.GetTempUnschedStatus(context.Background(), 51)
+	require.NoError(t, err)
+	require.NotNil(t, state)
+	require.Equal(t, rawReason, state.ErrorMessage)
+	require.Equal(t, 401, state.StatusCode)
+	require.Equal(t, until.Unix(), state.UntilUnix)
+	require.Equal(t, 1, repo.getByIDCalls)
+}
+
+func TestRateLimitService_GetTempUnschedStatus_FallsBackToDBReasonWhenCacheIsSparse(t *testing.T) {
+	until := time.Now().Add(10 * time.Minute).UTC().Truncate(time.Second)
+	cache := &tempUnschedCacheRecorder{
+		state: &TempUnschedState{
+			UntilUnix:  until.Unix(),
+			StatusCode: 401,
+		},
+	}
+	repo := &rateLimitClearRepoStub{
+		getByIDAccount: &Account{
+			ID:                      52,
+			TempUnschedulableUntil:  &until,
+			TempUnschedulableReason: "token refresh retry exhausted: upstream 401",
+		},
+	}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, cache)
+
+	state, err := svc.GetTempUnschedStatus(context.Background(), 52)
+	require.NoError(t, err)
+	require.NotNil(t, state)
+	require.Equal(t, "token refresh retry exhausted: upstream 401", state.ErrorMessage)
+	require.Equal(t, 401, state.StatusCode)
+	require.Equal(t, until.Unix(), state.UntilUnix)
+	require.Equal(t, 1, repo.getByIDCalls)
+	require.NotEmpty(t, cache.setStates)
+	require.Equal(t, "token refresh retry exhausted: upstream 401", cache.setStates[len(cache.setStates)-1].ErrorMessage)
 }
