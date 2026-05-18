@@ -163,8 +163,8 @@ func validatePlatformAccountType(platform, accountType string) error {
 
 func validateKiroCredentials(credentials map[string]any) error {
 	refreshToken := strings.TrimSpace(stringCredential(credentials, "refresh_token"))
-	if refreshToken == "" {
-		return infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro refresh_token is required")
+	if err := ValidateKiroRefreshTokenHealth(refreshToken); err != nil {
+		return err
 	}
 	authMethod := NormalizeKiroAuthMethod(credentials)
 	if KiroAuthMethodUsesIDCRefresh(authMethod) {
@@ -178,6 +178,30 @@ func validateKiroCredentials(credentials map[string]any) error {
 		}
 	}
 	return nil
+}
+
+const kiroRefreshTokenMinLength = 10
+
+func ValidateKiroRefreshTokenHealth(refreshToken string) error {
+	refreshToken = strings.TrimSpace(refreshToken)
+	switch {
+	case refreshToken == "":
+		return infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro refresh_token is required")
+	case len(refreshToken) < kiroRefreshTokenMinLength:
+		return infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro refresh_token is too short")
+	case looksLikeTruncatedKiroRefreshToken(refreshToken):
+		return infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro refresh_token appears truncated")
+	default:
+		return nil
+	}
+}
+
+func looksLikeTruncatedKiroRefreshToken(refreshToken string) bool {
+	token := strings.TrimSpace(strings.ToLower(refreshToken))
+	return strings.HasSuffix(token, "...") ||
+		strings.HasSuffix(token, "…") ||
+		strings.Contains(token, "(truncated)") ||
+		strings.Contains(token, "[truncated]")
 }
 
 func validateCredentialsBaseURL(platform, raw string) error {

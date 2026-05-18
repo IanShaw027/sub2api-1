@@ -108,3 +108,39 @@ func TestKiroOAuthHandlerRefreshTokenRejectsIDCRefreshAliasesWithoutClientCreden
 		})
 	}
 }
+
+func TestKiroOAuthHandlerRefreshTokenRejectsShortRefreshToken(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	handler := NewKiroOAuthHandler(nil, service.NewKiroTokenRefresher())
+	router.POST("/refresh-token", handler.RefreshToken)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/refresh-token", bytes.NewReader([]byte(`{"credentials":{"refresh_token":"short"}}`)))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "kiro refresh_token is too short")
+}
+
+func TestKiroOAuthHandlerRefreshTokenRejectsTruncatedRefreshToken(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	handler := NewKiroOAuthHandler(nil, service.NewKiroTokenRefresher())
+	router.POST("/refresh-token", handler.RefreshToken)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/refresh-token", bytes.NewReader([]byte(`{"credentials":{"refresh_token":"kiro-refresh-token..."}}`)))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "kiro refresh_token appears truncated")
+}

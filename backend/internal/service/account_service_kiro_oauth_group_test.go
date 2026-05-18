@@ -136,6 +136,42 @@ func TestAccountService_Create_RejectsInvalidKiroCredentials(t *testing.T) {
 	require.ErrorContains(t, err, "kiro refresh_token is required")
 }
 
+func TestAccountService_Create_RejectsShortKiroRefreshToken(t *testing.T) {
+	t.Parallel()
+
+	svc := &AccountService{
+		accountRepo: &accountRepoStubForOAuthOnlyGroup{},
+		groupRepo:   &groupRepoStubForOAuthOnlyGroup{},
+	}
+
+	_, err := svc.Create(context.Background(), CreateAccountRequest{
+		Name:        "kiro-oauth",
+		Platform:    PlatformKiro,
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"refresh_token": "short"},
+	})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "kiro refresh_token is too short")
+}
+
+func TestAccountService_Create_RejectsTruncatedKiroRefreshToken(t *testing.T) {
+	t.Parallel()
+
+	svc := &AccountService{
+		accountRepo: &accountRepoStubForOAuthOnlyGroup{},
+		groupRepo:   &groupRepoStubForOAuthOnlyGroup{},
+	}
+
+	_, err := svc.Create(context.Background(), CreateAccountRequest{
+		Name:        "kiro-oauth",
+		Platform:    PlatformKiro,
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"refresh_token": "kiro-refresh-token..."},
+	})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "kiro refresh_token appears truncated")
+}
+
 func TestAccountService_Update_IgnoresInvalidKiroIDCAuthPatches(t *testing.T) {
 	t.Parallel()
 
@@ -367,7 +403,7 @@ func TestAccountService_Update_IgnoresKiroOAuthExpiresAtEmptyStringPatch(t *test
 			Type:     AccountTypeOAuth,
 			Status:   StatusActive,
 			Credentials: map[string]any{
-				"refresh_token": "rt",
+				"refresh_token": "kiro-refresh-token",
 				"expires_at":    "1735689600",
 			},
 		},
@@ -385,7 +421,7 @@ func TestAccountService_Update_IgnoresKiroOAuthExpiresAtEmptyStringPatch(t *test
 
 	require.NoError(t, err)
 	require.NotNil(t, accountRepo.updatedAccount)
-	require.Equal(t, "rt", accountRepo.updatedAccount.GetCredential("refresh_token"))
+	require.Equal(t, "kiro-refresh-token", accountRepo.updatedAccount.GetCredential("refresh_token"))
 	require.Equal(t, "1735689600", accountRepo.updatedAccount.GetCredential("expires_at"))
 }
 
@@ -400,7 +436,7 @@ func TestAccountService_Update_IgnoresKiroOAuthExpiresAtNullPatch(t *testing.T) 
 			Type:     AccountTypeOAuth,
 			Status:   StatusActive,
 			Credentials: map[string]any{
-				"refresh_token": "rt",
+				"refresh_token": "kiro-refresh-token",
 				"expires_at":    "1735689600",
 			},
 		},
@@ -418,7 +454,7 @@ func TestAccountService_Update_IgnoresKiroOAuthExpiresAtNullPatch(t *testing.T) 
 
 	require.NoError(t, err)
 	require.NotNil(t, accountRepo.updatedAccount)
-	require.Equal(t, "rt", accountRepo.updatedAccount.GetCredential("refresh_token"))
+	require.Equal(t, "kiro-refresh-token", accountRepo.updatedAccount.GetCredential("refresh_token"))
 	require.Equal(t, "1735689600", accountRepo.updatedAccount.GetCredential("expires_at"))
 }
 
@@ -433,7 +469,7 @@ func TestAccountService_Update_ClearsKiroModelMappingWithEmptyObject(t *testing.
 			Type:     AccountTypeOAuth,
 			Status:   StatusActive,
 			Credentials: map[string]any{
-				"refresh_token": "rt",
+				"refresh_token": "kiro-refresh-token",
 				"model_mapping": map[string]any{"claude-sonnet-4": "claude-sonnet-4"},
 			},
 		},
@@ -451,6 +487,6 @@ func TestAccountService_Update_ClearsKiroModelMappingWithEmptyObject(t *testing.
 
 	require.NoError(t, err)
 	require.NotNil(t, accountRepo.updatedAccount)
-	require.Equal(t, "rt", accountRepo.updatedAccount.GetCredential("refresh_token"))
+	require.Equal(t, "kiro-refresh-token", accountRepo.updatedAccount.GetCredential("refresh_token"))
 	require.Equal(t, map[string]any{}, accountRepo.updatedAccount.Credentials["model_mapping"])
 }

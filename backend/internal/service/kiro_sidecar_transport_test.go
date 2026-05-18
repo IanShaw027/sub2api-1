@@ -249,6 +249,89 @@ func TestKiroTokenRefresher_Refresh_UsesHTTPUpstreamTransport(t *testing.T) {
 	}
 }
 
+func TestKiroTokenRefresher_Refresh_DecodeWrappedDataPayload(t *testing.T) {
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Body: io.NopCloser(strings.NewReader(`{
+				"data":{
+					"accessToken":"new-access-token",
+					"refreshToken":"new-refresh-token",
+					"profileArn":"arn:aws:kiro:wrapped",
+					"expiresIn":3600
+				}
+			}`)),
+			Header: make(http.Header),
+		},
+	}
+	refresher := NewKiroTokenRefresher().WithTransport(upstream, &TLSFingerprintProfileService{})
+	account := &Account{
+		ID:       70,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "kiro-refresh-token",
+		},
+	}
+
+	creds, err := refresher.Refresh(context.Background(), account)
+
+	require.NoError(t, err)
+	require.Equal(t, "new-access-token", creds["access_token"])
+	require.Equal(t, "new-refresh-token", creds["refresh_token"])
+	require.Equal(t, "arn:aws:kiro:wrapped", creds["profile_arn"])
+}
+
+func TestKiroTokenRefresher_Refresh_KeepsExistingRefreshTokenWhenUpstreamReturnsTruncatedValue(t *testing.T) {
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Body: io.NopCloser(strings.NewReader(`{
+				"accessToken":"new-access-token",
+				"refreshToken":"kiro-refresh-token...",
+				"profileArn":"arn:aws:kiro:test",
+				"expiresIn":3600
+			}`)),
+			Header: make(http.Header),
+		},
+	}
+	refresher := NewKiroTokenRefresher().WithTransport(upstream, &TLSFingerprintProfileService{})
+	account := &Account{
+		ID:       71,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "kiro-refresh-token",
+		},
+	}
+
+	creds, err := refresher.Refresh(context.Background(), account)
+
+	require.NoError(t, err)
+	require.Equal(t, "new-access-token", creds["access_token"])
+	require.Equal(t, "kiro-refresh-token", creds["refresh_token"])
+	require.Equal(t, "arn:aws:kiro:test", creds["profile_arn"])
+}
+
+func TestKiroTokenRefresher_Refresh_RejectsShortRefreshTokenBeforeRequest(t *testing.T) {
+	upstream := &kiroHTTPUpstreamRecorder{}
+	refresher := NewKiroTokenRefresher().WithTransport(upstream, &TLSFingerprintProfileService{})
+	account := &Account{
+		ID:       72,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "short",
+		},
+	}
+
+	_, err := refresher.Refresh(context.Background(), account)
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "kiro refresh_token is too short")
+	require.Equal(t, 0, upstream.calls)
+}
+
 func TestKiroTokenRefresher_Refresh_IDCUsesRuntimeHeaders(t *testing.T) {
 	kiroRuntimeSettingsCache.Store((*cachedKiroRuntimeSettings)(nil))
 	kiroRuntimeSettingsSF.Forget("kiro_runtime")

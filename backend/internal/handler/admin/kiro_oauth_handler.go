@@ -133,8 +133,8 @@ func (h *KiroOAuthHandler) RefreshToken(c *gin.Context) {
 	}
 
 	refreshToken := strings.TrimSpace(stringCredentialValue(req.Credentials, "refresh_token"))
-	if refreshToken == "" {
-		response.BadRequest(c, "kiro refresh_token is required")
+	if err := service.ValidateKiroRefreshTokenHealth(refreshToken); err != nil {
+		response.ErrorFrom(c, err)
 		return
 	}
 

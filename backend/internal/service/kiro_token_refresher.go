@@ -116,8 +116,12 @@ func (r *KiroTokenRefresher) prepareAccount(ctx context.Context, account *Accoun
 }
 
 func (r *KiroTokenRefresher) refreshKiroSocialToken(ctx context.Context, account *Account) (accessToken, refreshToken, expiresAt, profileARN string, err error) {
+	refreshToken = strings.TrimSpace(account.GetCredential("refresh_token"))
+	if err = ValidateKiroRefreshTokenHealth(refreshToken); err != nil {
+		return "", "", "", "", err
+	}
 	payload := map[string]any{
-		"refreshToken": account.GetCredential("refresh_token"),
+		"refreshToken": refreshToken,
 	}
 	url := fmt.Sprintf("https://prod.%s.auth.desktop.kiro.dev/refreshToken", KiroAuthRegion(account))
 	host := fmt.Sprintf("prod.%s.auth.desktop.kiro.dev", KiroAuthRegion(account))
@@ -125,19 +129,22 @@ func (r *KiroTokenRefresher) refreshKiroSocialToken(ctx context.Context, account
 	if err = r.doKiroJSONRequest(ctx, account, url, host, payload, &out); err != nil {
 		return "", "", "", "", err
 	}
-	refreshToken = out.RefreshToken
-	if refreshToken == "" {
-		refreshToken = account.GetCredential("refresh_token")
+	if ValidateKiroRefreshTokenHealth(out.RefreshToken) == nil {
+		refreshToken = out.RefreshToken
 	}
 	expiresAt = time.Now().Add(time.Duration(out.ExpiresIn) * time.Second).UTC().Format(time.RFC3339)
 	return out.AccessToken, refreshToken, expiresAt, out.ProfileARN, nil
 }
 
 func (r *KiroTokenRefresher) refreshKiroIDCToken(ctx context.Context, account *Account) (accessToken, refreshToken, expiresAt string, err error) {
+	refreshToken = strings.TrimSpace(account.GetCredential("refresh_token"))
+	if err = ValidateKiroRefreshTokenHealth(refreshToken); err != nil {
+		return "", "", "", err
+	}
 	payload := map[string]any{
 		"clientId":     account.GetCredential("client_id"),
 		"clientSecret": account.GetCredential("client_secret"),
-		"refreshToken": account.GetCredential("refresh_token"),
+		"refreshToken": refreshToken,
 		"grantType":    "refresh_token",
 	}
 	url := fmt.Sprintf("https://oidc.%s.amazonaws.com/token", KiroAuthRegion(account))
@@ -146,9 +153,8 @@ func (r *KiroTokenRefresher) refreshKiroIDCToken(ctx context.Context, account *A
 	if err = r.doKiroJSONRequest(ctx, account, url, host, payload, &out); err != nil {
 		return "", "", "", fmt.Errorf("kiro idc refresh failed: %w", err)
 	}
-	refreshToken = out.RefreshToken
-	if refreshToken == "" {
-		refreshToken = account.GetCredential("refresh_token")
+	if ValidateKiroRefreshTokenHealth(out.RefreshToken) == nil {
+		refreshToken = out.RefreshToken
 	}
 	expiresAt = time.Now().Add(time.Duration(out.ExpiresIn) * time.Second).UTC().Format(time.RFC3339)
 	return out.AccessToken, refreshToken, expiresAt, nil
@@ -223,6 +229,9 @@ func decodeKiroRefreshResponse(body []byte, out any) error {
 	var payload map[string]any
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return err
+	}
+	if nested, ok := payload["data"].(map[string]any); ok && len(nested) > 0 {
+		payload = nested
 	}
 	switch typed := out.(type) {
 	case *kiroRefreshResponse:
