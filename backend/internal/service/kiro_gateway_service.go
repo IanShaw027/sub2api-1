@@ -83,7 +83,7 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 
 	runtimeSettings := s.resolveKiroRuntimeSettings(ctx)
 
-	// 只有 model_and_simulate 模式才走 Free 账号的双请求路径，避免绕过 simulate/model 语义。
+	// Free 账号在 simulate / model_and_simulate 模式下，对缺少原生 thinking 的模型走双请求提取。
 	if shouldUseKiroFreeThinkingPath(account, parsed, runtimeSettings) {
 		return s.forwardWithFreeThinking(ctx, c, account, parsed, runtimeSettings)
 	}
@@ -314,7 +314,9 @@ func shouldUseKiroFreeThinkingPath(account *Account, parsed *ParsedRequest, runt
 		return false
 	}
 	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
-	if runtimeSettings.ThinkingMode != KiroThinkingModeModelAndSimulate {
+	switch runtimeSettings.ThinkingMode {
+	case KiroThinkingModeSimulate, KiroThinkingModeModelAndSimulate:
+	default:
 		return false
 	}
 	return kiroModelNeedsFreeThinkingPreparation(parsed)
@@ -653,13 +655,13 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 		return nil, err
 	}
 
-	textBuilder := strings.Builder{}
+	assistantContentBuilder := strings.Builder{}
 	toolOutputBuilder := strings.Builder{}
 	toolUses := make([]map[string]any, 0)
 	toolBuffers := make(map[string]*kiroToolState)
 	toolNames := make([]string, 0)
 	stopReason := "end_turn"
-	hasVisibleOutput := false
+	hasVisibleOutput := strings.TrimSpace(thinkingOverride) != ""
 
 	for _, frame := range frames {
 		if failureErr := kiroFrameFailure(frame); failureErr != nil {
@@ -669,8 +671,7 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 		switch frame.EventType {
 		case "assistantResponseEvent":
 			if content := rawStringField(frame.Payload, "content"); content != "" {
-				_, _ = textBuilder.WriteString(content)
-				hasVisibleOutput = true
+				_, _ = assistantContentBuilder.WriteString(content)
 			}
 		case "toolUseEvent":
 			state := ensureKiroToolState(toolBuffers, controlStringField(frame.Payload, "toolUseId"), controlStringField(frame.Payload, "name"))
@@ -694,6 +695,14 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 			}
 		}
 	}
+	content := make([]map[string]any, 0, 2+len(toolUses))
+	if strings.TrimSpace(thinkingOverride) != "" {
+		content = append(content, map[string]any{"type": "thinking", "thinking": thinkingOverride})
+	}
+	content, textOutput, nativeThinkingOutput := appendKiroNativeContentBlocks(assistantContentBuilder.String(), content)
+	if textOutput != "" || nativeThinkingOutput != "" {
+		hasVisibleOutput = true
+	}
 	if !hasVisibleOutput {
 		emptyErr := errors.New("kiro response contained no assistant output")
 		logKiroResponseAnomaly(ctx, account, parsed, false, "empty_output", emptyErr, 0, len(toolNames), nil)
@@ -708,21 +717,10 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 		parsed.OnUpstreamAccepted()
 	}
 
-	simulatedThinking := thinkingOverride
-	if simulatedThinking == "" {
-		simulatedThinking = renderKiroThinkingSimulation(parsed, converted, runtimeSettings)
-	}
-	content := make([]map[string]any, 0)
-	if simulatedThinking != "" {
-		content = append(content, map[string]any{"type": "thinking", "thinking": simulatedThinking})
-	}
-	if text := textBuilder.String(); text != "" {
-		content = append(content, map[string]any{"type": "text", "text": text})
-	}
 	content = append(content, toolUses...)
 	fakeCacheUsage := resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, inputTokens, runtimeSettings)
 	inputTokens = fakeCacheUsage.InputTokens
-	outputTokens := estimateKiroOutputTokens(textBuilder.String()+simulatedThinking, toolOutputBuilder.String())
+	outputTokens := estimateKiroOutputTokens(textOutput+nativeThinkingOutput+thinkingOverride, toolOutputBuilder.String())
 	s.commitFakeCachePlan(fakeCachePlan, runtimeSettings)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -754,7 +752,7 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 			CacheReadInputTokens:     fakeCacheUsage.CacheReadInputTokens,
 		},
 	}
-	logKiroRequestCompleted(ctx, account, parsed, result.RequestID, result.UpstreamModel, false, result.Duration, nil, inputTokens, outputTokens, fakeCacheUsage.CacheCreationInputTokens, fakeCacheUsage.CacheReadInputTokens, stopReason, toolNames, simulatedThinking != "", nil)
+	logKiroRequestCompleted(ctx, account, parsed, result.RequestID, result.UpstreamModel, false, result.Duration, nil, inputTokens, outputTokens, fakeCacheUsage.CacheCreationInputTokens, fakeCacheUsage.CacheReadInputTokens, stopReason, toolNames, strings.TrimSpace(thinkingOverride) != "", nil)
 	return result, nil
 }
 
@@ -766,20 +764,23 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	streamStarted := false
 	textBlockOpen := false
 	textBlockIndex := -1
+	thinkingBlockOpen := false
+	thinkingBlockIndex := -1
 	nextBlockIndex := 0
 	toolStates := make(map[string]*kiroToolState)
 	var firstTokenMs *int
-	var outputBuilder strings.Builder
+	var textOutputBuilder strings.Builder
+	var nativeThinkingBuilder strings.Builder
 	var toolOutputBuilder strings.Builder
 	stopReason := "end_turn"
 	framesSeen := 0
 	completedToolUses := 0
 	toolNames := make([]string, 0)
 	var lastContextUsagePercentage *float64
-	simulatedThinking := thinkingOverride
-	if simulatedThinking == "" {
-		simulatedThinking = renderKiroThinkingSimulation(parsed, converted, runtimeSettings)
-	}
+	simulatedThinking := strings.TrimSpace(thinkingOverride)
+	nativeThinkingBuffer := ""
+	nativeThinkingExtracted := false
+	stripThinkingLeadingNewline := false
 	startStream := func(initialInputTokens int) error {
 		if parsed.OnUpstreamAccepted != nil {
 			parsed.OnUpstreamAccepted()
@@ -794,6 +795,159 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		blockIndex := nextBlockIndex
 		nextBlockIndex++
 		return writeKiroThinkingBlock(writer, blockIndex, simulatedThinking)
+	}
+	closeTextBlock := func() error {
+		if !textBlockOpen {
+			return nil
+		}
+		if err := writeSSEEvent(writer, "content_block_stop", map[string]any{
+			"type":  "content_block_stop",
+			"index": textBlockIndex,
+		}); err != nil {
+			return err
+		}
+		textBlockOpen = false
+		textBlockIndex = -1
+		return nil
+	}
+	ensureTextBlock := func() error {
+		if textBlockOpen {
+			return nil
+		}
+		textBlockIndex = nextBlockIndex
+		nextBlockIndex++
+		textBlockOpen = true
+		return writeSSEEvent(writer, "content_block_start", map[string]any{
+			"type":  "content_block_start",
+			"index": textBlockIndex,
+			"content_block": map[string]any{
+				"type": "text",
+				"text": "",
+			},
+		})
+	}
+	emitTextDelta := func(text string) error {
+		if text == "" {
+			return nil
+		}
+		if err := ensureTextBlock(); err != nil {
+			return err
+		}
+		_, _ = textOutputBuilder.WriteString(text)
+		return writeSSEEvent(writer, "content_block_delta", map[string]any{
+			"type":  "content_block_delta",
+			"index": textBlockIndex,
+			"delta": map[string]any{
+				"type": "text_delta",
+				"text": text,
+			},
+		})
+	}
+	openThinkingBlock := func() error {
+		if thinkingBlockOpen {
+			return nil
+		}
+		if err := closeTextBlock(); err != nil {
+			return err
+		}
+		thinkingBlockIndex = nextBlockIndex
+		nextBlockIndex++
+		thinkingBlockOpen = true
+		return writeKiroThinkingBlockStart(writer, thinkingBlockIndex)
+	}
+	emitThinkingDelta := func(thinking string) error {
+		if thinking == "" {
+			return nil
+		}
+		_, _ = nativeThinkingBuilder.WriteString(thinking)
+		return writeKiroThinkingBlockDelta(writer, thinkingBlockIndex, thinking)
+	}
+	closeThinkingBlock := func() error {
+		if !thinkingBlockOpen {
+			return nil
+		}
+		if err := writeKiroThinkingBlockDelta(writer, thinkingBlockIndex, ""); err != nil {
+			return err
+		}
+		if err := writeKiroThinkingBlockStop(writer, thinkingBlockIndex); err != nil {
+			return err
+		}
+		thinkingBlockOpen = false
+		thinkingBlockIndex = -1
+		return nil
+	}
+	processAssistantContent := func(content string) error {
+		nativeThinkingBuffer += content
+		for {
+			if !thinkingBlockOpen && !nativeThinkingExtracted {
+				start := strings.Index(nativeThinkingBuffer, "<thinking>")
+				if start >= 0 {
+					before := nativeThinkingBuffer[:start]
+					if strings.TrimSpace(before) != "" {
+						if err := emitTextDelta(before); err != nil {
+							return err
+						}
+					}
+					nativeThinkingBuffer = nativeThinkingBuffer[start+len("<thinking>"):]
+					stripThinkingLeadingNewline = true
+					if err := openThinkingBlock(); err != nil {
+						return err
+					}
+					continue
+				}
+				targetLen := len(nativeThinkingBuffer) - len("<thinking>")
+				if targetLen > 0 {
+					safeContent := nativeThinkingBuffer[:targetLen]
+					if strings.TrimSpace(safeContent) != "" {
+						if err := emitTextDelta(safeContent); err != nil {
+							return err
+						}
+						nativeThinkingBuffer = nativeThinkingBuffer[targetLen:]
+					}
+				}
+				return nil
+			}
+			if thinkingBlockOpen {
+				if stripThinkingLeadingNewline {
+					if strings.HasPrefix(nativeThinkingBuffer, "\n") {
+						nativeThinkingBuffer = nativeThinkingBuffer[1:]
+						stripThinkingLeadingNewline = false
+					} else if nativeThinkingBuffer != "" {
+						stripThinkingLeadingNewline = false
+					} else {
+						return nil
+					}
+				}
+				end := strings.Index(nativeThinkingBuffer, "</thinking>")
+				if end >= 0 {
+					if err := emitThinkingDelta(nativeThinkingBuffer[:end]); err != nil {
+						return err
+					}
+					if err := closeThinkingBlock(); err != nil {
+						return err
+					}
+					nativeThinkingExtracted = true
+					nativeThinkingBuffer = strings.TrimLeft(nativeThinkingBuffer[end+len("</thinking>"):], "\n")
+					continue
+				}
+				targetLen := len(nativeThinkingBuffer) - len("</thinking>\n\n")
+				if targetLen > 0 {
+					if err := emitThinkingDelta(nativeThinkingBuffer[:targetLen]); err != nil {
+						return err
+					}
+					nativeThinkingBuffer = nativeThinkingBuffer[targetLen:]
+				}
+				return nil
+			}
+			if nativeThinkingBuffer == "" {
+				return nil
+			}
+			if err := emitTextDelta(nativeThinkingBuffer); err != nil {
+				return err
+			}
+			nativeThinkingBuffer = ""
+			return nil
+		}
 	}
 
 	for {
@@ -821,7 +975,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 				if failureErr := kiroFrameFailure(frame); failureErr != nil {
 					if streamStarted {
 						handledErr := s.handleFrameFailure(ctx, c, account, resp.Header.Get("x-amzn-requestid"), frame, failureErr, false)
-						if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, toolStates); err != nil {
+						if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, thinkingBlockOpen, thinkingBlockIndex, toolStates); err != nil {
 							return nil, err
 						}
 						_ = writeKiroStreamError(writer, failureErr.Error())
@@ -855,30 +1009,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						v := int(time.Since(start).Milliseconds())
 						firstTokenMs = &v
 					}
-					if !textBlockOpen {
-						textBlockIndex = nextBlockIndex
-						nextBlockIndex++
-						textBlockOpen = true
-						if err := writeSSEEvent(writer, "content_block_start", map[string]any{
-							"type":  "content_block_start",
-							"index": textBlockIndex,
-							"content_block": map[string]any{
-								"type": "text",
-								"text": "",
-							},
-						}); err != nil {
-							return nil, err
-						}
-					}
-					_, _ = outputBuilder.WriteString(content)
-					if err := writeSSEEvent(writer, "content_block_delta", map[string]any{
-						"type":  "content_block_delta",
-						"index": textBlockIndex,
-						"delta": map[string]any{
-							"type": "text_delta",
-							"text": content,
-						},
-					}); err != nil {
+					if err := processAssistantContent(content); err != nil {
 						return nil, err
 					}
 				case "toolUseEvent":
@@ -890,14 +1021,26 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						}
 					}
 					if !state.Started {
-						if textBlockOpen {
-							if err := writeSSEEvent(writer, "content_block_stop", map[string]any{
-								"type":  "content_block_stop",
-								"index": textBlockIndex,
-							}); err != nil {
+						if thinkingBlockOpen {
+							if err := emitThinkingDelta(nativeThinkingBuffer); err != nil {
 								return nil, err
 							}
-							textBlockOpen = false
+							nativeThinkingBuffer = ""
+							if err := closeThinkingBlock(); err != nil {
+								return nil, err
+							}
+							nativeThinkingExtracted = true
+						}
+						if !nativeThinkingExtracted && nativeThinkingBuffer != "" {
+							if strings.TrimSpace(nativeThinkingBuffer) != "" {
+								if err := emitTextDelta(nativeThinkingBuffer); err != nil {
+									return nil, err
+								}
+							}
+							nativeThinkingBuffer = ""
+						}
+						if err := closeTextBlock(); err != nil {
+							return nil, err
 						}
 						state.Started = true
 						state.BlockIndex = nextBlockIndex
@@ -951,7 +1094,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 				if len(buffer) > 0 {
 					incompleteErr := fmt.Errorf("incomplete kiro frame at EOF: %w", io.ErrUnexpectedEOF)
 					if streamStarted {
-						if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, toolStates); err != nil {
+						if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, thinkingBlockOpen, thinkingBlockIndex, toolStates); err != nil {
 							return nil, err
 						}
 					}
@@ -970,7 +1113,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 				break
 			}
 			if streamStarted {
-				if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, toolStates); err != nil {
+				if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, thinkingBlockOpen, thinkingBlockIndex, toolStates); err != nil {
 					return nil, err
 				}
 			}
@@ -980,10 +1123,27 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			return nil, readErr
 		}
 	}
-	if !streamStarted || (outputBuilder.Len() == 0 && completedToolUses == 0) {
+	if thinkingBlockOpen {
+		if err := emitThinkingDelta(nativeThinkingBuffer); err != nil {
+			return nil, err
+		}
+		nativeThinkingBuffer = ""
+		if err := closeThinkingBlock(); err != nil {
+			return nil, err
+		}
+		nativeThinkingExtracted = true
+	} else if nativeThinkingBuffer != "" {
+		if strings.TrimSpace(nativeThinkingBuffer) != "" {
+			if err := emitTextDelta(nativeThinkingBuffer); err != nil {
+				return nil, err
+			}
+		}
+		nativeThinkingBuffer = ""
+	}
+	if !streamStarted || (textOutputBuilder.Len() == 0 && nativeThinkingBuilder.Len() == 0 && simulatedThinking == "" && completedToolUses == 0) {
 		emptyErr := errors.New("kiro response contained no assistant output")
 		if streamStarted {
-			if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, toolStates); err != nil {
+			if err := closeOpenKiroBlocks(writer, textBlockOpen, textBlockIndex, thinkingBlockOpen, thinkingBlockIndex, toolStates); err != nil {
 				return nil, err
 			}
 		}
@@ -993,18 +1153,13 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		return nil, emptyErr
 	}
 
-	if textBlockOpen {
-		if err := writeSSEEvent(writer, "content_block_stop", map[string]any{
-			"type":  "content_block_stop",
-			"index": textBlockIndex,
-		}); err != nil {
-			return nil, err
-		}
+	if err := closeTextBlock(); err != nil {
+		return nil, err
 	}
 
 	finalFakeCacheUsage := resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, inputTokens, runtimeSettings)
 	inputTokens = finalFakeCacheUsage.InputTokens
-	outputTokens := estimateKiroOutputTokens(outputBuilder.String()+simulatedThinking, toolOutputBuilder.String())
+	outputTokens := estimateKiroOutputTokens(textOutputBuilder.String()+nativeThinkingBuilder.String()+simulatedThinking, toolOutputBuilder.String())
 	if err := writeSSEEvent(writer, "message_delta", map[string]any{
 		"type":  "message_delta",
 		"delta": map[string]any{"stop_reason": stopReason, "stop_sequence": nil},
@@ -1048,30 +1203,128 @@ func writeKiroThinkingBlock(writer gin.ResponseWriter, index int, thinking strin
 	if thinking == "" {
 		return nil
 	}
-	if err := writeSSEEvent(writer, "content_block_start", map[string]any{
+	if err := writeKiroThinkingBlockStart(writer, index); err != nil {
+		return err
+	}
+	if err := writeKiroThinkingBlockDelta(writer, index, thinking); err != nil {
+		return err
+	}
+	return writeKiroThinkingBlockStop(writer, index)
+}
+
+func writeKiroThinkingBlockStart(writer gin.ResponseWriter, index int) error {
+	return writeSSEEvent(writer, "content_block_start", map[string]any{
 		"type":  "content_block_start",
 		"index": index,
 		"content_block": map[string]any{
 			"type":     "thinking",
 			"thinking": "",
 		},
-	}); err != nil {
-		return err
-	}
-	if err := writeSSEEvent(writer, "content_block_delta", map[string]any{
+	})
+}
+
+func writeKiroThinkingBlockDelta(writer gin.ResponseWriter, index int, thinking string) error {
+	return writeSSEEvent(writer, "content_block_delta", map[string]any{
 		"type":  "content_block_delta",
 		"index": index,
 		"delta": map[string]any{
 			"type":     "thinking_delta",
 			"thinking": thinking,
 		},
-	}); err != nil {
-		return err
-	}
+	})
+}
+
+func writeKiroThinkingBlockStop(writer gin.ResponseWriter, index int) error {
 	return writeSSEEvent(writer, "content_block_stop", map[string]any{
 		"type":  "content_block_stop",
 		"index": index,
 	})
+}
+
+func splitKiroThinkingContent(text string) (before, thinking, after string, found bool) {
+	start := strings.Index(text, "<thinking>")
+	if start < 0 {
+		return text, "", "", false
+	}
+	afterOpen := text[start+len("<thinking>"):]
+	end := strings.Index(afterOpen, "</thinking>")
+	if end < 0 {
+		return text, "", "", false
+	}
+	before = text[:start]
+	thinking = afterOpen[:end]
+	if strings.HasPrefix(thinking, "\n") {
+		thinking = thinking[1:]
+	}
+	after = afterOpen[end+len("</thinking>"):]
+	after = strings.TrimLeft(after, "\n")
+	return before, thinking, after, true
+}
+
+func appendKiroNativeContentBlocks(text string, content []map[string]any) ([]map[string]any, string, string) {
+	remaining := text
+	var textOutput strings.Builder
+	var thinkingOutput strings.Builder
+	for remaining != "" {
+		before, thinking, after, found := splitKiroThinkingContent(remaining)
+		if !found {
+			if trimmed := strings.TrimSpace(remaining); trimmed != "" {
+				content = append(content, map[string]any{"type": "text", "text": remaining})
+				textOutput.WriteString(remaining)
+			}
+			break
+		}
+		if strings.TrimSpace(before) != "" {
+			content = append(content, map[string]any{"type": "text", "text": before})
+			textOutput.WriteString(before)
+		}
+		if thinking != "" {
+			content = append(content, map[string]any{"type": "thinking", "thinking": thinking})
+			thinkingOutput.WriteString(thinking)
+		}
+		remaining = after
+	}
+	return content, textOutput.String(), thinkingOutput.String()
+}
+
+func collectKiroAssistantResponseText(frames []*kiroFrame) (string, bool) {
+	var textBuilder strings.Builder
+	hasAssistantResponse := false
+	for _, frame := range frames {
+		if frame == nil {
+			return "", false
+		}
+		if failureErr := kiroFrameFailure(frame); failureErr != nil {
+			return "", false
+		}
+		if frame.EventType != "assistantResponseEvent" {
+			continue
+		}
+		content := rawStringField(frame.Payload, "content")
+		if content == "" {
+			continue
+		}
+		hasAssistantResponse = true
+		textBuilder.WriteString(content)
+	}
+	return textBuilder.String(), hasAssistantResponse
+}
+
+func extractKiroNativeThinkingText(text string) string {
+	content, _, _ := appendKiroNativeContentBlocks(text, nil)
+	thinkingParts := make([]string, 0, len(content))
+	for _, block := range content {
+		if rawType, ok := block["type"].(string); !ok || rawType != "thinking" {
+			continue
+		}
+		thinking, _ := block["thinking"].(string)
+		thinking = strings.TrimSpace(thinking)
+		if thinking == "" {
+			continue
+		}
+		thinkingParts = append(thinkingParts, thinking)
+	}
+	return strings.TrimSpace(strings.Join(thinkingParts, "\n\n"))
 }
 
 func (s *KiroGatewayService) prepareFakeCachePlan(account *Account, parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) (*kiropkg.FakeCachePlan, kiropkg.FakeCacheHitState) {
@@ -1603,12 +1856,17 @@ func startKiroStream(writer gin.ResponseWriter, msgID, model string, fakeCacheUs
 	})
 }
 
-func closeOpenKiroBlocks(writer gin.ResponseWriter, textBlockOpen bool, textBlockIndex int, toolStates map[string]*kiroToolState) error {
+func closeOpenKiroBlocks(writer gin.ResponseWriter, textBlockOpen bool, textBlockIndex int, thinkingBlockOpen bool, thinkingBlockIndex int, toolStates map[string]*kiroToolState) error {
 	if textBlockOpen {
 		if err := writeSSEEvent(writer, "content_block_stop", map[string]any{
 			"type":  "content_block_stop",
 			"index": textBlockIndex,
 		}); err != nil {
+			return err
+		}
+	}
+	if thinkingBlockOpen {
+		if err := writeKiroThinkingBlockStop(writer, thinkingBlockIndex); err != nil {
 			return err
 		}
 	}
@@ -1930,7 +2188,8 @@ func (s *KiroGatewayService) forwardWithFreeThinking(ctx context.Context, c *gin
 }
 
 // generateKiroFreeThinkingContent 向 Kiro 发一次非流式请求，注入 ThinkingFreePrompt，
-// 从响应里提取 <thinking>...</thinking> 标签内的内容。失败时返回空字符串，由调用方决定是否回退到 simulated thinking。
+// 再复用正常 native-thinking 解析逻辑，从 assistantResponseEvent 文本里提取 thinking 内容。
+// 失败时返回空字符串，由调用方决定是否回退到 simulated thinking。
 func (s *KiroGatewayService) generateKiroFreeThinkingContent(ctx context.Context, account *Account, parsed *ParsedRequest, runtimeSettings *KiroRuntimeSettings) string {
 	freePrompt := runtimeSettings.ThinkingFreePrompt
 	if strings.TrimSpace(freePrompt) == "" {
@@ -1978,17 +2237,11 @@ func (s *KiroGatewayService) generateKiroFreeThinkingContent(ctx context.Context
 		return ""
 	}
 
-	var textBuilder strings.Builder
-	for _, frame := range frames {
-		if frame.EventType == "assistantResponseEvent" {
-			if content := rawStringField(frame.Payload, "content"); content != "" {
-				textBuilder.WriteString(content)
-			}
-		}
+	text, ok := collectKiroAssistantResponseText(frames)
+	if !ok {
+		return ""
 	}
-
-	thinking, _ := extractKiroFreeThinking(textBuilder.String())
-	return thinking
+	return extractKiroNativeThinkingText(text)
 }
 
 // buildKiroFreeThinkingBody 在请求体的 system 前注入 freePrompt，并移除 thinking 字段。
@@ -2041,17 +2294,4 @@ func stripKiroThinkingField(body []byte) []byte {
 		return body
 	}
 	return removeThinkingDependentContextStrategies(encoded)
-}
-
-// extractKiroFreeThinking 从文本里提取 <thinking>...</thinking> 标签内容。
-// 返回 (thinkingContent, remainingText)。
-func extractKiroFreeThinking(text string) (string, string) {
-	start := strings.Index(text, "<thinking>")
-	end := strings.Index(text, "</thinking>")
-	if start < 0 || end <= start {
-		return "", text
-	}
-	thinking := strings.TrimSpace(text[start+len("<thinking>") : end])
-	remaining := strings.TrimSpace(text[:start] + text[end+len("</thinking>"):])
-	return thinking, remaining
 }

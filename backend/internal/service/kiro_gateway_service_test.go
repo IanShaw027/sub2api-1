@@ -449,7 +449,7 @@ func TestShouldUseKiroFreeThinkingPath_ThinkingModes(t *testing.T) {
 		mode     string
 		expected bool
 	}{
-		{name: "simulate", model: "claude-sonnet-4-5", mode: KiroThinkingModeSimulate, expected: false},
+		{name: "simulate", model: "claude-sonnet-4-5", mode: KiroThinkingModeSimulate, expected: true},
 		{name: "model", model: "claude-sonnet-4-5", mode: KiroThinkingModeModel, expected: false},
 		{name: "model_and_simulate_sonnet45", model: "claude-sonnet-4-5", mode: KiroThinkingModeModelAndSimulate, expected: true},
 		{name: "model_and_simulate_sonnet46", model: "claude-sonnet-4-6", mode: KiroThinkingModeModelAndSimulate, expected: false},
@@ -544,20 +544,42 @@ func TestRenderKiroThinkingSimulation_UsesConfiguredTemplateAndEffortThreshold(t
 	require.Contains(t, high, "failure modes")
 }
 
-func TestKiroGatewayService_Forward_FreeSimulateModeKeepsSingleRequestAndSimulatedThinking(t *testing.T) {
+func TestKiroGatewayService_Forward_FreeSimulateModeUsesThinkingPreflight(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	upstream := &kiroHTTPUpstreamRecorder{
-		resp: &http.Response{
-			StatusCode: http.StatusOK,
-			Header:     make(http.Header),
-			Body: io.NopCloser(bytes.NewReader(buildKiroTestFrame(t, map[string]string{
-				":message-type": "event",
-				":event-type":   "assistantResponseEvent",
-			}, map[string]any{"content": "final answer"}))),
-		},
+	upstream := &kiroHTTPUpstreamRecorder{}
+	upstream.doFunc = func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+		switch upstream.calls {
+		case 1:
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(bytes.NewReader(bytes.Join([][]byte{
+					buildKiroTestFrame(t, map[string]string{
+						":message-type": "event",
+						":event-type":   "assistantResponseEvent",
+					}, map[string]any{"content": "<thinking>\npreflight"}),
+					buildKiroTestFrame(t, map[string]string{
+						":message-type": "event",
+						":event-type":   "assistantResponseEvent",
+					}, map[string]any{"content": " reasoning</thinking>\n\nintermediate answer"}),
+				}, nil))),
+			}, nil
+		case 2:
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(bytes.NewReader(buildKiroTestFrame(t, map[string]string{
+					":message-type": "event",
+					":event-type":   "assistantResponseEvent",
+				}, map[string]any{"content": "final answer"}))),
+			}, nil
+		default:
+			t.Fatalf("unexpected upstream call %d", upstream.calls)
+			return nil, nil
+		}
 	}
 	svc := &KiroGatewayService{httpUpstream: upstream}
 	account := &Account{
@@ -584,10 +606,11 @@ func TestKiroGatewayService_Forward_FreeSimulateModeKeepsSingleRequestAndSimulat
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, 1, upstream.calls, "simulate mode should not take the free two-request path")
+	require.Equal(t, 2, upstream.calls, "simulate mode should use the thinking preflight for Sonnet 4.5")
 	require.Contains(t, rec.Body.String(), `"type":"thinking"`)
-	require.Contains(t, rec.Body.String(), `Using Kiro simulated thinking with high effort for claude-sonnet-4-5-20250929`)
+	require.Contains(t, rec.Body.String(), `preflight reasoning`)
 	require.Contains(t, rec.Body.String(), `"text":"final answer"`)
+	require.NotContains(t, rec.Body.String(), `Thinking through the request with high effort`)
 }
 
 func TestKiroGatewayService_Forward_ModelAndSimulateFreeThinkingFallsBackToSimulatedThinking(t *testing.T) {
@@ -666,6 +689,107 @@ func TestKiroGatewayService_Forward_ModelAndSimulateFreeThinkingFallsBackToSimul
 	require.Contains(t, rec.Body.String(), `"type":"thinking"`)
 	require.Contains(t, rec.Body.String(), `fallback high claude-sonnet-4-5-20250929 claude-sonnet-4.5`)
 	require.Contains(t, rec.Body.String(), `"text":"final answer"`)
+}
+
+func TestKiroGatewayService_Forward_NativeThinkingBlocksUseUpstreamContent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body: io.NopCloser(bytes.NewReader(buildKiroTestFrame(t, map[string]string{
+				":message-type": "event",
+				":event-type":   "assistantResponseEvent",
+			}, map[string]any{"content": "<thinking>\nreal native reasoning</thinking>\n\nfinal answer"}))),
+		},
+	}
+	svc := &KiroGatewayService{httpUpstream: upstream}
+	account := &Account{
+		ID:       113,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "kiro-api-key",
+		},
+	}
+	parsed := &ParsedRequest{
+		Model:           "claude-opus-4-6",
+		ThinkingEnabled: true,
+		OutputEffort:    "high",
+		Body: []byte(`{
+			"model":"claude-opus-4-6",
+			"thinking":{"type":"enabled","budget_tokens":5000},
+			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
+		}`),
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, parsed)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 1, upstream.calls)
+	require.Contains(t, rec.Body.String(), `"thinking":"real native reasoning","type":"thinking"`)
+	require.Contains(t, rec.Body.String(), `"text":"final answer","type":"text"`)
+	require.NotContains(t, rec.Body.String(), `Thinking through the request with high effort`)
+}
+
+func TestKiroGatewayService_ForwardStream_NativeThinkingBlocksUseUpstreamContent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+
+	body := bytes.Join([][]byte{
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": "<thinking>\nreal"}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": " native reasoning</thinking>\n\nfinal"}),
+		buildKiroTestFrame(t, map[string]string{
+			":message-type": "event",
+			":event-type":   "assistantResponseEvent",
+		}, map[string]any{"content": " answer"}),
+	}, nil)
+
+	result, err := svc.forwardStream(
+		context.Background(),
+		c,
+		&Account{ID: 114, Platform: PlatformKiro, Type: AccountTypeAPIKey},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-opus-4-6", Stream: true, ThinkingEnabled: true},
+		&kiropkg.ConvertResult{Model: "claude-opus-4.6"},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	output := rec.Body.String()
+	require.Contains(t, output, `"content_block":{"thinking":"","type":"thinking"}`)
+	require.Contains(t, output, `"delta":{"thinking":"real native reasoning","type":"thinking_delta"}`)
+	require.Contains(t, output, `"content_block":{"text":"","type":"text"}`)
+	require.Contains(t, output, `"delta":{"text":"final","type":"text_delta"}`)
+	require.Contains(t, output, `"delta":{"text":" answer","type":"text_delta"}`)
+	require.NotContains(t, output, `Thinking through the request with high effort`)
+}
+
+func TestExtractKiroNativeThinkingText_UsesSameParserAsNativeNonStreamPath(t *testing.T) {
+	thinking := extractKiroNativeThinkingText("prefix<thinking>\nfirst pass</thinking>\n\nmiddle<thinking>second pass</thinking>\n\nsuffix")
+
+	require.Equal(t, "first pass\n\nsecond pass", thinking)
 }
 
 func TestKiroThinkingBodyBuilders_RemoveThinkingDependentContextStrategies(t *testing.T) {
