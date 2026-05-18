@@ -214,7 +214,7 @@ func TestGeminiMessagesCompatService_ForwardAIStudioGET_RequestErrorRecordsOpsCo
 
 	upstreamMessage, ok := c.Get(OpsUpstreamErrorMessageKey)
 	require.True(t, ok)
-	require.Equal(t, "dial tcp timeout", upstreamMessage)
+	require.Equal(t, "Upstream transport request failed", upstreamMessage)
 
 	raw, ok := c.Get(OpsUpstreamErrorsKey)
 	require.True(t, ok)
