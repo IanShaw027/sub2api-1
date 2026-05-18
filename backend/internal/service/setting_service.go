@@ -1916,6 +1916,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 		ThinkingMode:               settings.KiroThinkingMode,
 		ThinkingEffortThreshold:    settings.KiroThinkingEffortThreshold,
 		ThinkingSimulationTemplate: settings.KiroThinkingSimulationTemplate,
+		ThinkingFreePrompt:         settings.KiroThinkingFreePrompt,
 	})
 	updates[SettingKeyKiroDefaultVersion] = kiroRuntime.KiroVersion
 	updates[SettingKeyKiroDefaultCommit] = kiroRuntime.KiroCommit
@@ -1928,6 +1929,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyKiroThinkingMode] = kiroRuntime.ThinkingMode
 	updates[SettingKeyKiroThinkingEffortThreshold] = kiroRuntime.ThinkingEffortThreshold
 	updates[SettingKeyKiroThinkingSimulationTemplate] = kiroRuntime.ThinkingSimulationTemplate
+	updates[SettingKeyKiroThinkingFreePrompt] = kiroRuntime.ThinkingFreePrompt
 	updates[SettingKeyEnableAnthropicCacheTTL1hInjection] = strconv.FormatBool(settings.EnableAnthropicCacheTTL1hInjection)
 	updates[SettingKeyRewriteMessageCacheControl] = strconv.FormatBool(settings.RewriteMessageCacheControl)
 	updates[SettingKeyAntigravityUserAgentVersion] = antigravity.NormalizeUserAgentVersion(settings.AntigravityUserAgentVersion)
@@ -2032,6 +2034,7 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 			ThinkingMode:               settings.KiroThinkingMode,
 			ThinkingEffortThreshold:    settings.KiroThinkingEffortThreshold,
 			ThinkingSimulationTemplate: settings.KiroThinkingSimulationTemplate,
+			ThinkingFreePrompt:         settings.KiroThinkingFreePrompt,
 		}),
 		expiresAt: time.Now().Add(kiroRuntimeSettingsCacheTTL).UnixNano(),
 	})
@@ -2907,6 +2910,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyKiroThinkingMode:               defaultKiroThinkingMode,
 		SettingKeyKiroThinkingEffortThreshold:    defaultKiroThinkingEffortThreshold,
 		SettingKeyKiroThinkingSimulationTemplate: defaultKiroThinkingSimulationTemplate,
+		SettingKeyKiroThinkingFreePrompt:         defaultKiroThinkingFreePrompt,
 	}
 
 	return s.settingRepo.SetMultiple(ctx, defaults)
@@ -3321,6 +3325,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.KiroThinkingMode = kiroRuntime.ThinkingMode
 	result.KiroThinkingEffortThreshold = kiroRuntime.ThinkingEffortThreshold
 	result.KiroThinkingSimulationTemplate = kiroRuntime.ThinkingSimulationTemplate
+	result.KiroThinkingFreePrompt = kiroRuntime.ThinkingFreePrompt
 	result.PaymentVisibleMethodAlipaySource = NormalizeVisibleMethodSource("alipay", settings[SettingPaymentVisibleMethodAlipaySource])
 	result.PaymentVisibleMethodWxpaySource = NormalizeVisibleMethodSource("wxpay", settings[SettingPaymentVisibleMethodWxpaySource])
 	result.PaymentVisibleMethodAlipayEnabled = settings[SettingPaymentVisibleMethodAlipayEnabled] == "true"
@@ -3422,6 +3427,7 @@ func parseKiroRuntimeSettingsMap(settings map[string]string) *KiroRuntimeSetting
 	result.ThinkingMode = strings.TrimSpace(settings[SettingKeyKiroThinkingMode])
 	result.ThinkingEffortThreshold = strings.TrimSpace(settings[SettingKeyKiroThinkingEffortThreshold])
 	result.ThinkingSimulationTemplate = strings.TrimSpace(settings[SettingKeyKiroThinkingSimulationTemplate])
+	result.ThinkingFreePrompt = strings.TrimSpace(settings[SettingKeyKiroThinkingFreePrompt])
 
 	return normalizeKiroRuntimeSettings(result)
 }
@@ -3445,6 +3451,7 @@ func normalizeKiroRuntimeSettings(settings *KiroRuntimeSettings) *KiroRuntimeSet
 	settings.ThinkingMode = normalizeKiroThinkingMode(settings.ThinkingMode)
 	settings.ThinkingEffortThreshold = normalizeKiroThinkingEffortThreshold(settings.ThinkingEffortThreshold)
 	settings.ThinkingSimulationTemplate = normalizeKiroThinkingSimulationTemplate(settings.ThinkingSimulationTemplate)
+	settings.ThinkingFreePrompt = normalizeKiroThinkingFreePrompt(settings.ThinkingFreePrompt)
 	return settings
 }
 
@@ -3545,6 +3552,17 @@ func normalizeKiroThinkingSimulationTemplate(value string) string {
 	}
 	if len([]rune(trimmed)) > 2000 {
 		return string([]rune(trimmed)[:2000])
+	}
+	return trimmed
+}
+
+func normalizeKiroThinkingFreePrompt(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return defaultKiroThinkingFreePrompt
+	}
+	if len([]rune(trimmed)) > 4000 {
+		return string([]rune(trimmed)[:4000])
 	}
 	return trimmed
 }
@@ -4473,6 +4491,7 @@ func (s *SettingService) GetKiroRuntimeSettings(ctx context.Context) *KiroRuntim
 			SettingKeyKiroThinkingMode,
 			SettingKeyKiroThinkingEffortThreshold,
 			SettingKeyKiroThinkingSimulationTemplate,
+			SettingKeyKiroThinkingFreePrompt,
 		})
 		if err != nil {
 			slog.Warn("failed to get kiro runtime settings, falling back to defaults", "error", err)

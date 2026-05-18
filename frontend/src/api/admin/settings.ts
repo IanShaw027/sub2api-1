@@ -65,7 +65,8 @@ export type KiroRuntimeValidationError =
   | "cache_independent_ttl_seconds_range"
   | "cache_prefix_ttl_seconds_range"
   | "cache_prefix_ttl_seconds_exceeds_independent"
-  | "kiro_thinking_simulation_template_length";
+  | "kiro_thinking_simulation_template_length"
+  | "kiro_thinking_free_prompt_length";
 
 export type KiroThinkingMode =
   | "off"
@@ -91,6 +92,7 @@ export interface KiroRuntimeSettingsInput {
   kiro_thinking_mode?: KiroThinkingMode | string | null;
   kiro_thinking_effort_threshold?: KiroThinkingEffortThreshold | string | null;
   kiro_thinking_simulation_template?: string | null;
+  kiro_thinking_free_prompt?: string | null;
 }
 
 export const KIRO_CACHE_HIT_RATE_SCALE_DEFAULT = 95;
@@ -103,6 +105,9 @@ export const KIRO_THINKING_EFFORT_THRESHOLD_DEFAULT: KiroThinkingEffortThreshold
   "medium";
 export const KIRO_THINKING_SIMULATION_TEMPLATE_DEFAULT =
   "Using Kiro simulated thinking with {effort} effort for {model}. {detail}";
+export const KIRO_THINKING_FREE_PROMPT_DEFAULT =
+  "Before answering, think through the problem carefully. Output your complete reasoning in <thinking>...</thinking> XML tags first, then provide your answer.";
+export const KIRO_THINKING_FREE_PROMPT_MAX_LENGTH = 4000;
 
 const AUTH_SOURCE_TYPES: AuthSourceType[] = [
   "email",
@@ -401,6 +406,12 @@ export function validateKiroRuntimeSettings(
   ) {
     return "kiro_thinking_simulation_template_length";
   }
+  if (
+    [...String(settings.kiro_thinking_free_prompt ?? "").trim()].length >
+    KIRO_THINKING_FREE_PROMPT_MAX_LENGTH
+  ) {
+    return "kiro_thinking_free_prompt_length";
+  }
 
   return null;
 }
@@ -420,6 +431,7 @@ export function normalizeKiroRuntimeSettingsForUpdate(
   | "kiro_thinking_mode"
   | "kiro_thinking_effort_threshold"
   | "kiro_thinking_simulation_template"
+  | "kiro_thinking_free_prompt"
 > {
   const payload: Pick<
     UpdateSettingsRequest,
@@ -434,6 +446,7 @@ export function normalizeKiroRuntimeSettingsForUpdate(
     | "kiro_thinking_mode"
     | "kiro_thinking_effort_threshold"
     | "kiro_thinking_simulation_template"
+    | "kiro_thinking_free_prompt"
   > = {};
 
   if (settings.kiro_version !== undefined) {
@@ -496,6 +509,13 @@ export function normalizeKiroRuntimeSettingsForUpdate(
       settings.kiro_thinking_simulation_template ||
         KIRO_THINKING_SIMULATION_TEMPLATE_DEFAULT,
     ).trim();
+  }
+  if (settings.kiro_thinking_free_prompt !== undefined) {
+    const normalizedFreePrompt = String(
+      settings.kiro_thinking_free_prompt ?? "",
+    ).trim();
+    payload.kiro_thinking_free_prompt =
+      normalizedFreePrompt || KIRO_THINKING_FREE_PROMPT_DEFAULT;
   }
 
   return payload;
@@ -724,6 +744,7 @@ export interface SystemSettings {
   kiro_thinking_mode?: KiroThinkingMode | string;
   kiro_thinking_effort_threshold?: KiroThinkingEffortThreshold | string;
   kiro_thinking_simulation_template?: string;
+  kiro_thinking_free_prompt?: string;
 
   // 分组隔离
   allow_ungrouped_key_scheduling: boolean;
@@ -955,6 +976,7 @@ export interface UpdateSettingsRequest {
   kiro_thinking_mode?: KiroThinkingMode | string;
   kiro_thinking_effort_threshold?: KiroThinkingEffortThreshold | string;
   kiro_thinking_simulation_template?: string;
+  kiro_thinking_free_prompt?: string;
   allow_ungrouped_key_scheduling?: boolean;
   enable_fingerprint_unification?: boolean;
   enable_metadata_passthrough?: boolean;

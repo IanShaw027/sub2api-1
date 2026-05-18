@@ -465,6 +465,7 @@ const (
 	SettingKeyKiroThinkingMode               = "kiro_thinking_mode"
 	SettingKeyKiroThinkingEffortThreshold    = "kiro_thinking_effort_threshold"
 	SettingKeyKiroThinkingSimulationTemplate = "kiro_thinking_simulation_template"
+	SettingKeyKiroThinkingFreePrompt         = "kiro_thinking_free_prompt"
 )
 
 // AdminAPIKeyPrefix is the prefix for admin API keys (distinct from user "sk-" keys).

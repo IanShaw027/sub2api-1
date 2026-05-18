@@ -204,6 +204,7 @@ type SystemSettings struct {
 	KiroThinkingMode               string
 	KiroThinkingEffortThreshold    string
 	KiroThinkingSimulationTemplate string
+	KiroThinkingFreePrompt         string
 
 	// Payment visible method routing
 	PaymentVisibleMethodAlipaySource  string
@@ -253,6 +254,7 @@ type KiroRuntimeSettings struct {
 	ThinkingMode               string `json:"thinking_mode"`
 	ThinkingEffortThreshold    string `json:"thinking_effort_threshold"`
 	ThinkingSimulationTemplate string `json:"thinking_simulation_template"`
+	ThinkingFreePrompt         string `json:"thinking_free_prompt"`
 }
 
 const (
@@ -271,6 +273,7 @@ const (
 	defaultKiroThinkingMode               = KiroThinkingModeSimulate
 	defaultKiroThinkingEffortThreshold    = "medium"
 	defaultKiroThinkingSimulationTemplate = "Using Kiro simulated thinking with {effort} effort for {model}. {detail}"
+	defaultKiroThinkingFreePrompt         = "Before answering, think through the problem carefully. Output your complete reasoning in <thinking>...</thinking> XML tags first, then provide your answer."
 )
 
 func DefaultKiroRuntimeSettings() *KiroRuntimeSettings {
@@ -286,6 +289,7 @@ func DefaultKiroRuntimeSettings() *KiroRuntimeSettings {
 		ThinkingMode:               defaultKiroThinkingMode,
 		ThinkingEffortThreshold:    defaultKiroThinkingEffortThreshold,
 		ThinkingSimulationTemplate: defaultKiroThinkingSimulationTemplate,
+		ThinkingFreePrompt:         defaultKiroThinkingFreePrompt,
 	}
 }
 

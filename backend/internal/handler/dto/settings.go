@@ -195,6 +195,7 @@ type SystemSettings struct {
 	KiroThinkingMode               string `json:"kiro_thinking_mode"`
 	KiroThinkingEffortThreshold    string `json:"kiro_thinking_effort_threshold"`
 	KiroThinkingSimulationTemplate string `json:"kiro_thinking_simulation_template"`
+	KiroThinkingFreePrompt         string `json:"kiro_thinking_free_prompt"`
 
 	// Payment visible method routing
 	PaymentVisibleMethodAlipaySource  string `json:"payment_visible_method_alipay_source"`

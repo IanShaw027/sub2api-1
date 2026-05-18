@@ -1,4 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
+import {
+  KIRO_THINKING_FREE_PROMPT_DEFAULT,
+  normalizeKiroRuntimeSettingsForUpdate,
+  validateKiroRuntimeSettings,
+} from '@/api/admin/settings'
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
@@ -77,12 +82,31 @@ describe('useKiroOAuth', () => {
     })
   })
 
+  it('normalizes and validates the Kiro thinking free prompt setting', () => {
+    expect(normalizeKiroRuntimeSettingsForUpdate({
+      kiro_thinking_free_prompt: '  Think step by step before answering.  '
+    })).toEqual({
+      kiro_thinking_free_prompt: 'Think step by step before answering.'
+    })
+
+    expect(normalizeKiroRuntimeSettingsForUpdate({
+      kiro_thinking_free_prompt: '   '
+    })).toEqual({
+      kiro_thinking_free_prompt: KIRO_THINKING_FREE_PROMPT_DEFAULT
+    })
+
+    expect(validateKiroRuntimeSettings({
+      kiro_thinking_free_prompt: 'x'.repeat(4001)
+    })).toBe('kiro_thinking_free_prompt_length')
+  })
+
   it('builds account names from explicit or identity fields and avoids generic defaults', () => {
     const kiroOAuth = useKiroOAuth()
 
     expect(kiroOAuth.buildAccountName({ email: 'user@example.com' } as any, '  Manual Name  ')).toBe('Manual Name')
     expect(kiroOAuth.buildAccountName({ email: 'user@example.com', profile_id: 'EHGA3GRVQMUK' } as any)).toBe('user@example.com (EHGA3GRVQMUK)')
     expect(kiroOAuth.buildAccountName({ name: 'Kiro User' } as any)).toBe('Kiro User')
+    expect(kiroOAuth.buildAccountName({ name: 'Kiro User', profile_id: 'EHGA3GRVQMUK' } as any)).toBe('Kiro User')
     expect(kiroOAuth.buildAccountName({ email: 'user@example.com' } as any)).toBe('user@example.com')
     expect(kiroOAuth.buildAccountName({ profile_id: 'EHGA3GRVQMUK' } as any)).toBe('EHGA3GRVQMUK')
     expect(kiroOAuth.buildAccountName({ user_id: 'arn:aws:codewhisperer:us-east-1:699475941385:profile/EHGA3GRVQMUK' } as any)).toBe('')

@@ -3057,6 +3057,33 @@
                     }}
                   </p>
                 </div>
+                <div class="mt-4">
+                  <label
+                    class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    {{ localText("自由思考提示词", "Free Thinking Prompt") }}
+                  </label>
+                  <textarea
+                    v-model="form.kiro_thinking_free_prompt"
+                    rows="4"
+                    class="input min-h-[112px] font-mono text-sm"
+                    data-testid="kiro-runtime-thinking-free-prompt"
+                    :placeholder="
+                      localText(
+                        '留空将恢复默认提示词。',
+                        'Leave blank to restore the default prompt.',
+                      )
+                    "
+                  />
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      localText(
+                        `保存时最多 ${KIRO_THINKING_FREE_PROMPT_MAX_LENGTH} 个字符；留空会恢复默认提示词。`,
+                        `Save up to ${KIRO_THINKING_FREE_PROMPT_MAX_LENGTH} characters; leave blank to restore the default prompt.`,
+                      )
+                    }}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -6875,6 +6902,8 @@ import {
   deriveWeChatConnectStoredMode,
   KIRO_CACHE_MIN_BLOCK_TOKENS_MAX,
   KIRO_THINKING_EFFORT_THRESHOLD_DEFAULT,
+  KIRO_THINKING_FREE_PROMPT_DEFAULT,
+  KIRO_THINKING_FREE_PROMPT_MAX_LENGTH,
   KIRO_THINKING_MODE_DEFAULT,
   KIRO_THINKING_SIMULATION_TEMPLATE_DEFAULT,
   normalizeKiroRuntimeSettingsForUpdate,
@@ -6956,6 +6985,12 @@ function formatKiroRuntimeValidationError(
     return localText(
       `缓存最小块 Token 数必须在 0-${KIRO_CACHE_MIN_BLOCK_TOKENS_MAX} 之间。`,
       `Cache min block tokens must be between 0 and ${KIRO_CACHE_MIN_BLOCK_TOKENS_MAX}.`,
+    );
+  }
+  if (error === "kiro_thinking_free_prompt_length") {
+    return localText(
+      `自由思考提示词不能超过 ${KIRO_THINKING_FREE_PROMPT_MAX_LENGTH} 个字符。`,
+      `Free thinking prompt must be at most ${KIRO_THINKING_FREE_PROMPT_MAX_LENGTH} characters.`,
     );
   }
 
@@ -7483,6 +7518,7 @@ const form = reactive<SettingsForm>({
   kiro_thinking_mode: KIRO_THINKING_MODE_DEFAULT,
   kiro_thinking_effort_threshold: KIRO_THINKING_EFFORT_THRESHOLD_DEFAULT,
   kiro_thinking_simulation_template: KIRO_THINKING_SIMULATION_TEMPLATE_DEFAULT,
+  kiro_thinking_free_prompt: KIRO_THINKING_FREE_PROMPT_DEFAULT,
   // 分组隔离
   allow_ungrouped_key_scheduling: false,
   openai_advanced_scheduler_enabled: false,

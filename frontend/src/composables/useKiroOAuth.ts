@@ -193,11 +193,14 @@ export function useKiroOAuth() {
     const normalizedSubscription = subscriptionLabel?.toLowerCase().startsWith('kiro')
       ? subscriptionLabel
       : subscriptionLabel
+    const primaryIdentity =
+      tokenInfo.email || tokenInfo.name || tokenInfo.profile_id || tokenInfo.user_id
+    const detailIdentity = tokenInfo.email ? tokenInfo.profile_id : undefined
 
     return formatOAuthAccountName({
       manualName: fallbackName,
-      primary: tokenInfo.email || tokenInfo.name || tokenInfo.profile_id || tokenInfo.user_id,
-      details: [tokenInfo.profile_id],
+      primary: primaryIdentity,
+      details: detailIdentity ? [detailIdentity] : [],
       platformLabel: 'Kiro',
       fallbackDetail: normalizedSubscription,
       defaultName: ''

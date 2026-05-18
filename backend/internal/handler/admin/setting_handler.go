@@ -461,6 +461,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		KiroThinkingMode:                          settings.KiroThinkingMode,
 		KiroThinkingEffortThreshold:               settings.KiroThinkingEffortThreshold,
 		KiroThinkingSimulationTemplate:            settings.KiroThinkingSimulationTemplate,
+		KiroThinkingFreePrompt:                    settings.KiroThinkingFreePrompt,
 		PaymentVisibleMethodAlipaySource:          settings.PaymentVisibleMethodAlipaySource,
 		PaymentVisibleMethodWxpaySource:           settings.PaymentVisibleMethodWxpaySource,
 		PaymentVisibleMethodAlipayEnabled:         settings.PaymentVisibleMethodAlipayEnabled,
@@ -779,6 +780,7 @@ type UpdateSettingsRequest struct {
 	KiroThinkingMode               *string `json:"kiro_thinking_mode"`
 	KiroThinkingEffortThreshold    *string `json:"kiro_thinking_effort_threshold"`
 	KiroThinkingSimulationTemplate *string `json:"kiro_thinking_simulation_template"`
+	KiroThinkingFreePrompt         *string `json:"kiro_thinking_free_prompt"`
 
 	// Payment visible method routing
 	PaymentVisibleMethodAlipaySource  *string `json:"payment_visible_method_alipay_source"`
@@ -2004,6 +2006,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.KiroThinkingSimulationTemplate
 		}(),
+		KiroThinkingFreePrompt: func() string {
+			if req.KiroThinkingFreePrompt != nil {
+				return strings.TrimSpace(*req.KiroThinkingFreePrompt)
+			}
+			return previousSettings.KiroThinkingFreePrompt
+		}(),
 		EnableAnthropicCacheTTL1hInjection: func() bool {
 			if req.EnableAnthropicCacheTTL1hInjection != nil {
 				return *req.EnableAnthropicCacheTTL1hInjection
@@ -2413,6 +2421,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		KiroThinkingMode:                          updatedSettings.KiroThinkingMode,
 		KiroThinkingEffortThreshold:               updatedSettings.KiroThinkingEffortThreshold,
 		KiroThinkingSimulationTemplate:            updatedSettings.KiroThinkingSimulationTemplate,
+		KiroThinkingFreePrompt:                    updatedSettings.KiroThinkingFreePrompt,
 		PaymentVisibleMethodAlipaySource:          updatedSettings.PaymentVisibleMethodAlipaySource,
 		PaymentVisibleMethodWxpaySource:           updatedSettings.PaymentVisibleMethodWxpaySource,
 		PaymentVisibleMethodAlipayEnabled:         updatedSettings.PaymentVisibleMethodAlipayEnabled,
