@@ -229,6 +229,41 @@ func TestNormalizeCodexImportRejectsExpiredAccessToken(t *testing.T) {
 	}
 }
 
+func TestNormalizeCodexImportRejectsMalformedIDToken(t *testing.T) {
+	accessToken := buildCodexImportTestJWT(t, time.Now().Add(time.Hour), map[string]any{})
+	raw := map[string]any{
+		"accessToken": accessToken,
+		"id_token":    "not-a-jwt",
+	}
+
+	_, err := normalizeCodexImportEntry(codexImportEntry{Index: 1, Value: raw})
+	if err == nil {
+		t.Fatal("normalizeCodexImportEntry error = nil, want malformed id_token error")
+	}
+	if !strings.Contains(err.Error(), "id_token") {
+		t.Fatalf("error = %v, want id_token message", err)
+	}
+}
+
+func TestNormalizeCodexImportRejectsExpiredIDToken(t *testing.T) {
+	accessToken := buildCodexImportTestJWT(t, time.Now().Add(time.Hour), map[string]any{})
+	idToken := buildCodexImportTestJWT(t, time.Now().Add(-time.Hour), map[string]any{
+		"email": "expired-id-token@example.com",
+	})
+	raw := map[string]any{
+		"accessToken": accessToken,
+		"id_token":    idToken,
+	}
+
+	_, err := normalizeCodexImportEntry(codexImportEntry{Index: 1, Value: raw})
+	if err == nil {
+		t.Fatal("normalizeCodexImportEntry error = nil, want expired id_token error")
+	}
+	if !strings.Contains(err.Error(), "id_token") || !strings.Contains(err.Error(), "已过期") {
+		t.Fatalf("error = %v, want expired id_token message", err)
+	}
+}
+
 func TestResolveCodexImportExpiryForNoRefreshTokenUsesTokenExpiry(t *testing.T) {
 	tokenExpiresAt := time.Now().Add(time.Hour).UTC()
 	item := &codexImportAccount{

@@ -518,14 +518,8 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 	var finalResponse *apicompat.ResponsesResponse
 	var usage OpenAIUsage
 	acc := apicompat.NewBufferedResponseAccumulator()
-
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if !strings.HasPrefix(line, "data: ") || line == "data: [DONE]" {
-			continue
-		}
-		payload := line[6:]
+	processFrame := func(frame openAICompatSSEFrame) bool {
+		payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)
 
 		var event apicompat.ResponsesStreamEvent
 		if err := json.Unmarshal([]byte(payload), &event); err != nil {
@@ -533,7 +527,7 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 				zap.Error(err),
 				zap.String("request_id", requestID),
 			)
-			continue
+			return false
 		}
 
 		// Accumulate delta content for fallback when terminal output is empty.
@@ -551,6 +545,19 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 					usage.CacheReadInputTokens = event.Response.Usage.InputTokensDetails.CachedTokens
 				}
 			}
+			return true
+		}
+		return false
+	}
+
+	var parser openAICompatSSEFrameParser
+	for scanner.Scan() {
+		line := scanner.Text()
+		frame, ok := parser.AddLine(line)
+		if !ok {
+			continue
+		}
+		if processFrame(frame) {
 			break
 		}
 	}
@@ -561,6 +568,11 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 				zap.Error(err),
 				zap.String("request_id", requestID),
 			)
+		}
+	}
+	if finalResponse == nil {
+		if frame, ok := parser.Finish(); ok {
+			processFrame(frame)
 		}
 	}
 
@@ -742,6 +754,10 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			)
 		}
 	}
+	processFrame := func(frame openAICompatSSEFrame) bool {
+		payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)
+		return processDataLine(payload)
+	}
 
 	// ── Determine keepalive interval ──
 	keepaliveInterval := time.Duration(0)
@@ -751,12 +767,19 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 
 	// ── No keepalive: fast synchronous path (no goroutine overhead) ──
 	if keepaliveInterval <= 0 {
+		var parser openAICompatSSEFrameParser
 		for scanner.Scan() {
 			line := scanner.Text()
-			if !strings.HasPrefix(line, "data: ") || line == "data: [DONE]" {
+			frame, ok := parser.AddLine(line)
+			if !ok {
 				continue
 			}
-			if processDataLine(line[6:]) {
+			if processFrame(frame) {
+				return finalizeStream()
+			}
+		}
+		if frame, ok := parser.Finish(); ok {
+			if processFrame(frame) {
 				return finalizeStream()
 			}
 		}
@@ -795,12 +818,18 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	keepaliveTicker := time.NewTicker(keepaliveInterval)
 	defer keepaliveTicker.Stop()
 	lastDataAt := time.Now()
+	var parser openAICompatSSEFrameParser
 
 	for {
 		select {
 		case ev, ok := <-events:
 			if !ok {
 				// Upstream closed
+				if frame, ok := parser.Finish(); ok {
+					if processFrame(frame) {
+						return finalizeStream()
+					}
+				}
 				return finalizeStream()
 			}
 			if ev.err != nil {
@@ -809,10 +838,11 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			}
 			lastDataAt = time.Now()
 			line := ev.line
-			if !strings.HasPrefix(line, "data: ") || line == "data: [DONE]" {
+			frame, ok := parser.AddLine(line)
+			if !ok {
 				continue
 			}
-			if processDataLine(line[6:]) {
+			if processFrame(frame) {
 				return finalizeStream()
 			}
 

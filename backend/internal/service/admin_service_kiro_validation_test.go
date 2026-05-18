@@ -74,7 +74,7 @@ func TestAdminServiceUpdateAccount_AllowsSwitchToKiroAPIKeyType(t *testing.T) {
 				Type:     AccountTypeOAuth,
 				Status:   StatusActive,
 				Credentials: map[string]any{
-					"refresh_token": "rt",
+					"refresh_token": "rt-placeholder",
 				},
 			},
 		},
@@ -104,7 +104,7 @@ func TestAdminServiceUpdateAccount_IgnoresInvalidKiroIDCAuthPatches(t *testing.T
 				Type:     AccountTypeOAuth,
 				Status:   StatusActive,
 				Credentials: map[string]any{
-					"refresh_token": "rt",
+					"refresh_token": "rt-placeholder",
 				},
 			},
 		},
@@ -113,7 +113,7 @@ func TestAdminServiceUpdateAccount_IgnoresInvalidKiroIDCAuthPatches(t *testing.T
 
 	account, err := svc.UpdateAccount(context.Background(), 55, &UpdateAccountInput{
 		Credentials: map[string]any{
-			"refresh_token": "rt",
+			"refresh_token": "rt-placeholder",
 			"auth_method":   "idc",
 			"client_id":     "client-only",
 		},
@@ -121,7 +121,7 @@ func TestAdminServiceUpdateAccount_IgnoresInvalidKiroIDCAuthPatches(t *testing.T
 
 	require.NoError(t, err)
 	require.NotNil(t, account)
-	require.Equal(t, "rt", account.GetCredential("refresh_token"))
+	require.Equal(t, "rt-placeholder", account.GetCredential("refresh_token"))
 	require.Empty(t, account.GetCredential("auth_method"))
 	require.Empty(t, account.GetCredential("client_id"))
 }
@@ -250,7 +250,7 @@ func TestAdminServiceUpdateAccount_IgnoresKiroOAuthExpiresAtEmptyStringPatch(t *
 				Type:     AccountTypeOAuth,
 				Status:   StatusActive,
 				Credentials: map[string]any{
-					"refresh_token": "rt",
+					"refresh_token": "rt-placeholder",
 					"expires_at":    "1735689600",
 				},
 			},
@@ -266,7 +266,7 @@ func TestAdminServiceUpdateAccount_IgnoresKiroOAuthExpiresAtEmptyStringPatch(t *
 
 	require.NoError(t, err)
 	require.NotNil(t, account)
-	require.Equal(t, "rt", account.GetCredential("refresh_token"))
+	require.Equal(t, "rt-placeholder", account.GetCredential("refresh_token"))
 	require.Equal(t, "1735689600", account.GetCredential("expires_at"))
 }
 
@@ -282,7 +282,7 @@ func TestAdminServiceUpdateAccount_IgnoresKiroOAuthExpiresAtNullPatch(t *testing
 				Type:     AccountTypeOAuth,
 				Status:   StatusActive,
 				Credentials: map[string]any{
-					"refresh_token": "rt",
+					"refresh_token": "rt-placeholder",
 					"expires_at":    "1735689600",
 				},
 			},
@@ -298,7 +298,7 @@ func TestAdminServiceUpdateAccount_IgnoresKiroOAuthExpiresAtNullPatch(t *testing
 
 	require.NoError(t, err)
 	require.NotNil(t, account)
-	require.Equal(t, "rt", account.GetCredential("refresh_token"))
+	require.Equal(t, "rt-placeholder", account.GetCredential("refresh_token"))
 	require.Equal(t, "1735689600", account.GetCredential("expires_at"))
 }
 
@@ -314,7 +314,7 @@ func TestAdminServiceUpdateAccount_ClearsKiroModelMappingWithEmptyObject(t *test
 				Type:     AccountTypeOAuth,
 				Status:   StatusActive,
 				Credentials: map[string]any{
-					"refresh_token": "rt",
+					"refresh_token": "rt-placeholder",
 					"model_mapping": map[string]any{"claude-sonnet-4": "claude-sonnet-4"},
 				},
 			},
@@ -330,7 +330,7 @@ func TestAdminServiceUpdateAccount_ClearsKiroModelMappingWithEmptyObject(t *test
 
 	require.NoError(t, err)
 	require.NotNil(t, account)
-	require.Equal(t, "rt", account.GetCredential("refresh_token"))
+	require.Equal(t, "rt-placeholder", account.GetCredential("refresh_token"))
 	require.Equal(t, map[string]any{}, account.Credentials["model_mapping"])
 }
 
@@ -424,7 +424,7 @@ func TestAdminServiceCreateAccount_ValidatesGroupsBeforePersist(t *testing.T) {
 		Name:        "kiro-oauth",
 		Platform:    PlatformKiro,
 		Type:        AccountTypeOAuth,
-		Credentials: map[string]any{"refresh_token": "rt"},
+		Credentials: map[string]any{"refresh_token": "rt-placeholder"},
 		GroupIDs:    []int64{404},
 	})
 
@@ -446,7 +446,7 @@ func TestValidateKiroCredentials_AcceptsUnixSecondsExpiresAt(t *testing.T) {
 	t.Parallel()
 
 	err := validateKiroCredentials(map[string]any{
-		"refresh_token": "rt",
+		"refresh_token": "rt-placeholder",
 		"expires_at":    time.Now().Add(time.Hour).Unix(),
 	})
 	require.NoError(t, err)
@@ -457,7 +457,7 @@ func TestValidateKiroCredentials_RequiresIDCSecretsForAllIDCRefreshMethods(t *te
 
 	for _, authMethod := range []string{"idc", "builder-id", "iam"} {
 		err := validateKiroCredentials(map[string]any{
-			"refresh_token": "rt",
+			"refresh_token": "rt-placeholder",
 			"auth_method":   authMethod,
 			"client_id":     "client-only",
 		})
@@ -470,7 +470,7 @@ func TestNormalizeKiroAuthMethod_InfersIDCFromClientCredentials(t *testing.T) {
 	t.Parallel()
 
 	got := NormalizeKiroAuthMethod(map[string]any{
-		"refresh_token": "rt",
+		"refresh_token": "rt-placeholder",
 		"client_id":     "client-id",
 		"client_secret": "client-secret",
 	})
@@ -481,7 +481,7 @@ func TestNormalizeKiroAuthMethod_ExplicitSocialOverridesClientCredentials(t *tes
 	t.Parallel()
 
 	got := NormalizeKiroAuthMethod(map[string]any{
-		"refresh_token": "rt",
+		"refresh_token": "rt-placeholder",
 		"auth_method":   "social",
 		"client_id":     "client-id",
 		"client_secret": "client-secret",
