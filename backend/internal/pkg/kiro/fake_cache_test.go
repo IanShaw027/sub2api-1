@@ -216,6 +216,8 @@ func TestBuildFakeCachePlanBuildsCacheControlCheckpoints(t *testing.T) {
 	}`)
 
 	require.GreaterOrEqual(t, len(plan.Checkpoints), 3)
+	require.NotEmpty(t, plan.SessionProgressKey)
+	require.Equal(t, plan.Checkpoints[len(plan.Checkpoints)-1].Tokens, plan.CurrentCheckpointTokens())
 	for idx := 1; idx < len(plan.Checkpoints); idx++ {
 		require.Greater(t, plan.Checkpoints[idx].Tokens, plan.Checkpoints[idx-1].Tokens)
 		require.NotEqual(t, plan.Checkpoints[idx].Key, plan.Checkpoints[idx-1].Key)

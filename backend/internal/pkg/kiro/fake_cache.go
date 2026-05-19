@@ -20,6 +20,7 @@ const (
 type FakeCachePlan struct {
 	CacheStrategy                 string
 	CacheStrategyGeneration       uint64
+	SessionProgressKey            string
 	PreviousKey                   string
 	CurrentKey                    string
 	PreviousCacheableTokens       int
@@ -87,6 +88,7 @@ func BuildFakeCachePlan(body []byte, accountID int64, requestedModel string) (*F
 
 	plan := &FakeCachePlan{
 		PreviousCacheableTokens: 0,
+		SessionProgressKey:      scope + ":session_progress",
 	}
 	if independentChain != "" {
 		plan.IndependentKey = fakeCacheKey(scope+":independent", independentChain)
@@ -110,6 +112,13 @@ func BuildFakeCachePlan(body []byte, accountID int64, requestedModel string) (*F
 	plan.Checkpoints = buildFakeCacheCheckpoints(scope, plan.IndependentKey, independentChain, rawMessages)
 
 	return plan, nil
+}
+
+func (p *FakeCachePlan) CurrentCheckpointTokens() int {
+	if p == nil || len(p.Checkpoints) == 0 {
+		return 0
+	}
+	return p.Checkpoints[len(p.Checkpoints)-1].Tokens
 }
 
 func (p *FakeCachePlan) ResolveUsage(totalInputTokens int, hit bool) FakeCacheUsage {

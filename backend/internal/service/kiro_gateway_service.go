@@ -1358,6 +1358,13 @@ func (s *KiroGatewayService) prepareFakeCachePlan(account *Account, parsed *Pars
 		if plan.PreviousPrefixKey != "" {
 			_, hit.Prefix = s.fakeCache.Get(plan.PreviousPrefixKey)
 		}
+		if plan.SessionProgressKey != "" {
+			if value, ok := s.fakeCache.Get(plan.SessionProgressKey); ok {
+				if tokens, ok := value.(int); ok && tokens > hit.CheckpointTokens {
+					hit.CheckpointTokens = tokens
+				}
+			}
+		}
 		for _, checkpoint := range plan.Checkpoints {
 			if checkpoint.Key == "" || checkpoint.Tokens <= hit.CheckpointTokens {
 				continue
@@ -1413,6 +1420,17 @@ func (s *KiroGatewayService) commitFakeCachePlan(plan *kiropkg.FakeCachePlan, ru
 			continue
 		}
 		s.fakeCache.Set(checkpoint.Key, struct{}{}, time.Duration(runtimeSettings.CachePrefixTTLSecs)*time.Second)
+	}
+	if plan.SessionProgressKey != "" {
+		currentTokens := plan.CurrentCheckpointTokens()
+		if currentTokens > 0 {
+			if value, ok := s.fakeCache.Get(plan.SessionProgressKey); ok {
+				if existing, ok := value.(int); ok && existing > currentTokens {
+					currentTokens = existing
+				}
+			}
+			s.fakeCache.Set(plan.SessionProgressKey, currentTokens, time.Duration(runtimeSettings.CachePrefixTTLSecs)*time.Second)
+		}
 	}
 }
 
@@ -2071,6 +2089,7 @@ func logKiroFakeCachePlan(ctx context.Context, account *Account, parsed *ParsedR
 		zap.Bool("prefix_hit", hit.Prefix),
 		zap.Int("checkpoint_hit_tokens", hit.CheckpointTokens),
 		zap.Int("checkpoint_count", len(plan.Checkpoints)),
+		zap.Int("current_checkpoint_tokens", plan.CurrentCheckpointTokens()),
 		zap.Int("independent_cacheable_tokens", plan.IndependentCacheableTokens),
 		zap.Int("previous_prefix_cacheable_tokens", plan.PreviousPrefixCacheableTokens),
 		zap.Int("prefix_cacheable_tokens", plan.CurrentPrefixCacheableTokens),

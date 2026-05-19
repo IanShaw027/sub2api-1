@@ -215,6 +215,66 @@ func TestKiroGatewayService_CommitFakeCachePlanSkipsConcurrentStaleGenerationAft
 	require.False(t, found, "old in-flight requests must not repopulate cache after a concurrent flush")
 }
 
+func TestKiroGatewayService_FakeCacheSessionProgressCarriesCheckpointAcrossTurns(t *testing.T) {
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+	account := &Account{ID: 77, Platform: PlatformKiro, Type: AccountTypeOAuth}
+	settings := &KiroRuntimeSettings{
+		CacheHitRateScale:       100,
+		CacheMinBlockTokens:     0,
+		CacheIndependentTTLSecs: 3600,
+		CachePrefixTTLSecs:      300,
+	}
+	sessionID := "123e4567-e89b-12d3-a456-426614174000"
+	firstBody := []byte(fmt.Sprintf(`{
+		"model":"claude-sonnet-4",
+		"metadata":{"user_id":"user_x_account__session_%s"},
+		"system":"Use concise answers.",
+		"messages":[
+			{"role":"user","content":[
+				{"type":"text","text":"first prompt"},
+				{"type":"text","text":"cache checkpoint one","cache_control":{"type":"ephemeral"}}
+			]}
+		]
+	}`, sessionID))
+	secondBody := []byte(fmt.Sprintf(`{
+		"model":"claude-sonnet-4",
+		"metadata":{"user_id":"user_x_account__session_%s"},
+		"system":"Use concise answers.",
+		"messages":[
+			{"role":"user","content":[
+				{"type":"text","text":"first prompt"},
+				{"type":"text","text":"cache checkpoint one"}
+			]},
+			{"role":"assistant","content":[
+				{"type":"tool_use","id":"toolu-different","name":"Bash","input":{"command":"printf ok"}}
+			]},
+			{"role":"user","content":[
+				{"type":"tool_result","tool_use_id":"toolu-different","content":"ok","cache_control":{"type":"ephemeral"}}
+			]}
+		]
+	}`, sessionID))
+
+	firstPlan, firstHit := svc.prepareFakeCachePlan(account, &ParsedRequest{Model: "claude-sonnet-4", Body: firstBody}, nil, settings)
+	require.NotNil(t, firstPlan)
+	require.Zero(t, firstHit.CheckpointTokens)
+	firstCurrent := firstPlan.CurrentCheckpointTokens()
+	require.Positive(t, firstCurrent)
+
+	svc.commitFakeCachePlan(firstPlan, settings)
+
+	secondPlan, secondHit := svc.prepareFakeCachePlan(account, &ParsedRequest{Model: "claude-sonnet-4", Body: secondBody}, nil, settings)
+	require.NotNil(t, secondPlan)
+	require.Greater(t, secondPlan.CurrentCheckpointTokens(), firstCurrent)
+	require.Equal(t, firstCurrent, secondHit.CheckpointTokens)
+
+	usage := resolveKiroFakeCacheUsage(secondPlan, secondHit, secondPlan.CurrentCheckpointTokens()+10, settings)
+	require.Equal(t, firstCurrent, usage.CacheReadInputTokens)
+	require.Equal(t, secondPlan.CurrentCheckpointTokens()-firstCurrent, usage.CacheCreationInputTokens)
+	require.Equal(t, 10, usage.InputTokens)
+}
+
 func TestKiroGatewayService_ForwardSnapshotsFakeCacheHitBeforeUpstreamRequest(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
