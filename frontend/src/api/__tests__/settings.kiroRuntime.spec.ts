@@ -104,7 +104,7 @@ describe("admin settings kiro runtime helpers", () => {
         cache_prefix_ttl_seconds: null,
       }),
     ).toEqual({
-      cache_hit_rate_scale: 95,
+      cache_hit_rate_scale: 100,
       cache_min_block_tokens: 1024,
       cache_independent_ttl_seconds: 3600,
       cache_prefix_ttl_seconds: 300,

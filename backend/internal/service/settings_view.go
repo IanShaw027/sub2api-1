@@ -266,7 +266,7 @@ const (
 	defaultKiroVersion                    = "0.10.0"
 	defaultKiroSystemVersion              = "darwin#24.6.0"
 	defaultKiroNodeVersion                = "22.21.1"
-	defaultKiroCacheHitRateScale          = 95
+	defaultKiroCacheHitRateScale          = 100
 	defaultKiroCacheMinBlockTokens        = 1024
 	defaultKiroCacheIndependentTTL        = 3600
 	defaultKiroCachePrefixTTL             = 300

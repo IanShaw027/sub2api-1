@@ -455,7 +455,7 @@ const baseSettingsResponse = {
   kiro_commit: "",
   system_version: "darwin#24.6.0",
   node_version: "22.21.1",
-  cache_hit_rate_scale: 95,
+  cache_hit_rate_scale: 100,
   cache_min_block_tokens: 1024,
   cache_independent_ttl_seconds: 3600,
   cache_prefix_ttl_seconds: 300,
@@ -1240,7 +1240,7 @@ describe("admin SettingsView wechat connect controls", () => {
         wrapper.get('[data-testid="kiro-runtime-cache-hit-rate-scale"]')
           .element as HTMLInputElement
       ).value,
-    ).toBe("95");
+    ).toBe("100");
 
     await wrapper.get('[data-testid="kiro-runtime-version"]').setValue(" 0.11.0 ");
     await wrapper
@@ -1306,7 +1306,7 @@ describe("admin SettingsView wechat connect controls", () => {
     expect(updateSettings).toHaveBeenCalledTimes(1);
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
-        cache_hit_rate_scale: 95,
+        cache_hit_rate_scale: 100,
         cache_min_block_tokens: 1024,
         cache_independent_ttl_seconds: 3600,
         cache_prefix_ttl_seconds: 300,

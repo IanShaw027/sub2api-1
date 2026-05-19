@@ -95,7 +95,7 @@ export interface KiroRuntimeSettingsInput {
   kiro_thinking_free_prompt?: string | null;
 }
 
-export const KIRO_CACHE_HIT_RATE_SCALE_DEFAULT = 95;
+export const KIRO_CACHE_HIT_RATE_SCALE_DEFAULT = 100;
 export const KIRO_CACHE_MIN_BLOCK_TOKENS_DEFAULT = 1024;
 export const KIRO_CACHE_MIN_BLOCK_TOKENS_MAX = 1 << 20;
 export const KIRO_CACHE_INDEPENDENT_TTL_SECONDS_DEFAULT = 3600;
