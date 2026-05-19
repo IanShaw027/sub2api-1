@@ -195,6 +195,33 @@ func TestBuildFakeCachePlanPrefixKeysIncludeAssistantAndToolHistory(t *testing.T
 	}
 }
 
+func TestBuildFakeCachePlanBuildsCacheControlCheckpoints(t *testing.T) {
+	plan := requireFakeCachePlan(t, `{
+		"model":"claude-sonnet-4",
+		"metadata":{"user_id":"user_x_account__session_123e4567-e89b-12d3-a456-426614174003"},
+		"system":"Use concise answers.",
+		"tools":[{"name":"search","description":"find docs"}],
+		"messages":[
+			{"role":"user","content":[
+				{"type":"text","text":"first"},
+				{"type":"text","text":"cache me","cache_control":{"type":"ephemeral"}}
+			]},
+			{"role":"assistant","content":[
+				{"type":"tool_use","id":"toolu_1","name":"search","input":{"query":"alpha"}}
+			]},
+			{"role":"user","content":[
+				{"type":"tool_result","tool_use_id":"toolu_1","content":[{"type":"text","text":"alpha result"}],"cache_control":{"type":"ephemeral"}}
+			]}
+		]
+	}`)
+
+	require.GreaterOrEqual(t, len(plan.Checkpoints), 3)
+	for idx := 1; idx < len(plan.Checkpoints); idx++ {
+		require.Greater(t, plan.Checkpoints[idx].Tokens, plan.Checkpoints[idx-1].Tokens)
+		require.NotEqual(t, plan.Checkpoints[idx].Key, plan.Checkpoints[idx-1].Key)
+	}
+}
+
 func TestFakeCachePlanResolveUsage(t *testing.T) {
 	plan := &FakeCachePlan{
 		PreviousPrefixCacheableTokens: 60,
@@ -310,8 +337,56 @@ func TestFakeCachePlanResolveUsageWithConfig_DropsSmallBlocks(t *testing.T) {
 
 	require.Equal(t, FakeCacheUsage{
 		InputTokens:              60,
-		CacheCreationInputTokens: 40,
-		CacheReadInputTokens:     40,
+		CacheCreationInputTokens: 20,
+		CacheReadInputTokens:     60,
+	}, usage)
+}
+
+func TestFakeCachePlanResolveUsageWithConfig_WritesSmallIncrementAfterEligiblePrefixHit(t *testing.T) {
+	plan := &FakeCachePlan{
+		IndependentCacheableTokens:    2600,
+		CurrentPrefixCacheableTokens:  320,
+		PreviousPrefixCacheableTokens: 200,
+		IndependentKey:                "independent",
+		CurrentPrefixKey:              "prefix:current",
+		PreviousPrefixKey:             "prefix:previous",
+	}
+
+	usage := plan.ResolveUsageWithConfig(3300, FakeCacheHitState{
+		Independent: true,
+		Prefix:      true,
+	}, FakeCacheUsageConfig{
+		HitRateScale:   100,
+		MinBlockTokens: 1024,
+	})
+
+	require.Equal(t, FakeCacheUsage{
+		InputTokens:              380,
+		CacheCreationInputTokens: 120,
+		CacheReadInputTokens:     2800,
+	}, usage)
+}
+
+func TestFakeCachePlanResolveUsageWithConfig_UsesLongestCheckpointHit(t *testing.T) {
+	plan := &FakeCachePlan{
+		Checkpoints: []FakeCacheCheckpoint{
+			{Key: "checkpoint:system", Tokens: 2600},
+			{Key: "checkpoint:previous", Tokens: 2800},
+			{Key: "checkpoint:current", Tokens: 2920},
+		},
+	}
+
+	usage := plan.ResolveUsageWithConfig(3300, FakeCacheHitState{
+		CheckpointTokens: 2800,
+	}, FakeCacheUsageConfig{
+		HitRateScale:   100,
+		MinBlockTokens: 1024,
+	})
+
+	require.Equal(t, FakeCacheUsage{
+		InputTokens:              380,
+		CacheCreationInputTokens: 120,
+		CacheReadInputTokens:     2800,
 	}, usage)
 }
 

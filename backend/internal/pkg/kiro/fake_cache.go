@@ -11,7 +11,7 @@ import (
 
 const (
 	DefaultFakeCacheTTL            = 5 * time.Minute
-	DefaultFakeCacheHitRateScale   = 95
+	DefaultFakeCacheHitRateScale   = 100
 	DefaultFakeCacheMinBlockTokens = 1024
 	DefaultFakeCacheIndependentTTL = 3600
 	DefaultFakeCachePrefixTTL      = 300
@@ -30,6 +30,12 @@ type FakeCachePlan struct {
 	CurrentPrefixKey              string
 	PreviousPrefixCacheableTokens int
 	CurrentPrefixCacheableTokens  int
+	Checkpoints                   []FakeCacheCheckpoint
+}
+
+type FakeCacheCheckpoint struct {
+	Key    string
+	Tokens int
 }
 
 type FakeCacheUsage struct {
@@ -39,8 +45,9 @@ type FakeCacheUsage struct {
 }
 
 type FakeCacheHitState struct {
-	Independent bool
-	Prefix      bool
+	Independent      bool
+	Prefix           bool
+	CheckpointTokens int
 }
 
 type FakeCacheUsageConfig struct {
@@ -100,6 +107,7 @@ func BuildFakeCachePlan(body []byte, accountID int64, requestedModel string) (*F
 		plan.PreviousKey = plan.PreviousPrefixKey
 	}
 	plan.PreviousCacheableTokens = plan.IndependentCacheableTokens + plan.PreviousPrefixCacheableTokens
+	plan.Checkpoints = buildFakeCacheCheckpoints(scope, plan.IndependentKey, independentChain, rawMessages)
 
 	return plan, nil
 }
@@ -121,39 +129,53 @@ func (p *FakeCachePlan) ResolveUsageWithConfig(totalInputTokens int, hit FakeCac
 	if config.HitRateScale < 0 || config.HitRateScale > 100 {
 		config.HitRateScale = 100
 	}
-	independentCurrent := clampFakeCacheTokens(applyMinBlockTokens(p.IndependentCacheableTokens, config.MinBlockTokens), totalInputTokens)
-	currentPrefix := clampFakeCacheTokens(applyMinBlockTokens(p.CurrentPrefixCacheableTokens, config.MinBlockTokens), totalInputTokens)
-	previousPrefix := clampFakeCacheTokens(applyMinBlockTokens(p.PreviousPrefixCacheableTokens, config.MinBlockTokens), totalInputTokens)
-
 	// If all keys are empty (no session ID), don't simulate cache at all
 	// This prevents incorrect statistics where all input tokens are counted as cache creation
-	if p.IndependentKey == "" && p.CurrentPrefixKey == "" && p.PreviousPrefixKey == "" {
+	if p.IndependentKey == "" && p.CurrentPrefixKey == "" && p.PreviousPrefixKey == "" && len(p.Checkpoints) == 0 {
 		return FakeCacheUsage{InputTokens: totalInputTokens}
 	}
 
-	cacheRead := 0
-	cacheWrite := 0
-	if hit.Independent {
-		cacheRead += independentCurrent
-	} else {
-		cacheWrite += independentCurrent
+	if len(p.Checkpoints) > 0 {
+		currentTokens := eligibleFakeCacheCheckpointTokens(p.Checkpoints[len(p.Checkpoints)-1].Tokens, config.MinBlockTokens, totalInputTokens)
+		cacheRead := eligibleFakeCacheCheckpointTokens(hit.CheckpointTokens, config.MinBlockTokens, totalInputTokens)
+		if cacheRead > currentTokens {
+			cacheRead = currentTokens
+		}
+		cacheWrite := currentTokens - cacheRead
+		return fakeCacheUsageFromReadWrite(totalInputTokens, cacheRead, cacheWrite, config.HitRateScale)
 	}
-	if hit.Prefix {
-		cacheRead += previousPrefix
-		cacheWrite += currentPrefix - previousPrefix
-	} else {
-		cacheWrite += currentPrefix
+
+	independentCurrent := eligibleFakeCacheCheckpointTokens(p.IndependentCacheableTokens, config.MinBlockTokens, totalInputTokens)
+	previousCumulative := eligibleFakeCacheCheckpointTokens(p.IndependentCacheableTokens+p.PreviousPrefixCacheableTokens, config.MinBlockTokens, totalInputTokens)
+	currentCumulative := eligibleFakeCacheCheckpointTokens(p.IndependentCacheableTokens+p.CurrentPrefixCacheableTokens, config.MinBlockTokens, totalInputTokens)
+
+	cacheRead := 0
+	if hit.Prefix && previousCumulative > 0 {
+		cacheRead = previousCumulative
+	} else if hit.Independent && independentCurrent > 0 {
+		cacheRead = independentCurrent
+	}
+
+	cacheWrite := 0
+	if currentCumulative > 0 {
+		cacheWrite = currentCumulative - cacheRead
+	} else if independentCurrent > 0 && !hit.Independent {
+		cacheWrite = independentCurrent
 	}
 	if cacheWrite < 0 {
 		cacheWrite = 0
 	}
+	return fakeCacheUsageFromReadWrite(totalInputTokens, cacheRead, cacheWrite, config.HitRateScale)
+}
+
+func fakeCacheUsageFromReadWrite(totalInputTokens, cacheRead, cacheWrite, hitRateScale int) FakeCacheUsage {
 	cacheRead = clampFakeCacheTokens(cacheRead, totalInputTokens)
 	cacheWrite = clampFakeCacheTokens(cacheWrite, totalInputTokens-cacheRead)
 
 	// Apply hit rate scaling: reduce cache read and increase regular input tokens
 	// This simulates a lower cache hit rate without artificially inflating cache writes
-	if config.HitRateScale < 100 {
-		scaledRead := cacheRead * config.HitRateScale / 100
+	if hitRateScale < 100 {
+		scaledRead := cacheRead * hitRateScale / 100
 		if scaledRead < 0 {
 			scaledRead = 0
 		}
@@ -222,6 +244,60 @@ func buildFakeCachePrefixChain(messages []any, includeCurrent bool) string {
 	return strings.TrimSpace(strings.Join(parts, "\n"))
 }
 
+func buildFakeCacheCheckpoints(scope, independentKey, independentChain string, messages []any) []FakeCacheCheckpoint {
+	checkpoints := make([]FakeCacheCheckpoint, 0)
+	base := strings.TrimSpace(independentChain)
+	if base != "" {
+		checkpoints = append(checkpoints, FakeCacheCheckpoint{
+			Key:    independentKey,
+			Tokens: AccurateTokenCount(base),
+		})
+	}
+
+	for _, chain := range buildFakeCacheControlPrefixChains(messages) {
+		cumulative := strings.TrimSpace(strings.Join([]string{base, chain}, "\n"))
+		if cumulative == "" {
+			continue
+		}
+		key := fakeCacheKey(scope+":checkpoint", cumulative)
+		if len(checkpoints) > 0 && checkpoints[len(checkpoints)-1].Key == key {
+			continue
+		}
+		checkpoints = append(checkpoints, FakeCacheCheckpoint{
+			Key:    key,
+			Tokens: AccurateTokenCount(cumulative),
+		})
+	}
+	return checkpoints
+}
+
+func buildFakeCacheControlPrefixChains(messages []any) []string {
+	checkpoints := make([]string, 0)
+	parts := make([]string, 0, len(messages))
+	for _, item := range messages {
+		msg, _ := item.(map[string]any)
+		role := strings.ToLower(strings.TrimSpace(stringField(msg, "role")))
+		content := msg["content"]
+		switch role {
+		case "user":
+			for _, prefix := range fakeCacheUserContentPrefixes(content) {
+				checkpoints = append(checkpoints, strings.TrimSpace(strings.Join(append(append([]string{}, parts...), "user:"+prefix), "\n")))
+			}
+			if rendered := fakeCacheUserContent(content); rendered != "" {
+				parts = append(parts, "user:"+rendered)
+			}
+		case "assistant":
+			for _, prefix := range fakeCacheAssistantContentPrefixes(content) {
+				checkpoints = append(checkpoints, strings.TrimSpace(strings.Join(append(append([]string{}, parts...), "assistant:"+prefix), "\n")))
+			}
+			if rendered := fakeCacheAssistantContent(content); rendered != "" {
+				parts = append(parts, "assistant:"+rendered)
+			}
+		}
+	}
+	return checkpoints
+}
+
 func applyMinBlockTokens(tokens, minBlockTokens int) int {
 	if tokens <= 0 {
 		return 0
@@ -230,6 +306,10 @@ func applyMinBlockTokens(tokens, minBlockTokens int) int {
 		return 0
 	}
 	return tokens
+}
+
+func eligibleFakeCacheCheckpointTokens(tokens, minBlockTokens, totalInputTokens int) int {
+	return clampFakeCacheTokens(applyMinBlockTokens(tokens, minBlockTokens), totalInputTokens)
 }
 
 func fakeCacheUserContent(content any) string {
@@ -266,6 +346,27 @@ func fakeCacheUserContent(content any) string {
 	}
 }
 
+func fakeCacheUserContentPrefixes(content any) []string {
+	items, ok := content.([]any)
+	if !ok {
+		return nil
+	}
+	prefixes := make([]string, 0)
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		block, _ := item.(map[string]any)
+		if rendered := fakeCacheUserBlock(block); rendered != "" {
+			parts = append(parts, rendered)
+		}
+		if hasFakeCacheControl(block) {
+			if prefix := strings.TrimSpace(strings.Join(parts, "\n")); prefix != "" {
+				prefixes = append(prefixes, prefix)
+			}
+		}
+	}
+	return prefixes
+}
+
 func fakeCacheAssistantContent(content any) string {
 	switch v := content.(type) {
 	case string:
@@ -292,6 +393,69 @@ func fakeCacheAssistantContent(content any) string {
 	default:
 		return ""
 	}
+}
+
+func fakeCacheAssistantContentPrefixes(content any) []string {
+	items, ok := content.([]any)
+	if !ok {
+		return nil
+	}
+	prefixes := make([]string, 0)
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		block, _ := item.(map[string]any)
+		if rendered := fakeCacheAssistantBlock(block); rendered != "" {
+			parts = append(parts, rendered)
+		}
+		if hasFakeCacheControl(block) {
+			if prefix := strings.TrimSpace(strings.Join(parts, "\n")); prefix != "" {
+				prefixes = append(prefixes, prefix)
+			}
+		}
+	}
+	return prefixes
+}
+
+func fakeCacheUserBlock(block map[string]any) string {
+	switch strings.TrimSpace(stringField(block, "type")) {
+	case "text":
+		return stringField(block, "text")
+	case "tool_result":
+		status := "success"
+		if isError, ok := block["is_error"].(bool); ok && isError {
+			status = "error"
+		}
+		return "tool_result:" +
+			"\ntool_use_id:" + stringField(block, "tool_use_id") +
+			"\nstatus:" + status +
+			"\ncontent:" + strings.TrimSpace(toolResultContent(block["content"]))
+	case "image":
+		return "image:" + fakeCacheJSON(block)
+	default:
+		return ""
+	}
+}
+
+func fakeCacheAssistantBlock(block map[string]any) string {
+	switch strings.TrimSpace(stringField(block, "type")) {
+	case "text":
+		return stringField(block, "text")
+	case "tool_use":
+		return "tool_use:" +
+			"\nid:" + stringField(block, "id") +
+			"\nname:" + stringField(block, "name") +
+			"\ninput:" + fakeCacheJSON(jsonValue(block["input"]))
+	default:
+		return ""
+	}
+}
+
+func hasFakeCacheControl(block map[string]any) bool {
+	if block == nil {
+		return false
+	}
+	_, ok := block["cache_control"]
+	return ok
 }
 
 func fakeCacheJSON(v any) string {

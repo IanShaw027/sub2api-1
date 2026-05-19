@@ -47,6 +47,13 @@ func TestKiroGatewayService_ResolveTLSProfile_UsesKiroResolver(t *testing.T) {
 	require.Equal(t, "Kiro Gateway Profile", profile.Name)
 }
 
+func TestKiroFakeCachePlanBodyPrefersForwardBody(t *testing.T) {
+	parsed := &ParsedRequest{Body: []byte(`{"metadata":{"user_id":"original"}}`)}
+	meta := &kiroPreparedRequestMeta{ForwardBody: []byte(`{"metadata":{"user_id":"compacted"}}`)}
+
+	require.Equal(t, string(meta.ForwardBody), string(kiroFakeCachePlanBody(parsed, meta)))
+}
+
 func TestKiroGatewayService_BuildRequest_DoesNotForceConnectionClose(t *testing.T) {
 	svc := &KiroGatewayService{}
 
@@ -1010,6 +1017,56 @@ func TestKiroGatewayService_ForwardStream_ExceptionDoesNotCommitFakeCacheOrEmitF
 	require.False(t, found, "exception streams must not commit fake cache")
 }
 
+func TestKiroGatewayService_ForwardNonStream_UsageMatchesAnthropicCacheShape(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+	fakeCachePlan := &kiropkg.FakeCachePlan{
+		CurrentKey:             "kiro:test:usage-shape",
+		CurrentCacheableTokens: 17,
+	}
+	body := buildKiroTestFrame(t, map[string]string{
+		":message-type": "event",
+		":event-type":   "assistantResponseEvent",
+	}, map[string]any{"content": "hello"})
+	headers := http.Header{"X-Amzn-Requestid": []string{"kiro-request-usage"}}
+
+	result, err := svc.forwardNonStream(
+		context.Background(),
+		c,
+		&Account{ID: 1, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: headers},
+		&ParsedRequest{Model: "claude-sonnet-4-6"},
+		&kiropkg.ConvertResult{Model: "claude-sonnet-4.6"},
+		32,
+		time.Now(),
+		fakeCachePlan,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+	usage, ok := payload["usage"].(map[string]any)
+	require.True(t, ok)
+	require.Contains(t, usage, "cache_creation_input_tokens")
+	require.Contains(t, usage, "cache_read_input_tokens")
+	require.Equal(t, "standard", usage["service_tier"])
+	require.Equal(t, "global", usage["inference_geo"])
+	cacheCreation, ok := usage["cache_creation"].(map[string]any)
+	require.True(t, ok)
+	require.Contains(t, cacheCreation, "ephemeral_5m_input_tokens")
+	require.Contains(t, cacheCreation, "ephemeral_1h_input_tokens")
+}
+
 func TestKiroGatewayService_Forward_HTTPErrorRecordsOpsContext(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -1572,7 +1629,8 @@ func TestKiroGatewayService_ForwardStream_PreservesWhitespaceInContentAndInputDe
 		deltaType, _ := delta["type"].(string)
 		switch deltaType {
 		case "text_delta":
-			textDelta, _ = delta["text"].(string)
+			chunk, _ := delta["text"].(string)
+			textDelta += chunk
 		case "input_json_delta":
 			inputDelta, _ = delta["partial_json"].(string)
 		}

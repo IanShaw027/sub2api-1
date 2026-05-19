@@ -120,3 +120,49 @@ func TestStreamWrittenGuard_NoByteWritten_GuardNotTriggered(t *testing.T) {
 	require.False(t, guardTriggered,
 		"未写入任何字节时，守卫条件必须为 false，应允许正常 failover 继续")
 }
+
+func TestGatewayHandlerFailoverExhausted_CopiesKiroDiagnosticHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	failoverErr := &service.UpstreamFailoverError{
+		StatusCode:   http.StatusTooManyRequests,
+		ResponseBody: []byte(`{"message":"rate exceeded"}`),
+		ResponseHeaders: http.Header{
+			"Retry-After":        []string{"12"},
+			"X-Amzn-Requestid":   []string{"kiro-request-123"},
+			"X-Amzn-Errortype":   []string{"ThrottlingException"},
+			"X-Amz-Cf-Id":        []string{"cf-id-123"},
+			"Cf-Ray":             []string{"ray-123"},
+			"Content-Type":       []string{"application/json"},
+			"X-Unrelated-Header": []string{"drop-me"},
+		},
+	}
+
+	h := &GatewayHandler{}
+	h.handleFailoverExhausted(c, failoverErr, service.PlatformKiro, false)
+
+	require.Equal(t, http.StatusTooManyRequests, w.Code)
+	require.Equal(t, "12", w.Header().Get("Retry-After"))
+	require.Equal(t, "kiro-request-123", w.Header().Get("x-amzn-requestid"))
+	require.Equal(t, "kiro-request-123", w.Header().Get("x-request-id"))
+	require.Equal(t, "ThrottlingException", w.Header().Get("x-amzn-errortype"))
+	require.Equal(t, "cf-id-123", w.Header().Get("x-amz-cf-id"))
+	require.Equal(t, "ray-123", w.Header().Get("cf-ray"))
+	require.Empty(t, w.Header().Get("X-Unrelated-Header"))
+}
+
+func TestGatewayHandlerFailoverExhausted_Kiro429AddsRetryAfterFallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	h := &GatewayHandler{}
+	h.handleFailoverExhausted(c, &service.UpstreamFailoverError{StatusCode: http.StatusTooManyRequests}, service.PlatformKiro, false)
+
+	require.Equal(t, http.StatusTooManyRequests, w.Code)
+	require.Equal(t, "5", w.Header().Get("Retry-After"))
+}

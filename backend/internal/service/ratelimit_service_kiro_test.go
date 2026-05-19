@@ -84,7 +84,7 @@ func TestRateLimitService_HandleUpstreamError_KiroTransient429HonorsRetryAfter(t
 	require.Empty(t, repo.tempIDs)
 	require.Equal(t, []int64{43}, repo.rateLimitedIDs)
 	require.Len(t, repo.rateLimitUntil, 1)
-	require.WithinDuration(t, before.Add(5*time.Second), repo.rateLimitUntil[0], 2*time.Second)
+	require.WithinDuration(t, before.Add(12*time.Second), repo.rateLimitUntil[0], 2*time.Second)
 }
 
 func TestRateLimitService_HandleUpstreamError_KiroQuotaExhausted429KeepsRateLimitedPath(t *testing.T) {
