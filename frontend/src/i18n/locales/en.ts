@@ -1078,6 +1078,28 @@ export default {
       completing: 'Completing registration…',
       completeRegistrationFailed: 'Registration failed. Please check your invitation code and try again.'
     },
+    dingtalk: {
+      signIn: 'Continue with DingTalk',
+      providerName: 'DingTalk',
+      callbackTitle: 'Signing you in with DingTalk',
+      callbackProcessing: 'Completing login with DingTalk, please wait...',
+      callbackHint: 'If you are not redirected automatically, go back to the login page and try again.',
+      callbackMissingToken: 'Missing login token, please try again.',
+      createAccountTitle: 'Complete your DingTalk sign-in',
+      invitationRequired:
+        'This DingTalk account is not yet registered. The site requires an invitation code — please enter one to complete registration.',
+      completeRegistration: 'Complete Registration',
+      completing: 'Completing registration…',
+      completeRegistrationFailed: 'Registration failed. Please check your invitation code and try again.',
+      registrationDisabledRedirectToBind:
+        'Open registration is disabled for DingTalk. Sign in to an existing account to bind it instead.',
+      error: {
+        provider_error: 'DingTalk sign-in was cancelled or failed. Please try again.',
+        missing_params: 'Missing DingTalk callback parameters. Please try again.',
+        csrf: 'The DingTalk sign-in request expired. Please try again.',
+        missing_browser_session: 'The DingTalk sign-in session expired. Please try again.',
+      },
+    },
     emailOAuth: {
       signIn: 'Continue with {providerName}'
     },
@@ -1840,6 +1862,7 @@ export default {
       providers: {
         email: 'Email',
         linuxdo: 'LinuxDo',
+        dingtalk: 'DingTalk',
         github: 'GitHub',
         google: 'Google',
         oidc: '{providerName}',

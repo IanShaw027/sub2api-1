@@ -36,7 +36,8 @@ import {
   persistOAuthTokenContext,
   type PendingOAuthExchangeResponse
 } from '@/api/auth'
-import { clearAllAffiliateReferralCodes } from '@/utils/oauthAffiliate'
+import { clearAllAffiliateReferralCodes, loadOAuthAffiliateCode } from '@/utils/oauthAffiliate'
+import { buildDingTalkPendingEmailCompletionPayload } from './dingtalkEmailCompletionPayload'
 
 const route = useRoute()
 const router = useRouter()
@@ -78,12 +79,15 @@ async function handleCreateAccount(payload: PendingOAuthCreateAccountPayload) {
       }
     >(
       '/auth/oauth/pending/create-account',
-      {
-        email: payload.email,
-        password: payload.password,
-        verify_code: payload.verifyCode || undefined,
-        invitation_code: payload.invitationCode || undefined
-      }
+      buildDingTalkPendingEmailCompletionPayload(
+        payload,
+        authStore.pendingAuthSession as {
+          provider?: string
+          adopt_display_name?: boolean
+          adopt_avatar?: boolean
+        } | null,
+        loadOAuthAffiliateCode(),
+      )
     )
 
     const redirect = sanitizeRedirectPath(data.redirect || (route.query.redirect as string | undefined))

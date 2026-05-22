@@ -65,6 +65,7 @@ const DataTableStub = {
   template: `
     <div data-test="groups-table">
       <div v-for="row in data" :key="row.id" :data-test="['group-row', row.id].join('-')">
+        <slot name="cell-account_count" :row="row" />
         <slot name="cell-actions" :row="row" />
       </div>
     </div>
@@ -120,7 +121,10 @@ function buildGroup(id: number, name: string, modelRouting: Record<string, numbe
     model_routing: modelRouting,
     supported_model_scopes: ['claude'],
     mcp_xml_inject: true,
-    rpm_limit: 0
+    rpm_limit: 0,
+    account_count: 0,
+    active_account_count: 0,
+    rate_limited_account_count: 0
   } as any
 }
 
@@ -199,5 +203,32 @@ describe('admin GroupsView edit hydration', () => {
     await flushPromises()
 
     expect((wrapper.get('input[data-tour="edit-group-form-name"]').element as HTMLInputElement).value).toBe('Group Beta')
+  })
+
+  it('renders available accounts directly from active_account_count without subtracting rate-limited twice', async () => {
+    listGroups.mockResolvedValueOnce({
+      items: [
+        {
+          ...buildGroup(3, 'Group Gamma', {}),
+          account_count: 5,
+          active_account_count: 2,
+          rate_limited_account_count: 3
+        }
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mountGroupsView()
+    await flushPromises()
+
+    const rowText = wrapper.get('[data-test="group-row-3"]').text()
+    expect(rowText).toContain('admin.groups.accountsAvailable')
+    expect(rowText).toContain('2')
+    expect(rowText).toContain('admin.groups.accountsRateLimited')
+    expect(rowText).toContain('3')
+    expect(rowText).not.toContain('-1')
   })
 })

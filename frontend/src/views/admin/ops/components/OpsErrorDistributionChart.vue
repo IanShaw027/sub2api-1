@@ -55,7 +55,7 @@ function buildOwnerCategories(): ErrorCategory[] {
   const out: ErrorCategory[] = []
   for (const item of ownerItems) {
     const owner = String(item.owner || '').toLowerCase()
-    const count = Number(item.total || 0)
+    const count = Number(item.sla || 0)
     if (!owner || !Number.isFinite(count) || count <= 0) continue
 
     if (owner === 'provider') out.push({ label: t('admin.ops.errorDetails.owner.provider'), count, color: colors.value.orange })

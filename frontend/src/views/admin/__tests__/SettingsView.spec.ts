@@ -367,6 +367,22 @@ const baseSettingsResponse = {
   linuxdo_connect_client_id: "",
   linuxdo_connect_client_secret_configured: false,
   linuxdo_connect_redirect_url: "",
+  dingtalk_connect_enabled: false,
+  dingtalk_connect_client_id: "",
+  dingtalk_connect_client_secret_configured: false,
+  dingtalk_connect_redirect_url: "",
+  dingtalk_connect_corp_restriction_policy: "none",
+  dingtalk_connect_internal_corp_id: "",
+  dingtalk_connect_bypass_registration: false,
+  dingtalk_connect_sync_corp_email: false,
+  dingtalk_connect_sync_display_name: false,
+  dingtalk_connect_sync_dept: false,
+  dingtalk_connect_sync_corp_email_attr_key: "",
+  dingtalk_connect_sync_display_name_attr_key: "",
+  dingtalk_connect_sync_dept_attr_key: "",
+  dingtalk_connect_sync_corp_email_attr_name: "",
+  dingtalk_connect_sync_display_name_attr_name: "",
+  dingtalk_connect_sync_dept_attr_name: "",
   wechat_connect_enabled: true,
   wechat_connect_app_id: "wx-app-id-123",
   wechat_connect_app_secret_configured: true,
@@ -479,6 +495,9 @@ function mountView() {
         ProxySelector: true,
         ImageUpload: ImageUploadStub,
         BackupSettings: true,
+        EmailTemplateEditor: {
+          template: '<div data-testid="email-template-editor-stub" />',
+        },
       },
     },
   });
@@ -521,6 +540,16 @@ async function openGatewayTab(wrapper: ReturnType<typeof mountView>) {
 
   expect(gatewayTabButton).toBeDefined();
   await gatewayTabButton?.trigger("click");
+  await flushPromises();
+}
+
+async function openEmailTab(wrapper: ReturnType<typeof mountView>) {
+  const emailTabButton = wrapper
+    .findAll("button")
+    .find((node) => node.text().includes("admin.settings.tabs.email"));
+
+  expect(emailTabButton).toBeDefined();
+  await emailTabButton?.trigger("click");
   await flushPromises();
 }
 
@@ -1025,6 +1054,7 @@ describe("admin SettingsView wechat connect controls", () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
       api_base_url: "https://api.example.com/api/v1",
+      dingtalk_connect_enabled: true,
       github_oauth_enabled: true,
       google_oauth_enabled: true,
     });
@@ -1039,6 +1069,9 @@ describe("admin SettingsView wechat connect controls", () => {
     );
     expect(wrapper.text()).toContain(
       "https://api.example.com/api/v1/auth/oauth/google/callback",
+    );
+    expect(wrapper.text()).toContain(
+      "https://api.example.com/api/v1/auth/oauth/dingtalk/callback",
     );
   });
 
@@ -1541,5 +1574,271 @@ describe("admin SettingsView wechat connect controls", () => {
       `缓存最小块 Token 数必须在 0-${KIRO_CACHE_MIN_BLOCK_TOKENS_MAX} 之间。`,
     );
     expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("renders DingTalk auth-source bonus controls from the settings contract", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      auth_source_default_dingtalk_balance: 8,
+      auth_source_default_dingtalk_grant_on_signup: true,
+      auth_source_default_dingtalk_grant_on_first_bind: true,
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openUsersTab(wrapper);
+
+    expect(
+      (
+        wrapper.get('[data-testid="auth-source-dingtalk-enabled"]')
+          .element as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    expect(
+      (
+        wrapper.get('[data-testid="auth-source-dingtalk-first-bind-enabled"]')
+          .element as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    expect(
+      wrapper.find('[data-testid="auth-source-dingtalk-panel"]').exists(),
+    ).toBe(true);
+  });
+});
+
+describe("admin SettingsView DingTalk and email template surfaces", () => {
+  beforeEach(() => {
+    getSettings.mockReset();
+    updateSettings.mockReset();
+    getWebSearchEmulationConfig.mockReset();
+    updateWebSearchEmulationConfig.mockReset();
+    getAdminApiKey.mockReset();
+    getOverloadCooldownSettings.mockReset();
+    getRateLimit429CooldownSettings.mockReset();
+    updateRateLimit429CooldownSettings.mockReset();
+    getStreamTimeoutSettings.mockReset();
+    getRectifierSettings.mockReset();
+    getBetaPolicySettings.mockReset();
+    getGroups.mockReset();
+    listProxies.mockReset();
+    getProviders.mockReset();
+    updateProvider.mockReset();
+    createProvider.mockReset();
+    deleteProvider.mockReset();
+    fetchPublicSettings.mockReset();
+    adminSettingsFetch.mockReset();
+    showError.mockReset();
+    showSuccess.mockReset();
+    localeRef.value = "zh-CN";
+
+    getSettings.mockResolvedValue({ ...baseSettingsResponse });
+    updateSettings.mockImplementation(async (payload) => ({
+      ...baseSettingsResponse,
+      ...payload,
+    }));
+    getWebSearchEmulationConfig.mockResolvedValue({
+      enabled: false,
+      providers: [],
+    });
+    updateWebSearchEmulationConfig.mockResolvedValue({
+      enabled: false,
+      providers: [],
+    });
+    getAdminApiKey.mockResolvedValue({
+      exists: false,
+      masked_key: "",
+    });
+    getOverloadCooldownSettings.mockResolvedValue({
+      enabled: true,
+      cooldown_minutes: 10,
+    });
+    getRateLimit429CooldownSettings.mockResolvedValue({
+      enabled: true,
+      cooldown_seconds: 5,
+    });
+    updateRateLimit429CooldownSettings.mockImplementation(async (payload) => payload);
+    getStreamTimeoutSettings.mockResolvedValue({
+      enabled: true,
+      action: "temp_unsched",
+      temp_unsched_minutes: 5,
+      threshold_count: 3,
+      threshold_window_minutes: 10,
+    });
+    getRectifierSettings.mockResolvedValue({
+      enabled: true,
+      thinking_signature_enabled: true,
+      thinking_budget_enabled: true,
+      apikey_signature_enabled: false,
+      apikey_signature_patterns: [],
+    });
+    getBetaPolicySettings.mockResolvedValue({
+      rules: [],
+    });
+    getGroups.mockResolvedValue([]);
+    listProxies.mockResolvedValue({
+      items: [],
+    });
+    getProviders.mockResolvedValue({
+      data: [],
+    });
+    fetchPublicSettings.mockResolvedValue(undefined);
+    adminSettingsFetch.mockResolvedValue(undefined);
+  });
+
+  it("keeps the email template editor reachable from the email tab", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openEmailTab(wrapper);
+
+    expect(wrapper.find('[data-testid="email-template-editor-stub"]').exists()).toBe(
+      true,
+    );
+  });
+
+  it("loads DingTalk connect fields from the backend payload", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      dingtalk_connect_enabled: true,
+      dingtalk_connect_client_id: "ding-client-id-123",
+      dingtalk_connect_client_secret_configured: true,
+      dingtalk_connect_redirect_url:
+        "https://admin.example.com/api/v1/auth/oauth/dingtalk/callback",
+      dingtalk_connect_corp_restriction_policy: "internal_only",
+      dingtalk_connect_internal_corp_id: "dingcorp123456",
+      dingtalk_connect_bypass_registration: true,
+      dingtalk_connect_sync_corp_email: true,
+      dingtalk_connect_sync_display_name: true,
+      dingtalk_connect_sync_dept: true,
+      dingtalk_connect_sync_corp_email_attr_key: "dingtalk_email",
+      dingtalk_connect_sync_display_name_attr_key: "dingtalk_name",
+      dingtalk_connect_sync_dept_attr_key: "dingtalk_department",
+      dingtalk_connect_sync_corp_email_attr_name: "企业邮箱",
+      dingtalk_connect_sync_display_name_attr_name: "钉钉昵称",
+      dingtalk_connect_sync_dept_attr_name: "所在部门",
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openSecurityTab(wrapper);
+
+    expect(
+      (
+        wrapper.get('[data-testid="dingtalk-connect-client-id"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe("ding-client-id-123");
+    expect(
+      wrapper
+        .get('[data-testid="dingtalk-connect-client-secret"]')
+        .attributes("placeholder"),
+    ).toContain("密钥已配置");
+    expect(
+      (
+        wrapper.get('[data-testid="dingtalk-connect-corp-restriction-policy"]')
+          .element as HTMLSelectElement
+      ).value,
+    ).toBe("internal_only");
+    expect(
+      (
+        wrapper.get('[data-testid="dingtalk-connect-sync-display-name"]')
+          .element as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    expect(
+      (
+        wrapper.get('[data-testid="dingtalk-connect-sync-dept-attr-key"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe("dingtalk_department");
+  });
+
+  it("saves DingTalk connect fields and clears the secret after save", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openSecurityTab(wrapper);
+
+    await wrapper
+      .get('[data-testid="dingtalk-connect-enabled"]')
+      .setValue(true);
+    await wrapper
+      .get('[data-testid="dingtalk-connect-client-id"]')
+      .setValue("ding-client-id-updated");
+    await wrapper
+      .get('[data-testid="dingtalk-connect-client-secret"]')
+      .setValue("ding-secret-updated");
+    await wrapper
+      .get('[data-testid="dingtalk-connect-redirect-url"]')
+      .setValue("https://admin.example.com/api/v1/auth/oauth/dingtalk/callback");
+    await wrapper
+      .get('[data-testid="dingtalk-connect-corp-restriction-policy"]')
+      .setValue("internal_only");
+    await wrapper
+      .get('[data-testid="dingtalk-connect-internal-corp-id"]')
+      .setValue("dingcorp-updated");
+    await wrapper
+      .get('[data-testid="dingtalk-connect-bypass-registration"]')
+      .setValue(true);
+    await wrapper
+      .get('[data-testid="dingtalk-connect-sync-corp-email"]')
+      .setValue(true);
+    await wrapper
+      .get('[data-testid="dingtalk-connect-sync-display-name"]')
+      .setValue(true);
+    await wrapper
+      .get('[data-testid="dingtalk-connect-sync-dept"]')
+      .setValue(true);
+    await wrapper
+      .get('[data-testid="dingtalk-connect-sync-corp-email-attr-key"]')
+      .setValue("corp_email");
+    await wrapper
+      .get('[data-testid="dingtalk-connect-sync-display-name-attr-key"]')
+      .setValue("display_name");
+    await wrapper
+      .get('[data-testid="dingtalk-connect-sync-dept-attr-key"]')
+      .setValue("department");
+    await wrapper
+      .get('[data-testid="dingtalk-connect-sync-corp-email-attr-name"]')
+      .setValue("企业邮箱");
+    await wrapper
+      .get('[data-testid="dingtalk-connect-sync-display-name-attr-name"]')
+      .setValue("展示名称");
+    await wrapper
+      .get('[data-testid="dingtalk-connect-sync-dept-attr-name"]')
+      .setValue("部门名称");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dingtalk_connect_enabled: true,
+        dingtalk_connect_client_id: "ding-client-id-updated",
+        dingtalk_connect_client_secret: "ding-secret-updated",
+        dingtalk_connect_redirect_url:
+          "https://admin.example.com/api/v1/auth/oauth/dingtalk/callback",
+        dingtalk_connect_corp_restriction_policy: "internal_only",
+        dingtalk_connect_internal_corp_id: "dingcorp-updated",
+        dingtalk_connect_bypass_registration: true,
+        dingtalk_connect_sync_corp_email: true,
+        dingtalk_connect_sync_display_name: true,
+        dingtalk_connect_sync_dept: true,
+        dingtalk_connect_sync_corp_email_attr_key: "corp_email",
+        dingtalk_connect_sync_display_name_attr_key: "display_name",
+        dingtalk_connect_sync_dept_attr_key: "department",
+        dingtalk_connect_sync_corp_email_attr_name: "企业邮箱",
+        dingtalk_connect_sync_display_name_attr_name: "展示名称",
+        dingtalk_connect_sync_dept_attr_name: "部门名称",
+      }),
+    );
+    expect(
+      (
+        wrapper.get('[data-testid="dingtalk-connect-client-secret"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe("");
   });
 });

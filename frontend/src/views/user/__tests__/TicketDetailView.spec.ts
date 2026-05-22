@@ -14,6 +14,7 @@ const {
   getTicket,
   listTicketMessages,
   replyTicket,
+  uploadTicketMedia,
   updateTicket,
   submitTicket,
   getAvailable,
@@ -25,6 +26,7 @@ const {
   getTicket: vi.fn(),
   listTicketMessages: vi.fn(),
   replyTicket: vi.fn(),
+  uploadTicketMedia: vi.fn(),
   updateTicket: vi.fn(),
   submitTicket: vi.fn(),
   getAvailable: vi.fn(),
@@ -39,6 +41,7 @@ vi.mock('@/api/tickets', () => ({
     getTicket,
     listTicketMessages,
     replyTicket,
+    uploadTicketMedia,
     withdrawTicket: vi.fn(),
     closeTicket: vi.fn(),
     updateTicket,
@@ -90,6 +93,7 @@ describe('user TicketDetailView', () => {
     getTicket.mockReset()
     listTicketMessages.mockReset()
     replyTicket.mockReset()
+    uploadTicketMedia.mockReset()
     updateTicket.mockReset()
     submitTicket.mockReset()
     getAvailable.mockReset()
@@ -174,6 +178,53 @@ describe('user TicketDetailView', () => {
 
     expect(replyTicket).toHaveBeenCalledWith(42, 'Follow up', undefined)
     expect(getTicket.mock.calls.length).toBe(ticketLoadCallsBeforeReply + 1)
+  })
+
+  it('does not surface stale upload errors after switching to another ticket', async () => {
+    let rejectUpload!: (reason?: unknown) => void
+    uploadTicketMedia.mockReturnValueOnce(new Promise((_, reject) => {
+      rejectUpload = reject
+    }))
+
+    const wrapper = mount(TicketDetailView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TicketDetailPane: true,
+          TicketEditorCard: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const fileInput = wrapper.get('input[type="file"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [new File(['image'], 'ticket.png', { type: 'image/png' })],
+      configurable: true,
+    })
+
+    const uploadPromise = fileInput.trigger('change')
+    await Promise.resolve()
+
+    getTicket.mockResolvedValueOnce({
+      id: 77,
+      ticket_no: 'TK-77',
+      category: 'consult',
+      title: 'Need help',
+      status: 'waiting_admin',
+      current_form_payload: {},
+    })
+    listTicketMessages.mockResolvedValueOnce([])
+    routeState.path = '/tickets/77'
+    routeState.params.id = '77'
+    await flushPromises()
+
+    rejectUpload(new Error('stale upload failed'))
+    await uploadPromise
+    await flushPromises()
+
+    expect(showError).not.toHaveBeenCalledWith('tickets.uploadFailed')
   })
 
   it('hides withdrawn reply and close actions while keeping edit action', async () => {

@@ -241,13 +241,15 @@ async function handleAttachmentUpload(event: Event) {
   uploadingAttachment.value = true
   try {
     for (const file of files) {
+      if (!isCurrentAttachmentUpload(ticketId, uploadGeneration)) {
+        break
+      }
       if (!file.type.startsWith('image/')) continue
       const result = await props.uploadFn(file, ticketId)
-      if (
-        !result ||
-        props.ticketId !== ticketId ||
-        attachmentUploadGeneration.value !== uploadGeneration
-      ) {
+      if (!isCurrentAttachmentUpload(ticketId, uploadGeneration)) {
+        break
+      }
+      if (!result) {
         continue
       }
       const previewURL = URL.createObjectURL(file)
@@ -262,13 +264,19 @@ async function handleAttachmentUpload(event: Event) {
       })
     }
   } catch (error) {
-    emit('upload-error', error)
+    if (isCurrentAttachmentUpload(ticketId, uploadGeneration)) {
+      emit('upload-error', error)
+    }
   } finally {
-    if (attachmentUploadGeneration.value === uploadGeneration) {
+    if (isCurrentAttachmentUpload(ticketId, uploadGeneration)) {
       uploadingAttachment.value = false
     }
     input.value = ''
   }
+}
+
+function isCurrentAttachmentUpload(ticketId: number | undefined, uploadGeneration: number) {
+  return props.ticketId === ticketId && attachmentUploadGeneration.value === uploadGeneration
 }
 
 function removePendingAttachment(index: number) {

@@ -145,7 +145,7 @@
       </div>
 
       <div v-if="form.provider === PROVIDER_OPENAI" class="rounded-lg border border-blue-100 bg-blue-50/50 p-3 dark:border-blue-500/20 dark:bg-blue-500/10">
-        <label class="input-label">{{ t('admin.channelMonitor.form.apiMode') }}</label>
+        <label class="input-label">{{ apiModeFieldLabel }}</label>
         <div class="grid gap-3 sm:grid-cols-2">
           <button
             v-for="opt in apiModeOptions"
@@ -268,6 +268,15 @@ const providerTabs = computed<{ value: Provider; label: string }[]>(() => [
   { value: PROVIDER_OPENAI, label: t('monitorCommon.providers.openai') },
   { value: PROVIDER_GEMINI, label: t('monitorCommon.providers.gemini') },
 ])
+
+function translateOrFallback(key: string, fallback: string): string {
+  const translated = t(key)
+  return translated === key ? fallback : translated
+}
+
+const apiModeFieldLabel = computed(() =>
+  translateOrFallback('admin.channelMonitor.form.apiMode', 'API Mode'),
+)
 
 const activeProvider = ref<Provider>(PROVIDER_ANTHROPIC)
 const templates = ref<ChannelMonitorTemplate[]>([])
@@ -482,13 +491,13 @@ function modeLabel(mode: BodyOverrideMode): string {
 const apiModeOptions = computed<{ value: APIMode; label: string; hint: string }[]>(() => [
   {
     value: API_MODE_CHAT_COMPLETIONS,
-    label: t('admin.channelMonitor.form.apiModeChatCompletions'),
-    hint: t('admin.channelMonitor.form.apiModeChatCompletionsHint'),
+    label: translateOrFallback('admin.channelMonitor.form.apiModeChatCompletions', 'Chat Completions'),
+    hint: translateOrFallback('admin.channelMonitor.form.apiModeChatCompletionsHint', 'Use the Chat Completions request shape.'),
   },
   {
     value: API_MODE_RESPONSES,
-    label: t('admin.channelMonitor.form.apiModeResponses'),
-    hint: t('admin.channelMonitor.form.apiModeResponsesHint'),
+    label: translateOrFallback('admin.channelMonitor.form.apiModeResponses', 'Responses'),
+    hint: translateOrFallback('admin.channelMonitor.form.apiModeResponsesHint', 'Use the Responses request shape.'),
   },
 ])
 
@@ -512,8 +521,8 @@ function apiModeButtonClass(mode: APIMode): string {
 
 function apiModeLabel(mode: APIMode): string {
   return normalizeAPIMode(mode) === API_MODE_RESPONSES
-    ? t('admin.channelMonitor.form.apiModeResponses')
-    : t('admin.channelMonitor.form.apiModeChatCompletions')
+    ? translateOrFallback('admin.channelMonitor.form.apiModeResponses', 'Responses')
+    : translateOrFallback('admin.channelMonitor.form.apiModeChatCompletions', 'Chat Completions')
 }
 
 function apiModeBadgeClass(mode: APIMode): string {

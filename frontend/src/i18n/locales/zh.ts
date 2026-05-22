@@ -1071,6 +1071,26 @@ export default {
       completing: '正在完成注册...',
       completeRegistrationFailed: '注册失败，请检查邀请码后重试。'
     },
+    dingtalk: {
+      signIn: '使用钉钉登录',
+      providerName: '钉钉',
+      callbackTitle: '正在完成钉钉登录',
+      callbackProcessing: '正在验证钉钉登录信息，请稍候...',
+      callbackHint: '如果页面未自动跳转，请返回登录页重试。',
+      callbackMissingToken: '登录信息缺失，请返回重试。',
+      createAccountTitle: '完成钉钉登录注册',
+      invitationRequired: '该钉钉账号尚未注册，站点已开启邀请码注册，请输入邀请码以完成注册。',
+      completeRegistration: '完成注册',
+      completing: '正在完成注册...',
+      completeRegistrationFailed: '注册失败，请检查邀请码后重试。',
+      registrationDisabledRedirectToBind: '当前未开放钉钉注册，请先登录已有账户并完成绑定。',
+      error: {
+        provider_error: '钉钉登录已取消或失败，请重试。',
+        missing_params: '钉钉回调参数缺失，请重试。',
+        csrf: '钉钉登录请求已过期，请重试。',
+        missing_browser_session: '钉钉登录会话已失效，请重试。',
+      },
+    },
     emailOAuth: {
       signIn: '使用 {providerName} 登录'
     },
@@ -1832,6 +1852,7 @@ export default {
       providers: {
         email: '邮箱',
         linuxdo: 'LinuxDo',
+        dingtalk: '钉钉',
         github: 'GitHub',
         google: 'Google',
         oidc: '{providerName}',

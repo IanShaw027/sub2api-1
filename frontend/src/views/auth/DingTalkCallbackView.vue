@@ -295,7 +295,7 @@ const totpTempToken = ref('')
 const totpCode = ref('')
 const totpError = ref('')
 const totpUserEmailMasked = ref('')
-const providerName = '钉钉'
+const providerName = computed(() => t('auth.dingtalk.providerName'))
 
 const needsCreateAccount = computed(() => pendingAccountAction.value === 'create_account')
 const needsChooser = computed(() => pendingAccountAction.value === 'choose_account_action')
@@ -336,11 +336,17 @@ type DingTalkPendingActionResponse = PendingOAuthExchangeResponse & {
 }
 
 function persistPendingAuthSession(redirect?: string) {
+  const decision = currentAdoptionDecision()
   authStore.setPendingAuthSession({
     token: '',
     token_field: 'pending_oauth_token',
     provider: 'dingtalk',
-    redirect: sanitizeRedirectPath(redirect || redirectTo.value)
+    redirect: sanitizeRedirectPath(redirect || redirectTo.value),
+    adoption_required: adoptionRequired.value,
+    suggested_display_name: suggestedDisplayName.value || undefined,
+    suggested_avatar_url: suggestedAvatarUrl.value || undefined,
+    adopt_display_name: decision.adoptDisplayName,
+    adopt_avatar: decision.adoptAvatar,
   })
 }
 
@@ -595,6 +601,7 @@ async function finalizePendingAccountResponse(completion: DingTalkPendingActionR
 
   // step=email_completion: 用户无邮箱，需要跳到补邮箱页面
   if (completion.step === 'email_completion' || (completion as Record<string, unknown>)['requires_email_completion'] === true) {
+    persistPendingAuthSession(redirect)
     await router.replace('/auth/dingtalk/email-completion?redirect=' + encodeURIComponent(redirect))
     return
   }
@@ -799,6 +806,7 @@ onMounted(async () => {
         persistPendingAuthSession(completionRedirect)
         return
       }
+      persistPendingAuthSession(completionRedirect)
       await router.replace('/auth/dingtalk/email-completion?redirect=' + encodeURIComponent(completionRedirect))
       return
     }

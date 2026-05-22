@@ -191,7 +191,7 @@ describe('TicketConversationPane', () => {
     URL.revokeObjectURL = originalRevokeObjectURL
   })
 
-  it('keeps an in-flight attachment upload bound to the ticket where it started', async () => {
+  it('stops queueing the remaining attachment uploads after switching tickets', async () => {
     let uploadResolver!: (value: { id: number; public_url: string; mime_type: string }) => void
     const firstUpload = new Promise<{ id: number; public_url: string; mime_type: string }>((resolve) => {
       uploadResolver = resolve
@@ -237,8 +237,9 @@ describe('TicketConversationPane', () => {
     await uploadPromise
     await flushPromises()
 
+    expect(uploadFn).toHaveBeenCalledTimes(1)
     expect(uploadFn.mock.calls[0]?.[1]).toBe(1)
-    expect(uploadFn.mock.calls[1]?.[1]).toBe(1)
+    expect(wrapper.html()).not.toContain('https://example.com/one.png')
   })
 
   it('keeps the new ticket upload lock while an old upload finally resolves after a ticket switch', async () => {
@@ -345,5 +346,38 @@ describe('TicketConversationPane', () => {
 
     URL.createObjectURL = originalCreateObjectURL
     URL.revokeObjectURL = originalRevokeObjectURL
+  })
+
+  it('does not emit upload errors from an old ticket after switching tickets', async () => {
+    let rejectUpload!: (reason?: unknown) => void
+    const uploadFn = vi.fn().mockReturnValueOnce(new Promise((_, reject) => {
+      rejectUpload = reject
+    }))
+
+    const wrapper = mount(TicketConversationPane, {
+      props: {
+        title: 'Conversation',
+        emptyText: 'Empty',
+        messages: [],
+        uploadFn,
+        ticketId: 1,
+      },
+    })
+
+    const fileInput = wrapper.get('input[type="file"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [new File(['one'], 'one.png', { type: 'image/png' })],
+      configurable: true,
+    })
+
+    const uploadPromise = fileInput.trigger('change')
+    await Promise.resolve()
+    await wrapper.setProps({ ticketId: 2 })
+
+    rejectUpload(new Error('stale upload failed'))
+    await uploadPromise
+    await flushPromises()
+
+    expect(wrapper.emitted('upload-error')).toBeUndefined()
   })
 })

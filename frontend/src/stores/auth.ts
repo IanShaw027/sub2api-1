@@ -26,6 +26,8 @@ interface PendingAuthSessionSummary {
   adoption_required?: boolean
   suggested_display_name?: string
   suggested_avatar_url?: string
+  adopt_display_name?: boolean
+  adopt_avatar?: boolean
 }
 
 function normalizePendingAuthTokenField(value: unknown): PendingAuthTokenField {
@@ -52,7 +54,9 @@ function getPersistedPendingAuthSession(): PendingAuthSessionSummary | null {
       redirect: typeof parsed?.redirect === 'string' ? parsed.redirect : undefined,
       adoption_required: typeof parsed?.adoption_required === 'boolean' ? parsed.adoption_required : undefined,
       suggested_display_name: typeof parsed?.suggested_display_name === 'string' ? parsed.suggested_display_name : undefined,
-      suggested_avatar_url: typeof parsed?.suggested_avatar_url === 'string' ? parsed.suggested_avatar_url : undefined
+      suggested_avatar_url: typeof parsed?.suggested_avatar_url === 'string' ? parsed.suggested_avatar_url : undefined,
+      adopt_display_name: typeof parsed?.adopt_display_name === 'boolean' ? parsed.adopt_display_name : undefined,
+      adopt_avatar: typeof parsed?.adopt_avatar === 'boolean' ? parsed.adopt_avatar : undefined,
     }
   } catch {
     localStorage.removeItem(PENDING_AUTH_SESSION_KEY)

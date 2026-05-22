@@ -92,6 +92,7 @@ describe('Ops SLA-scoped error charts', () => {
             { status_code: 400, total: 7, sla: 2, business_limited: 5 },
             { status_code: 503, total: 3, sla: 0, business_limited: 3 },
           ],
+          owners: [],
         },
       },
       global: globalStubs,
@@ -112,6 +113,7 @@ describe('Ops SLA-scoped error charts', () => {
         data: {
           total: 4,
           items: [{ status_code: 500, total: 4, sla: 0, business_limited: 4 }],
+          owners: [],
         },
       },
       global: globalStubs,
@@ -143,5 +145,35 @@ describe('Ops SLA-scoped error charts', () => {
 
     const requestErrorsButton = wrapper.findAll('button')[0]
     expect(requestErrorsButton.attributes('disabled')).toBeDefined()
+  })
+
+  it('owner 甜甜圈按 SLA scope 统计 owner 分布，不使用 raw total', () => {
+    const wrapper = mount(OpsErrorDistributionChart, {
+      props: {
+        loading: false,
+        data: {
+          total: 14,
+          items: [
+            { status_code: 400, total: 10, sla: 3, business_limited: 7 },
+            { status_code: 500, total: 4, sla: 1, business_limited: 3 },
+          ],
+          owners: [
+            { owner: 'provider', total: 10, sla: 3, business_limited: 7 },
+            { owner: 'platform', total: 4, sla: 1, business_limited: 3 },
+          ],
+        },
+      },
+      global: globalStubs,
+    })
+
+    const doughnut = wrapper.findComponent({ name: 'Doughnut' })
+    expect(doughnut.exists()).toBe(true)
+    expect(doughnut.props('data')).toMatchObject({
+      labels: [
+        'admin.ops.errorDetails.owner.provider',
+        'admin.ops.errorDetails.owner.platform',
+      ],
+      datasets: [{ data: [3, 1] }],
+    })
   })
 })

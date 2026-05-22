@@ -15,6 +15,7 @@ const {
   replaceAdminTicketReplyTemplates,
   replyAdminTicket,
   updateAdminTicketStatus,
+  apiPost,
   showError,
   showSuccess,
 } = vi.hoisted(() => ({
@@ -24,6 +25,7 @@ const {
   replaceAdminTicketReplyTemplates: vi.fn(),
   replyAdminTicket: vi.fn(),
   updateAdminTicketStatus: vi.fn(),
+  apiPost: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
 }))
@@ -36,6 +38,12 @@ vi.mock('@/api/adminTickets', () => ({
     replaceAdminTicketReplyTemplates,
     replyAdminTicket,
     updateAdminTicketStatus,
+  },
+}))
+
+vi.mock('@/api/client', () => ({
+  apiClient: {
+    post: apiPost,
   },
 }))
 
@@ -76,6 +84,7 @@ describe('admin TicketDetailView reply template menu', () => {
     replaceAdminTicketReplyTemplates.mockReset()
     replyAdminTicket.mockReset()
     updateAdminTicketStatus.mockReset()
+    apiPost.mockReset()
     showError.mockReset()
     showSuccess.mockReset()
     routeState.params.id = '42'
@@ -202,6 +211,49 @@ describe('admin TicketDetailView reply template menu', () => {
 
     expect(replyAdminTicket).toHaveBeenCalledWith(42, 'Need update', undefined)
     expect(getAdminTicket).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not surface stale upload errors after switching to another ticket', async () => {
+    let rejectUpload!: (reason?: unknown) => void
+    apiPost.mockReturnValueOnce(new Promise((_, reject) => {
+      rejectUpload = reject
+    }))
+
+    const wrapper = mount(TicketDetailView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TicketDetailPane: true,
+          TicketReplyTemplatesDialog: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const fileInput = wrapper.get('input[type="file"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [new File(['image'], 'ticket.png', { type: 'image/png' })],
+      configurable: true,
+    })
+
+    const uploadPromise = fileInput.trigger('change')
+    await Promise.resolve()
+
+    getAdminTicket.mockResolvedValueOnce({
+      id: 108,
+      ticket_no: 'TK-108',
+      status: 'waiting_admin',
+    })
+    listAdminTicketMessages.mockResolvedValueOnce([])
+    routeState.params.id = '108'
+    await flushPromises()
+
+    rejectUpload(new Error('stale admin upload failed'))
+    await uploadPromise
+    await flushPromises()
+
+    expect(showError).not.toHaveBeenCalledWith('tickets.uploadFailed')
   })
 
   it('hides withdrawn reply and status update actions', async () => {
