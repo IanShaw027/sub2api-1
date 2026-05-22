@@ -435,7 +435,12 @@ func (h *AuthHandler) DingTalkOAuthCallback(c *gin.Context) {
 	}
 
 	// ─── Level 1：auth_identities hit ───
-	if existing, _ := h.findOAuthIdentityUser(c.Request.Context(), identityKey); existing != nil {
+	existing, err := h.findOAuthIdentityUser(c.Request.Context(), identityKey)
+	if err != nil {
+		redirectOAuthError(c, frontendCallback, "session_error", infraerrors.Reason(err), infraerrors.Message(err))
+		return
+	}
+	if existing != nil {
 		// 身份同步：已登录用户，直接同步（user_id 已知）。
 		// 异步执行避免上游钉钉接口（GetStaffInfoByUserId / 部门递归）阻塞登录跳转。
 		runDingTalkSyncAsync(c.Request.Context(), func(ctx context.Context) {
@@ -458,6 +463,48 @@ func (h *AuthHandler) DingTalkOAuthCallback(c *gin.Context) {
 
 	// ─── 非命中：require_email=false 走 synthetic email 直接登录 ───
 	if !cfg.RequireEmail {
+		if forceEmailOnSignup {
+			if strings.TrimSpace(staff.Email) == "" {
+				completionResponse := map[string]any{
+					"step":                      "email_completion",
+					"requires_email_completion": true,
+					"redirect":                  redirectTo,
+				}
+				if signupBlocked {
+					completionResponse = dingTalkBindLoginCompletionResponse(redirectTo)
+				}
+				if err := h.createOAuthPendingSession(c, oauthPendingSessionPayload{
+					Intent: oauthIntentLogin, Identity: identityKey, TargetUserID: nil,
+					ResolvedEmail: "", RedirectTo: redirectTo, BrowserSessionKey: browserSessionKey,
+					UpstreamIdentityClaims: upstreamClaims,
+					CompletionResponse:     completionResponse,
+				}); err != nil {
+					redirectOAuthError(c, frontendCallback, "session_error", infraerrors.Reason(err), infraerrors.Message(err))
+					return
+				}
+				redirectToFrontendCallback(c, frontendCallback)
+				return
+			}
+			var compatEmailUser *dbent.User
+			if strings.TrimSpace(staff.Email) != "" {
+				compatEmailUser, err = h.findDingTalkCompatEmailUser(c.Request.Context(), staff.Email)
+				if err != nil {
+					redirectOAuthError(c, frontendCallback, "session_error", infraerrors.Reason(err), infraerrors.Message(err))
+					return
+				}
+			}
+			if err := h.createDingTalkOAuthChoicePendingSession(
+				c, identityKey, staff.Email, staff.Email,
+				redirectTo, browserSessionKey, upstreamClaims,
+				staff.Email, compatEmailUser, forceEmailOnSignup,
+				signupBlocked,
+			); err != nil {
+				redirectOAuthError(c, frontendCallback, "session_error", infraerrors.Reason(err), infraerrors.Message(err))
+				return
+			}
+			redirectToFrontendCallback(c, frontendCallback)
+			return
+		}
 		if signupBlocked {
 			// 注册被拦 + 无邮箱可输：唯一出路是绑定已有账户
 			if err := h.createOAuthPendingSession(c, oauthPendingSessionPayload{
@@ -513,7 +560,11 @@ func (h *AuthHandler) DingTalkOAuthCallback(c *gin.Context) {
 	// ─── L3/L4 有邮箱：统一 choice pending session ───
 	var compatEmailUser *dbent.User
 	if dingTalkLevelThreeEnabled && staff.Email != "" {
-		compatEmailUser, _ = h.findDingTalkCompatEmailUser(c.Request.Context(), staff.Email)
+		compatEmailUser, err = h.findDingTalkCompatEmailUser(c.Request.Context(), staff.Email)
+		if err != nil {
+			redirectOAuthError(c, frontendCallback, "session_error", infraerrors.Reason(err), infraerrors.Message(err))
+			return
+		}
 	}
 	if err := h.createDingTalkOAuthChoicePendingSession(
 		c, identityKey, staff.Email, staff.Email,

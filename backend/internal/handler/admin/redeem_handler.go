@@ -136,7 +136,7 @@ func (h *RedeemHandler) Generate(c *gin.Context) {
 		return
 	}
 
-	_, err := resolveRedeemCodeExpiresAt(req.ExpiresAt, req.ExpiresInDays)
+	expiresAt, err := resolveRedeemCodeExpiresAt(req.ExpiresAt, req.ExpiresInDays)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -149,6 +149,7 @@ func (h *RedeemHandler) Generate(c *gin.Context) {
 			Value:        req.Value,
 			GroupID:      req.GroupID,
 			ValidityDays: req.ValidityDays,
+			ExpiresAt:    expiresAt,
 		})
 		if execErr != nil {
 			return nil, execErr

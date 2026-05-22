@@ -1,5 +1,3 @@
-//go:build unit
-
 package service
 
 import (
@@ -244,6 +242,100 @@ func (s *groupRepoStub) UpdateSortOrders(ctx context.Context, updates []GroupSor
 	return nil
 }
 
+type apiKeyRepoStubForGroupUpdate struct {
+	key       *APIKey
+	getErr    error
+	updateErr error
+	updated   *APIKey
+}
+
+func (s *apiKeyRepoStubForGroupUpdate) GetByID(_ context.Context, _ int64) (*APIKey, error) {
+	if s.getErr != nil {
+		return nil, s.getErr
+	}
+	if s.key == nil {
+		return nil, ErrAPIKeyNotFound
+	}
+	clone := *s.key
+	return &clone, nil
+}
+
+func (s *apiKeyRepoStubForGroupUpdate) Update(_ context.Context, key *APIKey) error {
+	if s.updateErr != nil {
+		return s.updateErr
+	}
+	if key == nil {
+		s.updated = nil
+		return nil
+	}
+	clone := *key
+	s.updated = &clone
+	return nil
+}
+
+func (s *apiKeyRepoStubForGroupUpdate) Create(context.Context, *APIKey) error { panic("unexpected") }
+func (s *apiKeyRepoStubForGroupUpdate) GetKeyAndOwnerID(context.Context, int64) (string, int64, error) {
+	panic("unexpected")
+}
+func (s *apiKeyRepoStubForGroupUpdate) GetByKey(context.Context, string) (*APIKey, error) {
+	panic("unexpected")
+}
+func (s *apiKeyRepoStubForGroupUpdate) GetByKeyForAuth(context.Context, string) (*APIKey, error) {
+	panic("unexpected")
+}
+func (s *apiKeyRepoStubForGroupUpdate) Delete(context.Context, int64) error { panic("unexpected") }
+func (s *apiKeyRepoStubForGroupUpdate) ListByUserID(context.Context, int64, pagination.PaginationParams, APIKeyListFilters) ([]APIKey, *pagination.PaginationResult, error) {
+	panic("unexpected")
+}
+func (s *apiKeyRepoStubForGroupUpdate) VerifyOwnership(context.Context, int64, []int64) ([]int64, error) {
+	panic("unexpected")
+}
+func (s *apiKeyRepoStubForGroupUpdate) CountByUserID(context.Context, int64) (int64, error) {
+	panic("unexpected")
+}
+func (s *apiKeyRepoStubForGroupUpdate) ExistsByKey(context.Context, string) (bool, error) {
+	panic("unexpected")
+}
+func (s *apiKeyRepoStubForGroupUpdate) ListByGroupID(context.Context, int64, pagination.PaginationParams) ([]APIKey, *pagination.PaginationResult, error) {
+	panic("unexpected")
+}
+func (s *apiKeyRepoStubForGroupUpdate) SearchAPIKeys(context.Context, int64, string, int) ([]APIKey, error) {
+	panic("unexpected")
+}
+func (s *apiKeyRepoStubForGroupUpdate) ClearGroupIDByGroupID(context.Context, int64) (int64, error) {
+	panic("unexpected")
+}
+func (s *apiKeyRepoStubForGroupUpdate) CountByGroupID(context.Context, int64) (int64, error) {
+	panic("unexpected")
+}
+func (s *apiKeyRepoStubForGroupUpdate) CountActiveByGroupID(context.Context, int64) (int64, error) {
+	panic("unexpected")
+}
+func (s *apiKeyRepoStubForGroupUpdate) ListKeysByUserID(context.Context, int64) ([]string, error) {
+	panic("unexpected")
+}
+func (s *apiKeyRepoStubForGroupUpdate) ListKeysByGroupID(context.Context, int64) ([]string, error) {
+	panic("unexpected")
+}
+func (s *apiKeyRepoStubForGroupUpdate) IncrementQuotaUsed(context.Context, int64, float64) (float64, error) {
+	panic("unexpected")
+}
+func (s *apiKeyRepoStubForGroupUpdate) UpdateLastUsed(context.Context, int64, time.Time) error {
+	panic("unexpected")
+}
+func (s *apiKeyRepoStubForGroupUpdate) IncrementRateLimitUsage(context.Context, int64, float64) error {
+	panic("unexpected")
+}
+func (s *apiKeyRepoStubForGroupUpdate) ResetRateLimitWindows(context.Context, int64) error {
+	panic("unexpected")
+}
+func (s *apiKeyRepoStubForGroupUpdate) GetRateLimitData(context.Context, int64) (*APIKeyRateLimitData, error) {
+	panic("unexpected")
+}
+func (s *apiKeyRepoStubForGroupUpdate) UpdateGroupIDByUserAndGroup(context.Context, int64, int64, int64) (int64, error) {
+	panic("unexpected")
+}
+
 type deleteGroupAPIKeyRepoStub struct {
 	apiKeyRepoStubForGroupUpdate
 	keys         []string
@@ -325,6 +417,9 @@ func (s *proxyRepoStub) ListAccountSummariesByProxyID(ctx context.Context, proxy
 type redeemRepoStub struct {
 	deleteErrByID map[int64]error
 	deletedIDs    []int64
+	created       []*RedeemCode
+	getByID       map[int64]*RedeemCode
+	getByIDErr    error
 
 	batchUpdateIDs    []int64
 	batchUpdateFields RedeemCodeBatchUpdateFields
@@ -334,7 +429,20 @@ type redeemRepoStub struct {
 }
 
 func (s *redeemRepoStub) Create(ctx context.Context, code *RedeemCode) error {
-	panic("unexpected Create call")
+	if code == nil {
+		return nil
+	}
+	clone := *code
+	if clone.GroupID != nil {
+		groupID := *clone.GroupID
+		clone.GroupID = &groupID
+	}
+	if clone.ExpiresAt != nil {
+		expiresAt := *clone.ExpiresAt
+		clone.ExpiresAt = &expiresAt
+	}
+	s.created = append(s.created, &clone)
+	return nil
 }
 
 func (s *redeemRepoStub) CreateBatch(ctx context.Context, codes []RedeemCode) error {
@@ -342,6 +450,23 @@ func (s *redeemRepoStub) CreateBatch(ctx context.Context, codes []RedeemCode) er
 }
 
 func (s *redeemRepoStub) GetByID(ctx context.Context, id int64) (*RedeemCode, error) {
+	if s.getByIDErr != nil {
+		return nil, s.getByIDErr
+	}
+	if s.getByID != nil {
+		if code, ok := s.getByID[id]; ok {
+			clone := *code
+			if clone.GroupID != nil {
+				groupID := *clone.GroupID
+				clone.GroupID = &groupID
+			}
+			if clone.ExpiresAt != nil {
+				expiresAt := *clone.ExpiresAt
+				clone.ExpiresAt = &expiresAt
+			}
+			return &clone, nil
+		}
+	}
 	panic("unexpected GetByID call")
 }
 
@@ -461,6 +586,24 @@ func (s *billingCacheStub) UpdateAPIKeyRateLimitUsage(ctx context.Context, keyID
 }
 func (s *billingCacheStub) InvalidateAPIKeyRateLimit(ctx context.Context, keyID int64) error {
 	panic("unexpected InvalidateAPIKeyRateLimit call")
+}
+
+type authCacheInvalidatorStub struct {
+	userIDs  []int64
+	groupIDs []int64
+	keys     []string
+}
+
+func (s *authCacheInvalidatorStub) InvalidateAuthCacheByKey(ctx context.Context, key string) {
+	s.keys = append(s.keys, key)
+}
+
+func (s *authCacheInvalidatorStub) InvalidateAuthCacheByUserID(ctx context.Context, userID int64) {
+	s.userIDs = append(s.userIDs, userID)
+}
+
+func (s *authCacheInvalidatorStub) InvalidateAuthCacheByGroupID(ctx context.Context, groupID int64) {
+	s.groupIDs = append(s.groupIDs, groupID)
 }
 
 func waitForInvalidations(t *testing.T, ch <-chan subscriptionInvalidateCall, expected int) []subscriptionInvalidateCall {

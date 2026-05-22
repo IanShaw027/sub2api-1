@@ -424,6 +424,7 @@ type GenerateRedeemCodesInput struct {
 	Value        float64
 	GroupID      *int64 // 订阅类型专用：关联的分组ID
 	ValidityDays int    // 订阅类型专用：有效天数
+	ExpiresAt    *time.Time
 }
 
 type ProxyBatchDeleteResult struct {
@@ -1547,7 +1548,7 @@ func (s *adminServiceImpl) BindUserAuthIdentity(ctx context.Context, userID int6
 	providerKey := strings.TrimSpace(input.ProviderKey)
 	providerSubject := strings.TrimSpace(input.ProviderSubject)
 	if providerType == "" {
-		return nil, infraerrors.BadRequest("INVALID_INPUT", "provider_type must be one of email, linuxdo, oidc, or wechat")
+		return nil, infraerrors.BadRequest("INVALID_INPUT", "provider_type must be one of email, github, google, linuxdo, oidc, wechat, or dingtalk")
 	}
 	if providerKey == "" || providerSubject == "" {
 		return nil, infraerrors.BadRequest("INVALID_INPUT", "provider_type, provider_key, and provider_subject are required")
@@ -1796,12 +1797,18 @@ func normalizeAdminAuthIdentityProviderType(input string) string {
 	switch strings.ToLower(strings.TrimSpace(input)) {
 	case "email":
 		return "email"
+	case "github":
+		return "github"
+	case "google":
+		return "google"
 	case "linuxdo":
 		return "linuxdo"
 	case "oidc":
 		return "oidc"
 	case "wechat":
 		return "wechat"
+	case "dingtalk":
+		return "dingtalk"
 	default:
 		return ""
 	}
@@ -3577,14 +3584,24 @@ func (s *adminServiceImpl) GenerateRedeemCodes(ctx context.Context, input *Gener
 		if input.GroupID == nil {
 			return nil, errors.New("group_id is required for subscription type")
 		}
+		if s.groupRepo == nil {
+			return nil, errors.New("subscription group validation unavailable")
+		}
 		// 验证分组存在且为订阅类型
 		group, err := s.groupRepo.GetByID(ctx, *input.GroupID)
 		if err != nil {
 			return nil, fmt.Errorf("group not found: %w", err)
 		}
-		if !group.IsSubscriptionType() {
+		if group == nil || !group.IsSubscriptionType() {
 			return nil, errors.New("group must be subscription type")
 		}
+	}
+	if input.ExpiresAt != nil {
+		expiresAt := input.ExpiresAt.UTC()
+		if !expiresAt.After(time.Now().UTC()) {
+			return nil, errors.New("expires_at must be in the future")
+		}
+		input.ExpiresAt = &expiresAt
 	}
 
 	codes := make([]RedeemCode, 0, input.Count)
@@ -3594,10 +3611,11 @@ func (s *adminServiceImpl) GenerateRedeemCodes(ctx context.Context, input *Gener
 			return nil, err
 		}
 		code := RedeemCode{
-			Code:   codeValue,
-			Type:   input.Type,
-			Value:  input.Value,
-			Status: StatusUnused,
+			Code:      codeValue,
+			Type:      input.Type,
+			Value:     input.Value,
+			Status:    StatusUnused,
+			ExpiresAt: input.ExpiresAt,
 		}
 		// 订阅类型专用字段
 		if input.Type == RedeemTypeSubscription {

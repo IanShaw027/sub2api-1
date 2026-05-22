@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -189,6 +190,81 @@ func TestCreateAndRedeem_BalanceIgnoresSubscriptionFields(t *testing.T) {
 
 	assert.NotEqual(t, http.StatusBadRequest, code,
 		"balance type should not require group_id or validity_days")
+}
+
+func TestGenerateRedeemCodes_ExpiresInDaysIsForwardedAsExpiresAt(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	adminSvc := newStubAdminService()
+	handler := NewRedeemHandler(adminSvc, nil)
+	router := gin.New()
+	router.POST("/api/v1/admin/redeem-codes/generate", handler.Generate)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/redeem-codes/generate", bytes.NewBufferString(`{
+		"count": 1,
+		"type": "balance",
+		"value": 10,
+		"expires_in_days": 2
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	start := time.Now().UTC()
+	router.ServeHTTP(rec, req)
+	end := time.Now().UTC()
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, adminSvc.lastGenerateRedeemInput)
+	require.NotNil(t, adminSvc.lastGenerateRedeemInput.ExpiresAt)
+	minExpiresAt := start.AddDate(0, 0, 2)
+	maxExpiresAt := end.AddDate(0, 0, 2)
+	assert.False(t, adminSvc.lastGenerateRedeemInput.ExpiresAt.Before(minExpiresAt))
+	assert.False(t, adminSvc.lastGenerateRedeemInput.ExpiresAt.After(maxExpiresAt))
+}
+
+func TestGenerateRedeemCodes_RejectsConflictingExpiryFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewRedeemHandler(newStubAdminService(), nil)
+	router := gin.New()
+	router.POST("/api/v1/admin/redeem-codes/generate", handler.Generate)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/redeem-codes/generate", bytes.NewBufferString(`{
+		"count": 1,
+		"type": "balance",
+		"value": 10,
+		"expires_at": "2099-01-02T03:04:05Z",
+		"expires_in_days": 2
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestCreateAndRedeem_RejectsConflictingExpiryFields(t *testing.T) {
+	h := newCreateAndRedeemHandler()
+	code := postCreateAndRedeemValidation(t, h, map[string]any{
+		"code":            "test-expiry-conflict",
+		"type":            "balance",
+		"value":           10,
+		"user_id":         1,
+		"expires_at":      "2099-01-02T03:04:05Z",
+		"expires_in_days": 2,
+	})
+
+	assert.Equal(t, http.StatusBadRequest, code)
+}
+
+func TestCreateAndRedeem_RejectsPastExpiresAt(t *testing.T) {
+	h := newCreateAndRedeemHandler()
+	code := postCreateAndRedeemValidation(t, h, map[string]any{
+		"code":       "test-expiry-past",
+		"type":       "balance",
+		"value":      10,
+		"user_id":    1,
+		"expires_at": "2000-01-02T03:04:05Z",
+	})
+
+	assert.Equal(t, http.StatusBadRequest, code)
 }
 
 func TestRedeemHandlerGetStatsUsesRedeemService(t *testing.T) {

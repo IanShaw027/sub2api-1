@@ -121,7 +121,7 @@ func (s *ChannelMonitorService) Create(ctx context.Context, p ChannelMonitorCrea
 	if err := validateExtraHeaders(p.ExtraHeaders); err != nil {
 		return nil, err
 	}
-	if err := s.validateTemplateBinding(ctx, p.Provider, p.TemplateID); err != nil {
+	if err := s.validateTemplateBinding(ctx, p.Provider, p.APIMode, p.TemplateID); err != nil {
 		return nil, err
 	}
 	encrypted, err := s.encryptor.Encrypt(p.APIKey)
@@ -192,7 +192,7 @@ func (s *ChannelMonitorService) Update(ctx context.Context, id int64, p ChannelM
 	if err := applyMonitorUpdate(existing, p); err != nil {
 		return nil, err
 	}
-	if err := s.validateTemplateBinding(ctx, existing.Provider, existing.TemplateID); err != nil {
+	if err := s.validateTemplateBinding(ctx, existing.Provider, existing.APIMode, existing.TemplateID); err != nil {
 		return nil, err
 	}
 
@@ -223,7 +223,8 @@ func (s *ChannelMonitorService) Update(ctx context.Context, id int64, p ChannelM
 //   - template_id 为空：不校验
 //   - template 必须存在
 //   - template.provider 必须与 monitor.provider 一致
-func (s *ChannelMonitorService) validateTemplateBinding(ctx context.Context, provider string, templateID *int64) error {
+//   - template.api_mode 必须与 monitor.api_mode 一致（空值都按 chat_completions 归一）
+func (s *ChannelMonitorService) validateTemplateBinding(ctx context.Context, provider, apiMode string, templateID *int64) error {
 	if templateID == nil {
 		return nil
 	}
@@ -233,6 +234,9 @@ func (s *ChannelMonitorService) validateTemplateBinding(ctx context.Context, pro
 	}
 	if tpl.Provider != provider {
 		return ErrChannelMonitorTemplateProviderMismatch
+	}
+	if defaultAPIMode(tpl.APIMode) != defaultAPIMode(apiMode) {
+		return ErrChannelMonitorTemplateAPIModeMismatch
 	}
 	return nil
 }

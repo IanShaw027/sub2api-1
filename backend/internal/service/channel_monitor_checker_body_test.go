@@ -247,6 +247,49 @@ func TestRunCheckForModel_OpenAIResponses_SkipsLeadingReasoningItem(t *testing.T
 	}
 }
 
+func TestRunCheckForModel_OpenAIResponses_MergeMode_ProtectsChallengeFields(t *testing.T) {
+	h := &openAICaptureHandler{}
+	endpoint := setupFakeOpenAI(t, h)
+
+	res := runCheckForModel(context.Background(), MonitorProviderOpenAI, endpoint, "sk-openai", "gpt-5.5", &CheckOptions{
+		APIMode:          MonitorAPIModeResponses,
+		BodyOverrideMode: MonitorBodyOverrideModeMerge,
+		BodyOverride: map[string]any{
+			"metadata":          map[string]any{"source": "monitor"},
+			"max_output_tokens": float64(64),
+			"model":             "user-forced-model",
+			"instructions":      "user-forced-instructions",
+			"input":             "user-forced-input",
+			"stream":            true,
+		},
+	})
+
+	if res.Status != MonitorStatusOperational {
+		t.Fatalf("responses merge request should pass challenge, got status=%s message=%q", res.Status, res.Message)
+	}
+	if h.lastPath != providerOpenAIResponsesPath {
+		t.Fatalf("expected responses path %q, got %q", providerOpenAIResponsesPath, h.lastPath)
+	}
+	if h.lastBody["model"] != "gpt-5.5" {
+		t.Errorf("responses merge should keep adapter model, got %v", h.lastBody["model"])
+	}
+	if h.lastBody["instructions"] == "user-forced-instructions" {
+		t.Error("responses merge should protect adapter instructions")
+	}
+	if h.lastBody["input"] == "user-forced-input" {
+		t.Error("responses merge should protect adapter input")
+	}
+	if h.lastBody["stream"] != false {
+		t.Errorf("responses merge should keep stream=false, got %v", h.lastBody["stream"])
+	}
+	if h.lastBody["metadata"] == nil {
+		t.Error("responses merge should allow non-protected keys like metadata")
+	}
+	if got := h.lastBody["max_output_tokens"]; got != float64(64) {
+		t.Errorf("responses merge should allow max_output_tokens override, got %v", got)
+	}
+}
+
 func TestRunCheckForModel_OpenAIResponsesReplaceMissingInstructionsFailsLocally(t *testing.T) {
 	h := &openAICaptureHandler{}
 	endpoint := setupFakeOpenAI(t, h)
@@ -263,11 +306,43 @@ func TestRunCheckForModel_OpenAIResponsesReplaceMissingInstructionsFailsLocally(
 	if res.Status != MonitorStatusError {
 		t.Fatalf("invalid responses replace body should fail locally as error, got status=%s", res.Status)
 	}
-	if !strings.Contains(res.Message, "instructions and input are required") {
+	if !strings.Contains(res.Message, "non-empty instructions and input for responses") {
 		t.Errorf("expected local validation message about instructions/input, got %q", res.Message)
 	}
 	if h.lastPath != "" {
 		t.Errorf("invalid replace body should fail before HTTP request, got path %q", h.lastPath)
+	}
+}
+
+func TestRunCheckForModel_OpenAIResponses_ReplaceMode_UsesResponsesBodyAndExtraction(t *testing.T) {
+	h := &openAICaptureHandler{responsesLeadingReasoning: true}
+	endpoint := setupFakeOpenAI(t, h)
+
+	res := runCheckForModel(context.Background(), MonitorProviderOpenAI, endpoint, "sk-openai", "gpt-5.5", &CheckOptions{
+		APIMode:          MonitorAPIModeResponses,
+		BodyOverrideMode: MonitorBodyOverrideModeReplace,
+		BodyOverride: map[string]any{
+			"model":        "user-forced-model",
+			"instructions": "Return the number 42.",
+			"input":        "What is 40 + 2?",
+			"stream":       false,
+		},
+	})
+
+	if res.Status != MonitorStatusOperational {
+		t.Fatalf("responses replace request should treat non-empty output text as operational, got status=%s message=%q", res.Status, res.Message)
+	}
+	if h.lastPath != providerOpenAIResponsesPath {
+		t.Fatalf("expected responses path %q, got %q", providerOpenAIResponsesPath, h.lastPath)
+	}
+	if h.lastBody["model"] != "user-forced-model" {
+		t.Errorf("responses replace should use user model, got %v", h.lastBody["model"])
+	}
+	if h.lastBody["instructions"] != "Return the number 42." {
+		t.Errorf("responses replace should use user instructions, got %v", h.lastBody["instructions"])
+	}
+	if h.lastBody["input"] != "What is 40 + 2?" {
+		t.Errorf("responses replace should use user input, got %v", h.lastBody["input"])
 	}
 }
 

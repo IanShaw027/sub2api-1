@@ -6,11 +6,15 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -388,4 +392,329 @@ func TestResolveDingTalkDeptPath_MultiLevel(t *testing.T) {
 	path, err := handler.resolveDingTalkDeptPath(context.Background(), cli, 42)
 	require.NoError(t, err)
 	require.Equal(t, "研发部/AI研发", path)
+}
+
+func TestDingTalkOAuthCallback_ForceEmailOnThirdPartySignupOverridesSyntheticSignup(t *testing.T) {
+	handler, client := newDingTalkOAuthCallbackTestHandler(t, map[string]string{
+		service.SettingKeyForceEmailOnThirdPartySignup: "true",
+	}, config.DingTalkConnectConfig{
+		Enabled:               true,
+		ClientID:              "ding-client",
+		ClientSecret:          "ding-secret",
+		AuthorizeURL:          "https://login.example.com/dingtalk/authorize",
+		RedirectURL:           "https://api.example.com/api/v1/auth/oauth/dingtalk/callback",
+		FrontendRedirectURL:   "/auth/dingtalk/callback",
+		TokenURL:              "https://placeholder.invalid/oauth2/userAccessToken",
+		UserInfoURL:           "https://placeholder.invalid/contact/users/me",
+		Scopes:                "openid",
+		CorpRestrictionPolicy: "none",
+		RequireEmail:          false,
+	})
+
+	stub := newDingTalkOAuthAPIServer(t, dingTalkOAuthAPIServerConfig{
+		UnionID: "union-force-email-1",
+		CorpID:  "ding-force-1",
+		UserID:  "user-force-1",
+		Name:    "Fresh User",
+		Nick:    "Fresh Nick",
+		Email:   "fresh@example.com",
+	})
+	defer stub.Close()
+	configureDingTalkOAuthTestEndpoints(handler, stub)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/oauth/dingtalk/callback?code=code-1&state=state-1", nil)
+	req.AddCookie(&http.Cookie{Name: dingTalkOAuthStateCookieName, Value: encodeCookieValue("state-1")})
+	req.AddCookie(&http.Cookie{Name: dingTalkOAuthRedirectCookie, Value: encodeCookieValue("/dashboard")})
+	req.AddCookie(&http.Cookie{Name: dingTalkOAuthIntentCookieName, Value: encodeCookieValue(oauthIntentLogin)})
+	req.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue("browser-force-1")})
+	c.Request = req
+
+	handler.DingTalkOAuthCallback(c)
+
+	require.Equal(t, http.StatusFound, recorder.Code)
+	require.Equal(t, "/auth/dingtalk/callback", recorder.Header().Get("Location"))
+
+	session, err := client.PendingAuthSession.Query().Only(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "fresh@example.com", session.ResolvedEmail)
+	require.NotEqual(t, buildDingTalkSyntheticEmail("union-force-email-1"), session.ResolvedEmail)
+
+	completion := dingTalkPendingCompletionResponse(t, session)
+	require.Equal(t, oauthPendingChoiceStep, completion["step"])
+	require.Equal(t, true, completion["force_email_on_signup"])
+	require.Equal(t, "force_email_on_signup", completion["choice_reason"])
+	require.Equal(t, "fresh@example.com", completion["resolved_email"])
+	_, hasSyntheticEmail := completion["synthetic_email"]
+	require.False(t, hasSyntheticEmail)
+}
+
+func TestDingTalkOAuthCallback_ForceEmailOnThirdPartySignupWithoutCorpEmailRequiresEmailCompletion(t *testing.T) {
+	handler, client := newDingTalkOAuthCallbackTestHandler(t, map[string]string{
+		service.SettingKeyForceEmailOnThirdPartySignup: "true",
+	}, config.DingTalkConnectConfig{
+		Enabled:               true,
+		ClientID:              "ding-client",
+		ClientSecret:          "ding-secret",
+		AuthorizeURL:          "https://login.example.com/dingtalk/authorize",
+		RedirectURL:           "https://api.example.com/api/v1/auth/oauth/dingtalk/callback",
+		FrontendRedirectURL:   "/auth/dingtalk/callback",
+		TokenURL:              "https://placeholder.invalid/oauth2/userAccessToken",
+		UserInfoURL:           "https://placeholder.invalid/contact/users/me",
+		Scopes:                "openid",
+		CorpRestrictionPolicy: "none",
+		RequireEmail:          false,
+	})
+
+	stub := newDingTalkOAuthAPIServer(t, dingTalkOAuthAPIServerConfig{
+		UnionID: "union-force-email-missing",
+		CorpID:  "ding-force-missing",
+		UserID:  "user-force-missing",
+		Name:    "Fresh User",
+		Nick:    "Fresh Nick",
+		Email:   "",
+	})
+	defer stub.Close()
+	configureDingTalkOAuthTestEndpoints(handler, stub)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/oauth/dingtalk/callback?code=code-missing&state=state-missing", nil)
+	req.AddCookie(&http.Cookie{Name: dingTalkOAuthStateCookieName, Value: encodeCookieValue("state-missing")})
+	req.AddCookie(&http.Cookie{Name: dingTalkOAuthRedirectCookie, Value: encodeCookieValue("/dashboard")})
+	req.AddCookie(&http.Cookie{Name: dingTalkOAuthIntentCookieName, Value: encodeCookieValue(oauthIntentLogin)})
+	req.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue("browser-force-missing")})
+	c.Request = req
+
+	handler.DingTalkOAuthCallback(c)
+
+	require.Equal(t, http.StatusFound, recorder.Code)
+	require.Equal(t, "/auth/dingtalk/callback", recorder.Header().Get("Location"))
+
+	session, err := client.PendingAuthSession.Query().Only(context.Background())
+	require.NoError(t, err)
+
+	completion := dingTalkPendingCompletionResponse(t, session)
+	require.Equal(t, "email_completion", completion["step"])
+	require.Equal(t, true, completion["requires_email_completion"])
+	require.Equal(t, "/dashboard", completion["redirect"])
+	resolvedEmail, _ := completion["resolved_email"].(string)
+	require.Empty(t, resolvedEmail)
+}
+
+func TestDingTalkOAuthCallback_CompatEmailConflictRedirectsInsteadOfCreatingPendingSession(t *testing.T) {
+	handler, client := newDingTalkOAuthCallbackTestHandler(t, nil, config.DingTalkConnectConfig{
+		Enabled:               true,
+		ClientID:              "ding-client",
+		ClientSecret:          "ding-secret",
+		AuthorizeURL:          "https://login.example.com/dingtalk/authorize",
+		RedirectURL:           "https://api.example.com/api/v1/auth/oauth/dingtalk/callback",
+		FrontendRedirectURL:   "/auth/dingtalk/callback",
+		TokenURL:              "https://placeholder.invalid/oauth2/userAccessToken",
+		UserInfoURL:           "https://placeholder.invalid/contact/users/me",
+		Scopes:                "openid",
+		CorpRestrictionPolicy: "none",
+		RequireEmail:          true,
+	})
+
+	ctx := context.Background()
+	_, err := client.User.Create().
+		SetEmail("Conflict@example.com").
+		SetUsername("conflict-1").
+		SetPasswordHash("hash-1").
+		SetRole(service.RoleUser).
+		SetStatus(service.StatusActive).
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.User.Create().
+		SetEmail("conflict@example.com").
+		SetUsername("conflict-2").
+		SetPasswordHash("hash-2").
+		SetRole(service.RoleUser).
+		SetStatus(service.StatusActive).
+		Save(ctx)
+	require.NoError(t, err)
+
+	stub := newDingTalkOAuthAPIServer(t, dingTalkOAuthAPIServerConfig{
+		UnionID: "union-compat-conflict-1",
+		CorpID:  "ding-conflict-1",
+		UserID:  "user-conflict-1",
+		Name:    "Conflict User",
+		Nick:    "Conflict Nick",
+		Email:   " conflict@example.com ",
+	})
+	defer stub.Close()
+	configureDingTalkOAuthTestEndpoints(handler, stub)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/oauth/dingtalk/callback?code=code-conflict&state=state-conflict", nil)
+	req.AddCookie(&http.Cookie{Name: dingTalkOAuthStateCookieName, Value: encodeCookieValue("state-conflict")})
+	req.AddCookie(&http.Cookie{Name: dingTalkOAuthRedirectCookie, Value: encodeCookieValue("/dashboard")})
+	req.AddCookie(&http.Cookie{Name: dingTalkOAuthIntentCookieName, Value: encodeCookieValue(oauthIntentLogin)})
+	req.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue("browser-conflict-1")})
+	c.Request = req
+
+	handler.DingTalkOAuthCallback(c)
+
+	require.Equal(t, http.StatusFound, recorder.Code)
+	redirectURL, err := url.Parse(recorder.Header().Get("Location"))
+	require.NoError(t, err)
+	fragment, err := url.ParseQuery(redirectURL.Fragment)
+	require.NoError(t, err)
+	require.Equal(t, "session_error", fragment.Get("error"))
+	require.Equal(t, "USER_EMAIL_CONFLICT", fragment.Get("error_message"))
+	require.Equal(t, "normalized email matched multiple users", fragment.Get("error_description"))
+
+	count, err := client.PendingAuthSession.Query().Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, count)
+}
+
+func TestDingTalkOAuthCallback_IdentityLookupFailureIsNotSwallowed(t *testing.T) {
+	handler, client := newDingTalkOAuthCallbackTestHandler(t, nil, config.DingTalkConnectConfig{
+		Enabled:               true,
+		ClientID:              "ding-client",
+		ClientSecret:          "ding-secret",
+		AuthorizeURL:          "https://login.example.com/dingtalk/authorize",
+		RedirectURL:           "https://api.example.com/api/v1/auth/oauth/dingtalk/callback",
+		FrontendRedirectURL:   "/auth/dingtalk/callback",
+		TokenURL:              "https://placeholder.invalid/oauth2/userAccessToken",
+		UserInfoURL:           "https://placeholder.invalid/contact/users/me",
+		Scopes:                "openid",
+		CorpRestrictionPolicy: "none",
+		RequireEmail:          false,
+	})
+
+	stub := newDingTalkOAuthAPIServer(t, dingTalkOAuthAPIServerConfig{
+		UnionID: "union-identity-error-1",
+		CorpID:  "ding-identity-error-1",
+		UserID:  "user-identity-error-1",
+		Name:    "Lookup Error User",
+		Nick:    "Lookup Nick",
+		Email:   "lookup@example.com",
+	})
+	defer stub.Close()
+	configureDingTalkOAuthTestEndpoints(handler, stub)
+
+	require.NoError(t, client.Close())
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/oauth/dingtalk/callback?code=code-identity&state=state-identity", nil)
+	req.AddCookie(&http.Cookie{Name: dingTalkOAuthStateCookieName, Value: encodeCookieValue("state-identity")})
+	req.AddCookie(&http.Cookie{Name: dingTalkOAuthRedirectCookie, Value: encodeCookieValue("/dashboard")})
+	req.AddCookie(&http.Cookie{Name: dingTalkOAuthIntentCookieName, Value: encodeCookieValue(oauthIntentLogin)})
+	req.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue("browser-identity-1")})
+	c.Request = req
+
+	handler.DingTalkOAuthCallback(c)
+
+	require.Equal(t, http.StatusFound, recorder.Code)
+	redirectURL, err := url.Parse(recorder.Header().Get("Location"))
+	require.NoError(t, err)
+	fragment, err := url.ParseQuery(redirectURL.Fragment)
+	require.NoError(t, err)
+	require.Equal(t, "session_error", fragment.Get("error"))
+	require.Equal(t, "AUTH_IDENTITY_LOOKUP_FAILED", fragment.Get("error_message"))
+	require.Equal(t, "failed to inspect auth identity ownership", fragment.Get("error_description"))
+}
+
+func TestAuthHandler_SetUserAttributeService_WiresDingTalkSyncDependency(t *testing.T) {
+	userAttributeService := &service.UserAttributeService{}
+
+	handler := NewAuthHandler(nil, nil, nil, nil, nil, nil, nil)
+	handler.SetUserAttributeService(userAttributeService)
+
+	require.Same(t, userAttributeService, handler.userAttributeService)
+}
+
+type dingTalkOAuthAPIServerConfig struct {
+	UnionID string
+	CorpID  string
+	UserID  string
+	Name    string
+	Nick    string
+	Email   string
+}
+
+func newDingTalkOAuthCallbackTestHandler(
+	t *testing.T,
+	extraSettings map[string]string,
+	dingTalkCfg config.DingTalkConnectConfig,
+) (*AuthHandler, *dbent.Client) {
+	t.Helper()
+
+	settings := map[string]string{
+		service.SettingKeyRegistrationEnabled: "true",
+	}
+	for key, value := range extraSettings {
+		settings[key] = value
+	}
+
+	handler, client := newOAuthPendingFlowTestHandlerWithDependencies(t, oauthPendingFlowTestHandlerOptions{
+		settingValues: settings,
+	})
+
+	cfg := &config.Config{DingTalk: dingTalkCfg}
+	if cfg.DingTalk.DingTalkAppKind == "" {
+		cfg.DingTalk.DingTalkAppKind = "internal_app"
+	}
+	if cfg.DingTalk.AppType == "" {
+		cfg.DingTalk.AppType = "internal"
+	}
+	handler.cfg = cfg
+	handler.settingSvc = service.NewSettingService(&oauthPendingFlowSettingRepoStub{values: settings}, cfg)
+
+	return handler, client
+}
+
+func configureDingTalkOAuthTestEndpoints(handler *AuthHandler, server *httptest.Server) {
+	handler.cfg.DingTalk.TokenURL = server.URL + "/v1.0/oauth2/userAccessToken"
+	handler.cfg.DingTalk.UserInfoURL = server.URL + "/v1.0/contact/users/me"
+	handler.dingTalkClientInstance = &DingTalkClient{
+		cfg: dingTalkClientConfig{
+			ClientID:     handler.cfg.DingTalk.ClientID,
+			ClientSecret: handler.cfg.DingTalk.ClientSecret,
+			TokenURL:     handler.cfg.DingTalk.TokenURL,
+			UserInfoURL:  handler.cfg.DingTalk.UserInfoURL,
+		},
+		httpClient: server.Client(),
+	}
+}
+
+func newDingTalkOAuthAPIServer(t *testing.T, cfg dingTalkOAuthAPIServerConfig) *httptest.Server {
+	t.Helper()
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1.0/oauth2/userAccessToken":
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"accessToken":"user-token","refreshToken":"refresh-token","expireIn":7200,"corpId":%q}`, cfg.CorpID)))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1.0/oauth2/accessToken":
+			_, _ = w.Write([]byte(`{"accessToken":"app-token","expireIn":7200}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1.0/contact/users/me":
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"unionId":%q,"nick":%q}`, cfg.UnionID, cfg.Nick)))
+		case r.Method == http.MethodPost && r.URL.Path == "/topapi/user/getbyunionid":
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"errcode":0,"result":{"userid":%q}}`, cfg.UserID)))
+		case r.Method == http.MethodPost && r.URL.Path == "/topapi/v2/user/get":
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"errcode":0,"result":{"userid":%q,"name":%q,"email":%q,"dept_id_list":[42]}}`, cfg.UserID, cfg.Name, cfg.Email)))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+func dingTalkPendingCompletionResponse(t *testing.T, session *dbent.PendingAuthSession) map[string]any {
+	t.Helper()
+
+	require.NotNil(t, session)
+	raw, ok := session.LocalFlowState[oauthCompletionResponseKey]
+	require.True(t, ok)
+
+	completion, ok := raw.(map[string]any)
+	require.True(t, ok)
+	return completion
 }

@@ -619,6 +619,26 @@ func TestResponsesToChatCompletions_Incomplete(t *testing.T) {
 	assert.Equal(t, "length", chat.Choices[0].FinishReason)
 }
 
+func TestResponsesToChatCompletions_IncompleteContentFilterMapsToContentFilter(t *testing.T) {
+	resp := &ResponsesResponse{
+		ID:                "resp_inc_filter",
+		Status:            "incomplete",
+		IncompleteDetails: &ResponsesIncompleteDetails{Reason: "content_filter"},
+		Output: []ResponsesOutput{
+			{
+				Type: "message",
+				Content: []ResponsesContentPart{
+					{Type: "output_text", Text: "blocked"},
+				},
+			},
+		},
+	}
+
+	chat := ResponsesToChatCompletions(resp, "gpt-4o")
+	require.Len(t, chat.Choices, 1)
+	assert.Equal(t, "content_filter", chat.Choices[0].FinishReason)
+}
+
 func TestResponsesToChatCompletions_FailedMapsToStopFinishReason(t *testing.T) {
 	resp := &ResponsesResponse{
 		ID:     "resp_failed",
@@ -641,6 +661,40 @@ func TestResponsesToChatCompletions_FailedPolicyStillMapsToContentFilter(t *test
 	chat := ResponsesToChatCompletions(resp, "gpt-4o")
 	require.Len(t, chat.Choices, 1)
 	assert.Equal(t, "content_filter", chat.Choices[0].FinishReason)
+}
+
+func TestChatCompletionsResponseToResponses_ContentFilterMapsToIncomplete(t *testing.T) {
+	resp := &ChatCompletionsResponse{
+		ID:    "chatcmpl_filter",
+		Model: "gpt-4o",
+		Choices: []ChatChoice{{
+			Index: 0,
+			Message: ChatMessage{
+				Role:    "assistant",
+				Content: json.RawMessage(`"blocked"`),
+			},
+			FinishReason: "content_filter",
+		}},
+	}
+
+	out := ChatCompletionsResponseToResponses(resp, "gpt-4o")
+	require.Equal(t, "incomplete", out.Status)
+	require.NotNil(t, out.IncompleteDetails)
+	assert.Equal(t, "content_filter", out.IncompleteDetails.Reason)
+	require.Len(t, out.Output, 1)
+	assert.Equal(t, "blocked", out.Output[0].Content[0].Text)
+}
+
+func TestResponsesToChatCompletionsRequest_RejectsUnsupportedToolTypes(t *testing.T) {
+	req := &ResponsesRequest{
+		Model: "gpt-4o",
+		Input: json.RawMessage(`"hello"`),
+		Tools: []ResponsesTool{{Type: "web_search", Name: "search"}},
+	}
+
+	_, err := ResponsesToChatCompletionsRequest(req)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported Responses tool type")
 }
 
 func TestResponsesToChatCompletions_CachedTokens(t *testing.T) {
@@ -796,6 +850,122 @@ func TestResponsesEventToChatChunks_ToolCallDelta(t *testing.T) {
 	assert.Equal(t, 0, *tc.Index, "first tool arg delta must still use index 0")
 }
 
+func TestChatCompletionsChunkToResponsesEvents_DoesNotDuplicateFirstToolArgumentDelta(t *testing.T) {
+	state := NewChatCompletionsToResponsesStreamState("gpt-4o")
+	firstChunk := &ChatCompletionsChunk{
+		ID:    "chatcmpl_tool_stream",
+		Model: "gpt-4o",
+		Choices: []ChatChunkChoice{{
+			Delta: ChatDelta{
+				ToolCalls: []ChatToolCall{{
+					Index: intPtr(0),
+					ID:    "call_1",
+					Function: ChatFunctionCall{
+						Name:      "get_weather",
+						Arguments: `{"city":"`,
+					},
+				}},
+			},
+		}},
+	}
+
+	events := ChatCompletionsChunkToResponsesEvents(firstChunk, state)
+	require.Len(t, events, 3)
+	require.Equal(t, "response.function_call_arguments.delta", events[2].Type)
+	require.Equal(t, `{"city":"`, events[2].Delta)
+	require.Contains(t, state.ToolCalls, 0)
+	require.Equal(t, `{"city":"`, state.ToolCalls[0].Function.Arguments)
+}
+
+func TestChatCompletionsChunkToResponsesEvents_FinalizesFunctionCallsWithStableItemIDs(t *testing.T) {
+	state := NewChatCompletionsToResponsesStreamState("gpt-4o")
+	firstChunk := &ChatCompletionsChunk{
+		ID:    "chatcmpl_tool_stream",
+		Model: "gpt-4o",
+		Choices: []ChatChunkChoice{{
+			Delta: ChatDelta{
+				ToolCalls: []ChatToolCall{{
+					Index: intPtr(0),
+					ID:    "call_1",
+					Function: ChatFunctionCall{
+						Name:      "get_weather",
+						Arguments: `{"city":"`,
+					},
+				}},
+			},
+		}},
+	}
+
+	events := ChatCompletionsChunkToResponsesEvents(firstChunk, state)
+	require.Len(t, events, 3)
+	require.Equal(t, "response.output_item.added", events[1].Type)
+	itemID := events[1].Item.ID
+	require.NotEmpty(t, itemID)
+	require.Equal(t, "call_1", events[1].Item.CallID)
+	require.Equal(t, "response.function_call_arguments.delta", events[2].Type)
+	require.Equal(t, `{"city":"`, events[2].Delta)
+
+	finishReason := "tool_calls"
+	secondChunk := &ChatCompletionsChunk{
+		ID:    "chatcmpl_tool_stream",
+		Model: "gpt-4o",
+		Choices: []ChatChunkChoice{{
+			Delta: ChatDelta{
+				ToolCalls: []ChatToolCall{{
+					Index: intPtr(0),
+					Function: ChatFunctionCall{
+						Arguments: `NYC"}`,
+					},
+				}},
+			},
+			FinishReason: &finishReason,
+		}},
+	}
+
+	events = ChatCompletionsChunkToResponsesEvents(secondChunk, state)
+	require.Len(t, events, 1)
+	require.Equal(t, "response.function_call_arguments.delta", events[0].Type)
+	require.Equal(t, `NYC"}`, events[0].Delta)
+
+	finalEvents := FinalizeChatCompletionsResponsesStream(state)
+	require.Len(t, finalEvents, 3)
+	require.Equal(t, "response.function_call_arguments.done", finalEvents[0].Type)
+	require.Equal(t, `{"city":"NYC"}`, finalEvents[0].Arguments)
+	require.Equal(t, "response.output_item.done", finalEvents[1].Type)
+	require.NotNil(t, finalEvents[1].Item)
+	require.Equal(t, itemID, finalEvents[1].Item.ID)
+	require.Equal(t, "call_1", finalEvents[1].Item.CallID)
+	require.Equal(t, "response.completed", finalEvents[2].Type)
+	require.NotNil(t, finalEvents[2].Response)
+	require.Len(t, finalEvents[2].Response.Output, 1)
+	require.Equal(t, "function_call", finalEvents[2].Response.Output[0].Type)
+	assert.Equal(t, itemID, finalEvents[2].Response.Output[0].ID)
+	assert.Equal(t, `{"city":"NYC"}`, finalEvents[2].Response.Output[0].Arguments)
+}
+
+func TestFinalizeChatCompletionsResponsesStream_ContentFilterMapsToIncomplete(t *testing.T) {
+	state := NewChatCompletionsToResponsesStreamState("gpt-4o")
+	finishReason := "content_filter"
+
+	events := ChatCompletionsChunkToResponsesEvents(&ChatCompletionsChunk{
+		ID:    "chatcmpl_content_filter",
+		Model: "gpt-4o",
+		Choices: []ChatChunkChoice{{
+			FinishReason: &finishReason,
+		}},
+	}, state)
+	require.Len(t, events, 1)
+	require.Equal(t, "response.created", events[0].Type)
+
+	finalEvents := FinalizeChatCompletionsResponsesStream(state)
+	require.Len(t, finalEvents, 1)
+	require.Equal(t, "response.completed", finalEvents[0].Type)
+	require.NotNil(t, finalEvents[0].Response)
+	assert.Equal(t, "incomplete", finalEvents[0].Response.Status)
+	require.NotNil(t, finalEvents[0].Response.IncompleteDetails)
+	assert.Equal(t, "content_filter", finalEvents[0].Response.IncompleteDetails.Reason)
+}
+
 func TestResponsesEventToChatChunks_Completed(t *testing.T) {
 	state := NewResponsesEventToChatState()
 	state.Model = "gpt-4o"
@@ -872,6 +1042,22 @@ func TestResponsesEventToChatChunks_ResponseDoneIncomplete(t *testing.T) {
 	assert.Equal(t, 13, chunks[1].Usage.PromptTokens)
 	assert.Equal(t, 7, chunks[1].Usage.CompletionTokens)
 	assert.Nil(t, FinalizeResponsesChatStream(state))
+}
+
+func TestResponsesEventToChatChunks_ResponseDoneIncompleteContentFilter(t *testing.T) {
+	state := NewResponsesEventToChatState()
+	state.Model = "gpt-4o"
+
+	chunks := ResponsesEventToChatChunks(&ResponsesStreamEvent{
+		Type: "response.done",
+		Response: &ResponsesResponse{
+			Status:            "incomplete",
+			IncompleteDetails: &ResponsesIncompleteDetails{Reason: "content_filter"},
+		},
+	}, state)
+	require.Len(t, chunks, 1)
+	require.NotNil(t, chunks[0].Choices[0].FinishReason)
+	assert.Equal(t, "content_filter", *chunks[0].Choices[0].FinishReason)
 }
 
 func TestResponsesEventToChatChunks_CompletedWithToolCalls(t *testing.T) {

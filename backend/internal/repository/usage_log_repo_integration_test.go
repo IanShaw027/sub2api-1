@@ -183,6 +183,34 @@ func TestUsageLogRepositoryCreate_BatchPathDuplicateRequestID(t *testing.T) {
 	require.Equal(t, 1, count)
 }
 
+func TestUsageLogRepositoryCreate_SingleInsertPathWithoutRequestID(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := newUsageLogRepositoryWithSQL(client, integrationDB)
+
+	user := mustCreateUser(t, client, &service.User{Email: fmt.Sprintf("usage-single-%d@example.com", time.Now().UnixNano())})
+	apiKey := mustCreateApiKey(t, client, &service.APIKey{UserID: user.ID, Key: "sk-usage-single-" + uuid.NewString(), Name: "k"})
+	account := mustCreateAccount(t, client, &service.Account{Name: "acc-usage-single-" + uuid.NewString()})
+
+	log := &service.UsageLog{
+		UserID:       user.ID,
+		APIKeyID:     apiKey.ID,
+		AccountID:    account.ID,
+		Model:        "claude-3",
+		InputTokens:  11,
+		OutputTokens: 22,
+		TotalCost:    0.6,
+		ActualCost:   0.6,
+		CreatedAt:    time.Now().UTC(),
+	}
+
+	inserted, err := repo.Create(ctx, log)
+	require.NoError(t, err)
+	require.True(t, inserted)
+	require.NotZero(t, log.ID)
+	require.Empty(t, log.RequestID)
+}
+
 func TestUsageLogRepositoryFlushCreateBatch_DeduplicatesSameKeyInMemory(t *testing.T) {
 	ctx := context.Background()
 	client := testEntClient(t)
@@ -959,21 +987,21 @@ func (s *UsageLogRepoSuite) TestDashboardStatsWithRange_PreservesTodayFieldsWith
 			totalCost:   yesterdaySubscriptionCost,
 			createdAt:   rangeStart.Add(4 * time.Hour),
 		},
-			{
-				requestID:   uuid.NewString(),
-				billingType: service.BillingTypeBalance,
-				actualCost:  todayBalanceCost,
-				totalCost:   todayBalanceCost,
-				createdAt:   todayUsageAt,
-			},
-			{
-				requestID:   uuid.NewString(),
-				billingType: service.BillingTypeSubscription,
-				actualCost:  todaySubscriptionCost,
-				totalCost:   todaySubscriptionCost,
-				createdAt:   todayUsageAt.Add(10 * time.Minute),
-			},
-		} {
+		{
+			requestID:   uuid.NewString(),
+			billingType: service.BillingTypeBalance,
+			actualCost:  todayBalanceCost,
+			totalCost:   todayBalanceCost,
+			createdAt:   todayUsageAt,
+		},
+		{
+			requestID:   uuid.NewString(),
+			billingType: service.BillingTypeSubscription,
+			actualCost:  todaySubscriptionCost,
+			totalCost:   todaySubscriptionCost,
+			createdAt:   todayUsageAt.Add(10 * time.Minute),
+		},
+	} {
 		_, err := s.repo.Create(s.ctx, &service.UsageLog{
 			UserID:       user.ID,
 			APIKeyID:     apiKey.ID,

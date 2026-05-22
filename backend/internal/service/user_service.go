@@ -1359,6 +1359,24 @@ func (s *UserService) sendNotifyVerifyEmail(ctx context.Context, emailService *E
 			siteName = name
 		}
 	}
+	if emailService != nil && emailService.notificationEmailService != nil {
+		err := emailService.notificationEmailService.Send(ctx, NotificationEmailSendInput{
+			Event:          NotificationEmailEventNotificationEmailVerifyCode,
+			RecipientEmail: email,
+			RecipientName:  emailRecipientName(email),
+			Variables: map[string]string{
+				"verification_code":  code,
+				"expires_in_minutes": strconv.Itoa(int(verifyCodeTTL / time.Minute)),
+			},
+		})
+		if err == nil {
+			return nil
+		}
+		if !shouldFallbackNotificationEmail(err) {
+			return err
+		}
+		slog.Warn("failed to send templated notify verification email, falling back to legacy template", "recipient_hash", notificationEmailHash(email), "error", err)
+	}
 	subject := fmt.Sprintf("[%s] 通知邮箱验证码 / Notification Email Verification", siteName)
 	body := buildNotifyVerifyEmailBody(code, siteName)
 	return emailService.SendEmail(ctx, email, subject, body)

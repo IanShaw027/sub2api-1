@@ -1730,6 +1730,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	if settings.TurnstileSecretKey != "" {
 		updates[SettingKeyTurnstileSecretKey] = settings.TurnstileSecretKey
 	}
+	updates[SettingKeyAPIKeyACLTrustForwardedIP] = strconv.FormatBool(settings.APIKeyACLTrustForwardedIP)
 
 	// LinuxDo Connect OAuth 登录
 	updates[SettingKeyLinuxDoConnectEnabled] = strconv.FormatBool(settings.LinuxDoConnectEnabled)
@@ -1996,6 +1997,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyBalanceLowNotifyEnabled] = strconv.FormatBool(settings.BalanceLowNotifyEnabled)
 	updates[SettingKeyBalanceLowNotifyThreshold] = strconv.FormatFloat(settings.BalanceLowNotifyThreshold, 'f', 8, 64)
 	updates[SettingKeyBalanceLowNotifyRechargeURL] = settings.BalanceLowNotifyRechargeURL
+	updates[SettingKeySubscriptionExpiryNotifyEnabled] = strconv.FormatBool(settings.SubscriptionExpiryNotifyEnabled)
 	updates[SettingKeyAccountQuotaNotifyEnabled] = strconv.FormatBool(settings.AccountQuotaNotifyEnabled)
 	updates[SettingKeyAccountQuotaNotifyEmails] = MarshalNotifyEmails(settings.AccountQuotaNotifyEmails)
 
@@ -2113,6 +2115,9 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 		freshClient:       settings.OpenAIOAuthImageBridgeFreshUpstreamClient,
 		expiresAt:         time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano(),
 	})
+	if s != nil && s.cfg != nil {
+		s.cfg.SetTrustForwardedIPForAPIKeyACL(settings.APIKeyACLTrustForwardedIP)
+	}
 	if s.onUpdate != nil {
 		s.onUpdate() // Invalidate cache after settings update
 	}
@@ -2786,9 +2791,11 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 	}
 	openAIOAuthImageBridgeDisableKeepAlivesDefault := false
 	openAIOAuthImageBridgeFreshUpstreamClientDefault := false
+	apiKeyACLTrustForwardedIPDefault := false
 	if s.cfg != nil {
 		openAIOAuthImageBridgeDisableKeepAlivesDefault = s.cfg.Gateway.OpenAIOAuthImageBridgeDisableKeepAlives
 		openAIOAuthImageBridgeFreshUpstreamClientDefault = s.cfg.Gateway.OpenAIOAuthImageBridgeFreshUpstreamClient
+		apiKeyACLTrustForwardedIPDefault = s.cfg.Security.TrustForwardedIPForAPIKeyACL
 	}
 
 	// 初始化默认设置
@@ -2909,6 +2916,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyForceEmailOnThirdPartySignup:              "false",
 		SettingKeySMTPPort:                                  "587",
 		SettingKeySMTPUseTLS:                                "false",
+		SettingKeyAPIKeyACLTrustForwardedIP:                 strconv.FormatBool(apiKeyACLTrustForwardedIPDefault),
 		// Model fallback defaults
 		SettingKeyEnableModelFallback:               "false",
 		SettingKeyFallbackModelAnthropic:            "claude-3-5-sonnet-20241022",
@@ -3026,6 +3034,11 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		settings[SettingKeyTableDefaultPageSize],
 		settings[SettingKeyTablePageSizeOptions],
 	)
+	if raw, ok := settings[SettingKeyAPIKeyACLTrustForwardedIP]; ok && strings.TrimSpace(raw) != "" {
+		result.APIKeyACLTrustForwardedIP = strings.EqualFold(strings.TrimSpace(raw), "true")
+	} else if s.cfg != nil {
+		result.APIKeyACLTrustForwardedIP = s.cfg.TrustForwardedIPForAPIKeyACL()
+	}
 
 	// 解析整数类型
 	if port, err := strconv.Atoi(settings[SettingKeySMTPPort]); err == nil {
@@ -3474,6 +3487,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		result.BalanceLowNotifyThreshold = v
 	}
 	result.BalanceLowNotifyRechargeURL = settings[SettingKeyBalanceLowNotifyRechargeURL]
+	result.SubscriptionExpiryNotifyEnabled = !isFalseSettingValue(settings[SettingKeySubscriptionExpiryNotifyEnabled])
 
 	// Account quota notification
 	result.AccountQuotaNotifyEnabled = settings[SettingKeyAccountQuotaNotifyEnabled] == "true"

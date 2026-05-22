@@ -343,7 +343,7 @@ func (s *NotificationEmailService) PreviewTemplate(ctx context.Context, input No
 	for key, value := range input.Variables {
 		variables[key] = value
 	}
-	return renderNotificationEmail(normalizedEvent, subject, htmlBody, variables, nil)
+	return renderNotificationEmail(normalizedEvent, subject, htmlBody, variables, previewNotificationEmailRawHTMLVariables(normalizedEvent, variables))
 }
 
 func (s *NotificationEmailService) Send(ctx context.Context, input NotificationEmailSendInput) error {
@@ -509,6 +509,7 @@ func (s *NotificationEmailService) runtimeVariables(ctx context.Context, event, 
 		variables["recipient_name"] = input.RecipientName
 	}
 	if notificationEmailEventDefinitions[event].Optional {
+		variables["unsubscribe_url"] = ""
 		if unsubscribeURL, err := s.buildUnsubscribeURL(ctx, input.RecipientEmail, event); err == nil {
 			variables["unsubscribe_url"] = unsubscribeURL
 		}
@@ -533,8 +534,10 @@ func (s *NotificationEmailService) baseURL(ctx context.Context) string {
 	}
 	for _, key := range []string{SettingKeyAPIBaseURL, SettingKeyFrontendURL} {
 		value, err := s.settingRepo.GetValue(ctx, key)
-		if err == nil && strings.TrimSpace(value) != "" {
-			return strings.TrimRight(strings.TrimSpace(value), "/")
+		if err == nil {
+			if origin := notificationEmailAbsoluteOrigin(value); origin != "" {
+				return origin
+			}
 		}
 	}
 	return ""
@@ -548,9 +551,39 @@ func (s *NotificationEmailService) buildUnsubscribeURL(ctx context.Context, emai
 	path := "/api/v1/settings/email-unsubscribe?token=" + url.QueryEscape(token)
 	baseURL := s.baseURL(ctx)
 	if baseURL == "" {
-		return path, nil
+		return "", errors.New("absolute unsubscribe base url not configured")
 	}
 	return baseURL + path, nil
+}
+
+func notificationEmailAbsoluteOrigin(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed == nil {
+		return ""
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return ""
+	}
+	if strings.TrimSpace(parsed.Host) == "" {
+		return ""
+	}
+	return (&url.URL{Scheme: parsed.Scheme, Host: parsed.Host}).String()
+}
+
+func previewNotificationEmailRawHTMLVariables(event string, variables map[string]string) map[string]string {
+	if len(variables) == 0 {
+		return nil
+	}
+	raw := make(map[string]string)
+	for key, value := range variables {
+		if notificationEmailRawHTMLAllowed(event, key) {
+			raw[key] = value
+		}
+	}
+	if len(raw) == 0 {
+		return nil
+	}
+	return raw
 }
 
 func (s *NotificationEmailService) createUnsubscribeToken(ctx context.Context, email, event string) (string, error) {

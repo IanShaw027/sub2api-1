@@ -12,6 +12,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -1081,4 +1082,52 @@ func TestHandleChatBufferedStreamingResponse_TerminalFollowedByDoneWithoutBlankO
 	case <-time.After(time.Second):
 		require.Fail(t, "buffered chat response should dispatch terminal frame before a following DONE sentinel")
 	}
+}
+
+func TestForwardResponses_ForceChatCompletionsRejectsUnsupportedNonFunctionTools_NoBuildTag(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"gpt-5.4","input":"hello","stream":false,"tools":[{"type":"web_search"}]}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_resp_chat_unsupported_tool"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"chatcmpl_unused","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"unused"},"finish_reason":"stop"}]}`)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{
+			Security: config.SecurityConfig{
+				URLAllowlist: config.URLAllowlistConfig{
+					Enabled:           false,
+					AllowInsecureHTTP: true,
+				},
+			},
+		},
+		httpUpstream: upstream,
+	}
+
+	account := &Account{
+		ID:          101,
+		Name:        "raw-openai-apikey",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-test",
+			"base_url": "http://upstream.example",
+		},
+		Extra: map[string]any{
+			openai_compat.ExtraKeyResponsesMode: string(openai_compat.ResponsesSupportModeForceChatCompletions),
+		},
+	}
+	result, err := svc.forwardResponsesViaRawChatCompletions(context.Background(), c, account, body)
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "unsupported Responses tool type")
+	require.Nil(t, upstream.lastReq)
 }

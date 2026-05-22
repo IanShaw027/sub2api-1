@@ -271,6 +271,34 @@ func (m *mockUserRepo) UnbindUserAuthProvider(_ context.Context, _ int64, provid
 	return nil
 }
 
+func TestUserServiceSendNotifyVerifyEmailUsesNotificationTemplateOverrides(t *testing.T) {
+	ctx := context.Background()
+	repo := newNotificationEmailMemorySettingRepo()
+	smtpServer := startNotificationEmailTestSMTPServer(t)
+	require.NoError(t, repo.SetMultiple(ctx, smtpServer.settings()))
+	require.NoError(t, repo.Set(ctx, SettingKeySiteName, "Sub2API"))
+
+	emailSvc := NewEmailService(repo, nil)
+	templateSvc := NewNotificationEmailService(repo, emailSvc)
+	_, err := templateSvc.UpdateTemplate(
+		ctx,
+		NotificationEmailEventNotificationEmailVerifyCode,
+		"en",
+		"[custom notify] {{verification_code}}",
+		"<p>template-marker {{verification_code}}</p>",
+	)
+	require.NoError(t, err)
+
+	userSvc := NewUserService(&mockUserRepo{}, repo, nil, nil)
+	err = userSvc.sendNotifyVerifyEmail(ctx, emailSvc, "person@example.com", "654321")
+	require.NoError(t, err)
+
+	message := smtpServer.latestMessage()
+	require.Contains(t, message, "Subject: [custom notify] 654321")
+	require.Contains(t, message, "template-marker 654321")
+	require.NotContains(t, message, "通知邮箱验证码 / Notification Email Verification")
+}
+
 func (m *mockUserRepo) WithUserProfileIdentityTx(ctx context.Context, fn func(txCtx context.Context) error) error {
 	m.txCalls++
 	txState := &mockUserRepoTxState{

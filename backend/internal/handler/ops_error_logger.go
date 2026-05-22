@@ -27,8 +27,9 @@ const (
 	opsRequestBodyKey = "ops_request_body"
 	opsAccountIDKey   = "ops_account_id"
 
-	opsUpstreamModelKey = "ops_upstream_model"
-	opsRequestTypeKey   = "ops_request_type"
+	opsUpstreamModelKey          = "ops_upstream_model"
+	opsRequestTypeKey            = "ops_request_type"
+	opsRoutingCapacityLimitedKey = "ops_routing_capacity_limited"
 
 	// 错误分类匹配常量
 	opsErrNoAvailableAccounts = "no available accounts"
@@ -346,7 +347,7 @@ func markOpsRoutingCapacityLimited(c *gin.Context) {
 	if c == nil {
 		return
 	}
-	c.Set("ops_routing_capacity_limited", true)
+	c.Set(opsRoutingCapacityLimitedKey, true)
 }
 
 func markOpsRoutingCapacityLimitedIfNoAvailable(c *gin.Context, err error) {
@@ -356,6 +357,36 @@ func markOpsRoutingCapacityLimitedIfNoAvailable(c *gin.Context, err error) {
 	if strings.Contains(strings.ToLower(err.Error()), "no available") {
 		markOpsRoutingCapacityLimited(c)
 	}
+}
+
+func hasOpsRoutingCapacityLimited(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	v, ok := c.Get(opsRoutingCapacityLimitedKey)
+	if !ok {
+		return false
+	}
+	marked, ok := v.(bool)
+	return ok && marked
+}
+
+func classifyOpsPhaseForContext(c *gin.Context, errType, message, code string) string {
+	phase := classifyOpsPhase(errType, message, code)
+	if phase != "routing" && hasOpsRoutingCapacityLimited(c) {
+		return "routing"
+	}
+	if phase == "internal" && service.HasOpsClientBusinessLimited(c) {
+		return "request"
+	}
+	return phase
+}
+
+func classifyOpsIsBusinessLimitedForContext(c *gin.Context, errType, phase, code string, status int, message string) bool {
+	if service.HasOpsClientBusinessLimited(c) {
+		return true
+	}
+	return classifyOpsIsBusinessLimited(errType, phase, code, status, message)
 }
 
 // setOpsEndpointContext stores upstream model and request type for ops error logging.
@@ -792,8 +823,8 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 
 		normalizedType := normalizeOpsErrorType(parsed.ErrorType, parsed.Code)
 
-		phase := classifyOpsPhase(normalizedType, parsed.Message, parsed.Code)
-		isBusinessLimited := classifyOpsIsBusinessLimited(normalizedType, phase, parsed.Code, status, parsed.Message)
+		phase := classifyOpsPhaseForContext(c, normalizedType, parsed.Message, parsed.Code)
+		isBusinessLimited := classifyOpsIsBusinessLimitedForContext(c, normalizedType, phase, parsed.Code, status, parsed.Message)
 
 		errorOwner := classifyOpsErrorOwner(phase, normalizedType, parsed.Message, parsed.Code)
 		errorSource := classifyOpsErrorSource(phase, normalizedType, parsed.Message, parsed.Code)

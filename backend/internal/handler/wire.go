@@ -104,6 +104,21 @@ func ProvideSettingHandler(settingService *service.SettingService, buildInfo Bui
 	return h
 }
 
+func ProvideAuthHandler(
+	cfg *config.Config,
+	authService *service.AuthService,
+	userService *service.UserService,
+	settingService *service.SettingService,
+	promoService *service.PromoService,
+	redeemService *service.RedeemService,
+	totpService *service.TotpService,
+	userAttributeService *service.UserAttributeService,
+) *AuthHandler {
+	h := NewAuthHandler(cfg, authService, userService, settingService, promoService, redeemService, totpService)
+	h.SetUserAttributeService(userAttributeService)
+	return h
+}
+
 // ProvideAdminSettingHandler creates admin.SettingHandler.
 func ProvideAdminSettingHandler(settingService *service.SettingService, emailService *service.EmailService, turnstileService *service.TurnstileService, opsService *service.OpsService, paymentConfigService *service.PaymentConfigService, paymentService *service.PaymentService, notificationEmailService *service.NotificationEmailService, mediaService *service.MediaService) *admin.SettingHandler {
 	h := admin.NewSettingHandler(settingService, emailService, turnstileService, opsService, paymentConfigService, paymentService, mediaService)
@@ -193,7 +208,7 @@ func ProvideHandlers(
 // ProviderSet is the Wire provider set for all handlers
 var ProviderSet = wire.NewSet(
 	// Top-level handlers
-	NewAuthHandler,
+	ProvideAuthHandler,
 	NewAIHandler,
 	NewUserHandler,
 	NewAPIKeyHandler,

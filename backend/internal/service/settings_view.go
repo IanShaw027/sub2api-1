@@ -245,6 +245,9 @@ type SystemSettings struct {
 	BalanceLowNotifyThreshold   float64
 	BalanceLowNotifyRechargeURL string
 
+	// Subscription expiry notification
+	SubscriptionExpiryNotifyEnabled bool
+
 	// Account quota notification
 	AccountQuotaNotifyEnabled bool
 	AccountQuotaNotifyEmails  []NotifyEmailEntry

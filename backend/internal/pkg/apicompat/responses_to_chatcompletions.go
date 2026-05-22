@@ -104,6 +104,9 @@ func responsesStatusToChatFinishReason(status string, details *ResponsesIncomple
 		if details != nil && details.Reason == "max_output_tokens" {
 			return "length"
 		}
+		if details != nil && details.Reason == "content_filter" {
+			return "content_filter"
+		}
 		return "stop"
 	case "completed":
 		if len(toolCalls) > 0 {
@@ -346,8 +349,13 @@ func resToChatHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 
 		switch evt.Response.Status {
 		case "incomplete":
-			if evt.Response.IncompleteDetails != nil && evt.Response.IncompleteDetails.Reason == "max_output_tokens" {
-				finishReason = "length"
+			if evt.Response.IncompleteDetails != nil {
+				switch evt.Response.IncompleteDetails.Reason {
+				case "max_output_tokens":
+					finishReason = "length"
+				case "content_filter":
+					finishReason = "content_filter"
+				}
 			}
 		case "completed":
 			if state.SawToolCall {

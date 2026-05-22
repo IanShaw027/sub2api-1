@@ -868,15 +868,17 @@ func (r *opsRepository) UpdateErrorResolution(ctx context.Context, errorID int64
 	if errorID <= 0 {
 		return fmt.Errorf("invalid error id")
 	}
+	// Keep the parameter for interface compatibility, but migrated schemas no
+	// longer persist resolved_retry_id on ops_error_logs.
+	_ = resolvedRetryID
 
 	q := `
-UPDATE ops_error_logs
-SET
-  resolved = $2,
-  resolved_at = $3,
-  resolved_by_user_id = $4,
-  resolved_retry_id = $5
-WHERE id = $1`
+	UPDATE ops_error_logs
+	SET
+	  resolved = $2,
+	  resolved_at = $3,
+	  resolved_by_user_id = $4
+	WHERE id = $1`
 
 	at := sql.NullTime{}
 	if resolvedAt != nil && !resolvedAt.IsZero() {
@@ -893,7 +895,6 @@ WHERE id = $1`
 		resolved,
 		at,
 		nullInt64(resolvedByUserID),
-		nullInt64(resolvedRetryID),
 	)
 	return err
 }

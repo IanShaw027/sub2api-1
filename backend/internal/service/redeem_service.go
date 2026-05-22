@@ -325,12 +325,53 @@ func (s *RedeemService) BatchUpdate(ctx context.Context, input *RedeemCodeBatchU
 	if input.Fields.GroupID.Set && input.Fields.GroupID.Value != nil && *input.Fields.GroupID.Value <= 0 {
 		return nil, infraerrors.BadRequest("REDEEM_CODE_GROUP_ID_INVALID", "group_id must be positive")
 	}
+	if err := s.validateSubscriptionBatchUpdate(ctx, ids, input.Fields); err != nil {
+		return nil, err
+	}
 
 	updated, err := s.redeemRepo.BatchUpdate(ctx, ids, input.Fields)
 	if err != nil {
 		return nil, err
 	}
 	return &RedeemCodeBatchUpdateResult{Updated: updated}, nil
+}
+
+func (s *RedeemService) validateSubscriptionBatchUpdate(ctx context.Context, ids []int64, fields RedeemCodeBatchUpdateFields) error {
+	for _, id := range ids {
+		code, err := s.redeemRepo.GetByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		if code == nil || code.Type != RedeemTypeSubscription {
+			continue
+		}
+
+		finalGroupID := code.GroupID
+		if fields.GroupID.Set {
+			finalGroupID = fields.GroupID.Value
+		}
+		if finalGroupID == nil {
+			return infraerrors.BadRequest("REDEEM_CODE_SUBSCRIPTION_GROUP_REQUIRED", "subscription redeem codes require a subscription group")
+		}
+		if err := s.validateSubscriptionRedeemGroup(ctx, *finalGroupID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *RedeemService) validateSubscriptionRedeemGroup(ctx context.Context, groupID int64) error {
+	if s.subscriptionService == nil || s.subscriptionService.groupRepo == nil {
+		return infraerrors.InternalServer("REDEEM_CODE_SUBSCRIPTION_GROUP_VALIDATION_UNAVAILABLE", "subscription group validation unavailable")
+	}
+	group, err := s.subscriptionService.groupRepo.GetByID(ctx, groupID)
+	if err != nil {
+		return err
+	}
+	if group == nil || !group.IsSubscriptionType() {
+		return infraerrors.BadRequest("REDEEM_CODE_SUBSCRIPTION_GROUP_INVALID", "group must be a subscription type")
+	}
+	return nil
 }
 
 // checkRedeemRateLimit 检查用户兑换错误次数是否超限

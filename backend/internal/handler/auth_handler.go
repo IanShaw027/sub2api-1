@@ -50,6 +50,10 @@ func (h *AuthHandler) SetAffiliateService(affiliateService *service.AffiliateSer
 	h.affiliateService = affiliateService
 }
 
+func (h *AuthHandler) SetUserAttributeService(userAttributeService *service.UserAttributeService) {
+	h.userAttributeService = userAttributeService
+}
+
 // RegisterRequest represents the registration request payload
 type RegisterRequest struct {
 	Email          string `json:"email" binding:"required,email"`

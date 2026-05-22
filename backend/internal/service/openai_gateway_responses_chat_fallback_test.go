@@ -136,6 +136,33 @@ func TestForwardResponses_AutoSupportedAccountStillUsesResponsesEndpoint(t *test
 	require.Equal(t, "ok", gjson.Get(rec.Body.String(), "output.0.content.0.text").String())
 }
 
+func TestForwardResponses_ForceChatCompletionsRejectsUnsupportedNonFunctionTools(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"gpt-5.4","input":"hello","stream":false,"tools":[{"type":"web_search"}]}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_resp_chat_unsupported_tool"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"chatcmpl_unused","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"unused"},"finish_reason":"stop"}]}`)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg:          rawChatCompletionsTestConfig(),
+		httpUpstream: upstream,
+	}
+
+	result, err := svc.forwardResponsesViaRawChatCompletions(context.Background(), c, forceChatResponsesFallbackAccount(), body)
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "unsupported Responses tool type")
+	require.Nil(t, upstream.lastReq)
+}
+
 func forceChatResponsesFallbackAccount() *Account {
 	account := rawChatCompletionsTestAccount()
 	account.Extra = map[string]any{

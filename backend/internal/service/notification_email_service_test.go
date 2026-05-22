@@ -192,6 +192,19 @@ func TestNotificationEmailRawHTMLVariablesAreTrustedOnlyForHTMLPlaceholders(t *t
 	require.NotContains(t, preview.HTML, `<strong>raw</strong>`)
 }
 
+func TestNotificationEmailPreviewTemplateUsesRawHTMLForScheduledReports(t *testing.T) {
+	ctx := context.Background()
+	svc := NewNotificationEmailService(newNotificationEmailMemorySettingRepo(), nil)
+
+	preview, err := svc.PreviewTemplate(ctx, NotificationEmailPreviewInput{
+		Event:  NotificationEmailEventOpsScheduledReport,
+		Locale: "en",
+	})
+	require.NoError(t, err)
+	require.Contains(t, preview.HTML, `<h2>Daily summary</h2><p>Requests: 1024</p>`)
+	require.NotContains(t, preview.HTML, `&lt;h2&gt;Daily summary&lt;/h2&gt;`)
+}
+
 func TestNotificationEmailFallbackClassification(t *testing.T) {
 	templateErr := notificationEmailTemplateErr(errors.New("bad template"))
 	configErr := notificationEmailConfigErr(errors.New("missing email service"))
@@ -321,6 +334,34 @@ func TestNotificationEmailPreferenceKeyUsesShortStableHashAndReadsLegacyKey(t *t
 	require.True(t, unsubscribed)
 }
 
+func TestNotificationEmailBuildUnsubscribeURLUsesAbsoluteOrigins(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("prefers api base url origin", func(t *testing.T) {
+		repo := newNotificationEmailMemorySettingRepo()
+		require.NoError(t, repo.Set(ctx, SettingKeyAPIBaseURL, "https://api.example.com/api/v1"))
+		require.NoError(t, repo.Set(ctx, SettingKeyFrontendURL, "https://app.example.com/console"))
+
+		svc := NewNotificationEmailService(repo, nil)
+		got, err := svc.buildUnsubscribeURL(ctx, "user@example.com", NotificationEmailEventBalanceLow)
+		require.NoError(t, err)
+		require.Contains(t, got, "https://api.example.com/api/v1/settings/email-unsubscribe?token=")
+		require.NotContains(t, got, "https://api.example.com/api/v1/api/v1/settings/email-unsubscribe")
+	})
+
+	t.Run("falls back to frontend origin when api base url is not absolute", func(t *testing.T) {
+		repo := newNotificationEmailMemorySettingRepo()
+		require.NoError(t, repo.Set(ctx, SettingKeyAPIBaseURL, "/api/v1"))
+		require.NoError(t, repo.Set(ctx, SettingKeyFrontendURL, "https://app.example.com/console"))
+
+		svc := NewNotificationEmailService(repo, nil)
+		got, err := svc.buildUnsubscribeURL(ctx, "user@example.com", NotificationEmailEventBalanceLow)
+		require.NoError(t, err)
+		require.Contains(t, got, "https://app.example.com/api/v1/settings/email-unsubscribe?token=")
+		require.NotContains(t, got, "https://app.example.com/console/api/v1/settings/email-unsubscribe")
+	})
+}
+
 func TestNotificationEmailSendDeduplicatesSubscriptionExpiryReminder(t *testing.T) {
 	ctx := context.Background()
 	repo := newNotificationEmailMemorySettingRepo()
@@ -354,6 +395,37 @@ func TestNotificationEmailSendDeduplicatesSubscriptionExpiryReminder(t *testing.
 
 	require.NoError(t, svc.Send(ctx, input))
 	require.Equal(t, int64(1), smtpServer.messageCount())
+}
+
+func TestNotificationEmailSendIncludesAbsoluteUnsubscribeURL(t *testing.T) {
+	ctx := context.Background()
+	repo := newNotificationEmailMemorySettingRepo()
+	smtpServer := startNotificationEmailTestSMTPServer(t)
+	require.NoError(t, repo.SetMultiple(ctx, smtpServer.settings()))
+	require.NoError(t, repo.Set(ctx, SettingKeyFrontendURL, "https://app.example.com/console"))
+
+	emailSvc := NewEmailService(repo, nil)
+	svc := NewNotificationEmailService(repo, emailSvc)
+	input := NotificationEmailSendInput{
+		Event:          NotificationEmailEventSubscriptionExpiryReminder,
+		RecipientEmail: "user@example.com",
+		RecipientName:  "User",
+		UserID:         42,
+		SourceType:     "user_subscription",
+		SourceID:       "subscription-123",
+		ReminderKey:    "7d",
+		Variables: map[string]string{
+			"subscription_group": "Codex",
+			"expiry_time":        "2026-05-27 12:00",
+			"days_remaining":     "7",
+		},
+	}
+
+	require.NoError(t, svc.Send(ctx, input))
+
+	message := smtpServer.latestMessage()
+	require.Contains(t, message, "https://app.example.com/api/v1/settings/email-unsubscribe?token=")
+	require.NotContains(t, message, "https://app.example.com/console/api/v1/settings/email-unsubscribe")
 }
 
 func TestNotificationEmailSendRespectsLegacyDeliveryKey(t *testing.T) {
@@ -457,6 +529,8 @@ type notificationEmailTestSMTPServer struct {
 	listener net.Listener
 	wg       sync.WaitGroup
 	messages atomic.Int64
+	mu       sync.Mutex
+	lastData string
 }
 
 func startNotificationEmailTestSMTPServer(t *testing.T) *notificationEmailTestSMTPServer {
@@ -486,6 +560,12 @@ func (s *notificationEmailTestSMTPServer) settings() map[string]string {
 
 func (s *notificationEmailTestSMTPServer) messageCount() int64 {
 	return s.messages.Load()
+}
+
+func (s *notificationEmailTestSMTPServer) latestMessage() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lastData
 }
 
 func (s *notificationEmailTestSMTPServer) close() {
@@ -546,6 +626,7 @@ func (s *notificationEmailTestSMTPServer) handleConn(conn net.Conn) {
 			if !writeLine("354 End data with <CR><LF>.<CR><LF>") {
 				return
 			}
+			var payload strings.Builder
 			for {
 				dataLine, err := rw.ReadString('\n')
 				if err != nil {
@@ -554,7 +635,11 @@ func (s *notificationEmailTestSMTPServer) handleConn(conn net.Conn) {
 				if strings.TrimRight(dataLine, "\r\n") == "." {
 					break
 				}
+				payload.WriteString(dataLine)
 			}
+			s.mu.Lock()
+			s.lastData = payload.String()
+			s.mu.Unlock()
 			s.messages.Add(1)
 			if !writeLine("250 2.0.0 OK") {
 				return

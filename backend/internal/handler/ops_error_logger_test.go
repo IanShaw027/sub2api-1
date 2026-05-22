@@ -423,3 +423,78 @@ func TestSetOpsEndpointContext_NilContext(t *testing.T) {
 		setOpsEndpointContext(nil, "model", int16(1))
 	})
 }
+
+func TestOpsErrorLoggerMiddleware_UsesBusinessLimitedMarkerForClassification(t *testing.T) {
+	resetOpsErrorLoggerStateForTest(t)
+	t.Cleanup(func() { resetOpsErrorLoggerStateForTest(t) })
+	gin.SetMode(gin.TestMode)
+
+	opsErrorLogOnce.Do(func() {})
+	opsErrorLogMu.Lock()
+	opsErrorLogQueue = make(chan opsErrorLogJob, 1)
+	opsErrorLogMu.Unlock()
+
+	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := gin.New()
+	r.POST("/v1/chat/completions", OpsErrorLoggerMiddleware(ops), func(c *gin.Context) {
+		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonIPRestriction)
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    "ACCESS_DENIED",
+			"message": "Access denied",
+		})
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+
+	select {
+	case job := <-opsErrorLogQueue:
+		opsErrorLogQueueLen.Add(-1)
+		require.NotNil(t, job.entry)
+		require.True(t, job.entry.IsBusinessLimited)
+		require.Equal(t, "request", job.entry.ErrorPhase)
+		require.Equal(t, "client", job.entry.ErrorOwner)
+		require.Equal(t, "client_request", job.entry.ErrorSource)
+	default:
+		t.Fatal("expected business-limited error to be enqueued")
+	}
+}
+
+func TestOpsErrorLoggerMiddleware_UsesRoutingCapacityMarkerForClassification(t *testing.T) {
+	resetOpsErrorLoggerStateForTest(t)
+	t.Cleanup(func() { resetOpsErrorLoggerStateForTest(t) })
+	gin.SetMode(gin.TestMode)
+
+	opsErrorLogOnce.Do(func() {})
+	opsErrorLogMu.Lock()
+	opsErrorLogQueue = make(chan opsErrorLogJob, 1)
+	opsErrorLogMu.Unlock()
+
+	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := gin.New()
+	r.POST("/v1beta/models/gemini-2.5-pro:generateContent", OpsErrorLoggerMiddleware(ops), func(c *gin.Context) {
+		markOpsRoutingCapacityLimited(c)
+		googleError(c, http.StatusServiceUnavailable, "No available Gemini accounts")
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini-2.5-pro:generateContent", nil)
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+
+	select {
+	case job := <-opsErrorLogQueue:
+		opsErrorLogQueueLen.Add(-1)
+		require.NotNil(t, job.entry)
+		require.Equal(t, "routing", job.entry.ErrorPhase)
+		require.Equal(t, "platform", job.entry.ErrorOwner)
+		require.Equal(t, "gateway", job.entry.ErrorSource)
+		require.False(t, job.entry.IsBusinessLimited)
+	default:
+		t.Fatal("expected routing-capacity error to be enqueued")
+	}
+}
