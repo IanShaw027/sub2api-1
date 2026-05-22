@@ -216,6 +216,7 @@ watch(() => props.ticketId, (nextTicketID, previousTicketID) => {
   if (nextTicketID === previousTicketID) return
   composerValue.value = ''
   clearPendingAttachments()
+  uploadingAttachment.value = false
 })
 
 function submitReply() {

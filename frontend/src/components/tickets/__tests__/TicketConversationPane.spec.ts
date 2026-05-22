@@ -228,6 +228,7 @@ describe('TicketConversationPane', () => {
     const uploadPromise = fileInput.trigger('change')
     await Promise.resolve()
     await wrapper.setProps({ ticketId: 2 })
+    expect(wrapper.get('input[type="file"]').attributes('disabled')).toBeUndefined()
     uploadResolver({
       id: 11,
       public_url: 'https://example.com/one.png',
