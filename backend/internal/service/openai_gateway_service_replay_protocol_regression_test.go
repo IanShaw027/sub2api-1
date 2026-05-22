@@ -222,3 +222,46 @@ func openAIReplayProtocolCompletedEvent(responseID string) string {
 func openAIReplayProtocolOverloadFailedEvent(responseID string) string {
 	return fmt.Sprintf(`{"type":"response.failed","response":{"id":"%s","status":"failed","error":{"type":"service_unavailable_error","code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}}}`, responseID)
 }
+
+func TestOpenAIReplayProtocol_PassthroughRetryDedupesFunctionCallArgumentDeltaPrefix(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec, c := newOpenAIReplayProtocolContext()
+	account := openAIReplayProtocolTestAccount(31)
+
+	firstResp := strings.Join([]string{
+		`data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_tool_1","call_id":"call_tool_1","name":"webfetch","arguments":""}}`,
+		"",
+		`data: {"type":"response.function_call_arguments.delta","output_index":0,"delta":"prefix-"}`,
+		"",
+		`data: ` + openAIReplayProtocolOverloadFailedEvent("resp_tool_retry_1"),
+		"",
+	}, "\n")
+
+	_, err := invokeOpenAIReplayProtocolPassthroughStream(c, account, firstResp)
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.RetryableOnSameAccount)
+
+	secondResp := strings.Join([]string{
+		`data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_tool_1","call_id":"call_tool_1","name":"webfetch","arguments":""}}`,
+		"",
+		`data: {"type":"response.function_call_arguments.delta","output_index":0,"delta":"prefix-suffix"}`,
+		"",
+		`data: {"type":"response.function_call_arguments.done","output_index":0}`,
+		"",
+		`data: ` + openAIReplayProtocolCompletedEvent("resp_tool_retry_2"),
+		"",
+		`data: [DONE]`,
+		"",
+	}, "\n")
+
+	result, err := invokeOpenAIReplayProtocolPassthroughStream(c, account, secondResp)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	body := rec.Body.String()
+	require.Equal(t, 1, strings.Count(body, `"delta":"prefix-"`))
+	require.Contains(t, body, `"delta":"suffix"`)
+}

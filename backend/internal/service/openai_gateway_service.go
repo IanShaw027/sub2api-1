@@ -6022,7 +6022,7 @@ func (a *openAIStreamRetryReplayAttempt) filterFrame(frame openAICompatSSEFrame)
 	if a == nil || a.state == nil || !a.active {
 		return frame, true
 	}
-	if delta, ok := openAIStreamReplayTextDelta(frame); ok {
+	if delta, ok := openAIStreamReplayDelta(frame); ok {
 		if a.textMatched >= len(a.state.emittedTextPrefix) {
 			if a.replayComplete() {
 				a.active = false
@@ -6046,7 +6046,7 @@ func (a *openAIStreamRetryReplayAttempt) filterFrame(frame openAICompatSSEFrame)
 				}
 				return openAICompatSSEFrame{}, false
 			}
-			frame = patchOpenAIStreamReplayTextDelta(frame, suffix)
+			frame = patchOpenAIStreamReplayDelta(frame, suffix)
 			if a.replayComplete() {
 				a.active = false
 			}
@@ -6086,7 +6086,7 @@ func (a *openAIStreamRetryReplayAttempt) recordEmittedFrame(frame openAICompatSS
 	if a == nil || a.state == nil {
 		return
 	}
-	if delta, ok := openAIStreamReplayTextDelta(frame); ok {
+	if delta, ok := openAIStreamReplayDelta(frame); ok {
 		a.state.emittedTextPrefix += delta
 		return
 	}
@@ -6097,9 +6097,6 @@ func (a *openAIStreamRetryReplayAttempt) recordEmittedFrame(frame openAICompatSS
 
 func openAIStreamReplayFrameSignature(frame openAICompatSSEFrame) string {
 	eventType, data := openAIStreamFrameEventTypeAndData(frame)
-	if eventType == "response.output_text.delta" {
-		return ""
-	}
 	metadataSignature := openAICompatSSEFrameMetadataSignature(frame)
 	trimmed := strings.TrimSpace(data)
 	if trimmed == "" {
@@ -6134,15 +6131,19 @@ func openAIStreamReplayFrameSignature(frame openAICompatSSEFrame) string {
 	return signature
 }
 
-func openAIStreamReplayTextDelta(frame openAICompatSSEFrame) (string, bool) {
+func openAIStreamReplayDelta(frame openAICompatSSEFrame) (string, bool) {
 	eventType, data := openAIStreamFrameEventTypeAndData(frame)
-	if eventType != "response.output_text.delta" {
+	if !strings.HasSuffix(eventType, ".delta") {
 		return "", false
 	}
-	return gjson.Get(data, "delta").String(), true
+	delta := gjson.Get(data, "delta")
+	if !delta.Exists() || delta.Type != gjson.String {
+		return "", false
+	}
+	return delta.String(), true
 }
 
-func patchOpenAIStreamReplayTextDelta(frame openAICompatSSEFrame, suffix string) openAICompatSSEFrame {
+func patchOpenAIStreamReplayDelta(frame openAICompatSSEFrame, suffix string) openAICompatSSEFrame {
 	data := strings.TrimSpace(openAICompatPayloadWithEventType(frame.Data, frame.EventType))
 	if data == "" || data == "[DONE]" {
 		return frame
