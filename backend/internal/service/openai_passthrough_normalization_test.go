@@ -139,7 +139,7 @@ func TestFinalizeOpenAIResponsesOAuthUpstreamBody_EnforcesFinalOAuthResponsesCon
 	require.True(t, gjson.GetBytes(finalBody, "stream").Bool())
 }
 
-func TestFinalizeOpenAIResponsesOAuthUpstreamBody_CompactSkipsDefaultInstructions(t *testing.T) {
+func TestFinalizeOpenAIResponsesOAuthUpstreamBody_CompactInjectsDefaultInstructions(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	rec := httptest.NewRecorder()
@@ -158,10 +158,11 @@ func TestFinalizeOpenAIResponsesOAuthUpstreamBody_CompactSkipsDefaultInstruction
 	require.False(t, gjson.GetBytes(finalBody, "max_output_tokens").Exists())
 	require.False(t, gjson.GetBytes(finalBody, "store").Exists())
 	require.False(t, gjson.GetBytes(finalBody, "stream").Exists())
-	require.False(t, gjson.GetBytes(finalBody, "instructions").Exists())
+	require.True(t, gjson.GetBytes(finalBody, "instructions").Exists())
+	require.NotEmpty(t, gjson.GetBytes(finalBody, "instructions").String())
 }
 
-func TestFinalizeOpenAIResponsesOAuthUpstreamBody_ContextMarkedMessagesBridgeSkipsDefaultInstructions(t *testing.T) {
+func TestFinalizeOpenAIResponsesOAuthUpstreamBody_ContextMarkedMessagesBridgeInjectsDefaultInstructions(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	rec := httptest.NewRecorder()
@@ -177,6 +178,7 @@ func TestFinalizeOpenAIResponsesOAuthUpstreamBody_ContextMarkedMessagesBridgeSki
 
 	finalBody, changed, err := finalizeOpenAIResponsesOAuthUpstreamBody(c, account, "gpt-5.5", body)
 	require.NoError(t, err)
-	require.False(t, changed)
-	require.False(t, gjson.GetBytes(finalBody, "instructions").Exists())
+	require.True(t, changed)
+	require.True(t, gjson.GetBytes(finalBody, "instructions").Exists())
+	require.NotEmpty(t, gjson.GetBytes(finalBody, "instructions").String())
 }

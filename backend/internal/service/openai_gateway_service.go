@@ -5524,6 +5524,24 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		return nil, fmt.Errorf("upstream error: %d message=%s", resp.StatusCode, upstreamMsg)
 	}
 
+	if isOpenAITransientCapacityError(upstreamMsg) {
+		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+			Platform:           account.Platform,
+			AccountID:          account.ID,
+			AccountName:        account.Name,
+			UpstreamStatusCode: resp.StatusCode,
+			UpstreamRequestID:  resp.Header.Get("x-request-id"),
+			Kind:               "failover",
+			Message:            upstreamMsg,
+			Detail:             upstreamDetail,
+		})
+		return nil, &UpstreamFailoverError{
+			StatusCode:             resp.StatusCode,
+			ResponseBody:           body,
+			RetryableOnSameAccount: false,
+		}
+	}
+
 	// Check custom error codes
 	if !account.ShouldHandleErrorCode(resp.StatusCode) {
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -5676,6 +5694,25 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 		})
 		writeError(c, resp.StatusCode, openAIClientVisibleErrorType(resp.StatusCode), upstreamMsg)
 		return nil, fmt.Errorf("upstream error: %d message=%s", resp.StatusCode, upstreamMsg)
+	}
+
+	if isOpenAITransientCapacityError(upstreamMsg) {
+		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+			Platform:           account.Platform,
+			AccountID:          account.ID,
+			AccountName:        account.Name,
+			UpstreamStatusCode: resp.StatusCode,
+			UpstreamRequestID:  resp.Header.Get("x-request-id"),
+			Kind:               "failover",
+			Message:            upstreamMsg,
+			Detail:             upstreamDetail,
+		})
+		return nil, &UpstreamFailoverError{
+			StatusCode:             resp.StatusCode,
+			ResponseBody:           body,
+			ResponseHeaders:        resp.Header.Clone(),
+			RetryableOnSameAccount: false,
+		}
 	}
 
 	// Check custom error codes — if the account does not handle this status,
@@ -8049,9 +8086,6 @@ func isOpenAIResponsesInboundPath(c *gin.Context) bool {
 
 func shouldInjectDefaultInstructionsForOpenAIResponses(c *gin.Context, account *Account, isMessagesBridgeRequest bool, isCompactRequest bool) bool {
 	if account == nil {
-		return false
-	}
-	if isMessagesBridgeRequest || isCompactRequest {
 		return false
 	}
 	if account.Platform != PlatformOpenAI || account.Type != AccountTypeOAuth {
