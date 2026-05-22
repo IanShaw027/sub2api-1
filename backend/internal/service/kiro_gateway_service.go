@@ -416,6 +416,35 @@ func renderKiroFallbackThinkingSimulation(parsed *ParsedRequest, converted *kiro
 	return renderKiroThinkingSimulation(parsed, converted, runtimeSettings)
 }
 
+func resolveKiroFallbackThinkingOverride(
+	parsed *ParsedRequest,
+	converted *kiropkg.ConvertResult,
+	runtimeSettings *KiroRuntimeSettings,
+	current string,
+) string {
+	if strings.TrimSpace(current) != "" {
+		return strings.TrimSpace(current)
+	}
+	fallback := renderKiroFallbackThinkingSimulation(parsed, converted, runtimeSettings)
+	if strings.TrimSpace(fallback) != "" {
+		return strings.TrimSpace(fallback)
+	}
+	if parsed == nil || !parsed.ThinkingEnabled {
+		return ""
+	}
+	cloned := DefaultKiroRuntimeSettings()
+	if runtimeSettings != nil {
+		cloned = runtimeSettings
+	}
+	if cloned == nil {
+		cloned = &KiroRuntimeSettings{}
+	}
+	clonedCopy := *cloned
+	clonedCopy.ThinkingMode = KiroThinkingModeSimulate
+	clonedCopy.ThinkingEffortThreshold = "minimal"
+	return renderKiroThinkingSimulation(parsed, converted, &clonedCopy)
+}
+
 func kiroThinkingSimulationDetail(effort string) string {
 	switch normalizeKiroThinkingEffortThreshold(effort) {
 	case "minimal", "low":
@@ -705,6 +734,14 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 	content, textOutput, nativeThinkingOutput := appendKiroNativeContentBlocks(assistantContentBuilder.String(), content)
 	if textOutput != "" || nativeThinkingOutput != "" {
 		hasVisibleOutput = true
+	}
+	if !hasVisibleOutput {
+		fallbackThinking := resolveKiroFallbackThinkingOverride(parsed, converted, runtimeSettings, thinkingOverride)
+		if fallbackThinking != "" {
+			thinkingOverride = fallbackThinking
+			content = append(content, map[string]any{"type": "thinking", "thinking": thinkingOverride})
+			hasVisibleOutput = true
+		}
 	}
 	if !hasVisibleOutput {
 		emptyErr := errors.New("kiro response contained no assistant output")
@@ -1137,6 +1174,17 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			}
 		}
 		nativeThinkingBuffer = ""
+	}
+	if !streamStarted || (textOutputBuilder.Len() == 0 && nativeThinkingBuilder.Len() == 0 && simulatedThinking == "" && completedToolUses == 0) {
+		fallbackThinking := resolveKiroFallbackThinkingOverride(parsed, converted, runtimeSettings, simulatedThinking)
+		if fallbackThinking != "" {
+			simulatedThinking = fallbackThinking
+			if !streamStarted {
+				if err := startStream(inputTokens); err != nil {
+					return nil, err
+				}
+			}
+		}
 	}
 	if !streamStarted || (textOutputBuilder.Len() == 0 && nativeThinkingBuilder.Len() == 0 && simulatedThinking == "" && completedToolUses == 0) {
 		emptyErr := errors.New("kiro response contained no assistant output")

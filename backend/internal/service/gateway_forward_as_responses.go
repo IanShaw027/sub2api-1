@@ -96,7 +96,7 @@ func (s *GatewayService) ForwardAsResponses(
 		}
 
 		isClaudeCode := false
-		shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCode
+		shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCode && account.Platform != PlatformKiro
 		if shouldMimicClaudeCode {
 			anthropicBody = s.applyClaudeCodeOAuthMimicryToBody(ctx, c, account, anthropicBody, anthropicReq.System, mappedModel)
 		}
@@ -140,6 +140,26 @@ func (s *GatewayService) ForwardAsResponses(
 		attempt, err = buildAttempt(currentBody)
 		if err != nil {
 			return nil, err
+		}
+
+		if account != nil && account.Platform == PlatformKiro {
+			kiroResp, kiroResult, err := s.forwardKiroAnthropicCapture(ctx, c, account, currentBody, attempt.anthropicBody, attempt.originalModel)
+			if err != nil {
+				var failoverErr *UpstreamFailoverError
+				if errors.As(err, &failoverErr) {
+					return nil, err
+				}
+				msg := sanitizeUpstreamErrorMessage(err.Error())
+				if msg == "" {
+					msg = "Kiro upstream request failed"
+				}
+				writeResponsesError(c, http.StatusBadGateway, "server_error", msg)
+				return nil, err
+			}
+			if attempt.clientStream {
+				return s.handleResponsesStreamingResponse(kiroResp, c, attempt.originalModel, kiroUpstreamModel(kiroResult, attempt.originalModel), attempt.reasoningEffort, startTime)
+			}
+			return s.handleResponsesBufferedStreamingResponse(kiroResp, c, attempt.originalModel, kiroUpstreamModel(kiroResult, attempt.originalModel), attempt.reasoningEffort, startTime)
 		}
 
 		upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, reqStream)

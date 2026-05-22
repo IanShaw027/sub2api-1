@@ -1421,6 +1421,80 @@ func TestKiroGatewayService_ForwardStream_ContextOnlyBodyFailsWithoutStartingStr
 	require.NotContains(t, rec.Body.String(), "event: message_start")
 }
 
+func TestKiroGatewayService_ForwardNonStream_ContextOnlyBodyFallsBackToThinking(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+
+	body := buildKiroTestFrame(t, map[string]string{
+		":message-type": "event",
+		":event-type":   "contextUsageEvent",
+	}, map[string]any{"contextUsagePercentage": 42})
+
+	result, err := svc.forwardNonStream(
+		context.Background(),
+		c,
+		&Account{ID: 5, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4-6", ThinkingEnabled: true, OutputEffort: "high"},
+		&kiropkg.ConvertResult{Model: "claude-sonnet-4.6"},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"type":"thinking"`)
+	require.NotContains(t, rec.Body.String(), "Kiro upstream returned no assistant output")
+}
+
+func TestKiroGatewayService_ForwardStream_ContextOnlyBodyFallsBackToThinking(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &KiroGatewayService{
+		fakeCache: gocache.New(time.Minute, time.Minute),
+	}
+
+	body := buildKiroTestFrame(t, map[string]string{
+		":message-type": "event",
+		":event-type":   "contextUsageEvent",
+	}, map[string]any{"contextUsagePercentage": 42})
+
+	result, err := svc.forwardStream(
+		context.Background(),
+		c,
+		&Account{ID: 6, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4-6", Stream: true, ThinkingEnabled: true, OutputEffort: "high"},
+		&kiropkg.ConvertResult{Model: "claude-sonnet-4.6"},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "event: message_start")
+	require.Contains(t, rec.Body.String(), `"content_block":{"thinking":"","type":"thinking"}`)
+	require.Contains(t, rec.Body.String(), `Thinking through the request with high effort`)
+	require.NotContains(t, rec.Body.String(), "Kiro upstream returned no assistant output")
+}
+
 func TestKiroGatewayService_ForwardStream_DoesNotBillContextUsagePercentageAsInputTokens(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
