@@ -445,6 +445,18 @@ func TestNotificationEmailSendRespectsLegacyDeliveryKey(t *testing.T) {
 	require.NoError(t, svc.Send(ctx, input))
 }
 
+func TestNotificationEmailSendSkipsEmptyRecipient(t *testing.T) {
+	ctx := context.Background()
+	svc := NewNotificationEmailService(newNotificationEmailMemorySettingRepo(), nil)
+
+	err := svc.Send(ctx, NotificationEmailSendInput{
+		Event:          NotificationEmailEventBalanceLow,
+		RecipientEmail: "   ",
+		RecipientName:  "User",
+	})
+	require.NoError(t, err)
+}
+
 type notificationEmailMemorySettingRepo struct {
 	mu     sync.RWMutex
 	values map[string]string

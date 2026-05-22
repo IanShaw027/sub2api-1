@@ -314,6 +314,30 @@ func TestRunCheckForModel_OpenAIResponsesReplaceMissingInstructionsFailsLocally(
 	}
 }
 
+func TestRunCheckForModel_OpenAIResponsesReplaceMissingModelFailsLocally(t *testing.T) {
+	h := &openAICaptureHandler{}
+	endpoint := setupFakeOpenAI(t, h)
+
+	res := runCheckForModel(context.Background(), MonitorProviderOpenAI, endpoint, "sk-openai", "gpt-test", &CheckOptions{
+		APIMode:          MonitorAPIModeResponses,
+		BodyOverrideMode: MonitorBodyOverrideModeReplace,
+		BodyOverride: map[string]any{
+			"instructions": "Return a number.",
+			"input":        "What is 1 + 1?",
+		},
+	})
+
+	if res.Status != MonitorStatusError {
+		t.Fatalf("missing model should fail locally as error, got status=%s", res.Status)
+	}
+	if !strings.Contains(res.Message, "non-empty model") {
+		t.Errorf("expected local validation message about model, got %q", res.Message)
+	}
+	if h.lastPath != "" {
+		t.Errorf("invalid replace body should fail before HTTP request, got path %q", h.lastPath)
+	}
+}
+
 func TestRunCheckForModel_OpenAIResponses_ReplaceMode_UsesResponsesBodyAndExtraction(t *testing.T) {
 	h := &openAICaptureHandler{responsesLeadingReasoning: true}
 	endpoint := setupFakeOpenAI(t, h)

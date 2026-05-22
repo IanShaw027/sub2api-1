@@ -42,6 +42,9 @@ func validateReplaceRequestBody(provider, apiMode string, body map[string]any) e
 	if len(body) == 0 {
 		return ErrChannelMonitorTemplateBodyRequired
 	}
+	if !hasNonEmptyStringValue(body["model"]) {
+		return ErrChannelMonitorInvalidRequestBody
+	}
 
 	switch defaultAPIMode(apiMode) {
 	case MonitorAPIModeResponses:

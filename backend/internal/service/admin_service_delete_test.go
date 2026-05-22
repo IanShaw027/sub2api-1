@@ -1,3 +1,5 @@
+//go:build unit
+
 package service
 
 import (
@@ -242,14 +244,14 @@ func (s *groupRepoStub) UpdateSortOrders(ctx context.Context, updates []GroupSor
 	return nil
 }
 
-type apiKeyRepoStubForGroupUpdate struct {
+type apiKeyRepoStubForGroupUpdateDelete struct {
 	key       *APIKey
 	getErr    error
 	updateErr error
 	updated   *APIKey
 }
 
-func (s *apiKeyRepoStubForGroupUpdate) GetByID(_ context.Context, _ int64) (*APIKey, error) {
+func (s *apiKeyRepoStubForGroupUpdateDelete) GetByID(_ context.Context, _ int64) (*APIKey, error) {
 	if s.getErr != nil {
 		return nil, s.getErr
 	}
@@ -260,7 +262,7 @@ func (s *apiKeyRepoStubForGroupUpdate) GetByID(_ context.Context, _ int64) (*API
 	return &clone, nil
 }
 
-func (s *apiKeyRepoStubForGroupUpdate) Update(_ context.Context, key *APIKey) error {
+func (s *apiKeyRepoStubForGroupUpdateDelete) Update(_ context.Context, key *APIKey) error {
 	if s.updateErr != nil {
 		return s.updateErr
 	}
@@ -273,71 +275,71 @@ func (s *apiKeyRepoStubForGroupUpdate) Update(_ context.Context, key *APIKey) er
 	return nil
 }
 
-func (s *apiKeyRepoStubForGroupUpdate) Create(context.Context, *APIKey) error { panic("unexpected") }
-func (s *apiKeyRepoStubForGroupUpdate) GetKeyAndOwnerID(context.Context, int64) (string, int64, error) {
+func (s *apiKeyRepoStubForGroupUpdateDelete) Create(context.Context, *APIKey) error { panic("unexpected") }
+func (s *apiKeyRepoStubForGroupUpdateDelete) GetKeyAndOwnerID(context.Context, int64) (string, int64, error) {
 	panic("unexpected")
 }
-func (s *apiKeyRepoStubForGroupUpdate) GetByKey(context.Context, string) (*APIKey, error) {
+func (s *apiKeyRepoStubForGroupUpdateDelete) GetByKey(context.Context, string) (*APIKey, error) {
 	panic("unexpected")
 }
-func (s *apiKeyRepoStubForGroupUpdate) GetByKeyForAuth(context.Context, string) (*APIKey, error) {
+func (s *apiKeyRepoStubForGroupUpdateDelete) GetByKeyForAuth(context.Context, string) (*APIKey, error) {
 	panic("unexpected")
 }
-func (s *apiKeyRepoStubForGroupUpdate) Delete(context.Context, int64) error { panic("unexpected") }
-func (s *apiKeyRepoStubForGroupUpdate) ListByUserID(context.Context, int64, pagination.PaginationParams, APIKeyListFilters) ([]APIKey, *pagination.PaginationResult, error) {
+func (s *apiKeyRepoStubForGroupUpdateDelete) Delete(context.Context, int64) error { panic("unexpected") }
+func (s *apiKeyRepoStubForGroupUpdateDelete) ListByUserID(context.Context, int64, pagination.PaginationParams, APIKeyListFilters) ([]APIKey, *pagination.PaginationResult, error) {
 	panic("unexpected")
 }
-func (s *apiKeyRepoStubForGroupUpdate) VerifyOwnership(context.Context, int64, []int64) ([]int64, error) {
+func (s *apiKeyRepoStubForGroupUpdateDelete) VerifyOwnership(context.Context, int64, []int64) ([]int64, error) {
 	panic("unexpected")
 }
-func (s *apiKeyRepoStubForGroupUpdate) CountByUserID(context.Context, int64) (int64, error) {
+func (s *apiKeyRepoStubForGroupUpdateDelete) CountByUserID(context.Context, int64) (int64, error) {
 	panic("unexpected")
 }
-func (s *apiKeyRepoStubForGroupUpdate) ExistsByKey(context.Context, string) (bool, error) {
+func (s *apiKeyRepoStubForGroupUpdateDelete) ExistsByKey(context.Context, string) (bool, error) {
 	panic("unexpected")
 }
-func (s *apiKeyRepoStubForGroupUpdate) ListByGroupID(context.Context, int64, pagination.PaginationParams) ([]APIKey, *pagination.PaginationResult, error) {
+func (s *apiKeyRepoStubForGroupUpdateDelete) ListByGroupID(context.Context, int64, pagination.PaginationParams) ([]APIKey, *pagination.PaginationResult, error) {
 	panic("unexpected")
 }
-func (s *apiKeyRepoStubForGroupUpdate) SearchAPIKeys(context.Context, int64, string, int) ([]APIKey, error) {
+func (s *apiKeyRepoStubForGroupUpdateDelete) SearchAPIKeys(context.Context, int64, string, int) ([]APIKey, error) {
 	panic("unexpected")
 }
-func (s *apiKeyRepoStubForGroupUpdate) ClearGroupIDByGroupID(context.Context, int64) (int64, error) {
+func (s *apiKeyRepoStubForGroupUpdateDelete) ClearGroupIDByGroupID(context.Context, int64) (int64, error) {
 	panic("unexpected")
 }
-func (s *apiKeyRepoStubForGroupUpdate) CountByGroupID(context.Context, int64) (int64, error) {
+func (s *apiKeyRepoStubForGroupUpdateDelete) CountByGroupID(context.Context, int64) (int64, error) {
 	panic("unexpected")
 }
-func (s *apiKeyRepoStubForGroupUpdate) CountActiveByGroupID(context.Context, int64) (int64, error) {
+func (s *apiKeyRepoStubForGroupUpdateDelete) CountActiveByGroupID(context.Context, int64) (int64, error) {
 	panic("unexpected")
 }
-func (s *apiKeyRepoStubForGroupUpdate) ListKeysByUserID(context.Context, int64) ([]string, error) {
+func (s *apiKeyRepoStubForGroupUpdateDelete) ListKeysByUserID(context.Context, int64) ([]string, error) {
 	panic("unexpected")
 }
-func (s *apiKeyRepoStubForGroupUpdate) ListKeysByGroupID(context.Context, int64) ([]string, error) {
+func (s *apiKeyRepoStubForGroupUpdateDelete) ListKeysByGroupID(context.Context, int64) ([]string, error) {
 	panic("unexpected")
 }
-func (s *apiKeyRepoStubForGroupUpdate) IncrementQuotaUsed(context.Context, int64, float64) (float64, error) {
+func (s *apiKeyRepoStubForGroupUpdateDelete) IncrementQuotaUsed(context.Context, int64, float64) (float64, error) {
 	panic("unexpected")
 }
-func (s *apiKeyRepoStubForGroupUpdate) UpdateLastUsed(context.Context, int64, time.Time) error {
+func (s *apiKeyRepoStubForGroupUpdateDelete) UpdateLastUsed(context.Context, int64, time.Time) error {
 	panic("unexpected")
 }
-func (s *apiKeyRepoStubForGroupUpdate) IncrementRateLimitUsage(context.Context, int64, float64) error {
+func (s *apiKeyRepoStubForGroupUpdateDelete) IncrementRateLimitUsage(context.Context, int64, float64) error {
 	panic("unexpected")
 }
-func (s *apiKeyRepoStubForGroupUpdate) ResetRateLimitWindows(context.Context, int64) error {
+func (s *apiKeyRepoStubForGroupUpdateDelete) ResetRateLimitWindows(context.Context, int64) error {
 	panic("unexpected")
 }
-func (s *apiKeyRepoStubForGroupUpdate) GetRateLimitData(context.Context, int64) (*APIKeyRateLimitData, error) {
+func (s *apiKeyRepoStubForGroupUpdateDelete) GetRateLimitData(context.Context, int64) (*APIKeyRateLimitData, error) {
 	panic("unexpected")
 }
-func (s *apiKeyRepoStubForGroupUpdate) UpdateGroupIDByUserAndGroup(context.Context, int64, int64, int64) (int64, error) {
+func (s *apiKeyRepoStubForGroupUpdateDelete) UpdateGroupIDByUserAndGroup(context.Context, int64, int64, int64) (int64, error) {
 	panic("unexpected")
 }
 
 type deleteGroupAPIKeyRepoStub struct {
-	apiKeyRepoStubForGroupUpdate
+	apiKeyRepoStubForGroupUpdateDelete
 	keys         []string
 	listErr      error
 	listGroupIDs []int64
@@ -588,21 +590,21 @@ func (s *billingCacheStub) InvalidateAPIKeyRateLimit(ctx context.Context, keyID 
 	panic("unexpected InvalidateAPIKeyRateLimit call")
 }
 
-type authCacheInvalidatorStub struct {
+type authCacheInvalidatorDeleteStub struct {
 	userIDs  []int64
 	groupIDs []int64
 	keys     []string
 }
 
-func (s *authCacheInvalidatorStub) InvalidateAuthCacheByKey(ctx context.Context, key string) {
+func (s *authCacheInvalidatorDeleteStub) InvalidateAuthCacheByKey(ctx context.Context, key string) {
 	s.keys = append(s.keys, key)
 }
 
-func (s *authCacheInvalidatorStub) InvalidateAuthCacheByUserID(ctx context.Context, userID int64) {
+func (s *authCacheInvalidatorDeleteStub) InvalidateAuthCacheByUserID(ctx context.Context, userID int64) {
 	s.userIDs = append(s.userIDs, userID)
 }
 
-func (s *authCacheInvalidatorStub) InvalidateAuthCacheByGroupID(ctx context.Context, groupID int64) {
+func (s *authCacheInvalidatorDeleteStub) InvalidateAuthCacheByGroupID(ctx context.Context, groupID int64) {
 	s.groupIDs = append(s.groupIDs, groupID)
 }
 
@@ -684,7 +686,7 @@ func TestAdminService_DeleteGroup_Success_WithCacheInvalidation(t *testing.T) {
 func TestAdminService_DeleteGroup_InvalidatesAuthCacheForBoundKeys(t *testing.T) {
 	repo := &groupRepoStub{}
 	apiKeyRepo := &deleteGroupAPIKeyRepoStub{keys: []string{"k1", "k2"}}
-	invalidator := &authCacheInvalidatorStub{}
+	invalidator := &authCacheInvalidatorDeleteStub{}
 	svc := &adminServiceImpl{
 		groupRepo:            repo,
 		apiKeyRepo:           apiKeyRepo,
