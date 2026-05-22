@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChannelMonitor } from '@/api/admin/channelMonitor'
+import type { ChannelMonitorTemplate } from '@/api/admin/channelMonitorTemplate'
 import MonitorFormDialog from '../MonitorFormDialog.vue'
 
 const {
@@ -237,6 +238,14 @@ async function clickButtonByText(wrapper: ReturnType<typeof mountDialog>, text: 
   await button!.trigger('click')
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((res) => {
+    resolve = res
+  })
+  return { promise, resolve }
+}
+
 describe('MonitorFormDialog', () => {
   beforeEach(() => {
     showErrorMock.mockReset()
@@ -362,6 +371,45 @@ describe('MonitorFormDialog', () => {
       template_id: 2,
     }))
     expect(updateMonitorMock.mock.calls[0]?.[1]).not.toHaveProperty('clear_template')
+  })
+
+  it('waits for template loading before submitting an edited OpenAI monitor', async () => {
+    const deferred = createDeferred<{ items: ChannelMonitorTemplate[] }>()
+    listTemplatesMock.mockReturnValueOnce(deferred.promise)
+
+    const wrapper = mountDialog(buildMonitor({ template_id: 1 }))
+    await flushPromises()
+
+    await clickButtonByText(wrapper, 'Responses')
+    await wrapper.find('form').trigger('submit.prevent')
+
+    expect(updateMonitorMock).not.toHaveBeenCalled()
+
+    deferred.resolve({
+      items: [
+        {
+          id: 1,
+          name: 'Chat Template',
+          provider: 'openai',
+          api_mode: 'chat_completions',
+          description: '',
+          extra_headers: {},
+          body_override_mode: 'off',
+          body_override: null,
+          created_at: '2026-05-20T00:00:00Z',
+          updated_at: '2026-05-20T00:00:00Z',
+          associated_monitors: 1,
+        },
+      ],
+    })
+    await flushPromises()
+
+    expect(updateMonitorMock).toHaveBeenCalledWith(42, expect.objectContaining({
+      provider: 'openai',
+      api_mode: 'responses',
+      clear_template: true,
+    }))
+    expect(updateMonitorMock.mock.calls[0]?.[1]).not.toHaveProperty('template_id')
   })
 
   it('clears copied advanced request config when switching OpenAI api_mode after applying a template', async () => {

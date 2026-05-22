@@ -284,6 +284,7 @@ const form = reactive<MonitorForm>({
 // 可用模板列表（进入 dialog 时一次性拉取 cache；OpenAI 再按 api_mode 过滤）。
 const templatesCache = ref<ChannelMonitorTemplate[]>([])
 const templatesLoading = ref(false)
+let templatesLoadPromise: Promise<void> | null = null
 
 const templateOptions = computed(() => {
   const items = templatesCache.value.filter((tpl) => templateMatchesCurrentForm(tpl))
@@ -295,16 +296,21 @@ const templateOptions = computed(() => {
 
 async function loadTemplates() {
   if (templatesCache.value.length > 0) return
+  if (templatesLoadPromise) return templatesLoadPromise
   templatesLoading.value = true
-  try {
-    const { items } = await adminAPI.channelMonitorTemplate.list()
-    templatesCache.value = items
-  } catch (err: unknown) {
-    // 模板拉取失败不阻塞监控表单，用户可以不选模板
-    console.warn('load monitor templates failed', err)
-  } finally {
-    templatesLoading.value = false
-  }
+  templatesLoadPromise = (async () => {
+    try {
+      const { items } = await adminAPI.channelMonitorTemplate.list()
+      templatesCache.value = items
+    } catch (err: unknown) {
+      // 模板拉取失败不阻塞监控表单，用户可以不选模板
+      console.warn('load monitor templates failed', err)
+    } finally {
+      templatesLoading.value = false
+      templatesLoadPromise = null
+    }
+  })()
+  return templatesLoadPromise
 }
 
 // 模板下拉绑定：value 是 string（Select 组件约束），需要与 number | null 互转。
@@ -537,6 +543,9 @@ async function handleSubmit() {
   if (!form.primary_model.trim()) {
     appStore.showError(t('admin.channelMonitor.primaryModelRequired'))
     return
+  }
+  if (form.provider === PROVIDER_OPENAI && form.template_id != null) {
+    await loadTemplates()
   }
 
   submitting.value = true
