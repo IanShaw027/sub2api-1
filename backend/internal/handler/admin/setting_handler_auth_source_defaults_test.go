@@ -157,7 +157,7 @@ func TestSettingHandler_GetSettings_InjectsAuthSourceDefaults(t *testing.T) {
 		},
 	}
 	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
-	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -194,7 +194,7 @@ func TestSettingHandler_UpdateSettings_PreservesOmittedAuthSourceDefaults(t *tes
 		},
 	}
 	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
-	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
 
 	body := map[string]any{
 		"registration_enabled":              true,
@@ -372,7 +372,7 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 		},
 	}
 	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
-	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
 
 	body := map[string]any{
 		"promo_code_enabled":                              true,
@@ -428,7 +428,7 @@ func TestSettingHandler_UpdateSettings_PreservesLegacyBlankPaymentVisibleMethodS
 		},
 	}
 	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
-	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
 
 	body := map[string]any{
 		"promo_code_enabled": false,
@@ -473,7 +473,7 @@ func TestSettingHandler_UpdateSettings_PersistsExplicitFalseOIDCCompatibilityFla
 		},
 	}
 	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
-	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
 
 	body := map[string]any{
 		"promo_code_enabled":                true,
@@ -552,7 +552,7 @@ func TestSettingHandler_UpdateSettings_DoesNotSolidifyImplicitOIDCSecurityDefaul
 			ClockSkewSeconds:    120,
 		},
 	})
-	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
 
 	body := map[string]any{
 		"promo_code_enabled":   true,
@@ -581,7 +581,7 @@ func TestSettingHandler_UpdateSettings_RejectsInvalidPaymentVisibleMethodSource(
 		},
 	}
 	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
-	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
 
 	body := map[string]any{
 		"promo_code_enabled":                   true,
@@ -614,7 +614,7 @@ func TestSettingHandler_UpdateSettings_DoesNotPersistPartialSystemSettingsWhenAu
 		err: errors.New("write auth source defaults failed"),
 	}
 	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
-	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
 
 	body := map[string]any{
 		"registration_enabled":              true,

@@ -76,7 +76,7 @@ describe('TicketConversationPane', () => {
 
     await textarea.setValue('first reply')
     await textarea.trigger('keydown', { key: 'Enter' })
-    expect(wrapper.emitted('reply')).toEqual([['first reply']])
+    expect(wrapper.emitted('reply')).toEqual([['first reply', undefined]])
 
     await textarea.setValue('line break')
     await textarea.trigger('keydown', { key: 'Enter', shiftKey: true })

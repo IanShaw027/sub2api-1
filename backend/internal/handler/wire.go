@@ -97,31 +97,18 @@ func ProvideChannelMonitorHandler(monitorService *service.ChannelMonitorService,
 	return admin.NewChannelMonitorHandler(monitorService, settingService)
 }
 
-// ProvideAdminSettingHandler wires the optional media service parameter
-// explicitly so Wire does not try to synthesize a variadic []*MediaService dependency.
-func ProvideAdminSettingHandler(
-	settingService *service.SettingService,
-	emailService *service.EmailService,
-	turnstileService *service.TurnstileService,
-	opsService *service.OpsService,
-	paymentConfigService *service.PaymentConfigService,
-	paymentService *service.PaymentService,
-	mediaService *service.MediaService,
-) *admin.SettingHandler {
-	return admin.NewSettingHandler(
-		settingService,
-		emailService,
-		turnstileService,
-		opsService,
-		paymentConfigService,
-		paymentService,
-		mediaService,
-	)
+// ProvideSettingHandler creates SettingHandler with version from BuildInfo
+func ProvideSettingHandler(settingService *service.SettingService, buildInfo BuildInfo, notificationEmailService *service.NotificationEmailService) *SettingHandler {
+	h := NewSettingHandler(settingService, buildInfo.Version)
+	h.SetNotificationEmailService(notificationEmailService)
+	return h
 }
 
-// ProvideSettingHandler creates SettingHandler with version from BuildInfo
-func ProvideSettingHandler(settingService *service.SettingService, buildInfo BuildInfo) *SettingHandler {
-	return NewSettingHandler(settingService, buildInfo.Version)
+// ProvideAdminSettingHandler creates admin.SettingHandler.
+func ProvideAdminSettingHandler(settingService *service.SettingService, emailService *service.EmailService, turnstileService *service.TurnstileService, opsService *service.OpsService, paymentConfigService *service.PaymentConfigService, paymentService *service.PaymentService, notificationEmailService *service.NotificationEmailService, mediaService *service.MediaService) *admin.SettingHandler {
+	h := admin.NewSettingHandler(settingService, emailService, turnstileService, opsService, paymentConfigService, paymentService, mediaService)
+	h.SetNotificationEmailService(notificationEmailService)
+	return h
 }
 
 func ProvideAISkillModule(

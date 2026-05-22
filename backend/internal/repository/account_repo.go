@@ -326,6 +326,10 @@ func (r *accountRepository) Update(ctx context.Context, account *service.Account
 	if account == nil {
 		return nil
 	}
+	schedulable := account.Schedulable
+	if account.Status == service.StatusError {
+		schedulable = false
+	}
 
 	builder := r.client.Account.UpdateOneID(account.ID).
 		SetName(account.Name).
@@ -338,7 +342,7 @@ func (r *accountRepository) Update(ctx context.Context, account *service.Account
 		SetPriority(account.Priority).
 		SetStatus(account.Status).
 		SetErrorMessage(account.ErrorMessage).
-		SetSchedulable(account.Schedulable).
+		SetSchedulable(schedulable).
 		SetAutoPauseOnExpired(account.AutoPauseOnExpired)
 
 	if account.RateMultiplier != nil {
@@ -459,6 +463,7 @@ func (r *accountRepository) Delete(ctx context.Context, id int64) error {
 			return err
 		}
 	}
+	r.deleteSchedulerAccountSnapshot(ctx, id)
 	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &id, nil, buildSchedulerGroupPayload(groupIDs)); err != nil {
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue account delete failed: account=%d err=%v", id, err)
 	}
@@ -725,6 +730,7 @@ func (r *accountRepository) SetError(ctx context.Context, id int64, errorMsg str
 		Where(dbaccount.IDEQ(id)).
 		SetStatus(service.StatusError).
 		SetErrorMessage(errorMsg).
+		SetSchedulable(false).
 		Save(ctx)
 	if err != nil {
 		return err
@@ -755,6 +761,15 @@ func (r *accountRepository) syncSchedulerAccountSnapshot(ctx context.Context, ac
 	}
 	if err := r.schedulerCache.SetAccount(ctx, account); err != nil {
 		logger.LegacyPrintf("repository.account", "[Scheduler] sync account snapshot write failed: id=%d err=%v", accountID, err)
+	}
+}
+
+func (r *accountRepository) deleteSchedulerAccountSnapshot(ctx context.Context, accountID int64) {
+	if r == nil || r.schedulerCache == nil || accountID <= 0 {
+		return
+	}
+	if err := r.schedulerCache.DeleteAccount(ctx, accountID); err != nil {
+		logger.LegacyPrintf("repository.account", "[Scheduler] delete account snapshot failed: id=%d err=%v", accountID, err)
 	}
 }
 

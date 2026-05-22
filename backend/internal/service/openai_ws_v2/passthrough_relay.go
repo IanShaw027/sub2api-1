@@ -574,14 +574,14 @@ func observeUpstreamMessage(
 		responseID = strings.TrimSpace(values[3].String())
 	}
 	now := nowFn()
+	terminalEvent := isTerminalEvent(eventType)
 
-	if state.firstTokenMs == nil && isTokenEvent(eventType) {
+	if state.firstTokenMs == nil && isTokenEvent(eventType) && !terminalEvent {
 		ms := int(now.Sub(startAt).Milliseconds())
 		if ms >= 0 {
 			state.firstTokenMs = &ms
 		}
 	}
-	terminalEvent := isTerminalEvent(eventType)
 	if terminalEvent && responseID != "" && openAIWSRelayHasSeenTerminal(state, responseID) {
 		// 同一 response 的后续 terminal 帧继续透传，但不再重复累加 usage 或重复触发 turn 完成。
 		return observedUpstreamEvent{
@@ -610,7 +610,7 @@ func observeUpstreamMessage(
 	}
 	if responseID != "" {
 		turnTiming := openAIWSRelayGetOrInitTurnTiming(state, responseID, now)
-		if turnTiming != nil && turnTiming.firstTokenMs == nil && isTokenEvent(eventType) {
+		if turnTiming != nil && turnTiming.firstTokenMs == nil && isTokenEvent(eventType) && !terminalEvent {
 			ms := int(now.Sub(turnTiming.startAt).Milliseconds())
 			if ms >= 0 {
 				turnTiming.firstTokenMs = &ms
@@ -646,6 +646,13 @@ func observeUpstreamMessage(
 			}
 			observed.duration = duration
 			observed.firstToken = openAIWSRelayCloneIntPtr(turnTiming.firstTokenMs)
+			if observed.firstToken == nil {
+				observed.firstToken = openAIWSRelayCloneIntPtr(state.firstTokenMs)
+			}
+			if observed.firstToken == nil {
+				zero := 0
+				observed.firstToken = &zero
+			}
 		}
 	}
 	openAIWSRelayFinalizeObservedTerminal(state, &observed)
@@ -842,6 +849,12 @@ func openAIWSRelayFinalizeFlushedTerminal(state *relayState, observed *observedU
 			observed.duration = maxDuration(observed.duration, duration)
 			if turnTiming.firstTokenMs != nil {
 				observed.firstToken = openAIWSRelayCloneIntPtr(turnTiming.firstTokenMs)
+			} else if observed.firstToken == nil {
+				observed.firstToken = openAIWSRelayCloneIntPtr(state.firstTokenMs)
+			}
+			if observed.firstToken == nil {
+				zero := 0
+				observed.firstToken = &zero
 			}
 		}
 	}

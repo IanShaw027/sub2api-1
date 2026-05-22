@@ -18,6 +18,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	pkgerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/gemini"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
@@ -966,8 +967,8 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		platform = forcedPlatform
 	}
 
-	// Get available models from account configurations (without platform filter)
-	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, "")
+	// Get available models from account configurations scoped to the current group platform.
+	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform)
 
 	if len(availableModels) > 0 {
 		// Build model list from whitelist
@@ -992,6 +993,23 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"object": "list",
 			"data":   openai.DefaultModels,
+		})
+		return
+	}
+	if platform == service.PlatformGemini {
+		models := make([]claude.Model, 0, len(gemini.DefaultModels()))
+		for _, model := range gemini.DefaultModels() {
+			id := strings.TrimPrefix(model.Name, "models/")
+			models = append(models, claude.Model{
+				ID:          id,
+				Type:        "model",
+				DisplayName: id,
+				CreatedAt:   "2024-01-01T00:00:00Z",
+			})
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"object": "list",
+			"data":   models,
 		})
 		return
 	}

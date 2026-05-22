@@ -257,6 +257,7 @@ const providerLabels = computed<Record<UserAuthProvider, string>>(() => ({
   linuxdo: t('profile.authBindings.providers.linuxdo'),
   oidc: t('profile.authBindings.providers.oidc', { providerName: props.oidcProviderName }),
   wechat: t('profile.authBindings.providers.wechat'),
+  dingtalk: 'DingTalk',
   github: 'GitHub',
   google: 'Google'
 }))
@@ -283,6 +284,7 @@ function normalizeProvider(value: string): UserAuthProvider | null {
     normalized === 'linuxdo' ||
     normalized === 'oidc' ||
     normalized === 'wechat' ||
+    normalized === 'dingtalk' ||
     normalized === 'github' ||
     normalized === 'google'
   ) {

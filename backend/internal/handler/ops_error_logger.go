@@ -326,19 +326,35 @@ func opsErrorLogConfig() (workerCount int, queueSize int) {
 	return workerCount, queueSize
 }
 
-func setOpsRequestContext(c *gin.Context, model string, stream bool, requestBody []byte) {
+func setOpsRequestContext(c *gin.Context, model string, stream bool, requestBody ...[]byte) {
 	if c == nil {
 		return
 	}
 	model = strings.TrimSpace(model)
 	c.Set(opsModelKey, model)
 	c.Set(opsStreamKey, stream)
-	if len(requestBody) > 0 {
-		c.Set(opsRequestBodyKey, requestBody)
+	if len(requestBody) > 0 && len(requestBody[0]) > 0 {
+		c.Set(opsRequestBodyKey, requestBody[0])
 	}
 	if c.Request != nil && model != "" {
 		ctx := context.WithValue(c.Request.Context(), ctxkey.Model, model)
 		c.Request = c.Request.WithContext(ctx)
+	}
+}
+
+func markOpsRoutingCapacityLimited(c *gin.Context) {
+	if c == nil {
+		return
+	}
+	c.Set("ops_routing_capacity_limited", true)
+}
+
+func markOpsRoutingCapacityLimitedIfNoAvailable(c *gin.Context, err error) {
+	if c == nil || err == nil {
+		return
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "no available") {
+		markOpsRoutingCapacityLimited(c)
 	}
 }
 

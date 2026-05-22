@@ -8390,18 +8390,21 @@ function dedupeDefaultSubscriptions(
 }
 
 function buildAuthSourceDefaultsForSubmit(): AuthSourceDefaultsState {
-  return authSourceDefaultsMeta.value.reduce((acc, authSource) => {
-    const current = authSourceDefaults[authSource.source];
+  const entries = Object.entries(authSourceDefaults) as Array<
+    [AuthSourceType, AuthSourceDefaultsState[AuthSourceType]]
+  >;
+
+  return entries.reduce((acc, [source, current]) => {
     const normalizedSubscriptions = normalizeDefaultSubscriptionSettings(
       current.subscriptions,
     );
 
-    acc[authSource.source] = {
+    acc[source] = {
       ...current,
       grant_on_signup: current.enabled,
       grant_on_first_bind:
         current.enabled && current.grant_on_first_bind,
-      subscriptions: isAuthSourceBonusEnabled(authSource.source)
+      subscriptions: isAuthSourceBonusEnabled(source)
         ? normalizedSubscriptions
         : dedupeDefaultSubscriptions(normalizedSubscriptions),
     };

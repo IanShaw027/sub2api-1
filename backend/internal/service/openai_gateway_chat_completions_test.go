@@ -918,8 +918,8 @@ func TestForwardAsChatCompletions_OAuth_RetriesCodexCompatFallbackOnceOnMissingT
 	require.Equal(t, 2, upstream.callCount)
 	require.Equal(t, "call_1", gjson.GetBytes(upstream.bodies[0], "input.0.id").String())
 	require.Equal(t, "call_1", gjson.GetBytes(upstream.bodies[0], "input.1.call_id").String())
-	require.Equal(t, "fc1", gjson.GetBytes(upstream.bodies[1], "input.0.id").String())
-	require.Equal(t, "fc1", gjson.GetBytes(upstream.bodies[1], "input.1.call_id").String())
+	require.Equal(t, "fc_1", gjson.GetBytes(upstream.bodies[1], "input.0.id").String())
+	require.Equal(t, "fc_1", gjson.GetBytes(upstream.bodies[1], "input.1.call_id").String())
 }
 
 func testResponsesCompletedSSE(model string) string {

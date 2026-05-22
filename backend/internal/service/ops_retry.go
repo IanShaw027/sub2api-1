@@ -812,15 +812,6 @@ func looksLikeBinaryResponsePreview(raw []byte) bool {
 	return true
 }
 
-func containsInt64(items []int64, needle int64) bool {
-	for _, v := range items {
-		if v == needle {
-			return true
-		}
-	}
-	return false
-}
-
 func (s *OpsService) isFailoverError(message string) bool {
 	msg := strings.ToLower(strings.TrimSpace(message))
 	if msg == "" {

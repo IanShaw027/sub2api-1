@@ -7,13 +7,17 @@ import (
 
 // opsRepoMock is a test-only OpsRepository implementation with optional function hooks.
 type opsRepoMock struct {
-	InsertErrorLogFn              func(ctx context.Context, input *OpsInsertErrorLogInput) (int64, error)
-	BatchInsertErrorLogsFn        func(ctx context.Context, inputs []*OpsInsertErrorLogInput) (int64, error)
-	GetErrorLogByIDFn             func(ctx context.Context, id int64) (*OpsErrorLogDetail, error)
-	BatchInsertSystemLogsFn       func(ctx context.Context, inputs []*OpsInsertSystemLogInput) (int64, error)
-	ListSystemLogsFn              func(ctx context.Context, filter *OpsSystemLogFilter) (*OpsSystemLogList, error)
-	DeleteSystemLogsFn            func(ctx context.Context, filter *OpsSystemLogCleanupFilter) (int64, error)
-	InsertSystemLogCleanupAuditFn func(ctx context.Context, input *OpsSystemLogCleanupAudit) error
+	InsertErrorLogFn                func(ctx context.Context, input *OpsInsertErrorLogInput) (int64, error)
+	BatchInsertErrorLogsFn          func(ctx context.Context, inputs []*OpsInsertErrorLogInput) (int64, error)
+	GetErrorLogByIDFn               func(ctx context.Context, id int64) (*OpsErrorLogDetail, error)
+	InsertRetryAttemptFn            func(ctx context.Context, input *OpsInsertRetryAttemptInput) (int64, error)
+	UpdateRetryAttemptFn            func(ctx context.Context, input *OpsUpdateRetryAttemptInput) error
+	GetLatestRetryAttemptForErrorFn func(ctx context.Context, sourceErrorID int64) (*OpsRetryAttempt, error)
+	ListRetryAttemptsByErrorIDFn    func(ctx context.Context, sourceErrorID int64, limit int) ([]*OpsRetryAttempt, error)
+	BatchInsertSystemLogsFn         func(ctx context.Context, inputs []*OpsInsertSystemLogInput) (int64, error)
+	ListSystemLogsFn                func(ctx context.Context, filter *OpsSystemLogFilter) (*OpsSystemLogList, error)
+	DeleteSystemLogsFn              func(ctx context.Context, filter *OpsSystemLogCleanupFilter) (int64, error)
+	InsertSystemLogCleanupAuditFn   func(ctx context.Context, input *OpsSystemLogCleanupAudit) error
 }
 
 func (m *opsRepoMock) InsertErrorLog(ctx context.Context, input *OpsInsertErrorLogInput) (int64, error) {
@@ -39,6 +43,34 @@ func (m *opsRepoMock) GetErrorLogByID(ctx context.Context, id int64) (*OpsErrorL
 		return m.GetErrorLogByIDFn(ctx, id)
 	}
 	return &OpsErrorLogDetail{}, nil
+}
+
+func (m *opsRepoMock) InsertRetryAttempt(ctx context.Context, input *OpsInsertRetryAttemptInput) (int64, error) {
+	if m.InsertRetryAttemptFn != nil {
+		return m.InsertRetryAttemptFn(ctx, input)
+	}
+	return 1, nil
+}
+
+func (m *opsRepoMock) UpdateRetryAttempt(ctx context.Context, input *OpsUpdateRetryAttemptInput) error {
+	if m.UpdateRetryAttemptFn != nil {
+		return m.UpdateRetryAttemptFn(ctx, input)
+	}
+	return nil
+}
+
+func (m *opsRepoMock) GetLatestRetryAttemptForError(ctx context.Context, sourceErrorID int64) (*OpsRetryAttempt, error) {
+	if m.GetLatestRetryAttemptForErrorFn != nil {
+		return m.GetLatestRetryAttemptForErrorFn(ctx, sourceErrorID)
+	}
+	return nil, nil
+}
+
+func (m *opsRepoMock) ListRetryAttemptsByErrorID(ctx context.Context, sourceErrorID int64, limit int) ([]*OpsRetryAttempt, error) {
+	if m.ListRetryAttemptsByErrorIDFn != nil {
+		return m.ListRetryAttemptsByErrorIDFn(ctx, sourceErrorID, limit)
+	}
+	return []*OpsRetryAttempt{}, nil
 }
 
 func (m *opsRepoMock) ListRequestDetails(ctx context.Context, filter *OpsRequestDetailFilter) ([]*OpsRequestDetail, int64, error) {
@@ -71,22 +103,6 @@ func (m *opsRepoMock) InsertSystemLogCleanupAudit(ctx context.Context, input *Op
 		return m.InsertSystemLogCleanupAuditFn(ctx, input)
 	}
 	return nil
-}
-
-func (m *opsRepoMock) InsertRetryAttempt(ctx context.Context, input *OpsInsertRetryAttemptInput) (int64, error) {
-	return 0, nil
-}
-
-func (m *opsRepoMock) UpdateRetryAttempt(ctx context.Context, input *OpsUpdateRetryAttemptInput) error {
-	return nil
-}
-
-func (m *opsRepoMock) GetLatestRetryAttemptForError(ctx context.Context, sourceErrorID int64) (*OpsRetryAttempt, error) {
-	return nil, nil
-}
-
-func (m *opsRepoMock) ListRetryAttemptsByErrorID(ctx context.Context, sourceErrorID int64, limit int) ([]*OpsRetryAttempt, error) {
-	return []*OpsRetryAttempt{}, nil
 }
 
 func (m *opsRepoMock) UpdateErrorResolution(ctx context.Context, errorID int64, resolved bool, resolvedByUserID *int64, resolvedRetryID *int64, resolvedAt *time.Time) error {

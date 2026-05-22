@@ -83,6 +83,7 @@ type CreateOrderRequest struct {
 	PaymentSource   string
 	OrderType       string
 	PlanID          int64
+	Locale          string
 }
 
 type CreateOrderResponse struct {
@@ -203,6 +204,7 @@ type PaymentService struct {
 	groupRepo        GroupRepository
 	resumeService    *PaymentResumeService
 	affiliateService *AffiliateService
+	notificationEmailService *NotificationEmailService
 	commitPaymentTx  func(tx *dbent.Tx) error
 }
 
@@ -210,6 +212,10 @@ func NewPaymentService(entClient *dbent.Client, registry *payment.Registry, load
 	svc := &PaymentService{entClient: entClient, registry: registry, loadBalancer: newVisibleMethodLoadBalancer(loadBalancer, configService), redeemService: redeemService, subscriptionSvc: subscriptionSvc, configService: configService, userRepo: userRepo, groupRepo: groupRepo, affiliateService: affiliateService}
 	svc.resumeService = psNewPaymentResumeService(configService)
 	return svc
+}
+
+func (s *PaymentService) SetNotificationEmailService(notificationEmailService *NotificationEmailService) {
+	s.notificationEmailService = notificationEmailService
 }
 
 // --- Provider Registry ---

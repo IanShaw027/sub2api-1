@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
@@ -19,14 +20,17 @@ import (
 
 // AuthHandler handles authentication-related requests
 type AuthHandler struct {
-	cfg              *config.Config
-	authService      *service.AuthService
-	userService      *service.UserService
-	settingSvc       *service.SettingService
-	promoService     *service.PromoService
-	redeemService    *service.RedeemService
-	totpService      *service.TotpService
-	affiliateService *service.AffiliateService
+	cfg                    *config.Config
+	authService            *service.AuthService
+	userService            *service.UserService
+	settingSvc             *service.SettingService
+	promoService           *service.PromoService
+	redeemService          *service.RedeemService
+	totpService            *service.TotpService
+	affiliateService       *service.AffiliateService
+	dingTalkClientMu       sync.Mutex
+	dingTalkClientInstance *DingTalkClient
+	userAttributeService   *service.UserAttributeService
 }
 
 // NewAuthHandler creates a new AuthHandler

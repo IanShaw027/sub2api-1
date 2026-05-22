@@ -44,6 +44,8 @@ func blockMonitorRedirect(_ *http.Request, _ []*http.Request) error {
 // CheckOptions 承载一次检测的自定义入参。
 // 所有字段都是可选（零值即等价于"用默认行为"）。
 type CheckOptions struct {
+	// APIMode 仅对 OpenAI provider 生效；空串等同 chat_completions。
+	APIMode string
 	// ExtraHeaders 用户自定义 HTTP 头；允许覆盖普通头，但禁止覆盖鉴权/协议/客户端自管头。
 	ExtraHeaders map[string]string
 	// BodyOverrideMode: off | merge | replace

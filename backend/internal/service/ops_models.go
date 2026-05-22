@@ -82,6 +82,12 @@ type OpsErrorLogDetail struct {
 	UpstreamErrorDetail  string `json:"upstream_error_detail,omitempty"`
 	UpstreamErrors       string `json:"upstream_errors,omitempty"` // JSON array (string) for display/parsing
 
+	// Retry context
+	RequestBody          string `json:"request_body"`
+	RequestBodyTruncated bool   `json:"request_body_truncated"`
+	RequestBodyBytes     *int   `json:"request_body_bytes"`
+	RequestHeaders       string `json:"request_headers,omitempty"`
+
 	// Timings (optional)
 	AuthLatencyMs      *int64 `json:"auth_latency_ms"`
 	RoutingLatencyMs   *int64 `json:"routing_latency_ms"`
@@ -89,52 +95,8 @@ type OpsErrorLogDetail struct {
 	ResponseLatencyMs  *int64 `json:"response_latency_ms"`
 	TimeToFirstTokenMs *int64 `json:"time_to_first_token_ms"`
 
-	// Retry context
-	RequestBody          string `json:"request_body"`
-	RequestBodyTruncated bool   `json:"request_body_truncated"`
-	RequestBodyBytes     *int   `json:"request_body_bytes"`
-	RequestHeaders       string `json:"request_headers,omitempty"`
-
 	// vNext metric semantics
 	IsBusinessLimited bool `json:"is_business_limited"`
-}
-
-type OpsErrorLogFilter struct {
-	StartTime *time.Time
-	EndTime   *time.Time
-
-	Platform  string
-	GroupID   *int64
-	AccountID *int64
-
-	StatusCodes      []int
-	StatusCodesOther bool
-	Phase            string
-	Owner            string
-	Source           string
-	Resolved         *bool
-	Query            string
-	UserQuery        string // Search by user email
-
-	// Optional correlation keys for exact matching.
-	RequestID       string
-	ClientRequestID string
-
-	// View controls error categorization for list endpoints.
-	// - errors: show actionable errors (exclude business-limited + normal rate limits 429/529)
-	// - excluded: only show excluded errors
-	// - all: show everything
-	View string
-
-	Page     int
-	PageSize int
-}
-
-type OpsErrorLogList struct {
-	Errors   []*OpsErrorLog `json:"errors"`
-	Total    int            `json:"total"`
-	Page     int            `json:"page"`
-	PageSize int            `json:"page_size"`
 }
 
 type OpsRetryAttempt struct {
@@ -187,4 +149,42 @@ type OpsRetryResult struct {
 	StartedAt  time.Time `json:"started_at"`
 	FinishedAt time.Time `json:"finished_at"`
 	DurationMs int64     `json:"duration_ms"`
+}
+
+type OpsErrorLogFilter struct {
+	StartTime *time.Time
+	EndTime   *time.Time
+
+	Platform  string
+	GroupID   *int64
+	AccountID *int64
+
+	StatusCodes      []int
+	StatusCodesOther bool
+	Phase            string
+	Owner            string
+	Source           string
+	Resolved         *bool
+	Query            string
+	UserQuery        string // Search by user email
+
+	// Optional correlation keys for exact matching.
+	RequestID       string
+	ClientRequestID string
+
+	// View controls error categorization for list endpoints.
+	// - errors: show actionable errors (exclude business-limited + normal rate limits 429/529)
+	// - excluded: only show excluded errors
+	// - all: show everything
+	View string
+
+	Page     int
+	PageSize int
+}
+
+type OpsErrorLogList struct {
+	Errors   []*OpsErrorLog `json:"errors"`
+	Total    int            `json:"total"`
+	Page     int            `json:"page"`
+	PageSize int            `json:"page_size"`
 }

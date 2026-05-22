@@ -1552,8 +1552,8 @@ func TestOpenAIGatewayService_Forward_WSv2OAuthRetriesCodexCompatOnMissingToolCa
 	require.Len(t, requests, 2)
 	require.Equal(t, "call_1", gjson.GetBytes(requests[0], "input.0.id").String())
 	require.Equal(t, "call_1", gjson.GetBytes(requests[0], "input.1.call_id").String())
-	require.Equal(t, "fc1", gjson.GetBytes(requests[1], "input.0.id").String())
-	require.Equal(t, "fc1", gjson.GetBytes(requests[1], "input.1.call_id").String())
+	require.Equal(t, "fc_1", gjson.GetBytes(requests[1], "input.0.id").String())
+	require.Equal(t, "fc_1", gjson.GetBytes(requests[1], "input.1.call_id").String())
 }
 
 func TestOpenAIGatewayService_Forward_WSv2OAuthDoesNotCodexCompatRecoverNonCompatReason(t *testing.T) {

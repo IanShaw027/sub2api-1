@@ -172,7 +172,7 @@ describe('user TicketDetailView', () => {
     await wrapper.get('.send-reply').trigger('click')
     await flushPromises()
 
-    expect(replyTicket).toHaveBeenCalledWith(42, 'Follow up')
+    expect(replyTicket).toHaveBeenCalledWith(42, 'Follow up', undefined)
     expect(getTicket.mock.calls.length).toBe(ticketLoadCallsBeforeReply + 1)
   })
 

@@ -1720,6 +1720,16 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 	responseBody := failoverErr.ResponseBody
 	copyFailoverResponseHeaders(c, failoverErr)
 
+	if isOpenAIRetryableOverloadFailover(failoverErr) {
+		upstreamMsg := strings.TrimSpace(service.ExtractUpstreamErrorMessage(responseBody))
+		if upstreamMsg == "" {
+			upstreamMsg = "Upstream service overloaded, please retry later"
+		}
+		service.SetOpsUpstreamErrorWithType(c, "overloaded_error", statusCode, upstreamMsg, "")
+		h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "overloaded_error", "Upstream service overloaded, please retry later", streamStarted)
+		return
+	}
+
 	// 先检查透传规则
 	if h.errorPassthroughService != nil && len(responseBody) > 0 {
 		if rule := h.errorPassthroughService.MatchRule("openai", statusCode, responseBody); rule != nil {
@@ -1751,6 +1761,17 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 	// 使用默认的错误映射
 	status, errType, errMsg := h.mapUpstreamError(statusCode)
 	h.handleStreamingAwareError(c, status, errType, errMsg, streamStarted)
+}
+
+func isOpenAIRetryableOverloadFailover(failoverErr *service.UpstreamFailoverError) bool {
+	if failoverErr == nil || failoverErr.StatusCode != http.StatusServiceUnavailable || !failoverErr.RetryableOnSameAccount {
+		return false
+	}
+	message := strings.ToLower(strings.TrimSpace(service.ExtractUpstreamErrorMessage(failoverErr.ResponseBody)))
+	if message == "" {
+		return true
+	}
+	return strings.Contains(message, "overloaded") || strings.Contains(message, "capacity")
 }
 
 // handleFailoverExhaustedSimple 简化版本，用于没有响应体的情况

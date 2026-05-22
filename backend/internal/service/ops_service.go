@@ -515,6 +515,10 @@ func sanitizeAndTrimRequestBody(raw []byte, maxBytes int) (jsonString string, tr
 	return string(encoded4), true, bytesLen
 }
 
+func sanitizeAndTrimJSONPayload(raw []byte, maxBytes int) (string, bool, int) {
+	return sanitizeAndTrimRequestBody(raw, maxBytes)
+}
+
 func redactSensitiveJSON(v any) any {
 	switch t := v.(type) {
 	case map[string]any:

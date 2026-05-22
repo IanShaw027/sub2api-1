@@ -26,6 +26,7 @@ const (
 	rateLimitModeFixed         = "fixed"
 	checkPaidResultAlreadyPaid = "already_paid"
 	checkPaidResultCancelled   = "cancelled"
+	pendingWxpayReconcileLimit = 20
 )
 
 func (s *PaymentService) checkCancelRateLimit(ctx context.Context, userID int64, cfg *PaymentConfig) error {
@@ -196,6 +197,66 @@ func (s *PaymentService) checkPaid(ctx context.Context, o *dbent.PaymentOrder) s
 	}
 	if cp, ok := prov.(payment.CancelableProvider); ok {
 		_ = cp.CancelPayment(ctx, queryRef)
+	}
+	return ""
+}
+
+func (s *PaymentService) reconcilePaid(ctx context.Context, o *dbent.PaymentOrder) string {
+	prov, err := s.getOrderProvider(ctx, o)
+	if err != nil {
+		return ""
+	}
+	queryRef := paymentOrderQueryReference(o, prov)
+	if queryRef == "" {
+		return ""
+	}
+	resp, err := prov.QueryOrder(ctx, queryRef)
+	if err != nil {
+		slog.Warn("query upstream failed", "orderID", o.ID, "error", err)
+		return ""
+	}
+	if resp.Status == payment.ProviderStatusPaid {
+		if !isValidProviderAmount(resp.Amount) {
+			s.writeAuditLog(ctx, o.ID, "PAYMENT_INVALID_AMOUNT", prov.ProviderKey(), map[string]any{
+				"expected": o.PayAmount,
+				"paid":     resp.Amount,
+				"tradeNo":  resp.TradeNo,
+				"queryRef": queryRef,
+			})
+			slog.Warn("query upstream returned invalid paid amount", "orderID", o.ID, "queryRef", queryRef, "paid", resp.Amount)
+			retriedResp, retryOK := requeryPaidOrderOnce(ctx, prov, queryRef)
+			if !retryOK {
+				return ""
+			}
+			resp = retriedResp
+		}
+		notificationTradeNo := o.PaymentTradeNo
+		if upstreamTradeNo := strings.TrimSpace(resp.TradeNo); paymentOrderShouldPersistUpstreamTradeNo(queryRef, upstreamTradeNo, notificationTradeNo) {
+			if _, updateErr := s.entClient.PaymentOrder.Update().
+				Where(paymentorder.IDEQ(o.ID)).
+				SetPaymentTradeNo(upstreamTradeNo).
+				Save(ctx); updateErr != nil {
+				slog.Error("persist upstream trade no during checkPaid failed", "orderID", o.ID, "tradeNo", upstreamTradeNo, "error", updateErr)
+			} else {
+				o.PaymentTradeNo = upstreamTradeNo
+			}
+			notificationTradeNo = upstreamTradeNo
+		}
+		if o.Status == OrderStatusFailed {
+			recoveredOrder, recoverErr := s.markFailedOrderPaidAndReload(ctx, o.ID, notificationTradeNo, resp.Amount)
+			if recoverErr != nil {
+				slog.Error("recover failed order paid metadata during checkPaid failed", "orderID", o.ID, "error", recoverErr)
+				return ""
+			}
+			if err := s.executeFulfillment(ctx, recoveredOrder.ID); err != nil {
+				slog.Error("fulfillment failed during checkPaid", "orderID", o.ID, "error", err)
+			}
+			return checkPaidResultAlreadyPaid
+		}
+		if err := s.HandlePaymentNotification(ctx, &payment.PaymentNotification{TradeNo: notificationTradeNo, OrderID: o.OutTradeNo, Amount: resp.Amount, Status: payment.ProviderStatusSuccess, Metadata: resp.Metadata}, prov.ProviderKey()); err != nil {
+			slog.Error("fulfillment failed during checkPaid", "orderID", o.ID, "error", err)
+		}
+		return checkPaidResultAlreadyPaid
 	}
 	return ""
 }
@@ -395,6 +456,37 @@ func normalizeOrderLookupOutTradeNo(raw string) (string, error) {
 		}
 	}
 	return outTradeNo, nil
+}
+
+// ReconcilePendingWxpayOrders actively checks recent pending WeChat orders so
+// missed provider notifications do not wait until order expiry to fulfill.
+func (s *PaymentService) ReconcilePendingWxpayOrders(ctx context.Context) (int, error) {
+	now := time.Now()
+	orders, err := s.entClient.PaymentOrder.Query().
+		Where(
+			paymentorder.StatusEQ(OrderStatusPending),
+			paymentorder.ExpiresAtGT(now),
+			paymentorder.Or(
+				paymentorder.PaymentTypeEQ(payment.TypeWxpay),
+				paymentorder.PaymentTypeHasPrefix(payment.TypeWxpay+"_"),
+				paymentorder.ProviderKeyEQ(payment.TypeWxpay),
+				paymentorder.ProviderKeyHasPrefix(payment.TypeWxpay+"_"),
+			),
+		).
+		Order(dbent.Asc(paymentorder.FieldCreatedAt)).
+		Limit(pendingWxpayReconcileLimit).
+		All(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("query pending wxpay orders: %w", err)
+	}
+
+	recovered := 0
+	for _, order := range orders {
+		if s.reconcilePaid(ctx, order) == checkPaidResultAlreadyPaid {
+			recovered++
+		}
+	}
+	return recovered, nil
 }
 
 func (s *PaymentService) ExpireTimedOutOrders(ctx context.Context) (int, error) {

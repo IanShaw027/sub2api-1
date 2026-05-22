@@ -201,6 +201,24 @@ func (s *subscriptionUserSubRepoStub) GetByID(_ context.Context, id int64) (*Use
 	return &cp, nil
 }
 
+func (s *subscriptionUserSubRepoStub) Update(ctx context.Context, sub *UserSubscription) error {
+	if sub == nil {
+		return ErrSubscriptionNilInput
+	}
+	s.lastExtendCtx = ctx
+	existing := s.byID[sub.ID]
+	if existing == nil {
+		return ErrSubscriptionNotFound
+	}
+	cp := *sub
+	s.byID[sub.ID] = &cp
+	s.byUserGroup[s.key(cp.UserID, cp.GroupID)] = &cp
+	if existing.UserID != cp.UserID || existing.GroupID != cp.GroupID {
+		delete(s.byUserGroup, s.key(existing.UserID, existing.GroupID))
+	}
+	return nil
+}
+
 func (s *subscriptionUserSubRepoStub) ExtendExpiry(ctx context.Context, id int64, expiresAt time.Time) error {
 	s.lastExtendCtx = ctx
 	sub := s.byID[id]

@@ -200,7 +200,7 @@ describe('admin TicketDetailView reply template menu', () => {
     await wrapper.get('.send-reply').trigger('click')
     await flushPromises()
 
-    expect(replyAdminTicket).toHaveBeenCalledWith(42, 'Need update')
+    expect(replyAdminTicket).toHaveBeenCalledWith(42, 'Need update', undefined)
     expect(getAdminTicket).toHaveBeenCalledTimes(2)
   })
 

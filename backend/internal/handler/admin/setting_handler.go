@@ -12,8 +12,10 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
@@ -111,13 +113,14 @@ func mustMarshalSupportQRCodes(entries *[]dto.SupportQRCodeEntry) string {
 
 // SettingHandler 系统设置处理器
 type SettingHandler struct {
-	settingService       *service.SettingService
-	emailService         *service.EmailService
-	turnstileService     *service.TurnstileService
-	opsService           *service.OpsService
-	paymentConfigService *service.PaymentConfigService
-	paymentService       *service.PaymentService
-	mediaService         *service.MediaService
+	settingService           *service.SettingService
+	notificationEmailService *service.NotificationEmailService
+	emailService             *service.EmailService
+	turnstileService         *service.TurnstileService
+	opsService               *service.OpsService
+	paymentConfigService     *service.PaymentConfigService
+	paymentService           *service.PaymentService
+	mediaService             *service.MediaService
 }
 
 // NewSettingHandler 创建系统设置处理器
@@ -142,6 +145,12 @@ func NewSettingHandler(
 		handler.mediaService = mediaServices[0]
 	}
 	return handler
+}
+
+// SetNotificationEmailService attaches the notification email service without
+// making it a constructor dependency for legacy test helpers.
+func (h *SettingHandler) SetNotificationEmailService(notificationEmailService *service.NotificationEmailService) {
+	h.notificationEmailService = notificationEmailService
 }
 
 func (h *SettingHandler) ingestSettingsMediaReferences(ctx context.Context, req *UpdateSettingsRequest) ([]int64, error) {
@@ -254,6 +263,177 @@ func (h *SettingHandler) parseManagedMediaID(raw string) (int64, bool) {
 		return 0, false
 	}
 	return parseManagedMediaIDFromPath(parsed.Path)
+}
+
+func (h *SettingHandler) emailTemplateService() *service.NotificationEmailService {
+	if h == nil {
+		return nil
+	}
+	return h.notificationEmailService
+}
+
+func (h *SettingHandler) ListEmailTemplates(c *gin.Context) {
+	svc := h.emailTemplateService()
+	if svc == nil {
+		response.InternalError(c, "Notification email service is not configured")
+		return
+	}
+	events := svc.ListEventInfos()
+	eventOptions := make([]dto.EmailTemplateEventOption, 0, len(events))
+	placeholderSet := make(map[string]struct{})
+	for _, event := range events {
+		eventOptions = append(eventOptions, dto.EmailTemplateEventOption{
+			Value:       event.Event,
+			Label:       event.Label,
+			Description: event.Description,
+			Category:    event.Category,
+			Optional:    event.Optional,
+		})
+		for _, placeholder := range event.Placeholders {
+			if placeholder = strings.TrimSpace(placeholder); placeholder != "" {
+				placeholderSet[placeholder] = struct{}{}
+			}
+		}
+	}
+	placeholders := make([]string, 0, len(placeholderSet))
+	for placeholder := range placeholderSet {
+		placeholders = append(placeholders, placeholder)
+	}
+	sort.Strings(placeholders)
+
+	templates, err := svc.ListTemplates(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	summaries := make([]dto.EmailTemplateSummary, 0, len(templates))
+	for _, tmpl := range templates {
+		summary := dto.EmailTemplateSummary{
+			Event:    tmpl.Event,
+			Locale:   tmpl.Locale,
+			Subject:  tmpl.Subject,
+			IsCustom: tmpl.IsCustom,
+		}
+		if tmpl.UpdatedAt != nil {
+			summary.UpdatedAt = tmpl.UpdatedAt.UTC().Format(time.RFC3339)
+		}
+		summaries = append(summaries, summary)
+	}
+
+	response.Success(c, dto.EmailTemplateListResponse{
+		Events:       eventOptions,
+		Locales:      svc.SupportedLocales(),
+		Templates:    summaries,
+		Placeholders: placeholders,
+	})
+}
+
+func (h *SettingHandler) GetEmailTemplate(c *gin.Context) {
+	svc := h.emailTemplateService()
+	if svc == nil {
+		response.InternalError(c, "Notification email service is not configured")
+		return
+	}
+	tmpl, err := svc.GetTemplate(c.Request.Context(), c.Param("event"), c.Param("locale"))
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	detail := dto.EmailTemplateDetail{
+		Event:        tmpl.Event,
+		Locale:       tmpl.Locale,
+		Subject:      tmpl.Subject,
+		HTML:         tmpl.HTML,
+		IsCustom:     tmpl.IsCustom,
+		Placeholders: append([]string(nil), tmpl.Placeholders...),
+	}
+	if tmpl.UpdatedAt != nil {
+		detail.UpdatedAt = tmpl.UpdatedAt.UTC().Format(time.RFC3339)
+	}
+	response.Success(c, detail)
+}
+
+func (h *SettingHandler) UpdateEmailTemplate(c *gin.Context) {
+	svc := h.emailTemplateService()
+	if svc == nil {
+		response.InternalError(c, "Notification email service is not configured")
+		return
+	}
+	var req dto.UpdateEmailTemplateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	tmpl, err := svc.UpdateTemplate(c.Request.Context(), c.Param("event"), c.Param("locale"), req.Subject, req.HTML)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	detail := dto.EmailTemplateDetail{
+		Event:        tmpl.Event,
+		Locale:       tmpl.Locale,
+		Subject:      tmpl.Subject,
+		HTML:         tmpl.HTML,
+		IsCustom:     tmpl.IsCustom,
+		Placeholders: append([]string(nil), tmpl.Placeholders...),
+	}
+	if tmpl.UpdatedAt != nil {
+		detail.UpdatedAt = tmpl.UpdatedAt.UTC().Format(time.RFC3339)
+	}
+	response.Success(c, detail)
+}
+
+func (h *SettingHandler) RestoreOfficialEmailTemplate(c *gin.Context) {
+	svc := h.emailTemplateService()
+	if svc == nil {
+		response.InternalError(c, "Notification email service is not configured")
+		return
+	}
+	tmpl, err := svc.RestoreOfficialTemplate(c.Request.Context(), c.Param("event"), c.Param("locale"))
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	detail := dto.EmailTemplateDetail{
+		Event:        tmpl.Event,
+		Locale:       tmpl.Locale,
+		Subject:      tmpl.Subject,
+		HTML:         tmpl.HTML,
+		IsCustom:     tmpl.IsCustom,
+		Placeholders: append([]string(nil), tmpl.Placeholders...),
+	}
+	if tmpl.UpdatedAt != nil {
+		detail.UpdatedAt = tmpl.UpdatedAt.UTC().Format(time.RFC3339)
+	}
+	response.Success(c, detail)
+}
+
+func (h *SettingHandler) PreviewEmailTemplate(c *gin.Context) {
+	svc := h.emailTemplateService()
+	if svc == nil {
+		response.InternalError(c, "Notification email service is not configured")
+		return
+	}
+	var req dto.PreviewEmailTemplateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	preview, err := svc.PreviewTemplate(c.Request.Context(), service.NotificationEmailPreviewInput{
+		Event:     req.Event,
+		Locale:    req.Locale,
+		Subject:   req.Subject,
+		HTML:      req.HTML,
+		Variables: req.Variables,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, dto.EmailTemplatePreviewResponse{
+		Subject: preview.Subject,
+		HTML:    preview.HTML,
+	})
 }
 
 func parseManagedMediaIDFromPath(raw string) (int64, bool) {
@@ -612,6 +792,24 @@ type UpdateSettingsRequest struct {
 	LinuxDoConnectClientID     string `json:"linuxdo_connect_client_id"`
 	LinuxDoConnectClientSecret string `json:"linuxdo_connect_client_secret"`
 	LinuxDoConnectRedirectURL  string `json:"linuxdo_connect_redirect_url"`
+
+	// DingTalk Connect OAuth 登录
+	DingTalkConnectEnabled                 bool   `json:"dingtalk_connect_enabled"`
+	DingTalkConnectClientID                string `json:"dingtalk_connect_client_id"`
+	DingTalkConnectClientSecret            string `json:"dingtalk_connect_client_secret"`
+	DingTalkConnectRedirectURL             string `json:"dingtalk_connect_redirect_url"`
+	DingTalkConnectCorpRestrictionPolicy   string `json:"dingtalk_connect_corp_restriction_policy"`
+	DingTalkConnectInternalCorpID          string `json:"dingtalk_connect_internal_corp_id"`
+	DingTalkConnectBypassRegistration      bool   `json:"dingtalk_connect_bypass_registration"`
+	DingTalkConnectSyncCorpEmail           bool   `json:"dingtalk_connect_sync_corp_email"`
+	DingTalkConnectSyncDisplayName         bool   `json:"dingtalk_connect_sync_display_name"`
+	DingTalkConnectSyncDept                bool   `json:"dingtalk_connect_sync_dept"`
+	DingTalkConnectSyncCorpEmailAttrKey    string `json:"dingtalk_connect_sync_corp_email_attr_key"`
+	DingTalkConnectSyncDisplayNameAttrKey  string `json:"dingtalk_connect_sync_display_name_attr_key"`
+	DingTalkConnectSyncDeptAttrKey         string `json:"dingtalk_connect_sync_dept_attr_key"`
+	DingTalkConnectSyncCorpEmailAttrName   string `json:"dingtalk_connect_sync_corp_email_attr_name"`
+	DingTalkConnectSyncDisplayNameAttrName string `json:"dingtalk_connect_sync_display_name_attr_name"`
+	DingTalkConnectSyncDeptAttrName        string `json:"dingtalk_connect_sync_dept_attr_name"`
 
 	// WeChat Connect OAuth 登录
 	WeChatConnectEnabled             bool   `json:"wechat_connect_enabled"`
@@ -1165,6 +1363,62 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			req.LinuxDoConnectClientSecret = previousSettings.LinuxDoConnectClientSecret
 		}
+	}
+
+	if req.DingTalkConnectEnabled {
+		req.DingTalkConnectClientID = strings.TrimSpace(req.DingTalkConnectClientID)
+		req.DingTalkConnectClientSecret = strings.TrimSpace(req.DingTalkConnectClientSecret)
+		req.DingTalkConnectRedirectURL = strings.TrimSpace(req.DingTalkConnectRedirectURL)
+		req.DingTalkConnectCorpRestrictionPolicy = strings.ToLower(strings.TrimSpace(req.DingTalkConnectCorpRestrictionPolicy))
+		req.DingTalkConnectInternalCorpID = strings.TrimSpace(req.DingTalkConnectInternalCorpID)
+		req.DingTalkConnectSyncCorpEmailAttrKey = strings.TrimSpace(req.DingTalkConnectSyncCorpEmailAttrKey)
+		req.DingTalkConnectSyncDisplayNameAttrKey = strings.TrimSpace(req.DingTalkConnectSyncDisplayNameAttrKey)
+		req.DingTalkConnectSyncDeptAttrKey = strings.TrimSpace(req.DingTalkConnectSyncDeptAttrKey)
+		req.DingTalkConnectSyncCorpEmailAttrName = strings.TrimSpace(req.DingTalkConnectSyncCorpEmailAttrName)
+		req.DingTalkConnectSyncDisplayNameAttrName = strings.TrimSpace(req.DingTalkConnectSyncDisplayNameAttrName)
+		req.DingTalkConnectSyncDeptAttrName = strings.TrimSpace(req.DingTalkConnectSyncDeptAttrName)
+
+		if req.DingTalkConnectClientID == "" {
+			response.BadRequest(c, "DingTalk Client ID is required when enabled")
+			return
+		}
+		if req.DingTalkConnectRedirectURL == "" {
+			response.BadRequest(c, "DingTalk Redirect URL is required when enabled")
+			return
+		}
+		if err := config.ValidateAbsoluteHTTPURL(req.DingTalkConnectRedirectURL); err != nil {
+			response.BadRequest(c, "DingTalk Redirect URL must be an absolute http(s) URL")
+			return
+		}
+		if req.DingTalkConnectClientSecret == "" {
+			if previousSettings.DingTalkConnectClientSecret == "" {
+				response.BadRequest(c, "DingTalk Client Secret is required when enabled")
+				return
+			}
+			req.DingTalkConnectClientSecret = previousSettings.DingTalkConnectClientSecret
+		}
+
+		switch req.DingTalkConnectCorpRestrictionPolicy {
+		case "", "none", "whitelist":
+			req.DingTalkConnectCorpRestrictionPolicy = "none"
+		case "internal_only":
+			// keep as-is
+		default:
+			response.BadRequest(c, "DingTalk corp restriction policy must be none or internal_only")
+			return
+		}
+
+		if req.DingTalkConnectCorpRestrictionPolicy != "internal_only" {
+			req.DingTalkConnectInternalCorpID = ""
+			req.DingTalkConnectBypassRegistration = false
+			req.DingTalkConnectSyncCorpEmail = false
+			req.DingTalkConnectSyncDisplayName = false
+			req.DingTalkConnectSyncDept = false
+		}
+
+		req.DingTalkConnectSyncCorpEmailAttrKey = firstNonEmpty(req.DingTalkConnectSyncCorpEmailAttrKey, previousSettings.DingTalkConnectSyncCorpEmailAttrKey, "dingtalk_email")
+		req.DingTalkConnectSyncDisplayNameAttrKey = firstNonEmpty(req.DingTalkConnectSyncDisplayNameAttrKey, previousSettings.DingTalkConnectSyncDisplayNameAttrKey, "dingtalk_name")
+		req.DingTalkConnectSyncDeptAttrKey = firstNonEmpty(req.DingTalkConnectSyncDeptAttrKey, previousSettings.DingTalkConnectSyncDeptAttrKey, "dingtalk_department")
 	}
 
 	if req.WeChatConnectEnabled {
@@ -1752,81 +2006,97 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	}
 
 	settings := &service.SystemSettings{
-		RegistrationEnabled:              req.RegistrationEnabled,
-		EmailVerifyEnabled:               req.EmailVerifyEnabled,
-		RegistrationEmailSuffixWhitelist: req.RegistrationEmailSuffixWhitelist,
-		PromoCodeEnabled:                 req.PromoCodeEnabled,
-		PasswordResetEnabled:             req.PasswordResetEnabled,
-		FrontendURL:                      req.FrontendURL,
-		InvitationCodeEnabled:            req.InvitationCodeEnabled,
-		TotpEnabled:                      req.TotpEnabled,
-		LoginAgreementEnabled:            req.LoginAgreementEnabled,
-		LoginAgreementMode:               loginAgreementMode,
-		LoginAgreementUpdatedAt:          loginAgreementUpdatedAt,
-		LoginAgreementDocuments:          loginAgreementDocuments,
-		SMTPHost:                         req.SMTPHost,
-		SMTPPort:                         req.SMTPPort,
-		SMTPUsername:                     req.SMTPUsername,
-		SMTPPassword:                     req.SMTPPassword,
-		SMTPFrom:                         req.SMTPFrom,
-		SMTPFromName:                     req.SMTPFromName,
-		SMTPUseTLS:                       req.SMTPUseTLS,
-		TurnstileEnabled:                 req.TurnstileEnabled,
-		TurnstileSiteKey:                 req.TurnstileSiteKey,
-		TurnstileSecretKey:               req.TurnstileSecretKey,
-		LinuxDoConnectEnabled:            req.LinuxDoConnectEnabled,
-		LinuxDoConnectClientID:           req.LinuxDoConnectClientID,
-		LinuxDoConnectClientSecret:       req.LinuxDoConnectClientSecret,
-		LinuxDoConnectRedirectURL:        req.LinuxDoConnectRedirectURL,
-		WeChatConnectEnabled:             req.WeChatConnectEnabled,
-		WeChatConnectAppID:               req.WeChatConnectAppID,
-		WeChatConnectAppSecret:           req.WeChatConnectAppSecret,
-		WeChatConnectOpenAppID:           req.WeChatConnectOpenAppID,
-		WeChatConnectOpenAppSecret:       req.WeChatConnectOpenAppSecret,
-		WeChatConnectMPAppID:             req.WeChatConnectMPAppID,
-		WeChatConnectMPAppSecret:         req.WeChatConnectMPAppSecret,
-		WeChatConnectMobileAppID:         req.WeChatConnectMobileAppID,
-		WeChatConnectMobileAppSecret:     req.WeChatConnectMobileAppSecret,
-		WeChatConnectOpenEnabled:         req.WeChatConnectOpenEnabled,
-		WeChatConnectMPEnabled:           req.WeChatConnectMPEnabled,
-		WeChatConnectMobileEnabled:       req.WeChatConnectMobileEnabled,
-		WeChatConnectMode:                req.WeChatConnectMode,
-		WeChatConnectScopes:              req.WeChatConnectScopes,
-		WeChatConnectRedirectURL:         req.WeChatConnectRedirectURL,
-		WeChatConnectFrontendRedirectURL: req.WeChatConnectFrontendRedirectURL,
-		OIDCConnectEnabled:               req.OIDCConnectEnabled,
-		OIDCConnectProviderName:          req.OIDCConnectProviderName,
-		OIDCConnectClientID:              req.OIDCConnectClientID,
-		OIDCConnectClientSecret:          req.OIDCConnectClientSecret,
-		OIDCConnectIssuerURL:             req.OIDCConnectIssuerURL,
-		OIDCConnectDiscoveryURL:          req.OIDCConnectDiscoveryURL,
-		OIDCConnectAuthorizeURL:          req.OIDCConnectAuthorizeURL,
-		OIDCConnectTokenURL:              req.OIDCConnectTokenURL,
-		OIDCConnectUserInfoURL:           req.OIDCConnectUserInfoURL,
-		OIDCConnectJWKSURL:               req.OIDCConnectJWKSURL,
-		OIDCConnectScopes:                req.OIDCConnectScopes,
-		OIDCConnectRedirectURL:           req.OIDCConnectRedirectURL,
-		OIDCConnectFrontendRedirectURL:   req.OIDCConnectFrontendRedirectURL,
-		OIDCConnectTokenAuthMethod:       req.OIDCConnectTokenAuthMethod,
-		OIDCConnectUsePKCE:               oidcUsePKCE,
-		OIDCConnectValidateIDToken:       oidcValidateIDToken,
-		OIDCConnectAllowedSigningAlgs:    req.OIDCConnectAllowedSigningAlgs,
-		OIDCConnectClockSkewSeconds:      req.OIDCConnectClockSkewSeconds,
-		OIDCConnectRequireEmailVerified:  req.OIDCConnectRequireEmailVerified,
-		OIDCConnectUserInfoEmailPath:     req.OIDCConnectUserInfoEmailPath,
-		OIDCConnectUserInfoIDPath:        req.OIDCConnectUserInfoIDPath,
-		OIDCConnectUserInfoUsernamePath:  req.OIDCConnectUserInfoUsernamePath,
-		GitHubOAuthEnabled:               req.GitHubOAuthEnabled,
-		GitHubOAuthClientID:              req.GitHubOAuthClientID,
-		GitHubOAuthClientSecret:          req.GitHubOAuthClientSecret,
-		GitHubOAuthRedirectURL:           req.GitHubOAuthRedirectURL,
-		GitHubOAuthFrontendRedirectURL:   req.GitHubOAuthFrontendRedirectURL,
-		GoogleOAuthEnabled:               req.GoogleOAuthEnabled,
-		GoogleOAuthClientID:              req.GoogleOAuthClientID,
-		GoogleOAuthClientSecret:          req.GoogleOAuthClientSecret,
-		GoogleOAuthRedirectURL:           req.GoogleOAuthRedirectURL,
-		GoogleOAuthFrontendRedirectURL:   req.GoogleOAuthFrontendRedirectURL,
-		SiteName:                         req.SiteName,
+		RegistrationEnabled:                    req.RegistrationEnabled,
+		EmailVerifyEnabled:                     req.EmailVerifyEnabled,
+		RegistrationEmailSuffixWhitelist:       req.RegistrationEmailSuffixWhitelist,
+		PromoCodeEnabled:                       req.PromoCodeEnabled,
+		PasswordResetEnabled:                   req.PasswordResetEnabled,
+		FrontendURL:                            req.FrontendURL,
+		InvitationCodeEnabled:                  req.InvitationCodeEnabled,
+		TotpEnabled:                            req.TotpEnabled,
+		LoginAgreementEnabled:                  req.LoginAgreementEnabled,
+		LoginAgreementMode:                     loginAgreementMode,
+		LoginAgreementUpdatedAt:                loginAgreementUpdatedAt,
+		LoginAgreementDocuments:                loginAgreementDocuments,
+		SMTPHost:                               req.SMTPHost,
+		SMTPPort:                               req.SMTPPort,
+		SMTPUsername:                           req.SMTPUsername,
+		SMTPPassword:                           req.SMTPPassword,
+		SMTPFrom:                               req.SMTPFrom,
+		SMTPFromName:                           req.SMTPFromName,
+		SMTPUseTLS:                             req.SMTPUseTLS,
+		TurnstileEnabled:                       req.TurnstileEnabled,
+		TurnstileSiteKey:                       req.TurnstileSiteKey,
+		TurnstileSecretKey:                     req.TurnstileSecretKey,
+		LinuxDoConnectEnabled:                  req.LinuxDoConnectEnabled,
+		LinuxDoConnectClientID:                 req.LinuxDoConnectClientID,
+		LinuxDoConnectClientSecret:             req.LinuxDoConnectClientSecret,
+		LinuxDoConnectRedirectURL:              req.LinuxDoConnectRedirectURL,
+		DingTalkConnectEnabled:                 req.DingTalkConnectEnabled,
+		DingTalkConnectClientID:                req.DingTalkConnectClientID,
+		DingTalkConnectClientSecret:            req.DingTalkConnectClientSecret,
+		DingTalkConnectRedirectURL:             req.DingTalkConnectRedirectURL,
+		DingTalkConnectCorpRestrictionPolicy:   req.DingTalkConnectCorpRestrictionPolicy,
+		DingTalkConnectInternalCorpID:          req.DingTalkConnectInternalCorpID,
+		DingTalkConnectBypassRegistration:      req.DingTalkConnectBypassRegistration,
+		DingTalkConnectSyncCorpEmail:           req.DingTalkConnectSyncCorpEmail,
+		DingTalkConnectSyncDisplayName:         req.DingTalkConnectSyncDisplayName,
+		DingTalkConnectSyncDept:                req.DingTalkConnectSyncDept,
+		DingTalkConnectSyncCorpEmailAttrKey:    req.DingTalkConnectSyncCorpEmailAttrKey,
+		DingTalkConnectSyncDisplayNameAttrKey:  req.DingTalkConnectSyncDisplayNameAttrKey,
+		DingTalkConnectSyncDeptAttrKey:         req.DingTalkConnectSyncDeptAttrKey,
+		DingTalkConnectSyncCorpEmailAttrName:   req.DingTalkConnectSyncCorpEmailAttrName,
+		DingTalkConnectSyncDisplayNameAttrName: req.DingTalkConnectSyncDisplayNameAttrName,
+		DingTalkConnectSyncDeptAttrName:        req.DingTalkConnectSyncDeptAttrName,
+		WeChatConnectEnabled:                   req.WeChatConnectEnabled,
+		WeChatConnectAppID:                     req.WeChatConnectAppID,
+		WeChatConnectAppSecret:                 req.WeChatConnectAppSecret,
+		WeChatConnectOpenAppID:                 req.WeChatConnectOpenAppID,
+		WeChatConnectOpenAppSecret:             req.WeChatConnectOpenAppSecret,
+		WeChatConnectMPAppID:                   req.WeChatConnectMPAppID,
+		WeChatConnectMPAppSecret:               req.WeChatConnectMPAppSecret,
+		WeChatConnectMobileAppID:               req.WeChatConnectMobileAppID,
+		WeChatConnectMobileAppSecret:           req.WeChatConnectMobileAppSecret,
+		WeChatConnectOpenEnabled:               req.WeChatConnectOpenEnabled,
+		WeChatConnectMPEnabled:                 req.WeChatConnectMPEnabled,
+		WeChatConnectMobileEnabled:             req.WeChatConnectMobileEnabled,
+		WeChatConnectMode:                      req.WeChatConnectMode,
+		WeChatConnectScopes:                    req.WeChatConnectScopes,
+		WeChatConnectRedirectURL:               req.WeChatConnectRedirectURL,
+		WeChatConnectFrontendRedirectURL:       req.WeChatConnectFrontendRedirectURL,
+		OIDCConnectEnabled:                     req.OIDCConnectEnabled,
+		OIDCConnectProviderName:                req.OIDCConnectProviderName,
+		OIDCConnectClientID:                    req.OIDCConnectClientID,
+		OIDCConnectClientSecret:                req.OIDCConnectClientSecret,
+		OIDCConnectIssuerURL:                   req.OIDCConnectIssuerURL,
+		OIDCConnectDiscoveryURL:                req.OIDCConnectDiscoveryURL,
+		OIDCConnectAuthorizeURL:                req.OIDCConnectAuthorizeURL,
+		OIDCConnectTokenURL:                    req.OIDCConnectTokenURL,
+		OIDCConnectUserInfoURL:                 req.OIDCConnectUserInfoURL,
+		OIDCConnectJWKSURL:                     req.OIDCConnectJWKSURL,
+		OIDCConnectScopes:                      req.OIDCConnectScopes,
+		OIDCConnectRedirectURL:                 req.OIDCConnectRedirectURL,
+		OIDCConnectFrontendRedirectURL:         req.OIDCConnectFrontendRedirectURL,
+		OIDCConnectTokenAuthMethod:             req.OIDCConnectTokenAuthMethod,
+		OIDCConnectUsePKCE:                     oidcUsePKCE,
+		OIDCConnectValidateIDToken:             oidcValidateIDToken,
+		OIDCConnectAllowedSigningAlgs:          req.OIDCConnectAllowedSigningAlgs,
+		OIDCConnectClockSkewSeconds:            req.OIDCConnectClockSkewSeconds,
+		OIDCConnectRequireEmailVerified:        req.OIDCConnectRequireEmailVerified,
+		OIDCConnectUserInfoEmailPath:           req.OIDCConnectUserInfoEmailPath,
+		OIDCConnectUserInfoIDPath:              req.OIDCConnectUserInfoIDPath,
+		OIDCConnectUserInfoUsernamePath:        req.OIDCConnectUserInfoUsernamePath,
+		GitHubOAuthEnabled:                     req.GitHubOAuthEnabled,
+		GitHubOAuthClientID:                    req.GitHubOAuthClientID,
+		GitHubOAuthClientSecret:                req.GitHubOAuthClientSecret,
+		GitHubOAuthRedirectURL:                 req.GitHubOAuthRedirectURL,
+		GitHubOAuthFrontendRedirectURL:         req.GitHubOAuthFrontendRedirectURL,
+		GoogleOAuthEnabled:                     req.GoogleOAuthEnabled,
+		GoogleOAuthClientID:                    req.GoogleOAuthClientID,
+		GoogleOAuthClientSecret:                req.GoogleOAuthClientSecret,
+		GoogleOAuthRedirectURL:                 req.GoogleOAuthRedirectURL,
+		GoogleOAuthFrontendRedirectURL:         req.GoogleOAuthFrontendRedirectURL,
+		SiteName:                               req.SiteName,
 		SiteLogo: func() string {
 			if hasSiteLogoField {
 				return strings.TrimSpace(req.SiteLogo)
@@ -2307,6 +2577,22 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		LinuxDoConnectClientID:                    updatedSettings.LinuxDoConnectClientID,
 		LinuxDoConnectClientSecretConfigured:      updatedSettings.LinuxDoConnectClientSecretConfigured,
 		LinuxDoConnectRedirectURL:                 updatedSettings.LinuxDoConnectRedirectURL,
+		DingTalkConnectEnabled:                    updatedSettings.DingTalkConnectEnabled,
+		DingTalkConnectClientID:                   updatedSettings.DingTalkConnectClientID,
+		DingTalkConnectClientSecretConfigured:     updatedSettings.DingTalkConnectClientSecretConfigured,
+		DingTalkConnectRedirectURL:                updatedSettings.DingTalkConnectRedirectURL,
+		DingTalkConnectCorpRestrictionPolicy:      updatedSettings.DingTalkConnectCorpRestrictionPolicy,
+		DingTalkConnectInternalCorpID:             updatedSettings.DingTalkConnectInternalCorpID,
+		DingTalkConnectBypassRegistration:         updatedSettings.DingTalkConnectBypassRegistration,
+		DingTalkConnectSyncCorpEmail:              updatedSettings.DingTalkConnectSyncCorpEmail,
+		DingTalkConnectSyncDisplayName:            updatedSettings.DingTalkConnectSyncDisplayName,
+		DingTalkConnectSyncDept:                   updatedSettings.DingTalkConnectSyncDept,
+		DingTalkConnectSyncCorpEmailAttrKey:       updatedSettings.DingTalkConnectSyncCorpEmailAttrKey,
+		DingTalkConnectSyncDisplayNameAttrKey:     updatedSettings.DingTalkConnectSyncDisplayNameAttrKey,
+		DingTalkConnectSyncDeptAttrKey:            updatedSettings.DingTalkConnectSyncDeptAttrKey,
+		DingTalkConnectSyncCorpEmailAttrName:      updatedSettings.DingTalkConnectSyncCorpEmailAttrName,
+		DingTalkConnectSyncDisplayNameAttrName:    updatedSettings.DingTalkConnectSyncDisplayNameAttrName,
+		DingTalkConnectSyncDeptAttrName:           updatedSettings.DingTalkConnectSyncDeptAttrName,
 		WeChatConnectEnabled:                      updatedSettings.WeChatConnectEnabled,
 		WeChatConnectAppID:                        updatedSettings.WeChatConnectAppID,
 		WeChatConnectAppSecretConfigured:          updatedSettings.WeChatConnectAppSecretConfigured,
