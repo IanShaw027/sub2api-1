@@ -2511,6 +2511,193 @@ func TestOpenAIStreamingPassthroughErrorEventServerOverloadedAfterOutputReturnsR
 	require.NotContains(t, rec.Body.String(), "server_is_overloaded")
 }
 
+func TestOpenAIStreamingRetryAfterPartialOverloadDedupesRetriedPrefix(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Gateway: config.GatewayConfig{
+			MaxLineSize: defaultMaxLineSize,
+		},
+	}
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+	account := &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}
+
+	firstResp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			"event: response.created",
+			`data: {"type":"response.created","response":{"id":"resp_first"}}`,
+			"",
+			"event: response.output_text.delta",
+			`data: {"type":"response.output_text.delta","delta":"hello"}`,
+			"",
+			"event: error",
+			`data: {"type":"error","error":{"type":"service_unavailable_error","code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later.","param":null},"sequence_number":2}`,
+			"",
+		}, "\n"))),
+		Header: http.Header{"X-Request-Id": []string{"rid-first"}},
+	}
+
+	_, err := svc.handleStreamingResponse(c.Request.Context(), firstResp, c, account, time.Now(), "model", "model")
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.RetryableOnSameAccount)
+
+	secondResp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			"event: response.created",
+			`data: {"type":"response.created","response":{"id":"resp_retry"}}`,
+			"",
+			"event: response.output_text.delta",
+			`data: {"type":"response.output_text.delta","delta":"hello"}`,
+			"",
+			"event: response.output_text.delta",
+			`data: {"type":"response.output_text.delta","delta":" world"}`,
+			"",
+			"event: response.completed",
+			`data: {"type":"response.completed","response":{"id":"resp_retry","usage":{"input_tokens":4,"output_tokens":2}}}`,
+			"",
+			`data: [DONE]`,
+			"",
+		}, "\n"))),
+		Header: http.Header{"X-Request-Id": []string{"rid-retry"}},
+	}
+
+	result, err := svc.handleStreamingResponse(c.Request.Context(), secondResp, c, account, time.Now(), "model", "model")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 4, result.usage.InputTokens)
+	require.Equal(t, 2, result.usage.OutputTokens)
+
+	body := rec.Body.String()
+	require.Equal(t, 1, strings.Count(body, `"type":"response.created"`))
+	require.Equal(t, 1, strings.Count(body, `"delta":"hello"`))
+	require.Equal(t, 1, strings.Count(body, `"delta":" world"`))
+	require.NotContains(t, body, "server_is_overloaded")
+}
+
+func TestOpenAIStreamingPassthroughRetryAfterPartialOverloadDedupesRetriedPrefix(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Gateway: config.GatewayConfig{
+			MaxLineSize: defaultMaxLineSize,
+		},
+	}
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+	account := &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}
+
+	firstResp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			"event: response.created",
+			`data: {"type":"response.created","response":{"id":"resp_first"}}`,
+			"",
+			"event: response.output_text.delta",
+			`data: {"type":"response.output_text.delta","delta":"hello"}`,
+			"",
+			"event: error",
+			`data: {"type":"error","error":{"type":"service_unavailable_error","code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later.","param":null},"sequence_number":2}`,
+			"",
+		}, "\n"))),
+		Header: http.Header{"X-Request-Id": []string{"rid-first-pass"}},
+	}
+
+	_, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), firstResp, c, account, time.Now(), "model", "model")
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.RetryableOnSameAccount)
+
+	secondResp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			"event: response.created",
+			`data: {"type":"response.created","response":{"id":"resp_retry"}}`,
+			"",
+			"event: response.output_text.delta",
+			`data: {"type":"response.output_text.delta","delta":"hello"}`,
+			"",
+			"event: response.output_text.delta",
+			`data: {"type":"response.output_text.delta","delta":" world"}`,
+			"",
+			"event: response.completed",
+			`data: {"type":"response.completed","response":{"id":"resp_retry","usage":{"input_tokens":4,"output_tokens":2}}}`,
+			"",
+			`data: [DONE]`,
+			"",
+		}, "\n"))),
+		Header: http.Header{"X-Request-Id": []string{"rid-retry-pass"}},
+	}
+
+	result, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), secondResp, c, account, time.Now(), "model", "model")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 4, result.usage.InputTokens)
+	require.Equal(t, 2, result.usage.OutputTokens)
+
+	body := rec.Body.String()
+	require.Equal(t, 1, strings.Count(body, `"type":"response.created"`))
+	require.Equal(t, 1, strings.Count(body, `"delta":"hello"`))
+	require.Equal(t, 1, strings.Count(body, `"delta":" world"`))
+	require.NotContains(t, body, "server_is_overloaded")
+}
+
+func TestOpenAIStreamingCompletedBeforeTrailingOverloadTreatsStreamAsSuccess(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Gateway: config.GatewayConfig{
+			MaxLineSize: defaultMaxLineSize,
+		},
+	}
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			"event: response.created",
+			`data: {"type":"response.created","response":{"id":"resp_done"}}`,
+			"",
+			"event: response.output_text.delta",
+			`data: {"type":"response.output_text.delta","delta":"hello"}`,
+			"",
+			"event: response.completed",
+			`data: {"type":"response.completed","response":{"id":"resp_done","usage":{"input_tokens":6,"output_tokens":3}}}`,
+			"",
+			"event: error",
+			`data: {"type":"error","error":{"type":"service_unavailable_error","code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later.","param":null},"sequence_number":9}`,
+			"",
+			`data: [DONE]`,
+			"",
+		}, "\n"))),
+		Header: http.Header{"X-Request-Id": []string{"rid-trailing-overload"}},
+	}
+
+	result, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}, time.Now(), "model", "model")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 6, result.usage.InputTokens)
+	require.Equal(t, 3, result.usage.OutputTokens)
+	require.Contains(t, rec.Body.String(), `"delta":"hello"`)
+	require.Contains(t, rec.Body.String(), `"type":"response.completed"`)
+	require.NotContains(t, rec.Body.String(), "server_is_overloaded")
+}
+
 func TestOpenAIStreamingPassthroughSoftRateLimitAdvisoryBeforeOutputReturnsFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}

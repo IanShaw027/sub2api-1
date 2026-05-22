@@ -55,6 +55,30 @@ func TestOpenAIHandleFailoverExhausted_StreamRetryableOverloadReturnsSSEOverload
 	require.NotContains(t, body, "Upstream service temporarily unavailable")
 }
 
+func TestOpenAIHandleFailoverExhausted_PartialSSEOutputKeepsStreamingErrorShape(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Header("Content-Type", "text/event-stream")
+
+	_, err := c.Writer.Write([]byte("data: {\"type\":\"response.output_text.delta\"}\n\n"))
+	require.NoError(t, err)
+
+	h := &OpenAIGatewayHandler{}
+	h.handleFailoverExhausted(c, &service.UpstreamFailoverError{
+		StatusCode:             http.StatusServiceUnavailable,
+		RetryableOnSameAccount: true,
+		ResponseBody:           []byte(`{"error":{"type":"upstream_error","message":"Upstream service overloaded, please retry later"}}`),
+	}, false)
+
+	body := w.Body.String()
+	require.Contains(t, body, "data: {\"type\":\"response.output_text.delta\"}\n\n")
+	require.Contains(t, body, "event: error\n")
+	require.Contains(t, body, `"type":"overloaded_error"`)
+	require.Contains(t, body, `"message":"Upstream service overloaded, please retry later"`)
+}
+
 func TestOpenAIHandleFailoverExhausted_Generic503StillReturnsBadGateway(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -69,4 +93,24 @@ func TestOpenAIHandleFailoverExhausted_Generic503StillReturnsBadGateway(t *testi
 
 	require.Equal(t, http.StatusBadGateway, w.Code)
 	require.Contains(t, strings.TrimSpace(w.Body.String()), "Upstream service temporarily unavailable")
+}
+
+func TestClearOpenAIStreamRetryReplayState_RemovesPriorAccountReplayState(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Set("openai_stream_retry_replay_state", map[string]any{
+		"visibleFrameSignatures": []string{"response.created"},
+		"emittedTextPrefix":      "partial output",
+	})
+	c.Set("unrelated", "keep")
+
+	clearOpenAIStreamRetryReplayState(c)
+
+	_, exists := c.Get("openai_stream_retry_replay_state")
+	require.False(t, exists)
+	other, exists := c.Get("unrelated")
+	require.True(t, exists)
+	require.Equal(t, "keep", other)
 }

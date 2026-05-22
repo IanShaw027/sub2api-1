@@ -40,6 +40,8 @@ type OpenAIGatewayHandler struct {
 	cfg                      *config.Config
 }
 
+const openAIStreamRetryReplayStateContextKey = "openai_stream_retry_replay_state"
+
 func resolveOpenAIMessagesDispatchMappedModel(apiKey *service.APIKey, requestedModel string) string {
 	if apiKey == nil || apiKey.Group == nil {
 		return ""
@@ -405,6 +407,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
+					clearOpenAIStreamRetryReplayState(c)
 					switchCount++
 					reqLog.Warn("openai.upstream_failover_switching",
 						zap.Int64("account_id", account.ID),
@@ -1800,7 +1803,7 @@ func (h *OpenAIGatewayHandler) mapUpstreamError(statusCode int) (int, string, st
 
 // handleStreamingAwareError handles errors that may occur after streaming has started
 func (h *OpenAIGatewayHandler) handleStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
-	if streamStarted {
+	if openAIStreamingResponseStarted(c, streamStarted) {
 		// Stream already started, send error as SSE event then close
 		flusher, ok := c.Writer.(http.Flusher)
 		if ok {
@@ -1816,6 +1819,24 @@ func (h *OpenAIGatewayHandler) handleStreamingAwareError(c *gin.Context, status 
 
 	// Normal case: return JSON response with proper status code
 	h.errorResponse(c, status, errType, message)
+}
+
+func clearOpenAIStreamRetryReplayState(c *gin.Context) {
+	if c == nil || c.Keys == nil {
+		return
+	}
+	delete(c.Keys, openAIStreamRetryReplayStateContextKey)
+}
+
+func openAIStreamingResponseStarted(c *gin.Context, streamStarted bool) bool {
+	if streamStarted {
+		return true
+	}
+	if c == nil || c.Writer == nil || !c.Writer.Written() {
+		return false
+	}
+	contentType := strings.ToLower(strings.TrimSpace(c.Writer.Header().Get("Content-Type")))
+	return strings.Contains(contentType, "text/event-stream")
 }
 
 // ensureForwardErrorResponse 在 Forward 返回错误但尚未写响应时补写统一错误响应。
