@@ -8784,6 +8784,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		IsSubscriptionBill:    isSubscriptionBilling,
 		AccountRateMultiplier: accountRateMultiplier,
 		APIKeyService:         input.APIKeyService,
+		UsageLog:              usageLog,
 	}, s.billingDeps(), s.usageBillingRepo)
 
 	if billingErr != nil {
@@ -8981,6 +8982,7 @@ func (s *GatewayService) buildRecordUsageLog(
 		IPAddress:             optionalTrimmedStringPtr(input.IPAddress),
 		GroupID:               apiKey.GroupID,
 		SubscriptionID:        optionalSubscriptionID(subscription),
+		RequestType:           resolveGatewayUsageLogRequestType(result),
 		CreatedAt:             time.Now(),
 	}
 	if result.ImageCount > 0 {
@@ -8997,6 +8999,21 @@ func (s *GatewayService) buildRecordUsageLog(
 	}
 
 	return usageLog
+}
+
+func resolveGatewayUsageLogRequestType(result *ForwardResult) RequestType {
+	if result == nil {
+		return RequestTypeUnknown
+	}
+	if result.ImageCount > 0 ||
+		result.Usage.ImageOutputTokens > 0 ||
+		strings.TrimSpace(result.ImageSize) != "" ||
+		strings.TrimSpace(result.ImageInputSize) != "" ||
+		strings.TrimSpace(result.ImageOutputSize) != "" ||
+		len(result.ImageOutputSizes) > 0 {
+		return RequestTypeImage
+	}
+	return RequestTypeFromLegacy(result.Stream, false)
 }
 
 // resolveBillingMode 根据计费结果和请求类型确定计费模式。

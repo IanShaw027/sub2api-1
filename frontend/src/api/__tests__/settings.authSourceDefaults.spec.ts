@@ -26,7 +26,7 @@ describe("admin settings auth source defaults helpers", () => {
     });
 
     expect(state.email).toEqual({
-      enabled: true,
+      enabled: false,
       balance: 9.5,
       concurrency: 3,
       subscriptions: [{ group_id: 1, validity_days: 30 }],
@@ -135,7 +135,7 @@ describe("admin settings auth source defaults helpers", () => {
       auth_source_default_wechat_concurrency: 5,
       auth_source_default_wechat_subscriptions: [],
       auth_source_default_wechat_grant_on_signup: false,
-      auth_source_default_wechat_grant_on_first_bind: false,
+      auth_source_default_wechat_grant_on_first_bind: true,
     });
   });
 

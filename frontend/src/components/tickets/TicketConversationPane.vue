@@ -212,7 +212,14 @@ watch(() => props.clearComposerKey, () => {
   clearPendingAttachments()
 })
 
+watch(() => props.ticketId, (nextTicketID, previousTicketID) => {
+  if (nextTicketID === previousTicketID) return
+  composerValue.value = ''
+  clearPendingAttachments()
+})
+
 function submitReply() {
+  if (props.sending || uploadingAttachment.value) return
   const content = composerValue.value.trim()
   const atts = pendingAttachments.value.length > 0
     ? pendingAttachments.value.map(a => ({ media_id: a.media_id }))

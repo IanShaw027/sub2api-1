@@ -451,7 +451,7 @@ function buildWechatOAuthAuthorizeUrl(
       redirectUrl.searchParams.delete('plan_id')
     }
 
-    if (context.orderAmount > 0) {
+    if (context.orderType === 'balance' && context.orderAmount > 0) {
       redirectUrl.searchParams.set('amount', String(context.orderAmount))
     } else {
       redirectUrl.searchParams.delete('amount')
@@ -810,6 +810,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
               orderType,
               planId,
               paymentType: visibleMethod,
+              wechatResumeToken: options.wechatResumeToken,
               attempted: options.mobileQrFallbackAttempted === true,
             },
           )
@@ -828,6 +829,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
           orderType,
           planId,
           paymentType: visibleMethod,
+          wechatResumeToken: options.wechatResumeToken,
           attempted: options.mobileQrFallbackAttempted === true,
         })
         if (!fallbackApplied) {
@@ -858,6 +860,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
       orderType,
       planId,
       paymentType: requestType,
+      wechatResumeToken: options.wechatResumeToken,
       attempted: options.mobileQrFallbackAttempted === true,
     })) {
       return
@@ -885,6 +888,7 @@ interface MobileQrFallbackContext {
   orderType: OrderType
   planId?: number
   paymentType: string
+  wechatResumeToken?: string
   attempted: boolean
 }
 
@@ -937,6 +941,9 @@ async function attemptMobileQrFallback(err: unknown, context: MobileQrFallbackCo
       isMobile: false,
       isWechatBrowser: false,
     })
+    if (context.wechatResumeToken) {
+      payload.wechat_resume_token = context.wechatResumeToken
+    }
     const result = await paymentStore.createOrder(payload) as CreateOrderResult & { resume_token?: string }
     const stripeMethod = visibleMethod === 'wxpay' ? 'wechat_pay' : 'alipay'
     const stripeRouteUrl = result.client_secret
@@ -993,7 +1000,11 @@ function applyScenarioError(err: unknown, paymentMethod: string): boolean {
 }
 
 async function resumeWechatPaymentFromQuery() {
-  const resume = parseWechatResumeRoute(route.query, checkout.value.plans, validAmount.value)
+  const resume = parseWechatResumeRoute(
+    route.query,
+    checkout.value.plans,
+    paymentState.value.amount > 0 ? paymentState.value.amount : validAmount.value,
+  )
   if (!resume) {
     return
   }
@@ -1009,7 +1020,7 @@ async function resumeWechatPaymentFromQuery() {
   await router.replace({ path: route.path, query: stripWechatResumeQuery(route.query) })
 
   if (resume.wechatResumeToken) {
-    await createOrder(0, resume.orderType, resume.planId, {
+    await createOrder(resume.orderAmount, resume.orderType, resume.planId, {
       wechatResumeToken: resume.wechatResumeToken,
       paymentType: resume.paymentType,
       isResume: true,

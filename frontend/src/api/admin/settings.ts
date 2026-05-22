@@ -229,7 +229,7 @@ export function buildAuthSourceDefaultsState(
     const grantOnFirstBind =
       raw[`auth_source_default_${source}_grant_on_first_bind`] === true;
     acc[source] = {
-      enabled: grantOnSignup || grantOnFirstBind,
+      enabled: grantOnSignup,
       balance: Number(
         raw[`auth_source_default_${source}_balance`] ??
           AUTH_SOURCE_DEFAULT_BALANCE,
@@ -271,7 +271,7 @@ export function appendAuthSourceDefaultsToUpdateRequest(
     target[`auth_source_default_${source}_grant_on_signup`] =
       current.enabled;
     target[`auth_source_default_${source}_grant_on_first_bind`] =
-      current.enabled && current.grant_on_first_bind;
+      current.grant_on_first_bind;
   }
 
   return payload;
@@ -822,6 +822,7 @@ export interface SystemSettings {
   balance_low_notify_enabled: boolean;
   balance_low_notify_threshold: number;
   balance_low_notify_recharge_url: string;
+  subscription_expiry_notify_enabled: boolean;
   account_quota_notify_enabled: boolean;
   account_quota_notify_emails: NotifyEmailEntry[];
 
@@ -1068,6 +1069,7 @@ export interface UpdateSettingsRequest {
   balance_low_notify_enabled?: boolean;
   balance_low_notify_threshold?: number;
   balance_low_notify_recharge_url?: string;
+  subscription_expiry_notify_enabled?: boolean;
   account_quota_notify_enabled?: boolean;
   account_quota_notify_emails?: NotifyEmailEntry[];
 

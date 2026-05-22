@@ -6607,6 +6607,10 @@ export default {
         rechargeUrlPlaceholder: 'https://example.com/payment',
         rechargeUrlHint: 'A top-up button will appear in the email when set',
       },
+      subscriptionExpiryNotify: {
+        title: 'Subscription Expiry Notification',
+        description: 'Send reminder emails before user subscriptions expire',
+      },
       quotaNotify: {
         title: 'Account Quota Notification',
         description: 'Notify admins when account quota usage reaches alert threshold',

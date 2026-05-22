@@ -429,6 +429,21 @@ describe('PaymentView WeChat JSAPI flow', () => {
         qr_code: 'weixin://wxpay/bizpayurl?pr=fallback-native',
         out_trade_no: 'sub2_qr_778',
       })
+    window.localStorage.setItem(PAYMENT_RECOVERY_STORAGE_KEY, JSON.stringify({
+      orderId: 777,
+      amount: 88,
+      qrCode: 'weixin://wxpay/bizpayurl?pr=resume-native',
+      expiresAt: '2099-01-01T00:10:00.000Z',
+      paymentType: 'wxpay',
+      payUrl: '',
+      outTradeNo: 'sub2_qr_777',
+      clientSecret: '',
+      payAmount: 88,
+      orderType: 'balance',
+      paymentMode: 'native',
+      resumeToken: 'resume-token-h5',
+      createdAt: Date.UTC(2099, 0, 1, 0, 0, 0),
+    }))
 
     shallowMount(PaymentView, {
       global: {
@@ -442,14 +457,17 @@ describe('PaymentView WeChat JSAPI flow', () => {
     await flushPromises()
 
     expect(createOrder).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      amount: 88,
       payment_type: 'wxpay',
       is_mobile: true,
       wechat_resume_token: 'resume-token-h5',
     }))
     expect(createOrder).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      amount: 88,
       payment_type: 'wxpay',
       is_mobile: false,
       payment_source: 'hosted_redirect',
+      wechat_resume_token: 'resume-token-h5',
     }))
     expect(showWarning).toHaveBeenCalledWith('payment.errors.mobilePaymentFallbackToQr')
     expect(showError).not.toHaveBeenCalled()

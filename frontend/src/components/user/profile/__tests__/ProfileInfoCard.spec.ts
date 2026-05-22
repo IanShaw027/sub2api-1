@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import ProfileInfoCard from '@/components/user/profile/ProfileInfoCard.vue'
+import ProfileIdentityBindingsSection from '@/components/user/profile/ProfileIdentityBindingsSection.vue'
 import type { User } from '@/types'
 
 vi.mock('vue-router', () => ({
@@ -168,5 +169,23 @@ describe('ProfileInfoCard', () => {
     expect(wrapper.find('[data-testid="profile-side-column"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="profile-basics-panel"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="profile-auth-bindings-panel"]').exists()).toBe(true)
+  })
+
+  it('passes the DingTalk availability flag through to the identity bindings section', () => {
+    const wrapper = mount(ProfileInfoCard, {
+      props: {
+        user: createUser(),
+        dingtalkEnabled: true,
+      },
+      global: {
+        stubs: {
+          Icon: true,
+        },
+      },
+    })
+
+    expect(
+      wrapper.getComponent(ProfileIdentityBindingsSection).props('dingtalkEnabled'),
+    ).toBe(true)
   })
 })

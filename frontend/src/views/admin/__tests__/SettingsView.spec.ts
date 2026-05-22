@@ -1167,6 +1167,61 @@ describe("admin SettingsView wechat connect controls", () => {
     );
   });
 
+  it("preserves first-bind auth-source grants without forcing signup grants", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      auth_source_default_email_balance: 5,
+      auth_source_default_email_grant_on_signup: false,
+      auth_source_default_email_grant_on_first_bind: true,
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openUsersTab(wrapper);
+
+    expect(
+      (
+        wrapper.get('[data-testid="auth-source-email-enabled"]')
+          .element as HTMLInputElement
+      ).checked,
+    ).toBe(false);
+    expect(
+      wrapper.find('[data-testid="auth-source-email-panel"]').exists(),
+    ).toBe(true);
+    expect(
+      (
+        wrapper.get('[data-testid="auth-source-email-first-bind-enabled"]')
+          .element as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        auth_source_default_email_grant_on_signup: false,
+        auth_source_default_email_grant_on_first_bind: true,
+      }),
+    );
+  });
+
+  it("preserves notification settings values when saving untouched data", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        balance_low_notify_recharge_url: "",
+        subscription_expiry_notify_enabled: true,
+      }),
+    );
+  });
+
   it("does not block save for duplicate subscriptions on disabled source bonus sections", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,

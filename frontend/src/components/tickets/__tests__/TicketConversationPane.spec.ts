@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 
 import TicketConversationPane from '../TicketConversationPane.vue'
@@ -91,5 +91,103 @@ describe('TicketConversationPane', () => {
     await textarea.setValue('native composing')
     await textarea.trigger('keydown', { key: 'Enter', isComposing: true })
     expect(wrapper.emitted('reply')).toHaveLength(1)
+  })
+
+  it('does not submit on Enter while sending or while an attachment upload is in progress', async () => {
+    const originalCreateObjectURL = URL.createObjectURL
+    const originalRevokeObjectURL = URL.revokeObjectURL
+    let uploadResolver!: (value: { id: number; public_url: string; mime_type: string }) => void
+    const pendingUpload = new Promise<{ id: number; public_url: string; mime_type: string }>((resolve) => {
+      uploadResolver = resolve
+    })
+    URL.createObjectURL = vi.fn(() => 'blob:pending-ticket-image') as typeof URL.createObjectURL
+    URL.revokeObjectURL = vi.fn() as typeof URL.revokeObjectURL
+
+    const uploadFn = vi.fn(() => pendingUpload)
+    const wrapper = mount(TicketConversationPane, {
+      props: {
+        title: 'Conversation',
+        emptyText: 'Empty',
+        messages: [],
+        uploadFn,
+        ticketId: 1,
+      },
+    })
+
+    const textarea = wrapper.get('textarea')
+    await textarea.setValue('draft reply')
+
+    await wrapper.setProps({ sending: true })
+    await textarea.trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('reply')).toBeUndefined()
+
+    await wrapper.setProps({ sending: false })
+    const fileInput = wrapper.get('input[type="file"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [new File(['image'], 'ticket.png', { type: 'image/png' })],
+      configurable: true,
+    })
+    await fileInput.trigger('change')
+    await Promise.resolve()
+
+    await textarea.trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('reply')).toBeUndefined()
+
+    uploadResolver({
+      id: 9,
+      public_url: 'https://example.com/ticket.png',
+      mime_type: 'image/png',
+    })
+    await flushPromises()
+
+    URL.createObjectURL = originalCreateObjectURL
+    URL.revokeObjectURL = originalRevokeObjectURL
+  })
+
+  it('clears the draft and pending attachments when switching to another ticket', async () => {
+    const originalCreateObjectURL = URL.createObjectURL
+    const originalRevokeObjectURL = URL.revokeObjectURL
+    const revokeObjectURL = vi.fn()
+    URL.createObjectURL = vi.fn(() => 'blob:ticket-preview') as typeof URL.createObjectURL
+    URL.revokeObjectURL = revokeObjectURL as typeof URL.revokeObjectURL
+
+    const uploadFn = vi.fn().mockResolvedValue({
+      id: 12,
+      public_url: 'https://example.com/ticket.png',
+      mime_type: 'image/png',
+    })
+    const wrapper = mount(TicketConversationPane, {
+      props: {
+        title: 'Conversation',
+        emptyText: 'Empty',
+        messages: [],
+        uploadFn,
+        ticketId: 1,
+      },
+    })
+
+    const textarea = wrapper.get('textarea')
+    await textarea.setValue('draft reply')
+
+    const fileInput = wrapper.get('input[type="file"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [new File(['image'], 'ticket.png', { type: 'image/png' })],
+      configurable: true,
+    })
+    await fileInput.trigger('change')
+    await flushPromises()
+
+    expect(wrapper.html()).toContain('blob:ticket-preview')
+    expect((textarea.element as HTMLTextAreaElement).value).toBe('draft reply')
+
+    await wrapper.setProps({ ticketId: 2 })
+    await flushPromises()
+
+    expect((textarea.element as HTMLTextAreaElement).value).toBe('')
+    expect(wrapper.html()).not.toContain('blob:ticket-preview')
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:ticket-preview')
+
+    URL.createObjectURL = originalCreateObjectURL
+    URL.revokeObjectURL = originalRevokeObjectURL
   })
 })

@@ -6733,6 +6733,24 @@
                   {{ t("admin.settings.balanceNotify.rechargeUrlHint") }}
                 </p>
               </div>
+              <div
+                class="flex items-center justify-between rounded-2xl border border-gray-100 px-4 py-3 dark:border-dark-700"
+              >
+                <div>
+                  <label
+                    class="mb-0 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >{{ t("admin.settings.subscriptionExpiryNotify.title") }}</label
+                  >
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      t(
+                        "admin.settings.subscriptionExpiryNotify.description",
+                      )
+                    }}
+                  </p>
+                </div>
+                <Toggle v-model="form.subscription_expiry_notify_enabled" />
+              </div>
             </div>
           </div>
 
@@ -7539,6 +7557,7 @@ const form = reactive<SettingsForm>({
   balance_low_notify_enabled: false,
   balance_low_notify_threshold: 0,
   balance_low_notify_recharge_url: "",
+  subscription_expiry_notify_enabled: true,
   account_quota_notify_enabled: false,
   account_quota_notify_emails: [] as NotifyEmailEntry[],
   ai_studio_enabled: false,
@@ -8371,7 +8390,7 @@ function findDuplicateDefaultSubscription(
 
 function isAuthSourceBonusEnabled(source: AuthSourceType): boolean {
   const current = authSourceDefaults[source];
-  return current.enabled;
+  return current.enabled || current.grant_on_first_bind;
 }
 
 function dedupeDefaultSubscriptions(
@@ -8402,8 +8421,7 @@ function buildAuthSourceDefaultsForSubmit(): AuthSourceDefaultsState {
     acc[source] = {
       ...current,
       grant_on_signup: current.enabled,
-      grant_on_first_bind:
-        current.enabled && current.grant_on_first_bind,
+      grant_on_first_bind: current.grant_on_first_bind,
       subscriptions: isAuthSourceBonusEnabled(source)
         ? normalizedSubscriptions
         : dedupeDefaultSubscriptions(normalizedSubscriptions),
@@ -8790,8 +8808,9 @@ async function saveSettings() {
       balance_low_notify_enabled: form.balance_low_notify_enabled,
       balance_low_notify_threshold:
         Number(form.balance_low_notify_threshold) || 0,
-      balance_low_notify_recharge_url: (form.balance_low_notify_recharge_url =
-        form.balance_low_notify_recharge_url || currentOrigin),
+      balance_low_notify_recharge_url: form.balance_low_notify_recharge_url,
+      subscription_expiry_notify_enabled:
+        form.subscription_expiry_notify_enabled,
       account_quota_notify_enabled: form.account_quota_notify_enabled,
       account_quota_notify_emails: (
         form.account_quota_notify_emails || []
