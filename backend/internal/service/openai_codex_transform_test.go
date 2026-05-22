@@ -519,6 +519,32 @@ func TestApplyCodexOAuthTransform_NormalizeCodexTools_PreservesResponsesFunction
 	require.Equal(t, "bash", first["name"])
 }
 
+func TestApplyCodexOAuthTransform_NormalizeCodexTools_FillsMissingParameters(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.1",
+		"tools": []any{
+			map[string]any{
+				"type": "function",
+				"name": "builtin_web_search",
+			},
+		},
+	}
+
+	applyCodexOAuthTransform(reqBody, false, false)
+
+	tools, ok := reqBody["tools"].([]any)
+	require.True(t, ok)
+	require.Len(t, tools, 1)
+
+	first, ok := tools[0].(map[string]any)
+	require.True(t, ok)
+	params, ok := first["parameters"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "object", params["type"])
+	_, hasProperties := params["properties"]
+	require.True(t, hasProperties)
+}
+
 func TestNormalizeOpenAIResponsesImageGenerationTools_RewritesLegacyFields(t *testing.T) {
 	reqBody := map[string]any{
 		"tools": []any{

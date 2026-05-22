@@ -1556,6 +1556,9 @@ func normalizeCodexTools(reqBody map[string]any) bool {
 
 		// OpenAI Responses-style tools use top-level name/parameters.
 		if name, ok := toolMap["name"].(string); ok && strings.TrimSpace(name) != "" {
+			if normalizeCodexFunctionToolParameters(toolMap) {
+				modified = true
+			}
 			validTools = append(validTools, toolMap)
 			continue
 		}
@@ -1593,6 +1596,9 @@ func normalizeCodexTools(reqBody map[string]any) bool {
 				modified = true
 			}
 		}
+		if normalizeCodexFunctionToolParameters(toolMap) {
+			modified = true
+		}
 
 		validTools = append(validTools, toolMap)
 	}
@@ -1602,4 +1608,50 @@ func normalizeCodexTools(reqBody map[string]any) bool {
 	}
 
 	return modified
+}
+
+func normalizeCodexFunctionToolParameters(toolMap map[string]any) bool {
+	if toolMap == nil || strings.TrimSpace(firstNonEmptyString(toolMap["type"])) != "function" {
+		return false
+	}
+
+	paramsValue, hasParams := toolMap["parameters"]
+	if !hasParams || paramsValue == nil {
+		if function, ok := toolMap["function"].(map[string]any); ok && function != nil {
+			if fnParams, ok := function["parameters"]; ok && fnParams != nil {
+				toolMap["parameters"] = fnParams
+				paramsValue = fnParams
+				hasParams = true
+			}
+		}
+	}
+
+	if !hasParams || paramsValue == nil {
+		toolMap["parameters"] = map[string]any{
+			"type":       "object",
+			"properties": map[string]any{},
+		}
+		return true
+	}
+
+	paramsMap, ok := paramsValue.(map[string]any)
+	if !ok {
+		toolMap["parameters"] = map[string]any{
+			"type":       "object",
+			"properties": map[string]any{},
+		}
+		return true
+	}
+
+	changed := false
+	if typ, ok := paramsMap["type"].(string); !ok || strings.TrimSpace(typ) == "" {
+		paramsMap["type"] = "object"
+		changed = true
+	}
+	if _, ok := paramsMap["properties"]; !ok {
+		paramsMap["properties"] = map[string]any{}
+		changed = true
+	}
+	toolMap["parameters"] = paramsMap
+	return changed
 }

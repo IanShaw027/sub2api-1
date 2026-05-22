@@ -456,7 +456,7 @@ func convertChatToolsToResponses(tools []ChatTool, functions []ChatFunction) []R
 			Type:        "function",
 			Name:        t.Function.Name,
 			Description: t.Function.Description,
-			Parameters:  t.Function.Parameters,
+			Parameters:  normalizeToolParameters(t.Function.Parameters),
 			Strict:      t.Function.Strict,
 		}
 		out = append(out, rt)
@@ -468,7 +468,7 @@ func convertChatToolsToResponses(tools []ChatTool, functions []ChatFunction) []R
 			Type:        "function",
 			Name:        f.Name,
 			Description: f.Description,
-			Parameters:  f.Parameters,
+			Parameters:  normalizeToolParameters(f.Parameters),
 			Strict:      f.Strict,
 		}
 		out = append(out, rt)
