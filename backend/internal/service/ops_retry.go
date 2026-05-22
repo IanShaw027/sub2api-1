@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -702,10 +703,113 @@ func extractResponsePreview(w *limitedResponseWriter) (preview string, truncated
 	if len(b) == 0 {
 		return "", w.truncated()
 	}
+	if summary, ok := summarizeKiroEventStreamPreviewForOps(b); ok {
+		return summary, w.truncated()
+	}
+	if looksLikeBinaryResponsePreview(b) {
+		return fmt.Sprintf("[binary response body: %d bytes]", len(b)), w.truncated()
+	}
 	if len(b) > opsRetryResponsePreviewMax {
 		return string(b[:opsRetryResponsePreviewMax]), true
 	}
 	return string(b), w.truncated()
+}
+
+func summarizeKiroEventStreamPreviewForOps(raw []byte) (string, bool) {
+	if len(raw) == 0 {
+		return "", false
+	}
+
+	remaining := raw
+	eventTypes := make([]string, 0, 4)
+	var assistantText strings.Builder
+	frames := 0
+	truncated := false
+
+	for len(remaining) > 0 && frames < 4 {
+		frame, consumed, ok, err := parseKiroFrame(remaining)
+		if err != nil {
+			if frames == 0 {
+				return summarizeKiroEventStreamPreviewByMarker(raw)
+			}
+			truncated = true
+			break
+		}
+		if !ok {
+			if frames == 0 {
+				return summarizeKiroEventStreamPreviewByMarker(raw)
+			}
+			truncated = true
+			break
+		}
+
+		frames++
+		remaining = remaining[consumed:]
+
+		if eventType := strings.TrimSpace(frame.EventType); eventType != "" {
+			eventTypes = append(eventTypes, eventType)
+		} else if messageType := strings.TrimSpace(frame.MessageType); messageType != "" {
+			eventTypes = append(eventTypes, messageType)
+		}
+
+		if frame.EventType == "assistantResponseEvent" {
+			if content := rawStringField(frame.Payload, "content"); content != "" {
+				_, _ = assistantText.WriteString(content)
+			}
+		}
+	}
+
+	if frames == 0 {
+		return "", false
+	}
+	if len(remaining) > 0 {
+		truncated = true
+	}
+
+	parts := []string{fmt.Sprintf("Kiro eventstream %d frame(s)", frames)}
+	if len(eventTypes) > 0 {
+		parts = append(parts, "events="+strings.Join(eventTypes, ", "))
+	}
+	if text := strings.TrimSpace(assistantText.String()); text != "" {
+		parts = append(parts, fmt.Sprintf("assistant_text=%q", truncateString(text, 256)))
+	}
+	if truncated {
+		parts = append(parts, "truncated")
+	}
+
+	return "[" + strings.Join(parts, "; ") + "]", true
+}
+
+func summarizeKiroEventStreamPreviewByMarker(raw []byte) (string, bool) {
+	candidates := []string{
+		"assistantResponseEvent",
+		"toolUseEvent",
+		"contextUsageEvent",
+		"meteringEvent",
+	}
+	events := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		if bytes.Contains(raw, []byte(candidate)) {
+			events = append(events, candidate)
+		}
+	}
+	if len(events) == 0 {
+		return "", false
+	}
+	return "[Kiro eventstream bytes; events=" + strings.Join(events, ", ") + "; truncated]", true
+}
+
+func looksLikeBinaryResponsePreview(raw []byte) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	if bytes.IndexByte(raw, 0) >= 0 {
+		return true
+	}
+	if utf8.Valid(raw) {
+		return false
+	}
+	return true
 }
 
 func containsInt64(items []int64, needle int64) bool {
