@@ -298,4 +298,52 @@ describe('TicketConversationPane', () => {
     })
     await flushPromises()
   })
+
+  it('drops stale upload results when switching A -> B -> A before the original upload resolves', async () => {
+    const originalCreateObjectURL = URL.createObjectURL
+    const originalRevokeObjectURL = URL.revokeObjectURL
+    const createObjectURL = vi.fn(() => 'blob:stale-ticket-upload')
+    URL.createObjectURL = createObjectURL as typeof URL.createObjectURL
+    URL.revokeObjectURL = vi.fn() as typeof URL.revokeObjectURL
+
+    let uploadResolver!: (value: { id: number; public_url: string; mime_type: string }) => void
+    const uploadFn = vi.fn().mockReturnValueOnce(
+      new Promise<{ id: number; public_url: string; mime_type: string }>((resolve) => {
+        uploadResolver = resolve
+      }),
+    )
+
+    const wrapper = mount(TicketConversationPane, {
+      props: {
+        title: 'Conversation',
+        emptyText: 'Empty',
+        messages: [],
+        uploadFn,
+        ticketId: 1,
+      },
+    })
+
+    const fileInput = wrapper.get('input[type="file"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [new File(['one'], 'one.png', { type: 'image/png' })],
+      configurable: true,
+    })
+
+    await fileInput.trigger('change')
+    await Promise.resolve()
+    await wrapper.setProps({ ticketId: 2 })
+    await wrapper.setProps({ ticketId: 1 })
+    uploadResolver({
+      id: 31,
+      public_url: 'https://example.com/one.png',
+      mime_type: 'image/png',
+    })
+    await flushPromises()
+
+    expect(createObjectURL).not.toHaveBeenCalled()
+    expect(wrapper.html()).not.toContain('https://example.com/one.png')
+
+    URL.createObjectURL = originalCreateObjectURL
+    URL.revokeObjectURL = originalRevokeObjectURL
+  })
 })

@@ -243,7 +243,13 @@ async function handleAttachmentUpload(event: Event) {
     for (const file of files) {
       if (!file.type.startsWith('image/')) continue
       const result = await props.uploadFn(file, ticketId)
-      if (!result || props.ticketId !== ticketId) continue
+      if (
+        !result ||
+        props.ticketId !== ticketId ||
+        attachmentUploadGeneration.value !== uploadGeneration
+      ) {
+        continue
+      }
       const previewURL = URL.createObjectURL(file)
       pendingAttachments.value.push({
         media_id: result.id,
