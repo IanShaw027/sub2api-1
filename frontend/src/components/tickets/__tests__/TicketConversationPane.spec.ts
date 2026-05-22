@@ -190,4 +190,53 @@ describe('TicketConversationPane', () => {
     URL.createObjectURL = originalCreateObjectURL
     URL.revokeObjectURL = originalRevokeObjectURL
   })
+
+  it('keeps an in-flight attachment upload bound to the ticket where it started', async () => {
+    let uploadResolver!: (value: { id: number; public_url: string; mime_type: string }) => void
+    const firstUpload = new Promise<{ id: number; public_url: string; mime_type: string }>((resolve) => {
+      uploadResolver = resolve
+    })
+
+    const uploadFn = vi
+      .fn()
+      .mockReturnValueOnce(firstUpload)
+      .mockResolvedValueOnce({
+        id: 22,
+        public_url: 'https://example.com/two.png',
+        mime_type: 'image/png',
+      })
+
+    const wrapper = mount(TicketConversationPane, {
+      props: {
+        title: 'Conversation',
+        emptyText: 'Empty',
+        messages: [],
+        uploadFn,
+        ticketId: 1,
+      },
+    })
+
+    const fileInput = wrapper.get('input[type="file"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [
+        new File(['one'], 'one.png', { type: 'image/png' }),
+        new File(['two'], 'two.png', { type: 'image/png' }),
+      ],
+      configurable: true,
+    })
+
+    const uploadPromise = fileInput.trigger('change')
+    await Promise.resolve()
+    await wrapper.setProps({ ticketId: 2 })
+    uploadResolver({
+      id: 11,
+      public_url: 'https://example.com/one.png',
+      mime_type: 'image/png',
+    })
+    await uploadPromise
+    await flushPromises()
+
+    expect(uploadFn.mock.calls[0]?.[1]).toBe(1)
+    expect(uploadFn.mock.calls[1]?.[1]).toBe(1)
+  })
 })

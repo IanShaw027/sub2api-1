@@ -233,23 +233,23 @@ async function handleAttachmentUpload(event: Event) {
   const files = Array.from(input.files || [])
   if (files.length === 0 || !props.uploadFn) return
 
+  const ticketId = props.ticketId
   uploadingAttachment.value = true
   try {
     for (const file of files) {
       if (!file.type.startsWith('image/')) continue
-      const result = await props.uploadFn(file, props.ticketId)
-      if (result) {
-        const previewURL = URL.createObjectURL(file)
-        pendingAttachments.value.push({
-          media_id: result.id,
-          url: result.public_url || result.url || '',
-          thumbnail_url: result.thumbnail_public_url || result.thumbnail_url || previewURL,
-          preview_url: previewURL,
-          file_name: result.original_file_name || file.name,
-          content_type: result.mime_type || file.type,
-          size_bytes: result.size_bytes || file.size,
-        })
-      }
+      const result = await props.uploadFn(file, ticketId)
+      if (!result || props.ticketId !== ticketId) continue
+      const previewURL = URL.createObjectURL(file)
+      pendingAttachments.value.push({
+        media_id: result.id,
+        url: result.public_url || result.url || '',
+        thumbnail_url: result.thumbnail_public_url || result.thumbnail_url || previewURL,
+        preview_url: previewURL,
+        file_name: result.original_file_name || file.name,
+        content_type: result.mime_type || file.type,
+        size_bytes: result.size_bytes || file.size,
+      })
     }
   } catch (error) {
     emit('upload-error', error)
