@@ -179,6 +179,7 @@ const { t } = useI18n()
 const localReplyContent = ref('')
 const messageContainerRef = ref<HTMLDivElement | null>(null)
 const isComposing = ref(false)
+const attachmentUploadGeneration = ref(0)
 type PendingTicketAttachment = TicketMessageAttachment & { preview_url?: string }
 
 const pendingAttachments = ref<PendingTicketAttachment[]>([])
@@ -214,6 +215,7 @@ watch(() => props.clearComposerKey, () => {
 
 watch(() => props.ticketId, (nextTicketID, previousTicketID) => {
   if (nextTicketID === previousTicketID) return
+  attachmentUploadGeneration.value += 1
   composerValue.value = ''
   clearPendingAttachments()
   uploadingAttachment.value = false
@@ -235,6 +237,7 @@ async function handleAttachmentUpload(event: Event) {
   if (files.length === 0 || !props.uploadFn) return
 
   const ticketId = props.ticketId
+  const uploadGeneration = attachmentUploadGeneration.value
   uploadingAttachment.value = true
   try {
     for (const file of files) {
@@ -255,7 +258,9 @@ async function handleAttachmentUpload(event: Event) {
   } catch (error) {
     emit('upload-error', error)
   } finally {
-    uploadingAttachment.value = false
+    if (attachmentUploadGeneration.value === uploadGeneration) {
+      uploadingAttachment.value = false
+    }
     input.value = ''
   }
 }

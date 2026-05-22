@@ -240,4 +240,62 @@ describe('TicketConversationPane', () => {
     expect(uploadFn.mock.calls[0]?.[1]).toBe(1)
     expect(uploadFn.mock.calls[1]?.[1]).toBe(1)
   })
+
+  it('keeps the new ticket upload lock while an old upload finally resolves after a ticket switch', async () => {
+    let firstUploadResolver!: (value: { id: number; public_url: string; mime_type: string }) => void
+    let secondUploadResolver!: (value: { id: number; public_url: string; mime_type: string }) => void
+
+    const uploadFn = vi
+      .fn()
+      .mockReturnValueOnce(new Promise<{ id: number; public_url: string; mime_type: string }>((resolve) => {
+        firstUploadResolver = resolve
+      }))
+      .mockReturnValueOnce(new Promise<{ id: number; public_url: string; mime_type: string }>((resolve) => {
+        secondUploadResolver = resolve
+      }))
+
+    const wrapper = mount(TicketConversationPane, {
+      props: {
+        title: 'Conversation',
+        emptyText: 'Empty',
+        messages: [],
+        uploadFn,
+        ticketId: 1,
+      },
+    })
+
+    const fileInput = wrapper.get('input[type="file"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [new File(['one'], 'one.png', { type: 'image/png' })],
+      configurable: true,
+    })
+
+    await fileInput.trigger('change')
+    await Promise.resolve()
+    await wrapper.setProps({ ticketId: 2 })
+    expect(wrapper.get('input[type="file"]').attributes('disabled')).toBeUndefined()
+
+    Object.defineProperty(wrapper.get('input[type="file"]').element, 'files', {
+      value: [new File(['two'], 'two.png', { type: 'image/png' })],
+      configurable: true,
+    })
+    await wrapper.get('input[type="file"]').trigger('change')
+    await Promise.resolve()
+
+    firstUploadResolver({
+      id: 11,
+      public_url: 'https://example.com/one.png',
+      mime_type: 'image/png',
+    })
+    await flushPromises()
+
+    expect(wrapper.get('input[type="file"]').attributes('disabled')).toBeDefined()
+
+    secondUploadResolver({
+      id: 12,
+      public_url: 'https://example.com/two.png',
+      mime_type: 'image/png',
+    })
+    await flushPromises()
+  })
 })
