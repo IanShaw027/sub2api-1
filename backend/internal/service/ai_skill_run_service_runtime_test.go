@@ -220,7 +220,7 @@ func TestAISkillRunServiceExecuteFailedDispatchDoesNotChargeRuntimeStore(t *test
 	require.Empty(t, run.Output)
 }
 
-func TestAISkillRunServiceExecuteScriptDispatchDoesNotSettle(t *testing.T) {
+func TestAISkillRunServiceExecuteScriptDispatchFailsFast(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -272,18 +272,22 @@ func TestAISkillRunServiceExecuteScriptDispatchDoesNotSettle(t *testing.T) {
 		VersionID: aiSkillRunServiceTestInt64Ptr(version.ID),
 		Mode:      AISkillRunModeUse,
 	})
-	require.NoError(t, err)
-	require.NotNil(t, result)
+	require.Error(t, err)
+	require.Nil(t, result)
 	require.Len(t, runtime.requests, 1)
-	require.Equal(t, AISkillRunStatusDispatched, result.Dispatch.Status)
-	require.Equal(t, AISkillRunStatusDispatched, result.Prepared.Run.Status)
+	run := store.runs[1]
+	require.NotNil(t, run)
+	require.Equal(t, AISkillRunStatusFailed, run.Status)
+	require.Equal(t, "skillrunner", run.Provider)
+	require.Equal(t, "skillrunner:1", run.ExternalJobID)
+	require.NotEmpty(t, run.ErrorMessage)
 	settlementRepo, ok := settlementSvc.repo.(*aiSkillRunServiceTestSettlementRepo)
 	require.True(t, ok)
 	require.Len(t, settlementRepo.created, 0)
-	require.Equal(t, 0.0, result.Prepared.Run.ChargeAmount)
-	require.Empty(t, result.Prepared.Run.BillingMode)
-	require.Empty(t, result.Prepared.Run.Currency)
-	require.Nil(t, result.Prepared.Run.SettlementID)
+	require.Equal(t, 0.0, run.ChargeAmount)
+	require.Empty(t, run.BillingMode)
+	require.Empty(t, run.Currency)
+	require.Nil(t, run.SettlementID)
 }
 
 func cloneAISkillEntityForRunRuntime(skill *AISkill) *AISkill {

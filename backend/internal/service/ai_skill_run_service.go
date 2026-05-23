@@ -129,6 +129,23 @@ func (s *AISkillRunService) Execute(ctx context.Context, userID int64, input *AI
 		_ = s.runRepo.UpdateRun(ctx, prepared.Run)
 		return nil, err
 	}
+	if dispatch == nil {
+		prepared.Run.Status = AISkillRunStatusFailed
+		prepared.Run.ErrorMessage = skillExecutionDispatchFailedError().Error()
+		prepared.Run.UpdatedAt = s.nowOrDefault()
+		_ = s.runRepo.UpdateRun(ctx, prepared.Run)
+		return nil, skillExecutionDispatchFailedError()
+	}
+	if prepared.Execution != nil && prepared.Execution.Script != nil && normalizeAISkillDispatchStatus(dispatch.Status) == AISkillRunStatusDispatched {
+		prepared.Run.Status = AISkillRunStatusFailed
+		prepared.Run.Provider = strings.TrimSpace(dispatch.Provider)
+		prepared.Run.ExternalJobID = strings.TrimSpace(dispatch.ExternalJobID)
+		prepared.Run.Output = cloneAIMap(dispatch.Output)
+		prepared.Run.ErrorMessage = skillExecutionIncompleteError().Error()
+		prepared.Run.UpdatedAt = s.nowOrDefault()
+		_ = s.runRepo.UpdateRun(ctx, prepared.Run)
+		return nil, skillExecutionIncompleteError()
+	}
 	if !isAISkillDispatchSuccess(dispatch.Status) {
 		prepared.Run.Status = AISkillRunStatusFailed
 		prepared.Run.Provider = strings.TrimSpace(dispatch.Provider)
@@ -319,6 +336,10 @@ func buildAISkillSettlementPreview(run *AISkillRun, skill *AISkill, version *AIS
 
 func skillExecutionDispatchFailedError() error {
 	return infraerrors.InternalServer("AI_SKILL_EXECUTION_FAILED", "ai skill execution failed")
+}
+
+func skillExecutionIncompleteError() error {
+	return infraerrors.InternalServer("AI_SKILL_EXECUTION_INCOMPLETE", "ai skill execution did not produce a terminal result")
 }
 
 func isAISkillDispatchSuccess(status string) bool {

@@ -14,8 +14,10 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/handler/skillkit"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/repository"
 	servermiddleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -329,6 +331,70 @@ func TestAIHandlerRunSkillCleansUpUploadedAttachmentsOnExecutionFailure(t *testi
 	require.Len(t, store.deleted, 1)
 }
 
+func TestAIHandlerRunSkillRejectsPrivateSkillBeforeUploadingAttachments(t *testing.T) {
+	t.Parallel()
+
+	handler, repo, store := newAIHandlerMediaTestHarness(t)
+	runSvc := service.NewAISkillRunService(
+		&aiSkillHandlerRunSkillRepo{
+			skill: &service.AISkill{
+				ID:            7,
+				CreatorUserID: 1001,
+				Type:          service.AISkillTypePromptChat,
+				Metadata: map[string]any{
+					"visibility": "private",
+				},
+			},
+		},
+		&aiSkillHandlerRunVersionRepo{
+			version: &service.AISkillVersion{
+				ID:            8,
+				SkillID:       7,
+				CreatorUserID: 1001,
+				Type:          service.AISkillTypePromptChat,
+				Status:        service.AISkillVersionStatusApproved,
+				ExecutionSpec: service.AISkillExecutionSpec{
+					Type:       service.AISkillTypePromptChat,
+					PromptChat: &service.AISkillPromptChatSpec{},
+				},
+				BillingPolicy: service.AISkillBillingPolicy{Mode: service.AISkillBillingModeFree},
+			},
+		},
+		&aiSkillHandlerRunRepo{},
+		service.NewAISkillSettlementService(nil, nil, nil),
+		nil,
+	)
+	handler.skillModule = &skillkit.Module{
+		DomainRepo: &aiSkillHandlerViewerRepo{
+			skill: &domain.AISkill{
+				ID:         7,
+				UserID:     1001,
+				Type:       domain.AISkillTypePromptChat,
+				Visibility: domain.AIVisibilityPrivate,
+			},
+		},
+		RunService: runSvc,
+	}
+
+	png := aiSkillHandlerTestPNGBytes(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(png)
+	}))
+	defer srv.Close()
+
+	ctx, recorder := newAISkillHandlerJSONContext(t, http.MethodPost, "/api/v1/ai/skills/7/runs", `{"mode":"use","attachments":[{"url":"`+srv.URL+`/input.png","purpose":"input","file_name":"input.png"}]}`)
+	ctx.Params = gin.Params{{Key: "id", Value: "7"}}
+
+	handler.RunSkill(ctx)
+
+	require.Equal(t, http.StatusForbidden, recorder.Code)
+	require.Empty(t, repo.created)
+	require.Empty(t, repo.deleted)
+	require.Empty(t, store.uploads)
+	require.Empty(t, store.deleted)
+}
+
 func newAIHandlerMediaTestHarness(t *testing.T) (*AIHandler, *aiSkillHandlerMediaRepo, *aiSkillHandlerMediaStore) {
 	t.Helper()
 
@@ -454,4 +520,24 @@ func (*aiSkillHandlerRunRepo) GetRunByID(context.Context, int64) (*service.AISki
 
 func (*aiSkillHandlerRunRepo) UpdateRun(context.Context, *service.AISkillRun) error {
 	return nil
+}
+
+type aiSkillHandlerViewerRepo struct {
+	repository.AISkillRepository
+
+	skill *domain.AISkill
+}
+
+func (r *aiSkillHandlerViewerRepo) GetSkillByID(context.Context, int64) (*domain.AISkill, error) {
+	if r == nil || r.skill == nil {
+		return nil, domain.ErrAISkillNotFound
+	}
+	copy := *r.skill
+	if r.skill.Metadata != nil {
+		copy.Metadata = make(map[string]any, len(r.skill.Metadata))
+		for key, value := range r.skill.Metadata {
+			copy.Metadata[key] = value
+		}
+	}
+	return &copy, nil
 }
