@@ -407,12 +407,28 @@ func TestExchangePendingOAuthCompletionKeepsCompletionWhenAvatarAdoptionIsBlocke
 
 	handler.ExchangePendingOAuthCompletion(ginCtx)
 
-	require.Equal(t, http.StatusOK, recorder.Code)
-	data := decodeJSONResponseData(t, recorder)
-	require.NotEmpty(t, data["access_token"])
+	require.Equal(t, http.StatusInternalServerError, recorder.Code)
+
+	storedUser, err := client.User.Get(ctx, userEntity.ID)
+	require.NoError(t, err)
+	require.Equal(t, "legacy-name", storedUser.Username)
+
+	identityCount, err := client.AuthIdentity.Query().
+		Where(
+			authidentity.ProviderTypeEQ("linuxdo"),
+			authidentity.ProviderKeyEQ("linuxdo"),
+			authidentity.ProviderSubjectEQ("blocked-avatar-123"),
+		).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, identityCount)
 
 	avatar := loadUserAvatarRecord(t, client, userEntity.ID)
 	require.Nil(t, avatar)
+
+	storedSession, err := client.PendingAuthSession.Get(ctx, session.ID)
+	require.NoError(t, err)
+	require.Nil(t, storedSession.ConsumedAt)
 }
 
 func TestExchangePendingOAuthCompletionBindCurrentUserWithSuggestedProfileBindsImmediately(t *testing.T) {
@@ -589,7 +605,7 @@ func TestExchangePendingOAuthCompletionBindCurrentUserOwnershipConflict(t *testi
 	require.Nil(t, storedSession.ConsumedAt)
 }
 
-func TestExchangePendingOAuthCompletionBindCurrentUserRejectsIdentityReclaimFromDisabledOwner(t *testing.T) {
+func TestExchangePendingOAuthCompletionBindCurrentUserReclaimsIdentityFromDisabledOwner(t *testing.T) {
 	handler, client := newOAuthPendingFlowTestHandler(t, false)
 	ctx := context.Background()
 
@@ -653,25 +669,24 @@ func TestExchangePendingOAuthCompletionBindCurrentUserRejectsIdentityReclaimFrom
 
 	handler.ExchangePendingOAuthCompletion(ginCtx)
 
-	require.Equal(t, http.StatusConflict, recorder.Code)
-	payload := decodeJSONBody(t, recorder)
-	require.Equal(t, "AUTH_IDENTITY_OWNERSHIP_CONFLICT", payload["reason"])
+	require.Equal(t, http.StatusOK, recorder.Code)
 
 	identity, err := client.AuthIdentity.Get(ctx, existingIdentity.ID)
 	require.NoError(t, err)
-	require.Equal(t, inactiveOwner.ID, identity.UserID)
+	require.Equal(t, targetUser.ID, identity.UserID)
 
 	decision, err := client.IdentityAdoptionDecision.Query().
 		Where(identityadoptiondecision.PendingAuthSessionIDEQ(session.ID)).
 		Only(ctx)
 	require.NoError(t, err)
-	require.Nil(t, decision.IdentityID)
+	require.NotNil(t, decision.IdentityID)
+	require.Equal(t, identity.ID, *decision.IdentityID)
 
 	storedSession, err := client.PendingAuthSession.Query().
 		Where(pendingauthsession.IDEQ(session.ID)).
 		Only(ctx)
 	require.NoError(t, err)
-	require.Nil(t, storedSession.ConsumedAt)
+	require.NotNil(t, storedSession.ConsumedAt)
 }
 
 func TestExchangePendingOAuthCompletionLoginFalseFalseBindsIdentityWithoutAdoption(t *testing.T) {

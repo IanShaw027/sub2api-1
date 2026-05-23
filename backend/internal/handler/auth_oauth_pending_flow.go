@@ -1058,6 +1058,9 @@ func findReclaimBlockingActiveUserByID(ctx context.Context, client *dbent.Client
 		}
 		return nil, infraerrors.InternalServer("AUTH_IDENTITY_USER_LOOKUP_FAILED", "failed to load auth identity user").WithCause(err)
 	}
+	if !strings.EqualFold(strings.TrimSpace(userEntity.Status), service.StatusActive) {
+		return nil, nil
+	}
 	return userEntity, nil
 }
 
@@ -1191,11 +1194,11 @@ func applyPendingOAuthBindingTx(
 	if shouldAdoptAvatar && userService != nil {
 		avatar, cleanup, setAvatarErr := userService.SetAvatarWithCleanup(ctx, targetUserID, adoptedAvatarURL)
 		avatarCleanup = cleanup
-		if setAvatarErr == nil && avatar != nil && strings.TrimSpace(avatar.URL) != "" {
-			adoptedAvatarStorageURL = avatar.URL
-		}
 		if setAvatarErr != nil {
-			avatarCleanup = nil
+			return "", avatarCleanup, setAvatarErr
+		}
+		if avatar != nil && strings.TrimSpace(avatar.URL) != "" {
+			adoptedAvatarStorageURL = avatar.URL
 		}
 	}
 
