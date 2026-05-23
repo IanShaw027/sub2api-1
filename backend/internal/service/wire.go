@@ -532,6 +532,17 @@ func ProvideMediaStorageConfigProvider(
 	return NewMediaStorageConfigProvider(settingRepo, encryptor, cfg)
 }
 
+func ProvideMediaService(
+	repo MediaRepository,
+	store MediaObjectStore,
+	cfg *config.Config,
+	mediaConfigProvider *MediaStorageConfigProvider,
+) *MediaService {
+	svc := NewMediaService(repo, store, cfg)
+	svc.SetStorageConfigProvider(mediaConfigProvider)
+	return svc
+}
+
 // ProvideSettingService wires SettingService with group reader and proxy repo.
 func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupRepository, proxyRepo ProxyRepository, cfg *config.Config) *SettingService {
 	svc := NewSettingService(settingRepo, cfg)
@@ -697,7 +708,8 @@ var ProviderSet = wire.NewSet(
 	NewTurnstileService,
 	NewSubscriptionService,
 	NewTicketService,
-	NewMediaService,
+	ProvideMediaStorageConfigProvider,
+	ProvideMediaService,
 	ProvideInvoiceService,
 	ProvideAISkillBalanceCharger,
 	ProvideAISkillCreatorEarningsCreditor,

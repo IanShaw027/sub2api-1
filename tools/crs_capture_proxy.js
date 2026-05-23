@@ -92,11 +92,7 @@ function parseArgs(argv) {
 }
 
 function parsePositiveInt(value, name) {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new Error(`invalid ${name}: ${value}`);
-  }
-  return parsed;
+  return parseStrictNonNegativeInt(value, name);
 }
 
 function parseHostPort(value) {
@@ -127,9 +123,25 @@ function parseHostPort(value) {
 }
 
 function parsePort(value, original) {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 65535) {
+  const trimmed = String(value).trim();
+  if (!/^\d+$/.test(trimmed)) {
     throw new Error(`invalid listen port in ${original}`);
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed) || parsed > 65535) {
+    throw new Error(`invalid listen port in ${original}`);
+  }
+  return parsed;
+}
+
+function parseStrictNonNegativeInt(value, name) {
+  const trimmed = String(value).trim();
+  if (!/^\d+$/.test(trimmed)) {
+    throw new Error(`invalid ${name}: ${value}`);
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`invalid ${name}: ${value}`);
   }
   return parsed;
 }
@@ -230,28 +242,32 @@ function sanitizeIncomingResponseHeaders(headers) {
 
 function sanitizeHeadersForLog(headers) {
   const out = stripHopByHopHeaders(headers);
-  for (const key of [
-    'authorization',
-    'proxy-authorization',
-    'cookie',
-    'set-cookie',
-    'x-api-key',
-    'x-api-token',
-    'x-access-token',
-    'x-auth-token',
-    'x-client-secret',
-    'x-csrf-token',
-    'x-xsrf-token',
-    'x-goog-api-key',
-    'x-rapidapi-key',
-    'x-amz-security-token',
-    'api-key',
-    'api-token',
-    'x-token',
-    'token',
-  ]) {
-    if (Object.hasOwn(out, key)) {
-      out[key] = '[redacted]';
+  for (const [key] of Object.entries(out)) {
+    switch (key.toLowerCase()) {
+      case 'authorization':
+      case 'proxy-authorization':
+      case 'cookie':
+      case 'set-cookie':
+      case 'x-api-key':
+      case 'x-api-token':
+      case 'x-access-token':
+      case 'x-auth-token':
+      case 'x-client-secret':
+      case 'x-csrf-token':
+      case 'x-xsrf-token':
+      case 'x-goog-api-key':
+      case 'x-rapidapi-key':
+      case 'x-amz-security-token':
+      case 'api-key':
+      case 'api-token':
+      case 'x-token':
+      case 'token':
+      case 'referer':
+      case 'location':
+        out[key] = '[redacted]';
+        break;
+      default:
+        break;
     }
   }
   return out;
@@ -283,6 +299,10 @@ function shouldRedactQueryParam(name) {
     'access_token',
     'refresh_token',
     'id_token',
+    'code_verifier',
+    'client_assertion',
+    'assertion',
+    'jwt',
     'token',
     'secret',
     'client_secret',
@@ -323,11 +343,11 @@ function redactSecretLikeText(text) {
   redacted = redacted.replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[redacted]');
   redacted = redacted.replace(/(Basic\s+)[A-Za-z0-9+/=]+/gi, '$1[redacted]');
   redacted = redacted.replace(
-    /(["'])(password|passwd|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|secret|token|authorization)\1(\s*:\s*)(["'])([^"\\]*(?:\\.[^"\\]*)*)\4/gi,
+    /(["'])(password|passwd|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|code[_-]?verifier|client[_-]?assertion|assertion|jwt|client[_-]?secret|secret|token|authorization)\1(\s*:\s*)(["'])([^"\\]*(?:\\.[^"\\]*)*)\4/gi,
     (_, keyQuote, keyName, separator, valueQuote) => `${keyQuote}${keyName}${keyQuote}${separator}${valueQuote}[redacted]${valueQuote}`,
   );
   redacted = redacted.replace(
-    /((?:password|passwd|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|secret|token|authorization)\s*[:=]\s*)(["']?)([^"'\s,&}\]]+)(\2?)/gi,
+    /((?:password|passwd|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|code[_-]?verifier|client[_-]?assertion|assertion|jwt|client[_-]?secret|secret|token|authorization)\s*[:=]\s*)(["']?)([^"'\s,&}\]]+)(\2?)/gi,
     '$1[redacted]',
   );
   return redacted;
@@ -664,15 +684,33 @@ function runSelfCheck() {
     '[redacted]',
   );
   assert.equal(
+    sanitizeHeadersForLog({
+      referer: 'https://example.test/oauth/start?code=abc123',
+      location: 'https://example.test/oauth/callback?jwt=abc123',
+    }).referer,
+    '[redacted]',
+  );
+  assert.equal(
+    sanitizeHeadersForLog({
+      referer: 'https://example.test/oauth/start?code=abc123',
+      location: 'https://example.test/oauth/callback?jwt=abc123',
+    }).location,
+    '[redacted]',
+  );
+  assert.equal(
     sanitizeHeadersForLog({ 'x-api-key': 'secret', 'content-type': 'text/plain' })['x-api-key'],
     '[redacted]',
   );
   assert.equal(
+    sanitizeQueryForLog('?code_verifier=abc123&client_assertion=def456&assertion=ghi789&jwt=jkl012&keep=ok'),
+    '?code_verifier=%5Bredacted%5D&client_assertion=%5Bredacted%5D&assertion=%5Bredacted%5D&jwt=%5Bredacted%5D&keep=ok',
+  );
+  assert.equal(
     sanitizeBodyTextForLog(
       { 'content-type': 'application/json' },
-      '{"api_key":"abc123","nested":{"client_secret":"shh"}}',
+      '{"api_key":"abc123","code_verifier":"pkce","client_assertion":"jwt","assertion":"signed","jwt":"token","nested":{"client_secret":"shh"}}',
     ),
-    '{"api_key":"[redacted]","nested":{"client_secret":"[redacted]"}}',
+    '{"api_key":"[redacted]","code_verifier":"[redacted]","client_assertion":"[redacted]","assertion":"[redacted]","jwt":"[redacted]","nested":{"client_secret":"[redacted]"}}',
   );
   assert.equal(
     sanitizeBodyTextForLog(
@@ -706,6 +744,9 @@ function runSelfCheck() {
     )['x-forwarded-for'],
     '9.9.9.9',
   );
+  assert.throws(() => parsePositiveInt('12abc', 'max-body-bytes'));
+  assert.throws(() => parsePositiveInt('1.5', 'upstream-timeout-ms'));
+  assert.throws(() => parsePort('80x', '127.0.0.1:80x'));
 
   const tempDir = mkdtempSync(path.join(os.tmpdir(), 'crs-capture-self-check-'));
   try {

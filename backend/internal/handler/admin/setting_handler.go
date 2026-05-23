@@ -521,6 +521,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		TurnstileEnabled:                          settings.TurnstileEnabled,
 		TurnstileSiteKey:                          settings.TurnstileSiteKey,
 		TurnstileSecretKeyConfigured:              settings.TurnstileSecretKeyConfigured,
+		APIKeyACLTrustForwardedIP:                 settings.APIKeyACLTrustForwardedIP,
 		LinuxDoConnectEnabled:                     settings.LinuxDoConnectEnabled,
 		LinuxDoConnectClientID:                    settings.LinuxDoConnectClientID,
 		LinuxDoConnectClientSecretConfigured:      settings.LinuxDoConnectClientSecretConfigured,
@@ -629,6 +630,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		EnableAnthropicCacheTTL1hInjection:        settings.EnableAnthropicCacheTTL1hInjection,
 		RewriteMessageCacheControl:                settings.RewriteMessageCacheControl,
 		AntigravityUserAgentVersion:               settings.AntigravityUserAgentVersion,
+		OpenAICodexUserAgent:                      settings.OpenAICodexUserAgent,
 		WebSearchEmulationEnabled:                 settings.WebSearchEmulationEnabled,
 		KiroDefaultVersion:                        settings.KiroDefaultVersion,
 		KiroDefaultCommit:                         settings.KiroDefaultCommit,
@@ -678,6 +680,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		PaymentCancelRateLimitWindow:              paymentCfg.CancelRateLimitWindow,
 		PaymentCancelRateLimitUnit:                paymentCfg.CancelRateLimitUnit,
 		PaymentCancelRateLimitMode:                paymentCfg.CancelRateLimitMode,
+		PaymentAlipayForceQRCode:                  paymentCfg.AlipayForceQRCode,
 
 		ChannelMonitorEnabled:                settings.ChannelMonitorEnabled,
 		ChannelMonitorDefaultIntervalSeconds: settings.ChannelMonitorDefaultIntervalSeconds,
@@ -784,9 +787,10 @@ type UpdateSettingsRequest struct {
 	SMTPUseTLS   bool   `json:"smtp_use_tls"`
 
 	// Cloudflare Turnstile 设置
-	TurnstileEnabled   bool   `json:"turnstile_enabled"`
-	TurnstileSiteKey   string `json:"turnstile_site_key"`
-	TurnstileSecretKey string `json:"turnstile_secret_key"`
+	TurnstileEnabled          bool   `json:"turnstile_enabled"`
+	TurnstileSiteKey          string `json:"turnstile_site_key"`
+	TurnstileSecretKey        string `json:"turnstile_secret_key"`
+	APIKeyACLTrustForwardedIP bool   `json:"api_key_acl_trust_forwarded_ip"`
 
 	// LinuxDo Connect OAuth 登录
 	LinuxDoConnectEnabled      bool   `json:"linuxdo_connect_enabled"`
@@ -971,6 +975,7 @@ type UpdateSettingsRequest struct {
 	EnableAnthropicCacheTTL1hInjection *bool   `json:"enable_anthropic_cache_ttl_1h_injection"`
 	RewriteMessageCacheControl         *bool   `json:"rewrite_message_cache_control"`
 	AntigravityUserAgentVersion        *string `json:"antigravity_user_agent_version"`
+	OpenAICodexUserAgent               *string `json:"openai_codex_user_agent"`
 
 	// Kiro runtime defaults
 	KiroDefaultVersion             *string `json:"kiro_version"`
@@ -2002,6 +2007,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			return
 		}
 	}
+	if req.OpenAICodexUserAgent != nil {
+		normalized := strings.TrimSpace(*req.OpenAICodexUserAgent)
+		req.OpenAICodexUserAgent = &normalized
+	}
 
 	// 交叉验证：如果同时设置了最低和最高版本号，最高版本号必须 >= 最低版本号
 	if req.MinClaudeCodeVersion != "" && req.MaxClaudeCodeVersion != "" {
@@ -2050,6 +2059,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		TurnstileEnabled:                       req.TurnstileEnabled,
 		TurnstileSiteKey:                       req.TurnstileSiteKey,
 		TurnstileSecretKey:                     req.TurnstileSecretKey,
+		APIKeyACLTrustForwardedIP:              req.APIKeyACLTrustForwardedIP,
 		LinuxDoConnectEnabled:                  req.LinuxDoConnectEnabled,
 		LinuxDoConnectClientID:                 req.LinuxDoConnectClientID,
 		LinuxDoConnectClientSecret:             req.LinuxDoConnectClientSecret,
@@ -2321,6 +2331,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				return *req.AntigravityUserAgentVersion
 			}
 			return previousSettings.AntigravityUserAgentVersion
+		}(),
+		OpenAICodexUserAgent: func() string {
+			if req.OpenAICodexUserAgent != nil {
+				return *req.OpenAICodexUserAgent
+			}
+			return previousSettings.OpenAICodexUserAgent
 		}(),
 		PaymentVisibleMethodAlipaySource: func() string {
 			if req.PaymentVisibleMethodAlipaySource != nil {
@@ -2614,6 +2630,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		TurnstileEnabled:                          updatedSettings.TurnstileEnabled,
 		TurnstileSiteKey:                          updatedSettings.TurnstileSiteKey,
 		TurnstileSecretKeyConfigured:              updatedSettings.TurnstileSecretKeyConfigured,
+		APIKeyACLTrustForwardedIP:                 updatedSettings.APIKeyACLTrustForwardedIP,
 		LinuxDoConnectEnabled:                     updatedSettings.LinuxDoConnectEnabled,
 		LinuxDoConnectClientID:                    updatedSettings.LinuxDoConnectClientID,
 		LinuxDoConnectClientSecretConfigured:      updatedSettings.LinuxDoConnectClientSecretConfigured,
@@ -2737,6 +2754,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		EnableAnthropicCacheTTL1hInjection:        updatedSettings.EnableAnthropicCacheTTL1hInjection,
 		RewriteMessageCacheControl:                updatedSettings.RewriteMessageCacheControl,
 		AntigravityUserAgentVersion:               updatedSettings.AntigravityUserAgentVersion,
+		OpenAICodexUserAgent:                      updatedSettings.OpenAICodexUserAgent,
 		KiroDefaultVersion:                        updatedSettings.KiroDefaultVersion,
 		KiroDefaultCommit:                         updatedSettings.KiroDefaultCommit,
 		KiroDefaultSystemVersion:                  updatedSettings.KiroDefaultSystemVersion,

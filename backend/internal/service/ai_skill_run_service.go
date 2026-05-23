@@ -229,16 +229,18 @@ func (s *AISkillRunService) buildExecutionRequest(run *AISkillRun, skill *AISkil
 	}
 	switch version.Type {
 	case AISkillTypePromptChat:
+		parameters := mergeAISkillExecutionParameters(run.Parameters, spec.PromptChat.Variables)
 		req.PromptChat = &AISkillPromptChatExecution{
 			Model:              spec.PromptChat.Model,
 			SystemPrompt:       spec.PromptChat.SystemPrompt,
 			UserPromptTemplate: spec.PromptChat.UserPromptTemplate,
 			Variables:          cloneAIMapSlice(spec.PromptChat.Variables),
 			ResponseFormat:     cloneAIMap(spec.PromptChat.ResponseFormat),
-			Parameters:         cloneAIMap(run.Parameters),
+			Parameters:         parameters,
 			Attachments:        cloneAISkillRunAttachments(run.Attachments),
 		}
 	case AISkillTypePromptImage:
+		parameters := mergeAISkillExecutionParameters(run.Parameters, spec.PromptImage.Variables)
 		req.PromptImage = &AISkillPromptImageExecution{
 			Model:                  spec.PromptImage.Model,
 			PromptTemplate:         spec.PromptImage.PromptTemplate,
@@ -246,10 +248,11 @@ func (s *AISkillRunService) buildExecutionRequest(run *AISkillRun, skill *AISkil
 			Size:                   spec.PromptImage.Size,
 			ImageCount:             spec.PromptImage.ImageCount,
 			Variables:              cloneAIMapSlice(spec.PromptImage.Variables),
-			Parameters:             cloneAIMap(run.Parameters),
+			Parameters:             parameters,
 			Attachments:            cloneAISkillRunAttachments(run.Attachments),
 		}
 	case AISkillTypeScript:
+		parameters := mergeAISkillExecutionParameters(run.Parameters, extractAISkillVariableSchema(version.Metadata))
 		scriptRuntime := normalizeAISkillScriptRuntime(spec.Script.Runtime)
 		scriptName := normalizeAISkillScriptBundleName(spec.Script.ScriptName, skill, version)
 		scriptEntryPoint := normalizeAISkillScriptEntryPoint(spec.Script.EntryPoint, scriptRuntime)
@@ -286,12 +289,83 @@ func (s *AISkillRunService) buildExecutionRequest(run *AISkillRun, skill *AISkil
 			TimeoutSeconds: spec.Script.TimeoutSeconds,
 			Environment:    cloneAISkillStringMap(spec.Script.Environment),
 			Arguments:      cloneAIMapSlice(spec.Script.Arguments),
-			Parameters:     cloneAIMap(run.Parameters),
+			Parameters:     parameters,
 		}
 	default:
 		return nil, ErrAISkillExecutionSpecInvalid
 	}
 	return req, nil
+}
+
+func mergeAISkillExecutionParameters(parameters map[string]any, schemas ...[]map[string]any) map[string]any {
+	merged := cloneAIMap(parameters)
+	for _, schema := range schemas {
+		for _, field := range schema {
+			key := strings.TrimSpace(extractAISkillVariableKey(field))
+			if key == "" {
+				continue
+			}
+			if _, exists := merged[key]; exists {
+				continue
+			}
+			if defaultValue, ok := extractAISkillVariableDefaultValue(field); ok {
+				merged[key] = defaultValue
+			}
+		}
+	}
+	return merged
+}
+
+func extractAISkillVariableSchema(meta map[string]any) []map[string]any {
+	if len(meta) == 0 {
+		return nil
+	}
+	raw, ok := meta["variable_schema"]
+	if !ok || raw == nil {
+		return nil
+	}
+	switch typed := raw.(type) {
+	case []map[string]any:
+		return cloneAIMapSlice(typed)
+	case []any:
+		out := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			record, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			out = append(out, cloneAIMap(record))
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func extractAISkillVariableKey(field map[string]any) string {
+	if len(field) == 0 {
+		return ""
+	}
+	for _, key := range []string{"key", "name", "id"} {
+		if value, ok := field[key]; ok {
+			if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
+				return text
+			}
+		}
+	}
+	return ""
+}
+
+func extractAISkillVariableDefaultValue(field map[string]any) (any, bool) {
+	if len(field) == 0 {
+		return nil, false
+	}
+	for _, key := range []string{"default_value", "default"} {
+		if value, ok := field[key]; ok && value != nil {
+			return value, true
+		}
+	}
+	return nil, false
 }
 
 func (s *AISkillRunService) nowOrDefault() time.Time {

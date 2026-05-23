@@ -859,6 +859,7 @@ const buildRedeemQueryFilters = () => ({
 })
 
 const loadCodes = async () => {
+  clearTimeout(searchTimeout)
   if (abortController) {
     abortController.abort()
   }

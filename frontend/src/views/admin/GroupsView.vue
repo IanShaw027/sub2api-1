@@ -4052,6 +4052,7 @@ const deleteConfirmMessage = computed(() => {
 });
 
 const loadGroups = async () => {
+  clearTimeout(searchTimeout);
   if (abortController) {
     abortController.abort();
   }

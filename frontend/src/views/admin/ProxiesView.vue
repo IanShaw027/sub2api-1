@@ -1074,6 +1074,7 @@ const buildProxyQueryFilters = () => ({
 })
 
 const loadProxies = async () => {
+  clearTimeout(searchTimeout)
   if (abortController) {
     abortController.abort()
   }

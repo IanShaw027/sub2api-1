@@ -4056,6 +4056,57 @@
                   }}
                 </p>
               </div>
+
+              <!-- API Key ACL trust forwarded IP -->
+              <div class="flex items-center justify-between">
+                <div>
+                  <label
+                    class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    {{
+                      t(
+                        "admin.settings.gatewayForwarding.apiKeyAclTrustForwardedIP",
+                      )
+                    }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      t(
+                        "admin.settings.gatewayForwarding.apiKeyAclTrustForwardedIPHint",
+                      )
+                    }}
+                  </p>
+                </div>
+                <Toggle v-model="form.api_key_acl_trust_forwarded_ip" />
+              </div>
+
+              <!-- OpenAI Codex User-Agent -->
+              <div>
+                <label
+                  class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  {{
+                    t("admin.settings.gatewayForwarding.openaiCodexUserAgent")
+                  }}
+                </label>
+                <input
+                  v-model="form.openai_codex_user_agent"
+                  type="text"
+                  class="input max-w-xs font-mono text-sm"
+                  :placeholder="
+                    t(
+                      'admin.settings.gatewayForwarding.openaiCodexUserAgentPlaceholder',
+                    )
+                  "
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{
+                    t(
+                      "admin.settings.gatewayForwarding.openaiCodexUserAgentHint",
+                    )
+                  }}
+                </p>
+              </div>
             </div>
           </div>
           <!-- Web Search Emulation -->
@@ -6455,6 +6506,22 @@
                 <Toggle v-model="form.payment_enabled" />
               </div>
               <template v-if="form.payment_enabled">
+                <!-- Alipay QR code flow -->
+                <div class="flex items-center justify-between">
+                  <div>
+                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{
+                        t("admin.settings.payment.alipayForceQRCode")
+                      }}
+                    </label>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{
+                        t("admin.settings.payment.alipayForceQRCodeHint")
+                      }}
+                    </p>
+                  </div>
+                  <Toggle v-model="form.payment_alipay_force_qrcode" />
+                </div>
                 <!-- Row 1: Product name -->
                 <div class="grid grid-cols-3 gap-3">
                   <div>
@@ -7881,6 +7948,7 @@ const form = reactive<SettingsForm>({
   payment_cancel_rate_limit_window: 1,
   payment_cancel_rate_limit_unit: "day",
   payment_cancel_rate_limit_window_mode: "rolling",
+  payment_alipay_force_qrcode: false,
   table_default_page_size: tablePageSizeDefault,
   table_page_size_options: [10, 20, 50, 100],
   custom_menu_items: [] as Array<{
@@ -7910,6 +7978,7 @@ const form = reactive<SettingsForm>({
   turnstile_site_key: "",
   turnstile_secret_key: "",
   turnstile_secret_key_configured: false,
+  api_key_acl_trust_forwarded_ip: false,
   // LinuxDo Connect OAuth 登录
   linuxdo_connect_enabled: false,
   linuxdo_connect_client_id: "",
@@ -8040,6 +8109,7 @@ const form = reactive<SettingsForm>({
   enable_anthropic_cache_ttl_1h_injection: false,
   rewrite_message_cache_control: false,
   antigravity_user_agent_version: "",
+  openai_codex_user_agent: "",
   // Balance & quota notification
   balance_low_notify_enabled: false,
   balance_low_notify_threshold: 0,
@@ -9184,6 +9254,8 @@ async function saveSettings() {
       turnstile_enabled: form.turnstile_enabled,
       turnstile_site_key: form.turnstile_site_key,
       turnstile_secret_key: form.turnstile_secret_key || undefined,
+      api_key_acl_trust_forwarded_ip:
+        form.api_key_acl_trust_forwarded_ip,
       linuxdo_connect_enabled: form.linuxdo_connect_enabled,
       linuxdo_connect_client_id: form.linuxdo_connect_client_id,
       linuxdo_connect_client_secret:
@@ -9312,6 +9384,8 @@ async function saveSettings() {
       rewrite_message_cache_control: form.rewrite_message_cache_control,
       antigravity_user_agent_version:
         form.antigravity_user_agent_version?.trim() || "",
+      openai_codex_user_agent:
+        form.openai_codex_user_agent?.trim() || "",
       // Payment configuration
       payment_enabled: form.payment_enabled,
       risk_control_enabled: form.risk_control_enabled,
@@ -9339,6 +9413,7 @@ async function saveSettings() {
       payment_cancel_rate_limit_unit: form.payment_cancel_rate_limit_unit,
       payment_cancel_rate_limit_window_mode:
         form.payment_cancel_rate_limit_window_mode,
+      payment_alipay_force_qrcode: form.payment_alipay_force_qrcode,
 	      openai_advanced_scheduler_enabled: form.openai_advanced_scheduler_enabled,
 	      openai_sticky_reserve_percent: Math.max(
 	        0,

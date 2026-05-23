@@ -1963,7 +1963,9 @@
         "email": "Email",
         "linuxdo": "LinuxDo",
         "oidc": "{providerName}",
-        "wechat": "WeChat"
+        "wechat": "WeChat",
+        "github": "GitHub",
+        "google": "Google"
       },
       "notes": {
         "emailManagedFromProfile": "Primary email is managed in the profile form",
@@ -6115,7 +6117,12 @@
         "debugTimelineRetentionDays": "Retention Days",
         "debugTimelineMaxSizeMB": "Max Size MB",
         "anthropicCacheTTL1hInjection": "Anthropic Cache TTL Injection",
-        "anthropicCacheTTL1hInjectionHint": "When enabled, existing ephemeral cache_control blocks in Anthropic OAuth/Setup Token request bodies are forced to 1h; response usage is billed back as 5m by default, with account-level TTL billing override taking priority."
+        "anthropicCacheTTL1hInjectionHint": "When enabled, existing ephemeral cache_control blocks in Anthropic OAuth/Setup Token request bodies are forced to 1h; response usage is billed back as 5m by default, with account-level TTL billing override taking priority.",
+        "apiKeyAclTrustForwardedIP": "Trust Forwarded IP for API Key ACL",
+        "apiKeyAclTrustForwardedIPHint": "Use forwarded IP headers when evaluating API Key ACL rules.",
+        "openaiCodexUserAgent": "OpenAI Codex User-Agent",
+        "openaiCodexUserAgentPlaceholder": "OpenAI-Codex/2025.05",
+        "openaiCodexUserAgentHint": "Set the User-Agent sent to OpenAI Codex upstream requests."
       },
       "webSearchEmulation": {
         "title": "Web Search Emulation",
@@ -6284,6 +6291,8 @@
         "cancelRateLimitWindowMode": "Window Mode",
         "cancelRateLimitWindowModeRolling": "Rolling",
         "cancelRateLimitWindowModeFixed": "Fixed",
+        "alipayForceQRCode": "Force Alipay QR Code",
+        "alipayForceQRCodeHint": "Always use the QR code flow for Alipay recharges.",
         "helpText": "Help Text",
         "helpImageUrl": "Help Image URL",
         "manageProviders": "Manage Providers",

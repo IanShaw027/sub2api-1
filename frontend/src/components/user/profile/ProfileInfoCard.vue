@@ -315,8 +315,8 @@ const providerLabels = computed<Record<UserAuthProvider, string>>(() => ({
   oidc: t('profile.authBindings.providers.oidc', { providerName: props.oidcProviderName }),
   wechat: t('profile.authBindings.providers.wechat'),
   dingtalk: t('profile.authBindings.providers.dingtalk'),
-  github: 'GitHub',
-  google: 'Google'
+  github: t('profile.authBindings.providers.github'),
+  google: t('profile.authBindings.providers.google')
 }))
 function formatCurrency(value: number): string {
   return `$${value.toFixed(2)}`
@@ -335,13 +335,17 @@ function resolveProfileSourceProvider(source: string | UserProfileSourceContext 
   if (normalized === 'email') {
     return ''
   }
+  const explicitLabel =
+    formatProviderLabel(source.provider_label || '') ||
+    formatProviderLabel(source.label || '')
+  if (explicitLabel) {
+    return explicitLabel
+  }
   if (normalized) {
     return providerLabels.value[normalized]
   }
 
-  return formatProviderLabel(source.provider_label || '')
-    || formatProviderLabel(source.label || '')
-    || formatProviderLabel(source.provider || source.source || '')
+  return formatProviderLabel(source.provider || source.source || '')
 }
 
 function normalizeProvider(value: string): UserAuthProvider | null {

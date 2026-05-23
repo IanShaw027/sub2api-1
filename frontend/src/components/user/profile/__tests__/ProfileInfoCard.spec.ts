@@ -37,6 +37,8 @@ vi.mock('vue-i18n', async (importOriginal) => {
         if (key === 'profile.authBindings.providers.linuxdo') return 'LinuxDo'
         if (key === 'profile.authBindings.providers.oidc') return _params?.providerName ?? 'OIDC'
         if (key === 'profile.authBindings.providers.dingtalk') return '钉钉'
+        if (key === 'profile.authBindings.providers.github') return 'GitHub'
+        if (key === 'profile.authBindings.providers.google') return 'Google'
         if (key === 'profile.identity.source.avatar') return `Avatar from ${_params?.providerName}`
         if (key === 'profile.identity.source.username') return `Nickname from ${_params?.providerName}`
         return key
@@ -316,6 +318,30 @@ describe('ProfileInfoCard', () => {
     expect(hints).toContain('Nickname from LegacyID')
     expect(hints).not.toContain('oidc_connect')
     expect(hints).not.toContain('oidc-connect')
+  })
+
+  it('keeps explicit legacy aliases ahead of normalized provider labels', () => {
+    const wrapper = mount(ProfileInfoCard, {
+      props: {
+        user: createUser({
+          profile_sources: {
+            username: {
+              provider: 'github',
+              source: 'github',
+              provider_label: 'Legacy GitHub',
+            },
+          },
+        }),
+      },
+      global: {
+        stubs: {
+          Icon: true,
+        },
+      },
+    })
+
+    expect(wrapper.get('[data-testid="profile-source-hints"]').text()).toContain('Nickname from Legacy GitHub')
+    expect(wrapper.get('[data-testid="profile-source-hints"]').text()).not.toContain('Nickname from GitHub')
   })
 
   it('does not render raw non-provider source sentinels as profile hints', () => {

@@ -1317,6 +1317,7 @@ const handleAttributesModalClose = async () => {
 }
 
 const loadUsers = async () => {
+  clearTimeout(searchTimeout)
   abortController?.abort()
   const currentAbortController = new AbortController()
   abortController = currentAbortController

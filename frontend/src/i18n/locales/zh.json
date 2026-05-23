@@ -1957,7 +1957,9 @@
         "email": "邮箱",
         "linuxdo": "LinuxDo",
         "oidc": "{providerName}",
-        "wechat": "微信"
+        "wechat": "微信",
+        "github": "GitHub",
+        "google": "Google"
       },
       "notes": {
         "emailManagedFromProfile": "主邮箱在资料表单中管理",
@@ -6460,6 +6462,8 @@
         "cancelRateLimitWindowMode": "窗口模式",
         "cancelRateLimitWindowModeRolling": "滚动",
         "cancelRateLimitWindowModeFixed": "固定",
+        "alipayForceQRCode": "强制使用支付宝二维码",
+        "alipayForceQRCodeHint": "支付宝充值始终使用二维码流程。",
         "helpText": "帮助文本",
         "helpImageUrl": "帮助图片链接",
         "manageProviders": "管理服务商",

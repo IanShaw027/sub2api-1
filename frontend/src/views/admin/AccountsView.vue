@@ -842,6 +842,7 @@ const resetAutoRefreshCache = () => {
 const isFirstLoad = ref(true)
 
 const load = async () => {
+  baseDebouncedReload.cancel()
   const requestParams = params as any
   hasPendingListSync.value = false
   resetAutoRefreshCache()
@@ -858,6 +859,7 @@ const load = async () => {
 }
 
 const reload = async () => {
+  baseDebouncedReload.cancel()
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = false
@@ -873,6 +875,7 @@ const debouncedReload = () => {
 }
 
 const handlePageChange = (page: number) => {
+  baseDebouncedReload.cancel()
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = true
@@ -880,6 +883,7 @@ const handlePageChange = (page: number) => {
 }
 
 const handlePageSizeChange = (size: number) => {
+  baseDebouncedReload.cancel()
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = true
@@ -887,6 +891,7 @@ const handlePageSizeChange = (size: number) => {
 }
 
 const handleSort = (key: string, order: AccountSortOrder) => {
+  baseDebouncedReload.cancel()
   sortState.sort_by = key
   sortState.sort_order = order
   const requestParams = params as any
@@ -1058,6 +1063,7 @@ const refreshAccountsIncrementally = async () => {
 }
 
 const handleManualRefresh = async () => {
+  baseDebouncedReload.cancel()
   await load()
   // Force usage cells to refetch /usage on explicit user refresh.
   usageManualRefreshToken.value += 1
