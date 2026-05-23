@@ -167,6 +167,27 @@ func (s *paymentConfigWriteFailRepoStub) SetMultiple(ctx context.Context, settin
 	return s.settingHandlerRepoStub.SetMultiple(ctx, settings)
 }
 
+type rollbackFailureRepoStub struct {
+	settingHandlerRepoStub
+	callCount   int
+	paymentErr  error
+	rollbackErr error
+}
+
+func (s *rollbackFailureRepoStub) SetMultiple(ctx context.Context, settings map[string]string) error {
+	s.callCount++
+	switch s.callCount {
+	case 1:
+		return s.settingHandlerRepoStub.SetMultiple(ctx, settings)
+	case 2:
+		return s.paymentErr
+	case 3:
+		return s.rollbackErr
+	default:
+		return s.settingHandlerRepoStub.SetMultiple(ctx, settings)
+	}
+}
+
 func buildSettingHandlerTestPNGDataURL(t *testing.T) string {
 	t.Helper()
 
@@ -431,7 +452,6 @@ func TestSettingHandler_UpdateSettings_CleansUpMigratedMediaWhenPersistenceFails
 	require.NotNil(t, mediaRepo.assets[1])
 	require.Equal(t, service.MediaStatusDeleted, mediaRepo.assets[1].Status)
 	require.Greater(t, mediaStore.deleteCount, 0)
-	require.Equal(t, "https://legacy.example/logo.png", repo.values[service.SettingKeySiteLogo])
 }
 
 func TestSettingHandler_UpdateSettings_FailsBeforePersistenceWhenPaymentConfigReadbackFails(t *testing.T) {
@@ -662,6 +682,66 @@ func TestSettingHandler_UpdateSettings_CleansUpMigratedMediaWhenFastPolicySaveFa
 	require.Equal(t, "https://legacy.example/logo.png", repo.values[service.SettingKeySiteLogo])
 }
 
+func TestSettingHandler_UpdateSettings_CleansUpMigratedMediaWhenRollbackFails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &rollbackFailureRepoStub{
+		settingHandlerRepoStub: settingHandlerRepoStub{
+			values: map[string]string{
+				service.SettingKeyPromoCodeEnabled: "true",
+				service.SettingKeySiteLogo:         "https://legacy.example/logo.png",
+				service.SettingPaymentEnabled:      "true",
+			},
+		},
+		paymentErr:  errors.New("payment config save failed"),
+		rollbackErr: errors.New("rollback failed"),
+	}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	paymentCfgSvc := service.NewPaymentConfigService(nil, repo, nil)
+	mediaRepo := &settingHandlerMediaRepoStub{}
+	mediaStore := &settingHandlerMediaStoreStub{}
+	mediaSvc := service.NewMediaService(mediaRepo, mediaStore, &config.Config{
+		Media: config.MediaConfig{
+			Enabled:            true,
+			Endpoint:           "https://storage.example.com",
+			Region:             "auto",
+			Bucket:             "media",
+			AccessKeyID:        "test-ak",
+			SecretAccessKey:    "test-sk",
+			PublicBaseURL:      "https://media.example",
+			MaxUploadSizeBytes: 1024 * 1024,
+		},
+	})
+	handler := NewSettingHandler(svc, nil, nil, nil, paymentCfgSvc, nil, mediaSvc)
+
+	body := map[string]any{
+		"promo_code_enabled":          true,
+		"site_logo":                   buildSettingHandlerTestPNGDataURL(t),
+		"payment_enabled":             false,
+		"payment_help_text":           "keep cleanup",
+		"payment_product_name_prefix": "prefix",
+	}
+	rawBody, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateSettings(c)
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Equal(t, 4, repo.callCount)
+	require.Equal(t, int64(1), mediaRepo.nextID)
+	require.Len(t, mediaRepo.deletedIDs, 1)
+	require.Equal(t, int64(1), mediaRepo.deletedIDs[0])
+	require.NotNil(t, mediaRepo.assets[1])
+	require.Equal(t, service.MediaStatusDeleted, mediaRepo.assets[1].Status)
+	require.Greater(t, mediaStore.deleteCount, 0)
+	require.Equal(t, "https://legacy.example/logo.png", repo.values[service.SettingKeySiteLogo])
+}
+
 func TestSettingHandler_UpdateSettings_PreservesPartialFieldsWhenSavingPaymentHelpImage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -716,4 +796,61 @@ func TestSettingHandler_UpdateSettings_PreservesPartialFieldsWhenSavingPaymentHe
 	require.Equal(t, "alipay,wxpay", repo.values[service.SettingEnabledPaymentTypes])
 	require.Equal(t, "Prefix", repo.values[service.SettingProductNamePrefix])
 	require.Equal(t, "https://media.example/api/v1/media/public/1", repo.values[service.SettingHelpImageURL])
+}
+
+func TestSettingHandler_UpdateSettings_RoundTripsDingTalkAuthSourceDefaults(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &settingHandlerRepoStub{
+		values: map[string]string{
+			service.SettingKeyRegistrationEnabled: "true",
+			service.SettingKeyPromoCodeEnabled:    "true",
+		},
+	}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+
+	body := map[string]any{
+		"registration_enabled":                     true,
+		"promo_code_enabled":                       true,
+		"auth_source_default_dingtalk_balance":     4.5,
+		"auth_source_default_dingtalk_concurrency": 8,
+		"auth_source_default_dingtalk_subscriptions": []map[string]any{
+			{"group_id": 77, "validity_days": 15},
+		},
+		"auth_source_default_dingtalk_grant_on_signup":     true,
+		"auth_source_default_dingtalk_grant_on_first_bind": false,
+	}
+	rawBody, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateSettings(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "4.50000000", repo.values[service.SettingKeyAuthSourceDefaultDingTalkBalance])
+	require.Equal(t, "8", repo.values[service.SettingKeyAuthSourceDefaultDingTalkConcurrency])
+	require.JSONEq(t, `[{"group_id":77,"validity_days":15}]`, repo.values[service.SettingKeyAuthSourceDefaultDingTalkSubscriptions])
+	require.Equal(t, "true", repo.values[service.SettingKeyAuthSourceDefaultDingTalkGrantOnSignup])
+	require.Equal(t, "false", repo.values[service.SettingKeyAuthSourceDefaultDingTalkGrantOnFirstBind])
+
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	data, ok := resp.Data.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, 4.5, data["auth_source_default_dingtalk_balance"])
+	require.Equal(t, float64(8), data["auth_source_default_dingtalk_concurrency"])
+	require.Equal(t, true, data["auth_source_default_dingtalk_grant_on_signup"])
+	require.Equal(t, false, data["auth_source_default_dingtalk_grant_on_first_bind"])
+	subs, ok := data["auth_source_default_dingtalk_subscriptions"].([]any)
+	require.True(t, ok)
+	require.Len(t, subs, 1)
+	sub, ok := subs[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, float64(77), sub["group_id"])
+	require.Equal(t, float64(15), sub["validity_days"])
 }
