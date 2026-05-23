@@ -5041,6 +5041,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		line := scanner.Text()
 		lineStartsClientOutput := false
 		forceFlushFailedEvent := false
+		line = normalizeOpenAIHTTPResponseTerminalSSELine(line)
 		if data, ok := extractOpenAISSEDataLine(line); ok {
 			dataBytes := []byte(data)
 			trimmedData := strings.TrimSpace(data)
@@ -6021,6 +6022,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 		if streamFailoverErr != nil {
 			return
 		}
+		line = normalizeOpenAIHTTPResponseTerminalSSELine(line)
 		// Extract data from SSE line (supports both "data: " and "data:" formats)
 		if data, ok := extractOpenAISSEDataLine(line); ok {
 
@@ -6379,6 +6381,27 @@ func (s *OpenAIGatewayService) replaceModelInSSELine(line, fromModel, toModel st
 	}
 
 	return line
+}
+
+func normalizeOpenAIHTTPResponseTerminalSSELine(line string) string {
+	trimmed := strings.TrimSpace(line)
+	if strings.EqualFold(trimmed, "event: response.done") {
+		return "event: response.completed"
+	}
+
+	data, ok := extractOpenAISSEDataLine(line)
+	if !ok || data == "" || data == "[DONE]" {
+		return line
+	}
+	if strings.TrimSpace(gjson.Get(data, "type").String()) != "response.done" {
+		return line
+	}
+
+	normalized, err := sjson.Set(data, "type", "response.completed")
+	if err != nil {
+		return line
+	}
+	return "data: " + normalized
 }
 
 // correctToolCallsInResponseBody 修正响应体中的工具调用
@@ -6944,6 +6967,36 @@ func trimOpenAIEncryptedReasoningItems(reqBody map[string]any) bool {
 	default:
 		return false
 	}
+}
+
+func trimOpenAIStoreFalseReasoningItems(reqBody map[string]any) bool {
+	if len(reqBody) == 0 {
+		return false
+	}
+	rawStore, ok := reqBody["store"]
+	if !ok {
+		return false
+	}
+	storeEnabled, ok := rawStore.(bool)
+	if !ok || storeEnabled {
+		return false
+	}
+
+	rawInput, ok := reqBody["input"]
+	if !ok || rawInput == nil {
+		return false
+	}
+	input, ok := rawInput.([]any)
+	if !ok || len(input) == 0 {
+		return false
+	}
+
+	filtered, modified := filterCodexInputWithOptions(input, codexInputFilterOptions{})
+	if !modified {
+		return false
+	}
+	reqBody["input"] = filtered
+	return true
 }
 
 func sanitizeEncryptedReasoningInputItem(item any) (next any, changed bool, keep bool) {
@@ -7875,6 +7928,9 @@ func normalizeOpenAIPassthroughOAuthBody(body []byte, compact bool) ([]byte, boo
 	if normalizeOpenAIResponsesInputToolRoles(reqBody) {
 		changed = true
 	}
+	if trimOpenAIStoreFalseReasoningItems(reqBody) {
+		changed = true
+	}
 	if normalizeOpenAIStrictFunctionToolSchemas(reqBody) {
 		changed = true
 	}
@@ -7932,6 +7988,9 @@ func normalizeOpenAIPassthroughBaseBody(body []byte, compact bool, stripTopP boo
 		}
 	}
 	if normalizeOpenAIResponsesInputToolRoles(reqBody) {
+		changed = true
+	}
+	if trimOpenAIStoreFalseReasoningItems(reqBody) {
 		changed = true
 	}
 

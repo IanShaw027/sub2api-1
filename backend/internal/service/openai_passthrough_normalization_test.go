@@ -115,6 +115,16 @@ func TestNormalizeOpenAIPassthroughOAuthBody_PreservesFunctionCallOutputWithItem
 	require.Equal(t, "call_123", gjson.GetBytes(normalized, "input.1.call_id").String())
 }
 
+func TestNormalizeOpenAIPassthroughOAuthBody_DropsUnpersistedReasoningItemsWhenStoreFalse(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.4","stream":true,"store":false,"input":[{"type":"message","role":"user","content":"hi"},{"type":"reasoning","id":"rs_0672f12450da0b9c0169f07220a6c08198b68c2455ced99344","summary":[]}]}`)
+
+	normalized, changed, err := normalizeOpenAIPassthroughOAuthBody(body, false)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.False(t, gjson.GetBytes(normalized, `input.#(type=="reasoning")`).Exists())
+	require.Equal(t, "message", gjson.GetBytes(normalized, "input.0.type").String())
+}
+
 func TestFinalizeOpenAIResponsesOAuthUpstreamBody_EnforcesFinalOAuthResponsesConstraints(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

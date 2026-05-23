@@ -1262,6 +1262,7 @@ func (s *OpenAIGatewayService) buildOpenAIWSCreatePayload(reqBody map[string]any
 	if account != nil && account.Type == AccountTypeOAuth && !s.isOpenAIWSStoreRecoveryAllowed(account) {
 		payload["store"] = false
 	}
+	trimOpenAIStoreFalseReasoningItems(payload)
 	return payload
 }
 

@@ -2165,6 +2165,41 @@ func TestOpenAIStreamingPreambleKeepaliveUsesDownstreamIdle(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "response.completed")
 }
 
+func TestOpenAIStreamingNormalizesResponseDoneEventForHTTPClients(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Gateway: config.GatewayConfig{
+			StreamDataIntervalTimeout: 0,
+			StreamKeepaliveInterval:   0,
+			MaxLineSize:               defaultMaxLineSize,
+		},
+	}
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			"event: response.done",
+			`data: {"type":"response.done","response":{"id":"resp_done","usage":{"input_tokens":2,"output_tokens":3,"input_tokens_details":{"cached_tokens":1}}}}`,
+			"",
+		}, "\n"))),
+		Header: http.Header{},
+	}
+
+	result, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}, time.Now(), "model", "model")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 2, result.usage.InputTokens)
+	require.Contains(t, rec.Body.String(), "event: response.completed")
+	require.Contains(t, rec.Body.String(), `"type":"response.completed"`)
+	require.NotContains(t, rec.Body.String(), "response.done")
+}
+
 func TestOpenAIStreamingPolicyResponseFailedBeforeOutputPassesThrough(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{
@@ -2483,6 +2518,8 @@ func TestOpenAIStreamingPassthroughResponseDoneWithoutDoneMarkerStillSucceeds(t 
 	require.Equal(t, 2, result.usage.InputTokens)
 	require.Equal(t, 3, result.usage.OutputTokens)
 	require.Equal(t, 1, result.usage.CacheReadInputTokens)
+	require.Contains(t, rec.Body.String(), "response.completed")
+	require.NotContains(t, rec.Body.String(), "response.done")
 }
 
 func TestOpenAIStreamingPassthroughResponseIncompleteWithoutDoneMarkerStillSucceeds(t *testing.T) {
@@ -2518,6 +2555,39 @@ func TestOpenAIStreamingPassthroughResponseIncompleteWithoutDoneMarkerStillSucce
 	require.Equal(t, 2, result.usage.InputTokens)
 	require.Equal(t, 3, result.usage.OutputTokens)
 	require.Equal(t, 1, result.usage.CacheReadInputTokens)
+}
+
+func TestOpenAIStreamingPassthroughNormalizesResponseDoneEventForHTTPClients(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Gateway: config.GatewayConfig{
+			MaxLineSize: defaultMaxLineSize,
+		},
+	}
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			"event: response.done",
+			`data: {"type":"response.done","response":{"id":"resp_done","usage":{"input_tokens":2,"output_tokens":3,"input_tokens_details":{"cached_tokens":1}}}}`,
+			"",
+		}, "\n"))),
+		Header: http.Header{},
+	}
+
+	result, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "", "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 2, result.usage.InputTokens)
+	require.Contains(t, rec.Body.String(), "event: response.completed")
+	require.Contains(t, rec.Body.String(), `"type":"response.completed"`)
+	require.NotContains(t, rec.Body.String(), "response.done")
 }
 
 func TestOpenAIStreamingTooLong(t *testing.T) {
