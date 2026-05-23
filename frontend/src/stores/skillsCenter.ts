@@ -1,6 +1,7 @@
 import { computed, reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { BasePaginationResponse } from '@/types'
+import { apiClient } from '@/api/client'
 import {
   createSkill,
   createSkillVersion,
@@ -13,11 +14,9 @@ import {
   listSkillVersions,
   publishSkillVersion,
   submitSkillVersion,
-  testSkill,
   uninstallSkill,
   updateSkill,
-  updateSkillVersion,
-  useSkill
+  updateSkillVersion
 } from '@/api/skills'
 import {
   createDefaultSkillContent,
@@ -63,6 +62,10 @@ function cloneContent(content: SkillContent): SkillContent {
 
 function cloneVariableSchema(schema: SkillVariableSchemaItem[]): SkillVariableSchemaItem[] {
   return cloneOptions(schema)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
 }
 
 function buildDraftFromDetail(detail: SkillDetail): SkillEditorDraft {
@@ -523,12 +526,20 @@ export const useSkillsCenterStore = defineStore('skillsCenter', () => {
   async function runSkillAction(
     mode: SkillRunMode,
     skillId: number,
-    versionId?: number | null
+    versionId?: number | null,
+    parameters: Record<string, unknown> = {}
   ): Promise<SkillRunActionResult> {
     runningVersionId.value = versionId ?? 0
     runningMode.value = mode
     try {
-      const response = mode === 'test' ? await testSkill(skillId, versionId) : await useSkill(skillId, versionId)
+      const config = typeof versionId === 'number' && versionId > 0 ? { params: { version_id: versionId } } : undefined
+      const { data } = await apiClient.post(
+        mode === 'test' ? `/user/skills/${skillId}/test` : `/user/skills/${skillId}/use`,
+        {
+          parameters: cloneOptions(parameters)
+        },
+        config
+      )
       await loadSkillDetail(skillId, true)
 
       const canLoadRuns = detailCache.value[skillId]?.owned ?? (detail.value?.id === skillId ? detail.value.owned : false)
@@ -536,19 +547,43 @@ export const useSkillsCenterStore = defineStore('skillsCenter', () => {
         await loadRuns(skillId, 1, runsPagination.page_size)
       }
 
-      return response
+      const source = isRecord(data) ? data : {}
+      return {
+        mode,
+        skill_id: typeof source.skill_id === 'number' ? source.skill_id : skillId,
+        version_id:
+          typeof source.version_id === 'number'
+            ? source.version_id
+            : versionId ?? null,
+        run_id:
+          typeof source.run_id === 'number'
+            ? source.run_id
+            : typeof source.id === 'number'
+              ? source.id
+              : null,
+        status: typeof source.status === 'string' ? source.status : null,
+        raw: source
+      }
     } finally {
       runningVersionId.value = null
       runningMode.value = null
     }
   }
 
-  async function testSkillVersion(skillId: number, versionId?: number | null): Promise<SkillRunActionResult> {
-    return runSkillAction('test', skillId, versionId)
+  async function testSkillVersion(
+    skillId: number,
+    versionId?: number | null,
+    parameters?: Record<string, unknown>
+  ): Promise<SkillRunActionResult> {
+    return runSkillAction('test', skillId, versionId, parameters)
   }
 
-  async function useSkillVersion(skillId: number, versionId?: number | null): Promise<SkillRunActionResult> {
-    return runSkillAction('use', skillId, versionId)
+  async function useSkillVersion(
+    skillId: number,
+    versionId?: number | null,
+    parameters?: Record<string, unknown>
+  ): Promise<SkillRunActionResult> {
+    return runSkillAction('use', skillId, versionId, parameters)
   }
 
   async function loadRuns(skillId: number, page = runsPagination.page, pageSize = runsPagination.page_size): Promise<void> {

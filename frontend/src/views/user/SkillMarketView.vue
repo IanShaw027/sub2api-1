@@ -350,7 +350,11 @@ async function updatePageSize(pageSize: number): Promise<void> {
 async function handleToggleInstall(skill: SkillSummary): Promise<void> {
   installingSkillId.value = skill.id
   try {
+    const shouldRefresh = props.installedOnly || skillsStore.marketFilters.installed !== 'all'
     await skillsStore.toggleInstall(skill.id, skill.installed)
+    if (shouldRefresh) {
+      await reloadMarket()
+    }
     appStore.showSuccess(skill.installed ? t('skills.market.uninstallSuccess', '已卸载技能') : t('skills.market.installSuccess', '已安装技能'))
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('common.error')))
