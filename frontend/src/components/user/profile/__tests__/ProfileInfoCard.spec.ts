@@ -36,6 +36,7 @@ vi.mock('vue-i18n', async (importOriginal) => {
         if (key === 'profile.user') return 'User'
         if (key === 'profile.authBindings.providers.linuxdo') return 'LinuxDo'
         if (key === 'profile.authBindings.providers.oidc') return _params?.providerName ?? 'OIDC'
+        if (key === 'profile.authBindings.providers.dingtalk') return '钉钉'
         if (key === 'profile.identity.source.avatar') return `Avatar from ${_params?.providerName}`
         if (key === 'profile.identity.source.username') return `Nickname from ${_params?.providerName}`
         return key
@@ -148,6 +149,25 @@ describe('ProfileInfoCard', () => {
     expect(wrapper.text()).not.toContain('legacy-user@wechat-connect.invalid')
   })
 
+  it('suppresses legacy string email source chips', () => {
+    const wrapper = mount(ProfileInfoCard, {
+      props: {
+        user: createUser({
+          profile_sources: {
+            avatar: 'email'
+          }
+        })
+      },
+      global: {
+        stubs: {
+          Icon: true
+        }
+      }
+    })
+
+    expect(wrapper.find('[data-testid="profile-source-hints"]').exists()).toBe(false)
+  })
+
   it('renders the approved overview hero and two-column content shell', () => {
     const wrapper = mount(ProfileInfoCard, {
       props: {
@@ -226,6 +246,51 @@ describe('ProfileInfoCard', () => {
     })
 
     expect(wrapper.get('[data-testid="profile-source-hints"]').text()).toContain('Nickname from LegacyID')
+  })
+
+  it('maps legacy oidc: and oidc/ source aliases to the configured provider label', () => {
+    const wrapper = mount(ProfileInfoCard, {
+      props: {
+        user: createUser({
+          profile_sources: {
+            avatar: 'oidc:',
+            username: 'oidc/'
+          }
+        }),
+        oidcProviderName: 'LegacyID'
+      },
+      global: {
+        stubs: {
+          Icon: true
+        }
+      }
+    })
+
+    const hints = wrapper.get('[data-testid="profile-source-hints"]').text()
+    expect(hints).toContain('Avatar from LegacyID')
+    expect(hints).toContain('Nickname from LegacyID')
+    expect(hints).not.toContain('oidc:')
+    expect(hints).not.toContain('oidc/')
+  })
+
+  it('uses the localized DingTalk provider label in source hints', () => {
+    const wrapper = mount(ProfileInfoCard, {
+      props: {
+        user: createUser({
+          profile_sources: {
+            avatar: 'dingtalk'
+          }
+        })
+      },
+      global: {
+        stubs: {
+          Icon: true
+        }
+      }
+    })
+
+    expect(wrapper.get('[data-testid="profile-source-hints"]').text()).toContain('钉钉')
+    expect(wrapper.get('[data-testid="profile-source-hints"]').text()).not.toContain('DingTalk')
   })
 
   it('maps legacy oidc source labels without surfacing raw aliases', () => {

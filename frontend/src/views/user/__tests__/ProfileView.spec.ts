@@ -151,4 +151,40 @@ describe('ProfileView', () => {
     expect(profileCard.attributes('data-second-qr-url')).toBe('   ')
     expect(profileCard.attributes('data-oidc')).toBe('LegacyID')
   })
+
+  it('passes the configured OIDC provider label from modern public settings to the profile card', async () => {
+    fetchPublicSettingsMock.mockResolvedValue({
+      contact_info: '',
+      support_qr_codes: [],
+      balance_low_notify_enabled: false,
+      balance_low_notify_threshold: 0,
+      linuxdo_oauth_enabled: true,
+      wechat_oauth_enabled: true,
+      wechat_oauth_open_enabled: true,
+      wechat_oauth_mp_enabled: false,
+      oidc_oauth_enabled: true,
+      oidc_oauth_provider_name: 'ConfiguredID',
+      oidc_connect_provider_name: 'LegacyID'
+    } as any)
+
+    const wrapper = mount(ProfileView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          ProfileInfoCard: {
+            props: ['oidcProviderName'],
+            template: '<div data-testid="profile-info-card" :data-oidc="oidcProviderName" />'
+          },
+          ProfileBalanceNotifyCard: { template: '<div data-testid="profile-balance-notify-card" />' },
+          ProfilePasswordForm: { template: '<div data-testid="profile-password-form" />' },
+          ProfileTotpCard: { template: '<div data-testid="profile-totp-card" />' },
+          UserBalanceHistoryModal: true,
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="profile-info-card"]').attributes('data-oidc')).toBe('ConfiguredID')
+  })
 })

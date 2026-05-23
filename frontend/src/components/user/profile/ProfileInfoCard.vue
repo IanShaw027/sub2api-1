@@ -314,7 +314,7 @@ const providerLabels = computed<Record<UserAuthProvider, string>>(() => ({
   linuxdo: t('profile.authBindings.providers.linuxdo'),
   oidc: t('profile.authBindings.providers.oidc', { providerName: props.oidcProviderName }),
   wechat: t('profile.authBindings.providers.wechat'),
-  dingtalk: 'DingTalk',
+  dingtalk: t('profile.authBindings.providers.dingtalk'),
   github: 'GitHub',
   google: 'Google'
 }))
@@ -326,9 +326,15 @@ function resolveProfileSourceProvider(source: string | UserProfileSourceContext 
   if (!source) return ''
   if (typeof source === 'string') {
     const normalized = normalizeProvider(source)
+    if (normalized === 'email') {
+      return ''
+    }
     return normalized ? providerLabels.value[normalized] : formatProviderLabel(source)
   }
   const normalized = normalizeProvider(source.provider || source.source || '')
+  if (normalized === 'email') {
+    return ''
+  }
   if (normalized) {
     return providerLabels.value[normalized]
   }
@@ -339,7 +345,12 @@ function resolveProfileSourceProvider(source: string | UserProfileSourceContext 
 }
 
 function normalizeProvider(value: string): UserAuthProvider | null {
-  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, '_')
+  const trimmed = value.trim().toLowerCase()
+  if (trimmed.startsWith('oidc:') || trimmed.startsWith('oidc/')) {
+    return 'oidc'
+  }
+
+  const normalized = trimmed.replace(/[\s-]+/g, '_')
   if (normalized === 'oidc_connect' || normalized === 'oidcconnect') {
     return 'oidc'
   }
@@ -366,7 +377,7 @@ function formatProviderLabel(provider: string): string {
   if (normalized === 'oidc' || normalized === 'oidc_connect' || normalized === 'oidcconnect') return props.oidcProviderName || 'OIDC'
   if (normalized === 'linuxdo') return 'LinuxDo'
   if (normalized === 'wechat') return 'WeChat'
-  if (normalized === 'email') return t('profile.email')
+  if (normalized === 'email') return ''
   return provider.trim()
 }
 
