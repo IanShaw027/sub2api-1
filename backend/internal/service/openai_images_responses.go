@@ -1060,16 +1060,15 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 		imageCount = openAIImagesResponsesEffectiveN(parsed)
 	}
 	return &OpenAIForwardResult{
-		RequestID:         resp.Header.Get("x-request-id"),
-		Usage:             usage,
-		Model:             requestModel,
-		TokenBillingModel: NormalizeOpenAIImageMainModel(mainModel),
-		UpstreamModel:     requestModel,
-		Stream:            parsed.Stream,
-		ResponseHeaders:   resp.Header.Clone(),
-		Duration:          time.Since(startTime),
-		FirstTokenMs:      firstTokenMs,
-		ImageCount:        imageCount,
-		ImageSize:         parsed.SizeTier,
+		RequestID:       resp.Header.Get("x-request-id"),
+		Usage:           usage,
+		Model:           requestModel,
+		UpstreamModel:   requestModel,
+		Stream:          parsed.Stream,
+		ResponseHeaders: resp.Header.Clone(),
+		Duration:        time.Since(startTime),
+		FirstTokenMs:    firstTokenMs,
+		ImageCount:      imageCount,
+		ImageSize:       parsed.SizeTier,
 	}, nil
 }

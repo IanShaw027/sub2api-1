@@ -4180,6 +4180,7 @@ oauthTransformDone:
 			FirstTokenMs:    firstTokenMs,
 			ImageCount:      imageCount,
 		}
+		applyOpenAIResponsesImageBillingMeta(result, body, upstreamModel)
 		emitOpenAICacheProbeEvent(ctx, c, account, originalBody, body, result, promptCacheKey, false)
 		emitOpenAICodexCompatFallbackEvent(
 			ctx,
@@ -4505,6 +4506,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		FirstTokenMs:    firstTokenMs,
 		ImageCount:      imageCount,
 	}
+	applyOpenAIResponsesImageBillingMeta(result, body, upstreamPassthroughModel)
 	emitOpenAICacheProbeEvent(ctx, c, account, originalBody, body, result, promptCacheKey, true)
 	return result, nil
 }
@@ -7232,6 +7234,33 @@ func isOpenAIRecordUsageImageRequest(input *OpenAIRecordUsageInput, result *Open
 		return false
 	}
 	return isOpenAIImagesPath(input.InboundEndpoint) || isOpenAIImagesPath(input.UpstreamEndpoint)
+}
+
+func applyOpenAIResponsesImageBillingMeta(result *OpenAIForwardResult, body []byte, fallbackModel string) {
+	if result == nil || result.ImageCount <= 0 || len(body) == 0 {
+		return
+	}
+
+	if imageModel, imageSizeTier, err := resolveOpenAIResponsesImageBillingConfigFromBody(body, fallbackModel); err == nil {
+		if result.BillingModel == "" {
+			result.BillingModel = imageModel
+		}
+		if result.ImageSize == "" {
+			result.ImageSize = imageSizeTier
+		}
+	}
+
+	if result.TokenBillingModel != "" {
+		return
+	}
+
+	tokenBillingModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
+	if tokenBillingModel == "" {
+		tokenBillingModel = strings.TrimSpace(fallbackModel)
+	}
+	if tokenBillingModel != "" && !isOpenAIImageGenerationModel(tokenBillingModel) {
+		result.TokenBillingModel = tokenBillingModel
+	}
 }
 
 func isOpenAIImages2APIBridgePath(path string) bool {
