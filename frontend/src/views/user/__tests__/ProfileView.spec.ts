@@ -101,7 +101,10 @@ describe('ProfileView', () => {
   it('passes profile support contact info and legacy OIDC provider names to the profile card', async () => {
     fetchPublicSettingsMock.mockResolvedValue({
       contact_info: 'Telegram: @sub2api_support',
-      support_qr_codes: [{ image_url: 'https://cdn.example.com/support.png', note: '客服' }],
+      support_qr_codes: [
+        { image_url: 'https://cdn.example.com/support.png', note: '客服' },
+        { image_url: '   ', note: 'empty url' },
+      ],
       balance_low_notify_enabled: false,
       balance_low_notify_threshold: 0,
       linuxdo_oauth_enabled: true,
@@ -126,6 +129,8 @@ describe('ProfileView', () => {
                 :data-contact="contactInfo"
                 :data-oidc="oidcProviderName"
                 :data-qr-count="String((supportQRCodes || []).length)"
+                :data-first-qr-url="supportQRCodes?.[0]?.image_url || ''"
+                :data-second-qr-url="supportQRCodes?.[1]?.image_url || ''"
               />
             `
           },
@@ -141,7 +146,9 @@ describe('ProfileView', () => {
 
     const profileCard = wrapper.get('[data-testid="profile-info-card"]')
     expect(profileCard.attributes('data-contact')).toBe('Telegram: @sub2api_support')
-    expect(profileCard.attributes('data-qr-count')).toBe('1')
+    expect(profileCard.attributes('data-qr-count')).toBe('2')
+    expect(profileCard.attributes('data-first-qr-url')).toBe('https://cdn.example.com/support.png')
+    expect(profileCard.attributes('data-second-qr-url')).toBe('   ')
     expect(profileCard.attributes('data-oidc')).toBe('LegacyID')
   })
 })

@@ -174,11 +174,14 @@
             <div
               v-for="(qrCode, index) in supportQRCodeItems"
               :key="`${qrCode.image_url}-${index}`"
+              :aria-label="supportQRCodeAlt(qrCode)"
               class="overflow-hidden rounded-3xl border border-gray-100 bg-gray-50/80 p-4 dark:border-dark-700 dark:bg-dark-900/30"
+              role="group"
             >
               <img
                 :src="qrCode.image_url"
-                :alt="qrCode.note || t('common.contactSupport')"
+                :alt="supportQRCodeAlt(qrCode)"
+                :aria-label="supportQRCodeAlt(qrCode)"
                 class="aspect-square w-full rounded-2xl object-cover"
               />
               <p
@@ -326,9 +329,13 @@ function resolveProfileSourceProvider(source: string | UserProfileSourceContext 
     return normalized ? providerLabels.value[normalized] : formatProviderLabel(source)
   }
   const normalized = normalizeProvider(source.provider || source.source || '')
-  return source.provider_label?.trim()
-    || source.label?.trim()
-    || (normalized ? providerLabels.value[normalized] : formatProviderLabel(source.provider || source.source || ''))
+  if (normalized) {
+    return providerLabels.value[normalized]
+  }
+
+  return formatProviderLabel(source.provider_label || '')
+    || formatProviderLabel(source.label || '')
+    || formatProviderLabel(source.provider || source.source || '')
 }
 
 function normalizeProvider(value: string): UserAuthProvider | null {
@@ -353,10 +360,23 @@ function normalizeProvider(value: string): UserAuthProvider | null {
 function formatProviderLabel(provider: string): string {
   const normalized = provider.trim().toLowerCase().replace(/[\s-]+/g, '_')
   if (!normalized) return ''
+  const providerAlias = normalizeProvider(provider)
+  if (providerAlias) return providerLabels.value[providerAlias]
+  if (isInternalProfileSourceSentinel(normalized)) return ''
   if (normalized === 'oidc' || normalized === 'oidc_connect' || normalized === 'oidcconnect') return props.oidcProviderName || 'OIDC'
   if (normalized === 'linuxdo') return 'LinuxDo'
   if (normalized === 'wechat') return 'WeChat'
   if (normalized === 'email') return t('profile.email')
   return provider.trim()
+}
+
+function isInternalProfileSourceSentinel(normalized: string): boolean {
+  return normalized === 'remote_url' || normalized === 'media'
+}
+
+function supportQRCodeAlt(qrCode: SupportQRCodeEntry): string {
+  const note = qrCode.note?.trim()
+  const label = note || t('common.contactSupport')
+  return `${label} QR code`
 }
 </script>

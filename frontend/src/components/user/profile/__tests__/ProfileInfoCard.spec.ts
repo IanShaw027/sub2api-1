@@ -189,7 +189,7 @@ describe('ProfileInfoCard', () => {
     ).toBe(true)
   })
 
-  it('renders support contact info and qr codes when provided', () => {
+  it('renders support contact info and accessible qr codes when provided', () => {
     const wrapper = mount(ProfileInfoCard, {
       props: {
         user: createUser(),
@@ -206,6 +206,8 @@ describe('ProfileInfoCard', () => {
     expect(wrapper.get('[data-testid="profile-support-panel"]').text()).toContain('Telegram: @sub2api_support')
     expect(wrapper.get('[data-testid="profile-support-qr-grid"]').html()).toContain('https://cdn.example.com/support.png')
     expect(wrapper.get('[data-testid="profile-support-qr-grid"]').text()).toContain('客服')
+    expect(wrapper.get('[data-testid="profile-support-qr-grid"] img').attributes('alt')).toContain('QR')
+    expect(wrapper.get('[data-testid="profile-support-qr-grid"] img').attributes('aria-label')).toContain('QR')
   })
 
   it('maps legacy oidc source aliases to the configured provider label', () => {
@@ -224,5 +226,50 @@ describe('ProfileInfoCard', () => {
     })
 
     expect(wrapper.get('[data-testid="profile-source-hints"]').text()).toContain('Nickname from LegacyID')
+  })
+
+  it('maps legacy oidc source labels without surfacing raw aliases', () => {
+    const wrapper = mount(ProfileInfoCard, {
+      props: {
+        user: createUser({
+          profile_sources: {
+            username: { provider: '', source: 'oidc_connect', provider_label: 'oidc_connect' },
+            avatar: { provider: '', source: 'oidc-connect', label: 'oidc-connect' },
+          }
+        }),
+        oidcProviderName: 'LegacyID'
+      },
+      global: {
+        stubs: {
+          Icon: true
+        }
+      }
+    })
+
+    const hints = wrapper.get('[data-testid="profile-source-hints"]').text()
+    expect(hints).toContain('Avatar from LegacyID')
+    expect(hints).toContain('Nickname from LegacyID')
+    expect(hints).not.toContain('oidc_connect')
+    expect(hints).not.toContain('oidc-connect')
+  })
+
+  it('does not render raw non-provider source sentinels as profile hints', () => {
+    const wrapper = mount(ProfileInfoCard, {
+      props: {
+        user: createUser({
+          avatar_source: 'remote_url',
+          username_source: { provider: '', source: 'media', label: 'media' }
+        }),
+      },
+      global: {
+        stubs: {
+          Icon: true
+        }
+      }
+    })
+
+    expect(wrapper.find('[data-testid="profile-source-hints"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('remote_url')
+    expect(wrapper.text()).not.toContain('media')
   })
 })
